@@ -146,6 +146,37 @@ CREATE TABLE IF NOT EXISTS sys_flow_comment (
     INDEX idx_user_id(user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='流程意见表';
 
+-- 流程运行错误日志表
+CREATE TABLE IF NOT EXISTS sys_flow_error_log (
+    id VARCHAR(64) PRIMARY KEY COMMENT '主键',
+    process_instance_id VARCHAR(64) COMMENT '流程实例ID',
+    process_def_id VARCHAR(64) COMMENT '流程定义ID',
+    process_def_key VARCHAR(100) COMMENT '流程定义KEY',
+    business_key VARCHAR(100) COMMENT '业务Key',
+    task_id VARCHAR(64) COMMENT 'Flowable任务ID',
+    task_name VARCHAR(200) COMMENT '任务名称',
+    activity_id VARCHAR(100) COMMENT 'BPMN节点ID',
+    activity_name VARCHAR(200) COMMENT 'BPMN节点名称',
+    error_stage VARCHAR(80) COMMENT '错误发生环节',
+    error_type VARCHAR(300) COMMENT '异常类型',
+    error_message TEXT COMMENT '异常摘要',
+    stack_trace TEXT COMMENT '异常堆栈',
+    job_id VARCHAR(64) COMMENT 'Flowable作业ID',
+    job_retries INT COMMENT 'Flowable作业剩余重试次数',
+    status TINYINT DEFAULT 0 COMMENT '状态（0-未处理/1-已重试/2-已解决/3-重试失败）',
+    retry_count INT DEFAULT 0 COMMENT '人工重试次数',
+    last_retry_user_id VARCHAR(64) COMMENT '最近重试人',
+    last_retry_time DATETIME COMMENT '最近重试时间',
+    retry_message TEXT COMMENT '重试说明或失败原因',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_process_instance_id(process_instance_id),
+    INDEX idx_activity_id(activity_id),
+    INDEX idx_job_id(job_id),
+    INDEX idx_status(status),
+    INDEX idx_create_time(create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='流程运行错误日志表';
+
 -- 流程分类表
 CREATE TABLE IF NOT EXISTS sys_flow_category (
     id VARCHAR(64) PRIMARY KEY COMMENT '主键',

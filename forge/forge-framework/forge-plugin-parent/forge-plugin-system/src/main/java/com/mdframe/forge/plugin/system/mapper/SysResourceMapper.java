@@ -27,4 +27,14 @@ public interface SysResourceMapper extends BaseMapper<SysResource> {
      * 查询用户指定客户端下的API权限列表
      */
     List<String> selectUserApiPermissions(@Param("userId") Long userId, @Param("clientCode") String clientCode);
+
+    /**
+     * 查询指定HTTP方法下已配置的API权限资源地址。
+     */
+    List<String> selectConfiguredApiUrls(@Param("method") String method);
+
+    /**
+     * 按资源ID查询API权限匹配表达式。
+     */
+    List<String> selectApiPermissionPatternsByResourceIds(@Param("resourceIds") List<Long> resourceIds);
 }

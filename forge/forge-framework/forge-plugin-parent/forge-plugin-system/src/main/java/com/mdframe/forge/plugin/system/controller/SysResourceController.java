@@ -48,6 +48,15 @@ public class SysResourceController {
     }
 
     /**
+     * 查询当前用户可分配的资源树
+     */
+    @GetMapping("/assignable-tree")
+    public RespInfo<List<SysResource>> assignableTree(SysResourceQuery query) {
+        List<SysResource> list = resourceService.selectAssignableResourceTree(query);
+        return RespInfo.success(list);
+    }
+
+    /**
      * 根据ID查询资源详情
      */
     @PostMapping("/getById")

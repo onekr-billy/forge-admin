@@ -31,6 +31,14 @@ public interface ISysResourceService extends IService<SysResource> {
     List<SysResource> selectResourceTree(SysResourceQuery query);
 
     /**
+     * 查询当前用户可分配的资源树。
+     *
+     * @param query 查询条件
+     * @return 资源列表
+     */
+    List<SysResource> selectAssignableResourceTree(SysResourceQuery query);
+
+    /**
      * 根据ID查询资源详情
      *
      * @param id 资源ID

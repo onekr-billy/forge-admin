@@ -24,6 +24,8 @@
         <result column="login_count" property="loginCount" />
         <result column="remark" property="remark" />
         <result column="create_dept" property="createDept" />
+        <result column="org_name" property="orgName" />
+        <result column="dept_name" property="deptName" />
         <result column="create_by" property="createBy" />
         <result column="create_time" property="createTime" />
         <result column="update_by" property="updateBy" />
@@ -32,10 +34,11 @@
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, tenant_id, username, real_name, user_type, user_client, email, phone,
+        u.id, u.tenant_id, u.username, u.real_name, u.user_type, u.user_client, u.email, u.phone,
         id_card, gender, password, salt, user_status, avatar, region_code,
         last_login_time, last_login_ip, login_count, remark, create_dept,
-        create_by, create_time, update_by, update_time
+        create_by, create_time, update_by, update_time,
+        orgs.org_name, orgs.org_name AS dept_name
     </sql>
 
     <!-- 通用查询条件 -->
@@ -48,6 +51,10 @@
         </if>
         <if test="query.realName != null and query.realName != ''">
             AND u.real_name LIKE CONCAT('%', #{query.realName}, '%')
+        </if>
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (u.username LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR u.real_name LIKE CONCAT('%', #{query.keyword}, '%'))
         </if>
         <if test="query.userType != null">
             AND u.user_type = #{query.userType}
@@ -83,6 +90,12 @@
     <select id="selectUserPage" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List" />
         FROM sys_user u
+        LEFT JOIN (
+            SELECT uo.user_id, GROUP_CONCAT(o.org_name ORDER BY o.sort SEPARATOR ',') AS org_name
+            FROM sys_user_org uo
+            LEFT JOIN sys_org o ON o.id = uo.org_id
+            GROUP BY uo.user_id
+        ) orgs ON orgs.user_id = u.id
         <where>
             <include refid="queryCondition" />
         </where>

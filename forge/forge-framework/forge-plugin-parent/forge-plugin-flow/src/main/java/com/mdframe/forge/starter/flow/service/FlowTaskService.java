@@ -17,17 +17,17 @@ public interface FlowTaskService {
     /**
      * 我的待办任务
      */
-    IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category);
+    IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category, Integer status);
 
     /**
      * 我的已办任务
      */
-    IPage<FlowTask> doneTasks(Page<FlowTask> page, String userId, String title, String category);
+    IPage<FlowTask> doneTasks(Page<FlowTask> page, String userId, String title, String category, Integer status);
 
     /**
      * 我发起的流程
      */
-    IPage<FlowTask> startedTasks(Page<FlowTask> page, String userId, String title, String category);
+    IPage<FlowTask> startedTasks(Page<FlowTask> page, String userId, String title, String category, Integer status);
 
     /**
      * 候选任务（未签收的任务）

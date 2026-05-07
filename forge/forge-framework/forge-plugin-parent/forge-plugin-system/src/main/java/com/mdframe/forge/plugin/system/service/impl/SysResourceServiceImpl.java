@@ -53,6 +53,26 @@ public class SysResourceServiceImpl extends ServiceImpl<SysResourceMapper, SysRe
     }
 
     @Override
+    public List<SysResource> selectAssignableResourceTree(SysResourceQuery query) {
+        LoginUser loginUser = SessionHelper.getLoginUser();
+        if (loginUser == null) {
+            throw new RuntimeException("用户未登录");
+        }
+
+        LambdaQueryWrapper<SysResource> wrapper = buildQueryWrapper(query);
+        if (!loginUser.isAdmin()) {
+            List<Long> resourceIds = selectCurrentUserResourceIds();
+            if (CollUtil.isEmpty(resourceIds)) {
+                return new ArrayList<>();
+            }
+            wrapper.in(SysResource::getId, resourceIds);
+        }
+
+        List<SysResource> list = list(wrapper);
+        return buildEntityTree(list, 0L);
+    }
+
+    @Override
     public SysResource selectResourceById(Long id) {
         return resourceMapper.selectById(id);
     }

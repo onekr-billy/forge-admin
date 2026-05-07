@@ -140,6 +140,7 @@
         :schema="editSchema"
         :grid-cols="editGridCols"
         :label-width="editLabelWidth"
+        :label-placement="editLabelPlacement"
         :show-actions="false"
         :context="formContext"
       >
@@ -182,6 +183,7 @@
           :schema="editSchema"
           :grid-cols="editGridCols"
           :label-width="editLabelWidth"
+          :label-placement="editLabelPlacement"
           :show-actions="false"
           :context="formContext"
         >

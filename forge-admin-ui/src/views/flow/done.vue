@@ -30,6 +30,7 @@
           </template>
         </n-input>
         <n-select v-model:value="queryParams.category" placeholder="流程分类" clearable class="category-select" :options="categoryOptions" />
+        <n-select v-model:value="queryParams.status" placeholder="审批结果" clearable class="category-select" :options="statusOptions" />
         <NButton type="primary" class="search-btn" @click="handleSearch">
           <i class="i-material-symbols:search mr-2" />查询
         </NButton>
@@ -158,7 +159,7 @@ const pagination = reactive({
   },
 })
 
-const queryParams = reactive({ title: '', category: '' })
+const queryParams = reactive({ title: '', category: '', status: null })
 const categoryOptions = ref([])
 
 const todoCount = ref(0)
@@ -179,6 +180,13 @@ const statusMap = {
   6: { text: '已撤回', type: 'default' },
 }
 
+const statusOptions = [
+  { label: '已通过', value: 2 },
+  { label: '已驳回', value: 3 },
+  { label: '已转办', value: 4 },
+  { label: '已委派', value: 5 },
+]
+
 function getStatusDotClass(status) {
   const cls = { 2: 'success', 3: 'error', 4: 'warning', 5: 'info', 6: 'default' }
   return cls[status] || 'default'
@@ -193,29 +201,29 @@ const columns = [
   {
     title: '任务标题',
     key: 'title',
-    minWidth: 200,
+    width: 180,
     ellipsis: { tooltip: true },
     render: row => h('span', { class: 'task-title-link', onClick: () => openDrawer(row) }, row.title || row.taskName),
   },
-  { title: '任务名称', key: 'taskName', width: 120 },
+  { title: '任务名称', key: 'taskName', width: 100, ellipsis: { tooltip: true } },
   {
     title: '发起人',
     key: 'startUserName',
-    width: 120,
+    width: 100,
     render: row => h('div', { class: 'table-user' }, [
       h(UserAvatar, { name: row.startUserName || '未知', size: 24 }),
       h('span', { class: 'user-name-text' }, row.startUserName || '-'),
     ]),
   },
-  { title: '发起部门', key: 'startDeptName', width: 120, ellipsis: { tooltip: true } },
+  { title: '发起部门', key: 'startDeptName', width: 100, ellipsis: { tooltip: true } },
   {
     title: '审批结果',
     key: 'status',
-    width: 90,
+    width: 80,
     render: row => h('span', { class: ['status-tag-mini', getStatusTagClass(row.status)] }, statusMap[row.status]?.text ?? '未知'),
   },
-  { title: '审批意见', key: 'comment', width: 150, ellipsis: { tooltip: true } },
-  { title: '完成时间', key: 'completeTime', width: 155 },
+  { title: '审批意见', key: 'comment', width: 140, ellipsis: { tooltip: true } },
+  { title: '完成时间', key: 'completeTime', width: 150 },
   {
     title: '操作',
     key: 'actions',
@@ -259,6 +267,7 @@ async function loadData() {
       userId: userStore.userId,
       title: queryParams.title || undefined,
       category: queryParams.category || undefined,
+      status: queryParams.status ?? undefined,
     })
     if (res.code === 200 && res.data) {
       dataSource.value = res.data.records || []
@@ -309,6 +318,7 @@ function handleSearch() {
 function handleReset() {
   queryParams.title = ''
   queryParams.category = ''
+  queryParams.status = null
   pagination.page = 1
   loadData()
 }
@@ -327,6 +337,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+:deep(.n-data-table .n-data-table-th),
+:deep(.n-data-table .n-data-table-td) {
+  padding: 6px 8px;
+}
+
 .flow-page {
   padding: 20px;
   height: 100%;

@@ -303,23 +303,16 @@ public class UserLoadServiceImpl implements IUserLoadService {
                 .collect(Collectors.toList());
 
         // 4. 查询API类型的资源（resourceType=4）
-        LambdaQueryWrapper<SysResource> resourceWrapper = new LambdaQueryWrapper<>();
-        resourceWrapper.in(SysResource::getId, resourceIds)
-                .eq(SysResource::getResourceType, 4)  // API接口类型
-                .eq(SysResource::getVisible, 1)  // 可见的资源
-                .isNotNull(SysResource::getApiUrl);  // 必须配置了apiUrl
+        List<String> apiPermissions = resourceMapper.selectApiPermissionPatternsByResourceIds(resourceIds);
 
-        List<SysResource> apiResources = resourceMapper.selectList(resourceWrapper);
-
-        if (CollUtil.isEmpty(apiResources)) {
+        if (CollUtil.isEmpty(apiPermissions)) {
             log.debug("用户没有API权限: userId={}", loginUser.getUserId());
             loginUser.setApiPermissions(new ArrayList<>());
             return;
         }
 
-        // 5. 提取apiUrl列表（支持通配符）
-        List<String> apiUrls = apiResources.stream()
-                .map(SysResource::getApiUrl)
+        // 5. 提取apiUrl列表（支持通配符；方法明确时格式为 METHOD path）
+        List<String> apiUrls = apiPermissions.stream()
                 .filter(StrUtil::isNotBlank)
                 .distinct()
                 .collect(Collectors.toList());

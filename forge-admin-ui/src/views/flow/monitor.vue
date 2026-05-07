@@ -121,6 +121,92 @@
       />
     </n-card>
 
+    <!-- 流程实例错误日志抽屉 -->
+    <n-drawer v-model:show="instanceErrorDrawerVisible" :width="900" title="流程错误日志">
+      <n-drawer-content title="流程错误日志">
+        <template #header>
+          <n-space align="center" justify="space-between" style="width: 100%">
+            <span>流程错误日志</span>
+            <n-select
+              v-model:value="instanceErrorStatusFilter"
+              :options="errorStatusOptions"
+              placeholder="错误状态"
+              clearable
+              size="small"
+              style="width: 130px"
+              @update:value="loadInstanceErrorLogs"
+            />
+          </n-space>
+        </template>
+        <n-data-table
+          :columns="errorColumns"
+          :data="instanceErrorLogData"
+          :loading="instanceErrorLogLoading"
+          :pagination="instanceErrorPagination"
+          :remote="true"
+          :row-key="row => row.id"
+          :scroll-x="1000"
+          @update:page="handleInstanceErrorPageChange"
+          @update:page-size="handleInstanceErrorPageSizeChange"
+        />
+      </n-drawer-content>
+    </n-drawer>
+
+    <!-- 错误日志详情弹窗 -->
+    <n-modal v-model:show="errorDetailVisible" preset="card" title="错误详情" style="width: 800px;">
+      <n-descriptions v-if="currentErrorLog" :column="2" label-placement="left" bordered>
+        <n-descriptions-item label="流程实例ID">{{ currentErrorLog.processInstanceId }}</n-descriptions-item>
+        <n-descriptions-item label="节点名称">{{ currentErrorLog.activityName || '-' }}</n-descriptions-item>
+        <n-descriptions-item label="任务名称">{{ currentErrorLog.taskName || '-' }}</n-descriptions-item>
+        <n-descriptions-item label="错误环节">{{ getErrorStageText(currentErrorLog.errorStage) }}</n-descriptions-item>
+        <n-descriptions-item label="错误类型">{{ getErrorTypeText(currentErrorLog.errorType) }}</n-descriptions-item>
+        <n-descriptions-item label="状态">
+          <NTag :type="getErrorStatusType(currentErrorLog.status)">
+            {{ getErrorStatusText(currentErrorLog.status) }}
+          </NTag>
+        </n-descriptions-item>
+        <n-descriptions-item label="重试次数">{{ currentErrorLog.retryCount || 0 }}</n-descriptions-item>
+        <n-descriptions-item label="重试时间">{{ currentErrorLog.lastRetryTime || '-' }}</n-descriptions-item>
+        <n-descriptions-item label="错误信息" :span="2">
+          <n-text depth="3">{{ currentErrorLog.errorMessage || '-' }}</n-text>
+        </n-descriptions-item>
+        <n-descriptions-item label="堆栈信息" :span="2">
+          <n-code :code="currentErrorLog.stackTrace || '无'" language="text" word-wrap style="max-height: 300px; overflow: auto" />
+        </n-descriptions-item>
+      </n-descriptions>
+      <template #footer>
+        <NSpace>
+          <NButton v-if="currentErrorLog && (currentErrorLog.status === 0 || currentErrorLog.status === 3)" type="primary" @click="handleRetryError">
+            重试节点
+          </NButton>
+          <NButton v-if="currentErrorLog && currentErrorLog.status === 0" type="warning" @click="handleResolveError">
+            标记已解决
+          </NButton>
+        </NSpace>
+      </template>
+    </n-modal>
+
+    <!-- 重试确认弹窗 -->
+    <n-modal v-model:show="retryModalVisible" preset="card" title="确认重试" style="width: 450px;">
+      <NSpace vertical>
+        <n-text>确定要重试该节点吗？请填写重试原因：</n-text>
+        <n-input
+          v-model:value="retryReason"
+          type="textarea"
+          placeholder="请输入重试原因"
+          :rows="3"
+        />
+      </NSpace>
+      <template #footer>
+        <NSpace>
+          <NButton @click="retryModalVisible = false">取消</NButton>
+          <NButton type="primary" :disabled="!retryReason.trim()" :loading="retrying" @click="confirmRetry">
+            确认重试
+          </NButton>
+        </NSpace>
+      </template>
+    </n-modal>
+
     <!-- 任务统计图表 -->
     <n-grid :cols="2" :x-gap="16" class="mt-4">
       <n-gi>
@@ -135,12 +221,16 @@
               </n-radio-button>
             </n-radio-group>
           </template>
-          <div ref="taskChartRef" style="height: 300px" />
+          <div class="chart-container">
+            <div ref="taskChartRef" />
+          </div>
         </n-card>
       </n-gi>
       <n-gi>
         <n-card title="流程分布统计">
-          <div ref="processChartRef" style="height: 300px" />
+          <div class="chart-container">
+            <div ref="processChartRef" />
+          </div>
         </n-card>
       </n-gi>
     </n-grid>
@@ -324,7 +414,7 @@
 
 <script setup>
 import * as echarts from 'echarts'
-import { NButton, NSpace, NTag } from 'naive-ui'
+import { NButton, NSpace, NTag, NDropdown } from 'naive-ui'
 import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -380,55 +470,78 @@ const columns = [
   {
     title: '流程名称',
     key: 'processName',
+    width: 160,
     ellipsis: { tooltip: true },
   },
   {
     title: '发起人',
     key: 'initiatorName',
-    width: 100,
+    width: 80,
   },
   {
     title: '当前节点',
     key: 'currentNode',
-    width: 150,
+    width: 110,
+    ellipsis: { tooltip: true },
   },
   {
-    title: '当前处理人',
+    title: '处理人',
     key: 'currentAssignee',
-    width: 100,
+    width: 80,
   },
   {
     title: '状态',
     key: 'status',
-    width: 100,
+    width: 80,
     render(row) {
       const type = getStatusType(row.status)
       const text = getStatusText(row.status)
-      return h(NTag, { type }, { default: () => text })
+      return h(NTag, { type, size: 'small' }, { default: () => text })
     },
   },
   {
     title: '发起时间',
     key: 'startTime',
-    width: 160,
+    width: 150,
   },
   {
     title: '运行时长',
     key: 'duration',
-    width: 100,
+    width: 80,
   },
   {
     title: '操作',
     key: 'actions',
-    width: 280,
+    width: 120,
+    fixed: 'right',
     render(row) {
-      return h(NSpace, null, {
+      const options = [
+        { label: '流程图', key: 'diagram' },
+        { label: '变量', key: 'variables' },
+        { label: '错误日志', key: 'errors' },
+      ]
+      if (row.status === 'running') {
+        options.push({ type: 'divider', key: 'd1' })
+        options.push({ label: '管理', key: 'admin' })
+      }
+      return h(NSpace, { size: 'small' }, {
         default: () => [
-          h(NButton, { text: true, type: 'primary', onClick: () => showDetail(row) }, { default: () => '详情' }),
-          h(NButton, { text: true, type: 'info', onClick: () => showDiagram(row) }, { default: () => '流程图' }),
-          h(NButton, { text: true, type: 'warning', onClick: () => showVariables(row) }, { default: () => '变量' }),
-          row.status === 'running' && h(NButton, { text: true, type: 'error', onClick: () => showAdminActions(row) }, { default: () => '管理' }),
-        ].filter(Boolean),
+          h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => showDetail(row) }, { default: () => '详情' }),
+          h(NDropdown, {
+            options,
+            onSelect: (key) => {
+              const map = {
+                diagram: () => showDiagram(row),
+                variables: () => showVariables(row),
+                errors: () => showInstanceErrorLogs(row),
+                admin: () => showAdminActions(row),
+              }
+              map[key]?.()
+            },
+          }, {
+            default: () => h(NButton, { text: true, type: 'primary', size: 'small' }, { default: () => '更多' }),
+          }),
+        ],
       })
     },
   },
@@ -470,6 +583,285 @@ let processChart = null
 
 // 图表周期（天数）
 const chartPeriod = ref(7)
+
+// 流程实例错误日志抽屉
+const instanceErrorDrawerVisible = ref(false)
+const currentErrorInstanceId = ref(null)
+const instanceErrorLogData = ref([])
+const instanceErrorLogLoading = ref(false)
+const instanceErrorStatusFilter = ref(null)
+const instanceErrorPagination = reactive({
+  page: 1,
+  pageSize: 10,
+  itemCount: 0,
+  showSizePicker: true,
+  pageSizes: [10, 20, 50],
+})
+const errorStatusOptions = [
+  { label: '未处理', value: 0 },
+  { label: '已重试', value: 1 },
+  { label: '已解决', value: 2 },
+  { label: '重试失败', value: 3 },
+]
+const errorDetailVisible = ref(false)
+const currentErrorLog = ref(null)
+const retryModalVisible = ref(false)
+const retryReason = ref('')
+const retrying = ref(false)
+
+const errorColumns = [
+  {
+    title: '流程实例ID',
+    key: 'processInstanceId',
+    width: 180,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '节点名称',
+    key: 'activityName',
+    width: 120,
+  },
+  {
+    title: '错误类型',
+    key: 'errorType',
+    width: 120,
+    ellipsis: { tooltip: true },
+    render(row) {
+      return getErrorTypeText(row.errorType)
+    },
+  },
+  {
+    title: '错误信息',
+    key: 'errorMessage',
+    width: 200,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '错误环节',
+    key: 'errorStage',
+    width: 100,
+    render(row) {
+      return getErrorStageText(row.errorStage)
+    },
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render(row) {
+      const type = getErrorStatusType(row.status)
+      const text = getErrorStatusText(row.status)
+      return h(NTag, { type }, { default: () => text })
+    },
+  },
+  {
+    title: '创建时间',
+    key: 'createTime',
+    width: 160,
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 200,
+    fixed: 'right',
+    render(row) {
+      return h(NSpace, null, {
+        default: () => [
+          h(NButton, { text: true, type: 'primary', onClick: () => showErrorDetail(row) }, { default: () => '详情' }),
+          (row.status === 0 || row.status === 3) && h(NButton, { text: true, type: 'info', onClick: () => showRetryDialog(row) }, { default: () => '重试' }),
+          row.status === 0 && h(NButton, { text: true, type: 'warning', onClick: () => handleResolveErrorLog(row) }, { default: () => '解决' }),
+        ].filter(Boolean),
+      })
+    },
+  },
+]
+
+function getErrorStatusType(status) {
+  const map = { 0: 'error', 1: 'success', 2: 'default', 3: 'warning' }
+  return map[status] || 'default'
+}
+
+function getErrorStatusText(status) {
+  const map = { 0: '未处理', 1: '已重试', 2: '已解决', 3: '重试失败' }
+  return map[status] || '未知'
+}
+
+function getErrorStageText(stage) {
+  const map = {
+    TASK_APPROVE: '审批通过',
+    TASK_REJECT: '审批驳回',
+    TASK_DELEGATE: '任务转办',
+    TASK_WITHDRAW: '流程撤回',
+    PROCESS_START: '流程启动',
+    PROCESS_TERMINATE: '流程终止',
+    TASK_REASSIGN: '任务转派',
+    EVENT_TASK_CREATED: '任务创建事件',
+    EVENT_TASK_COMPLETED: '任务完成事件',
+    EVENT_TASK_ASSIGNED: '任务分配事件',
+    EVENT_TASK_DELETED: '任务删除事件',
+    EVENT_PROCESS_COMPLETED: '流程完成事件',
+    EVENT_PROCESS_CANCELLED: '流程取消事件',
+    NODE_RETRY: '节点重试',
+    TASK_ASSIGNEE_MISSING: '审批人缺失',
+    EVENT_DISPATCH: '事件分发',
+  }
+  return map[stage] || stage || '-'
+}
+
+function getErrorTypeText(errorType) {
+  if (!errorType) return '-'
+  const simpleName = errorType.replace(/^.*\./, '')
+  const map = {
+    RuntimeException: '运行时异常',
+    NullPointerException: '空指针异常',
+    IllegalArgumentException: '参数异常',
+    IllegalStateException: '状态异常',
+    FlowableException: '流程引擎异常',
+    FlowableObjectNotFoundException: '流程对象未找到',
+    FlowableTaskNotFoundException: '任务未找到',
+    FlowableIllegalArgumentException: '流程参数异常',
+    ClassCastException: '类型转换异常',
+    IOException: 'IO异常',
+    SQLException: '数据库异常',
+    TimeoutException: '超时异常',
+    ConcurrentModificationException: '并发修改异常',
+    IndexOutOfBoundsException: '索引越界异常',
+    NoSuchElementException: '元素不存在异常',
+    UnsupportedOperationException: '不支持的操作',
+    SecurityException: '安全异常',
+    ArithmeticException: '算术异常',
+    NumberFormatException: '数字格式异常',
+    ParseException: '解析异常',
+    FLOW_RUNTIME_ERROR: '流程运行异常',
+    DataAccessException: '数据访问异常',
+    MyBatisSystemException: 'MyBatis异常',
+    DuplicateKeyException: '主键冲突',
+    DataIntegrityViolationException: '数据完整性异常',
+    HttpMessageNotReadableException: '请求参数解析异常',
+    MethodArgumentNotValidException: '参数校验异常',
+    MissingServletRequestParameterException: '缺少请求参数',
+    HttpRequestMethodNotSupportedException: '请求方法不支持',
+    AccessDeniedException: '权限不足',
+    AuthenticationException: '认证异常',
+    FeignException: '远程调用异常',
+    RedisConnectionFailureException: 'Redis连接异常',
+    AmqpException: '消息队列异常',
+  }
+  return map[simpleName] || simpleName
+}
+
+function showInstanceErrorLogs(row) {
+  currentErrorInstanceId.value = row.id
+  instanceErrorStatusFilter.value = null
+  instanceErrorPagination.page = 1
+  instanceErrorDrawerVisible.value = true
+  loadInstanceErrorLogs()
+}
+
+async function loadInstanceErrorLogs() {
+  if (!currentErrorInstanceId.value) return
+  instanceErrorLogLoading.value = true
+  try {
+    const params = {
+      page: instanceErrorPagination.page,
+      pageSize: instanceErrorPagination.pageSize,
+      processInstanceId: currentErrorInstanceId.value,
+      status: instanceErrorStatusFilter.value,
+    }
+    const res = await request.get('/api/flow/monitor/error-logs', { params })
+    if (res.code === 200) {
+      instanceErrorLogData.value = res.data.list || []
+      instanceErrorPagination.itemCount = res.data.total || 0
+    }
+  }
+  catch (error) {
+    console.error('加载实例错误日志失败', error)
+  }
+  finally {
+    instanceErrorLogLoading.value = false
+  }
+}
+
+function handleInstanceErrorPageChange(page) {
+  instanceErrorPagination.page = page
+  loadInstanceErrorLogs()
+}
+
+function handleInstanceErrorPageSizeChange(pageSize) {
+  instanceErrorPagination.pageSize = pageSize
+  instanceErrorPagination.page = 1
+  loadInstanceErrorLogs()
+}
+
+function showErrorDetail(row) {
+  currentErrorLog.value = row
+  errorDetailVisible.value = true
+}
+
+function showRetryDialog(row) {
+  currentErrorLog.value = row
+  retryReason.value = ''
+  retryModalVisible.value = true
+}
+
+async function handleResolveErrorLog(row) {
+  try {
+    const res = await request.put(`/api/flow/monitor/error-logs/${row.id}/resolve`)
+    if (res.code === 200) {
+      message.success('已标记为已解决')
+      loadInstanceErrorLogs()
+    }
+    else {
+      message.error(res.msg || '操作失败')
+    }
+  }
+  catch (error) {
+    console.error('解决错误日志失败', error)
+    message.error('操作失败')
+  }
+}
+
+async function handleRetryError() {
+  retryModalVisible.value = true
+}
+
+async function confirmRetry() {
+  if (!retryReason.value.trim()) {
+    message.warning('请输入重试原因')
+    return
+  }
+  const errorLog = currentErrorLog.value
+  if (!errorLog || !errorLog.id) {
+    message.error('无法获取错误日志信息')
+    return
+  }
+
+  retrying.value = true
+  try {
+    const res = await request.post(`/api/flow/monitor/error-logs/${errorLog.id}/retry`, {
+      processInstanceId: errorLog.processInstanceId,
+      activityId: errorLog.activityId,
+      reason: retryReason.value,
+    })
+    if (res.code === 200) {
+      message.success('节点重试成功')
+      retryModalVisible.value = false
+      errorDetailVisible.value = false
+      loadInstanceErrorLogs()
+      loadData()
+    }
+    else {
+      message.error(res.msg || '重试失败')
+    }
+  }
+  catch (error) {
+    console.error('重试节点失败', error)
+    message.error(error.response?.data?.msg || '重试失败')
+  }
+  finally {
+    retrying.value = false
+  }
+}
 
 // 加载统计数据
 async function loadStatistics() {
@@ -915,41 +1307,79 @@ async function refreshCharts() {
 
   if (taskChart) {
     taskChart.setOption({
+      color: ['#2080f0', '#18a058', '#f0a020'],
       tooltip: {
         trigger: 'axis',
-        axisPointer: { type: 'cross' },
+        axisPointer: {
+          type: 'cross',
+          crossStyle: { color: '#999' },
+        },
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        borderColor: '#e8e8e8',
+        borderWidth: 1,
+        textStyle: { color: '#333' },
         formatter(params) {
           let html = `<b>${params[0].axisValue}</b><br/>`
           params.forEach((p) => {
-            const suffix = p.seriesName === '通过率' ? '%' : '件'
-            html += `${p.marker}${p.seriesName}：<b>${p.value}${suffix}</b><br/>`
+            const suffix = p.seriesName === '通过率' ? '%' : ' 件'
+            html += `${p.marker} ${p.seriesName}：<b>${p.value}${suffix}</b><br/>`
           })
           return html
         },
       },
-      legend: { data: ['新增流程', '完成流程', '通过率'] },
-      grid: { right: 60 },
+      legend: {
+        data: ['新增流程', '完成流程', '通过率'],
+        bottom: 0,
+        textStyle: { fontSize: 12 },
+      },
+      grid: {
+        left: 50,
+        right: 60,
+        top: 20,
+        bottom: 40,
+      },
       xAxis: {
         type: 'category',
-        boundaryGap: false,
+        boundaryGap: true,
+        axisTick: { alignWithLabel: true },
         data: trendData.dates.length > 0 ? trendData.dates : Array.from({ length: chartPeriod.value }, (_, i) => `第${i + 1}天`),
       },
       yAxis: [
-        { type: 'value', name: '数量（件）', minInterval: 1 },
-        { type: 'value', name: '通过率', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+        {
+          type: 'value',
+          name: '数量（件）',
+          minInterval: 1,
+          nameTextStyle: { fontSize: 12, color: '#666' },
+          axisLabel: { fontSize: 11 },
+          splitLine: { lineStyle: { type: 'dashed', color: '#f0f0f0' } },
+        },
+        {
+          type: 'value',
+          name: '通过率',
+          min: 0,
+          max: 100,
+          nameTextStyle: { fontSize: 12, color: '#666' },
+          axisLabel: { formatter: '{value}%', fontSize: 11 },
+          splitLine: { show: false },
+        },
       ],
       series: [
         {
           name: '新增流程',
           type: 'bar',
+          barWidth: '30%',
+          barGap: '20%',
           data: trendData.created.length > 0 ? trendData.created : new Array(chartPeriod.value).fill(0),
-          itemStyle: { color: '#2080f0', borderRadius: [3, 3, 0, 0] },
+          itemStyle: { borderRadius: [4, 4, 0, 0] },
+          emphasis: { itemStyle: { borderRadius: [4, 4, 0, 0] } },
         },
         {
           name: '完成流程',
           type: 'bar',
+          barWidth: '30%',
           data: trendData.completed.length > 0 ? trendData.completed : new Array(chartPeriod.value).fill(0),
-          itemStyle: { color: '#18a058', borderRadius: [3, 3, 0, 0] },
+          itemStyle: { borderRadius: [4, 4, 0, 0] },
+          emphasis: { itemStyle: { borderRadius: [4, 4, 0, 0] } },
         },
         {
           name: '通过率',
@@ -959,9 +1389,18 @@ async function refreshCharts() {
           smooth: true,
           symbol: 'circle',
           symbolSize: 6,
-          lineStyle: { color: '#f0a020', width: 2 },
-          itemStyle: { color: '#f0a020' },
-          areaStyle: { color: 'rgba(240,160,32,0.08)' },
+          lineStyle: { width: 2.5 },
+          itemStyle: { borderWidth: 2, borderColor: '#fff' },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(240,160,32,0.25)' },
+                { offset: 1, color: 'rgba(240,160,32,0.02)' },
+              ],
+            },
+          },
         },
       ],
     }, true)
@@ -1081,5 +1520,28 @@ onUnmounted(() => {
   color: #d03050;
   margin-left: 6px;
   font-weight: normal;
+}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 280px;
+}
+
+.chart-container > div {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+:deep(.n-data-table .n-data-table-th),
+:deep(.n-data-table .n-data-table-td) {
+  padding: 6px 8px;
+}
+
+:deep(.n-drawer-body-content-wrapper) {
+  overflow-x: auto;
 }
 </style>

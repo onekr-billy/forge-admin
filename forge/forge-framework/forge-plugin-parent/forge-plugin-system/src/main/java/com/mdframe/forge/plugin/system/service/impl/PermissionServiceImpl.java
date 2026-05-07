@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.system.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import com.mdframe.forge.plugin.system.mapper.SysResourceMapper;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.auth.service.IPermissionService;
@@ -21,6 +22,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class PermissionServiceImpl implements IPermissionService {
+
+    private final SysResourceMapper resourceMapper;
 
     @Override
     public List<String> getCurrentUserApiPermissions() {
@@ -46,7 +49,27 @@ public class PermissionServiceImpl implements IPermissionService {
     }
 
     @Override
+    public boolean isApiPermissionConfigured(String apiUrl, String method) {
+        if (StrUtil.isBlank(apiUrl)) {
+            return false;
+        }
+
+        List<String> configuredApiUrls = resourceMapper.selectConfiguredApiUrls(method);
+        boolean configured = CollUtil.isNotEmpty(configuredApiUrls)
+                && PathMatcher.matchAny(configuredApiUrls, apiUrl);
+        if (!configured) {
+            log.debug("接口未配置API权限资源: method={}, apiUrl={}", method, apiUrl);
+        }
+        return configured;
+    }
+
+    @Override
     public boolean hasApiPermission(String apiUrl) {
+        return hasApiPermission(apiUrl, null);
+    }
+
+    @Override
+    public boolean hasApiPermission(String apiUrl, String method) {
         if (StrUtil.isBlank(apiUrl)) {
             return false;
         }
@@ -64,8 +87,11 @@ public class PermissionServiceImpl implements IPermissionService {
             return true;
         }
 
-        // 3. 使用通配符匹配
+        // 3. 使用通配符匹配。方法级权限格式为 "GET /system/user/page"。
         boolean hasPermission = PathMatcher.matchAny(apiPermissions, apiUrl);
+        if (!hasPermission && StrUtil.isNotBlank(method)) {
+            hasPermission = PathMatcher.matchAny(apiPermissions, method.toUpperCase() + " " + apiUrl);
+        }
         
         if (hasPermission) {
             log.debug("权限校验通过: apiUrl={}", apiUrl);

@@ -11,11 +11,13 @@ import com.mdframe.forge.starter.flow.dto.ProcessDiagramInfo;
 import com.mdframe.forge.starter.flow.dto.ProcessNodeInfo;
 import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
+import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowNodeConfig;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
+import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
 import com.mdframe.forge.starter.flow.service.FlowNodeConfigService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
@@ -37,6 +39,7 @@ import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.image.ProcessDiagramGenerator;
+import org.flowable.task.api.DelegationState;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.history.HistoricTaskInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -105,8 +108,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Autowired
     private ISysUserService sysUserService;
 
+    @Autowired
+    private FlowErrorLogService flowErrorLogService;
+
     @Override
-    public IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category) {
+    public IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
         LambdaQueryWrapper<FlowTask> wrapper = new LambdaQueryWrapper<>();
         
         // 获取用户的角色编码列表（用于候选组匹配）
@@ -163,7 +169,12 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         log.info("查询条件 - userId类型: {}, 值: {}", userId.getClass().getName(), userId);
         log.info("wrapper toString: {}", wrapper.getCustomSqlSegment());
         
-        wrapper.eq(FlowTask::getStatus, 0)  // 待办状态
+        wrapper.and(statusW -> statusW
+                        .eq(FlowTask::getStatus, 0)
+                        .or(claimedW -> claimedW
+                                .eq(FlowTask::getAssignee, userId)
+                                .eq(FlowTask::getStatus, 1)))
+                .eq(status != null, FlowTask::getStatus, status)
                 .like(title != null, FlowTask::getTitle, title)
                 .orderByDesc(FlowTask::getCreateTime);
         
@@ -174,19 +185,21 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     @Override
-    public IPage<FlowTask> doneTasks(Page<FlowTask> page, String userId, String title, String category) {
+    public IPage<FlowTask> doneTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
         LambdaQueryWrapper<FlowTask> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FlowTask::getAssignee, userId)
-                .in(FlowTask::getStatus, Arrays.asList(2, 3, 4, 5))
+                .in(status == null, FlowTask::getStatus, Arrays.asList(2, 3, 4, 5))
+                .eq(status != null, FlowTask::getStatus, status)
                 .like(title != null, FlowTask::getTitle, title)
                 .orderByDesc(FlowTask::getCompleteTime);
         return page(page, wrapper);
     }
 
     @Override
-    public IPage<FlowTask> startedTasks(Page<FlowTask> page, String userId, String title, String category) {
+    public IPage<FlowTask> startedTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
         LambdaQueryWrapper<FlowTask> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FlowTask::getStartUserId, userId)
+                .eq(status != null, FlowTask::getStatus, status)
                 .like(title != null, FlowTask::getTitle, title)
                 .orderByDesc(FlowTask::getCreateTime);
         return page(page, wrapper);
@@ -264,23 +277,25 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
 
-        if (comment != null && !comment.isEmpty()) {
-            taskService.addComment(taskId, task.getProcessInstanceId(), comment);
-        }
+        try {
+            if (comment != null && !comment.isEmpty()) {
+                taskService.addComment(taskId, task.getProcessInstanceId(), comment);
+            }
 
-        if (variables != null && !variables.isEmpty()) {
-            taskService.complete(taskId, variables);
-        } else {
-            taskService.complete(taskId);
-        }
+            completeTask(task, variables);
 
-        FlowTask flowTask = new FlowTask();
-        flowTask.setStatus(2);
-        flowTask.setComment(comment);
-        flowTask.setCompleteTime(LocalDateTime.now());
-        lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask);
-        
-        log.info("审批通过：taskId={}, userId={}", taskId, userId);
+            FlowTask flowTask = new FlowTask();
+            flowTask.setStatus(2);
+            flowTask.setComment(comment);
+            flowTask.setCompleteTime(LocalDateTime.now());
+            lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask);
+
+            log.info("审批通过：taskId={}, userId={}", taskId, userId);
+        } catch (Exception e) {
+            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
+                    task.getName(), "TASK_APPROVE", e);
+            throw e;
+        }
     }
 
     @Override
@@ -291,34 +306,75 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
 
-        if (comment != null && !comment.isEmpty()) {
-            taskService.addComment(taskId, task.getProcessInstanceId(), comment);
+        try {
+            if (comment != null && !comment.isEmpty()) {
+                taskService.addComment(taskId, task.getProcessInstanceId(), comment);
+            }
+
+            completeTask(task, null);
+
+            FlowTask flowTask = new FlowTask();
+            flowTask.setStatus(3);
+            flowTask.setComment(comment);
+            flowTask.setCompleteTime(LocalDateTime.now());
+            lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask);
+
+            log.info("审批驳回：taskId={}, userId={}", taskId, userId);
+        } catch (Exception e) {
+            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
+                    task.getName(), "TASK_REJECT", e);
+            throw e;
         }
-
-        taskService.complete(taskId);
-
-        FlowTask flowTask = new FlowTask();
-        flowTask.setStatus(3);
-        flowTask.setComment(comment);
-        flowTask.setCompleteTime(LocalDateTime.now());
-        lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask);
-        
-        log.info("审批驳回：taskId={}, userId={}", taskId, userId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delegate(String taskId, String userId, String targetUserId, String comment) {
-        taskService.delegateTask(taskId, targetUserId);
-        
-        FlowTask flowTask = new FlowTask();
-        flowTask.setStatus(0);
-        flowTask.setComment(comment);
-        flowTask.setAssignee(targetUserId);
-        flowTask.setOwner(userId);
-        lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask);
-        
-        log.info("转办任务：taskId={}, from={}, to={}", taskId, userId, targetUserId);
+        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (task == null) {
+            throw new RuntimeException("任务不存在或已处理");
+        }
+
+        try {
+            String owner = task.getAssignee() != null && !task.getAssignee().isEmpty()
+                    ? task.getAssignee()
+                    : userId;
+            if (owner != null && !owner.isEmpty()) {
+                taskService.setOwner(taskId, owner);
+            }
+            taskService.setAssignee(taskId, targetUserId);
+
+            FlowTask flowTask = new FlowTask();
+            flowTask.setStatus(0);
+            flowTask.setComment(comment);
+            flowTask.setAssignee(targetUserId);
+            flowTask.setOwner(owner);
+            lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask);
+
+            log.info("转办任务：taskId={}, from={}, to={}", taskId, userId, targetUserId);
+        } catch (Exception e) {
+            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
+                    task.getName(), "TASK_DELEGATE", e);
+            throw e;
+        }
+    }
+
+    /**
+     * Flowable 委派态任务不能直接 complete，需要先 resolve。
+     */
+    private void completeTask(Task task, Map<String, Object> variables) {
+        String taskId = task.getId();
+        if (DelegationState.PENDING.equals(task.getDelegationState())) {
+            log.info("任务处于委派待解决状态，先 resolve 再 complete：taskId={}, assignee={}, owner={}",
+                    taskId, task.getAssignee(), task.getOwner());
+            taskService.resolveTask(taskId);
+        }
+
+        if (variables != null && !variables.isEmpty()) {
+            taskService.complete(taskId, variables);
+        } else {
+            taskService.complete(taskId);
+        }
     }
 
     @Override
@@ -330,14 +386,22 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void withdraw(String processInstanceId, String userId) {
-        runtimeService.deleteProcessInstance(processInstanceId, "用户撤回");
-        
-        FlowTask flowTask = new FlowTask();
-        flowTask.setStatus(6);
-        flowTask.setCompleteTime(LocalDateTime.now());
-        lambdaUpdate().eq(FlowTask::getProcessInstanceId, processInstanceId).update(flowTask);
-        
-        log.info("撤回流程：processInstanceId={}, userId={}", processInstanceId, userId);
+        try {
+            runtimeService.deleteProcessInstance(processInstanceId, "用户撤回");
+
+            FlowTask flowTask = new FlowTask();
+            flowTask.setStatus(6);
+            flowTask.setCompleteTime(LocalDateTime.now());
+            lambdaUpdate().eq(FlowTask::getProcessInstanceId, processInstanceId).update(flowTask);
+
+            log.info("撤回流程：processInstanceId={}, userId={}", processInstanceId, userId);
+        } catch (Exception e) {
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setProcessInstanceId(processInstanceId);
+            errorLog.setErrorStage("TASK_WITHDRAW");
+            flowErrorLogService.recordError(errorLog, e);
+            throw e;
+        }
     }
 
     @Override
@@ -1224,5 +1288,16 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         // 格式：processKey:version:id
         String[] parts = processDefinitionId.split(":");
         return parts.length > 0 ? parts[0] : processDefinitionId;
+    }
+
+    private void recordTaskError(String processInstanceId, String taskId, String activityId,
+                                  String activityName, String errorStage, Throwable e) {
+        FlowErrorLog errorLog = new FlowErrorLog();
+        errorLog.setProcessInstanceId(processInstanceId);
+        errorLog.setTaskId(taskId);
+        errorLog.setActivityId(activityId);
+        errorLog.setActivityName(activityName);
+        errorLog.setErrorStage(errorStage);
+        flowErrorLogService.recordError(errorLog, e);
     }
 }

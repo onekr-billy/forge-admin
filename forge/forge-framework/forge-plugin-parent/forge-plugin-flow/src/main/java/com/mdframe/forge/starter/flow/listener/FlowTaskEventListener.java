@@ -2,6 +2,7 @@ package com.mdframe.forge.starter.flow.listener;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
+import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.core.domain.FlowEventMessage;
@@ -10,6 +11,7 @@ import com.mdframe.forge.starter.flow.event.FlowWebhookNotifier;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
+import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.common.engine.api.delegate.event.FlowableEntityEvent;
 import org.flowable.common.engine.api.delegate.event.FlowableEvent;
@@ -64,31 +66,40 @@ public class FlowTaskEventListener implements FlowableEventListener {
     @Lazy
     private FlowWebhookNotifier flowWebhookNotifier;
 
+    @Autowired
+    @Lazy
+    private FlowErrorLogService flowErrorLogService;
+
     @Override
     public void onEvent(FlowableEvent event) {
-        FlowableEventType eventType = (FlowableEventType) event.getType();
-        
-        switch (eventType.name()) {
-            case "TASK_CREATED":
-                handleTaskCreated(event);
-                break;
-            case "TASK_COMPLETED":
-                handleTaskCompleted(event);
-                break;
-            case "TASK_ASSIGNED":
-                handleTaskAssigned(event);
-                break;
-            case "ENTITY_DELETED":
-                handleTaskDeleted(event);
-                break;
-            case "PROCESS_COMPLETED":
-                handleProcessCompleted(event);
-                break;
-            case "PROCESS_CANCELLED":
-                handleProcessCancelled(event);
-                break;
-            default:
-                break;
+        try {
+            FlowableEventType eventType = (FlowableEventType) event.getType();
+
+            switch (eventType.name()) {
+                case "TASK_CREATED":
+                    handleTaskCreated(event);
+                    break;
+                case "TASK_COMPLETED":
+                    handleTaskCompleted(event);
+                    break;
+                case "TASK_ASSIGNED":
+                    handleTaskAssigned(event);
+                    break;
+                case "ENTITY_DELETED":
+                    handleTaskDeleted(event);
+                    break;
+                case "PROCESS_COMPLETED":
+                    handleProcessCompleted(event);
+                    break;
+                case "PROCESS_CANCELLED":
+                    handleProcessCancelled(event);
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("FlowTaskEventListener.onEvent 未捕获异常", e);
+            recordEventListenerError(event, "EVENT_DISPATCH", e);
         }
     }
 
@@ -104,13 +115,6 @@ public class FlowTaskEventListener implements FlowableEventListener {
             log.info("processInstanceId={}, processDefinitionId={}",
                     task.getProcessInstanceId(), task.getProcessDefinitionId());
             
-            // 关键警告：审批人未匹配
-            if (task.getAssignee() == null || task.getAssignee().isEmpty()) {
-                log.warn("[审批人分配失败] 任务创建时没有审批人: taskId={}, taskName={}, taskDefKey={}, processInstanceId={}", 
-                        task.getId(), task.getName(), task.getTaskDefinitionKey(), task.getProcessInstanceId());
-                log.warn("[审批人分配失败] 请检查: 1)审批人配置是否正确 2)流程变量是否传入 3)SPEL表达式是否返回有效用户ID");
-            }
-                
             // 检查是否已存在
             FlowTask existingTask = flowTaskMapper.selectByTaskId(task.getId());
             if (existingTask != null) {
@@ -124,6 +128,25 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             log.info("任务处理人: {}, 候选人: {}, 候选组: {}",
                     flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
+
+            // 审批人分配失败：无处理人且无候选人/候选组时，记录错误日志
+            boolean noAssignee = flowTask.getAssignee() == null || flowTask.getAssignee().isEmpty();
+            boolean noCandidateUsers = flowTask.getCandidateUsers() == null || flowTask.getCandidateUsers().isEmpty();
+            boolean noCandidateGroups = flowTask.getCandidateGroups() == null || flowTask.getCandidateGroups().isEmpty();
+            if (noAssignee && noCandidateUsers && noCandidateGroups) {
+                log.warn("[审批人分配失败] 任务无处理人且无候选人: taskId={}, taskName={}, taskDefKey={}, processInstanceId={}",
+                        task.getId(), task.getName(), task.getTaskDefinitionKey(), task.getProcessInstanceId());
+                FlowErrorLog errorLog = new FlowErrorLog();
+                errorLog.setProcessInstanceId(task.getProcessInstanceId());
+                errorLog.setTaskId(task.getId());
+                errorLog.setActivityId(task.getTaskDefinitionKey());
+                errorLog.setActivityName(task.getName());
+                errorLog.setErrorStage("TASK_ASSIGNEE_MISSING");
+                errorLog.setErrorMessage(String.format(
+                        "任务[%s]审批人分配失败：未找到处理人，请检查审批人配置或流程变量是否正确传入",
+                        task.getName() != null ? task.getName() : task.getTaskDefinitionKey()));
+                flowErrorLogService.recordError(errorLog, null);
+            }
                 
             // 获取业务信息（优先通过 processInstanceId 查询，查不到则通过 businessKey 查询）
             FlowBusiness business = getFlowBusiness(task.getProcessInstanceId());
@@ -192,6 +215,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
         } catch (Exception e) {
             log.error("处理任务创建事件失败", e);
+            recordEventListenerError(event, "EVENT_TASK_CREATED", e);
         }
     }
 
@@ -261,6 +285,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
         } catch (Exception e) {
             log.error("处理任务完成事件失败", e);
+            recordEventListenerError(event, "EVENT_TASK_COMPLETED", e);
         }
     }
 
@@ -318,6 +343,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
         } catch (Exception e) {
             log.error("处理任务分配事件失败", e);
+            recordEventListenerError(event, "EVENT_TASK_ASSIGNED", e);
         }
     }
 
@@ -345,6 +371,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
         } catch (Exception e) {
             log.error("处理任务删除事件失败", e);
+            recordEventListenerError(event, "EVENT_TASK_DELETED", e);
         }
     }
 
@@ -398,6 +425,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
         } catch (Exception e) {
             log.error("处理流程完成事件失败", e);
+            recordEventListenerError(event, "EVENT_PROCESS_COMPLETED", e);
         }
     }
 
@@ -451,6 +479,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
         } catch (Exception e) {
             log.error("处理流程取消事件失败", e);
+            recordEventListenerError(event, "EVENT_PROCESS_CANCELLED", e);
         }
     }
 
@@ -600,6 +629,33 @@ public class FlowTaskEventListener implements FlowableEventListener {
 
         } catch (Exception e) {
             log.warn("[FlowEvent] 发布事件失败，不影响主流程: processDefKey={}, error={}", processDefKey, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 安全记录事件监听器中的错误，避免记录错误本身再次抛出异常
+     */
+    private void recordEventListenerError(FlowableEvent event, String errorStage, Throwable e) {
+        try {
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setErrorStage(errorStage);
+            if (event instanceof FlowableEntityEvent) {
+                Object entity = ((FlowableEntityEvent) event).getEntity();
+                if (entity instanceof TaskEntity) {
+                    TaskEntity task = (TaskEntity) entity;
+                    errorLog.setProcessInstanceId(task.getProcessInstanceId());
+                    errorLog.setTaskId(task.getId());
+                    errorLog.setActivityId(task.getTaskDefinitionKey());
+                    errorLog.setActivityName(task.getName());
+                } else if (entity instanceof org.flowable.engine.impl.persistence.entity.ExecutionEntity) {
+                    org.flowable.engine.impl.persistence.entity.ExecutionEntity execution =
+                            (org.flowable.engine.impl.persistence.entity.ExecutionEntity) entity;
+                    errorLog.setProcessInstanceId(execution.getProcessInstanceId());
+                }
+            }
+            flowErrorLogService.recordError(errorLog, e);
+        } catch (Exception ex) {
+            log.warn("记录事件错误日志失败", ex);
         }
     }
 

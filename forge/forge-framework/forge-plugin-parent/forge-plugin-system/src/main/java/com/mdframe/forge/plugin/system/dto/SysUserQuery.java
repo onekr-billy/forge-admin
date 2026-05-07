@@ -29,6 +29,11 @@ public class SysUserQuery extends PageQuery {
     private String realName;
 
     /**
+     * 用户名/真实姓名关键字（模糊查询）
+     */
+    private String keyword;
+
+    /**
      * 用户类型（0-系统管理员，1-租户管理员，2-普通用户）
      */
     private Integer userType;

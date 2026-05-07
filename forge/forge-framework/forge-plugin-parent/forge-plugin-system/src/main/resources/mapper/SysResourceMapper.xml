@@ -84,5 +84,38 @@
         </if>
         ORDER BY sr.sort ASC
     </select>
+
+    <!-- 查询指定HTTP方法下已配置的API权限资源地址 -->
+    <select id="selectConfiguredApiUrls" resultType="java.lang.String">
+        SELECT DISTINCT api_url
+        FROM sys_resource
+        WHERE visible = 1
+          AND resource_type = 4
+          AND api_url IS NOT NULL
+          AND api_url != ''
+          AND (
+              api_method IS NULL
+              OR api_method = ''
+              OR UPPER(api_method) = UPPER(#{method})
+          )
+    </select>
+
+    <!-- 按资源ID查询API权限匹配表达式：方法明确时使用 METHOD path，方法为空时仅使用 path -->
+    <select id="selectApiPermissionPatternsByResourceIds" resultType="java.lang.String">
+        SELECT DISTINCT
+        CASE
+            WHEN api_method IS NULL OR api_method = '' THEN api_url
+            ELSE CONCAT(UPPER(api_method), ' ', api_url)
+        END
+        FROM sys_resource
+        WHERE visible = 1
+          AND resource_type = 4
+          AND api_url IS NOT NULL
+          AND api_url != ''
+          AND id IN
+        <foreach collection="resourceIds" item="resourceId" open="(" separator="," close=")">
+            #{resourceId}
+        </foreach>
+    </select>
     
 </mapper>

@@ -115,4 +115,16 @@ public class SysUser extends TenantEntity {
      * 创建部门
      */
     private Long createDept;
+
+    /**
+     * 所属组织名称（查询列表时填充）
+     */
+    @TableField(exist = false)
+    private String orgName;
+
+    /**
+     * 所属部门名称（前端选择器兼容字段）
+     */
+    @TableField(exist = false)
+    private String deptName;
 }

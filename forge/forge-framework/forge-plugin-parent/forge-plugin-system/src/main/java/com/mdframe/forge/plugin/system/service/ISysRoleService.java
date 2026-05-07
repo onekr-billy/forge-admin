@@ -75,6 +75,16 @@ public interface ISysRoleService extends IService<SysRole> {
     boolean bindRoleResources(Long roleId, Long[] resourceIds);
 
     /**
+     * 给角色绑定指定客户端下的资源（菜单/按钮/接口）
+     *
+     * @param roleId 角色ID
+     * @param resourceIds 资源ID数组
+     * @param clientCode 客户端编码
+     * @return 是否成功
+     */
+    boolean bindRoleResources(Long roleId, Long[] resourceIds, String clientCode);
+
+    /**
      * 解除角色资源
      *
      * @param roleId 角色ID
@@ -90,6 +100,15 @@ public interface ISysRoleService extends IService<SysRole> {
      * @return 资源ID列表
      */
     List<Long> selectRoleResourceIds(Long roleId);
+
+    /**
+     * 查询角色指定客户端下的资源ID列表
+     *
+     * @param roleId 角色ID
+     * @param clientCode 客户端编码
+     * @return 资源ID列表
+     */
+    List<Long> selectRoleResourceIds(Long roleId, String clientCode);
 
     /**
      * 查询当前用户的角色ID列表

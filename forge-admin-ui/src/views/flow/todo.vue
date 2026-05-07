@@ -48,6 +48,13 @@
           class="category-select"
           :options="categoryOptions"
         />
+        <n-select
+          v-model:value="queryParams.status"
+          placeholder="任务状态"
+          clearable
+          class="category-select"
+          :options="statusOptions"
+        />
         <NButton type="primary" class="search-btn" @click="handleSearch">
           <i class="i-material-symbols:search mr-2" />
           查询
@@ -190,7 +197,25 @@
                 :read-only="false"
                 @submit="handleExternalFormSubmit"
                 @cancel="showDrawer = false"
-              />
+              >
+                <template #actions>
+                  <NButton v-if="canDelegate" size="large" :disabled="approveLoading" @click="handleDelegate">
+                    <i class="i-material-symbols:person-add mr-2" />
+                    转办
+                  </NButton>
+
+                  <NButton
+                    v-if="currentTask.status === 0 && !currentTask.assignee"
+                    type="info"
+                    size="large"
+                    :disabled="approveLoading"
+                    @click="handleClaim(currentTask)"
+                  >
+                    <i class="i-material-symbols:assignment-ind mr-2" />
+                    签收
+                  </NButton>
+                </template>
+              </FlowBusinessForm>
             </template>
 
             <template v-else>
@@ -228,7 +253,7 @@
                   确认驳回该审批？
                 </n-popconfirm>
 
-                <NButton size="large" :disabled="approveLoading" @click="handleDelegate">
+                <NButton v-if="canDelegate" size="large" :disabled="approveLoading" @click="handleDelegate">
                   <i class="i-material-symbols:person-add mr-2" />
                   转办
                 </NButton>
@@ -336,7 +361,7 @@ const pagination = reactive({
   },
 })
 
-const queryParams = reactive({ title: '', category: '' })
+const queryParams = reactive({ title: '', category: '', status: null })
 const categoryOptions = ref([])
 
 // 统计数据
@@ -357,6 +382,7 @@ const activeDrawerTab = ref('info')
 const taskFormInfo = ref(null)
 const formInfoLoading = ref(false)
 const useExternalForm = computed(() => taskFormInfo.value?.formType === 'external' && taskFormInfo.value?.formUrl)
+const canDelegate = computed(() => taskFormInfo.value?.allowDelegate !== false)
 
 // 审批表单
 const approveLoading = ref(false)
@@ -368,6 +394,11 @@ const showUserSelectModal = ref(false)
 const delegateLoading = ref(false)
 const delegateTargetUser = ref(null)
 const delegateForm = reactive({ comment: '' })
+
+const statusOptions = [
+  { label: '待办', value: 0 },
+  { label: '已签收', value: 1 },
+]
 
 // 优先级
 function getPriorityClass(p) {
@@ -387,38 +418,38 @@ const columns = [
   {
     title: '任务标题',
     key: 'title',
-    minWidth: 200,
+    width: 180,
     ellipsis: { tooltip: true },
     render: row => h('span', { class: 'task-title-link', onClick: () => openDrawer(row) }, row.title || row.taskName),
   },
-  { title: '当前节点', key: 'taskName', width: 120 },
+  { title: '当前节点', key: 'taskName', width: 100, ellipsis: { tooltip: true } },
   {
     title: '发起人',
     key: 'startUserName',
-    width: 120,
+    width: 100,
     render: row => h('div', { class: 'table-user' }, [
       h(UserAvatar, { name: row.startUserName || '未知', size: 24 }),
       h('span', { class: 'user-name-text' }, row.startUserName || '-'),
     ]),
   },
-  { title: '发起部门', key: 'startDeptName', width: 120, ellipsis: { tooltip: true } },
+  { title: '发起部门', key: 'startDeptName', width: 100, ellipsis: { tooltip: true } },
   {
     title: '状态',
     key: 'status',
-    width: 90,
+    width: 70,
     render: row => h('span', { class: ['status-tag-mini', row.status === 0 ? 'pending' : 'claimed'] }, row.status === 0 ? '待办' : '已签收'),
   },
   {
     title: '优先级',
     key: 'priority',
-    width: 80,
+    width: 70,
     render: row => h('span', { class: ['priority-tag-mini', getPriorityClass(row.priority)] }, getPriorityText(row.priority)),
   },
-  { title: '发起时间', key: 'createTime', width: 155 },
+  { title: '发起时间', key: 'createTime', width: 150 },
   {
     title: '操作',
     key: 'actions',
-    width: 160,
+    width: 140,
     fixed: 'right',
     render: row => h(NSpace, { size: 4 }, () => [
       h(NButton, { size: 'small', type: 'primary', onClick: () => openDrawer(row) }, () => '去审批'),
@@ -559,8 +590,8 @@ async function submitDelegate() {
   try {
     const res = await flowApi.delegateTask({
       taskId: currentTask.value.taskId,
-      userId: userStore.userId,
-      targetUserId: delegateTargetUser.value.id,
+      userId: String(userStore.userId),
+      targetUserId: String(delegateTargetUser.value.id),
       comment: delegateForm.comment,
     })
     if (res.code === 200) {
@@ -610,6 +641,7 @@ async function loadData() {
       userId: userStore.userId,
       title: queryParams.title || undefined,
       category: queryParams.category || undefined,
+      status: queryParams.status ?? undefined,
     })
     if (res.code === 200 && res.data) {
       dataSource.value = res.data.records || []
@@ -665,6 +697,7 @@ function handleSearch() {
 function handleReset() {
   queryParams.title = ''
   queryParams.category = ''
+  queryParams.status = null
   pagination.page = 1
   loadData()
 }
@@ -683,6 +716,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+:deep(.n-data-table .n-data-table-th),
+:deep(.n-data-table .n-data-table-td) {
+  padding: 6px 8px;
+}
+
 .flow-page {
   padding: 20px;
   height: 100%;

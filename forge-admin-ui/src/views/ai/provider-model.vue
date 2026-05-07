@@ -313,28 +313,28 @@ const providerColumns = [
   {
     title: 'Logo',
     key: 'logo',
-    width: 50,
+    width: 45,
     render(row) {
       if (row.logo) {
-        return h(AuthImage, { src: row.logo, imgStyle: { width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' } })
+        return h(AuthImage, { src: row.logo, imgStyle: { width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' } })
       }
       return h('div', {
-        style: `width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#4242F7,#6366F1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600`,
+        style: `width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#4242F7,#6366F1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600`,
       }, (row.providerName || '?').charAt(0))
     },
   },
-  { title: '供应商名称', key: 'providerName', width: 140 },
+  { title: '供应商名称', key: 'providerName', width: 120, ellipsis: { tooltip: true } },
   {
     title: '类型',
     key: 'providerType',
-    width: 110,
+    width: 90,
     render(row) { return h(DictTag, { dictType: 'ai_provider_type', value: row.providerType, size: 'small' }) },
   },
   { title: 'Base URL', key: 'baseUrl', ellipsis: { tooltip: true } },
   {
     title: '默认',
     key: 'isDefault',
-    width: 70,
+    width: 60,
     align: 'center',
     render(row) {
       return h(NSwitch, {
@@ -348,14 +348,14 @@ const providerColumns = [
   {
     title: '状态',
     key: 'status',
-    width: 70,
+    width: 60,
     align: 'center',
     render(row) { return h(DictTag, { dictType: 'ai_status', value: row.status, size: 'small' }) },
   },
   {
     title: '操作',
     key: 'actions',
-    width: 200,
+    width: 180,
     fixed: 'right',
     render(row) {
       return h('div', { style: 'display:flex;gap:8px' }, [
@@ -394,42 +394,42 @@ const modelColumns = [
   {
     title: '图标',
     key: 'icon',
-    width: 50,
+    width: 45,
     render(row) {
       if (row.icon) {
-        return h(AuthImage, { src: row.icon, imgStyle: { width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' } })
+        return h(AuthImage, { src: row.icon, imgStyle: { width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' } })
       }
       return h('div', {
-        style: `width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#6EE7B7,#34D399);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600`,
+        style: `width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#6EE7B7,#34D399);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600`,
       }, (row.modelName || '?').charAt(0))
     },
   },
-  { title: '模型名称', key: 'modelName', width: 140 },
-  { title: '模型标识', key: 'modelId', width: 180 },
+  { title: '模型名称', key: 'modelName', width: 120, ellipsis: { tooltip: true } },
+  { title: '模型标识', key: 'modelId', width: 160, ellipsis: { tooltip: true } },
   {
     title: '类型',
     key: 'modelType',
-    width: 90,
+    width: 80,
     render(row) { return h(DictTag, { dictType: 'ai_model_type', value: row.modelType, size: 'small' }) },
   },
   {
     title: '最大Token',
     key: 'maxTokens',
-    width: 100,
+    width: 90,
     align: 'right',
     render(row) { return row.maxTokens ? row.maxTokens.toLocaleString() : '-' },
   },
   {
     title: '默认',
     key: 'isDefault',
-    width: 60,
+    width: 55,
     align: 'center',
     render(row) { return h(DictTag, { dictType: 'ai_is_default', value: row.isDefault, size: 'small' }) },
   },
   {
     title: '状态',
     key: 'status',
-    width: 60,
+    width: 55,
     align: 'center',
     render(row) { return h(DictTag, { dictType: 'ai_status', value: row.status, size: 'small' }) },
   },
@@ -679,6 +679,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+:deep(.n-data-table .n-data-table-th),
+:deep(.n-data-table .n-data-table-td) {
+  padding: 6px 8px;
+}
+
 .ai-provider-model-page {
   padding: 24px;
   min-height: 100%;

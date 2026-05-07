@@ -111,6 +111,7 @@ const loading = ref(false)
 const userList = ref([])
 const checkedKeys = ref([])
 const deptTreeOptions = ref([])
+const deptNameMap = ref(new Map())
 
 // 搜索条件
 const searchForm = reactive({
@@ -138,8 +139,9 @@ const columns = computed(() => [
   },
   {
     title: '姓名',
-    key: 'name',
+    key: 'realName',
     width: 120,
+    render: row => row.realName || row.name || row.nickname || '-',
   },
   {
     title: '部门',
@@ -164,10 +166,10 @@ const columns = computed(() => [
 ])
 
 // 监听显示状态
-watch(() => props.show, (val) => {
+watch(() => props.show, async (val) => {
   visible.value = val
   if (val) {
-    loadDeptTree()
+    await loadDeptTree()
     loadUserList()
     // 初始化已选中的用户
     checkedKeys.value = props.selectedUsers.map(u => u.id)
@@ -184,6 +186,7 @@ async function loadDeptTree() {
     const res = await request.get('/system/org/tree')
     if (res.code === 200 && res.data) {
       deptTreeOptions.value = formatDeptTree(res.data)
+      deptNameMap.value = buildDeptNameMap(res.data)
     }
   }
   catch (e) {
@@ -201,6 +204,25 @@ function formatDeptTree(depts) {
   }))
 }
 
+function buildDeptNameMap(depts, map = new Map()) {
+  depts.forEach((dept) => {
+    map.set(dept.id, dept.name || dept.orgName)
+    if (dept.children?.length)
+      buildDeptNameMap(dept.children, map)
+  })
+  return map
+}
+
+function normalizeUser(user) {
+  const deptName = user.deptName || user.orgName || deptNameMap.value.get(user.createDept) || ''
+  return {
+    ...user,
+    name: user.name || user.realName || user.nickname || user.username,
+    realName: user.realName || user.name || user.nickname,
+    deptName,
+  }
+}
+
 // 加载用户列表
 async function loadUserList() {
   loading.value = true
@@ -209,12 +231,12 @@ async function loadUserList() {
       params: {
         pageNum: pagination.page,
         pageSize: pagination.pageSize,
-        userName: searchForm.keyword || undefined,
-        deptId: searchForm.deptId || undefined,
+        keyword: searchForm.keyword || undefined,
+        orgId: searchForm.deptId || undefined,
       },
     })
     if (res.code === 200 && res.data) {
-      userList.value = res.data.records || []
+      userList.value = (res.data.records || []).map(normalizeUser)
       pagination.total = res.data.total || 0
     }
   }

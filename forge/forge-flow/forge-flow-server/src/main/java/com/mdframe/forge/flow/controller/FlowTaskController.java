@@ -42,10 +42,11 @@ public class FlowTaskController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam String userId,
             @RequestParam(required = false) String title,
-            @RequestParam(required = false) String category) {
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer status) {
         
         Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.todoTasks(page, userId, title, category);
+        IPage<FlowTask> result = flowTaskService.todoTasks(page, userId, title, category, status);
         return RespInfo.success(result);
     }
 
@@ -58,10 +59,11 @@ public class FlowTaskController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam String userId,
             @RequestParam(required = false) String title,
-            @RequestParam(required = false) String category) {
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer status) {
         
         Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.doneTasks(page, userId, title, category);
+        IPage<FlowTask> result = flowTaskService.doneTasks(page, userId, title, category, status);
         return RespInfo.success(result);
     }
 
@@ -74,10 +76,11 @@ public class FlowTaskController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam String userId,
             @RequestParam(required = false) String title,
-            @RequestParam(required = false) String category) {
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer status) {
         
         Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.startedTasks(page, userId, title, category);
+        IPage<FlowTask> result = flowTaskService.startedTasks(page, userId, title, category, status);
         return RespInfo.success(result);
     }
 
@@ -139,10 +142,20 @@ public class FlowTaskController {
      */
     @PostMapping("/delegate")
     public RespInfo<Void> delegate(@RequestBody Map<String, Object> params) {
-        String taskId = (String) params.get("taskId");
-        String userId = (String) params.get("userId");
-        String targetUserId = (String) params.get("targetUserId");
-        String comment = (String) params.get("comment");
+        String taskId = String.valueOf(params.get("taskId"));
+        String userId = String.valueOf(params.get("userId"));
+        String targetUserId = String.valueOf(params.get("targetUserId"));
+        String comment = params.get("comment") != null ? String.valueOf(params.get("comment")) : null;
+
+        if (taskId == null || taskId.isBlank() || "null".equals(taskId)) {
+            return RespInfo.error("任务ID不能为空");
+        }
+        if (userId == null || userId.isBlank() || "null".equals(userId)) {
+            return RespInfo.error("当前用户ID不能为空");
+        }
+        if (targetUserId == null || targetUserId.isBlank() || "null".equals(targetUserId)) {
+            return RespInfo.error("转办人ID不能为空");
+        }
         
         flowTaskService.delegate(taskId, userId, targetUserId, comment);
         return RespInfo.success("转办成功", null);
@@ -153,8 +166,14 @@ public class FlowTaskController {
      */
     @PostMapping("/withdraw")
     public RespInfo<Void> withdraw(@RequestBody Map<String, Object> params) {
-        String processInstanceId = (String) params.get("processInstanceId");
-        String userId = (String) params.get("userId");
+        String processInstanceId = String.valueOf(params.get("processInstanceId"));
+        String userId = String.valueOf(params.get("userId"));
+        if (processInstanceId == null || processInstanceId.isBlank() || "null".equals(processInstanceId)) {
+            return RespInfo.error("流程实例ID不能为空");
+        }
+        if (userId == null || userId.isBlank() || "null".equals(userId)) {
+            return RespInfo.error("当前用户ID不能为空");
+        }
         
         flowTaskService.withdraw(processInstanceId, userId);
         return RespInfo.success("撤回成功", null);

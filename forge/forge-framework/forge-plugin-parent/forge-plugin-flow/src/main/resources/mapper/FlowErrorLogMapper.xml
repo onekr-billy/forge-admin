@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.starter.flow.mapper.FlowErrorLogMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.starter.flow.entity.FlowErrorLog">
+        <id column="id" property="id"/>
+        <result column="process_instance_id" property="processInstanceId"/>
+        <result column="process_def_id" property="processDefId"/>
+        <result column="process_def_key" property="processDefKey"/>
+        <result column="business_key" property="businessKey"/>
+        <result column="task_id" property="taskId"/>
+        <result column="task_name" property="taskName"/>
+        <result column="activity_id" property="activityId"/>
+        <result column="activity_name" property="activityName"/>
+        <result column="error_stage" property="errorStage"/>
+        <result column="error_type" property="errorType"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="stack_trace" property="stackTrace"/>
+        <result column="job_id" property="jobId"/>
+        <result column="job_retries" property="jobRetries"/>
+        <result column="status" property="status"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="last_retry_user_id" property="lastRetryUserId"/>
+        <result column="last_retry_time" property="lastRetryTime"/>
+        <result column="retry_message" property="retryMessage"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, process_instance_id, process_def_id, process_def_key, business_key,
+        task_id, task_name, activity_id, activity_name, error_stage, error_type,
+        error_message, stack_trace, job_id, job_retries, status, retry_count,
+        last_retry_user_id, last_retry_time, retry_message, create_time, update_time
+    </sql>
+
+    <select id="selectErrorLogPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_flow_error_log
+        WHERE 1 = 1
+        <if test="processInstanceId != null and processInstanceId != ''">
+            AND process_instance_id = #{processInstanceId}
+        </if>
+        <if test="activityId != null and activityId != ''">
+            AND activity_id = #{activityId}
+        </if>
+        <if test="status != null">
+            AND status = #{status}
+        </if>
+        ORDER BY create_time DESC, id DESC
+    </select>
+
+    <select id="selectRecentByProcessInstanceId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_flow_error_log
+        WHERE process_instance_id = #{processInstanceId}
+        ORDER BY create_time DESC, id DESC
+        LIMIT 50
+    </select>
+
+    <select id="selectLatestUnresolved" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_flow_error_log
+        WHERE process_instance_id = #{processInstanceId}
+          AND status IN (0, 3)
+        <if test="activityId != null and activityId != ''">
+          AND activity_id = #{activityId}
+        </if>
+        ORDER BY create_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="countUnresolvedByProcessInstanceId" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM sys_flow_error_log
+        WHERE process_instance_id = #{processInstanceId}
+          AND status IN (0, 3)
+    </select>
+</mapper>

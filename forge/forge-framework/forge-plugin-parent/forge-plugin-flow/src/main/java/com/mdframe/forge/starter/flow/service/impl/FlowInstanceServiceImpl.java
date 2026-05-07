@@ -5,8 +5,12 @@ import com.mdframe.forge.plugin.system.entity.SysRole;
 import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.service.ISysUserService;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
+import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
+import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
+import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowInstanceService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +49,9 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     @Autowired
     private FlowBusinessMapper flowBusinessMapper;
 
+    @Autowired
+    private FlowTaskMapper flowTaskMapper;
+
     /** 组织架构服务（可选，未引入时跳过上级领导变量注入）*/
     @Autowired(required = false)
     private FlowOrgIntegrationService flowOrgIntegrationService;
@@ -52,6 +59,9 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     /** 用户服务（可选，用于获取用户角色信息）*/
     @Autowired(required = false)
     private ISysUserService sysUserService;
+
+    @Autowired
+    private FlowErrorLogService flowErrorLogService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -186,11 +196,22 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         log.info("保存业务信息成功：businessKey={}", businessKey);
 
         // 4. 启动流程（会触发 TASK_CREATED 事件，此时业务信息已存在）
-        ProcessInstance processInstance = runtimeService.startProcessInstanceByKey(
-                modelKey,
-                businessKey,
-                vars
-        );
+        ProcessInstance processInstance;
+        try {
+            processInstance = runtimeService.startProcessInstanceByKey(
+                    modelKey,
+                    businessKey,
+                    vars
+            );
+        } catch (Exception e) {
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setProcessDefKey(modelKey);
+            errorLog.setBusinessKey(businessKey);
+            errorLog.setErrorStage("PROCESS_START");
+            errorLog.setErrorMessage("启动流程失败：" + e.getMessage());
+            flowErrorLogService.recordError(errorLog, e);
+            throw e;
+        }
 
         // 5. 更新流程实例ID
         business.setProcessInstanceId(processInstance.getId());
@@ -217,13 +238,24 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             throw new RuntimeException("流程实例不存在");
         }
 
-        runtimeService.deleteProcessInstance(business.getProcessInstanceId(), reason);
+        try {
+            runtimeService.deleteProcessInstance(business.getProcessInstanceId(), reason);
 
-        business.setStatus("canceled");
-        business.setEndTime(LocalDateTime.now());
-        flowBusinessMapper.updateById(business);
+            business.setStatus("canceled");
+            business.setEndTime(LocalDateTime.now());
+            flowBusinessMapper.updateById(business);
 
-        log.info("终止流程：businessKey={}, reason={}", businessKey, reason);
+            log.info("终止流程：businessKey={}, reason={}", businessKey, reason);
+        } catch (Exception e) {
+            log.error("终止流程失败", e);
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setProcessInstanceId(business.getProcessInstanceId());
+            errorLog.setBusinessKey(businessKey);
+            errorLog.setErrorStage("PROCESS_TERMINATE");
+            errorLog.setErrorMessage("终止流程失败：" + e.getMessage());
+            flowErrorLogService.recordError(errorLog, e);
+            throw e;
+        }
     }
 
     @Override
@@ -281,6 +313,12 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             log.info("流程节点回退成功：processInstanceId={}, targetActivityId={}", processInstanceId, targetActivityId);
         } catch (Exception e) {
             log.error("流程节点回退失败", e);
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setProcessInstanceId(processInstanceId);
+            errorLog.setActivityId(targetActivityId);
+            errorLog.setErrorStage("PROCESS_ROLLBACK");
+            errorLog.setErrorMessage("流程节点回退失败：" + e.getMessage());
+            flowErrorLogService.recordError(errorLog, e);
             throw new RuntimeException("流程节点回退失败：" + e.getMessage());
         }
     }
@@ -301,6 +339,11 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
                 throw new RuntimeException("任务不存在：" + taskId);
             }
 
+            String owner = task.getAssignee() != null ? task.getAssignee() : userId;
+            if (owner != null && !owner.isEmpty()) {
+                taskService.setOwner(taskId, owner);
+            }
+
             // 设置新的处理人
             taskService.setAssignee(taskId, newAssignee);
 
@@ -309,9 +352,23 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
                 taskService.addComment(taskId, task.getProcessInstanceId(), "转派", reason);
             }
 
+            FlowTask flowTask = flowTaskMapper.selectByTaskId(taskId);
+            if (flowTask != null) {
+                flowTask.setAssignee(newAssignee);
+                flowTask.setOwner(owner);
+                flowTask.setStatus(0);
+                flowTask.setComment(reason);
+                flowTaskMapper.updateById(flowTask);
+            }
+
             log.info("任务转派成功：taskId={}, newAssignee={}", taskId, newAssignee);
         } catch (Exception e) {
             log.error("任务转派失败", e);
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setTaskId(taskId);
+            errorLog.setErrorStage("TASK_REASSIGN");
+            errorLog.setErrorMessage("任务转派失败：" + e.getMessage());
+            flowErrorLogService.recordError(errorLog, e);
             throw new RuntimeException("任务转派失败：" + e.getMessage());
         }
     }
@@ -333,14 +390,12 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
                     .singleResult();
 
             if (processInstance == null) {
-                // 流程实例不存在于运行时表，可能已经完成
                 log.warn("流程实例不存在或已完成：processInstanceId={}", processInstanceId);
                 throw new RuntimeException("流程实例不存在或已完成，无法终止");
             }
 
             // 检查流程实例状态
             if (processInstance.isSuspended()) {
-                // 如果流程已挂起，先激活再终止
                 log.info("流程实例已挂起，先激活再终止：processInstanceId={}", processInstanceId);
                 runtimeService.activateProcessInstanceById(processInstanceId);
             }
@@ -362,6 +417,11 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             log.info("流程终止成功：processInstanceId={}", processInstanceId);
         } catch (Exception e) {
             log.error("流程终止失败", e);
+            FlowErrorLog errorLog = new FlowErrorLog();
+            errorLog.setProcessInstanceId(processInstanceId);
+            errorLog.setErrorStage("PROCESS_TERMINATE");
+            errorLog.setErrorMessage("终止流程失败：" + e.getMessage());
+            flowErrorLogService.recordError(errorLog, e);
             throw new RuntimeException("流程终止失败：" + e.getMessage());
         }
     }

@@ -32,9 +32,36 @@
       :mask-closable="false"
     >
       <div class="auth-modal-content">
-        <!-- 操作按钮 -->
+        <div class="auth-summary">
+          <div class="auth-role-meta">
+            <span class="auth-role-name">{{ currentRole.roleName || '-' }}</span>
+            <span class="auth-role-key">{{ currentRole.roleKey || '-' }}</span>
+          </div>
+          <div class="auth-counts">
+            <span>{{ currentAuthClientName }}</span>
+            <span>可分配 {{ resourceCount }}</span>
+            <span>已选择 {{ checkedResourceKeys.length }}</span>
+          </div>
+        </div>
+
+        <div class="auth-client-tabs">
+          <n-tabs
+            type="segment"
+            size="small"
+            :value="currentAuthClientCode"
+            @update:value="handleAuthClientChange"
+          >
+            <n-tab-pane
+              v-for="client in authClientTabs"
+              :key="client.clientCode"
+              :name="client.clientCode"
+              :tab="client.clientName"
+            />
+          </n-tabs>
+        </div>
+
         <div class="auth-toolbar">
-          <n-space size="small">
+          <n-space size="small" align="center">
             <n-button size="small" @click="toggleExpandAll">
               <template #icon>
                 <i :class="treeExpandAll ? 'i-material-symbols:unfold-less' : 'i-material-symbols:unfold-more'" />
@@ -59,7 +86,6 @@
           </n-space>
         </div>
 
-        <!-- 资源类型标签页 -->
         <n-tabs v-model:value="activeResourceTab" type="line" animated class="auth-tabs">
           <n-tab-pane name="all" tab="全部资源">
             <div class="auth-tree-container">
@@ -303,6 +329,8 @@ const treeExpandAll = ref(true)
 const treeExpandedKeys = ref([])
 const checkStrictly = ref(false) // 父子联动开关，false表示联动
 const activeResourceTab = ref('all') // 当前选中的资源类型标签
+const clientList = ref([])
+const currentAuthClientCode = ref('pc')
 
 // 用户列表相关
 const usersModalVisible = ref(false)
@@ -357,6 +385,23 @@ const buttonTreeData = computed(() => {
 const apiTreeData = computed(() => {
   return filterResourceByType(resourceTreeData.value, [4])
 })
+
+const resourceCount = computed(() => countResources(resourceTreeData.value))
+const authClientTabs = computed(() => {
+  if (clientList.value.length > 0)
+    return clientList.value
+  return [{ clientCode: 'pc', clientName: 'PC端' }]
+})
+const currentAuthClientName = computed(() => {
+  const client = authClientTabs.value.find(item => item.clientCode === currentAuthClientCode.value)
+  return client?.clientName || currentAuthClientCode.value || '-'
+})
+
+function countResources(data) {
+  if (!Array.isArray(data))
+    return 0
+  return data.reduce((count, item) => count + 1 + countResources(item.children), 0)
+}
 
 // 过滤指定类型的资源
 function filterResourceByType(data, types) {
@@ -677,7 +722,6 @@ const userTableColumns = [
 
 // 表单提交前处理
 function beforeSubmit(formData) {
-  console.log('提交的表单数据:', formData)
   return formData
 }
 
@@ -701,7 +745,7 @@ function handleDelete(row) {
           crudRef.value?.refresh()
         }
       }
-      catch (error) {
+      catch {
         window.$message.error('删除失败')
       }
     },
@@ -818,9 +862,11 @@ async function handleAuth(row) {
   currentRole.value = row
   authModalVisible.value = true
 
-  // 加载资源树和已选中的资源
-  await loadResourceTree()
-  await loadRoleResources(row.id)
+  await loadClientList()
+  if (!authClientTabs.value.some(item => item.clientCode === currentAuthClientCode.value)) {
+    currentAuthClientCode.value = authClientTabs.value[0]?.clientCode || 'pc'
+  }
+  await loadAuthClientResources()
 }
 
 // 获取所有节点的 key（用于展开/收起）
@@ -838,7 +884,9 @@ function getAllKeys(list, keys = []) {
 async function loadResourceTree() {
   try {
     authLoading.value = true
-    const res = await request.get('/system/resource/tree')
+    const res = await request.get('/system/resource/assignable-tree', {
+      params: { clientCode: currentAuthClientCode.value },
+    })
     if (res.code === 200) {
       resourceTreeData.value = res.data || []
 
@@ -861,7 +909,9 @@ async function loadResourceTree() {
 async function loadRoleResources(roleId) {
   try {
     authLoading.value = true
-    const res = await request.get(`/system/role/${roleId}/resources`)
+    const res = await request.get(`/system/role/${roleId}/resources`, {
+      params: { clientCode: currentAuthClientCode.value },
+    })
     if (res.code === 200) {
       checkedResourceKeys.value = res.data || []
     }
@@ -873,6 +923,34 @@ async function loadRoleResources(roleId) {
   finally {
     authLoading.value = false
   }
+}
+
+async function loadClientList() {
+  try {
+    const res = await request.get('/system/client/list')
+    if (res.code === 200) {
+      clientList.value = res.data || []
+    }
+  }
+  catch (error) {
+    console.error('加载客户端列表失败:', error)
+  }
+}
+
+async function loadAuthClientResources() {
+  checkedResourceKeys.value = []
+  resourceTreeData.value = []
+  treeExpandedKeys.value = []
+  await Promise.all([
+    loadResourceTree(),
+    loadRoleResources(currentRole.value.id),
+  ])
+}
+
+async function handleAuthClientChange(clientCode) {
+  currentAuthClientCode.value = clientCode
+  activeResourceTab.value = 'all'
+  await loadAuthClientResources()
 }
 
 // 展开的节点变化
@@ -911,10 +989,9 @@ function handleUncheckAll() {
 }
 
 // 父子联动开关变化
-function handleCheckStrictlyChange(value) {
+function handleCheckStrictlyChange() {
   // 当切换父子联动时，保持当前选中状态
   // checkStrictly 为 false 时表示联动
-  console.log('父子联动:', !value)
 }
 
 // 提交授权
@@ -924,6 +1001,7 @@ async function handleSubmitAuth() {
     const res = await request.post(
       `/system/role/${currentRole.value.id}/resources`,
       checkedResourceKeys.value,
+      { params: { clientCode: currentAuthClientCode.value } },
     )
     if (res.code === 200) {
       window.$message.success('授权成功')
@@ -967,34 +1045,81 @@ async function handleSubmitAuth() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-height: 600px;
+  max-height: 640px;
+  color: #1f2937;
+}
+
+.auth-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  margin-bottom: 12px;
+}
+
+.auth-role-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-role-name {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.auth-role-key {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.auth-counts {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.auth-client-tabs {
+  margin-bottom: 12px;
+}
+
+.auth-client-tabs :deep(.n-tabs-nav) {
+  max-width: 100%;
 }
 
 .auth-toolbar {
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
-}
-
-.auth-toolbar :deep(.n-button) {
-  color: white;
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.auth-toolbar :deep(.n-button:hover) {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-.auth-toolbar :deep(.n-checkbox) {
-  color: white;
 }
 
 .auth-toolbar :deep(.n-checkbox .n-checkbox__label) {
-  color: white;
+  color: #475569;
+  font-size: 13px;
 }
 
 /* 标签页样式 */
@@ -1006,18 +1131,19 @@ async function handleSubmitAuth() {
 }
 
 .auth-tabs :deep(.n-tabs-nav) {
-  padding: 0 12px;
-  background-color: #f8f9fa;
-  border-radius: 8px 8px 0 0;
+  padding: 0 4px;
+  background-color: transparent;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .auth-tabs :deep(.n-tabs-tab) {
   font-weight: 500;
-  padding: 12px 20px;
+  padding: 10px 14px;
+  color: #475569;
 }
 
 .auth-tabs :deep(.n-tabs-tab.n-tabs-tab--active) {
-  color: #667eea;
+  color: #2563eb;
 }
 
 .auth-tabs :deep(.n-tabs-pane-wrapper) {
@@ -1029,12 +1155,12 @@ async function handleSubmitAuth() {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid var(--n-border-color);
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  padding: 16px;
-  min-height: 300px;
+  padding: 10px 12px;
+  min-height: 340px;
   max-height: 450px;
-  background-color: var(--n-color);
+  background-color: #fff;
 }
 
 /* 优化树形组件样式 */
@@ -1043,21 +1169,22 @@ async function handleSubmitAuth() {
 }
 
 .auth-tree-container :deep(.n-tree-node) {
-  padding: 2px 0;
+  padding: 1px 0;
 }
 
 .auth-tree-container :deep(.n-tree-node-content) {
-  padding: 6px 8px;
+  min-height: 34px;
+  padding: 4px 8px;
   border-radius: 6px;
-  transition: all 0.2s ease;
+  transition: background-color 0.15s ease;
 }
 
 .auth-tree-container :deep(.n-tree-node-content:hover) {
-  background-color: var(--n-color-hover);
+  background-color: #f8fafc;
 }
 
 .auth-tree-container :deep(.n-tree-node--selected .n-tree-node-content) {
-  background-color: var(--n-color-target);
+  background-color: #eff6ff;
 }
 
 /* 树节点标签样式增强 */
@@ -1066,8 +1193,14 @@ async function handleSubmitAuth() {
 }
 
 .auth-tree-container :deep(.n-tag) {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.5;
+  border-radius: 6px;
+}
+
+.auth-tree-container :deep(.font-medium) {
+  font-weight: 500;
+  color: #1f2937;
 }
 
 /* 滚动条样式 */
@@ -1093,9 +1226,9 @@ async function handleSubmitAuth() {
 
 /* 弹窗底部按钮样式 */
 :deep(.n-card__footer) {
-  padding: 16px 24px;
-  border-top: 1px solid var(--n-border-color);
-  background-color: #f8f9fa;
+  padding: 14px 24px;
+  border-top: 1px solid #e5e7eb;
+  background-color: #f8fafc;
 }
 
 /* 用户列表弹窗样式 */
@@ -1194,17 +1327,49 @@ async function handleSubmitAuth() {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+.dark .auth-modal-content {
+  color: #e5e7eb;
+}
+
+.dark .auth-summary,
 .dark .auth-toolbar {
-  background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%);
+  background: #111827;
+  border-color: #334155;
+}
+
+.dark .auth-role-name {
+  color: #f8fafc;
+}
+
+.dark .auth-role-key {
+  background: #1e3a8a;
+  color: #bfdbfe;
+}
+
+.dark .auth-counts,
+.dark .auth-toolbar :deep(.n-checkbox .n-checkbox__label) {
+  color: #94a3b8;
 }
 
 .dark .auth-tabs :deep(.n-tabs-nav) {
-  background-color: #1e293b;
+  border-color: #334155;
 }
 
 .dark .auth-tree-container {
   background: #0f172a;
   border-color: #334155;
+}
+
+.dark .auth-tree-container :deep(.n-tree-node-content:hover) {
+  background-color: #1e293b;
+}
+
+.dark .auth-tree-container :deep(.n-tree-node--selected .n-tree-node-content) {
+  background-color: #172554;
+}
+
+.dark .auth-tree-container :deep(.font-medium) {
+  color: #e5e7eb;
 }
 
 .dark .users-search-form {

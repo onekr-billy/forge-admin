@@ -87,8 +87,10 @@ public class SysRoleController {
      * 给角色绑定资源（菜单/按钮/接口）
      */
     @PostMapping("/{roleId}/resources")
-    public RespInfo<Void> bindResources(@PathVariable Long roleId, @RequestBody Long[] resourceIds) {
-        boolean result = roleService.bindRoleResources(roleId, resourceIds);
+    public RespInfo<Void> bindResources(@PathVariable Long roleId,
+                                        @RequestBody Long[] resourceIds,
+                                        @RequestParam(required = false) String clientCode) {
+        boolean result = roleService.bindRoleResources(roleId, resourceIds, clientCode);
         return result ? RespInfo.success() : RespInfo.error("绑定资源失败");
     }
 
@@ -105,8 +107,9 @@ public class SysRoleController {
      * 查询角色的资源ID列表
      */
     @GetMapping("/{roleId}/resources")
-    public RespInfo<List<Long>> getRoleResourceIds(@PathVariable Long roleId) {
-        List<Long> resourceIds = roleService.selectRoleResourceIds(roleId);
+    public RespInfo<List<Long>> getRoleResourceIds(@PathVariable Long roleId,
+                                                   @RequestParam(required = false) String clientCode) {
+        List<Long> resourceIds = roleService.selectRoleResourceIds(roleId, clientCode);
         return RespInfo.success(resourceIds);
     }
 

@@ -16,10 +16,28 @@ public interface IPermissionService {
     List<String> getCurrentUserApiPermissions();
 
     /**
+     * 检查指定API是否已配置为受控接口。
+     *
+     * @param apiUrl API地址，如：/system/user/add
+     * @param method HTTP方法，如：GET/POST
+     * @return 是否已配置API权限资源
+     */
+    boolean isApiPermissionConfigured(String apiUrl, String method);
+
+    /**
      * 检查当前用户是否有访问指定API的权限
      *
      * @param apiUrl API地址，如：/system/user/add
      * @return 是否有权限
      */
     boolean hasApiPermission(String apiUrl);
+
+    /**
+     * 检查当前用户是否有访问指定API的权限。
+     *
+     * @param apiUrl API地址，如：/system/user/add
+     * @param method HTTP方法，如：GET/POST
+     * @return 是否有权限
+     */
+    boolean hasApiPermission(String apiUrl, String method);
 }

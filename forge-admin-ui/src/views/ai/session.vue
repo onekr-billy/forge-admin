@@ -228,13 +228,13 @@ const tableColumns = [
   {
     title: '用户',
     key: 'nickName',
-    width: 140,
+    width: 110,
     render(row) {
-      return h('div', { style: 'display:flex;align-items:center;gap:8px' }, [
+      return h('div', { style: 'display:flex;align-items:center;gap:6px' }, [
         row.avatar
-          ? h(AuthImage, { src: row.avatar, imgStyle: { width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' } })
+          ? h(AuthImage, { src: row.avatar, imgStyle: { width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' } })
           : h('div', {
-              style: `width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;background:${getAvatarGradient(row.nickName)}`,
+              style: `width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;background:${getAvatarGradient(row.nickName)}`,
             }, (row.nickName || '?').charAt(0)),
         h('span', { style: 'font-weight:500' }, row.nickName || '未知用户'),
       ])
@@ -251,7 +251,7 @@ const tableColumns = [
   {
     title: '消息数',
     key: 'messageCount',
-    width: 80,
+    width: 70,
     align: 'center',
     render(row) {
       return h(NTag, { size: 'small', round: true, type: 'info' }, { default: () => `${row.messageCount || 0}` })
@@ -260,7 +260,7 @@ const tableColumns = [
   {
     title: 'Token',
     key: 'tokenUsage',
-    width: 100,
+    width: 90,
     align: 'right',
     render(row) {
       const v = row.tokenUsage || 0
@@ -270,7 +270,7 @@ const tableColumns = [
   {
     title: '最后活跃',
     key: 'updateTime',
-    width: 120,
+    width: 110,
     render(row) {
       return h('span', { style: 'color:#94a3b8;font-size:13px' }, formatRelativeTime(row.updateTime || row.createTime))
     },
@@ -278,11 +278,11 @@ const tableColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 160,
+    width: 130,
     fixed: 'right',
     render(row) {
       return h('div', { style: 'display:flex;gap:8px' }, [
-        h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => handleSelectSession(row) }, { default: () => '查看详情' }),
+        h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => handleSelectSession(row) }, { default: () => '查看' }),
         h(NPopconfirm, { onPositiveClick: () => handleDeleteSession(row.id) }, {
           trigger: () => h(NButton, { text: true, type: 'error', size: 'small' }, { default: () => '删除' }),
           default: () => '确定删除该会话吗？',
@@ -447,6 +447,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+:deep(.n-data-table .n-data-table-th),
+:deep(.n-data-table .n-data-table-td) {
+  padding: 6px 8px;
+}
+
 .ai-session-page {
   padding: 24px;
   min-height: 100%;

@@ -191,10 +191,15 @@ public class FlowClient {
      * 获取我的待办任务
      */
     public FlowResult<Map<String, Object>> getTodoTasks(String userId, int pageNum, int pageSize) {
+        return getTodoTasks(userId, pageNum, pageSize, null);
+    }
+
+    public FlowResult<Map<String, Object>> getTodoTasks(String userId, int pageNum, int pageSize, Integer status) {
         String url = UriComponentsBuilder.fromHttpUrl(flowServiceUrl + "/api/flow/task/todo")
                 .queryParam("userId", userId)
                 .queryParam("pageNum", pageNum)
                 .queryParam("pageSize", pageSize)
+                .queryParamIfPresent("status", Optional.ofNullable(status))
                 .toUriString();
         return get(url, new TypeReference<FlowResult<Map<String, Object>>>() {});
     }
@@ -203,10 +208,15 @@ public class FlowClient {
      * 获取我的已办任务
      */
     public FlowResult<Map<String, Object>> getDoneTasks(String userId, int pageNum, int pageSize) {
+        return getDoneTasks(userId, pageNum, pageSize, null);
+    }
+
+    public FlowResult<Map<String, Object>> getDoneTasks(String userId, int pageNum, int pageSize, Integer status) {
         String url = UriComponentsBuilder.fromHttpUrl(flowServiceUrl + "/api/flow/task/done")
                 .queryParam("userId", userId)
                 .queryParam("pageNum", pageNum)
                 .queryParam("pageSize", pageSize)
+                .queryParamIfPresent("status", Optional.ofNullable(status))
                 .toUriString();
         return get(url, new TypeReference<FlowResult<Map<String, Object>>>() {});
     }
@@ -215,10 +225,15 @@ public class FlowClient {
      * 获取我发起的流程
      */
     public FlowResult<Map<String, Object>> getStartedTasks(String userId, int pageNum, int pageSize) {
+        return getStartedTasks(userId, pageNum, pageSize, null);
+    }
+
+    public FlowResult<Map<String, Object>> getStartedTasks(String userId, int pageNum, int pageSize, Integer status) {
         String url = UriComponentsBuilder.fromHttpUrl(flowServiceUrl + "/api/flow/task/started")
                 .queryParam("userId", userId)
                 .queryParam("pageNum", pageNum)
                 .queryParam("pageSize", pageSize)
+                .queryParamIfPresent("status", Optional.ofNullable(status))
                 .toUriString();
         return get(url, new TypeReference<FlowResult<Map<String, Object>>>() {});
     }

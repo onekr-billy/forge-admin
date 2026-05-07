@@ -199,3 +199,38 @@ if (processDefinition == null) {
 **影响范围**:
 说明哪些场景会受影响。
 ```
+
+## 5. Flowable 管理员转派后待办消失
+
+**发现日期**: 2026-05-06
+
+**问题描述**:
+管理员转派任务后，`sys_flow_task`（或误写为 `flow_stak`）中任务 `status` 被更新为 `1`，新处理人在“我的待办”列表查询不到。
+
+**根本原因**:
+直接调用 `taskService.setAssignee(taskId, newAssignee)` 会触发 `TASK_ASSIGNED` 监听器；如果 Flowable 任务没有设置 `owner`，监听器会把这次分配误判为“签收”，将本地任务状态改成 `1`。
+
+**解决方案**:
+转派前先设置 `owner` 为原处理人或管理员用户，再设置新的 `assignee`；本地 `sys_flow_task` 同步更新 `assignee`、`owner`，并保持 `status=0`。待办查询也应包含“当前用户已签收但未完成”的 `status=1` 任务。
+
+**影响范围**:
+- 流程监控中的管理员转派
+- 我的待办列表查询
+- 所有依赖 `TASK_ASSIGNED` 事件同步本地任务表的场景
+
+## 6. Flowable 委派态任务不能直接完成
+
+**发现日期**: 2026-05-06
+
+**问题描述**:
+调用 `/api/flow/task/reject` 驳回被 `taskService.delegateTask` 处理过的任务时，Flowable 抛出 `A delegated Task ... cannot be completed, but should be resolved instead.`。
+
+**根本原因**:
+`delegateTask` 会把任务置为 `DelegationState.PENDING`。Flowable 禁止对 `PENDING` 委派态任务直接调用 `taskService.complete`，必须先 `taskService.resolveTask(taskId)`。
+
+**解决方案**:
+审批通过/驳回统一走封装方法：如果 `task.getDelegationState() == DelegationState.PENDING`，先 `resolveTask` 再 `complete`。业务“转办”不要使用 Flowable 委派语义，应设置 `owner` 后用 `setAssignee` 转派，并同步本地任务表保持 `status=0`。
+
+**影响范围**:
+- 转办后再审批通过/驳回的流程任务
+- 所有直接调用 `taskService.complete` 的 Flowable 任务操作

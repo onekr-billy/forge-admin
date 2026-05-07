@@ -101,6 +101,12 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean bindRoleResources(Long roleId, Long[] resourceIds) {
+        return bindRoleResources(roleId, resourceIds, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean bindRoleResources(Long roleId, Long[] resourceIds, String clientCode) {
         if (roleId == null) {
             return false;
         }
@@ -111,13 +117,33 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             return false;
         }
 
-        // 防止权限溢出校验：非管理员只能分配自己拥有的资源
-        LoginUser loginUser = SessionHelper.getLoginUser();
-        if (loginUser != null && !loginUser.isAdmin()) {
-            List<Long> currentUserResourceIds = resourceService.selectCurrentUserResourceIds();
+        List<SysResource> assignableResources = resourceService.list();
+        Set<Long> clientResourceIdSet = Collections.emptySet();
+        if (StringUtils.isNotBlank(clientCode)) {
+            assignableResources = assignableResources.stream()
+                    .filter(resource -> clientCode.equals(resource.getClientCode()))
+                    .collect(Collectors.toList());
+            clientResourceIdSet = assignableResources.stream()
+                    .map(SysResource::getId)
+                    .collect(Collectors.toSet());
             if (resourceIds != null) {
                 for (Long resourceId : resourceIds) {
-                    if (!currentUserResourceIds.contains(resourceId)) {
+                    if (!clientResourceIdSet.contains(resourceId)) {
+                        throw new RuntimeException("权限溢出：不能分配其他客户端的资源权限");
+                    }
+                }
+            }
+        }
+
+        // 防止权限溢出校验：非管理员只能分配自己拥有的资源
+        LoginUser loginUser = SessionHelper.getLoginUser();
+        Set<Long> currentUserResourceIdSet = Collections.emptySet();
+        if (loginUser != null && !loginUser.isAdmin()) {
+            List<Long> currentUserResourceIds = resourceService.selectCurrentUserResourceIds();
+            currentUserResourceIdSet = new HashSet<>(currentUserResourceIds);
+            if (resourceIds != null) {
+                for (Long resourceId : resourceIds) {
+                    if (!currentUserResourceIdSet.contains(resourceId)) {
                         throw new RuntimeException("权限溢出：不能分配自己没有的资源权限");
                     }
                 }
@@ -130,8 +156,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             finalResourceIdSet.addAll(Arrays.asList(resourceIds));
             
             // 获取所有资源并构建父子关系映射
-            List<SysResource> allResources = resourceService.list();
-            Map<Long, Long> parentMap = allResources.stream()
+            Map<Long, Long> parentMap = assignableResources.stream()
                 .collect(Collectors.toMap(SysResource::getId, r -> r.getParentId() == null ? 0L : r.getParentId()));
             
             Set<Long> parentIdsToAdd = new HashSet<>();
@@ -147,10 +172,23 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             }
             finalResourceIdSet.addAll(parentIdsToAdd);
         }
+
+        if (loginUser != null && !loginUser.isAdmin() && !currentUserResourceIdSet.containsAll(finalResourceIdSet)) {
+            throw new RuntimeException("权限溢出：不能分配自己没有的父级资源权限");
+        }
+        if (StringUtils.isNotBlank(clientCode) && !clientResourceIdSet.containsAll(finalResourceIdSet)) {
+            throw new RuntimeException("权限溢出：不能分配其他客户端的父级资源权限");
+        }
         
-        // 1. 先删除该角色的所有资源关联
+        // 1. 先删除该角色的资源关联。指定客户端时仅替换当前客户端资源，避免清空其他客户端权限。
         LambdaQueryWrapper<SysRoleResource> deleteWrapper = new LambdaQueryWrapper<>();
         deleteWrapper.eq(SysRoleResource::getRoleId, roleId);
+        if (StringUtils.isNotBlank(clientCode)) {
+            if (clientResourceIdSet.isEmpty()) {
+                return true;
+            }
+            deleteWrapper.in(SysRoleResource::getResourceId, clientResourceIdSet);
+        }
         roleResourceMapper.delete(deleteWrapper);
         
         // 2. 如果没有新的资源ID，直接返回（表示清空所有权限）
@@ -169,7 +207,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         }
         
         if (!roleResources.isEmpty()) {
-            roleResources.forEach(roleResourceMapper::insert);
+            roleResourceMapper.insertBatch(roleResources);
         }
         return true;
     }
@@ -189,6 +227,11 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     @Override
     public List<Long> selectRoleResourceIds(Long roleId) {
+        return selectRoleResourceIds(roleId, null);
+    }
+
+    @Override
+    public List<Long> selectRoleResourceIds(Long roleId, String clientCode) {
         if (roleId == null) {
             return new ArrayList<>();
         }
@@ -200,6 +243,27 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 .stream()
                 .map(SysRoleResource::getResourceId)
                 .collect(Collectors.toList());
+
+        if (StringUtils.isNotBlank(clientCode) && CollUtil.isNotEmpty(resourceIds)) {
+            Set<Long> clientResourceIdSet = resourceService.lambdaQuery()
+                    .eq(SysResource::getClientCode, clientCode)
+                    .select(SysResource::getId)
+                    .list()
+                    .stream()
+                    .map(SysResource::getId)
+                    .collect(Collectors.toSet());
+            resourceIds = resourceIds.stream()
+                    .filter(clientResourceIdSet::contains)
+                    .collect(Collectors.toList());
+        }
+
+        LoginUser loginUser = SessionHelper.getLoginUser();
+        if (loginUser != null && !loginUser.isAdmin() && CollUtil.isNotEmpty(resourceIds)) {
+            Set<Long> currentUserResourceIdSet = new HashSet<>(resourceService.selectCurrentUserResourceIds());
+            resourceIds = resourceIds.stream()
+                    .filter(currentUserResourceIdSet::contains)
+                    .collect(Collectors.toList());
+        }
 
         // 优化：过滤掉父级ID，只返回叶子节点（在当前选中集合中没有子节点的节点）
         // 这样可以适配前端树组件的 cascade 模式，防止因父节点存在导致子节点全选

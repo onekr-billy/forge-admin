@@ -30,7 +30,11 @@
       :read-only="readOnly"
       @submit="handleFormSubmit"
       @cancel="$emit('cancel')"
-    />
+    >
+      <template #actions>
+        <slot name="actions" />
+      </template>
+    </component>
 
     <!-- 无表单时降级展示 -->
     <n-empty

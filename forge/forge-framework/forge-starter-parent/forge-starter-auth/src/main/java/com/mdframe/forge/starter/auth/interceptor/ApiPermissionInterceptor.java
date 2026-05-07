@@ -73,8 +73,13 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
             requestUri = requestUri.substring(contextPath.length());
         }
 
+        if (!permissionService.isApiPermissionConfigured(requestUri, request.getMethod())) {
+            log.debug("接口未配置API权限资源，跳过权限校验: uri={}, method={}", requestUri, request.getMethod());
+            return true;
+        }
+
         // 4. 校验接口权限
-        boolean hasPermission = permissionService.hasApiPermission(requestUri);
+        boolean hasPermission = permissionService.hasApiPermission(requestUri, request.getMethod());
         
         if (!hasPermission) {
             log.warn("接口权限校验失败: uri={}, method={}, handler={}",

@@ -180,6 +180,12 @@ export const aiCrudPageProps = {
     default: 'auto',
   },
 
+  editLabelPlacement: {
+    type: String,
+    default: 'left',
+    validator: value => ['left', 'top'].includes(value),
+  },
+
   /**
    * 弹窗宽度
    * @type {string}

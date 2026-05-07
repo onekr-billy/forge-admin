@@ -143,6 +143,8 @@
           </template>
           确认驳回该请假申请？
         </n-popconfirm>
+
+        <slot name="actions" />
       </div>
     </n-card>
 

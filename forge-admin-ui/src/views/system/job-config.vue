@@ -46,8 +46,9 @@
         :columns="tableColumns"
         :edit-schema="editSchema"
         row-key="id"
-        :edit-grid-cols="1"
-        modal-width="900px"
+        :edit-grid-cols="2"
+        edit-label-placement="top"
+        modal-width="720px"
         add-button-text="新增定时任务"
         :before-submit="beforeSubmit"
         modal-type="modal"
@@ -279,6 +280,7 @@ const editSchema = [
     type: 'divider',
     label: '基本信息',
     props: { titlePlacement: 'left' },
+    span: 2,
   },
   {
     field: 'jobName',
@@ -293,24 +295,27 @@ const editSchema = [
     type: 'input',
     defaultValue: 'DEFAULT',
     rules: [{ required: true, message: '请输入任务分组', trigger: 'blur' }],
-    props: { placeholder: '请输入任务分组，如：DEFAULT' },
+    props: { placeholder: '如：DEFAULT' },
   },
   {
     field: 'description',
     label: '任务描述',
     type: 'textarea',
+    span: 2,
     props: { placeholder: '请输入任务描述', rows: 2 },
   },
   {
     type: 'divider',
     label: '执行配置',
     props: { titlePlacement: 'left' },
+    span: 2,
   },
   {
     field: 'executeMode',
     label: '执行模式',
     type: 'radio',
     defaultValue: 'BEAN',
+    span: 2,
     rules: [{ required: true, message: '请选择执行模式', trigger: 'change' }],
     props: {
       options: [
@@ -325,7 +330,7 @@ const editSchema = [
     type: 'input',
     vIf: formData => formData.executeMode === 'BEAN',
     rules: [{ required: true, message: '请输入Bean名称', trigger: 'blur' }],
-    props: { placeholder: '请输入Spring Bean名称，如：demoJob' },
+    props: { placeholder: '如：demoJob' },
   },
   {
     field: 'executorMethod',
@@ -333,12 +338,13 @@ const editSchema = [
     type: 'input',
     vIf: formData => formData.executeMode === 'BEAN',
     rules: [{ required: true, message: '请输入方法名', trigger: 'blur' }],
-    props: { placeholder: '请输入要执行的方法名，如：execute' },
+    props: { placeholder: '如：execute' },
   },
   {
     field: 'executorHandler',
     label: 'Handler名称',
     type: 'input',
+    span: 2,
     vIf: formData => formData.executeMode === 'HANDLER',
     rules: [{ required: true, message: '请输入Handler名称', trigger: 'blur' }],
     props: { placeholder: '请输入Handler名称' },
@@ -347,18 +353,21 @@ const editSchema = [
     field: 'jobParam',
     label: '任务参数',
     type: 'textarea',
+    span: 2,
     props: { placeholder: '请输入任务参数（JSON格式，可选）', rows: 2 },
   },
   {
     type: 'divider',
     label: '调度配置',
     props: { titlePlacement: 'left' },
+    span: 2,
   },
   {
     field: 'cronExpression',
     label: 'Cron表达式',
     type: 'slot',
     slotName: 'cronExpression',
+    span: 2,
     rules: [{ required: true, message: '请输入Cron表达式', trigger: 'blur' }],
   },
   {
@@ -366,6 +375,7 @@ const editSchema = [
     label: '任务状态',
     type: 'radio',
     defaultValue: 0,
+    span: 2,
     props: {
       options: [
         { label: '停止', value: 0 },
@@ -377,6 +387,7 @@ const editSchema = [
     type: 'divider',
     label: '高级配置',
     props: { titlePlacement: 'left' },
+    span: 2,
   },
   {
     field: 'retryCount',
@@ -384,7 +395,7 @@ const editSchema = [
     type: 'input-number',
     defaultValue: 0,
     props: {
-      placeholder: '失败后重试次数',
+      placeholder: '0',
       min: 0,
       max: 5,
     },
@@ -393,12 +404,13 @@ const editSchema = [
     field: 'alarmEmail',
     label: '告警邮箱',
     type: 'input',
-    props: { placeholder: '失败时发送告警的邮箱地址（可选）' },
+    props: { placeholder: '失败时发送告警的邮箱（可选）' },
   },
   {
     field: 'webhookUrl',
     label: 'WebHook地址',
     type: 'input',
+    span: 2,
     props: { placeholder: '失败时回调的WebHook地址（可选）' },
   },
 ]

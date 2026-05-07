@@ -36,6 +36,7 @@
           </template>
         </n-input>
         <n-select v-model:value="queryParams.category" placeholder="流程分类" clearable class="category-select" :options="categoryOptions" />
+        <n-select v-model:value="queryParams.status" placeholder="流程状态" clearable class="category-select" :options="statusOptions" />
         <NButton type="primary" class="search-btn" @click="handleSearch">
           <i class="i-material-symbols:search mr-2" />查询
         </NButton>
@@ -174,7 +175,7 @@ const pagination = reactive({
   },
 })
 
-const queryParams = reactive({ title: '', category: '' })
+const queryParams = reactive({ title: '', category: '', status: null })
 const categoryOptions = ref([])
 
 const todoCount = ref(0)
@@ -202,6 +203,14 @@ const statusMap = {
   6: { text: '已撤回', type: 'default' },
 }
 
+const statusOptions = [
+  { label: '审批中', value: 0 },
+  { label: '已签收', value: 1 },
+  { label: '已通过', value: 2 },
+  { label: '已驳回', value: 3 },
+  { label: '已撤回', value: 6 },
+]
+
 function getStatusDotClass(status) {
   const cls = { 0: 'warning', 1: 'info', 2: 'success', 3: 'error', 4: 'warning', 5: 'info', 6: 'default' }
   return cls[status] || 'default'
@@ -216,15 +225,15 @@ const columns = [
   {
     title: '流程标题',
     key: 'title',
-    minWidth: 200,
+    width: 180,
     ellipsis: { tooltip: true },
     render: row => h('span', { class: 'task-title-link', onClick: () => openDrawer(row) }, row.title || row.taskName),
   },
-  { title: '当前任务', key: 'taskName', width: 120 },
+  { title: '当前任务', key: 'taskName', width: 100, ellipsis: { tooltip: true } },
   {
-    title: '当前处理人',
+    title: '处理人',
     key: 'assigneeName',
-    width: 120,
+    width: 100,
     render: row => row.assigneeName
       ? h('div', { class: 'table-user' }, [
           h(UserAvatar, { name: row.assigneeName, size: 24 }),
@@ -235,14 +244,14 @@ const columns = [
   {
     title: '状态',
     key: 'status',
-    width: 90,
+    width: 80,
     render: row => h('span', { class: ['status-tag-mini', getStatusTagClass(row.status)] }, statusMap[row.status]?.text ?? '未知'),
   },
-  { title: '发起时间', key: 'createTime', width: 155 },
+  { title: '发起时间', key: 'createTime', width: 150 },
   {
     title: '操作',
     key: 'actions',
-    width: 120,
+    width: 110,
     fixed: 'right',
     render: row => h(NButton, {
       size: 'small',
@@ -304,6 +313,7 @@ async function loadData() {
       userId: userStore.userId,
       title: queryParams.title || undefined,
       category: queryParams.category || undefined,
+      status: queryParams.status ?? undefined,
     })
     if (res.code === 200 && res.data) {
       dataSource.value = res.data.records || []
@@ -357,6 +367,7 @@ function handleSearch() {
 function handleReset() {
   queryParams.title = ''
   queryParams.category = ''
+  queryParams.status = null
   pagination.page = 1
   loadData()
 }
@@ -374,6 +385,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+:deep(.n-data-table .n-data-table-th),
+:deep(.n-data-table .n-data-table-td) {
+  padding: 6px 8px;
+}
+
 .flow-page {
   padding: 20px;
   height: 100%;
