@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
+import com.mdframe.forge.starter.flow.service.FlowModelVersionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.bpmn.model.BpmnModel;
@@ -39,6 +40,8 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
     
     @Autowired(required = false)
     private ProcessEngineConfiguration processEngineConfiguration;
+
+    private final FlowModelVersionService flowModelVersionService;
 
     @Override
     public IPage<FlowModel> pageFlowModel(Page<FlowModel> page, String modelName, String category, Integer status) {
@@ -124,6 +127,12 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String deployModel(String id) {
+        return deployModel(id, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String deployModel(String id, String changeDescription) {
         FlowModel model = getById(id);
         if (model == null) {
             throw new RuntimeException("流程模型不存在");
@@ -211,8 +220,9 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             model.setVersion(newVersion);
             model.setStatus(1);
             model.setDeployTime(LocalDateTime.now());
-            model.setVersion(model.getVersion() + 1);
             updateById(model);
+
+            flowModelVersionService.insertVersionOnPublish(model, changeDescription);
             
             log.info("部署流程模型成功：{}，部署ID：{}", model.getModelKey(), deployment.getId());
             return deployment.getId();

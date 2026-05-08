@@ -43,6 +43,8 @@ public interface FlowModelService extends IService<FlowModel> {
      */
     String deployModel(String id);
 
+    String deployModel(String id, String changeDescription);
+
     /**
      * 挂起流程模型
      */
