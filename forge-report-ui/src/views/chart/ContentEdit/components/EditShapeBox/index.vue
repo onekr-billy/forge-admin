@@ -99,33 +99,43 @@ const hide = computed(() => {
   .shape-point {
     z-index: 1;
     position: absolute;
-    width: 7px;
-    height: 7px;
-    border: 3px solid v-bind('themeColor');
-    border-radius: 5px;
-    background-color: #fff;
-    transform: translate(-40%, -30%);
-    &.t {
-      width: 30px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background-color: var(--app-theme, #3b82f6);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5), 0 0 6px rgba(var(--app-theme-rgb), 0.5);
+    transform: translate(-50%, -50%);
+    transition: box-shadow 0.15s ease;
+
+    &:hover {
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 12px rgba(var(--app-theme-rgb), 0.7);
+    }
+
+    &.t,
+    &.b {
+      width: 32px;
+      height: 5px;
+      border-radius: 3px;
       transform: translate(-50%, -50%);
     }
-    &.b {
-      width: 30px;
-      transform: translate(-50%, -30%);
-    }
+
     &.l,
     &.r {
-      height: 30px;
+      width: 5px;
+      height: 32px;
+      border-radius: 3px;
+      transform: translate(-50%, -50%);
     }
-    &.r {
-      transform: translate(-20%, -50%);
-    }
-    &.l {
-      transform: translate(-45%, -50%);
-    }
+
+    &.lt,
+    &.lb,
     &.rt,
     &.rb {
-      transform: translate(-30%, -30%);
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--app-theme, #3b82f6);
+      background-color: #fff;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
     }
   }
   /* 选中 */
@@ -143,22 +153,24 @@ const hide = computed(() => {
     }
 
     .shape-modal-select {
-      opacity: 0.1;
+      opacity: 0.08;
       top: 2px;
       left: 2px;
       &.active {
-        background-color: v-bind('themeColor');
+        background-color: var(--app-theme, #3b82f6);
       }
     }
     .shape-modal-change {
       border: 2px solid rgba(0, 0, 0, 0);
+      border-radius: 4px;
       &.selectActive,
       &.hoverActive {
-        border-color: v-bind('themeColor');
+        border-color: var(--app-theme, #3b82f6);
         border-width: 2px;
+        box-shadow: 0 0 8px rgba(var(--app-theme-rgb), 0.15);
       }
       &.hoverActive {
-        border-style: dotted;
+        border-style: dashed;
       }
       &.selectActive {
         border-style: solid;

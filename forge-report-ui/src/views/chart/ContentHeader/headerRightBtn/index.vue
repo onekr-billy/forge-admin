@@ -1,12 +1,21 @@
 <template>
-  <n-space class="go-mt-0" :wrap="false">
-    <n-button v-for="item in comBtnList" :key="item.title" :type="item.type" ghost @click="item.event">
+  <div class="header-right-actions">
+    <span class="action-label">输出</span>
+    <n-button
+      v-for="item in comBtnList"
+      :key="item.title"
+      class="action-btn"
+      :class="{ publish: item.title === '发布' }"
+      :type="item.type"
+      ghost
+      @click="item.event"
+    >
       <template #icon>
         <component :is="item.icon"></component>
       </template>
       <span>{{ item.title }}</span>
     </n-button>
-  </n-space>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -148,7 +157,47 @@ const comBtnList = computed(() => {
 </script>
 
 <style lang="scss" scoped>
-.align-center {
-  margin-top: -4px;
+.header-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--app-theme-rgb), 0.12);
+  background:
+    linear-gradient(90deg, rgba(var(--app-theme-rgb), 0.08), transparent),
+    rgba(2, 6, 23, 0.3);
+
+  .action-label {
+    padding: 0 7px 0 10px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    @include fetch-color(4);
+  }
+
+  :deep(.n-button) {
+    height: 32px;
+    border-radius: 999px;
+    padding: 0 14px;
+    border-color: rgba(var(--app-theme-rgb), 0.16);
+    background: rgba(15, 23, 42, 0.36);
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    transition: all 0.22s ease;
+
+    &:hover {
+      border-color: rgba(var(--app-theme-rgb), 0.34);
+      background: rgba(var(--app-theme-rgb), 0.1);
+      box-shadow: 0 0 16px rgba(var(--app-theme-rgb), 0.16);
+      transform: translateY(-1px);
+    }
+  }
+
+  .publish {
+    background:
+      linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.22), rgba(167, 139, 250, 0.16)),
+      rgba(15, 23, 42, 0.5);
+    box-shadow: 0 0 18px rgba(var(--app-theme-rgb), 0.14);
+  }
 }
 </style>

@@ -52,7 +52,7 @@
   <chart-data-matching-and-show :show="showMatching && !loading" :ajax="true"></chart-data-matching-and-show>
 
   <!-- 骨架图 -->
-  <go-skeleton :load="loading" :repeat="3"></go-skeleton>
+  <fg-skeleton :load="loading" :repeat="3"></fg-skeleton>
 
   <!-- 编辑 / 新增弹窗 -->
   <chart-data-pond-control v-model:modelShow="controlModel" @sendHandle="sendHandle"></chart-data-pond-control>
@@ -155,32 +155,54 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   .n-card-shallow {
+    position: relative;
     &.n-card {
-      @extend .go-background-filter;
+      border-radius: 12px;
+      border: 1px solid rgba(var(--app-theme-rgb), 0.12);
+      background:
+        linear-gradient(180deg, rgba(var(--app-theme-rgb), 0.04), transparent 50%),
+        rgba(15, 23, 42, 0.22);
       @include deep() {
         .n-card__content {
-          padding: 10px;
+          padding: 14px 12px;
         }
       }
     }
     .edit-text {
       position: absolute;
-      top: 0px;
-      left: 0px;
-      width: 325px;
-      height: 136px;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       cursor: pointer;
       opacity: 0;
-      transition: all 0.3s;
-      @extend .go-background-filter;
-      backdrop-filter: blur(2px) !important;
+      transition: all 0.28s ease;
+      border-radius: 12px;
+      background: rgba(8, 13, 22, 0.76);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      :deep(.n-button) {
+        box-shadow: 0 0 24px rgba(var(--app-theme-rgb), 0.24);
+      }
     }
     &:hover {
-      border-color: v-bind('themeColor');
+      border-color: rgba(var(--app-theme-rgb), 0.28);
       .edit-text {
         opacity: 1;
       }
     }
+  }
+
+  :deep(.go-config-item-box) {
+    margin: 8px 0;
+  }
+
+  :deep(.n-input.n-input--disabled) {
+    opacity: 0.65;
   }
 }
 </style>

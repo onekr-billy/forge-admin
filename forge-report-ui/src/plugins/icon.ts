@@ -71,7 +71,9 @@ import {
   Analytics as AnalyticsIcon,
   AirplaneOutline as AirPlaneOutlineIcon,
   Sparkles as SparklesIcon,
-  SparklesOutline as SparklesOutlineIcon
+  SparklesOutline as SparklesOutlineIcon,
+  ArrowUndo as ArrowUndoIcon,
+  ArrowRedo as ArrowRedoIcon
 } from '@vicons/ionicons5'
 
 import {
@@ -255,7 +257,11 @@ const ionicons5 = {
   // AI 闪烁 Outline
   SparklesOutlineIcon,
   // 向右
-  ChevronForwardIcon
+  ChevronForwardIcon,
+  // 撤销
+  ArrowUndoIcon,
+  // 重做
+  ArrowRedoIcon
 }
 
 const carbon = {

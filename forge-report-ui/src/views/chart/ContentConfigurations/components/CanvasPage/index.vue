@@ -1,106 +1,131 @@
 <template>
   <div class="go-canvas-setting">
-    <n-form inline :label-width="45" size="small" label-placement="left">
-      <n-form-item label="宽度">
-        <!-- 尺寸选择 -->
-        <n-input-number
-          size="small"
-          v-model:value="canvasConfig.width"
-          :disabled="editCanvas.lockScale"
-          :validator="validator"
-          @update:value="changeSizeHandle"
-        ></n-input-number>
-      </n-form-item>
-      <n-form-item label="高度">
-        <n-input-number
-          size="small"
-          v-model:value="canvasConfig.height"
-          :disabled="editCanvas.lockScale"
-          :validator="validator"
-          @update:value="changeSizeHandle"
-        ></n-input-number>
-      </n-form-item>
-    </n-form>
-
-    <div class="upload-box">
-      <n-upload
-        v-model:file-list="uploadFileListRef"
-        :show-file-list="false"
-        :customRequest="customRequest"
-        :onBeforeUpload="beforeUploadHandle"
-      >
-        <n-upload-dragger>
-          <img v-if="canvasConfig.backgroundImage" class="upload-show" :src="canvasConfig.backgroundImage" alt="背景" />
-          <div class="upload-img" v-show="!canvasConfig.backgroundImage">
-            <img src="@/assets/images/canvas/noImage.png" />
-            <n-text class="upload-desc" depth="3">
-              背景图需小于 {{ backgroundImageSize }}M ，格式为 png/jpg/gif 的文件
-            </n-text>
-          </div>
-        </n-upload-dragger>
-      </n-upload>
+    <div class="canvas-overview">
+      <div>
+        <span class="overview-label">画布尺寸</span>
+        <strong>{{ canvasConfig.width }} x {{ canvasConfig.height }}</strong>
+      </div>
+      <n-button size="tiny" secondary @click="fitCanvasHandle">适配视图</n-button>
     </div>
-    <n-space vertical :size="12">
-      <n-space>
-        <n-text>背景颜色</n-text>
-        <div class="picker-height">
-          <n-color-picker
-            v-if="!switchSelectColorLoading"
+
+    <section class="canvas-section size-section">
+      <div class="section-title">
+        <span>SIZE</span>
+        <strong>基础尺寸</strong>
+      </div>
+      <div class="size-grid">
+        <label>
+          <span>宽度</span>
+          <n-input-number
             size="small"
-            style="width: 250px"
-            v-model:value="canvasConfig.background"
-            :showPreview="true"
-            :swatches="swatchesColors"
-          ></n-color-picker>
-        </div>
-      </n-space>
-      <n-space>
-        <n-text>应用类型</n-text>
-        <n-select
-          size="small"
-          style="width: 250px"
-          v-model:value="selectColorValue"
-          :disabled="!canvasConfig.backgroundImage"
-          :options="selectColorOptions"
-          @update:value="selectColorValueHandle"
-        />
-      </n-space>
-      <n-space>
-        <n-text>背景控制</n-text>
-        <n-button class="clear-btn" size="small" :disabled="!canvasConfig.backgroundImage" @click="clearImage">
-          清除背景
-        </n-button>
-        <n-button class="clear-btn" size="small" :disabled="!canvasConfig.background" @click="clearColor">
-          清除颜色
-        </n-button>
-      </n-space>
-      <n-space>
-        <n-text>适配方式</n-text>
-        <n-button-group>
-          <n-button
-            v-for="item in previewTypeList"
-            :key="item.key"
-            :type="canvasConfig.previewScaleType === item.key ? 'primary' : 'tertiary'"
-            ghost
+            v-model:value="canvasConfig.width"
+            :disabled="editCanvas.lockScale"
+            :validator="validator"
+            @update:value="changeSizeHandle"
+          ></n-input-number>
+        </label>
+        <label>
+          <span>高度</span>
+          <n-input-number
             size="small"
-            @click="selectPreviewType(item.key)"
+            v-model:value="canvasConfig.height"
+            :disabled="editCanvas.lockScale"
+            :validator="validator"
+            @update:value="changeSizeHandle"
+          ></n-input-number>
+        </label>
+      </div>
+    </section>
+
+    <section class="canvas-section background-section">
+      <div class="section-title">
+        <span>BACKGROUND</span>
+        <strong>背景设置</strong>
+      </div>
+      <div class="background-layout">
+        <div class="upload-box">
+          <n-upload
+            v-model:file-list="uploadFileListRef"
+            :show-file-list="false"
+            :customRequest="customRequest"
+            :onBeforeUpload="beforeUploadHandle"
           >
-            <n-tooltip :show-arrow="false" trigger="hover">
-              <template #trigger>
-                <n-icon class="select-preview-icon" size="18">
-                  <component :is="item.icon"></component>
-                </n-icon>
-              </template>
-              {{ item.desc }}
-            </n-tooltip>
-          </n-button>
-        </n-button-group>
-      </n-space>
-    </n-space>
+            <n-upload-dragger>
+              <img v-if="canvasConfig.backgroundImage" class="upload-show" :src="canvasConfig.backgroundImage" alt="背景" />
+              <div class="upload-img" v-show="!canvasConfig.backgroundImage">
+                <img src="@/assets/images/canvas/noImage.png" />
+                <n-text class="upload-desc" depth="3">
+                  png / jpg / gif，{{ backgroundImageSize }}M 内
+                </n-text>
+              </div>
+            </n-upload-dragger>
+          </n-upload>
+        </div>
+        <div class="background-controls">
+          <label>
+            <span>背景颜色</span>
+            <div class="picker-height">
+              <n-color-picker
+                v-if="!switchSelectColorLoading"
+                size="small"
+                v-model:value="canvasConfig.background"
+                :showPreview="true"
+                :swatches="swatchesColors"
+              ></n-color-picker>
+            </div>
+          </label>
+          <label>
+            <span>应用类型</span>
+            <n-select
+              size="small"
+              v-model:value="selectColorValue"
+              :disabled="!canvasConfig.backgroundImage"
+              :options="selectColorOptions"
+              @update:value="selectColorValueHandle"
+            />
+          </label>
+          <div class="background-actions">
+            <n-button class="clear-btn" size="small" :disabled="!canvasConfig.backgroundImage" @click="clearImage">
+              清除背景
+            </n-button>
+            <n-button class="clear-btn" size="small" :disabled="!canvasConfig.background" @click="clearColor">
+              清除颜色
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="canvas-section preview-section">
+      <div class="section-title">
+        <span>PREVIEW</span>
+        <strong>适配方式</strong>
+      </div>
+      <div class="preview-type-grid">
+        <button
+          v-for="item in previewTypeList"
+          :key="item.key"
+          class="preview-type-card"
+          :class="{ active: canvasConfig.previewScaleType === item.key }"
+          type="button"
+          @click="selectPreviewType(item.key)"
+        >
+          <n-icon size="18">
+            <component :is="item.icon"></component>
+          </n-icon>
+          <span>{{ item.title }}</span>
+        </button>
+      </div>
+    </section>
 
     <!-- 滤镜 -->
-    <styles-setting :isCanvas="true" :chartStyles="canvasConfig"></styles-setting>
-    <n-divider style="margin: 10px 0"></n-divider>
+    <section class="canvas-section filter-section">
+      <div class="section-title">
+        <span>FILTER</span>
+        <strong>滤镜效果</strong>
+      </div>
+      <styles-setting :isCanvas="true" :chartStyles="canvasConfig"></styles-setting>
+    </section>
 
     <!-- 主题选择和全局配置 -->
     <n-tabs class="tabs-box" size="small" type="segment">
@@ -288,56 +313,252 @@ const customRequest = (options: UploadCustomRequestOptions) => {
 const selectPreviewType = (key: PreviewScaleEnum) => {
   chartEditStore.setEditCanvasConfig(EditCanvasConfigEnum.PREVIEW_SCALE_TYPE, key)
 }
+
+const fitCanvasHandle = () => {
+  chartEditStore.computedScale()
+}
 </script>
 
 <style lang="scss" scoped>
 $uploadWidth: 326px;
 $uploadHeight: 193px;
+
 @include go(canvas-setting) {
-  padding-top: 20px;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .canvas-overview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+    background:
+      linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.08), transparent),
+      rgba(15, 23, 42, 0.28);
+
+    .overview-label {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 10px;
+      letter-spacing: 1px;
+      @include fetch-color(4);
+    }
+
+    strong {
+      font-size: 17px;
+      color: var(--app-theme, $--color-primary);
+      font-family: 'Courier New', monospace;
+      font-weight: 700;
+      text-shadow: 0 0 10px rgba(var(--app-theme-rgb), 0.24);
+    }
+  }
+
+  .canvas-section {
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    background: rgba(15, 23, 42, 0.16);
+
+    .section-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 14px;
+
+      span {
+        font-size: 9px;
+        line-height: 1;
+        letter-spacing: 1px;
+        @include fetch-color(4);
+      }
+
+      strong {
+        font-size: 14px;
+        line-height: 17px;
+        color: rgba(226, 232, 240, 0.92);
+        font-weight: 650;
+      }
+    }
+  }
+
+  .size-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+
+      > span {
+        font-size: 11px;
+        @include fetch-color(3);
+        padding-left: 2px;
+      }
+    }
+  }
+
+  .background-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   .upload-box {
     cursor: pointer;
-    margin-bottom: 20px;
     @include deep() {
       .n-upload-dragger {
         padding: 5px;
         width: $uploadWidth;
-        background-color: rgba(0, 0, 0, 0);
+        border-radius: 10px;
+        border-color: rgba(var(--app-theme-rgb), 0.12);
+        background:
+          radial-gradient(circle at center, rgba(var(--app-theme-rgb), 0.06), transparent 66%),
+          rgba(2, 6, 23, 0.14);
+        transition: border-color 0.22s ease;
+
+        &:hover {
+          border-color: rgba(var(--app-theme-rgb), 0.24);
+        }
       }
     }
     .upload-show {
       width: -webkit-fill-available;
       height: $uploadHeight;
-      border-radius: 5px;
+      border-radius: 6px;
+      object-fit: cover;
     }
     .upload-img {
       display: flex;
       flex-direction: column;
       align-items: center;
       img {
-        height: 150px;
+        height: 140px;
+        opacity: 0.6;
       }
       .upload-desc {
         padding: 10px 0;
       }
     }
   }
+
+  .background-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+
+      > span {
+        font-size: 12px;
+        @include fetch-color(3);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .picker-height {
+        min-height: 35px;
+        min-width: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+      }
+    }
+
+    .background-actions {
+      display: flex;
+      gap: 8px;
+
+      .clear-btn {
+        flex: 1;
+        height: 32px;
+        border-radius: 8px;
+        font-size: 12px;
+        border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+        background: rgba(15, 23, 42, 0.28);
+        color: rgba(203, 213, 225, 0.7);
+        transition: all 0.2s ease;
+
+        &:hover:not(:disabled) {
+          border-color: rgba(var(--app-theme-rgb), 0.24);
+          color: rgba(255, 255, 255, 0.9);
+        }
+
+        &:disabled {
+          opacity: 0.35;
+        }
+      }
+    }
+  }
+
+  .preview-type-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+
+    .preview-type-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px 8px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      background: rgba(15, 23, 42, 0.22);
+      cursor: pointer;
+      color: rgba(203, 213, 225, 0.64);
+      transition: all 0.22s ease;
+
+      span {
+        font-size: 11px;
+        line-height: 1;
+      }
+
+      &:hover {
+        color: rgba(255, 255, 255, 0.88);
+        border-color: rgba(var(--app-theme-rgb), 0.2);
+        background: rgba(var(--app-theme-rgb), 0.06);
+        transform: translateY(-1px);
+      }
+
+      &.active {
+        color: #fff;
+        border-color: rgba(var(--app-theme-rgb), 0.38);
+        background:
+          linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.22), rgba(var(--app-theme-rgb), 0.06)),
+          rgba(15, 23, 42, 0.48);
+        box-shadow: 0 6px 16px rgba(var(--app-theme-rgb), 0.1);
+      }
+    }
+  }
+
   .icon-position {
     padding-top: 2px;
   }
-  .picker-height {
-    min-height: 35px;
-  }
-  .clear-btn {
-    padding-left: 2.25em;
-    padding-right: 2.25em;
-  }
-  .select-preview-icon {
-    padding-right: 0.68em;
-    padding-left: 0.68em;
-  }
+
   .tabs-box {
-    margin-top: 20px;
+    margin-top: 4px;
+    padding: 10px 2px 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    background: rgba(15, 23, 42, 0.16);
+
+    @include deep() {
+      .n-tabs-nav {
+        border-radius: 10px;
+        padding: 2px 4px;
+      }
+    }
   }
 }
 </style>

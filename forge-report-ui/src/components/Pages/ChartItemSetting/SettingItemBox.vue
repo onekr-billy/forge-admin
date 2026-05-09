@@ -8,10 +8,8 @@
     </n-text>
     <div
       class="item-right"
-      :style="{
-        gridTemplateColumns: alone ? '1fr' : '1fr 1fr',
-        ...itemRightStyle
-      }"
+      :class="{ 'item-right--alone': alone }"
+      :style="{ ...itemRightStyle }"
     >
       <slot></slot>
     </div>
@@ -38,22 +36,30 @@ defineProps({
 </script>
 
 <style lang="scss" scoped>
-$leftWidth: 60px;
+$leftWidth: 64px;
 @include go('config-item-box') {
   position: relative;
   display: flex;
-  margin: 20px 0;
+  gap: 8px;
+  margin: 14px 0;
   .item-left {
-    width: $leftWidth;
+    flex: 0 0 $leftWidth;
     text-align: left;
     margin-top: 4px;
-    margin-left: 10px;
     font-size: 12px;
+    letter-spacing: 0.3px;
+    color: rgba(203, 213, 225, 0.64);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .item-right {
+    flex: 1;
+    min-width: 0;
     display: grid;
+    grid-template-columns: 1fr;
     grid-column-gap: 10px;
-    width: calc(100% - #{$leftWidth});
+    grid-row-gap: 4px;
   }
 }
 </style>

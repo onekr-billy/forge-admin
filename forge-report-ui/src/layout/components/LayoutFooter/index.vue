@@ -14,7 +14,10 @@
   justify-content: center;
   align-items: center;
   width: 100%;
-  padding: 0 40px;
+  padding: 0 24px;
   height: $--footer-height;
+  font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  @include fetch-bg-color('background-color1');
 }
 </style>

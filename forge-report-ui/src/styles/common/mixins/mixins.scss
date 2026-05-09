@@ -82,3 +82,11 @@
     border: 1px solid themed($target);
   }
 }
+
+//获取主题文字颜色
+@mixin fetch-color($level: '') {
+  $key: if($level == '', 'color', 'color-#{$level}');
+  @include themeify {
+    color: themed($key);
+  }
+}

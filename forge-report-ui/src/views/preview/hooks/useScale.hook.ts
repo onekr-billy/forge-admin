@@ -59,7 +59,7 @@ export const useScale = (localStorageInfo: ChartEditStorageType) => {
   onMounted(() => {
     switch (localStorageInfo.editCanvasConfig.previewScaleType) {
       case PreviewScaleEnum.FIT:
-        ;(() => {
+        (() => {
           const { calcRate, windowResize, unWindowResize } = usePreviewFitScale(
             width.value as number,
             height.value as number,
@@ -75,7 +75,7 @@ export const useScale = (localStorageInfo: ChartEditStorageType) => {
         })()
         break
       case PreviewScaleEnum.SCROLL_Y:
-        ;(() => {
+        (() => {
           const { calcRate, windowResize, unWindowResize } = usePreviewScrollYScale(
             width.value as number,
             height.value as number,
@@ -97,7 +97,7 @@ export const useScale = (localStorageInfo: ChartEditStorageType) => {
 
         break
       case PreviewScaleEnum.SCROLL_X:
-        ;(() => {
+        (() => {
           const { calcRate, windowResize, unWindowResize } = usePreviewScrollXScale(
             width.value as number,
             height.value as number,
@@ -119,7 +119,7 @@ export const useScale = (localStorageInfo: ChartEditStorageType) => {
 
         break
       case PreviewScaleEnum.FULL:
-        ;(() => {
+        (() => {
           const { calcRate, windowResize, unWindowResize } = usePreviewFullScale(
             width.value as number,
             height.value as number,

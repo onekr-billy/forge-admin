@@ -46,18 +46,51 @@
   box-sizing: border-box;
 }
 
-// 毛玻璃
+// 毛玻璃面板
 .go-background-filter {
   backdrop-filter: $--filter-blur-base;
+  -webkit-backdrop-filter: $--filter-blur-base;
   @include fetch-bg-color("filter-color");
   box-shadow: $--border-shadow;
+  border: $--border-glass;
+  border-radius: $--border-radius-base;
 }
 
-// 毛玻璃
+// 轻量毛玻璃
 .go-background-filter-shallow {
   backdrop-filter: $--filter-blur-base;
+  -webkit-backdrop-filter: $--filter-blur-base;
   @include fetch-bg-color("filter-color-shallow");
-  box-shadow: $--border-shadow;
+  box-shadow: $--border-shadow-sm;
+  border: $--border-glass;
+}
+
+// 霓虹发光玻璃面板（hover 发光）
+.go-glass-panel {
+  @extend .go-background-filter;
+  transition: all 0.3s ease;
+  &:hover {
+    border-color: rgba(var(--app-theme-rgb), 0.2);
+    box-shadow: $--border-shadow, $--glow-primary;
+  }
+}
+
+// 霓虹发光边框
+.go-border-glow {
+  border: $--border-glass-active;
+  box-shadow: $--glow-border-primary;
+}
+
+// 霓虹强调色文字
+.go-text-neon {
+  color: var(--app-theme, $--color-primary);
+  text-shadow: 0 0 8px rgba(var(--app-theme-rgb, 0, 212, 255), 0.4);
+}
+
+// 紫霓虹文字
+.go-text-accent {
+  color: $--color-accent;
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.4);
 }
 
 // 边框圆角

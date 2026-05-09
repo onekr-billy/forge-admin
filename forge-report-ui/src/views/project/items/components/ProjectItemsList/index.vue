@@ -8,17 +8,23 @@
       responsive="screen"
     >
       <n-grid-item v-for="(item, index) in list" :key="item.id">
-        <project-items-card
-          :cardData="item"
-          @resize="resizeHandle"
-          @delete="deleteHandle($event, index)"
-          @edit="editHandle"
-          @refresh="loadList"
-        ></project-items-card>
+        <div class="go-float-up" :style="{ animationDelay: `${index * 0.06}s` }">
+          <project-items-card
+            :cardData="item"
+            @resize="resizeHandle"
+            @delete="deleteHandle($event, index)"
+            @edit="editHandle"
+            @refresh="loadList"
+          ></project-items-card>
+        </div>
       </n-grid-item>
     </n-grid>
-    <div v-else class="go-flex-center" style="min-height: 240px">
-      <n-spin size="large" />
+    <div v-else class="go-flex-center list-loading">
+      <n-spin size="large">
+        <template #description>
+          <span style="color: #64748b; margin-top: 12px; display: block;">加载项目数据...</span>
+        </template>
+      </n-spin>
     </div>
     <div class="list-pagination">
       <n-pagination
@@ -50,20 +56,21 @@ const { modalData, modalShow, closeModal, resizeHandle, editHandle } = useModalD
 </script>
 
 <style lang="scss" scoped>
-$contentHeight: 250px;
 @include go('items-list') {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  min-height: calc(100vh - #{$--header-height} * 2 - 2px);
-  .list-content {
-    position: relative;
-    height: $contentHeight;
+  min-height: calc(100vh - 120px);
+
+  .list-loading {
+    min-height: 400px;
+    flex-direction: column;
   }
+
   .list-pagination {
     display: flex;
     justify-content: flex-end;
-    margin-top: 20px;
+    margin-top: 24px;
+    padding-top: 8px;
   }
 }
 </style>

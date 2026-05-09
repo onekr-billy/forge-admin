@@ -1,5 +1,5 @@
 import { defineAsyncComponent, AsyncComponentLoader } from 'vue'
-import { AsyncLoading, AsyncSkeletonLoading } from '@/components/GoLoading'
+import { AsyncLoading, AsyncSkeletonLoading } from '@/components/FgLoading'
 
 /**
  * * 动态注册组件

@@ -1,21 +1,29 @@
 <template>
   <div class="go-aside-footer">
-    <n-divider class="go-mt-0"></n-divider>
+    <div class="footer-info" v-show="!collapsed">
+      <span class="footer-version">v1.3.2</span>
+    </div>
   </div>
 </template>
 <script setup lang="ts">
-const props = defineProps({
-  collapsed: Boolean
-})
+const props = defineProps({ collapsed: Boolean })
 </script>
 
 <style lang="scss" scoped>
 @include go('aside-footer') {
-  padding-bottom: 20px;
-}
+  padding: 0;
 
-@include dark() {
-  @include go('aside-footer') {
+  .footer-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  .footer-version {
+    font-size: 11px;
+    @include fetch-color(4);
+    letter-spacing: 1px;
   }
 }
 </style>

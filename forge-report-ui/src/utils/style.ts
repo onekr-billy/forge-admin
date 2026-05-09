@@ -118,6 +118,16 @@ export const setHtmlTheme = (themeName?: string) => {
 }
 
 /**
+ * * 设置 CSS 主题色变量
+ */
+export const setAppCssTheme = (color: string) => {
+  const root = window.document.documentElement
+  root.style.setProperty('--app-theme', color)
+  const c = Color(color)
+  root.style.setProperty('--app-theme-rgb', `${c.red()}, ${c.green()}, ${c.blue()}`)
+}
+
+/**
  * * 合并基础颜色和自定义颜色
  * @param chartDefaultColors
  * @param customColor

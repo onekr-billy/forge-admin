@@ -37,7 +37,7 @@
               :title="item.title"
               @click="selectChartHandle(item)"
             >
-              <GoIconify v-if="item.icon" class="list-img" :icon="item.icon" color="#999" width="20" />
+              <FgIconify v-if="item.icon" class="list-img" :icon="item.icon" color="#999" width="20" />
               <chart-glob-image v-else class="list-item-img" :chartConfig="item" />
               <n-text class="list-item-fs" depth="2">{{ item.title }}</n-text>
             </div>
@@ -79,7 +79,7 @@ import { isString, addEventListener, removeEventListener } from '@/utils'
 import { fetchConfigComponent, fetchChartComponent } from '@/packages/index'
 import { componentInstall, loadingStart, loadingFinish, loadingError } from '@/utils'
 import { ChartGlobImage } from '@/components/Pages/ChartGlobImage'
-import { GoIconify } from '@/components/GoIconify'
+import { FgIconify } from '@/components/FgIconify'
 
 const props = defineProps({
   menuOptions: {
@@ -202,14 +202,25 @@ $searchWidth: 176px;
 
 @include go('chart-search-box') {
   display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+
   .chart-search {
-    width: $width;
-    margin-right: 10px;
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    margin-right: 0;
     &.chart-search-focus {
-      width: $searchWidth;
+      width: auto;
       &.chart-search {
         margin-right: 0;
       }
+    }
+
+    :deep(.n-input) {
+      border-radius: 999px;
+      background: rgba(2, 6, 23, 0.28);
     }
     @include deep() {
       .chart-search-popover {
@@ -270,10 +281,20 @@ $searchWidth: 176px;
     }
   }
   .btn-group {
+    flex: 0 0 68px;
     width: 68px;
     overflow: hidden;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.22);
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+
     &.btn-group-focus {
-      width: 0px;
+      width: 68px;
+    }
+
+    :deep(.n-button) {
+      border-radius: 999px;
+      border-color: transparent;
     }
   }
 }

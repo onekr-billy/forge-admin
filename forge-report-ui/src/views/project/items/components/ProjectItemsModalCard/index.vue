@@ -3,235 +3,335 @@
     class="go-modal-box"
     v-model:show="showRef"
     :mask-closable="true"
+    transform-origin="center"
     @afterLeave="closeHandle"
   >
-    <n-card hoverable size="small">
-      <div class="list-content">
-        <!-- 标题 -->
-        <n-space class="list-content-top go-px-0" justify="center">
-          <n-space>
-            <n-text>
-              {{ cardData?.title || '' }}
-            </n-text>
-          </n-space>
-        </n-space>
-        <!-- 顶部按钮 -->
-        <n-space class="list-content-top">
-          <mac-os-control-btn
-            :narrow="true"
-            :hidden="['close']"
-            @remove="closeHandle"
-         ></mac-os-control-btn>
-        </n-space>
-        <!-- 中间 -->
-        <div class="list-content-img">
-          <img
-            :src="imageSrc"
-            :alt="cardData?.title"
-          />
+    <div class="project-modal">
+      <div class="modal-left">
+        <div class="modal-image" @click="doEdit">
+          <img :src="imageSrc" :alt="cardData?.title" />
+          <div class="image-hover-panel">
+            <n-icon size="28"><HammerIcon /></n-icon>
+            <span>点击编辑项目</span>
+          </div>
         </div>
       </div>
-      <template #action>
-        <n-space class="list-footer" justify="space-between">
-          <n-text depth="3">
-            {{ $t('project.last_edit') }}:
-            <n-time :time="new Date()" format="yyyy-MM-dd hh:mm"></n-time>
-          </n-text>
-          <!-- 工具 -->
-          <n-space>
-            <n-text>
+
+      <div class="modal-right">
+        <div class="modal-header">
+          <div class="modal-icon-wrap">
+            <span class="modal-diamond">&#9670;</span>
+          </div>
+          <div>
+            <div class="modal-title">{{ cardData?.title || '' }}</div>
+            <div class="modal-subtitle">项目详情</div>
+          </div>
+          <n-icon size="20" class="modal-close-btn" @click="closeHandle"><CloseIcon /></n-icon>
+        </div>
+
+        <div class="modal-divider"></div>
+
+        <div class="modal-info-grid">
+          <div class="info-item">
+            <span class="info-label">状态</span>
+            <span class="info-value">
               <n-badge
                 class="go-animation-twinkle"
                 dot
-                :color="cardData?.release ? '#34c749' : '#fcbc40'"
-             ></n-badge>
-              {{
-                cardData?.release
-                  ? $t('project.release')
-                  : $t('project.unreleased')
-              }}
-            </n-text>
+                :color="cardData?.release ? '#2ed573' : '#ffa502'"
+                style="margin-right: 6px"
+              />
+              {{ cardData?.release ? $t('project.release') : $t('project.unreleased') }}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">创建时间</span>
+            <span class="info-value">{{ cardData?.createTime || '--' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">项目 ID</span>
+            <span class="info-value id-value">{{ cardData?.id || '--' }}</span>
+          </div>
+        </div>
 
-            <template v-for="item in fnBtnList" :key="item.key">
-              <n-tooltip placement="bottom" trigger="hover">
-                <template #trigger>
-                  <n-button size="small" @click="handleSelect(item.key)">
-                    <template #icon>
-                      <component :is="item.icon"></component>
-                    </template>
-                  </n-button>
-                </template>
-                <component :is="item.label"></component>
-              </n-tooltip>
-            </template>
-          </n-space>
-          <!-- end -->
-        </n-space>
-      </template>
-    </n-card>
+        <div class="modal-divider"></div>
+
+        <div class="modal-actions">
+          <n-button class="action-btn primary" @click="doEdit">
+            <template #icon><n-icon size="16"><HammerIcon /></n-icon></template>
+            编辑
+          </n-button>
+          <n-button class="action-btn" @click="handlePreview">
+            <template #icon><n-icon size="16"><BrowsersOutlineIcon /></n-icon></template>
+            {{ $t('global.r_preview') }}
+          </n-button>
+          <n-button class="action-btn" @click="handlePublish">
+            <template #icon><n-icon size="16"><SendIcon /></n-icon></template>
+            {{ cardData?.release ? '重新发布' : $t('global.r_publish') }}
+          </n-button>
+        </div>
+      </div>
+    </div>
   </n-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onUnmounted } from 'vue'
-import { renderIcon, renderLang, getLocalStorage } from '@/utils'
+import { ref, watch, onUnmounted } from 'vue'
+import { getLocalStorage, fetchPathByName, routerTurnByPath } from '@/utils'
 import { icon } from '@/plugins'
-import { MacOsControlBtn } from '@/components/Tips/MacOsControlBtn'
 import { StorageEnum } from '@/enums/storageEnum'
+import { PreviewEnum } from '@/enums/pageEnum'
+import { publishProjectApi } from '@/api/project'
 
-const { HammerIcon } = icon.ionicons5
+const { HammerIcon, CloseIcon, BrowsersOutlineIcon, SendIcon } = icon.ionicons5
 const showRef = ref(false)
 const emit = defineEmits(['close', 'edit'])
 
 const props = defineProps({
-  modalShow: {
-    required: true,
-    type: Boolean
-  },
-  cardData: {
-    required: true,
-    type: Object
-  }
+  modalShow: { required: true, type: Boolean },
+  cardData: { required: true, type: Object }
 })
 
-watch(
-  () => props.modalShow,
-  newValue => {
-    showRef.value = newValue
-  },
-  {
-    immediate: true
-  }
-)
+watch(() => props.modalShow, v => { showRef.value = v }, { immediate: true })
 
-// 处理url获取
-const requireUrl = (name: string) => {
-  return new URL(`../../../../../assets/images/${name}`, import.meta.url).href
-}
+const requireUrl = (n: string) => new URL(`../../../../../assets/images/${n}`, import.meta.url).href
 
-// 图片src（支持认证）
 const imageSrc = ref('')
-let currentBlobUrl: string | null = null
+let blobUrl: string | null = null
 
-// 判断是否需要认证的图片URL
-const needsAuth = (url: string) => {
-  if (!url) return false
-  if (url.startsWith('data:') || url.startsWith('blob:')) return false
-  if (url.startsWith('http://') || url.startsWith('https://')) return false
-  return url.includes('/api/file/')
-}
+const needsAuth = (u: string) => !(!u || u.startsWith('data:') || u.startsWith('blob:') || u.startsWith('http://') || u.startsWith('https://')) && u.includes('/api/file/')
 
-// 加载带认证的图片
-const loadAuthImage = async (url: string) => {
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl)
-    currentBlobUrl = null
-  }
-
-  if (!url) {
-    imageSrc.value = requireUrl('project/moke-20211219181327.png')
-    return
-  }
-
-  if (!needsAuth(url)) {
-    imageSrc.value = url
-    return
-  }
-
+const loadImg = async (u: string) => {
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null }
+  if (!u) { imageSrc.value = requireUrl('project/moke-20211219181327.png'); return }
+  if (!needsAuth(u)) { imageSrc.value = u; return }
   try {
-    const token = getLocalStorage(StorageEnum.GO_ACCESS_TOKEN_STORE)
-    const response = await fetch(url, {
-      headers: {
-        Authorization: token ? `Bearer ${token}` : ''
-      }
-    })
-
-    if (response.ok) {
-      const blob = await response.blob()
-      currentBlobUrl = URL.createObjectURL(blob)
-      imageSrc.value = currentBlobUrl
-    } else {
-      console.warn('[AuthImage] 图片加载失败', url, response.status)
-      imageSrc.value = requireUrl('project/moke-20211219181327.png')
-    }
-  } catch (error) {
-    console.warn('[AuthImage] 图片加载异常', error)
-    imageSrc.value = requireUrl('project/moke-20211219181327.png')
-  }
+    const t = getLocalStorage(StorageEnum.GO_ACCESS_TOKEN_STORE)
+    const r = await fetch(u, { headers: { Authorization: t ? `Bearer ${t}` : '' } })
+    if (r.ok) { const b = await r.blob(); blobUrl = URL.createObjectURL(b); imageSrc.value = blobUrl }
+    else imageSrc.value = requireUrl('project/moke-20211219181327.png')
+  } catch { imageSrc.value = requireUrl('project/moke-20211219181327.png') }
 }
 
-// 监听 cardData 变化，加载图片
-watch(() => props.cardData?.indexImg, (newUrl) => {
-  loadAuthImage(newUrl)
-}, { immediate: true })
+watch(() => props.cardData?.indexImg, v => loadImg(v), { immediate: true })
+onUnmounted(() => { if (blobUrl) URL.revokeObjectURL(blobUrl) })
 
-// 组件卸载时清理 blob URL
-onUnmounted(() => {
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl)
-  }
-})
+const closeHandle = () => emit('close')
 
-const fnBtnList = reactive([
-  {
-    label: renderLang('global.r_edit'),
-    key: 'edit',
-    icon: renderIcon(HammerIcon)
-  }
-])
-
-const handleSelect = (key: string) => {
-  switch (key) {
-    case 'edit':
-      editHandle()
-      break
-  }
+const handlePreview = () => {
+  const p = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')
+  if (p) routerTurnByPath(p, [String(props.cardData?.id)], undefined, true)
 }
 
-// 编辑处理
-const editHandle = () => {
-  emit('edit', props.cardData)
+const handlePublish = async () => {
+  try {
+    const p = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')
+    if (!p || !props.cardData?.id) return
+    await publishProjectApi(props.cardData.id, `${window.location.origin}${p}/${props.cardData.id}`)
+    window.$message.success(props.cardData.release ? '重新发布成功' : '发布成功')
+  } catch (e: any) { window.$message.error(e?.message || '发布失败') }
 }
 
-// 关闭对话框
-const closeHandle = () => {
-  emit('close')
-}
+const doEdit = () => { emit('edit', props.cardData); closeHandle() }
 </script>
 
 <style lang="scss" scoped>
-$padding: 30px;
-$contentHeight: calc(80vh);
-$contentWidth: calc(82vw);
+.project-modal {
+  display: flex;
+  width: 85vw;
+  max-width: 960px;
+  border-radius: $--border-radius-lg;
+  overflow: hidden;
+  @include fetch-bg-color('background-color1');
+  border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 40px rgba(var(--app-theme-rgb), 0.03);
 
-@include go('modal-box') {
-  width: $contentWidth;
-  .list-content {
-    margin-top: 28px;
-    border-radius: $--border-radius-base;
-    overflow: hidden;
-    @include background-image('background-point');
-    @extend .go-point-bg;
-    &-top {
-      position: absolute;
-      top: 7px;
-      left: 0px;
-      padding-left: 10px;
-      height: 22px;
-      width: $contentWidth;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle at 1px 1px, rgba(var(--app-theme-rgb), 0.025) 1px, transparent 0);
+    background-size: 24px 24px;
+    z-index: 0;
+  }
+}
+
+.modal-left {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.modal-image {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    transition: transform 0.4s ease;
+  }
+
+  &:hover img { transform: scale(1.02); }
+
+  .image-hover-panel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(var(--app-theme-rgb), 0.06);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity 0.3s;
+    color: $--color-primary;
+    font-size: 14px;
+  }
+
+  &:hover .image-hover-panel { opacity: 1; }
+}
+
+.modal-right {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1;
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  @include fetch-bg-color('background-color2');
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+
+  .modal-icon-wrap {
+    flex-shrink: 0;
+  }
+
+  .modal-diamond {
+    font-size: 18px;
+    color: $--color-primary;
+    text-shadow: 0 0 10px rgba(var(--app-theme-rgb), 0.5);
+  }
+
+  .modal-title {
+    font-size: 16px;
+    font-weight: 700;
+    @include fetch-color();
+    letter-spacing: 0.5px;
+  }
+
+  .modal-subtitle {
+    font-size: 10px;
+    @include fetch-color(4);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  .modal-close-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    @include fetch-color(3);
+    cursor: pointer;
+    transition: all 0.2s;
+    &:hover { color: $--color-red; }
+  }
+}
+
+.modal-divider {
+  height: 1px;
+  margin: 0 20px;
+  background: linear-gradient(90deg, transparent, rgba(var(--app-theme-rgb), 0.1), transparent);
+}
+
+.modal-info-grid {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+
+  .info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    .info-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      @include fetch-color(4);
+      font-weight: 600;
     }
-    &-img {
-      @extend .go-flex-center;
-      img {
-        max-height: $contentHeight;
-        min-height: 200px;
-        max-width: 100%;
-        @extend .go-border-radius;
+
+    .info-value {
+      font-size: 13px;
+      @include fetch-color(1);
+      display: flex;
+      align-items: center;
+
+      &.id-value {
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        @include fetch-color(3);
       }
     }
   }
-  .list-footer {
-    line-height: 30px;
+}
+
+.modal-actions {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .action-btn {
+    justify-content: flex-start;
+    width: 100%;
+    border-radius: $--border-radius-sm;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    @include fetch-color(2);
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: rgba(var(--app-theme-rgb), 0.2);
+      color: $--color-primary;
+      background: rgba(var(--app-theme-rgb), 0.04);
+    }
+
+    &.primary {
+      background: rgba(var(--app-theme-rgb), 0.06);
+      border-color: rgba(var(--app-theme-rgb), 0.2);
+      color: $--color-primary;
+      &:hover {
+        background: rgba(var(--app-theme-rgb), 0.12);
+        box-shadow: 0 0 16px rgba(var(--app-theme-rgb), 0.15);
+      }
+    }
+
+    &.danger {
+      &:hover {
+        color: $--color-red;
+        border-color: rgba(255, 71, 87, 0.3);
+        background: rgba(255, 71, 87, 0.06);
+      }
+    }
   }
 }
 </style>

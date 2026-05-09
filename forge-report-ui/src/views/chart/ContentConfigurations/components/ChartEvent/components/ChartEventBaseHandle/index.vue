@@ -27,71 +27,70 @@
   </n-collapse-item>
 
   <!-- 弹窗 -->
-  <n-modal class="go-chart-data-monaco-editor" v-model:show="showModal" :mask-closable="false">
-    <n-card :bordered="false" role="dialog" size="small" aria-modal="true" style="width: 1200px; height: 700px">
+  <n-modal class="go-chart-data-monaco-editor" v-model:show="showModal" :mask-closable="false" style="width: 1100px">
+    <n-card class="event-modal-card" :bordered="false" role="dialog" size="small" aria-modal="true">
       <template #header>
-        <n-space>
-          <n-text>基础事件编辑器</n-text>
-        </n-space>
+        <div class="modal-header">
+          <n-icon size="20" color="var(--app-theme)"><pencil-icon /></n-icon>
+          <n-text strong>基础事件编辑器</n-text>
+        </div>
       </template>
 
-      <template #header-extra> </template>
-      <n-layout has-sider sider-placement="right">
-        <n-layout style="height: 580px; padding-right: 20px">
-          <n-tabs v-model:value="editTab" type="card" tab-style="min-width: 100px;">
-            <!-- 提示 -->
-            <template #suffix>
-              <n-text class="tab-tip" type="warning">提示: ECharts 组件会拦截鼠标事件</n-text>
-            </template>
+      <template #header-extra>
+        <n-tag :bordered="false" type="warning" size="small">ECharts 组件会拦截鼠标事件</n-tag>
+      </template>
+
+      <n-layout has-sider sider-placement="right" class="modal-layout">
+        <n-layout class="editor-pane">
+          <n-tabs v-model:value="editTab" type="segment" size="small">
             <n-tab-pane
               v-for="(eventName, index) in BaseEvent"
               :key="index"
-              :tab="`${EventTypeName[eventName]}-${eventName}`"
+              :tab="EventTypeName[eventName]"
               :name="eventName"
             >
-              <!-- 函数名称 -->
-              <p class="go-pl-3">
-                <span class="func-keyword">async function &nbsp;&nbsp;</span>
-                <span class="func-keyNameWord">{{ eventName }}(mouseEvent,components)&nbsp;&nbsp;{</span>
-              </p>
-              <!-- 编辑主体 -->
-              <monaco-editor v-model:modelValue="baseEvent[eventName]" height="480px" language="javascript" />
-              <!-- 函数结束 -->
-              <p class="go-pl-3 func-keyNameWord">}</p>
+              <div class="func-signature">
+                <span class="func-kw">async function</span>
+                <span class="func-name">{{ eventName }}</span>
+                <span class="func-params">(mouseEvent, components) {</span>
+              </div>
+              <div class="monaco-wrap">
+                <monaco-editor v-model:modelValue="baseEvent[eventName]" height="440px" language="javascript" />
+              </div>
+              <p class="func-close">}</p>
             </n-tab-pane>
           </n-tabs>
         </n-layout>
+
         <n-layout-sider
+          class="modal-sider"
           :collapsed-width="14"
-          :width="340"
+          :width="320"
           show-trigger="bar"
           collapse-mode="transform"
-          content-style="padding: 12px 12px 0px 12px;margin-left: 3px;"
         >
-          <n-tabs default-value="1" justify-content="space-evenly" type="segment">
-            <!-- 验证结果 -->
-            <n-tab-pane tab="验证结果" name="1" size="small">
-              <n-scrollbar trigger="none" style="max-height: 505px">
-                <n-collapse class="go-px-3" arrow-placement="right" :default-expanded-names="[1, 2, 3]">
+          <n-tabs default-value="1" justify-content="space-evenly" type="segment" size="small">
+            <n-tab-pane tab="验证结果" name="1">
+              <n-scrollbar trigger="none" style="max-height: 460px">
+                <n-collapse arrow-placement="right" :default-expanded-names="[1, 2, 3]">
                   <template v-for="error in [validEvents()]" :key="error">
-                    <n-collapse-item title="错误函数" :name="1">
+                    <n-collapse-item title="错误函数" :name="1" style="padding:10px">
                       <n-text depth="3">{{ error.errorFn || '暂无' }}</n-text>
                     </n-collapse-item>
-                    <n-collapse-item title="错误信息" :name="2">
+                    <n-collapse-item title="错误信息" :name="2" style="padding:10px">
                       <n-text depth="3">{{ error.name || '暂无' }}</n-text>
                     </n-collapse-item>
-                    <n-collapse-item title="堆栈信息" :name="3">
+                    <n-collapse-item title="堆栈信息" :name="3" style="padding:10px">
                       <n-text depth="3">{{ error.message || '暂无' }}</n-text>
                     </n-collapse-item>
                   </template>
                 </n-collapse>
               </n-scrollbar>
             </n-tab-pane>
-            <!-- 辅助说明 -->
             <n-tab-pane tab="变量说明" name="2">
-              <n-scrollbar trigger="none" style="max-height: 505px">
-                <n-collapse class="go-px-3" arrow-placement="right" :default-expanded-names="[1, 2]">
-                  <n-collapse-item title="mouseEvent" :name="1">
+              <n-scrollbar trigger="none" style="max-height: 460px">
+                <n-collapse arrow-placement="right" :default-expanded-names="[1]">
+                  <n-collapse-item title="mouseEvent" :name="1" style="padding:10px">
                     <n-text depth="3">鼠标事件对象</n-text>
                   </n-collapse-item>
                 </n-collapse>
@@ -102,20 +101,14 @@
       </n-layout>
 
       <template #action>
-        <n-space justify="space-between">
-          <div class="go-flex-items-center">
-            <n-tag :bordered="false" type="primary">
-              <template #icon>
-                <n-icon :component="DocumentTextIcon" />
-              </template>
-              说明
-            </n-tag>
-            <n-text class="go-ml-2" depth="2">编写方式同正常 JavaScript 写法</n-text>
+        <n-space justify="space-between" class="modal-action">
+          <div class="action-hint">
+            <n-icon size="16" :depth="3"><document-text-icon /></n-icon>
+            <n-text depth="3">编写方式同正常 JavaScript 写法</n-text>
           </div>
-
           <n-space>
-            <n-button size="medium" @click="closeEvents">取消</n-button>
-            <n-button size="medium" type="primary" @click="saveEvents">保存</n-button>
+            <n-button size="small" ghost @click="closeEvents">取消</n-button>
+            <n-button size="small" type="primary" @click="saveEvents">保存</n-button>
           </n-space>
         </n-space>
       </template>

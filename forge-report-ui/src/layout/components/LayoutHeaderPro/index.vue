@@ -10,12 +10,12 @@
       <slot name="ri-left"></slot>
     </template>
     <template #ri-right>
-      <go-user-info></go-user-info>
+      <fg-user-info></fg-user-info>
       <slot name="ri-right"></slot>
     </template>
   </layout-header>
 </template>
 <script setup lang="ts">
 import { LayoutHeader } from '@/layout/components/LayoutHeader'
-import { GoUserInfo } from '@/components/GoUserInfo'
+import { FgUserInfo } from '@/components/FgUserInfo'
 </script>

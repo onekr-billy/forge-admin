@@ -84,22 +84,31 @@ const selectText = computed(() => {
 
 <style lang="scss" scoped>
 $centerHeight: 52px;
-$centerMiniHeight: 28px;
-$textSize: 10px;
+$centerMiniHeight: 34px;
+$textSize: 11px;
 
 @include go(content-layers-list-item) {
   position: relative;
   height: $centerHeight;
-  width: 90%;
-  margin: 5px 5%;
-  margin-bottom: 5px;
-  border-radius: 5px;
+  width: calc(100% - 12px);
+  margin: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  border: 1px solid rgba(0, 0, 0, 0);
+  border: 1px solid rgba(148, 163, 184, 0.11);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.045), transparent 48%),
+    rgba(15, 23, 42, 0.46);
   @extend .go-transition-quick;
+
   &.hover,
   &:hover {
-    @include fetch-bg-color('background-color4');
+    background:
+      linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.14), transparent 56%),
+      rgba(15, 23, 42, 0.54);
+    border-color: rgba(var(--app-theme-rgb), 0.24);
+    box-shadow:
+      0 10px 22px rgba(0, 0, 0, 0.18),
+      inset 0 0 0 1px rgba(var(--app-theme-rgb), 0.06);
   }
   &:hover {
     @include deep() {
@@ -117,38 +126,47 @@ $textSize: 10px;
   }
   .item-content {
     z-index: 1;
-    padding: 6px 5px;
+    padding: 6px;
     justify-content: start !important;
-    width: calc(100% - 10px);
-    height: calc(100% - 10px);
+    width: calc(100% - 12px);
+    height: calc(100% - 12px);
   }
 
   .select-modal {
     width: 100%;
     height: 100%;
-    opacity: 0.3;
-    background-color: v-bind('themeColor');
+    opacity: 0.16;
+    background:
+      linear-gradient(90deg, v-bind('themeColor'), transparent),
+      v-bind('themeColor');
+    border-radius: 8px;
   }
 
   .list-img {
     flex-shrink: 0;
-    height: $centerHeight;
-    border-radius: 5px;
+    width: 42px;
+    height: 38px;
+    border-radius: 6px;
     overflow: hidden;
-    border: none !important;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.14) !important;
     padding: 2px;
-    @include hover-border-color('hover-border-color');
+    background: rgba(2, 6, 23, 0.42);
   }
 
   .list-text {
-    padding-left: 6px;
+    padding-left: 8px;
     font-size: $textSize;
+    color: rgba(226, 232, 240, 0.9);
+    font-weight: 600;
   }
 
   /* 选中样式 */
   &.select {
     border: 1px solid v-bind('themeColor');
     background-color: rgba(0, 0, 0, 0);
+    box-shadow:
+      0 0 16px rgba(var(--app-theme-rgb), 0.16),
+      inset 3px 0 0 v-bind('themeColor');
   }
 
   // mini样式

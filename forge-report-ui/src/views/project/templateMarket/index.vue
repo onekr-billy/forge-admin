@@ -1,13 +1,9 @@
 <template>
   <div class="go-project-template-market">
-    <div class="content-box">
-      <n-space vertical>
-        <img src="https://goviewpro.goviewlink.com/charts-img-db/charts-img-db_id_5pimyysnnh8000.png" style="width: 100%" />
-        <img src="https://goviewpro.goviewlink.com/charts-img-db/charts-img-db_id_izetnl0654w00.png" style="height: 400px" />
-        <n-button text tag="a" href="https://ai.goviewlink.com/saas/?channel=mayun" target="_blank" type="primary">
-          前往 GoViewPro 查看 👆
-        </n-button>
-      </n-space>
+    <div class="market-content">
+      <div class="market-icon">&#9670;</div>
+      <h2 class="market-title go-text-neon">Template Market</h2>
+      <p class="market-desc">模板市场正在建设中，敬请期待</p>
     </div>
   </div>
 </template>
@@ -16,26 +12,32 @@
 
 <style lang="scss" scoped>
 @include go('project-template-market') {
-  box-sizing: border-box;
-  height: calc(100vh - 62px);
-  padding-top: 3vh;
-  .content-box {
-    width: 700px;
-    margin: 0 auto 0;
-    padding: 20px;
-    border-radius: 10px;
-    background: linear-gradient(120deg, rgba(255, 255, 255, 0.15) 0%, rgba(29, 83, 163, 0.3) 99.09%);
-    box-shadow: 0px 0px 6px 6px rgba(0, 0, 0, 0.04);
-    @extend .go-flex-center;
-    img {
-      border-radius: 6px;
-    }
-  }
+  height: calc(100vh - 2px);
+  @extend .go-flex-center;
 }
 
-@include dark() {
-  @include go('project-template-market') {
-    background-color: #18181c;
+.market-content {
+  text-align: center;
+
+  .market-icon {
+    font-size: 48px;
+    color: $--color-primary;
+    text-shadow: 0 0 20px rgba(var(--app-theme-rgb), 0.5);
+    margin-bottom: 16px;
+  }
+
+  .market-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: 2px;
+  }
+
+  .market-desc {
+    font-size: 13px;
+    @include fetch-color(3);
+    margin: 0;
+    letter-spacing: 1px;
   }
 }
 </style>

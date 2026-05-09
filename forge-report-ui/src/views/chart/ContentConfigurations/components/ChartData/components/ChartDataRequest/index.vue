@@ -87,20 +87,64 @@ const onEsc = () => {
 
 <style lang="scss" scoped>
 @include go('chart-data-request') {
-  &.n-card.n-modal,
-  .n-card {
-    @extend .go-background-filter;
+  :deep(.n-card) {
+    border-radius: 16px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.12);
+    background:
+      linear-gradient(180deg, rgba(var(--app-theme-rgb), 0.06), transparent 40%),
+      rgba(10, 14, 23, 0.94);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow:
+      0 0 80px rgba(var(--app-theme-rgb), 0.08),
+      0 24px 60px rgba(0, 0, 0, 0.5);
   }
-  .n-card-shallow {
-    background-color: rgba(0, 0, 0, 0) !important;
+
+  :deep(.n-card__content) {
+    padding: 0 20px;
   }
-  @include deep() {
-    & > .n-card__content {
-      padding-right: 0;
-    }
-    .n-card__content {
-      padding-bottom: 5px;
-    }
+
+  :deep(.n-card__action) {
+    padding: 12px 20px 16px;
+    border-top: 1px solid rgba(var(--app-theme-rgb), 0.08);
+  }
+
+  :deep(.n-button) {
+    border-radius: 8px;
+    transition: all 0.22s ease;
+  }
+
+  :deep(.n-button--primary-type) {
+    box-shadow: 0 0 18px rgba(var(--app-theme-rgb), 0.2);
+  }
+
+  :deep(.n-tag) {
+    border-radius: 6px;
+    padding: 2px 10px;
+  }
+
+  :deep(.n-collapse-item) {
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    background: rgba(15, 23, 42, 0.16);
+  }
+
+  :deep(.n-collapse-item__header) {
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.86);
+  }
+
+  :deep(.n-input),
+  :deep(.n-base-selection) {
+    border-radius: 8px;
+  }
+
+  :deep(.go-config-item-box) {
+    margin: 10px 0;
   }
 }
 </style>

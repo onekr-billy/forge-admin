@@ -56,8 +56,25 @@ const rangeModelStyle = computed(() => {
   transform-origin: left top;
   background-size: cover;
   overflow: hidden;
-  @include fetch-border-color('hover-border-color');
+  border: 1px solid rgba(var(--app-theme-rgb), 0.22);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.025),
+    0 0 28px rgba(var(--app-theme-rgb), 0.08);
   @include fetch-bg-color('background-color2');
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      linear-gradient(90deg, rgba(var(--app-theme-rgb), 0.12), transparent 18%, transparent 82%, rgba(var(--app-theme-rgb), 0.12)),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 16%);
+    mix-blend-mode: screen;
+  }
+
   @include go(edit-range-model) {
     z-index: -1;
     position: absolute;

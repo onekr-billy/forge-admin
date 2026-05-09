@@ -97,11 +97,41 @@ const backHandle = () => {
 
 <style lang="scss" scoped>
 $topOrBottomHeight: 40px;
+$workbenchGapHeight: 24px;
 
 @include go(content-box) {
-  height: calc(100vh - #{$--header-height});
-  margin: 1px;
+  height: calc(100vh - #{$--header-height} - #{$workbenchGapHeight});
+  margin: 0;
   margin-bottom: 0;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+  background: rgba(10, 14, 23, 0.58);
+  backdrop-filter: $--filter-blur-base;
+  -webkit-backdrop-filter: $--filter-blur-base;
+  box-shadow:
+    0 14px 42px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 120px),
+      radial-gradient(circle at 0 0, rgba(var(--app-theme-rgb), 0.08), transparent 220px);
+    opacity: 0.8;
+    z-index: 0;
+  }
+
+  > .top,
+  > .content,
+  > .bottom,
+  > .aside {
+    position: relative;
+    z-index: 1;
+  }
 
   &.bg-depth0 {
     @include fetch-bg-color('background-color1');
@@ -150,9 +180,17 @@ $topOrBottomHeight: 40px;
     flex-wrap: nowrap;
     align-items: center;
     height: $topOrBottomHeight;
-    padding: 0 10px;
+    padding: 0 12px;
     border-top: 1px solid;
-    @include fetch-border-color('hover-border-color');
+    border-color: rgba(var(--app-theme-rgb), 0.08);
+
+    :deep(.n-text) {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--app-theme, $--color-primary);
+      text-shadow: 0 0 8px rgba(var(--app-theme-rgb), 0.28);
+    }
 
     .mt-1 {
       margin-top: 2px;
@@ -161,11 +199,11 @@ $topOrBottomHeight: 40px;
 
   .top {
     border-bottom: 1px solid;
-    @include fetch-border-color('background-color1');
+    border-color: rgba(var(--app-theme-rgb), 0.08);
   }
 
   .content {
-    height: calc(100vh - #{$--header-height});
+    height: calc(100vh - #{$--header-height} - #{$workbenchGapHeight});
     overflow: hidden;
   }
 
@@ -174,11 +212,11 @@ $topOrBottomHeight: 40px;
   }
 
   .content-height-show-top-bottom {
-    height: calc(100vh - #{$--header-height} - #{$topOrBottomHeight});
+    height: calc(100vh - #{$--header-height} - #{$workbenchGapHeight} - #{$topOrBottomHeight});
   }
 
   .content-height-show-both {
-    height: calc(100vh - #{$--header-height} - #{$topOrBottomHeight} - #{$topOrBottomHeight});
+    height: calc(100vh - #{$--header-height} - #{$workbenchGapHeight} - #{$topOrBottomHeight} - #{$topOrBottomHeight});
   }
 }
 </style>

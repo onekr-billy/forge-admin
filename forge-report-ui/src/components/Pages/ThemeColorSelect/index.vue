@@ -4,39 +4,53 @@
       <color-wand-icon></color-wand-icon>
     </n-icon>
   </n-button>
-  <n-modal v-model:show="modelShow">
-    <div class="go-system-color-setting">
-      <n-space justify="space-between">
-        <n-h3 class="title">主题颜色选择</n-h3>
-        <n-icon size="20" class="go-cursor-pointer" @click="modelShow = false">
+  <n-modal
+    v-model:show="modelShow"
+    :mask-closable="true"
+    transform-origin="center"
+  >
+    <div class="color-panel">
+      <div class="panel-header">
+        <div class="header-left">
+          <span class="header-diamond">&#9670;</span>
+          <span class="header-title">主题颜色</span>
+          <div class="header-preview" v-if="appThemeDetail">
+            <span class="preview-dot" :style="{ background: designStore.appTheme }"></span>
+            <span class="preview-name" :style="{ color: designStore.appTheme }">{{ appThemeDetail.name }}</span>
+            <span class="preview-hex">{{ designStore.appTheme }}</span>
+          </div>
+          <div class="header-preview" v-else>
+            <span class="preview-dot" style="background: var(--app-theme)"></span>
+            <span class="preview-name" style="color: var(--app-theme)">电光青</span>
+            <span class="preview-hex">var(--app-theme)</span>
+          </div>
+        </div>
+        <n-icon size="22" class="panel-close" @click="modelShow = false">
           <close-icon></close-icon>
         </n-icon>
-      </n-space>
-      <n-divider></n-divider>
-      <div class="model-content" ref="contentLeftRef">
-        <div class="content-left" v-if="modelShow">
+      </div>
+
+      <div class="panel-body" ref="contentRef">
+        <div class="color-section" v-if="modelShow">
+          <div class="section-label">
+            <span class="label-dot"></span> 推荐色板
+          </div>
+          <color-list :designColor="designColorRecommend" @colorSelectHandle="colorSelectHandle"></color-list>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="color-section" v-if="modelShow">
+          <div class="section-label">
+            <span class="label-dot"></span> 中国色 · 全部 {{ designColorSplit.length }} / {{ designColor.length }}
+          </div>
           <color-list :designColor="designColorSplit" @colorSelectHandle="colorSelectHandle"></color-list>
         </div>
-        <div class="content-right">
-          <div class="color-name-detail">
-            <n-text v-if="appThemeDetail" class="color-name">{{ appThemeDetail.name }}</n-text>
-            <n-text v-else class="color-name">中国色</n-text>
-            <n-text
-              v-if="appThemeDetail"
-              class="color-name-Pinyin"
-            >{{ appThemeDetail.pinyin.toUpperCase() }}</n-text>
-            <div
-              v-if="appThemeDetail"
-              class="select-color"
-              :style="{ backgroundColor: designStore.appTheme }"
-            ></div>
-          </div>
-          <img :src="themeColorLogo" />
-        </div>
       </div>
-      <div class="model-footer">
-        中国色列表来自于：
-        <n-a href="http://zhongguose.com" target="_blank">http://zhongguose.com</n-a>
+
+      <div class="panel-footer">
+        <span class="footer-text">中国色 · zhongguose.com</span>
+        <span class="footer-text">SCROLL 加载更多</span>
       </div>
     </div>
   </n-modal>
@@ -47,31 +61,25 @@ import { ref, computed, watch, toRefs } from 'vue'
 import { useDesignStore } from '@/store/modules/designStore/designStore'
 import { AppThemeColorType } from '@/store/modules/designStore/designStore.d'
 import { icon } from '@/plugins'
-import themeColorLogo from '@/assets/images/exception/theme-color.png'
 import { loadAsyncComponent } from '@/utils'
 import { useScroll } from '@vueuse/core'
 import designColor from '@/settings/designColor.json'
+import designColorRecommend from '@/settings/designColorRecommend.json'
 
-const ColorList = loadAsyncComponent(() =>
-  import('./components/ColorList.vue')
-)
+const ColorList = loadAsyncComponent(() => import('./components/ColorList.vue'))
 const { ColorWandIcon, CloseIcon } = icon.ionicons5
 
 let splitNumber = 50
 
 const designStore = useDesignStore()
 const modelShow = ref(false)
-const contentLeftRef = ref<HTMLElement | null>(null)
+const contentRef = ref<HTMLElement | null>(null)
 const designColorSplit = ref(designColor.slice(0, splitNumber))
 
-const { arrivedState } = useScroll(contentLeftRef, {
-  offset: { bottom: 200 },
-})
+const { arrivedState } = useScroll(contentRef, { offset: { bottom: 200 } })
 const { bottom } = toRefs(arrivedState)
 
-const appThemeDetail = computed(() => {
-  return designStore.getAppThemeDetail
-})
+const appThemeDetail = computed(() => designStore.getAppThemeDetail)
 
 const colorSelectHandle = (color: AppThemeColorType) => {
   designStore.setAppColor(color)
@@ -84,81 +92,154 @@ watch(() => bottom.value, (newData: boolean) => {
   }
 })
 
-watch(() => modelShow.value, (modelShow: boolean) => {
-  if (!modelShow) {
-    splitNumber = 50
-  }
+watch(() => modelShow.value, (show: boolean) => {
+  if (!show) splitNumber = 50
 })
 </script>
 
 <style lang="scss" scoped>
-$height: 85vh;
-@include go("system-color-setting") {
-  position: relative;
+.color-panel {
+  width: 94vw;
+  max-width: 1100px;
+  height: 85vh;
   display: flex;
   flex-direction: column;
-  width: 90%;
-  min-width: 1000px;
-  padding: 20px 25px;
-  height: $height;
-  border-radius: 15px;
+  border-radius: $--border-radius-lg;
   overflow: hidden;
-  @extend .go-background-filter;
-  @include hover-border-color("background-color5");
-  .title {
-    margin: 0;
+  @include fetch-bg-color('background-color');
+  border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+  backdrop-filter: blur(20px);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.6),
+    0 0 32px rgba(var(--app-theme-rgb), 0.04);
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle at 1px 1px, rgba(var(--app-theme-rgb), 0.03) 1px, transparent 0);
+    background-size: 32px 32px;
+    z-index: 0;
   }
-  .model-content {
-    flex: 1;
-    height: calc(#{$height} - 40px - 48px - 36px);
-    overflow: auto;
-    /* 右侧 */
-    .content-right {
-      position: absolute;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      width: 300px;
-      height: 100%;
-      right: 50px;
-      top: 0px;
-      .color-name-detail {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-right: 40px;
-        .go-flex-items-center {
-          flex-direction: column;
-        }
-        .select-color {
-          margin-top: 20px;
-          width: 100px;
-          height: 20px;
-          border-radius: 3px;
-          background-image: url("@/assets/images/exception/texture.png");
-        }
-        .color-name {
-          font-family: serif;
-          font-size: 80px;
-          color: #fff;
-          margin: 0 auto;
-          display: block;
-          width: 110px;
-          text-align: center;
-          background-position: center top;
-          background-repeat: no-repeat;
-        }
-        .color-name-Pinyin {
-          text-align: center;
-          font-family: Georgia;
-          font-size: 16px;
-        }
-      }
+
+  > * { position: relative; z-index: 1; }
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .header-diamond {
+    font-size: 20px;
+    color: $--color-primary;
+    text-shadow: 0 0 10px rgba(var(--app-theme-rgb), 0.5);
+  }
+
+  .header-title {
+    font-size: 18px;
+    font-weight: 700;
+    @include fetch-color();
+    letter-spacing: 2px;
+  }
+
+  .header-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 14px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    margin-left: 10px;
+
+    .preview-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      box-shadow: 0 0 8px currentColor;
+      flex-shrink: 0;
+    }
+
+    .preview-name {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .preview-hex {
+      font-size: 11px;
+      @include fetch-color(3);
+      font-family: 'Courier New', monospace;
     }
   }
-  .model-footer {
-    z-index: 1;
-    text-align: end;
+
+  .panel-close {
+    @include fetch-color(3);
+    cursor: pointer;
+    transition: all 0.2s;
+    &:hover { color: $--color-red; transform: rotate(90deg); }
+  }
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 28px;
+
+  .color-section {
+    margin-bottom: 8px;
+  }
+
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    @include fetch-color(3);
+    margin-bottom: 16px;
+    font-weight: 600;
+
+    .label-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: $--color-accent;
+      box-shadow: 0 0 6px $--color-accent-glow;
+    }
+  }
+
+  .section-divider {
+    height: 1px;
+    margin: 12px 0 24px;
+    background: linear-gradient(90deg, transparent, rgba(var(--app-theme-rgb), 0.08), transparent);
+  }
+}
+
+.panel-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 28px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  flex-shrink: 0;
+
+  .footer-text {
+    font-size: 10px;
+    @include fetch-color(4);
+    letter-spacing: 1px;
   }
 }
 </style>
