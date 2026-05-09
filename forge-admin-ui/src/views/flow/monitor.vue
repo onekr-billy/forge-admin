@@ -125,7 +125,7 @@
     <n-drawer v-model:show="instanceErrorDrawerVisible" :width="900" title="流程错误日志">
       <n-drawer-content title="流程错误日志">
         <template #header>
-          <n-space align="center" justify="space-between" style="width: 100%">
+          <NSpace align="center" justify="space-between" style="width: 100%">
             <span>流程错误日志</span>
             <n-select
               v-model:value="instanceErrorStatusFilter"
@@ -136,7 +136,7 @@
               style="width: 130px"
               @update:value="loadInstanceErrorLogs"
             />
-          </n-space>
+          </NSpace>
         </template>
         <n-data-table
           :columns="errorColumns"
@@ -155,20 +155,36 @@
     <!-- 错误日志详情弹窗 -->
     <n-modal v-model:show="errorDetailVisible" preset="card" title="错误详情" style="width: 800px;">
       <n-descriptions v-if="currentErrorLog" :column="2" label-placement="left" bordered>
-        <n-descriptions-item label="流程实例ID">{{ currentErrorLog.processInstanceId }}</n-descriptions-item>
-        <n-descriptions-item label="节点名称">{{ currentErrorLog.activityName || '-' }}</n-descriptions-item>
-        <n-descriptions-item label="任务名称">{{ currentErrorLog.taskName || '-' }}</n-descriptions-item>
-        <n-descriptions-item label="错误环节">{{ getErrorStageText(currentErrorLog.errorStage) }}</n-descriptions-item>
-        <n-descriptions-item label="错误类型">{{ getErrorTypeText(currentErrorLog.errorType) }}</n-descriptions-item>
+        <n-descriptions-item label="流程实例ID">
+          {{ currentErrorLog.processInstanceId }}
+        </n-descriptions-item>
+        <n-descriptions-item label="节点名称">
+          {{ currentErrorLog.activityName || '-' }}
+        </n-descriptions-item>
+        <n-descriptions-item label="任务名称">
+          {{ currentErrorLog.taskName || '-' }}
+        </n-descriptions-item>
+        <n-descriptions-item label="错误环节">
+          {{ getErrorStageText(currentErrorLog.errorStage) }}
+        </n-descriptions-item>
+        <n-descriptions-item label="错误类型">
+          {{ getErrorTypeText(currentErrorLog.errorType) }}
+        </n-descriptions-item>
         <n-descriptions-item label="状态">
           <NTag :type="getErrorStatusType(currentErrorLog.status)">
             {{ getErrorStatusText(currentErrorLog.status) }}
           </NTag>
         </n-descriptions-item>
-        <n-descriptions-item label="重试次数">{{ currentErrorLog.retryCount || 0 }}</n-descriptions-item>
-        <n-descriptions-item label="重试时间">{{ currentErrorLog.lastRetryTime || '-' }}</n-descriptions-item>
+        <n-descriptions-item label="重试次数">
+          {{ currentErrorLog.retryCount || 0 }}
+        </n-descriptions-item>
+        <n-descriptions-item label="重试时间">
+          {{ currentErrorLog.lastRetryTime || '-' }}
+        </n-descriptions-item>
         <n-descriptions-item label="错误信息" :span="2">
-          <n-text depth="3">{{ currentErrorLog.errorMessage || '-' }}</n-text>
+          <n-text depth="3">
+            {{ currentErrorLog.errorMessage || '-' }}
+          </n-text>
         </n-descriptions-item>
         <n-descriptions-item label="堆栈信息" :span="2">
           <n-code :code="currentErrorLog.stackTrace || '无'" language="text" word-wrap style="max-height: 300px; overflow: auto" />
@@ -199,7 +215,9 @@
       </NSpace>
       <template #footer>
         <NSpace>
-          <NButton @click="retryModalVisible = false">取消</NButton>
+          <NButton @click="retryModalVisible = false">
+            取消
+          </NButton>
           <NButton type="primary" :disabled="!retryReason.trim()" :loading="retrying" @click="confirmRetry">
             确认重试
           </NButton>
@@ -414,7 +432,7 @@
 
 <script setup>
 import * as echarts from 'echarts'
-import { NButton, NSpace, NTag, NDropdown } from 'naive-ui'
+import { NButton, NDropdown, NSpace, NTag } from 'naive-ui'
 import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -709,7 +727,8 @@ function getErrorStageText(stage) {
 }
 
 function getErrorTypeText(errorType) {
-  if (!errorType) return '-'
+  if (!errorType)
+    return '-'
   const simpleName = errorType.replace(/^.*\./, '')
   const map = {
     RuntimeException: '运行时异常',
@@ -759,7 +778,8 @@ function showInstanceErrorLogs(row) {
 }
 
 async function loadInstanceErrorLogs() {
-  if (!currentErrorInstanceId.value) return
+  if (!currentErrorInstanceId.value)
+    return
   instanceErrorLogLoading.value = true
   try {
     const params = {
@@ -1394,7 +1414,10 @@ async function refreshCharts() {
           areaStyle: {
             color: {
               type: 'linear',
-              x: 0, y: 0, x2: 0, y2: 1,
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
               colorStops: [
                 { offset: 0, color: 'rgba(240,160,32,0.25)' },
                 { offset: 1, color: 'rgba(240,160,32,0.02)' },

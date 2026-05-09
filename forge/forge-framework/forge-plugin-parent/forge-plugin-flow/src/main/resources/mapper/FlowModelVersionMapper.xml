@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.starter.flow.mapper.FlowModelVersionMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.starter.flow.entity.FlowModelVersion">
+        <id column="id" property="id"/>
+        <result column="model_id" property="modelId"/>
+        <result column="version" property="version"/>
+        <result column="version_name" property="versionName"/>
+        <result column="version_tag" property="versionTag"/>
+        <result column="bpmn_xml" property="bpmnXml"/>
+        <result column="form_json" property="formJson"/>
+        <result column="change_description" property="changeDescription"/>
+        <result column="deployment_id" property="deploymentId"/>
+        <result column="process_definition_id" property="processDefinitionId"/>
+        <result column="publish_by" property="publishBy"/>
+        <result column="publish_time" property="publishTime"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="del_flag" property="delFlag"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, model_id, version, version_name, version_tag, bpmn_xml, form_json,
+        change_description, deployment_id, process_definition_id, publish_by,
+        publish_time, tenant_id, create_time, del_flag
+    </sql>
+
+    <select id="pageByVersion" resultMap="BaseResultMap">
+        SELECT
+            v.id,
+            v.model_id,
+            v.version,
+            v.version_name,
+            v.version_tag,
+            v.bpmn_xml,
+            v.form_json,
+            v.change_description,
+            v.deployment_id,
+            v.process_definition_id,
+            COALESCE(NULLIF(u.real_name, ''), v.publish_by) AS publish_by,
+            v.publish_time,
+            v.tenant_id,
+            v.create_time,
+            v.del_flag
+        FROM sys_flow_model_version v
+        LEFT JOIN sys_user u ON u.username = v.publish_by
+            AND u.tenant_id = v.tenant_id
+        WHERE v.model_id = #{modelId}
+          AND v.del_flag = 0
+        ORDER BY v.version DESC
+    </select>
+
+    <select id="getMaxVersion" resultType="java.lang.Integer">
+        SELECT MAX(version)
+        FROM sys_flow_model_version
+        WHERE model_id = #{modelId}
+          AND del_flag = 0
+    </select>
+
+    <select id="getVersionDetail" resultMap="BaseResultMap">
+        SELECT
+            v.id,
+            v.model_id,
+            v.version,
+            v.version_name,
+            v.version_tag,
+            v.bpmn_xml,
+            v.form_json,
+            v.change_description,
+            v.deployment_id,
+            v.process_definition_id,
+            COALESCE(NULLIF(u.real_name, ''), v.publish_by) AS publish_by,
+            v.publish_time,
+            v.tenant_id,
+            v.create_time,
+            v.del_flag
+        FROM sys_flow_model_version v
+        LEFT JOIN sys_user u ON u.username = v.publish_by
+            AND u.tenant_id = v.tenant_id
+        WHERE v.id = #{versionId}
+          AND v.del_flag = 0
+    </select>
+
+    <select id="getVersionByModelAndVersion" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_flow_model_version
+        WHERE model_id = #{modelId}
+          AND version = #{version}
+          AND del_flag = 0
+        LIMIT 1
+    </select>
+</mapper>

@@ -23,6 +23,10 @@
         </div>
       </div>
       <div class="header-right">
+        <n-button type="primary" @click="handleAdd">
+          <i class="i-material-symbols:add mr-2" />
+          新增模型
+        </n-button>
         <n-input
           v-model:value="queryParams.modelName"
           placeholder="搜索模型名称或 Key"
@@ -34,37 +38,34 @@
             <i class="i-material-symbols:search" />
           </template>
         </n-input>
-        <n-select
+        <NTreeSelect
           v-model:value="queryParams.category"
           placeholder="流程分类"
           clearable
           class="category-select"
-          :options="categoryOptions"
+          :options="categoryTreeOptions"
+          :default-expand-all="true"
         />
         <n-select
           v-model:value="queryParams.status"
-          placeholder="全部状态"
+          placeholder="状态"
           clearable
           class="status-select"
           :options="statusOptions"
         />
-        <NButton type="primary" class="search-btn" @click="handleSearch">
+        <n-button @click="handleSearch">
           <i class="i-material-symbols:search mr-2" />
           搜索
-        </NButton>
-        <NButton class="reset-btn" @click="handleReset">
+        </n-button>
+        <n-button @click="handleReset">
           <i class="i-material-symbols:refresh mr-2" />
           重置
-        </NButton>
-        <NButton type="primary" class="add-btn" @click="handleAdd">
-          <i class="i-material-symbols:add mr-2" />
-          新增模型
-        </NButton>
+        </n-button>
       </div>
     </div>
 
-    <!-- 卡片网格 -->
-    <n-spin :show="loading">
+    <!-- 模型列表 -->
+    <n-spin :show="loading" class="model-list-spin">
       <div v-if="dataSource.length > 0" class="model-grid">
         <div
           v-for="item in dataSource"
@@ -72,77 +73,71 @@
           class="model-card"
           @click="handleDesign(item)"
         >
-          <!-- 卡片头 -->
           <div class="card-header">
             <div class="card-icon" :class="iconClass(item)">
               <i :class="iconName(item)" />
             </div>
             <span class="status-tag" :class="statusClass(item.status)">
-              {{ statusText[item.status] ?? '未知' }}
+              {{ statusText[item.status] }}
             </span>
           </div>
-
-          <!-- 卡片体 -->
           <div class="card-body">
-            <div class="card-title" :title="item.modelName">
+            <div class="card-title">
               {{ item.modelName }}
             </div>
             <div class="card-key">
               {{ item.modelKey }}
             </div>
-            <div class="card-desc" :title="item.description">
+            <div class="card-desc">
               {{ item.description || '暂无描述' }}
             </div>
           </div>
-
-          <!-- 卡片脚 -->
           <div class="card-footer">
             <div class="card-meta">
-              <span class="meta-item">
-                <i class="i-material-symbols:category-outline" />
-                {{ item.category || '未分类' }}
-              </span>
-              <span class="meta-item">
-                <i class="i-material-symbols:layers-outline" />
+              <div class="meta-item">
+                <i class="i-material-symbols:history-outline" />
+                {{ formatDate(item.updateTime) }}
+              </div>
+              <div class="meta-item">
+                <i class="i-material-symbols:deployed-code-outline" />
                 v{{ item.version || 1 }}
-              </span>
-              <span v-if="item.deployTime" class="meta-item">
-                <i class="i-material-symbols:schedule-outline" />
-                {{ formatDate(item.deployTime) }}
-              </span>
+              </div>
             </div>
-            <div class="card-actions" @click.stop>
-              <NButton size="small" type="primary" @click.stop="handleDesign(item)">
+            <div class="card-actions">
+              <n-button
+                size="small"
+                type="primary"
+                secondary
+                @click.stop="handleDesign(item)"
+              >
                 <i class="i-material-symbols:edit-outline mr-1" />
                 设计
-              </NButton>
-              <NButton
+              </n-button>
+              <n-button
                 v-if="item.status === 0"
                 size="small"
-                type="success"
+                type="primary"
                 @click.stop="handleDeploy(item)"
               >
-                <i class="i-material-symbols:rocket-launch mr-1" />
                 部署
-              </NButton>
-              <NButton
-                v-if="item.status === 1"
+              </n-button>
+              <n-button
+                v-else-if="item.status === 1"
                 size="small"
                 @click.stop="handleViewInstances(item)"
               >
-                <i class="i-material-symbols:visibility-outline mr-1" />
-                实例
-              </NButton>
+                查看实例
+              </n-button>
               <n-dropdown
                 trigger="click"
                 :options="getActionOptions(item)"
-                @select="(key) => handleActionSelect(key, item)"
+                @select="key => handleActionSelect(key, item)"
               >
-                <NButton size="small" quaternary circle @click.stop>
+                <n-button size="small" @click.stop>
                   <template #icon>
-                    <i class="i-material-symbols:more-horiz" />
+                    <NIcon><EllipsisVertical /></NIcon>
                   </template>
-                </NButton>
+                </n-button>
               </n-dropdown>
             </div>
           </div>
@@ -156,10 +151,10 @@
         class="empty-state"
       >
         <template #extra>
-          <NButton type="primary" @click="handleAdd">
+          <n-button type="primary" @click="handleAdd">
             <i class="i-material-symbols:add mr-2" />
             新增模型
-          </NButton>
+          </n-button>
         </template>
       </n-empty>
     </n-spin>
@@ -205,10 +200,11 @@
               />
             </n-form-item-gi>
             <n-form-item-gi label="流程分类" path="category">
-              <n-select
+              <NTreeSelect
                 v-model:value="formData.category"
                 placeholder="请选择分类"
-                :options="categoryOptions"
+                :options="categoryTreeOptions"
+                :default-expand-all="true"
               />
             </n-form-item-gi>
             <n-form-item-gi label="表单类型" path="formType">
@@ -278,14 +274,25 @@
         </template>
       </n-modal>
     </Teleport>
+
+    <VersionHistory
+      v-if="showVersionHistory"
+      :model-id="currentModelId"
+      :current-version="currentModelVersion"
+      @close="showVersionHistory = false"
+      @refresh="fetchData"
+    />
   </div>
 </template>
 
 <script setup>
+import { CopyOutline, CreateOutline, EllipsisVertical, PauseCircleOutline, PlayCircleOutline, TimeOutline, TrashOutline } from '@vicons/ionicons5'
+import { NIcon, NTreeSelect } from 'naive-ui'
 import { h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import flowApi from '@/api/flow'
 import FlowModelStats from '@/components/flow/FlowModelStats.vue'
+import VersionHistory from './version.vue'
 
 const router = useRouter()
 
@@ -301,6 +308,16 @@ const formTypeOptions = [
   { label: '无表单', value: 'none' },
 ]
 const categoryOptions = ref([])
+const categoryTreeOptions = ref([])
+
+function buildTreeSelectOptions(treeData) {
+  return treeData.map(item => ({
+    label: item.categoryName,
+    value: item.id,
+    key: item.id,
+    children: item.children && item.children.length > 0 ? buildTreeSelectOptions(item.children) : undefined,
+  }))
+}
 
 const statusText = { 0: '设计中', 1: '已部署', 2: '已挂起', 3: '已禁用' }
 
@@ -345,30 +362,37 @@ function formatDate(d) {
 }
 
 function getActionOptions(row) {
+  const renderIcon = (icon) => {
+    return () => h(NIcon, null, { default: () => h(icon) })
+  }
   const opts = [
-    { label: '编辑信息', key: 'edit', icon: () => h('i', { class: 'i-material-symbols:edit-outline' }) },
-    { label: '复制模型', key: 'copy', icon: () => h('i', { class: 'i-material-symbols:content-copy-outline' }) },
+    { label: '编辑信息', key: 'edit', icon: renderIcon(CreateOutline) },
+    { label: '版本历史', key: 'versionHistory', icon: renderIcon(TimeOutline) },
+    { label: '复制模型', key: 'copy', icon: renderIcon(CopyOutline) },
   ]
   if (row.status === 1) {
-    opts.push({ label: '挂起', key: 'suspend', icon: () => h('i', { class: 'i-material-symbols:pause-circle-outline' }) })
+    opts.push({ label: '挂起', key: 'suspend', icon: renderIcon(PauseCircleOutline) })
   }
   if (row.status === 2) {
-    opts.push({ label: '激活', key: 'activate', icon: () => h('i', { class: 'i-material-symbols:play-circle-outline' }) })
+    opts.push({ label: '激活', key: 'activate', icon: renderIcon(PlayCircleOutline) })
   }
   opts.push({ type: 'divider', key: 'd1' })
-  opts.push({ label: '删除', key: 'delete', props: { style: 'color: #d03050' } })
+  opts.push({ label: '删除', key: 'delete', icon: renderIcon(TrashOutline), props: { style: 'color: #d03050' } })
   return opts
 }
 
 function handleActionSelect(key, row) {
-  const map = { edit: handleEdit, copy: handleCopy, suspend: handleSuspend, activate: handleActivate, delete: handleDelete }
+  const map = { edit: handleEdit, copy: handleCopy, versionHistory: handleVersionHistory, suspend: handleSuspend, activate: handleActivate, delete: handleDelete }
   map[key]?.(row)
 }
 
 const queryParams = reactive({ modelName: '', category: null, status: null })
 const dataSource = ref([])
 const loading = ref(false)
-const pagination = reactive({ page: 1, pageSize: 12, itemCount: 0 })
+const pagination = reactive({ page: 1, pageSize: 20, itemCount: 0 })
+const showVersionHistory = ref(false)
+const currentModelId = ref('')
+const currentModelVersion = ref(null)
 
 const totalCount = ref(0)
 const designingCount = ref(0)
@@ -378,8 +402,9 @@ const disabledCount = ref(0)
 
 async function fetchCategories() {
   try {
-    const res = await flowApi.getEnabledCategories()
+    const res = await flowApi.getCategoryTreeSelect(false)
     if (res.code === 200) {
+      categoryTreeOptions.value = buildTreeSelectOptions(res.data || [])
       categoryOptions.value = (res.data || []).map(item => ({
         label: item.categoryName,
         value: item.categoryCode,
@@ -599,6 +624,12 @@ async function handleDelete(row) {
   })
 }
 
+function handleVersionHistory(row) {
+  currentModelId.value = row.id
+  currentModelVersion.value = row.version
+  showVersionHistory.value = true
+}
+
 onMounted(() => {
   fetchCategories()
   fetchData()
@@ -607,59 +638,67 @@ onMounted(() => {
 
 <style scoped>
 .flow-page {
-  padding: 20px;
-  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 14px;
+  padding: 18px;
+  background: #f5f7fb;
 }
 
 .page-header {
   background: #fff;
-  border-radius: 12px;
-  padding: 16px 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-  margin-bottom: 16px;
+  gap: 16px;
+  flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  min-width: 120px;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .title-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 18px;
+  color: #475569;
+  font-size: 17px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
 }
 
 .page-title {
   font-size: 18px;
-  font-weight: 700;
-  color: #0f172a;
+  font-weight: 600;
+  color: #111827;
   margin: 0;
+  letter-spacing: 0;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .search-input {
@@ -667,116 +706,132 @@ onMounted(() => {
 }
 
 .category-select {
-  width: 150px;
+  width: 148px;
 }
 
 .status-select {
-  width: 130px;
+  width: 124px;
 }
 
 .model-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-@media (max-width: 1400px) {
-  .model-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 1000px) {
-  .model-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  align-content: start;
+  gap: 12px;
+  padding: 4px;
 }
 
 .model-card {
   background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  min-height: 180px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .model-card:hover {
-  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.1);
-  border-color: #cbd5e1;
-  transform: translateY(-2px);
+  border-color: #b8c2cc;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
 }
 
 .card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .card-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
-  color: #fff;
+  font-size: 18px;
   flex-shrink: 0;
+  border: 1px solid transparent;
 }
 
 .icon-bg-0 {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 
 .icon-bg-1 {
-  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
+  color: #0891b2;
+  background: #ecfeff;
+  border-color: #a5f3fc;
 }
 
 .icon-bg-2 {
-  background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
 }
 
 .icon-bg-3 {
-  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .icon-bg-4 {
-  background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 .icon-bg-5 {
-  background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
 }
 
 .status-tag {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 6px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1;
+  border: 1px solid transparent;
 }
 
 .status-tag.designing {
-  background: #fef3c7;
-  color: #b45309;
+  background: #fffbeb;
+  color: #92400e;
+  border-color: #fde68a;
 }
 
 .status-tag.deployed {
-  background: #dcfce7;
-  color: #15803d;
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #bbf7d0;
 }
 
 .status-tag.suspended {
-  background: #f1f5f9;
-  color: #64748b;
+  background: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
 }
 
 .status-tag.disabled {
-  background: #fee2e2;
+  background: #fef2f2;
   color: #b91c1c;
+  border-color: #fecaca;
 }
 
 .card-body {
@@ -788,19 +843,20 @@ onMounted(() => {
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: #111827;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 22px;
 }
 
 .card-key {
   font-size: 12px;
   color: #64748b;
-  font-family: monospace;
-  letter-spacing: 0.3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -808,13 +864,14 @@ onMounted(() => {
 
 .card-desc {
   font-size: 12px;
-  color: #94a3b8;
+  color: #6b7280;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  line-height: 1.5;
-  margin-top: 2px;
+  line-height: 18px;
+  min-height: 36px;
+  margin-top: 4px;
 }
 
 .card-footer {
@@ -822,15 +879,15 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding-top: 10px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid #eef2f7;
   gap: 8px;
+  min-height: 32px;
 }
 
 .card-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   flex: 1;
   min-width: 0;
 }
@@ -838,9 +895,9 @@ onMounted(() => {
 .meta-item {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   font-size: 11px;
-  color: #94a3b8;
+  color: #64748b;
   white-space: nowrap;
 }
 
@@ -848,17 +905,31 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+}
+
+.card-actions .n-button {
+  font-size: 12px;
+  padding: 0 10px;
+  height: 28px;
 }
 
 .empty-state {
-  padding: 64px 0;
+  flex: 1;
+  min-height: 320px;
+  padding: 24px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pagination-wrapper {
   display: flex;
   justify-content: end;
-  margin-top: 16px;
+  flex-shrink: 0;
+  padding-top: 2px;
 }
 
 .notify-section {
@@ -872,5 +943,65 @@ onMounted(() => {
 .cursor-help {
   cursor: help;
   color: #64748b;
+}
+
+:deep(.n-spin-container),
+:deep(.n-spin-content) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.model-list-spin {
+  display: flex;
+}
+
+.model-list-spin :deep(.n-spin-container) {
+  flex: 1;
+}
+
+@media (max-width: 1500px) {
+  .model-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .model-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .header-right {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+}
+
+@media (max-width: 760px) {
+  .flow-page {
+    padding: 12px;
+  }
+
+  .model-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-input,
+  .category-select,
+  .status-select {
+    width: 160px;
+  }
+
+  .card-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>
