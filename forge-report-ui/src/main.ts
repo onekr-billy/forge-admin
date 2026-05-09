@@ -4,7 +4,7 @@ import router, { setupRouter } from '@/router'
 import i18n from '@/i18n/index'
 import { setupStore } from '@/store'
 import { setupNaive, setupDirectives, setupCustomComponents, initFunction } from '@/plugins'
-import { GoAppProvider } from '@/components/GoAppProvider/index'
+import { FgAppProvider } from '@/components/FgAppProvider/index'
 import { setHtmlTheme } from '@/utils'
 import { addCollection } from 'iconify-icon'
 import uimIcons from '@iconify/json/json/uim.json'
@@ -23,7 +23,7 @@ addCollection(lineMdIcons)
 addCollection(wiIcons)
 
 async function appInit() {
-  const goAppProvider = createApp(GoAppProvider)
+  const goAppProvider = createApp(FgAppProvider)
 
   const app = createApp(App)
 

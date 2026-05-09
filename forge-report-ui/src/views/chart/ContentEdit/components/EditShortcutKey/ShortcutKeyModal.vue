@@ -1,32 +1,29 @@
 <template>
   <n-modal v-model:show="modelShowRef" :mask-closable="true" @afterLeave="closeHandle">
-    <n-table class="model-content" :bordered="false" :single-line="false">
-      <thead>
-        <tr>
-          <th>功能</th>
-          <th>Win 快捷键</th>
-          <th>
-            <n-space justify="space-between">
-              <span> Mac 快捷键 </span>
-              <n-icon size="20" class="go-cursor-pointer" @click="closeHandle">
-                <close-icon></close-icon>
-              </n-icon>
-            </n-space>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(item, index) in shortcutKeyOptions" :key="index">
-          <td>{{ item.label }}</td>
-          <td>{{ item.win }}</td>
-          <td v-if="item.macSource">{{ item.mac }}</td>
-          <td v-else>
-            <n-gradient-text :size="22">{{ item.mac.substr(0, 1) }}</n-gradient-text>
-            + {{ item.mac.substr(3) }}
-          </td>
-        </tr>
-      </tbody>
-    </n-table>
+    <div class="shortcut-modal">
+      <div class="shortcut-head">
+        <div>
+          <span class="shortcut-kicker">SHORTCUTS</span>
+          <h3>快捷键</h3>
+        </div>
+        <n-icon size="20" class="go-cursor-pointer close-btn" @click="closeHandle">
+          <close-icon></close-icon>
+        </n-icon>
+      </div>
+      <div class="shortcut-grid">
+        <div class="shortcut-row shortcut-row-head">
+          <span>功能</span>
+          <span>Win</span>
+          <span>Mac</span>
+        </div>
+        <div class="shortcut-row" v-for="(item, index) in shortcutKeyOptions" :key="index">
+          <span class="shortcut-label">{{ item.label }}</span>
+          <kbd>{{ item.win }}</kbd>
+          <kbd v-if="item.macSource">{{ item.mac }}</kbd>
+          <kbd v-else>{{ item.mac }}</kbd>
+        </div>
+      </div>
+    </div>
   </n-modal>
 </template>
 
@@ -135,13 +132,88 @@ const closeHandle = () => {
 </script>
 
 <style lang="scss" scoped>
-.model-content {
-  width: 50vw;
-  padding-bottom: 20px;
+.shortcut-modal {
+  width: min(760px, 72vw);
+  max-height: 78vh;
   overflow: hidden;
-  border-radius: 15px;
-  td {
-    padding: 5px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--app-theme-rgb), 0.14);
+  background:
+    radial-gradient(circle at 12% 0, rgba(var(--app-theme-rgb), 0.16), transparent 34%),
+    rgba(10, 14, 23, 0.94);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(18px);
+}
+
+.shortcut-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(var(--app-theme-rgb), 0.1);
+
+  h3 {
+    margin: 2px 0 0;
+    font-size: 18px;
+    color: var(--app-theme, $--color-primary);
+  }
+
+  .shortcut-kicker {
+    font-size: 10px;
+    letter-spacing: 1.4px;
+    @include fetch-color(4);
+  }
+
+  .close-btn {
+    color: rgba(226, 232, 240, 0.76);
+  }
+}
+
+.shortcut-grid {
+  max-height: calc(78vh - 72px);
+  overflow: auto;
+  padding: 12px;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr 1.35fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: rgba(226, 232, 240, 0.86);
+
+  &:nth-child(odd):not(.shortcut-row-head) {
+    background: rgba(255, 255, 255, 0.025);
+  }
+
+  &.shortcut-row-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(10, 14, 23, 0.96);
+    color: var(--app-theme, $--color-primary);
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .shortcut-label {
+    font-weight: 600;
+    font-size: 12px;
+  }
+
+  kbd {
+    display: inline-flex;
+    min-height: 26px;
+    align-items: center;
+    padding: 0 8px;
+    border-radius: 7px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.12);
+    background: rgba(2, 6, 23, 0.42);
+    color: rgba(226, 232, 240, 0.9);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
   }
 }
 </style>

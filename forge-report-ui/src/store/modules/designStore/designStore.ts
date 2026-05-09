@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { theme } from '@/settings/designSetting'
 import { DesignStateType, AppThemeColorType } from './designStore.d'
 import { setLocalStorage, getLocalStorage } from '@/utils'
+import { setAppCssTheme } from '@/utils/style'
 import { StorageEnum } from '@/enums/storageEnum'
 import { ThemeEnum } from '@/enums/styleEnum'
 
@@ -45,6 +46,7 @@ export const useDesignStore = defineStore({
     setAppColor(color: AppThemeColorType): void {
       this.appTheme = color.hex
       this.appThemeDetail = color
+      setAppCssTheme(color.hex)
       setLocalStorage(GO_DESIGN_STORE, this.$state)
     }
   }

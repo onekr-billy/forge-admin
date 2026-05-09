@@ -1,13 +1,13 @@
 <template>
   <div class="go-icon-box">
-    <GoIconify :icon="((dataset || '') as string)" :color="color" :width="size" :rotate="rotate" />
+    <FgIconify :icon="((dataset || '') as string)" :color="color" :width="size" :rotate="rotate" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { PropType, toRefs } from 'vue'
 import { CreateComponentType } from '@/packages/index.d'
-import { GoIconify } from '@/components/GoIconify'
+import { FgIconify } from '@/components/FgIconify'
 
 const props = defineProps({
   chartConfig: {

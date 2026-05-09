@@ -1,53 +1,19 @@
 <template>
-  <div class="content-left">
+  <div class="color-grid">
     <div
-      class="content-left-item go-transition-quick go-mb-0"
-      span="12 1000:6 1400:4 1800:4 2200:2"
-      v-for="(item, index) in designColorRecommend"
-      :key="index"
-      @click="colorSelectHandle(item)"
-    >
-      <n-space>
-        <div class="content-left-item-color" :style="{ backgroundColor: item.hex }"></div>
-        <n-space vertical>
-          <n-space>
-            <span :style="{ color: item.hex }">{{ item.name }}</span>
-            <span class="Pinyin-upper">{{ item.pinyin.toUpperCase() }}</span>
-          </n-space>
-          <n-text>
-            {{ item.hex }}
-            <n-divider vertical></n-divider>
-            {{
-              `rgb(${item.RGB[0]}, ${item.RGB[1]}, ${item.RGB[2]})`
-            }}
-          </n-text>
-        </n-space>
-      </n-space>
-    </div>
-    <n-divider></n-divider>
-    <div
-      class="content-left-item go-transition-quick"
-      span="12 1000:6 1400:4 1800:4 2200:2"
+      class="color-chip"
       v-for="(item, index) in designColor"
       :key="index"
       @click="colorSelectHandle(item)"
+      :style="{ '--chip-color': item.hex }"
     >
-      <n-space>
-        <div class="content-left-item-color" :style="{ backgroundColor: item.hex }"></div>
-        <n-space vertical>
-          <n-space>
-            <span :style="{ color: item.hex }">{{ item.name }}</span>
-            <span class="Pinyin-upper">{{ item.pinyin.toUpperCase() }}</span>
-          </n-space>
-          <n-text>
-            {{ item.hex }}
-            <n-divider vertical></n-divider>
-            {{
-              `rgb(${item.RGB[0]}, ${item.RGB[1]}, ${item.RGB[2]})`
-            }}
-          </n-text>
-        </n-space>
-      </n-space>
+      <div class="chip-swatch" :style="{ background: item.hex }">
+        <div class="chip-glow"></div>
+      </div>
+      <div class="chip-info">
+        <span class="chip-name">{{ item.name }}</span>
+        <span class="chip-hex">{{ item.hex }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -55,7 +21,6 @@
 <script lang="ts" setup>
 import { PropType } from 'vue'
 import { AppThemeColorType } from '@/store/modules/designStore/designStore.d'
-import designColorRecommend from '@/settings/designColorRecommend.json'
 
 const emits = defineEmits(['colorSelectHandle'])
 defineProps({
@@ -64,51 +29,87 @@ defineProps({
     required: true
   }
 })
+
 const colorSelectHandle = (color: AppThemeColorType) => {
   emits('colorSelectHandle', color)
 }
 </script>
 
 <style lang="scss" scoped>
-.content-left {
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.color-chip {
   display: flex;
-  flex-wrap: wrap;
-  margin-right: 200px;
-  .content-left-item {
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: $--border-radius-sm;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.01);
+
+  &:hover {
+    background: rgba(var(--app-theme-rgb), 0.04);
+    border-color: rgba(var(--app-theme-rgb), 0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+
+    .chip-swatch {
+      transform: scale(1.1);
+      box-shadow: 0 0 12px var(--chip-color);
+    }
+
+    .chip-name {
+      color: var(--chip-color);
+    }
+  }
+
+  .chip-swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
     position: relative;
-    display: flex;
-    margin-bottom: 10px;
-    margin-right: 10px;
-    padding: 10px 20px;
-    min-width: 300px;
-    border-radius: 5px;
-    cursor: pointer;
-    border: 1px solid rgba(0, 0, 0, 0);
-    &:hover {
-      @include hover-border-color("background-color5");
-    }
-    &::after {
-      content: "";
-      z-index: -1;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+    .chip-glow {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0.7;
-      overflow: hidden;
-      border-radius: 5px;
-      @extend .go-background-filter-shallow;
-      backdrop-filter: none;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.3) 0%, transparent 60%);
     }
-    &-color {
-      width: 8px;
-      height: 40px;
-      border-radius: 2px;
-    }
-    .Pinyin-upper {
-      font-size: 8px;
-    }
+  }
+
+  .chip-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .chip-name {
+    font-size: 12px;
+    @include fetch-color(2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.2s;
+  }
+
+  .chip-hex {
+    font-size: 10px;
+    @include fetch-color(4);
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.5px;
   }
 }
 </style>

@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { useAIStore } from '@/store/modules/aiStore/aiStore'
 import { aiGenerate } from '@/api/ai'
-import { applyAIToCanvas } from '@/components/GoAI/aiEngine'
+import { applyAIToCanvas } from '@/components/FgAI/aiEngine'
 import { AIGenerateResponse } from '@/api/ai/ai.d'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 

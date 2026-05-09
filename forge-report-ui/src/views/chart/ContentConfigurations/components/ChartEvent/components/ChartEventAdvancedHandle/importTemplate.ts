@@ -49,8 +49,8 @@ chart.setOption({
   '`' +
   `
         <div>
-          <img src="https://portrait.gitee.com/uploads/avatars/user/1654/4964818_MTrun_1653229420.png!avatar30">
-          <b><a href="https://gitee.com/dromara/go-view">《这是一个自定义的tooltip》</a></b>
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%2300d4ff'/%3E%3C/svg%3E">
+          <b>这是一个自定义的tooltip</b>
         <div>
         <div style='border-radius:35px;color:#666'>
         ` +

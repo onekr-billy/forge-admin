@@ -1,308 +1,298 @@
 <template>
   <div v-if="cardData" class="go-items-list-card">
-    <n-card hoverable size="small">
-      <div class="list-content">
-        <!-- 顶部按钮 -->
-        <div class="list-content-top">
-          <mac-os-control-btn
-            class="top-btn"
-            :hidden="['remove']"
-            @close="deleteHanlde"
-            @resize="resizeHandle"
-         ></mac-os-control-btn>
+    <div class="card-inner">
+      <div class="card-image" @click="resizeHandle">
+        <n-image
+          object-fit="contain"
+          height="170"
+          preview-disabled
+          :src="imageSrc"
+          :alt="cardData.title"
+          :fallback-src="requireErrorImg()"
+          class="!w-full"
+        ></n-image>
+        <div class="image-overlay">
+          <div class="overlay-scan"></div>
+          <div class="overlay-gradient"></div>
+          <div class="overlay-corner top-left"></div>
+          <div class="overlay-corner top-right"></div>
+          <div class="overlay-corner bottom-left"></div>
+          <div class="overlay-corner bottom-right"></div>
         </div>
-<!-- 中间 -->
-        <div class="list-content-img" @click="resizeHandle">
-          <n-image
-            object-fit="contain"
-            height="180"
-            preview-disabled
-            :src="imageSrc"
-            :alt="cardData.title"
-            :fallback-src="requireErrorImg()"
-          ></n-image>
+        <div class="card-actions">
+          <div class="action-group">
+            <n-tooltip placement="top" trigger="hover">
+              <template #trigger>
+                <div class="action-dot" @click.stop="editHandle" title="编辑">
+                  <n-icon size="12"><HammerIcon /></n-icon>
+                </div>
+              </template>
+              <span>编辑</span>
+            </n-tooltip>
+            <n-dropdown trigger="click" placement="bottom-end" :options="selectOptions" @select="handleSelect">
+              <div class="action-dot" @click.stop>
+                <n-icon size="12"><EllipsisHorizontalCircleSharpIcon /></n-icon>
+              </div>
+            </n-dropdown>
+          </div>
         </div>
       </div>
-      <template #action>
-        <div class="go-flex-items-center list-footer" justify="space-between">
-          <n-text class="go-ellipsis-1" :title="cardData.title">
+
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="card-indicator" :class="{ released: cardData.release }"></span>
+          <n-text class="go-ellipsis-1 card-title" :title="cardData.title">
             {{ cardData.title || '' }}
           </n-text>
-          <!-- 工具 -->
-          <div class="go-flex-items-center list-footer-ri">
-            <n-space>
-              <n-text>
-                <n-badge
-                  class="go-animation-twinkle"
-                  dot
-                  :color="cardData.release ? '#34c749' : '#fcbc40'"
-              ></n-badge>
-                {{
-                  cardData.release
-                    ? $t('project.release')
-                    : $t('project.unreleased')
-                }}
-              </n-text>
-
-              <template v-for="item in fnBtnList" :key="item.key">
-                <template v-if="item.key === 'select'">
-                  <n-dropdown
-                    trigger="hover"
-                    placement="bottom"
-                    :options="selectOptions"
-                    :show-arrow="true"
-                    @select="handleSelect"
-                  >
-                    <n-button size="small">
-                      <template #icon>
-                        <component :is="item.icon"></component>
-                      </template>
-                    </n-button>
-                  </n-dropdown>
-                </template>
-
-                <n-tooltip v-else placement="bottom" trigger="hover">
-                  <template #trigger>
-                    <n-button size="small" @click="handleSelect(item.key)">
-                      <template #icon>
-                        <component :is="item.icon"></component>
-                      </template>
-                    </n-button>
-                  </template>
-                  <component :is="item.label"></component>
-                </n-tooltip>
-              </template>
-            </n-space>
-          </div>
-          <!-- end -->
         </div>
-      </template>
-    </n-card>
+        <div class="card-meta">
+          <span class="meta-badge" :class="{ released: cardData.release }">
+            {{ cardData.release ? $t('project.release') : $t('project.unreleased') }}
+          </span>
+          <span class="meta-time">{{ cardData.createTime || '' }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, PropType, watch, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { renderIcon, renderLang, requireErrorImg, fetchPathByName, routerTurnByPath, getLocalStorage } from '@/utils'
 import { icon } from '@/plugins'
-import { MacOsControlBtn } from '@/components/Tips/MacOsControlBtn'
 import { Chartype } from '../../index.d'
 import { PreviewEnum } from '@/enums/pageEnum'
 import { StorageEnum } from '@/enums/storageEnum'
 import { publishProjectApi } from '@/api/project'
-const {
-  EllipsisHorizontalCircleSharpIcon,
-  CopyIcon,
-  TrashIcon,
-  PencilIcon,
-  DownloadIcon,
-  BrowsersOutlineIcon,
-  HammerIcon,
-  SendIcon
-} = icon.ionicons5
+const { EllipsisHorizontalCircleSharpIcon, TrashIcon, HammerIcon, BrowsersOutlineIcon, SendIcon } = icon.ionicons5
 
 const emit = defineEmits(['delete', 'resize', 'edit', 'refresh'])
 
-const props = defineProps({
-  cardData: Object as PropType<Chartype>
-})
+const props = defineProps({ cardData: Object as () => Chartype })
 
-// 处理url获取
-const requireUrl = (name: string) => {
-  return new URL(`../../../../../assets/images/${name}`, import.meta.url).href
-}
+const requireUrl = (name: string) => new URL(`../../../../../assets/images/${name}`, import.meta.url).href
 
-// 图片src（支持认证）
 const imageSrc = ref('')
 let currentBlobUrl: string | null = null
 
-// 判断是否需要认证的图片URL
-const needsAuth = (url: string) => {
-  if (!url) return false
-  if (url.startsWith('data:') || url.startsWith('blob:')) return false
-  if (url.startsWith('http://') || url.startsWith('https://')) return false
-  return url.includes('/api/file/')
-}
+const needsAuth = (url: string) => !(!url || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) && url.includes('/api/file/')
 
-// 加载带认证的图片
 const loadAuthImage = async (url: string) => {
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl)
-    currentBlobUrl = null
-  }
-
-  if (!url) {
-    imageSrc.value = requireUrl('project/moke-20211219181327.png')
-    return
-  }
-
-  if (!needsAuth(url)) {
-    imageSrc.value = url
-    return
-  }
-
+  if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null }
+  if (!url) { imageSrc.value = requireUrl('project/moke-20211219181327.png'); return }
+  if (!needsAuth(url)) { imageSrc.value = url; return }
   try {
     const token = getLocalStorage(StorageEnum.GO_ACCESS_TOKEN_STORE)
-    const response = await fetch(url, {
-      headers: {
-        Authorization: token ? `Bearer ${token}` : ''
-      }
-    })
-
-    if (response.ok) {
-      const blob = await response.blob()
-      currentBlobUrl = URL.createObjectURL(blob)
-      imageSrc.value = currentBlobUrl
-    } else {
-      console.warn('[AuthImage] 图片加载失败', url, response.status)
-      imageSrc.value = requireUrl('project/moke-20211219181327.png')
-    }
-  } catch (error) {
-    console.warn('[AuthImage] 图片加载异常', error)
-    imageSrc.value = requireUrl('project/moke-20211219181327.png')
-  }
+    const res = await fetch(url, { headers: { Authorization: token ? `Bearer ${token}` : '' } })
+    if (res.ok) { const blob = await res.blob(); currentBlobUrl = URL.createObjectURL(blob); imageSrc.value = currentBlobUrl }
+    else { imageSrc.value = requireUrl('project/moke-20211219181327.png') }
+  } catch { imageSrc.value = requireUrl('project/moke-20211219181327.png') }
 }
 
-// 监听 cardData 变化，加载图片
-watch(() => props.cardData?.indexImg, (newUrl) => {
-  loadAuthImage(newUrl)
-}, { immediate: true })
-
-// 组件卸载时清理 blob URL
-onUnmounted(() => {
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl)
-  }
-})
-
-const fnBtnList = reactive([
-  {
-    label: renderLang('global.r_edit'),
-    key: 'edit',
-    icon: renderIcon(HammerIcon)
-  },
-  {
-    lable: renderLang('global.r_more'),
-    key: 'select',
-    icon: renderIcon(EllipsisHorizontalCircleSharpIcon)
-  }
-])
+watch(() => props.cardData?.indexImg, (n) => loadAuthImage(n), { immediate: true })
+onUnmounted(() => { if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl) })
 
 const selectOptions = ref([
-  {
-    label: renderLang('global.r_preview'),
-    key: 'preview',
-    icon: renderIcon(BrowsersOutlineIcon)
-  },
-  {
-    label: props.cardData?.release
-      ? '重新发布'
-      : renderLang('global.r_publish'),
-    key: 'send',
-    icon: renderIcon(SendIcon)
-  },
-  {
-    label: renderLang('global.r_delete'),
-    key: 'delete',
-    icon: renderIcon(TrashIcon)
-  }
+  { label: renderLang('global.r_preview'), key: 'preview', icon: renderIcon(BrowsersOutlineIcon) },
+  { label: props.cardData?.release ? '重新发布' : renderLang('global.r_publish'), key: 'send', icon: renderIcon(SendIcon) },
+  { label: renderLang('global.r_delete'), key: 'delete', icon: renderIcon(TrashIcon) }
 ])
 
 const handleSelect = async (key: string) => {
-  switch (key) {
-    case 'delete':
-      deleteHanlde()
-      break
-    case 'edit':
-      editHandle()
-      break
-    case 'preview':
-      previewHandle()
-      break
-    case 'send':
-      await publishHandle()
-      break
+  if (key === 'delete') emit('delete', props.cardData)
+  else if (key === 'preview') { const p = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href'); if (p) routerTurnByPath(p, [String(props.cardData?.id)], undefined, true) }
+  else if (key === 'send') {
+    try {
+      const p = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')
+      if (!p || !props.cardData?.id) return
+      await publishProjectApi(props.cardData.id, `${window.location.origin}${p}/${props.cardData.id}`)
+      window.$message.success(props.cardData.release ? '重新发布成功' : '发布成功')
+      emit('refresh')
+    } catch (e: any) { window.$message.error(e?.message || '发布失败') }
   }
 }
 
-// 预览处理
-const previewHandle = () => {
-  const path = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')
-  if (!path) return
-  routerTurnByPath(path, [String(props.cardData?.id)], undefined, true)
-}
-
-// 发布处理
-const publishHandle = async () => {
-  try {
-    const path = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')
-    if (!path || !props.cardData?.id) return
-    const previewUrl = `${window.location.origin}${path}/${props.cardData.id}`
-    await publishProjectApi(props.cardData.id, previewUrl)
-    window.$message.success(props.cardData.release ? '重新发布成功' : '发布成功')
-    emit('refresh')
-  } catch (error: any) {
-    window.$message.error(error?.message || '发布失败')
-  }
-}
-
-// 删除处理
-const deleteHanlde = () => {
-  emit('delete', props.cardData)
-}
-
-// 编辑处理
-const editHandle = () => {
-  emit('edit', props.cardData)
-}
-
-// 放大处理
-const resizeHandle = () => {
-  emit('resize', props.cardData)
-}
+const editHandle = () => emit('edit', props.cardData)
+const resizeHandle = () => emit('resize', props.cardData)
 </script>
 
 <style lang="scss" scoped>
-$contentHeight: 180px;
 @include go('items-list-card') {
-  position: relative;
-  border-radius: $--border-radius-base;
-  border: 1px solid rgba(0, 0, 0, 0);
-  @extend .go-transition;
-  &:hover {
-    @include hover-border-color('hover-border-color');
+  .card-inner {
+    border-radius: $--border-radius-lg;
+    overflow: hidden;
+    @include fetch-bg-color('background-color1');
+    border: 1px solid rgba(var(--app-theme-rgb), 0.04);
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .list-content {
-    margin-top: 20px;
-    margin-bottom: 5px;
+
+  &:hover .card-inner {
+    border-color: rgba(var(--app-theme-rgb), 0.2);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.5),
+      0 0 20px rgba(var(--app-theme-rgb), 0.06),
+      inset 0 0 0 1px rgba(var(--app-theme-rgb), 0.06);
+    transform: translateY(-3px);
+  }
+
+  .card-image {
+    text-align: center;
+    position: relative;
+    overflow: hidden;
     cursor: pointer;
-    border-radius: $--border-radius-base;
-    @include background-image('background-point');
-    @extend .go-point-bg;
-    &-top {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      height: 22px;
+    height: 170px;
+    @include fetch-bg-color('background-color2');
+
+    @include deep() {
+      img {
+        display: block;
+        width: 100%;
+        transition: transform 0.5s ease;
+      }
     }
-    &-img {
-      height: $contentHeight;
-      @extend .go-flex-center;
-      @extend .go-border-radius;
-      @include deep() {
-        img {
-          @extend .go-border-radius;
-        }
+
+    .image-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+
+      .overlay-gradient {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 80px;
+        background: linear-gradient(transparent, rgba(10, 14, 23, 0.95));
+      }
+
+      .overlay-scan {
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 200%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(var(--app-theme-rgb), 0.15), transparent);
+        animation: scanDown 3s ease-in-out infinite;
+      }
+
+      .overlay-corner {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-color: rgba(var(--app-theme-rgb), 0.15);
+        border-style: solid;
+        transition: all 0.35s ease;
+        opacity: 0;
+      }
+      .top-left { top: 4px; left: 4px; border-width: 1px 0 0 1px; }
+      .top-right { top: 4px; right: 4px; border-width: 1px 1px 0 0; }
+      .bottom-left { bottom: 4px; left: 4px; border-width: 0 0 1px 1px; }
+      .bottom-right { bottom: 4px; right: 4px; border-width: 0 1px 1px 0; }
+    }
+  }
+
+  &:hover .card-image {
+    @include deep() { img { transform: scale(1.05); } }
+    .overlay-corner { opacity: 1; border-color: rgba(var(--app-theme-rgb), 0.4); }
+  }
+
+  @keyframes scanDown {
+    0%, 100% { top: -1px; }
+    50% { top: 100%; }
+  }
+
+  .card-actions {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    opacity: 0;
+    transform: translateX(4px);
+    transition: all 0.25s ease;
+
+    .action-group {
+      display: flex;
+      gap: 4px;
+    }
+
+    .action-dot {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      @include fetch-bg-color('background-color');
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      @include fetch-color(2);
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: rgba(var(--app-theme-rgb), 0.15);
+        border-color: rgba(var(--app-theme-rgb), 0.3);
+        color: $--color-primary;
+        box-shadow: 0 0 10px rgba(var(--app-theme-rgb), 0.2);
       }
     }
   }
-  .list-footer {
-    flex-wrap: nowrap;
+
+  &:hover .card-actions { opacity: 1; transform: translateX(0); }
+
+  .card-body {
+    padding: 14px 16px;
+  }
+
+  .card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+
+    .card-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: $--color-warn;
+      box-shadow: 0 0 6px rgba(255, 165, 2, 0.5);
+
+      &.released {
+        background: $--color-success;
+        box-shadow: 0 0 6px rgba(46, 213, 115, 0.5);
+      }
+    }
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    @include fetch-color();
+  }
+
+  .card-meta {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
-    line-height: 30px;
-    &-ri {
-      justify-content: flex-end;
-      min-width: 180px;
+
+    .meta-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: rgba(255, 165, 2, 0.1);
+      color: $--color-warn;
+      border: 1px solid rgba(255, 165, 2, 0.15);
+
+      &.released {
+        background: rgba(46, 213, 115, 0.08);
+        color: $--color-success;
+        border-color: rgba(46, 213, 115, 0.15);
+      }
+    }
+
+    .meta-time {
+      font-size: 10px;
+      @include fetch-color(4);
+      font-family: 'Courier New', monospace;
     }
   }
 }

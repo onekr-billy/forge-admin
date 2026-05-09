@@ -8,8 +8,18 @@
   opacity: 0 !important;
 }
 
+// 暗色主题全局
 [data-theme='dark'] {
   body {
-    background-color: #18181c;
+    background-color: #0a0e17;
+    color: #e2e8f0;
+  }
+}
+
+// 亮色主题全局
+[data-theme='light'] {
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
   }
 }

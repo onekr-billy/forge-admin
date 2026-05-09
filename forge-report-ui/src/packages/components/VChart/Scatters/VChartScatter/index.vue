@@ -1,11 +1,11 @@
 <template>
-  <GoVChart ref="vChartRef" :option="chartConfig.option"> </GoVChart>
+  <FgVChart ref="vChartRef" :option="chartConfig.option"> </FgVChart>
 </template>
 
 <script setup lang="ts">
 import { PropType } from 'vue'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
-import { GoVChart } from '@/components/GoVChart'
+import { FgVChart } from '@/components/FgVChart'
 import { useChartDataFetch } from '@/hooks'
 import config from './config'
 

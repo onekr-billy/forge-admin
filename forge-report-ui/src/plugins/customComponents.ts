@@ -1,6 +1,6 @@
 import type { App } from 'vue'
-import { GoSkeleton } from '@/components/GoSkeleton'
-import { GoLoading } from '@/components/GoLoading'
+import { FgSkeleton } from '@/components/FgSkeleton'
+import { FgLoading } from '@/components/FgLoading'
 import { SketchRule } from 'vue3-sketch-ruler'
 
 /**
@@ -8,7 +8,7 @@ import { SketchRule } from 'vue3-sketch-ruler'
  * @param app
  */
 export function setupCustomComponents(app: App) {
-  app.component('GoSkeleton', GoSkeleton)
-  app.component('GoLoading', GoLoading)
+  app.component('FgSkeleton', FgSkeleton)
+  app.component('FgLoading', FgLoading)
   app.component('SketchRule', SketchRule)
 }

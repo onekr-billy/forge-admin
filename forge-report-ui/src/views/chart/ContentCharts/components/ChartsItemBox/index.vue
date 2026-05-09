@@ -10,26 +10,22 @@
         class="item-box"
         v-for="(item, index) in menuOptions"
         :key="item.title"
-        draggable
-        @dragstart="!item.disabled && dragStartHandle($event, item)"
+        draggable="true"
+        @dragstart.capture="!item.disabled && dragStartHandle($event, item)"
         @dragend="!item.disabled && dragendHandle()"
         @dblclick="dblclickHandle(item)"
         @click="clickHandle(item)"
       >
-        <div class="list-header">
-          <mac-os-control-btn class="list-header-control-btn" :mini="true" :disabled="true"></mac-os-control-btn>
-          <n-text class="list-header-text" depth="3">
-            <n-ellipsis>{{ item.title }}</n-ellipsis>
-          </n-text>
-        </div>
-        <div class="list-center go-flex-center go-transition" draggable="true">
-          <GoIconify v-if="item.icon" class="list-img" :icon="item.icon" color="#999" width="48" style="height: auto" />
+        <span class="asset-index">{{ index + 1 }}</span>
+        <div class="list-center go-flex-center go-transition" draggable="false">
+          <FgIconify v-if="item.icon" class="list-img" :icon="item.icon" color="#999" width="48" style="height: auto" />
           <chart-glob-image v-else class="list-img" :chartConfig="item" />
         </div>
-        <div class="list-bottom">
-          <n-text class="list-bottom-text" depth="3">
-            <n-ellipsis style="max-width: 90%">{{ item.title }}</n-ellipsis>
+        <div class="asset-meta">
+          <n-text class="asset-title" depth="2">
+            <n-ellipsis>{{ item.title }}</n-ellipsis>
           </n-text>
+          <span class="asset-hint">{{ item.disabled ? '开发中' : '拖拽 / 双击' }}</span>
         </div>
         <!-- 遮罩 -->
         <div v-if="item.disabled" class="list-model"></div>
@@ -51,7 +47,6 @@
 
 <script setup lang="ts">
 import { PropType, watch, ref, Ref, computed, nextTick } from 'vue'
-import { MacOsControlBtn } from '@/components/Tips/MacOsControlBtn/index'
 import { ChartGlobImage } from '@/components/Pages/ChartGlobImage'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 import { EditCanvasTypeEnum } from '@/store/modules/chartEditStore/chartEditStore.d'
@@ -64,7 +59,7 @@ import { createComponent } from '@/packages'
 import { ConfigType, CreateComponentType, PackagesCategoryEnum } from '@/packages/index.d'
 import { ChatCategoryEnum } from '@/packages/components/Photos/index.d'
 import { fetchConfigComponent, fetchChartComponent } from '@/packages/index'
-import { GoIconify } from '@/components/GoIconify'
+import { FgIconify } from '@/components/FgIconify'
 import { icon } from '@/plugins'
 
 import omit from 'lodash/omit'
@@ -168,71 +163,129 @@ watch(
 <style lang="scss" scoped>
 /* 列表项宽度 */
 $itemWidth: 100%;
-$maxItemWidth: 180px;
-$halfItemWidth: 46%;
+$maxItemWidth: 170px;
+$halfItemWidth: calc(50% - 5px);
 /* 内容高度 */
-$centerHeight: 100px;
-$halfCenterHeight: 50px;
+$centerHeight: 78px;
+$halfCenterHeight: 74px;
 
 @include go('content-charts-item-animation-patch') {
-  padding: 10px;
+  padding: 12px;
 }
 
 @include go('content-charts-item-box') {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 9px;
+  gap: 10px;
   transition: all 0.7s linear;
   .item-box {
     position: relative;
     margin: 0;
     width: $itemWidth;
     overflow: hidden;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    border: 1px solid rgba(0, 0, 0, 0);
-    @include fetch-bg-color('background-color2');
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 44%),
+      rgba(15, 23, 42, 0.5);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    min-height: 108px;
+    transition:
+      transform 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease,
+      background 0.2s ease;
+
     &:hover {
-      @include hover-border-color('background-color4');
+      border-color: rgba(var(--app-theme-rgb), 0.28);
+      box-shadow:
+        0 14px 26px rgba(0, 0, 0, 0.24),
+        0 0 16px rgba(var(--app-theme-rgb), 0.1);
+      transform: translateY(-2px);
       .list-img {
         transform: scale(1.08);
+      }
+      .asset-hint {
+        color: rgba(var(--app-theme-rgb), 0.95);
       }
       .list-tools {
         opacity: 1;
       }
     }
-    .list-header {
-      display: flex;
+
+    .asset-index {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 1;
+      min-width: 22px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 6px;
+      display: inline-flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 2px 15px;
-      @include fetch-bg-color('background-color3');
-      &-text {
-        font-size: 12px;
-        margin-left: 8px;
-        user-select: none;
-      }
+      justify-content: center;
+      font-size: 10px;
+      line-height: 20px;
+      color: rgba(226, 232, 240, 0.76);
+      background: rgba(2, 6, 23, 0.46);
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
+
     .list-center {
-      padding: 6px 0;
+      padding: 10px 0;
       height: $centerHeight;
       overflow: hidden;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at center, rgba(var(--app-theme-rgb), 0.08), transparent 62%),
+        rgba(2, 6, 23, 0.16);
+
+      :deep(img),
+      :deep(svg),
+      :deep(canvas) {
+        pointer-events: none;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+
       .list-img {
-        height: 100px;
-        max-width: 140px;
+        height: 70px;
+        max-width: 128px;
         border-radius: 6px;
         object-fit: contain;
         @extend .go-transition;
       }
     }
-    .list-bottom {
-      display: none;
-      .list-bottom-text {
+
+    .asset-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px 10px;
+      min-width: 0;
+
+      .asset-title {
+        flex: 1;
+        min-width: 0;
         font-size: 12px;
-        padding-left: 5px;
+        line-height: 16px;
+        font-weight: 600;
+        color: rgba(226, 232, 240, 0.92);
+      }
+
+      .asset-hint {
+        flex-shrink: 0;
+        font-size: 10px;
+        line-height: 16px;
+        color: rgba(148, 163, 184, 0.72);
+        transition: color 0.2s ease;
       }
     }
+
     .list-model {
       z-index: 1;
       position: absolute;
@@ -256,6 +309,7 @@ $halfCenterHeight: 50px;
       border-radius: 6px;
       backdrop-filter: blur(20px);
       background-color: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       &:hover {
         background-color: rgba(232, 128, 128, 0.7);
       }
@@ -264,37 +318,70 @@ $halfCenterHeight: 50px;
   &.single {
     .item-box {
       @extend .go-transition;
+      display: grid;
+      grid-template-columns: 94px minmax(0, 1fr);
+      align-items: center;
+      min-height: 82px;
+      background:
+        linear-gradient(90deg, rgba(var(--app-theme-rgb), 0.08), transparent 44%),
+        rgba(15, 23, 42, 0.46);
+    }
+
+    .list-center {
+      height: 82px;
+      padding: 0;
+      background: rgba(2, 6, 23, 0.22);
+
+      .list-img {
+        height: 58px;
+        max-width: 76px;
+      }
+    }
+
+    .asset-meta {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 0 34px 0 10px;
+      gap: 3px;
     }
   }
   &.double {
-    .list-header {
-      padding: 2px 5px;
-      .list-header-text {
-        display: none;
-      }
-      .list-header-control-btn {
-        transform: scale(0.7);
-      }
-    }
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 10px;
+
     .item-box {
-      width: $halfItemWidth;
-      max-width: $maxItemWidth;
+      width: 100%;
+      max-width: none;
       .list-img {
         max-width: 76px;
       }
     }
     .list-center {
       height: $halfCenterHeight;
-      padding-bottom: 0px;
+      padding: 8px 0 0;
       .list-img {
-        height: $halfCenterHeight;
+        height: 56px;
         width: auto;
         transition: all 0.2s;
         object-fit: contain;
       }
     }
-    .list-bottom {
+
+    .asset-meta {
       display: block;
+      padding: 8px 9px 10px;
+
+      .asset-title {
+        display: block;
+      }
+
+      .asset-hint {
+        display: block;
+        margin-top: 2px;
+      }
     }
   }
   /* 缩小展示 */

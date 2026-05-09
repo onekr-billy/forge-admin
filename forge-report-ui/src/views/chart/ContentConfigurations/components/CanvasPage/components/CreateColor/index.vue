@@ -1,8 +1,15 @@
 <template>
   <n-modal class="go-chart-create-color" v-model:show="modelShowRef" :mask-closable="false" :closeOnEsc="false">
-    <n-card :bordered="false" role="dialog" size="small" aria-modal="true" style="width: 900px; height: 720px">
-      <template #header></template>
-      <template #header-extra> </template>
+    <n-card class="create-shell" :bordered="false" role="dialog" size="small" aria-modal="true">
+      <template #header>
+        <div class="create-title">
+          <span>CUSTOM PALETTE</span>
+          <strong>自定义颜色</strong>
+        </div>
+      </template>
+      <template #header-extra>
+        <n-button quaternary size="small" @click="closeHandle">完成</n-button>
+      </template>
       <div class="create-content">
         <div class="create-color-setting-box">
           <create-color-render
@@ -17,12 +24,8 @@
           </div>
         </div>
         <div class="color-list-box">
-          <n-timeline class="pond-item-timeline" style="width: 20px">
-            <n-timeline-item type="info"> </n-timeline-item>
-            <n-timeline-item type="success"></n-timeline-item>
-          </n-timeline>
           <div class="color-list">
-            <n-space>
+            <n-space class="palette-actions">
               <!-- 新增 -->
               <n-button
                 class="create-btn"
@@ -50,7 +53,7 @@
                 </n-button>
               </n-badge>
             </n-space>
-            <n-divider style="margin: 10px 0"></n-divider>
+            <n-divider style="margin: 12px 0"></n-divider>
             <n-text v-if="!selectColorId" class="not-data-text" :depth="3">
               暂无自定义颜色，
               <n-a @click="createColor">立即创建</n-a>
@@ -92,9 +95,10 @@
       </div>
       <!-- 底部 -->
       <template #action>
-        <n-space justify="end">
-          <n-button @click="closeHandle">操作完成</n-button>
-        </n-space>
+        <div class="create-footer">
+          <span>修改后点击“应用数据”写入当前主题列表</span>
+          <n-button type="primary" secondary @click="closeHandle">关闭</n-button>
+        </div>
       </template>
     </n-card>
   </n-modal>
@@ -290,11 +294,46 @@ $color-radius: 8px;
 $color-item-radius: 4px;
 
 @include go('chart-create-color') {
+  .create-shell {
+    width: min(860px, 78vw);
+    height: min(700px, 82vh);
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.14);
+    background:
+      radial-gradient(circle at 0 0, rgba(var(--app-theme-rgb), 0.14), transparent 32%),
+      rgba(10, 14, 23, 0.94);
+  }
+
+  .create-title {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+
+    span {
+      font-size: 10px;
+      letter-spacing: 1.4px;
+      @include fetch-color(4);
+    }
+
+    strong {
+      font-size: 17px;
+      color: var(--app-theme, $--color-primary);
+    }
+  }
+
   .create-content {
     display: flex;
+    gap: 14px;
+    height: 100%;
     /* 左侧 */
     .create-color-setting-box {
       flex: 1;
+      min-width: 0;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+      background: rgba(2, 6, 23, 0.24);
       .no-data {
         flex-direction: column;
         width: 100%;
@@ -307,19 +346,24 @@ $color-item-radius: 4px;
     /* 列表 */
     .color-list-box {
       display: flex;
-      padding-top: 10px;
-      margin-right: 5px;
-      .pond-item-timeline > .n-timeline-item {
-        &:first-child {
-          height: $height;
-        }
-      }
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+      background: rgba(15, 23, 42, 0.24);
       .color-list {
         width: $listWidth;
         position: relative;
-        padding-right: 8px;
+        padding-right: 0;
+        overflow: auto;
+        max-height: calc(min(700px, 82vh) - 150px);
+
+        .palette-actions {
+          width: 100%;
+        }
+
         .create-btn {
-          width: 133px;
+          width: 130px;
+          border-radius: 999px;
           &.is-full {
             width: 280px;
           }
@@ -339,10 +383,12 @@ $color-item-radius: 4px;
           .color-card {
             overflow: hidden;
             cursor: pointer;
-            border-radius: $color-radius;
-            border: 2px solid rgba(0, 0, 0, 0);
-            border-bottom: 1px solid rgba(0, 0, 0, 0);
-            @include fetch-bg-color('background-color4-shallow');
+            border-radius: 10px;
+            border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+            background:
+              linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.07), transparent),
+              rgba(2, 6, 23, 0.22);
+            transition: all 0.2s ease;
 
             @include deep() {
               & > .n-card__content {
@@ -352,18 +398,20 @@ $color-item-radius: 4px;
               }
             }
             &.selected {
-              border: 2px solid var(--n-color-target);
-              border-bottom: 1px solid rgba(0, 0, 0, 0);
+              border: 1px solid var(--app-theme, #00d4ff);
+              box-shadow: 0 0 16px rgba(var(--app-theme-rgb), 0.18);
             }
             .go-flex-items-center {
               justify-content: space-between;
-              margin-top: -4px;
+              gap: 5px;
             }
             .theme-color-item {
               display: inline-block;
-              width: 16px;
-              height: 16px;
+              flex: 1;
+              min-width: 12px;
+              height: 20px;
               border-radius: $color-item-radius;
+              box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13);
             }
             .theme-bottom {
               position: absolute;
@@ -380,6 +428,15 @@ $color-item-radius: 4px;
   &.n-card.n-modal,
   .n-card {
     @extend .go-background-filter;
+  }
+
+  .create-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 12px;
+    @include fetch-color(3);
   }
   .n-card-shallow {
     background-color: rgba(0, 0, 0, 0) !important;

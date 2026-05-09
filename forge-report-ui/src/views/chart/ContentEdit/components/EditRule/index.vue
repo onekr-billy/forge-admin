@@ -77,13 +77,13 @@ const paletteStyle = computed(() => {
   const isDarkTheme = designStore.getDarkTheme
   return isDarkTheme
     ? {
-        bgColor: '#18181c',
-        longfgColor: '#4d4d4d',
-        shortfgColor: '#4d4d4d',
-        fontColor: '#4d4d4d',
-        shadowColor: '#18181c',
-        borderColor: '#18181c',
-        cornerActiveColor: '#18181c'
+        bgColor: 'rgba(10, 14, 23, 0.88)',
+        longfgColor: 'rgba(0, 212, 255, 0.32)',
+        shortfgColor: 'rgba(148, 163, 184, 0.24)',
+        fontColor: 'rgba(148, 163, 184, 0.72)',
+        shadowColor: 'rgba(10, 14, 23, 0.88)',
+        borderColor: 'rgba(0, 212, 255, 0.12)',
+        cornerActiveColor: 'rgba(0, 212, 255, 0.16)'
       }
     : {}
 })
@@ -275,7 +275,10 @@ window.onKeySpacePressHold = (isHold: boolean) => {
 
 /* 坐标数值背景颜色 */
 #mb-ruler .indicator .value {
-  background-color: rgba(0, 0, 0, 0);
+  background-color: rgba(10, 14, 23, 0.72);
+  color: rgba(226, 232, 240, 0.88);
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 
 /* 删除按钮 */
@@ -306,7 +309,7 @@ window.onKeySpacePressHold = (isHold: boolean) => {
     padding-bottom: 0px;
 
     /* firefox */
-    scrollbar-color: rgba(144, 146, 152, 0.3) transparent;
+    scrollbar-color: rgba(0, 212, 255, 0.24) transparent;
     scrollbar-width: thin;
 
     /* chrome */
@@ -321,7 +324,7 @@ window.onKeySpacePressHold = (isHold: boolean) => {
 
     &::-webkit-scrollbar-thumb {
       border-radius: 5px;
-      background-color: rgba(144, 146, 152, 0.3);
+      background-color: rgba(var(--app-theme-rgb), 0.24);
     }
     // 修复右下角白点用的
     &::-webkit-scrollbar-corner {
@@ -347,7 +350,7 @@ window.onKeySpacePressHold = (isHold: boolean) => {
 
   .canvas {
     position: absolute;
-    top:50%;
+    top: 50%;
     left: 50%;
     transform-origin: 50% 0;
     transform: translateY(-50%);

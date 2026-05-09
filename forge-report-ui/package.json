@@ -1,5 +1,5 @@
 {
-  "name": "go-view",
+  "name": "forge-report-ui",
   "version": "1.3.2",
   "engines": {
     "node": ">=16.14"

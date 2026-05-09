@@ -54,102 +54,114 @@
     </n-card>
   </div>
 
-  <n-modal v-model:show="showFormRef" class="go-ai-form-modal">
-    <n-card class="form-card" :title="editingProvider?.id ? '编辑供应商' : '新增供应商'" :bordered="false">
+  <n-modal v-model:show="showFormRef" class="go-ai-form-modal" :mask-closable="false" style="width: 900px">
+    <n-card class="form-card" :title="editingProvider?.id ? '编辑供应商' : '新增供应商'" :bordered="false" size="small">
       <template #header-extra>
         <n-button text @click="closeForm">
-          <n-icon size="20"><component :is="CloseIcon" /></n-icon>
+          <n-icon size="18"><component :is="CloseIcon" /></n-icon>
         </n-button>
       </template>
 
-      <n-form :model="formData" label-placement="left" label-width="96" style="padding: 0 8px">
-        <n-form-item label="选择模板">
-          <n-select
-            v-model:value="selectedTemplate"
-            :options="templateOptions"
-            placeholder="选择预设供应商（可自动填充配置）"
-            clearable
-            @update:value="onTemplateSelect"
-          />
-        </n-form-item>
+      <n-scrollbar style="max-height: 60vh">
+        <n-form :model="formData" label-placement="top" size="small">
+          <n-form-item label="模板快速填充">
+            <n-select
+              v-model:value="selectedTemplate"
+              :options="templateOptions"
+              placeholder="选择预设供应商自动填充"
+              clearable
+              size="small"
+              @update:value="onTemplateSelect"
+            />
+          </n-form-item>
 
-        <n-form-item label="供应商名称" required>
-          <n-input v-model:value="formData.providerName" placeholder="如 阿里百炼" />
-        </n-form-item>
-
-        <n-form-item label="供应商类型" required>
-          <n-select
-            v-model:value="formData.providerType"
-            :options="providerTypeOptions"
-            placeholder="请选择供应商类型"
-          />
-        </n-form-item>
-
-        <n-form-item label="Base URL" required>
-          <n-input v-model:value="formData.baseUrl" placeholder="如 https://dashscope.aliyuncs.com/compatible-mode" />
-        </n-form-item>
-
-        <n-form-item label="API Key" required>
-          <n-input
-            v-model:value="formData.apiKey"
-            type="password"
-            show-password-on="click"
-            placeholder="请输入 API Key"
-          />
-        </n-form-item>
-
-        <n-form-item label="默认模型">
-          <n-input
-            v-model:value="formData.defaultModel"
-            placeholder="手动填写默认模型；也可在下方可用模型中点“设为默认”"
-          />
-        </n-form-item>
-
-        <n-form-item label="可用模型">
-          <div class="model-editor">
-            <n-space class="model-input-row" :wrap="false">
-              <n-input
-                v-model:value="modelInput"
-                placeholder="输入模型后回车或点击添加，例如 qwen-plus"
-                @keydown.enter.prevent="handleAddModel"
+          <div class="form-row">
+            <n-form-item label="供应商名称">
+              <n-input v-model:value="formData.providerName" placeholder="如 阿里百炼" size="small" />
+            </n-form-item>
+            <n-form-item label="供应商类型">
+              <n-select
+                v-model:value="formData.providerType"
+                :options="providerTypeOptions"
+                placeholder="选择类型"
+                size="small"
               />
-              <n-button type="primary" ghost @click="handleAddModel">添加</n-button>
-            </n-space>
-            <div v-if="modelTags.length" class="model-tag-list">
-              <div v-for="model in modelTags" :key="model" class="model-tag-item">
-                <n-tag closable type="info" @close="handleRemoveModel(model)">{{ model }}</n-tag>
-                <n-button
-                  size="tiny"
-                  text
-                  :type="formData.defaultModel === model ? 'primary' : 'default'"
-                  @click="formData.defaultModel = model"
-                >
-                  {{ formData.defaultModel === model ? '已设为默认' : '设为默认' }}
-                </n-button>
+            </n-form-item>
+          </div>
+
+          <n-form-item label="Base URL">
+            <n-input v-model:value="formData.baseUrl" placeholder="https://dashscope.aliyuncs.com/compatible-mode" size="small" />
+          </n-form-item>
+
+          <n-form-item label="API Key">
+            <n-input
+              v-model:value="formData.apiKey"
+              type="password"
+              show-password-on="click"
+              placeholder="请输入 API Key"
+              size="small"
+            />
+          </n-form-item>
+
+          <n-form-item label="默认模型">
+            <n-input
+              v-model:value="formData.defaultModel"
+              placeholder="手动输入或从下方可用模型中选择"
+              size="small"
+            />
+          </n-form-item>
+
+          <n-form-item label="可用模型">
+            <div class="model-editor">
+              <n-space class="model-input-row" :wrap="false" :size="8">
+                <n-input
+                  v-model:value="modelInput"
+                  placeholder="输入模型名称后点击添加"
+                  size="small"
+                  @keydown.enter.prevent="handleAddModel"
+                />
+                <n-button size="small" type="primary" ghost @click="handleAddModel">添加</n-button>
+              </n-space>
+
+              <n-empty
+                v-if="!modelTags.length"
+                class="model-empty"
+                size="tiny"
+                description="暂无模型，请添加"
+              />
+
+              <div v-else class="model-tag-list">
+                <div v-for="model in modelTags" :key="model" class="model-tag-item">
+                  <n-tag closable size="small" type="info" @close="handleRemoveModel(model)">
+                    {{ model }}
+                  </n-tag>
+                  <n-button
+                    size="tiny"
+                    text
+                    :type="formData.defaultModel === model ? 'primary' : 'default'"
+                    @click="formData.defaultModel = model"
+                  >
+                    {{ formData.defaultModel === model ? '已设为默认' : '默认' }}
+                  </n-button>
+                </div>
               </div>
             </div>
-            <n-empty v-else size="small" description="暂无可用模型，请先添加" />
-            <n-text depth="3" class="model-tip">支持自由输入；标签可删除，也可单独指定其中一个为默认模型。</n-text>
-          </div>
-        </n-form-item>
+          </n-form-item>
 
-        <n-form-item label="备注">
-          <n-input v-model:value="formData.remark" placeholder="可选" />
-        </n-form-item>
-      </n-form>
+          <n-form-item label="备注">
+            <n-input v-model:value="formData.remark" placeholder="可选备注" size="small" />
+          </n-form-item>
+        </n-form>
+      </n-scrollbar>
 
       <template #footer>
         <n-space justify="space-between">
-          <n-button
-            :loading="testing"
-            @click="testConnection"
-            :disabled="!formData.baseUrl || !formData.apiKey"
-          >
+          <n-button size="small" :loading="testing" :disabled="!formData.baseUrl || !formData.apiKey" @click="testConnection">
             测试连接
           </n-button>
-          <n-space>
-            <n-button @click="closeForm">取消</n-button>
-            <n-button type="primary" :loading="saving" @click="saveProvider">保存</n-button>
+          <n-space :size="8">
+            <n-button size="small" @click="closeForm">取消</n-button>
+            <n-button size="small" type="primary" :loading="saving" @click="saveProvider">保存</n-button>
           </n-space>
         </n-space>
       </template>
@@ -486,6 +498,63 @@ onActivated(async () => {
       align-items: flex-start;
     }
   }
+}
+
+@include go('ai-form-modal') {
+  .form-card {
+    width: 440px;
+    max-width: 94vw;
+    border-radius: 16px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.12);
+    background:
+      linear-gradient(180deg, rgba(var(--app-theme-rgb), 0.05), transparent 40%),
+      rgba(10, 14, 23, 0.95);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow:
+      0 0 60px rgba(var(--app-theme-rgb), 0.06),
+      0 24px 60px rgba(0, 0, 0, 0.5);
+
+    .n-card__content {
+      padding: 0 12px 8px;
+    }
+
+    .n-card__footer {
+      padding: 10px 12px 14px;
+      border-top: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    }
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 14px;
+  }
+
+  :deep(.n-form-item) {
+    margin-bottom: 12px;
+  }
+
+  :deep(.n-form-item-label) {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(203, 213, 225, 0.72);
+    padding-bottom: 4px;
+  }
+
+  :deep(.n-input),
+  :deep(.n-base-selection) {
+    --n-border-radius: 8px;
+  }
+
+  :deep(.n-button) {
+    border-radius: 8px;
+    transition: all 0.22s ease;
+  }
+
+  :deep(.n-button--primary-type) {
+    box-shadow: 0 0 16px rgba(var(--app-theme-rgb), 0.18);
+  }
 
   .model-editor {
     width: 100%;
@@ -497,33 +566,27 @@ onActivated(async () => {
       width: 100%;
     }
 
+    .model-empty {
+      padding: 10px 0;
+      opacity: 0.5;
+    }
+
     .model-tag-list {
       display: flex;
-      flex-direction: column;
+      flex-wrap: wrap;
       gap: 8px;
     }
 
     .model-tag-item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 4px;
+
+      .n-button {
+        font-size: 10px;
+        padding: 0 6px;
+      }
     }
-
-    .model-tip {
-      font-size: 12px;
-    }
-  }
-}
-
-@include go('ai-form-modal') {
-  position: fixed;
-  top: 120px;
-  left: 50%;
-  transform: translateX(-50%);
-
-  .form-card {
-    width: 560px;
   }
 }
 </style>

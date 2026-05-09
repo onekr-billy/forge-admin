@@ -1,4 +1,3 @@
-/* 外层也要使用 */
 .func-keyword {
   color: #b478cf;
 }
@@ -8,31 +7,153 @@
 }
 
 @include go('chart-data-monaco-editor') {
-  .func-keyNameWord {
-    color: #70c0e8;
+  .event-modal-card {
+    width: 960px;
+    max-width: 95vw;
+    border-radius: 16px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.12);
+    background:
+      linear-gradient(180deg, rgba(var(--app-theme-rgb), 0.06), transparent 40%),
+      rgba(10, 14, 23, 0.95);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow:
+      0 0 80px rgba(var(--app-theme-rgb), 0.08),
+      0 24px 60px rgba(0, 0, 0, 0.5);
+
+    .n-card__content {
+      padding: 0 16px 0;
+    }
+
+    .n-card__action {
+      padding: 12px 16px 16px;
+      border-top: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    }
   }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    color: rgba(226, 232, 240, 0.92);
+    letter-spacing: 0.5px;
+  }
+
+  .modal-layout {
+    background: transparent;
+
+    .n-layout {
+      background: transparent;
+    }
+  }
+
+  .editor-pane {
+    padding-right: 16px;
+    height: 540px;
+  }
+
+  .modal-sider {
+    background: rgba(15, 23, 42, 0.2);
+    border-left: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    border-radius: 12px 0 0 12px;
+    overflow: hidden;
+
+    .n-layout-toggle-button {
+      border-color: rgba(var(--app-theme-rgb), 0.12);
+      background: rgba(10, 14, 23, 0.86);
+      color: var(--app-theme);
+      box-shadow: 0 0 12px rgba(var(--app-theme-rgb), 0.12);
+    }
+
+    .n-tabs {
+      padding: 12px 8px 0;
+    }
+
+    .n-scrollbar-content {
+      padding: 4px;
+    }
+  }
+
+  .func-signature {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 10px 14px;
+    margin: 8px 0 4px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.28);
+    border: 1px solid rgba(var(--app-theme-rgb), 0.07);
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 13px;
+
+    .func-kw {
+      color: #b478cf;
+      font-style: italic;
+    }
+
+    .func-name {
+      color: #61afef;
+    }
+
+    .func-params {
+      color: rgba(203, 213, 225, 0.7);
+    }
+  }
+
+  .func-close {
+    padding: 0 14px;
+    margin-top: 4px;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 13px;
+    color: #61afef;
+  }
+
+  .monaco-wrap {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+  }
+
+  .modal-action {
+    width: 100%;
+
+    .action-hint {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(148, 163, 184, 0.5);
+      font-size: 12px;
+    }
+  }
+
   .tab-tip {
     font-size: 12px;
   }
-  &.n-card.n-modal,
-  .n-card {
-    @extend .go-background-filter;
+
+  .func-keyNameWord {
+    color: #70c0e8;
   }
 }
+
 @include deep() {
   .n-layout,
   .n-layout-sider {
     background-color: transparent;
   }
+
   .collapse-show-box {
     .n-card__content {
       padding-left: 20px;
       padding-right: 10px;
     }
   }
+
   .go-editor-area {
     max-height: 530px;
   }
+
   .checkbox--hidden:checked {
     & + label {
       .n-icon {
@@ -44,8 +165,61 @@
       display: none;
     }
   }
-  // 优化代码换行
+
   .n-code > pre {
     white-space: break-spaces;
+  }
+
+  .n-tabs-nav {
+    background: rgba(15, 23, 42, 0.24);
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    border-radius: 9px;
+    padding: 3px;
+  }
+
+  .n-tabs-tab {
+    border-radius: 7px;
+    font-size: 12px;
+    padding: 4px 14px;
+    color: rgba(203, 213, 225, 0.6);
+    transition: all 0.2s ease;
+
+    &:hover {
+      color: rgba(226, 232, 240, 0.85);
+    }
+  }
+
+  .n-tabs-tab--active {
+    color: #fff !important;
+    background: rgba(var(--app-theme-rgb), 0.18) !important;
+    box-shadow: 0 0 14px rgba(var(--app-theme-rgb), 0.14);
+  }
+
+  .n-collapse-item {
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 6px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.06);
+    background: rgba(15, 23, 42, 0.14);
+
+    &__header {
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(226, 232, 240, 0.8);
+    }
+
+    &__content-inner {
+      padding: 6px 12px 10px;
+    }
+  }
+
+  .n-button {
+    border-radius: 8px;
+    transition: all 0.22s ease;
+  }
+
+  .n-button--primary-type {
+    box-shadow: 0 0 16px rgba(var(--app-theme-rgb), 0.18);
   }
 }

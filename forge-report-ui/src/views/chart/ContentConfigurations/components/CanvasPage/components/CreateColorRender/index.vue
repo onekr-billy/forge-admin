@@ -240,6 +240,16 @@ const titleChangeHandle = () => {
   justify-content: space-between;
   height: 100%;
   padding-right: 10px;
+  gap: 12px;
+
+  :deep(.n-card) {
+    border-radius: 12px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+      rgba(15, 23, 42, 0.24);
+  }
+
   .create-color-name {
     width: 200px;
   }
@@ -252,7 +262,7 @@ const titleChangeHandle = () => {
       .select {
         .n-color-picker {
           border: 2px solid v-bind('targetColor.color');
-          border-radius: 5px;
+          border-radius: 9px;
         }
       }
     }
@@ -266,16 +276,23 @@ const titleChangeHandle = () => {
       .color-computed-item {
         position: relative;
         display: inline-block;
-        height: 22px;
-        width: 22px;
+        height: 20px;
+        width: 20px;
         cursor: pointer;
         overflow: hidden;
-        border-radius: 4px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        transition: transform 0.15s ease;
+
+        &:hover {
+          transform: translateY(-1px) scale(1.05);
+        }
+
         & div {
           position: absolute;
           display: inline-block;
-          height: 22px;
-          width: 22px;
+          height: 20px;
+          width: 20px;
         }
       }
     }

@@ -1,17 +1,36 @@
-// 颜色
-$--color-red: #fc625d;
-$--color-warn: #fcbc40;
-$--color-success: #34c749;
+// ============================================
+// 科幻暗黑数据大屏 — 设计令牌
+// ============================================
 
-// 文字
-$--color-text: #1d2129;
-$--color-text-1: #4e5969;
-$--color-text-2: #86909c;
-$--color-text-3: #c9cdd4;
-$--color-text-4: #f2f3f5;
+// 状态颜色
+$--color-red: #ff4757;
+$--color-warn: #ffa502;
+$--color-success: #2ed573;
+$--color-info: #00d4ff;
 
-//.mt-1 => margin top
-//spacing
+// 强调色系统（霓虹系）
+$--color-primary: #00d4ff;
+$--color-primary-light: #7dd8ff;
+$--color-primary-dark: #0099cc;
+$--color-accent: #a78bfa;
+$--color-accent-light: #c4b5fd;
+$--color-accent-glow: rgba(167, 139, 250, 0.4);
+
+// 文字颜色（暗色主题）
+$--color-text: #e2e8f0;
+$--color-text-1: #cbd5e1;
+$--color-text-2: #94a3b8;
+$--color-text-3: #64748b;
+$--color-text-4: #475569;
+
+// 文字颜色（亮色主题）
+$--color-text-light: #0f172a;
+$--color-text-light-1: #1e293b;
+$--color-text-light-2: #334155;
+$--color-text-light-3: #64748b;
+$--color-text-light-4: #94a3b8;
+
+// spacing
 $spacing-base-size: 1em;
 
 $spacing-types: (
@@ -35,53 +54,66 @@ $spacing-sizes: (
   5: 2.5,
 );
 
-// 变亮值
-$--light-shalow: 2%;
+// 深空背景层级（太空色调）
+$--color-dark-black: #020617;
+$--color-dark-bg-0: #0a0e17;
+$--color-dark-bg-1: #111827;
+$--color-dark-bg-1-shallow: #151d2b;
+$--color-dark-bg-2: #1a1f2e;
+$--color-dark-bg-2-shallow: #1e2436;
+$--color-dark-bg-3: #1f2937;
+$--color-dark-bg-3-shallow: #233043;
+$--color-dark-bg-4: #2d3748;
+$--color-dark-bg-4-shallow: #334155;
+$--color-dark-bg-5: #374151;
+$--color-dark-bg-5-shallow: #3d4a5c;
 
-// 白色
-$--color-light-bg: #fff;
-$--color-light-bg-1: #fafafc;
-$--color-light-bg-1-shallow: lighten($--color-light-bg-1, $--light-shalow);
-$--color-light-bg-2: #f2f3f5;
-$--color-light-bg-2-shallow: lighten($--color-light-bg-2, $--light-shalow);
-$--color-light-bg-3: #e5e6eb;
-$--color-light-bg-3-shallow: lighten($--color-light-bg-3, $--light-shalow);
-$--color-light-bg-4: #e3e3e4;
-$--color-light-bg-4-shallow: lighten($--color-light-bg-4, $--light-shalow);
-$--color-light-bg-5: #bebebe;
-$--color-light-bg-5-shallow: lighten($--color-light-bg-5, $--light-shalow);
+// 亮色背景层级
+$--color-light-bg: #f8fafc;
+$--color-light-bg-1: #f1f5f9;
+$--color-light-bg-1-shallow: #edf2f6;
+$--color-light-bg-2: #e2e8f0;
+$--color-light-bg-2-shallow: #dce4ec;
+$--color-light-bg-3: #cbd5e1;
+$--color-light-bg-3-shallow: #c4cfde;
+$--color-light-bg-4: #94a3b8;
+$--color-light-bg-4-shallow: #8b9cb3;
+$--color-light-bg-5: #64748b;
+$--color-light-bg-5-shallow: #5c6d85;
 
-// 变暗值
-$--dark-shalow: 2%;
-
-// 黑色
-$--color-dark-black: #000;
-$--color-dark-bg-1: #18181c;
-$--color-dark-bg-1-shallow: darken($--color-dark-bg-1, $--dark-shalow);
-$--color-dark-bg-2: #232324;
-$--color-dark-bg-2-shallow: darken($--color-dark-bg-2, $--dark-shalow);
-$--color-dark-bg-3: #2a2a2b;
-$--color-dark-bg-3-shallow: darken($--color-dark-bg-3, $--dark-shalow);
-$--color-dark-bg-4: #313132;
-$--color-dark-bg-4-shallow: darken($--color-dark-bg-4, $--dark-shalow);
-$--color-dark-bg-5: #373739;
-$--color-dark-bg-5-shallow: darken($--color-dark-bg-5, $--dark-shalow);
-
-// 最大宽度
+// 尺寸
 $--max-width: 1920px;
-// 顶部距离
-$--header-height: 60px;
-// 底部距离
-$--footer-height: 50px;
-// 模糊
-$--filter-blur-base: blur(20px);
-// 毛玻璃
-$--filter-color-login-dark: rgba(35,35,36, 0.7);
-$--filter-color-login-dark-shallow: rgba(35,35,36, 0.3);
-$--filter-color-login-light: rgba(240, 240, 240, 0.7);
-$--filter-color-login-light-shallow: rgba(240, 240, 240, 0.3);
+$--header-height: 56px;
+$--footer-height: 40px;
 
-// 边框
-$--border-radius-base: 8px;
+// 模糊
+$--filter-blur-base: blur(16px);
+$--filter-blur-light: blur(8px);
+
+// 毛玻璃面板（暗色）
+$--filter-color-dark: rgba(17, 24, 39, 0.75);
+$--filter-color-dark-shallow: rgba(17, 24, 39, 0.5);
+$--filter-color-dark-heavy: rgba(10, 14, 23, 0.85);
+
+// 毛玻璃面板（亮色）
+$--filter-color-light: rgba(248, 250, 252, 0.75);
+$--filter-color-light-shallow: rgba(248, 250, 252, 0.5);
+$--filter-color-light-heavy: rgba(241, 245, 249, 0.85);
+
+// 边框圆角
+$--border-radius-base: 6px;
+$--border-radius-sm: 4px;
+$--border-radius-lg: 12px;
+
 // 阴影
-$--border-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+$--border-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+$--border-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+// 霓虹发光效果
+$--glow-primary: 0 0 12px rgba(0, 212, 255, 0.25), 0 0 24px rgba(0, 212, 255, 0.1);
+$--glow-accent: 0 0 12px rgba(167, 139, 250, 0.25), 0 0 24px rgba(167, 139, 250, 0.1);
+$--glow-border-primary: 0 0 8px rgba(0, 212, 255, 0.3);
+
+// 霓虹边框（用于玻璃面板）
+$--border-glass: 1px solid rgba(255, 255, 255, 0.06);
+$--border-glass-active: 1px solid rgba(0, 212, 255, 0.25);

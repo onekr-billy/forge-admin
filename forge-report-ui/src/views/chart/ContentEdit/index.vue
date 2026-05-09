@@ -194,11 +194,26 @@ onMounted(() => {
   overflow: hidden;
   @extend .go-point-bg;
   @include background-image('background-point');
+  border-radius: 10px;
+  border-color: rgba(var(--app-theme-rgb), 0.1);
+  background-color: rgba(2, 6, 23, 0.32);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 50% 44%, rgba(var(--app-theme-rgb), 0.08), transparent 42%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 90px);
+    z-index: 0;
+  }
 
   @include goId('chart-edit-content') {
     overflow: hidden;
     @extend .go-transition;
     @include fetch-theme('box-shadow');
+    border-radius: 4px;
 
     .edit-content-chart {
       position: absolute;

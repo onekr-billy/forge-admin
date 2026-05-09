@@ -192,14 +192,13 @@ const mouseleaveHandle = (componentInstance: CreateComponentType | CreateCompone
 
 <style lang="scss" scoped>
 $centerHeight: 52px;
-$centerMiniHeight: 28px;
-$textSize: 10px;
+$centerMiniHeight: 34px;
+$textSize: 11px;
 
 @include go(content-layers-group-list-item) {
   position: relative;
-  width: 90%;
-  margin: 10px 5%;
-  margin-bottom: 5px;
+  width: calc(100% - 12px);
+  margin: 8px 6px;
   @extend .go-transition-quick;
   @include deep() {
     .go-content-layers-list-item {
@@ -219,17 +218,26 @@ $textSize: 10px;
   .root-item-content {
     height: $centerHeight;
     cursor: pointer;
-    border-radius: 5px;
-    border: 1px solid rgba(0, 0, 0, 0);
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background:
+      linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.11), transparent 56%),
+      rgba(15, 23, 42, 0.52);
     &.hover,
     &:hover {
-      @include fetch-bg-color('background-color4');
+      background:
+        linear-gradient(135deg, rgba(var(--app-theme-rgb), 0.18), transparent 56%),
+        rgba(15, 23, 42, 0.58);
+      border-color: rgba(var(--app-theme-rgb), 0.25);
     }
     /* 选中 */
     &.select {
       border: 1px solid v-bind('themeColor');
       /* 需要设置最高级，覆盖 hover 的颜色 */
       background-color: rgba(0, 0, 0, 0);
+      box-shadow:
+        0 0 16px rgba(var(--app-theme-rgb), 0.16),
+        inset 3px 0 0 v-bind('themeColor');
       .list-img {
         border: 1px solid v-bind('themeColor') !important;
       }
@@ -254,20 +262,25 @@ $textSize: 10px;
   }
   .item-content {
     z-index: 1;
-    padding: 6px 5px;
+    padding: 6px;
     justify-content: start !important;
-    width: calc(100% - 10px);
-    height: calc(#{$centerHeight} - 10px);
+    width: calc(100% - 12px);
+    height: calc(#{$centerHeight} - 12px);
   }
   .select-modal {
     width: 100%;
     height: calc(#{$centerHeight} + 2px);
-    opacity: 0.3;
-    background-color: v-bind('themeColor');
+    opacity: 0.16;
+    background:
+      linear-gradient(90deg, v-bind('themeColor'), transparent),
+      v-bind('themeColor');
+    border-radius: 8px;
   }
   .list-text {
-    padding-left: 6px;
+    padding-left: 8px;
     font-size: $textSize;
+    color: rgba(226, 232, 240, 0.9);
+    font-weight: 600;
   }
 
   .list-status-icon {

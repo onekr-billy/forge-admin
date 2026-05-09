@@ -61,7 +61,7 @@
       <span>点击供应商行查看其下的模型</span>
     </div>
 
-    <n-modal v-model:show="providerModal.show" preset="card" :title="providerModal.isEdit ? '编辑供应商' : '新增供应商'" :style="{ maxWidth: '800px', width: '90vw' }">
+    <n-modal v-model:show="providerModal.show" preset="card" :title="providerModal.isEdit ? '编辑供应商' : '新增供应商'" style="width: 900px;">
       <n-form ref="providerFormRef" :model="providerModal.form" :rules="providerRules" label-placement="left" label-width="100">
         <n-grid :cols="2" :x-gap="16">
           <n-form-item-gi label="供应商名称" path="providerName">

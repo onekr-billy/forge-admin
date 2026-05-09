@@ -2,7 +2,7 @@
   <div class="go-flex-items-center">
     <n-popover class="edit-history-popover" :show-arrow="false" size="small" trigger="click" placement="top-start">
       <template #trigger>
-        <n-button class="mr-10" secondary size="small" :disabled="options.length === 0">
+        <n-button class="history-trigger" quaternary size="small" :disabled="options.length === 0">
           <span class="btn-text">历史记录</span>
         </n-button>
       </template>
@@ -133,9 +133,6 @@ const options = computed(() => {
 </script>
 
 <style lang="scss" scoped>
-.mr-10 {
-  margin-right: 10px;
-}
 .edit-history-popover {
   .btn-text {
     font-size: 12px;
@@ -153,5 +150,21 @@ const options = computed(() => {
       }
     }
   }
+}
+
+.history-trigger {
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+  background: rgba(15, 23, 42, 0.3);
+
+  &:hover {
+    border-color: rgba(var(--app-theme-rgb), 0.28);
+    background: rgba(var(--app-theme-rgb), 0.1);
+  }
+}
+
+:deep(.n-icon) {
+  color: rgba(148, 163, 184, 0.8);
 }
 </style>

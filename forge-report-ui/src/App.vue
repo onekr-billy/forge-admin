@@ -6,29 +6,28 @@
     :date-locale="dateLocale"
     :theme-overrides="overridesTheme"
   >
-    <go-app-provider>
+    <fg-app-provider>
       <I18n></I18n>
       <router-view></router-view>
-    </go-app-provider>
+    </fg-app-provider>
   </n-config-provider>
 </template>
 
 <script lang="ts" setup>
+import { onMounted } from 'vue'
 import { NConfigProvider } from 'naive-ui'
-import { GoAppProvider } from '@/components/GoAppProvider'
+import { FgAppProvider } from '@/components/FgAppProvider'
 import { I18n } from '@/components/I18n'
 import { useDarkThemeHook, useThemeOverridesHook, useCode, useLang } from '@/hooks'
+import { setAppCssTheme } from '@/utils/style'
+import { useDesignStore } from '@/store/modules/designStore/designStore'
 
-// 暗黑主题
 const darkTheme = useDarkThemeHook()
-
-// 主题配置
 const overridesTheme = useThemeOverridesHook()
-
-// 代码主题
 const hljsTheme = useCode()
-
-// 全局语言
 const { locale, dateLocale } = useLang()
-//测试提交
+
+onMounted(() => {
+  setAppCssTheme(useDesignStore().getAppTheme)
+})
 </script>

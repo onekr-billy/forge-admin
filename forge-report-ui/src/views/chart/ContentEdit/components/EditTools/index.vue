@@ -58,7 +58,7 @@
     </n-tooltip>
   </div>
   <!-- 系统设置 model -->
-  <go-system-set v-model:modelShow="globalSettingModel"></go-system-set>
+  <fg-system-set v-model:modelShow="globalSettingModel"></fg-system-set>
 </template>
 
 <script setup lang="ts">
@@ -77,7 +77,7 @@ import {
 import { EditEnum } from '@/enums/pageEnum'
 import { StorageEnum } from '@/enums/storageEnum'
 import { useRoute } from 'vue-router'
-import { GoSystemSet } from '@/components/GoSystemSet/index'
+import { FgSystemSet } from '@/components/FgSystemSet/index'
 import { exportHandle } from './utils'
 import { useFile } from './hooks/useFile.hooks'
 import { useSyncUpdate } from './hooks/useSyncUpdate.hook'
@@ -227,47 +227,98 @@ $asideBottom: 70px;
   display: flex;
   justify-content: space-around;
   align-items: center;
-  border-radius: 25px;
-  border: 1px solid;
-  @include fetch-border-color('hover-border-color-shallow');
+  border-radius: 999px;
+  border: 1px solid rgba(var(--app-theme-rgb), 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+    rgba(10, 14, 23, 0.72);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.36),
+    0 0 22px rgba(var(--app-theme-rgb), 0.1);
+
+  :deep(.n-button) {
+    border-radius: 999px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    background: rgba(15, 23, 42, 0.42);
+    transition: all 0.22s ease;
+
+    &:hover {
+      border-color: rgba(var(--app-theme-rgb), 0.28);
+      background: rgba(var(--app-theme-rgb), 0.11);
+      transform: translateY(-1px);
+    }
+  }
+
   &.aside {
     display: flex;
     justify-content: center;
     flex-direction: column-reverse;
     height: auto;
-    right: 20px;
-    padding: 30px 8px;
+    right: 24px;
+    padding: 12px 7px;
     bottom: $asideBottom;
     overflow: hidden;
     transition: height ease 0.4s;
+    border-radius: 16px;
+
     .btn-item {
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       &:first-of-type {
         margin-bottom: 0;
       }
       @include deep() {
+        .n-button {
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
+          padding: 0;
+        }
+
         .n-button__icon {
-          margin-right: 0;
-          margin-left: 0;
-          margin-bottom: 12px;
+          margin: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
       }
     }
     &.unMini {
       animation: aside-in 0.4s ease forwards;
+      background:
+        linear-gradient(180deg, rgba(var(--app-theme-rgb), 0.12), transparent),
+        rgba(10, 14, 23, 0.78);
+      border-color: rgba(var(--app-theme-rgb), 0.18);
+
       @keyframes aside-in {
         0% {
           opacity: 0.5;
           height: $asideMiniHeight;
         }
         100% {
-          height: $asideHeight;
+          height: 204px;
           opacity: 1;
         }
       }
       .btn-item {
         position: relative;
         display: block;
+
+        &::before {
+          content: '';
+          position: absolute;
+          left: -7px;
+          top: 8px;
+          width: 2px;
+          height: 24px;
+          border-radius: 999px;
+          background: rgba(var(--app-theme-rgb), 0);
+          transition: background 0.2s ease;
+        }
+
+        &:hover::before {
+          background: var(--app-theme, #00d4ff);
+          box-shadow: 0 0 8px rgba(var(--app-theme-rgb), 0.5);
+        }
       }
       .asideLogo {
         opacity: 0.4;
@@ -276,8 +327,11 @@ $asideBottom: 70px;
     &.isMini {
       cursor: pointer;
       padding: 13px 13px;
-      background-color: var(--n-toggle-bar-color);
+      background:
+        radial-gradient(circle, rgba(var(--app-theme-rgb), 0.18), rgba(15, 23, 42, 0.78));
       animation: aside-mini-in 0.4s ease forwards;
+      border-radius: 999px;
+
       @keyframes aside-mini-in {
         0% {
           opacity: 0.5;
@@ -342,7 +396,7 @@ $asideBottom: 70px;
       padding: 5px;
       border-radius: 8px;
       cursor: pointer;
-      border: 0px;
+      border: 1px solid rgba(var(--app-theme-rgb), 0.12);
       animation: dock-mini-in 1s ease forwards;
       @keyframes dock-mini-in {
         0% {

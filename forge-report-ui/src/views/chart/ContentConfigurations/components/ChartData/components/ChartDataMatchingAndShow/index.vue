@@ -401,14 +401,85 @@ watch(
 
 <style lang="scss" scoped>
 @include go('chart-configurations-timeline') {
-  @include deep() {
-    pre {
-      white-space: pre-wrap;
-      word-wrap: break-word;
+  padding: 4px 0;
+
+  :deep(.n-timeline-item__title) {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.86);
+  }
+
+  :deep(.n-table) {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.06);
+
+    th {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      color: rgba(203, 213, 225, 0.7);
+      background: rgba(15, 23, 42, 0.28);
+    }
+
+    td {
+      font-size: 12px;
     }
   }
+
+  :deep(.n-card) {
+    border-radius: 10px;
+    border: 1px solid rgba(var(--app-theme-rgb), 0.08);
+    background: rgba(15, 23, 42, 0.14);
+
+    .n-card__content {
+      padding: 10px 14px;
+    }
+  }
+
+  :deep(.n-code) {
+    border-radius: 8px;
+    max-height: 200px;
+    overflow: auto;
+
+    pre {
+      white-space: pre-wrap !important;
+      word-wrap: break-word !important;
+      word-break: break-all;
+    }
+  }
+
   .source-btn-box {
-    margin-top: 10px !important;
+    margin-top: 8px !important;
+
+    :deep(.sourceBtn-item) {
+      height: 30px;
+      border-radius: 8px;
+      font-size: 12px;
+      border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+      background: rgba(15, 23, 42, 0.24);
+      color: rgba(203, 213, 225, 0.74);
+      transition: all 0.2s ease;
+
+      &:hover:not(:disabled) {
+        border-color: rgba(var(--app-theme-rgb), 0.24);
+        background: rgba(var(--app-theme-rgb), 0.08);
+        color: #fff;
+      }
+
+      &:disabled {
+        opacity: 0.35;
+      }
+    }
+  }
+
+  :deep(.n-divider) {
+    margin: 8px 0;
+  }
+
+  :deep(.n-tag) {
+    border-radius: 6px;
+    font-size: 11px;
   }
 }
 </style>

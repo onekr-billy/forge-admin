@@ -12,9 +12,6 @@
       <div class="header-item right">
         <n-space>
           <slot name="ri-left"> </slot>
-          <go-lang-select></go-lang-select>
-          <theme-color-select></theme-color-select>
-          <go-theme-select></go-theme-select>
           <slot name="ri-right"> </slot>
         </n-space>
       </div>
@@ -25,9 +22,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { GoThemeSelect } from '@/components/GoThemeSelect'
-import { GoLangSelect } from '@/components/GoLangSelect'
-import { ThemeColorSelect } from '@/components/Pages/ThemeColorSelect'
 import { PageEnum } from '@/enums/pageEnum'
 
 const route = useRoute()
@@ -39,9 +33,30 @@ const isProject = computed(() => {
 
 <style lang="scss" scoped>
 @include go(header) {
+  backdrop-filter: $--filter-blur-base;
+  -webkit-backdrop-filter: $--filter-blur-base;
+  background:
+    linear-gradient(90deg, rgba(10, 14, 23, 0.92), rgba(17, 24, 39, 0.76)),
+    rgba(10, 14, 23, 0.76);
+  border-bottom: 1px solid rgba(var(--app-theme-rgb), 0.12);
+  position: relative;
+  z-index: 10;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(var(--app-theme-rgb), 0.35), transparent);
+    pointer-events: none;
+  }
+
   &-box {
     display: flex;
     justify-content: space-between;
+    gap: 16px;
     &.is-project {
       grid-template-columns: none;
     }
@@ -50,6 +65,7 @@ const isProject = computed(() => {
       align-items: center;
       &.left {
         justify-content: start;
+        flex: 1;
       }
       &.center {
         justify-content: center;
@@ -59,7 +75,18 @@ const isProject = computed(() => {
       }
     }
     height: $--header-height;
-    padding: 0 20px 0 60px;
+    padding: 0 22px;
+    max-width: $--max-width;
+    margin: 0 auto;
+
+    :deep(.n-button) {
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+
+    :deep(.n-button--primary-type) {
+      box-shadow: 0 0 14px rgba(var(--app-theme-rgb), 0.18);
+    }
   }
 }
 </style>

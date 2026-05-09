@@ -5,19 +5,31 @@ body {
 * {
   list-style: none;
 }
+
 /* 设置滚动条的样式 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-/* 滚动槽 */
-::-webkit-scrollbar-track {
-  -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0);
-  border-radius: 2px;
-}
-/* 滚动条滑块 */
-::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: #a3a3a3;
+  width: 6px;
+  height: 6px;
 }
 
+/* 滚动槽 */
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+/* 滚动条滑块 */
+::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(var(--app-theme-rgb), 0.2);
+  transition: background 0.3s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--app-theme-rgb), 0.4);
+}
+
+/* 滚动条按钮（上下箭头） */
+::-webkit-scrollbar-button {
+  display: none;
+}

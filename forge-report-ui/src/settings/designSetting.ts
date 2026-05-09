@@ -6,7 +6,7 @@ import designColor from './designColor.json'
 export const lang = LangEnum.ZH
 
 // 水印文字
-export const watermarkText = "GoView 低代码平台"
+export const watermarkText = "Forge 数据大屏"
 
 // 分组名称
 export const groupTitle = "分组"
@@ -15,8 +15,8 @@ export const groupTitle = "分组"
 export const theme = {
   // 默认是否开启深色主题
   darkTheme: true,
-  //默认主题色
-  appTheme: '#51d6a9',
+  //默认主题色（电光青）
+  appTheme: '#00d4ff',
   appThemeDetail: null,
 }
 
@@ -35,7 +35,7 @@ export const chartInitConfig = {
 export const dialogIconSize = '20'
 
 // 侧边栏宽度
-export const asideWidth = '270'
+export const asideWidth = '200'
 
 // 侧边栏折叠后的宽度，支持全部折叠会覆盖为 0
 export const asideCollapsedWidth = 60

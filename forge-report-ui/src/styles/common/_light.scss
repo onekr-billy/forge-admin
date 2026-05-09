@@ -2,36 +2,40 @@
 
 $light: (
   // 文字颜色
-    color: $--color-text,
+    color: $--color-text-light,
+    color-1: $--color-text-light-1,
+    color-2: $--color-text-light-2,
+    color-3: $--color-text-light-3,
+    color-4: $--color-text-light-4,
   // aside 背景
-    aside-background-color: $--color-light-bg-1,
+    aside-background-color: $--color-light-bg,
   //背景
     background-color: $--color-light-bg-3,
-    background-color1: $--color-light-bg-1,
+    background-color1: $--color-light-bg,
     background-color1-shallow: $--color-light-bg-1-shallow,
-    background-color2: $--color-light-bg-2,
+    background-color2: $--color-light-bg-1,
     background-color2-shallow: $--color-light-bg-2-shallow,
-    background-color3: $--color-light-bg-3,
+    background-color3: $--color-light-bg-2,
     background-color3-shallow: $--color-light-bg-3-shallow,
-    background-color4: $--color-light-bg-4,
+    background-color4: $--color-light-bg-3,
     background-color4-shallow: $--color-light-bg-4-shallow,
-    background-color5: $--color-light-bg-5,
+    background-color5: $--color-light-bg-4,
     background-color5-shallow: $--color-light-bg-5-shallow,
   // 毛玻璃背景
-    filter-color: $--filter-color-login-light,
-    filter-color-shallow: $--filter-color-login-light-shallow,
+    filter-color: $--filter-color-light,
+    filter-color-shallow: $--filter-color-light-shallow,
   //渐变背景
     background-image:
-    linear-gradient(120deg, $--color-light-bg 0%, $--color-light-bg 100%),
+    linear-gradient(135deg, $--color-light-bg 0%, $--color-light-bg-1 50%, $--color-light-bg-2 100%),
   // 斑点背景
     background-point:
     (
       linear-gradient($--color-light-bg-1 14px, transparent 0),
-      linear-gradient(90deg, transparent 14px, $--color-dark-bg-5 0)
+      linear-gradient(90deg, transparent 14px, $--color-light-bg-3 0)
     ),
   // hover 边框颜色
     hover-border-color: $--color-light-bg-4,
     hover-border-color-shallow: $--color-light-bg-3,
     // 阴影
-    box-shadow: 0 8px 10px #00000012
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08)
 );
