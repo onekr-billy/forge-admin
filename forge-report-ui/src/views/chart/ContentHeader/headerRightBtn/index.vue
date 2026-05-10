@@ -20,8 +20,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { renderIcon, goDialog, fetchPathByName, routerTurnByPath, setSessionStorage, getSessionStorage } from '@/utils'
+import { renderIcon, goDialog, fetchPathByName, routerTurnByPath, setSessionStorage, getSessionStorage, downloadTextFile } from '@/utils'
 import { captureProjectScreenshot } from '@/utils/capture'
+import { buildApiContractDocument, buildApiContractFileName } from '@/utils/apiContractExport'
 import { PreviewEnum } from '@/enums/pageEnum'
 import { StorageEnum } from '@/enums/storageEnum'
 import { useRoute } from 'vue-router'
@@ -31,7 +32,7 @@ import { icon } from '@/plugins'
 import { cloneDeep } from 'lodash'
 import { buildProjectPayload, publishProjectApi, updateProjectApi } from '@/api/project'
 
-const { BrowsersOutlineIcon, SendIcon, AnalyticsIcon } = icon.ionicons5
+const { BrowsersOutlineIcon, SendIcon, AnalyticsIcon, DocumentTextIcon } = icon.ionicons5
 const chartEditStore = useChartEditStore()
 
 const routerParamsInfo = useRoute()
@@ -124,6 +125,38 @@ const sendHandle = async () => {
   }
 }
 
+// 导出接口规范文档
+const exportApiContractHandle = () => {
+  const document = buildApiContractDocument({
+    canvasConfig: chartEditStore.getEditCanvasConfig,
+    requestGlobalConfig: chartEditStore.getRequestGlobalConfig,
+    componentList: chartEditStore.getComponentList,
+    includeStatic: true
+  })
+
+  if (!document.endpoints.length) {
+    window['$message'].warning('当前画布没有可导出的组件数据规范')
+    return
+  }
+
+  const fileName = buildApiContractFileName(document.meta.projectName)
+  const warningText = document.warnings.length ? `\n\n检测到 ${document.warnings.length} 条提示，建议导出后检查 URL、dataset 和 filter 说明。` : ''
+
+  goDialog({
+    message: `将导出 ${document.endpoints.length} 个组件数据规范，后端可按文档中的 dataset 结构开发接口，接口地址可后续自行选择或配置。${warningText}`,
+    positiveText: '下载 Markdown',
+    negativeText: '下载 JSON',
+    onPositiveCallback: () => {
+      downloadTextFile(document.markdown, fileName, 'md')
+      window['$message'].success('接口规范 Markdown 已导出')
+    },
+    onNegativeCallback: () => {
+      downloadTextFile(document.json, fileName, 'json')
+      window['$message'].success('接口规范 JSON 已导出')
+    }
+  })
+}
+
 const btnList = [
   {
     select: true,
@@ -131,6 +164,12 @@ const btnList = [
     type: 'primary',
     icon: renderIcon(AnalyticsIcon),
     event: syncData
+  },
+  {
+    select: true,
+    title: '接口文档',
+    icon: renderIcon(DocumentTextIcon),
+    event: exportApiContractHandle
   },
   {
     select: true,

@@ -21,7 +21,7 @@
 
       <template v-else>
         <div
-          v-for="msg in aiStore.getChatMessages"
+          v-for="(msg, index) in aiStore.getChatMessages"
           :key="msg.id"
           class="message-item"
           :class="msg.role"
@@ -30,8 +30,65 @@
             <n-icon size="14" color="#51d6a9"><SparklesIcon /></n-icon>
           </div>
           <div class="bubble-wrapper">
+            <div v-if="msg.role === 'assistant' && msg.reasoning?.trim()" class="reasoning-section">
+              <div class="reasoning-header" @click="toggleReasoning(index)">
+                <div class="reasoning-header-left">
+                  <n-icon size="14" color="#51d6a9"><SparklesIcon /></n-icon>
+                  <span>思考过程</span>
+                  <span v-if="msg.reasoningTime" class="reasoning-duration">用时 {{ msg.reasoningTime }}s</span>
+                  <span v-else-if="msg.isReasoning" class="reasoning-duration thinking">思考中...</span>
+                </div>
+                <span class="reasoning-toggle" :class="{ expanded: expandedReasonings[index] }">⌄</span>
+              </div>
+              <div
+                v-if="expandedReasonings[index]"
+                :ref="el => setReasoningContentRef(el, index)"
+                class="reasoning-content"
+              >
+                {{ msg.reasoning }}
+              </div>
+            </div>
             <div class="bubble" :class="msg.role">
-              <span class="msg-content" v-html="renderContent(msg.content)"></span>
+              <div
+                v-if="msg.role === 'assistant' && msg.canvasResponse"
+                class="generate-result-card"
+              >
+                <div class="generate-result-icon">
+                  <n-icon size="18"><AnalyticsIcon /></n-icon>
+                </div>
+                <div class="generate-result-main">
+                  <div class="generate-result-title">
+                    大屏生成完成
+                  </div>
+                  <div class="generate-result-name">
+                    {{ msg.canvasResponse.title || '未命名大屏' }}
+                  </div>
+                  <div class="generate-result-meta">
+                    <span>{{ msg.canvasResponse.components?.length || 0 }} 个组件</span>
+                    <span>可应用到当前画布</span>
+                  </div>
+                </div>
+              </div>
+              <div
+                v-else-if="msg.role === 'assistant' && msg.streaming && msg.progressSteps?.length"
+                class="generate-progress-card"
+              >
+                <div class="generate-progress-title">
+                  AI 正在生成大屏
+                </div>
+                <div class="generate-progress-list">
+                  <div
+                    v-for="step in msg.progressSteps"
+                    :key="step.key"
+                    class="generate-progress-step"
+                    :class="step.status"
+                  >
+                    <span class="generate-progress-dot" />
+                    <span class="generate-progress-label">{{ step.label }}</span>
+                  </div>
+                </div>
+              </div>
+              <span v-else class="msg-content" v-html="renderContent(msg.content)"></span>
               <span v-if="msg.streaming" class="typing-cursor">|</span>
             </div>
             <div v-if="msg.role === 'assistant' && !msg.streaming && msg.canvasResponse" class="msg-actions">
@@ -180,9 +237,7 @@ import {
   type AiProvider,
   aiChatStream,
   aiGenerateStream,
-  getProviderPageApi,
-  getSessionListApi,
-  getSessionMessagesApi
+  getProviderPageApi
 } from '@/api/ai'
 import type { AIGenerateResponse } from '@/api/ai/ai.d'
 import { applyAIToCanvas } from './aiEngine'
@@ -204,6 +259,7 @@ const styleRef = ref<'dark' | 'light'>('dark')
 const chatModeRef = ref<'generate' | 'chat'>('generate')
 const showModeSelect = ref(false)
 const messagesContainerRef = ref<HTMLElement>()
+const reasoningContentRefs = ref<HTMLElement[]>([])
 const providerList = ref<AiProvider[]>([])
 const providerLoading = ref(false)
 const chatSessionIdRef = ref(aiStore.currentSessionId || createSessionId())
@@ -220,13 +276,20 @@ const quickPrompts = [
 ]
 
 const GENERATE_PROGRESS_STEPS = [
-  '🧠 正在理解你的大屏需求...',
-  '🧩 正在规划页面布局与组件组合...',
-  '📊 正在生成图表数据结构与画布配置...',
-  '✨ 正在整理最终结果...'
+  { key: 'understand', label: '理解需求' },
+  { key: 'layout', label: '规划布局' },
+  { key: 'charts', label: '生成组件' },
+  { key: 'detail', label: '完善配置' },
+  { key: 'verify', label: '校验结果' }
 ]
 
 const hasStreamingMessage = computed(() => aiStore.getChatMessages.some(message => message.streaming))
+const expandedReasonings = ref<Record<number, boolean>>({})
+const aiRawContent = ref('')
+const aiReasoningContent = ref('')
+const aiIsReasoningPhase = ref(false)
+const aiReasoningStartTime = ref<number | null>(null)
+const aiReasoningEndTime = ref<number | null>(null)
 
 function createSessionId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -278,14 +341,26 @@ const modelOptions = computed(() => {
 
 const scrollToBottom = async () => {
   await nextTick()
+  scrollActiveReasoningToBottom()
   if (messagesContainerRef.value) {
     messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight
   }
+  requestAnimationFrame(() => {
+    scrollActiveReasoningToBottom()
+    if (messagesContainerRef.value) {
+      messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight
+    }
+  })
 }
 
 watch(() => aiStore.getChatMessages.length, scrollToBottom)
 watch(
   () => aiStore.getChatMessages[aiStore.getChatMessages.length - 1]?.content,
+  scrollToBottom
+)
+
+watch(
+  () => aiStore.getChatMessages[aiStore.getChatMessages.length - 1]?.reasoning,
   scrollToBottom
 )
 
@@ -348,6 +423,136 @@ function useQuickPrompt(prompt: string) {
   chatModeRef.value = 'generate'
 }
 
+function toggleReasoning(index: number) {
+  expandedReasonings.value[index] = !expandedReasonings.value[index]
+  scrollToBottom()
+}
+
+function setReasoningContentRef(el: Element | null, index: number) {
+  if (el instanceof HTMLElement) {
+    reasoningContentRefs.value[index] = el
+  } else {
+    delete reasoningContentRefs.value[index]
+  }
+}
+
+function scrollActiveReasoningToBottom() {
+  const activeIndex = aiStore.getChatMessages.findLastIndex(msg => msg.role === 'assistant' && msg.isReasoning)
+  const reasoningEl = reasoningContentRefs.value[activeIndex]
+  if (reasoningEl) {
+    reasoningEl.scrollTop = reasoningEl.scrollHeight
+  }
+}
+
+function resetStreamingState() {
+  aiRawContent.value = ''
+  aiReasoningContent.value = ''
+  aiIsReasoningPhase.value = false
+  aiReasoningStartTime.value = null
+  aiReasoningEndTime.value = null
+}
+
+function getReasoningTime() {
+  if (!aiReasoningStartTime.value)
+    return null
+  const endTime = aiReasoningEndTime.value || Date.now()
+  return Math.max(1, Math.round((endTime - aiReasoningStartTime.value) / 1000))
+}
+
+function updateAssistantStreaming(content: string, canvasResponse?: AIGenerateResponse | null) {
+  aiStore.updateLastAssistantMessage(content, canvasResponse, {
+    reasoning: aiReasoningContent.value,
+    isReasoning: aiIsReasoningPhase.value,
+    reasoningTime: aiReasoningContent.value ? getReasoningTime() : null,
+    progressSteps: getGenerateProgressSteps(aiRawContent.value)
+  })
+  const lastMessageIndex = aiStore.getChatMessages.length - 1
+  const lastMsg = aiStore.getChatMessages[lastMessageIndex]
+  if (lastMsg?.role === 'assistant') {
+    lastMsg.streaming = aiStore.getGenerating
+    if (aiIsReasoningPhase.value) {
+      expandedReasonings.value[lastMessageIndex] = true
+    }
+  }
+}
+
+function appendAnswerContent(text: string, mode: 'generate' | 'chat') {
+  if (!text)
+    return
+  aiRawContent.value += text
+  const displayContent = mode === 'generate'
+    ? buildGenerateStreamingPreview(aiRawContent.value)
+    : aiRawContent.value
+  updateAssistantStreaming(displayContent, null)
+}
+
+function getGenerateProgressSteps(fullText: string) {
+  const activeCount = Math.min(
+    GENERATE_PROGRESS_STEPS.length,
+    Math.max(1, Math.ceil((fullText.trim().length || 1) / 90))
+  )
+  return GENERATE_PROGRESS_STEPS.map((step, index) => ({
+    ...step,
+    status: index < activeCount - 1 ? 'done' : index === activeCount - 1 ? 'active' : 'pending'
+  }))
+}
+
+function consumeReasoningAwareChunk(chunk: string, mode: 'generate' | 'chat') {
+  if (!chunk)
+    return
+
+  const reasoningDelimiter = '==================== 思考过程 ===================='
+  const answerDelimiter = '==================== 完整回复 ===================='
+  let remaining = chunk
+
+  while (remaining) {
+    const reasoningIndex = remaining.indexOf(reasoningDelimiter)
+    const answerIndex = remaining.indexOf(answerDelimiter)
+
+    if (reasoningIndex >= 0 && (answerIndex < 0 || reasoningIndex < answerIndex)) {
+      appendAnswerContent(remaining.slice(0, reasoningIndex), mode)
+      aiIsReasoningPhase.value = true
+      aiReasoningContent.value = ''
+      aiReasoningStartTime.value = Date.now()
+      aiReasoningEndTime.value = null
+      updateAssistantStreaming('', null)
+      remaining = remaining.slice(reasoningIndex + reasoningDelimiter.length).replace(/^\s*\n?/, '')
+      continue
+    }
+
+    if (answerIndex >= 0) {
+      const beforeAnswer = remaining.slice(0, answerIndex)
+      if (aiIsReasoningPhase.value) {
+        aiReasoningContent.value += beforeAnswer
+        aiIsReasoningPhase.value = false
+        aiReasoningEndTime.value = Date.now()
+      } else {
+        appendAnswerContent(beforeAnswer, mode)
+      }
+      remaining = remaining.slice(answerIndex + answerDelimiter.length).replace(/^\s*\n?/, '')
+      continue
+    }
+
+    if (aiIsReasoningPhase.value) {
+      aiReasoningContent.value += remaining
+      updateAssistantStreaming('', null)
+    } else {
+      appendAnswerContent(remaining, mode)
+    }
+    break
+  }
+}
+
+function extractAnswerContent(fullText: string) {
+  if (aiRawContent.value)
+    return aiRawContent.value
+  const answerDelimiter = '==================== 完整回复 ===================='
+  if (fullText.includes(answerDelimiter)) {
+    return fullText.split(answerDelimiter).pop()?.trim() || ''
+  }
+  return fullText || ''
+}
+
 function getCanvasSize() {
   try {
     const config = chartEditStore.getEditCanvasConfig
@@ -382,53 +587,8 @@ function buildCanvasContext() {
   }
 }
 
-async function loadSessionHistory() {
-  try {
-    const sessionRes = await getSessionListApi()
-    const sessions = sessionRes?.data || []
-    aiStore.setChatSessions(sessions)
-
-    let activeSessionId = aiStore.currentSessionId
-    if (!activeSessionId && sessions.length) {
-      activeSessionId = sessions[0].id
-    }
-
-    if (activeSessionId) {
-      aiStore.setCurrentSessionId(activeSessionId)
-      chatSessionIdRef.value = activeSessionId
-      const messagesRes = await getSessionMessagesApi(activeSessionId)
-      const records = messagesRes?.data || []
-      aiStore.setChatMessages(
-        records.map((item, index) => ({
-          id: String(item.id || `${item.role}-${index}`),
-          role: item.role === 'assistant' ? 'assistant' : 'user',
-          content: item.content,
-          timestamp: item.createTime ? new Date(item.createTime).getTime() : Date.now(),
-          sessionId: item.sessionId,
-          streaming: false,
-          canvasResponse: null
-        }))
-      )
-    } else {
-      aiStore.setChatMessages([])
-    }
-  } catch (error: any) {
-    window['$message']?.error('加载历史会话失败: ' + (error?.message || '未知错误'))
-  }
-}
-
 function buildGenerateStreamingPreview(fullText: string): string {
-  const trimmed = fullText.trim()
-  if (!trimmed) {
-    return GENERATE_PROGRESS_STEPS[0]
-  }
-
-  const progress = [...GENERATE_PROGRESS_STEPS]
-  if (trimmed.length > 80) progress.push('🔧 正在完善组件配置细节...')
-  if (trimmed.length > 160) progress.push('📐 正在校验布局坐标与尺寸...')
-  if (trimmed.length > 260) progress.push('✅ 结果即将完成，请稍候...')
-
-  return progress.slice(0, Math.min(progress.length, Math.max(1, Math.ceil(trimmed.length / 80)))).join('\n')
+  return fullText.trim() ? 'AI 正在生成大屏，请稍候...' : 'AI 正在理解需求...'
 }
 
 const loadProviders = async () => {
@@ -473,6 +633,7 @@ async function handleSend() {
 
   inputRef.value = ''
   aiStore.setGenerating(true)
+  resetStreamingState()
 
   aiStore.addChatMessage({
     id: `user-${Date.now()}`,
@@ -488,6 +649,10 @@ async function handleSend() {
     timestamp: Date.now(),
     sessionId: chatSessionIdRef.value,
     streaming: true,
+    reasoning: '',
+    isReasoning: false,
+    reasoningTime: null,
+    progressSteps: getGenerateProgressSteps(''),
     canvasResponse: null
   })
 
@@ -498,6 +663,7 @@ async function handleSend() {
     const { width, height } = getCanvasSize()
     const generateRequest = {
       prompt: content,
+      sessionId: chatSessionIdRef.value,
       style: styleRef.value,
       canvasWidth: width,
       canvasHeight: height,
@@ -509,41 +675,66 @@ async function handleSend() {
       temperature: temperatureRef.value,
       maxTokens: maxTokensRef.value || undefined
     }
-    let rawGenerateText = ''
 
-    aiStore.updateLastAssistantMessage(GENERATE_PROGRESS_STEPS[0], null)
-    aiStore.getChatMessages[aiStore.getChatMessages.length - 1].streaming = true
+    updateAssistantStreaming(buildGenerateStreamingPreview(''), null)
 
     await aiGenerateStream(
       generateRequest,
       chunk => {
-        rawGenerateText += chunk
-        aiStore.updateLastAssistantMessage(buildGenerateStreamingPreview(rawGenerateText), null)
-        aiStore.getChatMessages[aiStore.getChatMessages.length - 1].streaming = true
+        consumeReasoningAwareChunk(chunk, 'generate')
         scrollToBottom()
       },
       fullText => {
         if (!fullText) {
-          aiStore.updateLastAssistantMessage('⏹️ 已停止生成', null)
+          aiStore.updateLastAssistantMessage('⏹️ 已停止生成', null, {
+            reasoning: aiReasoningContent.value,
+            isReasoning: false,
+            reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+          })
+          aiStore.setGenerating(false)
+          scrollToBottom()
+          return
+        }
+
+        const answerContent = extractAnswerContent(fullText)
+        if (!answerContent) {
+          aiStore.updateLastAssistantMessage('⏹️ 已停止生成', null, {
+            reasoning: aiReasoningContent.value,
+            isReasoning: false,
+            reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+          })
           aiStore.setGenerating(false)
           scrollToBottom()
           return
         }
 
         try {
-          const canvasResponse = parseStreamedResponse(fullText)
+          const canvasResponse = parseStreamedResponse(answerContent)
           const displayText = `✅ 大屏生成完成！\n📊 标题：${canvasResponse.title}\n🧩 共 ${canvasResponse.components.length} 个组件\n\n点击下方按钮应用到画布。`
-          aiStore.updateLastAssistantMessage(displayText, canvasResponse)
+          aiStore.updateLastAssistantMessage(displayText, canvasResponse, {
+            reasoning: aiReasoningContent.value,
+            isReasoning: false,
+            reasoningTime: aiReasoningContent.value ? getReasoningTime() : null,
+            progressSteps: undefined
+          })
           aiStore.addHistory(content, canvasResponse)
         } catch (error: any) {
-          aiStore.updateLastAssistantMessage(`❌ 生成结果解析失败：${error?.message || '返回内容不是合法 JSON'}`, null)
+          aiStore.updateLastAssistantMessage(`❌ 生成结果解析失败：${error?.message || '返回内容不是合法 JSON'}`, null, {
+            reasoning: aiReasoningContent.value,
+            isReasoning: false,
+            reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+          })
         } finally {
           aiStore.setGenerating(false)
           scrollToBottom()
         }
       },
       error => {
-        aiStore.updateLastAssistantMessage(`❌ 生成失败：${error?.message || '未知错误'}`, null)
+        aiStore.updateLastAssistantMessage(`❌ 生成失败：${error?.message || '未知错误'}`, null, {
+          reasoning: aiReasoningContent.value,
+          isReasoning: false,
+          reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+        })
         aiStore.setGenerating(false)
         scrollToBottom()
       },
@@ -569,20 +760,44 @@ async function handleSend() {
       maxTokens: maxTokensRef.value || undefined
     },
     chunk => {
-      aiStore.appendStreamingText(chunk)
+      consumeReasoningAwareChunk(chunk, 'chat')
       scrollToBottom()
     },
     fullText => {
       if (!fullText) {
-        aiStore.updateLastAssistantMessage('⏹️ 已停止生成', undefined)
+        aiStore.updateLastAssistantMessage('⏹️ 已停止生成', undefined, {
+          reasoning: aiReasoningContent.value,
+          isReasoning: false,
+          reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+        })
+        aiStore.setGenerating(false)
+        scrollToBottom()
+        return
+      }
+
+      const answerContent = extractAnswerContent(fullText)
+      if (!answerContent) {
+        aiStore.updateLastAssistantMessage('⏹️ 已停止生成', undefined, {
+          reasoning: aiReasoningContent.value,
+          isReasoning: false,
+          reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+        })
       } else {
-        aiStore.updateLastAssistantMessage(fullText, undefined)
+        aiStore.updateLastAssistantMessage(answerContent, undefined, {
+          reasoning: aiReasoningContent.value,
+          isReasoning: false,
+          reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+        })
       }
       aiStore.setGenerating(false)
       scrollToBottom()
     },
     error => {
-      aiStore.updateLastAssistantMessage(`❌ 请求失败：${error.message}`, undefined)
+      aiStore.updateLastAssistantMessage(`❌ 请求失败：${error.message}`, undefined, {
+        reasoning: aiReasoningContent.value,
+        isReasoning: false,
+        reasoningTime: aiReasoningContent.value ? getReasoningTime() : null
+      })
       aiStore.setGenerating(false)
       scrollToBottom()
     },
@@ -591,7 +806,14 @@ async function handleSend() {
 }
 
 function handleStop() {
+  aiIsReasoningPhase.value = false
+  aiReasoningEndTime.value = Date.now()
   aiStore.abortGenerating()
+  const lastMsg = aiStore.getChatMessages[aiStore.getChatMessages.length - 1]
+  if (lastMsg?.role === 'assistant') {
+    lastMsg.isReasoning = false
+    lastMsg.reasoningTime = lastMsg.reasoning ? getReasoningTime() : null
+  }
 }
 
 async function applyToCanvas(response: AIGenerateResponse) {
@@ -606,7 +828,10 @@ async function applyToCanvas(response: AIGenerateResponse) {
 
 onMounted(async () => {
   await loadProviders()
-  await loadSessionHistory()
+  aiStore.setChatSessions([])
+  if (!aiStore.currentSessionId) {
+    aiStore.setCurrentSessionId(chatSessionIdRef.value)
+  }
   if (!providerList.value.length) {
     window['$message']?.warning('请先在左侧菜单的 AI 供应商 页面配置可用供应商')
   }
@@ -714,6 +939,81 @@ $topHeight: 40px;
         gap: 6px;
         max-width: calc(100% - 40px);
 
+        .reasoning-section {
+          border: 1px solid rgba(81, 214, 169, 0.24);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(81, 214, 169, 0.08);
+
+          .reasoning-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 7px 9px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.16s ease;
+
+            &:hover {
+              background: rgba(81, 214, 169, 0.1);
+            }
+          }
+
+          .reasoning-header-left {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 0;
+            font-size: 12px;
+            color: #51d6a9;
+            font-weight: 600;
+          }
+
+          .reasoning-duration {
+            color: rgba(81, 214, 169, 0.7);
+            font-size: 11px;
+            font-weight: 400;
+
+            &.thinking {
+              animation: blink 1.2s infinite;
+            }
+          }
+
+          .reasoning-toggle {
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 16px;
+            line-height: 1;
+            transition: transform 0.18s ease;
+
+            &.expanded {
+              transform: rotate(180deg);
+            }
+          }
+
+          .reasoning-content {
+            max-height: 180px;
+            overflow-y: auto;
+            padding: 8px 10px;
+            border-top: 1px solid rgba(81, 214, 169, 0.18);
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            line-height: 1.6;
+            color: rgba(230, 255, 248, 0.88);
+            background: rgba(0, 0, 0, 0.12);
+
+            &::-webkit-scrollbar {
+              width: 4px;
+            }
+
+            &::-webkit-scrollbar-thumb {
+              border-radius: 2px;
+              background: rgba(81, 214, 169, 0.32);
+            }
+          }
+        }
+
         .bubble {
           padding: 8px 12px;
           border-radius: 8px;
@@ -761,6 +1061,130 @@ $topHeight: 40px;
               &:nth-child(3) {
                 animation-delay: 0.4s;
               }
+            }
+          }
+
+          .generate-progress-card,
+          .generate-result-card {
+            min-width: 240px;
+          }
+
+          .generate-progress-card {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .generate-progress-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #e8fff8;
+          }
+
+          .generate-progress-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+          }
+
+          .generate-progress-step {
+            height: 28px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 8px;
+            color: #8b949e;
+            background: rgba(255, 255, 255, 0.035);
+            font-size: 12px;
+
+            &.done {
+              color: rgba(81, 214, 169, 0.86);
+              border-color: rgba(81, 214, 169, 0.28);
+              background: rgba(81, 214, 169, 0.08);
+            }
+
+            &.active {
+              color: #1a1a2e;
+              border-color: rgba(81, 214, 169, 0.8);
+              background: #51d6a9;
+              font-weight: 700;
+            }
+          }
+
+          .generate-progress-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: currentColor;
+            opacity: 0.85;
+          }
+
+          .generate-progress-step.active .generate-progress-dot {
+            animation: bounce 1.1s infinite ease-in-out;
+          }
+
+          .generate-progress-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .generate-result-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+          }
+
+          .generate-result-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: rgba(81, 214, 169, 0.14);
+            color: #51d6a9;
+            border: 1px solid rgba(81, 214, 169, 0.32);
+          }
+
+          .generate-result-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+
+          .generate-result-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #e8fff8;
+          }
+
+          .generate-result-name {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.78);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .generate-result-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+
+            span {
+              border-radius: 999px;
+              padding: 2px 7px;
+              background: rgba(255, 255, 255, 0.07);
+              color: rgba(255, 255, 255, 0.62);
+              font-size: 11px;
+              line-height: 1.6;
             }
           }
         }

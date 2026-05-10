@@ -113,13 +113,27 @@ export const useAIStore = defineStore({
     setCurrentSessionId(sessionId: string | null) {
       this.currentSessionId = sessionId
     },
-    updateLastAssistantMessage(content: string, canvasResponse?: AIGenerateResponse | null) {
+    updateLastAssistantMessage(content: string, canvasResponse?: AIGenerateResponse | null, reasoningData?: Partial<ChatMessage>) {
       const lastMsg = this.chatMessages[this.chatMessages.length - 1]
       if (lastMsg && lastMsg.role === 'assistant') {
         lastMsg.content = content
         lastMsg.streaming = false
         if (canvasResponse !== undefined) {
           lastMsg.canvasResponse = canvasResponse
+        }
+        if (reasoningData) {
+          if (reasoningData.reasoning !== undefined) {
+            lastMsg.reasoning = reasoningData.reasoning
+          }
+          if (reasoningData.isReasoning !== undefined) {
+            lastMsg.isReasoning = reasoningData.isReasoning
+          }
+          if (reasoningData.reasoningTime !== undefined) {
+            lastMsg.reasoningTime = reasoningData.reasoningTime
+          }
+          if (reasoningData.progressSteps !== undefined) {
+            lastMsg.progressSteps = reasoningData.progressSteps
+          }
         }
       }
     },

@@ -39,8 +39,18 @@ export interface ChatMessage {
   content: string
   timestamp: number
   sessionId?: string
+  reasoning?: string
+  isReasoning?: boolean
+  reasoningTime?: number | null
+  progressSteps?: ChatProgressStep[]
   // 当 role 为 assistant 时，保存应用到画布的响应
   canvasResponse?: AIGenerateResponse | null
   // 是否正在流式输出中
   streaming?: boolean
+}
+
+export interface ChatProgressStep {
+  key: string
+  label: string
+  status: 'pending' | 'active' | 'done'
 }

@@ -67,6 +67,7 @@ export interface AiChatStreamRequest {
 
 export interface AiGenerateStreamRequest {
   prompt: string
+  sessionId?: string
   style?: string
   canvasWidth?: number
   canvasHeight?: number
@@ -237,9 +238,13 @@ const consumeAiSse = async (
   }
 
   try {
-    while (true) {
+    let reading = true
+    while (reading) {
       const { done, value } = await reader.read()
-      if (done || finished) break
+      if (done || finished) {
+        reading = false
+        break
+      }
       buffer += decoder.decode(value, { stream: true })
       const blocks = buffer.split('\n\n')
       buffer = blocks.pop() || ''

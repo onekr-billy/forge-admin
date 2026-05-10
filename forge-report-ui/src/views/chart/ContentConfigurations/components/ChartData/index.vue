@@ -2,7 +2,15 @@
   <div class="go-chart-configurations-data" v-if="targetData">
     <div class="data-mode-bar">
       <span class="data-mode-label">数据模式</span>
-      <n-select v-model:value="targetData.request.requestDataType" :disabled="isNotData" :options="selectOptions" size="small" />
+      <div class="data-mode-actions">
+        <n-select v-model:value="targetData.request.requestDataType" :disabled="isNotData" :options="selectOptions" size="small" />
+        <n-button size="small" secondary @click="exportCurrentApiContract">
+          <template #icon>
+            <n-icon :component="DocumentTextIcon" />
+          </template>
+          接口文档
+        </n-button>
+      </div>
     </div>
     <!-- 静态 -->
     <chart-data-static v-if="targetData.request.requestDataType === RequestDataTypeEnum.STATIC"></chart-data-static>
@@ -15,17 +23,20 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { loadAsyncComponent } from '@/utils'
+import { downloadTextFile, loadAsyncComponent } from '@/utils'
+import { buildApiContractDocument, buildApiContractFileName } from '@/utils/apiContractExport'
 import { RequestDataTypeEnum } from '@/enums/httpEnum'
 import { ChartFrameEnum } from '@/packages/index.d'
 import { useTargetData } from '../hooks/useTargetData.hook'
 import { SelectCreateDataType, SelectCreateDataEnum } from './index.d'
+import { icon } from '@/plugins'
 
 const ChartDataStatic = loadAsyncComponent(() => import('./components/ChartDataStatic/index.vue'))
 const ChartDataAjax = loadAsyncComponent(() => import('./components/ChartDataAjax/index.vue'))
 const ChartDataPond = loadAsyncComponent(() => import('./components/ChartDataPond/index.vue'))
 
-const { targetData } = useTargetData()
+const { DocumentTextIcon } = icon.ionicons5
+const { targetData, chartEditStore } = useTargetData()
 
 // 选项
 const selectOptions: SelectCreateDataType[] = [
@@ -50,6 +61,27 @@ const isNotData = computed(() => {
     typeof targetData.value?.option?.dataset === 'undefined'
   )
 })
+
+const exportCurrentApiContract = () => {
+  if (!targetData.value) return
+  const document = buildApiContractDocument({
+    canvasConfig: chartEditStore.getEditCanvasConfig,
+    requestGlobalConfig: chartEditStore.getRequestGlobalConfig,
+    componentList: chartEditStore.getComponentList,
+    targetComponentIds: [targetData.value.id],
+    includeStatic: true
+  })
+
+  if (!document.endpoints.length) {
+    window['$message'].warning('当前组件没有可导出的数据规范')
+    return
+  }
+
+  const componentName = targetData.value.chartConfig?.title || targetData.value.id
+  const fileName = buildApiContractFileName(`${document.meta.projectName}-${componentName}`)
+  downloadTextFile(document.markdown, fileName, 'md')
+  window['$message'].success('当前组件接口规范已导出')
+}
 </script>
 
 <style lang="scss" scoped>
@@ -75,6 +107,18 @@ const isNotData = computed(() => {
 
     :deep(.n-select) {
       min-width: 140px;
+    }
+
+    .data-mode-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    :deep(.n-button) {
+      flex-shrink: 0;
+      border-radius: 7px;
     }
   }
 }
