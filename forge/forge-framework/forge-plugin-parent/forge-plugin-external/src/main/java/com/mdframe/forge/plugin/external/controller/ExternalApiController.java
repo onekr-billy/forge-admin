@@ -5,6 +5,8 @@ import com.mdframe.forge.plugin.external.dto.ExternalApiDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalApiQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalApi;
 import com.mdframe.forge.plugin.external.service.ExternalApiService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -15,6 +17,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/external/api")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class ExternalApiController {
 
     private final ExternalApiService apiService;

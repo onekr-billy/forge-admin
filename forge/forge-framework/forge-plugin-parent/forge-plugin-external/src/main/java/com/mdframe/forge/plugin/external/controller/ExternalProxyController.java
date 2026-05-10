@@ -1,6 +1,8 @@
 package com.mdframe.forge.plugin.external.controller;
 
 import com.mdframe.forge.plugin.external.service.ExternalProxyService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -10,6 +12,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/external/proxy")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class ExternalProxyController {
 
     private final ExternalProxyService proxyService;

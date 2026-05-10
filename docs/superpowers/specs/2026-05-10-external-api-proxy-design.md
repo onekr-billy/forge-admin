@@ -500,8 +500,8 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
             .timeout(Duration.ofSeconds(30));
         
         // 5. 应用认证策略
-        AuthStrategy authStrategy = authFactory.getStrategy(system.getAuthType());
-        authStrategy.applyAuth(requestBuilder, system.getAuthConfig());
+        AuthStrategy externalAuthStrategy = authFactory.getStrategy(system.getAuthType());
+        externalAuthStrategy.applyAuth(requestBuilder, system.getAuthConfig());
         
         // 6. 设置请求方法和参数
         applyRequestMethod(requestBuilder, api.getMethod(), params);

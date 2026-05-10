@@ -8,8 +8,8 @@ import com.mdframe.forge.plugin.external.entity.ExternalSystem;
 import com.mdframe.forge.plugin.external.service.ExternalApiService;
 import com.mdframe.forge.plugin.external.service.ExternalProxyService;
 import com.mdframe.forge.plugin.external.service.ExternalSystemService;
-import com.mdframe.forge.plugin.external.strategy.AuthStrategy;
-import com.mdframe.forge.plugin.external.strategy.AuthStrategyFactory;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategy;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategyFactory;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,7 +28,7 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
 
     private final ExternalApiService apiService;
     private final ExternalSystemService systemService;
-    private final AuthStrategyFactory authFactory;
+    private final ExternalAuthStrategyFactory authFactory;
     private final DataAdapterFactory adapterFactory;
 
     @Override
@@ -49,8 +49,8 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
                 .uri(URI.create(fullUrl))
                 .timeout(Duration.ofSeconds(30));
 
-        AuthStrategy authStrategy = authFactory.getStrategy(system.getAuthType());
-        authStrategy.applyAuth(requestBuilder, buildAuthConfig(system));
+        ExternalAuthStrategy externalAuthStrategy = authFactory.getStrategy(system.getAuthType());
+        externalAuthStrategy.applyAuth(requestBuilder, buildAuthConfig(system));
 
         applyRequestMethod(requestBuilder, api.getApiMethod(), params);
 
@@ -59,7 +59,7 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
 
         Object originalData = JSON.parse(response.body());
 
-        if (api.getResponseTransformEnabled() != null && api.getResponseTransformEnabled() 
+        if (api.getResponseTransformEnabled() != null && api.getResponseTransformEnabled()
                 && api.getResponseTransformScript() != null && !api.getResponseTransformScript().isEmpty()) {
             DataAdapter adapter = adapterFactory.getAdapter("Script");
             return adapter.transform(originalData, api.getResponseTransformScript());

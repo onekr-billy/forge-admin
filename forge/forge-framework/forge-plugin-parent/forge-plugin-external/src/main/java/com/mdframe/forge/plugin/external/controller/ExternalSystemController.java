@@ -5,8 +5,12 @@ import com.mdframe.forge.plugin.external.dto.ExternalSystemDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalSystemQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalSystem;
 import com.mdframe.forge.plugin.external.service.ExternalSystemService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
+import org.checkerframework.checker.units.qual.A;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,6 +19,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/external/system")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class ExternalSystemController {
 
     private final ExternalSystemService systemService;

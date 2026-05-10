@@ -955,7 +955,7 @@ public interface AuthStrategy {
 ```java
 package com.mdframe.forge.plugin.external.strategy.impl;
 
-import com.mdframe.forge.plugin.external.strategy.AuthStrategy;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategy;
 import org.springframework.stereotype.Component;
 
 import java.net.http.HttpRequest;
@@ -993,7 +993,7 @@ package com.mdframe.forge.plugin.external.strategy.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.mdframe.forge.plugin.external.strategy.AuthStrategy;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategy;
 import org.springframework.stereotype.Component;
 
 import java.net.http.HttpRequest;
@@ -1398,8 +1398,8 @@ import com.mdframe.forge.plugin.external.entity.ExternalSystem;
 import com.mdframe.forge.plugin.external.service.ExternalApiService;
 import com.mdframe.forge.plugin.external.service.ExternalProxyService;
 import com.mdframe.forge.plugin.external.service.ExternalSystemService;
-import com.mdframe.forge.plugin.external.strategy.AuthStrategy;
-import com.mdframe.forge.plugin.external.strategy.AuthStrategyFactory;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategy;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategyFactory;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -1439,8 +1439,8 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
                 .uri(URI.create(fullUrl))
                 .timeout(Duration.ofSeconds(30));
 
-        AuthStrategy authStrategy = authFactory.getStrategy(system.getAuthType());
-        authStrategy.applyAuth(requestBuilder, system.getAuthConfig());
+        AuthStrategy externalAuthStrategy = authFactory.getStrategy(system.getAuthType());
+        externalAuthStrategy.applyAuth(requestBuilder, system.getAuthConfig());
 
         applyRequestMethod(requestBuilder, api.getMethod(), params);
 

@@ -2,13 +2,13 @@ package com.mdframe.forge.plugin.external.strategy.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.mdframe.forge.plugin.external.strategy.AuthStrategy;
+import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategy;
 import org.springframework.stereotype.Component;
 
 import java.net.http.HttpRequest;
 
 @Component
-public class BearerTokenAuthStrategy implements AuthStrategy {
+public class BearerTokenAuthStrategy implements ExternalAuthStrategy {
 
     @Override
     public String getAuthType() {
