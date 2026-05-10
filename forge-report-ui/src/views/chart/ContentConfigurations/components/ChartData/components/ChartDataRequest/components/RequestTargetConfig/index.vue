@@ -145,8 +145,7 @@ import {
   sankeyUrl,
   vchartBarDataUrl
 } from '@/api/mock'
-import { getExternalApiListApi, ExternalApi } from '@/api/external/api'
-import { getExternalSystemListApi } from '@/api/external/system'
+import { getExternalApiListApi, ExternalApiVO } from '@/api/external/api'
 
 const props = defineProps({
   targetDataRequest: Object as PropType<RequestConfigType>
