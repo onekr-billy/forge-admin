@@ -51,7 +51,7 @@ cd forge && mvn -pl forge-framework/forge-plugin-parent/forge-plugin-data,forge-
 
 **目标**: 实现数据连接 CRUD、测试连接、元数据查询接口。
 
-**状态**: executing
+**状态**: completed
 
 **范围**:
 - Controller：`DataConnectionController`
@@ -97,6 +97,8 @@ cd forge && mvn -pl forge-framework/forge-plugin-parent/forge-plugin-data,forge-
 ## Task 3: 数据集管理
 
 **目标**: 实现数据集 CRUD、字段同步、预览接口。
+
+**状态**: executing
 
 **范围**:
 - Controller：
