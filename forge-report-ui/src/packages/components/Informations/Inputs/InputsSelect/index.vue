@@ -32,6 +32,7 @@ const option = shallowReactive({
 
 // 监听事件改变
 const onChange = (v: string) => {
+  props.chartConfig.option.selectValue = v
   // 存储到联动数据
   useChartInteract(
     props.chartConfig,

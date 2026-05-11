@@ -40,6 +40,7 @@ const isRange = computed(() => {
 
 // 监听事件改变
 const onChange = (v: number | number[] | null) => {
+  props.chartConfig.option.dataset = v
   if (isRange.value) {
     let dateStart = null
     let dateEnd = null

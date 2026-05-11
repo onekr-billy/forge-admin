@@ -1,9 +1,10 @@
 import { toRaw, watch, computed, ComputedRef } from 'vue'
 import { customizeHttp } from '@/api/http'
-import { CreateComponentType, ChartFrameEnum } from '@/packages/index.d'
+import { CreateComponentType, CreateComponentGroupType, ChartFrameEnum } from '@/packages/index.d'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 import { RequestGlobalConfigType, RequestDataPondItemType } from '@/store/modules/chartEditStore/chartEditStore.d'
 import { newFunctionHandle, intervalUnitHandle, normalizeDatasetForChart } from '@/utils'
+import { getDynamicRequestParamDependencySnapshot } from '@/utils/requestDynamicParams'
 
 // 获取类型
 type ChartEditStoreType = typeof useChartEditStore
@@ -22,6 +23,7 @@ const mittDataPondMap = new Map<string, DataPondMapType[]>()
 const newPondItemInterval = (
   requestGlobalConfig: RequestGlobalConfigType,
   requestDataPondItem: ComputedRef<RequestDataPondItemType>,
+  componentList: Array<CreateComponentType | CreateComponentGroupType>,
   dataPondMapItem?: DataPondMapType[]
 ) => {
   if (!dataPondMapItem) return
@@ -32,7 +34,11 @@ const newPondItemInterval = (
   // 请求
   const fetchFn = async () => {
     try {
-      const res = await customizeHttp(toRaw(requestDataPondItem.value.dataPondRequestConfig), toRaw(requestGlobalConfig))
+      const res = await customizeHttp(
+        toRaw(requestDataPondItem.value.dataPondRequestConfig),
+        toRaw(requestGlobalConfig),
+        toRaw(componentList)
+      )
       if (res) {
         try {
           // 遍历更新回调函数
@@ -51,7 +57,14 @@ const newPondItemInterval = (
   }
 
   watch(
-    () => requestDataPondItem.value.dataPondRequestConfig.requestParams.Params,
+    () => [
+      requestDataPondItem.value.dataPondRequestConfig.requestParams.Params,
+      requestDataPondItem.value.dataPondRequestConfig.dynamicRequestParams,
+      getDynamicRequestParamDependencySnapshot(
+        requestDataPondItem.value.dataPondRequestConfig.dynamicRequestParams,
+        componentList
+      )
+    ],
     () => {
       fetchFn()
     },
@@ -120,7 +133,12 @@ export const useChartDataPondFetch = () => {
         return requestGlobalConfig.requestDataPond.find(item => item.dataPondId === pondKey)
       }) as ComputedRef<RequestDataPondItemType>
       if (requestDataPondItem) {
-        newPondItemInterval(chartEditStore.requestGlobalConfig, requestDataPondItem, mittDataPondMap.get(pondKey))
+        newPondItemInterval(
+          chartEditStore.requestGlobalConfig,
+          requestDataPondItem,
+          chartEditStore.componentList,
+          mittDataPondMap.get(pondKey)
+        )
       }
     }
   }

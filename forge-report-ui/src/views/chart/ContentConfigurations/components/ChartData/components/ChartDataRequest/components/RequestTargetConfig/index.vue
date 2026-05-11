@@ -62,31 +62,33 @@
 
   <div v-show="requestSourceValue === 'external'" class="external-request-config">
     <setting-item-box name="外部接口" class="go-mt-0">
+      <setting-item name="外部系统">
+        <n-select
+          v-model:value="externalSystemId"
+          :options="externalSystemOptions"
+          :loading="externalSystemLoading"
+          placeholder="请选择外部系统"
+          filterable
+          clearable
+          @focus="loadExternalSystemOptions"
+          @update:value="handleExternalSystemChange"
+        />
+      </setting-item>
+
       <setting-item name="选择接口">
         <n-select
           v-model:value="externalApiId"
           :options="externalApiOptions"
           :loading="externalApiLoading"
-          placeholder="请选择外部接口"
+          :disabled="!externalSystemId"
+          placeholder="请先选择外部系统"
           filterable
+          remote
           clearable
-          @focus="loadExternalApiOptions"
+          @focus="() => loadExternalApiOptions()"
+          @search="handleExternalApiSearch"
           @update:value="handleExternalApiChange"
         />
-      </setting-item>
-
-      <setting-item name="请求参数">
-        <n-space align="center">
-          <n-button size="small" @click="showParamModal = true">
-            <template #icon>
-              <n-icon><edit-icon /></n-icon>
-            </template>
-            配置参数
-          </n-button>
-          <n-text v-if="externalRequestParamsText" depth="3">
-            {{ externalRequestParamsText }}
-          </n-text>
-        </n-space>
       </setting-item>
 
       <setting-item name="更新间隔，为 0 只会初始化">
@@ -105,26 +107,103 @@
     </setting-item-box>
   </div>
 
-  <setting-item-box v-show="requestSourceValue === 'internal'" name="选择方式" class="go-mt-0">
-    <request-header :targetDataRequest="targetDataRequest"></request-header>
+  <setting-item-box name="动态参数" class="go-mt-0">
+    <setting-item name="参数绑定">
+      <n-space align="center">
+        <n-button size="small" @click="showDynamicParamModal = true">
+          <template #icon>
+            <n-icon><edit-icon /></n-icon>
+          </template>
+          配置参数
+        </n-button>
+        <n-text v-if="dynamicParamsText" depth="3">{{ dynamicParamsText }}</n-text>
+      </n-space>
+    </setting-item>
   </setting-item-box>
 
-  <!-- 参数配置弹窗 -->
-  <n-modal v-model:show="showParamModal" preset="dialog" title="配置外部接口参数" style="width: 500px;">
-    <n-form>
-      <n-form-item label="请求参数（JSON）">
-        <n-input
-          v-model:value="externalRequestParamsJson"
-          type="textarea"
-          :rows="8"
-          placeholder="请输入 JSON 格式的参数配置"
+  <n-modal v-model:show="showDynamicParamModal" preset="dialog" title="配置动态请求参数" style="width: 860px;">
+    <n-space vertical :size="12">
+      <div
+        v-for="(item, index) in dynamicRequestParams"
+        :key="item.id"
+        class="dynamic-param-row"
+      >
+        <n-switch v-model:value="item.enabled" size="small" />
+        <n-select
+          v-model:value="item.target"
+          :options="dynamicTargetOptions"
+          size="small"
         />
-      </n-form-item>
-    </n-form>
+        <n-input
+          v-model:value.trim="item.targetKey"
+          size="small"
+          placeholder="参数名"
+        />
+        <n-select
+          v-model:value="item.source"
+          :options="dynamicSourceOptions"
+          size="small"
+          @update:value="() => handleDynamicSourceChange(item)"
+        />
+        <n-select
+          v-if="item.source === 'context'"
+          v-model:value="item.sourceKey"
+          :options="contextParamOptions"
+          size="small"
+          filterable
+          placeholder="上下文字段"
+        />
+        <template v-else-if="item.source === 'component'">
+          <n-select
+            v-model:value="item.componentId"
+            :options="filterComponentOptions"
+            size="small"
+            filterable
+            placeholder="筛选组件"
+          />
+          <n-select
+            v-model:value="item.componentField"
+            :options="componentParamOptions"
+            size="small"
+            placeholder="组件值"
+          />
+        </template>
+        <template v-else-if="item.source === 'preset'">
+          <n-select
+            v-model:value="item.presetType"
+            :options="presetParamOptions"
+            size="small"
+            placeholder="预设类型"
+          />
+          <n-input-number
+            v-model:value="item.offsetDays"
+            size="small"
+            :min="0"
+            placeholder="T-N"
+          />
+        </template>
+        <n-input
+          v-else
+          v-model:value="item.customValue"
+          size="small"
+          placeholder="固定值"
+        />
+        <n-input
+          v-model:value="item.fallbackValue"
+          size="small"
+          placeholder="默认值"
+        />
+        <n-button size="small" type="error" text @click="removeDynamicParam(index)">删除</n-button>
+      </div>
+      <n-space>
+        <n-button size="small" type="primary" dashed @click="addDynamicParam">新增参数</n-button>
+        <n-button size="small" type="primary" secondary @click="addTnDateRangeParams">新增 T-N 时间范围</n-button>
+      </n-space>
+    </n-space>
     <template #action>
       <n-space justify="end">
-        <n-button @click="showParamModal = false">取消</n-button>
-        <n-button type="primary" @click="handleSaveParams">确定</n-button>
+        <n-button @click="showDynamicParamModal = false">取消</n-button>
+        <n-button type="primary" @click="handleSaveDynamicParams">确定</n-button>
       </n-space>
     </template>
   </n-modal>
@@ -136,7 +215,6 @@ import { SettingItemBox, SettingItem } from '@/components/Pages/ChartItemSetting
 import { useTargetData } from '@/views/chart/ContentConfigurations/components/hooks/useTargetData.hook'
 import { selectTypeOptions, selectTimeOptions } from '@/views/chart/ContentConfigurations/components/ChartData/index.d'
 import { RequestConfigType } from '@/store/modules/chartEditStore/chartEditStore.d'
-import { RequestHeader } from '../RequestHeader'
 import { isDev } from '@/utils'
 import { icon } from '@/plugins'
 import { useMessage } from 'naive-ui'
@@ -161,7 +239,19 @@ import {
   sankeyUrl,
   vchartBarDataUrl
 } from '@/api/mock'
-import { getExternalApiListApi, ExternalApiVO } from '@/api/external/api'
+import {
+  getExternalApiDetailApi,
+  getExternalApiPageApi,
+  getExternalSystemListApi,
+  ExternalSystemVO
+} from '@/api/external/api'
+import {
+  contextParamOptions,
+  componentParamOptions,
+  presetParamOptions,
+  createDynamicParamBinding
+} from '@/utils/requestDynamicParams'
+import type { DynamicRequestParamBinding } from '@/store/modules/chartEditStore/chartEditStore.d'
 
 const props = defineProps({
   targetDataRequest: Object as PropType<RequestConfigType>
@@ -182,9 +272,16 @@ const handleRequestSourceChange = (value: 'internal' | 'external') => {
   const requestConfig = props.targetDataRequest as RequestConfigType
   requestConfig.requestSource = value
   if (value === 'external') {
-    loadExternalApiOptions()
+    loadExternalSystemOptions()
   }
 }
+
+const externalSystemId = computed({
+  get: () => (props.targetDataRequest as RequestConfigType).externalSystemId || null,
+  set: (val) => {
+    (props.targetDataRequest as RequestConfigType).externalSystemId = val
+  }
+})
 
 const externalApiId = computed({
   get: () => (props.targetDataRequest as RequestConfigType).externalApiId || null,
@@ -193,23 +290,46 @@ const externalApiId = computed({
   }
 })
 
-const externalRequestParams = computed({
-  get: () => (props.targetDataRequest as RequestConfigType).externalRequestParams || {},
-  set: (val) => {
-    (props.targetDataRequest as RequestConfigType).externalRequestParams = val
+const showDynamicParamModal = ref(false)
+const externalSystemLoading = ref(false)
+const externalApiLoading = ref(false)
+const externalApiKeyword = ref('')
+const externalSystemOptions = ref<{ label: string; value: number; systemCode?: string }[]>([])
+const externalApiOptions = ref<{ label: string; value: number; systemId: number; apiPath: string }[]>([])
+const dynamicRequestParams = computed({
+  get: () => {
+    const requestConfig = props.targetDataRequest as RequestConfigType
+    if (!requestConfig.dynamicRequestParams) {
+      requestConfig.dynamicRequestParams = []
+    }
+    return requestConfig.dynamicRequestParams as DynamicRequestParamBinding[]
+  },
+  set: (val: DynamicRequestParamBinding[]) => {
+    (props.targetDataRequest as RequestConfigType).dynamicRequestParams = val
   }
 })
-
-const showParamModal = ref(false)
-const externalRequestParamsJson = ref('')
-const externalApiLoading = ref(false)
-const externalApiOptions = ref<{ label: string; value: number; systemId: number; apiPath: string }[]>([])
-const externalRequestParamsText = computed(() => {
-  const params = externalRequestParams.value
-  if (params && Object.keys(params).length > 0) {
-    return `已配置 ${Object.keys(params).length} 个参数`
-  }
-  return ''
+const dynamicParamsText = computed(() => {
+  const count = dynamicRequestParams.value.filter(item => item.enabled && item.targetKey).length
+  return count ? `已配置 ${count} 个动态参数` : ''
+})
+const dynamicTargetOptions = [
+  { label: 'Query', value: 'Params' },
+  { label: 'Header', value: 'Header' },
+  { label: 'Body', value: 'Body' }
+]
+const dynamicSourceOptions = [
+  { label: '登录人', value: 'context' },
+  { label: '筛选组件', value: 'component' },
+  { label: '预设条件', value: 'preset' },
+  { label: '固定值', value: 'custom' }
+]
+const filterComponentOptions = computed(() => {
+  return chartEditStore.getComponentList
+    .filter(item => item.key?.startsWith('Inputs'))
+    .map(item => ({
+      label: `${item.chartConfig?.title || item.key} (${item.id})`,
+      value: item.id
+    }))
 })
 
 const apiList = [
@@ -272,15 +392,45 @@ const apiList = [
   }
 ]
 
-const loadExternalApiOptions = async () => {
+const loadExternalSystemOptions = async () => {
+  if (externalSystemLoading.value || externalSystemOptions.value.length) return
+  externalSystemLoading.value = true
+  try {
+    const res = await getExternalSystemListApi()
+    externalSystemOptions.value = (res.data || [])
+      .filter((system: ExternalSystemVO) => system.systemStatus === undefined || system.systemStatus === 1)
+      .map(system => ({
+        label: `${system.systemName}${system.systemCode ? ` (${system.systemCode})` : ''}`,
+        value: system.id,
+        systemCode: system.systemCode
+      }))
+  } catch (error) {
+    message.error('加载外部系统列表失败')
+  } finally {
+    externalSystemLoading.value = false
+  }
+}
+
+const loadExternalApiOptions = async (keyword = externalApiKeyword.value) => {
+  if (!externalSystemId.value) {
+    externalApiOptions.value = []
+    return
+  }
   if (externalApiLoading.value) return
   externalApiLoading.value = true
+  externalApiKeyword.value = keyword || ''
   try {
-    const res = await getExternalApiListApi()
-    externalApiOptions.value = (res.data || [])
+    const res = await getExternalApiPageApi({
+      pageNum: 1,
+      pageSize: 50,
+      systemId: externalSystemId.value,
+      apiName: externalApiKeyword.value || undefined,
+      apiStatus: 1
+    })
+    externalApiOptions.value = (res.data?.records || [])
       .filter(api => api.apiStatus === undefined || api.apiStatus === 1)
       .map(api => ({
-        label: `${api.systemName || '未知系统'} - ${api.apiName} (${api.apiMethod || 'GET'} ${api.apiPath})`,
+        label: `${api.apiName}${api.apiCode ? ` (${api.apiCode})` : ''} - ${api.apiMethod || 'GET'} ${api.apiPath}`,
         value: api.id as number,
         systemId: api.systemId,
         apiPath: api.apiPath
@@ -292,36 +442,133 @@ const loadExternalApiOptions = async () => {
   }
 }
 
-const handleExternalApiChange = (value: number | null) => {
-  externalApiId.value = value || null
-  externalRequestParams.value = {}
-  externalRequestParamsJson.value = ''
+const appendExternalApiOption = (api: {
+  id: number
+  systemId: number
+  apiName: string
+  apiCode?: string
+  apiMethod?: string
+  apiPath: string
+}) => {
+  const exists = externalApiOptions.value.some(item => item.value === api.id)
+  if (exists) return
+  externalApiOptions.value.unshift({
+    label: `${api.apiName}${api.apiCode ? ` (${api.apiCode})` : ''} - ${api.apiMethod || 'GET'} ${api.apiPath}`,
+    value: api.id,
+    systemId: api.systemId,
+    apiPath: api.apiPath
+  })
 }
 
-const handleSaveParams = () => {
+const loadSelectedExternalApi = async () => {
+  if (!externalApiId.value) return
   try {
-    const params = JSON.parse(externalRequestParamsJson.value || '{}')
-    externalRequestParams.value = params
-    showParamModal.value = false
-    message.success('参数配置已保存')
+    const res = await getExternalApiDetailApi(externalApiId.value)
+    const api = res.data
+    if (!api) return
+    externalSystemId.value = api.systemId || externalSystemId.value
+    appendExternalApiOption(api)
   } catch (error) {
-    message.error('JSON 格式错误，请检查')
+    // 旧配置回显失败不阻断已有 externalApiId 的请求执行
   }
+}
+
+const handleExternalSystemChange = (value: number | null) => {
+  externalSystemId.value = value || null
+  externalApiId.value = null
+  externalApiOptions.value = []
+  externalApiKeyword.value = ''
+  if (value) {
+    loadExternalApiOptions('')
+  }
+}
+
+const handleExternalApiSearch = (keyword: string) => {
+  loadExternalApiOptions(keyword)
+}
+
+const handleExternalApiChange = (value: number | null) => {
+  externalApiId.value = value || null
+  ;(props.targetDataRequest as RequestConfigType).externalRequestParams = {}
+}
+
+const addDynamicParam = () => {
+  dynamicRequestParams.value.push(createDynamicParamBinding())
+}
+
+const removeDynamicParam = (index: number) => {
+  dynamicRequestParams.value.splice(index, 1)
+}
+
+const addTnDateRangeParams = () => {
+  const startParam = createDynamicParamBinding()
+  startParam.target = 'Params'
+  startParam.targetKey = 'startTime'
+  startParam.source = 'preset'
+  startParam.presetType = 'tn-day-start'
+  startParam.offsetDays = 1
+  startParam.dateFormat = 'YYYY-MM-DD HH:mm:ss'
+
+  const endParam = createDynamicParamBinding()
+  endParam.target = 'Params'
+  endParam.targetKey = 'endTime'
+  endParam.source = 'preset'
+  endParam.presetType = 'tn-day-end'
+  endParam.offsetDays = 1
+  endParam.dateFormat = 'YYYY-MM-DD HH:mm:ss'
+
+  dynamicRequestParams.value.push(startParam, endParam)
+}
+
+const handleDynamicSourceChange = (item: DynamicRequestParamBinding) => {
+  if (item.source === 'context') {
+    item.sourceKey = item.sourceKey || 'userId'
+    item.componentId = undefined
+    item.componentField = 'value'
+    item.customValue = ''
+    item.presetType = undefined
+  } else if (item.source === 'component') {
+    item.sourceKey = undefined
+    item.componentField = item.componentField || 'value'
+    item.customValue = ''
+    item.presetType = undefined
+  } else if (item.source === 'preset') {
+    item.sourceKey = undefined
+    item.componentId = undefined
+    item.componentField = undefined
+    item.customValue = ''
+    item.presetType = item.presetType || 'tn-day-start'
+    item.offsetDays = item.offsetDays ?? 1
+    item.dateFormat = item.dateFormat || 'YYYY-MM-DD HH:mm:ss'
+  } else {
+    item.sourceKey = undefined
+    item.componentId = undefined
+    item.componentField = undefined
+    item.presetType = undefined
+  }
+}
+
+const handleSaveDynamicParams = () => {
+  const invalidItem = dynamicRequestParams.value.find(item => item.enabled && !item.targetKey)
+  if (invalidItem) {
+    message.error('请填写动态参数名')
+    return
+  }
+  showDynamicParamModal.value = false
+  message.success('动态参数配置已保存')
 }
 
 onMounted(() => {
   const requestConfig = props.targetDataRequest as RequestConfigType
   requestSourceValue.value = requestConfig.requestSource || 'internal'
   requestConfig.requestSource = requestSourceValue.value
-  loadExternalApiOptions()
-  if (externalRequestParams.value) {
-    externalRequestParamsJson.value = JSON.stringify(externalRequestParams.value, null, 2)
-  }
-})
-
-watch(showParamModal, show => {
-  if (show) {
-    externalRequestParamsJson.value = JSON.stringify(externalRequestParams.value || {}, null, 2)
+  if (requestSourceValue.value === 'external') {
+    loadExternalSystemOptions()
+    if (requestConfig.externalApiId) {
+      loadSelectedExternalApi().then(() => loadExternalApiOptions())
+    } else if (requestConfig.externalSystemId) {
+      loadExternalApiOptions()
+    }
   }
 })
 
@@ -352,5 +599,11 @@ watch(
   :deep(.go-config-item-box) {
     padding-right: 25px;
   }
+}
+.dynamic-param-row {
+  display: grid;
+  grid-template-columns: 54px 90px 120px 100px minmax(130px, 1fr) minmax(100px, 0.75fr) minmax(90px, 0.65fr) 46px;
+  gap: 8px;
+  align-items: center;
 }
 </style>

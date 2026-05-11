@@ -3,9 +3,13 @@ package com.mdframe.forge.mock.controller;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -21,13 +25,16 @@ import java.util.Map;
 @RequestMapping("/mock")
 @ApiDecrypt
 @ApiEncrypt
+@Slf4j
 public class ReportMockDataController {
 
     /**
      * 财务月度营收支出数据。
      */
-    @GetMapping("/finance/monthly-revenue-expense")
-    public RespInfo<Map<String, Object>> monthlyRevenueExpense() {
+    @PostMapping("/finance/monthly-revenue-expense")
+    public RespInfo<Map<String, Object>> monthlyRevenueExpense(@RequestBody Map<String, Object> params) {
+        
+        log.info("finance/monthly-revenue-expense:{}", params);
         Map<String, Object> dataset = new LinkedHashMap<>();
         dataset.put("dimensions", Arrays.asList("月份", "营收(万元)", "支出(万元)"));
         dataset.put("source", buildFinanceRows());

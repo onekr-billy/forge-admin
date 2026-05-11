@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.report.project.domain.GoviewProject;
 import com.mdframe.forge.report.project.service.GoviewProjectService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
+import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/goview/project")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class GoviewProjectController {
 
     private final GoviewProjectService projectService;
@@ -58,7 +63,7 @@ public class GoviewProjectController {
      */
     @PutMapping
     public RespInfo<Void> update(@RequestBody GoviewProject project) {
-        projectService.updateById(project);
+        projectService.updateProject(project);
         return RespInfo.success();
     }
 

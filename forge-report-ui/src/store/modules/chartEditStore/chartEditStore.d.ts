@@ -170,6 +170,26 @@ export type RequestDataPondItemType = {
   dataPondRequestConfig: RequestConfigType
 }
 
+export type DynamicRequestParamTarget = 'Params' | 'Header' | 'Body'
+
+export type DynamicRequestParamSource = 'context' | 'component' | 'custom' | 'preset'
+
+export interface DynamicRequestParamBinding {
+  id: string
+  enabled: boolean
+  target: DynamicRequestParamTarget
+  targetKey: string
+  source: DynamicRequestParamSource
+  sourceKey?: string
+  componentId?: string
+  componentField?: string
+  customValue?: string | number | boolean | null
+  presetType?: 'tn-day-start' | 'tn-day-end'
+  offsetDays?: number
+  dateFormat?: string
+  fallbackValue?: string | number | boolean | null
+}
+
 // 全局的图表请求配置
 export interface RequestGlobalConfigType extends RequestPublicConfigType {
   // 组件定制轮询时间
@@ -202,10 +222,14 @@ export interface RequestConfigType extends RequestPublicConfigType {
   }
   // 接口来源（内部/外部）
   requestSource?: 'internal' | 'external'
+  // 外部系统ID（当 requestSource 为 external 时）
+  externalSystemId?: number | null
   // 外部接口ID（当 requestSource 为 external 时）
   externalApiId?: number | null
   // 外部请求参数配置
   externalRequestParams?: Record<string, any>
+  // 动态请求参数配置
+  dynamicRequestParams?: DynamicRequestParamBinding[]
 }
 
 // Store 类型

@@ -8,6 +8,7 @@ import { RequestDataTypeEnum } from '@/enums/httpEnum'
 import { isPreview, newFunctionHandle, intervalUnitHandle, normalizeDatasetForChart } from '@/utils'
 import { setOption } from '@/packages/public/chart'
 import { isNil } from 'lodash'
+import { getDynamicRequestParamDependencySnapshot } from '@/utils/requestDynamicParams'
 
 // 获取类型
 type ChartEditStoreType = typeof useChartEditStore
@@ -77,7 +78,11 @@ export const useChartDataFetch = (
         clearInterval(fetchInterval)
 
         const fetchFn = async () => {
-          const res = await customizeHttp(toRaw(targetComponent.request), toRaw(chartEditStore.getRequestGlobalConfig))
+          const res = await customizeHttp(
+            toRaw(targetComponent.request),
+            toRaw(chartEditStore.getRequestGlobalConfig),
+            toRaw(chartEditStore.getComponentList)
+          )
           if (res) {
             try {
               const filter = targetComponent.filter
@@ -99,7 +104,12 @@ export const useChartDataFetch = (
           () => [
             targetComponent.request.requestParams,
             targetComponent.request.externalApiId,
-            targetComponent.request.externalRequestParams
+            targetComponent.request.externalRequestParams,
+            targetComponent.request.dynamicRequestParams,
+            getDynamicRequestParamDependencySnapshot(
+              targetComponent.request.dynamicRequestParams,
+              chartEditStore.getComponentList
+            )
           ],
           () => {
             fetchFn()

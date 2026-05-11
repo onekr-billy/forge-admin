@@ -172,6 +172,39 @@ if (processDefinition == null) {
 
 ---
 
+## 5. 报表项目保存/读取接口缺少加解密注解导致配置不生效
+
+**发现日期**: 2026-05-11
+
+**问题描述**:
+报表页面发布后重新进入，动态接口配置或组件删除等画布变更看起来没有保存成功。前端请求链路正常，但后台接口缺少 `@ApiEncrypt` / `@ApiDecrypt` 时，响应/请求与前端加密拦截链路不匹配，导致保存或读取结果异常。
+
+**正确用法**:
+报表项目保存、读取、发布等需要经过前端加密请求链路的接口，后端必须按项目规范补齐：
+
+```java
+@ApiDecrypt
+@PutMapping
+public RespInfo<Void> update(@RequestBody GoviewProject project) {
+    ...
+}
+
+@ApiEncrypt
+@GetMapping("/{id}")
+public RespInfo<GoviewProject> getById(@PathVariable Long id) {
+    ...
+}
+```
+
+**解决方案**:
+排查“前端已传参但后台保存/回显不生效”时，除字段映射、租户条件外，必须检查接口是否补齐 `@ApiEncrypt` / `@ApiDecrypt`。
+
+**影响范围**:
+- `forge-report-ui` 项目保存、发布、详情回显
+- 所有启用前端加密拦截的后端接口
+
+---
+
 ## 记录规范
 
 每次发现新的踩坑点，按以下格式添加：

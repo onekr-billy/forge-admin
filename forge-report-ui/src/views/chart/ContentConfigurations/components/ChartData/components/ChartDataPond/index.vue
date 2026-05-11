@@ -114,7 +114,11 @@ const sendHandle = async () => {
   }
   loading.value = true
   try {
-    const res = await customizeHttp(toRaw(targetData.value.request), toRaw(chartEditStore.getRequestGlobalConfig))
+    const res = await customizeHttp(
+      toRaw(targetData.value.request),
+      toRaw(chartEditStore.getRequestGlobalConfig),
+      toRaw(chartEditStore.getComponentList)
+    )
     loading.value = false
     if (res) {
       if (!res?.data && !targetData.value.filter) {

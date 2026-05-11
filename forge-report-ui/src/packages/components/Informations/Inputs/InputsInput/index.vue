@@ -34,6 +34,8 @@ const option = shallowReactive({
 
 const onChange = (v: string) => {
   if(v == undefined) return;
+  props.chartConfig.option.dataset = v
+  props.chartConfig.option.inputValue = v
   // 存储到联动数据
   useChartInteract(
       props.chartConfig,
@@ -57,7 +59,6 @@ watch(
 )
 
 </script>
-
 
 
 

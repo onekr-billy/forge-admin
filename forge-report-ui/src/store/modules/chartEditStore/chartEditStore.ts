@@ -1,9 +1,10 @@
 import { toRaw } from 'vue'
 import { defineStore } from 'pinia'
 import { CreateComponentType, CreateComponentGroupType } from '@/packages/index.d'
-import { PublicGroupConfigClass } from '@/packages/public/publicConfig'
+import { PublicGroupConfigClass, requestConfig as defaultRequestConfig } from '@/packages/public/publicConfig'
 import debounce from 'lodash/debounce'
 import cloneDeep from 'lodash/cloneDeep'
+import merge from 'lodash/merge'
 import { defaultTheme, globalThemeJson } from '@/settings/chartThemes/index'
 import { requestInterval, previewScaleType, requestIntervalUnit } from '@/settings/designSetting'
 // 记录记录
@@ -31,6 +32,33 @@ import {
 
 const chartHistoryStore = useChartHistoryStore()
 const settingStore = useSettingStore()
+
+const normalizeRequestConfigForStorage = (request?: any) => {
+  return merge(cloneDeep(defaultRequestConfig), cloneDeep(toRaw(request || {})))
+}
+
+const normalizeComponentForStorage = (component: CreateComponentType | CreateComponentGroupType) => {
+  const rawComponent = cloneDeep(toRaw(component)) as CreateComponentType | CreateComponentGroupType
+  rawComponent.request = normalizeRequestConfigForStorage(rawComponent.request)
+
+  if (rawComponent.isGroup && Array.isArray((rawComponent as CreateComponentGroupType).groupList)) {
+    const groupComponent = rawComponent as CreateComponentGroupType
+    groupComponent.groupList = groupComponent.groupList.map(item =>
+      normalizeComponentForStorage(item) as CreateComponentType
+    )
+  }
+
+  return rawComponent
+}
+
+const normalizeRequestGlobalConfigForStorage = (requestGlobalConfig: RequestGlobalConfigType) => {
+  const rawConfig = cloneDeep(toRaw(requestGlobalConfig)) as RequestGlobalConfigType
+  rawConfig.requestDataPond = (rawConfig.requestDataPond || []).map(item => ({
+    ...item,
+    dataPondRequestConfig: normalizeRequestConfigForStorage(item.dataPondRequestConfig)
+  }))
+  return rawConfig
+}
 
 // 编辑区域内容
 export const useChartEditStore = defineStore({
@@ -169,9 +197,9 @@ export const useChartEditStore = defineStore({
     // * 获取需要存储的数据项
     getStorageInfo(): ChartEditStorage {
       return {
-        [ChartEditStoreEnum.EDIT_CANVAS_CONFIG]: this.getEditCanvasConfig,
-        [ChartEditStoreEnum.COMPONENT_LIST]: this.getComponentList,
-        [ChartEditStoreEnum.REQUEST_GLOBAL_CONFIG]: this.getRequestGlobalConfig
+        [ChartEditStoreEnum.EDIT_CANVAS_CONFIG]: cloneDeep(toRaw(this.getEditCanvasConfig)),
+        [ChartEditStoreEnum.COMPONENT_LIST]: this.getComponentList.map(normalizeComponentForStorage),
+        [ChartEditStoreEnum.REQUEST_GLOBAL_CONFIG]: normalizeRequestGlobalConfigForStorage(this.getRequestGlobalConfig)
       }
     },
     // * 获取针对 componentList 顺序排过序的 selectId

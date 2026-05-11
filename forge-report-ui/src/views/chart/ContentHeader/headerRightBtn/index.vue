@@ -30,12 +30,36 @@ import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore
 import { syncData } from '../../ContentEdit/components/EditTools/hooks/useSyncUpdate.hook'
 import { icon } from '@/plugins'
 import { cloneDeep } from 'lodash'
-import { buildProjectPayload, publishProjectApi, updateProjectApi } from '@/api/project'
+import { buildProjectPayload, getProjectDetailApi, publishProjectApi, updateProjectApi } from '@/api/project'
 
 const { BrowsersOutlineIcon, SendIcon, AnalyticsIcon, DocumentTextIcon } = icon.ionicons5
 const chartEditStore = useChartEditStore()
 
 const routerParamsInfo = useRoute()
+
+const syncProjectStorageToSession = (id: string, storageInfo: ReturnType<typeof chartEditStore.getStorageInfo>) => {
+  const sessionStorageInfo = getSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST) || []
+  const saveData = { id, ...storageInfo }
+  const repeateIndex = sessionStorageInfo.findIndex((e: { id: string }) => String(e.id) === String(id))
+
+  if (repeateIndex !== -1) {
+    sessionStorageInfo.splice(repeateIndex, 1, saveData)
+  } else {
+    sessionStorageInfo.push(saveData)
+  }
+  setSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST, sessionStorageInfo)
+}
+
+const assertProjectComponentDataSaved = async (id: string, expectedComponentData?: string) => {
+  if (!expectedComponentData) return
+  const res = await getProjectDetailApi(id)
+  const actualComponentData = res?.data?.componentData || ''
+  if (actualComponentData !== expectedComponentData) {
+    const expectedLength = JSON.parse(expectedComponentData).componentList?.length ?? 0
+    const actualLength = actualComponentData ? JSON.parse(actualComponentData).componentList?.length ?? 0 : 0
+    throw new Error(`项目配置保存校验失败，当前 ${actualLength} 个组件，预期 ${expectedLength} 个组件`)
+  }
+}
 
 // 预览
 const previewHandle = () => {
@@ -93,6 +117,8 @@ const sendHandle = async () => {
     console.log('[Publish] 项目数据:', projectPayload)
 
     await updateProjectApi(projectPayload)
+    await assertProjectComponentDataSaved(previewId, projectPayload.componentData)
+    syncProjectStorageToSession(previewId, storageInfo)
 
     const previewPath = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')
     if (!previewPath) {
@@ -101,6 +127,7 @@ const sendHandle = async () => {
     }
     const previewUrl = `${window.location.origin}${previewPath}/${previewId}`
     await publishProjectApi(previewId, previewUrl)
+    await assertProjectComponentDataSaved(previewId, projectPayload.componentData)
 
     window['$message'].success('发布成功')
 

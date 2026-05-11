@@ -1,5 +1,12 @@
 import { get } from '@/api/http'
 
+export interface ExternalSystemVO {
+  id: number
+  systemName: string
+  systemCode?: string
+  systemStatus?: number
+}
+
 export interface ExternalApiVO {
   id: number
   systemId: number
@@ -15,10 +22,42 @@ export interface ExternalApiVO {
   responseTotalPath?: string
 }
 
-export const getExternalApiListApi = () => {
-  return get('/forge-report-api/external/api/list') as unknown as Promise<{
+export interface ExternalApiPageParams {
+  pageNum: number
+  pageSize: number
+  systemId: number
+  apiName?: string
+  apiCode?: string
+  apiStatus?: number
+}
+
+export interface PageResponse<T> {
+  records: T[]
+  total: number
+  current: number
+  size: number
+}
+
+export const getExternalSystemListApi = () => {
+  return get('/forge-report-api/external/system/list') as unknown as Promise<{
     code: number
-    data: ExternalApiVO[]
+    data: ExternalSystemVO[]
+    message: string
+  }>
+}
+
+export const getExternalApiPageApi = (params: ExternalApiPageParams) => {
+  return get('/forge-report-api/external/api/page', params) as unknown as Promise<{
+    code: number
+    data: PageResponse<ExternalApiVO>
+    message: string
+  }>
+}
+
+export const getExternalApiDetailApi = (id: number) => {
+  return get(`/forge-report-api/external/api/${id}`) as unknown as Promise<{
+    code: number
+    data: ExternalApiVO
     message: string
   }>
 }

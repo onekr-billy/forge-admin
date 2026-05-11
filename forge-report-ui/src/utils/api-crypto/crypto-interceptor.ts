@@ -46,11 +46,19 @@ export function decryptPayload<T = any>(payload: Required<EncryptedPayload>): T 
   }
 }
 
+function isFormDataPayload(data: unknown): data is FormData {
+  return typeof FormData !== 'undefined' && data instanceof FormData
+}
+
 export function encryptRequest(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
   const customConfig = config as InternalAxiosRequestConfig & { encrypt?: boolean }
   config.headers = config.headers || {}
 
   if (customConfig.encrypt === false || !shouldEncrypt(config.url || '')) {
+    return config
+  }
+
+  if (isFormDataPayload(config.data)) {
     return config
   }
 

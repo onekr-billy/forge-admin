@@ -6,7 +6,16 @@ export const cryptoConfig = {
   enableReplay: true,
   replayExcludePaths: ['/auth/captcha', '/auth/captcha/**', '/auth/loginConfig', '/crypto/public-key'],
   includePaths: [] as string[],
-  excludePaths: ['/auth/captcha', '/auth/captcha/**', '/auth/login', '/auth/loginConfig', '/crypto/public-key', '/crypto/exchange']
+  excludePaths: [
+    '/auth/captcha',
+    '/auth/captcha/**',
+    '/auth/login',
+    '/auth/loginConfig',
+    '/crypto/public-key',
+    '/crypto/exchange',
+    '/api/file/upload',
+    '/api/file/upload/**'
+  ]
 }
 
 export function matchPath(path: string, pattern: string): boolean {
