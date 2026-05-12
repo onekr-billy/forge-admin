@@ -172,6 +172,39 @@ if (processDefinition == null) {
 
 ---
 
+## 5. 报表项目保存/读取接口缺少加解密注解导致配置不生效
+
+**发现日期**: 2026-05-11
+
+**问题描述**:
+报表页面发布后重新进入，动态接口配置或组件删除等画布变更看起来没有保存成功。前端请求链路正常，但后台接口缺少 `@ApiEncrypt` / `@ApiDecrypt` 时，响应/请求与前端加密拦截链路不匹配，导致保存或读取结果异常。
+
+**正确用法**:
+报表项目保存、读取、发布等需要经过前端加密请求链路的接口，后端必须按项目规范补齐：
+
+```java
+@ApiDecrypt
+@PutMapping
+public RespInfo<Void> update(@RequestBody GoviewProject project) {
+    ...
+}
+
+@ApiEncrypt
+@GetMapping("/{id}")
+public RespInfo<GoviewProject> getById(@PathVariable Long id) {
+    ...
+}
+```
+
+**解决方案**:
+排查“前端已传参但后台保存/回显不生效”时，除字段映射、租户条件外，必须检查接口是否补齐 `@ApiEncrypt` / `@ApiDecrypt`。
+
+**影响范围**:
+- `forge-report-ui` 项目保存、发布、详情回显
+- 所有启用前端加密拦截的后端接口
+
+---
+
 ## 记录规范
 
 每次发现新的踩坑点，按以下格式添加：
@@ -218,7 +251,78 @@ if (processDefinition == null) {
 - 我的待办列表查询
 - 所有依赖 `TASK_ASSIGNED` 事件同步本地任务表的场景
 
-## 6. Flowable 委派态任务不能直接完成
+---
+
+## 6. 外部接口代理返回二层加密壳导致图表数据异常
+
+**发现日期**: 2026-05-11
+
+**问题描述**:
+报表设计器通过外部接口代理调用 Forge 系统接口时，前端外层响应已解密，但代理返回的业务数据仍可能是目标系统响应的 `{data, algorithm}` 加密壳，ECharts 会拿到密文对象并报 `Invalide sourceFormat: unknown`。
+
+**根本原因**:
+`forge-plugin-external` 代理只是转发并解析目标接口响应，没有和目标 Forge 系统做独立密钥交换，也没有对目标系统返回的加密响应做二次解密。
+
+**解决方案**:
+代理服务调用外部 Forge 接口前先尝试 `/crypto/public-key` + `/crypto/exchange`，用目标系统会话密钥加密请求体，并在代理层解密目标系统返回的 `{data, algorithm}`，前端图表只接收明文业务数据。
+
+**影响范围**:
+- 报表动态请求选择外部 Forge 接口
+- 外部接口代理调试
+- 所有通过 `ExternalProxyService` 转发到启用 API 加解密服务的场景
+
+---
+
+## 7. X-Inner-Call 只能由可信内部系统配置触发
+
+**发现日期**: 2026-05-11
+
+**问题描述**:
+外部接口代理如果允许接口自定义请求头直接传 `X-Inner-Call: true`，调用 Forge 服务时可能绕过 API 加解密和重放校验。
+
+**根本原因**:
+`forge-starter-crypto` 在请求头 `X-Inner-Call=true` 时会跳过请求解密、响应加密和重放校验，这个头属于服务间内部调用信任边界，不应由普通接口配置任意设置。
+
+**解决方案**:
+在 `sys_external_system` 增加 `trusted_internal` 配置。只有该配置为 true 时，`ExternalProxyService` 才主动添加 `X-Inner-Call: true`；同时过滤接口自定义请求头里的 `X-Inner-Call`。
+
+**影响范围**:
+- 外部系统配置
+- 外部接口代理调用
+- 所有调用 Forge 内部服务并依赖 `X-Inner-Call` 跳过加解密的场景
+
+## 6. AiCrudPage 表格列配置不能直接使用 Naive UI title/key
+
+**发现日期**: 2026-05-11
+
+**问题描述**:
+外围系统/接口管理页面列表接口有数据，但表格字段显示为空。
+
+**错误示例**:
+```javascript
+const tableColumns = [
+  { title: '系统名称', key: 'systemName' }
+]
+```
+
+**正确用法**:
+```javascript
+const tableColumns = [
+  { label: '系统名称', prop: 'systemName' }
+]
+```
+
+**根本原因**:
+`AiCrudPage` 会再交给 `AiTable` 转换列配置，默认渲染逻辑读取 `row[col.prop]`。只配置 `key` 时，列标题能显示，但默认单元格取值会变成 `row[undefined]`，最终显示 `-` 或空值。
+
+**解决方案**:
+所有 `AiCrudPage` 的表格列统一使用 `label/prop`；只有直接使用 Naive `NDataTable` 时才使用 `title/key`。
+
+**影响范围**:
+- 所有基于 `AiCrudPage` 的 CRUD 页面
+- AI 生成或手写的前端管理页面
+
+## 7. Flowable 委派态任务不能直接完成
 
 **发现日期**: 2026-05-06
 

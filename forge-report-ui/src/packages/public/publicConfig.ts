@@ -39,7 +39,12 @@ export const requestConfig: RequestConfigType = {
     },
     Header: {},
     Params: {}
-  }
+  },
+  requestSource: 'internal',
+  externalSystemId: null,
+  externalApiId: null,
+  externalRequestParams: {},
+  dynamicRequestParams: []
 }
 
 // 单实例类

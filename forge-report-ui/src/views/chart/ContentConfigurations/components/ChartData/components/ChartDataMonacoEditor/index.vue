@@ -127,7 +127,11 @@ const sourceData = ref<any>('')
 // 动态获取数据
 const fetchTargetData = async () => {
   try {
-    const res = await customizeHttp(toRaw(targetData.value.request), toRaw(chartEditStore.getRequestGlobalConfig))
+    const res = await customizeHttp(
+      toRaw(targetData.value.request),
+      toRaw(chartEditStore.getRequestGlobalConfig),
+      toRaw(chartEditStore.getComponentList)
+    )
     if (res) {
       sourceData.value = res
       return

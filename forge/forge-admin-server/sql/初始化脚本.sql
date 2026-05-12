@@ -14785,3 +14785,142 @@ VALUES (2, 21, 'GITEE', '4998937', 'gitee_4998937', 'yaomd',
         '2026-04-01 17:59:25', NULL),
        (3, 22, 'GITEE', '5359992', 'gitee_5359992', 'ml331', 'https://gitee.com/assets/no_portrait.png', NULL, NULL,
         NULL, NULL, '2026-04-07 17:50:00', NULL);
+
+-- ----------------------------
+-- 外部系统配置表
+-- ----------------------------
+DROP TABLE IF EXISTS sys_external_system;
+CREATE TABLE sys_external_system (
+    id                      BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    tenant_id               BIGINT NOT NULL DEFAULT 1 COMMENT '租户ID',
+    system_code             VARCHAR(50) NOT NULL COMMENT '系统编码',
+    system_name             VARCHAR(100) NOT NULL COMMENT '系统名称',
+    system_desc             VARCHAR(500) COMMENT '系统描述',
+    base_url                VARCHAR(255) NOT NULL COMMENT '基础URL',
+    auth_type               VARCHAR(20) NOT NULL COMMENT '认证类型(none/basic/token/current_token/oauth2/api_key/custom)',
+    basic_username          VARCHAR(100) COMMENT 'Basic认证用户名',
+    basic_password          VARCHAR(255) COMMENT 'Basic认证密码',
+    token_value             VARCHAR(500) COMMENT 'Token值',
+    token_header_name       VARCHAR(50) COMMENT 'Token Header名称',
+    token_prefix            VARCHAR(20) COMMENT 'Token前缀',
+    oauth2_token_url        VARCHAR(255) COMMENT 'OAuth2 Token URL',
+    oauth2_client_id        VARCHAR(100) COMMENT 'OAuth2 Client ID',
+    oauth2_client_secret    VARCHAR(255) COMMENT 'OAuth2 Client Secret',
+    oauth2_grant_type       VARCHAR(20) COMMENT 'OAuth2授权类型',
+    oauth2_scope            VARCHAR(100) COMMENT 'OAuth2 Scope',
+    api_key_name            VARCHAR(50) COMMENT 'API Key名称',
+    api_key_value           VARCHAR(255) COMMENT 'API Key值',
+    api_key_position        VARCHAR(20) COMMENT 'API Key位置(header/query)',
+    custom_auth_adapter     VARCHAR(100) COMMENT '自定义认证适配器字典值(external_auth_adapter)',
+    custom_auth_config      TEXT COMMENT '自定义认证配置(JSON)',
+    trusted_internal        TINYINT(1) DEFAULT 0 COMMENT '是否可信内部Forge系统',
+    proxy_enabled           TINYINT(1) DEFAULT 0 COMMENT '是否启用代理',
+    proxy_host              VARCHAR(100) COMMENT '代理主机',
+    proxy_port              INT COMMENT '代理端口',
+    proxy_username          VARCHAR(100) COMMENT '代理用户名',
+    proxy_password          VARCHAR(255) COMMENT '代理密码',
+    retry_enabled           TINYINT(1) DEFAULT 0 COMMENT '是否启用重试',
+    retry_max_attempts      INT COMMENT '最大重试次数',
+    retry_backoff_interval  INT COMMENT '重试间隔(ms)',
+    connect_timeout         INT COMMENT '连接超时(ms)',
+    read_timeout            INT COMMENT '读取超时(ms)',
+    write_timeout           INT COMMENT '写入超时(ms)',
+    ssl_verify_enabled      TINYINT(1) DEFAULT 1 COMMENT '是否启用SSL验证',
+    request_logging_enabled TINYINT(1) DEFAULT 0 COMMENT '是否启用请求日志',
+    system_status           INT DEFAULT 1 COMMENT '状态(0停用 1启用)',
+    remark                  VARCHAR(500) COMMENT '备注',
+    create_by               BIGINT COMMENT '创建者',
+    create_time             DATETIME COMMENT '创建时间',
+    create_dept             BIGINT COMMENT '创建部门',
+    update_by               BIGINT COMMENT '更新者',
+    update_time             DATETIME COMMENT '更新时间',
+    UNIQUE KEY uk_system_code_tenant (system_code, tenant_id),
+    INDEX idx_tenant_id (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部系统配置表';
+
+-- ----------------------------
+-- 外部接口配置表
+-- ----------------------------
+DROP TABLE IF EXISTS sys_external_api;
+CREATE TABLE sys_external_api (
+    id                      BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    tenant_id               BIGINT NOT NULL DEFAULT 1 COMMENT '租户ID',
+    system_id               BIGINT NOT NULL COMMENT '所属系统ID',
+    api_code                VARCHAR(50) NOT NULL COMMENT '接口编码',
+    api_name                VARCHAR(100) NOT NULL COMMENT '接口名称',
+    api_desc                VARCHAR(500) COMMENT '接口描述',
+    api_path                VARCHAR(255) NOT NULL COMMENT '接口路径',
+    api_method              VARCHAR(10) NOT NULL COMMENT '请求方法(GET/POST/PUT/DELETE)',
+    request_content_type    VARCHAR(50) COMMENT '请求Content-Type',
+    request_headers         TEXT COMMENT '请求头配置(JSON)',
+    request_params          TEXT COMMENT '请求参数配置(JSON)',
+    request_body_template   TEXT COMMENT '请求体模板',
+    response_content_type   VARCHAR(50) COMMENT '响应Content-Type',
+    response_data_path      VARCHAR(100) COMMENT '响应数据路径(JsonPath)',
+    response_total_path     VARCHAR(100) COMMENT '响应总数路径(JsonPath)',
+    param_mapping_enabled   TINYINT(1) DEFAULT 0 COMMENT '是否启用参数映射',
+    param_mappings          TEXT COMMENT '参数映射配置(JSON)',
+    response_transform_enabled TINYINT(1) DEFAULT 0 COMMENT '是否启用响应转换',
+    response_transform_script TEXT COMMENT '响应转换脚本',
+    error_code_path         VARCHAR(100) COMMENT '错误码路径(JsonPath)',
+    error_msg_path          VARCHAR(100) COMMENT '错误消息路径(JsonPath)',
+    success_codes           VARCHAR(100) COMMENT '成功码列表',
+    doc_file_id             VARCHAR(100) COMMENT '接口文档文件ID',
+    doc_file_name           VARCHAR(255) COMMENT '接口文档文件名',
+    rate_limit_enabled      TINYINT(1) DEFAULT 0 COMMENT '是否启用限流',
+    rate_limit_qps          INT COMMENT '限流QPS',
+    cache_enabled           TINYINT(1) DEFAULT 0 COMMENT '是否启用缓存',
+    cache_ttl               INT COMMENT '缓存时间(秒)',
+    cache_key_template      VARCHAR(255) COMMENT '缓存Key模板',
+    permission_check_enabled TINYINT(1) DEFAULT 0 COMMENT '是否启用权限检查',
+    required_permission     VARCHAR(100) COMMENT '所需权限',
+    api_status              INT DEFAULT 1 COMMENT '状态(0停用 1启用)',
+    sort_order              INT DEFAULT 0 COMMENT '排序',
+    remark                  VARCHAR(500) COMMENT '备注',
+    create_by               BIGINT COMMENT '创建者',
+    create_time             DATETIME COMMENT '创建时间',
+    create_dept             BIGINT COMMENT '创建部门',
+    update_by               BIGINT COMMENT '更新者',
+    update_time             DATETIME COMMENT '更新时间',
+    UNIQUE KEY uk_api_code_system (api_code, system_id),
+    INDEX idx_tenant_id (tenant_id),
+    INDEX idx_system_id (system_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部接口配置表';
+
+-- ----------------------------
+-- 外部接口调用日志表
+-- ----------------------------
+DROP TABLE IF EXISTS sys_external_api_log;
+CREATE TABLE sys_external_api_log (
+    id               BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    tenant_id        BIGINT NOT NULL DEFAULT 1 COMMENT '租户ID',
+    system_id        BIGINT COMMENT '外部系统ID',
+    api_id           BIGINT NOT NULL COMMENT '外部接口ID',
+    system_name      VARCHAR(100) COMMENT '系统名称快照',
+    api_name         VARCHAR(100) COMMENT '接口名称快照',
+    api_code         VARCHAR(50) COMMENT '接口编码快照',
+    request_method   VARCHAR(10) COMMENT '请求方法',
+    request_url      VARCHAR(1000) COMMENT '请求URL',
+    request_params   TEXT COMMENT '请求参数',
+    request_body     TEXT COMMENT '请求体',
+    response_body    TEXT COMMENT '响应体',
+    http_status_code INT COMMENT 'HTTP状态码',
+    call_status      TINYINT DEFAULT 1 COMMENT '调用状态(0失败 1成功)',
+    error_message    VARCHAR(1000) COMMENT '错误信息',
+    duration_ms      BIGINT COMMENT '耗时毫秒',
+    debug_flag       TINYINT(1) DEFAULT 0 COMMENT '是否调试调用',
+    create_by        BIGINT COMMENT '创建者',
+    create_time      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    create_dept      BIGINT COMMENT '创建部门',
+    update_by        BIGINT COMMENT '更新者',
+    update_time      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_tenant_api (tenant_id, api_id),
+    INDEX idx_system_id (system_id),
+    INDEX idx_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部接口调用日志表';
+
+INSERT IGNORE INTO sys_dict_type (tenant_id, dict_name, dict_type, dict_status, remark, create_time, update_time)
+VALUES (1, '外部认证适配器', 'external_auth_adapter', 1, '外部系统自定义认证适配器字典', NOW(), NOW());
+
+INSERT IGNORE INTO sys_dict_data (tenant_id, dict_sort, dict_label, dict_value, dict_type, dict_status, remark, create_time, update_time)
+VALUES (1, 1, '请求头映射', 'header_map', 'external_auth_adapter', 1, '将自定义认证配置中的 KEY:VALUE 写入请求头', NOW(), NOW());

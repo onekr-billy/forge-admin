@@ -5,9 +5,10 @@ import { useChartDataPondFetch } from '@/hooks/'
 import { CreateComponentType, ChartFrameEnum } from '@/packages/index.d'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 import { RequestDataTypeEnum } from '@/enums/httpEnum'
-import { isPreview, newFunctionHandle, intervalUnitHandle } from '@/utils'
+import { isPreview, newFunctionHandle, intervalUnitHandle, normalizeDatasetForChart } from '@/utils'
 import { setOption } from '@/packages/public/chart'
 import { isNil } from 'lodash'
+import { getDynamicRequestParamDependencySnapshot } from '@/utils/requestDynamicParams'
 
 // 获取类型
 type ChartEditStoreType = typeof useChartEditStore
@@ -55,6 +56,8 @@ export const useChartDataFetch = (
     const {
       requestDataType,
       requestUrl,
+      requestSource,
+      externalApiId,
       requestIntervalUnit: targetUnit,
       requestInterval: targetInterval
     } = toRefs(targetComponent.request)
@@ -63,25 +66,32 @@ export const useChartDataFetch = (
     if (requestDataType.value !== RequestDataTypeEnum.AJAX) return
 
     try {
-      // 处理地址
-      // @ts-ignore
-      if (requestUrl?.value) {
+      const isExternalRequest = requestSource?.value === 'external'
+      const canFetchInternal = !isExternalRequest && requestUrl?.value
+      const canFetchExternal = isExternalRequest && externalApiId?.value
+
+      if (canFetchInternal || canFetchExternal) {
         // requestOriginUrl 允许为空
         const completePath = requestOriginUrl && requestOriginUrl.value + requestUrl.value
-        if (!completePath) return
+        if (canFetchInternal && !completePath) return
 
         clearInterval(fetchInterval)
 
         const fetchFn = async () => {
-          const res = await customizeHttp(toRaw(targetComponent.request), toRaw(chartEditStore.getRequestGlobalConfig))
+          const res = await customizeHttp(
+            toRaw(targetComponent.request),
+            toRaw(chartEditStore.getRequestGlobalConfig),
+            toRaw(chartEditStore.getComponentList)
+          )
           if (res) {
             try {
               const filter = targetComponent.filter
               const { data } = res
-              echartsUpdateHandle(newFunctionHandle(data, res, filter))
+              const nextDataset = normalizeDatasetForChart(newFunctionHandle(data, res, filter), chartFrame)
+              echartsUpdateHandle(nextDataset)
               // 更新回调函数
               if (updateCallback) {
-                updateCallback(newFunctionHandle(data, res, filter))
+                updateCallback(nextDataset)
               }
             } catch (error) {
               console.error(error)
@@ -91,7 +101,16 @@ export const useChartDataFetch = (
 
         // 普通初始化与组件交互处理监听
         watch(
-          () => targetComponent.request.requestParams,
+          () => [
+            targetComponent.request.requestParams,
+            targetComponent.request.externalApiId,
+            targetComponent.request.externalRequestParams,
+            targetComponent.request.dynamicRequestParams,
+            getDynamicRequestParamDependencySnapshot(
+              targetComponent.request.dynamicRequestParams,
+              chartEditStore.getComponentList
+            )
+          ],
           () => {
             fetchFn()
           },

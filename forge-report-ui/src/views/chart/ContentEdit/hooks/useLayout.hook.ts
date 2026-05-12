@@ -9,38 +9,37 @@ import { useSync } from '@/views/chart/hooks/useSync.hook'
 
 const chartEditStore = useChartEditStore()
 
-// 从 sessionStorage 或后端加载项目数据（在 DOM 就绪后调用）
-async function loadProjectData() {
-  // 已有组件数据（如 AI 生成流程直接跳转），跳过
-  if (chartEditStore.getComponentList.length > 0) return
+const applyProjectStorage = async (storage: any, updateComponent: (projectData: any, isReplace?: boolean) => Promise<void>, source: string) => {
+  if (Array.isArray(storage?.componentList)) {
+    console.log(`[useLayout] 从${source}恢复`, storage.componentList.length, '个组件')
+    await updateComponent(storage, true)
+    return true
+  }
+  return false
+}
 
+// 从后端或 sessionStorage 加载项目数据（在 DOM 就绪后调用）
+async function loadProjectData() {
   const { updateComponent } = useSync()
 
   try {
     const id = fetchRouteParamsLocation()
 
-    // 优先从 sessionStorage 读取
-    const storageList = getSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST) as any[]
-    if (storageList && id) {
-      const found = storageList.find((item: any) => String(item.id) === String(id))
-      if (found && found.componentList && found.componentList.length > 0) {
-        console.log('[useLayout] 从 SessionStorage 恢复', found.componentList.length, '个组件')
-        await updateComponent(found, true)
-        return
-      }
-    }
-
-    // sessionStorage 没有，从后端拉取
+    // 工作台以后台保存内容为准，避免 sessionStorage 旧缓存覆盖发布后的配置
     if (id) {
       const res = await getProjectDetailApi(String(id))
       const project = res?.data
       if (project?.componentData) {
         const parsed = JSON.parse(project.componentData)
-        if (parsed.componentList && parsed.componentList.length > 0) {
-          console.log('[useLayout] 从后端恢复', parsed.componentList.length, '个组件')
-          await updateComponent(parsed, true)
-        }
+        if (await applyProjectStorage(parsed, updateComponent, '后端')) return
       }
+    }
+
+    // 后台没有可用组件时，再从 sessionStorage 兜底恢复
+    const storageList = getSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST) as any[]
+    if (storageList && id) {
+      const found = storageList.find((item: any) => String(item.id) === String(id))
+      await applyProjectStorage(found, updateComponent, 'SessionStorage')
     }
   } catch (e) {
     console.warn('[useLayout] 项目数据恢复失败:', e)

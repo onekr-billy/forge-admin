@@ -29,6 +29,8 @@ const option = shallowReactive({
 const onChange = (v: string) => {
   if (v === undefined) return
   const selectItem = option.value.dataset.find((item: { label: string; value: any }) => item.label === v)
+  props.chartConfig.option.tabLabel = v
+  props.chartConfig.option.tabValue = selectItem?.value
   // 存储到联动数据
   useChartInteract(
     props.chartConfig,

@@ -1,4 +1,5 @@
-import { post } from '@/api/http'
+import type { AxiosRequestConfig } from 'axios'
+import axiosInstance from '@/api/axios'
 
 export interface FileUploadResult {
   fileId: string
@@ -19,11 +20,15 @@ export const uploadFileApi = async (file: File, businessType = 'project_screensh
   if (businessId) {
     formData.append('businessId', businessId)
   }
-  return post('/forge-report-api/api/file/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  }) as unknown as Promise<{ code: number; data: FileUploadResult; msg: string }>
+
+  const config: AxiosRequestConfig & { encrypt?: boolean } = {
+    url: '/forge-report-api/api/file/upload',
+    method: 'post',
+    data: formData,
+    encrypt: false
+  }
+
+  return axiosInstance(config) as unknown as Promise<{ code: number; data: FileUploadResult; msg: string }>
 }
 
 export const getFileUrlApi = (fileId: string, expires = 3600) => {

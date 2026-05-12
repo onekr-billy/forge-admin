@@ -39,6 +39,8 @@ const option = shallowReactive({
 
 const onChange = (v: number,v2:number) => {
   if(v == undefined) return;
+  props.chartConfig.option.pageValue = v
+  props.chartConfig.option.pageSize = v2 || option.value.pageSize
   // 存储到联动数据
   useChartInteract(
       props.chartConfig,

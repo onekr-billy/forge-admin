@@ -8,6 +8,8 @@ import {
   RequestParamsObjType
 } from '@/enums/httpEnum'
 import type { RequestGlobalConfigType, RequestConfigType } from '@/store/modules/chartEditStore/chartEditStore.d'
+import { DynamicParamComponent, resolveDynamicRequestParams } from '@/utils/requestDynamicParams'
+import { queryDataDataset } from './data/dataset'
 
 export const get = (url: string, params?: object) => {
   return axiosInstance({
@@ -81,6 +83,24 @@ export const http = (type?: RequestHttpEnum) => {
   }
 }
 const prefix = 'javascript:'
+const toPlainObject = (target?: Record<string, unknown>) => {
+  if (!target) return {}
+  return JSON.parse(JSON.stringify(target)) as Record<string, unknown>
+}
+
+const mergeDefinedObjects = (...items: Record<string, unknown>[]) => {
+  const result: Record<string, unknown> = {}
+  items.forEach(item => {
+    Object.keys(item).forEach(key => {
+      const value = item[key]
+      if (value !== undefined && value !== null && value !== '') {
+        result[key] = value
+      }
+    })
+  })
+  return result
+}
+
 // 对输入字符进行转义处理
 export const translateStr = (target: string | object) => {
   if (typeof target === 'string') {
@@ -112,10 +132,32 @@ export const translateStr = (target: string | object) => {
  * @param targetParams 当前组件参数
  * @param globalParams 全局参数
  */
-export const customizeHttp = (targetParams: RequestConfigType, globalParams: RequestGlobalConfigType) => {
+export const customizeHttp = async (
+  targetParams: RequestConfigType,
+  globalParams: RequestGlobalConfigType,
+  componentList: DynamicParamComponent[] = []
+) => {
   if (!targetParams || !globalParams) {
     return
   }
+
+  // 判断接口来源
+  const requestSource = targetParams.requestSource || 'internal'
+
+  // 静态数据不发起请求
+  if (targetParams.requestDataType === RequestDataTypeEnum.STATIC) return
+  
+  // 数据集模式
+  if (targetParams.requestDataType === RequestDataTypeEnum.DATASET) {
+    return datasetRequest(targetParams, componentList)
+  }
+  
+  // 外部接口：通过代理转发
+  if (requestSource === 'external' && targetParams.externalApiId) {
+    return externalProxyRequest(targetParams, componentList)
+  }
+
+  // 内部接口：原有逻辑
   // 全局
   const {
     // 全局请求源地址
@@ -142,9 +184,6 @@ export const customizeHttp = (targetParams: RequestConfigType, globalParams: Req
     requestParams: targetRequestParams
   } = targetParams
 
-  // 静态排除
-  if (requestDataType === RequestDataTypeEnum.STATIC) return
-
   if (!requestUrl) {
     return
   }
@@ -155,12 +194,21 @@ export const customizeHttp = (targetParams: RequestConfigType, globalParams: Req
     ...targetRequestParams.Header
   }
   headers = translateStr(headers)
+  const dynamicParams = await resolveDynamicRequestParams(targetParams.dynamicRequestParams, componentList)
+  headers = {
+    ...headers,
+    ...dynamicParams.Header
+  } as RequestParamsObjType
 
   // data 参数
   let data: RequestParamsObjType | FormData | string = {}
   // params 参数
   let params: RequestParamsObjType = { ...targetRequestParams.Params }
   params = translateStr(params)
+  params = {
+    ...params,
+    ...dynamicParams.Params
+  } as RequestParamsObjType
   // form 类型处理
   let formData: FormData = new FormData()
   // 类型处理
@@ -187,6 +235,7 @@ export const customizeHttp = (targetParams: RequestConfigType, globalParams: Req
       headers['Content-Type'] = ContentTypeEnum.FORM_URLENCODED
       const bodyFormData = targetRequestParams.Body['x-www-form-urlencoded']
       for (const i in bodyFormData) formData.set(i, translateStr(bodyFormData[i]))
+      Object.keys(dynamicParams.Body).forEach(key => formData.set(key, dynamicParams.Body[key] as string))
       // FormData 赋值给 data
       data = formData
       break
@@ -198,10 +247,21 @@ export const customizeHttp = (targetParams: RequestConfigType, globalParams: Req
       for (const i in bodyFormUrlencoded) {
         formData.set(i, translateStr(bodyFormUrlencoded[i]))
       }
+      Object.keys(dynamicParams.Body).forEach(key => formData.set(key, dynamicParams.Body[key] as string))
       // FormData 赋值给 data
       data = formData
       break
     }
+  }
+
+  if (!(data instanceof FormData) && Object.keys(dynamicParams.Body).length) {
+    if (typeof data === 'string') {
+      data = data ? JSON.parse(data) : {}
+    }
+    data = {
+      ...(data as RequestParamsObjType),
+      ...dynamicParams.Body
+    } as RequestParamsObjType
   }
 
   // sql 处理
@@ -222,5 +282,79 @@ export const customizeHttp = (targetParams: RequestConfigType, globalParams: Req
   } catch (error) {
     console.log(error)
     window['$message'].error('URL地址格式有误！')
+  }
+}
+
+/**
+ * * 外部接口代理请求
+ * @param targetParams 当前组件参数
+ */
+const externalProxyRequest = async (
+  targetParams: RequestConfigType,
+  componentList: DynamicParamComponent[] = []
+) => {
+  const { externalApiId } = targetParams
+  
+  if (!externalApiId) {
+    window['$message'].error('未选择外部接口')
+    return
+  }
+
+  try {
+    const dynamicParams = await resolveDynamicRequestParams(targetParams.dynamicRequestParams, componentList)
+    const proxyParams = mergeDefinedObjects(
+      toPlainObject(dynamicParams.Params),
+      toPlainObject(dynamicParams.Header),
+      toPlainObject(dynamicParams.Body)
+    )
+    return axiosInstance({
+      url: `/forge-report-api/external/proxy/${externalApiId}`,
+      method: RequestHttpEnum.POST,
+      data: proxyParams,
+      headers: {
+        'Content-Type': ContentTypeEnum.JSON
+      }
+    })
+  } catch (error) {
+    console.log(error)
+    window['$message'].error('外部接口请求失败')
+  }
+}
+
+/**
+ * * 数据集查询请求
+ * @param targetParams 当前组件参数
+ * @param componentList 组件列表
+ */
+const datasetRequest = async (
+  targetParams: RequestConfigType,
+  componentList: DynamicParamComponent[] = []
+) => {
+  const { datasetId, datasetFields, datasetMaxRows, datasetOutputMode } = targetParams
+  
+  if (!datasetId) {
+    window['$message'].error('未选择数据集')
+    return
+  }
+
+  try {
+    const dynamicParams = await resolveDynamicRequestParams(targetParams.dynamicRequestParams, componentList)
+    const datasetParams = mergeDefinedObjects(
+      toPlainObject(dynamicParams.Params),
+      toPlainObject(dynamicParams.Body)
+    )
+    
+    const result = await queryDataDataset({
+      datasetId,
+      params: datasetParams,
+      fields: datasetFields,
+      maxRows: datasetMaxRows,
+      outputMode: datasetOutputMode || 'ECHARTS_DATASET'
+    })
+    
+    return result
+  } catch (error) {
+    console.log(error)
+    window['$message'].error('数据集查询失败')
   }
 }

@@ -67,7 +67,7 @@ import { ChartDataPondControl } from './components/ChartDataPondControl'
 import { useDesignStore } from '@/store/modules/designStore/designStore'
 import { useTargetData } from '../../../hooks/useTargetData.hook'
 import { ChartDataMatchingAndShow } from '../ChartDataMatchingAndShow'
-import { newFunctionHandle } from '@/utils'
+import { newFunctionHandle, normalizeDatasetForChart } from '@/utils'
 
 const designStore = useDesignStore()
 const { HelpOutlineIcon, FlashIcon, PulseIcon, FishIcon } = icon.ionicons5
@@ -114,7 +114,11 @@ const sendHandle = async () => {
   }
   loading.value = true
   try {
-    const res = await customizeHttp(toRaw(targetData.value.request), toRaw(chartEditStore.getRequestGlobalConfig))
+    const res = await customizeHttp(
+      toRaw(targetData.value.request),
+      toRaw(chartEditStore.getRequestGlobalConfig),
+      toRaw(chartEditStore.getComponentList)
+    )
     loading.value = false
     if (res) {
       if (!res?.data && !targetData.value.filter) {
@@ -122,7 +126,8 @@ const sendHandle = async () => {
         showMatching.value = true
         return
       }
-      targetData.value.option.dataset = newFunctionHandle(res?.data, res, targetData.value.filter)
+      const nextDataset = newFunctionHandle(res?.data, res, targetData.value.filter)
+      targetData.value.option.dataset = normalizeDatasetForChart(nextDataset, targetData.value.chartConfig?.chartFrame)
       showMatching.value = true
       return
     }
