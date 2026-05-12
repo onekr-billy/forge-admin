@@ -78,12 +78,16 @@ public class JdbcDataSourceProvider {
 
     private String decryptPassword(String cipherText) {
         if (cipherText == null || cipherText.isEmpty()) {
+            log.warn("Password cipher is empty");
             return cipherText;
         }
         try {
-            return encryptorFactory.getDefaultEncryptor().decrypt(cipherText);
+            String decrypted = encryptorFactory.getDefaultEncryptor().decrypt(cipherText);
+            log.debug("Password decrypted successfully");
+            return decrypted;
         } catch (Exception e) {
-            log.warn("Failed to decrypt password, using raw value: {}", e.getMessage());
+            log.warn("Failed to decrypt password (cipher length={}), using raw value. Error: {}", 
+                    cipherText.length(), e.getMessage());
             return cipherText;
         }
     }

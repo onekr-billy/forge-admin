@@ -14,6 +14,8 @@ import com.mdframe.forge.plugin.data.support.*;
 import com.mdframe.forge.plugin.data.vo.DataConnectionFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetDetailVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -33,6 +35,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/data/dataset")
 @RequiredArgsConstructor
+@ApiDecrypt
+@ApiEncrypt
 public class DataDatasetController {
 
     private final DataDatasetService datasetService;

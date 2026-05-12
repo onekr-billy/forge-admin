@@ -10,6 +10,8 @@ import com.mdframe.forge.plugin.data.support.JdbcDataSourceProvider;
 import com.mdframe.forge.plugin.data.vo.DataConnectionDetailVO;
 import com.mdframe.forge.plugin.data.vo.DataConnectionFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataConnectionTableVO;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -31,6 +33,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/data/connection")
 @RequiredArgsConstructor
+@ApiDecrypt
+@ApiEncrypt
 public class DataConnectionController {
 
     private final DataConnectionService connectionService;
@@ -241,6 +245,9 @@ public class DataConnectionController {
 
     private boolean doTestConnection(DataConnection connection) {
         try {
+            log.info("Testing saved connection id={}, dbType={}, url={}, username={}", 
+                    connection.getId(), connection.getDbType(), 
+                    maskJdbcUrl(connection.getJdbcUrl()), connection.getUsername());
             Connection conn = dataSourceProvider.getConnection(connection);
             try {
                 PreparedStatement ps = conn.prepareStatement(connection.getTestSql());
@@ -248,6 +255,7 @@ public class DataConnectionController {
                     ResultSet rs = ps.executeQuery();
                     rs.close();
                     ps.close();
+                    log.info("Connection test success for id={}", connection.getId());
                     return true;
                 } finally {
                     ps.close();
@@ -256,7 +264,8 @@ public class DataConnectionController {
                 conn.close();
             }
         } catch (Exception e) {
-            log.warn("Test connection failed for id={}: {}", connection.getId(), e.getMessage());
+            log.error("Test saved connection failed for id={}: {}", 
+                    connection.getId(), e.getMessage(), e);
             return false;
         }
     }

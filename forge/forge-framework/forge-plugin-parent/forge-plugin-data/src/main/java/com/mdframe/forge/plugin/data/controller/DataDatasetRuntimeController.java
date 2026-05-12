@@ -11,6 +11,8 @@ import com.mdframe.forge.plugin.data.service.DataQueryExecutor;
 import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetMetadataVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/data/dataset/runtime")
 @RequiredArgsConstructor
+@ApiDecrypt
+@ApiEncrypt
 public class DataDatasetRuntimeController {
 
     private final DataDatasetService datasetService;
