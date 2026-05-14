@@ -86,6 +86,9 @@ public class ApiConfigManagerImpl implements IApiConfigManager {
 
     @Override
     public ApiConfigInfo getApiConfig(String urlPath, String method) {
+        if (!configProperties.isEnabled()) {
+            return null;
+        }
         if (urlPath == null || method == null) {
             return null;
         }

@@ -132,16 +132,16 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import TheLogo from '@/components/common/TheLogo.vue'
 import IconRenderer from '@/components/IconRenderer.vue'
-import { useUser } from '@/composables'
+import { useMenu, useUser } from '@/composables'
 import MenuCollapse from '@/layouts/components/MenuCollapse.vue'
 import { usePermissionStore } from '@/store'
 
-const router = useRouter()
 const route = useRoute()
 const permissionStore = usePermissionStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 const { userName, userAvatarText, userAvatar, userDropdownOptions, dropdownVisible: userDropdownVisible, handleDropdownSelect } = useUser()
 
@@ -215,7 +215,7 @@ function handleNavClick(item) {
     toggleExpand(item)
   }
   else if (item.path) {
-    router.push({ path: item.path })
+    baseHandleMenuSelect(item.key || item.id, item.path)
   }
 }
 

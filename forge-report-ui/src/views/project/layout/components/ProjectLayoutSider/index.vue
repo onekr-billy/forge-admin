@@ -104,7 +104,7 @@ import { LangEnum } from '@/enums/styleEnum'
 import { langList } from '@/i18n/index'
 import { icon } from '@/plugins'
 
-const { MoonIcon, SunnyIcon, LanguageIcon, TvOutlineIcon, SparklesIcon, ImagesIcon } = icon.ionicons5
+const { MoonIcon, SunnyIcon, LanguageIcon, TvOutlineIcon, SparklesIcon, ImagesIcon,FolderOpenIcon } = icon.ionicons5
 const { StoreIcon, ObjectStorageIcon } = icon.carbon
 
 const { locale } = useI18n()
@@ -124,7 +124,8 @@ const navSections = computed(() => [
       { key: PageEnum.BASE_HOME_ITEMS_NAME, icon: TvOutlineIcon, text: t('project.all_project'), to: { name: PageEnum.BASE_HOME_ITEMS_NAME } },
       { key: PageEnum.BASE_HOME_TEMPLATE_NAME, icon: ObjectStorageIcon, text: t('project.my_template'), to: { name: PageEnum.BASE_HOME_TEMPLATE_NAME } },
       { key: PageEnum.BASE_HOME_MATERIALS_NAME, icon: ImagesIcon, text: '素材库', to: { name: PageEnum.BASE_HOME_MATERIALS_NAME } },
-      { key: PageEnum.BASE_HOME_AI_PROVIDER_NAME, icon: SparklesIcon, text: 'AI 供应商', to: { name: PageEnum.BASE_HOME_AI_PROVIDER_NAME } }
+      { key: PageEnum.BASE_HOME_AI_PROVIDER_NAME, icon: SparklesIcon, text: 'AI 供应商', to: { name: PageEnum.BASE_HOME_AI_PROVIDER_NAME } },
+      { key: PageEnum.BASE_HOME_DIRECTORY_NAME, icon: FolderOpenIcon, text: t('project.directory_manage'), to: { name: PageEnum.BASE_HOME_DIRECTORY_NAME } },
     ]
   },
   {

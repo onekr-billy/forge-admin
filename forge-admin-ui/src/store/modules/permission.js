@@ -138,7 +138,6 @@ export const usePermissionStore = defineStore('permission', {
     // 处理新的菜单数据结构 - 适配 UserResourceTreeVO
     processMenuData(menuItems) {
       if (!menuItems || !Array.isArray(menuItems)) {
-        console.log('菜单数据为空或不是数组')
         return []
       }
 
@@ -167,7 +166,6 @@ export const usePermissionStore = defineStore('permission', {
       }
       collectAllMenus(menuItems)
       this.allMenus = allMenusFlat
-      console.log('[菜单] allMenus 收集完成, 共', allMenusFlat.length, '项:', allMenusFlat.map(m => `${m.path} -> ${m.label}`))
 
       // 处理菜单项，将 UserResourceTreeVO 转换为前端菜单格式
       const processItems = (items) => {
@@ -208,6 +206,10 @@ export const usePermissionStore = defineStore('permission', {
               path: item.path || '',
               component: componentPath,
               icon: item.icon || '',
+              clientCode: item.clientCode || '',
+              ssoEnabled: item.ssoEnabled ?? 0,
+              ssoTargetClient: item.ssoTargetClient || '',
+              openTarget: item.openTarget || '_self',
               type: item.resourceType === 1 ? 'module' : 'menu', // 1-目录(module)，2-菜单(menu)
               order: item.sort || 0,
               parentId: item.parentId,
@@ -220,6 +222,9 @@ export const usePermissionStore = defineStore('permission', {
                 redirect: item.redirect,
                 isExternal: item.isExternal === 1,
                 perms: item.perms,
+                ssoEnabled: item.ssoEnabled ?? 0,
+                ssoTargetClient: item.ssoTargetClient || '',
+                openTarget: item.openTarget || '_self',
               },
             }
 
@@ -279,7 +284,6 @@ export const usePermissionStore = defineStore('permission', {
       }
       extract(menuItems)
       if (hiddenRoutes.length > 0) {
-        console.log('[菜单] 发现隐藏菜单路由:', hiddenRoutes.map(r => `${r.path} -> ${r.meta.title}`))
         this.accessRoutes = [...this.accessRoutes, ...hiddenRoutes]
       }
     },

@@ -14,6 +14,15 @@ export const LoginRoute: RouteRecordRaw = {
   },
 };
 
+export const SsoLoginRoute: RouteRecordRaw = {
+  path: PageEnum.BASE_SSO_LOGIN,
+  name: PageEnum.BASE_SSO_LOGIN_NAME,
+  component: () => import('@/views/login/sso.vue'),
+  meta: {
+    title: '单点登录',
+  },
+};
+
 export const HttpErrorPage: RouteRecordRaw[] = [
   {
     path: '/error/404',

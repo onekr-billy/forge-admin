@@ -5,7 +5,7 @@ import { useChartDataPondFetch } from '@/hooks/'
 import { CreateComponentType, ChartFrameEnum } from '@/packages/index.d'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 import { RequestDataTypeEnum } from '@/enums/httpEnum'
-import { isPreview, newFunctionHandle, intervalUnitHandle, normalizeDatasetForChart } from '@/utils'
+import { adaptDatasetForComponent, isPreview, newFunctionHandle, intervalUnitHandle, normalizeDatasetForChart } from '@/utils'
 import { setOption } from '@/packages/public/chart'
 import { isNil } from 'lodash'
 import { getDynamicRequestParamDependencySnapshot } from '@/utils/requestDynamicParams'
@@ -58,22 +58,24 @@ export const useChartDataFetch = (
       requestUrl,
       requestSource,
       externalApiId,
+      datasetId,
       requestIntervalUnit: targetUnit,
       requestInterval: targetInterval
     } = toRefs(targetComponent.request)
 
     // 非请求类型
-    if (requestDataType.value !== RequestDataTypeEnum.AJAX) return
+    if (![RequestDataTypeEnum.AJAX, RequestDataTypeEnum.DATASET].includes(requestDataType.value)) return
 
     try {
       const isExternalRequest = requestSource?.value === 'external'
       const canFetchInternal = !isExternalRequest && requestUrl?.value
       const canFetchExternal = isExternalRequest && externalApiId?.value
+      const canFetchDataset = requestDataType.value === RequestDataTypeEnum.DATASET && datasetId?.value
 
-      if (canFetchInternal || canFetchExternal) {
+      if (canFetchInternal || canFetchExternal || canFetchDataset) {
         // requestOriginUrl 允许为空
         const completePath = requestOriginUrl && requestOriginUrl.value + requestUrl.value
-        if (canFetchInternal && !completePath) return
+        if (requestDataType.value === RequestDataTypeEnum.AJAX && canFetchInternal && !completePath) return
 
         clearInterval(fetchInterval)
 
@@ -87,7 +89,15 @@ export const useChartDataFetch = (
             try {
               const filter = targetComponent.filter
               const { data } = res
-              const nextDataset = normalizeDatasetForChart(newFunctionHandle(data, res, filter), chartFrame)
+              const filteredData = newFunctionHandle(data, res, filter)
+              const adaptedDataset =
+                requestDataType.value === RequestDataTypeEnum.DATASET
+                  ? adaptDatasetForComponent(filteredData, targetComponent)
+                  : { dataset: normalizeDatasetForChart(filteredData, chartFrame) }
+              if (adaptedDataset.optionPatch) {
+                Object.assign(targetComponent.option, adaptedDataset.optionPatch)
+              }
+              const nextDataset = adaptedDataset.dataset
               echartsUpdateHandle(nextDataset)
               // 更新回调函数
               if (updateCallback) {
@@ -105,6 +115,13 @@ export const useChartDataFetch = (
             targetComponent.request.requestParams,
             targetComponent.request.externalApiId,
             targetComponent.request.externalRequestParams,
+            targetComponent.request.datasetId,
+            targetComponent.request.datasetFields,
+            targetComponent.request.datasetParams,
+            targetComponent.request.datasetPageNum,
+            targetComponent.request.datasetPageSize,
+            targetComponent.request.datasetMaxRows,
+            targetComponent.request.datasetMapping,
             targetComponent.request.dynamicRequestParams,
             getDynamicRequestParamDependencySnapshot(
               targetComponent.request.dynamicRequestParams,

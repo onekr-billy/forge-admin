@@ -1,9 +1,11 @@
 package com.mdframe.forge.starter.auth.controller;
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import com.mdframe.forge.starter.auth.domain.*;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.auth.service.IAuthService;
 import com.mdframe.forge.starter.auth.service.IMenuService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
@@ -39,6 +41,29 @@ public class AuthController {
     @IgnoreTenant
     public RespInfo<LoginResult> login(@RequestBody LoginRequest request) {
         LoginResult result = authService.login(request);
+        return RespInfo.success(result);
+    }
+
+    /**
+     * 申请一次性 SSO 票据
+     */
+    @ApiDecrypt
+    @IgnoreTenant
+    @PostMapping("/sso/ticket")
+    public RespInfo<SsoTicketResult> createSsoTicket(@RequestBody SsoTicketRequest request) {
+        SsoTicketResult result = authService.createSsoTicket(request);
+        return RespInfo.success(result);
+    }
+
+    /**
+     * 使用一次性票据换发目标客户端 Token
+     */
+    @SaIgnore
+    @IgnoreTenant
+    @ApiDecrypt
+    @PostMapping("/sso/exchange")
+    public RespInfo<LoginResult> exchangeSsoTicket(@RequestBody SsoExchangeRequest request) {
+        LoginResult result = authService.exchangeSsoTicket(request);
         return RespInfo.success(result);
     }
 

@@ -40,7 +40,6 @@ import { icon } from '@/plugins'
 import { PageEnum, ChartEnum } from '@/enums/pageEnum'
 import { fetchPathByName, routerTurnByPath, renderLang, getUUID } from '@/utils'
 import { createProjectApi } from '@/api/project'
-import router from '@/router'
 
 const { FishIcon, CloseIcon } = icon.ionicons5
 const { StoreIcon, ObjectStorageIcon } = icon.carbon
@@ -62,13 +61,13 @@ const typeList = shallowRef([
     title: renderLang('project.my_template'),
     key: PageEnum.BASE_HOME_TEMPLATE_NAME,
     icon: ObjectStorageIcon,
-    disabled: true
+    disabled: false
   },
   {
     title: renderLang('project.template_market'),
     key: PageEnum.BASE_HOME_TEMPLATE_MARKET_NAME,
     icon: StoreIcon,
-    disabled: true
+    disabled: false
   }
 ])
 
@@ -76,14 +75,20 @@ watch(props, newValue => {
   showRef.value = newValue.show
 })
 
-// 关闭对话框
 const closeHandle = () => {
   emit('close', false)
 }
 
-// 处理按钮点击
-const btnHandle = async (_key: string) => {
+const btnHandle = async (key: string) => {
   closeHandle()
+  if (key === PageEnum.BASE_HOME_TEMPLATE_NAME || key === PageEnum.BASE_HOME_TEMPLATE_MARKET_NAME) {
+    const path = fetchPathByName(key, 'href')
+    if (path) {
+      routerTurnByPath(path, [], undefined, true)
+    }
+    return
+  }
+
   try {
     const res = await createProjectApi({
       projectName: '新项目',
@@ -105,6 +110,7 @@ const btnHandle = async (_key: string) => {
   }
 }
 </script>
+
 <style lang="scss" scoped>
 $cardWidth: 570px;
 

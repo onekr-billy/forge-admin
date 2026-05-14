@@ -5,6 +5,7 @@ export default {
   my: 'My',
   new_project: 'New Project',
   all_project: 'All Project',
+  directory_manage: 'Directory Manage',
   my_template: 'My Template',
   template_market: 'Template Market',
 

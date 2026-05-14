@@ -21,7 +21,7 @@ export function createRouterGuards(router: Router) {
     }
 
     if (!loginCheck()) {
-      if (to.name === PageEnum.BASE_LOGIN_NAME) {
+      if (to.name === PageEnum.BASE_LOGIN_NAME || to.name === PageEnum.BASE_SSO_LOGIN_NAME) {
         next()
       } else {
         next({ name: PageEnum.BASE_LOGIN_NAME })

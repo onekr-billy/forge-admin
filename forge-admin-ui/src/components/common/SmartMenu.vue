@@ -44,6 +44,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useMenu } from '@/composables'
 import { useMenuStore } from '@/store'
 
 const props = defineProps({
@@ -77,6 +78,7 @@ const props = defineProps({
 const emit = defineEmits(['select', 'expand'])
 
 const router = useRouter()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 const menuStore = useMenuStore()
 
 const activeKey = ref('')
@@ -151,7 +153,7 @@ function handleSelect(key) {
 
   const menuItem = findMenuItem(props.options)
   if (menuItem && menuItem.path) {
-    router.push(menuItem.path)
+    baseHandleMenuSelect(menuItem.key || menuItem.id, menuItem.path)
   }
 
   emit('select', key, menuItem)

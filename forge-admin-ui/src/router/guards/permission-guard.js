@@ -125,9 +125,9 @@ export function createPermissionGuard(router) {
           next({ path: '/' })
           return
         }
-        catch (error) {
+        catch {
           // token 无效，清除 token 并允许访问登录页面
-          console.log('Token 验证失败，允许访问登录页面')
+          console.warn('Token 验证失败，允许访问登录页面')
           authStore.resetToken()
           appStore.setRouteGuardCompleted(true)
           next()
@@ -173,11 +173,8 @@ export function createPermissionGuard(router) {
           permissionStore.setPermissions(permissions)
 
           // 获取并设置菜单数据
-          console.log('开始获取菜单数据')
           const res = await api.getMenu(1)
-          console.log('获取菜单接口响应:', res)
           if (res.code === 200 && res.data) {
-            console.log('设置菜单数据')
             permissionStore.setMenuData(res.data)
           }
           else {

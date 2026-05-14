@@ -60,23 +60,57 @@ import { renderIcon, renderLang, requireErrorImg, fetchPathByName, routerTurnByP
 import { icon } from '@/plugins'
 import { Chartype } from '../../index.d'
 import { PreviewEnum } from '@/enums/pageEnum'
-import { publishProjectApi } from '@/api/project'
 import FgAuthImage from '@/components/FgAuthImage/index.vue'
-const { EllipsisHorizontalCircleSharpIcon, TrashIcon, HammerIcon, BrowsersOutlineIcon, SendIcon } = icon.ionicons5
+import { StorageEnum } from '@/enums/storageEnum'
+import { getProjectDetailApi, publishProjectApi } from '@/api/project'
+import { createTemplateFromProjectApi } from '@/api/project/template'
 
-const emit = defineEmits(['delete', 'resize', 'edit', 'refresh'])
+const { EllipsisHorizontalCircleSharpIcon, TrashIcon, HammerIcon, BrowsersOutlineIcon, SendIcon, CopyIcon } = icon.ionicons5
+const { StackedMoveIcon } = icon.carbon
+
+const emit = defineEmits(['delete', 'resize', 'edit', 'refresh', 'move-directory'])
 
 const props = defineProps({ cardData: Object as () => Chartype })
 
 const selectOptions = ref([
   { label: renderLang('global.r_preview'), key: 'preview', icon: renderIcon(BrowsersOutlineIcon) },
+  { label: '调整目录', key: 'move-directory', icon: renderIcon(StackedMoveIcon) },
+  { label: '发布为模板', key: 'publish-template', icon: renderIcon(CopyIcon) },
   { label: props.cardData?.release ? '重新发布' : renderLang('global.r_publish'), key: 'send', icon: renderIcon(SendIcon) },
   { label: renderLang('global.r_delete'), key: 'delete', icon: renderIcon(TrashIcon) }
 ])
 
+const publishAsTemplate = async () => {
+  try {
+    if (!props.cardData?.id) return
+    const res = await getProjectDetailApi(props.cardData.id)
+    const project = res?.data
+    if (!project?.componentData) {
+      window.$message.warning('该项目暂无可发布内容')
+      return
+    }
+    await createTemplateFromProjectApi({
+      sourceProjectId: project.id,
+      templateName: project.projectName,
+      remark: project.remark,
+      indexImg: project.indexImg,
+      componentData: project.componentData,
+      status: '0'
+    })
+    window.$message.success('已发布为模板')
+    emit('refresh')
+  } catch (e: any) {
+    window.$message.error(e?.message || '发布为模板失败')
+  }
+}
+
 const handleSelect = async (key: string) => {
   if (key === 'delete') emit('delete', props.cardData)
+  else if (key === 'move-directory') emit('move-directory', props.cardData)
   else if (key === 'preview') { const p = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href'); if (p) routerTurnByPath(p, [String(props.cardData?.id)], undefined, true) }
+  else if (key === 'publish-template') {
+    await publishAsTemplate()
+  }
   else if (key === 'send') {
     try {
       const p = fetchPathByName(PreviewEnum.CHART_PREVIEW_NAME, 'href')

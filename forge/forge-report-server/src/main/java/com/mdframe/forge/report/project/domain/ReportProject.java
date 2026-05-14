@@ -2,6 +2,7 @@ package com.mdframe.forge.report.project.domain;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.mdframe.forge.starter.tenant.core.TenantEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -16,7 +17,7 @@ import java.util.Date;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("ai_report_project")
-public class GoviewProject extends TenantEntity implements Serializable {
+public class ReportProject extends TenantEntity implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -25,7 +26,14 @@ public class GoviewProject extends TenantEntity implements Serializable {
      * 主键ID
      */
     @TableId(value = "id")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long id;
+
+    /**
+     * 所属目录ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long directoryId;
 
     /**
      * 项目名称

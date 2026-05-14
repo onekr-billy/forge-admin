@@ -4,7 +4,7 @@ import { getLocalStorage } from '@/utils/storage'
 import { StorageEnum } from '@/enums/storageEnum'
 import { decryptResponse, encryptRequest } from '@/utils/api-crypto/crypto-interceptor'
 import { shouldEncrypt } from '@/utils/api-crypto/crypto-config'
-import { ensureKeyExchanged, resetKeyExchange } from '@/utils/api-crypto/key-exchange'
+import { ensureKeyExchanged, getCurrentCryptoSessionId, resetKeyExchange } from '@/utils/api-crypto/key-exchange'
 
 interface ApiResponse<T = any> {
   code?: number
@@ -61,6 +61,8 @@ axiosInstance.interceptors.request.use(
     const token = getLocalStorage(StorageEnum.GO_ACCESS_TOKEN_STORE)
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
+    } else {
+      config.headers['X-Session-Id'] = getCurrentCryptoSessionId()
     }
 
     // 防重放参数：X-Timestamp + X-Nonce

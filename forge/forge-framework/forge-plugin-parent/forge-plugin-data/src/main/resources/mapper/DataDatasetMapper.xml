@@ -8,6 +8,7 @@
         <result column="dataset_code" property="datasetCode"/>
         <result column="dataset_name" property="datasetName"/>
         <result column="connection_id" property="connectionId"/>
+        <result column="connection_name" property="connectionName"/>
         <result column="dataset_type" property="datasetType"/>
         <result column="table_name" property="tableName"/>
         <result column="sql_text" property="sqlText"/>
@@ -27,34 +28,40 @@
     </resultMap>
 
     <select id="selectDatasetPage" resultMap="BaseResultMap">
-        SELECT *
-        FROM ai_report_data_dataset
-        WHERE tenant_id = #{tenantId}
+        SELECT d.*, c.connection_name
+        FROM ai_report_data_dataset d
+        LEFT JOIN ai_report_data_connection c
+            ON d.connection_id = c.id
+            AND c.tenant_id = #{tenantId}
+        WHERE d.tenant_id = #{tenantId}
         <if test="datasetName != null and datasetName != ''">
-            AND dataset_name LIKE CONCAT('%', #{datasetName}, '%')
+            AND d.dataset_name LIKE CONCAT('%', #{datasetName}, '%')
         </if>
         <if test="connectionId != null">
-            AND connection_id = #{connectionId}
+            AND d.connection_id = #{connectionId}
         </if>
         <if test="datasetType != null and datasetType != ''">
-            AND dataset_type = #{datasetType}
+            AND d.dataset_type = #{datasetType}
         </if>
         <if test="status != null">
-            AND status = #{status}
+            AND d.status = #{status}
         </if>
-        ORDER BY create_time DESC
+        ORDER BY d.create_time DESC
     </select>
 
     <select id="selectDatasetList" resultMap="BaseResultMap">
-        SELECT id, tenant_id, dataset_code, dataset_name, connection_id, dataset_type, 
-               table_name, max_rows, timeout_seconds, status, description
-        FROM ai_report_data_dataset
-        WHERE tenant_id = #{tenantId}
-          AND status = 1
+        SELECT d.id, d.tenant_id, d.dataset_code, d.dataset_name, d.connection_id, c.connection_name,
+               d.dataset_type, d.table_name, d.max_rows, d.timeout_seconds, d.status, d.description
+        FROM ai_report_data_dataset d
+        LEFT JOIN ai_report_data_connection c
+            ON d.connection_id = c.id
+            AND c.tenant_id = #{tenantId}
+        WHERE d.tenant_id = #{tenantId}
+          AND d.status = 1
         <if test="connectionId != null">
-            AND connection_id = #{connectionId}
+            AND d.connection_id = #{connectionId}
         </if>
-        ORDER BY create_time DESC
+        ORDER BY d.create_time DESC
     </select>
 
     <select id="selectDatasetByCode" resultMap="BaseResultMap">

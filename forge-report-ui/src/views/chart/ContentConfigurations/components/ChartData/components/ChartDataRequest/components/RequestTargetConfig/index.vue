@@ -3,6 +3,7 @@
   <n-divider class="go-my-3" title-placement="left"></n-divider>
   
   <setting-item-box
+    v-show="!isDatasetRequest"
     name="接口来源"
     class="go-mt-0"
   >
@@ -15,7 +16,7 @@
   </setting-item-box>
 
   <setting-item-box
-    v-show="requestSourceValue === 'internal'"
+    v-show="!isDatasetRequest && requestSourceValue === 'internal'"
     name="地址"
     :itemRightStyle="{
       gridTemplateColumns: '6fr 2fr'
@@ -60,7 +61,7 @@
     </setting-item>
   </setting-item-box>
 
-  <div v-show="requestSourceValue === 'external'" class="external-request-config">
+  <div v-show="!isDatasetRequest && requestSourceValue === 'external'" class="external-request-config">
     <setting-item-box name="外部接口" class="go-mt-0">
       <setting-item name="外部系统">
         <n-select
@@ -107,21 +108,141 @@
     </setting-item-box>
   </div>
 
-  <setting-item-box name="动态参数" class="go-mt-0">
-    <setting-item name="参数绑定">
+  <div v-show="isDatasetRequest" class="dataset-request-config">
+    <setting-item-box name="数据库数据集" class="go-mt-0">
+      <setting-item name="数据连接">
+        <n-select
+          v-model:value="datasetConnectionId"
+          :options="datasetConnectionOptions"
+          :loading="datasetConnectionLoading"
+          placeholder="请选择数据连接"
+          filterable
+          clearable
+          @focus="loadDatasetConnectionOptions"
+          @update:value="handleDatasetConnectionChange"
+        />
+      </setting-item>
+
+      <setting-item name="数据集">
+        <n-select
+          v-model:value="datasetId"
+          :options="datasetOptions"
+          :loading="datasetLoading"
+          :disabled="!datasetConnectionId"
+          placeholder="请先选择数据连接"
+          filterable
+          clearable
+          @focus="() => loadDatasetOptions()"
+          @update:value="handleDatasetChange"
+        />
+      </setting-item>
+
+      <setting-item name="输出字段">
+        <n-select
+          v-model:value="datasetFields"
+          :options="datasetFieldOptions"
+          :loading="datasetMetadataLoading"
+          :disabled="!datasetId"
+          placeholder="默认全部可展示字段"
+          multiple
+          filterable
+          clearable
+        />
+      </setting-item>
+
+      <setting-item v-if="datasetParamOptions.length" name="可用查询条件">
+        <n-space :size="6" wrap>
+          <n-tag
+            v-for="item in datasetParamOptions"
+            :key="item.value"
+            size="small"
+            :bordered="false"
+            type="info"
+          >
+            {{ item.label }}
+          </n-tag>
+        </n-space>
+      </setting-item>
+
+      <setting-item v-if="showNameValueMapping" name="字段映射">
+        <n-input-group>
+          <n-select
+            v-model:value="datasetNameField"
+            :options="datasetFieldOptions"
+            :disabled="!datasetFieldOptions.length"
+            placeholder="名称字段"
+            filterable
+            clearable
+          />
+          <n-select
+            v-model:value="datasetValueField"
+            :options="datasetFieldOptions"
+            :disabled="!datasetFieldOptions.length"
+            placeholder="数值字段"
+            filterable
+            clearable
+          />
+        </n-input-group>
+      </setting-item>
+
+      <setting-item v-if="showHeaderMapping" name="表头同步">
+        <n-switch v-model:value="datasetSyncHeader">
+          <template #checked>使用字段标签</template>
+          <template #unchecked>保持组件配置</template>
+        </n-switch>
+      </setting-item>
+
+      <setting-item name="分页与限制">
+        <n-input-group>
+          <n-input-number
+            v-model:value="datasetPageSize"
+            class="select-time-number"
+            :min="1"
+            :max="datasetMaxRows || 10000"
+            :show-button="false"
+            placeholder="每页条数"
+          />
+          <n-input-number
+            v-model:value="datasetMaxRows"
+            class="select-time-number"
+            :min="1"
+            :max="10000"
+            :show-button="false"
+            placeholder="最大行数"
+          />
+        </n-input-group>
+      </setting-item>
+
+      <setting-item name="更新间隔，为 0 只会初始化">
+        <n-input-group>
+          <n-input-number
+            v-model:value.trim="requestInterval"
+            class="select-time-number"
+            min="0"
+            :show-button="false"
+            placeholder="默认使用全局数据"
+          />
+          <n-select class="select-time-options" v-model:value="requestIntervalUnit" :options="selectTimeOptions" />
+        </n-input-group>
+      </setting-item>
+    </setting-item-box>
+  </div>
+
+  <setting-item-box name="查询条件绑定" class="go-mt-0">
+    <setting-item name="绑定配置">
       <n-space align="center">
         <n-button size="small" @click="showDynamicParamModal = true">
           <template #icon>
             <n-icon><edit-icon /></n-icon>
           </template>
-          配置参数
+          配置绑定
         </n-button>
         <n-text v-if="dynamicParamsText" depth="3">{{ dynamicParamsText }}</n-text>
       </n-space>
     </setting-item>
   </setting-item-box>
 
-  <n-modal v-model:show="showDynamicParamModal" preset="dialog" title="配置动态请求参数" style="width: 860px;">
+  <n-modal v-model:show="showDynamicParamModal" preset="dialog" title="配置查询条件绑定" style="width: 860px;">
     <n-space vertical :size="12">
       <div
         v-for="(item, index) in dynamicRequestParams"
@@ -134,10 +255,20 @@
           :options="dynamicTargetOptions"
           size="small"
         />
+        <n-select
+          v-if="showDatasetParamTarget(item)"
+          v-model:value="item.targetKey"
+          :options="datasetParamOptions"
+          size="small"
+          filterable
+          clearable
+          placeholder="选择查询条件"
+        />
         <n-input
+          v-else
           v-model:value.trim="item.targetKey"
           size="small"
-          placeholder="参数名"
+          placeholder="目标参数名"
         />
         <n-select
           v-model:value="item.source"
@@ -246,26 +377,46 @@ import {
   ExternalSystemVO
 } from '@/api/external/api'
 import {
+  getDataConnectionList,
+  getDataDatasetList,
+  getDataDatasetMetadata,
+  DataConnectionOption,
+  DataDatasetField,
+  DataDatasetOption
+} from '@/api/data/dataset'
+import {
   contextParamOptions,
   componentParamOptions,
   presetParamOptions,
   createDynamicParamBinding
 } from '@/utils/requestDynamicParams'
 import type { DynamicRequestParamBinding } from '@/store/modules/chartEditStore/chartEditStore.d'
+import { RequestDataTypeEnum } from '@/enums/httpEnum'
 
 const props = defineProps({
   targetDataRequest: Object as PropType<RequestConfigType>
 })
 
+interface DatasetParamOption {
+  label: string
+  value: string
+  dataType?: string
+  operator?: string
+  fieldName?: string
+}
+
 const message = useMessage()
 const { EditIcon } = icon.ionicons5
-const { chartEditStore } = useTargetData()
+const { chartEditStore, targetData } = useTargetData()
 const { requestOriginUrl } = toRefs(chartEditStore.getRequestGlobalConfig)
 const { requestInterval, requestIntervalUnit, requestHttpType, requestUrl } = toRefs(
   props.targetDataRequest as RequestConfigType
 )
 
 const requestSourceValue = ref<'internal' | 'external'>('internal')
+const isDatasetRequest = computed(() => {
+  return (props.targetDataRequest as RequestConfigType)?.requestDataType === RequestDataTypeEnum.DATASET
+})
 
 const handleRequestSourceChange = (value: 'internal' | 'external') => {
   requestSourceValue.value = value
@@ -296,6 +447,15 @@ const externalApiLoading = ref(false)
 const externalApiKeyword = ref('')
 const externalSystemOptions = ref<{ label: string; value: number; systemCode?: string }[]>([])
 const externalApiOptions = ref<{ label: string; value: number; systemId: number; apiPath: string }[]>([])
+const datasetConnectionLoading = ref(false)
+const datasetLoading = ref(false)
+const datasetMetadataLoading = ref(false)
+const datasetConnectionOptions = ref<{ label: string; value: number; connectionCode?: string }[]>([])
+const datasetOptions = ref<{ label: string; value: number; datasetCode?: string; connectionId?: number }[]>([])
+const datasetFieldOptions = ref<{ label: string; value: string; dataType?: string; fieldRole?: string }[]>([])
+const datasetParamOptions = ref<DatasetParamOption[]>([])
+const showNameValueMapping = computed(() => targetData.value?.key === 'TableList')
+const showHeaderMapping = computed(() => targetData.value?.key === 'TableScrollBoard')
 const dynamicRequestParams = computed({
   get: () => {
     const requestConfig = props.targetDataRequest as RequestConfigType
@@ -310,7 +470,7 @@ const dynamicRequestParams = computed({
 })
 const dynamicParamsText = computed(() => {
   const count = dynamicRequestParams.value.filter(item => item.enabled && item.targetKey).length
-  return count ? `已配置 ${count} 个动态参数` : ''
+  return count ? `已配置 ${count} 个条件绑定` : ''
 })
 const dynamicTargetOptions = [
   { label: 'Query', value: 'Params' },
@@ -331,6 +491,137 @@ const filterComponentOptions = computed(() => {
       value: item.id
     }))
 })
+
+const datasetConnectionId = computed({
+  get: () => (props.targetDataRequest as RequestConfigType).datasetConnectionId || null,
+  set: (val) => {
+    (props.targetDataRequest as RequestConfigType).datasetConnectionId = val
+  }
+})
+
+const datasetId = computed({
+  get: () => (props.targetDataRequest as RequestConfigType).datasetId || null,
+  set: (val) => {
+    (props.targetDataRequest as RequestConfigType).datasetId = val
+  }
+})
+
+const datasetFields = computed({
+  get: () => (props.targetDataRequest as RequestConfigType).datasetFields || [],
+  set: (val: string[]) => {
+    const requestConfig = props.targetDataRequest as RequestConfigType
+    requestConfig.datasetFields = val
+    ensureDatasetMapping().outputFields = val || []
+  }
+})
+
+const ensureDatasetMapping = () => {
+  const requestConfig = props.targetDataRequest as RequestConfigType
+  if (!requestConfig.datasetMapping) {
+    requestConfig.datasetMapping = {
+      mode: 'auto',
+      fieldMap: {},
+      outputFields: [],
+      syncHeader: true
+    }
+  }
+  requestConfig.datasetMapping.fieldMap = requestConfig.datasetMapping.fieldMap || {}
+  requestConfig.datasetMapping.outputFields = requestConfig.datasetMapping.outputFields || []
+  if (requestConfig.datasetMapping.syncHeader === undefined) {
+    requestConfig.datasetMapping.syncHeader = true
+  }
+  return requestConfig.datasetMapping
+}
+
+const datasetNameField = computed({
+  get: () => ensureDatasetMapping().fieldMap?.name || null,
+  set: (val: string | null) => {
+    ensureDatasetMapping().fieldMap!.name = val || ''
+  }
+})
+
+const datasetValueField = computed({
+  get: () => ensureDatasetMapping().fieldMap?.value || null,
+  set: (val: string | null) => {
+    ensureDatasetMapping().fieldMap!.value = val || ''
+  }
+})
+
+const datasetSyncHeader = computed({
+  get: () => ensureDatasetMapping().syncHeader !== false,
+  set: (val: boolean) => {
+    ensureDatasetMapping().syncHeader = val
+  }
+})
+
+const showDatasetParamTarget = (item: DynamicRequestParamBinding) => {
+  return isDatasetRequest.value && item.target === 'Params' && datasetParamOptions.value.length > 0
+}
+
+const datasetPageSize = computed({
+  get: () => (props.targetDataRequest as RequestConfigType).datasetPageSize || 50,
+  set: (val) => {
+    (props.targetDataRequest as RequestConfigType).datasetPageSize = val || 50
+  }
+})
+
+const datasetMaxRows = computed({
+  get: () => (props.targetDataRequest as RequestConfigType).datasetMaxRows || 1000,
+  set: (val) => {
+    (props.targetDataRequest as RequestConfigType).datasetMaxRows = val || 1000
+  }
+})
+
+const resolveDefaultNameField = () => {
+  return (
+    datasetFieldOptions.value.find(item => item.fieldRole === 'DIMENSION')?.value ||
+    datasetFieldOptions.value.find(item => ['STRING', 'DATE', 'DATETIME'].includes(item.dataType || ''))?.value ||
+    datasetFieldOptions.value[0]?.value ||
+    ''
+  )
+}
+
+const resolveDefaultValueField = (nameField: string) => {
+  return (
+    datasetFieldOptions.value.find(item => item.fieldRole === 'MEASURE')?.value ||
+    datasetFieldOptions.value.find(item => ['NUMBER', 'INTEGER', 'DECIMAL'].includes(item.dataType || ''))?.value ||
+    datasetFieldOptions.value.find(item => item.value !== nameField)?.value ||
+    datasetFieldOptions.value[1]?.value ||
+    nameField ||
+    ''
+  )
+}
+
+const syncDefaultDatasetMapping = () => {
+  const mapping = ensureDatasetMapping()
+  mapping.outputFields = datasetFields.value || []
+  if (showNameValueMapping.value && datasetFieldOptions.value.length) {
+    const nameField = mapping.fieldMap?.name || resolveDefaultNameField()
+    mapping.fieldMap!.name = nameField
+    mapping.fieldMap!.value = mapping.fieldMap?.value || resolveDefaultValueField(nameField)
+  }
+}
+
+const parseDatasetParamOptions = (paramSchemaJson?: string) => {
+  if (!paramSchemaJson) return []
+  try {
+    const parsed = JSON.parse(paramSchemaJson)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter(item => item?.paramName)
+      .map(item => ({
+        label: `${item.label || item.paramName}${item.required ? '（必填）' : ''}`,
+        value: item.paramName,
+        dataType: item.dataType,
+        operator: item.operator,
+        fieldName: item.fieldName,
+        required: item.required,
+      }))
+  }
+  catch (error) {
+    return []
+  }
+}
 
 const apiList = [
   {
@@ -473,6 +764,81 @@ const loadSelectedExternalApi = async () => {
   }
 }
 
+const loadDatasetConnectionOptions = async () => {
+  if (datasetConnectionLoading.value || datasetConnectionOptions.value.length) return
+  datasetConnectionLoading.value = true
+  try {
+    const res = await getDataConnectionList()
+    datasetConnectionOptions.value = (res.data || [])
+      .filter((connection: DataConnectionOption) => connection.status === undefined || connection.status === 1)
+      .map(connection => ({
+        label: `${connection.connectionName}${connection.connectionCode ? ` (${connection.connectionCode})` : ''}`,
+        value: connection.id,
+        connectionCode: connection.connectionCode
+      }))
+  } catch (error) {
+    message.error('加载数据连接失败')
+  } finally {
+    datasetConnectionLoading.value = false
+  }
+}
+
+const loadDatasetOptions = async () => {
+  if (!datasetConnectionId.value) {
+    datasetOptions.value = []
+    return
+  }
+  if (datasetLoading.value) return
+  datasetLoading.value = true
+  try {
+    const res = await getDataDatasetList(datasetConnectionId.value)
+    datasetOptions.value = (res.data || [])
+      .filter((dataset: DataDatasetOption) => dataset.status === undefined || dataset.status === 1)
+      .map(dataset => ({
+        label: `${dataset.datasetName}${dataset.datasetCode ? ` (${dataset.datasetCode})` : ''}`,
+        value: dataset.id,
+        datasetCode: dataset.datasetCode,
+        connectionId: dataset.connectionId
+      }))
+  } catch (error) {
+    message.error('加载数据集失败')
+  } finally {
+    datasetLoading.value = false
+  }
+}
+
+const loadDatasetMetadata = async (id = datasetId.value) => {
+  if (!id) {
+    datasetFieldOptions.value = []
+    datasetParamOptions.value = []
+    return
+  }
+  datasetMetadataLoading.value = true
+  try {
+    const res = await getDataDatasetMetadata(id)
+    const metadata = res.data
+    const requestConfig = props.targetDataRequest as RequestConfigType
+    requestConfig.datasetName = metadata?.datasetName || requestConfig.datasetName
+    datasetParamOptions.value = parseDatasetParamOptions(metadata?.paramSchemaJson)
+    datasetFieldOptions.value = (metadata?.fields || [])
+      .filter((field: DataDatasetField) => field.displayEnabled === undefined || field.displayEnabled === 1)
+      .map(field => ({
+        label: `${field.fieldLabel || field.fieldName}${field.dataType ? ` (${field.dataType})` : ''}`,
+        value: field.fieldName,
+        dataType: field.dataType,
+        fieldRole: field.fieldRole
+      }))
+    if (!requestConfig.datasetFields?.length) {
+      requestConfig.datasetFields = datasetFieldOptions.value.map(item => item.value)
+    }
+    syncDefaultDatasetMapping()
+  } catch (error) {
+    message.error('加载数据集字段失败')
+  } finally {
+    datasetMetadataLoading.value = false
+  }
+}
+
 const handleExternalSystemChange = (value: number | null) => {
   externalSystemId.value = value || null
   externalApiId.value = null
@@ -490,6 +856,45 @@ const handleExternalApiSearch = (keyword: string) => {
 const handleExternalApiChange = (value: number | null) => {
   externalApiId.value = value || null
   ;(props.targetDataRequest as RequestConfigType).externalRequestParams = {}
+}
+
+const handleDatasetConnectionChange = (value: number | null) => {
+  datasetConnectionId.value = value || null
+  datasetId.value = null
+  datasetOptions.value = []
+  datasetFieldOptions.value = []
+  datasetParamOptions.value = []
+  const requestConfig = props.targetDataRequest as RequestConfigType
+  requestConfig.datasetName = ''
+  requestConfig.datasetFields = []
+  requestConfig.datasetMapping = {
+    mode: 'auto',
+    fieldMap: {},
+    outputFields: [],
+    syncHeader: true
+  }
+  if (value) {
+    loadDatasetOptions()
+  }
+}
+
+const handleDatasetChange = (value: number | null) => {
+  datasetId.value = value || null
+  const requestConfig = props.targetDataRequest as RequestConfigType
+  const option = datasetOptions.value.find(item => item.value === value)
+  requestConfig.datasetName = option?.label || ''
+  requestConfig.datasetFields = []
+  datasetParamOptions.value = []
+  requestConfig.datasetMapping = {
+    mode: 'auto',
+    fieldMap: {},
+    outputFields: [],
+    syncHeader: true
+  }
+  datasetFieldOptions.value = []
+  if (value) {
+    loadDatasetMetadata(value)
+  }
 }
 
 const addDynamicParam = () => {
@@ -551,17 +956,31 @@ const handleDynamicSourceChange = (item: DynamicRequestParamBinding) => {
 const handleSaveDynamicParams = () => {
   const invalidItem = dynamicRequestParams.value.find(item => item.enabled && !item.targetKey)
   if (invalidItem) {
-    message.error('请填写动态参数名')
+    message.error(isDatasetRequest.value ? '请选择要绑定的查询条件' : '请填写目标参数名')
     return
   }
   showDynamicParamModal.value = false
-  message.success('动态参数配置已保存')
+  message.success('查询条件绑定已保存')
 }
 
 onMounted(() => {
   const requestConfig = props.targetDataRequest as RequestConfigType
   requestSourceValue.value = requestConfig.requestSource || 'internal'
   requestConfig.requestSource = requestSourceValue.value
+  if (requestConfig.requestDataType === RequestDataTypeEnum.DATASET) {
+    ensureDatasetMapping()
+    requestConfig.datasetPageNum = requestConfig.datasetPageNum || 1
+    requestConfig.datasetPageSize = requestConfig.datasetPageSize || 50
+    requestConfig.datasetMaxRows = requestConfig.datasetMaxRows || 1000
+    requestConfig.datasetOutputMode = requestConfig.datasetOutputMode || 'ECHARTS_DATASET'
+    loadDatasetConnectionOptions()
+    if (requestConfig.datasetConnectionId) {
+      loadDatasetOptions()
+    }
+    if (requestConfig.datasetId) {
+      loadDatasetMetadata(requestConfig.datasetId)
+    }
+  }
   if (requestSourceValue.value === 'external') {
     loadExternalSystemOptions()
     if (requestConfig.externalApiId) {
@@ -576,6 +995,37 @@ watch(
   () => props.targetDataRequest?.requestSource,
   value => {
     requestSourceValue.value = value || 'internal'
+  }
+)
+
+watch(
+  () => props.targetDataRequest?.requestDataType,
+  value => {
+    if (value === RequestDataTypeEnum.DATASET) {
+      const requestConfig = props.targetDataRequest as RequestConfigType
+      ensureDatasetMapping()
+      requestConfig.datasetPageNum = requestConfig.datasetPageNum || 1
+      requestConfig.datasetPageSize = requestConfig.datasetPageSize || 50
+      requestConfig.datasetMaxRows = requestConfig.datasetMaxRows || 1000
+      requestConfig.datasetOutputMode = requestConfig.datasetOutputMode || 'ECHARTS_DATASET'
+      loadDatasetConnectionOptions()
+      if (requestConfig.datasetConnectionId) {
+        loadDatasetOptions()
+      }
+      if (requestConfig.datasetId) {
+        loadDatasetMetadata(requestConfig.datasetId)
+      }
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => targetData.value?.key,
+  () => {
+    if ((props.targetDataRequest as RequestConfigType)?.requestDataType === RequestDataTypeEnum.DATASET) {
+      syncDefaultDatasetMapping()
+    }
   }
 )
 </script>
@@ -596,6 +1046,11 @@ watch(
   cursor: pointer;
 }
 .external-request-config {
+  :deep(.go-config-item-box) {
+    padding-right: 25px;
+  }
+}
+.dataset-request-config {
   :deep(.go-config-item-box) {
     padding-right: 25px;
   }

@@ -266,12 +266,16 @@ public class SysResourceServiceImpl extends ServiceImpl<SysResourceMapper, SysRe
         vo.setPath(resource.getPath());
         vo.setComponent(resource.getComponent());
         vo.setIsExternal(resource.getIsExternal());
+        vo.setSsoEnabled(resource.getSsoEnabled());
+        vo.setSsoTargetClient(resource.getSsoTargetClient());
+        vo.setOpenTarget(resource.getOpenTarget());
         vo.setIsPublic(resource.getIsPublic());
         vo.setMenuStatus(resource.getMenuStatus());
         vo.setVisible(resource.getVisible());
         vo.setPerms(resource.getPerms());
         vo.setIcon(resource.getIcon());
         vo.setApiMethod(resource.getApiMethod());
+        vo.setApiUrl(resource.getApiUrl());
         vo.setKeepAlive(resource.getKeepAlive());
         vo.setAlwaysShow(resource.getAlwaysShow());
         vo.setRedirect(resource.getRedirect());

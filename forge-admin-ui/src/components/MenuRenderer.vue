@@ -16,10 +16,11 @@
 <script setup>
 import { NMenu } from 'naive-ui'
 import { computed, h, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
+import { useMenu } from '@/composables'
 import { usePermissionStore } from '@/store'
 
-const props = defineProps({
+defineProps({
   collapsed: {
     type: Boolean,
     default: false,
@@ -27,8 +28,8 @@ const props = defineProps({
 })
 
 const route = useRoute()
-const router = useRouter()
 const permissionStore = usePermissionStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 // 展开的菜单key
 const expandedKeys = ref([])
@@ -81,13 +82,7 @@ function processMenuData(menuItems) {
 // 处理菜单点击
 function handleMenuClick(item) {
   if (item.path) {
-    // iframe模式处理
-    if (item.openMode === 'iframe' && item.subAppURL) {
-      router.push(`/iframe?page=${encodeURIComponent(item.subAppURL + (item.path || ''))}`)
-    }
-    else {
-      router.push(item.path)
-    }
+    baseHandleMenuSelect(item.key || item.id, item.path)
   }
 }
 

@@ -44,7 +44,7 @@ export async function fetchPublicKey(forceRefresh = false): Promise<string> {
  */
 export function rsaEncrypt(data: string, publicKey: string): string {
   const encrypt = new JSEncrypt()
-  encrypt.setPublicKey(publicKey)
+  encrypt.setPublicKey(wrapPublicKeyPem(publicKey))
   const result = encrypt.encrypt(data)
   if (!result) throw new Error('RSA 加密失败')
   return result as string

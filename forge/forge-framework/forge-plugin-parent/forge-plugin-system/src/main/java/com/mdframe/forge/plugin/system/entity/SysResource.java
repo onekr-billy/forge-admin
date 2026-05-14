@@ -58,6 +58,21 @@ public class SysResource extends TenantEntity {
     private Integer isExternal;
 
     /**
+     * 是否启用SSO（0-否，1-是）
+     */
+    private Integer ssoEnabled;
+
+    /**
+     * SSO目标客户端编码
+     */
+    private String ssoTargetClient;
+
+    /**
+     * 打开方式（_self-当前页，_blank-新窗口）
+     */
+    private String openTarget;
+
+    /**
      * 是否公开资源（0-否，1-是，公开资源无需权限验证）
      */
     private Integer isPublic;

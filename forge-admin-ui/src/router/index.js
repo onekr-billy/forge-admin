@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
+import { routes as autoRoutes } from 'vue-router/auto-routes'
 import { setupRouterGuards } from './guards'
 
 // 手动定义的路由（登录页、SSO、带参数的路由等）
@@ -83,6 +84,12 @@ export const manualRoutes = [
     component: () => import('@/views/ai/crud-page.vue'),
     meta: { title: 'CRUD页面' },
   },
+  {
+    name: 'ReportSsoBridge',
+    path: '/report/design',
+    component: () => import('@/views/report/design.vue'),
+    meta: { title: '子系统跳转' },
+  },
   // Nexus 布局演示页面
   {
     name: 'NexusRoleManagement',
@@ -92,13 +99,9 @@ export const manualRoutes = [
   },
 ]
 
-// 从 unplugin-vue-router 自动生成的路由
-// eslint-disable-next-line
-import { routes as autoRoutes } from 'vue-router/auto-routes'
-
 // 开发环境打印所有路由
 if (import.meta.env.DEV) {
-  console.log('📋 所有注册的路由:', autoRoutes)
+  console.warn('📋 所有注册的路由:', autoRoutes)
 }
 
 // 合并路由：手动路由 + 自动生成路由 + 兜底路由

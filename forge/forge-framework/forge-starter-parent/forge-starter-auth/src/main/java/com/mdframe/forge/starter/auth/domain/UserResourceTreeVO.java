@@ -21,6 +21,9 @@ public class UserResourceTreeVO implements Serializable {
     private String path;
     private String component;
     private Integer isExternal;
+    private Integer ssoEnabled;
+    private String ssoTargetClient;
+    private String openTarget;
     /**
      * 是否公开资源（0-否，1-是，公开资源无需权限验证）
      */

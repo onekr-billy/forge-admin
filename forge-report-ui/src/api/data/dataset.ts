@@ -1,4 +1,20 @@
-import { post } from '../http'
+import { get, post } from '../http'
+
+export interface DataConnectionOption {
+  id: number
+  connectionName: string
+  connectionCode?: string
+  status?: number
+}
+
+export interface DataDatasetOption {
+  id: number
+  datasetName: string
+  datasetCode?: string
+  connectionId?: number
+  datasetType?: string
+  status?: number
+}
 
 export interface DataDatasetQueryDTO {
   datasetId: number
@@ -42,6 +58,14 @@ export function queryDataDataset(dto: DataDatasetQueryDTO): Promise<{ data: Data
   return post('/forge-report-api/data/dataset/runtime/query', dto)
 }
 
+export function getDataConnectionList(): Promise<{ data: DataConnectionOption[] }> {
+  return get('/forge-report-api/data/connection/list')
+}
+
+export function getDataDatasetList(connectionId?: number): Promise<{ data: DataDatasetOption[] }> {
+  return get('/forge-report-api/data/dataset/list', { connectionId })
+}
+
 export function getDataDatasetMetadata(id: number): Promise<{ data: DataDatasetMetadata }> {
-  return post(`/forge-report-api/data/dataset/runtime/${id}/metadata`)
+  return get(`/forge-report-api/data/dataset/runtime/${id}/metadata`)
 }

@@ -18,6 +18,8 @@
     <chart-data-ajax v-if="targetData.request.requestDataType === RequestDataTypeEnum.AJAX"></chart-data-ajax>
     <!-- 数据池 -->
     <chart-data-pond v-if="targetData.request.requestDataType === RequestDataTypeEnum.Pond"></chart-data-pond>
+    <!-- 数据库数据集 -->
+    <chart-data-dataset v-if="targetData.request.requestDataType === RequestDataTypeEnum.DATASET"></chart-data-dataset>
   </div>
 </template>
 
@@ -34,6 +36,7 @@ import { icon } from '@/plugins'
 const ChartDataStatic = loadAsyncComponent(() => import('./components/ChartDataStatic/index.vue'))
 const ChartDataAjax = loadAsyncComponent(() => import('./components/ChartDataAjax/index.vue'))
 const ChartDataPond = loadAsyncComponent(() => import('./components/ChartDataPond/index.vue'))
+const ChartDataDataset = loadAsyncComponent(() => import('./components/ChartDataDataset/index.vue'))
 
 const { DocumentTextIcon } = icon.ionicons5
 const { targetData, chartEditStore } = useTargetData()
@@ -51,6 +54,10 @@ const selectOptions: SelectCreateDataType[] = [
   {
     label: SelectCreateDataEnum.Pond,
     value: RequestDataTypeEnum.Pond
+  },
+  {
+    label: SelectCreateDataEnum.DATASET,
+    value: RequestDataTypeEnum.DATASET
   }
 ]
 

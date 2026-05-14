@@ -27,7 +27,7 @@
       <div class="modal-right">
         <div class="modal-header">
           <div class="modal-icon-wrap">
-            <span class="modal-diamond">&#9670;</span>
+            <span class="modal-diamond">◆</span>
           </div>
           <div>
             <div class="modal-title">{{ cardData?.title || '' }}</div>
@@ -68,6 +68,14 @@
             <template #icon><n-icon size="16"><HammerIcon /></n-icon></template>
             编辑
           </n-button>
+          <n-button class="action-btn" @click="doMoveDirectory">
+            <template #icon><n-icon size="16"><StackedMoveIcon /></n-icon></template>
+            调整目录
+          </n-button>
+          <n-button class="action-btn" @click="handlePublishTemplate">
+            <template #icon><n-icon size="16"><CopyIcon /></n-icon></template>
+            发布为模板
+          </n-button>
           <n-button class="action-btn" @click="handlePreview">
             <template #icon><n-icon size="16"><BrowsersOutlineIcon /></n-icon></template>
             {{ $t('global.r_preview') }}
@@ -87,12 +95,14 @@ import { ref, watch } from 'vue'
 import { fetchPathByName, routerTurnByPath } from '@/utils'
 import { icon } from '@/plugins'
 import { PreviewEnum } from '@/enums/pageEnum'
-import { publishProjectApi } from '@/api/project'
 import FgAuthImage from '@/components/FgAuthImage/index.vue'
+import { publishProjectApi, getProjectDetailApi } from '@/api/project'
+import { createTemplateFromProjectApi } from '@/api/project/template'
 
-const { HammerIcon, CloseIcon, BrowsersOutlineIcon, SendIcon } = icon.ionicons5
+const { HammerIcon, CloseIcon, BrowsersOutlineIcon, SendIcon, CopyIcon } = icon.ionicons5
+const { StackedMoveIcon } = icon.carbon
 const showRef = ref(false)
-const emit = defineEmits(['close', 'edit'])
+const emit = defineEmits(['close', 'edit', 'move-directory'])
 
 const props = defineProps({
   modalShow: { required: true, type: Boolean },
@@ -119,7 +129,31 @@ const handlePublish = async () => {
   } catch (e: any) { window.$message.error(e?.message || '发布失败') }
 }
 
+const handlePublishTemplate = async () => {
+  try {
+    if (!props.cardData?.id) return
+    const res = await getProjectDetailApi(props.cardData.id)
+    const project = res?.data
+    if (!project?.componentData) {
+      window.$message.warning('该项目暂无可发布内容')
+      return
+    }
+    await createTemplateFromProjectApi({
+      sourceProjectId: project.id,
+      templateName: project.projectName,
+      remark: project.remark,
+      indexImg: project.indexImg,
+      componentData: project.componentData,
+      status: '0'
+    })
+    window.$message.success('已发布为模板')
+  } catch (e: any) {
+    window.$message.error(e?.message || '发布为模板失败')
+  }
+}
+
 const doEdit = () => { emit('edit', props.cardData); closeHandle() }
+const doMoveDirectory = () => { emit('move-directory', props.cardData); closeHandle() }
 </script>
 
 <style lang="scss" scoped>

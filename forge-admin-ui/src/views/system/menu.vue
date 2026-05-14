@@ -133,7 +133,7 @@
 </template>
 
 <script setup>
-import { NInputNumber } from 'naive-ui'
+import { NInputNumber, NTag } from 'naive-ui'
 import { computed, h, onMounted, ref } from 'vue'
 import api from '@/api'
 import { AiCrudPage } from '@/components/ai-form'
@@ -187,6 +187,20 @@ const clientCodeOptions = computed(() => {
     value: client.clientCode,
   }))
 })
+
+function getClientDisplayName(clientCode) {
+  return clientList.value.find(item => item.clientCode === clientCode)?.clientName || clientCode || '-'
+}
+
+function getSsoTargetClientOptions(formData) {
+  const currentClient = formData?.clientCode || pendingClientCode.value || currentClientCode.value
+  return clientList.value
+    .filter(client => client.clientCode && client.clientCode !== currentClient)
+    .map(client => ({
+      label: client.clientName,
+      value: client.clientCode,
+    }))
+}
 
 // 加载上级资源选项
 async function loadParentResourceOptions() {
@@ -247,6 +261,15 @@ const apiMethodOptions = [
   { label: 'PUT', value: 'PUT' },
   { label: 'DELETE', value: 'DELETE' },
 ]
+
+const openTargetOptions = [
+  { label: '当前页', value: '_self' },
+  { label: '新窗口', value: '_blank' },
+]
+
+function getOpenTargetDisplayName(openTarget) {
+  return openTargetOptions.find(item => item.value === openTarget)?.label || '当前页'
+}
 
 // 搜索表单配置
 const searchSchema = [
@@ -327,11 +350,7 @@ const tableColumns = computed(() => [
     width: 100,
     render: (row) => {
       const config = clientStyleMap[row.clientCode] || { text: row.clientCode, type: 'default' }
-      return h(
-        'n-tag',
-        { type: config.type, size: 'small', bordered: false },
-        { default: () => config.text },
-      )
+      return h(NTag, { type: config.type, size: 'small', bordered: false }, { default: () => config.text })
     },
   },
   {
@@ -365,6 +384,26 @@ const tableColumns = computed(() => [
     prop: 'path',
     label: '路由地址',
     width: 180,
+  },
+  {
+    prop: 'ssoEnabled',
+    label: 'SSO',
+    width: 240,
+    render: (row) => {
+      if (row.resourceType !== 2) {
+        return h('span', { class: 'text-gray-400' }, '-')
+      }
+
+      if (Number(row.ssoEnabled) !== 1) {
+        return h(NTag, { size: 'small', bordered: false }, { default: () => '关闭' })
+      }
+
+      return h('div', { class: 'flex items-center', style: { gap: '8px' } }, [
+        h(NTag, { type: 'success', size: 'small', bordered: false }, { default: () => '开启' }),
+        h('span', { class: 'text-xs text-gray-500' }, getClientDisplayName(row.ssoTargetClient)),
+        h('span', { class: 'text-xs text-gray-400' }, `/${getOpenTargetDisplayName(row.openTarget || '_self')}`),
+      ])
+    },
   },
   {
     prop: 'sort',
@@ -499,35 +538,35 @@ const editSchema = computed(() => [
     label: '目录/菜单配置',
     props: { titlePlacement: 'left' },
     span: 1,
-    vIf: formData => formData.resourceType == 1 || formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 1 || formData.resourceType === 2,
   },
   {
     field: 'icon',
     label: '图标',
     type: 'slot',
     slotName: 'icon',
-    vIf: formData => formData.resourceType == 1 || formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 1 || formData.resourceType === 2,
   },
   {
     field: 'path',
     label: '路由地址',
     type: 'input',
-    props: { placeholder: '/system/user' },
-    vIf: formData => formData.resourceType == 1 || formData.resourceType == 2,
+    props: { placeholder: '本系统路由或子系统目标路由，如 /system/user、/project/items' },
+    vIf: formData => formData.resourceType === 1 || formData.resourceType === 2,
   },
   {
     field: 'component',
     label: '组件路径',
     type: 'input',
     props: { placeholder: 'system/user/index' },
-    vIf: formData => formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 2,
   },
   {
     field: 'redirect',
     label: '重定向地址',
     type: 'input',
     props: { placeholder: '重定向地址' },
-    vIf: formData => formData.resourceType == 1 || formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 1 || formData.resourceType === 2,
   },
   {
     field: 'isExternal',
@@ -535,7 +574,38 @@ const editSchema = computed(() => [
     type: 'radio',
     defaultValue: 0,
     props: { options: [{ label: '否', value: 0 }, { label: '是', value: 1 }] },
-    vIf: formData => formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 2,
+  },
+  {
+    field: 'ssoEnabled',
+    label: '启用SSO',
+    type: 'switch',
+    defaultValue: 0,
+    checkedValue: 1,
+    uncheckedValue: 0,
+    checkedText: '开启',
+    uncheckedText: '关闭',
+    vIf: formData => formData.resourceType === 2,
+  },
+  {
+    field: 'ssoTargetClient',
+    label: '目标子系统',
+    type: 'select',
+    rules: [{ required: true, message: '请选择目标子系统', trigger: 'change' }],
+    props: {
+      placeholder: '请选择目标子系统',
+      clearable: true,
+    },
+    options: ({ formData }) => getSsoTargetClientOptions(formData),
+    vIf: formData => formData.resourceType === 2 && formData.ssoEnabled === 1,
+  },
+  {
+    field: 'openTarget',
+    label: '打开方式',
+    type: 'radio',
+    defaultValue: '_self',
+    props: { options: openTargetOptions },
+    vIf: formData => formData.resourceType === 2 && formData.ssoEnabled === 1,
   },
   {
     field: 'keepAlive',
@@ -543,7 +613,7 @@ const editSchema = computed(() => [
     type: 'radio',
     defaultValue: 0,
     props: { options: [{ label: '否', value: 0 }, { label: '是', value: 1 }] },
-    vIf: formData => formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 2,
   },
   {
     field: 'alwaysShow',
@@ -551,7 +621,7 @@ const editSchema = computed(() => [
     type: 'radio',
     defaultValue: 0,
     props: { options: [{ label: '否', value: 0 }, { label: '是', value: 1 }] },
-    vIf: formData => formData.resourceType == 1 || formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 1 || formData.resourceType === 2,
   },
 
   // 按钮和API配置
@@ -560,14 +630,14 @@ const editSchema = computed(() => [
     label: '按钮/API配置',
     props: { titlePlacement: 'left' },
     span: 1,
-    vIf: formData => formData.resourceType == 3 || formData.resourceType == 4,
+    vIf: formData => formData.resourceType === 3 || formData.resourceType === 4,
   },
   {
     field: 'perms',
     label: '权限标识',
     type: 'input',
     props: { placeholder: 'sys:user:add' },
-    vIf: formData => formData.resourceType == 3 || formData.resourceType == 4,
+    vIf: formData => formData.resourceType === 3 || formData.resourceType === 4,
   },
   {
     field: 'apiMethod',
@@ -575,14 +645,14 @@ const editSchema = computed(() => [
     type: 'select',
     defaultValue: 'GET',
     props: { placeholder: '请求方法', options: apiMethodOptions },
-    vIf: formData => formData.resourceType == 4,
+    vIf: formData => formData.resourceType === 4,
   },
   {
     field: 'apiUrl',
     label: '接口地址',
     type: 'input',
     props: { placeholder: '/system/user/list' },
-    vIf: formData => formData.resourceType == 4,
+    vIf: formData => formData.resourceType === 4,
   },
 
   // 状态配置
@@ -605,7 +675,7 @@ const editSchema = computed(() => [
     type: 'radio',
     defaultValue: 1,
     props: { options: [{ label: '显示', value: 1 }, { label: '隐藏', value: 0 }] },
-    vIf: formData => formData.resourceType == 1 || formData.resourceType == 2,
+    vIf: formData => formData.resourceType === 1 || formData.resourceType === 2,
   },
   {
     field: 'remark',
@@ -644,19 +714,43 @@ function beforeRenderForm(data) {
     // 清空临时值
     pendingParentId.value = null
     pendingClientCode.value = null
-    return { parentId, clientCode }
+    return { parentId, clientCode, ssoEnabled: 0, ssoTargetClient: '', openTarget: '_self' }
   }
   // 编辑时清空临时值
   pendingParentId.value = null
   pendingClientCode.value = null
-  return data
+  return {
+    ...data,
+    ssoEnabled: data.ssoEnabled ?? 0,
+    ssoTargetClient: data.ssoTargetClient || '',
+    openTarget: data.openTarget || '_self',
+  }
 }
 
 // 表单提交前处理
 function beforeSubmit(formData) {
+  const resourceType = formData.resourceType !== undefined ? Number(formData.resourceType) : formData.resourceType
+  const ssoEnabled = resourceType === 2 ? Number(formData.ssoEnabled || 0) : 0
+  const ssoTargetClient = ssoEnabled === 1 ? (formData.ssoTargetClient || '').trim() : ''
+  const openTarget = resourceType === 2 && ssoEnabled === 1 ? (formData.openTarget || '_self') : '_self'
+
+  if (resourceType === 2 && ssoEnabled === 1) {
+    if (!ssoTargetClient) {
+      window.$message.error('请选择目标子系统')
+      return false
+    }
+    if (ssoTargetClient === formData.clientCode) {
+      window.$message.error('目标子系统不能与当前客户端相同')
+      return false
+    }
+  }
+
   return {
     ...formData,
-    resourceType: formData.resourceType !== undefined ? Number(formData.resourceType) : formData.resourceType,
+    resourceType,
+    ssoEnabled,
+    ssoTargetClient,
+    openTarget,
   }
 }
 
@@ -768,6 +862,7 @@ function handleDelete(row) {
         }
       }
       catch (error) {
+        console.error('删除资源失败:', error)
         window.$message.error('删除失败')
       }
     },

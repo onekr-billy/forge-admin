@@ -569,9 +569,7 @@ const currentOptions = computed(() => {
         return field._cachedOptions
       }
       // 否则返回空数组，并异步加载
-      result.then((options) => {
-        field._cachedOptions = options
-      })
+      cacheAsyncOptions(field, result)
       return []
     }
 
@@ -601,12 +599,10 @@ const currentOptions = computed(() => {
   return []
 })
 
-/**
- * 获取选项数据 (保留此函数以兼容模板中的直接调用)
- * @deprecated 建议直接使用 currentOptions
- */
-function getOptions(field) {
-  return currentOptions.value
+function cacheAsyncOptions(field, promise) {
+  promise.then((options) => {
+    field._cachedOptions = options
+  })
 }
 
 /**
@@ -637,16 +633,6 @@ function getComponentEvents(field) {
  */
 function handleUpdate(newValue) {
   emit('update:value', newValue)
-
-  // 如果有 onChange 回调，执行它
-  if (props.field.onChange && typeof props.field.onChange === 'function') {
-    props.field.onChange({
-      value: newValue,
-      field: props.field,
-      formData: props.formData,
-      context: props.context,
-    })
-  }
 }
 
 /**

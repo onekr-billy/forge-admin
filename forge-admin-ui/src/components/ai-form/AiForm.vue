@@ -310,19 +310,24 @@ const formActionSpan = computed(() => {
 })
 
 // 字段值变化
-function handleFieldChange(field, value) {
-  formValue.value[field] = value
+async function handleFieldChange(field, value) {
+  formValue.value = {
+    ...formValue.value,
+    [field]: value,
+  }
   emit('update:value', { ...formValue.value })
 
   // 触发字段变化事件
   const fieldConfig = props.schema.find(f => f.field === field)
   if (fieldConfig?.onChange) {
-    fieldConfig.onChange({
+    await fieldConfig.onChange({
       value,
       field: fieldConfig,
       formData: formValue.value,
       context: props.context,
     })
+    formValue.value = { ...formValue.value }
+    emit('update:value', { ...formValue.value })
   }
 }
 

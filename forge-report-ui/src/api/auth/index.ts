@@ -22,6 +22,10 @@ export interface LoginResponse {
   data: LoginResult
 }
 
+export interface SsoExchangeRequest {
+  ticket: string
+}
+
 /**
  * 用户登录（密码使用 RSA 加密）
  */
@@ -45,4 +49,11 @@ export const loginApi = async (data: LoginRequest): Promise<LoginResponse> => {
  */
 export const logoutApi = (): Promise<any> => {
   return post('/forge-report-api/auth/logout') as Promise<any>
+}
+
+/**
+ * SSO 票据交换
+ */
+export const ssoExchangeApi = (data: SsoExchangeRequest): Promise<LoginResponse> => {
+  return post('/forge-report-api/auth/sso/exchange', data) as unknown as Promise<LoginResponse>
 }

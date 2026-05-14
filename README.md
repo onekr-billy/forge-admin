@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Spring%20Boot-3.x-green.svg" alt="Spring Boot">
   <img src="https://img.shields.io/badge/Vue-3.x-brightgreen.svg" alt="Vue3">
-  <img src="https://img.shields.io/badge/GoView-AI%20Enhanced-orange.svg" alt="AI Dashboard">
+  <img src="https://img.shields.io/badge/Report-AI%20Enhanced-orange.svg" alt="AI Dashboard">
 </p>
 
 <p align="center">
@@ -26,8 +26,6 @@
 ## ✨ 项目简介
 
 **Forge Admin** 是一个现代化的企业级中后台管理框架，采用 **微内核 + 插件化** 架构设计，核心功能以插件形式存在，便于按需引入和扩展。
-
-除了完善的后台管理能力外，Forge Admin 还集成了基于 [GoView](https://gitee.com/dromara/go-view) 二次开发的 **AI 数据可视化大屏平台**，支持通过自然语言描述一键生成数据大屏，对接真实后台接口，让数据可视化开发效率提升 10 倍。
 
 ## 系统架构
 ![系统架构图.jpeg](images/%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E5%9B%BE.jpeg)

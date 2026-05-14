@@ -187,6 +187,15 @@ export const aiCrudPageProps = {
   },
 
   /**
+   * 编辑表单自定义 class
+   * @type {string | object | Array}
+   */
+  editFormClass: {
+    type: [String, Object, Array],
+    default: '',
+  },
+
+  /**
    * 弹窗宽度
    * @type {string}
    */

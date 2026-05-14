@@ -1,5 +1,6 @@
 export type Chartype = {
   id: number | string
+  directoryId?: number | string
   title: string
   label: string
   release: boolean

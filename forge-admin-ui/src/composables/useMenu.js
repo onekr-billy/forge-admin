@@ -7,6 +7,170 @@ import { useRoute, useRouter } from 'vue-router'
 import { usePermissionStore } from '@/store'
 import { isExternal } from '@/utils'
 import { findMenuItem, processMenuData } from '@/utils/menu-utils'
+import {
+  DEFAULT_SSO_TARGET_CLIENT,
+  normalizeSsoBaseUrl,
+  normalizeSsoRedirectPath,
+  parseExternalSsoTarget,
+  resolveSsoTargetBaseUrl,
+  SSO_BRIDGE_ROUTE,
+} from '@/utils/sso-target'
+
+const REPORT_BASE_URL = (import.meta.env.VITE_REPORT_UI_BASE_URL || '').replace(/\/+$/, '')
+const REPORT_HOST_FALLBACK = 'localhost:3021'
+const REPORT_PATH_PREFIX = '/forge-report'
+
+function normalizeLocalPath(path) {
+  if (!path) {
+    return ''
+  }
+  const targetPath = path.trim()
+  if (!targetPath) {
+    return ''
+  }
+  if (targetPath.startsWith('/') || isExternal(targetPath)) {
+    return targetPath
+  }
+  return `/${targetPath}`
+}
+
+function isReportBaseUrl(baseUrl) {
+  if (!baseUrl) {
+    return false
+  }
+
+  const normalizedBaseUrl = normalizeSsoBaseUrl(baseUrl)
+  if (REPORT_BASE_URL && normalizedBaseUrl === REPORT_BASE_URL) {
+    return true
+  }
+
+  try {
+    const url = new URL(`${normalizedBaseUrl}/`)
+    return url.host === REPORT_HOST_FALLBACK || url.pathname.startsWith(REPORT_PATH_PREFIX)
+  }
+  catch {
+    return false
+  }
+}
+
+function parseReportMenuTarget(rawTarget) {
+  if (!rawTarget || !isExternal(rawTarget)) {
+    return null
+  }
+
+  try {
+    const targetUrl = new URL(rawTarget)
+    const baseUrl = normalizeSsoBaseUrl(`${targetUrl.origin}${targetUrl.pathname}`)
+    if (!isReportBaseUrl(baseUrl)) {
+      return null
+    }
+
+    let redirectPath = ''
+    if (targetUrl.hash) {
+      const hashValue = targetUrl.hash.replace(/^#/, '')
+      if (hashValue.startsWith('/')) {
+        const [hashPath] = hashValue.split('?')
+        redirectPath = hashPath
+      }
+    }
+
+    if (!redirectPath) {
+      redirectPath = '/project/items'
+    }
+
+    return {
+      baseUrl,
+      redirectPath: normalizeSsoRedirectPath(redirectPath, DEFAULT_SSO_TARGET_CLIENT),
+    }
+  }
+  catch {
+    return null
+  }
+}
+
+function buildSsoBridgeRoute(router, { targetClient, redirectPath, baseUrl, menuKey, title, display }) {
+  const query = {
+    targetClient,
+    redirect: redirectPath,
+  }
+
+  if (baseUrl) {
+    query.baseUrl = baseUrl
+  }
+  if (menuKey !== undefined && menuKey !== null && menuKey !== '') {
+    query.menuKey = String(menuKey)
+  }
+  if (title) {
+    query.title = title
+  }
+  if (display) {
+    query.display = display
+  }
+
+  return router.resolve({
+    path: SSO_BRIDGE_ROUTE,
+    query,
+  }).fullPath
+}
+
+function normalizeOpenTarget(openTarget) {
+  return openTarget === '_blank' ? '_blank' : '_self'
+}
+
+function buildSsoBridgeDisplay(openTarget) {
+  return normalizeOpenTarget(openTarget) === '_blank' ? 'redirect' : 'embed'
+}
+
+function navigateSsoBridge(router, bridgeRoute, openTarget) {
+  if (!bridgeRoute) {
+    return
+  }
+
+  if (normalizeOpenTarget(openTarget) === '_blank') {
+    window.open(bridgeRoute, '_blank', 'noopener,noreferrer')
+    return
+  }
+
+  router.push(bridgeRoute)
+}
+
+function buildConfiguredSsoTarget(originalItem) {
+  if (Number(originalItem?.ssoEnabled) !== 1 || !originalItem?.ssoTargetClient) {
+    return null
+  }
+
+  const targetClient = originalItem.ssoTargetClient
+  const pathTarget = parseExternalSsoTarget(originalItem.path, targetClient)
+  const subAppTarget = parseExternalSsoTarget(originalItem.subAppURL, targetClient)
+  const preferredBaseUrl = subAppTarget?.baseUrl || pathTarget?.baseUrl || ''
+  const baseUrl = resolveSsoTargetBaseUrl({ targetClient, preferredBaseUrl })
+  const redirectPath = pathTarget?.redirectPath
+    || normalizeSsoRedirectPath(originalItem.path || subAppTarget?.redirectPath, targetClient)
+
+  return {
+    targetClient,
+    baseUrl,
+    redirectPath,
+    menuKey: originalItem.key || originalItem.id,
+    title: originalItem.resourceName || originalItem.label || originalItem.name || '',
+  }
+}
+
+function isNoMatchRoute(resolvedRoute) {
+  if (!resolvedRoute) {
+    return true
+  }
+
+  if (resolvedRoute.name === '404' || resolvedRoute.path === '/404') {
+    return true
+  }
+
+  if (!resolvedRoute.matched || resolvedRoute.matched.length === 0) {
+    return true
+  }
+
+  return resolvedRoute.matched.every(record => record.path === '/:pathMatch(.*)*')
+}
 
 /**
  * 根据路由路径查找匹配的菜单ID
@@ -90,6 +254,70 @@ export function useMenu() {
   const router = useRouter()
   const permissionStore = usePermissionStore()
 
+  function resolveReportMenuRoute(rawTarget, openTarget = '_self') {
+    const reportTarget = parseReportMenuTarget(rawTarget)
+    if (!reportTarget) {
+      return ''
+    }
+
+    return buildSsoBridgeRoute(router, {
+      targetClient: DEFAULT_SSO_TARGET_CLIENT,
+      baseUrl: reportTarget.baseUrl,
+      redirectPath: reportTarget.redirectPath,
+      display: buildSsoBridgeDisplay(openTarget),
+    })
+  }
+
+  function resolveConfiguredSsoRoute(originalItem) {
+    const ssoTarget = buildConfiguredSsoTarget(originalItem)
+    if (!ssoTarget) {
+      return ''
+    }
+
+    return buildSsoBridgeRoute(router, {
+      ...ssoTarget,
+      display: buildSsoBridgeDisplay(originalItem?.openTarget),
+    })
+  }
+
+  function resolveNoMatchSsoRoute(targetPath, options = {}) {
+    if (!targetPath || isExternal(targetPath)) {
+      return ''
+    }
+
+    const resolvedRoute = router.resolve(targetPath)
+    if (!isNoMatchRoute(resolvedRoute)) {
+      return ''
+    }
+
+    const baseUrl = resolveSsoTargetBaseUrl({ targetClient: DEFAULT_SSO_TARGET_CLIENT })
+    if (!baseUrl) {
+      return ''
+    }
+
+    return buildSsoBridgeRoute(router, {
+      targetClient: DEFAULT_SSO_TARGET_CLIENT,
+      baseUrl,
+      redirectPath: targetPath,
+      menuKey: options.menuKey,
+      title: options.title,
+      display: buildSsoBridgeDisplay(options.openTarget),
+    })
+  }
+
+  function resolveReportFallbackSsoRoute(originalItem) {
+    const targetPath = normalizeLocalPath(originalItem?.path)
+    if (!targetPath || originalItem?.component) {
+      return ''
+    }
+
+    return resolveNoMatchSsoRoute(targetPath, {
+      menuKey: originalItem.key || originalItem.id,
+      title: originalItem.resourceName || originalItem.label || originalItem.name || '',
+      openTarget: originalItem.openTarget,
+    })
+  }
+
   /**
    * 已处理的菜单数据，可直接用于 Naive UI menu 组件
    */
@@ -120,6 +348,10 @@ export function useMenu() {
    * 当前路由对应的活跃菜单key
    */
   const activeKey = computed(() => {
+    if (route.path === SSO_BRIDGE_ROUTE && route.query?.menuKey) {
+      return String(route.query.menuKey)
+    }
+
     // 优先级1: 使用 route.meta.parentKey（用于隐藏的二级页面）
     if (route.meta?.parentKey) {
       return route.meta.parentKey
@@ -163,16 +395,41 @@ export function useMenu() {
 
     if (!originalItem) {
       if (fallbackPath) {
-        let targetPath = fallbackPath.trim()
-        if (!targetPath.startsWith('/') && !isExternal(targetPath)) {
-          targetPath = `/${targetPath}`
+        const targetPath = normalizeLocalPath(fallbackPath)
+        const reportRoute = resolveReportMenuRoute(targetPath)
+        if (reportRoute) {
+          router.push(reportRoute)
+          return
+        }
+        const noMatchSsoRoute = resolveNoMatchSsoRoute(targetPath)
+        if (noMatchSsoRoute) {
+          router.push(noMatchSsoRoute)
+          return
         }
         router.push(targetPath)
       }
       return
     }
 
+    const configuredSsoRoute = resolveConfiguredSsoRoute(originalItem)
+    if (configuredSsoRoute) {
+      navigateSsoBridge(router, configuredSsoRoute, originalItem.openTarget)
+      return
+    }
+
+    const reportFallbackSsoRoute = resolveReportFallbackSsoRoute(originalItem)
+    if (reportFallbackSsoRoute) {
+      navigateSsoBridge(router, reportFallbackSsoRoute, originalItem.openTarget)
+      return
+    }
+
     if (isExternal(originalItem.path)) {
+      const reportRoute = resolveReportMenuRoute(originalItem.path, originalItem.openTarget)
+      if (reportRoute) {
+        navigateSsoBridge(router, reportRoute, originalItem.openTarget)
+        return
+      }
+
       $dialog.confirm({
         type: 'info',
         title: '请选择打开方式',
@@ -189,15 +446,23 @@ export function useMenu() {
     }
 
     if (originalItem.openMode === 'iframe' && originalItem.subAppURL) {
-      const iframePath = `/iframe?page=${encodeURIComponent(originalItem.subAppURL + (originalItem.path || ''))}`
+      const iframeTarget = `${originalItem.subAppURL}${originalItem.path || ''}`
+      const reportRoute = resolveReportMenuRoute(iframeTarget, originalItem.openTarget)
+      if (reportRoute) {
+        navigateSsoBridge(router, reportRoute, originalItem.openTarget)
+        return
+      }
+      const iframePath = `/iframe?page=${encodeURIComponent(iframeTarget)}`
       router.push(iframePath)
       return
     }
 
     if (originalItem.path) {
-      let targetPath = originalItem.path.trim()
-      if (!targetPath.startsWith('/') && !isExternal(targetPath)) {
-        targetPath = `/${targetPath}`
+      const targetPath = normalizeLocalPath(originalItem.path)
+      const reportRoute = resolveReportMenuRoute(targetPath, originalItem.openTarget)
+      if (reportRoute) {
+        navigateSsoBridge(router, reportRoute, originalItem.openTarget)
+        return
       }
       router.push(targetPath)
     }

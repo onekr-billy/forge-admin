@@ -330,7 +330,15 @@ const datasetRequest = async (
   targetParams: RequestConfigType,
   componentList: DynamicParamComponent[] = []
 ) => {
-  const { datasetId, datasetFields, datasetMaxRows, datasetOutputMode } = targetParams
+  const {
+    datasetId,
+    datasetFields,
+    datasetParams: baseDatasetParams,
+    datasetPageNum,
+    datasetPageSize,
+    datasetMaxRows,
+    datasetOutputMode
+  } = targetParams
   
   if (!datasetId) {
     window['$message'].error('未选择数据集')
@@ -340,6 +348,7 @@ const datasetRequest = async (
   try {
     const dynamicParams = await resolveDynamicRequestParams(targetParams.dynamicRequestParams, componentList)
     const datasetParams = mergeDefinedObjects(
+      toPlainObject(baseDatasetParams),
       toPlainObject(dynamicParams.Params),
       toPlainObject(dynamicParams.Body)
     )
@@ -348,6 +357,8 @@ const datasetRequest = async (
       datasetId,
       params: datasetParams,
       fields: datasetFields,
+      pageNum: datasetPageNum || 1,
+      pageSize: datasetPageSize || datasetMaxRows || 50,
       maxRows: datasetMaxRows,
       outputMode: datasetOutputMode || 'ECHARTS_DATASET'
     })

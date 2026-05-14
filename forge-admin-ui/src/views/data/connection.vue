@@ -18,18 +18,75 @@
       modal-width="800px"
       add-button-text="新增数据连接"
     />
+
+    <n-modal
+      v-model:show="tableModalVisible"
+      preset="card"
+      :title="tableModalTitle"
+      style="width: 980px"
+      :segmented="{ content: 'soft' }"
+    >
+      <n-space class="mb-3" justify="space-between">
+        <n-input
+          v-model:value="tableKeyword"
+          clearable
+          placeholder="按表名或注释搜索"
+          style="width: 260px"
+          @keyup.enter="loadConnectionTables"
+        />
+        <n-button type="primary" :loading="tableLoading" @click="loadConnectionTables">
+          查询
+        </n-button>
+      </n-space>
+      <n-data-table
+        :columns="connectionTableColumns"
+        :data="connectionTables"
+        :loading="tableLoading"
+        :pagination="{ pageSize: 10 }"
+        size="small"
+        striped
+      />
+    </n-modal>
+
+    <n-modal
+      v-model:show="fieldModalVisible"
+      preset="card"
+      :title="fieldModalTitle"
+      style="width: 900px"
+      :segmented="{ content: 'soft' }"
+    >
+      <n-data-table
+        :columns="fieldColumns"
+        :data="fieldRows"
+        :loading="fieldLoading"
+        :pagination="{ pageSize: 10 }"
+        size="small"
+        striped
+      />
+    </n-modal>
   </div>
 </template>
 
 <script setup>
 import { NTag } from 'naive-ui'
 import { computed, h, ref } from 'vue'
+import { getDataConnectionFields, getDataConnectionTables } from '@/api/data/connection'
 import { AiCrudPage } from '@/components/ai-form'
 import { request } from '@/utils'
 
 defineOptions({ name: 'DataConnection' })
 
 const crudRef = ref(null)
+const tableModalVisible = ref(false)
+const tableModalTitle = ref('数据表')
+const tableLoading = ref(false)
+const tableKeyword = ref('')
+const connectionTables = ref([])
+const currentConnection = ref(null)
+const fieldModalVisible = ref(false)
+const fieldModalTitle = ref('字段列表')
+const fieldLoading = ref(false)
+const fieldRows = ref([])
 
 const dbTypeOptions = [
   { label: 'MySQL', value: 'MYSQL' },
@@ -100,6 +157,39 @@ const tableColumns = computed(() => [
     ],
   },
 ])
+
+const connectionTableColumns = [
+  { title: '表名', key: 'tableName', width: 220 },
+  { title: '表类型', key: 'tableType', width: 120 },
+  { title: '表注释', key: 'tableComment' },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render: row => h('a', {
+      class: 'text-primary cursor-pointer hover:text-primary-hover',
+      onClick: () => handleViewFields(row),
+    }, '查看字段'),
+  },
+]
+
+const fieldColumns = [
+  { title: '字段名', key: 'columnName', width: 180 },
+  { title: '字段类型', key: 'columnType', width: 160 },
+  { title: '字段注释', key: 'columnComment' },
+  {
+    title: '可空',
+    key: 'nullable',
+    width: 80,
+    render: row => row.nullable ? '是' : '否',
+  },
+  {
+    title: '主键',
+    key: 'primaryKey',
+    width: 80,
+    render: row => row.primaryKey ? '是' : '否',
+  },
+]
 
 const editSchema = [
   {
@@ -217,7 +307,7 @@ function handleDelete(row) {
           crudRef.value?.refresh()
         }
       }
-      catch (error) {
+      catch {
         window.$message.error('删除失败')
       }
     },
@@ -235,13 +325,67 @@ async function handleTest(row) {
       window.$message.error('连接失败', { key: 'testConn' })
     }
   }
-  catch (error) {
+  catch {
     window.$message.error('连接测试失败', { key: 'testConn' })
   }
 }
 
-function handleViewTables(row) {
-  window.$message.info('请创建数据集时选择数据连接查看表')
+async function handleViewTables(row) {
+  currentConnection.value = row
+  tableModalTitle.value = `数据表 - ${row.connectionName}`
+  tableKeyword.value = ''
+  tableModalVisible.value = true
+  await loadConnectionTables()
+}
+
+async function loadConnectionTables() {
+  if (!currentConnection.value?.id) {
+    return
+  }
+
+  tableLoading.value = true
+  try {
+    const res = await getDataConnectionTables(currentConnection.value.id, tableKeyword.value || undefined)
+    if (res.code === 200) {
+      connectionTables.value = res.data || []
+    }
+    else {
+      window.$message.error(res.msg || '加载数据表失败')
+    }
+  }
+  catch {
+    window.$message.error('加载数据表失败')
+  }
+  finally {
+    tableLoading.value = false
+  }
+}
+
+async function handleViewFields(row) {
+  if (!currentConnection.value?.id) {
+    return
+  }
+
+  fieldModalTitle.value = `字段列表 - ${row.tableName}`
+  fieldModalVisible.value = true
+  fieldLoading.value = true
+  fieldRows.value = []
+
+  try {
+    const res = await getDataConnectionFields(currentConnection.value.id, row.tableName)
+    if (res.code === 200) {
+      fieldRows.value = res.data || []
+    }
+    else {
+      window.$message.error(res.msg || '加载字段失败')
+    }
+  }
+  catch {
+    window.$message.error('加载字段失败')
+  }
+  finally {
+    fieldLoading.value = false
+  }
 }
 </script>
 

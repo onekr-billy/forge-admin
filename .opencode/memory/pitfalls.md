@@ -221,6 +221,59 @@ public RespInfo<GoviewProject> getById(@PathVariable Long id) {
 
 ---
 
+## 6. SSO 接口缺少 `@ApiDecrypt` 会导致请求参数为空
+
+**发现日期**: 2026-05-13
+
+**问题描述**:
+admin-ui / report-ui 的请求拦截器默认会对未排除的 `POST` JSON 请求体做 SM4/AES 加密。如果后端 SSO 接口仍按普通 `@RequestBody` 接收、但没有补 `@ApiDecrypt`，后台拿到的业务字段会是空值，表现为：
+
+```text
+java.lang.RuntimeException: 目标客户端不能为空
+```
+
+或：
+
+```text
+java.lang.RuntimeException: SSO票据不能为空
+```
+
+**典型场景**:
+- `POST /auth/sso/ticket`
+- `POST /auth/sso/exchange`
+
+**正确用法**:
+```java
+@ApiDecrypt
+@PostMapping("/sso/ticket")
+public RespInfo<SsoTicketResult> createSsoTicket(@RequestBody SsoTicketRequest request) {
+    ...
+}
+
+@SaIgnore
+@IgnoreTenant
+@ApiDecrypt
+@PostMapping("/sso/exchange")
+public RespInfo<LoginResult> exchangeSsoTicket(@RequestBody SsoExchangeRequest request) {
+    ...
+}
+```
+
+**根本原因**:
+- admin-ui 默认只排除了 `/auth/login`、`/auth/captcha`、`/crypto/exchange` 等少数路径
+- report-ui 也会对 `/forge-report-api/auth/sso/exchange` 默认加密
+- 没有 `@ApiDecrypt` 时，请求体实际是 `{ data, algorithm }`，不会映射到 `targetClient` / `ticket`
+
+**解决方案**:
+- 对接前端默认加密链路的 SSO `POST` 接口必须补 `@ApiDecrypt`
+- 不要优先用前端 `encrypt: false` 规避，除非这个接口明确约定为明文
+
+**影响范围**:
+- admin-ui -> report-ui 单点登录
+- 所有新增的跨端票据交换、临时令牌类接口
+
+---
+
 ## 记录规范
 
 每次发现新的踩坑点，按以下格式添加：
@@ -397,3 +450,25 @@ AI 生成流程配置后点击“加载到画布”，bpmn-js 报错：
 **影响范围**:
 - `forge-admin-ui/src/views/flow/design.vue` 的 AI 流程生成/加载画布。
 - 所有依赖 AI 返回 BPMN XML 并直接导入 bpmn-js 的场景。
+
+## 9. 跨系统 SSO 首跳前的 `/crypto/exchange` 必须匿名放行
+
+**发现日期**: 2026-05-13
+
+**问题描述**:
+从 `admin-ui` 单点进入 `report-ui` 时，目标系统会先请求 `/crypto/public-key` 和 `/crypto/exchange` 建立会话密钥，再调用 `/auth/sso/exchange`。如果 `/crypto/exchange` 仍要求已登录，会直接报：
+
+```text
+未登录异常：未能读取到有效 token，请求地址：/crypto/exchange
+```
+
+**根本原因**:
+`report-ui` 的 SSO 登录页在拿到目标系统 token 之前，也要先走 API 加密链路。此时密钥交换接口只能依赖匿名 `X-Session-Id` 建立临时会话，不能被 `SaTokenConfig` 的登录拦截器拦住。
+
+**解决方案**:
+- 在 `forge-starter-auth` 的 Sa-Token 白名单里显式排除 `/crypto/public-key`、`/crypto/exchange`
+- 在 `KeyExchangeController.exchangeKey` 上补 `@SaIgnore`，明确该接口允许匿名密钥协商
+
+**影响范围**:
+- `admin-ui -> report-ui` 单点登录
+- 所有“未登录先协商动态密钥，再换发 token”的跨系统接入场景

@@ -137,6 +137,7 @@
       <AiForm
         ref="formRef"
         v-model:value="formData"
+        :class="editFormClass"
         :schema="editSchema"
         :grid-cols="editGridCols"
         :label-width="editLabelWidth"
@@ -180,6 +181,7 @@
         <AiForm
           ref="formRef"
           v-model:value="formData"
+          :class="editFormClass"
           :schema="editSchema"
           :grid-cols="editGridCols"
           :label-width="editLabelWidth"
@@ -934,8 +936,8 @@ async function handleAdd() {
   // 初始化表单数据，设置默认值
   const initialData = {}
   props.editSchema.forEach((field) => {
-    if (field.field && field.defaultValue !== undefined) {
-      initialData[field.field] = field.defaultValue
+    if (field.field) {
+      initialData[field.field] = field.defaultValue ?? null
     }
   })
 
@@ -1165,10 +1167,13 @@ async function performDelete(rows, keys) {
  */
 async function handleModalConfirm() {
   try {
+    await nextTick()
     await formRef.value?.validate()
 
     // 调用 beforeSubmit 钩子
-    let data = await callHook('beforeSubmit', formData.value, data => data)
+    const latestFormData = formRef.value?.getFormData?.() || formData.value
+    formData.value = latestFormData
+    let data = await callHook('beforeSubmit', latestFormData, data => data)
 
     if (data === false) {
       return

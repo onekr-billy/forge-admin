@@ -69,17 +69,17 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import TheLogo from '@/components/common/TheLogo.vue'
-import { useUser } from '@/composables'
+import { useMenu, useUser } from '@/composables'
 import { MessageNotification } from '@/layouts/components'
 import { useAppStore, usePermissionStore } from '@/store'
 import DrawerMenu from '../../immersive/components/DrawerMenu.vue'
 
-const router = useRouter()
 const route = useRoute()
 const permissionStore = usePermissionStore()
 const appStore = useAppStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 const menuDrawerVisible = ref(false)
 
@@ -128,7 +128,7 @@ const activeKey = computed(() => {
 
 function handleMenuSelect(item) {
   if (item.path) {
-    router.push(item.path)
+    baseHandleMenuSelect(item.key || item.id, item.path)
   }
 }
 

@@ -1,7 +1,11 @@
 package com.mdframe.forge.plugin.system.service.impl;
 
 import cn.dev33.satoken.SaManager;
+import cn.dev33.satoken.session.SaSession;
+import cn.dev33.satoken.stp.SaLoginModel;
 import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -9,6 +13,7 @@ import com.mdframe.forge.plugin.system.entity.*;
 import com.mdframe.forge.plugin.system.mapper.*;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.plugin.system.service.IClientService;
+import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.config.config.LoginConfig;
 import com.mdframe.forge.starter.config.service.ConfigManagerService;
 import com.mdframe.forge.starter.core.context.AuthProperties;
@@ -27,6 +32,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 系统认证服务实现
@@ -37,6 +45,10 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class SystemAuthServiceImpl implements IAuthService {
 
+    private static final String DEFAULT_USER_CLIENT = "pc";
+    private static final String SSO_TICKET_CACHE_KEY = "auth:sso:ticket:";
+    private static final long SSO_TICKET_EXPIRE_SECONDS = 60L;
+
     private final SysUserMapper userMapper;
     private final ICaptchaService captchaService;
     private final AuthStrategyFactory authStrategyFactory;
@@ -45,6 +57,7 @@ public class SystemAuthServiceImpl implements IAuthService {
     private final AuthProperties authProperties;
     private final ConfigManagerService configManagerService;
     private final IClientService clientService;
+    private final ICacheService cacheService;
 
     // ==================== 核心认证方法 ====================
 
@@ -55,7 +68,7 @@ public class SystemAuthServiceImpl implements IAuthService {
         }
         
         if (StrUtil.isBlank(request.getUserClient())) {
-            request.setUserClient("pc");
+            request.setUserClient(DEFAULT_USER_CLIENT);
         }
         
         SysClient client = validateAndLoadClient(
@@ -63,9 +76,7 @@ public class SystemAuthServiceImpl implements IAuthService {
             request.getAppId(),
             request.getAppSecret()
         );
-        
-        applyClientTokenConfig(client);
-        
+
         IAuthStrategy strategy = authStrategyFactory.getStrategy(
                 request.getAuthType(),
                 request.getUserClient()
@@ -78,22 +89,7 @@ public class SystemAuthServiceImpl implements IAuthService {
 
         LoginUser loginUser = strategy.authenticate(request);
 
-        handleSameAccountLogin(loginUser.getUserId(), client);
-
-        loginUser.setLoginTime(System.currentTimeMillis());
-        loginUser.setUserClient(request.getUserClient());
-
-        StpUtil.login(loginUser.getUserId());
-
-        SessionHelper.setLoginUser(loginUser);
-
-        log.info("用户登录成功: username={}, userId={}, client={}, tokenTimeout={}s",
-                loginUser.getUsername(),
-                loginUser.getUserId(),
-                request.getUserClient(),
-                client.getTokenTimeout());
-
-        return buildLoginResult(loginUser);
+        return issueTokenForUser(loginUser, client, request.getUserClient());
     }
 
     /**
@@ -101,17 +97,19 @@ public class SystemAuthServiceImpl implements IAuthService {
      *
      * @param userId 用户ID
      * @param client 客户端配置
+     * @param userClient 客户端编码
      */
-    private void handleSameAccountLogin(Long userId, SysClient client) {
+    private void handleSameAccountLogin(Long userId, SysClient client, String userClient) {
         if (!authProperties.getEnableOnlineUserManagement()) {
             return;
         }
 
-        if (client.getConcurrentLogin()) {
+        if (Boolean.TRUE.equals(client.getConcurrentLogin())) {
             log.debug("客户端允许并发登录: userId={}, client={}", userId, client.getClientCode());
             return;
         }
 
+        List<String> sameClientTokens = getUserTokensByClient(userId, userClient);
         String strategy = authProperties.getSameAccountLoginStrategy();
         
         switch (strategy) {
@@ -121,19 +119,18 @@ public class SystemAuthServiceImpl implements IAuthService {
                 
             case "replace_old":
                 try {
-                    String currentToken = StpUtil.getTokenValue();
-                    onlineUserService.kickoutAllSessions(userId, currentToken);
-                    log.info("同一账号新登录踢出旧登录: userId={}", userId);
+                    kickoutUserTokens(sameClientTokens);
+                    log.info("同一账号新登录踢出旧登录: userId={}, client={}", userId, userClient);
                 } catch (Exception e) {
                     log.error("踢出旧会话失败: userId={}", userId, e);
                 }
                 break;
                 
             case "reject_new":
-                if (!onlineUserService.getUserTokens(userId).isEmpty()) {
-                    throw new RuntimeException("该账号已在其他地方登录,请先退出后再登录");
+                if (CollUtil.isNotEmpty(sameClientTokens)) {
+                    throw new RuntimeException("该账号已在当前客户端登录,请先退出后再登录");
                 }
-                log.info("同一账号拒绝新登录: userId={}", userId);
+                log.info("同一账号拒绝新登录: userId={}, client={}", userId, userClient);
                 break;
                 
             default:
@@ -141,19 +138,73 @@ public class SystemAuthServiceImpl implements IAuthService {
         }
     }
 
+    @Override
+    public SsoTicketResult createSsoTicket(SsoTicketRequest request) {
+        LoginUser currentUser = SessionHelper.getLoginUser();
+        if (currentUser == null) {
+            throw new RuntimeException("未登录");
+        }
+
+        if (request == null || StrUtil.isBlank(request.getTargetClient())) {
+            throw new RuntimeException("目标客户端不能为空");
+        }
+
+        SysClient targetClient = loadEnabledClient(request.getTargetClient());
+        String redirectPath = normalizeRedirectPath(request.getRedirectPath());
+        String ticket = IdUtil.fastSimpleUUID();
+
+        SsoTicketPayload payload = new SsoTicketPayload();
+        payload.setTicket(ticket);
+        payload.setSourceToken(StpUtil.getTokenValue());
+        payload.setSourceClient(StrUtil.blankToDefault(currentUser.getUserClient(), DEFAULT_USER_CLIENT));
+        payload.setTargetClient(targetClient.getClientCode());
+        payload.setUserId(currentUser.getUserId());
+        payload.setUsername(currentUser.getUsername());
+        payload.setTenantId(currentUser.getTenantId());
+        payload.setRedirectPath(redirectPath);
+        payload.setIssuedAt(System.currentTimeMillis());
+
+        cacheService.set(buildSsoTicketCacheKey(ticket), payload, SSO_TICKET_EXPIRE_SECONDS, TimeUnit.SECONDS);
+
+        log.info("生成SSO票据成功: userId={}, sourceClient={}, targetClient={}, redirectPath={}",
+                currentUser.getUserId(), payload.getSourceClient(), targetClient.getClientCode(), redirectPath);
+
+        return SsoTicketResult.builder()
+                .ticket(ticket)
+                .expiresIn(SSO_TICKET_EXPIRE_SECONDS)
+                .targetClient(targetClient.getClientCode())
+                .redirectPath(redirectPath)
+                .build();
+    }
+
+    @Override
+    public LoginResult exchangeSsoTicket(SsoExchangeRequest request) {
+        if (request == null || StrUtil.isBlank(request.getTicket())) {
+            throw new RuntimeException("SSO票据不能为空");
+        }
+
+        String cacheKey = buildSsoTicketCacheKey(request.getTicket().trim());
+        SsoTicketPayload payload = cacheService.get(cacheKey, SsoTicketPayload.class);
+        if (payload == null) {
+            throw new RuntimeException("SSO票据不存在或已过期");
+        }
+        if (!cacheService.delete(cacheKey)) {
+            throw new RuntimeException("SSO票据已失效或已使用");
+        }
+
+        validateSsoSourceSession(payload);
+
+        SysClient targetClient = loadEnabledClient(payload.getTargetClient());
+        LoginUser loginUser = rebuildSsoLoginUser(payload);
+
+        log.info("开始SSO票据交换: userId={}, sourceClient={}, targetClient={}, redirectPath={}",
+                payload.getUserId(), payload.getSourceClient(), payload.getTargetClient(), payload.getRedirectPath());
+
+        return issueTokenForUser(loginUser, targetClient, payload.getTargetClient());
+    }
+
     private SysClient validateAndLoadClient(String userClient, String appId, String appSecret) {
-        if (StrUtil.isBlank(userClient)) {
-            userClient = "pc";
-        }
-        
-        SysClient client = clientService.getByCode(userClient);
-        if (client == null) {
-            throw new RuntimeException("客户端不存在: " + userClient);
-        }
-        
-        if (client.getStatus() == 0) {
-            throw new RuntimeException("客户端已禁用: " + userClient);
-        }
+        SysClient client = loadEnabledClient(userClient);
         
         // 验证AppId和AppSecret（可选）
         if (authProperties.getEnableClientValidation()) {
@@ -183,6 +234,18 @@ public class SystemAuthServiceImpl implements IAuthService {
         
         return client;
     }
+
+    private SysClient loadEnabledClient(String userClient) {
+        String clientCode = StrUtil.blankToDefault(userClient, DEFAULT_USER_CLIENT);
+        SysClient client = clientService.getByCode(clientCode);
+        if (client == null) {
+            throw new RuntimeException("客户端不存在: " + clientCode);
+        }
+        if (client.getStatus() == null || client.getStatus() == 0) {
+            throw new RuntimeException("客户端已禁用: " + clientCode);
+        }
+        return client;
+    }
     
     private void applyClientTokenConfig(SysClient client) {
         cn.dev33.satoken.config.SaTokenConfig config = cn.dev33.satoken.SaManager.getConfig();
@@ -193,6 +256,26 @@ public class SystemAuthServiceImpl implements IAuthService {
         SaManager.setConfig(config);
         log.debug("应用客户端Token配置: client={}, timeout={}s, concurrent={}",
             client.getClientCode(), client.getTokenTimeout(), client.getConcurrentLogin());
+    }
+
+    private LoginResult issueTokenForUser(LoginUser loginUser, SysClient client, String userClient) {
+        String resolvedClient = StrUtil.blankToDefault(userClient, DEFAULT_USER_CLIENT);
+        handleSameAccountLogin(loginUser.getUserId(), client, resolvedClient);
+        applyClientTokenConfig(client);
+
+        loginUser.setLoginTime(System.currentTimeMillis());
+        loginUser.setUserClient(resolvedClient);
+
+        StpUtil.login(loginUser.getUserId(), new SaLoginModel().setDevice(resolvedClient));
+        SessionHelper.setLoginUser(loginUser);
+
+        log.info("用户登录成功: username={}, userId={}, client={}, tokenTimeout={}s",
+                loginUser.getUsername(),
+                loginUser.getUserId(),
+                resolvedClient,
+                client.getTokenTimeout());
+
+        return buildLoginResult(loginUser);
     }
 
     @Override
@@ -462,6 +545,91 @@ public class SystemAuthServiceImpl implements IAuthService {
                 .expiresIn(tokenTimeout)
                 .tokenType("Bearer")
                 .build();
+    }
+
+    private String buildSsoTicketCacheKey(String ticket) {
+        return SSO_TICKET_CACHE_KEY + ticket;
+    }
+
+    private String normalizeRedirectPath(String redirectPath) {
+        if (StrUtil.isBlank(redirectPath)) {
+            return "/";
+        }
+
+        String normalized = redirectPath.trim();
+        if (normalized.contains("://") || normalized.startsWith("//")) {
+            throw new RuntimeException("跳转路径不合法");
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        return normalized;
+    }
+
+    private void validateSsoSourceSession(SsoTicketPayload payload) {
+        if (StrUtil.isBlank(payload.getSourceToken())) {
+            throw new RuntimeException("SSO票据来源会话无效");
+        }
+
+        try {
+            SaSession sourceSession = StpUtil.getTokenSessionByToken(payload.getSourceToken());
+            Object loginUserObj = sourceSession == null ? null : sourceSession.get("loginUser");
+            if (!(loginUserObj instanceof LoginUser sourceUser)
+                    || !Objects.equals(sourceUser.getUserId(), payload.getUserId())) {
+                throw new RuntimeException("SSO票据来源会话已失效");
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("SSO票据来源会话已失效", e);
+        }
+    }
+
+    private LoginUser rebuildSsoLoginUser(SsoTicketPayload payload) {
+        SysUser user = userMapper.selectById(payload.getUserId());
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        if (user.getUserStatus() == null || user.getUserStatus() != 1) {
+            throw new RuntimeException("用户已被禁用或锁定");
+        }
+
+        LoginUser loginUser = loadUserByUsername(user.getUsername(), payload.getTenantId());
+        loginUser.setUserClient(payload.getTargetClient());
+        return loginUser;
+    }
+
+    private List<String> getUserTokensByClient(Long userId, String userClient) {
+        String resolvedClient = StrUtil.blankToDefault(userClient, DEFAULT_USER_CLIENT);
+        return onlineUserService.getUserTokens(userId).stream()
+                .filter(token -> isTokenBelongsToClient(token, resolvedClient))
+                .toList();
+    }
+
+    private boolean isTokenBelongsToClient(String token, String userClient) {
+        try {
+            SaSession tokenSession = StpUtil.getTokenSessionByToken(token);
+            Object loginUserObj = tokenSession == null ? null : tokenSession.get("loginUser");
+            if (!(loginUserObj instanceof LoginUser loginUser)) {
+                return false;
+            }
+            return resolvedClientEquals(loginUser.getUserClient(), userClient);
+        } catch (Exception e) {
+            log.warn("过滤客户端会话失败: token={}, client={}", token, userClient, e);
+            return false;
+        }
+    }
+
+    private boolean resolvedClientEquals(String actualClient, String expectedClient) {
+        return StrUtil.blankToDefault(actualClient, DEFAULT_USER_CLIENT)
+                .equals(StrUtil.blankToDefault(expectedClient, DEFAULT_USER_CLIENT));
+    }
+
+    private void kickoutUserTokens(List<String> tokenValues) {
+        if (CollUtil.isEmpty(tokenValues)) {
+            return;
+        }
+        tokenValues.forEach(onlineUserService::kickoutUser);
     }
 
     @Override

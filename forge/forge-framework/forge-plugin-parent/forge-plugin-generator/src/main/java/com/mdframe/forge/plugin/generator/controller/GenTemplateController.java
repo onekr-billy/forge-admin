@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.GenTemplate;
 import com.mdframe.forge.plugin.generator.service.IGenTemplateService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
@@ -21,6 +23,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/generator/template")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class GenTemplateController {
 
     private final IGenTemplateService genTemplateService;

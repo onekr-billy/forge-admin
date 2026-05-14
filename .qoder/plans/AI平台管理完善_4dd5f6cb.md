@@ -62,10 +62,10 @@ ALTER TABLE ai_chat_record ADD KEY `idx_tenant_id` (`tenant_id`);
 **1.2 `AiProviderController` 新增接口**
 ```java
 // 测试连接（发送一条简单消息，验证 API Key + Base URL 可用）
-POST /goview/ai/provider/test
+POST /report/ai/provider/test
 
 // 设为默认供应商
-PUT /goview/ai/provider/{id}/default
+PUT /report/ai/provider/{id}/default
 ```
 
 **1.3 `AiProviderService` 新增方法**
@@ -75,7 +75,7 @@ PUT /goview/ai/provider/{id}/default
 **1.4 预设供应商模板接口**
 ```java
 // 返回内置模板列表（不涉及数据库，纯代码枚举）
-GET /goview/ai/provider/templates
+GET /report/ai/provider/templates
 ```
 返回结构（代码中硬编码列表）：
 ```json
@@ -137,9 +137,9 @@ public class DbChatMemory implements ChatMemory {
 String sessionId;  // 前端生成 UUID，同一会话始终传同一个
 
 // 新增查询接口
-GET  /goview/ai/session/list              // 当前用户会话列表
-GET  /goview/ai/session/{sessionId}/messages  // 会话消息记录
-DELETE /goview/ai/session/{sessionId}    // 删除会话
+GET  /report/ai/session/list              // 当前用户会话列表
+GET  /report/ai/session/{sessionId}/messages  // 会话消息记录
+DELETE /report/ai/session/{sessionId}    // 删除会话
 ```
 
 ---
@@ -149,23 +149,23 @@ DELETE /goview/ai/session/{sessionId}    // 删除会话
 位置：新建 `src/views/project/settings/AiSettings.vue`（在项目列表页头部工具栏增加"AI设置"入口）
 
 **3.1 供应商设置弹窗**
-- 打开时调 `GET /goview-api/goview/ai/provider/page` 加载已配置列表
-- 调 `GET /goview-api/goview/ai/provider/templates` 加载预设模板列表
+- 打开时调 `GET /report-api/report/ai/provider/page` 加载已配置列表
+- 调 `GET /report-api/report/ai/provider/templates` 加载预设模板列表
 - 选择模板时自动填充 Name / BaseURL / DefaultModel
 - 用户只需填入 API Key
-- 支持"测试连接"按钮（调 `POST /goview-api/goview/ai/provider/test`）
+- 支持"测试连接"按钮（调 `POST /report-api/report/ai/provider/test`）
 - 支持"设为默认"操作
 
 **3.2 新增 API 文件**
 文件：`src/api/ai/index.ts`
 ```typescript
-export const getProviderTemplatesApi = () => get('/goview-api/goview/ai/provider/templates')
-export const getProviderPageApi = (params?) => get('/goview-api/goview/ai/provider/page', params)
-export const createProviderApi = (data) => post('/goview-api/goview/ai/provider', data)
-export const updateProviderApi = (data) => put('/goview-api/goview/ai/provider', data)
-export const deleteProviderApi = (id) => del(`/goview-api/goview/ai/provider/${id}`)
-export const testProviderApi = (data) => post('/goview-api/goview/ai/provider/test', data)
-export const setDefaultProviderApi = (id) => put(`/goview-api/goview/ai/provider/${id}/default`)
+export const getProviderTemplatesApi = () => get('/report-api/report/ai/provider/templates')
+export const getProviderPageApi = (params?) => get('/report-api/report/ai/provider/page', params)
+export const createProviderApi = (data) => post('/report-api/report/ai/provider', data)
+export const updateProviderApi = (data) => put('/report-api/report/ai/provider', data)
+export const deleteProviderApi = (id) => del(`/report-api/report/ai/provider/${id}`)
+export const testProviderApi = (data) => post('/report-api/report/ai/provider/test', data)
+export const setDefaultProviderApi = (id) => put(`/report-api/report/ai/provider/${id}/default`)
 ```
 
 **3.3 项目列表页增加入口**
@@ -186,13 +186,13 @@ export const setDefaultProviderApi = (id) => put(`/goview-api/goview/ai/provider
 
 | 模块 | 方法 | 路径 | 说明 |
 |---|---|---|---|
-| 供应商 | GET | `/goview/ai/provider/templates` | 预设模板 |
-| 供应商 | POST | `/goview/ai/provider/test` | 测试连接 |
-| 供应商 | PUT | `/goview/ai/provider/{id}/default` | 设为默认 |
-| 会话 | GET | `/goview/ai/session/list` | 当前用户会话列表 |
-| 会话 | GET | `/goview/ai/session/{sessionId}/messages` | 消息明细 |
-| 会话 | DELETE | `/goview/ai/session/{sessionId}` | 删除会话 |
-| 对话 | POST (SSE) | `/goview/ai/chat/stream` | 新增 sessionId 字段 |
+| 供应商 | GET | `/report/ai/provider/templates` | 预设模板 |
+| 供应商 | POST | `/report/ai/provider/test` | 测试连接 |
+| 供应商 | PUT | `/report/ai/provider/{id}/default` | 设为默认 |
+| 会话 | GET | `/report/ai/session/list` | 当前用户会话列表 |
+| 会话 | GET | `/report/ai/session/{sessionId}/messages` | 消息明细 |
+| 会话 | DELETE | `/report/ai/session/{sessionId}` | 删除会话 |
+| 对话 | POST (SSE) | `/report/ai/chat/stream` | 新增 sessionId 字段 |
 
 ---
 

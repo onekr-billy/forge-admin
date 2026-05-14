@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.mdframe.forge.plugin.generator.domain.entity.GenTableColumn;
 import com.mdframe.forge.plugin.generator.mapper.GenTableColumnMapper;
 import com.mdframe.forge.plugin.generator.util.GenUtils;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
@@ -19,6 +21,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/generator/column")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class GenTableColumnController {
 
     private final GenTableColumnMapper genTableColumnMapper;

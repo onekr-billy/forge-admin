@@ -3,7 +3,7 @@
     <!-- 面包屑匹配到菜单：显示父级链 -->
     <template v-if="breadItems?.length">
       <n-breadcrumb-item
-        v-for="(item, index) of breadItems"
+        v-for="item of breadItems"
         :key="item.code"
         :clickable="!!item.path"
         @click="handleItemClick(item)"
@@ -44,13 +44,14 @@
 
 <script setup>
 import { h, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import IconRenderer from '@/components/IconRenderer.vue'
+import { useMenu } from '@/composables'
 import { usePermissionStore } from '@/store'
 
-const router = useRouter()
 const route = useRoute()
 const permissionStore = usePermissionStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 const breadItems = ref([])
 
@@ -123,7 +124,7 @@ function handleDropdownSelect(key) {
 
   const item = findItem(permissionStore.menus)
   if (item?.path) {
-    router.push({ path: item.path })
+    baseHandleMenuSelect(item.key || item.id, item.path)
   }
 }
 </script>

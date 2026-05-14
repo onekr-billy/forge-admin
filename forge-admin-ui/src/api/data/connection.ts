@@ -50,7 +50,7 @@ export interface DataConnectionField {
   primaryKey: boolean
 }
 
-export function getDataConnectionPage(params: { pageNum: number, pageSize: number, connectionName?: string, dbType?: string, status?: number }) {
+export function getDataConnectionPage(params: { pageNum: number; pageSize: number; connectionName?: string; dbType?: string; status?: number }) {
   return request.get('/data/connection/page', { params })
 }
 
@@ -78,7 +78,7 @@ export function testDataConnection(id: number) {
   return request.post(`/data/connection/${id}/test`)
 }
 
-export function testDataConnectionTemp(data: { dbType: string, driverClassName: string, jdbcUrl: string, username: string, password: string, testSql?: string }) {
+export function testDataConnectionTemp(data: { dbType: string; driverClassName: string; jdbcUrl: string; username: string; password: string; testSql?: string }) {
   return request.post('/data/connection/test', data)
 }
 
@@ -87,5 +87,5 @@ export function getDataConnectionTables(id: number, keyword?: string) {
 }
 
 export function getDataConnectionFields(id: number, tableName: string) {
-  return request.get(`/data/connection/${id}/tables/${tableName}/fields`)
+  return request.get(`/data/connection/${id}/tables/${encodeURIComponent(tableName)}/fields`)
 }

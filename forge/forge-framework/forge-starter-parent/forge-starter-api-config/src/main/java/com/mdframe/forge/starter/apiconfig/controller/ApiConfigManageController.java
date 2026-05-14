@@ -10,7 +10,9 @@ import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,14 +30,21 @@ import java.util.List;
 public class ApiConfigManageController {
 
     private final IApiConfigManager apiConfigManager;
-    private final ApplicationEventPublisher eventPublisher;
-    private final ApiConfigAutoRegistrar apiConfigAutoRegistrar;
+    
+    @Autowired(required = false)
+    private ApplicationEventPublisher eventPublisher;
+    
+    @Autowired(required = false)
+    private ApiConfigAutoRegistrar apiConfigAutoRegistrar;
     
     
     
     @PostMapping("/registerApiConfigs")
     @OperationLog(module = "API配置管理", type = OperationType.OTHER, desc = "自动注册API配置")
     public RespInfo<?> registerApiConfigs() {
+        if (apiConfigAutoRegistrar == null) {
+            throw new BusinessException("API配置功能未开启，请检查forge.api-config.enabled是否开启");
+        }
         apiConfigAutoRegistrar.registerApiConfigsAsync();
         return RespInfo.success();
     }

@@ -44,6 +44,7 @@ public class KeyExchangeController {
      * 密钥交换
      * 前端生成会话密钥，用RSA公钥加密后发送到此接口
      */
+    @SaIgnore
     @PostMapping("/exchange")
     public ResponseEntity<Map<String, Object>> exchangeKey(
             @RequestBody KeyExchangeRequest request,

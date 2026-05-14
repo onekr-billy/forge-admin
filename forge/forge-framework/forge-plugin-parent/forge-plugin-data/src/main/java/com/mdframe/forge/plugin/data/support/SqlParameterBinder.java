@@ -40,4 +40,31 @@ public class SqlParameterBinder {
         }
         return indexMap;
     }
+
+    public String renderDebugSql(String sql, Map<String, Object> params) {
+        if (sql == null || sql.isEmpty() || params == null || params.isEmpty()) {
+            return sql;
+        }
+
+        Matcher matcher = NAMED_PARAM_PATTERN.matcher(sql);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String paramName = matcher.group(1);
+            Object value = params.get(paramName);
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(formatSqlLiteral(value)));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String formatSqlLiteral(Object value) {
+        if (value == null) {
+            return "NULL";
+        }
+        if (value instanceof Number || value instanceof Boolean) {
+            return String.valueOf(value);
+        }
+        String text = String.valueOf(value).replace("'", "''");
+        return "'" + text + "'";
+    }
 }

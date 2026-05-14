@@ -24,11 +24,13 @@
 </template>
 
 <script setup>
+import { useMenu } from '@/composables'
 import { usePermissionStore } from '@/store'
 
 const router = useRouter()
 const route = useRoute()
 const permissionStore = usePermissionStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 const breadItems = ref([])
 watch(
@@ -56,7 +58,7 @@ function findMatchs(tree, code, parents = []) {
 
 function handleItemClick(item) {
   if (item.path && item.code !== route.name) {
-    router.push(item.path)
+    baseHandleMenuSelect(item.code, item.path)
   }
 }
 

@@ -1,4 +1,5 @@
 export * from '@/utils/utils'
+export * from '@/utils/datasetAdapter'
 export * from '@/utils/crypto'
 export * from '@/utils/router'
 export * from '@/utils/storage'

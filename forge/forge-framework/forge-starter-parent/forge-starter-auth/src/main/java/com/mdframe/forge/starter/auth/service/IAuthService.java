@@ -18,6 +18,22 @@ public interface IAuthService {
     LoginResult login(LoginRequest request);
 
     /**
+     * 生成一次性 SSO 票据
+     *
+     * @param request 票据申请参数
+     * @return 票据结果
+     */
+    SsoTicketResult createSsoTicket(SsoTicketRequest request);
+
+    /**
+     * 使用一次性票据换发目标客户端 Token
+     *
+     * @param request 票据交换参数
+     * @return 登录结果
+     */
+    LoginResult exchangeSsoTicket(SsoExchangeRequest request);
+
+    /**
      * 登出
      */
     void logout();

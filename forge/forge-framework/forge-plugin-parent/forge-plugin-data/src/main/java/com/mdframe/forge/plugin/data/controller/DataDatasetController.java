@@ -46,6 +46,7 @@ public class DataDatasetController {
     private final DbDialectFactory dialectFactory;
     private final SqlSafetyValidator sqlSafetyValidator;
     private final SqlParameterBinder parameterBinder;
+    private final DatasetParamSchemaParser datasetParamSchemaParser;
 
     @GetMapping("/page")
     public RespInfo<IPage<DataDataset>> page(
@@ -162,6 +163,31 @@ public class DataDatasetController {
         return RespInfo.success(result);
     }
 
+    @PostMapping("/preview-sql")
+    @OperationLog(module = "数据资产", desc = "预览SQL数据集")
+    public RespInfo<Map<String, Object>> previewSql(@RequestBody DataDatasetSaveDTO dto) {
+        if (dto.getConnectionId() == null) {
+            throw new BusinessException("数据连接不能为空");
+        }
+        if (dto.getSqlText() == null || dto.getSqlText().isEmpty()) {
+            throw new BusinessException("SQL不能为空");
+        }
+        DataConnection connection = connectionService.getById(dto.getConnectionId());
+        if (connection == null) {
+            throw new BusinessException("数据连接不存在或已删除");
+        }
+        if (connection.getStatus() != 1) {
+            throw new BusinessException("数据连接已禁用");
+        }
+
+        DataDataset dataset = new DataDataset();
+        dataset.setConnectionId(dto.getConnectionId());
+        dataset.setDatasetType("SQL");
+        dataset.setSqlText(dto.getSqlText());
+        Map<String, Object> result = executePreviewSqlOrThrow(dataset, connection, 10);
+        return RespInfo.success(result);
+    }
+
     private void validateDataset(DataDatasetSaveDTO dto) {
         if (dto.getDatasetCode() == null || dto.getDatasetCode().isEmpty()) {
             throw new BusinessException("数据集编码不能为空");
@@ -192,6 +218,13 @@ public class DataDatasetController {
                 throw new BusinessException("SQL不能为空");
             }
             sqlSafetyValidator.validate(dto.getSqlText());
+        }
+        if (dto.getParamSchemaJson() != null && !dto.getParamSchemaJson().trim().isEmpty()) {
+            try {
+                datasetParamSchemaParser.validate(dto.getParamSchemaJson(), "TABLE".equals(dto.getDatasetType()));
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(e.getMessage());
+            }
         }
     }
 
@@ -414,6 +447,21 @@ public class DataDatasetController {
         List<Map<String, Object>> rows = new ArrayList<>();
         List<String> columns = new ArrayList<>();
         try {
+            return executePreviewSqlOrThrow(dataset, connection, maxRows);
+        } catch (Exception e) {
+            log.warn("Preview SQL failed: {}", e.getMessage());
+        }
+        result.put("columns", columns);
+        result.put("rows", rows);
+        result.put("total", rows.size());
+        return result;
+    }
+
+    private Map<String, Object> executePreviewSqlOrThrow(DataDataset dataset, DataConnection connection, int maxRows) {
+        Map<String, Object> result = new java.util.HashMap<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        List<String> columns = new ArrayList<>();
+        try {
             Connection conn = dataSourceProvider.getConnection(connection);
             try {
                 DbDialect dialect = dialectFactory.getDialect(connection.getDbType());
@@ -443,8 +491,11 @@ public class DataDatasetController {
             } finally {
                 conn.close();
             }
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Preview SQL failed: {}", e.getMessage());
+            throw new BusinessException("SQL预览失败：" + e.getMessage());
         }
         result.put("columns", columns);
         result.put("rows", rows);

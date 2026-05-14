@@ -29,11 +29,12 @@
 </template>
 
 <script setup>
+import { useMenu } from '@/composables'
 import { useTabStore } from '@/store'
 import ContextMenu from './ContextMenu.vue'
 
-const router = useRouter()
 const tabStore = useTabStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 const contextMenuOption = reactive({
   show: false,
@@ -44,7 +45,7 @@ const contextMenuOption = reactive({
 
 function handleItemClick(path) {
   tabStore.setActiveTab(path)
-  router.push(path)
+  baseHandleMenuSelect(undefined, path)
 }
 
 function showContextMenu() {

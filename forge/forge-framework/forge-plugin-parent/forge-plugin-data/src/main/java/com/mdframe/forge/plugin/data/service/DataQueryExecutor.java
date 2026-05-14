@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.data.entity.DataDatasetField;
 import com.mdframe.forge.plugin.data.support.*;
 import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class DataQueryExecutor {
     private final DbDialectFactory dialectFactory;
     private final SqlSafetyValidator sqlSafetyValidator;
     private final SqlParameterBinder parameterBinder;
+    private final DatasetParamSchemaParser datasetParamSchemaParser;
 
     public DataDatasetQueryResultVO execute(DataDataset dataset, DataConnection connection, 
             List<DataDatasetField> fieldConfigs, DataDatasetQueryDTO query) {
@@ -37,6 +39,14 @@ public class DataQueryExecutor {
                 .filter(f -> f.getDisplayEnabled() == 1)
                 .filter(f -> !"HIDDEN".equals(f.getSensitiveLevel()))
                 .collect(Collectors.toList());
+
+        List<DataDatasetField> queryFields = fieldConfigs.stream()
+                .filter(f -> f.getQueryEnabled() == null || f.getQueryEnabled() == 1)
+                .collect(Collectors.toList());
+
+        if (queryFields.isEmpty()) {
+            queryFields = fieldConfigs;
+        }
         
         if (query.getFields() != null && !query.getFields().isEmpty()) {
             Set<String> requestedFields = new HashSet<>(query.getFields());
@@ -58,17 +68,18 @@ public class DataQueryExecutor {
                 .map(DataDatasetField::getFieldName)
                 .collect(Collectors.toList());
         
-        String sql;
+        QueryBuildResult buildResult;
         if ("TABLE".equals(dataset.getDatasetType())) {
-            sql = buildTableQuerySql(dataset, connection, displayFields, query.getParams());
+            buildResult = buildTableQuerySql(dataset, connection, displayFields, queryFields, query.getParams());
         } else {
-            sql = buildSqlQuery(dataset, query.getParams());
+            buildResult = buildSqlQuery(dataset, query.getParams());
         }
-        
+
         DbDialect dialect = dialectFactory.getDialect(connection.getDbType());
-        sql = dialect.buildLimitSql(sql, pageSize);
-        
-        List<Map<String, Object>> rows = executeQuery(connection, sql, query.getParams(), dataset.getTimeoutSeconds());
+        String sql = dialect.buildLimitSql(buildResult.getSql(), pageSize);
+        logQuerySql(dataset, query, buildResult.getParams(), sql);
+
+        List<Map<String, Object>> rows = executeQuery(connection, sql, buildResult.getParams(), dataset.getTimeoutSeconds());
         
         rows = applyMasking(rows, displayFields);
         
@@ -82,40 +93,57 @@ public class DataQueryExecutor {
         return result;
     }
 
-    private String buildTableQuerySql(DataDataset dataset, DataConnection connection, 
-            List<DataDatasetField> fields, Map<String, Object> params) {
+    private QueryBuildResult buildTableQuerySql(DataDataset dataset, DataConnection connection,
+            List<DataDatasetField> selectFields, List<DataDatasetField> queryFields, Map<String, Object> params) {
         DbDialect dialect = dialectFactory.getDialect(connection.getDbType());
         StringBuilder sql = new StringBuilder();
+        Map<String, Object> boundParams = params != null ? new LinkedHashMap<>(params) : new LinkedHashMap<>();
         sql.append("SELECT ");
-        List<String> fieldNames = fields.stream()
+        List<String> fieldNames = selectFields.stream()
                 .map(f -> dialect.quoteIdentifier(f.getFieldName()))
                 .collect(Collectors.toList());
         sql.append(String.join(", ", fieldNames));
         sql.append(" FROM ").append(dialect.quoteIdentifier(dataset.getTableName()));
         sql.append(" WHERE 1 = 1");
+
+        List<DatasetParamSchemaItem> paramSchemaItems = datasetParamSchemaParser.parse(dataset.getParamSchemaJson());
+        if (!paramSchemaItems.isEmpty()) {
+            appendSchemaConditions(dataset, dialect, sql, queryFields, paramSchemaItems, boundParams);
+            return new QueryBuildResult(sql.toString(), boundParams);
+        }
+
+        Set<String> matchedParams = new LinkedHashSet<>();
         if (params != null && !params.isEmpty()) {
             for (Map.Entry<String, Object> entry : params.entrySet()) {
                 String paramName = entry.getKey();
                 Object value = entry.getValue();
                 if (value != null) {
-                    DataDatasetField field = fields.stream()
+                    DataDatasetField field = queryFields.stream()
                             .filter(f -> f.getFieldName().equals(paramName))
                             .findFirst()
                             .orElse(null);
                     if (field != null) {
                         sql.append(" AND ").append(dialect.quoteIdentifier(field.getFieldName()));
                         sql.append(" = :").append(paramName);
+                        matchedParams.add(paramName);
                     }
                 }
             }
+            Set<String> ignoredParams = params.keySet().stream()
+                    .filter(paramName -> !matchedParams.contains(paramName))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            if (!ignoredParams.isEmpty()) {
+                log.warn("Dataset {} ignored query params in TABLE mode, no matching query field found: {}",
+                        dataset.getId(), ignoredParams);
+            }
         }
-        return sql.toString();
+        return new QueryBuildResult(sql.toString(), boundParams);
     }
 
-    private String buildSqlQuery(DataDataset dataset, Map<String, Object> params) {
+    private QueryBuildResult buildSqlQuery(DataDataset dataset, Map<String, Object> params) {
         String sql = dataset.getSqlText();
         sqlSafetyValidator.validate(sql);
-        return sql;
+        return new QueryBuildResult(sql, params != null ? new LinkedHashMap<>(params) : new LinkedHashMap<>());
     }
 
     private List<Map<String, Object>> executeQuery(DataConnection connection, String sql, 
@@ -130,6 +158,7 @@ public class DataQueryExecutor {
                         String preparedSql = parameterBinder.convertToPreparedStatement(sql);
                         PreparedStatement ps = conn.prepareStatement(preparedSql);
                         try {
+                            ps.setQueryTimeout(timeoutSeconds);
                             Map<Integer, Object> indexMap = parameterBinder.buildParamIndexMap(sql, params);
                             for (Map.Entry<Integer, Object> entry : indexMap.entrySet()) {
                                 ps.setObject(entry.getKey(), entry.getValue());
@@ -143,6 +172,7 @@ public class DataQueryExecutor {
                     } else {
                         PreparedStatement ps = conn.prepareStatement(sql);
                         try {
+                            ps.setQueryTimeout(timeoutSeconds);
                             ResultSet rs = ps.executeQuery();
                             rows = resultSetToMaps(rs);
                             rs.close();
@@ -153,6 +183,7 @@ public class DataQueryExecutor {
                 } else {
                     PreparedStatement ps = conn.prepareStatement(sql);
                     try {
+                        ps.setQueryTimeout(timeoutSeconds);
                         ResultSet rs = ps.executeQuery();
                         rows = resultSetToMaps(rs);
                         rs.close();
@@ -164,9 +195,88 @@ public class DataQueryExecutor {
                 conn.close();
             }
         } catch (Exception e) {
-            log.warn("Execute query failed: {}", e.getMessage());
+            log.warn("Execute query failed, sql={}, params={}, error={}", sql, params, e.getMessage(), e);
         }
         return rows;
+    }
+
+    private void logQuerySql(DataDataset dataset, DataDatasetQueryDTO query, Map<String, Object> params, String sql) {
+        String debugSql = parameterBinder.renderDebugSql(sql, params);
+        log.info("Dataset runtime query: datasetId={}, datasetType={}, pageNum={}, pageSize={}, params={}, sql={}",
+                dataset.getId(),
+                dataset.getDatasetType(),
+                query.getPageNum(),
+                query.getPageSize(),
+                params,
+                debugSql);
+    }
+
+    private void appendSchemaConditions(DataDataset dataset, DbDialect dialect, StringBuilder sql,
+            List<DataDatasetField> queryFields, List<DatasetParamSchemaItem> paramSchemaItems, Map<String, Object> boundParams) {
+        Map<String, DataDatasetField> queryFieldMap = queryFields.stream()
+                .collect(Collectors.toMap(DataDatasetField::getFieldName, field -> field, (left, right) -> left, LinkedHashMap::new));
+        Set<String> inputParamNames = new LinkedHashSet<>(boundParams.keySet());
+        Set<String> matchedParams = new LinkedHashSet<>();
+        for (DatasetParamSchemaItem item : paramSchemaItems) {
+            if (item == null || isBlank(item.getParamName())) {
+                continue;
+            }
+            Object value = resolveSchemaParamValue(item, boundParams);
+            if (isEmptyValue(value)) {
+                if (Boolean.TRUE.equals(item.getRequired())) {
+                    throw new BusinessException("查询参数[" + resolveSchemaLabel(item) + "]不能为空");
+                }
+                continue;
+            }
+            DataDatasetField field = queryFieldMap.get(item.getFieldName());
+            if (field == null) {
+                throw new BusinessException("数据集参数映射字段不存在或不可筛选: " + item.getFieldName());
+            }
+            String operator = datasetParamSchemaParser.normalizeOperator(item.getOperator());
+            String columnName = !isBlank(field.getSourceColumn()) ? field.getSourceColumn() : field.getFieldName();
+            String paramName = item.getParamName();
+            if ("LIKE".equals(operator)) {
+                paramName = paramName + "_like";
+                boundParams.put(paramName, "%" + value + "%");
+            } else {
+                boundParams.put(paramName, value);
+            }
+            sql.append(" AND ").append(dialect.quoteIdentifier(columnName)).append(" ")
+                    .append(operator).append(" :").append(paramName);
+            matchedParams.add(item.getParamName());
+        }
+
+        Set<String> unknownParams = inputParamNames.stream()
+                .filter(paramName -> paramSchemaItems.stream()
+                        .noneMatch(item -> item != null && item.getParamName() != null && item.getParamName().equals(paramName)))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!unknownParams.isEmpty()) {
+            log.warn("Dataset {} ignored query params not declared in paramSchemaJson: {}", dataset.getId(), unknownParams);
+        }
+    }
+
+    private Object resolveSchemaParamValue(DatasetParamSchemaItem item, Map<String, Object> boundParams) {
+        Object value = boundParams.get(item.getParamName());
+        return isEmptyValue(value) ? item.getDefaultValue() : value;
+    }
+
+    private String resolveSchemaLabel(DatasetParamSchemaItem item) {
+        return !isBlank(item.getLabel()) ? item.getLabel() : item.getParamName();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private boolean isEmptyValue(Object value) {
+        return value == null || (value instanceof String && ((String) value).trim().isEmpty());
+    }
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    private static class QueryBuildResult {
+        private String sql;
+        private Map<String, Object> params;
     }
 
     private List<Map<String, Object>> resultSetToMaps(ResultSet rs) throws SQLException {

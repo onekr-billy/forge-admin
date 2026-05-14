@@ -38,6 +38,11 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     .notMatch("/auth/register")
                     // 排除重置密码接口
                     .notMatch("/auth/resetPassword")
+                    // 排除 SSO 票据交换接口
+                    .notMatch("/auth/sso/exchange")
+                    // 排除密钥交换相关接口（未登录时也需要先完成协商）
+                    .notMatch("/crypto/public-key")
+                    .notMatch("/crypto/exchange")
                     // 排除获取验证码接口
                     .notMatch("/auth/captcha")
                     // 排除静态资源
@@ -56,7 +61,8 @@ public class SaTokenConfig implements WebMvcConfigurer {
         registry.addInterceptor(apiPermissionInterceptor)
                 .addPathPatterns("/**")
                 // 排除登录相关接口
-                .excludePathPatterns("/auth/login", "/auth/register", "/auth/resetPassword", "/auth/captcha")
+                .excludePathPatterns("/auth/login", "/auth/register", "/auth/resetPassword", "/auth/captcha", "/auth/sso/exchange")
+                .excludePathPatterns("/crypto/public-key", "/crypto/exchange")
                 // 排除静态资源
                 .excludePathPatterns("/static/**", "/css/**", "/js/**", "/images/**")
                 // 排除Swagger文档

@@ -59,6 +59,12 @@ export default defineConfig(({ mode }) => {
       // 为某些依赖（例如 browser-crypto）提供全局对象
       global: 'window',
     },
+    optimizeDeps: {
+      include: [
+        'codemirror',
+        '@codemirror/lang-sql',
+      ],
+    },
     css: {
       preprocessorOptions: {
         scss: {

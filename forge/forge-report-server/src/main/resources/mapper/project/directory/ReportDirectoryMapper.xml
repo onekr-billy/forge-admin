@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.report.project.directory.mapper.ReportDirectoryMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.report.project.directory.domain.ReportDirectory">
+        <id column="id" property="id" />
+        <result column="tenant_id" property="tenantId" />
+        <result column="parent_id" property="parentId" />
+        <result column="ancestors" property="ancestors" />
+        <result column="directory_name" property="directoryName" />
+        <result column="sort" property="sort" />
+        <result column="remark" property="remark" />
+        <result column="create_dept" property="createDept" />
+        <result column="create_by" property="createBy" />
+        <result column="create_time" property="createTime" />
+        <result column="update_by" property="updateBy" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, tenant_id, parent_id, ancestors, directory_name, sort, remark,
+        create_dept, create_by, create_time, update_by, update_time
+    </sql>
+
+    <select id="selectDirectoryList" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List" />
+        FROM ai_report_directory
+        ORDER BY sort ASC, create_time DESC
+    </select>
+
+    <select id="selectDirectoryAndChildrenIds" resultType="java.lang.Long">
+        SELECT id
+        FROM ai_report_directory
+        WHERE id = #{directoryId}
+           OR FIND_IN_SET(#{directoryId}, ancestors) > 0
+        ORDER BY sort ASC, create_time DESC
+    </select>
+
+    <select id="countByParentId" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ai_report_directory
+        WHERE parent_id = #{parentId}
+    </select>
+
+    <select id="selectDescendants" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List" />
+        FROM ai_report_directory
+        WHERE FIND_IN_SET(#{directoryId}, ancestors) > 0
+        ORDER BY ancestors ASC, sort ASC, create_time DESC
+    </select>
+
+</mapper>

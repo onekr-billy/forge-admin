@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.report.project.template.mapper.ReportTemplateMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.report.project.template.domain.ReportTemplate">
+        <id column="id" property="id" />
+        <result column="tenant_id" property="tenantId" />
+        <result column="source_project_id" property="sourceProjectId" />
+        <result column="directory_id" property="directoryId" />
+        <result column="template_name" property="templateName" />
+        <result column="remark" property="remark" />
+        <result column="index_img" property="indexImg" />
+        <result column="status" property="status" />
+        <result column="canvas_width" property="canvasWidth" />
+        <result column="canvas_height" property="canvasHeight" />
+        <result column="background_color" property="backgroundColor" />
+        <result column="component_data" property="componentData" />
+        <result column="publish_status" property="publishStatus" />
+        <result column="template_scope" property="templateScope" />
+        <result column="publish_url" property="publishUrl" />
+        <result column="publish_time" property="publishTime" />
+        <result column="copied_count" property="copiedCount" />
+        <result column="create_dept" property="createDept" />
+        <result column="create_by" property="createBy" />
+        <result column="create_time" property="createTime" />
+        <result column="update_by" property="updateBy" />
+        <result column="update_time" property="updateTime" />
+        <result column="owner_id" property="ownerId" />
+        <result column="owner_name" property="ownerName" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        t.id, t.tenant_id, t.source_project_id, t.directory_id, t.template_name, t.remark, t.index_img, t.status,
+        t.canvas_width, t.canvas_height, t.background_color, t.component_data,
+        t.publish_status, t.template_scope, t.publish_url, t.publish_time, t.copied_count,
+        t.create_dept, t.create_by, t.create_time, t.update_by, t.update_time
+    </sql>
+
+    <sql id="Owner_Column_List">
+        t.create_by AS owner_id,
+        COALESCE(NULLIF(u.real_name, ''), u.username) AS owner_name
+    </sql>
+
+    <select id="selectMyTemplatePage" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />,
+        <include refid="Owner_Column_List" />
+        FROM ai_report_template t
+        LEFT JOIN sys_user u ON u.id = t.create_by
+        <where>
+            t.del_flag = '0'
+            <if test="ownerId != null">
+                AND t.create_by = #{ownerId}
+            </if>
+            <if test="templateName != null and templateName != ''">
+                AND t.template_name LIKE CONCAT('%', #{templateName}, '%')
+            </if>
+            <if test="publishStatus != null and publishStatus != ''">
+                AND t.template_scope = #{publishStatus}
+            </if>
+        </where>
+        ORDER BY t.create_time DESC
+    </select>
+
+    <select id="selectTemplateMarketPage" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />,
+        <include refid="Owner_Column_List" />
+        FROM ai_report_template t
+        LEFT JOIN sys_user u ON u.id = t.create_by
+        <where>
+            t.del_flag = '0'
+            AND t.template_scope = '1'
+            <if test="templateName != null and templateName != ''">
+                AND t.template_name LIKE CONCAT('%', #{templateName}, '%')
+            </if>
+        </where>
+        ORDER BY t.publish_time DESC, t.create_time DESC
+    </select>
+
+    <select id="selectTemplateDetail" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />,
+        <include refid="Owner_Column_List" />
+        FROM ai_report_template t
+        LEFT JOIN sys_user u ON u.id = t.create_by
+        WHERE t.id = #{id}
+          AND t.del_flag = '0'
+        LIMIT 1
+    </select>
+
+</mapper>

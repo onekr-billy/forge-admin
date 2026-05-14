@@ -128,11 +128,11 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useMenu } from '@/composables'
 import { usePermissionStore } from '@/store'
 
-const router = useRouter()
 const permissionStore = usePermissionStore()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 
 // 弹窗显示状态
 const showModal = ref(false)
@@ -150,7 +150,6 @@ const recentMenus = ref([])
 // 扁平化所有菜单
 const flatMenus = computed(() => {
   const menus = permissionStore.menus || []
-  console.log('MenuSearch - 原始菜单数据:', menus)
   const result = []
 
   const flatten = (items, parentName = '') => {
@@ -176,7 +175,6 @@ const flatMenus = computed(() => {
   }
 
   flatten(menus)
-  console.log('MenuSearch - 扁平化后的菜单:', result)
   return result
 })
 
@@ -228,7 +226,7 @@ function handleSelect(item) {
   saveRecentMenu(item)
 
   // 跳转路由
-  router.push(item.path)
+  baseHandleMenuSelect(item.key || item.id, item.path)
   handleClose()
 }
 

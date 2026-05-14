@@ -16,25 +16,40 @@
     <AiCrudPage
       ref="crudRef"
       api="/system/dict/data"
-      :api-config="{
-        list: 'get@/system/dict/data/page',
-        detail: 'post@/system/dict/data/getById',
-        add: 'post@/system/dict/data/add',
-        update: 'post@/system/dict/data/edit',
-        delete: 'post@/system/dict/data/remove',
-      }"
+      :api-config="apiConfig"
       :load-detail-on-edit="true"
       :search-schema="searchSchema"
       :columns="tableColumns"
       :edit-schema="editSchema"
       :public-params="publicParams"
+      :before-load-list="handleBeforeLoadList"
+      :before-render-list="handleBeforeRenderList"
       row-key="dictCode"
       add-button-text="新增字典数据"
       :before-submit="handleBeforeSubmit"
       :before-render-form="handleBeforeRenderForm"
+      :before-render-detail="handleBeforeRenderDetail"
       :edit-grid-cols="2"
+      :show-pagination="!isTreeMode"
+      :table-props="tableProps"
       :lazy="true"
-    />
+      @add="handleToolbarAdd"
+      @submit-success="handleSubmitSuccess"
+    >
+      <template #toolbar-end>
+        <n-button v-if="isTreeMode" size="small" @click="toggleExpandAll">
+          {{ expandAll ? '折叠全部' : '展开全部' }}
+        </n-button>
+      </template>
+
+      <template #toolbar-right-start>
+        <n-radio-group :value="viewMode" size="small" @update:value="handleViewModeChange">
+          <n-radio-button v-for="item in viewModeOptions" :key="item.value" :value="item.value">
+            {{ item.label }}
+          </n-radio-button>
+        </n-radio-group>
+      </template>
+    </AiCrudPage>
   </div>
 </template>
 
@@ -47,6 +62,8 @@ import { request } from '@/utils'
 
 defineOptions({ name: 'DictData', title: '字典数据' })
 
+const ROOT_PARENT_CODE = 0
+
 const router = useRouter()
 const route = useRoute()
 const crudRef = ref(null)
@@ -55,8 +72,19 @@ const crudRef = ref(null)
 const currentDictType = ref('')
 const dictTypeName = ref('')
 
-// 字典类型选项
-const dictTypeOptions = ref([])
+const parentDictOptions = ref([createRootOption()])
+const allDictData = ref([])
+const pendingParentDictCode = ref(ROOT_PARENT_CODE)
+const editingDictCode = ref(null)
+const latestListParams = ref({})
+const viewMode = ref('list')
+const expandAll = ref(true)
+const expandedKeys = ref([])
+
+const viewModeOptions = [
+  { label: '平铺列表', value: 'list' },
+  { label: '树形结构', value: 'tree' },
+]
 
 // 字典状态选项
 const statusOptions = [
@@ -79,9 +107,40 @@ const tagTypeOptions = [
   { label: '错误', value: 'error' },
 ]
 
+const isTreeMode = computed(() => viewMode.value === 'tree')
+
+const apiConfig = computed(() => ({
+  list: isTreeMode.value ? 'get@/system/dict/data/list' : 'get@/system/dict/data/page',
+  detail: 'post@/system/dict/data/getById',
+  add: 'post@/system/dict/data/add',
+  update: 'post@/system/dict/data/edit',
+  delete: 'post@/system/dict/data/remove',
+}))
+
 // 公共查询参数
 const publicParams = computed(() => {
   return currentDictType.value ? { dictType: currentDictType.value } : {}
+})
+
+const dictLabelMap = computed(() => {
+  const map = new Map()
+  allDictData.value.forEach((item) => {
+    map.set(item.dictCode, item.dictLabel)
+  })
+  return map
+})
+
+const tableProps = computed(() => {
+  if (!isTreeMode.value) {
+    return {}
+  }
+
+  return {
+    indent: 24,
+    expandOnClick: true,
+    expandedRowKeys: expandedKeys.value,
+    onUpdateExpandedRowKeys: handleExpandedKeysUpdate,
+  }
 })
 
 // 搜索表单配置
@@ -129,6 +188,12 @@ const tableColumns = computed(() => [
     prop: 'dictValue',
     label: '字典键值',
     width: 150,
+  },
+  {
+    prop: 'parentDictCode',
+    label: '上级节点',
+    width: 160,
+    render: row => getParentDictLabel(row.parentDictCode),
   },
   {
     prop: 'dictSort',
@@ -199,9 +264,10 @@ const tableColumns = computed(() => [
   {
     prop: 'action',
     label: '操作',
-    width: 120,
+    width: 180,
     fixed: 'right',
     actions: [
+      { label: '新增下级', key: 'addChild', type: 'primary', onClick: handleAddChild },
       { label: '编辑', key: 'edit', type: 'primary', onClick: handleEdit },
       { label: '删除', key: 'delete', type: 'error', onClick: handleDelete },
     ],
@@ -217,6 +283,19 @@ const editSchema = computed(() => [
       titlePlacement: 'left',
     },
     span: 2,
+  },
+  {
+    field: 'parentDictCode',
+    label: '上级节点',
+    type: 'treeSelect',
+    defaultValue: ROOT_PARENT_CODE,
+    props: {
+      placeholder: '请选择上级节点',
+      clearable: true,
+      filterable: true,
+      defaultExpandAll: true,
+    },
+    options: () => parentDictOptions.value,
   },
   {
     field: 'dictType',
@@ -315,39 +394,237 @@ const editSchema = computed(() => [
   },
 ])
 
-// 加载字典类型选项
-async function loadDictTypeOptions() {
+async function loadParentDictOptions(currentDictCode = null) {
+  if (!currentDictType.value) {
+    parentDictOptions.value = [createRootOption()]
+    allDictData.value = []
+    return
+  }
+
   try {
-    const res = await request.get('/system/dict/type/list')
+    const res = await request.get('/system/dict/data/list', {
+      params: {
+        dictType: currentDictType.value,
+      },
+    })
+
     if (res.code === 200) {
-      dictTypeOptions.value = (res.data || []).map(item => ({
-        label: item.dictName,
-        value: item.dictType,
-      }))
+      allDictData.value = Array.isArray(res.data) ? res.data : []
+
+      const excludedDictCodes = collectExcludedDictCodes(allDictData.value, currentDictCode)
+      const availableDictData = allDictData.value.filter(item => !excludedDictCodes.has(item.dictCode))
+      const treeData = buildDictTree(availableDictData)
+
+      parentDictOptions.value = [
+        createRootOption(),
+        ...convertToTreeSelectOptions(treeData),
+      ]
     }
   }
   catch (error) {
-    console.error('加载字典类型选项失败:', error)
+    console.error('加载上级字典选项失败:', error)
+    parentDictOptions.value = [createRootOption()]
   }
+}
+
+function createRootOption() {
+  return {
+    label: '顶级节点',
+    value: ROOT_PARENT_CODE,
+    key: ROOT_PARENT_CODE,
+  }
+}
+
+function isRootParentCode(parentDictCode) {
+  return parentDictCode === null
+    || parentDictCode === undefined
+    || parentDictCode === ''
+    || Number(parentDictCode) === ROOT_PARENT_CODE
+}
+
+function normalizeParentDictCode(parentDictCode) {
+  return isRootParentCode(parentDictCode) ? ROOT_PARENT_CODE : parentDictCode
+}
+
+function buildDictTree(list) {
+  const nodeMap = new Map()
+  const tree = []
+
+  list.forEach((item) => {
+    nodeMap.set(item.dictCode, {
+      ...item,
+      children: [],
+    })
+  })
+
+  nodeMap.forEach((node) => {
+    const parentDictCode = normalizeParentDictCode(node.parentDictCode)
+
+    if (!isRootParentCode(parentDictCode) && nodeMap.has(parentDictCode) && parentDictCode !== node.dictCode) {
+      nodeMap.get(parentDictCode).children.push(node)
+    }
+    else {
+      tree.push(node)
+    }
+  })
+
+  sortDictTree(tree)
+  return tree
+}
+
+function sortDictTree(list) {
+  list.sort((left, right) => {
+    const leftSort = Number(left.dictSort ?? 0)
+    const rightSort = Number(right.dictSort ?? 0)
+
+    if (leftSort !== rightSort) {
+      return leftSort - rightSort
+    }
+
+    return Number(left.dictCode ?? 0) - Number(right.dictCode ?? 0)
+  })
+
+  list.forEach((item) => {
+    if (item.children && item.children.length > 0) {
+      sortDictTree(item.children)
+    }
+    else {
+      delete item.children
+    }
+  })
+}
+
+function convertToTreeSelectOptions(list) {
+  return list.map(item => ({
+    label: item.dictLabel,
+    value: item.dictCode,
+    key: item.dictCode,
+    children: item.children && item.children.length > 0
+      ? convertToTreeSelectOptions(item.children)
+      : undefined,
+  }))
+}
+
+function collectExcludedDictCodes(list, currentDictCode) {
+  if (!currentDictCode) {
+    return new Set()
+  }
+
+  const childrenMap = new Map()
+  list.forEach((item) => {
+    const parentDictCode = normalizeParentDictCode(item.parentDictCode)
+    if (!isRootParentCode(parentDictCode)) {
+      const children = childrenMap.get(parentDictCode) || []
+      children.push(item.dictCode)
+      childrenMap.set(parentDictCode, children)
+    }
+  })
+
+  const excluded = new Set([currentDictCode])
+  const queue = [currentDictCode]
+
+  while (queue.length > 0) {
+    const parentDictCode = queue.shift()
+    const children = childrenMap.get(parentDictCode) || []
+
+    children.forEach((dictCode) => {
+      if (!excluded.has(dictCode)) {
+        excluded.add(dictCode)
+        queue.push(dictCode)
+      }
+    })
+  }
+
+  return excluded
+}
+
+function filterTreeModeList(list) {
+  if (!isTreeMode.value) {
+    return list
+  }
+
+  const { dictLabel, dictValue, dictStatus } = latestListParams.value
+
+  return list.filter((item) => {
+    const labelMatched = !dictLabel || String(item.dictLabel || '').includes(dictLabel)
+    const valueMatched = !dictValue || String(item.dictValue || '').includes(dictValue)
+    const statusMatched = dictStatus === null
+      || dictStatus === undefined
+      || dictStatus === ''
+      || Number(item.dictStatus) === Number(dictStatus)
+
+    return labelMatched && valueMatched && statusMatched
+  })
+}
+
+function getAllKeys(list, keys = []) {
+  list.forEach((item) => {
+    keys.push(item.dictCode)
+    if (item.children && item.children.length > 0) {
+      getAllKeys(item.children, keys)
+    }
+  })
+  return keys
+}
+
+function getParentDictLabel(parentDictCode) {
+  if (isRootParentCode(parentDictCode)) {
+    return '顶级节点'
+  }
+
+  return dictLabelMap.value.get(parentDictCode)
+    || dictLabelMap.value.get(Number(parentDictCode))
+    || parentDictCode
+}
+
+function handleBeforeLoadList(params) {
+  latestListParams.value = { ...params }
+  return params
+}
+
+function handleBeforeRenderList(list) {
+  if (!isTreeMode.value) {
+    expandedKeys.value = []
+    return list
+  }
+
+  const treeList = buildDictTree(filterTreeModeList(list))
+  expandedKeys.value = expandAll.value ? getAllKeys(treeList) : []
+  return treeList
 }
 
 // 表单渲染前处理（新增时设置默认值）
 function handleBeforeRenderForm(data) {
-  // 如果是新增（data 为 null），设置默认的 dictType
-  if (!data && currentDictType.value) {
+  if (!data) {
     return {
       dictType: currentDictType.value,
+      parentDictCode: pendingParentDictCode.value,
     }
   }
+
+  editingDictCode.value = data.dictCode || null
   return data
+}
+
+function handleBeforeRenderDetail(data) {
+  return {
+    ...data,
+    parentDictCode: normalizeParentDictCode(data?.parentDictCode),
+  }
 }
 
 // 提交前处理
 function handleBeforeSubmit(formData) {
-  // 确保 dictType 始终是当前的字典类型
+  if (formData.dictCode && Number(formData.dictCode) === Number(formData.parentDictCode)) {
+    window.$message.warning('上级节点不能选择自己')
+    return false
+  }
+
   if (currentDictType.value) {
     formData.dictType = currentDictType.value
   }
+
+  formData.parentDictCode = isRootParentCode(formData.parentDictCode) ? null : formData.parentDictCode
   return formData
 }
 
@@ -356,8 +633,65 @@ function handleBack() {
   router.push('/system/dictType')
 }
 
+function handleExpandedKeysUpdate(keys) {
+  expandedKeys.value = keys
+
+  if (!isTreeMode.value) {
+    return
+  }
+
+  const tableData = crudRef.value?.getTableData() || []
+  const allKeys = getAllKeys(tableData)
+  expandAll.value = allKeys.length > 0 && keys.length === allKeys.length
+}
+
+function toggleExpandAll() {
+  expandAll.value = !expandAll.value
+
+  if (expandAll.value) {
+    const tableData = crudRef.value?.getTableData() || []
+    expandedKeys.value = getAllKeys(tableData)
+  }
+  else {
+    expandedKeys.value = []
+  }
+}
+
+function handleViewModeChange(value) {
+  if (viewMode.value === value) {
+    return
+  }
+
+  viewMode.value = value
+
+  if (!isTreeMode.value) {
+    expandedKeys.value = []
+  }
+
+  nextTick(() => {
+    crudRef.value?.loadList()
+  })
+}
+
+async function handleToolbarAdd() {
+  pendingParentDictCode.value = ROOT_PARENT_CODE
+  editingDictCode.value = null
+  await loadParentDictOptions()
+}
+
+async function handleAddChild(row) {
+  pendingParentDictCode.value = row.dictCode
+  editingDictCode.value = null
+  await loadParentDictOptions()
+  crudRef.value?.showAdd()
+  await nextTick()
+  pendingParentDictCode.value = ROOT_PARENT_CODE
+}
+
 // 编辑
-function handleEdit(row) {
+async function handleEdit(row) {
+  editingDictCode.value = row.dictCode || null
+  await loadParentDictOptions(editingDictCode.value)
   crudRef.value?.showEdit(row)
 }
 
@@ -375,26 +709,32 @@ function handleDelete(row) {
         })
         if (res.code === 200) {
           window.$message.success('删除成功')
+          await loadParentDictOptions()
           crudRef.value?.refresh()
         }
       }
-      catch (error) {
+      catch {
         window.$message.error('删除失败')
       }
     },
   })
 }
 
+async function handleSubmitSuccess() {
+  pendingParentDictCode.value = ROOT_PARENT_CODE
+  editingDictCode.value = null
+  await loadParentDictOptions()
+}
+
 // 初始化
-onMounted(() => {
+onMounted(async () => {
   // 从路由参数获取字典类型
   if (route.query.dictType) {
     currentDictType.value = route.query.dictType
     dictTypeName.value = route.query.dictName || ''
   }
 
-  // 加载字典类型选项
-  loadDictTypeOptions()
+  await loadParentDictOptions()
 
   // 延迟加载列表数据，确保 publicParams 已更新
   nextTick(() => {

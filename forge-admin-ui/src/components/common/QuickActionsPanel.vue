@@ -90,8 +90,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useMenu } from '@/composables'
 
 const props = defineProps({
   // 操作列表
@@ -116,11 +116,20 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['action', 'search'])
+const emit = defineEmits(['action', 'search', 'toggle'])
 
-const router = useRouter()
+const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
 const searchKeyword = ref('')
 const history = ref([])
+const actionList = ref([])
+
+watch(
+  () => props.actions,
+  (newActions) => {
+    actionList.value = Array.isArray(newActions) ? [...newActions] : []
+  },
+  { immediate: true, deep: true },
+)
 
 // 默认快捷键提示
 const shortcutHints = ref([
@@ -133,10 +142,10 @@ const shortcutHints = ref([
 // 根据搜索关键词过滤操作
 const filteredActions = computed(() => {
   if (!searchKeyword.value) {
-    return props.actions
+    return actionList.value
   }
   const keyword = searchKeyword.value.toLowerCase()
-  return props.actions.filter(action =>
+  return actionList.value.filter(action =>
     action.title.toLowerCase().includes(keyword)
     || (action.description && action.description.toLowerCase().includes(keyword)),
   )
@@ -155,7 +164,7 @@ function handleActionClick(action) {
     action.handler()
   }
   else if (action.path) {
-    router.push(action.path)
+    baseHandleMenuSelect(action.key, action.path)
   }
 
   emit('action', action)
@@ -164,7 +173,7 @@ function handleActionClick(action) {
 // 处理历史记录点击
 function handleHistoryClick(item) {
   if (item.path) {
-    router.push(item.path)
+    baseHandleMenuSelect(item.key, item.path)
   }
 }
 
@@ -264,12 +273,12 @@ onUnmounted(() => {
 // 暴露方法
 defineExpose({
   addAction: (action) => {
-    props.actions.push(action)
+    actionList.value.push(action)
   },
   removeAction: (key) => {
-    const index = props.actions.findIndex(a => a.key === key)
+    const index = actionList.value.findIndex(a => a.key === key)
     if (index !== -1) {
-      props.actions.splice(index, 1)
+      actionList.value.splice(index, 1)
     }
   },
   clearHistory,

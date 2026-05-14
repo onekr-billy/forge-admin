@@ -21,10 +21,15 @@ public class DataDataset extends TenantEntity {
 
     private Long connectionId;
 
+    @TableField(exist = false)
+    private String connectionName;
+
     private String datasetType;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String tableName;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String sqlText;
 
     private String paramSchemaJson;

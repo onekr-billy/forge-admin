@@ -220,9 +220,14 @@ const calcRowsData = () => {
     })
   }
   dataset = dataset.map((ceils: any, i: number) => ({ ceils, rowIndex: i }))
-  const rowLength = dataset.length
-  if (rowLength > rowNum && rowLength < 2 * rowNum) {
-    dataset = [...dataset, ...dataset]
+  const sourceRowLength = dataset.length
+  if (sourceRowLength > 1) {
+    while (dataset.length <= rowNum) {
+      dataset = [...dataset, ...dataset]
+    }
+    if (sourceRowLength > rowNum && dataset.length < 2 * rowNum) {
+      dataset = [...dataset, ...dataset]
+    }
   }
   dataset = dataset.map((d: any, i: number) => ({ ...d, scroll: i }))
 

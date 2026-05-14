@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.GenDatasource;
 import com.mdframe.forge.plugin.generator.domain.entity.GenTable;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
+import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
@@ -21,6 +23,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/generator/datasource")
 @RequiredArgsConstructor
+@ApiEncrypt
+@ApiDecrypt
 public class GenDatasourceController {
 
     private final IGenDatasourceService genDatasourceService;

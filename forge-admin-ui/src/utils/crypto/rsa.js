@@ -4,6 +4,14 @@
  */
 import JSEncrypt from 'jsencrypt-ext'
 
+function wrapPublicKeyPem(publicKey) {
+  if (!publicKey || publicKey.includes('-----BEGIN')) {
+    return publicKey
+  }
+  const lines = publicKey.match(/.{1,64}/g)?.join('\n') || publicKey
+  return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----`
+}
+
 /**
  * RSA 加密
  * @param {string} data 要加密的数据
@@ -12,7 +20,7 @@ import JSEncrypt from 'jsencrypt-ext'
  */
 export function rsaEncrypt(data, publicKey) {
   const encrypt = new JSEncrypt()
-  encrypt.setPublicKey(publicKey)
+  encrypt.setPublicKey(wrapPublicKeyPem(publicKey))
   const encrypted = encrypt.encrypt(data)
   if (!encrypted) {
     throw new Error('RSA 加密失败')

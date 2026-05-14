@@ -44,7 +44,22 @@ export const requestConfig: RequestConfigType = {
   externalSystemId: null,
   externalApiId: null,
   externalRequestParams: {},
-  dynamicRequestParams: []
+  dynamicRequestParams: [],
+  datasetConnectionId: null,
+  datasetId: null,
+  datasetName: '',
+  datasetFields: [],
+  datasetParams: {},
+  datasetPageNum: 1,
+  datasetPageSize: 50,
+  datasetMaxRows: 1000,
+  datasetOutputMode: 'ECHARTS_DATASET',
+  datasetMapping: {
+    mode: 'auto',
+    fieldMap: {},
+    outputFields: [],
+    syncHeader: true
+  }
 }
 
 // 单实例类

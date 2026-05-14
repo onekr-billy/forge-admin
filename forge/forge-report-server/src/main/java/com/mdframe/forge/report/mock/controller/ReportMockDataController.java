@@ -16,7 +16,7 @@ import java.util.Map;
  * 大屏数据渲染测试 Mock 接口。
  */
 @RestController
-@RequestMapping("/goview/mock")
+@RequestMapping("/report/mock")
 @CrossOrigin(
         origins = {"http://localhost:3021", "http://127.0.0.1:3021"},
         allowedHeaders = "*",

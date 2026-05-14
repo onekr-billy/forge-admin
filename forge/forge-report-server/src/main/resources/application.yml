@@ -21,7 +21,7 @@ logging:
 # Spring配置
 spring:
   application:
-    name: forge-goview
+    name: forge-report
   messages:
     basename: i18n/messages
   profiles:
@@ -80,4 +80,6 @@ forge:
   auth:
     api-permission-exclude-paths:
       - /auth/**
-      - /goview/mock/**
+      - /report/mock/**
+  crypto:
+    secretKey: 8r0fV9G3kLcNz7p2xQaA1w==

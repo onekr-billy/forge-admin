@@ -22,6 +22,8 @@ export enum PageEnum {
   // 登录
   BASE_LOGIN = '/login',
   BASE_LOGIN_NAME = 'Login',
+  BASE_SSO_LOGIN = '/sso-login',
+  BASE_SSO_LOGIN_NAME = 'SsoLogin',
 
   //重定向
   REDIRECT = '/redirect',
@@ -37,6 +39,10 @@ export enum PageEnum {
   // 我的项目
   BASE_HOME_ITEMS = '/project/items',
   BASE_HOME_ITEMS_NAME = 'Project-Items',
+
+  // 目录管理
+  BASE_HOME_DIRECTORY = '/project/directories',
+  BASE_HOME_DIRECTORY_NAME = 'Project-Directories',
 
   // 我的模板
   BASE_HOME_TEMPLATE = '/project/my-template',

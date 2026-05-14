@@ -23,6 +23,10 @@ function currentSessionId(): string {
   return getLocalStorage(StorageEnum.GO_ACCESS_TOKEN_STORE) || 'forge-report-anonymous'
 }
 
+export function getCurrentCryptoSessionId(): string {
+  return currentSessionId()
+}
+
 function restoreKeyState() {
   try {
     const sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID)

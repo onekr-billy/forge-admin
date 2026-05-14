@@ -104,3 +104,8 @@ sa-token:
     timeout: 10000
 sms:
   config-type: interface
+forge:
+  crypto:
+    secretKey: 8r0fV9G3kLcNz7p2xQaA1w==
+  api-config:
+    enabled: false

@@ -190,6 +190,17 @@ export interface DynamicRequestParamBinding {
   fallbackValue?: string | number | boolean | null
 }
 
+export interface DatasetMappingConfig {
+  // 组件数据适配模式，auto 会按组件类型和现有 dataset 结构自动转换
+  mode?: 'auto' | 'echartsDataset' | 'arrayRows' | 'objectRows' | 'nameValue' | 'singleValue'
+  // 组件字段到数据集字段的映射，例如 TableList: { name: 'dept_name', value: 'amount' }
+  fieldMap?: Record<string, string>
+  // 组件实际输出字段顺序，默认使用 datasetFields
+  outputFields?: string[]
+  // 表格类组件是否用数据集字段标签同步表头
+  syncHeader?: boolean
+}
+
 // 全局的图表请求配置
 export interface RequestGlobalConfigType extends RequestPublicConfigType {
   // 组件定制轮询时间
@@ -232,16 +243,24 @@ export interface RequestConfigType extends RequestPublicConfigType {
   dynamicRequestParams?: DynamicRequestParamBinding[]
   // 数据集ID（当 requestDataType 为 DATASET 时）
   datasetId?: number | null
+  // 数据连接ID（仅用于 report-ui 配置联动）
+  datasetConnectionId?: number | null
   // 数据集名称
   datasetName?: string
   // 数据集输出字段
   datasetFields?: string[]
   // 数据集查询参数
   datasetParams?: Record<string, any>
+  // 数据集页码
+  datasetPageNum?: number
+  // 数据集每页条数
+  datasetPageSize?: number
   // 数据集最大行数
   datasetMaxRows?: number
   // 数据集输出模式
   datasetOutputMode?: string
+  // 数据集到组件数据结构的字段映射
+  datasetMapping?: DatasetMappingConfig
 }
 
 // Store 类型

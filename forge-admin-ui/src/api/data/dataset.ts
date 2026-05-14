@@ -5,6 +5,7 @@ export interface DataDataset {
   datasetCode: string
   datasetName: string
   connectionId: number
+  connectionName?: string
   datasetType: string
   tableName?: string
   sqlText?: string

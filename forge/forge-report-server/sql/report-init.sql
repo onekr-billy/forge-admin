@@ -88,12 +88,33 @@ CREATE TABLE `ai_provider`
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI供应商配置表';
 
 
+-- forge_admin_new.ai_report_directory definition
+
+CREATE TABLE `ai_report_directory`
+(
+    `id`             bigint                                  NOT NULL COMMENT '主键ID',
+    `tenant_id`      bigint                                  NOT NULL DEFAULT '0' COMMENT '租户ID',
+    `parent_id`      bigint                                  NOT NULL DEFAULT '0' COMMENT '父目录ID',
+    `ancestors`      varchar(500) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '0' COMMENT '祖级链',
+    `directory_name` varchar(100) COLLATE utf8mb4_general_ci NOT NULL COMMENT '目录名称',
+    `sort`           int                                     NOT NULL DEFAULT '0' COMMENT '排序',
+    `remark`         varchar(500) COLLATE utf8mb4_general_ci          DEFAULT NULL COMMENT '备注',
+    `create_by`      bigint                                           DEFAULT NULL COMMENT '创建者',
+    `create_time`    datetime                                         DEFAULT NULL COMMENT '创建时间',
+    `update_by`      bigint                                           DEFAULT NULL COMMENT '更新者',
+    `update_time`    datetime                                         DEFAULT NULL COMMENT '更新时间',
+    `create_dept`    bigint                                           DEFAULT NULL COMMENT '创建部门',
+    PRIMARY KEY (`id`),
+    KEY              `idx_tenant_parent` (`tenant_id`, `parent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='报表目录表';
+
 -- forge_admin_new.ai_report_project definition
 
 CREATE TABLE `ai_report_project`
 (
     `id`               bigint                                  NOT NULL COMMENT '主键ID',
     `tenant_id`        bigint                                  NOT NULL DEFAULT '0' COMMENT '租户ID',
+    `directory_id`     bigint                                           DEFAULT NULL COMMENT '所属目录ID',
     `project_name`     varchar(100) COLLATE utf8mb4_general_ci NOT NULL COMMENT '项目名称',
     `remark`           varchar(500) COLLATE utf8mb4_general_ci          DEFAULT NULL COMMENT '备注',
     `index_img`        varchar(500) COLLATE utf8mb4_general_ci          DEFAULT NULL COMMENT '封面图URL',
@@ -113,8 +134,45 @@ CREATE TABLE `ai_report_project`
     `del_flag`         char(1) COLLATE utf8mb4_general_ci      NOT NULL DEFAULT '0' COMMENT '删除标志（0正常 1删除）',
     PRIMARY KEY (`id`),
     KEY                `idx_tenant_id` (`tenant_id`),
+    KEY                `idx_directory_id` (`directory_id`),
     KEY                `idx_create_by` (`create_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='go-view项目表';
+
+-- forge_admin_new.ai_report_template definition
+
+CREATE TABLE `ai_report_template`
+(
+    `id`               bigint                                  NOT NULL COMMENT '模板ID',
+    `tenant_id`        bigint                                  NOT NULL DEFAULT '0' COMMENT '租户ID',
+    `source_project_id` bigint                                 NOT NULL COMMENT '来源项目ID',
+    `directory_id`     bigint                                           DEFAULT NULL COMMENT '所属目录ID',
+    `template_name`    varchar(100) COLLATE utf8mb4_general_ci NOT NULL COMMENT '模板名称',
+    `remark`           varchar(500) COLLATE utf8mb4_general_ci          DEFAULT NULL COMMENT '备注',
+    `index_img`        varchar(500) COLLATE utf8mb4_general_ci          DEFAULT NULL COMMENT '封面图URL',
+    `status`           char(1) COLLATE utf8mb4_general_ci      NOT NULL DEFAULT '0' COMMENT '状态（0正常 1停用）',
+    `canvas_width`     int                                     NOT NULL DEFAULT '1920' COMMENT '画布宽度',
+    `canvas_height`    int                                     NOT NULL DEFAULT '1080' COMMENT '画布高度',
+    `background_color` varchar(20) COLLATE utf8mb4_general_ci           DEFAULT '#1e1e2e' COMMENT '背景颜色',
+    `component_data`   longtext COLLATE utf8mb4_general_ci COMMENT '模板组件JSON',
+    `publish_status`   char(1) COLLATE utf8mb4_general_ci      NOT NULL DEFAULT '0' COMMENT '发布状态（0未发布 1已发布）',
+    `template_scope`   char(1) COLLATE utf8mb4_general_ci      NOT NULL DEFAULT '0' COMMENT '模板范围（0私有 1公开）',
+    `publish_url`      varchar(500) COLLATE utf8mb4_general_ci          DEFAULT NULL COMMENT '发布地址',
+    `publish_time`     datetime                                         DEFAULT NULL COMMENT '发布时间',
+    `copied_count`     int                                     NOT NULL DEFAULT '0' COMMENT '复制次数',
+    `create_by`        bigint                                           DEFAULT NULL COMMENT '创建者',
+    `create_time`      datetime                                         DEFAULT NULL COMMENT '创建时间',
+    `update_by`        bigint                                           DEFAULT NULL COMMENT '更新者',
+    `update_time`      datetime                                         DEFAULT NULL COMMENT '更新时间',
+    `create_dept`      bigint                                           DEFAULT NULL COMMENT '创建部门',
+    `del_flag`         char(1) COLLATE utf8mb4_general_ci      NOT NULL DEFAULT '0' COMMENT '删除标志（0正常 1删除）',
+    PRIMARY KEY (`id`),
+    KEY                `idx_template_tenant` (`tenant_id`),
+    KEY                `idx_template_source_project` (`source_project_id`),
+    KEY                `idx_template_directory` (`directory_id`),
+    KEY                `idx_template_publish_status` (`publish_status`),
+    KEY                `idx_template_scope` (`template_scope`),
+    KEY                `idx_template_create_by` (`create_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='模板表';
 
 INSERT INTO ai_agent (id, tenant_id, agent_name, agent_code, description, system_prompt, provider_id, model_name, temperature, max_tokens, extra_config, status, create_by, create_time, update_by, update_time, del_flag, create_dept) VALUES(1, 1, '大屏生成助手', 'dashboard_generator', '根据用户需求自动生成数据可视化大屏布局', '你是一个资深数据可视化大屏设计专家。你需要根据用户需求选择合适组件，设计规整、有主次、有视觉层级的大屏，并且只输出一个合法 JSON 对象。
 

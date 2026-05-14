@@ -20,7 +20,7 @@ public class SysClient extends BaseEntity {
     private String clientName;
     private String appId;
     
-    @TableField(typeHandler = EncryptTypeHandler.class)
+    //@TableField(typeHandler = EncryptTypeHandler.class)
     private String appSecret;
     
     private Long tokenTimeout;

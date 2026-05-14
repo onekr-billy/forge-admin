@@ -1,12 +1,10 @@
 package com.mdframe.forge.report.project.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.mdframe.forge.report.project.domain.GoviewProject;
-import com.mdframe.forge.report.project.service.GoviewProjectService;
+import com.mdframe.forge.report.project.domain.ReportProject;
+import com.mdframe.forge.report.project.service.ReportProjectService;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
-import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -15,37 +13,32 @@ import org.springframework.web.bind.annotation.*;
  * Go-View 项目 Controller
  */
 @RestController
-@RequestMapping("/goview/project")
+@RequestMapping("/report/project")
 @RequiredArgsConstructor
 @ApiEncrypt
 @ApiDecrypt
-public class GoviewProjectController {
+public class ReportProjectController {
 
-    private final GoviewProjectService projectService;
+    private final ReportProjectService projectService;
 
     /**
      * 分页查询项目列表
      */
     @GetMapping("/page")
-    public RespInfo<Page<GoviewProject>> page(
+    public RespInfo<Page<ReportProject>> page(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam(required = false) String projectName) {
-        
-        LambdaQueryWrapper<GoviewProject> wrapper = new LambdaQueryWrapper<>();
-        wrapper.like(projectName != null, GoviewProject::getProjectName, projectName)
-               .orderByDesc(GoviewProject::getCreateTime);
-        
-        Page<GoviewProject> page = projectService.page(new Page<>(pageNum, pageSize), wrapper);
-        return RespInfo.success(page);
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) Long directoryId) {
+        return RespInfo.success(projectService.pageProjects(pageNum, pageSize, projectName, directoryId));
     }
 
     /**
      * 查询项目详情
      */
     @GetMapping("/{id}")
-    public RespInfo<GoviewProject> getById(@PathVariable Long id) {
-        GoviewProject project = projectService.getById(id);
+    public RespInfo<ReportProject> getById(@PathVariable Long id) {
+        ReportProject project = projectService.getById(id);
         return RespInfo.success(project);
     }
 
@@ -53,16 +46,15 @@ public class GoviewProjectController {
      * 创建项目
      */
     @PostMapping
-    public RespInfo<GoviewProject> create(@RequestBody GoviewProject project) {
-        projectService.save(project);
-        return RespInfo.success(project);
+    public RespInfo<ReportProject> create(@RequestBody ReportProject project) {
+        return RespInfo.success(projectService.createProject(project));
     }
 
     /**
      * 更新项目
      */
     @PutMapping
-    public RespInfo<Void> update(@RequestBody GoviewProject project) {
+    public RespInfo<Void> update(@RequestBody ReportProject project) {
         projectService.updateProject(project);
         return RespInfo.success();
     }
