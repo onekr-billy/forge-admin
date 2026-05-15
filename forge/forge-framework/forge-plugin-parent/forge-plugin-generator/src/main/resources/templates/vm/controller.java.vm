@@ -27,12 +27,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/${moduleName}/${businessName}")
 @RequiredArgsConstructor
-#if(${enableDecrypt})
 @ApiDecrypt
-#end
-#if(${enableEncrypt})
 @ApiEncrypt
-#end
 public class ${className}Controller {
 
     private final I${className}Service ${classname}Service;

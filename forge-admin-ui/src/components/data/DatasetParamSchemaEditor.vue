@@ -28,6 +28,13 @@
       </n-space>
     </div>
 
+    <div class="editor-summary-strip">
+      <div v-for="item in editorStatItems" :key="item.label" class="editor-summary-card">
+        <span>{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+      </div>
+    </div>
+
     <div v-if="isTableMode && !tableReady" class="editor-alert">
       <n-alert type="info" :show-icon="false">
         先选择数据连接和数据表，再定义这个数据集支持哪些筛选条件。
@@ -51,6 +58,15 @@
         :key="row.__key"
         class="editor-row-card"
       >
+        <div class="editor-row-card__header">
+          <div class="editor-row-card__title">
+            条件 {{ String(index + 1).padStart(2, '0') }}
+          </div>
+          <span class="editor-row-badge" :class="getRowBadgeClass(row)">
+            {{ getRowBadgeLabel(row) }}
+          </span>
+        </div>
+
         <div class="editor-row" :style="gridStyle">
           <div class="editor-cell">
             <div class="editor-cell__label">
@@ -288,6 +304,23 @@ const footerText = computed(() => {
     : '当前 SQL 还没有命名参数；你可以先定义条件，后续再把 :条件参数 接入 SQL。'
 })
 
+const editorStatItems = computed(() => [
+  {
+    label: '条件数',
+    value: `${rows.value.length} 个`,
+  },
+  {
+    label: '工作模式',
+    value: isTableMode.value ? '单表字段映射' : 'SQL 参数维护',
+  },
+  {
+    label: isTableMode.value ? '字段状态' : '识别参数',
+    value: isTableMode.value
+      ? (tableReady.value ? `${fieldOptions.value.length} 个可选字段` : '待选择数据表')
+      : `${sqlParamNames.value.length} 个命名参数`,
+  },
+])
+
 watch(
   () => props.modelValue,
   (value) => {
@@ -479,6 +512,17 @@ function handleDefaultValueChange(index, value) {
   })
 }
 
+function getRowBadgeLabel(row) {
+  if (isTableMode.value) {
+    return row.fieldName ? '已映射字段' : '待映射字段'
+  }
+  return isSqlParamLinked(row.paramName) ? 'SQL 已接入' : '待接入 SQL'
+}
+
+function getRowBadgeClass(row) {
+  return getRowBadgeLabel(row).includes('已') ? 'is-linked' : 'is-pending'
+}
+
 function clearInvalidFieldMappings() {
   if (!isTableMode.value || rows.value.length === 0) {
     return
@@ -649,18 +693,18 @@ function getDefaultValuePlaceholder(dataType) {
 <style scoped>
 .dataset-param-editor {
   width: 100%;
-  padding: 16px;
-  border: 1px solid #dbe4f0;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fcfdff 0%, #f8fbff 100%);
+  padding: 18px;
+  border: 1px solid #dbe3ef;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
 }
 
 .editor-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .editor-toolbar__content {
@@ -671,8 +715,37 @@ function getDefaultValuePlaceholder(dataType) {
 
 .editor-toolbar__title {
   color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.editor-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.editor-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.editor-summary-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.editor-summary-card strong {
+  color: #0f172a;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.4;
 }
 
@@ -690,16 +763,54 @@ function getDefaultValuePlaceholder(dataType) {
   display: grid;
   gap: 12px;
   padding: 0 4px;
-  color: #64748b;
+  color: #475569;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .editor-row-card {
-  padding: 12px;
-  border: 1px solid #e5edf6;
-  border-radius: 10px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
   background: #fff;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 4%);
+}
+
+.editor-row-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.editor-row-card__title {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.editor-row-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.editor-row-badge.is-linked {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.editor-row-badge.is-pending {
+  color: #92400e;
+  background: #fef3c7;
 }
 
 .editor-row {
@@ -710,16 +821,18 @@ function getDefaultValuePlaceholder(dataType) {
 
 .editor-row-tip {
   margin-top: 8px;
+  padding-left: 10px;
   color: #64748b;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
+  border-left: 2px solid #e2e8f0;
 }
 
 .editor-row-tip code {
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
   background: #f1f5f9;
-  color: #334155;
+  color: #1e293b;
 }
 
 .editor-cell {
@@ -748,19 +861,24 @@ function getDefaultValuePlaceholder(dataType) {
 }
 
 .editor-empty {
-  padding: 20px 0;
-  border: 1px dashed #d7e3f0;
-  border-radius: 10px;
+  padding: 24px 0;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
   background: #fff;
 }
 
 .editor-footer {
   margin-top: 12px;
+  color: #64748b;
 }
 
 @media (max-width: 1320px) {
   .editor-head {
     display: none;
+  }
+
+  .editor-summary-strip {
+    grid-template-columns: 1fr;
   }
 
   .editor-row {

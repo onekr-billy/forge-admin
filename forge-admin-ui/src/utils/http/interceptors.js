@@ -12,20 +12,66 @@ function generateUUID() {
   })
 }
 
+function getContentType(headers, data) {
+  return headers?.get?.('content-type')
+    || headers?.['content-type']
+    || headers?.['Content-Type']
+    || data?.type
+    || ''
+}
+
+function isBlobData(data) {
+  return typeof Blob !== 'undefined' && data instanceof Blob
+}
+
+function isArrayBufferData(data) {
+  return typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer
+}
+
+function isBinaryData(data) {
+  return isBlobData(data) || isArrayBufferData(data)
+}
+
+function hasBusinessCode(data) {
+  return data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'code')
+}
+
+async function parseBlobJsonResponse(response) {
+  const { data, headers } = response
+  const contentType = getContentType(headers, data)
+  if (!isBlobData(data) || !contentType.includes('json')) {
+    return response
+  }
+
+  try {
+    const text = await data.text()
+    if (!text) {
+      return response
+    }
+
+    return {
+      ...response,
+      data: JSON.parse(text),
+    }
+  }
+  catch (error) {
+    console.warn('JSON Blob 响应解析失败:', error)
+    return response
+  }
+}
+
 export function setupInterceptors(axiosInstance) {
   const SUCCESS_CODES = [0, 200]
 
   /**
    * 响应成功拦截器
    */
-  function resResolve(response) {
+  async function resResolve(response) {
     // 先进行解密处理
     try {
       response = decryptResponse(response)
-      if (response.data.code !== 200) {
-        const finalMessage = resolveResError(response.data.code, response.data.message, response.config.needTip)
-        return Promise.reject({ code: response.data.code, message: finalMessage, error: response.data.message })
-      }
+      response = await parseBlobJsonResponse(response)
+      response = decryptResponse(response)
     }
     catch (error) {
       if (error.message === 'DECRYPT_ERROR') {
@@ -44,31 +90,34 @@ export function setupInterceptors(axiosInstance) {
     }
 
     const { data, status, config, statusText, headers } = response
+    const contentType = getContentType(headers, data)
 
-    // 处理JSON响应
-    if (headers['content-type']?.includes('json')) {
-      // 成功响应 (code === 200 或在 SUCCESS_CODES 中)
-      if (data && (data.code === 200 || SUCCESS_CODES.includes(data?.code))) {
-        return Promise.resolve(data)
-      }
-
-      // 业务错误响应 - 交给 resReject 统一处理
-      const code = data?.code ?? status
-      const message = data?.message ?? statusText
-      const needTip = config?.needTip !== false
-
-      // 标记为业务错误，传递给 resReject
-      return Promise.reject({
-        code,
-        message,
-        error: data ?? response,
-        isBusinessError: true,
-        needTip,
-      })
+    // 二进制响应（下载、图片、附件等）不走 RespInfo code 判断
+    if (isBinaryData(data)) {
+      return Promise.resolve(data)
     }
 
-    // 非JSON响应直接返回
-    return Promise.resolve(data ?? response)
+    // 非 JSON 响应直接返回
+    if (!contentType.includes('json')) {
+      return Promise.resolve(data ?? response)
+    }
+
+    // 兼容少数非 RespInfo JSON 响应
+    if (!hasBusinessCode(data)) {
+      return Promise.resolve(data ?? response)
+    }
+
+    // 成功响应 (code === 200 或在 SUCCESS_CODES 中)
+    if (data && (data.code === 200 || SUCCESS_CODES.includes(data?.code))) {
+      return Promise.resolve(data)
+    }
+
+    // 业务错误响应
+    const code = data?.code ?? status
+    const message = data?.message ?? statusText
+    const needTip = config?.needTip !== false
+    const finalMessage = resolveResError(code, message, needTip)
+    return Promise.reject({ code, message: finalMessage, error: data ?? response })
   }
 
   /**

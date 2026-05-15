@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.data.service.DataConnectionService;
 import com.mdframe.forge.plugin.data.service.DataDatasetFieldService;
 import com.mdframe.forge.plugin.data.service.DataDatasetService;
 import com.mdframe.forge.plugin.data.service.DataQueryExecutor;
+import com.mdframe.forge.plugin.data.support.DataDatasetFieldViewAssembler;
 import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetMetadataVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
@@ -21,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -35,6 +35,7 @@ public class DataDatasetRuntimeController {
     private final DataConnectionService connectionService;
     private final DataDatasetFieldService fieldService;
     private final DataQueryExecutor queryExecutor;
+    private final DataDatasetFieldViewAssembler fieldViewAssembler;
 
     @PostMapping("/query")
     public RespInfo<DataDatasetQueryResultVO> query(@RequestBody DataDatasetQueryDTO dto) {
@@ -84,16 +85,6 @@ public class DataDatasetRuntimeController {
     }
 
     private List<DataDatasetFieldVO> convertToFieldVOList(List<DataDatasetField> fields) {
-        return fields.stream().map(f -> {
-            DataDatasetFieldVO vo = new DataDatasetFieldVO();
-            vo.setId(f.getId());
-            vo.setFieldName(f.getFieldName());
-            vo.setFieldLabel(f.getFieldLabel());
-            vo.setDataType(f.getDataType());
-            vo.setFieldRole(f.getFieldRole());
-            vo.setQueryEnabled(f.getQueryEnabled());
-            vo.setDisplayEnabled(f.getDisplayEnabled());
-            return vo;
-        }).collect(Collectors.toList());
+        return fieldViewAssembler.toVOList(fields);
     }
 }

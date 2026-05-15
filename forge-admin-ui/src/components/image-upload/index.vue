@@ -23,13 +23,15 @@
               <EyeOutline />
             </NIcon>
             <NIcon v-if="!disabled" class="action-icon" title="重命名" @click="openRename(file)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
             </NIcon>
             <NIcon v-if="!disabled" class="action-icon delete" title="删除" @click="handleRemoveFile(file)">
               <TrashOutline />
             </NIcon>
           </div>
-          <div class="image-name" :title="file.name">{{ file.name }}</div>
+          <div class="image-name" :title="file.name">
+            {{ file.name }}
+          </div>
         </template>
 
         <!-- 上传失败 -->
@@ -111,8 +113,8 @@
 import { AddOutline, CloseCircleOutline, CloseOutline, EyeOutline, TrashOutline } from '@vicons/ionicons5'
 import { NIcon, NInput, NModal, NProgress, NText, NUpload } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useAuthStore } from '@/store'
 import { useStorageConfig } from '@/composables/useStorageConfig'
+import { useAuthStore } from '@/store'
 import { generateUUID, getFileUrl, request, resolveRenderableFileUrl } from '@/utils'
 
 const props = defineProps({
@@ -449,16 +451,19 @@ function openRename(file) {
 async function confirmRename() {
   const file = renameFile.value
   const newName = renameName.value.trim()
-  if (!file || !newName) return
+  if (!file || !newName)
+    return
   try {
     // 更新本地显示
     file.name = newName
     const cached = filePropsCache.get(file.id)
-    if (cached && cached.metadata) cached.metadata.originalName = newName
+    if (cached && cached.metadata)
+      cached.metadata.originalName = newName
     // 更新后端
     await request.put(`/system/file/metadata/rename?fileId=${encodeURIComponent(file.fileId)}&originalName=${encodeURIComponent(newName)}`)
     window.$message.success('重命名成功')
-  } catch (e) {
+  }
+  catch (e) {
     window.$message.error('重命名失败')
   }
   finally {
@@ -562,7 +567,8 @@ async function fetchImageFileName(fileId) {
     if (res?.code === 200 && res.data?.originalName) {
       return { name: res.data.originalName, metadata: res.data }
     }
-  } catch { /* 静默 */ }
+  }
+  catch { /* 静默 */ }
   return null
 }
 

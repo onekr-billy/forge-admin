@@ -11,7 +11,8 @@
       :search-schema="computedSearchSchema"
       :columns="computedColumns"
       :edit-schema="computedEditSchema"
-      row-key="id"
+      row-key="${pkColumn.javaField}"
+      :load-detail-on-edit="true"
     />
   </div>
 </template>
@@ -32,7 +33,7 @@ const apiConfig = {
   detail: 'post@${apiBase}/getById',
   add:    'post@${apiBase}/add',
   update: 'post@${apiBase}/edit',
-  delete: 'post@${apiBase}/remove/:id',
+  delete: 'post@${apiBase}/remove/:${pkColumn.javaField}',
 }
 
 // ── 字典缓存 ──────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ async function preloadDicts() {
     try {
       dictCache.value[type] = await getDictData(type)
     } catch (e) {
-      console.warn(`[${componentName}] 加载字典 ${type} 失败`, e)
+      console.warn('[${componentName}] 加载字典 ' + type + ' 失败', e)
     }
   }
 }

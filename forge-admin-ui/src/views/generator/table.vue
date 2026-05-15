@@ -15,6 +15,8 @@
       :edit-grid-cols="2"
       modal-width="900px"
       :show-add-button="false"
+      :before-render-detail="handleBeforeRenderDetail"
+      :before-submit="handleBeforeSubmit"
     >
       <!-- 自定义顶部操作栏 -->
       <template #toolbar-end>
@@ -62,7 +64,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { AiCrudPage } from '@/components/ai-form'
 import { request } from '@/utils'
 import AiSchemaModal from './components/AiSchemaModal.vue'
@@ -79,6 +81,7 @@ const showPreviewModal = ref(false)
 const showAiSchemaModal = ref(false)
 const currentTableId = ref(null)
 const currentTableName = ref('')
+const menuParentOptions = ref([{ label: '顶级资源', value: 0, key: 0 }])
 
 // 生成方式选项
 const genTypeOptions = [
@@ -280,6 +283,22 @@ const editSchema = [
     },
   },
   {
+    field: 'menuParentId',
+    label: '发布目录',
+    type: 'treeSelect',
+    defaultValue: 0,
+    span: 2,
+    props: {
+      placeholder: '请选择生成菜单的父级目录或菜单',
+      clearable: true,
+      filterable: true,
+      keyField: 'value',
+      labelField: 'label',
+      childrenField: 'children',
+    },
+    options: () => menuParentOptions.value,
+  },
+  {
     field: 'remark',
     label: '备注',
     type: 'textarea',
@@ -290,6 +309,81 @@ const editSchema = [
     },
   },
 ]
+
+onMounted(loadMenuParentOptions)
+
+async function loadMenuParentOptions() {
+  try {
+    const res = await request.get('/system/resource/tree')
+    if (res.code === 200) {
+      menuParentOptions.value = [
+        { label: '顶级资源', value: 0, key: 0 },
+        ...convertMenuParentOptions(res.data || []),
+      ]
+    }
+  }
+  catch (error) {
+    console.warn('[GeneratorTable] 加载菜单资源树失败:', error)
+  }
+}
+
+function convertMenuParentOptions(list = []) {
+  return list.flatMap((item) => {
+    const children = convertMenuParentOptions(item.children || [])
+    const resourceType = Number(item.resourceType)
+    if (![1, 2].includes(resourceType)) {
+      return children
+    }
+    return [{
+      label: `${item.resourceName}（${resourceType === 1 ? '目录' : '菜单'}）`,
+      value: item.id,
+      key: item.id,
+      children: children.length > 0 ? children : undefined,
+    }]
+  })
+}
+
+function parseOptions(options) {
+  if (!options)
+    return {}
+  if (typeof options === 'string') {
+    try {
+      const parsed = JSON.parse(options)
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    }
+    catch {
+      return {}
+    }
+  }
+  return typeof options === 'object' ? { ...options } : {}
+}
+
+function normalizeMenuParentId(value) {
+  if (value === null || value === undefined || value === '')
+    return 0
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : 0
+}
+
+function handleBeforeRenderDetail(data) {
+  const options = parseOptions(data?.options)
+  return {
+    ...data,
+    options,
+    menuParentId: normalizeMenuParentId(data?.menuParentId ?? options.menuParentId),
+  }
+}
+
+function handleBeforeSubmit(formData) {
+  const options = parseOptions(formData.options)
+  options.menuParentId = normalizeMenuParentId(formData.menuParentId)
+  const data = {
+    ...formData,
+    options,
+  }
+  delete data.menuParentId
+  return data
+}
 
 // 编辑
 function handleEdit(row) {
@@ -311,7 +405,7 @@ function handleDelete(row) {
           crudRef.value?.refresh()
         }
       }
-      catch (error) {
+      catch {
         window.$message.error('删除失败')
       }
     },

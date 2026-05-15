@@ -75,7 +75,8 @@ const loading = ref(false)
 const submitLoading = ref(false)
 const aiLoading = ref(false)
 const columnList = ref([])
-const originalColumnMap = ref({})
+const dictTypeOptions = ref([])
+const dictTypeLoading = ref(false)
 
 // Java类型选项
 const javaTypeOptions = [
@@ -243,12 +244,17 @@ const columns = [
   {
     title: '字典类型',
     key: 'dictType',
-    width: 120,
-    render: row => h(NInput, {
-      value: row.dictType,
+    width: 220,
+    render: row => h(NSelect, {
+      value: row.dictType || null,
+      options: dictTypeOptions.value,
+      loading: dictTypeLoading.value,
       size: 'small',
-      placeholder: '字典编码',
-      onUpdateValue: (val) => { row.dictType = val },
+      placeholder: '输入或选择字典',
+      filterable: true,
+      clearable: true,
+      tag: true,
+      onUpdateValue: (val) => { row.dictType = val || '' },
     }),
   },
 ]
@@ -258,6 +264,7 @@ watch(() => props.show, (val) => {
   visible.value = val
   if (val && props.tableId) {
     loadColumns()
+    loadDictTypes()
   }
 })
 
@@ -283,6 +290,27 @@ async function loadColumns() {
   }
 }
 
+// 加载系统字典类型，支持下拉选择；NSelect tag 模式仍可手动输入新编码
+async function loadDictTypes() {
+  try {
+    dictTypeLoading.value = true
+    const res = await request.get('/system/dict/type/list', { params: { pageSize: 9999 } })
+    const list = res.data || []
+    dictTypeOptions.value = list
+      .filter(item => item.dictType)
+      .map(item => ({
+        label: item.dictName ? `${item.dictName} (${item.dictType})` : item.dictType,
+        value: item.dictType,
+      }))
+  }
+  catch (error) {
+    console.warn('[ColumnConfigModal] 加载字典类型失败:', error)
+  }
+  finally {
+    dictTypeLoading.value = false
+  }
+}
+
 // 重置配置
 async function handleReset() {
   window.$dialog.warning({
@@ -299,7 +327,7 @@ async function handleReset() {
           loadColumns()
         }
       }
-      catch (error) {
+      catch {
         window.$message.error('重置失败')
       }
       finally {

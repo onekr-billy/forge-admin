@@ -12,7 +12,7 @@ import java.util.Map;
  * 代码生成表配置实体类
  */
 @Data
-@TableName("gen_table")
+@TableName(value = "gen_table", autoResultMap = true)
 public class GenTable implements Serializable {
 
     private static final long serialVersionUID = 1L;

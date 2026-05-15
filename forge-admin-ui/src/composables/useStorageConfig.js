@@ -18,21 +18,25 @@ function readCache() {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY)
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  }
+  catch { return null }
 }
 function writeCache(data) {
-  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)) } catch { /* noop */ }
+  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)) }
+  catch { /* noop */ }
 }
 
 export function useStorageConfig() {
   async function loadConfig(force = false) {
     if (!force) {
-      if (configRef.value) return configRef.value
+      if (configRef.value)
+        return configRef.value
       if (cached) { configRef.value = cached; return cached }
       const fromCache = readCache()
       if (fromCache) { cached = fromCache; configRef.value = fromCache; return fromCache }
     }
-    if (pending) return pending
+    if (pending)
+      return pending
     pending = (async () => {
       try {
         const res = await getDefaultStorageConfig()
@@ -42,9 +46,11 @@ export function useStorageConfig() {
           writeCache(res.data)
           return res.data
         }
-      } catch (e) {
+      }
+      catch (e) {
         console.warn('[StorageConfig] 加载默认存储配置失败:', e)
-      } finally { pending = null }
+      }
+      finally { pending = null }
       return null
     })()
     return pending

@@ -8,25 +8,25 @@ const BASE = '${apiBase}'
 
 /** 分页查询 */
 export function get${apiVarName}Page(params) {
-  return request.get(`${BASE}/page`, { params })
+  return request.get(BASE + '/page', { params })
 }
 
 /** 查询详情 */
-export function get${apiVarName}Detail(id) {
-  return request.post(`${BASE}/getById`, null, { params: { id } })
+export function get${apiVarName}Detail(${pkColumn.javaField}) {
+  return request.post(BASE + '/getById', null, { params: { ${pkColumn.javaField} } })
 }
 
 /** 新增 */
 export function create${apiVarName}(data) {
-  return request.post(`${BASE}/add`, data)
+  return request.post(BASE + '/add', data)
 }
 
 /** 更新 */
 export function update${apiVarName}(data) {
-  return request.post(`${BASE}/edit`, data)
+  return request.post(BASE + '/edit', data)
 }
 
 /** 删除 */
-export function remove${apiVarName}(id) {
-  return request.post(`${BASE}/remove/${id}`)
+export function remove${apiVarName}(${pkColumn.javaField}) {
+  return request.post(BASE + '/remove/' + ${pkColumn.javaField})
 }

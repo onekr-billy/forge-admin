@@ -3,25 +3,32 @@
     v-model:show="visible"
     :title="`代码预览 - ${tableName}`"
     preset="card"
-    style="width: 1400px"
+    style="width: min(1400px, calc(100vw - 48px))"
     :mask-closable="false"
   >
     <div class="code-preview-modal">
       <n-spin :show="loading">
         <div class="preview-container">
-          <!-- 左侧文件列表 -->
           <div class="file-list">
-            <n-menu
-              :options="fileOptions"
-              :value="selectedFile"
-              @update:value="handleFileSelect"
+            <div class="file-list-header">
+              <span>目录</span>
+              <span>{{ fileCount }} 个文件</span>
+            </div>
+            <n-tree
+              block-line
+              expand-on-click
+              :data="fileTree"
+              :expanded-keys="expandedKeys"
+              :selected-keys="selectedKeys"
+              :render-label="renderTreeLabel"
+              @update:expanded-keys="handleExpandedKeys"
+              @update:selected-keys="handleTreeSelect"
             />
           </div>
 
-          <!-- 右侧代码展示 -->
           <div class="code-viewer">
             <div class="code-header">
-              <span class="file-name">{{ selectedFile }}</span>
+              <span class="file-name">{{ selectedFile || '请选择文件' }}</span>
               <n-button size="small" @click="handleCopy">
                 <template #icon>
                   <i class="i-material-symbols:content-copy" />
@@ -29,7 +36,10 @@
                 复制
               </n-button>
             </div>
-            <div ref="editorContainer" class="editor-container" />
+            <div v-if="selectedFile" ref="editorContainer" class="editor-container" />
+            <div v-else class="preview-empty">
+              暂无可预览文件
+            </div>
           </div>
         </div>
       </n-spin>
@@ -52,7 +62,7 @@ import { sql } from '@codemirror/lang-sql'
 import { xml } from '@codemirror/lang-xml'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { basicSetup, EditorView } from 'codemirror'
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, h, nextTick, onUnmounted, ref, watch } from 'vue'
 import { request } from '@/utils'
 
 const props = defineProps({
@@ -72,16 +82,13 @@ const visible = ref(false)
 const loading = ref(false)
 const selectedFile = ref('')
 const fileMap = ref({})
+const fileTree = ref([])
+const expandedKeys = ref([])
 const editorContainer = ref(null)
 let editorView = null
 
-// 文件选项
-const fileOptions = computed(() => {
-  return Object.keys(fileMap.value).map(key => ({
-    label: getFileName(key),
-    key,
-  }))
-})
+const selectedKeys = computed(() => selectedFile.value ? [selectedFile.value] : [])
+const fileCount = computed(() => Object.keys(fileMap.value).length)
 
 // 监听 show 变化
 watch(() => props.show, (val) => {
@@ -105,12 +112,20 @@ async function loadPreview() {
     const res = await request.get(`/generator/preview/${props.tableName}`)
     if (res.code === 200) {
       fileMap.value = res.data || {}
+      const keys = Object.keys(fileMap.value).sort((a, b) => a.localeCompare(b))
+      const treeResult = buildFileTree(keys)
+      fileTree.value = treeResult.tree
+      expandedKeys.value = treeResult.expandedKeys
+
       // 自动选中第一个文件
-      const keys = Object.keys(fileMap.value)
       if (keys.length > 0) {
         selectedFile.value = keys[0]
         await nextTick()
         initEditor(fileMap.value[keys[0]], keys[0])
+      }
+      else {
+        selectedFile.value = ''
+        destroyEditor()
       }
     }
   }
@@ -123,10 +138,73 @@ async function loadPreview() {
   }
 }
 
-// 获取文件名（从路径中提取）
-function getFileName(path) {
-  const parts = path.split('/')
-  return parts[parts.length - 1]
+function buildFileTree(paths) {
+  const root = []
+  const nodeMap = new Map()
+  const directoryKeys = []
+
+  paths.forEach((path) => {
+    const parts = path.split('/').filter(Boolean)
+    let currentChildren = root
+    let currentPath = ''
+
+    parts.forEach((part, index) => {
+      const isFile = index === parts.length - 1
+      currentPath = currentPath ? `${currentPath}/${part}` : part
+      const key = isFile ? path : `dir:${currentPath}`
+
+      let node = nodeMap.get(key)
+      if (!node) {
+        node = {
+          key,
+          label: part,
+          type: isFile ? 'file' : 'directory',
+          children: isFile ? undefined : [],
+        }
+        nodeMap.set(key, node)
+        currentChildren.push(node)
+
+        if (!isFile) {
+          directoryKeys.push(key)
+        }
+      }
+
+      if (!isFile) {
+        currentChildren = node.children
+      }
+    })
+  })
+
+  sortTree(root)
+  return {
+    tree: root,
+    expandedKeys: directoryKeys,
+  }
+}
+
+function sortTree(nodes) {
+  nodes.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === 'directory' ? -1 : 1
+    }
+    return a.label.localeCompare(b.label)
+  })
+  nodes.forEach((node) => {
+    if (node.children) {
+      sortTree(node.children)
+    }
+  })
+}
+
+function renderTreeLabel({ option }) {
+  return h('span', { class: ['tree-node-label', option.type === 'directory' ? 'is-directory' : 'is-file'] }, [
+    h('i', {
+      class: option.type === 'directory'
+        ? 'i-material-symbols:folder-outline-rounded'
+        : 'i-material-symbols:description-outline-rounded',
+    }),
+    h('span', option.label),
+  ])
 }
 
 // 获取语言支持
@@ -176,8 +254,16 @@ function destroyEditor() {
   }
 }
 
+function handleExpandedKeys(keys) {
+  expandedKeys.value = keys
+}
+
 // 文件选择变化
-async function handleFileSelect(key) {
+async function handleTreeSelect(keys) {
+  const key = keys?.[0]
+  if (!key || !fileMap.value[key]) {
+    return
+  }
   selectedFile.value = key
   await nextTick()
   initEditor(fileMap.value[key], key)
@@ -208,39 +294,86 @@ onUnmounted(() => {
 
 <style scoped>
 .code-preview-modal {
-  height: 600px;
+  height: min(72vh, 720px);
+  min-height: 460px;
   overflow: hidden;
+}
+
+.code-preview-modal :deep(.n-spin-container),
+.code-preview-modal :deep(.n-spin-content) {
+  height: 100%;
 }
 
 .preview-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
   height: 100%;
   border: 1px solid var(--n-border-color);
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
+  min-height: 0;
 }
 
 .file-list {
-  width: 280px;
   border-right: 1px solid var(--n-border-color);
-  overflow-y: auto;
   background-color: var(--n-color-modal);
-  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
-.file-list :deep(.n-menu) {
-  padding: 8px;
+.file-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--n-text-color-3);
+  background-color: var(--n-color-modal);
+  border-bottom: 1px solid var(--n-border-color);
 }
 
-.file-list :deep(.n-menu-item-content-header) {
+.file-list :deep(.n-tree) {
+  padding: 8px 6px 12px;
+}
+
+.file-list :deep(.n-tree-node-content) {
+  min-width: 0;
+}
+
+.file-list :deep(.n-tree-node-content__text) {
+  min-width: 0;
+}
+
+.file-list :deep(.tree-node-label) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   font-size: 13px;
 }
 
+.file-list :deep(.tree-node-label i) {
+  flex: 0 0 auto;
+  color: var(--n-text-color-3);
+}
+
+.file-list :deep(.tree-node-label span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .code-viewer {
-  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -252,6 +385,7 @@ onUnmounted(() => {
   background-color: #282c34;
   border-bottom: 1px solid #3e4451;
   flex-shrink: 0;
+  gap: 12px;
 }
 
 .file-name {
@@ -268,6 +402,16 @@ onUnmounted(() => {
   overflow: hidden;
   position: relative;
   min-height: 0;
+  background-color: #282c34;
+}
+
+.preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #8b949e;
+  background-color: #282c34;
 }
 
 .editor-container :deep(.cm-editor) {

@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS `ai_report_data_dataset_field` (
   `sensitive_level` varchar(20) NOT NULL DEFAULT 'NONE' COMMENT '敏感级别：NONE/MASK/HIDDEN',
   `mask_rule` varchar(100) DEFAULT NULL COMMENT '脱敏规则',
   `dict_type` varchar(100) DEFAULT NULL COMMENT '字典类型',
+  `date_format` varchar(64) DEFAULT NULL COMMENT '日期展示格式',
+  `data_unit` varchar(32) DEFAULT NULL COMMENT '数据计量单位',
+  `dimension_id` bigint DEFAULT NULL COMMENT '绑定维度ID',
   `sort` int NOT NULL DEFAULT 0 COMMENT '排序',
   `description` varchar(500) DEFAULT NULL COMMENT '描述',
   `create_by` varchar(64) DEFAULT NULL COMMENT '创建者',
@@ -106,5 +109,52 @@ CREATE TABLE IF NOT EXISTS `ai_report_data_dataset_field` (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_data_dataset_field` (`tenant_id`, `dataset_id`, `field_name`),
-  KEY `idx_data_dataset_field_dataset` (`tenant_id`, `dataset_id`)
+  KEY `idx_data_dataset_field_dataset` (`tenant_id`, `dataset_id`),
+  KEY `idx_data_dataset_field_dimension` (`tenant_id`, `dimension_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='平台数据集字段';
+
+-- 平台维度表
+CREATE TABLE IF NOT EXISTS `ai_report_data_dimension` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id` bigint NOT NULL DEFAULT 1 COMMENT '租户ID',
+  `dimension_code` varchar(64) NOT NULL COMMENT '维度编码',
+  `dimension_name` varchar(100) NOT NULL COMMENT '维度名称',
+  `source_type` varchar(20) NOT NULL DEFAULT 'MANUAL' COMMENT '来源类型：MANUAL/SQL',
+  `connection_id` bigint DEFAULT NULL COMMENT 'SQL来源数据连接ID',
+  `sql_text` longtext DEFAULT NULL COMMENT 'SQL来源查询语句',
+  `value_column` varchar(128) DEFAULT NULL COMMENT '值字段列名',
+  `label_column` varchar(128) DEFAULT NULL COMMENT '显示字段列名',
+  `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态：1启用 0禁用',
+  `last_sync_time` datetime DEFAULT NULL COMMENT '最近同步时间',
+  `description` varchar(500) DEFAULT NULL COMMENT '描述',
+  `create_by` bigint DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `create_dept` bigint DEFAULT NULL COMMENT '创建部门',
+  `update_by` bigint DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_data_dimension_code_tenant` (`tenant_id`, `dimension_code`),
+  KEY `idx_data_dimension_source` (`tenant_id`, `source_type`),
+  KEY `idx_data_dimension_status` (`tenant_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='平台维度';
+
+-- 平台维度值表
+CREATE TABLE IF NOT EXISTS `ai_report_data_dimension_item` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id` bigint NOT NULL DEFAULT 1 COMMENT '租户ID',
+  `dimension_id` bigint NOT NULL COMMENT '维度ID',
+  `item_value` varchar(255) NOT NULL COMMENT '维度值',
+  `item_label` varchar(255) NOT NULL COMMENT '维度显示值',
+  `sort` int NOT NULL DEFAULT 0 COMMENT '排序',
+  `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态：1启用 0禁用',
+  `extra_json` json DEFAULT NULL COMMENT '扩展信息JSON',
+  `create_by` bigint DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `create_dept` bigint DEFAULT NULL COMMENT '创建部门',
+  `update_by` bigint DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_data_dimension_item_value` (`tenant_id`, `dimension_id`, `item_value`),
+  KEY `idx_data_dimension_item_dimension` (`tenant_id`, `dimension_id`),
+  KEY `idx_data_dimension_item_status` (`tenant_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='平台维度值';
