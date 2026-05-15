@@ -17,7 +17,7 @@
       </layout-header-pro>
       <n-layout-content class="chart-main" content-style="overflow:hidden; display: flex">
         <div class="chart-left-stack">
-          <content-pages></content-pages>
+          <content-pages v-if="getPages"></content-pages>
           <content-charts v-if="getCharts"></content-charts>
           <content-layers v-if="getLayers"></content-layers>
         </div>
@@ -53,7 +53,7 @@ import { useChartLayoutStore } from '@/store/modules/chartLayoutStore/chartLayou
 
 const chartHistoryStoreStore = useChartHistoryStore()
 const chartEditStore = useChartEditStore()
-const { getCharts, getLayers } = toRefs(useChartLayoutStore())
+const { getPages, getCharts, getLayers } = toRefs(useChartLayoutStore())
 
 // 实时自动保存
 const { saveStatus, lastSaveTime, saveError } = useAutoSave()

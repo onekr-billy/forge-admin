@@ -4,8 +4,6 @@ import { setLocalStorage, getLocalStorage } from '@/utils'
 import { StorageEnum } from '@/enums/storageEnum'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 
-const chartEditStore = useChartEditStore()
-
 const { GO_CHART_LAYOUT_STORE } = StorageEnum
 
 const storageChartLayout: Partial<ChartLayoutType> = getLocalStorage(GO_CHART_LAYOUT_STORE)
@@ -14,6 +12,8 @@ const storageChartLayout: Partial<ChartLayoutType> = getLocalStorage(GO_CHART_LA
 export const useChartLayoutStore = defineStore({
   id: 'useChartLayoutStore',
   state: (): ChartLayoutType => ({
+    // 画布页面
+    pages: true,
     // 图层控制
     layers: true,
     // 图表组件
@@ -34,6 +34,9 @@ export const useChartLayoutStore = defineStore({
   getters: {
     getLayers(): boolean {
       return this.layers
+    },
+    getPages(): boolean {
+      return this.pages
     },
     getCharts(): boolean {
       return this.charts
@@ -70,7 +73,7 @@ export const useChartLayoutStore = defineStore({
       // 重新计算拖拽区域缩放比例
       if (computedScale) {
         setTimeout(() => {
-          chartEditStore.computedScale()
+          useChartEditStore().computedScale()
         }, 500)
       }
     },

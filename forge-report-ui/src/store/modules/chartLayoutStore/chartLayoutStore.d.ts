@@ -9,6 +9,7 @@ export enum LayerModeEnum {
 }
 
 export enum ChartLayoutStoreEnum {
+  PAGES = 'pages',
   LAYERS = 'layers',
   CHARTS = 'charts',
   DETAILS = 'details',
@@ -19,6 +20,8 @@ export enum ChartLayoutStoreEnum {
 }
 
 export interface ChartLayoutType {
+  // 画布页面
+  [ChartLayoutStoreEnum.PAGES]: boolean
   // 图层控制
   [ChartLayoutStoreEnum.LAYERS]: boolean
   // 图表组件

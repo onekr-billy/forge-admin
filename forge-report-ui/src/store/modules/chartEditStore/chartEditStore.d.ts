@@ -173,7 +173,7 @@ export type RequestDataPondItemType = {
 
 export type DynamicRequestParamTarget = 'Params' | 'Header' | 'Body'
 
-export type DynamicRequestParamSource = 'context' | 'component' | 'custom' | 'preset'
+export type DynamicRequestParamSource = 'context' | 'pageContext' | 'component' | 'custom' | 'preset'
 
 export interface DynamicRequestParamBinding {
   id: string

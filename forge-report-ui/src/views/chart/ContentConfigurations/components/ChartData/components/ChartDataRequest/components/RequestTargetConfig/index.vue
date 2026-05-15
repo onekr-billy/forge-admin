@@ -284,6 +284,15 @@
           filterable
           placeholder="上下文字段"
         />
+        <n-select
+          v-else-if="item.source === 'pageContext'"
+          v-model:value="item.sourceKey"
+          :options="pageContextParamOptions"
+          size="small"
+          filterable
+          tag
+          placeholder="页面上下文字段"
+        />
         <template v-else-if="item.source === 'component'">
           <n-select
             v-model:value="item.componentId"
@@ -386,6 +395,7 @@ import {
 } from '@/api/data/dataset'
 import {
   contextParamOptions,
+  pageContextParamOptions,
   componentParamOptions,
   presetParamOptions,
   createDynamicParamBinding
@@ -479,6 +489,7 @@ const dynamicTargetOptions = [
 ]
 const dynamicSourceOptions = [
   { label: '登录人', value: 'context' },
+  { label: '页面上下文', value: 'pageContext' },
   { label: '筛选组件', value: 'component' },
   { label: '预设条件', value: 'preset' },
   { label: '固定值', value: 'custom' }
@@ -928,6 +939,12 @@ const addTnDateRangeParams = () => {
 const handleDynamicSourceChange = (item: DynamicRequestParamBinding) => {
   if (item.source === 'context') {
     item.sourceKey = item.sourceKey || 'userId'
+    item.componentId = undefined
+    item.componentField = 'value'
+    item.customValue = ''
+    item.presetType = undefined
+  } else if (item.source === 'pageContext') {
+    item.sourceKey = item.sourceKey || 'regionCode'
     item.componentId = undefined
     item.componentField = 'value'
     item.customValue = ''

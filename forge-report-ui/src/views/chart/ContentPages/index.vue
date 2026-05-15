@@ -71,7 +71,15 @@ const chartEditStore = useChartEditStore()
 const { updateComponent } = useSync()
 
 const pages = computed(() => {
-  return [...chartEditStore.getProjectPages].sort((a, b) => (a.sort || 0) - (b.sort || 0))
+  return chartEditStore.getProjectPages
+    .map(page => {
+      if (page.id !== chartEditStore.getActivePageId) return page
+      return {
+        ...page,
+        componentList: chartEditStore.getComponentList
+      }
+    })
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
 })
 
 const renderPageStorage = async (storage?: ChartEditStorage) => {

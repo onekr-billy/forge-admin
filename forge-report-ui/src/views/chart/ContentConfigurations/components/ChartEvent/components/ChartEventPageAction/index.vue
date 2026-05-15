@@ -64,6 +64,74 @@
           :options="transitionOptions"
         />
       </setting-item-box>
+
+      <n-divider>下钻参数</n-divider>
+
+      <div v-if="!item.params?.length" class="param-empty">
+        <n-text depth="3">未配置参数</n-text>
+      </div>
+
+      <div v-for="(param, paramIndex) in item.params" :key="param.id" class="param-row">
+        <n-input
+          v-model:value.trim="param.targetKey"
+          class="param-target"
+          size="tiny"
+          placeholder="目标参数名"
+        />
+        <n-select
+          v-model:value="param.source"
+          class="param-source"
+          size="tiny"
+          :options="paramSourceOptions"
+          @update:value="() => handleParamSourceChange(param)"
+        />
+        <n-tooltip :show-arrow="false" trigger="hover">
+          <template #trigger>
+            <n-button class="param-delete" size="tiny" type="error" tertiary circle @click="deleteParam(item, paramIndex)">
+              <template #icon>
+                <n-icon>
+                  <trash-icon />
+                </n-icon>
+              </template>
+            </n-button>
+          </template>
+          删除参数
+        </n-tooltip>
+        <n-input
+          v-if="param.source === 'static'"
+          v-model:value="param.value"
+          class="param-value"
+          size="tiny"
+          placeholder="固定值"
+        />
+        <n-select
+          v-else-if="param.source === 'pageContext'"
+          v-model:value="param.sourceKey"
+          class="param-value"
+          size="tiny"
+          filterable
+          tag
+          :options="pageContextOptions"
+          placeholder="上下文字段"
+        />
+        <n-input
+          v-else
+          v-model:value="param.sourceKey"
+          class="param-value"
+          size="tiny"
+          placeholder="组件字段，如 option.dataset"
+        />
+        <n-input
+          v-model:value="param.fallbackValue"
+          class="param-fallback"
+          size="tiny"
+          placeholder="默认值"
+        />
+      </div>
+
+      <n-button size="tiny" type="primary" dashed class="param-add" @click="addParam(item)">
+        新增参数
+      </n-button>
     </n-card>
   </n-collapse-item>
 </template>
@@ -73,12 +141,18 @@ import { computed } from 'vue'
 import { SettingItemBox } from '@/components/Pages/ChartItemSetting'
 import { BaseEvent, ComponentActionType } from '@/enums/eventEnum'
 import { getUUID } from '@/utils'
+import { pageContextParamOptions } from '@/utils/requestDynamicParams'
 import { icon } from '@/plugins'
 import noData from '@/assets/images/canvas/noData.png'
 import { useTargetData } from '../../../hooks/useTargetData.hook'
-import type { ComponentAction, ReportPageTransition } from '@/store/modules/chartEditStore/chartEditStore.d'
+import type {
+  ComponentAction,
+  DrillParamBinding,
+  DrillParamSource,
+  ReportPageTransition
+} from '@/store/modules/chartEditStore/chartEditStore.d'
 
-const { CloseIcon, AddIcon } = icon.ionicons5
+const { CloseIcon, AddIcon, TrashIcon } = icon.ionicons5
 const { targetData, chartEditStore } = useTargetData()
 
 const triggerOptions = [
@@ -93,6 +167,14 @@ const transitionOptions: Array<{ label: string; value: ReportPageTransition }> =
   { label: '右滑', value: 'slide-right' },
   { label: '缩放', value: 'zoom' }
 ]
+
+const paramSourceOptions: Array<{ label: string; value: DrillParamSource }> = [
+  { label: '固定值', value: 'static' },
+  { label: '组件字段', value: 'componentField' },
+  { label: '页面上下文', value: 'pageContext' }
+]
+
+const pageContextOptions = pageContextParamOptions
 
 const ensureActions = () => {
   targetData.value.events.actions = targetData.value.events.actions || []
@@ -136,6 +218,35 @@ const addAction = () => {
 const deleteAction = (id: string) => {
   targetData.value.events.actions = ensureActions().filter(action => action.id !== id)
 }
+
+const addParam = (action: ComponentAction) => {
+  action.params = action.params || []
+  action.params.push({
+    id: getUUID(),
+    targetKey: '',
+    source: 'static',
+    value: '',
+    sourceKey: '',
+    fallbackValue: ''
+  })
+}
+
+const deleteParam = (action: ComponentAction, index: number) => {
+  action.params?.splice(index, 1)
+}
+
+const handleParamSourceChange = (param: DrillParamBinding) => {
+  if (param.source === 'static') {
+    param.sourceKey = ''
+    param.value = param.value ?? ''
+  } else if (param.source === 'pageContext') {
+    param.sourceKey = param.sourceKey || 'regionCode'
+    param.value = ''
+  } else {
+    param.sourceKey = param.sourceKey || 'option.dataset'
+    param.value = ''
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -151,5 +262,51 @@ const deleteAction = (id: string) => {
   img {
     width: 120px;
   }
+}
+
+.param-empty {
+  padding: 2px 0 10px;
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 28px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(var(--app-theme-rgb), 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+
+  :deep(.n-input),
+  :deep(.n-select) {
+    min-width: 0;
+  }
+
+  .param-target,
+  .param-source,
+  .param-value,
+  .param-fallback {
+    min-width: 0;
+  }
+
+  .param-delete {
+    width: 28px;
+    height: 28px;
+  }
+
+  .param-value {
+    grid-column: 1 / -1;
+  }
+
+  .param-fallback {
+    grid-column: 1 / -1;
+  }
+}
+
+.param-add {
+  width: 100%;
 }
 </style>

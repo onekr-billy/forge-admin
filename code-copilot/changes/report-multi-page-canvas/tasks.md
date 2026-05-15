@@ -20,7 +20,7 @@
 | Task 4 | 保存、自动保存、预览、发布改造 | completed | P0 |
 | Task 5 | 预览页多页面运行时 | completed | P0 |
 | Task 6 | 组件页面跳转动作配置 | completed | P0 |
-| Task 7 | 下钻上下文与动态参数接入 | pending | P0 |
+| Task 7 | 下钻上下文与动态参数接入 | completed | P0 |
 | Task 8 | JSON 导入导出和代码编辑兼容 | pending | P1 |
 | Task 9 | 构建验证与手动回归 | pending | P0 |
 
@@ -270,6 +270,8 @@ source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm build
 
 **目标**: 页面跳转可携带下钻参数，目标页面的数据请求可通过动态参数读取。
 
+**状态**: completed
+
 **涉及文件**:
 - `forge-report-ui/src/store/modules/chartEditStore/chartEditStore.ts` — 新增 `runtimePageContext` 管理。
 - `forge-report-ui/src/store/modules/chartEditStore/chartEditStore.d.ts` — 动态参数来源增加 `pageContext`。
@@ -291,6 +293,16 @@ export function resolveDrillParams(
 - 从首页点击携带 `regionCode` 后，详情页请求参数可读取 `pageContext.regionCode`。
 - 参数为空时按动态参数 fallback 逻辑处理。
 - 不执行任意用户脚本。
+
+**验证**:
+```bash
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm exec eslint src/utils/reportDrill.ts src/utils/requestDynamicParams.ts src/hooks/useLifeHandler.hook.ts src/store/modules/chartEditStore/chartEditStore.ts src/store/modules/chartEditStore/chartEditStore.d.ts src/views/chart/ContentConfigurations/components/ChartEvent/components/ChartEventPageAction/index.vue src/views/chart/ContentConfigurations/components/ChartData/components/ChartDataRequest/components/RequestTargetConfig/index.vue
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm build
+```
+
+**结果**:
+- ESLint 无错误。
+- `pnpm build` 通过；输出的 lottie `eval`、Rollup 循环 chunk、CSS `:deep()`、chunk size 均为既有警告。
 
 ---
 

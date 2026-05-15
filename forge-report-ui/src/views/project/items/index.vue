@@ -10,16 +10,26 @@
       </div>
     </div>
 
-    <div class="items-layout">
-      <aside class="directory-panel">
+    <div class="items-layout" :class="{ 'dir-collapsed': directoryCollapsed }">
+      <aside class="directory-panel" :class="{ collapsed: directoryCollapsed }">
         <div class="panel-title-row">
-          <div>
+          <div v-show="!directoryCollapsed">
             <div class="panel-title">目录筛选</div>
             <div class="panel-desc">目录由专门页面统一维护，这里只负责筛选项目</div>
           </div>
+          <n-button
+            size="tiny"
+            quaternary
+            class="panel-toggle-btn"
+            @click="directoryCollapsed = !directoryCollapsed"
+          >
+            <template #icon>
+              <n-icon><ChevronBackIcon v-if="!directoryCollapsed" /><ChevronForwardIcon v-else /></n-icon>
+            </template>
+          </n-button>
         </div>
 
-        <div class="directory-tree">
+        <div v-show="!directoryCollapsed" class="directory-tree">
           <n-spin :show="loadingDirectories">
             <n-tree
               block-line
@@ -56,7 +66,7 @@
             <n-button @click="handleResetSearch">重置</n-button>
             <n-button @click="loadProjectList">
               <template #icon>
-                <n-icon><ArrowRedoIcon /></n-icon>
+                <n-icon><SyncOutlineIcon /></n-icon>
               </template>
               刷新
             </n-button>
@@ -165,13 +175,14 @@ type DirectoryTreeNode = {
   children?: DirectoryTreeNode[]
 }
 
-const { SearchIcon, ArrowRedoIcon } = icon.ionicons5
+const { SearchIcon, SyncOutlineIcon, ChevronBackIcon, ChevronForwardIcon } = icon.ionicons5
 
 const loadingDirectories = ref(false)
 const loadingProjects = ref(false)
 const showMoveProjectModal = ref(false)
 const submittingMoveProject = ref(false)
 const selectedDirectoryKey = ref('all')
+const directoryCollapsed = ref(false)
 const directoryTreeRaw = ref<ReportDirectory[]>([])
 const directoryLookup = ref<Map<string, ReportDirectory>>(new Map())
 const projectCards = ref<ChartList>([])
@@ -397,6 +408,10 @@ onMounted(async () => {
   grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   gap: 20px;
   min-height: calc(100vh - 160px);
+
+  &.dir-collapsed {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
 }
 
 .directory-panel,
@@ -411,6 +426,18 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  transition: min-width 0.25s ease;
+
+  &.collapsed {
+    min-width: auto;
+    .panel-title-row {
+      justify-content: center;
+    }
+  }
+}
+
+.panel-toggle-btn {
+  flex-shrink: 0;
 }
 
 .panel-title-row,

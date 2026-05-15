@@ -41,8 +41,8 @@ import {
   ReportPageTransition
 } from './chartEditStore.d'
 
-const chartHistoryStore = useChartHistoryStore()
-const settingStore = useSettingStore()
+const getChartHistoryStore = () => useChartHistoryStore()
+const getSettingStore = () => useSettingStore()
 
 const normalizeRequestConfigForStorage = (request?: any) => {
   return merge(cloneDeep(defaultRequestConfig), cloneDeep(toRaw(request || {})))
@@ -324,8 +324,8 @@ export const useChartEditStore = defineStore({
       this.activePageId = pageId
       const pageStorage = extractPageStorage(project, pageId)
       this.applyPageStorage(pageStorage)
-      chartHistoryStore.clearBackStack()
-      chartHistoryStore.clearForwardStack()
+      getChartHistoryStore().clearBackStack()
+      getChartHistoryStore().clearForwardStack()
       if (this.getEditCanvas.editLayoutDom) {
         this.computedScale()
       }
@@ -416,6 +416,10 @@ export const useChartEditStore = defineStore({
     // * 设置运行时下钻上下文
     setRuntimePageContext(context: Record<string, any>): void {
       this.runtimePageContext = cloneDeep(context || {})
+      if (typeof window !== 'undefined') {
+        const runtimeWindow = window as unknown as { reportContext?: Record<string, any> }
+        runtimeWindow.reportContext = this.runtimePageContext
+      }
     },
     // * 获取针对 componentList 顺序排过序的 selectId
     getSelectIdSortList(ids?: string[]): string[] {
@@ -559,7 +563,7 @@ export const useChartEditStore = defineStore({
         return
       }
       if (isHistory) {
-        chartHistoryStore.createAddHistory([componentInstance])
+        getChartHistoryStore().createAddHistory([componentInstance])
       }
       if (isHead) {
         this.componentList.unshift(componentInstance)
@@ -583,7 +587,7 @@ export const useChartEditStore = defineStore({
             this.componentList.splice(index, 1)
           }
         })
-        isHistory && chartHistoryStore.createDeleteHistory(history)
+        isHistory && getChartHistoryStore().createDeleteHistory(history)
         loadingFinish()
         return
       } catch (value) {
@@ -610,7 +614,7 @@ export const useChartEditStore = defineStore({
     },
     // * 移动组件
     moveComponentList(item: Array<CreateComponentType | CreateComponentGroupType>) {
-      chartHistoryStore.createMoveHistory(item)
+      getChartHistoryStore().createMoveHistory(item)
     },
     // * 更新组件列表某一项的值
     updateComponentList(index: number, newData: CreateComponentType | CreateComponentGroupType) {
@@ -655,7 +659,7 @@ export const useChartEditStore = defineStore({
 
           // 历史记录
           if (isHistory) {
-            chartHistoryStore.createLayerHistory(
+            getChartHistoryStore().createLayerHistory(
               [setIndex(targetData, index)],
               isEnd ? HistoryActionTypeEnum.BOTTOM : HistoryActionTypeEnum.TOP
             )
@@ -706,7 +710,7 @@ export const useChartEditStore = defineStore({
 
           // 历史记录
           if (isHistory) {
-            chartHistoryStore.createLayerHistory(
+            getChartHistoryStore().createLayerHistory(
               [targetItem],
               isDown ? HistoryActionTypeEnum.DOWN : HistoryActionTypeEnum.UP
             )
@@ -931,7 +935,7 @@ export const useChartEditStore = defineStore({
     setBack() {
       try {
         loadingStart()
-        const targetData = chartHistoryStore.backAction()
+        const targetData = getChartHistoryStore().backAction()
         if (!targetData) {
           loadingFinish()
           return
@@ -946,7 +950,7 @@ export const useChartEditStore = defineStore({
     setForward() {
       try {
         loadingStart()
-        const targetData = chartHistoryStore.forwardAction()
+        const targetData = getChartHistoryStore().forwardAction()
         if (!targetData) {
           loadingFinish()
           return
@@ -962,7 +966,7 @@ export const useChartEditStore = defineStore({
       const index = this.fetchTargetIndex()
       if (index === -1) return
       const attr = this.getComponentList[index].attr
-      const distance = settingStore.getChartMoveDistance
+      const distance = getSettingStore().getChartMoveDistance
       switch (keyboardValue) {
         case MenuEnum.ARROW_UP:
           attr.y -= distance
@@ -1042,7 +1046,7 @@ export const useChartEditStore = defineStore({
         })
 
         // 修改原数据之前，先记录
-        if (isHistory) chartHistoryStore.createGroupHistory(historyList)
+        if (isHistory) getChartHistoryStore().createGroupHistory(historyList)
 
         // 设置子组件的位置
         targetList.forEach((item: CreateComponentType) => {
@@ -1080,7 +1084,7 @@ export const useChartEditStore = defineStore({
           if (!targetGroup.isGroup) return
 
           // 记录数据
-          if (isHistory) chartHistoryStore.createUnGroupHistory(cloneDeep([targetGroup]))
+          if (isHistory) getChartHistoryStore().createUnGroupHistory(cloneDeep([targetGroup]))
 
           // 分离组件并还原位置属性
           targetGroup.groupList.forEach(item => {
@@ -1128,8 +1132,8 @@ export const useChartEditStore = defineStore({
           // 历史记录
           if (isHistory) {
             status
-              ? chartHistoryStore.createLockHistory([targetItem])
-              : chartHistoryStore.createUnLockHistory([targetItem])
+              ? getChartHistoryStore().createLockHistory([targetItem])
+              : getChartHistoryStore().createUnLockHistory([targetItem])
           }
           this.updateComponentList(index, targetItem)
           // 锁定添加失焦效果
@@ -1161,8 +1165,8 @@ export const useChartEditStore = defineStore({
           // 历史记录
           if (isHistory) {
             status
-              ? chartHistoryStore.createHideHistory([targetItem])
-              : chartHistoryStore.createShowHistory([targetItem])
+              ? getChartHistoryStore().createHideHistory([targetItem])
+              : getChartHistoryStore().createShowHistory([targetItem])
           }
           this.updateComponentList(index, targetItem)
           loadingFinish()

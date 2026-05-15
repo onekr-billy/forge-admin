@@ -20,7 +20,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { renderIcon, goDialog, fetchPathByName, routerTurnByPath, setSessionStorage, getSessionStorage, downloadTextFile } from '@/utils'
+import { renderIcon, goDialog, fetchPathByName, routerTurnByPath, openNewWindow, setSessionStorage, getSessionStorage, downloadTextFile } from '@/utils'
 import { captureProjectScreenshot } from '@/utils/capture'
 import { buildApiContractDocument, buildApiContractFileName } from '@/utils/apiContractExport'
 import { PreviewEnum } from '@/enums/pageEnum'
@@ -50,6 +50,11 @@ const syncProjectStorageToSession = (id: string, storageInfo: ReturnType<typeof 
   setSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST, sessionStorageInfo)
 }
 
+const buildPreviewUrl = (path: string, id: string, pageId?: string) => {
+  const baseUrl = `${path}/${id}`
+  return pageId ? `${baseUrl}?pageId=${encodeURIComponent(pageId)}` : baseUrl
+}
+
 const assertProjectComponentDataSaved = async (id: string, expectedComponentData?: string) => {
   if (!expectedComponentData) return
   const res = await getProjectDetailApi(id)
@@ -77,6 +82,7 @@ const previewHandle = () => {
   // id 标识
   const previewId = typeof id === 'string' ? id : id[0]
   const storageInfo = chartEditStore.getProjectStorageInfo()
+  const previewUrl = buildPreviewUrl(path, previewId, storageInfo.activePageId)
   const sessionStorageInfo = getSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST) || []
 
   if (sessionStorageInfo?.length) {
@@ -96,7 +102,7 @@ const previewHandle = () => {
     setSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST, [{ id: previewId, ...storageInfo }])
   }
   // 跳转
-  routerTurnByPath(path, [previewId], undefined, true)
+  openNewWindow(previewUrl)
 }
 
 // 发布

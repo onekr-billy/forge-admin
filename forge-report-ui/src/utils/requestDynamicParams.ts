@@ -1,5 +1,6 @@
 import axiosInstance from '@/api/axios'
 import dayjs from 'dayjs'
+import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 import type {
   DynamicRequestParamBinding,
   DynamicRequestParamTarget
@@ -74,6 +75,15 @@ export const contextParamOptions: DynamicParamOption[] = [
   { label: '行政区划全名', value: 'regionFullName' },
   { label: '路由参数', value: 'route.params' },
   { label: '自定义上下文', value: 'reportContext' }
+]
+
+export const pageContextParamOptions: DynamicParamOption[] = [
+  { label: '行政区划编码', value: 'regionCode' },
+  { label: '行政区划名称', value: 'regionName' },
+  { label: '对象ID', value: 'id' },
+  { label: '对象名称', value: 'name' },
+  { label: '指标编码', value: 'metricCode' },
+  { label: '指标名称', value: 'metricName' }
 ]
 
 export const componentParamOptions: DynamicParamOption[] = [
@@ -161,6 +171,11 @@ const getContextValue = async (sourceKey?: string): Promise<unknown> => {
   return getByPath(user, sourceKey)
 }
 
+const getPageContextValue = (sourceKey?: string): unknown => {
+  const chartEditStore = useChartEditStore()
+  return getByPath(chartEditStore.getRuntimePageContext, sourceKey)
+}
+
 const getTabValue = (option: Record<string, unknown>) => {
   const label = option.tabLabel
   const dataset = option.dataset
@@ -218,8 +233,14 @@ export const getDynamicRequestParamDependencySnapshot = (
 ) => {
   if (!bindings?.length) return []
   return bindings
-    .filter(binding => binding.enabled && binding.source === 'component' && binding.componentId)
+    .filter(binding => binding.enabled && (
+      (binding.source === 'component' && binding.componentId) ||
+      (binding.source === 'pageContext' && binding.sourceKey)
+    ))
     .map(binding => {
+      if (binding.source === 'pageContext') {
+        return `${binding.id}:pageContext:${binding.sourceKey}:${stringifyDependencyValue(getPageContextValue(binding.sourceKey))}`
+      }
       const component = componentList.find(item => item.id === binding.componentId)
       const field = binding.componentField || 'value'
       const value = getComponentDynamicValue(component, field)
@@ -255,6 +276,8 @@ const getBindingValue = async (
   let value: unknown
   if (binding.source === 'context') {
     value = await getContextValue(binding.sourceKey)
+  } else if (binding.source === 'pageContext') {
+    value = getPageContextValue(binding.sourceKey)
   } else if (binding.source === 'component') {
     value = getComponentValue(binding, componentList)
   } else if (binding.source === 'preset') {

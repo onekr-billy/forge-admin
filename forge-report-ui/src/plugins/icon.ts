@@ -73,7 +73,10 @@ import {
   Sparkles as SparklesIcon,
   SparklesOutline as SparklesOutlineIcon,
   ArrowUndo as ArrowUndoIcon,
-  ArrowRedo as ArrowRedoIcon
+  ArrowRedo as ArrowRedoIcon,
+  RefreshOutline as RefreshOutlineIcon,
+  SyncOutline as SyncOutlineIcon,
+  ChevronBack as ChevronBackIcon
 } from '@vicons/ionicons5'
 
 import {
@@ -261,7 +264,12 @@ const ionicons5 = {
   // 撤销
   ArrowUndoIcon,
   // 重做
-  ArrowRedoIcon
+  ArrowRedoIcon,
+  // 刷新
+  RefreshOutlineIcon,
+  SyncOutlineIcon,
+  // 折叠返回
+  ChevronBackIcon
 }
 
 const carbon = {

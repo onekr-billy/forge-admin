@@ -58,9 +58,9 @@ import { ChartLayoutStoreEnum } from '@/store/modules/chartLayoutStore/chartLayo
 
 import { useAIStore } from '@/store/modules/aiStore/aiStore'
 
-const { LayersIcon, BarChartIcon, PrismIcon, HomeIcon, ArrowUndoIcon, ArrowRedoIcon, SparklesIcon } = icon.ionicons5
+const { AlbumsIcon, LayersIcon, BarChartIcon, PrismIcon, HomeIcon, ArrowUndoIcon, ArrowRedoIcon, SparklesIcon } = icon.ionicons5
 const { setItem } = useChartLayoutStore()
-const { getLayers, getCharts, getDetails } = toRefs(useChartLayoutStore())
+const { getPages, getLayers, getCharts, getDetails } = toRefs(useChartLayoutStore())
 const chartEditStore = useChartEditStore()
 const chartHistoryStore = useChartHistoryStore()
 const aiStore = useAIStore()
@@ -75,6 +75,12 @@ interface ItemType<T> {
 }
 
 const btnList = reactive<ItemType<ChartLayoutStoreEnum>[]>([
+  {
+    key: ChartLayoutStoreEnum.PAGES,
+    select: getPages,
+    title: '画布页面',
+    icon: renderIcon(AlbumsIcon)
+  },
   {
     key: ChartLayoutStoreEnum.CHARTS,
     select: getCharts,

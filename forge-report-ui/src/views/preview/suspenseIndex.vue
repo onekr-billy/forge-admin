@@ -41,10 +41,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { PreviewRenderList } from './components/PreviewRenderList'
 import { getFilterStyle, setTitle } from '@/utils'
-import { getSessionStorageInfo, keyRecordHandle, dragCanvas } from './utils'
+import { getSessionStorageInfo, keyRecordHandle, dragCanvas, restorePreviewPageFromUrl } from './utils'
 import { useComInstall } from './hooks/useComInstall.hook'
 import { useScale } from './hooks/useScale.hook'
 import { useStore } from './hooks/useStore.hook'
@@ -103,6 +103,20 @@ const { show } = useComInstall(chartEditStore)
 
 // 开启键盘监听
 keyRecordHandle()
+
+const handlePreviewHistoryChange = () => {
+  restorePreviewPageFromUrl()
+}
+
+onMounted(() => {
+  window.addEventListener('popstate', handlePreviewHistoryChange)
+  window.addEventListener('hashchange', handlePreviewHistoryChange)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', handlePreviewHistoryChange)
+  window.removeEventListener('hashchange', handlePreviewHistoryChange)
+})
 
 // 处理全局的 vChart 主题
 useInitVChartsTheme(chartEditStore)

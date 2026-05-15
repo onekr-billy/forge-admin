@@ -1,6 +1,8 @@
 import { CreateComponentType, CreateComponentGroupType } from '@/packages/index.d'
 import { BaseEvent, ComponentActionType, EventLife } from '@/enums/eventEnum'
 import { switchPreviewPage } from '@/views/preview/utils/storage'
+import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
+import { resolveDrillParams } from '@/utils/reportDrill'
 import * as echarts from 'echarts'
 
 // 所有图表组件集合对象
@@ -12,6 +14,7 @@ export const npmPkgs = { echarts }
 // 组件事件处理 hook
 export const useLifeHandler = (chartConfig: CreateComponentType | CreateComponentGroupType) => {
   if (!chartConfig.events) return {}
+  const chartEditStore = useChartEditStore()
 
   // 处理基础事件
   const baseEvent: { [key: string]: any } = {}
@@ -19,7 +22,7 @@ export const useLifeHandler = (chartConfig: CreateComponentType | CreateComponen
     const fnStr: string | undefined = (chartConfig.events.baseEvent as any)[key]
     const actions = (chartConfig.events.actions || []).filter(action => action.trigger === key)
     if (fnStr || actions.length) {
-      baseEvent[key] = generateBaseFunc(fnStr, actions)
+      baseEvent[key] = generateBaseFunc(fnStr, actions, chartConfig, chartEditStore.getRuntimePageContext)
     }
   }
 
@@ -45,7 +48,12 @@ export const useLifeHandler = (chartConfig: CreateComponentType | CreateComponen
  * @param fnStr 用户方法体代码
  * @param event 鼠标事件
  */
- export function generateBaseFunc(fnStr = '', actions: CreateComponentType['events']['actions'] = []) {
+ export function generateBaseFunc(
+  fnStr = '',
+  actions: CreateComponentType['events']['actions'] = [],
+  chartConfig?: CreateComponentType | CreateComponentGroupType,
+  pageContext: Record<string, any> = {}
+) {
   try {
     const customHandler = fnStr
       ? new Function(`
@@ -62,7 +70,8 @@ export const useLifeHandler = (chartConfig: CreateComponentType | CreateComponen
       }
       for (const action of actions || []) {
         if (action.type === ComponentActionType.GO_PAGE && action.targetPageId) {
-          await switchPreviewPage(action.targetPageId, {}, action.transition)
+          const drillParams = resolveDrillParams(action.params || [], { mouseEvent, component: chartConfig }, pageContext)
+          await switchPreviewPage(action.targetPageId, { ...pageContext, ...drillParams }, action.transition)
         }
       }
     }
