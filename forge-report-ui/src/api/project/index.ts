@@ -1,5 +1,6 @@
 import { del, get, post, put } from '@/api/http'
-import type { ChartEditStorage } from '@/store/modules/chartEditStore/chartEditStore.d'
+import { extractPageStorage, isMultiPageStorage } from '@/utils/reportPages'
+import type { ChartEditStorage, ReportMultiPageStorage } from '@/store/modules/chartEditStore/chartEditStore.d'
 
 export interface ForgeProject {
   id: number | string
@@ -81,14 +82,21 @@ export const deleteProjectDirectoryApi = (id: string | number) => {
   return del(`/forge-report-api/report/directory/${id}`) as unknown as Promise<{ code: number; data?: any; msg: string }>
 }
 
-export const buildProjectPayload = (rawId: string | string[] | number, storageInfo: ChartEditStorage, indexImg?: string) => {
+export const buildProjectPayload = (
+  rawId: string | string[] | number,
+  storageInfo: ChartEditStorage | ReportMultiPageStorage,
+  indexImg?: string
+) => {
   const id = Array.isArray(rawId) ? rawId[0] : rawId
+  const activeStorage = isMultiPageStorage(storageInfo)
+    ? extractPageStorage(storageInfo, storageInfo.activePageId)
+    : storageInfo
   const payload: Partial<ForgeProject> = {
     id,
-    projectName: storageInfo.editCanvasConfig?.projectName || '新项目',
-    canvasWidth: storageInfo.editCanvasConfig?.width,
-    canvasHeight: storageInfo.editCanvasConfig?.height,
-    backgroundColor: storageInfo.editCanvasConfig?.background || '',
+    projectName: activeStorage.editCanvasConfig?.projectName || '新项目',
+    canvasWidth: activeStorage.editCanvasConfig?.width,
+    canvasHeight: activeStorage.editCanvasConfig?.height,
+    backgroundColor: activeStorage.editCanvasConfig?.background || '',
     componentData: JSON.stringify(storageInfo),
     status: '0',
   }

@@ -37,7 +37,7 @@ const chartEditStore = useChartEditStore()
 
 const routerParamsInfo = useRoute()
 
-const syncProjectStorageToSession = (id: string, storageInfo: ReturnType<typeof chartEditStore.getStorageInfo>) => {
+const syncProjectStorageToSession = (id: string, storageInfo: ReturnType<typeof chartEditStore.getProjectStorageInfo>) => {
   const sessionStorageInfo = getSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST) || []
   const saveData = { id, ...storageInfo }
   const repeateIndex = sessionStorageInfo.findIndex((e: { id: string }) => String(e.id) === String(id))
@@ -55,8 +55,16 @@ const assertProjectComponentDataSaved = async (id: string, expectedComponentData
   const res = await getProjectDetailApi(id)
   const actualComponentData = res?.data?.componentData || ''
   if (actualComponentData !== expectedComponentData) {
-    const expectedLength = JSON.parse(expectedComponentData).componentList?.length ?? 0
-    const actualLength = actualComponentData ? JSON.parse(actualComponentData).componentList?.length ?? 0 : 0
+    const countComponents = (componentData?: string) => {
+      if (!componentData) return 0
+      const parsed = JSON.parse(componentData)
+      if (Array.isArray(parsed.pages)) {
+        return parsed.pages.reduce((total: number, page: any) => total + (page.componentList?.length || 0), 0)
+      }
+      return parsed.componentList?.length ?? 0
+    }
+    const expectedLength = countComponents(expectedComponentData)
+    const actualLength = countComponents(actualComponentData)
     throw new Error(`项目配置保存校验失败，当前 ${actualLength} 个组件，预期 ${expectedLength} 个组件`)
   }
 }
@@ -68,7 +76,7 @@ const previewHandle = () => {
   const { id } = routerParamsInfo.params
   // id 标识
   const previewId = typeof id === 'string' ? id : id[0]
-  const storageInfo = chartEditStore.getStorageInfo()
+  const storageInfo = chartEditStore.getProjectStorageInfo()
   const sessionStorageInfo = getSessionStorage(StorageEnum.GO_CHART_STORAGE_LIST) || []
 
   if (sessionStorageInfo?.length) {
@@ -95,7 +103,7 @@ const previewHandle = () => {
 const sendHandle = async () => {
   const { id } = routerParamsInfo.params
   const previewId = typeof id === 'string' ? id : id[0]
-  const storageInfo = chartEditStore.getStorageInfo()
+  const storageInfo = chartEditStore.getProjectStorageInfo()
 
   try {
     window['$message'].loading('正在生成项目截图...')

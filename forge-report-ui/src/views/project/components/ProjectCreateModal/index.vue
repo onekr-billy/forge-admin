@@ -37,8 +37,10 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { FormInst, FormRules } from 'naive-ui'
 import { ChartEnum } from '@/enums/pageEnum'
-import { createProjectApi, getProjectDirectoryTreeApi, type ReportDirectory } from '@/api/project'
+import { createProjectApi, getProjectDirectoryTreeApi } from '@/api/project'
+import type { ReportDirectory } from '@/api/project'
 import { fetchPathByName, getUUID, routerTurnByPath } from '@/utils'
+import { createDefaultProjectStorage } from '@/utils/reportPages'
 
 const props = defineProps({
   show: {
@@ -141,11 +143,7 @@ const handleCreate = async () => {
       canvasWidth: 1920,
       canvasHeight: 1080,
       backgroundColor: '',
-      componentData: JSON.stringify({
-        editCanvasConfig: { projectName: formModel.projectName.trim(), width: 1920, height: 1080 },
-        requestGlobalConfig: {},
-        componentList: []
-      }),
+      componentData: JSON.stringify(createDefaultProjectStorage(formModel.projectName.trim())),
       status: '0'
     })
     const id = res?.data?.id || getUUID()

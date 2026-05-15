@@ -83,6 +83,20 @@ export function createDefaultPage(name = DEFAULT_PAGE_NAME): ReportCanvasPage {
   }
 }
 
+export function createDefaultProjectStorage(projectName = '新项目'): ReportMultiPageStorage {
+  const page = createDefaultPage(DEFAULT_PAGE_NAME)
+  page.editCanvasConfig.projectName = projectName
+
+  return {
+    version: 2,
+    homePageId: page.id,
+    activePageId: page.id,
+    pageTransition: 'fade',
+    pages: [page],
+    sharedRequestGlobalConfig: {}
+  }
+}
+
 export function normalizeComponentPageActions<T extends CreateComponentType | CreateComponentGroupType | any>(component: T): T {
   if (!component || !component.events) return component
 

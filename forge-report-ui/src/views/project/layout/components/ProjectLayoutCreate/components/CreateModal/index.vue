@@ -40,6 +40,7 @@ import { icon } from '@/plugins'
 import { PageEnum, ChartEnum } from '@/enums/pageEnum'
 import { fetchPathByName, routerTurnByPath, renderLang, getUUID } from '@/utils'
 import { createProjectApi } from '@/api/project'
+import { createDefaultProjectStorage } from '@/utils/reportPages'
 
 const { FishIcon, CloseIcon } = icon.ionicons5
 const { StoreIcon, ObjectStorageIcon } = icon.carbon
@@ -95,11 +96,7 @@ const btnHandle = async (key: string) => {
       canvasWidth: 1920,
       canvasHeight: 1080,
       backgroundColor: '',
-      componentData: JSON.stringify({
-        editCanvasConfig: { projectName: '新项目', width: 1920, height: 1080 },
-        requestGlobalConfig: {},
-        componentList: []
-      }),
+      componentData: JSON.stringify(createDefaultProjectStorage('新项目')),
       status: '0'
     })
     const id = res?.data?.id || getUUID()

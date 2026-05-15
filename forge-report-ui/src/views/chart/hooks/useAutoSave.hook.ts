@@ -24,7 +24,7 @@ export function useAutoSave() {
     saveStatus.value = 'saving'
     saveError.value = ''
     try {
-      const storageInfo = chartEditStore.getStorageInfo()
+      const storageInfo = chartEditStore.getProjectStorageInfo()
       const payload = buildProjectPayload(projectId, storageInfo)
       await updateProjectApi(payload)
       saveStatus.value = 'saved'
@@ -54,6 +54,10 @@ export function useAutoSave() {
       chartEditStore.getEditCanvasConfig.height,
       chartEditStore.getEditCanvasConfig.background,
       chartEditStore.getComponentList.length,
+      chartEditStore.getProjectPages.length,
+      chartEditStore.getProjectPages.map(item => `${item.id}:${item.name}:${item.sort}`).join('|'),
+      chartEditStore.getActivePageId,
+      chartEditStore.getHomePageId,
     ],
     () => {
       scheduleSave()

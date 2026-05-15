@@ -17,7 +17,7 @@
 | Task 1 | 多页面协议与兼容工具 | completed | P0 |
 | Task 2 | chartEditStore 多页面状态 | completed | P0 |
 | Task 3 | 编辑器页面管理面板 | completed | P0 |
-| Task 4 | 保存、自动保存、预览、发布改造 | pending | P0 |
+| Task 4 | 保存、自动保存、预览、发布改造 | completed | P0 |
 | Task 5 | 预览页多页面运行时 | pending | P0 |
 | Task 6 | 组件页面跳转动作配置 | pending | P0 |
 | Task 7 | 下钻上下文与动态参数接入 | pending | P0 |
@@ -148,11 +148,13 @@ source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm build
 
 **目标**: 所有项目保存链路写入多页面完整 JSON，而不是仅保存当前页面。
 
+**状态**: completed
+
 **涉及文件**:
 - `forge-report-ui/src/api/project/index.ts` — `buildProjectPayload()` 支持 `ReportMultiPageStorage`。
 - `forge-report-ui/src/views/chart/hooks/useAutoSave.hook.ts` — 保存前 `flushCurrentPage()`，使用 `getProjectStorageInfo()`。
 - `forge-report-ui/src/views/chart/ContentHeader/headerRightBtn/index.vue` — 预览、发布、保存校验使用多页面完整数据。
-- `forge-report-ui/src/utils/capture.ts` — 发布截图保持当前页或首页截图策略。
+- `forge-report-ui/src/utils/reportPages.ts` — 新增默认多页面项目创建工具。
 - `forge-report-ui/src/views/project/components/ProjectCreateModal/index.vue` — 新建项目默认写入多页面协议。
 - `forge-report-ui/src/views/project/layout/components/ProjectLayoutCreate/components/CreateModal/index.vue` — 新建项目默认写入多页面协议。
 
@@ -170,6 +172,16 @@ export const buildProjectPayload = (
 - 预览打开的是当前编辑的完整项目数据。
 - 发布后后端 `componentData` 与前端预期一致。
 - 新建项目直接是 `version=2` 多页面协议。
+
+**验证**:
+```bash
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm exec eslint src/utils/reportPages.ts src/api/project/index.ts src/views/chart/hooks/useAutoSave.hook.ts src/views/chart/ContentHeader/headerRightBtn/index.vue src/views/project/components/ProjectCreateModal/index.vue src/views/project/layout/components/ProjectLayoutCreate/components/CreateModal/index.vue
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm build
+```
+
+**结果**:
+- ESLint 无错误。
+- `pnpm build` 通过；输出的 lottie `eval`、Rollup 循环 chunk、CSS `:deep()`、chunk size 均为既有警告。
 
 ---
 
