@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.data.mapper.DataDimensionItemMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.plugin.data.entity.DataDimensionItem">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="dimension_id" property="dimensionId"/>
+        <result column="item_value" property="itemValue"/>
+        <result column="item_label" property="itemLabel"/>
+        <result column="sort" property="sort"/>
+        <result column="status" property="status"/>
+        <result column="extra_json" property="extraJson"/>
+        <result column="create_by" property="createBy"/>
+        <result column="create_time" property="createTime"/>
+        <result column="create_dept" property="createDept"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectItemsByDimensionId" resultMap="BaseResultMap">
+        SELECT *
+        FROM ai_report_data_dimension_item
+        WHERE tenant_id = #{tenantId}
+          AND dimension_id = #{dimensionId}
+        <if test="status != null">
+            AND status = #{status}
+        </if>
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="selectEnabledItemsByDimensionIds" resultMap="BaseResultMap">
+        SELECT *
+        FROM ai_report_data_dimension_item
+        WHERE tenant_id = #{tenantId}
+          AND status = 1
+          AND dimension_id IN
+          <foreach collection="dimensionIds" item="dimensionId" open="(" separator="," close=")">
+              #{dimensionId}
+          </foreach>
+        ORDER BY dimension_id ASC, sort ASC, id ASC
+    </select>
+
+    <delete id="deleteByDimensionId">
+        DELETE FROM ai_report_data_dimension_item
+        WHERE tenant_id = #{tenantId}
+          AND dimension_id = #{dimensionId}
+    </delete>
+</mapper>

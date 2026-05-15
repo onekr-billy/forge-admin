@@ -13,4 +13,6 @@ public interface DataDatasetFieldMapper extends BaseMapper<DataDatasetField> {
     List<DataDatasetField> selectFieldListByDatasetId(@Param("datasetId") Long datasetId, @Param("tenantId") Long tenantId);
 
     int deleteByDatasetId(@Param("datasetId") Long datasetId, @Param("tenantId") Long tenantId);
+
+    int selectCountByDimensionId(@Param("tenantId") Long tenantId, @Param("dimensionId") Long dimensionId);
 }

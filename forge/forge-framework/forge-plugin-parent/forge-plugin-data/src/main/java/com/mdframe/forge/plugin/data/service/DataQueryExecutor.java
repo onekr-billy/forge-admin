@@ -4,10 +4,13 @@ import com.mdframe.forge.plugin.data.dto.DataDatasetQueryDTO;
 import com.mdframe.forge.plugin.data.entity.DataConnection;
 import com.mdframe.forge.plugin.data.entity.DataDataset;
 import com.mdframe.forge.plugin.data.entity.DataDatasetField;
+import com.mdframe.forge.plugin.data.entity.DataDimensionItem;
+import com.mdframe.forge.plugin.data.mapper.DataDimensionItemMapper;
 import com.mdframe.forge.plugin.data.support.*;
 import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,8 @@ public class DataQueryExecutor {
     private final SqlSafetyValidator sqlSafetyValidator;
     private final SqlParameterBinder parameterBinder;
     private final DatasetParamSchemaParser datasetParamSchemaParser;
+    private final DataDimensionItemMapper dimensionItemMapper;
+    private final DataDatasetFieldViewAssembler fieldViewAssembler;
 
     public DataDatasetQueryResultVO execute(DataDataset dataset, DataConnection connection, 
             List<DataDatasetField> fieldConfigs, DataDatasetQueryDTO query) {
@@ -81,6 +86,7 @@ public class DataQueryExecutor {
 
         List<Map<String, Object>> rows = executeQuery(connection, sql, buildResult.getParams(), dataset.getTimeoutSeconds());
         
+        rows = applyDimensionTranslation(rows, displayFields);
         rows = applyMasking(rows, displayFields);
         
         result.setDimensions(dimensions);
@@ -313,6 +319,65 @@ public class DataQueryExecutor {
         return rows;
     }
 
+    private List<Map<String, Object>> applyDimensionTranslation(List<Map<String, Object>> rows, List<DataDatasetField> fields) {
+        if (rows == null || rows.isEmpty() || fields == null || fields.isEmpty()) {
+            return rows;
+        }
+
+        List<DataDatasetField> dimensionFields = fields.stream()
+                .filter(field -> field.getDimensionId() != null)
+                .collect(Collectors.toList());
+        if (dimensionFields.isEmpty()) {
+            return rows;
+        }
+
+        Set<Long> dimensionIds = dimensionFields.stream()
+                .map(DataDatasetField::getDimensionId)
+                .collect(Collectors.toSet());
+        if (dimensionIds.isEmpty()) {
+            return rows;
+        }
+
+        List<DataDimensionItem> items = dimensionItemMapper.selectEnabledItemsByDimensionIds(SessionHelper.getTenantId(), dimensionIds);
+        if (items == null || items.isEmpty()) {
+            return rows;
+        }
+
+        Map<Long, Map<String, String>> labelMap = items.stream()
+                .collect(Collectors.groupingBy(
+                        DataDimensionItem::getDimensionId,
+                        LinkedHashMap::new,
+                        Collectors.toMap(
+                                DataDimensionItem::getItemValue,
+                                DataDimensionItem::getItemLabel,
+                                (left, right) -> left,
+                                LinkedHashMap::new
+                        )
+                ));
+
+        for (Map<String, Object> row : rows) {
+            for (DataDatasetField field : dimensionFields) {
+                String fieldName = field.getFieldName();
+                if (!row.containsKey(fieldName)) {
+                    continue;
+                }
+                Object rawValue = row.get(fieldName);
+                if (rawValue == null) {
+                    continue;
+                }
+                if (!"MASK".equals(field.getSensitiveLevel())) {
+                    row.put(fieldName + "Raw", rawValue);
+                }
+                Map<String, String> dimensionLabels = labelMap.get(field.getDimensionId());
+                String label = dimensionLabels != null ? dimensionLabels.get(String.valueOf(rawValue)) : null;
+                if (label != null) {
+                    row.put(fieldName, label);
+                }
+            }
+        }
+        return rows;
+    }
+
     private String applyMaskRule(String value, String maskRule) {
         if (value == null) return null;
         if (maskRule == null || maskRule.isEmpty()) {
@@ -324,14 +389,6 @@ public class DataQueryExecutor {
     }
 
     private List<DataDatasetFieldVO> convertToFieldVOList(List<DataDatasetField> fields) {
-        return fields.stream().map(f -> {
-            DataDatasetFieldVO vo = new DataDatasetFieldVO();
-            vo.setId(f.getId());
-            vo.setFieldName(f.getFieldName());
-            vo.setFieldLabel(f.getFieldLabel());
-            vo.setDataType(f.getDataType());
-            vo.setFieldRole(f.getFieldRole());
-            return vo;
-        }).collect(Collectors.toList());
+        return fieldViewAssembler.toVOList(fields);
     }
 }

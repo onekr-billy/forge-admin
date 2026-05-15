@@ -274,6 +274,29 @@ public RespInfo<LoginResult> exchangeSsoTicket(@RequestBody SsoExchangeRequest r
 
 ---
 
+## 7. Blob 下载响应被统一错误拦截器误判为未知异常
+
+**发现日期**: 2026-05-15
+
+**问题描述**:
+`generator/table` 点击“生成”下载代码包时，后端 `/generator/download/{tableName}` 正常返回 zip 二进制流，但前端报：
+
+```javascript
+{ code: undefined, message: '【undefined】: 未知异常!', error: undefined }
+```
+
+**根本原因**:
+`src/utils/http/interceptors.js` 的响应拦截器在判断 `content-type` 前无条件读取 `response.data.code`。下载接口返回的是 `Blob`，`Blob.code` 为 `undefined`，于是被当成业务异常。
+
+**解决方案**:
+响应拦截器必须先识别 `Blob` / `ArrayBuffer` 等二进制响应，直接返回数据；只有 JSON 响应才走 `RespInfo.code` 判断。若 `responseType: 'blob'` 下服务端返回 JSON 错误 Blob，应先解析 Blob，再进入统一错误处理。
+
+**影响范围**:
+- 所有通过 `request.get(..., { responseType: 'blob' })` 下载文件的前端功能
+- 代码生成、流程图、附件下载等返回非 JSON 的接口
+
+---
+
 ## 记录规范
 
 每次发现新的踩坑点，按以下格式添加：

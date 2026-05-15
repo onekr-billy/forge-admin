@@ -18,6 +18,9 @@
         <result column="sensitive_level" property="sensitiveLevel"/>
         <result column="mask_rule" property="maskRule"/>
         <result column="dict_type" property="dictType"/>
+        <result column="date_format" property="dateFormat"/>
+        <result column="data_unit" property="dataUnit"/>
+        <result column="dimension_id" property="dimensionId"/>
         <result column="sort" property="sort"/>
         <result column="description" property="description"/>
         <result column="create_by" property="createBy"/>
@@ -40,5 +43,12 @@
         WHERE dataset_id = #{datasetId}
           AND tenant_id = #{tenantId}
     </delete>
+
+    <select id="selectCountByDimensionId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_report_data_dataset_field
+        WHERE tenant_id = #{tenantId}
+          AND dimension_id = #{dimensionId}
+    </select>
 
 </mapper>

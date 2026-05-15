@@ -61,7 +61,7 @@
           </button>
         </div>
 
-        <n-input
+        <NInput
           v-model:value="categoryKeyword"
           placeholder="搜索分类名称或编码"
           clearable
@@ -70,7 +70,7 @@
           <template #prefix>
             <i class="i-material-symbols:search-rounded" />
           </template>
-        </n-input>
+        </NInput>
 
         <div class="category-tree-shell">
           <n-empty v-if="categoryTreeNodes.length === 0" description="暂无分类，请前往分类管理页配置" size="small" />
@@ -125,7 +125,7 @@
           </div>
 
           <div class="toolbar-filters">
-            <n-input
+            <NInput
               v-model:value="queryForm.datasetName"
               class="toolbar-filter toolbar-filter--keyword"
               clearable
@@ -135,8 +135,8 @@
               <template #prefix>
                 <i class="i-material-symbols:search-rounded" />
               </template>
-            </n-input>
-            <n-select
+            </NInput>
+            <NSelect
               v-model:value="queryForm.connectionId"
               class="toolbar-filter"
               clearable
@@ -144,14 +144,14 @@
               placeholder="数据连接"
               :options="connectionOptions"
             />
-            <n-select
+            <NSelect
               v-model:value="queryForm.datasetType"
               class="toolbar-filter"
               clearable
               placeholder="数据集类型"
               :options="datasetTypeOptions"
             />
-            <n-select
+            <NSelect
               v-model:value="queryForm.publishStatus"
               class="toolbar-filter"
               clearable
@@ -197,57 +197,104 @@
           @load-list-success="handleDatasetLoadSuccess"
           @modal-close="handleDatasetModalClose"
         >
+          <template #form-stepIndicator>
+            <div class="step-shell" :class="{ 'is-readonly': isFormReadOnly }" :style="stepShellStyle">
+              <div class="step-shell__header">
+                <div class="step-shell__intro">
+                  <p class="step-shell__eyebrow">
+                    Dataset Editing Flow
+                  </p>
+                  <div class="step-shell__title-row">
+                    <h3 class="step-shell__title">
+                      {{ currentStepMeta.title }}
+                    </h3>
+                    <span class="step-shell__progress">
+                      STEP {{ currentStep }}/{{ totalSteps }}
+                    </span>
+                  </div>
+                  <p class="step-shell__description">
+                    {{ currentStepMeta.description }}
+                  </p>
+                </div>
+                <span class="step-shell__status" :class="{ 'is-readonly': isFormReadOnly }">
+                  {{ formModeLabel }}
+                </span>
+              </div>
+
+              <div class="step-progress" :style="stepProgressWrapStyle">
+                <div :style="stepProgressBaseLineStyle" />
+                <div :style="stepProgressActiveLineStyle" />
+                <template v-for="(step, index) in stepDefinitions" :key="step.label">
+                  <div
+                    class="step-node"
+                    :style="getStepNodeInlineStyle(index)"
+                    :class="{
+                      'is-active': currentStep === index + 1,
+                      'is-completed': currentStep > index + 1,
+                    }"
+                  >
+                    <div class="step-circle">
+                      <span v-if="currentStep <= index + 1">{{ index + 1 }}</span>
+                      <i v-else class="i-material-symbols:check-rounded" />
+                    </div>
+                    <div class="step-node__meta">
+                      <div class="step-label">
+                        {{ step.label }}
+                      </div>
+                      <div class="step-caption">
+                        {{ step.caption }}
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
           <template #form-publishReadonlyAlert>
             <n-alert type="warning" :show-icon="false">
               当前数据集已发布，内容处于只读状态。如需修改，请先在列表中执行“下架”。
             </n-alert>
           </template>
 
-          <template #form-datasetOverview="{ formData }">
-            <div class="dataset-guide-grid">
-              <div class="dataset-guide-card">
-                <div class="guide-label">
-                  资产识别
+          <template #form-stepNavigation="{ formData }">
+            <div class="step-navigation-wrapper" :style="stepNavigationWrapperStyle">
+              <div class="step-nav-actions" :style="stepNavigationActionsStyle">
+                <div class="step-navigation-meta" :style="stepNavigationMetaStyle">
+                  <span class="step-navigation-meta__label">当前步骤</span>
+                  <strong class="step-navigation-meta__title">{{ currentStepMeta.label }}</strong>
+                  <span class="step-navigation-meta__desc">{{ stepNavigationNote }}</span>
                 </div>
-                <div class="guide-value">
-                  {{ formData.datasetName || '待命名数据集' }}
-                </div>
-                <div class="guide-note">
-                  {{ formData.datasetCode || '建议使用业务域_主题_粒度 的编码方式' }}
-                </div>
-              </div>
-              <div class="dataset-guide-card">
-                <div class="guide-label">
-                  建模模式
-                </div>
-                <div class="guide-value">
-                  {{ getDatasetTypeLabel(formData.datasetType || 'TABLE') }}
-                </div>
-                <div class="guide-note">
-                  {{ getDatasetSourceSummary(formData) }}
-                </div>
-              </div>
-              <div class="dataset-guide-card">
-                <div class="guide-label">
-                  业务分类
-                </div>
-                <div class="guide-value">
-                  {{ getCategoryName(formData.categoryId) || '未分类' }}
-                </div>
-                <div class="guide-note">
-                  {{ getCategoryGuideNote(formData.categoryId) }}
-                </div>
-              </div>
-              <div class="dataset-guide-card">
-                <div class="guide-label">
-                  发布状态
-                </div>
-                <div class="guide-value">
-                  {{ getPublishStatusLabel(formData.publishStatus ?? 0) }}
-                </div>
-                <div class="guide-note">
-                  {{ getPublishStatusGuide(formData.publishStatus) }}
-                </div>
+                <n-button
+                  v-if="currentStep > 1"
+                  quaternary
+                  @click="goToPrevStep"
+                >
+                  <template #icon>
+                    <i class="i-material-symbols:arrow-back-rounded" />
+                  </template>
+                  上一步
+                </n-button>
+                <n-button
+                  v-if="currentStep < totalSteps"
+                  type="primary"
+                  @click="goToNextStep(formData)"
+                >
+                  <template #icon>
+                    <i class="i-material-symbols:arrow-forward-rounded" />
+                  </template>
+                  下一步
+                </n-button>
+                <n-button
+                  v-if="currentStep === totalSteps && !isFormReadOnly"
+                  type="success"
+                  @click="crudRef?.submitForm()"
+                >
+                  <template #icon>
+                    <i class="i-material-symbols:save-rounded" />
+                  </template>
+                  保存数据集
+                </n-button>
               </div>
             </div>
           </template>
@@ -279,43 +326,61 @@
           </template>
 
           <template #form-sourceGuide="{ formData }">
-            <div class="dataset-inline-guide">
-              <div class="inline-guide-main">
-                <div class="inline-guide-title">
-                  来源选择建议
+            <div class="dataset-context-panel">
+              <div class="context-panel__main">
+                <div class="context-panel__eyebrow">
+                  来源配置
                 </div>
-                <div class="inline-guide-desc">
+                <div class="context-panel__title">
+                  先确定接入方式，再继续字段同步或 SQL 建模
+                </div>
+                <div class="context-panel__desc">
                   {{ getDatasetSourceGuide(formData) }}
                 </div>
               </div>
-              <div class="inline-guide-pills">
-                <span class="guide-pill">
-                  {{ formData.connectionId ? getConnectionName(formData.connectionId) : '待选数据连接' }}
-                </span>
-                <span class="guide-pill guide-pill--muted">
-                  {{ formData.datasetType === 'SQL' ? 'SQL 查询模式' : (formData.tableName || '待选数据表') }}
-                </span>
+              <div class="context-panel__facts">
+                <div class="context-fact">
+                  <span>数据连接</span>
+                  <strong>{{ formData.connectionId ? getConnectionName(formData.connectionId) : '待选择' }}</strong>
+                </div>
+                <div class="context-fact">
+                  <span>接入方式</span>
+                  <strong>{{ getDatasetTypeLabel(formData.datasetType) }}</strong>
+                </div>
+                <div class="context-fact">
+                  <span>来源对象</span>
+                  <strong>{{ getDatasetSourceSubject(formData) }}</strong>
+                </div>
               </div>
             </div>
           </template>
 
           <template #form-paramGuide="{ formData }">
-            <div class="dataset-inline-guide dataset-inline-guide--soft">
-              <div class="inline-guide-main">
-                <div class="inline-guide-title">
-                  条件定义建议
+            <div class="dataset-context-panel dataset-context-panel--muted">
+              <div class="context-panel__main">
+                <div class="context-panel__eyebrow">
+                  条件设计
                 </div>
-                <div class="inline-guide-desc">
+                <div class="context-panel__title">
+                  只保留真正会被报表和运行时消费的筛选条件
+                </div>
+                <div class="context-panel__desc">
                   {{ getDatasetParamGuide(formData) }}
                 </div>
               </div>
-              <div class="inline-guide-pills">
-                <span class="guide-pill">
-                  {{ formData.datasetType === 'SQL' ? `SQL 参数 ${getSqlParamCount(formData.sqlText)} 个` : (formData.tableName ? '已绑定数据表字段' : '待绑定数据表字段') }}
-                </span>
-                <span class="guide-pill guide-pill--muted">
-                  {{ formData.datasetType === 'SQL' ? '参数名需与 SQL 中的 :param 保持一致' : '每个条件都需要映射数据表字段' }}
-                </span>
+              <div class="context-panel__facts">
+                <div class="context-fact">
+                  <span>当前模式</span>
+                  <strong>{{ getDatasetTypeLabel(formData.datasetType) }}</strong>
+                </div>
+                <div class="context-fact">
+                  <span>{{ formData.datasetType === 'SQL' ? '识别参数' : '字段准备' }}</span>
+                  <strong>{{ getDatasetParamReadiness(formData) }}</strong>
+                </div>
+                <div class="context-fact">
+                  <span>约束要求</span>
+                  <strong>{{ getDatasetParamConstraint(formData) }}</strong>
+                </div>
               </div>
             </div>
           </template>
@@ -333,16 +398,33 @@
           </template>
 
           <template #form-settingGuide="{ formData }">
-            <div class="dataset-runtime-strip">
-              <div class="runtime-chip">
-                <span>最大行数</span>
-                <strong>{{ formData.maxRows || 1000 }}</strong>
+            <div class="dataset-context-panel dataset-context-panel--compact">
+              <div class="context-panel__main">
+                <div class="context-panel__eyebrow">
+                  运行建议
+                </div>
+                <div class="context-panel__title">
+                  控制查询边界，保证运行稳定性
+                </div>
+                <div class="context-panel__desc">
+                  最大返回行数和超时时间会直接影响下游报表查询体验与系统负载。
+                </div>
               </div>
-              <div class="runtime-chip">
-                <span>超时</span>
-                <strong>{{ formData.timeoutSeconds || 15 }}s</strong>
+              <div class="context-panel__facts">
+                <div class="context-fact">
+                  <span>最大行数</span>
+                  <strong>{{ formData.maxRows || 1000 }}</strong>
+                </div>
+                <div class="context-fact">
+                  <span>超时时间</span>
+                  <strong>{{ formData.timeoutSeconds || 15 }}s</strong>
+                </div>
+                <div class="context-fact context-fact--wide">
+                  <span>治理建议</span>
+                  <strong>{{ formData.datasetType === 'SQL' ? '复杂 SQL 建议收紧阈值' : '单表模式建议保持轻量' }}</strong>
+                </div>
               </div>
-              <div class="runtime-note">
+              <div class="context-panel__footnote">
                 {{ formData.datasetType === 'SQL' ? '复杂 SQL 建议收紧返回行数和超时时间，避免拖慢报表查询。' : '单表数据集建议保持轻量，先同步字段再逐步补充筛选条件。' }}
               </div>
             </div>
@@ -355,16 +437,68 @@
       v-model:show="fieldModalVisible"
       preset="card"
       :title="fieldModalTitle"
-      style="width: 960px"
+      :style="{ width: 'min(1320px, calc(100vw - 32px))' }"
       :segmented="{ content: 'soft' }"
+      :mask-closable="false"
     >
-      <n-data-table
-        :columns="fieldColumns"
-        :data="fieldRows"
-        :loading="fieldLoading"
-        :pagination="{ pageSize: 10 }"
-        size="small"
-      />
+      <div class="field-config-modal">
+        <div class="field-config-head">
+          <div>
+            <div class="field-config-title">
+              字段配置台
+            </div>
+            <div class="field-config-desc">
+              维护显示名称、标准类型、字段角色和扩展属性。筛选/展示开关不再外露，保持运行时默认可用。
+            </div>
+          </div>
+          <div class="field-config-stats">
+            <div v-for="item in fieldConfigStats" :key="item.label" class="field-config-stat">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <n-alert v-if="fieldConfigReadonly" type="warning" :show-icon="false" class="field-config-alert">
+          当前数据集已发布，字段配置处于只读状态。如需调整，请先下架数据集。
+        </n-alert>
+
+        <n-data-table
+          class="field-config-table"
+          :columns="fieldColumns"
+          :data="fieldRows"
+          :loading="fieldLoading"
+          :pagination="{ pageSize: 10 }"
+          :scroll-x="fieldTableScrollX"
+          max-height="calc(100vh - 390px)"
+          size="small"
+          striped
+        />
+      </div>
+
+      <template #footer>
+        <div class="field-config-footer">
+          <n-button @click="fieldModalVisible = false">
+            关闭
+          </n-button>
+          <n-button
+            v-if="currentFieldDataset?.publishStatus !== 1"
+            secondary
+            :loading="fieldLoading"
+            @click="handleSyncCurrentFields"
+          >
+            同步字段
+          </n-button>
+          <n-button
+            v-if="currentFieldDataset?.publishStatus !== 1"
+            type="primary"
+            :loading="fieldSaving"
+            @click="handleSaveFieldConfig"
+          >
+            保存字段配置
+          </n-button>
+        </div>
+      </template>
     </n-modal>
 
     <n-modal
@@ -387,17 +521,20 @@
 </template>
 
 <script setup>
-import { NTag } from 'naive-ui'
+import { NInput, NSelect, NTag } from 'naive-ui'
 import { computed, h, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getDataConnectionList, getDataConnectionTables } from '@/api/data/connection'
 import {
   deleteDataDataset,
+  getDataDatasetById,
   getDataDatasetCategoryTree,
   offlineDataDataset,
   publishDataDataset,
+  saveDataDatasetFields,
   syncDataDatasetFields,
 } from '@/api/data/dataset'
+import { getDataDimensionList } from '@/api/data/dimension'
 import { AiCrudPage } from '@/components/ai-form'
 import DatasetParamSchemaEditor from '@/components/data/DatasetParamSchemaEditor.vue'
 import SqlEditor from '@/components/SqlEditor.vue'
@@ -411,13 +548,16 @@ const connectionOptions = ref([])
 const categoryTree = ref([])
 const categoryKeyword = ref('')
 const tableOptions = ref([])
+const dimensionOptions = ref([])
 const tableLoading = ref(false)
 const loadedTableConnectionId = ref(null)
 const loadingTableConnectionId = ref(null)
 const fieldModalVisible = ref(false)
 const fieldLoading = ref(false)
+const fieldSaving = ref(false)
 const fieldModalTitle = ref('字段列表')
 const fieldRows = ref([])
+const currentFieldDataset = ref(null)
 const sqlPreviewVisible = ref(false)
 const sqlPreviewLoading = ref(false)
 const sqlPreviewColumns = ref([])
@@ -427,6 +567,28 @@ const activeCategoryScope = ref('all')
 const selectedCategoryId = ref(null)
 const currentFormMode = ref('edit')
 const currentEditingDataset = ref(null)
+const currentStep = ref(1)
+const stepDefinitions = [
+  {
+    label: '数据集定义',
+    caption: '编码 / 分类 / 来源',
+    title: '先把数据集身份和接入来源定清楚',
+    description: '编码、名称、分类和来源会影响字段同步、参数建模和后续发布方式。',
+  },
+  {
+    label: '查询条件',
+    caption: '参数 / 字段 / 约束',
+    title: '只定义真正会被下游消费的筛选条件',
+    description: '单表模式强调字段映射，SQL 模式强调参数名与语句保持一致。',
+  },
+  {
+    label: '执行设置',
+    caption: '行数 / 超时 / 描述',
+    title: '控制查询边界，保证运行时稳定',
+    description: '通过返回行数和超时限制，把数据集控制在可复用、可治理的范围内。',
+  },
+]
+const totalSteps = stepDefinitions.length
 
 const queryForm = reactive({
   datasetName: '',
@@ -457,11 +619,134 @@ const publishStatusOptions = [
   { label: '已下架', value: 2 },
 ]
 
+const dataTypeOptions = [
+  { label: '文本 STRING', value: 'STRING' },
+  { label: '数值 NUMBER', value: 'NUMBER' },
+  { label: '日期 DATE', value: 'DATE' },
+  { label: '日期时间 DATETIME', value: 'DATETIME' },
+  { label: '布尔 BOOLEAN', value: 'BOOLEAN' },
+]
+
+const fieldRoleOptions = [
+  { label: '维度', value: 'DIMENSION' },
+  { label: '指标', value: 'MEASURE' },
+]
+
+const sensitiveLevelOptions = [
+  { label: '不脱敏', value: 'NONE' },
+  { label: '脱敏展示', value: 'MASK' },
+  { label: '隐藏字段', value: 'HIDDEN' },
+]
+
+const maskRuleOptions = [
+  { label: '默认：保留前2后2', value: '__DEFAULT__' },
+  { label: '手机号：隐藏中间4位', value: '(?<=\\d{3})\\d{4}(?=\\d{4})' },
+  { label: '身份证：隐藏出生日期', value: '(?<=\\d{6})\\d{8}(?=\\d{4})' },
+  { label: '银行卡：保留前4后4', value: '(?<=\\d{4})\\d+(?=\\d{4})' },
+]
+
+const dateFormatOptions = [
+  { label: 'yyyy-MM-dd', value: 'yyyy-MM-dd' },
+  { label: 'yyyy-MM-dd HH:mm:ss', value: 'yyyy-MM-dd HH:mm:ss' },
+  { label: 'yyyy/MM/dd', value: 'yyyy/MM/dd' },
+  { label: 'yyyy年MM月dd日', value: 'yyyy年MM月dd日' },
+]
+
+const dataUnitOptions = [
+  { label: '元', value: '元' },
+  { label: '万元', value: '万元' },
+  { label: '%', value: '%' },
+  { label: '人', value: '人' },
+  { label: '次', value: '次' },
+  { label: '件', value: '件' },
+  { label: '天', value: '天' },
+]
+
 const supportedParamOperators = ['=', '!=', '>', '>=', '<', '<=', 'LIKE']
 
 const isFormReadOnly = computed(() => currentFormMode.value === 'view' || currentEditingDataset.value?.publishStatus === 1)
+const fieldConfigReadonly = computed(() => currentFieldDataset.value?.publishStatus === 1)
 const selectedCategoryNode = computed(() => findCategoryById(categoryTree.value, selectedCategoryId.value))
 const selectedTreeKeys = computed(() => activeCategoryScope.value === 'category' && selectedCategoryId.value ? [selectedCategoryId.value] : [])
+const currentStepMeta = computed(() => stepDefinitions[currentStep.value - 1] || stepDefinitions[0])
+const formModeLabel = computed(() => {
+  if (currentEditingDataset.value?.publishStatus === 1) {
+    return '已发布 · 只读浏览'
+  }
+  if (currentFormMode.value === 'add') {
+    return '新增草稿'
+  }
+  if (currentFormMode.value === 'view') {
+    return '只读查看'
+  }
+  return '编辑草稿'
+})
+const stepNavigationNote = computed(() => {
+  if (isFormReadOnly.value) {
+    return '当前为只读模式，可继续浏览各步骤内容'
+  }
+  return currentStepMeta.value.caption
+})
+const stepProgressPercent = computed(() => {
+  if (totalSteps <= 1) {
+    return 0
+  }
+  return ((currentStep.value - 1) / (totalSteps - 1)) * 100
+})
+const stepShellStyle = {
+  width: '100%',
+  boxSizing: 'border-box',
+}
+const stepProgressWrapStyle = computed(() => ({
+  position: 'relative',
+  display: 'grid',
+  gridTemplateColumns: `repeat(${totalSteps}, minmax(0, 1fr))`,
+  gap: '0',
+  width: '100%',
+  maxWidth: 'none',
+  boxSizing: 'border-box',
+  paddingTop: '4px',
+}))
+const stepProgressBaseLineStyle = {
+  position: 'absolute',
+  top: '26px',
+  left: '22px',
+  right: '22px',
+  height: '2px',
+  background: '#dbe3ef',
+}
+const stepProgressActiveLineStyle = computed(() => ({
+  position: 'absolute',
+  top: '26px',
+  left: '22px',
+  width: `calc((100% - 44px) * ${stepProgressPercent.value / 100})`,
+  height: '2px',
+  background: 'linear-gradient(90deg, #0f172a 0%, #1d4ed8 100%)',
+  transition: 'width 0.24s ease',
+}))
+const stepNavigationWrapperStyle = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+  gap: '16px',
+  width: '100%',
+  boxSizing: 'border-box',
+}
+const stepNavigationActionsStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  flexWrap: 'wrap',
+  gap: '12px',
+  width: '100%',
+}
+const stepNavigationMetaStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  minWidth: '0',
+  textAlign: 'right',
+}
 
 const activeCategoryScopeLabel = computed(() => {
   if (activeCategoryScope.value === 'uncategorized') {
@@ -502,6 +787,15 @@ const statCards = computed(() => [
 
 const categoryTreeNodes = computed(() => buildCategoryTreeNodes(filterCategoryTree(categoryTree.value, categoryKeyword.value)))
 const categoryTreeSelectOptions = computed(() => buildCategorySelectOptions(categoryTree.value))
+const fieldConfigStats = computed(() => {
+  const rows = fieldRows.value || []
+  return [
+    { label: '字段总数', value: rows.length },
+    { label: '维度字段', value: rows.filter(field => field.fieldRole === 'DIMENSION').length },
+    { label: '已绑定维度', value: rows.filter(field => field.dimensionId).length },
+    { label: '脱敏字段', value: rows.filter(field => field.sensitiveLevel === 'MASK' || field.sensitiveLevel === 'HIDDEN').length },
+  ]
+})
 
 const tableColumns = computed(() => [
   {
@@ -574,40 +868,135 @@ const tableColumns = computed(() => [
       { label: '查看', key: 'view', type: 'primary', visible: row => row.publishStatus === 1, onClick: handleViewDataset },
       { label: '发布', key: 'publish', type: 'success', visible: row => row.publishStatus !== 1, onClick: handlePublishDataset },
       { label: '下架', key: 'offline', type: 'warning', visible: row => row.publishStatus === 1, onClick: handleOfflineDataset },
-      { label: '查看字段', key: 'fields', type: 'info', onClick: handleViewFields },
+      { label: '字段配置', key: 'fields', type: 'info', onClick: handleViewFields },
       { label: '同步字段', key: 'sync', type: 'info', visible: row => row.publishStatus !== 1, onClick: handleSyncFields },
       { label: '删除', key: 'delete', type: 'error', visible: row => row.publishStatus !== 1, onClick: handleDelete },
     ],
   },
 ])
 
-const fieldColumns = [
-  { title: '字段名', key: 'fieldName', width: 160 },
-  { title: '显示名', key: 'fieldLabel', width: 160 },
-  { title: '来源列', key: 'sourceColumn', width: 140 },
-  { title: '数据库类型', key: 'dbType', width: 120 },
-  { title: '标准类型', key: 'dataType', width: 100 },
+const fieldColumns = computed(() => [
+  {
+    title: '字段名',
+    key: 'fieldName',
+    width: 180,
+    render: row => h('div', { class: 'field-name-cell' }, row.fieldName),
+  },
+  {
+    title: '显示名称',
+    key: 'fieldLabel',
+    width: 190,
+    render: row => renderFieldInput(row, 'fieldLabel', '请输入显示名称'),
+  },
+  {
+    title: '字段说明',
+    key: 'description',
+    width: 250,
+    render: row => renderFieldInput(row, 'description', '字段口径或配置说明'),
+  },
+  {
+    title: '标准类型',
+    key: 'dataType',
+    width: 160,
+    render: row => renderFieldSelect(row, 'dataType', dataTypeOptions, { placeholder: '标准类型' }),
+  },
   {
     title: '字段角色',
     key: 'fieldRole',
-    width: 100,
-    render: row => row.fieldRole === 'MEASURE' ? '指标' : '维度',
+    width: 140,
+    render: row => renderFieldSelect(row, 'fieldRole', fieldRoleOptions, {
+      placeholder: '字段角色',
+      onChange: (value) => {
+        if (value !== 'DIMENSION') {
+          row.dimensionId = null
+        }
+      },
+    }),
   },
   {
-    title: '可筛选',
-    key: 'queryEnabled',
-    width: 80,
-    render: row => row.queryEnabled === 1 ? '是' : '否',
+    title: '绑定维度',
+    key: 'dimensionId',
+    width: 220,
+    render: (row) => {
+      if (row.fieldRole !== 'DIMENSION') {
+        return h('span', { class: 'field-muted-text' }, '指标字段无需绑定')
+      }
+      return renderFieldSelect(row, 'dimensionId', dimensionOptions.value, {
+        placeholder: '选择维度翻译',
+        clearable: true,
+        filterable: true,
+      })
+    },
   },
   {
-    title: '可展示',
-    key: 'displayEnabled',
-    width: 80,
-    render: row => row.displayEnabled === 1 ? '是' : '否',
+    title: '日期格式',
+    key: 'dateFormat',
+    width: 190,
+    render: (row) => {
+      if (!['DATE', 'DATETIME'].includes(row.dataType)) {
+        return h('span', { class: 'field-muted-text' }, '非日期字段')
+      }
+      return renderFieldSelect(row, 'dateFormat', dateFormatOptions, {
+        placeholder: '选择或输入格式',
+        clearable: true,
+        filterable: true,
+        tag: true,
+      })
+    },
   },
-]
+  {
+    title: '计量单位',
+    key: 'dataUnit',
+    width: 150,
+    render: row => renderFieldSelect(row, 'dataUnit', dataUnitOptions, {
+      placeholder: '单位',
+      clearable: true,
+      filterable: true,
+      tag: true,
+    }),
+  },
+  {
+    title: '脱敏策略',
+    key: 'sensitiveLevel',
+    width: 150,
+    render: row => renderFieldSelect(row, 'sensitiveLevel', sensitiveLevelOptions, { placeholder: '脱敏策略' }),
+  },
+  {
+    title: '脱敏规则',
+    key: 'maskRule',
+    width: 230,
+    render: (row) => {
+      if (row.sensitiveLevel !== 'MASK') {
+        return h('span', { class: 'field-muted-text' }, row.sensitiveLevel === 'HIDDEN' ? '字段隐藏' : '不脱敏')
+      }
+      return renderMaskRuleSelect(row)
+    },
+  },
+  {
+    title: '排序',
+    key: 'sort',
+    width: 170,
+    render: row => fieldConfigReadonly.value
+      ? h('span', { class: 'field-sort-value' }, row.sort ?? 0)
+      : h('input', {
+          class: 'field-sort-native-input',
+          type: 'number',
+          min: 0,
+          value: row.sort ?? 0,
+          onInput: event => row.sort = normalizeSortInput(event.target.value),
+        }),
+  },
+  {
+    title: '来源类型',
+    key: 'dbType',
+    width: 130,
+    render: row => h(NTag, { size: 'small', bordered: false }, { default: () => row.dbType || '-' }),
+  },
+])
 
-const editSchema = computed(() => [
+const fieldTableScrollX = computed(() => fieldColumns.value.reduce((total, column) => total + (Number(column.width) || 140), 0))
+
+const step1Schema = computed(() => [
   {
     field: 'publishReadonlyAlert',
     label: '',
@@ -618,10 +1007,10 @@ const editSchema = computed(() => [
     vIf: () => isFormReadOnly.value,
   },
   {
-    field: 'datasetOverview',
+    field: 'stepIndicator',
     label: '',
     type: 'slot',
-    slotName: 'datasetOverview',
+    slotName: 'stepIndicator',
     span: 12,
     showFeedback: false,
   },
@@ -743,6 +1132,25 @@ const editSchema = computed(() => [
     showFeedback: false,
   },
   {
+    field: 'stepNavigation',
+    label: '',
+    type: 'slot',
+    slotName: 'stepNavigation',
+    span: 12,
+    showFeedback: false,
+  },
+])
+
+const step2Schema = computed(() => [
+  {
+    field: 'stepIndicator',
+    label: '',
+    type: 'slot',
+    slotName: 'stepIndicator',
+    span: 12,
+    showFeedback: false,
+  },
+  {
     field: '__sectionParam',
     label: '查询条件定义',
     type: 'divider',
@@ -763,6 +1171,25 @@ const editSchema = computed(() => [
     label: '查询条件',
     type: 'slot',
     slotName: 'paramSchemaJson',
+    span: 12,
+    showFeedback: false,
+  },
+  {
+    field: 'stepNavigation',
+    label: '',
+    type: 'slot',
+    slotName: 'stepNavigation',
+    span: 12,
+    showFeedback: false,
+  },
+])
+
+const step3Schema = computed(() => [
+  {
+    field: 'stepIndicator',
+    label: '',
+    type: 'slot',
+    slotName: 'stepIndicator',
     span: 12,
     showFeedback: false,
   },
@@ -808,10 +1235,27 @@ const editSchema = computed(() => [
     disabled: () => isFormReadOnly.value,
     props: { placeholder: '请输入描述', rows: 3 },
   },
+  {
+    field: 'stepNavigation',
+    label: '',
+    type: 'slot',
+    slotName: 'stepNavigation',
+    span: 12,
+    showFeedback: false,
+  },
 ])
+
+const editSchema = computed(() => {
+  if (currentStep.value === 1)
+    return step1Schema.value
+  if (currentStep.value === 2)
+    return step2Schema.value
+  return step3Schema.value
+})
 
 loadConnectionOptions()
 loadCategoryTree()
+loadDimensionOptions()
 
 async function loadConnectionOptions() {
   try {
@@ -825,6 +1269,21 @@ async function loadConnectionOptions() {
   }
   catch (error) {
     console.error('Failed to load connections', error)
+  }
+}
+
+async function loadDimensionOptions() {
+  try {
+    const res = await getDataDimensionList()
+    if (res.code === 200 && Array.isArray(res.data)) {
+      dimensionOptions.value = res.data.map(item => ({
+        label: `${item.dimensionName}（${item.dimensionCode}）`,
+        value: item.id,
+      }))
+    }
+  }
+  catch (error) {
+    console.error('Failed to load dimensions', error)
   }
 }
 
@@ -863,42 +1322,14 @@ function getPublishStatusLabel(status) {
   return publishStatusOptions.find(item => item.value === status)?.label || '未发布'
 }
 
-function getDatasetTypeLabel(datasetType) {
-  return datasetTypeOptions.find(item => item.value === datasetType)?.label || '单表数据集'
-}
-
-function getCategoryName(categoryId) {
-  return findCategoryById(categoryTree.value, categoryId)?.categoryName || ''
-}
-
-function getCategoryGuideNote(categoryId) {
-  if (categoryId) {
-    return '分类用于筛选定位和默认关联，不在此页维护层级。'
-  }
-  if (activeCategoryScope.value === 'category' && selectedCategoryId.value) {
-    return '当前从分类视角新建，保存前可继续调整默认带入的分类。'
-  }
-  return '未分类也可先保存，后续再补充归档。'
-}
-
-function getPublishStatusGuide(status) {
+function getPublishStatusTagType(status) {
   if (status === 1) {
-    return '当前内容只读，如需调整结构或 SQL，请先下架。'
+    return 'success'
   }
   if (status === 2) {
-    return '已下架，可继续修改并重新发布。'
+    return 'warning'
   }
-  return '草稿状态，可继续完善后发布。'
-}
-
-function getDatasetSourceSummary(formData) {
-  if (!formData?.connectionId) {
-    return '待选择数据连接'
-  }
-  if (formData.datasetType === 'SQL') {
-    return `连接：${getConnectionName(formData.connectionId)}`
-  }
-  return formData.tableName ? `表：${formData.tableName}` : `连接：${getConnectionName(formData.connectionId)}`
+  return 'default'
 }
 
 function getDatasetSourceGuide(formData) {
@@ -906,6 +1337,17 @@ function getDatasetSourceGuide(formData) {
     return 'SQL 数据集适合多表关联、预聚合和复杂过滤，保存前建议先执行 SQL 预览。'
   }
   return '单表数据集适合标准明细表和维表建模，字段同步会按所选数据表结构生成。'
+}
+
+function getDatasetTypeLabel(datasetType) {
+  return datasetType === 'SQL' ? 'SQL 数据集' : '单表数据集'
+}
+
+function getDatasetSourceSubject(formData) {
+  if (formData?.datasetType === 'SQL') {
+    return 'SQL 语句'
+  }
+  return formData?.tableName || '待选择数据表'
 }
 
 function getDatasetParamGuide(formData) {
@@ -916,6 +1358,59 @@ function getDatasetParamGuide(formData) {
       : '先在 SQL 中写入 :paramName，再回到这里定义参数类型、默认值和是否必填。'
   }
   return '单表模式下每个查询条件都要映射到具体数据表字段，便于运行时安全拼装过滤条件。'
+}
+
+function getDatasetParamReadiness(formData) {
+  if (formData?.datasetType === 'SQL') {
+    return `${getSqlParamCount(formData?.sqlText)} 个命名参数`
+  }
+  return formData?.tableName ? '已绑定数据表' : '待选择数据表'
+}
+
+function getDatasetParamConstraint(formData) {
+  if (formData?.datasetType === 'SQL') {
+    return '参数名需与 SQL 保持一致'
+  }
+  return '每项都需要映射字段'
+}
+
+function getStepNodeInlineStyle(index) {
+  if (index === 1) {
+    return {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '12px',
+      minWidth: '0',
+      position: 'relative',
+      zIndex: 1,
+      textAlign: 'center',
+    }
+  }
+
+  if (index === totalSteps - 1) {
+    return {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+      gap: '12px',
+      minWidth: '0',
+      position: 'relative',
+      zIndex: 1,
+      textAlign: 'right',
+    }
+  }
+
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '12px',
+    minWidth: '0',
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'left',
+  }
 }
 
 function getSqlParamCount(sqlText) {
@@ -929,16 +1424,6 @@ function extractSqlParamNames(sqlText) {
 
   const matches = sqlText.matchAll(/:([a-z_]\w*)/gi)
   return [...new Set(Array.from(matches, match => match[1]))]
-}
-
-function getPublishStatusTagType(status) {
-  if (status === 1) {
-    return 'success'
-  }
-  if (status === 2) {
-    return 'warning'
-  }
-  return 'default'
 }
 
 function buildCategoryTreeNodes(tree) {
@@ -1074,6 +1559,7 @@ function handleViewDataset(row) {
 function handleDatasetModalClose() {
   currentFormMode.value = 'edit'
   currentEditingDataset.value = null
+  handleStepReset()
 }
 
 function prepareDatasetFormData(sourceData = {}, options = {}) {
@@ -1191,6 +1677,8 @@ function beforeSubmit(formData) {
 
   delete formData.publishReadonlyAlert
   delete formData.datasetOverview
+  delete formData.stepIndicator
+  delete formData.stepNavigation
   delete formData.__sectionBasic
   delete formData.__sectionSource
   delete formData.__sectionParam
@@ -1316,6 +1804,68 @@ function normalizeParamSchema(rows, datasetType) {
   return normalizedRows
 }
 
+function renderFieldInput(row, key, placeholder) {
+  if (fieldConfigReadonly.value) {
+    return row[key] || '-'
+  }
+  return h(NInput, {
+    value: row[key],
+    size: 'small',
+    placeholder,
+    onUpdateValue: value => row[key] = value,
+  })
+}
+
+function renderFieldSelect(row, key, options, extraProps = {}) {
+  if (fieldConfigReadonly.value) {
+    const option = options.find(item => item.value === row[key])
+    return option?.label || row[key] || '-'
+  }
+
+  const { onChange, ...selectProps } = extraProps
+  return h(NSelect, {
+    value: row[key] ?? null,
+    options,
+    size: 'small',
+    clearable: false,
+    ...selectProps,
+    onUpdateValue: (value) => {
+      row[key] = value
+      onChange?.(value)
+    },
+  })
+}
+
+function renderMaskRuleSelect(row) {
+  if (fieldConfigReadonly.value) {
+    if (!row.maskRule) {
+      return '默认：保留前2后2'
+    }
+    const option = maskRuleOptions.find(item => item.value === row.maskRule)
+    return option?.label || row.maskRule
+  }
+
+  return h(NSelect, {
+    value: row.maskRule || '__DEFAULT__',
+    options: maskRuleOptions,
+    size: 'small',
+    filterable: true,
+    tag: true,
+    placeholder: '选择脱敏规则',
+    onUpdateValue: (value) => {
+      row.maskRule = value === '__DEFAULT__' ? null : value
+    },
+  })
+}
+
+function normalizeSortInput(value) {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return 0
+  }
+  return parsed
+}
+
 async function handlePreviewSql(formData) {
   if (!formData.connectionId) {
     window.$message?.error('请选择数据连接')
@@ -1364,15 +1914,17 @@ async function handlePreviewSql(formData) {
 }
 
 async function handleViewFields(row) {
-  fieldModalTitle.value = `字段列表 - ${row.datasetName}`
+  currentFieldDataset.value = row
+  fieldModalTitle.value = `字段配置 - ${row.datasetName}`
   fieldModalVisible.value = true
   fieldLoading.value = true
   fieldRows.value = []
 
   try {
-    const res = await request.get(`/data/dataset/${row.id}`)
+    await loadDimensionOptions()
+    const res = await getDataDatasetById(row.id)
     if (res.code === 200) {
-      fieldRows.value = res.data?.fields || []
+      fieldRows.value = normalizeFieldRows(res.data?.fields || [])
     }
     else {
       window.$message?.error(res.msg || '加载字段失败')
@@ -1384,6 +1936,102 @@ async function handleViewFields(row) {
   }
   finally {
     fieldLoading.value = false
+  }
+}
+
+function normalizeFieldRows(rows) {
+  return (rows || []).map((row, index) => ({
+    ...row,
+    fieldLabel: row.fieldLabel || row.fieldName,
+    dataType: row.dataType || 'STRING',
+    fieldRole: row.fieldRole || 'DIMENSION',
+    queryEnabled: row.queryEnabled ?? 1,
+    displayEnabled: row.displayEnabled ?? 1,
+    sensitiveLevel: row.sensitiveLevel || 'NONE',
+    sort: row.sort ?? index,
+  }))
+}
+
+function validateFieldRows(rows) {
+  const fieldNames = new Set()
+  for (const [index, row] of rows.entries()) {
+    const fieldName = typeof row.fieldName === 'string' ? row.fieldName.trim() : ''
+    const fieldLabel = typeof row.fieldLabel === 'string' ? row.fieldLabel.trim() : ''
+    if (!fieldName) {
+      window.$message?.error(`第${index + 1}行缺少字段名`)
+      return null
+    }
+    if (fieldNames.has(fieldName)) {
+      window.$message?.error(`字段名重复：${fieldName}`)
+      return null
+    }
+    if (!fieldLabel) {
+      window.$message?.error(`字段 ${fieldName} 缺少显示名称`)
+      return null
+    }
+    fieldNames.add(fieldName)
+  }
+
+  return rows.map((row, index) => {
+    const dataType = row.dataType || 'STRING'
+    const fieldRole = row.fieldRole || 'DIMENSION'
+    const sensitiveLevel = row.sensitiveLevel || 'NONE'
+    const maskRule = row.maskRule === '__DEFAULT__' ? null : row.maskRule
+    return {
+      ...row,
+      fieldName: row.fieldName.trim(),
+      fieldLabel: row.fieldLabel.trim(),
+      dataType,
+      fieldRole,
+      queryEnabled: row.queryEnabled ?? 1,
+      displayEnabled: row.displayEnabled ?? 1,
+      sensitiveLevel,
+      dateFormat: ['DATE', 'DATETIME'].includes(dataType) ? row.dateFormat || null : null,
+      dataUnit: row.dataUnit || null,
+      dimensionId: fieldRole === 'DIMENSION' ? row.dimensionId || null : null,
+      maskRule: sensitiveLevel === 'MASK' ? maskRule || null : null,
+      sort: row.sort ?? index,
+      description: row.description || null,
+    }
+  })
+}
+
+async function handleSaveFieldConfig() {
+  if (!currentFieldDataset.value?.id) {
+    return
+  }
+  if (fieldConfigReadonly.value) {
+    window.$message?.warning('已发布数据集不可修改字段配置')
+    return
+  }
+
+  const normalizedRows = validateFieldRows(fieldRows.value)
+  if (!normalizedRows) {
+    return
+  }
+
+  fieldSaving.value = true
+  try {
+    const res = await saveDataDatasetFields(currentFieldDataset.value.id, normalizedRows)
+    if (res.code === 200) {
+      window.$message?.success('字段配置已保存')
+      fieldRows.value = normalizeFieldRows(normalizedRows)
+    }
+    else {
+      window.$message?.error(res.msg || '保存字段配置失败')
+    }
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '保存字段配置失败')
+  }
+  finally {
+    fieldSaving.value = false
+  }
+}
+
+async function handleSyncCurrentFields() {
+  if (currentFieldDataset.value) {
+    confirmSyncDatasetFields(currentFieldDataset.value, true)
   }
 }
 
@@ -1409,12 +2057,33 @@ function handleDelete(row) {
 }
 
 async function handleSyncFields(row) {
+  confirmSyncDatasetFields(row, true)
+}
+
+function confirmSyncDatasetFields(row, openModal = false) {
+  window.$dialog.warning({
+    title: '确认同步字段',
+    content: `同步会重新读取数据源字段，并覆盖数据集“${row.datasetName}”当前字段配置，包括显示名称、字段角色、维度绑定、脱敏规则和排序。确认继续吗？`,
+    positiveText: '确认同步',
+    negativeText: '取消',
+    onPositiveClick: () => syncDatasetFields(row, openModal),
+  })
+}
+
+async function syncDatasetFields(row, openModal = false) {
+  if (openModal) {
+    currentFieldDataset.value = row
+    fieldModalTitle.value = `字段配置 - ${row.datasetName}`
+    fieldModalVisible.value = true
+    fieldLoading.value = true
+  }
   try {
     window.$message?.loading('正在同步字段...', { duration: 0, key: 'syncFields' })
+    await loadDimensionOptions()
     const res = await syncDataDatasetFields(row.id)
     if (res.code === 200) {
       window.$message?.success(`同步成功，共 ${res.data?.length || 0} 个字段`, { key: 'syncFields' })
-      fieldRows.value = res.data || []
+      fieldRows.value = normalizeFieldRows(res.data || [])
     }
     else {
       window.$message?.error(res.msg || '同步失败', { key: 'syncFields' })
@@ -1422,6 +2091,9 @@ async function handleSyncFields(row) {
   }
   catch (error) {
     window.$message?.error(error?.message || '同步字段失败', { key: 'syncFields' })
+  }
+  finally {
+    fieldLoading.value = false
   }
 }
 
@@ -1469,6 +2141,55 @@ function handleOfflineDataset(row) {
 
 function goToCategoryManage() {
   router.push('/data/dataset-category')
+}
+
+function handleStepReset() {
+  currentStep.value = 1
+}
+
+function canGoToNextStep(formData) {
+  if (isFormReadOnly.value) {
+    return true
+  }
+
+  if (currentStep.value === 1) {
+    if (!formData.datasetCode) {
+      window.$message?.warning('请输入数据集编码')
+      return false
+    }
+    if (!formData.datasetName) {
+      window.$message?.warning('请输入数据集名称')
+      return false
+    }
+    if (!formData.connectionId) {
+      window.$message?.warning('请选择数据连接')
+      return false
+    }
+    if (formData.datasetType === 'TABLE' && !formData.tableName) {
+      window.$message?.warning('请选择数据表')
+      return false
+    }
+    if (formData.datasetType === 'SQL' && !formData.sqlText) {
+      window.$message?.warning('请输入查询SQL')
+      return false
+    }
+  }
+  return true
+}
+
+function goToNextStep(formData) {
+  if (!canGoToNextStep(formData)) {
+    return
+  }
+  if (currentStep.value < totalSteps) {
+    currentStep.value++
+  }
+}
+
+function goToPrevStep() {
+  if (currentStep.value > 1) {
+    currentStep.value--
+  }
 }
 </script>
 
@@ -1777,6 +2498,135 @@ function goToCategoryManage() {
   padding: 2px 0 4px;
 }
 
+.field-config-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field-config-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(420px, 0.85fr);
+  gap: 16px;
+  align-items: stretch;
+  padding: 18px;
+  border: 1px solid #dbe3ef;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 8% 0%, rgb(20 184 166 / 14%), transparent 30%),
+    linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+}
+
+.field-config-title {
+  color: #0f172a;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.field-config-desc {
+  max-width: 720px;
+  margin-top: 8px;
+  color: #475569;
+  line-height: 1.75;
+}
+
+.field-config-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.field-config-stat {
+  padding: 12px 14px;
+  border: 1px solid rgb(148 163 184 / 18%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 80%);
+}
+
+.field-config-stat span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.field-config-stat strong {
+  display: block;
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.field-config-alert {
+  border-radius: 14px;
+}
+
+.field-config-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.field-config-table {
+  width: 100%;
+}
+
+:deep(.field-config-table .n-data-table-base-table-body) {
+  overflow-x: auto !important;
+}
+
+:deep(.field-config-table .n-data-table-td) {
+  vertical-align: top;
+}
+
+.field-name-cell {
+  display: block;
+  overflow: hidden;
+  color: #0f172a;
+  font-weight: 700;
+  line-height: 1.45;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-muted-text {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.field-sort-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 26px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.field-sort-native-input {
+  width: 112px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  outline: none;
+}
+
+.field-sort-native-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 12%);
+}
+
 :deep(.dataset-crud .ai-crud-main) {
   background: transparent;
 }
@@ -1815,152 +2665,49 @@ function goToCategoryManage() {
 }
 
 :global(.data-dataset-edit-form) {
-  padding: 4px 2px 0;
+  padding: 8px 4px 4px;
 }
 
-:global(.data-dataset-edit-form .dataset-guide-grid) {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+:global(.data-dataset-edit-form .n-form-item:has(.step-shell)),
+:global(.data-dataset-edit-form .n-form-item:has(.dataset-context-panel)),
+:global(.data-dataset-edit-form .n-form-item:has(.dataset-param-editor)),
+:global(.data-dataset-edit-form .n-form-item:has(.step-navigation-wrapper)),
+:global(.data-dataset-edit-form .n-form-item:has(.sql-preview-action)),
+:global(.data-dataset-edit-form .n-form-item:has(.dataset-form-divider)),
+:global(.data-dataset-edit-form .n-form-item:has(.n-alert)) {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-:global(.data-dataset-edit-form .dataset-guide-card) {
-  padding: 14px 16px;
-  border: 1px solid #dbe8f5;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #fbfdff 0%, #f6faff 100%);
+:global(.data-dataset-edit-form .n-form-item:has(.step-shell)) {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  max-width: none !important;
 }
 
-:global(.data-dataset-edit-form .guide-label) {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-:global(.data-dataset-edit-form .guide-value) {
-  margin-top: 10px;
-  color: #0f172a;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.4;
-}
-
-:global(.data-dataset-edit-form .guide-note) {
-  margin-top: 6px;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-:global(.data-dataset-edit-form .dataset-inline-guide) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
-  border: 1px solid #d8e6f4;
-  border-radius: 14px;
-}
-
-:global(.data-dataset-edit-form .dataset-inline-guide--soft) {
-  background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
-}
-
-:global(.data-dataset-edit-form .inline-guide-main) {
-  min-width: 0;
-}
-
-:global(.data-dataset-edit-form .inline-guide-title) {
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-:global(.data-dataset-edit-form .inline-guide-desc) {
-  margin-top: 6px;
-  color: #475569;
-  font-size: 12px;
-  line-height: 1.75;
-}
-
-:global(.data-dataset-edit-form .inline-guide-pills) {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-:global(.data-dataset-edit-form .guide-pill) {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 12px;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  background: #ecfeff;
-  border: 1px solid #a5f3fc;
-  border-radius: 999px;
-}
-
-:global(.data-dataset-edit-form .guide-pill--muted) {
-  color: #475569;
-  background: #fff;
-  border-color: #dbe3ef;
-}
-
-:global(.data-dataset-edit-form .dataset-runtime-strip) {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  border-radius: 14px;
-}
-
-:global(.data-dataset-edit-form .runtime-chip) {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 6px 10px;
-  color: #334155;
-  font-size: 12px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-}
-
-:global(.data-dataset-edit-form .runtime-chip strong) {
-  color: #0f172a;
-  font-size: 14px;
-}
-
-:global(.data-dataset-edit-form .runtime-note) {
-  color: #475569;
-  font-size: 12px;
-  line-height: 1.7;
+:global(.data-dataset-edit-form .n-form-item:has(.step-shell) .n-form-item-blank) {
+  width: 100% !important;
+  max-width: none !important;
 }
 
 :global(.data-dataset-edit-form .n-form-item) {
-  margin-bottom: 8px;
-  padding: 12px;
-  border: 1px solid #e8edf5;
-  border-radius: 10px;
-  background: #fff;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff 0%, #fcfdff 100%);
   transition:
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
 :global(.data-dataset-edit-form .n-form-item:hover) {
-  border-color: #cbd8ea;
-  box-shadow: 0 2px 8px rgb(15 23 42 / 4%);
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 6%);
+  transform: translateY(-1px);
 }
 
 :global(.data-dataset-edit-form .n-form-item-blank) {
@@ -1969,15 +2716,16 @@ function goToCategoryManage() {
 
 :global(.data-dataset-edit-form .n-form-item-label) {
   min-height: 20px;
-  margin-bottom: 7px;
-  color: #475569;
+  margin-bottom: 10px;
+  color: #334155;
   font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
 }
 
 :global(.data-dataset-edit-form .dataset-form-divider) {
-  margin: 12px 0 8px;
+  margin: 14px 0 10px;
   color: #64748b;
 }
 
@@ -1987,9 +2735,9 @@ function goToCategoryManage() {
 }
 
 :global(.data-dataset-edit-form .dataset-form-divider .n-divider__title) {
-  color: #1e293b;
-  font-size: 14px;
-  font-weight: 600;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 :global(.data-dataset-edit-form .n-input),
@@ -2003,13 +2751,105 @@ function goToCategoryManage() {
   width: 100%;
 }
 
-:global(.data-dataset-edit-form textarea) {
-  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
-  line-height: 1.55;
+:global(.data-dataset-edit-form .sql-preview-action) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
 }
 
 :global(.data-dataset-edit-form .n-radio-group .n-space) {
   gap: 8px 18px !important;
+}
+
+:global(.data-dataset-edit-form .dataset-context-panel) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  gap: 18px;
+  padding: 18px 20px;
+  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+  border: 1px solid #dbe3ef;
+  border-radius: 18px;
+}
+
+:global(.data-dataset-edit-form .dataset-context-panel--muted) {
+  background: linear-gradient(180deg, #fcfdff 0%, #f8fafc 100%);
+}
+
+:global(.data-dataset-edit-form .dataset-context-panel--compact) {
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 1fr);
+}
+
+:global(.data-dataset-edit-form .context-panel__main) {
+  min-width: 0;
+}
+
+:global(.data-dataset-edit-form .context-panel__eyebrow) {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+:global(.data-dataset-edit-form .context-panel__title) {
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+:global(.data-dataset-edit-form .context-panel__desc) {
+  margin-top: 8px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+:global(.data-dataset-edit-form .context-panel__facts) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+:global(.data-dataset-edit-form .context-fact) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+:global(.data-dataset-edit-form .context-fact--wide) {
+  grid-column: 1 / -1;
+}
+
+:global(.data-dataset-edit-form .context-fact span) {
+  color: #64748b;
+  font-size: 12px;
+}
+
+:global(.data-dataset-edit-form .context-fact strong) {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+:global(.data-dataset-edit-form .context-panel__footnote) {
+  grid-column: 1 / -1;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.8;
+  padding-top: 2px;
 }
 
 @media (max-width: 1400px) {
@@ -2044,22 +2884,332 @@ function goToCategoryManage() {
     flex-direction: column;
   }
 
-  :global(.data-dataset-edit-form .dataset-guide-grid) {
-    grid-template-columns: 1fr;
-  }
-
-  :global(.data-dataset-edit-form .dataset-inline-guide) {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  :global(.data-dataset-edit-form .inline-guide-pills) {
-    justify-content: flex-start;
-  }
-
   .toolbar-title-meta {
     width: 100%;
     justify-content: flex-start;
+  }
+}
+
+:global(.data-dataset-edit-form .step-shell) {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box;
+  padding: 24px 28px;
+  margin-bottom: 6px;
+  background: linear-gradient(180deg, #fff 0%, #f7f9fc 100%);
+  border: 1px solid #dbe3ef;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgb(15 23 42 / 8%);
+}
+
+:global(.data-dataset-edit-form .step-shell.is-readonly) {
+  border-color: #d8dee8;
+}
+
+:global(.data-dataset-edit-form .step-shell__header) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+:global(.data-dataset-edit-form .step-shell__intro) {
+  min-width: 0;
+}
+
+:global(.data-dataset-edit-form .step-shell__eyebrow) {
+  margin: 0 0 10px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+:global(.data-dataset-edit-form .step-shell__title-row) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+:global(.data-dataset-edit-form .step-shell__title) {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+:global(.data-dataset-edit-form .step-shell__progress) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: #e2e8f0;
+  border-radius: 999px;
+}
+
+:global(.data-dataset-edit-form .step-shell__description) {
+  max-width: 760px;
+  margin: 10px 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+:global(.data-dataset-edit-form .step-shell__status) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #e2e8f0;
+  border-radius: 999px;
+}
+
+:global(.data-dataset-edit-form .step-shell__status.is-readonly) {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+:global(.data-dataset-edit-form .step-progress) {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  max-width: none;
+  gap: 0;
+  padding-top: 4px;
+}
+
+:global(.data-dataset-edit-form .step-progress::before) {
+  position: absolute;
+  top: 26px;
+  left: 22px;
+  right: 22px;
+  height: 2px;
+  background: #dbe3ef;
+  content: '';
+}
+
+:global(.data-dataset-edit-form .step-progress::after) {
+  position: absolute;
+  top: 26px;
+  left: 22px;
+  width: calc((100% - 44px) * var(--step-progress-percent));
+  height: 2px;
+  background: linear-gradient(90deg, #0f172a 0%, #1d4ed8 100%);
+  content: '';
+  transition: width 0.24s ease;
+}
+
+:global(.data-dataset-edit-form .step-node) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+:global(.data-dataset-edit-form .step-circle) {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #64748b;
+  transition: all 0.3s ease;
+}
+
+:global(.data-dataset-edit-form .step-node__meta) {
+  min-width: 0;
+}
+
+:global(.data-dataset-edit-form .step-node:nth-child(3n - 1)) {
+  align-items: center;
+  text-align: center;
+}
+
+:global(.data-dataset-edit-form .step-node:nth-child(3n)) {
+  align-items: flex-end;
+  text-align: right;
+}
+
+:global(.data-dataset-edit-form .step-node.is-active .step-circle) {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+  box-shadow: 0 10px 20px rgb(15 23 42 / 18%);
+}
+
+:global(.data-dataset-edit-form .step-node.is-completed .step-circle) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+  box-shadow: none;
+}
+
+:global(.data-dataset-edit-form .step-node.is-completed .step-circle i) {
+  font-size: 18px;
+}
+
+:global(.data-dataset-edit-form .step-label) {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+:global(.data-dataset-edit-form .step-caption) {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+:global(.data-dataset-edit-form .step-node.is-active .step-label) {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+:global(.data-dataset-edit-form .step-node.is-active .step-caption) {
+  color: #64748b;
+}
+
+:global(.data-dataset-edit-form .step-navigation-wrapper) {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+  margin-top: 28px;
+  padding: 18px 20px 4px;
+  border-top: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0%), rgb(255 255 255 / 88%) 18%, #fff 100%);
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+}
+
+:global(.data-dataset-edit-form .step-navigation-meta) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  text-align: right;
+}
+
+:global(.data-dataset-edit-form .step-navigation-meta__label) {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+:global(.data-dataset-edit-form .step-navigation-meta__title) {
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+:global(.data-dataset-edit-form .step-navigation-meta__desc) {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+:global(.data-dataset-edit-form .step-nav-actions) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+  .field-config-head {
+    grid-template-columns: 1fr;
+  }
+
+  .field-config-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :global(.data-dataset-edit-form .dataset-context-panel),
+  :global(.data-dataset-edit-form .dataset-context-panel--compact) {
+    grid-template-columns: 1fr;
+  }
+
+  :global(.data-dataset-edit-form .step-progress) {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  :global(.data-dataset-edit-form .step-progress::before),
+  :global(.data-dataset-edit-form .step-progress::after) {
+    display: none;
+  }
+
+  :global(.data-dataset-edit-form .step-node) {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  :global(.data-dataset-edit-form .step-navigation-wrapper) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  :global(.data-dataset-edit-form .step-node:nth-child(3n - 1)),
+  :global(.data-dataset-edit-form .step-node:nth-child(3n)) {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  :global(.data-dataset-edit-form .step-nav-actions) {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  :global(.data-dataset-edit-form .step-navigation-meta) {
+    text-align: left;
+  }
+}
+
+@media (max-width: 768px) {
+  .field-config-stats {
+    grid-template-columns: 1fr;
+  }
+
+  :global(.data-dataset-edit-form .step-shell) {
+    padding: 20px 18px;
+  }
+
+  :global(.data-dataset-edit-form .step-shell__header) {
+    flex-direction: column;
+  }
+
+  :global(.data-dataset-edit-form .context-panel__facts) {
+    grid-template-columns: 1fr;
+  }
+
+  :global(.data-dataset-edit-form .sql-preview-action) {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.data.service.DataDatasetCategoryService;
 import com.mdframe.forge.plugin.data.service.DataDatasetFieldService;
 import com.mdframe.forge.plugin.data.service.DataDatasetService;
 import com.mdframe.forge.plugin.data.support.DatasetParamSchemaParser;
+import com.mdframe.forge.plugin.data.support.DataDatasetFieldViewAssembler;
 import com.mdframe.forge.plugin.data.support.DbDialect;
 import com.mdframe.forge.plugin.data.support.DbDialectFactory;
 import com.mdframe.forge.plugin.data.support.JdbcDataSourceProvider;
@@ -60,6 +61,7 @@ public class DataDatasetController {
     private final SqlSafetyValidator sqlSafetyValidator;
     private final SqlParameterBinder parameterBinder;
     private final DatasetParamSchemaParser datasetParamSchemaParser;
+    private final DataDatasetFieldViewAssembler fieldViewAssembler;
 
     @GetMapping("/page")
     public RespInfo<IPage<DataDataset>> page(
@@ -358,25 +360,7 @@ public class DataDatasetController {
     }
 
     private List<DataDatasetFieldVO> convertToFieldVOList(List<DataDatasetField> fields) {
-        return fields.stream().map(field -> {
-            DataDatasetFieldVO vo = new DataDatasetFieldVO();
-            vo.setId(field.getId());
-            vo.setFieldName(field.getFieldName());
-            vo.setFieldLabel(field.getFieldLabel());
-            vo.setSourceColumn(field.getSourceColumn());
-            vo.setDbType(field.getDbType());
-            vo.setDataType(field.getDataType());
-            vo.setFieldRole(field.getFieldRole());
-            vo.setDefaultAgg(field.getDefaultAgg());
-            vo.setQueryEnabled(field.getQueryEnabled());
-            vo.setDisplayEnabled(field.getDisplayEnabled());
-            vo.setSensitiveLevel(field.getSensitiveLevel());
-            vo.setMaskRule(field.getMaskRule());
-            vo.setDictType(field.getDictType());
-            vo.setSort(field.getSort());
-            vo.setDescription(field.getDescription());
-            return vo;
-        }).collect(Collectors.toList());
+        return fieldViewAssembler.toVOList(fields);
     }
 
     private DataDatasetField convertFieldDTOToEntity(DataDatasetFieldDTO dto) {
@@ -394,6 +378,9 @@ public class DataDatasetController {
         entity.setSensitiveLevel(dto.getSensitiveLevel() != null ? dto.getSensitiveLevel() : "NONE");
         entity.setMaskRule(dto.getMaskRule());
         entity.setDictType(dto.getDictType());
+        entity.setDateFormat(dto.getDateFormat());
+        entity.setDataUnit(dto.getDataUnit());
+        entity.setDimensionId(dto.getDimensionId());
         entity.setSort(dto.getSort() != null ? dto.getSort() : 0);
         entity.setDescription(dto.getDescription());
         return entity;

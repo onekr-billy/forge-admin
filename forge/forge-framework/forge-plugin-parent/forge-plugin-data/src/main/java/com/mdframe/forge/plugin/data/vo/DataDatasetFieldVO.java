@@ -31,6 +31,16 @@ public class DataDatasetFieldVO {
 
     private String dictType;
 
+    private String dateFormat;
+
+    private String dataUnit;
+
+    private Long dimensionId;
+
+    private String dimensionCode;
+
+    private String dimensionName;
+
     private Integer sort;
 
     private String description;

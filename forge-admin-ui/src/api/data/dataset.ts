@@ -52,6 +52,11 @@ export interface DataDatasetField {
   sensitiveLevel?: string
   maskRule?: string
   dictType?: string
+  dateFormat?: string
+  dataUnit?: string
+  dimensionId?: number | null
+  dimensionCode?: string
+  dimensionName?: string
   sort?: number
   description?: string
 }

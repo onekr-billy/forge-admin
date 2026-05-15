@@ -1237,12 +1237,15 @@ async function confirmRename() {
     if (res?.code === 200) {
       file.originalName = newName
       window.$message?.success('重命名成功')
-    } else {
+    }
+    else {
       window.$message?.error(res?.msg || '重命名失败')
     }
-  } catch (e) {
+  }
+  catch (e) {
     window.$message?.error('重命名失败')
-  } finally {
+  }
+  finally {
     renameVisible.value = false
   }
 }

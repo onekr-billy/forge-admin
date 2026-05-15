@@ -21,7 +21,9 @@
     >
       <!-- 自定义上传触发区 -->
       <div v-if="!disabled && (!limit || fileList.length < limit)" class="upload-dropzone">
-        <NIcon size="24" class="upload-dropzone-icon"><CloudUploadOutline /></NIcon>
+        <NIcon size="24" class="upload-dropzone-icon">
+          <CloudUploadOutline />
+        </NIcon>
         <div class="upload-dropzone-text">
           <span class="upload-dropzone-main">{{ uploadButtonText }}</span>
           <span v-if="uploadHint" class="upload-dropzone-hint">{{ uploadHint }}</span>
@@ -54,7 +56,7 @@
                 title="重命名"
                 @click="openRename(file)"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
               </NIcon>
             </span>
             <span v-if="file.status === 'uploading'" class="file-progress">
@@ -74,10 +76,10 @@
 
         <div v-if="file.status === 'finished'" class="file-actions">
           <NIcon size="18" title="下载" @click="handleDownload(file)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
           </NIcon>
           <NIcon v-if="!disabled" size="18" class="file-action-danger" title="删除" @click="handleRemoveFile(file)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
           </NIcon>
         </div>
       </div>
@@ -91,9 +93,15 @@
     <!-- 上传提示 -->
     <div v-if="showTip" class="upload-tip">
       <NText depth="3" style="font-size: 12px">
-        <template v-if="fileType && fileType.length > 0">支持 {{ fileType.join('/') }} </template>
-        <template v-if="fileSize">单文件 ≤ {{ fileSize }}MB </template>
-        <template v-if="limit">最多 {{ limit }} 个</template>
+        <template v-if="fileType && fileType.length > 0">
+          支持 {{ fileType.join('/') }}
+        </template>
+        <template v-if="fileSize">
+          单文件 ≤ {{ fileSize }}MB
+        </template>
+        <template v-if="limit">
+          最多 {{ limit }} 个
+        </template>
       </NText>
     </div>
   </div>
@@ -101,18 +109,18 @@
 
 <script setup>
 import {
+  ArchiveOutline,
   CloudUploadOutline,
+  CodeOutline,
   DocumentTextOutline,
   ImageOutline,
-  VideocamOutline,
   MusicalNoteOutline,
-  ArchiveOutline,
-  CodeOutline,
+  VideocamOutline,
 } from '@vicons/ionicons5'
 import { NIcon, NInput, NModal, NText, NUpload } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useAuthStore } from '@/store'
 import { useStorageConfig } from '@/composables/useStorageConfig'
+import { useAuthStore } from '@/store'
 import { downloadFile, generateUUID, getFileUrl, request, resolveRenderableFileUrl } from '@/utils'
 
 const props = defineProps({
@@ -203,8 +211,10 @@ let loadSeq = 0
 // 上传提示文案
 const uploadHint = computed(() => {
   const parts = []
-  if (props.fileType?.length) parts.push(`支持 ${props.fileType.join('/')}`)
-  if (props.fileSize) parts.push(`≤${props.fileSize}MB`)
+  if (props.fileType?.length)
+    parts.push(`支持 ${props.fileType.join('/')}`)
+  if (props.fileSize)
+    parts.push(`≤${props.fileSize}MB`)
   return parts.join(' · ')
 })
 
@@ -217,36 +227,63 @@ const displayFiles = computed(() => {
 function getFileTypeIcon(file) {
   const ext = (file.metadata?.extension || getExt(file.name)).toLowerCase()
   const map = {
-    png: ImageOutline, jpg: ImageOutline, jpeg: ImageOutline, gif: ImageOutline,
-    webp: ImageOutline, svg: ImageOutline, bmp: ImageOutline, ico: ImageOutline,
-    mp4: VideocamOutline, avi: VideocamOutline, mov: VideocamOutline, wmv: VideocamOutline,
-    mp3: MusicalNoteOutline, wav: MusicalNoteOutline, flac: MusicalNoteOutline,
-    zip: ArchiveOutline, rar: ArchiveOutline, '7z': ArchiveOutline, tar: ArchiveOutline,
-    gz: ArchiveOutline,
-    js: CodeOutline, ts: CodeOutline, py: CodeOutline, java: CodeOutline,
-    html: CodeOutline, css: CodeOutline, json: CodeOutline, xml: CodeOutline,
+    'png': ImageOutline,
+    'jpg': ImageOutline,
+    'jpeg': ImageOutline,
+    'gif': ImageOutline,
+    'webp': ImageOutline,
+    'svg': ImageOutline,
+    'bmp': ImageOutline,
+    'ico': ImageOutline,
+    'mp4': VideocamOutline,
+    'avi': VideocamOutline,
+    'mov': VideocamOutline,
+    'wmv': VideocamOutline,
+    'mp3': MusicalNoteOutline,
+    'wav': MusicalNoteOutline,
+    'flac': MusicalNoteOutline,
+    'zip': ArchiveOutline,
+    'rar': ArchiveOutline,
+    '7z': ArchiveOutline,
+    'tar': ArchiveOutline,
+    'gz': ArchiveOutline,
+    'js': CodeOutline,
+    'ts': CodeOutline,
+    'py': CodeOutline,
+    'java': CodeOutline,
+    'html': CodeOutline,
+    'css': CodeOutline,
+    'json': CodeOutline,
+    'xml': CodeOutline,
   }
   return map[ext] || DocumentTextOutline
 }
 
 function getFileIconColor(file) {
   const ext = (file.metadata?.extension || getExt(file.name)).toLowerCase()
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return '#e8590c'
-  if (['mp4', 'avi', 'mov'].includes(ext)) return '#1971c2'
-  if (['mp3', 'wav'].includes(ext)) return '#e03131'
-  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '#2f9e44'
-  if (['js', 'ts', 'py', 'java', 'html', 'css', 'json'].includes(ext)) return '#6741d9'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext))
+    return '#e8590c'
+  if (['mp4', 'avi', 'mov'].includes(ext))
+    return '#1971c2'
+  if (['mp3', 'wav'].includes(ext))
+    return '#e03131'
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext))
+    return '#2f9e44'
+  if (['js', 'ts', 'py', 'java', 'html', 'css', 'json'].includes(ext))
+    return '#6741d9'
   return '#868e96'
 }
 
 function getExt(name) {
-  if (!name) return ''
+  if (!name)
+    return ''
   const i = name.lastIndexOf('.')
   return i > -1 ? name.slice(i + 1) : ''
 }
 
 function formatSize(bytes) {
-  if (!bytes || bytes <= 0) return ''
+  if (!bytes || bytes <= 0)
+    return ''
   const units = ['B', 'KB', 'MB', 'GB']
   let i = 0
   let size = Number(bytes)
@@ -435,7 +472,8 @@ function handleFinish({ file, event }) {
       }
       if (idx > -1) {
         fileList.value.splice(idx, 1, enriched)
-      } else {
+      }
+      else {
         fileList.value.push(enriched)
       }
 
@@ -587,7 +625,8 @@ async function fetchFileName(fileId) {
     if (res?.code === 200 && res.data?.originalName) {
       return { name: res.data.originalName, metadata: res.data }
     }
-  } catch { /* 静默 */ }
+  }
+  catch { /* 静默 */ }
   return null
 }
 
@@ -610,15 +649,19 @@ function openRename(file) {
 async function confirmRename() {
   const file = renameFile.value
   const newName = renameName.value.trim()
-  if (!file || !newName) return
+  if (!file || !newName)
+    return
   try {
     file.name = newName
-    if (file.metadata) file.metadata.originalName = newName
+    if (file.metadata)
+      file.metadata.originalName = newName
     await request.put(`/system/file/metadata/rename?fileId=${encodeURIComponent(file.fileId)}&originalName=${encodeURIComponent(newName)}`)
     window.$message.success('重命名成功')
-  } catch (e) {
+  }
+  catch (e) {
     window.$message.error('重命名失败')
-  } finally {
+  }
+  finally {
     renameVisible.value = false
   }
 }
@@ -743,7 +786,9 @@ onMounted(() => {
   opacity: 0;
   cursor: pointer;
   color: #868e96;
-  transition: opacity 0.15s, color 0.15s;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
 }
 .file-card:hover .file-rename-trigger {
   opacity: 0.5;

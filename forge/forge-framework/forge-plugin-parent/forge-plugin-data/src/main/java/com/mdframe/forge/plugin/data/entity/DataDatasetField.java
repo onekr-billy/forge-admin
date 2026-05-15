@@ -41,6 +41,12 @@ public class DataDatasetField extends TenantEntity {
 
     private String dictType;
 
+    private String dateFormat;
+
+    private String dataUnit;
+
+    private Long dimensionId;
+
     private Integer sort;
 
     private String description;
