@@ -18,6 +18,13 @@ type DataPondMapType = {
 
 // 数据池 Map 中请求对应 callback
 const mittDataPondMap = new Map<string, DataPondMapType[]>()
+const dataPondRuntimeStops: Array<() => void> = []
+const dataPondRuntimeIntervals: any[] = []
+
+const clearDataPondRuntime = () => {
+  dataPondRuntimeStops.splice(0).forEach(stop => stop())
+  dataPondRuntimeIntervals.splice(0).forEach(interval => clearInterval(interval))
+}
 
 // 创建单个数据项轮询接口
 const newPondItemInterval = (
@@ -26,7 +33,7 @@ const newPondItemInterval = (
   componentList: Array<CreateComponentType | CreateComponentGroupType>,
   dataPondMapItem?: DataPondMapType[]
 ) => {
-  if (!dataPondMapItem) return
+  if (!dataPondMapItem || !requestDataPondItem.value) return
   let fetchInterval: any = 0
 
   clearInterval(fetchInterval)
@@ -56,12 +63,12 @@ const newPondItemInterval = (
     }
   }
 
-  watch(
+  const stopWatch = watch(
     () => [
-      requestDataPondItem.value.dataPondRequestConfig.requestParams.Params,
-      requestDataPondItem.value.dataPondRequestConfig.dynamicRequestParams,
+      requestDataPondItem.value?.dataPondRequestConfig.requestParams.Params,
+      requestDataPondItem.value?.dataPondRequestConfig.dynamicRequestParams,
       getDynamicRequestParamDependencySnapshot(
-        requestDataPondItem.value.dataPondRequestConfig.dynamicRequestParams,
+        requestDataPondItem.value?.dataPondRequestConfig.dynamicRequestParams,
         componentList
       )
     ],
@@ -73,6 +80,7 @@ const newPondItemInterval = (
       deep: true
     }
   )
+  dataPondRuntimeStops.push(stopWatch)
 
 
   // 立即调用
@@ -90,7 +98,10 @@ const newPondItemInterval = (
   // 单位
   const unit = targetInterval ? targetUnit : globalUnit
   // 开启轮询
-  if (time) fetchInterval = setInterval(fetchFn, intervalUnitHandle(time, unit))
+  if (time) {
+    fetchInterval = setInterval(fetchFn, intervalUnitHandle(time, unit))
+    dataPondRuntimeIntervals.push(fetchInterval)
+  }
 }
 
 /**
@@ -120,6 +131,7 @@ export const useChartDataPondFetch = () => {
 
   // 清除旧数据
   const clearMittDataPondMap = () => {
+    clearDataPondRuntime()
     mittDataPondMap.clear()
   }
 
@@ -132,7 +144,7 @@ export const useChartDataPondFetch = () => {
       const requestDataPondItem = computed(() => {
         return requestGlobalConfig.requestDataPond.find(item => item.dataPondId === pondKey)
       }) as ComputedRef<RequestDataPondItemType>
-      if (requestDataPondItem) {
+      if (requestDataPondItem.value) {
         newPondItemInterval(
           chartEditStore.requestGlobalConfig,
           requestDataPondItem,

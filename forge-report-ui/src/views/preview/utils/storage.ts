@@ -1,8 +1,9 @@
 import { getSessionStorage, getLocalStorage } from '@/utils'
 import { StorageEnum } from '@/enums/storageEnum'
-import { ChartEditStorage, ReportProjectStorage } from '@/store/modules/chartEditStore/chartEditStore.d'
 import { useChartEditStore } from '@/store/modules/chartEditStore/chartEditStore'
 import { getProjectDetailApi } from '@/api/project'
+import { normalizeProjectStorage, resolveInitialPreviewPage } from '@/utils/reportPages'
+import type { ChartEditStorage, ReportPageTransition, ReportProjectStorage } from '@/store/modules/chartEditStore/chartEditStore.d'
 
 const chartEditStore = useChartEditStore()
 
@@ -20,8 +21,26 @@ const getHashInfo = () => {
 }
 
 const applyStorage = (storage: ReportProjectStorage, id: string, pageId?: string) => {
-  const pageStorage = chartEditStore.loadProjectStorage(storage, pageId)
+  const project = normalizeProjectStorage(storage)
+  const initialPageId = resolveInitialPreviewPage(project, pageId)
+  const pageStorage = chartEditStore.loadProjectStorage(project, initialPageId)
   return { ...pageStorage, id }
+}
+
+export const switchPreviewPage = async (
+  pageId: string,
+  context: Record<string, any> = {},
+  transition?: ReportPageTransition
+) => {
+  if (transition) {
+    chartEditStore.setPageTransition(transition)
+  }
+  chartEditStore.setRuntimePageContext(context)
+  const nextStorage = chartEditStore.switchPage(pageId)
+
+  if (!nextStorage && chartEditStore.getHomePageId) {
+    chartEditStore.switchPage(chartEditStore.getHomePageId)
+  }
 }
 
 // 根据路由 id 获取存储数据的信息

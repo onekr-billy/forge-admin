@@ -159,7 +159,7 @@
 | Task 2 | done | `forge-report-ui/src/store/modules/chartEditStore/chartEditStore.ts`, `forge-report-ui/src/store/modules/chartEditStore/chartEditStore.d.ts`, `forge-report-ui/src/views/chart/ContentEdit/hooks/useLayout.hook.ts`, `forge-report-ui/src/views/preview/utils/storage.ts` | Store 增加页面列表、首页、当前页、页面上下文与切换动作；编辑/预览加载接入多页面协议；`pnpm build` 通过 |
 | Task 3 | done | `forge-report-ui/src/views/chart/ContentPages/index.vue`, `forge-report-ui/src/views/chart/ContentPages/components/PageListItem.vue`, `forge-report-ui/src/views/chart/index.vue`, `forge-report-ui/src/store/modules/chartEditStore/chartEditStore.ts` | 编辑器左侧新增画布页面管理面板，支持新增、复制、删除、重命名、设置首页、上移/下移、切换页面；`pnpm build` 通过 |
 | Task 4 | done | `forge-report-ui/src/api/project/index.ts`, `forge-report-ui/src/utils/reportPages.ts`, `forge-report-ui/src/views/chart/hooks/useAutoSave.hook.ts`, `forge-report-ui/src/views/chart/ContentHeader/headerRightBtn/index.vue`, `forge-report-ui/src/views/project/components/ProjectCreateModal/index.vue`, `forge-report-ui/src/views/project/layout/components/ProjectLayoutCreate/components/CreateModal/index.vue` | 保存、自动保存、预览、发布链路改为项目级多页面 JSON；新建项目默认写入 v2 协议；`pnpm build` 通过 |
-| Task 5 | pending | - | 预览运行时页面切换 |
+| Task 5 | done | `forge-report-ui/src/views/preview/suspenseIndex.vue`, `forge-report-ui/src/views/preview/utils/storage.ts`, `forge-report-ui/src/hooks/useChartDataPondFetch.hook.ts`, `forge-report-ui/src/utils/reportPages.ts` | 预览默认解析首页，支持 `?pageId=`，提供运行态切页方法和页面转场；切页重建渲染列表并清理旧数据池 watcher/轮询；`pnpm build` 通过 |
 | Task 6 | pending | - | 组件跳转动作配置 |
 | Task 7 | pending | - | 下钻上下文参数 |
 | Task 8 | pending | - | 动画与回归 |

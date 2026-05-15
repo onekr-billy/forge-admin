@@ -184,6 +184,20 @@ export function extractPageStorage(project: ReportMultiPageStorage, pageId?: str
   return normalizeChartStorage(targetPage, targetPage.name)
 }
 
+export function resolveInitialPreviewPage(project: ReportMultiPageStorage, queryPageId?: string): string {
+  const pages = project.pages || []
+  if (queryPageId && pages.some(page => page.id === queryPageId)) {
+    return queryPageId
+  }
+  if (project.homePageId && pages.some(page => page.id === project.homePageId)) {
+    return project.homePageId
+  }
+  if (project.activePageId && pages.some(page => page.id === project.activePageId)) {
+    return project.activePageId
+  }
+  return pages[0]?.id || ''
+}
+
 export function updatePageStorage(
   project: ReportMultiPageStorage,
   pageId: string,

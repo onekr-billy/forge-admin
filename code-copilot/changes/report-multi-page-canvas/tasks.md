@@ -18,7 +18,7 @@
 | Task 2 | chartEditStore 多页面状态 | completed | P0 |
 | Task 3 | 编辑器页面管理面板 | completed | P0 |
 | Task 4 | 保存、自动保存、预览、发布改造 | completed | P0 |
-| Task 5 | 预览页多页面运行时 | pending | P0 |
+| Task 5 | 预览页多页面运行时 | completed | P0 |
 | Task 6 | 组件页面跳转动作配置 | pending | P0 |
 | Task 7 | 下钻上下文与动态参数接入 | pending | P0 |
 | Task 8 | JSON 导入导出和代码编辑兼容 | pending | P1 |
@@ -189,12 +189,15 @@ source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm build
 
 **目标**: 预览页支持项目内页面切换、query 指定页面和页面过渡动画。
 
+**状态**: completed
+
 **涉及文件**:
 - `forge-report-ui/src/views/preview/suspenseIndex.vue` — 根据当前页面渲染画布，增加 transition 包裹。
 - `forge-report-ui/src/views/preview/utils/storage.ts` — 支持 `?pageId=` 和 `homePageId`。
 - `forge-report-ui/src/views/preview/components/PreviewRenderList/index.vue` — 页面切换时重新初始化数据池。
 - `forge-report-ui/src/views/preview/hooks/useStore.hook.ts` — 多页面运行时 store 同步。
-- `forge-report-ui/src/styles/common/animation.scss` — 增加页面过渡样式。
+- `forge-report-ui/src/hooks/useChartDataPondFetch.hook.ts` — 清理旧页面数据池 watcher 和轮询。
+- `forge-report-ui/src/utils/reportPages.ts` — 增加预览初始页面解析工具。
 
 **关键签名**:
 ```ts
@@ -207,6 +210,16 @@ resolveInitialPreviewPage(project: ReportMultiPageStorage, queryPageId?: string)
 - `/chart/preview/:id?pageId=xxx` 打开指定页面。
 - 页面切换后组件重新渲染，数据请求重新执行。
 - 无效 `pageId` 自动回退首页。
+
+**验证**:
+```bash
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm exec eslint src/utils/reportPages.ts src/views/preview/utils/storage.ts src/views/preview/suspenseIndex.vue src/hooks/useChartDataPondFetch.hook.ts
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm build
+```
+
+**结果**:
+- ESLint 无错误。
+- `pnpm build` 通过；输出的 lottie `eval`、Rollup 循环 chunk、CSS `:deep()`、chunk size 均为既有警告。
 
 ---
 

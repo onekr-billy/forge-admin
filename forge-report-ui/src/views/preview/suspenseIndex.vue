@@ -6,10 +6,17 @@
         <!-- 缩放层 -->
         <div ref="previewRef" class="go-preview-scale">
           <!-- 展示层 -->
-          <div :style="previewRefStyle" v-if="show">
-            <!-- 渲染层 -->
-            <preview-render-list></preview-render-list>
-          </div>
+          <transition :name="previewTransitionName" mode="out-in">
+            <div
+              v-if="show"
+              :key="chartEditStore.getActivePageId"
+              class="go-preview-page"
+              :style="previewRefStyle"
+            >
+              <!-- 渲染层 -->
+              <preview-render-list :key="chartEditStore.getActivePageId"></preview-render-list>
+            </div>
+          </transition>
         </div>
       </div>
     </template>
@@ -17,10 +24,17 @@
       <!-- 缩放层 -->
       <div ref="previewRef" class="go-preview-scale">
         <!-- 展示层 -->
-        <div :style="previewRefStyle" v-if="show">
-          <!-- 渲染层 -->
-          <preview-render-list></preview-render-list>
-        </div>
+        <transition :name="previewTransitionName" mode="out-in">
+          <div
+            v-if="show"
+            :key="chartEditStore.getActivePageId"
+            class="go-preview-page"
+            :style="previewRefStyle"
+          >
+            <!-- 渲染层 -->
+            <preview-render-list :key="chartEditStore.getActivePageId"></preview-render-list>
+          </div>
+        </transition>
       </div>
     </template>
   </div>
@@ -78,6 +92,11 @@ const showEntity = computed(() => {
   return type === PreviewScaleEnum.SCROLL_Y || type === PreviewScaleEnum.SCROLL_X
 })
 
+const previewTransitionName = computed(() => {
+  const transition = chartEditStore.getPageTransition
+  return transition === 'none' ? 'go-preview-page-none' : `go-preview-page-${transition || 'fade'}`
+})
+
 useStore(chartEditStore)
 const { entityRef, previewRef } = useScale(chartEditStore)
 const { show } = useComInstall(chartEditStore)
@@ -120,5 +139,50 @@ useInitVChartsTheme(chartEditStore)
   .go-preview-entity {
     overflow: hidden;
   }
+  .go-preview-page {
+    transform-origin: center center;
+  }
+}
+
+.go-preview-page-fade-enter-active,
+.go-preview-page-fade-leave-active,
+.go-preview-page-slide-left-enter-active,
+.go-preview-page-slide-left-leave-active,
+.go-preview-page-slide-right-enter-active,
+.go-preview-page-slide-right-leave-active,
+.go-preview-page-zoom-enter-active,
+.go-preview-page-zoom-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.go-preview-page-fade-enter-from,
+.go-preview-page-fade-leave-to {
+  opacity: 0;
+}
+
+.go-preview-page-slide-left-enter-from {
+  opacity: 0;
+  transform: translateX(32px);
+}
+
+.go-preview-page-slide-left-leave-to {
+  opacity: 0;
+  transform: translateX(-32px);
+}
+
+.go-preview-page-slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(-32px);
+}
+
+.go-preview-page-slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(32px);
+}
+
+.go-preview-page-zoom-enter-from,
+.go-preview-page-zoom-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
 }
 </style>
