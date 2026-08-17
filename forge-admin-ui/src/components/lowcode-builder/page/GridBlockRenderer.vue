@@ -866,21 +866,8 @@
     <!-- 条形码 -->
     <template v-else-if="block.blockType === 'barcode'">
       <div class="barcode-preview" :style="{ background: block.props?.background || '#fff' }">
-        <Vue3Barcode
-          :key="`${block.id}_${block.props?.value || ''}_${block.props?.format || ''}`"
-          :value="String(block.props?.value || 'FORGE-2026-0001')"
-          :format="block.props?.format || 'CODE128'"
-          :width="Number(block.props?.barWidth || 2)"
-          :height="Number(block.props?.barHeight || 72)"
-          :display-value="block.props?.showText !== false"
-          :line-color="block.props?.lineColor || '#0f172a'"
-          :background="block.props?.background || '#ffffff'"
-          :font-size="Number(block.props?.fontSize || 14)"
-          :margin="Number(block.props?.margin ?? 8)"
-          element-tag="svg"
-        >
-          <span class="code-invalid">条形码内容无效</span>
-        </Vue3Barcode>
+        <svg ref="barcodeSvgRef" class="barcode-svg" />
+        <span v-if="!barcodeValid" class="code-invalid">条形码内容无效</span>
       </div>
     </template>
 
@@ -1199,8 +1186,7 @@
 <script setup>
 import { ChevronBackOutline, CubeOutline } from '@vicons/ionicons5'
 import QRCodeVue3 from 'qrcode-vue3'
-import { computed, h, onMounted, ref, watch } from 'vue'
-import Vue3Barcode from 'vue3-barcode'
+import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
 import AiForm from '@/components/ai-form/AiForm.vue'
@@ -2087,6 +2073,43 @@ const qrcodeCornersDotOptions = computed(() => ({
   type: props.block.props?.cornersDotType || 'square',
   color: props.block.props?.cornerColor || props.block.props?.foreground || '#0f172a',
 }))
+const barcodeSvgRef = ref(null)
+const barcodeValid = ref(true)
+let barcodeModulePromise
+function loadBarcodeModule() {
+  if (!barcodeModulePromise)
+    barcodeModulePromise = import('jsbarcode').then(module => module.default || module)
+  return barcodeModulePromise
+}
+async function renderBarcode() {
+  if (props.block.blockType !== 'barcode')
+    return
+  await nextTick()
+  const svg = barcodeSvgRef.value
+  if (!svg)
+    return
+  try {
+    const JsBarcode = await loadBarcodeModule()
+    JsBarcode(svg, String(props.block.props?.value || 'FORGE-2026-0001'), {
+      format: props.block.props?.format || 'CODE128',
+      width: Number(props.block.props?.barWidth || 2),
+      height: Number(props.block.props?.barHeight || 72),
+      displayValue: props.block.props?.showText !== false,
+      lineColor: props.block.props?.lineColor || '#0f172a',
+      background: props.block.props?.background || '#ffffff',
+      fontSize: Number(props.block.props?.fontSize || 14),
+      margin: Number(props.block.props?.margin ?? 8),
+      valid: (value) => {
+        barcodeValid.value = value !== false
+      },
+    })
+    barcodeValid.value = true
+  }
+  catch {
+    barcodeValid.value = false
+    svg.replaceChildren()
+  }
+}
 const boxLayoutStyle = computed(() => ({
   display: 'flex',
   flexDirection: props.block.props?.direction || 'row',
@@ -2966,7 +2989,21 @@ onMounted(() => {
   loadRuntimeTree()
   loadDetailInfoRecord()
   loadBlockBindingData()
+  renderBarcode()
 })
+
+watch([
+  () => props.block.blockType,
+  () => props.block.props?.value,
+  () => props.block.props?.format,
+  () => props.block.props?.barWidth,
+  () => props.block.props?.barHeight,
+  () => props.block.props?.showText,
+  () => props.block.props?.lineColor,
+  () => props.block.props?.background,
+  () => props.block.props?.fontSize,
+  () => props.block.props?.margin,
+], () => renderBarcode())
 
 watch([
   () => props.block.blockType,
