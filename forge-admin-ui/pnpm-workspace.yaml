@@ -1,0 +1,11 @@
+allowBuilds:
+  esbuild: true
+  vue-demi: true
+
+ignoreBuilds:
+  '@carbon/icons': true
+  '@parcel/watcher': true
+  core-js-pure: true
+  cpu-features: true
+  es5-ext: true
+  ssh2: true
