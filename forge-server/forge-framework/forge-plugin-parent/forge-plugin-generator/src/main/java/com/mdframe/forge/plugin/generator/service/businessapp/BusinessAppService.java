@@ -589,9 +589,10 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         if (parentId == null) {
             return null;
         }
-        if (isSameResource(parentId, suiteMenuResourceId)
-                || isSameResource(parentId, actualParentId)
-                || isSameResource(parentId, menuResourceId)) {
+        // 仅当菜单父级指向自身（真正自父级）时才判定为配置错误返回 null；
+        // parentId == actualParentId 属正常层级结构（父级即实际挂载目录），保留，
+        // 否则误伤"子入口挂在应用链接入口下"的场景，导致菜单提升到顶级、不可点击。
+        if (isSameResource(parentId, menuResourceId)) {
             return null;
         }
         return parentId;
