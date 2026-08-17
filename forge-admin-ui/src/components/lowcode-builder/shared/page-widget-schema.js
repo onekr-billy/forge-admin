@@ -92,7 +92,7 @@ export const pageWidgetCatalog = [
     group: 'media',
     title: '条形码',
     label: '条形码',
-    desc: 'vue3-barcode 条形码',
+    desc: '条形码 (jsbarcode)',
     defaultW: 4,
     defaultH: 3,
   },

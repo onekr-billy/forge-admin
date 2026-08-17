@@ -422,16 +422,14 @@ async function openApp(app) {
   }
   const res = await businessAppOpenInfo(app.id)
   const info = res.data || {}
-  if (!info.canOpen) {
-    message.warning(info.message || '访问入口暂不可打开')
-    return
-  }
-  if (info.openType === 'EXTERNAL' || info.openType === 'H5') {
-    window.open(info.targetUrl, '_blank', 'noopener,noreferrer')
-    return
-  }
   if (info.openType === 'API') {
     message.info('API 类型入口已保留为接口能力，不再跳转独立集成中心')
+    return
+  }
+  // 外部打开/未配置地址的入口：不再弹外部窗口或弹错误提示，
+  // 统一内嵌到 app-entry 页面展示（无地址显示空白占位，不跳转、不报错）
+  if (info.openType === 'EXTERNAL' || info.openType === 'H5' || !info.canOpen) {
+    router.push(`/app-center/app/${app.id}`)
     return
   }
   router.push(info.targetUrl)

@@ -514,9 +514,10 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (parentId == null) {
             return null;
         }
-        if (Objects.equals(parentId, suiteMenuResourceId)
-                || Objects.equals(parentId, actualParentId)
-                || Objects.equals(parentId, menuResourceId)) {
+        // 仅当菜单父级指向自身（真正自父级）时才判定为配置错误返回 null；
+        // parentId == actualParentId（父级即实际挂载目录）属正常层级结构，必须保留，
+        // 否则会误伤"子入口挂在应用链接入口下"的场景，导致菜单被提升到顶级、不可点击。
+        if (Objects.equals(parentId, menuResourceId)) {
             return null;
         }
         return parentId;
