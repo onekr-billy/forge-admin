@@ -5,6 +5,7 @@ export interface ExternalApi {
   systemId: number
   apiName: string
   apiCode?: string
+  executionMode?: string
   apiPath: string
   apiMethod: string
   apiDesc?: string
@@ -15,6 +16,7 @@ export interface ExternalApi {
   responseContentType?: string
   responseDataPath?: string
   responseTotalPath?: string
+  mockResponseJson?: string
   paramMappingEnabled?: boolean
   paramMappings?: string
   responseTransformEnabled?: boolean
@@ -31,6 +33,9 @@ export interface ExternalApi {
   cacheKeyTemplate?: string
   permissionCheckEnabled?: boolean
   requiredPermission?: string
+  lowcodeQueryEnabled?: boolean
+  inputSchemaJson?: string
+  outputSchemaJson?: string
   apiStatus?: number
   sortOrder?: number
   remark?: string

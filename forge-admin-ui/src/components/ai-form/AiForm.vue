@@ -104,7 +104,7 @@
 
     <!-- 表单操作按钮 -->
     <n-space v-if="showActions" justify="center" :style="{ marginTop: '24px' }">
-      <n-button v-if="showSubmit" type="primary" @click="handleSubmit">
+      <n-button v-if="showSubmit" type="primary" :loading="submitLoading" @click="handleSubmit">
         {{ submitText }}
       </n-button>
       <n-button v-if="showReset" @click="handleReset">
@@ -136,7 +136,7 @@
         :y-gap="actionModalLayout.yGap || actionModalLayout.rowGap || yGap"
         :show-feedback="actionModalLayout.showFeedback !== false"
         :show-actions="false"
-        :context="itemContext"
+        :context="actionModalContext"
         :form-assets="formAssets"
       />
       <n-empty v-else description="未找到可渲染的弹窗表单" />
@@ -146,12 +146,15 @@
 
 <script setup>
 import { ChevronDownOutline, ChevronUpOutline } from '@vicons/ionicons5'
-import { computed, nextTick, ref, useSlots, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import { resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
+import { scan as scanCollaborationCode } from '@/utils/collaboration-runtime'
 import { createFieldPermissionMap } from '@/utils/field-permissions'
 import { normalizeRulePattern, normalizeValidationRules } from '@/utils/validation-presets'
 import AiFormLayoutNodes from './AiFormLayoutNodes.vue'
+import { createFieldEventRuntime } from './field-event-runtime'
 import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
 
 const props = defineProps({
@@ -212,6 +215,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  submitLoading: {
+    type: Boolean,
+    default: false,
+  },
   showReset: {
     type: Boolean,
     default: true,
@@ -255,9 +262,17 @@ const props = defineProps({
     type: [Array, String, Object],
     default: () => [],
   },
+  fieldEvents: {
+    type: Array,
+    default: () => [],
+  },
+  fieldEventLoadToken: {
+    type: [String, Number],
+    default: '',
+  },
 })
 
-const emit = defineEmits(['update:value', 'submit', 'reset', 'cancel', 'nodeAction'])
+const emit = defineEmits(['update:value', 'submit', 'reset', 'cancel', 'nodeAction', 'fieldEvent'])
 const slots = useSlots()
 const route = useRoute()
 
@@ -295,10 +310,6 @@ function isFieldVisible(field) {
   })
   if (control.visible === false)
     return false
-  if (field.hidden || field.visible === false) {
-    return false
-  }
-
   if (typeof field.vIf === 'function') {
     return field.vIf(formValue.value, props.context)
   }
@@ -315,6 +326,17 @@ const conditionVisibleSchema = computed(() => filterVisibleNodes(permissionAppli
 
 const allFieldSchema = computed(() => flattenFieldNodes(permissionAppliedSchema.value))
 const visibleFieldSchema = computed(() => flattenFieldNodes(conditionVisibleSchema.value))
+const allFieldNames = computed(() => allFieldSchema.value.map(field => field?.field).filter(Boolean))
+const resolvedFieldEvents = computed(() => (
+  Array.isArray(props.fieldEvents) && props.fieldEvents.length
+    ? props.fieldEvents
+    : (Array.isArray(props.context?.fieldEvents) ? props.context.fieldEvents : [])
+))
+const resolvedFieldEventLoadToken = computed(() => props.fieldEventLoadToken || props.context?.fieldEventLoadToken || '')
+const fieldEventStates = reactive({})
+let formMounted = false
+let initialFormLoadDispatched = false
+let fieldEventRuntime = null
 
 // 生成表单验证规则
 const formRules = computed(() => {
@@ -481,7 +503,53 @@ const itemContext = computed(() => ({
   allSchema: allFieldSchema.value,
   formAssets: resolveFormAssets(),
   patchFormData,
+  scanField,
+  dispatchFieldEvent,
+  getFieldEventState,
+  getFieldEventRules: (trigger, field) => fieldEventRuntime?.getRules(trigger, field) || [],
+  hasFieldEvent: (trigger, field) => fieldEventRuntime?.hasRule(trigger, field) === true,
 }))
+
+fieldEventRuntime = createFieldEventRuntime({
+  rules: resolvedFieldEvents.value,
+  fields: allFieldNames.value,
+  execute: (payload, config) => executeLowcodeQuerySource(payload, config),
+  getFormData: () => formValue.value,
+  getContext: () => itemContext.value,
+  getRouteQuery: () => route.query || {},
+  applyPatch: patchFormData,
+  onStateChange: handleFieldEventStateChange,
+  onNotify: handleFieldEventNotify,
+})
+
+const actionModalContext = computed(() => ({
+  ...itemContext.value,
+  fieldEvents: [],
+  fieldEventLoadToken: '',
+}))
+
+watch([resolvedFieldEvents, allFieldNames], ([rules, fields]) => {
+  fieldEventRuntime.setRules(rules, fields)
+  if (formMounted && !initialFormLoadDispatched && fieldEventRuntime.hasRule('FORM_LOAD'))
+    dispatchInitialFormLoad()
+}, { immediate: true, deep: true })
+
+watch(resolvedFieldEventLoadToken, (nextToken, previousToken) => {
+  if (!formMounted || nextToken === previousToken)
+    return
+  fieldEventRuntime.setRules(resolvedFieldEvents.value, allFieldNames.value)
+  dispatchInitialFormLoad(true)
+})
+
+onMounted(() => {
+  formMounted = true
+  dispatchInitialFormLoad()
+})
+
+onBeforeUnmount(() => {
+  formMounted = false
+  fieldEventRuntime.dispose()
+})
 
 const showCollapseToggle = computed(() => props.enableCollapse && visibleFieldSchema.value.length > props.maxVisibleFields)
 const sectionNavItems = computed(() => collectSectionNavItems(visibleSchema.value))
@@ -532,7 +600,66 @@ async function handleFieldChange(field, value) {
     emit('update:value', { ...formValue.value })
   }
 
+  await dispatchFieldEvent('CHANGE', field)
   await validateChangedField(field)
+}
+
+async function dispatchInitialFormLoad(force = false) {
+  if (!force && initialFormLoadDispatched)
+    return
+  if (!isFieldEventSessionReady())
+    return
+  if (!fieldEventRuntime.hasRule('FORM_LOAD'))
+    return
+  initialFormLoadDispatched = true
+  await nextTick()
+  await fieldEventRuntime.dispatch('FORM_LOAD')
+}
+
+function isFieldEventSessionReady() {
+  if (!Object.prototype.hasOwnProperty.call(props.context || {}, 'modalStatus'))
+    return true
+  return Boolean(props.context?.modalStatus) || Boolean(resolvedFieldEventLoadToken.value)
+}
+
+function scanField(field) {
+  const scanOptions = props.context?.scanOptions && typeof props.context.scanOptions === 'object'
+    ? props.context.scanOptions
+    : {}
+  const fieldScanOptions = field?.props && typeof field.props === 'object'
+    ? {
+        timeoutMs: field.props.timeoutMs,
+        formats: field.props.formats,
+      }
+    : {}
+  return scanCollaborationCode({
+    ...scanOptions,
+    ...fieldScanOptions,
+    scanner: typeof props.context?.scanScanner === 'function' ? props.context.scanScanner : scanOptions.scanner,
+    field,
+  })
+}
+
+function dispatchFieldEvent(trigger, field, runtime = {}) {
+  return fieldEventRuntime.dispatch(trigger, field, runtime)
+}
+
+function getFieldEventState(field) {
+  return fieldEventStates[field] || { status: 'idle', loading: false, message: '' }
+}
+
+function handleFieldEventStateChange(state) {
+  if (state.field)
+    fieldEventStates[state.field] = state
+  emit('fieldEvent', state)
+}
+
+function handleFieldEventNotify({ message, type }) {
+  if (typeof window === 'undefined' || !message)
+    return
+  const notify = window.$message?.[type]
+  if (typeof notify === 'function')
+    notify(message)
 }
 
 async function validateChangedField(field) {
@@ -819,6 +946,7 @@ defineExpose({
   restoreValidation: () => formRef.value?.restoreValidation(),
   reset: handleReset,
   getFormData: () => ({ ...formValue.value }),
+  dispatchFieldEvent,
 })
 
 function applyFieldPermissionsToNodes(nodes = []) {

@@ -62,6 +62,10 @@ public class LowcodeRuntimeConfigBuilder {
 
         LowcodeRuntimeConfig runtimeConfig = new LowcodeRuntimeConfig();
         runtimeConfig.setConfigKey(configKey);
+        runtimeConfig.setObjectCode(StringUtils.firstNonBlank(
+                modelSchema.getObject() == null ? null : modelSchema.getObject().getCode(),
+                configKey,
+                modelSchema.getTableName()));
         runtimeConfig.setTableName(modelSchema.getTableName());
         runtimeConfig.setTableComment(modelSchema.getBusinessName());
         runtimeConfig.setLayoutType(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "simple-crud"));
@@ -117,7 +121,7 @@ public class LowcodeRuntimeConfigBuilder {
         Set<String> childFieldRefs = isMasterDetailRuntime(pageSchema) ? buildChildFieldRefs(pageSchema) : Set.of();
         List<LowcodeFieldSchema> orderedFields = sortByCanvasOrder(
                 resolveFields(modelSchema, pageSchema, "edit",
-                        field -> field.getFormVisible() == null || Boolean.TRUE.equals(field.getFormVisible())),
+                        field -> isEditFieldVisibleAtDesignTime(pageSchema, field)),
                 pageSchema,
                 "edit"
         );
@@ -570,6 +574,7 @@ public class LowcodeRuntimeConfigBuilder {
             child.put("modelName", ref.getModelName());
             child.put("tableName", ref.getTableName());
             child.put("relationType", StringUtils.defaultIfBlank(relation.getRelationType(), "ONE_TO_MANY"));
+            child.put("relationKey", StringUtils.defaultIfBlank(text(refProps.get("relationKey")), ref.getModelCode()));
             child.put("sourceField", childFkField);
             child.put("targetField", resolveMainRelationField(primaryModelCode, relation));
             child.put("showInCreate", booleanWithDefault(refProps.get("inlineCreateEnabled"), true));
@@ -579,6 +584,10 @@ public class LowcodeRuntimeConfigBuilder {
             Object recordSelector = refProps.get("recordSelector");
             if (recordSelector instanceof Map<?, ?> selector && !selector.isEmpty()) {
                 child.put("recordSelector", selector);
+            }
+            Object rowActions = refProps.get("rowActions");
+            if (rowActions instanceof List<?> actions && !actions.isEmpty()) {
+                child.put("rowActions", actions);
             }
             putIfNotBlank(child, "tabTitle", text(refProps.get("tabTitle")));
             putIfNotBlank(child, "relationName", text(refProps.get("relationName")));
@@ -2045,6 +2054,9 @@ public class LowcodeRuntimeConfigBuilder {
             item.put("disabled", true);
             item.put("readonly", true);
         }
+        copyRuntimeSetting(item, pageSetting, "hidden");
+        copyRuntimeSetting(item, pageSetting, "formVisible");
+        copyRuntimeSetting(item, pageSetting, "runtimeRules");
         if (formulaField) {
             item.put("formulaConfig", new LinkedHashMap<>(formulaConfig));
         }
@@ -2382,6 +2394,9 @@ public class LowcodeRuntimeConfigBuilder {
             putIfNotBlank(action, "targetFormKey", text(source.get("targetFormKey")));
             putIfNotBlank(action, "openTarget", StringUtils.defaultIfBlank(text(source.get("openTarget")), "_self"));
             putIfNotBlank(action, "permissionCode", text(source.get("permissionCode")));
+            putIfNotBlank(action, "permissionKey", StringUtils.firstNonBlank(
+                    text(source.get("permissionKey")), text(source.get("permissionCode"))));
+            putIfNotBlank(action, "permissionStrategy", text(source.get("permissionStrategy")));
             putIfNotBlank(action, "confirmText", text(source.get("confirmText")));
             putIfNotBlank(action, "displayCondition", text(source.get("displayCondition")));
             putIfNotBlank(action, "successMessage", text(source.get("successMessage")));
@@ -2563,9 +2578,39 @@ public class LowcodeRuntimeConfigBuilder {
         if ("edit".equals(zoneKey)) {
             return !isSystemField(field)
                     && !Boolean.TRUE.equals(field.getReadonly())
-                    && (field.getFormVisible() == null || Boolean.TRUE.equals(field.getFormVisible()));
+                    && fallbackPredicate.test(field);
         }
         return fallbackPredicate.test(field);
+    }
+
+    private boolean isEditFieldVisibleAtDesignTime(LowcodePageSchema pageSchema,
+                                                   LowcodeFieldSchema field) {
+        if (field == null || Boolean.TRUE.equals(field.getSystemField())
+                || Boolean.TRUE.equals(field.getReadonly())) {
+            return false;
+        }
+        if (field.getFormVisible() == null || Boolean.TRUE.equals(field.getFormVisible())) {
+            return true;
+        }
+        Map<String, Object> setting = resolveEditFieldSetting(pageSchema, field.getField());
+        return containsVisibilityRuntimeRules(setting.get("runtimeRules"))
+                || containsVisibilityRuntimeRules(mapValue(setting.get("props")).get("runtimeRules"));
+    }
+
+    private boolean containsVisibilityRuntimeRules(Object value) {
+        if (!(value instanceof List<?> rules)) {
+            return false;
+        }
+        return rules.stream()
+                .filter(item -> item instanceof Map<?, ?>)
+                .map(item -> (Map<?, ?>) item)
+                .anyMatch(rule -> {
+                    Object effectValue = rule.get("effect");
+                    if (effectValue instanceof Map<?, ?> effect) {
+                        return effect.containsKey("visible") || effect.containsKey("hidden");
+                    }
+                    return rule.containsKey("visible") || rule.containsKey("hidden");
+                });
     }
 
     private boolean isActiveField(LowcodeFieldSchema field) {

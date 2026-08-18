@@ -513,9 +513,10 @@ const submitText = computed(() => isUpgrade.value ? '发布新版本' : '注册�
 const submitDisabled = computed(() => {
   if (draftLoading.value || !!sourceError.value)
     return true
-  if (form.sourceType === 'FLOW_ACTION')
+  if (form.sourceType === 'FLOW_ACTION') {
     return !flowSource.value || detailLoading.value
       || (form.operation === 'SUBMIT' && !flowSource.value.submissionSupported)
+  }
   if (form.sourceType === 'SYSTEM_SERVICE')
     return systemSourceLoading.value || !selectedSystemService.value || !form.systemModelId
   return detailLoading.value || !selectedBusinessAction.value?.publishable
@@ -553,9 +554,10 @@ const rules = {
         return new Error('请选择流程动作')
       if (form.operation === 'START' && !flowSource.value.startSupported)
         return new Error('该对象不是平台托管运行对象，不能注册发起流程能力')
-      if (form.operation === 'SUBMIT' && !flowSource.value.submissionSupported)
+      if (form.operation === 'SUBMIT' && !flowSource.value.submissionSupported) {
         return new Error(flowSource.value.submissionUnavailableReason
           || '该对象暂不能注册提交业务申请能力')
+      }
       return true
     },
   },
@@ -563,7 +565,7 @@ const rules = {
     trigger: 'change',
     validator: () => (form.sourceType !== 'BUSINESS_ACTION'
       && !(form.sourceType === 'FLOW_ACTION' && form.operation === 'SUBMIT'))
-      || form.allowedFields.length > 0
+    || form.allowedFields.length > 0
       ? true
       : new Error('请至少选择一个允许字段'),
   },
@@ -702,10 +704,12 @@ watch(() => props.show, async (visible) => {
   if (isUpgrade.value) {
     await initializeUpgrade()
   }
-  else if (form.sourceType === 'SYSTEM_SERVICE')
+  else if (form.sourceType === 'SYSTEM_SERVICE') {
     await loadSystemServices()
-  else
+  }
+  else {
     await loadObjects()
+  }
 }, { immediate: true })
 
 watch(flowOperationOptions, (options) => {

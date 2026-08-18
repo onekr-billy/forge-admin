@@ -28,6 +28,7 @@
 - [x] Task 11：提供管理员迁移入口与全 scope 写前预检。
 - [x] Task 12：完成 Runbook、聚合验证和两阶段审查。
 - [x] Task 13：实现启动前密钥自动引导、稳定持久化和 Docker 共享卷。
+- [x] Task 14：修复 Admin/Flow 多 JVM 读取同一自动密钥文件时的排他锁冲突。
 - [ ] 部署门禁：生产 Secret 注入、真实迁移、所有租户归零、观察窗口和旧钥退役；不属于本地 `/apply` 执行范围。
 
 ## 里程碑 A：来源与暴露面加固
@@ -75,6 +76,22 @@
 - **Docker**：Admin 容器挂载持久化 `crypto_secrets` 卷，密钥文件路径固定为 `/var/lib/forge/secrets/crypto.properties`；容器重建不重新生成。
 - **升级限制**：历史密文的 legacy key 无法由程序推导；有历史密文的环境必须由 Secret Manager/既有部署配置提供原密钥，引导器不得伪造兼容成功。
 - **验证**：首次生成、二次复用、显式配置优先、损坏文件失败、并发首启和文件权限合同。
+
+### Task 14：多服务共享读取自动密钥文件
+
+- **目标**：Admin、Flow 等独立 JVM 指向同一完整 `crypto.properties` 时允许并发读取，同时保持首次生成和兼容升级的单写安全。
+- **涉及文件**：
+  - `forge-server/forge-framework/forge-starter-parent/forge-starter-crypto/src/main/java/com/mdframe/forge/starter/crypto/config/CryptoSecretEnvironmentPostProcessor.java` — 将完整文件读取改为共享锁；需要创建或补齐字段时释放共享锁、获取排他锁并重新读取。
+  - `forge-server/forge-framework/forge-starter-parent/forge-starter-crypto/src/test/java/com/mdframe/forge/starter/crypto/config/CryptoSecretEnvironmentPostProcessorTest.java` — 增加跨 JVM 共享读取回归测试并保留首次并发创建测试。
+  - `forge-server/forge-framework/forge-starter-parent/forge-starter-crypto/src/test/java/com/mdframe/forge/starter/crypto/config/CryptoSecretBootstrapProcess.java` — 提供独立 JVM 启动引导测试入口。
+- **执行步骤**：
+  - [x] 在父 JVM 持有锁文件共享锁时启动子 JVM 读取完整密钥文件，确认旧实现因申请排他锁而超时失败。
+  - [x] 锁文件通道增加读权限，完整文件在 `lock(0, Long.MAX_VALUE, true)` 保护下读取、校验并直接返回。
+  - [x] 文件不存在或缺少 Capability Pepper 时释放共享锁，再申请排他锁；排他锁内重新判断文件状态后才生成或原子写回。
+  - [x] 运行跨 JVM 回归、首次并发创建、旧文件补字段、损坏文件失败关闭和 Starter Crypto 全量测试。
+  - [x] 执行 Starter Crypto、Admin、Flow Server 聚合构建与 `git diff --check`，并回填 `test-spec.md` 与 `execution-log.md`。
+- **验证**：完整文件共享读取不被另一 JVM 的共享锁阻塞；写路径仍只有一个进程生效，密钥原值不变化且最终文件字段完整。
+- **提交信息**：`[framework-crypto-key-lifecycle-hardening] fix: 优化多服务密钥引导锁`
 
 ### Task 3：收紧配置管理 API 与数据库配置源
 

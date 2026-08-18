@@ -8,9 +8,11 @@ import com.mdframe.forge.plugin.generator.service.businessapp.BusinessBootstrapS
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectCreateService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectReadinessService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectReadinessVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRuntimeInfoVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
+import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
@@ -37,6 +39,7 @@ public class BusinessObjectController {
     private final BusinessObjectCreateService objectCreateService;
     private final BusinessBootstrapService bootstrapService;
     private final BusinessObjectReadinessService readinessService;
+    private final BusinessProcessService businessProcessService;
 
     @GetMapping("/page")
     @SaCheckPermission("ai:businessObject:list")
@@ -67,6 +70,13 @@ public class BusinessObjectController {
     @OperationLog(module = "业务对象", type = OperationType.QUERY, desc = "查询业务对象详情")
     public RespInfo<BusinessObjectVO> detail(@PathVariable Long id) {
         return RespInfo.success(objectService.detail(id));
+    }
+
+    @GetMapping("/{objectCode}/processes")
+    @SaCheckPermission("ai:businessProcess:list")
+    @OperationLog(module = "业务对象", type = OperationType.QUERY, desc = "查询业务对象参与的业务流程")
+    public RespInfo<List<BusinessObjectProcessVO>> listProcesses(@PathVariable String objectCode) {
+        return RespInfo.success(businessProcessService.listByObjectCode(objectCode));
     }
 
     @GetMapping("/{id}/runtime-info")

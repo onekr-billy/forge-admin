@@ -29,6 +29,11 @@ public class RagSearchContext {
     private List<KnowledgeSearchResult> bm25Results;
 
     /**
+     * Milvus 原生混合检索结果（searchType=hybrid 时使用）
+     */
+    private List<KnowledgeSearchResult> hybridResults;
+
+    /**
      * 融合后的结果
      */
     private List<KnowledgeSearchResult> fusedResults;

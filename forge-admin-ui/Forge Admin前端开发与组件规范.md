@@ -79,17 +79,17 @@ src/
 
 ## 4. 组件选择与使用规范
 
-| 场景 | 首选组件/能力 | 约定 |
-| --- | --- | --- |
-| 标准列表、新增、编辑、删除、导入导出 | `AiCrudPage` | API 占位符使用 `:id`，分页使用 `pageNum`、`pageSize` |
-| 配置化表单 | `AiForm` | Schema 只描述字段与行为，不在页面重复实现控件渲染 |
-| 表格 | `AiTable` / `AiCrudPage` 内置表格 | 默认密度为 `medium`；需要切换时使用紧凑/默认/宽松语义 |
-| 字典下拉与回显 | `DictSelect`、`DictTag`、`useDict()` | 禁止硬编码业务枚举和状态标签 |
-| 行政区划 | `RegionTreeSelect` | 不自行复制区划树转换逻辑 |
-| 鉴权图片 | `AuthImage` | 文件字段保存的是 `fileId`，不是可直接使用的 URL |
-| 左树右表、主从页 | `MasterDetailWorkspace` | 左侧和右侧通过插槽组织 |
-| 页面级统一边界 | `SystemPageLayout` | `/system/**` 已自动接入，无需手工包裹 |
-| 用户、组织、租户等实体单元格 | `SystemTableCell` | 实体使用主标题 + 换行辅助标识；用户可提供详情入口和首字标识，多值归属显示主值与可展开 `+N` |
+| 场景                                 | 首选组件/能力                        | 约定                                                                                       |
+| ------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 标准列表、新增、编辑、删除、导入导出 | `AiCrudPage`                         | API 占位符使用 `:id`，分页使用 `pageNum`、`pageSize`                                       |
+| 配置化表单                           | `AiForm`                             | Schema 只描述字段与行为，不在页面重复实现控件渲染                                          |
+| 表格                                 | `AiTable` / `AiCrudPage` 内置表格    | 默认密度为 `medium`；需要切换时使用紧凑/默认/宽松语义                                      |
+| 字典下拉与回显                       | `DictSelect`、`DictTag`、`useDict()` | 禁止硬编码业务枚举和状态标签                                                               |
+| 行政区划                             | `RegionTreeSelect`                   | 不自行复制区划树转换逻辑                                                                   |
+| 鉴权图片                             | `AuthImage`                          | 文件字段保存的是 `fileId`，不是可直接使用的 URL                                            |
+| 左树右表、主从页                     | `MasterDetailWorkspace`              | 左侧和右侧通过插槽组织                                                                     |
+| 页面级统一边界                       | `SystemPageLayout`                   | `/system/**` 已自动接入，无需手工包裹                                                      |
+| 用户、组织、租户等实体单元格         | `SystemTableCell`                    | 实体使用主标题 + 换行辅助标识；用户可提供详情入口和首字标识，多值归属显示主值与可展开 `+N` |
 
 新公共组件应明确：输入 Props、输出事件、插槽职责、空态/加载态和键盘可访问性。图标按钮必须有 `title` 或 `aria-label`。
 
@@ -97,16 +97,16 @@ src/
 
 ## 5. 命名规范
 
-| 对象 | 规则 | 示例 |
-| --- | --- | --- |
-| Vue 组件文件与组件名 | `PascalCase.vue` | `MasterDetailWorkspace.vue` |
-| 页面文件 | 新页面用 `kebab-case.vue`；历史文件不为统一命名而改路由 | `storage-config.vue` |
-| 组合式函数 | `use` + `PascalCase`，文件同名 | `useDict.js`、`usePermission.js` |
-| Pinia Store | `use` + 领域 + `Store` | `useUserStore` |
-| 普通函数/变量 | `camelCase` | `loadUserList`、`selectedOrgNode` |
-| 常量 | `UPPER_SNAKE_CASE` | `USER_STATUS_DICT` |
-| CSS 类 | 业务/组件前缀 + `kebab-case` | `master-detail-workspace__aside` |
-| 事件 | 动词开头的 kebab-case | `@selection-change`、`@submit-success` |
+| 对象                 | 规则                                                    | 示例                                   |
+| -------------------- | ------------------------------------------------------- | -------------------------------------- |
+| Vue 组件文件与组件名 | `PascalCase.vue`                                        | `MasterDetailWorkspace.vue`            |
+| 页面文件             | 新页面用 `kebab-case.vue`；历史文件不为统一命名而改路由 | `storage-config.vue`                   |
+| 组合式函数           | `use` + `PascalCase`，文件同名                          | `useDict.js`、`usePermission.js`       |
+| Pinia Store          | `use` + 领域 + `Store`                                  | `useUserStore`                         |
+| 普通函数/变量        | `camelCase`                                             | `loadUserList`、`selectedOrgNode`      |
+| 常量                 | `UPPER_SNAKE_CASE`                                      | `USER_STATUS_DICT`                     |
+| CSS 类               | 业务/组件前缀 + `kebab-case`                            | `master-detail-workspace__aside`       |
+| 事件                 | 动词开头的 kebab-case                                   | `@selection-change`、`@submit-success` |
 
 避免含义宽泛的 `data`、`list`、`handleClick`。使用能表达领域和动作的名字，例如 `tenantOptions`、`handleOrgNodeSelect`。
 
@@ -170,13 +170,13 @@ src/
 
 ### 9.2 状态边界
 
-| 状态类型 | 放置位置 | 示例 |
-| --- | --- | --- |
-| 单个控件、弹窗、筛选值 | 当前组件 `ref` | `modalVisible`、`selectedOrgId` |
-| 基于当前状态推导的展示值 | `computed` | `filteredRows`、`canSubmit` |
-| 可复用请求/交互逻辑 | `src/composables/useXxx` | `useDict`、`usePermission` |
-| 登录态、主题、跨页会话 | Pinia Store | `useUserStore`、`useAppStore` |
-| 不随渲染变化的映射/常量 | 模块顶层 `const` | `USER_STATUS_DICT` |
+| 状态类型                 | 放置位置                 | 示例                            |
+| ------------------------ | ------------------------ | ------------------------------- |
+| 单个控件、弹窗、筛选值   | 当前组件 `ref`           | `modalVisible`、`selectedOrgId` |
+| 基于当前状态推导的展示值 | `computed`               | `filteredRows`、`canSubmit`     |
+| 可复用请求/交互逻辑      | `src/composables/useXxx` | `useDict`、`usePermission`      |
+| 登录态、主题、跨页会话   | Pinia Store              | `useUserStore`、`useAppStore`   |
+| 不随渲染变化的映射/常量  | 模块顶层 `const`         | `USER_STATUS_DICT`              |
 
 - 组件不能直接修改父组件传入的对象或数组；通过事件上抛，或先复制后提交。
 - `watch` 只处理副作用（重新请求、同步外部值、清理资源），不能替代本应使用的 `computed`。
@@ -269,14 +269,14 @@ src/
 
 ### 最小验证矩阵
 
-| 变更 | 必做验证 |
-| --- | --- |
-| Vue、JS、CSS | 目标文件 ESLint + `pnpm build` |
-| CRUD 页面 | 列表、查询、重置、分页、增改删、空态 |
-| 字典字段 | 异步加载、下拉回显、表格标签回显 |
-| 文件字段 | 上传、编辑回显、鉴权预览、下载 |
-| 主从工作台 | 左侧选择、收起、右侧刷新、窄屏堆叠 |
-| 权限操作 | 无权限隐藏/禁用、接口失败提示、权限变更后刷新 |
+| 变更         | 必做验证                                      |
+| ------------ | --------------------------------------------- |
+| Vue、JS、CSS | 目标文件 ESLint + `pnpm build`                |
+| CRUD 页面    | 列表、查询、重置、分页、增改删、空态          |
+| 字典字段     | 异步加载、下拉回显、表格标签回显              |
+| 文件字段     | 上传、编辑回显、鉴权预览、下载                |
+| 主从工作台   | 左侧选择、收起、右侧刷新、窄屏堆叠            |
+| 权限操作     | 无权限隐藏/禁用、接口失败提示、权限变更后刷新 |
 
 ### 代码评审
 

@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.ai.knowledge.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledge;
+import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledgeChunk;
 import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledgeDocument;
 import com.mdframe.forge.plugin.ai.knowledge.mapper.AiKnowledgeDocumentMapper;
 import com.mdframe.forge.plugin.ai.knowledge.mapper.AiKnowledgeMapper;
@@ -98,6 +99,18 @@ public class AiKnowledgeService {
 
     public void confirmDocument(Long documentId) {
         documentProcessService.confirmAndProcess(documentId);
+    }
+
+    public void reprocessDocument(Long documentId) {
+        documentProcessService.reprocessDocument(documentId);
+    }
+
+    public List<AiKnowledgeChunk> listDocumentChunks(Long documentId) {
+        return documentProcessService.listChunks(documentId);
+    }
+
+    public String getDocumentRawContent(Long documentId) {
+        return documentProcessService.getDocumentRawContent(documentId);
     }
 
     public void deleteDocument(Long documentId) {

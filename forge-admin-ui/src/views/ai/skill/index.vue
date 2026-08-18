@@ -3,20 +3,30 @@
     <!-- 顶部工具条 -->
     <div class="tool-bar">
       <div>
-        <div class="page-title">技能管理</div>
-        <div class="page-subtitle">管理可复用的技能包（SKILL.md），供 Agent 调用</div>
+        <div class="page-title">
+          技能管理
+        </div>
+        <div class="page-subtitle">
+          管理可复用的技能包（SKILL.md），供 Agent 调用
+        </div>
       </div>
       <div class="tool-bar-actions">
         <NButton secondary @click="showUploadModal = true">
-          <template #icon><i class="ai-icon:upload" /></template>
+          <template #icon>
+            <i class="ai-icon:upload" />
+          </template>
           上传ZIP
         </NButton>
         <NButton secondary @click="openGenerateModal">
-          <template #icon><i class="ai-icon:sparkles" /></template>
+          <template #icon>
+            <i class="ai-icon:sparkles" />
+          </template>
           AI生成
         </NButton>
         <NButton type="primary" @click="openCreateDrawer">
-          <template #icon><i class="ai-icon:plus" /></template>
+          <template #icon>
+            <i class="ai-icon:plus" />
+          </template>
           新增技能
         </NButton>
       </div>
@@ -24,15 +34,17 @@
 
     <!-- 筛选区 -->
     <div class="filter-bar">
-      <n-input
+      <NInput
         v-model:value="search.keyword"
         placeholder="搜索名称、编码或描述"
         clearable
         class="filter-keyword"
         @keyup.enter="handleSearch"
       >
-        <template #prefix><i class="ai-icon:search" /></template>
-      </n-input>
+        <template #prefix>
+          <i class="ai-icon:search" />
+        </template>
+      </NInput>
       <n-select
         v-model:value="search.status"
         placeholder="全部状态"
@@ -40,12 +52,16 @@
         :options="statusOptions"
         class="filter-status"
       />
-      <NButton secondary @click="handleSearch">查询</NButton>
-      <NButton quaternary @click="handleReset">重置</NButton>
+      <NButton secondary @click="handleSearch">
+        查询
+      </NButton>
+      <NButton quaternary @click="handleReset">
+        重置
+      </NButton>
     </div>
 
     <!-- 技能卡片列表 -->
-    <n-spin :show="loading">
+    <NSpin :show="loading">
       <div v-if="list.length" class="skill-grid">
         <article
           v-for="skill in list"
@@ -57,25 +73,37 @@
               <i class="ai-icon:sparkles" />
             </div>
             <div class="skill-card-title-wrap">
-              <h3 class="skill-card-title" :title="skill.skillName">{{ skill.skillName }}</h3>
+              <h3 class="skill-card-title" :title="skill.skillName">
+                {{ skill.skillName }}
+              </h3>
               <code class="skill-card-code">{{ skill.skillCode }}</code>
             </div>
             <DictTag dict-type="ai_status" :value="skill.status" size="small" />
           </div>
 
-          <p class="skill-card-desc">{{ skill.description || '暂无描述' }}</p>
+          <p class="skill-card-desc">
+            {{ skill.description || '暂无描述' }}
+          </p>
 
           <div class="skill-card-meta">
             <span v-if="skill.version">v{{ skill.version }}</span>
           </div>
 
           <div class="skill-card-footer">
-            <NButton text size="small" type="primary" @click="openEditDrawer(skill)">编辑</NButton>
-            <NButton text size="small" @click="viewFiles(skill.id)">文件</NButton>
-            <NButton text size="small" type="warning" @click="openOptimize(skill)">AI优化</NButton>
+            <NButton text size="small" type="primary" @click="openEditDrawer(skill)">
+              编辑
+            </NButton>
+            <NButton text size="small" @click="viewFiles(skill.id)">
+              文件
+            </NButton>
+            <NButton text size="small" type="warning" @click="openOptimize(skill)">
+              AI优化
+            </NButton>
             <NPopconfirm @positive-click="handleDelete(skill)">
               <template #trigger>
-                <NButton text size="small" type="error">删除</NButton>
+                <NButton text size="small" type="error">
+                  删除
+                </NButton>
               </template>
               确定删除技能"{{ skill.skillName }}"吗？
             </NPopconfirm>
@@ -86,9 +114,11 @@
       <div v-else-if="!loading" class="empty-state">
         <i class="ai-icon:sparkles" />
         <p>暂无技能</p>
-        <NButton size="small" type="primary" @click="openCreateDrawer">新增技能</NButton>
+        <NButton size="small" type="primary" @click="openCreateDrawer">
+          新增技能
+        </NButton>
       </div>
-    </n-spin>
+    </NSpin>
 
     <!-- 分页 -->
     <div v-if="pagination.itemCount > 0" class="pagination-wrap">
@@ -108,140 +138,169 @@
     <!-- 编辑抽屉 -->
     <n-drawer v-model:show="drawerVisible" :width="520">
       <n-drawer-content :title="drawerMode === 'create' ? '新增技能' : '编辑技能'" closable>
-        <n-form ref="formRef" :model="form" :rules="formRules" label-placement="top">
-          <n-form-item label="技能名称" path="skillName">
-            <n-input v-model:value="form.skillName" placeholder="请输入技能名称" />
-          </n-form-item>
-          <n-form-item label="技能编码" path="skillCode">
-            <n-input
+        <NForm ref="formRef" :model="form" :rules="formRules" label-placement="top">
+          <NFormItem label="技能名称" path="skillName">
+            <NInput v-model:value="form.skillName" placeholder="请输入技能名称" />
+          </NFormItem>
+          <NFormItem label="技能编码" path="skillCode">
+            <NInput
               v-model:value="form.skillCode"
               placeholder="如 code_reviewer"
               :disabled="drawerMode === 'edit'"
             />
-          </n-form-item>
-          <n-form-item label="描述" path="description">
-            <n-input v-model:value="form.description" type="textarea" :rows="3" placeholder="技能用途说明" />
-          </n-form-item>
-          <n-form-item label="版本" path="version">
-            <n-input v-model:value="form.version" placeholder="如 1.0.0" />
-          </n-form-item>
-          <n-form-item label="状态" path="status">
-            <n-radio-group v-model:value="form.status">
-              <n-radio v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
+          </NFormItem>
+          <NFormItem label="描述" path="description">
+            <NInput v-model:value="form.description" type="textarea" :rows="3" placeholder="技能用途说明" />
+          </NFormItem>
+          <NFormItem label="版本" path="version">
+            <NInput v-model:value="form.version" placeholder="如 1.0.0" />
+          </NFormItem>
+          <NFormItem label="状态" path="status">
+            <NRadioGroup v-model:value="form.status">
+              <NRadio v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
-              </n-radio>
-            </n-radio-group>
-          </n-form-item>
-        </n-form>
+              </NRadio>
+            </NRadioGroup>
+          </NFormItem>
+        </NForm>
         <template #footer>
           <div class="drawer-footer">
-            <NButton @click="drawerVisible = false">取消</NButton>
-            <NButton type="primary" :loading="saving" @click="handleSave">确定</NButton>
+            <NButton @click="drawerVisible = false">
+              取消
+            </NButton>
+            <NButton type="primary" :loading="saving" @click="handleSave">
+              确定
+            </NButton>
           </div>
         </template>
       </n-drawer-content>
     </n-drawer>
 
     <!-- ZIP 上传弹窗 -->
-    <n-modal v-model:show="showUploadModal" preset="card" title="上传技能包" style="width: 500px">
-      <n-upload
+    <NModal v-model:show="showUploadModal" preset="card" title="上传技能包" style="width: 500px">
+      <NUpload
         :max="1"
         accept=".zip"
         :custom-request="handleUploadZip"
         :show-file-list="false"
       >
-        <n-upload-dragger>
+        <NUploadDragger>
           <div style="padding: 20px; text-align: center">
-            <n-icon size="40" :depth="3"><cloud-upload-outline /></n-icon>
+            <NIcon size="40" :depth="3">
+              <CloudUploadOutline />
+            </NIcon>
             <p>点击或拖拽 ZIP 文件到此处</p>
             <p style="font-size: 12px; color: var(--n-text-color-3)">
               ZIP 包需包含 SKILL.md 文件
             </p>
           </div>
-        </n-upload-dragger>
-      </n-upload>
-    </n-modal>
+        </NUploadDragger>
+      </NUpload>
+    </NModal>
 
     <!-- AI 生成弹窗 -->
-    <n-modal v-model:show="showGenerateModal" preset="card" title="AI 生成技能" style="width: 600px">
-      <n-form label-placement="top">
-        <n-form-item label="技能描述">
-          <n-input
+    <NModal v-model:show="showGenerateModal" preset="card" title="AI 生成技能" style="width: 600px">
+      <NForm label-placement="top">
+        <NFormItem label="技能描述">
+          <NInput
             v-model:value="generateDescription"
             type="textarea"
             :rows="4"
             placeholder="描述你需要的技能功能..."
           />
-        </n-form-item>
-      </n-form>
+        </NFormItem>
+      </NForm>
       <template #action>
-        <n-space>
-          <n-button @click="showGenerateModal = false">取消</n-button>
-          <n-button type="primary" :loading="generating" @click="handleAiGenerate">生成</n-button>
-        </n-space>
+        <NSpace>
+          <NButton @click="showGenerateModal = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="generating" @click="handleAiGenerate">
+            生成
+          </NButton>
+        </NSpace>
       </template>
-    </n-modal>
+    </NModal>
 
     <!-- AI 优化弹窗 -->
-    <n-modal v-model:show="showOptimizeModal" preset="card" title="AI 优化技能" style="width: 600px">
-      <n-form label-placement="top">
-        <n-form-item label="优化指令">
-          <n-input
+    <NModal v-model:show="showOptimizeModal" preset="card" title="AI 优化技能" style="width: 600px">
+      <NForm label-placement="top">
+        <NFormItem label="优化指令">
+          <NInput
             v-model:value="optimizeInstruction"
             type="textarea"
             :rows="3"
             placeholder="描述你希望如何优化..."
           />
-        </n-form-item>
-      </n-form>
+        </NFormItem>
+      </NForm>
       <template #action>
-        <n-space>
-          <n-button @click="showOptimizeModal = false">取消</n-button>
-          <n-button type="primary" :loading="optimizing" @click="handleAiOptimize">优化</n-button>
-        </n-space>
+        <NSpace>
+          <NButton @click="showOptimizeModal = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="optimizing" @click="handleAiOptimize">
+            优化
+          </NButton>
+        </NSpace>
       </template>
-    </n-modal>
+    </NModal>
 
     <!-- 技能文件查看弹窗 -->
-    <n-modal v-model:show="showFilesModal" preset="card" title="技能文件" style="width: 800px">
-      <n-spin :show="loadingFiles">
+    <NModal v-model:show="showFilesModal" preset="card" title="技能文件" style="width: 800px">
+      <NSpin :show="loadingFiles">
         <div v-if="skillFiles.length">
-          <n-collapse>
-            <n-collapse-item
+          <NCollapse>
+            <NCollapseItem
               v-for="file in skillFiles"
               :key="file.id"
               :title="file.filePath"
               :name="file.id"
             >
               <pre class="file-content">{{ file.fileContent }}</pre>
-            </n-collapse-item>
-          </n-collapse>
+            </NCollapseItem>
+          </NCollapse>
         </div>
-        <n-empty v-else description="暂无文件" />
-      </n-spin>
-    </n-modal>
+        <NEmpty v-else description="暂无文件" />
+      </NSpin>
+    </NModal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
-import {
-  NButton, NTag, NModal, NUpload, NUploadDragger, NIcon, NForm, NFormItem, NInput, NSpace, NCollapse, NCollapseItem, NSpin, NEmpty, NRadioGroup, NRadio, useMessage,
-} from 'naive-ui'
 import { CloudUploadOutline } from '@vicons/ionicons5'
-import { DictTag } from '@/components'
-import { useDict } from '@/composables/useDict'
+import {
+  NButton,
+  NCollapse,
+  NCollapseItem,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NIcon,
+  NInput,
+  NModal,
+  NRadio,
+  NRadioGroup,
+  NSpace,
+  NSpin,
+  NUpload,
+  NUploadDragger,
+  useMessage,
+} from 'naive-ui'
+import { computed, reactive, ref } from 'vue'
 import {
   skillPage as fetchSkillPage,
   skillAdd,
-  skillUpdate,
-  skillDelete,
-  skillGetFiles,
-  skillUploadZip,
   skillAiGenerate,
   skillAiOptimize,
+  skillDelete,
   skillGetById,
+  skillGetFiles,
+  skillUpdate,
+  skillUploadZip,
 } from '@/api/ai'
+import { DictTag } from '@/components'
+import { useDict } from '@/composables/useDict'
 
 defineOptions({ name: 'AiSkill' })
 
@@ -284,8 +343,10 @@ async function loadList() {
   loading.value = true
   try {
     const params = { pageNum: pagination.page, pageSize: pagination.pageSize }
-    if (search.keyword) params.keyword = search.keyword
-    if (search.status) params.status = search.status
+    if (search.keyword)
+      params.keyword = search.keyword
+    if (search.status)
+      params.status = search.status
     const res = await fetchSkillPage(params)
     if (res.code === 200) {
       list.value = res.data?.records || []
@@ -383,7 +444,8 @@ async function handleDelete(skill) {
     const res = await skillDelete(skill.id)
     if (res.code === 200) {
       message.success('已删除')
-      if (list.value.length === 1 && pagination.page > 1) pagination.page -= 1
+      if (list.value.length === 1 && pagination.page > 1)
+        pagination.page -= 1
       loadList()
     }
     else {
@@ -430,7 +492,7 @@ async function handleUploadZip({ file }) {
     }
   }
   catch (e) {
-    message.error('上传失败: ' + (e.message || e))
+    message.error(`上传失败: ${e.message || e}`)
   }
 }
 
@@ -462,7 +524,7 @@ async function handleAiGenerate() {
     }
   }
   catch (e) {
-    message.error('生成失败: ' + (e.message || e))
+    message.error(`生成失败: ${e.message || e}`)
   }
   finally {
     generating.value = false
@@ -493,7 +555,7 @@ async function handleAiOptimize() {
     }
   }
   catch (e) {
-    message.error('优化失败: ' + (e.message || e))
+    message.error(`优化失败: ${e.message || e}`)
   }
   finally {
     optimizing.value = false
@@ -570,8 +632,12 @@ loadList()
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
-.filter-keyword { width: 260px; }
-.filter-status { width: 150px; }
+.filter-keyword {
+  width: 260px;
+}
+.filter-status {
+  width: 150px;
+}
 
 .skill-grid {
   display: grid;
@@ -588,7 +654,10 @@ loadList()
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .skill-card:hover {
@@ -712,19 +781,29 @@ loadList()
 }
 
 @media (max-width: 1400px) {
-  .skill-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .skill-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1024px) {
-  .skill-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skill-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
-  .filter-bar, .tool-bar {
+  .filter-bar,
+  .tool-bar {
     align-items: stretch;
     flex-direction: column;
   }
-  .filter-keyword, .filter-status { width: 100%; }
-  .skill-grid { grid-template-columns: 1fr; }
+  .filter-keyword,
+  .filter-status {
+    width: 100%;
+  }
+  .skill-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

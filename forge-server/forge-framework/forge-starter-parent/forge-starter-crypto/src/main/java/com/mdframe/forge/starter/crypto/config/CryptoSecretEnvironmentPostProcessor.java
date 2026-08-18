@@ -181,29 +181,62 @@ public final class CryptoSecretEnvironmentPostProcessor implements EnvironmentPo
                 Path lockFile = directory.resolve(secretFile.getFileName() + ".lock");
                 rejectSymbolicLink(lockFile);
                 try (FileChannel lockChannel = FileChannel.open(lockFile,
-                        StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.READ,
+                        StandardOpenOption.WRITE)) {
                     tightenPermissions(lockFile, FILE_PERMISSIONS);
+                    Map<String, Object> existing = readCompleteProperties(
+                            lockChannel, secretFile, algorithm);
+                    if (existing != null) {
+                        return existing;
+                    }
                     try (var ignored = lockChannel.lock()) {
-                        if (Files.exists(secretFile, LinkOption.NOFOLLOW_LINKS)) {
-                            Map<String, Object> existing = readProperties(secretFile);
-                            if (addMissingCapabilityPeppers(existing)) {
-                                validateProperties(existing, algorithm);
-                                writeAtomically(secretFile, existing);
-                            } else {
-                                validateProperties(existing, algorithm);
-                            }
-                            return existing;
-                        }
-                        Map<String, Object> generated = generateProperties(algorithm);
-                        validateProperties(generated, algorithm);
-                        writeAtomically(secretFile, generated);
-                        return generated;
+                        return loadOrCreateWithExclusiveLock(secretFile, algorithm);
                     }
                 }
             } catch (IOException e) {
                 throw new IllegalStateException("无法初始化自动密钥文件: " + secretFile, e);
             }
         }
+    }
+
+    private Map<String, Object> readCompleteProperties(FileChannel lockChannel,
+                                                       Path secretFile,
+                                                       CryptoAlgorithm algorithm) throws IOException {
+        try (var ignored = lockChannel.lock(0L, Long.MAX_VALUE, true)) {
+            if (!Files.exists(secretFile, LinkOption.NOFOLLOW_LINKS)) {
+                return null;
+            }
+            Map<String, Object> existing = readProperties(secretFile);
+            if (requiresCapabilityPepperUpgrade(existing)) {
+                return null;
+            }
+            validateProperties(existing, algorithm);
+            return existing;
+        }
+    }
+
+    private Map<String, Object> loadOrCreateWithExclusiveLock(Path secretFile,
+                                                               CryptoAlgorithm algorithm) throws IOException {
+        if (Files.exists(secretFile, LinkOption.NOFOLLOW_LINKS)) {
+            Map<String, Object> existing = readProperties(secretFile);
+            boolean changed = addMissingCapabilityPeppers(existing);
+            validateProperties(existing, algorithm);
+            if (changed) {
+                writeAtomically(secretFile, existing);
+            }
+            return existing;
+        }
+        Map<String, Object> generated = generateProperties(algorithm);
+        validateProperties(generated, algorithm);
+        writeAtomically(secretFile, generated);
+        return generated;
+    }
+
+    private boolean requiresCapabilityPepperUpgrade(Map<String, Object> properties) {
+        return !properties.containsKey(CAPABILITY_CLIENT_PEPPER_PROPERTY)
+                || !properties.containsKey(CAPABILITY_TOKEN_PEPPER_PROPERTY)
+                || !properties.containsKey(CAPABILITY_AUTHORIZATION_CODE_PEPPER_PROPERTY);
     }
 
     private Map<String, Object> generateProperties(CryptoAlgorithm algorithm) {

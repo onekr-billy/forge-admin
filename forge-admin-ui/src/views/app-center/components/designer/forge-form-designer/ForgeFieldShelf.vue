@@ -197,6 +197,10 @@ const props = defineProps({
     type: Object,
     default: () => new Set(),
   },
+  relations: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 defineEmits(['appendField'])
@@ -210,6 +214,7 @@ const fieldTemplateGroups = [
     title: '输入',
     items: [
       { componentKey: 'input', label: '输入框', icon: TextOutline },
+      { componentKey: 'barcodeScanner', label: '扫码输入', icon: StatsChartOutline },
       { componentKey: 'textarea', label: '多行文本', icon: DocumentTextOutline },
       { componentKey: 'number', label: '数字', icon: CalculatorOutline },
       { componentKey: 'money', label: '金额', icon: CashOutline },
@@ -265,6 +270,7 @@ const layoutItems = [
   { componentKey: 'row', label: '栅格布局', icon: GridOutline },
   { componentKey: 'table', label: '表格布局', icon: KeypadOutline },
   { componentKey: 'AiCrudPage', label: 'CRUD区块', icon: ListOutline },
+  { componentKey: 'subTable', label: '关联子表', icon: ListOutline },
   { componentKey: 'button', label: '按钮', icon: ToggleOutline },
   { componentKey: 'title', label: '分组标题', icon: ReorderThreeOutline },
   { componentKey: 'AiFormSectionTitle', label: '表单分隔线', icon: ReorderThreeOutline },
@@ -288,9 +294,13 @@ const visibleTemplateGroups = computed(() => {
 })
 const visibleLayoutItems = computed(() => {
   const text = normalizedKeyword.value
+  // 关联子表依赖对象关系上下文，无关系时不提供入口，避免出现无效配置。
+  const baseItems = props.relations.length
+    ? layoutItems
+    : layoutItems.filter(item => item.componentKey !== 'subTable')
   if (!text)
-    return layoutItems
-  return layoutItems.filter(item => [item.label, item.componentKey].some(value => String(value || '').toLowerCase().includes(text)))
+    return baseItems
+  return baseItems.filter(item => [item.label, item.componentKey].some(value => String(value || '').toLowerCase().includes(text)))
 })
 const componentTotal = computed(() => {
   return visibleTemplateGroups.value.reduce((total, group) => total + group.items.length, 0) + visibleLayoutItems.value.length

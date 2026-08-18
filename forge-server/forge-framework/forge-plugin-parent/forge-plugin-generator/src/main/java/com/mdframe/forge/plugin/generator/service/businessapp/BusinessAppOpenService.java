@@ -73,7 +73,7 @@ public class BusinessAppOpenService {
         boolean basePermissionGranted = hasPermission("ai:businessApp:open");
         boolean entryPermissionGranted = permissionCode == null || hasPermission(permissionCode);
         vo.setPermissionGranted(basePermissionGranted && entryPermissionGranted);
-        vo.setOpenType(resolveOpenType(app.getEntryMode()));
+        vo.setOpenType(resolveOpenType(app.getEntryMode(), app.getAppType()));
         vo.setTargetUrl(targetUrl);
         vo.setTargetRoute(targetUrl);
 
@@ -166,6 +166,9 @@ public class BusinessAppOpenService {
         JSONObject options = readOptions(app.getOptions());
         Map<String, String> query = new LinkedHashMap<>();
         query.put("appId", String.valueOf(app.getId()));
+        if (StringUtils.isNotBlank(app.getConfigKey())) {
+            query.put("configKey", app.getConfigKey());
+        }
         if (menuResourceId != null) {
             query.put("menuKey", String.valueOf(menuResourceId));
             query.put("menuResourceId", String.valueOf(menuResourceId));
@@ -195,6 +198,14 @@ public class BusinessAppOpenService {
         }
         if (StringUtils.isNotBlank(app.getAppName())) {
             query.put("title", app.getAppName());
+        }
+        String appType = StringUtils.defaultIfBlank(app.getAppType(), "WEB").toUpperCase();
+        if ("MOBILE".equals(appType)) {
+            String h5BasePath = StringUtils.defaultIfBlank(options.getString("h5BasePath"), "/forge-h5/#");
+            if (!h5BasePath.endsWith("#")) {
+                h5BasePath = h5BasePath + (h5BasePath.endsWith("/") ? "#" : "/#");
+            }
+            return appendQuery(h5BasePath + "/pages/lowcode-runtime", query);
         }
         return appendQuery("/ai/crud-page/" + app.getConfigKey(), query);
     }
@@ -370,8 +381,11 @@ public class BusinessAppOpenService {
         return host.equals(allowedDomain);
     }
 
-    private String resolveOpenType(String entryMode) {
+    private String resolveOpenType(String entryMode, String appType) {
         String mode = StringUtils.defaultIfBlank(entryMode, "ROUTE").toUpperCase();
+        if ("RUNTIME".equals(mode) && "MOBILE".equalsIgnoreCase(appType)) {
+            return "H5";
+        }
         return switch (mode) {
             case "RUNTIME" -> "ROUTE";
             case "IFRAME" -> "IFRAME";

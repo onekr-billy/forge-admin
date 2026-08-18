@@ -197,7 +197,7 @@ function normalizeError(error, stage) {
   const safeMessage = message
     .replace(/(token|secret|password|cookie|authorization)\S*/gi, '[REDACTED]')
     .slice(0, 420)
-  return stageLabel(stage) + '：' + (safeMessage || '未知错误')
+  return `${stageLabel(stage)}：${safeMessage || '未知错误'}`
 }
 
 function stageLabel(stage) {

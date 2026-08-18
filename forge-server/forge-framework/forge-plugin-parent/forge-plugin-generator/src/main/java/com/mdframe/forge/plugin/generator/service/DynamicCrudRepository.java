@@ -27,6 +27,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Types;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -884,6 +885,21 @@ public class DynamicCrudRepository {
         return results.isEmpty() ? null : results.get(0);
     }
 
+    /** 事务命令状态门禁使用的行锁读取，条件与普通详情查询完全一致。 */
+    public Map<String, Object> selectByIdForUpdate(String tableName,
+                                                   String primaryKeyColumn,
+                                                   Object id,
+                                                   SqlCondition dataScopeCondition) {
+        validateTableName(tableName);
+        validateIdentifier(primaryKeyColumn);
+        StringBuilder whereClause = buildIdWhereClause(tableName, primaryKeyColumn);
+        MapSqlParameterSource params = buildIdQueryParams(id);
+        appendSqlCondition(whereClause, params, dataScopeCondition);
+        String sql = buildSelectSql("SELECT *", tableName, whereClause) + " FOR UPDATE";
+        List<Map<String, Object>> results = jdbc().queryForList(sql, params);
+        return results.isEmpty() ? null : results.get(0);
+    }
+
     public List<Map<String, Object>> selectListByColumn(String tableName, String columnName, Object value) {
         validateTableName(tableName);
         validateIdentifier(columnName);
@@ -1122,7 +1138,81 @@ public class DynamicCrudRepository {
         Map<String, Object> updateData = prepareUpdateData(tableName, data, primaryKeyColumn);
         MapSqlParameterSource params = toSqlParams(updateData, id);
         String sql = appendTenantCondition(buildUpdateSql(tableName, updateData, primaryKeyColumn), params, tableName);
+        sql = appendLogicActiveCondition(sql, params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);
+        return jdbc().update(sql, params);
+    }
+
+    /**
+     * 在单条 UPDATE 中原子调整多个数值列，并把上下界和期望状态放进同一 WHERE。
+     */
+    public int adjustNumbersById(String tableName,
+                                 String primaryKeyColumn,
+                                 Object id,
+                                 Map<String, BigDecimal> deltas,
+                                 Map<String, BigDecimal> minimums,
+                                 Map<String, BigDecimal> maximums,
+                                 SqlCondition condition) {
+        validateTableName(tableName);
+        validateIdentifier(primaryKeyColumn);
+        if (id == null) {
+            throw new BusinessException("数值调整缺少目标记录 ID");
+        }
+        if (deltas == null || deltas.isEmpty()) {
+            throw new BusinessException("数值调整字段不能为空");
+        }
+        Set<String> tableColumns = getTableColumns(tableName);
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("id", id);
+        List<String> setClauses = new ArrayList<>();
+        List<String> boundConditions = new ArrayList<>();
+        int index = 0;
+        for (Map.Entry<String, BigDecimal> entry : deltas.entrySet()) {
+            String column = entry.getKey();
+            validateIdentifier(column);
+            if (!tableColumns.contains(column)) {
+                throw new BusinessException("数值调整字段不存在");
+            }
+            BigDecimal delta = entry.getValue();
+            if (delta == null) {
+                throw new BusinessException("数值调整量不能为空");
+            }
+            String deltaParam = "adjustDelta" + index;
+            params.addValue(deltaParam, delta);
+            setClauses.add(column + " = " + column + " + :" + deltaParam);
+            BigDecimal minimum = minimums == null ? null : minimums.get(column);
+            if (minimum != null) {
+                String minParam = "adjustMin" + index;
+                params.addValue(minParam, minimum);
+                boundConditions.add(column + " + :" + deltaParam + " >= :" + minParam);
+            }
+            BigDecimal maximum = maximums == null ? null : maximums.get(column);
+            if (maximum != null) {
+                String maxParam = "adjustMax" + index;
+                params.addValue(maxParam, maximum);
+                boundConditions.add(column + " + :" + deltaParam + " <= :" + maxParam);
+            }
+            index++;
+        }
+
+        Map<String, Object> auditValues = new LinkedHashMap<>();
+        fillUpdateAuditFields(auditValues, tableColumns);
+        auditValues.forEach((column, value) -> {
+            if (!deltas.containsKey(column)) {
+                validateIdentifier(column);
+                setClauses.add(column + " = :" + column);
+                params.addValue(column, value);
+            }
+        });
+
+        String sql = "UPDATE " + tableName + " SET " + String.join(", ", setClauses)
+                + " WHERE " + primaryKeyColumn + " = :id";
+        sql = appendTenantCondition(sql, params, tableName);
+        sql = appendLogicActiveCondition(sql, params, tableName);
+        sql = appendSqlCondition(sql, params, condition);
+        for (String bound : boundConditions) {
+            sql += " AND (" + bound + ")";
+        }
         return jdbc().update(sql, params);
     }
 
@@ -1527,6 +1617,14 @@ public class DynamicCrudRepository {
         }
         params.addValue("tenantId", tenantId);
         return sql + " AND " + tenantColumn + " = :tenantId";
+    }
+
+    private String appendLogicActiveCondition(String sql, MapSqlParameterSource params, String tableName) {
+        if (tableName == null || !hasDelFlag(tableName)) {
+            return sql;
+        }
+        appendLogicDeleteParam(params);
+        return sql + " AND " + logicDeleteColumn() + " = :logicActiveValue";
     }
 
     private String appendSqlCondition(String sql, MapSqlParameterSource params, SqlCondition condition) {

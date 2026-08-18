@@ -35,7 +35,8 @@ public class UpdateFieldActionStepExecutor implements BusinessActionStepExecutor
         if (fields.isEmpty()) {
             throw new BusinessException("更新字段步骤没有可更新字段");
         }
-        dynamicCrudService.updateFieldsInternal(targetConfigKey, targetRecordId, fields);
+        Map<String, Object> expected = BusinessActionStepConfigHelper.buildExpectedData(config, context);
+        dynamicCrudService.updateCommandFields(targetConfigKey, targetRecordId, fields, expected);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
         result.setStatus("SUCCESS");

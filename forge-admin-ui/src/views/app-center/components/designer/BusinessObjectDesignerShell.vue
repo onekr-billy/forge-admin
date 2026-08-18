@@ -1,6 +1,6 @@
 <template>
-  <div class="designer-shell">
-    <header class="designer-topbar">
+  <div class="designer-shell" :class="{ embedded, 'compact-embedded': compactEmbedded, 'nav-hidden': !showDesignerNavigation }">
+    <header v-if="!embedded" class="designer-topbar">
       <div class="topbar-left">
         <n-button quaternary circle @click="$emit('back')">
           <template #icon>
@@ -25,7 +25,7 @@
             </n-tag>
           </div>
           <p>
-            <span class="object-workbench-description">维护字段、表单、列表和业务规则</span>
+            <span class="object-workbench-description">维护对象字段、数据关系和树形模型</span>
             {{ designer?.suiteName || designer?.suiteCode || '未关联业务域' }}
             <span v-if="designer?.updateTime">最近保存 {{ designer.updateTime }}</span>
             <span v-if="designer?.lastPublishTime">最后发布 {{ designer.lastPublishTime }}</span>
@@ -80,7 +80,7 @@
     </header>
 
     <div class="designer-workbench" :class="{ 'nav-collapsed': navCollapsed }">
-      <aside class="designer-nav" :class="{ collapsed: navCollapsed }">
+      <aside v-if="showDesignerNavigation" class="designer-nav" :class="{ collapsed: navCollapsed }">
         <button
           type="button"
           class="nav-collapse-button"
@@ -98,7 +98,7 @@
           :key="item.key"
           type="button"
           class="nav-item"
-          :class="{ active: item.key === activePanel, disabled: loading }"
+          :class="{ active: item.key === activeNavigationKey, disabled: loading }"
           :disabled="loading"
           :title="navCollapsed ? item.label : ''"
           @click="handlePanelClick(item.key)"
@@ -109,24 +109,6 @@
           <span>{{ item.label }}</span>
           <em v-if="item.key === 'publish' && designer?.hasUnpublishedChanges">待发布</em>
         </button>
-
-        <div v-if="closureSteps.length" class="closure-steps">
-          <div class="closure-steps-head">
-            <strong>单据闭环配置</strong>
-            <span>{{ closureDoneCount }}/{{ closureSteps.length }}</span>
-          </div>
-          <button
-            v-for="step in closureSteps"
-            :key="step.key"
-            type="button"
-            class="closure-step"
-            :class="[`step-${step.status || 'todo'}`]"
-            @click="handleStepClick(step)"
-          >
-            <span>{{ step.label }}</span>
-            <em>{{ step.statusLabel }}</em>
-          </button>
-        </div>
       </aside>
 
       <main class="designer-main">
@@ -160,7 +142,6 @@ import {
   FlashOutline,
   GitBranchOutline,
   GitNetworkOutline,
-  KeyOutline,
   ListOutline,
   OptionsOutline,
   ReaderOutline,
@@ -170,6 +151,7 @@ import {
 } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
 import DesignerAsyncLoader from './DesignerAsyncLoader.vue'
+import { resolveStandaloneObjectDesignerSection, standaloneObjectDesignerSections } from './object-designer-navigation'
 
 const props = defineProps({
   designer: {
@@ -212,10 +194,6 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  closureSteps: {
-    type: Array,
-    default: () => [],
-  },
   navPanels: {
     type: Array,
     default: () => [],
@@ -228,6 +206,14 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
+  compactEmbedded: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits([
@@ -238,38 +224,51 @@ const emit = defineEmits([
   'back',
   'refresh',
   'openRuntime',
-  'openTrigger',
   'openFields',
   'openFunctionMarket',
 ])
 const navCollapsed = ref(false)
 
-const navItems = [
+const legacyNavItems = [
   { key: 'fields', label: '数据结构', icon: TextOutline },
   { key: 'form', label: '表单设计', icon: ReaderOutline },
   { key: 'list', label: '列表设计', icon: ListOutline },
-  { key: 'actions', label: '业务处理', icon: GitBranchOutline },
-  { key: 'triggers', label: '自动化触发器', icon: FlashOutline },
   { key: 'relations', label: '关系与级联', icon: GitNetworkOutline },
+  { key: 'actions', label: '业务动作', icon: FlashOutline },
   { key: 'flow-app', label: '业务流程配置', icon: GitBranchOutline },
-  { key: 'permission', label: '数据权限', icon: KeyOutline },
+  { key: 'tree-model', label: '树形模型', icon: GitNetworkOutline },
   { key: 'publish', label: '发布检查', icon: CheckmarkDoneOutline },
   { key: 'basic', label: '基本信息', icon: OptionsOutline },
   { key: 'advanced', label: '高级配置', icon: SettingsOutline },
 ]
 
+const standaloneIconMap = {
+  'basic': OptionsOutline,
+  'fields': TextOutline,
+  'data-model': GitNetworkOutline,
+}
+
+const standaloneNavItems = standaloneObjectDesignerSections.map(item => ({
+  ...item,
+  icon: standaloneIconMap[item.key],
+}))
+
 const filteredNavItems = computed(() => {
   const whitelist = props.navPanels || []
-  return navItems.filter((item) => {
+  if (!whitelist.length)
+    return standaloneNavItems
+  return legacyNavItems.filter((item) => {
     if (whitelist.length && !whitelist.includes(item.key))
-      return false
-    if (item.key === 'actions' && !whitelist.includes(item.key))
       return false
     if (item.key === 'advanced')
       return props.showAdvanced
     return true
   })
 })
+const activeNavigationKey = computed(() => props.navPanels?.length
+  ? props.activePanel
+  : resolveStandaloneObjectDesignerSection(props.activePanel))
+const showDesignerNavigation = computed(() => !props.embedded || filteredNavItems.value.length > 1)
 const moreOptions = computed(() => {
   if (props.navPanels?.length) {
     return [
@@ -280,7 +279,6 @@ const moreOptions = computed(() => {
     { label: '函数市场', key: 'openFunctionMarket' },
     { label: '刷新设计器', key: 'refresh' },
     { label: '打开运行应用', key: 'openRuntime' },
-    { label: '配置触发器', key: 'openTrigger' },
   ]
   if (props.showAdvanced) {
     options.splice(1, 0, {
@@ -290,8 +288,6 @@ const moreOptions = computed(() => {
   }
   return options
 })
-const closureDoneCount = computed(() => props.closureSteps.filter(step => step.status === 'done').length)
-
 function handlePanelClick(key) {
   if (props.loading)
     return
@@ -312,20 +308,6 @@ function handlePanelClick(key) {
     negativeText: '留在当前',
     onPositiveClick: () => emit('update:activePanel', key),
   })
-}
-
-function handleStepClick(step = {}) {
-  if (props.loading)
-    return
-  if (step.key === 'trigger') {
-    emit('openTrigger')
-    return
-  }
-  if (step.key === 'runtime') {
-    emit('openRuntime')
-    return
-  }
-  handlePanelClick(step.panel || step.key)
 }
 
 const designStatusLabel = computed(() => {
@@ -396,6 +378,42 @@ function handleTopbarActionsClick(event) {
   width: 100vw;
   height: 100vh;
   background: #f8f9fa;
+}
+
+.designer-shell.embedded {
+  position: relative;
+  z-index: auto;
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+}
+
+.designer-shell.embedded .designer-workbench {
+  height: 100%;
+}
+
+.designer-shell.embedded.nav-hidden .designer-workbench {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.designer-shell.embedded.compact-embedded,
+.designer-shell.embedded.compact-embedded .designer-workbench,
+.designer-shell.embedded.compact-embedded .designer-main-content,
+.designer-shell.embedded.compact-embedded .panel-frame {
+  height: auto;
+  min-height: 0;
+}
+
+.designer-shell.embedded.compact-embedded .designer-workbench {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.designer-shell.embedded.compact-embedded .designer-nav {
+  display: none;
+}
+
+.designer-shell.embedded.compact-embedded .panel-frame {
+  overflow: visible;
 }
 
 .designer-main-content {
@@ -540,10 +558,10 @@ function handleTopbarActionsClick(event) {
   width: 30px;
   height: 30px;
   place-items: center;
-  border: 1px solid #dbeafe;
+  border: 1px solid #e4e4e7;
   border-radius: 7px;
-  background: #eef2ff;
-  color: #3153d8;
+  background: #f4f4f5;
+  color: #52525b;
   font-size: 16px;
 }
 
@@ -608,9 +626,9 @@ function handleTopbarActionsClick(event) {
 }
 
 .nav-collapse-button:hover {
-  border-color: #c7d2fe;
-  background: #f4f6ff;
-  color: #3153d8;
+  border-color: #d4d4d8;
+  background: #f4f4f5;
+  color: #18181b;
 }
 
 .designer-nav.collapsed .nav-collapse-button {
@@ -672,8 +690,8 @@ function handleTopbarActionsClick(event) {
 }
 
 .nav-item.active {
-  background: #eef2ff;
-  color: #3153d8;
+  background: #f4f4f5;
+  color: #18181b;
   font-weight: 700;
 }
 
@@ -691,84 +709,6 @@ function handleTopbarActionsClick(event) {
   font-style: normal;
   line-height: 20px;
   padding: 0 6px;
-}
-
-.closure-steps {
-  display: grid;
-  gap: 6px;
-  margin-top: 16px;
-  border-top: 1px solid #e5e7eb;
-  padding-top: 14px;
-}
-
-.designer-nav.collapsed .closure-steps {
-  display: none;
-}
-
-.closure-steps-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #334155;
-  font-size: 12px;
-  padding: 0 8px;
-}
-
-.closure-steps-head strong {
-  font-size: 12px;
-}
-
-.closure-steps-head span {
-  color: #64748b;
-}
-
-.closure-step {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-  color: #475569;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: left;
-  padding: 0 8px;
-}
-
-.closure-step:hover {
-  border-color: #bfdbfe;
-  background: #f8fbff;
-}
-
-.closure-step span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.closure-step em {
-  border-radius: 4px;
-  font-size: 11px;
-  font-style: normal;
-  line-height: 20px;
-  padding: 0 6px;
-}
-
-.closure-step.step-done em {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.closure-step.step-warn em {
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.closure-step.step-todo em {
-  background: #f1f5f9;
-  color: #64748b;
 }
 
 .designer-main {

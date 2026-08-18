@@ -1,0 +1,31 @@
+# ============================================
+# Forge Admin 后端服务 Dockerfile
+# ============================================
+# 构建上下文为项目根目录，docker compose 中 context 设为 ..
+FROM maven:3.9.16-eclipse-temurin-17 AS builder
+WORKDIR /build
+COPY ./forge-server .
+RUN mvn clean package -pl forge-admin-server -am -DskipTests -Pprod
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=builder /build/forge-admin-server/target/forge-admin-server.jar app.jar
+
+ENV JAVA_OPTS="-Xms256m -Xmx512m"
+ENV SPRING_PROFILES_ACTIVE=prod
+ENV MYSQL_HOST=mysql
+ENV MYSQL_PORT=3306
+ENV MYSQL_DB=forge_admin
+ENV MYSQL_USER=root
+ENV MYSQL_PASSWORD=forge123456
+ENV REDIS_HOST=redis
+ENV REDIS_PORT=6379
+ENV REDIS_PASSWORD=forge123456
+ENV FLOW_CLIENT_URL=http://forge-flow:8081
+
+EXPOSE 8580
+
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} \
+  -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE} \
+  -Dforge.flow.client.url=${FLOW_CLIENT_URL} \
+  -jar app.jar"]

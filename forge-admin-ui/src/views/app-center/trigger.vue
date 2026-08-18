@@ -9,7 +9,7 @@
           <NButton secondary @click="loadAll">
             刷新
           </NButton>
-          <NButton type="primary" @click="openEditor(null)">
+          <NButton v-if="!legacyReadOnly" type="primary" @click="openEditor(null)">
             新增触发器
           </NButton>
         </NSpace>
@@ -24,6 +24,15 @@
         </div>
       </div>
     </header>
+
+    <n-alert type="info" :bordered="false" class="legacy-entry-alert">
+      触发器配置已整合到业务流程画布，建议在新入口维护。此处仅支持查看历史配置。
+      <template #action>
+        <NButton data-open-process-workspace text type="primary" @click="openProcessWorkspace">
+          前往应用工作台业务流程
+        </NButton>
+      </template>
+    </n-alert>
 
     <section v-if="!embedded" class="trigger-stats">
       <div class="trigger-stat">
@@ -48,7 +57,7 @@
       <div class="trigger-toolbar">
         <div v-if="!embedded">
           <h2>规则列表</h2>
-          <p>筛选、启停和查看每条触发器的执行情况。</p>
+          <p>筛选并查看历史触发器及其执行情况。</p>
         </div>
         <NSpace :wrap="true" align="center">
           <n-select
@@ -103,8 +112,16 @@
     </section>
 
     <!-- 触发器编辑弹窗 -->
-    <n-modal v-model:show="editorVisible" preset="card" :title="editingTrigger ? '编辑触发器' : '新增触发器'" style="width: 680px">
-      <n-form ref="formRef" :model="formData" :rules="formRules" label-placement="left" label-width="100">
+    <n-modal v-model:show="editorVisible" preset="card" :title="legacyReadOnly ? '查看历史触发器' : editingTrigger ? '编辑触发器' : '新增触发器'" style="width: 680px">
+      <n-form
+        ref="formRef"
+        :model="formData"
+        :rules="formRules"
+        label-placement="left"
+        label-width="100"
+        :disabled="legacyReadOnly"
+        :class="{ 'is-read-only': legacyReadOnly }"
+      >
         <n-form-item label="触发器名称" path="triggerName">
           <n-input v-model:value="formData.triggerName" placeholder="例：商机创建时发起主流程" />
         </n-form-item>
@@ -276,7 +293,7 @@
           <NButton @click="editorVisible = false">
             取消
           </NButton>
-          <NButton type="primary" :loading="submitting" :disabled="!formData.objectCode" @click="handleSubmit">
+          <NButton v-if="!legacyReadOnly" type="primary" :loading="submitting" :disabled="!formData.objectCode" @click="handleSubmit">
             保存
           </NButton>
         </NSpace>
@@ -385,14 +402,15 @@ const fieldOptions = ref([])
 const actionOptions = ref([])
 const objectFieldsCache = ref({})
 const objectActionsCache = ref({})
+const legacyReadOnly = true
 
 const embedded = computed(() => props.embedded)
 const fixedObjectCode = computed(() => String(props.objectCode || '').trim())
 const objectLocked = computed(() => props.embedded && props.lockObject && Boolean(fixedObjectCode.value))
 const pageTitle = computed(() => props.embedded ? '自动化触发器' : '触发器配置')
 const pageDescription = computed(() => props.embedded
-  ? '配置当前业务单元的自动化规则，支持记录事件、定时提醒、流程发起和消息推送。'
-  : '基于业务事件的自动化规则：当记录创建、修改或状态变更时自动发起主流程、推送消息或更新字段。')
+  ? '查看当前业务单元的历史自动化规则，新配置请前往应用工作台。'
+  : '查看基于业务事件创建的历史自动化规则及其执行情况。')
 const enabledCount = computed(() => triggers.value.filter(t => t.status === 1).length)
 const scheduledCount = computed(() => triggers.value.filter(isScheduleRow).length)
 const currentObjectLabel = computed(() => {
@@ -469,6 +487,7 @@ const columns = [
         h(NSwitch, {
           'value': row.status === 1,
           'size': 'small',
+          'disabled': legacyReadOnly,
           'onUpdate:value': () => toggleStatus(row),
         }),
         h(DictTag, {
@@ -486,18 +505,23 @@ const columns = [
     key: 'actions',
     width: 190,
     fixed: 'right',
-    render: row => h(NSpace, { size: 10 }, {
-      default: () => [
-        h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => openEditor(row) }, { default: () => '编辑' }),
-        h(NButton, { text: true, type: 'info', size: 'small', onClick: () => openLogs(row) }, { default: () => '日志' }),
-        h(NPopconfirm, { onPositiveClick: () => handleDelete(row) }, {
-          trigger: () => h(NButton, { text: true, type: 'error', size: 'small' }, { default: () => '删除' }),
-          default: () => `确定删除“${row.triggerName || '该触发器'}”吗？`,
-        }),
-      ],
-    }),
+    render: row => h(NSpace, { size: 10 }, { default: () => renderRowActions(row) }),
   },
 ]
+
+function renderRowActions(row) {
+  const actions = [
+    h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => openEditor(row) }, { default: () => legacyReadOnly ? '查看' : '编辑' }),
+    h(NButton, { text: true, type: 'info', size: 'small', onClick: () => openLogs(row) }, { default: () => '日志' }),
+  ]
+  if (!legacyReadOnly) {
+    actions.push(h(NPopconfirm, { onPositiveClick: () => handleDelete(row) }, {
+      trigger: () => h(NButton, { text: true, type: 'error', size: 'small' }, { default: () => '删除' }),
+      default: () => `确定删除“${row.triggerName || '该触发器'}”吗？`,
+    }))
+  }
+  return actions
+}
 
 const logColumns = [
   { title: '事件', key: 'eventType', width: 110, render: row => h(DictTag, { options: eventTypeOptions.value, value: row.eventType, size: 'small', bordered: false }) },
@@ -593,6 +617,20 @@ function resetFilters() {
   filterObjectCode.value = objectLocked.value ? fixedObjectCode.value : null
   filterScenarioType.value = null
   handleFilterChange()
+}
+
+function openProcessWorkspace() {
+  const applicationCode = normalizeQueryValue(route.params.applicationCode)
+    || normalizeQueryValue(route.query.applicationCode)
+  if (!applicationCode) {
+    router.push('/app-center')
+    return
+  }
+  router.push({
+    name: 'BusinessApplicationWorkspace',
+    params: { applicationCode },
+    query: { section: 'automation' },
+  })
 }
 
 function handlePageChange(page) {
@@ -1029,6 +1067,15 @@ function normalizeQueryValue(value) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.legacy-entry-alert {
+  margin-bottom: 12px;
+}
+
+:deep(.n-form.is-read-only) {
+  opacity: 0.82;
+  pointer-events: none;
 }
 
 .trigger-embedded {

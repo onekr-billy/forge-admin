@@ -26,8 +26,8 @@ const dictPendingCache = new Map()
  */
 async function loadDictData(dictType) {
   try {
-    const res = await request.get('/system/dict/data/list', {
-      params: { dictType },
+    const encodedDictType = encodeURIComponent(dictType)
+    const res = await request.get(`/system/dict/data/type/${encodedDictType}`, {
       needTip: false,
     })
 

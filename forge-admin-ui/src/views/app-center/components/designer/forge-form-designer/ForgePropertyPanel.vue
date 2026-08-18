@@ -678,6 +678,36 @@
                       </n-switch>
                     </div>
                   </n-form-item>
+                  <n-form-item v-if="selectedComponent.componentKey === 'barcodeScanner'" label="扫码输入设置">
+                    <div class="field-constraint-config">
+                      <div class="switch-line compact">
+                        <span>允许手工输入</span>
+                        <n-switch
+                          size="small"
+                          :value="selectedComponent.props?.allowManualInput !== false"
+                          @update:value="updateComponent({ props: { allowManualInput: $event } })"
+                        />
+                      </div>
+                      <n-input-number
+                        :value="selectedComponent.props?.timeoutMs || 30000"
+                        :min="1000"
+                        :max="60000"
+                        :step="1000"
+                        :show-button="false"
+                        placeholder="扫码超时（毫秒）"
+                        @update:value="updateComponent({ props: { timeoutMs: $event || 30000 } })"
+                      />
+                      <n-select
+                        :value="selectedComponent.props?.formats || []"
+                        :options="barcodeFormatOptions"
+                        multiple
+                        clearable
+                        filterable
+                        placeholder="限定码制（不选表示全部）"
+                        @update:value="updateComponent({ props: { formats: $event || [] } })"
+                      />
+                    </div>
+                  </n-form-item>
                   <n-form-item label="字段约束">
                     <div class="field-constraint-config">
                       <n-select
@@ -788,6 +818,66 @@
                       :options="componentSizeOptions"
                       @update:value="updateComponent({ props: { size: $event || undefined } })"
                     />
+                  </n-form-item>
+                  <n-form-item v-if="isOptionField && selectedComponent.componentKey !== 'transfer'" label="选项来源">
+                    <div class="page-widget-config-stack">
+                      <n-select
+                        :value="selectedOptionSourceType"
+                        :options="optionSourceTypeOptions"
+                        @update:value="updateOptionSourceType"
+                      />
+                      <template v-if="selectedOptionSourceType === 'CURRENT_CHILDREN'">
+                        <n-input
+                          :value="selectedComponent.props?.optionSource?.relationKey || ''"
+                          placeholder="子表关系编码，例如 presale_items"
+                          @update:value="updatePageWidgetOptionSource({ relationKey: $event || '' })"
+                        />
+                        <div class="option-editor-row two-columns">
+                          <n-input
+                            :value="selectedComponent.props?.optionSource?.valueField || 'id'"
+                            placeholder="值字段"
+                            @update:value="updatePageWidgetOptionSource({ valueField: $event || 'id' })"
+                          />
+                          <n-input
+                            :value="selectedComponent.props?.optionSource?.labelField || 'label'"
+                            placeholder="显示字段"
+                            @update:value="updatePageWidgetOptionSource({ labelField: $event || 'label' })"
+                          />
+                        </div>
+                        <div class="switch-line compact">
+                          <span>仅已保存明细</span>
+                          <n-switch
+                            size="small"
+                            :value="selectedComponent.props?.optionSource?.persistedOnly !== false"
+                            @update:value="updatePageWidgetOptionSource({ persistedOnly: $event })"
+                          />
+                        </div>
+                      </template>
+                      <template v-else-if="selectedOptionSourceType === 'REMOTE'">
+                        <n-input
+                          :value="selectedComponent.props?.optionSource?.api || ''"
+                          placeholder="例如 get@/api/options"
+                          @update:value="updatePageWidgetOptionSource({ api: $event || '' })"
+                        />
+                        <div class="option-editor-row two-columns">
+                          <n-input
+                            :value="selectedComponent.props?.optionSource?.recordsField || 'records'"
+                            placeholder="列表路径"
+                            @update:value="updatePageWidgetOptionSource({ recordsField: $event || 'records' })"
+                          />
+                          <n-input
+                            :value="selectedComponent.props?.optionSource?.valueField || 'value'"
+                            placeholder="值字段"
+                            @update:value="updatePageWidgetOptionSource({ valueField: $event || 'value' })"
+                          />
+                        </div>
+                        <n-input
+                          :value="selectedComponent.props?.optionSource?.labelField || 'label'"
+                          placeholder="显示字段"
+                          @update:value="updatePageWidgetOptionSource({ labelField: $event || 'label' })"
+                        />
+                      </template>
+                    </div>
                   </n-form-item>
                   <template v-if="selectedComponent.componentKey === 'transfer'">
                     <n-form-item label="数据来源">
@@ -2200,6 +2290,34 @@
               </div>
             </section>
 
+            <section v-if="isSubTableLayout" class="panel-item">
+              <div class="panel-item-title">
+                关联子表
+              </div>
+              <n-form-item label="标题">
+                <n-input
+                  :value="selectedComponent.props?.header || ''"
+                  placeholder="关联子表"
+                  @update:value="updateComponent({ props: { header: $event || '关联子表' } })"
+                />
+              </n-form-item>
+              <n-form-item label="关联关系">
+                <n-select
+                  :value="selectedComponent.props?.relationKey || ''"
+                  :options="subTableRelationOptions"
+                  filterable
+                  placeholder="选择对象关系"
+                  @update:value="updateSubTableRelation"
+                />
+              </n-form-item>
+              <n-form-item label="展示方式">
+                <n-select
+                  :value="selectedComponent.props?.displayMode || 'inline_grid'"
+                  :options="subTableDisplayModeOptions"
+                  @update:value="updateComponent({ props: { displayMode: $event || 'inline_grid' } })"
+                />
+              </n-form-item>
+            </section>
             <section v-if="isCollapseLayout" class="panel-item">
               <div class="panel-item-title">
                 Collapse 属性
@@ -2361,6 +2479,23 @@
                 :field-options="runtimeRuleFieldOptions"
                 @update:rules="updateComponent({ props: { runtimeRules: $event } })"
               />
+            </section>
+
+            <section v-if="isField && selectedDrivenRuntimeRules.length" class="panel-item driven-runtime-rules-panel">
+              <div class="panel-item-title">
+                当前字段影响
+              </div>
+              <div class="driven-runtime-rule-list">
+                <article v-for="item in selectedDrivenRuntimeRules" :key="item.key" class="driven-runtime-rule-card">
+                  <div>
+                    <strong>{{ item.targetLabel }}</strong>
+                    <span>{{ item.summary }}</span>
+                  </div>
+                  <n-button size="tiny" text type="primary" @click="emit('update:selectedId', item.targetId)">
+                    查看目标字段
+                  </n-button>
+                </article>
+              </div>
             </section>
 
             <section class="panel-item">
@@ -3528,8 +3663,67 @@
               </section>
             </n-collapse-item>
 
-            <n-collapse-item title="表单事件与生命周期" name="events">
+            <n-collapse-item title="本地草稿与断网提交" name="offline">
+              <section class="panel-item form-offline-panel">
+                <div class="compact-config-row">
+                  <label>启用本地草稿</label>
+                  <n-switch
+                    size="small"
+                    :value="formOfflineDraftConfig.enabled"
+                    @update:value="updateFormOfflineDraft({ enabled: $event })"
+                  />
+                </div>
+                <p class="offline-draft-description">
+                  启用后，新增和编辑内容会保存在当前用户的浏览器中；恢复网络后仍需检查并确认提交。
+                </p>
+                <template v-if="formOfflineDraftConfig.enabled">
+                  <div class="compact-field">
+                    <label>草稿所属表单</label>
+                    <n-input
+                      :value="formOfflineDraftConfig.formCode"
+                      clearable
+                      placeholder="默认使用当前表单编码"
+                      size="small"
+                      @update:value="updateFormOfflineDraft({ formCode: $event || schema.formKey || 'default' })"
+                    />
+                  </div>
+                  <div class="compact-field">
+                    <label>联网后提交动作</label>
+                    <n-input
+                      :value="formOfflineDraftConfig.replayActionCode"
+                      clearable
+                      placeholder="可选；填写已发布的业务动作编码"
+                      size="small"
+                      @update:value="updateFormOfflineDraft({ replayActionCode: $event || '' })"
+                    />
+                  </div>
+                  <div class="compact-field">
+                    <label>记录版本字段</label>
+                    <n-input
+                      :value="formOfflineDraftConfig.recordVersionField"
+                      clearable
+                      placeholder="默认 updateTime"
+                      size="small"
+                      @update:value="updateFormOfflineDraft({ recordVersionField: $event || 'updateTime' })"
+                    />
+                  </div>
+                  <p class="offline-draft-description">
+                    未配置提交动作时，断网提交只保存草稿；配置动作后也不会自动重放，必须由用户联网后确认。
+                  </p>
+                </template>
+              </section>
+            </n-collapse-item>
+
+            <n-collapse-item title="表单事件与生命周期（高级）" name="events">
               <section class="panel-item form-lifecycle-panel">
+                <FieldEventRulesEditor
+                  :model-value="formFieldEventRows"
+                  :field-options="formFieldOptions"
+                  @update:model-value="updateFormFieldEvents"
+                />
+                <n-divider title-placement="left">
+                  高级生命周期
+                </n-divider>
                 <div v-for="(eventItem, idx) in formEventRows" :key="eventItem.id || idx" class="lifecycle-event-card">
                   <button type="button" class="event-delete-icon" title="删除事件" @click="removeFormEvent(idx)">
                     ×
@@ -3703,6 +3897,29 @@
             </n-collapse-item>
           </n-collapse>
         </n-form>
+      </n-tab-pane>
+
+      <n-tab-pane name="events">
+        <template #tab>
+          <span class="property-tab-label">
+            <n-icon><FlashOutline /></n-icon>
+            事件
+            <i v-if="formFieldEventRows.length" class="property-tab-configured-dot" title="已有事件配置" />
+          </span>
+        </template>
+        <div class="form-event-primary-panel">
+          <FieldEventRulesEditor
+            :model-value="formFieldEventRows"
+            :field-options="formFieldOptions"
+            @update:model-value="updateFormFieldEvents"
+          />
+          <FieldLinkageRulesEditor
+            :model-value="formFieldLinkageRows"
+            :fields="formFieldCatalog"
+            :relations="relations"
+            @update:model-value="updateFormFieldLinkages"
+          />
+        </div>
       </n-tab-pane>
 
       <n-tab-pane name="style">
@@ -4151,6 +4368,9 @@ import { COMMON_VALIDATION_PRESETS, getValidationPreset } from '@/utils/validati
 import BusinessFieldPropertyPanel from '../BusinessFieldPropertyPanel.vue'
 import { appendDesignerLayoutChild, cloneValue, findDesignerComponentPath, getDesignerComponent, isFieldComponent, isLayoutComponent, normalizeFormDesignerSchema, updateDesignerComponent, updateDesignerLayout } from '../form-first/formDesignerSchema'
 import { camelToSnake } from '../form-first/namingUtils'
+import FieldEventRulesEditor from './FieldEventRulesEditor.vue'
+import FieldLinkageRulesEditor from './FieldLinkageRulesEditor.vue'
+import { normalizeRelationOption } from './pageSectionEditorUtils'
 import { buildDefaultPlaceholder, buildFieldAssetPlaceholderPatch, shouldSyncPlaceholder } from './placeholder-utils'
 
 const props = defineProps({
@@ -4173,6 +4393,10 @@ const props = defineProps({
   objectCode: {
     type: String,
     default: '',
+  },
+  initialFormTab: {
+    type: String,
+    default: 'basic',
   },
 })
 
@@ -4231,13 +4455,13 @@ const fieldFormulaPanelVisible = ref(false)
 const crudDescriptionFieldPanelOpen = ref(false)
 const editingCrudFieldId = ref('')
 const propertyActiveTab = ref('basic')
-const formPropertyActiveTab = ref('basic')
+const formPropertyActiveTab = ref(props.initialFormTab === 'events' ? 'events' : 'basic')
 const basicExpandedNames = ['identity', 'gridQuick', 'field', 'validation']
 const selectedBasicExpandedNames = ref([...basicExpandedNames])
-const formBasicExpandedNames = ref(['assets', 'layout', 'permissions', 'events'])
+const formBasicExpandedNames = ref(['assets', 'layout', 'permissions', 'offline', 'events'])
 const formStyleExpandedNames = ref(['position', 'layout', 'typography', 'appearance'])
 const allSelectedBasicExpandNames = ['identity', 'gridQuick', 'field', 'button', 'options', 'crud-field', 'temporal', 'assist', 'validation']
-const allFormBasicExpandNames = ['assets', 'layout', 'permissions', 'events', 'spacing', 'actions']
+const allFormBasicExpandNames = ['assets', 'layout', 'permissions', 'offline', 'events', 'spacing', 'actions']
 const allFormStyleExpandNames = ['position', 'spacing', 'typography', 'appearance', 'custom-style']
 const commonValidationOptions = COMMON_VALIDATION_PRESETS.map(item => ({
   label: item.label,
@@ -4265,6 +4489,20 @@ const isCrudBlock = computed(() => ['AiCrudPage', 'crudBlock'].includes(selected
 const isRowLayout = computed(() => ['row', 'fcRow'].includes(selectedComponent.value?.componentKey))
 const isColumnLayout = computed(() => selectedComponent.value?.componentKey === 'col')
 const isCardLayout = computed(() => ['card', 'elCard'].includes(selectedComponent.value?.componentKey))
+const isSubTableLayout = computed(() => selectedComponent.value?.componentKey === 'subTable')
+const subTableRelationOptions = computed(() => props.relations
+  .map(normalizeRelationOption)
+  .filter(Boolean))
+const subTableDisplayModeOptions = [
+  { label: '行内表格', value: 'inline_grid' },
+  { label: '卡片列表', value: 'card_list' },
+  { label: '底部抽屉', value: 'bottom_sheet' },
+]
+function updateSubTableRelation(relationKey) {
+  const matched = subTableRelationOptions.value.find(option => option.value === relationKey)
+  const header = matched ? matched.label.replace(/（[^（）]+）$/, '') : selectedComponent.value?.props?.header || '关联子表'
+  updateComponent({ props: { relationKey: relationKey || '', header } })
+}
 const isTabsLayout = computed(() => ['tabs', 'elTabs'].includes(selectedComponent.value?.componentKey))
 const isCollapseLayout = computed(() => ['collapse', 'elCollapse'].includes(selectedComponent.value?.componentKey))
 const isButtonComponent = computed(() => ['button', 'elButton'].includes(selectedComponent.value?.componentKey))
@@ -4282,7 +4520,26 @@ const formGovernanceSettings = computed(() => props.schema.settings?.governance 
 const formPermissionConfig = computed(() => formGovernanceSettings.value.permission || {})
 const formFieldRuleRows = computed(() => Array.isArray(formGovernanceSettings.value.fieldRules) ? formGovernanceSettings.value.fieldRules : [])
 const formEventRows = computed(() => Array.isArray(formGovernanceSettings.value.events) ? formGovernanceSettings.value.events : [])
+const formFieldEventRows = computed(() => Array.isArray(formGovernanceSettings.value.fieldEvents) ? formGovernanceSettings.value.fieldEvents : [])
+const formFieldLinkageRows = computed(() => Array.isArray(formGovernanceSettings.value.fieldLinkages) ? formGovernanceSettings.value.fieldLinkages : [])
+const formOfflineDraftConfig = computed(() => {
+  const source = formGovernanceSettings.value.offlineDraft
+  const config = source && typeof source === 'object' ? source : {}
+  return {
+    enabled: config.enabled === true,
+    formCode: config.formCode || props.schema.formKey || 'default',
+    replayActionCode: config.replayActionCode || '',
+    recordVersionField: config.recordVersionField || 'updateTime',
+  }
+})
 const formFieldOptions = computed(() => collectBoundFieldOptions(props.schema.components || []))
+const formFieldCatalog = computed(() => {
+  const source = Array.isArray(props.fields) && props.fields.length ? props.fields : props.schema.components || []
+  return source.map(field => ({
+    fieldCode: field?.fieldCode || field?.field || field?.props?.field || field?.id,
+    fieldName: field?.fieldName || field?.label || field?.props?.label || field?.id,
+  })).filter(field => field.fieldCode)
+})
 const selectedFieldCode = computed(() => String(
   selectedComponent.value?.fieldBinding?.fieldCode
   || selectedComponent.value?.field
@@ -4307,6 +4564,7 @@ const switchableComponentGroups = [
 ]
 const componentTypeLabelMap = {
   input: '单行输入',
+  barcodeScanner: '扫码输入',
   textarea: '多行文本',
   number: '数字输入',
   inputNumber: '数字输入',
@@ -4336,7 +4594,7 @@ const switchableComponentOptions = computed(() => {
     value,
   }))
 })
-const supportsFieldMaxLength = computed(() => ['input', 'textarea'].includes(selectedComponent.value?.componentKey))
+const supportsFieldMaxLength = computed(() => ['input', 'textarea', 'barcodeScanner'].includes(selectedComponent.value?.componentKey))
 const selectedFieldMaxLength = computed(() => {
   const fromProps = normalizePositiveInteger(selectedComponent.value?.props?.maxlength)
   if (fromProps)
@@ -4396,6 +4654,11 @@ const layoutChildren = computed(() => selectedComponent.value?.children || [])
 const interactionRules = computed(() => Array.isArray(selectedComponent.value?.props?.__events) ? selectedComponent.value.props.__events : [])
 const defaultTrigger = computed(() => selectedComponent.value?.componentKey === 'button' ? 'click' : 'change')
 const componentTargetOptions = computed(() => collectComponentTargetOptions(props.schema.components || []))
+const selectedDrivenRuntimeRules = computed(() => collectDrivenRuntimeRules(
+  props.schema.components || [],
+  selectedComponent.value?.fieldBinding?.fieldCode || selectedComponent.value?.field || '',
+  selectedComponent.value?.id || '',
+))
 const dictTypeFields = computed(() => collectDictTypeFields(props.schema.components || []))
 const selectedComponentCodeRaw = computed(() => JSON.stringify(selectedComponent.value || {}, null, 2))
 const selectedCodeText = computed(() => selectedCodeDraftTarget.value === props.selectedId ? selectedCodeDraft.value : selectedComponentCodeRaw.value)
@@ -4456,6 +4719,11 @@ watch(() => props.objectCode, () => {
   loadCodeRuleOptions()
 })
 
+watch(() => props.initialFormTab, (tab) => {
+  if (!selectedComponent.value)
+    formPropertyActiveTab.value = tab === 'events' ? 'events' : 'basic'
+})
+
 const gridColumnOptions = Array.from({ length: maxFormGridColumns }).map((_, index) => index + 1)
 const gridColumnMarks = gridColumnOptions.reduce((marks, item) => {
   if (![1, 6, 12, 18, 24].includes(item))
@@ -4486,6 +4754,11 @@ const widgetDataSourceOptions = [
   { label: '静态配置', value: 'static' },
   { label: '当前表单/详情数据', value: 'context' },
   { label: '远程接口', value: 'remote' },
+]
+const optionSourceTypeOptions = [
+  { label: '静态选项', value: 'STATIC' },
+  { label: '当前子表明细', value: 'CURRENT_CHILDREN' },
+  { label: '受管远程选项', value: 'REMOTE' },
 ]
 const dataBindablePageWidgetKeys = [
   'rich-text',
@@ -4573,7 +4846,7 @@ const propertySearchIndex = [
   { keys: ['crud', '查询', '搜索', '表格', '列表', '分页', '接口', 'api', '数据源', '基础路径', '行主键', '渲染模式', '表格尺寸', '编辑表单'], label: 'CRUD 配置', selectedTab: 'crud' },
   { keys: ['布局', '跨度', '栅格', '列数', '宽度', 'labelWidth', '标签宽度', '标签位置', '标签对齐', '打开方式'], label: '布局', selectedTab: 'basic', selectedExpand: ['gridQuick'], formTab: 'basic', formExpand: ['layout'] },
   { keys: ['校验', '唯一', '唯一校验', '不能重复', '必填', '只读', '隐藏', '状态', 'unique', 'required', 'readonly'], label: '可见性与校验', selectedTab: 'basic', selectedExpand: ['validation'], formTab: 'basic', formExpand: ['spacing'] },
-  { keys: ['事件', '交互', '联动', '弹窗事件', 'openModal', '生命周期', '加载', '提交', '字段变化'], label: '交互 / 事件规则', selectedTab: 'interaction', formTab: 'basic', formExpand: ['events'] },
+  { keys: ['事件', '交互', '联动', '弹窗事件', 'openModal', '生命周期', '加载', '提交', '字段变化'], label: '交互 / 事件规则', selectedTab: 'interaction', formTab: 'events' },
   { keys: ['样式', '颜色', '背景', '边框', '圆角', '阴影', '间距', 'padding', 'margin'], label: '样式配置', selectedTab: 'style', formTab: 'style', formExpand: ['appearance', 'spacing'] },
   { keys: ['表单资产', '多表单', '表单名称', '表单编码'], label: '表单属性 / 表单资产', formTab: 'basic', formExpand: ['assets'] },
   { keys: ['弹窗', '抽屉', 'modal', 'drawer', '打开方式'], label: '表单属性 / AiForm 布局', formTab: 'basic', formExpand: ['layout'] },
@@ -4894,6 +5167,14 @@ const selectedOptions = computed(() => selectedComponent.value?.props?.options |
 const isFieldInsideCrud = computed(() => isField.value && hasAncestorComponent(props.schema, props.selectedId, ['AiCrudPage', 'crudBlock']))
 const selectedCrudFieldConfig = computed(() => isFieldInsideCrud.value ? selectedComponent.value?.props?.__crudConfig || {} : null)
 const isOptionField = computed(() => ['select', 'radio', 'radioButton', 'checkbox', 'transfer', 'cascader', 'treeSelect'].includes(selectedComponent.value?.componentKey || ''))
+const selectedOptionSourceType = computed(() => {
+  const source = selectedComponent.value?.props?.optionSource || {}
+  if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || '')))
+    return 'CURRENT_CHILDREN'
+  if (source.api || source.url)
+    return 'REMOTE'
+  return 'STATIC'
+})
 const isManualOptionField = computed(() => isOptionField.value && !selectedComponent.value?.props?.dictType && selectedComponent.value?.props?.dataSourceType !== 'remote')
 const defaultValueSelectMultiple = computed(() => ['checkbox'].includes(selectedComponent.value?.componentKey || ''))
 const defaultValueSelectEnabled = computed(() => {
@@ -4965,6 +5246,7 @@ const generationTriggerOptions = [
 
 const componentFieldDefaults = {
   input: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'input', length: 128, precision: 2, queryType: 'like' },
+  barcodeScanner: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'barcodeScanner', length: 2048, precision: 2, queryType: 'eq' },
   textarea: { fieldType: 'MULTILINE', dataType: 'text', componentType: 'textarea', length: null, precision: 2, queryType: 'like' },
   number: { fieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
   inputNumber: { fieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
@@ -5270,6 +5552,29 @@ function updatePageWidgetOptionSource(patch = {}) {
       },
     },
   })
+}
+
+function updateOptionSourceType(type = 'STATIC') {
+  if (type === 'CURRENT_CHILDREN') {
+    updatePageWidgetOptionSource({
+      type: 'CURRENT_CHILDREN',
+      api: undefined,
+      url: undefined,
+      relationKey: selectedComponent.value?.props?.optionSource?.relationKey || '',
+      valueField: selectedComponent.value?.props?.optionSource?.valueField || 'id',
+      labelField: selectedComponent.value?.props?.optionSource?.labelField || 'label',
+      persistedOnly: selectedComponent.value?.props?.optionSource?.persistedOnly !== false,
+    })
+    return
+  }
+  if (type === 'REMOTE') {
+    updatePageWidgetOptionSource({
+      type: 'REMOTE',
+      api: selectedComponent.value?.props?.optionSource?.api || '',
+    })
+    return
+  }
+  updateComponent({ props: { optionSource: undefined } })
 }
 
 function updatePageWidgetDataBinding(patch = {}) {
@@ -5668,6 +5973,19 @@ function updateFormPermission(patch = {}) {
   })
 }
 
+function updateFormOfflineDraft(patch = {}) {
+  updateFormGovernance({
+    offlineDraft: {
+      ...formOfflineDraftConfig.value,
+      ...patch,
+      formCode: patch.formCode || formOfflineDraftConfig.value.formCode || props.schema.formKey || 'default',
+      recordVersionField: patch.recordVersionField
+        || formOfflineDraftConfig.value.recordVersionField
+        || 'updateTime',
+    },
+  })
+}
+
 function addFormFieldRule() {
   updateFormGovernance({
     fieldRules: [
@@ -5721,6 +6039,14 @@ function removeFormEvent(index) {
   const list = [...formEventRows.value]
   list.splice(index, 1)
   updateFormGovernance({ events: list })
+}
+
+function updateFormFieldEvents(fieldEvents = []) {
+  updateFormGovernance({ fieldEvents: Array.isArray(fieldEvents) ? fieldEvents : [] })
+}
+
+function updateFormFieldLinkages(fieldLinkages = []) {
+  updateFormGovernance({ fieldLinkages: Array.isArray(fieldLinkages) ? fieldLinkages : [] })
 }
 
 function updateFormAssetMeta(formKey = '', patch = {}) {
@@ -6176,6 +6502,56 @@ function collectComponentTargetOptions(components = [], result = [], depth = 0) 
     collectComponentTargetOptions(component.children || [], result, depth + 1)
   })
   return result
+}
+
+function collectDrivenRuntimeRules(components = [], sourceField = '', sourceId = '', result = []) {
+  const normalizedSourceField = String(sourceField || '').trim()
+  if (!normalizedSourceField) {
+    return result
+  }
+  ;(Array.isArray(components) ? components : []).forEach((component) => {
+    if (!component)
+      return
+    const rules = Array.isArray(component.props?.runtimeRules) ? component.props.runtimeRules : []
+    rules.forEach((rule, ruleIndex) => {
+      if (runtimeRuleDependsOnField(rule, normalizedSourceField)) {
+        result.push({
+          key: `${component.id || component.fieldBinding?.fieldCode || 'target'}:${rule.id || ruleIndex}`,
+          targetId: component.id,
+          targetLabel: component.label || component.fieldBinding?.fieldCode || component.componentKey || '目标字段',
+          summary: summarizeDrivenRuntimeRule(rule, component),
+        })
+      }
+    })
+    if (component.id !== sourceId)
+      collectDrivenRuntimeRules(component.children || [], normalizedSourceField, sourceId, result)
+  })
+  return result
+}
+
+function runtimeRuleDependsOnField(rule = {}, sourceField = '') {
+  const conditions = Array.isArray(rule.conditions) ? rule.conditions : []
+  if (!conditions.length && rule.field)
+    return String(rule.field) === sourceField
+  return conditions.some(condition => String(condition?.field || condition?.path || condition?.key || '') === sourceField)
+}
+
+function summarizeDrivenRuntimeRule(rule = {}, component = {}) {
+  const effect = { ...(rule.effect || {}), ...(rule.actions || {}), ...rule }
+  const actionText = effect.visible === true
+    ? '满足条件时显示'
+    : effect.hidden === true
+      ? '满足条件时隐藏'
+      : effect.readonly === true
+        ? '满足条件时只读'
+        : effect.required === true
+          ? '满足条件时必填'
+          : '满足条件时生效'
+  const conditions = Array.isArray(rule.conditions) ? rule.conditions : []
+  const conditionText = conditions.length
+    ? conditions.map(condition => `${condition.field || condition.path || condition.key || '字段'} ${condition.operator || condition.op || 'eq'} ${condition.value ?? condition.expected ?? ''}`.trim()).join('，')
+    : '无条件'
+  return `${actionText}：${conditionText}；目标 ${component.fieldBinding?.fieldCode || component.id || component.componentKey}`
 }
 
 function collectDictTypeFields(components = [], result = []) {
@@ -7622,6 +7998,13 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
+.property-tab-configured-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f53f3f;
+}
+
 .property-tabs :deep(.n-tabs-tab--active .property-tab-label .n-icon) {
   color: #27272a;
 }
@@ -7652,6 +8035,12 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: auto;
   padding: 8px 8px 42px;
+  background: #fafafa;
+}
+
+.form-event-primary-panel {
+  min-height: 100%;
+  padding: 10px 8px 42px;
   background: #fafafa;
 }
 
@@ -8663,9 +9052,17 @@ onBeforeUnmount(() => {
 
 .form-item-config,
 .form-permission-panel,
+.form-offline-panel,
 .form-lifecycle-panel {
   display: grid;
   gap: 14px;
+}
+
+.offline-draft-description {
+  margin: -4px 0 0;
+  color: var(--text-tertiary, #71717a);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .compact-config-row {
@@ -9699,6 +10096,48 @@ button.form-asset-card,
   display: grid;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.driven-runtime-rules-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.driven-runtime-rule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.driven-runtime-rule-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.driven-runtime-rule-card div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.driven-runtime-rule-card strong {
+  color: #1e3a8a;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.driven-runtime-rule-card span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-permission-rules {

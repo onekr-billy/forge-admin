@@ -42,17 +42,11 @@
         </template>
         管理业务对象
       </n-button>
-      <n-button secondary @click="emit('pageDesign')">
+      <n-button secondary title="配置页面、表单、流程与自动化" @click="emit('pageDesign')">
         <template #icon>
           <n-icon><CreateOutline /></n-icon>
         </template>
-        设计页面
-      </n-button>
-      <n-button secondary @click="emit('preview')">
-        <template #icon>
-          <n-icon><EyeOutline /></n-icon>
-        </template>
-        预览草稿
+        打开设计器
       </n-button>
       <n-button secondary @click="emit('runtime')">
         <template #icon>
@@ -77,7 +71,7 @@
 </template>
 
 <script setup>
-import { AppsOutline, ArrowBackOutline, CodeSlashOutline, CreateOutline, EyeOutline, LayersOutline, OpenOutline, RocketOutline } from '@vicons/ionicons5'
+import { AppsOutline, ArrowBackOutline, CodeSlashOutline, CreateOutline, LayersOutline, OpenOutline, RocketOutline } from '@vicons/ionicons5'
 import { computed } from 'vue'
 import DictTag from '@/components/DictTag.vue'
 import IconRenderer from '@/components/IconRenderer.vue'
@@ -97,7 +91,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['back', 'refresh', 'pageDesign', 'preview', 'runtime', 'code', 'primaryAction', 'publish'])
+const emit = defineEmits(['back', 'refresh', 'pageDesign', 'runtime', 'code', 'primaryAction', 'publish'])
 
 const readinessLabel = computed(() => {
   if (Number(props.workspace?.blockingCount || 0) > 0)

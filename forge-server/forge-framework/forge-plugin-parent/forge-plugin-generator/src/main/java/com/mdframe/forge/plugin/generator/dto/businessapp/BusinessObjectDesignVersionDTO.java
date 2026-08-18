@@ -22,8 +22,6 @@ public class BusinessObjectDesignVersionDTO {
 
     private Long crudConfigVersionId;
 
-    private Integer versionNo;
-
     private String versionType;
 
     private LowcodeModelSchema modelSnapshot;

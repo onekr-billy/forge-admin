@@ -16,8 +16,11 @@ import org.springframework.core.env.StandardEnvironment;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.SecureRandom;
@@ -29,6 +32,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -346,6 +350,39 @@ class CryptoSecretEnvironmentPostProcessorTest {
     }
 
     @Test
+    void shouldReadCompleteSecretFileWhileAnotherJvmHoldsSharedLock() throws Exception {
+        Path secretFile = tempDir.resolve("shared-read/crypto.properties");
+        StandardEnvironment initial = environment(secretFile, Map.of());
+        new CryptoSecretEnvironmentPostProcessor().postProcessEnvironment(
+                initial, new SpringApplication(Object.class));
+        byte[] originalContent = Files.readAllBytes(secretFile);
+
+        Path lockFile = secretFile.resolveSibling(secretFile.getFileName() + ".lock");
+        Path childOutput = tempDir.resolve("shared-read-child.log");
+        Process child = null;
+        try (FileChannel channel = FileChannel.open(
+                lockFile, StandardOpenOption.READ, StandardOpenOption.WRITE);
+             FileLock sharedLock = channel.lock(0L, Long.MAX_VALUE, true)) {
+            assertThat(sharedLock.isShared()).isTrue();
+            child = startBootstrapProcess(secretFile, childOutput);
+
+            boolean completed = child.waitFor(5, TimeUnit.SECONDS);
+            assertThat(completed)
+                    .as("子 JVM 读取完整密钥文件不应等待另一个 JVM 的共享锁")
+                    .isTrue();
+            assertThat(child.exitValue())
+                    .as(Files.readString(childOutput))
+                    .isZero();
+        } finally {
+            if (child != null && child.isAlive()) {
+                child.destroyForcibly();
+                child.waitFor(5, TimeUnit.SECONDS);
+            }
+        }
+        assertThat(Files.readAllBytes(secretFile)).isEqualTo(originalContent);
+    }
+
+    @Test
     void shouldRestrictSecretFilePermissionsOnPosixFileSystems() throws IOException {
         Path secretFile = tempDir.resolve("permissions/crypto.properties");
         StandardEnvironment environment = environment(secretFile, Map.of());
@@ -431,6 +468,19 @@ class CryptoSecretEnvironmentPostProcessorTest {
         properties.put(CryptoSecretEnvironmentPostProcessor.BOOTSTRAP_FILE_PROPERTY, secretFile.toString());
         environment.getPropertySources().addFirst(new MapPropertySource("testOverrides", properties));
         return environment;
+    }
+
+    private Process startBootstrapProcess(Path secretFile, Path outputFile) throws IOException {
+        String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        return new ProcessBuilder(
+                javaExecutable,
+                "-cp",
+                System.getProperty("java.class.path"),
+                CryptoSecretBootstrapProcess.class.getName(),
+                secretFile.toString())
+                .redirectErrorStream(true)
+                .redirectOutput(outputFile.toFile())
+                .start();
     }
 
     @Configuration(proxyBeanMethods = false)

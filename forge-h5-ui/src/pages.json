@@ -63,6 +63,13 @@
 				"navigationBarTitleText": "应用功能",
 				"navigationStyle": "custom"
 			}
+		},
+		{
+			"path": "pages/lowcode-runtime",
+			"style": {
+				"navigationBarTitleText": "低代码应用",
+				"navigationStyle": "custom"
+			}
 		}
 	],
 	"tabBar": {

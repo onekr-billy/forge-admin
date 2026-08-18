@@ -10,6 +10,10 @@ export function businessProcessPage(params) {
   return request.get('/ai/business/process/page', encryptedParams(params))
 }
 
+export function businessObjectProcesses(objectCode) {
+  return request.get(`/ai/business/object/${encodeURIComponent(objectCode)}/processes`, ENCRYPTED_REQUEST)
+}
+
 export function businessProcessDetail(id) {
   return request.get(`/ai/business/process/${id}`, ENCRYPTED_REQUEST)
 }
@@ -40,6 +44,11 @@ export function saveBusinessProcessSchema(id, data) {
 
 export function validateBusinessProcess(id) {
   return request.post(`/ai/business/process/${id}/validate`, null, ENCRYPTED_REQUEST)
+}
+
+// 独立发布：同步生成不可变流程版本并切换运行投影，不触发应用发布。
+export function publishBusinessProcess(id) {
+  return request.post(`/ai/business/process/${id}/publish`, null, ENCRYPTED_REQUEST)
 }
 
 export function updateBusinessProcessStatus(id, status) {

@@ -49,4 +49,23 @@
         ORDER BY tenant_id ASC, role_id ASC, module_code ASC
     </select>
 
+    <delete id="deleteByRoleAndModules">
+        DELETE FROM sys_role_module_data_scope
+        WHERE tenant_id = #{tenantId}
+          AND role_id = #{roleId}
+          AND module_code IN
+        <foreach collection="moduleCodes" item="moduleCode" open="(" separator="," close=")">
+            #{moduleCode}
+        </foreach>
+    </delete>
+
+    <insert id="insertBatch">
+        INSERT INTO sys_role_module_data_scope (
+            tenant_id, role_id, module_code, data_scope, create_time, update_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.tenantId}, #{item.roleId}, #{item.moduleCode}, #{item.dataScope}, NOW(), NOW())
+        </foreach>
+    </insert>
+
 </mapper>

@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.ai.provider.adapter;
 
 import com.mdframe.forge.plugin.ai.provider.domain.AiProvider;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.embedding.EmbeddingModel;
 
 /**
  * AI 供应商模型适配器。
@@ -31,4 +32,13 @@ public interface AiProviderAdapter {
      * @return ChatModel
      */
     ChatModel createChatModel(AiProvider provider, AiModelRuntimeOptions options);
+
+    /**
+     * 创建供应商 Embedding 模型（连接测试 / 向量化）。
+     *
+     * @param provider 供应商配置
+     * @param model 模型标识
+     * @return EmbeddingModel
+     */
+    EmbeddingModel createEmbeddingModel(AiProvider provider, String model);
 }

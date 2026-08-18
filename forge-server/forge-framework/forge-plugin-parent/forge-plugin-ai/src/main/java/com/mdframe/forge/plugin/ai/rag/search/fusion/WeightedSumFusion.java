@@ -57,6 +57,8 @@ public class WeightedSumFusion {
             copy.setChunkIndex(r.getChunkIndex());
             copy.setContent(r.getContent());
             copy.setTitle(r.getTitle());
+            copy.setHideContent(r.getHideContent());
+            copy.setSourceId(r.getSourceId());
             merged.put(r.getChunkId(), copy);
         }
         for (KnowledgeSearchResult r : bm25Results) {
@@ -68,6 +70,8 @@ public class WeightedSumFusion {
                 copy.setChunkIndex(r.getChunkIndex());
                 copy.setContent(r.getContent());
                 copy.setTitle(r.getTitle());
+                copy.setHideContent(r.getHideContent());
+                copy.setSourceId(r.getSourceId());
                 merged.put(r.getChunkId(), copy);
             }
         }

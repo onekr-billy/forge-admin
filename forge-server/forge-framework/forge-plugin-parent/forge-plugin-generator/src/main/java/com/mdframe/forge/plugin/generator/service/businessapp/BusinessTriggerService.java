@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerLogMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessTriggerScenarioTemplateVO;
@@ -240,7 +241,17 @@ public class BusinessTriggerService {
         if (StringUtils.isNotBlank(trigger.getEventCondition())) {
             readJson(trigger.getEventCondition(), "触发条件");
         }
-        readJson(trigger.getActionConfig(), "动作配置");
+        JSONObject actionConfig = readJson(trigger.getActionConfig(), "动作配置");
+        if ("WEBHOOK".equals(StringUtils.upperCase(trigger.getActionType()))) {
+            String failureStrategy = StringUtils.upperCase(StringUtils.defaultIfBlank(
+                    actionConfig.getString("failureStrategy"), "THROW"));
+            BusinessActionStepDTO step = new BusinessActionStepDTO();
+            step.setStepType("CALL_API");
+            step.setRollbackOnFailure(!"LOG_AND_CONTINUE".equals(failureStrategy));
+            step.setStepConfig(new java.util.LinkedHashMap<>(actionConfig));
+            BusinessActionCommandPolicy.assertSafeConfiguration(actionConfig, "trigger.actionConfig.WEBHOOK");
+            BusinessActionCommandPolicy.validateCallApiStep(step, step.getStepConfig());
+        }
     }
 
     private void fillDefaults(AiBusinessTrigger trigger) {

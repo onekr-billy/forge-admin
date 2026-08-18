@@ -251,10 +251,14 @@ public class BusinessApplicationReadinessService {
         if (Boolean.FALSE.equals(objectCheck.getPublishable())) {
             List<BusinessPublishCheckItemVO> blocks = objectCheck.getBlockItems() == null
                     ? List.of() : objectCheck.getBlockItems();
-            String detail = blocks.stream().limit(3)
-                    .map(BusinessPublishCheckItemVO::getTitle)
+            String detail = blocks.stream().limit(5)
+                    .map(item -> {
+                        String title = StringUtils.defaultString(item.getTitle());
+                        String message = StringUtils.defaultString(item.getMessage());
+                        return StringUtils.isNotBlank(message) ? title + "：" + message : title;
+                    })
                     .filter(StringUtils::isNotBlank)
-                    .reduce((left, right) -> left + "、" + right)
+                    .reduce((left, right) -> left + "；" + right)
                     .orElse("对象发布检查未通过");
             issues.add(issue("OBJECT_PUBLISH_BLOCKED", BLOCK, "对象发布检查未通过",
                     objectName + "：" + detail, "objects", "objects", "OBJECT",

@@ -14,8 +14,6 @@ class FlowControllerBoundaryContractTest {
 
     private static final Path FLOW_MAPPER_DIR = Path.of(
             "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/resources/mapper");
-    private static final Path SYSTEM_CONTROLLER_DIR = Path.of(
-            "../../forge-framework/forge-plugin-parent/forge-plugin-system/src/main/java/com/mdframe/forge/plugin/system/controller");
     private static final Path FLOW_CLEANUP_PERMISSION_MIGRATION = Path.of(
             "../../db/migration/V1.0.55__secure_flow_monitor_cleanup.sql");
 
@@ -274,8 +272,7 @@ class FlowControllerBoundaryContractTest {
 
         for (Path controller : List.of(
                 Path.of("src/main/java/com/mdframe/forge/flow/controller/FlowMonitorController.java"),
-                Path.of("src/main/java/com/mdframe/forge/flow/controller/FlowErrorLogController.java"),
-                SYSTEM_CONTROLLER_DIR.resolve("SysCacheController.java"))) {
+                Path.of("src/main/java/com/mdframe/forge/flow/controller/FlowErrorLogController.java"))) {
             assertThat(Files.readString(controller))
                     .as(controller.toString())
                     .contains("PageParamResolver.resolve(page, pageNum)");

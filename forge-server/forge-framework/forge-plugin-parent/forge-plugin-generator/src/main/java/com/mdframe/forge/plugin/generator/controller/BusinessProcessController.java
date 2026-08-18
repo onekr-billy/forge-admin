@@ -4,7 +4,9 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.dto.businessprocess.BusinessProcessDTO;
 import com.mdframe.forge.plugin.generator.dto.businessprocess.BusinessProcessSchemaDTO;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessPublishService;
 import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessService;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessSnapshot;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessFlowModelVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessValidationVO;
@@ -38,6 +40,7 @@ import java.util.List;
 public class BusinessProcessController {
 
     private final BusinessProcessService businessProcessService;
+    private final BusinessProcessPublishService businessProcessPublishService;
 
     @GetMapping("/page")
     @SaCheckPermission("ai:businessProcess:list")
@@ -111,6 +114,13 @@ public class BusinessProcessController {
     @OperationLog(module = "业务流程", type = OperationType.UPDATE, desc = "校验业务流程设计草稿")
     public RespInfo<BusinessProcessValidationVO> validate(@PathVariable Long id) {
         return RespInfo.success(businessProcessService.validate(id));
+    }
+
+    @PostMapping("/{id}/publish")
+    @SaCheckPermission("ai:businessProcess:publish")
+    @OperationLog(module = "业务流程", type = OperationType.UPDATE, desc = "独立发布业务流程版本")
+    public RespInfo<BusinessProcessSnapshot> publish(@PathVariable Long id) {
+        return RespInfo.success(businessProcessPublishService.publishStandalone(id));
     }
 
     @PutMapping("/{id}/status")

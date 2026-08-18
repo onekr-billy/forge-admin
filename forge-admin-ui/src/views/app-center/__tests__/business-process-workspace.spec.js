@@ -14,6 +14,7 @@ const processApiMocks = vi.hoisted(() => ({
   businessProcessFlowModels: vi.fn(),
   saveBusinessProcessSchema: vi.fn(),
   validateBusinessProcess: vi.fn(),
+  publishBusinessProcess: vi.fn(),
   updateBusinessProcessStatus: vi.fn(),
   deleteBusinessProcess: vi.fn(),
 }))
@@ -22,6 +23,7 @@ const applicationApiMocks = vi.hoisted(() => ({
   businessApplicationObjects: vi.fn(),
   businessApplicationWorkspace: vi.fn(),
   businessApplicationWorkspaceByCode: vi.fn(),
+  publishBusinessApplication: vi.fn(),
 }))
 
 const catalogApiMocks = vi.hoisted(() => ({
@@ -71,6 +73,21 @@ vi.mock('vue-router', async (importOriginal) => {
     useRoute: () => routeState,
     useRouter: () => routerMocks,
     onBeforeRouteLeave: (callback) => { routeGuardState.callback = callback },
+  }
+})
+
+// application.vue 在 setup 中使用 useMessage，测试环境无 <n-message-provider>，mock 掉并保留其余导出
+vi.mock('naive-ui', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    useMessage: () => ({
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+      loading: vi.fn(),
+    }),
   }
 })
 
@@ -220,13 +237,14 @@ function designerMountOptions() {
 describe('application business process panel', () => {
   beforeEach(() => {
     Object.values(processApiMocks).forEach(mock => mock.mockReset())
+    applicationApiMocks.publishBusinessApplication.mockReset()
     processApiMocks.businessProcessPage.mockResolvedValue(processPageResponse())
     processApiMocks.createBusinessProcess.mockResolvedValue(designerResponse())
     processApiMocks.copyBusinessProcess.mockResolvedValue(designerResponse({ id: '1900000000000003002' }))
     processApiMocks.updateBusinessProcessStatus.mockResolvedValue({ data: null })
     processApiMocks.deleteBusinessProcess.mockResolvedValue({ data: null })
     routerMocks.replace.mockReset()
-    window.$message = { success: vi.fn(), error: vi.fn(), info: vi.fn() }
+    window.$message = { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }
     window.$dialog = {
       warning: vi.fn(options => options.onPositiveClick?.()),
     }
@@ -285,6 +303,39 @@ describe('application business process panel', () => {
     expect(processApiMocks.deleteBusinessProcess).toHaveBeenCalledWith(processRecord.id)
     expect(window.$dialog.warning).toHaveBeenCalled()
   })
+
+  it('publishes a single process through the standalone publish endpoint after validation', async () => {
+    processApiMocks.validateBusinessProcess.mockResolvedValue({
+      data: { valid: true, errorCount: 0, warningCount: 0, issues: [] },
+    })
+    processApiMocks.publishBusinessProcess.mockResolvedValue({
+      data: { versionNo: 1, processCode: processRecord.processCode },
+    })
+    const wrapper = mount(ApplicationProcessPanel, panelMountOptions())
+    await flushPromises()
+
+    await wrapper.find(`[data-process-publish="${processRecord.id}"]`).trigger('click')
+    await flushPromises()
+
+    expect(processApiMocks.validateBusinessProcess).toHaveBeenCalledWith(processRecord.id)
+    expect(processApiMocks.publishBusinessProcess).toHaveBeenCalledWith(processRecord.id)
+    expect(applicationApiMocks.publishBusinessApplication).not.toHaveBeenCalled()
+    expect(window.$message.success).toHaveBeenCalled()
+  })
+
+  it('blocks single-process publishing when validation fails', async () => {
+    processApiMocks.validateBusinessProcess.mockResolvedValue({
+      data: { valid: false, errorCount: 2, warningCount: 0, issues: [] },
+    })
+    const wrapper = mount(ApplicationProcessPanel, panelMountOptions())
+    await flushPromises()
+
+    await wrapper.find(`[data-process-publish="${processRecord.id}"]`).trigger('click')
+    await flushPromises()
+
+    expect(processApiMocks.publishBusinessProcess).not.toHaveBeenCalled()
+    expect(window.$message.warning).toHaveBeenCalled()
+  })
 })
 
 describe('application workspace process routing', () => {
@@ -300,7 +351,7 @@ describe('application workspace process routing', () => {
     routerMocks.replace.mockReset()
   })
 
-  it('replaces the old automation links and opens the full-screen process route with a return location', async () => {
+  it('replaces the old automation section with a designer redirect card', async () => {
     processApiMocks.businessProcessPage.mockResolvedValue(processPageResponse())
     const wrapper = mount(ApplicationWorkspace, {
       global: {
@@ -322,16 +373,15 @@ describe('application workspace process routing', () => {
     await flushPromises()
     await nextTick()
 
-    expect(wrapper.find('[data-workspace-process]').exists()).toBe(true)
-    await wrapper.find(`[data-process-open="${processRecord.id}"]`).trigger('click')
+    // 业务流程已收敛进应用设计器：工作台不再渲染流程面板，旧 automation 链接落地引导卡。
+    expect(wrapper.find('[data-workspace-process]').exists()).toBe(false)
+    expect(wrapper.find('.designer-redirect-card').exists()).toBe(true)
+    await wrapper.find('.designer-redirect-card button').trigger('click')
 
     expect(routerMocks.push).toHaveBeenCalledWith({
-      name: 'BusinessProcessDesigner',
-      params: { processId: processRecord.id },
-      query: {
-        applicationCode: application.applicationCode,
-        returnTo: routeState.fullPath,
-      },
+      name: 'BusinessApplicationRuntime',
+      params: { applicationCode: application.applicationCode },
+      query: { edit: '1', designSection: 'automation' },
     })
   })
 })
@@ -437,5 +487,28 @@ describe('full-screen business process designer page', () => {
 
     await wrapper.find('[data-process-action="back"]').trigger('click')
     expect(routerMocks.push).toHaveBeenCalledWith(routeState.query.returnTo)
+  })
+
+  it('adds a refresh token when returning to a page button designer', async () => {
+    const previousQuery = routeState.query
+    routeState.query = {
+      applicationCode: 'PURCHASE_APP',
+      from: 'button',
+      objectCode: 'sample_purchase_order',
+      returnTo: '/app-center/object/sample_purchase_order/designer?panel=form&detailTab=sections&applicationCode=PURCHASE_APP',
+    }
+    try {
+      const wrapper = mount(BusinessProcessPage, designerMountOptions())
+      await flushPromises()
+
+      await wrapper.find('[data-process-action="back"]').trigger('click')
+
+      expect(routerMocks.push).toHaveBeenCalledWith(
+        `/app-center/object/sample_purchase_order/designer?panel=form&detailTab=sections&applicationCode=PURCHASE_APP&processRefresh=${processRecord.id}`,
+      )
+    }
+    finally {
+      routeState.query = previousQuery
+    }
   })
 })

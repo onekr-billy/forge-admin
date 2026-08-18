@@ -333,16 +333,25 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
             }
             Long parentId = resolveAppMenuParentId(app, options, adminMenu, menuResourceId);
             Integer sort = readInteger(firstNonNull(adminMenu.get("sort"), options.get("menuSort")), app.getSortOrder());
+            String mountTarget = StringUtils.defaultIfBlank(options.getString("mountTarget"), deriveMountTarget(app));
+            boolean mobileMount = "MOBILE".equalsIgnoreCase(mountTarget);
+            String path = mobileMount
+                    ? resolveAppMenuPath(app, options)
+                    : StringUtils.defaultIfBlank(adminMenu.getString("path"), resolveAppMenuPath(app, options));
+            String component = mobileMount
+                    ? resolveAppMenuComponent(app, options)
+                    : StringUtils.defaultIfBlank(adminMenu.getString("component"), resolveAppMenuComponent(app, options));
             menuRegisterAdapter.updateAppMenu(
                     menuResourceId,
                     app.getAppName(),
                     parentId,
-                    resolveAppMenuPath(app, options),
-                    resolveAppMenuComponent(app, options),
+                    path,
+                    component,
                     buildAppMenuPerms(app),
                     app.getIcon(),
                     sort,
-                    true
+                    true,
+                    mobileMount ? "h5" : "pc"
             );
         }
     }
@@ -355,6 +364,9 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
     }
 
     private Long resolveAppMenuParentId(AiBusinessApp app, JSONObject options, JSONObject adminMenu, Long menuResourceId) {
+        if (isMobileMount(app, options)) {
+            return 0L;
+        }
         Long originalParentId = readLong(firstNonNull(
                 adminMenu.get("originalParentId"),
                 firstNonNull(adminMenu.get("parentId"), options.get("adminMenuParentId"))));
@@ -380,10 +392,14 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         }
         String mountTarget = StringUtils.defaultIfBlank(options.getString("mountTarget"), deriveMountTarget(app));
         boolean syncEnabled = readBoolean(firstNonNull(adminMenu.get("syncEnabled"), options.get("adminMenuSyncEnabled")), false);
-        return "ADMIN".equalsIgnoreCase(mountTarget) && syncEnabled;
+        return ("ADMIN".equalsIgnoreCase(mountTarget) || "MOBILE".equalsIgnoreCase(mountTarget))
+                && syncEnabled;
     }
 
     private String resolveAppMenuPath(AiBusinessApp app, JSONObject options) {
+        if (isMobileMount(app, options)) {
+            return resolveMobileMenuPath(app, options);
+        }
         String entryMode = StringUtils.defaultString(app.getEntryMode()).toUpperCase();
         if ("RUNTIME".equals(entryMode) && StringUtils.isNotBlank(app.getConfigKey())) {
             String runtimeOpenMode = resolveRuntimeOpenMode(options == null ? null : options.get("runtimeOpenMode"));
@@ -393,6 +409,16 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
                     .append(app.getId())
                     .append("&runtimeOpenMode=")
                     .append(runtimeOpenMode);
+            // 入口配置的目标页面/表单必须体现在菜单路径上，否则设计态选择不会生效。
+            String targetPageKey = options == null ? null : StringUtils.trimToNull(options.getString("targetPageKey"));
+            if (targetPageKey == null) {
+                targetPageKey = "DETAIL".equals(runtimeOpenMode) ? "detail" : "list";
+            }
+            path.append("&pageKey=").append(targetPageKey);
+            String targetFormKey = options == null ? null : StringUtils.trimToNull(options.getString("targetFormKey"));
+            if (targetFormKey != null) {
+                path.append("&formKey=").append(targetFormKey);
+            }
             if ("CREATE_FORM".equals(runtimeOpenMode)) {
                 path.append("&mode=create");
             } else if ("DETAIL".equals(runtimeOpenMode)) {
@@ -404,11 +430,39 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
     }
 
     private String resolveAppMenuComponent(AiBusinessApp app, JSONObject options) {
+        if (isMobileMount(app, options)) {
+            return resolveMobileMenuPath(app, options);
+        }
         String entryMode = StringUtils.defaultString(app.getEntryMode()).toUpperCase();
         if ("RUNTIME".equals(entryMode) && StringUtils.isNotBlank(app.getConfigKey())) {
             return "ai/crud-page";
         }
         return "app-center/app-entry";
+    }
+
+    private String resolveMobileMenuPath(AiBusinessApp app, JSONObject options) {
+        String entryMode = StringUtils.defaultString(app.getEntryMode()).toUpperCase();
+        if ("RUNTIME".equals(entryMode) && StringUtils.isNotBlank(app.getConfigKey())) {
+            String runtimeOpenMode = resolveRuntimeOpenMode(options == null ? null : options.get("runtimeOpenMode"));
+            StringBuilder path = new StringBuilder("/pages/lowcode-runtime?configKey=")
+                    .append(app.getConfigKey())
+                    .append("&appId=")
+                    .append(app.getId());
+            if ("CREATE_FORM".equals(runtimeOpenMode)) {
+                path.append("&mode=create");
+            } else if ("DETAIL".equals(runtimeOpenMode)) {
+                path.append("&mode=detail");
+            }
+            return path.toString();
+        }
+        String entryUrl = StringUtils.trimToNull(app.getEntryUrl());
+        return entryUrl == null ? "/pages/app-entry" : entryUrl;
+    }
+
+    private boolean isMobileMount(AiBusinessApp app, JSONObject options) {
+        String mountTarget = StringUtils.defaultIfBlank(
+                options == null ? null : options.getString("mountTarget"), deriveMountTarget(app));
+        return "MOBILE".equalsIgnoreCase(mountTarget);
     }
 
     private boolean isCodeDownloadRuntime(AiBusinessApp app, JSONObject options) {
@@ -460,9 +514,10 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (parentId == null) {
             return null;
         }
-        if (Objects.equals(parentId, suiteMenuResourceId)
-                || Objects.equals(parentId, actualParentId)
-                || Objects.equals(parentId, menuResourceId)) {
+        // 仅当菜单父级指向自身（真正自父级）时才判定为配置错误返回 null；
+        // parentId == actualParentId（父级即实际挂载目录）属正常层级结构，必须保留，
+        // 否则会误伤"子入口挂在应用链接入口下"的场景，导致菜单被提升到顶级、不可点击。
+        if (Objects.equals(parentId, menuResourceId)) {
             return null;
         }
         return parentId;

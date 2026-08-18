@@ -25,7 +25,7 @@
           placeholder-class="ai-field__placeholder"
           @input="handleInput"
           @focus="focused = true"
-          @blur="focused = false"
+          @blur="handleBlur"
           @confirm="$emit('confirm', $event)"
         />
 
@@ -100,7 +100,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'input', 'clear', 'confirm'])
+const emit = defineEmits(['update:modelValue', 'input', 'clear', 'confirm', 'blur', 'focus'])
 
 const focused = ref(false)
 const showPassword = ref(false)
@@ -112,6 +112,11 @@ const handleInput = (event) => {
   const value = event.detail.value
   emit('update:modelValue', value)
   emit('input', value)
+}
+
+const handleBlur = (event) => {
+  focused.value = false
+  emit('blur', event)
 }
 
 const handleClear = () => {

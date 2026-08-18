@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isInputLikeFieldType, isNumberFieldType } from '../field-type-utils'
 
 describe('field type utils', () => {
-  it.each(['number', 'inputNumber', 'input-number'])(
+  it.each(['number', 'inputNumber', 'input-number', 'integer', 'money'])(
     'recognizes %s as a number field type',
     (type) => {
       expect(isNumberFieldType(type)).toBe(true)
@@ -15,7 +15,7 @@ describe('field type utils', () => {
     expect(isNumberFieldType(undefined)).toBe(false)
   })
 
-  it.each(['input', 'textarea', 'number', 'inputNumber', 'input-number'])(
+  it.each(['input', 'textarea', 'number', 'inputNumber', 'input-number', 'integer', 'money'])(
     'recognizes %s as an input-like field type',
     (type) => {
       expect(isInputLikeFieldType(type)).toBe(true)

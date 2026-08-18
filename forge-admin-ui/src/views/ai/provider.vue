@@ -154,6 +154,17 @@ const statusOptions = computed(() => dict.value.ai_status || [])
 // 是否默认选项
 const isDefaultOptions = computed(() => dict.value.ai_is_default || [])
 
+// 已知供应商类型的默认 Base URL（与后端 AiProviderBaseUrlPolicy 对齐）
+// azure / custom 无固定官方端点，需手动填写
+const PROVIDER_DEFAULT_BASE_URL = {
+  alibaba: 'https://dashscope.aliyuncs.com/compatible-mode',
+  openai: 'https://api.openai.com/v1',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  moonshot: 'https://api.moonshot.cn/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  ollama: 'http://localhost:11434/v1',
+}
+
 const modelModalVisible = ref(false)
 const modelSaving = ref(false)
 const activeModelProvider = ref(null)
@@ -293,6 +304,14 @@ const editSchema = computed(() => [
     type: 'select',
     rules: [{ required: true, message: '请选择供应商类型', trigger: 'change' }],
     props: { placeholder: '请选择供应商类型', options: providerTypeOptions.value },
+    // 选择已知类型且 Base URL 为空时自动补默认地址，无需手动填写
+    // （用 onChange：在表单重建后拿到活对象，赋值才能保留并随表单提交）
+    onChange: ({ value, formData }) => {
+      const defaultUrl = PROVIDER_DEFAULT_BASE_URL[value]
+      if (defaultUrl && !formData.baseUrl) {
+        formData.baseUrl = defaultUrl
+      }
+    },
   },
   {
     field: 'logo',
@@ -310,8 +329,8 @@ const editSchema = computed(() => [
     label: 'Base URL',
     type: 'input',
     span: 2,
-    rules: [{ required: true, message: '请输入 Base URL', trigger: 'blur' }],
-    props: { placeholder: '如 https://api.openai.com' },
+    // 已知供应商类型选择后自动填充默认地址；azure / custom 需手动填写
+    props: { placeholder: '留空自动使用默认地址，如 https://dashscope.aliyuncs.com/compatible-mode' },
   },
   {
     field: 'apiKey',

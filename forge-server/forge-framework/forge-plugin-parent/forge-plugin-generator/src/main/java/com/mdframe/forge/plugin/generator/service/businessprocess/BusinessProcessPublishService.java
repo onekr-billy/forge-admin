@@ -159,6 +159,52 @@ public class BusinessProcessPublishService {
         return List.copyOf(result);
     }
 
+    /**
+     * 独立发布单条业务流程：同步生成不可变版本并切换该流程的运行投影。
+     * 不创建应用发布运行单，也不影响其他流程的已发布投影；
+     * applicationVersion 使用负数序列与应用协调发布的正数版本空间隔离，
+     * 避免与后续应用发布在 uk_ai_business_process_app_version_active 上互撞。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessProcessSnapshot publishStandalone(Long processId) {
+        if (processId == null || processId <= 0) {
+            throw new BusinessException("业务流程ID不能为空");
+        }
+        Long tenantId = resolveTenantId();
+        AiBusinessProcess process = processMapper.selectById(processId);
+        if (process == null || !tenantId.equals(process.getTenantId()) || process.getApplicationId() == null) {
+            throw new BusinessException("业务流程不存在、已删除或不属于当前租户");
+        }
+        AiBusinessProcess locked = processMapper.selectForPublish(tenantId, process.getApplicationId(), processId);
+        if (locked == null) {
+            throw new BusinessException("业务流程已停用或已失效，无法发布");
+        }
+        BusinessProcessSchema schema = normalizeSchema(locked.getDraftSchemaJson());
+        String canonicalHash = schemaValidator.schemaHash(schema);
+        if (!StringUtils.equals(canonicalHash, locked.getDraftSchemaHash())) {
+            throw new BusinessException(409, "业务流程草稿摘要与内容不一致，请先在画布保存草稿后再发布");
+        }
+        AiBusinessProcessVersion current = locked.getPublishedVersion() == null
+                ? null
+                : versionMapper.selectPublishedVersion(tenantId, processId, locked.getPublishedVersion());
+        if (current != null && StringUtils.equals(current.getSchemaHash(), canonicalHash)) {
+            return toSnapshot(current);
+        }
+        BusinessProcessValidationContext context = validationContextResolver.resolve(
+                tenantId, locked.getApplicationId(), locked.getProcessCode(), schema);
+        BusinessProcessValidationVO validation = schemaValidator.validate(schema, context);
+        if (!validation.isValid()) {
+            String summary = validation.getIssues().stream()
+                    .filter(issue -> "ERROR".equals(issue.getLevel()))
+                    .limit(3)
+                    .map(issue -> issue.getCode() + "：" + issue.getMessage())
+                    .collect(Collectors.joining("；"));
+            throw new BusinessException(422, "业务流程发布校验未通过: " + summary, validation);
+        }
+        int nextVersionNo = value(versionMapper.selectMaxVersionNo(tenantId, processId)) + 1;
+        return publishNewVersion(tenantId, locked.getApplicationId(), -nextVersionNo, null, locked);
+    }
+
     private BusinessProcessSnapshot publishNewVersion(
             Long tenantId,
             Long applicationId,
@@ -214,7 +260,7 @@ public class BusinessProcessPublishService {
             AiBusinessProcessVersion existing = versionMapper.selectPublishedForApplicationVersion(
                     tenantId, process.getId(), applicationVersion);
             if (existing == null) {
-                throw new BusinessException(409, "业务流程版本并发发布冲突，请恢复原发布运行单", exception);
+                throw new BusinessException(409, "业务流程版本并发发布冲突，请稍后重试", exception);
             }
             assertSameImmutableVersion(existing, canonicalHash);
             version = existing;

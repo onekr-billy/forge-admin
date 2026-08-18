@@ -52,8 +52,12 @@
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="editVisible = false">取消</n-button>
-          <n-button type="primary" :loading="editLoading" @click="submitEdit">保存</n-button>
+          <n-button @click="editVisible = false">
+            取消
+          </n-button>
+          <n-button type="primary" :loading="editLoading" @click="submitEdit">
+            保存
+          </n-button>
         </n-space>
       </template>
     </n-modal>

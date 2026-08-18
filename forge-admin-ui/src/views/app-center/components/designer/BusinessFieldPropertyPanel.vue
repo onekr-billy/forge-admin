@@ -2326,12 +2326,12 @@ defineExpose({
   min-height: 0;
   min-width: 0;
   height: 100%;
-  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
+  background: #f7f8fa;
 }
 
 .property-panel.formula-only-panel {
   grid-template-rows: minmax(0, 1fr);
-  background: var(--n-color, var(--bg-primary, #fff));
+  background: #fff;
 }
 
 .property-panel > :deep(.n-empty) {
@@ -2345,7 +2345,7 @@ defineExpose({
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--border-default, #e5e6eb);
-  background: var(--n-color, var(--bg-primary, #fff));
+  background: #fff;
   padding: 16px;
 }
 
@@ -2391,7 +2391,7 @@ defineExpose({
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  background: var(--n-color, var(--bg-primary, #fff));
+  background: #fff;
   padding: 0 16px 16px;
 }
 
@@ -2420,7 +2420,7 @@ defineExpose({
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--n-color, var(--bg-primary, #fff));
+  background: #fff;
   padding-top: 10px;
 }
 
@@ -2434,7 +2434,7 @@ defineExpose({
 .property-tabs :deep(.n-tabs-pane-wrapper) {
   min-width: 0;
   min-height: 0;
-  background: var(--n-color, var(--bg-primary, #fff));
+  background: #fff;
   overflow: auto;
 }
 
@@ -2457,7 +2457,7 @@ defineExpose({
   gap: 8px;
   border: 1px solid var(--border-default, #e5e6eb);
   border-radius: 6px;
-  background: var(--n-color, var(--bg-primary, #fff));
+  background: #fff;
   color: var(--n-text-color-2, var(--text-regular, #4e5969));
   font-size: 12px;
   padding: 8px 10px;
@@ -2470,7 +2470,7 @@ defineExpose({
   margin-bottom: 14px;
   border: 1px solid var(--border-default, #e5e6eb);
   border-radius: 7px;
-  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
+  background: #f7f8fa;
   padding: 10px 12px;
 }
 
@@ -2502,7 +2502,7 @@ defineExpose({
   gap: 10px;
   border: 1px solid var(--border-default, #e5e6eb);
   border-radius: 7px;
-  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
+  background: #f7f8fa;
   padding: 11px 12px 2px;
 }
 

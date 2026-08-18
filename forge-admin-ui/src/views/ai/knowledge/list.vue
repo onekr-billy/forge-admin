@@ -30,8 +30,12 @@
             </template>
           </n-input>
           <div class="kb-list-filters__actions">
-            <NButton type="primary" size="small" @click="handleSearch">查询</NButton>
-            <NButton size="small" @click="handleReset">重置</NButton>
+            <NButton type="primary" size="small" @click="handleSearch">
+              查询
+            </NButton>
+            <NButton size="small" @click="handleReset">
+              重置
+            </NButton>
           </div>
         </div>
         <n-spin :show="loading">
@@ -89,15 +93,19 @@
                   <h2>{{ selectedKb.knowledgeName }}</h2>
                   <DictTag dict-type="ai_status" :value="selectedKb.status" size="small" />
                 </div>
-                <p class="kb-detail-header__desc">{{ selectedKb.description || '暂无描述' }}</p>
+                <p class="kb-detail-header__desc">
+                  {{ selectedKb.description || '暂无描述' }}
+                </p>
               </div>
             </div>
             <div class="kb-detail-header__actions">
               <NButton secondary @click="handleEdit(selectedKb)">编辑</NButton>
-              <NButton secondary @click="searchModal.show = true">检索调试</NButton>
+              <NButton secondary @click="openSearchDebug">检索调试</NButton>
               <NPopconfirm @positive-click="handleDelete(selectedKb.id)">
                 <template #trigger>
-                  <NButton text class="text-error">删除</NButton>
+                  <NButton text class="text-error">
+                    删除
+                  </NButton>
                 </template>
                 确定删除知识库“{{ selectedKb.knowledgeName }}”吗？该操作将删除其下所有文档。
               </NPopconfirm>
@@ -119,7 +127,7 @@
             </div>
             <div class="kb-doc-toolbar__actions">
               <n-upload
-                :action="`${uploadPrefix}/system/file/upload`"
+                :action="`${uploadPrefix}/api/file/upload`"
                 :headers="uploadHeaders"
                 :max="5"
                 :default-upload="true"
@@ -226,7 +234,9 @@
                 <i class="ai-icon:copy" aria-hidden="true" />
                 <span>上传去重</span>
               </div>
-              <p class="section-desc">控制同一知识库内重复文档的判定与处理方式。</p>
+              <p class="section-desc">
+                控制同一知识库内重复文档的判定与处理方式。
+              </p>
               <n-form-item label="去重策略" path="dedupStrategy">
                 <n-select
                   v-model:value="kbModal.form.dedupStrategy"
@@ -241,7 +251,9 @@
                 <i class="ai-icon:cut" aria-hidden="true" />
                 <span>切片策略</span>
               </div>
-              <p class="section-desc">选择文档入库时的分块方式。</p>
+              <p class="section-desc">
+                选择文档入库时的分块方式。
+              </p>
               <div class="chunk-mode-seg" role="tablist" aria-label="切片策略">
                 <button
                   v-for="opt in chunkStrategyOptions"
@@ -284,6 +296,43 @@
 
             <div class="kb-section-card">
               <div class="section-title">
+                <i class="ai-icon:tool" aria-hidden="true" />
+                <span>检索配置</span>
+              </div>
+              <p class="section-desc">重排、上下文扩展与混合融合参数。重排序需先在基础信息中选择重排序模型。</p>
+              <div class="search-config-grid">
+                <n-form-item label="重排序">
+                  <n-switch v-model:value="searchCfg.rerankEnable" />
+                </n-form-item>
+                <n-form-item label="中段遗忘优化">
+                  <n-switch v-model:value="searchCfg.lostInMiddle" />
+                </n-form-item>
+                <n-form-item label="上下文扩展（邻近文档）">
+                  <n-input-number v-model:value="searchCfg.nearbyCount" :min="0" :max="10" style="width: 100%" />
+                </n-form-item>
+                <n-form-item label="默认返回数">
+                  <n-input-number v-model:value="searchCfg.topK" :min="1" :max="50" style="width: 100%" />
+                </n-form-item>
+                <n-form-item label="相似度阈值">
+                  <n-input-number v-model:value="searchCfg.threshold" :min="0" :max="1" :step="0.05" style="width: 100%" />
+                </n-form-item>
+                <n-form-item label="融合方式">
+                  <n-select v-model:value="searchCfg.rerankType" :options="rerankTypeOptions" clearable placeholder="RRF" style="width: 100%" />
+                </n-form-item>
+                <n-form-item label="向量权重（加权融合）">
+                  <n-input-number v-model:value="searchCfg.vectorWeight" :min="0" :step="0.1" style="width: 100%" />
+                </n-form-item>
+                <n-form-item label="BM25 权重（加权融合）">
+                  <n-input-number v-model:value="searchCfg.bm25Weight" :min="0" :step="0.1" style="width: 100%" />
+                </n-form-item>
+                <n-form-item label="RRF k 值">
+                  <n-input-number v-model:value="searchCfg.rrfK" :min="1" :max="1000" style="width: 100%" />
+                </n-form-item>
+              </div>
+            </div>
+
+            <div class="kb-section-card">
+              <div class="section-title">
                 <i class="ai-icon:settings" aria-hidden="true" />
                 <span>其他</span>
               </div>
@@ -302,8 +351,12 @@
         </div>
         <template #footer>
           <div class="kb-drawer-footer">
-            <NButton @click="kbModal.show = false">取消</NButton>
-            <NButton type="primary" :loading="kbModal.saving" @click="handleSave">确定</NButton>
+            <NButton @click="kbModal.show = false">
+              取消
+            </NButton>
+            <NButton type="primary" :loading="kbModal.saving" @click="handleSave">
+              确定
+            </NButton>
           </div>
         </template>
       </n-drawer-content>
@@ -314,34 +367,215 @@
       v-model:show="searchModal.show"
       preset="card"
       title="知识库检索调试"
-      :style="{ maxWidth: '760px', width: 'calc(100vw - 32px)' }"
+      :style="{ maxWidth: '820px', width: 'calc(100vw - 32px)' }"
+      class="forge-debug-modal"
     >
-      <div class="search-form">
-        <n-input
-          v-model:value="searchModal.query"
-          type="textarea"
-          :rows="3"
-          placeholder="输入检索问题，例如：如何配置 API Key？"
-        />
-        <div class="search-form__actions">
-          <n-input-number v-model:value="searchModal.topK" :min="1" :max="20" placeholder="TopK" style="width: 120px" />
-          <NButton type="primary" :loading="searchModal.loading" @click="handleSearch">
-            检索
-          </NButton>
-        </div>
-      </div>
-      <div v-if="searchModal.results.length" class="search-results">
-        <div v-for="(r, i) in searchModal.results" :key="i" class="search-result-item">
-          <div class="search-result-item__meta">
-            <NTag size="small" :bordered="false">{{ r.score?.toFixed?.(3) ?? '—' }}</NTag>
-            <code>{{ r.docName || `文档 #${r.documentId}` }}</code>
+      <div class="fm">
+        <!-- 查询输入 -->
+        <div class="fm-query">
+          <n-input
+            v-model:value="searchModal.query"
+            type="textarea"
+            :rows="2"
+            placeholder="输入检索问题，例如：如何配置 API Key？"
+            @keydown.enter.exact.prevent="handleSearchDebug"
+          />
+          <div class="fm-query__actions">
+            <NButton type="primary" :loading="searchModal.loading" @click="handleSearchDebug">
+              检索
+            </NButton>
           </div>
-          <p>{{ r.content }}</p>
+        </div>
+
+        <!-- 检索模式 -->
+        <div class="fm-modes">
+          <button
+            v-for="m in searchModeOptions"
+            :key="m.value"
+            type="button"
+            class="fm-mode"
+            :class="{ 'fm-mode--active': searchModal.searchType === m.value }"
+            @click="searchModal.searchType = m.value"
+          >
+            {{ m.label }}
+          </button>
+        </div>
+
+        <!-- 高级设置 -->
+        <div class="fm-adv-toggle" role="button" tabindex="0" @click="searchModal.showAdvanced = !searchModal.showAdvanced">
+          <span class="fm-adv-toggle__label">{{ searchModal.showAdvanced ? '收起高级设置' : '高级设置' }}</span>
+          <i class="fm-adv-toggle__chevron" :class="{ 'is-open': searchModal.showAdvanced }">▾</i>
+        </div>
+        <div v-show="searchModal.showAdvanced" class="fm-adv">
+          <div class="fm-adv__row">
+            <div class="fm-adv__item fm-adv__item--grow">
+              <span class="fm-adv__label">阈值</span>
+              <n-slider v-model:value="searchModal.threshold" :min="0" :max="1" :step="0.05" />
+              <n-input-number v-model:value="searchModal.threshold" :min="0" :max="1" :step="0.05" size="small" style="width: 84px" />
+            </div>
+          </div>
+          <div class="fm-adv__row">
+            <div class="fm-adv__item">
+              <span class="fm-adv__label">返回条数</span>
+              <n-input-number v-model:value="searchModal.topK" :min="1" :max="50" size="small" style="width: 84px" />
+            </div>
+            <div class="fm-adv__item">
+              <span class="fm-adv__label">重排序</span>
+              <n-switch v-model:value="searchModal.rerankEnable" size="small" />
+            </div>
+            <div class="fm-adv__item">
+              <span class="fm-adv__label">中段遗忘优化</span>
+              <n-switch v-model:value="searchModal.lostInMiddle" size="small" />
+            </div>
+            <div class="fm-adv__item">
+              <span class="fm-adv__label">查询补全</span>
+              <n-switch v-model:value="searchModal.queryComplete" size="small" />
+            </div>
+            <div class="fm-adv__item">
+              <span class="fm-adv__label">邻近文档</span>
+              <n-input-number v-model:value="searchModal.nearbyCount" :min="0" :max="10" size="small" style="width: 84px" />
+            </div>
+            <div class="fm-adv__item">
+              <span class="fm-adv__label">融合</span>
+              <n-select v-model:value="searchModal.fusionStrategy" :options="fusionStrategyOptions" size="small" style="width: 150px" />
+            </div>
+          </div>
+          <div class="fm-adv__row">
+            <div class="fm-adv__item fm-adv__item--grow">
+              <span class="fm-adv__label">过滤表达式</span>
+              <n-input v-model:value="searchModal.filterExpr" placeholder="如 source_id == &quot;doc1&quot;" clearable size="small" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 统计条 -->
+        <div v-if="searchModal.meta || searchModal.results.length" class="fm-stats">
+          <span class="fm-stats__item"><strong>{{ searchModal.results.length }}</strong> 条命中</span>
+          <span class="fm-stats__item">耗时 <strong>{{ searchModal.meta?.elapsedMs ?? 0 }}</strong> ms</span>
+          <span class="fm-stats__item fm-stats__item--tag">{{ searchModeLabel }}</span>
+          <span v-if="searchModal.meta?.vectorCount != null" class="fm-stats__item">向量 {{ searchModal.meta.vectorCount }}</span>
+          <span v-if="searchModal.meta?.bm25Count != null" class="fm-stats__item">BM25 {{ searchModal.meta.bm25Count }}</span>
+          <span v-if="searchModal.meta?.hybridCount != null" class="fm-stats__item">混合 {{ searchModal.meta.hybridCount }}</span>
+          <span v-if="searchModal.meta?.expandedQuery" class="fm-stats__item fm-stats__item--ellipsis" :title="`补全后查询：${searchModal.meta.expandedQuery}`">
+            补全 <code>{{ searchModal.meta.expandedQuery }}</code>
+          </span>
+        </div>
+
+        <!-- 结果 -->
+        <div class="fm-results">
+          <n-spin :show="searchModal.loading">
+            <div v-if="searchModal.results.length" class="fm-list">
+              <div v-for="(r, i) in searchModal.results" :key="i" class="fm-item">
+                <div class="fm-item__head">
+                  <span class="fm-item__rank">{{ i + 1 }}</span>
+                  <div class="fm-item__score">
+                    <div class="fm-item__score-bar" :style="{ width: scorePercent(r.score) + '%' }" />
+                  </div>
+                  <span class="fm-item__score-num">{{ r.score?.toFixed?.(3) ?? '—' }}</span>
+                  <span v-if="r.rerankScore && Math.abs(r.rerankScore - (r.score || 0)) > 0.0001" class="fm-item__rerank">
+                    重排 {{ r.rerankScore.toFixed(3) }}
+                  </span>
+                  <div class="fm-item__actions">
+                    <NButton text size="tiny" @click="copyText(r.content)">复制</NButton>
+                    <NButton text size="tiny" @click="openDocFromResult(r)">查看原文</NButton>
+                  </div>
+                </div>
+                <div v-if="r.title" class="fm-item__title" v-html="highlightText(r.title, searchModal.query)" />
+                <div class="fm-item__content" v-html="highlightText(r.content, searchModal.query)" />
+                <div class="fm-item__meta">
+                  <NTag size="tiny" :bordered="false">{{ r.docName || `文档 #${r.documentId}` }}</NTag>
+                  <span v-if="r.chunkIndex != null" class="fm-item__meta-tag">分块 #{{ r.chunkIndex + 1 }}</span>
+                  <span v-if="r.sourceId" class="fm-item__meta-tag">{{ r.sourceId }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="!searchModal.loading && searchModal.meta" class="fm-empty">
+              没有命中结果 —— 试试降低阈值、换关键词，或切换检索模式。
+            </div>
+            <div v-else-if="!searchModal.loading && !searchModal.meta" class="fm-hint">
+              输入检索问题，点击「检索」开始测试。
+            </div>
+          </n-spin>
         </div>
       </div>
       <template #action>
         <div class="modal-footer-actions">
+          <NButton text @click="resetSearchDebug">重置</NButton>
           <NButton @click="searchModal.show = false">关闭</NButton>
+        </div>
+      </template>
+    </n-modal>
+
+    <n-modal
+      v-model:show="docViewModal.show"
+      preset="card"
+      :title="`查看文档 - ${docViewModal.docName || ''}`"
+      :style="{ maxWidth: '1180px', width: 'calc(100vw - 48px)' }"
+      class="forge-debug-modal"
+    >
+      <div class="fm">
+        <!-- 文档统计条 -->
+        <div v-if="!docViewModal.loading" class="fm-doc__stats">
+          <div class="fm-doc__stat">
+            <span class="fm-doc__stat-num">{{ docCharCount }}</span>
+            <span class="fm-doc__stat-label">字符</span>
+          </div>
+          <div class="fm-doc__stat">
+            <span class="fm-doc__stat-num">{{ docParagraphCount }}</span>
+            <span class="fm-doc__stat-label">段落</span>
+          </div>
+          <div class="fm-doc__stat">
+            <span class="fm-doc__stat-num">{{ docViewModal.chunks.length }}</span>
+            <span class="fm-doc__stat-label">分块</span>
+          </div>
+          <div class="fm-doc__stat">
+            <span class="fm-doc__stat-num">{{ chunkTotalTokens }}</span>
+            <span class="fm-doc__stat-label">词元</span>
+          </div>
+          <div class="fm-doc__stat-actions">
+            <NButton size="small" type="primary" ghost @click="copyText(docViewModal.content)">
+              复制原文
+            </NButton>
+          </div>
+        </div>
+
+        <n-tabs v-model:value="docViewModal.tab" type="line" animated>
+          <n-tab-pane name="content" tab="原文">
+            <n-spin :show="docViewModal.loading">
+              <template v-if="!docViewModal.loading">
+                <div v-if="docViewModal.content" class="fm-doc__paper">
+                  <pre class="fm-doc__raw">{{ docViewModal.content }}</pre>
+                </div>
+                <div v-else class="fm-empty">原文为空</div>
+              </template>
+            </n-spin>
+          </n-tab-pane>
+          <n-tab-pane name="chunks" tab="分块">
+            <n-spin :show="docViewModal.loading">
+              <div v-if="!docViewModal.loading && docViewModal.chunks.length" class="fm-chunk-grid">
+                <div v-for="(c, i) in docViewModal.chunks" :key="c.id || i" class="fm-chunk">
+                  <div class="fm-chunk__head">
+                    <span class="fm-chunk__badge">分块 {{ i + 1 }}</span>
+                    <span class="fm-chunk__tokens">{{ c.tokenCount ?? 0 }} 词元</span>
+                    <div class="fm-chunk__actions">
+                      <NButton text size="tiny" @click="copyText(c.content)">复制</NButton>
+                    </div>
+                  </div>
+                  <div class="fm-chunk__content">{{ c.content }}</div>
+                  <div v-if="c.vectorId || c.title" class="fm-chunk__meta">
+                    <span v-if="c.vectorId" class="fm-chunk__tag" title="向量 ID">{{ c.vectorId }}</span>
+                    <span v-if="c.title" class="fm-chunk__tag fm-chunk__tag--title" title="分块标题">{{ c.title }}</span>
+                  </div>
+                </div>
+              </div>
+              <n-empty v-else-if="!docViewModal.loading" description="暂无分块" />
+            </n-spin>
+          </n-tab-pane>
+        </n-tabs>
+      </div>
+      <template #action>
+        <div class="modal-footer-actions">
+          <NButton @click="docViewModal.show = false">关闭</NButton>
         </div>
       </template>
     </n-modal>
@@ -352,23 +586,28 @@
 import { NButton, NPopconfirm, NTag } from 'naive-ui'
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import {
+  knowledgeDocumentPage as fetchDocPage,
   knowledgePage as fetchKbPage,
+  modelPage as fetchModelPage,
+  storeInstancePage as fetchStorePage,
   knowledgeCreate,
   knowledgeDelete,
-  knowledgeDocumentPage as fetchDocPage,
-  knowledgeDocumentUpload,
   knowledgeDocumentDelete,
+  knowledgeDocumentChunks,
+  knowledgeDocumentContent,
   knowledgeDocumentProgressSSE,
-  knowledgeSearch,
+  knowledgeDocumentReprocess,
+  knowledgeDocumentUpload,
   knowledgeUpdate,
-  storeInstancePage as fetchStorePage,
-  modelPage as fetchModelPage,
+  ragSearchDebug,
 } from '@/api/ai'
 import DictTag from '@/components/DictTag.vue'
+import { useAuthStore } from '@/store'
 import { useDict } from '@/composables/useDict'
 
 defineOptions({ name: 'AiKnowledge' })
 
+const authStore = useAuthStore()
 const { dict } = useDict('ai_status', 'ai_knowledge_process_status', 'ai_store_instance_category', 'ai_vector_store_type')
 
 const statusOptions = computed(() => dict.value.ai_status || [])
@@ -410,10 +649,10 @@ const chunkOverlap = ref(null)
 const chunkDelimiters = ref('')
 const chunkRegex = ref('')
 
-const uploadPrefix = import.meta.env.VITE_API_BASEURL || '/api'
+const uploadPrefix = import.meta.env.VITE_REQUEST_PREFIX || '/dev-api'
 const uploadHeaders = computed(() => {
-  const token = localStorage.getItem('token') || ''
-  return { Authorization: `Bearer ${token}` }
+  const token = authStore.accessToken
+  return { Authorization: token ? `Bearer ${token}` : '' }
 })
 
 const search = reactive({ name: '' })
@@ -430,12 +669,88 @@ const docProcessing = reactive({})
 
 const kbFormRef = ref(null)
 const kbModal = reactive({ show: false, isEdit: false, saving: false, form: createKbForm() })
-const searchModal = reactive({ show: false, query: '', topK: 5, loading: false, results: [] })
+const searchModal = reactive({
+  show: false,
+  query: '',
+  topK: 5,
+  threshold: 0.5,
+  loading: false,
+  results: [],
+  meta: null,
+  searchType: '',
+  rerankEnable: false,
+  lostInMiddle: false,
+  fusionStrategy: 'rrf',
+  queryComplete: false,
+  nearbyCount: 0,
+  filterExpr: '',
+  showAdvanced: false,
+})
 
 // 存储实例 / 模型下拉数据
 const storeInstanceOptions = ref([])
 const embeddingModelOptions = ref([])
 const rerankModelOptions = ref([])
+
+// 检索模式选项（检索调试弹窗分段按钮；空串=管线默认融合）
+const searchModeOptions = [
+  { label: '默认融合', value: '' },
+  { label: '纯向量', value: 'vector' },
+  { label: 'BM25', value: 'bm25' },
+  { label: '混合', value: 'hybrid' },
+]
+// 融合策略选项（检索调试弹窗高级设置；对齐后端 fusionStrategy=rrf/weighted_sum）
+const fusionStrategyOptions = [
+  { label: 'RRF 融合（默认）', value: 'rrf' },
+  { label: '加权融合', value: 'weighted_sum' },
+]
+// 融合方式选项（知识库检索配置）
+const rerankTypeOptions = [
+  { label: 'RRF 融合（默认）', value: 'rrf' },
+  { label: '加权融合（向量 + BM25）', value: 'weighted' },
+]
+
+// 检索配置（存 search_config_json；可空项不写入，交给后端默认）
+function defaultSearchCfg() {
+  return {
+    rerankEnable: false,
+    lostInMiddle: false,
+    nearbyCount: 0,
+    topK: null,
+    threshold: null,
+    rerankType: null,
+    vectorWeight: null,
+    bm25Weight: null,
+    rrfK: null,
+  }
+}
+
+const searchCfg = reactive(defaultSearchCfg())
+
+function resetSearchCfg() {
+  Object.assign(searchCfg, defaultSearchCfg())
+}
+
+function loadSearchCfg(json) {
+  if (!json)
+    return
+  let cfg
+  try {
+    cfg = JSON.parse(json)
+  }
+  catch { return }
+  if (!cfg || typeof cfg !== 'object')
+    return
+  searchCfg.rerankEnable = cfg.rerank_enable != null ? cfg.rerank_enable : false
+  searchCfg.lostInMiddle = cfg.lost_in_middle != null ? cfg.lost_in_middle : false
+  searchCfg.nearbyCount = cfg.nearby_count != null ? cfg.nearby_count : 0
+  searchCfg.topK = cfg.topK != null ? cfg.topK : null
+  searchCfg.threshold = cfg.threshold != null ? cfg.threshold : null
+  searchCfg.rerankType = cfg.rerank_type || null
+  searchCfg.vectorWeight = cfg.vector_weight != null ? cfg.vector_weight : null
+  searchCfg.bm25Weight = cfg.bm25_weight != null ? cfg.bm25_weight : null
+  searchCfg.rrfK = cfg.rrf_k != null ? cfg.rrf_k : null
+}
 
 function createKbForm() {
   return {
@@ -541,12 +856,15 @@ function handleSelect(kb) {
 function handleAdd() {
   kbModal.isEdit = false
   kbModal.form = createKbForm()
+  resetSearchCfg()
   kbModal.show = true
 }
 
 async function handleEdit(kb) {
   kbModal.isEdit = true
   kbModal.form = { ...createKbForm(), ...kb }
+  resetSearchCfg()
+  loadSearchCfg(kb.searchConfigJson)
   kbModal.show = true
 }
 
@@ -572,6 +890,27 @@ async function handleSave() {
     else if (strategy === 'regex') {
       payload.chunkConfigJson = JSON.stringify({ regex: chunkRegex.value })
     }
+    // 拼检索配置 searchConfigJson（布尔/数量总是写入以支持关闭；可空项不写入，交给后端默认）
+    const cfg = {}
+    if (searchCfg.rerankEnable != null)
+      cfg.rerank_enable = searchCfg.rerankEnable
+    if (searchCfg.lostInMiddle != null)
+      cfg.lost_in_middle = searchCfg.lostInMiddle
+    if (searchCfg.nearbyCount != null)
+      cfg.nearby_count = searchCfg.nearbyCount
+    if (searchCfg.topK != null)
+      cfg.topK = searchCfg.topK
+    if (searchCfg.threshold != null)
+      cfg.threshold = searchCfg.threshold
+    if (searchCfg.rerankType)
+      cfg.rerank_type = searchCfg.rerankType
+    if (searchCfg.vectorWeight != null)
+      cfg.vector_weight = searchCfg.vectorWeight
+    if (searchCfg.bm25Weight != null)
+      cfg.bm25_weight = searchCfg.bm25Weight
+    if (searchCfg.rrfK != null)
+      cfg.rrf_k = searchCfg.rrfK
+    payload.searchConfigJson = Object.keys(cfg).length ? JSON.stringify(cfg) : ''
     const res = kbModal.isEdit ? await knowledgeUpdate(payload) : await knowledgeCreate(payload)
     if (res.code === 200) {
       window.$message.success(kbModal.isEdit ? '更新成功' : '新增成功')
@@ -726,7 +1065,92 @@ async function handleDeleteDoc(doc) {
   }
 }
 
+async function reprocessDoc(doc) {
+  try {
+    const res = await knowledgeDocumentReprocess(doc.id)
+    if (res.code === 200) {
+      window.$message.success('已重新处理')
+      subscribeDocProgress(doc)
+      await loadDocs()
+    }
+    else {
+      window.$message.error(res.msg || '重试失败')
+    }
+  }
+  catch (e) {
+    window.$message.error(e.message || '重试失败')
+  }
+}
+
+// ===== 文档查看（原文 / 分块） =====
+
+const docViewModal = reactive({
+  show: false,
+  docName: '',
+  tab: 'content',
+  content: null,
+  chunks: [],
+  loading: false,
+})
+
+// 文档统计（原文字符/段落、分块词元合计）
+const docCharCount = computed(() => (docViewModal.content || '').length)
+const docParagraphCount = computed(() => {
+  const s = docViewModal.content || ''
+  return s ? s.split(/\r?\n/).filter((l) => l.trim()).length : 0
+})
+const chunkTotalTokens = computed(() =>
+  docViewModal.chunks.reduce((sum, c) => sum + (c.tokenCount ?? 0), 0),
+)
+
+async function openDocView(doc) {
+  docViewModal.show = true
+  docViewModal.docName = doc.docName
+  docViewModal.tab = 'content'
+  docViewModal.content = null
+  docViewModal.chunks = []
+  docViewModal.loading = true
+  try {
+    const [contentRes, chunkRes] = await Promise.all([
+      knowledgeDocumentContent(doc.id),
+      knowledgeDocumentChunks(doc.id),
+    ])
+    docViewModal.content = contentRes.code === 200 ? contentRes.data : null
+    docViewModal.chunks = chunkRes.code === 200 && Array.isArray(chunkRes.data) ? chunkRes.data : []
+    if (contentRes.code !== 200) window.$message.error(contentRes.msg || '原文加载失败')
+    if (chunkRes.code !== 200) window.$message.error(chunkRes.msg || '分块加载失败')
+  }
+  catch (e) {
+    window.$message.error(e.message || '文档加载失败')
+  }
+  finally {
+    docViewModal.loading = false
+  }
+}
+
 // ===== 检索调试 =====
+
+function openSearchDebug() {
+  // 打开时按知识库检索配置初始化（rerank/nearby 跟随配置，可临时覆盖做对比）
+  let cfg = null
+  try {
+    cfg = selectedKb.value?.searchConfigJson ? JSON.parse(selectedKb.value.searchConfigJson) : null
+  }
+  catch {}
+  searchModal.rerankEnable = cfg?.rerank_enable != null ? cfg.rerank_enable : false
+  searchModal.lostInMiddle = cfg?.lost_in_middle != null ? cfg.lost_in_middle : false
+  searchModal.nearbyCount = cfg?.nearby_count != null ? cfg.nearby_count : 0
+  searchModal.topK = cfg?.topK || 5
+  searchModal.threshold = cfg?.threshold != null ? cfg.threshold : 0.5
+  searchModal.searchType = ''
+  searchModal.fusionStrategy = 'rrf'
+  searchModal.queryComplete = false
+  searchModal.filterExpr = ''
+  searchModal.results = []
+  searchModal.meta = null
+  searchModal.showAdvanced = false
+  searchModal.show = true
+}
 
 async function handleSearchDebug() {
   if (!searchModal.query.trim()) {
@@ -735,14 +1159,27 @@ async function handleSearchDebug() {
   }
   searchModal.loading = true
   searchModal.results = []
+  searchModal.meta = null
   try {
-    const res = await knowledgeSearch({
+    const params = {
       knowledgeId: selectedKb.value.id,
       query: searchModal.query,
       topK: searchModal.topK || 5,
-    })
-    if (res.code === 200) {
-      searchModal.results = res.data || []
+      threshold: searchModal.threshold,
+      rerankEnable: searchModal.rerankEnable,
+      lostInMiddle: searchModal.lostInMiddle,
+      fusionStrategy: searchModal.fusionStrategy,
+      queryComplete: searchModal.queryComplete,
+      nearbyCount: searchModal.nearbyCount > 0 ? searchModal.nearbyCount : undefined,
+      filterExpr: searchModal.filterExpr?.trim() || undefined,
+    }
+    if (searchModal.searchType)
+      params.searchType = searchModal.searchType
+    // 走 RAG 管线调试端点：返回结果 + 元信息（实际检索类型/各路命中数/耗时/补全query）
+    const res = await ragSearchDebug(params)
+    if (res.code === 200 && res.data) {
+      searchModal.results = res.data.list || []
+      searchModal.meta = res.data.meta || null
     }
     else {
       window.$message.error(res.msg || '检索失败')
@@ -754,6 +1191,76 @@ async function handleSearchDebug() {
   finally {
     searchModal.loading = false
   }
+}
+
+// ===== 检索调试辅助 =====
+
+const searchModeLabel = computed(() => {
+  const t = searchModal.meta?.searchType
+  if (!t)
+    return '默认融合'
+  if (t === 'vector')
+    return '纯向量'
+  if (t === 'bm25')
+    return 'BM25'
+  if (t === 'hybrid')
+    return '混合'
+  return t
+})
+
+function scorePercent(score) {
+  const v = Number(score) || 0
+  return Math.max(0, Math.min(100, v * 100))
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function highlightText(text, query) {
+  if (!text)
+    return ''
+  let html = escapeHtml(text)
+  const terms = (query || '').trim().split(/\s+/).filter(Boolean)
+  for (const t of terms) {
+    const escaped = escapeHtml(t)
+    if (!escaped)
+      continue
+    html = html.replace(new RegExp(escapeRegExp(escaped), 'gi'), (m) => `<mark class="fm-hl">${m}</mark>`)
+  }
+  return html
+}
+
+function copyText(text) {
+  if (!text)
+    return
+  navigator.clipboard?.writeText(text)
+    .then(() => window.$message.success('已复制'))
+    .catch(() => window.$message.error('复制失败'))
+}
+
+function openDocFromResult(r) {
+  openDocView({ id: r.documentId, docName: r.docName || `文档 #${r.documentId}` })
+}
+
+function resetSearchDebug() {
+  searchModal.query = ''
+  searchModal.results = []
+  searchModal.meta = null
+  searchModal.searchType = ''
+  searchModal.showAdvanced = false
+  searchModal.threshold = 0.5
+  searchModal.topK = 5
+  searchModal.rerankEnable = false
+  searchModal.lostInMiddle = false
+  searchModal.fusionStrategy = 'rrf'
+  searchModal.queryComplete = false
+  searchModal.nearbyCount = 0
+  searchModal.filterExpr = ''
 }
 
 // ===== 表格列 =====
@@ -785,12 +1292,16 @@ const docColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 160,
+    width: 200,
     fixed: 'right',
     render(row) {
       const actions = []
+      actions.push(h(NButton, { text: true, size: 'small', onClick: () => openDocView(row) }, { default: () => '查看' }))
       if (row.processStatus === 'pending' || row.processStatus === 'processing') {
         actions.push(h(NButton, { text: true, size: 'small', class: 'text-warning', loading: !!docProcessing[row.id], onClick: () => subscribeDocProgress(row) }, { default: () => docProcessing[row.id] ? '处理中' : '刷新进度' }))
+      }
+      if (row.processStatus === 'failed') {
+        actions.push(h(NButton, { text: true, size: 'small', class: 'text-warning', onClick: () => reprocessDoc(row) }, { default: () => '重试' }))
       }
       actions.push(h(NPopconfirm, { onPositiveClick: () => handleDeleteDoc(row) }, {
         trigger: () => h(NButton, { text: true, size: 'small', class: 'text-error' }, { default: () => '删除' }),
@@ -1168,7 +1679,10 @@ onMounted(() => {
   cursor: pointer;
   font-size: 13px;
   color: var(--text-muted);
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
 }
 
 .chunk-mode-seg__item:hover {
@@ -1230,52 +1744,473 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.search-form__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 10px;
+.search-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 18px;
 }
 
-.search-results {
+/* ===== 检索调试 / 文档查看 弹窗（forge-debug-modal，teleport 到 body，自包含配色） ===== */
+.fm {
+  --fm-bg: #ffffff;
+  --fm-subtle: #f8fafc;
+  --fm-border: #e6ebf2;
+  --fm-border-strong: #d7dfe9;
+  --fm-text: #334155;
+  --fm-text-strong: #0f172a;
+  --fm-muted: #94a3b8;
+  --fm-accent: #2563eb;
+  --fm-accent-soft: #eff6ff;
+  --fm-accent-border: #bfdbfe;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--fm-text);
+}
+
+/* 查询输入 */
+.fm-query {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.fm-query :deep(.n-input) {
+  flex: 1;
+}
+
+.fm-query__actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+/* 检索模式 */
+.fm-modes {
+  display: inline-flex;
+  gap: 2px;
+  align-self: flex-start;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--fm-subtle);
+  border: 1px solid var(--fm-border);
+}
+
+.fm-mode {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fm-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.fm-mode:hover {
+  color: var(--fm-text);
+}
+
+.fm-mode--active {
+  background: var(--fm-bg);
+  color: var(--fm-accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* 高级设置 */
+.fm-adv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  color: var(--fm-muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fm-adv-toggle:hover {
+  color: var(--fm-accent);
+}
+
+.fm-adv-toggle__chevron {
+  display: inline-block;
+  font-size: 10px;
+  font-style: normal;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.fm-adv-toggle__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.fm-adv {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 14px;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.search-result-item {
   padding: 12px 14px;
-  background: var(--panel-subtle);
-  border: 1px solid var(--panel-border);
+  border: 1px dashed var(--fm-border-strong);
   border-radius: 8px;
+  background: var(--fm-subtle);
 }
 
-.search-result-item__meta {
+.fm-adv__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+  align-items: center;
+}
+
+.fm-adv__item {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
 }
 
-.search-result-item__meta code {
-  overflow: hidden;
-  color: var(--text-muted);
+.fm-adv__item--grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+.fm-adv__item--grow :deep(.n-slider) {
+  flex: 1;
+  min-width: 120px;
+}
+
+.fm-adv__label {
+  flex-shrink: 0;
+  color: var(--fm-muted);
+  font-size: 12px;
+}
+
+/* 统计条 */
+.fm-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--fm-accent-soft);
+  border: 1px solid var(--fm-accent-border);
+  color: var(--fm-text);
+  font-size: 12px;
+}
+
+.fm-stats__item strong {
+  color: var(--fm-accent);
+  font-weight: 700;
+}
+
+.fm-stats__item code {
   font-size: 11px;
+  color: var(--fm-accent);
+}
+
+.fm-stats__item--tag {
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--fm-bg);
+  border: 1px solid var(--fm-accent-border);
+}
+
+.fm-stats__item--ellipsis {
+  max-width: 280px;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.search-result-item p {
-  margin: 0;
-  color: var(--text-body);
+/* 结果列表 */
+.fm-results {
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.fm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fm-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--fm-bg);
+  border: 1px solid var(--fm-border);
+  border-radius: 10px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.fm-item:hover {
+  border-color: var(--fm-accent-border);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+}
+
+.fm-item__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fm-item__rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--fm-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fm-item__score {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--fm-subtle);
+}
+
+.fm-item__score-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.45), var(--fm-accent));
+  transition: width 0.3s ease;
+}
+
+.fm-item__score-num {
+  min-width: 40px;
+  color: var(--fm-accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fm-item__rerank {
+  color: #d97706;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fm-item__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.fm-item__title {
+  color: var(--fm-text-strong);
   font-size: 13px;
-  line-height: 1.6;
+  font-weight: 600;
+}
+
+.fm-item__content {
+  color: var(--fm-text);
+  font-size: 13px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.fm-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.fm-item__meta-tag {
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: var(--fm-subtle);
+  border: 1px solid var(--fm-border);
+  color: var(--fm-muted);
+  font-size: 11px;
+}
+
+/* 文档查看 - 统计条 */
+.fm-doc__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--fm-subtle);
+  border: 1px solid var(--fm-border);
+  border-radius: 12px;
+}
+
+.fm-doc__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  padding: 6px 14px;
+  background: var(--fm-bg);
+  border: 1px solid var(--fm-border);
+  border-radius: 8px;
+}
+
+.fm-doc__stat-num {
+  color: var(--fm-text-strong);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.fm-doc__stat-label {
+  margin-top: 2px;
+  color: var(--fm-muted);
+  font-size: 11px;
+}
+
+.fm-doc__stat-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* 文档原文（纸张式） */
+.fm-doc__paper {
+  border: 1px solid var(--fm-border);
+  border-radius: 12px;
+  background: var(--fm-bg);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.fm-doc__raw {
+  margin: 0;
+  padding: 20px 24px;
+  max-height: 58vh;
+  overflow: auto;
+  color: var(--fm-text);
+  font-size: 13.5px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 分块卡片（两列网格） */
+.fm-chunk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.fm-chunk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--fm-bg);
+  border: 1px solid var(--fm-border);
+  border-radius: 12px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.fm-chunk:hover {
+  border-color: var(--fm-accent-border);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+.fm-chunk__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fm-chunk__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--fm-accent-soft);
+  border: 1px solid var(--fm-accent-border);
+  color: var(--fm-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fm-chunk__tokens {
+  color: var(--fm-muted);
+  font-size: 11px;
+}
+
+.fm-chunk__actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.fm-chunk__content {
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 4px;
+  color: var(--fm-text);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fm-chunk__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--fm-border);
+}
+
+.fm-chunk__tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--fm-subtle);
+  border: 1px solid var(--fm-border);
+  color: var(--fm-muted);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-chunk__tag--title {
+  font-family: inherit;
+}
+
+@media (max-width: 900px) {
+  .fm-chunk-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 空态 / 提示 */
+.fm-empty,
+.fm-hint {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--fm-muted);
+  font-size: 13px;
+}
+
+.fm-hint {
+  border: 1px dashed var(--fm-border-strong);
+  border-radius: 10px;
 }
 
 @media (max-width: 1120px) {
@@ -1291,5 +2226,67 @@ onMounted(() => {
   .kb-list {
     max-height: 360px;
   }
+}
+</style>
+
+<style>
+/* forge 调试弹窗（检索调试 / 查看文档）暗色适配。
+   n-modal 内容 teleport 到 body；且本工程 vue 编译器对 scoped 内 `:global(.dark) .x` 编译异常
+   （变量规则退化为 `.dark {}` 特异性不足、普通规则被整条丢弃），故暗色覆盖放全局作用域，
+   用 `.dark` + `.forge-debug-modal` 祖先双重门控保证特异性与正确性。 */
+.forge-debug-modal .fm-hl {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.15);
+  color: inherit;
+  font-style: normal;
+}
+
+.dark .forge-debug-modal .fm {
+  --fm-bg: #151f2d;
+  --fm-subtle: #1a2635;
+  --fm-border: #2c3a4d;
+  --fm-border-strong: #3a4d63;
+  --fm-text: #cbd5e1;
+  --fm-text-strong: #e2e8f0;
+  --fm-muted: #7b8ba1;
+  --fm-accent: #3b82f6;
+  --fm-accent-soft: #1d3352;
+  --fm-accent-border: #2c4a70;
+}
+
+.dark .forge-debug-modal .fm-hl {
+  background: rgba(96, 165, 250, 0.22);
+}
+
+.dark .forge-debug-modal .fm-mode--active {
+  background: var(--fm-accent-soft);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.dark .forge-debug-modal .fm-item:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.dark .forge-debug-modal .fm-chunk:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.dark .forge-debug-modal .fm-chunk__badge {
+  background: var(--fm-accent-soft);
+  border-color: var(--fm-accent-border);
+  color: var(--fm-accent);
+}
+
+.dark .forge-debug-modal .fm-doc__paper {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.dark .forge-debug-modal .fm-item__score-bar {
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.4), var(--fm-accent));
+}
+
+.dark .forge-debug-modal .fm-item__rerank {
+  color: #fbbf24;
 }
 </style>

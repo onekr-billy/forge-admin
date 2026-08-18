@@ -326,6 +326,8 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
     private void syncManagementMenu(AiBusinessApp app) {
         JSONObject options = readOptions(app.getOptions());
         JSONObject adminMenu = readAdminMenu(options);
+        String mountTarget = StringUtils.defaultIfBlank(options.getString("mountTarget"), deriveMountTarget(app));
+        String clientCode = resolveMenuClientCode(mountTarget);
         Long menuResourceId = readLong(firstNonNull(adminMenu.get("menuResourceId"), options.get("menuResourceId")));
         if (!Integer.valueOf(1).equals(app.getStatus())) {
             if (menuResourceId != null) {
@@ -352,7 +354,8 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         Long originalParentId = readLong(firstNonNull(
                 adminMenu.get("originalParentId"),
                 firstNonNull(adminMenu.get("parentId"), options.get("adminMenuParentId"))));
-        boolean suiteAsParent = readBoolean(firstNonNull(adminMenu.get("suiteAsParent"), options.get("suiteAsMenuParent")), true);
+        boolean suiteAsParent = "ADMIN".equalsIgnoreCase(mountTarget)
+                && readBoolean(firstNonNull(adminMenu.get("suiteAsParent"), options.get("suiteAsMenuParent")), true);
         if (suiteAsParent) {
             originalParentId = normalizeSuiteMenuParentId(
                     originalParentId,
@@ -373,10 +376,11 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         boolean enabled = Integer.valueOf(1).equals(app.getStatus());
         if (menuResourceId == null) {
             menuResourceId = menuRegisterAdapter.registerAppMenu(
-                    app.getAppName(), parentId, path, component, perms, app.getIcon(), sort, enabled);
+                    app.getAppName(), parentId, path, component, perms, app.getIcon(), sort, enabled, clientCode);
         } else {
             menuRegisterAdapter.updateAppMenu(
-                    menuResourceId, app.getAppName(), parentId, path, component, perms, app.getIcon(), sort, enabled);
+                    menuResourceId, app.getAppName(), parentId, path, component, perms, app.getIcon(), sort, enabled,
+                    clientCode);
         }
         adminMenu.put("menuResourceId", menuResourceId == null ? null : String.valueOf(menuResourceId));
         adminMenu.put("activeMenuKey", menuResourceId == null ? null : String.valueOf(menuResourceId));
@@ -397,6 +401,7 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         adminMenu.put("sort", sort);
         adminMenu.put("path", path);
         adminMenu.put("component", component);
+        adminMenu.put("clientCode", clientCode);
         options.put("adminMenu", adminMenu);
         app.setOptions(writeOptions(options));
         updateById(app);
@@ -436,7 +441,8 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         }
         String mountTarget = StringUtils.defaultIfBlank(options.getString("mountTarget"), deriveMountTarget(app));
         boolean syncEnabled = readBoolean(firstNonNull(adminMenu.get("syncEnabled"), options.get("adminMenuSyncEnabled")), false);
-        return "ADMIN".equalsIgnoreCase(mountTarget) && syncEnabled;
+        return ("ADMIN".equalsIgnoreCase(mountTarget) || "MOBILE".equalsIgnoreCase(mountTarget))
+                && syncEnabled;
     }
 
     private boolean isCodeDownloadRuntime(AiBusinessApp app, JSONObject options) {
@@ -450,6 +456,9 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
     }
 
     private String resolveManagementMenuPath(AiBusinessApp app, JSONObject options) {
+        if (isMobileMount(app, options)) {
+            return resolveMobileMenuPath(app, options);
+        }
         String entryMode = StringUtils.defaultString(app.getEntryMode()).toUpperCase();
         if ("RUNTIME".equals(entryMode) && StringUtils.isNotBlank(app.getConfigKey())) {
             if (BusinessAppMode.isCodeDownload(options == null ? null : options.get("appMode"))) {
@@ -473,6 +482,9 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
     }
 
     private String resolveManagementMenuComponent(AiBusinessApp app, JSONObject options) {
+        if (isMobileMount(app, options)) {
+            return resolveMobileMenuPath(app, options);
+        }
         String entryMode = StringUtils.defaultString(app.getEntryMode()).toUpperCase();
         if ("RUNTIME".equals(entryMode) && StringUtils.isNotBlank(app.getConfigKey())) {
             if (BusinessAppMode.isCodeDownload(options == null ? null : options.get("appMode"))) {
@@ -481,6 +493,35 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
             return "ai/crud-page";
         }
         return "app-center/app-entry";
+    }
+
+    private String resolveMobileMenuPath(AiBusinessApp app, JSONObject options) {
+        String entryMode = StringUtils.defaultString(app.getEntryMode()).toUpperCase();
+        if ("RUNTIME".equals(entryMode) && StringUtils.isNotBlank(app.getConfigKey())) {
+            String runtimeOpenMode = resolveRuntimeOpenMode(options == null ? null : options.get("runtimeOpenMode"));
+            StringBuilder path = new StringBuilder("/pages/lowcode-runtime?configKey=")
+                    .append(app.getConfigKey())
+                    .append("&appId=")
+                    .append(app.getId());
+            if ("CREATE_FORM".equals(runtimeOpenMode)) {
+                path.append("&mode=create");
+            } else if ("DETAIL".equals(runtimeOpenMode)) {
+                path.append("&mode=detail");
+            }
+            return path.toString();
+        }
+        String entryUrl = StringUtils.trimToNull(app.getEntryUrl());
+        return entryUrl == null ? "/pages/app-entry" : entryUrl;
+    }
+
+    private boolean isMobileMount(AiBusinessApp app, JSONObject options) {
+        String mountTarget = StringUtils.defaultIfBlank(
+                options == null ? null : options.getString("mountTarget"), deriveMountTarget(app));
+        return "MOBILE".equalsIgnoreCase(mountTarget);
+    }
+
+    private String resolveMenuClientCode(String mountTarget) {
+        return "MOBILE".equalsIgnoreCase(mountTarget) ? "h5" : "pc";
     }
 
     private String deriveMountTarget(AiBusinessApp app) {
@@ -548,9 +589,10 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         if (parentId == null) {
             return null;
         }
-        if (isSameResource(parentId, suiteMenuResourceId)
-                || isSameResource(parentId, actualParentId)
-                || isSameResource(parentId, menuResourceId)) {
+        // 仅当菜单父级指向自身（真正自父级）时才判定为配置错误返回 null；
+        // parentId == actualParentId 属正常层级结构（父级即实际挂载目录），保留，
+        // 否则误伤"子入口挂在应用链接入口下"的场景，导致菜单提升到顶级、不可点击。
+        if (isSameResource(parentId, menuResourceId)) {
             return null;
         }
         return parentId;

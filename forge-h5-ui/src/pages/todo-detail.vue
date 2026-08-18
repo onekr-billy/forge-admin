@@ -321,7 +321,7 @@ const unsupportedWritableField = computed(() => displayFields.value.find(field =
 const blockedReason = computed(() => {
   if (formInfo.value?.formType === 'external' && formInfo.value?.formUrl && !renderFields.value.length) return '此节点未提供可移动端渲染的字段描述，不能跳过 PC 专属表单直接审批。'
   if (formInfo.value?.formType === 'dynamic' && formInfo.value?.formJson && !dynamicFields.value.length) return '此动态表单没有可识别的字段描述，不能跳过填写直接审批。'
-  if (unsupportedWritableField.value) return `“${unsupportedWritableField.value.label}”为 H5 尚未支持的可编辑字段，不能跳过填写直接审批。`
+  if (unsupportedWritableField.value) return `“${unsupportedWritableField.value.label}”为移动端尚未支持的可编辑字段，不能跳过填写直接审批。`
   return ''
 })
 

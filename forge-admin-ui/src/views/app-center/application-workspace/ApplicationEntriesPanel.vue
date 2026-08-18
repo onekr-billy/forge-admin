@@ -47,6 +47,7 @@
             >
               {{ item.status === 1 ? '停用' : '启用' }}
             </a>
+            <a class="cursor-pointer text-error" @click="confirmDelete(item)">删除</a>
           </div>
         </div>
       </div>
@@ -59,6 +60,7 @@
       :application-id="application?.id"
       :default-suite-code="application?.suiteCode"
       :objects="applicationObjects"
+      :application-pages="applicationPages"
       lock-suite
       @saved="handleSaved"
     />
@@ -66,12 +68,13 @@
 </template>
 
 <script setup>
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { businessAppList, updateBusinessAppStatus } from '@/api/business-app'
+import { businessAppList, deleteBusinessApp, updateBusinessAppStatus } from '@/api/business-app'
 import DictTag from '@/components/DictTag.vue'
+import { buildEntryOpenUrl } from '../components/app-entry-targets'
 import AppEntryWizard from '../components/AppEntryWizard.vue'
+import { normalizeInAppBuilder } from '../in-app-builder/in-app-builder-schema'
 
 const props = defineProps({
   application: {
@@ -89,8 +92,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['changed', 'openDesigner'])
-const router = useRouter()
 const message = useMessage()
+const dialog = useDialog()
 const loading = ref(false)
 const entries = ref([])
 const wizardVisible = ref(false)
@@ -102,6 +105,11 @@ const workspaceSuites = computed(() => props.application
       suiteName: props.application.suiteName || props.application.suiteCode,
     }]
   : [])
+const applicationPages = computed(() => normalizeInAppBuilder(
+  props.application?.options,
+  props.application,
+  props.applicationObjects,
+).nodes)
 
 const wizardEntry = computed(() => editingEntry.value || {
   applicationId: props.application?.id,
@@ -145,8 +153,15 @@ function openEdit(item) {
 }
 
 function openEntry(item) {
-  const route = router.resolve(`/app-center/app/${item.id}`)
-  window.open(route.href, '_blank', 'noopener,noreferrer')
+  const url = buildEntryOpenUrl(item)
+  if (!url) {
+    message.warning('该入口尚未关联可运行的页面配置，请先发布业务单元')
+    return
+  }
+  const fullUrl = url.startsWith('/')
+    ? `${window.location.origin}${url}`
+    : url
+  window.open(fullUrl, '_blank', 'noopener,noreferrer')
 }
 
 function openEntryDesigner(item) {
@@ -163,6 +178,26 @@ async function toggleStatus(item) {
   message.success(item.status === 1 ? '访问入口已停用' : '访问入口已启用')
   await loadEntries()
   emit('changed')
+}
+
+function confirmDelete(item) {
+  dialog.warning({
+    title: '删除访问入口',
+    content: `确定删除入口「${entryDisplayName(item)}」吗？删除后不可恢复，关联菜单会一并移除。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteBusinessApp(item.id)
+        message.success('访问入口已删除')
+        await loadEntries()
+        emit('changed')
+      }
+      catch (error) {
+        message.error(error?.message || '删除失败，请稍后重试')
+      }
+    },
+  })
 }
 
 async function handleSaved() {
@@ -192,6 +227,7 @@ function entryDisplayName(item = {}) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 20px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border-light, #e5e6eb);
@@ -215,17 +251,17 @@ function entryDisplayName(item = {}) {
 }
 
 .entry-table {
-  overflow-x: auto;
+  min-width: 0;
   border: 1px solid var(--border-default, #c9cdd4);
   border-radius: 7px;
 }
 
 .entry-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.4fr) 110px minmax(140px, 1fr) 80px 160px 220px;
-  gap: 12px;
+  grid-template-columns: minmax(150px, 1.35fr) 78px minmax(120px, 1fr) 68px 120px minmax(130px, 1.2fr);
+  gap: 8px;
   align-items: center;
-  min-width: 980px;
+  min-width: 0;
   min-height: 58px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-light, #e5e6eb);
@@ -269,6 +305,65 @@ function entryDisplayName(item = {}) {
 
 .entry-actions {
   display: flex;
-  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.entry-row > span,
+.entry-row > :deep(.n-tag) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .entry-row-head {
+    display: none;
+  }
+
+  .entry-row:not(.entry-row-head) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 10px;
+  }
+
+  .entry-row:not(.entry-row-head) .entry-name {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .entry-row:not(.entry-row-head) > :nth-child(2),
+  .entry-row:not(.entry-row-head) > :nth-child(3),
+  .entry-row:not(.entry-row-head) > :nth-child(4),
+  .entry-row:not(.entry-row-head) > :nth-child(5) {
+    grid-column: 1;
+  }
+
+  .entry-row:not(.entry-row-head) > :nth-child(2) {
+    grid-row: 2;
+  }
+
+  .entry-row:not(.entry-row-head) > :nth-child(3) {
+    grid-row: 3;
+  }
+
+  .entry-row:not(.entry-row-head) > :nth-child(4) {
+    grid-row: 4;
+  }
+
+  .entry-row:not(.entry-row-head) > :nth-child(5) {
+    grid-row: 5;
+  }
+
+  .entry-row:not(.entry-row-head) .entry-actions {
+    grid-column: 2;
+    grid-row: 1 / span 5;
+    align-self: start;
+    justify-self: end;
+    max-width: 160px;
+    justify-content: flex-end;
+  }
 }
 </style>

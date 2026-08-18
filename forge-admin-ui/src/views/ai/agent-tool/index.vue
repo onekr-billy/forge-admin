@@ -3,18 +3,24 @@
     <!-- 顶部工具条 -->
     <div class="tool-bar">
       <div>
-        <div class="page-title">工具管理</div>
-        <div class="page-subtitle">管理 Agent 可使用的工具绑定（MCP / 内置 / 能力平台）</div>
+        <div class="page-title">
+          工具管理
+        </div>
+        <div class="page-subtitle">
+          管理 Agent 可使用的工具绑定（MCP / 内置 / 能力平台）
+        </div>
       </div>
       <NButton type="primary" @click="handleAdd">
-        <template #icon><i class="ai-icon:plus" /></template>
+        <template #icon>
+          <i class="ai-icon:plus" />
+        </template>
         新增工具绑定
       </NButton>
     </div>
 
     <!-- 筛选区 -->
     <div class="filter-bar">
-      <n-select
+      <NSelect
         v-model:value="search.agentId"
         placeholder="全部 Agent"
         clearable
@@ -22,7 +28,7 @@
         :options="agentOptions"
         class="filter-agent"
       />
-      <n-select
+      <NSelect
         v-model:value="search.toolSource"
         placeholder="全部来源"
         clearable
@@ -36,10 +42,16 @@
         class="filter-keyword"
         @keyup.enter="handleSearch"
       >
-        <template #prefix><i class="ai-icon:search" /></template>
+        <template #prefix>
+          <i class="ai-icon:search" />
+        </template>
       </n-input>
-      <NButton secondary @click="handleSearch">查询</NButton>
-      <NButton quaternary @click="handleReset">重置</NButton>
+      <NButton secondary @click="handleSearch">
+        查询
+      </NButton>
+      <NButton quaternary @click="handleReset">
+        重置
+      </NButton>
     </div>
 
     <!-- 表格 -->
@@ -61,7 +73,7 @@
       <n-drawer-content :title="editingId ? '编辑工具绑定' : '新增工具绑定'" closable>
         <n-form label-placement="left" label-width="90">
           <n-form-item label="Agent">
-            <n-select
+            <NSelect
               v-model:value="form.agentId"
               :options="agentOptions"
               placeholder="请选择 Agent"
@@ -70,7 +82,7 @@
             />
           </n-form-item>
           <n-form-item label="工具来源">
-            <n-select
+            <NSelect
               v-model:value="form.toolSource"
               :options="toolSourceOptions"
               placeholder="请选择工具来源"
@@ -83,13 +95,17 @@
             <n-input v-model:value="form.toolGroup" placeholder="默认 default" />
           </n-form-item>
           <n-form-item label="启用">
-            <n-switch v-model:value="form.enabled" :checked-value="'1'" :unchecked-value="'0'" />
+            <NSwitch v-model:value="form.enabled" checked-value="1" unchecked-value="0" />
           </n-form-item>
         </n-form>
         <template #footer>
           <div class="drawer-footer">
-            <NButton @click="drawerVisible = false">取消</NButton>
-            <NButton type="primary" :loading="saving" @click="handleSave">确定</NButton>
+            <NButton @click="drawerVisible = false">
+              取消
+            </NButton>
+            <NButton type="primary" :loading="saving" @click="handleSave">
+              确定
+            </NButton>
           </div>
         </template>
       </n-drawer-content>
@@ -98,15 +114,15 @@
 </template>
 
 <script setup>
-import { h, onMounted, reactive, ref } from 'vue'
 import { NButton, NPopconfirm, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
+import { h, onMounted, reactive, ref } from 'vue'
 import {
-  agentList as fetchAgentList,
   agentToolAdd,
   agentToolDelete,
   agentToolGetById,
   agentToolPage,
   agentToolUpdate,
+  agentList as fetchAgentList,
 } from '@/api/ai'
 
 defineOptions({ name: 'AiAgentTool' })
@@ -175,9 +191,12 @@ async function loadList() {
   loading.value = true
   try {
     const params = { pageNum: pagination.page, pageSize: pagination.pageSize }
-    if (search.agentId) params.agentId = search.agentId
-    if (search.toolSource) params.toolSource = search.toolSource
-    if (search.keyword) params.keyword = search.keyword
+    if (search.agentId)
+      params.agentId = search.agentId
+    if (search.toolSource)
+      params.toolSource = search.toolSource
+    if (search.keyword)
+      params.keyword = search.keyword
     const res = await agentToolPage(params)
     if (res.code === 200) {
       list.value = res.data?.records || []
@@ -212,7 +231,8 @@ function handleAdd() {
 }
 
 async function handleEdit(row) {
-  if (isRowLoading(row.id, 'edit')) return
+  if (isRowLoading(row.id, 'edit'))
+    return
   rowLoading[row.id] = 'edit'
   try {
     const res = await agentToolGetById(row.id)
@@ -293,13 +313,15 @@ async function handleToggleEnabled(row, value) {
 }
 
 async function handleDelete(row) {
-  if (isRowLoading(row.id, 'delete')) return
+  if (isRowLoading(row.id, 'delete'))
+    return
   rowLoading[row.id] = 'delete'
   try {
     const res = await agentToolDelete(row.id)
     if (res.code === 200) {
       message.success('已删除')
-      if (list.value.length === 1 && pagination.page > 1) pagination.page -= 1
+      if (list.value.length === 1 && pagination.page > 1)
+        pagination.page -= 1
       loadList()
     }
     else {
@@ -342,9 +364,11 @@ const columns = [
     key: 'actions',
     width: 130,
     fixed: 'right',
-    render: row => {
+    render: (row) => {
       const edit = h(NButton, {
-        text: true, size: 'small', type: 'primary',
+        text: true,
+        size: 'small',
+        type: 'primary',
         loading: isRowLoading(row.id, 'edit'),
         disabled: !!rowLoading[row.id] && rowLoading[row.id] !== 'edit',
         onClick: () => handleEdit(row),
@@ -353,7 +377,9 @@ const columns = [
         onPositiveClick: () => handleDelete(row),
       }, {
         trigger: () => h(NButton, {
-          text: true, size: 'small', type: 'error',
+          text: true,
+          size: 'small',
+          type: 'error',
           loading: isRowLoading(row.id, 'delete'),
           disabled: !!rowLoading[row.id] && rowLoading[row.id] !== 'delete',
         }, { default: () => '删除' }),
@@ -432,9 +458,15 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
-.filter-agent { width: 220px; }
-.filter-source { width: 140px; }
-.filter-keyword { width: 220px; }
+.filter-agent {
+  width: 220px;
+}
+.filter-source {
+  width: 140px;
+}
+.filter-keyword {
+  width: 220px;
+}
 
 .table-card {
   padding: 4px;
@@ -462,6 +494,10 @@ onMounted(() => {
     align-items: stretch;
     flex-direction: column;
   }
-  .filter-agent, .filter-source, .filter-keyword { width: 100%; }
+  .filter-agent,
+  .filter-source,
+  .filter-keyword {
+    width: 100%;
+  }
 }
 </style>

@@ -167,6 +167,49 @@ public class DocumentProcessService {
     }
 
     /**
+     * 重新处理失败文档
+     */
+    public void reprocessDocument(Long documentId) {
+        AiKnowledgeDocument document = documentMapper.selectById(documentId);
+        if (document == null) {
+            throw new BusinessException("文档不存在");
+        }
+        if (!"failed".equals(document.getProcessStatus())) {
+            throw new BusinessException("仅失败状态的文档可重新处理");
+        }
+        AiKnowledge knowledge = knowledgeMapper.selectById(document.getKnowledgeId());
+        if (knowledge == null) {
+            throw new BusinessException("知识库不存在");
+        }
+        // 重置状态为待处理并清空错误信息
+        documentMapper.updateProcessStatus(documentId, "pending", null, null);
+        processDocumentAsync(documentId, knowledge);
+    }
+
+    /**
+     * 查看文档分块列表（按分块序号升序）
+     */
+    public List<AiKnowledgeChunk> listChunks(Long documentId) {
+        return chunkMapper.selectByDocumentId(documentId);
+    }
+
+    /**
+     * 查看文档原始内容。
+     * upload 来源重新解析文件获取全文；manual/url 来源直接返回录入文本。
+     */
+    public String getDocumentRawContent(Long documentId) {
+        AiKnowledgeDocument document = documentMapper.selectById(documentId);
+        if (document == null) {
+            throw new BusinessException("文档不存在");
+        }
+        if ("manual".equals(document.getSourceType()) || "url".equals(document.getSourceType())) {
+            return document.getSourceUrl() != null ? document.getSourceUrl() : "";
+        }
+        ParsedDocument parsed = parseDocument(document);
+        return parsed.getContent() != null ? parsed.getContent() : "";
+    }
+
+    /**
      * 异步处理文档
      */
     private void processDocumentAsync(Long documentId, AiKnowledge knowledge) {
@@ -247,6 +290,11 @@ public class DocumentProcessService {
     private void embedAndStore(Long documentId, AiKnowledge knowledge, List<ChunkResult> chunks) {
         if (chunks.isEmpty()) return;
 
+        // 来源标识：URL来源存 source_url，否则回退文档名（库表导入将来存表/行标识）
+        AiKnowledgeDocument document = documentMapper.selectById(documentId);
+        String sourceId = document != null && document.getSourceUrl() != null && !document.getSourceUrl().isBlank()
+                ? document.getSourceUrl() : (document != null ? document.getDocName() : null);
+
         // 获取 Embedding 模型信息
         AiModel embeddingModel = modelMapper.selectEnabledById(knowledge.getEmbeddingModelId());
         if (embeddingModel == null) {
@@ -270,27 +318,39 @@ public class DocumentProcessService {
                         ? getStoreInstance(knowledge.getVectorStoreInstanceId()) : null
         );
 
-        // 确定向量维度
-        int dimension = knowledge.getDimensionOfVectorModel() != null
-                ? knowledge.getDimensionOfVectorModel() : 1536;
-
         // 集合名称
         String collectionName = "knowledge_" + knowledge.getId();
 
-        // 确保集合存在
+        // 先批量嵌入，再按模型实际输出维度建集合：
+        // 知识库未配置向量维度时以模型真实输出为准（避免硬编码 1536 与 text-embedding-v3 实际输出 1024 不符）
+        List<String> texts = chunks.stream().map(ChunkResult::getContent).toList();
+        List<List<Float>> vectors = adapter.embed(
+                provider.getBaseUrl(), apiKey, embeddingModel.getModelId(), texts
+        );
+        int actualDim = vectors.isEmpty() ? 0 : vectors.get(0).size();
+        Integer configuredDim = knowledge.getDimensionOfVectorModel();
+        int dimension;
+        if (configuredDim != null && configuredDim > 0) {
+            if (actualDim > 0 && actualDim != configuredDim) {
+                throw new BusinessException("Embedding模型输出维度(" + actualDim + ")与知识库配置维度(" + configuredDim + ")不一致");
+            }
+            dimension = configuredDim;
+        } else {
+            if (actualDim <= 0) {
+                throw new BusinessException("Embedding模型未返回有效向量");
+            }
+            dimension = actualDim;
+        }
+
+        // 确保集合存在（维度不匹配时 forceRecreate 触发删除重建，见 MilvusVectorStoreService 维度校验）
         String configJson = knowledge.getVectorStoreInstanceId() != null
                 ? getStoreInstance(knowledge.getVectorStoreInstanceId()).getConfigJson() : "{}";
         VectorStoreService.CreateCollectionRequest createReq = new VectorStoreService.CreateCollectionRequest();
         createReq.setCollectionName(collectionName);
         createReq.setDimension(dimension);
         createReq.setConfigJson(configJson);
+        createReq.setForceRecreate(true);
         vectorStore.createCollectionIfAbsent(createReq);
-
-        // 批量嵌入
-        List<String> texts = chunks.stream().map(ChunkResult::getContent).toList();
-        List<List<Float>> vectors = adapter.embed(
-                provider.getBaseUrl(), apiKey, embeddingModel.getModelId(), texts
-        );
 
         // 保存分块到数据库
         List<AiKnowledgeChunk> chunkEntities = new ArrayList<>();
@@ -298,6 +358,9 @@ public class DocumentProcessService {
         List<List<Float>> vectorList = new ArrayList<>();
         List<Long> docIds = new ArrayList<>();
         List<Integer> chunkIndices = new ArrayList<>();
+        List<String> sourceIds = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
+        List<String> hideContents = new ArrayList<>();
 
         for (int i = 0; i < chunks.size(); i++) {
             ChunkResult chunk = chunks.get(i);
@@ -320,6 +383,10 @@ public class DocumentProcessService {
             vectorList.add(vectors.get(i));
             docIds.add(documentId);
             chunkIndices.add(chunk.getIndex());
+            sourceIds.add(sourceId);
+            titles.add(chunk.getTitle());
+            // 分块暂无"隐藏内容"概念，预留空串（参考项目存医生介绍等不参与检索的补充详情）
+            hideContents.add(null);
             chunkEntities.add(entity);
         }
 
@@ -331,6 +398,9 @@ public class DocumentProcessService {
         insertReq.setContents(texts);
         insertReq.setDocumentIds(docIds);
         insertReq.setChunkIndices(chunkIndices);
+        insertReq.setSourceIds(sourceIds);
+        insertReq.setTitles(titles);
+        insertReq.setHideContents(hideContents);
         insertReq.setConfigJson(configJson);
         vectorStore.insert(insertReq);
     }
@@ -376,7 +446,7 @@ public class DocumentProcessService {
         return storeInstanceService.getById(storeInstanceId);
     }
 
-    private String computeFileHash(Long fileId) {
+    private String computeFileHash(String fileId) {
         try (InputStream is = getFileInputStream(fileId)) {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] buffer = new byte[8192];
@@ -426,14 +496,13 @@ public class DocumentProcessService {
 
     /**
      * 通过 FileManager 获取文件输入流。
-     * fileId 在数据库中为 Long，但 FileManager 使用 String。
+     * fileId 为 FileManager 上传返回的 UUID 字符串。
      */
-    private InputStream getFileInputStream(Long fileId) {
+    private InputStream getFileInputStream(String fileId) {
         if (fileId == null) {
             throw new BusinessException("文件ID不能为空");
         }
-        String fileIdStr = String.valueOf(fileId);
-        var metadata = fileManager.getFileMetadata(fileIdStr);
+        var metadata = fileManager.getFileMetadata(fileId);
         if (metadata == null) {
             throw new BusinessException("文件不存在: " + fileId);
         }
@@ -441,6 +510,6 @@ public class DocumentProcessService {
         if (storage == null) {
             throw new BusinessException("文件存储策略不存在: " + metadata.getStorageType());
         }
-        return storage.download(fileIdStr);
+        return storage.download(fileId);
     }
 }

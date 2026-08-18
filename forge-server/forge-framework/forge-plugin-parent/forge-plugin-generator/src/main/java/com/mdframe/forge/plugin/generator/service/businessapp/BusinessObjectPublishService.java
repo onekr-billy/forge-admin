@@ -9,8 +9,10 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDesignVersionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectPublishDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishDTO;
@@ -18,6 +20,7 @@ import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerMapper;
+import com.mdframe.forge.plugin.generator.service.MenuRegisterAdapter;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodePublishService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeRuntimeConfigBuilder;
@@ -31,6 +34,7 @@ import com.mdframe.forge.plugin.generator.service.formula.FormulaValidationResul
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectDesignVersionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRelationVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectActionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPermissionSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckVO;
@@ -63,6 +67,17 @@ public class BusinessObjectPublishService {
     private static final String LINKAGE_SCHEMA_OPTION_KEY = "linkageSchema";
     private static final String DESIGNER_ACTIONS_KEY = "actions";
     private static final Set<String> RUNTIME_OPEN_MODES = Set.of("LIST", "CREATE_FORM", "DETAIL");
+    private static final Set<String> FIELD_EVENT_TRIGGERS = Set.of(
+            "FORM_LOAD", "CHANGE", "BLUR", "MANUAL", "SCAN_COMPLETE");
+    private static final Set<String> FIELD_EVENT_SOURCE_TYPES = Set.of("EXTERNAL_API", "DATASET");
+    private static final Set<String> FIELD_EVENT_PARAM_SOURCES = Set.of(
+            "FORM_FIELD", "CONTEXT_PATH", "ROUTE_QUERY");
+    private static final Set<String> FIELD_EVENT_RESULT_MODES = Set.of("ROOT", "FIRST_ROW");
+    private static final Set<String> FIELD_EVENT_MISSING_MODES = Set.of("CLEAR", "KEEP");
+    private static final Set<String> FIELD_EVENT_ERROR_MODES = Set.of("MESSAGE", "SILENT");
+    private static final Set<String> FIELD_EVENT_DANGEROUS_KEYS = Set.of(
+            "url", "uri", "header", "headers", "authorization", "authentication",
+            "credential", "credentials", "secret", "token", "sql", "script", "handler");
     private static final Set<String> APP_ENTRY_TYPES = Set.of(
             "OBJECT_LIST", "CREATE_FORM", "DETAIL_PAGE", "APPROVAL_TODO", "REPORT_DASHBOARD", "EXTERNAL_OR_API");
     private static final Set<String> GENERIC_FORM_COMPONENT_ID_SUFFIXES = Set.of(
@@ -75,11 +90,24 @@ public class BusinessObjectPublishService {
             "collapse", "elcollapseitem", "collapseitem", "fctable", "table", "fctablegrid",
             "tablegrid", "eldivider", "divider", "fctitle", "title", "text", "html", "space",
             "elalert", "alert", "elbutton", "button", "eltag", "tag", "elimage", "image");
+    /**
+     * 布局容器与纯展示组件：承载分组/关联子表分区等结构语义，不绑定业务字段。
+     * 与前端 formDesignerSchema 的 VIRTUAL_COMPONENT_KEYS 协议对齐；种子数据可能缺省
+     * virtual fieldBinding，发布检查需按组件类型跳过字段绑定校验。
+     */
+    private static final Set<String> FORM_VIRTUAL_COMPONENT_KEYS = Set.of(
+            "card", "elCard", "collapse", "elCollapse", "collapseItem", "elCollapseItem",
+            "fcRow", "row", "col", "tabs", "elTabs", "tabPane", "elTabPane",
+            "fcTable", "table", "fcTableGrid", "tableGrid", "subTable",
+            "elDivider", "divider", "fcTitle", "title", "text", "html", "space",
+            "elAlert", "alert", "elButton", "button", "elTag", "tag", "elImage", "image");
     private static final Set<String> REQUIRED_BLOCK_ITEM_CODES = Set.of(
             "FIELD_EMPTY", "FIELD_LABEL_EMPTY", "FIELD_CODE_EMPTY", "FIELD_DUPLICATE",
             "PAGE_EMPTY", "PAGE_REF_MISSING", "PAGE_SCHEMA_INVALID", "PAGE_TARGET_MISSING",
             "FORM_TARGET_MISSING", "FORM_COMPONENT_EMPTY", "FORM_COMPONENT_DUPLICATE",
             "FORM_FIELD_BINDING_EMPTY", "FORM_FIELD_MISSING", "FORM_FIELD_COMPONENT_EMPTY",
+            "FORM_FIELD_EVENT_INVALID",
+            "COMMAND_CODE_INVALID", "COMMAND_CODE_DUPLICATE", "COMMAND_PROTOCOL_INVALID",
             "VIEW_FIELD_MISSING", "RUNTIME_INVALID", "APP_ENTRY_PAGE_MISSING", "APP_ENTRY_FORM_MISSING",
             "DATASOURCE_UNAVAILABLE", "TABLE_NAME_EMPTY", "TABLE_MISSING", "TABLE_PK_MISSING", "TABLE_COLUMN_MISSING",
             "TABLE_COLUMN_CHANGED", "TABLE_INDEX_MISSING"
@@ -100,6 +128,7 @@ public class BusinessObjectPublishService {
     private final BusinessTriggerMapper triggerMapper;
     private final BusinessDocumentConfigService documentConfigService;
     private final BusinessPermissionService permissionService;
+    private final MenuRegisterAdapter menuRegisterAdapter;
     private final ObjectMapper objectMapper;
 
     public BusinessPublishCheckVO publishCheck(Long objectId) {
@@ -134,6 +163,7 @@ public class BusinessObjectPublishService {
         List<BusinessPublishCheckItemVO> items = new ArrayList<>();
         checkFields(context.getModelSchema(), items);
         checkPage(context, items);
+        checkTransactionalActions(context, items);
         checkFormFirstSchemas(context, items);
         checkRelations(context, items);
         checkLinkage(context, items);
@@ -180,7 +210,9 @@ public class BusinessObjectPublishService {
         designerService.applyRelationsToModel(context);
         context = designerService.saveDraft(context, BusinessObjectDesignStatus.READY);
         BusinessPublishCheckVO check = publishCheck(context, permissionSummary);
-        if (Boolean.FALSE.equals(check.getPublishable()) && (dto == null || !Boolean.TRUE.equals(dto.getForce()))) {
+        boolean force = dto != null && Boolean.TRUE.equals(dto.getForce());
+        if (Boolean.FALSE.equals(check.getPublishable())
+                && (!force || containsNonForceableCommandBlock(check))) {
             throw new BusinessException(buildPublishBlockedMessage(check));
         }
 
@@ -205,7 +237,6 @@ public class BusinessObjectPublishService {
         versionDTO.setConfigId(publishedConfig.getId());
         versionDTO.setConfigKey(publishedConfig.getConfigKey());
         versionDTO.setCrudConfigVersionId(crudConfigVersionId);
-        versionDTO.setVersionNo(publishedConfig.getPublishedVersion());
         versionDTO.setVersionType("publish");
         versionDTO.setModelSnapshot(context.getModelSchema());
         versionDTO.setPageSnapshot(context.getPageSchema());
@@ -215,6 +246,8 @@ public class BusinessObjectPublishService {
         versionDTO.setPublishVersion(publishedConfig.getPublishedVersion());
         versionDTO.setRemark(dto == null ? null : dto.getRemark());
         Long versionId = designVersionService.createVersion(versionDTO);
+        menuRegisterAdapter.syncBusinessObjectActionPermissions(
+                object.getObjectCode(), object.getObjectName(), publishedConfig.getConfigKey());
         enqueueCrossObjectRecompute(context);
         return versionId;
     }
@@ -235,6 +268,11 @@ public class BusinessObjectPublishService {
         int remain = Math.max(blockItems.size() - 3, 0);
         String suffix = remain > 0 ? "；另有 " + remain + " 项" : "";
         return "发布检查存在 " + blockItems.size() + " 个阻断项：" + summary + suffix;
+    }
+
+    private boolean containsNonForceableCommandBlock(BusinessPublishCheckVO check) {
+        return check != null && check.getBlockItems() != null
+                && check.getBlockItems().stream().anyMatch(item -> "COMMAND".equals(item.getCategory()));
     }
 
     private String formatBlockItem(BusinessPublishCheckItemVO item) {
@@ -316,16 +354,48 @@ public class BusinessObjectPublishService {
 
     private LowcodePageSchema buildPublishPageSchema(BusinessObjectDesignerService.DesignerContext context) {
         LowcodePageSchema pageSchema = context.getPageSchema();
-        List<Map<String, Object>> customActions = buildRuntimeCustomActions(context, readDesignerOptions(context));
-        if (pageSchema == null || customActions.isEmpty()) {
+        List<Map<String, Object>> runtimeActions = buildRuntimeCustomActions(context, readDesignerOptions(context));
+        if (pageSchema == null || runtimeActions.isEmpty()) {
             return pageSchema;
         }
         LowcodePageSchema next = objectMapper.convertValue(pageSchema, LowcodePageSchema.class);
-        LowcodePageZone tableZone = findOrCreateZone(next, "table");
-        Map<String, Object> props = tableZone.getProps() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(tableZone.getProps());
-        props.put("customActions", customActions);
-        tableZone.setProps(props);
+        List<Map<String, Object>> pageActions = runtimeActions.stream()
+                .filter(action -> !"childRow".equals(action.get("position")))
+                .toList();
+        if (!pageActions.isEmpty()) {
+            LowcodePageZone tableZone = findOrCreateZone(next, "table");
+            Map<String, Object> props = tableZone.getProps() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(tableZone.getProps());
+            props.put("customActions", pageActions);
+            tableZone.setProps(props);
+        }
+        applyChildRowActions(next, runtimeActions.stream()
+                .filter(action -> "childRow".equals(action.get("position")))
+                .toList());
         return next;
+    }
+
+    private void applyChildRowActions(LowcodePageSchema pageSchema, List<Map<String, Object>> childActions) {
+        if (pageSchema == null || pageSchema.getModelRefs() == null || childActions.isEmpty()) {
+            return;
+        }
+        for (LowcodePageModelRef ref : pageSchema.getModelRefs()) {
+            if (ref == null || Boolean.TRUE.equals(ref.getPrimary()) || StringUtils.isBlank(ref.getModelCode())) {
+                continue;
+            }
+            Map<String, Object> props = ref.getProps() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(ref.getProps());
+            String relationKey = StringUtils.defaultIfBlank(text(props.get("relationKey")), ref.getModelCode());
+            List<Map<String, Object>> matched = childActions.stream()
+                    .filter(action -> relationKey.equals(text(action.get("relationKey"))))
+                    .<Map<String, Object>>map(action -> new LinkedHashMap<>(action))
+                    .toList();
+            if (!matched.isEmpty()) {
+                props.put("relationKey", relationKey);
+                props.put("rowActions", matched);
+                ref.setProps(props);
+            }
+        }
     }
 
     private LowcodePageZone findOrCreateZone(LowcodePageSchema pageSchema, String zoneKey) {
@@ -361,7 +431,7 @@ public class BusinessObjectPublishService {
             String actionType = StringUtils.defaultIfBlank(text(action.get("actionType")), "OPEN_PAGE").toUpperCase();
             String position = normalizeActionPosition(action.get("actionPosition"));
             Map<String, Object> config = mapValue(action.get("actionConfig"));
-            if (isBusinessAutomationAction(actionType, config)) {
+            if (isBusinessAutomationAction(actionType, config) && !"childRow".equals(position)) {
                 continue;
             }
             if (isBuiltinCrudAction(position, actionCode, actionName, actionType, config)) {
@@ -374,6 +444,7 @@ public class BusinessObjectPublishService {
             item.put("position", position);
             item.put("type", resolveActionButtonType(actionType));
             item.put("actionType", resolveRuntimeActionType(actionType));
+            putIfNotBlank(item, "relationKey", text(config.get("relationKey")));
             AiBusinessObject object = context == null ? null : context.getObject();
             if (object != null) {
                 putIfNotBlank(item, "suiteCode", object.getSuiteCode());
@@ -384,7 +455,13 @@ public class BusinessObjectPublishService {
             putIfNotBlank(item, "routePath", resolveActionRoutePath(actionType, config));
             putIfNotBlank(item, "targetFormKey", text(config.get("targetFormKey")));
             putIfNotBlank(item, "openTarget", StringUtils.defaultIfBlank(text(config.get("openTarget")), "_self"));
-            putIfNotBlank(item, "permissionCode", text(action.get("permission")));
+            String permissionKey = StringUtils.firstNonBlank(
+                    text(action.get("permissionKey")),
+                    text(action.get("permissionCode")),
+                    text(action.get("permission")));
+            putIfNotBlank(item, "permissionKey", permissionKey);
+            putIfNotBlank(item, "permissionCode", permissionKey);
+            putIfNotBlank(item, "permissionStrategy", text(action.get("permissionStrategy")));
             putIfNotBlank(item, "successMessage", text(action.get("successMessage")));
             putIfNotBlank(item, "failureMessage", text(action.get("failureMessage")));
             putIfNotBlank(item, "successBehavior", text(config.get("successBehavior")));
@@ -392,7 +469,7 @@ public class BusinessObjectPublishService {
             if (!params.isEmpty()) {
                 item.put("params", params);
             }
-            if ("CALL_API".equals(actionType) && !config.isEmpty()) {
+            if (("CALL_API".equals(actionType) || "COMMAND".equals(actionType)) && !config.isEmpty()) {
                 item.put("actionConfig", new LinkedHashMap<>(config));
             }
             if (Boolean.TRUE.equals(booleanValue(action.get("confirmRequired")))) {
@@ -450,6 +527,9 @@ public class BusinessObjectPublishService {
         }
         if ("DETAIL".equals(position)) {
             return "detail";
+        }
+        if ("CHILD_ROW".equals(position)) {
+            return "childRow";
         }
         return "row";
     }
@@ -574,6 +654,216 @@ public class BusinessObjectPublishService {
         }
         checkPageTargetReferences(pageSchema, collectFormKeys(readDesignerOptions(context)), items);
         checkPageActionCompleteness(pageSchema, collectFields(modelSchema), items);
+    }
+
+    private void checkTransactionalActions(
+            BusinessObjectDesignerService.DesignerContext context,
+            List<BusinessPublishCheckItemVO> items) {
+        List<Map<String, Object>> actions = listOfMap(readDesignerOptions(context).get(DESIGNER_ACTIONS_KEY));
+        if (actions.isEmpty()) {
+            return;
+        }
+        Set<String> childRelationKeys = collectChildRelationKeys(context);
+        Set<String> actionCodes = new LinkedHashSet<>();
+        int index = 0;
+        for (Map<String, Object> action : actions) {
+            index++;
+            String actionType = StringUtils.upperCase(StringUtils.defaultIfBlank(text(action.get("actionType")), "OPEN_PAGE"));
+            Map<String, Object> config = mapValue(action.get("actionConfig"));
+            String actionPosition = StringUtils.upperCase(StringUtils.defaultIfBlank(
+                    text(action.get("actionPosition")), "ROW")).replace('-', '_');
+            boolean childRowAction = "CHILD_ROW".equals(actionPosition);
+            String actionName = StringUtils.defaultIfBlank(text(action.get("actionName")), "未命名动作");
+            if (childRowAction) {
+                String relationKey = text(config.get("relationKey"));
+                String triggerScene = StringUtils.upperCase(StringUtils.defaultString(text(config.get("triggerScene"))));
+                if (!"COMMAND".equals(actionType)) {
+                    addCommandBlock(items, "COMMAND_PROTOCOL_INVALID", actionName,
+                            "子表行按钮仅支持 COMMAND 动作", index);
+                    continue;
+                }
+                if (!"MANUAL".equals(triggerScene)) {
+                    addCommandBlock(items, "COMMAND_PROTOCOL_INVALID", actionName,
+                            "子表行按钮执行场景必须为 MANUAL", index);
+                    continue;
+                }
+                if (StringUtils.isBlank(relationKey)
+                        || !relationKey.matches("^[A-Za-z][A-Za-z0-9_-]{0,127}$")
+                        || !childRelationKeys.contains(relationKey)) {
+                    addCommandBlock(items, "COMMAND_PROTOCOL_INVALID", actionName,
+                            "子表行按钮 relationKey 未指向当前对象的启用明细关系", index);
+                    continue;
+                }
+            }
+            if (!"COMMAND".equals(actionType) && !hasActionSteps(config)) {
+                continue;
+            }
+            String actionCode = text(action.get("actionCode"));
+            if (StringUtils.isBlank(actionCode) || !actionCode.matches("^[a-z][a-z0-9_]{1,63}$")) {
+                addCommandBlock(items, "COMMAND_CODE_INVALID", actionName,
+                        "事务型动作编码必须为 2～64 位小写字母、数字和下划线", index);
+                continue;
+            }
+            if (!actionCodes.add(actionCode)) {
+                addCommandBlock(items, "COMMAND_CODE_DUPLICATE", actionName,
+                        "事务型动作编码重复: " + actionCode, index);
+                continue;
+            }
+            try {
+                List<BusinessActionStepDTO> steps = parseCommandSteps(config);
+                if (steps.isEmpty()) {
+                    throw new BusinessException("事务型动作未配置执行步骤");
+                }
+                BusinessObjectActionVO vo = new BusinessObjectActionVO();
+                vo.setActionCode(actionCode);
+                vo.setActionName(actionName);
+                vo.setActionConfig(config);
+                BusinessActionCommandPolicy.validateDefinition(vo, steps);
+                validateCommandStepCompleteness(steps);
+            } catch (BusinessException e) {
+                addCommandBlock(items, "COMMAND_PROTOCOL_INVALID", actionName, e.getMessage(), index);
+            } catch (Exception e) {
+                addCommandBlock(items, "COMMAND_PROTOCOL_INVALID", actionName,
+                        "事务型动作配置格式不正确", index);
+            }
+        }
+    }
+
+    private Set<String> collectChildRelationKeys(BusinessObjectDesignerService.DesignerContext context) {
+        if (context == null || context.getRelations() == null || context.getObject() == null) {
+            return Set.of();
+        }
+        Set<String> keys = new LinkedHashSet<>();
+        for (BusinessObjectRelationVO relation : context.getRelations()) {
+            if (relation == null || Integer.valueOf(0).equals(relation.getStatus())
+                    || !StringUtils.equals(context.getObject().getObjectCode(), relation.getSourceObjectCode())) {
+                continue;
+            }
+            String type = StringUtils.upperCase(StringUtils.defaultString(relation.getRelationType()));
+            if (!Set.of("DETAIL", "CHILD_LIST", "ONE_TO_MANY").contains(type)) {
+                continue;
+            }
+            Map<String, Object> config;
+            try {
+                config = StringUtils.isBlank(relation.getRelationConfig())
+                        ? Map.of()
+                        : objectMapper.readValue(relation.getRelationConfig(), new TypeReference<>() { });
+            } catch (Exception ignored) {
+                config = Map.of();
+            }
+            String relationKey = StringUtils.defaultIfBlank(
+                    text(config.get("relationKey")), defaultRelationKey(relation.getTargetObjectCode()));
+            if (StringUtils.isNotBlank(relationKey)) {
+                keys.add(relationKey);
+            }
+        }
+        return keys;
+    }
+
+    private String defaultRelationKey(String value) {
+        return StringUtils.defaultString(value)
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .replaceAll("[^A-Za-z0-9_]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "")
+                .toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private List<BusinessActionStepDTO> parseCommandSteps(Map<String, Object> config) {
+        Object raw = config.get("steps");
+        if (!(raw instanceof List<?>)) {
+            raw = config.get("stepList");
+        }
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<BusinessActionStepDTO> steps = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?>)) {
+                throw new BusinessException("事务型动作步骤格式不正确");
+            }
+            BusinessActionStepDTO step = objectMapper.convertValue(item, BusinessActionStepDTO.class);
+            step.setStepType(StringUtils.upperCase(StringUtils.defaultString(step.getStepType())
+                    .replaceAll("([a-z])([A-Z])", "$1_$2").replace('-', '_')));
+            if (step.getStepConfig() == null) {
+                step.setStepConfig(new LinkedHashMap<>());
+            }
+            steps.add(step);
+        }
+        return steps;
+    }
+
+    private void validateCommandStepCompleteness(List<BusinessActionStepDTO> steps) {
+        Set<String> supported = Set.of(
+                "CREATE_RECORD", "UPDATE_FIELD", "ADJUST_NUMBER", "TRANSITION_STATUS", "ASSERT_RECORD", "FOREACH",
+                "DOMAIN_ACTION", "SEND_MESSAGE", "START_FLOW", "CALL_API");
+        for (BusinessActionStepDTO step : steps) {
+            String type = StringUtils.upperCase(StringUtils.defaultString(step.getStepType()));
+            if (!supported.contains(type)) {
+                throw new BusinessException("不支持的事务型动作步骤: " + type);
+            }
+            Map<String, Object> config = step.getStepConfig();
+            if ("CREATE_RECORD".equals(type)
+                    && StringUtils.isBlank(text(config.get("targetConfigKey")))) {
+                throw new BusinessException("创建记录步骤缺少 targetConfigKey");
+            }
+            if (Set.of("CREATE_RECORD", "UPDATE_FIELD").contains(type)
+                    && listOfMap(config.get("fieldMapping")).isEmpty()
+                    && listOfMap(config.get("fieldMappings")).isEmpty()
+                    && mapValue(config.get("staticValues")).isEmpty()) {
+                throw new BusinessException(type + " 步骤没有配置字段映射");
+            }
+            if ("ADJUST_NUMBER".equals(type) && listOfMap(config.get("adjustments")).isEmpty()) {
+                throw new BusinessException("数值调整步骤没有配置调整字段");
+            }
+            if ("ASSERT_RECORD".equals(type)) {
+                if (StringUtils.isBlank(text(config.get("targetConfigKey")))) {
+                    throw new BusinessException("记录门禁步骤缺少 targetConfigKey");
+                }
+                if (StringUtils.isBlank(text(config.get("targetRecordIdField")))) {
+                    throw new BusinessException("记录门禁步骤缺少 targetRecordIdField");
+                }
+            }
+            if ("TRANSITION_STATUS".equals(type)) {
+                if (StringUtils.isBlank(text(config.get("targetConfigKey")))) {
+                    throw new BusinessException("状态迁移步骤缺少 targetConfigKey");
+                }
+                if (StringUtils.isBlank(text(config.get("targetRecordIdField")))) {
+                    throw new BusinessException("状态迁移步骤缺少 targetRecordIdField");
+                }
+                if (StringUtils.isBlank(text(config.get("statusField")))) {
+                    throw new BusinessException("状态迁移步骤缺少 statusField");
+                }
+                if (config.get("fromValue") == null || config.get("toValue") == null) {
+                    throw new BusinessException("状态迁移步骤缺少 fromValue/toValue");
+                }
+            }
+            if ("FOREACH".equals(type)) {
+                if (StringUtils.isBlank(text(config.get("collectionPath")))) {
+                    throw new BusinessException("逐行步骤缺少集合路径");
+                }
+                List<BusinessActionStepDTO> nested = parseCommandSteps(config);
+                if (nested.isEmpty()) {
+                    throw new BusinessException("逐行步骤没有配置子步骤");
+                }
+                validateCommandStepCompleteness(nested);
+            }
+            if ("CALL_API".equals(type)
+                    && StringUtils.isBlank(text(config.get("sourceKey")))
+                    && StringUtils.isBlank(text(config.get("querySourceKey")))) {
+                throw new BusinessException("CALL_API 步骤缺少 sourceKey");
+            }
+        }
+    }
+
+    private void addCommandBlock(List<BusinessPublishCheckItemVO> items,
+                                 String code,
+                                 String actionName,
+                                 String message,
+                                 int index) {
+        add(items, code, "COMMAND", BusinessPublishCheckLevel.BLOCK,
+                "事务型动作配置无效", actionName + "：" + message,
+                null, actionName, "CONFIG_COMMAND", "修复业务动作", "automation", 195 + index);
     }
 
     private void checkPageTargetReferences(LowcodePageSchema pageSchema, Set<String> formKeys,
@@ -904,6 +1194,10 @@ public class BusinessObjectPublishService {
                         "表单组件重复", "组件 ID 重复: " + componentId, null, null,
                         "FIX_FORM", "修复表单", "form", 132);
             }
+            if (FORM_VIRTUAL_COMPONENT_KEYS.contains(componentKey)) {
+                // 布局容器承载分区结构，不绑定业务字段（前端保存会 normalize 为 virtual，种子数据可能缺省）。
+                continue;
+            }
             Map<String, Object> binding = mapValue(component.get("fieldBinding"));
             if (!"field".equals(StringUtils.defaultIfBlank(text(binding.get("mode")), "field"))) {
                 continue;
@@ -928,6 +1222,26 @@ public class BusinessObjectPublishService {
                     "CONFIG_FORM", "设计表单", "form", 135);
         }
         checkFormGovernance(formSchema, modelFields, items);
+        checkNestedFormFieldEvents(formSchema, modelFields, items);
+    }
+
+    private void checkNestedFormFieldEvents(Map<String, Object> formSchema, Set<String> modelFields,
+                                            List<BusinessPublishCheckItemVO> items) {
+        String activeFormKey = text(formSchema.get("formKey"));
+        for (Map<String, Object> form : listOfMap(formSchema.get("forms"))) {
+            String formKey = text(form.get("formKey"));
+            if (StringUtils.isNotBlank(activeFormKey) && activeFormKey.equals(formKey)) {
+                continue;
+            }
+            Map<String, Object> nestedSchema = mapValue(form.get("schema"));
+            if (nestedSchema.isEmpty()) {
+                nestedSchema = form;
+            }
+            Map<String, Object> governance = mapValue(mapValue(nestedSchema.get("settings")).get("governance"));
+            if (!governance.isEmpty()) {
+                checkFieldEvents(governance.get("fieldEvents"), modelFields, items);
+            }
+        }
     }
 
     private void checkFormGovernance(Map<String, Object> formSchema, Set<String> modelFields,
@@ -966,6 +1280,221 @@ public class BusinessObjectPublishService {
                         handler, null, "CONFIG_FORM_EVENT", "修复表单事件", "form", 166 + index);
             }
         }
+        checkFieldEvents(governance.get("fieldEvents"), modelFields, items);
+    }
+
+    private void checkFieldEvents(Object rawEvents, Set<String> modelFields,
+                                  List<BusinessPublishCheckItemVO> items) {
+        if (rawEvents == null) {
+            return;
+        }
+        if (!(rawEvents instanceof List<?>)) {
+            addFieldEventBlock(items, 0, "fieldEvents", "字段查询事件必须是数组", null);
+            return;
+        }
+        List<Map<String, Object>> events = listOfMap(rawEvents);
+        if (((List<?>) rawEvents).size() != events.size()) {
+            addFieldEventBlock(items, 0, "fieldEvents", "字段查询事件中包含非法配置项", null);
+        }
+        Set<String> eventIds = new LinkedHashSet<>();
+        for (int index = 0; index < events.size(); index++) {
+            Map<String, Object> event = events.get(index);
+            int rowNumber = index + 1;
+            String basePath = "fieldEvents[" + index + "]";
+            if (containsDangerousFieldEventKey(event)) {
+                addFieldEventBlock(items, rowNumber, basePath,
+                        "第 " + rowNumber + " 条字段查询事件包含 URL、认证、SQL 或脚本等禁用配置", null);
+                continue;
+            }
+
+            String eventId = text(event.get("id"));
+            if (StringUtils.isBlank(eventId)
+                    || !eventId.matches("[A-Za-z][A-Za-z0-9_-]{0,63}")) {
+                addFieldEventBlock(items, rowNumber, basePath + ".id",
+                        "第 " + rowNumber + " 条字段查询事件编码为空或格式非法", null);
+            } else if (!eventIds.add(eventId)) {
+                addFieldEventBlock(items, rowNumber, basePath + ".id",
+                        "字段查询事件编码重复: " + eventId, null);
+            }
+
+            String trigger = text(event.get("trigger"));
+            if (!FIELD_EVENT_TRIGGERS.contains(trigger)) {
+                addFieldEventBlock(items, rowNumber, basePath + ".trigger",
+                        "第 " + rowNumber + " 条字段查询事件触发时机不受支持", null);
+            }
+            String sourceField = text(event.get("sourceField"));
+            if (!"FORM_LOAD".equals(trigger)) {
+                checkFieldEventField(items, rowNumber, basePath + ".sourceField",
+                        "触发字段", sourceField, modelFields);
+            } else if (StringUtils.isNotBlank(sourceField) && !modelFields.contains(sourceField)) {
+                addFieldEventBlock(items, rowNumber, basePath + ".sourceField",
+                        "字段查询事件引用了不存在的触发字段: " + sourceField, sourceField);
+            }
+
+            String sourceType = text(event.get("sourceType"));
+            if (!FIELD_EVENT_SOURCE_TYPES.contains(sourceType)) {
+                addFieldEventBlock(items, rowNumber, basePath + ".sourceType",
+                        "查询源类型仅支持 EXTERNAL_API、DATASET", null);
+            }
+            String sourceKey = text(event.get("sourceKey"));
+            if (StringUtils.isBlank(sourceKey) || sourceKey.length() > 129
+                    || !sourceKey.matches("[A-Za-z0-9][A-Za-z0-9_.:/-]{0,128}")) {
+                addFieldEventBlock(items, rowNumber, basePath + ".sourceKey",
+                        "查询源编码为空、过长或格式非法", null);
+            }
+
+            Integer debounceMs = integerValue(event.get("debounceMs"));
+            if (debounceMs == null || debounceMs < 0 || debounceMs > 5000) {
+                addFieldEventBlock(items, rowNumber, basePath + ".debounceMs",
+                        "字段查询事件防抖时间必须是 0～5000 的整数", null);
+            }
+            String resultMode = StringUtils.defaultIfBlank(text(event.get("resultMode")), "ROOT");
+            if (!FIELD_EVENT_RESULT_MODES.contains(resultMode)) {
+                addFieldEventBlock(items, rowNumber, basePath + ".resultMode",
+                        "结果取值方式仅支持 ROOT、FIRST_ROW", null);
+            }
+            String errorMode = StringUtils.defaultIfBlank(text(event.get("errorMode")), "MESSAGE");
+            if (!FIELD_EVENT_ERROR_MODES.contains(errorMode)) {
+                addFieldEventBlock(items, rowNumber, basePath + ".errorMode",
+                        "错误反馈方式不受支持", null);
+            }
+            checkFieldEventMessage(items, rowNumber, basePath + ".name", event.get("name"), 80);
+            checkFieldEventMessage(items, rowNumber, basePath + ".notFoundMessage",
+                    event.get("notFoundMessage"), 200);
+            checkFieldEventMessage(items, rowNumber, basePath + ".errorMessage",
+                    event.get("errorMessage"), 200);
+            checkFieldEventParams(event.get("paramMappings"), modelFields, items, rowNumber, basePath);
+            checkFieldEventResults(event.get("resultMappings"), modelFields, items, rowNumber, basePath);
+        }
+    }
+
+    private void checkFieldEventParams(Object rawMappings, Set<String> modelFields,
+                                       List<BusinessPublishCheckItemVO> items, int rowNumber, String basePath) {
+        if (!(rawMappings instanceof List<?>)) {
+            addFieldEventBlock(items, rowNumber, basePath + ".paramMappings", "查询参数映射必须是数组", null);
+            return;
+        }
+        List<Map<String, Object>> mappings = listOfMap(rawMappings);
+        if (((List<?>) rawMappings).size() != mappings.size()) {
+            addFieldEventBlock(items, rowNumber, basePath + ".paramMappings", "查询参数映射包含非法配置项", null);
+        }
+        Set<String> params = new LinkedHashSet<>();
+        for (int index = 0; index < mappings.size(); index++) {
+            Map<String, Object> mapping = mappings.get(index);
+            String path = basePath + ".paramMappings[" + index + "]";
+            String param = text(mapping.get("param"));
+            if (StringUtils.isBlank(param)
+                    || !param.matches("[A-Za-z_][A-Za-z0-9_.-]{0,127}")
+                    || FIELD_EVENT_DANGEROUS_KEYS.contains(param.toLowerCase(java.util.Locale.ROOT))) {
+                addFieldEventBlock(items, rowNumber, path + ".param", "查询参数名为空或格式非法", null);
+            } else if (!params.add(param)) {
+                addFieldEventBlock(items, rowNumber, path + ".param", "查询参数名重复: " + param, null);
+            }
+            String source = text(mapping.get("source"));
+            if (!FIELD_EVENT_PARAM_SOURCES.contains(source)) {
+                addFieldEventBlock(items, rowNumber, path + ".source", "查询参数来源不受支持", null);
+                continue;
+            }
+            if ("FORM_FIELD".equals(source)) {
+                String field = text(mapping.get("field"));
+                checkFieldEventField(items, rowNumber, path + ".field", "参数字段", field, modelFields);
+            } else {
+                String valuePath = text(mapping.get("path"));
+                if (!isSafeFieldEventPath(valuePath)) {
+                    addFieldEventBlock(items, rowNumber, path + ".path", "运行上下文或路由参数路径为空或不安全", null);
+                }
+            }
+        }
+    }
+
+    private void checkFieldEventResults(Object rawMappings, Set<String> modelFields,
+                                        List<BusinessPublishCheckItemVO> items, int rowNumber, String basePath) {
+        if (!(rawMappings instanceof List<?>)) {
+            addFieldEventBlock(items, rowNumber, basePath + ".resultMappings", "结果回填映射必须是数组", null);
+            return;
+        }
+        List<Map<String, Object>> mappings = listOfMap(rawMappings);
+        if (mappings.isEmpty()) {
+            addFieldEventBlock(items, rowNumber, basePath + ".resultMappings", "至少配置一个结果回填字段", null);
+            return;
+        }
+        Set<String> targets = new LinkedHashSet<>();
+        for (int index = 0; index < mappings.size(); index++) {
+            Map<String, Object> mapping = mappings.get(index);
+            String path = basePath + ".resultMappings[" + index + "]";
+            String from = text(mapping.get("from"));
+            if (StringUtils.isNotBlank(from) && !isSafeFieldEventPath(from)) {
+                addFieldEventBlock(items, rowNumber, path + ".from", "返回字段路径格式不安全", null);
+            }
+            String target = text(mapping.get("to"));
+            checkFieldEventField(items, rowNumber, path + ".to", "回填目标字段", target, modelFields);
+            if (StringUtils.isNotBlank(target) && !targets.add(target)) {
+                addFieldEventBlock(items, rowNumber, path + ".to", "回填目标字段重复: " + target, target);
+            }
+            String missingMode = StringUtils.defaultIfBlank(text(mapping.get("whenMissing")), "CLEAR");
+            if (!FIELD_EVENT_MISSING_MODES.contains(missingMode)) {
+                addFieldEventBlock(items, rowNumber, path + ".whenMissing", "结果缺失处理方式不受支持", target);
+            }
+        }
+    }
+
+    private void checkFieldEventField(List<BusinessPublishCheckItemVO> items, int rowNumber, String path,
+                                      String label, String field, Set<String> modelFields) {
+        if (StringUtils.isBlank(field)) {
+            addFieldEventBlock(items, rowNumber, path, label + "不能为空", null);
+        } else if (!modelFields.contains(field)) {
+            addFieldEventBlock(items, rowNumber, path, label + "不存在: " + field, field);
+        }
+    }
+
+    private void checkFieldEventMessage(List<BusinessPublishCheckItemVO> items, int rowNumber, String path,
+                                        Object value, int maxLength) {
+        String message = text(value);
+        if (message != null && message.length() > maxLength) {
+            addFieldEventBlock(items, rowNumber, path, "字段查询事件文案长度不能超过 " + maxLength, null);
+        }
+    }
+
+    private boolean containsDangerousFieldEventKey(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = String.valueOf(entry.getKey()).toLowerCase(java.util.Locale.ROOT);
+                if (FIELD_EVENT_DANGEROUS_KEYS.contains(key) || containsDangerousFieldEventKey(entry.getValue())) {
+                    return true;
+                }
+            }
+        } else if (value instanceof List<?> list) {
+            return list.stream().anyMatch(this::containsDangerousFieldEventKey);
+        }
+        return false;
+    }
+
+    private boolean isSafeFieldEventPath(String path) {
+        if (StringUtils.isBlank(path)
+                || !path.matches("[A-Za-z_$][A-Za-z0-9_$-]*(\\.[A-Za-z_$][A-Za-z0-9_$-]*)*")) {
+            return false;
+        }
+        return List.of(path.split("\\.")).stream()
+                .noneMatch(segment -> Set.of("__proto__", "prototype", "constructor").contains(segment)
+                        || FIELD_EVENT_DANGEROUS_KEYS.contains(segment.toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    private Integer integerValue(Object value) {
+        if (!(value instanceof Number number)) {
+            return null;
+        }
+        double doubleValue = number.doubleValue();
+        if (!Double.isFinite(doubleValue) || doubleValue != Math.rint(doubleValue)) {
+            return null;
+        }
+        return number.intValue();
+    }
+
+    private void addFieldEventBlock(List<BusinessPublishCheckItemVO> items, int rowNumber, String path,
+                                    String message, String fieldCode) {
+        add(items, "FORM_FIELD_EVENT_INVALID", "FORM", BusinessPublishCheckLevel.BLOCK,
+                "字段查询事件配置无效", message, fieldCode, path,
+                "CONFIG_FORM_EVENT", "修复字段查询", "form", 176 + rowNumber);
     }
 
     private boolean isGenericFormComponentId(String componentId, String componentKey) {

@@ -6,6 +6,7 @@ import {
 
 const FIELD_DEFAULTS = {
   input: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'input', length: 128, precision: 2, queryType: 'like' },
+  barcodeScanner: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'barcodeScanner', length: 2048, precision: 2, queryType: 'eq' },
   textarea: { fieldType: 'MULTILINE', dataType: 'text', componentType: 'textarea', length: null, precision: 2, queryType: 'like' },
   number: { fieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
   integer: { fieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },

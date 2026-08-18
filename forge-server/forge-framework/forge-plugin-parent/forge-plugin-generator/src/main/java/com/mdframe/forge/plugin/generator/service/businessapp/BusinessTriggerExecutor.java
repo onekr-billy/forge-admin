@@ -6,9 +6,11 @@ import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionExecuteDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionExecuteResultVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResultVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
@@ -43,6 +45,7 @@ public class BusinessTriggerExecutor {
     private final DynamicCrudService dynamicCrudService;
     private final BusinessMessageChannelService messageChannelService;
     private final BusinessActionExecutionService actionExecutionService;
+    private final CallApiActionStepExecutor callApiStepExecutor;
 
     /**
      * 异步执行触发器匹配和动作
@@ -99,10 +102,14 @@ public class BusinessTriggerExecutor {
 
             // 3. 记录执行结果
             String resultStatus = result == null ? "SUCCESS" : result.getString("status");
-            logEntry.setExecuteStatus("TODO".equals(resultStatus) ? "TODO" : "SUCCESS");
+            logEntry.setExecuteStatus("TODO".equals(resultStatus)
+                    ? "TODO" : "FAILED".equals(resultStatus) ? "FAILED" : "SUCCESS");
             if (result != null) {
                 logEntry.setTodoCode(result.getString("todoCode"));
                 logEntry.setCorrelationId(resolveCorrelationId(result));
+                if ("FAILED".equals(resultStatus)) {
+                    logEntry.setErrorMessage(result.getString("errorMessage"));
+                }
             }
             logEntry.setActionResult(result != null ? result.toJSONString() : null);
             logEntry.setDurationMs(System.currentTimeMillis() - startTime);
@@ -697,15 +704,44 @@ public class BusinessTriggerExecutor {
     }
 
     /**
-     * Webhook 调用动作（TODO预留）
+     * Webhook 复用受管 CALL_API 步骤，不接受任意 URL 或认证配置。
      */
     private JSONObject executeWebhookAction(JSONObject config, BusinessEvent event) {
-        log.info("Webhook动作待实现: objectCode={}, recordId={}", event.getObjectCode(), event.getRecordId());
+        String failureStrategy = StringUtils.upperCase(StringUtils.defaultIfBlank(
+                config.getString("failureStrategy"), "THROW"));
+        BusinessActionStepDTO step = new BusinessActionStepDTO();
+        step.setStepCode("webhook");
+        step.setStepName("触发器调用外部接口");
+        step.setStepType("CALL_API");
+        step.setRollbackOnFailure(!"LOG_AND_CONTINUE".equals(failureStrategy));
+        step.setStepConfig(new LinkedHashMap<>(config));
 
+        BusinessActionExecutionContext context = new BusinessActionExecutionContext();
+        context.setTenantId(event.getTenantId());
+        context.setCorrelationId(UUID.randomUUID().toString().replace("-", ""));
+        context.setRecordData(new LinkedHashMap<>(event.getRecordData() == null
+                ? Map.of() : event.getRecordData()));
+        context.setFormData(new LinkedHashMap<>(event.getRecordData() == null
+                ? Map.of() : event.getRecordData()));
+        context.setExtraContext(new LinkedHashMap<>(Map.of(
+                "routeQuery", Map.of())));
+        Map<String, Object> system = new LinkedHashMap<>();
+        system.put("tenantId", event.getTenantId());
+        system.put("recordId", event.getRecordId());
+        system.put("objectCode", event.getObjectCode());
+        system.put("userId", event.getOperatorId());
+        system.put("username", event.getOperatorName());
+        context.setSystemContext(system);
+
+        BusinessActionStepResultVO stepResult = callApiStepExecutor.execute(context, step);
         JSONObject result = new JSONObject();
-        result.put("status", "TODO");
-        result.put("todoCode", "WEBHOOK_NOT_IMPLEMENTED");
-        result.put("message", "Webhook动作待实现");
+        result.put("status", stepResult.getStatus());
+        result.put("message", stepResult.getMessage());
+        result.put("errorMessage", stepResult.getErrorMessage());
+        result.put("sourceType", stepResult.getResult().get("sourceType"));
+        result.put("sourceKey", stepResult.getResult().get("sourceKey"));
+        result.put("mappingCount", stepResult.getResult().get("mappingCount"));
+        result.put("correlationId", context.getCorrelationId());
         return result;
     }
 

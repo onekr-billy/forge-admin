@@ -5,6 +5,7 @@ export const LINKAGE_TYPES = [
   'parentDictCode',
   'linkedDict',
   'remoteParam',
+  'clear',
   'objectReference',
   'orgScope',
   'visibility',
@@ -333,6 +334,8 @@ function resolveDataSourceType(type) {
     return 'org'
   if (type === 'objectReference')
     return 'object'
+  if (type === 'clear')
+    return 'none'
   return 'remote'
 }
 

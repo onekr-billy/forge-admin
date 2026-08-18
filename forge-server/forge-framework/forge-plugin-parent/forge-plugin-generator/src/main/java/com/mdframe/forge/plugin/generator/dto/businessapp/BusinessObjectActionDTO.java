@@ -15,7 +15,7 @@ public class BusinessObjectActionDTO {
 
     private String actionName;
 
-    /** toolbar/row/detail */
+    /** toolbar/row/detail/child_row */
     private String actionPosition;
 
     /** openPage/callApi/startApproval/trigger/openExternal */

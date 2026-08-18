@@ -3,10 +3,12 @@
     <!-- 左侧会话列表 -->
     <div class="chat-sidebar">
       <div class="sidebar-header">
-        <n-button type="primary" block @click="createSession" size="small">
-          <template #icon><n-icon><chatbubbles-outline /></n-icon></template>
+        <NButton type="primary" block size="small" @click="createSession">
+          <template #icon>
+            <NIcon><ChatbubblesOutline /></NIcon>
+          </template>
           新建对话
-        </n-button>
+        </NButton>
       </div>
       <div class="session-list">
         <div
@@ -20,14 +22,18 @@
             <span class="session-name">{{ session.name || '新对话' }}</span>
             <span class="session-time">{{ formatTime(session.createTime) }}</span>
           </div>
-          <n-popconfirm @positive-click="deleteSession(session.id)">
+          <NPopconfirm @positive-click="deleteSession(session.id)">
             <template #trigger>
-              <n-button quaternary circle size="tiny" @click.stop>
-                <template #icon><n-icon size="14"><close-outline /></n-icon></template>
-              </n-button>
+              <NButton quaternary circle size="tiny" @click.stop>
+                <template #icon>
+                  <NIcon size="14">
+                    <CloseOutline />
+                  </NIcon>
+                </template>
+              </NButton>
             </template>
             确定删除该会话吗？
-          </n-popconfirm>
+          </NPopconfirm>
         </div>
       </div>
     </div>
@@ -37,40 +43,48 @@
       <!-- Agent 头部信息 -->
       <div class="chat-header">
         <div class="chat-header-left">
-          <n-button v-if="agentId" size="small" text @click="backToBuilder" title="返回Agent设计器">
-            <template #icon><n-icon><arrow-back-outline /></n-icon></template>
-          </n-button>
-          <n-tag v-if="currentAgent" type="info" size="small" :bordered="false">
+          <NButton v-if="agentId" size="small" text title="返回Agent设计器" @click="backToBuilder">
+            <template #icon>
+              <NIcon><ArrowBackOutline /></NIcon>
+            </template>
+          </NButton>
+          <NTag v-if="currentAgent" type="info" size="small" :bordered="false">
             {{ currentAgent.agentName || currentAgent.agentCode }}
-          </n-tag>
+          </NTag>
           <span v-if="currentAgent" class="chat-header-title">{{ currentAgent.description }}</span>
         </div>
       </div>
       <template v-if="currentSessionId">
         <!-- 消息区域 -->
-        <div class="message-area" ref="messageAreaRef">
-          <div v-for="msg in messages" :key="msg.id" :class="['message-bubble', msg.role]">
+        <div ref="messageAreaRef" class="message-area">
+          <div v-for="msg in messages" :key="msg.id" class="message-bubble" :class="[msg.role]">
             <!-- 用户消息 -->
             <template v-if="msg.role === 'user'">
-              <div class="message-content user-content">{{ msg.content }}</div>
+              <div class="message-content user-content">
+                {{ msg.content }}
+              </div>
             </template>
 
             <!-- 助手消息 -->
             <template v-else>
               <!-- 思考块 -->
               <template v-if="msg.thinking">
-                <n-collapse class="thinking-block">
-                  <n-collapse-item title="思考过程" name="thinking">
-                    <div class="thinking-content">{{ msg.thinking }}</div>
-                  </n-collapse-item>
-                </n-collapse>
+                <NCollapse class="thinking-block">
+                  <NCollapseItem title="思考过程" name="thinking">
+                    <div class="thinking-content">
+                      {{ msg.thinking }}
+                    </div>
+                  </NCollapseItem>
+                </NCollapse>
               </template>
 
               <!-- 工具调用卡片 -->
               <template v-if="msg.toolCalls && msg.toolCalls.length">
                 <div v-for="(tc, idx) in msg.toolCalls" :key="idx" class="tool-call-card">
                   <div class="tool-header">
-                    <n-tag size="small" type="info">{{ tc.tool }}</n-tag>
+                    <NTag size="small" type="info">
+                      {{ tc.tool }}
+                    </NTag>
                   </div>
                   <div v-if="tc.args" class="tool-args">
                     <span class="tool-label">参数:</span>
@@ -84,7 +98,7 @@
               </template>
 
               <!-- 文本内容 -->
-              <div v-if="msg.content" class="message-content assistant-content" v-html="renderMarkdown(msg.content)"></div>
+              <div v-if="msg.content" class="message-content assistant-content" v-html="renderMarkdown(msg.content)" />
 
               <!-- 流式光标 -->
               <span v-if="msg.streaming" class="streaming-cursor">|</span>
@@ -93,45 +107,57 @@
 
           <!-- HITL 确认对话框 -->
           <div v-if="pendingConfirm" class="hitl-confirm">
-            <n-card title="需要确认" size="small" :bordered="true">
-              <p>工具 <n-tag size="small" type="warning">{{ pendingConfirm.tool }}</n-tag> 请求执行确认</p>
+            <NCard title="需要确认" size="small" :bordered="true">
+              <p>
+                工具 <NTag size="small" type="warning">
+                  {{ pendingConfirm.tool }}
+                </NTag> 请求执行确认
+              </p>
               <div v-if="pendingConfirm.args" class="tool-args">
                 <code>{{ pendingConfirm.args }}</code>
               </div>
               <template #action>
-                <n-space>
-                  <n-button size="small" @click="cancelHitl">取消</n-button>
-                  <n-button type="error" size="small" @click="handleConfirm(false)">拒绝</n-button>
-                  <n-button type="primary" size="small" @click="handleConfirm(true)">确认</n-button>
-                </n-space>
+                <NSpace>
+                  <NButton size="small" @click="cancelHitl">
+                    取消
+                  </NButton>
+                  <NButton type="error" size="small" @click="handleConfirm(false)">
+                    拒绝
+                  </NButton>
+                  <NButton type="primary" size="small" @click="handleConfirm(true)">
+                    确认
+                  </NButton>
+                </NSpace>
               </template>
-            </n-card>
+            </NCard>
           </div>
         </div>
 
         <!-- 输入区域 -->
         <div class="input-area">
-          <n-input
+          <NInput
             v-model:value="inputText"
             type="textarea"
             :autosize="{ minRows: 1, maxRows: 4 }"
             placeholder="输入消息..."
-            @keydown.enter.exact="handleSend"
             :disabled="isStreaming"
+            @keydown.enter.exact="handleSend"
           />
-          <n-button
+          <NButton
             :type="isStreaming ? 'error' : 'primary'"
             size="small"
-            @click="isStreaming ? stopChat() : handleSend()"
             :disabled="!isStreaming && !inputText.trim()"
+            @click="isStreaming ? stopChat() : handleSend()"
           >
             {{ isStreaming ? '停止' : '发送' }}
-          </n-button>
+          </NButton>
         </div>
       </template>
 
       <div v-else class="empty-state">
-        <n-icon size="48" :depth="3"><chatbubbles-outline /></n-icon>
+        <NIcon size="48" :depth="3">
+          <ChatbubblesOutline />
+        </NIcon>
         <p>选择或创建一个对话开始</p>
       </div>
     </div>
@@ -139,12 +165,12 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { NButton, NInput, NIcon, NTag, NCard, NCollapse, NCollapseItem, NSpace, NPopconfirm, useMessage } from 'naive-ui'
-import { ChatbubblesOutline, CloseOutline, ArrowBackOutline } from '@vicons/ionicons5'
-import { streamEngineChat, engineResume, agentList, agentGetById, sessionList, sessionMessagesByUser, sessionDeleteByUser } from '@/api/ai'
+import { ArrowBackOutline, ChatbubblesOutline, CloseOutline } from '@vicons/ionicons5'
 import { marked } from 'marked'
+import { NButton, NCard, NCollapse, NCollapseItem, NIcon, NInput, NPopconfirm, NSpace, NTag, useMessage } from 'naive-ui'
+import { nextTick, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { agentGetById, agentList, engineResume, sessionDeleteByUser, sessionList, sessionMessagesByUser, streamEngineChat } from '@/api/ai'
 
 defineOptions({ name: 'AiAgentChat' })
 
@@ -198,13 +224,15 @@ async function loadAgent() {
       if (currentAgent.value) {
         selectedAgentCode.value = currentAgent.value.agentCode
       }
-    } catch { /* ignore */ }
+    }
+    catch { /* ignore */ }
   }
   // 同时加载 agent 列表（供侧栏切换）
   try {
     const res = await agentList()
     agents.value = res.data || []
-  } catch { /* ignore */ }
+  }
+  catch { /* ignore */ }
 }
 
 async function loadSessions() {
@@ -254,7 +282,8 @@ async function loadMessages(sessionId) {
 function backToBuilder() {
   if (agentId.value) {
     router.push({ path: '/ai/agent', query: { agentId: agentId.value, mode: 'builder' } })
-  } else {
+  }
+  else {
     router.push('/ai/agent')
   }
 }
@@ -282,7 +311,8 @@ function createSession() {
 }
 
 async function switchSession(id) {
-  if (currentSessionId.value === id) return
+  if (currentSessionId.value === id)
+    return
   currentSessionId.value = id
   pendingConfirm.value = null
   await loadMessages(id)
@@ -296,7 +326,8 @@ async function deleteSession(id) {
       currentSessionId.value = sessions.value.length > 0 ? sessions.value[0].id : null
       if (currentSessionId.value) {
         await loadMessages(currentSessionId.value)
-      } else {
+      }
+      else {
         messages.value = []
       }
     }
@@ -308,9 +339,12 @@ async function deleteSession(id) {
 }
 
 function handleSend(e) {
-  if (e && e.shiftKey) return
-  if (e) e.preventDefault()
-  if (!inputText.value.trim() || isStreaming.value) return
+  if (e && e.shiftKey)
+    return
+  if (e)
+    e.preventDefault()
+  if (!inputText.value.trim() || isStreaming.value)
+    return
   if (!selectedAgentCode.value) {
     message.warning('请先选择一个Agent')
     return
@@ -322,7 +356,7 @@ function handleSend(e) {
   // 更新会话名称（首条消息作为标题）
   const session = sessions.value.find(s => s.id === currentSessionId.value)
   if (session && session.name === '新对话') {
-    session.name = text.length > 20 ? text.slice(0, 20) + '…' : text
+    session.name = text.length > 20 ? `${text.slice(0, 20)}…` : text
   }
 
   // 添加用户消息
@@ -366,8 +400,8 @@ function startStream(text, assistantMsg) {
     (err) => {
       assistantMsg.streaming = false
       isStreaming.value = false
-      message.error('对话失败: ' + (err.message || err))
-    }
+      message.error(`对话失败: ${err.message || err}`)
+    },
   )
 }
 
@@ -430,7 +464,8 @@ function handleSSEEvent(eventType, data, assistantMsg) {
 }
 
 async function handleConfirm(confirmed) {
-  if (!pendingConfirm.value) return
+  if (!pendingConfirm.value)
+    return
   const interruptId = pendingConfirm.value.interruptId
   const tool = pendingConfirm.value.tool
   clearHitlTimer()
@@ -442,7 +477,8 @@ async function handleConfirm(confirmed) {
       return
     }
     await engineResume(interruptId, confirmed)
-  } catch (e) {
+  }
+  catch (e) {
     message.error('确认操作失败')
   }
 }
@@ -472,7 +508,8 @@ function scrollToBottom() {
 
 // 轻量 XSS 清洗：阻止脚本标签与危险协议（marked 默认 html:false 已转义 raw HTML，这里兜底）
 function sanitizeHtml(html) {
-  if (!html) return html
+  if (!html)
+    return html
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/javascript:/gi, '')
@@ -483,16 +520,19 @@ function sanitizeHtml(html) {
 }
 
 function renderMarkdown(text) {
-  if (!text) return ''
+  if (!text)
+    return ''
   try {
     return sanitizeHtml(marked(text))
-  } catch {
+  }
+  catch {
     return text
   }
 }
 
 function formatTime(time) {
-  if (!time) return ''
+  if (!time)
+    return ''
   const d = new Date(time)
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
 }
@@ -730,7 +770,8 @@ function formatTime(time) {
   margin-bottom: 4px;
 }
 
-.tool-args, .tool-result {
+.tool-args,
+.tool-result {
   margin-top: 4px;
   color: var(--text-muted);
 }
@@ -756,7 +797,9 @@ function formatTime(time) {
 }
 
 @keyframes blink {
-  50% { opacity: 0; }
+  50% {
+    opacity: 0;
+  }
 }
 
 .hitl-confirm {

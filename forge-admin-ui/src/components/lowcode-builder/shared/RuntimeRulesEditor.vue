@@ -79,8 +79,13 @@
 
       <div class="runtime-rule-effects">
         <label>
-          <span>隐藏</span>
-          <n-switch size="small" :value="rule.effect?.hidden === true" @update:value="patchRuleEffect(index, { hidden: $event, visible: $event ? false : undefined })" />
+          <span>满足时</span>
+          <n-select
+            size="small"
+            :value="effectMode(rule)"
+            :options="effectOptions"
+            @update:value="patchRuleEffectMode(index, $event)"
+          />
         </label>
         <label>
           <span>只读</span>
@@ -161,6 +166,10 @@ const operatorOptions = [
   { label: '为空', value: 'empty' },
   { label: '不为空', value: 'notEmpty' },
 ]
+const effectOptions = [
+  { label: '显示字段', value: 'visible' },
+  { label: '隐藏字段', value: 'hidden' },
+]
 
 function isFreePathSource(source = 'record') {
   return ['query', 'params', 'route', 'user'].includes(source || 'record')
@@ -193,7 +202,7 @@ function addRule() {
       enabled: true,
       mode: 'all',
       conditions: [{ source: 'record', field: '', operator: 'eq', value: '' }],
-      effect: {},
+      effect: { visible: true, whenUnmatched: 'hidden' },
     },
   ])
 }
@@ -226,6 +235,18 @@ function patchRuleEffect(index, patch = {}) {
       .filter(([, value]) => value !== undefined && value !== ''))
     return { ...rule, effect }
   }))
+}
+
+function effectMode(rule = {}) {
+  if (rule.effect?.visible === true)
+    return 'visible'
+  return 'hidden'
+}
+
+function patchRuleEffectMode(index, mode) {
+  patchRuleEffect(index, mode === 'visible'
+    ? { visible: true, hidden: undefined, whenUnmatched: 'hidden' }
+    : { hidden: true, visible: undefined, whenUnmatched: 'visible' })
 }
 
 function emitRules(rules = []) {

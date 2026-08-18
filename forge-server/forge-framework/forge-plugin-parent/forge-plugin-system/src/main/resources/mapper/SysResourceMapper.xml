@@ -172,4 +172,25 @@
         </foreach>
     </select>
 
+    <select id="selectByPermissions" resultType="com.mdframe.forge.plugin.system.entity.SysResource">
+        SELECT id,
+               tenant_id,
+               resource_name,
+               parent_id,
+               resource_type,
+               sort,
+               perms,
+               client_code,
+               visible,
+               menu_status
+        FROM sys_resource
+        WHERE tenant_id = #{tenantId}
+          AND del_flag = 0
+          AND perms IN
+        <foreach collection="permissions" item="permission" open="(" separator="," close=")">
+            #{permission}
+        </foreach>
+        ORDER BY sort ASC, id ASC
+    </select>
+
 </mapper>

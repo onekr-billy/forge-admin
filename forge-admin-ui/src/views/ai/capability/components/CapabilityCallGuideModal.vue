@@ -99,76 +99,76 @@
                 </div>
               </div>
               <div class="endpoint-grid">
-            <div class="endpoint-item endpoint-wide">
-              <span class="endpoint-label">调用地址</span>
-              <div class="copy-line">
-                <code>{{ guide.invokeUrl }}</code>
-                <n-button text type="primary" @click="copyValue(guide.invokeUrl, '调用地址已复制')">
-                  复制
-                </n-button>
-              </div>
-            </div>
-            <div class="endpoint-item endpoint-wide">
-              <span class="endpoint-label">OAuth Resource</span>
-              <div class="copy-line">
-                <code>{{ guide.openapiResource }}</code>
-                <n-button text type="primary" @click="copyValue(guide.openapiResource, 'Resource 已复制')">
-                  复制
-                </n-button>
-              </div>
-            </div>
-            <div class="endpoint-item endpoint-wide">
-              <span class="endpoint-label">Token 地址</span>
-              <div class="copy-line">
-                <code>{{ guide.tokenUrl }}</code>
-                <n-button text type="primary" @click="copyValue(guide.tokenUrl, 'Token 地址已复制')">
-                  复制
-                </n-button>
-              </div>
-            </div>
-            <div class="endpoint-item">
-              <span class="endpoint-label">实际调用版本</span>
-              <strong>{{ guide.version ? `v${guide.version}` : '授权版本尚未解析' }}</strong>
-            </div>
-            <div class="endpoint-item">
-              <span class="endpoint-label">当前能力版本</span>
-              <strong>{{ guide.currentVersion ? `v${guide.currentVersion}` : '-' }}</strong>
-            </div>
-            <div class="endpoint-item">
-              <span class="endpoint-label">客户端授权策略</span>
-              <strong>{{ grantVersionStrategyLabel }}</strong>
-            </div>
-            <div class="endpoint-item">
-              <span class="endpoint-label">客户端</span>
-              <strong>{{ guide.clientName }}（{{ guide.clientCode }}）</strong>
-            </div>
-            <div class="endpoint-item">
-              <span class="endpoint-label">调用主体</span>
-              <strong>{{ actorTypeLabel }}</strong>
-            </div>
-            <div class="endpoint-item">
-              <span class="endpoint-label">可用认证</span>
-              <strong>{{ authModeLabel }}</strong>
-            </div>
-            <template v-if="guide.userAssertionEnabled">
-              <div class="endpoint-item">
-                <span class="endpoint-label">客户端用户断言</span>
-                <strong>RS256 · kid {{ guide.userAssertionKeyId }}</strong>
-              </div>
-              <div class="endpoint-item">
-                <span class="endpoint-label">断言 Audience</span>
-                <strong>{{ guide.userAssertionAudience }}</strong>
-              </div>
-              <div class="endpoint-item endpoint-wide">
-                <span class="endpoint-label">用户断言 Subject Token Type</span>
-                <div class="copy-line">
-                  <code>{{ guide.userAssertionSubjectTokenType }}</code>
-                  <n-button text type="primary" @click="copyValue(guide.userAssertionSubjectTokenType, 'Token Type 已复制')">
-                    复制
-                  </n-button>
+                <div class="endpoint-item endpoint-wide">
+                  <span class="endpoint-label">调用地址</span>
+                  <div class="copy-line">
+                    <code>{{ guide.invokeUrl }}</code>
+                    <n-button text type="primary" @click="copyValue(guide.invokeUrl, '调用地址已复制')">
+                      复制
+                    </n-button>
+                  </div>
                 </div>
-              </div>
-            </template>
+                <div class="endpoint-item endpoint-wide">
+                  <span class="endpoint-label">OAuth Resource</span>
+                  <div class="copy-line">
+                    <code>{{ guide.openapiResource }}</code>
+                    <n-button text type="primary" @click="copyValue(guide.openapiResource, 'Resource 已复制')">
+                      复制
+                    </n-button>
+                  </div>
+                </div>
+                <div class="endpoint-item endpoint-wide">
+                  <span class="endpoint-label">Token 地址</span>
+                  <div class="copy-line">
+                    <code>{{ guide.tokenUrl }}</code>
+                    <n-button text type="primary" @click="copyValue(guide.tokenUrl, 'Token 地址已复制')">
+                      复制
+                    </n-button>
+                  </div>
+                </div>
+                <div class="endpoint-item">
+                  <span class="endpoint-label">实际调用版本</span>
+                  <strong>{{ guide.version ? `v${guide.version}` : '授权版本尚未解析' }}</strong>
+                </div>
+                <div class="endpoint-item">
+                  <span class="endpoint-label">当前能力版本</span>
+                  <strong>{{ guide.currentVersion ? `v${guide.currentVersion}` : '-' }}</strong>
+                </div>
+                <div class="endpoint-item">
+                  <span class="endpoint-label">客户端授权策略</span>
+                  <strong>{{ grantVersionStrategyLabel }}</strong>
+                </div>
+                <div class="endpoint-item">
+                  <span class="endpoint-label">客户端</span>
+                  <strong>{{ guide.clientName }}（{{ guide.clientCode }}）</strong>
+                </div>
+                <div class="endpoint-item">
+                  <span class="endpoint-label">调用主体</span>
+                  <strong>{{ actorTypeLabel }}</strong>
+                </div>
+                <div class="endpoint-item">
+                  <span class="endpoint-label">可用认证</span>
+                  <strong>{{ authModeLabel }}</strong>
+                </div>
+                <template v-if="guide.userAssertionEnabled">
+                  <div class="endpoint-item">
+                    <span class="endpoint-label">客户端用户断言</span>
+                    <strong>RS256 · kid {{ guide.userAssertionKeyId }}</strong>
+                  </div>
+                  <div class="endpoint-item">
+                    <span class="endpoint-label">断言 Audience</span>
+                    <strong>{{ guide.userAssertionAudience }}</strong>
+                  </div>
+                  <div class="endpoint-item endpoint-wide">
+                    <span class="endpoint-label">用户断言 Subject Token Type</span>
+                    <div class="copy-line">
+                      <code>{{ guide.userAssertionSubjectTokenType }}</code>
+                      <n-button text type="primary" @click="copyValue(guide.userAssertionSubjectTokenType, 'Token Type 已复制')">
+                        复制
+                      </n-button>
+                    </div>
+                  </div>
+                </template>
               </div>
             </section>
 
@@ -208,40 +208,50 @@
               </div>
 
               <n-tabs type="segment" animated>
-            <n-tab-pane name="request-contract" tab="请求参数">
-              <n-data-table
-                :columns="fieldColumns"
-                :data="guide.requestFields || []"
-                :row-key="row => row.path"
-                :bordered="false"
-                size="small"
-                class="contract-table"
-              />
-              <div v-if="guide.requestNotes?.length" class="contract-notes">
-                <strong>请求说明</strong>
-                <ul><li v-for="note in guide.requestNotes" :key="note">{{ note }}</li></ul>
-              </div>
-            </n-tab-pane>
-            <n-tab-pane name="response-contract" tab="返回参数">
-              <n-data-table
-                :columns="fieldColumns"
-                :data="guide.responseFields || []"
-                :row-key="row => row.path"
-                :bordered="false"
-                size="small"
-                class="contract-table"
-              />
-              <div v-if="guide.responseNotes?.length" class="contract-notes">
-                <strong>返回说明</strong>
-                <ul><li v-for="note in guide.responseNotes" :key="note">{{ note }}</li></ul>
-              </div>
-            </n-tab-pane>
-            <n-tab-pane name="business-rules" tab="业务校验">
-              <n-empty v-if="!guide.businessRules?.length" description="当前版本未补充业务校验说明" />
-              <ol v-else class="business-rule-list">
-                <li v-for="rule in guide.businessRules" :key="rule">{{ rule }}</li>
-              </ol>
-            </n-tab-pane>
+                <n-tab-pane name="request-contract" tab="请求参数">
+                  <n-data-table
+                    :columns="fieldColumns"
+                    :data="guide.requestFields || []"
+                    :row-key="row => row.path"
+                    :bordered="false"
+                    size="small"
+                    class="contract-table"
+                  />
+                  <div v-if="guide.requestNotes?.length" class="contract-notes">
+                    <strong>请求说明</strong>
+                    <ul>
+                      <li v-for="note in guide.requestNotes" :key="note">
+                        {{ note }}
+                      </li>
+                    </ul>
+                  </div>
+                </n-tab-pane>
+                <n-tab-pane name="response-contract" tab="返回参数">
+                  <n-data-table
+                    :columns="fieldColumns"
+                    :data="guide.responseFields || []"
+                    :row-key="row => row.path"
+                    :bordered="false"
+                    size="small"
+                    class="contract-table"
+                  />
+                  <div v-if="guide.responseNotes?.length" class="contract-notes">
+                    <strong>返回说明</strong>
+                    <ul>
+                      <li v-for="note in guide.responseNotes" :key="note">
+                        {{ note }}
+                      </li>
+                    </ul>
+                  </div>
+                </n-tab-pane>
+                <n-tab-pane name="business-rules" tab="业务校验">
+                  <n-empty v-if="!guide.businessRules?.length" description="当前版本未补充业务校验说明" />
+                  <ol v-else class="business-rule-list">
+                    <li v-for="rule in guide.businessRules" :key="rule">
+                      {{ rule }}
+                    </li>
+                  </ol>
+                </n-tab-pane>
               </n-tabs>
             </section>
           </n-tab-pane>

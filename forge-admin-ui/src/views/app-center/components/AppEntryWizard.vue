@@ -36,7 +36,7 @@
               <span>基础信息</span>
               <small>已按{{ currentScene.label }}自动填充</small>
             </div>
-            <n-grid :cols="2" :x-gap="12" :y-gap="2" responsive="screen">
+            <n-grid :cols="2" :x-gap="12" :y-gap="12" responsive="screen">
               <n-form-item-gi label="入口名称">
                 <n-input
                   :value="form.appName"
@@ -71,25 +71,20 @@
               <span v-else>当前应用没有可用业务单元，请先在“数据对象”中添加。</span>
             </div>
 
-            <template v-if="isRuntimeScene">
+            <template v-if="runtimeTargetEnabled">
               <div class="section-title">
                 <span>打开内容</span>
-                <small>默认配置自动生效</small>
+                <small>决定入口点开后落到哪个页面</small>
               </div>
-              <n-grid :cols="2" :x-gap="12" :y-gap="2" responsive="screen">
-                <n-form-item-gi
-                  v-if="sceneKey === 'DATA_MANAGE' && runtimePageOptions.length > 1"
-                  label="目标页面"
-                >
+              <n-grid :cols="2" :x-gap="12" :y-gap="12" responsive="screen">
+                <n-form-item-gi label="打开方式">
                   <n-select
-                    v-model:value="form.targetPageKey"
-                    :options="runtimePageOptions"
-                    :loading="designerLoading"
-                    filterable
-                    placeholder="列表页（默认）"
+                    v-model:value="form.runtimeOpenMode"
+                    :options="runtimeOpenModeOptions"
+                    @update:value="handleRuntimeOpenModeChange"
                   />
                 </n-form-item-gi>
-                <n-form-item-gi v-if="runtimeFormOptions.length > 1" label="目标表单">
+                <n-form-item-gi v-if="['CREATE_FORM', 'DETAIL'].includes(form.runtimeOpenMode)" label="目标表单">
                   <n-select
                     v-model:value="form.targetFormKey"
                     :options="runtimeFormOptions"
@@ -103,6 +98,16 @@
               <div class="auto-config-summary runtime-summary">
                 <span class="auto-config-mark">自动</span>
                 <span>{{ runtimeAutoSummary }}</span>
+              </div>
+              <div class="runtime-target-preview">
+                <span class="runtime-target-label">预览路径</span>
+                <code :title="runtimeTargetFullUrl">{{ runtimeTargetFullUrl }}</code>
+                <n-button size="tiny" secondary @click="copyRuntimeTargetUrl">
+                  <template #icon>
+                    <n-icon><CopyOutline /></n-icon>
+                  </template>
+                  复制
+                </n-button>
               </div>
             </template>
 
@@ -121,7 +126,7 @@
                 <span>外部页面</span>
                 <small>内嵌或新窗口打开</small>
               </div>
-              <n-grid :cols="2" :x-gap="12" :y-gap="2" responsive="screen">
+              <n-grid :cols="2" :x-gap="12" :y-gap="12" responsive="screen">
                 <n-form-item-gi label="打开方式">
                   <n-select v-model:value="form.entryMode" :options="externalModeOptions" />
                 </n-form-item-gi>
@@ -139,21 +144,9 @@
             </template>
 
             <template v-if="sceneKey === 'MOBILE'">
-              <div class="section-title">
-                <span>移动入口</span>
-                <small>H5 / 移动端业务</small>
-              </div>
-              <n-grid :cols="2" :x-gap="12" :y-gap="2" responsive="screen">
-                <n-form-item-gi label="H5 地址">
-                  <n-input v-model:value="form.entryUrl" placeholder="https://m.example.com/customer" />
-                </n-form-item-gi>
-                <n-form-item-gi label="移动场景">
-                  <n-select v-model:value="form.mobileScene" :options="mobileSceneOptions" />
-                </n-form-item-gi>
-                <n-form-item-gi label="可见范围">
-                  <n-select v-model:value="form.visibleScope" :options="visibleScopeOptions" />
-                </n-form-item-gi>
-              </n-grid>
+              <n-alert type="info" :bordered="false">
+                移动入口会在移动端打开本应用页面，实际内容以上方「打开内容」为准。
+              </n-alert>
             </template>
 
             <template v-if="sceneKey === 'INTEGRATION'">
@@ -161,7 +154,7 @@
                 <span>接口服务</span>
                 <small>API / Webhook / 系统集成</small>
               </div>
-              <n-grid :cols="2" :x-gap="12" :y-gap="2" responsive="screen">
+              <n-grid :cols="2" :x-gap="12" :y-gap="12" responsive="screen">
                 <n-form-item-gi label="集成类型">
                   <n-select v-model:value="form.platformType" :options="platformTypeOptions" />
                 </n-form-item-gi>
@@ -174,15 +167,15 @@
               </n-form-item>
             </template>
 
-            <template v-if="showAdminMenuConfig">
+            <template v-if="showMenuConfig">
               <div class="section-title">
                 <span>菜单配置</span>
                 <small>可选</small>
               </div>
               <div class="menu-config-row">
                 <div>
-                  <strong>添加到管理端菜单</strong>
-                  <span>开启后自动放到“{{ selectedSuiteName }}”业务域目录，其他参数使用系统默认值。</span>
+                  <strong>{{ menuSyncTitle }}</strong>
+                  <span>{{ menuSyncDescription }}</span>
                 </div>
                 <n-switch v-model:value="form.adminMenuSyncEnabled" />
               </div>
@@ -196,6 +189,11 @@
                 <n-form-item label="业务说明">
                   <n-input v-model:value="form.description" type="textarea" placeholder="说明这个入口面向的业务场景" />
                 </n-form-item>
+                <template v-if="sceneKey === 'MOBILE'">
+                  <n-form-item label="移动端站点地址">
+                    <n-input v-model:value="form.h5BaseUrl" placeholder="http://localhost:3001" />
+                  </n-form-item>
+                </template>
                 <n-form-item label="启用状态">
                   <n-switch v-model:value="form.status" :checked-value="1" :unchecked-value="0" />
                 </n-form-item>
@@ -243,6 +241,7 @@
 <script setup>
 import {
   CodeSlashOutline,
+  CopyOutline,
   DocumentTextOutline,
   GlobeOutline,
   ListOutline,
@@ -252,9 +251,15 @@ import {
 } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { businessObjectDesigner, businessObjectList, createBusinessApp, updateBusinessApp } from '@/api/business-app'
 import IconSelector from '@/components/IconSelector.vue'
 import { useDict } from '@/composables/useDict'
+import {
+  buildRuntimePageOptions,
+  buildRuntimeTargetPreview,
+  supportsRuntimeTarget,
+} from './app-entry-targets'
 import { normalizeMultiFormDesignerSchema } from './designer/form-first/formDesignerSchema'
 
 const props = defineProps({
@@ -286,15 +291,18 @@ const props = defineProps({
     type: Array,
     default: null,
   },
+  applicationPages: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const emit = defineEmits(['update:show', 'saved'])
 const AppEditorDrawer = defineAsyncComponent(() => import('./AppEditorDrawer.vue'))
 const message = useMessage()
+const router = useRouter()
 const { dict } = useDict(
   'ai_business_app_entry_mode',
-  'ai_business_app_mobile_scene',
-  'ai_business_app_visible_scope',
   'ai_business_app_platform_type',
 )
 
@@ -380,15 +388,15 @@ const SCENE_TEMPLATES = {
     label: '移动入口',
     icon: PhonePortraitOutline,
     tone: 'violet',
-    description: 'H5、移动端业务和轻应用入口。',
+    description: '手机浏览器、企业微信和移动应用入口。',
     objectPlaceholder: '可选，关联后按业务单元归集',
     nameSuffix: '移动端',
     codeSuffix: 'MOBILE',
     defaults: {
       appType: 'MOBILE',
       mountTarget: 'MOBILE',
-      entryMode: 'H5',
-      entryType: 'EXTERNAL_OR_API',
+      entryMode: 'RUNTIME',
+      entryType: 'OBJECT_LIST',
       runtimeOpenMode: 'LIST',
       appMode: 'DYNAMIC_RENDER',
       targetPageKey: 'list',
@@ -435,18 +443,23 @@ let objectRequestSeq = 0
 
 const currentScene = computed(() => SCENE_TEMPLATES[sceneKey.value] || SCENE_TEMPLATES.DATA_MANAGE)
 const firstStep = computed(() => form.id ? 2 : 1)
-const isRuntimeScene = computed(() => ['DATA_MANAGE', 'FORM_SUBMIT'].includes(sceneKey.value))
+const isRuntimeScene = computed(() => ['DATA_MANAGE', 'FORM_SUBMIT', 'MOBILE'].includes(sceneKey.value))
+const runtimeTargetEnabled = computed(() => supportsRuntimeTarget(form.entryMode))
 const showObjectSelect = computed(() => {
   if (sceneKey.value === 'INTEGRATION' && !form.suiteCode)
     return false
   return !(props.lockSuite && Array.isArray(props.objects) && objectOptions.value.length <= 1)
 })
-const showAdminMenuConfig = computed(() => form.mountTarget === 'ADMIN')
+const showMenuConfig = computed(() => ['ADMIN', 'MOBILE'].includes(form.mountTarget))
 const selectedObject = computed(() => objectOptions.value.find(item => item.value === form.objectCode) || null)
 const selectedSuiteName = computed(() => {
   const suite = props.suites.find(item => item.suiteCode === form.suiteCode)
   return suite?.suiteName || form.suiteCode || '-'
 })
+const menuSyncTitle = computed(() => form.mountTarget === 'MOBILE' ? '同步到移动端菜单' : '添加到管理端菜单')
+const menuSyncDescription = computed(() => form.mountTarget === 'MOBILE'
+  ? '开启后写入菜单管理的“移动端”客户端，完成角色授权后显示在移动端的全部应用中。'
+  : `开启后自动放到“${selectedSuiteName.value}”业务域目录，其他参数使用系统默认值。`)
 const selectedObjectName = computed(() => selectedObject.value?.label || form.objectCode || (isRuntimeScene.value ? '-' : '未关联'))
 const suiteOptions = computed(() => props.suites.map(item => ({
   label: item.suiteName || item.suiteCode,
@@ -454,18 +467,11 @@ const suiteOptions = computed(() => props.suites.map(item => ({
 })))
 const runtimePageOptions = computed(() => {
   const pageSchema = selectedObjectDesigner.value?.pageSchema || {}
-  const pages = Array.isArray(pageSchema.pages) ? pageSchema.pages : []
-  const options = pages
-    .filter(page => page?.pageKey)
-    .map(page => ({
-      label: `${page.pageName || page.pageKey}${page.pageKey === 'list' ? '（默认）' : ''}`,
-      value: page.pageKey,
-    }))
-  if (!options.length)
-    options.push({ label: '列表页（默认）', value: 'list' })
-  if (form.targetPageKey && !options.some(item => item.value === form.targetPageKey))
-    options.push({ label: pageLabelFallback(form.targetPageKey), value: form.targetPageKey })
-  return options
+  return buildRuntimePageOptions({
+    objectPages: Array.isArray(pageSchema.pages) ? pageSchema.pages : [],
+    applicationPages: props.applicationPages,
+    currentTargetPageKey: form.targetPageKey,
+  })
 })
 const runtimeFormOptions = computed(() => {
   if (!selectedObjectDesigner.value?.formDesignerSchema)
@@ -478,6 +484,11 @@ const runtimeFormOptions = computed(() => {
       value: item.formKey,
     }))
 })
+const runtimeOpenModeOptions = [
+  { label: '列表页', value: 'LIST' },
+  { label: '表单页', value: 'CREATE_FORM' },
+  { label: '详情页', value: 'DETAIL' },
+]
 const runtimeAutoSummary = computed(() => {
   const formOption = runtimeFormOptions.value.find(item => item.value === form.targetFormKey)
   const formLabel = formOption?.label || '默认表单'
@@ -486,11 +497,44 @@ const runtimeAutoSummary = computed(() => {
     : `打开${pageLabel(form.targetPageKey)}，使用${formLabel}`
   return form.configKey ? `${target}；业务页面配置已自动关联` : `${target}；业务单元发布后自动关联页面配置`
 })
+const runtimeTargetPreview = computed(() => buildRuntimeTargetPreview({
+  entryMode: form.entryMode,
+  appType: form.appType,
+  appId: form.id,
+  configKey: form.configKey,
+  runtimeOpenMode: form.runtimeOpenMode,
+  targetPageKey: form.targetPageKey,
+  targetFormKey: form.targetFormKey,
+}))
+// 预览路径需要能直接粘贴到浏览器打开，因此拼上站点 origin 与路由 base。
+const runtimeTargetFullUrl = computed(() => {
+  const preview = runtimeTargetPreview.value
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
+  if (preview.mobile) {
+    // 移动端预览走独立移动站点（用户可在「更多设置」配置），默认 http://localhost:3001
+    const h5Origin = String(form.h5BaseUrl || '').trim() || 'http://localhost:3001'
+    return `${h5Origin}${preview.value}`
+  }
+  const resolved = router.resolve({ path: preview.path, query: Object.fromEntries(new URLSearchParams(preview.query)) })
+  return `${origin}${resolved.href}`
+})
+
+async function copyRuntimeTargetUrl() {
+  const url = runtimeTargetFullUrl.value
+  try {
+    if (navigator.clipboard?.writeText)
+      await navigator.clipboard.writeText(url)
+    else
+      throw new Error('clipboard unavailable')
+    message.success('已复制完整路径')
+  }
+  catch {
+    message.warning(`复制失败，请手动复制：${url}`)
+  }
+}
 
 const externalModeOptions = computed(() => (dict.value.ai_business_app_entry_mode || [])
   .filter(item => ['IFRAME', 'EXTERNAL'].includes(item.value)))
-const mobileSceneOptions = computed(() => dict.value.ai_business_app_mobile_scene || [])
-const visibleScopeOptions = computed(() => dict.value.ai_business_app_visible_scope || [])
 const platformTypeOptions = computed(() => dict.value.ai_business_app_platform_type || [])
 
 watch(() => props.show, (visible) => {
@@ -566,10 +610,6 @@ function selectScene(key) {
 function applySceneDefaults(key) {
   const defaults = SCENE_TEMPLATES[key]?.defaults || SCENE_TEMPLATES.DATA_MANAGE.defaults
   Object.assign(form, defaults)
-  if (key === 'MOBILE') {
-    form.mobileScene = form.mobileScene || 'h5'
-    form.visibleScope = form.visibleScope || 'all'
-  }
   if (key === 'INTEGRATION')
     form.platformType = form.platformType || 'api'
   if (key !== 'EXTERNAL_PAGE')
@@ -616,7 +656,7 @@ async function validateCurrentStep() {
     message.warning('关联业务单元尚未发布页面配置，请先发布业务单元后再创建入口')
     return false
   }
-  if (['DASHBOARD', 'EXTERNAL_PAGE', 'MOBILE'].includes(sceneKey.value) && !String(form.entryUrl || '').trim()) {
+  if (['DASHBOARD', 'EXTERNAL_PAGE'].includes(sceneKey.value) && !String(form.entryUrl || '').trim()) {
     message.warning('请输入入口地址')
     return false
   }
@@ -751,6 +791,12 @@ function applyRuntimeDesignerDefaults() {
     form.targetPageKey = pageOptions[0]?.value || defaultTargetPageKey(form.runtimeOpenMode)
 }
 
+function handleRuntimeOpenModeChange(mode) {
+  form.runtimeOpenMode = mode
+  form.targetPageKey = defaultTargetPageKey(mode)
+  applyRuntimeDesignerDefaults()
+}
+
 function refreshSuggestedCode() {
   if (appCodeTouched.value)
     return
@@ -782,11 +828,11 @@ function buildDraftPayload() {
     appType: resolveAppType(),
     suiteCode: form.suiteCode,
     objectCode: form.objectCode || null,
-    entryMode: form.entryMode,
+    entryMode: sceneKey.value === 'MOBILE' ? 'RUNTIME' : form.entryMode,
     entryUrl: normalizeEntryUrl(),
-    configKey: form.entryMode === 'RUNTIME' ? form.configKey || '' : '',
-    runtimeOpenMode: form.entryMode === 'RUNTIME' ? form.runtimeOpenMode : 'LIST',
-    appMode: form.entryMode === 'RUNTIME' ? form.appMode || 'DYNAMIC_RENDER' : 'DYNAMIC_RENDER',
+    configKey: runtimeTargetEnabled.value ? form.configKey || '' : '',
+    runtimeOpenMode: runtimeTargetEnabled.value ? form.runtimeOpenMode : 'LIST',
+    appMode: runtimeTargetEnabled.value ? form.appMode || 'DYNAMIC_RENDER' : 'DYNAMIC_RENDER',
     icon: form.icon || '',
     description: form.description || '',
     status: form.status,
@@ -816,20 +862,28 @@ function buildOptions() {
   else
     delete options.permissionCode
 
-  if (form.mountTarget === 'ADMIN') {
+  if (['ADMIN', 'MOBILE'].includes(form.mountTarget)) {
+    const previousMenu = options.adminMenu || {}
+    const mobileMenu = form.mountTarget === 'MOBILE'
     options.adminMenu = {
-      parentId: form.adminMenuParentId || null,
-      originalParentId: form.adminMenuParentId || null,
+      ...previousMenu,
+      parentId: mobileMenu ? null : form.adminMenuParentId || null,
+      originalParentId: mobileMenu ? null : form.adminMenuParentId || null,
       syncEnabled: Boolean(form.adminMenuSyncEnabled),
-      suiteAsParent: Boolean(form.suiteAsMenuParent),
+      suiteAsParent: mobileMenu ? false : Boolean(form.suiteAsMenuParent),
       sort: Number(form.menuSort || 0),
+      clientCode: mobileMenu ? 'h5' : 'pc',
+    }
+    if (mobileMenu) {
+      delete options.adminMenu.actualParentId
+      delete options.adminMenu.suiteMenuResourceId
     }
   }
   else {
     delete options.adminMenu
   }
 
-  if (form.entryMode === 'RUNTIME') {
+  if (runtimeTargetEnabled.value) {
     options.runtimeOpenMode = form.runtimeOpenMode
     options.appMode = form.appMode || 'DYNAMIC_RENDER'
     options.targetPageKey = form.targetPageKey || defaultTargetPageKey(form.runtimeOpenMode)
@@ -853,12 +907,12 @@ function buildOptions() {
     delete options.allowedDomains
 
   if (sceneKey.value === 'MOBILE') {
-    options.mobileScene = form.mobileScene || 'h5'
-    options.visibleScope = form.visibleScope || 'all'
+    options.h5BaseUrl = String(form.h5BaseUrl || '').trim() || 'http://localhost:3001'
   }
   else {
     delete options.mobileScene
     delete options.visibleScope
+    delete options.h5BaseUrl
   }
 
   if (sceneKey.value === 'INTEGRATION') {
@@ -901,8 +955,7 @@ function hydrateOptions() {
   form.suiteAsMenuParent = adminMenu.suiteAsParent !== false
   form.menuSort = Number(adminMenu.sort || form.sortOrder || 0)
   form.allowedDomains = Array.isArray(options.allowedDomains) ? options.allowedDomains.join('\n') : ''
-  form.mobileScene = options.mobileScene || 'h5'
-  form.visibleScope = options.visibleScope || 'all'
+  form.h5BaseUrl = options.h5BaseUrl || 'http://localhost:3001'
   form.platformType = options.platformType || 'api'
   form.integrationResource = options.integrationResource || stripApiPrefix(form.entryUrl)
   form.integrationEvents = Array.isArray(options.integrationEvents) ? options.integrationEvents.join(',') : options.integrationEvents || ''
@@ -958,15 +1011,6 @@ function pageLabel(value) {
   return runtimePageOptions.value.find(item => item.value === value)?.label || value || '列表页'
 }
 
-function pageLabelFallback(value) {
-  return {
-    list: '列表页（默认）',
-    detail: '详情页',
-    create: '新增页',
-    edit: '编辑页',
-  }[value] || value || '列表页'
-}
-
 function stripApiPrefix(value) {
   return String(value || '').replace(/^api:\/\//i, '')
 }
@@ -1012,14 +1056,13 @@ function defaultForm() {
     suiteAsMenuParent: true,
     menuSort: 0,
     allowedDomains: '',
-    mobileScene: 'h5',
-    visibleScope: 'all',
     platformType: 'api',
     integrationResource: '',
     integrationEvents: '',
     permissionCode: '',
     targetPageKey: 'list',
     targetFormKey: '',
+    h5BaseUrl: 'http://localhost:3001',
   }
 }
 </script>
@@ -1028,6 +1071,50 @@ function defaultForm() {
 .entry-wizard {
   display: grid;
   gap: 18px;
+}
+
+.runtime-target-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-light, #e5e6eb);
+  border-radius: 6px;
+  background: var(--bg-secondary, #f7f8fa);
+  color: var(--text-tertiary, #86909c);
+  font-size: 12px;
+}
+
+.runtime-target-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.runtime-target-preview code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary, #4e5969);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 表单内部各区块的纵向节奏由 n-form 统一控制，避免 section-title 与 n-grid 间距互相打架。 */
+.wizard-step :deep(.n-form) {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.wizard-step :deep(.n-form-item) {
+  margin: 0;
+}
+
+.wizard-step :deep(.n-form-item .n-form-item-label) {
+  padding-bottom: 2px;
+  font-size: 12px;
 }
 
 .wizard-step {
@@ -1142,7 +1229,7 @@ function defaultForm() {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  margin: 2px 0 8px;
+  margin: 4px 0 0;
   border-bottom: 1px solid var(--n-border-color, #eef2f7);
   padding-bottom: 7px;
 }
@@ -1173,7 +1260,7 @@ function defaultForm() {
 }
 
 .runtime-summary {
-  margin-top: -4px;
+  margin-top: 0;
 }
 
 .auto-config-mark {

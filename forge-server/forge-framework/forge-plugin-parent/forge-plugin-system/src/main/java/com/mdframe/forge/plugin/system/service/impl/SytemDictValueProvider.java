@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @Slf4j
@@ -33,31 +32,12 @@ public class SytemDictValueProvider implements DictValueProvider {
     private final SysRegionMapper sysRegionMapper;
     private final SysFileMetadataMapper sysFileMetadataMapper;
 
-    private static final long CACHE_TTL_MS = 30 * 60 * 1000L;
-
-    static class DictCacheEntry {
-        final Map<String, String> valueLabelMap;
-        final long timestamp;
-
-        DictCacheEntry(Map<String, String> valueLabelMap) {
-            this.valueLabelMap = valueLabelMap;
-            this.timestamp = System.currentTimeMillis();
-        }
-
-        boolean isExpired() {
-            return System.currentTimeMillis() - timestamp > CACHE_TTL_MS;
-        }
-    }
-
-    private final ConcurrentHashMap<String, DictCacheEntry> dictCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, DictCacheEntry> reverseDictCache = new ConcurrentHashMap<>();
-
     @Override
     public String getLabel(String dictType, String key) {
         if (dictType == null || key == null) {
             return null;
         }
-        Map<String, String> valueLabelMap = getOrLoadDictMap(dictType);
+        Map<String, String> valueLabelMap = loadValueLabelMap(dictType);
         return valueLabelMap.get(key);
     }
 
@@ -66,7 +46,7 @@ public class SytemDictValueProvider implements DictValueProvider {
         if (dictType == null || labelOrValue == null) {
             return null;
         }
-        Map<String, String> labelValueMap = getOrLoadLabelValueMap(dictType);
+        Map<String, String> labelValueMap = loadLabelValueMap(dictType);
         return labelValueMap.get(labelOrValue);
     }
 
@@ -241,30 +221,16 @@ public class SytemDictValueProvider implements DictValueProvider {
         return result;
     }
 
-    private Map<String, String> getOrLoadDictMap(String dictType) {
-        DictCacheEntry entry = dictCache.get(dictType);
-        if (entry != null && !entry.isExpired()) {
-            return entry.valueLabelMap;
-        }
-        Map<String, String> valueLabelMap = loadDictMapFromDb(dictType);
-        dictCache.put(dictType, new DictCacheEntry(valueLabelMap));
-        return valueLabelMap;
-    }
-
-    private Map<String, String> loadDictMapFromDb(String dictType) {
+    private Map<String, String> loadValueLabelMap(String dictType) {
         List<SysDictData> dictDataList = sysDictDataService.selectDictDataByType(dictType);
-        Map<String, String> map = new ConcurrentHashMap<>(dictDataList.size() * 2);
+        Map<String, String> map = new LinkedHashMap<>(dictDataList.size() * 2);
         for (SysDictData dictData : dictDataList) {
             map.put(dictData.getDictValue(), dictData.getDictLabel());
         }
         return map;
     }
 
-    private Map<String, String> getOrLoadLabelValueMap(String dictType) {
-        DictCacheEntry entry = reverseDictCache.get(dictType);
-        if (entry != null && !entry.isExpired()) {
-            return entry.valueLabelMap;
-        }
+    private Map<String, String> loadLabelValueMap(String dictType) {
         List<SysDictData> dictDataList = sysDictDataService.selectDictDataByType(dictType);
         Map<String, String> map = new LinkedHashMap<>(dictDataList.size() * 2);
         for (SysDictData dictData : dictDataList) {
@@ -273,19 +239,6 @@ public class SytemDictValueProvider implements DictValueProvider {
                 map.putIfAbsent(dictData.getDictValue(), dictData.getDictValue());
             }
         }
-        reverseDictCache.put(dictType, new DictCacheEntry(map));
         return map;
-    }
-
-    public void clearCache() {
-        dictCache.clear();
-        reverseDictCache.clear();
-        log.info("字典翻译缓存已全部清除");
-    }
-
-    public void clearCache(String dictType) {
-        dictCache.remove(dictType);
-        reverseDictCache.remove(dictType);
-        log.info("字典翻译缓存已清除: {}", dictType);
     }
 }

@@ -9,6 +9,7 @@
         <result column="api_code" property="apiCode"/>
         <result column="api_name" property="apiName"/>
         <result column="api_desc" property="apiDesc"/>
+        <result column="execution_mode" property="executionMode"/>
         <result column="api_path" property="apiPath"/>
         <result column="api_method" property="apiMethod"/>
         <result column="request_content_type" property="requestContentType"/>
@@ -18,6 +19,7 @@
         <result column="response_content_type" property="responseContentType"/>
         <result column="response_data_path" property="responseDataPath"/>
         <result column="response_total_path" property="responseTotalPath"/>
+        <result column="mock_response_json" property="mockResponseJson"/>
         <result column="param_mapping_enabled" property="paramMappingEnabled"/>
         <result column="param_mappings" property="paramMappings"/>
         <result column="response_transform_enabled" property="responseTransformEnabled"/>
@@ -34,6 +36,9 @@
         <result column="cache_key_template" property="cacheKeyTemplate"/>
         <result column="permission_check_enabled" property="permissionCheckEnabled"/>
         <result column="required_permission" property="requiredPermission"/>
+        <result column="lowcode_query_enabled" property="lowcodeQueryEnabled"/>
+        <result column="input_schema_json" property="inputSchemaJson"/>
+        <result column="output_schema_json" property="outputSchemaJson"/>
         <result column="api_status" property="apiStatus"/>
         <result column="sort_order" property="sortOrder"/>
         <result column="remark" property="remark"/>
@@ -95,6 +100,66 @@
         WHERE a.tenant_id = #{tenantId}
           AND a.api_status = 1
         ORDER BY a.sort_order ASC, a.create_time DESC
+    </select>
+
+    <select id="selectLowcodeQuerySources" resultMap="ApiWithSystemResultMap">
+        SELECT a.id,
+               a.tenant_id,
+               a.system_id,
+               a.api_code,
+               a.api_name,
+               a.api_desc,
+               a.execution_mode,
+               a.api_method,
+               a.mock_response_json,
+               a.permission_check_enabled,
+               a.required_permission,
+               a.lowcode_query_enabled,
+               a.input_schema_json,
+               a.output_schema_json,
+               a.api_status,
+               s.system_name,
+               s.system_code
+        FROM sys_external_api a
+        INNER JOIN sys_external_system s
+                ON s.id = a.system_id
+               AND s.tenant_id = #{tenantId}
+               AND s.system_status = 1
+        WHERE a.tenant_id = #{tenantId}
+          AND a.api_status = 1
+          AND a.lowcode_query_enabled = 1
+        ORDER BY s.system_name ASC, a.sort_order ASC, a.api_name ASC
+    </select>
+
+    <select id="selectLowcodeQuerySourceByKey" resultMap="ApiWithSystemResultMap">
+        SELECT a.id,
+               a.tenant_id,
+               a.system_id,
+               a.api_code,
+               a.api_name,
+               a.api_desc,
+               a.execution_mode,
+               a.api_method,
+               a.mock_response_json,
+               a.permission_check_enabled,
+               a.required_permission,
+               a.lowcode_query_enabled,
+               a.input_schema_json,
+               a.output_schema_json,
+               a.api_status,
+               s.system_name,
+               s.system_code
+        FROM sys_external_api a
+        INNER JOIN sys_external_system s
+                ON s.id = a.system_id
+               AND s.tenant_id = #{tenantId}
+               AND s.system_status = 1
+        WHERE a.tenant_id = #{tenantId}
+          AND a.api_code = #{apiCode}
+          AND a.api_status = 1
+          AND a.lowcode_query_enabled = 1
+          AND s.system_code = #{systemCode}
+        LIMIT 1
     </select>
 
 </mapper>

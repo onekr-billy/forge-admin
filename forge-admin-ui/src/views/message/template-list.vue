@@ -573,7 +573,7 @@ function renderTemplatePreview(content) {
 function sanitizePreviewHtml(html) {
   return String(html || '')
     .replace(/<\s*(script|iframe|object|embed|link|meta|style)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
-    .replace(/<\s*(script|iframe|object|embed|link|meta|style)\b[^>]*\/?\s*>/gi, '')
+    .replace(/<\s*(script|iframe|object|embed|link|meta|style)\b[^>]*>/gi, '')
     .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/(href|src)\s*=\s*("\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '$1="#"')
 }

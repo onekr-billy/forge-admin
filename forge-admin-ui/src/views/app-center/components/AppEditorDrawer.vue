@@ -32,24 +32,29 @@
           </n-radio-group>
         </n-form-item>
 
-        <template v-if="isAdminMount && !isCodeDownloadMode">
-          <n-form-item :label="form.suiteAsMenuParent ? '业务域目录上级' : '父级菜单或模块'">
-            <MenuParentSelect v-model:value="form.adminMenuParentId" placeholder="选择挂载在哪个管理端菜单下" />
-          </n-form-item>
-          <n-form-item v-if="form.suiteAsMenuParent && form.suiteMenuResourceId" label="实际挂载目录">
-            <MenuParentSelect :value="form.suiteMenuResourceId" placeholder="已生成业务域目录" disabled />
-          </n-form-item>
-          <n-grid :cols="3" :x-gap="12">
-            <n-form-item-gi label="同步为菜单">
+        <template v-if="showMenuSyncConfig && !isCodeDownloadMode">
+          <template v-if="isAdminMount">
+            <n-form-item :label="form.suiteAsMenuParent ? '业务域目录上级' : '父级菜单或模块'">
+              <MenuParentSelect v-model:value="form.adminMenuParentId" placeholder="选择挂载在哪个管理端菜单下" />
+            </n-form-item>
+            <n-form-item v-if="form.suiteAsMenuParent && form.suiteMenuResourceId" label="实际挂载目录">
+              <MenuParentSelect :value="form.suiteMenuResourceId" placeholder="已生成业务域目录" disabled />
+            </n-form-item>
+          </template>
+          <n-grid :cols="isAdminMount ? 3 : 2" :x-gap="12">
+            <n-form-item-gi :label="isMobileApp ? '同步到移动端菜单' : '同步为管理端菜单'">
               <n-switch v-model:value="form.adminMenuSyncEnabled" />
             </n-form-item-gi>
-            <n-form-item-gi label="业务域作为父级目录">
+            <n-form-item-gi v-if="isAdminMount" label="业务域作为父级目录">
               <n-switch v-model:value="form.suiteAsMenuParent" />
             </n-form-item-gi>
             <n-form-item-gi label="菜单排序">
               <n-input-number v-model:value="form.menuSort" :min="0" :show-button="false" placeholder="排序" />
             </n-form-item-gi>
           </n-grid>
+          <n-alert v-if="isMobileApp" class="runtime-mode-tip" type="info" :bordered="false">
+            开启后会写入菜单管理的“移动端”客户端；在应用权限或角色授权中分配入口后，用户可从移动端“全部应用”打开。
+          </n-alert>
         </template>
 
         <n-grid :cols="2" :x-gap="12">
@@ -170,14 +175,6 @@
           <IconSelector v-model="form.icon" />
         </n-form-item>
 
-        <template v-if="isMobileApp">
-          <n-form-item label="移动场景">
-            <n-select v-model:value="form.mobileScene" :options="mobileSceneOptions" placeholder="选择移动入口场景" />
-          </n-form-item>
-          <n-form-item label="可见范围">
-            <n-select v-model:value="form.visibleScope" :options="visibleScopeOptions" placeholder="选择移动端可见范围" />
-          </n-form-item>
-        </template>
         <template v-if="isIntegrationApp">
           <n-form-item label="集成类型">
             <n-select v-model:value="form.platformType" :options="platformTypeOptions" placeholder="选择集成类型" />
@@ -262,8 +259,6 @@ const { dict } = useDict(
   'ai_business_app_mode',
   'ai_business_app_mount_target',
   'ai_business_app_entry_type',
-  'ai_business_app_mobile_scene',
-  'ai_business_app_visible_scope',
   'ai_business_app_platform_type',
   'ai_business_app_runtime_open_mode',
 )
@@ -310,9 +305,9 @@ const entryModeMeta = {
     urlPlaceholder: '例如：https://crm.example.com',
   },
   H5: {
-    title: 'H5 入口',
-    description: '面向移动端或轻应用的 H5 地址，可配置移动场景和可见范围。',
-    urlLabel: 'H5 地址',
+    title: '移动端页面',
+    description: '打开移动站点或轻应用页面。',
+    urlLabel: '移动端页面地址',
     urlPlaceholder: '例如：https://m.example.com/customer',
   },
   API: {
@@ -343,6 +338,7 @@ const suiteOptions = computed(() => props.suites.map(item => ({
 const isAdminMount = computed(() => form.mountTarget === 'ADMIN')
 const isMobileApp = computed(() => form.mountTarget === 'MOBILE')
 const isIntegrationApp = computed(() => form.mountTarget === 'API')
+const showMenuSyncConfig = computed(() => isAdminMount.value || isMobileApp.value)
 const showConfigKey = computed(() => form.entryMode === 'RUNTIME')
 const showEntryUrl = computed(() => !['RUNTIME', 'API'].includes(form.entryMode))
 const showSecurityFields = computed(() => ['IFRAME', 'EXTERNAL', 'H5'].includes(form.entryMode))
@@ -411,8 +407,6 @@ const objectPlaceholder = computed(() => {
     return '可选，用于标识接口服务的业务单元'
   return '可选，关联后按业务单元归集'
 })
-const mobileSceneOptions = computed(() => dict.value.ai_business_app_mobile_scene || [])
-const visibleScopeOptions = computed(() => dict.value.ai_business_app_visible_scope || [])
 const platformTypeOptions = computed(() => dict.value.ai_business_app_platform_type || [])
 const runtimeOpenModeOptions = computed(() => (dict.value.ai_business_app_runtime_open_mode || []).map(item => ({
   ...item,
@@ -510,8 +504,6 @@ async function save() {
   try {
     const payload = { ...form, appType: resolveAppType(), options: buildOptions() }
     delete payload.allowedDomains
-    delete payload.mobileScene
-    delete payload.visibleScope
     delete payload.platformType
     delete payload.integrationResource
     delete payload.integrationEvents
@@ -582,8 +574,6 @@ function hydrateOptions() {
     form.targetFormKey = String(options.targetFormKey || '').trim()
     form.defaultParamsConfig = normalizeEntryDefaultParams(options.defaultParams)
     form.allowedDomains = allowedDomains.join('\n')
-    form.mobileScene = options.mobileScene || defaultMobileScene(form.entryMode)
-    form.visibleScope = options.visibleScope || 'all'
     form.platformType = options.platformType || defaultPlatformType(form.entryMode)
     form.integrationResource = options.integrationResource || ''
     form.integrationEvents = Array.isArray(options.integrationEvents)
@@ -606,17 +596,15 @@ function hydrateOptions() {
     form.targetFormKey = ''
     form.defaultParamsConfig = normalizeEntryDefaultParams()
     form.allowedDomains = ''
-    form.mobileScene = defaultMobileScene(form.entryMode)
-    form.visibleScope = 'all'
     form.platformType = defaultPlatformType(form.entryMode)
     form.integrationResource = ''
     form.integrationEvents = ''
   }
   normalizeEntryModeForMount()
   form.appType = resolveAppType()
-  if (form.entryMode !== 'RUNTIME')
+  if (form.entryMode !== 'RUNTIME' && form.entryMode !== 'H5')
     form.runtimeOpenMode = 'LIST'
-  if (form.entryMode !== 'RUNTIME')
+  if (form.entryMode !== 'RUNTIME' && form.entryMode !== 'H5')
     form.appMode = 'DYNAMIC_RENDER'
   normalizeRuntimeTargets()
   if (isCodeDownloadMode.value)
@@ -632,8 +620,9 @@ function buildOptions() {
     options.permissionCode = permissionCode
   else
     delete options.permissionCode
-  if (isAdminMount.value) {
+  if (showMenuSyncConfig.value) {
     const previousAdminMenu = options.adminMenu || {}
+    const mobileMenu = isMobileApp.value
     const menuResourceId = props.app?.menuResourceId || previousAdminMenu.menuResourceId || options.menuResourceId
     const actualParentId = form.actualMenuParentId || previousAdminMenu.actualParentId || props.app?.adminMenuActualParentId
     const suiteMenuResourceId = form.suiteMenuResourceId || previousAdminMenu.suiteMenuResourceId || props.app?.suiteMenuResourceId
@@ -644,21 +633,27 @@ function buildOptions() {
       menuResourceId,
     })
     options.adminMenu = {
-      parentId: adminMenuParentId || null,
-      originalParentId: adminMenuParentId || null,
+      ...previousAdminMenu,
+      parentId: mobileMenu ? null : adminMenuParentId || null,
+      originalParentId: mobileMenu ? null : adminMenuParentId || null,
       syncEnabled: !isCodeDownloadMode.value && Boolean(form.adminMenuSyncEnabled),
-      suiteAsParent: Boolean(form.suiteAsMenuParent),
+      suiteAsParent: mobileMenu ? false : Boolean(form.suiteAsMenuParent),
       sort: Number(form.menuSort || 0),
+      clientCode: mobileMenu ? 'h5' : 'pc',
     }
     if (menuResourceId)
       options.adminMenu.menuResourceId = String(menuResourceId)
     const activeMenuKey = previousAdminMenu.activeMenuKey || props.app?.activeMenuKey || menuResourceId
     if (activeMenuKey)
       options.adminMenu.activeMenuKey = String(activeMenuKey)
-    if (actualParentId)
+    if (!mobileMenu && actualParentId)
       options.adminMenu.actualParentId = String(actualParentId)
-    if (suiteMenuResourceId)
+    else
+      delete options.adminMenu.actualParentId
+    if (!mobileMenu && suiteMenuResourceId)
       options.adminMenu.suiteMenuResourceId = String(suiteMenuResourceId)
+    else
+      delete options.adminMenu.suiteMenuResourceId
   }
   else {
     delete options.adminMenu
@@ -667,7 +662,7 @@ function buildOptions() {
     delete options.suiteAsMenuParent
     delete options.menuSort
   }
-  if (form.entryMode === 'RUNTIME') {
+  if (form.entryMode === 'RUNTIME' || form.entryMode === 'H5') {
     options.runtimeOpenMode = normalizeRuntimeOpenMode(form.runtimeOpenMode)
     options.appMode = normalizeAppMode(form.appMode)
     if (normalizeAppMode(form.appMode) === 'DYNAMIC_RENDER') {
@@ -698,11 +693,7 @@ function buildOptions() {
   else {
     delete options.allowedDomains
   }
-  if (isMobileApp.value) {
-    options.mobileScene = form.mobileScene || defaultMobileScene(form.entryMode)
-    options.visibleScope = form.visibleScope || 'all'
-  }
-  else {
+  if (!isMobileApp.value) {
     delete options.mobileScene
     delete options.visibleScope
   }
@@ -807,7 +798,7 @@ function normalizeRuntimeTargets() {
 
 function allowedEntryModesForTarget(target) {
   if (target === 'MOBILE')
-    return ['H5', 'ROUTE', 'EXTERNAL']
+    return ['RUNTIME', 'H5', 'ROUTE', 'EXTERNAL']
   if (target === 'API')
     return ['API']
   return ['RUNTIME', 'ROUTE', 'IFRAME', 'EXTERNAL']
@@ -849,10 +840,6 @@ function normalizeBoolean(value, fallback) {
   if (typeof value === 'boolean')
     return value
   return String(value) === 'true' || String(value) === '1'
-}
-
-function defaultMobileScene(entryMode) {
-  return entryMode === 'H5' ? 'h5' : 'business'
 }
 
 function defaultPlatformType(entryMode) {
@@ -1011,8 +998,6 @@ function defaultForm() {
     suiteAsMenuParent: true,
     menuSort: 0,
     allowedDomains: '',
-    mobileScene: 'h5',
-    visibleScope: 'all',
     platformType: 'api',
     integrationResource: '',
     integrationEvents: '',

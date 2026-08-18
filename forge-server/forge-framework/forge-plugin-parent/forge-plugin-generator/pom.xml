@@ -84,6 +84,16 @@
             <artifactId>forge-starter-id</artifactId>
         </dependency>
 
+        <!-- 低代码统一只读查询源复用外部连接器与发布态数据集 -->
+        <dependency>
+            <groupId>com.mdframe.forge</groupId>
+            <artifactId>forge-plugin-external</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mdframe.forge</groupId>
+            <artifactId>forge-plugin-data</artifactId>
+        </dependency>
+
         <!-- 编码规则定义本地缓存 -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>

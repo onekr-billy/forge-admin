@@ -219,7 +219,9 @@
         >
           <n-icon :component="option.icon" />
           <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
-          <n-icon v-if="modelValue === option.value" class="selected-icon"><CheckmarkCircle /></n-icon>
+          <n-icon v-if="modelValue === option.value" class="selected-icon">
+            <CheckmarkCircle />
+          </n-icon>
         </button>
       </div>
     </section>
@@ -584,7 +586,9 @@ function preferredField(options, ...matchers) {
   color: var(--n-text-color);
   background: var(--n-color, #fff);
   text-align: left;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .template-option:hover,

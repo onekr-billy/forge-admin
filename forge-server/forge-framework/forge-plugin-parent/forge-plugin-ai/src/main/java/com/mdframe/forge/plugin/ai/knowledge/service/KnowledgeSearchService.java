@@ -44,7 +44,7 @@ public class KnowledgeSearchService {
     private final AiStoreInstanceService storeInstanceService;
 
     /**
-     * 检索知识库
+     * 检索知识库（独立检索入口：含 Rerank/Nearby/Lost-in-Middle 后处理）
      */
     public List<KnowledgeSearchResult> search(KnowledgeSearchRequest request) {
         AiKnowledge knowledge = knowledgeMapper.selectById(request.getKnowledgeId());
@@ -52,53 +52,110 @@ public class KnowledgeSearchService {
             throw new BusinessException("知识库不存在");
         }
 
-        // 解析检索配置
         JSONObject searchConfig = parseSearchConfig(knowledge.getSearchConfigJson());
-        int topK = request.getTopK() != null ? request.getTopK() : searchConfig.getIntValue("topK", 5);
-        double threshold = request.getThreshold() != null ? request.getThreshold() : searchConfig.getDoubleValue("threshold") > 0 ? searchConfig.getDoubleValue("threshold") : 0.5;
-        boolean rerankEnable = request.getRerankEnable() != null ? request.getRerankEnable() : searchConfig.getBooleanValue("rerank_enable", false);
-        boolean lostInMiddle = request.getLostInMiddle() != null ? request.getLostInMiddle() : searchConfig.getBooleanValue("lost_in_middle", false);
+        boolean rerankEnable = request.getRerankEnable() != null ? request.getRerankEnable()
+                : searchConfig.getBooleanValue("rerank_enable", false);
+        boolean lostInMiddle = request.getLostInMiddle() != null ? request.getLostInMiddle()
+                : searchConfig.getBooleanValue("lost_in_middle", false);
         int nearbyCount = searchConfig.getIntValue("nearby_count", 0);
 
-        // 1. Embedding 查询向量
-        List<Float> queryVector = embedQuery(knowledge, request.getQuery());
+        List<KnowledgeSearchResult> results = searchVectorOnly(knowledge, request);
 
-        // 2. 向量检索
-        List<VectorStoreService.SearchResult> vectorResults = vectorSearch(knowledge, queryVector, topK, threshold);
-
-        if (vectorResults.isEmpty()) {
-            return List.of();
-        }
-
-        // 3. 转换为 KnowledgeSearchResult
-        List<KnowledgeSearchResult> results = vectorResults.stream()
-                .map(this::toSearchResult)
-                .collect(Collectors.toList());
-
-        // 4. Rerank（可选）
+        // 独立检索入口的后处理（RAG 管线内由 RerankHandler/FinalizeHandler 承担，避免重复执行）
         if (rerankEnable && knowledge.getRerankModelId() != null) {
             results = rerank(knowledge, request.getQuery(), results);
         }
-
-        // 5. Nearby 上下文扩展（可选）
         if (nearbyCount > 0) {
             results = expandNearby(results, nearbyCount);
         }
-
-        // 6. Lost-in-Middle 重排（可选）
         if (lostInMiddle) {
             results = lostInMiddleRerank(results);
         }
 
-        // 7. 更新检索计数
+        incrementRetrievalCount(results);
+        return results;
+    }
+
+    /**
+     * 纯向量检索（不做任何后处理），供 RAG 管线内作为向量检索阶段使用，
+     * 避免与管线的 RerankHandler/FinalizeHandler 重复执行 Rerank/Nearby/Lost-in-Middle。
+     */
+    public List<KnowledgeSearchResult> searchVectorOnly(KnowledgeSearchRequest request) {
+        AiKnowledge knowledge = knowledgeMapper.selectById(request.getKnowledgeId());
+        if (knowledge == null) {
+            throw new BusinessException("知识库不存在");
+        }
+        return searchVectorOnly(knowledge, request);
+    }
+
+    /**
+     * 纯向量检索核心：Embedding → 向量检索 → 结果映射
+     */
+    private List<KnowledgeSearchResult> searchVectorOnly(AiKnowledge knowledge, KnowledgeSearchRequest request) {
+        JSONObject searchConfig = parseSearchConfig(knowledge.getSearchConfigJson());
+        int topK = request.getTopK() != null ? request.getTopK() : searchConfig.getIntValue("topK", 5);
+        double threshold = request.getThreshold() != null ? request.getThreshold()
+                : (searchConfig.getDoubleValue("threshold") > 0 ? searchConfig.getDoubleValue("threshold") : 0.5);
+
+        List<Float> queryVector = embedQuery(knowledge, request.getQuery());
+        List<VectorStoreService.SearchResult> vectorResults = vectorSearch(knowledge, queryVector, topK, threshold, request);
+        if (vectorResults.isEmpty()) {
+            return List.of();
+        }
+        return vectorResults.stream()
+                .map(this::toSearchResult)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Milvus 原生混合检索（稠密向量 + 标题BM25 + 正文BM25 单次调用融合，对齐参考项目 54doctor_ai）。
+     * 管线 searchType=hybrid 时调用。
+     */
+    public List<KnowledgeSearchResult> hybridSearch(KnowledgeSearchRequest request) {
+        AiKnowledge knowledge = knowledgeMapper.selectById(request.getKnowledgeId());
+        if (knowledge == null) {
+            throw new BusinessException("知识库不存在");
+        }
+        JSONObject searchConfig = parseSearchConfig(knowledge.getSearchConfigJson());
+        int topK = request.getTopK() != null ? request.getTopK() : searchConfig.getIntValue("topK", 5);
+
+        List<Float> queryVector = embedQuery(knowledge, request.getQuery());
+        VectorStoreService vectorStore = resolveVectorStore(knowledge);
+        String configJson = resolveConfigJson(knowledge);
+
+        VectorStoreService.SearchRequest searchReq = new VectorStoreService.SearchRequest();
+        searchReq.setCollectionName("knowledge_" + knowledge.getId());
+        searchReq.setVector(queryVector);
+        searchReq.setQuery(request.getQuery());
+        searchReq.setTopK(topK);
+        searchReq.setFilterExpr(request.getFilterExpr());
+        // 权重/融合类型：知识库检索配置可配 rerank_type(rrf|weighted)/vector_weight/bm25_weight/rrf_k
+        searchReq.setRerankType(searchConfig.getString("rerank_type"));
+        if (searchConfig.getDouble("vector_weight") != null) {
+            searchReq.setVectorWeight(searchConfig.getDouble("vector_weight"));
+        }
+        if (searchConfig.getDouble("bm25_weight") != null) {
+            searchReq.setBm25Weight(searchConfig.getDouble("bm25_weight"));
+        }
+        searchReq.setRrfK(searchConfig.getInteger("rrf_k"));
+        searchReq.setConfigJson(configJson);
+
+        List<VectorStoreService.SearchResult> vectorResults = vectorStore.hybridSearch(searchReq);
+        return vectorResults.stream()
+                .map(this::toSearchResult)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 更新检索计数
+     */
+    private void incrementRetrievalCount(List<KnowledgeSearchResult> results) {
         results.forEach(r -> {
             try {
                 chunkMapper.incrementRetrievalCount(Long.parseLong(r.getChunkId()));
             } catch (Exception ignored) {
             }
         });
-
-        return results;
     }
 
     /**
@@ -125,7 +182,7 @@ public class KnowledgeSearchService {
     /**
      * 向量检索
      */
-    private List<VectorStoreService.SearchResult> vectorSearch(AiKnowledge knowledge, List<Float> queryVector, int topK, double threshold) {
+    private List<VectorStoreService.SearchResult> vectorSearch(AiKnowledge knowledge, List<Float> queryVector, int topK, double threshold, KnowledgeSearchRequest request) {
         VectorStoreService vectorStore = resolveVectorStore(knowledge);
         String configJson = resolveConfigJson(knowledge);
 
@@ -134,7 +191,7 @@ public class KnowledgeSearchService {
         searchReq.setVector(queryVector);
         searchReq.setTopK(topK);
         searchReq.setThreshold(threshold);
-        searchReq.setKnowledgeId(knowledge.getId());
+        searchReq.setFilterExpr(request.getFilterExpr());
         searchReq.setConfigJson(configJson);
 
         return vectorStore.search(searchReq);
@@ -177,19 +234,25 @@ public class KnowledgeSearchService {
     }
 
     /**
-     * Nearby 上下文扩展：为每个命中的分块追加前后相邻分块
+     * Nearby 上下文扩展：为每个命中的分块追加前后相邻分块（按文档缓存，避免重复查库）
      */
     private List<KnowledgeSearchResult> expandNearby(List<KnowledgeSearchResult> results, int nearbyCount) {
         Set<String> seen = new HashSet<>();
         List<KnowledgeSearchResult> expanded = new ArrayList<>();
+        Map<Long, List<AiKnowledgeChunk>> chunksByDoc = new HashMap<>();
 
         for (KnowledgeSearchResult result : results) {
             if (seen.add(result.getChunkId())) {
                 expanded.add(result);
             }
 
-            // 查找前后相邻分块
+            // 查找前后相邻分块（同一文档只查一次）
             Long documentId = result.getDocumentId();
+            if (documentId == null) continue;
+            List<AiKnowledgeChunk> nearbyChunks = chunksByDoc.computeIfAbsent(documentId, id -> {
+                List<AiKnowledgeChunk> list = chunkMapper.selectByDocumentId(id);
+                return list != null ? list : List.of();
+            });
             int chunkIndex = result.getChunkIndex();
 
             for (int offset = -nearbyCount; offset <= nearbyCount; offset++) {
@@ -197,8 +260,6 @@ public class KnowledgeSearchService {
                 int targetIndex = chunkIndex + offset;
                 if (targetIndex < 0) continue;
 
-                // 查询相邻分块
-                List<AiKnowledgeChunk> nearbyChunks = chunkMapper.selectByDocumentId(documentId);
                 for (AiKnowledgeChunk chunk : nearbyChunks) {
                     if (chunk.getChunkIndex() == targetIndex) {
                         String key = String.valueOf(chunk.getId());
@@ -250,24 +311,27 @@ public class KnowledgeSearchService {
         result.setDocumentId(sr.getDocumentId());
         result.setChunkIndex(sr.getChunkIndex());
         result.setContent(sr.getContent());
+        result.setTitle(sr.getTitle());
+        result.setHideContent(sr.getHideContent());
+        result.setSourceId(sr.getSourceId());
         result.setScore(sr.getScore());
         return result;
     }
 
     private VectorStoreService resolveVectorStore(AiKnowledge knowledge) {
-        if (knowledge.getVectorStoreInstanceId() != null) {
-            AiStoreInstance storeInstance = storeInstanceService.getById(knowledge.getVectorStoreInstanceId());
-            return vectorStoreFactory.getService(storeInstance);
+        if (knowledge.getVectorStoreInstanceId() == null) {
+            throw new BusinessException("知识库未配置向量存储实例，请先在知识库配置中绑定向量存储后再检索");
         }
-        return vectorStoreFactory.getService("MILVUS");
+        AiStoreInstance storeInstance = storeInstanceService.getById(knowledge.getVectorStoreInstanceId());
+        return vectorStoreFactory.getService(storeInstance);
     }
 
     private String resolveConfigJson(AiKnowledge knowledge) {
-        if (knowledge.getVectorStoreInstanceId() != null) {
-            AiStoreInstance storeInstance = storeInstanceService.getById(knowledge.getVectorStoreInstanceId());
-            return storeInstance != null ? storeInstance.getConfigJson() : "{}";
+        if (knowledge.getVectorStoreInstanceId() == null) {
+            throw new BusinessException("知识库未配置向量存储实例，请先在知识库配置中绑定向量存储后再检索");
         }
-        return "{}";
+        AiStoreInstance storeInstance = storeInstanceService.getById(knowledge.getVectorStoreInstanceId());
+        return storeInstance != null ? storeInstance.getConfigJson() : "{}";
     }
 
     private JSONObject parseSearchConfig(String configJson) {

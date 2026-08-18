@@ -89,19 +89,28 @@
         </div>
 
         <div class="toolbar-controls">
-          <div class="cascade-switch" title="开启后，勾选菜单会自动全选下方操作，取消菜单会清空下方操作">
+          <div
+            v-if="linkPageAndActions"
+            class="cascade-switch"
+            title="开启后，勾选菜单会自动全选下方操作，取消菜单会清空下方操作"
+          >
             <n-switch v-model:value="cascadeEnabled" size="small" aria-label="父子联动" />
             <span>{{ cascadeEnabled ? '父子联动开' : '父子联动关' }}</span>
+          </div>
+
+          <div v-else class="cascade-switch is-independent" title="页面入口和功能权限分别授权">
+            <i class="i-material-symbols:call-split" aria-hidden="true" />
+            <span>入口与功能独立授权</span>
           </div>
 
           <div class="toolbar-divider" />
 
           <div class="collapse-pill-control" role="group" aria-label="展开折叠控制">
-            <button type="button" :disabled="activePages.length === 0" @click="toggleCollapseAll(false)">
+            <button type="button" :disabled="activeDetailPages.length === 0" @click="toggleCollapseAll(false)">
               <i class="i-material-symbols:unfold-more" aria-hidden="true" />
               展开
             </button>
-            <button type="button" :disabled="activePages.length === 0" @click="toggleCollapseAll(true)">
+            <button type="button" :disabled="activeDetailPages.length === 0" @click="toggleCollapseAll(true)">
               <i class="i-material-symbols:unfold-less" aria-hidden="true" />
               折叠
             </button>
@@ -110,6 +119,7 @@
           <div class="toolbar-divider" />
 
           <n-dropdown
+            v-if="defaultScopeEditable"
             trigger="click"
             placement="bottom-end"
             :options="defaultScopeDropdownOptions"
@@ -133,6 +143,17 @@
               <i class="i-material-symbols:keyboard-arrow-down default-scope-chevron" aria-hidden="true" />
             </button>
           </n-dropdown>
+
+          <div v-else class="default-scope-button is-readonly" title="应用工作台不修改角色的全局默认数据范围">
+            <span class="default-scope-copy">
+              <span class="default-scope-eyebrow">角色默认：</span>
+              <strong>
+                <i :class="scopeIconClass(dataScopeSettings.defaultDataScope)" aria-hidden="true" />
+                {{ currentDefaultScopeLabel }}
+              </strong>
+            </span>
+            <i class="i-material-symbols:lock-outline default-scope-lock" aria-hidden="true" />
+          </div>
 
           <n-dropdown
             trigger="click"
@@ -217,9 +238,10 @@
             :key="page.key"
             class="permission-page-card"
           >
-            <header class="page-card-header">
+            <header class="page-card-header" :class="{ 'is-compact': !page.hasDetails }">
               <div class="page-card-title">
                 <button
+                  v-if="page.hasDetails"
                   type="button"
                   class="collapse-button"
                   :aria-expanded="!isCollapsed(page.key)"
@@ -229,6 +251,7 @@
                 </button>
 
                 <n-checkbox
+                  v-if="page.accessItem"
                   :checked="isPageAccessChecked(page)"
                   :indeterminate="isPagePartiallyChecked(page)"
                   @update:checked="checked => togglePageAccess(page, checked)"
@@ -236,17 +259,30 @@
                   <span class="page-name">{{ page.name }}</span>
                 </n-checkbox>
 
-                <span class="page-entry-tag">
+                <span v-else class="page-name">{{ page.name }}</span>
+
+                <span v-if="page.accessItem" class="page-entry-tag">
                   <i class="i-material-symbols:dashboard-customize" />
                   页面入口
+                </span>
+
+                <span v-else-if="page.accessUnavailableLabel" class="page-entry-tag is-warning">
+                  <i class="i-material-symbols:pending-actions" />
+                  {{ page.accessUnavailableLabel }}
+                </span>
+
+                <span v-else-if="page.objectPermission" class="page-entry-tag is-object">
+                  <i class="i-material-symbols:database" />
+                  对象权限
                 </span>
               </div>
 
               <div class="page-card-actions">
-                <span class="page-action-count">
-                  已选功能 <strong>{{ selectedActionCountInPage(page) }}</strong> / {{ page.actionItems.length }}
+                <span v-if="page.actionItems.length" class="page-action-count">
+                  已选功能 <strong>{{ selectedActionCountInPage(page) }}</strong> / {{ configurableActions(page).length }}
                 </span>
                 <n-button
+                  v-if="page.accessItem"
                   size="tiny"
                   :disabled="!page.accessItem || !hasAnyActionChecked(page)"
                   @click="selectPageAccessOnly(page)"
@@ -257,8 +293,9 @@
                   仅菜单
                 </n-button>
                 <n-button
+                  v-if="page.actionItems.length"
                   size="tiny"
-                  :disabled="page.actionItems.length === 0 || areAllActionsChecked(page)"
+                  :disabled="configurableActions(page).length === 0 || areAllActionsChecked(page)"
                   @click="togglePageAllActions(page, true)"
                 >
                   <template #icon>
@@ -267,6 +304,7 @@
                   全选功能
                 </n-button>
                 <n-button
+                  v-if="page.actionItems.length"
                   size="tiny"
                   :disabled="selectedActionCountInPage(page) === 0"
                   @click="togglePageAllActions(page, false)"
@@ -276,11 +314,28 @@
                   </template>
                   清空功能
                 </n-button>
+                <n-button
+                  v-if="page.auxActionLabel && page.dataScopeModule"
+                  text
+                  type="primary"
+                  size="small"
+                  @click="emit('auxAction', page.auxActionPayload)"
+                >
+                  <template #icon>
+                    <i class="i-material-symbols:settings" />
+                  </template>
+                  {{ page.auxActionLabel }}
+                </n-button>
               </div>
             </header>
 
-            <div v-show="!isCollapsed(page.key)" class="page-card-body">
-              <section class="data-scope-panel" aria-label="数据权限范围">
+            <div
+              v-if="page.hasDetails"
+              v-show="!isCollapsed(page.key)"
+              class="page-card-body"
+              :class="{ 'is-single': !page.showDataScopePanel || !page.showFunctionPanel }"
+            >
+              <section v-if="page.showDataScopePanel" class="data-scope-panel" aria-label="数据权限范围">
                 <div class="section-heading">
                   <i class="i-material-symbols:database" aria-hidden="true" />
                   <span>数据权限范围</span>
@@ -304,12 +359,21 @@
                   </button>
                 </div>
 
-                <div v-else class="scope-unavailable">
-                  当前页面未接入数据权限配置
+                <div v-else class="scope-unavailable is-warning">
+                  <span>{{ page.dataScopeUnavailableText || '当前页面未接入数据权限配置' }}</span>
+                  <n-button
+                    v-if="page.auxActionLabel"
+                    text
+                    type="primary"
+                    size="small"
+                    @click="emit('auxAction', page.auxActionPayload)"
+                  >
+                    {{ page.auxActionLabel }}
+                  </n-button>
                 </div>
               </section>
 
-              <section class="function-panel" aria-label="业务功能权限">
+              <section v-if="page.showFunctionPanel" class="function-panel" aria-label="业务功能权限">
                 <div class="section-heading">
                   <i class="i-material-symbols:tune" aria-hidden="true" />
                   <span>业务功能权限</span>
@@ -334,6 +398,7 @@
                         :key="permission.key"
                         :checked="isPermissionChecked(permission)"
                         :indeterminate="isPermissionPartiallyChecked(permission)"
+                        :disabled="permission.disabled || permission.resourceIds.length === 0"
                         @update:checked="checked => toggleAction(page, permission, checked)"
                       >
                         <span class="function-permission-label">
@@ -386,6 +451,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  permissionModules: {
+    type: Array,
+    default: () => [],
+  },
   checkedKeys: {
     type: Array,
     default: () => [],
@@ -406,9 +475,17 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  defaultScopeEditable: {
+    type: Boolean,
+    default: true,
+  },
+  linkPageAndActions: {
+    type: Boolean,
+    default: true,
+  },
 })
 
-const emit = defineEmits(['update:checkedKeys', 'update:dataScopeSettings'])
+const emit = defineEmits(['update:checkedKeys', 'update:dataScopeSettings', 'auxAction'])
 
 const INHERIT_SCOPE = '__inherit__'
 const keyword = ref('')
@@ -419,9 +496,13 @@ const collapsedPageKeys = ref(new Set())
 const checkedKeySet = computed(() => new Set(props.checkedKeys.map(String)))
 const dataScopeModuleMap = computed(() => new Map((props.dataScopeSettings.modules || [])
   .map(module => [module.moduleCode, module])))
-const workspaceModules = computed(() => buildWorkspaceModules(props.resourceTree))
+const workspaceModules = computed(() => normalizePermissionModules(
+  props.permissionModules.length
+    ? props.permissionModules
+    : buildWorkspaceModules(props.resourceTree),
+))
 const totalActionCount = computed(() => workspaceModules.value.reduce((total, module) =>
-  total + module.pages.reduce((pageTotal, page) => pageTotal + page.actionItems.length, 0), 0))
+  total + module.pages.reduce((pageTotal, page) => pageTotal + configurableActions(page).length, 0), 0))
 const selectedActionCount = computed(() => workspaceModules.value.reduce((total, module) =>
   total + module.pages.reduce((pageTotal, page) => pageTotal + selectedActionCountInPage(page), 0), 0))
 
@@ -449,6 +530,7 @@ const activePages = computed(() => {
     || page.path.toLowerCase().includes(search)
     || page.actionItems.some(item => item.label.toLowerCase().includes(search)))
 })
+const activeDetailPages = computed(() => activePages.value.filter(page => page.hasDetails))
 const pageScopeOptions = computed(() => [
   {
     label: `跟随角色默认（当前${dataScopeOptionText(props.dataScopeSettings.defaultDataScope)}）`,
@@ -580,6 +662,57 @@ function buildWorkspaceModules(tree) {
 
   return modules
     .filter(module => module.pages.length > 0)
+}
+
+function normalizePermissionModules(modules) {
+  return (modules || []).map((module, moduleIndex) => ({
+    ...module,
+    key: module.key || `module:prepared:${moduleIndex}`,
+    name: module.name || '业务模块',
+    path: module.path || '',
+    pages: (module.pages || []).map((page, pageIndex) => {
+      const actionItems = (page.actionItems || []).map((item, itemIndex) => ({
+        ...item,
+        key: item.key || `permission:${moduleIndex}:${pageIndex}:${itemIndex}`,
+        label: item.label || '使用',
+        resourceIds: uniqueIds(item.resourceIds || []),
+        permissions: uniqueIds(item.permissions || []),
+        sources: Array.isArray(item.sources) ? item.sources : [],
+        disabled: Boolean(item.disabled),
+      }))
+      const accessItem = page.accessItem
+        ? {
+            ...page.accessItem,
+            resourceIds: uniqueIds(page.accessItem.resourceIds || []),
+          }
+        : null
+      const moduleCode = page.moduleCode || page.dataScopeModule?.moduleCode || ''
+      const showDataScopePanel = page.showDataScopePanel === undefined
+        ? true
+        : Boolean(page.showDataScopePanel)
+      const showFunctionPanel = page.showFunctionPanel === undefined
+        ? true
+        : Boolean(page.showFunctionPanel)
+
+      return {
+        ...page,
+        key: page.key || `page:prepared:${moduleIndex}:${pageIndex}`,
+        name: page.name || '未命名页面',
+        path: page.path || '',
+        accessItem,
+        actionItems,
+        moduleCode,
+        dataScopeModule: moduleCode ? dataScopeModuleMap.value.get(moduleCode) || null : null,
+        resourceIds: uniqueIds([
+          ...(accessItem?.resourceIds || []),
+          ...actionItems.flatMap(item => item.resourceIds),
+        ]),
+        showDataScopePanel,
+        showFunctionPanel,
+        hasDetails: showDataScopePanel || showFunctionPanel,
+      }
+    }),
+  })).filter(module => module.pages.length > 0)
 }
 
 function collectOwnedActions(menuNode) {
@@ -831,7 +964,11 @@ function isPagePartiallyChecked(page) {
 }
 
 function selectedActionCountInPage(page) {
-  return page.actionItems.filter(isPermissionChecked).length
+  return configurableActions(page).filter(isPermissionChecked).length
+}
+
+function configurableActions(page) {
+  return (page.actionItems || []).filter(item => !item.disabled && item.resourceIds.length > 0)
 }
 
 function hasAnyActionChecked(page) {
@@ -840,7 +977,8 @@ function hasAnyActionChecked(page) {
 }
 
 function areAllActionsChecked(page) {
-  return page.actionItems.length > 0 && page.actionItems.every(isPermissionChecked)
+  const actions = configurableActions(page)
+  return actions.length > 0 && actions.every(isPermissionChecked)
 }
 
 function togglePageAccess(page, checked) {
@@ -848,22 +986,24 @@ function togglePageAccess(page, checked) {
     updateCheckedKeys(page.resourceIds, checked)
     return
   }
-  const ids = checked
-    ? (cascadeEnabled.value ? uniqueIds(page.resourceIds) : page.accessItem.resourceIds)
-    : page.resourceIds
+  let ids = page.accessItem.resourceIds
+  if (props.linkPageAndActions && checked && cascadeEnabled.value)
+    ids = uniqueIds(page.resourceIds)
+  else if (props.linkPageAndActions && !checked)
+    ids = page.resourceIds
   updateCheckedKeys(ids, checked)
 }
 
 function toggleAction(page, permission, checked) {
-  const ids = checked && page.accessItem
+  const ids = checked && page.accessItem && props.linkPageAndActions
     ? uniqueIds([...permission.resourceIds, ...page.accessItem.resourceIds])
     : permission.resourceIds
   updateCheckedKeys(ids, checked)
 }
 
 function togglePageAllActions(page, checked) {
-  const actionIds = page.actionItems.flatMap(item => item.resourceIds)
-  const ids = checked && page.accessItem
+  const actionIds = configurableActions(page).flatMap(item => item.resourceIds)
+  const ids = checked && page.accessItem && props.linkPageAndActions
     ? uniqueIds([...actionIds, ...page.accessItem.resourceIds])
     : uniqueIds(actionIds)
   updateCheckedKeys(ids, checked)
@@ -882,7 +1022,7 @@ function selectPageAccessOnly(page) {
 }
 
 function normalizePageAccessKeys() {
-  if (workspaceModules.value.length === 0 || props.checkedKeys.length === 0)
+  if (!props.linkPageAndActions || workspaceModules.value.length === 0 || props.checkedKeys.length === 0)
     return
   const next = new Map(props.checkedKeys.map(id => [String(id), id]))
   let changed = false
@@ -1031,7 +1171,7 @@ function toggleCollapseAll(collapse) {
   if (!activeModule.value)
     return
   const next = new Set(collapsedPageKeys.value)
-  activeModule.value.pages.forEach((page) => {
+  activeModule.value.pages.filter(page => page.hasDetails).forEach((page) => {
     if (collapse)
       next.add(page.key)
     else
@@ -1065,6 +1205,8 @@ function scopeIconClass(value) {
 }
 
 function updateDefaultScope(value) {
+  if (!props.defaultScopeEditable)
+    return
   emit('update:dataScopeSettings', {
     ...props.dataScopeSettings,
     defaultDataScope: value,
@@ -1364,6 +1506,17 @@ function updateModuleScope(moduleCode, value) {
   user-select: none;
 }
 
+.cascade-switch.is-independent {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  cursor: default;
+}
+
+.cascade-switch.is-independent i {
+  font-size: 15px;
+}
+
 .toolbar-divider {
   width: 1px;
   height: 18px;
@@ -1451,6 +1604,16 @@ function updateModuleScope(moduleCode, value) {
 .default-scope-button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+.default-scope-button.is-readonly {
+  cursor: default;
+}
+
+.default-scope-lock {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 14px;
 }
 
 .default-scope-copy {
@@ -1562,6 +1725,10 @@ function updateModuleScope(moduleCode, value) {
   background: rgba(248, 250, 252, 0.86);
 }
 
+.page-card-header.is-compact {
+  border-bottom: 0;
+}
+
 .page-card-title {
   display: flex;
   align-items: center;
@@ -1619,6 +1786,18 @@ function updateModuleScope(moduleCode, value) {
   font-size: 13px;
 }
 
+.page-entry-tag.is-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.page-entry-tag.is-object {
+  border-color: #dbeafe;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
 .page-card-actions {
   display: flex;
   align-items: center;
@@ -1649,6 +1828,14 @@ function updateModuleScope(moduleCode, value) {
   display: grid;
   grid-template-columns: minmax(280px, 42%) minmax(0, 1fr);
   min-height: 160px;
+}
+
+.page-card-body.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.page-card-body.is-single .data-scope-panel {
+  border-right: 0;
 }
 
 .data-scope-panel,
@@ -1785,6 +1972,11 @@ function updateModuleScope(moduleCode, value) {
   font-size: 13px;
 }
 
+.scope-unavailable:has(.n-button) {
+  flex-direction: column;
+  gap: 6px;
+}
+
 .scope-unavailable.is-warning {
   border-color: #fde68a;
   background: #fffbeb;
@@ -1890,6 +2082,12 @@ function updateModuleScope(moduleCode, value) {
   border-color: #dcfce7;
   background: #f0fdf4;
   color: #059669;
+}
+
+.function-source-tag.is-pending {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
 }
 
 .function-skeleton-grid {

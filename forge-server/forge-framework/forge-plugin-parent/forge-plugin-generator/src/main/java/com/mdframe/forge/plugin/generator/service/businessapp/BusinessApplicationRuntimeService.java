@@ -34,6 +34,17 @@ public class BusinessApplicationRuntimeService {
 
     public BusinessApplicationRuntimeVO runtimeByCode(String applicationCode) {
         BusinessApplicationVO current = applicationService.detailByCode(applicationCode);
+        return runtime(current);
+    }
+
+    /**
+     * 按应用主键读取正式运行快照，供带应用入口上下文的低代码运行配置叠加使用。
+     */
+    public BusinessApplicationRuntimeVO runtimeById(Long applicationId) {
+        return runtime(applicationService.detail(applicationId));
+    }
+
+    private BusinessApplicationRuntimeVO runtime(BusinessApplicationVO current) {
         if (!Integer.valueOf(1).equals(current.getStatus())) {
             throw new BusinessException("应用已停用，暂时无法访问");
         }
@@ -46,7 +57,8 @@ public class BusinessApplicationRuntimeService {
         Map<String, Object> applicationSnapshot = map(snapshot.get("application"));
         Map<String, Object> options = map(applicationSnapshot.get("options"));
         options.put("inAppBuilder", filterBuilder(
-                map(options.get("inAppBuilder")), resolveRoleIds(), resolveAdminAccess()));
+                map(options.get("inAppBuilder")), current.getApplicationCode(),
+                resolvePermissionCodes(), resolveAdminAccess()));
         applicationSnapshot.put("options", options);
 
         BusinessApplicationRuntimeVO runtime = new BusinessApplicationRuntimeVO();
@@ -57,12 +69,15 @@ public class BusinessApplicationRuntimeService {
         return runtime;
     }
 
-    Map<String, Object> filterBuilder(Map<String, Object> builder, Set<Long> roleIds) {
-        return filterBuilder(builder, roleIds, false);
+    Map<String, Object> filterBuilder(Map<String, Object> builder,
+                                      String applicationCode,
+                                      Set<String> permissionCodes) {
+        return filterBuilder(builder, applicationCode, permissionCodes, false);
     }
 
     Map<String, Object> filterBuilder(Map<String, Object> builder,
-                                      Set<Long> roleIds,
+                                      String applicationCode,
+                                      Set<String> permissionCodes,
                                       boolean bypassRoleAccess) {
         if (builder.isEmpty()) {
             return builder;
@@ -79,8 +94,8 @@ public class BusinessApplicationRuntimeService {
         Set<String> accessiblePages = new LinkedHashSet<>();
         nodes.stream()
                 .filter(node -> "page".equalsIgnoreCase(string(node.get("type"))))
-                .filter(node -> accessAllowed(node, roleIds, bypassRoleAccess))
-                .filter(node -> ancestorsAllow(node, nodesById, roleIds, bypassRoleAccess))
+                .filter(node -> accessAllowed(node, applicationCode, permissionCodes, bypassRoleAccess))
+                .filter(node -> ancestorsAllow(node, nodesById, applicationCode, permissionCodes, bypassRoleAccess))
                 .map(node -> string(node.get("id")))
                 .filter(StringUtils::isNotBlank)
                 .forEach(accessiblePages::add);
@@ -118,13 +133,14 @@ public class BusinessApplicationRuntimeService {
 
     private boolean ancestorsAllow(Map<String, Object> node,
                                    Map<String, Map<String, Object>> nodesById,
-                                   Set<Long> roleIds,
+                                   String applicationCode,
+                                   Set<String> permissionCodes,
                                    boolean bypassRoleAccess) {
         Set<String> visited = new HashSet<>();
         String parentId = StringUtils.trimToNull(string(node.get("parentId")));
         while (parentId != null && visited.add(parentId)) {
             Map<String, Object> parent = nodesById.get(parentId);
-            if (parent == null || !accessAllowed(parent, roleIds, bypassRoleAccess)) {
+            if (parent == null || !accessAllowed(parent, applicationCode, permissionCodes, bypassRoleAccess)) {
                 return false;
             }
             parentId = StringUtils.trimToNull(string(parent.get("parentId")));
@@ -146,17 +162,29 @@ public class BusinessApplicationRuntimeService {
     }
 
     private boolean accessAllowed(Map<String, Object> node,
-                                  Set<Long> roleIds,
+                                  String applicationCode,
+                                  Set<String> permissionCodes,
                                   boolean bypassRoleAccess) {
-        if (bypassRoleAccess) {
+        if (bypassRoleAccess || !systemMenuVisible(node)) {
             return true;
         }
-        Map<String, Object> access = map(firstNonNull(
-                node.get("access"), map(node.get("settings")).get("access")));
-        if (!"roles".equalsIgnoreCase(string(access.get("mode")))) {
-            return true;
+        String nodeId = StringUtils.trimToNull(string(node.get("id")));
+        String normalizedApplicationCode = StringUtils.trimToNull(applicationCode);
+        if (nodeId == null || normalizedApplicationCode == null) {
+            return false;
         }
-        return longSet(access.get("roleIds")).stream().anyMatch(roleIds::contains);
+        String permission = "ai:business:application:" + normalizedApplicationCode + ":page:" + nodeId;
+        return permissionCodes.contains(permission)
+                || permissionCodes.contains("*:*:*")
+                || permissionCodes.contains("**");
+    }
+
+    private boolean systemMenuVisible(Map<String, Object> node) {
+        Object value = node.get("systemMenuVisible");
+        if (value == null) {
+            value = map(node.get("settings")).get("systemMenuVisible");
+        }
+        return Boolean.TRUE.equals(value);
     }
 
     private BusinessApplicationVO toApplication(Map<String, Object> snapshot,
@@ -193,10 +221,11 @@ public class BusinessApplicationRuntimeService {
         return entry;
     }
 
-    private Set<Long> resolveRoleIds() {
+    private Set<String> resolvePermissionCodes() {
         try {
-            List<Long> roleIds = SessionHelper.getRoleIds();
-            return roleIds == null ? Set.of() : Set.copyOf(roleIds);
+            var loginUser = SessionHelper.getLoginUser();
+            return loginUser == null || loginUser.getPermissions() == null
+                    ? Set.of() : Set.copyOf(loginUser.getPermissions());
         } catch (Exception ignored) {
             return Set.of();
         }
@@ -221,10 +250,6 @@ public class BusinessApplicationRuntimeService {
         }
     }
 
-    private Object firstNonNull(Object left, Object right) {
-        return left != null ? left : right;
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> map(Object value) {
         return value instanceof Map<?, ?> raw
@@ -237,15 +262,6 @@ public class BusinessApplicationRuntimeService {
         }
         List<Map<String, Object>> result = new ArrayList<>();
         collection.stream().filter(Map.class::isInstance).map(this::map).forEach(result::add);
-        return result;
-    }
-
-    private Set<Long> longSet(Object value) {
-        if (!(value instanceof Collection<?> collection)) {
-            return Set.of();
-        }
-        Set<Long> result = new LinkedHashSet<>();
-        collection.stream().map(this::longValue).filter(java.util.Objects::nonNull).forEach(result::add);
         return result;
     }
 

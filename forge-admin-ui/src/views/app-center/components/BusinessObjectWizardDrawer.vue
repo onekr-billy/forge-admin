@@ -116,6 +116,7 @@
               </n-form-item-gi>
               <n-form-item-gi label="对象编码" required>
                 <n-input
+                  ref="objectCodeInputRef"
                   v-model:value="form.objectCode"
                   placeholder="例如：customer"
                   @blur="form.objectCode = normalizeObjectCode(form.objectCode, form.objectName)"
@@ -141,6 +142,36 @@
           </n-form>
         </section>
       </div>
+
+      <n-modal
+        v-model:show="existingObjectModalVisible"
+        preset="card"
+        title="业务单元已存在"
+        :bordered="false"
+        :style="{ width: '520px' }"
+      >
+        <template #default>
+          <p class="existing-tip">
+            业务域「{{ existingObject?.suiteName || existingObject?.suiteCode }}」下已存在编码为
+            <code>{{ existingObject?.objectCode }}</code>
+            （{{ existingObject?.objectName }}）的业务单元。
+          </p>
+          <p class="existing-sub">
+            它通常只是被从某个应用移除了编排关系，业务单元本身仍可复用，无需重复创建。
+          </p>
+          <n-space justify="end" class="existing-actions">
+            <n-button @click="retryWithNewCode">
+              更换编码重试
+            </n-button>
+            <n-button v-if="lockSuite" secondary @click="associateExistingObject">
+              关联到当前应用
+            </n-button>
+            <n-button type="primary" @click="openExistingObject">
+              打开已有对象
+            </n-button>
+          </n-space>
+        </template>
+      </n-modal>
 
       <template #footer>
         <n-space justify="space-between" align="center">
@@ -170,8 +201,14 @@
 
 <script setup>
 import { useMessage } from 'naive-ui'
-import { computed, reactive, ref, watch } from 'vue'
-import { createBusinessObject, createBusinessSuite, genDatasourceEnabled, genDatasourceTables } from '@/api/business-app'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import {
+  businessObjectList,
+  createBusinessObject,
+  createBusinessSuite,
+  genDatasourceEnabled,
+  genDatasourceTables,
+} from '@/api/business-app'
 import DictSelect from '@/components/DictSelect.vue'
 import IconSelector from '@/components/IconSelector.vue'
 import MenuParentSelect from '@/components/lowcode-builder/shared/MenuParentSelect.vue'
@@ -205,6 +242,9 @@ const message = useMessage()
 const MASTER_DATASOURCE_VALUE = 'MASTER'
 const currentStep = ref(1)
 const saving = ref(false)
+const objectCodeInputRef = ref(null)
+const existingObjectModalVisible = ref(false)
+const existingObject = ref(null)
 const form = reactive(defaultForm(props.defaultCreateMode))
 const lastSuggestedObjectCode = ref('')
 const lastSuggestedSuiteCode = ref('')
@@ -274,8 +314,11 @@ const footerHint = computed(() => {
 })
 
 watch(() => props.show, (visible) => {
-  if (!visible)
+  if (!visible) {
+    existingObjectModalVisible.value = false
+    existingObject.value = null
     return
+  }
   Object.assign(form, defaultForm(props.defaultCreateMode))
   lastSuggestedObjectCode.value = ''
   lastSuggestedSuiteCode.value = ''
@@ -351,8 +394,17 @@ async function saveObject() {
     return
   saving.value = true
   try {
-    const suiteCode = await resolveSuiteCode()
     const objectCode = normalizeObjectCode(form.objectCode, form.objectName)
+    const candidateSuiteCode = form.suiteMode === 'EXISTING'
+      ? form.suiteCode
+      : normalizeCode(form.newSuiteCode, form.newSuiteName)
+    const existing = await findExistingObject(candidateSuiteCode, objectCode)
+    if (existing) {
+      existingObject.value = existing
+      existingObjectModalVisible.value = true
+      return
+    }
+    const suiteCode = await resolveSuiteCode()
     const runtimeDatasourceId = selectedRegisteredDatasourceId.value
     const res = await createBusinessObject({
       suiteCode,
@@ -384,6 +436,51 @@ async function saveObject() {
   finally {
     saving.value = false
   }
+}
+
+async function findExistingObject(suiteCode, objectCode) {
+  if (!suiteCode || !objectCode)
+    return null
+  const res = await businessObjectList({ suiteCode, objectCode })
+  return (res.data || [])[0] || null
+}
+
+function openExistingObject() {
+  const existing = existingObject.value
+  if (!existing)
+    return
+  existingObjectModalVisible.value = false
+  emit('saved', {
+    id: existing.id,
+    suiteCode: existing.suiteCode,
+    objectCode: existing.objectCode,
+    objectName: existing.objectName || existing.objectCode,
+    createMode: form.createMode,
+    nextAction: 'OPEN_DESIGNER',
+    designerPanel: resolveDesignerPanel(form.createMode),
+  })
+  emit('update:show', false)
+}
+
+function associateExistingObject() {
+  const existing = existingObject.value
+  if (!existing)
+    return
+  existingObjectModalVisible.value = false
+  emit('saved', {
+    id: existing.id,
+    suiteCode: existing.suiteCode,
+    objectCode: existing.objectCode,
+    objectName: existing.objectName || existing.objectCode,
+    createMode: form.createMode,
+    nextAction: 'ASSOCIATE',
+  })
+  emit('update:show', false)
+}
+
+function retryWithNewCode() {
+  existingObjectModalVisible.value = false
+  nextTick(() => objectCodeInputRef.value?.focus())
 }
 
 function resolveDesignerPanel(createMode) {
@@ -747,6 +844,34 @@ function defaultForm(defaultCreateMode = 'BLANK') {
   color: #6b7280;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.existing-tip {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.existing-tip code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #2f6feb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.existing-sub {
+  margin: 0 0 18px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.existing-actions {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 14px;
 }
 
 @media (max-width: 640px) {

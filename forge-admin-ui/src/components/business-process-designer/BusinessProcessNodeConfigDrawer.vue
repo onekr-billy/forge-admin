@@ -32,6 +32,7 @@ const emit = defineEmits([
   'save',
   'openFlowDesigner',
   'refreshFlowModel',
+  'editAction',
 ])
 
 const draftNode = ref(null)
@@ -139,6 +140,7 @@ function clone(value) {
           @update:config="patchConfig"
           @open-flow-designer="emit('openFlowDesigner', $event)"
           @refresh-flow-model="emit('refreshFlowModel', $event)"
+          @edit-action="emit('editAction', $event)"
         />
 
         <BusinessProcessConditionConfig

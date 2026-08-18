@@ -78,6 +78,36 @@ export function businessApplicationRuntimeByCode(applicationCode) {
   )
 }
 
+export function businessApplicationPermissionWorkspace(applicationCode) {
+  return request.get(
+    `/ai/business/application/by-code/${encodeURIComponent(applicationCode)}/permissions`,
+    ENCRYPTED_REQUEST,
+  )
+}
+
+export function businessApplicationRolePermission(applicationCode, roleId) {
+  return request.get(
+    `/ai/business/application/by-code/${encodeURIComponent(applicationCode)}/permissions/roles/${roleId}`,
+    ENCRYPTED_REQUEST,
+  )
+}
+
+export function saveBusinessApplicationRolePermission(applicationCode, roleId, data) {
+  return request.put(
+    `/ai/business/application/by-code/${encodeURIComponent(applicationCode)}/permissions/roles/${roleId}`,
+    data,
+    ENCRYPTED_REQUEST,
+  )
+}
+
+export function saveBusinessApplicationDataScopeAdapter(applicationCode, objectId, data) {
+  return request.put(
+    `/ai/business/application/by-code/${encodeURIComponent(applicationCode)}/permissions/objects/${objectId}/data-scope-adapter`,
+    data,
+    ENCRYPTED_REQUEST,
+  )
+}
+
 export function businessApplicationReadiness(id) {
   return request.get(`/ai/business/application/${id}/readiness`, ENCRYPTED_REQUEST)
 }

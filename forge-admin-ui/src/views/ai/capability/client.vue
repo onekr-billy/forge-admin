@@ -423,17 +423,17 @@
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  addClientUserAssertionMapping,
   addCapabilityClient,
+  addClientUserAssertionMapping,
   disableClientUserAssertion,
   getCapabilityClient,
   getClientUserAssertionConfig,
   getClientUserAssertionMappingPage,
   removeClientUserAssertionMapping,
   revokeCapabilityClient,
-  rotateClientUserAssertionKey,
   rotateCapabilityClientSecret,
   rotateCapabilityClientSigningKey,
+  rotateClientUserAssertionKey,
   updateClientUserAssertionMappingRule,
 } from '@/api/ai/capability'
 import { AiCrudPage } from '@/components/ai-form'

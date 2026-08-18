@@ -238,4 +238,59 @@ export default {
     method: 'post',
     params: { tenantId },
   }),
+
+  // 通用低代码运行时。H5 与管理端共用发布态协议和动态 CRUD，后端由 app-server 暴露同一套运行接口。
+  getLowcodeRenderConfig: (configKey, params = {}) => request({
+    url: `/ai/crud-config/render/${encodeURIComponent(configKey)}`,
+    method: 'get',
+    params,
+    needTip: false,
+  }),
+  getLowcodePage: (configKey, params = {}) => request({
+    url: `/ai/crud/${encodeURIComponent(configKey)}/page`,
+    method: 'get',
+    params,
+    needTip: false,
+  }),
+  getLowcodeDetail: (configKey, id) => request({
+    url: `/ai/crud/${encodeURIComponent(configKey)}/${encodeURIComponent(id)}`,
+    method: 'get',
+    needTip: false,
+  }),
+  createLowcodeRecord: (configKey, data) => request({
+    url: `/ai/crud/${encodeURIComponent(configKey)}`,
+    method: 'post',
+    data,
+    encrypt: true,
+  }),
+  updateLowcodeRecord: (configKey, data) => request({
+    url: `/ai/crud/${encodeURIComponent(configKey)}`,
+    method: 'put',
+    data,
+    encrypt: true,
+  }),
+  deleteLowcodeRecord: (configKey, id) => request({
+    url: `/ai/crud/${encodeURIComponent(configKey)}/${encodeURIComponent(id)}`,
+    method: 'delete',
+    needTip: false,
+  }),
+  getDictOptions: dictType => request({
+    url: `/system/dict/data/type/${encodeURIComponent(dictType)}`,
+    method: 'get',
+    needTip: false,
+  }),
+  executeLowcodeQuerySource: (data, options = {}) => request({
+    ...options,
+    url: '/ai/lowcode/query-source/execute',
+    method: 'post',
+    data,
+    encrypt: true,
+    needTip: false,
+  }),
+  executeBusinessAction: data => request({
+    url: '/ai/business/action/execute',
+    method: 'post',
+    data,
+    encrypt: true,
+  }),
 }

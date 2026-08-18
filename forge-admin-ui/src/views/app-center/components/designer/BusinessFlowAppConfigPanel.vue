@@ -2,9 +2,9 @@
   <div
     ref="rootRef"
     class="business-flow-config-designer"
-    :class="[rootStageClass, { 'code-app-mode': isCodeApp }]"
+    :class="[rootStageClass, { 'code-app-mode': isCodeApp, compact }]"
   >
-    <header class="flow-config-topbar">
+    <header v-if="!compact" class="flow-config-topbar">
       <div class="flow-config-breadcrumb">
         <strong>业务配置中心</strong>
         <span>›</span>
@@ -12,7 +12,7 @@
       </div>
     </header>
 
-    <div class="flow-config-tabs">
+    <div v-if="!compact" class="flow-config-tabs">
       <span class="tabs-prefix">配置项</span>
       <div class="tabs-list">
         <button
@@ -34,7 +34,7 @@
       </n-alert>
 
       <div class="flow-config-shell">
-        <section class="flow-stage-track">
+        <section v-if="!compact" class="flow-stage-track">
           <button
             v-for="stage in activeStages"
             :key="stage.key"
@@ -64,7 +64,7 @@
         </section>
 
         <main class="flow-config-workspace">
-          <div class="workspace-context">
+          <div v-if="!compact" class="workspace-context">
             <div>
               <span>{{ activeStepTitle }}</span>
               <strong>{{ activeStageMeta.title }}</strong>
@@ -73,7 +73,7 @@
           </div>
 
           <section
-            v-if="!isCodeApp"
+            v-if="!isCodeApp && !compact"
             v-show="activeSection === 'document'"
             class="flow-config-panel"
             data-section="document"
@@ -111,7 +111,7 @@
           </section>
 
           <section
-            v-show="activeSection === 'flow'"
+            v-show="compact || activeSection === 'flow'"
             class="flow-config-panel"
             data-section="flow"
           >
@@ -120,9 +120,12 @@
               :object-id="objectId"
               :object-code="objectCode"
               :object-name="objectName"
+              :application-code="applicationCode"
               :fields="fields"
               :code-app="isCodeApp"
+              :compact="compact"
               @saved="handleFlowSaved"
+              @context-change="handleFlowContextChange"
               @dirty-change="handleDirtyChange"
             />
           </section>
@@ -173,9 +176,17 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
+  applicationCode: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['dirtyChange', 'saved', 'openTrigger', 'openPublish', 'updateFieldGeneration'])
+const emit = defineEmits(['dirtyChange', 'saved', 'openTrigger', 'openPublish', 'updateFieldGeneration', 'flowContextChange'])
 
 const message = useMessage()
 const rootRef = ref(null)
@@ -185,7 +196,7 @@ const flowBindingPanelRef = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const configState = ref({})
-const activeSection = ref(normalizeInitialSection(props.initialSection))
+const activeSection = ref(props.compact ? 'flow' : normalizeInitialSection(props.initialSection))
 const activeStageKey = ref('')
 
 const isCodeApp = computed(() => {
@@ -356,6 +367,10 @@ const activeStageMeta = computed(() => {
   }
 })
 
+function handleFlowContextChange(context = {}) {
+  emit('flowContextChange', context)
+}
+
 function isActiveStage(key) {
   return currentStageKey.value === key
 }
@@ -369,7 +384,7 @@ watch(isCodeApp, (value) => {
 
 onMounted(async () => {
   await loadConfig()
-  activeSection.value = normalizeSection(props.initialSection, isCodeApp.value)
+  activeSection.value = props.compact ? 'flow' : normalizeSection(props.initialSection, isCodeApp.value)
   activeStageKey.value = defaultStageKey.value
 })
 
@@ -537,6 +552,30 @@ defineExpose({
   height: 100%;
   min-height: 100%;
   background: #f5f7fb;
+}
+
+.business-flow-config-designer.compact {
+  display: block;
+  height: auto;
+  min-height: 0;
+  background: transparent;
+}
+
+.business-flow-config-designer.compact .flow-config-body,
+.business-flow-config-designer.compact .flow-config-shell,
+.business-flow-config-designer.compact .flow-config-workspace {
+  min-height: 0;
+  background: transparent;
+}
+
+.business-flow-config-designer.compact .flow-config-body {
+  display: block;
+  padding: 0;
+}
+
+.business-flow-config-designer.compact .flow-config-shell {
+  max-width: none;
+  margin: 0;
 }
 
 .flow-config-topbar {

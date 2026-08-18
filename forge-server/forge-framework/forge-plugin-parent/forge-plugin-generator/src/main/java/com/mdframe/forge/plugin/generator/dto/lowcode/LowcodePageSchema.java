@@ -28,6 +28,12 @@ public class LowcodePageSchema {
     private List<LowcodePageZone> zones = new ArrayList<>();
 
     /**
+     * 设计态页面选项。主子表向导会同步写入 masterDetailConfig，
+     * 发布时仍以 modelRefs 编译出的运行配置为准。
+     */
+    private Map<String, Object> options = new LinkedHashMap<>();
+
+    /**
      * 列表设计器多页面画布。运行态首期主要使用 listGridLayout，
      * 但设计器必须完整保存 list/detail/custom 页，避免保存后详情页被默认布局补回。
      */

@@ -2,11 +2,13 @@ package com.mdframe.forge.plugin.generator.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDataScopeAdapterDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationFormDataProvisionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationObjectDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPublishDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationRolePermissionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationRollbackDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationTemplateInitializeDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeCodegenRequest;
@@ -19,6 +21,7 @@ import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicatio
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishRecoveryService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishRunService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPermissionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRollbackService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationVersionService;
@@ -30,6 +33,8 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationWorkspaceVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishCheckVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishResultVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPermissionWorkspaceVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRolePermissionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishRunVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationTemplateResultVO;
@@ -71,6 +76,7 @@ public class BusinessApplicationController {
     private final BusinessApplicationFormDataService formDataService;
     private final BusinessApplicationTemplateService templateService;
     private final BusinessApplicationWorkspaceService workspaceService;
+    private final BusinessApplicationPermissionService permissionService;
     private final BusinessApplicationPublishService publishService;
     private final BusinessApplicationVersionService versionService;
     private final BusinessApplicationPublishRunService publishRunService;
@@ -115,6 +121,42 @@ public class BusinessApplicationController {
     @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "按编码查询应用工作台快照")
     public RespInfo<BusinessApplicationWorkspaceVO> workspaceByCode(@PathVariable String applicationCode) {
         return RespInfo.success(workspaceService.workspaceByCode(applicationCode));
+    }
+
+    @GetMapping("/by-code/{applicationCode}/permissions")
+    @SaCheckPermission("ai:businessApplication:list")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询应用权限目录")
+    public RespInfo<BusinessApplicationPermissionWorkspaceVO> permissionWorkspace(
+            @PathVariable String applicationCode) {
+        return RespInfo.success(permissionService.workspace(applicationCode));
+    }
+
+    @GetMapping("/by-code/{applicationCode}/permissions/roles/{roleId}")
+    @SaCheckPermission("ai:businessApplication:list")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询应用角色权限")
+    public RespInfo<BusinessApplicationRolePermissionVO> rolePermission(
+            @PathVariable String applicationCode, @PathVariable Long roleId) {
+        return RespInfo.success(permissionService.rolePermission(applicationCode, roleId));
+    }
+
+    @PutMapping("/by-code/{applicationCode}/permissions/roles/{roleId}")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "保存应用角色权限")
+    public RespInfo<BusinessApplicationRolePermissionVO> saveRolePermission(
+            @PathVariable String applicationCode,
+            @PathVariable Long roleId,
+            @RequestBody BusinessApplicationRolePermissionDTO request) {
+        return RespInfo.success(permissionService.saveRolePermission(applicationCode, roleId, request));
+    }
+
+    @PutMapping("/by-code/{applicationCode}/permissions/objects/{objectId}/data-scope-adapter")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "保存对象数据范围适配")
+    public RespInfo<BusinessApplicationPermissionWorkspaceVO.ObjectPermission> saveDataScopeAdapter(
+            @PathVariable String applicationCode,
+            @PathVariable Long objectId,
+            @RequestBody BusinessApplicationDataScopeAdapterDTO request) {
+        return RespInfo.success(permissionService.saveDataScopeAdapter(applicationCode, objectId, request));
     }
 
     @GetMapping("/by-code/{applicationCode}/runtime")

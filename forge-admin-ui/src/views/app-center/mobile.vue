@@ -15,7 +15,7 @@
         </n-space>
       </div>
       <h1>移动端中心</h1>
-      <p>登记 H5、移动待办、移动审批和移动业务入口，统一纳入业务域和打开校验。</p>
+      <p>集中管理移动端页面入口，并统一接入菜单和角色授权。</p>
     </header>
 
     <section class="mobile-summary">
@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { ClipboardOutline, ListOutline, PhonePortraitOutline, WalkOutline } from '@vicons/ionicons5'
+import { CheckmarkCircleOutline, CreateOutline, ListOutline, PhonePortraitOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -109,13 +109,13 @@ const pagination = ref({
 
 const enabledCount = computed(() => apps.value.filter(item => item.status === 1).length)
 const summaryCards = computed(() => [
-  { name: 'H5 入口', count: countByMode('H5'), icon: PhonePortraitOutline },
-  { name: '移动待办', count: countByScene('todo'), icon: ListOutline },
-  { name: '移动审批', count: countByScene('approval'), icon: ClipboardOutline },
-  { name: '移动业务', count: countByScene('business'), icon: WalkOutline },
+  { name: '全部入口', count: total.value, icon: PhonePortraitOutline },
+  { name: '列表入口', count: countByRuntimeMode('LIST'), icon: ListOutline },
+  { name: '填报入口', count: countByRuntimeMode('CREATE_FORM'), icon: CreateOutline },
+  { name: '已同步菜单', count: countSyncedMenus(), icon: CheckmarkCircleOutline },
 ])
 const entryModeOptions = [
-  { label: 'H5', value: 'H5' },
+  { label: '移动端页面', value: 'H5' },
   { label: '系统已有页面', value: 'ROUTE' },
   { label: '外部链接', value: 'EXTERNAL' },
 ]
@@ -210,14 +210,17 @@ function handlePageSizeChange(pageSize) {
   loadApps()
 }
 
-function countByMode(mode) {
-  return apps.value.filter(item => item.entryMode === mode).length
-}
-
-function countByScene(scene) {
+function countByRuntimeMode(mode) {
   return apps.value.filter((item) => {
     const options = parseOptions(item.options)
-    return options.mobileScene === scene
+    return String(item.runtimeOpenMode || options.runtimeOpenMode || 'LIST').toUpperCase() === mode
+  }).length
+}
+
+function countSyncedMenus() {
+  return apps.value.filter((item) => {
+    const options = parseOptions(item.options)
+    return options.adminMenu?.syncEnabled === true || item.adminMenuSyncEnabled === true
   }).length
 }
 

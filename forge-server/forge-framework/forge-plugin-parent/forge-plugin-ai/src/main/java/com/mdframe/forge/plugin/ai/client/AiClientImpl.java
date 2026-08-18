@@ -61,6 +61,10 @@ public class AiClientImpl implements AiClient {
         AiInvocationResolver.ResolvedInvocation resolved = null;
         boolean dispatched = false;
         try {
+            log.info("[AiClient.call] 请求进入, requestId={}, agentCode={}, providerId={}, modelName={}, sessionId={}, temperature={}, maxTokens={}, contextVars={}, message={}",
+                    requestId, request.getAgentCode(), request.getProviderId(), request.getModelName(),
+                    request.getSessionId(), request.getTemperature(), request.getMaxTokens(),
+                    request.getContextVars(), request.getMessage(), 2000);
             resolved = invocationResolver.resolve(
                     request.getAgentCode(), request.getProviderId(), request.getModelName(),
                     request.getTemperature(), request.getMaxTokens());
@@ -72,6 +76,7 @@ public class AiClientImpl implements AiClient {
             ChatClient baseClient = chatClientCache.getOrCreateBase(resolved.provider(), options);
             ChatClient chatClient = chatClientCache.createSessionClient(
                     baseClient, historySessionId, dbChatMemory);
+            logRoute(requestId, request, resolved, systemPrompt);
             log.info("[AiClient.call] 请求开始, requestId={}, agentCode={}, providerId={}, model={}, systemLength={}, userLength={}",
                     requestId, request.getAgentCode(), resolved.provider().getId(), resolved.model(), length(systemPrompt), length(request.getMessage()));
             dispatched = true;
@@ -86,7 +91,7 @@ public class AiClientImpl implements AiClient {
             completeLeaseSuccess(resolved);
             recordObservation(requestId, request, resolved, AiInvocationOutcome.SUCCESS, AiInvocationPhase.COMPLETED,
                     true, null, response == null ? null : response.getMetadata().getUsage(), elapsedMillis(startedAt));
-            log.info("[AiClient.call] 请求完成, requestId={}, responseLength={}, latencyMs={}", requestId, length(content), elapsedMillis(startedAt));
+            log.info("[AiClient.call] 请求完成, requestId={}, responseLength={}, latencyMs={}, response={}", requestId, length(content), elapsedMillis(startedAt), content, 2000);
             if (StringUtils.hasText(sessionId)) {
                 ensureSession(sessionId, request.getAgentCode(), request.getUserInputOrMessage(),
                         SessionHelper.getUserId(), SessionHelper.getTenantId());
@@ -98,13 +103,13 @@ public class AiClientImpl implements AiClient {
             abortOrFailLease(resolved, dispatched, e);
             recordObservation(requestId, request, resolved, resolved == null ? AiInvocationOutcome.ROUTING_FAILED : AiInvocationOutcome.FAILED,
                     dispatched ? AiInvocationPhase.DISPATCHED : AiInvocationPhase.RESOLUTION, dispatched, e, null, elapsedMillis(startedAt));
-            log.warn("[AiClient] 业务异常, requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName());
+            log.warn("[AiClient] 业务异常, requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName(), e);
             return handleBusinessException(e, request);
         } catch (Exception e) {
             abortOrFailLease(resolved, dispatched, e);
             recordObservation(requestId, request, resolved, AiInvocationOutcome.FAILED,
                     dispatched ? AiInvocationPhase.DISPATCHED : AiInvocationPhase.PREPARATION, dispatched, e, null, elapsedMillis(startedAt));
-            log.error("[AiClient] AI调用失败, requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName());
+            log.error("[AiClient] AI调用失败, requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName(), e);
             return AiClientResponse.fallback(null, AiFallbackReason.API_ERROR, request.getSessionId());
         }
     }
@@ -116,6 +121,10 @@ public class AiClientImpl implements AiClient {
         AtomicReference<AiInvocationResolver.ResolvedInvocation> resolvedReference = new AtomicReference<>();
         AtomicBoolean dispatched = new AtomicBoolean(false);
         try {
+            log.info("[AiClient.stream] 请求进入, requestId={}, agentCode={}, providerId={}, modelName={}, sessionId={}, temperature={}, maxTokens={}, message={}",
+                    requestId, request.getAgentCode(), request.getProviderId(), request.getModelName(),
+                    request.getSessionId(), request.getTemperature(), request.getMaxTokens(),
+                    request.getMessage());
             AiInvocationResolver.ResolvedInvocation resolved = invocationResolver.resolve(
                     request.getAgentCode(), request.getProviderId(), request.getModelName(),
                     request.getTemperature(), request.getMaxTokens());
@@ -130,6 +139,7 @@ public class AiClientImpl implements AiClient {
             ChatClient baseClient = chatClientCache.getOrCreateBase(resolved.provider(), options);
             ChatClient chatClient = chatClientCache.createSessionClient(
                     baseClient, historySessionId, dbChatMemory);
+            logRoute(requestId, request, resolved, systemPrompt);
 
             Long userId = SessionHelper.getUserId();
             Long tenantId = SessionHelper.getTenantId();
@@ -205,11 +215,12 @@ public class AiClientImpl implements AiClient {
                                 signal == SignalType.CANCEL ? AiInvocationPhase.STREAMING : AiInvocationPhase.COMPLETED,
                                 dispatched.get(), failure, lastUsage.get(), elapsedMillis(startedAt),
                                 tenantId, userId);
-                        log.info("[AiClient.stream] 请求结束, requestId={}, signal={}, reasoningLength={}, responseLength={}, latencyMs={}",
-                                requestId, signal, fullReasoning.length(), fullContent.length(), elapsedMillis(startedAt));
                         String finalContent = hasReasoning
                                 ? "【思考过程】\n" + fullReasoning + "\n\n【回复内容】\n" + fullContent
                                 : fullContent;
+                        log.info("[AiClient.stream] 请求结束, requestId={}, signal={}, reasoningLength={}, responseLength={}, latencyMs={}, response={}",
+                                requestId, signal, fullReasoning.length(), fullContent.length(), elapsedMillis(startedAt),
+                                finalContent);
                         persistConversationAsync(sessionId, request.getAgentCode(),
                                 request.getUserInput(), finalContent, persisted, signal, userId, tenantId);
                     });
@@ -220,7 +231,7 @@ public class AiClientImpl implements AiClient {
                     resolved == null ? AiInvocationOutcome.ROUTING_FAILED : AiInvocationOutcome.FAILED,
                     resolved == null ? AiInvocationPhase.RESOLUTION : AiInvocationPhase.PREPARATION,
                     dispatched.get(), e, null, elapsedMillis(startedAt));
-            log.warn("[AiClient] 业务异常(流式), requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName());
+            log.warn("[AiClient] 业务异常(流式), requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName(), e);
             AiClientResponse fallbackResp = handleBusinessException(e, request);
             return Flux.just("{\"fallback\":true,\"reason\":\"" + fallbackResp.getFallbackReason() + "\"}");
         } catch (Exception e) {
@@ -229,7 +240,7 @@ public class AiClientImpl implements AiClient {
             recordObservation(requestId, request, resolved, AiInvocationOutcome.FAILED,
                     resolved == null ? AiInvocationPhase.RESOLUTION : AiInvocationPhase.PREPARATION,
                     dispatched.get(), e, null, elapsedMillis(startedAt));
-            log.error("[AiClient] 流式初始化失败, requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName());
+            log.error("[AiClient] 流式初始化失败, requestId={}, agentCode={}, exceptionType={}", requestId, request.getAgentCode(), e.getClass().getSimpleName(), e);
             return Flux.just("{\"fallback\":true,\"reason\":\"API_ERROR\"}");
         }
     }
@@ -338,6 +349,25 @@ public class AiClientImpl implements AiClient {
     private Long toLong(Number number) { return number == null ? null : number.longValue(); }
     private long elapsedMillis(long startedAt) { return Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L); }
     private int length(String value) { return value == null ? 0 : value.length(); }
+
+    private void logRoute(String requestId, AiClientRequest request,
+                          AiInvocationResolver.ResolvedInvocation resolved, String systemPrompt) {
+        try {
+            RouteDecision decision = resolved != null && resolved.routedInvocation() != null
+                    ? resolved.routedInvocation().decision() : null;
+            log.info("[AiClient] 路由结果, requestId={}, agentCode={}, providerId={}, providerName={}, adapterCode={}, baseUrl={}, model={}, temperature={}, maxTokens={}, routeSource={}, routeReason={}, policyId={}, systemPrompt={}",
+                    requestId, request.getAgentCode(),
+                    resolved.provider().getId(), resolved.provider().getProviderName(),
+                    resolved.provider().getAdapterCode(), resolved.provider().getBaseUrl(),
+                    resolved.model(), resolved.temperature(), resolved.maxTokens(),
+                    decision == null ? null : decision.source(),
+                    decision == null ? null : decision.reason(),
+                    decision == null ? null : decision.policyId(),
+                    systemPrompt);
+        } catch (Exception logEx) {
+            log.warn("[AiClient] 路由日志记录失败, requestId={}", requestId, logEx);
+        }
+    }
 
     private void persistConversation(String sessionId, String agentCode,
                                      String userPrompt, String assistantContent,Long userId,Long tenantId) {

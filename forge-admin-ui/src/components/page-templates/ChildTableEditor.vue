@@ -12,11 +12,22 @@
             <div class="child-table-title">
               {{ child.tabTitle || child.relationName || child.modelName || child.modelCode || '子表明细' }}
             </div>
-            <n-space v-if="!props.readonly" size="small">
-              <n-button v-if="hasRecordSelector(child)" size="small" secondary @click="openRecordSelector(child)">
+            <n-space v-if="!props.readonly || visibleToolbarActions(child).length" size="small">
+              <n-button v-if="hasRecordSelector(child) && !props.readonly" size="small" secondary @click="openRecordSelector(child)">
                 {{ resolveSelectorButtonText(child) }}
               </n-button>
-              <n-button size="small" type="primary" secondary @click="addRow(child)">
+              <n-button
+                v-for="action in visibleToolbarActions(child)"
+                :key="action.key || action.actionCode || action.label"
+                size="small"
+                :type="resolveActionButtonType(action)"
+                :loading="isToolbarActionLoading(action, child)"
+                secondary
+                @click="executeToolbarAction(action, child)"
+              >
+                {{ action.label || action.actionName || action.actionCode }}
+              </n-button>
+              <n-button v-if="!props.readonly" size="small" type="primary" secondary @click="addRow(child)">
                 {{ resolveAddButtonText(child) }}
               </n-button>
             </n-space>
@@ -34,7 +45,7 @@
                     <span>{{ field.label || field.field }}</span>
                     <em v-if="field.required">*</em>
                   </th>
-                  <th v-if="!props.readonly" class="action-col">
+                  <th v-if="hasActionColumn(child)" class="action-col">
                     操作
                   </th>
                 </tr>
@@ -46,7 +57,7 @@
                 >
                   <td v-for="field in child.fields" :key="field.field">
                     <AiFormItem
-                      v-if="useRuntimeCell(field)"
+                      v-if="useRuntimeCell(field, child)"
                       class="child-runtime-cell"
                       :field="toRuntimeCellField(field)"
                       :value="row[field.field]"
@@ -128,14 +139,29 @@
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                   </td>
-                  <td v-if="!props.readonly" class="action-col">
-                    <n-button text type="error" size="small" @click="removeRow(child, rowIndex)">
-                      删除
-                    </n-button>
+                  <td v-if="hasActionColumn(child)" class="action-col">
+                    <n-space size="small" :wrap="false">
+                      <n-button
+                        v-for="action in visibleRowActions(child, row)"
+                        :key="action.key || action.actionCode || action.label"
+                        text
+                        size="small"
+                        :type="resolveActionButtonType(action)"
+                        :disabled="!childActionContext(child, row).persisted || isRowActionLoading(action, child, row)"
+                        :loading="isRowActionLoading(action, child, row)"
+                        :title="childActionTitle(action, child, row)"
+                        @click="executeRowAction(action, child, row)"
+                      >
+                        {{ action.label || action.actionName || action.actionCode }}
+                      </n-button>
+                      <n-button v-if="!props.readonly" text type="error" size="small" @click="removeRow(child, rowIndex)">
+                        删除
+                      </n-button>
+                    </n-space>
                   </td>
                 </tr>
                 <tr v-if="!visibleRowsFor(child).length">
-                  <td :colspan="props.readonly ? child.fields.length : child.fields.length + 1" class="empty-cell">
+                  <td :colspan="child.fields.length + (hasActionColumn(child) ? 1 : 0)" class="empty-cell">
                     <n-empty size="small" description="暂无明细" />
                   </td>
                 </tr>
@@ -171,12 +197,17 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import AiFormItem from '@/components/ai-form/AiFormItem.vue'
 import AiRecordSelectorModal from '@/components/ai-form/AiRecordSelectorModal.vue'
+import { buildChildRowActionContext } from '@/components/ai-form/business-action-runtime'
+import { createFieldEventRuntime } from '@/components/ai-form/field-event-runtime'
 import { applyRecordFieldMappings, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
+import { hasRuntimeVisibilityRules, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
+import { scan as scanCollaborationCode } from '@/utils/collaboration-runtime'
 
 const props = defineProps({
   value: {
@@ -199,14 +230,24 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  rowActionVisible: {
+    type: Function,
+    default: () => true,
+  },
+  rowActionLoading: {
+    type: Function,
+    default: () => false,
+  },
 })
 
-const emit = defineEmits(['update:value'])
+const emit = defineEmits(['update:value', 'rowAction', 'toolbarAction'])
 
 const route = useRoute()
 const localValue = ref({})
 const selectorVisible = ref(false)
 const activeSelectorChild = ref(null)
+const rowEventRuntimes = new Map()
+const rowEventStates = reactive({})
 
 const normalizedChildren = computed(() => (props.childrenConfig || [])
   .map(child => ({
@@ -222,6 +263,11 @@ watch(
   },
   { immediate: true, deep: true },
 )
+
+onBeforeUnmount(() => {
+  rowEventRuntimes.forEach(runtime => runtime.dispose())
+  rowEventRuntimes.clear()
+})
 
 function resolveChildKey(child) {
   return child.key || child.modelCode || child.tableName || 'children'
@@ -259,13 +305,76 @@ function resolveSelectorButtonText(child) {
   return normalizeRecordSelectorConfig(child).buttonText || '选择记录'
 }
 
+function configuredRowActions(child = {}) {
+  return Array.isArray(child.rowActions) ? child.rowActions : []
+}
+
+function visibleRowActions(child, row) {
+  return configuredRowActions(child).filter(action => action?.visible !== false
+    && props.rowActionVisible(action, child, row))
+}
+
+function configuredToolbarActions(child = {}) {
+  return Array.isArray(child.toolbarActions) ? child.toolbarActions : []
+}
+
+function visibleToolbarActions(child) {
+  return configuredToolbarActions(child).filter(action => action?.visible !== false)
+}
+
+function executeToolbarAction(action, child) {
+  emit('toolbarAction', { action, child })
+}
+
+function isToolbarActionLoading(action, child) {
+  return props.rowActionLoading(action, child, null)
+}
+
+function hasActionColumn(child) {
+  return !props.readonly || configuredRowActions(child).length > 0
+}
+
+function childActionContext(child, row) {
+  return buildChildRowActionContext({
+    child,
+    parentRecord: props.parentFormData,
+    childRecord: row,
+  })
+}
+
+function executeRowAction(action, child, row) {
+  const executionContext = childActionContext(child, row)
+  if (!executionContext.persisted)
+    return
+  emit('rowAction', { action, child, row, executionContext })
+}
+
+function isRowActionLoading(action, child, row) {
+  return props.rowActionLoading(action, child, row)
+}
+
+function childActionTitle(action, child, row) {
+  if (!childActionContext(child, row).persisted)
+    return '请先保存主记录和子表行'
+  if (isRowActionLoading(action, child, row))
+    return action.loadingReason || '操作执行中，请稍候'
+  return action.label || action.actionName || action.actionCode || ''
+}
+
+function resolveActionButtonType(action = {}) {
+  const type = String(action.buttonType || action.type || '').toLowerCase()
+  return ['primary', 'info', 'success', 'warning', 'error'].includes(type) ? type : 'primary'
+}
+
 function isChildEditorFieldVisible(field = {}) {
-  if (field.hidden === true || field.visible === false || field.formVisible === false)
+  const hasVisibilityRules = hasRuntimeVisibilityRules(field)
+  if (!hasVisibilityRules && (
+    field.hidden === true || field.visible === false || field.formVisible === false
+    || field.props?.hidden === true || field.props?.visible === false || field.props?.formVisible === false
+    || field.basicProps?.hidden === true || field.basicProps?.visible === false || field.basicProps?.formVisible === false
+  )) {
     return false
-  if (field.props?.hidden === true || field.props?.visible === false || field.props?.formVisible === false)
-    return false
-  if (field.basicProps?.hidden === true || field.basicProps?.visible === false || field.basicProps?.formVisible === false)
-    return false
+  }
   const explicitChildVisible = readOptionalBoolean(
     field.showInChildEditor,
     field.props?.showInChildEditor,
@@ -390,7 +499,24 @@ function updateRow(child, rowIndex, patch) {
   commit()
 }
 
-function useRuntimeCell(field = {}) {
+function useRuntimeCell(field = {}, child = {}) {
+  const runtimeRules = Array.isArray(field.runtimeRules)
+    ? field.runtimeRules
+    : Array.isArray(field.props?.runtimeRules)
+      ? field.props.runtimeRules
+      : Array.isArray(field.basicProps?.runtimeRules) ? field.basicProps.runtimeRules : []
+  const optionSource = field.optionSource || field.props?.optionSource
+  const hasCurrentChildrenSource = optionSource && ['CURRENT_CHILDREN', 'current_children', 'currentChildren']
+    .includes(String(optionSource.type || ''))
+  const relationKey = resolveChildKey(child)
+  const fieldEvents = Array.isArray(child.fieldEvents)
+    ? child.fieldEvents
+    : (props.context?.childFieldEvents?.[relationKey] || props.context?.fieldEvents || [])
+  const hasFieldEvents = Array.isArray(fieldEvents) && fieldEvents.some(rule => rule?.enabled !== false
+    && ['FORM_LOAD', 'CHANGE', 'BLUR', 'MANUAL', 'SCAN_COMPLETE'].includes(String(rule.trigger || '').toUpperCase())
+    && (!rule.sourceField || rule.sourceField === field.field))
+  if (field.type === 'barcodeScanner' || runtimeRules.length || hasCurrentChildrenSource || hasFieldEvents)
+    return true
   if (field.type === 'select') {
     return Boolean(field.dictType || field.props?.dictType || field.optionSource || field.props?.optionSource)
   }
@@ -426,6 +552,9 @@ function toRuntimeCellField(field = {}) {
 
 function buildRuntimeCellContext(child, rowIndex) {
   const row = rowsFor(child)[rowIndex] || {}
+  const relationKey = resolveChildKey(child)
+  const rowKey = row.__rowKey || `${relationKey}:${rowIndex}`
+  const runtime = getRowEventRuntime(child, rowIndex, row)
   return {
     ...(props.context || {}),
     schema: child.fields || [],
@@ -445,7 +574,73 @@ function buildRuntimeCellContext(child, rowIndex) {
       name: route.name,
     },
     patchFormData: patch => updateRow(child, rowIndex, patch),
+    childCollections: Object.fromEntries(normalizedChildren.value.map(item => [
+      resolveChildKey(item),
+      rowsFor(item).filter(rowItem => !isDeletedRow(rowItem)),
+    ])),
+    relationKey,
+    childRowIndex: rowIndex,
+    scanField: typeof props.context?.scanField === 'function' ? props.context.scanField : scanChildField,
+    hasFieldEvent: (trigger, field) => runtime?.hasRule(trigger, field) === true,
+    getFieldEventState: field => rowEventStates[`${rowKey}:${field}`] || { status: 'idle', loading: false, message: '' },
+    getFieldEventRules: (trigger, field) => runtime?.getRules(trigger, field) || [],
+    dispatchFieldEvent: (trigger, field, eventRuntime = {}) => runtime?.dispatch(trigger, field, eventRuntime) || Promise.resolve([]),
   }
+}
+
+function scanChildField(field = {}) {
+  const scanOptions = props.context?.scanOptions && typeof props.context.scanOptions === 'object'
+    ? props.context.scanOptions
+    : {}
+  const fieldScanOptions = field.props && typeof field.props === 'object'
+    ? {
+        timeoutMs: field.props.timeoutMs,
+        formats: field.props.formats,
+      }
+    : {}
+  return scanCollaborationCode({
+    ...scanOptions,
+    ...fieldScanOptions,
+    scanner: typeof props.context?.scanScanner === 'function' ? props.context.scanScanner : scanOptions.scanner,
+    field,
+  })
+}
+
+function getRowEventRuntime(child, rowIndex, row) {
+  const relationKey = resolveChildKey(child)
+  const rowKey = row.__rowKey || `${relationKey}:${rowIndex}`
+  const runtimeKey = `${relationKey}:${rowKey}`
+  if (rowEventRuntimes.has(runtimeKey))
+    return rowEventRuntimes.get(runtimeKey)
+  const rules = Array.isArray(child.fieldEvents)
+    ? child.fieldEvents
+    : (props.context?.childFieldEvents?.[relationKey] || props.context?.fieldEvents || [])
+  if (!Array.isArray(rules) || !rules.length)
+    return null
+  const fields = (child.fields || []).map(field => field.field).filter(Boolean)
+  const runtime = createFieldEventRuntime({
+    rules,
+    fields,
+    execute: (payload, config) => executeLowcodeQuerySource(payload, config),
+    getFormData: () => rowsFor(child)[rowIndex] || {},
+    getContext: () => ({
+      ...(props.context || {}),
+      parentFormData: props.parentFormData || {},
+      formData: rowsFor(child)[rowIndex] || {},
+      record: props.parentFormData || {},
+      row: rowsFor(child)[rowIndex] || {},
+      relationKey,
+      childRowIndex: rowIndex,
+    }),
+    getRouteQuery: () => route.query || {},
+    applyPatch: patch => updateRow(child, rowIndex, patch),
+    onStateChange: (state) => {
+      rowEventStates[`${rowKey}:${state.field}`] = state
+    },
+    onNotify: props.context?.onNotify,
+  })
+  rowEventRuntimes.set(runtimeKey, runtime)
+  return runtime
 }
 
 function applyRowPatch(row, patch) {
@@ -611,7 +806,18 @@ function validate() {
       if (isEmptyRow(row, child.fields))
         continue
       for (const field of child.fields) {
-        if (field.required && isEmptyValue(row[field.field])) {
+        const control = resolveRuntimeControl(field, {
+          ...(props.context || {}),
+          parentFormData: props.parentFormData || {},
+          record: props.parentFormData || {},
+          row,
+          formData: row,
+          data: row,
+        })
+        if (control.visible === false)
+          continue
+        const required = control.required === true || (control.required === undefined && field.required === true)
+        if (required && isEmptyValue(row[field.field])) {
           throw new Error(`${child.modelName || '子表'}第${index + 1}行请填写${field.label || field.field}`)
         }
       }
@@ -621,7 +827,7 @@ function validate() {
 
 function resolveTableStyle(child) {
   const contentWidth = (child.fields || [])
-    .reduce((total, field) => total + Number.parseInt(resolveColumnWidth(field), 10), props.readonly ? 0 : 76)
+    .reduce((total, field) => total + Number.parseInt(resolveColumnWidth(field), 10), hasActionColumn(child) ? 150 : 0)
   const minWidth = Math.max(contentWidth, Number(child.minWidth || child.tableMinWidth || 720))
   return {
     minWidth: `${minWidth}px`,

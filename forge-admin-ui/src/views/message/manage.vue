@@ -163,8 +163,8 @@
 
 <script setup>
 import { computed, h, ref } from 'vue'
-import messageApi from '@/api/message'
 import { fetchConnectionOptions } from '@/api/collaboration'
+import messageApi from '@/api/message'
 import { AiCrudPage } from '@/components/ai-form'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import DictTag from '@/components/DictTag.vue'

@@ -111,7 +111,7 @@ describe('dict option converters', () => {
 
   it('seeds every persisted business app entry mode', () => {
     expect(frontendDictionaryMigrationSource).toContain(
-      "'访问入口打开方式', 'ai_business_app_entry_mode'",
+      '\'访问入口打开方式\', \'ai_business_app_entry_mode\'',
     )
     for (const value of ['RUNTIME', 'ROUTE', 'IFRAME', 'EXTERNAL', 'H5', 'API']) {
       expect(frontendDictionaryMigrationSource).toContain(

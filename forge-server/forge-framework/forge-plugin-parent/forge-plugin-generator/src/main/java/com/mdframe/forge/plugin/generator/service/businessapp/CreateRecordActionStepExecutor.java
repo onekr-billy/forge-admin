@@ -32,7 +32,7 @@ public class CreateRecordActionStepExecutor implements BusinessActionStepExecuto
         if (data.isEmpty()) {
             throw new BusinessException("创建记录步骤没有可写入字段");
         }
-        Map<String, Object> created = dynamicCrudService.insertInternal(targetConfigKey, data);
+        Map<String, Object> created = dynamicCrudService.insertCommandRecord(targetConfigKey, data);
         Object createdRecordId = created == null ? null : dynamicCrudService.resolveRecordId(targetConfigKey, created);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();

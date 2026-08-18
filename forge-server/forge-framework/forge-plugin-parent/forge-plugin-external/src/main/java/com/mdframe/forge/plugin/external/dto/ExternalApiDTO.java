@@ -15,6 +15,8 @@ public class ExternalApiDTO {
 
     private String apiDesc;
 
+    private String executionMode;
+
     private String apiPath;
 
     private String apiMethod;
@@ -32,6 +34,8 @@ public class ExternalApiDTO {
     private String responseDataPath;
 
     private String responseTotalPath;
+
+    private String mockResponseJson;
 
     private Boolean paramMappingEnabled;
 
@@ -64,6 +68,12 @@ public class ExternalApiDTO {
     private Boolean permissionCheckEnabled;
 
     private String requiredPermission;
+
+    private Boolean lowcodeQueryEnabled;
+
+    private String inputSchemaJson;
+
+    private String outputSchemaJson;
 
     private Integer apiStatus;
 

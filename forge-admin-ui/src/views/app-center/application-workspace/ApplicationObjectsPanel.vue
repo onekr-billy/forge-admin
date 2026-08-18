@@ -5,17 +5,15 @@
         <h2>数据对象</h2>
         <p>应用以业务对象组织数据库表、业务字段和页面设计；对象仍可被多个应用复用。</p>
       </div>
-      <n-space>
-        <n-button secondary @click="openBinder">
-          关联已有对象
+      <n-dropdown
+        :options="addObjectOptions"
+        trigger="click"
+        @select="handleAddObject"
+      >
+        <n-button type="primary">
+          添加业务对象
         </n-button>
-        <n-button secondary @click="openCreate('DB_IMPORT')">
-          从数据库表导入
-        </n-button>
-        <n-button type="primary" @click="openCreate('BLANK')">
-          新建对象
-        </n-button>
-      </n-space>
+      </n-dropdown>
     </header>
 
     <n-spin :show="loading">
@@ -25,14 +23,15 @@
         description="当前应用还没有数据对象"
       >
         <template #extra>
-          <n-space>
-            <n-button secondary @click="openBinder">
-              关联已有对象
+          <n-dropdown
+            :options="addObjectOptions"
+            trigger="click"
+            @select="handleAddObject"
+          >
+            <n-button type="primary">
+              添加业务对象
             </n-button>
-            <n-button type="primary" @click="openCreate('DB_IMPORT')">
-              从数据库表开始
-            </n-button>
-          </n-space>
+          </n-dropdown>
         </template>
       </n-empty>
 
@@ -73,10 +72,17 @@
             {{ Number(item.sharedApplicationCount || 0) > 1 ? `${item.sharedApplicationCount} 个应用共用` : '仅当前应用' }}
           </span>
           <div class="object-actions">
-            <a class="cursor-pointer text-primary" @click="openDesigner(item)">数据结构</a>
-            <a class="cursor-pointer text-info" @click="openForm(item)">设计表单</a>
-            <a class="cursor-pointer text-info" @click="openDesignerPanel(item, 'actions')">业务动作</a>
-            <a class="cursor-pointer text-error" @click="removeObject(item)">移除</a>
+            <a class="cursor-pointer text-primary" @click="openDesigner(item)">编辑字段</a>
+            <n-dropdown
+              trigger="click"
+              placement="bottom-end"
+              :options="objectRowMoreOptions"
+              @select="key => handleObjectMoreSelect(key, item)"
+            >
+              <n-button size="small" quaternary aria-label="更多操作" title="更多操作">
+                ⋯
+              </n-button>
+            </n-dropdown>
           </div>
         </div>
       </div>
@@ -153,6 +159,12 @@ const workspaceSuites = computed(() => props.application
     }]
   : [])
 
+const addObjectOptions = [
+  { label: '关联已有对象', key: 'bind' },
+  { label: '从数据库表导入', key: 'DB_IMPORT' },
+  { label: '新建空白对象', key: 'BLANK' },
+]
+
 watch([
   () => props.application?.id,
   () => props.initialObjects,
@@ -206,6 +218,14 @@ function openCreate(mode) {
   wizardVisible.value = true
 }
 
+function handleAddObject(key) {
+  if (key === 'bind') {
+    openBinder()
+    return
+  }
+  openCreate(key)
+}
+
 async function bindObject(binding) {
   const next = [...objects.value, {
     objectId: binding.objectId,
@@ -221,6 +241,10 @@ async function bindObject(binding) {
 }
 
 async function handleObjectCreated(result) {
+  if (result.nextAction === 'ASSOCIATE' && objects.value.some(item => String(item.objectId) === String(result.id))) {
+    message.info('业务对象已在当前应用中')
+    return
+  }
   const role = hasPrimary.value ? 'SHARED' : 'PRIMARY'
   try {
     await persistObjects([...objects.value, {
@@ -232,6 +256,10 @@ async function handleObjectCreated(result) {
       objectId: result.id,
       objectCode: result.objectCode,
     })
+    if (result.nextAction === 'ASSOCIATE') {
+      message.success('业务对象已关联到当前应用')
+      return
+    }
     if (props.openDesignerAfterCreate)
       openDesigner({ objectCode: result.objectCode })
     else
@@ -292,8 +320,13 @@ function openDesigner(item) {
   openDesignerPanel(item, 'fields')
 }
 
-function openForm(item) {
-  openDesignerPanel(item, 'form')
+const objectRowMoreOptions = [
+  { label: '移除出应用', key: 'remove', props: { style: { color: '#d03050' } } },
+]
+
+function handleObjectMoreSelect(key, item) {
+  if (key === 'remove')
+    removeObject(item)
 }
 
 function openDesignerPanel(item, panel) {
@@ -335,6 +368,7 @@ function syncTone(status) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 20px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border-light, #e5e6eb);
@@ -359,17 +393,20 @@ function syncTone(status) {
 }
 
 .object-table {
-  overflow-x: auto;
+  min-width: 0;
   border: 1px solid var(--border-default, #c9cdd4);
   border-radius: 7px;
 }
 
 .object-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) 132px minmax(190px, 1.15fr) 130px 120px 190px;
-  gap: 14px;
+  grid-template-columns:
+    minmax(150px, 1.2fr) minmax(108px, 0.78fr) minmax(150px, 1.1fr) minmax(112px, 0.82fr)
+    minmax(100px, 0.78fr)
+    minmax(90px, 0.72fr);
+  gap: 10px;
   align-items: center;
-  min-width: 1020px;
+  min-width: 0;
   min-height: 64px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-light, #e5e6eb);
@@ -461,8 +498,55 @@ function syncTone(status) {
 
 .object-actions {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  .object-row-head {
+    display: none;
+  }
+
+  .object-row:not(.object-row-head) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 10px;
+  }
+
+  .object-row:not(.object-row-head) .object-identity {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .object-row:not(.object-row-head) .role-select {
+    grid-column: 1;
+    grid-row: 2;
+    width: min(100%, 180px);
+  }
+
+  .object-row:not(.object-row-head) .database-anchor {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .object-row:not(.object-row-head) .sync-state {
+    grid-column: 1;
+    grid-row: 4;
+  }
+
+  .object-row:not(.object-row-head) .shared-impact {
+    grid-column: 1;
+    grid-row: 5;
+  }
+
+  .object-row:not(.object-row-head) .object-actions {
+    grid-column: 2;
+    grid-row: 1 / span 5;
+    align-self: start;
+    justify-self: end;
+  }
 }
 </style>

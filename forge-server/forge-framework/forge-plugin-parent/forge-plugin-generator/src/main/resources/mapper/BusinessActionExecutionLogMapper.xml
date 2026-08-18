@@ -10,6 +10,8 @@
         <result column="record_id" property="recordId"/>
         <result column="action_code" property="actionCode"/>
         <result column="action_name" property="actionName"/>
+        <result column="action_version" property="actionVersion"/>
+        <result column="execution_mode" property="executionMode"/>
         <result column="execute_status" property="executeStatus"/>
         <result column="request_digest" property="requestDigest"/>
         <result column="step_result" property="stepResult"/>
@@ -22,6 +24,12 @@
         <result column="client_id" property="clientId"/>
         <result column="service_user_id" property="serviceUserId"/>
         <result column="actor_type" property="actorType"/>
+        <result column="audit_event_type" property="auditEventType"/>
+        <result column="status_field" property="statusField"/>
+        <result column="status_from" property="statusFrom"/>
+        <result column="status_to" property="statusTo"/>
+        <result column="change_summary" property="changeSummary"/>
+        <result column="retention_until" property="retentionUntil"/>
         <result column="create_by" property="createBy"/>
         <result column="create_time" property="createTime"/>
         <result column="create_dept" property="createDept"/>
@@ -37,6 +45,8 @@
         record_id,
         action_code,
         action_name,
+        action_version,
+        execution_mode,
         execute_status,
         request_digest,
         step_result,
@@ -49,6 +59,12 @@
         client_id,
         service_user_id,
         actor_type,
+        audit_event_type,
+        status_field,
+        status_from,
+        status_to,
+        change_summary,
+        retention_until,
         create_by,
         create_time,
         create_dept,
@@ -89,6 +105,7 @@
         WHERE tenant_id = #{tenantId}
           AND object_code = #{objectCode}
           AND action_code = #{actionCode}
+          AND action_version = #{actionVersion}
           AND idempotency_key = #{idempotencyKey}
         <if test="recordId != null and recordId != ''">
           AND record_id = #{recordId}

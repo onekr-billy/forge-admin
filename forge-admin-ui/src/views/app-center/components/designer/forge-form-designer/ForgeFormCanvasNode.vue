@@ -135,6 +135,23 @@
         v-else-if="isTitle"
         v-bind="buildGroupTitleProps(component)"
       />
+      <div v-else-if="isSubTableComponent" class="subtable-preview" :class="{ unconfigured: !component.props?.relationKey }">
+        <div class="subtable-preview-header">
+          <strong>{{ component.props?.header || '关联子表' }}</strong>
+          <span class="subtable-preview-actions">
+            <span>{{ subTableDisplayModeLabel }}</span>
+            <n-button size="tiny" secondary @click.stop="emit('configureSubTable', component.props?.relationKey || '')">
+              配置
+            </n-button>
+          </span>
+        </div>
+        <div v-if="!component.props?.relationKey" class="subtable-preview-empty">
+          在右侧属性面板选择关联关系，或点击「配置」打开子表分区向导
+        </div>
+        <div v-else class="subtable-preview-grid">
+          <span v-for="column in 4" :key="column" class="subtable-preview-cell" />
+        </div>
+      </div>
       <div v-else-if="isButton" class="button-preview">
         <n-button
           :type="component.props?.type || 'primary'"
@@ -450,7 +467,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select', 'update:schema', 'dropBefore', 'dropAfter', 'configure'])
+const emit = defineEmits(['select', 'update:schema', 'dropBefore', 'dropAfter', 'configure', 'configureSubTable'])
 
 const DRAG_COMPONENT_MIME = 'application/x-forge-form-component'
 const DRAG_FIELD_MIME = 'application/x-forge-form-field'
@@ -482,6 +499,11 @@ const isSelected = computed(() => props.selectedId === props.component.id)
 const isField = computed(() => isFieldComponent(props.component))
 const isLayout = computed(() => isLayoutComponent(props.component))
 const isTitle = computed(() => ['title', 'fcTitle'].includes(props.component.componentKey))
+const isSubTableComponent = computed(() => props.component.componentKey === 'subTable')
+const subTableDisplayModeLabel = computed(() => {
+  const labels = { inline_grid: '行内表格', card_list: '卡片列表', bottom_sheet: '底部抽屉' }
+  return labels[props.component.props?.displayMode] || '行内表格'
+})
 const isButton = computed(() => ['button', 'elButton'].includes(props.component.componentKey))
 const isCrudBlock = computed(() => ['AiCrudPage', 'crudBlock'].includes(props.component.componentKey))
 const isGridRow = computed(() => ['row', 'fcRow'].includes(props.component.componentKey))
@@ -501,7 +523,7 @@ const beforeActive = computed(() => designerDropKey.value === beforeDropKey.valu
 const afterActive = computed(() => designerDropKey.value === afterDropKey.value)
 const activeInside = computed(() => designerDropKey.value === insideDropKey.value)
 const displayLabel = computed(() => props.component.label || props.component.props?.header || props.component.props?.title || props.component.componentKey)
-const previewContext = computed(() => ({ mode: 'designer-preview' }))
+const previewContext = computed(() => ({ mode: 'designer-preview', disableRuntimeRules: true }))
 const previewFormData = computed(() => ({
   [props.component.fieldBinding?.fieldCode || props.component.id]: previewValue.value,
 }))
@@ -615,6 +637,7 @@ const previewField = computed(() => {
     options: resolvePreviewOptions(rawProps, componentKey),
     props: {
       ...rawProps,
+      runtimeRules: [],
       disabled: false,
       readonly: false,
     },
@@ -1868,6 +1891,54 @@ function buildFormDividerProps(component) {
 <style scoped>
 .node-wrap {
   min-width: 0;
+}
+
+.subtable-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px dashed var(--n-border-color, #d9dfe8);
+  border-radius: 6px;
+  background: rgba(32, 128, 240, 0.03);
+}
+
+.subtable-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: #1f2329;
+}
+
+.subtable-preview-header span {
+  font-size: 12px;
+  color: #8a919f;
+}
+
+.subtable-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subtable-preview-empty {
+  font-size: 12px;
+  color: #8a919f;
+}
+
+.subtable-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.subtable-preview-cell {
+  height: 28px;
+  border-radius: 4px;
+  background: rgba(32, 128, 240, 0.08);
 }
 
 .drop-line {

@@ -14,4 +14,12 @@ public interface ExternalSystemService extends IService<ExternalSystem> {
     List<ExternalSystem> listAll();
 
     ExternalSystem getByCode(String systemCode);
+
+    ExternalSystem getManagementById(Long id);
+
+    ExternalSystem getRuntimeById(Long id);
+
+    boolean saveSystem(ExternalSystem entity);
+
+    boolean updateSystem(ExternalSystem entity);
 }

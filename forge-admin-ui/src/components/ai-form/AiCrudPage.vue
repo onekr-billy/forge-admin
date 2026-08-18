@@ -18,6 +18,26 @@
       </n-spin>
     </div>
 
+    <n-alert
+      v-if="offlineDraftNotice"
+      type="info"
+      :bordered="false"
+      class="offline-draft-notice"
+    >
+      {{ offlineDraftNotice }}
+      <template #action>
+        <n-button
+          v-if="offlineReplayAvailable"
+          size="small"
+          secondary
+          :loading="offlineReplayLoading"
+          @click="confirmOfflineReplay"
+        >
+          检查并重放
+        </n-button>
+      </template>
+    </n-alert>
+
     <div v-if="formOnlySubmitted" class="ai-crud-form-only-result">
       <n-result
         status="success"
@@ -68,6 +88,10 @@
           :readonly="isDetailMode"
           :parent-form-data="formData"
           :context="formContext"
+          :row-action-visible="isChildRowActionVisible"
+          :row-action-loading="isChildRowActionLoading"
+          @row-action="handleChildRowAction"
+          @toolbar-action="handleChildToolbarAction"
         />
       </div>
       <footer class="form-only-footer">
@@ -346,6 +370,10 @@
                   :readonly="isDetailMode"
                   :parent-form-data="formData"
                   :context="formContext"
+                  :row-action-visible="isChildRowActionVisible"
+                  :row-action-loading="isChildRowActionLoading"
+                  @row-action="handleChildRowAction"
+                  @toolbar-action="handleChildToolbarAction"
                 />
                 <AiCrudRowExpand
                   v-if="showDetailPanels"
@@ -396,6 +424,10 @@
                 :readonly="isDetailMode"
                 :parent-form-data="formData"
                 :context="formContext"
+                :row-action-visible="isChildRowActionVisible"
+                :row-action-loading="isChildRowActionLoading"
+                @row-action="handleChildRowAction"
+                @toolbar-action="handleChildToolbarAction"
               />
               <AiCrudRowExpand
                 v-if="showDetailPanels"
@@ -475,6 +507,10 @@
             :readonly="isDetailMode"
             :parent-form-data="formData"
             :context="formContext"
+            :row-action-visible="isChildRowActionVisible"
+            :row-action-loading="isChildRowActionLoading"
+            @row-action="handleChildRowAction"
+            @toolbar-action="handleChildToolbarAction"
           />
           <AiCrudRowExpand
             v-if="showDetailPanels"
@@ -526,6 +562,10 @@
           :readonly="isDetailMode"
           :parent-form-data="formData"
           :context="formContext"
+          :row-action-visible="isChildRowActionVisible"
+          :row-action-loading="isChildRowActionLoading"
+          @row-action="handleChildRowAction"
+          @toolbar-action="handleChildToolbarAction"
         />
         <AiCrudRowExpand
           v-if="showDetailPanels"
@@ -595,6 +635,10 @@
           :readonly="isDetailMode"
           :parent-form-data="formData"
           :context="formContext"
+          :row-action-visible="isChildRowActionVisible"
+          :row-action-loading="isChildRowActionLoading"
+          @row-action="handleChildRowAction"
+          @toolbar-action="handleChildToolbarAction"
         />
 
         <!-- 抽屉底部按钮 -->
@@ -645,6 +689,45 @@
             取消
           </n-button>
           <n-button type="primary" :loading="commandActionSubmitting" @click="submitCommandAction">
+            确定
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 子表工具栏动作弹窗（登记提货/登记退货） -->
+    <n-modal
+      v-model:show="childToolbarActionModalVisible"
+      :title="childToolbarActionTitle"
+      preset="card"
+      style="width: min(520px, calc(100vw - 32px))"
+      :mask-closable="false"
+    >
+      <n-form label-placement="left" :show-feedback="true">
+        <n-form-item label="商品" required>
+          <n-select
+            v-model:value="childToolbarItemSelected"
+            :options="childToolbarItemOptions"
+            placeholder="请选择商品"
+            clearable
+            filterable
+          />
+        </n-form-item>
+        <n-form-item :label="childToolbarQuantityLabel" required>
+          <n-input-number
+            v-model:value="childToolbarQuantity"
+            :min="1"
+            :max="childToolbarQuantityMax"
+            style="width: 100%"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="childToolbarActionSubmitting" @click="closeChildToolbarActionModal">
+            取消
+          </n-button>
+          <n-button type="primary" :loading="childToolbarActionSubmitting" @click="submitChildToolbarAction">
             确定
           </n-button>
         </n-space>
@@ -719,7 +802,7 @@ import {
 import { NButton, NDropdown, NIcon, NProgress, NTag } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { customQueryExecute } from '@/api/ai'
+import { crudConfigRender, customQueryExecute } from '@/api/ai'
 import { executeBusinessAction } from '@/api/business-app'
 import { previewFormula } from '@/api/formula'
 import AuthImage from '@/components/common/AuthImage.vue'
@@ -737,9 +820,22 @@ import AiCustomQuery from './AiCustomQuery.vue'
 import AiForm from './AiForm.vue'
 import AiSearch from './AiSearch.vue'
 import AiTable from './AiTable.vue'
+import {
+  buildBusinessActionExecutePayload,
+  buildBusinessActionInitialData,
+  buildBusinessActionInputFormSchema,
+  buildChildRowActionContext,
+  createBusinessActionIdempotencyKey,
+  resolveBusinessActionAttempt,
+  unwrapBusinessActionResult,
+} from './business-action-runtime'
 import { normalizeExpandConfig, shouldExpandRow } from './expand-utils'
 import { isNumberFieldType } from './field-type-utils'
 import { isImageFileName, resolveFileRenderItems } from './file-render-utils'
+import {
+  createOfflineFormRuntime,
+  createOfflinePublishedSnapshot,
+} from './offline-form-runtime'
 
 /**
  * ==================== Props 定义 ====================
@@ -809,6 +905,7 @@ const formData = ref({})
 const childFormData = ref({})
 const confirmLoading = ref(false)
 const currentRow = ref(null)
+const fieldEventLoadToken = ref(0)
 const inlineFormTabs = ref([])
 const activeInlineFormTabKey = ref('')
 const INLINE_WORKSPACE_LIST_KEY = 'list'
@@ -824,16 +921,58 @@ const commandActionModalVisible = ref(false)
 const commandActionSubmitting = ref(false)
 const commandActionFormData = ref({})
 const commandActionContext = ref(null)
+const childToolbarActionModalVisible = ref(false)
+const childToolbarActionSubmitting = ref(false)
+const childToolbarActionContext = ref(null)
+const childToolbarItemSelected = ref(null)
+const childToolbarQuantity = ref(1)
+const offlineFormRuntime = ref(null)
+const offlineDraftId = ref('')
+const offlineBaseRecordVersion = ref('')
+const offlineDraftNotice = ref('')
+const offlineDraftHydrating = ref(false)
+const offlineReplayLoading = ref(false)
+let offlineDraftSaveTimer = null
 const commandActionTitle = computed(() => commandActionContext.value?.action?.label || commandActionContext.value?.action?.actionName || '业务动作')
 const commandActionFormSchema = computed(() => {
   const config = normalizeCommandActionRuntimeConfig(commandActionContext.value?.action || {})
-  return Array.isArray(config.formSchema) ? config.formSchema : []
+  return Array.isArray(config.inputSchema)
+    ? buildBusinessActionInputFormSchema(config.inputSchema)
+    : (Array.isArray(config.formSchema) ? config.formSchema : [])
 })
 const commandActionFormContext = computed(() => ({
   row: commandActionContext.value?.row || null,
   action: commandActionContext.value?.action || null,
   mode: 'businessAction',
 }))
+const childToolbarActionTitle = computed(() =>
+  childToolbarActionContext.value?.action?.label
+  || childToolbarActionContext.value?.action?.actionName
+  || '业务操作',
+)
+const childToolbarQuantityLabel = computed(() => {
+  const actionCode = childToolbarActionContext.value?.action?.actionCode
+  return actionCode === 'record_return' ? '退货数量' : '提货数量'
+})
+const childToolbarItemOptions = computed(() => {
+  const items = childFormData.value?.presale_items || []
+  return items
+    .filter(item => item?.id)
+    .map(item => ({
+      label: `${item.productName || '商品'}（待提: ${item.pendingQuantity ?? 0}，已提: ${item.pickedQuantity ?? 0}）`,
+      value: item.id,
+    }))
+})
+const childToolbarQuantityMax = computed(() => {
+  const items = childFormData.value?.presale_items || []
+  const selectedItem = items.find(item => item?.id === childToolbarItemSelected.value)
+  if (!selectedItem)
+    return 999999
+  const actionCode = childToolbarActionContext.value?.action?.actionCode
+  if (actionCode === 'record_return')
+    return selectedItem.pickedQuantity ?? 0
+  return selectedItem.pendingQuantity ?? 0
+})
 const formulaRuntimeTimers = new Map()
 const formulaRuntimeSequences = new Map()
 let inlineFormTabSequence = 0
@@ -1228,6 +1367,97 @@ async function handleConfiguredAction(action, row) {
   }
 }
 
+function isChildRowActionVisible(action, _child, row) {
+  return action?.status !== 0
+    && action?.visible !== false
+    && hasRuntimePermission(action?.permissionCode)
+    && matchDisplayCondition(action?.displayCondition || action?.visibleCondition, row)
+}
+
+function isChildRowActionLoading(action, _child, row) {
+  const recordId = row?.id ?? row?.ID ?? ''
+  return isActionLoading({ ...action, recordId }, row)
+}
+
+async function handleChildRowAction({ action, row, executionContext } = {}) {
+  if (!action || !executionContext?.persisted) {
+    window.$message?.warning('请先保存主记录和子表行')
+    return
+  }
+  if (String(action.actionType || '').toUpperCase() !== 'COMMAND') {
+    window.$message?.warning('子表行按钮仅支持事务型业务命令')
+    return
+  }
+  await handleConfiguredAction({
+    ...action,
+    recordId: executionContext.childRecordId,
+    childActionContext: executionContext,
+  }, row)
+}
+
+async function handleChildToolbarAction({ action, child } = {}) {
+  if (!action)
+    return
+  const parentRecordId = formData.value?.id
+  if (!parentRecordId) {
+    window.$message?.warning('请先保存主记录')
+    return
+  }
+  const items = childFormData.value?.presale_items || []
+  const persistedItems = items.filter(item => item?.id)
+  if (!persistedItems.length) {
+    window.$message?.warning('请先添加并保存商品明细')
+    return
+  }
+  childToolbarActionContext.value = { action, child }
+  childToolbarItemSelected.value = null
+  childToolbarQuantity.value = 1
+  childToolbarActionModalVisible.value = true
+}
+
+async function submitChildToolbarAction() {
+  const context = childToolbarActionContext.value
+  if (!context?.action)
+    return
+  const selectedItem = (childFormData.value?.presale_items || [])
+    .find(item => item?.id === childToolbarItemSelected.value)
+  if (!selectedItem) {
+    window.$message?.warning('请选择商品')
+    return
+  }
+  const executionContext = buildChildRowActionContext({
+    child: { relationKey: context.action.relationKey || 'presale_items' },
+    parentRecord: formData.value,
+    childRecord: selectedItem,
+  })
+  if (!executionContext.persisted) {
+    window.$message?.warning('记录未保存，无法执行操作')
+    return
+  }
+  childToolbarActionModalVisible.value = false
+  childToolbarActionSubmitting.value = true
+  try {
+    await executeCommandAction(
+      { ...context.action, childActionContext: executionContext, recordId: executionContext.childRecordId },
+      selectedItem,
+      { quantity: childToolbarQuantity.value },
+      { fromModal: true },
+    )
+  }
+  finally {
+    childToolbarActionSubmitting.value = false
+  }
+}
+
+function closeChildToolbarActionModal() {
+  if (childToolbarActionSubmitting.value)
+    return
+  childToolbarActionModalVisible.value = false
+  childToolbarActionContext.value = null
+  childToolbarItemSelected.value = null
+  childToolbarQuantity.value = 1
+}
+
 function handleConfiguredActionSuccess(action = {}) {
   if (action.successBehavior === 'refreshList')
     loadList()
@@ -1316,8 +1546,18 @@ async function callConfiguredApiAction(action, row) {
 
 async function handleCommandAction(action, row) {
   const config = normalizeCommandActionRuntimeConfig(action)
-  if (Array.isArray(config.formSchema) && config.formSchema.length) {
-    commandActionContext.value = { action, row }
+  const hasInputForm = Array.isArray(config.inputSchema)
+    ? buildBusinessActionInputFormSchema(config.inputSchema).length > 0
+    : config.formSchema.length > 0
+  if (hasInputForm) {
+    commandActionContext.value = {
+      action,
+      row,
+      attempt: {
+        idempotencyKey: createBusinessActionIdempotencyKey(),
+        lastPayloadDigest: '',
+      },
+    }
     commandActionFormData.value = buildCommandActionInitialData(config, row)
     commandActionModalVisible.value = true
     await nextTick()
@@ -1336,7 +1576,12 @@ async function submitCommandAction() {
     await nextTick()
     await commandActionFormRef.value?.validate?.()
     const latestFormData = commandActionFormRef.value?.getFormData?.() || commandActionFormData.value || {}
-    const success = await executeCommandAction(context.action, context.row, latestFormData, { fromModal: true })
+    const attempt = resolveBusinessActionAttempt(context.attempt, latestFormData)
+    context.attempt = attempt
+    const success = await executeCommandAction(context.action, context.row, latestFormData, {
+      fromModal: true,
+      idempotencyKey: attempt.idempotencyKey,
+    })
     if (success)
       closeCommandActionModal()
   }
@@ -1356,7 +1601,9 @@ function closeCommandActionModal() {
 async function executeCommandAction(action, row, formData = {}, options = {}) {
   const config = normalizeCommandActionRuntimeConfig(action)
   const objectCode = resolveRuntimeObjectCode(action, row)
-  const recordId = action.recordId || resolveRowKeyValue(row)
+  const recordId = action.recordId === undefined || action.recordId === null || action.recordId === ''
+    ? resolveRowKeyValue(row)
+    : action.recordId
   const actionCode = action.actionCode || action.key
   if (!objectCode || !actionCode) {
     window.$message?.warning('缺少业务对象或动作编码，无法执行')
@@ -1369,22 +1616,19 @@ async function executeCommandAction(action, row, formData = {}, options = {}) {
   }
   setActionLoading(loadingKey, true)
   try {
-    const response = await executeBusinessAction({
-      suiteCode: action.suiteCode || config.suiteCode || '',
+    const response = await executeBusinessAction(buildBusinessActionExecutePayload({
+      action: { ...action, actionCode },
+      config,
       objectCode,
-      recordId: recordId === undefined || recordId === null ? '' : String(recordId),
-      actionCode,
-      formData: formData || {},
-      context: {
-        routeQuery: { ...route.query },
-        row,
-      },
-      idempotencyKey: config.idempotencyKey || '',
-    })
-    const result = response?.data || {}
-    if (String(result.executeStatus || '').toUpperCase() === 'FAILED') {
-      throw new Error(result.message || action.failureMessage || '动作执行失败')
-    }
+      recordId,
+      formData,
+      routeQuery: route.query,
+      idempotencyKey: options.idempotencyKey || createBusinessActionIdempotencyKey(),
+      parentRecordId: action.childActionContext?.parentRecordId,
+      childRecordId: action.childActionContext?.childRecordId,
+      relationKey: action.childActionContext?.relationKey,
+    }))
+    const result = unwrapBusinessActionResult(response, action.failureMessage || '动作执行失败')
     const successMessage = action.successMessage || result.message || config.successMessage || '操作成功'
     if (successMessage)
       window.$message?.success(resolveActionText(successMessage, row))
@@ -1409,6 +1653,7 @@ function normalizeCommandActionRuntimeConfig(action = {}) {
   const config = parseActionConfig(action.actionConfig)
   return {
     ...config,
+    inputSchema: Array.isArray(config.inputSchema) ? config.inputSchema : undefined,
     formSchema: Array.isArray(config.formSchema) ? config.formSchema : [],
     steps: Array.isArray(config.steps) ? config.steps : [],
     successBehavior: action.successBehavior || config.successBehavior || 'refreshList',
@@ -1418,6 +1663,8 @@ function normalizeCommandActionRuntimeConfig(action = {}) {
 }
 
 function buildCommandActionInitialData(config = {}, row = {}) {
+  if (Array.isArray(config.inputSchema))
+    return buildBusinessActionInitialData(config, row)
   const defaults = {}
   const defaultValues = config.defaultValues && typeof config.defaultValues === 'object' ? config.defaultValues : {}
   Object.entries(defaultValues).forEach(([key, value]) => {
@@ -2049,12 +2296,15 @@ const activeSourceColumns = computed(() => {
  */
 const formContext = computed(() => {
   return {
+    ...(props.formRuntimeContext || {}),
     modalStatus: modalStatus.value, // 'add' | 'edit' | 'detail'
     isEdit: modalStatus.value === 'edit',
     isAdd: modalStatus.value === 'add',
     isDetail: modalStatus.value === 'detail',
     currentRow: currentRow.value,
     formAssets: props.formAssets,
+    fieldEvents: props.fieldEvents,
+    fieldEventLoadToken: fieldEventLoadToken.value,
   }
 })
 
@@ -2833,6 +3083,321 @@ function isEmptyRuntimeFormulaValue(value) {
   return value === null || value === undefined || value === ''
 }
 
+const offlineReplayAvailable = computed(() => {
+  const runtime = offlineFormRuntime.value
+  if (!runtime || !offlineDraftId.value)
+    return false
+  const draft = runtime.store.getDraft(offlineDraftId.value)
+  return Boolean(draft?.replayLog?.some(item => item.status !== 'COMPLETED'))
+})
+
+function refreshOfflineFormRuntime() {
+  if (offlineDraftSaveTimer) {
+    window.clearTimeout(offlineDraftSaveTimer)
+    offlineDraftSaveTimer = null
+  }
+  offlineDraftId.value = ''
+  offlineBaseRecordVersion.value = ''
+  offlineDraftNotice.value = ''
+  try {
+    offlineFormRuntime.value = createOfflineFormRuntime({
+      config: props.offlineDraft,
+      scope: {
+        tenantId: userStore.tenantId,
+        userId: userStore.userId,
+      },
+    })
+  }
+  catch (error) {
+    offlineFormRuntime.value = null
+    if (props.offlineDraft?.enabled === true)
+      console.warn('[AiCrudPage] 离线草稿配置无效，已失败关闭:', error?.message || error)
+  }
+}
+
+function resolveOfflineRecordId(row = currentRow.value) {
+  if (!row || modalStatus.value !== 'edit')
+    return ''
+  return resolveRowKeyValue(row) ?? ''
+}
+
+function readOfflineRecordVersion(row = currentRow.value) {
+  const field = offlineFormRuntime.value?.config.recordVersionField
+    || props.offlineDraft?.recordVersionField
+    || 'updateTime'
+  const mainData = isMasterDetailPayload(formData.value) ? formData.value.main : formData.value
+  return mainData?.[field]
+    ?? mainData?.version
+    ?? mainData?.recordVersion
+    ?? row?.[field]
+    ?? row?.version
+    ?? row?.recordVersion
+    ?? ''
+}
+
+function resolveOfflineRecordVersion() {
+  return offlineBaseRecordVersion.value || readOfflineRecordVersion()
+}
+
+function offlineDraftPayload(data = formData.value) {
+  if (hasChildrenConfig.value) {
+    return {
+      main: data && typeof data.main === 'object' ? data.main : { ...(formData.value || {}) },
+      children: normalizeChildrenData(data?.children || childFormData.value),
+    }
+  }
+  return data && typeof data === 'object' ? data : {}
+}
+
+function saveOfflineDraft(data = formData.value) {
+  const runtime = offlineFormRuntime.value
+  if (!runtime || !['add', 'edit'].includes(modalStatus.value) || offlineDraftHydrating.value || inlineFormHydrating.value)
+    return null
+  try {
+    const draft = runtime.save({
+      draftId: offlineDraftId.value || undefined,
+      data: offlineDraftPayload(data),
+      recordId: resolveOfflineRecordId(),
+      baseRecordVersion: resolveOfflineRecordVersion(),
+    })
+    offlineDraftId.value = draft.draftId
+    return draft
+  }
+  catch (error) {
+    offlineDraftNotice.value = error?.message || '本地草稿保存失败'
+    console.warn('[AiCrudPage] 本地草稿保存失败:', error?.code || error?.message || error)
+    return null
+  }
+}
+
+function scheduleOfflineDraftSave() {
+  if (!offlineFormRuntime.value
+    || !['add', 'edit'].includes(modalStatus.value)
+    || offlineDraftHydrating.value
+    || inlineFormHydrating.value) {
+    return
+  }
+  if (offlineDraftSaveTimer) {
+    window.clearTimeout(offlineDraftSaveTimer)
+  }
+  offlineDraftSaveTimer = window.setTimeout(() => {
+    offlineDraftSaveTimer = null
+    saveOfflineDraft()
+  }, 300)
+}
+
+function flushOfflineDraftSave() {
+  const shouldSave = Boolean(offlineDraftSaveTimer || offlineDraftId.value)
+  if (offlineDraftSaveTimer) {
+    window.clearTimeout(offlineDraftSaveTimer)
+    offlineDraftSaveTimer = null
+  }
+  return shouldSave ? saveOfflineDraft() : null
+}
+
+function resetOfflineDraftSession() {
+  if (offlineDraftSaveTimer) {
+    window.clearTimeout(offlineDraftSaveTimer)
+    offlineDraftSaveTimer = null
+  }
+  offlineDraftId.value = ''
+  offlineBaseRecordVersion.value = ''
+  offlineDraftNotice.value = ''
+}
+
+async function restoreOfflineDraft(recordId = '') {
+  const runtime = offlineFormRuntime.value
+  if (!runtime)
+    return null
+  const draft = runtime.findDraft(recordId)
+  if (!draft)
+    return null
+  offlineDraftId.value = draft.draftId
+  offlineBaseRecordVersion.value = draft.baseRecordVersion || readOfflineRecordVersion()
+  offlineDraftHydrating.value = true
+  try {
+    if (hasChildrenConfig.value && draft.data && typeof draft.data.main === 'object') {
+      formData.value = normalizeEditData({ ...(formData.value || {}), ...draft.data.main })
+      childFormData.value = normalizeChildrenData(draft.data.children)
+    }
+    else if (draft.data && typeof draft.data === 'object') {
+      formData.value = normalizeEditData({ ...(formData.value || {}), ...draft.data })
+    }
+    offlineDraftNotice.value = draft.replayLog?.some(item => item.status !== 'COMPLETED')
+      ? '已恢复待提交草稿，联网后可检查并重放。'
+      : '已恢复本地草稿，提交前请确认数据。'
+    return draft
+  }
+  finally {
+    await nextTick()
+    offlineDraftHydrating.value = false
+  }
+}
+
+function isBrowserOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
+function createOfflineReplayKey() {
+  return `ui:offline:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`
+}
+
+function appendOfflineSubmitIntent(draft, data, isEdit, idValue) {
+  const runtime = offlineFormRuntime.value
+  if (!runtime?.config.replayActionCode || !draft)
+    return null
+  const sourceData = hasChildrenConfig.value ? (data?.main || {}) : data
+  const intent = runtime.appendSubmitIntent(draft.draftId, {
+    formData: sourceData,
+    recordId: isEdit ? idValue : '',
+    idempotencyKey: createOfflineReplayKey(),
+    routeQuery: route.query,
+  })
+  if (intent)
+    offlineDraftNotice.value = '当前网络不可用，已保存本地草稿和待提交意图。联网后请检查并重放。'
+  return intent
+}
+
+function confirmOfflineReplay() {
+  if (!offlineDraftId.value || offlineReplayLoading.value)
+    return
+  window.$dialog?.warning({
+    title: '检查并重放本地草稿',
+    content: '系统会先检查发布版本和记录版本，确认无冲突后按幂等键提交。是否继续？',
+    positiveText: '继续检查',
+    negativeText: '取消',
+    onPositiveClick: replayOfflineDraft,
+  })
+}
+
+async function replayOfflineDraft() {
+  const runtime = offlineFormRuntime.value
+  const draftId = offlineDraftId.value
+  if (!runtime || !draftId)
+    return
+  offlineReplayLoading.value = true
+  try {
+    const result = await runtime.store.replayDraft(draftId, {
+      confirmed: true,
+      loadCurrent: () => loadOfflineCurrent(runtime, draftId),
+      execute: async (intent) => {
+        const response = await executeBusinessAction(buildBusinessActionExecutePayload({
+          action: { actionCode: intent.actionCode },
+          config: { suiteCode: runtime.config.suiteCode },
+          objectCode: intent.objectCode,
+          recordId: intent.recordId,
+          formData: intent.formData,
+          routeQuery: intent.routeQuery,
+          idempotencyKey: intent.idempotencyKey,
+          parentRecordId: intent.parentRecordId,
+          childRecordId: intent.childRecordId,
+          relationKey: intent.relationKey,
+        }))
+        return unwrapBusinessActionResult(response, '草稿重放失败')
+      },
+    })
+    if (result.status === 'completed') {
+      runtime.store.removeDraft(draftId)
+      offlineDraftId.value = ''
+      offlineDraftNotice.value = '本地草稿已按幂等键提交。'
+      await loadList()
+    }
+    else if (result.status === 'conflict') {
+      offlineDraftNotice.value = result.message || '草稿存在冲突，请重新加载。'
+    }
+    else if (result.status === 'failed') {
+      offlineDraftNotice.value = result.draft?.failureMessage || '草稿重放失败，请修正后重试。'
+    }
+  }
+  finally {
+    offlineReplayLoading.value = false
+  }
+}
+
+async function loadOfflineCurrent(runtime, draftId) {
+  const draft = runtime.store.getDraft(draftId)
+  const publication = await loadOfflinePublishedSnapshot(runtime)
+  if (!draft?.recordId) {
+    return {
+      available: true,
+      ...publication,
+    }
+  }
+  const { method, url } = parseApiConfig(
+    'detail',
+    `${props.api}/${draft.recordId}`,
+    'get',
+    { id: draft.recordId },
+  )
+  try {
+    const requestMethod = method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase()
+    const urlHasId = url.endsWith(`/${draft.recordId}`)
+      || url.includes(`/${draft.recordId}?`)
+      || url.includes(`/${draft.recordId}/`)
+    const idParam = typeof props.rowKey === 'string' ? props.rowKey : 'id'
+    const params = ['post', 'postEncrypt'].includes(requestMethod) && !urlHasId
+      ? { [idParam]: draft.recordId }
+      : undefined
+    const response = requestMethod === 'postEncrypt'
+      ? await postEncrypt(url, {}, { params })
+      : await request({ method: requestMethod, url, params })
+    const payload = response?.data && typeof response.data === 'object' ? response.data : response
+    const current = payload?.main && typeof payload.main === 'object' ? payload.main : payload
+    return {
+      available: Boolean(current),
+      ...publication,
+      recordVersion: current?.[runtime.config.recordVersionField]
+        ?? current?.version
+        ?? current?.recordVersion,
+    }
+  }
+  catch {
+    return { available: false, ...publication }
+  }
+}
+
+async function loadOfflinePublishedSnapshot(runtime) {
+  if (!runtime.config.configKey) {
+    return {
+      publishedVersion: runtime.config.publishedVersion,
+      schemaHash: runtime.config.schemaHash,
+    }
+  }
+  const response = await crudConfigRender(runtime.config.configKey, false)
+  const currentConfig = response?.data && typeof response.data === 'object' ? response.data : null
+  if (!currentConfig)
+    throw new Error('无法读取最新发布配置')
+  return createOfflinePublishedSnapshot(currentConfig, runtime.config.formCode)
+}
+
+function clearOfflineDraftAfterSubmit() {
+  if (offlineDraftSaveTimer) {
+    window.clearTimeout(offlineDraftSaveTimer)
+    offlineDraftSaveTimer = null
+  }
+  if (offlineFormRuntime.value && offlineDraftId.value)
+    offlineFormRuntime.value.store.removeDraft(offlineDraftId.value)
+  offlineDraftId.value = ''
+  offlineBaseRecordVersion.value = ''
+  offlineDraftNotice.value = ''
+}
+
+function handleBrowserOnline() {
+  const runtime = offlineFormRuntime.value
+  if (!runtime)
+    return
+  const draft = offlineDraftId.value
+    ? runtime.store.getDraft(offlineDraftId.value)
+    : runtime.findDraft(resolveOfflineRecordId())
+  if (!draft)
+    return
+  offlineDraftId.value = draft.draftId
+  offlineBaseRecordVersion.value = draft.baseRecordVersion || offlineBaseRecordVersion.value
+  offlineDraftNotice.value = draft.replayLog?.some(item => item.status !== 'COMPLETED')
+    ? '网络已恢复，请检查发布版本和记录版本后再重放。'
+    : '网络已恢复，本地草稿仍保留，请确认后在线提交。'
+}
+
 watch(runtimeFormulaSignature, () => {
   if (!runtimeFormulaCalculationEnabled.value)
     return
@@ -2841,11 +3406,19 @@ watch(runtimeFormulaSignature, () => {
 
 watch(formData, () => {
   persistActiveInlineFormTab({ dirty: true })
+  scheduleOfflineDraftSave()
 }, { deep: true })
 
 watch(childFormData, () => {
   persistActiveInlineFormTab({ dirty: true })
+  scheduleOfflineDraftSave()
 }, { deep: true })
+
+watch([
+  () => stableSerialize(props.offlineDraft || {}),
+  () => String(userStore.tenantId || ''),
+  () => String(userStore.userId || ''),
+], refreshOfflineFormRuntime, { immediate: true })
 
 watch(detailActiveTab, () => {
   persistActiveInlineFormTab()
@@ -3644,6 +4217,7 @@ function buildInlineFormTabKey(status, row) {
 
 function openFormContainer(status, title, row = null, context = {}) {
   if (!usesInlineFormWorkspace.value || props.formOnly) {
+    fieldEventLoadToken.value += 1
     modalVisible.value = true
     return true
   }
@@ -3667,6 +4241,9 @@ function openFormContainer(status, title, row = null, context = {}) {
     childFormData: cloneInlineFormValue(childFormData.value || {}),
     detailRuntime: cloneInlineFormValue(detailRuntime.value),
     detailActiveTab: detailActiveTab.value,
+    offlineDraftId: offlineDraftId.value,
+    offlineBaseRecordVersion: offlineBaseRecordVersion.value,
+    offlineDraftNotice: offlineDraftNotice.value,
     dirty: false,
   }
   if (isTabWorkspaceMode.value) {
@@ -3677,6 +4254,7 @@ function openFormContainer(status, title, row = null, context = {}) {
     inlineFormTabs.value = [tab]
   }
   activeInlineFormTabKey.value = tab.key
+  fieldEventLoadToken.value += 1
   hydrateInlineFormTab(tab)
   return true
 }
@@ -3690,6 +4268,9 @@ function hydrateInlineFormTab(tab) {
   currentRow.value = cloneInlineFormValue(tab.row)
   detailRuntime.value = cloneInlineFormValue(tab.detailRuntime)
   detailActiveTab.value = tab.detailActiveTab || 'business'
+  offlineDraftId.value = tab.offlineDraftId || ''
+  offlineBaseRecordVersion.value = tab.offlineBaseRecordVersion || ''
+  offlineDraftNotice.value = tab.offlineDraftNotice || ''
   formData.value = cloneInlineFormValue(tab.formData || {})
   childFormData.value = cloneInlineFormValue(tab.childFormData || {})
   nextTick(() => {
@@ -3708,6 +4289,9 @@ function persistActiveInlineFormTab({ dirty = false } = {}) {
   tab.childFormData = cloneInlineFormValue(childFormData.value || {})
   tab.detailRuntime = cloneInlineFormValue(detailRuntime.value)
   tab.detailActiveTab = detailActiveTab.value
+  tab.offlineDraftId = offlineDraftId.value
+  tab.offlineBaseRecordVersion = offlineBaseRecordVersion.value
+  tab.offlineDraftNotice = offlineDraftNotice.value
   if (dirty)
     tab.dirty = true
 }
@@ -3723,6 +4307,7 @@ function markActiveInlineFormClean() {
 function handleInlineFormTabChange(key) {
   if (!key)
     return
+  flushOfflineDraftSave()
   persistActiveInlineFormTab()
   const tab = inlineFormTabs.value.find(item => item.key === key)
   if (!tab)
@@ -3737,8 +4322,10 @@ function handleInlineFormTabChange(key) {
 }
 
 function handleInlineWorkspaceListTab() {
+  flushOfflineDraftSave()
   persistActiveInlineFormTab()
   activeInlineWorkspaceKey.value = INLINE_WORKSPACE_LIST_KEY
+  resetOfflineDraftSession()
 }
 
 function inlineFormTabTitle(tab) {
@@ -3758,6 +4345,11 @@ function closeInlineFormTab(key = activeInlineFormTabKey.value, force = false) {
       onPositiveClick: () => closeInlineFormTab(key, true),
     })
     return
+  }
+
+  if (activeInlineFormTabKey.value === key) {
+    flushOfflineDraftSave()
+    persistActiveInlineFormTab()
   }
 
   const listPaneActive = isTabWorkspaceMode.value && activeInlineWorkspaceKey.value === INLINE_WORKSPACE_LIST_KEY
@@ -3783,6 +4375,7 @@ function closeInlineFormTab(key = activeInlineFormTabKey.value, force = false) {
     modalTitle.value = ''
     currentRow.value = null
     detailRuntime.value = null
+    resetOfflineDraftSession()
     formData.value = {}
     childFormData.value = {}
     emit('modal-close')
@@ -3790,11 +4383,13 @@ function closeInlineFormTab(key = activeInlineFormTabKey.value, force = false) {
 }
 
 function handleCloseActiveInlineFormTab() {
+  flushOfflineDraftSave()
   persistActiveInlineFormTab()
   closeInlineFormTab()
 }
 
 function handleInlineFormCancel() {
+  flushOfflineDraftSave()
   persistActiveInlineFormTab()
   closeInlineFormTab()
 }
@@ -3828,6 +4423,9 @@ function handleInlineFormSubmitSuccess(response, isEdit) {
  * 新增
  */
 async function handleAdd(defaultValues = null, options = {}) {
+  flushOfflineDraftSave()
+  persistActiveInlineFormTab()
+  resetOfflineDraftSession()
   formOnlySubmitted.value = false
   const presetValues = isPlainRecord(defaultValues)
     ? defaultValues
@@ -3865,8 +4463,15 @@ async function handleAdd(defaultValues = null, options = {}) {
     childFormData.value = buildInitialChildrenData()
   }
 
-  if (!props.formOnly && !openFormContainer('add', modalTitle.value, null, options))
+  if (!presetValues)
+    await restoreOfflineDraft('')
+
+  if (props.formOnly) {
+    fieldEventLoadToken.value += 1
+  }
+  else if (!openFormContainer('add', modalTitle.value, null, options)) {
     return
+  }
 
   await nextTick()
   formRef.value?.restoreValidation()
@@ -3918,6 +4523,10 @@ async function handleEdit(row) {
     return
   }
 
+  flushOfflineDraftSave()
+  persistActiveInlineFormTab()
+  resetOfflineDraftSession()
+
   modalTitle.value = row?.__modalTitle || '编辑'
   modalStatus.value = 'edit'
   currentRow.value = row
@@ -3937,6 +4546,9 @@ async function handleEdit(row) {
     const data = await callHook('beforeRenderDetail', renderRow, data => data)
     applyDetailData(data)
   }
+
+  offlineBaseRecordVersion.value = readOfflineRecordVersion(renderRow)
+  await restoreOfflineDraft(resolveRowKeyValue(row))
 
   if (!openFormContainer('edit', modalTitle.value, row))
     return
@@ -3959,6 +4571,10 @@ async function handleDetail(row) {
     emit('modal-open', { status: 'detail', row })
     return
   }
+
+  flushOfflineDraftSave()
+  persistActiveInlineFormTab()
+  resetOfflineDraftSession()
 
   modalTitle.value = row?.__modalTitle || '查看详情'
   modalStatus.value = 'detail'
@@ -4267,6 +4883,20 @@ async function handleModalConfirm() {
       window.$message.warning(`缺少${props.rowKey}参数，无法提交编辑`)
       return
     }
+
+    if (offlineFormRuntime.value && isBrowserOffline()) {
+      const draft = saveOfflineDraft(data)
+      if (!draft)
+        throw new Error(offlineDraftNotice.value || '本地草稿保存失败')
+      const intent = appendOfflineSubmitIntent(draft, data, isEdit, idValue)
+      offlineDraftNotice.value = intent
+        ? '当前网络不可用，已保存本地草稿和待提交意图。联网后请检查并重放。'
+        : '当前网络不可用，仅保存了本地草稿。联网后请手动提交。'
+      persistActiveInlineFormTab({ dirty: true })
+      window.$message.warning(offlineDraftNotice.value)
+      return
+    }
+
     const { method, url } = parseApiConfig(
       isEdit ? 'update' : createKey,
       isEdit ? `${props.api}/${idValue}` : props.api,
@@ -4296,6 +4926,7 @@ async function handleModalConfirm() {
       response = await request({ method: requestMethod, url, data })
     }
 
+    clearOfflineDraftAfterSubmit()
     window.$message.success(`${isEdit ? '编辑' : '新增'}成功`)
     if (props.formOnly) {
       formOnlySubmitted.value = true
@@ -4345,6 +4976,9 @@ function handleModalCancel() {
  * 弹窗关闭后
  */
 function handleModalClose() {
+  flushOfflineDraftSave()
+  modalStatus.value = ''
+  resetOfflineDraftSession()
   formData.value = {}
   childFormData.value = {}
   currentRow.value = null
@@ -4836,6 +5470,7 @@ defineExpose({
  * ==================== 生命周期 ====================
  */
 onMounted(() => {
+  window.addEventListener('online', handleBrowserOnline)
   if (props.formOnly) {
     handleAdd()
     return
@@ -4846,6 +5481,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  flushOfflineDraftSave()
+  window.removeEventListener('online', handleBrowserOnline)
   clearExportTaskPollTimer()
   clearRuntimeFormulaTimers()
 })

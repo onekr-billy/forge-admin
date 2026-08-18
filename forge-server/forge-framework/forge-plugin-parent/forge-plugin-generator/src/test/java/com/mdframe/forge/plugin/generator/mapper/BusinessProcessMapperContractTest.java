@@ -5,6 +5,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcess;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessVersion;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunDetailVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunVO;
+import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +46,22 @@ class BusinessProcessMapperContractTest {
         assertTrue(xml.contains("p.del_flag = 0"));
         assertTrue(page.contains("List_Columns"));
         assertFalse(page.contains("Base_Columns"));
+    }
+
+    @Test
+    @DisplayName("object process summary is tenant scoped and extracts the real start node")
+    void objectProcessSummaryIsTenantScoped() throws IOException, NoSuchFieldException {
+        String query = statement(resource("mapper/BusinessProcessMapper.xml"),
+                "select", "selectBySubjectObjectCode");
+
+        assertEquals(String.class, BusinessObjectProcessVO.class.getDeclaredField("id").getType());
+        assertTrue(query.contains("CAST(p.id AS CHAR)"));
+        assertTrue(query.contains("p.tenant_id = #{tenantId}"));
+        assertTrue(query.contains("p.subject_object_code = #{objectCode}"));
+        assertTrue(query.contains("p.del_flag = 0"));
+        assertTrue(query.contains("JSON_TABLE"));
+        assertTrue(query.contains("LEFT(node.node_type, 6) = 'START_'"));
+        assertTrue(query.contains("Active_Application_And_Subject"));
     }
 
     @Test

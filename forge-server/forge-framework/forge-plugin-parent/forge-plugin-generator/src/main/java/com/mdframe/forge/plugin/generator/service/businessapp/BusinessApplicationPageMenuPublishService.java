@@ -45,7 +45,7 @@ public class BusinessApplicationPageMenuPublishService {
         BusinessApplicationPageMenuDTO root = menu(ROOT_NODE_ID, null,
                 StringUtils.defaultIfBlank(string(application.get("applicationName")), applicationCode),
                 "/app-center/application/" + applicationCode + "/runtime", null, rootPerms,
-                string(application.get("icon")), 0, true, true, true, List.of());
+                string(application.get("icon")), 0, true, true);
         menus.add(root);
         for (Map<String, Object> node : visibleNodes) {
             String nodeId = StringUtils.trimToNull(string(node.get("id")));
@@ -57,14 +57,11 @@ public class BusinessApplicationPageMenuPublishService {
             String parentNodeId = requestedParentId != null && visibleNodeIds.contains(requestedParentId)
                     ? requestedParentId : ROOT_NODE_ID;
             String title = StringUtils.defaultIfBlank(string(node.get("title")), directory ? "页面组" : "未命名页面");
-            Map<String, Object> access = map(firstNonNull(node.get("access"), map(node.get("settings")).get("access")));
-            boolean inherit = !"roles".equalsIgnoreCase(string(access.get("mode")));
-            List<Long> roleIds = longList(access.get("roleIds"));
             menus.add(menu(nodeId, parentNodeId, title,
                     directory ? "/app-center/application/" + applicationCode + "/runtime"
                             : "/app-center/application/" + applicationCode + "/runtime?pageId=" + nodeId,
                     directory ? null : RUNTIME_COMPONENT, permission(applicationCode, nodeId),
-                    string(node.get("icon")), integer(node.get("sort")), directory, true, inherit, roleIds));
+                    string(node.get("icon")), integer(node.get("sort")), directory, true));
         }
         Map<String, Long> bindings = menuRegisterAdapter.syncApplicationPageMenus(applicationCode, menus);
         snapshot.put("pageMenu", bindings);
@@ -82,21 +79,12 @@ public class BusinessApplicationPageMenuPublishService {
                 errors.add("应用页面未设置有效默认首页");
             }
         }
-        for (Map<String, Object> node : nodes) {
-            if (!systemMenuVisible(node)) {
-                continue;
-            }
-            Map<String, Object> access = map(firstNonNull(node.get("access"), map(node.get("settings")).get("access")));
-            if ("roles".equalsIgnoreCase(string(access.get("mode"))) && longList(access.get("roleIds")).isEmpty()) {
-                errors.add("系统菜单页面未配置访问角色: " + StringUtils.defaultIfBlank(string(node.get("title")), "未命名页面"));
-            }
-        }
         return errors;
     }
 
     private BusinessApplicationPageMenuDTO menu(String nodeId, String parentNodeId, String title, String path,
                                                 String component, String perms, String icon, Integer sort,
-                                                boolean directory, boolean visible, boolean inherit, List<Long> roleIds) {
+                                                boolean directory, boolean visible) {
         BusinessApplicationPageMenuDTO item = new BusinessApplicationPageMenuDTO();
         item.setNodeId(nodeId);
         item.setParentNodeId(parentNodeId);
@@ -108,13 +96,14 @@ public class BusinessApplicationPageMenuPublishService {
         item.setSort(sort == null ? 0 : sort);
         item.setDirectory(directory);
         item.setVisible(visible);
-        item.setInheritRuntimeRoles(inherit);
-        item.setRoleIds(roleIds);
         return item;
     }
 
     private boolean systemMenuVisible(Map<String, Object> node) {
-        Object value = firstNonNull(node.get("systemMenuVisible"), map(node.get("settings")).get("systemMenuVisible"));
+        Object value = node.get("systemMenuVisible");
+        if (value == null) {
+            value = map(node.get("settings")).get("systemMenuVisible");
+        }
         return Boolean.TRUE.equals(value);
     }
 
@@ -122,11 +111,9 @@ public class BusinessApplicationPageMenuPublishService {
         return "ai:business:application:" + applicationCode + ":page:" + nodeId;
     }
 
-    private Object firstNonNull(Object left, Object right) { return left != null ? left : right; }
     @SuppressWarnings("unchecked")
     private Map<String, Object> map(Object value) { return value instanceof Map<?, ?> raw ? new LinkedHashMap<>((Map<String, Object>) raw) : Map.of(); }
     private String string(Object value) { return value == null ? null : String.valueOf(value); }
     private Integer integer(Object value) { try { return value == null ? 0 : Integer.valueOf(String.valueOf(value)); } catch (Exception ignored) { return 0; } }
     private List<Map<String, Object>> maps(Object value) { if (!(value instanceof List<?> list)) return List.of(); return list.stream().filter(Map.class::isInstance).map(this::map).toList(); }
-    private List<Long> longList(Object value) { if (!(value instanceof List<?> list)) return List.of(); return list.stream().map(this::string).map(StringUtils::trimToNull).filter(java.util.Objects::nonNull).map(item -> { try { return Long.valueOf(item); } catch (Exception ignored) { return null; } }).filter(java.util.Objects::nonNull).toList(); }
 }

@@ -153,7 +153,9 @@ function selectItem(item) {
   margin-left: auto;
   flex-shrink: 0;
   color: var(--text-tertiary);
-  transition: color var(--transition-fast), transform var(--transition-fast);
+  transition:
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .forge-top-menu-branch-item:hover > .forge-top-menu-dropdown-item .forge-top-menu-dropdown-arrow,

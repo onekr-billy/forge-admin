@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.ai.provider.service;
 import com.mdframe.forge.plugin.ai.provider.adapter.AiModelRuntimeOptions;
 import com.mdframe.forge.plugin.ai.provider.adapter.AiProviderAdapterCode;
 import com.mdframe.forge.plugin.ai.provider.adapter.AiProviderAdapterRegistry;
+import com.mdframe.forge.plugin.ai.model.adapter.AiModelAdapterRegistry;
 import com.mdframe.forge.plugin.ai.model.service.AiModelService;
 import com.mdframe.forge.plugin.ai.provider.domain.AiProvider;
 import com.mdframe.forge.plugin.ai.provider.dto.AiProviderSaveDTO;
@@ -51,6 +52,9 @@ class AiProviderServiceTest {
     private AiProviderAdapterRegistry adapterRegistry;
 
     @Mock
+    private AiModelAdapterRegistry modelAdapterRegistry;
+
+    @Mock
     private AiProviderCacheEvictionScheduler evictionScheduler;
 
     @Mock
@@ -74,7 +78,7 @@ class AiProviderServiceTest {
     void setUp() {
         // AiSecretCrypto mock: encrypt 返回输入（测试中不验证加密逻辑，只验证调用链）
         lenient().when(aiSecretCrypto.encrypt(any())).thenAnswer(inv -> inv.getArgument(0));
-        service = new AiProviderService(adapterRegistry, evictionScheduler, modelService, healthRegistry, aiSecretCrypto, providerModelFetcher);
+        service = new AiProviderService(adapterRegistry, modelAdapterRegistry, evictionScheduler, modelService, healthRegistry, aiSecretCrypto, providerModelFetcher);
         ReflectionTestUtils.setField(service, "baseMapper", providerMapper);
     }
 

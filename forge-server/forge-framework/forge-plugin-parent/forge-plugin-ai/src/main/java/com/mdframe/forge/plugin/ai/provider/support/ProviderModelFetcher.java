@@ -35,13 +35,15 @@ public class ProviderModelFetcher {
     /** 响应体截断长度，避免把整页 HTML 404 带进错误信息 */
     private static final int ERROR_BODY_MAX_CHARS = 512;
 
-    /**
-     * 已知的「Anthropic 协议兼容子路径」后缀，按长度降序（最长前缀优先匹配）。
-     */
+    /** 已知的「Anthropic 协议兼容子路径」后缀，按长度降序（最长前缀优先匹配）。 */
     private static final String[] KNOWN_COMPAT_SUFFIXES = {
             "/api/claudecode", "/api/anthropic", "/apps/anthropic", "/api/coding",
             "/claudecode", "/anthropic", "/step_plan", "/coding", "/claude",
     };
+
+    /** DashScope 主机：原生根地址无模型列表端点，模型列表需走 OpenAI 兼容路径 */
+    private static final String DASHSCOPE_HOST = "dashscope.aliyuncs.com";
+    private static final String DASHSCOPE_COMPATIBLE_BASE = "https://dashscope.aliyuncs.com/compatible-mode";
 
     private final HttpClient httpClient;
 
@@ -135,6 +137,12 @@ public class ProviderModelFetcher {
             }
         }
 
+        // DashScope 原生根地址（无 /compatible-mode 路径）的模型列表在 OpenAI 兼容端点下
+        String dashScopeCompat = toDashScopeCompatible(trimmed);
+        if (dashScopeCompat != null && !trimmed.endsWith("/compatible-mode")) {
+            candidates.add(dashScopeCompat + "/v1/models");
+        }
+
         List<String> unique = new ArrayList<>();
         for (String c : candidates) {
             if (!unique.contains(c)) {
@@ -142,6 +150,20 @@ public class ProviderModelFetcher {
             }
         }
         return unique;
+    }
+
+    /**
+     * 命中 DashScope 官方主机时返回其 OpenAI 兼容端点根地址，否则返回 {@code null}。
+     */
+    private String toDashScopeCompatible(String baseUrl) {
+        try {
+            URI uri = URI.create(baseUrl);
+            if (DASHSCOPE_HOST.equalsIgnoreCase(uri.getHost())) {
+                return DASHSCOPE_COMPATIBLE_BASE;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private boolean endsWithVersionSegment(String url) {

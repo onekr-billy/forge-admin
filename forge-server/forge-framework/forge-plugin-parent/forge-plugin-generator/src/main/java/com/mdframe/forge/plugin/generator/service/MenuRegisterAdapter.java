@@ -29,9 +29,20 @@ public interface MenuRegisterAdapter {
         return null;
     }
 
+    default Long registerAppMenu(String menuName, Long parentId, String path, String component,
+                                 String perms, String icon, Integer sort, boolean enabled, String clientCode) {
+        return registerAppMenu(menuName, parentId, path, component, perms, icon, sort, enabled);
+    }
+
     default void updateAppMenu(Long menuResourceId, String menuName, Long parentId, String path,
                                String component, String perms, String icon, Integer sort, boolean enabled) {
         updateMenu(menuResourceId, menuName, parentId, sort);
+    }
+
+    default void updateAppMenu(Long menuResourceId, String menuName, Long parentId, String path,
+                               String component, String perms, String icon, Integer sort, boolean enabled,
+                               String clientCode) {
+        updateAppMenu(menuResourceId, menuName, parentId, path, component, perms, icon, sort, enabled);
     }
 
     /**
@@ -80,5 +91,13 @@ public interface MenuRegisterAdapter {
     default Map<String, Long> syncApplicationPageMenus(String applicationCode,
                                                         List<BusinessApplicationPageMenuDTO> menus) {
         return Map.of();
+    }
+
+    /**
+     * 对象发布时把单据动作权限码（ai:business:{objectCode}:list/query/add/edit/delete/export/import）
+     * 注册为系统按钮资源，便于管理员在角色管理中直接按对象授权。
+     * 按 perms 幂等；父级优先对象运行菜单，找不到时回落低代码根目录。
+     */
+    default void syncBusinessObjectActionPermissions(String objectCode, String objectName, String menuConfigKey) {
     }
 }

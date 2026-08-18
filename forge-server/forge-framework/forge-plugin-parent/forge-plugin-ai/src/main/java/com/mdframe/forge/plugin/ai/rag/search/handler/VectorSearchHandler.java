@@ -12,7 +12,8 @@ import java.util.List;
 
 /**
  * 向量检索处理器。
- * 委托给现有 KnowledgeSearchService 执行向量检索。
+ * 委托给 KnowledgeSearchService 执行纯向量检索（searchVectorOnly：不做 Rerank/Nearby/Lost-in-Middle，
+ * 这些后处理由管线的 RerankHandler/FinalizeHandler 统一承担，避免重复执行）。
  */
 @Component
 @RequiredArgsConstructor
@@ -28,7 +29,7 @@ public class VectorSearchHandler implements RagSearchHandler {
     @Override
     public void handle(RagSearchContext context) {
         KnowledgeSearchRequest request = context.getRequest();
-        List<KnowledgeSearchResult> results = knowledgeSearchService.search(request);
+        List<KnowledgeSearchResult> results = knowledgeSearchService.searchVectorOnly(request);
         context.setVectorResults(results);
     }
 }

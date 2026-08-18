@@ -68,6 +68,25 @@
             <groupId>com.mdframe.forge</groupId>
             <artifactId>forge-plugin-collaboration</artifactId>
         </dependency>
+
+        <!-- H5/企微低代码运行时：复用已发布配置、动态 CRUD、字段事件和业务动作协议。 -->
+        <dependency>
+            <groupId>com.mdframe.forge</groupId>
+            <artifactId>forge-plugin-generator</artifactId>
+        </dependency>
+
+        <!--
+            forge-plugin-generator contains the low-code business-flow service.  Its
+            forge-flow-client dependency is optional at plugin level so generator can
+            also be used in the admin server without forcing a flow deployment, but
+            app-server scans the same service classes at startup.  Keep the client on
+            this runtime classpath; the service still fails closed when no FlowClient
+            bean/flow endpoint is configured.
+        -->
+        <dependency>
+            <groupId>com.mdframe.forge</groupId>
+            <artifactId>forge-flow-client</artifactId>
+        </dependency>
         
         <dependency>
             <groupId>com.mdframe.forge</groupId>

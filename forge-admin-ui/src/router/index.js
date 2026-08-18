@@ -3,6 +3,24 @@ import { routes as autoRoutes } from 'vue-router/auto-routes'
 import { SSO_BRIDGE_ROUTE } from '@/utils/sso-target'
 import { setupRouterGuards } from './guards'
 
+export function redirectLegacyDataScopeAdapter(to) {
+  if (String(to.query?.panel || '') !== 'permission')
+    return true
+  const returnTo = String(to.query?.returnTo || '').trim()
+  const [returnPath, returnSearch = ''] = returnTo.split('?', 2)
+  if (!/^\/app-center\/application\/[^/]+$/.test(returnPath))
+    return true
+  return {
+    path: returnPath,
+    query: {
+      ...Object.fromEntries(new URLSearchParams(returnSearch).entries()),
+      section: 'permissions',
+      dataScopeObjectId: to.query?.objectId || undefined,
+    },
+    replace: true,
+  }
+}
+
 // 手动定义的路由（登录页、SSO、带参数的路由等）
 export const manualRoutes = [
   // 白名单页面
@@ -95,12 +113,13 @@ export const manualRoutes = [
     name: 'AiLowcodeBuilderDynamic',
     path: '/ai/lowcode-builder/:id?',
     component: () => import('@/views/ai/lowcode-builder.vue'),
-    meta: { title: '业务页面设计器' },
+    meta: { title: '业务页面设计器（存量）', deprecated: true },
   },
   {
     name: 'BusinessObjectDesigner',
     path: '/app-center/object/:objectCode/designer',
     component: () => import('@/views/app-center/object-designer.[objectCode].vue'),
+    beforeEnter: redirectLegacyDataScopeAdapter,
     meta: { title: '业务单元设计', skipTab: true, preserveOnQuery: true },
   },
   {

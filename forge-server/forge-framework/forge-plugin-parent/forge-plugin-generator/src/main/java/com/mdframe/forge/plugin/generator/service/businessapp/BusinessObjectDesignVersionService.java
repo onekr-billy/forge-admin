@@ -74,7 +74,10 @@ public class BusinessObjectDesignVersionService
         version.setConfigId(dto.getConfigId());
         version.setConfigKey(StringUtils.trimToNull(dto.getConfigKey()));
         version.setCrudConfigVersionId(dto.getCrudConfigVersionId());
-        version.setVersionNo(dto.getVersionNo() == null ? nextVersionNo(object.getId()) : dto.getVersionNo());
+        // versionNo is the object's design-history sequence, not the linked CRUD publish version.
+        // Always allocate it from object history so imports/seeds with a published CRUD v1
+        // cannot collide with the first later object publication.
+        version.setVersionNo(nextVersionNo(object.getId()));
         version.setVersionType(StringUtils.defaultIfBlank(dto.getVersionType(), "draft").toLowerCase(Locale.ROOT));
         version.setModelSnapshot(writeJson(dto.getModelSnapshot()));
         version.setPageSnapshot(writeJson(dto.getPageSnapshot()));

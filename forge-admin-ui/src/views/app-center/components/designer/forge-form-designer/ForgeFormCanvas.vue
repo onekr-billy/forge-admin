@@ -59,6 +59,7 @@
               @select="$emit('update:selectedId', $event)"
               @update:schema="$emit('update:schema', $event)"
               @configure="$emit('configure', $event)"
+              @configure-sub-table="$emit('configureSubTable', $event)"
               @drop-before="handleDropAt(index, $event)"
               @drop-after="handleDropAt(index + 1, $event)"
             />
@@ -232,7 +233,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:schema', 'update:selectedId', 'configure', 'openSource', 'toggleFocus'])
+const emit = defineEmits(['update:schema', 'update:selectedId', 'configure', 'configureSubTable', 'openSource', 'toggleFocus'])
 const DRAG_COMPONENT_MIME = 'application/x-forge-form-component'
 const DRAG_FIELD_MIME = 'application/x-forge-form-field'
 const DRAG_LAYOUT_MIME = 'application/x-forge-form-layout'

@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.external.dto.ExternalApiDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalApiQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalApi;
 import com.mdframe.forge.plugin.external.service.ExternalApiService;
+import com.mdframe.forge.plugin.external.support.ExternalQueryContractValidator;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -24,6 +25,7 @@ import java.util.List;
 public class ExternalApiController {
 
     private final ExternalApiService apiService;
+    private final ExternalQueryContractValidator queryContractValidator;
 
     @GetMapping("/page")
     public RespInfo<IPage<ExternalApi>> page(ExternalApiQuery query) {
@@ -72,6 +74,7 @@ public class ExternalApiController {
         entity.setApiCode(dto.getApiCode());
         entity.setApiName(dto.getApiName());
         entity.setApiDesc(dto.getApiDesc());
+        entity.setExecutionMode(normalizeExecutionMode(dto.getExecutionMode()));
         entity.setApiPath(dto.getApiPath());
         entity.setApiMethod(dto.getApiMethod());
         entity.setRequestContentType(dto.getRequestContentType());
@@ -81,6 +84,7 @@ public class ExternalApiController {
         entity.setResponseContentType(dto.getResponseContentType());
         entity.setResponseDataPath(dto.getResponseDataPath());
         entity.setResponseTotalPath(dto.getResponseTotalPath());
+        entity.setMockResponseJson(dto.getMockResponseJson());
         entity.setParamMappingEnabled(dto.getParamMappingEnabled());
         entity.setParamMappings(dto.getParamMappings());
         entity.setResponseTransformEnabled(dto.getResponseTransformEnabled());
@@ -97,6 +101,9 @@ public class ExternalApiController {
         entity.setCacheKeyTemplate(dto.getCacheKeyTemplate());
         entity.setPermissionCheckEnabled(dto.getPermissionCheckEnabled());
         entity.setRequiredPermission(dto.getRequiredPermission());
+        entity.setLowcodeQueryEnabled(dto.getLowcodeQueryEnabled());
+        entity.setInputSchemaJson(dto.getInputSchemaJson());
+        entity.setOutputSchemaJson(dto.getOutputSchemaJson());
         entity.setApiStatus(dto.getApiStatus());
         entity.setSortOrder(dto.getSortOrder());
         entity.setRemark(dto.getRemark());
@@ -109,8 +116,16 @@ public class ExternalApiController {
         }
         requireNotBlank(dto.getApiName(), "接口名称不能为空");
         requireNotBlank(dto.getApiCode(), "接口编码不能为空");
-        requireNotBlank(dto.getApiPath(), "接口路径不能为空");
+        String executionMode = normalizeExecutionMode(dto.getExecutionMode());
         requireNotBlank(dto.getApiMethod(), "请求方法不能为空");
+        if (isMockMode(executionMode)) {
+            dto.setExecutionMode(executionMode);
+            dto.setApiPath(defaultText(dto.getApiPath(), "/mock"));
+            validateMockResponse(dto.getMockResponseJson());
+        } else {
+            dto.setExecutionMode(executionMode);
+            requireNotBlank(dto.getApiPath(), "接口路径不能为空");
+        }
         validateJsonObject(dto.getRequestHeaders(), "额外请求头");
         validateJsonObject(dto.getRequestParams(), "固定请求参数");
         validateJsonObject(dto.getParamMappings(), "参数映射规则");
@@ -118,6 +133,27 @@ public class ExternalApiController {
                 && !isBlank(dto.getRequestBodyTemplate())) {
             validateJson(dto.getRequestBodyTemplate(), "请求体模板");
         }
+        if (Boolean.TRUE.equals(dto.getPermissionCheckEnabled())) {
+            requireNotBlank(dto.getRequiredPermission(), "启用权限校验时必须配置权限码");
+        }
+        if (Boolean.TRUE.equals(dto.getRateLimitEnabled())
+                && (dto.getRateLimitQps() == null || dto.getRateLimitQps() < 1 || dto.getRateLimitQps() > 1000)) {
+            throw new BusinessException("限流QPS必须在1到1000之间");
+        }
+        if (Boolean.TRUE.equals(dto.getCacheEnabled())) {
+            if (!"GET".equalsIgnoreCase(dto.getApiMethod())) {
+                throw new BusinessException("外部接口缓存仅支持GET请求");
+            }
+            if (dto.getCacheTtl() != null && (dto.getCacheTtl() < 1 || dto.getCacheTtl() > 86400)) {
+                throw new BusinessException("缓存有效期必须在1到86400秒之间");
+            }
+        }
+        if (Boolean.TRUE.equals(dto.getResponseTransformEnabled())) {
+            requireNotBlank(dto.getResponseTransformScript(), "启用响应转换时必须配置转换脚本");
+        }
+        queryContractValidator.validateConfiguration(
+                dto.getLowcodeQueryEnabled(), dto.getApiMethod(), dto.getPermissionCheckEnabled(),
+                dto.getRequiredPermission(), dto.getInputSchemaJson(), dto.getOutputSchemaJson());
     }
 
     private void validateJsonObject(String value, String label) {
@@ -136,6 +172,30 @@ public class ExternalApiController {
         } catch (Exception e) {
             throw new BusinessException(label + "必须是合法JSON");
         }
+    }
+
+    private void validateMockResponse(String value) {
+        requireNotBlank(value, "Mock模式必须配置Mock响应JSON");
+        validateJson(value, "Mock响应JSON");
+    }
+
+    private String normalizeExecutionMode(String value) {
+        if (isBlank(value)) {
+            return "HTTP";
+        }
+        String mode = value.trim().toUpperCase();
+        if (!"HTTP".equals(mode) && !"MOCK".equals(mode)) {
+            throw new BusinessException("接口执行模式仅支持HTTP或MOCK");
+        }
+        return mode;
+    }
+
+    private boolean isMockMode(String executionMode) {
+        return "MOCK".equalsIgnoreCase(executionMode);
+    }
+
+    private String defaultText(String value, String fallback) {
+        return isBlank(value) ? fallback : value;
     }
 
     private void requireNotBlank(String value, String message) {

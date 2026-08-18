@@ -75,12 +75,12 @@ public class DynamicCrudController {
     @ApiEncrypt
     @ApiDecrypt
     @PostMapping
-    public RespInfo<Void> create(@PathVariable String configKey,
-                                  @RequestBody Map<String, Object> data) {
+    public RespInfo<Map<String, Object>> create(@PathVariable String configKey,
+                                                @RequestBody Map<String, Object> data) {
         Map<String, Object> createdData = dynamicCrudService.insert(configKey, data);
         // 发布记录创建事件，触发器引擎异步处理
         businessEventPublisher.publishRecordCreated(configKey, createdData != null ? createdData : data);
-        return RespInfo.success();
+        return RespInfo.success(createdData != null ? createdData : data);
     }
 
     @ApiEncrypt

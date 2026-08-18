@@ -19,6 +19,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessNamingService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
+import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessFlowModelVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessValidationVO;
@@ -97,6 +98,17 @@ public class BusinessProcessService {
 
     public BusinessProcessVO detail(Long processId) {
         return toVO(requireProcess(requireTenantId(), processId), false);
+    }
+
+    public List<BusinessObjectProcessVO> listByObjectCode(String objectCode) {
+        Long tenantId = requireTenantId();
+        String normalizedObjectCode = StringUtils.trimToNull(objectCode);
+        if (normalizedObjectCode == null) {
+            throw new BusinessException("业务对象编码不能为空");
+        }
+        List<BusinessObjectProcessVO> result = safeList(processMapper.selectBySubjectObjectCode(tenantId, normalizedObjectCode));
+        result.forEach(this::extractStartNodeType);
+        return result;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -485,6 +497,31 @@ public class BusinessProcessService {
             return schemaValidator.normalize(schemaJson);
         } catch (IllegalArgumentException exception) {
             throw new BusinessException(400, exception.getMessage(), exception);
+        }
+    }
+
+    /**
+     * 从 draftSchemaJson 中提取第一个 START_ 开头的节点类型，填充到 startNodeType 字段，
+     * 然后清理 draftSchemaJson 以避免序列化时暴露完整画布 JSON。
+     */
+    private void extractStartNodeType(BusinessObjectProcessVO vo) {
+        String json = vo.getDraftSchemaJson();
+        vo.setDraftSchemaJson(null);
+        if (StringUtils.isBlank(json)) {
+            return;
+        }
+        try {
+            BusinessProcessSchema schema = parseSchema(json);
+            if (schema != null && schema.getNodes() != null) {
+                schema.getNodes().stream()
+                        .map(BusinessProcessNode::getType)
+                        .filter(type -> type != null && type.startsWith("START_"))
+                        .findFirst()
+                        .ifPresent(vo::setStartNodeType);
+            }
+        } catch (Exception exception) {
+            log.debug("无法解析业务流程草稿 JSON 提取 startNodeType（processCode={}）：{}",
+                    vo.getProcessCode(), exception.getMessage());
         }
     }
 

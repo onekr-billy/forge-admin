@@ -33,6 +33,18 @@ export function resolveRuntimeControl(target = {}, context = {}) {
     matchedRules: [],
   }
 
+  // “满足时显示”规则的默认态应为隐藏，否则字段初始可见时规则看起来不会生效。
+  // 设计器会写入 whenUnmatched；不带该标记的旧规则继续沿用原有初始可见性。
+  const visibilityDefaults = rules
+    .filter(rule => rule?.enabled !== false)
+    .map(rule => normalizeRuleEffect(rule))
+    .filter(effect => effect.whenUnmatched === 'hidden' || effect.whenUnmatched === 'visible')
+  const defaultVisibility = visibilityDefaults.at(-1)?.whenUnmatched
+  if (defaultVisibility === 'hidden')
+    control.visible = false
+  else if (defaultVisibility === 'visible')
+    control.visible = true
+
   if (typeof target.vIf === 'function')
     control.visible = target.vIf(runtimeContext.formData, runtimeContext)
   else if (typeof target.vIf === 'boolean')
@@ -141,6 +153,15 @@ export function matchRuntimeCondition(condition = {}, context = {}) {
   return compareRuntimeValues(actual, expected, operator)
 }
 
+export function hasRuntimeVisibilityRules(target = {}) {
+  return normalizeRuntimeRules(target).some((rule) => {
+    if (rule?.enabled === false)
+      return false
+    const effect = normalizeRuleEffect(rule)
+    return Object.prototype.hasOwnProperty.call(effect, 'visible') || effect.hidden === true
+  })
+}
+
 export function matchSimpleExpression(expression = '', record = {}) {
   const text = String(expression || '').trim()
   if (!text)
@@ -176,7 +197,7 @@ function normalizeRuleEffect(rule = {}) {
     ...(rule.effect || {}),
     ...(rule.actions || {}),
     ...(rule.then || {}),
-    ...Object.fromEntries(['visible', 'hidden', 'readonly', 'disabled', 'required', 'textColor', 'backgroundColor', 'className', 'style']
+    ...Object.fromEntries(['visible', 'hidden', 'readonly', 'disabled', 'required', 'textColor', 'backgroundColor', 'className', 'style', 'whenUnmatched']
       .filter(key => Object.prototype.hasOwnProperty.call(rule, key))
       .map(key => [key, rule[key]])),
   }

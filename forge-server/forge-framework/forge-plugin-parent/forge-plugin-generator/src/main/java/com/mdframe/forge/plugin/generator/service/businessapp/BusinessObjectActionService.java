@@ -37,7 +37,7 @@ import java.util.Set;
 public class BusinessObjectActionService {
 
     private static final String DESIGNER_ACTIONS_KEY = "actions";
-    private static final Set<String> ACTION_POSITIONS = Set.of("TOOLBAR", "ROW", "DETAIL");
+    private static final Set<String> ACTION_POSITIONS = Set.of("TOOLBAR", "ROW", "DETAIL", "CHILD_ROW");
     private static final Set<String> ACTION_TYPES = Set.of("OPEN_PAGE", "CALL_API", "START_FLOW", "START_APPROVAL", "TRIGGER", "OPEN_EXTERNAL", "COMMAND");
     private static final String PERMISSION_PATTERN = "^[A-Za-z0-9:_-]{3,128}$";
 
@@ -342,7 +342,11 @@ public class BusinessObjectActionService {
 
     private Map<String, Object> normalizeActionConfig(String actionType, Map<String, Object> config) {
         if (!"START_FLOW".equals(actionType)) {
-            return config == null ? new LinkedHashMap<>() : config;
+            Map<String, Object> result = config == null ? new LinkedHashMap<>() : new LinkedHashMap<>(config);
+            if ("COMMAND".equals(actionType)) {
+                BusinessActionCommandPolicy.assertSafeConfiguration(result, "actionConfig");
+            }
+            return result;
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("useMainFlow", true);

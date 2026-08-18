@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { createBusinessProcessNodeTemplate } from './business-process-node-types.js'
+import { createStartTemplateConfig, START_NODE_TEMPLATES } from './node-templates.js'
 
 const props = defineProps({
   type: { type: String, required: true },
@@ -11,6 +12,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:type', 'update:config', 'update:recordIdSource'])
 const localConfig = ref(clone(props.config))
+const selectedTemplate = ref('')
 
 const fieldOptions = computed(() => props.fields
   .map(field => ({
@@ -24,11 +26,24 @@ const firstRule = computed(() => localConfig.value?.[conditionKey.value]?.rules?
 
 watch(() => props.config, (value) => {
   localConfig.value = clone(value || {})
+  selectedTemplate.value = ''
 }, { deep: true })
+
+function applyTemplate(value) {
+  const template = createStartTemplateConfig(value)
+  if (!template)
+    return
+  selectedTemplate.value = value
+  localConfig.value = template.config
+  emit('update:type', template.type)
+  emit('update:recordIdSource', recordIdSource(template.type))
+  emitConfig()
+}
 
 function handleTypeChange(event) {
   const type = event.target.value
   const template = createBusinessProcessNodeTemplate(type)
+  selectedTemplate.value = ''
   localConfig.value = clone(template.config)
   emit('update:type', type)
   emit('update:recordIdSource', recordIdSource(type))
@@ -82,6 +97,27 @@ function clone(value) {
 
 <template>
   <div class="start-node-config structured-config-stack">
+    <section class="template-section" aria-label="开始节点场景模板">
+      <div class="template-section-head">
+        <strong>场景模板</strong>
+        <span>选择后仍可继续调整</span>
+      </div>
+      <div class="template-grid">
+        <button
+          v-for="item in START_NODE_TEMPLATES"
+          :key="item.value"
+          type="button"
+          class="template-card"
+          :class="{ 'is-selected': selectedTemplate === item.value }"
+          :data-start-template="item.value"
+          @click="applyTemplate(item.value)"
+        >
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.description }}</span>
+        </button>
+      </div>
+    </section>
+
     <label class="config-field">
       <span>触发方式</span>
       <select data-start-type :value="type" @change="handleTypeChange">
@@ -233,6 +269,68 @@ function clone(value) {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.template-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.template-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.template-section-head strong {
+  color: var(--text-color-1, #0f172a);
+  font-size: 13px;
+}
+
+.template-section-head span {
+  color: var(--text-color-3, #64748b);
+  font-size: 12px;
+}
+
+.template-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-card {
+  min-width: 0;
+  min-height: 76px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 7px;
+  background: var(--card-color, #fff);
+  padding: 10px;
+  text-align: left;
+}
+
+.template-card:hover,
+.template-card.is-selected {
+  border-color: var(--primary-color, #2563eb);
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.template-card strong,
+.template-card span {
+  display: block;
+}
+
+.template-card strong {
+  color: var(--text-color-1, #0f172a);
+  font-size: 13px;
+}
+
+.template-card span {
+  margin-top: 5px;
+  color: var(--text-color-3, #64748b);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .config-field {

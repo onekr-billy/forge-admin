@@ -13,7 +13,7 @@ import { pluginIcons, pluginPagePathes } from './build/plugin-isme'
 
 export default defineConfig(({ mode, command }) => {
   const viteEnv = loadEnv(mode, process.cwd())
-  const { VITE_HTTP_PORT, VITE_REQUEST_PREFIX, VITE_PUBLIC_PATH, VITE_HTTP_PROXY_TARGET, VITE_FLOW_PROXY_TARGET } = viteEnv
+  const { VITE_HTTP_PORT, VITE_REQUEST_PREFIX, VITE_PUBLIC_PATH, VITE_HTTP_PROXY_TARGET, VITE_FLOW_PROXY_TARGET, VITE_OUT_DIR } = viteEnv
   const isServe = command === 'serve'
 
   return {
@@ -162,6 +162,14 @@ export default defineConfig(({ mode, command }) => {
       sourcemap: false,
       // 分包优化
       chunkSizeWarningLimit: 2000, // chunk 大小警告的限制（单位kb）
+      // 输出目录（.env 里 VITE_OUT_DIR 控制，如 dist/prod）
+      outDir: VITE_OUT_DIR || 'dist',
+      // 关闭 gzip 体积上报（大幅降低构建内存，与 report-ui 一致）
+      reportCompressedSize: false,
+      // oxc 压缩器：Rust 原生，内存占用远低于 esbuild（与 shenshuo 管理端一致）
+      minify: 'oxc',
+      // CSS 压缩用 esbuild（vite 8 默认 lightningcss 对源码中 // 注释更严格会报错）
+      cssMinify: 'esbuild',
     },
   }
 })

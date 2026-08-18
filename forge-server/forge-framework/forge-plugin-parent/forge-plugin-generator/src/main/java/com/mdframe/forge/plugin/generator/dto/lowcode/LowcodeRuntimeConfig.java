@@ -10,6 +10,8 @@ public class LowcodeRuntimeConfig {
 
     private String configKey;
 
+    private String objectCode;
+
     private String tableName;
 
     private String tableComment;

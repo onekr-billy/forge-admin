@@ -50,6 +50,35 @@ class LowcodeRuntimeConfigBuilderTest {
     }
 
     @Test
+    @DisplayName("publishes managed field events with the form designer schema")
+    void publishesManagedFieldEventsIntoRuntimeOptions() throws Exception {
+        LowcodePageSchema pageSchema = pageSchema();
+        LowcodePageZone editZone = new LowcodePageZone();
+        editZone.setZoneKey("edit");
+        editZone.setComponentKey("edit-form");
+        editZone.setProps(Map.of("formDesignerSchema", Map.of(
+                "settings", Map.of("governance", Map.of("fieldEvents", List.of(Map.of(
+                        "id", "query_item",
+                        "trigger", "BLUR",
+                        "sourceField", "itemName",
+                        "sourceType", "DATASET",
+                        "sourceKey", "item_catalog"
+                ))))
+        )));
+        pageSchema.getZones().add(editZone);
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("biz_inventory", modelSchema(), pageSchema);
+        Map<String, Object> options = objectMapper.readValue(runtimeConfig.getOptions(), new TypeReference<>() {
+        });
+        Map<?, ?> formSchema = assertInstanceOf(Map.class, options.get("formDesignerSchema"));
+        Map<?, ?> settings = assertInstanceOf(Map.class, formSchema.get("settings"));
+        Map<?, ?> governance = assertInstanceOf(Map.class, settings.get("governance"));
+        List<?> fieldEvents = assertInstanceOf(List.class, governance.get("fieldEvents"));
+
+        assertEquals("query_item", assertInstanceOf(Map.class, fieldEvents.get(0)).get("id"));
+    }
+
+    @Test
     @DisplayName("preserves command action object identity in runtime options")
     void preservesCommandActionObjectIdentityInRuntimeOptions() throws Exception {
         LowcodePageSchema pageSchema = pageSchema();
@@ -144,6 +173,57 @@ class LowcodeRuntimeConfigBuilderTest {
     }
 
     @Test
+    @DisplayName("keeps hidden runtime-rule fields and barcode scanner metadata in edit schema")
+    void keepsHiddenRuntimeRuleFieldsAndBarcodeScannerMetadata() throws Exception {
+        LowcodeFieldSchema barcode = new LowcodeFieldSchema();
+        barcode.setField("barcode");
+        barcode.setColumnName("barcode");
+        barcode.setLabel("商品条码");
+        barcode.setDataType("varchar");
+        barcode.setComponentType("barcodeScanner");
+        barcode.setFormVisible(false);
+        barcode.setBasicProps(Map.of("allowManualInput", true, "timeoutMs", 5000));
+
+        LowcodeModelSchema schema = new LowcodeModelSchema();
+        schema.setAppType("SINGLE");
+        schema.setTableMode("EXISTING");
+        schema.setTableName("presale_order");
+        schema.setBusinessName("预售单");
+        schema.setFields(List.of(barcode));
+
+        Map<String, Object> runtimeRule = Map.of(
+                "conditions", List.of(Map.of("field", "deliveryMode", "operator", "eq", "value", "PICKUP")),
+                "effect", Map.of("visible", true));
+        LowcodePageZone editZone = new LowcodePageZone();
+        editZone.setZoneKey("edit");
+        editZone.setComponentKey("edit-form");
+        editZone.setFieldRefs(List.of("barcode"));
+        editZone.setProps(Map.of("fieldSettings", Map.of("barcode", Map.of(
+                "hidden", true,
+                "formVisible", false,
+                "runtimeRules", List.of(runtimeRule),
+                "props", Map.of("allowManualInput", true, "timeoutMs", 5000)
+        ))));
+
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("simple-crud");
+        pageSchema.setZones(new ArrayList<>(List.of(editZone)));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("presale_order", schema, pageSchema);
+        List<Map<String, Object>> editSchema = objectMapper.readValue(runtimeConfig.getEditSchema(), new TypeReference<>() {
+        });
+
+        assertEquals(1, editSchema.size());
+        Map<String, Object> field = editSchema.get(0);
+        assertEquals("barcodeScanner", field.get("type"));
+        assertEquals(true, field.get("hidden"));
+        assertEquals(false, field.get("formVisible"));
+        assertInstanceOf(List.class, field.get("runtimeRules"));
+        Map<?, ?> props = assertInstanceOf(Map.class, field.get("props"));
+        assertEquals(5000, props.get("timeoutMs"));
+    }
+
+    @Test
     @DisplayName("keeps user and organization labels separate from bigint identifier fields")
     void selectionLabelsNeverTargetPrimaryIdentifierFields() throws Exception {
         LowcodeFieldSchema applicant = selectionField("applicantId", "申请人", "userSelect");
@@ -189,6 +269,43 @@ class LowcodeRuntimeConfigBuilderTest {
         assertFalse(transConfig.containsKey("id"));
     }
 
+    @Test
+    @DisplayName("publishes relation key and child-row actions into master-detail runtime")
+    void publishesChildRowActionsIntoMasterDetailRuntime() throws Exception {
+        LowcodePageSchema pageSchema = purchaseOrderMasterDetailPageSchema();
+        LowcodePageModelRef childRef = pageSchema.getModelRefs().get(1);
+        childRef.setProps(Map.of(
+                "relationKey", "pw_purchase_order_item",
+                "rowActions", List.of(Map.of(
+                        "key", "confirm_detail",
+                        "actionCode", "confirm_detail",
+                        "label", "确认明细",
+                        "position", "childRow",
+                        "actionType", "COMMAND",
+                        "objectCode", "PW_PURCHASE_ORDER",
+                        "relationKey", "pw_purchase_order_item"))));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
+                "pw_purchase_order", purchaseOrderModelSchema(), pageSchema);
+        Map<String, Object> options = objectMapper.readValue(runtimeConfig.getOptions(), new TypeReference<>() { });
+        Map<?, ?> masterDetail = assertInstanceOf(Map.class, options.get("masterDetailConfig"));
+        List<?> children = assertInstanceOf(List.class, masterDetail.get("children"));
+        Map<?, ?> child = assertInstanceOf(Map.class, children.get(0));
+        assertEquals("pw_purchase_order_item", child.get("relationKey"));
+        List<?> rowActions = assertInstanceOf(List.class, child.get("rowActions"));
+        Map<?, ?> action = assertInstanceOf(Map.class, rowActions.get(0));
+        assertEquals("confirm_detail", action.get("actionCode"));
+        assertEquals("COMMAND", action.get("actionType"));
+    }
+
+    @Test
+    @DisplayName("publishes primary object code into runtime config")
+    void publishesPrimaryObjectCodeIntoRuntimeConfig() throws Exception {
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("pw_purchase_order", purchaseOrderModelSchema(), pageSchema());
+
+        assertEquals("pw_purchase_order", runtimeConfig.getObjectCode());
+    }
+
     private LowcodeModelSchema modelSchema() {
         LowcodeFieldSchema itemName = new LowcodeFieldSchema();
         itemName.setField("itemName");
@@ -228,6 +345,9 @@ class LowcodeRuntimeConfigBuilderTest {
         id.setLabel("ID");
         id.setDataType("bigint");
         id.setPrimaryKey(true);
+        id.setAutoIncrement(true);
+        id.setReadonly(true);
+        id.setSystemField(true);
         id.setListVisible(true);
         id.setFormVisible(false);
 

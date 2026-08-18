@@ -18,5 +18,6 @@ public interface BusinessActionExecutionLogMapper extends BaseMapper<AiBusinessA
                                                               @Param("objectCode") String objectCode,
                                                               @Param("recordId") String recordId,
                                                               @Param("actionCode") String actionCode,
+                                                              @Param("actionVersion") Integer actionVersion,
                                                               @Param("idempotencyKey") String idempotencyKey);
 }

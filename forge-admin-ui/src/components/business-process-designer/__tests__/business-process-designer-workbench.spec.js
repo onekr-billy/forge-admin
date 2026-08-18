@@ -57,6 +57,62 @@ describe('structured business node configuration', () => {
     expect(wrapper.text()).not.toMatch(/JSON|SpEL|Java|SQL|Webhook/)
   })
 
+  it('applies editable start templates while preserving the manual configuration path', async () => {
+    const wrapper = mount(StartNodeConfig, {
+      props: {
+        type: 'START_MANUAL',
+        config: {},
+        fields: [{ fieldCode: 'dueDate', fieldName: '到期日期' }],
+      },
+    })
+
+    expect(wrapper.findAll('[data-start-template]')).toHaveLength(4)
+    await wrapper.find('[data-start-template="EVENT_STATUS_CHANGED"]').trigger('click')
+
+    expect(wrapper.emitted('update:type').at(-1)[0]).toBe('START_EVENT')
+    expect(wrapper.emitted('update:recordIdSource').at(-1)[0]).toBe('EVENT_RECORD')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({ eventType: 'STATUS_CHANGED' })
+
+    await wrapper.setProps({ type: 'START_EVENT', config: { eventType: 'STATUS_CHANGED' } })
+    await wrapper.find('select:not([data-start-type])').setValue('RECORD_UPDATED')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({ eventType: 'RECORD_UPDATED' })
+  })
+
+  it('applies action templates as governed config that remains editable', async () => {
+    const wrapper = shallowMount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'action_update',
+          type: 'ACTION',
+          name: '更新采购单',
+          ports: [],
+          config: {},
+        },
+        objectCode: 'sample_purchase_order',
+        businessActions: [{ actionCode: 'adjust_quantity', actionName: '调整库存数量' }],
+      },
+      global: {
+        stubs: {
+          NModal: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+
+    expect(wrapper.findAll('[data-action-template]')).toHaveLength(4)
+    await wrapper.find('[data-action-template="UPDATE_STATUS"]').trigger('click')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      actionType: 'UPDATE_RECORD',
+      objectCode: 'sample_purchase_order',
+      fieldMappings: [{ field: 'status', valueSource: 'CONSTANT', value: '' }],
+    })
+
+    await wrapper.find('[data-action-template="ADJUST_NUMBER"]').trigger('click')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      actionType: 'BUSINESS_ACTION',
+      businessActionCode: '',
+    })
+  })
+
   it('opens the real flow designer for a selected deployed approval model', async () => {
     const wrapper = shallowMount(ActionAndApprovalNodeConfig, {
       props: {

@@ -20,4 +20,10 @@ public interface ExternalApiMapper extends BaseMapper<ExternalApi> {
     ExternalApi selectApiByCode(@Param("apiCode") String apiCode, @Param("systemId") Long systemId);
 
     List<ExternalApi> selectApiListWithSystem(@Param("tenantId") Long tenantId);
+
+    List<ExternalApi> selectLowcodeQuerySources(@Param("tenantId") Long tenantId);
+
+    ExternalApi selectLowcodeQuerySourceByKey(@Param("tenantId") Long tenantId,
+                                              @Param("systemCode") String systemCode,
+                                              @Param("apiCode") String apiCode);
 }

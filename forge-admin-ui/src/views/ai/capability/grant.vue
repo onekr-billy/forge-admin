@@ -517,11 +517,12 @@ function getCapabilityUnavailableReason(capability) {
     return ''
   if (capability.sourceType === 'BUSINESS_ACTION' && capability.behavior === 'ACTION')
     return capability.allowedFields?.length ? '' : '缺少字段白名单'
-  if (capability.sourceType === 'FLOW_ACTION' && capability.behavior === 'FLOW')
+  if (capability.sourceType === 'FLOW_ACTION' && capability.behavior === 'FLOW') {
     return capability.allowedOperations?.length
       && (!capability.allowedOperations.includes('SUBMIT') || capability.allowedFields?.length)
       ? ''
       : '缺少操作或申请字段白名单'
+  }
   if (capability.sourceType === 'SYSTEM_SERVICE' && capability.behavior === 'ACTION')
     return ''
   return '当前类型不可授权'
@@ -530,13 +531,14 @@ function getCapabilityUnavailableReason(capability) {
 function buildFieldPolicy() {
   if (selectedCapability.value?.sourceType === 'BUSINESS_ACTION')
     return { allowedFields: addForm.allowedFields }
-  if (selectedCapability.value?.sourceType === 'FLOW_ACTION')
+  if (selectedCapability.value?.sourceType === 'FLOW_ACTION') {
     return {
       allowedOperations: addForm.allowedOperations,
       ...(selectedCapability.value.allowedFields?.length
         ? { allowedFields: addForm.allowedFields }
         : {}),
     }
+  }
   return null
 }
 

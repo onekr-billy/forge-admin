@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.external.dto.ExternalSystemDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalSystemQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalSystem;
 import com.mdframe.forge.plugin.external.service.ExternalSystemService;
+import com.mdframe.forge.plugin.external.support.ExternalSensitiveDataMasker;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -33,14 +35,14 @@ public class ExternalSystemController {
 
     @GetMapping("/{id}")
     public RespInfo<ExternalSystem> getById(@PathVariable Long id) {
-        return RespInfo.success(systemService.getById(id));
+        return RespInfo.success(systemService.getManagementById(id));
     }
 
     @PostMapping
     public RespInfo<Void> add(@Validated @RequestBody ExternalSystemDTO dto) {
         validateSystem(dto);
         ExternalSystem entity = convertDtoToEntity(dto);
-        systemService.save(entity);
+        systemService.saveSystem(entity);
         return RespInfo.success();
     }
 
@@ -48,7 +50,7 @@ public class ExternalSystemController {
     public RespInfo<Void> edit(@Validated @RequestBody ExternalSystemDTO dto) {
         validateSystem(dto);
         ExternalSystem entity = convertDtoToEntity(dto);
-        systemService.updateById(entity);
+        systemService.updateSystem(entity);
         return RespInfo.success();
     }
 
@@ -115,16 +117,17 @@ public class ExternalSystemController {
         if (isBlank(dto.getBaseUrl())) {
             throw new BusinessException("基础URL不能为空");
         }
+        validateHttpUrl(dto.getBaseUrl(), "基础URL");
         if (isBlank(dto.getAuthType())) {
             dto.setAuthType("none");
         }
         String authType = dto.getAuthType();
         if ("basic".equalsIgnoreCase(authType)) {
             requireNotBlank(dto.getBasicUsername(), "Basic用户名不能为空");
-            requireNotBlank(dto.getBasicPassword(), "Basic密码不能为空");
+            requireSecretOnCreate(dto.getBasicPassword(), dto.getId(), "Basic密码不能为空");
         }
         if ("token".equalsIgnoreCase(authType)) {
-            requireNotBlank(dto.getTokenValue(), "Token值不能为空");
+            requireSecretOnCreate(dto.getTokenValue(), dto.getId(), "Token值不能为空");
         }
         if ("current_token".equalsIgnoreCase(authType)) {
             if (isBlank(dto.getTokenHeaderName())) {
@@ -136,22 +139,30 @@ public class ExternalSystemController {
         }
         if ("api_key".equalsIgnoreCase(authType)) {
             requireNotBlank(dto.getApiKeyName(), "API Key名称不能为空");
-            requireNotBlank(dto.getApiKeyValue(), "API Key值不能为空");
+            requireSecretOnCreate(dto.getApiKeyValue(), dto.getId(), "API Key值不能为空");
             if (isBlank(dto.getApiKeyPosition())) {
                 dto.setApiKeyPosition("header");
             }
         }
         if ("oauth2".equalsIgnoreCase(authType)) {
             requireNotBlank(dto.getOauth2TokenUrl(), "OAuth2 Token URL不能为空");
+            validateHttpUrl(dto.getOauth2TokenUrl(), "OAuth2 Token URL");
             requireNotBlank(dto.getOauth2ClientId(), "OAuth2 Client ID不能为空");
-            requireNotBlank(dto.getOauth2ClientSecret(), "OAuth2 Client Secret不能为空");
+            requireSecretOnCreate(dto.getOauth2ClientSecret(), dto.getId(), "OAuth2 Client Secret不能为空");
         }
         if (Boolean.TRUE.equals(dto.getProxyEnabled())) {
-            requireNotBlank(dto.getProxyHost(), "代理主机不能为空");
-            if (dto.getProxyPort() == null) {
-                throw new BusinessException("代理端口不能为空");
-            }
+            throw new BusinessException("统一安全出站客户端暂不支持连接器代理，请使用网关出口");
         }
+        if (Boolean.FALSE.equals(dto.getSslVerifyEnabled())) {
+            throw new BusinessException("外部连接器禁止关闭SSL证书校验");
+        }
+        if (Boolean.TRUE.equals(dto.getRetryEnabled())) {
+            validateRange(dto.getRetryMaxAttempts(), 1, 5, "最大重试次数");
+            validateRange(dto.getRetryBackoffInterval(), 0, 5000, "重试间隔");
+        }
+        validateRange(dto.getConnectTimeout(), 100, 120000, "连接超时");
+        validateRange(dto.getReadTimeout(), 100, 120000, "读取超时");
+        validateRange(dto.getWriteTimeout(), 100, 120000, "写入超时");
     }
 
     private String normalizeCustomAuthConfig(ExternalSystemDTO dto) {
@@ -163,6 +174,9 @@ public class ExternalSystemController {
         }
         if (isBlank(dto.getCustomAuthConfig())) {
             return "{}";
+        }
+        if (dto.getId() != null && ExternalSensitiveDataMasker.MASK.equals(dto.getCustomAuthConfig())) {
+            return ExternalSensitiveDataMasker.MASK;
         }
         try {
             JSONObject config = JSON.parseObject(dto.getCustomAuthConfig());
@@ -186,6 +200,30 @@ public class ExternalSystemController {
     private void requireNotBlank(String value, String message) {
         if (isBlank(value)) {
             throw new BusinessException(message);
+        }
+    }
+
+    private void requireSecretOnCreate(String value, Long id, String message) {
+        if (id == null && (isBlank(value) || "******".equals(value))) {
+            throw new BusinessException(message);
+        }
+    }
+
+    private void validateRange(Integer value, int minimum, int maximum, String label) {
+        if (value != null && (value < minimum || value > maximum)) {
+            throw new BusinessException(label + "必须在" + minimum + "到" + maximum + "之间");
+        }
+    }
+
+    private void validateHttpUrl(String value, String label) {
+        try {
+            URI uri = URI.create(value.trim());
+            if (uri.getHost() == null || uri.getUserInfo() != null
+                    || (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme()))) {
+                throw new IllegalArgumentException();
+            }
+        } catch (Exception exception) {
+            throw new BusinessException(label + "必须是有效的HTTP或HTTPS地址，且不能包含用户凭据");
         }
     }
 }

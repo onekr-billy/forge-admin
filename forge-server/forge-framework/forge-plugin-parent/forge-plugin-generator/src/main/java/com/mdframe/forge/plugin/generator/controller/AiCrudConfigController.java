@@ -10,6 +10,7 @@ import com.mdframe.forge.plugin.generator.service.AiCrudConfigGenerateService;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectDesignerService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeConfigOverlayService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeCodegenService;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -34,6 +35,7 @@ public class AiCrudConfigController {
     private final LowcodeCodegenService lowcodeCodegenService;
     private final BusinessObjectService businessObjectService;
     private final BusinessObjectDesignerService businessObjectDesignerService;
+    private final BusinessApplicationRuntimeConfigOverlayService runtimeConfigOverlayService;
 
     @GetMapping("/page")
     @SaCheckPermission("ai:crud-config:list")
@@ -58,7 +60,8 @@ public class AiCrudConfigController {
     @GetMapping("/render/{configKey}")
     public RespInfo<AiCrudConfigRenderVO> render(
             @PathVariable String configKey,
-            @RequestParam(defaultValue = "false") boolean designPreview) {
+            @RequestParam(defaultValue = "false") boolean designPreview,
+            @RequestParam(required = false) Long appId) {
         if (designPreview) {
             crudConfigService.assertDesignPreviewPermission();
             var businessObject = businessObjectService.findByConfigKey(configKey);
@@ -66,7 +69,8 @@ public class AiCrudConfigController {
                 businessObjectDesignerService.prepareRuntimeDraft(businessObject.getId());
             }
         }
-        return RespInfo.success(crudConfigService.getRenderConfig(configKey, designPreview));
+        AiCrudConfigRenderVO renderConfig = crudConfigService.getRenderConfig(configKey, designPreview);
+        return RespInfo.success(runtimeConfigOverlayService.overlay(configKey, appId, renderConfig));
     }
 
     @PostMapping

@@ -1,9 +1,9 @@
 <template>
   <div
     class="forge-form-designer"
-    :class="{ 'left-collapsed': leftCollapsed, 'right-open': rightOpen, 'right-collapsed': !rightOpen, 'canvas-focused': canvasFocusMode }"
+    :class="{ 'left-collapsed': leftCollapsed, 'right-open': rightOpen, 'right-collapsed': !rightOpen, 'canvas-focused': canvasFocusMode, 'section-view': canvasView !== 'layout' }"
   >
-    <aside class="designer-left">
+    <aside v-if="canvasView === 'layout'" class="designer-left">
       <button
         v-if="leftCollapsed"
         type="button"
@@ -17,6 +17,7 @@
         v-if="!leftCollapsed"
         :fields="fields"
         :used-field-set="usedFieldSet"
+        :relations="relations"
         @append-field="appendField"
       >
         <template #actions>
@@ -112,83 +113,114 @@
       />
       <div class="designer-form-tabs-bar page-design-switcher" @contextmenu.prevent="openFormTabsMenu">
         <div class="page-switch-title">
-          <span class="page-switch-icon">F</span>
+          <span class="page-switch-icon">{{ canvasViewIcon }}</span>
           <div>
-            <strong>表单页设计</strong>
-            <small>{{ normalizedSchema.formName || '当前表单' }} · {{ componentCount }} 个组件</small>
+            <strong>{{ canvasViewTitle }}</strong>
+            <small>{{ canvasViewDescription }}</small>
           </div>
         </div>
-        <div class="designer-form-tabs" aria-label="表单切换">
-          <button type="button" class="designer-form-tab active" @click="selectedId = ''">
-            <em>1</em>
-            <span>{{ normalizedSchema.formName || '主表单' }}</span>
-            <strong>当前</strong>
-          </button>
-          <button
-            v-for="(asset, assetIndex) in formAssets"
-            :key="asset.formKey"
-            type="button"
-            class="designer-form-tab"
-            @click="switchFormAsset(asset.formKey)"
-          >
-            <em>{{ assetIndex + 2 }}</em>
-            <span>{{ asset.formName || `表单 ${assetIndex + 2}` }}</span>
-          </button>
+        <div class="page-view-controls">
+          <n-radio-group v-model:value="canvasView" size="small" aria-label="表单页画布视图">
+            <n-radio-button value="layout">
+              表单布局
+            </n-radio-button>
+            <n-radio-button v-if="enableSectionsView" value="sections">
+              页面分区
+            </n-radio-button>
+            <n-radio-button v-if="hasDetailSettings" value="detail">
+              详情设置
+            </n-radio-button>
+          </n-radio-group>
+          <div v-if="formAssets.length && canvasView === 'layout'" class="designer-form-tabs" aria-label="表单切换">
+            <button type="button" class="designer-form-tab active" @click="selectedId = ''">
+              <em>1</em>
+              <span>{{ normalizedSchema.formName || '主表单' }}</span>
+            </button>
+            <button
+              v-for="(asset, assetIndex) in formAssets"
+              :key="asset.formKey"
+              type="button"
+              class="designer-form-tab"
+              @click="switchFormAsset(asset.formKey)"
+            >
+              <em>{{ assetIndex + 2 }}</em>
+              <span>{{ asset.formName || `表单 ${assetIndex + 2}` }}</span>
+            </button>
+          </div>
         </div>
-        <div class="page-switch-actions">
-          <n-button class="designer-toolbar-icon-button neutral" circle size="small" secondary :disabled="!canUndo" title="撤销" @click="undoSchema">
-            <template #icon>
-              <n-icon><ArrowUndoOutline /></n-icon>
-            </template>
-          </n-button>
-          <n-button class="designer-toolbar-icon-button neutral" circle size="small" secondary :disabled="!canRedo" title="重做" @click="redoSchema">
-            <template #icon>
-              <n-icon><ArrowRedoOutline /></n-icon>
-            </template>
-          </n-button>
-          <n-button class="designer-toolbar-icon-button neutral danger" circle size="small" secondary :disabled="!canClearCanvas" title="清空画布" @click="openClearCanvasDialog">
-            <template #icon>
-              <n-icon><TrashOutline /></n-icon>
-            </template>
-          </n-button>
-          <n-dropdown trigger="click" placement="bottom-end" :options="formTabsMenuOptions" @select="handleFormTabsMenuSelect">
-            <n-button class="designer-toolbar-icon-button neutral" circle size="small" secondary title="表单页面操作">
+        <div class="page-tools">
+          <div v-if="canvasView === 'layout'" class="page-switch-actions">
+            <n-button class="designer-toolbar-icon-button neutral" circle size="small" secondary :disabled="!canUndo" title="撤销" @click="undoSchema">
               <template #icon>
-                <n-icon><EllipsisHorizontalOutline /></n-icon>
+                <n-icon><ArrowUndoOutline /></n-icon>
               </template>
             </n-button>
-          </n-dropdown>
-          <n-button
-            class="designer-toolbar-icon-button neutral"
-            circle
-            size="small"
-            secondary
-            :title="rightOpen ? '收起属性栏' : '打开属性栏'"
-            @click="rightOpen ? (rightOpen = false) : openPropertyPanel(selectedId)"
-          >
-            <template #icon>
-              <n-icon>
-                <ChevronForwardOutline v-if="rightOpen" />
-                <ChevronBackOutline v-else />
-              </n-icon>
-            </template>
-          </n-button>
+            <n-button class="designer-toolbar-icon-button neutral" circle size="small" secondary :disabled="!canRedo" title="重做" @click="redoSchema">
+              <template #icon>
+                <n-icon><ArrowRedoOutline /></n-icon>
+              </template>
+            </n-button>
+            <n-button class="designer-toolbar-icon-button neutral danger" circle size="small" secondary :disabled="!canClearCanvas" title="清空画布" @click="openClearCanvasDialog">
+              <template #icon>
+                <n-icon><TrashOutline /></n-icon>
+              </template>
+            </n-button>
+            <n-dropdown trigger="click" placement="bottom-end" :options="formTabsMenuOptions" @select="handleFormTabsMenuSelect">
+              <n-button class="designer-toolbar-icon-button neutral" circle size="small" secondary title="表单页面操作">
+                <template #icon>
+                  <n-icon><EllipsisHorizontalOutline /></n-icon>
+                </template>
+              </n-button>
+            </n-dropdown>
+            <n-button
+              class="designer-toolbar-icon-button neutral"
+              circle
+              size="small"
+              secondary
+              :title="rightOpen ? '收起属性栏' : '打开属性栏'"
+              @click="rightOpen ? (rightOpen = false) : openPropertyPanel(selectedId)"
+            >
+              <template #icon>
+                <n-icon>
+                  <ChevronForwardOutline v-if="rightOpen" />
+                  <ChevronBackOutline v-else />
+                </n-icon>
+              </template>
+            </n-button>
+          </div>
         </div>
       </div>
 
       <ForgeFormCanvas
+        v-if="canvasView === 'layout'"
         :schema="normalizedSchema"
         :fields="fields"
         :selected-id="selectedId"
         @update:schema="updateSchema"
         @update:selected-id="handleCanvasSelectedIdChange"
         @configure="openPropertyPanel"
+        @configure-sub-table="relationKey => emit('editSubTableContainer', relationKey)"
         @open-source="openSourcePanel"
         @toggle-focus="toggleCanvasFocus"
       />
+      <PageSectionEditor
+        v-else-if="canvasView === 'sections'"
+        class="inline-page-section-editor"
+        :model-value="pageSectionProtocol"
+        :fields="fields"
+        :relations="relations"
+        :actions="actions"
+        @update:model-value="updatePageSectionProtocol"
+        @configure-bottom-action="emit('configureBottomAction', $event)"
+        @edit-child-table-section="emit('editChildTableSection', $event)"
+        @remove-child-table-section="emit('removeChildTableSection', $event)"
+      />
+      <div v-else class="inline-detail-settings">
+        <slot name="detail-settings" />
+      </div>
     </main>
 
-    <aside class="designer-right">
+    <aside v-if="canvasView === 'layout'" class="designer-right">
       <ForgePropertyPanel
         v-if="rightOpen"
         :schema="normalizedSchema"
@@ -196,6 +228,7 @@
         :relations="relations"
         :object-code="objectCode"
         :selected-id="selectedId"
+        :initial-form-tab="initialPropertyTab"
         @update:schema="updateSchema"
         @update:selected-id="selectedId = $event"
         @field-asset-updated="emit('fieldAssetUpdated', $event)"
@@ -203,6 +236,21 @@
       />
     </aside>
   </div>
+  <n-modal
+    v-model:show="bottomBarDialogVisible"
+    preset="card"
+    title="底部操作栏"
+    :bordered="false"
+    class="designer-bottom-bar-modal"
+    :style="{ width: 'min(960px, calc(100vw - 40px))' }"
+  >
+    <BottomBarEditor
+      :model-value="normalizedSchema.bottomBar || {}"
+      :fields="fields"
+      @update:model-value="updateBottomBarFromDialog"
+      @configure-bottom-action="payload => emit('configureBottomAction', payload)"
+    />
+  </n-modal>
   <n-modal
     v-model:show="previewDialogVisible"
     preset="card"
@@ -424,12 +472,13 @@
 <script setup>
 import { ArrowRedoOutline, ArrowUndoOutline, ChevronBackOutline, ChevronForwardOutline, EllipsisHorizontalOutline, TrashOutline, WarningOutline } from '@vicons/ionicons5'
 import { NSpace } from 'naive-ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
 import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
 import AiForm from '@/components/ai-form/AiForm.vue'
 import AiFormGroupTitle from '@/components/ai-form/AiFormGroupTitle.vue'
 import AiFormSectionTitle from '@/components/ai-form/AiFormSectionTitle.vue'
 import { normalizeRecordSelectorConfig as normalizeRuntimeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
+import { buildLegacyLinkageSchema } from '../form-first/field-linkage-config'
 import { repairFormDesignerFieldRefs } from '../form-first/fieldReferenceUtils'
 import { extractForgeSchemaFieldRefs } from '../form-first/forgeToFormCreate'
 import {
@@ -439,9 +488,12 @@ import {
   normalizeFormDesignerSchema,
   normalizeFormDesignerSchemaForSave,
 } from '../form-first/formDesignerSchema'
+import BottomBarEditor from './BottomBarEditor.vue'
 import ForgeFieldShelf from './ForgeFieldShelf.vue'
 import ForgeFormCanvas from './ForgeFormCanvas.vue'
 import ForgePropertyPanel from './ForgePropertyPanel.vue'
+import { derivePageSectionsFromLayout } from './pageSectionDerivation'
+import PageSectionEditor from './PageSectionEditor.vue'
 
 const props = defineProps({
   modelValue: {
@@ -464,17 +516,55 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  actions: {
+    type: Array,
+    default: () => [],
+  },
+  linkageSchema: {
+    type: Object,
+    default: null,
+  },
   extraMoreOptions: {
     type: Array,
     default: () => [],
   },
+  initialPropertyTab: {
+    type: String,
+    default: 'basic',
+  },
+  initialCanvasView: {
+    type: String,
+    default: 'layout',
+    validator: value => ['layout', 'sections', 'detail'].includes(value),
+  },
+  // 是否提供独立「页面分区」视图：分区由布局容器承载时宿主应关闭，分区随画布派生维护。
+  enableSectionsView: {
+    type: Boolean,
+    default: true,
+  },
+  // 开启后每次 schema 变更都会从布局组件树派生 pageSections 写回（card/collapse=内容分区、subTable=子表分区）。
+  deriveSectionsFromLayout: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const emit = defineEmits(['update:modelValue', 'dirtyChange', 'moreSelect', 'fieldAssetUpdated'])
+const emit = defineEmits([
+  'update:modelValue',
+  'update:linkageSchema',
+  'dirtyChange',
+  'moreSelect',
+  'fieldAssetUpdated',
+  'configureBottomAction',
+  'editSubTableContainer',
+  'editChildTableSection',
+  'removeChildTableSection',
+])
+const slots = useSlots()
 
 const selectedId = ref('')
 const leftCollapsed = ref(false)
-const rightOpen = ref(false)
+const rightOpen = ref(true)
 const canvasFocusMode = ref(false)
 const formTabsMenuVisible = ref(false)
 const formTabsMenuX = ref(0)
@@ -485,6 +575,8 @@ const HISTORY_LIMIT = 50
 const previewMode = ref('create')
 const clearDialogVisible = ref(false)
 const clearScope = ref('current')
+const bottomBarDialogVisible = ref(false)
+const canvasView = ref(!props.enableSectionsView && props.initialCanvasView === 'sections' ? 'layout' : props.initialCanvasView)
 const previewModeOptions = [
   { label: '新增', value: 'create' },
   { label: '编辑', value: 'edit' },
@@ -498,6 +590,7 @@ const previewRuntimeContext = {
 const baseDesignerMoreOptions = [
   { label: '按字段生成', key: 'resetFromFields' },
   { label: '清理失效字段', key: 'repairRefs' },
+  { label: '底部操作栏', key: 'configureBottomBar' },
 ]
 
 const normalizedSchema = computed(() => normalizeFormDesignerSchema(props.modelValue || createDefaultFormDesignerSchema({
@@ -521,6 +614,24 @@ const canClearCanvas = computed(() => {
   return formAssets.value.some(asset => asset?.schema?.components?.length)
 })
 const componentCount = computed(() => countComponents(normalizedSchema.value.components))
+const hasDetailSettings = computed(() => Boolean(slots['detail-settings']))
+const pageSectionProtocol = computed(() => ({
+  pageSections: normalizedSchema.value.pageSections || [],
+  bottomBar: normalizedSchema.value.bottomBar || {},
+}))
+const canvasViewTitle = computed(() => ({
+  layout: '表单页设计',
+  sections: '页面分区',
+  detail: '详情设置',
+}[canvasView.value] || '表单页设计'))
+const canvasViewIcon = computed(() => ({ layout: 'F', sections: 'S', detail: 'D' }[canvasView.value] || 'F'))
+const canvasViewDescription = computed(() => {
+  if (canvasView.value === 'sections')
+    return `${pageSectionProtocol.value.pageSections.length} 个分区 · 与表单草稿同步保存`
+  if (canvasView.value === 'detail')
+    return '关系页签、日志和数量区块'
+  return `${normalizedSchema.value.formName || '当前表单'} · ${componentCount.value} 个组件`
+})
 const previewModeTitle = computed(() => previewModeOptions.find(item => item.value === previewMode.value)?.label || '新增')
 const previewModeDescription = computed(() => {
   const modeMap = {
@@ -540,7 +651,10 @@ const canvasMetaText = computed(() => {
 })
 
 function updateSchema(schema, options = {}) {
-  const nextSchema = normalizeFormDesignerSchema(schema || {})
+  let nextSchema = normalizeFormDesignerSchema(schema || {})
+  // 分区由布局承载时，pageSections 不再独立编辑，随画布结构派生写回。
+  if (props.deriveSectionsFromLayout)
+    nextSchema = { ...nextSchema, pageSections: derivePageSectionsFromLayout(nextSchema.components, nextSchema.pageSections || []) }
   const currentSchema = normalizeFormDesignerSchema(normalizedSchema.value || {})
   if (isSameDesignerSchema(nextSchema, currentSchema))
     return
@@ -549,6 +663,9 @@ function updateSchema(schema, options = {}) {
     redoStack.value = []
   }
   emit('update:modelValue', nextSchema)
+  if (Array.isArray(nextSchema.settings?.governance?.fieldLinkages)) {
+    emit('update:linkageSchema', buildLegacyLinkageSchema(nextSchema, props.linkageSchema || {}))
+  }
   emit('dirtyChange', true)
 }
 
@@ -638,7 +755,29 @@ function openClearCanvasDialog() {
   clearDialogVisible.value = true
 }
 
+function updatePageSectionProtocol(protocol) {
+  if (!protocol || typeof protocol !== 'object')
+    return
+  updateSchema({
+    ...normalizedSchema.value,
+    pageSections: protocol.pageSections,
+    bottomBar: protocol.bottomBar,
+  })
+}
+
+// 底部操作栏弹窗即时写回：与分区编辑一致走 updateSchema，保留撤销历史与脏标记。
+function updateBottomBarFromDialog(bottomBar) {
+  updateSchema({
+    ...normalizedSchema.value,
+    bottomBar,
+  })
+}
+
 function handleDesignerMoreSelect(key = '') {
+  if (key === 'configureBottomBar') {
+    bottomBarDialogVisible.value = true
+    return
+  }
   if (key === 'resetFromFields') {
     resetFromFields()
     return
@@ -830,6 +969,11 @@ function flushDesigner() {
   })
 }
 
+function openPageSections() {
+  // 分区由布局承载的宿主没有 sections 视图，向导确认等入口改跳画布查看承载容器。
+  canvasView.value = props.enableSectionsView ? 'sections' : 'layout'
+}
+
 function countComponents(components = []) {
   return (Array.isArray(components) ? components : []).reduce((total, component) => {
     return total + 1 + countComponents(component.children || [])
@@ -838,6 +982,7 @@ function countComponents(components = []) {
 
 defineExpose({
   flushDesigner,
+  openPageSections,
   resetFromFields,
   repairRefs,
   appendField,
@@ -1685,10 +1830,12 @@ onBeforeUnmount(() => {
 }
 
 .designer-form-tab.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+  border-color: transparent;
+  border-bottom: 2px solid #2563eb;
+  border-radius: 0 0 4px 4px;
+  background: transparent;
+  color: #2563eb;
+  box-shadow: none;
 }
 
 .designer-form-tab em {
@@ -1719,17 +1866,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.designer-form-tab strong {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: #dbeafe;
-  color: #1d4ed8;
-  font-size: 10px;
-  line-height: 16px;
-  padding: 0 5px;
-}
-
-/* Workbench visual unification */
 .forge-form-designer {
   display: grid;
   grid-template-columns: 256px minmax(0, 1fr) 320px;
@@ -1758,6 +1894,14 @@ onBeforeUnmount(() => {
 .forge-form-designer.canvas-focused.right-collapsed,
 .forge-form-designer.canvas-focused.left-collapsed.right-collapsed {
   grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
+.forge-form-designer.section-view,
+.forge-form-designer.section-view.left-collapsed,
+.forge-form-designer.section-view.right-open,
+.forge-form-designer.section-view.right-collapsed,
+.forge-form-designer.section-view.canvas-focused {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .forge-form-designer.canvas-focused .designer-left,
@@ -1872,20 +2016,64 @@ onBeforeUnmount(() => {
   line-height: 13px;
 }
 
+.page-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+  min-width: 0;
+  gap: 10px;
+}
+
+.page-view-controls {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  gap: 6px;
+}
+
+.page-view-controls :deep(.n-radio-group) {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.inline-page-section-editor,
+.inline-detail-settings {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.inline-page-section-editor :deep(.section-workbench) {
+  min-height: 520px;
+}
+
+.inline-detail-settings > :deep(*) {
+  min-height: 100%;
+}
+
 .page-switch-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   min-width: 0;
+  border-left: 1px solid #e4e4e7;
+  padding-left: 10px;
+}
+
+.page-section-entry-button {
+  --n-color: #eef4ff !important;
+  --n-color-hover: #e0eaff !important;
+  --n-border: 1px solid #c9d8ff !important;
+  --n-border-hover: 1px solid #8eacff !important;
+  --n-text-color: #3153d8 !important;
+  --n-text-color-hover: #2445bd !important;
 }
 
 .designer-form-tabs {
   justify-content: center;
   justify-self: center;
   max-width: 100%;
-  padding: 3px;
-  border: 1px solid rgba(228, 228, 231, 0.8);
-  border-radius: 8px;
-  background: rgba(244, 244, 245, 0.9);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -1895,11 +2083,12 @@ onBeforeUnmount(() => {
 }
 
 .designer-form-tab {
-  height: 26px;
+  height: 30px;
   min-width: 76px;
   max-width: 156px;
-  border-color: transparent;
-  border-radius: 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   padding: 0 9px;
   color: #71717a;
@@ -1907,15 +2096,14 @@ onBeforeUnmount(() => {
 }
 
 .designer-form-tab:hover {
-  border-color: transparent;
-  background: rgba(228, 228, 231, 0.75);
+  background: rgba(228, 228, 231, 0.6);
 }
 
 .designer-form-tab.active {
-  border-color: #fff;
-  background: #fff;
-  color: #27272a;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  border-bottom-color: #2563eb;
+  background: transparent;
+  color: #2563eb;
+  box-shadow: none;
 }
 
 .designer-form-tab em {
@@ -1933,10 +2121,6 @@ onBeforeUnmount(() => {
 
 .designer-form-tab span {
   font-size: 12px;
-}
-
-.designer-form-tab strong {
-  display: none;
 }
 
 .designer-toolbar-text-button,
@@ -2079,6 +2263,36 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+:global(.page-section-modal.n-card) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+}
+
+:global(.page-section-modal .n-card-header),
+:global(.page-section-modal .n-card__footer) {
+  flex: 0 0 auto;
+  padding: 14px 18px;
+}
+
+:global(.page-section-modal .n-card-header) {
+  border-bottom: 1px solid #eef2f7;
+}
+
+:global(.page-section-modal .n-card__content),
+:global(.page-section-modal .n-card-content) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px;
+  overscroll-behavior: contain;
+}
+
+:global(.page-section-modal .n-card__footer) {
+  border-top: 1px solid #eef2f7;
 }
 
 :global(.designer-preview-modal.n-card) {

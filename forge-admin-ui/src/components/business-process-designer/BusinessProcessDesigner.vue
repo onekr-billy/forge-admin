@@ -40,6 +40,7 @@ const emit = defineEmits([
   'validate',
   'openFlowDesigner',
   'refreshFlowModel',
+  'editAction',
   'dirtyChange',
   'locateIssue',
   'reload',
@@ -444,6 +445,7 @@ defineExpose({
       @save="handleDrawerSave"
       @open-flow-designer="emit('openFlowDesigner', $event)"
       @refresh-flow-model="emit('refreshFlowModel', $event)"
+      @edit-action="emit('editAction', $event)"
     />
   </section>
 </template>

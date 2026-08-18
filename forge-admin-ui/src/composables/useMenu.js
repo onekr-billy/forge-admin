@@ -491,6 +491,11 @@ export function useMenu() {
     }
 
     if (originalItem.type === 'module' && originalItem.children?.length) {
+      // 业务域（套件）目录：直接进入业务域列表页，不默认选中/进入任一入口
+      if (String(originalItem.path || '').startsWith('/app-center/suite-menu/')) {
+        router.push(originalItem.path)
+        return
+      }
       const firstMenu = findFirstMenuWithPath(originalItem)
       if (firstMenu?.path) {
         handleMenuSelect(firstMenu.key || firstMenu.id, firstMenu.path)

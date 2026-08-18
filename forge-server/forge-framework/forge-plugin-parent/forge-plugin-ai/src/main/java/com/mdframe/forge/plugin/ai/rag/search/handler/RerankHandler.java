@@ -1,5 +1,7 @@
 package com.mdframe.forge.plugin.ai.rag.search.handler;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledge;
 import com.mdframe.forge.plugin.ai.knowledge.mapper.AiKnowledgeMapper;
 import com.mdframe.forge.plugin.ai.knowledge.service.dto.KnowledgeSearchResult;
@@ -39,7 +41,19 @@ public class RerankHandler implements RagSearchHandler {
 
     @Override
     public void handle(RagSearchContext context) {
-        Boolean rerankEnabled = context.getRequest().getRerankEnabled();
+        // 请求字段优先，缺失时回退知识库检索配置 rerank_enable（对齐独立入口 KnowledgeSearchService）
+        Boolean rerankEnabled = context.getRequest().getRerankEnable();
+        Long knowledgeId = context.getRequest().getKnowledgeId();
+        AiKnowledge knowledge = null;
+        if (rerankEnabled == null && knowledgeId != null) {
+            knowledge = knowledgeMapper.selectById(knowledgeId);
+            if (knowledge != null) {
+                Boolean configEnabled = readConfigRerankEnable(knowledge.getSearchConfigJson());
+                if (configEnabled != null) {
+                    rerankEnabled = configEnabled;
+                }
+            }
+        }
         if (rerankEnabled == null || !rerankEnabled) {
             // 未启用 rerank，直接透传
             if (context.getFusedResults() != null) {
@@ -56,7 +70,6 @@ public class RerankHandler implements RagSearchHandler {
             return;
         }
 
-        Long knowledgeId = context.getRequest().getKnowledgeId();
         if (knowledgeId == null) {
             log.warn("[RerankHandler] 未指定知识库ID，跳过Rerank");
             context.setFinalResults(results);
@@ -64,7 +77,9 @@ public class RerankHandler implements RagSearchHandler {
         }
 
         try {
-            AiKnowledge knowledge = knowledgeMapper.selectById(knowledgeId);
+            if (knowledge == null) {
+                knowledge = knowledgeMapper.selectById(knowledgeId);
+            }
             if (knowledge == null || knowledge.getRerankModelId() == null) {
                 log.warn("[RerankHandler] 知识库未配置Rerank模型，跳过");
                 context.setFinalResults(results);
@@ -105,6 +120,22 @@ public class RerankHandler implements RagSearchHandler {
         } catch (Exception e) {
             log.warn("[RerankHandler] Rerank失败，使用原始排序", e);
             context.setFinalResults(results);
+        }
+    }
+
+    /**
+     * 从知识库检索配置读取 rerank_enable（null 表示未配置，交由请求字段决定）
+     */
+    private Boolean readConfigRerankEnable(String searchConfigJson) {
+        if (searchConfigJson == null || searchConfigJson.isBlank()) {
+            return null;
+        }
+        try {
+            JSONObject cfg = JSON.parseObject(searchConfigJson);
+            return cfg.containsKey("rerank_enable") ? cfg.getBoolean("rerank_enable") : null;
+        } catch (Exception e) {
+            log.warn("[RerankHandler] 检索配置解析失败，使用请求字段: {}", e.getMessage());
+            return null;
         }
     }
 }

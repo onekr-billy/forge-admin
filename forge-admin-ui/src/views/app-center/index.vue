@@ -91,10 +91,10 @@
         <section class="application-panel">
           <div class="panel-toolbar">
             <ApplicationFilterBar
-              class="toolbar-filters"
               v-model:keyword="keyword"
               v-model:design-status="designStatus"
               v-model:status="status"
+              class="toolbar-filters"
               :loading="loadingApplications"
               @search="applyKeywordFilter"
               @refresh="loadApplications"

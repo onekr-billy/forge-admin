@@ -147,6 +147,32 @@
         ORDER BY p.process_code ASC, p.id ASC
     </select>
 
+    <resultMap id="ObjectProcessSummaryMap"
+               type="com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO">
+        <result column="id" property="id"/>
+        <result column="processName" property="processName"/>
+        <result column="processCode" property="processCode"/>
+        <result column="status" property="status"/>
+        <result column="designStatus" property="designStatus"/>
+        <result column="draftSchemaJson" property="draftSchemaJson"/>
+    </resultMap>
+
+    <select id="selectBySubjectObjectCode" resultMap="ObjectProcessSummaryMap">
+        SELECT CAST(p.id AS CHAR) AS id,
+               p.process_name AS processName,
+               p.process_code AS processCode,
+               p.status,
+               p.design_status AS designStatus,
+               p.draft_schema_json AS draftSchemaJson
+        FROM ai_business_process p
+        <include refid="Active_Application_And_Subject"/>
+        WHERE p.tenant_id = #{tenantId}
+          AND p.subject_object_code = #{objectCode}
+          AND p.del_flag = 0
+        ORDER BY p.update_time DESC, p.id DESC
+    </select>
+
+    <!-- 主键等值查询禁用 LIMIT 1：租户拦截器（JSqlParser）会把 LIMIT+FOR UPDATE 重排为非法的 FOR UPDATE LIMIT -->
     <select id="selectForPublish" resultMap="BaseResultMap">
         SELECT <include refid="Base_Columns"/>
         FROM ai_business_process p
@@ -155,7 +181,6 @@
           AND p.id = #{id}
           AND p.status = 1
           AND p.del_flag = 0
-        LIMIT 1
         FOR UPDATE
     </select>
 
@@ -166,7 +191,6 @@
           AND p.application_id = #{applicationId}
           AND p.id = #{id}
           AND p.del_flag = 0
-        LIMIT 1
         FOR UPDATE
     </select>
 

@@ -44,6 +44,8 @@ public class RrfFusion {
                     copy.setChunkIndex(r.getChunkIndex());
                     copy.setContent(r.getContent());
                     copy.setTitle(r.getTitle());
+                    copy.setHideContent(r.getHideContent());
+                    copy.setSourceId(r.getSourceId());
                     merged.put(key, copy);
                 }
             }

@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcess;
+import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -28,6 +29,9 @@ public interface BusinessProcessMapper extends BaseMapper<AiBusinessProcess> {
 
     List<AiBusinessProcess> selectByApplicationId(@Param("tenantId") Long tenantId,
                                                    @Param("applicationId") Long applicationId);
+
+    List<BusinessObjectProcessVO> selectBySubjectObjectCode(@Param("tenantId") Long tenantId,
+                                                            @Param("objectCode") String objectCode);
 
     AiBusinessProcess selectForPublish(@Param("tenantId") Long tenantId,
                                        @Param("applicationId") Long applicationId,

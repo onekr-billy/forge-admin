@@ -236,22 +236,22 @@ public class BusinessFieldSchemaService {
     private void validateFieldTypeOptions(String fieldType, BusinessFieldDTO dto, Map<String, Object> fieldBinding) {
         boolean designerDraftField = "designer".equalsIgnoreCase(StringUtils.defaultString(mapText(fieldBinding, "source")))
                 && readBoolean(fieldBinding.get("createIfMissing"), false);
+        String fieldLabel = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(dto.getFieldName()),
+                StringUtils.trimToNull(dto.getFieldCode()),
+                "未命名字段"
+        );
         if (DICT_FIELD_TYPES.contains(fieldType)
                 && StringUtils.isBlank(resolveDictType(dto))
                 && !designerDraftField
                 && !hasInlineOptions(dto)) {
-            String fieldLabel = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(dto.getFieldName()),
-                    StringUtils.trimToNull(dto.getFieldCode()),
-                    "未命名字段"
-            );
             throw new BusinessException("字段「" + fieldLabel + "」使用字典组件时必须配置字典类型或静态选项");
         }
         if ("REFERENCE".equals(fieldType)
                 && (StringUtils.isBlank(dto.getReferenceObjectCode())
                 || StringUtils.isBlank(dto.getReferenceDisplayField()))
                 && !designerDraftField) {
-            throw new BusinessException("引用对象字段必须配置目标对象和回显字段");
+            throw new BusinessException("字段「" + fieldLabel + "」使用引用对象组件时必须配置目标对象和回显字段");
         }
         if ("RECORD_SELECTOR".equals(fieldType)
                 && !hasRecordSelectorObject(dto)

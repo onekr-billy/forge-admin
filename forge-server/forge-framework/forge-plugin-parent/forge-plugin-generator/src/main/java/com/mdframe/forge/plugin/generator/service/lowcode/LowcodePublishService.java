@@ -312,19 +312,21 @@ public class LowcodePublishService {
             app = new AiBusinessApp();
             app.setTenantId(tenantId);
             app.setAppCode(resolveRuntimeAppCode(tenantId, suiteCode, businessObject.getObjectCode(), config));
+            app.setAppName(resolveRuntimeAppName(config, dto, businessObject));
+            app.setAppType("BUSINESS");
+            app.setEntryMode("RUNTIME");
+            app.setEntryUrl("/ai/crud-page/" + config.getConfigKey());
+            app.setIcon(StringUtils.defaultIfBlank(businessObject.getIcon(), "ionicons5:AppsOutline"));
+            app.setDescription(StringUtils.defaultIfBlank(config.getTableComment(), "低代码发布生成的标准业务应用入口"));
+            app.setStatus(1);
+            app.setSortOrder(config.getMenuSort() == null ? 0 : config.getMenuSort());
+            app.setOptions("{\"source\":\"lowcode_publish\"}");
         }
-        app.setAppName(resolveRuntimeAppName(config, dto, businessObject));
-        app.setAppType("BUSINESS");
+        // 对象发布只补齐入口的运行绑定。已有入口的挂载端、菜单、展示和状态属于应用级配置，
+        // 不能再用自动生成的管理端默认值覆盖，否则移动端入口会在重新发布后退回管理端。
         app.setSuiteCode(suiteCode);
         app.setObjectCode(businessObject.getObjectCode());
-        app.setEntryMode("RUNTIME");
-        app.setEntryUrl("/ai/crud-page/" + config.getConfigKey());
         app.setConfigKey(config.getConfigKey());
-        app.setIcon(StringUtils.defaultIfBlank(businessObject.getIcon(), "ionicons5:AppsOutline"));
-        app.setDescription(StringUtils.defaultIfBlank(config.getTableComment(), "低代码发布生成的标准业务应用入口"));
-        app.setStatus(1);
-        app.setSortOrder(config.getMenuSort() == null ? 0 : config.getMenuSort());
-        app.setOptions("{\"source\":\"lowcode_publish\"}");
         if (create) {
             businessAppMapper.insert(app);
         } else {

@@ -333,7 +333,7 @@
             </n-upload>
           </n-form-item>
           <n-form-item class="form-item--full" label="Base URL" path="baseUrl">
-            <n-input v-model:value="providerModal.form.baseUrl" placeholder="如 https://api.openai.com" />
+            <n-input v-model:value="providerModal.form.baseUrl" placeholder="留空自动使用默认地址，如 https://dashscope.aliyuncs.com/compatible-mode" />
           </n-form-item>
           <n-form-item class="form-item--full" label="API Key" path="apiKey">
             <div class="form-control-stack">
@@ -451,7 +451,8 @@
       v-model:show="fetchModelsModal.show"
       preset="card"
       title="获取可用模型"
-      :style="modalCardStyle"
+      :style="fetchModelsModalStyle"
+      :content-style="fetchModelsModalContentStyle"
       :mask-closable="false"
     >
       <template v-if="fetchModelsModal.loading">
@@ -462,7 +463,13 @@
       </template>
 
       <template v-else-if="fetchModelsModal.error">
-        <n-result status="error" title="获取模型失败" :description="fetchModelsModal.error" size="small">
+        <n-result
+          status="error"
+          title="获取模型失败"
+          :description="fetchModelsModal.error"
+          size="small"
+          class="fetch-models-result"
+        >
           <template #footer>
             <NButton size="small" @click="handleFetchModels">
               重试
@@ -472,34 +479,58 @@
       </template>
 
       <template v-else>
+        <div class="fetch-models-categories">
+          <n-radio-group v-model:value="fetchModelsModalCategory" size="small">
+            <n-radio-button v-for="cat in fetchModelsModalCategories" :key="cat.value" :value="cat.value">
+              {{ cat.label }}
+            </n-radio-button>
+          </n-radio-group>
+        </div>
         <div class="fetch-models-toolbar">
-          <span>发现 {{ fetchModelsModal.models.length }} 个可用模型</span>
-          <n-checkbox
-            :checked="fetchModelsModalAllChecked"
-            :indeterminate="fetchModelsModalSomeChecked"
-            @update:checked="handleToggleAllModels"
-          >
-            全选
-          </n-checkbox>
+          <span class="fetch-models-count">发现 {{ fetchModelsModal.models.length }} 个可用模型</span>
+          <n-input
+            v-model:value="fetchModelsModalSearch"
+            size="small"
+            clearable
+            placeholder="搜索模型 ID"
+            class="fetch-models-search"
+          />
         </div>
         <div class="fetch-models-list">
-          <template v-for="group in fetchModelsModalGroups" :key="group.ownedBy">
+          <template v-for="group in fetchModelsModalGroups" :key="group.type">
             <div class="fetch-models-group-title">
-              {{ group.ownedBy }}
+              <n-checkbox
+                size="small"
+                :checked="isGroupChecked(group.type)"
+                :indeterminate="isGroupIndeterminate(group.type)"
+                @update:checked="checked => handleToggleGroup(group.type, checked)"
+              />
+              <span class="fetch-models-group-name">{{ group.label }}</span>
+              <span class="fetch-models-group-count">{{ group.models.length }}</span>
             </div>
             <div v-for="model in group.models" :key="model.id" class="fetch-models-item">
               <n-checkbox :checked="fetchModelsModal.checked[model.id]" @update:checked="checked => handleToggleModel(model.id, checked)">
-                <code>{{ model.id }}</code>
+                <code class="fetch-models-model-id" :title="model.id">{{ model.id }}</code>
               </n-checkbox>
-              <n-select
-                :value="fetchModelsModal.modelTypes[model.id]"
-                :options="modelTypeOptions"
-                size="tiny"
-                style="width: 110px; margin-left: 8px;"
-                @update:value="val => handleModelTypeChange(model.id, val)"
-              />
+              <n-popselect
+                v-model:value="fetchModelsModal.modelTypes[model.id]"
+                :options="modelTypeOverrideOptions"
+                trigger="click"
+                size="small"
+                class="fetch-models-type-select"
+              >
+                <n-tag size="small" :type="modelTypeTagColor(fetchModelsModal.modelTypes[model.id] || inferModelType(model.id))">
+                  {{ modelTypeLabel(fetchModelsModal.modelTypes[model.id] || inferModelType(model.id)) }}
+                </n-tag>
+              </n-popselect>
             </div>
           </template>
+          <n-empty
+            v-if="fetchModelsModalGroups.length === 0"
+            size="small"
+            description="没有匹配的模型"
+            style="padding: 24px 0"
+          />
         </div>
       </template>
       <template #footer>
@@ -514,10 +545,10 @@
             v-if="!fetchModelsModal.loading && !fetchModelsModal.error"
             type="primary"
             :loading="fetchModelsModal.importing"
-            :disabled="fetchModelsModalCheckedCount === 0"
+            :disabled="fetchModelsModalVisibleCheckedCount === 0"
             @click="handleImportModels"
           >
-            导入 {{ fetchModelsModalCheckedCount }} 个模型
+            导入 {{ fetchModelsModalVisibleCheckedCount }} 个模型
           </NButton>
           <NButton v-if="fetchModelsModal.error" @click="fetchModelsModal.show = false">
             关闭
@@ -562,30 +593,84 @@ const statusOptions = computed(() => dict.value.ai_status || [])
 const isDefaultOptions = computed(() => dict.value.ai_is_default || [])
 const modelCapabilityOptions = computed(() => dict.value.ai_model_capability_type || [])
 
+// 模型类型能力分类（对齐阿里百炼模型广场，与后端 AiModelType 枚举一致）
+const MODEL_TYPE_LABEL = {
+  chat: '对话',
+  vision: '视觉理解',
+  video_understanding: '视频理解',
+  audio_understanding: '音频理解',
+  asr: '语音识别',
+  tts: '语音合成',
+  image_generation: '图像生成',
+  video_generation: '视频生成',
+  embedding: '向量化',
+  rerank: '重排',
+}
+const MODEL_TYPE_ORDER = ['chat', 'vision', 'video_understanding', 'audio_understanding', 'asr', 'tts', 'image_generation', 'video_generation', 'embedding', 'rerank']
+const MODEL_TYPE_TAG_COLOR = {
+  chat: 'success',
+  vision: 'primary',
+  video_understanding: 'error',
+  audio_understanding: 'info',
+  asr: 'default',
+  tts: 'info',
+  image_generation: 'warning',
+  video_generation: 'error',
+  embedding: 'info',
+  rerank: 'warning',
+}
+
+function modelTypeLabel(code) {
+  return MODEL_TYPE_LABEL[code] || code
+}
+function modelTypeTagColor(code) {
+  return MODEL_TYPE_TAG_COLOR[code] || 'default'
+}
+
+// 类型覆盖下拉：只展示规范化的能力分类（过滤字典中存量的 image/audio 宽泛值）
+const modelTypeOverrideOptions = computed(() =>
+  modelTypeOptions.value.filter(o => MODEL_TYPE_ORDER.includes(o.value)))
+
 /**
  * 根据模型标识启发式推断模型类型（与后端 AiModelType.inferFromModelId 逻辑一致）。
  * @param {string} modelId 模型标识
  * @returns {string} 推断的模型类型 code
  */
 function inferModelType(modelId) {
-  if (!modelId) return 'chat'
+  if (!modelId)
+    return 'chat'
   const lower = modelId.toLowerCase()
   if (lower.includes('embedding') || lower.includes('embed')) return 'embedding'
   if (lower.includes('rerank') || lower.includes('re-rank') || lower.includes('cross-encoder')) return 'rerank'
-  if (lower.includes('dall-e') || lower.includes('dalle')
+  if (lower.includes('t2v') || lower.includes('i2v')
+    || lower.includes('video-gen') || lower.includes('videogen')
+    || lower.includes('maku')) return 'video_generation'
+  if (lower.includes('t2i') || lower.includes('i2i')
+    || lower.includes('dall-e') || lower.includes('dalle')
     || lower.includes('imagen') || lower.includes('flux')
     || lower.includes('midjourney') || lower.includes('stable-diffusion')
-    || lower.includes('sdxl') || lower.includes('cogview')) return 'image_generation'
+    || lower.includes('sdxl') || lower.includes('cogview')
+    || lower.includes('wanx')) return 'image_generation'
+  if (lower.includes('video')) return 'video_understanding'
   if (lower.includes('whisper') || lower.includes('asr')
-    || lower.includes('speech-to-text') || lower.includes('paraformer')) return 'asr'
+    || lower.includes('speech-to-text') || lower.includes('paraformer')
+    || lower.includes('sensevoice')) return 'asr'
   if (lower.includes('tts') || lower.includes('speech-to-speech')
-    || lower.includes('cosyvoice') || lower.includes('sambert')) return 'tts'
+    || lower.includes('speech-synthesis') || lower.includes('cosyvoice')
+    || lower.includes('sambert')) return 'tts'
+  if (lower.includes('audio')) return 'audio_understanding'
+  if (lower.includes('vl') || lower.includes('vision')) return 'vision'
   return 'chat'
 }
 
 const providerPageSizes = [10, 20, 50]
 const modelPageSizes = [10, 20, 50]
 const modalCardStyle = { maxWidth: '860px', width: 'calc(100vw - 32px)' }
+
+// 获取可用模型弹窗：固定高度，避免随列表数量伸缩导致窗口跳动
+const fetchModelsModalStyle = { maxWidth: '860px', width: 'calc(100vw - 32px)', height: 'min(640px, calc(100vh - 80px))' }
+// 内容区约束为 flex 列，列表在固定高度内滚动，避免卡片内容溢出（穿模）
+const fetchModelsModalContentStyle = { display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden' }
 const providerAvatarStyle = { width: '48px', height: '48px', borderRadius: '14px', objectFit: 'cover' }
 const providerListAvatarStyle = { width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }
 
@@ -626,20 +711,37 @@ const providerModal = reactive({
 const providerApiKeyPlaceholder = computed(() => providerModal.isEdit ? '留空表示不修改' : '请输入 API Key')
 
 const DASHSCOPE_NATIVE_BASE_URL = 'https://dashscope.aliyuncs.com'
-const KNOWN_DASHSCOPE_COMPATIBLE_URLS = new Set([
-  'https://dashscope.aliyuncs.com/compatible-mode',
-  'https://dashscope.aliyuncs.com/compatible-mode/',
-])
+// 已知供应商类型（字典 ai_provider_type）的默认 OpenAI Compatible 端点，与后端 AiProviderBaseUrlPolicy 对齐
+const PROVIDER_DEFAULT_BASE_URL = {
+  alibaba: 'https://dashscope.aliyuncs.com/compatible-mode',
+  openai: 'https://api.openai.com/v1',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  moonshot: 'https://api.moonshot.cn/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  ollama: 'http://localhost:11434/v1',
+}
+// 已知默认地址集合（含尾斜杠变体）：当前地址是"别的协议/类型的默认"时切换后覆盖，自定义地址不覆盖
+const KNOWN_PROVIDER_DEFAULT_URLS = new Set(
+  [DASHSCOPE_NATIVE_BASE_URL, ...Object.values(PROVIDER_DEFAULT_BASE_URL)]
+    .flatMap(url => [url, `${url}/`]),
+)
+
+function resolveDefaultBaseUrl(adapterCode, providerType) {
+  if (adapterCode === 'dashscope_native')
+    return DASHSCOPE_NATIVE_BASE_URL
+  return PROVIDER_DEFAULT_BASE_URL[providerType] || ''
+}
 
 watch(
-  () => providerModal.form.adapterCode,
-  (adapterCode) => {
-    if (adapterCode !== 'dashscope_native')
+  () => [providerModal.form.adapterCode, providerModal.form.providerType],
+  ([adapterCode, providerType]) => {
+    const resolved = resolveDefaultBaseUrl(adapterCode, providerType)
+    if (!resolved)
       return
 
     const currentBaseUrl = providerModal.form.baseUrl?.trim() || ''
-    if (!currentBaseUrl || KNOWN_DASHSCOPE_COMPATIBLE_URLS.has(currentBaseUrl))
-      providerModal.form.baseUrl = DASHSCOPE_NATIVE_BASE_URL
+    if (!currentBaseUrl || (KNOWN_PROVIDER_DEFAULT_URLS.has(currentBaseUrl) && currentBaseUrl !== resolved))
+      providerModal.form.baseUrl = resolved
   },
 )
 
@@ -660,22 +762,64 @@ const fetchModelsModal = reactive({
   modelTypes: {}, // { modelId: inferredType } — 每个模型的推断/用户修改后的类型
 })
 
-const fetchModelsModalGroups = computed(() => {
-  const groupsMap = new Map()
-  for (const model of fetchModelsModal.models) {
-    const ownedBy = model.ownedBy || '其他'
-    if (!groupsMap.has(ownedBy))
-      groupsMap.set(ownedBy, [])
-    groupsMap.get(ownedBy).push(model)
-  }
-  return [...groupsMap.entries()].map(([ownedBy, models]) => ({ ownedBy, models }))
+const fetchModelsModalSearch = ref('')
+const fetchModelsModalCategory = ref('all')
+
+// 顶部分类筛选：只显示当前供应商列表里真实存在的分类（全部始终保留）
+const fetchModelsModalCategories = computed(() => {
+  const present = new Set(fetchModelsModal.models.map(m => fetchModelsModal.modelTypes[m.id] || inferModelType(m.id)))
+  return [
+    { label: '全部', value: 'all' },
+    ...MODEL_TYPE_ORDER.filter(t => present.has(t)).map(t => ({ label: MODEL_TYPE_LABEL[t], value: t })),
+  ]
 })
 
-const fetchModelsModalCheckedCount = computed(() => Object.values(fetchModelsModal.checked).filter(Boolean).length)
+// 分类筛选 + 搜索过滤（ID 模糊匹配）
+const fetchModelsModalFilteredModels = computed(() => {
+  const keyword = fetchModelsModalSearch.value.trim().toLowerCase()
+  const category = fetchModelsModalCategory.value
+  return fetchModelsModal.models.filter(m => {
+    if (category !== 'all' && (fetchModelsModal.modelTypes[m.id] || inferModelType(m.id)) !== category)
+      return false
+    if (keyword && !(m.id || '').toLowerCase().includes(keyword))
+      return false
+    return true
+  })
+})
 
-const fetchModelsModalAllChecked = computed(() => fetchModelsModal.models.length > 0 && fetchModelsModalCheckedCount.value === fetchModelsModal.models.length)
+// 按推断能力类型分组（顺序对齐阿里百炼模型广场分类）
+const fetchModelsModalGroups = computed(() => {
+  const groupsMap = new Map()
+  for (const model of fetchModelsModalFilteredModels.value) {
+    const type = fetchModelsModal.modelTypes[model.id] || inferModelType(model.id)
+    if (!groupsMap.has(type))
+      groupsMap.set(type, [])
+    groupsMap.get(type).push(model)
+  }
+  return MODEL_TYPE_ORDER
+    .filter(t => groupsMap.has(t))
+    .map(t => ({ type: t, label: modelTypeLabel(t), models: groupsMap.get(t) }))
+})
 
-const fetchModelsModalSomeChecked = computed(() => fetchModelsModalCheckedCount.value > 0 && !fetchModelsModalAllChecked.value)
+function groupModels(type) {
+  return fetchModelsModalGroups.value.find(g => g.type === type)?.models || []
+}
+function isGroupChecked(type) {
+  const models = groupModels(type)
+  return models.length > 0 && models.every(m => fetchModelsModal.checked[m.id])
+}
+function isGroupIndeterminate(type) {
+  const models = groupModels(type)
+  const n = models.filter(m => fetchModelsModal.checked[m.id]).length
+  return n > 0 && n < models.length
+}
+function handleToggleGroup(type, checked) {
+  for (const m of groupModels(type))
+    fetchModelsModal.checked[m.id] = checked
+}
+
+// 导入数量 = 当前筛选视图内已勾选的模型数（切分类/搜索后只统计可见部分）
+const fetchModelsModalVisibleCheckedCount = computed(() => fetchModelsModalFilteredModels.value.filter(m => fetchModelsModal.checked[m.id]).length)
 
 function createProviderForm() {
   return {
@@ -745,7 +889,8 @@ const providerRules = {
   providerName: [{ required: true, message: '请输入供应商名称', trigger: 'blur' }],
   providerType: [{ required: true, message: '请选择类型', trigger: 'change' }],
   adapterCode: [{ required: true, message: '请选择连接协议', trigger: 'change' }],
-  baseUrl: [{ required: true, message: '请输入 Base URL', trigger: 'blur' }],
+  // baseUrl 选填：已知类型/协议选择后自动填充默认地址；azure/custom 留空时后端会明确提示
+  baseUrl: [],
   apiKey: [{
     trigger: 'blur',
     validator(_rule, value) {
@@ -822,7 +967,7 @@ const modelColumns = [
     width: 160,
     fixed: 'right',
     render(row) {
-      const rowLoading = (type) => isModelRowActionLoading(row.id, type)
+      const rowLoading = type => isModelRowActionLoading(row.id, type)
       const anyLoading = rowLoading('test') || rowLoading('edit') || rowLoading('delete')
       const actions = [
         h(NButton, { text: true, size: 'small', class: 'text-info', loading: rowLoading('test'), disabled: anyLoading, onClick: () => handleTestModel(row) }, { default: () => '测试' }),
@@ -1108,6 +1253,8 @@ async function handleFetchModels() {
   fetchModelsModal.models = []
   fetchModelsModal.checked = {}
   fetchModelsModal.modelTypes = {}
+  fetchModelsModalSearch.value = ''
+  fetchModelsModalCategory.value = 'all'
   try {
     const res = await providerFetchModels(provider.id)
     if (res.code === 200 && Array.isArray(res.data)) {
@@ -1133,28 +1280,18 @@ async function handleFetchModels() {
   }
 }
 
-function handleToggleAllModels(checked) {
-  const next = {}
-  for (const model of fetchModelsModal.models)
-    next[model.id] = checked
-  fetchModelsModal.checked = next
-}
-
 function handleToggleModel(id, checked) {
   fetchModelsModal.checked[id] = checked
 }
 
-function handleModelTypeChange(modelId, modelType) {
-  fetchModelsModal.modelTypes[modelId] = modelType
-}
-
 async function handleImportModels() {
   const providerId = selectedProvider.value?.id
-  const items = Object.entries(fetchModelsModal.checked)
-    .filter(([, checked]) => checked)
-    .map(([modelId]) => ({
-      modelId,
-      modelType: fetchModelsModal.modelTypes[modelId] || inferModelType(modelId),
+  // 只导入当前筛选视图内勾选的模型，与按钮计数保持一致
+  const items = fetchModelsModalFilteredModels.value
+    .filter(m => fetchModelsModal.checked[m.id])
+    .map(m => ({
+      modelId: m.id,
+      modelType: fetchModelsModal.modelTypes[m.id] || inferModelType(m.id),
     }))
   if (!providerId || items.length === 0)
     return
@@ -1958,6 +2095,7 @@ onMounted(() => {
 
 .fetch-models-loading {
   display: flex;
+  flex: 1 1 auto;
   min-height: 200px;
   align-items: center;
   justify-content: center;
@@ -1970,37 +2108,117 @@ onMounted(() => {
   font-size: 32px;
 }
 
+.fetch-models-result {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.fetch-models-categories {
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 10px;
+}
+
+.fetch-models-categories :deep(.n-radio-group) {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
 .fetch-models-toolbar {
   display: flex;
-  padding: 8px 2px 12px;
+  padding: 0 2px 12px;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
+.fetch-models-count {
+  flex: 0 0 auto;
+}
+
+.fetch-models-search {
+  flex: 1 1 auto;
+  min-width: 160px;
+  max-width: 260px;
+  margin-left: auto;
+}
+
 .fetch-models-list {
-  max-height: 420px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 4px 2px;
   overflow-y: auto;
   border-top: 1px solid var(--panel-border);
 }
 
 .fetch-models-group-title {
-  padding: 10px 2px 6px;
+  display: flex;
+  grid-column: 1 / -1;
+  padding: 10px 6px 6px;
+  align-items: center;
+  gap: 8px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
+}
+
+.fetch-models-group-name {
+  flex: 0 0 auto;
+}
+
+.fetch-models-group-count {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  padding: 0 8px;
+  line-height: 18px;
 }
 
 .fetch-models-item {
   display: flex;
-  padding: 6px 2px;
+  min-width: 0;
+  padding: 5px 8px;
   align-items: center;
+  gap: 8px;
+  border-radius: 6px;
 }
 
-.fetch-models-item code {
+.fetch-models-item:hover {
+  background: var(--bg-hover);
+}
+
+.fetch-models-item :deep(.n-checkbox) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fetch-models-item :deep(.n-checkbox__label) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fetch-models-list :deep(.n-empty) {
+  grid-column: 1 / -1;
+}
+
+.fetch-models-model-id {
+  display: block;
   color: var(--text-strong);
   font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fetch-models-type-select {
+  flex: 0 0 auto;
 }
 </style>

@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.plugin.system.constant.SystemConstants;
 import com.mdframe.forge.plugin.system.dto.RoleDataScopeSettingsDTO;
 import com.mdframe.forge.plugin.system.dto.RoleModuleDataScopeDTO;
+import com.mdframe.forge.plugin.system.dto.ScopedRolePermissionDTO;
 import com.mdframe.forge.plugin.system.dto.RoleUserQuery;
 import com.mdframe.forge.plugin.system.dto.SysRoleDTO;
 import com.mdframe.forge.plugin.system.dto.SysRoleQuery;
@@ -322,6 +323,73 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         return true;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean saveScopedRolePermissions(Long roleId, ScopedRolePermissionDTO settings) {
+        if (settings == null) {
+            throw new RuntimeException("范围化角色权限不能为空");
+        }
+        SysRole role = loadRoleForAccess(roleId);
+        assertCanMaintainRole(role);
+
+        Set<Long> scopeResourceIds = normalizeIds(settings.getScopeResourceIds());
+        Set<Long> selectedResourceIds = normalizeIds(settings.getSelectedResourceIds());
+        if (!scopeResourceIds.containsAll(selectedResourceIds)) {
+            throw new RuntimeException("权限溢出：选择了授权范围以外的资源");
+        }
+
+        Set<Long> resourceIdsToLoad = new LinkedHashSet<>(scopeResourceIds);
+        resourceIdsToLoad.addAll(selectedResourceIds);
+        List<SysResource> resources = loadResourcesWithAncestors(resourceIdsToLoad);
+        Map<Long, SysResource> resourceMap = resources.stream()
+                .collect(Collectors.toMap(SysResource::getId, resource -> resource, (left, right) -> left));
+        if (!resourceMap.keySet().containsAll(scopeResourceIds)) {
+            throw new RuntimeException("授权范围包含不存在的系统资源");
+        }
+        validateScopedResources(settings.getClientCode(), scopeResourceIds, resourceMap);
+
+        Set<Long> finalSelectedResourceIds = withResourceAncestors(
+                selectedResourceIds, resourceMap, settings.getClientCode());
+        validateCurrentUserCanAssign(finalSelectedResourceIds);
+
+        Set<String> scopeModuleCodes = normalizeModuleCodes(settings.getScopeModuleCodes());
+        Map<String, Integer> moduleScopes = normalizeScopedModuleDataScopes(
+                settings.getModuleScopes(), scopeModuleCodes, role);
+
+        return TenantContextHolder.executeIgnore(() -> {
+            List<Long> currentResourceIds = roleResourceMapper.selectResourceIdsByRole(
+                    role.getTenantId(), role.getId());
+            Set<Long> retainedResourceIds = new HashSet<>(currentResourceIds);
+            retainedResourceIds.removeAll(scopeResourceIds);
+
+            if (!scopeResourceIds.isEmpty()) {
+                roleResourceMapper.delete(new LambdaQueryWrapper<SysRoleResource>()
+                        .eq(SysRoleResource::getTenantId, role.getTenantId())
+                        .eq(SysRoleResource::getRoleId, role.getId())
+                        .in(SysRoleResource::getResourceId, scopeResourceIds));
+            }
+            List<SysRoleResource> resourceBindings = finalSelectedResourceIds.stream()
+                    .filter(resourceId -> !retainedResourceIds.contains(resourceId))
+                    .map(resourceId -> roleResource(role, resourceId))
+                    .toList();
+            if (!resourceBindings.isEmpty()) {
+                roleResourceMapper.insertBatch(resourceBindings);
+            }
+
+            if (!scopeModuleCodes.isEmpty()) {
+                roleModuleDataScopeMapper.deleteByRoleAndModules(
+                        role.getTenantId(), role.getId(), scopeModuleCodes);
+            }
+            List<SysRoleModuleDataScope> dataScopeBindings = moduleScopes.entrySet().stream()
+                    .map(entry -> roleModuleDataScope(role, entry.getKey(), entry.getValue()))
+                    .toList();
+            if (!dataScopeBindings.isEmpty()) {
+                roleModuleDataScopeMapper.insertBatch(dataScopeBindings);
+            }
+            return true;
+        }) && refreshDataScopeCacheAfterScopedSave();
+    }
+
     private Long normalizeParentId(Long parentId) {
         return parentId == null ? 0L : parentId;
     }
@@ -604,9 +672,10 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 return false;
             }
 
-            roleModuleDataScopeMapper.delete(new LambdaQueryWrapper<SysRoleModuleDataScope>()
-                    .eq(SysRoleModuleDataScope::getTenantId, role.getTenantId())
-                    .eq(SysRoleModuleDataScope::getRoleId, role.getId()));
+            if (!availableModuleCodes.isEmpty()) {
+                roleModuleDataScopeMapper.deleteByRoleAndModules(
+                        role.getTenantId(), role.getId(), availableModuleCodes);
+            }
 
             requestedOverrides.forEach((moduleCode, dataScope) -> {
                 SysRoleModuleDataScope override = new SysRoleModuleDataScope();
@@ -635,6 +704,121 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 dataScopeService.refreshDataScopeCache();
             }
         });
+    }
+
+    private boolean refreshDataScopeCacheAfterScopedSave() {
+        refreshDataScopeCacheAfterCommit();
+        return true;
+    }
+
+    private Set<Long> normalizeIds(Collection<Long> ids) {
+        if (ids == null) {
+            return new LinkedHashSet<>();
+        }
+        return ids.stream().filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<String> normalizeModuleCodes(Collection<String> moduleCodes) {
+        if (moduleCodes == null) {
+            return new LinkedHashSet<>();
+        }
+        return moduleCodes.stream().map(StringUtils::trimToNull).filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private void validateScopedResources(String clientCode,
+                                         Set<Long> scopeResourceIds,
+                                         Map<Long, SysResource> resourceMap) {
+        if (StringUtils.isNotBlank(clientCode)) {
+            boolean incompatible = scopeResourceIds.stream()
+                    .map(resourceMap::get)
+                    .anyMatch(resource -> !isClientCompatibleResource(resource, clientCode));
+            if (incompatible) {
+                throw new RuntimeException("权限溢出：授权范围包含其他客户端资源");
+            }
+        }
+        validateCurrentUserCanAssign(scopeResourceIds);
+    }
+
+    private void validateCurrentUserCanAssign(Set<Long> resourceIds) {
+        LoginUser loginUser = requireLoginUser();
+        if (loginUser.isAdmin() || resourceIds.isEmpty()) {
+            return;
+        }
+        Set<Long> currentUserResourceIds = new HashSet<>(resourceService.selectCurrentUserResourceIds());
+        if (!currentUserResourceIds.containsAll(resourceIds)) {
+            throw new RuntimeException("权限溢出：不能分配自己没有的资源权限");
+        }
+    }
+
+    private Set<Long> withResourceAncestors(Set<Long> selectedResourceIds,
+                                            Map<Long, SysResource> resourceMap,
+                                            String clientCode) {
+        Set<Long> result = new LinkedHashSet<>(selectedResourceIds);
+        for (Long resourceId : selectedResourceIds) {
+            SysResource resource = resourceMap.get(resourceId);
+            Long parentId = resource == null ? null : normalizeParentId(resource.getParentId());
+            while (parentId != null && parentId != 0L && result.add(parentId)) {
+                SysResource parent = resourceMap.get(parentId);
+                if (parent == null) {
+                    break;
+                }
+                if (StringUtils.isNotBlank(clientCode) && !isClientCompatibleParent(parent, clientCode)) {
+                    throw new RuntimeException("权限溢出：不能分配其他客户端的父级资源权限");
+                }
+                parentId = normalizeParentId(parent.getParentId());
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Integer> normalizeScopedModuleDataScopes(
+            List<RoleModuleDataScopeDTO> moduleScopes,
+            Set<String> scopeModuleCodes,
+            SysRole role) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        if (moduleScopes == null) {
+            return result;
+        }
+        for (RoleModuleDataScopeDTO moduleScope : moduleScopes) {
+            if (moduleScope == null || StringUtils.isBlank(moduleScope.getModuleCode())) {
+                throw new RuntimeException("业务模块编码不能为空");
+            }
+            String moduleCode = moduleScope.getModuleCode().trim();
+            if (!scopeModuleCodes.contains(moduleCode)) {
+                throw new RuntimeException("业务模块不属于当前授权范围：" + moduleCode);
+            }
+            if (result.containsKey(moduleCode)) {
+                throw new RuntimeException("业务模块重复配置：" + moduleCode);
+            }
+            Integer dataScope = moduleScope.getDataScope();
+            if (dataScope == null) {
+                continue;
+            }
+            validateSupportedDataScope(dataScope);
+            validateDataScopeAllowedForCurrentUser(dataScope);
+            validateDataScopeAllowedForBoundUsers(role, dataScope);
+            result.put(moduleCode, dataScope);
+        }
+        return result;
+    }
+
+    private SysRoleResource roleResource(SysRole role, Long resourceId) {
+        SysRoleResource binding = new SysRoleResource();
+        binding.setTenantId(role.getTenantId());
+        binding.setRoleId(role.getId());
+        binding.setResourceId(resourceId);
+        return binding;
+    }
+
+    private SysRoleModuleDataScope roleModuleDataScope(SysRole role, String moduleCode, Integer dataScope) {
+        SysRoleModuleDataScope binding = new SysRoleModuleDataScope();
+        binding.setTenantId(role.getTenantId());
+        binding.setRoleId(role.getId());
+        binding.setModuleCode(moduleCode);
+        binding.setDataScope(dataScope);
+        return binding;
     }
 
     @Override

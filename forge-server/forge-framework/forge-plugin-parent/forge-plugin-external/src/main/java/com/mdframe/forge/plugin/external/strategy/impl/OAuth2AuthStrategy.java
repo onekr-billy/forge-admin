@@ -4,22 +4,25 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.external.strategy.ExternalAuthStrategy;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.outbound.client.SecureOutboundClient;
+import com.mdframe.forge.starter.outbound.constant.OutboundScenes;
+import com.mdframe.forge.starter.outbound.model.OutboundRequest;
+import com.mdframe.forge.starter.outbound.model.OutboundResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
+@RequiredArgsConstructor
 public class OAuth2AuthStrategy implements ExternalAuthStrategy {
+
+    private final SecureOutboundClient outboundClient;
 
     @Override
     public String getAuthType() {
@@ -61,33 +64,26 @@ public class OAuth2AuthStrategy implements ExternalAuthStrategy {
             form.put("scope", config.getString("scope"));
         }
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(config.getString("tokenUrl")))
-                .timeout(Duration.ofSeconds(15))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(encodeForm(form)))
-                .build();
-        try {
-            HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new BusinessException("OAuth2获取Token失败，HTTP状态码: " + response.statusCode());
-            }
-            JSONObject body = JSON.parseObject(response.body());
-            String tokenType = body.getString("token_type");
-            if (tokenType != null && !tokenType.isEmpty()) {
-                config.put("tokenType", tokenType);
-            }
-            String accessToken = body.getString("access_token");
-            if (accessToken == null || accessToken.isEmpty()) {
-                throw new BusinessException("OAuth2响应缺少access_token");
-            }
-            return accessToken;
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new BusinessException("OAuth2获取Token失败: " + e.getMessage());
+        OutboundResponse response = outboundClient.execute(OutboundRequest.builder()
+                .scene(OutboundScenes.EXTERNAL_CONNECTOR)
+                .url(config.getString("tokenUrl"))
+                .method("POST")
+                .contentType("application/x-www-form-urlencoded")
+                .body(encodeForm(form).getBytes(StandardCharsets.UTF_8))
+                .build());
+        if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
+            throw new BusinessException("OAuth2获取Token失败，HTTP状态码: " + response.getStatusCode());
         }
+        JSONObject body = JSON.parseObject(response.bodyAsUtf8());
+        String tokenType = body.getString("token_type");
+        if (tokenType != null && !tokenType.isEmpty()) {
+            config.put("tokenType", tokenType);
+        }
+        String accessToken = body.getString("access_token");
+        if (accessToken == null || accessToken.isEmpty()) {
+            throw new BusinessException("OAuth2响应缺少access_token");
+        }
+        return accessToken;
     }
 
     private String encodeForm(Map<String, String> form) {

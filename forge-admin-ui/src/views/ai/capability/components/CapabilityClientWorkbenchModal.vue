@@ -38,28 +38,28 @@
             </div>
           </div>
           <n-space>
-            <n-button v-if="canRotate && client.status === 'ENABLED'" type="primary" secondary @click="emit('rotate-secret', client)">
+            <NButton v-if="canRotate && client.status === 'ENABLED'" type="primary" secondary @click="emit('rotate-secret', client)">
               轮换 Client Secret
-            </n-button>
-            <n-button
+            </NButton>
+            <NButton
               v-if="canEdit && signatureEnabled && client.status === 'ENABLED'"
               type="primary"
               secondary
               @click="emit('rotate-signing-key', client)"
             >
               轮换 Signing Key
-            </n-button>
-            <n-button
+            </NButton>
+            <NButton
               v-if="canEdit && userDelegationEnabled && client.status === 'ENABLED'"
               type="primary"
               secondary
               @click="emit('configure-identity', client)"
             >
               用户身份与 RSA 私钥
-            </n-button>
-            <n-button v-if="canRevoke && client.status === 'ENABLED'" type="error" secondary @click="emit('revoke', client)">
+            </NButton>
+            <NButton v-if="canRevoke && client.status === 'ENABLED'" type="error" secondary @click="emit('revoke', client)">
               吊销客户端
-            </n-button>
+            </NButton>
           </n-space>
         </section>
       </n-tab-pane>
@@ -70,9 +70,9 @@
             <h3>这个客户端可以调用哪些能力</h3>
             <p>授权默认锚定当前能力版本；必填字段会自动保留，客户端只能进一步收窄字段范围。</p>
           </div>
-          <n-button v-if="canGrant" type="primary" @click="openGrantModal()">
+          <NButton v-if="canGrant" type="primary" @click="openGrantModal()">
             新增授权
-          </n-button>
+          </NButton>
         </div>
         <n-data-table
           :columns="grantColumns"
@@ -97,13 +97,13 @@
             <strong>{{ mappingModeLabel }}</strong>
             <p>在这里可以生成或轮换 RSA 私钥、切换映射规则、分页查询及维护外围用户映射。</p>
           </div>
-          <n-button
+          <NButton
             v-if="canEdit && userDelegationEnabled && client.status === 'ENABLED'"
             type="primary"
             @click="emit('configure-identity', client)"
           >
             配置身份映射
-          </n-button>
+          </NButton>
         </div>
       </n-tab-pane>
 
@@ -134,8 +134,12 @@
             @keyup.enter="searchLogs"
           />
           <n-space :wrap="false">
-            <n-button type="primary" :loading="logLoading" @click="searchLogs">查询</n-button>
-            <n-button :disabled="logLoading" @click="resetLogFilters">重置</n-button>
+            <NButton type="primary" :loading="logLoading" @click="searchLogs">
+              查询
+            </NButton>
+            <NButton :disabled="logLoading" @click="resetLogFilters">
+              重置
+            </NButton>
           </n-space>
         </div>
         <n-data-table
@@ -156,7 +160,9 @@
 
     <template #footer>
       <n-space justify="end">
-        <n-button @click="emit('update:show', false)">关闭</n-button>
+        <NButton @click="emit('update:show', false)">
+          关闭
+        </NButton>
       </n-space>
     </template>
 
@@ -194,10 +200,12 @@
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="grantVisible = false">取消</n-button>
-          <n-button type="primary" :loading="grantSubmitting" @click="submitGrant">
+          <NButton @click="grantVisible = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="grantSubmitting" @click="submitGrant">
             {{ editingGrantId ? '保存调整' : '确认授权' }}
-          </n-button>
+          </NButton>
         </n-space>
       </template>
     </n-modal>
@@ -290,7 +298,8 @@ const userDelegationEnabled = computed(() => Number(props.client?.oauthEnabled) 
   && ['USER_DELEGATION', 'HYBRID'].includes(props.client?.actorMode))
 const authModes = computed(() => String(props.client?.authModes || '').split(',').filter(Boolean))
 const authModeText = computed(() => authModes.value
-  .map(mode => dictLabel(dict.value.ai_capability_auth_mode || [], mode)).join(' / ') || '-')
+  .map(mode => dictLabel(dict.value.ai_capability_auth_mode || [], mode))
+  .join(' / ') || '-')
 const mappingModeLabel = computed(() => dictLabel(
   mappingModeOptions.value,
   props.client?.userAssertionMappingMode || 'PREBOUND',
@@ -332,7 +341,9 @@ const capabilityMap = computed(() => new Map((grantOptions.value.capabilities ||
 
 const grantColumns = computed(() => [
   {
-    title: '能力', key: 'capabilityId', minWidth: 220,
+    title: '能力',
+    key: 'capabilityId',
+    minWidth: 220,
     render: row => capabilityName(row.capabilityId),
   },
   { title: '版本策略', key: 'versionStrategy', width: 120, render: row => dictLabel(versionStrategyOptions.value, row.versionStrategy) },
@@ -340,7 +351,10 @@ const grantColumns = computed(() => [
   { title: '状态', key: 'status', width: 90, render: row => dictLabel(grantStatusOptions.value, row.status) },
   { title: '过期时间', key: 'expiresAt', width: 160, render: row => row.expiresAt || '长期有效' },
   {
-    title: '操作', key: 'action', width: 230, fixed: 'right',
+    title: '操作',
+    key: 'action',
+    width: 230,
+    fixed: 'right',
     render: row => h('div', { class: 'table-actions' }, [
       row.status === 'ENABLED' && grantVersionUpgradeAvailable(row)
         ? h(NButton, { text: true, type: 'primary', onClick: () => switchGrantVersion(row) }, { default: () => '使用当前版本' })
@@ -532,11 +546,12 @@ function capabilityUnavailableReason(capability) {
     return ''
   if (capability.sourceType === 'BUSINESS_ACTION')
     return capability.allowedFields?.length ? '' : '缺少允许字段'
-  if (capability.sourceType === 'FLOW_ACTION')
+  if (capability.sourceType === 'FLOW_ACTION') {
     return capability.allowedOperations?.length
       && (!capability.allowedOperations.includes('SUBMIT') || capability.allowedFields?.length)
       ? ''
       : '缺少允许操作或申请字段'
+  }
   return '当前类型不可授权'
 }
 
@@ -642,7 +657,9 @@ const logColumns = [
   { title: '能力', key: 'capabilityCode', width: 250, ellipsis: { tooltip: true }, render: capabilityDisplay },
   { title: '调用用户', key: 'actorUserId', width: 190, ellipsis: { tooltip: true }, render: userLabel },
   {
-    title: '结果', key: 'resultStatus', width: 95,
+    title: '结果',
+    key: 'resultStatus',
+    width: 95,
     render: row => h(NTag, { size: 'small', type: row.resultStatus === 'SUCCESS' ? 'success' : 'error' }, { default: () => resultStatusLabel(row.resultStatus) }),
   },
   { title: '失败阶段', key: 'failureStage', width: 150, render: row => failureStageLabel(row.failureStage, row.resultStatus) },
@@ -650,7 +667,10 @@ const logColumns = [
   { title: '耗时', key: 'durationMs', width: 90, render: row => row.durationMs == null ? '-' : `${row.durationMs} ms` },
   { title: '调用时间', key: 'createTime', width: 170, fixed: 'right', render: row => formatInvocationTime(row.createTime) },
   {
-    title: '操作', key: 'action', width: 70, fixed: 'right',
+    title: '操作',
+    key: 'action',
+    width: 70,
+    fixed: 'right',
     render: row => h(NButton, { text: true, type: 'primary', onClick: () => openLogDetail(row) }, { default: () => '详情' }),
   },
 ]

@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,14 +34,25 @@ public class DataQueryExecutor {
     private final DataDimensionItemMapper dimensionItemMapper;
     private final DataDatasetFieldViewAssembler fieldViewAssembler;
     private final DataDatasetRowScopeService rowScopeService;
+    private final DataQueryRuntimeCache runtimeCache;
+
+    static final int DEFAULT_MAX_ROWS = 1000;
+    static final int ABSOLUTE_MAX_ROWS = 10000;
+    static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    static final int MAX_TIMEOUT_SECONDS = 120;
 
     public DataDatasetQueryResultVO execute(DataDataset dataset, DataConnection connection, 
             List<DataDatasetField> fieldConfigs, DataDatasetQueryDTO query) {
+        if (dataset == null || connection == null || query == null) {
+            throw new BusinessException("数据集查询上下文不完整");
+        }
         DataDatasetQueryResultVO result = new DataDatasetQueryResultVO();
-        
-        int maxRows = query.getMaxRows() != null ? Math.min(query.getMaxRows(), dataset.getMaxRows()) : dataset.getMaxRows();
-        int pageNum = query.getPageNum() != null ? query.getPageNum() : 1;
-        int pageSize = query.getPageSize() != null ? Math.min(query.getPageSize(), maxRows) : maxRows;
+
+        int configuredMaxRows = normalizeMaxRows(dataset.getMaxRows());
+        int requestedMaxRows = query.getMaxRows() == null ? configuredMaxRows : normalizeMaxRows(query.getMaxRows());
+        int maxRows = Math.min(requestedMaxRows, configuredMaxRows);
+        int pageNum = query.getPageNum() == null ? 1 : Math.max(1, query.getPageNum());
+        int pageSize = query.getPageSize() == null ? maxRows : Math.min(normalizeMaxRows(query.getPageSize()), maxRows);
         
         List<DataDatasetField> displayFields = fieldConfigs.stream()
                 .filter(f -> f.getDisplayEnabled() == 1)
@@ -73,6 +86,11 @@ public class DataQueryExecutor {
         List<String> dimensions = displayFields.stream()
                 .map(DataDatasetField::getFieldName)
                 .collect(Collectors.toList());
+
+        Optional<DataDatasetQueryResultVO> cached = runtimeCache.get(dataset, query, dimensions, pageNum, pageSize);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         
         DbDialect dialect = dialectFactory.getDialect(connection.getDbType());
         QueryBuildResult buildResult;
@@ -84,9 +102,10 @@ public class DataQueryExecutor {
         buildResult = applyRowScope(dataset, dialect, buildResult);
 
         String sql = dialect.buildLimitSql(buildResult.getSql(), pageSize);
-        logQuerySql(dataset, query, buildResult.getParams(), sql);
+        logQuerySql(dataset, pageNum, pageSize, dimensions.size(), buildResult.getParams(), sql);
 
-        List<Map<String, Object>> rows = executeQuery(connection, sql, buildResult.getParams(), dataset.getTimeoutSeconds());
+        List<Map<String, Object>> rows = executeQuery(connection, dataset.getId(), sql, buildResult.getParams(),
+                normalizeTimeout(dataset.getTimeoutSeconds()));
         
         rows = applyDimensionTranslation(rows, displayFields);
         rows = applyMasking(rows, displayFields);
@@ -97,7 +116,7 @@ public class DataQueryExecutor {
         result.setPageNum(pageNum);
         result.setPageSize(pageSize);
         result.setFields(convertToFieldVOList(displayFields));
-        
+        runtimeCache.put(dataset, query, dimensions, pageNum, pageSize, result);
         return result;
     }
 
@@ -176,69 +195,69 @@ public class DataQueryExecutor {
         return new QueryBuildResult(scopedSql, params);
     }
 
-    private List<Map<String, Object>> executeQuery(DataConnection connection, String sql, 
+    private List<Map<String, Object>> executeQuery(DataConnection connection, Long datasetId, String sql,
             Map<String, Object> params, int timeoutSeconds) {
-        List<Map<String, Object>> rows = new ArrayList<>();
-        try {
-            Connection conn = dataSourceProvider.getConnection(connection);
+        try (Connection conn = dataSourceProvider.getConnection(connection)) {
             try {
+                conn.setReadOnly(true);
+            } catch (SQLException exception) {
+                log.warn("数据集连接不支持只读标记，datasetId={}", datasetId);
+            }
+            String preparedSql = parameterBinder.convertToPreparedStatement(sql);
+            try (PreparedStatement ps = conn.prepareStatement(preparedSql)) {
+                ps.setQueryTimeout(timeoutSeconds);
                 if (params != null && !params.isEmpty()) {
-                    List<String> namedParams = parameterBinder.extractNamedParams(sql);
-                    if (!namedParams.isEmpty()) {
-                        String preparedSql = parameterBinder.convertToPreparedStatement(sql);
-                        PreparedStatement ps = conn.prepareStatement(preparedSql);
-                        try {
-                            ps.setQueryTimeout(timeoutSeconds);
-                            Map<Integer, Object> indexMap = parameterBinder.buildParamIndexMap(sql, params);
-                            for (Map.Entry<Integer, Object> entry : indexMap.entrySet()) {
-                                ps.setObject(entry.getKey(), entry.getValue());
-                            }
-                            ResultSet rs = ps.executeQuery();
-                            rows = resultSetToMaps(rs);
-                            rs.close();
-                        } finally {
-                            ps.close();
-                        }
-                    } else {
-                        PreparedStatement ps = conn.prepareStatement(sql);
-                        try {
-                            ps.setQueryTimeout(timeoutSeconds);
-                            ResultSet rs = ps.executeQuery();
-                            rows = resultSetToMaps(rs);
-                            rs.close();
-                        } finally {
-                            ps.close();
-                        }
-                    }
-                } else {
-                    PreparedStatement ps = conn.prepareStatement(sql);
-                    try {
-                        ps.setQueryTimeout(timeoutSeconds);
-                        ResultSet rs = ps.executeQuery();
-                        rows = resultSetToMaps(rs);
-                        rs.close();
-                    } finally {
-                        ps.close();
+                    Map<Integer, Object> indexMap = parameterBinder.buildParamIndexMap(sql, params);
+                    for (Map.Entry<Integer, Object> entry : indexMap.entrySet()) {
+                        ps.setObject(entry.getKey(), entry.getValue());
                     }
                 }
-            } finally {
-                conn.close();
+                try (ResultSet rs = ps.executeQuery()) {
+                    return resultSetToMaps(rs);
+                }
             }
-        } catch (Exception e) {
-            log.warn("Execute query failed, sql={}, params={}, error={}", sql, params, e.getMessage(), e);
+        } catch (Exception exception) {
+            log.warn("数据集查询失败，datasetId={}, datasetType={}, errorType={}", datasetId,
+                    connection.getDbType(), exception.getClass().getSimpleName());
+            throw new BusinessException("数据集查询失败，请检查连接、参数或查询超时配置");
         }
-        return rows;
     }
 
-    private void logQuerySql(DataDataset dataset, DataDatasetQueryDTO query, Map<String, Object> params, String sql) {
-        String debugSql = parameterBinder.renderDebugSql(sql, params);
-        log.info("Dataset runtime query: datasetId={}, datasetType={}, pageNum={}, pageSize={}, params={}, sql={}",
+    private void logQuerySql(DataDataset dataset, int pageNum, int pageSize, int fieldCount,
+                             Map<String, Object> params, String sql) {
+        String parameterKeys = params == null ? "[]" : params.keySet().stream().sorted().collect(Collectors.joining(",", "[", "]"));
+        log.info("数据集运行查询: datasetId={}, datasetType={}, pageNum={}, pageSize={}, fieldCount={}, parameterKeys={}, sqlDigest={}",
                 dataset.getId(),
                 dataset.getDatasetType(),
-                query.getPageNum(),
-                query.getPageSize(),
-                params,
-                debugSql);
+                pageNum,
+                pageSize,
+                fieldCount,
+                parameterKeys,
+                sqlDigest(sql));
+    }
+
+    private int normalizeMaxRows(Integer value) {
+        if (value == null || value <= 0) {
+            return DEFAULT_MAX_ROWS;
+        }
+        return Math.min(value, ABSOLUTE_MAX_ROWS);
+    }
+
+    private int normalizeTimeout(Integer value) {
+        if (value == null || value <= 0) {
+            return DEFAULT_TIMEOUT_SECONDS;
+        }
+        return Math.min(value, MAX_TIMEOUT_SECONDS);
+    }
+
+    private String sqlDigest(String sql) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest((sql == null ? "" : sql).getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (Exception exception) {
+            throw new IllegalStateException("无法生成SQL摘要", exception);
+        }
     }
 
     private void appendSchemaConditions(DataDataset dataset, DbDialect dialect, StringBuilder sql,

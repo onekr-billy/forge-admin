@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +34,69 @@ final class BusinessActionStepConfigHelper {
         return data;
     }
 
+    static Map<String, Object> buildExpectedData(
+            Map<String, Object> config,
+            BusinessActionExecutionContext context) {
+        Map<String, Object> expected = new LinkedHashMap<>();
+        for (Object item : firstList(config, "expectedFieldMappings", "expectedMappings", "conditions")) {
+            Map<String, Object> mapping = asMap(item);
+            if (mapping.isEmpty()) {
+                continue;
+            }
+            String targetField = firstText(mapping, "targetField", "target", "field", "name");
+            if (StringUtils.isBlank(targetField)) {
+                throw new IllegalArgumentException("条件更新字段不能为空");
+            }
+            if (expected.containsKey(targetField)) {
+                throw new IllegalArgumentException("条件更新字段重复: " + targetField);
+            }
+            expected.put(targetField, resolveMappingValue(mapping, context));
+        }
+        Map<String, Object> staticExpected = asMap(firstValue(config, "expectedValues", "expected"));
+        staticExpected.forEach((field, value) -> {
+            if (expected.putIfAbsent(field, value) != null) {
+                throw new IllegalArgumentException("条件更新字段重复: " + field);
+            }
+        });
+        return expected;
+    }
+
+    /**
+     * 解析 ASSERT_RECORD 的字段间数值比较。比较值可以来自当前动作表单、记录、父记录或可信系统上下文，
+     * 但最终只保留字段、操作符和值，避免把客户端路径或任意表达式下沉到 SQL 层。
+     */
+    static List<Map<String, Object>> buildNumericConstraints(
+            Map<String, Object> config,
+            BusinessActionExecutionContext context) {
+        List<Map<String, Object>> constraints = new ArrayList<>();
+        for (Object item : firstList(config, "numericConstraints", "fieldComparisons")) {
+            Map<String, Object> raw = asMap(item);
+            if (raw.isEmpty()) {
+                continue;
+            }
+            String field = firstText(raw, "field", "targetField", "target");
+            String operator = firstText(raw, "operator", "op");
+            if (StringUtils.isBlank(field) || StringUtils.isBlank(operator)) {
+                throw new IllegalArgumentException("数值比较缺少 field 或 operator");
+            }
+            Map<String, Object> valueMapping = new LinkedHashMap<>(raw);
+            valueMapping.remove("field");
+            valueMapping.remove("targetField");
+            valueMapping.remove("target");
+            valueMapping.remove("operator");
+            valueMapping.remove("op");
+            Object value = resolveMappingValue(valueMapping, context);
+            if (value == null) {
+                throw new IllegalArgumentException("数值比较值不能为空: " + field);
+            }
+            constraints.add(new LinkedHashMap<>(Map.of(
+                    "field", field,
+                    "operator", operator,
+                    "value", value)));
+        }
+        return constraints;
+    }
+
     static Object resolveTargetRecordId(Map<String, Object> config, BusinessActionExecutionContext context) {
         Object explicit = firstValue(config, "targetRecordId", "recordId");
         if (explicit != null) {
@@ -42,7 +106,12 @@ final class BusinessActionStepConfigHelper {
         if (StringUtils.isNotBlank(sourceField)) {
             return resolvePath(sourceField, context);
         }
-        return context.getRequest() == null ? null : context.getRequest().getRecordId();
+        if (context.getRequest() == null) {
+            return null;
+        }
+        return StringUtils.firstNonBlank(
+                StringUtils.trimToNull(context.getRequest().getChildRecordId()),
+                StringUtils.trimToNull(context.getRequest().getRecordId()));
     }
 
     static Object resolveMappingValue(Map<String, Object> mapping, BusinessActionExecutionContext context) {
@@ -60,6 +129,7 @@ final class BusinessActionStepConfigHelper {
             return null;
         }
         return switch (sourceType) {
+            case "parent", "parentrecord", "parent_record" -> readPath(context.getParentRecordData(), sourceField);
             case "form", "formdata", "form_data" -> readPath(context.getFormData(), sourceField);
             case "context" -> readPath(context.getExtraContext(), sourceField);
             case "system" -> resolveSystemValue(sourceField, context);
@@ -89,6 +159,12 @@ final class BusinessActionStepConfigHelper {
         }
         if (field.startsWith("row.")) {
             return readPath(context.getRecordData(), field.substring("row.".length()));
+        }
+        if (field.startsWith("parentRecord.")) {
+            return readPath(context.getParentRecordData(), field.substring("parentRecord.".length()));
+        }
+        if (field.startsWith("parent.")) {
+            return readPath(context.getParentRecordData(), field.substring("parent.".length()));
         }
         if (field.startsWith("context.")) {
             return readPath(context.getExtraContext(), field.substring("context.".length()));
@@ -178,13 +254,12 @@ final class BusinessActionStepConfigHelper {
     }
 
     private static Object resolveSystemValue(String sourceField, BusinessActionExecutionContext context) {
-        return switch (StringUtils.defaultString(sourceField).toLowerCase(Locale.ROOT)) {
-            case "objectcode" -> context.getBusinessObject() == null ? null : context.getBusinessObject().getObjectCode();
-            case "recordid" -> context.getRequest() == null ? null : context.getRequest().getRecordId();
-            case "correlationid" -> context.getCorrelationId();
-            case "tenantid" -> context.getTenantId();
-            default -> null;
-        };
+        String field = StringUtils.defaultString(sourceField);
+        Object trusted = readPath(context.getSystemContext(), field);
+        if (trusted != null || context.getSystemContext().containsKey(field)) {
+            return trusted;
+        }
+        return readPath(context.getSystemContext(), snakeToCamel(field));
     }
 
     private static String camelToSnake(String value) {

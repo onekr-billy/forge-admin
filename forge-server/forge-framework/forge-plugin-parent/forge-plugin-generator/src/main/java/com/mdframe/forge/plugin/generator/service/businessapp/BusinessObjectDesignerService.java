@@ -69,13 +69,14 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     private static final String GENERAL_DOMAIN_CODE = "general";
     private static final String FORM_DESIGNER_SCHEMA_OPTION_KEY = "formDesignerSchema";
+    private static final String DESIGNER_ACTIONS_OPTION_KEY = "actions";
     private static final String VIEW_SCHEMA_OPTION_KEY = "viewSchema";
     private static final String LINKAGE_SCHEMA_OPTION_KEY = "linkageSchema";
     private static final String LINKAGE_SCHEMA_MANAGED_BY = "linkageSchema";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE_ID = "runtimeDatasourceId";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE = "runtimeDatasource";
     private static final Set<String> FORM_FIELD_COMPONENT_KEYS = Set.of(
-            "input", "textarea", "number", "inputNumber", "input-number", "inputnumber",
+            "input", "barcodeScanner", "textarea", "number", "inputNumber", "input-number", "inputnumber",
             "integer", "money", "date", "datetime", "time",
             "switch", "select", "radio", "checkbox", "dictSelect", "cascader",
             "regionTreeSelect", "orgTreeSelect", "orgSelect", "departmentSelect", "departmentTreeSelect",
@@ -114,6 +115,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     );
     private static final Map<String, ComponentFieldDefaults> COMPONENT_FIELD_DEFAULTS = Map.ofEntries(
             Map.entry("input", new ComponentFieldDefaults("TEXT", "varchar", 128, 2, "like")),
+            Map.entry("barcodeScanner", new ComponentFieldDefaults("TEXT", "varchar", 2048, 2, "eq")),
             Map.entry("textarea", new ComponentFieldDefaults("MULTILINE", "text", null, 2, "like")),
             Map.entry("number", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
             Map.entry("inputNumber", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
@@ -204,12 +206,14 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         vo.setPageSchema(context.getPageSchema());
         vo.setFields(fieldSchemaService.toFieldVOList(context.getModelSchema()));
         vo.setRelations(sourceRelations(object, context.getRelations()));
-        Map<String, Object> designerOptions = readMap(object.getDesignerOptions());
+        Map<String, Object> designerOptions = resolveDesignerOptions(object, context.getConfig());
         vo.setDesignerOptions(designerOptions);
-        vo.setFormDesignerSchema(resolveFormDesignerSchema(object, context.getModelSchema(),
-                context.getPageSchema(), designerOptions));
+        LinkageSchemaDTO linkageSchema = resolveLinkageSchema(designerOptions);
+        FormDesignerSchemaDTO formDesignerSchema = resolveFormDesignerSchema(object, context.getModelSchema(),
+                context.getPageSchema(), designerOptions);
+        vo.setFormDesignerSchema(hydrateFormFieldLinkages(formDesignerSchema, linkageSchema));
         vo.setViewSchema(resolveViewSchema(context.getModelSchema(), context.getPageSchema(), designerOptions));
-        vo.setLinkageSchema(resolveLinkageSchema(designerOptions));
+        vo.setLinkageSchema(linkageSchema);
         vo.setDocumentConfig(documentConfigService.getConfig(object.getId()));
         return vo;
     }
@@ -228,17 +232,26 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             if (dto.getPageSchema() != null) {
                 context.setPageSchema(ensurePageSchema(dto.getPageSchema(), context.getModelSchema()));
             }
-            Map<String, Object> designerOptions = readMap(object.getDesignerOptions());
+            Map<String, Object> designerOptions = resolveDesignerOptions(object, context.getConfig());
             if (dto.getDesignerOptions() != null && !dto.getDesignerOptions().isEmpty()) {
                 designerOptions.putAll(dto.getDesignerOptions());
             }
+            boolean linkageSynchronizedFromForm = false;
             if (dto.getFormDesignerSchema() != null) {
                 designerOptions.put(FORM_DESIGNER_SCHEMA_OPTION_KEY, dto.getFormDesignerSchema());
+                if (hasFormFieldLinkages(dto.getFormDesignerSchema())) {
+                    LinkageSchemaDTO legacyLinkage = dto.getLinkageSchema() == null
+                            ? resolveLinkageSchema(designerOptions)
+                            : dto.getLinkageSchema();
+                    designerOptions.put(LINKAGE_SCHEMA_OPTION_KEY,
+                            resolveUnifiedLinkageSchema(dto.getFormDesignerSchema(), legacyLinkage));
+                    linkageSynchronizedFromForm = true;
+                }
             }
             if (dto.getViewSchema() != null) {
                 designerOptions.put(VIEW_SCHEMA_OPTION_KEY, dto.getViewSchema());
             }
-            if (dto.getLinkageSchema() != null) {
+            if (dto.getLinkageSchema() != null && !linkageSynchronizedFromForm) {
                 designerOptions.put(LINKAGE_SCHEMA_OPTION_KEY, dto.getLinkageSchema());
             }
             if (!designerOptions.isEmpty()) {
@@ -359,7 +372,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (context == null || context.getObject() == null) {
             return context;
         }
-        Map<String, Object> designerOptions = readMap(context.getObject().getDesignerOptions());
+        Map<String, Object> designerOptions = resolveDesignerOptions(context.getObject(), context.getConfig());
         boolean hasFormSchema = hasDesignerOption(designerOptions, FORM_DESIGNER_SCHEMA_OPTION_KEY);
         boolean hasViewSchema = hasDesignerOption(designerOptions, VIEW_SCHEMA_OPTION_KEY);
         boolean hasLinkageSchema = hasDesignerOption(designerOptions, LINKAGE_SCHEMA_OPTION_KEY);
@@ -375,7 +388,10 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         ViewSchemaDTO viewSchema = hasViewSchema
                 ? resolveViewSchema(modelSchema, pageSchema, designerOptions)
                 : null;
-        LinkageSchemaDTO linkageSchema = hasLinkageSchema ? resolveLinkageSchema(designerOptions) : null;
+        LinkageSchemaDTO legacyLinkageSchema = hasLinkageSchema ? resolveLinkageSchema(designerOptions) : null;
+        LinkageSchemaDTO linkageSchema = formSchema == null
+                ? legacyLinkageSchema
+                : resolveUnifiedLinkageSchema(formSchema, legacyLinkageSchema);
 
         if (linkageSchema != null) {
             applyLinkageSchemaToModel(modelSchema, linkageSchema);
@@ -779,6 +795,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 modelSchema.getTableName()));
         target.setModelSchema(writeJson(modelSchema, "modelSchema"));
         target.setPageSchema(writeJson(pageSchema, "pageSchema"));
+        target.setOptions(mergeFormDesignerSchemaIntoRuntimeOptions(target.getOptions(), pageSchema));
         if (target.getId() == null) {
             crudConfigService.save(target);
         } else {
@@ -1230,6 +1247,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private void syncInlineEditRelationsToPageSchema(DesignerContext context,
                                                      List<AiBusinessObjectRelation> relations) {
         LowcodePageSchema pageSchema = context.getPageSchema() == null ? new LowcodePageSchema() : context.getPageSchema();
+        Map<String, LowcodePageModelRef> existingRefs = indexPageModelRefs(pageSchema);
         LowcodePageModelRef primaryRef = toPageModelRef(context.getObject(), context.getModel(), context.getModelSchema(), true);
         List<LowcodePageModelRef> refs = new ArrayList<>();
         Set<String> addedModelCodes = new LinkedHashSet<>();
@@ -1247,6 +1265,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             DesignerContext targetContext = loadContext(target.getId());
             LowcodePageModelRef targetRef = toPageModelRef(target, targetContext.getModel(),
                     targetContext.getModelSchema(), false);
+            mergeExistingPageModelRef(targetRef, existingRefs.get(targetRef.getModelCode()));
             if (isEmbeddedRelation(relation)) {
                 targetRef.setRelations(List.of(toRelationToPrimary(relation, primaryRef.getModelCode())));
                 targetRef.setProps(toInlineRelationProps(relation));
@@ -1275,6 +1294,46 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         syncInlineEditRefsToEditZone(pageSchema, primaryRef, childFieldRefs);
         context.setPageSchema(pageSchema);
+    }
+
+    private Map<String, LowcodePageModelRef> indexPageModelRefs(LowcodePageSchema pageSchema) {
+        Map<String, LowcodePageModelRef> result = new LinkedHashMap<>();
+        if (pageSchema == null || pageSchema.getModelRefs() == null) {
+            return result;
+        }
+        for (LowcodePageModelRef ref : pageSchema.getModelRefs()) {
+            if (ref != null && StringUtils.isNotBlank(ref.getModelCode())) {
+                result.put(ref.getModelCode(), ref);
+            }
+        }
+        return result;
+    }
+
+    private void mergeExistingPageModelRef(LowcodePageModelRef targetRef, LowcodePageModelRef existingRef) {
+        if (targetRef == null || existingRef == null) {
+            return;
+        }
+        Map<String, Object> mergedProps = new LinkedHashMap<>();
+        if (targetRef.getProps() != null) {
+            mergedProps.putAll(targetRef.getProps());
+        }
+        if (existingRef.getProps() != null) {
+            mergedProps.putAll(existingRef.getProps());
+        }
+        targetRef.setProps(mergedProps);
+        if (StringUtils.isNotBlank(existingRef.getModelName())) {
+            targetRef.setModelName(existingRef.getModelName());
+        }
+        if (StringUtils.isNotBlank(text(existingRef.getProps().get("tabTitle")))) {
+            targetRef.getProps().put("tabTitle", text(existingRef.getProps().get("tabTitle")));
+        }
+        if (StringUtils.isNotBlank(text(existingRef.getProps().get("relationName")))) {
+            targetRef.getProps().put("relationName", text(existingRef.getProps().get("relationName")));
+        }
+        if (StringUtils.isBlank(text(targetRef.getProps().get("relationKey")))
+                && StringUtils.isNotBlank(text(existingRef.getProps().get("relationKey")))) {
+            targetRef.getProps().put("relationKey", text(existingRef.getProps().get("relationKey")));
+        }
     }
 
     private boolean addPageModelRef(List<LowcodePageModelRef> refs, Set<String> addedModelCodes, LowcodePageModelRef ref) {
@@ -1319,6 +1378,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         props.put("sourceObjectCode", relation.getSourceObjectCode());
         props.put("targetObjectCode", relation.getTargetObjectCode());
         props.put("businessObjectCode", relation.getTargetObjectCode());
+        props.put("relationKey", StringUtils.defaultIfBlank(
+                text(config.get("relationKey")), defaultRelationKey(relation.getTargetObjectCode())));
         props.put("showInDetail", readBoolean(config.get("showInDetail"), true));
         props.put("inlineCreateEnabled", readBoolean(config.get("inlineCreateEnabled"), true));
         props.put("inlineEditEnabled", readBoolean(config.get("inlineEditEnabled"), true));
@@ -1329,6 +1390,10 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         Object recordSelector = config.get("recordSelector");
         if (recordSelector instanceof Map<?, ?> selector && !selector.isEmpty()) {
             props.put("recordSelector", selector);
+        }
+        Object rowActions = config.get("rowActions");
+        if (rowActions instanceof List<?> actions && !actions.isEmpty()) {
+            props.put("rowActions", actions);
         }
         putIfNotBlank(props, "displayField", resolveRelationDisplayField(relation));
         return props;
@@ -1342,6 +1407,15 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     private String normalizeChildSaveMode(Object value) {
         return "merge".equalsIgnoreCase(text(value)) ? "merge" : "replace";
+    }
+
+    private String defaultRelationKey(String value) {
+        return StringUtils.defaultString(value)
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .replaceAll("[^A-Za-z0-9_]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     private Map<String, Object> toLookupRelationProps(AiBusinessObjectRelation relation) {
@@ -1757,6 +1831,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         LowcodePageZone editZone = findZone(pageSchema, "edit");
         if (editZone == null || editZone.getProps() == null) {
             return null;
+        }
+        FormDesignerSchemaDTO embedded = readFormDesignerSchema(
+                editZone.getProps().get(FORM_DESIGNER_SCHEMA_OPTION_KEY));
+        if (embedded != null) {
+            return embedded;
         }
         List<Map<String, Object>> formCreateRules = listOfMap(editZone.getProps().get("formCreateRule"));
         if (!formCreateRules.isEmpty()) {
@@ -2184,6 +2263,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private String resolveFormComponentKey(LowcodeFieldSchema field) {
         String componentType = StringUtils.defaultString(field.getComponentType());
         String businessType = StringUtils.defaultString(field.getBusinessFieldType()).toUpperCase(Locale.ROOT);
+        if ("barcodeScanner".equals(componentType)) {
+            return "barcodeScanner";
+        }
         if ("textarea".equals(componentType) || "MULTILINE".equals(businessType)) {
             return "textarea";
         }
@@ -2402,6 +2484,71 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return new LinkageSchemaDTO();
     }
 
+    private FormDesignerSchemaDTO hydrateFormFieldLinkages(FormDesignerSchemaDTO formSchema,
+                                                            LinkageSchemaDTO legacyLinkageSchema) {
+        if (formSchema == null || hasFormFieldLinkages(formSchema)
+                || legacyLinkageSchema == null || legacyLinkageSchema.getRules() == null
+                || legacyLinkageSchema.getRules().isEmpty()) {
+            return formSchema;
+        }
+        Map<String, Object> settings = new LinkedHashMap<>(formSchema.getSettings() == null
+                ? Map.of()
+                : formSchema.getSettings());
+        Map<String, Object> governance = resolveGovernanceSettings(settings);
+        governance.put("fieldLinkages", copyLinkageRules(legacyLinkageSchema.getRules()));
+        settings.put("governance", governance);
+        formSchema.setSettings(settings);
+        return formSchema;
+    }
+
+    private LinkageSchemaDTO resolveUnifiedLinkageSchema(FormDesignerSchemaDTO formSchema,
+                                                          LinkageSchemaDTO legacyLinkageSchema) {
+        if (!hasFormFieldLinkages(formSchema)) {
+            return legacyLinkageSchema;
+        }
+        Map<String, Object> governance = resolveGovernanceSettings(formSchema.getSettings());
+        Object configuredRules = governance.get("fieldLinkages");
+        LinkageSchemaDTO unified = new LinkageSchemaDTO();
+        if (legacyLinkageSchema != null) {
+            unified.setSchemaVersion(StringUtils.defaultIfBlank(
+                    legacyLinkageSchema.getSchemaVersion(), unified.getSchemaVersion()));
+            unified.setSettings(new LinkedHashMap<>(legacyLinkageSchema.getSettings() == null
+                    ? Map.of()
+                    : legacyLinkageSchema.getSettings()));
+        }
+        if (configuredRules instanceof List<?> rules) {
+            unified.setRules(objectMapper.convertValue(rules,
+                    new TypeReference<List<Map<String, Object>>>() { }));
+        }
+        return unified;
+    }
+
+    private boolean hasFormFieldLinkages(FormDesignerSchemaDTO formSchema) {
+        if (formSchema == null || formSchema.getSettings() == null) {
+            return false;
+        }
+        Map<String, Object> governance = resolveGovernanceSettings(formSchema.getSettings());
+        return governance.containsKey("fieldLinkages")
+                && governance.get("fieldLinkages") instanceof List<?>;
+    }
+
+    private Map<String, Object> resolveGovernanceSettings(Map<String, Object> settings) {
+        if (settings == null) {
+            return new LinkedHashMap<>();
+        }
+        Object governance = settings.get("governance");
+        if (governance instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, value) -> result.put(String.valueOf(key), value));
+            return result;
+        }
+        return new LinkedHashMap<>();
+    }
+
+    private List<Map<String, Object>> copyLinkageRules(List<Map<String, Object>> rules) {
+        return objectMapper.convertValue(rules, new TypeReference<List<Map<String, Object>>>() { });
+    }
+
     private boolean hasDesignerOption(Map<String, Object> designerOptions, String key) {
         if (designerOptions == null || !designerOptions.containsKey(key)) {
             return false;
@@ -2551,7 +2698,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                     continue;
                 }
                 Map<String, Object> visibility = mapValue(component.get("visibility"));
-                if (readBoolean(visibility.get("hidden"), false)) {
+                if (readBoolean(visibility.get("hidden"), false)
+                        && !hasRuntimeVisibilityRules(component)) {
                     continue;
                 }
                 formFieldRefs.add(fieldCode);
@@ -2604,7 +2752,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             Map<String, Object> binding = mapValue(component.get("fieldBinding"));
             String fieldCode = text(binding.get("fieldCode"));
             if (StringUtils.isBlank(fieldCode) || !modelFields.contains(fieldCode)
-                    || readBoolean(mapValue(component.get("visibility")).get("hidden"), false)) {
+                    || (readBoolean(mapValue(component.get("visibility")).get("hidden"), false)
+                    && !hasRuntimeVisibilityRules(component))) {
                 return null;
             }
             Map<String, Object> node = new LinkedHashMap<>();
@@ -2739,11 +2888,47 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (visibility.containsKey("readonly")) {
             setting.put("readonly", readBoolean(visibility.get("readonly"), false));
         }
+        if (visibility.containsKey("hidden")) {
+            setting.put("hidden", readBoolean(visibility.get("hidden"), false));
+            setting.put("formVisible", !readBoolean(visibility.get("hidden"), false));
+        }
+        Object runtimeRules = props.get("runtimeRules");
+        if (runtimeRules instanceof List<?> runtimeRuleList && !runtimeRuleList.isEmpty()) {
+            setting.put("runtimeRules", runtimeRuleList);
+        } else if (component.get("runtimeRules") instanceof List<?> directRuleList) {
+            setting.put("runtimeRules", directRuleList);
+        }
         putIfNotBlank(setting, "dictType", text(props.get("dictType")));
         if (props.containsKey("defaultValue")) {
             setting.put("defaultValue", props.get("defaultValue"));
         }
         return setting;
+    }
+
+    private boolean hasRuntimeVisibilityRules(Map<String, Object> component) {
+        if (component == null) {
+            return false;
+        }
+        Object directRules = component.get("runtimeRules");
+        if (containsVisibilityRule(directRules)) {
+            return true;
+        }
+        return containsVisibilityRule(mapValue(component.get("props")).get("runtimeRules"));
+    }
+
+    private boolean containsVisibilityRule(Object value) {
+        if (!(value instanceof List<?> rules)) {
+            return false;
+        }
+        return rules.stream().filter(item -> item instanceof Map<?, ?>)
+                .map(item -> (Map<?, ?>) item)
+                .anyMatch(rule -> {
+                    Object effectValue = rule.get("effect");
+                    if (effectValue instanceof Map<?, ?> effect) {
+                        return effect.containsKey("visible") || effect.containsKey("hidden");
+                    }
+                    return rule.containsKey("visible") || rule.containsKey("hidden");
+                });
     }
 
     private Map<String, Object> sanitizeRuntimeFieldProps(Map<String, Object> source) {
@@ -3228,6 +3413,46 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             });
         } catch (Exception e) {
             return new LinkedHashMap<>();
+        }
+    }
+
+    private Map<String, Object> resolveDesignerOptions(AiBusinessObject object, AiCrudConfig config) {
+        Map<String, Object> result = readMap(object == null ? null : object.getDesignerOptions());
+        Map<String, Object> runtimeOptions = readMap(config == null ? null : config.getOptions());
+        copyOptionFallback(result, runtimeOptions, FORM_DESIGNER_SCHEMA_OPTION_KEY);
+        copyOptionFallback(result, runtimeOptions, DESIGNER_ACTIONS_OPTION_KEY);
+        return result;
+    }
+
+    private void copyOptionFallback(Map<String, Object> target, Map<String, Object> fallback, String key) {
+        if (!target.containsKey(key) && fallback.containsKey(key)) {
+            target.put(key, fallback.get(key));
+        }
+    }
+
+    private String mergeFormDesignerSchemaIntoRuntimeOptions(String optionsJson, LowcodePageSchema pageSchema) {
+        LowcodePageZone editZone = findZone(pageSchema, "edit");
+        Object formSchema = editZone == null || editZone.getProps() == null
+                ? null : editZone.getProps().get(FORM_DESIGNER_SCHEMA_OPTION_KEY);
+        if (formSchema == null) {
+            return optionsJson;
+        }
+        Map<String, Object> options = readMap(optionsJson);
+        options.put(FORM_DESIGNER_SCHEMA_OPTION_KEY, formSchema);
+        return writeJson(options, "options");
+    }
+
+    private FormDesignerSchemaDTO readFormDesignerSchema(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            if (value instanceof String text && StringUtils.isNotBlank(text)) {
+                return objectMapper.readValue(text, FormDesignerSchemaDTO.class);
+            }
+            return objectMapper.convertValue(value, FormDesignerSchemaDTO.class);
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

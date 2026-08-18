@@ -2,8 +2,8 @@
   <div class="business-relation-designer">
     <div class="relation-designer-head">
       <div>
-        <h3>关系与级联</h3>
-        <p>优先在关系图拖线建立对象关系，再按需配置字段联动和高级行为。</p>
+        <h3>{{ modelOnly ? '对象关系' : '关系与级联' }}</h3>
+        <p>{{ modelOnly ? '维护对象之间的关系和字段端点；表单交互与字段联动在应用设计器中配置。' : '优先在关系图拖线建立对象关系，再按需配置字段联动和高级行为。' }}</p>
       </div>
       <n-space size="small">
         <n-button size="small" secondary @click="loadRelations">
@@ -57,30 +57,32 @@
           <n-empty v-else size="small" description="暂无关系" />
         </div>
 
-        <div class="rail-divider" />
+        <template v-if="!modelOnly">
+          <div class="rail-divider" />
 
-        <div class="rail-block">
-          <div class="rail-title">
-            <span>字段联动</span>
-            <n-button size="tiny" secondary @click="addLinkageRule">
-              新增
-            </n-button>
+          <div class="rail-block">
+            <div class="rail-title">
+              <span>字段联动</span>
+              <n-button size="tiny" secondary @click="addLinkageRule">
+                新增
+              </n-button>
+            </div>
+            <div v-if="localLinkage.rules.length" class="relation-choice-list">
+              <button
+                v-for="rule in localLinkage.rules"
+                :key="rule.ruleId"
+                type="button"
+                class="relation-choice linkage-choice"
+                :class="{ active: activePanel === 'linkage' && activeLinkageRuleId === rule.ruleId }"
+                @click="selectLinkageRule(rule.ruleId)"
+              >
+                <strong>{{ linkageRuleLabel(rule) }}</strong>
+                <span>{{ linkageRuleSentence(rule) }}</span>
+              </button>
+            </div>
+            <n-empty v-else size="small" description="暂无联动" />
           </div>
-          <div v-if="localLinkage.rules.length" class="relation-choice-list">
-            <button
-              v-for="rule in localLinkage.rules"
-              :key="rule.ruleId"
-              type="button"
-              class="relation-choice linkage-choice"
-              :class="{ active: activePanel === 'linkage' && activeLinkageRuleId === rule.ruleId }"
-              @click="selectLinkageRule(rule.ruleId)"
-            >
-              <strong>{{ linkageRuleLabel(rule) }}</strong>
-              <span>{{ linkageRuleSentence(rule) }}</span>
-            </button>
-          </div>
-          <n-empty v-else size="small" description="暂无联动" />
-        </div>
+        </template>
       </aside>
 
       <main class="relation-main-pane">
@@ -212,7 +214,7 @@
                 </div>
               </section>
 
-              <n-collapse class="relation-advanced-collapse" arrow-placement="right">
+              <n-collapse v-if="!modelOnly" class="relation-advanced-collapse" arrow-placement="right">
                 <n-collapse-item name="inline">
                   <template #header>
                     <span class="advanced-relation-title">
@@ -649,39 +651,39 @@
                     <section class="linkage-detail-section">
                       <strong>数据来源</strong>
                       <n-grid :cols="3" :x-gap="12" :y-gap="4" responsive="screen">
-                      <template v-if="rule.dataSourceType === 'dict'">
-                        <n-form-item-gi label="上级字典类型">
-                          <n-input v-model:value="rule.dictConfig.sourceDictType" placeholder="选择或填写字典类型" @update:value="markLinkageDirty" />
-                        </n-form-item-gi>
-                        <n-form-item-gi label="目标字典类型">
-                          <n-input v-model:value="rule.dictConfig.targetDictType" placeholder="选择或填写字典类型" @update:value="markLinkageDirty" />
-                        </n-form-item-gi>
-                        <n-form-item-gi v-if="rule.type === 'linkedDict'" label="关联字典类型">
-                          <n-input v-model:value="rule.dictConfig.linkedDictType" placeholder="选择或填写关联字典类型" @update:value="markLinkageDirty" />
-                        </n-form-item-gi>
-                      </template>
+                        <template v-if="rule.dataSourceType === 'dict'">
+                          <n-form-item-gi label="上级字典类型">
+                            <n-input v-model:value="rule.dictConfig.sourceDictType" placeholder="选择或填写字典类型" @update:value="markLinkageDirty" />
+                          </n-form-item-gi>
+                          <n-form-item-gi label="目标字典类型">
+                            <n-input v-model:value="rule.dictConfig.targetDictType" placeholder="选择或填写字典类型" @update:value="markLinkageDirty" />
+                          </n-form-item-gi>
+                          <n-form-item-gi v-if="rule.type === 'linkedDict'" label="关联字典类型">
+                            <n-input v-model:value="rule.dictConfig.linkedDictType" placeholder="选择或填写关联字典类型" @update:value="markLinkageDirty" />
+                          </n-form-item-gi>
+                        </template>
 
-                      <template v-else>
-                        <n-form-item-gi label="请求参数名">
-                          <n-input v-model:value="rule.remoteConfig.paramName" placeholder="例如：上级字段参数名" @update:value="markLinkageDirty" />
-                        </n-form-item-gi>
-                        <n-form-item-gi label="远程接口">
-                          <n-input v-model:value="rule.remoteConfig.url" placeholder="选择项接口地址" @update:value="markLinkageDirty" />
-                        </n-form-item-gi>
-                        <n-form-item-gi label="请求方式">
-                          <n-select v-model:value="rule.remoteConfig.method" :options="methodOptions" @update:value="markLinkageDirty" />
-                        </n-form-item-gi>
-                        <n-form-item-gi v-if="rule.type === 'objectReference'" label="目标对象">
-                          <n-select
-                            v-model:value="rule.objectConfig.targetObjectCode"
-                            :options="targetObjectOptions"
-                            clearable
-                            filterable
-                            placeholder="选择目标对象"
-                            @update:value="markLinkageDirty"
-                          />
-                        </n-form-item-gi>
-                      </template>
+                        <template v-else>
+                          <n-form-item-gi label="请求参数名">
+                            <n-input v-model:value="rule.remoteConfig.paramName" placeholder="例如：上级字段参数名" @update:value="markLinkageDirty" />
+                          </n-form-item-gi>
+                          <n-form-item-gi label="远程接口">
+                            <n-input v-model:value="rule.remoteConfig.url" placeholder="选择项接口地址" @update:value="markLinkageDirty" />
+                          </n-form-item-gi>
+                          <n-form-item-gi label="请求方式">
+                            <n-select v-model:value="rule.remoteConfig.method" :options="methodOptions" @update:value="markLinkageDirty" />
+                          </n-form-item-gi>
+                          <n-form-item-gi v-if="rule.type === 'objectReference'" label="目标对象">
+                            <n-select
+                              v-model:value="rule.objectConfig.targetObjectCode"
+                              :options="targetObjectOptions"
+                              clearable
+                              filterable
+                              placeholder="选择目标对象"
+                              @update:value="markLinkageDirty"
+                            />
+                          </n-form-item-gi>
+                        </template>
                       </n-grid>
                     </section>
 
@@ -868,6 +870,10 @@ const props = defineProps({
   designerOptions: {
     type: Object,
     default: () => ({}),
+  },
+  modelOnly: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -1491,11 +1497,13 @@ async function saveRelations() {
 function normalizeRelation(relation = {}) {
   const config = parseRelationConfig(relation.relationConfig)
   const selector = normalizeRelationSelector(config.recordSelector || config.selector)
+  const isKeyAlias = relation.relationName && relation.relationName === config.relationKey
   return {
     ...relation,
     clientKey: relation.id || createClientKey(),
     relationType: normalizeDesignerRelationType(relation.relationType),
-    relationName: relation.relationName || relationLabel(relation),
+    relationKey: config.relationKey || '',
+    relationName: (!isKeyAlias && relation.relationName) || relation.targetObjectName || relationLabel(relation),
     targetObjectCode: relation.targetObjectCode || '',
     sourceFieldCode: relation.sourceFieldCode || '',
     targetFieldCode: relation.targetFieldCode || '',
@@ -1544,6 +1552,7 @@ function toRelationPayload(relation = {}) {
 
 function buildRelationConfig(relation) {
   const config = {}
+  config.relationKey = relationCollectionKey(relation)
   if (relation.detailTabTitle)
     config.detailTabTitle = relation.detailTabTitle
   config.showInDetail = relation.showInDetail !== false
@@ -1996,7 +2005,8 @@ function relationQuantityActionCode(relation = {}) {
 }
 
 function relationCollectionKey(relation = {}) {
-  return lowerSnake(relation.targetObjectCode || relation.relationName || relation.clientKey || 'detail')
+  return relation.relationKey
+    || lowerSnake(relation.targetObjectCode || relation.relationName || relation.clientKey || 'detail')
 }
 
 function wrapExpression(path) {

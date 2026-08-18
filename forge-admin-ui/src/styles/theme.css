@@ -368,6 +368,9 @@
 .n-input {
   font-size: calc(var(--n-font-size) * var(--font-scale, 1)) !important;
 }
+.n-input .n-input__input-el {
+  height: fit-content;
+}
 .n-form-item .n-form-item-feedback-wrapper {
   font-size: calc(var(--n-feedback-font-size) * var(--font-scale, 1)) !important;
   min-height: calc(var(--n-feedback-height) * var(--font-scale, 1)) !important;

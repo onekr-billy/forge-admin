@@ -1,8 +1,12 @@
 <template>
   <div class="voice-settings-page">
     <div class="page-header">
-      <div class="page-title">语音设置</div>
-      <div class="page-subtitle">配置 ASR（语音识别）和 TTS（语音合成）模型</div>
+      <div class="page-title">
+        语音设置
+      </div>
+      <div class="page-subtitle">
+        配置 ASR（语音识别）和 TTS（语音合成）模型
+      </div>
     </div>
 
     <n-grid :cols="2" :x-gap="16">
@@ -71,9 +75,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { voiceAsr, voiceTts, modelListByProvider } from '@/api/ai'
+import { onMounted, ref } from 'vue'
+import { modelListByProvider, voiceAsr, voiceTts } from '@/api/ai'
 import { getFileUrl } from '@/utils/file'
 
 const message = useMessage()
@@ -104,7 +108,8 @@ async function loadModels() {
         .filter(m => m.modelType === 'tts')
         .map(m => ({ label: m.modelName || m.modelId, value: m.id }))
     }
-  } catch { /* ignore */ }
+  }
+  catch { /* ignore */ }
 }
 
 async function handleAsrTest({ file }) {
@@ -123,9 +128,11 @@ async function handleAsrTest({ file }) {
       asrResult.value = res.data
       message.success('语音识别成功')
     }
-  } catch (e) {
-    message.error('语音识别失败: ' + (e.message || '未知错误'))
-  } finally {
+  }
+  catch (e) {
+    message.error(`语音识别失败: ${e.message || '未知错误'}`)
+  }
+  finally {
     asrTesting.value = false
   }
 }
@@ -150,9 +157,11 @@ async function handleTtsTest() {
       ttsResultFileId.value = res.data
       message.success('语音合成成功')
     }
-  } catch (e) {
-    message.error('语音合成失败: ' + (e.message || '未知错误'))
-  } finally {
+  }
+  catch (e) {
+    message.error(`语音合成失败: ${e.message || '未知错误'}`)
+  }
+  finally {
     ttsTesting.value = false
   }
 }

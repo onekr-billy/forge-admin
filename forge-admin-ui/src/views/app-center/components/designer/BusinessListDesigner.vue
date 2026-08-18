@@ -210,7 +210,7 @@
       </div>
     </div>
 
-    <section class="list-custom-actions-entry">
+    <section v-if="!defaultViewOnly" class="list-custom-actions-entry">
       <div class="custom-actions-entry-copy">
         <strong>自定义操作</strong>
         <span>配置列表顶部按钮和每行操作按钮，当前共 {{ listCustomActions.length }} 个。</span>
@@ -248,7 +248,8 @@
           :pages="designerPages"
           :form-options="formOptions"
           :runtime-crud-props="designerRuntimeCrudProps"
-          :custom-actions="listCustomActions"
+          :custom-actions="visibleListCustomActions"
+          :custom-actions-editable="!defaultViewOnly"
           @update:model-value="handleGridLayoutUpdate"
           @update:custom-actions="handleListCustomActionsUpdate"
         />
@@ -272,7 +273,7 @@
         :pages="designerPages"
         :form-options="formOptions"
         :runtime-crud-props="designerRuntimeCrudProps"
-        :custom-actions="listCustomActions"
+        :custom-actions="visibleListCustomActions"
         readonly
       />
     </n-modal>
@@ -356,6 +357,10 @@ const props = defineProps({
   designerActions: {
     type: Array,
     default: () => [],
+  },
+  defaultViewOnly: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -460,7 +465,8 @@ const previewGridLayout = computed(() => {
     : bootstrapGridLayoutFromZones(localSchema.value.zones || [], effectiveModelSchema.value, { layoutType: localSchema.value.layoutType })
   return syncGridLayoutWithModel(source, effectiveModelSchema.value, { layoutType: localSchema.value.layoutType })
 })
-const designerRuntimeCrudProps = computed(() => buildDesignerRuntimeCrudProps(localSchema.value, designFields.value, listCustomActions.value))
+const visibleListCustomActions = computed(() => props.defaultViewOnly ? [] : listCustomActions.value)
+const designerRuntimeCrudProps = computed(() => buildDesignerRuntimeCrudProps(localSchema.value, designFields.value, visibleListCustomActions.value))
 
 function resolveTemplateSelectValue(layoutType = '') {
   return layoutType === 'tree-crud' ? 'tree-crud' : 'simple-crud'
@@ -1019,8 +1025,12 @@ async function saveLayout() {
   if (!props.objectId)
     return
   const schema = normalizeSchemaForSave(resolveSchema(localSchema.value, effectiveModelSchema.value))
-  const designerActions = buildDesignerActionsForSave()
-  const invalidApiAction = designerActions.find(action => action.status !== 0 && isInvalidDesignerApiAction(action))
+  const designerActions = props.defaultViewOnly
+    ? cloneSchema(props.designerActions || [])
+    : buildDesignerActionsForSave()
+  const invalidApiAction = props.defaultViewOnly
+    ? null
+    : designerActions.find(action => action.status !== 0 && isInvalidDesignerApiAction(action))
   if (invalidApiAction) {
     const actionName = invalidApiAction.actionName || '自定义操作'
     message.warning(`请为“${actionName}”配置接口地址或能力标识`)
@@ -1028,7 +1038,8 @@ async function saveLayout() {
   }
   saving.value = true
   try {
-    await saveBusinessObjectActions(props.objectId, designerActions)
+    if (!props.defaultViewOnly)
+      await saveBusinessObjectActions(props.objectId, designerActions)
     await saveBusinessObjectListLayout(props.objectId, {
       layoutKey: 'list',
       layoutName: '列表布局',
@@ -1040,17 +1051,21 @@ async function saveLayout() {
       },
     })
     const viewSchema = buildCurrentViewSchema(schema)
-    await saveBusinessObjectDesigner(props.objectId, {
+    const designerPayload = {
       pageSchema: cloneSchema(schema),
       viewSchema: cloneSchema(viewSchema),
-      designerOptions: cloneSchema({
+    }
+    if (!props.defaultViewOnly) {
+      designerPayload.designerOptions = cloneSchema({
         ...(props.designerOptions || {}),
         actions: designerActions,
-      }),
-    })
+      })
+    }
+    await saveBusinessObjectDesigner(props.objectId, designerPayload)
     setLocalSchema(schema, { external: true })
     emit('update:viewSchema', cloneSchema(viewSchema))
-    emit('update:designerActions', cloneSchema(designerActions))
+    if (!props.defaultViewOnly)
+      emit('update:designerActions', cloneSchema(designerActions))
     emit('saved', cloneSchema(schema))
     emit('dirtyChange', false)
     message.success('列表布局已保存')
@@ -1187,10 +1202,13 @@ function buildDesignerCrudHookHandlers(tableProps = {}) {
 }
 
 function handleListCustomActionsUpdate(actions = []) {
+  if (props.defaultViewOnly)
+    return
   const nextActions = normalizeListCustomActions(actions)
   listCustomActions.value = nextActions
   setLocalSchema(syncSchemaCustomActions(localSchema.value, nextActions))
-  emit('update:designerActions', cloneSchema(nextActions.map((action, index) => listActionToDesignerAction(action, index, { preserveDraftParams: true }))))
+  const managedActions = nextActions.map((action, index) => listActionToDesignerAction(action, index, { preserveDraftParams: true }))
+  emit('update:designerActions', cloneSchema(mergeUnmanagedChildRowActions(managedActions)))
   emit('dirtyChange', true)
 }
 
@@ -1207,13 +1225,29 @@ function createRowCustomAction() {
 }
 
 function buildDesignerActionsForSave() {
-  return normalizeListCustomActions(listCustomActions.value).map((action, index) => listActionToDesignerAction(action, index))
+  const managedActions = normalizeListCustomActions(listCustomActions.value)
+    .map((action, index) => listActionToDesignerAction(action, index))
+  return mergeUnmanagedChildRowActions(managedActions)
 }
 
 function normalizeDesignerActionsForList(actions = []) {
   if (!Array.isArray(actions))
     return []
-  return normalizeListCustomActions(actions.map(designerActionToListAction))
+  return normalizeListCustomActions(actions
+    .filter(action => !isChildRowDesignerAction(action))
+    .map(designerActionToListAction))
+}
+
+function mergeUnmanagedChildRowActions(managedActions = []) {
+  const childActions = (Array.isArray(props.designerActions) ? props.designerActions : [])
+    .filter(isChildRowDesignerAction)
+  return [...managedActions, ...cloneSchema(childActions)]
+}
+
+function isChildRowDesignerAction(action = {}) {
+  return String(action.actionPosition || action.position || '')
+    .replace(/[-\s]+/g, '_')
+    .toUpperCase() === 'CHILD_ROW'
 }
 
 function syncSchemaCustomActions(schema = {}, actions = []) {
@@ -1291,7 +1325,9 @@ function designerActionToListAction(action = {}, index = 0) {
     routePath,
     targetFormKey: config.targetFormKey || action.targetFormKey || '',
     openTarget: config.openTarget || action.openTarget || (actionType === 'OPEN_EXTERNAL' ? '_blank' : '_self'),
-    permissionCode: action.permission || action.permissionCode || '',
+    permissionKey: action.permissionKey || action.permissionCode || action.permission || '',
+    permissionCode: action.permissionKey || action.permissionCode || action.permission || '',
+    permissionStrategy: action.permissionStrategy === 'disable' ? 'disable' : 'hide',
     confirmText: action.confirmText || (action.confirmRequired ? `确认执行“${action.actionName || action.label || '该操作'}”？` : ''),
     displayCondition: action.displayCondition || config.displayCondition || '',
     successBehavior: action.successBehavior || config.successBehavior || 'none',
@@ -1314,7 +1350,9 @@ function listActionToDesignerAction(action = {}, index = 0, options = {}) {
     actionPosition: normalizeDesignerActionPosition(normalized.position),
     actionType,
     visible: normalized.visible !== false,
-    permission: normalized.permissionCode || '',
+    permissionKey: normalized.permissionKey || normalized.permissionCode || '',
+    permission: normalized.permissionKey || normalized.permissionCode || '',
+    permissionStrategy: normalized.permissionStrategy === 'disable' ? 'disable' : 'hide',
     confirmRequired: Boolean(normalized.confirmText),
     confirmText: normalized.confirmText || '',
     successMessage: normalized.successMessage || '',
@@ -1413,7 +1451,9 @@ function normalizeListCustomAction(action = {}, index = 0) {
     routePath: action.routePath || resolveListActionRoutePath(actionType, config),
     targetFormKey: action.targetFormKey || config.targetFormKey || '',
     openTarget: action.openTarget || config.openTarget || (actionType === 'external' ? '_blank' : '_self'),
-    permissionCode: action.permissionCode || action.permission || '',
+    permissionKey: action.permissionKey || action.permissionCode || action.permission || '',
+    permissionCode: action.permissionKey || action.permissionCode || action.permission || '',
+    permissionStrategy: action.permissionStrategy === 'disable' ? 'disable' : 'hide',
     confirmText: action.confirmText || '',
     displayCondition: action.displayCondition || config.displayCondition || '',
     successBehavior: action.successBehavior || config.successBehavior || 'none',

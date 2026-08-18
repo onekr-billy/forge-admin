@@ -1,21 +1,33 @@
 <template>
-  <div class="business-flow-binding-panel">
+  <div class="business-flow-binding-panel" :class="{ compact, 'compact-expanded': compactExpanded }">
+    <n-alert type="info" :bordered="false" class="legacy-entry-alert">
+      流程绑定配置已整合到业务流程画布，建议在新入口维护。此处仅支持查看历史配置。
+      <template #action>
+        <n-button data-open-process-workspace text type="primary" @click="openProcessWorkspace">
+          前往应用工作台业务流程
+        </n-button>
+      </template>
+    </n-alert>
+
     <div class="flow-head">
       <div>
-        <h3>流程与自动化</h3>
-        <p>绑定默认流程并进入流程设计器配置节点；业务字段由表单设计自动提供给流程使用。</p>
+        <h3>{{ compact ? '流程绑定' : '流程与自动化' }}</h3>
+        <p>{{ compact ? '选择流程模型和启动方式，节点配置会在下方自动生成。' : '绑定默认流程并进入流程设计器配置节点；业务字段由表单设计自动提供给流程使用。' }}</p>
       </div>
       <n-space size="small">
+        <n-button v-if="compact" size="small" quaternary @click="compactExpanded = !compactExpanded">
+          {{ compactExpanded ? '收起完整设置' : '完整绑定设置' }}
+        </n-button>
         <n-button size="small" secondary :loading="loading" @click="loadBinding">
           刷新
         </n-button>
-        <n-button size="small" type="primary" :loading="saving" @click="saveConfig">
+        <n-button v-if="!legacyReadOnly" size="small" type="primary" :loading="saving" @click="saveConfig">
           保存流程
         </n-button>
       </n-space>
     </div>
 
-    <div class="flow-body">
+    <div class="flow-body" :class="{ 'is-read-only': legacyReadOnly }" aria-readonly="true">
       <main class="flow-main">
         <n-spin :show="loading">
           <section class="flow-card">
@@ -48,7 +60,7 @@
                     @update:value="markDirty"
                   />
                 </n-form-item-gi>
-                <n-form-item-gi :span="2" label="流程标题模板">
+                <n-form-item-gi v-if="!compact || compactExpanded" :span="2" label="流程标题模板">
                   <TemplateVariableEditor
                     v-model="form.titleTemplate"
                     :fields="fieldOptions"
@@ -325,6 +337,7 @@
 <script setup>
 import { useMessage } from 'naive-ui'
 import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { businessFlowBinding, businessFlowFormAssets, businessFlowVariables, businessObjectActions, saveBusinessFlowBinding } from '@/api/business-app'
 import flowApi from '@/api/flow'
 import TemplateVariableEditor from './TemplateVariableEditor.vue'
@@ -354,13 +367,23 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
+  applicationCode: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['dirtyChange', 'saved', 'loaded'])
+const emit = defineEmits(['dirtyChange', 'saved', 'loaded', 'contextChange'])
 
 const FlowDesignPage = defineAsyncComponent(() => import('@/views/flow/design.vue'))
 
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const flowModelsLoading = ref(false)
@@ -375,7 +398,9 @@ const flowFieldCandidates = ref([])
 const formAssetWarnings = ref([])
 const actionOptions = ref([])
 const flowDesignerVisible = ref(false)
+const compactExpanded = ref(false)
 const form = reactive(createDefaultBinding())
+const legacyReadOnly = true
 
 const startModeOptions = [
   { label: '用户点击按钮', value: 'MANUAL' },
@@ -491,6 +516,21 @@ async function loadBinding() {
   finally {
     loading.value = false
   }
+}
+
+function openProcessWorkspace() {
+  const applicationCode = normalizeText(props.applicationCode)
+    || normalizeText(route.params.applicationCode)
+    || normalizeText(route.query.applicationCode)
+  if (!applicationCode) {
+    router.push('/app-center')
+    return
+  }
+  router.push({
+    name: 'BusinessApplicationWorkspace',
+    params: { applicationCode },
+    query: { section: 'automation' },
+  })
 }
 
 async function loadActionOptions() {
@@ -692,6 +732,7 @@ function handleFlowChange(value) {
   form.flowModelName = flowModelOptions.value.find(item => item.value === value)?.modelName || ''
   form.variableMapping = []
   form.nodeForms = []
+  emitFlowContext()
   loadVariableCandidates()
   markDirty()
 }
@@ -710,9 +751,14 @@ function handleBusinessBindingModeChange(value) {
 async function loadVariableCandidates() {
   variableOptions.value = []
   flowFieldCandidates.value = []
-  if (!form.flowModelKey)
+  if (!form.flowModelKey) {
+    userTasks.value = []
+    emitFlowContext()
     return
+  }
   variablesLoading.value = true
+  emitFlowContext()
+  let contextError = ''
   try {
     const res = await businessFlowVariables(form.flowModelKey, { objectCode: props.objectCode })
     const data = res.data || {}
@@ -729,11 +775,23 @@ async function loadVariableCandidates() {
     flowFieldCandidates.value = []
     userTasks.value = []
     ensureVariableMappings()
+    contextError = e.message || '流程节点解析失败，可暂时使用历史手动配置'
     message.warning(e.message || '流程变量候选项加载失败')
   }
   finally {
     variablesLoading.value = false
+    emitFlowContext(contextError)
   }
+}
+
+function emitFlowContext(error = '') {
+  emit('contextChange', {
+    flowModelKey: normalizeText(form.flowModelKey),
+    flowModelName: normalizeText(form.flowModelName || selectedFlowName()),
+    userTasks: userTasks.value.map(task => ({ ...task })),
+    loading: variablesLoading.value,
+    error,
+  })
 }
 
 function ensureVariableMappings() {
@@ -1046,8 +1104,66 @@ defineExpose({
 <style scoped>
 .business-flow-binding-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 100%;
+}
+
+.legacy-entry-alert {
+  margin: 12px 16px 0;
+}
+
+.business-flow-binding-panel.compact {
+  border: 0;
+  background: #fff;
+}
+
+.business-flow-binding-panel.compact .flow-head {
+  min-height: 54px;
+  padding: 10px 16px;
+}
+
+.business-flow-binding-panel.compact .flow-main {
+  padding: 0;
+  background: #fff;
+}
+
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-main > :deep(.n-spin-container) {
+  padding: 0;
+}
+
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-card:first-child {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.3fr) minmax(420px, 1fr);
+  align-items: center;
+  gap: 20px;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  border-radius: 0;
+  padding: 10px 16px 6px;
+}
+
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-card:first-child .flow-card-head {
+  align-items: center;
+  margin: 0 0 4px;
+}
+
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-card:first-child .flow-card-head p,
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-step-index,
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-field-binding-card,
+.business-flow-binding-panel.compact:not(.compact-expanded) .advanced-flow-collapse,
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-step-card {
+  display: none;
+}
+
+.business-flow-binding-panel.compact:not(.compact-expanded) .flow-card:first-child :deep(.n-grid) {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 900px) {
+  .business-flow-binding-panel.compact:not(.compact-expanded) .flow-card:first-child {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 }
 
 .flow-head {
@@ -1078,6 +1194,12 @@ defineExpose({
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
+}
+
+.flow-body.is-read-only {
+  cursor: default;
+  opacity: 0.82;
+  pointer-events: none;
 }
 
 .flow-main {

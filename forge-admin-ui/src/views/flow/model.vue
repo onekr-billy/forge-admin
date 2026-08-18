@@ -298,7 +298,7 @@
                   placeholder="留空默认跳待办详情页；可填相对路径或完整链接"
                   clearable
                 />
-                <div class="text-12px text-gray-400 mt-1">
+                <div class="text-12px mt-1 text-gray-400">
                   企业协同待办卡片点击后的跳转地址，支持占位符 {taskId}/{businessKey}/{processInstanceId}（自动替换并 URL 编码）。例：/#/pages/order-detail?bizKey={businessKey}
                 </div>
               </div>

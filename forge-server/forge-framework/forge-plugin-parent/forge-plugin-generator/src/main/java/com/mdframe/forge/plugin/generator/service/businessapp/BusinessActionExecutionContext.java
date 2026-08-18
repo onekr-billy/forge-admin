@@ -36,9 +36,20 @@ public class BusinessActionExecutionContext {
 
     private Map<String, Object> recordData = new LinkedHashMap<>();
 
+    /** CHILD_ROW 动作的服务端权威父记录；普通动作保持为空。 */
+    private Map<String, Object> parentRecordData = new LinkedHashMap<>();
+
     private Map<String, Object> formData = new LinkedHashMap<>();
 
     private Map<String, Object> extraContext = new LinkedHashMap<>();
 
+    /** 仅由服务端可信 Session/执行身份构建，客户端同名字段不能覆盖。 */
+    private Map<String, Object> systemContext = new LinkedHashMap<>();
+
+    private String executionMode;
+
     private Map<String, Object> scopedVariables = new LinkedHashMap<>();
+
+    /** 本次执行成功完成的结构化状态迁移摘要，不保存业务原值。 */
+    private java.util.List<Map<String, Object>> auditTransitions = new java.util.ArrayList<>();
 }

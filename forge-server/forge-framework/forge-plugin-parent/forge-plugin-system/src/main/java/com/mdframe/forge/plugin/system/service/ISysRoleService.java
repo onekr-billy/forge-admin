@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.mdframe.forge.plugin.system.dto.RoleUserQuery;
 import com.mdframe.forge.plugin.system.dto.RoleDataScopeSettingsDTO;
+import com.mdframe.forge.plugin.system.dto.ScopedRolePermissionDTO;
 import com.mdframe.forge.plugin.system.dto.SysRoleDTO;
 import com.mdframe.forge.plugin.system.dto.SysRoleQuery;
 import com.mdframe.forge.plugin.system.entity.SysUser;
@@ -129,6 +130,11 @@ public interface ISysRoleService extends IService<SysRole> {
      * 保存角色默认及业务模块数据范围。
      */
     boolean saveRoleDataScopeSettings(Long roleId, RoleDataScopeSettingsDTO settings);
+
+    /**
+     * 只替换指定资源和业务模块范围内的角色授权。
+     */
+    boolean saveScopedRolePermissions(Long roleId, ScopedRolePermissionDTO settings);
 
     /**
      * 查询角色适用组织ID列表。

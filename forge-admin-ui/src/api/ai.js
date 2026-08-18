@@ -775,6 +775,21 @@ export function knowledgeDocumentConfirm(documentId) {
   return request.post(`/ai/knowledge/document/${documentId}/confirm`)
 }
 
+/** 重新处理失败文档 */
+export function knowledgeDocumentReprocess(documentId) {
+  return request.post(`/ai/knowledge/document/${documentId}/reprocess`)
+}
+
+/** 查看文档分块列表 */
+export function knowledgeDocumentChunks(documentId) {
+  return request.get(`/ai/knowledge/document/${documentId}/chunks`)
+}
+
+/** 查看文档原始内容 */
+export function knowledgeDocumentContent(documentId) {
+  return request.get(`/ai/knowledge/document/${documentId}/content`)
+}
+
 /** 删除文档 */
 export function knowledgeDocumentDelete(documentId) {
   return request.delete(`/ai/knowledge/document/${documentId}`)
@@ -837,6 +852,16 @@ export function knowledgeDocumentProgressSSE(documentId, onEvent, onComplete, on
 /** 知识库检索调试 */
 export function knowledgeSearch(data) {
   return request.post('/ai/knowledge/search', data)
+}
+
+/** RAG 增强检索（管线：融合/Rerank/查询补全，支持 searchType=vector/bm25/hybrid） */
+export function ragSearch(data) {
+  return request.post('/ai/rag/search', data)
+}
+
+/** RAG 增强检索调试（额外返回元信息：实际检索类型/各路命中数/耗时/补全query） */
+export function ragSearchDebug(data) {
+  return request.post('/ai/rag/search/debug', data)
 }
 
 // ========== 向量存储实例 ==========

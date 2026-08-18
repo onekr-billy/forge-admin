@@ -247,7 +247,7 @@
         <view class="support-icon">
           <AiIcon icon="/static/icons/ai-icon/info.svg" color="#2563eb" size="lg" />
         </view>
-        <text class="support-title">Forge H5</text>
+        <text class="support-title">Forge 移动端</text>
         <text class="support-desc">支持移动端菜单、消息中心、流程待办和账号自助维护。遇到权限或页面打不开时，请先在首页刷新信息。</text>
         <view class="support-actions">
           <AiButton variant="secondary" size="sm" @click="refreshUser">

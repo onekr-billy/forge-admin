@@ -4,19 +4,23 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
   businessFlowFormAssets,
   businessObjectActions,
+  businessObjectDesigner,
   businessObjectFields,
+  saveBusinessObjectActions,
 } from '@/api/business-app'
 import { businessApplicationObjects } from '@/api/business-application'
 import {
   businessProcessDesigner,
   businessProcessFlowModels,
   businessProcessPage,
+  publishBusinessProcess,
   saveBusinessProcessSchema,
   validateBusinessProcess,
 } from '@/api/business-process'
 import messageApi from '@/api/message'
 import { businessProcessHashInput } from '@/components/business-process-designer/business-process-schema.js'
 import BusinessProcessDesigner from '@/components/business-process-designer/BusinessProcessDesigner.vue'
+import ObjectActionEditor from './components/designer/ObjectActionEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +34,7 @@ const saveState = ref('idle')
 const saveError = ref('')
 const dirty = ref(false)
 const saveQueued = ref(false)
+const publishing = ref(false)
 const applicationObjects = ref([])
 const fields = ref([])
 const flowModels = ref([])
@@ -163,6 +168,98 @@ function handleDirtyChange(value) {
   dirty.value = Boolean(value)
 }
 
+// ===== 画布内直接编辑 / 新建业务动作（动作是流程的执行节点） =====
+const actionEditorVisible = ref(false)
+const actionEditorContext = ref(null) // { actionCode, isNew, nodeId }
+const subjectDesigner = ref(null) // 主对象设计数据（fields/relations/configKey）
+
+async function openActionEditor(payload = {}) {
+  const objectId = stringValue(process.value?.subjectObjectId)
+  if (!objectId) {
+    window.$message?.warning('该流程未绑定业务对象，无法配置动作')
+    return
+  }
+  if (!subjectDesigner.value) {
+    try {
+      const res = await businessObjectDesigner(objectId)
+      subjectDesigner.value = res?.data || {}
+    }
+    catch {
+      subjectDesigner.value = {}
+    }
+  }
+  actionEditorContext.value = payload
+  actionEditorVisible.value = true
+}
+
+const editingAction = computed(() => {
+  const ctx = actionEditorContext.value
+  if (!ctx)
+    return []
+  if (ctx.isNew) {
+    return [{
+      actionCode: `action_${Date.now()}`,
+      actionName: '新操作',
+      actionPosition: 'ROW',
+      actionType: 'COMMAND',
+      permission: '',
+      confirmRequired: true,
+      successMessage: '',
+      status: 1,
+      sortOrder: (businessActions.value.length + 1) * 10,
+      actionConfig: { triggerScene: 'MANUAL', executionMode: 'LOCAL_TRANSACTION', inputSchema: [], steps: [] },
+    }]
+  }
+  return businessActions.value.filter(item => stringValue(item?.actionCode) === stringValue(ctx.actionCode))
+})
+
+const subjectDesignerSummaries = computed(() => {
+  const objectId = stringValue(process.value?.subjectObjectId)
+  return objectId && subjectDesigner.value ? { [objectId]: subjectDesigner.value } : {}
+})
+
+function bindActionToNode(nodeId, actionCode) {
+  const schema = draftSchema.value
+  const nodes = schema?.nodes
+  if (!Array.isArray(nodes))
+    return
+  const index = nodes.findIndex(node => node?.id === nodeId)
+  if (index < 0)
+    return
+  const nextNodes = nodes.slice()
+  nextNodes[index] = {
+    ...nextNodes[index],
+    config: { ...(nextNodes[index].config || {}), actionType: 'BUSINESS_ACTION', businessActionCode: actionCode },
+  }
+  draftSchema.value = { ...schema, nodes: nextNodes }
+  dirty.value = true
+}
+
+async function handleActionSaved(actions) {
+  const objectId = stringValue(process.value?.subjectObjectId)
+  const saved = actions?.[0]
+  if (!objectId || !saved?.actionCode)
+    return
+  try {
+    const full = await businessObjectActions(objectId)
+    const list = (full?.data || []).slice()
+    const index = list.findIndex(item => stringValue(item?.actionCode) === stringValue(saved.actionCode))
+    if (index >= 0)
+      list.splice(index, 1, saved)
+    else
+      list.push(saved)
+    await saveBusinessObjectActions(objectId, list)
+    window.$message?.success(`业务动作「${saved.actionName || saved.actionCode}」已保存`)
+    if (actionEditorContext.value?.isNew && actionEditorContext.value.nodeId)
+      bindActionToNode(actionEditorContext.value.nodeId, saved.actionCode)
+    actionEditorVisible.value = false
+    await loadCatalogs()
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '保存业务动作失败')
+  }
+}
+
 async function handleSave(schema, metadata = {}) {
   return persistSchema(schema, metadata)
 }
@@ -259,19 +356,73 @@ async function handleValidate(schema) {
 function returnToApplication() {
   const returnTo = String(route.query.returnTo || '')
   if (isLocalPath(returnTo)) {
-    router.push(returnTo)
+    router.push(resolveReturnTarget(returnTo))
     return
   }
   const applicationCode = String(route.query.applicationCode || '')
   if (applicationCode) {
     router.push({
-      name: 'BusinessApplicationWorkspace',
+      name: 'BusinessApplicationRuntime',
       params: { applicationCode },
-      query: { section: 'automation' },
+      query: { designSection: 'automation' },
     })
     return
   }
   router.push('/app-center')
+}
+
+// 独立发布：只生成当前流程的不可变版本并切换运行投影，不触发应用发布。
+async function openApplicationPublish() {
+  if (publishing.value)
+    return
+  if (dirty.value) {
+    notify('warning', '请先保存流程草稿，再发布流程')
+    return
+  }
+  if (!window.$dialog)
+    return
+  window.$dialog.warning({
+    title: '发布业务流程',
+    content: '将为当前流程生成不可变流程版本并立即生效，应用内其他资产与流程不受影响。',
+    positiveText: '检查并发布',
+    negativeText: '取消',
+    onPositiveClick: () => executePublish(),
+  })
+}
+
+async function executePublish() {
+  if (publishing.value)
+    return
+  publishing.value = true
+  try {
+    const validation = await validateBusinessProcess(processId.value)
+    if (!validation.data?.valid) {
+      const errorCount = Number(validation.data?.errorCount || 0)
+      notify('warning', errorCount
+        ? `流程检查发现 ${errorCount} 项错误，请修正后再发布`
+        : '流程检查未通过，请修正后再发布')
+      return
+    }
+    const response = await publishBusinessProcess(processId.value)
+    const versionNo = Number(response.data?.versionNo || 0)
+    notify('success', versionNo ? `业务流程已发布为 V${versionNo}` : '业务流程发布成功')
+    returnToApplication()
+  }
+  catch (error) {
+    notify('error', errorMessage(error, '业务流程发布失败'))
+  }
+  finally {
+    publishing.value = false
+  }
+}
+
+function resolveReturnTarget(returnTo) {
+  // button（按钮动作配置）与 designer（页面设计资源树）两类来源方都会监听 processRefresh 重载列表。
+  if (!['button', 'designer'].includes(String(route.query.from || '')))
+    return returnTo
+  const target = new URL(returnTo, window.location.origin)
+  target.searchParams.set('processRefresh', processId.value)
+  return `${target.pathname}${target.search}${target.hash}`
 }
 
 function confirmLeave() {
@@ -363,7 +514,18 @@ function notify(type, message) {
         <span>{{ subjectObject?.objectName || process.subjectObjectCode }}</span>
       </div>
       <div class="process-page-boundary">
-        应用画布负责业务编排，审批内部配置仍由 Flowable 管理
+        <span>应用画布负责业务编排，审批内部配置仍由 Flowable 管理</span>
+        <n-button
+          data-process-action="publish"
+          size="tiny"
+          type="primary"
+          secondary
+          :loading="publishing"
+          title="生成不可变流程版本并立即生效，不影响应用内其他资产"
+          @click="openApplicationPublish"
+        >
+          发布
+        </n-button>
       </div>
     </header>
 
@@ -408,9 +570,31 @@ function notify(type, message) {
         @validate="handleValidate"
         @dirty-change="handleDirtyChange"
         @refresh-flow-model="refreshFlowCatalog"
+        @edit-action="openActionEditor"
         @reload="loadDesigner"
       />
     </main>
+
+    <!-- 画布内编辑 / 新建业务动作 -->
+    <n-modal
+      v-model:show="actionEditorVisible"
+      preset="card"
+      :title="actionEditorContext?.isNew ? '新建业务动作' : '编辑业务动作'"
+      class="action-editor-modal"
+      :style="{ width: 'min(960px, 94vw)' }"
+      @after-leave="actionEditorContext = null"
+    >
+      <ObjectActionEditor
+        :actions="editingAction"
+        :fields="subjectDesigner?.fields || []"
+        :relations="subjectDesigner?.relations || []"
+        :objects="applicationObjects"
+        :designer-summaries="subjectDesignerSummaries"
+        :object-code="process?.subjectObjectCode || ''"
+        :config-key="subjectDesigner?.configKey || ''"
+        @save="handleActionSaved"
+      />
+    </n-modal>
   </div>
 </template>
 
@@ -487,6 +671,10 @@ function notify(type, message) {
   border-left: 1px solid var(--border-color, #e5e7eb);
   line-height: 1.5;
   text-align: right;
+}
+.process-page-boundary span {
+  display: block;
+  margin-bottom: 6px;
 }
 
 .process-page-main {

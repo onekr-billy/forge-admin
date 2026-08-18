@@ -26,7 +26,7 @@
             <image class="brand-logo" :src="assetUrl('/static/logo.png')" mode="aspectFit" />
           </view>
           <view class="brand-copy">
-            <text class="brand-title">FORGE H5</text>
+            <text class="brand-title">FORGE 移动端</text>
             <text class="brand-subtitle">移动端模板</text>
           </view>
         </view>
@@ -105,7 +105,7 @@
       </view>
 
       <view class="login-foot">
-        <text>© 2026 FORGE H5</text>
+        <text>© 2026 FORGE 移动端</text>
         <text class="foot-dot" />
         <text>{{ requestPrefix }}</text>
       </view>
@@ -131,7 +131,7 @@ function normalizeLoginError(error) {
 export default {
   data() {
     return {
-      title: import.meta.env.VITE_TITLE || 'Forge H5',
+      title: import.meta.env.VITE_TITLE || 'Forge 移动端',
       userClient: import.meta.env.VITE_USER_CLIENT || 'app',
       requestPrefix: import.meta.env.VITE_REQUEST_PREFIX || '/',
       redirect: '/pages/index/index',

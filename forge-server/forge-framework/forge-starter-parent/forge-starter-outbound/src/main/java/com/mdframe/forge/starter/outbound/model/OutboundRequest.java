@@ -3,6 +3,7 @@ package com.mdframe.forge.starter.outbound.model;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.time.Duration;
 import java.util.Map;
 
 @Getter
@@ -22,4 +23,12 @@ public class OutboundRequest {
 
     @Builder.Default
     private final byte[] body = new byte[0];
+
+    private final Duration connectTimeout;
+
+    private final Duration readTimeout;
+
+    private final Duration writeTimeout;
+
+    private final Duration callTimeout;
 }

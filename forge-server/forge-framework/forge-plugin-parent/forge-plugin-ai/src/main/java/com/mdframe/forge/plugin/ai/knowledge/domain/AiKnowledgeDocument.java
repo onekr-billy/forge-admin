@@ -29,9 +29,9 @@ public class AiKnowledgeDocument extends TenantEntity {
     private Long knowledgeId;
 
     /**
-     * 文件ID(sys_file)
+     * 文件ID（FileManager 上传返回的 UUID 字符串）
      */
-    private Long fileId;
+    private String fileId;
 
     /**
      * 文档名称

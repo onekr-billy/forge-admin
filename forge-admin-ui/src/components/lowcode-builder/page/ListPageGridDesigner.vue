@@ -1476,8 +1476,8 @@
                           </draggable>
                           <span v-if="!crudTablePanelFields.length" class="custom-action-empty">暂无可配置字段</span>
                         </div>
-                        <div class="bitable-field-operation-divider" />
-                        <div class="bitable-field-operation-group">
+                        <div v-if="customActionsEditable" class="bitable-field-operation-divider" />
+                        <div v-if="customActionsEditable" class="bitable-field-operation-group">
                           <div class="bitable-field-operation-head">
                             <div class="bitable-field-operation-title">
                               <span class="bitable-field-drag disabled">
@@ -1508,7 +1508,7 @@
                             </button>
                           </div>
                         </div>
-                        <div class="bitable-operation-list">
+                        <div v-if="customActionsEditable" class="bitable-operation-list">
                           <draggable
                             :model-value="rowCustomActions"
                             item-key="clientKey"
@@ -1911,7 +1911,7 @@
                         />
                       </div>
                     </n-form-item>
-                    <n-form-item label="工具栏按钮">
+                    <n-form-item v-if="customActionsEditable" label="工具栏按钮">
                       <div class="custom-action-builder">
                         <div class="custom-action-builder-section">
                           <div class="custom-action-builder-head">
@@ -2205,8 +2205,10 @@
                     </n-space>
                   </n-checkbox-group>
                 </n-form-item>
-                <n-divider>自定义操作按钮</n-divider>
-                <div class="custom-action-builder">
+                <n-divider v-if="customActionsEditable">
+                  自定义操作按钮
+                </n-divider>
+                <div v-if="customActionsEditable" class="custom-action-builder">
                   <div class="custom-action-builder-section">
                     <div class="custom-action-builder-head">
                       <div>
@@ -4158,7 +4160,7 @@
       </n-drawer-content>
     </n-drawer>
 
-    <n-modal v-model:show="customActionModalOpen" :mask-closable="false">
+    <n-modal v-if="customActionsEditable" v-model:show="customActionModalOpen" :mask-closable="false">
       <n-card
         class="custom-action-modal"
         title="配置自定义操作"
@@ -4727,6 +4729,10 @@ const props = defineProps({
   customActions: {
     type: Array,
     default: null,
+  },
+  customActionsEditable: {
+    type: Boolean,
+    default: true,
   },
   panelOnly: {
     type: Boolean,
@@ -9379,6 +9385,8 @@ function getCustomActionIdentity(action = {}) {
 }
 
 function addCustomAction(position = 'row') {
+  if (!props.customActionsEditable)
+    return
   const list = [...customActionList.value]
   const normalizedPosition = ['toolbar', 'row', 'detail'].includes(position) ? position : 'row'
   const clientKey = createCustomActionClientKey()
@@ -9408,6 +9416,8 @@ function addCustomAction(position = 'row') {
 }
 
 function openCustomActionManager(actionOrIdentity = '') {
+  if (!props.customActionsEditable)
+    return
   if (!customActionList.value.length) {
     addCustomAction('toolbar')
     activeActionIndex.value = 0
@@ -9422,6 +9432,8 @@ function openCustomActionManager(actionOrIdentity = '') {
 }
 
 function createAndEditCustomAction(position = 'toolbar') {
+  if (!props.customActionsEditable)
+    return
   addCustomAction(position)
   customActionModalOpen.value = true
 }

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>门店预售登记 · 交互原型（企业微信）</title>
+<style>
+  :root{
+    --wx:#2f7dfb; --wx-d:#1f5fd0; --ok:#07c160; --line:#ebedf0; --ink:#1f2329;
+    --sub:#8a909c; --bg:#f2f3f5; --card:#fff; --warn:#fa5151; --orange:#ff976a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:#dfe3e8;color:var(--ink);display:flex;justify-content:center;min-height:100vh}
+  .phone{width:390px;background:var(--bg);min-height:100vh;position:relative;box-shadow:0 0 40px rgba(0,0,0,.15)}
+  .statusbar{height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font-size:12px;color:#fff;background:var(--wx)}
+  .nav{height:46px;background:var(--wx);color:#fff;display:flex;align-items:center;padding:0 12px;position:sticky;top:0;z-index:5}
+  .nav .back{font-size:22px;width:30px}
+  .nav .title{font-size:17px;font-weight:600;flex:1;text-align:center;margin-right:30px}
+  .scroll{padding:12px 12px 96px;overflow:auto}
+  .card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card h3{margin:0 0 10px;font-size:14px;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:6px}
+  .card h3 .n{background:var(--wx);color:#fff;width:18px;height:18px;border-radius:50%;font-size:11px;display:inline-flex;align-items:center;justify-content:center}
+  .row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .row .lab{width:84px;color:var(--sub);font-size:14px;flex:0 0 84px}
+  .row .val{flex:1;font-size:14px}
+  input,textarea,select{width:100%;border:none;outline:none;font-size:15px;color:var(--ink);background:transparent;font-family:inherit}
+  textarea{resize:none;height:54px;line-height:1.5}
+  .readonly{color:var(--ink);background:#f7f8fa;border-radius:8px;padding:9px 10px}
+  .btn{background:var(--wx);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:600;cursor:pointer}
+  .btn.ghost{background:#eaf1ff;color:var(--wx)}
+  .btn.sm{padding:6px 12px;font-size:13px}
+  .btn.line{background:#fff;color:var(--wx);border:1px solid var(--wx)}
+  .btn:active{transform:scale(.97)}
+  .hint{font-size:12px;color:var(--sub);margin-top:6px}
+  .err{color:var(--warn);font-size:12px;margin-top:6px;display:none}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;background:#eef1f6;color:#555;margin:3px 6px 0 0;cursor:pointer}
+  .pill.on{background:var(--wx);color:#fff}
+  .pill.cash.on{background:var(--ok);color:#fff}
+  .prod{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#fcfcfd}
+  .prod .pname{font-weight:600;font-size:14px;margin-bottom:8px;display:flex;justify-content:space-between}
+  .prod .pname .x{color:var(--sub);font-size:12px;cursor:pointer}
+  .qgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+  .qgrid .b{background:#f2f3f5;border-radius:8px;padding:7px 2px}
+  .qgrid .b .k{font-size:11px;color:var(--sub)}
+  .qgrid .b .v{font-size:16px;font-weight:700;margin-top:2px}
+  .qgrid .b.up .v{color:var(--wx)}
+  .qgrid .b.un .v{color:var(--ok)}
+  .qgrid .b.rt .v{color:var(--orange)}
+  .logrow{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .logrow:last-child{border-bottom:none}
+  .tag{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+  .tag.pick{background:#e6f6ee;color:var(--ok)}
+  .tag.ret{background:#fff0e8;color:var(--orange)}
+  .addbar{display:flex;gap:8px;margin-top:2px}
+  .addbar input{flex:1;background:#f2f3f5;border-radius:8px;padding:9px 10px}
+  .foot{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:390px;background:#fff;padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:10px;z-index:6}
+  .foot .btn{flex:1;padding:12px}
+  .demo{font-size:12px;color:var(--wx);text-align:center;cursor:pointer;margin:-4px 0 10px}
+  .sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:10}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:16px 16px 0 0;padding:16px;animation:up .2s ease}
+  @keyframes up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .sheet h4{margin:0 0 12px;font-size:15px}
+  .sheet .f{margin-bottom:12px}
+  .sheet .f label{font-size:13px;color:var(--sub);display:block;margin-bottom:5px}
+  .sheet input,.sheet select{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff}
+  .sheet .acts{display:flex;gap:10px;margin-top:6px}
+  .sheet .acts .btn{flex:1}
+  .toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;z-index:20;display:none;max-width:80%;text-align:center}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>企微 · 预售登记</span></div>
+  <div class="nav"><div class="back">‹</div><div class="title">预售登记</div></div>
+  <div class="scroll">
+
+    <div class="demo" onclick="loadDemo()">⚡ 一键填入示例数据（便于看联动效果）</div>
+
+    <!-- 导购身份 -->
+    <div class="card">
+      <h3><span class="n">1</span>导购信息（自动识别）</h3>
+      <div class="row"><span class="lab">导购</span><div class="val readonly">张三 · 工号 G001</div></div>
+      <div class="row"><span class="lab">门店</span><div class="val readonly">朝阳母婴旗舰店</div></div>
+    </div>
+
+    <!-- 会员 -->
+    <div class="card">
+      <h3><span class="n">2</span>会员身份</h3>
+      <div class="row"><span class="lab">手机号</span>
+        <div class="val"><input id="mPhone" placeholder="输入会员手机号" maxlength="11" inputmode="numeric"/></div>
+        <button class="btn sm" onclick="queryMember()">查询</button>
+      </div>
+      <div id="mResult" style="display:none">
+        <div class="row"><span class="lab">会员ID</span><div class="val readonly" id="mId">—</div></div>
+        <div class="row"><span class="lab">姓名</span><div class="val readonly" id="mName">—</div></div>
+      </div>
+      <div class="err" id="mErr">未匹配到会员，请核对手机号</div>
+      <div class="hint">系统按手机号在会员库查询并保存会员ID</div>
+    </div>
+
+    <!-- 支付方式 -->
+    <div class="card">
+      <h3><span class="n">3</span>支付方式</h3>
+      <div style="margin:4px 0 10px">
+        <span class="pill" id="pStatic" onclick="setPay('static')">① 静态码</span>
+        <span class="pill cash" id="pCash" onclick="setPay('cash')">② 现金</span>
+      </div>
+      <div id="staticBox" style="display:none">
+        <div class="row"><span class="lab">静态码单号</span>
+          <div class="val"><input id="sNo" placeholder="输入静态码单号"/></div>
+          <button class="btn sm" onclick="queryStatic()">查询</button>
+        </div>
+        <div id="sResult" style="display:none">
+          <div class="row"><span class="lab">收款金额</span><div class="val readonly" id="sAmt">—</div></div>
+          <div class="row"><span class="lab">状态</span><div class="val readonly" id="sStat">—</div></div>
+        </div>
+        <div class="err" id="sErr">未查到该静态码单号</div>
+      </div>
+      <div id="cashBox" style="display:none">
+        <div class="row"><span class="lab">现金金额</span>
+          <div class="val"><input id="cAmt" placeholder="0.00" type="number" min="0" step="0.01"/></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 备注 -->
+    <div class="card">
+      <h3><span class="n">4</span>备注</h3>
+      <textarea id="remark" placeholder="记录助记信息，如：客户说国庆前提完"></textarea>
+    </div>
+
+    <!-- 商品子表 -->
+    <div class="card">
+      <h3><span class="n">5</span>商品子表</h3>
+      <div id="prodList"></div>
+      <button class="btn line" style="width:100%" onclick="openProdSheet()">＋ 添加商品（扫码/输条码）</button>
+      <div class="hint">条码查询商品主数据自动带出名称；预售数量为导购录入</div>
+    </div>
+
+    <!-- 日志子表 -->
+    <div class="card">
+      <h3><span class="n">6</span>日志子表（提货 / 退货）</h3>
+      <div id="logList"><div class="hint">尚未记录提货/退货</div></div>
+      <button class="btn line" style="width:100%;margin-top:8px" onclick="openLogSheet()">＋ 记一笔提货/退货</button>
+      <div class="hint">每记一笔，自动改写上方对应商品的已提/未提/退货</div>
+    </div>
+
+  </div>
+
+  <!-- 底部 -->
+  <div class="foot">
+    <button class="btn ghost" onclick="resetAll()">清空</button>
+    <button class="btn" onclick="submitOrder()">提交预售单</button>
+  </div>
+
+  <!-- 商品弹层 -->
+  <div class="sheet-mask" id="prodMask" onclick="closeProd()">
+    <div class="sheet" onclick="event.stopPropagation()">
+      <h4>添加商品</h4>
+      <div class="f"><label>商品条码（可扫码或手输）</label>
+        <div style="display:flex;gap:8px">
+          <input id="pBarcode" placeholder="如 6901234567890"/>
+          <button class="btn sm" onclick="scanBarcode()">扫码</button>
+        </div>
+        <div class="err" id="pErr">商品库中无此条码</div>
+      </div>
+      <div class="f"><label>商品名称（自动带出）</label>
+        <input id="pName" readonly placeholder="查询后自动填充"/></div>
+      <div class="f"><label>预售数量</label>
+        <input id="pQty" type="number" min="1" placeholder="1"/></div>
+      <div class="acts">
+        <button class="btn ghost" onclick="closeProd()">取消</button>
+        <button class="btn" onclick="addProduct()">保存此商品</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志弹层 -->
+  <div class="sheet-mask" id="logMask" onclick="closeLog()">
+    <div class="sheet" onclick="event.stopPropagation()">
+      <h4>记一笔提货 / 退货</h4>
+      <div class="f"><label>选择商品</label>
+        <select id="lProd"></select></div>
+      <div class="f"><label>数量</label>
+        <input id="lQty" type="number" min="1" placeholder="1"/></div>
+      <div class="f"><label>执行动作</label>
+        <div>
+          <span class="pill on" id="aPick" onclick="setAction('pick')">提货</span>
+          <span class="pill" id="aRet" onclick="setAction('ret')">退货</span>
+        </div>
+      </div>
+      <div class="err" id="lErr"></div>
+      <div class="acts">
+        <button class="btn ghost" onclick="closeLog()">取消</button>
+        <button class="btn" onclick="addLog()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+// ---- mock 主数据 ----
+const PRODUCT_MASTER = {
+  '6901234567890':'爱他美奶粉3段 800g',
+  '6902345678901':'好奇铂金装纸尿裤 L码',
+  '6903456789012':'帮宝适一级帮 M码',
+  '6904567890123':'可么多么奶瓶 240ml'
+};
+const MEMBER_MASTER = {'13800138000':{id:'M10086',name:'李女士'},'13900139000':{id:'M20088',name:'王妈妈'}};
+
+let state = {
+  pay:'', products:[], logs:[], action:'pick'
+};
+let pid=0, lid=0;
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',1600);}
+function unpicked(p){return p.pre - p.picked + p.returned;}
+
+// ---- 会员 ----
+function queryMember(){
+  const phone=document.getElementById('mPhone').value.trim();
+  const err=document.getElementById('mErr');err.style.display='none';
+  if(!/^\d{11}$/.test(phone)){err.textContent='请输入11位手机号';err.style.display='block';return;}
+  const m=MEMBER_MASTER[phone]||{id:'M'+phone.slice(-6),name:'散客'+phone.slice(-4)};
+  document.getElementById('mId').textContent=m.id;
+  document.getElementById('mName').textContent=m.name;
+  document.getElementById('mResult').style.display='block';
+}
+
+// ---- 支付 ----
+function setPay(t){
+  state.pay=t;
+  document.getElementById('pStatic').classList.toggle('on',t==='static');
+  document.getElementById('pCash').classList.toggle('on',t==='cash');
+  document.getElementById('staticBox').style.display=t==='static'?'block':'none';
+  document.getElementById('cashBox').style.display=t==='cash'?'block':'none';
+}
+function queryStatic(){
+  const no=document.getElementById('sNo').value.trim();
+  const err=document.getElementById('sErr');err.style.display='none';
+  if(!no){err.style.display='block';return;}
+  document.getElementById('sAmt').textContent='¥ '+(Math.floor(Math.random()*900)+99)+'.00';
+  document.getElementById('sStat').textContent='已支付';
+  document.getElementById('sResult').style.display='block';
+}
+
+// ---- 商品弹层 ----
+function openProdSheet(){document.getElementById('prodMask').style.display='block';}
+function closeProd(){document.getElementById('prodMask').style.display='none';}
+function scanBarcode(){ // 模拟扫码
+  const keys=Object.keys(PRODUCT_MASTER);
+  document.getElementById('pBarcode').value=keys[Math.floor(Math.random()*keys.length)];
+  queryBarcode();
+}
+function queryBarcode(){
+  const bc=document.getElementById('pBarcode').value.trim();
+  const err=document.getElementById('pErr');err.style.display='none';
+  if(PRODUCT_MASTER[bc]){document.getElementById('pName').value=PRODUCT_MASTER[bc];return true;}
+  document.getElementById('pName').value='';err.style.display='block';return false;
+}
+function addProduct(){
+  const bc=document.getElementById('pBarcode').value.trim();
+  if(!queryBarcode())return;
+  const qty=parseInt(document.getElementById('pQty').value);
+  if(!qty||qty<1){toast('请填写预售数量');return;}
+  state.products.push({id:++pid,barcode:bc,name:PRODUCT_MASTER[bc],pre:qty,picked:0,returned:0});
+  document.getElementById('pBarcode').value='';document.getElementById('pName').value='';document.getElementById('pQty').value='';
+  closeProd();renderProducts();renderLogOptions();
+}
+function renderProducts(){
+  const box=document.getElementById('prodList');
+  if(!state.products.length){box.innerHTML='<div class="hint">尚未添加商品</div>';return;}
+  box.innerHTML=state.products.map(p=>`
+    <div class="prod">
+      <div class="pname"><span>${p.name}</span><span class="x" onclick="delProd(${p.id})">删除</span></div>
+      <div class="row" style="border:none;padding:2px 0"><span class="lab">条码</span><div class="val" style="font-size:12px;color:var(--sub)">${p.barcode}</div></div>
+      <div class="qgrid">
+        <div class="b"><div class="k">预售</div><div class="v">${p.pre}</div></div>
+        <div class="b up"><div class="k">已提</div><div class="v">${p.picked}</div></div>
+        <div class="b un"><div class="k">未提</div><div class="v">${unpicked(p)}</div></div>
+        <div class="b rt"><div class="k">退货</div><div class="v">${p.returned}</div></div>
+      </div>
+    </div>`).join('');
+}
+function delProd(id){
+  state.products=state.products.filter(p=>p.id!==id);
+  state.logs=state.logs.filter(l=>l.pid!==id);
+  renderProducts();renderLogs();renderLogOptions();
+}
+
+// ---- 日志弹层 ----
+function openLogSheet(){
+  if(!state.products.length){toast('请先添加商品');return;}
+  renderLogOptions();document.getElementById('logMask').style.display='block';
+}
+function closeLog(){document.getElementById('logMask').style.display='none';}
+function renderLogOptions(){
+  const sel=document.getElementById('lProd');
+  sel.innerHTML=state.products.map(p=>`<option value="${p.id}">${p.name}（未提${unpicked(p)}）</option>`).join('');
+}
+function setAction(a){
+  state.action=a;
+  document.getElementById('aPick').classList.toggle('on',a==='pick');
+  document.getElementById('aRet').classList.toggle('on',a==='ret');
+}
+function addLog(){
+  const pid2=parseInt(document.getElementById('lProd').value);
+  const qty=parseInt(document.getElementById('lQty').value);
+  const err=document.getElementById('lErr');err.style.display='none';
+  const p=state.products.find(x=>x.id===pid2);
+  if(!qty||qty<1){err.textContent='请填写数量';err.style.display='block';return;}
+  if(state.action==='pick' && qty>unpicked(p)){err.textContent=`超出可提数量（未提仅 ${unpicked(p)}）`;err.style.display='block';return;}
+  if(state.action==='ret' && qty>p.picked){err.textContent=`超出已提数量（已提仅 ${p.picked}）`;err.style.display='block';return;}
+  if(state.action==='pick') p.picked+=qty; else p.returned+=qty;
+  const now=new Date();
+  state.logs.push({id:++lid,pid:pid2,pname:p.name,qty,action:state.action,
+    op:'张三',time:`${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`});
+  document.getElementById('lQty').value='';
+  closeLog();renderProducts();renderLogs();renderLogOptions();
+}
+function renderLogs(){
+  const box=document.getElementById('logList');
+  if(!state.logs.length){box.innerHTML='<div class="hint">尚未记录提货/退货</div>';return;}
+  box.innerHTML=state.logs.slice().reverse().map(l=>`
+    <div class="logrow">
+      <span class="tag ${l.action==='pick'?'pick':'ret'}">${l.action==='pick'?'提货':'退货'}</span>
+      <span style="flex:1">${l.pname}</span>
+      <b>×${l.qty}</b>
+      <span style="color:var(--sub);font-size:11px">${l.op} ${l.time}</span>
+    </div>`).join('');
+}
+
+// ---- 其它 ----
+function submitOrder(){
+  if(!state.pay){toast('请选择支付方式');return;}
+  if(!state.products.length){toast('至少添加一件商品');return;}
+  toast('✅ 预售单已提交（演示）');
+}
+function resetAll(){
+  state={pay:'',products:[],logs:[],action:'pick'};
+  document.getElementById('mPhone').value='';document.getElementById('mResult').style.display='none';
+  setPay('');document.getElementById('sResult').style.display='none';document.getElementById('cAmt').value='';
+  document.getElementById('remark').value='';setAction('pick');
+  renderProducts();renderLogs();
+}
+function loadDemo(){
+  resetAll();
+  state.products=[
+    {id:++pid,barcode:'6901234567890',name:'爱他美奶粉3段 800g',pre:10,picked:0,returned:0},
+    {id:++pid,barcode:'6902345678901',name:'好奇铂金装纸尿裤 L码',pre:6,picked:0,returned:0}
+  ];
+  const p0=state.products[0];p0.picked=4;
+  state.logs.push({id:++lid,pid:p0.id,pname:p0.name,qty:4,action:'pick',op:'张三',time:'10:12'});
+  renderProducts();renderLogs();
+  toast('已载入示例：奶粉预售10，已提4（未提6）');
+}
+renderProducts();renderLogs();
+</script>
+</body>
+</html>

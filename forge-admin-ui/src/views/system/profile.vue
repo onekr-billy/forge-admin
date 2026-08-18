@@ -427,8 +427,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useAuthStore, useUserStore } from '@/store'
 import AuthImage from '@/components/common/AuthImage.vue'
+import { useAuthStore, useUserStore } from '@/store'
 import { request } from '@/utils'
 import { resolveRenderableFileUrl } from '@/utils/file'
 

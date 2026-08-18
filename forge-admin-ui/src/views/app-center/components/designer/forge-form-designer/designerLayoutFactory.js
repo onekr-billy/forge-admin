@@ -34,6 +34,20 @@ export function createForgeLayoutComponent(componentKey = 'title', schema = {}) 
       children: [],
     }
   }
+  if (componentKey === 'subTable') {
+    // 关联子表容器：承载子表分区语义（relationKey + 展示方式），不承载字段。
+    return {
+      id,
+      componentKey: 'subTable',
+      label: '关联子表',
+      props: {
+        header: '关联子表',
+        relationKey: '',
+        displayMode: 'inline_grid',
+      },
+      layout: { span: gridColumns, align: 'left' },
+    }
+  }
   if (componentKey === 'tabs') {
     return {
       id,
@@ -256,7 +270,7 @@ export function createForgeFieldTemplateComponent(template = {}, schema = {}) {
       ...(template.props || {}),
     },
     layout: {
-      span: ['textarea', 'fileUpload', 'imageUpload', 'daterange', 'datetimerange', 'timerange'].includes(componentKey) ? Math.min(2, gridColumns) : 1,
+      span: ['textarea', 'fileUpload', 'imageUpload', 'barcodeScanner', 'daterange', 'datetimerange', 'timerange'].includes(componentKey) ? Math.min(2, gridColumns) : 1,
       align: 'left',
     },
     validation: {
@@ -273,6 +287,11 @@ export function createForgeFieldTemplateComponent(template = {}, schema = {}) {
 
 function buildTemplateDefaultProps(componentKey = '') {
   const map = {
+    barcodeScanner: {
+      allowManualInput: true,
+      timeoutMs: 30000,
+      formats: ['CODE128', 'CODE39', 'EAN13', 'EAN8', 'UPC', 'ITF14'],
+    },
     radioButton: {
       options: buildDefaultOptions(),
     },

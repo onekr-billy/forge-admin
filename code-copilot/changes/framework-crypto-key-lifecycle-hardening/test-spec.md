@@ -200,3 +200,38 @@
 - 关键接口：`/api/config/manage/crypto`、`/api/config/group/**`、crypto migration inventory/execute、数据连接和低代码既有 CRUD。
 - 关键数据库检查：`sys_config`/`sys_config_group` 敏感字段清理，`password_cipher` 和动态字段格式分类；真实结果仅在隔离测试库/生产变更单留档。
 - 服务启动与停止：默认不启动服务；如需装配验证，只停止本轮明确启动的 PID。
+
+## 7. Task 14 多服务锁增量验证
+
+### P0 行为合同
+
+| 场景 | 输入/并发条件 | 预期结果 |
+|------|---------------|----------|
+| 跨 JVM 完整文件读取 | 父 JVM 持有 `crypto.properties.lock` 共享锁，子 JVM 执行启动引导 | 子 JVM 在共享锁未释放前完成，读取原密钥且不改写文件 |
+| 首次并发创建 | 同一 JVM 两个调用同时指向不存在的文件 | 排他写串行，两个调用获得相同密钥 |
+| 旧文件兼容升级 | 文件缺少 Capability Pepper | 共享读路径不修改文件；排他锁内重新读取、补齐并原子写回，原加密密钥保持不变 |
+| 损坏文件 | 密钥非法或必需字段空白 | 启动失败关闭，不生成新密钥覆盖原文件 |
+
+### 执行顺序
+
+- [x] 固定 JDK 17 运行现有 `CryptoSecretEnvironmentPostProcessorTest` 基线。
+- [x] 新增跨 JVM 共享读取测试并在旧实现上取得超时失败证据。
+- [x] 实施共享读、排他写和排他锁内二次检查。
+- [x] 运行目标测试类和 Starter Crypto 全量测试。
+- [x] 运行 Starter Crypto、Admin、Flow Server 聚合构建与 `git diff --check`。
+
+### 边界
+
+- 不启动 Admin、Flow、数据库或 Redis；跨 JVM 测试只启动短生命周期 Java 子进程并在测试结束时强制清理。
+- 不修改真实 `~/.forge/secrets`，全部密钥文件位于 JUnit 临时目录。
+
+### 实际结果（2026-08-17）
+
+| 阶段 | 命令/范围 | 结果 |
+|------|-----------|------|
+| 基线 | JDK 17，`CryptoSecretEnvironmentPostProcessorTest` | 16/16 通过 |
+| Red | 仅运行跨 JVM 共享读取用例 | 1/1 失败；子 JVM 等待旧排他锁 5 秒后超时 |
+| Green | 目标用例与目标测试类 | 目标用例 1/1、目标类 17/17 通过；密钥文件字节未变化 |
+| 全量回归 | Starter Crypto 依赖链 `-Penable-tests ... test` | Starter Crypto 53/53、Config 8/8、Tenant 4/4 通过 |
+| 聚合构建 | Starter Crypto、Admin、Flow Server `package -DskipTests` | 分别 11/11、45/45、37/37 模块成功 |
+| 静态检查 | `git diff --check` | 通过 |

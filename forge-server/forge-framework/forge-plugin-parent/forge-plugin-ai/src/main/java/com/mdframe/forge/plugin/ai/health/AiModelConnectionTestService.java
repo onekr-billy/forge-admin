@@ -38,12 +38,12 @@ public class AiModelConnectionTestService {
             modelType = AiModelType.CHAT;
         }
 
-        // 按模型类型路由连接测试
+        // 按模型类型路由连接测试（多模态理解模型走 Chat 协议）
         return switch (modelType) {
-            case CHAT -> testChatModel(model, provider, tenantId);
+            case CHAT, VISION, VIDEO_UNDERSTANDING, AUDIO_UNDERSTANDING -> testChatModel(model, provider, tenantId);
             case EMBEDDING -> testEmbeddingModel(model, provider, tenantId);
             case RERANK -> testRerankModel(model, provider, tenantId);
-            case IMAGE_GENERATION, ASR, TTS -> {
+            case IMAGE_GENERATION, ASR, TTS, VIDEO_GENERATION -> {
                 log.info("[AI模型测试] 类型{}连接测试暂未实现, modelId={}", modelType.getCode(), model.getId());
                 throw new BusinessException(modelType.getCode() + "类型模型连接测试暂未实现，将在后续版本支持");
             }
@@ -67,10 +67,23 @@ public class AiModelConnectionTestService {
     }
 
     private String testEmbeddingModel(AiModel model, AiProvider provider, Long tenantId) {
-        // Embedding 模型测试：通过适配器注册表获取 Embedding 适配器，调用 embed 验证返回维度
-        // 一期 Embedding 适配器尚未实现，返回提示信息
-        log.info("[AI模型测试] Embedding连接测试将在Embedding适配器实现后支持, modelId={}", model.getId());
-        throw new BusinessException("Embedding模型连接测试将在Embedding适配器实现后支持");
+        AiModelHealthKey key = new AiModelHealthKey(tenantId, provider.getId(), model.getId());
+        AiModelHealthLease lease = healthRegistry.acquireManualProbe(key);
+        try {
+            // 调供应商 Embedding 接口，返回非空向量即视为连接成功
+            float[] vector = adapterRegistry.createEmbeddingModel(provider, model.getModelId()).embed("连接测试");
+            if (vector == null || vector.length == 0) {
+                throw new BusinessException("Embedding模型返回空向量");
+            }
+            lease.success();
+            log.info("[AI模型测试] Embedding连接成功, providerId={}, modelId={}, dimension={}",
+                    provider.getId(), model.getId(), vector.length);
+            return "连接成功";
+        } catch (Exception e) {
+            return handleTestFailure(e, provider, model, lease);
+        } finally {
+            lease.close();
+        }
     }
 
     private String testRerankModel(AiModel model, AiProvider provider, Long tenantId) {

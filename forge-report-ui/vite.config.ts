@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import { OUTPUT_DIR, brotliSize, chunkSizeWarningLimit, terserOptions, rollupOptions } from './build/constant'
@@ -10,7 +10,11 @@ function pathResolve(dir: string) {
   return resolve(process.cwd(), '.', dir)
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const viteEnv = loadEnv(mode, process.cwd())
+  const outDir = viteEnv.VITE_OUT_DIR || OUTPUT_DIR
+
+  return {
   base: '/forge-report',
   // 修改端口
   server: {
@@ -102,11 +106,12 @@ export default defineConfig({
   ],
   build: {
     target: 'es2020',
-    outDir: OUTPUT_DIR,
+    outDir,
     // minify: 'terser', // 如果需要用terser混淆，可打开这两行
     // terserOptions: terserOptions,
     rollupOptions: rollupOptions,
     reportCompressedSize: brotliSize,
     chunkSizeWarningLimit: chunkSizeWarningLimit
+  }
   }
 })

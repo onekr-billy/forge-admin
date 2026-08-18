@@ -34,7 +34,7 @@ export const inAppPageTemplateCatalog = [
   {
     key: 'crud',
     label: '数据列表（CRUD）',
-    description: '筛选、列表和新增编辑，创建后直接设计表单',
+    description: '创建后选择业务对象，在页面画布完成搭建',
     pageTypes: ['object'],
     pageType: 'object',
     dataTemplate: true,
@@ -44,7 +44,7 @@ export const inAppPageTemplateCatalog = [
   {
     key: 'tree-table',
     label: '左树右表',
-    description: '左侧分类筛选，右侧展示和维护表单数据',
+    description: '创建后选择业务对象，在页面画布完成左树右表搭建',
     pageTypes: ['object'],
     pageType: 'object',
     dataTemplate: true,
@@ -54,7 +54,7 @@ export const inAppPageTemplateCatalog = [
   {
     key: 'master-detail',
     label: '主子表',
-    description: '用于主记录与明细录入，创建后继续设计表单和关联',
+    description: '创建后选择业务对象，在页面画布完成主记录与明细搭建',
     pageTypes: ['object'],
     pageType: 'object',
     dataTemplate: true,

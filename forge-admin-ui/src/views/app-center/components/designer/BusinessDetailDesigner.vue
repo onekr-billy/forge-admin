@@ -1,6 +1,6 @@
 <template>
   <div class="business-detail-designer">
-    <div class="detail-designer-head">
+    <div v-if="!settingsOnly" class="detail-designer-head">
       <div>
         <h3>详情设置</h3>
         <p>详情主信息自动复用表单设计布局，关联数据来自关系配置。</p>
@@ -20,7 +20,7 @@
 
     <div class="detail-designer-body">
       <main class="detail-workspace">
-        <section class="detail-section">
+        <section v-if="!settingsOnly" class="detail-section">
           <div class="detail-section-head">
             <div>
               <h4>主信息展示</h4>
@@ -224,6 +224,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  settingsOnly: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'update:viewSchema', 'saved', 'dirtyChange', 'openForm', 'openRelations'])
@@ -377,7 +381,7 @@ function addQuantityPanel(type = 'quantity-balance') {
     type: normalizedType,
     title: quantityPanelTypeLabel(normalizedType),
     pageSize: 20,
-    paramsText: 'sourceRecordId=${row.id}',
+    paramsText: `sourceRecordId=\${row.id}`,
     displayFieldsText: '',
   })
   markDirty()

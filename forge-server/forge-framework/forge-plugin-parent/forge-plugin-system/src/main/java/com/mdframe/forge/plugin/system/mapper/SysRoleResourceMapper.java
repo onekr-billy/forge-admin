@@ -17,4 +17,7 @@ public interface SysRoleResourceMapper extends BaseMapper<SysRoleResource> {
      * 批量插入角色资源关联。
      */
     int insertBatch(@Param("list") List<SysRoleResource> list);
+
+    List<Long> selectResourceIdsByRole(@Param("tenantId") Long tenantId,
+                                       @Param("roleId") Long roleId);
 }

@@ -45,12 +45,14 @@ import { crudConfigRender } from '@/api/ai'
 import { businessDocumentRuntimeBatch } from '@/api/business-app'
 import catalog from '@/catalog'
 import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
+import { createOfflineSchemaHash } from '@/components/ai-form/offline-form-runtime'
 import { normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from '@/components/lowcode-builder/page/crud-hook-rules'
 import ListPageGridDesigner from '@/components/lowcode-builder/page/ListPageGridDesigner.vue'
 import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRenderer.vue'
+import { hasRuntimeVisibilityRules } from '@/components/lowcode-builder/shared/runtime-rules'
 import { getDictData } from '@/composables/useDict'
-import { useTabStore } from '@/store'
+import { useTabStore, useUserStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
 import { getDefaultPageTitle } from '@/utils/page-title'
 import { normalizeMultiFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
@@ -69,6 +71,7 @@ const props = defineProps({
 const route = useRoute()
 const router = useRouter()
 const tabStore = useTabStore()
+const userStore = useUserStore()
 
 const loading = ref(false)
 const configLoaded = ref(false)
@@ -702,6 +705,8 @@ function normalizeFormGovernance(value = {}) {
     permission: value.permission && typeof value.permission === 'object' ? value.permission : {},
     fieldRules: Array.isArray(value.fieldRules) ? value.fieldRules : [],
     events: Array.isArray(value.events) ? value.events : [],
+    fieldEvents: Array.isArray(value.fieldEvents) ? value.fieldEvents : [],
+    offlineDraft: value.offlineDraft && typeof value.offlineDraft === 'object' ? value.offlineDraft : {},
   }
 }
 
@@ -770,10 +775,11 @@ function buildRuntimeFieldFromDesignerComponent(component = {}, baseFieldMap = n
   if (!fieldCode)
     return null
   const visibility = component.visibility || {}
-  if (visibility.hidden === true)
-    return null
   const base = baseFieldMap.get(fieldCode) || { field: fieldCode, type: 'input', label: fieldCode }
   const props = { ...(base.props || {}), ...(component.props || {}) }
+  const hasVisibilityRules = hasRuntimeVisibilityRules({ ...component, props })
+  if (visibility.hidden === true && !hasVisibilityRules)
+    return null
   const validation = component.validation || {}
   return {
     ...base,
@@ -783,6 +789,7 @@ function buildRuntimeFieldFromDesignerComponent(component = {}, baseFieldMap = n
     required: validation.required ?? base.required,
     readonly: visibility.readonly ?? base.readonly,
     disabled: visibility.readonly ?? base.disabled,
+    hidden: visibility.hidden === true,
     defaultValue: props.defaultValue ?? base.defaultValue,
     dictType: props.dictType || base.dictType,
     validation,
@@ -1067,6 +1074,9 @@ const crudProps = computed(() => {
     editFormClass: options.editFormClass || cfg.editFormClass || '',
     editFormStyle: options.editFormStyle || cfg.editFormStyle,
     formAssets: activeRuntimeFormProfile.value.formAssets || options.formAssets || cfg.formAssets || [],
+    fieldEvents: activeRuntimeFormProfile.value.governance?.fieldEvents || [],
+    offlineDraft: buildOfflineDraftConfig(cfg, options, activeRuntimeFormProfile.value),
+    formRuntimeContext: buildFormRuntimeContext(),
     editXGap: normalizeNumberOption(options.editXGap ?? cfg.editXGap, 12),
     editYGap: normalizeNumberOption(options.editYGap ?? cfg.editYGap, 8),
     loadDetailOnEdit: options.loadDetailOnEdit ?? cfg.loadDetailOnEdit ?? true,
@@ -1103,6 +1113,36 @@ const crudProps = computed(() => {
   }
 })
 
+function buildOfflineDraftConfig(cfg = {}, options = {}, formProfile = {}) {
+  const governanceConfig = formProfile.governance?.offlineDraft
+  const source = governanceConfig && Object.keys(governanceConfig).length
+    ? governanceConfig
+    : (options.offlineDraft || cfg.offlineDraft || {})
+  if (source?.enabled !== true)
+    return { enabled: false }
+  const objectCode = resolveBusinessObjectCode(cfg)
+  const formCode = activeRuntimeFormKey.value || source.formCode || 'default'
+  return {
+    ...source,
+    enabled: true,
+    applicationCode: source.applicationCode
+      || cfg.applicationCode
+      || cfg.suiteCode
+      || options.applicationCode
+      || cfg.configKey,
+    objectCode: source.objectCode || objectCode,
+    formCode,
+    configKey: source.configKey || cfg.configKey || '',
+    suiteCode: source.suiteCode || cfg.suiteCode || options.suiteCode || '',
+    publishedVersion: cfg.publishedVersion || source.publishedVersion || '',
+    schemaHash: source.schemaHash || createOfflineSchemaHash({
+      modelSchema: cfg.modelSchema || {},
+      pageSchema: cfg.pageSchema || {},
+      formCode,
+    }),
+  }
+}
+
 function resolveRuntimeFormOpenMode(options = {}, cfg = {}) {
   const value = options.formOpenMode || cfg.formOpenMode || options.modalType || cfg.modalType || 'modal'
   const mode = String(value || '').trim()
@@ -1110,6 +1150,21 @@ function resolveRuntimeFormOpenMode(options = {}, cfg = {}) {
     return 'tabWorkspace'
   const normalized = mode.toLowerCase()
   return ['modal', 'drawer', 'flat'].includes(normalized) ? normalized : 'modal'
+}
+
+function buildFormRuntimeContext() {
+  return {
+    currentUser: {
+      userId: userStore.userId,
+      username: userStore.username,
+      realName: userStore.realName,
+      tenantId: userStore.tenantId,
+      activeOrgId: userStore.activeOrgId,
+      activeOrgName: userStore.activeOrgName,
+      staffId: userStore.staffId,
+      staffName: userStore.staffName,
+    },
+  }
 }
 
 function resolveRuntimeModalType(formOpenMode, options = {}, cfg = {}) {

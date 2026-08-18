@@ -25,7 +25,7 @@
         <n-button v-if="expanded" size="small" secondary :loading="loading" @click="loadMapping">
           刷新结构
         </n-button>
-        <n-button v-else size="tiny" text type="primary" @click="emit('openStructure')">
+        <n-button v-else size="small" secondary @click="emit('openStructure')">
           查看数据结构
         </n-button>
       </div>
@@ -530,7 +530,8 @@ defineExpose({ refresh: loadMapping })
   padding: 14px;
   border: 1px solid var(--n-border-color, #dfe3e8);
   border-radius: 7px;
-  background: var(--n-color, #fff);
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #1f2328);
 }
 
 .table-mapping.compact {

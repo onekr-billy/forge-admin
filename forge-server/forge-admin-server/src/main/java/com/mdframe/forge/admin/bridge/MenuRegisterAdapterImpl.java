@@ -31,7 +31,20 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
     private static final String DEFAULT_CLIENT_CODE = "pc";
     private static final String DOMAIN_MENU_PERMS_PREFIX = "ai:lowcode:domain-menu:";
     private static final String BUSINESS_SUITE_MENU_PERMS_PREFIX = "ai:business:suite-menu:";
-    private static final int ROLE_BINDING_BATCH_SIZE = 500;
+
+    /** 业务对象单据动作权限码后缀 → 资源名称，与 BusinessPermissionService 的动作定义保持一致。 */
+    private static final LinkedHashMap<String, String> OBJECT_ACTION_PERMISSION_NAMES;
+
+    static {
+        OBJECT_ACTION_PERMISSION_NAMES = new LinkedHashMap<>();
+        OBJECT_ACTION_PERMISSION_NAMES.put("list", "查看列表");
+        OBJECT_ACTION_PERMISSION_NAMES.put("query", "查看详情");
+        OBJECT_ACTION_PERMISSION_NAMES.put("add", "新增");
+        OBJECT_ACTION_PERMISSION_NAMES.put("edit", "编辑");
+        OBJECT_ACTION_PERMISSION_NAMES.put("delete", "删除");
+        OBJECT_ACTION_PERMISSION_NAMES.put("export", "导出");
+        OBJECT_ACTION_PERMISSION_NAMES.put("import", "导入");
+    }
 
     private final ISysResourceService resourceService;
     private final SysResourceMapper resourceMapper;
@@ -97,15 +110,25 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
     @Override
     public Long registerAppMenu(String menuName, Long parentId, String path, String component,
                                 String perms, String icon, Integer sort, boolean enabled) {
+        return registerAppMenu(menuName, parentId, path, component, perms, icon, sort, enabled,
+                DEFAULT_CLIENT_CODE);
+    }
+
+    @Override
+    public Long registerAppMenu(String menuName, Long parentId, String path, String component,
+                                String perms, String icon, Integer sort, boolean enabled, String clientCode) {
         Long tenantId = resolveTenantId();
+        String resolvedClientCode = StringUtils.defaultIfBlank(clientCode, DEFAULT_CLIENT_CODE);
         SysResource existing = resourceMapper.selectOneByPerms(tenantId, 2, perms);
         if (existing != null && existing.getId() != null) {
-            updateAppMenu(existing.getId(), menuName, parentId, path, component, perms, icon, sort, enabled);
+            updateAppMenu(existing.getId(), menuName, parentId, path, component, perms, icon, sort, enabled,
+                    resolvedClientCode);
             return existing.getId();
         }
         SysResource existingByPath = resourceMapper.selectOneByPath(tenantId, 2, path);
         if (existingByPath != null && existingByPath.getId() != null) {
-            updateAppMenu(existingByPath.getId(), menuName, parentId, path, component, perms, icon, sort, enabled);
+            updateAppMenu(existingByPath.getId(), menuName, parentId, path, component, perms, icon, sort, enabled,
+                    resolvedClientCode);
             return existingByPath.getId();
         }
         SysResource resource = new SysResource();
@@ -124,16 +147,24 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setIcon(StringUtils.defaultIfBlank(icon, "ionicons5:AppsOutline"));
         resource.setKeepAlive(0);
         resource.setAlwaysShow(0);
-        resource.setClientCode(DEFAULT_CLIENT_CODE);
+        resource.setClientCode(resolvedClientCode);
         resourceService.save(resource);
-        log.info("[MenuRegisterAdapter] 注册应用入口菜单成功: menuName={}, path={}, menuId={}",
-                menuName, path, resource.getId());
+        log.info("[MenuRegisterAdapter] 注册应用入口菜单成功: menuName={}, path={}, clientCode={}, menuId={}",
+                menuName, path, resolvedClientCode, resource.getId());
         return resource.getId();
     }
 
     @Override
     public void updateAppMenu(Long menuResourceId, String menuName, Long parentId, String path,
                               String component, String perms, String icon, Integer sort, boolean enabled) {
+        updateAppMenu(menuResourceId, menuName, parentId, path, component, perms, icon, sort, enabled,
+                DEFAULT_CLIENT_CODE);
+    }
+
+    @Override
+    public void updateAppMenu(Long menuResourceId, String menuName, Long parentId, String path,
+                              String component, String perms, String icon, Integer sort, boolean enabled,
+                              String clientCode) {
         Long resolvedParentId = normalizeResourceParentId(menuResourceId, parentId);
         SysResource resource = new SysResource();
         resource.setId(menuResourceId);
@@ -146,9 +177,10 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setSort(sort != null ? sort : 0);
         resource.setMenuStatus(enabled ? 1 : 0);
         resource.setVisible(enabled ? 1 : 0);
+        resource.setClientCode(StringUtils.defaultIfBlank(clientCode, DEFAULT_CLIENT_CODE));
         resourceService.updateById(resource);
-        log.info("[MenuRegisterAdapter] 更新应用入口菜单成功: menuId={}, menuName={}, parentId={}",
-                menuResourceId, menuName, resolvedParentId);
+        log.info("[MenuRegisterAdapter] 更新应用入口菜单成功: menuId={}, menuName={}, parentId={}, clientCode={}",
+                menuResourceId, menuName, resolvedParentId, resource.getClientCode());
     }
 
     @Override
@@ -264,10 +296,6 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         pending.sort(Comparator.comparing(item -> item.getSort() == null ? 0 : item.getSort()));
         Map<String, Long> resolvedIds = new LinkedHashMap<>();
         Set<String> activePerms = new HashSet<>();
-        Map<Long, Set<Long>> pendingRoleBindings = new LinkedHashMap<>();
-        Set<Long> runtimeRoleIds = pending.stream().anyMatch(BusinessApplicationPageMenuDTO::isInheritRuntimeRoles)
-                ? resolveRuntimeRoleIds(tenantId)
-                : Set.of();
         while (!pending.isEmpty()) {
             boolean progressed = false;
             for (java.util.Iterator<BusinessApplicationPageMenuDTO> iterator = pending.iterator(); iterator.hasNext();) {
@@ -280,9 +308,6 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
                 Long resourceId = upsertApplicationPageMenu(tenantId, item, parentId);
                 resolvedIds.put(item.getNodeId(), resourceId);
                 activePerms.add(item.getPerms());
-                if (resourceId != null) {
-                    pendingRoleBindings.put(resourceId, resolveTargetRoleIds(item, runtimeRoleIds));
-                }
                 iterator.remove();
                 progressed = true;
             }
@@ -290,7 +315,6 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
                 throw new IllegalStateException("应用页面菜单父级引用无效或存在循环");
             }
         }
-        syncApplicationPageRoles(tenantId, pendingRoleBindings);
         for (SysResource stale : resourceMapper.selectList(new LambdaQueryWrapper<SysResource>()
                 .eq(SysResource::getTenantId, tenantId)
                 .likeRight(SysResource::getPerms, prefix))) {
@@ -303,6 +327,76 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             }
         }
         return resolvedIds;
+    }
+
+    /**
+     * 对象发布时将单据动作权限码注册为按钮资源：存在则刷新名称/父级，不存在则新建，
+     * 保证重复发布幂等；角色授权由管理员在角色管理中按需勾选，不自动授予。
+     */
+    @Override
+    public void syncBusinessObjectActionPermissions(String objectCode, String objectName, String menuConfigKey) {
+        String normalizedObjectCode = StringUtils.trimToNull(objectCode);
+        if (normalizedObjectCode == null) {
+            return;
+        }
+        Long tenantId = resolveTenantId();
+        String displayName = StringUtils.defaultIfBlank(objectName, normalizedObjectCode);
+        Long parentId = resolveObjectButtonParentId(tenantId, menuConfigKey);
+        int sort = 0;
+        for (Map.Entry<String, String> action : OBJECT_ACTION_PERMISSION_NAMES.entrySet()) {
+            String perms = "ai:business:" + normalizedObjectCode + ":" + action.getKey();
+            String resourceName = displayName + "-" + action.getValue();
+            upsertButtonResource(tenantId, perms, resourceName, parentId, sort++);
+        }
+        log.info("[MenuRegisterAdapter] 同步业务对象按钮权限成功: objectCode={}, menuConfigKey={}",
+                normalizedObjectCode, menuConfigKey);
+    }
+
+    private Long resolveObjectButtonParentId(Long tenantId, String menuConfigKey) {
+        String configKey = StringUtils.trimToNull(menuConfigKey);
+        if (configKey != null) {
+            SysResource objectMenu = resourceMapper.selectOneByPerms(tenantId, 2, "ai:crud:" + configKey);
+            if (objectMenu != null && objectMenu.getId() != null) {
+                return objectMenu.getId();
+            }
+        }
+        return resolveDefaultLowcodeParentId();
+    }
+
+    private void upsertButtonResource(Long tenantId, String perms, String resourceName, Long parentId, int sort) {
+        SysResource existing = resourceMapper.selectOneByPerms(tenantId, 3, perms);
+        if (existing != null && existing.getId() != null) {
+            SysResource resource = new SysResource();
+            resource.setId(existing.getId());
+            boolean changed = false;
+            if (!resourceName.equals(existing.getResourceName())) {
+                resource.setResourceName(resourceName);
+                changed = true;
+            }
+            if (parentId != null && !parentId.equals(existing.getParentId())) {
+                resource.setParentId(parentId);
+                changed = true;
+            }
+            if (changed) {
+                resourceService.updateById(resource);
+            }
+            return;
+        }
+        SysResource resource = new SysResource();
+        resource.setTenantId(tenantId);
+        resource.setResourceName(resourceName);
+        resource.setParentId(parentId);
+        resource.setResourceType(3);
+        resource.setSort(sort);
+        resource.setIsExternal(0);
+        resource.setIsPublic(0);
+        resource.setMenuStatus(1);
+        resource.setVisible(1);
+        resource.setPerms(perms);
+        resource.setKeepAlive(0);
+        resource.setAlwaysShow(0);
+        resource.setClientCode(DEFAULT_CLIENT_CODE);
+        resourceService.save(resource);
     }
 
     private Long upsertApplicationPageMenu(Long tenantId, BusinessApplicationPageMenuDTO item, Long parentId) {
@@ -333,53 +427,6 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             resourceService.updateById(resource);
         }
         return resource.getId();
-    }
-
-    /** 解析 runtime 入口菜单已授权的角色，仅在存在继承角色的页面时查询一次。 */
-    private Set<Long> resolveRuntimeRoleIds(Long tenantId) {
-        SysResource runtime = resourceMapper.selectOneByPerms(tenantId, 2, "ai:businessApplication:runtime");
-        if (runtime == null || runtime.getId() == null) {
-            return Set.of();
-        }
-        Set<Long> roleIds = new HashSet<>();
-        roleResourceMapper.selectList(new LambdaQueryWrapper<SysRoleResource>()
-                        .eq(SysRoleResource::getTenantId, tenantId)
-                        .eq(SysRoleResource::getResourceId, runtime.getId()))
-                .forEach(binding -> roleIds.add(binding.getRoleId()));
-        return roleIds;
-    }
-
-    private Set<Long> resolveTargetRoleIds(BusinessApplicationPageMenuDTO item, Set<Long> runtimeRoleIds) {
-        Set<Long> roleIds = new HashSet<>();
-        if (item.isInheritRuntimeRoles()) {
-            roleIds.addAll(runtimeRoleIds);
-        }
-        if (item.getRoleIds() != null) {
-            item.getRoleIds().stream().filter(java.util.Objects::nonNull).forEach(roleIds::add);
-        }
-        return roleIds;
-    }
-
-    /** 批量重建菜单角色绑定：一次范围 delete + 分批 insertBatch，避免每菜单每角色逐条执行。 */
-    private void syncApplicationPageRoles(Long tenantId, Map<Long, Set<Long>> roleBindings) {
-        if (roleBindings.isEmpty()) {
-            return;
-        }
-        roleResourceMapper.delete(new LambdaQueryWrapper<SysRoleResource>()
-                .eq(SysRoleResource::getTenantId, tenantId)
-                .in(SysRoleResource::getResourceId, roleBindings.keySet()));
-        List<SysRoleResource> bindings = new ArrayList<>();
-        roleBindings.forEach((resourceId, roleIds) -> roleIds.forEach(roleId -> {
-            SysRoleResource binding = new SysRoleResource();
-            binding.setTenantId(tenantId);
-            binding.setRoleId(roleId);
-            binding.setResourceId(resourceId);
-            bindings.add(binding);
-        }));
-        for (int start = 0; start < bindings.size(); start += ROLE_BINDING_BATCH_SIZE) {
-            roleResourceMapper.insertBatch(
-                    bindings.subList(start, Math.min(start + ROLE_BINDING_BATCH_SIZE, bindings.size())));
-        }
     }
 
     private void updateDomainParentIfNeeded(SysResource existing, Long parentId, String domainName, Integer sort) {

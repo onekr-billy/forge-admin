@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * 资源Mapper接口
@@ -56,4 +57,8 @@ public interface SysResourceMapper extends BaseMapper<SysResource> {
      * 按资源ID查询API权限匹配表达式。
      */
     List<String> selectApiPermissionPatternsByResourceIds(@Param("resourceIds") List<Long> resourceIds);
+
+    /** 按权限码批量查询有效资源。 */
+    List<SysResource> selectByPermissions(@Param("tenantId") Long tenantId,
+                                          @Param("permissions") Set<String> permissions);
 }

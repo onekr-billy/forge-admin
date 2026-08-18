@@ -131,8 +131,8 @@ public class AiProviderService extends ServiceImpl<AiProviderMapper, AiProvider>
     public String testConnection(AiProviderTestDTO request) {
         AiProvider provider = resolveTestProvider(request);
         String modelType = request.getModelType();
-        // 未指定或 Chat 类型走现有 ChatModel 路径
-        if (!StringUtils.hasText(modelType) || AiModelType.CHAT.getCode().equals(modelType)) {
+        // 未指定或 Chat 类多模态理解模型（视觉/视频/音频理解均走 OpenAI 兼容 Chat 协议）走 ChatModel 路径
+        if (!StringUtils.hasText(modelType) || isChatCapableType(modelType)) {
             return testChatConnection(provider);
         }
         return testNonChatConnection(provider, modelType, request);
@@ -173,7 +173,20 @@ public class AiProviderService extends ServiceImpl<AiProviderMapper, AiProvider>
     }
 
     /**
-     * 非 Chat 类型连接测试（Embedding/Rerank/Image/ASR/TTS），通过 model 层适配器分发。
+     * 判断模型类型是否通过 OpenAI 兼容 Chat 协议连接（多模态理解模型亦为对话协议）。
+     * 未知类型按 Chat 处理，避免非 Chat 分发报错。
+     */
+    private boolean isChatCapableType(String modelType) {
+        AiModelType type = AiModelType.fromCode(modelType);
+        return type == null
+                || type == AiModelType.CHAT
+                || type == AiModelType.VISION
+                || type == AiModelType.VIDEO_UNDERSTANDING
+                || type == AiModelType.AUDIO_UNDERSTANDING;
+    }
+
+    /**
+     * 非 Chat 类型连接测试（Embedding/Rerank/Image/ASR/TTS/Video），通过 model 层适配器分发。
      */
     private String testNonChatConnection(AiProvider provider, String modelType, AiProviderTestDTO request) {
         AiModelType type = AiModelType.fromCode(modelType);
@@ -182,7 +195,7 @@ public class AiProviderService extends ServiceImpl<AiProviderMapper, AiProvider>
         }
         String model = resolveNonChatTestModel(provider, modelType, request);
         String baseUrl = AiProviderBaseUrlPolicy.normalizeAndValidate(
-                provider.getAdapterCode(), provider.getBaseUrl());
+                provider.getAdapterCode(), provider.getProviderType(), provider.getBaseUrl());
         String apiKey = provider.getId() != null && aiSecretCrypto.isEncrypted(provider.getApiKey())
                 ? aiSecretCrypto.decrypt(provider.getApiKey()) : provider.getApiKey();
         try {
@@ -215,6 +228,7 @@ public class AiProviderService extends ServiceImpl<AiProviderMapper, AiProvider>
             case IMAGE_GENERATION -> testImageConnection(model, baseUrl, apiKey);
             case TTS -> testTtsConnection(model, baseUrl, apiKey);
             case ASR -> throw new BusinessException("ASR模型需音频输入，请通过其他类型模型测试供应商连接");
+            case VIDEO_GENERATION -> throw new BusinessException("视频生成模型暂无连接测试支持");
             default -> throw new BusinessException("不支持的模型类型: " + type.getCode());
         };
     }
@@ -473,7 +487,7 @@ public class AiProviderService extends ServiceImpl<AiProviderMapper, AiProvider>
             throw new BusinessException("API Key不能为空");
         }
         provider.setBaseUrl(AiProviderBaseUrlPolicy.normalizeAndValidate(
-                provider.getAdapterCode(), provider.getBaseUrl()));
+                provider.getAdapterCode(), provider.getProviderType(), provider.getBaseUrl()));
     }
 
     private AiProvider resolveTestProvider(AiProviderTestDTO request) {

@@ -33,6 +33,7 @@
 | Task 9-11 | 2026-07-26 | 批次事务 Red 8 条中 6 条通过、2 条原子性断言失败 | 批次事务专项 12 条通过；最终 Data 7、Generator/System/Admin 22 条通过 | 未提交 | Data 使用 `REQUIRES_NEW`；低代码使用实际运行数据源事务管理器 |
 | Task 12 | 2026-07-26 | — | 44 模块 test-compile/package、59 条隔离测试、前端 build、静态扫描通过 | 未提交 | 生产迁移和旧钥退役按设计跳过 |
 | Task 13 | 2026-07-27 | 旧实现缺少启动前自动注入 | 启动引导 8/8，引导+原校验 15/15，Compose 解析通过 | 未提交 | 新安装自动生成并持久化；历史 legacy key 不可自动推导 |
+| Task 14 | 2026-08-17 | 跨 JVM 共享读取用例在旧实现上 5 秒超时失败 | 目标类 17/17、Starter Crypto 53/53、Admin/Flow Server 聚合包通过 | 已提交 | 完整文件共享读；创建和补字段排他写并二次检查 |
 
 ## 技术决策
 
@@ -45,6 +46,7 @@
 | 动态表 DDL | 容量不足阻塞，不自动扩列 | 迁移器自动修改字段长度 | 外部数据源和业务表 DDL 风险过高 |
 | 错误处理 | 解密失败关闭 | 把密文当明文或静默跳过 | 防止错误密钥被掩盖和敏感值错误流转 |
 | 启动 Secret | EnvironmentPostProcessor + 外部稳定文件 | 每次启动生成、写入 Git/DB、运行后修改父环境 | 配置绑定前生效，又不会因重启或容器重建换钥 |
+| 自动密钥文件锁 | 完整文件共享读，创建/升级排他写 | 整段排他锁或整段共享锁 | 多服务读取无需互斥，同时避免并发生成、补字段和写回 |
 
 ## 踩坑记录
 
@@ -56,6 +58,7 @@
 | 滚动发布会产生格式不兼容 | 旧节点不能识别版本前缀 | 增加 `write-versioned` 开关并固化发布顺序 | 已写入 `decisions.md` |
 | per-row 捕获会破坏批次原子性 | 行级失败被吞掉后事务仍可提交前序更新 | 先准备整批，再在 `REQUIRES_NEW` 中执行；冲突/异常抛出触发整批回滚 | 已沉淀 |
 | 只在各 scope 内校验会产生部分迁移 | Data 先写入后 Lowcode 参数校验失败 | Coordinator 在首次写入前预校验全部 included scope | 已沉淀 |
+| 自动密钥读取被排他锁串行 | 读取和写入共用整段 `FileChannel.lock()` | 完整文件共享读；需要写时释放共享锁并在排他锁内二次读取 | 已写入 `pitfalls.md` |
 
 ## 知识发现
 
@@ -112,3 +115,14 @@
 
 - Spec Compliance：PASS。里程碑 A/B/C 全部代码和文档任务完成，生产操作按边界保留。
 - Code Quality：PASS_WITH_COMMENTS。已修复审查发现的批次事务、scope 预检、失败关闭、方括号配置键旁路、空历史密钥和 PostgreSQL 容量元数据问题；没有剩余阻塞项。
+
+## 2026-08-17 Task 14 多服务密钥引导锁修复
+
+- 变更范围：仅调整 `CryptoSecretEnvironmentPostProcessor` 的自动密钥文件锁策略，并增加独立 Java 子进程回归入口；未变更密钥格式、配置优先级或业务 API。
+- 基线：JDK 17 运行 `CryptoSecretEnvironmentPostProcessorTest`，16/16 通过。
+- Red：父 JVM 持有 `crypto.properties.lock` 共享锁时启动子 JVM；旧实现申请排他锁，新增用例等待 5 秒后按预期失败。
+- Green：完整文件改为 `lock(0L, Long.MAX_VALUE, true)` 共享读取；文件不存在或缺少 Capability Pepper 时释放共享锁，再申请排他锁并重新读取后生成/写回。目标用例 1/1、目标类 17/17 通过。
+- 全量测试：`mvn -Penable-tests -pl forge-framework/forge-starter-parent/forge-starter-crypto -am test` 通过；Starter Crypto 53/53、Config 8/8、Tenant 4/4。
+- 构建：Starter Crypto 11/11、Admin 45/45、Flow Server 37/37 模块 `package -DskipTests` 通过。聚合构建保留仓库既有 deprecated/unchecked 警告，无新增编译错误。
+- 静态检查：`git diff --check` 通过；生产改动不记录或输出任何密钥值。
+- 跳过项：按现有验证边界未启动真实 Admin/Flow、MySQL、Redis 或容器；未访问用户机器的 `~/.forge/secrets`。测试子 JVM 已退出，无残留服务 PID。

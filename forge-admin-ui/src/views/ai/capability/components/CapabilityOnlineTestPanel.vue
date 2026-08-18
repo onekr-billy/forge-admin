@@ -429,7 +429,7 @@ async function executeOAuth() {
     method: 'POST',
     credentials: 'omit',
     headers: {
-      Authorization: `Basic ${basicCredentials(props.guide.clientId, credential.value)}`,
+      'Authorization': `Basic ${basicCredentials(props.guide.clientId, credential.value)}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: params.toString(),
@@ -441,7 +441,7 @@ async function executeOAuth() {
       method: 'POST',
       url: props.guide.tokenUrl,
       headers: {
-        Authorization: 'Basic <REDACTED>',
+        'Authorization': 'Basic <REDACTED>',
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: redactTokenForm(params),
@@ -462,10 +462,10 @@ async function executeOAuth() {
   }
 
   const invocation = await invokeGateway({
-    Authorization: `Bearer ${accessToken}`,
+    'Authorization': `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
   }, {
-    Authorization: 'Bearer <REDACTED>',
+    'Authorization': 'Bearer <REDACTED>',
     'Content-Type': 'application/json',
   })
   const success = invocation.response.status >= 200 && invocation.response.status < 300
@@ -493,8 +493,9 @@ async function createUserAssertionJwt() {
     jti: globalThis.crypto.randomUUID?.() || fallbackNonce(),
   }
   if (props.guide?.userAssertionMappingMode === 'VERIFIED_PHONE'
-    && userAssertionPhone.value.trim())
+    && userAssertionPhone.value.trim()) {
     claims.phone_number = userAssertionPhone.value.trim()
+  }
   if (userAssertionOrgId.value.trim())
     claims.forge_org_id = userAssertionOrgId.value.trim()
   const header = {
@@ -526,7 +527,12 @@ async function executeHmac() {
   const bodyHash = await sha256Hex(requestBody.value)
   const path = new URL(props.guide.invokeUrl).pathname
   const canonical = [
-    String(props.guide.clientId), timestamp, nonce, 'POST', path, bodyHash,
+    String(props.guide.clientId),
+    timestamp,
+    nonce,
+    'POST',
+    path,
+    bodyHash,
   ].join('\n')
   const signature = await hmacSha256Hex(credential.value, canonical)
   const invocation = await invokeGateway({
@@ -698,7 +704,8 @@ function base64UrlBytes(value) {
 
 async function sha256Hex(value) {
   const digest = await globalThis.crypto.subtle.digest(
-    'SHA-256', new TextEncoder().encode(value),
+    'SHA-256',
+    new TextEncoder().encode(value),
   )
   return bytesToHex(digest)
 }
@@ -712,7 +719,9 @@ async function hmacSha256Hex(key, value) {
     ['sign'],
   )
   const signature = await globalThis.crypto.subtle.sign(
-    'HMAC', cryptoKey, new TextEncoder().encode(value),
+    'HMAC',
+    cryptoKey,
+    new TextEncoder().encode(value),
   )
   return bytesToHex(signature)
 }
@@ -780,18 +789,22 @@ function downloadIntegrationExample() {
     `- OAuth Resource：\`${guide.openapiResource}\``,
     `- 客户端 ID / AppId：\`${guide.clientId}\``,
     `- 用户身份方案：\`${guide.userAssertionEnabled ? '客户端 RS256 用户断言' : '受信 OIDC JWT'}\``,
-    ...(guide.userAssertionEnabled ? [
-      `- 用户断言 kid：\`${guide.userAssertionKeyId}\``,
-      `- 用户断言 Issuer：\`${guide.userAssertionIssuer}\``,
-      `- 用户断言 Audience：\`${guide.userAssertionAudience}\``,
-      `- Subject Token Type：\`${guide.userAssertionSubjectTokenType}\``,
-    ] : []),
-    ...(guide.requestNotes?.length ? [
-      '',
-      '## 请求前提',
-      '',
-      ...guide.requestNotes.map(note => `- ${note}`),
-    ] : []),
+    ...(guide.userAssertionEnabled
+      ? [
+          `- 用户断言 kid：\`${guide.userAssertionKeyId}\``,
+          `- 用户断言 Issuer：\`${guide.userAssertionIssuer}\``,
+          `- 用户断言 Audience：\`${guide.userAssertionAudience}\``,
+          `- Subject Token Type：\`${guide.userAssertionSubjectTokenType}\``,
+        ]
+      : []),
+    ...(guide.requestNotes?.length
+      ? [
+          '',
+          '## 请求前提',
+          '',
+          ...guide.requestNotes.map(note => `- ${note}`),
+        ]
+      : []),
     '',
     '## 请求 Body',
     '',

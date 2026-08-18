@@ -50,7 +50,7 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
     @Override
     public OutboundResponse execute(OutboundRequest request) {
         RequestState state = validateRequest(request);
-        long deadlineNanos = System.nanoTime() + positiveDuration(properties.getCallTimeout(), "整体超时").toNanos();
+        long deadlineNanos = System.nanoTime() + state.callTimeout().toNanos();
         int redirects = 0;
 
         while (true) {
@@ -83,7 +83,7 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
                                            OutboundRequestContext context,
                                            ValidatedOutboundTarget initialTarget,
                                            long deadlineNanos) {
-        OkHttpClient client = buildClient(context, initialTarget, deadlineNanos);
+        OkHttpClient client = buildClient(state, context, initialTarget, deadlineNanos);
         Request httpRequest = buildRequest(state, initialTarget.getUri());
         try (Response response = client.newCall(httpRequest).execute()) {
             return new OutboundResponse(
@@ -105,7 +105,8 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
         }
     }
 
-    private OkHttpClient buildClient(OutboundRequestContext context,
+    private OkHttpClient buildClient(RequestState state,
+                                     OutboundRequestContext context,
                                      ValidatedOutboundTarget initialTarget,
                                      long deadlineNanos) {
         long remainingMillis = remainingMillis(deadlineNanos);
@@ -116,11 +117,11 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
                 .retryOnConnectionFailure(false)
                 .followRedirects(false)
                 .followSslRedirects(false)
-                .connectTimeout(cappedMillis(properties.getConnectTimeout(), remainingMillis, "连接超时"),
+                .connectTimeout(cappedMillis(contextTimeout(state.connectTimeout(), properties.getConnectTimeout(), "连接超时"), remainingMillis, "连接超时"),
                         TimeUnit.MILLISECONDS)
-                .readTimeout(cappedMillis(properties.getReadTimeout(), remainingMillis, "读取超时"),
+                .readTimeout(cappedMillis(contextTimeout(state.readTimeout(), properties.getReadTimeout(), "读取超时"), remainingMillis, "读取超时"),
                         TimeUnit.MILLISECONDS)
-                .writeTimeout(cappedMillis(properties.getWriteTimeout(), remainingMillis, "写入超时"),
+                .writeTimeout(cappedMillis(contextTimeout(state.writeTimeout(), properties.getWriteTimeout(), "写入超时"), remainingMillis, "写入超时"),
                         TimeUnit.MILLISECONDS)
                 .callTimeout(remainingMillis, TimeUnit.MILLISECONDS)
                 .build();
@@ -202,7 +203,11 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
         }
         Map<String, String> headers = validateHeaders(request.getHeaders());
         return new RequestState(
-                request.getScene(), request.getUrl(), method, headers, request.getContentType(), body);
+                request.getScene(), request.getUrl(), method, headers, request.getContentType(), body,
+                contextTimeout(request.getConnectTimeout(), properties.getConnectTimeout(), "连接超时"),
+                contextTimeout(request.getReadTimeout(), properties.getReadTimeout(), "读取超时"),
+                contextTimeout(request.getWriteTimeout(), properties.getWriteTimeout(), "写入超时"),
+                contextTimeout(request.getCallTimeout(), properties.getCallTimeout(), "整体超时"));
     }
 
     private Map<String, String> validateHeaders(Map<String, String> requestHeaders) {
@@ -240,7 +245,8 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
             body = new byte[0];
             contentType = null;
         }
-        return new RequestState(current.scene(), nextUri.toString(), method, nextHeaders, contentType, body);
+        return new RequestState(current.scene(), nextUri.toString(), method, nextHeaders, contentType, body,
+                current.connectTimeout(), current.readTimeout(), current.writeTimeout(), current.callTimeout());
     }
 
     private boolean sameOrigin(URI first, URI second) {
@@ -290,6 +296,15 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
         return duration;
     }
 
+    private Duration contextTimeout(Duration requested, Duration platformMaximum, String name) {
+        Duration maximum = positiveDuration(platformMaximum, name);
+        if (requested == null) {
+            return maximum;
+        }
+        Duration normalized = positiveDuration(requested, name);
+        return normalized.compareTo(maximum) > 0 ? maximum : normalized;
+    }
+
     private long positiveLimit(long value, String name) {
         if (value <= 0) {
             throw new OutboundSecurityException(name + "上限必须大于0");
@@ -325,6 +340,8 @@ public class OkHttpSecureOutboundClient implements SecureOutboundClient {
     }
 
     private record RequestState(String scene, String url, String method,
-                                Map<String, String> headers, String contentType, byte[] body) {
+                                Map<String, String> headers, String contentType, byte[] body,
+                                Duration connectTimeout, Duration readTimeout, Duration writeTimeout,
+                                Duration callTimeout) {
     }
 }

@@ -54,6 +54,55 @@ class LowcodeProtocolSnapshotBuilderTest {
     }
 
     @Test
+    @DisplayName("字段查询事件随表单发布快照完整保留并声明运行时覆盖")
+    void preservesManagedFieldEvents() throws Exception {
+        AiCrudConfig config = validConfig();
+        config.setOptions("""
+                {"formDesignerSchema":{"settings":{"governance":{"fieldEvents":[{
+                  "id":"query_contact","trigger":"BLUR","sourceField":"mobile",
+                  "sourceType":"EXTERNAL_API","sourceKey":"crm/contact_lookup",
+                  "debounceMs":0,"paramMappings":[{"param":"mobile","source":"FORM_FIELD","field":"mobile"}],
+                  "resultMode":"ROOT","resultMappings":[{"from":"contact.name","to":"contactName","whenMissing":"CLEAR"}]
+                }]}}}}
+                """);
+
+        LowcodeProtocolSnapshotBuilder.ProtocolArtifacts artifacts = builder.build(config);
+        JsonNode frontend = objectMapper.readTree(artifacts.frontendRuntimeConfig());
+        JsonNode coverage = objectMapper.readTree(artifacts.coverageReport());
+
+        assertEquals("query_contact", frontend.at(
+                "/options/formDesignerSchema/settings/governance/fieldEvents/0/id").asText());
+        assertTrue(coverage.get("capabilities").toString().contains(
+                "/options/formDesignerSchema/settings/governance/fieldEvents"));
+        assertTrue(coverage.get("capabilities").toString().contains("QUERY_SOURCE_EVENT_COMPILED"));
+    }
+
+    @Test
+    @DisplayName("离线草稿治理配置随表单发布快照保留并声明共享运行时覆盖")
+    void preservesOfflineDraftGovernance() throws Exception {
+        AiCrudConfig config = validConfig();
+        config.setOptions("""
+                {"formDesignerSchema":{"settings":{"governance":{"offlineDraft":{
+                  "enabled":true,"formCode":"presale_form",
+                  "replayActionCode":"submit_presale","recordVersionField":"updateTime"
+                }}}}}
+                """);
+
+        LowcodeProtocolSnapshotBuilder.ProtocolArtifacts artifacts = builder.build(config);
+        JsonNode frontend = objectMapper.readTree(artifacts.frontendRuntimeConfig());
+        JsonNode coverage = objectMapper.readTree(artifacts.coverageReport());
+
+        assertTrue(frontend.at(
+                "/options/formDesignerSchema/settings/governance/offlineDraft/enabled").asBoolean());
+        assertEquals("submit_presale", frontend.at(
+                "/options/formDesignerSchema/settings/governance/offlineDraft/replayActionCode").asText());
+        assertTrue(coverage.get("capabilities").toString().contains(
+                "/options/formDesignerSchema/settings/governance/offlineDraft"));
+        assertTrue(coverage.get("capabilities").toString().contains(
+                "OFFLINE_DRAFT_GOVERNANCE_PRESERVED"));
+    }
+
+    @Test
     @DisplayName("低代码配置缺少权威模型或页面协议时失败关闭")
     void rejectsMissingAuthoritativeSchema() {
         AiCrudConfig config = validConfig();

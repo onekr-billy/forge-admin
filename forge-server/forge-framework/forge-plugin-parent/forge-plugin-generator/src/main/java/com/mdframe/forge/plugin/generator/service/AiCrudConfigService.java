@@ -298,6 +298,16 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
         published.setPublishedVersion(config.getPublishedVersion());
         published.setPublishTime(config.getPublishTime());
         published.setPublishBy(config.getPublishBy());
+        published.setRuntimeDatasourceId(config.getRuntimeDatasourceId());
+        published.setRuntimeDatasourceCode(config.getRuntimeDatasourceCode());
+        published.setRuntimeDatasourceSnapshot(config.getRuntimeDatasourceSnapshot());
+        published.setRuntimeTableName(config.getRuntimeTableName());
+        published.setPrimaryKeyField(config.getPrimaryKeyField());
+        published.setPrimaryKeyColumn(config.getPrimaryKeyColumn());
+        published.setPrimaryKeyType(config.getPrimaryKeyType());
+        published.setTenantStrategy(config.getTenantStrategy());
+        published.setAuditStrategy(config.getAuditStrategy());
+        published.setLogicDeleteStrategy(config.getLogicDeleteStrategy());
         published.setModelSchema(StringUtils.defaultIfBlank(version.getModelSchema(), config.getModelSchema()));
         published.setPageSchema(StringUtils.defaultIfBlank(version.getPageSchema(), config.getPageSchema()));
         published.setSearchSchema(StringUtils.defaultIfBlank(version.getSearchSchema(), config.getSearchSchema()));

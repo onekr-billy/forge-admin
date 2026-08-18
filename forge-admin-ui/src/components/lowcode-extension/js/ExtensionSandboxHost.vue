@@ -33,7 +33,7 @@ function execute(script, context = {}, allowedFields = []) {
     worker = new Worker(new URL('./extension-sandbox.worker.js', import.meta.url), { type: 'module' })
   }
   catch (error) {
-    throw new Error('无法创建客户端扩展隔离 Worker：' + normalizeThrownError(error))
+    throw new Error(`无法创建客户端扩展隔离 Worker：${normalizeThrownError(error)}`)
   }
 
   return new Promise((resolve, reject) => {
@@ -94,7 +94,7 @@ function execute(script, context = {}, allowedFields = []) {
         })
       }
       catch (error) {
-        rejectOnce(new Error('无法向客户端扩展隔离 Worker 发送测试上下文：' + normalizeThrownError(error)))
+        rejectOnce(new Error(`无法向客户端扩展隔离 Worker 发送测试上下文：${normalizeThrownError(error)}`))
       }
     }
 
@@ -144,7 +144,7 @@ function stageError(stage) {
     EXECUTE: '脚本运行',
     RESPONSE: '结果返回',
   }[stage] || '未知阶段'
-  return '客户端扩展在' + label + '失败'
+  return `客户端扩展在${label}失败`
 }
 
 function formatWorkerError(event) {
@@ -156,9 +156,9 @@ function formatWorkerError(event) {
   const line = Number(event?.lineno || 0)
   const column = Number(event?.colno || 0)
   const location = file
-    ? '（' + file + (line ? ':' + line : '') + (column ? ':' + column : '') + '）'
+    ? `（${file}${line ? `:${line}` : ''}${column ? `:${column}` : ''}）`
     : ''
-  return '客户端扩展隔离 Worker 异常终止：' + message + location + workerErrorHint(rawMessage)
+  return `客户端扩展隔离 Worker 异常终止：${message}${location}${workerErrorHint(rawMessage)}`
 }
 
 function normalizeThrownError(error) {

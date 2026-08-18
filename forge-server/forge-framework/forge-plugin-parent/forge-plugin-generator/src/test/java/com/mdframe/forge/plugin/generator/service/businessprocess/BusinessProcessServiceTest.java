@@ -17,6 +17,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessNamingService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
+import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessVO;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
@@ -116,6 +117,23 @@ class BusinessProcessServiceTest {
         assertEquals(64, inserted.getDraftSchemaHash().length());
         assertEquals("DRAFT", inserted.getDesignStatus());
         assertNull(inserted.getPublishedVersion());
+    }
+
+    @Test
+    @DisplayName("object process summary keeps tenant and canonical object code scope")
+    void listByObjectCodeKeepsTenantAndObjectScope() {
+        BusinessObjectProcessVO summary = new BusinessObjectProcessVO();
+        summary.setId("1001");
+        summary.setProcessCode("order_created_update");
+        summary.setStartNodeType("START_EVENT");
+        when(processMapper.selectBySubjectObjectCode(1L, "order")).thenReturn(List.of(summary));
+
+        List<BusinessObjectProcessVO> result = service.listByObjectCode("  order  ");
+
+        assertEquals(1, result.size());
+        assertEquals("1001", result.get(0).getId());
+        assertEquals("START_EVENT", result.get(0).getStartNodeType());
+        verify(processMapper).selectBySubjectObjectCode(1L, "order");
     }
 
     @Test

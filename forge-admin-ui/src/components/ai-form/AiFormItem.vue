@@ -54,6 +54,8 @@
         class="ai-form-control"
         :style="componentControlStyle"
         :class="componentControlClass"
+        @focusout="handleFieldFocusout"
+        @keyup="handleFieldKeyup"
       >
         <div
           v-if="shouldRenderReadonlySelectionText(field)"
@@ -87,6 +89,30 @@
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
+
+        <!-- H5/企业微信条码扫描输入框 -->
+        <div v-else-if="field.type === 'barcodeScanner'" class="ai-form-barcode-scanner-field">
+          <n-input
+            :value="value"
+            :placeholder="getPlaceholder(field)"
+            :disabled="disabledHandler(field)"
+            :clearable="field.props?.allowManualInput !== false"
+            :maxlength="field.props?.maxlength || 2048"
+            v-bind="field.props"
+            :readonly="field.props?.allowManualInput === false || fieldRuntimeControl.readonly"
+            @update:value="handleUpdate"
+            v-on="getComponentEvents(field)"
+          />
+          <n-button
+            type="primary"
+            secondary
+            :loading="scanLoading"
+            :disabled="disabledHandler(field) || scanLoading"
+            @click="handleScanFieldEvent"
+          >
+            {{ scanLoading ? '扫描中' : '扫描条码' }}
+          </n-button>
+        </div>
 
         <!-- 多行文本 -->
         <n-input
@@ -699,6 +725,51 @@
           v-on="getComponentEvents(field)"
         />
       </div>
+      <div v-if="showFieldEventFeedback" class="ai-form-field-event">
+        <n-button
+          v-if="scanFieldEventEnabled && field.type !== 'barcodeScanner'"
+          class="ai-form-field-event__action"
+          text
+          type="primary"
+          size="tiny"
+          :loading="scanLoading"
+          :disabled="disabledHandler(field) || scanLoading"
+          @mousedown.prevent
+          @click="handleScanFieldEvent"
+        >
+          {{ scanLoading ? '扫码中' : '扫码' }}
+        </n-button>
+        <n-button
+          v-if="manualFieldEventEnabled"
+          class="ai-form-field-event__action"
+          text
+          type="primary"
+          size="tiny"
+          :loading="fieldEventState.loading"
+          :disabled="disabledHandler(field) || fieldEventState.loading"
+          @mousedown.prevent
+          @click="handleManualFieldEvent"
+        >
+          {{ fieldEventState.loading ? '查询中' : '查询' }}
+        </n-button>
+        <span
+          v-if="scanFeedback.message"
+          class="ai-form-field-event__message"
+          :class="`is-${scanFeedback.status}`"
+        >
+          {{ scanFeedback.message }}
+        </span>
+        <span
+          v-if="fieldEventState.message"
+          class="ai-form-field-event__message"
+          :class="`is-${fieldEventState.status}`"
+        >
+          {{ fieldEventState.message }}
+        </span>
+        <span v-else-if="fieldEventState.loading && !manualFieldEventEnabled" class="ai-form-field-event__message is-loading">
+          查询中…
+        </span>
+      </div>
       <p v-if="fieldDescription" class="ai-form-item-description">
         {{ fieldDescription }}
       </p>
@@ -732,7 +803,7 @@
 <script setup>
 import { CopyOutline } from '@vicons/ionicons5'
 import { useClipboard } from '@vueuse/core'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { queryBusinessRecordSelector } from '@/api/business-app'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
@@ -782,6 +853,8 @@ const remoteLoading = ref(false)
 const dictOptions = ref([])
 const sourceDictOptions = ref([])
 const recordSelectorVisible = ref(false)
+const scanLoading = ref(false)
+const scanFeedback = ref({ status: 'idle', message: '' })
 const pickerDefaultTimestamp = Date.now()
 let remoteRequestSeq = 0
 
@@ -877,9 +950,15 @@ const formItemClass = computed(() => [
   props.field?.field ? `ai-form-item-field-${props.field.field}` : '',
   props.field?.formItemClass,
 ].filter(Boolean))
-const componentControlStyle = computed(() => props.field?.componentStyle || props.field?.style || undefined)
+const componentControlStyle = computed(() => {
+  const runtimeStyle = fieldRuntimeControl.value.style || {}
+  return Object.keys(runtimeStyle).length
+    ? { ...(props.field?.componentStyle || props.field?.style || {}), ...runtimeStyle }
+    : props.field?.componentStyle || props.field?.style || undefined
+})
 const componentControlClass = computed(() => [
   `ai-form-control--${props.field?.type || 'input'}`,
+  fieldRuntimeControl.value.className,
   props.field?.componentClass,
 ].filter(Boolean))
 const recordSelectorConfig = computed(() => normalizeRecordSelectorConfig(props.field))
@@ -909,6 +988,19 @@ const recordSelectorDisplayText = computed(() => {
 const fieldDescription = computed(() => props.field?.props?.description || props.field?.description || '')
 const fieldLabelTip = computed(() => props.field?.props?.labelTip || props.field?.labelTip || '')
 const fieldBadge = computed(() => props.field?.props?.badge || props.field?.badge || '')
+const manualFieldEventEnabled = computed(() => props.context?.hasFieldEvent?.('MANUAL', props.field?.field) === true)
+const blurFieldEventEnabled = computed(() => props.context?.hasFieldEvent?.('BLUR', props.field?.field) === true)
+const scanFieldEventEnabled = computed(() => props.context?.hasFieldEvent?.('SCAN_COMPLETE', props.field?.field) === true)
+const fieldEventState = computed(() => props.context?.getFieldEventState?.(props.field?.field) || {
+  status: 'idle',
+  loading: false,
+  message: '',
+})
+const showFieldEventFeedback = computed(() => manualFieldEventEnabled.value
+  || scanFieldEventEnabled.value
+  || scanFeedback.value.message
+  || fieldEventState.value.loading
+  || Boolean(fieldEventState.value.message))
 const isSectionTitleField = computed(() => {
   return !isLegacyGroupTitleField(props.field) && ['divider', 'elDivider', 'AiFormSectionTitle', 'aiFormSectionTitle', 'formSectionTitle', 'FormSectionTitle']
     .includes(props.field?.type || props.field?.componentKey || props.field?.nodeType)
@@ -1057,6 +1149,13 @@ const currentOptions = computed(() => {
     return withCurrentValueOption(resolveCascadedOptions(field.props.options))
   }
 
+  const currentChildrenSource = resolveCurrentChildrenSource(field)
+  if (currentChildrenSource) {
+    return withCurrentValueOption(resolveCascadedOptions(
+      buildCurrentChildrenOptions(currentChildrenSource, props.context),
+    ))
+  }
+
   if (fieldDictType.value) {
     const options = resolveCascadedOptions(dictOptions.value)
     if (field.type === 'cascader')
@@ -1187,11 +1286,56 @@ function hasEffectiveOptionSource(source) {
     return source.trim() !== ''
   if (typeof source !== 'object')
     return false
+  if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || '')))
+    return true
   return Boolean(
     String(source.api || source.url || '').trim()
     || Array.isArray(source.options)
     || Array.isArray(source.data),
   )
+}
+
+function resolveCurrentChildrenSource(field = {}) {
+  const source = field.optionSource || field.props?.optionSource
+  if (!source || typeof source !== 'object')
+    return null
+  return ['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || ''))
+    ? source
+    : null
+}
+
+function buildCurrentChildrenOptions(source = {}, context = {}) {
+  const relationKey = String(source.relationKey || source.childKey || '').trim()
+  const collections = context?.childCollections && typeof context.childCollections === 'object'
+    ? context.childCollections
+    : {}
+  const rows = relationKey && Array.isArray(collections[relationKey]) ? collections[relationKey] : []
+  const valueField = source.valueField || 'id'
+  const labelField = source.labelField || 'label'
+  const disabledField = source.disabledField || ''
+  const seen = new Set()
+  return rows
+    .filter(row => row && (!source.persistedOnly || hasPersistedOptionId(row)))
+    .map((row) => {
+      const value = row[valueField]
+      if (value === null || value === undefined || value === '' || seen.has(String(value)))
+        return null
+      seen.add(String(value))
+      const label = row[labelField] ?? row.name ?? row.title ?? value
+      return {
+        ...row,
+        value,
+        key: row.key ?? value,
+        label: String(label),
+        ...(disabledField ? { disabled: row[disabledField] === true } : {}),
+      }
+    })
+    .filter(Boolean)
+}
+
+function hasPersistedOptionId(row = {}) {
+  const value = row.id ?? row.ID ?? row.recordId
+  return value !== null && value !== undefined && String(value).trim() !== ''
 }
 
 function normalizeOptionSource(source) {
@@ -1970,6 +2114,76 @@ function handleUpdate(newValue) {
   emit('update:value', newValue)
 }
 
+function handleFieldFocusout(event) {
+  if (!blurFieldEventEnabled.value)
+    return
+  if (event?.currentTarget?.contains?.(event.relatedTarget))
+    return
+  props.context?.dispatchFieldEvent?.('BLUR', props.field?.field)
+}
+
+function handleFieldKeyup(event) {
+  if (!scanFieldEventEnabled.value || event?.key !== 'Enter')
+    return
+  event.preventDefault?.()
+  event.stopPropagation?.()
+  props.context?.dispatchFieldEvent?.('SCAN_COMPLETE', props.field?.field)
+}
+
+async function handleScanFieldEvent() {
+  if (scanLoading.value || disabledHandler(props.field))
+    return
+  const scanner = props.context?.scanField
+  if (typeof scanner !== 'function') {
+    setScanFeedback('error', '当前环境不支持扫码')
+    return
+  }
+  scanLoading.value = true
+  setScanFeedback('loading', '')
+  try {
+    const result = await scanner(props.field)
+    if (!result?.value)
+      throw Object.assign(new Error('扫码结果无效'), { code: 'SCAN_INVALID_RESULT' })
+    handleUpdate(result.value)
+    await nextTick()
+    await props.context?.dispatchFieldEvent?.('SCAN_COMPLETE', props.field?.field, { scan: result })
+    setScanFeedback('success', '')
+  }
+  catch (error) {
+    setScanFeedback('error', resolveScanErrorMessage(error))
+  }
+  finally {
+    scanLoading.value = false
+  }
+}
+
+function setScanFeedback(status, message) {
+  scanFeedback.value = { status, message: message || '' }
+}
+
+function resolveScanErrorMessage(error) {
+  switch (error?.code) {
+    case 'SCAN_CANCELLED':
+      return '已取消扫码'
+    case 'SCAN_TIMEOUT':
+      return '扫码超时，请重试'
+    case 'SCAN_UNSUPPORTED':
+      return '当前环境不支持扫码'
+    case 'SCAN_PERMISSION_DENIED':
+      return '请允许浏览器使用摄像头'
+    case 'SCAN_INVALID_RESULT':
+      return '扫码结果无效'
+    default:
+      return '扫码失败，请重试'
+  }
+}
+
+function handleManualFieldEvent() {
+  if (fieldEventState.value.loading)
+    return
+  props.context?.dispatchFieldEvent?.('MANUAL', props.field?.field)
+}
+
 function openRecordSelector() {
   if (!recordSelectorConfig.value.objectCode) {
     window.$message?.warning('未配置选择器业务对象')
@@ -2176,6 +2390,39 @@ function handleUploadRemove(field, file) {
   font-size: 12px;
   line-height: 18px;
   word-break: break-word;
+}
+
+.ai-form-field-event {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 8px;
+  line-height: 18px;
+}
+
+.ai-form-field-event__action {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.ai-form-field-event__message {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-form-field-event__message.is-error {
+  color: #dc2626;
+}
+
+.ai-form-field-event__message.is-not_found {
+  color: #b45309;
+}
+
+.ai-form-field-event__message.is-loading {
+  color: #2563eb;
 }
 
 .ai-form-item-label__tip {

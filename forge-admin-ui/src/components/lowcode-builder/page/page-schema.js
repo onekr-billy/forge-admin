@@ -292,6 +292,37 @@ function filterPageFields(fields = [], zoneKey = 'table') {
   return (fields || []).filter(field => isPageFieldVisible(field, zoneKey))
 }
 
+// 列表默认列只保留业务字段，审计类系统字段（创建人/时间、更新人/时间、创建部门）
+// 默认不进列表，避免一进来就有 20+ 列把操作列挤到看不见的位置。用户仍可在
+// 列表设计器里手动添加这些字段——它们没有从 listVisible 白名单里移除。
+const defaultListHiddenFieldNames = new Set([
+  'createBy',
+  'createTime',
+  'createDept',
+  'updateBy',
+  'updateTime',
+])
+const defaultListHiddenColumnNames = new Set([
+  'create_by',
+  'create_time',
+  'create_dept',
+  'update_by',
+  'update_time',
+])
+
+export function isDefaultListColumnField(field = {}) {
+  if (!isPageFieldVisible(field, 'table'))
+    return false
+  const fieldName = field.sourceField || field.field
+  return !defaultListHiddenFieldNames.has(fieldName)
+    && !defaultListHiddenFieldNames.has(field.field)
+    && !defaultListHiddenColumnNames.has(field.columnName)
+}
+
+function filterDefaultListFields(fields = []) {
+  return (fields || []).filter(isDefaultListColumnField)
+}
+
 function isChildPageModelField(field = {}) {
   const sourceField = field.sourceField || field.field
   return Boolean(field.modelCode) && field.field !== sourceField
@@ -323,7 +354,7 @@ export function createDefaultPageSchema(modelSchema) {
         zoneKey: 'table',
         componentKey: 'data-table',
         enabled: true,
-        fieldRefs: filterPageFields(fields, 'table').map(field => field.field),
+        fieldRefs: filterDefaultListFields(fields).map(field => field.field),
         props: {
           showImport: true,
           showExport: true,
@@ -533,6 +564,19 @@ export const LIST_PAGE_GRID_GAP = 8
 export const LIST_PAGE_DESIGN_WIDTH = 1366
 export const LIST_PAGE_GRID_BASE_COL_WIDTH = Math.floor((LIST_PAGE_DESIGN_WIDTH - (LIST_PAGE_GRID_COLS - 1) * LIST_PAGE_GRID_GAP) / LIST_PAGE_GRID_COLS)
 
+export const DATA_FIELD_BLOCK_TYPES = Object.freeze([
+  'AiCrudPage',
+  'AiForm',
+  'AiTable',
+  'data-table',
+  'search-form',
+  'detail-info',
+])
+
+export function isDataFieldBlockType(blockType) {
+  return DATA_FIELD_BLOCK_TYPES.includes(blockType)
+}
+
 export const listPageBlockCatalog = [
   {
     blockType: 'search-form',
@@ -592,8 +636,9 @@ export const listPageBlockCatalog = [
   {
     blockType: 'AiCrudPage',
     group: 'action',
-    title: 'AiCrudPage',
-    desc: '系统完整 CRUD 组件',
+    title: '数据列表',
+    techTitle: 'AiCrudPage',
+    desc: '选择业务对象，自动生成筛选、表格与新增、编辑、删除，内置数据表单弹窗',
     defaultW: 12,
     defaultH: 14,
     unique: true,
@@ -601,8 +646,9 @@ export const listPageBlockCatalog = [
   {
     blockType: 'AiTable',
     group: 'data',
-    title: 'AiTable',
-    desc: '系统表格组合组件',
+    title: '数据表格',
+    techTitle: 'AiTable',
+    desc: '选择业务对象，生成支持分页、密度与列设置的交互表格',
     defaultW: 12,
     defaultH: 9,
     unique: true,
@@ -610,15 +656,16 @@ export const listPageBlockCatalog = [
   {
     blockType: 'AiForm',
     group: 'data',
-    title: 'AiForm',
-    desc: '系统表单组合组件',
+    title: '数据表单',
+    techTitle: 'AiForm',
+    desc: '选择业务对象，按字段自动生成录入表单，可独立提交',
     defaultW: 12,
     defaultH: 6,
   },
   {
     blockType: 'data-table',
     group: 'data',
-    title: '数据列表',
+    title: '基础列表',
     desc: '配置展示列、排序、宽度',
     defaultW: 12,
     defaultH: 10,
@@ -1030,7 +1077,7 @@ export function createDefaultListGridLayout(modelSchema, options = {}) {
       defaultSortField: 'id',
       defaultSortOrder: 'desc',
     },
-    fieldRefs: filterPageFields(fields, 'table').map(f => f.field),
+    fieldRefs: filterDefaultListFields(fields).map(f => f.field),
   })
 
   return {
@@ -1774,7 +1821,7 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
     base.props = { ...base.props, fieldSettings: {}, collapsible: true }
   }
   if (blockType === 'data-table') {
-    base.fieldRefs = filterPageFields(fields, 'table').map(f => f.field)
+    base.fieldRefs = filterDefaultListFields(fields).map(f => f.field)
     base.props = { ...base.props, fieldSettings: {}, defaultSortField: 'id', defaultSortOrder: 'desc' }
   }
   if (blockType === 'toolbar') {
@@ -1821,7 +1868,7 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
   if (blockType === 'AiForm') {
     base.props = {
       ...base.props,
-      title: 'AiForm',
+      title: '数据表单',
       gridCols: 2,
       labelPlacement: 'left',
       labelWidth: 100,
@@ -2222,8 +2269,8 @@ function createDefaultBlockFrameStyle(gridX = 0, gridY = 0, gridW = 12, gridH = 
 
 function createDefaultAiCrudPageProps() {
   return {
-    title: 'AiCrudPage',
-    description: '系统完整 CRUD 页面组件',
+    title: '数据列表',
+    description: '自动生成筛选、列表和数据维护表单',
     api: '',
     rowKey: 'id',
     listApi: '',

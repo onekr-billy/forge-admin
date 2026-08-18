@@ -67,22 +67,24 @@ class BusinessApplicationRuntimeServiceTest {
     }
 
     @Test
-    @DisplayName("role filtering keeps hidden accessible pages and falls back to the first accessible page")
+    @DisplayName("RBAC page filtering keeps internal pages and falls back to the first accessible page")
     void filtersPagesAndFallsBackHome() {
         BusinessApplicationRuntimeService service = service(application(1), version(1, "{}"));
         Map<String, Object> builder = new LinkedHashMap<>();
         builder.put("homePageId", "page_admin");
         builder.put("nodes", List.of(
                 group("group_sales"),
-                node("page_admin", null, Map.of("mode", "roles", "roleIds", List.of(99L))),
-                node("page_sales", "group_sales", Map.of("mode", "roles", "roleIds", List.of(7L))),
+                menuNode("page_admin", null),
+                menuNode("page_sales", "group_sales"),
                 hiddenNode("page_hidden")));
         builder.put("pages", Map.of(
                 "page_admin", Map.of("title", "管理页"),
                 "page_sales", Map.of("title", "销售页"),
                 "page_hidden", Map.of("title", "隐藏页")));
 
-        Map<String, Object> filtered = service.filterBuilder(builder, Set.of(7L));
+        Map<String, Object> filtered = service.filterBuilder(builder, "crm_test",
+                Set.of("ai:business:application:crm_test:page:page_sales",
+                        "ai:business:application:crm_test:page:group_sales"));
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) filtered.get("nodes");
         Map<String, Object> pages = (Map<String, Object>) filtered.get("pages");
 
@@ -100,17 +102,33 @@ class BusinessApplicationRuntimeServiceTest {
         Map<String, Object> builder = new LinkedHashMap<>();
         builder.put("homePageId", "page_admin");
         builder.put("nodes", List.of(
-                node("page_admin", null, Map.of("mode", "roles", "roleIds", List.of(99L))),
-                node("page_sales", null, Map.of("mode", "roles", "roleIds", List.of(7L)))));
+                menuNode("page_admin", null),
+                menuNode("page_sales", null)));
         builder.put("pages", Map.of(
                 "page_admin", Map.of("title", "管理页"),
                 "page_sales", Map.of("title", "销售页")));
 
-        Map<String, Object> filtered = service.filterBuilder(builder, Set.of(), true);
+        Map<String, Object> filtered = service.filterBuilder(builder, "crm_test", Set.of(), true);
 
         assertEquals("page_admin", filtered.get("homePageId"));
         assertEquals(Set.of("page_admin", "page_sales"),
                 ((Map<?, ?>) filtered.get("pages")).keySet());
+    }
+
+    @Test
+    @DisplayName("RBAC filtering supports legacy system-menu markers stored in settings")
+    void filtersLegacySettingsSystemMenuPage() {
+        BusinessApplicationRuntimeService service = service(application(1), version(1, "{}"));
+        Map<String, Object> builder = new LinkedHashMap<>();
+        builder.put("homePageId", "page_legacy");
+        builder.put("nodes", List.of(settingsMenuNode("page_legacy")));
+        builder.put("pages", Map.of("page_legacy", Map.of("title", "历史菜单页")));
+
+        Map<String, Object> filtered = service.filterBuilder(builder, "crm_test", Set.of());
+
+        assertEquals(List.of(), filtered.get("nodes"));
+        assertEquals(Map.of(), filtered.get("pages"));
+        assertEquals(null, filtered.get("homePageId"));
     }
 
     private BusinessApplicationRuntimeService service(BusinessApplicationVO application,
@@ -147,7 +165,20 @@ class BusinessApplicationRuntimeServiceTest {
     }
 
     private Map<String, Object> group(String id) {
-        return Map.of("id", id, "type", "group", "title", id, "sort", 0);
+        return Map.of("id", id, "type", "group", "title", id, "sort", 0,
+                "systemMenuVisible", true);
+    }
+
+    private Map<String, Object> menuNode(String id, String parentId) {
+        Map<String, Object> node = node(id, parentId, null);
+        node.put("systemMenuVisible", true);
+        return node;
+    }
+
+    private Map<String, Object> settingsMenuNode(String id) {
+        Map<String, Object> node = node(id, null, null);
+        node.put("settings", Map.of("systemMenuVisible", true));
+        return node;
     }
 
     private Map<String, Object> node(String id, String parentId, Map<String, Object> access) {

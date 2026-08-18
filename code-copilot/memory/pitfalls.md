@@ -2,6 +2,30 @@
 
 > 记录开发过程中遇到的常见错误和解决方案，避免重复踩坑
 
+## 对象设计版本不能复用 CRUD 发布版本
+
+**发现日期**：2026-08-12
+
+`ai_business_object_design_version.version_no` 是同一业务对象的设计历史序号，唯一键为 `(tenant_id, object_id, version_no)`；`publish_version` 仅指向关联的 CRUD 发布版本。二者在普通创建时可能都从 1 开始，但种子/导入历史会使它们天然不同步。
+
+处理原则：对象设计快照一律按该对象 `MAX(version_no) + 1` 分配，发布链路只向 `publish_version` 写入 CRUD `publishedVersion`。不要在 DTO 上保留可由调用方指定的对象设计 `versionNo`，否则首次人工发布会与种子快照冲突。
+
+## 移动低代码字段事件不能只实现一次查询和回填
+
+**发现日期**：2026-08-12
+
+H5/企微运行页若只按字段事件调用查询源，会忽略统一协议中的 `skipWhenEmpty`、`clearTargetsOnTrigger`、`debounceMs` 和并发失效语义。用户快速改值时旧请求可能覆盖新结果，清空手机号或条码仍会请求外部系统，明细行复用同一个规则 ID 时还可能互相取消。
+
+处理原则：移动运行时应与管理端保持相同协议语义；按“规则 + 主表/明细行作用域”隔离定时器、取消控制器和序列号，空值时跳过并按映射清理目标字段，CHANGE 事件按配置防抖，旧响应必须失败关闭。移动主子表保存前还要校验所有已渲染明细表单，不能只校验主表。
+
+## 低代码动作种子只有 designer_options 没有发布版本时运行必然失败
+
+**发现日期**：2026-08-12
+
+`BusinessActionExecutionService` 执行动作时只读取 `ai_business_object_design_version` 的不可变已发布快照，不会直接信任 `ai_business_object.designer_options.actions`。如果 Flyway 只把动作 JSON 写进对象当前设计数据和页面按钮，界面能显示按钮，但运行时会报“业务对象缺少可执行的发布快照”；子表行动作还会因发布版本缺少 `relation_snapshot` 无法校验 `relationKey` 和父子归属。
+
+处理原则：内置低代码应用若需要迁移后立即执行动作，必须通过正式发布服务生成版本，或在受控 seed 中同时写入与当前 CRUD 配置一致的 `ai_business_object_design_version`，至少包含 `model_snapshot`、`page_snapshot`、`designer_options_snapshot` 和完整 `relation_snapshot`，并同步对象的 `design_status`、`last_publish_version`、`last_publish_time`。合同测试必须检查动作定义与不可变发布快照同时存在。
+
 ## Naive UI 表格居中不能只设置 `text-align`
 
 **发现日期**：2026-08-07
@@ -4030,3 +4054,77 @@ OR column LIKE CONCAT('%,', #{userId}, ',%')
 **发现日期**：2026-08-08
 
 Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport 或独立挂载的组件不一定继承该变量，直接写 `height: var(--n-height)` 会让高度声明失效。共享样式应使用与组件主题一致的 fallback，例如 default/small/tiny/large 分别使用 `var(--n-height, 34px)`、`28px`、`22px`、`40px`，并用实际浏览器几何验证弹层内控件。
+
+## 170. 显式空 Schema 不能与缺失 Schema 使用同一个空集合分支
+
+**发现日期**：2026-08-11
+
+兼容旧协议时，解析函数常把“配置字段不存在”和“显式配置空数组”都归一成空集合。若运行时再以 `schema.isEmpty()` 判断是否启用旧兼容逻辑，新动作配置 `inputSchema: []` 后反而会放行任意客户端字段，绕过设计器表达的“无输入”。
+
+处理原则：解析结果之外必须保留字段是否显式声明的信息。显式空 Schema 表示输入集合为空，任何额外字段都应失败关闭；只有配置键完全缺失的存量协议才能进入兼容分支。测试必须同时覆盖“显式空数组拒绝输入”和“缺失字段仍兼容旧输入”，不能只覆盖非空 Schema 的未知字段拒绝。
+
+## 171. 动作路径 `record.*` 的单测必须构造服务端权威记录上下文
+
+**发现日期**：2026-08-11
+
+`BusinessActionStepConfigHelper.resolvePath("record.id", context)` 读取的是执行服务按 `recordId` 和数据权限重新查询后写入的 `recordData`，不是客户端请求 DTO 的 `recordId`。单测若只设置 `context.request.recordId`，却配置 `targetRecordIdField=record.id`，会得到“缺少目标记录 ID”；把解析器降级为读取客户端 request 会破坏可信数据边界。
+
+测试执行器时应显式构造与 `BusinessActionExecutionService.buildContext` 一致的 `recordData`；测试请求回退语义时则不要配置 `targetRecordIdField`。主子表动作还应分别构造权威 `parentRecordData` 和子行 `recordData`，避免用浏览器自报父子记录模拟服务端关系校验。
+
+## 172. 表单设计器旧状态联动不能只保存 `props.__events`
+
+**发现日期**：2026-08-11
+
+旧属性面板会把“显示/隐藏、启用/禁用”配置保存在来源组件的 `props.__events`，但 `AiForm` 运行时只读取目标字段的 `runtimeRules`。只把配置保存在设计态会出现“页面能看到配置、预览和发布页完全不生效”。
+
+处理原则：表单协议规范化时，把旧 `showHide` / `enableDisable` 事件按 `targetId` 投影为目标组件运行规则，并保留稳定迁移标识避免重复；“满足时显示”必须显式声明条件不满足时隐藏。静态隐藏但带可见性规则的字段不能在设计器编译、发布编译或子表字段过滤阶段提前丢弃，隐藏态字段也不能参与必填校验。
+
+## 173. MONEY 组件和数据库金额单位必须形成完整运行时协议
+
+**发现日期**：2026-08-12
+
+只在设计器里把 `money` 渲染成两位小数输入框并不代表金额合同已经成立。若数据库按规范使用 bigint 分存储，而动态 CRUD 直接把页面的元值写库，MySQL 可能截断小数或把元误当分；反向读取也会把分直接展示给用户。另一个隐蔽问题是 `money` 只在设计器编译路径被归一为 `number`，直接使用 CRUD `editSchema` 时会退化成文本输入。
+
+处理原则：显式 `MONEY + 整数存储列` 必须由通用运行时执行“元输入 → 分存储 → 元回显”，严格拒绝超过配置小数位的静默舍入；历史 decimal MONEY 字段保持兼容。`money` 和 `integer` 必须进入共享数字字段识别函数，确保设计器页面与直接 CRUD 页面一致。合同测试至少覆盖正向转换、反向转换、精度越界和 decimal 兼容。
+
+## 174. MySQL 派生表外层引用的每个计算列都必须显式起别名
+
+**发现日期**：2026-08-12
+
+`INSERT ... SELECT seed.xxx FROM (SELECT JSON_OBJECT(...)) seed` 中，派生表列名由第一个 SELECT 决定。若 JSON、字符串常量或表达式未声明 `xxx` 别名，目标表即使真实存在同名列，MySQL 仍会报 `Unknown column 'seed.xxx' in 'field list'`。修完第一个漏别名后，后续同类表达式还可能继续报错。
+
+处理原则：所有派生表首个 SELECT 的计算列、常量列都显式声明稳定别名；UNION 后续分支沿用首个 SELECT 的列名。合同测试应断言外层使用的关键 `seed.xxx` 在首个 SELECT 中有对应别名，并对迁移所有 INSERT 目标列和当前全量表结构做静态对比。
+
+## 175. JSON 快照补丁不能靠肉眼猜字段数组下标
+
+**发现日期**：2026-08-12
+
+低代码模型快照常用 `$.fields[n]` 做迁移补丁。字段数组包含 `id`、`tenantId` 等系统字段时，业务字段下标容易错位；误把 `salesUserId/status` 当成 `fields[1]/fields[14]` 会实际修改租户字段和现金金额字段，造成“现金金额在设计器/运行页仍不可见”这类二次问题。
+
+处理原则：写 JSON 数组下标补丁前必须按真实 `model_schema.fields` 顺序核对目标字段，最好同时用 `JSON_UNQUOTE(JSON_EXTRACT(... '$.fields[n].field'))` 作为 WHERE 保护。合同测试要断言关键字段下标和正反条件，例如系统字段隐藏、条件展示字段保持 `formVisible=true`。
+
+设计器画布与运行页语义也要分开：画布用于配置字段，不能套用 `runtimeRules` 把“满足条件才显示”的字段隐藏掉；真实 H5/运行页再按 `runtimeRules` 控制显隐。否则用户会在设计器里找不到静态码、现金金额等受控字段。
+
+## 176. 数据区块的空 `fieldRefs` 应回退到运行时字段目录
+
+**发现日期**：2026-08-16
+
+页面搭建器中的数据表单、数据表格等区块刚绑定业务对象时，区块通常还没有持久化 `fieldRefs`。如果渲染器始终按 `fieldRefs` 映射字段，即使外层已经成功加载对象 `fieldCatalog`，最终仍会得到空数组，表现为“数据源已连接但画布空白”。
+
+处理原则：数据字段区块在 `fieldRefs` 为空时应使用外层提供的完整字段目录；一旦用户显式配置字段引用，再按引用筛选和排序。字段预加载、loading、缓存和数据源选择器必须复用同一组数据区块类型定义，避免新增区块时只放开其中一条链路。回归测试至少覆盖空引用回退、显式引用筛选、未选数据源引导和同对象缓存复用。
+
+## 177. 业务对象发布不能重置应用入口配置
+
+**发现日期**：2026-08-16
+
+应用发布会连带发布业务对象，业务对象发布又会同步其运行入口。如果同步已有入口时重新写入默认 `appType`、`entryMode`、`entryUrl`、名称、图标、状态和 `options`，会抹掉应用工作台中人工配置的 `mountTarget=MOBILE`、移动菜单和 `clientCode=h5`，表现为重新发布后移动端入口退回管理端。
+
+处理原则：低代码发布自动创建入口时可以写入标准管理端默认值；入口已经存在时，发布链路只补齐 `suiteCode`、`objectCode`、`configKey` 等对象运行绑定。入口的挂载端、菜单、打开方式、名称、图标、状态、排序和扩展配置由应用工作台维护，发布过程不得覆盖。
+
+## 178. Generator 新增强制适配器时必须检查所有聚合服务
+
+**发现日期**：2026-08-16
+
+`forge-app-server` 和独立 `forge-flow-server` 都会扫描 generator 插件。若 generator Service 新增构造器强制依赖，而只在 Admin 服务实现适配器，App 和 Flow 会在启动期同时报缺少 Bean；只验证 Admin 编译或启动发现不了这个问题。
+
+处理原则：新增 generator 跨模块适配器时，必须检查 Admin、App、Flow 三个聚合服务。真实管理能力由 Admin 实现；App/Flow 只需完成运行态装配时，应提供服务内失败关闭桥接，误调用时明确拒绝，不能用空结果或无操作保存伪装成功。典型接口包括 `MenuRegisterAdapter`、`AiClientAdapter` 和 `ApplicationPermissionAdapter`。

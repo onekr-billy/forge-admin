@@ -378,7 +378,7 @@
           </div>
 
           <div class="workbench-actions">
-            <NButton size="small" ghost @click="goToChat" :disabled="!agentForm.id" title="在新页面打开独立对话">
+            <NButton size="small" ghost :disabled="!agentForm.id" title="在新页面打开独立对话" @click="goToChat">
               对话
             </NButton>
             <NButton class="draft-save-button" :loading="saveLoading" @click="handleSaveDraft">
@@ -618,19 +618,25 @@
             <div class="modal-section">
               <div class="tool-section-header">
                 <span class="tool-section-title">已绑定工具 ({{ agentTools.length }})</span>
-                <n-button size="tiny" type="primary" @click="showAddTool = true">添加工具</n-button>
+                <n-button size="tiny" type="primary" @click="showAddTool = true">
+                  添加工具
+                </n-button>
               </div>
               <n-empty v-if="!agentTools.length" description="暂无绑定工具" size="small" class="my-4" />
               <div v-else class="tool-list">
                 <div v-for="tool in agentTools" :key="tool.id" class="tool-item">
                   <div class="tool-info">
-                    <n-tag size="tiny" :type="tool.toolSource === 'mcp' ? 'info' : 'default'">{{ tool.toolSource }}</n-tag>
+                    <n-tag size="tiny" :type="tool.toolSource === 'mcp' ? 'info' : 'default'">
+                      {{ tool.toolSource }}
+                    </n-tag>
                     <span class="tool-key">{{ tool.toolKey }}</span>
                     <span v-if="tool.toolGroup" class="tool-group">{{ tool.toolGroup }}</span>
                   </div>
                   <div class="tool-actions">
                     <n-switch v-model:value="tool.enabled" size="small" @update:value="(val) => updateToolEnabled(tool, val)" />
-                    <n-button text type="error" size="tiny" @click="removeTool(tool)">解除</n-button>
+                    <n-button text type="error" size="tiny" @click="removeTool(tool)">
+                      解除
+                    </n-button>
                   </div>
                 </div>
               </div>
@@ -648,8 +654,12 @@
                   <n-form-item label="分组">
                     <n-input v-model:value="newTool.group" placeholder="分组" size="small" style="width: 100px" />
                   </n-form-item>
-                  <n-button size="small" type="primary" @click="addTool" :disabled="!newTool.source || !newTool.key">确认</n-button>
-                  <n-button size="small" @click="showAddTool = false">取消</n-button>
+                  <n-button size="small" type="primary" :disabled="!newTool.source || !newTool.key" @click="addTool">
+                    确认
+                  </n-button>
+                  <n-button size="small" @click="showAddTool = false">
+                    取消
+                  </n-button>
                 </n-form>
               </div>
             </div>
@@ -664,7 +674,9 @@
                     <div v-for="skill in allSkills" :key="skill.id" class="skill-check-item">
                       <n-checkbox :value="skill.id">
                         <span class="skill-label">{{ skill.name }}</span>
-                        <n-tag v-if="skill.category" size="tiny" :bordered="false">{{ skill.category }}</n-tag>
+                        <n-tag v-if="skill.category" size="tiny" :bordered="false">
+                          {{ skill.category }}
+                        </n-tag>
                       </n-checkbox>
                     </div>
                   </div>
@@ -674,7 +686,9 @@
             </div>
             <template #footer>
               <div class="modal-footer">
-                <NButton type="primary" :loading="skillSaveLoading" @click="saveSkillBindings">保存</NButton>
+                <NButton type="primary" :loading="skillSaveLoading" @click="saveSkillBindings">
+                  保存
+                </NButton>
               </div>
             </template>
           </n-tab-pane>
@@ -690,7 +704,9 @@
         </n-tabs>
         <template #footer>
           <div class="modal-footer">
-            <NButton type="primary" @click="toolModalVisible = false">完成</NButton>
+            <NButton type="primary" @click="toolModalVisible = false">
+              完成
+            </NButton>
           </div>
         </template>
       </n-modal>
@@ -812,11 +828,11 @@ import {
   agentDelete,
   agentGetById,
   agentPage,
-  agentUpdate,
   agentToolAdd,
   agentToolDelete,
   agentToolPage,
   agentToolUpdate,
+  agentUpdate,
   contextConfigAdd,
   contextConfigDelete,
   contextConfigList,
@@ -1665,17 +1681,20 @@ function goToChat() {
 // ============================================================
 
 async function loadAgentTools() {
-  if (!agentForm.id) return
+  if (!agentForm.id)
+    return
   toolLoading.value = true
   try {
     const res = await agentToolPage({ agentId: agentForm.id, pageNum: 1, pageSize: 200 })
     agentTools.value = res.data?.records || []
-  } catch { agentTools.value = [] }
+  }
+  catch { agentTools.value = [] }
   finally { toolLoading.value = false }
 }
 
 async function addTool() {
-  if (!newTool.source || !newTool.key) return
+  if (!newTool.source || !newTool.key)
+    return
   try {
     await agentToolAdd({
       agentId: agentForm.id,
@@ -1688,7 +1707,8 @@ async function addTool() {
     newTool.key = ''
     showAddTool.value = false
     await loadAgentTools()
-  } catch (e) {
+  }
+  catch (e) {
     window.$message.error(e.message || '添加失败')
   }
 }
@@ -1697,7 +1717,8 @@ async function removeTool(tool) {
   try {
     await agentToolDelete(tool.id)
     await loadAgentTools()
-  } catch (e) {
+  }
+  catch (e) {
     window.$message.error(e.message || '删除失败')
   }
 }
@@ -1705,7 +1726,8 @@ async function removeTool(tool) {
 async function updateToolEnabled(tool, enabled) {
   try {
     await agentToolUpdate({ ...tool, enabled: enabled ? '1' : '0' })
-  } catch (e) {
+  }
+  catch (e) {
     tool.enabled = !enabled
     window.$message.error(e.message || '更新失败')
   }
@@ -1720,7 +1742,8 @@ async function loadSkills() {
     ])
     allSkills.value = skillRes.data?.records || []
     boundSkillIds.value = (boundRes.data || []).map(s => s.skillId)
-  } catch {
+  }
+  catch {
     allSkills.value = []
     boundSkillIds.value = []
   }
@@ -1743,7 +1766,8 @@ async function saveSkillBindings() {
       await skillDeleteAgentSkill(agentForm.id, skillId)
     }
     window.$message.success('技能绑定已保存')
-  } catch (e) {
+  }
+  catch (e) {
     window.$message.error(e.message || '保存失败')
   }
   finally { skillSaveLoading.value = false }

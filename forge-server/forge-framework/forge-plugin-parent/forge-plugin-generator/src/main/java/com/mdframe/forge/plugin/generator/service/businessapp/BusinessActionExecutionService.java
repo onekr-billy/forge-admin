@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessActionExecutionLog;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObjectDesignVersion;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionLogQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
@@ -15,6 +16,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResul
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectActionVO;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import lombok.RequiredArgsConstructor;
@@ -28,12 +30,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
@@ -51,6 +55,9 @@ public class BusinessActionExecutionService {
     private static final String STATUS_FAILED = "FAILED";
     private static final String STATUS_TODO = "TODO";
     private static final String STATUS_RUNNING = "RUNNING";
+    private static final String CHILD_ROW_POSITION = "CHILD_ROW";
+    private static final String CHILD_ROW_TYPE = "COMMAND";
+    private static final String SAFE_RELATION_KEY_PATTERN = "^[A-Za-z][A-Za-z0-9_-]{0,127}$";
 
     private final ObjectMapper objectMapper;
     private final DynamicCrudService dynamicCrudService;
@@ -59,8 +66,11 @@ public class BusinessActionExecutionService {
     private final PlatformTransactionManager transactionManager;
     private final List<BusinessActionStepExecutor> stepExecutors;
 
+    @org.springframework.beans.factory.annotation.Value("${forge.lowcode.audit.retention-years:7}")
+    private int auditRetentionYears = 7;
+
     public BusinessActionExecuteResultVO execute(BusinessActionExecuteDTO dto) {
-        return executeInternal(dto, null, null);
+        return executeInternal(dto, null, null, true);
     }
 
     public BusinessActionExecuteResultVO executePublished(
@@ -69,7 +79,7 @@ public class BusinessActionExecutionService {
         if (publishedVersion == null || publishedVersion <= 0) {
             throw new BusinessException("已发布业务动作版本不能为空");
         }
-        return executeInternal(dto, publishedVersion, null);
+        return executeInternal(dto, publishedVersion, null, true);
     }
 
     public BusinessActionExecuteResultVO executePublished(
@@ -83,39 +93,53 @@ public class BusinessActionExecutionService {
         if (publishedVersion == null || publishedVersion <= 0) {
             throw new BusinessException("已发布业务动作版本不能为空");
         }
-        return executeInternal(dto, publishedVersion, capabilityRequestId);
+        return executeInternal(dto, publishedVersion, capabilityRequestId, true);
     }
 
     private BusinessActionExecuteResultVO executeInternal(
             BusinessActionExecuteDTO dto,
             Integer publishedVersion,
-            String capabilityRequestId) {
+            String capabilityRequestId,
+            boolean publishedOnly) {
         long startTime = System.currentTimeMillis();
         BusinessActionExecutionContext context = null;
         List<BusinessActionStepResultVO> stepResults = new ArrayList<>();
         AiBusinessActionExecutionLog logEntry = null;
         try {
-            context = buildContext(dto, publishedVersion, capabilityRequestId);
+            BusinessActionCommandPolicy.validateIdempotencyKey(dto == null ? null : dto.getIdempotencyKey());
+            context = buildContext(dto, publishedVersion, capabilityRequestId, publishedOnly);
             AiBusinessActionExecutionLog reusableLog = findReusableLog(context);
             if (reusableLog != null) {
                 return fromLog(reusableLog, true);
             }
             validateActionPermission(context.getAction());
             List<BusinessActionStepDTO> steps = resolveSteps(context.getAction());
+            BusinessActionCommandPolicy.validateDefinition(context.getAction(), steps);
+            String executionMode = BusinessActionCommandPolicy.resolveExecutionMode(context.getAction(), steps);
+            context.setExecutionMode(executionMode);
+            if (BusinessActionCommandPolicy.MODE_LOCAL_TRANSACTION.equals(executionMode)) {
+                validateLocalTransactionTargets(context, steps);
+            }
             logEntry = reserveLog(context, startTime);
             BusinessActionExecutionContext executionContext = context;
 
-            StepExecutionOutcome outcome = new TransactionTemplate(transactionManager).execute(status -> {
-                try {
-                    return executeSteps(executionContext, steps);
-                } catch (StepExecutionException e) {
-                    status.setRollbackOnly();
-                    throw e;
-                }
-            });
+            StepExecutionOutcome outcome;
+            if (BusinessActionCommandPolicy.MODE_LOCAL_TRANSACTION.equals(executionMode)) {
+                outcome = new TransactionTemplate(transactionManager).execute(status -> {
+                    try {
+                        return executeSteps(executionContext, steps);
+                    } catch (StepExecutionException e) {
+                        status.setRollbackOnly();
+                        throw e;
+                    }
+                });
+            } else {
+                outcome = executeSteps(executionContext, steps);
+            }
             stepResults = outcome == null ? List.of() : outcome.stepResults();
             String executeStatus = hasTodo(stepResults) ? STATUS_TODO : hasFailed(stepResults) ? STATUS_FAILED : STATUS_SUCCESS;
             String message = resolveSuccessMessage(context.getAction(), executeStatus);
+            applyAuditFields(logEntry, context);
             saveLog(logEntry, executeStatus, message, null, stepResults, startTime);
             return buildResult(context, logEntry.getId(), executeStatus, message, stepResults, startTime, false);
         } catch (IdempotentLogHitException e) {
@@ -138,7 +162,7 @@ public class BusinessActionExecutionService {
     }
 
     public BusinessActionExecuteResultVO preview(BusinessActionExecuteDTO dto) {
-        BusinessActionExecutionContext context = buildContext(dto, null, null);
+        BusinessActionExecutionContext context = buildContext(dto, null, null, false);
         validateActionPermission(context.getAction());
         List<BusinessActionStepResultVO> stepResults = resolveSteps(context.getAction()).stream()
                 .map(step -> {
@@ -166,7 +190,8 @@ public class BusinessActionExecutionService {
     private BusinessActionExecutionContext buildContext(
             BusinessActionExecuteDTO dto,
             Integer publishedVersion,
-            String capabilityRequestId) {
+            String capabilityRequestId,
+            boolean publishedOnly) {
         if (dto == null) {
             throw new BusinessException("动作执行参数不能为空");
         }
@@ -180,7 +205,9 @@ public class BusinessActionExecutionService {
         }
         AiBusinessObject object;
         BusinessObjectActionVO resolvedAction;
-        if (publishedVersion == null) {
+        AiBusinessObjectDesignVersion resolvedVersion = null;
+        Integer resolvedPublishedVersion = publishedVersion;
+        if (!publishedOnly) {
             BusinessObjectActionService.ResolvedBusinessAction resolved =
                     actionService.resolveAction(dto.getSuiteCode(), objectCode, dto.getActionCode());
             object = resolved.object();
@@ -192,6 +219,10 @@ public class BusinessActionExecutionService {
                             dto.getSuiteCode(), objectCode, dto.getActionCode(), publishedVersion);
             object = resolved.object();
             resolvedAction = resolved.action();
+            resolvedVersion = resolved.version();
+            Integer snapshotVersion = resolved.version() == null
+                    ? null : resolved.version().getPublishVersion();
+            resolvedPublishedVersion = snapshotVersion == null ? publishedVersion : snapshotVersion;
         }
         BusinessActionExecutionContext context = new BusinessActionExecutionContext();
         if (object.getTenantId() == null || object.getTenantId() <= 0) {
@@ -201,8 +232,8 @@ public class BusinessActionExecutionService {
         context.setCorrelationId(UUID.randomUUID().toString().replace("-", ""));
         context.setBusinessObject(object);
         context.setAction(resolvedAction);
-        context.setPublishedVersion(publishedVersion);
-        if (publishedVersion != null) {
+        context.setPublishedVersion(resolvedPublishedVersion);
+        if (StringUtils.isNotBlank(capabilityRequestId)) {
             var identity = ExecutionIdentityContextHolder.current()
                     .orElseThrow(() -> new BusinessException("受控业务动作缺少可信执行身份"));
             context.setCapabilityRequestId(capabilityRequestId);
@@ -211,13 +242,184 @@ public class BusinessActionExecutionService {
             context.setCapabilityActorType(identity.actorType());
         }
         context.setRequest(dto);
-        context.setFormData(dto.getFormData() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(dto.getFormData()));
-        context.setExtraContext(dto.getContext() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(dto.getContext()));
-        if (StringUtils.isNotBlank(dto.getRecordId()) && StringUtils.isNotBlank(object.getConfigKey())) {
-            Map<String, Object> record = dynamicCrudService.selectById(object.getConfigKey(), dto.getRecordId());
-            context.setRecordData(record == null ? new LinkedHashMap<>() : new LinkedHashMap<>(record));
+        context.setFormData(BusinessActionCommandPolicy.projectFormData(resolvedAction, dto.getFormData()));
+        context.setExtraContext(BusinessActionCommandPolicy.sanitizeClientContext(dto.getContext()));
+        if (isChildRowAction(resolvedAction)) {
+            populateChildRowContext(context, resolvedVersion, publishedOnly);
+        } else if (StringUtils.isNotBlank(dto.getRecordId()) && StringUtils.isNotBlank(object.getConfigKey())) {
+            Map<String, Object> detail = dynamicCrudService.selectById(object.getConfigKey(), dto.getRecordId());
+            if (detail != null) {
+                // selectById 返回 { main: {...}, children: {...} }，recordData 只取 main 部分，
+                // 否则 targetRecordIdField='record.id' 在根找不到 id（id 在 main 内部）。
+                Map<String, Object> main = asStringMap(detail.get("main"));
+                context.setRecordData(main.isEmpty() ? new LinkedHashMap<>(detail) : new LinkedHashMap<>(main));
+            } else {
+                context.setRecordData(new LinkedHashMap<>());
+            }
         }
+        context.setSystemContext(buildSystemContext(context));
         return context;
+    }
+
+    private boolean isChildRowAction(BusinessObjectActionVO action) {
+        return action != null && CHILD_ROW_POSITION.equalsIgnoreCase(
+                StringUtils.defaultString(action.getActionPosition()));
+    }
+
+    private void populateChildRowContext(
+            BusinessActionExecutionContext context,
+            AiBusinessObjectDesignVersion version,
+            boolean publishedOnly) {
+        BusinessActionExecuteDTO request = context.getRequest();
+        BusinessObjectActionVO action = context.getAction();
+        if (!CHILD_ROW_TYPE.equalsIgnoreCase(StringUtils.defaultString(action.getActionType()))) {
+            throw new BusinessException("子表行动作仅支持事务型业务命令");
+        }
+        String parentRecordId = StringUtils.trimToNull(request.getParentRecordId());
+        String childRecordId = StringUtils.trimToNull(request.getChildRecordId());
+        String relationKey = StringUtils.trimToNull(request.getRelationKey());
+        if (parentRecordId == null || childRecordId == null || relationKey == null) {
+            throw new BusinessException("子表行动作缺少父记录、子记录或关系标识");
+        }
+        if (!relationKey.matches(SAFE_RELATION_KEY_PATTERN)) {
+            throw new BusinessException("子表行动作关系标识无效");
+        }
+        if (StringUtils.isNotBlank(request.getRecordId())
+                && !StringUtils.equals(request.getRecordId().trim(), childRecordId)) {
+            throw new BusinessException("子表行动作记录标识不一致");
+        }
+        String actionRelationKey = BusinessActionStepConfigHelper.firstText(
+                action.getActionConfig(), "relationKey");
+        if (!StringUtils.equals(actionRelationKey, relationKey)) {
+            throw new BusinessException("子表行动作与关系配置不一致");
+        }
+        ChildRelationSnapshot relation = publishedOnly
+                ? resolvePublishedChildRelation(context, version, relationKey)
+                : new ChildRelationSnapshot(relationKey, null);
+        AiBusinessObject object = context.getBusinessObject();
+        if (StringUtils.isBlank(object.getConfigKey())) {
+            throw new BusinessException("子表行动作所属对象缺少运行配置");
+        }
+        Map<String, Object> detail = dynamicCrudService.selectById(object.getConfigKey(), parentRecordId);
+        if (detail == null || detail.isEmpty()) {
+            throw new BusinessException("父记录不存在或无权访问");
+        }
+        Map<String, Object> parentRecord = asStringMap(detail.get("main"));
+        Map<String, Object> children = asStringMap(detail.get("children"));
+        if (parentRecord.isEmpty() || children.isEmpty()) {
+            throw new BusinessException("父记录不包含可执行的子表关系");
+        }
+        Object rawRows = children.get(relation.key());
+        if (!(rawRows instanceof List<?>) && StringUtils.isNotBlank(relation.targetObjectCode())) {
+            rawRows = children.get(relation.targetObjectCode());
+        }
+        if (!(rawRows instanceof List<?>) && StringUtils.isNotBlank(relation.targetObjectCode())) {
+            rawRows = children.get(StringUtils.lowerCase(relation.targetObjectCode()));
+        }
+        if (!(rawRows instanceof List<?>)) {
+            throw new BusinessException("发布关系未生成对应的子表运行配置（relationKey="
+                    + relation.key() + ", targetObjectCode=" + relation.targetObjectCode()
+                    + ", childrenKeys=" + children.keySet() + "）");
+        }
+        List<?> rows = (List<?>) rawRows;
+        Map<String, Object> childRecord = rows.stream()
+                .map(this::asStringMap)
+                .filter(row -> sameRecordId(row.get("id"), childRecordId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("子记录不存在或不属于当前父记录"));
+        request.setRecordId(childRecordId);
+        context.setParentRecordData(new LinkedHashMap<>(parentRecord));
+        context.setRecordData(new LinkedHashMap<>(childRecord));
+    }
+
+    private ChildRelationSnapshot resolvePublishedChildRelation(
+            BusinessActionExecutionContext context,
+            AiBusinessObjectDesignVersion version,
+            String relationKey) {
+        if (version == null || StringUtils.isBlank(version.getRelationSnapshot())) {
+            throw new BusinessException("发布版本缺少子表关系快照");
+        }
+        List<Map<String, Object>> relations;
+        try {
+            relations = objectMapper.readValue(version.getRelationSnapshot(), new TypeReference<>() { });
+        } catch (Exception e) {
+            throw new BusinessException("发布版本子表关系快照无效");
+        }
+        String sourceObjectCode = context.getBusinessObject().getObjectCode();
+        for (Map<String, Object> relation : relations) {
+            if (relation == null
+                    || !sourceObjectCode.equals(StringUtils.trimToEmpty(text(relation.get("sourceObjectCode"))))
+                    || intValue(relation.get("status"), 1) == 0) {
+                continue;
+            }
+            String relationType = StringUtils.upperCase(StringUtils.defaultString(text(relation.get("relationType"))));
+            if (!Set.of("DETAIL", "CHILD_LIST", "ONE_TO_MANY").contains(relationType)) {
+                continue;
+            }
+            String targetObjectCode = text(relation.get("targetObjectCode"));
+            Map<String, Object> relationConfig = readRelationConfig(relation.get("relationConfig"));
+            String snapshotKey = StringUtils.defaultIfBlank(
+                    text(relationConfig.get("relationKey")), defaultRelationKey(targetObjectCode));
+            if (relationKey.equals(snapshotKey)) {
+                return new ChildRelationSnapshot(snapshotKey, targetObjectCode);
+            }
+        }
+        throw new BusinessException("发布版本中不存在匹配的子表关系");
+    }
+
+    private Map<String, Object> readRelationConfig(Object value) {
+        if (value instanceof Map<?, ?>) {
+            return asStringMap(value);
+        }
+        if (value == null || StringUtils.isBlank(String.valueOf(value))) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return objectMapper.readValue(String.valueOf(value), new TypeReference<>() { });
+        } catch (Exception ignored) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private Map<String, Object> asStringMap(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        map.forEach((key, item) -> {
+            if (key != null) {
+                result.put(String.valueOf(key), item);
+            }
+        });
+        return result;
+    }
+
+    private boolean sameRecordId(Object actual, String expected) {
+        return actual != null && StringUtils.equals(String.valueOf(actual), expected);
+    }
+
+    private String text(Object value) {
+        return value == null ? null : StringUtils.trimToNull(String.valueOf(value));
+    }
+
+    private int intValue(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return value == null ? fallback : Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private String defaultRelationKey(String value) {
+        return StringUtils.defaultString(value)
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .replaceAll("[^A-Za-z0-9_]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     String resolveObjectCode(BusinessActionExecuteDTO dto) {
@@ -233,37 +435,63 @@ public class BusinessActionExecutionService {
                 StringUtils.trimToNull(dto.getReferenceObjectCode()),
                 StringUtils.trimToNull(dto.getRefObjectCode()),
                 StringUtils.trimToNull(dto.getSourceObjectCode()),
-                StringUtils.trimToNull(dto.getTargetCode()),
-                mapText(dto.getContext(), "objectCode"),
-                mapText(dto.getContext(), "businessObjectCode"),
-                mapText(dto.getContext(), "targetObjectCode"),
-                nestedMapText(dto.getContext(), "row", "_runtimeObjectCode"),
-                nestedMapText(dto.getContext(), "row", "objectCode"),
-                nestedMapText(dto.getContext(), "row", "businessObjectCode"),
-                nestedMapText(dto.getContext(), "currentRow", "_runtimeObjectCode"),
-                nestedMapText(dto.getContext(), "currentRow", "objectCode"),
-                mapText(dto.getFormData(), "objectCode"),
-                mapText(dto.getFormData(), "businessObjectCode"));
+                StringUtils.trimToNull(dto.getTargetCode()));
     }
 
-    private String mapText(Map<String, Object> source, String key) {
-        if (source == null || !source.containsKey(key)) {
-            return null;
+    private Map<String, Object> buildSystemContext(BusinessActionExecutionContext context) {
+        Map<String, Object> system = new LinkedHashMap<>();
+        LoginUser user;
+        try {
+            user = SessionHelper.getLoginUser();
+        } catch (Exception ignored) {
+            user = null;
         }
-        Object value = source.get(key);
-        return value == null ? null : StringUtils.trimToNull(String.valueOf(value));
+        system.put("tenantId", context.getTenantId());
+        system.put("correlationId", context.getCorrelationId());
+        system.put("recordId", context.getRequest() == null ? null : context.getRequest().getRecordId());
+        system.put("parentRecordId", context.getRequest() == null ? null : context.getRequest().getParentRecordId());
+        system.put("childRecordId", context.getRequest() == null ? null : context.getRequest().getChildRecordId());
+        system.put("relationKey", context.getRequest() == null ? null : context.getRequest().getRelationKey());
+        system.put("objectCode", context.getBusinessObject() == null ? null : context.getBusinessObject().getObjectCode());
+        if (user != null) {
+            system.put("userId", user.getUserId());
+            system.put("username", user.getUsername());
+            system.put("realName", user.getRealName());
+            system.put("activeOrgId", user.getActiveOrgId());
+            system.put("activeOrgName", user.getActiveOrgName());
+            system.put("mainOrgId", user.getMainOrgId());
+        }
+        return system;
     }
 
-    private String nestedMapText(Map<String, Object> source, String firstKey, String secondKey) {
-        if (source == null) {
-            return null;
+    private void validateLocalTransactionTargets(
+            BusinessActionExecutionContext context,
+            List<BusinessActionStepDTO> steps) {
+        for (BusinessActionStepDTO step : steps) {
+            if (step == null) {
+                continue;
+            }
+            String type = StringUtils.defaultString(step.getStepType()).toUpperCase(Locale.ROOT);
+            if ("FOREACH".equals(type)) {
+                Map<String, Object> config = step.getStepConfig();
+                Object nested = config == null ? null : config.get("steps");
+                if (!(nested instanceof List<?>)) {
+                    nested = config == null ? null : config.get("stepList");
+                }
+                validateLocalTransactionTargets(context, normalizeNestedSteps(nested));
+                continue;
+            }
+            Map<String, Object> config = step.getStepConfig();
+            String targetConfigKey = BusinessActionStepConfigHelper.firstText(config, "targetConfigKey");
+            if (StringUtils.isBlank(targetConfigKey) && !"CREATE_RECORD".equals(type)) {
+                targetConfigKey = context.getBusinessObject() == null
+                        ? null : context.getBusinessObject().getConfigKey();
+            }
+            if (StringUtils.isBlank(targetConfigKey)) {
+                throw new BusinessException("本地事务步骤缺少 targetConfigKey: " + type);
+            }
+            dynamicCrudService.assertLocalTransactionConfig(targetConfigKey);
         }
-        Object value = source.get(firstKey);
-        if (!(value instanceof Map<?, ?> map) || !map.containsKey(secondKey)) {
-            return null;
-        }
-        Object nestedValue = map.get(secondKey);
-        return nestedValue == null ? null : StringUtils.trimToNull(String.valueOf(nestedValue));
     }
 
     List<BusinessActionStepResultVO> executeNestedSteps(BusinessActionExecutionContext context, List<BusinessActionStepDTO> steps) {
@@ -375,6 +603,7 @@ public class BusinessActionExecutionService {
                 context.getBusinessObject().getObjectCode(),
                 context.getRequest().getRecordId(),
                 context.getAction().getActionCode(),
+                context.getPublishedVersion(),
                 idempotencyKey);
         if (existing == null) {
             return null;
@@ -405,12 +634,59 @@ public class BusinessActionExecutionService {
         logEntry.setRequestDigest(buildRequestDigest(context));
         logEntry.setCorrelationId(context.getCorrelationId());
         logEntry.setIdempotencyKey(StringUtils.trimToNull(context.getRequest().getIdempotencyKey()));
+        logEntry.setActionVersion(context.getPublishedVersion());
+        logEntry.setExecutionMode(context.getExecutionMode());
         logEntry.setDurationMs(System.currentTimeMillis() - startTime);
         logEntry.setCapabilityRequestId(context.getCapabilityRequestId());
         logEntry.setClientId(context.getCapabilityClientId());
         logEntry.setServiceUserId(context.getCapabilityServiceUserId());
         logEntry.setActorType(context.getCapabilityActorType());
+        if (StringUtils.isBlank(logEntry.getActorType())) {
+            logEntry.setActorType("SESSION");
+        }
+        int retentionYears = auditRetentionYears < 1 || auditRetentionYears > 30 ? 7 : auditRetentionYears;
+        logEntry.setRetentionUntil(LocalDateTime.now().plusYears(retentionYears));
         return logEntry;
+    }
+
+    private void applyAuditFields(AiBusinessActionExecutionLog logEntry,
+                                  BusinessActionExecutionContext context) {
+        if (logEntry == null || context == null
+                || context.getAuditTransitions() == null || context.getAuditTransitions().isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> safeSummary = new ArrayList<>();
+        for (Map<String, Object> transition : context.getAuditTransitions()) {
+            if (transition == null) {
+                continue;
+            }
+            Map<String, Object> safe = new LinkedHashMap<>();
+            copyAuditText(safe, transition, "eventType");
+            copyAuditText(safe, transition, "statusField");
+            copyAuditText(safe, transition, "from");
+            copyAuditText(safe, transition, "to");
+            copyAuditText(safe, transition, "targetConfigKey");
+            copyAuditText(safe, transition, "outcome");
+            if (!safe.isEmpty()) {
+                safeSummary.add(safe);
+            }
+        }
+        if (safeSummary.isEmpty()) {
+            return;
+        }
+        Map<String, Object> first = safeSummary.get(0);
+        logEntry.setAuditEventType("STATUS_TRANSITION");
+        logEntry.setStatusField(text(first.get("statusField")));
+        logEntry.setStatusFrom(text(first.get("from")));
+        logEntry.setStatusTo(text(first.get("to")));
+        logEntry.setChangeSummary(StringUtils.left(writeJson(safeSummary), 4000));
+    }
+
+    private void copyAuditText(Map<String, Object> target, Map<String, Object> source, String key) {
+        String value = StringUtils.trimToNull(text(source.get(key)));
+        if (value != null) {
+            target.put(key, StringUtils.left(value, 128));
+        }
     }
 
     private AiBusinessActionExecutionLog reserveLog(BusinessActionExecutionContext context, long startTime) {
@@ -426,6 +702,7 @@ public class BusinessActionExecutionService {
                     context.getBusinessObject().getObjectCode(),
                     context.getRequest().getRecordId(),
                     context.getAction().getActionCode(),
+                    context.getPublishedVersion(),
                     context.getRequest().getIdempotencyKey());
             if (existing == null) {
                 throw new IdempotentConflictException("业务动作重复提交，请稍候重试");
@@ -454,6 +731,7 @@ public class BusinessActionExecutionService {
         AiBusinessActionExecutionLog actualLog = logEntry == null ? buildLogEntry(context, startTime) : logEntry;
         String message = resolveFailureMessage(context.getAction(), errorMessage);
         try {
+            applyAuditFields(actualLog, context);
             saveLog(actualLog, STATUS_FAILED, message, errorMessage, stepResults, startTime);
         } catch (Exception logError) {
             log.warn("业务动作失败日志写入失败: objectCode={}, actionCode={}, error={}",
@@ -592,6 +870,9 @@ public class BusinessActionExecutionService {
         digest.put("suiteCode", context.getBusinessObject().getSuiteCode());
         digest.put("objectCode", context.getRequest().getObjectCode());
         digest.put("recordId", context.getRequest().getRecordId());
+        digest.put("parentRecordId", context.getRequest().getParentRecordId());
+        digest.put("childRecordId", context.getRequest().getChildRecordId());
+        digest.put("relationKey", context.getRequest().getRelationKey());
         digest.put("actionCode", context.getRequest().getActionCode());
         digest.put("publishedVersion", context.getPublishedVersion());
         digest.put("formData", canonicalize(context.getFormData()));
@@ -678,6 +959,9 @@ public class BusinessActionExecutionService {
     }
 
     private record StepExecutionOutcome(List<BusinessActionStepResultVO> stepResults) {
+    }
+
+    private record ChildRelationSnapshot(String key, String targetObjectCode) {
     }
 
     private static class StepExecutionException extends RuntimeException {

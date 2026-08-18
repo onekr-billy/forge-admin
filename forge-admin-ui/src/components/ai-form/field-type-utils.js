@@ -2,12 +2,14 @@ const NUMBER_FIELD_TYPES = new Set([
   'number',
   'inputnumber',
   'input-number',
+  'integer',
+  'money',
 ])
 
 /**
  * 判断 AiForm 字段是否属于数字输入类型。
  *
- * `number` 是页面 Schema 的标准写法；其余值用于兼容历史配置和外部 Schema。
+ * `number` 是页面 Schema 的标准写法；其余值用于兼容历史配置、业务字段和外部 Schema。
  *
  * @param {unknown} type 字段类型
  * @returns {boolean} 是否为数字输入

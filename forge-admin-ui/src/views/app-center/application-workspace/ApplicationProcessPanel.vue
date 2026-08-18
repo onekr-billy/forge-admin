@@ -6,7 +6,9 @@ import {
   copyBusinessProcess,
   createBusinessProcess,
   deleteBusinessProcess,
+  publishBusinessProcess,
   updateBusinessProcessStatus,
+  validateBusinessProcess,
 } from '@/api/business-process'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
@@ -70,6 +72,12 @@ watch(() => props.application?.id, (applicationId) => {
   }
   loadProcesses()
 }, { immediate: true })
+
+// 从流程画布返回时（returnTo 携带 processRefresh），重载列表同步最新草稿状态。
+watch(() => route.query.processRefresh, () => {
+  if (props.application?.id)
+    loadProcesses()
+})
 
 async function loadProcesses() {
   if (!props.application?.id || loading.value)
@@ -218,6 +226,50 @@ function previewMigration() {
 
 function requestApplicationPublish() {
   emit('navigate', 'releases')
+}
+
+// 独立发布：只生成该流程的不可变版本并切换运行投影，不触发应用发布，也不影响其他流程。
+function publishProcess(item) {
+  const processId = stringValue(item.id)
+  if (!processId || actionId.value)
+    return
+  if (!window.$dialog)
+    return
+  window.$dialog.warning({
+    title: '发布业务流程',
+    content: `将为“${item.processName || item.processCode}”生成不可变流程版本并立即生效，应用内其他资产与流程不受影响。`,
+    positiveText: '检查并发布',
+    negativeText: '取消',
+    onPositiveClick: () => executePublish(item),
+  })
+}
+
+async function executePublish(item) {
+  const processId = stringValue(item.id)
+  if (!processId || actionId.value)
+    return
+  actionId.value = `publish:${processId}`
+  try {
+    const validation = await validateBusinessProcess(processId)
+    if (!validation.data?.valid) {
+      const errorCount = Number(validation.data?.errorCount || 0)
+      notify('warning', errorCount
+        ? `流程检查发现 ${errorCount} 项错误，请修正后再发布`
+        : '流程检查未通过，请修正后再发布')
+      return
+    }
+    const response = await publishBusinessProcess(processId)
+    const versionNo = Number(response.data?.versionNo || 0)
+    notify('success', versionNo ? `业务流程已发布为 V${versionNo}` : '业务流程发布成功')
+    emit('changed')
+    await loadProcesses()
+  }
+  catch (error) {
+    notify('error', errorMessage(error, '业务流程发布失败'))
+  }
+  finally {
+    actionId.value = ''
+  }
 }
 
 async function applyFilters() {
@@ -419,6 +471,15 @@ function notify(type, message) {
                 <div class="row-actions">
                   <button type="button" class="text-primary" @click="openDesigner(item.id)">
                     设计
+                  </button>
+                  <button
+                    type="button"
+                    class="text-success"
+                    :data-process-publish="String(item.id)"
+                    :disabled="Boolean(actionId)"
+                    @click="publishProcess(item)"
+                  >
+                    发布
                   </button>
                   <button
                     type="button"

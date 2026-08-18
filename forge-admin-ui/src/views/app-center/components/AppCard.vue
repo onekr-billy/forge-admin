@@ -64,19 +64,20 @@ function isOpenDisabled(app) {
     return true
   if (isCodeDownload(app))
     return !app.id
+  // RUNTIME 入口未配置运行配置时禁用；EXTERNAL/EMBEDDED 入口允许打开（未配置地址时展示空白占位）
   if (app.entryMode === 'RUNTIME')
     return !app.configKey && !app.entryUrl
-  return !app.entryUrl
+  return false
 }
 
 function openTip(app) {
   if (app.status !== 1)
     return '入口已停用'
   if (isOpenDisabled(app))
-    return '未配置打开地址'
+    return '未配置运行配置'
   if (isCodeDownload(app))
     return '查看功能代码'
-  return '打开'
+  return '打开入口'
 }
 
 function moreOptions(app) {

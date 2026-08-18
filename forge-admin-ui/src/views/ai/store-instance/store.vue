@@ -51,7 +51,9 @@
           <i class="ai-icon:search" />
         </template>
       </n-input>
-      <NButton size="small" @click="handleReset">重置</NButton>
+      <NButton size="small" @click="handleReset">
+        重置
+      </NButton>
     </div>
 
     <div class="store-table-card">
@@ -152,7 +154,7 @@
               v-model:value="configEditorText"
               type="textarea"
               :rows="4"
-              placeholder='{"token":"","database":"default"}'
+              placeholder="{&quot;token&quot;:&quot;&quot;,&quot;database&quot;:&quot;default&quot;}"
               @blur="syncConfigFromEditor"
             />
             <span class="config-editor__tip">主机地址 / 端口 / 数据库已在上方填写，此处可补充 token 等额外配置。</span>
@@ -161,8 +163,12 @@
       </n-form>
       <template #action>
         <div class="modal-footer-actions">
-          <NButton @click="modal.show = false">取消</NButton>
-          <NButton type="primary" :loading="modal.saving" @click="handleSave">确定</NButton>
+          <NButton @click="modal.show = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="modal.saving" @click="handleSave">
+            确定
+          </NButton>
         </div>
       </template>
     </n-modal>

@@ -183,7 +183,10 @@ public class DynamicDataScopeService {
     private DataScopeContext resolveContext(AiCrudConfig config) {
         DataScopeContext context;
         try {
-            context = dataScopeService.getCurrentUserDataScope();
+            String objectCode = config == null ? null : StringUtils.trimToNull(config.getObjectCode());
+            context = objectCode == null
+                    ? dataScopeService.getCurrentUserDataScope()
+                    : dataScopeService.getCurrentUserDataScope("ai:business:" + objectCode);
         } catch (Exception e) {
             log.warn("[DynamicDataScopeService] 获取当前用户数据权限失败, configKey={}",
                     config == null ? null : config.getConfigKey(), e);

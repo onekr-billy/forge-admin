@@ -196,6 +196,7 @@ Flyway 版本：`forge-server/db/migration/V1.0.52__remove_database_crypto_secre
 10. **每个实施 Task 独立提交。** 每个里程碑完成后先做 Spec 合规检查和目标测试，再进入下一里程碑。
 11. **启动前自动引导而非运行期写环境变量。** `EnvironmentPostProcessor` 在配置绑定前将显式配置或持久化密钥文件加入 Spring Environment；Java 进程不尝试修改父 Shell 环境。
 12. **首次生成必须稳定持久化。** 采用进程内锁、文件锁、临时文件和原子移动；文件存在后只校验和复用，损坏时失败关闭。
+13. **多服务读取使用共享锁，写入继续使用排他锁。** 完整密钥文件只在共享文件锁内读取和校验，允许 Admin、Flow 等独立 JVM 同时启动；文件不存在或缺少可自动补齐的 Capability Pepper 时，必须释放共享锁后获取排他锁，并在排他锁内重新读取状态后再生成或原子写回。密钥字段损坏、空白或非法仍失败关闭，不得借升级流程静默换钥。
 
 ## 11. 执行日志
 
@@ -207,6 +208,7 @@ Flyway 版本：`forge-server/db/migration/V1.0.52__remove_database_crypto_secre
 | Task 9-11 | 完成 | Data/Generator migration、Admin migration API | 当前租户盘点、默认 dry-run、全 scope 预检、批次原子事务和原值比较更新 |
 | Task 12 | 完成 | Runbook、测试、构建、静态扫描、两阶段审查 | 代码就绪；生产迁移、全租户归零和旧钥退役仍为部署门禁 |
 | Task 13 | 完成 | Starter Crypto 启动引导器/注册/测试、Admin/Report YAML、Docker 持久化卷、Runbook | 新安装无需手工 export；历史 legacy key 仍需从既有 Secret 来源提供 |
+| Task 14 | 完成 | Starter Crypto 启动引导锁与跨 JVM 回归测试 | 完整文件共享读；首次创建和兼容补字段保持排他写与写前二次检查 |
 
 ## 12. 审查结论
 
@@ -216,6 +218,7 @@ Flyway 版本：`forge-server/db/migration/V1.0.52__remove_database_crypto_secre
 - **保留项**：仓库既有 Surefire groups/测试引擎配置和本地陈旧 Starter jar 会阻断部分直接模块测试，已使用 Reactor `target/classes` 隔离运行目标测试。低代码运行时当前只注册 MySQL、PostgreSQL、Oracle 方言，本变更验证这三种现有方言，未扩展 SQL Server 整体运行时支持。
 - **部署待办**：真实 Secret 注入、测试库/生产 dry-run 与 execute、所有租户归零报告、观察窗口、旧密钥移除和传输根密钥轮换均未在本地执行。
 - **Task 13 增量验证**：Starter Crypto Reactor 编译成功；自动引导 8/8，引导+原配置校验 15/15；最小 SpringApplication 合同确认无手工 export 也会在 Context 刷新前生成并注入；`docker compose config --quiet` 通过。
+- **Task 14 增量审查：PASS**。跨 JVM Red 用例在旧实现上等待 5 秒后失败；共享读/排他写修复后目标类 17/17、Starter Crypto 53/53 通过，Admin 45 模块和 Flow Server 37 模块聚合包通过。首次创建、旧文件补 Pepper、损坏文件失败关闭和文件权限合同均保持。
 
 ## 13. 确认记录（HARD-GATE）
 

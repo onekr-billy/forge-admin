@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.ai.knowledge.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledge;
+import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledgeChunk;
 import com.mdframe.forge.plugin.ai.knowledge.domain.AiKnowledgeDocument;
 import com.mdframe.forge.plugin.ai.knowledge.service.AiKnowledgeService;
 import com.mdframe.forge.plugin.ai.knowledge.service.dto.DocumentProcessEvent;
@@ -113,6 +114,34 @@ public class AiKnowledgeController {
     public RespInfo<Void> confirmDocument(@PathVariable Long documentId) {
         knowledgeService.confirmDocument(documentId);
         return RespInfo.success();
+    }
+
+    /**
+     * 重新处理失败文档
+     */
+    @PostMapping("/document/{documentId}/reprocess")
+    @SaCheckPermission("ai:knowledge:edit")
+    public RespInfo<Void> reprocessDocument(@PathVariable Long documentId) {
+        knowledgeService.reprocessDocument(documentId);
+        return RespInfo.success();
+    }
+
+    /**
+     * 查看文档分块列表
+     */
+    @GetMapping("/document/{documentId}/chunks")
+    @SaCheckPermission("ai:knowledge:list")
+    public RespInfo<List<AiKnowledgeChunk>> documentChunks(@PathVariable Long documentId) {
+        return RespInfo.success(knowledgeService.listDocumentChunks(documentId));
+    }
+
+    /**
+     * 查看文档原始内容
+     */
+    @GetMapping("/document/{documentId}/content")
+    @SaCheckPermission("ai:knowledge:list")
+    public RespInfo<String> documentContent(@PathVariable Long documentId) {
+        return RespInfo.success(knowledgeService.getDocumentRawContent(documentId));
     }
 
     /**

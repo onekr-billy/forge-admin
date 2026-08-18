@@ -222,7 +222,7 @@ function normalizeFieldOption(field) {
 function normalizeFieldCode(value) {
   const normalized = String(value || '')
     .trim()
-    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/\W/g, '_')
     .replace(/_+/g, '_')
   if (!normalized)
     return ''

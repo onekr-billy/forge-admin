@@ -325,6 +325,7 @@ const { dict, getLabel } = useDict(
   'external_request_content_type',
   'external_call_status',
   'external_call_type',
+  'external_api_execution_mode',
   'sys_enable_disable',
   'sys_req_method',
   'sys_yes_no',
@@ -367,6 +368,7 @@ const apiKeyPositionOptions = computed(() => dict.value.external_api_key_positio
 const statusOptions = computed(() => toNumberDictOptions(dict.value.sys_enable_disable))
 const methodOptions = computed(() => (dict.value.sys_req_method || []).filter(item => item.value !== 'ALL'))
 const contentTypeOptions = computed(() => dict.value.external_request_content_type || [])
+const executionModeOptions = computed(() => dict.value.external_api_execution_mode || [])
 const booleanOptions = computed(() => toBooleanDictOptions(dict.value.sys_yes_no))
 const callStatusOptions = computed(() => toNumberDictOptions(dict.value.external_call_status))
 const callTypeOptions = computed(() => toBooleanDictOptions(dict.value.external_call_type))
@@ -476,9 +478,12 @@ const apiTableColumns = computed(() => [
   { prop: 'systemName', label: '所属系统', width: 160 },
   {
     prop: 'apiMethod',
-    label: '方法',
-    width: 90,
-    render: row => renderMethodTag(row.apiMethod),
+    label: '模式/方法',
+    width: 110,
+    render: row => h('div', { class: 'name-cell name-cell--compact' }, [
+      h(DictTag, { options: executionModeOptions.value, value: row.executionMode || 'HTTP', size: 'small' }),
+      h('span', { class: 'secondary-text' }, row.apiMethod || '-'),
+    ]),
   },
   { prop: 'requestContentType', label: '请求配置', width: 180, render: row => renderApiRequestConfig(row) },
   { prop: 'apiPath', label: '接口路径', width: 280, render: row => renderTextWithTooltip(row.apiPath, 'url-cell') },
@@ -645,8 +650,9 @@ const apiEditSchema = computed(() => [
   { field: 'apiStatus', label: '状态', type: 'radio', defaultValue: 1, props: { options: statusOptions.value } },
   { field: 'apiName', label: '接口名称', type: 'input', required: true, props: { placeholder: '如：查询用户列表' } },
   { field: 'apiCode', label: '接口编码', type: 'input', required: true, props: { placeholder: '如：query_users' } },
+  { field: 'executionMode', label: '执行模式', type: 'select', defaultValue: 'HTTP', props: { options: executionModeOptions.value } },
   { field: 'apiMethod', label: '请求方法', type: 'select', required: true, props: { options: methodOptions.value } },
-  { field: 'apiPath', label: '接口路径', type: 'input', required: true, props: { placeholder: '如：/api/v1/users' } },
+  { field: 'apiPath', label: '接口路径', type: 'input', required: true, vIf: form => (form.executionMode || 'HTTP') !== 'MOCK', props: { placeholder: '如：/api/v1/users' } },
   { field: 'apiDesc', label: '接口描述', type: 'textarea', span: 2, props: { placeholder: '说明接口用途和调用场景', rows: 2 } },
 
   { field: '__api_request', type: 'divider', label: '请求配置', span: 2, props: { titlePlacement: 'left' } },
@@ -659,6 +665,17 @@ const apiEditSchema = computed(() => [
   { field: '__api_response', type: 'divider', label: '响应提取与转换', span: 2, props: { titlePlacement: 'left' } },
   { field: 'responseDataPath', label: '数据路径', type: 'input', props: { placeholder: '如：data.records 或 $.data.records' } },
   { field: 'responseTotalPath', label: '总数路径', type: 'input', props: { placeholder: '如：data.total 或 $.data.total，用于分页接口' } },
+  {
+    field: 'mockResponseJson',
+    label: 'Mock响应JSON',
+    type: 'textarea',
+    span: 2,
+    vIf: form => (form.executionMode || 'HTTP') === 'MOCK',
+    props: {
+      rows: 8,
+      placeholder: '配置调试或低代码查询时直接返回的JSON，如 {"memberId":"M000001","memberName":"测试会员"}',
+    },
+  },
   { field: 'paramMappingEnabled', label: '启用参数映射', type: 'radio', defaultValue: false, props: { options: booleanOptions.value } },
   { field: 'responseTransformEnabled', label: '启用响应转换', type: 'radio', defaultValue: false, props: { options: booleanOptions.value } },
   { field: 'paramMappings', label: '参数映射规则', type: 'textarea', span: 2, vIf: form => form.paramMappingEnabled === true, props: { rows: 4, placeholder: 'JSON 格式，如：{\"pageNum\":\"page\",\"keyword\":{\"target\":\"q\",\"defaultValue\":\"\"}}' } },
@@ -676,6 +693,37 @@ const apiEditSchema = computed(() => [
   { field: 'cacheKeyTemplate', label: '缓存Key模板', type: 'input', span: 2, vIf: form => form.cacheEnabled === true, props: { placeholder: '如：external:user:{userId}' } },
   { field: 'permissionCheckEnabled', label: '启用权限校验', type: 'radio', defaultValue: true, props: { options: booleanOptions.value } },
   { field: 'requiredPermission', label: '所需权限标识', type: 'input', vIf: form => form.permissionCheckEnabled === true, props: { placeholder: '如：external:user:list' } },
+  { field: '__api_lowcode_query', type: 'divider', label: '低代码只读查询契约', span: 2, props: { titlePlacement: 'left' } },
+  {
+    field: 'lowcodeQueryEnabled',
+    label: '开放为低代码查询源',
+    type: 'radio',
+    defaultValue: false,
+    span: 2,
+    props: { options: booleanOptions.value },
+  },
+  {
+    field: 'inputSchemaJson',
+    label: '输入 Schema',
+    type: 'textarea',
+    span: 2,
+    vIf: form => form.lowcodeQueryEnabled === true,
+    props: {
+      rows: 6,
+      placeholder: 'JSON 数组；无参数填 []。POST 仅在目标接口业务语义确认为只读查询时开放。',
+    },
+  },
+  {
+    field: 'outputSchemaJson',
+    label: '输出 Schema',
+    type: 'textarea',
+    span: 2,
+    vIf: form => form.lowcodeQueryEnabled === true,
+    props: {
+      rows: 6,
+      placeholder: 'JSON 数组，如 [{"name":"displayName","path":"member.name","label":"名称","type":"string"}]',
+    },
+  },
   { field: 'remark', label: '备注', type: 'textarea', span: 2, props: { rows: 2, placeholder: '补充说明' } },
 ])
 
@@ -813,6 +861,7 @@ function getDefaultApiForm() {
   return {
     systemId,
     systemNameDisplay: selectedSystem.value?.systemName || selectedSystem.value?.systemCode || '',
+    executionMode: 'HTTP',
     apiMethod: 'GET',
     requestContentType: 'application/json',
     responseContentType: 'application/json',
@@ -824,6 +873,7 @@ function getDefaultApiForm() {
     cacheEnabled: false,
     cacheTtl: 300,
     permissionCheckEnabled: true,
+    lowcodeQueryEnabled: false,
     apiStatus: 1,
     sortOrder: 0,
   }
@@ -836,6 +886,7 @@ function beforeRenderApiForm(row) {
   const systemId = getSelectedSystemId()
   return {
     ...row,
+    executionMode: row.executionMode || 'HTTP',
     systemId: systemId || row.systemId,
     systemNameDisplay: selectedSystem.value?.systemName || row.systemName || '',
   }
@@ -846,6 +897,7 @@ function beforeRenderApiDetail(data) {
   return {
     ...getDefaultApiForm(),
     ...data,
+    executionMode: data?.executionMode || 'HTTP',
     systemId: systemId || data?.systemId,
     systemNameDisplay: selectedSystem.value?.systemName || data?.systemName || '',
   }
@@ -860,6 +912,31 @@ function beforeSubmitApi(formData) {
   if (!payload.systemId) {
     message.error('请选择所属系统')
     return false
+  }
+  payload.executionMode = payload.executionMode || 'HTTP'
+  if (payload.executionMode === 'MOCK') {
+    payload.apiPath = payload.apiPath || '/mock'
+    if (!payload.mockResponseJson?.trim()) {
+      message.error('Mock模式必须配置Mock响应JSON')
+      return false
+    }
+    if (!validateJson(payload.mockResponseJson, 'Mock响应JSON')) {
+      return false
+    }
+  }
+  if (payload.lowcodeQueryEnabled === true) {
+    if (!payload.inputSchemaJson?.trim()) {
+      message.error('开放为低代码查询源时必须配置输入 Schema，无参数请填写 []')
+      return false
+    }
+    if (!payload.outputSchemaJson?.trim()) {
+      message.error('开放为低代码查询源时必须配置输出 Schema')
+      return false
+    }
+    if (!validateJson(payload.inputSchemaJson, '输入 Schema')
+      || !validateJson(payload.outputSchemaJson, '输出 Schema')) {
+      return false
+    }
   }
   const jsonFields = [
     ['requestHeaders', '额外请求头'],

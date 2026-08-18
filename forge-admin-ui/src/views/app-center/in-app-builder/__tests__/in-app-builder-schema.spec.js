@@ -5,7 +5,9 @@ import {
   insertPageComponent,
   mergeInAppBuilderOptions,
   moveNavigationNode,
+  normalizeFlowInteraction,
   normalizeInAppBuilder,
+  normalizeNodeAccess,
   removeNavigationNode,
   updateInAppFormAsset,
 } from '../in-app-builder-schema'
@@ -16,6 +18,25 @@ const APPLICATION = {
 }
 
 describe('in-app builder schema', () => {
+  it('normalizes and persists application flow interaction without inventing runtime requests', () => {
+    const flowInteraction = normalizeFlowInteraction({
+      approvalActions: [{ actionId: 'approve', operation: 'approve', label: '同意', permissionCode: 'order:approve' }],
+      timeline: { enabled: true },
+      nodePermissions: [{ nodeKey: 'manager', visibleSectionIds: ['base', 'base'], readonlySectionIds: ['amount'] }],
+      callbacks: { approvedActionCode: 'sync_stock' },
+    })
+    const schema = normalizeInAppBuilder({ inAppBuilder: { flowInteraction } }, APPLICATION, [])
+    const options = mergeInAppBuilderOptions({ unrelated: true }, schema)
+
+    expect(schema.flowInteraction.approvalActions[0]).toMatchObject({
+      permissionKey: 'order:approve',
+      permissionStrategy: 'hide',
+    })
+    expect(schema.flowInteraction.nodePermissions[0].visibleSectionIds).toEqual(['base'])
+    expect(options.inAppBuilder.flowInteraction).toEqual(schema.flowInteraction)
+    expect(options.unrelated).toBe(true)
+  })
+
   it('keeps an application without saved pages empty', () => {
     const source = { unrelated: { enabled: true } }
     const schema = normalizeInAppBuilder(source, APPLICATION, [])
@@ -162,5 +183,38 @@ describe('in-app builder schema', () => {
       expect.objectContaining({ id: created.formAssetId, name: '客户录入表单', formKey: 'customer_form' }),
     ])
     expect(mergeInAppBuilderOptions({}, updated).inAppBuilder.formAssets[0].formDesignerSchema.components).toHaveLength(1)
+  })
+
+  it('normalizes node access control and keeps roles grants across save round trips', () => {
+    const schema = normalizeInAppBuilder({
+      inAppBuilder: {
+        nodes: [
+          { id: 'page_sales', type: 'page', title: '销售', access: { mode: 'roles', roleIds: ['2', 3, 3, null] } },
+          { id: 'page_hr', type: 'page', title: '人事', access: { mode: 'unknown' } },
+          { id: 'page_finance', type: 'page', title: '财务' },
+        ],
+      },
+    }, APPLICATION, [])
+
+    expect(schema.nodes.find(node => node.id === 'page_sales').access).toEqual({ mode: 'roles', roleIds: [2, 3] })
+    expect(schema.nodes.find(node => node.id === 'page_hr').access).toEqual({ mode: 'inherit', roleIds: [] })
+    expect(schema.nodes.find(node => node.id === 'page_finance').access).toEqual({ mode: 'inherit', roleIds: [] })
+
+    const options = mergeInAppBuilderOptions({}, schema)
+    expect(options.inAppBuilder.nodes.find(node => node.id === 'page_sales').access).toEqual({ mode: 'roles', roleIds: [2, 3] })
+  })
+
+  it('defaults new navigation nodes to inherit access and accepts explicit roles input', () => {
+    const base = normalizeInAppBuilder({}, APPLICATION, [])
+    const inherited = createNavigationNode(base, { type: 'page', title: '默认页' })
+    const restricted = createNavigationNode(inherited, {
+      type: 'page',
+      title: '受限页',
+      access: { mode: 'roles', roleIds: [7] },
+    })
+
+    expect(inherited.nodes.find(node => node.title === '默认页').access).toEqual({ mode: 'inherit', roleIds: [] })
+    expect(restricted.nodes.find(node => node.title === '受限页').access).toEqual({ mode: 'roles', roleIds: [7] })
+    expect(normalizeNodeAccess(null)).toEqual({ mode: 'inherit', roleIds: [] })
   })
 })

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>门店预售信息登记（低码应用）· 产品需求文档 PRD</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --panel:#ffffff; --ink:#1f2733; --sub:#5b6675;
+    --line:#e3e8ef; --brand:#2f6fed; --brand-soft:#eaf1ff;
+    --p0:#e5484d; --p0-bg:#fdecec; --p1:#2f6fed; --p1-bg:#eaf1ff;
+    --p2:#8a94a6; --p2-bg:#eef1f6; --ok:#1a9c6b; --ok-bg:#e6f6ee;
+    --warn:#c47d00; --warn-bg:#fff4e0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.65;font-size:15px}
+  header.top{background:linear-gradient(120deg,#2f6fed,#5b8def);color:#fff;padding:30px 40px}
+  header.top h1{margin:0 0 6px;font-size:24px;font-weight:700}
+  header.top .meta{opacity:.92;font-size:13px;display:flex;gap:18px;flex-wrap:wrap}
+  .wrap{display:flex;align-items:flex-start;max-width:1280px;margin:0 auto;padding:0 16px}
+  nav.toc{position:sticky;top:0;align-self:flex-start;width:240px;flex:0 0 240px;
+    padding:24px 12px;font-size:13.5px}
+  nav.toc a{display:block;color:var(--sub);text-decoration:none;padding:6px 12px;border-radius:8px;margin:2px 0}
+  nav.toc a:hover{background:var(--brand-soft);color:var(--brand)}
+  nav.toc .grp{font-weight:700;color:var(--ink);margin:14px 12px 4px;font-size:12px;letter-spacing:.05em}
+  main{flex:1;min-width:0;background:var(--panel);margin:18px 0;padding:8px 36px 48px;border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 1px 3px rgba(16,24,40,.04)}
+  section{padding:26px 0;border-bottom:1px solid var(--line)}
+  section:last-child{border-bottom:none}
+  h2{font-size:20px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  h2 .num{display:inline-flex;width:26px;height:26px;background:var(--brand);color:#fff;border-radius:7px;
+    align-items:center;justify-content:center;font-size:13px;font-weight:700}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--ink)}
+  p{margin:8px 0;color:var(--sub)}
+  .lead{color:var(--ink)}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;vertical-align:middle}
+  .p0{background:var(--p0-bg);color:var(--p0)}
+  .p1{background:var(--p1-bg);color:var(--p1)}
+  .p2{background:var(--p2-bg);color:var(--p2)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#f0f4fb;color:#33415c;font-weight:600;white-space:nowrap}
+  tr:nth-child(even) td{background:#fbfcfe}
+  code{background:#eef1f6;padding:1px 6px;border-radius:5px;font-size:12.5px;color:#b5341f}
+  .card{background:#f8fafc;border:1px solid var(--line);border-left:4px solid var(--brand);
+    border-radius:10px;padding:14px 18px;margin:14px 0}
+  .card.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+  .card.ok{border-left-color:var(--ok);background:var(--ok-bg)}
+  .card.q{border-left-color:#7a5af0;background:#f3f0ff}
+  ul,ol{margin:8px 0;padding-left:22px;color:var(--sub)}
+  li{margin:4px 0}
+  .story{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:10px 0}
+  .story b{color:var(--ink)}
+  .ac{background:#fff;border:1px dashed var(--line);border-radius:10px;padding:12px 16px;margin:8px 0}
+  .ac .t{font-weight:700;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .formula{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#1f2733;color:#e6edf7;
+    padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.9;overflow:auto}
+  .tag{display:inline-block;background:#eef1f6;color:#475067;font-size:11.5px;padding:2px 8px;border-radius:6px;margin-right:6px}
+  .legend{font-size:12px;color:var(--sub);margin:6px 0 0}
+  svg{display:block;max-width:100%;height:auto;margin:12px auto;background:#fff;border:1px solid var(--line);border-radius:12px}
+  footer{text-align:center;color:var(--sub);font-size:12px;padding:20px}
+  @media (max-width:900px){nav.toc{display:none}main{padding:8px 18px 36px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>门店预售信息登记（低码应用）· 产品需求文档</h1>
+  <div class="meta">
+    <span>文档版本：v1.0（草案）</span>
+    <span>日期：2026-08-10</span>
+    <span>作者：周（信息部）</span>
+    <span>状态：待评审</span>
+    <span>面向对象：业务方 / 信息部 / 低代码实施</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc">
+    <div class="grp">文档导航</div>
+    <a href="#s1">1 · 问题背景</a>
+    <a href="#s2">2 · 目标</a>
+    <a href="#s3">3 · 非目标</a>
+    <a href="#s4">4 · 用户与角色</a>
+    <a href="#s5">5 · 用户故事</a>
+    <a href="#s6">6 · 功能需求</a>
+    <a href="#s7">7 · 核心业务规则</a>
+    <a href="#s8">8 · 数据模型</a>
+    <a href="#s9">9 · 集成与接口</a>
+    <a href="#s10">10 · 校验与边界</a>
+    <a href="#s11">11 · 验收标准</a>
+    <a href="#s12">12 · 成功指标</a>
+    <a href="#s13">13 · 待确认问题</a>
+    <a href="#s14">14 · 风险与合规</a>
+    <a href="#s15">15 · 优先级与里程碑</a>
+  </nav>
+
+  <main>
+    <!-- 1 -->
+    <section id="s1">
+      <h2><span class="num">1</span>问题背景（Problem Statement）</h2>
+      <p class="lead">门店导购在销售"预售（预定后分批提货）"类商品时，缺少一个在企微里就能随手记录的工具：会员是谁、钱怎么收的、每件商品预定了多少、客户已经提了多少/退了多少，目前多依赖纸笔、Excel 或口头交接，数据分散、易错、不可追溯。</p>
+      <ul>
+        <li><b>谁遇到：</b>门店导购（一线），以及需要对账/盘点的店长与信息部。</li>
+        <li><b>频率：</b>每个有预售业务的交易日都会发生，母婴行业预售（如奶粉、童装、礼盒）是常态化场景。</li>
+        <li><b>不解决的代价：</b>① 提货/退货数量对不上，导致客户纠纷与库存差异；② 会员与收款信息缺失，无法做复购跟进与财务对账；③ 数据散落，信息部无法沉淀分析。</li>
+      </ul>
+      <div class="card warn"><b>证据说明（待补）：</b>本文档基于业务口述需求撰写，缺少量化数据（如日均预售单数、差错率）。建议评审前由门店提供近 1 个月预售差错/客诉样本，用于校准目标值（见 §12）。</div>
+    </section>
+
+    <!-- 2 -->
+    <section id="s2">
+      <h2><span class="num">2</span>目标（Goals）</h2>
+      <p>衡量"做成了没有"的结果指标（Outcome），而非"做了什么功能"：</p>
+      <table>
+        <tr><th style="width:40px">#</th><th>目标</th><th>如何判定成功</th><th>类型</th></tr>
+        <tr><td>G1</td><td>预售登记全流程在企微内 1 次完成，无需切换系统</td><td>导购从打开应用到提交单据平均 ≤ 90 秒；切换外部系统的步骤 = 0</td><td>用户</td></tr>
+        <tr><td>G2</td><td>会员、收款、商品信息自动带出，减少手输错误</td><td>主表/子表手输字段错误率（与后台对账不符）&lt; 2%</td><td>用户</td></tr>
+        <tr><td>G3</td><td>提货/退货数量实时联动、账目始终自洽</td><td>任意时刻"未提 = 预售 − 已提 + 退货"恒成立；盘点差异 = 0</td><td>业务</td></tr>
+        <tr><td>G4</td><td>沉淀可分析的结构化预售数据</td><td>100% 预售单进入统一数据表，可按月/门店/会员导出分析</td><td>业务</td></tr>
+      </table>
+    </section>
+
+    <!-- 3 -->
+    <section id="s3">
+      <h2><span class="num">3</span>非目标（Non-Goals）</h2>
+      <p>明确"这版<b>不</b>做什么"，防止范围蔓延：</p>
+      <table>
+        <tr><th style="width:40px">#</th><th>非目标</th><th>为何不在范围</th></tr>
+        <tr><td>NG1</td><td>不实现收款/支付能力本身</td><td>仅"记录"收款方式与单号，实际收单由静态码/现金既有流程完成，不在本应用内做支付</td></tr>
+        <tr><td>NG2</td><td>不建会员系统、商品主数据、库存系统</td><td>这些是既有系统，本应用只做"查询带出"与"记录"，不维护主数据</td></tr>
+        <tr><td>NG3</td><td>不做财务对账/报表中心（v1）</td><td>先保证录入准确；对账报表作为 P2 后续，但数据模型需预留（见 §8）</td></tr>
+        <tr><td>NG4</td><td>不做会员营销/复购触达（v1）</td><td>仅记录会员身份，营销动作属独立 initiative</td></tr>
+        <tr><td>NG5</td><td>不做多门店调拨/跨店提货（v1）</td><td>默认"本店预售、本店提货"；跨店逻辑复杂度高，先不纳入</td></tr>
+      </table>
+    </section>
+
+    <!-- 4 -->
+    <section id="s4">
+      <h2><span class="num">4</span>用户与角色（Personas）</h2>
+      <table>
+        <tr><th>角色</th><th>职责</th><th>在本应用中的动作</th></tr>
+        <tr><td><b>门店导购</b>（主用户）</td><td>接待客户、录预售单、后续办提货/退货</td><td>新建预售单、录会员/收款、加商品行、记日志</td></tr>
+        <tr><td>店长</td><td>监督、对账、纠错</td><td>查看本店单据、处理异常（本版以只读查看为主）</td></tr>
+        <tr><td>信息部（实施方）</td><td>搭建低码应用、接接口</td><td>配置表单/联动/数据源</td></tr>
+        <tr><td>会员（间接）</td><td>购买预售、分批提货</td><td>不直接操作系统，仅作为被记录对象</td></tr>
+      </table>
+    </section>
+
+    <!-- 5 -->
+    <section id="s5">
+      <h2><span class="num">5</span>用户故事（User Stories）</h2>
+      <div class="story"><b>作为门店导购</b>，我希望在企微里打开应用就自动识别出"我是谁、我在哪家店"，以便不用每次手输工号、减少出错。 <span class="badge p0">P0</span></div>
+      <div class="story"><b>作为门店导购</b>，我希望输入会员手机号就能带出会员ID与姓名，以便准确关联这笔预售属于哪位会员。 <span class="badge p0">P0</span></div>
+      <div class="story"><b>作为门店导购</b>，我希望选择"静态码/现金"后表单只显示对应的录入项，以便不被无关字段干扰、录得更快。 <span class="badge p0">P0</span></div>
+      <div class="story"><b>作为门店导购</b>，我希望录入静态码单号后能自动查到这笔收款的相关信息并留存，以便财务对账时有据可查。 <span class="badge p0">P0</span></div>
+      <div class="story"><b>作为门店导购</b>，我希望扫码或手输商品条码就能带出商品名称，并填写预售数量，以便快速建好商品行。 <span class="badge p0">P0</span></div>
+      <div class="story"><b>作为门店导购</b>，我希望在日志里选商品、填数量、选"提货/退货"，系统自动帮我把商品行的已提/未提/退货改好，以便不用自己心算、不会算错。 <span class="badge p0">P0</span></div>
+      <div class="story"><b>作为门店导购</b>，我希望有一行备注能记助记信息（如"客户说国庆前提完"），以便后续自己对账或交接。 <span class="badge p1">P1</span></div>
+      <div class="story"><b>作为店长</b>，我希望随时能看本店任一笔预售单的提货进度，以便主动提醒客户或发现异常。 <span class="badge p1">P1</span></div>
+      <div class="story"><b>作为导购</b>，当会员手机号查不到 / 静态码单号无效时，我希望看到明确的报错与下一步提示，以便当场纠正而不是提交了才发现。 <span class="badge p0">P0</span>（错误态）</div>
+    </section>
+
+    <!-- 6 -->
+    <section id="s6">
+      <h2><span class="num">6</span>功能需求（Functional Requirements）</h2>
+
+      <h3>6.1 主表 · 预售单头 <span class="badge p0">P0</span></h3>
+      <table>
+        <tr><th style="width:34px">ID</th><th>需求</th><th>说明 / 行为</th></tr>
+        <tr><td>F1</td><td>企微身份识别</td><td>应用在企业微信工作台打开，通过网页授权/通讯录接口获取当前用户 <code>userid</code>，带出导购姓名、工号、所属门店并写入表单（只读展示）。</td></tr>
+        <tr><td>F2</td><td>会员身份录入</td><td>提供"会员手机号"输入框（11 位）；失焦/点击查询后调用会员系统接口，返回并保存 <code>会员ID</code>、展示会员姓名。查不到时提示并可选择"仅记录手机号"（见 §10）。</td></tr>
+        <tr><td>F3</td><td>支付方式（单选）</td><td>选项：<b>① 静态码</b>　<b>② 现金</b>。必选，未选不允许提交。</td></tr>
+        <tr><td>F4</td><td>静态码单号（条件显示）</td><td>仅当 F3=静态码 时显示"静态码单号"输入框；输入后查询静态码/收款系统，带出并保存该单号关联信息（收款金额/状态/时间等，字段以 §13-Q3 为准）。</td></tr>
+        <tr><td>F5</td><td>现金金额（条件显示）</td><td>仅当 F3=现金 时显示"现金金额"数值输入框（≥0，两位小数）。</td></tr>
+        <tr><td>F6</td><td>备注</td><td>自由文本，记录助记信息，非必填。</td></tr>
+        <tr><td>F7</td><td>单据状态</td><td>草稿 → 已提交 →（可选）已完成/已取消；状态变更留痕。</td></tr>
+      </table>
+
+      <h3>6.2 商品子表 <span class="badge p0">P0</span></h3>
+      <table>
+        <tr><th style="width:34px">ID</th><th>列</th><th>录入/来源</th><th>说明</th></tr>
+        <tr><td>F8</td><td>商品条码</td><td>手输 / 扫条码</td><td>必填；扫码或输入后触发 F9 带出名称。</td></tr>
+        <tr><td>F9</td><td>商品名称</td><td>商品主数据查询（只读）</td><td>由条码在商品系统查询并自动填充、展示，导购不可改（避免错填）。</td></tr>
+        <tr><td>F10</td><td>预售数量</td><td>导购输入</td><td>整数 &gt; 0；为该商品本单预定总数。</td></tr>
+        <tr><td>F11</td><td>已提数量</td><td>系统维护（日志驱动）</td><td>初始 0；由 §7 日志"提货"累加。</td></tr>
+        <tr><td>F12</td><td>未提数量</td><td>系统维护</td><td>初始 = 预售数量；由 §7 规则实时计算/扣减。</td></tr>
+        <tr><td>F13</td><td>退货数量</td><td>系统维护（日志驱动）</td><td>初始 0；由 §7 日志"退货"累加。</td></tr>
+      </table>
+      <div class="card"><b>UX 细节：</b>商品子表"新增一行"后需先完成条码带出名称、填入预售数量并保存，该行商品名称才会出现在日志子表的下拉选项中（依赖 §7-R1）。</div>
+
+      <h3>6.3 日志子表 · 提货/退货 <span class="badge p0">P0</span></h3>
+      <table>
+        <tr><th style="width:34px">ID</th><th>列</th><th>录入/来源</th><th>说明</th></tr>
+        <tr><td>F14</td><td>商品名称（单选）</td><td>下拉</td><td>选项 = 本单商品子表已保存的商品名称（含条码），不可手输。</td></tr>
+        <tr><td>F15</td><td>数量</td><td>导购输入</td><td>整数 &gt; 0；受 §10 上限约束。</td></tr>
+        <tr><td>F16</td><td>执行动作（单选）</td><td>导购选择</td><td>选项：<b>提货</b>　<b>退货</b>。</td></tr>
+        <tr><td>F17</td><td>联动写入</td><td>系统</td><td>每行保存后，按 §7 规则改写对应商品行的 已提/未提/退货（核心）。</td></tr>
+        <tr><td>F18</td><td>操作人 / 时间</td><td>系统</td><td>自动记录企微身份与操作时间，便于追溯。</td></tr>
+      </table>
+    </section>
+
+    <!-- 7 -->
+    <section id="s7">
+      <h2><span class="num">7</span>核心业务规则与联动逻辑（Business Rules）</h2>
+      <p>这是本应用最关键的部分——日志子表如何驱动商品子表的四个数量字段。以下为<b>推荐默认规则</b>，其中涉及"退货是否恢复可提"的语义见 §13-Q2，待业务确认。</p>
+
+      <div class="formula">未提数量 = 预售数量 − 已提数量 + 退货数量
+
+【提货】日志新增一行(动作=提货, 数量=N, 商品=X)：
+    已提数量(X) += N
+    未提数量(X) = 预售(X) − 已提(X) + 退货(X)   // 即 −N
+    退货数量(X) 不变
+
+【退货】日志新增一行(动作=退货, 数量=N, 商品=X)：
+    退货数量(X) += N
+    已提数量(X) 不变（累计提货，gross）
+    未提数量(X) = 预售(X) − 已提(X) + 退货(X)   // 即 +N，退货商品回到可提
+      </div>
+
+      <table>
+        <tr><th style="width:40px">规则</th><th>内容</th></tr>
+        <tr><td>R1</td><td>商品子表行保存后，其"商品名称"才进入日志子表的下拉选项；未保存的商品不出现在日志中。</td></tr>
+        <tr><td>R2</td><td>日志"提货"：对应商品行 已提 += N；未提 相应减少（不低于 0）。</td></tr>
+        <tr><td>R3</td><td>日志"退货"：退货 += N；未提 相应增加（默认退货商品可再次提货）。<b>语义待 §13-Q2 确认</b>。</td></tr>
+        <tr><td>R4</td><td>数量上限：提货数量 ≤ 当前未提数量；退货数量 ≤ 当前已提数量。超限拦截并提示。</td></tr>
+        <tr><td>R5</td><td>一行日志保存即触发一次联动写入（原子操作），失败时回滚并提示，避免半更新。</td></tr>
+        <tr><td>R6</td><td>已取消/已完成的单据不可再添加日志（或需店长权限），防止历史账目被改。</td></tr>
+      </table>
+
+      <svg viewBox="0 0 680 250" role="img" aria-label="日志联动逻辑">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#475067"/>
+          </marker>
+        </defs>
+        <rect x="14" y="20" width="200" height="60" rx="10" fill="#eaf1ff" stroke="#2f6fed"/>
+        <text x="114" y="46" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2733">日志子表新增一行</text>
+        <text x="114" y="66" text-anchor="middle" font-size="11" fill="#5b6675">选商品 / 数量 / 动作</text>
+        <rect x="14" y="120" width="200" height="56" rx="10" fill="#fdecec" stroke="#e5484d"/>
+        <text x="114" y="142" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1f2733">动作 = 提货</text>
+        <text x="114" y="162" text-anchor="middle" font-size="11" fill="#5b6675">已提+N，未提−N</text>
+        <rect x="14" y="190" width="200" height="56" rx="10" fill="#fff4e0" stroke="#c47d00"/>
+        <text x="114" y="212" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1f2733">动作 = 退货</text>
+        <text x="114" y="232" text-anchor="middle" font-size="11" fill="#5b6675">退货+N，未提+N</text>
+        <rect x="380" y="120" width="280" height="120" rx="10" fill="#f8fafc" stroke="#e3e8ef"/>
+        <text x="400" y="146" font-size="12.5" font-weight="700" fill="#1f2733">商品子表（对应行）</text>
+        <text x="400" y="172" font-size="12" fill="#33415c">已提数量：系统累加</text>
+        <text x="400" y="194" font-size="12" fill="#33415c">退货数量：系统累加</text>
+        <text x="400" y="216" font-size="12" fill="#33415c">未提 = 预售 − 已提 + 退货</text>
+        <line x1="214" y1="148" x2="378" y2="148" stroke="#475067" marker-end="url(#ar)"/>
+        <line x1="214" y1="218" x2="378" y2="200" stroke="#475067" marker-end="url(#ar)"/>
+        <line x1="114" y1="80" x2="114" y2="118" stroke="#475067" marker-end="url(#ar)"/>
+      </svg>
+      <p class="legend">图：日志子表每一行保存后，按执行动作改写商品子表对应行的三个数量字段，未提数量始终由公式保持一致。</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="s8">
+      <h2><span class="num">8</span>数据模型（Data Model）</h2>
+      <p>低码平台建议用"主表 + 两个子表（一对多）"结构；下列字段同时作为后续对账/报表的数据底座（即使 v1 不做报表，字段先留好）。</p>
+
+      <h3>8.1 预售单头（主表）</h3>
+      <table>
+        <tr><th>字段</th><th>类型</th><th>来源</th><th>必填</th><th>说明</th></tr>
+        <tr><td>预售单号</td><td>文本</td><td>系统生成</td><td>✓</td><td>唯一，如 YS+YYYYMMDD+序号</td></tr>
+        <tr><td>导购ID</td><td>文本</td><td>企微自动</td><td>✓</td><td>企微 userid</td></tr>
+        <tr><td>导购姓名 / 门店</td><td>文本</td><td>企微/档案</td><td>✓</td><td>由 userid 映射，只读</td></tr>
+        <tr><td>会员手机号</td><td>文本</td><td>导购输入</td><td>✓</td><td>11 位</td></tr>
+        <tr><td>会员ID</td><td>文本</td><td>会员系统</td><td>条件</td><td>查到则填；查不到见 §10</td></tr>
+        <tr><td>会员姓名</td><td>文本</td><td>会员系统</td><td>否</td><td>展示用</td></tr>
+        <tr><td>支付方式</td><td>单选</td><td>导购选择</td><td>✓</td><td>静态码 / 现金</td></tr>
+        <tr><td>静态码单号</td><td>文本</td><td>导购输入</td><td>条件</td><td>仅静态码</td></tr>
+        <tr><td>静态码信息</td><td>JSON/文本</td><td>静态码系统</td><td>条件</td><td>查询结果（§13-Q3）</td></tr>
+        <tr><td>现金金额</td><td>数值</td><td>导购输入</td><td>条件</td><td>仅现金，≥0</td></tr>
+        <tr><td>备注</td><td>文本</td><td>导购输入</td><td>否</td><td>助记</td></tr>
+        <tr><td>状态</td><td>单选</td><td>系统</td><td>✓</td><td>草稿/已提交/已完成/已取消</td></tr>
+        <tr><td>创建时间</td><td>时间</td><td>系统</td><td>✓</td><td></td></tr>
+      </table>
+
+      <h3>8.2 商品子表</h3>
+      <table>
+        <tr><th>字段</th><th>类型</th><th>来源</th><th>必填</th><th>说明</th></tr>
+        <tr><td>行ID</td><td>系统</td><td>自动</td><td>✓</td><td>关联日志用</td></tr>
+        <tr><td>商品条码</td><td>文本</td><td>输入/扫码</td><td>✓</td><td></td></tr>
+        <tr><td>商品名称</td><td>文本</td><td>商品系统</td><td>✓</td><td>只读带出</td></tr>
+        <tr><td>预售数量</td><td>整数</td><td>导购输入</td><td>✓</td><td>&gt;0</td></tr>
+        <tr><td>已提数量</td><td>整数</td><td>系统</td><td>✓</td><td>初始 0</td></tr>
+        <tr><td>未提数量</td><td>整数</td><td>系统</td><td>✓</td><td>初始=预售</td></tr>
+        <tr><td>退货数量</td><td>整数</td><td>系统</td><td>✓</td><td>初始 0</td></tr>
+      </table>
+
+      <h3>8.3 日志子表</h3>
+      <table>
+        <tr><th>字段</th><th>类型</th><th>来源</th><th>必填</th><th>说明</th></tr>
+        <tr><td>行ID</td><td>系统</td><td>自动</td><td>✓</td><td></td></tr>
+        <tr><td>关联商品行ID</td><td>文本</td><td>系统</td><td>✓</td><td>联动改写用</td></tr>
+        <tr><td>商品名称</td><td>单选</td><td>本单商品子表</td><td>✓</td><td>下拉</td></tr>
+        <tr><td>数量</td><td>整数</td><td>导购输入</td><td>✓</td><td>&gt;0</td></tr>
+        <tr><td>执行动作</td><td>单选</td><td>导购选择</td><td>✓</td><td>提货/退货</td></tr>
+        <tr><td>操作人</td><td>文本</td><td>企微自动</td><td>✓</td><td></td></tr>
+        <tr><td>操作时间</td><td>时间</td><td>系统</td><td>✓</td><td></td></tr>
+      </table>
+    </section>
+
+    <!-- 9 -->
+    <section id="s9">
+      <h2><span class="num">9</span>集成与接口依赖（Integrations）</h2>
+      <p>本应用是"记录层"，依赖 3 个既有系统的查询接口。低码平台需支持<b>数据源/Webhook/自定义API</b> 调用（不同平台叫法不同）。</p>
+      <table>
+        <tr><th>依赖</th><th>用途</th><th>触发点</th><th>返回关键字段</th><th>责任方</th></tr>
+        <tr><td>企业微信身份</td><td>识别导购</td><td>打开应用</td><td>userid → 姓名/门店</td><td>信息部</td></tr>
+        <tr><td>会员系统</td><td>手机号→会员</td><td>F2 查询</td><td>会员ID、姓名</td><td>会员系统Owner</td></tr>
+        <tr><td>商品主数据</td><td>条码→名称</td><td>F8/F9</td><td>商品名称（建议含规格）</td><td>商品/ERP Owner</td></tr>
+        <tr><td>静态码/收款系统</td><td>单号→收款信息</td><td>F4</td><td>金额/状态/时间等</td><td>财务/支付 Owner</td></tr>
+      </table>
+      <div class="card q"><b>平台选择（§13-Q1）：</b>低码底座未指定。候选：氚云、简道云、明道云、宜搭、腾讯云微搭（与企微集成更顺）。平台决定了"子表联动"是用<code>公式</code>、<code>自动化</code>还是<code>Webhook</code>实现，需在方案设计前定。</div>
+    </section>
+
+    <!-- 10 -->
+    <section id="s10">
+      <h2><span class="num">10</span>校验与边界规则（Validation & Edge Cases）</h2>
+      <table>
+        <tr><th style="width:34px">ID</th><th>场景</th><th>处理</th></tr>
+        <tr><td>V1</td><td>会员手机号格式错（非 11 位）</td><td>前端即时校验，禁止查询/提交</td></tr>
+        <tr><td>V2</td><td>手机号查不到会员</td><td>明确提示"未匹配到会员"；提供"仍以手机号记录（无会员ID）"选项（业务确认是否允许）</td></tr>
+        <tr><td>V3</td><td>静态码单号无效/查不到</td><td>提示并阻止提交，需导购核对单号</td></tr>
+        <tr><td>V4</td><td>商品条码查不到名称</td><td>提示"无此商品"，禁止保存该行（避免脏数据）</td></tr>
+        <tr><td>V5</td><td>预售数量 ≤ 0 / 非整数</td><td>拦截</td></tr>
+        <tr><td>V6</td><td>日志提货数量 &gt; 未提</td><td>拦截："超出可提数量"</td></tr>
+        <tr><td>V7</td><td>日志退货数量 &gt; 已提</td><td>拦截："超出已提数量，无法退货"</td></tr>
+        <tr><td>V8</td><td>现金金额为负/非数字</td><td>拦截</td></tr>
+        <tr><td>V9</td><td>提交时商品子表为空</td><td>拦截：至少 1 条商品</td></tr>
+        <tr><td>V10</td><td>断网/接口超时</td><td>查询失败给出重试；已填内容本地暂存，避免丢单</td></tr>
+      </table>
+    </section>
+
+    <!-- 11 -->
+    <section id="s11">
+      <h2><span class="num">11</span>验收标准（Acceptance Criteria）</h2>
+      <div class="ac"><div class="t">主表（Given/When/Then）</div>
+        Given 导购在企微打开应用　When 进入新建预售单　Then 自动带出导购姓名与门店且只读。<br>
+        Given 输入会员手机号　When 点击查询　Then 返回并保存会员ID、展示姓名。<br>
+        Given 选择"静态码"　When 查看表单　Then 仅显示"静态码单号"，"现金金额"隐藏；反之选择"现金"时仅显示金额。<br>
+        Given 输入有效静态码单号　When 查询　Then 带出并保存该单号收款信息。
+      </div>
+      <div class="ac"><div class="t">商品子表</div>
+        Given 商品子表新增行　When 扫/输条码　Then 自动填充商品名称（只读）。<br>
+        Given 填写预售数量并提交行　Then 该行出现在日志子表的商品下拉中，未提=预售。
+      </div>
+      <div class="ac"><div class="t">日志联动（核心）</div>
+        Given 商品A 预售=10、已提=0、退货=0（未提=10）　When 记"提货 4"　Then 已提=4、未提=6、退货=0。<br>
+        Given 上述状态　When 再记"退货 2"　Then 退货=2、未提=8（默认规则）、已提=4。<br>
+        Given 未提=6　When 企图"提货 8"　Then 被拦截并提示超限。<br>
+        Given 任意时刻　Then 恒成立 未提 = 预售 − 已提 + 退货。
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="s12">
+      <h2><span class="num">12</span>成功指标（Success Metrics）</h2>
+      <table>
+        <tr><th>类型</th><th>指标</th><th>目标（建议）</th><th>评估时点</th></tr>
+        <tr><td>领先</td><td>录入完成时长</td><td>≤ 90 秒/单（基线待 §1 数据）</td><td>上线 1 周</td></tr>
+        <tr><td>领先</td><td>字段错误率（与后台对账不符）</td><td>&lt; 2%</td><td>上线 1 月</td></tr>
+        <tr><td>领先</td><td>企微内使用覆盖率（有预售的门店/导购）</td><td>≥ 80% 导购首月使用</td><td>上线 1 月</td></tr>
+        <tr><td>滞后</td><td>提货/退货账目差异率</td><td>= 0（盘点无差异）</td><td>上线 1 季</td></tr>
+        <tr><td>滞后</td><td>预售相关客诉/差错工单</td><td>较上线前下降 ≥ 50%</td><td>上线 1 季</td></tr>
+      </table>
+      <p class="legend">目标值为建议假设，需用 §1 的真实基线替换后定稿。</p>
+    </section>
+
+    <!-- 13 -->
+    <section id="s13">
+      <h2><span class="num">13</span>待确认问题（Open Questions）</h2>
+      <div class="card q">
+        <p><b>Q1（实施·阻塞）：</b>低码底座用哪个平台？影响联动实现方式，需方案设计前定。</p>
+        <p><b>Q2（业务·关键）：</b>退货语义——"已提数量"是累计提货(gross)不随退货扣减，还是净提货？本 PRD 默认 gross + 未提恢复；若业务认为退货应扣减已提，则公式改为 未提 = 预售 − (已提 − 退货)。<b>需业务方拍板。</b></p>
+        <p><b>Q3（财务·阻塞）：</b>静态码单号查询应带出哪些字段（金额/状态/收款时间/收款方/门店）？决定主表"静态码信息"结构。</p>
+        <p><b>Q4（业务）：</b>查不到会员时，是否允许"仅以手机号记录"下单？涉及会员体系完整性。</p>
+        <p><b>Q5（流程）：</b>一笔预售单是否允许跨多天多次提货/退货？默认允许（日志可持续追加），请确认。</p>
+        <p><b>Q6（权限）：</b>日志/单据的修改与取消权限如何分配（导购自助 vs 仅店长）？</p>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section id="s14">
+      <h2><span class="num">14</span>风险与合规（Risk & Compliance）</h2>
+      <ul>
+        <li><b>个人信息合规：</b>采集会员手机号属个人信息，默认遵循《个人信息保护法》——最小必要、明确告知用途、仅授权人员可见。表单建议加隐私提示文案。</li>
+        <li><b>接口稳定性：</b>会员/商品/收款查询若超时，需降级（本地暂存 + 重试），避免导购卡在店门口。</li>
+        <li><b>账目安全：</b>日志联动须原子写入（§7-R5），防止并发/失败导致数量不一致；关键操作留痕（F18）。</li>
+        <li><b>权限越权：</b>企微身份是信任根，需确保 userid 不可被伪造/篡改（走官方鉴权，不前端传参）。</li>
+      </ul>
+    </section>
+
+    <!-- 15 -->
+    <section id="s15">
+      <h2><span class="num">15</span>优先级与里程碑建议</h2>
+      <table>
+        <tr><th>优先级</th><th>范围</th><th>说明</th></tr>
+        <tr><td><span class="badge p0">P0</span></td><td>主表(F1–F7) + 商品子表(F8–F13) + 日志子表(F14–F18) + 联动规则(§7) + 校验(§10)</td><td>构成最小可用版本，必须随首版上线</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>备注(F6)、店长查看/进度看板、断网本地暂存(V10)</td><td>显著提升体验，首版后快速跟进</td></tr>
+        <tr><td><span class="badge p2">P2</span></td><td>对账/报表中心、会员复购触达、跨店提货</td><td>数据模型已预留，后续独立立项</td></tr>
+      </table>
+      <h3>建议里程碑</h3>
+      <ul>
+        <li><b>M0 评审（本周）：</b>确认 §13 六个问题，定平台(Q1)。</li>
+        <li><b>M1 搭建（2–3 周）：</b>表单 + 身份识别 + 三个接口联调 + 联动逻辑。</li>
+        <li><b>M2 试点（1 周）：</b>1–2 家门店灰度，跑通提货/退货。</li>
+        <li><b>M3 全量 + 指标回收（上线后 1 月）：</b>推广并对照 §12 验收。</li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<footer>本文档为草案，按"产品通"PRD 规范撰写 · 评审通过前字段与规则以业务确认为准</footer>
+</body>
+</html>

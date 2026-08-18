@@ -128,7 +128,9 @@
 
           <n-divider style="margin: 12px 0" />
 
-          <div class="param-panel-title">参数配置</div>
+          <div class="param-panel-title">
+            参数配置
+          </div>
           <div class="param-config-list">
             <div class="param-config-row">
               <div class="param-meta-cell">
@@ -274,8 +276,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { NTag } from 'naive-ui'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 defineOptions({ name: 'AgentConfigForm' })
 
@@ -333,7 +335,8 @@ function scrollToSection(href) {
 
 function setupScrollObserver() {
   const container = scrollContainerRef.value
-  if (!container || !('IntersectionObserver' in window)) return
+  if (!container || !('IntersectionObserver' in window))
+    return
 
   scrollObserver = new IntersectionObserver(
     (entries) => {
@@ -350,7 +353,8 @@ function setupScrollObserver() {
 
   anchorItems.forEach((item) => {
     const el = document.getElementById(item.href)
-    if (el) scrollObserver.observe(el)
+    if (el)
+      scrollObserver.observe(el)
   })
 }
 
@@ -359,7 +363,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (scrollObserver) scrollObserver.disconnect()
+  if (scrollObserver)
+    scrollObserver.disconnect()
 })
 
 defineExpose({
@@ -401,7 +406,9 @@ defineExpose({
   background: transparent;
   border: 0;
   border-radius: 6px;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .anchor-item:hover {
@@ -531,7 +538,9 @@ defineExpose({
   background: #f8fafc;
   border: 1px solid rgba(226, 232, 240, 0.9);
   border-radius: 8px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .config-entry-card:hover {

@@ -2,7 +2,9 @@
  * RSA 加密工具
  * 使用 jsencrypt-ext 进行 RSA 加密
  */
-import JSEncrypt from 'jsencrypt-ext'
+import JSEncryptModule from 'jsencrypt-ext'
+// jsencrypt-ext 是 CJS/UMD 包，命名导出 { JSEncrypt }；兼容 vite8(rolldown) 的默认导入互操作
+const JSEncrypt = JSEncryptModule.JSEncrypt || JSEncryptModule.default?.JSEncrypt || JSEncryptModule
 
 function wrapPublicKeyPem(publicKey) {
   if (!publicKey || publicKey.includes('-----BEGIN')) {

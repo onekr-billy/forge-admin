@@ -91,15 +91,12 @@
     </template>
 
     <template v-else-if="actionType === 'WEBHOOK'">
-      <n-alert type="warning" :bordered="false">
-        Webhook 本阶段只记录 TODO 执行日志，不发起外部请求。
-      </n-alert>
-      <n-form-item label="通道引用">
-        <n-input v-model:value="config.channelConfigRef" placeholder="通道配置引用" @update:value="emitConfig" />
-      </n-form-item>
-      <n-form-item label="事件名称">
-        <n-input v-model:value="config.eventName" placeholder="例如：opportunity.created" @update:value="emitConfig" />
-      </n-form-item>
+      <CallApiStepConfigPanel
+        :model-value="config"
+        :field-options="fieldOptions"
+        context-mode="TRIGGER"
+        @update:model-value="updateWebhookConfig"
+      />
     </template>
 
     <n-empty v-else description="请选择动作类型" />
@@ -109,6 +106,8 @@
 <script setup>
 import { TrashOutline } from '@vicons/ionicons5'
 import { reactive, watch } from 'vue'
+import { normalizeCallApiStepConfig } from './designer/call-api-step-config'
+import CallApiStepConfigPanel from './designer/CallApiStepConfigPanel.vue'
 
 const props = defineProps({
   actionType: {
@@ -161,6 +160,11 @@ function emitConfig() {
   emit('update:modelValue', JSON.stringify(configPayload(config, props.actionType)))
 }
 
+function updateWebhookConfig(value) {
+  Object.assign(config, normalizeCallApiStepConfig(value))
+  emitConfig()
+}
+
 function normalizeConfig(actionType, value) {
   const source = safeParse(value)
   return {
@@ -175,6 +179,7 @@ function normalizeConfig(actionType, value) {
     valueTemplate: source.valueTemplate ?? source.value ?? '',
     channelConfigRef: source.channelConfigRef || '',
     eventName: source.eventName || '',
+    ...normalizeCallApiStepConfig(source),
     actionType,
   }
 }
@@ -215,11 +220,11 @@ function configPayload(value, actionType) {
     }
   }
   if (actionType === 'WEBHOOK') {
-    return {
-      channelConfigRef: value.channelConfigRef || '',
-      eventName: value.eventName || '',
-      todo: true,
-    }
+    const normalized = normalizeCallApiStepConfig(value)
+    delete normalized.todo
+    delete normalized.channelConfigRef
+    delete normalized.eventName
+    return normalized
   }
   return safeParse(props.modelValue)
 }

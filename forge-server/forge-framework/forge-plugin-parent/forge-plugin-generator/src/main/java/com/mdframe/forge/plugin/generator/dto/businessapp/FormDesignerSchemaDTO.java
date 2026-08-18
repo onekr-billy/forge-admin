@@ -28,4 +28,10 @@ public class FormDesignerSchemaDTO {
     private List<Map<String, Object>> components = new ArrayList<>();
 
     private Map<String, Object> settings = new LinkedHashMap<>();
+
+    /** H5 单页分区配置。 */
+    private List<Map<String, Object>> pageSections = new ArrayList<>();
+
+    /** H5 固定底部操作栏配置。 */
+    private Map<String, Object> bottomBar = new LinkedHashMap<>();
 }

@@ -339,6 +339,33 @@ export const aiCrudPageProps = {
   },
 
   /**
+   * 应用表单发布态的受管字段查询事件。
+   * @type {Array<object>}
+   */
+  fieldEvents: {
+    type: Array,
+    default: () => [],
+  },
+
+  /**
+   * 可作为查询参数使用的只读表单运行上下文，不参与服务端授权。
+   * @type {object}
+   */
+  formRuntimeContext: {
+    type: Object,
+    default: () => ({}),
+  },
+
+  /**
+   * 发布态离线草稿治理配置。未显式开启时不触碰本地存储。
+   * @type {{ enabled?: boolean, applicationCode?: string, objectCode?: string, formCode?: string }}
+   */
+  offlineDraft: {
+    type: Object,
+    default: () => ({ enabled: false }),
+  },
+
+  /**
    * 弹窗宽度
    * @type {string}
    */

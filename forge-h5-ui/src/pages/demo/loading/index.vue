@@ -1,5 +1,5 @@
 <template>
-  <AiLayoutPage title="组件演示" subtitle="按需查看 Forge H5 基础组件">
+  <AiLayoutPage title="组件演示" subtitle="按需查看 Forge 移动端基础组件">
     <template #navRight>
       <AiTag type="primary" round>{{ visibleComponents.length }} 个</AiTag>
     </template>
@@ -163,7 +163,7 @@
           <view class="profile-line">
             <AiAvatar size="lg" shape="square" />
             <view class="profile-copy">
-              <text class="profile-title">Forge H5</text>
+              <text class="profile-title">Forge 移动端</text>
               <text class="profile-desc">用户端模板统一组件体系</text>
             </view>
           </view>

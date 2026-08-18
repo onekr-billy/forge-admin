@@ -2,11 +2,11 @@
   <div class="business-permission-flow-panel">
     <div class="permission-flow-head">
       <div>
-        <h3>数据权限</h3>
-        <p>维护对象运行时的数据范围，并配置树形对象的层级字段。</p>
+        <h3>树形模型</h3>
+        <p>配置对象的父子层级、显示字段和加载方式。</p>
       </div>
-      <n-tag :type="localModel.policies?.dataScope === 'FOLLOW_SYSTEM' ? 'success' : 'info'" :bordered="false">
-        {{ dataScopeLabel }}
+      <n-tag :type="treeConfig.enabled ? 'success' : 'default'" :bordered="false">
+        {{ treeConfig.enabled ? '已启用' : '未启用' }}
       </n-tag>
     </div>
 
@@ -15,68 +15,7 @@
         <section class="summary-card">
           <div class="summary-card-head">
             <div>
-              <h4>数据策略</h4>
-              <p>控制当前对象列表、详情、编辑接口可访问的数据范围。</p>
-            </div>
-          </div>
-          <n-form label-placement="top" size="small" :show-feedback="false">
-            <n-grid :cols="2" :x-gap="14" :y-gap="4" responsive="screen">
-              <n-form-item-gi label="数据范围">
-                <n-select
-                  :value="localModel.policies.dataScope"
-                  :options="dataScopeOptions"
-                  @update:value="updateDataScope"
-                />
-              </n-form-item-gi>
-              <n-form-item-gi label="租户字段">
-                <n-input :value="`${localModel.policies.tenantField || 'tenantId'} / ${localModel.policies.tenantColumn || 'tenant_id'}`" disabled />
-              </n-form-item-gi>
-              <template v-if="isFollowSystemDataScope">
-                <n-form-item-gi label="本人字段">
-                  <n-select
-                    :value="localModel.policies.userField"
-                    clearable
-                    filterable
-                    :options="fieldOptions"
-                    @update:value="value => updatePolicyField('user', value)"
-                  />
-                </n-form-item-gi>
-                <n-form-item-gi label="组织字段">
-                  <n-select
-                    :value="localModel.policies.orgField"
-                    clearable
-                    filterable
-                    :options="fieldOptions"
-                    @update:value="value => updatePolicyField('org', value)"
-                  />
-                </n-form-item-gi>
-                <n-form-item-gi label="区划字段">
-                  <n-select
-                    :value="localModel.policies.regionField"
-                    clearable
-                    filterable
-                    :options="fieldOptions"
-                    @update:value="value => updatePolicyField('region', value)"
-                  />
-                </n-form-item-gi>
-              </template>
-              <n-form-item-gi label="主键策略">
-                <n-input :value="`${localModel.policies.primaryKeyField || 'id'} / ${localModel.policies.primaryKeyStrategy || 'AUTO_INCREMENT'}`" disabled />
-              </n-form-item-gi>
-              <n-form-item-gi label="逻辑删除字段">
-                <n-input :value="`${localModel.policies.logicDeleteField || 'delFlag'} / ${localModel.policies.logicDeleteColumn || 'del_flag'}`" disabled />
-              </n-form-item-gi>
-              <n-form-item-gi label="审计字段">
-                <n-switch :value="true" disabled />
-              </n-form-item-gi>
-            </n-grid>
-          </n-form>
-        </section>
-
-        <section class="summary-card">
-          <div class="summary-card-head">
-            <div>
-              <h4>树形模型</h4>
+              <h4>层级配置</h4>
               <p>树形对象发布后使用父子字段构建层级列表。</p>
             </div>
             <n-switch :value="treeConfig.enabled === true" @update:value="updateTreeEnabled" />
@@ -140,29 +79,30 @@
 
       <aside class="permission-flow-tips">
         <section>
-          <h4>当前策略</h4>
+          <h4>当前配置</h4>
           <div class="permission-facts">
-            <div>
-              <span>数据范围</span>
-              <strong>{{ dataScopeLabel }}</strong>
-            </div>
             <div>
               <span>树形模型</span>
               <strong>{{ treeConfig.enabled ? '已启用' : '未启用' }}</strong>
             </div>
             <div>
-              <span>本人字段</span>
-              <strong>{{ localModel.policies.userField || '-' }}</strong>
+              <span>主键字段</span>
+              <strong>{{ treeConfig.keyField || 'id' }}</strong>
             </div>
             <div>
-              <span>组织字段</span>
-              <strong>{{ localModel.policies.orgField || '-' }}</strong>
+              <span>父级字段</span>
+              <strong>{{ treeConfig.parentField || 'parentId' }}</strong>
+            </div>
+            <div>
+              <span>显示字段</span>
+              <strong>{{ treeConfig.labelField || '-' }}</strong>
             </div>
           </div>
         </section>
         <section>
-          <h4>发布关注</h4>
+          <h4>配置说明</h4>
           <p>启用树形模型会把对象列表切换为树形运行态；关闭时会移除列表中的树形运行配置。</p>
+          <p>对象访问控制和角色授权请在应用工作台「权限」分区统一维护。</p>
         </section>
       </aside>
     </div>
@@ -175,7 +115,6 @@ import {
   cloneSchema,
   createDefaultField,
   isSameSchema,
-  normalizeLowcodePolicies,
 } from '@/components/lowcode-builder/model/model-schema'
 import { syncPageSchemaWithModel } from '@/components/lowcode-builder/page/page-schema'
 
@@ -200,10 +139,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelSchema', 'update:pageSchema', 'dirtyChange'])
 
-const dataScopeOptions = [
-  { label: '租户隔离', value: 'TENANT' },
-  { label: '跟随系统数据权限', value: 'FOLLOW_SYSTEM' },
-]
 const treeLoadModeOptions = [
   { label: '一次性加载', value: 'full' },
   { label: '懒加载', value: 'lazy' },
@@ -212,11 +147,6 @@ const treeLoadModeOptions = [
 const localModel = ref(normalizeModel(props.modelSchema))
 
 const treeConfig = computed(() => localModel.value.treeConfig || {})
-const isFollowSystemDataScope = computed(() => localModel.value.policies?.dataScope === 'FOLLOW_SYSTEM')
-const dataScopeLabel = computed(() => {
-  const item = dataScopeOptions.find(option => option.value === localModel.value.policies?.dataScope)
-  return item?.label || '租户隔离'
-})
 const fieldOptions = computed(() => {
   const fields = localModel.value.fields?.length ? localModel.value.fields : props.fields.map(toPageField)
   return fields
@@ -236,42 +166,6 @@ watch(
   },
   { deep: true },
 )
-
-function updateDataScope(value) {
-  const next = {
-    ...localModel.value,
-    policies: {
-      ...(localModel.value.policies || {}),
-      dataScope: value,
-    },
-  }
-  normalizeLowcodePolicies(next)
-  commitModel(next)
-}
-
-function updatePolicyField(kind, fieldName) {
-  const field = (localModel.value.fields || []).find(item => item.field === fieldName || item.columnName === fieldName)
-  const columnName = field?.columnName || ''
-  const policies = {
-    ...(localModel.value.policies || {}),
-  }
-  if (kind === 'user') {
-    policies.userField = fieldName || ''
-    policies.userColumn = columnName
-  }
-  if (kind === 'org') {
-    policies.orgField = fieldName || ''
-    policies.orgColumn = columnName
-  }
-  if (kind === 'region') {
-    policies.regionField = fieldName || ''
-    policies.regionColumn = columnName
-  }
-  commitModel({
-    ...localModel.value,
-    policies,
-  })
-}
 
 function updateTreeEnabled(value) {
   const next = value ? ensureTreeModel(localModel.value) : disableTreeModel(localModel.value)
@@ -332,8 +226,6 @@ function commitPageSchema(model) {
 function normalizeModel(value) {
   const source = cloneSchema(value || {})
   source.fields = source.fields?.length ? source.fields : props.fields.map(toPageField)
-  source.policies = source.policies || {}
-  normalizeLowcodePolicies(source)
   source.treeConfig = normalizeTreeConfig(source)
   source.appType = source.treeConfig.enabled ? 'TREE' : (source.appType || 'SINGLE')
   return source

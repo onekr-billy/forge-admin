@@ -957,7 +957,9 @@ function truncate(value, maxLength) {
   fill: #fff;
   stroke: var(--primary-color, #165dff);
   stroke-width: 1.8;
-  transition: r 0.15s ease, fill 0.15s ease;
+  transition:
+    r 0.15s ease,
+    fill 0.15s ease;
 }
 
 .field-connector:hover,

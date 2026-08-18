@@ -57,6 +57,15 @@
       </n-space>
     </header>
 
+    <n-alert type="info" :bordered="false" class="legacy-builder-notice">
+      这是存量低代码页面设计器。新应用请从应用中心进入统一的「页面 / 事件 / 动作 / 数据模型 / 设置」设计入口；已有草稿仍可在此继续维护。
+      <template #action>
+        <n-button size="small" secondary @click="router.push('/app-center')">
+          打开应用中心
+        </n-button>
+      </template>
+    </n-alert>
+
     <n-spin :show="pageLoading" description="正在加载低代码应用..." class="builder-spin">
       <div class="app-shell">
         <main class="app-main">
@@ -1145,6 +1154,10 @@ function compactCodegenOptions(options = {}) {
 .app-builder-page {
   min-height: 100%;
   background: #f3f6fa;
+}
+
+.legacy-builder-notice {
+  margin: 10px 18px 0;
 }
 
 .app-header {

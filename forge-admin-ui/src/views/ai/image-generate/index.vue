@@ -1,8 +1,12 @@
 <template>
   <div class="image-generate-page">
     <div class="page-header">
-      <div class="page-title">图片生成</div>
-      <div class="page-subtitle">AI 文生图，输入提示词生成图片</div>
+      <div class="page-title">
+        图片生成
+      </div>
+      <div class="page-subtitle">
+        AI 文生图，输入提示词生成图片
+      </div>
     </div>
 
     <n-card class="generate-card">
@@ -56,7 +60,7 @@
       </div>
       <div v-else-if="currentResult.status === 'success'" class="result-image">
         <AuthImage :file-id="currentResult.resultFileId" style="max-width: 100%; max-height: 500px;" />
-        <n-button secondary @click="handleGenerate" style="margin-top: 12px;">
+        <n-button secondary style="margin-top: 12px;" @click="handleGenerate">
           重新生成
         </n-button>
       </div>
@@ -80,9 +84,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, h } from 'vue'
 import { useMessage } from 'naive-ui'
-import { imageGenerate, imageGeneratePage, imageGenerateGetResult, modelListByProvider } from '@/api/ai'
+import { onMounted, ref } from 'vue'
+import { imageGenerate, imageGenerateGetResult, imageGeneratePage, modelListByProvider } from '@/api/ai'
 import AuthImage from '@/components/common/AuthImage.vue'
 
 const message = useMessage()
@@ -137,7 +141,8 @@ async function loadModels() {
         .filter(m => m.modelType === 'image_generation')
         .map(m => ({ label: m.modelName || m.modelId, value: m.id }))
     }
-  } catch { /* ignore */ }
+  }
+  catch { /* ignore */ }
 }
 
 async function loadHistory(page) {
@@ -153,7 +158,8 @@ async function loadHistory(page) {
       historyPagination.value.itemCount = res.data.total || 0
       historyPagination.value.page = p
     }
-  } finally {
+  }
+  finally {
     historyLoading.value = false
   }
 }
@@ -182,9 +188,11 @@ async function handleGenerate() {
       // 轮询结果
       pollResult(res.data)
     }
-  } catch (e) {
-    message.error('生成请求失败: ' + (e.message || '未知错误'))
-  } finally {
+  }
+  catch (e) {
+    message.error(`生成请求失败: ${e.message || '未知错误'}`)
+  }
+  finally {
     generating.value = false
   }
 }
@@ -200,7 +208,8 @@ function pollResult(recordId) {
           loadHistory()
         }
       }
-    } catch {
+    }
+    catch {
       clearInterval(timer)
     }
   }, 2000)

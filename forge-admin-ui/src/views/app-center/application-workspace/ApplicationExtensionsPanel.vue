@@ -1,6 +1,6 @@
 <template>
   <div class="extensions-panel">
-    <header class="panel-heading">
+    <header v-if="!embedded" class="panel-heading">
       <div>
         <h2>动作与增强</h2>
         <p>可视化规则面向业务配置；脚本、样式和服务绑定统一经过校验、测试、版本与审计。</p>
@@ -20,6 +20,23 @@
         </n-button>
       </n-space>
     </header>
+
+    <div v-else class="embedded-actionbar">
+      <n-space>
+        <n-dropdown
+          v-if="objects.length"
+          :options="objectActionOptions"
+          @select="openObjectActions"
+        >
+          <n-button secondary>
+            对象业务动作
+          </n-button>
+        </n-dropdown>
+        <n-button type="primary" :loading="editorDependencyLoading" @click="openCreate">
+          新建扩展
+        </n-button>
+      </n-space>
+    </div>
 
     <div class="extension-guidance">
       <strong>增强怎么用</strong>
@@ -169,6 +186,10 @@ const props = defineProps({
     type: Array,
     default: null,
   },
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['changed', 'openDesigner'])
@@ -289,11 +310,13 @@ async function ensureEditorDependencies() {
   if (!applicationId)
     return
   if (editorDependenciesLoaded.value
-    && String(editorDependencyApplicationId) === String(applicationId))
+    && String(editorDependencyApplicationId) === String(applicationId)) {
     return
+  }
   if (editorDependencyPromise
-    && String(editorDependencyApplicationId) === String(applicationId))
+    && String(editorDependencyApplicationId) === String(applicationId)) {
     return editorDependencyPromise
+  }
 
   editorDependencyApplicationId = applicationId
   editorDependencyLoading.value = true
@@ -431,6 +454,12 @@ function scopeLabel(scopeType) {
 .panel-heading p {
   margin: 5px 0 0;
   color: var(--text-tertiary, #86909c);
+}
+
+.embedded-actionbar {
+  display: flex;
+  min-height: 36px;
+  justify-content: flex-end;
 }
 
 .extension-guidance {

@@ -97,6 +97,10 @@ public class LowcodeProtocolSnapshotBuilder {
         addCoverage(capabilities, "/pageSchema", "FRONTEND_SHARED_RUNTIME", "PROTOCOL_PASSTHROUGH");
         addCoverage(capabilities, "/pageSchema/modelRefs", "BACKEND_STATIC_COMPILER", "RELATION_METADATA_COMPILED");
         addCoverage(capabilities, "/options/formDesignerSchema", "FRONTEND_SHARED_RUNTIME", "PROTOCOL_PASSTHROUGH");
+        addCoverage(capabilities, "/options/formDesignerSchema/settings/governance/fieldEvents",
+                "FRONTEND_MANAGED_QUERY_RUNTIME", "QUERY_SOURCE_EVENT_COMPILED");
+        addCoverage(capabilities, "/options/formDesignerSchema/settings/governance/offlineDraft",
+                "FRONTEND_SHARED_RUNTIME", "OFFLINE_DRAFT_GOVERNANCE_PRESERVED");
         addCoverage(capabilities, "/options/viewSchema", "FRONTEND_SHARED_RUNTIME", "PROTOCOL_PASSTHROUGH");
         addCoverage(capabilities, "/options/linkageSchema", "FRONTEND_SHARED_RUNTIME", "PROTOCOL_PASSTHROUGH");
         addCoverage(capabilities, "/options/treeConfig", "FRONTEND_AND_BACKEND_STATIC", "TREE_MAPPER_XML_COMPILED");

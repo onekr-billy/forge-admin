@@ -3,11 +3,17 @@
     <div class="page-header">
       <div class="page-header-row">
         <div>
-          <div class="page-title">AI 创建 Agent</div>
-          <div class="page-subtitle">描述你的需求，AI 自动生成 Agent 配置</div>
+          <div class="page-title">
+            AI 创建 Agent
+          </div>
+          <div class="page-subtitle">
+            描述你的需求，AI 自动生成 Agent 配置
+          </div>
         </div>
         <n-button quaternary @click="handleBack">
-          <template #icon><i class="ai-icon:arrow-left" /></template>
+          <template #icon>
+            <i class="ai-icon:arrow-left" />
+          </template>
           返回智能体管理
         </n-button>
       </div>
@@ -40,7 +46,9 @@
     <n-card v-if="step === 2" title="AI 生成中">
       <div class="generate-progress">
         <n-spin :size="40" />
-        <p class="progress-text">AI 正在根据你的描述生成 Agent 配置...</p>
+        <p class="progress-text">
+          AI 正在根据你的描述生成 Agent 配置...
+        </p>
       </div>
       <div class="field-status-list">
         <div
@@ -59,7 +67,9 @@
         </div>
       </div>
       <div class="generate-actions">
-        <n-button @click="handleCancelGenerate">取消生成</n-button>
+        <n-button @click="handleCancelGenerate">
+          取消生成
+        </n-button>
       </div>
     </n-card>
 
@@ -97,7 +107,9 @@
         </n-form-item>
 
         <n-space>
-          <n-button @click="step = 1">返回修改</n-button>
+          <n-button @click="step = 1">
+            返回修改
+          </n-button>
           <n-button type="primary" size="large" :loading="creating" @click="handleConfirmCreate">
             确认创建
           </n-button>
@@ -119,10 +131,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { agentAiCreateSSE, agentAiCreateConfirm, agentToolAdd } from '@/api/ai'
+import { onBeforeUnmount, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { agentAiCreateConfirm, agentAiCreateSSE, agentToolAdd } from '@/api/ai'
 
 const router = useRouter()
 const message = useMessage()
@@ -173,21 +185,26 @@ function handleStartGenerate() {
     (eventType, data) => {
       if (eventType === 'start') {
         // 生成开始
-      } else if (eventType === 'field_done') {
+      }
+      else if (eventType === 'field_done') {
         // 字段完成
         const fieldName = data.name
         const fieldValue = data.value
         config[fieldName] = fieldValue
 
         const field = fieldStatuses.value.find(f => f.name === fieldName)
-        if (field) field.status = 'done'
+        if (field)
+          field.status = 'done'
 
         // 标记下一个为 running
         const nextField = fieldStatuses.value.find(f => f.status === 'pending')
-        if (nextField) nextField.status = 'running'
-      } else if (eventType === 'recommend') {
+        if (nextField)
+          nextField.status = 'running'
+      }
+      else if (eventType === 'recommend') {
         recommendations.value = data.items || []
-      } else if (eventType === 'error') {
+      }
+      else if (eventType === 'error') {
         message.error(data.message || '生成失败')
         generating.value = false
         step.value = 1
@@ -200,7 +217,8 @@ function handleStartGenerate() {
         step.value = 3
         // 确保 presetQuestions 是数组
         if (typeof config.presetQuestions === 'string') {
-          try { config.presetQuestions = JSON.parse(config.presetQuestions) } catch { config.presetQuestions = [config.presetQuestions] }
+          try { config.presetQuestions = JSON.parse(config.presetQuestions) }
+          catch { config.presetQuestions = [config.presetQuestions] }
         }
         if (!Array.isArray(config.presetQuestions)) {
           config.presetQuestions = config.presetQuestions ? [String(config.presetQuestions)] : []
@@ -209,9 +227,9 @@ function handleStartGenerate() {
     },
     (error) => {
       generating.value = false
-      message.error('生成失败: ' + (error.message || '未知错误'))
+      message.error(`生成失败: ${error.message || '未知错误'}`)
       step.value = 1
-    }
+    },
   )
 
   // 标记第一个字段为 running
@@ -249,15 +267,17 @@ async function handleConfirmCreate() {
           await bindRecommendedTools(createdAgentId.value, toolKeys)
         }
         catch (e) {
-          message.warning('Agent 已创建，但部分工具绑定失败：' + (e.message || '未知错误'))
+          message.warning(`Agent 已创建，但部分工具绑定失败：${e.message || '未知错误'}`)
         }
       }
       step.value = 4
       message.success('Agent 创建成功')
     }
-  } catch (e) {
-    message.error('创建失败: ' + (e.message || '未知错误'))
-  } finally {
+  }
+  catch (e) {
+    message.error(`创建失败: ${e.message || '未知错误'}`)
+  }
+  finally {
     creating.value = false
   }
 }

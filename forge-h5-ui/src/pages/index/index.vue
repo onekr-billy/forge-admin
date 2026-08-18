@@ -124,7 +124,7 @@
       max-height="96vh"
       body-max-height="calc(96vh - 160rpx - env(safe-area-inset-bottom))"
       title="全部应用"
-      description="按模块浏览已授权的 H5 菜单"
+      description="按模块浏览已授权的移动端菜单"
     >
       <view class="menu-search-bar">
         <AiIcon icon="/static/icons/ai-icon/search.svg" color="#64748b" size="sm" />
@@ -395,6 +395,7 @@ function isRegisteredH5Route(path) {
     'pages/mine/index',
     'pages/demo/loading/index',
     'pages/app-entry',
+    'pages/lowcode-runtime',
   ].includes(normalized)
 }
 
@@ -512,7 +513,16 @@ function openBackendMenu(item) {
     uni.navigateTo({ url: `/pages/app-entry?title=${encodeURIComponent(item.label)}&path=${encodeURIComponent(path)}` })
     return
   }
+  const lowcodeConfigKey = resolveLowcodeConfigKey(path)
+  if (lowcodeConfigKey) {
+    uni.navigateTo({ url: `/pages/lowcode-runtime?configKey=${encodeURIComponent(lowcodeConfigKey)}&title=${encodeURIComponent(item.label)}` })
+    return
+  }
   toast(`${item.label}页面待接入`, { type: 'info' })
+}
+
+function resolveLowcodeConfigKey(path) {
+  return String(path || '').match(/(?:crud-page|crud)\/([^/?]+)/)?.[1] || ''
 }
 
 function openMessage(message) {
