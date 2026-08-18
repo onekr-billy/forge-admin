@@ -21,6 +21,13 @@ public interface BusinessApplicationMapper extends BaseMapper<AiBusinessApplicat
     List<BusinessApplicationVO> selectApplicationList(@Param("tenantId") Long tenantId,
                                                        @Param("query") BusinessApplicationQueryDTO query);
 
+    List<BusinessApplicationVO> selectApplicationAccessList(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询已有发布版本的工作台候选，返回设计态分发配置和发布态快照供服务层分别判定。
+     */
+    List<BusinessApplicationVO> selectPublishedWorkbenchApplications(@Param("tenantId") Long tenantId);
+
     BusinessApplicationVO selectApplicationDetail(@Param("tenantId") Long tenantId,
                                                    @Param("id") Long id);
 
@@ -29,6 +36,15 @@ public interface BusinessApplicationMapper extends BaseMapper<AiBusinessApplicat
 
     BusinessApplicationVO selectApplicationDetailByCode(@Param("tenantId") Long tenantId,
                                                          @Param("applicationCode") String applicationCode);
+
+    BusinessApplicationVO selectApplicationDetailBySlug(@Param("tenantId") Long tenantId,
+                                                         @Param("portalSlug") String portalSlug);
+
+    BusinessApplicationVO selectApplicationDetailByCodeOrSlug(@Param("tenantId") Long tenantId,
+                                                               @Param("identifier") String identifier);
+
+    BusinessApplicationVO selectApplicationDetailByPublishedSlug(@Param("tenantId") Long tenantId,
+                                                                  @Param("portalSlug") String portalSlug);
 
     AiBusinessApplication selectEntityById(@Param("tenantId") Long tenantId,
                                            @Param("id") Long id);
@@ -40,8 +56,18 @@ public interface BusinessApplicationMapper extends BaseMapper<AiBusinessApplicat
                                 @Param("applicationCode") String applicationCode,
                                 @Param("excludeId") Long excludeId);
 
+    Long countByPortalSlug(@Param("tenantId") Long tenantId,
+                           @Param("portalSlug") String portalSlug,
+                           @Param("excludeId") Long excludeId);
+
     Long countBySuiteCode(@Param("tenantId") Long tenantId,
                           @Param("suiteCode") String suiteCode);
+
+    /**
+     * 统计租户内启用且拥有应用门户基础权限的角色数量。
+     */
+    Long countActiveDistributionRoles(@Param("tenantId") Long tenantId,
+                                      @Param("roleIds") List<Long> roleIds);
 
     int markChanged(@Param("tenantId") Long tenantId,
                     @Param("applicationId") Long applicationId);

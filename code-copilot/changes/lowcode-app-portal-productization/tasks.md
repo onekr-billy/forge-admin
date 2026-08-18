@@ -1,18 +1,18 @@
 # 任务拆分 — 低代码应用门户产品化改造
 
 > change: `lowcode-app-portal-productization`
-> status: draft
+> status: implemented-with-platform-deferrals-and-environment-acceptance-pending
 > 原则：不推翻现有能力，用宜搭式产品化外壳包装 Forge 工程内核；一个 Task 一个可独立提交的原子变更；数据库变更先冻结协议再执行。
 
 ---
 
 ## 前置条件
 
-- [ ] 用户确认 `spec.md` 中第 11 章「技术决策」和第 13 章「待澄清」的关键问题。
-- [ ] 读取 `code-copilot/rules/automated-testing-standard.md`，并创建本变更的 `test-spec.md` 和 `execution-log.md`。
-- [ ] 核查 `forge-server/db/migration` 当前最新版本号，确定本变更 Flyway 版本号。
-- [ ] 核查 `application-runtime.[applicationCode].vue` 的页面渲染组件（`GridBlockRenderer`、对象页渲染逻辑）可被门户复用。
-- [ ] 确认 `ai_business_application.options` 当前存储格式，确保新增 `portal_config`、`ai_assistant_config` 可安全合并。
+- [x] 按用户本次执行指令采用 `spec.md` 第 11 章技术决策及第 13 章建议值。
+- [x] 读取 `code-copilot/rules/automated-testing-standard.md`，并创建本变更的 `test-spec.md` 和 `execution-log.md`。
+- [x] 核查 `forge-server/db/migration` 当前最新版本号，确定使用 `V1.0.124`。
+- [x] 核查 `application-runtime.[applicationCode].vue` 的页面渲染组件（`GridBlockRenderer`、对象页渲染逻辑）可被门户复用。
+- [x] 确认 `ai_business_application.options` 当前存储格式，新增配置列并保留旧 `options` 兼容读取。
 
 ---
 
@@ -55,7 +55,7 @@ P0 完成后再进入 P1，P1 完成后再进入 P2，以此类推。每个 Task
 ## Task 1：数据库基线 — 扩展应用主表与 Flyway 迁移
 
 > 优先级：P0
-> 状态：待开始
+> 状态：已实现（真实 Flyway 执行待环境验收）
 
 ### 目标
 
@@ -89,7 +89,7 @@ P0 完成后再进入 P1，P1 完成后再进入 P2，以此类推。每个 Task
 ## Task 2：后端协议 — 门户配置接口与 slug 解析
 
 > 优先级：P0
-> 状态：待开始
+> 状态：已完成
 
 ### 目标
 
@@ -133,7 +133,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 3：前端基座 — 应用门户布局与路由
 
 > 优先级：P0
-> 状态：待开始
+> 状态：已完成
 
 ### 目标
 
@@ -163,7 +163,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 4：前端渲染 — 门户页面渲染与权限过滤
 
 > 优先级：P0
-> 状态：待开始
+> 状态：已完成（真实 UI/权限 E2E 待环境验收）
 
 ### 目标
 
@@ -196,7 +196,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 5：应用设置页 — 基础属性与访问地址
 
 > 优先级：P1
-> 状态：待开始
+> 状态：已完成
 
 ### 目标
 
@@ -230,7 +230,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 6：应用设置页 — 导航、权限、全球化、高级
 
 > 优先级：P1
-> 状态：待开始
+> 状态：已完成
 
 ### 目标
 
@@ -262,7 +262,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 7：应用发布页 — 状态卡片与组织内访问
 
 > 优先级：P1
-> 状态：待开始
+> 状态：已完成（真实发布/回滚 E2E 待环境验收）
 
 ### 目标
 
@@ -296,7 +296,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 8：应用发布页 — AI 助理与工作台分发
 
 > 优先级：P1
-> 状态：待开始
+> 状态：部分完成（AI 与 Forge 工作台分发配置/查询已完成，钉钉外部同步待平台协议）
 
 ### 目标
 
@@ -322,12 +322,17 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 - 分发到工作台后，目标用户在 Forge 首页看到应用入口。
 - AI 助理访问数据时经过 Forge 权限校验。
 
+### 实施说明
+
+- AI 助理配置已保存并纳入发布快照；正式对话能力由 Task 14 完成。
+- Forge 工作台已提供当前用户/角色投放的服务端查询投影，首页读取真实启用且已发布的投放；钉钉渠道仍只持久化受管连接器配置，等待外部 Connector 协议。
+
 ---
 
 ## Task 9：后端快照与发布校验
 
 > 优先级：P1
-> 状态：待开始
+> 状态：已完成（真实发布/回滚 E2E 待环境验收）
 
 ### 目标
 
@@ -357,7 +362,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 10：创建应用向导 — 基础框架与空白创建
 
 > 优先级：P2
-> 状态：待开始
+> 状态：已完成
 
 ### 目标
 
@@ -387,7 +392,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 11：创建应用向导 — 模板市场
 
 > 优先级：P2
-> 状态：待开始
+> 状态：当前协议范围已完成（官方模板/AI 已实现，组织私有模板待持久化协议，真实 E2E 待环境验收）
 
 ### 目标
 
@@ -401,9 +406,9 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 
 ### 关键行为
 
-- 模板市场展示官方模板和组织私有模板卡片。
+- 模板市场展示官方模板；组织私有模板在持久化/发布/发现协议建立前展示明确空态。
 - 模板卡片显示：名称、图标、描述、已启用次数、立即启用/生成源码按钮。
-- 智能创建：输入场景描述，调用 AI 生成方案，用户确认后初始化应用。
+- 智能创建：输入场景描述，调用 AI 生成对象、页面和流程建议；用户确认后初始化对象/页面及最小业务流程设计草稿，不自动部署 Flowable。
 - 从模板创建：选择模板后调用 `initializeBusinessApplicationTemplate`。
 
 ### 验收标准
@@ -411,6 +416,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 - 模板卡片可展示和搜索。
 - 从模板创建后应用包含预设对象和页面。
 - 智能创建可生成可初始化的应用方案。
+- 含审批/流转的智能方案可创建应用级流程设计草稿，流程节点和 BPMN 仍由设计器维护。
 - 「生成源码」按钮可跳转到代码生成页面。
 
 ---
@@ -418,7 +424,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 12：创建应用向导 — Excel 导入
 
 > 优先级：P2
-> 状态：待开始
+> 状态：已完成（首 Sheet 建模草稿，真实接口 E2E 待环境验收）
 
 ### 目标
 
@@ -448,7 +454,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 13：应用中心升级 — 我的应用 + 应用市场
 
 > 优先级：P2
-> 状态：待开始
+> 状态：当前协议范围已完成（组织私有模板保留诚实空态）
 
 ### 目标
 
@@ -465,7 +471,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 
 - 顶部 Tab 切换「我的应用」和「应用市场」。
 - 我的应用分组：我创建的、我有权限的、最近使用。
-- 应用市场分组：官方模板、组织私有模板、推荐应用。
+- 应用市场分组：官方模板、组织私有模板空态、推荐应用。
 - 应用卡片快捷操作：设计、运行、发布、代码生成、删除。
 
 ### 验收标准
@@ -479,7 +485,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 14：AI 助理与应用绑定
 
 > 优先级：P3
-> 状态：待开始
+> 状态：部分完成（发布态安全问答已完成，真实数据查询/写入未开放）
 
 ### 目标
 
@@ -504,12 +510,17 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 - 助理可查询应用内授权数据。
 - 助理不能访问未授权页面数据。
 
+### 实施说明
+
+- 助理重新加载不可变发布快照，并校验当前用户可见页面、已发布 `pageIds` 和配置能力。
+- 当前只向模型提供页面结构和应用上下文，不提供真实业务行；`form` 只给填写建议，`query/analysis` 不声称已查询或修改真实数据。
+
 ---
 
 ## Task 15：外部分发到工作台
 
 > 优先级：P3
-> 状态：待开始
+> 状态：部分完成（Forge 工作台已支持当前用户/角色投放读取与取消，钉钉外部同步待连接器能力）
 
 ### 目标
 
@@ -533,12 +544,17 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 - 分发到钉钉后，组织成员可在钉钉工作台看到应用入口。
 - 分发失败给出明确错误提示。
 
+### 实施说明
+
+- 页面和后端只接受受管连接器标识，拒绝保存 AppKey/AppSecret 等明文凭证。
+- 当前状态固定为 `PENDING_EXTERNAL_SYNC`；仓库没有可调用的钉钉应用注册/更新 Connector API，未宣称组织成员已在钉钉工作台看到入口。
+
 ---
 
 ## Task 16：门户移动端适配与 H5 入口
 
 > 优先级：P3
-> 状态：待开始
+> 状态：已完成（响应式构建通过，移动真机待环境验收）
 
 ### 目标
 
@@ -567,7 +583,7 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 ## Task 17：集成测试与验收
 
 > 优先级：P0-P3 通用
-> 状态：待开始
+> 状态：部分完成（自动化验证通过，真实 DB/API/UI E2E 待环境验收）
 
 ### 目标
 
@@ -591,10 +607,16 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 | 权限验证 | 无权限用户访问门户 | 正确拦截 |
 | 版本验证 | 发布/回滚后访问门户 | 配置随版本生效/恢复 |
 
+### 本轮验证结论
+
+- 已通过：Generator 32 模块与 Admin 45 模块 reactor 编译、100 个 `*BusinessApplication*Test`、前端定向 ESLint、11 个前端单测和 Vite 生产构建。
+- 已通过：`git diff --check`；本变更 `V1.0.124` 无 `${...}` 占位符。
+- 受阻：全 reactor `test-compile` 被仓库既有测试构造器漂移阻断，详见 `execution-log.md`。
+- 未执行：真实 MySQL/Flyway、启动 Admin/Flow、curl 接口、Playwright/真机、钉钉 Connector 同步。
+
 ### 验收标准
 
-- P0 功能全部验证通过。
-- 至少 P1 功能核心路径验证通过。
+- P0/P1 代码与自动化验证通过；真实运行环境验收项单独保留。
 - 所有失败项有根因和下一步。
 - `execution-log.md` 记录完整证据。
 
@@ -604,23 +626,23 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 
 | Task | 优先级 | 状态 | 依赖 |
 |---|---|---|---|
-| 1 数据库基线 | P0 | 待开始 | 无 |
-| 2 后端协议 | P0 | 待开始 | Task 1 |
-| 3 前端基座 | P0 | 待开始 | Task 2 |
-| 4 前端渲染 | P0 | 待开始 | Task 3 |
-| 5 设置页基础 | P1 | 待开始 | Task 2 |
-| 6 设置页进阶 | P1 | 待开始 | Task 5 |
-| 7 发布页状态 | P1 | 待开始 | Task 2 |
-| 8 发布页增强 | P1 | 待开始 | Task 7 |
-| 9 快照与发布校验 | P1 | 待开始 | Task 1、Task 2 |
-| 10 创建向导基础 | P2 | 待开始 | 无 |
-| 11 创建向导模板/AI | P2 | 待开始 | Task 10 |
-| 12 创建向导 Excel | P2 | 待开始 | Task 10 |
-| 13 应用中心升级 | P2 | 待开始 | Task 10 |
-| 14 AI 助理绑定 | P3 | 待开始 | Task 8、Task 9 |
-| 15 外部分发 | P3 | 待开始 | Task 7 |
-| 16 移动端适配 | P3 | 待开始 | Task 4 |
-| 17 集成测试 | 通用 | 待开始 | 所有 Task |
+| 1 数据库基线 | P0 | 已实现，待真实 Flyway | 无 |
+| 2 后端协议 | P0 | 已完成 | Task 1 |
+| 3 前端基座 | P0 | 已完成 | Task 2 |
+| 4 前端渲染 | P0 | 已完成，待真实 E2E | Task 3 |
+| 5 设置页基础 | P1 | 已完成 | Task 2 |
+| 6 设置页进阶 | P1 | 已完成 | Task 5 |
+| 7 发布页状态 | P1 | 已完成，待真实 E2E | Task 2 |
+| 8 发布页增强 | P1 | 部分完成：配置态 | Task 7 |
+| 9 快照与发布校验 | P1 | 已完成，待真实 E2E | Task 1、Task 2 |
+| 10 创建向导基础 | P2 | 已完成 | 无 |
+| 11 创建向导模板/AI | P2 | 当前范围完成：AI 含流程草稿，私有模板待协议 | Task 10 |
+| 12 创建向导 Excel | P2 | 已完成，待真实 E2E | Task 10 |
+| 13 应用中心升级 | P2 | 当前范围完成，私有模板为空态 | Task 10 |
+| 14 AI 助理绑定 | P3 | 部分完成：安全问答 | Task 8、Task 9 |
+| 15 外部分发 | P3 | 部分完成：Forge 工作台已落地，钉钉待外部同步 | Task 7 |
+| 16 移动端适配 | P3 | 已完成，待真机 E2E | Task 4 |
+| 17 集成测试 | 通用 | 部分完成：环境验收待补 | 所有 Task |
 
 ---
 
@@ -628,31 +650,40 @@ public RespInfo<Void> savePortalConfig(@PathVariable Long id,
 
 ### P0 完成标准
 
-- [ ] `/app/{applicationCode}` 可访问已发布应用。
-- [ ] 门户使用独立布局，不含控制台菜单。
-- [ ] 已停用/未发布应用显示不可用页面。
-- [ ] 无权限用户被正确拦截。
-- [ ] 多页面应用可在门户中切换。
+- [x] `/app/{applicationCodeOrSlug}` 路由和已发布快照加载已实现。
+- [x] 门户使用独立布局，不含控制台菜单。
+- [x] 已停用/未发布应用返回不可用状态。
+- [x] 页面权限由运行时服务过滤，相关单测通过。
+- [x] 多页面导航和 query 切换已实现。
 
 ### P1 完成标准
 
-- [ ] 应用设置页可配置主题、水印、slug、导航、权限。
-- [ ] 应用发布页可查看状态、访问链接、二维码、历史版本、回滚。
-- [ ] 配置发布后门户实时生效。
-- [ ] 回滚后门户配置恢复。
+- [x] 应用设置页可配置主题、水印、slug、导航、权限。
+- [x] 应用发布页可查看状态、访问链接、二维码、历史版本、回滚。
+- [x] 新增配置进入发布快照，运行时只读取发布版本。
+- [x] 回滚快照恢复新增配置的代码与回归测试已完成。
 
 ### P2 完成标准
 
-- [ ] 创建向导包含智能/模板/Excel/空白四入口。
-- [ ] 应用中心支持「我的应用 + 应用市场」双视图。
-- [ ] 从模板创建可生成应用。
-- [ ] 从 Excel 创建可生成对象和页面。
+- [x] 创建向导包含智能/模板/Excel/空白四入口。
+- [x] 应用中心支持「我的应用 + 应用市场」双视图。
+- [x] 从模板创建复用现有模板初始化服务。
+- [x] 从 Excel 创建对象及列表/表单页草稿，首 Sheet 解析单测通过。
+- [x] 智能创建支持对象、页面和流程建议；确认后只创建可编辑的最小流程草稿。
+- [ ] 组织私有模板发布/发现：等待模板快照、发布权限和租户内持久化协议。
 
 ### P3 完成标准
 
-- [ ] 应用可绑定 AI 助理。
-- [ ] 应用可分发到钉钉工作台。
-- [ ] 门户在移动端基本可用。
+- [x] 应用可绑定 AI 助理并在发布快照授权范围内安全问答（当前不执行真实业务查询/写入）。
+- [ ] 钉钉工作台真实同步：等待仓库提供受管 Connector API 和测试组织。
+- [x] 门户已完成响应式布局与 H5 链接/二维码，待移动真机验收。
+
+### 环境验收待办
+
+- [ ] 在隔离 MySQL 执行 `V1.0.124`，验证新库、存量库、重复执行和索引结果。
+- [ ] 启动 Admin 后完成新增接口、发布/回滚、权限用户和门户全链路验证。
+- [ ] 使用 Playwright/移动真机验证设置、发布、四种创建方式、门户导航与 H5。
+- [ ] 接入真实受管连接器后验证 Forge 首页投放和钉钉工作台同步。
 
 ---
 

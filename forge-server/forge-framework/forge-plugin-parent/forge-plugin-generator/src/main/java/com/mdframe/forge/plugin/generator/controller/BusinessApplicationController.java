@@ -2,43 +2,52 @@ package com.mdframe.forge.plugin.generator.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationAiAssistantChatDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationAiAssistantConfigDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDataScopeAdapterDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDistributionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationFormDataProvisionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationObjectDTO;
-import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPublishDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPortalConfigDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationRolePermissionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationRollbackDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationTemplateInitializeDTO;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeAiAppGenerateResult;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeCodegenRequest;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationAiAssistantService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationAiInitializeService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationCodegenService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationFormDataService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationObjectService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationTemplateService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationWorkspaceService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPermissionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishRecoveryService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishRunService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPermissionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRollbackService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationTemplateService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationVersionService;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationReadinessVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationWorkspaceService;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAiAssistantReplyVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAiInitializeResultVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationCreateVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationWorkspaceVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPermissionWorkspaceVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishCheckVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishResultVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPermissionWorkspaceVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRolePermissionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishRunVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationReadinessVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRolePermissionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationTemplateResultVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVersionVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationWorkspaceVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeCodePreviewVO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -53,8 +62,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -75,6 +84,8 @@ public class BusinessApplicationController {
     private final BusinessApplicationObjectService applicationObjectService;
     private final BusinessApplicationFormDataService formDataService;
     private final BusinessApplicationTemplateService templateService;
+    private final BusinessApplicationAiInitializeService aiInitializeService;
+    private final BusinessApplicationAiAssistantService aiAssistantService;
     private final BusinessApplicationWorkspaceService workspaceService;
     private final BusinessApplicationPermissionService permissionService;
     private final BusinessApplicationPublishService publishService;
@@ -102,6 +113,13 @@ public class BusinessApplicationController {
         return RespInfo.success(applicationService.list(query));
     }
 
+    @GetMapping("/workbench")
+    @SaCheckPermission("ai:businessApplication:portal")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询当前用户工作台应用")
+    public RespInfo<List<BusinessApplicationVO>> workbenchApplications() {
+        return RespInfo.success(runtimeService.workbenchApplications());
+    }
+
     @GetMapping("/{id}")
     @SaCheckPermission("ai:businessApplication:list")
     @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询业务应用详情")
@@ -114,6 +132,66 @@ public class BusinessApplicationController {
     @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "按编码查询业务应用详情")
     public RespInfo<BusinessApplicationVO> detailByCode(@PathVariable String applicationCode) {
         return RespInfo.success(applicationService.detailByCode(applicationCode));
+    }
+
+    @GetMapping("/by-slug/{portalSlug}")
+    @SaCheckPermission("ai:businessApplication:portal")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "按门户地址查询业务应用")
+    public RespInfo<BusinessApplicationVO> detailBySlug(@PathVariable String portalSlug) {
+        return RespInfo.success(runtimeService.runtimeByCodeOrSlug(portalSlug).getApplication());
+    }
+
+    @GetMapping("/slug-available")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "校验应用门户地址")
+    public RespInfo<Boolean> slugAvailable(
+            @RequestParam String portalSlug,
+            @RequestParam(required = false) Long excludeId) {
+        return RespInfo.success(applicationService.slugAvailable(portalSlug, excludeId));
+    }
+
+    @PutMapping("/{id}/portal-config")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "保存应用门户配置")
+    public RespInfo<Void> savePortalConfig(
+            @PathVariable Long id,
+            @RequestBody BusinessApplicationPortalConfigDTO dto) {
+        applicationService.savePortalConfig(id, dto);
+        return RespInfo.success();
+    }
+
+    @PutMapping("/{id}/ai-assistant-config")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "保存应用 AI 助理配置")
+    public RespInfo<Void> saveAiAssistantConfig(
+            @PathVariable Long id,
+            @RequestBody BusinessApplicationAiAssistantConfigDTO dto) {
+        applicationService.saveAiAssistantConfig(id, dto);
+        return RespInfo.success();
+    }
+
+    @GetMapping("/{id}/ai-assistant-status")
+    @SaCheckPermission("ai:businessApplication:list")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询应用 AI 助理状态")
+    public RespInfo<Map<String, Object>> aiAssistantStatus(@PathVariable Long id) {
+        return RespInfo.success(aiAssistantService.status(id));
+    }
+
+    @PostMapping("/portal/{applicationCodeOrSlug}/assistant/chat")
+    @SaCheckPermission("ai:businessApplication:portal")
+    public RespInfo<BusinessApplicationAiAssistantReplyVO> chatWithPortalAssistant(
+            @PathVariable String applicationCodeOrSlug,
+            @RequestBody BusinessApplicationAiAssistantChatDTO request) {
+        return RespInfo.success(aiAssistantService.chat(applicationCodeOrSlug, request));
+    }
+
+    @PostMapping("/{id}/distribute/workbench")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "分发业务应用")
+    public RespInfo<Map<String, Object>> distribute(
+            @PathVariable Long id,
+            @RequestBody BusinessApplicationDistributionDTO dto) {
+        return RespInfo.success(applicationService.distribute(id, dto));
     }
 
     @GetMapping("/by-code/{applicationCode}/workspace")
@@ -164,6 +242,14 @@ public class BusinessApplicationController {
     @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询已发布应用运行配置")
     public RespInfo<BusinessApplicationRuntimeVO> runtimeByCode(@PathVariable String applicationCode) {
         return RespInfo.success(runtimeService.runtimeByCode(applicationCode));
+    }
+
+    @GetMapping("/portal/{applicationCodeOrSlug}/runtime")
+    @SaCheckPermission("ai:businessApplication:portal")
+    @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询应用门户运行配置")
+    public RespInfo<BusinessApplicationRuntimeVO> portalRuntime(
+            @PathVariable String applicationCodeOrSlug) {
+        return RespInfo.success(runtimeService.runtimeByCodeOrSlug(applicationCodeOrSlug));
     }
 
     @GetMapping("/{id}/workspace")
@@ -282,6 +368,15 @@ public class BusinessApplicationController {
             @PathVariable Long id,
             @RequestBody BusinessApplicationTemplateInitializeDTO dto) {
         return RespInfo.success(templateService.initialize(id, dto));
+    }
+
+    @PostMapping("/{id}/initialize-ai")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.ADD, desc = "按 AI 方案初始化业务应用")
+    public RespInfo<BusinessApplicationAiInitializeResultVO> initializeAi(
+            @PathVariable Long id,
+            @RequestBody LowcodeAiAppGenerateResult plan) {
+        return RespInfo.success(aiInitializeService.initialize(id, plan));
     }
 
     @PostMapping("/{id}/publish/check")

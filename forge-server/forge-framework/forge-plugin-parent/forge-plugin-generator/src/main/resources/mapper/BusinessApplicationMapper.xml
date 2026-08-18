@@ -6,6 +6,7 @@
         <id column="id" property="id"/>
         <result column="tenant_id" property="tenantId"/>
         <result column="application_code" property="applicationCode"/>
+        <result column="portal_slug" property="portalSlug"/>
         <result column="application_name" property="applicationName"/>
         <result column="suite_code" property="suiteCode"/>
         <result column="icon" property="icon"/>
@@ -15,6 +16,8 @@
         <result column="last_publish_version" property="lastPublishVersion"/>
         <result column="last_publish_time" property="lastPublishTime"/>
         <result column="options" property="options"/>
+        <result column="portal_config" property="portalConfig"/>
+        <result column="ai_assistant_config" property="aiAssistantConfig"/>
         <result column="del_flag" property="delFlag"/>
         <result column="create_by" property="createBy"/>
         <result column="create_time" property="createTime"/>
@@ -27,6 +30,7 @@
         id,
         tenant_id,
         application_code,
+        portal_slug,
         application_name,
         suite_code,
         icon,
@@ -36,6 +40,8 @@
         last_publish_version,
         last_publish_time,
         options,
+        portal_config,
+        ai_assistant_config,
         del_flag,
         create_by,
         create_time,
@@ -47,6 +53,7 @@
     <sql id="Application_VO_Select">
         SELECT a.id AS id,
                a.application_code AS applicationCode,
+               a.portal_slug AS portalSlug,
                a.application_name AS applicationName,
                a.suite_code AS suiteCode,
                s.suite_name AS suiteName,
@@ -57,6 +64,8 @@
                a.last_publish_version AS lastPublishVersion,
                a.last_publish_time AS lastPublishTime,
                a.options AS options,
+               a.portal_config AS portalConfig,
+               a.ai_assistant_config AS aiAssistantConfig,
                COALESCE(object_stats.object_count, 0) AS objectCount,
                COALESCE(entry_stats.entry_count, 0) AS entryCount,
                COALESCE(entry_stats.active_entry_count, 0) AS activeEntryCount,
@@ -65,6 +74,7 @@
                 + COALESCE(extension_stats.extension_count, 0)) AS extensionCount,
                (CASE WHEN COALESCE(object_stats.primary_count, 0) = 1 THEN 0 ELSE 1 END
                 + CASE WHEN COALESCE(entry_stats.active_entry_count, 0) > 0 THEN 0 ELSE 1 END) AS problemCount,
+               a.create_by AS createBy,
                a.create_time AS createTime,
                a.update_time AS updateTime
         FROM ai_business_application a
@@ -150,6 +160,29 @@
         <if test="query != null and query.designStatus != null and query.designStatus != ''">
           AND a.design_status = #{query.designStatus}
         </if>
+        <if test="query != null and query.scope == 'CREATED'">
+          AND a.create_by = #{query.creatorId}
+        </if>
+        <if test="query != null and query.scope == 'RECENT' and (query.resolvedApplicationIds == null or query.resolvedApplicationIds.size() == 0)">
+          AND 1 = 0
+        </if>
+        <if test="query != null and query.scope == 'RECENT' and query.resolvedApplicationIds != null and query.resolvedApplicationIds.size() > 0">
+          AND a.id IN
+          <foreach collection="query.resolvedApplicationIds" item="applicationId" open="(" close=")" separator=",">
+            #{applicationId}
+          </foreach>
+        </if>
+        <if test="query != null and query.scope != 'CREATED' and query.currentAdmin != true
+                   and (query.visibleApplicationIds == null or query.visibleApplicationIds.size() == 0)">
+          AND 1 = 0
+        </if>
+        <if test="query != null and query.scope != 'CREATED' and query.currentAdmin != true
+                   and query.visibleApplicationIds != null and query.visibleApplicationIds.size() > 0">
+          AND a.id IN
+          <foreach collection="query.visibleApplicationIds" item="applicationId" open="(" close=")" separator=",">
+            #{applicationId}
+          </foreach>
+        </if>
     </sql>
 
     <select id="selectApplicationPage" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
@@ -164,6 +197,32 @@
         ORDER BY a.update_time DESC, a.id DESC
     </select>
 
+    <select id="selectApplicationAccessList" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
+        SELECT a.id AS id,
+               a.portal_config AS portalConfig,
+               a.create_by AS createBy
+        FROM ai_business_application a
+        WHERE a.tenant_id = #{tenantId}
+          AND a.del_flag = '0'
+    </select>
+
+    <select id="selectPublishedWorkbenchApplications" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
+        <include refid="Application_VO_Select"/>
+        WHERE a.tenant_id = #{tenantId}
+          AND a.del_flag = '0'
+          AND a.status = 1
+          AND a.last_publish_version IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM ai_business_application_version published_version
+            WHERE published_version.tenant_id = a.tenant_id
+              AND published_version.application_id = a.id
+              AND published_version.version_no = a.last_publish_version
+              AND published_version.del_flag = '0'
+          )
+        ORDER BY a.last_publish_time DESC, a.id DESC
+    </select>
+
     <select id="selectApplicationDetail" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
         <include refid="Application_VO_Select"/>
         WHERE a.tenant_id = #{tenantId}
@@ -175,6 +234,7 @@
     <select id="selectApplicationPublishContext" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
         SELECT a.id AS id,
                a.application_code AS applicationCode,
+               a.portal_slug AS portalSlug,
                a.application_name AS applicationName,
                a.suite_code AS suiteCode,
                s.suite_name AS suiteName,
@@ -185,6 +245,8 @@
                a.last_publish_version AS lastPublishVersion,
                a.last_publish_time AS lastPublishTime,
                a.options AS options
+               ,a.portal_config AS portalConfig
+               ,a.ai_assistant_config AS aiAssistantConfig
         FROM ai_business_application a
         LEFT JOIN ai_business_suite s
           ON s.tenant_id = a.tenant_id
@@ -201,6 +263,39 @@
         WHERE a.tenant_id = #{tenantId}
           AND a.del_flag = '0'
           AND a.application_code = #{applicationCode}
+        LIMIT 1
+    </select>
+
+    <select id="selectApplicationDetailBySlug" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
+        <include refid="Application_VO_Select"/>
+        WHERE a.tenant_id = #{tenantId}
+          AND a.del_flag = '0'
+          AND a.portal_slug = #{portalSlug}
+        LIMIT 1
+    </select>
+
+    <select id="selectApplicationDetailByCodeOrSlug" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
+        <include refid="Application_VO_Select"/>
+        WHERE a.tenant_id = #{tenantId}
+          AND a.del_flag = '0'
+          AND (a.application_code = #{identifier} OR a.portal_slug = #{identifier})
+        ORDER BY CASE WHEN a.application_code = #{identifier} THEN 0 ELSE 1 END
+        LIMIT 1
+    </select>
+
+    <select id="selectApplicationDetailByPublishedSlug" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
+        <include refid="Application_VO_Select"/>
+        INNER JOIN ai_business_application_version published_version
+          ON published_version.tenant_id = a.tenant_id
+         AND published_version.application_id = a.id
+         AND published_version.version_no = a.last_publish_version
+         AND published_version.del_flag = '0'
+        WHERE a.tenant_id = #{tenantId}
+          AND a.del_flag = '0'
+          AND a.status = 1
+          AND a.last_publish_version IS NOT NULL
+          AND JSON_UNQUOTE(JSON_EXTRACT(published_version.snapshot_json,
+              '$.application.portalSlug')) = #{portalSlug}
         LIMIT 1
     </select>
 
@@ -235,12 +330,45 @@
         </if>
     </select>
 
+    <select id="countByPortalSlug" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ai_business_application
+        WHERE tenant_id = #{tenantId}
+          AND del_flag = '0'
+          AND portal_slug = #{portalSlug}
+        <if test="excludeId != null">
+          AND id != #{excludeId}
+        </if>
+    </select>
+
     <select id="countBySuiteCode" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM ai_business_application
         WHERE tenant_id = #{tenantId}
           AND del_flag = '0'
           AND suite_code = #{suiteCode}
+    </select>
+
+    <select id="countActiveDistributionRoles" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT r.id)
+        FROM sys_role r
+        WHERE r.tenant_id = #{tenantId}
+          AND r.del_flag = 0
+          AND r.role_status = 1
+          AND r.id IN
+          <foreach collection="roleIds" item="roleId" open="(" close=")" separator=",">
+            #{roleId}
+          </foreach>
+          AND EXISTS (
+            SELECT 1
+            FROM sys_role_resource rr
+            INNER JOIN sys_resource resource
+              ON resource.id = rr.resource_id
+             AND resource.del_flag = 0
+             AND resource.perms = 'ai:businessApplication:portal'
+            WHERE rr.tenant_id = r.tenant_id
+              AND rr.role_id = r.id
+          )
     </select>
 
     <update id="markChanged">

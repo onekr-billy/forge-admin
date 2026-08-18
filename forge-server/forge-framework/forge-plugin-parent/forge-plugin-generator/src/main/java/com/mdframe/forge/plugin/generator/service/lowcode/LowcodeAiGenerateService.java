@@ -15,6 +15,7 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeObjectSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeProcessSuggestionDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRuntimeConfig;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
@@ -224,6 +225,7 @@ public class LowcodeAiGenerateService {
             pageSchema.setLayoutType(layoutType);
             fillAppDraft(app, primaryDomain, model, modelSchema, pageSchema);
         }
+        normalizeProcessSuggestions(result, request.getDescription());
         result.setModelDraft(result.getModels().get(0));
         result.setAppDraft(result.getApps().get(0));
         result.setModelSchema(result.getModelDraft().getModelSchema());
@@ -313,6 +315,7 @@ public class LowcodeAiGenerateService {
         result.setModelDraft(modelDrafts.get(0));
         result.setApps(appDrafts);
         result.setAppDraft(appDrafts.get(0));
+        result.setProcessSuggestions(inferProcessSuggestions(modelDrafts, request.getDescription()));
         result.setModelSchema(modelDrafts.get(0).getModelSchema());
         result.setPageSchema(appDrafts.get(0).getPageSchema());
         result.setSteps(completedSteps("已通过规则 Agent 完成端到端草稿生成"));
@@ -321,6 +324,7 @@ public class LowcodeAiGenerateService {
         result.setGenerationNotes(List.of(
                 "已自动划分业务领域并生成模型与应用草稿，确认前不会保存任何数据",
                 "页面模板由系统根据需求关键词和模型结构自动选择，后续可在应用设计器继续调整",
+                "涉及审批或流转的需求会生成可继续设计的业务流程草稿，不会自动部署 Flowable",
                 "当前未执行 DDL，不会自动发布应用"
         ));
         return result;
@@ -358,6 +362,7 @@ public class LowcodeAiGenerateService {
         sb.append("- allowAutoSave: false\n");
         sb.append("- supportedLayouts: simple-crud, tree-crud, master-detail-crud\n");
         sb.append("- firstPhaseCodegen: single-main-model\n");
+        sb.append("- processSuggestions: 仅在需求包含审批或业务流转时返回，引用 models[].modelCode；只生成设计建议，不部署流程\n");
         return sb.toString();
     }
 
@@ -510,12 +515,73 @@ public class LowcodeAiGenerateService {
         if (result.getApps() == null) {
             result.setApps(new ArrayList<>());
         }
+        if (result.getProcessSuggestions() == null) {
+            result.setProcessSuggestions(new ArrayList<>());
+        }
         if (result.getGenerationNotes() == null) {
             result.setGenerationNotes(new ArrayList<>());
         }
         if (result.getDdlPreview() == null) {
             result.setDdlPreview(new ArrayList<>());
         }
+    }
+
+    private void normalizeProcessSuggestions(LowcodeAiAppGenerateResult result, String description) {
+        if (result.getProcessSuggestions().isEmpty()) {
+            result.setProcessSuggestions(inferProcessSuggestions(result.getModels(), description));
+            return;
+        }
+        List<String> modelCodes = result.getModels().stream()
+                .map(LowcodeDataModelDTO::getModelCode)
+                .map(StringUtils::trimToNull)
+                .filter(StringUtils::isNotBlank)
+                .toList();
+        String defaultSubject = modelCodes.isEmpty() ? null : modelCodes.get(0);
+        List<LowcodeProcessSuggestionDTO> normalized = new ArrayList<>();
+        for (LowcodeProcessSuggestionDTO source : result.getProcessSuggestions()) {
+            if (source == null || normalized.size() >= 3) {
+                continue;
+            }
+            String subjectCode = StringUtils.defaultIfBlank(
+                    StringUtils.trimToNull(source.getSubjectObjectCode()), defaultSubject);
+            if (subjectCode == null || !modelCodes.contains(subjectCode)) {
+                continue;
+            }
+            LowcodeProcessSuggestionDTO suggestion = new LowcodeProcessSuggestionDTO();
+            suggestion.setSubjectObjectCode(subjectCode);
+            suggestion.setProcessName(StringUtils.left(StringUtils.defaultIfBlank(
+                    StringUtils.trimToNull(source.getProcessName()), "业务审批流程"), 128));
+            suggestion.setProcessCode(normalizeCode(StringUtils.defaultIfBlank(
+                    source.getProcessCode(), subjectCode + "_approval"), "business_approval", 128));
+            suggestion.setProcessDescription(StringUtils.left(StringUtils.defaultIfBlank(
+                    StringUtils.trimToNull(source.getProcessDescription()),
+                    "由 AI 应用方案生成的业务流程草稿，节点和表单需在流程设计器中确认。"), 500));
+            normalized.add(suggestion);
+        }
+        result.setProcessSuggestions(normalized);
+    }
+
+    private List<LowcodeProcessSuggestionDTO> inferProcessSuggestions(
+            List<LowcodeDataModelDTO> models, String description) {
+        if (!containsAny(StringUtils.defaultString(description),
+                Set.of("审批", "审核", "申请", "流转", "流程", "会签", "驳回"))) {
+            return new ArrayList<>();
+        }
+        LowcodeDataModelDTO subject = safeList(models).stream()
+                .filter(model -> model != null && StringUtils.isNotBlank(model.getModelCode()))
+                .findFirst().orElse(null);
+        if (subject == null) {
+            return new ArrayList<>();
+        }
+        String subjectName = StringUtils.defaultIfBlank(subject.getModelName(), "业务单据");
+        LowcodeProcessSuggestionDTO suggestion = new LowcodeProcessSuggestionDTO();
+        suggestion.setSubjectObjectCode(subject.getModelCode());
+        suggestion.setProcessCode(normalizeCode(
+                subject.getModelCode() + "_approval", "business_approval", 128));
+        suggestion.setProcessName(StringUtils.left(subjectName + "审批流程", 128));
+        suggestion.setProcessDescription(StringUtils.left(
+                "根据需求生成的" + subjectName + "流程草稿；请在业务流程设计器中补充审批节点、表单权限和发布绑定。", 500));
+        return new ArrayList<>(List.of(suggestion));
     }
 
     private void normalizeDomainDraft(LowcodeAiDomainDraftDTO domainDraft, String description) {

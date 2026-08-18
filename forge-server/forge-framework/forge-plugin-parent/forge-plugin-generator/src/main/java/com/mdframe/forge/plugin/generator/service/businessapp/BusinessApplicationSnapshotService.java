@@ -210,6 +210,7 @@ public class BusinessApplicationSnapshotService {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", String.valueOf(application.getId()));
         item.put("applicationCode", application.getApplicationCode());
+        item.put("portalSlug", application.getPortalSlug());
         item.put("applicationName", application.getApplicationName());
         item.put("suiteCode", application.getSuiteCode());
         item.put("icon", application.getIcon());
@@ -217,6 +218,8 @@ public class BusinessApplicationSnapshotService {
         item.put("status", application.getStatus());
         item.put("designStatus", application.getDesignStatus());
         item.put("options", parseOptionalJson(application.getOptions()));
+        item.put("portalConfig", parseOptionalJson(application.getPortalConfig()));
+        item.put("aiAssistantConfig", parseOptionalJson(application.getAiAssistantConfig()));
         return item;
     }
 
@@ -224,6 +227,7 @@ public class BusinessApplicationSnapshotService {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", String.valueOf(application.getId()));
         item.put("applicationCode", application.getApplicationCode());
+        item.put("portalSlug", application.getPortalSlug());
         item.put("applicationName", application.getApplicationName());
         item.put("suiteCode", application.getSuiteCode());
         item.put("icon", application.getIcon());
@@ -231,6 +235,8 @@ public class BusinessApplicationSnapshotService {
         item.put("status", application.getStatus());
         item.put("designStatus", application.getDesignStatus());
         item.put("options", parseOptionalJson(application.getOptions()));
+        item.put("portalConfig", parseOptionalJson(application.getPortalConfig()));
+        item.put("aiAssistantConfig", parseOptionalJson(application.getAiAssistantConfig()));
         return item;
     }
 

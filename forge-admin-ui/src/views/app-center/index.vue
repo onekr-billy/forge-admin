@@ -1,6 +1,21 @@
 <template>
   <div class="app-center-page">
-    <section class="app-center-layout">
+    <header class="app-center-view-head">
+      <div class="app-center-view-brand">
+        <span class="app-center-view-brand__mark"><NIcon><AppsOutline /></NIcon></span>
+        <span><strong>应用中心</strong><small>设计、发布与交付业务应用</small></span>
+      </div>
+      <n-tabs v-model:value="activeView" type="line" size="small" @update:value="handleViewChange">
+        <n-tab name="MY_APPS">
+          我的应用
+        </n-tab>
+        <n-tab name="MARKET">
+          应用市场
+        </n-tab>
+      </n-tabs>
+    </header>
+
+    <section v-if="activeView === 'MY_APPS'" class="app-center-layout">
       <aside class="suite-nav">
         <div class="suite-nav-head">
           <div>
@@ -90,18 +105,31 @@
       <main class="application-workspace">
         <section class="application-panel">
           <div class="panel-toolbar">
-            <ApplicationFilterBar
-              v-model:keyword="keyword"
-              v-model:design-status="designStatus"
-              v-model:status="status"
-              class="toolbar-filters"
-              :loading="loadingApplications"
-              @search="applyKeywordFilter"
-              @refresh="loadApplications"
-            />
+            <div class="toolbar-left">
+              <n-radio-group v-model:value="applicationScope" size="small" @update:value="handleScopeChange">
+                <n-radio-button value="CREATED">
+                  我创建的
+                </n-radio-button>
+                <n-radio-button value="ALL">
+                  我有权限的
+                </n-radio-button>
+                <n-radio-button value="RECENT">
+                  最近使用
+                </n-radio-button>
+              </n-radio-group>
+              <ApplicationFilterBar
+                v-model:keyword="keyword"
+                v-model:design-status="designStatus"
+                v-model:status="status"
+                class="toolbar-filters"
+                :loading="loadingApplications"
+                @search="applyKeywordFilter"
+                @refresh="loadApplications"
+              />
+            </div>
             <div class="toolbar-actions">
               <span class="result-summary">{{ resultRangeText }}</span>
-              <n-button type="primary" aria-label="新建应用" title="新建应用" @click="openApplicationEditor(null, 'BLANK')">
+              <n-button type="primary" aria-label="新建应用" title="新建应用" @click="openApplicationCreate('BLANK')">
                 <template #icon>
                   <NIcon><AddOutline /></NIcon>
                 </template>
@@ -131,10 +159,10 @@
             <n-empty
               v-else-if="!loadingApplications"
               class="application-empty"
-              description="当前条件下还没有应用"
+              :description="applicationEmptyDescription"
             >
               <template #extra>
-                <n-button type="primary" @click="openApplicationEditor(null, 'BLANK')">
+                <n-button type="primary" @click="openApplicationCreate('BLANK')">
                   新建应用
                 </n-button>
               </template>
@@ -167,6 +195,19 @@
         </section>
       </main>
     </section>
+
+    <AppMarketPanel v-else @create-template="openTemplateCreate" />
+
+    <AppCreateWizard
+      v-model:show="createWizardVisible"
+      :suites="suites"
+      :default-suite-code="suiteCode || ''"
+      :initial-mode="createWizardMode"
+      :initial-template-key="createWizardTemplateKey"
+      :initial-delivery-mode="createWizardDeliveryMode"
+      @created="handleApplicationCreated"
+      @draft-saved="handleApplicationDraftSaved"
+    />
 
     <ApplicationEditorDrawer
       v-model:show="applicationEditorVisible"
@@ -201,7 +242,7 @@ import {
   EllipsisVertical,
 } from '@vicons/ionicons5'
 import { NIcon, useMessage } from 'naive-ui'
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   businessSuiteSummary,
@@ -215,8 +256,10 @@ import {
   updateBusinessApplicationStatus,
 } from '@/api/business-application'
 import IconRenderer from '@/components/IconRenderer.vue'
+import AppCreateWizard from './components/AppCreateWizard.vue'
 import ApplicationFilterBar from './components/ApplicationFilterBar.vue'
 import ApplicationTable from './components/ApplicationTable.vue'
+import AppMarketPanel from './components/AppMarketPanel.vue'
 
 const ApplicationEditorDrawer = defineAsyncComponent(() => import('./components/ApplicationEditorDrawer.vue'))
 const AppCodePanel = defineAsyncComponent(() => import('./components/AppCodePanel.vue'))
@@ -225,7 +268,10 @@ const SuiteEditorDrawer = defineAsyncComponent(() => import('./components/SuiteE
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const RECENT_APPLICATION_STORAGE_KEY = 'forge:app-center:recent-applications'
 
+const activeView = ref(normalizeView(route.query.view))
+const applicationScope = ref(normalizeApplicationScope(route.query.scope))
 const keyword = ref(queryText(route.query.keyword))
 const suiteCode = ref(queryText(route.query.suiteCode) || null)
 const designStatus = ref(queryText(route.query.designStatus) || null)
@@ -238,6 +284,10 @@ const applications = ref([])
 const loadingSuites = ref(false)
 const loadingApplications = ref(false)
 const collapsedSuiteIds = ref(new Set())
+const createWizardVisible = ref(false)
+const createWizardMode = ref('BLANK')
+const createWizardTemplateKey = ref('')
+const createWizardDeliveryMode = ref('ONLINE')
 const applicationEditorVisible = ref(false)
 const editingApplication = ref(null)
 const applicationCodeVisible = ref(false)
@@ -246,6 +296,7 @@ const editorInitializeMode = ref('BLANK')
 const suiteEditorVisible = ref(false)
 const editingSuite = ref(null)
 let applicationRequestVersion = 0
+let applyingRouteQuery = false
 
 const pageSizeOptions = [
   { label: '10 条/页', value: 10 },
@@ -302,12 +353,56 @@ const resultRangeText = computed(() => {
   const end = Math.min(total.value, pageNum.value * pageSize.value)
   return `${start}-${end} / ${total.value} 个应用`
 })
+const applicationEmptyDescription = computed(() => ({
+  CREATED: '你还没有创建符合当前条件的应用',
+  ALL: '当前权限范围内没有符合条件的应用',
+  RECENT: '还没有最近打开的应用',
+})[applicationScope.value])
 
 watch([designStatus, status], () => {
+  if (applyingRouteQuery)
+    return
   pageNum.value = 1
   syncRouteQuery()
   loadApplications()
 })
+
+watch(() => route.query, async (query) => {
+  const nextState = {
+    activeView: normalizeView(query.view),
+    applicationScope: normalizeApplicationScope(query.scope),
+    keyword: queryText(query.keyword),
+    suiteCode: queryText(query.suiteCode) || null,
+    designStatus: queryText(query.designStatus) || null,
+    status: queryStatus(query.status),
+    pageNum: queryPositiveInt(query.pageNum, 1),
+    pageSize: queryPositiveInt(query.pageSize, 20),
+  }
+  const changed = activeView.value !== nextState.activeView
+    || applicationScope.value !== nextState.applicationScope
+    || keyword.value !== nextState.keyword
+    || suiteCode.value !== nextState.suiteCode
+    || designStatus.value !== nextState.designStatus
+    || status.value !== nextState.status
+    || pageNum.value !== nextState.pageNum
+    || pageSize.value !== nextState.pageSize
+  if (!changed)
+    return
+
+  applyingRouteQuery = true
+  activeView.value = nextState.activeView
+  applicationScope.value = nextState.applicationScope
+  keyword.value = nextState.keyword
+  suiteCode.value = nextState.suiteCode
+  designStatus.value = nextState.designStatus
+  status.value = nextState.status
+  pageNum.value = nextState.pageNum
+  pageSize.value = nextState.pageSize
+  await nextTick()
+  applyingRouteQuery = false
+  if (activeView.value === 'MY_APPS')
+    loadApplications()
+}, { deep: true })
 
 onMounted(async () => {
   await Promise.all([loadSuites(), loadApplications()])
@@ -331,6 +426,8 @@ async function loadApplications() {
     const response = await businessApplicationPage({
       pageNum: pageNum.value,
       pageSize: pageSize.value,
+      scope: applicationScope.value,
+      applicationIds: applicationScope.value === 'RECENT' ? readRecentApplicationIds().join(',') : undefined,
       keyword: trimToUndefined(keyword.value),
       suiteCode: suiteCode.value || undefined,
       designStatus: designStatus.value || undefined,
@@ -348,6 +445,18 @@ async function loadApplications() {
 }
 
 function applyKeywordFilter() {
+  pageNum.value = 1
+  syncRouteQuery()
+  loadApplications()
+}
+
+function handleViewChange() {
+  syncRouteQuery()
+  if (activeView.value === 'MY_APPS')
+    loadApplications()
+}
+
+function handleScopeChange() {
   pageNum.value = 1
   syncRouteQuery()
   loadApplications()
@@ -380,6 +489,8 @@ function syncRouteQuery() {
       suiteCode: suiteCode.value || undefined,
       designStatus: designStatus.value || undefined,
       status: status.value === null ? undefined : status.value,
+      view: activeView.value === 'MARKET' ? 'market' : undefined,
+      scope: applicationScope.value === 'CREATED' ? undefined : applicationScope.value.toLowerCase(),
       pageNum: pageNum.value > 1 ? pageNum.value : undefined,
       pageSize: pageSize.value !== 20 ? pageSize.value : undefined,
     },
@@ -403,6 +514,34 @@ async function openApplicationEditor(application, initializeMode = 'BLANK') {
   applicationEditorVisible.value = true
 }
 
+function openApplicationCreate(mode = 'BLANK', templateKey = '', deliveryMode = 'ONLINE') {
+  createWizardMode.value = mode
+  createWizardTemplateKey.value = templateKey
+  createWizardDeliveryMode.value = deliveryMode
+  createWizardVisible.value = true
+}
+
+function openTemplateCreate({ deliveryMode = 'ONLINE', template } = {}) {
+  openApplicationCreate('TEMPLATE', template?.key || '', deliveryMode)
+}
+
+async function handleApplicationCreated(result) {
+  await Promise.all([loadSuites(), loadApplications()])
+  const application = result?.application
+  if (!application?.applicationCode)
+    return
+  rememberApplication(application.id)
+  if (result.deliveryMode === 'SOURCE') {
+    openApplicationCode(application)
+    return
+  }
+  openApplication(application, true, result.initializeMode)
+}
+
+async function handleApplicationDraftSaved() {
+  await Promise.all([loadSuites(), loadApplications()])
+}
+
 async function handleApplicationSaved(result) {
   await Promise.all([loadSuites(), loadApplications()])
   if (result?.created && !result.initializationWarning && result.application?.applicationCode) {
@@ -419,6 +558,7 @@ async function handleApplicationSaved(result) {
 function openApplication(application, newTab = true, initializeMode = null) {
   if (!application?.applicationCode)
     return
+  rememberApplication(application.id)
   const location = {
     name: 'BusinessApplicationWorkspace',
     params: { applicationCode: application.applicationCode },
@@ -634,6 +774,35 @@ function queryText(value) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '')
 }
 
+function normalizeView(value) {
+  return queryText(value).toLowerCase() === 'market' ? 'MARKET' : 'MY_APPS'
+}
+
+function normalizeApplicationScope(value) {
+  const scope = queryText(value).toUpperCase()
+  return ['ALL', 'RECENT'].includes(scope) ? scope : 'CREATED'
+}
+
+function readRecentApplicationIds() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RECENT_APPLICATION_STORAGE_KEY) || '[]')
+    if (!Array.isArray(stored))
+      return []
+    return stored.map(value => String(value)).filter(value => /^\d+$/.test(value)).slice(0, 30)
+  }
+  catch {
+    return []
+  }
+}
+
+function rememberApplication(applicationId) {
+  const id = String(applicationId || '')
+  if (!/^\d+$/.test(id))
+    return
+  const nextIds = [id, ...readRecentApplicationIds().filter(item => item !== id)].slice(0, 30)
+  localStorage.setItem(RECENT_APPLICATION_STORAGE_KEY, JSON.stringify(nextIds))
+}
+
 function queryStatus(value) {
   const text = queryText(value)
   return text === '0' || text === '1' ? Number(text) : null
@@ -652,6 +821,8 @@ function trimToUndefined(value) {
 
 <style scoped>
 .app-center-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   box-sizing: border-box;
   height: 100%;
   min-height: 0;
@@ -661,10 +832,61 @@ function trimToUndefined(value) {
   color: var(--n-text-color, #111827);
 }
 
+.app-center-view-head {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 62px;
+  padding: 9px 18px 0;
+  border-bottom: 1px solid var(--n-border-color, #e5e7eb);
+  background: var(--n-color, #fff);
+}
+
+.app-center-view-brand,
+.app-center-view-brand > span:last-child {
+  display: flex;
+}
+
+.app-center-view-brand {
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+.app-center-view-brand > span:last-child {
+  flex-direction: column;
+  gap: 1px;
+}
+
+.app-center-view-brand__mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--n-primary-color, #165dff);
+  background: color-mix(in srgb, var(--n-primary-color, #165dff) 10%, transparent);
+}
+
+.app-center-view-brand strong {
+  font-size: 14px;
+}
+
+.app-center-view-brand small {
+  color: var(--n-text-color-3, #6b7280);
+  font-size: 10px;
+}
+
+.app-center-view-head :deep(.n-tabs) {
+  width: auto;
+}
+
 .app-center-layout {
   display: grid;
   grid-template-columns: 284px minmax(0, 1fr);
-  height: 100%;
+  height: auto;
   min-height: 0;
   overflow: hidden;
   border: 0;
@@ -909,8 +1131,17 @@ function trimToUndefined(value) {
   border-bottom: 1px solid var(--n-border-color, #e5e7eb);
 }
 
+.toolbar-left {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 760px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 .toolbar-filters {
-  flex: 1 1 680px;
+  flex: 1 1 500px;
 }
 
 .toolbar-actions {
@@ -1039,9 +1270,18 @@ function trimToUndefined(value) {
 
 @media (max-width: 720px) {
   .app-center-page {
-    height: auto;
     min-height: 100%;
-    padding: 8px;
+  }
+
+  .app-center-view-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0;
+    padding: 9px 12px 0;
+  }
+
+  .app-center-view-head :deep(.n-tabs) {
+    width: 100%;
   }
 
   .app-center-layout {

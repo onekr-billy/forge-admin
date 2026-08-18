@@ -35,9 +35,12 @@ class BusinessApplicationRuntimeServiceTest {
                 "application", Map.of(
                         "id", "10",
                         "applicationCode", "crm_test",
+                        "portalSlug", "crm-portal",
                         "applicationName", "发布时名称",
                         "suiteCode", "crm",
                         "status", 1,
+                        "portalConfig", Map.of("themeColor", "#3370ff"),
+                        "aiAssistantConfig", Map.of("enabled", true, "pageIds", List.of("page_home")),
                         "options", Map.of("inAppBuilder", builder)),
                 "objects", List.of(Map.of(
                         "objectId", "11", "objectCode", "customer", "objectName", "客户",
@@ -53,6 +56,67 @@ class BusinessApplicationRuntimeServiceTest {
         assertEquals(3, runtime.getApplication().getLastPublishVersion());
         assertEquals(11L, runtime.getObjects().get(0).getObjectId());
         assertTrue(runtime.getApplication().getOptions().contains("已发布首页"));
+        assertEquals("crm-portal", runtime.getApplication().getPortalSlug());
+        assertTrue(runtime.getApplication().getPortalConfig().contains("#3370ff"));
+        assertTrue(runtime.getApplication().getAiAssistantConfig().contains("page_home"));
+    }
+
+    @Test
+    @DisplayName("portal runtime resolves either the application code or portal slug")
+    void portalRuntimeResolvesCodeOrSlug() throws Exception {
+        BusinessApplicationVO application = application(2);
+        application.setPortalSlug("crm-portal");
+        Map<String, Object> snapshot = Map.of(
+                "application", Map.of(
+                        "id", "10",
+                        "applicationCode", "crm_test",
+                        "portalSlug", "crm-portal",
+                        "applicationName", "客户门户",
+                        "suiteCode", "crm",
+                        "status", 1,
+                        "options", Map.of()),
+                "objects", List.of(),
+                "entries", List.of());
+        BusinessApplicationRuntimeService service = service(
+                application,
+                version(2, objectMapper.writeValueAsString(snapshot)));
+
+        BusinessApplicationRuntimeVO runtime = service.runtimeByCodeOrSlug("crm-portal");
+
+        assertEquals("crm-portal", runtime.getApplication().getPortalSlug());
+        assertEquals("客户门户", runtime.getApplication().getApplicationName());
+    }
+
+    @Test
+    @DisplayName("workbench uses the published slug and only keeps a reachable published page")
+    void workbenchUsesPublishedRuntimeProjection() throws Exception {
+        BusinessApplicationVO application = application(2);
+        application.setPortalSlug("draft-slug");
+        Map<String, Object> builder = Map.of(
+                "homePageId", "page_home",
+                "nodes", List.of(node("page_home", null, null)),
+                "pages", Map.of("page_home", Map.of("title", "正式首页")));
+        Map<String, Object> snapshot = Map.of(
+                "application", Map.of(
+                        "id", "10",
+                        "applicationCode", "crm_test",
+                        "portalSlug", "released-slug",
+                        "applicationName", "已发布应用",
+                        "suiteCode", "crm",
+                        "status", 1,
+                        "portalConfig", Map.of("permission", Map.of("visibility", "all")),
+                        "options", Map.of("inAppBuilder", builder)),
+                "objects", List.of(),
+                "entries", List.of());
+        BusinessApplicationRuntimeService service = service(
+                application,
+                version(2, objectMapper.writeValueAsString(snapshot)));
+
+        List<BusinessApplicationVO> result = service.workbenchApplications();
+
+        assertEquals(1, result.size());
+        assertEquals("released-slug", result.get(0).getPortalSlug());
+        assertEquals("已发布应用", result.get(0).getApplicationName());
     }
 
     @Test
@@ -89,9 +153,9 @@ class BusinessApplicationRuntimeServiceTest {
         Map<String, Object> pages = (Map<String, Object>) filtered.get("pages");
 
         assertEquals("page_sales", filtered.get("homePageId"));
-        assertEquals(List.of("group_sales", "page_sales", "page_hidden"),
+        assertEquals(List.of("group_sales", "page_sales"),
                 nodes.stream().map(item -> String.valueOf(item.get("id"))).toList());
-        assertEquals(Set.of("page_sales", "page_hidden"), pages.keySet());
+        assertEquals(Set.of("page_sales"), pages.keySet());
         assertFalse(pages.containsKey("page_admin"));
     }
 
@@ -214,6 +278,31 @@ class BusinessApplicationRuntimeServiceTest {
         @Override
         public BusinessApplicationVO detailByCode(String applicationCode) {
             return application;
+        }
+
+        @Override
+        public BusinessApplicationVO detailByCodeOrSlug(String identifier) {
+            return application;
+        }
+
+        @Override
+        public BusinessApplicationVO detailByPublishedCodeOrSlug(String identifier) {
+            return application;
+        }
+
+        @Override
+        public List<BusinessApplicationVO> workbenchDistributionCandidates() {
+            return List.of(application);
+        }
+
+        @Override
+        public boolean canCurrentUserAccessPortal(String portalConfig) {
+            return true;
+        }
+
+        @Override
+        public boolean currentUserIsApplicationAdministrator(String portalConfig) {
+            return true;
         }
     }
 

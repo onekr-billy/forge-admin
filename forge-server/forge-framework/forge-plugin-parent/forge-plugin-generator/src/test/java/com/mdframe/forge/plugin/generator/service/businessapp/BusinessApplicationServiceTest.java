@@ -5,18 +5,25 @@ import com.mdframe.forge.plugin.generator.constant.BusinessApplicationDesignStat
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplication;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessSuite;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDistributionDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPortalConfigDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationQueryDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationCreateVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
+import com.mdframe.forge.starter.core.session.LoginUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -58,6 +65,7 @@ class BusinessApplicationServiceTest {
         assertEquals(1L, inserted.get().getTenantId());
         assertEquals(BusinessApplicationDesignStatus.DRAFT, inserted.get().getDesignStatus());
         assertEquals("crm_center", inserted.get().getApplicationCode());
+        assertEquals("crm_center", inserted.get().getPortalSlug());
     }
 
     @Test
@@ -180,6 +188,246 @@ class BusinessApplicationServiceTest {
                 () -> service.create(applicationDto()));
 
         assertTrue(error.getMessage().contains("应用编码已存在"));
+    }
+
+    @Test
+    @DisplayName("portal slug rejects reserved words and invalid characters")
+    void portalSlugRejectsReservedAndInvalidValues() throws Exception {
+        BusinessApplicationService service = service(
+                proxy(BusinessApplicationMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+
+        BusinessException reserved = assertThrows(BusinessException.class,
+                () -> service.slugAvailable("admin", null));
+        BusinessException invalid = assertThrows(BusinessException.class,
+                () -> service.slugAvailable("中文地址", null));
+
+        assertTrue(reserved.getMessage().contains("保留路径"));
+        assertTrue(invalid.getMessage().contains("格式不正确"));
+    }
+
+    @Test
+    @DisplayName("portal slug availability checks both slugs and application codes")
+    void portalSlugAvailabilityChecksSlugAndApplicationCodeCollisions() throws Exception {
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            if ("countByApplicationCode".equals(method)) {
+                return "existing_code".equals(args[1]) ? 1L : 0L;
+            }
+            if ("countByPortalSlug".equals(method)) {
+                return "existing_slug".equals(args[1]) ? 1L : 0L;
+            }
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+
+        assertFalse(service.slugAvailable("existing_code", null));
+        assertFalse(service.slugAvailable("existing_slug", null));
+        assertTrue(service.slugAvailable("available_slug", null));
+    }
+
+    @Test
+    @DisplayName("application visibility uses trusted role, department and user identity")
+    void applicationVisibilityUsesTrustedIdentity() throws Exception {
+        BusinessApplicationService service = service(
+                proxy(BusinessApplicationMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        loginUser.setRoleIds(List.of(11L));
+        loginUser.setOrgIds(List.of(21L));
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "visibility-test", java.util.Set.of()))) {
+            assertTrue(service.canCurrentUserAccessPortal("{\"permission\":{\"visibility\":\"roles\",\"roleIds\":[\"11\"]}}"));
+            assertTrue(service.canCurrentUserAccessPortal("{\"permission\":{\"visibility\":\"departments\",\"departmentIds\":[21]}}"));
+            assertTrue(service.canCurrentUserAccessPortal("{\"permission\":{\"visibility\":\"users\",\"userIds\":[7]}}"));
+            assertFalse(service.canCurrentUserAccessPortal("{\"permission\":{\"visibility\":\"roles\",\"roleIds\":[99]}}"));
+        }
+    }
+
+    @Test
+    @DisplayName("application administrator bypasses visibility without trusting system menu flags")
+    void applicationAdministratorBypassesVisibility() throws Exception {
+        BusinessApplicationService service = service(
+                proxy(BusinessApplicationMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "administrator-test", java.util.Set.of()))) {
+            String config = "{\"permission\":{\"visibility\":\"users\",\"userIds\":[],\"administrators\":[\"7\"]}}";
+            assertTrue(service.canCurrentUserAccessPortal(config));
+            assertTrue(service.currentUserIsApplicationAdministrator(config));
+        }
+    }
+
+    @Test
+    @DisplayName("published portal slug lookup does not use the mutable design slug")
+    void publishedPortalSlugLookupUsesPublishedAlias() throws Exception {
+        AtomicBoolean publishedLookup = new AtomicBoolean();
+        BusinessApplicationVO published = new BusinessApplicationVO();
+        published.setId(101L);
+        published.setApplicationCode("crm_center");
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            if ("selectApplicationDetailByCode".equals(method)) {
+                return null;
+            }
+            if ("selectApplicationDetailByPublishedSlug".equals(method)) {
+                publishedLookup.set(true);
+                return "released_slug".equals(args[1]) ? published : null;
+            }
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+
+        BusinessApplicationVO result = service.detailByPublishedCodeOrSlug("released_slug");
+
+        assertEquals(101L, result.getId());
+        assertTrue(publishedLookup.get());
+    }
+
+    @Test
+    @DisplayName("workbench returns enabled current-user and role distributions only")
+    void workbenchReturnsEnabledAuthorizedDistributions() throws Exception {
+        BusinessApplicationVO currentUserApp = workbenchApplication(1L,
+                "{\"permission\":{\"visibility\":\"all\"},\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":7}}}");
+        BusinessApplicationVO roleApp = workbenchApplication(2L,
+                "{\"permission\":{\"visibility\":\"roles\",\"roleIds\":[11]},\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"ROLES\",\"roleIds\":[\"11\"]}}}");
+        BusinessApplicationVO disabledApp = workbenchApplication(3L,
+                "{\"permission\":{\"visibility\":\"all\"},\"distribution\":{\"workbench\":{\"enabled\":false,\"targetType\":\"CURRENT_USER\",\"targetUserId\":7}}}");
+        BusinessApplicationVO otherUserApp = workbenchApplication(4L,
+                "{\"permission\":{\"visibility\":\"all\"},\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":8}}}");
+        List<BusinessApplicationVO> applications = List.of(
+                currentUserApp, roleApp, disabledApp, otherUserApp);
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            if ("selectPublishedWorkbenchApplications".equals(method)) {
+                return applications;
+            }
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        loginUser.setRoleIds(List.of(11L));
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "workbench-test", java.util.Set.of()))) {
+            assertEquals(List.of(1L, 2L), service.workbenchDistributionCandidates().stream()
+                    .map(BusinessApplicationVO::getId).toList());
+        }
+    }
+
+    @Test
+    @DisplayName("role distribution rejects roles without active portal permission")
+    void roleDistributionRejectsRoleWithoutPortalPermission() throws Exception {
+        AiBusinessApplication existing = applicationEntity();
+        existing.setLastPublishVersion(1);
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            if ("selectEntityById".equals(method)) {
+                return existing;
+            }
+            if ("countActiveDistributionRoles".equals(method)) {
+                return 0L;
+            }
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        BusinessApplicationDistributionDTO dto = new BusinessApplicationDistributionDTO();
+        dto.setChannel("WORKBENCH");
+        dto.setTargetType("ROLES");
+        dto.setRoleIds(List.of(9007199254740991L));
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        loginUser.setRoleIds(List.of(9007199254740991L));
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "distribution-test", java.util.Set.of()))) {
+            BusinessException error = assertThrows(BusinessException.class,
+                    () -> service.distribute(existing.getId(), dto));
+            assertTrue(error.getMessage().contains("门户访问权限"));
+        }
+    }
+
+    @Test
+    @DisplayName("role distribution respects the current user's role management scope")
+    void roleDistributionRespectsRoleManagementScope() throws Exception {
+        AiBusinessApplication existing = applicationEntity();
+        existing.setLastPublishVersion(1);
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            if ("selectEntityById".equals(method)) {
+                return existing;
+            }
+            if ("countActiveDistributionRoles".equals(method)) {
+                return 1L;
+            }
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        BusinessApplicationDistributionDTO dto = new BusinessApplicationDistributionDTO();
+        dto.setChannel("WORKBENCH");
+        dto.setTargetType("ROLES");
+        dto.setRoleIds(List.of(12L));
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        loginUser.setRoleIds(List.of(11L));
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "distribution-scope-test", java.util.Set.of()))) {
+            BusinessException error = assertThrows(BusinessException.class,
+                    () -> service.distribute(existing.getId(), dto));
+            assertTrue(error.getMessage().contains("角色管理范围"));
+        }
+    }
+
+    @Test
+    @DisplayName("saving portal config persists normalized JSON and marks the draft changed")
+    void savePortalConfigPersistsNormalizedJson() throws Exception {
+        AiBusinessApplication existing = applicationEntity();
+        existing.setPortalSlug("crm_center");
+        AtomicReference<AiBusinessApplication> updated = new AtomicReference<>();
+        AtomicBoolean markedChanged = new AtomicBoolean();
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            if ("selectEntityById".equals(method)) {
+                return existing;
+            }
+            if ("updateById".equals(method)) {
+                updated.set((AiBusinessApplication) args[0]);
+                return 1;
+            }
+            if ("markChanged".equals(method)) {
+                markedChanged.set(true);
+                return 1;
+            }
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        BusinessApplicationPortalConfigDTO dto = new BusinessApplicationPortalConfigDTO();
+        dto.setPortalSlug("crm_portal");
+        dto.setPortalConfig(Map.of("themeColor", "#3370ff",
+                "watermark", Map.of("enabled", true)));
+
+        service.savePortalConfig(existing.getId(), dto);
+
+        assertNotNull(updated.get());
+        assertEquals("crm_portal", updated.get().getPortalSlug());
+        assertTrue(updated.get().getPortalConfig().contains("#3370ff"));
+        assertTrue(markedChanged.get());
     }
 
     @Test
@@ -343,6 +591,17 @@ class BusinessApplicationServiceTest {
         return application;
     }
 
+    private BusinessApplicationVO workbenchApplication(Long id, String portalConfig) {
+        BusinessApplicationVO application = new BusinessApplicationVO();
+        application.setId(id);
+        application.setApplicationCode("app_" + id);
+        application.setPortalSlug("app-" + id);
+        application.setStatus(1);
+        application.setLastPublishVersion(1);
+        application.setPortalConfig(portalConfig);
+        return application;
+    }
+
     private static void setBaseMapper(Object service, Object mapper) throws Exception {
         Field field = ServiceImpl.class.getDeclaredField("baseMapper");
         field.setAccessible(true);
@@ -367,7 +626,8 @@ class BusinessApplicationServiceTest {
 
     private static Object defaultValue(String method, Object[] args) {
         return switch (method) {
-            case "countByApplicationCode", "countByApplicationId", "countActiveByApplicationId" -> 0L;
+            case "countByApplicationCode", "countByPortalSlug", "countByApplicationId",
+                    "countActiveByApplicationId", "countActiveDistributionRoles" -> 0L;
             case "insert", "updateById", "deleteById", "detachDisabledByApplicationId",
                     "logicDeleteByApplicationId", "insertBatch" -> 1;
             default -> null;

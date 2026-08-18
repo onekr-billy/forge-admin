@@ -1,6 +1,6 @@
 # 低代码应用门户产品化改造
 
-> status: draft
+> status: implemented-with-platform-deferrals-and-environment-acceptance-pending
 > created: 2026-08-17
 > complexity: 🔴🔴🔴 高（跨前后端 + 数据库 + 产品化体验）
 > change: `lowcode-app-portal-productization`
@@ -214,7 +214,7 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 应用管理员设置
 - 应用可见范围：全员 / 指定角色 / 指定部门 / 指定用户
-- 默认角色
+- 默认角色自动赋权依赖角色成员生命周期协议，本期不提供未生效的配置入口。
 
 #### 4.2.5 全球化
 
@@ -225,8 +225,8 @@ Forge 的低代码应用能力已具备完整骨架：
 #### 4.2.6 高级
 
 - 代码生成前缀
-- 运行时缓存策略
-- 版本保留策略
+- 运行时缓存策略（本期随发布快照保存；独立缓存执行器后续接入）
+- 版本保留策略（本期随发布快照保存；版本清理任务后续接入）
 
 ---
 
@@ -260,8 +260,8 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 添加到 Forge 工作台「我的应用」
 - 添加到指定角色首页
-- 发布到钉钉工作台（P3）
-- 发布到企业微信（P3）
+- 发布到钉钉工作台（P3，等待受管 Connector API；本期只保存待同步配置）
+- 发布到企业微信（P3，等待受管 Connector API）
 
 #### 4.3.5 历史版本
 
@@ -280,13 +280,13 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 输入业务场景描述，如「做一个销售线索跟进系统」。
 - 调用 AI 生成应用方案：建议对象、字段、页面、流程。
-- 用户确认后一键初始化应用。
+- 用户确认后一键初始化应用；流程建议只创建应用级最小设计草稿，不自动部署 Flowable/BPMN。
 - 初始化后可直接进入设计态，也可选择生成源码。
 
 #### 4.4.2 从模板创建
 
 - 官方模板：进销存、CRM、设备管理、项目管理等。
-- 组织私有模板：用户可将自有应用发布为模板。
+- 组织私有模板：待应用模板快照、发布权限和租户内发现协议建立后接入；本期显示明确空态。
 - 模板卡片展示：名称、图标、描述、已启用次数、立即启用按钮。
 - 模板支持「在线使用」和「生成源码」两种模式（Forge 独有）。
 
@@ -319,7 +319,7 @@ Forge 的低代码应用能力已具备完整骨架：
 #### 4.5.2 应用市场
 
 - 官方模板
-- 组织私有模板
+- 组织私有模板（本期明确空态，不伪造模板数据）
 - 推荐应用
 - 模板卡片展示：名称、图标、描述、已启用次数、启用按钮
 
@@ -375,6 +375,8 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 应用管理员自动拥有该应用所有页面权限。
 - 应用可见范围控制用户是否能在应用中心/工作台看到该应用。
+- 可见范围支持组织全员、指定角色、指定部门/组织和指定用户；应用管理员可见范围与页面权限均自动放行。
+- 应用中心“我有权限的”、Forge 工作台投放查询和正式门户运行时必须复用同一应用级授权判定；`systemMenuVisible=false` 不是页面权限放行条件。
 - 页面级权限继续沿用 `ai:business:application:{code}:page:{pageId}`。
 - 数据范围继续由 `DataScopeInterceptor` 控制。
 
@@ -399,7 +401,7 @@ Forge 的低代码应用能力已具备完整骨架：
 
 ### 6.2 索引变更
 
-- `ai_business_application` 新增唯一索引：`UNIQUE (tenant_id, portal_slug)`。
+- `ai_business_application` 新增有效行唯一索引：`UNIQUE (tenant_id, portal_slug, del_flag)`；应用表的 `del_flag` 已按项目逻辑删除规范使用 BIGINT 主键墓碑，删除后允许同 slug 重建。
 - 已有 `UNIQUE (tenant_id, application_code)` 保持不变。
 
 ### 6.3 Flyway 迁移脚本
@@ -428,10 +430,16 @@ Forge 的低代码应用能力已具备完整骨架：
 |---|---|---|---|
 | 按 slug 查询应用详情 | GET | `/ai/business/application/by-slug/{portalSlug}` | 门户访问时用 |
 | 校验 slug 可用性 | GET | `/ai/business/application/slug-available` | 应用设置时实时校验 |
+| 查询当前用户工作台应用 | GET | `/ai/business/application/workbench` | 只返回已发布、启用、已投放且当前用户有权访问的应用 |
 | 保存门户配置 | PUT | `/ai/business/application/{id}/portal-config` | 保存主题/水印/导航等 |
 | 保存 AI 助理配置 | PUT | `/ai/business/application/{id}/ai-assistant-config` | 绑定 AI 助理 |
 | 查询 AI 助理状态 | GET | `/ai/business/application/{id}/ai-assistant-status` | 发布页展示 |
-| 分发到工作台 | POST | `/ai/business/application/{id}/distribute/workbench` | 添加到我的应用/首页 |
+| 门户运行配置 | GET | `/ai/business/application/portal/{codeOrSlug}/runtime` | 读取当前用户过滤后的发布快照 |
+| 门户 AI 对话 | POST | `/ai/business/application/portal/{codeOrSlug}/assistant/chat` | 在发布页面与能力边界内调用智能体 |
+| 保存分发配置 | POST | `/ai/business/application/{id}/distribute/workbench` | 保存 Forge/钉钉受管分发配置，不代表外部已同步 |
+| AI 方案初始化 | POST | `/ai/business/application/{id}/initialize-ai` | 从既有生成方案创建对象和页面草稿 |
+| Excel 预览 | POST | `/ai/business/application/excel/preview` | 解析首 Sheet 表头与样例 |
+| Excel 初始化 | POST | `/ai/business/application/{id}/import-excel` | 创建对象、列表页和表单页草稿 |
 
 ### 7.2 改造后端接口
 
@@ -450,7 +458,11 @@ Forge 的低代码应用能力已具备完整骨架：
   - `saveBusinessApplicationPortalConfig(id, config)`
   - `saveBusinessApplicationAiAssistantConfig(id, config)`
   - `businessApplicationAiAssistantStatus(id)`
+  - `chatBusinessApplicationAssistant(codeOrSlug, data)`
   - `distributeBusinessApplicationToWorkbench(id, data)`
+  - `initializeBusinessApplicationAi(id, plan)`
+  - `previewBusinessApplicationExcel(file)`
+  - `importBusinessApplicationExcel(id, formData)`
 
 ---
 
@@ -470,7 +482,7 @@ Forge 的低代码应用能力已具备完整骨架：
 ### 8.2 前端影响
 
 - `forge-admin-ui/src/router/index.js`：新增门户路由、设置页、发布页路由。
-- `forge-admin-ui/src/layouts/`：新增 `app-portal.vue` 布局。
+- `forge-admin-ui/src/layouts/app-portal/`：新增独立门户布局。
 - `forge-admin-ui/src/views/app-center/`：
   - 新增 `application-portal.vue`
   - 新增 `application-settings.[applicationCode].vue`
@@ -599,22 +611,43 @@ Forge 的低代码应用能力已具备完整骨架：
 
 ---
 
-## 13. 待澄清
+## 13. 技术决策落地
 
-1. 是否需要在 P0 就支持自定义域名？建议 P3 再考虑。
-2. AI 助理是否复用现有 `forge-plugin-ai` 的助理实体，还是新建应用级助理？建议复用并新增绑定关系。
-3. 应用市场是否需要后台管理界面（模板上架/下架/审核）？建议 P2 先做组织私有模板，P3 做审核。
-4. 门户运行时是否支持移动端适配？建议 P2 做响应式，P3 做 H5 独立入口。
-5. 是否需要应用级别的操作日志/审计？建议 P2 接入 `@OperationLog`。
+1. 本轮不支持自定义域名；正式入口为 `/app/{applicationCodeOrSlug}`。
+2. AI 助理复用现有智能体编码，通过应用配置绑定，不新建重复的应用级智能体实体。
+3. 官方/推荐模板使用内置目录；仓库没有组织私有模板持久化协议，市场明确展示空态，不伪造私有模板数据。
+4. 移动端复用同一不可变发布快照和权限链路，通过响应式门户及 `?display=h5` 链接/二维码交付，不另建分叉运行时。
+5. 新增查询和变更接口沿用权限注解；可审计的后端变更接口使用 `@OperationLog`。AI 对话正文不写入普通业务日志。
+6. Excel 只解析首 Sheet，读取表头及最多 50 行样例，生成对象/页面草稿；不导入业务行、不自动执行 DDL。
+7. 钉钉只保存受管连接器标识和 `PENDING_EXTERNAL_SYNC` 状态，待仓库提供真实 Connector API 后再执行外部同步。
+8. 全球化配置在门户运行态用于根语言标识和水印时区/日期格式；高级缓存策略与版本保留数量先作为发布快照配置保存，待缓存/清理基础设施协议接入后再执行消费。
+9. 默认角色输入项在角色成员自动赋权协议落地前移除，避免保存一个不会生效的角色配置。
+10. AI 流程建议只创建应用级业务流程设计草稿；审批节点、节点表单、BPMN 绑定与发布继续由真实流程设计器维护。
 
 ---
 
 ## 14. 执行日志
 
-待任务执行后记录到 `execution-log.md`。
+完整命令、结果、警告和跳过项见 `execution-log.md`。本轮已完成：
+
+- Java 17 下 Generator 与 Admin reactor 编译。
+- 初始验证包含 92 个业务应用回归测试和前端 6 个单测；最终 Fix 增量执行 100 个业务应用测试和前端 11 个单测，均通过；另完成定向 ESLint 和 Vite 生产构建。
+- Flyway 静态检查与工作区空白检查。
+
+真实 MySQL/Flyway、服务启动、curl、Playwright/真机及受管钉钉 Connector 同步未执行。
 
 ---
 
 ## 15. 审查结论
 
-待 Review 后填写。
+结论：**阶段一 Spec Compliance：PASS（按第 13 章本期边界）；阶段二 Code Quality：PASS。**
+
+Review 阻塞项已完成闭环：
+
+- Forge 工作台现在只把设计态分发开关作为候选来源，展示名称、slug、应用可见范围、页面 RBAC 和首页均复用不可变发布快照；设计态修改不会提前影响正式入口。
+- 角色 ID 以前后端字符串/Long 传递，后端校验租户、启用状态、门户基础权限和当前用户可管理角色范围。
+- `/by-slug/{portalSlug}` 与正式门户统一按当前发布快照解析，不再返回可变设计态元数据。
+- AI 方案新增流程建议模型，确认初始化后只创建可编辑的应用级最小流程草稿；未自动部署 Flowable 或写入不完整 BPMN。
+- 未有真实协议的组织私有模板、AI 业务数据读写、钉钉/企微 Connector、缓存执行器和版本清理任务已明确延期；默认角色未生效输入项已移除，不再把配置态描述为完成能力。
+
+代码级验证均通过，证据见 `execution-log.md`。真实 MySQL/Flyway、服务 API、Playwright/移动真机和外部 Connector 仍属于环境/平台验收项，不计入本次代码级 PASS。

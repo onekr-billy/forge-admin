@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { resolveApplicationCreateResult } from '../components/application-create-result'
 
@@ -21,5 +22,12 @@ describe('application create result', () => {
 
   it('fails clearly when neither the server nor caller provides a code', () => {
     expect(() => resolveApplicationCreateResult('101')).toThrow('未返回应用编码')
+  })
+
+  it('shows confirmed AI process suggestions without claiming automatic deployment', () => {
+    const source = readFileSync('src/views/app-center/components/create/AppCreateAi.vue', 'utf8')
+
+    expect(source).toContain('plan.value?.processSuggestions || []')
+    expect(source).toContain('个流程草稿')
   })
 })

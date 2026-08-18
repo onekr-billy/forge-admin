@@ -4128,3 +4128,11 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 `forge-app-server` 和独立 `forge-flow-server` 都会扫描 generator 插件。若 generator Service 新增构造器强制依赖，而只在 Admin 服务实现适配器，App 和 Flow 会在启动期同时报缺少 Bean；只验证 Admin 编译或启动发现不了这个问题。
 
 处理原则：新增 generator 跨模块适配器时，必须检查 Admin、App、Flow 三个聚合服务。真实管理能力由 Admin 实现；App/Flow 只需完成运行态装配时，应提供服务内失败关闭桥接，误调用时明确拒绝，不能用空结果或无操作保存伪装成功。典型接口包括 `MenuRegisterAdapter`、`AiClientAdapter` 和 `ApplicationPermissionAdapter`。
+
+## 179. 逻辑删除业务键回填去重必须与最终唯一索引使用相同维度
+
+**发现日期**：2026-08-18
+
+数值主键墓碑逻辑删除使用 `UNIQUE (tenant_id, 业务键, del_flag)` 时，迁移回填新业务键后若只按 `(tenant_id, 业务键)` 去重，会把“已删除历史 + 当前有效记录”误判为冲突。若历史行 ID 更小，去重脚本甚至会保留历史值、改写当前有效行，导致正式访问地址等业务标识意外变化。
+
+处理原则：存量冲突检测、`GROUP BY`、回写 JOIN 和最终唯一索引必须使用完全相同的键维度；主键墓碑模式下包含 `del_flag`。有效行之间的真实冲突仍需确定性改名，删除历史与有效行可以保留相同业务键。迁移静态审查应同时核对去重维度、JOIN 条件和索引列顺序。

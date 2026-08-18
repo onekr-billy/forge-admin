@@ -29,6 +29,8 @@ public class LowcodeAiAppGenerateResult {
 
     private List<LowcodeAppDraftDTO> apps = new ArrayList<>();
 
+    private List<LowcodeProcessSuggestionDTO> processSuggestions = new ArrayList<>();
+
     private LowcodeModelSchema modelSchema;
 
     private LowcodePageSchema pageSchema;

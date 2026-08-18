@@ -129,10 +129,33 @@ export const manualRoutes = [
     meta: { title: '运行应用', layout: 'empty', skipTab: true, preserveOnQuery: true },
   },
   {
+    name: 'ApplicationPortal',
+    path: '/app/:applicationCodeOrSlug',
+    component: () => import('@/views/app-center/application-portal.vue'),
+    meta: {
+      title: '应用门户',
+      layout: 'app-portal',
+      skipTab: true,
+      preserveOnQuery: true,
+    },
+  },
+  {
     name: 'BusinessApplicationWorkspace',
     path: '/app-center/application/:applicationCode',
     component: () => import('@/views/app-center/application.[applicationCode].vue'),
     meta: { title: '应用工作台', skipTab: true, preserveOnQuery: true },
+  },
+  {
+    name: 'BusinessApplicationSettings',
+    path: '/app-center/application/:applicationCode/settings',
+    component: () => import('@/views/app-center/application-settings.[applicationCode].vue'),
+    meta: { title: '应用设置', skipTab: true, preserveOnQuery: true },
+  },
+  {
+    name: 'BusinessApplicationPublish',
+    path: '/app-center/application/:applicationCode/publish',
+    component: () => import('@/views/app-center/application-publish.[applicationCode].vue'),
+    meta: { title: '应用发布', skipTab: true, preserveOnQuery: true },
   },
   {
     name: 'BusinessProcessDesigner',

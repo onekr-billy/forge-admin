@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessAppVO;
@@ -37,6 +38,28 @@ public class BusinessApplicationRuntimeService {
         return runtime(current);
     }
 
+    public BusinessApplicationRuntimeVO runtimeByCodeOrSlug(String identifier) {
+        return runtime(applicationService.detailByPublishedCodeOrSlug(identifier));
+    }
+
+    /**
+     * 使用正式门户的同一发布快照、应用可见范围和页面权限链路构建工作台应用。
+     */
+    public List<BusinessApplicationVO> workbenchApplications() {
+        List<BusinessApplicationVO> result = new ArrayList<>();
+        for (BusinessApplicationVO candidate : applicationService.workbenchDistributionCandidates()) {
+            try {
+                BusinessApplicationRuntimeVO runtime = runtime(candidate);
+                if (hasReachableHomePage(runtime)) {
+                    result.add(runtime.getApplication());
+                }
+            } catch (BusinessException ignored) {
+                // 单个应用无权访问、快照失效或没有可达页面时不影响其它工作台入口。
+            }
+        }
+        return List.copyOf(result);
+    }
+
     /**
      * 按应用主键读取正式运行快照，供带应用入口上下文的低代码运行配置叠加使用。
      */
@@ -55,10 +78,15 @@ public class BusinessApplicationRuntimeService {
                 current.getId(), current.getLastPublishVersion());
         Map<String, Object> snapshot = snapshotService.parse(version.getSnapshotJson());
         Map<String, Object> applicationSnapshot = map(snapshot.get("application"));
+        if (!applicationService.canCurrentUserAccessPortal(JSON.toJSONString(
+                applicationSnapshot.get("portalConfig")))) {
+            throw new BusinessException("暂无访问该应用门户的权限");
+        }
         Map<String, Object> options = map(applicationSnapshot.get("options"));
         options.put("inAppBuilder", filterBuilder(
                 map(options.get("inAppBuilder")), current.getApplicationCode(),
-                resolvePermissionCodes(), resolveAdminAccess()));
+                resolvePermissionCodes(), applicationService.currentUserIsApplicationAdministrator(
+                        JSON.toJSONString(applicationSnapshot.get("portalConfig")))));
         applicationSnapshot.put("options", options);
 
         BusinessApplicationRuntimeVO runtime = new BusinessApplicationRuntimeVO();
@@ -165,7 +193,7 @@ public class BusinessApplicationRuntimeService {
                                   String applicationCode,
                                   Set<String> permissionCodes,
                                   boolean bypassRoleAccess) {
-        if (bypassRoleAccess || !systemMenuVisible(node)) {
+        if (bypassRoleAccess) {
             return true;
         }
         String nodeId = StringUtils.trimToNull(string(node.get("id")));
@@ -179,20 +207,15 @@ public class BusinessApplicationRuntimeService {
                 || permissionCodes.contains("**");
     }
 
-    private boolean systemMenuVisible(Map<String, Object> node) {
-        Object value = node.get("systemMenuVisible");
-        if (value == null) {
-            value = map(node.get("settings")).get("systemMenuVisible");
-        }
-        return Boolean.TRUE.equals(value);
-    }
-
     private BusinessApplicationVO toApplication(Map<String, Object> snapshot,
                                                 BusinessApplicationVO current,
                                                 Integer versionNo) {
         BusinessApplicationVO application = new BusinessApplicationVO();
         application.setId(longValue(snapshot.get("id")));
-        application.setApplicationCode(string(snapshot.get("applicationCode")));
+        application.setApplicationCode(StringUtils.defaultIfBlank(
+                string(snapshot.get("applicationCode")), current.getApplicationCode()));
+        application.setPortalSlug(StringUtils.defaultIfBlank(
+                string(snapshot.get("portalSlug")), application.getApplicationCode()));
         application.setApplicationName(string(snapshot.get("applicationName")));
         application.setSuiteCode(string(snapshot.get("suiteCode")));
         application.setSuiteName(current.getSuiteName());
@@ -203,7 +226,19 @@ public class BusinessApplicationRuntimeService {
                 string(snapshot.get("designStatus")), "PUBLISHED"));
         application.setLastPublishVersion(versionNo);
         application.setOptions(writeJson(snapshot.get("options")));
+        application.setPortalConfig(writeJson(snapshot.get("portalConfig")));
+        application.setAiAssistantConfig(writeJson(snapshot.get("aiAssistantConfig")));
         return application;
+    }
+
+    private boolean hasReachableHomePage(BusinessApplicationRuntimeVO runtime) {
+        if (runtime == null || runtime.getApplication() == null) {
+            return false;
+        }
+        Map<String, Object> options = readJsonObject(runtime.getApplication().getOptions());
+        Map<String, Object> builder = map(options.get("inAppBuilder"));
+        String homePageId = StringUtils.trimToNull(string(builder.get("homePageId")));
+        return homePageId != null && map(builder.get("pages")).containsKey(homePageId);
     }
 
     private BusinessApplicationObjectVO toObject(Map<String, Object> snapshot) {
@@ -231,14 +266,6 @@ public class BusinessApplicationRuntimeService {
         }
     }
 
-    private boolean resolveAdminAccess() {
-        try {
-            return SessionHelper.isAdmin();
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
     private String writeJson(Object value) {
         if (value == null) {
             return null;
@@ -247,6 +274,18 @@ public class BusinessApplicationRuntimeService {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
             throw new BusinessException("应用运行配置序列化失败");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readJsonObject(String value) {
+        if (StringUtils.isBlank(value)) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return map(objectMapper.readValue(value, Map.class));
+        } catch (Exception ignored) {
+            return new LinkedHashMap<>();
         }
     }
 
