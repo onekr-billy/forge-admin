@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.ai.agent.engine.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.ai.agent.domain.AiAgent;
 import com.mdframe.forge.plugin.ai.agent.engine.ReactAgent;
@@ -9,7 +10,11 @@ import com.mdframe.forge.plugin.ai.agent.engine.context.ContextTrimmer;
 import com.mdframe.forge.plugin.ai.agent.engine.event.AgentEvent;
 import com.mdframe.forge.plugin.ai.agent.engine.event.AgentEventType;
 import com.mdframe.forge.plugin.ai.agent.engine.persistence.AgentChatPersister;
+import com.mdframe.forge.plugin.ai.agent.engine.tool.AgentTool;
+import com.mdframe.forge.plugin.ai.agent.engine.tool.registry.AgentToolRegistry;
 import com.mdframe.forge.plugin.ai.agent.service.AiAgentService;
+import com.mdframe.forge.plugin.ai.agenttool.domain.AiAgentToolConfig;
+import com.mdframe.forge.plugin.ai.agenttool.service.AgentToolService;
 import com.mdframe.forge.plugin.ai.chat.domain.AiChatRecord;
 import com.mdframe.forge.plugin.ai.chat.service.AiChatRecordService;
 import com.mdframe.forge.plugin.ai.provider.adapter.AiModelRuntimeOptions;
@@ -28,7 +33,10 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 引擎服务。
@@ -48,6 +56,8 @@ public class AgentEngineService {
     private final AgentChatPersister chatPersister;
     private final AiChatRecordService recordService;
     private final ContextTrimmer contextTrimmer;
+    private final AgentToolService agentToolService;
+    private final AgentToolRegistry toolRegistry;
 
     /**
      * 流式执行 Agent 对话
@@ -137,7 +147,65 @@ public class AgentEngineService {
         ctx.setChatModel(createChatModel(agent));
         ctx.setAgent(agent);
 
+        // 解析本 Agent 运行时应向模型声明的工具：工具绑定表(enabled=1) + 知识库绑定兜底(rag_search)
+        ctx.setBoundTools(resolveBoundTools(agent));
+
         return ctx;
+    }
+
+    /**
+     * 解析 Agent 运行时应向模型声明的工具列表（已解析为 AgentTool，按 source:key 去重）。
+     * <p>来源：① 工具绑定表 {@code ai_agent_tool_config} 中 enabled='1' 的记录；
+     * ② 知识库绑定兜底——当 agent.knowledgeIds 非空且 ragMode!=none 时，自动补 builtin:rag_search
+     * （即便未在绑定表显式配置），保证绑了知识库就一定能检索。</p>
+     * <p>绑定表里配了但 registry 找不到的工具（如 source/key 拼错、或该工具未注册）会被跳过并告警，
+     * 不影响其余工具声明。</p>
+     */
+    private List<AgentTool> resolveBoundTools(AiAgent agent) {
+        Map<String, AgentTool> deduped = new LinkedHashMap<>();
+        // 1. 工具绑定表
+        List<AiAgentToolConfig> configs = agentToolService.listEnabledByAgentId(agent.getId());
+        if (configs != null) {
+            for (AiAgentToolConfig cfg : configs) {
+                AgentTool tool = toolRegistry.getTool(cfg.getToolSource(), cfg.getToolKey());
+                if (tool != null) {
+                    deduped.put(cfg.getToolSource() + ":" + cfg.getToolKey(), tool);
+                } else {
+                    log.warn("[AgentEngine] Agent[{}] 绑定的工具未注册，已跳过: source={}, key={}",
+                            agent.getId(), cfg.getToolSource(), cfg.getToolKey());
+                }
+            }
+        }
+        // 2. 知识库绑定兜底：自动补 rag_search
+        if (isRagEnabled(agent)) {
+            AgentTool rag = toolRegistry.getTool("builtin", "rag_search");
+            if (rag != null) {
+                deduped.putIfAbsent("builtin:rag_search", rag);
+            }
+        }
+        return new ArrayList<>(deduped.values());
+    }
+
+    /**
+     * 知识库检索是否启用：绑定了知识库且 ragMode 非 none。
+     */
+    private boolean isRagEnabled(AiAgent agent) {
+        String knowledgeIds = agent.getKnowledgeIds();
+        if (knowledgeIds == null || knowledgeIds.isBlank()) {
+            return false;
+        }
+        List<Long> ids;
+        try {
+            ids = JSON.parseArray(knowledgeIds, Long.class);
+        } catch (Exception e) {
+            log.warn("[AgentEngine] Agent[{}] knowledgeIds 解析失败: {}", agent.getId(), knowledgeIds);
+            return false;
+        }
+        if (ids == null || ids.isEmpty()) {
+            return false;
+        }
+        String ragMode = agent.getRagMode();
+        return ragMode == null || !"none".equalsIgnoreCase(ragMode);
     }
 
     /**

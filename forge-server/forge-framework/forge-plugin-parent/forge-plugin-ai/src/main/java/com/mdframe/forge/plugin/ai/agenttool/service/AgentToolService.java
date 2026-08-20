@@ -87,6 +87,17 @@ public class AgentToolService extends ServiceImpl<AiAgentToolConfigMapper, AiAge
     }
 
     /**
+     * 按 Agent 查询已启用(enabled='1')的工具绑定配置，供引擎运行时声明工具给模型。
+     * 已过滤逻辑删除与未启用项。
+     */
+    public List<AiAgentToolConfig> listEnabledByAgentId(Long agentId) {
+        if (agentId == null) {
+            return List.of();
+        }
+        return baseMapper.selectEnabledByAgentId(agentId);
+    }
+
+    /**
      * 批量保存工具权限
      */
     @Transactional(rollbackFor = Exception.class)

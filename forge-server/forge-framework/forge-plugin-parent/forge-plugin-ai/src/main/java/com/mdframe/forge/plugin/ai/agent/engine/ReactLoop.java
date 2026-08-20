@@ -506,28 +506,15 @@ public class ReactLoop {
     }
 
     /**
-     * 计算当前 Agent 需要向模型声明的工具列表。
-     * <p>当前策略（保守、最小爆炸半径）：仅当 Agent 绑定了知识库（knowledgeIds 非空且 ragMode != none）时，
-     * 声明内置 {@code rag_search}，使模型可自主决定何时检索知识库。其余内置工具（http/image/read_skill）
-     * 目前无 Agent 级启用信号，暂不自动声明，避免影响普通对话 Agent。</p>
+     * 计算当前 Agent 需向模型声明的工具列表。
+     * <p>工具来源已由 {@code AgentEngineService.buildContext} 解析注入到 {@link ReactContext#getBoundTools()}：
+     * 工具绑定表 {@code ai_agent_tool_config}(enabled=1) + 知识库绑定兜底(builtin:rag_search)。
+     * 这里直接取用，不再在循环内重复解析，职责单一。</p>
+     * <p>空列表表示本次不声明任何工具（普通对话 Agent），{@code callModel} 走无工具路径，行为与历史一致。</p>
      */
     private List<AgentTool> resolveAdvertisedTools(ReactContext ctx) {
-        List<AgentTool> tools = new ArrayList<>();
-        AiAgent agent = ctx.getAgent();
-        if (agent == null) {
-            return tools;
-        }
-        // 知识库绑定 → 声明 rag_search
-        List<Long> knowledgeIds = parseKnowledgeIds(agent.getKnowledgeIds());
-        boolean ragEnabled = !knowledgeIds.isEmpty()
-                && (agent.getRagMode() == null || !"none".equalsIgnoreCase(agent.getRagMode()));
-        if (ragEnabled) {
-            AgentTool rag = toolRegistry.getTool("builtin", "rag_search");
-            if (rag != null) {
-                tools.add(rag);
-            }
-        }
-        return tools;
+        List<AgentTool> bound = ctx.getBoundTools();
+        return bound == null ? Collections.emptyList() : bound;
     }
 
     /**
