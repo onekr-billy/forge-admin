@@ -10,6 +10,8 @@ import com.mdframe.forge.plugin.ai.knowledge.service.dto.KnowledgeSearchResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -64,19 +66,39 @@ public class RagSearchTool implements AgentTool {
                 return ToolResult.error("查询文本不能为空");
             }
 
-            KnowledgeSearchRequest request = new KnowledgeSearchRequest();
-            request.setQuery(query);
+            Integer topK = args.get("top_k") != null ? toInt(args.get("top_k")) : null;
 
+            // 目标知识库：优先模型显式传入的 knowledge_id，其次回退到 Agent 绑定的知识库（ToolContext 注入）
+            List<Long> targetIds = new ArrayList<>();
             if (args.get("knowledge_id") != null) {
-                request.setKnowledgeId(toLong(args.get("knowledge_id")));
+                targetIds.add(toLong(args.get("knowledge_id")));
+            } else if (context != null && context.getKnowledgeIds() != null && !context.getKnowledgeIds().isEmpty()) {
+                targetIds.addAll(context.getKnowledgeIds());
             }
 
-            if (args.get("top_k") != null) {
-                request.setTopK(toInt(args.get("top_k")));
+            List<KnowledgeSearchResult> results;
+            if (targetIds.isEmpty()) {
+                // 既未指定也无绑定：保持原行为（不限定知识库）
+                results = knowledgeService.search(buildRequest(query, null, topK));
+            } else if (targetIds.size() == 1) {
+                results = knowledgeService.search(buildRequest(query, targetIds.get(0), topK));
+            } else {
+                // 多个绑定知识库：逐库检索后按相似度降序合并，再按 topK 截断
+                results = new ArrayList<>();
+                for (Long kid : targetIds) {
+                    List<KnowledgeSearchResult> part = knowledgeService.search(buildRequest(query, kid, topK));
+                    if (part != null) {
+                        results.addAll(part);
+                    }
+                }
+                results.sort(Comparator.comparingDouble(KnowledgeSearchResult::getScore).reversed());
+                int limit = topK != null ? topK : 5;
+                if (results.size() > limit) {
+                    results = new ArrayList<>(results.subList(0, limit));
+                }
             }
 
-            List<KnowledgeSearchResult> results = knowledgeService.search(request);
-            if (results.isEmpty()) {
+            if (results == null || results.isEmpty()) {
                 return ToolResult.text("未找到相关文档。");
             }
 
@@ -92,6 +114,18 @@ public class RagSearchTool implements AgentTool {
         } catch (Exception e) {
             return ToolResult.error("RAG检索失败: " + e.getMessage());
         }
+    }
+
+    private KnowledgeSearchRequest buildRequest(String query, Long knowledgeId, Integer topK) {
+        KnowledgeSearchRequest request = new KnowledgeSearchRequest();
+        request.setQuery(query);
+        if (knowledgeId != null) {
+            request.setKnowledgeId(knowledgeId);
+        }
+        if (topK != null) {
+            request.setTopK(topK);
+        }
+        return request;
     }
 
     private Long toLong(Object val) {

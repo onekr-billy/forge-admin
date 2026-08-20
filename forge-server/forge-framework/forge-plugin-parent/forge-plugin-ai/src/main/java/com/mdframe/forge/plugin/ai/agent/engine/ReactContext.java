@@ -24,6 +24,8 @@ public class ReactContext {
     private String agentCode;
     private Long agentId;
     private Long tenantId;
+    /** 发起用户ID（请求线程注入，供埋点归属；loop 线程无 Sa-Token 上下文） */
+    private Long userId;
     private String sessionId;
     private int turnIndex;
     private int maxIters;
@@ -49,6 +51,11 @@ public class ReactContext {
      * 对话历史
      */
     private List<Message> history = new ArrayList<>();
+
+    /**
+     * 取消标识
+     */
+    private volatile boolean cancelled;
 
     /**
      * 当前轮次的工具调用和结果（用于构造下一轮消息）
