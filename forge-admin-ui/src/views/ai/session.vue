@@ -32,6 +32,29 @@
       </div>
     </div>
 
+    <div class="trend-card">
+      <div class="card-header">
+        <div class="card-title">
+          <i class="ai-icon:zap" />
+          <span>对话体验指标</span>
+          <span class="exp-subtitle">近 30 天助手回复</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="exp-metrics-grid">
+          <div v-for="m in experienceData" :key="m.label" class="exp-metric">
+            <div class="exp-metric-value" :style="{ color: m.color }">
+              {{ m.value }}
+            </div>
+            <div class="exp-metric-label">
+              {{ m.label }}
+            </div>
+          </div>
+        </div>
+        <div ref="expTrendChartRef" class="chart-container exp-chart" />
+      </div>
+    </div>
+
     <div class="session-table-card">
       <div class="card-header">
         <div class="card-title">
@@ -143,7 +166,7 @@ import hljs from 'highlight.js'
 import { marked } from 'marked'
 import { NButton, NEllipsis, NPopconfirm, NTag } from 'naive-ui'
 import { h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { sessionDelete, sessionMessages, sessionPage, sessionStatistics } from '@/api/ai'
+import { sessionDelete, sessionExperienceMetrics, sessionMessages, sessionPage, sessionStatistics } from '@/api/ai'
 import AuthImage from '@/components/common/AuthImage.vue'
 import { getEChartsTheme } from '@/utils/echarts-theme'
 
@@ -169,6 +192,29 @@ const statsData = ref([
 const trendChartRef = ref(null)
 const messageScrollbarRef = ref(null)
 let trendChart = null
+
+const experienceData = ref([
+  { label: '完成率', value: '-', color: '#10b981' },
+  { label: '平均首字延迟', value: '-', color: '#4242f7' },
+  { label: '平均总耗时', value: '-', color: '#8b5cf6' },
+  { label: '错误率', value: '-', color: '#ef4444' },
+  { label: '中断率', value: '-', color: '#f59e0b' },
+  { label: '平均 Token', value: '-', color: '#6366f1' },
+])
+const expTrendChartRef = ref(null)
+let expTrendChart = null
+
+function formatMs(ms) {
+  const v = Number(ms) || 0
+  if (v <= 0)
+    return '-'
+  return v < 1000 ? `${v}ms` : `${(v / 1000).toFixed(1)}s`
+}
+
+function formatPercent(rate) {
+  const v = Number(rate) || 0
+  return `${(v * 100).toFixed(1)}%`
+}
 
 const avatarGradients = [
   'linear-gradient(135deg, #4242F7 0%, #6366F1 100%)',
@@ -314,6 +360,23 @@ async function loadStatistics() {
   catch {}
 }
 
+async function loadExperienceMetrics() {
+  try {
+    const res = await sessionExperienceMetrics()
+    if (res.code === 200 && res.data) {
+      const d = res.data
+      experienceData.value[0].value = formatPercent(d.completionRate)
+      experienceData.value[1].value = formatMs(d.avgFirstTokenMs)
+      experienceData.value[2].value = formatMs(d.avgTotalMs)
+      experienceData.value[3].value = formatPercent(d.errorRate)
+      experienceData.value[4].value = formatPercent(d.abortRate)
+      experienceData.value[5].value = (d.avgTokenUsage ?? 0).toLocaleString()
+      initExpTrendChart(d.dailyTrend || [])
+    }
+  }
+  catch {}
+}
+
 async function loadSessionList() {
   loading.value = true
   try {
@@ -382,6 +445,7 @@ async function handleDeleteSession(sessionId) {
         closeDetail()
       loadSessionList()
       loadStatistics()
+      loadExperienceMetrics()
     }
   }
   catch {}
@@ -429,10 +493,45 @@ function initTrendChart(dailyTrend) {
 function handleResize() {
   if (trendChart)
     trendChart.resize()
+  if (expTrendChart)
+    expTrendChart.resize()
+}
+
+function initExpTrendChart(dailyTrend) {
+  if (!expTrendChartRef.value)
+    return
+  if (expTrendChart)
+    expTrendChart.dispose()
+  expTrendChart = echarts.init(expTrendChartRef.value)
+  const theme = getEChartsTheme()
+  const trend = dailyTrend || []
+  const days = trend.map(d => d.date ? d.date.substring(5) : '')
+  const firstToken = trend.map(d => d.avgFirstTokenMs ?? 0)
+  const totalMs = trend.map(d => d.avgTotalMs ?? 0)
+
+  expTrendChart.setOption({
+    ...theme,
+    tooltip: {
+      ...theme.tooltip,
+      trigger: 'axis',
+      valueFormatter: v => formatMs(v),
+    },
+    legend: { ...theme.legend, data: ['平均首字延迟', '平均总耗时'] },
+    grid: { left: 50, right: 50, bottom: 60, top: 60, containLabel: true },
+    xAxis: { ...theme.categoryAxis, type: 'category', data: days, boundaryGap: false },
+    yAxis: [
+      { ...theme.valueAxis, type: 'value', name: '毫秒', position: 'left' },
+    ],
+    series: [
+      { name: '平均首字延迟', type: 'line', smooth: true, showSymbol: false, data: firstToken, lineStyle: { width: 2 }, areaStyle: { opacity: 0.1 }, itemStyle: { color: theme.color[0] } },
+      { name: '平均总耗时', type: 'line', smooth: true, showSymbol: false, data: totalMs, lineStyle: { width: 2 }, areaStyle: { opacity: 0.1 }, itemStyle: { color: theme.color[3] || theme.color[1] } },
+    ],
+  })
 }
 
 onMounted(async () => {
   loadStatistics()
+  loadExperienceMetrics()
   loadSessionList()
   window.addEventListener('resize', handleResize)
 })
@@ -442,6 +541,10 @@ onBeforeUnmount(() => {
   if (trendChart) {
     trendChart.dispose()
     trendChart = null
+  }
+  if (expTrendChart) {
+    expTrendChart.dispose()
+    expTrendChart = null
   }
 })
 </script>
@@ -591,6 +694,57 @@ onBeforeUnmount(() => {
 .chart-container {
   height: 320px;
   width: 100%;
+}
+
+.exp-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: #94a3b8;
+  margin-left: 8px;
+}
+
+.exp-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.exp-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.exp-metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.exp-metric-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.exp-chart {
+  height: 280px;
+  margin-top: 8px;
+}
+
+.dark .exp-metric {
+  background: rgba(15, 23, 42, 0.4);
+  border-color: rgba(51, 65, 85, 0.5);
+}
+
+.dark .exp-metric-label {
+  color: #94a3b8;
 }
 
 .session-table {
@@ -848,6 +1002,10 @@ onBeforeUnmount(() => {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .exp-metrics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 @media (max-width: 768px) {
@@ -856,6 +1014,11 @@ onBeforeUnmount(() => {
   }
 
   .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .exp-metrics-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
   }

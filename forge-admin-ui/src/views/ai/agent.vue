@@ -693,6 +693,31 @@
             </template>
           </n-tab-pane>
 
+          <!-- 知识库 Tab -->
+          <n-tab-pane name="knowledge" tab="知识库">
+            <div class="modal-section">
+              <div class="tool-section-header">
+                <span class="tool-section-title">关联知识库 ({{ agentForm.knowledgeIds.length }})</span>
+              </div>
+              <p class="knowledge-tip">勾选的知识库会作为对话检索的默认来源，随「保存/发布」一起生效。</p>
+              <n-spin :show="knowledgeLoading">
+                <n-checkbox-group v-model:value="agentForm.knowledgeIds">
+                  <div class="skill-check-list">
+                    <div v-for="k in knowledgeOptions" :key="k.id" class="skill-check-item">
+                      <n-checkbox :value="Number(k.id)">
+                        <span class="skill-label">{{ k.knowledgeName }}</span>
+                        <n-tag v-if="k.description" size="tiny" :bordered="false">
+                          {{ k.description }}
+                        </n-tag>
+                      </n-checkbox>
+                    </div>
+                  </div>
+                </n-checkbox-group>
+                <n-empty v-if="!knowledgeOptions.length && !knowledgeLoading" description="暂无可用知识库" size="small" />
+              </n-spin>
+            </div>
+          </n-tab-pane>
+
           <!-- 推荐问题 Tab -->
           <n-tab-pane name="questions" tab="推荐问题">
             <div class="modal-section">
@@ -837,6 +862,7 @@ import {
   contextConfigDelete,
   contextConfigList,
   contextConfigUpdate,
+  knowledgePage,
   modelListByProvider,
   providerPage,
   routePolicyPage,
@@ -874,6 +900,9 @@ const allSkills = ref([])
 const boundSkillIds = ref([])
 const skillLoading = ref(false)
 const skillSaveLoading = ref(false)
+// 知识库绑定相关（knowledgeIds 直接存于 agentForm，随主表单保存）
+const knowledgeOptions = ref([])
+const knowledgeLoading = ref(false)
 const baseModalVisible = ref(false)
 const publishMenuVisible = ref(false)
 const baseSaveLoading = ref(false)
@@ -896,8 +925,6 @@ const pagination = reactive({ page: 1, pageSize: 12, itemCount: 0 })
 const filter = reactive({ keyword: '', status: 'all' })
 const baseMode = ref('create')
 const baseEditingAgent = ref(null)
-const reasoningDelimiter = '==================== 思考过程 ===================='
-const answerDelimiter = '==================== 完整回复 ===================='
 let chatAbortController = null
 let chatScrollFrame = null
 let activeChatStreamId = null
@@ -1077,6 +1104,8 @@ function createEmptyAgent() {
     temperature: 0.7,
     maxTokens: 4000,
     status: '1',
+    knowledgeIds: [],
+    ragMode: 'none',
     extraConfig: createDefaultExtraConfig(),
   }
 }
@@ -1104,6 +1133,8 @@ function resetAgentForm(agent = createEmptyAgent()) {
     temperature: Number(agent.temperature ?? 0.7),
     maxTokens: Number(agent.maxTokens ?? 4000),
     status: agent.status ?? '1',
+    knowledgeIds: parseKnowledgeIds(agent.knowledgeIds),
+    ragMode: agent.ragMode || 'none',
     extraConfig: parseExtraConfig(agent.extraConfig),
   })
 }
@@ -1133,11 +1164,29 @@ function parseExtraConfig(value) {
   }
 }
 
+// 知识库ID：后端存 JSON 数组字符串（如 "[1,2]"），表单用数字数组；兼容已是数组的情况
+function parseKnowledgeIds(value) {
+  if (Array.isArray(value)) {
+    return value.map(Number).filter(v => !Number.isNaN(v))
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const arr = JSON.parse(value)
+      return Array.isArray(arr) ? arr.map(Number).filter(v => !Number.isNaN(v)) : []
+    }
+    catch {
+      return []
+    }
+  }
+  return []
+}
+
 function serializeAgent(status) {
   const extraConfig = {
     ...agentForm.extraConfig,
     contextCount: contextConfigs.value.length,
   }
+  const knowledgeIds = parseKnowledgeIds(agentForm.knowledgeIds)
   return {
     id: agentForm.id,
     agentName: agentForm.agentName,
@@ -1151,6 +1200,8 @@ function serializeAgent(status) {
     temperature: modelParamEnabled.temperature ? toNullableNumber(agentForm.temperature) : null,
     maxTokens: modelParamEnabled.maxTokens ? toNullableInteger(agentForm.maxTokens) : null,
     status: status ?? agentForm.status,
+    knowledgeIds: JSON.stringify(knowledgeIds),
+    ragMode: knowledgeIds.length ? 'smart' : 'none',
     extraConfig: JSON.stringify(extraConfig),
   }
 }
@@ -1434,6 +1485,8 @@ function buildBaseAgentPayload(status = '1') {
     description: baseForm.description,
     providerId: providerList.value[0]?.id ? toIdString(providerList.value[0].id) : null,
     status,
+    knowledgeIds: null,
+    ragMode: 'none',
     extraConfig: JSON.stringify(createDefaultExtraConfig()),
   }
 }
@@ -1773,11 +1826,25 @@ async function saveSkillBindings() {
   finally { skillSaveLoading.value = false }
 }
 
+async function loadKnowledgeList() {
+  knowledgeLoading.value = true
+  try {
+    // 只取启用状态（status='0'）的知识库作为可选项
+    const res = await knowledgePage({ pageNum: 1, pageSize: 200, status: '0' })
+    knowledgeOptions.value = res.data?.records || []
+  }
+  catch {
+    knowledgeOptions.value = []
+  }
+  finally { knowledgeLoading.value = false }
+}
+
 // 打开工具与技能弹窗时加载数据
 watch(toolModalVisible, (visible) => {
   if (visible) {
     loadAgentTools()
     loadSkills()
+    loadKnowledgeList()
   }
 })
 
@@ -1877,8 +1944,9 @@ async function sendChatMessage() {
       temperature: modelParamEnabled.temperature ? toNullableNumber(agentForm.temperature) : null,
       maxTokens: modelParamEnabled.maxTokens ? toNullableInteger(agentForm.maxTokens) : null,
     },
-    (payload) => {
-      scheduleChunkFlush(payload)
+    (eventType, data) => {
+      // consumeEventStream 回调签名是 (eventType, data)；包成 { event, data } 交给结构化解析。
+      scheduleChunkFlush({ event: eventType, data })
     },
     (data) => {
       flushPendingChunks()
@@ -1908,65 +1976,50 @@ async function sendChatMessage() {
   )
 }
 
+// 消费新引擎（/ai/engine/stream）结构化事件，与主对话页 handleSSEEvent 同协议：
+// THINKING_BLOCK_DELTA→思考(reasoning)，TEXT_BLOCK_START/DELTA→正文(content)，其余更新状态或忽略。
+// payload 由发送处包成 { event, data }（data 已是 JSON.parse 后的对象，增量字段是 data.text）。
 function handleAgentSSEChunk(payload, assistantMessage, streamState) {
-  const event = typeof payload === 'string' ? 'chunk' : payload?.event
-  const data = typeof payload === 'string' ? { content: payload } : payload?.data || {}
+  const event = payload?.event || 'message'
+  const data = payload?.data || {}
 
-  if (event === 'progress') {
-    chatStatusText.value = data.message || '生成中'
-    return
-  }
-
-  const chunkContent = data.content || data.message || ''
-  if (!chunkContent) {
-    return
-  }
-
-  appendAgentChunk(assistantMessage, streamState, chunkContent)
-  chatStatusText.value = streamState.isReasoning ? '思考中' : '生成中'
-}
-
-function appendAgentChunk(assistantMessage, streamState, chunkContent) {
-  let remaining = chunkContent
-
-  while (remaining) {
-    const reasoningIndex = remaining.indexOf(reasoningDelimiter)
-    const answerIndex = remaining.indexOf(answerDelimiter)
-    const nextDelimiter = getNextDelimiter(reasoningIndex, answerIndex)
-
-    if (!nextDelimiter) {
-      appendAgentText(assistantMessage, streamState, remaining)
-      return
+  switch (event) {
+    case 'THINKING_BLOCK_DELTA': {
+      if (!streamState.isReasoning) {
+        streamState.isReasoning = true
+        streamState.reasoningStartTime = Date.now()
+        assistantMessage.isReasoning = true
+      }
+      assistantMessage.reasoning += data.text || ''
+      chatStatusText.value = '思考中'
+      break
     }
-
-    if (nextDelimiter.index > 0) {
-      appendAgentText(assistantMessage, streamState, remaining.slice(0, nextDelimiter.index))
-    }
-
-    if (nextDelimiter.type === 'reasoning') {
-      streamState.isReasoning = true
-      streamState.reasoningStartTime = Date.now()
-      assistantMessage.isReasoning = true
-      assistantMessage.reasoning = ''
-    }
-    else {
+    case 'TEXT_BLOCK_START':
       finishAgentReasoning(assistantMessage, streamState)
-    }
-
-    remaining = remaining.slice(nextDelimiter.index + nextDelimiter.text.length).replace(/^\n+/, '')
-  }
-}
-
-function appendAgentText(assistantMessage, streamState, text) {
-  if (!text) {
-    return
-  }
-
-  if (streamState.isReasoning) {
-    assistantMessage.reasoning += text
-  }
-  else {
-    assistantMessage.content += text
+      break
+    case 'TEXT_BLOCK_DELTA':
+      finishAgentReasoning(assistantMessage, streamState)
+      assistantMessage.content += data.text || ''
+      chatStatusText.value = '生成中'
+      break
+    case 'TOOL_CALL_START':
+      chatStatusText.value = data.tool ? `调用工具 ${data.tool}` : '调用工具'
+      break
+    case 'HINT_BLOCK':
+      if (data.hint)
+        window.$message.info(data.hint)
+      break
+    case 'AGENT_END':
+      finishAgentReasoning(assistantMessage, streamState)
+      break
+    case 'ERROR':
+    case 'error':
+      if (!assistantMessage.content && (data.message || data.error))
+        assistantMessage.content = `测试失败：${data.message || data.error}`
+      break
+    default:
+      // PERSIST_META / AGENT_START / MODEL_CALL_START / MODEL_CALL_END 等：预览无需处理
+      break
   }
 }
 
@@ -1981,17 +2034,6 @@ function finishAgentReasoning(assistantMessage, streamState) {
   if (streamState.reasoningStartTime) {
     assistantMessage.reasoningTime = Math.max(1, Math.round((Date.now() - streamState.reasoningStartTime) / 1000))
   }
-}
-
-function getNextDelimiter(reasoningIndex, answerIndex) {
-  const candidates = []
-  if (reasoningIndex > -1) {
-    candidates.push({ type: 'reasoning', index: reasoningIndex, text: reasoningDelimiter })
-  }
-  if (answerIndex > -1) {
-    candidates.push({ type: 'answer', index: answerIndex, text: answerDelimiter })
-  }
-  return candidates.sort((a, b) => a.index - b.index)[0] || null
 }
 
 function stopChat() {
@@ -3052,6 +3094,13 @@ onBeforeUnmount(() => {
 
 .modal-section {
   padding-top: 2px;
+}
+
+.knowledge-tip {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #94a3b8;
 }
 
 .context-modal-toolbar {

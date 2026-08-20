@@ -10,6 +10,8 @@
         <result property="sessionName" column="session_name"/>
         <result property="agentCode" column="agent_code"/>
         <result property="status" column="status"/>
+        <result property="pinned" column="pinned"/>
+        <result property="pinnedTime" column="pinned_time"/>
         <result property="messageCount" column="message_count"/>
         <result property="tokenUsage" column="token_usage"/>
         <result property="createTime" column="create_time"/>
@@ -18,7 +20,7 @@
 
     <select id="selectSessionPage" resultMap="sessionVOResultMap">
         SELECT s.id, s.user_id, u.real_name AS nick_name, u.avatar,
-               s.session_name, s.agent_code, s.status,
+               s.session_name, s.agent_code, s.status, s.pinned, s.pinned_time,
                COALESCE(r.message_count, 0) AS message_count,
                COALESCE(r.token_usage, 0) AS token_usage,
                s.create_time, s.update_time
@@ -27,6 +29,7 @@
         LEFT JOIN (
             SELECT session_id, COUNT(*) AS message_count, COALESCE(SUM(token_usage), 0) AS token_usage
             FROM ai_chat_record
+            WHERE del_flag = 0
             GROUP BY session_id
         ) r ON r.session_id = s.id
         <where>
@@ -47,16 +50,19 @@
             <if test="query.agentCode != null and query.agentCode != ''">
                 AND s.agent_code = #{query.agentCode}
             </if>
+            <if test="query.userId != null">
+                AND s.user_id = #{query.userId}
+            </if>
         </where>
-        ORDER BY s.update_time DESC
+        ORDER BY s.pinned DESC, s.pinned_time DESC, s.update_time DESC
     </select>
 
     <select id="selectStatistics" resultType="com.mdframe.forge.plugin.ai.session.vo.AiSessionStatisticsVO">
         SELECT
             (SELECT COUNT(*) FROM ai_chat_session WHERE status = '0' AND create_time &gt;= DATE_SUB(NOW(), INTERVAL 90 DAY)) AS totalSessions,
-            (SELECT COUNT(*) FROM ai_chat_record WHERE create_time &gt;= DATE_SUB(NOW(), INTERVAL 90 DAY)) AS totalMessages,
+            (SELECT COUNT(*) FROM ai_chat_record WHERE del_flag = 0 AND create_time &gt;= DATE_SUB(NOW(), INTERVAL 90 DAY)) AS totalMessages,
             (SELECT COUNT(*) FROM ai_chat_session WHERE status = '0' AND DATE(create_time) = CURDATE()) AS todaySessions,
-            (SELECT COALESCE(SUM(token_usage), 0) FROM ai_chat_record WHERE create_time &gt;= DATE_SUB(NOW(), INTERVAL 90 DAY)) AS totalTokenUsage
+            (SELECT COALESCE(SUM(token_usage), 0) FROM ai_chat_record WHERE del_flag = 0 AND create_time &gt;= DATE_SUB(NOW(), INTERVAL 90 DAY)) AS totalTokenUsage
     </select>
 
     <select id="selectDailyTrend" resultType="com.mdframe.forge.plugin.ai.session.vo.DailyTrendItem">
@@ -82,7 +88,52 @@
         LEFT JOIN (
             SELECT DATE(create_time) AS dt, COUNT(*) AS cnt
             FROM ai_chat_record
-            WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            WHERE del_flag = 0 AND create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            GROUP BY DATE(create_time)
+        ) r ON d.date = r.dt
+        ORDER BY d.date
+    </select>
+
+    <select id="selectExperienceMetrics" resultType="com.mdframe.forge.plugin.ai.session.vo.AiExperienceMetricsVO">
+        SELECT
+            COUNT(*) AS totalReplies,
+            COALESCE(SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END), 0) AS completedCount,
+            COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) AS errorCount,
+            COALESCE(SUM(CASE WHEN status = 'aborted' THEN 1 ELSE 0 END), 0) AS abortedCount,
+            COALESCE(ROUND(AVG(CASE WHEN first_token_ms IS NOT NULL THEN first_token_ms END)), 0) AS avgFirstTokenMs,
+            COALESCE(MAX(first_token_ms), 0) AS maxFirstTokenMs,
+            COALESCE(ROUND(AVG(CASE WHEN total_ms IS NOT NULL THEN total_ms END)), 0) AS avgTotalMs,
+            COALESCE(MAX(total_ms), 0) AS maxTotalMs,
+            COALESCE(ROUND(AVG(CASE WHEN token_usage IS NOT NULL AND token_usage &gt; 0 THEN token_usage END)), 0) AS avgTokenUsage
+        FROM ai_chat_record
+        WHERE del_flag = 0 AND role = 'assistant'
+          AND create_time &gt;= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    </select>
+
+    <select id="selectExperienceDailyTrend" resultType="com.mdframe.forge.plugin.ai.session.vo.ExperienceTrendItem">
+        SELECT
+            d.date,
+            COALESCE(r.cnt, 0) AS replyCount,
+            COALESCE(r.avg_first, 0) AS avgFirstTokenMs,
+            COALESCE(r.avg_total, 0) AS avgTotalMs,
+            COALESCE(r.err, 0) AS errorCount,
+            COALESCE(r.abt, 0) AS abortedCount
+        FROM (
+            SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n DAY), '%Y-%m-%d') AS date
+            FROM (SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
+                  UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9
+                  UNION SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13) nums
+        ) d
+        LEFT JOIN (
+            SELECT DATE(create_time) AS dt,
+                   COUNT(*) AS cnt,
+                   ROUND(AVG(CASE WHEN first_token_ms IS NOT NULL THEN first_token_ms END)) AS avg_first,
+                   ROUND(AVG(CASE WHEN total_ms IS NOT NULL THEN total_ms END)) AS avg_total,
+                   SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS err,
+                   SUM(CASE WHEN status = 'aborted' THEN 1 ELSE 0 END) AS abt
+            FROM ai_chat_record
+            WHERE del_flag = 0 AND role = 'assistant'
+              AND create_time &gt;= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
             GROUP BY DATE(create_time)
         ) r ON d.date = r.dt
         ORDER BY d.date

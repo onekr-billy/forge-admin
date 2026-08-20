@@ -13,4 +13,7 @@ public class AiSessionPageQuery extends PageQuery {
     private String endTime;
     private String status;
     private String agentCode;
+
+    /** 用户ID（用户侧分页按当前登录用户过滤；管理端不设则查全部） */
+    private Long userId;
 }
