@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationFormDataProvisionDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPageDesignDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationQueryDTO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationCreateVO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -94,6 +95,17 @@ class BusinessApplicationControllerTest {
         assertArrayEquals(new String[]{"/{id}/form-data/provision"},
                 provision.getAnnotation(PostMapping.class).value());
         assertPermission(provision, "ai:businessApplication:edit");
+    }
+
+    @Test
+    @DisplayName("page design is saved atomically inside the application edit boundary")
+    void pageDesignUsesApplicationEditPermission() throws NoSuchMethodException {
+        Method designPage = BusinessApplicationController.class.getDeclaredMethod(
+                "designPage", Long.class, BusinessApplicationPageDesignDTO.class);
+
+        assertArrayEquals(new String[]{"/{id}/design-page"},
+                designPage.getAnnotation(PostMapping.class).value());
+        assertPermission(designPage, "ai:businessApplication:edit");
     }
 
     @Test

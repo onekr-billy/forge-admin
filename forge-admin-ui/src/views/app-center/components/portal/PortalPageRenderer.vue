@@ -1,5 +1,5 @@
 <template>
-  <section class="portal-page-renderer">
+  <section class="portal-page-renderer" :class="{ 'is-fill': fillHost }">
     <iframe
       v-if="externalUrl"
       class="portal-external-frame"
@@ -7,11 +7,17 @@
       :title="node?.title || '外部页面'"
       sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
     />
-    <div v-else-if="blocks.length" class="portal-page-flow" :style="{ minHeight: `${pageHeight}px` }">
+    <div
+      v-else-if="blocks.length"
+      class="portal-page-flow"
+      :class="{ 'is-fill': fillHost }"
+      :style="fillHost ? undefined : { minHeight: `${pageHeight}px` }"
+    >
       <section
         v-for="(block, index) in blocks"
         :key="block.id || `${block.blockType}-${index}`"
         class="portal-page-block"
+        :class="{ 'is-fill': fillHost && blocks.length === 1 }"
         :style="resolveBlockShellStyle(block, index)"
       >
         <GridBlockRenderer
@@ -26,7 +32,7 @@
           :runtime-crud-loading-resolver="isRuntimeCrudLoading"
           :data-source-configured-resolver="isDataSourceConfigured"
           :selected="false"
-          readonly
+          :readonly="!configurable"
         />
       </section>
     </div>
@@ -52,7 +58,12 @@ const props = defineProps({
   page: { type: Object, default: null },
   objects: { type: Array, default: () => [] },
   entries: { type: Array, default: () => [] },
+  configurable: { type: Boolean, default: false },
+  designPreview: { type: Boolean, default: false },
+  fillHost: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['configure-block'])
 
 const runtimeCrudPropsByKey = ref({})
 const loadingKeys = ref(new Set())
@@ -153,13 +164,23 @@ function preloadRuntimeCrudProps(block) {
 
 async function loadRuntimeCrudProps(configKey, objectRef, key) {
   try {
-    const config = (await crudConfigRender(configKey, false)).data
+    let designPreview = props.designPreview
+    let config = null
+    try {
+      config = (await crudConfigRender(configKey, designPreview, { needTip: false })).data
+    }
+    catch (error) {
+      if (!designPreview)
+        throw error
+      designPreview = false
+      config = (await crudConfigRender(configKey, false, { needTip: false })).data
+    }
     if (!config || typeof config !== 'object')
       throw new Error('业务对象运行配置为空')
     runtimeCrudPropsByKey.value = {
       ...runtimeCrudPropsByKey.value,
       [key]: {
-        ...buildRuntimeCrudProps(config, { designPreview: false }),
+        ...buildRuntimeCrudProps(config, { designPreview }),
         title: config.title || objectRef.objectName || '',
       },
     }
@@ -203,6 +224,15 @@ function resolveBlockFields(block) {
 }
 
 function resolveBlockShellStyle(block, index) {
+  if (props.fillHost && blocks.value.length === 1) {
+    return {
+      position: 'relative',
+      inset: 'auto',
+      width: '100%',
+      height: '100%',
+      textAlign: block.props?.style?.textAlign || block.props?.textAlign || block.props?.align || 'left',
+    }
+  }
   const style = block.props?.style || {}
   const widthMode = style.widthMode || 'full'
   const heightMode = style.heightMode || 'fixed'
@@ -301,11 +331,33 @@ function readLength(value) {
   min-height: 100%;
 }
 
+.portal-page-renderer.is-fill {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
 .portal-page-flow {
   position: relative;
   width: 100%;
   min-width: 0;
   overflow: hidden;
+}
+
+.portal-page-flow.is-fill {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.portal-page-block.is-fill {
+  flex: 1;
+  min-height: 0;
 }
 
 .portal-page-block {

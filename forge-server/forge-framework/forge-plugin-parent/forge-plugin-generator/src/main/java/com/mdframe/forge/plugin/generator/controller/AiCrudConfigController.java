@@ -70,7 +70,7 @@ public class AiCrudConfigController {
             }
         }
         AiCrudConfigRenderVO renderConfig = crudConfigService.getRenderConfig(configKey, designPreview);
-        return RespInfo.success(runtimeConfigOverlayService.overlay(configKey, appId, renderConfig));
+        return RespInfo.success(runtimeConfigOverlayService.overlay(configKey, appId, renderConfig, designPreview));
     }
 
     @PostMapping

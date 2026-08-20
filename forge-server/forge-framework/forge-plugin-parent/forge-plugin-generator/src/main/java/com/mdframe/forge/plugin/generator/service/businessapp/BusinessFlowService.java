@@ -3023,7 +3023,31 @@ public class BusinessFlowService {
         }
         Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
         return TenantContextHolder.executeWithTenant(effectiveTenantId,
-                () -> startDocumentFlowInternal(dto, false, userId, userName, effectiveTenantId, false));
+                () -> startDocumentFlowInternal(dto, false, userId, userName, effectiveTenantId, false, false));
+    }
+
+    /**
+     * 应用级业务流程审批节点发起 Flowable。显式模型 Key 来自已发布/草稿画布，
+     * 业务对象运行配置允许尚未发布的工作台草稿。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessFlowRuntimeVO startFromBusinessProcess(String flowModelKey, String businessKey, String title,
+                                                          Long userId, String userName, Long tenantId, JSONObject variables) {
+        if (StringUtils.isBlank(flowModelKey)) {
+            throw new BusinessException("审批节点未配置已发布流程模型");
+        }
+        BusinessKeyParts parts = parseBusinessKey(businessKey);
+        BusinessFlowStartDTO dto = new BusinessFlowStartDTO();
+        dto.setObjectCode(parts.objectCode());
+        dto.setRecordId(parts.recordId());
+        dto.setFlowModelKey(flowModelKey);
+        dto.setTitle(title);
+        if (variables != null) {
+            dto.setVariables(new LinkedHashMap<>(variables));
+        }
+        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
+        return TenantContextHolder.executeWithTenant(effectiveTenantId,
+                () -> startDocumentFlowInternal(dto, false, userId, userName, effectiveTenantId, false, true));
     }
 
     /**
@@ -3123,6 +3147,17 @@ public class BusinessFlowService {
                                                             String starterUserName,
                                                             Long tenantId,
                                                             boolean stableBusinessKey) {
+        return startDocumentFlowInternal(dto, checkPermission, starterUserId, starterUserName,
+                tenantId, stableBusinessKey, false);
+    }
+
+    private BusinessFlowRuntimeVO startDocumentFlowInternal(BusinessFlowStartDTO dto,
+                                                            boolean checkPermission,
+                                                            Long starterUserId,
+                                                            String starterUserName,
+                                                            Long tenantId,
+                                                            boolean stableBusinessKey,
+                                                            boolean allowDraftRuntime) {
         if (dto == null) {
             throw new BusinessException("发起主流程参数不能为空");
         }
@@ -3136,12 +3171,14 @@ public class BusinessFlowService {
             throw new BusinessException("流程服务未配置，无法发起主流程");
         }
 
-        FlowStartContext startContext = resolveFlowStartContext(tenantId, dto.getObjectCode());
+        FlowStartContext startContext = resolveFlowStartContext(tenantId, dto.getObjectCode(), allowDraftRuntime);
         AiBusinessDocumentConfig documentConfig = startContext.documentConfig();
         AiCrudConfig runtimeConfig = startContext.runtimeConfig();
         String objectCode = startContext.objectCode();
         String configKey = startContext.configKey();
-        Map<String, Object> recordData = dynamicCrudService.selectById(configKey, dto.getRecordId());
+        Map<String, Object> recordData = allowDraftRuntime
+                ? dynamicCrudService.selectByIdAllowDraft(configKey, dto.getRecordId())
+                : dynamicCrudService.selectById(configKey, dto.getRecordId());
         if (recordData == null) {
             log.warn("[低代码流程启动] 业务记录查询为空: tenantId={}, objectCode={}, configKey={}, recordId={}, "
                             + "starterUserId={}, activeOrgId={}, checkPermission={}, stableBusinessKey={}",
@@ -3226,7 +3263,10 @@ public class BusinessFlowService {
         flowVariables.putIfAbsent("recordBusinessKey", businessKey);
         flowVariables.put("flowBusinessKey", flowBusinessKey);
 
-        String title = StringUtils.defaultIfBlank(dto.getTitle(), buildFlowTitle(bindingConfig, recordData, objectCode));
+        String title = applyTitleTemplate(
+                StringUtils.defaultIfBlank(dto.getTitle(), buildFlowTitle(bindingConfig, recordData, objectCode)),
+                recordData,
+                objectCode);
         Long userId = starterUserId != null ? starterUserId : resolveUserId();
         String userName = StringUtils.defaultIfBlank(starterUserName, resolveUsername());
         FlowResult<String> result = stableBusinessKey
@@ -3253,6 +3293,7 @@ public class BusinessFlowService {
         flowInstanceLinkMapper.insert(link);
 
         updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), "IN_PROCESS");
+        syncConfiguredStatusField(runtimeConfig, dto.getRecordId(), dto.getVariables(), "IN_PROCESS");
         return toRuntimeVO(link, "流程已发起");
     }
 
@@ -3366,6 +3407,7 @@ public class BusinessFlowService {
                 : dynamicCrudService.selectById(configKey, link.getRecordId());
         String result = normalizeCallbackResult(dto);
         updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), result);
+        syncConfiguredStatusField(runtimeConfig, link.getRecordId(), readJsonObject(link.getVariablesSnapshot()), result);
 
         link.setFlowStatus(result);
         link.setResult(result);
@@ -3389,17 +3431,26 @@ public class BusinessFlowService {
         }
     }
 
-    private String resolveStartConfigKey(AiBusinessDocumentConfig documentConfig, AiCrudConfig runtimeConfig) {
+    private String resolveStartConfigKey(AiBusinessDocumentConfig documentConfig,
+                                         AiCrudConfig runtimeConfig,
+                                         String fallbackConfigKey,
+                                         boolean allowDraftRuntime) {
         if (documentConfig != null) {
-            if (StringUtils.isBlank(documentConfig.getConfigKey())) {
-                throw new BusinessException("单据缺少发布配置，无法发起主流程");
+            if (StringUtils.isNotBlank(documentConfig.getConfigKey())) {
+                return documentConfig.getConfigKey();
             }
-            return documentConfig.getConfigKey();
+            if (allowDraftRuntime && StringUtils.isNotBlank(fallbackConfigKey)) {
+                return fallbackConfigKey;
+            }
+            throw new BusinessException("单据缺少发布配置，无法发起主流程");
         }
-        if (runtimeConfig == null || StringUtils.isBlank(runtimeConfig.getConfigKey())) {
-            throw new BusinessException("业务对象缺少已发布运行配置，无法发起主流程");
+        if (runtimeConfig != null && StringUtils.isNotBlank(runtimeConfig.getConfigKey())) {
+            return runtimeConfig.getConfigKey();
         }
-        return runtimeConfig.getConfigKey();
+        if (allowDraftRuntime && StringUtils.isNotBlank(fallbackConfigKey)) {
+            return fallbackConfigKey;
+        }
+        throw new BusinessException("业务对象缺少已发布运行配置，无法发起主流程");
     }
 
     private AiBusinessFlowInstanceLink findCallbackLink(Long tenantId, BusinessFlowCallbackDTO dto) {
@@ -3638,6 +3689,14 @@ public class BusinessFlowService {
                 tenantId != null ? tenantId : resolveTenantId(), objectCodeOrConfigKey);
     }
 
+    private AiCrudConfig resolveRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
+        if (StringUtils.isBlank(objectCodeOrConfigKey)) {
+            return null;
+        }
+        return crudConfigMapper.selectRuntimeByObjectCodeOrConfigKey(
+                tenantId != null ? tenantId : resolveTenantId(), objectCodeOrConfigKey);
+    }
+
     private String normalizeCallbackResult(BusinessFlowCallbackDTO dto) {
         String value = StringUtils.firstNonBlank(dto.getResult(), dto.getFlowStatus());
         if (StringUtils.isBlank(value)) {
@@ -3730,8 +3789,13 @@ public class BusinessFlowService {
     }
 
     private FlowStartContext resolveFlowStartContext(Long tenantId, String objectCodeOrConfigKey) {
-        BusinessRuntimeContext context = resolveBusinessRuntimeContext(tenantId, objectCodeOrConfigKey);
-        String configKey = resolveStartConfigKey(context.documentConfig(), context.runtimeConfig());
+        return resolveFlowStartContext(tenantId, objectCodeOrConfigKey, false);
+    }
+
+    private FlowStartContext resolveFlowStartContext(Long tenantId, String objectCodeOrConfigKey, boolean allowDraftRuntime) {
+        BusinessRuntimeContext context = resolveBusinessRuntimeContext(tenantId, objectCodeOrConfigKey, allowDraftRuntime);
+        String configKey = resolveStartConfigKey(
+                context.documentConfig(), context.runtimeConfig(), context.configKey(), allowDraftRuntime);
         return new FlowStartContext(
                 context.requestedObjectCode(),
                 context.objectCode(),
@@ -3749,6 +3813,11 @@ public class BusinessFlowService {
     }
 
     private BusinessRuntimeContext resolveBusinessRuntimeContext(Long tenantId, String objectCodeOrConfigKey) {
+        return resolveBusinessRuntimeContext(tenantId, objectCodeOrConfigKey, false);
+    }
+
+    private BusinessRuntimeContext resolveBusinessRuntimeContext(Long tenantId, String objectCodeOrConfigKey,
+                                                                 boolean allowDraftRuntime) {
         String requestedObjectCode = StringUtils.trimToNull(objectCodeOrConfigKey);
         if (requestedObjectCode == null) {
             return new BusinessRuntimeContext(null, null, null, null, null, null);
@@ -3770,6 +3839,13 @@ public class BusinessFlowService {
                     documentConfig == null ? null : documentConfig.getConfigKey(),
                     businessObject == null ? null : businessObject.getConfigKey(),
                     canonicalObjectCode));
+        }
+        if (runtimeConfig == null && allowDraftRuntime) {
+            runtimeConfig = resolveRuntimeConfig(tenantId, StringUtils.firstNonBlank(
+                    documentConfig == null ? null : documentConfig.getConfigKey(),
+                    businessObject == null ? null : businessObject.getConfigKey(),
+                    canonicalObjectCode,
+                    requestedObjectCode));
         }
         if (businessObject == null && !StringUtils.equals(canonicalObjectCode, requestedObjectCode)) {
             businessObject = resolveBusinessObject(tenantId, canonicalObjectCode, runtimeConfig, documentConfig);
@@ -3818,6 +3894,9 @@ public class BusinessFlowService {
         }
         if (object == null && StringUtils.isNotBlank(objectCodeOrConfigKey)) {
             object = businessObjectMapper.selectByConfigKey(effectiveTenantId, objectCodeOrConfigKey);
+        }
+        if (object == null && StringUtils.isNotBlank(objectCodeOrConfigKey)) {
+            object = businessObjectMapper.selectFirstByObjectCode(effectiveTenantId, objectCodeOrConfigKey);
         }
         return object;
     }
@@ -3942,14 +4021,54 @@ public class BusinessFlowService {
      */
     private String buildFlowTitle(JSONObject bindingConfig, Map<String, Object> recordData, String objectCode) {
         String titleTemplate = bindingConfig.getString("titleTemplate");
-        if (titleTemplate != null && !titleTemplate.isBlank() && recordData != null) {
-            // 兼容历史 ${fieldName} 与 Flyway 友好的 {fieldName} 模板。
-            for (Map.Entry<String, Object> entry : recordData.entrySet()) {
-                titleTemplate = replaceTemplateValue(titleTemplate, entry.getKey(), entry.getValue());
-            }
-            return titleTemplate;
+        return applyTitleTemplate(titleTemplate, recordData, objectCode);
+    }
+
+    private String applyTitleTemplate(String titleTemplate, Map<String, Object> recordData, String objectCode) {
+        if (StringUtils.isBlank(titleTemplate)) {
+            return StringUtils.defaultIfBlank(objectCode, "业务") + " 审批申请";
         }
-        return objectCode + " 审批申请";
+        String resolved = titleTemplate;
+        if (recordData != null) {
+            for (Map.Entry<String, Object> entry : recordData.entrySet()) {
+                resolved = replaceTemplateValue(resolved, entry.getKey(), entry.getValue());
+            }
+        }
+        return StringUtils.defaultIfBlank(StringUtils.trimToNull(resolved), objectCode + " 审批申请");
+    }
+
+    private void syncConfiguredStatusField(AiCrudConfig runtimeConfig,
+                                           Long recordId,
+                                           Map<String, Object> variables,
+                                           String statusKey) {
+        if (runtimeConfig == null || StringUtils.isBlank(runtimeConfig.getConfigKey()) || recordId == null) {
+            return;
+        }
+        String statusField = firstNonBlankText(
+                variables == null ? null : variables.get("statusField"),
+                variables == null ? null : variables.get("flowStatusField"));
+        if (StringUtils.isBlank(statusField)) {
+            return;
+        }
+        Map<String, Object> updateData = new LinkedHashMap<>();
+        updateData.put(statusField, statusKey);
+        try {
+            dynamicCrudService.updateInternalFieldsByIdAllowDraft(runtimeConfig.getConfigKey(), recordId, updateData);
+        } catch (Exception exception) {
+            log.warn("[业务流程状态] 回写 {}={} 失败: {}", statusField, statusKey, exception.getMessage());
+        }
+    }
+
+    private String firstNonBlankText(Object... values) {
+        if (values == null) {
+            return "";
+        }
+        for (Object value : values) {
+            if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
+                return String.valueOf(value).trim();
+            }
+        }
+        return "";
     }
 
     private String resolveBusinessSummary(BusinessObjectVO object,

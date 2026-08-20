@@ -804,6 +804,7 @@ import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch
 import { useRoute, useRouter } from 'vue-router'
 import { crudConfigRender, customQueryExecute } from '@/api/ai'
 import { executeBusinessAction } from '@/api/business-app'
+import { startBusinessProcess } from '@/api/business-process'
 import { previewFormula } from '@/api/formula'
 import AuthImage from '@/components/common/AuthImage.vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
@@ -1271,24 +1272,50 @@ function hasRuntimePermission(permissionCode = '') {
 }
 
 function matchDisplayCondition(expression = '', row = {}) {
+  if (expression && typeof expression === 'object' && !Array.isArray(expression)) {
+    const rules = Array.isArray(expression.rules) ? expression.rules : []
+    const rule = rules[0]
+    if (!rule?.field)
+      return true
+    const actual = resolveConditionValue(row, rule.field)
+    const operator = String(rule.operator || 'EQ').toUpperCase()
+    if (operator === 'NOT_EMPTY')
+      return actual !== undefined && actual !== null && String(actual).trim() !== ''
+    if (operator === 'IN') {
+      const expectedValues = String(rule.value ?? '').split(',').map(item => item.trim()).filter(Boolean)
+      return expectedValues.some(item => valuesEqual(actual, item))
+    }
+    const matched = valuesEqual(actual, rule.value)
+    return operator === 'NE' ? !matched : matched
+  }
   const text = String(expression || '').trim()
-  if (!text)
+  if (!text || text === '[object Object]')
     return true
   const lowerText = text.toLowerCase()
   const inIndex = lowerText.indexOf(' in ')
   if (inIndex > 0) {
     const actual = resolveConditionValue(row, text.slice(0, inIndex).trim())
     const expectedValues = text.slice(inIndex + 4).split(',').map(item => item.trim()).filter(Boolean)
-    return expectedValues.includes(String(actual ?? ''))
+    return expectedValues.some(item => valuesEqual(actual, item))
   }
   const operator = text.includes('!=') ? '!=' : text.includes('==') ? '==' : text.includes('=') ? '=' : ''
   if (operator) {
     const [fieldName, ...expectedParts] = text.split(operator)
-    const actual = String(resolveConditionValue(row, fieldName.trim()) ?? '')
+    const actual = resolveConditionValue(row, fieldName.trim())
     const expected = stripConditionQuote(expectedParts.join(operator))
-    return operator === '!=' ? actual !== expected : actual === expected
+    return operator === '!=' ? !valuesEqual(actual, expected) : valuesEqual(actual, expected)
   }
   return true
+}
+
+function valuesEqual(actual, expected) {
+  const left = actual === undefined || actual === null ? '' : String(actual).trim()
+  const right = expected === undefined || expected === null ? '' : String(expected).trim()
+  if (left === right)
+    return true
+  const leftNumber = Number(left)
+  const rightNumber = Number(right)
+  return left !== '' && right !== '' && Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber === rightNumber
 }
 
 function resolveConditionValue(row = {}, path = '') {
@@ -1332,6 +1359,10 @@ async function handleConfiguredAction(action, row) {
   const normalizedActionType = String(actionType).toUpperCase()
   if (actionType === 'START_FLOW' || action.key === 'START_FLOW') {
     await startFlowAction(action, row)
+    return
+  }
+  if (normalizedActionType === 'START_PROCESS' || String(action.key || '').startsWith('startProcess:')) {
+    await startProcessAction(action, row)
     return
   }
   emit('custom-action', { action, row })
@@ -1463,6 +1494,49 @@ function handleConfiguredActionSuccess(action = {}) {
     loadList()
   else if (action.successBehavior === 'goBack')
     router.back()
+}
+
+async function startProcessAction(action, row) {
+  const applicationCode = firstNonBlankText(action.applicationCode, action.props?.applicationCode)
+  const processCode = firstNonBlankText(action.processCode, action.props?.processCode)
+  const objectCode = resolveRuntimeObjectCode(action, row)
+  const recordId = action.recordId || resolveRowKeyValue(row)
+  if (!applicationCode || !processCode) {
+    window.$message.warning('缺少应用或流程编码，无法启动业务流程')
+    return
+  }
+  if (!recordId) {
+    window.$message.warning('缺少业务记录ID，无法启动业务流程')
+    return
+  }
+  const loadingKey = getActionLoadingKey(action, row)
+  if (loadingKey && actionLoadingKeys.value.has(loadingKey)) {
+    window.$message.info('业务流程正在启动，请稍候')
+    return
+  }
+  const confirmed = await confirmConfiguredAction(
+    resolveActionText(action.confirmText || `确定要启动“${action.label || processCode}”吗？`, row),
+    { title: action.label || '启动业务流程', positiveText: '启动' },
+  )
+  if (!confirmed)
+    return
+  setActionLoading(loadingKey, true)
+  flowStartPageLoading.value = true
+  try {
+    await startBusinessProcess(applicationCode, processCode, {
+      recordId: String(recordId),
+      objectCode: objectCode || undefined,
+    })
+    window.$message.success('业务流程已启动')
+    await loadList()
+  }
+  catch (error) {
+    window.$message.error(error.message || '启动业务流程失败')
+  }
+  finally {
+    flowStartPageLoading.value = false
+    setActionLoading(loadingKey, false)
+  }
 }
 
 async function startFlowAction(action, row) {

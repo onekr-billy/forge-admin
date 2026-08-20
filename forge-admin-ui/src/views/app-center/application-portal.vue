@@ -1,5 +1,5 @@
 <template>
-  <div class="application-portal" :lang="portalLanguage" :class="[`navigation-${navigationStyle}`, { 'is-collapsed': navigationCollapsed }]" :style="portalStyle">
+  <div class="application-portal" :lang="portalLanguage" :class="[`navigation-${navigationStyle}`, { 'is-collapsed': navigationCollapsed, 'is-h5': isMobileDisplay }]" :style="portalStyle">
     <n-spin :show="loading" class="portal-loading-host">
       <PortalEmptyState
         v-if="!loading && loadState"
@@ -155,6 +155,7 @@ const navigationCollapsed = ref(false)
 const assistantVisible = ref(false)
 const runtime = reactive({ objects: [], entries: [], versionNo: null })
 
+const isMobileDisplay = computed(() => route.meta.display === 'h5' || String(route.query.display || '') === 'h5')
 const portalConfig = computed(() => normalizePortalConfig(application.value?.portalConfig))
 const portalLanguage = computed(() => portalConfig.value.globalization.enabled
   ? portalConfig.value.globalization.defaultLanguage
@@ -369,6 +370,34 @@ function resolveErrorMessage(error) {
 .portal-watermark.is-full {
   position: fixed;
   z-index: 1001;
+}
+
+.application-portal.is-h5 .portal-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0 12px;
+}
+
+.application-portal.is-h5 .portal-header > :deep(.portal-navigation),
+.application-portal.is-h5 .portal-search {
+  display: none;
+}
+
+.application-portal.is-h5 .portal-shell {
+  flex-direction: column;
+}
+
+.application-portal.is-h5 .portal-mobile-navigation {
+  position: sticky;
+  z-index: 21;
+  top: 56px;
+  display: block;
+  overflow: hidden;
+  border-bottom: 1px solid #e5e6eb;
+  background: var(--portal-surface);
+}
+
+.application-portal.is-h5 .portal-sidebar {
+  display: none;
 }
 
 @media (max-width: 900px) {

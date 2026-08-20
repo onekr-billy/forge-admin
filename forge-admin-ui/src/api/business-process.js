@@ -58,3 +58,27 @@ export function updateBusinessProcessStatus(id, status) {
 export function deleteBusinessProcess(id) {
   return request.delete(`/ai/business/process/${id}`, ENCRYPTED_REQUEST)
 }
+
+export function startBusinessProcess(applicationCode, processCode, data) {
+  return request.post(
+    `/ai/business/process/runtime/${encodeURIComponent(applicationCode)}/${encodeURIComponent(processCode)}/start`,
+    data,
+    ENCRYPTED_REQUEST,
+  )
+}
+
+export function businessProcessRunPage(params) {
+  return request.get('/ai/business/process/run/page', encryptedParams(params))
+}
+
+export function businessProcessRunDetail(id) {
+  return request.get(`/ai/business/process/run/${id}`, ENCRYPTED_REQUEST)
+}
+
+export function retryBusinessProcessRun(id) {
+  return request.post(`/ai/business/process/run/${id}/retry`, null, ENCRYPTED_REQUEST)
+}
+
+export function cancelBusinessProcessRun(id) {
+  return request.post(`/ai/business/process/run/${id}/cancel`, null, ENCRYPTED_REQUEST)
+}

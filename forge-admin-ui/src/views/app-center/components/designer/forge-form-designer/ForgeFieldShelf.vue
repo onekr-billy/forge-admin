@@ -186,6 +186,7 @@ import {
 import { computed, ref } from 'vue'
 import { isReadonlySystemField } from '@/components/lowcode-builder/page/page-schema'
 import { pageWidgetCatalog } from '@/components/lowcode-builder/shared/page-widget-schema'
+import { FIELD_COMPONENT_PALETTE_GROUPS } from '../form-first/fieldComponentCatalog'
 import { clearDesignerDragPreview, clearDesignerDragSource, clearDesignerDropKey, setDesignerDragPreview } from './designerDragState'
 
 const props = defineProps({
@@ -209,56 +210,48 @@ const keyword = ref('')
 const activeShelfTab = ref('components')
 const activeTab = ref('unused')
 const draggingKey = ref('')
-const fieldTemplateGroups = [
-  {
-    title: '输入',
-    items: [
-      { componentKey: 'input', label: '输入框', icon: TextOutline },
-      { componentKey: 'barcodeScanner', label: '扫码输入', icon: StatsChartOutline },
-      { componentKey: 'textarea', label: '多行文本', icon: DocumentTextOutline },
-      { componentKey: 'number', label: '数字', icon: CalculatorOutline },
-      { componentKey: 'money', label: '金额', icon: CashOutline },
-      { componentKey: 'slider', label: '滑块', icon: OptionsOutline },
-      { componentKey: 'rate', label: '评分', icon: StarOutline },
-      { componentKey: 'color', label: '颜色选择', icon: ColorPaletteOutline },
-    ],
-  },
-  {
-    title: '选择',
-    items: [
-      { componentKey: 'select', label: '静态下拉', icon: ListOutline },
-      { componentKey: 'dictSelect', label: '字典下拉', icon: PricetagOutline },
-      { componentKey: 'radio', label: '单选', icon: CheckboxOutline },
-      { componentKey: 'radioButton', label: '按钮单选', icon: CheckboxOutline },
-      { componentKey: 'checkbox', label: '多选', icon: CheckboxOutline },
-      { componentKey: 'transfer', label: '穿梭框', icon: SwapHorizontalOutline },
-      { componentKey: 'cascader', label: '级联选择', icon: ChevronDownCircleOutline },
-      { componentKey: 'treeSelect', label: '树形选择', icon: GridOutline },
-      { componentKey: 'customSelect', label: '远程选择', icon: CloudOutline },
-      { componentKey: 'date', label: '日期', icon: CalendarOutline },
-      { componentKey: 'datetime', label: '日期时间', icon: TimeOutline },
-      { componentKey: 'daterange', label: '日期范围', icon: CalendarOutline },
-      { componentKey: 'datetimerange', label: '日期时间范围', icon: TimeOutline },
-      { componentKey: 'month', label: '月份', icon: CalendarOutline },
-      { componentKey: 'year', label: '年份', icon: CalendarOutline },
-      { componentKey: 'timerange', label: '时间范围', icon: TimerOutline },
-      { componentKey: 'switch', label: '开关', icon: ToggleOutline },
-    ],
-  },
-  {
-    title: '业务',
-    items: [
-      { componentKey: 'userSelect', label: '人员选择', icon: PersonOutline },
-      { componentKey: 'orgTreeSelect', label: '部门选择', icon: BusinessOutline },
-      { componentKey: 'regionTreeSelect', label: '行政区划', icon: LocationOutline },
-      { componentKey: 'objectReference', label: '对象引用', icon: BrowsersOutline },
-      { componentKey: 'recordSelector', label: '记录选择器', icon: SearchOutline },
-      { componentKey: 'fileUpload', label: '文件上传', icon: CloudUploadOutline },
-      { componentKey: 'imageUpload', label: '图片上传', icon: ImageOutline },
-      { componentKey: 'text', label: '文本展示', icon: TextOutline },
-    ],
-  },
-]
+const fieldComponentIcons = {
+  barcodeScanner: StatsChartOutline,
+  cascader: ChevronDownCircleOutline,
+  checkbox: CheckboxOutline,
+  color: ColorPaletteOutline,
+  customSelect: CloudOutline,
+  date: CalendarOutline,
+  datetimerange: TimeOutline,
+  datetime: TimeOutline,
+  daterange: CalendarOutline,
+  dictSelect: PricetagOutline,
+  fileUpload: CloudUploadOutline,
+  imageUpload: ImageOutline,
+  input: TextOutline,
+  money: CashOutline,
+  month: CalendarOutline,
+  number: CalculatorOutline,
+  objectReference: BrowsersOutline,
+  orgTreeSelect: BusinessOutline,
+  radio: CheckboxOutline,
+  radioButton: CheckboxOutline,
+  rate: StarOutline,
+  recordSelector: SearchOutline,
+  regionTreeSelect: LocationOutline,
+  select: ListOutline,
+  slider: OptionsOutline,
+  switch: ToggleOutline,
+  text: TextOutline,
+  textarea: DocumentTextOutline,
+  timerange: TimerOutline,
+  transfer: SwapHorizontalOutline,
+  treeSelect: GridOutline,
+  userSelect: PersonOutline,
+  year: CalendarOutline,
+}
+const fieldTemplateGroups = FIELD_COMPONENT_PALETTE_GROUPS.map(group => ({
+  ...group,
+  items: group.items.map(item => ({
+    ...item,
+    icon: fieldComponentIcons[item.componentKey] || HomeOutline,
+  })),
+}))
 const widgetLayoutItems = pageWidgetCatalog
   .filter(item => item.componentKey !== 'transfer')
   .map(item => ({

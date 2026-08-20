@@ -298,6 +298,7 @@ import { renameFormDesignerFieldRefs } from './components/designer/form-first/fi
 import { createDefaultFormDesignerSchema, normalizeMultiFormDesignerSchema } from './components/designer/form-first/formDesignerSchema'
 import { createDefaultViewSchema, renameViewSchemaFieldRefs, sanitizeViewSchemaFieldRefs } from './components/designer/form-first/viewSchema'
 import {
+  pickBusinessObjectIdentity,
   resolveDataModelTab,
   resolveStandaloneObjectDesignerSection,
 } from './components/designer/object-designer-navigation'
@@ -611,14 +612,10 @@ async function loadDesigner() {
 
 async function resolveBusinessObject() {
   const queryObjectId = props.embedded ? props.embeddedObjectId : route.query.objectId
-  if (props.embedded && queryObjectId)
-    return { id: queryObjectId }
-  const object = await findBusinessObjectByCode()
-  if (queryObjectId) {
-    const id = Array.isArray(queryObjectId) ? queryObjectId[0] : queryObjectId
-    return object?.id ? object : { id }
-  }
-  return object
+  const identity = pickBusinessObjectIdentity({ queryObjectId })
+  if (identity?.id)
+    return identity
+  return findBusinessObjectByCode()
 }
 
 async function findBusinessObjectByCode() {

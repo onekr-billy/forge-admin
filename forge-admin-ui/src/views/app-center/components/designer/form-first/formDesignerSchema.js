@@ -1,4 +1,5 @@
 import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
+import { FORM_FIELD_COMPONENT_KEYS as FIELD_COMPONENT_KEYS } from './fieldComponentCatalog'
 import {
   camelToSnake,
   generateFieldCode,
@@ -13,56 +14,6 @@ export {
   camelToSnake,
   generateFieldCode,
 }
-
-const FIELD_COMPONENT_KEYS = new Set([
-  'input',
-  'barcodeScanner',
-  'textarea',
-  'number',
-  'inputNumber',
-  'integer',
-  'money',
-  'date',
-  'datetime',
-  'daterange',
-  'datetimerange',
-  'month',
-  'year',
-  'time',
-  'timerange',
-  'switch',
-  'select',
-  'radio',
-  'radioButton',
-  'checkbox',
-  'transfer',
-  'slider',
-  'rate',
-  'color',
-  'dictSelect',
-  'cascader',
-  'treeSelect',
-  'regionTreeSelect',
-  'orgTreeSelect',
-  'orgSelect',
-  'departmentSelect',
-  'departmentTreeSelect',
-  'deptSelect',
-  'deptTreeSelect',
-  'elTreeSelect',
-  'orgName',
-  'deptName',
-  'userSelect',
-  'userPicker',
-  'userName',
-  'fileUpload',
-  'imageUpload',
-  'upload',
-  'objectReference',
-  'recordSelector',
-  'customSelect',
-  'text',
-])
 
 export const LAYOUT_COMPONENT_KEYS = new Set([
   'fcRow',
@@ -752,7 +703,12 @@ export function createComponentFromField(field = {}, index = 0) {
       columnName: field.columnName || camelToSnake(fieldCode),
       createIfMissing: false,
       source: 'field_asset',
-      locked: Boolean(field.systemField || field.readonly),
+      locked: Boolean(
+        field.systemField
+        || field.readonly
+        || field.locked
+        || field.fieldBinding?.locked,
+      ),
     },
     props: buildComponentProps(field, label),
     layout: {

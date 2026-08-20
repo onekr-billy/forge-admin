@@ -636,8 +636,8 @@ public class BusinessObjectPublishService {
                 }
                 for (String ref : zone.getFieldRefs()) {
                     if (StringUtils.isNotBlank(ref) && !modelFields.contains(ref)) {
-                        add(items, "PAGE_REF_MISSING", "PAGE", BusinessPublishCheckLevel.BLOCK,
-                                "页面引用了不存在的字段", "区域 " + zone.getZoneKey() + " 引用了不存在字段: " + ref,
+                        add(items, "PAGE_REF_MISSING", "PAGE", BusinessPublishCheckLevel.WARN,
+                                "页面引用了已删除的字段", "区域 " + zone.getZoneKey() + " 引用了已删除字段: " + ref + "，发布时会自动忽略",
                                 ref, zone.getZoneKey(), "REMOVE_FIELD_REF", "移除脏引用", zone.getZoneKey(), 110);
                     }
                 }

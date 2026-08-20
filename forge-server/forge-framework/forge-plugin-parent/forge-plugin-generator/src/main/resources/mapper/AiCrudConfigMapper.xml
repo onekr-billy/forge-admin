@@ -176,6 +176,22 @@
         LIMIT 1
     </select>
 
+    <select id="selectRuntimeByObjectCodeOrConfigKey" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_crud_config
+        WHERE tenant_id = #{tenantId}
+          AND (object_code = #{objectCodeOrConfigKey} OR config_key = #{objectCodeOrConfigKey})
+          AND del_flag = '0'
+          AND mode = 'CONFIG'
+          AND status = '0'
+        ORDER BY CASE WHEN publish_status = 'PUBLISHED' THEN 0 ELSE 1 END,
+                 CASE WHEN config_key = #{objectCodeOrConfigKey} THEN 0 ELSE 1 END,
+                 publish_time DESC,
+                 id DESC
+        LIMIT 1
+    </select>
+
     <select id="selectLowcodePage" resultMap="LowcodeAppDetailResultMap">
         SELECT
           c.id,

@@ -148,7 +148,8 @@
               <ApplicationTable
                 :applications="applications"
                 @enter="openApplication"
-                @edit="openApplicationEditor"
+                @run="openApplicationPortal"
+                @edit="openApplicationSettings"
                 @code="openApplicationCode"
                 @publish="openApplicationPublish"
                 @toggle="toggleApplication"
@@ -250,7 +251,6 @@ import {
   updateBusinessSuiteStatus,
 } from '@/api/business-app'
 import {
-  businessApplicationDetail,
   businessApplicationPage,
   deleteBusinessApplication,
   updateBusinessApplicationStatus,
@@ -497,23 +497,6 @@ function syncRouteQuery() {
   })
 }
 
-async function openApplicationEditor(application, initializeMode = 'BLANK') {
-  editorInitializeMode.value = initializeMode
-  if (application?.id) {
-    try {
-      const response = await businessApplicationDetail(application.id)
-      editingApplication.value = { ...application, ...(response.data || {}) }
-    }
-    catch {
-      editingApplication.value = { ...application }
-    }
-  }
-  else {
-    editingApplication.value = null
-  }
-  applicationEditorVisible.value = true
-}
-
 function openApplicationCreate(mode = 'BLANK', templateKey = '', deliveryMode = 'ONLINE') {
   createWizardMode.value = mode
   createWizardTemplateKey.value = templateKey
@@ -560,10 +543,10 @@ function openApplication(application, newTab = true, initializeMode = null) {
     return
   rememberApplication(application.id)
   const location = {
-    name: 'BusinessApplicationWorkspace',
+    name: 'BusinessApplicationRuntime',
     params: { applicationCode: application.applicationCode },
     query: initializeMode && initializeMode !== 'BLANK'
-      ? { section: 'objects' }
+      ? { edit: '1' }
       : undefined,
   }
   if (!newTab) {
@@ -574,13 +557,32 @@ function openApplication(application, newTab = true, initializeMode = null) {
   window.open(target.href, '_blank', 'noopener,noreferrer')
 }
 
+function openApplicationPortal(application) {
+  if (!application?.applicationCode)
+    return
+  const target = router.resolve({
+    name: 'ApplicationPortal',
+    params: { applicationCodeOrSlug: application.portalSlug || application.applicationCode },
+  })
+  window.open(target.href, '_blank', 'noopener,noreferrer')
+}
+
+function openApplicationSettings(application) {
+  if (!application?.applicationCode)
+    return
+  const target = router.resolve({
+    name: 'BusinessApplicationSettings',
+    params: { applicationCode: application.applicationCode },
+  })
+  window.open(target.href, '_blank', 'noopener,noreferrer')
+}
+
 function openApplicationPublish(application) {
   if (!application?.applicationCode)
     return
   const target = router.resolve({
-    name: 'BusinessApplicationWorkspace',
+    name: 'BusinessApplicationPublish',
     params: { applicationCode: application.applicationCode },
-    query: { section: 'releases', publish: '1' },
   })
   window.open(target.href, '_blank', 'noopener,noreferrer')
 }

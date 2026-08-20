@@ -1,3 +1,11 @@
+import { buildH5RuntimeUrl } from '../app-entry-targets'
+
+export const RESERVED_PORTAL_SLUGS = Object.freeze([
+  'admin', 'api', 'app-center', 'system', 'login', 'logout', 'auth', 'file',
+  'dict', 'ai', 'report', 'flow', 'h5', 'mobile', 'integration', 'preview',
+  'runtime', 'static', 'assets', 'favicon.ico',
+])
+
 export const DEFAULT_PORTAL_CONFIG = Object.freeze({
   themeColor: '#3370ff',
   navigation: {
@@ -64,6 +72,57 @@ export function normalizePortalConfig(value) {
     globalization: { ...DEFAULT_PORTAL_CONFIG.globalization, ...(source.globalization || {}) },
     advanced: { ...DEFAULT_PORTAL_CONFIG.advanced, ...(source.advanced || {}) },
     distribution: { ...DEFAULT_PORTAL_CONFIG.distribution, ...(source.distribution || {}) },
+  }
+}
+
+export function resolvePortalRuntimeConfigKey(application = {}, { pageId = '', objects = [] } = {}) {
+  const fromObjects = (list = []) => {
+    const primary = list.find(item => String(item?.objectRole || '').toUpperCase() === 'PRIMARY')
+    return String(primary?.configKey || list[0]?.configKey || '').trim()
+  }
+  const builder = parseJsonObject(application?.options)?.inAppBuilder || {}
+  const node = (builder.nodes || []).find(item => String(item?.id || '') === String(pageId || ''))
+    || (builder.nodes || []).find(item => item?.type === 'page' && item?.objectRef?.configKey)
+  const page = pageId ? builder.pages?.[pageId] : null
+  const blockRef = page?.layout?.gridLayout?.items?.find(item => item?.props?.objectRef)?.props?.objectRef
+  const objectRef = node?.objectRef || blockRef || {}
+  const matchedObject = (Array.isArray(objects) ? objects : []).find(item => (
+    String(item?.objectId ?? item?.id ?? '') === String(objectRef.objectId ?? objectRef.id ?? '')
+    || (objectRef.objectCode && String(item?.objectCode || '') === String(objectRef.objectCode))
+  ))
+  return String(
+    matchedObject?.configKey
+    || objectRef.configKey
+    || fromObjects(objects)
+    || '',
+  ).trim()
+}
+
+export function buildPortalAccessUrls({
+  origin = '',
+  basePath = '',
+  slug = '',
+  pageId = '',
+  configKey = '',
+  h5BaseUrl = '',
+  appId = '',
+  application = null,
+  objects = [],
+} = {}) {
+  const root = `${String(origin || '').replace(/\/$/, '')}${String(basePath || '').replace(/\/$/, '')}`
+  const path = `/app/${encodeURIComponent(String(slug || '').trim())}`
+  const pageQuery = String(pageId || '').trim()
+  const pcUrl = pageQuery
+    ? `${root}${path}?pageId=${encodeURIComponent(pageQuery)}`
+    : `${root}${path}`
+  return {
+    path,
+    pcUrl,
+    h5Url: buildH5RuntimeUrl({
+      h5BaseUrl,
+      configKey: configKey || resolvePortalRuntimeConfigKey(application || {}, { pageId, objects }),
+      appId,
+    }),
   }
 }
 

@@ -4,6 +4,7 @@ import {
   applyTableColumnLayout,
   buildCrudSearchTypeRequestParams,
   buildRuntimeCrudProps,
+  filterCrudItemsByFieldRefs,
   isDesignPreviewCrudProps,
   resolveCrudPreviewReloadKey,
   resolveCrudSearchFieldCatalog,
@@ -176,6 +177,14 @@ describe('runtime CRUD design preview props', () => {
     }))
   })
 
+  it('keeps action columns while dropping deleted form fields from runtime schemas', () => {
+    expect(filterCrudItemsByFieldRefs([
+      { field: 'fieldSlider', title: '滑块' },
+      { field: 'fieldNumber', title: '数字' },
+      { key: 'action', type: 'action', title: '操作' },
+    ], ['fieldSlider']).map(item => item.field || item.key)).toEqual(['fieldSlider', 'action'])
+  })
+
   it('changes the preview reload key only when a real request condition changes', () => {
     const source = {
       props: {
@@ -215,6 +224,19 @@ describe('runtime CRUD design preview props', () => {
     expect(columns).toEqual([
       expect.objectContaining({ prop: 'name', align: 'center', titleAlign: 'center' }),
       expect.objectContaining({ prop: 'status', align: 'right', titleAlign: 'right' }),
+    ])
+  })
+
+  it('passes compiled process runtime actions through to AiCrudPage', () => {
+    const props = buildRuntimeCrudProps({
+      objectCode: 'order',
+      options: {
+        runtimeActions: [{ key: 'startProcess:submit_approval', actionType: 'START_PROCESS' }],
+      },
+    })
+    expect(props.businessObjectCode).toBe('order')
+    expect(props.runtimeActions).toEqual([
+      { key: 'startProcess:submit_approval', actionType: 'START_PROCESS' },
     ])
   })
 })

@@ -3,6 +3,7 @@ import { createForgeFieldTemplateComponent } from '../../forge-form-designer/des
 import { buildAutoFieldAssets } from '../autoFieldRegistry'
 import {
   appendDesignerLayoutChild,
+  createComponentFromField,
   createDefaultFormDesignerSchema,
   getDesignerComponent,
   insertDesignerComponent,
@@ -89,6 +90,21 @@ describe('formDesignerSchema', () => {
       fieldType: 'TEXT',
       dataType: 'varchar',
       componentType: 'input',
+    })
+  })
+
+  it('preserves the business-data structure lock when reusing an object field', () => {
+    const component = createComponentFromField({
+      field: 'customerName',
+      fieldName: '客户名称',
+      componentType: 'input',
+      fieldBinding: { locked: true },
+    })
+
+    expect(component.fieldBinding).toMatchObject({
+      fieldCode: 'customerName',
+      createIfMissing: false,
+      locked: true,
     })
   })
 

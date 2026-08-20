@@ -29,7 +29,7 @@ class BusinessObjectPublishServiceCommandTest {
     void setUp() throws Exception {
         service = new BusinessObjectPublishService(
                 null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, objectMapper);
+                null, null, null, null, null, null, null, null, objectMapper);
         checkTransactionalActions = BusinessObjectPublishService.class.getDeclaredMethod(
                 "checkTransactionalActions",
                 BusinessObjectDesignerService.DesignerContext.class,

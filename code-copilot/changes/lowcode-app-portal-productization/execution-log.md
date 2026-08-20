@@ -250,3 +250,204 @@ rg -n '\$\{[^}]+\}' forge-server/db/migration/V1.0.124__add_business_application
 - 启动 Admin 后验证登录、发布/回滚、不同角色/组织/用户的门户与工作台 API 链路。
 - Playwright/移动真机验证设置、发布、四种创建方式、门户导航和 H5。
 - 平台先提供组织私有模板、受管 Connector、AI 业务操作、缓存执行器和版本清理协议，再继续相应验收。
+
+## 2026-08-18 字典缓存运行时异常修复
+
+- 现象：组织树字段翻译 `SysOrgTreeVO.orgType` 抛出 `LinkedHashMap cannot be cast to SysDictData`。
+- 根因：受管缓存只保留了集合外层具体类型，Redis JSON 往返后的泛型元素成为 Map；`SytemDictValueProvider` 的增强 `for` 在读取元素时发生隐式强转。
+- 修复：共享 `ForgeCacheAspect` 按被缓存方法声明的泛型返回类型恢复容器元素，转换失败时清理坏 entry 并穿透；字典 Provider 额外兼容历史 Map 缓存项。
+- 红测：新增 AOP 用例修复前稳定复现 `Map1 cannot be cast to SamplePayload`。
+- 绿测：`ForgeCacheAspectTest` 6 tests；starter 无 Mockito 的 6 个相关测试类共 17 tests；`SysDictDataServiceImplTest + SytemDictValueProviderLegacyCacheTest` 共 8 tests，均为 0 failures/errors。
+- 编译：Admin reactor 45/45 模块 `BUILD SUCCESS`。
+- 环境警告：完整 starter 27 tests 中 4 个既有 Mockito Manager 用例因当前 JDK 无法 self-attach Byte Buddy agent 报环境错误，未记为通过。
+- 未执行：未重启用户现有 Admin/Redis，未调用组织树接口做真实缓存命中复验；本轮未启动服务，无需清理。
+
+## 2026-08-18 表单左侧组件完整支持修复
+
+### 修复范围
+
+- 新增前端字段组件合同，左侧 33 个字段组件、自动建字段、属性面板和表单编译统一读取同一份默认定义。
+- 新增后端组件目录，`LowcodeSchemaValidator` 支持全部字段组件；`slider`、`year` 等扩展组件保存时不再抛“不支持的控件类型”。
+- 补齐 13 个扩展字段组件的模型恢复和发布编译，运行时保留原组件类型，不再回退为 `input`。
+- 修正 Naive UI 日期/时间控件的格式化值绑定，年份、月份、日期/日期时间及范围值按业务字符串回显和提交，不再混用时间戳协议。
+- 多选、穿梭框、日期范围、日期时间范围、时间范围统一以 JSON 数组写入文本列，读取时恢复数组并兼容历史逗号分隔值。
+- 19 个高级页面组件发布为 `widget` 布局节点，并接入表单运行时 `PageWidgetRenderer`，不再被编译器静默过滤。
+
+### 验证证据
+
+```bash
+cd forge-server
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home \
+PATH=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home/bin:$PATH \
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am compile -DskipTests
+```
+
+- Generator reactor：32/32 模块 `BUILD SUCCESS`，耗时 18.734 秒。
+- 编译警告为仓库既有 deprecated、unchecked 和 Lombok builder 提示，无新增编译错误。
+
+```bash
+cd forge-server/forge-framework/forge-plugin-parent/forge-plugin-generator
+mvn -Penable-tests \
+  -Dtest='BusinessObjectDesignerPageSchemaTest,LowcodeRuntimeConfigBuilderTest,DynamicCrudStructuredValueTest' \
+  -DfailIfNoTests=false surefire:test
+```
+
+- 后端目标测试：28 tests，0 failures，0 errors，0 skipped。
+- 覆盖全部字段组件校验、13 个扩展字段及 19 个 Widget 布局编译、扩展组件运行时类型保留，以及数组值 JSON/历史逗号值往返。
+- 标准全模块 `test-compile` 仍受既有 `BusinessObjectPublishServiceFieldEventTest`、`BusinessObjectPublishServiceCommandTest` 构造器参数漂移阻断；本轮测试类已单独编译并由 Surefire 实际执行，不把全量测试编译记为通过。
+
+```bash
+cd forge-admin-ui
+source ~/.nvm/nvm.sh && nvm use v20.19.0
+./node_modules/.bin/eslint <字段组件本轮文件>
+./node_modules/.bin/vitest run <6 个本轮回归测试文件>
+node --max_old_space_size=8192 ./node_modules/vite/bin/vite.js build
+```
+
+- ESLint：0 errors、0 warnings。
+- Vitest：最终 6 files、23 tests 全部通过；组件合同测试逐项确认左侧 33 个字段组件具备运行时渲染入口，`AiFormItem` 测试确认年份和日期范围按格式化字符串往返。
+- Vite production build：9063 modules transformed，`built in 41.72s`。
+- 构建仅保留既有 CSS `//` 注释、ineffective dynamic import 和 plugin timing 警告。
+- 未启动 Admin/Flow/Vite 开发服务，未修改数据库或 Redis，无本轮服务需要清理。
+
+## 2026-08-18 Task 18 页面形态与表单保存最小闭环
+
+### 实现范围
+
+- 新增 `PageTypeSelector.vue` 与 `page-shape-design.js`：页面形态选择支持表单页、列表页、列表 + 表单、自定义页面；页面名称自动推导对象名称/编码且编码可编辑。
+- 页面管理主入口增加空白应用引导，数据页创建后直接进入现有 `ForgeFormDesigner`；顶部对象栏持续展示并允许编辑对象名称/编码。
+- 新增 `designBusinessApplicationPage` API 与后端 `POST /ai/business/application/{id}/design-page`；元数据事务内保存应用构建器、对象、字段、表单 Schema、默认列表/详情视图及可见对象关联，DDL 在事务提交后安全追加同步。
+- 后端按实际数据记录数拒绝字段删除、字段编码变化和存储类型变化；已有数据字段写入 `fieldBinding.locked`，前端禁用字段删除、编码和类型操作，并禁止清空包含锁定字段的画布。
+- 对象字段复用保存时合并运行字段目录，后端校验页面确实包含并绑定提交的表单资产；更新对象关联时保留原有扩展配置。
+
+### 自动化验证
+
+前端环境：Node.js 20.19.0（通过 `source ~/.nvm/nvm.sh && nvm use v20.19.0`）。
+
+```bash
+cd forge-admin-ui
+./node_modules/.bin/eslint \
+  'src/views/app-center/application-runtime.[applicationCode].vue' \
+  src/views/app-center/components/designer/PageTypeSelector.vue \
+  src/views/app-center/in-app-builder/page-shape-design.js \
+  src/views/app-center/in-app-builder/page-form-object-promotion.js \
+  src/views/app-center/in-app-builder/in-app-builder-schema.js \
+  src/views/app-center/in-app-builder/__tests__/page-shape-design.spec.js \
+  src/views/app-center/components/designer/forge-form-designer/ForgeFormCanvasNode.vue \
+  src/views/app-center/components/designer/forge-form-designer/ForgePropertyPanel.vue \
+  src/views/app-center/components/designer/forge-form-designer/ForgeFormDesigner.vue \
+  src/api/business-application.js
+```
+
+- 结果：通过，0 errors / 0 warnings。
+
+```bash
+./node_modules/.bin/vitest run \
+  src/views/app-center/in-app-builder/__tests__/page-shape-design.spec.js \
+  src/views/app-center/components/designer/form-first/__tests__/formDesignerSchema.spec.js
+```
+
+- 结果：2 files、14 tests 全部通过；覆盖四种页面形态、五种基础字段、对象字段复用和 Schema 归一化。
+
+```bash
+NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/vite build
+```
+
+- 结果：生产构建通过，9066 modules transformed。保留既有 Vite native config-loader、组件重名、CSS `//` 注释、两个 ineffective dynamic import 和 plugin timing 警告。
+
+后端环境：Java 17（`/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home`）。
+
+```bash
+cd forge-server
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile
+```
+
+- 结果：Generator reactor 32/32 模块 `BUILD SUCCESS`。
+
+由于根 POM 的全模块 `test-compile` 仍被无关既有测试构造器漂移阻断，本轮按测试标准复用了生成的 Maven classpath，单独编译本轮三类测试后执行：
+
+```bash
+cd forge-framework/forge-plugin-parent/forge-plugin-generator
+export JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home
+export PATH="$JAVA_HOME/bin:$PATH"
+javac -cp "target/classes:target/test-classes:$(<target/test-classpath.txt)" -d target/test-classes \
+  src/test/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessApplicationPageDesignServiceTest.java \
+  src/test/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessApplicationPageFieldGuardTest.java \
+  src/test/java/com/mdframe/forge/plugin/generator/controller/BusinessApplicationControllerTest.java
+JAVA_TOOL_OPTIONS='-javaagent:/Users/yaomindong/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar' \
+  mvn -Penable-tests \
+  -Dtest='BusinessApplicationPageDesignServiceTest,BusinessApplicationPageFieldGuardTest,BusinessApplicationControllerTest' \
+  -DfailIfNoTests=false surefire:test
+```
+
+- 结果：14 tests、0 failures、0 errors。显式 Byte Buddy agent 仅用于绕过当前 JVM 无法 self-attach 的环境限制，未修改 POM。
+
+### 未执行项
+
+- 未启动 Admin/Flow/Vite 服务，未连接真实 MySQL/Redis，未执行 Flyway、登录 Token、curl 或 Playwright；本轮未启动服务，无需清理进程。
+- 列表专用设计器、真实数据新增和移动端/浏览器交互仍需隔离环境验收；当前列表形态复用同一表单资产与 `AiCrudPage` 运行协议，不宣称专用列表编辑体验已验收。
+- 根 POM 全量测试编译的已知阻断仍是 `forge-plugin-message/MessageServiceImplTest` 及其它既有构造器参数漂移，与本轮生产代码无关。
+
+## 2026-08-18 Task 18 交付前补强验证
+
+### 补强范围
+
+- 修复从「对象字段」拖入字段时未继承 `fieldBinding.locked` 的缺口；对象已有业务数据时，运行字段目录会向复用组件传递结构锁。
+- 后端增加已持久化表单组件对比：字段列表作为保存基线时，仍按稳定组件 ID 拒绝锁定组件删除、字段编码变化和组件类型变化，防止直接 API 请求绕过前端。
+- 页面形态选择弹窗和设计器对象栏改用 Naive UI 主题变量，并补充窄屏单列布局。
+
+### 验证证据
+
+```bash
+cd forge-admin-ui
+source ~/.nvm/nvm.sh && nvm use v20.19.0
+./node_modules/.bin/eslint <Task 18 本轮文件>
+./node_modules/.bin/vitest run \
+  src/views/app-center/in-app-builder/__tests__/page-shape-design.spec.js \
+  src/views/app-center/components/designer/form-first/__tests__/formDesignerSchema.spec.js
+NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/vite build
+```
+
+- ESLint：0 errors、0 warnings。
+- Vitest：2 files、15 tests 全部通过。
+- Vite：9066 modules transformed，生产构建通过（42.96 秒）。
+- 保留既有 native config-loader、`UserSelectModal` 重名、CSS `//` 注释、ineffective dynamic import 和 plugin timing 警告。
+
+```bash
+cd forge-server
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile
+
+cd forge-framework/forge-plugin-parent/forge-plugin-generator
+javac -cp "target/classes:target/test-classes:$(<target/test-classpath.txt)" -d target/test-classes \
+  src/test/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessApplicationPageDesignServiceTest.java \
+  src/test/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessApplicationPageFieldGuardTest.java \
+  src/test/java/com/mdframe/forge/plugin/generator/controller/BusinessApplicationControllerTest.java
+JAVA_TOOL_OPTIONS='-javaagent:/Users/yaomindong/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar' \
+  mvn -Penable-tests \
+  -Dtest='BusinessApplicationPageDesignServiceTest,BusinessApplicationPageFieldGuardTest,BusinessApplicationControllerTest' \
+  -DfailIfNoTests=false surefire:test
+```
+
+- Generator reactor：32/32 模块 `BUILD SUCCESS`。
+- 后端定向测试：17 tests、0 failures、0 errors、0 skipped。
+- `git diff --check` 通过。
+
+### 未执行项
+
+- 未启动 Admin/Flow/Vite 开发服务，未连接或修改 MySQL/Redis；无本轮服务需要清理。
+- 真实登录/curl、MySQL DDL/Flyway、页面保存后新增数据和 Playwright 交互继续保留为隔离环境验收项。
+
+## 2026-08-19 Review 修复验证
+
+- 范围：工作台重定向、页面管理主入口、设置页权限归集、发布快照分发判定、门户权限 ID 校验。
+- 前端定向 ESLint 通过；Vitest 6 files、19 tests 通过。
+- 后端 `BusinessApplicationServiceTest` + `BusinessApplicationRuntimeServiceTest`：27 tests、0 failures。
+- Generator reactor 32/32 模块 `compile -DskipTests` 通过；`git diff --check` 通过。
+- 未启动 Vite/Admin，未做浏览器端到端点击验证。
+
+## 2026-08-19 页面保存失败修复
+
+- 现象：直接设计页面保存时 `design-page` 报「数据模型至少需要一个业务字段」。
+- 原因：新建对象只有系统字段时，`hasBusinessData()` 仍调用 `previewCreateTable()`，该接口会先做完整模型校验。
+- 修复：没有业务字段时直接视为无业务数据，先保存用户字段再同步数据表。
+- 验证：`BusinessApplicationPageDesignServiceTest` 3 tests 通过。

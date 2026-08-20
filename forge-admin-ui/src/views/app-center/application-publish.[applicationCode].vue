@@ -2,7 +2,7 @@
   <div class="application-publish-page">
     <header class="publish-page-header">
       <div class="publish-page-title">
-        <n-button quaternary circle aria-label="返回应用工作台" @click="returnWorkspace">
+        <n-button quaternary circle aria-label="返回页面管理" @click="returnWorkspace">
           <template #icon>
             <n-icon><ArrowBackOutline /></n-icon>
           </template>
@@ -18,6 +18,17 @@
         </n-button>
       </n-space>
     </header>
+    <nav class="publish-app-tabs" aria-label="应用导航">
+      <button type="button" class="publish-app-tab" @click="goRuntime">
+        页面管理
+      </button>
+      <button type="button" class="publish-app-tab" @click="openSettings">
+        应用设置
+      </button>
+      <button type="button" class="publish-app-tab active">
+        应用发布
+      </button>
+    </nav>
 
     <n-spin :show="loading">
       <main v-if="application" class="publish-page-content">
@@ -55,6 +66,7 @@ import AppPublishAiAssistant from './components/publish/AppPublishAiAssistant.vu
 import AppPublishDistribute from './components/publish/AppPublishDistribute.vue'
 import AppPublishStatusCard from './components/publish/AppPublishStatusCard.vue'
 import AppPublishVersionHistory from './components/publish/AppPublishVersionHistory.vue'
+import { resolveDeprecatedWorkspaceLocation } from './workspace-redirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -105,7 +117,11 @@ async function toggleStatus() {
 }
 
 function returnWorkspace() {
-  router.push({ name: 'BusinessApplicationWorkspace', params: { applicationCode: route.params.applicationCode } })
+  router.push({ name: 'BusinessApplicationRuntime', params: { applicationCode: route.params.applicationCode } })
+}
+
+function goRuntime() {
+  router.push({ name: 'BusinessApplicationRuntime', params: { applicationCode: route.params.applicationCode } })
 }
 
 function openSettings() {
@@ -113,18 +129,21 @@ function openSettings() {
 }
 
 function handleNavigate(section) {
-  router.push({
-    name: 'BusinessApplicationWorkspace',
+  router.push(resolveDeprecatedWorkspaceLocation({
     params: { applicationCode: route.params.applicationCode },
     query: { section: section || 'overview' },
-  })
+  }))
 }
 </script>
 
 <style scoped>
 .application-publish-page {
-  min-height: 100%;
-  background: var(--body-color, #f5f7fa);
+  height: 100vh;
+  overflow-y: auto;
+  background: #f5f7fa;
+  /* 覆盖全局 body overflow:hidden */
+  position: fixed;
+  inset: 0;
 }
 
 .publish-page-header {
@@ -132,12 +151,43 @@ function handleNavigate(section) {
   z-index: 20;
   top: 0;
   display: flex;
-  height: 64px;
+  height: 56px;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-color, #e5e6eb);
-  background: var(--card-color, #fff);
+  border-bottom: 1px solid #e5e6eb;
+  background: #fff;
   padding: 0 20px;
+}
+.publish-app-tabs {
+  position: sticky;
+  z-index: 19;
+  top: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-bottom: 1px solid #e5e6eb;
+  background: #fff;
+  padding: 6px 20px;
+}
+.publish-app-tab {
+  cursor: pointer;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 5px 14px;
+  color: #4e5969;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.publish-app-tab:hover {
+  color: #1f2329;
+}
+.publish-app-tab.active {
+  background: #f2f3f5;
+  color: #1f2329;
+  font-weight: 600;
 }
 
 .publish-page-title {
@@ -147,7 +197,7 @@ function handleNavigate(section) {
 }
 
 .publish-page-title span {
-  color: var(--text-color-3, #86909c);
+  color: #86909c;
   font-size: 12px;
 }
 
@@ -158,22 +208,22 @@ function handleNavigate(section) {
 
 .publish-page-content {
   display: grid;
-  width: min(1280px, calc(100% - 32px));
-  gap: 18px;
-  margin: 20px auto;
+  width: min(1280px, calc(100% - 48px));
+  gap: 20px;
+  margin: 20px auto 32px;
 }
 
 .publish-page-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 16px;
 }
 
 .publish-page-content :deep(.publish-section-card) {
   min-width: 0;
-  border: 1px solid var(--border-color, #e5e6eb);
-  border-radius: 10px;
-  background: var(--card-color, #fff);
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
   padding: 20px;
 }
 
@@ -192,7 +242,7 @@ function handleNavigate(section) {
 
 .publish-page-content :deep(.publish-section-card > header p) {
   margin: 5px 0 0;
-  color: var(--text-color-3, #86909c);
+  color: #86909c;
   font-size: 12px;
 }
 
@@ -200,7 +250,7 @@ function handleNavigate(section) {
   margin-bottom: 18px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .publish-page-grid {
     grid-template-columns: 1fr;
   }

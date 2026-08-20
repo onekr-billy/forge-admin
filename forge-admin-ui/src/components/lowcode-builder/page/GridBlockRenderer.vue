@@ -1196,7 +1196,7 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import InlineRichText from '@/components/lowcode-builder/shared/InlineRichText.vue'
 import { pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
-import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi } from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { useUserStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
@@ -1777,13 +1777,29 @@ const effectiveRuntimeCrudProps = computed(() => {
     rowKey: blockProps.rowKey || props.runtimeCrudProps.rowKey || 'id',
     title: blockProps.title || props.runtimeCrudProps.title,
     columns: applyTableColumnLayout(
-      props.runtimeCrudProps.columns?.length ? props.runtimeCrudProps.columns : aiTableColumns.value,
+      filterCrudItemsByFieldRefs(
+        props.runtimeCrudProps.columns?.length ? props.runtimeCrudProps.columns : aiTableColumns.value,
+        configuredFieldRefs.value,
+      ),
       blockProps,
     ),
+    runtimeActions: Array.isArray(props.runtimeCrudProps.runtimeActions)
+      ? props.runtimeCrudProps.runtimeActions
+      : [],
+    toolbarActions: Array.isArray(blockProps.toolbarActions)
+      ? blockProps.toolbarActions
+      : (props.runtimeCrudProps.toolbarActions || []),
+    businessObjectCode: props.runtimeCrudProps.businessObjectCode || props.runtimeCrudProps.objectCode || '',
     searchSchema: hasExplicitSearchFieldRefs.value
       ? aiSearchSchema.value
-      : (props.runtimeCrudProps.searchSchema?.length ? props.runtimeCrudProps.searchSchema : aiSearchSchema.value),
-    editSchema: props.runtimeCrudProps.editSchema?.length ? props.runtimeCrudProps.editSchema : aiFormSchema.value,
+      : filterCrudItemsByFieldRefs(
+        props.runtimeCrudProps.searchSchema?.length ? props.runtimeCrudProps.searchSchema : aiSearchSchema.value,
+        configuredFieldRefs.value,
+      ),
+    editSchema: filterCrudItemsByFieldRefs(
+      props.runtimeCrudProps.editSchema?.length ? props.runtimeCrudProps.editSchema : aiFormSchema.value,
+      configuredFieldRefs.value,
+    ),
     apiConfig: {
       ...(props.runtimeCrudProps.apiConfig || {}),
       ...runtimeBlockApiConfig,

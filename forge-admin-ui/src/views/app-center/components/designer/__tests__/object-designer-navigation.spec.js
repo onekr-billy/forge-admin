@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  pickBusinessObjectIdentity,
   resolveDataModelTab,
   resolveStandaloneObjectDesignerSection,
   standaloneObjectDesignerSections,
@@ -74,5 +75,21 @@ describe('standalone object designer navigation', () => {
     expect(objectDesigner).toContain('流程与自动化配置已移至应用工作台')
     expect(objectDesigner).toContain('触发器、流程绑定和业务动作已统一为业务流程画布')
     expect(objectDesigner).toContain('@click="openProcessWorkspace"')
+  })
+
+  it('loads the object by query objectId even when the route code is a generic fallback', () => {
+    const colliding = { id: '1910000000000000001', objectCode: 'business_object', objectName: '打卡' }
+    expect(pickBusinessObjectIdentity({
+      queryObjectId: '2089974506884993026',
+      objectByCode: colliding,
+    })).toEqual({ id: '2089974506884993026' })
+    expect(pickBusinessObjectIdentity({
+      queryObjectId: ['2089974506884993026'],
+    })).toEqual({ id: '2089974506884993026' })
+    expect(pickBusinessObjectIdentity({ objectByCode: colliding })).toEqual(colliding)
+
+    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    expect(objectDesigner).toContain('pickBusinessObjectIdentity({ queryObjectId })')
+    expect(objectDesigner).not.toContain('return object?.id ? object : { id }')
   })
 })

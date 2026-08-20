@@ -295,18 +295,11 @@ class BusinessApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("workbench returns enabled current-user and role distributions only")
-    void workbenchReturnsEnabledAuthorizedDistributions() throws Exception {
-        BusinessApplicationVO currentUserApp = workbenchApplication(1L,
-                "{\"permission\":{\"visibility\":\"all\"},\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":7}}}");
-        BusinessApplicationVO roleApp = workbenchApplication(2L,
-                "{\"permission\":{\"visibility\":\"roles\",\"roleIds\":[11]},\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"ROLES\",\"roleIds\":[\"11\"]}}}");
-        BusinessApplicationVO disabledApp = workbenchApplication(3L,
-                "{\"permission\":{\"visibility\":\"all\"},\"distribution\":{\"workbench\":{\"enabled\":false,\"targetType\":\"CURRENT_USER\",\"targetUserId\":7}}}");
-        BusinessApplicationVO otherUserApp = workbenchApplication(4L,
-                "{\"permission\":{\"visibility\":\"all\"},\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":8}}}");
+    @DisplayName("workbench candidates are published applications only")
+    void workbenchCandidatesReturnPublishedApplications() throws Exception {
         List<BusinessApplicationVO> applications = List.of(
-                currentUserApp, roleApp, disabledApp, otherUserApp);
+                workbenchApplication(1L, "{\"distribution\":{\"workbench\":{\"enabled\":true}}}"),
+                workbenchApplication(2L, "{\"distribution\":{\"workbench\":{\"enabled\":false}}}"));
         BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
             if ("selectPublishedWorkbenchApplications".equals(method)) {
                 return applications;
@@ -316,14 +309,27 @@ class BusinessApplicationServiceTest {
         BusinessApplicationService service = service(applicationMapper,
                 proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
                 proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        assertEquals(List.of(1L, 2L), service.workbenchDistributionCandidates().stream()
+                .map(BusinessApplicationVO::getId).toList());
+    }
+
+    @Test
+    @DisplayName("workbench distribution reads the supplied portal config")
+    void workbenchDistributionReadsSuppliedConfig() throws Exception {
+        BusinessApplicationService service = service(
+                proxy(BusinessApplicationMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
         LoginUser loginUser = new LoginUser();
         loginUser.setUserId(7L);
         loginUser.setTenantId(1L);
         loginUser.setRoleIds(List.of(11L));
         try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
                 new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "workbench-test", java.util.Set.of()))) {
-            assertEquals(List.of(1L, 2L), service.workbenchDistributionCandidates().stream()
-                    .map(BusinessApplicationVO::getId).toList());
+            assertTrue(service.isCurrentUserDistributedToWorkbench(
+                    "{\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":7}}}"));
+            assertFalse(service.isCurrentUserDistributedToWorkbench(
+                    "{\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":8}}}"));
         }
     }
 

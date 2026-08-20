@@ -25,6 +25,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,15 +72,11 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
     }
 
     /**
-     * 查询当前用户命中的工作台投放候选。
-     *
-     * <p>这里只读取设计态中的投放开关；发布态可见范围、slug 和页面权限由运行时服务统一判定。</p>
+     * 查询已发布工作台候选。投放开关必须按发布快照判定，这里只返回发布过的应用。
      */
     public List<BusinessApplicationVO> workbenchDistributionCandidates() {
         List<BusinessApplicationVO> candidates = baseMapper.selectPublishedWorkbenchApplications(resolveTenantId());
-        return (candidates == null ? List.<BusinessApplicationVO>of() : candidates).stream()
-                .filter(application -> isCurrentUserDistributedToWorkbench(application.getPortalConfig()))
-                .toList();
+        return candidates == null ? List.of() : List.copyOf(candidates);
     }
 
     public BusinessApplicationVO detail(Long id) {
@@ -212,6 +209,7 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
         assertPortalSlugAvailable(slug, id);
         application.setPortalSlug(slug);
         application.setPortalConfig(normalizeJsonObject(dto.getPortalConfig(), "门户配置", true));
+        assertPortalPermissionIdentifiers(application.getPortalConfig());
         updateById(application);
         baseMapper.markChanged(resolveTenantId(), id);
     }
@@ -756,7 +754,7 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
         return configured.stream().map(String::valueOf).anyMatch(actualIds::contains);
     }
 
-    private boolean isCurrentUserDistributedToWorkbench(String portalConfig) {
+    public boolean isCurrentUserDistributedToWorkbench(String portalConfig) {
         JSONObject distribution = parseJsonObject(portalConfig).getJSONObject("distribution");
         if (distribution == null) {
             return false;
@@ -773,6 +771,68 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
         return "ROLES".equalsIgnoreCase(targetType)
                 && intersects(workbench.getJSONArray("roleIds"), normalizeIds(
                 currentLoginUser() == null ? null : currentLoginUser().getRoleIds()));
+    }
+
+    private void assertPortalPermissionIdentifiers(String portalConfig) {
+        JSONObject permission = parseJsonObject(portalConfig).getJSONObject("permission");
+        if (permission == null) {
+            return;
+        }
+        assertActiveTenantUsers("应用管理员", permission.getJSONArray("administrators"));
+        assertActiveTenantUsers("可见用户", permission.getJSONArray("userIds"));
+        assertActiveTenantRoles("可见角色", permission.getJSONArray("roleIds"));
+        assertActiveTenantOrgs("可见部门", permission.getJSONArray("departmentIds"));
+    }
+
+    private void assertActiveTenantUsers(String label, JSONArray values) {
+        List<Long> ids = toLongIds(values);
+        if (ids.isEmpty()) {
+            return;
+        }
+        Long count = baseMapper.countActiveTenantUsers(resolveTenantId(), ids);
+        if (count == null || count.longValue() != ids.size()) {
+            throw new BusinessException(label + "必须属于当前租户且有效");
+        }
+    }
+
+    private void assertActiveTenantRoles(String label, JSONArray values) {
+        List<Long> ids = toLongIds(values);
+        if (ids.isEmpty()) {
+            return;
+        }
+        Long count = baseMapper.countActiveTenantRoles(resolveTenantId(), ids);
+        if (count == null || count.longValue() != ids.size()) {
+            throw new BusinessException(label + "必须属于当前租户且处于启用状态");
+        }
+    }
+
+    private void assertActiveTenantOrgs(String label, JSONArray values) {
+        List<Long> ids = toLongIds(values);
+        if (ids.isEmpty()) {
+            return;
+        }
+        Long count = baseMapper.countActiveTenantOrgs(resolveTenantId(), ids);
+        if (count == null || count.longValue() != ids.size()) {
+            throw new BusinessException(label + "必须属于当前租户且有效");
+        }
+    }
+
+    private List<Long> toLongIds(JSONArray values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (Object value : values) {
+            if (value == null || StringUtils.isBlank(String.valueOf(value))) {
+                continue;
+            }
+            try {
+                ids.add(Long.valueOf(String.valueOf(value)));
+            } catch (NumberFormatException error) {
+                throw new BusinessException("权限对象标识格式不正确");
+            }
+        }
+        return ids.stream().distinct().toList();
     }
 
     private boolean enabledTargetRequiresCurrentUser(String targetType) {

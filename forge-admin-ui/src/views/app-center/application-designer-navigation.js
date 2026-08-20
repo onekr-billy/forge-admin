@@ -2,7 +2,6 @@ export const applicationDesignerSections = [
   { key: 'pages', label: '页面' },
   { key: 'data', label: '数据' },
   { key: 'automation', label: '业务流程' },
-  { key: 'settings', label: '设置' },
 ]
 
 const legacySectionMap = {
@@ -17,7 +16,7 @@ const legacySectionMap = {
   'flow-object': 'automation',
   'data-model': 'data',
   'data': 'data',
-  'settings': 'settings',
+  'settings': 'pages',
 }
 
 const objectDesignerSectionConfig = {
@@ -67,22 +66,17 @@ export function buildApplicationDesignerResourceGroups(options = {}) {
     {
       key: 'pages',
       label: '页面',
-      nodes: [
-        ...objectNodes.flatMap(item => [
-          createObjectNode(item, 'page-form', `${item.objectName}（表单页）`, item.formConfigured),
-          createObjectNode(item, 'page-list', `${item.objectName}（列表页）`, item.listConfigured),
-        ]),
-        ...pages.map(page => ({
-          key: `page-custom:${String(page.id)}`,
-          groupKey: 'pages',
-          kind: 'page-custom',
-          label: `${page.title || '工作台首页'}（自由编排）`,
-          pageId: String(page.id),
-          configured: true,
-          // 自由编排页面来自导航节点，支持重命名/复制/排序/删除等结构编辑。
-          editable: true,
-        })),
-      ],
+      nodes: pages.map(page => ({
+        key: `page-custom:${String(page.id)}`,
+        groupKey: 'pages',
+        kind: 'page-custom',
+        label: page.title || '未命名页面',
+        pageId: String(page.id),
+        objectId: page.objectRef?.objectId || null,
+        objectCode: page.objectRef?.objectCode || '',
+        configured: true,
+        editable: true,
+      })),
     },
     {
       key: 'data',
@@ -113,17 +107,6 @@ export function buildApplicationDesignerResourceGroups(options = {}) {
         },
       ],
     },
-    {
-      key: 'settings',
-      label: '设置',
-      nodes: [{
-        key: 'settings',
-        groupKey: 'settings',
-        kind: 'settings',
-        label: '应用设置',
-        configured: true,
-      }],
-    },
   ]
   return groups.map(group => ({
     ...group,
@@ -153,7 +136,7 @@ export function findApplicationDesignerResource(groups = [], resourceKey = '', l
 
   const legacy = String(legacySection || '').trim()
   if (legacy === 'events')
-    return nodes.find(node => node.kind === 'page-form') || nodes[0] || null
+    return nodes.find(node => node.kind === 'page-custom') || nodes[0] || null
   if (legacy === 'page')
     return nodes.find(node => node.kind === 'page-custom') || nodes.find(node => node.groupKey === 'pages') || nodes[0] || null
   if (['actions', 'business-flow', 'flow-object', 'automation-triggers'].includes(legacy))
@@ -167,7 +150,7 @@ export function findApplicationDesignerResource(groups = [], resourceKey = '', l
 
   const groupKey = normalizeApplicationDesignerSection(legacy)
   return nodes.find(node => node.groupKey === groupKey)
-    || nodes.find(node => node.kind === 'page-form')
+    || nodes.find(node => node.kind === 'page-custom')
     || nodes[0]
     || null
 }
@@ -177,6 +160,20 @@ export function resolveApplicationDesignerObject(objects = [], selectedObjectId 
     return null
   const selected = objects.find(item => String(item?.objectId) === String(selectedObjectId))
   return selected || objects.find(item => item?.objectRole === 'PRIMARY') || objects[0]
+}
+
+export function resolveObjectDesignerNavigationTarget(objectRef = {}, objects = []) {
+  const objectId = objectRef?.objectId ?? objectRef?.id ?? ''
+  const matched = Array.isArray(objects)
+    ? objects.find(item => String(item?.objectId ?? item?.id ?? '') === String(objectId))
+    : null
+  const objectCode = matched?.objectCode || objectRef?.objectCode || ''
+  if (!objectCode)
+    return null
+  return {
+    objectCode,
+    objectId: objectId || matched?.objectId || matched?.id || undefined,
+  }
 }
 
 export function resolveObjectDesignerSectionConfig(sectionOrResource) {

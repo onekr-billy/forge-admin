@@ -17,25 +17,38 @@
           />
         </n-input-group>
       </n-form-item>
-      <div class="access-link-card">
-        <div>
-          <span>组织内访问链接</span>
-          <strong>{{ portalUrl }}</strong>
+      <div class="access-link-grid">
+        <div class="access-link-card">
+          <n-qr-code :value="pcUrl" :size="108" :color="modelValue.themeColor || '#3370ff'" />
+          <div>
+            <span>电脑端</span>
+            <strong>{{ pcUrl }}</strong>
+            <p>在电脑浏览器打开完整应用门户。</p>
+            <n-space>
+              <n-button secondary @click="copyLink(pcUrl, '电脑端')">
+                复制链接
+              </n-button>
+              <n-button type="primary" :disabled="!modelValue.portalSlug" @click="openLink(pcUrl)">
+                打开电脑端
+              </n-button>
+            </n-space>
+          </div>
         </div>
-        <n-space>
-          <n-button secondary @click="copyLink">
-            复制链接
-          </n-button>
-          <n-button type="primary" :disabled="!modelValue.portalSlug" @click="openPortal">
-            新窗口打开
-          </n-button>
-        </n-space>
-      </div>
-      <div v-if="modelValue.portalSlug" class="access-qrcode">
-        <n-qr-code :value="portalUrl" :size="132" :color="modelValue.themeColor || '#3370ff'" />
-        <div>
-          <strong>移动端访问</strong>
-          <p>门户采用响应式布局，扫描二维码可直接打开当前访问地址。</p>
+        <div class="access-link-card">
+          <n-qr-code :value="h5Url" :size="108" :color="modelValue.themeColor || '#3370ff'" />
+          <div>
+            <span>移动端</span>
+            <strong>{{ h5Url }}</strong>
+            <p>扫码打开独立 H5 运行页，和旧访问入口同一套地址。</p>
+            <n-space>
+              <n-button secondary :disabled="!h5Url" @click="copyLink(h5Url, '移动端')">
+                复制移动端链接
+              </n-button>
+              <n-button type="primary" :disabled="!h5Url" @click="openLink(h5Url)">
+                打开移动端
+              </n-button>
+            </n-space>
+          </div>
         </div>
       </div>
     </n-form>
@@ -46,18 +59,32 @@
 import { useMessage } from 'naive-ui'
 import { computed, ref } from 'vue'
 import { checkBusinessApplicationSlugAvailable } from '@/api/business-application'
+import { buildPortalAccessUrls, RESERVED_PORTAL_SLUGS } from '../portal/portal-config'
 
-const props = defineProps({ modelValue: { type: Object, required: true } })
+const props = defineProps({
+  modelValue: { type: Object, required: true },
+  application: { type: Object, default: null },
+  configKey: { type: String, default: '' },
+  objects: { type: Array, default: () => [] },
+})
 const emit = defineEmits(['update:modelValue'])
 const message = useMessage()
 const slugStatus = ref(undefined)
 const slugFeedback = ref('只允许 2-50 位字母、数字、中划线或下划线。')
 let validationSequence = 0
 
-const portalUrl = computed(() => {
-  const path = `/app/${encodeURIComponent(props.modelValue.portalSlug || props.modelValue.applicationCode || '')}`
-  return `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}${path}`
-})
+const accessUrls = computed(() => buildPortalAccessUrls({
+  origin: window.location.origin,
+  basePath: import.meta.env.BASE_URL,
+  slug: props.modelValue.portalSlug || props.modelValue.applicationCode,
+  configKey: props.configKey,
+  h5BaseUrl: props.modelValue.distribution?.h5BaseUrl,
+  appId: props.modelValue.id,
+  application: props.application || props.modelValue,
+  objects: props.objects,
+}))
+const pcUrl = computed(() => accessUrls.value.pcUrl)
+const h5Url = computed(() => accessUrls.value.h5Url)
 
 function handleSlugInput(value) {
   slugStatus.value = undefined
@@ -70,6 +97,11 @@ async function checkSlug() {
   if (!/^[\w-]{2,50}$/.test(slug)) {
     slugStatus.value = 'error'
     slugFeedback.value = '门户地址格式不正确。'
+    return false
+  }
+  if (RESERVED_PORTAL_SLUGS.includes(slug.toLowerCase())) {
+    slugStatus.value = 'error'
+    slugFeedback.value = '该地址是系统保留路径，请更换其它值。'
     return false
   }
   const sequence = ++validationSequence
@@ -91,43 +123,43 @@ async function checkSlug() {
   }
 }
 
-async function copyLink() {
-  await navigator.clipboard.writeText(portalUrl.value)
-  message.success('访问链接已复制')
+async function copyLink(value, label) {
+  await navigator.clipboard.writeText(value)
+  message.success(`${label}访问链接已复制`)
 }
 
-function openPortal() {
-  window.open(portalUrl.value, '_blank', 'noopener,noreferrer')
+function openLink(value) {
+  window.open(value, '_blank', 'noopener,noreferrer')
 }
 
 defineExpose({ checkSlug })
 </script>
 
 <style scoped>
-.access-link-card,
-.access-qrcode {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  border: 1px solid var(--border-color, #e5e6eb);
-  border-radius: 8px;
-  background: var(--card-color, #fff);
-  padding: 16px;
+.access-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .access-link-card {
-  justify-content: space-between;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--border-color, #e5e6eb);
+  border-radius: 8px;
+  background: var(--card-color, #f7f8fa);
+  padding: 16px;
 }
 
-.access-link-card div:first-child,
-.access-qrcode div {
+.access-link-card > div {
   display: grid;
   min-width: 0;
   gap: 6px;
 }
 
 .access-link-card span,
-.access-qrcode p {
+.access-link-card p {
   margin: 0;
   color: var(--text-color-3, #86909c);
   font-size: 12px;
@@ -142,9 +174,9 @@ defineExpose({ checkSlug })
   white-space: nowrap;
 }
 
-.access-qrcode {
-  width: fit-content;
-  max-width: 100%;
-  margin-top: 18px;
+@media (max-width: 1080px) {
+  .access-link-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

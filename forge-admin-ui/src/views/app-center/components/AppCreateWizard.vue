@@ -121,7 +121,7 @@ const modeHint = computed(() => ({
   AI: 'AI 方案确认后写入设计态，不自动发布',
   TEMPLATE: '模板资产在同一事务中生成',
   EXCEL: '只生成对象和页面设计，不导入业务数据',
-  BLANK: '创建后进入应用工作台继续设计',
+  BLANK: '创建后进入页面管理主入口继续设计',
 })[activeMode.value])
 
 watch(() => props.show, (visible) => {

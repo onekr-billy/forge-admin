@@ -127,10 +127,7 @@ function handleAddNode(type) {
 function handleInsertNode({ edgeId, type }) {
   operationError.value = ''
   try {
-    const overrides = type === 'ACTION'
-      ? { config: { objectCode: designer.schema.value.subject?.objectCode } }
-      : {}
-    const nodeId = designer.insertNodeOnEdge(edgeId, type, overrides)
+    const nodeId = designer.insertNodeOnEdge(edgeId, type, buildInsertOverrides(type))
     designer.selectNode(nodeId)
     drawerVisible.value = true
     draggingNodeType.value = ''
@@ -138,6 +135,38 @@ function handleInsertNode({ edgeId, type }) {
   catch (error) {
     operationError.value = error.message
     draggingNodeType.value = ''
+  }
+}
+
+function buildInsertOverrides(type) {
+  const objectCode = designer.schema.value.subject?.objectCode
+  if (type === 'ACTION')
+    return { config: { objectCode } }
+  if (type !== 'APPROVAL')
+    return {}
+  const source = (props.formAssets || []).find(item => item?.formKey || item?.assetKey || item?.value || item?.code)
+    || (objectCode
+      ? {
+          formKey: objectCode,
+          formName: props.objectName || `${objectCode}表单`,
+          formMode: 'BUSINESS_OBJECT_FORM',
+        }
+      : null)
+  if (!source)
+    return {}
+  const formKey = String(source.formKey || source.assetKey || source.value || source.code || objectCode || '')
+  if (!formKey)
+    return {}
+  return {
+    config: {
+      versionPolicy: 'PINNED_AT_APPLICATION_PUBLISH',
+      formAsset: {
+        formKey,
+        formName: source.formName || source.name || source.label || formKey,
+        formMode: source.formMode || source.type || 'BUSINESS_OBJECT_FORM',
+        providerKey: source.providerKey || undefined,
+      },
+    },
   }
 }
 
@@ -160,7 +189,23 @@ function handlePaletteDragEnd() {
 
 function handleNodeSelect(node) {
   designer.selectNode(node.id)
+  bindDefaultApprovalForm(node.id)
   drawerVisible.value = true
+}
+
+function bindDefaultApprovalForm(nodeId) {
+  const node = designer.getNode(nodeId)
+  if (node?.type !== 'APPROVAL' || node.config?.formAsset?.formKey)
+    return
+  const formAsset = buildInsertOverrides('APPROVAL').config?.formAsset
+  if (!formAsset?.formKey)
+    return
+  designer.updateNode(nodeId, {
+    config: {
+      ...(node.config || {}),
+      formAsset,
+    },
+  })
 }
 
 function handleCopyNode() {
@@ -360,7 +405,8 @@ defineExpose({
       {{ operationError }}
     </NAlert>
 
-    <div class="designer-body min-h-0 flex flex-1">
+    <div class="designer-stage min-h-0 flex flex-1 flex-col">
+      <div class="designer-body min-h-0 flex flex-1">
       <aside class="node-palette">
         <div class="pane-heading">
           <strong>添加节点</strong>
@@ -447,6 +493,7 @@ defineExpose({
       @refresh-flow-model="emit('refreshFlowModel', $event)"
       @edit-action="emit('editAction', $event)"
     />
+    </div>
   </section>
 </template>
 

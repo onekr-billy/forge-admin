@@ -53,6 +53,8 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     formDefaultValues: { ...(options.formDefaultValues || config.formDefaultValues || {}) },
     submitDefaultParams: { ...(options.submitDefaultParams || config.submitDefaultParams || {}) },
     toolbarActions: Array.isArray(options.toolbarActions) ? options.toolbarActions : [],
+    runtimeActions: Array.isArray(options.runtimeActions) ? options.runtimeActions : [],
+    businessObjectCode: config.objectCode || options.businessObjectCode || '',
   }
 }
 
@@ -118,6 +120,20 @@ export function normalizeTableRowGap(value, fallback = 8) {
  * 新协议以 props.searchFieldRefs 为准；只有旧区块没有该属性时，才兼容使用
  * 列表 fieldRefs，避免列表列调整后把查询条件错误地一起改掉。
  */
+export function filterCrudItemsByFieldRefs(items = [], fieldRefs = []) {
+  if (!Array.isArray(items) || !items.length)
+    return Array.isArray(items) ? items : []
+  if (!Array.isArray(fieldRefs) || !fieldRefs.length)
+    return items
+  const allow = new Set(fieldRefs.filter(Boolean).map(String))
+  return items.filter((item) => {
+    const key = String(item?.prop || item?.field || item?.key || item?.dataIndex || '').trim()
+    if (!key || item?.type === 'action' || item?.fixed === 'right' || key === 'action')
+      return true
+    return allow.has(key)
+  })
+}
+
 export function resolveCrudSearchFieldCatalog(fields = [], block = {}) {
   const fieldMap = new Map((Array.isArray(fields) ? fields : []).flatMap((field) => {
     const fieldCode = field?.field || field?.fieldCode || field?.prop || field?.key

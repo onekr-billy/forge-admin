@@ -2,7 +2,7 @@
   <div class="application-settings-page">
     <header class="settings-page-header">
       <div class="settings-page-title">
-        <n-button quaternary circle aria-label="返回应用工作台" @click="returnWorkspace">
+        <n-button quaternary circle aria-label="返回页面管理" @click="returnWorkspace">
           <template #icon>
             <n-icon><ArrowBackOutline /></n-icon>
           </template>
@@ -21,6 +21,17 @@
         </n-button>
       </n-space>
     </header>
+    <nav class="settings-app-tabs" aria-label="应用导航">
+      <button type="button" class="settings-app-tab" @click="goRuntime">
+        页面管理
+      </button>
+      <button type="button" class="settings-app-tab active">
+        应用设置
+      </button>
+      <button type="button" class="settings-app-tab" @click="goPublish">
+        应用发布
+      </button>
+    </nav>
 
     <n-spin :show="loading">
       <div v-if="application" class="settings-layout">
@@ -38,9 +49,13 @@
         </aside>
         <main class="settings-content">
           <AppSettingsBasic v-if="activeSection === 'basic'" v-model="settingsModel" />
-          <AppSettingsAccess v-else-if="activeSection === 'access'" ref="accessRef" v-model="settingsModel" />
+          <AppSettingsAccess v-else-if="activeSection === 'access'" ref="accessRef" v-model="settingsModel" :application="application" />
           <AppSettingsNavigation v-else-if="activeSection === 'navigation'" v-model="settingsModel" :pages="applicationPages" />
-          <AppSettingsPermission v-else-if="activeSection === 'permission'" v-model="settingsModel" />
+          <AppSettingsPermission
+            v-else-if="activeSection === 'permission'"
+            v-model="settingsModel"
+            :application="application"
+          />
           <AppSettingsGlobalization v-else-if="activeSection === 'globalization'" v-model="settingsModel" />
           <AppSettingsAdvanced v-else v-model="settingsModel" />
         </main>
@@ -198,7 +213,15 @@ function selectSection(key) {
 }
 
 function returnWorkspace() {
-  router.push({ name: 'BusinessApplicationWorkspace', params: { applicationCode: route.params.applicationCode } })
+  router.push({ name: 'BusinessApplicationRuntime', params: { applicationCode: route.params.applicationCode } })
+}
+
+function goRuntime() {
+  router.push({ name: 'BusinessApplicationRuntime', params: { applicationCode: route.params.applicationCode } })
+}
+
+function goPublish() {
+  router.push({ name: 'BusinessApplicationPublish', params: { applicationCode: route.params.applicationCode } })
 }
 
 function openPortal() {
@@ -224,8 +247,12 @@ function stripApplicationFields(model) {
 
 <style scoped>
 .application-settings-page {
-  min-height: 100%;
-  background: var(--body-color, #f5f7fa);
+  height: 100vh;
+  overflow-y: auto;
+  background: #f5f7fa;
+  /* 覆盖全局 body overflow:hidden */
+  position: fixed;
+  inset: 0;
 }
 
 .settings-page-header {
@@ -233,13 +260,44 @@ function stripApplicationFields(model) {
   z-index: 20;
   top: 0;
   display: flex;
-  height: 64px;
+  height: 56px;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid var(--border-color, #e5e6eb);
-  background: var(--card-color, #fff);
+  gap: 16px;
+  border-bottom: 1px solid #e5e6eb;
+  background: #fff;
   padding: 0 20px;
+}
+.settings-app-tabs {
+  position: sticky;
+  z-index: 19;
+  top: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-bottom: 1px solid #e5e6eb;
+  background: #fff;
+  padding: 6px 20px;
+}
+.settings-app-tab {
+  cursor: pointer;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 5px 14px;
+  color: #4e5969;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.settings-app-tab:hover {
+  color: #1f2329;
+}
+.settings-app-tab.active {
+  background: #f2f3f5;
+  color: #1f2329;
+  font-weight: 600;
 }
 
 .settings-page-title {
@@ -254,7 +312,7 @@ function stripApplicationFields(model) {
 }
 
 .settings-page-title span {
-  color: var(--text-color-3, #86909c);
+  color: #86909c;
   font-size: 12px;
 }
 
@@ -266,17 +324,17 @@ function stripApplicationFields(model) {
 
 .settings-layout {
   display: grid;
-  width: min(1180px, calc(100% - 32px));
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 18px;
-  margin: 20px auto;
+  width: min(1280px, calc(100% - 48px));
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 20px;
+  margin: 20px auto 32px;
 }
 
 .settings-nav,
 .settings-content :deep(.settings-section-card) {
-  border: 1px solid var(--border-color, #e5e6eb);
-  border-radius: 9px;
-  background: var(--card-color, #fff);
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .settings-nav {
@@ -300,8 +358,8 @@ function stripApplicationFields(model) {
 
 .settings-nav button:hover,
 .settings-nav button.active {
-  background: color-mix(in srgb, var(--primary-color, #3370ff) 9%, transparent);
-  color: var(--primary-color, #3370ff);
+  background: #f2f3f5;
+  color: #1f2329;
 }
 
 .settings-content :deep(.settings-section-card) {
@@ -320,7 +378,7 @@ function stripApplicationFields(model) {
 
 .settings-content :deep(.settings-section-card > header p) {
   margin: 6px 0 0;
-  color: var(--text-color-3, #86909c);
+  color: #86909c;
   font-size: 13px;
 }
 

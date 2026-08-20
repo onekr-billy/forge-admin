@@ -1,33 +1,9 @@
+import { resolveFieldComponentDefaults } from './fieldComponentCatalog'
 import {
   camelToSnake,
   isFieldComponent,
   normalizeFormDesignerSchema,
 } from './formDesignerSchema'
-
-const FIELD_DEFAULTS = {
-  input: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'input', length: 128, precision: 2, queryType: 'like' },
-  barcodeScanner: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'barcodeScanner', length: 2048, precision: 2, queryType: 'eq' },
-  textarea: { fieldType: 'MULTILINE', dataType: 'text', componentType: 'textarea', length: null, precision: 2, queryType: 'like' },
-  number: { fieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
-  integer: { fieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
-  money: { fieldType: 'MONEY', dataType: 'decimal', componentType: 'number', length: 18, precision: 2, queryType: 'eq' },
-  date: { fieldType: 'DATE', dataType: 'date', componentType: 'date', length: null, precision: null, queryType: 'eq' },
-  datetime: { fieldType: 'DATETIME', dataType: 'datetime', componentType: 'datetime', length: null, precision: null, queryType: 'eq' },
-  time: { fieldType: 'TEXT', dataType: 'varchar', componentType: 'time', length: 32, precision: 2, queryType: 'eq' },
-  switch: { fieldType: 'SWITCH', dataType: 'tinyint', componentType: 'switch', length: 1, precision: 0, queryType: 'eq' },
-  select: { fieldType: 'DICT', dataType: 'varchar', componentType: 'select', length: 64, precision: 2, queryType: 'eq' },
-  radio: { fieldType: 'RADIO', dataType: 'varchar', componentType: 'radio', length: 64, precision: 2, queryType: 'eq' },
-  checkbox: { fieldType: 'CHECKBOX', dataType: 'varchar', componentType: 'checkbox', length: 255, precision: 2, queryType: 'in' },
-  dictSelect: { fieldType: 'DICT', dataType: 'varchar', componentType: 'dictSelect', length: 64, precision: 2, queryType: 'eq' },
-  cascader: { fieldType: 'DICT', dataType: 'varchar', componentType: 'cascader', length: 128, precision: 2, queryType: 'eq' },
-  regionTreeSelect: { fieldType: 'REGION', dataType: 'varchar', componentType: 'regionTreeSelect', length: 32, precision: 2, queryType: 'eq' },
-  orgTreeSelect: { fieldType: 'DEPT', dataType: 'bigint', componentType: 'orgTreeSelect', length: null, precision: null, queryType: 'eq' },
-  userSelect: { fieldType: 'USER', dataType: 'bigint', componentType: 'userSelect', length: null, precision: null, queryType: 'eq' },
-  fileUpload: { fieldType: 'FILE', dataType: 'varchar', componentType: 'fileUpload', length: 512, precision: 2, queryType: 'eq' },
-  imageUpload: { fieldType: 'IMAGE', dataType: 'varchar', componentType: 'imageUpload', length: 512, precision: 2, queryType: 'eq' },
-  objectReference: { fieldType: 'REFERENCE', dataType: 'bigint', componentType: 'objectReference', length: null, precision: null, queryType: 'eq' },
-  recordSelector: { fieldType: 'RECORD_SELECTOR', dataType: 'bigint', componentType: 'recordSelector', length: null, precision: null, queryType: 'eq' },
-}
 
 export function buildAutoFieldAssets(schema = {}, existingFields = []) {
   const normalized = normalizeFormDesignerSchema(schema)
@@ -53,7 +29,7 @@ export function buildAutoFieldAssets(schema = {}, existingFields = []) {
 export function createFieldFromComponent(component = {}, index = 0) {
   const binding = component.fieldBinding || {}
   const fieldCode = binding.fieldCode || ''
-  const defaults = FIELD_DEFAULTS[component.componentKey] || FIELD_DEFAULTS.input
+  const defaults = resolveFieldComponentDefaults(component.componentKey)
   const props = component.props || {}
   const basicProps = {
     ...props,

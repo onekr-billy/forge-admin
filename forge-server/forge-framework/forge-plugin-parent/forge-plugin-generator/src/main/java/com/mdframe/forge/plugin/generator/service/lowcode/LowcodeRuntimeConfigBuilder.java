@@ -2714,6 +2714,9 @@ public class LowcodeRuntimeConfigBuilder {
                 return "timerange";
             }
         }
+        if (LowcodeComponentCatalog.isFieldComponent(componentType)) {
+            return componentType;
+        }
         if ("number".equals(componentType)) {
             return "number";
         }
@@ -2821,7 +2824,8 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private String buildPlaceholder(String componentType, String label) {
-        if ("select".equals(componentType) || "radio".equals(componentType) || "checkbox".equals(componentType)
+        if ("select".equals(componentType) || "radio".equals(componentType) || "radioButton".equals(componentType)
+                || "checkbox".equals(componentType) || "transfer".equals(componentType) || "customSelect".equals(componentType)
                 || "date".equals(componentType) || "datetime".equals(componentType) || "time".equals(componentType)
                 || "daterange".equals(componentType) || "datetimerange".equals(componentType) || "timerange".equals(componentType)
                 || "dictSelect".equals(componentType) || "treeSelect".equals(componentType) || "orgTreeSelect".equals(componentType)

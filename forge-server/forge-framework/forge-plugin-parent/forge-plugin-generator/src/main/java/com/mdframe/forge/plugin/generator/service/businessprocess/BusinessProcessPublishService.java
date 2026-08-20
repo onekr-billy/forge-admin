@@ -419,6 +419,10 @@ public class BusinessProcessPublishService {
         }
     }
 
+    public BusinessProcessSnapshot toRuntimeSnapshot(AiBusinessProcessVersion version) {
+        return toSnapshot(version);
+    }
+
     private BusinessProcessSnapshot toSnapshot(AiBusinessProcessVersion version) {
         return new BusinessProcessSnapshot(
                 String.valueOf(version.getProcessId()),

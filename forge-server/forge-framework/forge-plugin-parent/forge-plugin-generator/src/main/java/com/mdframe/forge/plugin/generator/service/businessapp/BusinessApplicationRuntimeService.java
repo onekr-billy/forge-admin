@@ -50,7 +50,9 @@ public class BusinessApplicationRuntimeService {
         for (BusinessApplicationVO candidate : applicationService.workbenchDistributionCandidates()) {
             try {
                 BusinessApplicationRuntimeVO runtime = runtime(candidate);
-                if (hasReachableHomePage(runtime)) {
+                if (hasReachableHomePage(runtime)
+                        && applicationService.isCurrentUserDistributedToWorkbench(
+                                runtime.getApplication().getPortalConfig())) {
                     result.add(runtime.getApplication());
                 }
             } catch (BusinessException ignored) {

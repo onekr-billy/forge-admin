@@ -97,6 +97,10 @@ export function provisionBusinessApplicationFormData(id, data) {
   return request.post(`/ai/business/application/${id}/form-data/provision`, data, ENCRYPTED_REQUEST)
 }
 
+export function designBusinessApplicationPage(id, data) {
+  return request.post(`/ai/business/application/${id}/design-page`, data, ENCRYPTED_REQUEST)
+}
+
 export function initializeBusinessApplicationTemplate(id, data) {
   return request.post(`/ai/business/application/${id}/initialize-template`, data, ENCRYPTED_REQUEST)
 }

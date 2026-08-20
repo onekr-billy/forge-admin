@@ -163,6 +163,7 @@ export function createNavigationNode(schema, input = {}) {
     parentId,
     sort: resolveNextSort(siblingNodes),
     systemMenuVisible: input.systemMenuVisible === true,
+    navigationVisible: input.navigationVisible !== false,
     access: normalizeNodeAccess(input.access),
   }
   if (type === 'page') {
@@ -309,6 +310,7 @@ function normalizeNodes(nodes) {
       parentId: node.parentId ? String(node.parentId) : null,
       sort: Number.isFinite(Number(node.sort)) ? Number(node.sort) : index * 10,
       systemMenuVisible: node.systemMenuVisible === true,
+      navigationVisible: (node.navigationVisible ?? node.settings?.navigationVisible) !== false,
       access: normalizeNodeAccess(node.access),
       ...(node.type === 'group'
         ? {}
@@ -432,6 +434,7 @@ function normalizeObjectRef(value) {
     objectName: String(value.objectName || '').trim(),
     configKey: String(value.configKey || '').trim(),
     formKey: String(value.formKey || '').trim(),
+    hasBusinessData: value.hasBusinessData === true,
     defaultParams: clone(value.defaultParams || {}),
     valid: value.valid !== false,
   }

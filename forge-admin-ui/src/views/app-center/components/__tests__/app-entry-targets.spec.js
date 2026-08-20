@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildEntryOpenUrl,
+  buildH5RuntimeUrl,
   buildRuntimePageOptions,
   buildRuntimeTargetPreview,
   supportsRuntimeTarget,
@@ -44,7 +45,7 @@ describe('application entry targets', () => {
       targetFormKey: 'main',
     })).toMatchObject({
       mobile: true,
-      value: '/#/pages/lowcode-runtime?configKey=presale_order',
+      value: '/#/pages/lowcode-runtime?appId=9001&configKey=presale_order',
     })
     expect(buildRuntimeTargetPreview({
       entryMode: 'RUNTIME',
@@ -68,16 +69,16 @@ describe('application entry targets', () => {
       id: '9001',
       configKey: 'ps_presale_order',
       options: JSON.stringify({ runtimeOpenMode: 'LIST', h5BaseUrl: 'http://localhost:3001' }),
-    })).toBe('http://localhost:3001/#/pages/lowcode-runtime?configKey=ps_presale_order')
+    })).toBe('http://localhost:3001/#/pages/lowcode-runtime?appId=9001&configKey=ps_presale_order')
 
-    // 移动入口无 h5BaseUrl → 默认 http://localhost:3001
+    // 移动入口无 h5BaseUrl → 默认独立 H5 站点端口
     expect(buildEntryOpenUrl({
       appType: 'MOBILE',
       entryMode: 'RUNTIME',
       id: '9001',
       configKey: 'ps_presale_order',
       options: JSON.stringify({ runtimeOpenMode: 'LIST' }),
-    })).toBe('http://localhost:3001/#/pages/lowcode-runtime?configKey=ps_presale_order')
+    })).toBe('http://localhost:3009/#/pages/lowcode-runtime?appId=9001&configKey=ps_presale_order')
 
     // WEB 运行时 → AiCrudPage 完整参数
     expect(buildEntryOpenUrl({
@@ -94,5 +95,16 @@ describe('application entry targets', () => {
 
     // 外部页面 → entryUrl
     expect(buildEntryOpenUrl({ entryMode: 'EXTERNAL', entryUrl: 'https://example.com' })).toBe('https://example.com')
+  })
+
+  it('builds the standalone H5 runtime url used by portal publish cards', () => {
+    expect(buildH5RuntimeUrl({
+      configKey: 'presale_registration_business_object',
+    })).toBe('http://localhost:3009/#/pages/lowcode-runtime?configKey=presale_registration_business_object')
+    expect(buildH5RuntimeUrl({
+      h5BaseUrl: 'https://m.example.com/',
+      configKey: 'order',
+      appId: '12',
+    })).toBe('https://m.example.com/#/pages/lowcode-runtime?appId=12&configKey=order')
   })
 })

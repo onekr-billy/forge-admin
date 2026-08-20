@@ -141,3 +141,24 @@ Flyway 下线脚本必须先物理清理 `sys_role_resource` 关系，再将旧�
 - 前端定向 Vitest 2 个文件、7 个测试通过；目标 ESLint 通过；system 5 个测试类、18 个测试通过；Admin 45 模块聚合编译通过；前端生产构建通过。
 - 本地运行态打开组织管理后，实际请求 `sys_org_type`、`sys_normal_disable`、`sys_post_type`、`sys_user_status` 的 `/type/{dictType}` 接口；受管统计出现 miss/put/hit，后续页面请求中 hit 继续增长而 failure 保持 13 不变。
 - `1440x900` 桌面和 `390x844` 移动页面均展示命中、未命中、写入和失败；移动页面 `clientWidth/scrollWidth=390/390`，非零失败色为当前主题 `rgb(208, 48, 80)`，前端控制台无新增错误。
+
+## 10. 运行态泛型缓存兼容回归
+
+- `ForgeCacheAspectTest#shouldRestoreGenericCollectionElementsFromJsonCacheHit`：模拟 Redis 将 `List<T>` 元素反序列化为 Map，命中后必须恢复为方法声明的元素类型，且不得重新调用业务方法。
+- `SytemDictValueProviderLegacyCacheTest`：模拟历史字典缓存返回 `List<Map>`，正向和反向翻译均不得抛 `ClassCastException`。
+- `SysDictDataServiceImplTest`：继续验证字典加载和受管缓存注解合同。
+
+```bash
+cd forge-server
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
+mvn -Penable-tests -pl forge-framework/forge-starter-parent/forge-starter-cache \
+  -Dtest=ForgeCacheKeyResolverTest,ForgeCacheAspectTest,CacheTransactionExecutorTest,MultiLevelCacheHandleTest,ManagedCacheCodecTest,CacheDefinitionResolverTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
+mvn -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-system \
+  -Dtest=SytemDictValueProviderLegacyCacheTest,SysDictDataServiceImplTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+真实 Redis 验收应在重启 Admin 加载新代码后访问组织树，确认 `SysOrgTreeVO.orgType` 翻译成功；无需以手工清空 Redis 作为永久修复手段。

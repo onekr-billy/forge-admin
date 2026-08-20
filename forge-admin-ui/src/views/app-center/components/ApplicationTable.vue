@@ -69,7 +69,7 @@
                 circle
                 size="small"
                 class="action-icon-button enter-application-button"
-                aria-label="打开应用工作台"
+                aria-label="打开页面管理"
                 @click="emit('enter', application)"
               >
                 <template #icon>
@@ -77,7 +77,24 @@
                 </template>
               </n-button>
             </template>
-            打开应用工作台
+            页面管理
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                quaternary
+                circle
+                size="small"
+                class="action-icon-button"
+                aria-label="运行应用"
+                @click="emit('run', application)"
+              >
+                <template #icon>
+                  <n-icon><PlayOutline /></n-icon>
+                </template>
+              </n-button>
+            </template>
+            运行应用
           </n-tooltip>
           <n-tooltip v-if="isDraftApplication(application)" trigger="hover">
             <template #trigger>
@@ -115,7 +132,7 @@
 </template>
 
 <script setup>
-import { AppsOutline, EllipsisHorizontal, OpenOutline, RocketOutline } from '@vicons/ionicons5'
+import { AppsOutline, EllipsisHorizontal, OpenOutline, PlayOutline, RocketOutline } from '@vicons/ionicons5'
 import DictTag from '@/components/DictTag.vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 
@@ -126,7 +143,7 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['enter', 'edit', 'code', 'publish', 'toggle', 'delete'])
+const emit = defineEmits(['enter', 'run', 'edit', 'code', 'publish', 'toggle', 'delete'])
 const APPLICATION_ICON_HUES = [171, 28, 262, 340, 198, 86, 221, 12]
 
 function applicationIconStyle(application) {
@@ -140,8 +157,11 @@ function applicationIconStyle(application) {
 
 function actionOptions(application) {
   return [
+    { label: '页面管理', key: 'enter' },
+    { label: '运行应用', key: 'run' },
+    { label: '发布应用', key: 'publish' },
     { label: '预览与下载代码', key: 'code' },
-    { label: '编辑应用', key: 'edit' },
+    { label: '应用设置', key: 'edit' },
     { label: Number(application.status) === 1 ? '停用应用' : '启用应用', key: 'toggle' },
     { type: 'divider', key: 'divider' },
     { label: '删除应用', key: 'delete' },
@@ -153,7 +173,13 @@ function isDraftApplication(application) {
 }
 
 function handleAction(key, application) {
-  if (key === 'code')
+  if (key === 'enter')
+    emit('enter', application)
+  else if (key === 'run')
+    emit('run', application)
+  else if (key === 'publish')
+    emit('publish', application)
+  else if (key === 'code')
     emit('code', application)
   else if (key === 'edit')
     emit('edit', application)

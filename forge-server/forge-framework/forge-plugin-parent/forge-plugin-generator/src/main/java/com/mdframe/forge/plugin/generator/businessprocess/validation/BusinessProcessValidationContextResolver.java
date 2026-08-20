@@ -122,7 +122,11 @@ public class BusinessProcessValidationContextResolver {
         }
         // Flowable 模型是租户级可复用审批资产，不能通过主对象 FLOW Binding
         // 反向推导应用流程的可选目录。
-        return resolveFlowModelCatalog();
+        return resolveDesignableFlowModels();
+    }
+
+    public List<BusinessProcessFlowModelVO> resolveDesignableFlowModels() {
+        return loadFlowModelCatalog(false);
     }
 
     private Map<Long, AiBusinessObjectDesignVersion> loadPublishedObjectVersions(
@@ -199,18 +203,22 @@ public class BusinessProcessValidationContextResolver {
     }
 
     private List<BusinessProcessFlowModelVO> resolveFlowModelCatalog() {
+        return loadFlowModelCatalog(true);
+    }
+
+    private List<BusinessProcessFlowModelVO> loadFlowModelCatalog(boolean publishedOnly) {
         FlowClient flowClient = flowClientProvider.getIfAvailable();
         if (flowClient == null) {
             return List.of();
         }
         try {
-            FlowResult<List<Map<String, Object>>> response = flowClient.getModelList(null, 1);
+            FlowResult<List<Map<String, Object>>> response = flowClient.getModelList(null, publishedOnly ? 1 : null);
             if (response == null || !response.isSuccess() || response.getData() == null) {
                 return List.of();
             }
             List<BusinessProcessFlowModelVO> result = new ArrayList<>();
             for (Map<String, Object> model : response.getData()) {
-                if (!isPublishedFlowModel(model)) {
+                if (publishedOnly && !isPublishedFlowModel(model)) {
                     continue;
                 }
                 String designerType = StringUtils.trimToNull(text(model.get("designerType")));
@@ -229,7 +237,7 @@ public class BusinessProcessValidationContextResolver {
                 item.setVersion(integer(model.get("version")));
                 item.setProcessDefinitionId(text(model.get("processDefinitionId")));
                 item.setDeploymentId(text(model.get("deploymentId")));
-                item.setDeployed(Boolean.TRUE);
+                item.setDeployed(isPublishedFlowModel(model));
                 result.add(item);
             }
             result.sort(Comparator.comparing(BusinessProcessFlowModelVO::getModelName,

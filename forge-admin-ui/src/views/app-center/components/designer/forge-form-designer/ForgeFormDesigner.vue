@@ -609,6 +609,10 @@ const designerMoreOptions = computed(() => [
 const canUndo = computed(() => undoStack.value.length > 0)
 const canRedo = computed(() => redoStack.value.length > 0)
 const canClearCanvas = computed(() => {
+  if (containsLockedField(normalizedSchema.value.components)
+    || formAssets.value.some(asset => containsLockedField(asset?.schema?.components))) {
+    return false
+  }
   if (normalizedSchema.value.components?.length)
     return true
   return formAssets.value.some(asset => asset?.schema?.components?.length)
@@ -978,6 +982,16 @@ function countComponents(components = []) {
   return (Array.isArray(components) ? components : []).reduce((total, component) => {
     return total + 1 + countComponents(component.children || [])
   }, 0)
+}
+
+function containsLockedField(value = []) {
+  if (Array.isArray(value))
+    return value.some(item => containsLockedField(item))
+  if (!value || typeof value !== 'object')
+    return false
+  if (value.fieldBinding?.locked === true)
+    return true
+  return Object.values(value).some(item => containsLockedField(item))
 }
 
 defineExpose({
@@ -1594,9 +1608,9 @@ onBeforeUnmount(() => {
   grid-template-columns: 248px minmax(0, 1fr) 0;
   height: 100%;
   min-height: 0;
-  border: 1px solid #dbe3ee;
+  border: 1px solid #e5e6eb;
   border-radius: 8px;
-  background: #eef3f8;
+  background: #f7f8fa;
   overflow: hidden;
 }
 
@@ -1634,7 +1648,7 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 28px;
   cursor: pointer;
-  border: 1px solid #dbe3ee;
+  border: 1px solid #e5e6eb;
   border-radius: 7px;
   background: #fff;
   color: #475569;
@@ -1647,14 +1661,14 @@ onBeforeUnmount(() => {
 }
 
 .side-rail-toggle-button:hover {
-  border-color: #93c5fd;
-  background: #eff6ff;
-  color: #2563eb;
+  border-color: #c9cdd4;
+  background: #f2f3f5;
+  color: #1f2329;
 }
 
 .designer-right {
   position: relative;
-  border-left: 1px solid #dbe3ee;
+  border-left: 1px solid #e5e6eb;
   overflow: hidden;
 }
 
@@ -1719,7 +1733,7 @@ onBeforeUnmount(() => {
   .designer-right {
     grid-column: auto;
     border-top: 0;
-    border-left: 1px solid #dbe3ee;
+    border-left: 1px solid #e5e6eb;
   }
 }
 .designer-form-tabs {
@@ -1739,36 +1753,36 @@ onBeforeUnmount(() => {
 }
 
 .designer-toolbar-text-button {
-  --n-color: #eef6ff !important;
-  --n-color-hover: #dbeafe !important;
-  --n-color-pressed: #bfdbfe !important;
-  --n-color-focus: #eef6ff !important;
-  --n-border: 1px solid #bfdbfe !important;
-  --n-border-hover: 1px solid #93c5fd !important;
-  --n-border-pressed: 1px solid #60a5fa !important;
-  --n-border-focus: 1px solid #93c5fd !important;
-  --n-text-color: #1d4ed8 !important;
-  --n-text-color-hover: #1e40af !important;
-  --n-text-color-pressed: #1e3a8a !important;
-  --n-text-color-focus: #1d4ed8 !important;
+  --n-color: #f2f3f5 !important;
+  --n-color-hover: #e5e6eb !important;
+  --n-color-pressed: #c9cdd4 !important;
+  --n-color-focus: #f2f3f5 !important;
+  --n-border: 1px solid #e5e6eb !important;
+  --n-border-hover: 1px solid #c9cdd4 !important;
+  --n-border-pressed: 1px solid #86909c !important;
+  --n-border-focus: 1px solid #c9cdd4 !important;
+  --n-text-color: #1f2329 !important;
+  --n-text-color-hover: #1f2329 !important;
+  --n-text-color-pressed: #1f2329 !important;
+  --n-text-color-focus: #1f2329 !important;
   font-weight: 600;
 }
 
 .designer-toolbar-more-button,
 .designer-toolbar-icon-button {
-  --n-color: #2563eb !important;
-  --n-color-hover: #1d4ed8 !important;
-  --n-color-pressed: #1e40af !important;
-  --n-color-focus: #2563eb !important;
-  --n-border: 1px solid #2563eb !important;
-  --n-border-hover: 1px solid #1d4ed8 !important;
-  --n-border-pressed: 1px solid #1e40af !important;
-  --n-border-focus: 1px solid #2563eb !important;
+  --n-color: #4e5969 !important;
+  --n-color-hover: #1f2329 !important;
+  --n-color-pressed: #1f2329 !important;
+  --n-color-focus: #4e5969 !important;
+  --n-border: 1px solid #4e5969 !important;
+  --n-border-hover: 1px solid #1f2329 !important;
+  --n-border-pressed: 1px solid #1f2329 !important;
+  --n-border-focus: 1px solid #4e5969 !important;
   --n-text-color: #fff !important;
   --n-text-color-hover: #fff !important;
   --n-text-color-pressed: #fff !important;
   --n-text-color-focus: #fff !important;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 6px 14px rgba(31, 35, 41, 0.12);
 }
 
 .designer-toolbar-more-button :deep(.n-button__icon),
@@ -1780,18 +1794,18 @@ onBeforeUnmount(() => {
 
 .field-shelf-collapse-button {
   flex: 0 0 auto;
-  --n-color: #f8fafc !important;
-  --n-color-hover: #eff6ff !important;
-  --n-color-pressed: #dbeafe !important;
-  --n-color-focus: #f8fafc !important;
-  --n-border: 1px solid #cbd5e1 !important;
-  --n-border-hover: 1px solid #93c5fd !important;
-  --n-border-pressed: 1px solid #60a5fa !important;
-  --n-border-focus: 1px solid #93c5fd !important;
+  --n-color: #f7f8fa !important;
+  --n-color-hover: #f2f3f5 !important;
+  --n-color-pressed: #e5e6eb !important;
+  --n-color-focus: #f7f8fa !important;
+  --n-border: 1px solid #e5e6eb !important;
+  --n-border-hover: 1px solid #c9cdd4 !important;
+  --n-border-pressed: 1px solid #86909c !important;
+  --n-border-focus: 1px solid #c9cdd4 !important;
   --n-text-color: #475569 !important;
-  --n-text-color-hover: #2563eb !important;
-  --n-text-color-pressed: #1d4ed8 !important;
-  --n-text-color-focus: #2563eb !important;
+  --n-text-color-hover: #1f2329 !important;
+  --n-text-color-pressed: #1f2329 !important;
+  --n-text-color-focus: #1f2329 !important;
 }
 
 .designer-toolbar-danger-button {
@@ -1825,16 +1839,16 @@ onBeforeUnmount(() => {
 }
 
 .designer-form-tab:hover {
-  border-color: #bfdbfe;
-  background: #f8fafc;
+  border-color: #c9cdd4;
+  background: #f7f8fa;
 }
 
 .designer-form-tab.active {
   border-color: transparent;
-  border-bottom: 2px solid #2563eb;
+  border-bottom: 2px solid #1f2329;
   border-radius: 0 0 4px 4px;
   background: transparent;
-  color: #2563eb;
+  color: #1f2329;
   box-shadow: none;
 }
 
@@ -1853,7 +1867,7 @@ onBeforeUnmount(() => {
 }
 
 .designer-form-tab.active em {
-  background: #2563eb;
+  background: #4e5969;
   color: #fff;
 }
 
@@ -2100,9 +2114,9 @@ onBeforeUnmount(() => {
 }
 
 .designer-form-tab.active {
-  border-bottom-color: #2563eb;
+  border-bottom-color: #1f2329;
   background: transparent;
-  color: #2563eb;
+  color: #1f2329;
   box-shadow: none;
 }
 

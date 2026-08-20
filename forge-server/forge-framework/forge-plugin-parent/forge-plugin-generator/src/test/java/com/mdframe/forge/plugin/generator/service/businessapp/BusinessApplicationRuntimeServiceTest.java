@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -104,6 +107,48 @@ class BusinessApplicationRuntimeServiceTest {
                         "applicationName", "已发布应用",
                         "suiteCode", "crm",
                         "status", 1,
+                        "portalConfig", Map.of(
+                                "permission", Map.of("visibility", "all"),
+                                "distribution", Map.of("workbench", Map.of(
+                                        "enabled", true,
+                                        "targetType", "CURRENT_USER",
+                                        "targetUserId", 7))),
+                        "options", Map.of("inAppBuilder", builder)),
+                "objects", List.of(),
+                "entries", List.of());
+        BusinessApplicationRuntimeService service = service(
+                application,
+                version(2, objectMapper.writeValueAsString(snapshot)));
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "workbench-runtime", Set.of()))) {
+            List<BusinessApplicationVO> result = service.workbenchApplications();
+
+            assertEquals(1, result.size());
+            assertEquals("released-slug", result.get(0).getPortalSlug());
+            assertEquals("已发布应用", result.get(0).getApplicationName());
+        }
+    }
+
+    @Test
+    @DisplayName("workbench ignores draft-only distribution switches")
+    void workbenchIgnoresDraftDistribution() throws Exception {
+        BusinessApplicationVO application = application(2);
+        application.setPortalConfig("{\"distribution\":{\"workbench\":{\"enabled\":true,\"targetType\":\"CURRENT_USER\",\"targetUserId\":7}}}");
+        Map<String, Object> builder = Map.of(
+                "homePageId", "page_home",
+                "nodes", List.of(node("page_home", null, null)),
+                "pages", Map.of("page_home", Map.of("title", "正式首页")));
+        Map<String, Object> snapshot = Map.of(
+                "application", Map.of(
+                        "id", "10",
+                        "applicationCode", "crm_test",
+                        "portalSlug", "released-slug",
+                        "applicationName", "已发布应用",
+                        "suiteCode", "crm",
+                        "status", 1,
                         "portalConfig", Map.of("permission", Map.of("visibility", "all")),
                         "options", Map.of("inAppBuilder", builder)),
                 "objects", List.of(),
@@ -111,12 +156,13 @@ class BusinessApplicationRuntimeServiceTest {
         BusinessApplicationRuntimeService service = service(
                 application,
                 version(2, objectMapper.writeValueAsString(snapshot)));
-
-        List<BusinessApplicationVO> result = service.workbenchApplications();
-
-        assertEquals(1, result.size());
-        assertEquals("released-slug", result.get(0).getPortalSlug());
-        assertEquals("已发布应用", result.get(0).getApplicationName());
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L, "pc", "workbench-draft", Set.of()))) {
+            assertTrue(service.workbenchApplications().isEmpty());
+        }
     }
 
     @Test

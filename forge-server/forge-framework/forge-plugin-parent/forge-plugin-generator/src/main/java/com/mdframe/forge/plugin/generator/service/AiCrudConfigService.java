@@ -424,6 +424,9 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
         vo.setLayoutType(runtimeConfig.getLayoutType());
         vo.setTableName(runtimeConfig.getTableName());
         vo.setTableComment(runtimeConfig.getTableComment());
+        if (StringUtils.isBlank(vo.getObjectCode())) {
+            vo.setObjectCode(runtimeConfig.getObjectCode());
+        }
         vo.setSearchSchema(readJson(runtimeConfig.getSearchSchema()));
         vo.setColumnsSchema(readJson(runtimeConfig.getColumnsSchema()));
         vo.setEditSchema(readJson(runtimeConfig.getEditSchema()));

@@ -371,6 +371,61 @@
           )
     </select>
 
+    <select id="countActiveTenantUsers" resultType="java.lang.Long">
+        <choose>
+            <when test="userIds == null or userIds.size() == 0">
+                SELECT 0
+            </when>
+            <otherwise>
+                SELECT COUNT(DISTINCT u.id)
+                FROM sys_user u
+                WHERE u.tenant_id = #{tenantId}
+                  AND u.del_flag = 0
+                  AND u.id IN
+                  <foreach collection="userIds" item="userId" open="(" close=")" separator=",">
+                      #{userId}
+                  </foreach>
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="countActiveTenantRoles" resultType="java.lang.Long">
+        <choose>
+            <when test="roleIds == null or roleIds.size() == 0">
+                SELECT 0
+            </when>
+            <otherwise>
+                SELECT COUNT(DISTINCT r.id)
+                FROM sys_role r
+                WHERE r.tenant_id = #{tenantId}
+                  AND r.del_flag = 0
+                  AND r.role_status = 1
+                  AND r.id IN
+                  <foreach collection="roleIds" item="roleId" open="(" close=")" separator=",">
+                      #{roleId}
+                  </foreach>
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="countActiveTenantOrgs" resultType="java.lang.Long">
+        <choose>
+            <when test="orgIds == null or orgIds.size() == 0">
+                SELECT 0
+            </when>
+            <otherwise>
+                SELECT COUNT(DISTINCT o.id)
+                FROM sys_org o
+                WHERE o.tenant_id = #{tenantId}
+                  AND o.del_flag = 0
+                  AND o.id IN
+                  <foreach collection="orgIds" item="orgId" open="(" close=")" separator=",">
+                      #{orgId}
+                  </foreach>
+            </otherwise>
+        </choose>
+    </select>
+
     <update id="markChanged">
         UPDATE ai_business_application
         SET design_status = CASE

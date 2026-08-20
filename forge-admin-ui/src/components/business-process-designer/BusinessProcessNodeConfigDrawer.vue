@@ -1,5 +1,5 @@
 <script setup>
-import { NButton, NDrawer, NDrawerContent } from 'naive-ui'
+import { NButton } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import ActionAndApprovalNodeConfig from './ActionAndApprovalNodeConfig.vue'
 import {
@@ -42,18 +42,22 @@ const title = computed(() => draftNode.value?.name || '节点配置')
 const typeLabel = computed(() => getBusinessProcessNodeDefinition(draftNode.value?.type)?.label || '业务节点')
 const isExecutionNode = computed(() => ['ACTION', 'APPROVAL', 'SUB_PROCESS'].includes(draftNode.value?.type))
 
-watch([
-  () => props.node,
-  () => props.visible,
-], ([node, visible]) => {
-  if (visible && node) {
-    draftNode.value = clone(node)
-    draftRecordIdSource.value = null
-  }
-}, { deep: true, immediate: true })
+watch(
+  () => [props.visible, props.node?.id],
+  ([visible]) => {
+    if (visible && props.node) {
+      draftNode.value = clone(props.node)
+      draftRecordIdSource.value = null
+    }
+  },
+  { immediate: true },
+)
 
 function patchConfig(config) {
+  if (!draftNode.value)
+    return
   draftNode.value.config = clone(config)
+  persistDraft()
 }
 
 function handleStartType(type) {
@@ -64,6 +68,7 @@ function handleStartType(type) {
     ports: template.ports,
     config: template.config,
   }
+  persistDraft()
 }
 
 function patchBranches(branches) {
@@ -72,18 +77,21 @@ function patchBranches(branches) {
     branches,
   }
   draftNode.value.ports = branches.map(branch => branch.port)
+  persistDraft()
+}
+
+function persistDraft() {
+  if (!draftNode.value || props.readonly)
+    return
+  emit('save', clone(draftNode.value), {
+    recordIdSource: draftRecordIdSource.value,
+    reject: () => {},
+  })
 }
 
 function handleSave() {
-  if (!draftNode.value || props.readonly)
-    return
-  let accepted = true
-  emit('save', clone(draftNode.value), {
-    recordIdSource: draftRecordIdSource.value,
-    reject: () => { accepted = false },
-  })
-  if (accepted)
-    emit('update:visible', false)
+  persistDraft()
+  emit('update:visible', false)
 }
 
 function clone(value) {
@@ -92,25 +100,21 @@ function clone(value) {
 </script>
 
 <template>
-  <NDrawer
-    :show="visible"
-    width="520"
-    placement="right"
-    :mask-closable="false"
-    @update:show="emit('update:visible', $event)"
-  >
-    <NDrawerContent class="business-node-config-drawer" closable>
-      <template #header>
-        <div class="drawer-heading">
-          <strong>{{ title }}</strong>
-          <span>{{ typeLabel }}</span>
-        </div>
-      </template>
+  <section v-if="visible && draftNode" class="node-config-panel" data-node-config="panel">
+    <header class="node-config-header">
+      <div class="drawer-heading">
+        <strong>{{ title }}</strong>
+        <span>{{ typeLabel }}</span>
+      </div>
+      <button type="button" class="node-config-close" aria-label="收起" @click="emit('update:visible', false)">
+        ×
+      </button>
+    </header>
 
       <div v-if="draftNode" class="drawer-form">
         <label class="name-field">
           <span>节点名称</span>
-          <input v-model="draftNode.name" :disabled="readonly" maxlength="80">
+          <input v-model="draftNode.name" :disabled="readonly" maxlength="80" @change="persistDraft">
         </label>
 
         <StartNodeConfig
@@ -153,7 +157,7 @@ function clone(value) {
 
         <label v-else-if="draftNode.type === 'END'" class="name-field">
           <span>结束结果</span>
-          <select v-model="draftNode.config.result">
+          <select v-model="draftNode.config.result" @change="persistDraft">
             <option value="SUCCESS">成功完成</option>
             <option value="REJECTED">业务驳回</option>
             <option value="CANCELED">流程取消</option>
@@ -162,21 +166,55 @@ function clone(value) {
         </label>
       </div>
 
-      <template #footer>
-        <div class="drawer-actions">
-          <NButton @click="emit('update:visible', false)">
-            取消
-          </NButton>
-          <NButton type="primary" :disabled="readonly" @click="handleSave">
-            应用配置
-          </NButton>
-        </div>
-      </template>
-    </NDrawerContent>
-  </NDrawer>
+    <footer class="drawer-actions">
+      <NButton @click="emit('update:visible', false)">
+        收起
+      </NButton>
+      <NButton type="primary" :disabled="readonly" @click="handleSave">
+        完成
+      </NButton>
+    </footer>
+  </section>
 </template>
 
 <style scoped>
+.node-config-panel {
+  display: flex;
+  flex: 0 0 auto;
+  max-height: min(460px, 48%);
+  min-height: 220px;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--card-color, #fff);
+}
+
+.node-config-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 16px 22px 12px;
+}
+
+.node-config-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-color-3, #64748b);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.node-config-close:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-color-1, #0f172a);
+}
+
 .drawer-heading {
   display: flex;
   flex-direction: column;
@@ -195,8 +233,11 @@ function clone(value) {
 
 .drawer-form {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 20px;
+  overflow: auto;
+  padding: 18px 22px;
 }
 
 .name-field {
@@ -280,5 +321,7 @@ function clone(value) {
   justify-content: flex-end;
   gap: 8px;
   width: 100%;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 12px 22px 16px;
 }
 </style>

@@ -222,23 +222,51 @@ public class SytemDictValueProvider implements DictValueProvider {
     }
 
     private Map<String, String> loadValueLabelMap(String dictType) {
-        List<SysDictData> dictDataList = sysDictDataService.selectDictDataByType(dictType);
+        List<?> dictDataList = sysDictDataService.selectDictDataByType(dictType);
         Map<String, String> map = new LinkedHashMap<>(dictDataList.size() * 2);
-        for (SysDictData dictData : dictDataList) {
-            map.put(dictData.getDictValue(), dictData.getDictLabel());
+        for (Object rawDictData : dictDataList) {
+            SysDictData dictData = normalizeDictData(rawDictData);
+            if (dictData != null) {
+                map.put(dictData.getDictValue(), dictData.getDictLabel());
+            }
         }
         return map;
     }
 
     private Map<String, String> loadLabelValueMap(String dictType) {
-        List<SysDictData> dictDataList = sysDictDataService.selectDictDataByType(dictType);
+        List<?> dictDataList = sysDictDataService.selectDictDataByType(dictType);
         Map<String, String> map = new LinkedHashMap<>(dictDataList.size() * 2);
-        for (SysDictData dictData : dictDataList) {
-            if (dictData.getDictLabel() != null && dictData.getDictValue() != null) {
+        for (Object rawDictData : dictDataList) {
+            SysDictData dictData = normalizeDictData(rawDictData);
+            if (dictData != null && dictData.getDictLabel() != null && dictData.getDictValue() != null) {
                 map.putIfAbsent(dictData.getDictLabel(), dictData.getDictValue());
                 map.putIfAbsent(dictData.getDictValue(), dictData.getDictValue());
             }
         }
         return map;
+    }
+
+    /**
+     * 兼容旧缓存或非 Jackson 类型化缓存返回的 Map 元素，避免字典翻译边界再次发生裸强转。
+     */
+    private SysDictData normalizeDictData(Object rawDictData) {
+        if (rawDictData instanceof SysDictData dictData) {
+            return dictData;
+        }
+        if (!(rawDictData instanceof Map<?, ?> values)) {
+            if (rawDictData != null) {
+                log.warn("字典缓存项类型无法识别，已跳过: type={}", rawDictData.getClass().getName());
+            }
+            return null;
+        }
+        SysDictData dictData = new SysDictData();
+        dictData.setDictValue(stringValue(values, "dictValue", "dict_value"));
+        dictData.setDictLabel(stringValue(values, "dictLabel", "dict_label"));
+        return dictData;
+    }
+
+    private String stringValue(Map<?, ?> values, String camelCaseKey, String snakeCaseKey) {
+        Object value = values.containsKey(camelCaseKey) ? values.get(camelCaseKey) : values.get(snakeCaseKey);
+        return value == null ? null : String.valueOf(value);
     }
 }

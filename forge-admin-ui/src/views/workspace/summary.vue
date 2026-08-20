@@ -187,8 +187,8 @@ async function loadSummary() {
 }
 
 .summary-metric:hover {
-  border-color: #9dbaf6;
-  box-shadow: 0 8px 22px rgba(24, 39, 75, 0.08);
+  border-color: #c9cdd4;
+  box-shadow: 0 8px 22px rgba(31, 35, 41, 0.06);
   transform: translateY(-1px);
 }
 
@@ -203,8 +203,8 @@ async function loadSummary() {
 }
 
 .metric-icon.blue {
-  background: #e8f1ff;
-  color: #1d4ed8;
+  background: #f0f2f5;
+  color: #4e5969;
 }
 
 .metric-icon.green {

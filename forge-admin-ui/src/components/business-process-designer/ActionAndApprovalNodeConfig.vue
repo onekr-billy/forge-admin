@@ -1,6 +1,10 @@
 <script setup>
-import { NModal } from 'naive-ui'
+import { NButton, NEmpty, NSelect, NTag } from 'naive-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import flowApi from '@/api/flow'
+import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
+import TemplateVariableEditor from '@/views/app-center/components/designer/TemplateVariableEditor.vue'
+import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
 import { ACTION_NODE_TEMPLATES, createActionTemplateConfig } from './node-templates.js'
 
 const props = defineProps({
@@ -24,14 +28,46 @@ const FlowDesignPage = defineAsyncComponent(() => import('@/views/flow/design.vu
 const localConfig = ref(clone(props.node.config))
 const flowDesignerVisible = ref(false)
 const selectedTemplate = ref('')
+const creatingModel = ref(false)
+const previewXml = ref('')
+const previewLoading = ref(false)
+const autoBoundNodeId = ref('')
 
-const publishedFlowModels = computed(() => props.flowModels.filter((item) => {
-  const published = item.status === 1 || item.published === true
-  const deployed = item.deployed === true || Boolean(item.deploymentId)
-  return published && deployed
+const designableFlowModels = computed(() => (props.flowModels || []).filter((item) => {
+  const designerType = String(item.designerType || '').toLowerCase()
+  return designerType !== 'business' && Boolean(modelKey(item))
 }))
 
-const selectedFlowModel = computed(() => publishedFlowModels.value.find(item =>
+const flowModelOptions = computed(() => designableFlowModels.value.map(item => ({
+  label: item.modelName || item.name || modelKey(item),
+  value: modelKey(item),
+  deployed: item.deployed === true || Boolean(item.deploymentId),
+})))
+
+const resolvedFormAssets = computed(() => {
+  const assets = (props.formAssets || []).filter(item => formAssetKey(item))
+  if (assets.length)
+    return assets
+  if (!props.objectCode)
+    return []
+  return [{
+    formKey: props.objectCode,
+    formName: props.objectName || `${props.objectCode}表单`,
+    formMode: 'BUSINESS_OBJECT_FORM',
+    objectCode: props.objectCode,
+    objectName: props.objectName,
+  }]
+})
+
+const statusFieldOptions = computed(() => fieldOptions.value)
+
+const suggestedStatusField = computed(() => {
+  const preferred = ['flowStatus', 'documentStatus', 'approvalStatus', 'status']
+  const values = new Set(fieldOptions.value.map(item => item.value))
+  return preferred.find(item => values.has(item)) || ''
+})
+
+const selectedFlowModel = computed(() => designableFlowModels.value.find(item =>
   modelKey(item) === localConfig.value.flowModelKey,
 ) || null)
 
@@ -48,7 +84,33 @@ const fieldOptions = computed(() => props.fields.map(item => ({
 watch(() => props.node, (value) => {
   localConfig.value = clone(value?.config)
   selectedTemplate.value = ''
-}, { deep: true })
+  if (value?.type === 'APPROVAL' && value.id !== autoBoundNodeId.value) {
+    autoBoundNodeId.value = value.id
+    ensureDefaultApprovalBindings()
+  }
+}, { deep: true, immediate: true })
+
+watch(() => props.formAssets, () => {
+  if (props.node?.type === 'APPROVAL' && !stringValue(localConfig.value.formAsset?.formKey))
+    ensureDefaultApprovalBindings()
+})
+
+watch(selectedFlowModelId, async (modelId) => {
+  previewXml.value = ''
+  if (!modelId)
+    return
+  previewLoading.value = true
+  try {
+    const response = await flowApi.getModelDetail(modelId)
+    previewXml.value = String(response?.data?.bpmnXml || response?.bpmnXml || '')
+  }
+  catch {
+    previewXml.value = ''
+  }
+  finally {
+    previewLoading.value = false
+  }
+}, { immediate: true })
 
 function applyActionTemplate(value) {
   const config = createActionTemplateConfig(value, { objectCode: props.objectCode })
@@ -74,14 +136,27 @@ function handleActionType(event) {
   emit('update:config', clone(localConfig.value))
 }
 
-function handleFlowModel(event) {
-  const key = event.target.value
-  const item = publishedFlowModels.value.find(model => modelKey(model) === key)
+function handleFlowModelKey(key) {
+  const item = designableFlowModels.value.find(model => modelKey(model) === key)
+  const defaultTitle = localConfig.value.titleTemplate || defaultApprovalTitle()
   patchConfig({
-    flowModelKey: key,
-    flowModelName: item?.modelName || item?.name || key,
+    flowModelKey: key || '',
+    flowModelName: item?.modelName || item?.name || key || '',
+    flowModelId: stringValue(item?.modelId || item?.id),
     versionPolicy: 'PINNED_AT_APPLICATION_PUBLISH',
+    titleTemplate: defaultTitle,
+    statusField: localConfig.value.statusField || suggestedStatusField.value,
+    formAsset: localConfig.value.formAsset?.formKey
+      ? localConfig.value.formAsset
+      : toFormAssetRef(resolvedFormAssets.value[0]),
   })
+}
+
+function defaultApprovalTitle() {
+  const nameField = fieldOptions.value.find(item => ['name', 'title', 'subject', 'orderNo'].includes(item.value))
+    || fieldOptions.value[0]
+  const objectLabel = props.objectName || props.objectCode || '业务'
+  return nameField ? `${objectLabel}-\${${nameField.value}}` : `${objectLabel}审批`
 }
 
 function openFlowDesigner() {
@@ -95,6 +170,61 @@ function openFlowDesigner() {
   emit('openFlowDesigner', payload)
 }
 
+async function createAndDesign() {
+  if (creatingModel.value)
+    return
+  creatingModel.value = true
+  try {
+    const objectLabel = props.objectName || props.objectCode || '业务'
+    const modelKeyValue = `${String(props.objectCode || 'biz').replace(/[^a-zA-Z0-9_]/g, '_')}_approval_${Date.now().toString(36)}`
+    const defaultForm = toFormAssetRef(localConfig.value.formAsset?.formKey
+      ? localConfig.value.formAsset
+      : resolvedFormAssets.value[0])
+    const response = await flowApi.createModel({
+      modelName: `${objectLabel}审批`,
+      modelKey: modelKeyValue,
+      designerType: 'approval',
+      formType: 'business',
+      flowType: 'approval',
+      description: '由应用业务流程审批节点创建',
+      formJson: defaultForm.formKey
+        ? JSON.stringify({
+            type: defaultForm.formMode || 'BUSINESS_OBJECT_FORM',
+            formMode: defaultForm.formMode || 'BUSINESS_OBJECT_FORM',
+            objectCode: props.objectCode,
+            objectName: objectLabel,
+            formKey: defaultForm.formKey,
+            formName: defaultForm.formName,
+            providerKey: defaultForm.providerKey || '',
+            viewKey: 'default',
+          })
+        : undefined,
+    })
+    const created = response?.data || {}
+    const modelId = stringValue(created.id || created.modelId)
+    patchConfig({
+      flowModelKey: created.modelKey || modelKeyValue,
+      flowModelName: created.modelName || `${objectLabel}审批`,
+      flowModelId: modelId,
+      versionPolicy: 'PINNED_AT_APPLICATION_PUBLISH',
+      titleTemplate: localConfig.value.titleTemplate || defaultApprovalTitle(),
+      statusField: localConfig.value.statusField || suggestedStatusField.value,
+      formAsset: defaultForm.formKey ? defaultForm : {},
+    })
+    emit('refreshFlowModel', created.modelKey || modelKeyValue)
+    if (modelId) {
+      flowDesignerVisible.value = true
+      emit('openFlowDesigner', { modelId, modelKey: created.modelKey || modelKeyValue })
+    }
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '新建审批流程失败')
+  }
+  finally {
+    creatingModel.value = false
+  }
+}
+
 function handleFlowDesignerClosed() {
   flowDesignerVisible.value = false
   emit('refreshFlowModel', modelKey(selectedFlowModel.value))
@@ -104,18 +234,38 @@ function updateSingleReference(key, event) {
   patchConfig({ [key]: event.target.value || null })
 }
 
-function handleFormAsset(event) {
-  const formKey = event.target.value
-  const item = props.formAssets.find(candidate => optionValue(candidate) === formKey)
+function handleFormAssetUpdate(payload) {
   patchConfig({
-    formAsset: formKey
-      ? {
-          formKey,
-          formMode: item?.formMode || item?.type || undefined,
-          providerKey: item?.providerKey || undefined,
-        }
-      : {},
+    formAsset: payload?.formKey ? toFormAssetRef(payload) : {},
   })
+}
+
+function ensureDefaultApprovalBindings() {
+  if (props.node?.type !== 'APPROVAL')
+    return
+  const patch = {}
+  if (!stringValue(localConfig.value.formAsset?.formKey) && resolvedFormAssets.value[0])
+    patch.formAsset = toFormAssetRef(resolvedFormAssets.value[0])
+  if (!stringValue(localConfig.value.statusField) && suggestedStatusField.value)
+    patch.statusField = suggestedStatusField.value
+  if (!stringValue(localConfig.value.titleTemplate))
+    patch.titleTemplate = defaultApprovalTitle()
+  if (Object.keys(patch).length)
+    patchConfig(patch)
+}
+
+function toFormAssetRef(item) {
+  if (!item)
+    return {}
+  const formKey = formAssetKey(item)
+  if (!formKey)
+    return {}
+  return {
+    formKey,
+    formName: item.formName || item.name || item.label || formKey,
+    formMode: item.formMode || item.type || 'BUSINESS_OBJECT_FORM',
+    providerKey: item.providerKey || undefined,
+  }
 }
 
 function addFieldMapping() {
@@ -144,11 +294,24 @@ function modelKey(item) {
 }
 
 function optionValue(item) {
-  return stringValue(item?.value || item?.code || item?.actionCode || item?.templateCode || item?.processCode)
+  return stringValue(
+    item?.formKey
+    || item?.assetKey
+    || item?.value
+    || item?.code
+    || item?.actionCode
+    || item?.templateCode
+    || item?.processCode
+    || item?.objectCode,
+  )
 }
 
 function optionLabel(item) {
-  return item?.label || item?.name || item?.actionName || item?.templateName || item?.processName || optionValue(item)
+  return item?.formName || item?.label || item?.name || item?.actionName || item?.templateName || item?.processName || optionValue(item)
+}
+
+function formAssetKey(item) {
+  return stringValue(item?.formKey || item?.assetKey || item?.value || item?.code)
 }
 
 function stringValue(value) {
@@ -289,46 +452,111 @@ function clone(value) {
     </template>
 
     <template v-else-if="node.type === 'APPROVAL'">
-      <label class="config-field">
-        <span>审批流程</span>
-        <select :value="localConfig.flowModelKey || ''" @change="handleFlowModel">
-          <option value="">选择已发布并部署的审批模型</option>
-          <option v-for="item in publishedFlowModels" :key="modelKey(item)" :value="modelKey(item)">
-            {{ item.modelName || item.name || modelKey(item) }}
-          </option>
-        </select>
-        <small v-if="!publishedFlowModels.length" class="catalog-empty-tip">
-          当前租户暂无已发布并部署的审批流程。请先发布审批模型，再返回刷新。
-        </small>
-      </label>
-      <label class="config-field">
-        <span>审批标题</span>
-        <input
-          :value="localConfig.titleTemplate || ''"
-          placeholder="例如：采购审批-{orderNo}"
-          @input="patchConfig({ titleTemplate: $event.target.value })"
-        >
-      </label>
-      <label class="config-field">
-        <span>任务表单</span>
-        <select :value="localConfig.formAsset?.formKey || ''" @change="handleFormAsset">
-          <option value="">使用审批模型现有表单</option>
-          <option v-for="item in formAssets" :key="optionValue(item)" :value="optionValue(item)">
-            {{ optionLabel(item) }}
-          </option>
-        </select>
-      </label>
+      <div class="approval-config-layout">
+        <div class="approval-config-main">
+          <label class="config-field">
+            <span>审批流程</span>
+            <div class="approval-model-row">
+              <n-select
+                :value="localConfig.flowModelKey || null"
+                filterable
+                clearable
+                :options="flowModelOptions"
+                placeholder="搜索已有审批模型"
+                @update:value="handleFlowModelKey"
+              />
+              <n-button size="small" secondary :loading="creatingModel" @click="createAndDesign">
+                新建并设计
+              </n-button>
+            </div>
+            <small>
+              可选已有模型，或直接在本页新建。发布业务流程前请先部署审批模型。
+            </small>
+          </label>
+
+          <label class="config-field">
+            <span>审批标题</span>
+            <TemplateVariableEditor
+              :model-value="localConfig.titleTemplate || ''"
+              :fields="fieldOptions"
+              placeholder="点击下方字段插入，例如 ${name} 的审批"
+              @update:model-value="patchConfig({ titleTemplate: $event })"
+            />
+            <small>待办标题按当前记录字段自动替换，不需要手写表达式。</small>
+          </label>
+
+          <label class="config-field">
+            <span>任务表单</span>
+            <BusinessFlowFormAssetSelect
+              :node-form="localConfig.formAsset || {}"
+              :form-assets="resolvedFormAssets"
+              show-all-modes
+              @update="handleFormAssetUpdate"
+            />
+            <small v-if="!resolvedFormAssets.length" class="catalog-empty-tip">
+              当前对象还没有可绑定的表单，请先完成对象表单设计。
+            </small>
+            <small v-else>
+              已默认绑定当前对象表单，审批待办会打开这张表。
+            </small>
+          </label>
+
+          <label class="config-field">
+            <span>流程状态字段</span>
+            <n-select
+              :value="localConfig.statusField || suggestedStatusField || null"
+              filterable
+              clearable
+              :options="statusFieldOptions"
+              placeholder="选择回写到业务对象的状态字段"
+              @update:value="patchConfig({ statusField: $event || '' })"
+            />
+            <small>
+              发起后写入 IN_PROCESS，通过/驳回/取消后自动更新。建议使用独立的流程状态字段，不要和业务自己的状态混用。
+            </small>
+          </label>
+        </div>
+
+        <aside class="approval-preview-card">
+          <div class="approval-preview-head">
+            <div>
+              <strong>{{ selectedFlowModel?.modelName || selectedFlowModel?.flowModelName || localConfig.flowModelName || '审批流程图' }}</strong>
+              <n-tag
+                v-if="selectedFlowModel"
+                size="small"
+                :type="(selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? 'success' : 'warning'"
+                :bordered="false"
+              >
+                {{ (selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? '已部署' : '草稿，可在本页设计后部署' }}
+              </n-tag>
+            </div>
+            <button
+              type="button"
+              class="open-flow-designer-button"
+              :disabled="!selectedFlowModelId"
+              @click="openFlowDesigner"
+            >
+              在本页设计
+            </button>
+          </div>
+          <div class="approval-preview-canvas">
+            <DingFlowViewer
+              v-if="previewXml"
+              compact
+              :bpmn-xml="previewXml"
+            />
+            <n-empty
+              v-else
+              size="small"
+              :description="previewLoading ? '流程图加载中…' : (selectedFlowModel ? '保存审批模型后可在此预览流程图' : '选择或新建审批流程后在此预览')"
+            />
+          </div>
+        </aside>
+      </div>
+
       <div class="approval-boundary-card">
         <strong>审批内部配置</strong>
         <p>审批人、会签、驳回和字段权限在真实流程设计器中维护；业务画布只固定发布版本并处理四种结果。</p>
-        <button
-          type="button"
-          class="open-flow-designer-button"
-          :disabled="!selectedFlowModelId"
-          @click="openFlowDesigner"
-        >
-          打开真实流程设计器
-        </button>
       </div>
     </template>
 
@@ -345,20 +573,18 @@ function clone(value) {
       </label>
     </template>
 
-    <NModal v-model:show="flowDesignerVisible" :mask-closable="false" :auto-focus="false">
-      <section class="flow-designer-modal-shell">
-        <FlowDesignPage
-          v-if="flowDesignerVisible"
-          embedded
-          :model-id="selectedFlowModelId"
-          :business-object-code="objectCode"
-          :business-object-name="objectName || objectCode"
-          @close="handleFlowDesignerClosed"
-          @saved="handleFlowDesignerClosed"
-          @deployed="handleFlowDesignerClosed"
-        />
-      </section>
-    </NModal>
+    <div v-if="flowDesignerVisible" class="flow-designer-fullscreen">
+      <FlowDesignPage
+        embedded
+        :model-id="selectedFlowModelId"
+        :business-object-code="objectCode"
+        :business-object-name="objectName || objectCode"
+        :business-form-key="localConfig.formAsset?.formKey || ''"
+        @close="handleFlowDesignerClosed"
+        @saved="handleFlowDesignerClosed"
+        @deployed="handleFlowDesignerClosed"
+      />
+    </div>
   </div>
 </template>
 
@@ -524,12 +750,71 @@ function clone(value) {
   opacity: 0.45;
 }
 
-.flow-designer-modal-shell {
-  width: min(1480px, 96vw);
-  height: min(900px, 94vh);
+.approval-config-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.approval-config-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.approval-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-model-row :deep(.n-select) {
+  flex: 1;
+}
+
+.approval-preview-card {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 7px;
+  background: rgba(241, 245, 249, 0.58);
+  padding: 12px;
+}
+
+@media (min-width: 840px) {
+  .approval-config-layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+    align-items: start;
+  }
+}
+
+.approval-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.approval-preview-head strong {
+  margin-right: 8px;
+}
+
+.approval-preview-canvas {
+  min-height: 240px;
+  overflow: auto;
+  background: #fff;
+  border-radius: 6px;
+}
+
+.flow-designer-fullscreen {
+  position: fixed;
+  inset: 12px;
+  z-index: 1000;
   overflow: hidden;
   border-radius: 10px;
   background: var(--card-color, #fff);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
 }
 
 .action-edit-hint {

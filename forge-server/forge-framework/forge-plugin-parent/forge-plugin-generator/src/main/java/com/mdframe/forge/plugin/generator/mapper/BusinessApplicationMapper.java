@@ -69,6 +69,15 @@ public interface BusinessApplicationMapper extends BaseMapper<AiBusinessApplicat
     Long countActiveDistributionRoles(@Param("tenantId") Long tenantId,
                                       @Param("roleIds") List<Long> roleIds);
 
+    Long countActiveTenantUsers(@Param("tenantId") Long tenantId,
+                                @Param("userIds") List<Long> userIds);
+
+    Long countActiveTenantRoles(@Param("tenantId") Long tenantId,
+                                @Param("roleIds") List<Long> roleIds);
+
+    Long countActiveTenantOrgs(@Param("tenantId") Long tenantId,
+                               @Param("orgIds") List<Long> orgIds);
+
     int markChanged(@Param("tenantId") Long tenantId,
                     @Param("applicationId") Long applicationId);
 

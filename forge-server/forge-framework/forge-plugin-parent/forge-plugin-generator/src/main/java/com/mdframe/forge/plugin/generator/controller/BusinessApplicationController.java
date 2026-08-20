@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDTO
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationDistributionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationFormDataProvisionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationObjectDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPageDesignDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPublishDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPortalConfigDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationQueryDTO;
@@ -22,6 +23,7 @@ import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicatio
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationCodegenService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationFormDataService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationObjectService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPageDesignService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPermissionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishRecoveryService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationPublishRunService;
@@ -37,6 +39,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAiIn
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationCreateVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPageDesignVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPermissionWorkspaceVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishCheckVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPublishResultVO;
@@ -83,6 +86,7 @@ public class BusinessApplicationController {
     private final BusinessApplicationService applicationService;
     private final BusinessApplicationObjectService applicationObjectService;
     private final BusinessApplicationFormDataService formDataService;
+    private final BusinessApplicationPageDesignService pageDesignService;
     private final BusinessApplicationTemplateService templateService;
     private final BusinessApplicationAiInitializeService aiInitializeService;
     private final BusinessApplicationAiAssistantService aiAssistantService;
@@ -359,6 +363,15 @@ public class BusinessApplicationController {
             @PathVariable Long id,
             @RequestBody BusinessApplicationFormDataProvisionDTO dto) {
         return RespInfo.success(formDataService.provision(id, dto));
+    }
+
+    @PostMapping("/{id}/design-page")
+    @SaCheckPermission("ai:businessApplication:edit")
+    @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "保存应用页面设计")
+    public RespInfo<BusinessApplicationPageDesignVO> designPage(
+            @PathVariable Long id,
+            @RequestBody BusinessApplicationPageDesignDTO dto) {
+        return RespInfo.success(pageDesignService.save(id, dto));
     }
 
     @PostMapping("/{id}/initialize-template")

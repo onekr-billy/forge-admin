@@ -1,13 +1,28 @@
 import { buildAutoFieldAssets } from '@/views/app-center/components/designer/form-first/autoFieldRegistry'
 import { normalizeFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 
-export function buildBusinessObjectDesignerPayloadFromFormAsset(asset = {}) {
+export function buildBusinessObjectDesignerPayloadFromFormAsset(asset = {}, existingFields = []) {
   const formDesignerSchema = normalizeFormDesignerSchema(asset.formDesignerSchema || asset.schema || {})
-  const fields = buildAutoFieldAssets(formDesignerSchema).fields.map(toBusinessFieldPayload)
+  const fields = buildAutoFieldAssets(formDesignerSchema, existingFields).fields.map(toBusinessFieldPayload)
   return {
     fields,
     formDesignerSchema,
   }
+}
+
+export function syncFormBoundFieldRefs({ formFieldCodes = [], searchFieldRefs = [] } = {}) {
+  const fieldRefs = uniqueFieldCodes(formFieldCodes)
+  const keptSearch = uniqueFieldCodes(searchFieldRefs).filter(ref => fieldRefs.includes(ref))
+  return {
+    fieldRefs,
+    searchFieldRefs: (keptSearch.length ? keptSearch : fieldRefs).slice(0, 8),
+  }
+}
+
+function uniqueFieldCodes(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map(value => String(value || '').trim())
+    .filter(Boolean))]
 }
 
 export function normalizeObjectDesignerFieldCatalog(fields = []) {

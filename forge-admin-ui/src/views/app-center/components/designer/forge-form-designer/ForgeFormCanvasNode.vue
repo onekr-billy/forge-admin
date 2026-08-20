@@ -58,7 +58,8 @@
           <button
             type="button"
             class="icon-action danger"
-            title="删除"
+            :disabled="fieldStructureLocked"
+            :title="fieldStructureLocked ? '字段已有业务数据，不能删除' : '删除'"
             @click.stop="removeNode"
             @pointerdown.stop
           >
@@ -497,6 +498,7 @@ let resizeObserver = null
 
 const isSelected = computed(() => props.selectedId === props.component.id)
 const isField = computed(() => isFieldComponent(props.component))
+const fieldStructureLocked = computed(() => isField.value && props.component.fieldBinding?.locked === true)
 const isLayout = computed(() => isLayoutComponent(props.component))
 const isTitle = computed(() => ['title', 'fcTitle'].includes(props.component.componentKey))
 const isSubTableComponent = computed(() => props.component.componentKey === 'subTable')
@@ -604,7 +606,7 @@ const nodeMenuOptions = computed(() => [
   },
   { label: '移入', key: 'move-into', disabled: true },
   { type: 'divider', key: 'divider' },
-  { label: '删除', key: 'delete' },
+  { label: fieldStructureLocked.value ? '已有数据，不能删除' : '删除', key: 'delete', disabled: fieldStructureLocked.value },
 ])
 const childrenGridStyle = computed(() => {
   if (!isGridRow.value && !isTableLayout.value)
@@ -1613,6 +1615,8 @@ function duplicateNode() {
 }
 
 function removeNode() {
+  if (fieldStructureLocked.value)
+    return
   emit('update:schema', removeDesignerComponent(props.schema, props.component.id))
 }
 

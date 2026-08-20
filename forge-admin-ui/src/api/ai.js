@@ -471,9 +471,14 @@ export function updateSessionMetadata(sessionId, metadata) {
   return request.put(`/ai/admin/session/${sessionId}/metadata`, metadata)
 }
 
-export function crudConfigRender(configKey, designPreview = false) {
+export function crudConfigRender(configKey, designPreview = false, extra = {}) {
+  const { params: extraParams, ...rest } = extra || {}
   return request.get(`/ai/crud-config/render/${configKey}`, {
-    params: designPreview ? { designPreview: true } : undefined,
+    ...rest,
+    params: {
+      ...(designPreview ? { designPreview: true } : {}),
+      ...(extraParams || {}),
+    },
   })
 }
 

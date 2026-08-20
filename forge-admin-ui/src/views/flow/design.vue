@@ -767,6 +767,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  businessFormKey: {
+    type: String,
+    default: '',
+  },
   businessEntryRoute: {
     type: String,
     default: '',
@@ -1603,7 +1607,11 @@ function ensureBusinessGlobalFormSelection(assets = businessFormAssets.value) {
     return
   }
 
-  const nextAsset = currentAsset || availableAssets[0]
+  const preferredFormKey = routeQueryText(props.businessFormKey)
+  const preferredAsset = preferredFormKey
+    ? findBusinessFormAssetInList(availableAssets, preferredFormKey)
+    : null
+  const nextAsset = currentAsset || preferredAsset || availableAssets[0]
   modelInfo.formType = normalizeAppManagedFormType(modelInfo.formType)
   modelInfo.formId = null
   modelInfo.formUrl = ''
@@ -1931,8 +1939,17 @@ async function loadModel(id) {
       bpmnXml.value = res.data.bpmnXml || ''
       applyProcessConfigFromXml(bpmnXml.value)
       await resolveBusinessBindingForModel()
+      if (
+        embedded.value
+        && businessContextActive.value
+        && modelInfo.formType !== 'none'
+        && modelInfo.formType !== 'external'
+        && !isAppManagedFormType(modelInfo.formType)
+      ) {
+        modelInfo.formType = 'business'
+      }
 
-      if (res.data.formType === 'business') {
+      if (res.data.formType === 'business' || modelInfo.formType === 'business') {
         formSchema.value = []
       }
       else if (res.data.formJson) {

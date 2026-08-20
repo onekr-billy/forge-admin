@@ -1,40 +1,43 @@
 <template>
   <section class="publish-section-card">
     <header>
-      <div><h2>组织内访问</h2><p>只有已启用且拥有页面权限的组织成员可以访问。</p></div>
-      <n-tag :type="application.lastPublishVersion && application.status === 1 ? 'success' : 'warning'" :bordered="false">
-        {{ application.lastPublishVersion && application.status === 1 ? '可访问' : '暂不可用' }}
+      <div>
+        <h2>{{ pageId ? '页面地址' : '组织内访问' }}</h2>
+        <p>{{ pageId ? '电脑端打开当前门户页面；移动端打开独立 H5 运行页。' : '电脑端打开应用门户，移动端打开独立 H5 运行页。' }}</p>
+      </div>
+      <n-tag :type="portalAvailable ? 'success' : 'warning'" :bordered="false">
+        {{ portalAvailable ? '可访问' : '暂不可用' }}
       </n-tag>
     </header>
     <div class="publish-access-grid">
       <div class="publish-access-body">
-        <n-qr-code :value="portalUrl" :size="120" :color="themeColor" />
+        <n-qr-code :value="pcUrl" :size="120" :color="themeColor" />
         <div class="publish-access-copy">
-          <span>桌面与通用门户</span>
-          <strong>{{ portalUrl }}</strong>
-          <p>页面级权限由发布快照过滤，数据范围继续由 Forge DataScope 控制。</p>
+          <span>电脑端</span>
+          <strong>{{ pcUrl }}</strong>
+          <p>{{ pageId ? '在电脑浏览器打开当前页面。' : '在电脑浏览器打开应用门户。' }}</p>
           <n-space>
-            <n-button secondary @click="copyLink(portalUrl, '门户')">
+            <n-button secondary @click="copyLink(pcUrl, '电脑端')">
               复制链接
             </n-button>
-            <n-button type="primary" :disabled="!portalAvailable" @click="openLink(portalUrl)">
-              打开门户
+            <n-button type="primary" :disabled="!portalAvailable" @click="openLink(pcUrl)">
+              打开电脑端
             </n-button>
           </n-space>
         </div>
       </div>
-      <div v-if="h5Enabled" class="publish-access-body is-h5">
+      <div class="publish-access-body is-h5">
         <n-qr-code :value="h5Url" :size="120" :color="themeColor" />
         <div class="publish-access-copy">
-          <span>响应式 H5 入口</span>
+          <span>移动端</span>
           <strong>{{ h5Url }}</strong>
-          <p>扫码在移动浏览器打开；导航会折叠为横向页签，复杂页面按移动端流式排列。</p>
+          <p>扫码在手机打开 H5 运行页，和旧访问入口同一套地址。</p>
           <n-space>
-            <n-button secondary @click="copyLink(h5Url, 'H5')">
-              复制 H5 链接
+            <n-button secondary :disabled="!h5Url" @click="copyLink(h5Url, '移动端')">
+              复制移动端链接
             </n-button>
-            <n-button type="primary" :disabled="!portalAvailable" @click="openLink(h5Url)">
-              打开 H5
+            <n-button type="primary" :disabled="!portalAvailable || !h5Url" @click="openLink(h5Url)">
+              打开移动端
             </n-button>
           </n-space>
         </div>
@@ -46,15 +49,30 @@
 <script setup>
 import { useMessage } from 'naive-ui'
 import { computed } from 'vue'
-import { normalizePortalConfig } from '../portal/portal-config'
+import { buildPortalAccessUrls, normalizePortalConfig } from '../portal/portal-config'
 
-const props = defineProps({ application: { type: Object, required: true } })
+const props = defineProps({
+  application: { type: Object, required: true },
+  pageId: { type: String, default: '' },
+  configKey: { type: String, default: '' },
+  objects: { type: Array, default: () => [] },
+})
 const message = useMessage()
 const portalConfig = computed(() => normalizePortalConfig(props.application.portalConfig))
 const themeColor = computed(() => portalConfig.value.themeColor || '#3370ff')
-const portalUrl = computed(() => `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/app/${encodeURIComponent(props.application.portalSlug || props.application.applicationCode)}`)
-const h5Url = computed(() => `${portalUrl.value}?display=h5`)
-const h5Enabled = computed(() => portalConfig.value.distribution.h5Enabled !== false)
+const accessUrls = computed(() => buildPortalAccessUrls({
+  origin: window.location.origin,
+  basePath: import.meta.env.BASE_URL,
+  slug: props.application.portalSlug || props.application.applicationCode,
+  pageId: props.pageId,
+  configKey: props.configKey,
+  h5BaseUrl: portalConfig.value.distribution?.h5BaseUrl,
+  appId: props.application.id,
+  application: props.application,
+  objects: props.objects,
+}))
+const pcUrl = computed(() => accessUrls.value.pcUrl)
+const h5Url = computed(() => accessUrls.value.h5Url)
 const portalAvailable = computed(() => Boolean(props.application.lastPublishVersion) && Number(props.application.status) === 1)
 
 async function copyLink(value, label) {
@@ -68,6 +86,35 @@ function openLink(value) {
 </script>
 
 <style scoped>
+.publish-section-card {
+  min-width: 0;
+  padding: 20px 24px;
+  border: 1px solid #e5e6eb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(31 35 41 / 6%);
+}
+
+.publish-section-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.publish-section-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.publish-section-card header p {
+  margin: 5px 0 0;
+  color: #86909c;
+  font-size: 12px;
+}
+
 .publish-access-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -85,7 +132,7 @@ function openLink(value) {
 }
 
 .publish-access-body.is-h5 {
-  background: color-mix(in srgb, v-bind(themeColor) 4%, var(--n-color, #fff));
+  background: #f2f6ff;
 }
 
 .publish-access-copy {

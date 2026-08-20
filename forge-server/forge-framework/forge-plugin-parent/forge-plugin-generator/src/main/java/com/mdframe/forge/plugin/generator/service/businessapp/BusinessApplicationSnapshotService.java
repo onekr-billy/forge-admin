@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionVersionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessRuntimeActionCompiler;
 import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessSnapshot;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAssetSelectionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
@@ -147,8 +148,10 @@ public class BusinessApplicationSnapshotService {
                         item, new TypeReference<Map<String, Object>>() { }))
                 .toList();
         snapshot.put("publishedProcessVersions", published);
-        // Task 13 将从同一不可变流程版本编译 START_PROCESS；本任务先冻结稳定空投影字段。
-        snapshot.putIfAbsent("runtimeActions", new ArrayList<>());
+        Map<String, Object> application = map(snapshot.get("application"));
+        String applicationCode = StringUtils.trimToNull(stringValue(application.get("applicationCode")));
+        snapshot.put("runtimeActions", new BusinessProcessRuntimeActionCompiler(objectMapper)
+                .compileSnapshots(processSnapshots, applicationCode));
         return bundle(snapshot);
     }
 
