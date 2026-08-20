@@ -7,6 +7,9 @@ yarn-debug.log*
 yarn-error.log*
 **/*.log
 
+# Playwright MCP 临时截图、快照和日志
+.playwright-mcp/
+
 tests/**/coverage/
 tests/e2e/reports
 selenium-debug.log

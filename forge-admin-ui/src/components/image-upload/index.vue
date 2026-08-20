@@ -611,6 +611,8 @@ async function fetchImageFileName(fileId) {
 // 暴露方法
 defineExpose({
   submit: () => uploadRef.value?.submit(),
+  // 供外部自定义触发器调用（如聊天输入框的回形针按钮）
+  triggerUpload,
   clear: () => {
     fileList.value = []
     emitValue()

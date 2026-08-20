@@ -46,6 +46,14 @@ public class AiChatSession implements Serializable {
     /** 状态（0正常 1已删除） */
     private String status;
 
+    /** 是否置顶：0否 1是 */
+    private Integer pinned;
+
+    /** 置顶时间，置顶组内按此倒序 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @TableField(value = "pinned_time")
+    private LocalDateTime pinnedTime;
+
     /** 会话元数据（configKey、tableName等） */
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Map<String, Object> metadata;

@@ -995,7 +995,7 @@ import FlowFormCreateDesigner from '@/components/form-create/FlowFormCreateDesig
 import FlowFormCreateRenderer from '@/components/form-create/FlowFormCreateRenderer.vue'
 import { cloneValue, normalizeFormCreateRules } from '@/components/form-create/formCreateBridge'
 import { request } from '@/utils/http'
-import UserSelectModal from './UserSelectModal.vue'
+import UserSelectModal from '@/components/common/UserSelectModal.vue'
 
 const props = defineProps({
   element: {

@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 /**
  * ReAct Agent 入口。
  * 提供 execute（新对话）和 resume（HITL恢复）两个方法。
@@ -19,12 +22,25 @@ public class ReactAgent {
 
     private final ReactLoop reactLoop;
     private final InterruptStore interruptStore;
+    private final ConcurrentMap<String, ReactContext> activeContexts = new ConcurrentHashMap<>();
 
     /**
      * 执行新对话
      */
     public Flux<AgentEvent> execute(ReactContext ctx) {
-        return reactLoop.run(ctx);
+        activeContexts.put(ctx.getSessionId(), ctx);
+        return reactLoop.run(ctx)
+                .doFinally(signal -> activeContexts.remove(ctx.getSessionId(), ctx));
+    }
+
+    /**
+     * 停止指定会话
+     */
+    public void cancel(String sessionId) {
+        ReactContext ctx = activeContexts.get(sessionId);
+        if (ctx != null) {
+            ctx.setCancelled(true);
+        }
     }
 
     /**
@@ -52,6 +68,6 @@ public class ReactAgent {
         }
 
         // 用户确认，继续循环
-        return reactLoop.run(ctx);
+        return execute(ctx);
     }
 }
