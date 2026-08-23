@@ -181,7 +181,7 @@ class BusinessProcessOrchestratorTest {
         assertEquals("WAITING", result.getStatus());
         ArgumentCaptor<JSONObject> variables = ArgumentCaptor.forClass(JSONObject.class);
         verify(flowService).startFromBusinessProcess(
-                eq("order_approval"), eq("order:9001"), eq("订单审批"), eq(101L),
+                eq("order_approval"), eq("order:9001"), isNull(), eq(101L),
                 any(), eq(1L), variables.capture());
         assertEquals("flowStatus", variables.getValue().getString("flowStatusField"));
         assertEquals("app_10_page_order_apply_form_asset_order",
@@ -190,6 +190,24 @@ class BusinessProcessOrchestratorTest {
         assertEquals("10", formRef.getString("applicationId"));
         assertEquals("page_order_apply", formRef.getString("pageId"));
         assertEquals("订单申请页", formRef.getString("pageName"));
+    }
+
+    @Test
+    @DisplayName("approval uses the configured business title instead of the task node name")
+    void approvalUsesConfiguredTitleTemplate() {
+        stubPublishedProcess(approvalSchemaWithTitle("${name}审批"));
+        BusinessFlowRuntimeVO flowRuntime = new BusinessFlowRuntimeVO();
+        flowRuntime.setProcessInstanceId("flow-instance-title");
+        when(flowService.startFromBusinessProcess(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(flowRuntime);
+        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO();
+        dto.setRecordId("9001");
+        dto.setObjectCode("order");
+
+        orchestrator.start("CRM_APP", "submit_approval", dto);
+
+        verify(flowService).startFromBusinessProcess(
+                eq("order_approval"), eq("order:9001"), eq("${name}审批"), eq(101L), any(), eq(1L), any());
     }
 
     @Test
@@ -243,6 +261,41 @@ class BusinessProcessOrchestratorTest {
         verify(actionExecutor, times(1)).execute(
                 any(AiBusinessProcessRun.class), any(),
                 org.mockito.ArgumentMatchers.argThat(node -> "update-score".equals(node.getId())));
+    }
+
+    @Test
+    @DisplayName("action failure after approval is persisted as a failed outer process")
+    void actionFailureAfterApprovalMarksOuterProcessFailed() {
+        stubPublishedProcess(approvalActionSchema());
+        BusinessFlowRuntimeVO flowRuntime = new BusinessFlowRuntimeVO();
+        flowRuntime.setProcessInstanceId("flow-instance-1");
+        when(flowService.startFromBusinessProcess(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(flowRuntime);
+        when(actionExecutor.execute(any(), any(), any()))
+                .thenThrow(new BusinessException("目标字段不存在: approval_result"));
+        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO();
+        dto.setRecordId("9001");
+        dto.setObjectCode("order");
+        orchestrator.start("CRM_APP", "submit_approval", dto);
+
+        AiBusinessProcessNodeRun waitingAttempt = new AiBusinessProcessNodeRun();
+        waitingAttempt.setId(7001L);
+        waitingAttempt.setTenantId(1L);
+        waitingAttempt.setRunId(storedRun.get().getId());
+        waitingAttempt.setNodeId("approval");
+        waitingAttempt.setStatus("WAITING");
+        waitingAttempt.setCorrelationId("flow-instance-1");
+        when(runMapper.selectWaitingByProcessInstanceId(1L, "flow-instance-1"))
+                .thenAnswer(invocation -> copy(storedRun.get()));
+        when(nodeRunMapper.selectWaitingByCorrelation(
+                eq(1L), anyLong(), eq("approval"), eq("flow-instance-1")))
+                .thenReturn(waitingAttempt);
+
+        orchestrator.resumeApprovalResult(1L, "flow-instance-1", "APPROVED");
+
+        assertEquals("FAILED", storedRun.get().getStatus());
+        assertEquals("NODE_EXECUTE_FAILED", storedRun.get().getErrorCode());
+        assertEquals("目标字段不存在: approval_result", storedRun.get().getErrorSummary());
     }
 
     private void stubPublishedProcess(String schemaJson) {
@@ -366,6 +419,12 @@ class BusinessProcessOrchestratorTest {
                   ]
                 }
                 """.formatted(statusField);
+    }
+
+    private String approvalSchemaWithTitle(String titleTemplate) {
+        return approvalSchema("flowStatus").replace(
+                "\"statusField\":\"flowStatus\"",
+                "\"statusField\":\"flowStatus\",\"titleTemplate\":\"" + titleTemplate + "\"");
     }
 
     private String approvalActionSchema() {

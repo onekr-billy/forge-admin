@@ -3,9 +3,9 @@ import { NButton, NEmpty, NSelect, NTag } from 'naive-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { ensureBusinessFlowStatusField } from '@/api/business-app'
 import flowApi from '@/api/flow'
+import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
 import TemplateVariableEditor from '@/views/app-center/components/designer/TemplateVariableEditor.vue'
-import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
 import { ACTION_NODE_TEMPLATES, createActionTemplateConfig } from './node-templates.js'
 
 const props = defineProps({
@@ -49,12 +49,16 @@ const flowModelOptions = computed(() => designableFlowModels.value.map(item => (
 
 const resolvedFormAssets = computed(() => (props.formAssets || []).filter(item => stringValue(item?.formKey)))
 
-const statusFieldOptions = computed(() => fieldOptions.value.filter(item => isFlowStatusField(item.value)))
+const fieldOptions = computed(() => props.fields.map(item => ({
+  label: item.fieldName || item.fieldLabel || item.label || item.fieldCode || item.code || item.columnName,
+  value: item.fieldCode || item.field || item.code || item.value || item.columnName,
+  columnName: item.columnName || item.column || '',
+})).filter(item => item.value || item.columnName))
+
+const statusFieldOptions = computed(() => fieldOptions.value.filter(item => isFlowStatusField(item)))
 
 const suggestedStatusField = computed(() => {
-  const preferred = ['flowStatus', 'flow_status']
-  const values = new Set(fieldOptions.value.map(item => item.value))
-  return preferred.find(item => values.has(item)) || ''
+  return fieldOptions.value.find(item => isFlowStatusField(item))?.value || ''
 })
 
 const hasIndependentFlowStatus = computed(() => Boolean(suggestedStatusField.value))
@@ -68,11 +72,6 @@ const selectedFlowModelId = computed(() => {
   const item = selectedFlowModel.value
   return stringValue(item?.modelId || item?.id)
 })
-
-const fieldOptions = computed(() => props.fields.map(item => ({
-  label: item.fieldName || item.fieldLabel || item.label || item.fieldCode || item.code,
-  value: item.fieldCode || item.code || item.value,
-})).filter(item => item.value))
 
 watch(() => props.node, (value) => {
   localConfig.value = clone(value?.config)
@@ -128,8 +127,9 @@ function handleActionType(event) {
   const actionType = event.target.value
   const keep = { actionType }
   selectedTemplate.value = ''
-  if (['UPDATE_RECORD', 'CREATE_RECORD'].includes(actionType))
-    keep.objectCode = props.objectCode
+  if (['UPDATE_RECORD', 'CREATE_RECORD'].includes(actionType)) {
+    Object.assign(keep, targetObjectRef(props.objectCode))
+  }
   localConfig.value = keep
   emit('update:config', clone(localConfig.value))
 }
@@ -174,7 +174,7 @@ async function createAndDesign() {
   creatingModel.value = true
   try {
     const objectLabel = props.objectName || props.objectCode || '业务'
-    const modelKeyValue = `${String(props.objectCode || 'biz').replace(/[^a-zA-Z0-9_]/g, '_')}_approval_${Date.now().toString(36)}`
+    const modelKeyValue = `${String(props.objectCode || 'biz').replace(/\W/g, '_')}_approval_${Date.now().toString(36)}`
     const defaultForm = toFormAssetRef(localConfig.value.formAsset?.formKey
       ? localConfig.value.formAsset
       : resolvedFormAssets.value[0])
@@ -238,6 +238,20 @@ function updateSingleReference(key, event) {
   patchConfig({ [key]: event.target.value || null })
 }
 
+function handleTargetObjectChange(event) {
+  patchConfig(targetObjectRef(event.target.value))
+}
+
+function targetObjectRef(code) {
+  const object = (props.objects || []).find(item => objectOptionValue(item) === code)
+  const current = code === props.objectCode
+  return {
+    objectCode: code || null,
+    targetObjectId: stringValue(object?.objectId || object?.id || (current ? props.objectId : '')) || null,
+    targetConfigKey: stringValue(object?.configKey) || null,
+  }
+}
+
 function handleFormAssetUpdate(payload) {
   patchConfig({
     formAsset: payload?.formKey ? toFormAssetRef(payload) : {},
@@ -254,16 +268,20 @@ function ensureDefaultApprovalBindings() {
     formAssetKey(item) === currentFormKey
     && (!currentProviderKey || stringValue(item.providerKey) === currentProviderKey),
   )
-  if (resolvedFormAssets.value[0] && (!currentFormKey || !currentFormAvailable))
+  if (resolvedFormAssets.value[0] && (!currentFormKey || !currentFormAvailable)) {
     patch.formAsset = toFormAssetRef(resolvedFormAssets.value[0])
+  }
   else if (!resolvedFormAssets.value.length
     && currentFormKey
-    && String(localConfig.value.formAsset?.formMode || 'BUSINESS_OBJECT_FORM').toUpperCase() !== 'EXTERNAL')
+    && String(localConfig.value.formAsset?.formMode || 'BUSINESS_OBJECT_FORM').toUpperCase() !== 'EXTERNAL') {
     patch.formAsset = {}
-  if (!usesIndependentFlowStatus.value && suggestedStatusField.value)
+  }
+  if (!usesIndependentFlowStatus.value && suggestedStatusField.value) {
     patch.statusField = suggestedStatusField.value
-  if (!stringValue(localConfig.value.titleTemplate))
+  }
+  if (!stringValue(localConfig.value.titleTemplate)) {
     patch.titleTemplate = defaultApprovalTitle()
+  }
   if (Object.keys(patch).length)
     patchConfig(patch)
 }
@@ -293,7 +311,10 @@ async function ensureFlowStatusField() {
 }
 
 function isFlowStatusField(value) {
-  return ['flowStatus', 'flow_status'].includes(stringValue(value))
+  const candidates = typeof value === 'object' && value !== null
+    ? [value.value, value.fieldCode, value.field, value.columnName, value.column]
+    : [value]
+  return candidates.some(candidate => stringValue(candidate).replace(/[-_]/g, '').toLowerCase() === 'flowstatus')
 }
 
 function toFormAssetRef(item) {
@@ -355,7 +376,24 @@ function optionValue(item) {
 }
 
 function optionLabel(item) {
-  return item?.formName || item?.label || item?.name || item?.actionName || item?.templateName || item?.processName || optionValue(item)
+  return item?.objectName
+    || item?.pageName
+    || item?.formName
+    || item?.label
+    || item?.name
+    || item?.actionName
+    || item?.templateName
+    || item?.processName
+    || optionValue(item)
+}
+
+function objectOptionLabel(item, current = false) {
+  const label = item?.objectName || item?.pageName || item?.name || item?.label || '未命名业务对象'
+  return current ? `当前主对象（${label}）` : label
+}
+
+function objectOptionValue(item) {
+  return stringValue(item?.objectCode || item?.configKey || optionValue(item))
 }
 
 function formAssetKey(item) {
@@ -409,10 +447,10 @@ function clone(value) {
       <template v-if="['UPDATE_RECORD', 'CREATE_RECORD'].includes(localConfig.actionType)">
         <label class="config-field">
           <span>目标业务对象</span>
-          <select :value="localConfig.objectCode || objectCode" @change="updateSingleReference('objectCode', $event)">
-            <option :value="objectCode">当前主对象</option>
-            <option v-for="item in objects" :key="optionValue(item)" :value="optionValue(item)">
-              {{ optionLabel(item) }}
+          <select :value="localConfig.objectCode || objectCode" @change="handleTargetObjectChange">
+            <option :value="objectCode">{{ objectOptionLabel({ objectCode, objectName }, true) }}</option>
+            <option v-for="item in objects" :key="objectOptionValue(item)" :value="objectOptionValue(item)">
+              {{ objectOptionLabel(item) }}
             </option>
           </select>
         </label>
@@ -505,7 +543,7 @@ function clone(value) {
           <label class="config-field">
             <span>审批流程</span>
             <div class="approval-model-row">
-              <n-select
+              <NSelect
                 :value="localConfig.flowModelKey || null"
                 filterable
                 clearable
@@ -513,9 +551,9 @@ function clone(value) {
                 placeholder="搜索已有审批模型"
                 @update:value="handleFlowModelKey"
               />
-              <n-button size="small" secondary :loading="creatingModel" @click="createAndDesign">
+              <NButton size="small" secondary :loading="creatingModel" @click="createAndDesign">
                 新建并设计
-              </n-button>
+              </NButton>
             </div>
             <small>
               可选已有模型，或直接在本页新建。发布业务流程前请先部署审批模型。
@@ -551,7 +589,7 @@ function clone(value) {
 
           <label class="config-field">
             <span>流程状态字段</span>
-            <n-select
+            <NSelect
               v-if="hasIndependentFlowStatus"
               :value="localConfig.statusField || suggestedStatusField || null"
               filterable
@@ -564,7 +602,7 @@ function clone(value) {
                 <strong>尚未添加独立流程状态</strong>
                 <span>系统将创建只读字段 flowStatus，并仅追加数据库列 flow_status。</span>
               </div>
-              <n-button
+              <NButton
                 size="small"
                 type="primary"
                 secondary
@@ -572,7 +610,7 @@ function clone(value) {
                 @click="ensureFlowStatusField"
               >
                 一键添加流程状态字段
-              </n-button>
+              </NButton>
             </div>
             <small :class="{ 'status-field-warning': localConfig.statusField && !usesIndependentFlowStatus }">
               发起写入 IN_PROCESS，通过、驳回、取消分别写入 APPROVED、REJECTED、CANCELED；业务自己的“状态”字段不会被流程修改。
@@ -584,14 +622,14 @@ function clone(value) {
           <div class="approval-preview-head">
             <div>
               <strong>{{ selectedFlowModel?.modelName || selectedFlowModel?.flowModelName || localConfig.flowModelName || '审批流程图' }}</strong>
-              <n-tag
+              <NTag
                 v-if="selectedFlowModel"
                 size="small"
                 :type="(selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? 'success' : 'warning'"
                 :bordered="false"
               >
                 {{ (selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? '已部署' : '草稿，可在本页设计后部署' }}
-              </n-tag>
+              </NTag>
             </div>
             <button
               type="button"
@@ -608,7 +646,7 @@ function clone(value) {
               compact
               :bpmn-xml="previewXml"
             />
-            <n-empty
+            <NEmpty
               v-else
               size="small"
               :description="previewLoading ? '流程图加载中…' : (selectedFlowModel ? '保存审批模型后可在此预览流程图' : '选择或新建审批流程后在此预览')"

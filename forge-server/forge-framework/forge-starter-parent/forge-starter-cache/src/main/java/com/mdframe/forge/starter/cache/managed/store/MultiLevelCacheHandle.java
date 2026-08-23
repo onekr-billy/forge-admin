@@ -2,92 +2,133 @@ package com.mdframe.forge.starter.cache.managed.store;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.Ticker;
 import com.mdframe.forge.starter.cache.managed.model.CacheLookup;
+import com.mdframe.forge.starter.cache.managed.model.ManagedCacheInvalidationMessage;
 import com.mdframe.forge.starter.cache.managed.model.ManagedCacheValue;
-import org.redisson.api.RLocalCachedMapCache;
+import org.redisson.api.RMapCache;
+import org.redisson.api.RTopic;
+import org.redisson.api.listener.StatusListener;
 
-import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MultiLevelCacheHandle implements ManagedCacheHandle {
 
-    private final RLocalCachedMapCache<String, ManagedCacheValue> cache;
-    private final Cache<String, Long> localExpirations;
-    private final Ticker ticker;
+    private final RMapCache<String, ManagedCacheValue> remoteCache;
+    private final RTopic invalidationTopic;
+    private final Cache<String, ManagedCacheValue> localCache;
+    private final String sourceId;
+    private final int invalidationListenerId;
+    private final int statusListenerId;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
-    public MultiLevelCacheHandle(RLocalCachedMapCache<String, ManagedCacheValue> cache, int maximumSize) {
-        this(cache, maximumSize, Ticker.systemTicker());
+    public MultiLevelCacheHandle(RMapCache<String, ManagedCacheValue> remoteCache,
+                                 RTopic invalidationTopic,
+                                 int maximumSize) {
+        this(remoteCache, invalidationTopic, maximumSize, Ticker.systemTicker(), UUID.randomUUID().toString());
     }
 
-    MultiLevelCacheHandle(RLocalCachedMapCache<String, ManagedCacheValue> cache,
+    MultiLevelCacheHandle(RMapCache<String, ManagedCacheValue> remoteCache,
+                          RTopic invalidationTopic,
                           int maximumSize,
-                          Ticker ticker) {
-        this.cache = cache;
-        this.localExpirations = Caffeine.newBuilder().maximumSize(maximumSize).build();
-        this.ticker = ticker;
+                          Ticker ticker,
+                          String sourceId) {
+        this.remoteCache = remoteCache;
+        this.invalidationTopic = invalidationTopic;
+        this.sourceId = sourceId;
+        this.localCache = Caffeine.newBuilder()
+                .maximumSize(maximumSize)
+                .ticker(ticker)
+                .expireAfter(new Expiry<String, ManagedCacheValue>() {
+                    @Override
+                    public long expireAfterCreate(String key, ManagedCacheValue value, long currentTime) {
+                        return value.localTtlNanos();
+                    }
+
+                    @Override
+                    public long expireAfterUpdate(String key, ManagedCacheValue value,
+                                                  long currentTime, long currentDuration) {
+                        return value.localTtlNanos();
+                    }
+
+                    @Override
+                    public long expireAfterRead(String key, ManagedCacheValue value,
+                                                long currentTime, long currentDuration) {
+                        return currentDuration;
+                    }
+                })
+                .build();
+        this.invalidationListenerId = invalidationTopic.addListener(
+                ManagedCacheInvalidationMessage.class,
+                (channel, message) -> onInvalidation(message));
+        this.statusListenerId = invalidationTopic.addListener(new StatusListener() {
+            @Override
+            public void onSubscribe(String channel) {
+                localCache.invalidateAll();
+            }
+
+            @Override
+            public void onUnsubscribe(String channel) {
+                // 重新订阅时统一清空，断开期间继续由当前 L1 TTL 约束陈旧窗口。
+            }
+        });
     }
 
     @Override
     public CacheLookup get(String key) {
-        Map<String, ManagedCacheValue> localCache = cache.getCachedMap();
-        ManagedCacheValue localValue = localCache.get(key);
-        if (localValue != null && !isLocalExpired(key, localValue)) {
+        ManagedCacheValue localValue = localCache.getIfPresent(key);
+        if (localValue != null) {
             return CacheLookup.hit(localValue.value());
         }
-        if (localValue != null) {
-            localCache.entrySet().remove(Map.entry(key, localValue));
-            localExpirations.invalidate(key);
-        }
-        ManagedCacheValue value = cache.get(key);
+        ManagedCacheValue value = remoteCache.get(key);
         if (value == null) {
-            localExpirations.invalidate(key);
             return CacheLookup.miss();
         }
-        rememberLocalExpiry(key, value);
+        localCache.put(key, value);
         return CacheLookup.hit(value.value());
     }
 
     @Override
     public void put(String key, ManagedCacheValue value, long ttlSeconds) {
-        cache.fastPut(key, value, ttlSeconds, TimeUnit.SECONDS);
-        rememberLocalExpiry(key, value);
+        remoteCache.fastPut(key, value, ttlSeconds, TimeUnit.SECONDS);
+        localCache.put(key, value);
+        invalidationTopic.publish(new ManagedCacheInvalidationMessage(sourceId, key));
     }
 
     @Override
     public void evict(String key) {
-        cache.fastRemove(key);
-        localExpirations.invalidate(key);
+        remoteCache.fastRemove(key);
+        localCache.invalidate(key);
+        invalidationTopic.publish(new ManagedCacheInvalidationMessage(sourceId, key));
     }
 
     @Override
     public void clear() {
-        cache.clear();
-        localExpirations.invalidateAll();
+        remoteCache.clear();
+        localCache.invalidateAll();
+        invalidationTopic.publish(new ManagedCacheInvalidationMessage(sourceId, null));
     }
 
     @Override
     public void close() {
-        cache.clearLocalCache();
-        localExpirations.invalidateAll();
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        localCache.invalidateAll();
+        invalidationTopic.removeListener(invalidationListenerId, statusListenerId);
     }
 
-    private boolean isLocalExpired(String key, ManagedCacheValue value) {
-        Long expiresAt = localExpirations.getIfPresent(key);
-        if (expiresAt == null) {
-            rememberLocalExpiry(key, value);
-            return false;
+    private void onInvalidation(ManagedCacheInvalidationMessage message) {
+        if (message == null || sourceId.equals(message.sourceId())) {
+            return;
         }
-        return ticker.read() >= expiresAt;
-    }
-
-    private void rememberLocalExpiry(String key, ManagedCacheValue value) {
-        long now = ticker.read();
-        long ttl = value.localTtlNanos();
-        long expiresAt = now + ttl;
-        if (ttl > 0 && expiresAt < now) {
-            expiresAt = Long.MAX_VALUE;
+        if (message.key() == null) {
+            localCache.invalidateAll();
+        } else {
+            localCache.invalidate(message.key());
         }
-        localExpirations.put(key, expiresAt);
     }
 }

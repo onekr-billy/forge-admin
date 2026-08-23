@@ -690,12 +690,18 @@ public class BusinessProcessSchemaValidator {
         String formMode = firstString(formAsset, "formMode", "type");
         if ("BUSINESS_OBJECT_FORM".equalsIgnoreCase(formMode)) {
             String statusField = string(config.get("statusField"));
-            if (statusField == null || !FLOW_STATUS_FIELDS.contains(statusField)) {
+            if (statusField == null || !isFlowStatusField(statusField)) {
                 error(result, "APPROVAL_FLOW_STATUS_REQUIRED",
                         "低代码审批必须绑定独立流程状态字段 flowStatus", node.getId(),
                         path + ".config.statusField", "在审批节点中一键添加流程状态字段并重新选择");
             }
         }
+    }
+
+    private boolean isFlowStatusField(String value) {
+        return value != null
+                && FLOW_STATUS_FIELDS.stream().anyMatch(candidate -> candidate.equalsIgnoreCase(value)
+                || candidate.replace("_", "").equalsIgnoreCase(value.replace("_", "")));
     }
 
     private void validateSubProcess(BusinessProcessSchema schema,

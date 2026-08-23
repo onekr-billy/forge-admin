@@ -3,13 +3,19 @@ package com.mdframe.forge.plugin.generator.service.businessprocess;
 import com.mdframe.forge.plugin.generator.businessprocess.schema.BusinessProcessNode;
 import com.mdframe.forge.plugin.generator.businessprocess.schema.BusinessProcessSchema;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -23,8 +29,12 @@ import java.util.Map;
 public class BusinessProcessActionExecutor {
 
     private final AiCrudConfigMapper crudConfigMapper;
+    private final BusinessApplicationObjectMapper applicationObjectMapper;
+    private final BusinessObjectMapper businessObjectMapper;
     private final DynamicCrudService dynamicCrudService;
 
+    /** 动作使用独立事务，避免下游事务异常把编排状态事务标记为 rollback-only。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public String execute(AiBusinessProcessRun run,
                           BusinessProcessSchema schema,
                           BusinessProcessNode node) {
@@ -33,14 +43,17 @@ public class BusinessProcessActionExecutor {
         String configuredObjectCode = text(config.get("objectCode"));
         // Older action-node drafts used the generic placeholder
         // `business_object`. It is not a runtime object and must never be
-        // looked up as a published CRUD config. Prefer the immutable process
-        // subject snapshot when that placeholder is present.
+        // treated as the final published CRUD key; resolve the immutable
+        // object metadata first, then use its canonical object/config key.
         String objectCode = firstConcreteObjectCode(
                 configuredObjectCode,
                 schema.getSubject() == null ? null : schema.getSubject().getObjectCode(),
                 run.getSubjectObjectCode());
-        AiCrudConfig runtimeConfig = crudConfigMapper.selectPublishedByObjectCodeOrConfigKey(
-                run.getTenantId(), objectCode);
+        AiBusinessObject targetObject = resolveTargetObject(run, schema, config, objectCode);
+        if (targetObject != null) {
+            objectCode = StringUtils.defaultIfBlank(targetObject.getObjectCode(), objectCode);
+        }
+        AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(run.getTenantId(), objectCode, targetObject);
         if (runtimeConfig == null || StringUtils.isBlank(runtimeConfig.getConfigKey())) {
             throw new BusinessException("动作目标对象没有可用的发布态运行配置: " + objectCode);
         }
@@ -58,6 +71,74 @@ public class BusinessProcessActionExecutor {
             return "已创建记录并写入 " + data.size() + " 个字段";
         }
         throw new BusinessException("动作类型尚未接入运行时: " + actionType);
+    }
+
+    private AiBusinessObject resolveTargetObject(AiBusinessProcessRun run,
+                                                 BusinessProcessSchema schema,
+                                                 Map<String, Object> config,
+                                                 String objectCode) {
+        String objectId = firstText(config, "targetObjectId", "objectId");
+        if (StringUtils.isNotBlank(objectId)) {
+            try {
+                AiBusinessObject object = businessObjectMapper.selectById(Long.valueOf(objectId));
+                if (object != null) {
+                    return object;
+                }
+            } catch (NumberFormatException ignored) {
+                // 雪花 ID 只允许无损字符串传递；无法解析时继续走编码兼容路径。
+            }
+        }
+        String configKey = firstText(config, "targetConfigKey", "configKey");
+        if (StringUtils.isNotBlank(configKey)) {
+            AiBusinessObject object = businessObjectMapper.selectByConfigKey(run.getTenantId(), configKey);
+            if (object != null) {
+                return object;
+            }
+        }
+        if (StringUtils.isNotBlank(objectCode) && !"business_object".equalsIgnoreCase(objectCode)) {
+            AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(run.getTenantId(), objectCode);
+            if (object != null) {
+                return object;
+            }
+        }
+        if (schema.getSubject() != null && "business_object".equalsIgnoreCase(objectCode)) {
+            objectId = StringUtils.trimToEmpty(schema.getSubject().getObjectId());
+            if (StringUtils.isNotBlank(objectId)) {
+                try {
+                    return businessObjectMapper.selectById(Long.valueOf(objectId));
+                } catch (NumberFormatException ignored) {
+                    // 保持占位符兼容，后续仍可按 subject objectCode 查询。
+                }
+            }
+        }
+        if (run.getApplicationId() != null) {
+            List<BusinessApplicationObjectVO> objects = applicationObjectMapper.selectByApplicationId(
+                    run.getTenantId(), run.getApplicationId());
+            BusinessApplicationObjectVO primary = objects == null ? null : objects.stream()
+                    .filter(item -> item != null && "PRIMARY".equalsIgnoreCase(item.getObjectRole()))
+                    .findFirst()
+                    .orElse(objects.stream().filter(item -> item != null).findFirst().orElse(null));
+            if (primary != null && primary.getObjectId() != null) {
+                AiBusinessObject object = businessObjectMapper.selectById(primary.getObjectId());
+                if (object != null) {
+                    return object;
+                }
+            }
+        }
+        return null;
+    }
+
+    private AiCrudConfig resolvePublishedRuntimeConfig(Long tenantId,
+                                                        String objectCode,
+                                                        AiBusinessObject targetObject) {
+        AiCrudConfig runtimeConfig = crudConfigMapper.selectPublishedByObjectCodeOrConfigKey(tenantId, objectCode);
+        if (runtimeConfig == null && targetObject != null
+                && StringUtils.isNotBlank(targetObject.getConfigKey())
+                && !StringUtils.equals(targetObject.getConfigKey(), objectCode)) {
+            runtimeConfig = crudConfigMapper.selectPublishedByObjectCodeOrConfigKey(
+                    tenantId, targetObject.getConfigKey());
+        }
+        return runtimeConfig;
     }
 
     private String firstConcreteObjectCode(String... candidates) {

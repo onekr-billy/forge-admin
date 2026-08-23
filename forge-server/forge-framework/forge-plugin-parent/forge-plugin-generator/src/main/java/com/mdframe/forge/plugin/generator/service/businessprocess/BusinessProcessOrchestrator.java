@@ -31,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -317,7 +318,7 @@ public class BusinessProcessOrchestrator {
      * 审批流程到达终态后恢复外层业务流程。状态和关联 ID 均使用 CAS 认领，
      * 因此 Flowable 重复投递同一终态事件不会重复执行后继动作。
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void resumeApprovalResult(Long tenantId, String processInstanceId, String result) {
         if (tenantId == null || tenantId <= 0 || StringUtils.isAnyBlank(processInstanceId, result)) {
             return;
@@ -467,7 +468,14 @@ public class BusinessProcessOrchestrator {
         if (StringUtils.isBlank(flowModelKey)) {
             return BusinessProcessNodeResult.failed("APPROVAL_MODEL_MISSING", "审批节点未配置已发布流程模型");
         }
-        String title = firstText(text(node.getConfig(), "titleTemplate"), node.getName(), run.getProcessCode());
+        // Only an explicitly configured approval title may override the
+        // business object's flow binding. Falling back to the node label here
+        // used to replace the configured document title with labels such as
+        // "打卡" before BusinessFlowService could apply its title template.
+        String title = StringUtils.trimToNull(firstText(
+                text(node.getConfig(), "titleTemplate"),
+                text(node.getConfig(), "approvalTitle"),
+                text(node.getConfig(), "title")));
         JSONObject variables = new JSONObject();
         variables.put("processCode", run.getProcessCode());
         variables.put("processRunId", String.valueOf(run.getId()));

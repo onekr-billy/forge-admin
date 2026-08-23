@@ -2,6 +2,14 @@
 
 > 记录开发过程中遇到的常见错误和解决方案，避免重复踩坑
 
+## Redisson 接口存在不代表社区版可以运行
+
+**发现日期**：2026-08-23
+
+Redisson 3.50 社区版的 `RedissonClient` 接口虽然公开了 `getLocalCachedMapCache`，实际 `Redisson` 实现会直接抛出“Redisson PRO version”异常。编译成功和接口单测无法证明该能力可用于社区版，使用它实现 MULTI 缓存会导致每次业务读取都失败穿透。
+
+处理原则：Forge MULTI 受管缓存使用社区版可用的 Caffeine L1、`RMapCache` L2 和类型化 Topic 失效通知组合；Topic 初次订阅或重连订阅时清空 L1。引入 Redisson 高阶数据结构前必须检查当前依赖 JAR 的实际实现或做真实运行测试，不能只依据 API 接口是否存在。
+
 ## 门户外层 deep 样式不能覆盖嵌套加载容器
 
 **发现日期**：2026-08-23
@@ -4232,3 +4240,11 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 在 Vue SFC 的 `<template>` 中使用 `<style v-for>` 动态装载业务 CSS，会触发 `Tags with side effect (<script> and <style>) are ignored in client component templates`，标签会被编译器忽略；开发服务可能只显示警告，但正式运行时样式不会可靠生效。
 
 处理原则：动态 CSS 应由受控组件通过渲染函数创建 `style` VNode，并 Teleport 到 `document.head`；CSS 内容必须先经过平台校验与作用域重写。回归测试应覆盖样式挂载、更新时移除旧节点、空内容跳过和卸载清理，不能只断言 CSS 字符串生成正确。
+
+## 183. 捕获参与当前事务的下游异常不能清除 rollback-only
+
+**发现日期**：2026-08-23
+
+业务编排器在同一事务中调用带 `@Transactional` 的动态 CRUD；下游抛出运行时异常时，Spring 会先把共享事务标记为 rollback-only。上层即使把异常转换为节点 `FAILED` 并继续返回，事务提交仍会抛出 `UnexpectedRollbackException`，之前写入的失败状态也会一起回滚，最终日志只剩提交异常而不是原始动作错误。
+
+处理原则：流程终态事件必须在业务回调事务 `AFTER_COMMIT` 后消费；恢复编排和动作节点分别使用新的事务。动作失败时只回滚动作写入，外层仍可提交节点和运行实例的 `FAILED/errorSummary`。动作级独立事务意味着成功副作用必须使用稳定幂等键，并先于检查点提交；尤其创建记录动作不能依赖跨事务回滚避免重复。监听器必须记录完整原始异常且不反向回滚已经完成的 Flowable 回调。

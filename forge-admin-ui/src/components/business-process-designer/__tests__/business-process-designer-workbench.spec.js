@@ -288,6 +288,33 @@ describe('structured business node configuration', () => {
     })
   })
 
+  it('shows business object names while retaining object codes as option values', async () => {
+    const wrapper = mount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'action_target', type: 'ACTION', name: '更新', ports: [],
+          config: { actionType: 'UPDATE_RECORD' },
+        },
+        objectCode: 'order',
+        objectName: '订单',
+        objects: [{ objectId: '2002', objectCode: 'customer', objectName: '客户', configKey: 'customer_runtime' }],
+      },
+      global: { stubs: FORM_ASSET_STUBS },
+    })
+
+    const options = wrapper.findAll('option')
+    expect(options.map(option => option.text())).toContain('客户')
+    expect(options.find(option => option.text() === '客户').attributes('value')).toBe('customer')
+    expect(options.map(option => option.text())).not.toContain('customer')
+    await wrapper.findAll('.config-field select')[1].setValue('customer')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      objectCode: 'customer',
+      targetObjectId: '2002',
+      targetConfigKey: 'customer_runtime',
+    })
+    wrapper.unmount()
+  })
+
   it('opens the real flow designer for a selected deployed approval model', async () => {
     const wrapper = shallowMount(ActionAndApprovalNodeConfig, {
       props: {
@@ -489,6 +516,23 @@ describe('structured business node configuration', () => {
     expect(businessAppApiMocks.ensureBusinessFlowStatusField).toHaveBeenCalledWith('1900000000000001001')
     expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({ statusField: 'flowStatus' })
     expect(wrapper.emitted('refreshFields').at(-1)[0]).toMatchObject({ fieldCode: 'flowStatus' })
+    wrapper.unmount()
+  })
+
+  it('recognizes an existing snake-case flow status field', async () => {
+    const wrapper = mount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'approval_existing_status', type: 'APPROVAL', name: '审批',
+          ports: ['APPROVED', 'REJECTED', 'CANCELED', 'FAILED'], config: {},
+        },
+        objectCode: 'order',
+        fields: [{ fieldCode: 'flow_status', fieldName: '流程状态' }],
+      },
+      global: { stubs: FORM_ASSET_STUBS },
+    })
+
+    expect(wrapper.text()).not.toContain('一键添加流程状态字段')
     wrapper.unmount()
   })
 

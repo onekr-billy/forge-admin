@@ -3503,6 +3503,7 @@ public class BusinessFlowService {
             FlowCallback.ON_REJECTED,
             FlowCallback.ON_CANCELED
     })
+    @Transactional(rollbackFor = Exception.class)
     public void handleFlowEngineEvent(FlowEventContext ctx) {
         if (ctx == null) {
             return;

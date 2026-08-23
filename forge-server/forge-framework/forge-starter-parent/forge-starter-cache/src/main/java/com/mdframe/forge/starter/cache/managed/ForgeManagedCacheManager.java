@@ -9,6 +9,7 @@ import com.mdframe.forge.starter.cache.managed.model.CacheDefinition;
 import com.mdframe.forge.starter.cache.managed.model.CacheLookup;
 import com.mdframe.forge.starter.cache.managed.model.CachePolicyOverride;
 import com.mdframe.forge.starter.cache.managed.model.EffectiveCachePolicy;
+import com.mdframe.forge.starter.cache.managed.model.ManagedCacheInvalidationMessage;
 import com.mdframe.forge.starter.cache.managed.model.ManagedCacheValue;
 import com.mdframe.forge.starter.cache.managed.model.ManagedCacheView;
 import com.mdframe.forge.starter.cache.managed.properties.ManagedCacheProperties;
@@ -17,8 +18,6 @@ import com.mdframe.forge.starter.cache.managed.store.ManagedCacheHandle;
 import com.mdframe.forge.starter.cache.managed.store.MultiLevelCacheHandle;
 import com.mdframe.forge.starter.cache.managed.store.RedisCacheHandle;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.LocalCachedMapCacheOptions;
-import org.redisson.api.RLocalCachedMapCache;
 import org.redisson.api.RMap;
 import org.redisson.api.RMapCache;
 import org.redisson.api.RTopic;
@@ -55,6 +54,7 @@ public class ForgeManagedCacheManager {
     private final Codec definitionCodec;
     private final Codec policyCodec;
     private final Codec controlMessageCodec;
+    private final Codec invalidationMessageCodec;
     private final ConcurrentMap<String, CacheDefinition> definitions = new ConcurrentHashMap<>();
     private final AtomicReference<Map<String, CachePolicyOverride>> overrides =
             new AtomicReference<>(Map.of());
@@ -75,6 +75,7 @@ public class ForgeManagedCacheManager {
         this.definitionCodec = ManagedCacheCodecs.definitions(objectMapper);
         this.policyCodec = ManagedCacheCodecs.policies(objectMapper);
         this.controlMessageCodec = ManagedCacheCodecs.controlMessages(objectMapper);
+        this.invalidationMessageCodec = ManagedCacheCodecs.invalidationMessages(objectMapper);
         initializeControlPlane();
     }
 
@@ -281,16 +282,10 @@ public class ForgeManagedCacheManager {
             RMapCache<String, ManagedCacheValue> cache = redissonClient.getMapCache(cacheName, valueCodec);
             return new RedisCacheHandle(cache);
         }
-        LocalCachedMapCacheOptions<String, ManagedCacheValue> options =
-                LocalCachedMapCacheOptions.<String, ManagedCacheValue>defaults()
-                        .cacheProvider(LocalCachedMapCacheOptions.CacheProvider.CAFFEINE)
-                        .cacheSize(policy.localMaxSize())
-                        .syncStrategy(LocalCachedMapCacheOptions.SyncStrategy.INVALIDATE)
-                        .reconnectionStrategy(LocalCachedMapCacheOptions.ReconnectionStrategy.CLEAR)
-                        .storeMode(LocalCachedMapCacheOptions.StoreMode.LOCALCACHE_REDIS);
-        RLocalCachedMapCache<String, ManagedCacheValue> cache =
-                redissonClient.getLocalCachedMapCache(cacheName, valueCodec, options);
-        return new MultiLevelCacheHandle(cache, policy.localMaxSize());
+        RMapCache<String, ManagedCacheValue> cache = redissonClient.getMapCache(cacheName, valueCodec);
+        RTopic invalidationTopic = redissonClient.getTopic(
+                cacheName + ":invalidations", invalidationMessageCodec);
+        return new MultiLevelCacheHandle(cache, invalidationTopic, policy.localMaxSize());
     }
 
     private EffectiveCachePolicy effectivePolicy(CacheDefinition definition) {

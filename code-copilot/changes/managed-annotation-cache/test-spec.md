@@ -162,3 +162,24 @@ mvn -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-system \
 ```
 
 真实 Redis 验收应在重启 Admin 加载新代码后访问组织树，确认 `SysOrgTreeVO.orgType` 翻译成功；无需以手工清空 Redis 作为永久修复手段。
+
+## 11. Redisson 社区版 MULTI 兼容回归
+
+- 生产代码不得调用 `RedissonClient#getLocalCachedMapCache`，避免社区版运行时抛出 PRO 功能异常。
+- MULTI 使用 Caffeine 保存 L1，使用 `RMapCache` 保存带独立 TTL 的 L2；普通值和空值按 `ManagedCacheValue.localTtlNanos` 独立过期。
+- 两个 MULTI 句柄共享同一远端 Map 和 Topic 时，一方覆盖/删除单 key 或清空缓存后，另一方必须失效本地值并读取最新远端状态。
+- Topic 初次订阅或重连订阅时清空当前 L1，避免断线期间丢失失效消息后继续使用旧值。
+- 多级缓存失效事件使用应用 `ObjectMapper` 的显式类型化 codec 完成真实 encoder/decoder 往返。
+
+本轮只执行 starter 定向测试和差异检查，不执行完整 Maven/Vite 构建：
+
+```bash
+cd forge-server
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
+mvn -Penable-tests -pl forge-framework/forge-starter-parent/forge-starter-cache \
+  -Dtest=MultiLevelCacheHandleTest,ManagedCacheCodecTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+! rg -n "getLocalCachedMapCache|RLocalCachedMapCache|LocalCachedMapCacheOptions" \
+  forge-framework/forge-starter-parent/forge-starter-cache/src/main
+```
