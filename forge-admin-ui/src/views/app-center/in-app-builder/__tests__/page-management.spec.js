@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createPageManagementSystemNavigationNodes,
   PAGE_MANAGEMENT_SYSTEM_PAGES,
   resolvePageManagementSelection,
 } from '../page-management'
@@ -12,6 +13,15 @@ describe('page management selection', () => {
       '我已办的',
       '我发送的',
       '抄送我的',
+      '通知公告',
+    ])
+    expect(createPageManagementSystemNavigationNodes().map(item => item.icon)).toEqual([
+      'GridOutline',
+      'CheckboxOutline',
+      'CheckmarkDoneOutline',
+      'PaperPlaneOutline',
+      'PeopleOutline',
+      'NotificationsOutline',
     ])
     expect(resolvePageManagementSelection(
       [{ id: 'orders', type: 'page' }],

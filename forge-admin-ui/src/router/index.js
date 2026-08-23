@@ -143,7 +143,7 @@ export const manualRoutes = [
   {
     name: 'BusinessApplicationWorkspace',
     path: '/app-center/application/:applicationCode',
-    redirect: to => {
+    redirect: (to) => {
       const applicationCode = String(to.params?.applicationCode || '').trim()
       if (!applicationCode)
         return { path: '/app-center' }
@@ -154,14 +154,22 @@ export const manualRoutes = [
   {
     name: 'BusinessApplicationSettings',
     path: '/app-center/application/:applicationCode/settings',
-    component: () => import('@/views/app-center/application-settings.[applicationCode].vue'),
-    meta: { title: '应用设置', layout: 'empty', skipTab: true, preserveOnQuery: true },
+    redirect: to => ({
+      name: 'BusinessApplicationRuntime',
+      params: { applicationCode: to.params.applicationCode },
+      query: { ...(to.query || {}), view: 'settings' },
+    }),
+    meta: { title: '应用设置', layout: 'empty', skipTab: true, preserveOnQuery: true, deprecated: true },
   },
   {
     name: 'BusinessApplicationPublish',
     path: '/app-center/application/:applicationCode/publish',
-    component: () => import('@/views/app-center/application-publish.[applicationCode].vue'),
-    meta: { title: '应用发布', layout: 'empty', skipTab: true, preserveOnQuery: true },
+    redirect: to => ({
+      name: 'BusinessApplicationRuntime',
+      params: { applicationCode: to.params.applicationCode },
+      query: { ...(to.query || {}), view: 'publish' },
+    }),
+    meta: { title: '应用发布', layout: 'empty', skipTab: true, preserveOnQuery: true, deprecated: true },
   },
   {
     name: 'BusinessProcessDesigner',

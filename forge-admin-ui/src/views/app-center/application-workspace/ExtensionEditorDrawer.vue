@@ -51,14 +51,17 @@
                 <span>{{ selectedExtensionType?.description }}</span>
               </div>
             </n-form-item>
-            <n-form-item label="业务对象">
+            <n-form-item label="业务对象" :show-feedback="false">
               <n-select
                 v-model:value="form.objectId"
                 clearable
                 filterable
                 :options="objectOptions"
-                placeholder="不选表示应用级"
+                placeholder="选择规则使用的业务对象"
               />
+              <template #feedback>
+                单一对象或唯一主对象会自动带出；应用级提示、样式仍可不选对象。
+              </template>
             </n-form-item>
             <n-form-item label="页面入口">
               <n-select
@@ -111,6 +114,42 @@
             </n-radio-group>
           </div>
 
+          <n-alert
+            v-if="clientContextCatalogLoading"
+            type="info"
+            :bordered="false"
+            class="rule-catalog-alert"
+          >
+            正在读取业务字段，请稍候…
+          </n-alert>
+          <n-alert
+            v-else-if="clientContextCatalogError"
+            type="error"
+            :bordered="false"
+            class="rule-catalog-alert"
+          >
+            {{ clientContextCatalogError }}
+            <n-button text type="primary" size="tiny" @click="loadClientContextCatalog(form.objectId)">
+              重新加载
+            </n-button>
+          </n-alert>
+          <n-alert
+            v-else-if="!form.objectId"
+            type="warning"
+            :bordered="false"
+            class="rule-catalog-alert"
+          >
+            请先选择业务对象，条件字段和设置字段会自动从对象中带出。
+          </n-alert>
+          <n-alert
+            v-else-if="!clientFieldCatalog.length"
+            type="warning"
+            :bordered="false"
+            class="rule-catalog-alert"
+          >
+            当前对象还没有可用字段，请先在“数据”中完成字段设计。
+          </n-alert>
+
           <div class="rule-block">
             <div class="rule-block-title">
               <strong>条件</strong>
@@ -122,13 +161,51 @@
               没有条件时始终执行动作
             </div>
             <div v-for="(condition, index) in visualRule.conditions" :key="`condition-${index}`" class="rule-row condition-row">
-              <n-input v-model:value="condition.field" placeholder="字段编码" />
+              <n-select
+                v-model:value="condition.field"
+                filterable
+                :loading="clientContextCatalogLoading"
+                :options="visualRuleFieldOptions(condition.field)"
+                placeholder="选择条件字段"
+                @update:value="condition.value = ''"
+              />
               <DictSelect
                 v-model:value="condition.operator"
                 dict-type="ai_business_extension_rule_operator"
                 :clearable="false"
               />
-              <n-input v-model:value="condition.value" :disabled="condition.operator === 'EMPTY'" placeholder="比较值" />
+              <DictSelect
+                v-if="conditionValueKind(condition) === 'DICT' && operatorNeedsValue(condition.operator)"
+                v-model:value="condition.value"
+                :dict-type="conditionField(condition)?.dictType"
+                clearable
+              />
+              <n-select
+                v-else-if="conditionValueKind(condition) === 'BOOLEAN' && operatorNeedsValue(condition.operator)"
+                v-model:value="condition.value"
+                :options="booleanRuleOptions"
+                clearable
+                placeholder="选择是或否"
+              />
+              <n-input-number
+                v-else-if="conditionValueKind(condition) === 'NUMBER' && operatorNeedsValue(condition.operator)"
+                v-model:value="condition.value"
+                clearable
+                placeholder="输入比较值"
+              />
+              <n-date-picker
+                v-else-if="['DATE', 'DATETIME'].includes(conditionValueKind(condition)) && operatorNeedsValue(condition.operator)"
+                v-model:formatted-value="condition.value"
+                :type="conditionValueKind(condition) === 'DATETIME' ? 'datetime' : 'date'"
+                :value-format="conditionValueKind(condition) === 'DATETIME' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd'"
+                clearable
+              />
+              <n-input
+                v-else
+                v-model:value="condition.value"
+                :disabled="!operatorNeedsValue(condition.operator)"
+                :placeholder="operatorNeedsValue(condition.operator) ? '输入比较值' : '无需填写比较值'"
+              />
               <n-button quaternary type="error" @click="visualRule.conditions.splice(index, 1)">
                 移除
               </n-button>
@@ -151,25 +228,57 @@
                 dict-type="ai_business_extension_rule_action"
                 :clearable="false"
               />
-              <n-input
+              <n-select
                 v-if="action.actionType === 'SET_FIELD'"
                 v-model:value="action.field"
-                placeholder="目标字段编码"
+                filterable
+                :loading="clientContextCatalogLoading"
+                :options="visualRuleWritableFieldOptions(action.field)"
+                placeholder="选择要设置的字段"
+                @update:value="action.value = ''"
+              />
+              <DictSelect
+                v-if="action.actionType === 'SET_FIELD' && actionValueKind(action) === 'DICT'"
+                v-model:value="action.value"
+                :dict-type="actionField(action)?.dictType"
+                clearable
+              />
+              <n-select
+                v-else-if="action.actionType === 'SET_FIELD' && actionValueKind(action) === 'BOOLEAN'"
+                v-model:value="action.value"
+                :options="booleanRuleOptions"
+                clearable
+                placeholder="选择是或否"
+              />
+              <n-input-number
+                v-else-if="action.actionType === 'SET_FIELD' && actionValueKind(action) === 'NUMBER'"
+                v-model:value="action.value"
+                clearable
+                placeholder="输入设置值"
+              />
+              <n-date-picker
+                v-else-if="action.actionType === 'SET_FIELD' && ['DATE', 'DATETIME'].includes(actionValueKind(action))"
+                v-model:formatted-value="action.value"
+                :type="actionValueKind(action) === 'DATETIME' ? 'datetime' : 'date'"
+                :value-format="actionValueKind(action) === 'DATETIME' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd'"
+                clearable
               />
               <n-input
-                v-if="action.actionType === 'SET_FIELD'"
+                v-else-if="action.actionType === 'SET_FIELD'"
                 v-model:value="action.value"
-                placeholder="设置值"
+                placeholder="输入设置值"
               />
               <n-input
                 v-else-if="action.actionType === 'SHOW_MESSAGE'"
                 v-model:value="action.message"
                 placeholder="提示内容"
               />
-              <n-input
+              <n-select
                 v-else
                 v-model:value="action.actionCode"
-                placeholder="白名单动作编码"
+                filterable
+                :options="visualRuleActionOptions(action.actionCode)"
+                placeholder="选择页面动作"
               />
               <n-button quaternary type="error" @click="visualRule.actions.splice(index, 1)">
                 移除
@@ -326,8 +435,14 @@
               <h3>作用域样式</h3>
               <p>所有选择器会自动限制在当前应用和页面根节点。</p>
             </div>
-            <n-form-item label="页面编码" class="page-code-field">
-              <n-input v-model:value="form.scopeKey" placeholder="customer_form" />
+            <n-form-item label="作用页面" class="page-code-field">
+              <n-select
+                v-model:value="form.scopeKey"
+                clearable
+                filterable
+                :options="scopedCssPageOptions"
+                placeholder="全部页面"
+              />
             </n-form-item>
           </div>
           <ExtensionCodeWorkbench
@@ -411,7 +526,7 @@
             :show-icon="false"
             class="test-result-alert"
           >
-            当前草稿已通过校验和受限测试，可以启用或随应用发布。
+            当前草稿已通过校验和受限测试。只有启用当前版本后，提交表单时才会执行这条增强。
           </n-alert>
         </section>
 
@@ -439,6 +554,14 @@
             <n-button :loading="testing" type="primary" @click="saveAndTest">
               保存并测试
             </n-button>
+            <n-button
+              v-if="testStage === 'PASSED' && form.status !== 'ENABLED'"
+              :loading="enabling"
+              type="success"
+              @click="enableCurrentVersion"
+            >
+              启用当前版本
+            </n-button>
           </n-space>
         </div>
       </template>
@@ -457,6 +580,7 @@ import {
   saveBusinessExtensionDraft,
   testBusinessExtension,
   updateBusinessExtension,
+  updateBusinessExtensionStatus,
   validateBusinessExtension,
 } from '@/api/business-extension'
 import DictSelect from '@/components/DictSelect.vue'
@@ -466,6 +590,15 @@ import ScopedCssPreview from '@/components/lowcode-extension/css/ScopedCssPrevie
 import ExtensionCodeWorkbench from '@/components/lowcode-extension/ExtensionCodeWorkbench.vue'
 import { validateClientScript } from '@/components/lowcode-extension/js/extension-context-api'
 import ExtensionSandboxHost from '@/components/lowcode-extension/js/ExtensionSandboxHost.vue'
+import {
+  extensionFieldOptions,
+  extensionFieldValueKind,
+  extensionPageOptions,
+  findExtensionField,
+  operatorNeedsValue,
+  preferredExtensionObjectId,
+  validateExtensionVisualRule,
+} from './extension-visual-rule'
 import ExtensionHookMatrix from './ExtensionHookMatrix.vue'
 
 const props = defineProps({
@@ -486,6 +619,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  pages: {
+    type: Array,
+    default: () => [],
+  },
   handlers: {
     type: Array,
     default: () => [],
@@ -499,6 +636,7 @@ const formRef = ref(null)
 const sandboxRef = ref(null)
 const saving = ref(false)
 const testing = ref(false)
+const enabling = ref(false)
 const handlerCode = ref(null)
 const serverTestInput = ref('{}')
 const clientRecordId = ref('1')
@@ -507,6 +645,7 @@ const clientAllowedActions = ref([])
 const clientFieldCatalog = ref([])
 const clientActionCatalog = ref([])
 const clientContextCatalogLoading = ref(false)
+const clientContextCatalogError = ref('')
 const testStage = ref('IDLE')
 const testFailedStage = ref('')
 const testSummary = ref('点击底部“保存并测试”开始')
@@ -555,6 +694,10 @@ const clientBooleanOptions = [
   { label: '是（true）', value: 'true' },
   { label: '否（false）', value: 'false' },
 ]
+const booleanRuleOptions = [
+  { label: '是', value: 'true' },
+  { label: '否', value: 'false' },
+]
 const clientSensitiveKeyPattern = /token|secret|password|cookie|authorization|api[_-]?key|session/i
 const clientReservedKeys = new Set(['__proto__', 'prototype', 'constructor'])
 const clientHookScenes = {
@@ -583,12 +726,13 @@ const clientHookScenes = {
 const isEdit = computed(() => Boolean(form.id))
 const objectOptions = computed(() => props.objects.map(item => ({
   label: `${item.objectName || item.objectCode} · ${item.objectCode}`,
-  value: item.objectId,
+  value: String(item.objectId ?? item.id),
 })))
 const entryOptions = computed(() => props.entries.map(item => ({
   label: entryDisplayName(item),
   value: item.id,
 })))
+const scopedCssPageOptions = computed(() => extensionPageOptions(props.pages, form.scopeKey))
 const handlerOptions = computed(() => props.handlers.map(item => ({
   label: `${item.handlerName} · ${item.handlerCode}`,
   value: item.handlerCode,
@@ -712,10 +856,17 @@ const rules = {
 
 watch(() => props.show, async (visible) => {
   if (!visible) {
+    // 抽屉关闭后让尚未完成的字段/动作目录请求失效，避免过渡期间回写已关闭编辑器。
+    clientContextCatalogRequestId += 1
     clearRenewTimer()
     return
   }
   hydrateForm()
+  if (!form.objectId)
+    form.objectId = preferredExtensionObjectId(props.objects)
+  await loadClientContextCatalog(form.objectId || resolveClientContextObjectId())
+  if (!props.show)
+    return
   startRenewTimer()
   if (props.startWithTest) {
     await nextTick()
@@ -768,6 +919,11 @@ watch([clientRecordId, clientTestFields, clientAllowedActions], () => {
     resetTestStatus()
 }, { deep: true })
 
+watch(visualRule, () => {
+  if (['PASSED', 'FAILED'].includes(testStage.value))
+    resetTestStatus()
+}, { deep: true })
+
 onBeforeUnmount(clearRenewTimer)
 
 function defaultForm() {
@@ -785,6 +941,7 @@ function defaultForm() {
     sortOrder: 0,
     failurePolicy: 'BLOCK',
     riskLevel: 'MEDIUM',
+    status: 'DRAFT',
     content: '',
     processedContent: '',
     configJson: '{}',
@@ -799,6 +956,8 @@ function hydrateForm() {
   resetTestStatus()
   Object.assign(form, defaultForm(), props.extension || {}, {
     applicationId: props.application?.id,
+    objectId: props.extension?.objectId == null ? null : String(props.extension.objectId),
+    entryId: props.extension?.entryId == null ? null : String(props.extension.entryId),
   })
   handlerCode.value = null
   serverTestInput.value = '{}'
@@ -807,6 +966,7 @@ function hydrateForm() {
   clientAllowedActions.value = []
   clientFieldCatalog.value = []
   clientActionCatalog.value = []
+  clientContextCatalogError.value = ''
   visualRule.match = 'ALL'
   visualRule.conditions.splice(0)
   visualRule.actions.splice(0)
@@ -815,8 +975,15 @@ function hydrateForm() {
     try {
       const parsed = JSON.parse(form.content)
       visualRule.match = parsed.match === 'ANY' ? 'ANY' : 'ALL'
-      visualRule.conditions.push(...(Array.isArray(parsed.conditions) ? parsed.conditions : []))
-      visualRule.actions.push(...(Array.isArray(parsed.actions) ? parsed.actions : []))
+      visualRule.conditions.push(...normalizeVisualRuleRows(parsed.conditions, {
+        field: '',
+        operator: 'EQ',
+        value: '',
+      }))
+      visualRule.actions.push(...normalizeVisualRuleRows(parsed.actions, {
+        actionType: 'SHOW_MESSAGE',
+        message: '',
+      }))
     }
     catch {
       // 后端校验会保留错误内容；编辑器以空结构让用户修复。
@@ -832,6 +999,14 @@ function hydrateForm() {
   }
   if (form.extensionType === 'CLIENT_JS')
     syncClientContextFromScript(true)
+}
+
+function normalizeVisualRuleRows(rows, fallback) {
+  if (!Array.isArray(rows))
+    return []
+  return rows
+    .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+    .map(item => ({ ...fallback, ...item }))
 }
 
 function addCondition() {
@@ -875,10 +1050,12 @@ async function loadClientContextCatalog(objectId) {
     clientFieldCatalog.value = []
     clientActionCatalog.value = []
     clientContextCatalogLoading.value = false
+    clientContextCatalogError.value = ''
     return
   }
 
   clientContextCatalogLoading.value = true
+  clientContextCatalogError.value = ''
   try {
     const [fieldResult, actionResult] = await Promise.allSettled([
       businessObjectFields(objectId),
@@ -892,12 +1069,51 @@ async function loadClientContextCatalog(objectId) {
     clientActionCatalog.value = actionResult.status === 'fulfilled'
       ? (actionResult.value.data || []).filter(action => action?.actionCode && String(action.status ?? '1') !== '0')
       : []
+    if (fieldResult.status === 'rejected')
+      clientContextCatalogError.value = fieldResult.reason?.message || '业务字段加载失败，请重试'
     refreshClientFieldSamples()
   }
   finally {
     if (requestId === clientContextCatalogRequestId)
       clientContextCatalogLoading.value = false
   }
+}
+
+function visualRuleFieldOptions(currentValue) {
+  return extensionFieldOptions(clientFieldCatalog.value, currentValue)
+}
+
+function visualRuleWritableFieldOptions(currentValue) {
+  return extensionFieldOptions(clientFieldCatalog.value, currentValue, { writable: true })
+}
+
+function visualRuleActionOptions(currentValue) {
+  const options = [...clientActionOptions.value]
+  const value = String(currentValue || '').trim()
+  if (value && !options.some(item => item.value === value)) {
+    options.unshift({
+      label: `${value}（动作已失效，请重新选择）`,
+      value,
+      invalid: true,
+    })
+  }
+  return options
+}
+
+function conditionField(condition) {
+  return findExtensionField(clientFieldCatalog.value, condition?.field)
+}
+
+function actionField(action) {
+  return findExtensionField(clientFieldCatalog.value, action?.field)
+}
+
+function conditionValueKind(condition) {
+  return extensionFieldValueKind(conditionField(condition))
+}
+
+function actionValueKind(action) {
+  return extensionFieldValueKind(actionField(action))
 }
 
 function syncClientContextFromScript(silent = true) {
@@ -1130,6 +1346,7 @@ async function saveCurrent(showSuccess = true) {
       if (showSuccess)
         message.success('已追加新的扩展草稿版本')
     }
+    form.status = 'DRAFT'
     emit('saved')
     return form.id
   }
@@ -1181,7 +1398,8 @@ async function saveAndTest() {
     completeTestStage('SERVER')
     testStage.value = 'PASSED'
     testSummary.value = '当前草稿测试通过'
-    message.success('扩展校验和受限测试均已通过')
+    form.status = 'TESTED'
+    message.success('扩展测试通过，请点击“启用当前版本”使规则生效')
     emit('saved')
   }
   catch (error) {
@@ -1191,6 +1409,24 @@ async function saveAndTest() {
   }
   finally {
     testing.value = false
+  }
+}
+
+async function enableCurrentVersion() {
+  if (!form.id || testStage.value !== 'PASSED')
+    return
+  enabling.value = true
+  try {
+    await updateBusinessExtensionStatus(form.id, 'ENABLED')
+    form.status = 'ENABLED'
+    message.success('当前增强版本已启用，工作台预览刷新后生效；正式应用需重新发布')
+    emit('saved')
+  }
+  catch (error) {
+    message.error(error instanceof Error ? error.message : '启用增强失败')
+  }
+  finally {
+    enabling.value = false
   }
 }
 
@@ -1290,8 +1526,9 @@ function buildVersionPayload() {
   let configJson = '{}'
 
   if (form.extensionType === 'VISUAL_RULE') {
-    if (!visualRule.actions.length)
-      throw new Error('可视化规则至少需要一个动作')
+    const issues = validateExtensionVisualRule(visualRule, clientFieldCatalog.value)
+    if (issues.length)
+      throw new Error(issues[0])
     content = JSON.stringify({
       match: visualRule.match,
       conditions: visualRule.conditions,
@@ -1372,6 +1609,8 @@ function clearRenewTimer() {
 }
 
 function handleAfterLeave() {
+  clientContextCatalogRequestId += 1
+  clientContextCatalogLoading.value = false
   clearRenewTimer()
   emit('closed', { id: form.id, lockToken: form.lockToken })
 }
@@ -1532,6 +1771,11 @@ function handleAfterLeave() {
   padding: 10px;
   border: 1px solid var(--border-default, #c9cdd4);
   border-radius: 6px;
+}
+
+.rule-catalog-alert {
+  margin-bottom: 10px;
+  font-size: 12px;
 }
 
 .rule-block-title {

@@ -3,7 +3,7 @@
     <header>
       <div>
         <h2>{{ pageId ? '页面地址' : '组织内访问' }}</h2>
-        <p>{{ pageId ? '电脑端打开当前门户页面；移动端打开独立 H5 运行页。' : '电脑端打开应用门户，移动端打开独立 H5 运行页。' }}</p>
+        <p>{{ pageId ? '电脑端打开当前页面的独立运行地址；移动端打开独立 H5 运行页。' : '电脑端打开应用门户，移动端打开独立 H5 运行页。' }}</p>
       </div>
       <n-tag :type="portalAvailable ? 'success' : 'warning'" :bordered="false">
         {{ portalAvailable ? '可访问' : '暂不可用' }}
@@ -15,7 +15,7 @@
         <div class="publish-access-copy">
           <span>电脑端</span>
           <strong>{{ pcUrl }}</strong>
-          <p>{{ pageId ? '在电脑浏览器打开当前页面。' : '在电脑浏览器打开应用门户。' }}</p>
+          <p>{{ pageId ? '在电脑浏览器直接打开当前页面，不经过应用门户。' : '在电脑浏览器打开应用门户。' }}</p>
           <n-space>
             <n-button secondary @click="copyLink(pcUrl, '电脑端')">
               复制链接

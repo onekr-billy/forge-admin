@@ -539,6 +539,22 @@ export const aiCrudPageProps = {
   },
 
   /**
+   * 详情/表单页动作配置。与列表行动作分开传递，避免详情动作被错误地
+   * 合并到操作列，流程按钮可按配置同时出现在列表和详情页。
+   * @type {Array<object>}
+   */
+  detailActions: {
+    type: Array,
+    default: () => [],
+  },
+
+  /** 编辑表单页动作配置，与详情只读动作分开传递。 */
+  formActions: {
+    type: Array,
+    default: () => [],
+  },
+
+  /**
    * 当前低代码运行页对应的业务对象编码，用于详情页加载单据流程状态。
    * @type {string}
    */
@@ -805,6 +821,18 @@ export const aiCrudPageProps = {
    * @returns {object | Promise<object> | false} 处理后的数据，返回 false 则中断提交
    */
   beforeSubmit: {
+    type: Function,
+    default: null,
+  },
+
+  /** 编辑表单字段变化钩子，可返回更新后的完整表单数据。 */
+  formChange: {
+    type: Function,
+    default: null,
+  },
+
+  /** 受控行动作执行前钩子，返回 false 时中断动作。 */
+  beforeRowAction: {
     type: Function,
     default: null,
   },

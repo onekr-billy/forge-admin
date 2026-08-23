@@ -76,7 +76,7 @@ class BusinessProcessValidationContextResolverTest {
                 "deploymentId", "deployment-1"));
         when(flowClient.getModelList(null, 1)).thenReturn(FlowResult.success(publishedModels));
         when(flowClient.getModelList(null, null)).thenReturn(FlowResult.success(publishedModels));
-        when(flowService.getFormAssets("order")).thenReturn(Map.of(
+        when(flowService.getFormAssets("order", true, 10L)).thenReturn(Map.of(
                 "formAssets", List.of(Map.of("formKey", "order_form"))));
         when(permissionMapper.selectExistingPermissions(
                 1L, List.of("ai:businessProcess:start")))

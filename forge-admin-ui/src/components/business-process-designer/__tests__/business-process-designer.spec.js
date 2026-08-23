@@ -155,9 +155,58 @@ describe('business process graph validation', () => {
     })
     expect(getBusinessProcessNodeDefinition('ACTION').bpmnType).toBeUndefined()
   })
+
+  it('requires an independent flow status for low-code approval forms', () => {
+    const designer = useBusinessProcessDesigner(
+      createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef }),
+    )
+    const approvalId = designer.addNode('start_manual', 'APPROVAL', {
+      config: {
+        flowModelKey: 'purchase_approval',
+        formAsset: { formKey: 'purchase_form', formMode: 'BUSINESS_OBJECT_FORM' },
+        statusField: 'status',
+      },
+    })
+
+    expect(validateBusinessProcessGraph(designer.schema.value).issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'APPROVAL_FLOW_STATUS_REQUIRED', nodeId: approvalId }),
+    ]))
+
+    designer.updateNode(approvalId, {
+      config: {
+        ...designer.getNode(approvalId).config,
+        statusField: 'flowStatus',
+      },
+    })
+
+    expect(validateBusinessProcessGraph(designer.schema.value).issues
+      .some(item => item.code === 'APPROVAL_FLOW_STATUS_REQUIRED')).toBe(false)
+  })
 })
 
 describe('useBusinessProcessDesigner', () => {
+  it('replaces a complete node config so deleted visibility conditions are not merged back', () => {
+    const designer = useBusinessProcessDesigner(
+      createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef }),
+    )
+    designer.updateNode('start_manual', {
+      config: {
+        positions: ['ROW'],
+        visibleCondition: {
+          operator: 'AND',
+          rules: [{ field: 'status', operator: 'EQ', value: 'DRAFT' }],
+        },
+      },
+    })
+
+    designer.updateNode('start_manual', {
+      config: { positions: ['ROW'] },
+    }, { replaceConfig: true })
+
+    expect(designer.getNode('start_manual').config).toEqual({ positions: ['ROW'] })
+    expect(designer.getNode('start_manual').config).not.toHaveProperty('visibleCondition')
+  })
+
   it('inserts, copies and deletes a business action while preserving the DAG', () => {
     const designer = useBusinessProcessDesigner(
       createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef }),

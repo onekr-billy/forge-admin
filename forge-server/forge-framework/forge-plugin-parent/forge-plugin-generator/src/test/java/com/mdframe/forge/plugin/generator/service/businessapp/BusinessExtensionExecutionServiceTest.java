@@ -172,6 +172,75 @@ class BusinessExtensionExecutionServiceTest {
         assertEquals("HANDLER_REJECTED", results.get(0).getCode());
     }
 
+    @Test
+    @DisplayName("published Java extension executes the exact snapshot version and scope")
+    void publishedExtensionUsesExactSnapshotVersionAndScope() {
+        AiBusinessExtension extension = serverExtension("WARN");
+        extension.setObjectId(999L);
+        extension.setHookCode("AFTER_SUBMIT");
+        AiBusinessExtensionVersion version = version(true, true);
+        version.setConfigJson("{\"handlerCode\":\"published_handler\"}");
+        AtomicReference<Integer> selectedVersion = new AtomicReference<>();
+        AtomicReference<ExtensionExecutionContext> contextRef = new AtomicReference<>();
+        BusinessExtensionMapper extensionMapper = proxy(BusinessExtensionMapper.class, (method, args) ->
+                "selectEntityById".equals(method) ? extension : defaultValue(method));
+        BusinessExtensionVersionMapper versionMapper = proxy(BusinessExtensionVersionMapper.class, (method, args) -> {
+            if ("selectVersion".equals(method)) {
+                selectedVersion.set((Integer) args[2]);
+                return version;
+            }
+            return defaultValue(method);
+        });
+        BusinessExtensionExecutionService service = service(
+                extensionMapper, versionMapper, List.of(capturingHandler(contextRef)),
+                proxy(BusinessExtensionExecutionLogMapper.class, (method, args) -> defaultValue(method)));
+        Map<String, Object> published = Map.ofEntries(
+                Map.entry("id", "20"),
+                Map.entry("extensionCode", "published_validation"),
+                Map.entry("extensionType", "SERVER_BINDING"),
+                Map.entry("hookCode", "BEFORE_SUBMIT"),
+                Map.entry("scopeType", "OBJECT"),
+                Map.entry("objectId", "101"),
+                Map.entry("enabledVersion", 2),
+                Map.entry("failurePolicy", "BLOCK"));
+
+        ExtensionExecutionResult result = service.executePublishedServerExtension(
+                published, 10L, 101L, null, "BEFORE_SUBMIT", Map.of(
+                        "record", Map.of("customerName", "客户A", "undeclaredSecret", "不会进入处理器")));
+
+        assertTrue(result.isSuccess());
+        assertEquals(2, selectedVersion.get());
+        assertEquals(101L, contextRef.get().getObjectId());
+        assertEquals("BEFORE_SUBMIT", contextRef.get().getHookCode());
+        assertEquals("published_validation", contextRef.get().getExtensionCode());
+        assertEquals(Map.of("customerName", "客户A"), contextRef.get().getInput());
+    }
+
+    @Test
+    @DisplayName("published Java extension rejects a request outside its immutable scope")
+    void publishedExtensionRejectsWrongScope() {
+        AiBusinessExtension extension = serverExtension("BLOCK");
+        BusinessExtensionMapper extensionMapper = proxy(BusinessExtensionMapper.class, (method, args) ->
+                "selectEntityById".equals(method) ? extension : defaultValue(method));
+        BusinessExtensionExecutionService service = service(
+                extensionMapper,
+                proxy(BusinessExtensionVersionMapper.class, (method, args) -> defaultValue(method)));
+        Map<String, Object> published = Map.of(
+                "id", "20",
+                "extensionType", "SERVER_BINDING",
+                "hookCode", "BEFORE_SUBMIT",
+                "scopeType", "OBJECT",
+                "objectId", "101",
+                "enabledVersion", 2,
+                "failurePolicy", "BLOCK");
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.executePublishedServerExtension(
+                        published, 10L, 102L, null, "BEFORE_SUBMIT", Map.of()));
+
+        assertTrue(error.getMessage().contains("不适用于当前业务范围"));
+    }
+
     private BusinessExtensionExecutionService service(BusinessExtensionMapper extensionMapper,
                                                         BusinessExtensionVersionMapper versionMapper) {
         return service(extensionMapper, versionMapper, List.of(),
@@ -225,6 +294,36 @@ class BusinessExtensionExecutionServiceTest {
         };
     }
 
+    private LowcodeExtensionHandler capturingHandler(AtomicReference<ExtensionExecutionContext> contextRef) {
+        return new LowcodeExtensionHandler() {
+            @Override
+            public String handlerCode() {
+                return "published_handler";
+            }
+
+            @Override
+            public String handlerName() {
+                return "发布态处理器";
+            }
+
+            @Override
+            public Set<String> allowedHooks() {
+                return Set.of("BEFORE_SUBMIT");
+            }
+
+            @Override
+            public Map<String, ExtensionInputField> inputSchema() {
+                return Map.of("customerName", new ExtensionInputField("STRING", true));
+            }
+
+            @Override
+            public ExtensionExecutionResult execute(ExtensionExecutionContext context) {
+                contextRef.set(context);
+                return ExtensionExecutionResult.success(Map.of());
+            }
+        };
+    }
+
     private BusinessApplicationChangeTracker changeTracker() {
         BusinessApplicationMapper mapper = proxy(BusinessApplicationMapper.class,
                 (method, args) -> "markChanged".equals(method) ? 1 : defaultValue(method));
@@ -259,7 +358,7 @@ class BusinessExtensionExecutionServiceTest {
         AiBusinessExtensionVersion version = new AiBusinessExtensionVersion();
         version.setExtensionId(20L);
         version.setVersionNo(2);
-        version.setContent("{\"match\":\"ALL\",\"conditions\":[],\"actions\":[{\"actionType\":\"SHOW_MESSAGE\"}]}");
+        version.setContent("{\"match\":\"ALL\",\"conditions\":[],\"actions\":[{\"actionType\":\"SHOW_MESSAGE\",\"message\":\"已通过校验\"}]}");
         version.setConfigJson("{}");
         version.setValidationPassed(validated ? 1 : 0);
         version.setTestPassed(tested ? 1 : 0);

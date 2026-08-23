@@ -55,6 +55,7 @@ export function parseUserTaskConfig(taskElement) {
   const config = {
     taskType: 'assignee',
     assignee: '',
+    assigneeUserId: '',
     assigneeExpr: '',
     assigneeUserName: '',
     candidateUsers: [],
@@ -166,9 +167,13 @@ function applyAssignee(el, config) {
       config.assignee = 'spel'
       config.assigneeExpr = assignee
     }
-    else if (assignee.startsWith('${user_')) {
+    else if (assigneeType === 'custom') {
       config.assignee = 'custom'
-      config.assigneeExpr = assignee
+      config.assigneeUserId = extractFixedAssigneeUserId(assignee)
+    }
+    else if (extractLegacyFixedAssigneeUserId(assignee)) {
+      config.assignee = 'custom'
+      config.assigneeUserId = extractLegacyFixedAssigneeUserId(assignee)
     }
     else if (STATIC_ASSIGNEES.has(assignee)) {
       config.assignee = assignee
@@ -205,6 +210,15 @@ function applyAssignee(el, config) {
 
 function isSimpleVariableExpression(s) {
   return /^\$\{[a-z_$][\w$]*\}$/i.test(s)
+}
+
+function extractFixedAssigneeUserId(value) {
+  return extractLegacyFixedAssigneeUserId(value) || (/^\d+$/.test(String(value || '')) ? String(value) : '')
+}
+
+function extractLegacyFixedAssigneeUserId(value) {
+  const match = String(value || '').match(/^\$\{user_(\d+)\}$/)
+  return match?.[1] || ''
 }
 
 function splitCsv(str) {

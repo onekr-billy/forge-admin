@@ -48,7 +48,15 @@ class BusinessApplicationRuntimeServiceTest {
                 "objects", List.of(Map.of(
                         "objectId", "11", "objectCode", "customer", "objectName", "客户",
                         "objectRole", "PRIMARY")),
-                "entries", List.of());
+                "entries", List.of(),
+                "extensions", List.of(
+                        Map.of("id", "31", "extensionType", "VISUAL_RULE", "hookCode", "BEFORE_SUBMIT",
+                                "status", "ENABLED", "enabledVersion", 2, "content", "{\"conditions\":[],\"actions\":[]}"),
+                        Map.of("id", "32", "extensionType", "SERVER_BINDING", "hookCode", "AFTER_SUBMIT",
+                                "status", "ENABLED", "enabledVersion", 1, "content", "must-not-leak",
+                                "configJson", "{\"handlerCode\":\"internal\"}"),
+                        Map.of("id", "33", "extensionType", "CLIENT_JS", "hookCode", "PAGE_INIT",
+                                "status", "DISABLED", "enabledVersion", 1, "content", "must-not-run")));
         AiBusinessApplicationVersion version = version(3, objectMapper.writeValueAsString(snapshot));
         BusinessApplicationRuntimeService service = service(application, version);
 
@@ -62,6 +70,10 @@ class BusinessApplicationRuntimeServiceTest {
         assertEquals("crm-portal", runtime.getApplication().getPortalSlug());
         assertTrue(runtime.getApplication().getPortalConfig().contains("#3370ff"));
         assertTrue(runtime.getApplication().getAiAssistantConfig().contains("page_home"));
+        assertEquals(2, runtime.getExtensions().size());
+        assertTrue(String.valueOf(runtime.getExtensions().get(0).get("content")).contains("conditions"));
+        assertFalse(runtime.getExtensions().get(1).containsKey("content"));
+        assertFalse(runtime.getExtensions().get(1).containsKey("configJson"));
     }
 
     @Test
@@ -88,6 +100,52 @@ class BusinessApplicationRuntimeServiceTest {
 
         assertEquals("crm-portal", runtime.getApplication().getPortalSlug());
         assertEquals("客户门户", runtime.getApplication().getApplicationName());
+    }
+
+    @Test
+    @DisplayName("legacy primary-object application restores its object page")
+    void restoresLegacyPrimaryObjectPage() throws Exception {
+        BusinessApplicationVO application = application(2);
+        Map<String, Object> snapshot = Map.of(
+                "application", Map.of(
+                        "id", "10",
+                        "applicationCode", "presale_app",
+                        "applicationName", "门店预售登记",
+                        "suiteCode", "presale",
+                        "icon", "ionicons5:CartOutline",
+                        "status", 1,
+                        "options", Map.of(
+                                "primaryObjectCode", "PS_PRESALE_ORDER",
+                                "inAppBuilder", Map.of(
+                                        "nodes", List.of(),
+                                        "pages", Map.of(),
+                                        "formAssets", List.of()))),
+                "objects", List.of(Map.of(
+                        "objectId", "1910000000000001111",
+                        "objectCode", "PS_PRESALE_ORDER",
+                        "objectName", "预售单",
+                        "objectRole", "PRIMARY",
+                        "configKey", "ps_presale_order",
+                        "layoutType", "master-detail-crud",
+                        "options", "{\"pageKey\":\"list\"}")),
+                "entries", List.of());
+        BusinessApplicationRuntimeService service = service(
+                application, version(2, objectMapper.writeValueAsString(snapshot)));
+
+        BusinessApplicationRuntimeVO runtime = service.runtimeByCode("presale_app");
+        Map<String, Object> runtimeOptions = objectMapper.readValue(
+                runtime.getApplication().getOptions(), Map.class);
+        Map<String, Object> builder = (Map<String, Object>) runtimeOptions.get("inAppBuilder");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) builder.get("nodes");
+
+        assertEquals("page_ps_presale_order", builder.get("homePageId"));
+        assertEquals(Set.of("page_ps_presale_order"), ((Map<?, ?>) builder.get("pages")).keySet());
+        assertEquals(1, nodes.size());
+        assertEquals("预售单", nodes.get(0).get("title"));
+        assertEquals("master-detail", nodes.get(0).get("pageTemplate"));
+        assertEquals(true, nodes.get(0).get("legacyObjectPage"));
+        assertEquals("ps_presale_order",
+                ((Map<?, ?>) nodes.get(0).get("objectRef")).get("configKey"));
     }
 
     @Test

@@ -16,7 +16,6 @@
         SELECT t.*
         FROM sys_flow_task t
         WHERE t.task_id = #{taskId}
-        LIMIT 1
         FOR UPDATE
     </select>
 

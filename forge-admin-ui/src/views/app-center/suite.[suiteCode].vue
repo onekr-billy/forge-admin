@@ -636,6 +636,7 @@ function handleAcceptanceAction(action, data) {
 
 .suite-head-top {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
   align-items: center;

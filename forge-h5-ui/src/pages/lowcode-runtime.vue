@@ -653,7 +653,14 @@ async function persistRecord({ validate = true, navigate = true, notify = true, 
     return null
   saving.value = true
   try {
-    const payload = { main: { ...mainData }, children: buildChildrenPayload() }
+    const childrenPayload = buildChildrenPayload()
+    // DynamicCrud accepts the nested main/children envelope for master-detail
+    // objects, while a plain object expects writable fields at the top level.
+    // Sending `{ main: ... }` for the latter makes the server see no writable
+    // fields at all.
+    const payload = Object.keys(childrenPayload).length
+      ? { main: { ...mainData }, children: childrenPayload }
+      : { ...mainData }
     const response = mode.value === 'create'
       ? await api.createLowcodeRecord(configKey.value, payload)
       : await api.updateLowcodeRecord(configKey.value, payload)

@@ -126,7 +126,7 @@ cd ../../../../../../forge-admin-ui
 ### Task 5: Repair logical-delete and unique-index migration contract
 
 **Files:**
-- Modify: `forge-server/db/migration/V1.0.124__add_business_application_portal_config.sql` only for not-yet-applied corrections
+- Modify: `forge-server/db/migration/V1.0.127__add_business_application_portal_config.sql` only for not-yet-applied corrections
 - Create: next monotonic Flyway migration if the existing script is already a recorded baseline
 - Modify: `AiBusinessApplication.java` and custom delete/query XML only after the database field type is aligned
 - Test: static migration checks and entity/service delete tests

@@ -83,6 +83,8 @@
             :xml="bpmnXml"
             :form-asset-options="nodeFormAssetOptions"
             :form-field-catalog="formFieldCatalog"
+            :auto-bind-business-form="businessContextActive"
+            :default-form-key="businessGlobalFormNode.formKey || businessFormKey"
             :process-config="processConfig"
             @change="handleBpmnChange"
             @ready="handleModelerReady"
@@ -209,10 +211,6 @@
               />
             </label>
             <label class="settings-field">
-              <span class="settings-field-label">流程类型</span>
-              <n-input v-model:value="modelInfo.flowType" placeholder="approval" size="small" />
-            </label>
-            <label class="settings-field">
               <span class="settings-field-label">流程说明</span>
               <n-input
                 v-model:value="modelInfo.description"
@@ -240,7 +238,7 @@
             </div>
 
             <template v-if="businessFormConfigActive">
-              <label class="settings-field">
+              <label v-if="modelInfo.id" class="settings-field">
                 <span class="settings-field-label">表单类型</span>
                 <n-select
                   v-model:value="modelInfo.formType"
@@ -292,7 +290,7 @@
               </div>
             </template>
             <template v-else>
-              <label class="settings-field">
+              <label v-if="modelInfo.id" class="settings-field">
                 <span class="settings-field-label">表单类型</span>
                 <n-select
                   v-model:value="modelInfo.formType"
@@ -374,6 +372,115 @@
                   </span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div v-else-if="rightActiveTab === 'notification'" class="settings-section-pane notification-settings-pane">
+            <div class="settings-pane-header">
+              <div>
+                <div class="settings-pane-title">
+                  通知与推送
+                </div>
+                <div class="settings-pane-desc">
+                  按流程配置通知事件、发送渠道和消息模板；未配置时沿用系统默认通知行为。
+                </div>
+              </div>
+              <NTag size="small" :type="notificationConfigStatus.type" :bordered="false">
+                {{ notificationConfigStatus.label }}
+              </NTag>
+            </div>
+
+            <n-alert type="info" :show-icon="false">
+              站内信是新待办的基础通知，模板可在消息中心维护；这里显示的预览使用示例数据。
+            </n-alert>
+
+            <n-spin :show="notifyChannelsLoading || notificationTemplatesLoading">
+              <div class="notify-matrix-card">
+                <div class="notify-matrix-header">
+                  <span>事件 × 渠道</span>
+                  <n-space>
+                    <n-button text size="small" :loading="notificationTemplatesLoading" @click="loadNotificationMetadata(true)">
+                      <template #icon>
+                        <i class="i-material-symbols:refresh" />
+                      </template>
+                      刷新渠道和模板
+                    </n-button>
+                  </n-space>
+                </div>
+                <div class="notify-matrix">
+                  <div
+                    v-for="event in notifyEventDefinitions"
+                    :key="event.key"
+                    class="notify-matrix-row"
+                  >
+                    <div class="notify-event-copy">
+                      <div class="notify-event-label">
+                        {{ event.label }}
+                      </div>
+                      <div class="notify-event-description">
+                        {{ event.description }}
+                      </div>
+                    </div>
+                    <div class="notify-event-config">
+                      <n-checkbox-group
+                        :value="notifyMatrix[event.key]"
+                        class="notify-channel-group"
+                        @update:value="value => updateNotifyChannels(event.key, value)"
+                      >
+                        <n-space :size="12" :wrap-item="true">
+                          <n-checkbox
+                            v-for="channel in channelsForEvent(event.key)"
+                            :key="channel.channel"
+                            :value="channel.channel"
+                            :disabled="event.key === 'todo' && channel.alwaysOn === true"
+                          >
+                            {{ channel.name }}
+                            <n-tooltip v-if="channel.costWarning" trigger="hover" placement="top">
+                              <template #trigger>
+                                <i class="i-material-symbols:warning-outline ml-1 cursor-help text-warning" />
+                              </template>
+                              短信按条计费，请确认已配置短信通道后再启用
+                            </n-tooltip>
+                          </n-checkbox>
+                        </n-space>
+                      </n-checkbox-group>
+                      <div class="notify-template-row">
+                        <span class="notify-template-label">消息模板</span>
+                        <n-select
+                          :value="selectedNotificationTemplateValue(event.key)"
+                          :options="notificationTemplateOptions(event.key)"
+                          :loading="notificationTemplatesLoading"
+                          :disabled="!notifyMatrix[event.key].length"
+                          size="small"
+                          placeholder="使用系统默认模板"
+                          @update:value="value => updateNotificationTemplate(event.key, value)"
+                        />
+                        <n-button
+                          size="small"
+                          secondary
+                          :disabled="!selectedNotificationTemplateValue(event.key)"
+                          @click="previewNotificationTemplate(event.key)"
+                        >
+                          <template #icon>
+                            <i class="i-material-symbols:visibility-outline" />
+                          </template>
+                          预览
+                        </n-button>
+                      </div>
+                      <div class="notify-template-current">
+                        当前模板：{{ notificationTemplateSummary(event.key) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </n-spin>
+
+            <n-alert v-if="notifySmsSelected" type="warning" :show-icon="false" class="notify-cost-alert">
+              当前配置包含短信渠道，流程每次触发都会按短信服务商规则产生费用。
+            </n-alert>
+            <div v-if="!notifyChannelsLoading && !notifyChannels.length" class="notify-empty-tip">
+              暂时无法读取可用渠道，站内信仍会作为基础通知保留；保存后可刷新重试。
             </div>
           </div>
 
@@ -700,6 +807,32 @@
       </n-modal>
     </Teleport>
 
+    <!-- 通知模板预览弹窗 -->
+    <Teleport to="body">
+      <n-modal
+        v-model:show="showNotificationTemplatePreview"
+        preset="card"
+        :title="notificationPreview?.templateName || '通知模板预览'"
+        style="width: min(620px, 92vw)"
+      >
+        <div v-if="notificationPreview" class="notification-template-preview">
+          <div class="notification-template-preview-code">
+            {{ notificationPreview.templateCode }}
+          </div>
+          <div class="notification-template-preview-title">
+            {{ renderNotificationTemplate(notificationPreview.titleTemplate) || '通知标题' }}
+          </div>
+          <div
+            class="notification-template-preview-content"
+            v-html="renderNotificationTemplate(notificationPreview.contentTemplate) || '暂无模板内容'"
+          />
+          <div class="notification-template-preview-tip">
+            预览变量：流程名称「{{ modelInfo.modelName || '示例流程' }}」、发起人「张三」、结果「已通过」
+          </div>
+        </div>
+      </n-modal>
+    </Teleport>
+
     <Teleport to="body">
       <n-modal
         v-model:show="showAiXmlPreview"
@@ -737,6 +870,7 @@ import { modelListByProvider, providerPage } from '@/api/ai'
 import { businessFlowFormAssets, businessFlowModelBindings, businessObjectList } from '@/api/business-app'
 import flowApi from '@/api/flow'
 import { streamFlowGenerate } from '@/api/flow-generator'
+import messageApi from '@/api/message'
 import NodePropertiesPanel from '@/components/bpmn/NodePropertiesPanel.vue'
 import { DingFlowDesigner } from '@/components/flow-designer'
 import FlowPropertyPanelShell from '@/components/flow/FlowPropertyPanelShell.vue'
@@ -769,6 +903,10 @@ const props = defineProps({
   },
   businessFormKey: {
     type: String,
+    default: '',
+  },
+  applicationId: {
+    type: [String, Number],
     default: '',
   },
   businessEntryRoute: {
@@ -867,6 +1005,8 @@ const modelInfo = reactive({
   version: 1,
   startListener: '',
   endListener: '',
+  notifyType: 'redis',
+  notifyConfig: null,
 })
 
 const showFormDesigner = ref(false)
@@ -880,6 +1020,39 @@ const businessFormAssets = ref([])
 const categoryTreeOptions = ref([])
 const modelerInstance = ref(null)
 const dockedElement = ref(null)
+
+const notifyEventDefinitions = [
+  {
+    key: 'todo',
+    label: '新待办',
+    description: '任务创建或转办后通知当前处理人。',
+  },
+  {
+    key: 'result',
+    label: '审批结果',
+    description: '流程通过或驳回后通知发起人。',
+  },
+  {
+    key: 'cc',
+    label: '流程通过抄送',
+    description: '流程通过后通知抄送接收人，短信不适用于抄送。',
+  },
+]
+const notifyChannelOrder = ['WEB', 'EMAIL', 'SMS', 'COLLABORATION']
+const defaultNotificationTemplateCodes = { todo: 'FLOW_TODO_CARD', result: 'FLOW_RESULT_CARD', cc: 'FLOW_CC_CARD' }
+const notifyChannels = ref([])
+const notifyChannelsLoading = ref(false)
+const notifyChannelsLoaded = ref(false)
+const notificationTemplates = ref([])
+const notificationTemplatesLoading = ref(false)
+const notificationTemplatesLoaded = ref(false)
+const notifyMatrixDirty = ref(false)
+const notifyConfigInitialPresent = ref(false)
+const notifyMatrix = reactive({ todo: [], result: [], cc: [] })
+const notifyTemplateCodes = reactive({ todo: null, result: null, cc: null })
+const notifyEventConfigured = reactive({ todo: false, result: false, cc: false })
+const showNotificationTemplatePreview = ref(false)
+const notificationPreview = ref(null)
 
 const designerTypeOptions = computed(() => dict.value.flow_designer_type || [])
 const formTypeOptions = computed(() => dict.value.flow_process_form_type || [])
@@ -1049,6 +1222,233 @@ const formConfigStatus = computed(() => {
   return { label: '未配置', type: 'warning' }
 })
 
+const notifySmsSelected = computed(() => Object.values(notifyMatrix)
+  .some(channels => channels.includes('SMS')))
+
+const notificationConfigStatus = computed(() => {
+  if (notifyMatrixDirty.value || notifyConfigInitialPresent.value)
+    return { label: '已配置', type: 'success' }
+  return { label: '默认', type: 'default' }
+})
+
+function normalizeNotifyChannels(channels = []) {
+  const allowed = new Set(notifyChannelOrder)
+  return [...new Set((Array.isArray(channels) ? channels : [])
+    .map(channel => String(channel || '').trim().toUpperCase())
+    .filter(channel => allowed.has(channel)))]
+    .sort((a, b) => notifyChannelOrder.indexOf(a) - notifyChannelOrder.indexOf(b))
+}
+
+function parseNotifyConfig(value) {
+  if (!value)
+    return null
+  if (typeof value === 'object')
+    return value
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  }
+  catch {
+    return null
+  }
+}
+
+function defaultNotifyChannels(eventKey) {
+  if (eventKey === 'todo' && notifyChannels.value.some(channel => channel.channel === 'COLLABORATION'))
+    return ['WEB', 'COLLABORATION']
+  return eventKey === 'todo' ? ['WEB'] : []
+}
+
+function resetNotifyMatrix(rawConfig = null) {
+  const parsed = parseNotifyConfig(rawConfig)
+  notifyMatrixDirty.value = false
+  notifyConfigInitialPresent.value = Boolean(parsed)
+  for (const event of notifyEventDefinitions) {
+    const hasConfig = Boolean(parsed && Object.prototype.hasOwnProperty.call(parsed, event.key))
+    const config = hasConfig ? parsed[event.key] : null
+    const channels = normalizeNotifyChannels(config?.channels)
+    if (event.key === 'todo' && hasConfig && !channels.includes('WEB'))
+      channels.unshift('WEB')
+    notifyEventConfigured[event.key] = hasConfig && Array.isArray(config?.channels)
+    notifyMatrix[event.key] = hasConfig ? channels : defaultNotifyChannels(event.key)
+    notifyTemplateCodes[event.key] = typeof config?.templateCode === 'string' && config.templateCode.trim()
+      ? config.templateCode.trim()
+      : null
+  }
+}
+
+function updateNotifyChannels(eventKey, channels) {
+  const normalized = normalizeNotifyChannels(channels)
+  if (eventKey === 'todo' && !normalized.includes('WEB'))
+    normalized.unshift('WEB')
+  notifyMatrix[eventKey] = normalized
+  notifyEventConfigured[eventKey] = true
+  notifyMatrixDirty.value = true
+  hasChanges.value = true
+}
+
+function channelsForEvent(eventKey) {
+  return notifyChannels.value.filter(channel => eventKey !== 'cc' || channel.channel !== 'SMS')
+}
+
+function notificationTemplatePrefix(eventKey) {
+  return eventKey === 'todo' ? 'FLOW_TODO_CARD' : eventKey === 'result' ? 'FLOW_RESULT_CARD' : 'FLOW_CC_CARD'
+}
+
+function notificationTemplateOptions(eventKey) {
+  const prefix = notificationTemplatePrefix(eventKey)
+  const templates = notificationTemplates.value
+    .filter(item => String(item.templateCode || '').startsWith(prefix))
+    .map(item => ({
+      label: `${item.templateName || item.templateCode}（${item.templateCode}）`,
+      value: item.templateCode,
+      template: item,
+    }))
+  const defaultCode = defaultNotificationTemplateCodes[eventKey]
+  if (!templates.some(item => item.value === defaultCode)) {
+    templates.unshift({
+      label: `系统默认模板（${defaultCode}）`,
+      value: defaultCode,
+      template: { templateCode: defaultCode, templateName: '系统默认模板' },
+    })
+  }
+  return templates
+}
+
+function selectedNotificationTemplateValue(eventKey) {
+  return notifyTemplateCodes[eventKey] || defaultNotificationTemplateCodes[eventKey]
+}
+
+function notificationTemplateSummary(eventKey) {
+  const code = selectedNotificationTemplateValue(eventKey)
+  const option = notificationTemplateOptions(eventKey).find(item => item.value === code)
+  return option?.label || code || '系统默认模板'
+}
+
+function updateNotificationTemplate(eventKey, value) {
+  const defaultCode = defaultNotificationTemplateCodes[eventKey]
+  notifyTemplateCodes[eventKey] = value && value !== defaultCode ? value : null
+  notifyEventConfigured[eventKey] = true
+  notifyMatrixDirty.value = true
+  hasChanges.value = true
+}
+
+async function loadNotificationMetadata(force = false) {
+  if ((notifyChannelsLoading.value || notificationTemplatesLoading.value)
+    || (!force && notifyChannelsLoaded.value && notificationTemplatesLoaded.value)) {
+    return
+  }
+  notifyChannelsLoading.value = true
+  notificationTemplatesLoading.value = true
+  try {
+    const [channelResult, templateResult] = await Promise.allSettled([
+      flowApi.getFlowNotifyChannels(),
+      messageApi.getTemplatePage({ type: 'SYSTEM', keyword: 'FLOW_', pageNum: 1, pageSize: 100 }),
+    ])
+    const channelRes = channelResult.status === 'fulfilled' ? channelResult.value : null
+    const templateRes = templateResult.status === 'fulfilled' ? templateResult.value : null
+    if (channelRes?.code === 200 && Array.isArray(channelRes.data)) {
+      notifyChannels.value = channelRes.data.filter(item => item?.channel && item?.name)
+      notifyChannelsLoaded.value = true
+      if (!notifyMatrixDirty.value && !modelInfo.notifyConfig)
+        resetNotifyMatrix(null)
+    }
+    if (templateRes?.code === 200) {
+      notificationTemplates.value = templateRes.data?.records || []
+      notificationTemplatesLoaded.value = true
+    }
+    if (channelResult.status === 'rejected')
+      console.warn('[FlowDesign] 加载通知渠道失败:', channelResult.reason?.message || channelResult.reason)
+    if (templateResult.status === 'rejected')
+      console.warn('[FlowDesign] 加载通知模板失败:', templateResult.reason?.message || templateResult.reason)
+  }
+  catch (error) {
+    console.warn('[FlowDesign] 加载通知渠道或模板失败:', error?.message || error)
+  }
+  finally {
+    notifyChannelsLoading.value = false
+    notificationTemplatesLoading.value = false
+  }
+}
+
+function buildNotifyConfig() {
+  if (!notifyMatrixDirty.value && !modelInfo.notifyConfig)
+    return null
+  if (!notifyMatrixDirty.value && modelInfo.notifyConfig)
+    return typeof modelInfo.notifyConfig === 'string' ? modelInfo.notifyConfig : JSON.stringify(modelInfo.notifyConfig)
+
+  const config = {}
+  for (const event of notifyEventDefinitions) {
+    if (!notifyEventConfigured[event.key])
+      continue
+    const channels = normalizeNotifyChannels(notifyMatrix[event.key])
+    if (!channels.length)
+      continue
+    config[event.key] = { channels }
+    if (notifyTemplateCodes[event.key])
+      config[event.key].templateCode = notifyTemplateCodes[event.key]
+  }
+  if (!Object.keys(config).length)
+    return null
+
+  const todoChannels = normalizeNotifyChannels(config.todo?.channels)
+  const collaborationAvailable = notifyChannels.value.some(channel => channel.channel === 'COLLABORATION')
+  const isLegacyDefault = !notifyConfigInitialPresent.value
+    && Object.keys(config).length === 1
+    && !notifyTemplateCodes.todo
+    && !notifyTemplateCodes.result
+    && !notifyTemplateCodes.cc
+    && todoChannels.join(',') === (collaborationAvailable ? 'WEB,COLLABORATION' : 'WEB')
+  return isLegacyDefault ? null : JSON.stringify(config)
+}
+
+async function previewNotificationTemplate(eventKey) {
+  const code = selectedNotificationTemplateValue(eventKey)
+  if (!code)
+    return
+  let template = notificationTemplates.value.find(item => item.templateCode === code)
+  if (!template || !template.contentTemplate) {
+    try {
+      const res = await messageApi.getTemplateByCode(code)
+      if (res.code === 200 && res.data) {
+        template = res.data
+        notificationTemplates.value = [
+          ...notificationTemplates.value.filter(item => item.templateCode !== code),
+          template,
+        ]
+      }
+    }
+    catch (error) {
+      console.warn('[FlowDesign] 加载通知模板详情失败:', code, error?.message || error)
+    }
+  }
+  notificationPreview.value = template || {
+    templateCode: code,
+    templateName: '系统默认模板',
+    titleTemplate: eventKey === 'result' ? '流程审批结果通知' : eventKey === 'cc' ? '流程抄送通知' : '您有新的流程待办',
+    contentTemplate: eventKey === 'result'
+      ? '<div class="gray">流程审批结果通知</div><div class="normal">流程：$' + '{processName}</div><div class="normal">结果：$' + '{result}</div>'
+      : eventKey === 'cc'
+        ? '<div class="gray">流程抄送通知</div><div class="normal">流程：$' + '{processName}</div>'
+        : '<div class="gray">流程待办提醒</div><div class="normal">任务：$' + '{taskTitle}</div><div class="normal">流程：$' + '{processName}</div><div class="normal">发起人：$' + '{startUserName}</div>',
+  }
+  showNotificationTemplatePreview.value = true
+}
+
+function renderNotificationTemplate(value) {
+  const sample = {
+    taskTitle: '采购单审批',
+    processName: modelInfo.modelName || '示例流程',
+    startUserName: '张三',
+    applyUserName: '张三',
+    result: '已通过',
+    businessKey: 'demo:1001',
+    processInstanceId: 'demo-process-001',
+    url: '#',
+  }
+  return String(value || '').replace(/\$?\{([^}]+)\}/g, (_, key) => sample[key.trim()] ?? `{{${key.trim()}}}`)
+}
+
 const autoApprovalModeLabel = computed(() => {
   return autoApprovalModeOptions.value.find(item => item.value === processConfig.value.autoApprovalMode)?.label || processConfig.value.autoApprovalMode
 })
@@ -1062,7 +1462,7 @@ const settingsTreeGroups = computed(() => [
       {
         key: 'flow',
         label: '流程属性',
-        desc: '分类 / 类型 / 说明',
+        desc: '分类 / 说明',
         icon: 'i-material-symbols:tune',
       },
       {
@@ -1079,6 +1479,12 @@ const settingsTreeGroups = computed(() => [
             icon: 'i-material-symbols:approval-delegation-outline',
           }]
         : []),
+      {
+        key: 'notification',
+        label: '通知与推送',
+        desc: '渠道 / 模板 / 预览',
+        icon: 'i-material-symbols:notifications-outline',
+      },
       {
         key: 'description',
         label: '说明',
@@ -1112,6 +1518,8 @@ function openSettingsPanel(key) {
 function getSettingsBadge(key) {
   if (key === 'form')
     return formConfigStatus.value.label
+  if (key === 'notification')
+    return notificationConfigStatus.value.label
   if (key === 'approval')
     return processConfig.value.autoApprovalMode === 'none' ? '人工审批' : '自动'
   if (key === 'ai' && aiSending.value)
@@ -1122,6 +1530,8 @@ function getSettingsBadge(key) {
 function getSettingsBadgeClass(key) {
   if (key === 'form')
     return `is-${formConfigStatus.value.type}`
+  if (key === 'notification')
+    return `is-${notificationConfigStatus.value.type}`
   if (key === 'approval')
     return processConfig.value.autoApprovalMode === 'none' ? 'is-default' : 'is-info'
   if (key === 'ai')
@@ -1182,7 +1592,10 @@ function resetNewModelState() {
     version: 1,
     startListener: '',
     endListener: '',
+    notifyType: 'redis',
+    notifyConfig: null,
   })
+  resetNotifyMatrix(null)
   bpmnXml.value = ''
   formSchema.value = []
   formFieldCatalog.value = []
@@ -1209,6 +1622,7 @@ onMounted(async () => {
     else {
       resetNewModelState()
     }
+    await loadNotificationMetadata()
   }
   finally {
     pageLoading.value = false
@@ -1516,7 +1930,10 @@ async function refreshBusinessFormFieldCatalog() {
     return
   }
   try {
-    const res = await businessFlowFormAssets(businessObjectCode.value, { includeInternal: true })
+    const res = await businessFlowFormAssets(businessObjectCode.value, {
+      includeInternal: true,
+      applicationId: props.applicationId || route.query.applicationId || undefined,
+    })
     const assets = normalizeBusinessFormAssets(res.data?.formAssets || [])
     businessFormAssets.value = assets
     ensureBusinessGlobalFormSelection(assets)
@@ -1636,6 +2053,12 @@ function buildBusinessGlobalFormJson(source = {}) {
     providerKey,
     formUrl: source.formUrl || '',
     viewKey: source.viewKey || 'default',
+    applicationId: source.applicationId || '',
+    pageId: source.pageId || '',
+    pageCode: source.pageCode || '',
+    pageName: source.pageName || '',
+    pageType: source.pageType || '',
+    sourceFormKey: source.sourceFormKey || '',
   }
   return JSON.stringify({
     type: formMode,
@@ -1647,6 +2070,12 @@ function buildBusinessGlobalFormJson(source = {}) {
     providerKey,
     formUrl: formRef.formUrl,
     viewKey: formRef.viewKey,
+    applicationId: formRef.applicationId,
+    pageId: formRef.pageId,
+    pageCode: formRef.pageCode,
+    pageName: formRef.pageName,
+    pageType: formRef.pageType,
+    sourceFormKey: formRef.sourceFormKey,
     formRef,
   })
 }
@@ -1934,6 +2363,7 @@ async function loadModel(id) {
       formFieldCatalog.value = []
       dockedElement.value = null
       Object.assign(modelInfo, res.data)
+      resetNotifyMatrix(res.data.notifyConfig || null)
       modelInfo.designerType = normalizeDesignerType(res.data.designerType)
       modelInfo.category = resolveFlowCategoryValue(res.data.category, categoryTreeOptions.value)
       bpmnXml.value = res.data.bpmnXml || ''
@@ -2843,6 +3273,7 @@ async function handleSaveDraft() {
       ...modelInfo,
       bpmnXml: xml,
       formJson: modelInfo.formJson || (formSchema.value.length > 0 ? JSON.stringify(formSchema.value) : ''),
+      notifyConfig: buildNotifyConfig(),
     }
 
     let res
@@ -2853,6 +3284,7 @@ async function handleSaveDraft() {
       res = await flowApi.createModel(data)
       if (res.code === 200 && res.data) {
         modelInfo.id = res.data.id
+        modelInfo.modelKey = res.data.modelKey || modelInfo.modelKey
       }
     }
 
@@ -3550,6 +3982,145 @@ function getElementIcon(el) {
   gap: 16px;
   padding: 24px 28px;
   overflow-y: auto;
+}
+
+.notification-settings-pane {
+  width: min(900px, 100%);
+}
+
+.notify-matrix-card {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.notify-matrix-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.notify-matrix {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.notify-matrix-row {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.75fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 18px;
+  padding: 16px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.notify-matrix-row:last-child {
+  border-bottom: 0;
+}
+
+.notify-event-copy {
+  min-width: 0;
+}
+
+.notify-event-label {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.notify-event-description {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notify-event-config {
+  min-width: 0;
+}
+
+.notify-channel-group {
+  min-width: 0;
+}
+
+.notify-template-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.notify-template-label {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.notify-template-current {
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.notify-cost-alert {
+  margin-top: 10px;
+}
+
+.notify-empty-tip {
+  padding: 10px 0 2px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.notification-template-preview-code {
+  margin-bottom: 12px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.notification-template-preview-title {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.notification-template-preview-content {
+  min-height: 100px;
+  padding: 16px 0;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.notification-template-preview-content :deep(.gray) {
+  color: #94a3b8;
+}
+
+.notification-template-preview-content :deep(.normal) {
+  color: #475569;
+}
+
+.notification-template-preview-content :deep(.highlight) {
+  color: #2563eb;
+}
+
+.notification-template-preview-tip {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .settings-pane-header {
@@ -4410,6 +4981,19 @@ function getElementIcon(el) {
 
   .settings-tree-group + .settings-tree-group {
     margin-top: 0;
+  }
+
+  .notify-matrix-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .notify-template-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .notify-template-label {
+    grid-column: 1 / -1;
   }
 }
 

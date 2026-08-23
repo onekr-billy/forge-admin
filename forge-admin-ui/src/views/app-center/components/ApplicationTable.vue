@@ -4,7 +4,7 @@
       v-for="application in applications"
       :key="application.id"
       class="application-card"
-      :class="{ 'has-problem': Number(application.problemCount || 0) > 0 }"
+      :class="{ 'has-problem': isUnpublishedApplication(application) || Number(application.problemCount || 0) > 0 }"
       role="listitem"
       tabindex="0"
       @click="emit('enter', application)"
@@ -43,19 +43,16 @@
       </div>
 
       <div class="application-assets" aria-label="应用资产统计">
-        <span><strong>{{ application.objectCount || 0 }}</strong><small>对象</small></span>
-        <span><strong>{{ application.entryCount || 0 }}</strong><small>入口</small></span>
-        <span><strong>{{ application.flowCount || 0 }}</strong><small>流程</small></span>
-        <span><strong>{{ application.extensionCount || 0 }}</strong><small>扩展</small></span>
+        <span><strong>{{ application.pageCount || 0 }}</strong><small>页面</small></span>
       </div>
 
       <footer class="application-card-foot">
         <div class="application-runtime-state">
           <DictTag dict-type="sys_enable_disable" :value="application.status" :bordered="false" />
-          <span v-if="Number(application.problemCount || 0) > 0" class="problem-text">
-            {{ application.problemCount }} 项待处理
+          <span v-if="isUnpublishedApplication(application)" class="problem-text">
+            有变更未发布
           </span>
-          <span v-else-if="application.lastPublishVersion">
+          <span v-else-if="application.lastPublishVersion && !isUnpublishedApplication(application)">
             v{{ application.lastPublishVersion }}
           </span>
           <span v-else>尚未发布</span>
@@ -169,7 +166,13 @@ function actionOptions(application) {
 }
 
 function isDraftApplication(application) {
-  return String(application?.designStatus || '').toUpperCase() === 'DRAFT'
+  const status = String(application?.designStatus || '').toUpperCase()
+  return !application?.lastPublishVersion || ['DRAFT', 'READY', 'CHANGED'].includes(status)
+}
+
+function isUnpublishedApplication(application) {
+  const status = String(application?.designStatus || '').toUpperCase()
+  return Boolean(application?.lastPublishVersion) && ['DRAFT', 'READY', 'CHANGED'].includes(status)
 }
 
 function handleAction(key, application) {
@@ -323,7 +326,7 @@ function formatDate(value) {
 
 .application-assets {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--n-border-color, var(--border-light, #e5e6eb));
   border-radius: 6px;

@@ -50,6 +50,8 @@ public class BusinessApplicationVO {
 
     private Long extensionCount;
 
+    private Long pageCount;
+
     private Long problemCount;
 
     private LocalDateTime createTime;

@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -116,7 +117,18 @@ public class BusinessNamingService {
     public String generateObjectCode(String objectName) {
         List<String> words = inferNameWords(objectName);
         String source = words.isEmpty() ? objectName : String.join("_", words);
-        return normalizeSnakeCode(source, "business_object", 48);
+        // 追加随机后缀，避免同一业务套件下自动生成编码重复
+        return normalizeSnakeCode(source, "business_object", 43) + "_" + randomCodeSuffix();
+    }
+
+    private String randomCodeSuffix() {
+        String alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        StringBuilder suffix = new StringBuilder(4);
+        for (int index = 0; index < 4; index++) {
+            suffix.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return suffix.toString();
     }
 
     public String normalizeObjectCode(String value, String fallbackName) {

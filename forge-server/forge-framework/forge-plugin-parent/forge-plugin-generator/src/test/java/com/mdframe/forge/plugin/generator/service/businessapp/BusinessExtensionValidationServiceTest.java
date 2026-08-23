@@ -22,6 +22,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BusinessExtensionValidationServiceTest {
 
     @Test
+    @DisplayName("visual rule rejects incomplete row payloads with row-specific issues")
+    void visualRuleRejectsIncompleteRows() {
+        var result = service(List.of()).validate(
+                extension("VISUAL_RULE", "BEFORE_SUBMIT"),
+                version("{\"match\":\"ALL\",\"conditions\":[{\"field\":\"\",\"operator\":\"EQ\",\"value\":\"\"}],"
+                        + "\"actions\":[{\"actionType\":\"SET_FIELD\",\"field\":\"\",\"value\":\"\"}]}", null, "{}"));
+
+        assertFalse(result.isPassed());
+        assertTrue(result.getSummary().contains("条件第 1 行"));
+        assertTrue(result.getSummary().contains("动作第 1 行"));
+    }
+
+    @Test
+    @DisplayName("visual rule accepts empty checks without a comparison value")
+    void visualRuleAcceptsEmptyOperatorWithoutValue() {
+        var result = service(List.of()).validate(
+                extension("VISUAL_RULE", "BEFORE_SUBMIT"),
+                version("{\"match\":\"ANY\",\"conditions\":[{\"field\":\"customerName\",\"operator\":\"EMPTY\"}],"
+                        + "\"actions\":[{\"actionType\":\"SHOW_MESSAGE\",\"message\":\"请填写客户名称\"}]}", null, "{}"));
+
+        assertTrue(result.isPassed());
+    }
+
+    @Test
     @DisplayName("client script rejects browser network storage and dynamic code APIs")
     void clientScriptRejectsDangerousApis() {
         var result = service(List.of()).validate(

@@ -138,7 +138,23 @@ import { useAuthStore } from '@/store'
 import {
   isFlowApprovalMessage,
   isPendingFlowApprovalMessage,
+  mergeMessageNavigationTarget,
 } from './message-notification-utils'
+
+const props = defineProps({
+  messageRoute: {
+    type: [String, Object],
+    default: '',
+  },
+  todoRoute: {
+    type: [String, Object],
+    default: '',
+  },
+  doneRoute: {
+    type: [String, Object],
+    default: '',
+  },
+})
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -298,12 +314,16 @@ async function handleMessageClick(msg) {
   }
   if (isApprovalMessage(msg)) {
     showPanel.value = false
-    router.push('/flow/done')
+    navigateTo(props.doneRoute || '/flow/done')
     return
   }
   await markRead(msg, false)
-  const route = resolveBizRoute(msg)
   showPanel.value = false
+  if (props.messageRoute) {
+    navigateTo(props.messageRoute, { messageId: msg.id })
+    return
+  }
+  const route = resolveBizRoute(msg)
   if (route) {
     router.push(route)
   }
@@ -315,24 +335,25 @@ async function handleMessageClick(msg) {
 async function openApproval(msg) {
   if (!isPendingApprovalMessage(msg)) {
     showPanel.value = false
-    router.push('/flow/done')
+    navigateTo(props.doneRoute || '/flow/done')
     return
   }
   await markRead(msg, false)
   const taskId = msg.bizKey
   showPanel.value = false
   if (!taskId) {
-    router.push('/flow/todo')
+    navigateTo(props.todoRoute || '/flow/todo')
     return
   }
-  router.push({
-    path: '/flow/todo',
-    query: {
-      taskId,
-      source: 'message',
-      t: Date.now(),
-    },
+  navigateTo(props.todoRoute || '/flow/todo', {
+    taskId,
+    source: 'message',
+    t: Date.now(),
   })
+}
+
+function navigateTo(target, query = {}) {
+  return router.push(mergeMessageNavigationTarget(target, query))
 }
 
 function resolveBizRoute(msg) {
@@ -362,7 +383,7 @@ async function markRead(msg, refresh = true) {
 
 function handleViewAll() {
   showPanel.value = false
-  router.push('/message/message-list')
+  navigateTo(props.messageRoute || '/message/message-list')
 }
 
 async function handleMarkAllRead() {

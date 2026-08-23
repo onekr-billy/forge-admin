@@ -299,13 +299,22 @@ public class BusinessApplicationSnapshotService {
         item.put("extensionName", extension.getExtensionName());
         item.put("extensionType", extension.getExtensionType());
         item.put("hookCode", extension.getHookCode());
+        item.put("scopeType", extension.getScopeType());
+        item.put("scopeKey", extension.getScopeKey());
         item.put("objectId", stringValue(extension.getObjectId()));
         item.put("entryId", stringValue(extension.getEntryId()));
+        item.put("sortOrder", extension.getSortOrder());
+        item.put("failurePolicy", extension.getFailurePolicy());
         item.put("status", extension.getStatus());
         item.put("draftVersion", extension.getDraftVersion());
         item.put("enabledVersion", extension.getEnabledVersion());
         item.put("releaseVersion", releaseVersion);
         item.put("contentHash", version == null ? null : version.getContentHash());
+        if (version != null && Set.of("VISUAL_RULE", "CLIENT_JS", "SCOPED_CSS")
+                .contains(extension.getExtensionType())) {
+            item.put("content", version.getContent());
+            item.put("processedContent", version.getProcessedContent());
+        }
         return item;
     }
 

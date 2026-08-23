@@ -142,6 +142,43 @@
         LIMIT 1
     </select>
 
+    <select id="selectOneByPermsAndClientCode" resultType="com.mdframe.forge.plugin.system.entity.SysResource">
+        SELECT *
+        FROM sys_resource
+        WHERE tenant_id = #{tenantId}
+          AND resource_type = #{resourceType}
+          AND perms = #{perms}
+          AND (client_code = #{clientCode}
+               OR (#{clientCode} = 'pc' AND (client_code IS NULL OR client_code = '')))
+          AND del_flag = 0
+        LIMIT 1
+    </select>
+
+    <select id="selectOneByPermsAndClientCodeAnyType" resultType="com.mdframe.forge.plugin.system.entity.SysResource">
+        SELECT *
+        FROM sys_resource
+        WHERE tenant_id = #{tenantId}
+          AND resource_type IN (1, 2)
+          AND perms = #{perms}
+          AND (client_code = #{clientCode}
+               OR (#{clientCode} = 'pc' AND (client_code IS NULL OR client_code = '')))
+          AND del_flag = 0
+        ORDER BY resource_type, id
+        LIMIT 1
+    </select>
+
+    <select id="selectOneByPathAndClientCode" resultType="com.mdframe.forge.plugin.system.entity.SysResource">
+        SELECT *
+        FROM sys_resource
+        WHERE tenant_id = #{tenantId}
+          AND resource_type = #{resourceType}
+          AND path = #{path}
+          AND (client_code = #{clientCode}
+               OR (#{clientCode} = 'pc' AND (client_code IS NULL OR client_code = '')))
+          AND del_flag = 0
+        LIMIT 1
+    </select>
+
     <!-- 按路由查询单个资源 -->
     <select id="selectOneByPath" resultType="com.mdframe.forge.plugin.system.entity.SysResource">
         SELECT *

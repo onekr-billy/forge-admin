@@ -64,6 +64,7 @@ public class BusinessProcessSchemaValidator {
             "APPROVED", "REJECTED", "CANCELED", "FAILED");
     private static final Set<String> APPROVAL_PORTS = Set.of(
             "APPROVED", "REJECTED", "CANCELED", "FAILED");
+    private static final Set<String> FLOW_STATUS_FIELDS = Set.of("flowStatus", "flow_status");
     private static final Set<String> CONDITION_OPERATORS = Set.of(
             "eq", "ne", "neq", "gt", "ge", "gte", "lt", "le", "lte", "between",
             "contains", "notcontains", "not_contains", "empty", "is_null",
@@ -317,7 +318,8 @@ public class BusinessProcessSchemaValidator {
                 "FLOW_MODEL_UNAVAILABLE", "dependencies.flowModels",
                 "审批模型未发布、未部署或已失效", "重新选择当前租户可用的已发布审批模型", result);
         validateAvailable(dependencies.getFormAssets(), safeSet(context.getAvailableFormAssetKeys()),
-                "FORM_ASSET_UNAVAILABLE", "dependencies.formAssets", result);
+                "FORM_ASSET_UNAVAILABLE", "dependencies.formAssets",
+                "任务表单「{reference}」不存在、未发布或不属于当前应用", "重新选择当前业务对象的可用表单", result);
         validateAvailable(dependencies.getBusinessActions(), safeSet(context.getAvailableBusinessActionCodes()),
                 "BUSINESS_ACTION_UNAVAILABLE", "dependencies.businessActions", result);
         validateAvailable(dependencies.getMessageTemplates(), safeSet(context.getAvailableMessageTemplateCodes()),
@@ -344,7 +346,9 @@ public class BusinessProcessSchemaValidator {
                                    BusinessProcessValidationVO result) {
         for (String reference : declared) {
             if (!available.contains(reference)) {
-                error(result, code, message, null, path, action);
+                String resolvedReference = reference == null ? "" : reference;
+                error(result, code, message.replace("{reference}", resolvedReference),
+                        null, path, action.replace("{reference}", resolvedReference));
             }
         }
     }
@@ -679,7 +683,18 @@ public class BusinessProcessSchemaValidator {
             requireDeclared(formKey, schema.getDependencies().getFormAssets(), "FORM_ASSET_UNDECLARED",
                     node.getId(), path + ".config.formAsset.formKey", result);
             requireAvailable(formKey, safeSet(context.getAvailableFormAssetKeys()),
-                    "FORM_ASSET_UNAVAILABLE", node.getId(), path + ".config.formAsset.formKey", result);
+                    "FORM_ASSET_UNAVAILABLE", node.getId(), path + ".config.formAsset.formKey",
+                    "任务表单「" + formKey + "」不存在、未发布或不属于当前应用",
+                    "重新选择当前业务对象的可用表单", result);
+        }
+        String formMode = firstString(formAsset, "formMode", "type");
+        if ("BUSINESS_OBJECT_FORM".equalsIgnoreCase(formMode)) {
+            String statusField = string(config.get("statusField"));
+            if (statusField == null || !FLOW_STATUS_FIELDS.contains(statusField)) {
+                error(result, "APPROVAL_FLOW_STATUS_REQUIRED",
+                        "低代码审批必须绑定独立流程状态字段 flowStatus", node.getId(),
+                        path + ".config.statusField", "在审批节点中一键添加流程状态字段并重新选择");
+            }
         }
     }
 

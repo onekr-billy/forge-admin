@@ -5,6 +5,7 @@ import {
   buildCrudSearchTypeRequestParams,
   buildRuntimeCrudProps,
   filterCrudItemsByFieldRefs,
+  includeManagedRuntimeFieldRefs,
   isDesignPreviewCrudProps,
   resolveCrudPreviewReloadKey,
   resolveCrudSearchFieldCatalog,
@@ -185,6 +186,31 @@ describe('runtime CRUD design preview props', () => {
     ], ['fieldSlider']).map(item => item.field || item.key)).toEqual(['fieldSlider', 'action'])
   })
 
+  it('keeps a managed flow status column when the application block has an older field snapshot', () => {
+    expect(includeManagedRuntimeFieldRefs(
+      ['fieldRate'],
+      [
+        { field: 'fieldRate', listVisible: true },
+        {
+          field: 'flowStatus',
+          listVisible: true,
+          fieldStatus: 'ENABLED',
+          advancedProps: { managedBy: 'BUSINESS_FLOW' },
+        },
+      ],
+    )).toEqual(['fieldRate', 'flowStatus'])
+
+    expect(includeManagedRuntimeFieldRefs(
+      ['fieldRate'],
+      [{
+        field: 'flowStatus',
+        listVisible: true,
+        advancedProps: { managedBy: 'BUSINESS_FLOW' },
+      }],
+      { flowStatus: { visible: false } },
+    )).toEqual(['fieldRate'])
+  })
+
   it('changes the preview reload key only when a real request condition changes', () => {
     const source = {
       props: {
@@ -232,11 +258,19 @@ describe('runtime CRUD design preview props', () => {
       objectCode: 'order',
       options: {
         runtimeActions: [{ key: 'startProcess:submit_approval', actionType: 'START_PROCESS' }],
+        detailActions: [{ key: 'startProcess:submit_approval:detail', position: 'detail' }],
+        formActions: [{ key: 'startProcess:submit_approval:form', position: 'form' }],
       },
     })
     expect(props.businessObjectCode).toBe('order')
     expect(props.runtimeActions).toEqual([
       { key: 'startProcess:submit_approval', actionType: 'START_PROCESS' },
+    ])
+    expect(props.detailActions).toEqual([
+      { key: 'startProcess:submit_approval:detail', position: 'detail' },
+    ])
+    expect(props.formActions).toEqual([
+      { key: 'startProcess:submit_approval:form', position: 'form' },
     ])
   })
 })

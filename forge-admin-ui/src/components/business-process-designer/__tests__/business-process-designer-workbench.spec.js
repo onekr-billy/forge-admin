@@ -2,6 +2,12 @@ import { mount, shallowMount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ActionAndApprovalNodeConfig from '../ActionAndApprovalNodeConfig.vue'
 
+const businessAppApiMocks = vi.hoisted(() => ({
+  ensureBusinessFlowStatusField: vi.fn(),
+}))
+
+vi.mock('@/api/business-app', () => businessAppApiMocks)
+
 vi.mock('@/api/flow', () => ({
   default: {
     getModelDetail: vi.fn().mockResolvedValue({ data: { bpmnXml: '<definitions />' } }),
@@ -67,6 +73,13 @@ describe('business process node renderer', () => {
 })
 
 describe('structured business node configuration', () => {
+  beforeEach(() => {
+    businessAppApiMocks.ensureBusinessFlowStatusField.mockReset()
+    businessAppApiMocks.ensureBusinessFlowStatusField.mockResolvedValue({
+      data: { fieldCode: 'flowStatus', fieldName: '流程状态' },
+    })
+  })
+
   it('switches start modes with a governed record source and no expression editor', async () => {
     const wrapper = mount(StartNodeConfig, {
       props: {
@@ -82,6 +95,141 @@ describe('structured business node configuration', () => {
     expect(wrapper.emitted('update:type')[0][0]).toBe('START_EVENT')
     expect(wrapper.emitted('update:recordIdSource')[0][0]).toBe('EVENT_RECORD')
     expect(wrapper.text()).not.toMatch(/JSON|SpEL|Java|SQL|Webhook/)
+  })
+
+  it('allows multiple start button visibility rules with AND/OR logic', async () => {
+    const wrapper = mount(StartNodeConfig, {
+      props: {
+        type: 'START_MANUAL',
+        config: {
+          positions: ['ROW', 'DETAIL'],
+          visibleCondition: {
+            operator: 'AND',
+            rules: [{ field: 'status', operator: 'EQ', value: 'DRAFT' }],
+          },
+        },
+        fields: [
+          { fieldCode: 'status', fieldName: '业务状态' },
+          { fieldCode: 'priority', fieldName: '优先级' },
+        ],
+      },
+    })
+
+    expect(wrapper.findAll('.condition-row')).toHaveLength(1)
+    await wrapper.find('.condition-logic-row button').trigger('click')
+    expect(wrapper.findAll('.condition-row')).toHaveLength(2)
+    await wrapper.find('.condition-logic-row select').setValue('OR')
+    await wrapper.findAll('.condition-row')[1].find('select').setValue('priority')
+
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      visibleCondition: {
+        operator: 'OR',
+        rules: [
+          { field: 'status', operator: 'EQ', value: 'DRAFT' },
+          { field: 'priority' },
+        ],
+      },
+    })
+  })
+
+  it('keeps the manual start node name separate from its runtime button label', async () => {
+    const wrapper = mount(StartNodeConfig, {
+      props: {
+        type: 'START_MANUAL',
+        config: { positions: ['ROW'], buttonLabel: '提交审批' },
+      },
+    })
+
+    const buttonLabel = wrapper.find('input[placeholder="例如：提交审批"]')
+    expect(buttonLabel.element.value).toBe('提交审批')
+    await buttonLabel.setValue('发起采购审批')
+
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      buttonLabel: '发起采购审批',
+    })
+  })
+
+  it('removes one start button visibility rule and keeps the remaining rules', async () => {
+    const wrapper = mount(StartNodeConfig, {
+      props: {
+        type: 'START_MANUAL',
+        config: {
+          positions: ['ROW'],
+          visibleCondition: {
+            operator: 'AND',
+            rules: [
+              { field: 'status', operator: 'EQ', value: 'DRAFT' },
+              { field: 'priority', operator: 'EQ', value: 'HIGH' },
+            ],
+          },
+        },
+        fields: [
+          { fieldCode: 'status', fieldName: '业务状态' },
+          { fieldCode: 'priority', fieldName: '优先级' },
+        ],
+      },
+    })
+
+    await wrapper.findAll('[data-condition-remove]')[0].trigger('click')
+
+    expect(wrapper.findAll('.condition-row')).toHaveLength(1)
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      visibleCondition: {
+        operator: 'AND',
+        rules: [{ field: 'priority', operator: 'EQ', value: 'HIGH' }],
+      },
+    })
+  })
+
+  it('clears the complete start button visibility condition from either delete entry point', async () => {
+    const createWrapper = () => mount(StartNodeConfig, {
+      props: {
+        type: 'START_MANUAL',
+        config: {
+          positions: ['ROW'],
+          visibleCondition: {
+            operator: 'AND',
+            rules: [{ field: 'status', operator: 'EQ', value: 'DRAFT' }],
+          },
+        },
+        fields: [{ fieldCode: 'status', fieldName: '业务状态' }],
+      },
+    })
+    const deleteWrapper = createWrapper()
+
+    await deleteWrapper.find('[data-condition-remove]').trigger('click')
+
+    expect(deleteWrapper.findAll('.condition-row')).toHaveLength(0)
+    expect(deleteWrapper.emitted('update:config').at(-1)[0]).not.toHaveProperty('visibleCondition')
+    expect(deleteWrapper.text()).toContain('未设置条件时，按钮始终显示')
+
+    await deleteWrapper.find('[data-condition-add]').trigger('click')
+    expect(deleteWrapper.findAll('.condition-row')).toHaveLength(1)
+    expect(deleteWrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      visibleCondition: {
+        operator: 'AND',
+        rules: [{ field: '', operator: 'EQ', source: 'record' }],
+      },
+    })
+
+    const clearWrapper = createWrapper()
+    await clearWrapper.find('[data-condition-clear]').trigger('click')
+
+    expect(clearWrapper.findAll('.condition-row')).toHaveLength(0)
+    expect(clearWrapper.emitted('update:config').at(-1)[0]).not.toHaveProperty('visibleCondition')
+  })
+
+  it('allows a manual start action on the edit form separately from detail', async () => {
+    const wrapper = mount(StartNodeConfig, {
+      props: {
+        type: 'START_MANUAL',
+        config: { positions: ['ROW'] },
+        fields: [{ fieldCode: 'status', fieldName: '业务状态' }],
+      },
+    })
+    const formLabel = wrapper.findAll('.inline-check').find(item => item.text().includes('编辑表单操作'))
+    await formLabel.find('input').setValue(true)
+    expect(wrapper.emitted('update:config').at(-1)[0].positions).toContain('FORM')
   })
 
   it('applies editable start templates while preserving the manual configuration path', async () => {
@@ -233,7 +381,7 @@ describe('structured business node configuration', () => {
     wrapper.unmount()
   })
 
-  it('synthesizes the object form when the catalog is empty', async () => {
+  it('keeps the approval form unbound when the governed catalog is empty', async () => {
     const wrapper = mount(ActionAndApprovalNodeConfig, {
       props: {
         node: {
@@ -250,13 +398,36 @@ describe('structured business node configuration', () => {
       global: { stubs: FORM_ASSET_STUBS },
     })
 
-    expect(wrapper.emitted('update:config')?.at(-1)?.[0]).toMatchObject({
-      formAsset: {
-        formKey: 'sample_purchase_order',
-        formName: '采购单',
+    expect(wrapper.emitted('update:config') || []).not.toSatisfy(events => events.some(([config]) =>
+      config?.formAsset?.formKey === 'sample_purchase_order',
+    ))
+    expect(wrapper.findAll('.asset-card')).toHaveLength(0)
+    expect(wrapper.text()).toContain('当前对象还没有可绑定的表单')
+    wrapper.unmount()
+  })
+
+  it('clears a stale low-code form reference when the catalog is empty', async () => {
+    const wrapper = mount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'approval_stale_form',
+          type: 'APPROVAL',
+          name: '审批',
+          ports: ['APPROVED', 'REJECTED', 'CANCELED', 'FAILED'],
+          config: {
+            formAsset: {
+              formKey: 'deleted_form',
+              formMode: 'BUSINESS_OBJECT_FORM',
+            },
+          },
+        },
+        objectCode: 'sample_purchase_order',
+        formAssets: [],
       },
+      global: { stubs: FORM_ASSET_STUBS },
     })
-    expect(wrapper.text()).toContain('采购单')
+
+    expect(wrapper.emitted('update:config')?.at(-1)?.[0]).toMatchObject({ formAsset: {} })
     wrapper.unmount()
   })
 
@@ -286,6 +457,38 @@ describe('structured business node configuration', () => {
       formType: 'business',
     }))
     expect(flowApi.createModel.mock.calls.at(-1)[0].formJson).toContain('purchase_form')
+    wrapper.unmount()
+  })
+
+  it('provisions and binds an independent flow status instead of reusing business status', async () => {
+    const wrapper = mount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'approval_status',
+          type: 'APPROVAL',
+          name: '业务审批',
+          ports: ['APPROVED', 'REJECTED', 'CANCELED', 'FAILED'],
+          config: { statusField: 'status' },
+        },
+        objectId: '1900000000000001001',
+        objectCode: 'sample_purchase_order',
+        objectName: '采购单',
+        fields: [{ fieldCode: 'status', fieldName: '业务状态' }],
+      },
+      global: { stubs: FORM_ASSET_STUBS },
+    })
+
+    expect(wrapper.text()).toContain('一键添加流程状态字段')
+    expect(wrapper.text()).toContain('业务自己的“状态”字段不会被流程修改')
+
+    const provisionButton = wrapper.findAll('button')
+      .find(button => button.text().includes('一键添加流程状态字段'))
+    await provisionButton.trigger('click')
+    await Promise.resolve()
+
+    expect(businessAppApiMocks.ensureBusinessFlowStatusField).toHaveBeenCalledWith('1900000000000001001')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({ statusField: 'flowStatus' })
+    expect(wrapper.emitted('refreshFields').at(-1)[0]).toMatchObject({ fieldCode: 'flowStatus' })
     wrapper.unmount()
   })
 
@@ -354,6 +557,45 @@ describe('business process designer workbench', () => {
     vi.useRealTimers()
   })
 
+  it('keeps a removed start button condition deleted after the node drawer saves', async () => {
+    const schema = createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef })
+    schema.nodes[0].config = {
+      positions: ['ROW'],
+      visibleCondition: {
+        operator: 'AND',
+        rules: [{ field: 'status', operator: 'EQ', value: 'DRAFT' }],
+      },
+    }
+    const wrapper = mount(BusinessProcessDesigner, {
+      props: { schema, autoSaveDelay: 60000 },
+      global: {
+        stubs: {
+          BusinessProcessNodeConfigDrawer: {
+            props: ['node'],
+            emits: ['save'],
+            methods: {
+              saveWithoutCondition() {
+                this.$emit('save', {
+                  ...this.node,
+                  config: { positions: ['ROW'] },
+                })
+              },
+            },
+            template: '<button data-save-without-condition @click="saveWithoutCondition">保存节点</button>',
+          },
+        },
+      },
+    })
+
+    await wrapper.find('[data-save-without-condition]').trigger('click')
+
+    const latestSchema = wrapper.emitted('update:schema').at(-1)[0]
+    const start = latestSchema.nodes.find(node => node.id === 'start_manual')
+    expect(start.config).toEqual({ positions: ['ROW'] })
+    expect(start.config).not.toHaveProperty('visibleCondition')
+    wrapper.unmount()
+  })
+
   it('auto-saves dirty drafts, supports explicit validation and surfaces hash conflicts', async () => {
     const schema = createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef })
     const wrapper = mount(BusinessProcessDesigner, {
@@ -419,6 +661,85 @@ describe('business process designer workbench', () => {
       formName: '采购申请单',
     })
     wrapper.unmount()
+  })
+
+  it('does not invent a form key when inserting an approval node with an empty catalog', async () => {
+    const schema = createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef })
+    const wrapper = mount(BusinessProcessDesigner, {
+      props: {
+        schema,
+        autoSaveDelay: 60000,
+        objectName: '采购单',
+        formAssets: [],
+      },
+      global: { stubs: { BusinessProcessNodeConfigDrawer: true } },
+    })
+
+    await wrapper.find('[data-node-type="APPROVAL"]').trigger('click')
+
+    const latestSchema = wrapper.emitted('update:schema').at(-1)[0]
+    const approval = latestSchema.nodes.find(node => node.type === 'APPROVAL')
+    expect(approval.config.formAsset?.formKey).toBeFalsy()
+    expect(latestSchema.dependencies.formAssets).not.toContain('sample_purchase_order')
+    wrapper.unmount()
+  })
+
+  it('renders selectable validation details and copies the complete issue', async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const schema = createBusinessProcessSchema({ processCode: 'purchase_submit', objectRef })
+    const issue = {
+      level: 'ERROR',
+      code: 'FORM_ASSET_UNAVAILABLE',
+      message: '任务表单「missing_form」不存在、未发布或不属于当前应用',
+      nodeId: 'start_manual',
+      fieldPath: 'nodes[0].config.formAsset.formKey',
+      suggestion: '重新选择当前对象的可用表单',
+    }
+    const wrapper = mount(BusinessProcessDesigner, {
+      props: {
+        schema,
+        serverValidation: {
+          issues: [
+            {
+              ...issue,
+              message: '任务表单「missing_form」不存在、未发布或不属于当前应用',
+              nodeId: null,
+              fieldPath: 'dependencies.formAssets',
+            },
+            issue,
+          ],
+        },
+      },
+      global: { stubs: { BusinessProcessNodeConfigDrawer: true } },
+    })
+
+    const issueCard = wrapper.find('.issue-item')
+    expect(wrapper.findAll('.issue-item')).toHaveLength(1)
+    expect(issueCard.element.tagName).toBe('DIV')
+    expect(issueCard.text()).toContain('missing_form')
+    expect(issueCard.text()).toContain('FORM_ASSET_UNAVAILABLE')
+    expect(issueCard.text()).toContain('nodes[0].config.formAsset.formKey')
+
+    await issueCard.find('[data-issue-copy]').trigger('click')
+    await Promise.resolve()
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('任务表单「missing_form」'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('重新选择当前对象的可用表单'))
+    expect(wrapper.emitted('locateIssue')).toBeUndefined()
+
+    await issueCard.find('[data-issue-locate]').trigger('click')
+    expect(wrapper.emitted('locateIssue')?.[0]?.[0]).toEqual(issue)
+
+    wrapper.unmount()
+    if (originalClipboard)
+      Object.defineProperty(window.navigator, 'clipboard', originalClipboard)
+    else
+      delete window.navigator.clipboard
   })
 
   it('drags a palette node onto a concrete canvas insertion edge', async () => {

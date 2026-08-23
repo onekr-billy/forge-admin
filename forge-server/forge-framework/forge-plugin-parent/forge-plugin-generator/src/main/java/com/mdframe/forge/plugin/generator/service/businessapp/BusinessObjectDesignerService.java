@@ -322,6 +322,17 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     @Transactional(rollbackFor = Exception.class)
     public DesignerContext saveDraft(DesignerContext context, String designStatus) {
+        return saveDraft(context, designStatus, true);
+    }
+
+    /**
+     * 保存运行草稿。预览/发布前的运行时物化只同步派生配置，不应把应用重新标记为
+     * “有未发布变更”；真正的设计器保存仍通过默认的 {@code markApplicationChanged=true}
+     * 分支传播变更状态。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public DesignerContext saveDraft(DesignerContext context, String designStatus,
+                                     boolean markApplicationChanged) {
         if (context == null || context.getObject() == null) {
             throw new BusinessException("业务对象设计上下文不能为空");
         }
@@ -346,7 +357,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         businessObjectMapper.updateById(object);
         businessAppService.syncRuntimeAppsForObject(object.getSuiteCode(), object.getObjectCode(), config.getConfigKey());
-        applicationChangeTracker.markObjectChanged(object.getId());
+        if (markApplicationChanged) {
+            applicationChangeTracker.markObjectChanged(object.getId());
+        }
 
         context.setModel(model);
         context.setConfig(config);
@@ -374,7 +387,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 && StringUtils.equals(beforePageSchema, preparedPageSchema)) {
             return context.getConfig();
         }
-        return saveDraft(context, BusinessObjectDesignStatus.CHANGED).getConfig();
+        String currentStatus = StringUtils.defaultIfBlank(
+                context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT);
+        return saveDraft(context, currentStatus, false).getConfig();
     }
 
     public DesignerContext compileFormFirstRuntimeSchema(DesignerContext context) {

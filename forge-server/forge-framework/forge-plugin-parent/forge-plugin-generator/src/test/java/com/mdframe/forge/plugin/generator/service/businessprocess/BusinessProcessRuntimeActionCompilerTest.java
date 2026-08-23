@@ -28,7 +28,7 @@ class BusinessProcessRuntimeActionCompilerTest {
 
         List<Map<String, Object>> actions = compiler.compileSchema(schema, "CRM_APP", "submit_approval", "提交审批");
 
-        assertEquals(1, actions.size());
+        assertEquals(2, actions.size());
         Map<String, Object> action = actions.get(0);
         assertEquals("startProcess:submit_approval", action.get("key"));
         assertEquals("START_PROCESS", action.get("actionType"));
@@ -39,6 +39,20 @@ class BusinessProcessRuntimeActionCompilerTest {
         assertEquals("ai:businessProcess:start", action.get("permissionCode"));
         assertEquals("确认提交当前记录？", action.get("confirmText"));
         assertEquals("refreshList", action.get("successBehavior"));
+        assertEquals("detail", actions.get(1).get("position"));
+        assertEquals("startProcess:submit_approval:detail", actions.get(1).get("key"));
+    }
+
+    @Test
+    @DisplayName("manual start uses a separate button label without changing the node name")
+    void compileManualStartUsesButtonLabel() {
+        BusinessProcessSchema schema = schema("START_MANUAL", Map.of(
+                "positions", List.of("ROW"),
+                "buttonLabel", "提交采购申请"));
+
+        List<Map<String, Object>> actions = compiler.compileSchema(schema, "CRM_APP", "submit_approval", "提交审批");
+
+        assertEquals("提交采购申请", actions.get(0).get("label"));
     }
 
     @Test
@@ -53,6 +67,36 @@ class BusinessProcessRuntimeActionCompilerTest {
         List<Map<String, Object>> actions = compiler.compileSchema(schema, "CRM_APP", "submit_approval", "提交审批");
 
         assertEquals("score = 1", actions.get(0).get("displayCondition"));
+    }
+
+    @Test
+    @DisplayName("structured visibleCondition compiles all rules with configured logic")
+    void compileMultipleVisibleConditionRules() {
+        BusinessProcessSchema schema = schema("START_MANUAL", Map.of(
+                "positions", List.of("ROW"),
+                "visibleCondition", Map.of(
+                        "operator", "OR",
+                        "rules", List.of(
+                                Map.of("field", "score", "operator", "GTE", "value", "80"),
+                                Map.of("field", "priority", "operator", "EQ", "value", "HIGH")))));
+
+        List<Map<String, Object>> actions = compiler.compileSchema(schema, "CRM_APP", "submit_approval", "提交审批");
+
+        assertEquals("score >= 80 OR priority = HIGH", actions.get(0).get("displayCondition"));
+    }
+
+    @Test
+    @DisplayName("manual start can compile a separate edit-form action")
+    void compileFormActionSeparately() {
+        BusinessProcessSchema schema = schema("START_MANUAL", Map.of(
+                "positions", List.of("ROW", "FORM")));
+
+        List<Map<String, Object>> actions = compiler.compileSchema(schema, "CRM_APP", "submit_approval", "提交审批");
+
+        assertEquals(2, actions.size());
+        assertEquals("row", actions.get(0).get("position"));
+        assertEquals("form", actions.get(1).get("position"));
+        assertEquals("startProcess:submit_approval:form", actions.get(1).get("key"));
     }
 
     @Test

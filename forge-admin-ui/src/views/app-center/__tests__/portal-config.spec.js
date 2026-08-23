@@ -29,7 +29,7 @@ describe('published portal globalization settings', () => {
       appId: '2089974506884993026',
     })).toEqual({
       path: '/app/presale_registration_apply',
-      pcUrl: 'http://localhost:3000/app/presale_registration_apply?pageId=page_page',
+      pcUrl: 'http://localhost:3000/ai/crud-page/presale_registration_business_object?pageKey=list&appId=2089974506884993026',
       h5Url: 'http://localhost:3009/#/pages/lowcode-runtime?appId=2089974506884993026&configKey=presale_registration_business_object',
     })
   })
@@ -38,5 +38,32 @@ describe('published portal globalization settings', () => {
     expect(RESERVED_PORTAL_SLUGS).toContain('admin')
     expect(RESERVED_PORTAL_SLUGS).toContain('app-center')
     expect(RESERVED_PORTAL_SLUGS).toContain('favicon.ico')
+  })
+
+  it('builds a standalone form runtime url for an object page', () => {
+    const urls = buildPortalAccessUrls({
+      origin: 'http://localhost:3000',
+      slug: 'presale_registration_apply',
+      pageId: 'page_form',
+      appId: '2089974506884993026',
+      application: {
+        options: JSON.stringify({
+          inAppBuilder: {
+            nodes: [{
+              id: 'page_form',
+              type: 'page',
+              objectRef: {
+                configKey: 'presale_registration_business_object',
+                pageKey: 'form',
+                pageMode: 'form',
+                formKey: 'presale_registration_business_object_form',
+              },
+            }],
+          },
+        }),
+      },
+    })
+
+    expect(urls.pcUrl).toBe('http://localhost:3000/ai/crud-page/presale_registration_business_object?pageKey=form&appId=2089974506884993026&formKey=presale_registration_business_object_form&runtimeOpenMode=CREATE_FORM&mode=create')
   })
 })

@@ -123,6 +123,17 @@ public class FlowModel {
     private String todoDetailUrlTemplate;
 
     /**
+     * 通知配置（事件×渠道矩阵）。
+     * <p>JSON 结构，key 为事件类型（todo-新待办 / result-审批结果 / cc-抄送），
+     * value 为 {@code {"channels": ["WEB","EMAIL","SMS","COLLABORATION"], "templateCode": "模板编码覆盖"}}。</p>
+     * <p>渠道列表：WEB-站内信（基础渠道）/ EMAIL-邮件 / SMS-短信 / COLLABORATION-企业协同（企微等，按连接平台路由）。
+     * {@code templateCode} 为空时按事件使用默认模板编码。</p>
+     * <p>未配置（NULL）时保持默认通知行为：待办推站内信 + 连接开启待办推送时推企微卡片。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String notifyConfig;
+
+    /**
      * 状态（0-设计/1-已发布/2-已挂起/3-已禁用）
      */
     private Integer status;

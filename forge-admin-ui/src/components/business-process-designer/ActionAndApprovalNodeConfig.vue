@@ -1,6 +1,7 @@
 <script setup>
 import { NButton, NEmpty, NSelect, NTag } from 'naive-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { ensureBusinessFlowStatusField } from '@/api/business-app'
 import flowApi from '@/api/flow'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
 import TemplateVariableEditor from '@/views/app-center/components/designer/TemplateVariableEditor.vue'
@@ -9,6 +10,7 @@ import { ACTION_NODE_TEMPLATES, createActionTemplateConfig } from './node-templa
 
 const props = defineProps({
   node: { type: Object, required: true },
+  objectId: { type: String, default: '' },
   objectCode: { type: String, default: '' },
   objectName: { type: String, default: '' },
   objects: { type: Array, default: () => [] },
@@ -21,7 +23,7 @@ const props = defineProps({
   subProcesses: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['update:config', 'openFlowDesigner', 'refreshFlowModel', 'editAction'])
+const emit = defineEmits(['update:config', 'openFlowDesigner', 'refreshFlowModel', 'refreshFields', 'editAction'])
 
 const FlowDesignPage = defineAsyncComponent(() => import('@/views/flow/design.vue'))
 
@@ -32,6 +34,7 @@ const creatingModel = ref(false)
 const previewXml = ref('')
 const previewLoading = ref(false)
 const autoBoundNodeId = ref('')
+const ensuringStatusField = ref(false)
 
 const designableFlowModels = computed(() => (props.flowModels || []).filter((item) => {
   const designerType = String(item.designerType || '').toLowerCase()
@@ -44,28 +47,18 @@ const flowModelOptions = computed(() => designableFlowModels.value.map(item => (
   deployed: item.deployed === true || Boolean(item.deploymentId),
 })))
 
-const resolvedFormAssets = computed(() => {
-  const assets = (props.formAssets || []).filter(item => formAssetKey(item))
-  if (assets.length)
-    return assets
-  if (!props.objectCode)
-    return []
-  return [{
-    formKey: props.objectCode,
-    formName: props.objectName || `${props.objectCode}表单`,
-    formMode: 'BUSINESS_OBJECT_FORM',
-    objectCode: props.objectCode,
-    objectName: props.objectName,
-  }]
-})
+const resolvedFormAssets = computed(() => (props.formAssets || []).filter(item => stringValue(item?.formKey)))
 
-const statusFieldOptions = computed(() => fieldOptions.value)
+const statusFieldOptions = computed(() => fieldOptions.value.filter(item => isFlowStatusField(item.value)))
 
 const suggestedStatusField = computed(() => {
-  const preferred = ['flowStatus', 'documentStatus', 'approvalStatus', 'status']
+  const preferred = ['flowStatus', 'flow_status']
   const values = new Set(fieldOptions.value.map(item => item.value))
   return preferred.find(item => values.has(item)) || ''
 })
+
+const hasIndependentFlowStatus = computed(() => Boolean(suggestedStatusField.value))
+const usesIndependentFlowStatus = computed(() => isFlowStatusField(localConfig.value.statusField))
 
 const selectedFlowModel = computed(() => designableFlowModels.value.find(item =>
   modelKey(item) === localConfig.value.flowModelKey,
@@ -94,6 +87,11 @@ watch(() => props.formAssets, () => {
   if (props.node?.type === 'APPROVAL' && !stringValue(localConfig.value.formAsset?.formKey))
     ensureDefaultApprovalBindings()
 })
+
+watch(() => props.fields, () => {
+  if (props.node?.type === 'APPROVAL')
+    ensureDefaultApprovalBindings()
+}, { deep: true })
 
 watch(selectedFlowModelId, async (modelId) => {
   previewXml.value = ''
@@ -196,6 +194,12 @@ async function createAndDesign() {
             formKey: defaultForm.formKey,
             formName: defaultForm.formName,
             providerKey: defaultForm.providerKey || '',
+            applicationId: defaultForm.applicationId || '',
+            pageId: defaultForm.pageId || '',
+            pageCode: defaultForm.pageCode || '',
+            pageName: defaultForm.pageName || '',
+            pageType: defaultForm.pageType || '',
+            sourceFormKey: defaultForm.sourceFormKey || '',
             viewKey: 'default',
           })
         : undefined,
@@ -244,14 +248,52 @@ function ensureDefaultApprovalBindings() {
   if (props.node?.type !== 'APPROVAL')
     return
   const patch = {}
-  if (!stringValue(localConfig.value.formAsset?.formKey) && resolvedFormAssets.value[0])
+  const currentFormKey = stringValue(localConfig.value.formAsset?.formKey)
+  const currentProviderKey = stringValue(localConfig.value.formAsset?.providerKey)
+  const currentFormAvailable = resolvedFormAssets.value.some(item =>
+    formAssetKey(item) === currentFormKey
+    && (!currentProviderKey || stringValue(item.providerKey) === currentProviderKey),
+  )
+  if (resolvedFormAssets.value[0] && (!currentFormKey || !currentFormAvailable))
     patch.formAsset = toFormAssetRef(resolvedFormAssets.value[0])
-  if (!stringValue(localConfig.value.statusField) && suggestedStatusField.value)
+  else if (!resolvedFormAssets.value.length
+    && currentFormKey
+    && String(localConfig.value.formAsset?.formMode || 'BUSINESS_OBJECT_FORM').toUpperCase() !== 'EXTERNAL')
+    patch.formAsset = {}
+  if (!usesIndependentFlowStatus.value && suggestedStatusField.value)
     patch.statusField = suggestedStatusField.value
   if (!stringValue(localConfig.value.titleTemplate))
     patch.titleTemplate = defaultApprovalTitle()
   if (Object.keys(patch).length)
     patchConfig(patch)
+}
+
+async function ensureFlowStatusField() {
+  if (ensuringStatusField.value)
+    return
+  if (!props.objectId) {
+    window.$message?.warning('当前流程未关联有效业务对象，无法添加流程状态字段')
+    return
+  }
+  ensuringStatusField.value = true
+  try {
+    const response = await ensureBusinessFlowStatusField(props.objectId)
+    const field = response?.data || {}
+    const fieldCode = stringValue(field.fieldCode || field.field || 'flowStatus')
+    patchConfig({ statusField: isFlowStatusField(fieldCode) ? fieldCode : 'flowStatus' })
+    emit('refreshFields', field)
+    window.$message?.success('流程状态字段已添加，数据库列已安全同步')
+  }
+  catch (error) {
+    window.$message?.error(error?.response?.data?.message || error?.message || '添加流程状态字段失败')
+  }
+  finally {
+    ensuringStatusField.value = false
+  }
+}
+
+function isFlowStatusField(value) {
+  return ['flowStatus', 'flow_status'].includes(stringValue(value))
 }
 
 function toFormAssetRef(item) {
@@ -265,6 +307,12 @@ function toFormAssetRef(item) {
     formName: item.formName || item.name || item.label || formKey,
     formMode: item.formMode || item.type || 'BUSINESS_OBJECT_FORM',
     providerKey: item.providerKey || undefined,
+    applicationId: item.applicationId || undefined,
+    pageId: item.pageId || undefined,
+    pageCode: item.pageCode || undefined,
+    pageName: item.pageName || undefined,
+    pageType: item.pageType || undefined,
+    sourceFormKey: item.sourceFormKey || undefined,
   }
 }
 
@@ -504,15 +552,30 @@ function clone(value) {
           <label class="config-field">
             <span>流程状态字段</span>
             <n-select
+              v-if="hasIndependentFlowStatus"
               :value="localConfig.statusField || suggestedStatusField || null"
               filterable
-              clearable
               :options="statusFieldOptions"
               placeholder="选择回写到业务对象的状态字段"
               @update:value="patchConfig({ statusField: $event || '' })"
             />
-            <small>
-              发起后写入 IN_PROCESS，通过/驳回/取消后自动更新。建议使用独立的流程状态字段，不要和业务自己的状态混用。
+            <div v-else class="flow-status-provision">
+              <div>
+                <strong>尚未添加独立流程状态</strong>
+                <span>系统将创建只读字段 flowStatus，并仅追加数据库列 flow_status。</span>
+              </div>
+              <n-button
+                size="small"
+                type="primary"
+                secondary
+                :loading="ensuringStatusField"
+                @click="ensureFlowStatusField"
+              >
+                一键添加流程状态字段
+              </n-button>
+            </div>
+            <small :class="{ 'status-field-warning': localConfig.statusField && !usesIndependentFlowStatus }">
+              发起写入 IN_PROCESS，通过、驳回、取消分别写入 APPROVED、REJECTED、CANCELED；业务自己的“状态”字段不会被流程修改。
             </small>
           </label>
         </div>
@@ -580,6 +643,7 @@ function clone(value) {
         :business-object-code="objectCode"
         :business-object-name="objectName || objectCode"
         :business-form-key="localConfig.formAsset?.formKey || ''"
+        :application-id="localConfig.formAsset?.applicationId || ''"
         @close="handleFlowDesignerClosed"
         @saved="handleFlowDesignerClosed"
         @deployed="handleFlowDesignerClosed"
@@ -606,6 +670,7 @@ function clone(value) {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .template-section-head strong {
@@ -675,7 +740,10 @@ function clone(value) {
 .config-field input,
 .mapping-row select,
 .mapping-row input {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 34px;
+  min-width: 0;
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 6px;
   background: var(--input-color, #fff);
@@ -708,6 +776,36 @@ function clone(value) {
   padding: 12px;
 }
 
+.flow-status-provision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.07);
+  padding: 11px 12px;
+}
+
+.flow-status-provision > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.flow-status-provision strong {
+  color: var(--text-color-1, #0f172a);
+  font-size: 12px;
+}
+
+.flow-status-provision span,
+.status-field-warning {
+  color: var(--warning-color, #c17a16) !important;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .mapping-head {
   display: flex;
   align-items: center;
@@ -730,10 +828,11 @@ function clone(value) {
   align-items: center;
   gap: 7px;
   margin-top: 8px;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
 }
 
 .remove-row {
+  white-space: nowrap;
   color: var(--error-color, #dc2626);
   font-size: 12px;
 }
@@ -765,12 +864,13 @@ function clone(value) {
 
 .approval-model-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
 }
 
 .approval-model-row :deep(.n-select) {
   flex: 1;
+  min-width: 0;
 }
 
 .approval-preview-card {
@@ -781,10 +881,38 @@ function clone(value) {
   padding: 12px;
 }
 
-@media (min-width: 840px) {
+@container node-config (min-width: 700px) {
   .approval-config-layout {
-    grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+    grid-template-columns: minmax(340px, 1.15fr) minmax(280px, 0.85fr);
     align-items: start;
+  }
+}
+
+@container node-config (max-width: 560px) {
+  .approval-model-row,
+  .flow-status-provision {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mapping-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .mapping-row .remove-row {
+    justify-self: end;
+    grid-column: 1 / -1;
+  }
+}
+
+@container node-config (max-width: 480px) {
+  .template-grid,
+  .mapping-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mapping-row .remove-row {
+    grid-column: auto;
   }
 }
 
@@ -793,6 +921,7 @@ function clone(value) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 10px;
 }
 

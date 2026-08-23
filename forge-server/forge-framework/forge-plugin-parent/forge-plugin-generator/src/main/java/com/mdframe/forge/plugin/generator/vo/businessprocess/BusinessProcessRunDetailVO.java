@@ -30,6 +30,9 @@ public class BusinessProcessRunDetailVO extends BusinessProcessRunVO {
 
         private String nodeId;
 
+        /** 从流程 schema 解析的节点名称。 */
+        private String nodeName;
+
         private String nodeType;
 
         private Integer attemptNo;

@@ -22,7 +22,11 @@ const fieldOptions = computed(() => props.fields
   .filter(item => item.value))
 
 const conditionKey = computed(() => props.type === 'START_MANUAL' ? 'visibleCondition' : 'condition')
-const firstRule = computed(() => localConfig.value?.[conditionKey.value]?.rules?.[0] || null)
+const conditionRules = computed(() => {
+  const rules = localConfig.value?.[conditionKey.value]?.rules
+  return Array.isArray(rules) && rules.length ? rules : []
+})
+const firstRule = computed(() => conditionRules.value[0] || null)
 
 watch(() => props.config, (value) => {
   localConfig.value = clone(value || {})
@@ -64,10 +68,36 @@ function togglePosition(position, checked) {
   patchConfig('positions', [...positions])
 }
 
-function updateConditionRule(key, value) {
+function updateConditionRule(ruleIndex, key, value) {
   const condition = clone(localConfig.value[conditionKey.value] || { operator: 'AND', rules: [] })
-  const rule = { ...(condition.rules?.[0] || { source: 'record', operator: 'EQ' }), [key]: value }
-  condition.rules = [rule]
+  const rules = Array.isArray(condition.rules) && condition.rules.length
+    ? condition.rules.map(item => ({ ...item }))
+    : [{ source: 'record', operator: 'EQ', field: '' }]
+  rules[ruleIndex] = { ...(rules[ruleIndex] || { source: 'record', operator: 'EQ' }), [key]: value }
+  condition.rules = rules
+  patchConfig(conditionKey.value, condition)
+}
+
+function updateConditionLogic(value) {
+  const condition = clone(localConfig.value[conditionKey.value] || { rules: [] })
+  condition.operator = String(value || 'AND').toUpperCase() === 'OR' ? 'OR' : 'AND'
+  patchConfig(conditionKey.value, condition)
+}
+
+function addConditionRule() {
+  const condition = clone(localConfig.value[conditionKey.value] || { operator: 'AND', rules: [] })
+  const rules = Array.isArray(condition.rules) ? condition.rules : []
+  rules.push({ source: 'record', operator: 'EQ', field: '' })
+  condition.rules = rules
+  patchConfig(conditionKey.value, condition)
+}
+
+function removeConditionRule(ruleIndex) {
+  const condition = clone(localConfig.value[conditionKey.value] || { operator: 'AND', rules: [] })
+  const rules = Array.isArray(condition.rules) ? condition.rules.filter((_, index) => index !== ruleIndex) : []
+  if (!rules.length)
+    return clearCondition()
+  condition.rules = rules
   patchConfig(conditionKey.value, condition)
 }
 
@@ -147,7 +177,25 @@ function clone(value) {
           >
           详情页操作
         </label>
+        <label class="inline-check">
+          <input
+            type="checkbox"
+            :checked="localConfig.positions?.includes('FORM')"
+            @change="togglePosition('FORM', $event.target.checked)"
+          >
+          编辑表单操作
+        </label>
       </div>
+      <label class="config-field">
+        <span>按钮名称</span>
+        <input
+          :value="localConfig.buttonLabel || ''"
+          maxlength="80"
+          placeholder="例如：提交审批"
+          @input="patchConfig('buttonLabel', $event.target.value)"
+        >
+        <small>运行时按钮使用此名称；节点名称仅用于流程画布和审批记录展示。</small>
+      </label>
       <label class="config-field">
         <span>确认文案</span>
         <input
@@ -226,39 +274,65 @@ function clone(value) {
     <section v-if="type !== 'START_SCHEDULE'" class="condition-card">
       <div class="condition-head">
         <span>{{ type === 'START_MANUAL' ? '按钮显示条件' : '事件过滤条件' }}</span>
-        <button v-if="firstRule" type="button" @click="clearCondition">
+        <button
+          v-if="firstRule"
+          type="button"
+          class="condition-clear"
+          data-condition-clear
+          @click="clearCondition"
+        >
           清除
         </button>
       </div>
-      <div class="condition-row">
-        <select :value="firstRule?.field || ''" @change="updateConditionRule('field', $event.target.value)">
-          <option value="">
-            选择字段
-          </option>
+      <div v-if="conditionRules.length" class="condition-logic-row">
+        <span>满足方式</span>
+        <select
+          :value="localConfig[conditionKey]?.operator || 'AND'"
+          @change="updateConditionLogic($event.target.value)"
+        >
+          <option value="AND">同时满足全部条件</option>
+          <option value="OR">满足任意一个条件</option>
+        </select>
+        <button type="button" @click="addConditionRule">添加条件</button>
+      </div>
+      <div v-else class="condition-empty">
+        <span>未设置条件时，按钮始终显示。</span>
+        <button type="button" data-condition-add @click="addConditionRule">
+          添加显示条件
+        </button>
+      </div>
+      <div
+        v-for="(rule, ruleIndex) in conditionRules"
+        :key="`condition-rule-${ruleIndex}`"
+        class="condition-row"
+      >
+        <select :value="rule?.field || ''" @change="updateConditionRule(ruleIndex, 'field', $event.target.value)">
+          <option value="">选择字段</option>
           <option v-for="item in fieldOptions" :key="item.value" :value="item.value">
             {{ item.label }}
           </option>
         </select>
-        <select :value="firstRule?.operator || 'EQ'" @change="updateConditionRule('operator', $event.target.value)">
-          <option value="EQ">
-            等于
-          </option>
-          <option value="NE">
-            不等于
-          </option>
-          <option value="IN">
-            属于
-          </option>
-          <option value="NOT_EMPTY">
-            不为空
-          </option>
+        <select :value="rule?.operator || 'EQ'" @change="updateConditionRule(ruleIndex, 'operator', $event.target.value)">
+          <option value="EQ">等于</option>
+          <option value="NE">不等于</option>
+          <option value="IN">属于</option>
+          <option value="NOT_EMPTY">不为空</option>
         </select>
         <input
-          v-if="firstRule?.operator !== 'NOT_EMPTY'"
-          :value="firstRule?.value ?? ''"
+          v-if="rule?.operator !== 'NOT_EMPTY'"
+          :value="rule?.value ?? ''"
           placeholder="比较值"
-          @input="updateConditionRule('value', $event.target.value)"
+          @input="updateConditionRule(ruleIndex, 'value', $event.target.value)"
         >
+        <button
+          type="button"
+          class="condition-remove"
+          data-condition-remove
+          :aria-label="`删除第 ${ruleIndex + 1} 条条件`"
+          @click="removeConditionRule(ruleIndex)"
+        >
+          删除
+        </button>
       </div>
     </section>
   </div>
@@ -403,13 +477,77 @@ function clone(value) {
 }
 
 .condition-head button {
+  border: 0;
+  background: transparent;
   color: var(--primary-color, #2563eb);
+  cursor: pointer;
   font-size: 12px;
 }
 
 .condition-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: 1fr 92px 1fr;
+  grid-template-columns: minmax(0, 1fr) 92px minmax(0, 1fr) auto;
+}
+
+.condition-logic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-color-2, #475569);
+  font-size: 12px;
+}
+
+.condition-logic-row select {
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  background: var(--input-color, #fff);
+  padding: 4px 8px;
+  color: var(--text-color-1, #0f172a);
+}
+
+.condition-logic-row button,
+.condition-remove,
+.condition-empty button {
+  border: 0;
+  background: transparent;
+  color: var(--primary-color, #2563eb);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.condition-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-color-3, #64748b);
+}
+
+.condition-empty button {
+  flex: none;
+}
+
+.condition-remove {
+  align-self: center;
+  min-height: 30px;
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--error-color, #dc2626);
+}
+
+.condition-remove:hover,
+.condition-clear:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+@container node-config (max-width: 480px) {
+  .template-grid,
+  .two-column-fields,
+  .condition-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

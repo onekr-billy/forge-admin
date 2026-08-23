@@ -27,12 +27,14 @@ describe('page shape design draft', () => {
   })
 
   it('normalizes an editable object code from the page name', () => {
-    expect(normalizePageShapeSelection({ pageName: '客户管理', pageType: 'form' })).toMatchObject({
+    const selection = normalizePageShapeSelection({ pageName: '客户管理', pageType: 'form' })
+    expect(selection).toMatchObject({
       pageName: '客户管理',
       objectName: '客户管理',
-      objectCode: 'customer_management',
       pageType: 'form',
     })
+    // 自动生成的编码带随机后缀，避免同套件下重复
+    expect(selection.objectCode).toMatch(/^customer_management_[a-z0-9]{4}$/)
     expect(normalizePageShapeSelection({
       pageName: '客户管理',
       objectCode: 'crm_customer',

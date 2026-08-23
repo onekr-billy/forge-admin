@@ -1148,7 +1148,8 @@ function handleLayoutSaved(pageSchema) {
   draft.pageSchema = cloneSchema(pageSchema || draft.pageSchema)
   dirty.value = false
   designerDraftDirty.value = false
-  emit('saved')
+  // 透传保存后的pageSchema，供宿主页同步页面区块的查询字段等快照。
+  emit('saved', pageSchema ? cloneSchema(pageSchema) : undefined)
 }
 
 function applyFieldRename(rename = {}) {

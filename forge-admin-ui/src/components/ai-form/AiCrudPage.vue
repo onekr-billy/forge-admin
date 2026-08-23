@@ -75,6 +75,7 @@
           :show-actions="false"
           :context="formContext"
           :form-assets="formAssets"
+          @update:value="handleFormValueUpdate"
         >
           <template v-for="slotName in formSlots" #[slotName]="slotProps">
             <slot :name="`form-${slotName}`" v-bind="slotProps" />
@@ -357,6 +358,7 @@
                   :show-actions="false"
                   :context="formContext"
                   :form-assets="formAssets"
+                  @update:value="handleFormValueUpdate"
                 >
                   <template v-for="slotName in formSlots" #[slotName]="slotProps">
                     <slot :name="`form-${slotName}`" v-bind="slotProps" />
@@ -411,6 +413,7 @@
                 :show-actions="false"
                 :context="formContext"
                 :form-assets="formAssets"
+                @update:value="handleFormValueUpdate"
               >
                 <template v-for="slotName in formSlots" #[slotName]="slotProps">
                   <slot :name="`form-${slotName}`" v-bind="slotProps" />
@@ -440,17 +443,41 @@
             </template>
           </div>
 
-          <footer v-if="!hideModalFooter && !isDetailMode" class="inline-form-panel-footer">
-            <n-button @click="handleInlineFormCancel">
-              取消
-            </n-button>
-            <n-button
-              type="primary"
-              :loading="confirmLoading"
-              @click="handleModalConfirm"
-            >
-              确定
-            </n-button>
+          <footer v-if="!hideModalFooter && (!isDetailMode || visibleDetailActions.length || visibleFormActions.length)" class="inline-form-panel-footer">
+            <template v-if="!isDetailMode">
+              <n-button @click="handleInlineFormCancel">
+                取消
+              </n-button>
+              <n-button
+                type="primary"
+                :loading="confirmLoading"
+                @click="handleModalConfirm"
+              >
+                确定
+              </n-button>
+              <n-button
+                v-for="action in visibleFormActions"
+                :key="action.key || action.label"
+                :type="resolveButtonType(action)"
+                :loading="isActionLoading(action, formData)"
+                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+                @click="handleActionClick(action, formData)"
+              >
+                {{ resolveActionDisplayLabel(action, formData) }}
+              </n-button>
+            </template>
+            <template v-else>
+              <n-button
+                v-for="action in visibleDetailActions"
+                :key="action.key || action.label"
+                :type="resolveButtonType(action)"
+                :loading="isActionLoading(action, formData)"
+                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+                @click="handleActionClick(action, formData)"
+              >
+                {{ resolveActionDisplayLabel(action, formData) }}
+              </n-button>
+            </template>
           </footer>
         </section>
       </div>
@@ -494,6 +521,7 @@
             :show-actions="false"
             :context="formContext"
             :form-assets="formAssets"
+            @update:value="handleFormValueUpdate"
           >
             <template v-for="slotName in formSlots" #[slotName]="slotProps">
               <slot :name="`form-${slotName}`" v-bind="slotProps" />
@@ -548,6 +576,7 @@
           :show-actions="false"
           :context="formContext"
           :form-assets="formAssets"
+          @update:value="handleFormValueUpdate"
         >
           <!-- 透传表单插槽 -->
           <template v-for="slotName in formSlots" #[slotName]="slotProps">
@@ -578,18 +607,42 @@
       </template>
 
       <!-- 弹窗底部按钮 -->
-      <template v-if="!hideModalFooter && !isDetailMode" #footer>
+      <template v-if="!hideModalFooter && (!isDetailMode || visibleDetailActions.length || visibleFormActions.length)" #footer>
         <n-space justify="end">
-          <n-button @click="handleModalCancel">
-            取消
-          </n-button>
-          <n-button
-            type="primary"
-            :loading="confirmLoading"
-            @click="handleModalConfirm"
-          >
-            确定
-          </n-button>
+          <template v-if="!isDetailMode">
+            <n-button @click="handleModalCancel">
+              取消
+            </n-button>
+            <n-button
+              type="primary"
+              :loading="confirmLoading"
+              @click="handleModalConfirm"
+            >
+              确定
+            </n-button>
+            <n-button
+              v-for="action in visibleFormActions"
+              :key="action.key || action.label"
+              :type="resolveButtonType(action)"
+              :loading="isActionLoading(action, formData)"
+              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              @click="handleActionClick(action, formData)"
+            >
+              {{ resolveActionDisplayLabel(action, formData) }}
+            </n-button>
+          </template>
+          <template v-else>
+            <n-button
+              v-for="action in visibleDetailActions"
+              :key="action.key || action.label"
+              :type="resolveButtonType(action)"
+              :loading="isActionLoading(action, formData)"
+              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              @click="handleActionClick(action, formData)"
+            >
+              {{ resolveActionDisplayLabel(action, formData) }}
+            </n-button>
+          </template>
         </n-space>
       </template>
     </n-modal>
@@ -621,6 +674,7 @@
           :show-actions="false"
           :context="formContext"
           :form-assets="formAssets"
+          @update:value="handleFormValueUpdate"
         >
           <!-- 透传表单插槽 -->
           <template v-for="slotName in formSlots" #[slotName]="slotProps">
@@ -653,6 +707,16 @@
               @click="handleModalConfirm"
             >
               确定
+            </n-button>
+            <n-button
+              v-for="action in visibleFormActions"
+              :key="action.key || action.label"
+              :type="resolveButtonType(action)"
+              :loading="isActionLoading(action, formData)"
+              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              @click="handleActionClick(action, formData)"
+            >
+              {{ resolveActionDisplayLabel(action, formData) }}
             </n-button>
           </n-space>
         </template>
@@ -803,7 +867,7 @@ import { NButton, NDropdown, NIcon, NProgress, NTag } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { crudConfigRender, customQueryExecute } from '@/api/ai'
-import { executeBusinessAction } from '@/api/business-app'
+import { businessDocumentRuntimeBatch, executeBusinessAction } from '@/api/business-app'
 import { startBusinessProcess } from '@/api/business-process'
 import { previewFormula } from '@/api/formula'
 import AuthImage from '@/components/common/AuthImage.vue'
@@ -827,7 +891,11 @@ import {
   buildBusinessActionInputFormSchema,
   buildChildRowActionContext,
   createBusinessActionIdempotencyKey,
+  isRuntimeActionForPosition,
+  matchesRuntimeDisplayCondition,
   resolveBusinessActionAttempt,
+  shouldHideProcessStartAction,
+  shouldShowDetailFlowHistory,
   unwrapBusinessActionResult,
 } from './business-action-runtime'
 import { normalizeExpandConfig, shouldExpandRow } from './expand-utils'
@@ -1002,6 +1070,66 @@ const visibleToolbarActions = computed(() => (Array.isArray(props.toolbarActions
     && hasRuntimePermission(action?.permissionCode)
     && matchDisplayCondition(action?.displayCondition || action?.visibleCondition, {})))
 
+/** 详情页动作独立于列表操作列，流程动作可在两个位置同时配置。 */
+const visibleDetailActions = computed(() => {
+  const row = formData.value || currentRow.value || {}
+  const configured = [
+    ...(Array.isArray(props.detailActions) ? props.detailActions : []),
+    ...(Array.isArray(props.runtimeActions)
+      ? props.runtimeActions.filter(action => String(action?.position || '').toLowerCase() === 'detail')
+      : []),
+    ...(Array.isArray(detailRuntime.value?.runtimeActions)
+      ? detailRuntime.value.runtimeActions.map(action => ({ ...action, position: action?.position || 'detail' }))
+      : []),
+  ]
+  const actions = []
+  for (const source of configured) {
+    const action = normalizeRuntimeAction(source, row)
+    if (!action || actions.some(item => sameAction(item, action)))
+      continue
+    actions.push(action)
+  }
+  return actions.filter((action) => {
+    if (!isRuntimeActionForPosition(action, 'detail'))
+      return false
+    if (action.visible === false || !hasRuntimePermission(action.permissionCode))
+      return false
+    if (!matchDisplayCondition(action.displayCondition || action.visibleCondition, row))
+      return false
+    return !isStartFlowRuntimeHidden(action, row)
+  })
+})
+
+/** 编辑表单页动作。显式 formActions 优先，兼容历史 runtimeActions.position=form。 */
+const visibleFormActions = computed(() => {
+  const row = formData.value || currentRow.value || {}
+  const configured = [
+    ...(Array.isArray(props.formActions) ? props.formActions : []),
+    ...(Array.isArray(props.runtimeActions)
+      ? props.runtimeActions.filter(action => String(action?.position || '').toLowerCase() === 'form')
+      : []),
+    ...(Array.isArray(detailRuntime.value?.runtimeActions)
+      ? detailRuntime.value.runtimeActions.map(action => ({ ...action, position: action?.position || 'form' }))
+      : []),
+  ]
+  const actions = []
+  for (const source of configured) {
+    const action = normalizeRuntimeAction(source, row)
+    if (!action || !isRuntimeActionForPosition(action, 'form') || actions.some(item => sameAction(item, action)))
+      continue
+    actions.push(action)
+  }
+  return actions.filter((action) => {
+    if (String(action.position || '').toLowerCase() !== 'form')
+      return false
+    if (action.visible === false || !hasRuntimePermission(action.permissionCode))
+      return false
+    if (!matchDisplayCondition(action.displayCondition || action.visibleCondition, row))
+      return false
+    return !isStartFlowRuntimeHidden(action, row)
+  })
+})
+
 /**
  * 操作列最大显示按钮数
  */
@@ -1024,6 +1152,8 @@ function renderActionColumn(row, actions, maxVisibleActions = maxActionButtons) 
     if (!hasRuntimePermission(action.permissionCode))
       return false
     if (!matchDisplayCondition(action.displayCondition || action.visibleCondition, row))
+      return false
+    if (isStartFlowRuntimeHidden(action, row))
       return false
     return true
   })
@@ -1131,7 +1261,10 @@ function mergeRuntimeActions(actions = [], row) {
   const runtimeActions = [
     ...(Array.isArray(props.runtimeActions) ? props.runtimeActions : []),
     ...(Array.isArray(row?._runtimeActions) ? row._runtimeActions : []),
-  ].map(action => normalizeRuntimeAction(action, row)).filter(Boolean)
+  ]
+    .filter(action => isRuntimeActionForPosition(action, 'row'))
+    .map(action => normalizeRuntimeAction(action, row))
+    .filter(Boolean)
   runtimeActions.forEach((action) => {
     const existingIndex = next.findIndex(item => sameAction(item, action))
     if (existingIndex >= 0) {
@@ -1162,6 +1295,14 @@ function normalizeRuntimeAction(action, row) {
     objectCode: resolveRuntimeObjectCode(action, row),
     recordId: action.recordId || resolveRowKeyValue(row),
   }
+}
+
+function isStartFlowRuntimeHidden(action = {}, row = {}) {
+  const runtime = row?._documentRuntime
+    || row?.documentRuntime
+    || (modalStatus.value === 'detail' ? detailRuntime.value : null)
+    || {}
+  return shouldHideProcessStartAction(action, runtime)
 }
 
 function resolveRuntimeObjectCode(action = {}, row = {}) {
@@ -1246,6 +1387,8 @@ async function handleCustomActionClick(action, row) {
   }
   setActionLoading(loadingKey, true)
   try {
+    if (!(await runBeforeRowAction(action, row)))
+      return
     await action.onClick(row)
   }
   catch (error) {
@@ -1272,69 +1415,24 @@ function hasRuntimePermission(permissionCode = '') {
 }
 
 function matchDisplayCondition(expression = '', row = {}) {
-  if (expression && typeof expression === 'object' && !Array.isArray(expression)) {
-    const rules = Array.isArray(expression.rules) ? expression.rules : []
-    const rule = rules[0]
-    if (!rule?.field)
-      return true
-    const actual = resolveConditionValue(row, rule.field)
-    const operator = String(rule.operator || 'EQ').toUpperCase()
-    if (operator === 'NOT_EMPTY')
-      return actual !== undefined && actual !== null && String(actual).trim() !== ''
-    if (operator === 'IN') {
-      const expectedValues = String(rule.value ?? '').split(',').map(item => item.trim()).filter(Boolean)
-      return expectedValues.some(item => valuesEqual(actual, item))
-    }
-    const matched = valuesEqual(actual, rule.value)
-    return operator === 'NE' ? !matched : matched
-  }
-  const text = String(expression || '').trim()
-  if (!text || text === '[object Object]')
-    return true
-  const lowerText = text.toLowerCase()
-  const inIndex = lowerText.indexOf(' in ')
-  if (inIndex > 0) {
-    const actual = resolveConditionValue(row, text.slice(0, inIndex).trim())
-    const expectedValues = text.slice(inIndex + 4).split(',').map(item => item.trim()).filter(Boolean)
-    return expectedValues.some(item => valuesEqual(actual, item))
-  }
-  const operator = text.includes('!=') ? '!=' : text.includes('==') ? '==' : text.includes('=') ? '=' : ''
-  if (operator) {
-    const [fieldName, ...expectedParts] = text.split(operator)
-    const actual = resolveConditionValue(row, fieldName.trim())
-    const expected = stripConditionQuote(expectedParts.join(operator))
-    return operator === '!=' ? !valuesEqual(actual, expected) : valuesEqual(actual, expected)
-  }
-  return true
-}
-
-function valuesEqual(actual, expected) {
-  const left = actual === undefined || actual === null ? '' : String(actual).trim()
-  const right = expected === undefined || expected === null ? '' : String(expected).trim()
-  if (left === right)
-    return true
-  const leftNumber = Number(left)
-  const rightNumber = Number(right)
-  return left !== '' && right !== '' && Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber === rightNumber
+  return matchesRuntimeDisplayCondition(expression, row)
 }
 
 function resolveConditionValue(row = {}, path = '') {
   return String(path || '').split('.').filter(Boolean).reduce((value, key) => value?.[key], row)
 }
 
-function stripConditionQuote(value = '') {
-  return String(value || '').trim().replace(/^['"]|['"]$/g, '')
-}
-
 /**
  * 处理操作列按钮点击（内置 key 映射）
  */
-function handleActionClick(actionOrKey, row) {
+async function handleActionClick(actionOrKey, row) {
   const action = typeof actionOrKey === 'string' ? { key: actionOrKey, label: actionOrKey } : actionOrKey || {}
   if (row?._dataScopeWritable === false && ['edit', 'delete', 'addChild'].includes(action.key)) {
     window.$message.warning('该节点仅用于导航展示，不能执行数据操作')
     return
   }
+  if (!(await runBeforeRowAction(action, row)))
+    return
   switch (action.key) {
     case 'addChild':
       handleAddChild(row)
@@ -1349,12 +1447,14 @@ function handleActionClick(actionOrKey, row) {
       handleDelete(row)
       break
     default:
-      handleConfiguredAction(action, row)
+      handleConfiguredAction(action, row, { skipExtensionHook: true })
       break
   }
 }
 
-async function handleConfiguredAction(action, row) {
+async function handleConfiguredAction(action, row, options = {}) {
+  if (!options.skipExtensionHook && !(await runBeforeRowAction(action, row)))
+    return
   const actionType = action.actionType || 'route'
   const normalizedActionType = String(actionType).toUpperCase()
   if (actionType === 'START_FLOW' || action.key === 'START_FLOW') {
@@ -1395,6 +1495,42 @@ async function handleConfiguredAction(action, row) {
   if (actionType === 'external' && action.routePath) {
     window.open(buildActionTarget(action, row), action.openTarget || '_blank')
     handleConfiguredActionSuccess(action)
+  }
+}
+
+async function runBeforeRowAction(action, row) {
+  if (typeof props.beforeRowAction !== 'function')
+    return true
+  try {
+    return (await props.beforeRowAction({ action, row })) !== false
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '行操作增强执行失败')
+    return false
+  }
+}
+
+let formChangeSequence = 0
+async function handleFormValueUpdate(value = {}) {
+  if (typeof props.formChange !== 'function' || modalStatus.value === 'detail')
+    return
+  const sequence = ++formChangeSequence
+  try {
+    const result = await props.formChange({
+      data: { ...(value || {}) },
+      record: { ...(value || {}) },
+      modalStatus: modalStatus.value,
+    })
+    if (sequence !== formChangeSequence || result === false)
+      return
+    const next = result?.record || result?.data || result
+    if (next && typeof next === 'object' && !Array.isArray(next)
+      && JSON.stringify(next) !== JSON.stringify(formData.value)) {
+      formData.value = { ...next }
+    }
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '字段联动增强执行失败')
   }
 }
 
@@ -1528,6 +1664,7 @@ async function startProcessAction(action, row) {
       objectCode: objectCode || undefined,
     })
     window.$message.success('业务流程已启动')
+    await refreshCurrentDetailRuntime(row)
     await loadList()
   }
   catch (error) {
@@ -1567,6 +1704,7 @@ async function startFlowAction(action, row) {
     if (row)
       row._documentRuntime = res?.data || row?._documentRuntime || null
     window.$message.success('流程已发起')
+    await refreshCurrentDetailRuntime(row)
     await loadList()
   }
   catch (error) {
@@ -1575,6 +1713,20 @@ async function startFlowAction(action, row) {
   finally {
     flowStartPageLoading.value = false
     setActionLoading(loadingKey, false)
+  }
+}
+
+async function refreshCurrentDetailRuntime(row = {}) {
+  if (!(['detail', 'edit'].includes(modalStatus.value)) || !row)
+    return
+  const target = { ...row, ...formData.value }
+  await loadDetailRuntime(target)
+  if (detailRuntime.value) {
+    formData.value = {
+      ...formData.value,
+      _documentRuntime: detailRuntime.value,
+      _runtimeActions: detailRuntime.value.runtimeActions || [],
+    }
   }
 }
 
@@ -2671,13 +2823,12 @@ const detailFlowDiagramVisible = computed(() => {
 })
 
 const showDetailFlowTabs = computed(() => {
-  if (!isDetailMode.value)
-    return false
-  if (!detailRuntime.value || detailRuntime.value.documentEnabled !== true)
-    return false
-  if (!detailRuntime.value.processInstanceId && detailRuntime.value.nextAction === 'CONFIG_FLOW')
-    return false
-  return detailFlowTimelineVisible.value || detailFlowDiagramVisible.value
+  return shouldShowDetailFlowHistory({
+    isDetailMode: isDetailMode.value,
+    runtime: detailRuntime.value,
+    timelineVisible: detailFlowTimelineVisible.value,
+    diagramVisible: detailFlowDiagramVisible.value,
+  })
 })
 
 const visibleChildrenConfig = computed(() => {
@@ -3695,6 +3846,9 @@ async function callHook(hookName, params, success) {
       }
       catch (error) {
         console.error(`Hook ${hookName} error:`, error)
+        // 提交前 BLOCK 增强必须真正阻断保存，不能在异步失败后回退到原始表单继续提交。
+        if (hookName === 'beforeSubmit')
+          throw error
         return success ? success(params) : params
       }
     }
@@ -3973,6 +4127,10 @@ async function loadList() {
     // 调用 beforeRenderList 钩子
     list = await callHook('beforeRenderList', list, data => data)
 
+    // 列表动作需要按记录读取流程运行态。否则“发起主流程”只会依赖静态
+    // 配置，流程启动后仍会留在操作列里，也无法正确展示流程状态。
+    list = await enrichDocumentRuntimeRows(list)
+
     // 更新数据
     dataSource.value = list
     pagination.value.itemCount = total
@@ -3986,6 +4144,38 @@ async function loadList() {
   }
   finally {
     tableLoading.value = false
+  }
+}
+
+async function enrichDocumentRuntimeRows(list = []) {
+  const objectCode = String(props.businessObjectCode || '').trim()
+  const rows = Array.isArray(list) ? list : []
+  if (!objectCode || !rows.length)
+    return rows
+  const recordIds = rows.map(row => resolveRowKeyValue(row)).filter(isUsableKeyValue)
+  if (!recordIds.length)
+    return rows
+  try {
+    const response = await businessDocumentRuntimeBatch(objectCode, recordIds)
+    const payload = response?.data ?? response ?? {}
+    const runtimeMap = payload && typeof payload === 'object' ? payload : {}
+    return rows.map((row) => {
+      const key = String(resolveRowKeyValue(row))
+      const runtime = runtimeMap[key] || runtimeMap[resolveRowKeyValue(row)]
+      if (!runtime)
+        return row
+      return {
+        ...row,
+        _documentRuntime: runtime,
+        _runtimeActions: Array.isArray(runtime.runtimeActions) ? runtime.runtimeActions : [],
+        _runtimeObjectCode: objectCode,
+      }
+    })
+  }
+  catch (error) {
+    // 流程运行态不是列表数据本身，接口异常不能阻断普通 CRUD 列表。
+    console.warn('[AiCrudPage] 加载列表流程运行态失败:', error?.message || error)
+    return rows
   }
 }
 
@@ -4620,6 +4810,10 @@ async function handleEdit(row) {
     const data = await callHook('beforeRenderDetail', renderRow, data => data)
     applyDetailData(data)
   }
+
+  // 编辑表单同样需要单据流程运行态，保证发起按钮在流程启动后立即隐藏，
+  // 且表单页与列表页使用同一条流程状态判断链路。
+  await loadDetailRuntime(renderRow)
 
   offlineBaseRecordVersion.value = readOfflineRecordVersion(renderRow)
   await restoreOfflineDraft(resolveRowKeyValue(row))
@@ -5509,6 +5703,21 @@ defineExpose({
    * 提交当前弹窗表单
    */
   submitForm: handleModalConfirm,
+
+  /** 按动作编码触发当前 CRUD 中已发布的受控动作。 */
+  triggerAction: (actionCode, payload = {}) => {
+    const code = String(actionCode || '')
+    const action = [
+      ...(Array.isArray(props.runtimeActions) ? props.runtimeActions : []),
+      ...(Array.isArray(props.toolbarActions) ? props.toolbarActions : []),
+    ].find(item => String(item?.actionCode || item?.key || '') === code)
+    if (!action)
+      throw new Error(`页面动作不存在或未发布: ${code}`)
+    const row = payload?.row && typeof payload.row === 'object'
+      ? payload.row
+      : payload?.record && typeof payload.record === 'object' ? payload.record : formData.value
+    return handleConfiguredAction(action, row || {}, { skipExtensionHook: true })
+  },
 
   /**
    * 关闭弹窗

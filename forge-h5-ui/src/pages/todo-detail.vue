@@ -46,73 +46,23 @@
                 {{ formSaving ? '暂存中' : '暂存修改' }}
               </button>
             </view>
-            <view v-if="displayFields.length" class="field-list">
-              <view v-for="field in displayFields" :key="field.key" class="form-row">
-                <text class="form-label">{{ field.label }}<text v-if="field.required" class="required-mark"> *</text></text>
-                <textarea
-                  v-if="field.multiline && !field.readonly"
-                  v-model="fieldValues[field.key]"
-                  class="form-textarea"
-                  :placeholder="`请输入${field.label}`"
-                />
-                <AiRadioGroup
-                  v-else-if="field.radio && field.options.length && !field.readonly"
-                  v-model="fieldValues[field.key]"
-                  :options="field.options"
-                  class="form-radio-group"
-                />
-                <AiSelect
-                  v-else-if="field.select && field.options.length && !field.readonly"
-                  v-model="fieldValues[field.key]"
-                  :options="field.options"
-                  :title="field.label"
-                  :placeholder="`请选择${field.label}`"
-                  class="form-select"
-                />
-                <picker
-                  v-else-if="(field.date || field.datetime) && !field.readonly"
-                  :mode="field.datetime ? 'datetime' : 'date'"
-                  :value="pickerDateValue(fieldValues[field.key])"
-                  @change="setDateValue(field.key, $event)"
-                >
-                  <view class="form-date-picker" :class="{ 'is-placeholder': !fieldValues[field.key] }">
-                    <text>{{ fieldValues[field.key] || `请选择${field.label}` }}</text>
-                    <AiIcon icon="/static/icons/ai-icon/calendar.svg" color="#94a3b8" size="sm" />
-                  </view>
-                </picker>
-                <AiFileUpload
-                  v-else-if="field.file && !field.readonly"
-                  v-model="fieldValues[field.key]"
-                  :business-type="`flow_${field.key}`"
-                />
-                <view v-else-if="field.file" class="form-file-value">
-                  <AiIcon icon="/static/icons/ai-icon/file-text.svg" color="#64748b" size="sm" />
-                  <text>{{ displayValue(fieldValues[field.key]) }}</text>
-                </view>
-                <input
-                  v-else-if="!field.readonly"
-                  v-model="fieldValues[field.key]"
-                  class="form-input"
-                  :type="field.inputType"
-                  :placeholder="`请输入${field.label}`"
-                />
-                <text v-else class="form-readonly">{{ displayValue(fieldValues[field.key]) }}</text>
-              </view>
-            </view>
+            <PageSectionRenderer
+              v-if="hasLowcodeForm"
+              :sections="pageSections"
+              :main-fields="mainFields"
+              :main-data="mainData"
+              :children="allChildren"
+              :child-data="childData"
+              :mode="formMode"
+              :dict-options="dictOptions"
+              :runtime-context="runtimeContext"
+              :flow-interaction="flowInteraction"
+              :current-flow-node-key="currentFlowNodeKey"
+              @set-main-form-ref="setMainFormRef"
+              @set-child-form-ref="setChildFormRef"
+            />
             <view v-else-if="formSchemaUnavailable" class="form-schema-notice">
               <text>该流程未返回可展示的业务字段配置，已隐藏内部字段和技术标识。</text>
-            </view>
-            <view v-if="businessChildren.length" class="business-children">
-              <view v-for="child in businessChildren" :key="child.key" class="business-child-card">
-                <view class="business-child-head">
-                  <text>{{ child.label }}</text><text>{{ child.rows.length }} 条</text>
-                </view>
-                <view v-for="(row, rowIndex) in child.rows" :key="`${child.key}-${rowIndex}`" class="business-child-row">
-                  <view v-for="field in child.fields" :key="field.key" class="business-child-field">
-                    <text>{{ field.label }}</text><text>{{ displayValue(row[field.key]) }}</text>
-                  </view>
-                </view>
-              </view>
             </view>
 
             <view v-if="!readonlyMode" class="comment-row">
@@ -232,21 +182,30 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AiButton from '@/components/AiButton.vue'
-import AiFileUpload from '@/components/AiFileUpload.vue'
 import AiIcon from '@/components/AiIcon.vue'
 import AiListSkeleton from '@/components/AiListSkeleton.vue'
 import AiPopupSheet from '@/components/AiPopupSheet.vue'
-import AiRadioGroup from '@/components/AiRadioGroup.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
-import AiSelect from '@/components/AiSelect.vue'
 import AiSignaturePad from '@/components/AiSignaturePad.vue'
 import AiTab from '@/components/AiTab.vue'
 import AiTabs from '@/components/AiTabs.vue'
+import PageSectionRenderer from '@/components/lowcode/PageSectionRenderer.vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
 import { ensureLogin } from '@/utils/auth-guard'
 import { showConfirmDialog } from '@/utils/dialog'
 import { toast } from '@/utils/notify'
+import { normalizeDictOptions } from '@/utils/lowcode-runtime'
+import {
+  adaptBusinessTaskFields,
+  adaptChildrenConfig,
+  buildDefaultPageSections,
+  extractPageSections,
+  extractMainData,
+  extractChildData,
+  collectDictTypes,
+  buildFlowInteraction,
+} from '@/utils/business-task-form-adapter'
 
 const authStore = useAuthStore()
 const taskId = ref('')
@@ -266,7 +225,11 @@ const pageMode = ref('todo')
 const comment = ref('')
 const signature = ref('')
 const approvalSignatureRef = ref(null)
-const fieldValues = reactive({})
+const mainData = reactive({})
+const childData = reactive({})
+const dictOptions = reactive({})
+const mainSectionFormRefs = new Map()
+const childFormRefs = new Map()
 const actionLoading = ref(false)
 const pendingAction = ref('')
 const claimLoading = ref(false)
@@ -294,8 +257,6 @@ const canDelegate = computed(() => taskPolicySource.value?.allowDelegate !== fal
 const canTerminate = computed(() => taskPolicySource.value?.allowTerminate === true)
 const readonlyMode = computed(() => pageMode.value === 'readonly')
 const processNodes = computed(() => Array.isArray(diagramInfo.value?.nodes) ? diagramInfo.value.nodes : [])
-const dynamicFields = computed(() => normalizeFields(resolveTaskFormFields(formInfo.value)))
-const businessRecordData = computed(() => normalizeBusinessRecordData(businessContext.value?.recordData))
 const businessSchemaFallback = computed(() => {
   const context = businessContext.value || {}
   if (Array.isArray(context.fields) && context.fields.length) return []
@@ -305,23 +266,44 @@ const businessProviderUnavailable = computed(() => {
   const warnings = Array.isArray(businessContext.value?.warnings) ? businessContext.value.warnings : []
   return warnings.some(item => String(item).includes('Provider未注册'))
 })
-const businessFields = computed(() => normalizeFields(
-  Array.isArray(businessContext.value?.fields) && businessContext.value.fields.length
-    ? businessContext.value.fields
-    : businessSchemaFallback.value,
-  { forceReadonly: businessSchemaFallback.value.length > 0 || businessProviderUnavailable.value },
-))
-const businessFormHasWritableFields = computed(() => businessFields.value.some(field => !field.readonly))
-const renderFields = computed(() => businessFields.value.length ? businessFields.value : dynamicFields.value)
-const fallbackReadonlyFields = computed(() => [])
-const displayFields = computed(() => renderFields.value.length ? renderFields.value : fallbackReadonlyFields.value)
-const formSchemaUnavailable = computed(() => !displayFields.value.length && Boolean(Object.keys(businessRecordData.value || formInfo.value?.variables || {}).length))
-const businessChildren = computed(() => normalizeBusinessChildren(businessContext.value))
-const unsupportedWritableField = computed(() => displayFields.value.find(field => field.unsupported && !field.readonly))
+const mainFields = computed(() => {
+  const context = businessContext.value
+  if (Array.isArray(context?.fields) && context.fields.length)
+    return adaptBusinessTaskFields(context.fields)
+  if (businessSchemaFallback.value.length)
+    return adaptBusinessTaskFields(businessSchemaFallback.value)
+  return adaptBusinessTaskFields(resolveTaskFormFields(formInfo.value))
+})
+const pageSections = computed(() =>
+  extractPageSections(businessContext.value) || buildDefaultPageSections(mainFields.value),
+)
+const allChildren = computed(() => adaptChildrenConfig(businessContext.value?.childrenConfig || []))
+const flowInteraction = computed(() => buildFlowInteraction(businessContext.value))
+const currentFlowNodeKey = computed(() => String(businessContext.value?.taskDefKey || ''))
+const runtimeContext = computed(() => ({
+  routeQuery: { taskId: taskId.value },
+  user: authStore.userInfo || {},
+  currentUser: authStore.userInfo || {},
+}))
+const hasLowcodeForm = computed(() => mainFields.value.length > 0)
+const formMode = computed(() => {
+  if (readonlyMode.value || businessProviderUnavailable.value || businessSchemaFallback.value.length > 0)
+    return 'detail'
+  return mainFields.value.some(field => !field.readonly) ? 'edit' : 'detail'
+})
+const businessFormHasWritableFields = computed(() =>
+  mainFields.value.some(field => !field.readonly) && formMode.value === 'edit',
+)
+const formSchemaUnavailable = computed(() =>
+  !hasLowcodeForm.value && Boolean(
+    Object.keys(extractMainData(businessContext.value?.recordData) || formInfo.value?.variables || {}).length,
+  ),
+)
 const blockedReason = computed(() => {
-  if (formInfo.value?.formType === 'external' && formInfo.value?.formUrl && !renderFields.value.length) return '此节点未提供可移动端渲染的字段描述，不能跳过 PC 专属表单直接审批。'
-  if (formInfo.value?.formType === 'dynamic' && formInfo.value?.formJson && !dynamicFields.value.length) return '此动态表单没有可识别的字段描述，不能跳过填写直接审批。'
-  if (unsupportedWritableField.value) return `“${unsupportedWritableField.value.label}”为移动端尚未支持的可编辑字段，不能跳过填写直接审批。`
+  if (formInfo.value?.formType === 'external' && formInfo.value?.formUrl && !hasLowcodeForm.value)
+    return '此节点未提供可移动端渲染的字段描述，不能跳过 PC 专属表单直接审批。'
+  if (formInfo.value?.formType === 'dynamic' && formInfo.value?.formJson && !hasLowcodeForm.value)
+    return '此动态表单没有可识别的字段描述，不能跳过填写直接审批。'
   return ''
 })
 
@@ -365,7 +347,7 @@ async function refresh() {
         ? await api.getFlowProcessForm(compact({ taskId: currentTaskId, processInstanceId: task.value.processInstanceId, businessKey: task.value.businessKey, processDefKey: task.value.processDefKey || task.value.processDefinitionKey, taskDefKey: task.value.taskDefKey || task.value.taskDefinitionKey }))
         : await api.getFlowTaskForm(currentTaskId)
       formInfo.value = formResult?.data || null
-      seedFieldValues(formInfo.value?.variables)
+      seedMainData(formInfo.value?.variables)
     }
     if (historyResult.status === 'fulfilled') history.value = Array.isArray(historyResult.value?.data) ? historyResult.value.data : []
     if (diagramResult.status === 'fulfilled') diagramInfo.value = diagramResult.value?.data || null
@@ -388,7 +370,9 @@ async function loadReadonlyBusinessContext(overrides = {}) {
   try {
     const res = await api.getBusinessTaskReadonlyContext(query)
     businessContext.value = res?.data || null
-    seedFieldValues(businessRecordData.value)
+    seedMainData(extractMainData(businessContext.value?.recordData))
+    seedChildData(extractChildData(businessContext.value?.recordData))
+    await loadDictOptions()
     return businessContext.value
   }
   catch (error) {
@@ -403,7 +387,9 @@ async function loadBusinessContext(overrides = {}) {
   try {
     const res = await api.getBusinessTaskFormContext(query)
     businessContext.value = res?.data || null
-    seedFieldValues(businessRecordData.value)
+    seedMainData(extractMainData(businessContext.value?.recordData))
+    seedChildData(extractChildData(businessContext.value?.recordData))
+    await loadDictOptions()
     return businessContext.value
   }
   catch (error) {
@@ -433,11 +419,39 @@ function isConfiguredBusinessTaskForm(context) {
   return context?.configured === true && ['business-object', 'business-code'].includes(context?.formType)
 }
 
-function seedFieldValues(source = {}) {
+function seedMainData(source = {}) {
   if (!source || typeof source !== 'object') return
   Object.entries(source).forEach(([key, value]) => {
-    if (fieldValues[key] === undefined) fieldValues[key] = value == null ? '' : String(value)
+    if (mainData[key] === undefined) mainData[key] = value == null ? '' : value
   })
+}
+
+function seedChildData(source = {}) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return
+  Object.entries(source).forEach(([key, value]) => {
+    if (Array.isArray(value)) childData[key] = value
+  })
+}
+
+async function loadDictOptions() {
+  const types = collectDictTypes(mainFields.value, allChildren.value)
+  await Promise.all([...types].map(async type => {
+    try { dictOptions[type] = normalizeDictOptions((await api.getDictOptions(type))?.data) }
+    catch { dictOptions[type] = [] }
+  }))
+}
+
+function setMainFormRef({ sectionId, instance }) {
+  const key = String(sectionId || 'main')
+  if (instance) mainSectionFormRefs.set(key, instance)
+  else mainSectionFormRefs.delete(key)
+}
+
+function setChildFormRef({ child, row, rowIndex, instance }) {
+  if (!child) return
+  const key = `${child.modelCode}:${row?.id || rowIndex || 0}`
+  if (instance) childFormRefs.set(key, instance)
+  else childFormRefs.delete(key)
 }
 
 async function claimTask() {
@@ -588,7 +602,7 @@ function buildActionPayload(action, actionComment = comment.value.trim(), action
     comment: actionComment.trim(),
     signature: actionSignature || undefined,
     targetUserId: action === 'delegate' ? String(delegateUser.value?.id || '') : undefined,
-    variables: { ...(info.variables || {}), ...pickFieldValues(dynamicFields.value) },
+    variables: { ...(info.variables || {}), ...mainData },
   })
   return base
 }
@@ -596,9 +610,9 @@ function buildActionPayload(action, actionComment = comment.value.trim(), action
 async function saveBusinessFieldsIfNeeded(action) {
   if (!['approve', 'reject'].includes(action) || !isConfiguredBusinessTaskForm(businessContext.value) || !businessFormHasWritableFields.value) return null
   const payload = buildActionPayload(action)
-  const res = await api.saveBusinessTaskFormContext({ ...payload, data: pickFieldValues(businessFields.value) })
+  const res = await api.saveBusinessTaskFormContext({ ...payload, data: { ...mainData } })
   businessContext.value = res?.data || businessContext.value
-  seedFieldValues(businessRecordData.value)
+  seedMainData(extractMainData(businessContext.value?.recordData))
   return businessContext.value
 }
 
@@ -607,9 +621,9 @@ async function saveBusinessFields() {
   formSaving.value = true
   try {
     const payload = buildActionPayload('approve')
-    const res = await api.saveBusinessTaskFormContext({ ...payload, data: pickFieldValues(businessFields.value) })
+    const res = await api.saveBusinessTaskFormContext({ ...payload, data: { ...mainData } })
     businessContext.value = res?.data || businessContext.value
-    seedFieldValues(businessRecordData.value)
+    seedMainData(extractMainData(businessContext.value?.recordData))
     toast('修改已暂存', { type: 'success' })
   }
   catch (error) {
@@ -622,96 +636,13 @@ async function saveBusinessFields() {
 }
 
 function validateRequiredFields() {
-  const required = renderFields.value.find(field => field.required && !String(fieldValues[field.key] || '').trim())
-  if (!required) return true
-  toast(`请填写${required.label}`, { type: 'warning' })
-  return false
-}
-
-function pickFieldValues(fields) {
-  return fields.reduce((result, field) => ({ ...result, [field.key]: fieldValues[field.key] }), {})
-}
-
-function normalizeFields(raw, { forceReadonly = false } = {}) {
-  const list = Array.isArray(raw)
-    ? raw
-    : Array.isArray(raw?.fields)
-      ? raw.fields
-      : Array.isArray(raw?.fieldCatalog)
-        ? raw.fieldCatalog
-        : Array.isArray(raw?.formRef?.fields)
-          ? raw.formRef.fields
-          : Array.isArray(raw?.form?.fields)
-            ? raw.form.fields
-            : Array.isArray(raw?.rule)
-              ? raw.rule
-              : []
-  return list.map((item, index) => {
-    const props = item?.props || {}
-    const key = item?.field || item?.key || item?.fieldCode || props.fieldCode || props.field || item?.name
-    if (!key) return null
-    const type = String(item?.type || item?.component || props.type || 'input').toLowerCase()
-    const options = normalizeFieldOptions(item?.options || props.options || item?.props?.options)
-    const readable = item?.readable !== false && item?.visible !== false && props.visible !== false
-    const file = type.includes('file') || type.includes('upload')
-    const radio = type.includes('radio')
-    const select = !radio && (type.includes('select') || type.includes('picker'))
-    const datetime = type.includes('datetime') || type.includes('date-time')
-    const date = !datetime && (type === 'date' || type.includes('date-picker'))
-    const supported = type.includes('input') || type.includes('textarea') || type.includes('number')
-      || file || radio || select || date || datetime
-    const readonly = item?.writable === false || item?.readonly === true || item?.disabled === true || props.readonly === true || props.disabled === true
-    return {
-      key,
-      label: item?.label || item?.title || props.label || key,
-      required: item?.required === true || props.required === true,
-      readonly: readonly || readonlyMode.value || forceReadonly,
-      multiline: type.includes('textarea'),
-      inputType: type.includes('number') ? 'number' : 'text',
-      options,
-      radio,
-      select,
-      date,
-      datetime,
-      file,
-      unsupported: !supported || ((radio || select) && !readonly && !options.length),
-      index,
-    }
-  }).filter(field => field && field.readable)
-}
-
-function normalizeFieldOptions(raw) {
-  const source = Array.isArray(raw) ? raw : Array.isArray(raw?.options) ? raw.options : []
-  return source.map((item) => {
-    if (typeof item === 'string' || typeof item === 'number') return { label: String(item), value: item }
-    return {
-      label: item?.label ?? item?.name ?? item?.text ?? item?.dictLabel ?? String(item?.value ?? item?.id ?? ''),
-      value: item?.value ?? item?.id ?? item?.key ?? item?.dictValue ?? '',
-    }
-  }).filter(option => option.value !== '')
-}
-
-function normalizeBusinessRecordData(recordData) {
-  if (!recordData || typeof recordData !== 'object' || Array.isArray(recordData)) return {}
-  if (recordData.main && typeof recordData.main === 'object' && !Array.isArray(recordData.main)) return recordData.main
-  const { children, ...main } = recordData
-  return main
-}
-
-function normalizeBusinessChildren(context = {}) {
-  const source = context?.recordData?.children && typeof context.recordData.children === 'object' ? context.recordData.children : {}
-  return (Array.isArray(context?.childrenConfig) ? context.childrenConfig : [])
-    .map((child) => {
-      const key = child.key || child.modelCode || child.tableName
-      const rows = key && Array.isArray(source[key]) ? source[key] : []
-      return {
-        key,
-        label: child.label || child.name || child.title || child.tableComment || '明细',
-        fields: normalizeFields(child.fields),
-        rows,
-      }
-    })
-    .filter(child => child.key && child.rows.length && child.fields.length)
+  const forms = [...mainSectionFormRefs.values(), ...childFormRefs.values()]
+  const invalid = forms.find(form => form?.validate?.() === false)
+  if (invalid) {
+    toast('请完善必填字段', { type: 'warning' })
+    return false
+  }
+  return true
 }
 
 function parseJson(value) {
@@ -733,16 +664,13 @@ function resolveTaskFormFields(info = {}) {
     info?.formRef,
     info,
   ]
-  return candidates.find(candidate => normalizeFields(candidate).length) || []
+  return candidates.find(candidate => adaptBusinessTaskFields(candidate).length) || []
 }
 
 function compact(source) {
   return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined && value !== null && value !== ''))
 }
 
-function pickerDateValue(value) { return String(value || '').replace(' ', 'T').slice(0, 16) }
-function setDateValue(key, event) { fieldValues[key] = event?.detail?.value || '' }
-function displayValue(value) { return value === undefined || value === null || value === '' ? '-' : String(value) }
 function resolveErrorMessage(error, fallback) {
   const message = error?.data?.message
     || error?.response?.data?.message

@@ -24,6 +24,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessNodeResult;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunDetailVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunVO;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEvent;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -59,19 +62,31 @@ public class BusinessProcessOrchestrator {
     private final BusinessProcessNodeRunMapper nodeRunMapper;
     private final BusinessProcessSchemaValidator schemaValidator;
     private final BusinessFlowService flowService;
+    private final BusinessProcessActionExecutor actionExecutor;
 
     public Page<BusinessProcessRunVO> page(Integer pageNum, Integer pageSize, BusinessProcessRunQueryDTO query) {
         Long tenantId = requireTenantId();
         Page<BusinessProcessRunVO> page = new Page<>(normalizePageNum(pageNum), normalizePageSize(pageSize));
-        return runMapper.selectRunPage(page, tenantId, query == null ? new BusinessProcessRunQueryDTO() : query);
+        Page<BusinessProcessRunVO> result = runMapper.selectRunPage(page, tenantId,
+                query == null ? new BusinessProcessRunQueryDTO() : query);
+        enrichNodeNames(tenantId, result.getRecords());
+        return result;
     }
 
     public BusinessProcessRunDetailVO detail(Long runId) {
         AiBusinessProcessRun run = requireRun(runId);
         BusinessProcessRunDetailVO vo = toDetail(run);
+        Map<String, String> nodeNameMap = loadNodeNameMap(run.getTenantId(), run.getProcessVersionId());
+        if (!nodeNameMap.isEmpty()) {
+            vo.setCurrentNodeName(nodeNameMap.getOrDefault(run.getCurrentNodeId(), run.getCurrentNodeId()));
+        }
         List<BusinessProcessRunDetailVO.NodeRunVO> timeline = new ArrayList<>();
         for (AiBusinessProcessNodeRun nodeRun : safeList(nodeRunMapper.selectTimeline(run.getTenantId(), run.getId()))) {
-            timeline.add(toNodeVo(nodeRun));
+            BusinessProcessRunDetailVO.NodeRunVO nodeVo = toNodeVo(nodeRun);
+            if (!nodeNameMap.isEmpty()) {
+                nodeVo.setNodeName(nodeNameMap.getOrDefault(nodeRun.getNodeId(), nodeRun.getNodeId()));
+            }
+            timeline.add(nodeVo);
         }
         vo.setTimeline(timeline);
         return vo;
@@ -163,8 +178,82 @@ public class BusinessProcessOrchestrator {
         return completedStart(requireRun(run.getId()), process.getProcessName());
     }
 
+    /**
+     * 由动态 CRUD 成功写入后的业务事件启动已发布的 START_EVENT 流程。
+     * 事件只匹配当前主对象和发布版本，运行记录使用事件幂等键，避免
+     * 控制器重试或消息重复投递重复发起流程。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void startEvent(BusinessEvent event) {
+        if (event == null || StringUtils.isAnyBlank(event.getEventType(), event.getObjectCode())) {
+            return;
+        }
+        Long tenantId = event.getTenantId() == null ? 1L : event.getTenantId();
+        List<AiBusinessProcessVersion> versions = versionMapper.selectCurrentPublishedBySubjectObjectCode(
+                tenantId, event.getObjectCode());
+        if (versions == null || versions.isEmpty()) {
+            return;
+        }
+        for (AiBusinessProcessVersion version : versions) {
+            BusinessProcessSchema schema;
+            try {
+                schema = normalizeSchema(version.getSchemaJson());
+            } catch (Exception ignored) {
+                continue;
+            }
+            BusinessProcessNode startNode = schema.getNodes() == null ? null : schema.getNodes().stream()
+                    .filter(node -> "START_EVENT".equals(upper(node.getType())))
+                    .filter(node -> event.getEventType().equalsIgnoreCase(text(node.getConfig(), "eventType")))
+                    .filter(node -> matchesEventCondition(node.getConfig(), event))
+                    .findFirst().orElse(null);
+            if (startNode == null || schema.getSubject() == null
+                    || StringUtils.isBlank(schema.getSubject().getObjectCode())) {
+                continue;
+            }
+            String recordId = StringUtils.defaultIfBlank(event.getRecordId(), "-");
+            String idempotencyKey = "EVENT:" + event.getEventType() + ":"
+                    + schema.getSubject().getObjectCode() + ":" + recordId;
+            AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
+            if (existing != null) {
+                if ("PENDING".equals(existing.getStatus())) {
+                    execute(tenantId, existing.getId());
+                }
+                continue;
+            }
+            AiBusinessProcessRun run = new AiBusinessProcessRun();
+            run.setId(IdWorker.getId());
+            run.setTenantId(tenantId);
+            run.setApplicationId(version.getApplicationId());
+            run.setProcessId(version.getProcessId());
+            run.setProcessVersionId(version.getId());
+            run.setProcessCode(version.getProcessCode());
+            run.setSubjectObjectCode(schema.getSubject().getObjectCode());
+            run.setSubjectRecordId(recordId);
+            run.setBusinessKey(schema.getSubject().getObjectCode() + ":" + recordId);
+            run.setTriggerType("EVENT");
+            run.setIdempotencyKey(idempotencyKey);
+            run.setActorType("USER");
+            run.setActorUserId(event.getOperatorId());
+            run.setStatus("PENDING");
+            run.setContextSnapshot(safeContextSnapshot(schema.getSubject().getObjectCode(), recordId));
+            run.setRetryCount(0);
+            run.setCreateBy(event.getOperatorId());
+            run.setUpdateBy(event.getOperatorId());
+            try {
+                runMapper.insert(run);
+            } catch (DuplicateKeyException duplicate) {
+                continue;
+            }
+            execute(tenantId, run.getId());
+        }
+    }
+
     public void execute(Long runId) {
-        AiBusinessProcessRun run = requireRun(runId);
+        execute(requireTenantId(), runId);
+    }
+
+    private void execute(Long tenantId, Long runId) {
+        AiBusinessProcessRun run = requireRun(tenantId, runId);
         if (!"PENDING".equals(run.getStatus()) && !"RUNNING".equals(run.getStatus())) {
             return;
         }
@@ -175,7 +264,7 @@ public class BusinessProcessOrchestrator {
             if (claimed != 1) {
                 return;
             }
-            run = requireRun(runId);
+            run = requireRun(tenantId, runId);
         }
         AiBusinessProcessVersion version = versionMapper.selectPublishedVersionById(
                 run.getTenantId(), run.getProcessVersionId());
@@ -191,7 +280,7 @@ public class BusinessProcessOrchestrator {
             if (!advanceCheckpoint(run, "RUNNING", currentNodeId, null)) {
                 return;
             }
-            run = requireRun(runId);
+            run = requireRun(tenantId, runId);
         }
         int hops = 0;
         while (hops++ < MAX_HOPS) {
@@ -215,13 +304,82 @@ public class BusinessProcessOrchestrator {
                 failRun(run, "GRAPH_DEAD_END", "节点没有可继续的出口: " + node.getId());
                 return;
             }
-            if (!advanceCheckpoint(run, "RUNNING", nextId, null)) {
+            if (!advanceCheckpoint(run, "RUNNING", nextId, run.getFlowProcessInstanceId())) {
                 return;
             }
-            run = requireRun(run.getId());
+            run = requireRun(tenantId, run.getId());
             currentNodeId = nextId;
         }
         failRun(run, "MAX_HOPS_EXCEEDED", "业务流程节点跳转超过上限");
+    }
+
+    /**
+     * 审批流程到达终态后恢复外层业务流程。状态和关联 ID 均使用 CAS 认领，
+     * 因此 Flowable 重复投递同一终态事件不会重复执行后继动作。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void resumeApprovalResult(Long tenantId, String processInstanceId, String result) {
+        if (tenantId == null || tenantId <= 0 || StringUtils.isAnyBlank(processInstanceId, result)) {
+            return;
+        }
+        AiBusinessProcessRun run = runMapper.selectWaitingByProcessInstanceId(tenantId, processInstanceId);
+        if (run == null || StringUtils.isBlank(run.getCurrentNodeId())) {
+            return;
+        }
+        AiBusinessProcessVersion version = versionMapper.selectPublishedVersionById(
+                tenantId, run.getProcessVersionId());
+        if (version == null) {
+            failRun(run, "PROCESS_VERSION_MISSING", "业务流程版本不存在");
+            return;
+        }
+        BusinessProcessSchema schema = normalizeSchema(version.getSchemaJson());
+        BusinessProcessNode approvalNode = requireNode(schema, run.getCurrentNodeId());
+        if (!"APPROVAL".equals(upper(approvalNode.getType()))) {
+            failRun(run, "WAITING_NODE_INVALID", "等待中的节点不是审批节点");
+            return;
+        }
+        String outputPort = normalizeApprovalOutputPort(result);
+        AiBusinessProcessNodeRun waitingAttempt = nodeRunMapper.selectWaitingByCorrelation(
+                tenantId, run.getId(), approvalNode.getId(), processInstanceId);
+        if (waitingAttempt == null) {
+            return;
+        }
+        String nextId = nextNodeId(schema, approvalNode.getId(), outputPort);
+        if (StringUtils.isBlank(nextId)) {
+            failRun(run, "GRAPH_DEAD_END", "审批结果没有可继续的出口: " + outputPort);
+            return;
+        }
+        int claimed = runMapper.compareAndSetStatus(
+                tenantId,
+                run.getId(),
+                "WAITING",
+                approvalNode.getId(),
+                processInstanceId,
+                "RUNNING",
+                nextId,
+                processInstanceId,
+                null,
+                null,
+                null);
+        if (claimed != 1) {
+            return;
+        }
+        String attemptStatus = "FAILED".equals(outputPort) ? "FAILED" : "SUCCESS";
+        int attemptUpdated = nodeRunMapper.completeAttempt(
+                tenantId,
+                waitingAttempt.getId(),
+                "WAITING",
+                processInstanceId,
+                attemptStatus,
+                processInstanceId,
+                "审批结果: " + outputPort,
+                "FAILED".equals(outputPort) ? "APPROVAL_FAILED" : null,
+                "FAILED".equals(outputPort) ? "审批流程执行失败" : null,
+                null);
+        if (attemptUpdated != 1) {
+            throw new BusinessException("审批节点等待状态已变化，请稍后重试");
+        }
+        execute(tenantId, run.getId());
     }
 
     public BusinessProcessRunVO retry(Long runId) {
@@ -283,6 +441,10 @@ public class BusinessProcessOrchestrator {
             if ("APPROVAL".equals(type)) {
                 return executeApproval(run, node);
             }
+            if ("ACTION".equals(type)) {
+                return BusinessProcessNodeResult.completed(
+                        "NEXT", actionExecutor.execute(run, schema, node));
+            }
             return BusinessProcessNodeResult.failed(
                     "NODE_TYPE_UNSUPPORTED",
                     "节点类型尚未接入运行时: " + node.getType());
@@ -310,20 +472,31 @@ public class BusinessProcessOrchestrator {
         variables.put("processCode", run.getProcessCode());
         variables.put("processRunId", String.valueOf(run.getId()));
         variables.put("nodeId", node.getId());
-        String formKey = formAssetKey(node.getConfig());
+        Map<String, Object> businessFormRef = formAssetRef(node.getConfig());
+        String formKey = text(businessFormRef, "formKey");
         if (StringUtils.isNotBlank(formKey)) {
+            // formKey is retained for runs created by earlier versions. The explicit
+            // businessForm* variables identify the application page selected by the
+            // outer business-process node and take precedence at task-form runtime.
             variables.put("formKey", formKey);
+            variables.put("businessFormKey", formKey);
+            variables.put("businessFormRef", businessFormRef);
         }
         String statusField = text(node.getConfig(), "statusField");
         if (StringUtils.isNotBlank(statusField)) {
-            variables.put("statusField", statusField);
+            if (!Set.of("flowStatus", "flow_status").contains(statusField)) {
+                return BusinessProcessNodeResult.failed(
+                        "APPROVAL_FLOW_STATUS_INVALID",
+                        "审批节点只能使用独立流程状态字段 flowStatus");
+            }
+            variables.put("flowStatusField", statusField);
         }
         BusinessFlowRuntimeVO runtime = flowService.startFromBusinessProcess(
                 flowModelKey,
                 run.getBusinessKey(),
                 title,
                 run.getActorUserId(),
-                SessionHelper.getUsername(),
+                resolveActorName(run),
                 run.getTenantId(),
                 variables);
         String processInstanceId = runtime == null ? null : runtime.getProcessInstanceId();
@@ -439,6 +612,44 @@ public class BusinessProcessOrchestrator {
         return start;
     }
 
+    @SuppressWarnings("unchecked")
+    private boolean matchesEventCondition(Map<String, Object> config, BusinessEvent event) {
+        Object raw = config == null ? null : config.get("condition");
+        if (!(raw instanceof Map<?, ?> condition) || condition.isEmpty()) {
+            return true;
+        }
+        Object rules = condition.get("rules");
+        if (!(rules instanceof List<?> list) || list.isEmpty()) {
+            return true;
+        }
+        boolean any = "OR".equalsIgnoreCase(String.valueOf(condition.get("operator")))
+                || "OR".equalsIgnoreCase(String.valueOf(condition.get("logic")));
+        boolean result = any ? false : true;
+        for (Object rawRule : list) {
+            if (!(rawRule instanceof Map<?, ?> rule)) {
+                continue;
+            }
+            String field = StringUtils.trimToEmpty(String.valueOf(rule.get("field")));
+            Object operatorValue = rule.containsKey("operator") ? rule.get("operator") : rule.get("op");
+            String operator = upper(String.valueOf(operatorValue));
+            Object actual = event.readRecordValue(field);
+            Object expected = rule.get("value");
+            boolean matched = switch (operator) {
+                case "EQ", "EQUALS" -> StringUtils.equals(String.valueOf(actual), String.valueOf(expected));
+                case "NE", "NEQ", "NOT_EQUALS" -> !StringUtils.equals(String.valueOf(actual), String.valueOf(expected));
+                case "IS_NULL" -> actual == null;
+                case "NOT_NULL" -> actual != null;
+                default -> true;
+            };
+            if (any) {
+                result |= matched;
+            } else {
+                result &= matched;
+            }
+        }
+        return result;
+    }
+
     private BusinessProcessNode requireStart(BusinessProcessSchema schema) {
         return schema.getNodes().stream()
                 .filter(node -> node != null && START_TYPES.contains(upper(node.getType())))
@@ -462,14 +673,44 @@ public class BusinessProcessOrchestrator {
     }
 
     private AiBusinessProcessRun requireRun(Long runId) {
+        return requireRun(requireTenantId(), runId);
+    }
+
+    private AiBusinessProcessRun requireRun(Long tenantId, Long runId) {
         if (runId == null || runId <= 0) {
             throw new BusinessException("运行记录ID不能为空");
         }
-        AiBusinessProcessRun run = runMapper.selectRunById(requireTenantId(), runId);
+        AiBusinessProcessRun run = runMapper.selectRunById(tenantId, runId);
         if (run == null) {
             throw new BusinessException("业务流程运行记录不存在");
         }
         return run;
+    }
+
+    private String normalizeApprovalOutputPort(String result) {
+        String normalized = upper(result);
+        if (normalized.contains("APPROV") || normalized.contains("COMPLETED")) {
+            return "APPROVED";
+        }
+        if (normalized.contains("REJECT")) {
+            return "REJECTED";
+        }
+        if (normalized.contains("CANCEL") || normalized.contains("WITHDRAW")) {
+            return "CANCELED";
+        }
+        return "FAILED";
+    }
+
+    private String resolveActorName(AiBusinessProcessRun run) {
+        try {
+            String username = SessionHelper.getUsername();
+            if (StringUtils.isNotBlank(username)) {
+                return username;
+            }
+        } catch (Exception ignored) {
+            // Flowable 回调线程可能没有浏览器会话，使用持久化发起人标识兜底。
+        }
+        return run.getActorUserId() == null ? "system" : String.valueOf(run.getActorUserId());
     }
 
     private BusinessProcessRunVO completedStart(AiBusinessProcessRun run, String processName) {
@@ -539,6 +780,63 @@ public class BusinessProcessOrchestrator {
         return vo;
     }
 
+    /**
+     * 按页批量解析 currentNodeName：同一版本只加载一次 schema。
+     */
+    private void enrichNodeNames(Long tenantId, List<BusinessProcessRunVO> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Map<String, Map<String, String>> cache = new HashMap<>();
+        for (BusinessProcessRunVO run : records) {
+            String versionId = run.getProcessVersionId();
+            if (versionId == null || versionId.isBlank()) {
+                continue;
+            }
+            Map<String, String> nodeNameMap = cache.computeIfAbsent(versionId,
+                    key -> loadNodeNameMap(tenantId, parseLong(key)));
+            if (!nodeNameMap.isEmpty()) {
+                run.setCurrentNodeName(nodeNameMap.getOrDefault(run.getCurrentNodeId(), run.getCurrentNodeId()));
+            }
+        }
+    }
+
+    /**
+     * 加载已发布版本的 schema，构建 nodeId → nodeName 映射。
+     * 版本不存在或 schema 解析失败时返回空 Map，前端回退到显示 nodeId。
+     */
+    private Map<String, String> loadNodeNameMap(Long tenantId, Long processVersionId) {
+        if (tenantId == null || processVersionId == null) {
+            return Collections.emptyMap();
+        }
+        AiBusinessProcessVersion version = versionMapper.selectPublishedVersionById(tenantId, processVersionId);
+        if (version == null || version.getSchemaJson() == null || version.getSchemaJson().isBlank()) {
+            return Collections.emptyMap();
+        }
+        try {
+            BusinessProcessSchema schema = schemaValidator.normalize(version.getSchemaJson());
+            Map<String, String> map = new LinkedHashMap<>();
+            List<BusinessProcessNode> nodes = schema.getNodes() != null
+                    ? schema.getNodes() : Collections.emptyList();
+            for (BusinessProcessNode node : nodes) {
+                if (node.getId() != null) {
+                    map.put(node.getId(), node.getName() != null ? node.getName() : node.getId());
+                }
+            }
+            return map;
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private Long parseLong(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private String safeContextSnapshot(String objectCode, String recordId) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("objectCode", objectCode);
@@ -547,15 +845,33 @@ public class BusinessProcessOrchestrator {
         return JSONObject.toJSONString(snapshot);
     }
 
-    private String formAssetKey(Map<String, Object> config) {
+    private Map<String, Object> formAssetRef(Map<String, Object> config) {
         if (config == null) {
-            return "";
+            return Map.of();
         }
         Object formAsset = config.get("formAsset");
-        if (formAsset instanceof Map<?, ?> map && map.get("formKey") != null) {
-            return StringUtils.trimToEmpty(String.valueOf(map.get("formKey")));
+        if (!(formAsset instanceof Map<?, ?> map)) {
+            String formKey = text(config, "formKey");
+            return StringUtils.isBlank(formKey) ? Map.of() : Map.of("formKey", formKey);
         }
-        return text(config, "formKey");
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (String key : List.of(
+                "formKey", "formName", "formMode", "providerKey", "formUrl", "viewKey",
+                "applicationId", "pageId", "pageCode", "pageName", "pageType", "sourceFormKey")) {
+            Object value = map.get(key);
+            if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
+                result.put(key, value);
+            }
+        }
+        Object nestedRef = map.get("formRef");
+        if (nestedRef instanceof Map<?, ?> nested) {
+            nested.forEach((key, value) -> {
+                if (key != null && value != null && StringUtils.isNotBlank(String.valueOf(value))) {
+                    result.putIfAbsent(String.valueOf(key), value);
+                }
+            });
+        }
+        return result;
     }
 
     private String text(Map<String, Object> config, String key) {

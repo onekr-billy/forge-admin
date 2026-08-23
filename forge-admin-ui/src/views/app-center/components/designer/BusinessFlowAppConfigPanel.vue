@@ -121,6 +121,7 @@
               :object-code="objectCode"
               :object-name="objectName"
               :application-code="applicationCode"
+              :application-id="applicationId"
               :fields="fields"
               :code-app="isCodeApp"
               :compact="compact"
@@ -182,6 +183,10 @@ const props = defineProps({
   },
   applicationCode: {
     type: String,
+    default: '',
+  },
+  applicationId: {
+    type: [String, Number],
     default: '',
   },
 })

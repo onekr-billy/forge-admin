@@ -128,7 +128,7 @@ public class LowcodeModelSchemaNormalizer {
         }
         field.setPrimaryKey(false);
         field.setSystemField(false);
-        field.setReadonly(false);
+        field.setReadonly(Boolean.TRUE.equals(field.getReadonly()));
         field.setAutoIncrement(false);
         if (field.getWidth() == null) {
             field.setWidth("datetime".equals(dataType) ? 180 : "text".equals(dataType) || "longtext".equals(dataType) ? 220 : 160);

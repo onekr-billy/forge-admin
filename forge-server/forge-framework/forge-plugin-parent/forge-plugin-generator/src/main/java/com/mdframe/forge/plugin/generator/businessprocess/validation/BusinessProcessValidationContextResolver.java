@@ -107,7 +107,7 @@ public class BusinessProcessValidationContextResolver {
             return context;
         }
         resolveFlowModels(schema, context);
-        resolveFormAssets(schema, objects, context);
+        resolveFormAssets(schema, objects, applicationId, context);
         resolveMessageTemplates(schema, context);
         resolvePublishedSubProcesses(tenantId, applicationId, context);
         return context;
@@ -264,6 +264,7 @@ public class BusinessProcessValidationContextResolver {
 
     private void resolveFormAssets(BusinessProcessSchema schema,
                                    List<BusinessApplicationObjectVO> objects,
+                                   Long applicationId,
                                    BusinessProcessValidationContext context) {
         Set<String> required = new LinkedHashSet<>(safeList(schema.getDependencies().getFormAssets()));
         if (required.isEmpty()) {
@@ -285,7 +286,7 @@ public class BusinessProcessValidationContextResolver {
                 .toList();
         for (String objectCode : objectCodes) {
             try {
-                collectFormAssetKeys(businessFlowService.getFormAssets(objectCode), available);
+                collectFormAssetKeys(businessFlowService.getFormAssets(objectCode, true, applicationId), available);
             } catch (Exception exception) {
                 log.debug("业务流程校验无法解析表单资产: objectCode={}", objectCode, exception);
             }

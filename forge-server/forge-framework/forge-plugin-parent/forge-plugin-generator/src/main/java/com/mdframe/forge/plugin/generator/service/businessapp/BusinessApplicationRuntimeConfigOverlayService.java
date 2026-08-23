@@ -29,12 +29,13 @@ import java.util.Map;
 public class BusinessApplicationRuntimeConfigOverlayService {
 
     private final BusinessAppMapper businessAppMapper;
+    private final BusinessApplicationObjectService applicationObjectService;
     private final BusinessApplicationRuntimeService runtimeService;
     private final ObjectMapper objectMapper;
     private final BusinessProcessRuntimeActionProjectionService processActionProjectionService;
 
     public AiCrudConfigRenderVO overlay(String configKey, Long appId, AiCrudConfigRenderVO renderConfig) {
-        return overlay(configKey, appId, renderConfig, false);
+        return overlay(configKey, appId, null, renderConfig, false);
     }
 
     public AiCrudConfigRenderVO overlay(
@@ -42,24 +43,41 @@ public class BusinessApplicationRuntimeConfigOverlayService {
             Long appId,
             AiCrudConfigRenderVO renderConfig,
             boolean designPreview) {
+        return overlay(configKey, appId, null, renderConfig, designPreview);
+    }
+
+    public AiCrudConfigRenderVO overlay(
+            String configKey,
+            Long appId,
+            Long requestedApplicationId,
+            AiCrudConfigRenderVO renderConfig,
+            boolean designPreview) {
         if (renderConfig == null || StringUtils.isBlank(configKey)) {
             return renderConfig;
         }
-        Long applicationId = resolveApplicationId(configKey, appId);
+        Long applicationId = resolveApplicationId(configKey, appId, requestedApplicationId);
         overlayFlowInteraction(configKey, appId, applicationId, renderConfig);
         overlayProcessActions(configKey, renderConfig, applicationId, designPreview);
         return renderConfig;
     }
 
-    private Long resolveApplicationId(String configKey, Long appId) {
-        if (appId == null || appId <= 0) {
+    private Long resolveApplicationId(String configKey, Long appId, Long requestedApplicationId) {
+        if (appId != null && appId > 0) {
+            AiBusinessApp entry = businessAppMapper.selectEntityById(resolveTenantId(), appId);
+            if (entry != null && StringUtils.equals(configKey, entry.getConfigKey())) {
+                return entry.getApplicationId();
+            }
+        }
+        if (requestedApplicationId == null || requestedApplicationId <= 0) {
             return null;
         }
-        AiBusinessApp entry = businessAppMapper.selectEntityById(resolveTenantId(), appId);
-        if (entry == null || !StringUtils.equals(configKey, entry.getConfigKey())) {
+        try {
+            return applicationObjectService.list(requestedApplicationId).stream()
+                    .anyMatch(object -> StringUtils.equals(configKey, object.getConfigKey()))
+                    ? requestedApplicationId : null;
+        } catch (BusinessException ignored) {
             return null;
         }
-        return entry.getApplicationId();
     }
 
     private void overlayFlowInteraction(
@@ -67,7 +85,7 @@ public class BusinessApplicationRuntimeConfigOverlayService {
             Long appId,
             Long applicationId,
             AiCrudConfigRenderVO renderConfig) {
-        if (appId == null || applicationId == null) {
+        if (applicationId == null) {
             return;
         }
         BusinessApplicationRuntimeVO runtime;
@@ -76,7 +94,10 @@ public class BusinessApplicationRuntimeConfigOverlayService {
         } catch (BusinessException ignored) {
             return;
         }
-        if (!containsEntry(runtime, appId)) {
+        if (runtime == null) {
+            return;
+        }
+        if (appId != null && !containsEntry(runtime, appId)) {
             return;
         }
         Map<String, Object> applicationOptions = readMap(runtime.getApplication() == null
@@ -112,11 +133,21 @@ public class BusinessApplicationRuntimeConfigOverlayService {
         Map<String, Object> options = readMap(renderConfig.getOptions());
         List<Map<String, Object>> rowActions = new ArrayList<>(readActionList(options.get("rowActions")));
         List<Map<String, Object>> toolbarActions = new ArrayList<>(readActionList(options.get("toolbarActions")));
+        List<Map<String, Object>> detailActions = new ArrayList<>(readActionList(options.get("detailActions")));
+        List<Map<String, Object>> formActions = new ArrayList<>(readActionList(options.get("formActions")));
         List<Map<String, Object>> runtimeActions = new ArrayList<>(readActionList(options.get("runtimeActions")));
         for (Map<String, Object> action : visible) {
             String position = StringUtils.defaultIfBlank(text(action.get("position")), "row");
             if ("toolbar".equals(position)) {
                 mergeAction(toolbarActions, action);
+            }
+            else if ("detail".equals(position) || "form".equals(position)) {
+                if ("form".equals(position)) {
+                    mergeAction(formActions, action);
+                }
+                else {
+                    mergeAction(detailActions, action);
+                }
             }
             else {
                 mergeAction(rowActions, action);
@@ -125,6 +156,8 @@ public class BusinessApplicationRuntimeConfigOverlayService {
         }
         options.put("rowActions", rowActions);
         options.put("toolbarActions", toolbarActions);
+        options.put("detailActions", detailActions);
+        options.put("formActions", formActions);
         options.put("runtimeActions", runtimeActions);
         renderConfig.setOptions(options);
         mergeColumnActions(renderConfig, rowActions);

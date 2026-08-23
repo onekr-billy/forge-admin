@@ -43,7 +43,7 @@ describe('application designer navigation', () => {
       pages: [{ id: 'home', title: '客户管理', type: 'page', objectRef: { objectId: '1910000000000000001', objectCode: 'ORDER' } }],
     })
 
-    expect(groups.map(group => group.key)).toEqual(['pages', 'data', 'automation', 'settings'])
+    expect(groups.map(group => group.key)).toEqual(['pages', 'data', 'automation'])
     expect(groups[0].nodes).toEqual([
       expect.objectContaining({ key: 'page-custom:home', label: '客户管理', pageId: 'home', objectCode: 'ORDER' }),
     ])
@@ -72,9 +72,9 @@ describe('application designer navigation', () => {
       key: 'data-fields:1910000000000000001',
     })
     expect(groups[1].nodes.map(node => node.kind)).toEqual(['data-fields', 'data-relations'])
+    // settings 分组已移除，旧入口回退到第一个页面节点
     expect(findApplicationDesignerResource(groups, '', 'settings')).toMatchObject({
-      key: 'settings',
-      kind: 'settings',
+      key: 'page-custom:home',
     })
   })
 

@@ -41,6 +41,15 @@ public class BusinessTaskFormContextVO {
 
     private String formName;
 
+    /** 应用页面级表单身份，便于待办端明确显示实际绑定页面。 */
+    private String applicationId;
+
+    private String pageId;
+
+    private String pageCode;
+
+    private String pageName;
+
     private String providerKey;
 
     private String formUrl;

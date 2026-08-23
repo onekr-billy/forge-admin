@@ -18,7 +18,7 @@ describe('page design tabs', () => {
     expect(source).toContain('PageDesignSettingsPanel')
     expect(source).toContain('PageDesignPublishPanel')
     expect(source).toContain('v-else-if="!editing && runtimeViewMode === \'pages\'"')
-    expect(source).toContain('crudConfigRender(configKey, designPreview, { needTip: false })')
+    expect(source).toContain('applicationId: application.value?.id')
     expect(source).toContain('let designPreview = true')
   })
 
@@ -32,5 +32,15 @@ describe('page design tabs', () => {
 
     const created = createNavigationNode(hidden, { type: 'page', title: '新页面' })
     expect(created.nodes.find(node => node.title === '新页面')).toMatchObject({ navigationVisible: true })
+  })
+
+  it('uses div roots for embedded designer modals so Naive UI can keep input focus', () => {
+    const runtimeSource = readSource('src/views/app-center/application-runtime.[applicationCode].vue')
+    const processSource = readSource('src/views/app-center/business-process.[processId].vue')
+
+    expect(runtimeSource).toContain('<div class="embedded-process-designer-shell">')
+    expect(runtimeSource).not.toContain('<section class="embedded-process-designer-shell">')
+    expect(processSource).toContain('<div class="embedded-flow-designer-shell">')
+    expect(processSource).not.toContain('<section class="embedded-flow-designer-shell">')
   })
 })

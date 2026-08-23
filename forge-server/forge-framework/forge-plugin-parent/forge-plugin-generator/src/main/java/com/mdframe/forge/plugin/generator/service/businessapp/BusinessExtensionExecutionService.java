@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 
@@ -149,9 +150,95 @@ public class BusinessExtensionExecutionService {
         return results;
     }
 
+    /** 按应用不可变发布快照指定的版本执行单个 Java 增强。 */
+    public ExtensionExecutionResult executePublishedServerExtension(
+            Map<String, Object> published, Long applicationId, Long objectId, Long entryId,
+            String hookCode, Map<String, Object> input) {
+        if (published == null || !BusinessExtensionType.SERVER_BINDING.equals(text(published.get("extensionType")))) {
+            throw new BusinessException("当前发布扩展不是 Java 服务增强");
+        }
+        Long extensionId = longValue(published.get("id"));
+        Integer versionNo = integerValue(published.get("enabledVersion"));
+        if (extensionId == null || versionNo == null || !text(published.get("hookCode")).equals(text(hookCode))) {
+            throw new BusinessException("扩展运行钩子或版本不正确");
+        }
+        assertPublishedScope(published, objectId, entryId);
+        AiBusinessExtension extension = requireExtension(extensionId);
+        if (!java.util.Objects.equals(applicationId, extension.getApplicationId())) {
+            throw new BusinessException("扩展不属于当前应用");
+        }
+        applyPublishedRuntimeMetadata(extension, published, applicationId);
+        AiBusinessExtensionVersion version = versionMapper.selectVersion(resolveTenantId(), extensionId, versionNo);
+        ExtensionExecutionResult result = executeRuntimeServerBinding(extension, version, input);
+        if (!result.isSuccess() && "BLOCK".equals(text(published.get("failurePolicy")))) {
+            throw new BusinessException("Java 增强执行失败: "
+                    + StringUtils.defaultIfBlank(result.getCode(), "HANDLER_FAILED"));
+        }
+        return result;
+    }
+
+    private void assertPublishedScope(Map<String, Object> published, Long objectId, Long entryId) {
+        String scopeType = text(published.get("scopeType"));
+        Long publishedObjectId = longValue(published.get("objectId"));
+        Long publishedEntryId = longValue(published.get("entryId"));
+        if (("OBJECT".equals(scopeType) && !java.util.Objects.equals(publishedObjectId, objectId))
+                || ("ENTRY".equals(scopeType) && !java.util.Objects.equals(publishedEntryId, entryId))) {
+            throw new BusinessException("扩展不适用于当前业务范围");
+        }
+    }
+
+    private void applyPublishedRuntimeMetadata(AiBusinessExtension extension,
+                                               Map<String, Object> published,
+                                               Long applicationId) {
+        extension.setApplicationId(applicationId);
+        extension.setObjectId(longValue(published.get("objectId")));
+        extension.setEntryId(longValue(published.get("entryId")));
+        extension.setExtensionCode(String.valueOf(published.get("extensionCode")));
+        extension.setExtensionType(BusinessExtensionType.SERVER_BINDING);
+        extension.setHookCode(text(published.get("hookCode")));
+        extension.setScopeType(text(published.get("scopeType")));
+        extension.setScopeKey(published.get("scopeKey") == null ? null : String.valueOf(published.get("scopeKey")));
+        extension.setFailurePolicy(text(published.get("failurePolicy")));
+    }
+
+    private String text(Object value) {
+        return StringUtils.defaultString(value == null ? null : String.valueOf(value))
+                .trim().toUpperCase(Locale.ROOT);
+    }
+
+    private Long longValue(Object value) {
+        try {
+            return value == null || StringUtils.isBlank(String.valueOf(value))
+                    ? null : Long.valueOf(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private Integer integerValue(Object value) {
+        try {
+            return value == null ? null : Integer.valueOf(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private ExtensionExecutionResult executeServerBinding(AiBusinessExtension extension,
                                                             AiBusinessExtensionVersion version,
                                                             Map<String, Object> input) {
+        return executeServerBinding(extension, version, input, false);
+    }
+
+    private ExtensionExecutionResult executeRuntimeServerBinding(AiBusinessExtension extension,
+                                                                   AiBusinessExtensionVersion version,
+                                                                   Map<String, Object> input) {
+        return executeServerBinding(extension, version, input, true);
+    }
+
+    private ExtensionExecutionResult executeServerBinding(AiBusinessExtension extension,
+                                                            AiBusinessExtensionVersion version,
+                                                            Map<String, Object> input,
+                                                            boolean runtimeProjection) {
         if (version == null) {
             throw new BusinessException("扩展执行版本不存在");
         }
@@ -174,7 +261,9 @@ public class BusinessExtensionExecutionService {
             context.setHandlerCode(handlerCode);
             context.setHookCode(extension.getHookCode());
             context.setInput(input == null ? Map.of() : input);
-            ExtensionExecutionResult result = serverBindingExecutor.execute(context);
+            ExtensionExecutionResult result = runtimeProjection
+                    ? serverBindingExecutor.executeRuntime(context, input)
+                    : serverBindingExecutor.execute(context);
             if (!result.isSuccess()) {
                 resultStatus = "FAILED";
                 errorCode = StringUtils.abbreviate(

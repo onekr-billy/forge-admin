@@ -1,9 +1,26 @@
 import { buildH5RuntimeUrl } from '../app-entry-targets'
 
 export const RESERVED_PORTAL_SLUGS = Object.freeze([
-  'admin', 'api', 'app-center', 'system', 'login', 'logout', 'auth', 'file',
-  'dict', 'ai', 'report', 'flow', 'h5', 'mobile', 'integration', 'preview',
-  'runtime', 'static', 'assets', 'favicon.ico',
+  'admin',
+  'api',
+  'app-center',
+  'system',
+  'login',
+  'logout',
+  'auth',
+  'file',
+  'dict',
+  'ai',
+  'report',
+  'flow',
+  'h5',
+  'mobile',
+  'integration',
+  'preview',
+  'runtime',
+  'static',
+  'assets',
+  'favicon.ico',
 ])
 
 export const DEFAULT_PORTAL_CONFIG = Object.freeze({
@@ -98,6 +115,28 @@ export function resolvePortalRuntimeConfigKey(application = {}, { pageId = '', o
   ).trim()
 }
 
+export function resolvePortalRuntimeTarget(application = {}, { pageId = '', configKey = '', objects = [] } = {}) {
+  const builder = parseJsonObject(application?.options)?.inAppBuilder || {}
+  const node = (builder.nodes || []).find(item => String(item?.id || '') === String(pageId || '')) || {}
+  const objectRef = node.objectRef || {}
+  const resolvedConfigKey = String(
+    configKey
+    || resolvePortalRuntimeConfigKey(application, { pageId, objects })
+    || '',
+  ).trim()
+  if (!resolvedConfigKey)
+    return null
+  const pageKey = String(objectRef.pageKey || 'list').trim() || 'list'
+  const pageMode = String(objectRef.pageMode || 'crud').trim() || 'crud'
+  const formKey = String(objectRef.formKey || '').trim()
+  return {
+    configKey: resolvedConfigKey,
+    pageKey,
+    pageMode,
+    formKey,
+  }
+}
+
 export function buildPortalAccessUrls({
   origin = '',
   basePath = '',
@@ -112,9 +151,15 @@ export function buildPortalAccessUrls({
   const root = `${String(origin || '').replace(/\/$/, '')}${String(basePath || '').replace(/\/$/, '')}`
   const path = `/app/${encodeURIComponent(String(slug || '').trim())}`
   const pageQuery = String(pageId || '').trim()
-  const pcUrl = pageQuery
+  const runtimeTarget = pageQuery
+    ? resolvePortalRuntimeTarget(application || {}, { pageId, configKey, objects })
+    : null
+  const pcRuntimeUrl = runtimeTarget
+    ? buildStandaloneRuntimeUrl(root, runtimeTarget, appId)
+    : ''
+  const pcUrl = pcRuntimeUrl || (pageQuery
     ? `${root}${path}?pageId=${encodeURIComponent(pageQuery)}`
-    : `${root}${path}`
+    : `${root}${path}`)
   return {
     path,
     pcUrl,
@@ -124,6 +169,20 @@ export function buildPortalAccessUrls({
       appId,
     }),
   }
+}
+
+function buildStandaloneRuntimeUrl(root, target, appId) {
+  const query = new URLSearchParams()
+  query.set('pageKey', target.pageKey)
+  if (appId)
+    query.set('appId', String(appId))
+  if (target.formKey)
+    query.set('formKey', target.formKey)
+  if (target.pageMode.toLowerCase() === 'form') {
+    query.set('runtimeOpenMode', 'CREATE_FORM')
+    query.set('mode', 'create')
+  }
+  return `${root}/ai/crud-page/${encodeURIComponent(target.configKey)}?${query.toString()}`
 }
 
 export function buildPortalWatermarkText(config, userName, now = new Date()) {

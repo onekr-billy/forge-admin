@@ -1,17 +1,5 @@
 <template>
   <section class="app-market-panel">
-    <header class="market-hero">
-      <div class="market-hero__copy">
-        <span class="market-eyebrow">FORGE APPLICATION BLUEPRINTS</span>
-        <h2>从成熟业务骨架开始</h2>
-        <p>选择对象关系与页面布局已经配好的官方模板，几分钟内得到可继续设计、发布或生成源码的应用。</p>
-      </div>
-      <div class="market-hero__stat" aria-label="官方模板数量">
-        <strong>{{ officialTemplateCount }}</strong>
-        <span>个官方模板</span>
-      </div>
-    </header>
-
     <div class="market-toolbar">
       <n-tabs v-model:value="activeGroup" type="segment" size="small">
         <n-tab name="official">
@@ -90,14 +78,12 @@ import { FlashOutline, SearchOutline } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 import {
-  APPLICATION_TEMPLATE_CATALOG,
   filterApplicationTemplates,
 } from './create/app-template-catalog'
 
 const emit = defineEmits(['createTemplate'])
 const activeGroup = ref('official')
 const keyword = ref('')
-const officialTemplateCount = APPLICATION_TEMPLATE_CATALOG.filter(template => template.source === 'official').length
 
 const visibleTemplates = computed(() => {
   if (activeGroup.value === 'private')
@@ -150,76 +136,9 @@ function templateAccent(template) {
   background-size: 32px 32px;
 }
 
-.market-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 32px;
-  align-items: end;
-  max-width: 1180px;
-  margin: 0 auto 24px;
-  padding: 30px clamp(24px, 4vw, 54px);
-  border: 1px solid var(--market-border);
-  border-radius: 10px;
-  color: #f8fafc;
-  background:
-    radial-gradient(circle at 84% 18%, rgb(45 212 191 / 24%), transparent 27%),
-    linear-gradient(125deg, #111827 0%, #172554 62%, #134e4a 135%);
-  box-shadow: 0 16px 40px rgb(15 23 42 / 14%);
-}
-
-.market-hero__copy {
-  max-width: 690px;
-}
-
-.market-eyebrow {
-  display: block;
-  margin-bottom: 12px;
-  color: #5eead4;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-}
-
-.market-hero h2 {
-  margin: 0;
-  font-family: 'STSong', 'Songti SC', serif;
-  font-size: clamp(28px, 4vw, 46px);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.08;
-}
-
-.market-hero p {
-  max-width: 640px;
-  margin: 14px 0 0;
-  color: rgb(226 232 240 / 80%);
-  font-size: 13px;
-  line-height: 1.75;
-}
-
-.market-hero__stat {
-  display: grid;
-  justify-items: end;
-  padding-left: 30px;
-  border-left: 1px solid rgb(255 255 255 / 18%);
-}
-
-.market-hero__stat strong {
-  color: #5eead4;
-  font-family: Georgia, serif;
-  font-size: 48px;
-  line-height: 1;
-}
-
-.market-hero__stat span {
-  margin-top: 6px;
-  color: rgb(226 232 240 / 70%);
-  font-size: 11px;
-}
-
 .market-toolbar {
   display: flex;
+  flex-wrap: wrap;
   max-width: 1180px;
   align-items: center;
   justify-content: space-between;
@@ -228,7 +147,13 @@ function templateAccent(template) {
 }
 
 .market-toolbar :deep(.n-tabs) {
-  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+}
+
+.market-toolbar :deep(.n-tabs-nav) {
+  min-width: max-content;
 }
 
 .market-toolbar :deep(.n-input) {
@@ -406,18 +331,14 @@ function templateAccent(template) {
     padding: 12px 10px 30px;
   }
 
-  .market-hero {
-    grid-template-columns: 1fr;
-    padding: 24px;
-  }
-
-  .market-hero__stat {
-    display: none;
-  }
-
   .market-toolbar {
     align-items: stretch;
     flex-direction: column;
+    gap: 10px;
+  }
+
+  .market-toolbar :deep(.n-tabs) {
+    width: 100%;
   }
 
   .market-toolbar :deep(.n-input) {

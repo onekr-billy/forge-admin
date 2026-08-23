@@ -33,21 +33,11 @@
             v-if="navigationStyle === 'top'"
             :nodes="navigationNodes"
             :current-page-id="currentPageId"
-            style="top"
+            navigation-style="top"
             @select="selectPage"
           />
 
           <div class="portal-header-actions">
-            <n-input class="portal-search" size="small" placeholder="搜索应用内容" disabled>
-              <template #prefix>
-                <n-icon><SearchOutline /></n-icon>
-              </template>
-            </n-input>
-            <n-button quaternary circle disabled aria-label="通知">
-              <template #icon>
-                <n-icon><NotificationsOutline /></n-icon>
-              </template>
-            </n-button>
             <n-tooltip v-if="assistantAvailable" trigger="hover">
               <template #trigger>
                 <n-button quaternary circle aria-label="打开应用 AI 助理" @click="assistantVisible = true">
@@ -58,7 +48,13 @@
               </template>
               询问当前页面
             </n-tooltip>
-            <UserAvatar />
+            <MessageNotification
+              class="portal-message-notification"
+              :message-route="systemPageRoutes.messages"
+              :todo-route="systemPageRoutes.todo"
+              :done-route="systemPageRoutes.done"
+            />
+            <UserAvatar :profile-route="profileRoute" />
           </div>
         </header>
 
@@ -67,7 +63,7 @@
             <PortalNavigation
               :nodes="navigationNodes"
               :current-page-id="currentPageId"
-              style="side"
+              navigation-style="side"
               @select="selectPage"
             />
           </div>
@@ -75,7 +71,7 @@
             <PortalNavigation
               :nodes="navigationNodes"
               :current-page-id="currentPageId"
-              :style="navigationStyle"
+              :navigation-style="navigationStyle"
               :collapsed="navigationCollapsed"
               @select="selectPage"
             />
@@ -87,6 +83,14 @@
               type="forbidden"
               :show-back="false"
             />
+            <PageManagementSystemView
+              v-else-if="currentSystemPage"
+              :key="currentPageId"
+              class="portal-system-page"
+              :view="currentSystemPage.view"
+              :title="currentSystemPage.title"
+              :navigation-routes="systemPageRoutes"
+            />
             <PortalPageRenderer
               v-else
               :key="currentPageId"
@@ -94,6 +98,10 @@
               :page="currentPage"
               :objects="runtime.objects"
               :entries="runtime.entries"
+              :extensions="runtime.extensions"
+              :application-id="String(application.id || '')"
+              :application-code="application.applicationCode"
+              :page-id="currentPageId"
             />
             <div
               v-if="watermarkText && portalConfig.watermark.scope !== 'full'"
@@ -103,6 +111,19 @@
             />
           </main>
         </div>
+
+        <n-modal v-model:show="profileVisible" preset="card" title="个人资料" class="portal-profile-modal">
+          <div class="portal-profile-content">
+            <n-avatar round :size="56" :style="{ backgroundColor: 'var(--portal-primary)', fontSize: '22px' }">
+              {{ profileInitial }}
+            </n-avatar>
+            <div>
+              <strong>{{ userStore.realName || userStore.staffInfo?.staffName || userStore.username || '用户' }}</strong>
+              <span>{{ userStore.username || '-' }}</span>
+              <small>当前应用：{{ application.applicationName || application.applicationCode }}</small>
+            </div>
+          </div>
+        </n-modal>
 
         <div
           v-if="watermarkText && portalConfig.watermark.scope === 'full'"
@@ -124,24 +145,28 @@
 </template>
 
 <script setup>
-import { AppsOutline, MenuOutline, NotificationsOutline, SearchOutline, SparklesOutline } from '@vicons/ionicons5'
+import { AppsOutline, MenuOutline, SparklesOutline } from '@vicons/ionicons5'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { businessApplicationRuntimeByCodeOrSlug } from '@/api/business-application'
 import IconRenderer from '@/components/IconRenderer.vue'
+import MessageNotification from '@/layouts/components/MessageNotification.vue'
 import UserAvatar from '@/layouts/components/UserAvatar.vue'
 import { useUserStore } from '@/store'
+import PageManagementSystemView from './components/portal/PageManagementSystemView.vue'
 import {
   buildPortalWatermarkStyle,
   buildPortalWatermarkText,
   normalizePortalConfig,
   parseJsonObject,
 } from './components/portal/portal-config'
+import { buildApplicationPortalNavigationNodes } from './components/portal/portal-navigation-runtime'
 import PortalAiAssistant from './components/portal/PortalAiAssistant.vue'
 import PortalEmptyState from './components/portal/PortalEmptyState.vue'
 import PortalNavigation from './components/portal/PortalNavigation.vue'
 import PortalPageRenderer from './components/portal/PortalPageRenderer.vue'
 import { normalizeInAppBuilder } from './in-app-builder/in-app-builder-schema'
+import { resolvePageManagementSystemPage } from './in-app-builder/page-management'
 
 const route = useRoute()
 const router = useRouter()
@@ -153,7 +178,7 @@ const loadState = ref('')
 const loadError = ref('')
 const navigationCollapsed = ref(false)
 const assistantVisible = ref(false)
-const runtime = reactive({ objects: [], entries: [], versionNo: null })
+const runtime = reactive({ objects: [], entries: [], extensions: [], versionNo: null })
 
 const isMobileDisplay = computed(() => route.meta.display === 'h5' || String(route.query.display || '') === 'h5')
 const portalConfig = computed(() => normalizePortalConfig(application.value?.portalConfig))
@@ -164,8 +189,36 @@ const navigationStyle = computed(() => {
   const value = String(portalConfig.value.navigation.style || 'side')
   return ['side', 'top', 'collapsed'].includes(value) ? value : 'side'
 })
-const navigationNodes = computed(() => builder.value?.nodes || [])
+const navigationNodes = computed(() => buildApplicationPortalNavigationNodes(
+  builder.value?.nodes || [],
+  isMobileDisplay.value ? 'h5' : 'pc',
+))
 const pageNodes = computed(() => navigationNodes.value.filter(node => node.type === 'page'))
+const profileVisible = computed({
+  get: () => String(route.query.profile || '') === '1',
+  set: (visible) => {
+    router.replace({
+      query: {
+        ...route.query,
+        profile: visible ? '1' : undefined,
+      },
+    })
+  },
+})
+const profileRoute = computed(() => ({
+  name: 'ApplicationPortal',
+  params: { applicationCodeOrSlug: route.params.applicationCodeOrSlug },
+  query: { ...route.query, profile: '1' },
+}))
+const profileInitial = computed(() => String(userStore.realName || userStore.staffInfo?.staffName || userStore.username || 'U').charAt(0).toUpperCase())
+const systemPageRoutes = computed(() => ({
+  workbench: buildSystemPageRoute('system:workbench'),
+  todo: buildSystemPageRoute('system:todo'),
+  done: buildSystemPageRoute('system:done'),
+  sent: buildSystemPageRoute('system:sent'),
+  cc: buildSystemPageRoute('system:cc'),
+  messages: buildSystemPageRoute('system:messages'),
+}))
 const currentPageId = computed(() => {
   const requested = String(route.query.pageId || '')
   if (pageNodes.value.some(node => String(node.id) === requested))
@@ -176,6 +229,7 @@ const currentPageId = computed(() => {
   return String(pageNodes.value[0]?.id || '')
 })
 const currentNode = computed(() => pageNodes.value.find(node => String(node.id) === currentPageId.value) || null)
+const currentSystemPage = computed(() => resolvePageManagementSystemPage(currentPageId.value))
 const currentPage = computed(() => currentNode.value ? builder.value?.pages?.[currentNode.value.id] || null : null)
 const assistantConfig = computed(() => parseJsonObject(application.value?.aiAssistantConfig))
 const assistantAvailable = computed(() => assistantConfig.value.enabled === true
@@ -216,6 +270,7 @@ async function loadPortal(identifier) {
     application.value = data.application || null
     runtime.objects = data.objects || []
     runtime.entries = data.entries || []
+    runtime.extensions = data.extensions || []
     runtime.versionNo = data.versionNo || application.value?.lastPublishVersion || null
     builder.value = normalizeInAppBuilder(application.value?.options, application.value, runtime.objects)
     if (!application.value)
@@ -228,6 +283,7 @@ async function loadPortal(identifier) {
     builder.value = null
     runtime.objects = []
     runtime.entries = []
+    runtime.extensions = []
     const message = resolveErrorMessage(error)
     loadState.value = /权限|无权|forbidden/i.test(message) ? 'forbidden' : /停用|未发布|不存在|不可用/.test(message) ? 'unavailable' : 'error'
     loadError.value = message
@@ -241,6 +297,19 @@ function selectPage(pageId) {
   if (!pageNodes.value.some(node => String(node.id) === String(pageId)))
     return
   router.replace({ query: { ...route.query, pageId: String(pageId) } })
+}
+
+function buildSystemPageRoute(pageId) {
+  const query = { ...route.query, pageId }
+  delete query.taskId
+  delete query.source
+  delete query.t
+  delete query.profile
+  return {
+    name: 'ApplicationPortal',
+    params: { applicationCodeOrSlug: route.params.applicationCodeOrSlug },
+    query,
+  }
 }
 
 function normalizeThemeColor(value) {
@@ -259,16 +328,20 @@ function resolveErrorMessage(error) {
 
 <style scoped>
 .application-portal {
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   background: var(--portal-surface-muted);
   color: var(--portal-text);
 }
 
 .portal-loading-host {
+  height: 100vh;
   min-height: 100vh;
 }
 
-.portal-loading-host :deep(.n-spin-content) {
+.portal-loading-host > :deep(.n-spin-content) {
+  height: 100vh;
   min-height: 100vh;
 }
 
@@ -328,13 +401,44 @@ function resolveErrorMessage(error) {
   gap: 8px;
 }
 
-.portal-search {
-  width: 210px;
+.portal-system-top-menu {
+  --top-menu-bg-color: transparent;
+  --top-menu-text-color: var(--portal-text-muted);
+  --top-menu-text-color-hover: var(--portal-text);
+  --top-menu-text-color-active: var(--portal-primary);
+}
+
+.portal-message-notification {
+  margin-right: 0;
+  color: var(--portal-text-muted);
+}
+
+.portal-profile-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: min(320px, 80vw);
+}
+
+.portal-profile-content > div {
+  display: grid;
+  gap: 3px;
+}
+
+.portal-profile-content strong {
+  font-size: 16px;
+}
+
+.portal-profile-content span,
+.portal-profile-content small {
+  color: var(--portal-text-muted);
+  font-size: 12px;
 }
 
 .portal-shell {
   display: flex;
-  min-height: calc(100vh - 56px);
+  height: calc(100vh - 56px);
+  min-height: 0;
 }
 
 .portal-mobile-navigation {
@@ -355,9 +459,19 @@ function resolveErrorMessage(error) {
 .portal-main {
   position: relative;
   min-width: 0;
+  min-height: 0;
   flex: 1;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--portal-surface-muted);
+}
+
+.portal-system-page {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
 }
 
 .portal-watermark {
@@ -378,7 +492,7 @@ function resolveErrorMessage(error) {
 }
 
 .application-portal.is-h5 .portal-header > :deep(.portal-navigation),
-.application-portal.is-h5 .portal-search {
+.application-portal.is-h5 .portal-header > :deep(.portal-system-top-menu) {
   display: none;
 }
 
@@ -407,7 +521,7 @@ function resolveErrorMessage(error) {
   }
 
   .portal-header > :deep(.portal-navigation),
-  .portal-search {
+  .portal-header > :deep(.portal-system-top-menu) {
     display: none;
   }
 
@@ -431,6 +545,15 @@ function resolveErrorMessage(error) {
 }
 
 @media print {
+  .application-portal,
+  .portal-loading-host,
+  .portal-loading-host > :deep(.n-spin-content),
+  .portal-shell {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
   .portal-header,
   .portal-sidebar,
   .portal-watermark {

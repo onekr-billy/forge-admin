@@ -15,7 +15,6 @@
         FROM sys_flow_fill_batch_item i
         WHERE i.deleted = 0
           AND i.id = #{id}
-        LIMIT 1
         FOR UPDATE
     </select>
 

@@ -7,7 +7,7 @@
  * 规则：
  *   1) taskType=assignee
  *      - 静态变量：'发起人' / '上级领导' / '部门主管' / 'HR'
- *      - custom：'指定人员：张三'（assigneeUserName 优先）/ '指定表达式：${user_1001}'
+ *      - custom：'指定人员：张三'（assigneeUserName 优先）/ '指定人员：1001'
  *      - spel：'SPEL 模板：DEPT_LEADER' / 'SPEL 表达式：${...}'
  *      - 简单变量 ${var}：'变量：${var}'
  *      - 兜底：原值
@@ -19,11 +19,13 @@
  *   5) 未配置审批人：'点击配置审批人'
  */
 
+const DOLLAR = '$'
+
 const STATIC_LABELS = {
-  '${initiator}': '发起人',
-  '${initiatorLeader}': '上级领导',
-  '${deptManager}': '部门主管',
-  '${hr}': 'HR',
+  [`${DOLLAR}{initiator}`]: '发起人',
+  [`${DOLLAR}{initiatorLeader}`]: '上级领导',
+  [`${DOLLAR}{deptManager}`]: '部门主管',
+  [`${DOLLAR}{hr}`]: 'HR',
 }
 
 export function buildApproverSummary(config) {
@@ -48,8 +50,8 @@ function buildAssigneeText(c) {
       if (c.assignee === 'custom') {
         if (c.assigneeUserName)
           return `指定人员：${c.assigneeUserName}`
-        if (c.assigneeExpr)
-          return `指定表达式：${c.assigneeExpr}`
+        if (c.assigneeUserId)
+          return `指定人员：${c.assigneeUserId}`
         return '点击配置审批人'
       }
       // spel

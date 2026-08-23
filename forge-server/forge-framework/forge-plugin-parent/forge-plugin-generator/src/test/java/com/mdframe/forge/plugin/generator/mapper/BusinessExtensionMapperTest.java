@@ -27,4 +27,19 @@ class BusinessExtensionMapperTest {
         assertFalse(xml.contains("Class.forName"));
         assertFalse(xml.contains("getBean("));
     }
+
+    @Test
+    @DisplayName("workspace extension runtime uses the enabled immutable version content")
+    void workspaceExtensionUsesEnabledVersionContent() throws Exception {
+        String xml = Files.readString(Path.of(
+                "src/main/resources/mapper/BusinessExtensionMapper.xml"), StandardCharsets.UTF_8);
+        String workspaceQuery = xml.substring(
+                xml.indexOf("<select id=\"selectWorkspaceSummaries\""),
+                xml.indexOf("</select>", xml.indexOf("<select id=\"selectWorkspaceSummaries\"")));
+
+        assertTrue(workspaceQuery.contains("v.content AS content"));
+        assertTrue(workspaceQuery.contains("v.processed_content AS processedContent"));
+        assertTrue(workspaceQuery.contains("v.version_no = e.enabled_version"));
+        assertFalse(workspaceQuery.contains("v.version_no = e.draft_version"));
+    }
 }

@@ -207,6 +207,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private IPage<FlowTask> enrichTaskPage(IPage<FlowTask> page) {
+        enrichTaskUserNames(page);
         if (flowBusinessListDisplayAdapter == null || page == null || page.getRecords() == null
                 || page.getRecords().isEmpty()) {
             return page;
@@ -223,6 +224,80 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             log.warn("补齐流程任务业务摘要失败，继续返回流程基础信息: {}", e.getMessage());
         }
         return page;
+    }
+
+    /**
+     * 任务表历史上同时保存过账号和姓名，且低代码流程曾把 username 写入 start_user_name。
+     * 列表返回前统一按稳定的用户 ID 反查真实姓名，保证待办、已办和我发起的展示一致。
+     */
+    private void enrichTaskUserNames(IPage<FlowTask> page) {
+        if (page == null || page.getRecords() == null || page.getRecords().isEmpty()) {
+            return;
+        }
+        for (FlowTask task : page.getRecords()) {
+            if (task == null) {
+                continue;
+            }
+            task.setStartUserName(resolveUserDisplayName(task.getStartUserId(), task.getStartUserName()));
+
+            String assigneeName = resolveUserDisplayName(task.getAssignee(), task.getAssigneeName());
+            if (isBlank(assigneeName) && !isBlank(task.getCandidateUsers())) {
+                assigneeName = resolveUserNames(task.getCandidateUsers());
+            }
+            task.setAssigneeName(assigneeName);
+        }
+    }
+
+    private String resolveUserNames(String userIds) {
+        return Arrays.stream(userIds.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .map(value -> resolveUserDisplayName(value, value))
+                .filter(value -> !isBlank(value))
+                .distinct()
+                .collect(Collectors.joining(", "));
+    }
+
+    private String resolveUserDisplayName(String userId, String fallback) {
+        if (!isBlank(userId) && flowOrgIntegrationService != null) {
+            try {
+                Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());
+                if (userInfo != null) {
+                    String name = firstNonBlank(
+                            userInfo.get("realName"), userInfo.get("name"), userInfo.get("nickname"));
+                    if (!isBlank(name)) {
+                        return name;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("反查任务用户姓名失败: userId={}", userId, e);
+            }
+        }
+        if (!isBlank(userId) && sysUserService != null) {
+            try {
+                SysUser user = sysUserService.getById(Long.valueOf(userId.trim()));
+                if (user != null && !isBlank(user.getRealName())) {
+                    return user.getRealName().trim();
+                }
+            } catch (NumberFormatException ignored) {
+                // 非数字用户标识由外部组织服务负责解析。
+            } catch (Exception e) {
+                log.debug("从用户表反查任务用户姓名失败: userId={}", userId, e);
+            }
+        }
+        return isBlank(fallback) ? userId : fallback.trim();
+    }
+
+    private String firstNonBlank(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value != null && !String.valueOf(value).trim().isEmpty()) {
+                return String.valueOf(value).trim();
+            }
+        }
+        return null;
     }
 
     private FlowBusinessListDisplayItem toDisplayItem(FlowTask task) {
@@ -1613,7 +1688,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             formInfo.setBusinessKey(business.getBusinessKey());
             formInfo.setTitle(business.getTitle());
             formInfo.setStartUserId(business.getApplyUserId());
-            formInfo.setStartUserName(business.getApplyUserName());
+            formInfo.setStartUserName(resolveUserDisplayName(
+                    business.getApplyUserId(), business.getApplyUserName()));
             formInfo.setStartDeptId(business.getApplyDeptId());
             formInfo.setStartDeptName(business.getApplyDeptName());
         }
@@ -1687,7 +1763,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setTitle(business != null ? business.getTitle() : sourceTask != null ? sourceTask.getTitle() : null);
         if (business != null) {
             formInfo.setStartUserId(business.getApplyUserId());
-            formInfo.setStartUserName(business.getApplyUserName());
+            formInfo.setStartUserName(resolveUserDisplayName(
+                    business.getApplyUserId(), business.getApplyUserName()));
             formInfo.setStartDeptId(business.getApplyDeptId());
             formInfo.setStartDeptName(business.getApplyDeptName());
         }
@@ -2234,7 +2311,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (business != null) {
             Map<String, Object> startNode = new HashMap<>();
             startNode.put("taskName", "发起流程");
-            startNode.put("assigneeName", business.getApplyUserName());
+            startNode.put("assigneeName", resolveUserDisplayName(
+                    business.getApplyUserId(), business.getApplyUserName()));
             startNode.put("assigneeId", business.getApplyUserId());
             startNode.put("action", "start");
             startNode.put("comment", "");
@@ -2264,15 +2342,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             node.put("taskId", task.getTaskId());
             node.put("taskName", task.getTaskName());
             // 安全处理：assignee 可能为空
-            String assigneeName = "";
-            if (task.getAssignee() != null && !task.getAssignee().trim().isEmpty()) {
-                try {
-                    SysUser sysUser = sysUserService.selectUserById(Long.parseLong(task.getAssignee()));
-                    assigneeName = sysUser != null ? sysUser.getRealName() : task.getAssignee();
-                } catch (NumberFormatException e) {
-                    assigneeName = task.getAssignee();
-                }
-            }
+            String assigneeName = resolveUserDisplayName(task.getAssignee(), task.getAssigneeName());
             node.put("assigneeName", assigneeName);
             node.put("assigneeId", task.getAssignee());
             node.put("action", statusActionMap.getOrDefault(task.getStatus(), "pending"));

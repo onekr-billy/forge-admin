@@ -51,7 +51,8 @@
     </select>
 
     <select id="selectReleaseVersions" resultMap="BaseResultMap">
-        SELECT id, tenant_id, extension_id, version_no, content_hash, del_flag,
+        SELECT id, tenant_id, extension_id, version_no, content, processed_content,
+               config_json, content_hash, validation_passed, test_passed, del_flag,
                create_by, create_time, create_dept, update_by, update_time
         FROM ai_business_extension_version
         WHERE tenant_id = #{tenantId}

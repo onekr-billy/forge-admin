@@ -1,5 +1,12 @@
 <template>
-  <section class="portal-page-renderer" :class="{ 'is-fill': fillHost }">
+  <section
+    class="portal-page-renderer"
+    :class="{ 'is-fill': fillHost }"
+    :data-forge-app="applicationCode"
+    :data-forge-page="pageId"
+  >
+    <RuntimeScopedStyles :styles="runtimeScopedStyles" />
+    <ExtensionSandboxHost ref="extensionSandboxRef" />
     <iframe
       v-if="externalUrl"
       class="portal-external-frame"
@@ -17,7 +24,10 @@
         v-for="(block, index) in blocks"
         :key="block.id || `${block.blockType}-${index}`"
         class="portal-page-block"
-        :class="{ 'is-fill': fillHost && blocks.length === 1 }"
+        :class="{
+          'is-fill': fillHost && blocks.length === 1,
+          'is-runtime-form': block.blockType === 'AiForm',
+        }"
         :style="resolveBlockShellStyle(block, index)"
       >
         <GridBlockRenderer
@@ -27,6 +37,7 @@
           :runtime-crud-loading="isRuntimeCrudLoading(block)"
           :data-source-configured="isDataSourceConfigured(block)"
           :runtime-interactive="true"
+          :runtime-extension-hooks="runtimeExtensionHooks"
           :block-fields-resolver="resolveBlockFields"
           :runtime-crud-props-resolver="resolveRuntimeCrudProps"
           :runtime-crud-loading-resolver="isRuntimeCrudLoading"
@@ -49,8 +60,16 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { crudConfigRender } from '@/api/ai'
+import { executePublishedExtensionHook } from '@/api/business-extension'
 import GridBlockRenderer from '@/components/lowcode-builder/page/GridBlockRenderer.vue'
 import { buildRuntimeCrudProps } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import ExtensionSandboxHost from '@/components/lowcode-extension/js/ExtensionSandboxHost.vue'
+import {
+  materializeRuntimeScopedCss,
+  runRuntimeExtensions,
+  selectScopedCssExtensions,
+} from '@/components/lowcode-extension/runtime/application-extension-runtime'
+import RuntimeScopedStyles from '@/components/lowcode-extension/runtime/RuntimeScopedStyles'
 import PortalEmptyState from './PortalEmptyState.vue'
 
 const props = defineProps({
@@ -58,22 +77,45 @@ const props = defineProps({
   page: { type: Object, default: null },
   objects: { type: Array, default: () => [] },
   entries: { type: Array, default: () => [] },
+  extensions: { type: Array, default: () => [] },
+  applicationId: { type: String, default: '' },
+  applicationCode: { type: String, default: '' },
+  pageId: { type: String, default: '' },
   configurable: { type: Boolean, default: false },
   designPreview: { type: Boolean, default: false },
   fillHost: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['configure-block'])
-
 const runtimeCrudPropsByKey = ref({})
 const loadingKeys = ref(new Set())
 const unavailableKeys = ref(new Set())
+const extensionSandboxRef = ref(null)
+const pageInitKeys = ref(new Set())
+const pageInitDefaultsByObject = ref({})
+
+const extensionPageContext = computed(() => ({
+  applicationId: props.applicationId,
+  applicationCode: props.applicationCode,
+  pageId: props.pageId || String(props.node?.id || ''),
+  entryId: resolveEntry(props.node?.entryRef)?.id || props.node?.entryRef?.entryId || null,
+}))
+const scopedCssExtensions = computed(() => selectScopedCssExtensions(
+  props.extensions,
+  extensionPageContext.value,
+))
+const runtimeScopedStyles = computed(() => scopedCssExtensions.value
+  .map((item, index) => ({
+    id: String(item.id || item.extensionId || item.extensionCode || index),
+    css: materializeRuntimeScopedCss(item, extensionPageContext.value),
+  }))
+  .filter(item => item.css.trim()))
 
 const blocks = computed(() => {
   const layout = props.page?.layout || {}
-  const items = Array.isArray(layout.gridLayout?.items)
+  const rawItems = Array.isArray(layout.gridLayout?.items)
     ? layout.gridLayout.items
     : Array.isArray(layout.items) ? layout.items.map(normalizeLegacyBlock) : []
+  const items = rawItems.filter(item => item?.blockType !== 'page-title')
   if (items.length)
     return items
   if (props.node?.pageType === 'object' && resolveObjectRef(props.node)) {
@@ -108,7 +150,10 @@ const externalUrl = computed(() => {
 const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => {
   const style = block.props?.style || {}
   const top = finiteNumber(style.pageFlowY, resolveDefaultBlockY(block, index))
-  const height = finiteNumber(style.pageFlowHeight, resolveDefaultBlockHeight(block))
+  const height = finiteNumber(
+    style.pageFlowHeight,
+    readLength(style.height) || resolveDefaultBlockHeight(block),
+  )
   return Math.max(bottom, top + height + 28)
 }, 620))
 
@@ -116,6 +161,8 @@ watch(() => [props.node?.id, blocks.value], () => {
   runtimeCrudPropsByKey.value = {}
   loadingKeys.value = new Set()
   unavailableKeys.value = new Set()
+  pageInitKeys.value = new Set()
+  pageInitDefaultsByObject.value = {}
   visitBlocks(blocks.value, preloadRuntimeCrudProps)
 }, { immediate: true, deep: true })
 
@@ -165,15 +212,24 @@ function preloadRuntimeCrudProps(block) {
 async function loadRuntimeCrudProps(configKey, objectRef, key) {
   try {
     let designPreview = props.designPreview
+    const runtimeEntryId = resolveRuntimeEntryId(configKey)
     let config = null
     try {
-      config = (await crudConfigRender(configKey, designPreview, { needTip: false })).data
+      config = (await crudConfigRender(configKey, designPreview, {
+        needTip: false,
+        appId: runtimeEntryId,
+        applicationId: props.applicationId,
+      })).data
     }
     catch (error) {
       if (!designPreview)
         throw error
       designPreview = false
-      config = (await crudConfigRender(configKey, false, { needTip: false })).data
+      config = (await crudConfigRender(configKey, false, {
+        needTip: false,
+        appId: runtimeEntryId,
+        applicationId: props.applicationId,
+      })).data
     }
     if (!config || typeof config !== 'object')
       throw new Error('业务对象运行配置为空')
@@ -184,6 +240,7 @@ async function loadRuntimeCrudProps(configKey, objectRef, key) {
         title: config.title || objectRef.objectName || '',
       },
     }
+    await runPageInit(blockForObjectKey(key), objectRef, key)
   }
   catch (error) {
     unavailableKeys.value = new Set([...unavailableKeys.value, key])
@@ -196,12 +253,111 @@ async function loadRuntimeCrudProps(configKey, objectRef, key) {
   }
 }
 
+function resolveRuntimeEntryId(configKey) {
+  const normalized = String(configKey || '').trim()
+  if (!normalized)
+    return null
+  const entry = props.entries.find(item => String(item?.configKey || '').trim() === normalized)
+  return entry?.id ?? entry?.entryId ?? null
+}
+
 function resolveRuntimeCrudProps(block) {
   const objectRef = resolveObjectRef(block) || resolveObjectRef(props.node || {})
   const key = resolveObjectKey(objectRef)
   if (key && !runtimeCrudPropsByKey.value[key] && !loadingKeys.value.has(key) && !unavailableKeys.value.has(key))
     preloadRuntimeCrudProps(block)
-  return key ? runtimeCrudPropsByKey.value[key] || null : null
+  const runtimeProps = key ? runtimeCrudPropsByKey.value[key] || null : null
+  if (!runtimeProps)
+    return null
+  return {
+    ...runtimeProps,
+    formDefaultValues: {
+      ...(runtimeProps.formDefaultValues || {}),
+      ...(pageInitDefaultsByObject.value[key] || {}),
+    },
+  }
+}
+
+function blockForObjectKey(key) {
+  let found = null
+  visitBlocks(blocks.value, (block) => {
+    if (!found && resolveObjectKey(resolveObjectRef(block)) === key)
+      found = block
+  })
+  return found || blocks.value[0] || {}
+}
+
+async function runPageInit(block, objectRef, key) {
+  if (!key || pageInitKeys.value.has(key))
+    return
+  pageInitKeys.value = new Set([...pageInitKeys.value, key])
+  try {
+    const result = await executeHookForBlock('PAGE_INIT', {}, block, objectRef, null)
+    pageInitDefaultsByObject.value = {
+      ...pageInitDefaultsByObject.value,
+      [key]: result.record,
+    }
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '页面初始化增强执行失败')
+  }
+}
+
+function runtimeExtensionHooks(block) {
+  const objectRef = resolveObjectRef(block) || resolveObjectRef(props.node || {}) || {}
+  return {
+    beforeSubmit: async (data, runtimeApi) => (
+      await executeHookForBlock('BEFORE_SUBMIT', data, block, objectRef, runtimeApi)
+    ).record,
+    afterSubmit: async (payload, runtimeApi) => {
+      await executeHookForBlock('AFTER_SUBMIT', payload?.data || {}, block, objectRef, runtimeApi)
+    },
+    formChange: async (payload, runtimeApi) => (
+      await executeHookForBlock('FORM_CHANGE', payload?.record || payload?.data || {}, block, objectRef, runtimeApi)
+    ).record,
+    beforeRowAction: async (payload, runtimeApi) => {
+      await executeHookForBlock('ROW_ACTION', payload?.row || {}, block, objectRef, runtimeApi, payload?.action)
+      return true
+    },
+  }
+}
+
+async function executeHookForBlock(hookCode, record, block, objectRef, runtimeApi, action = null) {
+  const context = {
+    ...extensionPageContext.value,
+    objectId: objectRef?.objectId || objectRef?.id || null,
+    entryId: resolveBlockEntryId(block),
+  }
+  return runRuntimeExtensions({
+    extensions: props.extensions,
+    hookCode,
+    context,
+    record,
+    fieldCatalog: resolveBlockFields(block),
+    sandboxExecute: (...args) => extensionSandboxRef.value?.execute?.(...args),
+    serverExecute: extension => executeServerExtension(extension, hookCode, context, record, action),
+    triggerAction: (actionCode, payload) => runtimeApi?.triggerAction?.(actionCode, payload),
+  })
+}
+
+async function executeServerExtension(extension, hookCode, context, record, action) {
+  const response = await executePublishedExtensionHook({
+    applicationId: props.applicationId,
+    objectId: context.objectId || null,
+    entryId: context.entryId || null,
+    extensionId: String(extension.id),
+    hookCode,
+    input: {
+      record,
+      ...(action ? { actionCode: action.actionCode || action.key || '' } : {}),
+    },
+  })
+  return response?.data || {}
+}
+
+function resolveBlockEntryId(block = {}) {
+  const entryRef = block.entryRef || block.props?.entryRef || props.node?.entryRef
+  return resolveEntry(entryRef)?.id || entryRef?.entryId || entryRef?.id || null
 }
 
 function isRuntimeCrudLoading(block) {
@@ -239,14 +395,17 @@ function resolveBlockShellStyle(block, index) {
   const customX = finiteNumber(style.pageFlowX, 24)
   const customY = finiteNumber(style.pageFlowY, resolveDefaultBlockY(block, index))
   const customHeight = finiteNumber(style.pageFlowHeight, readLength(style.height) || resolveDefaultBlockHeight(block))
+  const runtimeAutoHeight = block.blockType === 'AiForm'
   const position = {
     position: 'absolute',
     left: `${customX}px`,
     top: `${customY}px`,
-    height: heightMode === 'auto' ? 'auto' : `${customHeight}px`,
+    height: runtimeAutoHeight || heightMode === 'auto' ? 'auto' : `${customHeight}px`,
     textAlign: style.textAlign || block.props?.textAlign || block.props?.align || 'left',
   }
-  if (heightMode === 'full') {
+  if (runtimeAutoHeight)
+    position.minHeight = `${customHeight}px`
+  if (!runtimeAutoHeight && heightMode === 'full') {
     position.height = 'auto'
     position.bottom = '24px'
   }
@@ -343,7 +502,7 @@ function readLength(value) {
   position: relative;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .portal-page-flow.is-fill {
@@ -368,6 +527,12 @@ function readLength(value) {
 .portal-page-block :deep(.grid-block) {
   height: 100% !important;
   min-height: 0;
+}
+
+.portal-page-block.is-runtime-form :deep(.grid-block.block-AiForm),
+.portal-page-block.is-runtime-form :deep(.system-component-preview) {
+  height: auto !important;
+  overflow: visible;
 }
 
 .portal-external-frame {

@@ -6,6 +6,27 @@
     </view>
     <view class="lowcode-field__control">
       <view v-if="readonly" class="lowcode-field__readonly">{{ displayValue }}</view>
+      <view v-else-if="isRangeField" class="lowcode-field__range">
+        <input
+          class="lowcode-field__input lowcode-field__range-input"
+          :type="rangeInputType"
+          :value="rangeValue[0]"
+          :disabled="disabled"
+          :placeholder="field.props?.startPlaceholder || '开始值'"
+          @input="updateRangeValue(0, $event.detail.value)"
+          @blur="emit('blur')"
+        />
+        <text class="lowcode-field__range-separator">至</text>
+        <input
+          class="lowcode-field__input lowcode-field__range-input"
+          :type="rangeInputType"
+          :value="rangeValue[1]"
+          :disabled="disabled"
+          :placeholder="field.props?.endPlaceholder || '结束值'"
+          @input="updateRangeValue(1, $event.detail.value)"
+          @blur="emit('blur')"
+        />
+      </view>
       <view v-else-if="field.type === 'barcodeScanner'" class="lowcode-field__barcode">
         <AiField
           :model-value="modelValue"
@@ -129,10 +150,30 @@ const scanning = ref(false)
 const scanMessage = ref('')
 const isTextField = computed(() => ['input', 'textarea', 'text', 'password'].includes(String(props.field.type)))
 const isNumberField = computed(() => ['number', 'input-number', 'integer', 'money'].includes(String(props.field.type)))
+const isRangeField = computed(() => ['daterange', 'datetimerange', 'timerange', 'numberrange', 'range'].includes(String(props.field.type).toLowerCase()))
+const rangeInputType = computed(() => {
+  const type = String(props.field.type).toLowerCase()
+  if (type === 'daterange') return 'date'
+  if (type === 'datetimerange') return 'datetime-local'
+  if (type === 'timerange') return 'time'
+  return 'number'
+})
+const rangeValue = computed(() => {
+  const value = props.modelValue
+  if (Array.isArray(value)) return [value[0] ?? '', value[1] ?? '']
+  if (value === undefined || value === null || value === '') return ['', '']
+  // Legacy deployments stored the first endpoint as a scalar. Preserve it
+  // while exposing the new two-endpoint shape to the submit payload.
+  return [value, '']
+})
 const control = computed(() => props.field.__runtimeControl || { visible: true, required: props.field.required === true })
 const readonly = computed(() => props.readonly || props.disabled || props.field.readonly === true || control.value.readonly)
 const displayValue = computed(() => {
   const value = props.modelValue
+  if (isRangeField.value) {
+    const [start, end] = rangeValue.value
+    return start || end ? `${start || '-'} 至 ${end || '-'}` : '-'
+  }
   if (props.field.type === 'dictSelect' || props.field.type === 'select' || props.field.type === 'pillSelect') {
     return props.options.find(item => String(item.value) === String(value))?.label || value || '-'
   }
@@ -143,6 +184,12 @@ const pickerValue = computed(() => String(props.modelValue || '').slice(0, 10) |
 
 function updateValue(value) {
   emit('update:modelValue', value)
+}
+
+function updateRangeValue(index, value) {
+  const next = [...rangeValue.value]
+  next[index] = value
+  emit('update:modelValue', next)
 }
 
 async function scan() {
@@ -203,6 +250,9 @@ function handlePickerChange(event) {
 .lowcode-field__barcode :deep(.ai-field) { flex: 1; min-width: 0; }
 .lowcode-field__scan { flex: 0 0 auto; }
 .lowcode-field__input { width: 100%; height: 76rpx; padding: 0 20rpx; border: 1rpx solid var(--border-color); border-radius: 12rpx; color: #334155; font-size: 27rpx; background: #fff; box-sizing: border-box; }
+.lowcode-field__range { display: flex; align-items: center; gap: 10rpx; }
+.lowcode-field__range-input { min-width: 0; flex: 1; padding: 0 12rpx; }
+.lowcode-field__range-separator { flex: 0 0 auto; color: #94a3b8; font-size: 24rpx; }
 .lowcode-field__textarea { width: 100%; min-height: 150rpx; padding: 20rpx; border: 1rpx solid var(--border-color); border-radius: 12rpx; color: #334155; font-size: 27rpx; line-height: 1.5; background: #fff; box-sizing: border-box; }
 .lowcode-field__picker { min-height: 76rpx; padding: 20rpx; border: 1rpx solid var(--border-color); border-radius: 12rpx; color: #334155; background: #fff; box-sizing: border-box; }
 .lowcode-field__error { display: block; margin-top: 8rpx; color: #ef4444; font-size: 22rpx; }

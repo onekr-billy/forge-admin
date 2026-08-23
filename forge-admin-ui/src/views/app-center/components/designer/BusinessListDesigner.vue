@@ -240,7 +240,7 @@
       <main class="list-workspace">
         <ListPageGridDesigner
           ref="listGridDesignerRef"
-          :model-value="currentPageGridLayout"
+          :model-value="designerGridLayout"
           :fields="designFields"
           :model-schema="effectiveModelSchema"
           :layout-type="localSchema.layoutType"
@@ -265,7 +265,7 @@
       :style="{ width: 'calc(100vw - 32px)', maxWidth: 'calc(100vw - 32px)', minWidth: 0, height: 'calc(100vh - 32px)' }"
     >
       <ListPageGridDesigner
-        :model-value="previewGridLayout"
+        :model-value="designerPreviewGridLayout"
         :fields="designFields"
         :model-schema="effectiveModelSchema"
         :layout-type="localSchema.layoutType"
@@ -323,6 +323,10 @@ import {
   syncGridLayoutWithModel,
   syncPageSchemaWithModel,
 } from '@/components/lowcode-builder/page/page-schema'
+import {
+  appendDesignPreviewToApiConfig,
+  appendDesignPreviewToApiValue,
+} from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { createViewSchemaFromPageSchema } from './form-first/viewSchema'
 
 const props = defineProps({
@@ -465,6 +469,16 @@ const previewGridLayout = computed(() => {
     : bootstrapGridLayoutFromZones(localSchema.value.zones || [], effectiveModelSchema.value, { layoutType: localSchema.value.layoutType })
   return syncGridLayoutWithModel(source, effectiveModelSchema.value, { layoutType: localSchema.value.layoutType })
 })
+function filterDesignerGridBlocks(grid) {
+  if (!grid || !Array.isArray(grid.items))
+    return grid
+  return {
+    ...grid,
+    items: grid.items.filter(item => item.blockType !== 'page-title'),
+  }
+}
+const designerGridLayout = computed(() => filterDesignerGridBlocks(currentPageGridLayout.value))
+const designerPreviewGridLayout = computed(() => filterDesignerGridBlocks(previewGridLayout.value))
 const visibleListCustomActions = computed(() => props.defaultViewOnly ? [] : listCustomActions.value)
 const designerRuntimeCrudProps = computed(() => buildDesignerRuntimeCrudProps(localSchema.value, designFields.value, visibleListCustomActions.value))
 
@@ -674,7 +688,14 @@ function updateListTemplate(value) {
 }
 
 function handleGridLayoutUpdate(layout) {
-  const synced = syncGridLayoutWithModel(layout, effectiveModelSchema.value, { layoutType: localSchema.value.layoutType })
+  const originalGrid = currentPageGridLayout.value
+  const pageTitleBlocks = Array.isArray(originalGrid?.items)
+    ? originalGrid.items.filter(item => item.blockType === 'page-title')
+    : []
+  const mergedLayout = pageTitleBlocks.length
+    ? { ...layout, items: [...pageTitleBlocks, ...(layout.items || [])] }
+    : layout
+  const synced = syncGridLayoutWithModel(mergedLayout, effectiveModelSchema.value, { layoutType: localSchema.value.layoutType })
   const pageKey = activePageKey.value || 'list'
   const pages = updateDesignerPageGrid(localSchema.value.pages || [], pageKey, synced)
   const nextSchema = {
@@ -1069,6 +1090,7 @@ async function saveLayout() {
     emit('saved', cloneSchema(schema))
     emit('dirtyChange', false)
     message.success('列表布局已保存')
+    return schema
   }
   catch (error) {
     message.error(error?.message || '列表布局保存失败')
@@ -1101,11 +1123,12 @@ function buildDesignerRuntimeCrudProps(schema = {}, fields = [], customActions =
   const resolvedModalType = resolveDesignerModalType(resolvedFormOpenMode, formLayout, tableProps, editProps)
   return {
     lazy: true,
+    designPreview: true,
     loadDetailOnEdit: false,
     columns: buildDesignerColumns(tableZone, fieldMap),
     searchSchema: buildDesignerSearchSchema(searchZone, fieldMap),
     editSchema: editFields,
-    apiConfig: {
+    apiConfig: appendDesignPreviewToApiConfig({
       list: tableProps.listApi || apiValues.listApi,
       detail: tableProps.detailApi || apiValues.detailApi,
       create: tableProps.createApi || apiValues.createApi,
@@ -1114,8 +1137,8 @@ function buildDesignerRuntimeCrudProps(schema = {}, fields = [], customActions =
       import: tableProps.importApi || '',
       export: tableProps.exportApi || '',
       tree: tableProps.treeApi || '',
-    },
-    api: tableProps.api || apiValues.api,
+    }),
+    api: appendDesignPreviewToApiValue(tableProps.api || apiValues.api),
     rowKey: tableProps.rowKey || 'id',
     showSearch: searchZone.enabled !== false && tableProps.showSearch !== false,
     showPagination: tableProps.showPagination !== false,
@@ -1759,6 +1782,10 @@ function buildDesignerColumns(zone = {}, fieldMap = new Map()) {
 }
 
 function buildDesignerSearchSchema(zone = {}, fieldMap = new Map()) {
+  // 搜索区仅在用户显式配置了搜索字段时才生成搜索表单项，
+  // 避免新建列表页时自动把对象全部字段填充为搜索输入框。
+  if (!Array.isArray(zone.fieldRefs) || !zone.fieldRefs.length)
+    return []
   return resolveDesignerZoneRefs(zone, fieldMap).map((fieldCode) => {
     const field = fieldMap.get(fieldCode) || {}
     const setting = zone.props?.fieldSettings?.[fieldCode] || {}
@@ -2192,6 +2219,10 @@ defineExpose({
 onMounted(() => {
   window.addEventListener('keydown', handleListDesignerShortcut)
   window.addEventListener('forge-list-designer:preview-current-list', openLocalPreview)
+  // 初始规范化后的schema若与已保存草稿不一致（如旧草稿缺grid布局被重建），
+  // 标记为脏，否则用户看到的配置会因保存按钮禁用而无法落盘。
+  if (!isSameSchema(localSchema.value, props.modelValue))
+    emit('dirtyChange', true)
 })
 
 onBeforeUnmount(() => {

@@ -107,7 +107,7 @@ const rules = {
   ],
 }
 
-watch(() => props.show, (visible) => {
+watch(() => [props.show, props.defaultParentId], ([visible]) => {
   if (!visible)
     return
   Object.assign(form, createDefaultForm())
@@ -121,7 +121,9 @@ function createDefaultForm() {
     pageName: '',
     objectName: '',
     objectCode: '',
-    parentId: props.defaultParentId || null,
+    parentId: props.defaultParentId == null || props.defaultParentId === ''
+      ? null
+      : String(props.defaultParentId),
   }
 }
 

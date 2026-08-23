@@ -128,6 +128,72 @@ public class LowcodeDdlService {
     }
 
     /**
+     * 仅追加一个指定业务列，供平台托管字段在用户明确确认后安全补齐存储结构。
+     * 不创建表、不修改已有列，也不会顺带执行模型中的其它待同步差异。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void executeAdditiveColumn(LowcodeModelSchema modelSchema, String columnName) {
+        schemaValidator.validateModel(modelSchema);
+        validateIdentifier(columnName, "字段列名");
+        LowcodeRuntimeDataSourceContext context = runtimeDataSourceResolver.resolve(modelSchema);
+        RuntimeDatabaseDialect dialect = dialectFactory.resolve(context);
+        if (!context.isAllowDdl()) {
+            throw new BusinessException("运行数据源不允许在线DDL");
+        }
+        if (!Boolean.TRUE.equals(ddlRepository.tableExists(context, context.getTableName()))) {
+            throw new BusinessException("业务数据表尚未创建，请先在高级数据设置中准备数据表");
+        }
+        LowcodeFieldSchema field = businessFields(modelSchema).stream()
+                .filter(item -> columnName.equals(item.getColumnName()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("模型中不存在待同步字段列: " + columnName));
+        Map<String, LowcodeDdlRepository.ColumnMetadata> columns =
+                ddlRepository.listColumnMetadata(context, context.getTableName());
+        if (columns.containsKey(columnName)) {
+            assertAdditiveColumnCompatible(field, columns.get(columnName));
+            return;
+        }
+        DdlColumn column = buildColumn(field, false, dialect);
+        List<String> statements = new ArrayList<>();
+        statements.add(dialect.addColumnSql(context.getTableName(), column));
+        statements.addAll(dialect.afterAddColumnSql(context.getTableName(), column));
+        for (String statement : statements) {
+            assertSafeDdl(statement);
+            ddlRepository.executeDdl(context, statement);
+        }
+        invalidateStructureCheckCache();
+        dynamicCrudRepository.clearTableMetadataCache(context, context.getTableName());
+    }
+
+    private void assertAdditiveColumnCompatible(LowcodeFieldSchema field,
+                                                LowcodeDdlRepository.ColumnMetadata metadata) {
+        String expectedType = normalizeDataType(field);
+        String actualType = StringUtils.defaultString(metadata == null ? null : metadata.columnType())
+                .trim().toLowerCase(Locale.ROOT);
+        boolean typeCompatible;
+        if (Set.of("varchar", "char").contains(expectedType)) {
+            int capacity = ddlRepository.characterCapacity(metadata);
+            int requiredCapacity = normalizeLength(field, "char".equals(expectedType) ? 1 : 255, 1, 2048);
+            typeCompatible = capacity == -1 || capacity >= requiredCapacity;
+        } else if (Set.of("text", "longtext").contains(expectedType)) {
+            typeCompatible = ddlRepository.characterCapacity(metadata) != 0;
+        } else {
+            typeCompatible = actualType.startsWith(expectedType + "(") || actualType.equals(expectedType);
+        }
+        boolean required = shouldUseNotNull(field, expectedType);
+        boolean nullableCompatible = !required || "NO".equalsIgnoreCase(metadata == null ? null : metadata.isNullable());
+        Object expectedDefault = required ? field.getDefaultValue() : null;
+        boolean defaultCompatible = !required || java.util.Objects.equals(
+                String.valueOf(expectedDefault),
+                metadata == null || metadata.columnDefault() == null ? null : String.valueOf(metadata.columnDefault()));
+        boolean generated = metadata != null && StringUtils.isNotBlank(metadata.generationExpression());
+        if (!typeCompatible || !nullableCompatible || !defaultCompatible || generated) {
+            throw new BusinessException("数据库列 " + field.getColumnName()
+                    + " 与受管字段定义不兼容，请先确认字段类型、非空约束和默认值后重试");
+        }
+    }
+
+    /**
      * 判断预览结果是否包含在线发布不允许执行的非追加式 DDL。
      *
      * <p>该策略与最终执行白名单共用同一判断，避免发布检查允许、执行阶段又拒绝。</p>
@@ -160,6 +226,24 @@ public class LowcodeDdlService {
 
     public boolean hasSinglePrimaryKey(LowcodeModelSchema modelSchema) {
         LowcodeRuntimeDataSourceContext context = runtimeDataSourceResolver.resolve(modelSchema);
+        validateIdentifier(context.getTableName(), "表名");
+        return Boolean.TRUE.equals(structureCheck(context, "hasSinglePrimaryKey",
+                () -> ddlRepository.hasSinglePrimaryKey(context, context.getTableName())));
+    }
+
+    /**
+     * 复用外部已解析的运行时上下文检查表是否存在，避免重复解析与重复查询。
+     */
+    public boolean tableExists(LowcodeModelSchema modelSchema, LowcodeRuntimeDataSourceContext context) {
+        validateIdentifier(context.getTableName(), "表名");
+        return Boolean.TRUE.equals(structureCheck(context, "tableExists",
+                () -> ddlRepository.tableExists(context, context.getTableName())));
+    }
+
+    /**
+     * 复用外部已解析的运行时上下文检查是否具备单字段主键，避免重复解析与重复查询。
+     */
+    public boolean hasSinglePrimaryKey(LowcodeModelSchema modelSchema, LowcodeRuntimeDataSourceContext context) {
         validateIdentifier(context.getTableName(), "表名");
         return Boolean.TRUE.equals(structureCheck(context, "hasSinglePrimaryKey",
                 () -> ddlRepository.hasSinglePrimaryKey(context, context.getTableName())));

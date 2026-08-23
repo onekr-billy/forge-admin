@@ -1,0 +1,4 @@
+--- presale_registration_business_object_11 designPreview=false: publishStatus=PUBLISHED showImport=None showExport=None enableCustomQuery=None search=['id']
+--- presale_registration_business_object_11 designPreview=true: publishStatus=PUBLISHED showImport=True showExport=True enableCustomQuery=True search=['fieldInput', 'fieldNumber']
+--- presale_registration_business_object designPreview=false: publishStatus=PUBLISHED showImport=True showExport=True enableCustomQuery=True search=['fieldSlider', 'fieldRate', 'fieldNumber', 'fieldInput']
+--- presale_registration_business_object designPreview=true: publishStatus=PUBLISHED showImport=True showExport=True enableCustomQuery=True search=['fieldSlider', 'fieldRate', 'fieldNumber', 'fieldInput']

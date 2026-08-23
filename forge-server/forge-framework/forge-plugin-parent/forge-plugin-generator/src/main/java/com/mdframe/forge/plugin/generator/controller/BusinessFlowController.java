@@ -9,6 +9,8 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskActionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormContextQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormSaveDTO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowStatusFieldService;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFieldVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessBindingSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
@@ -44,6 +46,7 @@ import java.util.Map;
 public class BusinessFlowController {
 
     private final BusinessFlowService flowService;
+    private final BusinessFlowStatusFieldService flowStatusFieldService;
 
     @GetMapping("/binding/{objectCode}")
     @SaCheckPermission("ai:businessFlow:config")
@@ -71,8 +74,17 @@ public class BusinessFlowController {
     @SaCheckPermission("ai:businessFlow:config")
     @OperationLog(module = "业务流程", type = OperationType.QUERY, desc = "查询业务流程表单资产")
     public RespInfo<Map<String, Object>> formAssets(@PathVariable String objectCode,
-                                                    @RequestParam(defaultValue = "false") Boolean includeInternal) {
-        return RespInfo.success(flowService.getFormAssets(objectCode, Boolean.TRUE.equals(includeInternal)));
+                                                    @RequestParam(defaultValue = "false") Boolean includeInternal,
+                                                    @RequestParam(required = false) Long applicationId) {
+        return RespInfo.success(flowService.getFormAssets(
+                objectCode, Boolean.TRUE.equals(includeInternal), applicationId));
+    }
+
+    @PostMapping("/status-field/{objectId}/ensure")
+    @SaCheckPermission("ai:businessFlow:config")
+    @OperationLog(module = "业务流程", type = OperationType.UPDATE, desc = "补齐流程状态字段与数据库列")
+    public RespInfo<BusinessFieldVO> ensureStatusField(@PathVariable Long objectId) {
+        return RespInfo.success(flowStatusFieldService.ensure(objectId));
     }
 
     // 以下为待办审批人运行时接口：审批人多为企微免登普通员工，不持有设计态权限 ai:businessFlow:view，

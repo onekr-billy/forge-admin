@@ -53,6 +53,8 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     formDefaultValues: { ...(options.formDefaultValues || config.formDefaultValues || {}) },
     submitDefaultParams: { ...(options.submitDefaultParams || config.submitDefaultParams || {}) },
     toolbarActions: Array.isArray(options.toolbarActions) ? options.toolbarActions : [],
+    detailActions: Array.isArray(options.detailActions) ? options.detailActions : [],
+    formActions: Array.isArray(options.formActions) ? options.formActions : [],
     runtimeActions: Array.isArray(options.runtimeActions) ? options.runtimeActions : [],
     businessObjectCode: config.objectCode || options.businessObjectCode || '',
   }
@@ -65,11 +67,30 @@ function normalizeApiConfig(apiConfig, configKey, designPreview) {
   }))
 }
 
+/**
+ * 对单个 API 配置值追加 designPreview=1 参数（幂等）。
+ * 值格式为 `method@url` 或纯 URL，参数追加在 URL 的 query string 中。
+ */
 export function appendDesignPreviewToApiValue(value) {
   const text = String(value || '').trim()
   if (!text || text.includes('designPreview='))
     return text
-  return `${text}${text.includes('?') ? '&' : '?'}designPreview=1`
+  // 值可能带 method 前缀（如 `get@/ai/crud/key/page`），需在 URL 部分追加参数。
+  const atIndex = text.indexOf('@')
+  const method = atIndex > -1 ? text.slice(0, atIndex) : ''
+  const url = atIndex > -1 ? text.slice(atIndex + 1) : text
+  const finalUrl = `${url}${url.includes('?') ? '&' : '?'}designPreview=1`
+  return method ? `${method}@${finalUrl}` : finalUrl
+}
+
+/**
+ * 对 apiConfig 对象中的所有值追加 designPreview=1 参数（幂等）。
+ * 空值会被过滤。
+ */
+export function appendDesignPreviewToApiConfig(apiConfig = {}) {
+  return Object.fromEntries(Object.entries(apiConfig || {})
+    .map(([key, value]) => [key, appendDesignPreviewToApiValue(value)])
+    .filter(([, value]) => value))
 }
 
 export function isDesignPreviewCrudProps(runtimeCrudProps = {}) {
@@ -132,6 +153,29 @@ export function filterCrudItemsByFieldRefs(items = [], fieldRefs = []) {
       return true
     return allow.has(key)
   })
+}
+
+/**
+ * 平台后补的流程状态字段不能被应用页面块较早保存的 fieldRefs 快照吞掉。
+ * 用户在页面块中显式隐藏该字段时仍尊重隐藏配置。
+ */
+export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = [], fieldSettings = {}) {
+  const refs = Array.isArray(fieldRefs) ? [...fieldRefs] : []
+  if (!refs.length)
+    return refs
+  const seen = new Set(refs.filter(Boolean).map(String))
+  ;(Array.isArray(fieldCatalog) ? fieldCatalog : []).forEach((field) => {
+    const fieldCode = String(field?.field || field?.fieldCode || '').trim()
+    const managedBy = String(field?.advancedProps?.managedBy || '').toUpperCase()
+    const active = !['DISABLED', 'HIDDEN'].includes(String(field?.fieldStatus || '').toUpperCase())
+    if (!fieldCode || managedBy !== 'BUSINESS_FLOW' || !active || field?.listVisible === false)
+      return
+    if (fieldSettings?.[fieldCode]?.visible === false || seen.has(fieldCode))
+      return
+    seen.add(fieldCode)
+    refs.push(fieldCode)
+  })
+  return refs
 }
 
 export function resolveCrudSearchFieldCatalog(fields = [], block = {}) {

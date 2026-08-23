@@ -243,7 +243,7 @@ import {
   EllipsisVertical,
 } from '@vicons/ionicons5'
 import { NIcon, useMessage } from 'naive-ui'
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   businessSuiteSummary,
@@ -406,7 +406,28 @@ watch(() => route.query, async (query) => {
 
 onMounted(async () => {
   await Promise.all([loadSuites(), loadApplications()])
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('storage', handleApplicationPublished)
+  window.addEventListener('forge:application-published', handleApplicationPublished)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('storage', handleApplicationPublished)
+  window.removeEventListener('forge:application-published', handleApplicationPublished)
+})
+
+function handleVisibilityChange() {
+  if (!document.hidden && activeView.value === 'MY_APPS')
+    loadApplications()
+}
+
+function handleApplicationPublished(event) {
+  if (event?.type === 'storage' && event.key !== 'forge:app-center:application-published')
+    return
+  if (activeView.value === 'MY_APPS')
+    loadApplications()
+}
 
 async function loadSuites() {
   loadingSuites.value = true
@@ -571,8 +592,9 @@ function openApplicationSettings(application) {
   if (!application?.applicationCode)
     return
   const target = router.resolve({
-    name: 'BusinessApplicationSettings',
+    name: 'BusinessApplicationRuntime',
     params: { applicationCode: application.applicationCode },
+    query: { view: 'settings' },
   })
   window.open(target.href, '_blank', 'noopener,noreferrer')
 }
@@ -581,8 +603,9 @@ function openApplicationPublish(application) {
   if (!application?.applicationCode)
     return
   const target = router.resolve({
-    name: 'BusinessApplicationPublish',
+    name: 'BusinessApplicationRuntime',
     params: { applicationCode: application.applicationCode },
+    query: { view: 'publish' },
   })
   window.open(target.href, '_blank', 'noopener,noreferrer')
 }
@@ -1142,6 +1165,11 @@ function trimToUndefined(value) {
   gap: 12px;
 }
 
+.toolbar-left > :deep(.n-radio-group) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .toolbar-filters {
   flex: 1 1 500px;
 }
@@ -1268,6 +1296,12 @@ function trimToUndefined(value) {
     width: 100%;
     justify-content: space-between;
   }
+
+  .toolbar-left,
+  .toolbar-filters {
+    width: 100%;
+    flex-basis: 100%;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1300,6 +1334,42 @@ function trimToUndefined(value) {
   .application-panel {
     min-height: 600px;
     margin: 0;
+  }
+
+  .toolbar-left {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toolbar-left > :deep(.n-radio-group) {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .toolbar-left > :deep(.n-radio-group .n-radio-button) {
+    min-width: 0;
+  }
+
+  .toolbar-left > :deep(.n-radio-group .n-radio-button__label) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toolbar-filters {
+    width: 100%;
+  }
+
+  .toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toolbar-actions :deep(.n-button) {
+    width: 100%;
   }
 }
 </style>

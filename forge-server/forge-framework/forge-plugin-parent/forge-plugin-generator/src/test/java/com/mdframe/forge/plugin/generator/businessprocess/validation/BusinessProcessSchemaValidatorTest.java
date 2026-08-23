@@ -85,6 +85,33 @@ class BusinessProcessSchemaValidatorTest {
     }
 
     @Test
+    @DisplayName("low-code approval requires an independent flow status field")
+    void lowcodeApprovalRequiresIndependentFlowStatus() throws IOException {
+        String lowcodeApproval = resource("businessprocess/manual-approval.json")
+                .replace("\"formMode\": \"BUSINESS_CODE_FORM\"", "\"formMode\": \"BUSINESS_OBJECT_FORM\"");
+        BusinessProcessSchema missingStatus = validator.normalize(lowcodeApproval);
+        BusinessProcessValidationContext context = frozenExampleContext()
+                .setExpectedProcessCode(missingStatus.getProcessCode());
+
+        BusinessProcessValidationVO invalid = validator.validate(missingStatus, context);
+
+        assertTrue(invalid.hasError("APPROVAL_FLOW_STATUS_REQUIRED"));
+
+        BusinessProcessSchema businessStatus = validator.normalize(lowcodeApproval.replace(
+                "\"versionPolicy\": \"PINNED_AT_APPLICATION_PUBLISH\",",
+                "\"versionPolicy\": \"PINNED_AT_APPLICATION_PUBLISH\", \"statusField\": \"status\","));
+        assertTrue(validator.validate(businessStatus, context)
+                .hasError("APPROVAL_FLOW_STATUS_REQUIRED"));
+
+        BusinessProcessSchema configured = validator.normalize(lowcodeApproval.replace(
+                "\"versionPolicy\": \"PINNED_AT_APPLICATION_PUBLISH\",",
+                "\"versionPolicy\": \"PINNED_AT_APPLICATION_PUBLISH\", \"statusField\": \"flowStatus\","));
+        BusinessProcessValidationVO valid = validator.validate(configured, context);
+
+        assertFalse(valid.hasError("APPROVAL_FLOW_STATUS_REQUIRED"));
+    }
+
+    @Test
     @DisplayName("condition branches require one default branch and complete structured rules")
     void conditionBranchesRequireCompleteStructuredRules() throws IOException {
         String invalid = resource("businessprocess/schedule-reminder.json")

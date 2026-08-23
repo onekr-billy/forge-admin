@@ -3,10 +3,12 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessDocumentConfig;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentRuntimeVO;
@@ -27,6 +29,7 @@ public class BusinessDocumentRuntimeService {
 
     private final BusinessDocumentConfigService documentConfigService;
     private final BusinessFlowInstanceLinkMapper flowInstanceLinkMapper;
+    private final BusinessProcessRunMapper businessProcessRunMapper;
     private final AiCrudConfigMapper crudConfigMapper;
     private final BusinessObjectMapper businessObjectMapper;
     private final BusinessPermissionService permissionService;
@@ -44,10 +47,21 @@ public class BusinessDocumentRuntimeService {
         String canonicalObjectCode = context.objectCode();
         String businessKey = buildBusinessKey(canonicalObjectCode, recordId);
         vo.setBusinessKey(businessKey);
+        vo.setActiveProcessCodes(loadActiveProcessCodes(tenantId, List.of(businessKey)).getOrDefault(
+                businessKey, Collections.emptyList()));
+        fillDetailFlowDisplayOptions(vo, null);
+        AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, businessKey);
+        if (link != null) {
+            vo.setFlowStatus(link.getFlowStatus());
+            vo.setProcessInstanceId(link.getProcessInstanceId());
+        } else {
+            fillBusinessProcessHistory(vo, tenantId, businessKey);
+        }
 
         AiBusinessDocumentConfig config = context.documentConfig();
         if (config == null) {
-            vo.setMessage("当前对象未启用单据模式");
+            vo.setMessage(StringUtils.isBlank(vo.getProcessInstanceId())
+                    ? "当前对象未启用单据模式" : "当前对象使用应用级业务流程");
             return vo;
         }
         vo.setDocumentEnabled(true);
@@ -63,12 +77,6 @@ public class BusinessDocumentRuntimeService {
         String documentStatus = text(resolveRecordField(recordData, config.getStatusField()));
         vo.setDocumentStatus(documentStatus);
         vo.setDocumentStatusLabel(resolveStatusLabel(configVO, documentStatus));
-
-        AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, businessKey);
-        if (link != null) {
-            vo.setFlowStatus(link.getFlowStatus());
-            vo.setProcessInstanceId(link.getProcessInstanceId());
-        }
 
         List<String> actions = permissionService.resolveAvailableActions(canonicalObjectCode, recordId, recordData);
         vo.setAvailableActions(actions);
@@ -91,9 +99,13 @@ public class BusinessDocumentRuntimeService {
         Map<Long, Map<String, Object>> recordDataMap = config == null
                 ? Collections.emptyMap()
                 : loadRecordDataBatch(config, normalizedRecordIds);
-        Map<Long, AiBusinessFlowInstanceLink> linkMap = config == null
-                ? Collections.emptyMap()
-                : loadFlowLinks(tenantId, context.objectCode(), normalizedRecordIds);
+        Map<Long, AiBusinessFlowInstanceLink> linkMap = loadFlowLinks(
+                tenantId, context.objectCode(), normalizedRecordIds);
+        Map<String, List<String>> activeProcessCodeMap = loadActiveProcessCodes(
+                tenantId,
+                normalizedRecordIds.stream()
+                        .map(recordId -> buildBusinessKey(context.objectCode(), recordId))
+                        .toList());
         List<String> documentActions = config == null
                 ? Collections.emptyList()
                 : permissionService.resolveDocumentActionPermissions(context.objectCode());
@@ -101,7 +113,16 @@ public class BusinessDocumentRuntimeService {
         for (Long recordId : normalizedRecordIds) {
             Map<String, Object> recordData = recordDataMap.get(recordId);
             List<String> actions = recordData == null ? Collections.emptyList() : documentActions;
-            result.put(recordId, buildRuntimeVO(context, recordId, config, configVO, recordData, linkMap.get(recordId), actions));
+            result.put(recordId, buildRuntimeVO(
+                    context,
+                    recordId,
+                    config,
+                    configVO,
+                    recordData,
+                    linkMap.get(recordId),
+                    actions,
+                    activeProcessCodeMap.getOrDefault(
+                            buildBusinessKey(context.objectCode(), recordId), Collections.emptyList())));
         }
         return result;
     }
@@ -112,23 +133,46 @@ public class BusinessDocumentRuntimeService {
         vo.setDetailFlowDiagramVisible(readBoolean(options == null ? null : options.get("detailFlowDiagramVisible"), true));
     }
 
+    private void fillBusinessProcessHistory(BusinessDocumentRuntimeVO vo,
+                                            Long tenantId,
+                                            String businessKey) {
+        AiBusinessProcessRun run = businessProcessRunMapper.selectLatestByBusinessKey(tenantId, businessKey);
+        if (run == null || StringUtils.isBlank(run.getFlowProcessInstanceId())) {
+            return;
+        }
+        vo.setProcessInstanceId(run.getFlowProcessInstanceId());
+        vo.setFlowStatus(switch (StringUtils.defaultString(run.getStatus()).toUpperCase(Locale.ROOT)) {
+            case "WAITING", "RUNNING", "PENDING" -> "IN_PROCESS";
+            case "SUCCESS" -> "APPROVED";
+            case "CANCELED" -> "CANCELED";
+            default -> run.getStatus();
+        });
+    }
+
     private BusinessDocumentRuntimeVO buildRuntimeVO(DocumentRuntimeContext context,
                                                      Long recordId,
                                                      AiBusinessDocumentConfig config,
                                                      BusinessDocumentConfigVO configVO,
                                                      Map<String, Object> recordData,
                                                      AiBusinessFlowInstanceLink link,
-                                                     List<String> actions) {
+                                                     List<String> actions,
+                                                     List<String> activeProcessCodes) {
         BusinessDocumentRuntimeVO vo = new BusinessDocumentRuntimeVO();
         vo.setDocumentEnabled(false);
         vo.setBusinessKey(buildBusinessKey(context.objectCode(), recordId));
+        vo.setActiveProcessCodes(activeProcessCodes == null ? new ArrayList<>() : new ArrayList<>(activeProcessCodes));
+        fillDetailFlowDisplayOptions(vo, configVO);
+        if (link != null) {
+            vo.setFlowStatus(link.getFlowStatus());
+            vo.setProcessInstanceId(link.getProcessInstanceId());
+        }
 
         if (config == null) {
-            vo.setMessage("当前对象未启用单据模式");
+            vo.setMessage(StringUtils.isBlank(vo.getProcessInstanceId())
+                    ? "当前对象未启用单据模式" : "当前对象使用应用级业务流程");
             return vo;
         }
         vo.setDocumentEnabled(true);
-        fillDetailFlowDisplayOptions(vo, configVO);
         if (recordData == null) {
             vo.setMessage("记录不存在或无权限访问");
             vo.setNextAction("SAVE_RECORD");
@@ -138,11 +182,6 @@ public class BusinessDocumentRuntimeService {
         String documentStatus = text(resolveRecordField(recordData, config.getStatusField()));
         vo.setDocumentStatus(documentStatus);
         vo.setDocumentStatusLabel(resolveStatusLabel(configVO, documentStatus));
-
-        if (link != null) {
-            vo.setFlowStatus(link.getFlowStatus());
-            vo.setProcessInstanceId(link.getProcessInstanceId());
-        }
 
         List<String> effectiveActions = actions == null ? Collections.emptyList() : actions;
         vo.setAvailableActions(effectiveActions);
@@ -240,6 +279,34 @@ public class BusinessDocumentRuntimeService {
         return result;
     }
 
+    private Map<String, List<String>> loadActiveProcessCodes(Long tenantId, List<String> businessKeys) {
+        if (tenantId == null || businessKeys == null || businessKeys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<String> keys = businessKeys.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .toList();
+        if (keys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<AiBusinessProcessRun> runs = businessProcessRunMapper.selectActiveByBusinessKeys(tenantId, keys);
+        if (runs == null || runs.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashMap<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
+        for (AiBusinessProcessRun run : runs) {
+            if (run == null || StringUtils.isAnyBlank(run.getBusinessKey(), run.getProcessCode())) {
+                continue;
+            }
+            grouped.computeIfAbsent(run.getBusinessKey(), ignored -> new LinkedHashSet<>())
+                    .add(run.getProcessCode());
+        }
+        LinkedHashMap<String, List<String>> result = new LinkedHashMap<>();
+        grouped.forEach((key, codes) -> result.put(key, List.copyOf(codes)));
+        return result;
+    }
+
     private void fillNextAction(BusinessDocumentRuntimeVO vo, BusinessDocumentConfigVO configVO,
                                 AiBusinessFlowInstanceLink link, List<String> actions) {
         Map<String, Object> mainFlowSummary = configVO.getMainFlowSummary();
@@ -306,8 +373,9 @@ public class BusinessDocumentRuntimeService {
             action.setDisabled(true);
             action.setDisabledReason("请先配置主流程");
         } else if (link != null && isRunningFlow(link.getFlowStatus())) {
-            action.setDisabled(true);
-            action.setDisabledReason("当前单据已有流转中的流程");
+            // 发起动作在流程运行中已经没有可执行意义。直接隐藏，避免列表、
+            // 详情页同时出现一个必然失败的审批按钮；流程进度由详情页展示。
+            action.setVisible(false);
         } else {
             StatusPolicy statusPolicy = resolveStatusPolicy(configVO, vo.getDocumentStatus());
             if (!statusPolicy.allowStartFlow()) {
@@ -387,7 +455,9 @@ public class BusinessDocumentRuntimeService {
     }
 
     private boolean isRunningFlow(String flowStatus) {
-        return "STARTED".equalsIgnoreCase(flowStatus) || "RUNNING".equalsIgnoreCase(flowStatus);
+        return "STARTED".equalsIgnoreCase(flowStatus)
+                || "RUNNING".equalsIgnoreCase(flowStatus)
+                || "IN_PROCESS".equalsIgnoreCase(flowStatus);
     }
 
     private String resolveStatusLabel(BusinessDocumentConfigVO configVO, String documentStatus) {

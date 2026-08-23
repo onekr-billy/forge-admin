@@ -5,11 +5,28 @@ import {
   buildBusinessActionInputFormSchema,
   buildChildRowActionContext,
   createBusinessActionIdempotencyKey,
+  isRuntimeActionForPosition,
+  matchesRuntimeDisplayCondition,
   resolveBusinessActionAttempt,
+  shouldHideProcessStartAction,
+  shouldShowDetailFlowHistory,
   unwrapBusinessActionResult,
 } from '../business-action-runtime'
 
 describe('business action runtime protocol', () => {
+  it('shows application-level flow history without requiring document mode', () => {
+    expect(shouldShowDetailFlowHistory({
+      isDetailMode: true,
+      runtime: { documentEnabled: false, processInstanceId: 'flow-instance-1' },
+      timelineVisible: true,
+      diagramVisible: true,
+    })).toBe(true)
+    expect(shouldShowDetailFlowHistory({
+      isDetailMode: true,
+      runtime: { documentEnabled: true },
+    })).toBe(false)
+  })
+
   it('converts inputSchema into a managed AiForm schema', () => {
     expect(buildBusinessActionInputFormSchema([
       { name: 'quantity', label: '本次数量', type: 'integer', required: true, min: 1, max: 99 },
@@ -120,6 +137,45 @@ describe('business action runtime protocol', () => {
       parentRecord: { id: 1001 },
       childRecord: { __rowKey: 'draft-row' },
     }).persisted).toBe(false)
+  })
+
+  it('keeps list and detail process actions in their configured positions', () => {
+    expect(isRuntimeActionForPosition({ key: 'legacy-action' }, 'row')).toBe(true)
+    expect(isRuntimeActionForPosition({ position: 'row' }, 'row')).toBe(true)
+    expect(isRuntimeActionForPosition({ position: 'detail' }, 'row')).toBe(false)
+    expect(isRuntimeActionForPosition({ position: 'form' }, 'detail')).toBe(false)
+    expect(isRuntimeActionForPosition({ position: 'form' }, 'form')).toBe(true)
+  })
+
+  it('hides only the active application process start action', () => {
+    const runtime = {
+      flowStatus: 'IN_PROCESS',
+      nextAction: 'VIEW_FLOW',
+      activeProcessCodes: ['submit_approval'],
+    }
+    expect(shouldHideProcessStartAction({
+      actionType: 'START_PROCESS',
+      processCode: 'submit_approval',
+    }, runtime)).toBe(true)
+    expect(shouldHideProcessStartAction({
+      actionType: 'START_PROCESS',
+      processCode: 'parallel_review',
+    }, runtime)).toBe(false)
+    expect(shouldHideProcessStartAction({ actionType: 'START_FLOW' }, runtime)).toBe(true)
+  })
+
+  it('evaluates multiple compiled display rules with numeric comparisons', () => {
+    const row = { score: 85, priority: 'HIGH', status: 'DRAFT' }
+    expect(matchesRuntimeDisplayCondition('score >= 80 AND status = DRAFT', row)).toBe(true)
+    expect(matchesRuntimeDisplayCondition('score > 90 OR priority = HIGH', row)).toBe(true)
+    expect(matchesRuntimeDisplayCondition('score < 80 OR status != DRAFT', row)).toBe(false)
+    expect(matchesRuntimeDisplayCondition({
+      operator: 'AND',
+      rules: [
+        { field: 'score', operator: 'GTE', value: 80 },
+        { field: 'status', operator: 'IN', value: ['DRAFT', 'REJECTED'] },
+      ],
+    }, row)).toBe(true)
   })
 
   it('fails closed when a replay request returns a failed business status', () => {

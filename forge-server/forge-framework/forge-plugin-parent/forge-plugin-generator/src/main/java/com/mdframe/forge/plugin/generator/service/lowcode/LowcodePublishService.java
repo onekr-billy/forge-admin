@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.lowcode;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApp;
@@ -26,8 +27,9 @@ import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntime
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeVersionVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,18 +41,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 低代码应用发布、版本和回滚服务。
  */
 @Service
-@RequiredArgsConstructor
 public class LowcodePublishService {
 
     private static final String DEPLOY_SKIP_DDL = "SKIP_DDL";
     private static final String DEPLOY_ONLINE_CREATE_TABLE = "ONLINE_CREATE_TABLE";
     private static final String DDL_PERMISSION = "ai:lowcode:deploy-ddl";
     private static final String GENERAL_DOMAIN_CODE = "general";
+    private static final String MOUNT_ADMIN = "ADMIN";
+    private static final String MOUNT_MOBILE = "MOBILE";
+    private static final String MOUNT_BOTH = "BOTH";
 
     private final ObjectMapper objectMapper;
     private final AiCrudConfigService configService;
@@ -66,6 +71,42 @@ public class LowcodePublishService {
     private final BusinessAppMapper businessAppMapper;
     private final AiLowcodeModelMapper lowcodeModelMapper;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+    /**
+     * 领域菜单父级缓存（domainId → menuParentId），发布过程中多次递归查询时避免重复读写 sys_resource。
+     */
+    private final Map<Long, Long> domainMenuParentIdCache = new ConcurrentHashMap<>();
+
+    public LowcodePublishService(ObjectMapper objectMapper,
+                                 AiCrudConfigService configService,
+                                 LowcodeAppService appService,
+                                 LowcodeDomainService domainService,
+                                 LowcodeRuntimeConfigBuilder runtimeConfigBuilder,
+                                 LowcodeSchemaValidator schemaValidator,
+                                 LowcodeDdlService ddlService,
+                                 LowcodePolicyService policyService,
+                                 MenuRegisterAdapter menuRegisterAdapter,
+                                 AiCrudConfigVersionMapper versionMapper,
+                                 BusinessObjectMapper businessObjectMapper,
+                                 BusinessAppMapper businessAppMapper,
+                                 AiLowcodeModelMapper lowcodeModelMapper,
+                                 LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver) {
+        this.objectMapper = objectMapper;
+        this.configService = configService;
+        this.appService = appService;
+        this.domainService = domainService;
+        this.runtimeConfigBuilder = runtimeConfigBuilder;
+        this.schemaValidator = schemaValidator;
+        this.ddlService = ddlService;
+        this.policyService = policyService;
+        this.menuRegisterAdapter = menuRegisterAdapter;
+        this.versionMapper = versionMapper;
+        this.businessObjectMapper = businessObjectMapper;
+        this.businessAppMapper = businessAppMapper;
+        this.lowcodeModelMapper = lowcodeModelMapper;
+        this.runtimeDataSourceResolver = runtimeDataSourceResolver;
+    }
 
     @Transactional(rollbackFor = Exception.class)
     public Long publish(Long id, LowcodePublishDTO dto) {
@@ -75,31 +116,40 @@ public class LowcodePublishService {
         applyDomainToModelSchema(modelSchema, domainContext, config.getConfigKey());
         LowcodePageSchema pageSchema = resolvePublishPage(config, dto, modelSchema);
         schemaValidator.validatePage(pageSchema, modelSchema);
-        ensureTableReady(modelSchema, dto);
-        policyService.validatePublishedPolicies(modelSchema, ddlService.listColumns(modelSchema));
+
+        // 一次解析运行时数据源上下文，后续所有依赖都复用同一份 context，避免 3-4 次重复查询
+        LowcodeRuntimeDataSourceContext runtimeContext = runtimeDataSourceResolver.resolve(modelSchema);
+        ensureTableReady(modelSchema, dto, runtimeContext);
+        // 去掉列校验（FOLLOW_SYSTEM 策略列已由设计器保证，不必再走 listColumns information_schema 查询）
+        policyService.normalizeModelSchema(modelSchema);
 
         LowcodeRuntimeConfig runtimeConfig = runtimeConfigBuilder.buildRuntimeConfig(config.getConfigKey(), modelSchema, pageSchema);
-        applyRuntimeConfig(config, modelSchema, pageSchema, runtimeConfig);
+        applyRuntimeConfig(config, modelSchema, pageSchema, runtimeConfig, runtimeContext);
         applyDomainToConfig(config, domainContext);
         applyMenuConfig(config, dto);
-        if (shouldSyncMenu(dto)) {
+        config.setMountTarget(resolveMountTarget(dto, config));
+
+        // 预先解析菜单父级 ID（主事务内），用于事务提交后异步执行菜单注册
+        Long menuParentId = null;
+        boolean syncMenu = shouldSyncMenu(dto);
+        if (syncMenu && shouldMountAdmin(config.getMountTarget())) {
             applyPublishMenuParent(config, dto, domainContext.domain());
+            menuParentId = config.getMenuParentId();
         }
+
         int versionNo = nextVersionNo(config);
         config.setPublishStatus("PUBLISHED");
         config.setPublishedVersion(versionNo);
         config.setPublishTime(LocalDateTime.now());
         config.setPublishBy(SessionHelper.getUserId());
-
-        if (shouldSyncMenu(dto)) {
-            registerOrUpdateMenu(config);
-        } else {
-            disablePublishedMenu(config);
-        }
         configService.updateById(config);
-        syncBusinessRuntimeEntry(config, dto, domainContext);
         AiCrudConfigVersion version = createVersion(config, versionNo, "publish",
                 dto != null ? dto.getRemark() : null);
+
+        // 菜单注册 + 业务入口同步全部放到事务提交后异步执行，不再阻塞响应
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new LowcodePublishPostEvent(config, dto, domainContext, syncMenu, menuParentId));
+        }
         return version.getId();
     }
 
@@ -122,25 +172,43 @@ public class LowcodePublishService {
         PublishDomainContext domainContext = resolveVersionDomainContext(config, targetVersion, snapshot, modelSchema);
         applyDomainToModelSchema(modelSchema, domainContext, config.getConfigKey());
         LowcodePageSchema pageSchema = readVersionPage(targetVersion);
+
+        // 一次解析运行时数据源上下文，后续所有依赖都复用同一份 context
+        LowcodeRuntimeDataSourceContext runtimeContext = runtimeDataSourceResolver.resolve(modelSchema);
         LowcodeRuntimeConfig runtimeConfig = runtimeConfigBuilder.buildRuntimeConfig(config.getConfigKey(), modelSchema, pageSchema);
-        applyRuntimeConfig(config, modelSchema, pageSchema, runtimeConfig);
+        applyRuntimeConfig(config, modelSchema, pageSchema, runtimeConfig, runtimeContext);
         applyDomainToConfig(config, domainContext);
         applyVersionRuntimeFields(config, targetVersion, snapshot, runtimeConfig);
         applySnapshotMenuFields(config, snapshot);
+
+        Long menuParentId = null;
+        if (syncMenu) {
+            if (shouldMountAdmin(config.getMountTarget())) {
+                Long parentId = config.getMenuParentId() != null
+                        ? config.getMenuParentId()
+                        : resolveDomainMenuParentId(resolveDomainForConfig(config));
+                if (parentId == null) {
+                    parentId = menuRegisterAdapter.resolveDefaultLowcodeParentId();
+                }
+                config.setMenuParentId(parentId);
+                menuParentId = parentId;
+            }
+            config.setMountTarget(StringUtils.defaultIfBlank(
+                    text(snapshot.get("mountTarget")), config.getMountTarget()));
+        }
 
         int versionNo = nextVersionNo(config);
         config.setPublishStatus("PUBLISHED");
         config.setPublishedVersion(versionNo);
         config.setPublishTime(LocalDateTime.now());
         config.setPublishBy(SessionHelper.getUserId());
-        if (syncMenu) {
-            registerOrUpdateMenu(config);
-        } else {
-            disablePublishedMenu(config);
-        }
         configService.updateById(config);
-        syncBusinessRuntimeEntry(config, null, domainContext);
         createVersion(config, versionNo, "rollback", "回滚到版本 " + targetVersion.getVersionNo());
+
+        // 菜单注册 + 业务入口同步放到事务提交后异步执行
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new LowcodePublishPostEvent(config, null, domainContext, syncMenu, menuParentId));
+        }
     }
 
     public List<LowcodeVersionVO> listVersions(Long id) {
@@ -168,7 +236,9 @@ public class LowcodePublishService {
         return appService.buildDefaultPageSchema(modelSchema);
     }
 
-    private void ensureTableReady(LowcodeModelSchema modelSchema, LowcodePublishDTO dto) {
+    private void ensureTableReady(LowcodeModelSchema modelSchema,
+                                  LowcodePublishDTO dto,
+                                  LowcodeRuntimeDataSourceContext runtimeContext) {
         String deployMode = dto != null && StringUtils.isNotBlank(dto.getDeployMode())
                 ? dto.getDeployMode()
                 : DEPLOY_SKIP_DDL;
@@ -182,10 +252,11 @@ public class LowcodePublishService {
             ddlService.executeCreateTable(modelSchema);
             return;
         }
-        if (!ddlService.tableExists(modelSchema)) {
+        // 复用外部已解析的 runtimeContext，避免每个 ddl 校验方法再单独 resolve 一次
+        if (!ddlService.tableExists(modelSchema, runtimeContext)) {
             throw new BusinessException("数据表不存在，请先在数据模型页同步表结构");
         }
-        if (!ddlService.hasSinglePrimaryKey(modelSchema)) {
+        if (!ddlService.hasSinglePrimaryKey(modelSchema, runtimeContext)) {
             throw new BusinessException("数据表缺少单字段主键，请先在数据模型页修正表结构");
         }
     }
@@ -193,7 +264,8 @@ public class LowcodePublishService {
     private void applyRuntimeConfig(AiCrudConfig config,
                                     LowcodeModelSchema modelSchema,
                                     LowcodePageSchema pageSchema,
-                                    LowcodeRuntimeConfig runtimeConfig) {
+                                    LowcodeRuntimeConfig runtimeConfig,
+                                    LowcodeRuntimeDataSourceContext runtimeContext) {
         config.setTableName(runtimeConfig.getTableName());
         config.setTableComment(runtimeConfig.getTableComment());
         config.setAppName(StringUtils.defaultIfBlank(config.getAppName(), runtimeConfig.getTableComment()));
@@ -212,11 +284,10 @@ public class LowcodePublishService {
         config.setDesensitizeConfig(runtimeConfig.getDesensitizeConfig());
         config.setEncryptConfig(runtimeConfig.getEncryptConfig());
         config.setTransConfig(runtimeConfig.getTransConfig());
-        applyRuntimeDatasourceConfig(config, modelSchema);
+        applyRuntimeDatasourceConfig(config, runtimeContext);
     }
 
-    private void applyRuntimeDatasourceConfig(AiCrudConfig config, LowcodeModelSchema modelSchema) {
-        LowcodeRuntimeDataSourceContext context = runtimeDataSourceResolver.resolve(modelSchema);
+    private void applyRuntimeDatasourceConfig(AiCrudConfig config, LowcodeRuntimeDataSourceContext context) {
         config.setRuntimeDatasourceId(context.getDatasourceId());
         config.setRuntimeDatasourceCode(context.getDatasourceCode());
         config.setRuntimeDatasourceSnapshot(context.getSnapshot() == null
@@ -241,28 +312,124 @@ public class LowcodePublishService {
         if (dto.getMenuSort() != null) {
             config.setMenuSort(dto.getMenuSort());
         }
+        if (StringUtils.isNotBlank(dto.getMountTarget())) {
+            config.setMountTarget(dto.getMountTarget().toUpperCase(Locale.ROOT));
+        }
     }
 
-    private void registerOrUpdateMenu(AiCrudConfig config) {
+    /**
+     * 解析菜单挂载位置：优先使用发布请求中的值，其次使用配置已有值，默认 ADMIN。
+     */
+    private String resolveMountTarget(LowcodePublishDTO dto, AiCrudConfig config) {
+        String fromDto = dto != null ? StringUtils.trimToNull(dto.getMountTarget()) : null;
+        if (fromDto != null) {
+            return fromDto.toUpperCase(Locale.ROOT);
+        }
+        return StringUtils.defaultIfBlank(config.getMountTarget(), MOUNT_ADMIN);
+    }
+
+    private boolean shouldMountAdmin(String mountTarget) {
+        return MOUNT_ADMIN.equalsIgnoreCase(mountTarget) || MOUNT_BOTH.equalsIgnoreCase(mountTarget);
+    }
+
+    private boolean shouldMountMobile(String mountTarget) {
+        return MOUNT_MOBILE.equalsIgnoreCase(mountTarget) || MOUNT_BOTH.equalsIgnoreCase(mountTarget);
+    }
+
+    private Long readMobileMenuResourceId(AiCrudConfig config) {
+        String options = config.getOptions();
+        if (StringUtils.isBlank(options)) {
+            return null;
+        }
+        try {
+            JSONObject obj = JSONObject.parseObject(options);
+            Long value = obj.getLong("mobileMenuResourceId");
+            return value;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void writeMobileMenuResourceId(AiCrudConfig config, Long mobileMenuResourceId) {
+        JSONObject obj;
+        try {
+            obj = StringUtils.isNotBlank(config.getOptions())
+                    ? JSONObject.parseObject(config.getOptions()) : new JSONObject();
+        } catch (Exception e) {
+            obj = new JSONObject();
+        }
+        if (mobileMenuResourceId != null) {
+            obj.put("mobileMenuResourceId", mobileMenuResourceId);
+        } else {
+            obj.remove("mobileMenuResourceId");
+        }
+        config.setOptions(obj.toJSONString());
+    }
+
+    /**
+     * 异步后置菜单注册入口：支持管理端（ADMIN）、移动端（MOBILE）或两端同时（BOTH）。
+     * 菜单父级 ID 已由主事务预先解析传入，避免在异步上下文中重复解析。
+     */
+    void registerOrUpdateMenuAsync(AiCrudConfig config, boolean syncMenu, Long resolvedParentId) {
+        String mountTarget = StringUtils.defaultIfBlank(config.getMountTarget(), MOUNT_ADMIN);
+        boolean mountAdmin = shouldMountAdmin(mountTarget);
+        boolean mountMobile = shouldMountMobile(mountTarget);
         String menuName = StringUtils.defaultIfBlank(config.getMenuName(),
                 StringUtils.defaultIfBlank(config.getAppName(), config.getTableComment()));
-        Long parentId = config.getMenuParentId() != null
-                ? config.getMenuParentId()
-                : resolveDomainMenuParentId(resolveDomainForConfig(config));
-        if (parentId == null) {
-            parentId = menuRegisterAdapter.resolveDefaultLowcodeParentId();
-        }
         Integer sort = config.getMenuSort() != null ? config.getMenuSort() : 0;
 
-        if (config.getMenuResourceId() == null) {
-            Long menuResourceId = menuRegisterAdapter.registerMenu(menuName, parentId, config.getConfigKey(), sort);
-            config.setMenuResourceId(menuResourceId);
-        } else {
-            menuRegisterAdapter.updateMenu(config.getMenuResourceId(), menuName, parentId, sort);
+        if (!syncMenu) {
+            if (config.getMenuResourceId() != null) {
+                menuRegisterAdapter.disableMenu(config.getMenuResourceId());
+            }
+            Long mobileResourceId = readMobileMenuResourceId(config);
+            if (mobileResourceId != null) {
+                menuRegisterAdapter.disableMenu(mobileResourceId);
+            }
+            return;
         }
-        config.setMenuName(menuName);
-        config.setMenuParentId(parentId);
-        config.setMenuSort(sort);
+
+        // 管理端菜单注册
+        if (mountAdmin) {
+            Long parentId = resolvedParentId != null ? resolvedParentId : menuRegisterAdapter.resolveDefaultLowcodeParentId();
+            if (config.getMenuResourceId() == null) {
+                Long menuResourceId = menuRegisterAdapter.registerMenu(menuName, parentId, config.getConfigKey(), sort);
+                config.setMenuResourceId(menuResourceId);
+            } else {
+                menuRegisterAdapter.updateMenu(config.getMenuResourceId(), menuName, parentId, sort);
+            }
+            config.setMenuName(menuName);
+            config.setMenuParentId(parentId);
+            config.setMenuSort(sort);
+        } else {
+            // 不挂管理端时禁用已有管理端菜单
+            if (config.getMenuResourceId() != null) {
+                menuRegisterAdapter.disableMenu(config.getMenuResourceId());
+            }
+        }
+
+        // 移动端菜单注册
+        if (mountMobile) {
+            String mobilePath = "/pages/lowcode-runtime?configKey=" + config.getConfigKey();
+            String mobilePerms = "ai:crud:h5:" + config.getConfigKey();
+            Long existingMobileId = readMobileMenuResourceId(config);
+            if (existingMobileId == null) {
+                Long mobileMenuId = menuRegisterAdapter.registerAppMenu(
+                        menuName, 0L, mobilePath, mobilePath,
+                        mobilePerms, null, sort, true, "h5");
+                writeMobileMenuResourceId(config, mobileMenuId);
+            } else {
+                menuRegisterAdapter.updateAppMenu(
+                        existingMobileId, menuName, 0L, mobilePath, mobilePath,
+                        mobilePerms, null, sort, true, "h5");
+            }
+        } else {
+            // 不挂移动端时禁用已有移动端菜单
+            Long mobileResourceId = readMobileMenuResourceId(config);
+            if (mobileResourceId != null) {
+                menuRegisterAdapter.disableMenu(mobileResourceId);
+            }
+        }
     }
 
     private boolean shouldSyncMenu(LowcodePublishDTO dto) {
@@ -275,7 +442,7 @@ public class LowcodePublishService {
         }
     }
 
-    private void syncBusinessRuntimeEntry(AiCrudConfig config, LowcodePublishDTO dto, PublishDomainContext context) {
+    void syncBusinessRuntimeEntry(AiCrudConfig config, LowcodePublishDTO dto, PublishDomainContext context) {
         if (config == null || context == null || context.domain() == null || StringUtils.isBlank(config.getConfigKey())) {
             return;
         }
@@ -315,7 +482,7 @@ public class LowcodePublishService {
             app.setAppName(resolveRuntimeAppName(config, dto, businessObject));
             app.setAppType("BUSINESS");
             app.setEntryMode("RUNTIME");
-            app.setEntryUrl("/ai/crud-page/" + config.getConfigKey());
+            app.setEntryUrl(resolveEntryUrl(config));
             app.setIcon(StringUtils.defaultIfBlank(businessObject.getIcon(), "ionicons5:AppsOutline"));
             app.setDescription(StringUtils.defaultIfBlank(config.getTableComment(), "低代码发布生成的标准业务应用入口"));
             app.setStatus(1);
@@ -335,11 +502,8 @@ public class LowcodePublishService {
     }
 
     private AiBusinessObject findBusinessObject(Long tenantId, String suiteCode, String objectCode) {
-        AiBusinessObject object = businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode);
-        if (object != null) {
-            return object;
-        }
-        return businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode.toUpperCase(Locale.ROOT));
+        // 对象编码统一小写存储，去掉多余的大写兜底查询
+        return businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode);
     }
 
     private String resolveRuntimeAppName(AiCrudConfig config, LowcodePublishDTO dto, AiBusinessObject businessObject) {
@@ -461,6 +625,16 @@ public class LowcodePublishService {
                 StringUtils.defaultIfBlank(config.getAppName(), config.getTableComment())));
         config.setMenuParentId(numberAsLong(snapshot.get("menuParentId"), config.getMenuParentId()));
         config.setMenuSort(numberAsInteger(snapshot.get("menuSort"), config.getMenuSort()));
+        config.setMountTarget(StringUtils.defaultIfBlank(
+                text(snapshot.get("mountTarget")), config.getMountTarget()));
+    }
+
+    private String resolveEntryUrl(AiCrudConfig config) {
+        String mountTarget = StringUtils.defaultIfBlank(config.getMountTarget(), MOUNT_ADMIN);
+        if (shouldMountMobile(mountTarget) && !shouldMountAdmin(mountTarget)) {
+            return "/pages/lowcode-runtime?configKey=" + config.getConfigKey();
+        }
+        return "/ai/crud-page/" + config.getConfigKey();
     }
 
     private LowcodeModelSchema readVersionModel(AiCrudConfigVersion version) {
@@ -502,6 +676,7 @@ public class LowcodePublishService {
         snapshot.put("menuParentId", config.getMenuParentId());
         snapshot.put("menuSort", config.getMenuSort());
         snapshot.put("menuResourceId", config.getMenuResourceId());
+        snapshot.put("mountTarget", config.getMountTarget());
         try {
             return objectMapper.writeValueAsString(snapshot);
         } catch (Exception e) {
@@ -732,10 +907,14 @@ public class LowcodePublishService {
     }
 
     private Long resolveDomainMenuParentId(AiLowcodeDomain domain) {
-        return resolveDomainMenuParentId(domain, new HashSet<>());
+        if (domain == null || domain.getId() == null) {
+            return resolveDomainMenuParentIdUncached(domain, new HashSet<>());
+        }
+        return domainMenuParentIdCache.computeIfAbsent(domain.getId(),
+                key -> resolveDomainMenuParentIdUncached(domain, new HashSet<>()));
     }
 
-    private Long resolveDomainMenuParentId(AiLowcodeDomain domain, Set<Long> resolvingDomainIds) {
+    private Long resolveDomainMenuParentIdUncached(AiLowcodeDomain domain, Set<Long> resolvingDomainIds) {
         if (domain == null) {
             return null;
         }
@@ -748,7 +927,7 @@ public class LowcodePublishService {
             Long parentDomainId = domain.getParentId();
             if (parentDomainId != null && parentDomainId > 0) {
                 AiLowcodeDomain parentDomain = domainService.requireDomain(parentDomainId);
-                Long resolvedParentMenuId = resolveDomainMenuParentId(parentDomain, resolvingDomainIds);
+                Long resolvedParentMenuId = resolveDomainMenuParentIdUncached(parentDomain, resolvingDomainIds);
                 if (resolvedParentMenuId != null) {
                     parentMenuId = resolvedParentMenuId;
                 }
@@ -814,6 +993,6 @@ public class LowcodePublishService {
         return defaultValue;
     }
 
-    private record PublishDomainContext(AiLowcodeDomain domain, String objectCode, String objectName) {
+    record PublishDomainContext(AiLowcodeDomain domain, String objectCode, String objectName) {
     }
 }

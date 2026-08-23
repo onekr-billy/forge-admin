@@ -196,7 +196,7 @@
         v-model:show="showModal"
         preset="card"
         :title="modalTitle"
-        style="width: min(620px, calc(100vw - 32px))"
+        style="width: min(760px, calc(100vw - 32px))"
         :mask-closable="false"
       >
         <n-form
@@ -234,62 +234,17 @@
             <n-form-item-gi label="模型Key" path="modelKey">
               <n-input
                 v-model:value="formData.modelKey"
-                placeholder="唯一标识，如 leave-apply"
-                :disabled="isEdit"
+                placeholder="系统自动生成"
+                disabled
               />
             </n-form-item-gi>
-            <n-form-item-gi label="流程分类" path="category">
+            <n-form-item-gi label="流程分类" path="category" :span="2">
               <NTreeSelect
                 v-model:value="formData.category"
                 placeholder="请选择分类"
                 :options="categoryTreeOptions"
                 :default-expand-all="true"
               />
-            </n-form-item-gi>
-            <n-form-item-gi label="表单类型" path="formType">
-              <n-select
-                v-model:value="formData.formType"
-                placeholder="请选择表单类型"
-                :options="formTypeOptions"
-              />
-            </n-form-item-gi>
-            <n-form-item-gi label="流程类型" path="flowType">
-              <n-input v-model:value="formData.flowType" placeholder="如 approval" />
-            </n-form-item-gi>
-            <n-form-item-gi label="事件通知" path="notifyType" :span="2">
-              <div class="notify-section">
-                <n-radio-group v-model:value="formData.notifyType" class="radio-group">
-                  <n-space>
-                    <n-radio value="none">
-                      不通知
-                    </n-radio>
-                    <n-radio value="redis">
-                      Redis Pub/Sub
-                      <n-tooltip trigger="hover" placement="top">
-                        <template #trigger>
-                          <i class="i-material-symbols:info-outline ml-2 cursor-help" />
-                        </template>
-                        流程完成/驳回/取消时，发布消息到 Redis 频道
-                      </n-tooltip>
-                    </n-radio>
-                    <n-radio value="webhook">
-                      HTTP Webhook
-                      <n-tooltip trigger="hover" placement="top">
-                        <template #trigger>
-                          <i class="i-material-symbols:info-outline ml-2 cursor-help" />
-                        </template>
-                        流程完成/驳回/取消时，POST 请求回调 Webhook URL
-                      </n-tooltip>
-                    </n-radio>
-                  </n-space>
-                </n-radio-group>
-                <n-input
-                  v-if="formData.notifyType === 'webhook'"
-                  v-model:value="formData.webhookUrl"
-                  placeholder="回调地址，如 http://your-service/api/flow/callback"
-                  clearable
-                />
-              </div>
             </n-form-item-gi>
             <n-form-item-gi label="待办跳转" path="todoDetailUrlTemplate" :span="2">
               <div class="w-full">
@@ -493,7 +448,6 @@ const VersionHistory = defineAsyncComponent({
 })
 
 const statusOptions = computed(() => toNumberOptions(dict.value.flow_model_status))
-const formTypeOptions = computed(() => dict.value.flow_process_form_type || [])
 const categoryTreeOptions = ref([])
 const designerTypePresentation = {
   approval: {
@@ -757,13 +711,13 @@ const formData = reactive({
   designerType: 'approval',
   formType: 'dynamic',
   description: '',
-  notifyType: 'none',
+  notifyType: 'redis',
   webhookUrl: '',
   todoDetailUrlTemplate: '',
+  notifyConfig: null,
 })
 const rules = {
   modelName: { required: true, message: '请输入模型名称', trigger: 'blur' },
-  modelKey: { required: true, message: '请输入模型Key', trigger: 'blur' },
   category: { required: true, message: '请选择分类', trigger: 'change' },
   designerType: { required: true, message: '请选择流程模式', trigger: 'change' },
 }
@@ -771,8 +725,13 @@ const rules = {
 function handleAdd() {
   isEdit.value = false
   modalTitle.value = '新增模型'
-  Object.assign(formData, { id: '', modelName: '', modelKey: '', category: '', flowType: '', designerType: 'approval', formType: 'dynamic', description: '', notifyType: 'none', webhookUrl: '', todoDetailUrlTemplate: '' })
+  Object.assign(formData, { id: '', modelName: '', modelKey: generateModelKey(), category: '', flowType: '', designerType: 'approval', formType: 'dynamic', description: '', notifyType: 'redis', webhookUrl: '', todoDetailUrlTemplate: '', notifyConfig: null })
   showModal.value = true
+}
+
+function generateModelKey() {
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  return `process_${suffix}`
 }
 
 function handleEdit(row) {
@@ -781,6 +740,7 @@ function handleEdit(row) {
   Object.assign(formData, row, {
     designerType: normalizeDesignerType(row.designerType),
     category: resolveFlowCategoryValue(row.category, categoryTreeOptions.value),
+    notifyConfig: row.notifyConfig || null,
   })
   showModal.value = true
 }
@@ -1565,10 +1525,6 @@ onMounted(() => {
 
 .pagination-wrapper :deep(.n-pagination) {
   min-width: max-content;
-}
-
-.notify-section {
-  width: 100%;
 }
 
 .designer-type-chooser {

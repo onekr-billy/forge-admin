@@ -64,6 +64,7 @@ public class BusinessApplicationVersionService
             if (!StringUtils.equals(existing.getSnapshotHash(), snapshot.hash())) {
                 throw new BusinessException("目标应用版本已被其他发布占用");
             }
+            markApplicationPublished(applicationId, versionNo, LocalDateTime.now());
             return existing;
         }
         LocalDateTime now = LocalDateTime.now();
@@ -79,10 +80,14 @@ public class BusinessApplicationVersionService
         version.setPublishedBy(resolveUserId());
         version.setPublishedTime(now);
         save(version);
-        if (applicationMapper.markPublished(resolveTenantId(), applicationId, versionNo, now) == 0) {
+        markApplicationPublished(applicationId, versionNo, now);
+        return version;
+    }
+
+    private void markApplicationPublished(Long applicationId, Integer versionNo, LocalDateTime publishTime) {
+        if (applicationMapper.markPublished(resolveTenantId(), applicationId, versionNo, publishTime) == 0) {
             throw new BusinessException("应用发布状态提交失败");
         }
-        return version;
     }
 
     private BusinessApplicationVersionVO toVO(AiBusinessApplicationVersion version, boolean includeSnapshot) {

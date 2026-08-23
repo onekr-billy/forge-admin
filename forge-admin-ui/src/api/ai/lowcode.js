@@ -16,9 +16,24 @@ export function updateSessionMetadata(sessionId, metadata) {
   return request.put(`/ai/admin/session/${sessionId}/metadata`, metadata)
 }
 
-export function crudConfigRender(configKey, designPreview = false) {
+export function crudConfigRender(configKey, designPreview = false, requestOptions = {}) {
+  const options = requestOptions && typeof requestOptions === 'object'
+    ? { ...requestOptions }
+    : { appId: requestOptions }
+  const appId = options.appId
+  const applicationId = options.applicationId
+  delete options.appId
+  delete options.applicationId
+  const params = { ...(options.params || {}) }
+  if (designPreview)
+    params.designPreview = true
+  if (appId !== null && appId !== undefined && String(appId).trim())
+    params.appId = String(appId)
+  if (applicationId !== null && applicationId !== undefined && String(applicationId).trim())
+    params.applicationId = String(applicationId)
   return request.get(`/ai/crud-config/render/${configKey}`, {
-    params: designPreview ? { designPreview: true } : undefined,
+    ...options,
+    params: Object.keys(params).length ? params : undefined,
   })
 }
 

@@ -1,0 +1,1787 @@
+{
+ "runtime_11": {
+  "toolbarButtons": [
+   "新增",
+   "批量删除"
+  ],
+  "crud": {
+   "showImport": false,
+   "showExport": false,
+   "hideBatchDelete": false,
+   "searchFields": [
+    "id"
+   ]
+  }
+ },
+ "designer_11": {
+  "dirty": null,
+  "zones": {
+   "search": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldInput",
+     "fieldNumber"
+    ],
+    "items": [],
+    "props": {
+     "fieldSettings": {},
+     "canvas": {
+      "width": 1040,
+      "height": 300,
+      "snap": 8,
+      "items": [
+       {
+        "id": "search_query_set",
+        "componentKey": "query-set",
+        "label": "查询集",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [
+         "fieldInput",
+         "fieldNumber"
+        ],
+        "x": 32,
+        "y": 36,
+        "w": 700,
+        "h": 132,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "",
+         "fieldRefs": [
+          "fieldInput",
+          "fieldNumber"
+         ]
+        }
+       },
+       {
+        "id": "search_action_reset",
+        "componentKey": "reset-button",
+        "label": "重置",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 760,
+        "y": 82,
+        "w": 104,
+        "h": 40,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "search_action_custom_query",
+        "componentKey": "custom-query",
+        "label": "自定义查询",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 876,
+        "y": 82,
+        "w": 128,
+        "h": 40,
+        "zIndex": 3,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       }
+      ]
+     }
+    }
+   },
+   "table": {
+    "enabled": true,
+    "fieldRefs": [
+     "id",
+     "fieldInput",
+     "fieldNumber"
+    ],
+    "items": [],
+    "props": {
+     "fieldSettings": {},
+     "canvas": {
+      "width": 1040,
+      "height": 460,
+      "snap": 8,
+      "items": [
+       {
+        "id": "table_action_add",
+        "componentKey": "add-button",
+        "label": "新增",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 28,
+        "w": 104,
+        "h": 40,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_action_import",
+        "componentKey": "import-button",
+        "label": "导入",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 148,
+        "y": 28,
+        "w": 104,
+        "h": 40,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_action_export",
+        "componentKey": "export-button",
+        "label": "导出",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 264,
+        "y": 28,
+        "w": 104,
+        "h": 40,
+        "zIndex": 3,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_action_custom_query",
+        "componentKey": "custom-query",
+        "label": "自定义查询",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 380,
+        "y": 28,
+        "w": 128,
+        "h": 40,
+        "zIndex": 4,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_data_grid",
+        "componentKey": "data-table",
+        "label": "11列表",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [
+         "id",
+         "fieldInput",
+         "fieldNumber",
+         "createTime",
+         "updateTime"
+        ],
+        "x": 32,
+        "y": 88,
+        "w": 940,
+        "h": 300,
+        "zIndex": 5,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "",
+         "fieldRefs": [
+          "id",
+          "fieldInput",
+          "fieldNumber",
+          "createTime",
+          "updateTime"
+         ]
+        }
+       }
+      ]
+     },
+     "title": "11",
+     "api": "",
+     "rowKey": "id",
+     "listApi": "",
+     "detailApi": "",
+     "createApi": "",
+     "updateApi": "",
+     "deleteApi": "",
+     "importApi": "",
+     "exportApi": "",
+     "listMethod": "get",
+     "listDataField": "records",
+     "listTotalField": "total",
+     "isEncrypt": false,
+     "publicParams": {},
+     "publicQuery": {},
+     "formDefaultValues": {},
+     "submitDefaultParams": {},
+     "showSearch": true,
+     "showPagination": true,
+     "searchGridCols": 4,
+     "searchLabelWidth": "auto",
+     "searchEnableCollapse": true,
+     "searchMaxVisibleFields": 3,
+     "searchYGap": 16,
+     "tableSize": "medium",
+     "renderMode": "table",
+     "showRenderModeSwitch": true,
+     "hideSelection": false,
+     "striped": false,
+     "bordered": false,
+     "maxHeight": "",
+     "scrollX": null,
+     "editGridCols": 1,
+     "editLabelWidth": "auto",
+     "editLabelPlacement": "left",
+     "editLabelAlign": "right",
+     "editSize": "medium",
+     "editShowFeedback": true,
+     "editXGap": 16,
+     "editYGap": 8,
+     "modalWidth": "800px",
+     "detailModalWidth": "min(1080px, 92vw)",
+     "modalType": "modal",
+     "formOpenMode": "modal",
+     "tabWorkspace": {
+      "maxTabs": 8,
+      "reuseRecordTab": true,
+      "closeAfterSave": false,
+      "showDirtyMark": true
+     },
+     "drawerPlacement": "right",
+     "hideModalFooter": false,
+     "hideDefaultDetailContent": false,
+     "hideToolbar": false,
+     "hideAdd": false,
+     "hideBatchDelete": false,
+     "showImport": true,
+     "showExport": true,
+     "showExportTasks": true,
+     "enableCustomQuery": true,
+     "addButtonText": "新增",
+     "exportButtonText": "导出",
+     "exportFileName": "",
+     "crudHookRules": {},
+     "beforeSubmitRules": [],
+     "previewLiveData": false,
+     "previewMode": "mock",
+     "previewRecordId": "",
+     "lastPreviewStatus": "idle",
+     "lastPreviewMessage": "当前使用模拟预览，不请求接口",
+     "lastPreviewError": "",
+     "lastPreviewAt": "",
+     "customActions": [],
+     "defaultSortField": "id",
+     "defaultSortOrder": "desc"
+    }
+   },
+   "edit": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldInput",
+     "fieldNumber"
+    ],
+    "items": [],
+    "props": {
+     "size": "medium",
+     "rowGap": 16,
+     "columnGap": 16,
+     "formLayout": [
+      {
+       "key": "cmp_fieldInput",
+       "span": 1,
+       "field": "fieldInput",
+       "nodeType": "field"
+      },
+      {
+       "key": "cmp_fieldNumber",
+       "span": 1,
+       "field": "fieldNumber",
+       "nodeType": "field"
+      }
+     ],
+     "labelAlign": "right",
+     "labelWidth": 100,
+     "compiledFrom": "formDesignerSchema",
+     "editGridCols": 2,
+     "showFeedback": true,
+     "fieldSettings": {
+      "fieldInput": {
+       "span": 1,
+       "align": "left",
+       "label": "输入框",
+       "props": {
+        "maxlength": 128,
+        "placeholder": "请填写输入框"
+       },
+       "hidden": false,
+       "readonly": false,
+       "required": false,
+       "labelWidth": 100,
+       "formVisible": true,
+       "placeholder": "请填写输入框",
+       "componentType": "input",
+       "type": "input"
+      },
+      "fieldNumber": {
+       "span": 1,
+       "align": "left",
+       "label": "数字",
+       "props": {
+        "precision": 0,
+        "placeholder": "请填写数字"
+       },
+       "hidden": false,
+       "readonly": false,
+       "required": false,
+       "labelWidth": 100,
+       "formVisible": true,
+       "placeholder": "请填写数字",
+       "componentType": "number",
+       "type": "number"
+      }
+     },
+     "inlineFeedback": false,
+     "labelPlacement": "left",
+     "formDesignerSchema": {
+      "forms": [],
+      "layout": {
+       "size": "medium",
+       "xGap": 16,
+       "yGap": 16,
+       "rowGap": 16,
+       "gridCols": 2,
+       "columnGap": 16,
+       "modalType": "modal",
+       "resetText": "重置",
+       "showReset": true,
+       "cancelText": "取消",
+       "labelAlign": "right",
+       "labelWidth": "auto",
+       "modalWidth": "800px",
+       "showCancel": false,
+       "showSubmit": true,
+       "submitText": "提交",
+       "gridColumns": 2,
+       "showActions": true,
+       "formOpenMode": "modal",
+       "showFeedback": true,
+       "enableCollapse": false,
+       "inlineFeedback": false,
+       "labelPlacement": "left",
+       "drawerPlacement": "right",
+       "detailModalWidth": "800px",
+       "maxVisibleFields": 6,
+       "hideRequiredAsterisk": false
+      },
+      "formKey": "business_object_11_default_form",
+      "formName": "11",
+      "settings": {},
+      "bottomBar": {
+       "actions": []
+      },
+      "components": [
+       {
+        "id": "cmp_fieldInput",
+        "label": "输入框",
+        "props": {
+         "placeholder": "请填写输入框"
+        },
+        "layout": {
+         "span": 1,
+         "align": "left"
+        },
+        "children": [],
+        "validation": {
+         "rules": [],
+         "preset": "",
+         "message": "",
+         "pattern": "",
+         "required": false,
+         "requiredMessage": ""
+        },
+        "visibility": {
+         "hidden": false,
+         "readonly": false
+        },
+        "componentKey": "input",
+        "fieldBinding": {
+         "mode": "field",
+         "locked": false,
+         "source": "designer",
+         "fieldCode": "fieldInput",
+         "columnName": "field_input",
+         "createIfMissing": true
+        },
+        "advancedProps": {}
+       },
+       {
+        "id": "cmp_fieldNumber",
+        "label": "数字",
+        "props": {
+         "placeholder": "请填写数字"
+        },
+        "layout": {
+         "span": 1,
+         "align": "left"
+        },
+        "children": [],
+        "validation": {
+         "rules": [],
+         "preset": "",
+         "message": "",
+         "pattern": "",
+         "required": false,
+         "requiredMessage": ""
+        },
+        "visibility": {
+         "hidden": false,
+         "readonly": false
+        },
+        "componentKey": "number",
+        "fieldBinding": {
+         "mode": "field",
+         "locked": false,
+         "source": "designer",
+         "fieldCode": "fieldNumber",
+         "columnName": "field_number",
+         "createIfMissing": true
+        },
+        "advancedProps": {}
+       }
+      ],
+      "pageSections": [
+       {
+        "title": "基本信息",
+        "fields": [
+         "fieldInput"
+        ],
+        "sectionId": "section_default",
+        "collapsible": false,
+        "sectionType": "card"
+       }
+      ],
+      "schemaVersion": "form-first-v1",
+      "defaultFormKey": null
+     },
+     "hideRequiredAsterisk": false,
+     "canvas": {
+      "width": 1040,
+      "height": 420,
+      "snap": 8,
+      "items": [
+       {
+        "id": "edit_fieldInput",
+        "componentKey": "field-input",
+        "label": "输入框",
+        "fieldRef": "fieldInput",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 32,
+        "w": 340,
+        "h": 64,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入输入框"
+        }
+       },
+       {
+        "id": "edit_fieldNumber",
+        "componentKey": "field-number",
+        "label": "数字",
+        "fieldRef": "fieldNumber",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 396,
+        "y": 32,
+        "w": 340,
+        "h": 64,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入数字"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "detail": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldInput",
+     "fieldNumber"
+    ],
+    "items": [],
+    "props": {
+     "canvas": {
+      "width": 1040,
+      "height": 420,
+      "snap": 8,
+      "items": [
+       {
+        "id": "detail_fieldInput",
+        "componentKey": "field-input",
+        "label": "输入框",
+        "fieldRef": "fieldInput",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 32,
+        "w": 340,
+        "h": 64,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入输入框"
+        }
+       },
+       {
+        "id": "detail_fieldNumber",
+        "componentKey": "field-number",
+        "label": "数字",
+        "fieldRef": "fieldNumber",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 396,
+        "y": 32,
+        "w": 340,
+        "h": 64,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入数字"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "toolbar": {
+    "enabled": true,
+    "fieldRefs": [
+     "id",
+     "fieldInput",
+     "fieldNumber",
+     "createBy",
+     "createTime",
+     "createDept",
+     "updateBy",
+     "updateTime"
+    ],
+    "items": [],
+    "props": {
+     "canvas": {
+      "width": 1040,
+      "height": 420,
+      "snap": 8,
+      "items": [
+       {
+        "id": "toolbar_id",
+        "componentKey": "field-number",
+        "label": "ID",
+        "fieldRef": "id",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 32,
+        "w": 280,
+        "h": 64,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入ID"
+        }
+       },
+       {
+        "id": "toolbar_fieldInput",
+        "componentKey": "field-input",
+        "label": "输入框",
+        "fieldRef": "fieldInput",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 340,
+        "y": 32,
+        "w": 280,
+        "h": 64,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入输入框"
+        }
+       },
+       {
+        "id": "toolbar_fieldNumber",
+        "componentKey": "field-number",
+        "label": "数字",
+        "fieldRef": "fieldNumber",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 648,
+        "y": 32,
+        "w": 280,
+        "h": 64,
+        "zIndex": 3,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入数字"
+        }
+       },
+       {
+        "id": "toolbar_createBy",
+        "componentKey": "field-number",
+        "label": "创建人",
+        "fieldRef": "createBy",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 118,
+        "w": 280,
+        "h": 64,
+        "zIndex": 4,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入创建人"
+        }
+       },
+       {
+        "id": "toolbar_createTime",
+        "componentKey": "field-datetime",
+        "label": "创建时间",
+        "fieldRef": "createTime",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 340,
+        "y": 118,
+        "w": 280,
+        "h": 64,
+        "zIndex": 5,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入创建时间"
+        }
+       },
+       {
+        "id": "toolbar_createDept",
+        "componentKey": "field-number",
+        "label": "创建部门",
+        "fieldRef": "createDept",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 648,
+        "y": 118,
+        "w": 280,
+        "h": 64,
+        "zIndex": 6,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入创建部门"
+        }
+       },
+       {
+        "id": "toolbar_updateBy",
+        "componentKey": "field-number",
+        "label": "更新人",
+        "fieldRef": "updateBy",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 204,
+        "w": 280,
+        "h": 64,
+        "zIndex": 7,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入更新人"
+        }
+       },
+       {
+        "id": "toolbar_updateTime",
+        "componentKey": "field-datetime",
+        "label": "更新时间",
+        "fieldRef": "updateTime",
+        "modelCode": "presale_registration_business_object_11",
+        "modelName": "11",
+        "fieldRefs": [],
+        "x": 340,
+        "y": 204,
+        "w": 280,
+        "h": 64,
+        "zIndex": 8,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入更新时间"
+        }
+       }
+      ]
+     }
+    }
+   }
+  }
+ },
+ "runtime_12": {
+  "toolbarButtons": [
+   "新增",
+   "批量删除"
+  ],
+  "crud": {
+   "showImport": false,
+   "showExport": false,
+   "hideBatchDelete": false,
+   "searchFields": [
+    "fieldBarcodeScanner"
+   ]
+  }
+ },
+ "designer_12": {
+  "dirty": null,
+  "zones": {
+   "search": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldBarcodeScanner",
+     "fieldTextarea"
+    ],
+    "items": [],
+    "props": {
+     "canvas": {
+      "width": 1040,
+      "height": 300,
+      "snap": 8,
+      "items": [
+       {
+        "id": "search_query_set",
+        "componentKey": "query-set",
+        "label": "查询集",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [
+         "fieldBarcodeScanner",
+         "fieldTextarea"
+        ],
+        "x": 32,
+        "y": 36,
+        "w": 700,
+        "h": 132,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "",
+         "fieldRefs": [
+          "fieldBarcodeScanner",
+          "fieldTextarea"
+         ]
+        }
+       },
+       {
+        "id": "search_action_reset",
+        "componentKey": "reset-button",
+        "label": "重置",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 760,
+        "y": 82,
+        "w": 104,
+        "h": 40,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "search_action_custom_query",
+        "componentKey": "custom-query",
+        "label": "自定义查询",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 876,
+        "y": 82,
+        "w": 128,
+        "h": 40,
+        "zIndex": 3,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       }
+      ]
+     },
+     "fieldSettings": {}
+    }
+   },
+   "table": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldTextarea"
+    ],
+    "items": [],
+    "props": {
+     "api": "",
+     "title": "12",
+     "canvas": {
+      "width": 1040,
+      "height": 460,
+      "snap": 8,
+      "items": [
+       {
+        "id": "table_action_add",
+        "componentKey": "add-button",
+        "label": "新增",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 28,
+        "w": 104,
+        "h": 40,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_action_import",
+        "componentKey": "import-button",
+        "label": "导入",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 148,
+        "y": 28,
+        "w": 104,
+        "h": 40,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_action_export",
+        "componentKey": "export-button",
+        "label": "导出",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 264,
+        "y": 28,
+        "w": 104,
+        "h": 40,
+        "zIndex": 3,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_action_custom_query",
+        "componentKey": "custom-query",
+        "label": "自定义查询",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [],
+        "x": 380,
+        "y": 28,
+        "w": 128,
+        "h": 40,
+        "zIndex": 4,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": ""
+        }
+       },
+       {
+        "id": "table_data_grid",
+        "componentKey": "data-table",
+        "label": "12列表",
+        "fieldRef": "",
+        "modelCode": "",
+        "modelName": "",
+        "fieldRefs": [
+         "id",
+         "fieldBarcodeScanner",
+         "fieldTextarea",
+         "createTime",
+         "updateTime"
+        ],
+        "x": 32,
+        "y": 88,
+        "w": 940,
+        "h": 300,
+        "zIndex": 5,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "",
+         "fieldRefs": [
+          "id",
+          "fieldBarcodeScanner",
+          "fieldTextarea",
+          "createTime",
+          "updateTime"
+         ]
+        }
+       }
+      ]
+     },
+     "rowKey": "id",
+     "hideAdd": false,
+     "listApi": "",
+     "striped": false,
+     "bordered": false,
+     "editSize": "medium",
+     "editXGap": 16,
+     "editYGap": 8,
+     "createApi": "",
+     "deleteApi": "",
+     "detailApi": "",
+     "exportApi": "",
+     "importApi": "",
+     "isEncrypt": false,
+     "maxHeight": "",
+     "modalType": "modal",
+     "tableSize": "medium",
+     "updateApi": "",
+     "listMethod": "get",
+     "modalWidth": "800px",
+     "renderMode": "table",
+     "searchYGap": 16,
+     "showExport": true,
+     "showImport": true,
+     "showSearch": true,
+     "hideToolbar": false,
+     "previewMode": "mock",
+     "publicQuery": {},
+     "editGridCols": 1,
+     "formOpenMode": "modal",
+     "publicParams": {},
+     "tabWorkspace": {
+      "maxTabs": 8,
+      "showDirtyMark": true,
+      "closeAfterSave": false,
+      "reuseRecordTab": true
+     },
+     "addButtonText": "新增",
+     "crudHookRules": {},
+     "customActions": [],
+     "fieldSettings": {},
+     "hideSelection": false,
+     "lastPreviewAt": "",
+     "listDataField": "records",
+     "editLabelAlign": "right",
+     "editLabelWidth": "auto",
+     "exportFileName": "",
+     "listTotalField": "total",
+     "searchGridCols": 4,
+     "showPagination": true,
+     "drawerPlacement": "right",
+     "hideBatchDelete": false,
+     "hideModalFooter": false,
+     "previewLiveData": false,
+     "previewRecordId": "",
+     "showExportTasks": true,
+     "defaultSortField": "id",
+     "defaultSortOrder": "desc",
+     "detailModalWidth": "min(1080px, 92vw)",
+     "editShowFeedback": true,
+     "exportButtonText": "导出",
+     "lastPreviewError": "",
+     "searchLabelWidth": "auto",
+     "beforeSubmitRules": [],
+     "enableCustomQuery": true,
+     "formDefaultValues": {},
+     "lastPreviewStatus": "idle",
+     "editLabelPlacement": "left",
+     "lastPreviewMessage": "当前使用模拟预览，不请求接口",
+     "submitDefaultParams": {},
+     "searchEnableCollapse": true,
+     "showRenderModeSwitch": true,
+     "searchMaxVisibleFields": 3,
+     "hideDefaultDetailContent": false
+    }
+   },
+   "edit": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldBarcodeScanner",
+     "fieldTextarea"
+    ],
+    "items": [],
+    "props": {
+     "size": "medium",
+     "rowGap": 16,
+     "columnGap": 16,
+     "formLayout": [
+      {
+       "key": "cmp_fieldBarcodeScanner",
+       "span": 2,
+       "field": "fieldBarcodeScanner",
+       "nodeType": "field"
+      },
+      {
+       "key": "cmp_fieldTextarea",
+       "span": 2,
+       "field": "fieldTextarea",
+       "nodeType": "field"
+      }
+     ],
+     "labelAlign": "right",
+     "labelWidth": 100,
+     "compiledFrom": "formDesignerSchema",
+     "editGridCols": 2,
+     "showFeedback": true,
+     "fieldSettings": {
+      "fieldTextarea": {
+       "span": 2,
+       "align": "left",
+       "label": "多行文本",
+       "props": {
+        "placeholder": "请填写多行文本"
+       },
+       "hidden": false,
+       "readonly": false,
+       "required": false,
+       "labelWidth": 100,
+       "formVisible": true,
+       "placeholder": "请填写多行文本",
+       "componentType": "textarea",
+       "type": "textarea"
+      },
+      "fieldBarcodeScanner": {
+       "span": 2,
+       "align": "left",
+       "label": "扫码输入",
+       "props": {
+        "formats": [
+         "CODE128",
+         "CODE39",
+         "EAN13",
+         "EAN8",
+         "UPC",
+         "ITF14"
+        ],
+        "timeoutMs": 30000,
+        "placeholder": "请填写扫码输入",
+        "allowManualInput": true
+       },
+       "hidden": false,
+       "readonly": false,
+       "required": false,
+       "labelWidth": 100,
+       "formVisible": true,
+       "placeholder": "请填写扫码输入",
+       "componentType": "barcodeScanner",
+       "type": "barcodeScanner"
+      }
+     },
+     "inlineFeedback": false,
+     "labelPlacement": "left",
+     "formDesignerSchema": {
+      "forms": [],
+      "layout": {
+       "size": "medium",
+       "xGap": 16,
+       "yGap": 16,
+       "rowGap": 16,
+       "gridCols": 2,
+       "columnGap": 16,
+       "modalType": "modal",
+       "resetText": "重置",
+       "showReset": true,
+       "cancelText": "取消",
+       "labelAlign": "right",
+       "labelWidth": "auto",
+       "modalWidth": "800px",
+       "showCancel": false,
+       "showSubmit": true,
+       "submitText": "提交",
+       "gridColumns": 2,
+       "showActions": true,
+       "formOpenMode": "modal",
+       "showFeedback": true,
+       "enableCollapse": false,
+       "inlineFeedback": false,
+       "labelPlacement": "left",
+       "drawerPlacement": "right",
+       "detailModalWidth": "800px",
+       "maxVisibleFields": 6,
+       "hideRequiredAsterisk": false
+      },
+      "formKey": "business_object_12_default_form",
+      "formName": "12",
+      "settings": {},
+      "bottomBar": {
+       "actions": []
+      },
+      "components": [
+       {
+        "id": "cmp_fieldBarcodeScanner",
+        "label": "扫码输入",
+        "props": {
+         "formats": [
+          "CODE128",
+          "CODE39",
+          "EAN13",
+          "EAN8",
+          "UPC",
+          "ITF14"
+         ],
+         "timeoutMs": 30000,
+         "placeholder": "请填写扫码输入",
+         "allowManualInput": true
+        },
+        "layout": {
+         "span": 2,
+         "align": "left"
+        },
+        "children": [],
+        "validation": {
+         "rules": [],
+         "preset": "",
+         "message": "",
+         "pattern": "",
+         "required": false,
+         "requiredMessage": ""
+        },
+        "visibility": {
+         "hidden": false,
+         "readonly": false
+        },
+        "componentKey": "barcodeScanner",
+        "fieldBinding": {
+         "mode": "field",
+         "locked": false,
+         "source": "designer",
+         "fieldCode": "fieldBarcodeScanner",
+         "columnName": "field_barcode_scanner",
+         "createIfMissing": true
+        },
+        "advancedProps": {}
+       },
+       {
+        "id": "cmp_fieldTextarea",
+        "label": "多行文本",
+        "props": {
+         "placeholder": "请填写多行文本"
+        },
+        "layout": {
+         "span": 2,
+         "align": "left"
+        },
+        "children": [],
+        "validation": {
+         "rules": [],
+         "preset": "",
+         "message": "",
+         "pattern": "",
+         "required": false,
+         "requiredMessage": ""
+        },
+        "visibility": {
+         "hidden": false,
+         "readonly": false
+        },
+        "componentKey": "textarea",
+        "fieldBinding": {
+         "mode": "field",
+         "locked": false,
+         "source": "designer",
+         "fieldCode": "fieldTextarea",
+         "columnName": "field_textarea",
+         "createIfMissing": true
+        },
+        "advancedProps": {}
+       }
+      ],
+      "pageSections": [
+       {
+        "title": "基本信息",
+        "fields": [
+         "fieldBarcodeScanner"
+        ],
+        "sectionId": "section_default",
+        "collapsible": false,
+        "sectionType": "card"
+       }
+      ],
+      "schemaVersion": "form-first-v1",
+      "defaultFormKey": null
+     },
+     "hideRequiredAsterisk": false,
+     "canvas": {
+      "width": 1040,
+      "height": 420,
+      "snap": 8,
+      "items": [
+       {
+        "id": "edit_fieldBarcodeScanner",
+        "componentKey": "field-input",
+        "label": "扫码输入",
+        "fieldRef": "fieldBarcodeScanner",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 32,
+        "w": 340,
+        "h": 64,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入扫码输入"
+        }
+       },
+       {
+        "id": "edit_fieldTextarea",
+        "componentKey": "field-textarea",
+        "label": "多行文本",
+        "fieldRef": "fieldTextarea",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 396,
+        "y": 32,
+        "w": 340,
+        "h": 76,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入多行文本"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "detail": {
+    "enabled": true,
+    "fieldRefs": [
+     "fieldBarcodeScanner",
+     "fieldTextarea"
+    ],
+    "items": [],
+    "props": {
+     "canvas": {
+      "width": 1040,
+      "height": 420,
+      "snap": 8,
+      "items": [
+       {
+        "id": "detail_fieldBarcodeScanner",
+        "componentKey": "field-input",
+        "label": "扫码输入",
+        "fieldRef": "fieldBarcodeScanner",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 32,
+        "w": 340,
+        "h": 64,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入扫码输入"
+        }
+       },
+       {
+        "id": "detail_fieldTextarea",
+        "componentKey": "field-textarea",
+        "label": "多行文本",
+        "fieldRef": "fieldTextarea",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 396,
+        "y": 32,
+        "w": 340,
+        "h": 76,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入多行文本"
+        }
+       }
+      ]
+     },
+     "detailGroups": [
+      {
+       "key": "basic",
+       "items": [
+        {
+         "align": "left",
+         "label": "扫码输入",
+         "fieldRef": "fieldBarcodeScanner",
+         "readonly": true
+        },
+        {
+         "align": "left",
+         "label": "多行文本",
+         "fieldRef": "fieldTextarea",
+         "readonly": true
+        }
+       ],
+       "title": "基础信息"
+      }
+     ],
+     "fieldSettings": {
+      "fieldTextarea": {
+       "align": "left"
+      },
+      "fieldBarcodeScanner": {
+       "align": "left"
+      }
+     }
+    }
+   },
+   "toolbar": {
+    "enabled": true,
+    "fieldRefs": [
+     "id",
+     "fieldBarcodeScanner",
+     "fieldTextarea",
+     "createBy",
+     "createTime",
+     "createDept",
+     "updateBy",
+     "updateTime"
+    ],
+    "items": [],
+    "props": {
+     "canvas": {
+      "width": 1040,
+      "height": 420,
+      "snap": 8,
+      "items": [
+       {
+        "id": "toolbar_id",
+        "componentKey": "field-number",
+        "label": "ID",
+        "fieldRef": "id",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 32,
+        "w": 280,
+        "h": 64,
+        "zIndex": 1,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入ID"
+        }
+       },
+       {
+        "id": "toolbar_fieldBarcodeScanner",
+        "componentKey": "field-input",
+        "label": "扫码输入",
+        "fieldRef": "fieldBarcodeScanner",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 340,
+        "y": 32,
+        "w": 280,
+        "h": 64,
+        "zIndex": 2,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入扫码输入"
+        }
+       },
+       {
+        "id": "toolbar_fieldTextarea",
+        "componentKey": "field-textarea",
+        "label": "多行文本",
+        "fieldRef": "fieldTextarea",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 648,
+        "y": 32,
+        "w": 580,
+        "h": 98,
+        "zIndex": 3,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入多行文本"
+        }
+       },
+       {
+        "id": "toolbar_createBy",
+        "componentKey": "field-number",
+        "label": "创建人",
+        "fieldRef": "createBy",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 118,
+        "w": 280,
+        "h": 64,
+        "zIndex": 4,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入创建人"
+        }
+       },
+       {
+        "id": "toolbar_createTime",
+        "componentKey": "field-datetime",
+        "label": "创建时间",
+        "fieldRef": "createTime",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 340,
+        "y": 118,
+        "w": 280,
+        "h": 64,
+        "zIndex": 5,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入创建时间"
+        }
+       },
+       {
+        "id": "toolbar_createDept",
+        "componentKey": "field-number",
+        "label": "创建部门",
+        "fieldRef": "createDept",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 648,
+        "y": 118,
+        "w": 280,
+        "h": 64,
+        "zIndex": 6,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入创建部门"
+        }
+       },
+       {
+        "id": "toolbar_updateBy",
+        "componentKey": "field-number",
+        "label": "更新人",
+        "fieldRef": "updateBy",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 32,
+        "y": 204,
+        "w": 280,
+        "h": 64,
+        "zIndex": 7,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入更新人"
+        }
+       },
+       {
+        "id": "toolbar_updateTime",
+        "componentKey": "field-datetime",
+        "label": "更新时间",
+        "fieldRef": "updateTime",
+        "modelCode": "presale_registration_business_object_12",
+        "modelName": "12",
+        "fieldRefs": [],
+        "x": 340,
+        "y": 204,
+        "w": 280,
+        "h": 64,
+        "zIndex": 8,
+        "locked": false,
+        "style": {
+         "labelWidth": 86,
+         "radius": 6,
+         "fill": "#ffffff",
+         "stroke": "#cbd5e1"
+        },
+        "props": {
+         "placeholder": "请输入更新时间"
+        }
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

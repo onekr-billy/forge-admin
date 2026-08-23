@@ -75,13 +75,15 @@ public class BusinessProcessRuntimeActionCompiler {
         }
         Map<String, Object> config = start.getConfig() == null ? Map.of() : start.getConfig();
         String objectCode = schema.getSubject() == null ? null : StringUtils.trimToNull(schema.getSubject().getObjectCode());
-        String label = firstText(start.getName(), processName, processCode, "启动流程");
+        // 手动开始节点的流程名称用于流程画布/时间线；运行时按钮文案单独配置，避免改按钮时污染节点语义。
+        // 兼容历史草稿：未配置 buttonLabel 时继续使用原来的节点名称回退链路。
+        String label = firstText(text(config.get("buttonLabel")), start.getName(), processName, processCode, "启动流程");
         String permission = firstText(text(config.get("permission")), DEFAULT_PERMISSION);
         String confirmText = text(config.get("confirmText"));
         String visibleCondition = compileDisplayCondition(config.get("visibleCondition"));
         Set<String> positions = normalizePositions(config.get("positions"));
         List<Map<String, Object>> actions = new ArrayList<>();
-        if (positions.contains("ROW") || positions.contains("DETAIL")) {
+        if (positions.contains("ROW")) {
             actions.add(action(
                     processCode,
                     applicationCode,
@@ -92,7 +94,29 @@ public class BusinessProcessRuntimeActionCompiler {
                     confirmText,
                     visibleCondition));
         }
-        if (positions.contains("TOOLBAR") || positions.contains("FORM")) {
+        if (positions.contains("DETAIL")) {
+            actions.add(action(
+                    processCode + ":detail",
+                    applicationCode,
+                    objectCode,
+                    label,
+                    "detail",
+                    permission,
+                    confirmText,
+                    visibleCondition));
+        }
+        if (positions.contains("FORM")) {
+            actions.add(action(
+                    processCode + ":form",
+                    applicationCode,
+                    objectCode,
+                    label,
+                    "form",
+                    permission,
+                    confirmText,
+                    visibleCondition));
+        }
+        if (positions.contains("TOOLBAR")) {
             actions.add(action(
                     processCode + ":toolbar",
                     applicationCode,
@@ -151,25 +175,42 @@ public class BusinessProcessRuntimeActionCompiler {
             return "";
         }
         Object rules = map.get("rules");
-        if (!(rules instanceof List<?> list) || list.isEmpty() || !(list.get(0) instanceof Map<?, ?> rule)) {
+        if (!(rules instanceof List<?> list) || list.isEmpty()) {
             return "";
         }
-        String field = text(rule.get("field"));
-        if (StringUtils.isBlank(field)) {
+        List<String> expressions = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> rule)) {
+                continue;
+            }
+            String field = text(rule.get("field"));
+            if (StringUtils.isBlank(field)) {
+                continue;
+            }
+            String operator = upper(text(rule.get("operator")));
+            String value = text(rule.get("value"));
+            expressions.add(compileRuleExpression(field, operator, value));
+        }
+        if (expressions.isEmpty()) {
             return "";
         }
-        String operator = upper(text(rule.get("operator")));
-        String value = text(rule.get("value"));
-        if ("NE".equals(operator)) {
-            return field + " != " + value;
-        }
-        if ("IN".equals(operator)) {
-            return field + " in " + value;
-        }
-        if ("NOT_EMPTY".equals(operator)) {
-            return field + " != ";
-        }
-        return field + " = " + value;
+        String joiner = "OR".equalsIgnoreCase(text(map.get("operator")))
+                || "ANY".equalsIgnoreCase(text(map.get("operator"))) ? " OR " : " AND ";
+        return expressions.size() == 1 ? expressions.get(0) : String.join(joiner, expressions);
+    }
+
+    private String compileRuleExpression(String field, String operator, String value) {
+        return switch (operator) {
+            case "NE" -> field + " != " + value;
+            case "IN" -> field + " in " + value;
+            case "NOT_EMPTY" -> field + " != ";
+            case "EMPTY" -> field + " = ";
+            case "GT" -> field + " > " + value;
+            case "GTE", "GE" -> field + " >= " + value;
+            case "LT" -> field + " < " + value;
+            case "LTE", "LE" -> field + " <= " + value;
+            default -> field + " = " + value;
+        };
     }
 
     public BusinessProcessSchema schemaFromJson(Map<String, Object> json) {

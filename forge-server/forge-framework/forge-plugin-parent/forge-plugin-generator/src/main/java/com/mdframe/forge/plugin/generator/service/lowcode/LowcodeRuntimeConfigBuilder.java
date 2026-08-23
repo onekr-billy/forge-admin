@@ -253,6 +253,8 @@ public class LowcodeRuntimeConfigBuilder {
         }
         options.put("toolbarActions", resolveCustomActions(pageSchema, "toolbar"));
         options.put("rowActions", resolveCustomActions(pageSchema, "row"));
+        options.put("detailActions", resolveCustomActions(pageSchema, "detail"));
+        options.put("formActions", resolveCustomActions(pageSchema, "form"));
         options.put("defaultSort", buildDefaultSort(modelSchema, pageSchema));
         options.put("joinConfig", buildJoinConfig(modelSchema, pageSchema));
         if (masterDetailRuntime) {

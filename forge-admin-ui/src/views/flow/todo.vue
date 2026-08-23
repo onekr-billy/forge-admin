@@ -255,6 +255,9 @@
             <div v-else-if="useBusinessManagedForm" class="business-task-form-section">
               <div class="approval-form-title">
                 <span>{{ businessFormTitle }}</span>
+                <small v-if="businessFormContext?.pageName || businessFormContext?.formRef?.pageName">
+                  页面：{{ businessFormContext.pageName || businessFormContext.formRef.pageName }}
+                </small>
               </div>
               <AiForm
                 ref="businessFormRef"
@@ -1440,7 +1443,7 @@ onMounted(async () => {
 watch(
   () => route.fullPath,
   async () => {
-    if (route.path === '/flow/todo' || route.path === '/workspace/todo')
+    if (route.name === 'ApplicationPortal' || route.path === '/flow/todo' || route.path === '/workspace/todo')
       await openTaskFromRoute()
   },
 )
@@ -1857,6 +1860,12 @@ watch(
   color: #172033;
   font-size: 14px;
   font-weight: 700;
+}
+
+.approval-form-title small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .business-form-warnings {

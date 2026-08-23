@@ -79,6 +79,7 @@ sendToHost({
 function executeScript(source, context) {
   const fields = { ...(context.fields || {}) }
   const allowedFields = new Set(context.allowedFields || [])
+  const allowedWritableFields = new Set(context.allowedWritableFields || context.allowedFields || [])
   const allowedActions = new Set(context.allowedActions || [])
   const effects = []
 
@@ -88,7 +89,7 @@ function executeScript(source, context) {
       return clone(fields[field])
     },
     setField(field, value) {
-      assertAllowedCode(field, allowedFields, '字段')
+      assertAllowedCode(field, allowedWritableFields, '可写字段')
       const safeValue = clone(value)
       fields[field] = safeValue
       effects.push({ type: 'SET_FIELD', field, value: safeValue })

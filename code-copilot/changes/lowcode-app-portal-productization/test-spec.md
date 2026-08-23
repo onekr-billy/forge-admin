@@ -191,3 +191,37 @@ JAVA_TOOL_OPTIONS='-javaagent:/Users/yaomindong/.m2/repository/net/bytebuddy/byt
 - 真实 MySQL/Flyway 执行、Admin/Flow 启动、登录 Token 和端到端业务数据验证由用户按偏好自行执行；本轮不启动真实服务或改动数据库。
 - 钉钉/企业微信凭证分发不使用伪造凭证验收；仅验证服务端输入校验、脱敏和失败关闭协议。
 - Forge 首页投放、组织私有模板持久化和真实数据型 AI 查询/写入没有现成仓库协议，只验证当前配置态与安全边界，不将其记为完成的外部效果。
+
+### 2026-08-22 应用门户问题修复增量
+
+- 变更范围：门户页面组层级、应用内个人资料与消息通知、应用中心窄屏布局、应用设置/发布路由兼容、发布状态刷新。
+- 必跑验证：目标文件 ESLint、门户/路由/页面编排 Vitest、Vite 生产构建、`git diff --check`。
+- 条件验证：Playwright 登录后页面截图和点击流程；因本地 Admin 接口返回 502，保留为环境验收项。
+
+### 2026-08-23 存量对象页结构恢复增量
+
+- 变更范围：改版前仅通过 `primaryObjectCode`、应用对象和 CRUD 配置运行的存量对象页，兼容恢复为新版 `inAppBuilder.nodes/pages`；正式发布快照与设计草稿采用同一恢复规则。
+- 必跑验证：`in-app-builder-schema` ESLint/Vitest、Generator reactor compile、`BusinessApplicationRuntimeServiceTest` 重新 test-compile 后定向执行、`git diff --check`。
+- 环境验收：打开真实 `PRESALE_REGISTRATION_APP`，确认恢复 `page_ps_presale_order`，并使用 `ps_presale_order` 渲染历史预售数据；确认恢复结构一次性写回草稿，已有页面应用和用户主动删空后的应用不重复补页。
+- 跳过项：按用户要求不执行前端生产构建和全量 Maven 构建。
+
+### 2026-08-23 正式应用门户系统页面增量
+
+- 变更范围：正式应用门户运行态导航投影和系统工作台页面渲染；PC 固定置顶个人工作台、待办、已办、发送、抄送，H5 保持客户端页面隔离。
+- 必跑验证：目标文件 ESLint、门户导航/页面管理/门户配置 Vitest、`git diff --check`。
+- 环境验收：登录现有 `http://localhost:3000/app/presale_registration_apply?pageId=page_page`，确认 5 个系统页面连续置顶；点击“我的待办”后 URL 为 `pageId=system:todo` 且渲染现有 `.flow-page` 待办视图。
+- 跳过项：按用户要求不执行前端生产构建和全量 Maven 构建；未启动新服务，复用当前开发服务。
+
+### 2026-08-23 应用内通知公告与待办跳转增量
+
+- 变更范围：系统页面增加真实菜单图标；新增“通知公告”系统页；消息通知抽屉、消息列表和工作台入口统一跳转当前应用的 `system:messages` / `system:todo` / `system:done` 页面。
+- 必跑验证：通知路由工具、系统页面管理、门户导航和门户配置 Vitest；目标 Vue/JS ESLint；`git diff --check`。
+- 环境验收：登录动态应用后确认系统页图标存在；点击“通知公告”进入 `pageId=system:messages` 并渲染消息列表；点击“我的待办”进入 `pageId=system:todo` 并渲染 `.flow-page`；通知抽屉“查看全部消息”也留在 `system:messages`。
+- 跳过项：按用户要求不执行前端生产构建和全量 Maven 构建；复用现有开发服务，未启动新服务。
+
+### 2026-08-23 应用门户滚动与表单底部操作区增量
+
+- 变更范围：应用门户视口高度链、系统页面内部滚动、门户根 `NSpin` 样式作用域、动态页面设计高度换算和运行态表单自然高度。
+- 必跑验证：目标 Vue 文件 ESLint；页面管理、门户导航、消息跳转和门户配置 Vitest；`git diff --check`。
+- 浏览器验收：分别使用 1280×800、1024×500、390×844 视口打开 `system:todo`，确认任务卡片列表 `scrollHeight > clientHeight` 且修改 `scrollTop` 后数值生效；在 1024×500 打开 `page_page` 并进入新增表单，滚动门户内容区后底部“取消/确定”按钮完整位于视口内。
+- 跳过项：按用户要求不执行前端生产构建和全量 Maven 构建；复用现有开发服务，未启动新服务。

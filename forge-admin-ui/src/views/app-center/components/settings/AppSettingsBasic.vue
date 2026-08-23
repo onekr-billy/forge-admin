@@ -33,7 +33,7 @@
         />
       </n-form-item>
       <n-divider title-placement="left">
-        门户主题
+        应用主题
       </n-divider>
       <n-form-item label="主题色">
         <div class="theme-color-row">
@@ -57,7 +57,7 @@
         </div>
       </n-form-item>
       <n-divider title-placement="left">
-        门户水印
+        应用水印
       </n-divider>
       <n-grid :cols="2" :x-gap="16" responsive="screen">
         <n-form-item-gi label="启用水印">

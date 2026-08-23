@@ -353,6 +353,19 @@ async function recoverRun(run) {
 function handleRunResult(result) {
   if (result?.runStatus === 'SUCCESS') {
     window.$message.success(result.message || '应用发布成功')
+    const payload = JSON.stringify({
+      applicationId: props.application?.id,
+      applicationCode: props.application?.applicationCode,
+      versionNo: result?.versionNo || result?.targetVersionNo || null,
+      at: Date.now(),
+    })
+    try {
+      localStorage.setItem('forge:app-center:application-published', payload)
+    }
+    catch {
+      // 受限存储不应影响发布结果。
+    }
+    window.dispatchEvent(new CustomEvent('forge:application-published', { detail: JSON.parse(payload) }))
     emit('changed')
     return
   }

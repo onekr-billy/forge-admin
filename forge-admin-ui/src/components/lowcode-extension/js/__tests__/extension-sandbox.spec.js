@@ -62,6 +62,7 @@ describe('client extension sandbox policy', () => {
       recordId: 8,
       fields: { amount: 1200 },
       allowedFields: ['amount'],
+      allowedWritableFields: ['amount'],
       allowedActions: ['recalculate'],
     })
   })

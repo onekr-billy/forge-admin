@@ -589,6 +589,8 @@ function buildRuntimeCrudProps(cfg) {
     enableCustomQuery: options.enableCustomQuery !== false,
     customQueryConfigKey: cfg.configKey,
     toolbarActions: options.toolbarActions || [],
+    detailActions: options.detailActions || [],
+    formActions: options.formActions || [],
   }
 }
 

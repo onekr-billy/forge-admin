@@ -110,7 +110,7 @@ export function useBusinessProcessDesigner(initialSchema, options = {}) {
     })
   }
 
-  function updateNode(nodeId, patch) {
+  function updateNode(nodeId, patch, options = {}) {
     const next = cloneBusinessProcessSchema(schema.value)
     const index = next.nodes.findIndex(node => node.id === nodeId)
     if (index < 0)
@@ -123,7 +123,9 @@ export function useBusinessProcessDesigner(initialSchema, options = {}) {
       type: current.type,
       config: patch?.config == null
         ? current.config
-        : { ...current.config, ...deepClone(patch.config) },
+        : options.replaceConfig
+          ? deepClone(patch.config)
+          : { ...current.config, ...deepClone(patch.config) },
     }
     next.nodes[index] = updated
     if (current.type === BUSINESS_PROCESS_NODE_TYPE.CONDITION

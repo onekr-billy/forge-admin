@@ -31,12 +31,18 @@ const DEFAULT_COMPONENT_PROPS = {
 
 export function normalizeInAppBuilder(rawOptions, _application = {}, objects = []) {
   const options = parseOptions(rawOptions)
-  const saved = clone(options.inAppBuilder || {})
+  const saved = restoreLegacyPrimaryObjectPage(
+    clone(options.inAppBuilder || {}),
+    options,
+    _application,
+    objects,
+  )
   const nodes = normalizeNodes(saved.nodes)
   const homePageId = resolveHomePageId(saved.homePageId, nodes)
   const pages = normalizePages(saved.pages, nodes)
   const schema = {
     schemaVersion: IN_APP_BUILDER_SCHEMA_VERSION,
+    legacyObjectPageMigrated: saved.legacyObjectPageMigrated === true,
     homePageId,
     nodes,
     pages,
@@ -50,18 +56,104 @@ export function normalizeInAppBuilder(rawOptions, _application = {}, objects = [
   return schema
 }
 
+export function hasPendingLegacyObjectPageMigration(rawOptions, schema) {
+  const options = parseOptions(rawOptions)
+  const saved = options.inAppBuilder && typeof options.inAppBuilder === 'object'
+    ? options.inAppBuilder
+    : {}
+  return saved.legacyObjectPageMigrated !== true
+    && schema?.legacyObjectPageMigrated === true
+    && (schema.nodes || []).some(node => node?.legacyObjectPage === true)
+}
+
 export function mergeInAppBuilderOptions(applicationOptions, schema) {
   const options = parseOptions(applicationOptions)
   return {
     ...options,
     inAppBuilder: clone({
       schemaVersion: IN_APP_BUILDER_SCHEMA_VERSION,
+      legacyObjectPageMigrated: schema.legacyObjectPageMigrated === true,
       homePageId: schema.homePageId,
       nodes: schema.nodes,
       pages: schema.pages,
       formAssets: schema.formAssets,
       flowInteraction: normalizeFlowInteraction(schema.flowInteraction),
     }),
+  }
+}
+
+/**
+ * 改版前的对象型应用没有独立页面实体，运行页直接由主业务对象和 CRUD
+ * 发布配置推导。新版页面树首次读取这类应用时，把主对象投影成一个对象页；
+ * 迁移标记随后随草稿保存，用户以后主动删除全部页面时不会再次自动恢复。
+ */
+function restoreLegacyPrimaryObjectPage(saved, options, application, objects) {
+  const builder = saved && typeof saved === 'object' ? saved : {}
+  const nodes = Array.isArray(builder.nodes) ? builder.nodes : []
+  const pages = builder.pages && typeof builder.pages === 'object' ? builder.pages : {}
+  const primaryObjectCode = String(options.primaryObjectCode || '').trim()
+  if (builder.legacyObjectPageMigrated === true
+    || nodes.length > 0
+    || Object.keys(pages).length > 0
+    || !primaryObjectCode) {
+    return builder
+  }
+
+  const primaryObject = (Array.isArray(objects) ? objects : []).find(item => (
+    String(item?.objectCode || '') === primaryObjectCode
+    && String(item?.objectRole || 'PRIMARY').toUpperCase() === 'PRIMARY'
+  ))
+  if (!primaryObject?.configKey)
+    return builder
+
+  const objectOptions = parseOptions(primaryObject.options)
+  const objectCode = String(primaryObject.objectCode || primaryObjectCode).trim()
+  const objectName = String(primaryObject.objectName || application?.applicationName || objectCode).trim()
+  const pageId = `page_${slugify(objectCode) || 'legacy_object'}`
+  const objectRef = {
+    objectId: primaryObject.objectId ?? primaryObject.id ?? null,
+    objectCode,
+    objectName,
+    configKey: String(primaryObject.configKey || '').trim(),
+    pageKey: String(objectOptions.pageKey || 'list').trim() || 'list',
+    pageMode: 'crud',
+    hasBusinessData: true,
+    valid: true,
+  }
+  return {
+    ...builder,
+    schemaVersion: IN_APP_BUILDER_SCHEMA_VERSION,
+    legacyObjectPageMigrated: true,
+    homePageId: pageId,
+    nodes: [{
+      id: pageId,
+      type: 'page',
+      title: objectName,
+      icon: String(application?.icon || '').trim(),
+      parentId: null,
+      sort: 0,
+      pageType: 'object',
+      pageTemplate: String(primaryObject.layoutType || '').toLowerCase() === 'master-detail-crud'
+        ? 'master-detail'
+        : 'crud',
+      objectRef,
+      mountTarget: 'BOTH',
+      systemMenuVisible: false,
+      navigationVisible: true,
+      access: { mode: 'inherit', roleIds: [] },
+      legacyObjectPage: true,
+    }],
+    pages: {
+      [pageId]: {
+        title: objectName,
+        description: '',
+        layout: {
+          items: [],
+          pageTitleComponentInitialized: true,
+        },
+      },
+    },
+    formAssets: Array.isArray(builder.formAssets) ? builder.formAssets : [],
   }
 }
 
@@ -304,15 +396,26 @@ function normalizeNodes(nodes) {
     })
     .map((node, index) => ({
       id: String(node.id).trim(),
-      type: node.type === 'group' ? 'group' : 'page',
-      title: String(node.title || (node.type === 'group' ? '未命名页面组' : '未命名页面')).trim(),
+      type: isGroupNode(node) ? 'group' : 'page',
+      title: String(node.title || node.name || (isGroupNode(node) ? '未命名页面组' : '未命名页面')).trim(),
       icon: String(node.icon || '').trim(),
-      parentId: node.parentId ? String(node.parentId) : null,
+      parentId: resolveNodeParentId(node),
       sort: Number.isFinite(Number(node.sort)) ? Number(node.sort) : index * 10,
-      systemMenuVisible: node.systemMenuVisible === true,
+      // Menu publishing fields are part of the page design snapshot.  Keep
+      // both the current top-level shape and the older settings shape so a
+      // publish/reload round-trip does not silently discard the target.
+      systemMenuVisible: (node.systemMenuVisible ?? node.settings?.systemMenuVisible) === true,
       navigationVisible: (node.navigationVisible ?? node.settings?.navigationVisible) !== false,
       access: normalizeNodeAccess(node.access),
-      ...(node.type === 'group'
+      mountTarget: String(node.mountTarget ?? node.settings?.mountTarget ?? 'ADMIN').trim().toUpperCase() || 'ADMIN',
+      menuName: String(node.menuName ?? node.settings?.menuName ?? '').trim(),
+      menuParentId: node.menuParentId ?? node.settings?.menuParentId ?? null,
+      mobileMenuParentId: node.mobileMenuParentId ?? node.settings?.mobileMenuParentId ?? null,
+      menuSort: Number.isFinite(Number(node.menuSort ?? node.settings?.menuSort))
+        ? Number(node.menuSort ?? node.settings?.menuSort)
+        : null,
+      legacyObjectPage: node.legacyObjectPage === true,
+      ...(isGroupNode(node)
         ? {}
         : {
             pageType: normalizePageType(node.pageType),
@@ -321,6 +424,16 @@ function normalizeNodes(nodes) {
             entryRef: normalizeEntryRef(node.entryRef),
           }),
     }))
+}
+
+function isGroupNode(node = {}) {
+  const type = String(node.type || node.nodeType || node.kind || '').trim().toLowerCase()
+  return ['group', 'page-group', 'page_group', 'pagegroup', 'menu-group', 'menu_group', 'directory', 'folder'].includes(type)
+}
+
+function resolveNodeParentId(node = {}) {
+  const parentId = node.parentId ?? node.parentNodeId ?? node.parentID ?? node.settings?.parentId
+  return parentId === undefined || parentId === null || parentId === '' ? null : String(parentId)
 }
 
 function resolveHomePageId(homePageId, nodes) {

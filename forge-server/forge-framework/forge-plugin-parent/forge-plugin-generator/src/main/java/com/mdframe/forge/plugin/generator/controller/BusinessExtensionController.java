@@ -4,15 +4,19 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionQueryDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionRuntimeHookDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionTestDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionVersionDTO;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessExtensionExecutionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessExtensionLockService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessExtensionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessExtensionVersionService;
+import com.mdframe.forge.plugin.generator.service.businessapp.extension.ExtensionExecutionResult;
 import com.mdframe.forge.plugin.generator.service.businessapp.extension.ExtensionInputField;
 import com.mdframe.forge.plugin.generator.service.businessapp.extension.LowcodeExtensionHandler;
 import com.mdframe.forge.plugin.generator.service.businessapp.extension.LowcodeExtensionRegistry;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessExtensionDiffVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessExtensionLockVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessExtensionVO;
@@ -24,6 +28,7 @@ import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
 import com.mdframe.forge.starter.core.domain.RespInfo;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -53,6 +58,7 @@ public class BusinessExtensionController {
     private final BusinessExtensionVersionService versionService;
     private final BusinessExtensionLockService lockService;
     private final BusinessExtensionExecutionService executionService;
+    private final BusinessApplicationRuntimeService applicationRuntimeService;
     private final LowcodeExtensionRegistry extensionRegistry;
 
     @GetMapping("/page")
@@ -190,6 +196,21 @@ public class BusinessExtensionController {
         return RespInfo.success(extensionRegistry.registeredHandlers().values().stream()
                 .map(this::toHandlerVO)
                 .toList());
+    }
+
+    @PostMapping("/runtime/hook")
+    @OperationLog(module = "业务扩展", type = OperationType.UPDATE, desc = "执行已发布应用服务端扩展")
+    public RespInfo<ExtensionExecutionResult> executeRuntimeHook(
+            @Valid @RequestBody BusinessExtensionRuntimeHookDTO dto) {
+        BusinessApplicationRuntimeVO runtime = applicationRuntimeService.runtimeById(dto.getApplicationId());
+        Map<String, Object> published = runtime.getExtensions().stream()
+                .filter(item -> String.valueOf(dto.getExtensionId()).equals(String.valueOf(item.get("id"))))
+                .findFirst()
+                .orElseThrow(() -> new com.mdframe.forge.starter.core.exception.BusinessException(
+                        "扩展不属于当前应用发布版本"));
+        return RespInfo.success(executionService.executePublishedServerExtension(
+                published, dto.getApplicationId(), dto.getObjectId(), dto.getEntryId(),
+                dto.getHookCode(), dto.getInput()));
     }
 
     private ServerBindingHandlerVO toHandlerVO(LowcodeExtensionHandler handler) {

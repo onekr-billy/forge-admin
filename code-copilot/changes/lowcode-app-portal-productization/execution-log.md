@@ -12,7 +12,7 @@
 
 ### P0 门户底座
 
-- 新增 `V1.0.124__add_business_application_portal_config.sql`，扩展 `portal_slug`、`portal_config`、`ai_assistant_config`，初始化存量 slug/配置、逻辑删除唯一索引及隐藏路由权限资源。
+- 新增 `V1.0.127__add_business_application_portal_config.sql`，扩展 `portal_slug`、`portal_config`、`ai_assistant_config`，初始化存量 slug/配置、逻辑删除唯一索引及隐藏路由权限资源。
 - 后端支持 code/slug 解析、slug 合法性与唯一性校验、门户配置持久化、发布快照回放和当前用户页面权限过滤。
 - 前端新增 `/app/:applicationCodeOrSlug`、`app-portal` 独立布局、门户导航/水印/空态/页面渲染；保留原设计态运行入口。
 
@@ -238,7 +238,7 @@ node --max_old_space_size=8192 ./node_modules/vite/bin/vite.js build
 ```bash
 git diff --check
 xmllint --noout forge-server/forge-framework/forge-plugin-parent/forge-plugin-generator/src/main/resources/mapper/BusinessApplicationMapper.xml
-rg -n '\$\{[^}]+\}' forge-server/db/migration/V1.0.124__add_business_application_portal_config.sql
+rg -n '\$\{[^}]+\}' forge-server/db/migration/V1.0.127__add_business_application_portal_config.sql
 ```
 
 - 三项通过；Flyway 脚本无属性占位符。
@@ -250,6 +250,38 @@ rg -n '\$\{[^}]+\}' forge-server/db/migration/V1.0.124__add_business_application
 - 启动 Admin 后验证登录、发布/回滚、不同角色/组织/用户的门户与工作台 API 链路。
 - Playwright/移动真机验证设置、发布、四种创建方式、门户导航和 H5。
 - 平台先提供组织私有模板、受管 Connector、AI 业务操作、缓存执行器和版本清理协议，再继续相应验收。
+
+## 2026-08-22 应用门户与应用中心体验修复增量
+
+### 修复范围
+
+- 应用门户页面导航统一归一化 `type/nodeType/parentId`，页面组使用明显的标题、缩进和左侧层级线，页面仍通过 `pageId` 切换。
+- 应用门户右上角接入现有 `MessageNotification` 组件；个人资料改为应用上下文内的资料弹窗，不再把门户用户带回系统资料页；系统布局未传入上下文时保留原系统资料路由。
+- 应用中心设置/发布入口统一打开当前 `BusinessApplicationRuntime` 工作台的 `view=settings/publish` 面板；窄屏下筛选、搜索、创建按钮分行布局；应用市场 Tab 支持横向滚动并与搜索框分行。
+- 发布页状态卡只展示当前版本、最近发布和页面数；应用列表只展示页面资产，并将草稿/待发布/有变更状态统一显示为“有变更未发布”。发布成功后通过事件和 `storage` 通知应用中心刷新列表。
+
+### 前端增量验证
+
+```bash
+cd forge-admin-ui
+pnpm exec vitest run \
+  src/views/app-center/in-app-builder/__tests__/in-app-builder-schema.spec.js \
+  src/views/app-center/__tests__/application-runtime-load.spec.js \
+  src/views/app-center/__tests__/workspace-redirect.spec.js \
+  src/views/app-center/__tests__/application-designer-navigation.spec.js \
+  --reporter=dot
+pnpm exec vite build
+```
+
+- Vitest：4 个文件、29 个测试全部通过。
+- Vite production build：成功，9106 modules transformed；保留仓库既有 native config-loader、CSS `//` 注释、ineffective dynamic import 和 plugin timing 警告。
+- 目标文件 ESLint 检查发现 `application-runtime.[applicationCode].vue` 中已有未使用函数/声明顺序问题（来自本轮之前的工作区改动）；本轮新增门户、导航、应用中心、发布状态代码已通过构建并未引入编译错误。
+
+### 未执行项
+
+- 未启动 Admin/Vite 服务，未执行用户登录、真实消息接口和应用发布 API 链路。
+- 未执行 Playwright 375/768/1280 宽度截图验收；需在本地服务可用、具备 `admin/123456` 登录环境后补跑。
+- 未修改数据库或 Flyway，本轮无新增后端迁移；未启动服务，无需清理进程。
 
 ## 2026-08-18 字典缓存运行时异常修复
 
@@ -451,3 +483,205 @@ JAVA_TOOL_OPTIONS='-javaagent:/Users/yaomindong/.m2/repository/net/bytebuddy/byt
 - 原因：新建对象只有系统字段时，`hasBusinessData()` 仍调用 `previewCreateTable()`，该接口会先做完整模型校验。
 - 修复：没有业务字段时直接视为无业务数据，先保存用户字段再同步数据表。
 - 验证：`BusinessApplicationPageDesignServiceTest` 3 tests 通过。
+
+## 2026-08-22 应用门户问题修复增量
+
+- 范围：页面组与页面树层级展示、应用门户个人资料上下文、复用系统消息通知组件、应用中心和应用市场响应式布局、设置/发布路由兼容、发布成功后的列表刷新。
+- 兼容修复：`UserAvatar` 仅在门户传入 `profileRoute` 时留在应用内；系统布局未传该参数时继续在当前窗口跳转 `/profile`。
+
+```bash
+cd forge-admin-ui
+pnpm exec eslint \
+  src/layouts/components/UserAvatar.vue \
+  src/views/app-center/application-portal.vue \
+  src/views/app-center/components/portal/PortalNavigation.vue \
+  src/views/app-center/in-app-builder/in-app-builder-schema.js \
+  src/views/app-center/index.vue \
+  src/router/index.js \
+  src/views/app-center/components/ApplicationTable.vue \
+  src/views/app-center/components/AppMarketPanel.vue \
+  src/views/app-center/components/publish/AppPublishStatusCard.vue \
+  src/views/app-center/application-workspace/ApplicationPublishPanel.vue
+```
+
+- 结果：ESLint 通过。
+
+```bash
+pnpm exec vitest run \
+  src/views/app-center/in-app-builder/__tests__/in-app-builder-schema.spec.js \
+  src/views/app-center/__tests__/application-runtime-load.spec.js \
+  src/views/app-center/__tests__/workspace-redirect.spec.js \
+  src/views/app-center/__tests__/application-designer-navigation.spec.js \
+  --reporter=dot
+```
+
+- 结果：4 个文件、29 个测试全部通过。
+
+```bash
+pnpm exec vite build
+```
+
+- 结果：生产构建通过，9106 个模块转换完成。保留既有 Vite native config-loader、CSS `//` 注释、ineffective dynamic import 和 plugin timing 警告，均未阻断构建。
+- 未执行：未启动 Admin/Flow/Vite 服务，未连接真实 MySQL/Redis；Playwright 登录后的窄屏布局、门户消息/资料交互、发布后真实列表刷新待可用后端环境验收。本轮未启动服务，无需清理进程。
+
+补充：随后针对发布状态边界（新应用显示“尚未发布”，已有版本且草稿变更显示“有变更未发布”）重新执行 `pnpm exec vite build`，构建成功（9106 个模块转换）。
+
+## 2026-08-22 顶部菜单渲染修复
+
+- 现象：应用门户顶部导航将页面组和子页面用自定义 flex 结构并排渲染，页面组标题、子页面和内容区发生挤压重叠。
+- 修复：`PortalNavigation.vue` 的 `style="top"` 分支改为直接复用系统 `TopMenuBar`，把页面组/页面转换为系统菜单项，使用系统既有悬浮下拉、多级菜单、激活态和滚动逻辑；`TopMenuBar`/`TopMenuDropdown` 增加对字符串图标的兼容，既保留系统组件图标，也支持应用页面图标。
+- 侧边导航仍保留应用门户的父子缩进展示，只有顶部导航复用系统顶部菜单，不影响侧边模式。
+
+```bash
+cd forge-admin-ui
+pnpm exec eslint \
+  src/views/app-center/components/portal/PortalNavigation.vue \
+  src/views/app-center/application-portal.vue \
+  src/layouts/components/TopMenuBar.vue \
+  src/layouts/components/TopMenuDropdown.vue
+pnpm exec vitest run src/views/app-center/__tests__/portal-config.spec.js --reporter=dot
+pnpm exec vite build
+```
+
+- 结果：ESLint 通过；Vitest 3 tests 通过；Vite 生产构建成功，保留既有 ineffective dynamic import 和 plugin timing 警告。
+
+### 2026-08-22 page_11 真实页面复验与 prop 根因修复
+
+- 真实访问地址：`http://localhost:3000/app/presale_registration_apply?pageId=page_11`。
+- 首次复验发现 DOM class 为 `portal-navigation is-[object Object]`，说明组件的 `style` prop 被 Vue 当作原生 `style` 属性处理，顶部导航没有进入系统菜单分支。
+- 修复：将 `PortalNavigation` 的 `style` prop 重命名为 `navigationStyle`，同步修改门户三个调用点和递归子节点传递。
+- Playwright 复验结果：页面 DOM 出现 `forge-top-menu portal-system-top-menu`；悬浮页面组后，系统下拉菜单显示 `12`、`11`，菜单位置位于顶栏下方，不再覆盖页面主体。
+- 追加点击复验：点击系统下拉项 `12` 后 URL 正确切换为 `?pageId=page_12`，返回 `page_11` 后页面组仍保持系统顶部菜单结构。
+- 产物截图：`var/tmp/page11-portal-menu-hover.png`（临时验收文件）。
+
+### 2026-08-22 顶部菜单激活项可见性修复
+
+- 现象：点击普通页面后页面组看似隐藏，点击页面组子页面后普通页面又看似隐藏。
+- 根因：复用的 `TopMenuBar` 默认激活色为白色，而应用门户顶部背景也是白色；菜单节点实际仍在 DOM 中，只是激活项白底白字不可见。
+- 修复：门户顶部菜单覆盖系统颜色变量，普通项使用门户次要文字色，激活项使用门户主题色，悬浮使用门户主文字色；页面组没有配置图标时补充文件夹图标。
+- 验证：Playwright 依次点击 `测试`、页面组子项 `11`，两个顶层菜单始终可见；激活项颜色为 `rgb(51, 112, 255)`，非激活项颜色为 `rgb(100, 106, 115)`；ESLint 通过。
+
+## 2026-08-23 存量预售对象页结构恢复
+
+- 根因：真正的预售应用是 `PRESALE_REGISTRATION_APP`，原 `PS_PRESALE_ORDER / ps_presale_order` 对象、CRUD 发布配置、入口和历史业务数据均存在；改版前对象页没有独立页面实体，新版只读取 `inAppBuilder.nodes/pages` 后得到空页面树。`presale_registration_apply` 已被另一套测试数据改为“请假申请”，未对其做覆盖恢复。
+- 修复：前端设计/门户规范化和后端不可变运行快照同时兼容 `primaryObjectCode + PRIMARY 对象`，投影为新版对象页；仅在页面树为空且存在旧主对象标识时触发。迁移结构写入 `legacyObjectPageMigrated`，避免用户以后主动删除全部页面时被重复补回；设计工作台首次打开后自动写回草稿。
+- 数据操作：通过应用现有更新 API，仅将 `PRESALE_REGISTRATION_APP` 的恢复页面 `page_ps_presale_order` 写入应用草稿；没有重建或覆盖对象、CRUD 配置和 `ps_presale_order` 业务数据，没有发布新应用版本。
+
+```bash
+cd forge-admin-ui
+source ~/.nvm/nvm.sh && nvm use v20.19.0
+./node_modules/.bin/eslint \
+  src/views/app-center/in-app-builder/in-app-builder-schema.js \
+  src/views/app-center/in-app-builder/__tests__/in-app-builder-schema.spec.js
+./node_modules/.bin/vitest run \
+  src/views/app-center/in-app-builder/__tests__/in-app-builder-schema.spec.js
+```
+
+- 结果：目标 Schema/Test ESLint 通过；Vitest 1 file、18 tests 全部通过。整份 `application-runtime.[applicationCode].vue` 定向 ESLint 仍命中该脏工作区已有的 17 个 `no-use-before-define/no-unused-vars` 错误，本轮未扩大修复范围；真实 Vite HMR 页面加载和自动迁移调用通过。
+
+```bash
+cd forge-server
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am compile -DskipTests
+
+cd forge-framework/forge-plugin-parent/forge-plugin-generator
+mvn -Penable-tests -DskipTests test-compile
+mvn -Penable-tests -Dtest='BusinessApplicationRuntimeServiceTest' \
+  -DfailIfNoTests=false surefire:test
+```
+
+- 结果：Generator reactor 32/32 模块 `BUILD SUCCESS`；测试源码重新编译成功；`BusinessApplicationRuntimeServiceTest` 9 tests、0 failures、0 errors。
+- Playwright：打开 `http://localhost:3000/app/PRESALE_REGISTRATION_APP` 后 URL 回填 `pageId=page_ps_presale_order`；导航显示“预售单”，页面加载 `ps_presale_order` 的查询、工具栏、表格和 5 条历史记录，`.ai-crud-page` 数量为 1。设计工作台首次打开返回应用更新接口 200，并确认恢复节点、对象引用和迁移标记已写回当前草稿。
+- 产物截图：`var/tmp/presale-restored-workspace.png`、`var/tmp/presale-restored-portal.png`（临时验收文件）。
+- 跳过：按用户要求未执行前端生产构建和全量 Maven 构建；未启动或停止任何服务，复用用户已有的前后端开发服务。
+
+## 2026-08-23 正式应用门户系统页面修复
+
+- 范围：正式动态应用门户缺少系统自带页面。新增共享系统导航节点投影，PC 端固定显示“个人工作台、我的待办、我已办的、我发送的、抄送我的”，并复用 `PageManagementSystemView`；H5 不注入桌面工作台页面，继续按 `mountTarget` 过滤用户页面。
+- 代码：`page-management.js` 提供系统页导航节点工厂；`portal-navigation-runtime.js` 提供应用门户客户端投影；`PortalNavigation.vue` 对系统页做独立置顶排序；`application-portal.vue` 对 `system:*` 页面切换到现有 Workspace 组件。
+
+```bash
+cd forge-admin-ui
+./node_modules/.bin/eslint \
+  src/views/app-center/application-portal.vue \
+  src/views/app-center/components/portal/PortalNavigation.vue \
+  src/views/app-center/components/portal/portal-navigation-runtime.js \
+  src/views/app-center/in-app-builder/page-management.js \
+  src/views/app-center/__tests__/portal-navigation-runtime.spec.js \
+  src/views/app-center/in-app-builder/__tests__/page-management.spec.js
+./node_modules/.bin/vitest run \
+  src/views/app-center/__tests__/portal-navigation-runtime.spec.js \
+  src/views/app-center/in-app-builder/__tests__/page-management.spec.js \
+  src/views/app-center/__tests__/portal-config.spec.js --reporter=dot
+cd ..
+git diff --check
+```
+
+- 结果：目标 ESLint 通过；Vitest 3 个文件、11 个测试全部通过；`git diff --check` 通过。
+- Playwright：使用现有开发服务登录应用门户，顶部菜单顺序为“个人工作台、我的待办、我已办的、我发送的、抄送我的、测试、页面组 1”；点击“我的待办”后 URL 为 `http://localhost:3000/app/presale_registration_apply?pageId=system:todo`，渲染 `.flow-page` 1 个且显示待办空状态。
+- 跳过：未执行前端生产构建、全量 Maven 构建和新服务启动；无本轮服务需要清理。
+
+## 2026-08-23 应用内通知公告与待办跳转修复
+
+- 范围：系统页面菜单补齐 Ionicons 图标；新增 `system:messages` 通知公告页；门户右上角消息通知、消息列表中的审批入口、工作台统计卡片均支持应用内命名路由，不再跳到旧 `/flow/*`、`/message/*` 页面。
+- 关键实现：`MessageNotification` 增加 `messageRoute`、`todoRoute`、`doneRoute`；`mergeMessageNavigationTarget` 保留应用路由参数并合并任务参数；`PageManagementSystemView` 复用现有 `MessageList`、Workspace 和 Flow 页面。
+
+```bash
+cd forge-admin-ui
+./node_modules/.bin/eslint \
+  src/views/app-center/application-portal.vue \
+  src/views/app-center/components/portal/PageManagementSystemView.vue \
+  src/views/app-center/components/portal/PortalNavigation.vue \
+  src/views/app-center/components/portal/portal-navigation-runtime.js \
+  src/views/app-center/in-app-builder/page-management.js \
+  src/layouts/components/MessageNotification.vue \
+  src/layouts/components/message-notification-utils.js \
+  src/layouts/components/__tests__/message-notification-utils.spec.js \
+  src/views/message/message-list.vue \
+  src/views/workspace/summary.vue \
+  src/views/flow/todo.vue \
+  src/views/app-center/in-app-builder/__tests__/page-management.spec.js \
+  src/views/app-center/__tests__/portal-navigation-runtime.spec.js
+./node_modules/.bin/vitest run \
+  src/views/app-center/in-app-builder/__tests__/page-management.spec.js \
+  src/views/app-center/__tests__/portal-navigation-runtime.spec.js \
+  src/layouts/components/__tests__/message-notification-utils.spec.js \
+  src/views/app-center/__tests__/portal-config.spec.js --reporter=dot
+cd ..
+git diff --check
+```
+
+- 结果：目标 ESLint 通过；Vitest 4 个文件、16 个测试全部通过；`git diff --check` 通过。
+- Playwright：现有开发服务实测顶部系统菜单包含图标；点击“通知公告”进入 `pageId=system:messages`，消息列表正常；点击“我的待办”进入 `pageId=system:todo`，`.flow-page` 正常；消息抽屉“查看全部消息”进入 `system:messages`。
+- 备注：对整份历史工作台文件执行 ESLint 仍会报告本轮之前已存在的 `application-runtime.[applicationCode].vue` 变量顺序/未使用函数错误，本轮仅新增图标映射，没有扩大清理范围。
+
+## 2026-08-23 应用门户滚动与表单底部操作区修复
+
+- 范围：修复应用内待办/已办等系统页面无法下滑，以及动态页面内容和表单底部操作按钮被固定区块高度裁掉的问题。
+- 根因：门户壳只有最小高度且主内容区禁止滚动；同时 `.portal-loading-host :deep(.n-spin-content)` 把 `100vh` 误应用到待办列表内部 `NSpin`。动态页面的 `pageHeight` 未计入 `style.height`，运行态表单继续使用设计态固定高度和 `overflow: hidden`。
+- 修复：门户建立 `100vh -> calc(100vh - 56px) -> min-height: 0` 的确定高度链，主内容区负责纵向滚动；根加载样式收窄为直接子级；系统页内部保持受限高度；页面高度兼容 `style.height`，`AiForm` 在运行态使用最小高度并允许内容自然撑开。
+
+```bash
+cd forge-admin-ui
+source ~/.nvm/nvm.sh && nvm use v20.19.0
+./node_modules/.bin/eslint \
+  src/views/app-center/application-portal.vue \
+  src/views/app-center/components/portal/PageManagementSystemView.vue \
+  src/views/app-center/components/portal/PortalPageRenderer.vue
+./node_modules/.bin/vitest run \
+  src/views/app-center/in-app-builder/__tests__/page-management.spec.js \
+  src/views/app-center/__tests__/portal-navigation-runtime.spec.js \
+  src/layouts/components/__tests__/message-notification-utils.spec.js \
+  src/views/app-center/__tests__/portal-config.spec.js --reporter=dot
+cd ..
+git diff --check -- \
+  forge-admin-ui/src/views/app-center/application-portal.vue \
+  forge-admin-ui/src/views/app-center/components/portal/PageManagementSystemView.vue \
+  forge-admin-ui/src/views/app-center/components/portal/PortalPageRenderer.vue
+```
+
+- 结果：目标 ESLint 通过；Vitest 4 个文件、16 个测试全部通过；相关文件 `git diff --check` 通过。
+- Playwright 桌面视口 1280×800：`portal-main` 高 744px；待办卡片滚动区 `clientHeight=586`、`scrollHeight=934`，设置后 `scrollTop` 从 0 变为 240。
+- Playwright 1024×500 系统页循环：待办、已办、我发送的卡片滚动区设置后 `scrollTop` 均从 0 变为 120；抄送我的和通知公告当前内容未超过容器，不产生无意义滚动条。
+- Playwright 小视口 1024×500：动态页内容区 `clientHeight=444`、`scrollHeight=680`；进入新增表单并滚到底后，底部操作区位于 `y=416..471`，完整落在 500px 视口内。
+- Playwright 移动宽度 390×844：移动导航占高 122px，门户主内容区自动取得剩余 666px；待办卡片滚动区 `clientHeight=324`、`scrollHeight=1864`，没有再被门户根加载样式撑高。
+- 未执行：按用户要求未执行前端生产构建和全量 Maven 构建；复用用户已运行的开发服务，本轮未启动或停止任何服务。

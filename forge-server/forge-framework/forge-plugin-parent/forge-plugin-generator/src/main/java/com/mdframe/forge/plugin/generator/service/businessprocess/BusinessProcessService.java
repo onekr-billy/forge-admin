@@ -18,6 +18,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessNamingService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessFlowModelVO;
@@ -28,6 +29,7 @@ import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,6 +76,13 @@ public class BusinessProcessService {
     private final BusinessProcessSchemaValidator schemaValidator;
     private final BusinessProcessValidationContextResolver validationContextResolver;
     private final BusinessNamingService namingService;
+
+    /**
+     * 读取应用页面表单资产目录。使用可选字段注入保持历史测试和插件装配兼容；
+     * 业务流程服务本身不依赖表单服务才能完成基础流程 CRUD。
+     */
+    @Autowired(required = false)
+    private BusinessFlowService businessFlowService;
 
     public Page<BusinessProcessVO> page(Integer pageNum,
                                         Integer pageSize,
@@ -217,6 +226,7 @@ public class BusinessProcessService {
         Long tenantId = requireTenantId();
         AiBusinessProcess process = requireProcess(tenantId, processId);
         BusinessProcessSchema schema = parseSchema(process.getDraftSchemaJson());
+        bindDefaultApplicationPageFormAssets(process, schema);
         BusinessProcessValidationContext context = validationContextResolver.resolve(
                 tenantId, process.getApplicationId(), process.getProcessCode(), schema);
         BusinessProcessValidationVO validation = schemaValidator.validate(schema, context);
@@ -224,6 +234,128 @@ public class BusinessProcessService {
         result.setBusinessProcessJson(schema);
         result.setValidation(validation);
         return result;
+    }
+
+    /**
+     * 老流程草稿只保存了审批模型，没有保存应用页面表单引用。
+     * 当当前应用对该业务对象只有一个页面表单资产时，服务端可确定唯一绑定，
+     * 自动写入具体的页面和资产身份，避免用户手填 formKey 或依赖浏览器 watcher。
+     */
+    private boolean bindDefaultApplicationPageFormAssets(AiBusinessProcess process,
+                                                          BusinessProcessSchema schema) {
+        if (process == null || schema == null || businessFlowService == null
+                || schema.getSubject() == null
+                || StringUtils.isBlank(schema.getSubject().getObjectCode())) {
+            return false;
+        }
+        Map<String, Object> catalog;
+        try {
+            catalog = businessFlowService.getFormAssets(
+                    schema.getSubject().getObjectCode(), true, process.getApplicationId());
+        } catch (Exception exception) {
+            log.debug("读取应用页面表单资产失败，跳过历史流程兼容补齐: processId={}", process.getId(), exception);
+            return false;
+        }
+        Object rawAssets = catalog == null ? null : catalog.get("formAssets");
+        if (!(rawAssets instanceof List<?> assets) || assets.size() != 1) {
+            // 多个页面表单无法安全猜测，仍交给设计器选择，避免错误绑定。
+            return false;
+        }
+        Object rawAsset = assets.get(0);
+        if (!(rawAsset instanceof Map<?, ?> source)
+                || StringUtils.isBlank(text(source.get("formKey")))) {
+            return false;
+        }
+        Map<String, Object> formAsset = new LinkedHashMap<>();
+        for (String key : List.of("formKey", "formName", "formMode", "type", "providerKey",
+                "formUrl", "viewKey", "applicationId", "pageId", "pageCode", "pageName",
+                "pageType", "sourceFormKey")) {
+            Object value = source.get(key);
+            if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
+                formAsset.put(key, value);
+            }
+        }
+        formAsset.putIfAbsent("formMode", "BUSINESS_OBJECT_FORM");
+        boolean changed = false;
+        for (BusinessProcessNode node : safeList(schema.getNodes())) {
+            if (node == null || !"APPROVAL".equalsIgnoreCase(node.getType())) {
+                continue;
+            }
+            Map<String, Object> config = node.getConfig() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(node.getConfig());
+            Map<String, Object> current = mapValue(config.get("formAsset"));
+            if (StringUtils.isNotBlank(text(current.get("formKey")))) {
+                continue;
+            }
+            config.put("formAsset", formAsset);
+            config.putIfAbsent("versionPolicy", "PINNED_AT_APPLICATION_PUBLISH");
+            node.setConfig(config);
+            changed = true;
+        }
+        if (changed) {
+            BusinessProcessSchema.Dependencies dependencies = schema.getDependencies();
+            if (dependencies == null) {
+                dependencies = new BusinessProcessSchema.Dependencies();
+                schema.setDependencies(dependencies);
+            }
+            String formKey = text(formAsset.get("formKey"));
+            if (dependencies.getFormAssets() == null) {
+                dependencies.setFormAssets(new ArrayList<>());
+            }
+            if (!dependencies.getFormAssets().contains(formKey)) {
+                dependencies.getFormAssets().add(formKey);
+            }
+        }
+        return changed;
+    }
+
+    private void persistDesignerCompatibilityBinding(Long tenantId,
+                                                      AiBusinessProcess process,
+                                                      BusinessProcessSchema schema,
+                                                      BusinessProcessValidationVO validation) {
+        String schemaJson = schemaValidator.canonicalJson(schema);
+        String schemaHash = schemaValidator.schemaHash(schema);
+        String designStatus = resolveDesignStatus(process, schemaHash, validation.isValid());
+        int updated = processMapper.updateDraftSchema(
+                tenantId,
+                process.getId(),
+                schemaJson,
+                schemaHash,
+                process.getDraftSchemaHash(),
+                requireId(schema.getSubject().getObjectId(), "主业务对象ID"),
+                schema.getSubject().getObjectCode(),
+                designStatus,
+                requireUserId());
+        if (updated != 1) {
+            throw conflict("业务流程草稿已被其他操作更新，请刷新后重试");
+        }
+        applicationMapper.markChanged(tenantId, process.getApplicationId());
+        process.setDraftSchemaJson(schemaJson);
+        process.setDraftSchemaHash(schemaHash);
+        process.setSubjectObjectId(requireId(schema.getSubject().getObjectId(), "主业务对象ID"));
+        process.setSubjectObjectCode(schema.getSubject().getObjectCode());
+        process.setDesignStatus(designStatus);
+    }
+
+    private Map<String, Object> mapValue(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        source.forEach((key, item) -> {
+            if (key != null) {
+                result.put(String.valueOf(key), item);
+            }
+        });
+        return result;
+    }
+
+    private String text(Object value) {
+        return value == null ? "" : StringUtils.trimToEmpty(String.valueOf(value));
+    }
+
+    private String text(Map<?, ?> source, String key) {
+        return source == null ? "" : text(source.get(key));
     }
 
     public List<BusinessProcessFlowModelVO> availableFlowModels(Long processId) {
@@ -242,6 +374,7 @@ public class BusinessProcessService {
         AiBusinessProcess process = requireProcess(tenantId, processId);
         String expectedHash = requireSchemaHash(dto.getExpectedSchemaHash());
         BusinessProcessSchema schema = parseSchema(dto.getBusinessProcessJson().toString());
+        bindDefaultApplicationPageFormAssets(process, schema);
         BusinessProcessValidationContext context = validationContextResolver.resolve(
                 tenantId, process.getApplicationId(), process.getProcessCode(), schema);
         BusinessProcessValidationVO validation = schemaValidator.validate(schema, context);
@@ -280,15 +413,20 @@ public class BusinessProcessService {
         Long tenantId = requireTenantId();
         AiBusinessProcess process = requireProcess(tenantId, processId);
         BusinessProcessSchema schema = parseSchema(process.getDraftSchemaJson());
+        boolean formBindingChanged = bindDefaultApplicationPageFormAssets(process, schema);
         BusinessProcessValidationContext context = validationContextResolver.resolve(
                 tenantId, process.getApplicationId(), process.getProcessCode(), schema);
         BusinessProcessValidationVO validation = schemaValidator.validate(schema, context);
-        String designStatus = resolveDesignStatus(
-                process, process.getDraftSchemaHash(), validation.isValid());
-        int updated = processMapper.updateDesignStatus(
-                tenantId, processId, process.getDraftSchemaHash(), designStatus, requireUserId());
-        if (updated != 1) {
-            throw conflict("校验期间业务流程草稿已变化，请刷新后重试");
+        if (formBindingChanged) {
+            persistDesignerCompatibilityBinding(tenantId, process, schema, validation);
+        } else {
+            String designStatus = resolveDesignStatus(
+                    process, process.getDraftSchemaHash(), validation.isValid());
+            int updated = processMapper.updateDesignStatus(
+                    tenantId, processId, process.getDraftSchemaHash(), designStatus, requireUserId());
+            if (updated != 1) {
+                throw conflict("校验期间业务流程草稿已变化，请刷新后重试");
+            }
         }
         return validation;
     }

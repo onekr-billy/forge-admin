@@ -176,6 +176,12 @@ export default {
     request.put('/api/flow/model', data),
 
   /**
+   * 获取流程通知矩阵当前可用的消息渠道
+   */
+  getFlowNotifyChannels: () =>
+    request.get('/api/flow/notify-channels'),
+
+  /**
    * 删除流程模型
    */
   deleteModel: id =>

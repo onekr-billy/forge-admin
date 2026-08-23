@@ -11,7 +11,7 @@
     <div class="publish-status-facts">
       <div><span>当前版本</span><strong>{{ application.lastPublishVersion ? `v${application.lastPublishVersion}` : '未发布' }}</strong></div>
       <div><span>最近发布</span><strong>{{ application.lastPublishTime || '-' }}</strong></div>
-      <div><span>设计状态</span><strong>{{ application.designStatus || '-' }}</strong></div>
+      <div><span>页面</span><strong>{{ pageCount }}</strong></div>
     </div>
     <n-space class="publish-status-actions">
       <n-button secondary :type="application.status === 1 ? 'warning' : 'success'" :loading="toggling" @click="emit('toggle')">
@@ -27,12 +27,17 @@
 <script setup>
 import { RocketOutline } from '@vicons/ionicons5'
 import { computed } from 'vue'
+import { parseJsonObject } from '../portal/portal-config'
 
 const props = defineProps({
   application: { type: Object, required: true },
   toggling: Boolean,
 })
 const emit = defineEmits(['toggle', 'publish'])
+const pageCount = computed(() => {
+  const nodes = parseJsonObject(props.application.options)?.inAppBuilder?.nodes
+  return Array.isArray(nodes) ? nodes.filter(node => node?.type === 'page').length : 0
+})
 
 const statusTitle = computed(() => {
   if (props.application.status !== 1)

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
   businessFlowFormAssets,
@@ -21,6 +21,21 @@ import messageApi from '@/api/message'
 import { businessProcessHashInput } from '@/components/business-process-designer/business-process-schema.js'
 import BusinessProcessDesigner from '@/components/business-process-designer/BusinessProcessDesigner.vue'
 import ObjectActionEditor from './components/designer/ObjectActionEditor.vue'
+
+const props = defineProps({
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
+  processId: {
+    type: String,
+    default: '',
+  },
+})
+
+const emit = defineEmits(['close', 'saved'])
+
+const FlowDesignPage = defineAsyncComponent(() => import('@/views/flow/design.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -44,19 +59,29 @@ const messageTemplates = ref([])
 const subProcesses = ref([])
 const capabilities = ref([])
 const serviceActors = ref([])
+const flowDesignerVisible = ref(false)
+const flowDesignerModelId = ref('')
+const flowDesignerContext = ref({
+  businessObjectCode: '',
+  businessObjectName: '',
+  applicationId: '',
+  businessFormKey: '',
+})
 let activeSavePromise = null
 
-const processId = computed(() => stringValue(route.params.processId))
+const processId = computed(() => props.embedded ? stringValue(props.processId) : stringValue(route.params.processId))
 const subjectObject = computed(() => applicationObjects.value.find(item => (
   stringValue(item.objectId || item.id) === stringValue(process.value?.subjectObjectId)
   || item.objectCode === process.value?.subjectObjectCode
 )) || null)
 const pageTitle = computed(() => process.value?.processName || '业务流程设计')
 
-watch(() => route.params.processId, loadDesigner)
+watch(() => props.embedded ? props.processId : route.params.processId, loadDesigner)
 onMounted(loadDesigner)
 
 onBeforeRouteLeave(() => {
+  if (props.embedded)
+    return true
   if (!dirty.value)
     return true
   return confirmLeave()
@@ -104,7 +129,10 @@ async function loadCatalogs() {
       objectId ? businessObjectActions(objectId) : Promise.resolve({ data: [] }),
       businessProcessFlowModels(processId.value),
       objectCode
-        ? businessFlowFormAssets(objectCode, { includeInternal: true })
+        ? businessFlowFormAssets(objectCode, {
+            includeInternal: true,
+            applicationId,
+          })
         : Promise.resolve({ data: { formAssets: [] } }),
       messageApi.getTemplatePage({ pageNum: 1, pageSize: 200, status: 1 }),
       applicationId
@@ -141,13 +169,19 @@ async function loadCatalogs() {
 }
 
 async function refreshFlowCatalog() {
+  const objectId = stringValue(process.value?.subjectObjectId)
   const objectCode = process.value?.subjectObjectCode || ''
-  const [modelsResult, assetsResult] = await Promise.allSettled([
+  const [fieldsResult, modelsResult, assetsResult] = await Promise.allSettled([
+    objectId ? businessObjectFields(objectId) : Promise.resolve({ data: [] }),
     businessProcessFlowModels(processId.value),
     objectCode
-      ? businessFlowFormAssets(objectCode, { includeInternal: true })
+      ? businessFlowFormAssets(objectCode, {
+          includeInternal: true,
+          applicationId: stringValue(process.value?.applicationId),
+        })
       : Promise.resolve({ data: { formAssets: [] } }),
   ])
+  fields.value = settledData(fieldsResult, fields.value).map(normalizeIds)
   flowModels.value = settledData(modelsResult, [])
     .map(item => normalizeIds({
       ...item,
@@ -156,6 +190,10 @@ async function refreshFlowCatalog() {
     }))
   const assetData = settledData(assetsResult, { formAssets: [] })
   formAssets.value = (Array.isArray(assetData) ? assetData : assetData.formAssets || []).map(normalizeIds)
+}
+
+async function refreshBusinessObjectFields() {
+  await refreshFlowCatalog()
 }
 
 function handleSchemaUpdate(value) {
@@ -353,7 +391,53 @@ async function handleValidate(schema) {
   }
 }
 
+function openFlowDesigner(payload = {}) {
+  const modelId = stringValue(payload.modelId || payload.id)
+  if (!modelId) {
+    notify('warning', '请先选择或创建审批流程模型')
+    return
+  }
+  const applicationId = stringValue(process.value?.applicationId)
+  const objectCode = stringValue(process.value?.subjectObjectCode || draftSchema.value?.subject?.objectCode)
+  const defaultFormKey = stringValue(formAssets.value.find(item => item?.formKey)?.formKey)
+  if (props.embedded) {
+    flowDesignerModelId.value = modelId
+    flowDesignerContext.value = {
+      businessObjectCode: objectCode,
+      businessObjectName: stringValue(subjectObject.value?.objectName || objectCode),
+      applicationId,
+      businessFormKey: defaultFormKey,
+    }
+    flowDesignerVisible.value = true
+    return
+  }
+  router.push({
+    path: '/flow/design',
+    query: {
+      id: modelId,
+      businessObjectCode: objectCode || undefined,
+      businessObjectName: stringValue(subjectObject.value?.objectName || objectCode) || undefined,
+      applicationId: applicationId || undefined,
+      businessFormKey: defaultFormKey || undefined,
+      returnTo: route.fullPath,
+    },
+  })
+}
+
+function handleFlowDesignerClose() {
+  flowDesignerVisible.value = false
+  refreshFlowCatalog()
+}
+
+function handleFlowDesignerSaved() {
+  refreshFlowCatalog()
+}
+
 function returnToApplication() {
+  if (props.embedded) {
+    emit('close')
+    return
+  }
   const returnTo = String(route.query.returnTo || '')
   if (isLocalPath(returnTo)) {
     router.push(resolveReturnTarget(returnTo))
@@ -406,6 +490,10 @@ async function executePublish() {
     const response = await publishBusinessProcess(processId.value)
     const versionNo = Number(response.data?.versionNo || 0)
     notify('success', versionNo ? `业务流程已发布为 V${versionNo}` : '业务流程发布成功')
+    if (props.embedded) {
+      emit('saved')
+      return
+    }
     returnToApplication()
   }
   catch (error) {
@@ -497,7 +585,7 @@ function notify(type, message) {
 </script>
 
 <template>
-  <div class="process-designer-page">
+  <div class="process-designer-page" :class="{ 'process-designer-embedded': embedded }">
     <header class="process-page-header">
       <button
         type="button"
@@ -506,7 +594,7 @@ function notify(type, message) {
         @click="returnToApplication"
       >
         <span aria-hidden="true">←</span>
-        返回业务流程
+        {{ embedded ? '关闭' : '返回业务流程' }}
       </button>
       <div v-if="process" class="process-page-identity">
         <strong>{{ pageTitle }}</strong>
@@ -555,6 +643,7 @@ function notify(type, message) {
         :save-state="saveState"
         :save-error="saveError"
         :server-validation="serverValidation"
+        :object-id="stringValue(process.subjectObjectId)"
         :object-name="subjectObject?.objectName || process.subjectObjectCode"
         :objects="applicationObjects"
         :fields="fields"
@@ -570,7 +659,9 @@ function notify(type, message) {
         @validate="handleValidate"
         @dirty-change="handleDirtyChange"
         @refresh-flow-model="refreshFlowCatalog"
+        @refresh-fields="refreshBusinessObjectFields"
         @edit-action="openActionEditor"
+        @open-flow-designer="openFlowDesigner"
         @reload="loadDesigner"
       />
     </main>
@@ -595,6 +686,29 @@ function notify(type, message) {
         @save="handleActionSaved"
       />
     </n-modal>
+
+    <!-- 内嵌审批流程设计器（二级弹窗） -->
+    <n-modal
+      v-model:show="flowDesignerVisible"
+      :mask-closable="false"
+      :auto-focus="false"
+      class="embedded-flow-designer-modal"
+    >
+      <div class="embedded-flow-designer-shell">
+        <FlowDesignPage
+          v-if="flowDesignerVisible"
+          embedded
+          :model-id="flowDesignerModelId"
+          :business-object-code="flowDesignerContext.businessObjectCode"
+          :business-object-name="flowDesignerContext.businessObjectName"
+          :application-id="flowDesignerContext.applicationId"
+          :business-form-key="flowDesignerContext.businessFormKey"
+          @close="handleFlowDesignerClose"
+          @saved="handleFlowDesignerSaved"
+          @deployed="handleFlowDesignerSaved"
+        />
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -605,6 +719,11 @@ function notify(type, message) {
   flex-direction: column;
   overflow: hidden;
   background: var(--body-color, #f5f6f8);
+}
+
+.process-designer-page.process-designer-embedded {
+  min-height: 0;
+  height: 100%;
 }
 
 .process-page-header {
@@ -688,6 +807,11 @@ function notify(type, message) {
   min-height: 620px;
 }
 
+.process-designer-embedded .process-page-main > :deep(.business-process-designer) {
+  height: calc(100% - 10px);
+  min-height: 0;
+}
+
 .page-loading {
   display: flex;
   min-height: calc(100vh - 90px);
@@ -699,6 +823,10 @@ function notify(type, message) {
   font-size: 13px;
 }
 
+.process-designer-embedded .page-loading {
+  min-height: 200px;
+}
+
 @media (max-width: 900px) {
   .process-page-header {
     grid-template-columns: auto minmax(0, 1fr);
@@ -707,5 +835,17 @@ function notify(type, message) {
   .process-page-boundary {
     display: none;
   }
+}
+
+.embedded-flow-designer-modal {
+  width: 98vw;
+  max-width: 1920px;
+  height: 96vh;
+}
+
+.embedded-flow-designer-shell {
+  height: 96vh;
+  overflow: hidden;
+  border-radius: 8px;
 }
 </style>

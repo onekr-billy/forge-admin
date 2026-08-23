@@ -25,19 +25,19 @@
           <nav class="runtime-app-tabs" aria-label="应用导航">
             <!-- 非编辑模式：应用级 Tab -->
             <template v-if="!editing">
-              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'pages' }" @click="runtimeViewMode = 'pages'">
+              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'pages' }" @click="switchRuntimeView('pages')">
                 页面管理
               </button>
-              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'process' }" @click="runtimeViewMode = 'process'">
+              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'process' }" @click="switchRuntimeView('process')">
                 业务流程
               </button>
-              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'enhance' }" @click="runtimeViewMode = 'enhance'">
+              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'enhance' }" @click="switchRuntimeView('enhance')">
                 增强
               </button>
-              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'settings' }" @click="runtimeViewMode = 'settings'">
+              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'settings' }" @click="switchRuntimeView('settings')">
                 应用设置
               </button>
-              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'publish' }" @click="runtimeViewMode = 'publish'">
+              <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'publish' }" @click="switchRuntimeView('publish')">
                 应用发布
               </button>
             </template>
@@ -102,9 +102,9 @@
               </div>
             </n-popover>
             <n-button
-              v-if="editing"
-              :disabled="pageBuilderResourceActive ? !dirty : designerSection === 'flow' ? (!dirty && !embeddedDesignerDirty) : !embeddedDesignerDirty"
-              :loading="pageBuilderResourceActive ? saving : designerSection === 'flow' ? (saving || embeddedDesignerSaving) : embeddedDesignerSaving"
+              v-if="editing || (canEditApplication && dirty)"
+              :disabled="!dirty && !embeddedDesignerDirty"
+              :loading="saving || embeddedDesignerSaving"
               title="保存当前设计草稿"
               secondary
               @click="saveCurrentDesignerSection"
@@ -278,7 +278,7 @@
                 </div>
                 <div class="navigation-section-divider" />
                 <template v-for="item in navigationNodes" :key="item.id">
-                  <div class="navigation-row base-app-sidebar__node_vertical" :class="{ 'base-app-sidebar__node_selected': item.id === selectedNodeId }" :style="{ paddingLeft: `${12 + item.depth * 16}px` }">
+                  <div class="navigation-row base-app-sidebar__node_vertical" :class="{ 'base-app-sidebar__node_selected': item.id === selectedNodeId, 'is-nav-hidden': !isNavigationVisible(item) }" :style="{ paddingLeft: `${12 + item.depth * 16}px` }">
                     <button
                       v-if="item.type === 'page'"
                       class="navigation-page"
@@ -324,6 +324,19 @@
                     >
                       <NIcon size="14">
                         <AddOutline />
+                      </NIcon>
+                    </button>
+                    <button
+                      v-if="canEditApplication"
+                      type="button"
+                      class="navigation-more navigation-visibility-toggle"
+                      :class="{ 'is-hidden': !isNavigationVisible(item) }"
+                      :title="isNavigationVisible(item) ? '隐藏菜单' : '显示菜单'"
+                      @click.stop="toggleNavigationVisible(item)"
+                    >
+                      <NIcon size="14">
+                        <EyeOffOutline v-if="!isNavigationVisible(item)" />
+                        <EyeOutline v-else />
                       </NIcon>
                     </button>
                     <n-dropdown
@@ -449,6 +462,10 @@
                 :page="currentPage"
                 :objects="objects"
                 :entries="workspaceEntries"
+                :extensions="workspaceExtensions"
+                :application-id="String(application?.id || '')"
+                :application-code="application?.applicationCode || ''"
+                :page-id="currentNode?.id || ''"
                 :configurable="canEditApplication"
                 :design-preview="canEditApplication"
                 fill-host
@@ -863,7 +880,7 @@
             <ListPageGridDesigner
               v-if="inspectorTab === 'properties'"
               panel-only
-              :model-value="currentGridLayout"
+              :model-value="designerGridLayout"
               :model-schema="applicationGridModelSchema"
               :fields="selectedPageBlockFields"
               :active-block-id="selectedPageBlockId"
@@ -887,6 +904,7 @@
           <PageDesignPublishPanel
             v-if="currentNode"
             :application="application"
+            :node="currentNode"
             :page-id="currentNode.id"
             :page-title="currentNode.title"
             :dirty="dirty"
@@ -895,6 +913,7 @@
             :objects="objects"
             @save="saveCurrentDesignerSection"
             @preview="openDraftPreview"
+            @update="patchCurrentPageNode"
           />
           <n-empty v-else description="请先选择要发布的页面" />
         </section>
@@ -918,6 +937,7 @@
             :initial-extensions="workspaceExtensions"
             :initial-objects="objects"
             :initial-entries="workspaceEntries"
+            :initial-pages="builder?.nodes || []"
             @changed="handleExtensionsChanged"
             @open-designer="openEmbeddedObjectActions"
           />
@@ -934,6 +954,20 @@
         <!-- 应用发布面板 -->
         <section v-else-if="runtimeViewMode === 'publish'" class="runtime-inline-panel">
           <div class="runtime-publish-stack">
+            <section class="runtime-publish-summary" aria-label="应用页面统计">
+              <div>
+                <span>当前发布版本</span>
+                <strong>{{ application.lastPublishVersion ? `v${application.lastPublishVersion}` : '未发布' }}</strong>
+              </div>
+              <div>
+                <span>页面</span>
+                <strong>{{ publishedPageCount }}</strong>
+              </div>
+              <div>
+                <span>最近发布</span>
+                <strong>{{ application.lastPublishTime || '-' }}</strong>
+              </div>
+            </section>
             <AppPublishAccess :application="application" :objects="objects" />
             <ApplicationPublishPanel
               :application="application"
@@ -1063,11 +1097,28 @@
         </n-space>
       </template>
     </n-modal>
+
+    <n-modal
+      v-model:show="embeddedProcessDesignerVisible"
+      :mask-closable="false"
+      :auto-focus="false"
+      class="embedded-process-designer-modal"
+    >
+      <div class="embedded-process-designer-shell">
+        <BusinessProcessPage
+          v-if="embeddedProcessDesignerVisible"
+          embedded
+          :process-id="embeddedProcessDesignerId"
+          @close="embeddedProcessDesignerVisible = false"
+          @saved="handleEmbeddedProcessDesignerSaved"
+        />
+      </div>
+    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { AddOutline, AppsOutline, ArrowBackOutline, ArrowDownOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, BarChartOutline, CheckboxOutline, CheckmarkDoneOutline, ColorFillOutline, CopyOutline, CreateOutline, CubeOutline, DocumentTextOutline, DuplicateOutline, EllipsisHorizontalOutline, ExpandOutline, EyeOutline, FolderOpenOutline, FunnelOutline, GitBranchOutline, GridOutline, InformationCircleOutline, ListOutline, MoveOutline, PaperPlaneOutline, PeopleOutline, ReaderOutline, RemoveOutline, ResizeOutline, SaveOutline, SettingsOutline, SquareOutline, StatsChartOutline, SwapHorizontalOutline, TextOutline, TrashOutline } from '@vicons/ionicons5'
+import { AddOutline, AppsOutline, ArrowBackOutline, ArrowDownOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, BarChartOutline, CheckboxOutline, CheckmarkDoneOutline, ColorFillOutline, CopyOutline, CreateOutline, CubeOutline, DocumentTextOutline, DuplicateOutline, EllipsisHorizontalOutline, ExpandOutline, EyeOffOutline, EyeOutline, FolderOpenOutline, FunnelOutline, GitBranchOutline, GridOutline, InformationCircleOutline, ListOutline, MoveOutline, NotificationsOutline, PaperPlaneOutline, PeopleOutline, ReaderOutline, RemoveOutline, ResizeOutline, SaveOutline, SettingsOutline, SquareOutline, StatsChartOutline, SwapHorizontalOutline, TextOutline, TrashOutline } from '@vicons/ionicons5'
 import { NIcon, useMessage } from 'naive-ui'
 import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1092,9 +1143,10 @@ import { createDefaultFormDesignerSchema, isFieldComponent, normalizeFormDesigne
 import PageDesignPublishPanel from '@/views/app-center/components/designer/PageDesignPublishPanel.vue'
 import PageDesignSettingsPanel from '@/views/app-center/components/designer/PageDesignSettingsPanel.vue'
 import PageTypeSelector from '@/views/app-center/components/designer/PageTypeSelector.vue'
-import AppPublishAccess from '@/views/app-center/components/publish/AppPublishAccess.vue'
 import PageManagementSystemView from '@/views/app-center/components/portal/PageManagementSystemView.vue'
+import { filterNavigationNodesByClient } from '@/views/app-center/components/portal/portal-navigation-runtime'
 import PortalPageRenderer from '@/views/app-center/components/portal/PortalPageRenderer.vue'
+import AppPublishAccess from '@/views/app-center/components/publish/AppPublishAccess.vue'
 import {
   buildApplicationDesignerResourceGroups,
   findApplicationDesignerResource,
@@ -1106,6 +1158,7 @@ import { createApplicationRuntimeLoadCoordinator, resolveApplicationRuntimeLoadK
 import {
   createInAppFormAsset,
   createNavigationNode,
+  hasPendingLegacyObjectPageMigration,
   mergeInAppBuilderOptions,
   moveNavigationNode,
   normalizeInAppBuilder,
@@ -1215,6 +1268,10 @@ const BusinessObjectDesignerPage = defineAsyncComponent({
   ...asyncPanelLoader,
   loader: () => import('./object-designer.[objectCode].vue'),
 })
+const BusinessProcessPage = defineAsyncComponent({
+  ...asyncPanelLoader,
+  loader: () => import('./business-process.[processId].vue'),
+})
 const application = ref(null)
 const objects = ref([])
 const builder = ref(null)
@@ -1222,7 +1279,7 @@ const loadError = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const editing = ref(route.query.edit === '1')
-const runtimeViewMode = ref('pages') // 'pages' | 'process' | 'enhance' | 'settings' | 'publish'
+const runtimeViewMode = ref(resolveRuntimeView(route.query.view)) // 'pages' | 'process' | 'enhance' | 'settings' | 'publish'
 const exitEditingVisible = ref(false)
 const selectedNodeId = ref('')
 const newNodePopoverVisible = ref(false)
@@ -1287,6 +1344,8 @@ const activeFlowContext = ref({})
 const embeddedDesignerRef = ref(null)
 const embeddedDesignerDirty = ref(false)
 const embeddedDesignerSaving = ref(false)
+const embeddedProcessDesignerVisible = ref(false)
+const embeddedProcessDesignerId = ref('')
 const applicationRuntimeLoadCoordinator = createApplicationRuntimeLoadCoordinator(load)
 
 const componentPickerGroupOptions = [
@@ -1318,6 +1377,7 @@ const systemPageIconMap = {
   'checkmark-done': CheckmarkDoneOutline,
   'paper-plane': PaperPlaneOutline,
   'people': PeopleOutline,
+  'notifications': NotificationsOutline,
 }
 function resolveSystemPageIcon(icon) {
   return systemPageIconMap[icon] || DocumentTextOutline
@@ -1341,6 +1401,11 @@ const activeDesignerResource = computed(() => {
 })
 const designerSection = computed(() => activeDesignerResource.value?.groupKey || normalizeApplicationDesignerSection(route.query.designSection))
 const pageBuilderResourceActive = computed(() => activeDesignerResource.value?.kind === 'page-custom')
+const publishedPageCount = computed(() => (builder.value?.nodes || []).filter(node => node?.type === 'page').length)
+// 工作台编辑者需要维护管理端和移动端两套页面树；正式门户仍由
+// application-portal.vue 按当前客户端过滤。该权限计算放在导航树之前，
+// 避免导航树首次求值时拿到旧的客户端过滤结果。
+const canEditApplication = computed(() => userStore.isAdmin || hasPermission(userStore.permissions, 'ai:businessApplication:edit') || hasPermission(userStore.apiPermissions, 'ai:businessApplication:edit') || hasPermission(userStore.getDataPermission, 'ai:businessApplication:edit'))
 const activeDesignerObject = computed(() => resolveApplicationDesignerObject(objects.value, activeDesignerResource.value?.objectId))
 // 对象页面（表单页/列表页/数据结构）也应能预览，落到对象自身的 CRUD 运行页。
 const activeResourceConfigKey = computed(() => String(activeDesignerObject.value?.configKey || '').trim())
@@ -1368,6 +1433,7 @@ const navigationIconValue = computed({
       nodes: builder.value.nodes.map(item => item.id === iconPickerNode.value.id ? { ...item, icon } : item),
     }
     iconPickerVisible.value = false
+    scheduleNavigationSave()
   },
 })
 const navigationActionTitle = computed(() => ({ rename: '重命名', move: '移动到', delete: '删除页面或页面组' }[navigationActionMode.value] || '页面操作'))
@@ -1375,13 +1441,27 @@ const navigationActionHasChildren = computed(() => navigationActionNode.value?.t
 const moveGroupOptions = computed(() => groupOptions.value.filter(item => item.value !== navigationActionNodeId.value && !isNavigationGroupDescendant(item.value, navigationActionNodeId.value)))
 const navigationNodes = computed(() => {
   const nodes = builder.value?.nodes || []
-  return flattenNodes(editing.value ? nodes : nodes.filter(isNavigationVisible), null, 0, collapsedGroupIds.value)
+  // 普通管理端运行用户只展示 pc/BOTH 菜单；H5 菜单由移动端客户端读取。
+  // 编辑态和有应用编辑权限的工作台用户保留完整页面树，方便配置、
+  // 维护移动端挂载页面；正式门户仍在 application-portal.vue 中按客户端隔离。
+  const clientNodes = editing.value || canEditApplication.value
+    ? nodes
+    : filterNavigationNodesByClient(nodes, 'pc')
+  // 有编辑权限的用户在工作台始终能看到所有页面（包括隐藏的），方便恢复显示
+  // 普通用户在门户运行时只看到可见的页面
+  const shouldShowAll = editing.value || canEditApplication.value
+  return flattenNodes(shouldShowAll ? clientNodes : clientNodes.filter(isNavigationVisible), null, 0, collapsedGroupIds.value)
 })
 const currentNode = computed(() => {
   if (isPageManagementSystemPageId(selectedNodeId.value))
     return null
-  return builder.value?.nodes.find(item => item.id === selectedNodeId.value)
-    || (!editing.value ? null : builder.value?.nodes.find(item => item.id === builder.value?.homePageId))
+  // 当前内容不能依赖侧栏的折叠状态；分组收起后仍应保留已选页面。
+  // 客户端过滤只用于确定可访问范围，不能把 collapsedGroupIds 带进内容解析。
+  const nodes = editing.value || canEditApplication.value
+    ? builder.value?.nodes || []
+    : filterNavigationNodesByClient(builder.value?.nodes || [], 'pc')
+  return nodes.find(item => item.id === selectedNodeId.value)
+    || (!editing.value ? null : nodes.find(item => item.id === builder.value?.homePageId))
     || null
 })
 const currentPage = computed(() => currentNode.value ? builder.value?.pages[currentNode.value.id] : null)
@@ -1410,7 +1490,19 @@ const currentGridLayout = computed(() => {
     items: (layout.items || []).map((item, index) => createLegacyBlock(item, index)).filter(Boolean),
   }
 })
-const pageBlocks = computed(() => currentGridLayout.value.items || [])
+const pageBlocks = computed(() => {
+  const items = currentGridLayout.value.items || []
+  return items.filter(item => item.blockType !== 'page-title')
+})
+const designerGridLayout = computed(() => {
+  const grid = currentGridLayout.value
+  if (!grid || !Array.isArray(grid.items))
+    return grid
+  return {
+    ...grid,
+    items: grid.items.filter(item => item.blockType !== 'page-title'),
+  }
+})
 const pageFlowHeight = computed(() => pageBlocks.value.reduce((bottom, block, index) => {
   const y = Number(block.props?.style?.pageFlowY)
   const height = Number(block.props?.style?.pageFlowHeight)
@@ -1541,7 +1633,6 @@ const canUndo = computed(() => undoStack.value.length > 0)
 const canRedo = computed(() => redoStack.value.length > 0)
 const isDraftMode = computed(() => route.query.edit === '1' || route.query.draft === '1')
 const loadErrorTitle = computed(() => isDraftMode.value ? '应用草稿加载失败' : '应用暂不可访问')
-const canEditApplication = computed(() => userStore.isAdmin || hasPermission(userStore.permissions, 'ai:businessApplication:edit') || hasPermission(userStore.apiPermissions, 'ai:businessApplication:edit') || hasPermission(userStore.getDataPermission, 'ai:businessApplication:edit'))
 const filteredComponents = computed(() => {
   const keyword = componentKeyword.value.trim().toLowerCase()
   return listPageBlockCatalog.filter((item) => {
@@ -1605,6 +1696,11 @@ watch([
 }, { immediate: true })
 watch(() => route.query.designResource, (resourceKey) => {
   selectedDesignerResourceKey.value = String(resourceKey || '')
+})
+watch(() => route.query.view, (view) => {
+  const next = resolveRuntimeView(view)
+  if (runtimeViewMode.value !== next)
+    runtimeViewMode.value = next
 })
 watch(() => activeDesignerResource.value?.key, (activeKey) => {
   activeFlowContext.value = {}
@@ -1695,6 +1791,16 @@ async function load() {
     bindSingleFormToCompatibleBlocks()
     savedSignature.value = JSON.stringify(builder.value)
     resetBuilderHistory(builder.value)
+    if (hasPendingLegacyObjectPageMigration(application.value?.options, builder.value)) {
+      try {
+        await persistApplicationDraft()
+        savedSignature.value = JSON.stringify(builder.value)
+        message.info('已将旧版业务对象页面恢复到新版页面结构')
+      }
+      catch (error) {
+        message.warning(error?.message || '旧版业务对象页面已恢复到当前页面，但草稿自动保存失败，请手动保存')
+      }
+    }
     selectedNodeId.value = resolveSelectablePageId(route.query.pageId)
     if (editing.value)
       syncActiveFormAssetForPage(selectedNodeId.value)
@@ -1761,6 +1867,7 @@ function applyBuilderHistorySnapshot(snapshot) {
   builder.value = cloneBuilderSchema(snapshot)
   latestBuilderSnapshot = cloneBuilderSchema(builder.value)
   historyReady.value = true
+  scheduleNavigationSave()
 }
 
 function undoBuilder() {
@@ -1803,12 +1910,17 @@ function handleBuilderShortcut(event) {
 function selectNode(nodeId) {
   selectedNodeId.value = nodeId || ''
   selectedPageBlockId.value = ''
-  router.replace({ query: { ...route.query, pageId: nodeId || undefined, edit: editing.value ? '1' : undefined } })
+  // 保留路由现有 edit 参数，选择页面不应切换编辑/运行模式，
+  // 也不要用可能过期的 editing.value 重建，避免覆盖并发导航中的 edit 参数。
+  router.replace({ query: { ...route.query, pageId: nodeId || undefined } })
 }
 
 function resolveSelectablePageId(pageId) {
+  const nodes = editing.value || canEditApplication.value
+    ? builder.value?.nodes || []
+    : filterNavigationNodesByClient(builder.value?.nodes || [], 'pc')
   return resolvePageManagementSelection(
-    builder.value?.nodes || [],
+    nodes,
     pageId,
     builder.value?.homePageId,
   )
@@ -1823,81 +1935,17 @@ function ensurePageTitleComponents(schema) {
     const node = nodeMap.get(pageId)
     if (node?.type !== 'page' || page?.layout?.pageTitleComponentInitialized)
       return [pageId, page]
-    const rawLayout = page?.layout || {}
-    const rawGridLayout = rawLayout.gridLayout || {
-      cols: 12,
-      rowHeight: 32,
-      gap: 8,
-      designWidth: 1366,
-      layoutType: 'simple-crud',
-      items: (rawLayout.items || []).map((item, index) => createLegacyBlock(item, index)).filter(Boolean),
-    }
-    const items = Array.isArray(rawGridLayout.items) ? rawGridLayout.items : []
-    const hasPageTitle = items.some(item => item?.blockType === 'page-title')
-    const titleBlock = hasPageTitle ? null : createPageTitleBlock(node, page)
-    const shiftedItems = titleBlock
-      ? items.map((item) => {
-          const flowY = Number(item?.props?.style?.pageFlowY)
-          if (!Number.isFinite(flowY))
-            return item
-          return {
-            ...item,
-            props: {
-              ...(item.props || {}),
-              style: { ...(item.props?.style || {}), pageFlowY: flowY + 192 },
-            },
-          }
-        })
-      : items
+    // 不再自动添加 page-title 区块，仅标记为已初始化
     changed = true
     return [pageId, {
       ...page,
       layout: {
-        ...rawLayout,
-        items: [],
+        ...(page?.layout || {}),
         pageTitleComponentInitialized: true,
-        gridLayout: {
-          ...rawGridLayout,
-          items: titleBlock ? [titleBlock, ...shiftedItems] : shiftedItems,
-        },
       },
     }]
   }))
   return changed ? { ...schema, pages } : schema
-}
-
-function createPageTitleBlock(node, page) {
-  const block = createGridBlock('page-title', { businessName: node?.title || '应用页面', fields: [] }, { gridX: 0, gridY: 0 })
-  if (!block)
-    return null
-  return {
-    ...block,
-    props: {
-      ...(block.props || {}),
-      title: node?.title || page?.title || '页面标题',
-      subtitle: page?.description || '',
-      content: createPageTitleRichContent(node?.title || page?.title || '页面标题', page?.description || ''),
-      style: {
-        ...(block.props?.style || {}),
-        widthMode: 'full',
-        pageFlowX: 24,
-        pageFlowY: 20,
-        pageFlowWidth: 'calc(100% - 48px)',
-        pageFlowHeight: 176,
-      },
-    },
-  }
-}
-
-function createPageTitleRichContent(title, subtitle) {
-  const escape = value => String(value || '').replace(/[&<>"']/g, (char) => {
-    if (char === '\"')
-      return '&quot;'
-    if (char === String.fromCharCode(39))
-      return '&#39;'
-    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]
-  })
-  return `<h1>${escape(title)}</h1>${subtitle ? `<p>${escape(subtitle)}</p>` : ''}`
 }
 
 function createQuickNode(type = 'page', parentId = null) {
@@ -1923,6 +1971,10 @@ function createQuickNode(type = 'page', parentId = null) {
   }
   if (created?.type === 'page')
     selectNode(created.id)
+  // 页面组仅在内存中创建，后续进入编辑模式会触发路由变化和后端重载，
+  // 必须先持久化草稿否则新建的页面组会被重载覆盖。
+  if (created?.type === 'group')
+    saveDraft()
 }
 
 function toggleGroupExpanded(groupId) {
@@ -1952,27 +2004,41 @@ function openPageTypeSelector(parentId = null) {
 }
 
 function handlePageTypeSelection(selection = {}) {
-  const result = createPageShapeBuilder(builder.value, {
-    ...selection,
-    parentId: selection.parentId || pageTypeSelectorParentId.value,
-  })
-  builder.value = result.schema
-  pageTypeSelectorVisible.value = false
-  pageTypeSelectorParentId.value = null
-  selectCreatedDesignerPage(result.pageId)
-  if (!result.formAssetId)
+  // 父页面组由打开弹窗的当前操作上下文决定。不能使用选择器内部上次打开时缓存的 parentId，
+  // 否则“新建页面组后立即新增页面”会把旧组传给 schema 校验。
+  const parentId = pageTypeSelectorParentId.value == null || pageTypeSelectorParentId.value === ''
+    ? null
+    : String(pageTypeSelectorParentId.value)
+  if (parentId && !builder.value?.nodes?.some(node => String(node.id) === parentId && node.type === 'group')) {
+    message.warning('目标页面组已不存在，请在页面树中重新选择页面组')
     return
-  activePageShapeDesign.value = {
-    pageId: result.pageId,
-    pageType: result.selection.pageType,
-    formAssetId: result.formAssetId,
-    objectId: null,
-    objectCode: result.selection.objectCode,
-    objectName: result.selection.objectName,
   }
-  activeFormAssetId.value = result.formAssetId
-  selectedPageBlockId.value = builder.value.pages?.[result.pageId]?.layout?.gridLayout?.items?.[0]?.id || ''
-  formDesignerMode.value = true
+  try {
+    const result = createPageShapeBuilder(builder.value, {
+      ...selection,
+      parentId,
+    })
+    builder.value = result.schema
+    pageTypeSelectorVisible.value = false
+    pageTypeSelectorParentId.value = null
+    selectCreatedDesignerPage(result.pageId)
+    if (!result.formAssetId)
+      return
+    activePageShapeDesign.value = {
+      pageId: result.pageId,
+      pageType: result.selection.pageType,
+      formAssetId: result.formAssetId,
+      objectId: null,
+      objectCode: result.selection.objectCode,
+      objectName: result.selection.objectName,
+    }
+    activeFormAssetId.value = result.formAssetId
+    selectedPageBlockId.value = builder.value.pages?.[result.pageId]?.layout?.gridLayout?.items?.[0]?.id || ''
+    formDesignerMode.value = true
+  }
+  catch (error) {
+    message.error(error?.message || '页面创建失败，请刷新后重试')
+  }
 }
 
 function selectIntroTemplate(templateKey) {
@@ -2126,6 +2192,8 @@ function resolveNavigationMoreOptions(node) {
     ),
     { label: '重命名', key: 'rename', icon: () => renderNavigationMenuIcon(CreateOutline) },
     { label: '更改图标', key: 'icon', icon: () => renderNavigationMenuIcon(ColorFillOutline) },
+    { label: isNavigationVisible(node) ? '隐藏菜单' : '显示菜单', key: 'toggle-visible', icon: () => renderNavigationMenuIcon(isNavigationVisible(node) ? EyeOutline : EyeOffOutline) },
+    { label: node.systemMenuVisible ? '取消系统菜单挂载' : '挂载到系统菜单', key: 'toggle-system-menu', icon: () => renderNavigationMenuIcon(GridOutline) },
     { label: '复制', key: 'duplicate', icon: () => renderNavigationMenuIcon(CopyOutline) },
     { label: '移动至', key: 'move', icon: () => renderNavigationMenuIcon(MoveOutline) },
     { type: 'divider', key: 'move-divider' },
@@ -2147,6 +2215,14 @@ function handleNavigationMoreSelect(key, node) {
   }
   if (key === 'move-up' || key === 'move-down') {
     moveNavigationByOffset(node, key === 'move-up' ? -1 : 1)
+    return
+  }
+  if (key === 'toggle-visible') {
+    toggleNavigationVisible(node)
+    return
+  }
+  if (key === 'toggle-system-menu') {
+    toggleSystemMenuVisible(node)
     return
   }
   if (key === 'duplicate') {
@@ -2171,6 +2247,27 @@ function handleNavigationMoreSelect(key, node) {
   navigationActionVisible.value = true
 }
 
+function toggleNavigationVisible(node) {
+  const isVisible = isNavigationVisible(node)
+  builder.value = {
+    ...builder.value,
+    nodes: builder.value.nodes.map(item => item.id === node.id
+      ? { ...item, navigationVisible: !isVisible }
+      : item),
+  }
+  scheduleNavigationSave()
+}
+
+function toggleSystemMenuVisible(node) {
+  builder.value = {
+    ...builder.value,
+    nodes: builder.value.nodes.map(item => item.id === node.id
+      ? { ...item, systemMenuVisible: !item.systemMenuVisible }
+      : item),
+  }
+  scheduleNavigationSave()
+}
+
 function duplicateNavigationNode(node) {
   const copyId = `${node.type}_${Date.now()}`
   const copy = {
@@ -2188,6 +2285,7 @@ function duplicateNavigationNode(node) {
   }
   if (copy.type === 'page')
     selectNode(copy.id)
+  scheduleNavigationSave()
 }
 
 function moveNavigationByOffset(node, offset) {
@@ -2197,6 +2295,7 @@ function moveNavigationByOffset(node, offset) {
     return
   try {
     builder.value = moveNavigationNode(builder.value, node.id, node.parentId, offset < 0 ? index - 1 : index + 1)
+    scheduleNavigationSave()
   }
   catch (error) {
     message.error(error?.message || '页面排序失败')
@@ -2254,6 +2353,7 @@ function confirmNavigationAction() {
       }
     }
     navigationActionVisible.value = false
+    scheduleNavigationSave()
   }
   catch (error) {
     message.error(error?.message || '页面操作失败')
@@ -2283,13 +2383,20 @@ function insertComponent(component) {
 function updateCurrentGridLayout(gridLayout) {
   if (!currentNode.value || !currentPage.value)
     return
+  const originalGrid = currentGridLayout.value
+  const pageTitleBlocks = Array.isArray(originalGrid?.items)
+    ? originalGrid.items.filter(item => item.blockType === 'page-title')
+    : []
+  const mergedLayout = pageTitleBlocks.length
+    ? { ...gridLayout, items: [...pageTitleBlocks, ...(gridLayout.items || [])] }
+    : gridLayout
   builder.value = {
     ...builder.value,
     pages: {
       ...builder.value.pages,
       [currentNode.value.id]: {
         ...currentPage.value,
-        layout: { ...currentPage.value.layout, items: [], gridLayout },
+        layout: { ...currentPage.value.layout, items: [], gridLayout: mergedLayout },
       },
     },
   }
@@ -2582,15 +2689,24 @@ async function loadRuntimeCrudProps(objectRef, cacheKey) {
       }
       if (!configKey)
         throw new Error('该业务对象还没有可用的列表运行配置')
+      const runtimeEntryId = resolveRuntimeEntryId(configKey)
       let config = null
       try {
-        config = (await crudConfigRender(configKey, designPreview, { needTip: false })).data
+        config = (await crudConfigRender(configKey, designPreview, {
+          needTip: false,
+          appId: runtimeEntryId,
+          applicationId: application.value?.id,
+        })).data
       }
       catch (error) {
         if (!designPreview)
           throw error
         designPreview = false
-        config = (await crudConfigRender(configKey, false, { needTip: false })).data
+        config = (await crudConfigRender(configKey, false, {
+          needTip: false,
+          appId: runtimeEntryId,
+          applicationId: application.value?.id,
+        })).data
       }
       if (!config || typeof config !== 'object')
         throw new Error('业务对象运行配置为空')
@@ -2636,6 +2752,14 @@ async function loadRuntimeCrudProps(objectRef, cacheKey) {
   finally {
     runtimeCrudLoadingObjectIds.delete(cacheKey)
   }
+}
+
+function resolveRuntimeEntryId(configKey) {
+  const normalized = String(configKey || '').trim()
+  if (!normalized)
+    return null
+  const entry = workspaceEntries.value.find(item => String(item?.configKey || '').trim() === normalized)
+  return entry?.id ?? null
 }
 
 /**
@@ -4297,6 +4421,47 @@ async function saveActiveFormDesigner(returnAfter = true) {
   }
 }
 
+let navigationSaveTimer = null
+let navigationSavePending = false
+
+/**
+ * 导航树操作（删除/排序/隐藏/系统菜单挂载等）后静默自动保存到草稿。
+ * 不弹成功提示，失败时提示用户手动保存。
+ * 防抖 300ms，避免连续操作多次调接口。
+ */
+function scheduleNavigationSave() {
+  if (navigationSaveTimer)
+    clearTimeout(navigationSaveTimer)
+  navigationSaveTimer = setTimeout(() => {
+    navigationSaveTimer = null
+    void saveNavigationDraft()
+  }, 300)
+}
+
+async function saveNavigationDraft() {
+  if (!application.value || !dirty.value)
+    return
+  if (saving.value) {
+    navigationSavePending = true
+    return
+  }
+  saving.value = true
+  try {
+    await persistApplicationDraft()
+    savedSignature.value = JSON.stringify(builder.value)
+  }
+  catch {
+    message.error('导航配置保存失败，请点击"保存草稿"手动保存')
+  }
+  finally {
+    saving.value = false
+    if (navigationSavePending) {
+      navigationSavePending = false
+      void saveNavigationDraft()
+    }
+  }
+}
+
 async function saveDraft() {
   if (!application.value || saving.value)
     return false
@@ -4394,26 +4559,49 @@ function requestExitEditing() {
 function currentDesignerDirty() {
   if (pageBuilderResourceActive.value)
     return dirty.value
-  if (designerSection.value === 'flow')
-    return dirty.value || embeddedDesignerDirty.value
-  return embeddedDesignerDirty.value
+  return dirty.value || embeddedDesignerDirty.value
 }
 
 async function saveCurrentDesignerSection() {
-  if (editing.value && activePageDesignTab.value === 'form')
-    return saveActiveFormDesigner(false)
+  // 非编辑模式下（页面管理视图等），导航树操作只修改了 builder，直接保存草稿
+  if (!editing.value && canEditApplication.value && dirty.value)
+    return await saveDraft()
+  if (editing.value && activePageDesignTab.value === 'form') {
+    const formSaved = await saveActiveFormDesigner(false)
+    if (dirty.value)
+      return await saveDraft()
+    return formSaved
+  }
+  if (editing.value && activePageDesignTab.value === 'list') {
+    if (!pageDesignObject.value)
+      return false
+    embeddedDesignerSaving.value = true
+    try {
+      const saved = await embeddedDesignerRef.value?.save?.()
+      if (saved !== false)
+        embeddedDesignerDirty.value = false
+      if (dirty.value)
+        return await saveDraft()
+      return saved !== false
+    }
+    finally {
+      embeddedDesignerSaving.value = false
+    }
+  }
   if (pageBuilderResourceActive.value)
     return saveDraft()
-  if (designerSection.value === 'settings')
+  if (designerSection.value === 'settings') {
+    if (dirty.value)
+      return await saveDraft()
     return true
+  }
   embeddedDesignerSaving.value = true
   try {
     const saved = await embeddedDesignerRef.value?.save?.()
-    if (saved !== false) {
+    if (saved !== false)
       embeddedDesignerDirty.value = false
-      if (designerSection.value === 'flow' && dirty.value)
-        return await saveDraft()
-    }
+    if (dirty.value)
+      return await saveDraft()
     return saved !== false
   }
   finally {
@@ -4505,35 +4693,117 @@ function openEmbeddedObjectActions() {
     selectDesignerResource(resource)
 }
 
-// 流程列表面板：打开画布时带上返回地址，画布保存/发布后可回到当前设计器。
+// 流程列表面板：内嵌画布，避免路由跳转导致上下文丢失。
 function openProcessDesigner(payload = {}) {
   const processId = String(payload?.processId || '')
   if (!processId)
     return
-  router.push({
-    name: 'BusinessProcessDesigner',
-    params: { processId },
-    query: {
-      applicationCode: application.value?.applicationCode || undefined,
-      returnTo: route.fullPath,
-      from: 'designer',
-    },
-  })
+  embeddedProcessDesignerId.value = processId
+  embeddedProcessDesignerVisible.value = true
 }
 
-// 流程列表面板的"应用发布"入口：直接展开运行时头部同款发布抽屉。
+async function handleEmbeddedProcessDesignerSaved() {
+  embeddedProcessDesignerVisible.value = false
+  await refreshWorkspaceMetadata()
+}
+
+// 流程列表面板的"应用发布"入口：切换到应用发布 Tab，与导航栏保持一致。
 function handleProcessPanelNavigate(section) {
   if (section === 'releases')
-    openPublishPanel()
+    runtimeViewMode.value = 'publish'
 }
 
 async function handleExtensionsChanged() {
   await refreshWorkspaceMetadata()
 }
 
-async function handleEmbeddedDesignerSaved() {
+async function handleEmbeddedDesignerSaved(savedSchema) {
   embeddedDesignerDirty.value = false
+  if (activePageDesignTab.value === 'list')
+    promoteCurrentPageToListShape(savedSchema)
   await refreshWorkspaceMetadata()
+}
+
+/**
+ * “表单页”创建时区块写入了 formOnly / showSearch:false 等表单形态锁死配置，
+ * 且区块上的 showImport/searchFieldRefs 等快照会优先于运行时配置。
+ * 用户在该页保存列表设计后，列表设计就是该页列表区块的事实来源：
+ * 同步查询字段快照、解除形态限制并清除模板遗留的工具栏覆盖项，
+ * 否则渲染页面会缺查询条件或批量操作，与列表设计结果不一致。
+ */
+function promoteCurrentPageToListShape(savedSchema = null) {
+  const pageId = selectedNodeId.value
+  if (!pageId)
+    return
+  const node = (builder.value?.nodes || []).find(item => item.id === pageId)
+  const isFormShapeNode = node?.pageTemplate === 'form' || node?.objectRef?.pageMode === 'form'
+  // 优先取本次列表设计保存的查询区配置，缓存的运行时配置仅作兜底（缓存可能落后于草稿）。
+  const savedSearchZone = (Array.isArray(savedSchema?.zones) ? savedSchema.zones : [])
+    .find(zone => zone?.zoneKey === 'search')
+  const latestSearchRefs = (savedSearchZone && Array.isArray(savedSearchZone.fieldRefs)
+    ? savedSearchZone.fieldRefs
+    : (runtimeCrudPropsByObjectId.value[resolveRuntimeObjectCacheKey(node?.objectRef || {})]?.searchSchema || [])
+        .map(field => field?.field))
+    .map(fieldCode => String(fieldCode || '').trim())
+    .filter(Boolean)
+  const searchEnabled = savedSearchZone ? savedSearchZone.enabled !== false : true
+  // 模板/早期快照遗留的覆盖项一律清除，交回运行时配置（列表设计编译结果）接管。
+  const legacyOverrideKeys = ['formOnly', 'showImport', 'showExport', 'enableCustomQuery', 'hideAdd', 'hideToolbar', 'hideBatchDelete', 'hideSelection']
+  let blockPromoted = false
+  const items = mapPageBlocksInTree(pageBlocks.value, (block) => {
+    if (block.blockType !== 'AiCrudPage')
+      return block
+    const blockProps = block.props || {}
+    const hasSearchRefs = Array.isArray(blockProps.searchFieldRefs)
+    const searchRefsChanged = latestSearchRefs.length > 0
+      && (!hasSearchRefs
+        || blockProps.searchFieldRefs.length !== latestSearchRefs.length
+        || blockProps.searchFieldRefs.some(fieldCode => !latestSearchRefs.includes(String(fieldCode))))
+    // 静态预览（previewLiveData=false）会禁用导入/导出/自定义查询等批量操作，
+    // 列表页必须按实时数据预览渲染，才能和列表设计的工具栏配置一致。
+    const needsLivePreview = blockProps.previewLiveData !== true
+    const hasLegacyOverrides = legacyOverrideKeys.some(key => key in blockProps)
+      || blockProps.showSearch !== searchEnabled
+      || needsLivePreview
+    if (!searchRefsChanged && !hasLegacyOverrides)
+      return block
+    blockPromoted = true
+    const nextProps = {
+      ...blockProps,
+      showSearch: searchEnabled,
+      previewLiveData: true,
+      previewMode: 'realList',
+      objectRef: blockProps.objectRef
+        ? { ...blockProps.objectRef, pageKey: 'list', pageMode: 'list' }
+        : blockProps.objectRef,
+    }
+    if (latestSearchRefs.length)
+      nextProps.searchFieldRefs = latestSearchRefs
+    else
+      delete nextProps.searchFieldRefs
+    for (const key of legacyOverrideKeys)
+      delete nextProps[key]
+    return { ...block, props: nextProps }
+  })
+  if (!blockPromoted && !isFormShapeNode)
+    return
+  if (blockPromoted)
+    updatePageBlocks(items)
+  if (isFormShapeNode) {
+    builder.value = {
+      ...builder.value,
+      nodes: builder.value.nodes.map(item => item.id === pageId
+        ? {
+            ...item,
+            pageTemplate: 'list',
+            objectRef: item.objectRef
+              ? { ...item.objectRef, pageKey: 'list', pageMode: 'list' }
+              : item.objectRef,
+          }
+        : item),
+    }
+  }
+  scheduleNavigationSave()
 }
 
 function handleRuntimeHeaderMoreSelect(key) {
@@ -4567,6 +4837,30 @@ function openWorkspace() {
   router.push({ path: '/app-center' })
 }
 
+async function switchRuntimeView(view) {
+  const next = resolveRuntimeView(view)
+  // 发布面板读取的是服务端已保存的应用草稿。导航/挂载配置可能刚在
+  // 页面管理视图中修改，进入发布面板前先把这份草稿落库，避免发布
+  // 服务拿到旧的 systemMenuVisible 或父级路径而下线现有菜单。
+  if (next === 'publish' && dirty.value) {
+    const saved = await saveCurrentDesignerSection()
+    if (!saved)
+      return
+  }
+  runtimeViewMode.value = next
+  router.replace({
+    query: {
+      ...route.query,
+      view: next === 'pages' ? undefined : next,
+    },
+  })
+}
+
+function resolveRuntimeView(value) {
+  const normalized = String(Array.isArray(value) ? value[0] : value || '').toLowerCase()
+  return ['pages', 'process', 'enhance', 'settings', 'publish'].includes(normalized) ? normalized : 'pages'
+}
+
 function openApplicationPortal() {
   if (!application.value)
     return
@@ -4578,21 +4872,11 @@ function openApplicationPortal() {
 }
 
 function openApplicationSettings() {
-  if (!application.value?.applicationCode)
-    return
-  router.push({
-    name: 'BusinessApplicationSettings',
-    params: { applicationCode: application.value.applicationCode },
-  })
+  switchRuntimeView('settings')
 }
 
 function openApplicationPublish() {
-  if (!application.value?.applicationCode)
-    return
-  router.push({
-    name: 'BusinessApplicationPublish',
-    params: { applicationCode: application.value.applicationCode },
-  })
+  switchRuntimeView('publish')
 }
 
 // 页面级 Tab（编辑模式）
@@ -4699,21 +4983,33 @@ function patchCurrentPageNode(partial = {}) {
   if (!currentNode.value || !builder.value)
     return
   const pageId = currentNode.value.id
+  const settingsFields = ['systemMenuVisible', 'navigationVisible', 'mountTarget', 'menuName', 'menuParentId', 'mobileMenuParentId', 'menuSort']
   builder.value = {
     ...builder.value,
     nodes: builder.value.nodes.map((item) => {
       if (item.id !== pageId)
         return item
       const next = { ...item, ...partial }
-      if (Object.prototype.hasOwnProperty.call(partial, 'navigationVisible')) {
+      const settingsPatch = {}
+      for (const key of settingsFields) {
+        if (Object.prototype.hasOwnProperty.call(partial, key)) {
+          settingsPatch[key] = key === 'navigationVisible'
+            ? partial[key] !== false
+            : partial[key]
+        }
+      }
+      if (Object.keys(settingsPatch).length > 0) {
         next.settings = {
-          ...(item.settings || {}),
-          navigationVisible: partial.navigationVisible !== false,
+          ...(next.settings || item.settings || {}),
+          ...settingsPatch,
         }
       }
       return next
     }),
   }
+  // 页面发布面板的挂载配置属于导航树草稿。自动保存可避免用户直接
+  // 切换到“应用发布”时，发布服务仍读取旧的菜单挂载状态。
+  scheduleNavigationSave()
 }
 
 function selectPageManagementNode(pageId) {
@@ -4769,10 +5065,20 @@ function enterPageDesign(pageId) {
   // 记录用户是否从页面管理视图（非编辑模式）进入
   formDesignerFromPageManagement.value = !editing.value
   selectedNodeId.value = pageId
-  selectedDesignerResourceKey.value = `page-custom:${pageId}`
-  editing.value = true
   activePageDesignTab.value = 'form'
   syncActiveFormAssetForPage(pageId)
+  // 所有状态（编辑模式、选中页面、设计资源）统一通过一次路由更新驱动：
+  // watch(route.query.edit) 设置 editing，watch(route.query.pageId) 设置 selectedNodeId，
+  // watch(route.query.designResource) 设置 selectedDesignerResourceKey。
+  // 避免在路由生效前同步修改这些 ref 触发 watch 产生不带 edit 的并发 router.replace。
+  router.replace({
+    query: {
+      ...route.query,
+      pageId,
+      edit: '1',
+      designResource: `page-custom:${pageId}`,
+    },
+  })
 }
 
 function openCustomPageSelector() {
@@ -4942,7 +5248,7 @@ function handlePublishIssueNavigate(section, issue) {
     return
   }
   if (section === 'releases') {
-    openApplicationPublish()
+    switchRuntimeView('publish')
     return
   }
   router.push({
@@ -5120,6 +5426,42 @@ function hasPermission(source, permission) {
   gap: 16px;
   width: min(1120px, 100%);
   margin: 0 auto;
+}
+
+.runtime-publish-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #e5e6eb;
+}
+
+.runtime-publish-summary > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px 16px;
+  background: #fff;
+}
+
+.runtime-publish-summary span {
+  color: #86909c;
+  font-size: 12px;
+}
+
+.runtime-publish-summary strong {
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .runtime-publish-summary {
+    grid-template-columns: 1fr;
+  }
 }
 .runtime-body {
   display: grid;
@@ -5492,10 +5834,11 @@ function hasPermission(source, permission) {
   flex: 0 0 auto;
 }
 .navigation-edit-icon {
-  opacity: 0;
+  opacity: 0.45;
   transition: opacity 0.15s ease;
 }
-.navigation-row:hover .navigation-edit-icon {
+.navigation-row:hover .navigation-edit-icon,
+.navigation-row:focus-within .navigation-edit-icon {
   opacity: 1;
 }
 .navigation-more {
@@ -5512,6 +5855,21 @@ function hasPermission(source, permission) {
 .navigation-more:hover {
   background: #f2f3f5;
   color: #1f2329;
+}
+.navigation-visibility-toggle.is-hidden {
+  opacity: 1;
+  color: #c9cdd4;
+}
+.navigation-visibility-toggle.is-hidden:hover {
+  color: #86909c;
+}
+.navigation-row.is-nav-hidden .navigation-page,
+.navigation-row.is-nav-hidden .navigation-group {
+  opacity: 0.5;
+}
+.navigation-row.is-nav-hidden .navigation-page span:last-child,
+.navigation-row.is-nav-hidden .navigation-group span:last-child {
+  text-decoration: line-through;
 }
 .navigation-create {
   gap: 8px;
@@ -7351,5 +7709,17 @@ function hasPermission(source, permission) {
   .application-template-card {
     min-height: 132px;
   }
+}
+
+.embedded-process-designer-modal {
+  width: 98vw;
+  max-width: 1920px;
+  height: 96vh;
+}
+
+.embedded-process-designer-shell {
+  height: 96vh;
+  overflow: hidden;
+  border-radius: 8px;
 }
 </style>

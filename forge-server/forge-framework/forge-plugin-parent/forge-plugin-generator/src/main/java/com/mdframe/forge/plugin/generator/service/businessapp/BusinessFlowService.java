@@ -28,6 +28,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessApprovalResultEvent;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessBindingSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
@@ -85,6 +86,13 @@ public class BusinessFlowService {
     @Autowired(required = false)
     private FlowClient flowClient;
 
+    /**
+     * 应用页面表单资产属于应用设计快照，不属于业务对象本身。
+     * 使用字段注入保持已有测试/插件扩展的构造器兼容性。
+     */
+    @Autowired(required = false)
+    private BusinessApplicationService businessApplicationService;
+
     private final BusinessBindingMapper bindingMapper;
     private final BusinessFlowInstanceLinkMapper flowInstanceLinkMapper;
     private final AiCrudConfigMapper crudConfigMapper;
@@ -92,6 +100,7 @@ public class BusinessFlowService {
     private final BusinessDocumentConfigService documentConfigService;
     private final BusinessDocumentRuntimeService documentRuntimeService;
     private final DynamicCrudService dynamicCrudService;
+    private final BusinessFieldDesignService businessFieldDesignService;
     private final BusinessFlowVariableResolver variableResolver;
     private final BusinessCodeFormProviderRegistry codeFormProviderRegistry;
     private final ApplicationEventPublisher applicationEventPublisher;
@@ -252,12 +261,36 @@ public class BusinessFlowService {
      * 查询业务对象可供流程节点绑定的表单资产。
      */
     public Map<String, Object> getFormAssets(String objectCode, boolean includeInternal) {
+        return getFormAssets(objectCode, includeInternal, null);
+    }
+
+    /**
+     * 查询当前应用中当前业务对象实际可作为审批任务表单的页面资产。
+     * applicationId 为空时保留对象级/代码表单兼容目录；有应用上下文时只返回该应用的真实页面表单，
+     * 避免把业务对象字段注册表误显示成一个不存在的页面。
+     */
+    public Map<String, Object> getFormAssets(String objectCode,
+                                             boolean includeInternal,
+                                             Long applicationId) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("objectCode", objectCode);
         result.put("formAssets", List.of());
         result.put("providerCatalog", List.of());
         result.put("warnings", List.of());
         if (StringUtils.isBlank(objectCode)) {
+            return result;
+        }
+
+        if (applicationId != null && applicationId > 0 && businessApplicationService != null) {
+            Map<String, Object> applicationAssets = collectApplicationPageFormAssets(
+                    applicationId, objectCode);
+            if (!applicationAssets.isEmpty()) {
+                result.putAll(applicationAssets);
+                result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(objectCode, includeInternal));
+                return result;
+            }
+            result.put("warnings", List.of("当前应用尚未配置属于该业务对象的表单页面，请先在应用中新增表单页面"));
+            result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(objectCode, includeInternal));
             return result;
         }
 
@@ -297,6 +330,7 @@ public class BusinessFlowService {
         JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
         List<Map<String, Object>> assets = new ArrayList<>(collectBusinessFormAssets(object, formSchema));
         appendUniqueFormAssets(assets, collectRuntimeCrudFormAssets(object, runtimeConfig));
+        appendObjectFieldRegistryFallback(assets, object);
         JSONObject metadata = readCodeAppMetadata(tenantId, object.getObjectCode());
         appendUniqueFormAssets(assets, mergeCodeAppAssets(
                 object.getObjectCode(), codeFormProviderRegistry.listAssets(object.getObjectCode(), includeInternal),
@@ -313,6 +347,211 @@ public class BusinessFlowService {
         result.put("codeAppMetadata", sanitizeCodeAppMetadata(metadata, includeInternal));
         result.put("warnings", warnings);
         return result;
+    }
+
+    /**
+     * 从应用草稿中的页面节点和页面布局提取真实页面表单。
+     * 表单 key 带应用/页面/资产三段稳定身份，运行时无需额外传 applicationId 即可重新解析页面。
+     */
+    private Map<String, Object> collectApplicationPageFormAssets(Long applicationId, String objectCode) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (applicationId == null || applicationId <= 0 || businessApplicationService == null) {
+            return result;
+        }
+        try {
+            var application = businessApplicationService.detail(applicationId);
+            JSONObject options = readJsonObject(application.getOptions());
+            JSONObject builder = readNestedObject(options.get("inAppBuilder"));
+            JSONArray nodes = readNestedArray(builder.get("nodes"));
+            JSONObject pages = readNestedObject(builder.get("pages"));
+            JSONArray assets = readNestedArray(builder.get("formAssets"));
+            if (nodes.isEmpty() || pages.isEmpty() || assets.isEmpty()) {
+                return result;
+            }
+            Map<String, JSONObject> assetsById = new LinkedHashMap<>();
+            for (int i = 0; i < assets.size(); i++) {
+                JSONObject asset = assets.getJSONObject(i);
+                if (asset != null && StringUtils.isNotBlank(asset.getString("id"))) {
+                    assetsById.put(asset.getString("id"), asset);
+                }
+            }
+            List<Map<String, Object>> formAssets = new ArrayList<>();
+            Set<String> seen = new LinkedHashSet<>();
+            for (int i = 0; i < nodes.size(); i++) {
+                JSONObject node = nodes.getJSONObject(i);
+                if (node == null || !"page".equalsIgnoreCase(node.getString("type"))) {
+                    continue;
+                }
+                JSONObject objectRef = readNestedObject(node.get("objectRef"));
+                if (!StringUtils.equals(objectCode,
+                        StringUtils.firstNonBlank(objectRef.getString("objectCode"), node.getString("objectCode")))) {
+                    continue;
+                }
+                String pageId = StringUtils.trimToNull(node.getString("id"));
+                if (pageId == null) {
+                    continue;
+                }
+                JSONObject page = pages.getJSONObject(pageId);
+                if (page == null) {
+                    continue;
+                }
+                Set<String> referencedAssetIds = new LinkedHashSet<>();
+                collectFormAssetIds(page, referencedAssetIds);
+                String directAssetId = StringUtils.firstNonBlank(
+                        node.getString("formAssetId"), objectRef.getString("formAssetId"));
+                if (directAssetId != null) {
+                    referencedAssetIds.add(directAssetId);
+                }
+                // Older object pages were persisted as a CRUD block without a
+                // formAssetId on the block.  The application still owns the
+                // form asset in inAppBuilder.formAssets, and when there is one
+                // unambiguous asset it is the page's default task form.  Keep
+                // this fallback here so historical pages can participate in
+                // business-process task forms without asking users to rebind
+                // the page manually.
+                if (referencedAssetIds.isEmpty()) {
+                    String defaultAssetId = resolveDefaultPageFormAssetId(
+                            node, objectRef, assets);
+                    if (defaultAssetId != null) {
+                        referencedAssetIds.add(defaultAssetId);
+                    }
+                }
+                for (String assetId : referencedAssetIds) {
+                    JSONObject source = assetsById.get(assetId);
+                    if (source == null) {
+                        continue;
+                    }
+                    Map<String, Object> item = buildApplicationPageFormAsset(
+                            applicationId, node, objectRef, source, pageId);
+                    String formKey = StringUtils.trimToNull(textValue(item.get("formKey")));
+                    if (formKey != null && seen.add(formKey)) {
+                        formAssets.add(item);
+                    }
+                }
+            }
+            if (formAssets.isEmpty()) {
+                return result;
+            }
+            result.put("applicationId", String.valueOf(applicationId));
+            result.put("objectCode", objectCode);
+            result.put("formAssets", formAssets);
+            result.put("warnings", List.of());
+        } catch (Exception error) {
+            log.debug("读取应用页面表单资产失败: applicationId={}, objectCode={}", applicationId, objectCode, error);
+        }
+        return result;
+    }
+
+    private String resolveDefaultPageFormAssetId(JSONObject pageNode,
+                                                  JSONObject objectRef,
+                                                  JSONArray assets) {
+        if (assets == null || assets.isEmpty()) {
+            return null;
+        }
+        String requestedFormKey = StringUtils.firstNonBlank(
+                pageNode == null ? null : pageNode.getString("formKey"),
+                pageNode == null ? null : pageNode.getString("defaultFormKey"),
+                objectRef == null ? null : objectRef.getString("formKey"),
+                objectRef == null ? null : objectRef.getString("defaultFormKey"));
+        if (requestedFormKey != null) {
+            for (int i = 0; i < assets.size(); i++) {
+                JSONObject asset = assets.getJSONObject(i);
+                if (asset != null && StringUtils.equals(requestedFormKey,
+                        StringUtils.firstNonBlank(asset.getString("formKey"), asset.getString("id")))) {
+                    return StringUtils.trimToNull(asset.getString("id"));
+                }
+            }
+        }
+        String markedDefault = null;
+        String onlyAsset = null;
+        int assetCount = 0;
+        for (int i = 0; i < assets.size(); i++) {
+            JSONObject asset = assets.getJSONObject(i);
+            if (asset == null || StringUtils.isBlank(asset.getString("id"))) {
+                continue;
+            }
+            assetCount++;
+            onlyAsset = asset.getString("id");
+            if (Boolean.TRUE.equals(asset.getBoolean("default"))
+                    || Boolean.TRUE.equals(asset.getBoolean("isDefault"))) {
+                markedDefault = asset.getString("id");
+            }
+        }
+        if (markedDefault != null) {
+            return markedDefault;
+        }
+        return assetCount == 1 ? onlyAsset : null;
+    }
+
+    private Map<String, Object> buildApplicationPageFormAsset(Long applicationId,
+                                                               JSONObject pageNode,
+                                                               JSONObject objectRef,
+                                                               JSONObject source,
+                                                               String pageId) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        String sourceAssetId = StringUtils.defaultIfBlank(source.getString("id"), "default");
+        String formKey = "app_" + applicationId + "_page_" + pageId + "_form_" + sourceAssetId;
+        String pageName = StringUtils.firstNonBlank(
+                pageNode.getString("pageName"),
+                pageNode.getString("name"),
+                pageNode.getString("title"),
+                pageId);
+        String objectName = StringUtils.firstNonBlank(
+                objectRef.getString("objectName"), pageName, objectRef.getString("objectCode"));
+        JSONObject formDesignerSchema = readNestedObject(source.get("formDesignerSchema"));
+        JSONObject schema = readNestedObject(source.get("schema"));
+        if (schema.isEmpty()) {
+            schema = formDesignerSchema;
+        }
+        List<Map<String, Object>> fields = readMapList(readNestedArray(source.get("fieldCatalog")));
+        if (fields.isEmpty()) {
+            fields = readMapList(readNestedArray(source.get("fields")));
+        }
+        if (fields.isEmpty()) {
+            fields = collectBusinessFormFieldCatalog(schema);
+        }
+        item.put("type", "BUSINESS_OBJECT_FORM");
+        item.put("formMode", "BUSINESS_OBJECT_FORM");
+        item.put("applicationId", String.valueOf(applicationId));
+        item.put("objectCode", objectRef.getString("objectCode"));
+        item.put("objectName", objectName);
+        item.put("configKey", objectRef.getString("configKey"));
+        item.put("formKey", formKey);
+        item.put("sourceFormKey", source.getString("formKey"));
+        item.put("formName", StringUtils.firstNonBlank(
+                source.getString("formName"), source.getString("name"), pageName, objectName + "表单"));
+        item.put("pageId", pageId);
+        item.put("pageCode", StringUtils.firstNonBlank(pageNode.getString("pageCode"), pageNode.getString("pageKey"), pageId));
+        item.put("pageName", pageName);
+        item.put("pageType", pageNode.getString("pageType"));
+        item.put("source", "applicationPage");
+        item.put("sourceType", "applicationPageForm");
+        item.put("fieldCatalog", fields);
+        item.put("fields", fields);
+        item.put("fieldCount", fields.size());
+        item.put("fieldPreview", buildFieldPreview(fields));
+        item.put("supportsSave", true);
+        schema.put("formKey", formKey);
+        schema.put("formName", item.get("formName"));
+        schema.put("fieldCatalog", fields);
+        schema.put("fields", fields);
+        item.put("schema", schema);
+        return item;
+    }
+
+    private void collectFormAssetIds(Object value, Set<String> result) {
+        if (value instanceof Map<?, ?> map) {
+            Object propsValue = map.get("props");
+            if (propsValue instanceof Map<?, ?> props && props.get("formAssetId") != null) {
+                String id = StringUtils.trimToNull(String.valueOf(props.get("formAssetId")));
+                if (id != null) {
+                    result.add(id);
+                }
+            }
+            map.values().forEach(child -> collectFormAssetIds(child, result));
+        } else if (value instanceof Collection<?> collection) {
+            collection.forEach(child -> collectFormAssetIds(child, result));
+        }
     }
 
     /**
@@ -931,6 +1170,7 @@ public class BusinessFlowService {
             vo.setFormUrl(StringUtils.trimToNull(nodeForm.getString("formUrl")));
             vo.setEditMode(normalizeNodeEditMode(nodeForm.getString("editMode")));
             vo.setFormRef(readNestedObject(nodeForm.get("formRef")));
+            applyPageFormIdentity(vo, vo.getFormRef());
             applyApprovalPolicy(vo, nodeForm);
             vo.getWarnings().add("当前节点表单类型暂不由低代码业务表单渲染: " + formMode);
             return vo;
@@ -971,6 +1211,7 @@ public class BusinessFlowService {
         vo.setEditMode(resolveBusinessObjectTaskEditMode(nodeForm, permissions));
         applyBusinessObjectFormLayout(vo, formSchema, runtime.configKey());
         vo.setFormRef(readNestedObject(nodeForm.get("formRef")));
+        applyPageFormIdentity(vo, vo.getFormRef());
         vo.setFieldPermissions(permissions);
         vo.setFields(fields);
         vo.setFormAssets(resolveBusinessTaskFormAssets(formSchema, runtime.configKey(), formKey));
@@ -981,6 +1222,16 @@ public class BusinessFlowService {
             vo.getWarnings().add("当前业务表单没有可展示字段");
         }
         return vo;
+    }
+
+    private void applyPageFormIdentity(BusinessTaskFormContextVO vo, Map<String, Object> formRef) {
+        if (vo == null || formRef == null || formRef.isEmpty()) {
+            return;
+        }
+        vo.setApplicationId(StringUtils.trimToNull(textValue(formRef.get("applicationId"))));
+        vo.setPageId(StringUtils.trimToNull(textValue(formRef.get("pageId"))));
+        vo.setPageCode(StringUtils.trimToNull(textValue(formRef.get("pageCode"))));
+        vo.setPageName(StringUtils.trimToNull(textValue(formRef.get("pageName"))));
     }
 
     private void applyBusinessObjectFormLayout(BusinessTaskFormContextVO vo, JSONObject formSchema, String configKey) {
@@ -1908,11 +2159,28 @@ public class BusinessFlowService {
         String taskDefKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(textValue(formInfo.get("taskDefKey"))),
                 StringUtils.trimToNull(query.getTaskDefKey()));
-        String formKey = StringUtils.firstNonBlank(
+        String configuredFormKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(textValue(formInfo.get("formKey"))),
                 StringUtils.trimToNull(query.getFormKey()));
+        JSONObject runtimeFormRef = resolveRuntimeBusinessFormRef(formInfo);
+        String runtimeFormKey = StringUtils.trimToNull(runtimeFormRef.getString("formKey"));
+        JSONObject runtimeAsset = resolveBusinessTaskFormAsset(objectCode, runtimeFormKey);
+        boolean useRuntimePageForm = StringUtils.isNotBlank(runtimeFormKey) && !runtimeAsset.isEmpty();
+        String formKey = useRuntimePageForm ? runtimeFormKey : configuredFormKey;
         List<Map<String, Object>> permissions = normalizeFieldPermissions(formInfo.get("formFieldPermissions"));
         JSONObject flowFormRef = readNestedObject(formInfo.get("formRef"));
+        if (useRuntimePageForm) {
+            JSONObject effectiveRuntimeRef = new JSONObject();
+            effectiveRuntimeRef.putAll(runtimeAsset);
+            effectiveRuntimeRef.putAll(runtimeFormRef);
+            flowFormRef = effectiveRuntimeRef;
+            // A reusable Flowable model can still carry permissions for a different
+            // page. When the outer business-process node selected another concrete
+            // application page, rebuild permissions from that page's field catalog.
+            if (!StringUtils.equals(runtimeFormKey, configuredFormKey)) {
+                permissions = List.of();
+            }
+        }
         JSONObject asset = resolveBusinessTaskFormAsset(objectCode, formKey);
         if (asset.isEmpty() && StringUtils.isBlank(formKey) && permissions.isEmpty()) {
             if (StringUtils.isNotBlank(runtime.configKey())) {
@@ -1999,6 +2267,28 @@ public class BusinessFlowService {
             nodeForm.put("fieldPermissions", permissions);
         }
         return nodeForm;
+    }
+
+    /**
+     * Reads the concrete page form selected by an outer application business-process
+     * approval node. Earlier runs only have the compatibility variable {@code formKey};
+     * newer runs also carry a structured {@code businessFormRef}.
+     */
+    private JSONObject resolveRuntimeBusinessFormRef(Map<String, Object> formInfo) {
+        JSONObject variables = readNestedObject(formInfo == null ? null : formInfo.get("variables"));
+        if (variables.isEmpty()) {
+            return new JSONObject();
+        }
+        JSONObject formRef = readNestedObject(variables.get("businessFormRef"));
+        String formKey = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(variables.getString("businessFormKey")),
+                StringUtils.trimToNull(formRef.getString("formKey")),
+                StringUtils.trimToNull(variables.getString("formKey")));
+        if (formKey == null) {
+            return new JSONObject();
+        }
+        formRef.put("formKey", formKey);
+        return formRef;
     }
 
     private Map<String, Object> loadFlowNodeFormInfo(TaskFormRuntimeContext runtime,
@@ -2106,6 +2396,11 @@ public class BusinessFlowService {
     }
 
     private JSONObject resolveBusinessTaskFormAsset(String objectCode, String formKey) {
+        JSONObject applicationAsset = resolveApplicationPageFormAsset(formKey);
+        if (!applicationAsset.isEmpty()
+                && StringUtils.equals(objectCode, StringUtils.trimToNull(applicationAsset.getString("objectCode")))) {
+            return applicationAsset;
+        }
         List<Map<String, Object>> assets = collectTaskFormAssets(objectCode);
         if (assets.isEmpty()) {
             return new JSONObject();
@@ -2118,6 +2413,75 @@ public class BusinessFlowService {
             }
         }
         return assets.size() == 1 ? readNestedObject(assets.get(0)) : new JSONObject();
+    }
+
+    private JSONObject resolveApplicationPageFormAsset(String formKey) {
+        String key = StringUtils.trimToNull(formKey);
+        if (key == null || businessApplicationService == null || !key.startsWith("app_")) {
+            return new JSONObject();
+        }
+        int pageMarker = key.indexOf("_page_");
+        if (pageMarker <= 4) {
+            return new JSONObject();
+        }
+        Long applicationId;
+        try {
+            applicationId = Long.valueOf(key.substring(4, pageMarker));
+        } catch (NumberFormatException error) {
+            return new JSONObject();
+        }
+        try {
+            var application = businessApplicationService.detail(applicationId);
+            JSONObject options = readJsonObject(application.getOptions());
+            JSONObject builder = readNestedObject(options.get("inAppBuilder"));
+            JSONArray nodes = readNestedArray(builder.get("nodes"));
+            JSONObject pages = readNestedObject(builder.get("pages"));
+            JSONArray assets = readNestedArray(builder.get("formAssets"));
+            for (int i = 0; i < nodes.size(); i++) {
+                JSONObject pageNode = nodes.getJSONObject(i);
+                if (pageNode == null || !"page".equalsIgnoreCase(pageNode.getString("type"))) {
+                    continue;
+                }
+                String pageId = StringUtils.trimToNull(pageNode.getString("id"));
+                JSONObject page = pageId == null ? null : pages.getJSONObject(pageId);
+                if (page == null) {
+                    continue;
+                }
+                Set<String> referencedIds = new LinkedHashSet<>();
+                collectFormAssetIds(page, referencedIds);
+                JSONObject objectRef = readNestedObject(pageNode.get("objectRef"));
+                for (int assetIndex = 0; assetIndex < assets.size(); assetIndex++) {
+                    JSONObject source = assets.getJSONObject(assetIndex);
+                    if (source == null || !referencedIds.contains(source.getString("id"))) {
+                        continue;
+                    }
+                    JSONObject resolved = readNestedObject(buildApplicationPageFormAsset(
+                            applicationId, pageNode, objectRef, source, pageId));
+                    if (StringUtils.equals(key, resolved.getString("formKey"))) {
+                        return resolved;
+                    }
+                }
+            }
+            return new JSONObject();
+        } catch (Exception error) {
+            log.debug("解析应用页面表单资产失败: formKey={}", formKey, error);
+            return new JSONObject();
+        }
+    }
+
+    private JSONObject resolveApplicationPageFormSchema(String formKey) {
+        JSONObject asset = resolveApplicationPageFormAsset(formKey);
+        if (asset.isEmpty()) {
+            return new JSONObject();
+        }
+        JSONObject schema = readNestedObject(asset.get("schema"));
+        if (schema.isEmpty()) {
+            schema.put("formKey", asset.getString("formKey"));
+            schema.put("formName", asset.getString("formName"));
+            schema.put("fieldCatalog", asset.get("fieldCatalog"));
+            schema.put("fields", asset.get("fields"));
+        }
+        return schema;
     }
 
     private List<Map<String, Object>> collectTaskFormAssets(String objectCode) {
@@ -2134,6 +2498,7 @@ public class BusinessFlowService {
             JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
             assets.addAll(collectBusinessFormAssets(object, formSchema));
             appendUniqueFormAssets(assets, collectRuntimeCrudFormAssets(object, runtimeConfig));
+            appendObjectFieldRegistryFallback(assets, object);
             JSONObject metadata = readCodeAppMetadata(tenantId, object.getObjectCode());
             appendUniqueFormAssets(assets, mergeCodeAppAssets(
                     object.getObjectCode(), codeFormProviderRegistry.listAssets(object.getObjectCode()),
@@ -2145,10 +2510,15 @@ public class BusinessFlowService {
             appendUniqueFormAssets(assets, mergeCodeAppAssets(
                     objectCode, codeFormProviderRegistry.listAssets(objectCode), metadata, false));
         }
+        appendObjectFieldRegistryFallback(assets, object);
         return assets;
     }
 
     private JSONObject resolveBusinessFormSchema(BusinessObjectVO object, String formKey, String configKey) {
+        JSONObject applicationSchema = resolveApplicationPageFormSchema(formKey);
+        if (!applicationSchema.isEmpty()) {
+            return applicationSchema;
+        }
         AiCrudConfig runtimeConfig = resolveRuntimeConfigForBusinessForm(object, configKey);
         if (object == null) {
             return buildRuntimeCrudFormSchema(null, runtimeConfig, formKey);
@@ -2156,7 +2526,8 @@ public class BusinessFlowService {
         JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
         JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
         if (formSchema.isEmpty()) {
-            return buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
+            JSONObject runtimeSchema = buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
+            return runtimeSchema.isEmpty() ? buildObjectFieldRegistryFormSchema(object, formKey) : runtimeSchema;
         }
         String targetFormKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(formKey),
@@ -2165,24 +2536,59 @@ public class BusinessFlowService {
 
         JSONObject byForms = findFormSchemaInArray(readNestedArray(formSchema.get("forms")), targetFormKey);
         if (!byForms.isEmpty()) {
-            return byForms;
+            return collectBusinessFormFieldCatalog(byForms).isEmpty()
+                    ? buildObjectFieldRegistryFormSchema(object, targetFormKey)
+                    : byForms;
         }
         JSONObject settings = readNestedObject(formSchema.get("settings"));
         JSONObject byAssets = findFormSchemaInArray(readNestedArray(settings.get("formAssets")), targetFormKey);
         if (!byAssets.isEmpty()) {
-            return byAssets;
+            return collectBusinessFormFieldCatalog(byAssets).isEmpty()
+                    ? buildObjectFieldRegistryFormSchema(object, targetFormKey)
+                    : byAssets;
         }
         String rootFormKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(formSchema.getString("formKey")),
                 StringUtils.trimToNull(formSchema.getString("defaultFormKey")));
         if (StringUtils.isBlank(targetFormKey) || StringUtils.equals(targetFormKey, rootFormKey)) {
-            return formSchema;
+            return collectBusinessFormFieldCatalog(formSchema).isEmpty()
+                    ? buildObjectFieldRegistryFormSchema(object, targetFormKey)
+                    : formSchema;
         }
         JSONObject runtimeFormSchema = buildRuntimeCrudFormSchema(object, runtimeConfig, targetFormKey);
         if (!runtimeFormSchema.isEmpty()) {
             return runtimeFormSchema;
         }
-        return new JSONObject();
+        return buildObjectFieldRegistryFormSchema(object, targetFormKey);
+    }
+
+    private JSONObject buildObjectFieldRegistryFormSchema(BusinessObjectVO object, String requestedFormKey) {
+        if (object == null || object.getId() == null) {
+            return new JSONObject();
+        }
+        try {
+            List<Map<String, Object>> sourceFields = new ArrayList<>();
+            businessFieldDesignService.listFields(object.getId()).forEach(field ->
+                    sourceFields.add(new LinkedHashMap<>(
+                            JSON.parseObject(JSON.toJSONString(field), JSONObject.class))));
+            List<Map<String, Object>> fields = normalizeRuntimeCrudFormFields(sourceFields);
+            if (fields.isEmpty()) {
+                return new JSONObject();
+            }
+            String formKey = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(requestedFormKey), object.getObjectCode());
+            JSONObject schema = new JSONObject();
+            schema.put("formKey", formKey);
+            schema.put("defaultFormKey", formKey);
+            schema.put("formName", StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode()) + "表单");
+            JSONArray components = new JSONArray();
+            fields.forEach(field -> components.add(toRuntimeCrudFormComponent(field)));
+            schema.put("components", components);
+            return schema;
+        } catch (Exception e) {
+            log.debug("读取业务对象字段注册表表单 schema 失败: objectId={}, error={}", object.getId(), e.getMessage());
+            return new JSONObject();
+        }
     }
 
     private JSONObject findFormSchemaInArray(JSONArray forms, String formKey) {
@@ -3292,8 +3698,12 @@ public class BusinessFlowService {
         link.setVariablesSnapshot(JSON.toJSONString(flowVariables));
         flowInstanceLinkMapper.insert(link);
 
-        updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), "IN_PROCESS");
-        syncConfiguredStatusField(runtimeConfig, dto.getRecordId(), dto.getVariables(), "IN_PROCESS");
+        AiCrudConfig statusRuntimeConfig = runtimeConfig != null
+                ? runtimeConfig : resolvePublishedRuntimeConfig(tenantId, objectCode);
+        if (StringUtils.isBlank(configuredStatusField(dto.getVariables()))) {
+            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), "IN_PROCESS");
+        }
+        syncConfiguredStatusField(statusRuntimeConfig, dto.getRecordId(), dto.getVariables(), "IN_PROCESS");
         return toRuntimeVO(link, "流程已发起");
     }
 
@@ -3391,6 +3801,7 @@ public class BusinessFlowService {
         if (isEndedLink(link)) {
             log.info("流程回调已处理，跳过重复回调: processInstanceId={}, result={}",
                     link.getProcessInstanceId(), link.getResult());
+            publishBusinessProcessApprovalResult(link, link.getResult());
             return;
         }
         AiBusinessDocumentConfig documentConfig = documentConfigService.selectEnabledByObjectCode(
@@ -3406,8 +3817,13 @@ public class BusinessFlowService {
                 ? null
                 : dynamicCrudService.selectById(configKey, link.getRecordId());
         String result = normalizeCallbackResult(dto);
-        updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), result);
-        syncConfiguredStatusField(runtimeConfig, link.getRecordId(), readJsonObject(link.getVariablesSnapshot()), result);
+        Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
+        AiCrudConfig statusRuntimeConfig = runtimeConfig != null
+                ? runtimeConfig : resolvePublishedRuntimeConfig(link.getTenantId(), link.getObjectCode());
+        if (StringUtils.isBlank(configuredStatusField(startVariables))) {
+            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), result);
+        }
+        syncConfiguredStatusField(statusRuntimeConfig, link.getRecordId(), startVariables, result);
 
         link.setFlowStatus(result);
         link.setResult(result);
@@ -3429,6 +3845,20 @@ public class BusinessFlowService {
         } else if (runtimeConfig != null) {
             publishFlowResultEvent(link, runtimeConfig, result, previousData, currentData, dto);
         }
+        publishBusinessProcessApprovalResult(link, result);
+    }
+
+    private void publishBusinessProcessApprovalResult(AiBusinessFlowInstanceLink link, String result) {
+        if (link == null || link.getTenantId() == null
+                || StringUtils.isAnyBlank(link.getProcessInstanceId(), result)) {
+            return;
+        }
+        String normalized = result.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("APPROVED", "REJECTED", "CANCELED", "FAILED").contains(normalized)) {
+            return;
+        }
+        applicationEventPublisher.publishEvent(new BusinessProcessApprovalResultEvent(
+                link.getTenantId(), link.getProcessInstanceId(), normalized));
     }
 
     private String resolveStartConfigKey(AiBusinessDocumentConfig documentConfig,
@@ -4044,9 +4474,7 @@ public class BusinessFlowService {
         if (runtimeConfig == null || StringUtils.isBlank(runtimeConfig.getConfigKey()) || recordId == null) {
             return;
         }
-        String statusField = firstNonBlankText(
-                variables == null ? null : variables.get("statusField"),
-                variables == null ? null : variables.get("flowStatusField"));
+        String statusField = configuredStatusField(variables);
         if (StringUtils.isBlank(statusField)) {
             return;
         }
@@ -4057,6 +4485,19 @@ public class BusinessFlowService {
         } catch (Exception exception) {
             log.warn("[业务流程状态] 回写 {}={} 失败: {}", statusField, statusKey, exception.getMessage());
         }
+    }
+
+    private String configuredStatusField(Map<String, Object> variables) {
+        String statusField = firstNonBlankText(
+                variables == null ? null : variables.get("flowStatusField"),
+                variables == null ? null : variables.get("statusField"));
+        if (StringUtils.isBlank(statusField)) {
+            return "";
+        }
+        if (!Set.of("flowStatus", "flow_status").contains(statusField)) {
+            throw new BusinessException("流程状态字段必须使用独立字段 flowStatus");
+        }
+        return statusField;
     }
 
     private String firstNonBlankText(Object... values) {
@@ -4408,6 +4849,75 @@ public class BusinessFlowService {
         return List.of(item);
     }
 
+    private List<Map<String, Object>> collectObjectFieldRegistryFormAssets(BusinessObjectVO object) {
+        if (object == null || object.getId() == null || StringUtils.isBlank(object.getObjectCode())) {
+            return List.of();
+        }
+        List<Map<String, Object>> fieldCatalog;
+        try {
+            fieldCatalog = normalizeRuntimeCrudFormFields(readMapList(readNestedArray(
+                    businessFieldDesignService.listFields(object.getId()))));
+        } catch (Exception e) {
+            log.warn("读取业务对象字段目录失败: objectId={}, objectCode={}, error={}",
+                    object.getId(), object.getObjectCode(), e.getMessage());
+            return List.of();
+        }
+        if (fieldCatalog.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("type", "BUSINESS_OBJECT_FORM");
+        item.put("formMode", "BUSINESS_OBJECT_FORM");
+        item.put("objectCode", object.getObjectCode());
+        item.put("objectName", object.getObjectName());
+        item.put("configKey", object.getConfigKey());
+        item.put("formKey", object.getObjectCode());
+        item.put("formName", StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode()) + "表单");
+        item.put("viewKey", "default");
+        item.put("source", "objectFieldRegistry");
+        item.put("sourceType", "businessObjectFieldRegistry");
+        item.put("fieldCatalog", fieldCatalog);
+        item.put("fields", fieldCatalog);
+        item.put("fieldCount", fieldCatalog.size());
+        item.put("fieldPreview", buildFieldPreview(fieldCatalog));
+        item.put("supportsSave", true);
+        return List.of(item);
+    }
+
+    private void appendObjectFieldRegistryFallback(List<Map<String, Object>> assets, BusinessObjectVO object) {
+        if (assets == null || assets.stream().anyMatch(this::hasFormAssetFields)) {
+            return;
+        }
+        List<Map<String, Object>> fallback = collectObjectFieldRegistryFormAssets(object);
+        if (fallback.isEmpty()) {
+            return;
+        }
+        if (!assets.isEmpty()) {
+            Map<String, Object> existing = assets.get(0);
+            Map<String, Object> generated = fallback.get(0);
+            String mode = StringUtils.defaultIfBlank(textValue(existing.get("formMode")), textValue(existing.get("type")));
+            String formKey = StringUtils.trimToNull(textValue(existing.get("formKey")));
+            if ("BUSINESS_OBJECT_FORM".equalsIgnoreCase(mode) && formKey != null) {
+                generated.put("formKey", formKey);
+                generated.put("formName", StringUtils.defaultIfBlank(textValue(existing.get("formName")),
+                        textValue(generated.get("formName"))));
+                generated.put("providerKey", existing.get("providerKey"));
+            }
+        }
+        appendUniqueFormAssets(assets, fallback);
+    }
+
+    private boolean hasFormAssetFields(Map<String, Object> asset) {
+        if (asset == null) {
+            return false;
+        }
+        List<Map<String, Object>> fields = readMapList(readNestedArray(asset.get("fieldCatalog")));
+        if (fields.isEmpty()) {
+            fields = readMapList(readNestedArray(asset.get("fields")));
+        }
+        return !fields.isEmpty();
+    }
+
     private List<Map<String, Object>> collectRuntimeDesignerFormAssets(BusinessObjectVO object,
                                                                        AiCrudConfig runtimeConfig,
                                                                        JSONObject formSchema) {
@@ -4487,16 +4997,56 @@ public class BusinessFlowService {
         if (target == null || source == null || source.isEmpty()) {
             return;
         }
-        Set<String> seen = target.stream()
-                .map(this::formAssetIdentity)
-                .filter(StringUtils::isNotBlank)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<String, Integer> positions = new LinkedHashMap<>();
+        for (int index = 0; index < target.size(); index++) {
+            String key = formAssetIdentity(target.get(index));
+            if (StringUtils.isNotBlank(key)) {
+                positions.putIfAbsent(key, index);
+            }
+        }
         for (Map<String, Object> asset : source) {
             String key = formAssetIdentity(asset);
-            if (StringUtils.isBlank(key) || !seen.add(key)) {
+            if (StringUtils.isBlank(key)) {
                 continue;
             }
-            target.add(asset);
+            Integer existingIndex = positions.get(key);
+            if (existingIndex == null) {
+                positions.put(key, target.size());
+                target.add(asset);
+            } else {
+                mergeFormAssetMetadata(target.get(existingIndex), asset);
+            }
+        }
+    }
+
+    private void mergeFormAssetMetadata(Map<String, Object> target, Map<String, Object> source) {
+        if (target == null || source == null) {
+            return;
+        }
+        List<Map<String, Object>> targetFields = readMapList(readNestedArray(target.get("fieldCatalog")));
+        if (targetFields.isEmpty()) {
+            targetFields = readMapList(readNestedArray(target.get("fields")));
+        }
+        List<Map<String, Object>> sourceFields = readMapList(readNestedArray(source.get("fieldCatalog")));
+        if (sourceFields.isEmpty()) {
+            sourceFields = readMapList(readNestedArray(source.get("fields")));
+        }
+        if (sourceFields.size() > targetFields.size()) {
+            List<Map<String, Object>> mergedFields = new ArrayList<>(sourceFields);
+            target.put("fieldCatalog", mergedFields);
+            target.put("fields", mergedFields);
+            target.put("fieldCount", mergedFields.size());
+            target.put("fieldPreview", buildFieldPreview(mergedFields));
+        }
+        for (String key : List.of("configKey", "objectCode", "objectName", "viewKey",
+                "providerKey", "providerName", "formUrl")) {
+            if (StringUtils.isBlank(textValue(target.get(key))) && StringUtils.isNotBlank(textValue(source.get(key)))) {
+                target.put(key, source.get(key));
+            }
+        }
+        if (!Boolean.TRUE.equals(readNullableBooleanValue(target.get("supportsSave")))
+                && Boolean.TRUE.equals(readNullableBooleanValue(source.get("supportsSave")))) {
+            target.put("supportsSave", true);
         }
     }
 
@@ -4792,6 +5342,36 @@ public class BusinessFlowService {
         List<Map<String, Object>> result = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         collectBusinessFormFieldComponents(readNestedArray(schema.get("components")), result, seen);
+        if (result.isEmpty()) {
+            JSONArray catalog = readNestedArray(schema.get("fieldCatalog"));
+            if (catalog.isEmpty()) {
+                catalog = readNestedArray(schema.get("fields"));
+            }
+            for (int i = 0; i < catalog.size(); i++) {
+                JSONObject field = catalog.getJSONObject(i);
+                if (field == null) {
+                    continue;
+                }
+                String code = StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(field.getString("field")),
+                        StringUtils.trimToNull(field.getString("fieldCode")),
+                        StringUtils.trimToNull(readNestedObject(field.get("fieldBinding")).getString("fieldCode")));
+                if (code == null || !seen.add(code)) {
+                    continue;
+                }
+                Map<String, Object> item = new LinkedHashMap<>(field);
+                item.put("field", code);
+                item.put("fieldCode", code);
+                item.put("label", StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(field.getString("label")),
+                        StringUtils.trimToNull(field.getString("fieldName")), code));
+                item.put("type", normalizeTaskFormFieldType(StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(field.getString("type")),
+                        StringUtils.trimToNull(field.getString("componentType")), "input")));
+                item.putIfAbsent("componentType", item.get("type"));
+                result.add(item);
+            }
+        }
         return result;
     }
 
@@ -4803,6 +5383,7 @@ public class BusinessFlowService {
         for (Map<String, Object> field : fields) {
             String label = StringUtils.firstNonBlank(
                     StringUtils.trimToNull(textValue(field.get("label"))),
+                    StringUtils.trimToNull(textValue(field.get("fieldName"))),
                     StringUtils.trimToNull(textValue(field.get("field"))),
                     StringUtils.trimToNull(textValue(field.get("fieldCode"))));
             if (label != null) {
@@ -5324,6 +5905,10 @@ public class BusinessFlowService {
 
     private String resolveUsername() {
         try {
+            var loginUser = SessionHelper.getLoginUser();
+            if (loginUser != null) {
+                return StringUtils.firstNonBlank(loginUser.getRealName(), loginUser.getUsername());
+            }
             return SessionHelper.getUsername();
         } catch (Exception e) {
             return null;

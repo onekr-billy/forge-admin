@@ -51,6 +51,8 @@ const runTotal = ref(0)
 const runPageNum = ref(1)
 const runPageSize = ref(10)
 const runStatus = ref(null)
+const runProcessId = ref(null)
+const runObjectCode = ref(null)
 const runDetailVisible = ref(false)
 const runDetail = ref(null)
 const runDetailLoading = ref(false)
@@ -63,6 +65,11 @@ const objectOptions = computed(() => (props.initialObjects || [])
     value: stringValue(item.objectId || item.id),
   }))
   .filter(item => item.value))
+
+const processOptions = computed(() => records.value.map(item => ({
+  label: item.processName || item.processCode,
+  value: stringValue(item.id),
+})))
 
 const statusOptions = computed(() => (dict.value?.sys_normal_disable || [])
   .map(item => ({
@@ -230,6 +237,11 @@ function openDesigner(processId) {
   emit('openDesigner', { processId: stringValue(processId) })
 }
 
+async function applyRunFilters() {
+  runPageNum.value = 1
+  await loadRuns()
+}
+
 function switchSection(section) {
   activeSection.value = section
   if (section === 'runs' && props.application?.id)
@@ -243,6 +255,8 @@ async function loadRuns() {
   try {
     const response = await businessProcessRunPage({
       applicationId: stringValue(props.application.id),
+      processId: runProcessId.value || undefined,
+      subjectObjectCode: runObjectCode.value || undefined,
       status: runStatus.value || undefined,
       pageNum: runPageNum.value,
       pageSize: runPageSize.value,
@@ -629,7 +643,7 @@ function notify(type, message) {
       </n-empty>
     </n-spin>
 
-    <footer v-if="total > pageSize" class="process-pagination">
+    <footer v-if="total > 0" class="process-pagination">
       <span>共 {{ total }} 项</span>
       <n-pagination
         :page="pageNum"
@@ -643,8 +657,26 @@ function notify(type, message) {
     <template v-else-if="activeSection === 'runs'">
       <div class="process-filter-bar">
         <label>
+          <span class="sr-only">流程筛选</span>
+          <select v-model="runProcessId" @change="applyRunFilters">
+            <option :value="null">全部流程</option>
+            <option v-for="item in processOptions" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">业务对象筛选</span>
+          <select v-model="runObjectCode" @change="applyRunFilters">
+            <option :value="null">全部对象</option>
+            <option v-for="item in objectOptions" :key="item.code" :value="item.code">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="sr-only">运行状态</span>
-          <select v-model="runStatus" @change="loadRuns">
+          <select v-model="runStatus" @change="applyRunFilters">
             <option :value="null">全部运行状态</option>
             <option
               v-for="item in (dict.value?.ai_business_process_run_status || [])"
@@ -655,7 +687,7 @@ function notify(type, message) {
             </option>
           </select>
         </label>
-        <n-button size="small" :loading="runLoading" @click="loadRuns">
+        <n-button size="small" :loading="runLoading" @click="applyRunFilters">
           查询
         </n-button>
       </div>
@@ -680,7 +712,7 @@ function notify(type, message) {
                 </td>
                 <td>
                   <div class="subject-cell">
-                    <strong>{{ item.subjectObjectCode }}</strong>
+                    <strong>{{ subjectName(item) }}</strong>
                     <small>{{ item.subjectRecordId }}</small>
                   </div>
                 </td>
@@ -691,7 +723,7 @@ function notify(type, message) {
                     :bordered="false"
                   />
                 </td>
-                <td>{{ item.currentNodeId || '-' }}</td>
+                <td>{{ item.currentNodeName || item.currentNodeId || '-' }}</td>
                 <td>{{ item.startTime || item.createTime || '-' }}</td>
                 <td>
                   <div class="row-actions">
@@ -729,7 +761,7 @@ function notify(type, message) {
         </div>
         <n-empty v-else-if="!runLoading" description="还没有运行记录。发布流程后，在对象列表点击开始按钮即可启动。" />
       </n-spin>
-      <footer v-if="runTotal > runPageSize" class="process-pagination">
+      <footer v-if="runTotal > 0" class="process-pagination">
         <span>共 {{ runTotal }} 项</span>
         <n-pagination
           :page="runPageNum"
@@ -744,7 +776,9 @@ function notify(type, message) {
       <n-spin :show="runDetailLoading">
         <div v-if="runDetail" class="create-form">
           <div class="generated-code-note">
-            {{ runDetail.processName || runDetail.processCode }} · {{ runDetail.status }} · {{ runDetail.businessKey }}
+            <strong>{{ runDetail.processName || runDetail.processCode }}</strong>
+            <DictTag dict-type="ai_business_process_run_status" :value="runDetail.status" :bordered="false" />
+            <span>业务键: {{ runDetail.businessKey || '-' }}</span>
           </div>
           <div v-if="runDetail.errorSummary" class="generated-code-note">
             {{ runDetail.errorSummary }}
@@ -760,7 +794,7 @@ function notify(type, message) {
             </thead>
             <tbody>
               <tr v-for="node in runDetail.timeline" :key="String(node.id)">
-                <td>{{ node.nodeId }}</td>
+                <td>{{ node.nodeName || node.nodeId }}</td>
                 <td>{{ node.nodeType }}</td>
                 <td>{{ node.status }}</td>
                 <td>{{ node.outputSummary || node.errorSummary || '-' }}</td>
@@ -1093,6 +1127,9 @@ function notify(type, message) {
 }
 
 .generated-code-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 9px 10px;
   border: 1px solid var(--border-light, #e5e6eb);
   border-radius: 6px;

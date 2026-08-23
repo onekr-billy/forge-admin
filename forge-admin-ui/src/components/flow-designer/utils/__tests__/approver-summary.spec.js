@@ -16,9 +16,9 @@ describe('buildApproverSummary - taskType=assignee', () => {
     expect(s).toBe('指定人员：张三')
   })
 
-  it('custom：无名称时显示表达式', () => {
-    const s = buildApproverSummary({ taskType: 'assignee', assignee: 'custom', assigneeExpr: `${DOLLAR}{user_1001}` })
-    expect(s).toBe(`指定表达式：${DOLLAR}{user_1001}`)
+  it('custom：无名称时显示固定用户 ID', () => {
+    const s = buildApproverSummary({ taskType: 'assignee', assignee: 'custom', assigneeUserId: '1001' })
+    expect(s).toBe('指定人员：1001')
   })
 
   it('spel：spelTemplate 优先', () => {
@@ -31,7 +31,7 @@ describe('buildApproverSummary - taskType=assignee', () => {
     expect(s).toBe(`SPEL 表达式：${DOLLAR}{x.y()}`)
   })
 
-  it('简单变量 ${var}', () => {
+  it(`简单变量 ${DOLLAR}{var}`, () => {
     const s = buildApproverSummary({ taskType: 'assignee', assignee: `${DOLLAR}{owner}` })
     expect(s).toBe(`变量：${DOLLAR}{owner}`)
   })
