@@ -81,6 +81,7 @@
 
 | 场景 | 输入/前置 | 预期 |
 |------|-----------|------|
+| 企业应用授权地址 | 连接旧 `clientSecret` 已清空，LOGIN 应用有 `secretCipher` | 解密应用 Secret 后构造授权请求，使用完成即清零，不把密文或明文请求放入缓存 |
 | state 正常消费 | 有效 state + 正确连接/客户端 | 一次成功，第二次失败 |
 | state 篡改/过期 | 非法、过期或连接不匹配 | 回调拒绝，不调用 Provider 登录 |
 | 回调成功 | Provider 返回合成身份 | 响应只有一次性 socialTicket，不含 AuthUser/Token/uuid |
@@ -323,6 +324,7 @@ rg -n 'clientSecret|accessToken|refreshToken|encodingAESKey|callbackToken' \
 | 时间 | 变更范围 | 必跑项 | 实际命令 | 结果 | 跳过/警告 |
 |------|----------|--------|----------|------|-----------|
 | 2026-07-28 | 仅 SDD 文档 | 空白、占位符、旧命名、类型术语、回调路由、代码块闭合和 Git 状态检查 | `git diff --no-index --check /dev/null <file>`；`rg` 一致性扫描；`awk` 代码块计数；`git status --short` | 通过 | `--no-index` 内容差异退出码 1 按预期处理；未编译、未启动服务、未连接企微/MySQL/Redis |
+| 2026-08-24 | Social OAuth LOGIN 应用凭据回归 | Red/Green 单测、Social 凭据相关定向测试、模块打包、静态检查 | `mvn -pl forge-framework/forge-starter-parent/forge-starter-social -am test -Dforge.compiler.skip=false -Dforge.tests.skip=false -Dforge.test.groups= -Dtest=SocialOAuthLoginServiceTest -Dsurefire.failIfNoSpecifiedTests=false`；同命令追加 `SocialAppCredentialServiceTest`；`mvn ... package -DskipTests`；`git diff --check` | Red 用例在旧实现按预期失败；修复后 1/1 通过，扩展定向测试 13/13 通过，模块打包成功 | 存在原有编译警告和篡改密文测试的预期错误日志；未启动服务、未连接真实企微/MySQL/Redis；真实企业授权登录由用户环境联调 |
 
 ## 7. 执行证据
 

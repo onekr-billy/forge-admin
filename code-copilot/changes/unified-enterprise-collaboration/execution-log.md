@@ -16,6 +16,7 @@
 | 2026-07-28 | Customer Plan | 更新客户版完整任务清单 | 增加 COL-01–10 通用协同底座任务，企微作为首个完整适配器，飞书/钉钉后续复用 |
 | 2026-07-28 | Reader Test | 使用只读陌生读者复核客户版与技术 Proposal | 发现估算无法对账、一期/二期缺少独立门禁、P0/阶段混用、P2 资料阻塞 M1、P3 和卡片直批边界冲突、COL/WX 重复计价风险 |
 | 2026-07-28 | Proposal/Refine | 修复 Reader Test 问题 | 建立 Gate A/B/C 和 M1/M2 独立验收；P2 资料不阻塞 M1；合同测试归 P0/P1；直批改为关闭扩展点；增加 COL/WX/Task/工作量唯一对照 |
+| 2026-08-24 | Fix/Social OAuth | 修复授权地址未读取 LOGIN 应用加密 Secret | 授权跳转与授权码换身份统一通过 `decryptAppSecret` 构造非缓存请求，使用后清零 Secret 字符数组；旧连接 Secret 保持兼容回退 |
 
 ## 技术决策
 
@@ -37,6 +38,7 @@
 |------|------|------|------|-----------|
 | 2026-07-28 | Proposal 文档 | `git diff --no-index --check /dev/null <file>`；`rg` 占位符/旧命名/术语扫描；`awk` 代码块计数；`git status --short` | 通过：5 个 文档无空白错误，4 份含代码块文档围栏闭合，旧回调路径和重复 Mapper 无残留 | 本轮 不构建、不启动服务、不连接真实企微/MySQL/Redis；`--no-index` 内容差异退出码 1 为预期 |
 | 2026-07-28 | M1 编码（Task 1-13/16-18 一期） | `JAVA_HOME=17 mvn -pl forge-admin-server -am compile -DskipTests`；`npx eslint src/api/collaboration.js src/views/system/collaboration/ --fix` | 后端 BUILD SUCCESS（含 forge-plugin-collaboration 全链路装配）；前端 6 页面 + API 层 ESLint 零错误 | 未执行单元测试与真实企微 UAT（Task 19A 待客户资料）；Flyway V1.0.57-59/V1.0.62 未在真实库执行验证 |
+| 2026-08-24 | Social OAuth 应用 Secret 回归 | 先运行 `SocialOAuthLoginServiceTest` 验证 Red；修复后运行该测试及 `SocialAppCredentialServiceTest`；执行 Social Reactor package | Red 在旧实现按预期失败；Green 1/1 通过；扩展定向测试 13/13 通过；模块及依赖 BUILD SUCCESS | 显式启用项目默认跳过的编译/测试；存在原有 deprecation/unchecked/Builder 编译警告；篡改密文失败用例按预期输出一条解密失败日志；未启动服务或调用真实企业微信 |
 
 ## 客户输入与外部阻塞
 
