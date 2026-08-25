@@ -52,18 +52,24 @@
           @update:value="handleStatusSelect"
         />
         <div class="toolbar-actions">
-          <button type="button" class="model-toolbar-button query" @click="handleSearch">
-            <i class="i-material-symbols:search" />
+          <n-button type="primary" @click="handleSearch">
+            <template #icon>
+              <i class="i-material-symbols:search" />
+            </template>
             查询
-          </button>
-          <button type="button" class="model-toolbar-button subtle" @click="handleReset">
-            <i class="i-material-symbols:restart-alt" />
+          </n-button>
+          <n-button @click="handleReset">
+            <template #icon>
+              <i class="i-material-symbols:restart-alt" />
+            </template>
             清空
-          </button>
-          <button type="button" class="model-create-button" @click="handleAdd">
-            <i class="i-material-symbols:add" />
+          </n-button>
+          <n-button type="primary" @click="handleAdd">
+            <template #icon>
+              <i class="i-material-symbols:add" />
+            </template>
             新增模型
-          </button>
+          </n-button>
         </div>
       </div>
     </div>
@@ -77,20 +83,26 @@
           class="model-card"
         >
           <div class="card-header">
-            <div class="card-icon" :class="iconClass(item)">
-              <i :class="iconName(item)" />
+            <div class="card-title-block">
+              <div class="card-title-row">
+                <div class="card-title-icon-box">
+                  <i class="i-lucide:git-merge card-title-icon" />
+                </div>
+                <div class="card-title-main">
+                  <div class="card-title">
+                    {{ item.modelName }}
+                  </div>
+                  <div class="card-key">
+                    {{ item.modelKey }}
+                  </div>
+                </div>
+              </div>
             </div>
             <span class="status-tag" :class="statusClass(item.status)">
               {{ getLabel('flow_model_status', item.status) }}
             </span>
           </div>
           <div class="card-body">
-            <div class="card-title">
-              {{ item.modelName }}
-            </div>
-            <div class="card-key">
-              {{ item.modelKey }}
-            </div>
             <div class="card-tags">
               <span class="designer-type-badge" :class="designerTypeClass(item.designerType)">
                 {{ designerTypeLabel(item.designerType) }}
@@ -100,7 +112,7 @@
               </span>
             </div>
             <div class="card-binding" :class="{ empty: !item.businessBindings?.length }">
-              <i class="i-material-symbols:apps" />
+              <i class="i-lucide:link-2" />
               <span>{{ formatBusinessBindings(item) }}</span>
             </div>
             <div class="card-desc">
@@ -108,50 +120,51 @@
             </div>
           </div>
           <div class="card-footer">
-            <div class="card-meta">
+            <div class="card-metadata">
               <div class="meta-item">
-                <i class="i-material-symbols:history" />
-                {{ formatDate(item.updateTime) }}
+                <i class="i-lucide:calendar" />
+                {{ formatDate(item.updateTime) || '未更新' }}
               </div>
               <div class="meta-item">
-                <i class="i-material-symbols:deployed-code-outline" />
+                <i class="i-lucide:git-commit" />
                 v{{ item.version || 1 }}
               </div>
             </div>
             <div class="card-actions">
               <button
                 type="button"
-                class="model-card-action primary"
+                class="card-action-link"
                 @click.stop="handleDesign(item)"
               >
-                <i class="i-material-symbols:edit-outline" />
-                设计
+                编辑
               </button>
-              <button
-                v-if="item.status === 0"
-                type="button"
-                class="model-card-action success"
-                @click.stop="handleDeploy(item)"
-              >
-                <i class="i-material-symbols:rocket-launch-outline" />
-                部署
-              </button>
-              <button
-                v-if="item.status === 1"
-                type="button"
-                class="model-card-action neutral"
-                @click.stop="handleViewInstances(item)"
-              >
-                <i class="i-material-symbols:list-alt-outline" />
-                实例
-              </button>
+              <template v-if="item.status === 0 || item.status === 1">
+                <span class="card-action-separator" />
+                <button
+                  v-if="item.status === 0"
+                  type="button"
+                  class="card-action-link"
+                  @click.stop="handleDeploy(item)"
+                >
+                  发布
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="card-action-link"
+                  @click.stop="handleViewInstances(item)"
+                >
+                  实例
+                </button>
+              </template>
+              <span class="card-action-separator" />
               <n-dropdown
                 trigger="click"
                 :options="getActionOptions(item)"
                 @select="key => handleActionSelect(key, item)"
               >
-                <button type="button" class="model-card-more" aria-label="更多操作" @click.stop>
-                  <i class="i-material-symbols:more-vert" />
+                <button type="button" class="card-more-action" aria-label="更多操作" @click.stop>
+                  <i class="i-lucide:more-horizontal" />
                 </button>
               </n-dropdown>
             </div>
@@ -169,10 +182,12 @@
         class="empty-state"
       >
         <template #extra>
-          <button type="button" class="model-create-button" @click="handleAdd">
-            <i class="i-material-symbols:add" />
+          <n-button type="primary" @click="handleAdd">
+            <template #icon>
+              <i class="i-material-symbols:add" />
+            </template>
             新增模型
-          </button>
+          </n-button>
         </template>
       </n-empty>
     </n-spin>
@@ -520,35 +535,6 @@ function toNumberOptions(options = []) {
     ...item,
     value: Number(item.value),
   }))
-}
-
-const iconColorClasses = ['icon-bg-0', 'icon-bg-1', 'icon-bg-2', 'icon-bg-3', 'icon-bg-4', 'icon-bg-5']
-
-function iconClass(item) {
-  const idx = Math.abs(hashStr(item.modelKey || '')) % iconColorClasses.length
-  return iconColorClasses[idx]
-}
-
-function iconName(item) {
-  const typeMap = {
-    leave: 'i-material-symbols:free-cancellation-outline',
-    expense: 'i-material-symbols:receipt-long-outline',
-    approval: 'i-material-symbols:approval-delegation-outline',
-    purchase: 'i-material-symbols:shopping-cart-outline',
-  }
-  const ft = item.flowType || item.businessType || ''
-  for (const [k, v] of Object.entries(typeMap)) {
-    if (ft.toLowerCase().includes(k))
-      return v
-  }
-  return 'i-material-symbols:device-hub'
-}
-
-function hashStr(s) {
-  let h = 0
-  for (let i = 0; i < s.length; i++)
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
-  return h
 }
 
 function formatDate(d) {
@@ -1128,184 +1114,88 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.model-toolbar-button,
-.model-create-button,
-.model-card-action,
-.model-card-more {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: #475569;
-  font: inherit;
-  line-height: 1;
-  letter-spacing: 0;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.model-toolbar-button:focus-visible,
-.model-create-button:focus-visible,
-.model-card-action:focus-visible,
-.model-card-more:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
-}
-
-.model-toolbar-button {
-  height: 34px;
-  gap: 5px;
-  padding: 0 11px;
-  border-color: #dbe3ee;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.model-toolbar-button:hover {
-  border-color: #b9c5d4;
-  background: #f8fafc;
-  color: #0f172a;
-}
-
-.model-toolbar-button.query {
-  border-color: #c9d3e3;
-  background: #f8fafc;
-  color: #1e293b;
-}
-
-.model-toolbar-button.subtle {
-  color: #64748b;
-}
-
-.model-create-button {
-  height: 34px;
-  gap: 5px;
-  padding: 0 12px;
-  border-color: #0f172a;
-  background: #0f172a;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.model-create-button:hover {
-  border-color: #1e293b;
-  background: #1e293b;
-}
-
-.model-toolbar-button i,
-.model-create-button i {
-  font-size: 16px;
-  line-height: 1;
-}
-
 .model-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   align-content: start;
-  gap: 12px;
-  padding: 4px;
+  gap: 10px;
+  padding: 2px;
   min-width: 0;
 }
 
 .model-card {
+  position: relative;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 2px;
   cursor: default;
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background 160ms ease;
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
   display: flex;
   flex-direction: column;
-  min-height: 180px;
+  min-height: 0;
   width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .model-card:hover {
-  border-color: #b8c2cc;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 .card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding: 16px 16px 12px;
   min-width: 0;
 }
 
-.card-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 7px;
+.card-title-block {
+  min-width: 0;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.card-title-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
   flex-shrink: 0;
-  border: 1px solid transparent;
-}
-
-.icon-bg-0 {
-  color: #2563eb;
   background: #eff6ff;
-  border-color: #bfdbfe;
+  border: 1px solid #dbeafe;
 }
 
-.icon-bg-1 {
-  color: #0891b2;
-  background: #ecfeff;
-  border-color: #a5f3fc;
-}
-
-.icon-bg-2 {
-  color: #15803d;
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.icon-bg-3 {
-  color: #b45309;
-  background: #fffbeb;
-  border-color: #fde68a;
-}
-
-.icon-bg-4 {
-  color: #b91c1c;
-  background: #fef2f2;
-  border-color: #fecaca;
-}
-
-.icon-bg-5 {
-  color: #7c3aed;
-  background: #f5f3ff;
-  border-color: #ddd6fe;
+.card-title-icon {
+  color: #2563eb;
+  font-size: 16px;
 }
 
 .status-tag {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 2px;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1;
   border: 1px solid transparent;
   white-space: nowrap;
   flex-shrink: 0;
+  letter-spacing: 0.01em;
 }
 
 .status-tag.designing {
@@ -1337,23 +1227,27 @@ onMounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+  padding: 0 16px 10px;
 }
 
 .card-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 22px;
+  line-height: 20px;
+  letter-spacing: 0;
 }
 
 .card-key {
-  font-size: 12px;
-  color: #64748b;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -1364,45 +1258,49 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 22px;
+  min-height: 0;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .designer-type-badge {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 2px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
+  color: #475569;
+  background: #fff;
 }
 
 .designer-type-badge.approval {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  color: #1e3a8a;
+  background: #f8fbff;
+  border-color: #dbe7ff;
 }
 
 .designer-type-badge.business {
-  color: #047857;
-  background: #ecfdf5;
-  border-color: #bbf7d0;
+  color: #065f46;
+  background: #f7fcfa;
+  border-color: #d7eee4;
 }
 
 .category-badge {
   display: inline-flex;
-  max-width: 120px;
-  height: 22px;
+  max-width: 132px;
+  height: 20px;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
+  border-radius: 2px;
+  background: #fff;
   color: #475569;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1415,9 +1313,14 @@ onMounted(() => {
   gap: 5px;
   min-width: 0;
   max-width: 100%;
-  color: #047857;
+  width: fit-content;
+  color: #6b7280;
   font-size: 12px;
   line-height: 18px;
+  padding: 6px 10px;
+  border-radius: 2px;
+  background: #f9fafb;
+  border: 1px solid #f1f5f9;
 }
 
 .card-binding.empty {
@@ -1436,36 +1339,37 @@ onMounted(() => {
   color: #6b7280;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   line-height: 18px;
-  min-height: 36px;
-  margin-top: 4px;
+  min-height: 18px;
+  text-wrap: pretty;
+}
+
+.card-metadata {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 10px;
-  border-top: 1px solid #eef2f7;
-  gap: 8px;
-  min-height: 32px;
+  padding: 8px 16px;
+  border-top: 1px solid #f1f5f9;
+  background: #f9fafb;
+  min-height: 0;
   min-width: 0;
-}
-
-.card-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
+  gap: 12px;
 }
 
 .meta-item {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 11px;
   color: #64748b;
   white-space: nowrap;
@@ -1477,65 +1381,53 @@ onMounted(() => {
 .card-actions {
   display: flex;
   align-items: center;
-  gap: 3px;
+  justify-content: flex-end;
+  gap: 6px;
   min-width: 0;
   flex-shrink: 0;
 }
 
-.model-card-action {
-  height: 28px;
-  gap: 4px;
-  padding: 0 7px;
+.card-action-link,
+.card-more-action {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
   font-size: 12px;
-  font-weight: 600;
-}
-
-.model-card-action:hover {
-  background: #f1f5f9;
-  color: #0f172a;
-}
-
-.model-card-action.primary {
-  color: #1d4ed8;
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  padding: 0 9px;
-}
-
-.model-card-action.primary:hover {
-  border-color: #93c5fd;
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.model-card-action.success {
-  color: #047857;
-}
-
-.model-card-action.success:hover {
-  background: #ecfdf5;
-  color: #065f46;
-}
-
-.model-card-action.neutral {
-  color: #475569;
-}
-
-.model-card-action i,
-.model-card-more i {
-  font-size: 15px;
+  font-weight: 500;
   line-height: 1;
+  color: #2563eb;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    transform 160ms ease;
 }
 
-.model-card-more {
-  width: 28px;
-  height: 28px;
-  color: #64748b;
+.card-action-link:hover,
+.card-more-action:hover {
+  color: #1d4ed8;
 }
 
-.model-card-more:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+.card-action-link:active,
+.card-more-action:active {
+  transform: translateY(1px);
+}
+
+.card-action-separator {
+  width: 1px;
+  height: 12px;
+  background: #d1d5db;
+}
+
+.card-more-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+}
+
+.card-more-action i {
+  font-size: 14px;
 }
 
 .model-list-loading {
@@ -1826,28 +1718,20 @@ onMounted(() => {
   }
 
   .model-grid {
-    grid-template-columns: repeat(2, minmax(260px, 1fr));
-    min-width: 540px;
+    grid-template-columns: 1fr;
+    min-width: 0;
   }
 
   .card-footer {
-    align-items: flex-start;
+    align-items: center;
     gap: 8px;
-  }
-
-  .card-meta {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-
-  .card-actions {
-    justify-content: flex-end;
     flex-wrap: wrap;
   }
 
-  .model-card-action {
-    padding: 0 6px;
+  .card-actions {
+    margin-left: auto;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }
 
@@ -1860,8 +1744,7 @@ onMounted(() => {
     justify-content: stretch;
   }
 
-  .model-toolbar-button,
-  .model-create-button {
+  .toolbar-actions :deep(.n-button) {
     flex: 1;
   }
 }
