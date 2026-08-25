@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionVersionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessRuntimeActionCompiler;
 import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessSnapshot;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAssetSelectionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
@@ -147,8 +148,10 @@ public class BusinessApplicationSnapshotService {
                         item, new TypeReference<Map<String, Object>>() { }))
                 .toList();
         snapshot.put("publishedProcessVersions", published);
-        // Task 13 将从同一不可变流程版本编译 START_PROCESS；本任务先冻结稳定空投影字段。
-        snapshot.putIfAbsent("runtimeActions", new ArrayList<>());
+        Map<String, Object> application = map(snapshot.get("application"));
+        String applicationCode = StringUtils.trimToNull(stringValue(application.get("applicationCode")));
+        snapshot.put("runtimeActions", new BusinessProcessRuntimeActionCompiler(objectMapper)
+                .compileSnapshots(processSnapshots, applicationCode));
         return bundle(snapshot);
     }
 
@@ -210,6 +213,7 @@ public class BusinessApplicationSnapshotService {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", String.valueOf(application.getId()));
         item.put("applicationCode", application.getApplicationCode());
+        item.put("portalSlug", application.getPortalSlug());
         item.put("applicationName", application.getApplicationName());
         item.put("suiteCode", application.getSuiteCode());
         item.put("icon", application.getIcon());
@@ -217,6 +221,8 @@ public class BusinessApplicationSnapshotService {
         item.put("status", application.getStatus());
         item.put("designStatus", application.getDesignStatus());
         item.put("options", parseOptionalJson(application.getOptions()));
+        item.put("portalConfig", parseOptionalJson(application.getPortalConfig()));
+        item.put("aiAssistantConfig", parseOptionalJson(application.getAiAssistantConfig()));
         return item;
     }
 
@@ -224,6 +230,7 @@ public class BusinessApplicationSnapshotService {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", String.valueOf(application.getId()));
         item.put("applicationCode", application.getApplicationCode());
+        item.put("portalSlug", application.getPortalSlug());
         item.put("applicationName", application.getApplicationName());
         item.put("suiteCode", application.getSuiteCode());
         item.put("icon", application.getIcon());
@@ -231,6 +238,8 @@ public class BusinessApplicationSnapshotService {
         item.put("status", application.getStatus());
         item.put("designStatus", application.getDesignStatus());
         item.put("options", parseOptionalJson(application.getOptions()));
+        item.put("portalConfig", parseOptionalJson(application.getPortalConfig()));
+        item.put("aiAssistantConfig", parseOptionalJson(application.getAiAssistantConfig()));
         return item;
     }
 
@@ -290,13 +299,22 @@ public class BusinessApplicationSnapshotService {
         item.put("extensionName", extension.getExtensionName());
         item.put("extensionType", extension.getExtensionType());
         item.put("hookCode", extension.getHookCode());
+        item.put("scopeType", extension.getScopeType());
+        item.put("scopeKey", extension.getScopeKey());
         item.put("objectId", stringValue(extension.getObjectId()));
         item.put("entryId", stringValue(extension.getEntryId()));
+        item.put("sortOrder", extension.getSortOrder());
+        item.put("failurePolicy", extension.getFailurePolicy());
         item.put("status", extension.getStatus());
         item.put("draftVersion", extension.getDraftVersion());
         item.put("enabledVersion", extension.getEnabledVersion());
         item.put("releaseVersion", releaseVersion);
         item.put("contentHash", version == null ? null : version.getContentHash());
+        if (version != null && Set.of("VISUAL_RULE", "CLIENT_JS", "SCOPED_CSS")
+                .contains(extension.getExtensionType())) {
+            item.put("content", version.getContent());
+            item.put("processedContent", version.getProcessedContent());
+        }
         return item;
     }
 

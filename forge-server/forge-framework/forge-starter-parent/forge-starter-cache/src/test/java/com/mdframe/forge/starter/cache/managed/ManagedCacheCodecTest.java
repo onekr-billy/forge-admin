@@ -9,6 +9,7 @@ import com.mdframe.forge.starter.cache.managed.model.CacheControlAction;
 import com.mdframe.forge.starter.cache.managed.model.CacheControlMessage;
 import com.mdframe.forge.starter.cache.managed.model.CacheDefinition;
 import com.mdframe.forge.starter.cache.managed.model.CachePolicyOverride;
+import com.mdframe.forge.starter.cache.managed.model.ManagedCacheInvalidationMessage;
 import com.mdframe.forge.starter.cache.managed.model.ManagedCacheValue;
 import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,15 @@ class ManagedCacheCodecTest {
                 roundTripMapValue(ManagedCacheCodecs.policies(objectMapper), policy));
         assertEquals(message,
                 roundTripValue(ManagedCacheCodecs.controlMessages(objectMapper), message));
+    }
+
+    @Test
+    void shouldRoundTripMultiLevelInvalidationMessage() throws Exception {
+        ManagedCacheInvalidationMessage message =
+                new ManagedCacheInvalidationMessage("instance-one", "tenant:key");
+
+        assertEquals(message,
+                roundTripValue(ManagedCacheCodecs.invalidationMessages(objectMapper), message));
     }
 
     @SuppressWarnings("unchecked")

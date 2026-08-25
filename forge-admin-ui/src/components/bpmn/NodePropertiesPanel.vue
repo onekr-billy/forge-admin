@@ -991,11 +991,11 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, toRaw, watch } from 'vue'
 import flowApi from '@/api/flow'
+import UserSelectModal from '@/components/common/UserSelectModal.vue'
 import FlowFormCreateDesigner from '@/components/form-create/FlowFormCreateDesigner.vue'
 import FlowFormCreateRenderer from '@/components/form-create/FlowFormCreateRenderer.vue'
 import { cloneValue, normalizeFormCreateRules } from '@/components/form-create/formCreateBridge'
 import { request } from '@/utils/http'
-import UserSelectModal from './UserSelectModal.vue'
 
 const props = defineProps({
   element: {
@@ -1093,6 +1093,7 @@ const properties = reactive({
   // 用户任务
   taskType: 'assignee',
   assignee: '',
+  assigneeUserId: '',
   assigneeExpr: '',
   assigneeUserName: '',
   candidateUsers: [],
@@ -1640,6 +1641,7 @@ watch(formVariableOptions, () => {
     const field = unwrapExpression(properties.assigneeExpr)
     if (getCatalogField(field)) {
       properties.assignee = properties.assigneeExpr
+      properties.assigneeUserId = ''
       properties.assigneeExpr = ''
       properties.assigneeUserName = ''
     }
@@ -1653,22 +1655,11 @@ function openUserSelect(type) {
     userSelectTitle.value = '选择审批人'
     userSelectMultiple.value = false
     // 如果已有选中的用户，回显
-    if (properties.assigneeExpr && properties.assigneeExpr.startsWith('${user_')) {
-      // 从表达式中提取用户ID，格式: ${user_1}
-      const match = properties.assigneeExpr.match(/\$\{user_(\d+)\}/)
-      if (match) {
-        currentSelectedUsers.value = [{
-          id: Number.parseInt(match[1]),
-          nickName: properties.assigneeUserName,
-        }]
-      }
-      else {
-        currentSelectedUsers.value = []
-      }
-    }
-    else {
-      currentSelectedUsers.value = []
-    }
+    const userId = normalizeFixedAssigneeUserId(properties.assigneeUserId)
+      || extractLegacyFixedAssigneeUserId(properties.assigneeExpr)
+    currentSelectedUsers.value = userId
+      ? [{ id: userId, nickName: properties.assigneeUserName }]
+      : []
   }
   else if (type === 'candidateUsers') {
     userSelectTitle.value = '选择候选用户'
@@ -1676,7 +1667,7 @@ function openUserSelect(type) {
     // 回显已选候选用户
     if (properties.candidateUsers.length > 0) {
       currentSelectedUsers.value = properties.candidateUsers.map((id, index) => ({
-        id: Number.parseInt(id),
+        id: String(id),
         nickName: properties.candidateUserNames[index] || '',
       }))
     }
@@ -1689,7 +1680,7 @@ function openUserSelect(type) {
     userSelectMultiple.value = true
     if (properties.candidateUsers.length > 0) {
       currentSelectedUsers.value = properties.candidateUsers.map((id, index) => ({
-        id: Number.parseInt(id),
+        id: String(id),
         nickName: properties.candidateUserNames[index] || '',
       }))
     }
@@ -1706,7 +1697,8 @@ function handleUserSelectConfirm(users) {
     const user = Array.isArray(users) ? users[0] : users
     if (user) {
       properties.assignee = 'custom'
-      properties.assigneeExpr = '$' + `{user_${user.id}}`
+      properties.assigneeUserId = String(user.id)
+      properties.assigneeExpr = ''
       properties.assigneeUserName = user.nickName || user.userName
       updateUserTaskAssignee()
     }
@@ -1742,6 +1734,7 @@ function handleUserSelectConfirm(users) {
 // 清除审批人
 function clearAssigneeUser() {
   properties.assignee = ''
+  properties.assigneeUserId = ''
   properties.assigneeExpr = ''
   properties.assigneeUserName = ''
   updateUserTaskAssignee()
@@ -1994,6 +1987,7 @@ function loadUserTaskProperties(bo) {
   // 重置审批相关属性，防止上一个节点的数据残留
   properties.taskType = 'assignee'
   properties.assignee = ''
+  properties.assigneeUserId = ''
   properties.assigneeExpr = ''
   properties.assigneeUserName = ''
   properties.candidateUsers = []
@@ -2010,10 +2004,15 @@ function loadUserTaskProperties(bo) {
       properties.assignee = 'spel'
       properties.assigneeExpr = assignee
     }
-    // 判断是否是自定义用户 ID 表达式：${user_123}
-    else if (assignee.startsWith('$' + '{user_')) {
+    // 新版固定人员直接保存字符串用户 ID；旧 ${user_123} 在加载时迁移。
+    else if (assigneeType === 'custom') {
       properties.assignee = 'custom'
-      properties.assigneeExpr = assignee
+      properties.assigneeUserId = normalizeFixedAssigneeUserId(assignee)
+        || extractLegacyFixedAssigneeUserId(assignee)
+    }
+    else if (extractLegacyFixedAssigneeUserId(assignee)) {
+      properties.assignee = 'custom'
+      properties.assigneeUserId = extractLegacyFixedAssigneeUserId(assignee)
     }
     // 预定义表达式：${initiator}, ${initiatorLeader}, ${deptManager}, ${hr}
     else if (['$' + '{initiator}', '$' + '{initiatorLeader}', '$' + '{deptManager}', '$' + '{hr}'].includes(assignee)) {
@@ -2248,6 +2247,7 @@ function updateExtensionProperty(prop) {
 function updateTaskType() {
   // 清空其他审批人配置
   properties.assignee = ''
+  properties.assigneeUserId = ''
   properties.assigneeExpr = ''
   properties.assigneeUserName = ''
   properties.candidateUsers = []
@@ -2424,12 +2424,20 @@ function updateUserTaskAssignee() {
 
   // 处理不同的审批人类型
   if (properties.assignee === 'custom') {
-    value = properties.assigneeExpr
+    value = normalizeFixedAssigneeUserId(properties.assigneeUserId)
+      || extractLegacyFixedAssigneeUserId(properties.assigneeExpr)
     assigneeType = 'custom'
   }
   else if (properties.assignee === 'spel') {
+    properties.assigneeUserId = ''
+    properties.assigneeUserName = ''
     value = properties.assigneeExpr
     assigneeType = 'spel'
+  }
+  else {
+    properties.assigneeUserId = ''
+    properties.assigneeExpr = ''
+    properties.assigneeUserName = ''
   }
 
   const element = rawElement.value
@@ -2445,6 +2453,16 @@ function updateUserTaskAssignee() {
     'flowable:candidateGroupNames': null,
   })
   emit('update')
+}
+
+function normalizeFixedAssigneeUserId(value) {
+  const userId = String(value ?? '').trim()
+  return /^\d+$/.test(userId) ? userId : ''
+}
+
+function extractLegacyFixedAssigneeUserId(value) {
+  const match = String(value || '').match(/^\$\{user_(\d+)\}$/)
+  return match?.[1] || ''
 }
 
 // 更新候选用户

@@ -15,10 +15,12 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 @DisplayName("LowcodeRuntimeConfigBuilder")
 class LowcodeRuntimeConfigBuilderTest {
@@ -76,6 +78,50 @@ class LowcodeRuntimeConfigBuilderTest {
         List<?> fieldEvents = assertInstanceOf(List.class, governance.get("fieldEvents"));
 
         assertEquals("query_item", assertInstanceOf(Map.class, fieldEvents.get(0)).get("id"));
+    }
+
+    @Test
+    @DisplayName("publishes every extended designer field component without fallback")
+    void publishesEveryExtendedDesignerFieldComponentWithoutFallback() throws Exception {
+        List<String> componentTypes = List.of(
+                "slider", "rate", "color", "radioButton", "transfer", "customSelect", "daterange",
+                "datetimerange", "month", "year", "timerange", "treeSelect", "text"
+        );
+        LowcodeModelSchema modelSchema = new LowcodeModelSchema();
+        modelSchema.setAppType("SINGLE");
+        modelSchema.setTableMode("EXISTING");
+        modelSchema.setTableName("designer_component_contract");
+        modelSchema.setBusinessName("组件合同");
+        List<LowcodeFieldSchema> fields = new ArrayList<>();
+        for (int index = 0; index < componentTypes.size(); index++) {
+            String componentType = componentTypes.get(index);
+            LowcodeFieldSchema field = new LowcodeFieldSchema();
+            field.setField("field" + index);
+            field.setColumnName("field_" + index);
+            field.setLabel(componentType);
+            field.setDataType(Set.of("transfer", "daterange", "datetimerange", "timerange").contains(componentType)
+                    ? "text" : "varchar");
+            field.setComponentType(componentType);
+            field.setFormVisible(true);
+            field.setListVisible(true);
+            fields.add(field);
+        }
+        modelSchema.setFields(fields);
+
+        LowcodePageZone editZone = new LowcodePageZone();
+        editZone.setZoneKey("edit");
+        editZone.setComponentKey("edit-form");
+        editZone.setFieldRefs(fields.stream().map(LowcodeFieldSchema::getField).toList());
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("simple-crud");
+        pageSchema.setZones(new ArrayList<>(List.of(editZone)));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
+                "designer_component_contract", modelSchema, pageSchema);
+        List<Map<String, Object>> editSchema = objectMapper.readValue(
+                runtimeConfig.getEditSchema(), new TypeReference<>() { });
+
+        assertEquals(componentTypes, editSchema.stream().map(field -> String.valueOf(field.get("type"))).toList());
     }
 
     @Test
@@ -304,6 +350,22 @@ class LowcodeRuntimeConfigBuilderTest {
         LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("pw_purchase_order", purchaseOrderModelSchema(), pageSchema());
 
         assertEquals("pw_purchase_order", runtimeConfig.getObjectCode());
+    }
+
+    @Test
+    @DisplayName("ignores draft page field refs that are not in the model yet")
+    void ignoresUnknownDraftPageFieldRefs() {
+        LowcodePageSchema pageSchema = pageSchema();
+        LowcodePageZone editZone = new LowcodePageZone();
+        editZone.setZoneKey("edit");
+        editZone.setComponentKey("edit-form");
+        editZone.setFieldRefs(new ArrayList<>(List.of("itemName", "fieldInput")));
+        pageSchema.getZones().add(editZone);
+
+        LowcodeRuntimeConfig runtimeConfig = assertDoesNotThrow(() ->
+                builder.buildRuntimeConfig("biz_inventory", modelSchema(), pageSchema));
+        assertEquals("biz_inventory", runtimeConfig.getConfigKey());
+        assertEquals(List.of("itemName"), editZone.getFieldRefs());
     }
 
     private LowcodeModelSchema modelSchema() {

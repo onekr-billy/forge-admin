@@ -270,7 +270,8 @@
         <!-- 日期选择 -->
         <n-date-picker
           v-else-if="field.type === 'date'"
-          :value="normalizePickerValue(value)"
+          :value="normalizeTimestampPickerValue(value)"
+          :formatted-value="normalizeFormattedPickerValue(value)"
           type="date"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -280,14 +281,15 @@
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 日期时间选择 -->
         <n-date-picker
           v-else-if="field.type === 'datetime'"
-          :value="normalizePickerValue(value)"
+          :value="normalizeTimestampPickerValue(value)"
+          :formatted-value="normalizeFormattedPickerValue(value)"
           type="datetime"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -297,14 +299,15 @@
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 日期范围选择 -->
         <n-date-picker
           v-else-if="field.type === 'daterange'"
-          :value="normalizeRangePickerValue(value)"
+          :value="normalizeTimestampRangePickerValue(value)"
+          :formatted-value="normalizeFormattedRangePickerValue(value)"
           type="daterange"
           :placeholder="field.placeholder"
           :start-placeholder="field.startPlaceholder || '开始日期'"
@@ -316,14 +319,15 @@
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 日期时间范围选择 -->
         <n-date-picker
           v-else-if="field.type === 'datetimerange'"
-          :value="normalizeRangePickerValue(value)"
+          :value="normalizeTimestampRangePickerValue(value)"
+          :formatted-value="normalizeFormattedRangePickerValue(value)"
           type="datetimerange"
           :placeholder="field.placeholder"
           :start-placeholder="field.startPlaceholder || '开始时间'"
@@ -335,14 +339,15 @@
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 月份选择 -->
         <n-date-picker
           v-else-if="field.type === 'month'"
-          :value="normalizePickerValue(value)"
+          :value="normalizeTimestampPickerValue(value)"
+          :formatted-value="normalizeFormattedPickerValue(value)"
           type="month"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -352,14 +357,15 @@
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 年份选择 -->
         <n-date-picker
           v-else-if="field.type === 'year'"
-          :value="normalizePickerValue(value)"
+          :value="normalizeTimestampPickerValue(value)"
+          :formatted-value="normalizeFormattedPickerValue(value)"
           type="year"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -369,14 +375,15 @@
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 时间选择 -->
         <n-time-picker
           v-else-if="field.type === 'time'"
-          :value="normalizePickerValue(value)"
+          :value="normalizeTimestampPickerValue(value)"
+          :formatted-value="normalizeFormattedPickerValue(value)"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
@@ -385,14 +392,14 @@
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
-          @update:value="handleUpdate"
+          @update:formatted-value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
         <!-- 时间范围选择 -->
         <div v-else-if="field.type === 'timerange'" class="time-range-picker">
           <n-time-picker
-            :value="resolveRangeValue(value, 0)"
+            :formatted-value="resolveFormattedRangeValue(value, 0)"
             :placeholder="field.startPlaceholder || '开始时间'"
             :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
@@ -401,12 +408,12 @@
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
-            @update:value="handleRangeUpdate(0, $event)"
+            @update:formatted-value="handleRangeUpdate(0, $event)"
             v-on="getComponentEvents(field)"
           />
           <span class="time-range-separator">至</span>
           <n-time-picker
-            :value="resolveRangeValue(value, 1)"
+            :formatted-value="resolveFormattedRangeValue(value, 1)"
             :placeholder="field.endPlaceholder || '结束时间'"
             :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
@@ -415,7 +422,7 @@
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
-            @update:value="handleRangeUpdate(1, $event)"
+            @update:formatted-value="handleRangeUpdate(1, $event)"
             v-on="getComponentEvents(field)"
           />
         </div>
@@ -2232,17 +2239,23 @@ function handleRuntimePageWidgetUpdate(nextProps = {}) {
   }
 }
 
-function resolveRangeValue(value, index) {
-  return Array.isArray(value) ? normalizePickerValue(value[index]) : null
+function resolveFormattedRangeValue(value, index) {
+  if (!Array.isArray(value))
+    return null
+  return normalizeFormattedPickerValue(value[index]) ?? null
 }
 
-function normalizePickerValue(value) {
+function normalizeTimestampPickerValue(value) {
+  if (value instanceof Date)
+    return Number.isNaN(value.getTime()) ? undefined : value.getTime()
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? value : undefined
+  return undefined
+}
+
+function normalizeFormattedPickerValue(value) {
   if (value === null || value === undefined || value === '')
     return null
-  if (value instanceof Date)
-    return Number.isNaN(value.getTime()) ? null : value
-  if (typeof value === 'number')
-    return Number.isFinite(value) ? value : null
   if (typeof value === 'string') {
     const text = value.trim()
     if (!text)
@@ -2251,7 +2264,7 @@ function normalizePickerValue(value) {
       return text
     return null
   }
-  return value
+  return undefined
 }
 
 function isSupportedPickerText(text = '') {
@@ -2262,12 +2275,26 @@ function isSupportedPickerText(text = '') {
     || /^\d{2}:\d{2}(?::\d{2})?$/.test(text)
 }
 
-function normalizeRangePickerValue(value) {
+function normalizeTimestampRangePickerValue(value) {
   if (!Array.isArray(value))
+    return undefined
+  const normalized = value.map(item => normalizeTimestampPickerValue(item))
+  return normalized.length === 2 && normalized.every(item => item !== undefined)
+    ? normalized
+    : undefined
+}
+
+function normalizeFormattedRangePickerValue(value) {
+  if (value === null || value === undefined || value === '')
     return null
-  const normalized = value.map(item => normalizePickerValue(item))
-  const hasValue = normalized.some(item => item !== null && item !== undefined && item !== '')
-  return hasValue ? normalized : null
+  if (!Array.isArray(value))
+    return undefined
+  const normalized = value.map(item => normalizeFormattedPickerValue(item))
+  if (normalized.every(item => item === null))
+    return null
+  if (normalized.length === 2 && normalized.every(item => typeof item === 'string'))
+    return normalized
+  return value.some(item => typeof item === 'string') ? null : undefined
 }
 
 function resolvePickerDefaultValue(field, range = false) {

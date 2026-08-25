@@ -23,6 +23,13 @@ const NInputNumberStub = {
   template: '<input class="n-input-number-stub">',
 }
 
+const NDatePickerStub = {
+  name: 'NDatePicker',
+  props: ['value', 'formattedValue', 'type', 'valueFormat'],
+  emits: ['update:formattedValue'],
+  template: '<div class="n-date-picker-stub" />',
+}
+
 const naiveStubs = Object.fromEntries([
   'NInput',
   'NInputNumber',
@@ -84,6 +91,55 @@ describe('aiFormItem number field compatibility', () => {
       step: 5,
     })
     expect(wrapper.find('.n-input-number-stub').exists()).toBe(true)
+  })
+})
+
+describe('aiFormItem formatted date storage', () => {
+  function mountDateField(field, value) {
+    return mount(AiFormItem, {
+      props: {
+        field,
+        value,
+      },
+      global: {
+        stubs: {
+          ...naiveStubs,
+          NFormItem: NFormItemStub,
+          NDatePicker: NDatePickerStub,
+          AiRecordSelectorModal: true,
+        },
+      },
+    })
+  }
+
+  it('binds and emits year values as formatted strings', async () => {
+    const wrapper = mountDateField({ field: 'year', label: '年份', type: 'year' }, '2026')
+    const picker = wrapper.findComponent(NDatePickerStub)
+
+    expect(picker.props()).toMatchObject({
+      value: undefined,
+      formattedValue: '2026',
+      type: 'year',
+      valueFormat: 'yyyy',
+    })
+    picker.vm.$emit('update:formattedValue', '2027')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('update:value')).toEqual([['2027']])
+  })
+
+  it('keeps date ranges as formatted string arrays', async () => {
+    const value = ['2026-08-01', '2026-08-31']
+    const wrapper = mountDateField({ field: 'period', label: '日期范围', type: 'daterange' }, value)
+    const picker = wrapper.findComponent(NDatePickerStub)
+
+    expect(picker.props('value')).toBeUndefined()
+    expect(picker.props('formattedValue')).toEqual(value)
+    const nextValue = ['2026-09-01', '2026-09-30']
+    picker.vm.$emit('update:formattedValue', nextValue)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('update:value')).toEqual([[nextValue]])
   })
 })
 

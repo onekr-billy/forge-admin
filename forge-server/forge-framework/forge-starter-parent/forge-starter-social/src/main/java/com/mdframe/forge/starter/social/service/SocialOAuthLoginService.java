@@ -83,8 +83,7 @@ public class SocialOAuthLoginService {
         if (connection == null || connection.getStatus() == null || connection.getStatus() != 1) {
             throw new BusinessException("连接不存在或已停用");
         }
-        SysSocialAppConfig loginApp = resolveLoginApp(connection);
-        return authRequestFactory.createRequest(connection, loginApp).authorize(state);
+        return buildAuthRequest(connection).authorize(state);
     }
 
     /**

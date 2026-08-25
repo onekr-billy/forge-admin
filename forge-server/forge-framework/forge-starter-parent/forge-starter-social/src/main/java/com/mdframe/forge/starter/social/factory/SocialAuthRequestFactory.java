@@ -50,9 +50,10 @@ public class SocialAuthRequestFactory {
     }
 
     /**
-     * 使用 LOGIN 应用的 OAuth 参数创建AuthRequest（不含 Secret，用于生成授权跳转地址）。
+     * 使用 LOGIN 应用的非敏感 OAuth 参数创建AuthRequest（Secret 仅兼容连接旧字段）。
      * <p>
      * 应用维度参数优先，连接维度作为兼容期回退，结果按连接+应用维度缓存。
+     * 应用 Secret 存储在密文字段时，调用方必须先解密并使用三参数重载，不能把密文传入本方法。
      */
     public AuthRequest createRequest(SysSocialConfig config, SysSocialAppConfig app) {
         String cacheKey = buildCacheKey(config, app);

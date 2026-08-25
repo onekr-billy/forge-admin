@@ -1,0 +1,10 @@
+--- 12: 保存草稿点击=True, PUT application 累计=1
+=== PAGE 测试 ===
+{"toolbarButtons": ["新增", "更多", "自定义查询"], "searchLabels": ["滑块", "评分", "数字"]}
+  更多下拉: []
+=== PAGE 11 ===
+{"toolbarButtons": ["新增", "更多", "自定义查询"], "searchLabels": ["输入框", "数字"]}
+  更多下拉: []
+=== PAGE 12 ===
+{"toolbarButtons": ["新增", "更多", "自定义查询"], "searchLabels": ["扫码输入", "多行文本"]}
+  更多下拉: []

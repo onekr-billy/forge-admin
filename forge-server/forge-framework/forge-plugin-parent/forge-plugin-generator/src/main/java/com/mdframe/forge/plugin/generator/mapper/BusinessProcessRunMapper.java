@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 @Mapper
@@ -28,6 +29,14 @@ public interface BusinessProcessRunMapper extends BaseMapper<AiBusinessProcessRu
     AiBusinessProcessRun selectWaitingByProcessInstanceId(
             @Param("tenantId") Long tenantId,
             @Param("processInstanceId") String processInstanceId);
+
+    AiBusinessProcessRun selectLatestByBusinessKey(
+            @Param("tenantId") Long tenantId,
+            @Param("businessKey") String businessKey);
+
+    List<AiBusinessProcessRun> selectActiveByBusinessKeys(
+            @Param("tenantId") Long tenantId,
+            @Param("businessKeys") Collection<String> businessKeys);
 
     List<AiBusinessProcessRun> selectRecoverableRuns(@Param("tenantId") Long tenantId,
                                                       @Param("before") LocalDateTime before,

@@ -324,6 +324,7 @@
           :model-id="selectedFlowModelId"
           :business-object-code="objectCode"
           :business-object-name="objectName || objectCode"
+          :application-id="applicationId"
           :code-app="codeApp"
           @close="handleFlowDesignerClose"
           @saved="handleFlowDesignerSaved"
@@ -373,6 +374,10 @@ const props = defineProps({
   },
   applicationCode: {
     type: String,
+    default: '',
+  },
+  applicationId: {
+    type: [String, Number],
     default: '',
   },
 })
@@ -984,9 +989,7 @@ function inferStatusField() {
     'approval_status',
     'flowStatus',
     'flow_status',
-    'status',
-    'state',
-  ], /流程状态|审批状态|单据状态|状态/)
+  ], /流程状态|审批状态|单据状态/)
 }
 
 function inferTitleField() {

@@ -103,7 +103,6 @@
         FROM sys_flow_error_log
         WHERE id = #{logId}
           AND tenant_id = #{tenantId}
-        LIMIT 1
         FOR UPDATE
     </select>
 

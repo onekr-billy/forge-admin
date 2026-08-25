@@ -52,8 +52,13 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
 
     @Override
     public Long registerMenu(String menuName, Long parentId, String configKey, Integer sort) {
+        Long tenantId = resolveTenantId();
+        String perms = "ai:crud:" + configKey;
+        SysResource existing = resourceMapper.selectOneByPermsAndClientCodeAnyType(
+                tenantId, perms, DEFAULT_CLIENT_CODE);
         SysResource resource = new SysResource();
-        resource.setTenantId(resolveTenantId());
+        resource.setId(existing == null ? null : existing.getId());
+        resource.setTenantId(tenantId);
         resource.setResourceName(menuName);
         resource.setParentId(parentId != null ? parentId : resolveDefaultLowcodeParentId());
         resource.setResourceType(2);
@@ -64,11 +69,15 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setIsPublic(0);
         resource.setMenuStatus(1);
         resource.setVisible(1);
-        resource.setPerms("ai:crud:" + configKey);
+        resource.setPerms(perms);
         resource.setKeepAlive(0);
         resource.setAlwaysShow(0);
         resource.setClientCode(DEFAULT_CLIENT_CODE);
-        resourceService.save(resource);
+        if (existing == null) {
+            resourceService.save(resource);
+        } else {
+            resourceService.updateById(resource);
+        }
 
         Long menuId = resource.getId();
         log.info("[MenuRegisterAdapter] 注册菜单成功: menuName={}, configKey={}, menuId={}", menuName, configKey, menuId);
@@ -119,13 +128,24 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
                                 String perms, String icon, Integer sort, boolean enabled, String clientCode) {
         Long tenantId = resolveTenantId();
         String resolvedClientCode = StringUtils.defaultIfBlank(clientCode, DEFAULT_CLIENT_CODE);
-        SysResource existing = resourceMapper.selectOneByPerms(tenantId, 2, perms);
+        // Menu resources are isolated by client.  Looking up by permission only
+        // would make a mobile registration reuse the management-side row (and
+        // would also hide the mobile row when both clients share a permission).
+        SysResource existing = resourceMapper.selectOneByPermsAndClientCode(
+                tenantId, 2, perms, resolvedClientCode);
+        if (existing == null) {
+            // 兼容历史应用入口从目录/菜单类型迁移的情况；唯一键仍按
+            // perms 约束，必须复用旧资源而不是再次 insert。
+            existing = resourceMapper.selectOneByPermsAndClientCodeAnyType(
+                    tenantId, perms, resolvedClientCode);
+        }
         if (existing != null && existing.getId() != null) {
             updateAppMenu(existing.getId(), menuName, parentId, path, component, perms, icon, sort, enabled,
                     resolvedClientCode);
             return existing.getId();
         }
-        SysResource existingByPath = resourceMapper.selectOneByPath(tenantId, 2, path);
+        SysResource existingByPath = resourceMapper.selectOneByPathAndClientCode(
+                tenantId, 2, path, resolvedClientCode);
         if (existingByPath != null && existingByPath.getId() != null) {
             updateAppMenu(existingByPath.getId(), menuName, parentId, path, component, perms, icon, sort, enabled,
                     resolvedClientCode);
@@ -300,14 +320,29 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             boolean progressed = false;
             for (java.util.Iterator<BusinessApplicationPageMenuDTO> iterator = pending.iterator(); iterator.hasNext();) {
                 BusinessApplicationPageMenuDTO item = iterator.next();
-                Long parentId = item.getParentNodeId() == null ? resolveDefaultLowcodeParentId()
-                        : resolvedIds.get(item.getParentNodeId());
+                String clientCode = StringUtils.defaultIfBlank(item.getClientCode(), DEFAULT_CLIENT_CODE);
+                Long parentId;
+                if (item.isExternalParent()) {
+                    // 外部门级：parentId 直接是 sys_resource.id，不经内部节点树解析
+                    parentId = parseLong(item.getParentNodeId());
+                } else if (item.getParentNodeId() == null) {
+                    // The H5 client has an independent resource tree.  Its
+                    // root must remain at parent 0; attaching it below the
+                    // management /ai directory makes the whole H5 subtree
+                    // disappear when the menu query is scoped to client h5.
+                    parentId = "h5".equalsIgnoreCase(clientCode)
+                            ? 0L : resolveDefaultLowcodeParentId();
+                } else {
+                    parentId = resolvedIds.get(resourceKey(item.getParentNodeId(), clientCode));
+                }
                 if (item.getParentNodeId() != null && parentId == null) {
                     continue;
                 }
                 Long resourceId = upsertApplicationPageMenu(tenantId, item, parentId);
-                resolvedIds.put(item.getNodeId(), resourceId);
-                activePerms.add(item.getPerms());
+                resolvedIds.put(resourceKey(item.getNodeId(), clientCode), resourceId);
+                // Keep the historical plain key for pc-only callers/snapshots.
+                resolvedIds.putIfAbsent(item.getNodeId(), resourceId);
+                activePerms.add(resourceKey(item.getPerms(), clientCode));
                 iterator.remove();
                 progressed = true;
             }
@@ -318,7 +353,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         for (SysResource stale : resourceMapper.selectList(new LambdaQueryWrapper<SysResource>()
                 .eq(SysResource::getTenantId, tenantId)
                 .likeRight(SysResource::getPerms, prefix))) {
-            if (!activePerms.contains(stale.getPerms())) {
+            if (!activePerms.contains(resourceKey(stale.getPerms(),
+                    StringUtils.defaultIfBlank(stale.getClientCode(), DEFAULT_CLIENT_CODE)))) {
                 SysResource disabled = new SysResource();
                 disabled.setId(stale.getId());
                 disabled.setMenuStatus(0);
@@ -401,7 +437,16 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
 
     private Long upsertApplicationPageMenu(Long tenantId, BusinessApplicationPageMenuDTO item, Long parentId) {
         int resourceType = item.isDirectory() ? 1 : 2;
-        SysResource existing = resourceMapper.selectOneByPerms(tenantId, resourceType, item.getPerms());
+        String clientCode = StringUtils.defaultIfBlank(item.getClientCode(), DEFAULT_CLIENT_CODE);
+        SysResource existing = resourceMapper.selectOneByPermsAndClientCode(
+                tenantId, resourceType, item.getPerms(), clientCode);
+        if (existing == null) {
+            // 页面组/根节点历史上可能以菜单类型落库。查询不能把
+            // resource_type 当成资源身份，否则会绕过唯一性校验并触发
+            // uk_tenant_resource_active 冲突。
+            existing = resourceMapper.selectOneByPermsAndClientCodeAnyType(
+                    tenantId, item.getPerms(), clientCode);
+        }
         SysResource resource = new SysResource();
         resource.setId(existing == null ? null : existing.getId());
         resource.setTenantId(tenantId);
@@ -420,13 +465,18 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
                 ? "ionicons5:FolderOpenOutline" : "ionicons5:AppsOutline"));
         resource.setKeepAlive(0);
         resource.setAlwaysShow(item.isDirectory() ? 1 : 0);
-        resource.setClientCode(DEFAULT_CLIENT_CODE);
+        resource.setClientCode(clientCode);
         if (existing == null) {
             resourceService.save(resource);
         } else {
             resourceService.updateById(resource);
         }
         return resource.getId();
+    }
+
+    private String resourceKey(String nodeOrPerms, String clientCode) {
+        return StringUtils.defaultString(nodeOrPerms) + "::"
+                + StringUtils.defaultIfBlank(clientCode, DEFAULT_CLIENT_CODE);
     }
 
     private void updateDomainParentIfNeeded(SysResource existing, Long parentId, String domainName, Integer sort) {
@@ -509,6 +559,17 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             return 0L;
         }
         return resolvedParentId;
+    }
+
+    private Long parseLong(String value) {
+        if (StringUtils.isBlank(value)) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private Long resolveTenantId() {

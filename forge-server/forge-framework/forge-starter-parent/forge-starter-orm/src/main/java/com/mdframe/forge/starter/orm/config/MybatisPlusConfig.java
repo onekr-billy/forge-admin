@@ -91,6 +91,5 @@ public class MybatisPlusConfig implements InitializingBean {
     
     @Override
     public void afterPropertiesSet() throws Exception {
-        System.out.println("12313");
     }
 }

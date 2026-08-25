@@ -17,6 +17,28 @@ const SIMPLE_XML = [
   '</bpmn:definitions>',
 ].join('\n')
 
+const LEGACY_FORM_XML = SIMPLE_XML.replace(
+  'flowable:assignee="${initiator}"',
+  'flowable:assignee="${initiator}" flowable:formKey="Activity_069lyqd_form" flowable:formJson="[]"',
+)
+
+const APPLICATION_PAGE_FORM = {
+  value: 'app_2089968247981060098_page_page_page_form_form_form',
+  formKey: 'app_2089968247981060098_page_page_page_form_form_form',
+  formName: '测试',
+  formMode: 'BUSINESS_OBJECT_FORM',
+  applicationId: '2089968247981060098',
+  pageId: 'page_page',
+  pageCode: 'page_page',
+  pageName: '测试',
+  pageType: 'object',
+  sourceFormKey: 'business_object_form',
+  fieldCatalog: [
+    { field: 'fieldSlider', label: '滑块' },
+    { field: 'fieldInput', label: '输入框11' },
+  ],
+}
+
 // 简化挂载：用 stubs 避免 Naive UI 全局组件未注册导致 warning 失控
 const STUBS = {
   'n-drawer': { template: '<div class="n-drawer"><slot /></div>' },
@@ -182,6 +204,35 @@ describe('dingFlowDesigner - props.xml 输入加载', () => {
     expect(xml2).toContain('sequenceFlow')
     expect(xml2).toContain('id="F1"')
     expect(xml2).toContain('id="F2"')
+    w.unmount()
+  })
+
+  it('业务应用进入时把旧任务表单自动迁移到具体页面并补齐字段权限', async () => {
+    const w = mountDesigner({
+      xml: LEGACY_FORM_XML,
+      autoBindBusinessForm: true,
+      defaultFormKey: APPLICATION_PAGE_FORM.formKey,
+      formAssetOptions: [APPLICATION_PAGE_FORM],
+    })
+    await new Promise(r => setTimeout(r, 80))
+
+    const xml = w.vm.getXML()
+    const doc = parseBpmnXml(xml)
+    const task = findElementsByLocalName(doc, 'userTask').find(item => item.getAttribute('id') === 'T1')
+    const formRef = JSON.parse(getFlowableAttr(task, 'formRef'))
+    const permissions = JSON.parse(getFlowableAttr(task, 'formFieldPermissions'))
+
+    expect(getFlowableAttr(task, 'formKey')).toBe(APPLICATION_PAGE_FORM.formKey)
+    expect(getFlowableAttr(task, 'formMode')).toBe('BUSINESS_OBJECT_FORM')
+    expect(getFlowableAttr(task, 'formJson')).toBe(null)
+    expect(formRef).toMatchObject({
+      applicationId: '2089968247981060098',
+      pageId: 'page_page',
+      pageName: '测试',
+      sourceFormKey: 'business_object_form',
+    })
+    expect(permissions.map(item => item.field)).toEqual(['fieldSlider', 'fieldInput'])
+
     w.unmount()
   })
 })

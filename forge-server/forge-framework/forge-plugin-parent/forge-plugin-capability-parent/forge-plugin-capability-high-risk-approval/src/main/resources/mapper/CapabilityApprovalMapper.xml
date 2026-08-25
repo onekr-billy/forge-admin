@@ -21,7 +21,7 @@
         SELECT <include refid="Columns"/>
         FROM ai_capability_approval
         WHERE tenant_id = #{tenantId} AND id = #{id} AND del_flag = 0
-        LIMIT 1 FOR UPDATE
+        FOR UPDATE
     </select>
     <select id="selectTenantById" resultType="com.mdframe.forge.plugin.capability.highrisk.domain.AiCapabilityApproval">
         SELECT <include refid="Columns"/>

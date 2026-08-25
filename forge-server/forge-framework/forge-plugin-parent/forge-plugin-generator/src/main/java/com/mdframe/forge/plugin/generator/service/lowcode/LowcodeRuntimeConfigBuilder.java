@@ -253,6 +253,8 @@ public class LowcodeRuntimeConfigBuilder {
         }
         options.put("toolbarActions", resolveCustomActions(pageSchema, "toolbar"));
         options.put("rowActions", resolveCustomActions(pageSchema, "row"));
+        options.put("detailActions", resolveCustomActions(pageSchema, "detail"));
+        options.put("formActions", resolveCustomActions(pageSchema, "form"));
         options.put("defaultSort", buildDefaultSort(modelSchema, pageSchema));
         options.put("joinConfig", buildJoinConfig(modelSchema, pageSchema));
         if (masterDetailRuntime) {
@@ -2714,6 +2716,9 @@ public class LowcodeRuntimeConfigBuilder {
                 return "timerange";
             }
         }
+        if (LowcodeComponentCatalog.isFieldComponent(componentType)) {
+            return componentType;
+        }
         if ("number".equals(componentType)) {
             return "number";
         }
@@ -2821,7 +2826,8 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private String buildPlaceholder(String componentType, String label) {
-        if ("select".equals(componentType) || "radio".equals(componentType) || "checkbox".equals(componentType)
+        if ("select".equals(componentType) || "radio".equals(componentType) || "radioButton".equals(componentType)
+                || "checkbox".equals(componentType) || "transfer".equals(componentType) || "customSelect".equals(componentType)
                 || "date".equals(componentType) || "datetime".equals(componentType) || "time".equals(componentType)
                 || "daterange".equals(componentType) || "datetimerange".equals(componentType) || "timerange".equals(componentType)
                 || "dictSelect".equals(componentType) || "treeSelect".equals(componentType) || "orgTreeSelect".equals(componentType)

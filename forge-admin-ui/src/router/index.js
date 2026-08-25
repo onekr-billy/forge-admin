@@ -129,10 +129,47 @@ export const manualRoutes = [
     meta: { title: '运行应用', layout: 'empty', skipTab: true, preserveOnQuery: true },
   },
   {
+    name: 'ApplicationPortal',
+    path: '/app/:applicationCodeOrSlug',
+    component: () => import('@/views/app-center/application-portal.vue'),
+    meta: {
+      title: '应用门户',
+      layout: 'app-portal',
+      skipTab: true,
+      preserveOnQuery: true,
+    },
+  },
+
+  {
     name: 'BusinessApplicationWorkspace',
     path: '/app-center/application/:applicationCode',
-    component: () => import('@/views/app-center/application.[applicationCode].vue'),
-    meta: { title: '应用工作台', skipTab: true, preserveOnQuery: true },
+    redirect: (to) => {
+      const applicationCode = String(to.params?.applicationCode || '').trim()
+      if (!applicationCode)
+        return { path: '/app-center' }
+      return { name: 'BusinessApplicationRuntime', params: { applicationCode } }
+    },
+    meta: { title: '页面管理', skipTab: true, preserveOnQuery: true },
+  },
+  {
+    name: 'BusinessApplicationSettings',
+    path: '/app-center/application/:applicationCode/settings',
+    redirect: to => ({
+      name: 'BusinessApplicationRuntime',
+      params: { applicationCode: to.params.applicationCode },
+      query: { ...(to.query || {}), view: 'settings' },
+    }),
+    meta: { title: '应用设置', layout: 'empty', skipTab: true, preserveOnQuery: true, deprecated: true },
+  },
+  {
+    name: 'BusinessApplicationPublish',
+    path: '/app-center/application/:applicationCode/publish',
+    redirect: to => ({
+      name: 'BusinessApplicationRuntime',
+      params: { applicationCode: to.params.applicationCode },
+      query: { ...(to.query || {}), view: 'publish' },
+    }),
+    meta: { title: '应用发布', layout: 'empty', skipTab: true, preserveOnQuery: true, deprecated: true },
   },
   {
     name: 'BusinessProcessDesigner',

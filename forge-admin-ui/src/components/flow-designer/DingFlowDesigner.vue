@@ -31,6 +31,8 @@ const props = defineProps({
   readonly: { type: Boolean, default: false },
   formAssetOptions: { type: Array, default: () => [] },
   formFieldCatalog: { type: Array, default: () => [] },
+  autoBindBusinessForm: { type: Boolean, default: false },
+  defaultFormKey: { type: String, default: '' },
   processConfig: { type: Object, default: () => ({}) },
 })
 
@@ -76,6 +78,14 @@ watch(
   { immediate: true, deep: true },
 )
 
+watch(
+  () => [props.formAssetOptions, props.defaultFormKey, props.autoBindBusinessForm],
+  () => {
+    applyDefaultBusinessFormBindings()
+  },
+  { immediate: true, deep: true },
+)
+
 function normalizeProcessConfig(config = {}) {
   const mode = ['firstOnly', 'consecutive', 'none'].includes(config.autoApprovalMode)
     ? config.autoApprovalMode
@@ -105,11 +115,13 @@ function applyProcessConfig(config = {}) {
 }
 
 async function importXml(xml) {
+  let businessFormBindingChanged = false
   isImporting.value = true
   emit('importStart')
   try {
     const json = convertBpmnToJson(xml)
     designer.loadJson(json)
+    businessFormBindingChanged = applyDefaultBusinessFormBindings()
     history.clear()
     await nextTick()
     autoFitToScreen()
@@ -121,7 +133,148 @@ async function importXml(xml) {
   }
   finally {
     isImporting.value = false
+    if (businessFormBindingChanged)
+      scheduleEmit()
   }
+}
+
+function applyDefaultBusinessFormBindings() {
+  if (props.readonly || !props.autoBindBusinessForm)
+    return false
+  const assets = normalizeBusinessFormAssets(props.formAssetOptions)
+  if (!assets.length)
+    return false
+  const preferred = assets.find(asset => asset.formKey === String(props.defaultFormKey || '').trim()) || assets[0]
+  let changed = false
+  const nodes = designer.flowJson.value.nodes.map((node) => {
+    if (node?.nodeType !== 'approver')
+      return node
+    const config = node.config || {}
+    const current = findMatchingFormAsset(assets, config)
+    const asset = current || preferred
+    const shouldReplaceAsset = !current
+    const shouldClearInlineForm = Boolean(config.formJson || config.formUrl)
+    const shouldInitializePermissions = !Array.isArray(config.formFieldPermissions)
+      || config.formFieldPermissions.length === 0
+    if (!shouldReplaceAsset && !shouldClearInlineForm && !shouldInitializePermissions)
+      return node
+    changed = true
+    return {
+      ...node,
+      config: {
+        ...config,
+        formType: 'dynamic',
+        formMode: asset.formMode,
+        formKey: asset.formKey,
+        formName: asset.formName,
+        providerKey: asset.providerKey,
+        formJson: '',
+        formUrl: asset.formUrl,
+        viewKey: asset.viewKey,
+        formRef: buildBusinessFormRef(asset),
+        formFieldPermissions: shouldReplaceAsset || shouldInitializePermissions
+          ? buildDefaultFieldPermissions(asset.fieldCatalog)
+          : config.formFieldPermissions,
+      },
+    }
+  })
+  if (!changed)
+    return false
+  designer.flowJson.value = {
+    ...designer.flowJson.value,
+    nodes,
+  }
+  return true
+}
+
+function normalizeBusinessFormAssets(source = []) {
+  return (Array.isArray(source) ? source : [])
+    .map((item) => {
+      const formKey = String(item?.formKey || item?.value || '').trim()
+      if (!formKey)
+        return null
+      const fields = Array.isArray(item?.fieldCatalog)
+        ? item.fieldCatalog
+        : Array.isArray(item?.fields) ? item.fields : []
+      return {
+        ...item,
+        formKey,
+        formName: item.formName || item.label || formKey,
+        formMode: normalizeBusinessFormMode(item.formMode || item.type),
+        providerKey: String(item.providerKey || ''),
+        formUrl: String(item.formUrl || ''),
+        viewKey: String(item.viewKey || 'default'),
+        fieldCatalog: fields,
+      }
+    })
+    .filter(Boolean)
+}
+
+function findMatchingFormAsset(assets, config = {}) {
+  const formKey = String(config.formKey || '').trim()
+  if (!formKey)
+    return null
+  const providerKey = String(config.providerKey || config.formRef?.providerKey || '')
+  const formMode = normalizeBusinessFormMode(
+    config.formMode || config.formRef?.formMode || config.formRef?.type,
+  )
+  return assets.find(asset => asset.formKey === formKey
+    && asset.formMode === formMode
+    && asset.providerKey === providerKey)
+    || assets.find(asset => asset.formKey === formKey && asset.providerKey === providerKey)
+    || assets.find(asset => asset.formKey === formKey)
+    || null
+}
+
+function normalizeBusinessFormMode(value) {
+  const mode = String(value || 'BUSINESS_OBJECT_FORM').toUpperCase()
+  if (mode === 'BUSINESS_CODE_FORM' || mode === 'EXTERNAL')
+    return mode
+  return 'BUSINESS_OBJECT_FORM'
+}
+
+function buildBusinessFormRef(asset) {
+  return {
+    ...(asset.formRef || {}),
+    type: asset.formMode,
+    formMode: asset.formMode,
+    objectCode: asset.objectCode || '',
+    objectName: asset.objectName || '',
+    applicationId: asset.applicationId || '',
+    pageId: asset.pageId || '',
+    pageCode: asset.pageCode || '',
+    pageName: asset.pageName || '',
+    pageType: asset.pageType || '',
+    sourceFormKey: asset.sourceFormKey || '',
+    providerKey: asset.providerKey,
+    formKey: asset.formKey,
+    formName: asset.formName,
+    formUrl: asset.formUrl,
+    viewKey: asset.viewKey,
+  }
+}
+
+function buildDefaultFieldPermissions(fieldCatalog = []) {
+  const seen = new Set()
+  return (Array.isArray(fieldCatalog) ? fieldCatalog : [])
+    .map((item) => {
+      const field = String(item?.field || item?.fieldCode || item?.fieldName || item?.name || item?.key || '').trim()
+      if (!field || seen.has(field))
+        return null
+      seen.add(field)
+      const required = item?.required === true || item?.sourceRequired === true
+      return {
+        field,
+        fieldCode: field,
+        label: String(item?.label || item?.title || item?.fieldName || field).trim(),
+        visible: true,
+        editable: true,
+        readable: true,
+        writable: true,
+        required,
+      }
+    })
+    .filter(Boolean)
 }
 
 let emitTimer = null
@@ -230,6 +383,7 @@ function handleAddAfter(afterNodeId, type) {
   history.snapshot()
   try {
     const newId = designer.addNode(afterNodeId, type)
+    applyDefaultBusinessFormBindings()
     designer.selectedNodeId.value = newId
     drawerNodeId.value = newId
     drawerFocusEdgeId.value = null

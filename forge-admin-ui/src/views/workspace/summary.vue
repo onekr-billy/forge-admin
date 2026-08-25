@@ -24,7 +24,7 @@
           :key="item.key"
           class="summary-metric"
           type="button"
-          @click="router.push(item.path)"
+          @click="router.push(item.target)"
         >
           <span class="metric-icon" :class="item.tone">
             <i :class="item.icon" />
@@ -46,6 +46,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getWorkspaceSummary } from '@/api/workspace'
 
+const props = defineProps({
+  routeTargets: {
+    type: Object,
+    default: () => ({}),
+  },
+})
 const router = useRouter()
 const loading = ref(false)
 const loadError = ref('')
@@ -62,7 +68,7 @@ const metricItems = computed(() => [
     label: '我的待办',
     desc: '需要我处理或签收',
     value: summary.value.todoCount,
-    path: '/workspace/todo',
+    target: props.routeTargets.todo || '/workspace/todo',
     icon: 'i-material-symbols:pending-actions',
     tone: 'blue',
   },
@@ -71,7 +77,7 @@ const metricItems = computed(() => [
     label: '本周已办',
     desc: '本周完成的审批处理',
     value: summary.value.doneWeekCount,
-    path: '/workspace/done',
+    target: props.routeTargets.done || '/workspace/done',
     icon: 'i-material-symbols:task-alt-outline',
     tone: 'green',
   },
@@ -80,7 +86,7 @@ const metricItems = computed(() => [
     label: '发起中',
     desc: '我发起且仍在流转',
     value: summary.value.startedRunningCount,
-    path: '/workspace/started',
+    target: props.routeTargets.sent || '/workspace/started',
     icon: 'i-material-symbols:send-outline',
     tone: 'amber',
   },
@@ -89,7 +95,7 @@ const metricItems = computed(() => [
     label: '未读抄送',
     desc: '抄送给我的未读消息',
     value: summary.value.ccUnreadCount,
-    path: '/workspace/cc',
+    target: props.routeTargets.cc || '/workspace/cc',
     icon: 'i-material-symbols:alternate-email',
     tone: 'red',
   },
@@ -187,8 +193,8 @@ async function loadSummary() {
 }
 
 .summary-metric:hover {
-  border-color: #9dbaf6;
-  box-shadow: 0 8px 22px rgba(24, 39, 75, 0.08);
+  border-color: #c9cdd4;
+  box-shadow: 0 8px 22px rgba(31, 35, 41, 0.06);
   transform: translateY(-1px);
 }
 
@@ -203,8 +209,8 @@ async function loadSummary() {
 }
 
 .metric-icon.blue {
-  background: #e8f1ff;
-  color: #1d4ed8;
+  background: #f0f2f5;
+  color: #4e5969;
 }
 
 .metric-icon.green {

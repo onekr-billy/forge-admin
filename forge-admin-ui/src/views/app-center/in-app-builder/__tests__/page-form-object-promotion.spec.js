@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBusinessObjectDesignerPayloadFromFormAsset,
   normalizeObjectDesignerFieldCatalog,
+  syncFormBoundFieldRefs,
 } from '../page-form-object-promotion'
 
 describe('page form object promotion', () => {
@@ -79,5 +80,15 @@ describe('page form object promotion', () => {
         fieldStatus: 'ENABLED',
       }),
     ])
+  })
+
+  it('drops deleted form fields from list and search refs instead of merging them', () => {
+    expect(syncFormBoundFieldRefs({
+      formFieldCodes: ['fieldSlider', 'fieldRate'],
+      searchFieldRefs: ['fieldSlider', 'fieldNumber', 'fieldRate'],
+    })).toEqual({
+      fieldRefs: ['fieldSlider', 'fieldRate'],
+      searchFieldRefs: ['fieldSlider', 'fieldRate'],
+    })
   })
 })

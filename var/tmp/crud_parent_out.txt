@@ -1,0 +1,62 @@
+[
+ {
+  "showImport": false,
+  "visible": true,
+  "hasToolbar": true,
+  "parentChain": [
+   "GridBlockRenderer",
+   "PortalPageRenderer",
+   "Spin",
+   "application-runtime.[applicationCode]",
+   "KeepAlive",
+   "[object Object]",
+   "AsyncComponentWrapper",
+   "RouterView"
+  ]
+ },
+ {
+  "showImport": false,
+  "visible": true,
+  "hasToolbar": true,
+  "parentChain": [
+   "GridBlockRenderer",
+   "PortalPageRenderer",
+   "Spin",
+   "application-runtime.[applicationCode]",
+   "KeepAlive",
+   "[object Object]",
+   "AsyncComponentWrapper",
+   "RouterView"
+  ]
+ },
+ {
+  "showImport": false,
+  "visible": true,
+  "hasToolbar": true,
+  "parentChain": [
+   "GridBlockRenderer",
+   "PortalPageRenderer",
+   "Spin",
+   "application-runtime.[applicationCode]",
+   "KeepAlive",
+   "[object Object]",
+   "AsyncComponentWrapper",
+   "RouterView"
+  ]
+ },
+ {
+  "showImport": false,
+  "visible": true,
+  "hasToolbar": true,
+  "parentChain": [
+   "GridBlockRenderer",
+   "PortalPageRenderer",
+   "Spin",
+   "application-runtime.[applicationCode]",
+   "KeepAlive",
+   "[object Object]",
+   "AsyncComponentWrapper",
+   "RouterView"
+  ]
+ }
+]

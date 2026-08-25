@@ -3,10 +3,14 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   businessProcessPage,
+  businessProcessRunDetail,
+  businessProcessRunPage,
+  cancelBusinessProcessRun,
   copyBusinessProcess,
   createBusinessProcess,
   deleteBusinessProcess,
   publishBusinessProcess,
+  retryBusinessProcessRun,
   updateBusinessProcessStatus,
   validateBusinessProcess,
 } from '@/api/business-process'
@@ -27,7 +31,7 @@ const props = defineProps({
 const emit = defineEmits(['changed', 'navigate', 'openDesigner'])
 const route = useRoute()
 const router = useRouter()
-const { dict } = useDict('sys_normal_disable', 'ai_business_process_design_status')
+const { dict } = useDict('sys_normal_disable', 'ai_business_process_design_status', 'ai_business_process_run_status')
 
 const loading = ref(false)
 const creating = ref(false)
@@ -40,6 +44,18 @@ const pageSize = ref(10)
 const keyword = ref(String(route.query.processKeyword || ''))
 const status = ref(normalizeOptionalStatus(route.query.processStatus))
 const createForm = reactive(createEmptyForm())
+const activeSection = ref('list')
+const runLoading = ref(false)
+const runRecords = ref([])
+const runTotal = ref(0)
+const runPageNum = ref(1)
+const runPageSize = ref(10)
+const runStatus = ref(null)
+const runProcessId = ref(null)
+const runObjectCode = ref(null)
+const runDetailVisible = ref(false)
+const runDetail = ref(null)
+const runDetailLoading = ref(false)
 
 const objectOptions = computed(() => (props.initialObjects || [])
   .map(item => ({
@@ -49,6 +65,11 @@ const objectOptions = computed(() => (props.initialObjects || [])
     value: stringValue(item.objectId || item.id),
   }))
   .filter(item => item.value))
+
+const processOptions = computed(() => records.value.map(item => ({
+  label: item.processName || item.processCode,
+  value: stringValue(item.id),
+})))
 
 const statusOptions = computed(() => (dict.value?.sys_normal_disable || [])
   .map(item => ({
@@ -216,8 +237,97 @@ function openDesigner(processId) {
   emit('openDesigner', { processId: stringValue(processId) })
 }
 
-function openRunDetail() {
-  notify('info', '运行记录将在编排运行服务接入后开放')
+async function applyRunFilters() {
+  runPageNum.value = 1
+  await loadRuns()
+}
+
+function switchSection(section) {
+  activeSection.value = section
+  if (section === 'runs' && props.application?.id)
+    loadRuns()
+}
+
+async function loadRuns() {
+  if (!props.application?.id || runLoading.value)
+    return
+  runLoading.value = true
+  try {
+    const response = await businessProcessRunPage({
+      applicationId: stringValue(props.application.id),
+      processId: runProcessId.value || undefined,
+      subjectObjectCode: runObjectCode.value || undefined,
+      status: runStatus.value || undefined,
+      pageNum: runPageNum.value,
+      pageSize: runPageSize.value,
+    })
+    const data = response.data || {}
+    runRecords.value = Array.isArray(data.records) ? data.records : (data.list || [])
+    runTotal.value = Number(data.total || runRecords.value.length)
+  }
+  catch (error) {
+    runRecords.value = []
+    runTotal.value = 0
+    notify('error', errorMessage(error, '运行记录加载失败'))
+  }
+  finally {
+    runLoading.value = false
+  }
+}
+
+async function openRunDetail(runId) {
+  const id = stringValue(runId)
+  if (!id)
+    return
+  runDetailVisible.value = true
+  runDetailLoading.value = true
+  try {
+    const response = await businessProcessRunDetail(id)
+    runDetail.value = response.data || null
+  }
+  catch (error) {
+    runDetail.value = null
+    notify('error', errorMessage(error, '运行详情加载失败'))
+  }
+  finally {
+    runDetailLoading.value = false
+  }
+}
+
+async function retryRun(item) {
+  const runId = stringValue(item.id)
+  if (!runId || actionId.value)
+    return
+  actionId.value = `retry:${runId}`
+  try {
+    await retryBusinessProcessRun(runId)
+    notify('success', '已提交重试')
+    await loadRuns()
+  }
+  catch (error) {
+    notify('error', errorMessage(error, '重试失败'))
+  }
+  finally {
+    actionId.value = ''
+  }
+}
+
+async function cancelRun(item) {
+  const runId = stringValue(item.id)
+  if (!runId || actionId.value)
+    return
+  actionId.value = `cancel:${runId}`
+  try {
+    await cancelBusinessProcessRun(runId)
+    notify('success', '运行已取消')
+    await loadRuns()
+  }
+  catch (error) {
+    notify('error', errorMessage(error, '取消失败'))
+  }
+  finally {
+    actionId.value = ''
+  }
 }
 
 function previewMigration() {
@@ -367,19 +477,25 @@ function notify(type, message) {
     </header>
 
     <div class="process-sections" aria-label="业务流程功能区">
-      <button type="button" class="section-tab is-active">
+      <button
+        type="button"
+        class="section-tab"
+        :class="{ 'is-active': activeSection === 'list' }"
+        data-process-section="list"
+        @click="switchSection('list')"
+      >
         流程列表
         <span>{{ total }}</span>
       </button>
       <button
         type="button"
-        class="section-tab is-reserved"
-        disabled
-        title="等待编排运行服务接入"
-        @click="openRunDetail"
+        class="section-tab"
+        :class="{ 'is-active': activeSection === 'runs' }"
+        data-process-section="runs"
+        @click="switchSection('runs')"
       >
         运行记录
-        <small>待接入</small>
+        <span>{{ runTotal }}</span>
       </button>
       <button
         type="button"
@@ -393,7 +509,7 @@ function notify(type, message) {
       </button>
     </div>
 
-    <div class="process-filter-bar">
+    <div v-if="activeSection === 'list'" class="process-filter-bar">
       <label class="keyword-field">
         <span class="sr-only">搜索业务流程</span>
         <input
@@ -417,6 +533,7 @@ function notify(type, message) {
       </n-button>
     </div>
 
+    <template v-if="activeSection === 'list'">
     <n-spin :show="loading">
       <div v-if="records.length" class="process-table-wrap">
         <table class="process-table">
@@ -526,7 +643,7 @@ function notify(type, message) {
       </n-empty>
     </n-spin>
 
-    <footer v-if="total > pageSize" class="process-pagination">
+    <footer v-if="total > 0" class="process-pagination">
       <span>共 {{ total }} 项</span>
       <n-pagination
         :page="pageNum"
@@ -535,6 +652,158 @@ function notify(type, message) {
         @update:page="changePage"
       />
     </footer>
+    </template>
+
+    <template v-else-if="activeSection === 'runs'">
+      <div class="process-filter-bar">
+        <label>
+          <span class="sr-only">流程筛选</span>
+          <select v-model="runProcessId" @change="applyRunFilters">
+            <option :value="null">全部流程</option>
+            <option v-for="item in processOptions" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">业务对象筛选</span>
+          <select v-model="runObjectCode" @change="applyRunFilters">
+            <option :value="null">全部对象</option>
+            <option v-for="item in objectOptions" :key="item.code" :value="item.code">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">运行状态</span>
+          <select v-model="runStatus" @change="applyRunFilters">
+            <option :value="null">全部运行状态</option>
+            <option
+              v-for="item in (dict.value?.ai_business_process_run_status || [])"
+              :key="item.value || item.dictValue"
+              :value="item.value || item.dictValue"
+            >
+              {{ item.label || item.dictLabel }}
+            </option>
+          </select>
+        </label>
+        <n-button size="small" :loading="runLoading" @click="applyRunFilters">
+          查询
+        </n-button>
+      </div>
+      <n-spin :show="runLoading">
+        <div v-if="runRecords.length" class="process-table-wrap">
+          <table class="process-table">
+            <thead>
+              <tr>
+                <th>流程</th>
+                <th>业务记录</th>
+                <th>状态</th>
+                <th>当前节点</th>
+                <th>开始时间</th>
+                <th class="operation-heading">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in runRecords" :key="String(item.id)">
+                <td>
+                  <strong>{{ item.processName || item.processCode }}</strong>
+                  <code>{{ item.processCode }}</code>
+                </td>
+                <td>
+                  <div class="subject-cell">
+                    <strong>{{ subjectName(item) }}</strong>
+                    <small>{{ item.subjectRecordId }}</small>
+                  </div>
+                </td>
+                <td>
+                  <DictTag
+                    dict-type="ai_business_process_run_status"
+                    :value="item.status"
+                    :bordered="false"
+                  />
+                </td>
+                <td>{{ item.currentNodeName || item.currentNodeId || '-' }}</td>
+                <td>{{ item.startTime || item.createTime || '-' }}</td>
+                <td>
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      class="text-primary"
+                      :data-run-open="String(item.id)"
+                      @click="openRunDetail(item.id)"
+                    >
+                      详情
+                    </button>
+                    <button
+                      v-if="item.status === 'FAILED'"
+                      type="button"
+                      class="text-warning"
+                      :disabled="Boolean(actionId)"
+                      @click="retryRun(item)"
+                    >
+                      重试
+                    </button>
+                    <button
+                      v-if="['PENDING', 'RUNNING', 'WAITING'].includes(item.status)"
+                      type="button"
+                      class="text-error"
+                      :disabled="Boolean(actionId)"
+                      @click="cancelRun(item)"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <n-empty v-else-if="!runLoading" description="还没有运行记录。发布流程后，在对象列表点击开始按钮即可启动。" />
+      </n-spin>
+      <footer v-if="runTotal > 0" class="process-pagination">
+        <span>共 {{ runTotal }} 项</span>
+        <n-pagination
+          :page="runPageNum"
+          :page-size="runPageSize"
+          :item-count="runTotal"
+          @update:page="(value) => { runPageNum = normalizePage(value); loadRuns() }"
+        />
+      </footer>
+    </template>
+
+    <n-modal v-model:show="runDetailVisible" preset="card" title="运行详情" class="process-create-modal">
+      <n-spin :show="runDetailLoading">
+        <div v-if="runDetail" class="create-form">
+          <div class="generated-code-note">
+            <strong>{{ runDetail.processName || runDetail.processCode }}</strong>
+            <DictTag dict-type="ai_business_process_run_status" :value="runDetail.status" :bordered="false" />
+            <span>业务键: {{ runDetail.businessKey || '-' }}</span>
+          </div>
+          <div v-if="runDetail.errorSummary" class="generated-code-note">
+            {{ runDetail.errorSummary }}
+          </div>
+          <table v-if="runDetail.timeline?.length" class="process-table">
+            <thead>
+              <tr>
+                <th>节点</th>
+                <th>类型</th>
+                <th>状态</th>
+                <th>摘要</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="node in runDetail.timeline" :key="String(node.id)">
+                <td>{{ node.nodeName || node.nodeId }}</td>
+                <td>{{ node.nodeType }}</td>
+                <td>{{ node.status }}</td>
+                <td>{{ node.outputSummary || node.errorSummary || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </n-spin>
+    </n-modal>
 
     <n-modal v-model:show="createVisible" preset="card" title="新建业务流程" class="process-create-modal">
       <div class="create-form">
@@ -858,6 +1127,9 @@ function notify(type, message) {
 }
 
 .generated-code-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 9px 10px;
   border: 1px solid var(--border-light, #e5e6eb);
   border-radius: 6px;

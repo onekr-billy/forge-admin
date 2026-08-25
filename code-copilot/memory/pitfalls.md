@@ -2,6 +2,86 @@
 
 > 记录开发过程中遇到的常见错误和解决方案，避免重复踩坑
 
+## Redisson 接口存在不代表社区版可以运行
+
+**发现日期**：2026-08-23
+
+Redisson 3.50 社区版的 `RedissonClient` 接口虽然公开了 `getLocalCachedMapCache`，实际 `Redisson` 实现会直接抛出“Redisson PRO version”异常。编译成功和接口单测无法证明该能力可用于社区版，使用它实现 MULTI 缓存会导致每次业务读取都失败穿透。
+
+处理原则：Forge MULTI 受管缓存使用社区版可用的 Caffeine L1、`RMapCache` L2 和类型化 Topic 失效通知组合；Topic 初次订阅或重连订阅时清空 L1。引入 Redisson 高阶数据结构前必须检查当前依赖 JAR 的实际实现或做真实运行测试，不能只依据 API 接口是否存在。
+
+## 门户外层 deep 样式不能覆盖嵌套加载容器
+
+**发现日期**：2026-08-23
+
+Vue scoped CSS 中的 `.portal-loading-host :deep(.n-spin-content)` 会命中门户下所有层级的 `NSpin`，不只命中门户最外层加载容器。若在这条规则上设置 `height/min-height: 100vh`，待办列表等内部加载容器也会被强制撑到一个视口高，再被自己的父级 `overflow: hidden` 裁掉，表现为列表有内容但无法向下滚动。
+
+处理原则：只需要约束根加载容器时使用直接子级选择器 `.portal-loading-host > :deep(.n-spin-content)`；应用壳建立 `height: calc(100vh - header)`、`min-height: 0` 的明确高度链，实际内容区使用 `overflow-y: auto`。浏览器回归不能只看 `scrollHeight`，还要设置滚动容器的 `scrollTop` 并确认数值确实变化。
+
+## 动态 CRUD 事件不能把运行配置对象码当作流程标准对象码
+
+**发现日期**：2026-08-23
+
+低代码运行配置的 `configKey`、历史 `ai_crud_config.object_code` 和 `ai_business_object.object_code` 可能不同。业务流程发布版本按标准业务对象编码保存 `subject_object_code`；新增记录事件如果直接使用 CRUD 配置对象码，保存接口虽然成功，事件也已发布，但流程查询始终匹配不到，表现为“记录新增后配置了自动发起仍不生效”。
+
+处理原则：事件入口应以 `configKey` 从 `ai_business_object` 解析标准 `objectCode` 和 `suiteCode`，并按 `<objectCode>:<recordId>` 生成业务 Key；只为尚未迁移到业务对象表的旧 CONFIG 配置回退 `ai_crud_config`。真实回归必须同时检查运行记录的 `triggerType=EVENT`、标准 `businessKey` 和当前审批节点，不能只断言 CRUD 返回成功。
+
+## 预览/发布前的派生运行配置不能传播应用设计变更
+
+**发现日期**：2026-08-23
+
+`designPreview=true` 和发布前准备会物化表单、页面、关系等派生运行配置。如果复用普通设计保存方法并无条件调用 `markObjectChanged`，应用刚发布为 `PUBLISHED`，只要外层列表或工作台触发一次设计预览，就会立刻回到 `CHANGED`，显示“有未发布变更”。
+
+处理原则：设计器中的用户保存继续传播变更状态；预览和发布准备只同步派生配置，保持对象当前设计状态且不得标记应用变更。回归顺序必须是“正式发布 → 确认 PUBLISHED → 调用 designPreview → 再确认仍为 PUBLISHED”，只测试发布接口当下状态不够。
+
+## 存量对象型应用不能只按新版页面树判空
+
+**发现日期**：2026-08-23
+
+改版前的低代码对象型应用可能没有独立页面实体，应用只保存 `primaryObjectCode`，页面由 `ai_business_application_object` 的 `PRIMARY` 对象和 `ai_crud_config` 发布配置直接推导。若新版运行时只读取 `options.inAppBuilder.nodes/pages`，对象、入口、CRUD 配置和业务数据即使都在，应用仍会表现为“没有页面”。
+
+处理原则：只对页面树为空、存在 `primaryObjectCode` 且能解析到有效主对象 `configKey` 的存量应用做一次性对象页投影；设计草稿与不可变发布快照必须采用同一兼容规则。恢复后写入显式迁移标记，避免用户后来主动删空页面时反复补回；已有新版页面的应用绝不能覆盖或合并猜测数据。排查时先区分“应用编码被复用/改名”和“真正的旧应用记录”，不要仅凭相似 URL 修改错误应用。
+
+## Flowable 固定审批人不能保存为用户变量表达式
+
+**发现日期**：2026-08-21
+
+流程设计器把指定用户 `45` 写成 `flowable:assignee="${user_45}"` 时，Flowable 会把它解释为流程变量表达式；启动流程若没有 `user_45` 变量，就会抛出 `Unknown property used in expression`，而不是把任务分给用户 45。
+
+处理原则：新模型将固定用户以字符串 ID 写入 `assignee`，并用 `assigneeType="custom"` 标识；前端所有选人和 XML 往返都禁止把用户 ID 转成 JavaScript `Number`。历史已部署模型只能对完整匹配 `^\$\{user_([0-9]+)}$` 的节点受控补入同名变量，不能对普通动态表达式或 SPEL 放宽注入范围。部署兼容后仍应重新打开并保存模型，使后续版本永久使用字面量 ID。
+
+## 低代码增强被选中不代表运行时拿到了启用版本正文
+
+**发现日期**：2026-08-21
+
+应用工作台若只返回增强名称、状态、草稿/启用版本号等摘要，不返回 `enabled_version` 对应的 `content / processedContent`，前端仍会筛选到 `ENABLED` 增强，但可视化规则和客户端增强实际执行为空。独立 `AiForm` 如果绕过 `AiCrudPage` 直接请求，也不会自动获得提交钩子；提交前 `BLOCK` 异常被吞掉时还会错误地继续保存。
+
+处理原则：设计工作台预览下发增强时必须按 `enabled_version` 关联不可变版本，禁止读取草稿正文；所有表单入口统一接入 `BEFORE_SUBMIT / AFTER_SUBMIT / FORM_CHANGE`。`BEFORE_SUBMIT` 返回 `false` 或抛出 `BLOCK` 异常必须停止请求。测试通过与启用是两个状态，界面必须提供明确启用动作并说明正式应用还需重新发布。
+
+## 多租户拦截器会破坏 LIMIT 1 FOR UPDATE 顺序
+
+**发现日期**：2026-08-21
+
+MySQL 的锁定查询必须把 `LIMIT` 放在 `FOR UPDATE` 前，但 Forge 多租户 JSqlParser 在改写带租户 SQL 时可能把 `LIMIT 1 FOR UPDATE` 重排为 `FOR UPDATE LIMIT 1`，从而触发 MySQL 语法错误（常见于 `IgnoreTenantAspect` 调用栈）。
+
+处理原则：带锁查询如果使用主键、租户 + 主键或其他唯一条件，不要再写冗余 `LIMIT 1`，直接使用 `... WHERE 唯一条件 FOR UPDATE`；新增锁查询应通过 Mapper 契约测试检查两种错误顺序均不存在。
+
+## 业务流程任务表单选项不能只读 value/code
+
+**发现日期**：2026-08-20
+
+`businessFlowFormAssets` 返回的资产主键是 `formKey` / `formName`，不是通用下拉的 `value` / `code`。审批节点若按 `item.value || item.code` 组装选项，列表会被滤空，用户选不到表单，默认绑定也会失败。
+
+处理原则：任务表单选择复用 `BusinessFlowFormAssetSelect`（按 `formKey` 卡片选择）；默认绑定当前对象第一张表单，目录为空时用 `objectCode` 合成对象表单。不要再给审批节点做只认 `value` 的 `n-select`。
+
+## 受管 JSON 缓存不能只恢复容器外层类型
+
+**发现日期**：2026-08-18
+
+`ManagedCacheValue.value` 即使通过 `@JsonTypeInfo` 保留了外层具体类型，`List<BusinessEntity>` 经过 Redis JSON 往返后仍可能变为 `List<LinkedHashMap>`。Java 泛型擦除使方法返回赋值阶段不报错，直到增强 `for`、`list.get()` 或下游字段访问发生隐式强转才抛 `ClassCastException`。
+
+处理原则：受管缓存命中边界必须使用被缓存方法的 `getGenericReturnType()` 和应用 `ObjectMapper` 恢复集合、Map、数组的元素类型；类型恢复失败应删除异常 entry 并穿透业务方法。关键消费边界可兼容历史 Map 缓存，但不能把“清 Redis”作为永久修复，也不能只依赖外层 `@JsonTypeInfo` 推断泛型内容。
+
 ## 对象设计版本不能复用 CRUD 发布版本
 
 **发现日期**：2026-08-12
@@ -4128,3 +4208,43 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 `forge-app-server` 和独立 `forge-flow-server` 都会扫描 generator 插件。若 generator Service 新增构造器强制依赖，而只在 Admin 服务实现适配器，App 和 Flow 会在启动期同时报缺少 Bean；只验证 Admin 编译或启动发现不了这个问题。
 
 处理原则：新增 generator 跨模块适配器时，必须检查 Admin、App、Flow 三个聚合服务。真实管理能力由 Admin 实现；App/Flow 只需完成运行态装配时，应提供服务内失败关闭桥接，误调用时明确拒绝，不能用空结果或无操作保存伪装成功。典型接口包括 `MenuRegisterAdapter`、`AiClientAdapter` 和 `ApplicationPermissionAdapter`。
+
+## 179. 逻辑删除业务键回填去重必须与最终唯一索引使用相同维度
+
+**发现日期**：2026-08-18
+
+数值主键墓碑逻辑删除使用 `UNIQUE (tenant_id, 业务键, del_flag)` 时，迁移回填新业务键后若只按 `(tenant_id, 业务键)` 去重，会把“已删除历史 + 当前有效记录”误判为冲突。若历史行 ID 更小，去重脚本甚至会保留历史值、改写当前有效行，导致正式访问地址等业务标识意外变化。
+
+处理原则：存量冲突检测、`GROUP BY`、回写 JOIN 和最终唯一索引必须使用完全相同的键维度；主键墓碑模式下包含 `del_flag`。有效行之间的真实冲突仍需确定性改名，删除历史与有效行可以保留相同业务键。迁移静态审查应同时核对去重维度、JOIN 条件和索引列顺序。
+
+## 180. 运行字段基线会掩盖表单组件的结构变更
+
+**发现日期**：2026-08-18
+
+页面表单保存时，为避免未展示字段被误判为删除，通常会把完整运行字段目录合并进提交字段列表。但这样只比较字段列表不够：用户删除已锁定组件、修改字段编码或切换组件类型后，旧字段仍可能由运行目录留在请求里，后端字段存在性/存储类型校验会被基线掩盖。对象字段从字段资产重新拖入画布时，如果组件构造器又没有继承 `fieldBinding.locked`，前端也会错误开放结构编辑。
+
+处理原则：运行字段目录可以作为字段保存基线，但已有数据保护还必须按表单组件稳定 ID 对比持久化草稿与提交草稿，独立校验组件是否删除、绑定编码是否变化、组件类型是否变化；字段资产转组件时显式继承结构锁。前端禁用只是体验保护，后端必须对直接请求继续失败关闭。
+
+## 181. Mockito 匹配重载方法时必须指定参数类型
+
+**发现日期**：2026-08-20
+
+同一依赖存在 `resolve(LowcodeModelSchema)`、`resolve(AiCrudConfig)` 等重载时，`when(resolver.resolve(any()))` 会在 Java 测试编译阶段报“引用不明确”，即使测试运行逻辑只会传其中一种类型。
+
+处理原则：对重载方法使用带类型的匹配器，例如 `any(LowcodeModelSchema.class)`，或通过显式类型变量消除重载歧义。新增重载后应至少触发一次 `testCompile`，避免仅运行主代码 `compile` 漏掉测试源码问题。
+
+## 182. Vue 客户端组件模板不能直接承载运行时 style 标签
+
+**发现日期**：2026-08-21
+
+在 Vue SFC 的 `<template>` 中使用 `<style v-for>` 动态装载业务 CSS，会触发 `Tags with side effect (<script> and <style>) are ignored in client component templates`，标签会被编译器忽略；开发服务可能只显示警告，但正式运行时样式不会可靠生效。
+
+处理原则：动态 CSS 应由受控组件通过渲染函数创建 `style` VNode，并 Teleport 到 `document.head`；CSS 内容必须先经过平台校验与作用域重写。回归测试应覆盖样式挂载、更新时移除旧节点、空内容跳过和卸载清理，不能只断言 CSS 字符串生成正确。
+
+## 183. 捕获参与当前事务的下游异常不能清除 rollback-only
+
+**发现日期**：2026-08-23
+
+业务编排器在同一事务中调用带 `@Transactional` 的动态 CRUD；下游抛出运行时异常时，Spring 会先把共享事务标记为 rollback-only。上层即使把异常转换为节点 `FAILED` 并继续返回，事务提交仍会抛出 `UnexpectedRollbackException`，之前写入的失败状态也会一起回滚，最终日志只剩提交异常而不是原始动作错误。
+
+处理原则：流程终态事件必须在业务回调事务 `AFTER_COMMIT` 后消费；恢复编排和动作节点分别使用新的事务。动作失败时只回滚动作写入，外层仍可提交节点和运行实例的 `FAILED/errorSummary`。动作级独立事务意味着成功副作用必须使用稳定幂等键，并先于检查点提交；尤其创建记录动作不能依赖跨事务回滚避免重复。监听器必须记录完整原始异常且不反向回滚已经完成的 Flowable 回调。

@@ -43,6 +43,14 @@ public class BusinessExtensionValidationService {
     private static final Set<String> CLIENT_API_NAMES = Set.of(
             "readField", "setField", "showMessage", "triggerAction"
     );
+    private static final Set<String> VISUAL_RULE_MATCHES = Set.of("ALL", "ANY");
+    private static final Set<String> VISUAL_RULE_OPERATORS = Set.of(
+            "EQ", "NE", "GT", "GE", "LT", "LE", "CONTAINS", "EMPTY", "NOT_EMPTY"
+    );
+    private static final Set<String> VISUAL_RULE_ACTIONS = Set.of(
+            "SET_FIELD", "SHOW_MESSAGE", "TRIGGER_ACTION"
+    );
+    private static final Pattern BUSINESS_CODE = Pattern.compile("^[A-Za-z][A-Za-z0-9_]{0,63}$");
 
     private final ObjectMapper objectMapper;
     private final LowcodeExtensionRegistry extensionRegistry;
@@ -77,9 +85,56 @@ public class BusinessExtensionValidationService {
             }
             if (!root.path("conditions").isArray() || !root.path("actions").isArray()) {
                 result.getIssues().add("可视化规则必须包含条件和动作列表");
+                return;
             }
-            if (root.path("actions").isArray() && root.path("actions").isEmpty()) {
+            String match = root.path("match").asText("ALL").toUpperCase(Locale.ROOT);
+            if (!VISUAL_RULE_MATCHES.contains(match)) {
+                result.getIssues().add("可视化规则匹配方式只允许 ALL 或 ANY");
+            }
+            int conditionIndex = 0;
+            for (JsonNode condition : root.path("conditions")) {
+                conditionIndex++;
+                String field = condition.path("field").asText();
+                String operator = condition.path("operator").asText().toUpperCase(Locale.ROOT);
+                if (!BUSINESS_CODE.matcher(field).matches()) {
+                    result.getIssues().add("条件第 " + conditionIndex + " 行字段不正确");
+                }
+                if (!VISUAL_RULE_OPERATORS.contains(operator)) {
+                    result.getIssues().add("条件第 " + conditionIndex + " 行比较方式不受支持");
+                }
+                if (!Set.of("EMPTY", "NOT_EMPTY").contains(operator)
+                        && (!condition.has("value") || condition.get("value").isNull()
+                        || condition.get("value").isTextual() && StringUtils.isBlank(condition.get("value").asText()))) {
+                    result.getIssues().add("条件第 " + conditionIndex + " 行比较值不能为空");
+                }
+            }
+            if (root.path("actions").isEmpty()) {
                 result.getIssues().add("可视化规则至少需要一个动作");
+            }
+            int actionIndex = 0;
+            for (JsonNode action : root.path("actions")) {
+                actionIndex++;
+                String actionType = action.path("actionType").asText().toUpperCase(Locale.ROOT);
+                if (!VISUAL_RULE_ACTIONS.contains(actionType)) {
+                    result.getIssues().add("动作第 " + actionIndex + " 行类型不受支持");
+                    continue;
+                }
+                if ("SET_FIELD".equals(actionType)) {
+                    String field = action.path("field").asText();
+                    if (!BUSINESS_CODE.matcher(field).matches()) {
+                        result.getIssues().add("动作第 " + actionIndex + " 行目标字段不正确");
+                    }
+                    if (!action.has("value") || action.get("value").isNull()
+                            || action.get("value").isTextual() && StringUtils.isBlank(action.get("value").asText())) {
+                        result.getIssues().add("动作第 " + actionIndex + " 行设置值不能为空");
+                    }
+                } else if ("SHOW_MESSAGE".equals(actionType)
+                        && StringUtils.isBlank(action.path("message").asText())) {
+                    result.getIssues().add("动作第 " + actionIndex + " 行提示内容不能为空");
+                } else if ("TRIGGER_ACTION".equals(actionType)
+                        && !BUSINESS_CODE.matcher(action.path("actionCode").asText()).matches()) {
+                    result.getIssues().add("动作第 " + actionIndex + " 行页面动作不正确");
+                }
             }
         } catch (Exception e) {
             result.getIssues().add("可视化规则 JSON 格式不正确");

@@ -98,6 +98,11 @@ export const layoutSettings = {
       title: '空布局',
       description: '空布局，不包含任何框架元素',
     },
+    {
+      name: 'app-portal',
+      title: '应用门户布局',
+      description: '已发布低代码应用的独立运行布局',
+    },
   ],
 }
 

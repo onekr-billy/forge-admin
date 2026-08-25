@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createInAppFormAsset,
   createNavigationNode,
+  hasPendingLegacyObjectPageMigration,
   insertPageComponent,
   mergeInAppBuilderOptions,
   moveNavigationNode,
@@ -11,6 +12,7 @@ import {
   removeNavigationNode,
   updateInAppFormAsset,
 } from '../in-app-builder-schema'
+import { createPageShapeBuilder } from '../page-shape-design'
 
 const APPLICATION = {
   applicationCode: 'crm',
@@ -46,6 +48,87 @@ describe('in-app builder schema', () => {
     expect(source).toEqual({ unrelated: { enabled: true } })
   })
 
+  it('restores a legacy primary-object application into the new page tree', () => {
+    const schema = normalizeInAppBuilder({
+      primaryObjectCode: 'PS_PRESALE_ORDER',
+      inAppBuilder: { nodes: [], pages: {}, formAssets: [] },
+    }, {
+      applicationName: '门店预售登记',
+      icon: 'ionicons5:CartOutline',
+    }, [{
+      objectId: '1910000000000001111',
+      objectRole: 'PRIMARY',
+      objectCode: 'PS_PRESALE_ORDER',
+      objectName: '预售单',
+      configKey: 'ps_presale_order',
+      layoutType: 'master-detail-crud',
+      options: '{"pageKey":"list"}',
+    }])
+
+    expect(schema.homePageId).toBe('page_ps_presale_order')
+    expect(schema.legacyObjectPageMigrated).toBe(true)
+    expect(schema.nodes).toEqual([
+      expect.objectContaining({
+        id: 'page_ps_presale_order',
+        title: '预售单',
+        pageType: 'object',
+        pageTemplate: 'master-detail',
+        mountTarget: 'BOTH',
+        legacyObjectPage: true,
+        objectRef: expect.objectContaining({
+          objectId: '1910000000000001111',
+          objectCode: 'PS_PRESALE_ORDER',
+          configKey: 'ps_presale_order',
+          hasBusinessData: true,
+        }),
+      }),
+    ])
+    expect(schema.pages.page_ps_presale_order.title).toBe('预售单')
+  })
+
+  it('does not recreate a legacy object page after the migrated page was deliberately removed', () => {
+    const schema = normalizeInAppBuilder({
+      primaryObjectCode: 'ORDER',
+      inAppBuilder: {
+        legacyObjectPageMigrated: true,
+        nodes: [],
+        pages: {},
+      },
+    }, APPLICATION, [{
+      objectId: '12',
+      objectRole: 'PRIMARY',
+      objectCode: 'ORDER',
+      objectName: '订单',
+      configKey: 'order',
+    }])
+
+    expect(schema.nodes).toEqual([])
+    expect(schema.pages).toEqual({})
+    expect(schema.legacyObjectPageMigrated).toBe(true)
+  })
+
+  it('marks the one-time legacy page projection for draft persistence', () => {
+    const schema = normalizeInAppBuilder({
+      primaryObjectCode: 'ORDER',
+      inAppBuilder: { nodes: [], pages: {} },
+    }, APPLICATION, [{
+      objectId: '12',
+      objectRole: 'PRIMARY',
+      objectCode: 'ORDER',
+      objectName: '订单',
+      configKey: 'order',
+    }])
+
+    expect(hasPendingLegacyObjectPageMigration({
+      primaryObjectCode: 'ORDER',
+      inAppBuilder: { nodes: [], pages: {} },
+    }, schema)).toBe(true)
+    expect(hasPendingLegacyObjectPageMigration({
+      primaryObjectCode: 'ORDER',
+      inAppBuilder: { legacyObjectPageMigrated: true },
+    }, schema)).toBe(false)
+  })
+
   it('creates the first page as the default entry and allows it to be organized into a group', () => {
     const base = normalizeInAppBuilder({}, APPLICATION, [])
     const withGroup = createNavigationNode(base, { type: 'group', title: '销售管理' })
@@ -63,6 +146,26 @@ describe('in-app builder schema', () => {
     expect(moveNavigationNode(withPage, withPage.homePageId, null).nodes.find(node => node.id === withPage.homePageId)).toMatchObject({ parentId: null })
   })
 
+  it('creates a data page under a newly-created unsaved group and preserves both after a save round trip', () => {
+    const base = normalizeInAppBuilder({}, APPLICATION, [])
+    const grouped = createNavigationNode(base, { type: 'group', title: '售前管理' })
+    const group = grouped.nodes.find(node => node.type === 'group')
+    const created = createPageShapeBuilder(grouped, {
+      pageName: '预售登记',
+      pageType: 'form',
+      objectName: '预售登记',
+      objectCode: 'presaleRegistration',
+      parentId: group.id,
+    })
+    const savedOptions = mergeInAppBuilderOptions({}, created.schema)
+    const reloaded = normalizeInAppBuilder(savedOptions, APPLICATION, [])
+
+    expect(created.schema.nodes.find(node => node.id === created.pageId)).toMatchObject({ parentId: group.id })
+    expect(reloaded.nodes.find(node => node.id === group.id)).toMatchObject({ type: 'group', title: '售前管理' })
+    expect(reloaded.nodes.find(node => node.id === created.pageId)).toMatchObject({ parentId: group.id })
+    expect(reloaded.formAssets.some(asset => asset.id === created.formAssetId)).toBe(true)
+  })
+
   it('preserves only an explicitly enabled system menu flag', () => {
     const schema = normalizeInAppBuilder({
       inAppBuilder: {
@@ -77,6 +180,35 @@ describe('in-app builder schema', () => {
       expect.objectContaining({ id: 'page_default', systemMenuVisible: false }),
       expect.objectContaining({ id: 'page_menu', systemMenuVisible: true }),
     ]))
+  })
+
+  it('round-trips client-specific menu mount settings', () => {
+    const schema = normalizeInAppBuilder({
+      inAppBuilder: {
+        nodes: [{
+          id: 'page_mount',
+          type: 'page',
+          title: '移动入口',
+          settings: {
+            systemMenuVisible: true,
+            mountTarget: 'BOTH',
+            menuName: '登记入口',
+            menuParentId: '42',
+            mobileMenuParentId: '84',
+            menuSort: 7,
+          },
+        }],
+      },
+    }, APPLICATION, [])
+    const reloaded = normalizeInAppBuilder(mergeInAppBuilderOptions({}, schema), APPLICATION, [])
+    expect(reloaded.nodes[0]).toMatchObject({
+      systemMenuVisible: true,
+      mountTarget: 'BOTH',
+      menuName: '登记入口',
+      menuParentId: '42',
+      mobileMenuParentId: '84',
+      menuSort: 7,
+    })
   })
 
   it('requires an explicit strategy when deleting a group with child pages', () => {

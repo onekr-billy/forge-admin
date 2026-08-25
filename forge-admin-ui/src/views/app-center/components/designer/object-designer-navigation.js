@@ -21,3 +21,10 @@ export function resolveDataModelTab(value) {
     return 'tree-model'
   return panel === 'relations' ? panel : 'relations'
 }
+
+export function pickBusinessObjectIdentity({ queryObjectId, objectByCode } = {}) {
+  const rawId = Array.isArray(queryObjectId) ? queryObjectId[0] : queryObjectId
+  if (rawId != null && String(rawId).trim() !== '')
+    return { id: String(rawId) }
+  return objectByCode || null
+}

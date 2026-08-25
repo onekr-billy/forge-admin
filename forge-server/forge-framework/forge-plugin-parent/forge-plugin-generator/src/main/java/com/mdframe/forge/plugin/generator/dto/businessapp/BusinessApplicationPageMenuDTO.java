@@ -35,4 +35,10 @@ public class BusinessApplicationPageMenuDTO {
     private boolean inheritRuntimeRoles;
 
     private List<Long> roleIds;
+
+    /** 菜单客户端标识：pc（管理端）或 h5（移动端）。为空时默认 pc。 */
+    private String clientCode;
+
+    /** parentId 是否为应用页面树之外的外部菜单 ID（直接作为 sys_resource.parent_id）。 */
+    private boolean externalParent;
 }

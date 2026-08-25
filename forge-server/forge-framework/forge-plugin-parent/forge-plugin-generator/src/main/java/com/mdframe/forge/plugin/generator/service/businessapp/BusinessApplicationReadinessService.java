@@ -1,5 +1,8 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.constant.BusinessExtensionStatus;
 import com.mdframe.forge.plugin.generator.businessprocess.schema.BusinessProcessSchema;
 import com.mdframe.forge.plugin.generator.businessprocess.validation.BusinessProcessSchemaValidator;
@@ -22,6 +25,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPermissionSumma
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessValidationVO;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -108,6 +112,7 @@ public class BusinessApplicationReadinessService {
                     "业务域不存在、已删除或当前租户无权访问。", "overview", "overview", "APPLICATION",
                     application.getId(), application.getApplicationCode()));
         }
+        checkPortalConfiguration(application, issues);
         BusinessApplicationPageDependencyInspector.InspectionResult dependencyInspection
                 = pageDependencyInspector.inspect(application, selectedObjectList);
         dependencyInspection.issues().forEach(item -> issues.add(issue(
@@ -175,6 +180,83 @@ public class BusinessApplicationReadinessService {
             }
         }
         return new EvaluationResult(buildReadiness(issues), permissionSummaries, bindings, objectContexts);
+    }
+
+    private void checkPortalConfiguration(
+            BusinessApplicationVO application,
+            List<BusinessApplicationReadinessIssueVO> issues) {
+        try {
+            if (!applicationService.slugAvailable(application.getPortalSlug(), application.getId())) {
+                issues.add(issue("PORTAL_SLUG_CONFLICT", BLOCK, "门户访问地址已被占用",
+                        "请在应用设置中更换门户访问地址。", "settings", "settings", "APPLICATION",
+                        application.getId(), application.getPortalSlug()));
+            }
+        } catch (BusinessException e) {
+            issues.add(issue("PORTAL_SLUG_INVALID", BLOCK, "门户访问地址不合法",
+                    e.getMessage(), "settings", "settings", "APPLICATION",
+                    application.getId(), application.getPortalSlug()));
+        }
+
+        JSONObject portalConfig = parseObject(application.getPortalConfig());
+        JSONObject watermark = portalConfig.getJSONObject("watermark");
+        if (watermark != null && StringUtils.length(watermark.getString("text")) > 50) {
+            issues.add(issue("PORTAL_WATERMARK_TOO_LONG", BLOCK, "门户水印文字过长",
+                    "水印文字不能超过 50 个字符。", "settings", "settings", "APPLICATION",
+                    application.getId(), application.getApplicationCode()));
+        }
+
+        JSONObject assistant = parseObject(application.getAiAssistantConfig());
+        if (!Boolean.TRUE.equals(assistant.getBoolean("enabled"))) {
+            return;
+        }
+        if (assistant.get("agentId") == null && StringUtils.isBlank(assistant.getString("agentCode"))) {
+            issues.add(issue("AI_ASSISTANT_MISSING", BLOCK, "AI 助理尚未绑定",
+                    "启用应用 AI 助理前必须选择已有助理。", "releases", "releases", "APPLICATION",
+                    application.getId(), application.getApplicationCode()));
+        }
+        Set<String> publishedPageIds = applicationPageIds(application.getOptions());
+        JSONArray pageIds = assistant.getJSONArray("pageIds");
+        if (pageIds == null) {
+            return;
+        }
+        List<String> missingPageIds = pageIds.stream()
+                .map(String::valueOf)
+                .filter(pageId -> !publishedPageIds.contains(pageId))
+                .toList();
+        if (!missingPageIds.isEmpty()) {
+            issues.add(issue("AI_ASSISTANT_PAGE_MISSING", BLOCK, "AI 助理页面范围无效",
+                    "以下页面已不存在或未纳入当前版本：" + String.join("、", missingPageIds),
+                    "releases", "releases", "APPLICATION",
+                    application.getId(), application.getApplicationCode()));
+        }
+    }
+
+    private Set<String> applicationPageIds(String optionsJson) {
+        JSONObject options = parseObject(optionsJson);
+        JSONObject builder = options.getJSONObject("inAppBuilder");
+        JSONArray nodes = builder == null ? null : builder.getJSONArray("nodes");
+        if (nodes == null) {
+            return Set.of();
+        }
+        return nodes.stream()
+                .filter(JSONObject.class::isInstance)
+                .map(JSONObject.class::cast)
+                .filter(node -> "page".equalsIgnoreCase(node.getString("type")))
+                .map(node -> node.getString("id"))
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toSet());
+    }
+
+    private JSONObject parseObject(String value) {
+        if (StringUtils.isBlank(value)) {
+            return new JSONObject();
+        }
+        try {
+            JSONObject object = JSON.parseObject(value);
+            return object == null ? new JSONObject() : object;
+        } catch (Exception ignored) {
+            return new JSONObject();
+        }
     }
 
     private void checkProcesses(

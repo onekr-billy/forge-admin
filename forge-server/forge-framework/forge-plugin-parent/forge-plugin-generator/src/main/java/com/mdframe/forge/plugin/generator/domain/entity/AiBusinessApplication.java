@@ -27,6 +27,9 @@ public class AiBusinessApplication extends TenantEntity {
 
     private String applicationCode;
 
+    /** 独立门户访问 slug。 */
+    private String portalSlug;
+
     private String applicationName;
 
     private String suiteCode;
@@ -47,6 +50,12 @@ public class AiBusinessApplication extends TenantEntity {
 
     /** 扩展配置 JSON，不允许保存敏感密钥。 */
     private String options;
+
+    /** 门户主题、水印和导航配置 JSON。 */
+    private String portalConfig;
+
+    /** 应用 AI 助理绑定配置 JSON。 */
+    private String aiAssistantConfig;
 
     @TableLogic(value = "0", delval = "id")
     private Long delFlag;

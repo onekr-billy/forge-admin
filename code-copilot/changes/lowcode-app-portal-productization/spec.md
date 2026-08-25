@@ -1,6 +1,6 @@
 # 低代码应用门户产品化改造
 
-> status: draft
+> status: implemented-with-platform-deferrals-and-environment-acceptance-pending
 > created: 2026-08-17
 > complexity: 🔴🔴🔴 高（跨前后端 + 数据库 + 产品化体验）
 > change: `lowcode-app-portal-productization`
@@ -15,7 +15,7 @@
 Forge 的低代码应用能力已具备完整骨架：
 
 - 后端：`ai_business_application` 聚合应用、`ai_business_application_version` 不可变版本、`ai_business_application_publish_run` 协调发布。
-- 前端：`application.[applicationCode].vue` 应用工作台、`application-runtime.[applicationCode].vue` 应用级页面设计器与运行时、`app-center/index.vue` 应用中心。
+- 前端：`application.[applicationCode].vue` 应用工作台（本轮废弃，能力下沉到新的页面管理主入口）、`application-runtime.[applicationCode].vue` 应用级页面设计器与运行时、`app-center/index.vue` 应用中心。
 
 但当前用户视角仍偏向「在 Forge 管理后台里配置一个应用」，而不是「创建并发布一个可独立访问的轻应用」。
 
@@ -47,16 +47,19 @@ Forge 的低代码应用能力已具备完整骨架：
 ### 2.2 前端现状
 
 - `forge-admin-ui/src/router/index.js` 已注册：
-  - `/app-center/application/:applicationCode` → 应用工作台
-  - `/app-center/application/:applicationCode/runtime` → 应用运行时（`layout: 'empty'`）
+  - `/app-center/application/:applicationCode` → 应用工作台（本轮废弃，路由重定向到新的「页面管理主入口」）
+  - `/app-center/application/:applicationCode/runtime` → 应用运行时（本轮改造为「页面管理主入口」，不再区分列表页/表单页）
   - `/app-center/application/:applicationCode/preview` → 应用预览
+  - `/app-center/application/:applicationCode/settings` → 应用设置（新增）
+  - `/app-center/application/:applicationCode/publish` → 应用发布（新增）
 - `application-runtime.[applicationCode].vue`（6585 行）已实现：
   - 编辑态/运行态切换
   - 页面组 + 页面导航树
   - 自由拖拽组件画布
   - 表单资产、业务对象绑定
   - 左侧导航、首页、权限过滤
-- `application.[applicationCode].vue` 应用工作台当前分区：`overview / objects / entries / automation / enhancements / permissions / releases`。
+- `application.[applicationCode].vue` 应用工作台因产品形态陈旧本轮废弃；其「对象/权限/发布」等能力分别归集到「页面管理」与「应用设置/发布」页。
+- `application-runtime.[applicationCode].vue` 当前承担设计态/运行态双重职责，本轮将其改造为「页面管理主入口」：左侧系统页面（个人工作台、我的待办、已办、我发送的、抄送我的）+ 用户创建的页面；右侧为页面预览/数据管理，点击编辑进入设计态。
 - `app-center/index.vue` 当前为应用列表，支持搜索、创建、卡片展示。
 - `app-entry.vue` 已处理 EXTERNAL / H5 / IFRAME / ROUTE 等入口打开方式。
 
@@ -72,7 +75,11 @@ Forge 的低代码应用能力已具备完整骨架：
 | 缺口 | 说明 |
 |---|---|
 | 运行时 URL 仍挂在 `/app-center/` 下 | 用户感知这是 Forge 的一个功能模块，不是独立应用 |
-| 缺少统一「应用设置」页 | 主题、水印、访问地址、导航风格分散或缺失 |
+| 应用工作台产品形态陈旧 | `application.[applicationCode].vue` 分区多、按钮拥挤、Overview 缺少 Dashboard 感，用户希望废弃并改用「页面管理主入口」 |
+| 页面管理不符合宜搭体验 | 设计器内列表页/表单页区分明显，缺少「左侧系统页面 + 我创建的页面，右侧预览/编辑」的页面管理视图 |
+| 空白应用启动路径断裂 | 新建空白应用后必须先创建业务对象，否则无法设计页面；创建业务对象又进入复杂的字段设计器，用户被迫在「对象」和「页面」之间反复跳转 |
+| 业务对象概念外露 | 宜搭/飞书等平台中用户直接创建「表单/页面」，数据模型在页面设计过程中隐式生成；Forge 当前要求用户先理解并创建业务对象 |
+| 缺少统一「应用设置」页 | 主题、水印、访问地址、导航风格、权限分散或缺失 |
 | 缺少独立「应用发布」页 | 发布入口隐藏在工作台/设计器里，状态不可视 |
 | 缺少创建向导 | 创建应用后直接进工作台，缺少智能/Excel/模板引导 |
 | 应用中心缺少市场概念 | 只有列表，没有「我的应用 + 应用市场」分层 |
@@ -171,15 +178,16 @@ Forge 的低代码应用能力已具备完整骨架：
 
 #### 4.1.4 与现有运行时页面关系
 
-- 现有 `/app-center/application/:applicationCode/runtime` 继续保留作为**设计态预览/编辑入口**。
+- 现有 `/app-center/application/:applicationCode/runtime` 改造为**页面管理主入口**：左侧系统页面 + 我创建的页面，右侧页面预览/数据管理，点击编辑进入设计态。
+- 设计态编辑通过页面管理主入口内的「编辑」按钮进入，或在页面管理主入口直接切换为设计模式。
 - 新增 `/app/:applicationCodeOrSlug` 作为**正式发布后的独立访问入口**。
-- 两个入口复用同一份运行时渲染组件，但门户布局更产品化、更独立。
+- 门户运行时使用独立的 `app-portal` 布局，与页面管理主入口的视觉框架不同。
 
 ---
 
 ### 4.2 应用设置页（P1）
 
-新增 `/app-center/application/:applicationCode/settings` 页面，左侧分组菜单，右侧配置面板。
+新增 `/app-center/application/:applicationCode/settings` 页面，左侧分组菜单，右侧配置面板；所有与应用相关的配置（基础属性、访问地址、导航、权限、全球化、高级）统一归集到此页面。
 
 #### 4.2.1 基础属性
 
@@ -214,7 +222,9 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 应用管理员设置
 - 应用可见范围：全员 / 指定角色 / 指定部门 / 指定用户
-- 默认角色
+- 页面级权限：展示页面树，为每个页面分配角色/部门/用户权限
+- 数据权限：按页面/对象配置数据范围
+- 默认角色自动赋权依赖角色成员生命周期协议，本期不提供未生效的配置入口。
 
 #### 4.2.5 全球化
 
@@ -225,8 +235,8 @@ Forge 的低代码应用能力已具备完整骨架：
 #### 4.2.6 高级
 
 - 代码生成前缀
-- 运行时缓存策略
-- 版本保留策略
+- 运行时缓存策略（本期随发布快照保存；独立缓存执行器后续接入）
+- 版本保留策略（本期随发布快照保存；版本清理任务后续接入）
 
 ---
 
@@ -260,8 +270,8 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 添加到 Forge 工作台「我的应用」
 - 添加到指定角色首页
-- 发布到钉钉工作台（P3）
-- 发布到企业微信（P3）
+- 发布到钉钉工作台（P3，等待受管 Connector API；本期只保存待同步配置）
+- 发布到企业微信（P3，等待受管 Connector API）
 
 #### 4.3.5 历史版本
 
@@ -280,13 +290,13 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 输入业务场景描述，如「做一个销售线索跟进系统」。
 - 调用 AI 生成应用方案：建议对象、字段、页面、流程。
-- 用户确认后一键初始化应用。
+- 用户确认后一键初始化应用；流程建议只创建应用级最小设计草稿，不自动部署 Flowable/BPMN。
 - 初始化后可直接进入设计态，也可选择生成源码。
 
 #### 4.4.2 从模板创建
 
 - 官方模板：进销存、CRM、设备管理、项目管理等。
-- 组织私有模板：用户可将自有应用发布为模板。
+- 组织私有模板：待应用模板快照、发布权限和租户内发现协议建立后接入；本期显示明确空态。
 - 模板卡片展示：名称、图标、描述、已启用次数、立即启用按钮。
 - 模板支持「在线使用」和「生成源码」两种模式（Forge 独有）。
 
@@ -301,7 +311,7 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 输入应用名称、编码、图标。
 - 选择所属套件。
-- 进入应用工作台。
+- 创建完成后直接进入**页面管理主入口**，左侧默认显示系统页面，右侧为空状态或引导创建第一个页面。
 
 ---
 
@@ -314,12 +324,12 @@ Forge 的低代码应用能力已具备完整骨架：
 - 我创建的
 - 我有权限的
 - 最近使用
-- 应用卡片：图标、名称、描述、状态标签、快捷操作（设计/运行/发布）
+- 应用卡片：图标、名称、描述、状态标签、快捷操作（页面管理/运行/发布）
 
 #### 4.5.2 应用市场
 
 - 官方模板
-- 组织私有模板
+- 组织私有模板（本期明确空态，不伪造模板数据）
 - 推荐应用
 - 模板卡片展示：名称、图标、描述、已启用次数、启用按钮
 
@@ -331,13 +341,145 @@ Forge 的低代码应用能力已具备完整骨架：
 
 ---
 
-### 4.6 页面管理强化（P1 与 P2 之间）
+### 4.6 页面管理主入口（P1）
 
-当前 `application-runtime.[applicationCode].vue` 的页面编排能力已经成熟，建议：
+废弃 `application.[applicationCode].vue` 应用工作台，将 `application-runtime.[applicationCode].vue` 升级为「页面管理主入口」，作为创建应用后打开的默认页面。
 
-- 在应用工作台新增「页面管理」分区，作为页面编排的独立入口。
-- 页面树在设置页和发布页中同步可见。
-- 页面设计器默认选中第一个页面节点，避免空画布。
+#### 4.6.1 左侧导航结构
+
+左侧导航固定分为上下两段：
+
+- **系统页面（上半部分）**
+  - 个人工作台
+  - 我的待办
+  - 我已办的
+  - 我发送的
+  - 抄送我的
+  - 系统页面不参与用户自定义排序，始终置顶。
+
+- **我创建的页面（下半部分）**
+  - 按页面组或扁平列表展示用户创建的所有页面。
+  - **不再区分列表页和表单页**，一个业务对象对应一个页面项，右侧根据上下文自动展示列表或表单预览。
+  - 支持拖拽排序、重命名、删除、隐藏/显示。
+
+#### 4.6.2 右侧内容区
+
+- 默认选中「个人工作台」或第一个有权限的页面。
+- 选中系统页面时，右侧渲染对应的工作台/待办/已办/发送/抄送视图。
+- 选中用户页面时，右侧默认展示该页面的**数据列表/表单预览**（非设计态画布）。
+- 页面项 hover 或选中状态下显示「编辑」按钮，点击后进入该页面的设计态。
+- 设计态与预览态在同一页面内切换，减少跳转。
+
+#### 4.6.3 新建页面
+
+- 左侧导航底部提供「+ 新建页面」按钮。
+- 新建时只让用户选择页面类型（数据管理页 / 自定义页面 / 外部页面），不再区分列表/表单。
+- 数据管理页自动生成列表视图和表单视图，但在页面树中只呈现为一个页面项。
+
+#### 4.6.4 与设置/发布页的关系
+
+- 页面管理主入口的 Header 提供「设置」「发布」入口，跳转到对应页面。
+- 应用设置页中的「页面排序」与页面管理主入口左侧导航顺序双向同步。
+- 应用发布页中展示页面树快照，用于确认发布范围。
+
+### 4.7 废弃应用工作台（P1）
+
+- `application.[applicationCode].vue` 及其相关子组件（如 `ApplicationWorkspaceHeader.vue`）本轮废弃。
+- 原路由 `/app-center/application/:applicationCode` 重定向到 `/app-center/application/:applicationCode/runtime`（页面管理主入口）。
+- 原「对象管理」「权限」「发布」等能力分别迁移到：
+  - 对象管理 → 页面管理主入口内某个系统页面或设置页中的「业务对象」卡片
+  - 权限 → 应用设置页「应用权限」分组
+  - 发布 → 应用发布页
+- 删除或归档相关旧组件，避免代码冗余。
+
+---
+
+### 4.8 空白应用引导与页面形态设计（P1）
+
+> 目标：一个页面就是一个业务对象的一种形态。用户从空白应用开始时，先选择页面形态并进入对应的设计器；业务对象和字段随页面设计自动创建，但在设计器内始终可见、可编辑。
+
+#### 4.8.1 空白应用进入页面管理主入口
+
+- 创建空白应用后，进入页面管理主入口。
+- 左侧「我创建的页面」为空，右侧显示引导卡片：
+  - 标题：「开始设计你的第一个页面」
+  - 描述：「选择页面形态，直接在页面上添加字段，系统会自动为你生成数据表。」
+  - 操作：「创建数据页」「创建自定义页面」「从 Excel 创建页面」。
+
+#### 4.8.2 创建页面时选择页面形态
+
+点击「创建数据页」后，先弹出页面形态选择：
+
+| 形态 | 说明 | 典型用途 |
+|---|---|---|
+| 表单页 | 纯表单，用于数据填报 | 报名表、登记页 |
+| 列表页 | 纯列表，用于数据展示 | 数据看板、查询页 |
+| 列表+表单 | 上方列表，下方/抽屉表单，完整 CRUD | 客户管理、订单管理 |
+
+- 用户输入页面名称，系统自动推导业务对象编码（可编辑）。
+- 一个页面默认对应一个业务对象；页面名称作为业务对象显示名称，页面编码作为业务对象编码。
+- 页面和对象信息在后续设计器顶部始终可见，用户可随时修改。
+- 选择形态后直接进入对应设计器。
+
+#### 4.8.3 表单页 / 列表+表单页设计器
+
+设计器布局：
+
+- **顶部**：
+  - 返回/页面名称。
+  - 业务对象信息：「数据对象：customer（客户管理）」，点击可展开编辑对象名称/编码。
+  - 操作：预览、保存、发布。
+- **左侧**：组件库，支持两种视图切换：
+  - **字段组件**：单行文本、多行文本、数字、日期、下拉选项、开关、附件、成员、部门等。
+  - **对象字段**：展示当前业务对象下已创建的所有字段，可直接拖拽到画布。
+  - 布局组件、高级组件作为独立分组或标签页存在。
+- **中间**：画布，显示表单区域。
+  - 列表+表单形态时，画布上方固定列表区，下方/抽屉为表单区。
+- **右侧**：属性面板。
+  - 选中字段组件后显示：字段标题、字段编码、字段类型、是否必填、默认值、占位提示等。
+  - 字段编码和字段类型直接可见、可编辑。
+  - 提供「查看对象结构」入口，跳转到对象字段列表。
+
+字段组件行为：
+
+- 拖拽字段组件到表单画布 → 自动创建对应业务对象字段。
+- 字段编码自动生成（拼音/英文），用户可编辑。
+- 已存在数据的字段，禁止删除和类型变更，并给出提示。
+- 表单保存时同时保存：表单布局 + 业务对象字段 + 列表视图列配置。
+
+#### 4.8.4 列表页设计器
+
+- 画布为表格区域。
+- 左侧组件库以「列类型」为主：文本列、数字列、日期列、标签列、操作列；同时支持切换到「对象字段」视图，把已有字段直接拖为表格列。
+- 拖拽列到表格 → 自动创建业务对象字段。
+- 右侧配置列宽、排序、筛选、操作按钮。
+- 点击「新增」按钮时，自动弹出对应表单（使用同对象的表单视图）。
+
+#### 4.8.5 自定义页面
+
+- 不强制绑定业务对象。
+- 自由拖拽组件：文本、图片、图表、按钮、IFrame、数据卡片等。
+- 可作为应用首页或 Dashboard。
+
+#### 4.8.6 后续编辑
+
+- 在页面管理主入口，hover 页面项显示「编辑」。
+- 点击进入对应形态的设计器。
+- 设计器内可随时查看和编辑业务对象信息、对象字段。
+- 复杂建模（关联关系、触发器、索引、自定义校验）通过「进入高级对象设计器」入口切换。
+
+#### 4.8.7 与既有对象设计器的关系
+
+- 表单/列表设计器是对象设计器的「页面视图」：以页面为中心，同时暴露对象字段。
+- 高级对象设计器保留现有 11 面板能力，作为「结构视图」。
+- 两者编辑的是同一套业务对象和字段数据，保存后实时同步。
+- 业务对象在后台仍然是 `ai_business_application_object`，但创建入口从显式变为隐式。
+
+#### 4.8.8 与 Excel 导入的关系
+
+- 从 Excel 创建页面时，解析表头后直接生成字段组件列表。
+- 用户在设计器中确认字段类型和布局后保存。
+- 保存时一键创建业务对象 + 页面。
 
 ---
 
@@ -375,10 +517,28 @@ Forge 的低代码应用能力已具备完整骨架：
 
 - 应用管理员自动拥有该应用所有页面权限。
 - 应用可见范围控制用户是否能在应用中心/工作台看到该应用。
+- 可见范围支持组织全员、指定角色、指定部门/组织和指定用户；应用管理员可见范围与页面权限均自动放行。
+- 应用中心“我有权限的”、Forge 工作台投放查询和正式门户运行时必须复用同一应用级授权判定；`systemMenuVisible=false` 不是页面权限放行条件。
 - 页面级权限继续沿用 `ai:business:application:{code}:page:{pageId}`。
 - 数据范围继续由 `DataScopeInterceptor` 控制。
 
-### 5.6 AI 助理规则
+### 5.6 页面形态与字段组件规则
+
+- 用户创建数据页时必须先选择页面形态：表单页、列表页、列表+表单、自定义页面。
+- 一个数据页默认对应一个业务对象；页面名称为业务对象显示名称，系统自动推导业务对象编码（拼音/英文），用户可编辑。
+- 业务对象编码需满足 `[a-zA-Z0-9_]`，且在应用内唯一。
+- 设计器顶部始终显示当前业务对象信息（编码和显示名称），用户可直接编辑。
+- 设计器左侧组件库提供「对象字段」视图，展示当前对象已有字段并支持拖拽复用。
+- 拖拽字段组件到表单/列表画布时，自动创建对应业务对象字段；字段编码自动生成，用户可编辑。
+- 左侧字段组件必须共享统一组件合同；组件进入左侧货架前，必须同时具备默认字段类型、模型校验、发布编译和运行时渲染能力，禁止出现“可拖入但保存时报不支持”或发布后回退为输入框。
+- 当前左侧 33 个字段组件均纳入合同，包括滑块、评分、颜色、按钮单选、穿梭框、树形/远程选择、日期/日期时间/时间范围、月份和年份等扩展组件。
+- 多选和范围类组件（多选、穿梭框、日期范围、日期时间范围、时间范围）统一以 JSON 数组写入文本列，读取时恢复为数组，并兼容历史逗号分隔值。
+- 高级页面组件不创建业务字段，统一编译为 `widget` 布局节点并由运行时 Widget 渲染器消费；未知组件不得静默丢弃。
+- 保存页面时原子完成：保存表单/列表布局 → 创建/更新业务对象 → 创建/更新字段 → 生成/更新列表视图 → 绑定页面导航。
+- 已存在业务数据的字段，禁止删除和类型变更；字段重命名需保留原字段编码或明确提示数据影响。
+- 复杂建模（关联关系、触发器、索引、自定义 SQL）通过设计器属性面板的「进入高级对象设计器」入口切换，不阻塞日常路径。
+
+### 5.7 AI 助理规则
 
 - AI 助理仅在应用启用后可用。
 - AI 助理可访问的数据页面必须是已发布版本中存在的页面。
@@ -399,7 +559,7 @@ Forge 的低代码应用能力已具备完整骨架：
 
 ### 6.2 索引变更
 
-- `ai_business_application` 新增唯一索引：`UNIQUE (tenant_id, portal_slug)`。
+- `ai_business_application` 新增有效行唯一索引：`UNIQUE (tenant_id, portal_slug, del_flag)`；应用表的 `del_flag` 已按项目逻辑删除规范使用 BIGINT 主键墓碑，删除后允许同 slug 重建。
 - 已有 `UNIQUE (tenant_id, application_code)` 保持不变。
 
 ### 6.3 Flyway 迁移脚本
@@ -428,10 +588,17 @@ Forge 的低代码应用能力已具备完整骨架：
 |---|---|---|---|
 | 按 slug 查询应用详情 | GET | `/ai/business/application/by-slug/{portalSlug}` | 门户访问时用 |
 | 校验 slug 可用性 | GET | `/ai/business/application/slug-available` | 应用设置时实时校验 |
+| 查询当前用户工作台应用 | GET | `/ai/business/application/workbench` | 只返回已发布、启用、已投放且当前用户有权访问的应用 |
 | 保存门户配置 | PUT | `/ai/business/application/{id}/portal-config` | 保存主题/水印/导航等 |
 | 保存 AI 助理配置 | PUT | `/ai/business/application/{id}/ai-assistant-config` | 绑定 AI 助理 |
 | 查询 AI 助理状态 | GET | `/ai/business/application/{id}/ai-assistant-status` | 发布页展示 |
-| 分发到工作台 | POST | `/ai/business/application/{id}/distribute/workbench` | 添加到我的应用/首页 |
+| 门户运行配置 | GET | `/ai/business/application/portal/{codeOrSlug}/runtime` | 读取当前用户过滤后的发布快照 |
+| 门户 AI 对话 | POST | `/ai/business/application/portal/{codeOrSlug}/assistant/chat` | 在发布页面与能力边界内调用智能体 |
+| 保存分发配置 | POST | `/ai/business/application/{id}/distribute/workbench` | 保存 Forge/钉钉受管分发配置，不代表外部已同步 |
+| AI 方案初始化 | POST | `/ai/business/application/{id}/initialize-ai` | 从既有生成方案创建对象和页面草稿 |
+| Excel 预览 | POST | `/ai/business/application/excel/preview` | 解析首 Sheet 表头与样例 |
+| Excel 初始化 | POST | `/ai/business/application/{id}/import-excel` | 创建对象、列表页和表单页草稿 |
+| 保存数据页设计 | POST | `/ai/business/application/{id}/design-page` | 保存页面布局，并原子创建/更新对象、字段、列表视图、表单视图 |
 
 ### 7.2 改造后端接口
 
@@ -450,7 +617,12 @@ Forge 的低代码应用能力已具备完整骨架：
   - `saveBusinessApplicationPortalConfig(id, config)`
   - `saveBusinessApplicationAiAssistantConfig(id, config)`
   - `businessApplicationAiAssistantStatus(id)`
+  - `chatBusinessApplicationAssistant(codeOrSlug, data)`
   - `distributeBusinessApplicationToWorkbench(id, data)`
+  - `initializeBusinessApplicationAi(id, plan)`
+  - `previewBusinessApplicationExcel(file)`
+  - `importBusinessApplicationExcel(id, formData)`
+  - `saveBusinessApplicationPageDesign(id, data)`
 
 ---
 
@@ -464,21 +636,27 @@ Forge 的低代码应用能力已具备完整骨架：
   - VO `BusinessApplicationVO.java`、`BusinessApplicationRuntimeVO.java`
   - Controller `BusinessApplicationController.java`
   - Service `BusinessApplicationService.java`、`BusinessApplicationRuntimeService.java`、`BusinessApplicationSnapshotService.java`、`BusinessApplicationPublishService.java`
+  - 新增 Service `BusinessApplicationPageDesignService.java`：保存页面布局，并原子创建/更新业务对象、字段、列表视图、表单视图
+  - 新增 Controller 接口 `POST /ai/business/application/{id}/design-page`：保存数据页设计
   - Mapper XML `AiBusinessApplicationMapper.xml`
 - `forge-server/db/migration/`：新增 Flyway 脚本。
 
 ### 8.2 前端影响
 
 - `forge-admin-ui/src/router/index.js`：新增门户路由、设置页、发布页路由。
-- `forge-admin-ui/src/layouts/`：新增 `app-portal.vue` 布局。
+- `forge-admin-ui/src/layouts/app-portal/`：新增独立门户布局。
 - `forge-admin-ui/src/views/app-center/`：
   - 新增 `application-portal.vue`
   - 新增 `application-settings.[applicationCode].vue`
   - 新增 `application-publish.[applicationCode].vue`
   - 新增创建向导组件 `AppCreateWizard.vue`
   - 升级 `index.vue` 应用中心
-  - 调整 `application.[applicationCode].vue` 增加「页面管理」入口
-- `forge-admin-ui/src/api/business-application.js`：新增接口封装。
+  - 废弃 `application.[applicationCode].vue`，原路由重定向到页面管理主入口
+  - 改造 `application-runtime.[applicationCode].vue` 为页面管理主入口（左侧系统页面 + 我创建的页面，右侧预览/编辑）
+  - 新增/复用页面渲染组件，支持列表/表单预览态与设计态切换
+- 废弃 `ApplicationWorkspaceHeader.vue` 等应用工作台子组件，删除或归档
+- 新增/升级表单/列表设计器组件：支持字段组件拖拽即创建对象字段、页面形态选择、列表+表单布局
+- `forge-admin-ui/src/api/business-application.js`：新增接口封装（含保存数据页设计）。
 - `forge-admin-ui/src/store/modules/tenant.js` 或新增 `portal.js`：门户主题缓存。
 
 ### 8.3 数据库影响
@@ -599,22 +777,46 @@ Forge 的低代码应用能力已具备完整骨架：
 
 ---
 
-## 13. 待澄清
+## 13. 技术决策落地
 
-1. 是否需要在 P0 就支持自定义域名？建议 P3 再考虑。
-2. AI 助理是否复用现有 `forge-plugin-ai` 的助理实体，还是新建应用级助理？建议复用并新增绑定关系。
-3. 应用市场是否需要后台管理界面（模板上架/下架/审核）？建议 P2 先做组织私有模板，P3 做审核。
-4. 门户运行时是否支持移动端适配？建议 P2 做响应式，P3 做 H5 独立入口。
-5. 是否需要应用级别的操作日志/审计？建议 P2 接入 `@OperationLog`。
+1. 本轮不支持自定义域名；正式入口为 `/app/{applicationCodeOrSlug}`。
+2. AI 助理复用现有智能体编码，通过应用配置绑定，不新建重复的应用级智能体实体。
+3. 官方/推荐模板使用内置目录；仓库没有组织私有模板持久化协议，市场明确展示空态，不伪造私有模板数据。
+4. 移动端复用同一不可变发布快照和权限链路，通过响应式门户及 `?display=h5` 链接/二维码交付，不另建分叉运行时。
+5. 新增查询和变更接口沿用权限注解；可审计的后端变更接口使用 `@OperationLog`。AI 对话正文不写入普通业务日志。
+6. Excel 只解析首 Sheet，读取表头及最多 50 行样例，生成对象/页面草稿；不导入业务行、不自动执行 DDL。
+7. 钉钉只保存受管连接器标识和 `PENDING_EXTERNAL_SYNC` 状态，待仓库提供真实 Connector API 后再执行外部同步。
+8. 全球化配置在门户运行态用于根语言标识和水印时区/日期格式；高级缓存策略与版本保留数量先作为发布快照配置保存，待缓存/清理基础设施协议接入后再执行消费。
+9. 默认角色输入项在角色成员自动赋权协议落地前移除，避免保存一个不会生效的角色配置。
+10. AI 流程建议只创建应用级业务流程设计草稿；审批节点、节点表单、BPMN 绑定与发布继续由真实流程设计器维护。
 
 ---
 
 ## 14. 执行日志
 
-待任务执行后记录到 `execution-log.md`。
+完整命令、结果、警告和跳过项见 `execution-log.md`。本轮已完成：
+
+- Java 17 下 Generator 与 Admin reactor 编译。
+- 初始验证包含 92 个业务应用回归测试和前端 6 个单测；最终 Fix 增量执行 100 个业务应用测试和前端 11 个单测，均通过；另完成定向 ESLint 和 Vite 生产构建。
+- 字段组件完整支持增量执行后端 28 个目标测试和前端 23 个回归测试，均通过；左侧 33 个字段组件及 19 个高级 Widget 已纳入合同验证。
+- Flyway 静态检查与工作区空白检查。
+
+真实 MySQL/Flyway、服务启动、curl、Playwright/真机及受管钉钉 Connector 同步未执行。
 
 ---
 
 ## 15. 审查结论
 
-待 Review 后填写。
+结论：**2026-08-19 `/fix` 已处理上一轮阶段一阻塞项，待重新 `/review`。阶段二仍未正式通过。**
+
+已闭环的 Review 阻塞项：
+
+- `/app-center/application/:code` 重定向到页面管理主入口；创建成功、卡片进入、设置/发布返回不再打开旧工作台。
+- 页面管理主入口 Header 提供运行/设置/发布；左侧为系统页面 + 我创建的页面；用户页在树中只保留一项，默认预览，编辑后进入设计态。
+- 应用设置「应用权限」提供管理员/角色/部门/用户选择器，并内嵌页面与数据权限工作台。
+- Forge 工作台投放开关改为读取已发布快照中的 `portalConfig.distribution`，设计态打开分发不会提前出现在首页。
+- `savePortalConfig` 校验管理员、可见用户、角色和部门属于当前租户且有效。
+
+仍按第 13 章延期：组织私有模板、AI 真实业务读写、钉钉/企微 Connector、缓存执行器和版本清理。Task 18 列表专用设计器与列表+表单双画布仍为部分完成。
+
+真实 MySQL/Flyway、服务 API、Playwright/移动真机和外部 Connector 仍属于环境/平台验收项。

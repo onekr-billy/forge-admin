@@ -16,7 +16,8 @@
         @click="selectItem(item)"
       >
         <span v-if="item.icon" class="forge-top-menu-dropdown-icon">
-          <component :is="item.icon" />
+          <IconRenderer v-if="typeof item.icon === 'string'" :icon="item.icon" :size="16" />
+          <component :is="item.icon" v-else />
         </span>
         <span class="forge-top-menu-dropdown-label">{{ item.label }}</span>
         <i class="forge-top-menu-dropdown-arrow i-material-symbols:chevron-right-rounded" aria-hidden="true" />
@@ -31,7 +32,8 @@
         @click="selectItem(item)"
       >
         <span v-if="item.icon" class="forge-top-menu-dropdown-icon">
-          <component :is="item.icon" />
+          <IconRenderer v-if="typeof item.icon === 'string'" :icon="item.icon" :size="16" />
+          <component :is="item.icon" v-else />
         </span>
         <span class="forge-top-menu-dropdown-label">{{ item.label }}</span>
       </button>
@@ -48,6 +50,8 @@
 </template>
 
 <script setup>
+import IconRenderer from '@/components/IconRenderer.vue'
+
 defineOptions({ name: 'TopMenuDropdown' })
 
 const props = defineProps({

@@ -18,7 +18,7 @@
             </span>
           </span>
           <span class="asset-card__meta">
-            {{ asset.formKey || '-' }} · {{ resolveFieldCount(asset) }} 个字段
+            {{ pageLabel(asset) }} · {{ resolveFieldCount(asset) }} 个字段
           </span>
           <span class="asset-card__preview">
             {{ fieldPreviewText(asset) }}
@@ -109,6 +109,12 @@ function handleAssetChange(value) {
     formKey: asset.formKey || '',
     formName: asset.formName || asset.formKey || '',
     providerKey,
+    applicationId: asset.applicationId || '',
+    pageId: asset.pageId || '',
+    pageCode: asset.pageCode || '',
+    pageName: asset.pageName || '',
+    pageType: asset.pageType || '',
+    sourceFormKey: asset.sourceFormKey || '',
     formUrl: asset.formUrl || '',
     viewKey: asset.viewKey || 'default',
     formRef: normalizedMode === 'BUSINESS_CODE_FORM'
@@ -128,11 +134,26 @@ function handleAssetChange(value) {
           formMode: 'BUSINESS_OBJECT_FORM',
           objectCode: asset.objectCode || '',
           objectName: asset.objectName || '',
+          applicationId: asset.applicationId || '',
+          pageId: asset.pageId || '',
+          pageCode: asset.pageCode || '',
+          pageName: asset.pageName || '',
+          pageType: asset.pageType || '',
+          sourceFormKey: asset.sourceFormKey || '',
           formKey: asset.formKey || '',
           formName: asset.formName || asset.formKey || '',
           viewKey: asset.viewKey || 'default',
         },
   })
+}
+
+function pageLabel(asset = {}) {
+  const pageName = normalizeText(asset.pageName)
+  const pageId = normalizeText(asset.pageId)
+  const formKey = normalizeText(asset.formKey)
+  if (pageName || pageId)
+    return `页面：${pageName || pageId}`
+  return formKey || '-'
 }
 
 function assetKey(asset = {}) {

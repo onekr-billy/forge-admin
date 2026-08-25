@@ -159,3 +159,36 @@ mvn -pl forge-admin-server -am -DskipTests compile
 - 页面验证：`1440x900` 桌面表格完整展示四项运行统计；`390x844` 移动列表展示 6 个策略/统计项，页面正文 `clientWidth/scrollWidth=390/390`；桌面和移动失败数的计算颜色均为主题 `rgb(208, 48, 80)`，控制台错误数为 0。首选内置浏览器因环境缺少沙箱元数据无法连接，按技能降级流程使用本地 Playwright 完成同等只读检查。
 - 跳过项：本轮未执行真实 MySQL Flyway、双 Admin 实例失效同步和普通管理员 403。
 - 环境清理：本轮 Playwright 浏览器已关闭；未启动或停止数据库、Redis、Vite 或 Admin，用户已有 PID `18363`/`29964` 保持运行。
+
+## 2026-08-18 运行态泛型缓存兼容修复
+
+- 用户运行组织树时出现 `LinkedHashMap cannot be cast to SysDictData`；根因为受管 Redis codec 恢复了外层 `List`，但运行时 JSON 不包含 `List<SysDictData>` 的元素泛型，命中值进入 `SytemDictValueProvider` 后在增强 `for` 隐式强转处失败。
+- 通用修复：`ForgeCacheAspect` 使用应用 `ObjectMapper` 和被缓存方法的 `getGenericReturnType()` 恢复集合、Map、数组元素；已有本地正确类型不会重复转换。转换失败时删除该 entry 并穿透业务方法。
+- 边界兼容：`SytemDictValueProvider` 同时接受 `SysDictData` 和历史 Map 字典项，只提取 `dictValue/dictLabel`，未知类型跳过并记录类型名。
+- 红测证据：新增 AOP 用例首次运行报 `Map1 cannot be cast to SamplePayload`；实现后 `ForgeCacheAspectTest` 6 tests、0 failures、0 errors，并覆盖类型恢复失败后的清理、穿透和正确值回填。
+- starter 增量测试：排除需要 Mockito agent 的既有 Manager 测试后，6 个测试类、17 tests 全部通过；覆盖 AOP、key、事务、MULTI、codec 和定义解析。
+- system 增量测试：`SysDictDataServiceImplTest` 7 tests 与 `SytemDictValueProviderLegacyCacheTest` 1 test 全部通过。
+- 完整 starter 定向套件尝试执行 27 tests，其中 `ForgeManagedCacheManagerTest` 4 个既有 Mockito 用例因当前 JDK 无法 self-attach Byte Buddy agent 报环境错误；其余无失败。该阻断与本轮生产代码无关，未记为通过。
+- Admin 聚合编译：`mvn -pl forge-admin-server -am -DskipTests compile`，45/45 模块 `BUILD SUCCESS`，耗时 53.869 秒。
+- 未启动或重启真实 Admin/Redis，未执行组织树接口运行态复验；本轮无服务需要清理。
+
+## 2026-08-23 Redisson 社区版 MULTI 兼容修复
+
+- 运行态根因：当前 Redisson `3.50.0` 社区版 JAR 的 `getLocalCachedMapCache` 实现直接抛出 `UnsupportedOperationException`，原 MULTI 句柄创建必然失败；业务数据源 Hikari 连接池此前已经正常启动，与本异常无关。
+- 实现范围：MULTI 改为 Caffeine L1 + `RMapCache` L2 + 每个命名缓存独立的类型化失效 Topic；写入、单 key 删除和全量清理均通知其他实例清理 L1，Topic 初次订阅或重连订阅时清空当前 L1。保留普通值/空值独立本地 TTL 和 Redis entry TTL。
+- codec：新增 `ManagedCacheInvalidationMessage` 显式类型化 codec，继续复用应用 `ObjectMapper`，不依赖全局 codec 推断。
+- starter 定向验证执行两轮，最终命令：
+
+```bash
+cd forge-server
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
+mvn -Penable-tests -pl forge-framework/forge-starter-parent/forge-starter-cache \
+  -Dtest=MultiLevelCacheHandleTest,ManagedCacheCodecTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+  结果：2 个测试类、6 个测试，0 failures/errors/skipped，`BUILD SUCCESS`。覆盖普通值/空值 L1 TTL、L2 TTL 参数、双句柄单 key/全量失效、重订阅清空和失效消息 codec 往返。
+- 静态检查：生产代码扫描不再包含 `getLocalCachedMapCache`、`RLocalCachedMapCache` 或 `LocalCachedMapCacheOptions`；相关文件 `git diff --check` 无输出。
+- 编译告警：`RedissonCacheServiceImpl` 使用旧 API 的既有 deprecation 提示，不是本轮引入，不影响测试成功。
+- 跳过项：遵循用户偏好未执行完整 Maven/Vite 构建，未启动或重启 Admin，也未执行双真实 Admin 实例的 Redis Topic E2E。
+- 环境清理：本轮未启动服务，无需清理进程。

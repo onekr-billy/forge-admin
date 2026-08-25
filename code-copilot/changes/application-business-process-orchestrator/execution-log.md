@@ -228,3 +228,13 @@
 - 生产构建：Node `v20.19.0` 下执行 `NODE_OPTIONS=--max-old-space-size=8192 pnpm build`，Vite 转换 `8878` 个模块并成功构建（`built in 2m 8s`）。仅保留仓库既有组件命名冲突、动态/静态 import 和 CSS `//` 注释告警。
 - 环境门禁：未启动真实 Admin/Flow，未执行 Flyway、真实加密 HTTP、应用发布或审批实例运行，也未改变 MySQL/Flowable 运行态；真实“选择审批模型 -> 保存 -> 发布 -> 发起审批”仍需 Task 19 目标环境联调。
 - 已启动服务：无；数据库/Flowable 运行态变更：无。
+
+## 2026-08-23 审批终态恢复 rollback-only 修复
+
+- 根因：`BusinessProcessApprovalResultListener` 原为同步事件监听器，审批终态恢复加入 `BusinessFlowService.handleFlowEngineEvent` 当前事务；动作节点的动态 CRUD 异常虽被编排器转换成失败结果，但共享事务已被下游拦截器标记 rollback-only，最终提交只抛 `UnexpectedRollbackException`，节点失败状态也无法落库。
+- 修复：流程引擎回调建立本地事务；审批结果监听改为 `AFTER_COMMIT + fallbackExecution`；业务流程恢复和动作执行分别使用 `REQUIRES_NEW`。动作失败只回滚动作写入，外层恢复事务仍可提交 `FAILED/errorSummary`，不再被下游事务标记为 rollback-only。
+- 容错：审批终态已经提交后，恢复异常记录包含租户、流程实例、结果和完整原始堆栈，不再反向抛给 FlowCallback；监听前后租户上下文正确恢复。
+- TDD 红灯：新增监听器事务合同与异常隔离测试，首次执行 2 项均失败，分别确认原监听仍为同步 `@EventListener` 且异常会向外传播。
+- 定向验证：JDK 17 执行 `mvn -o -Penable-tests -Dtest=BusinessProcessApprovalResultListenerTest,BusinessProcessOrchestratorTest,BusinessProcessActionExecutorTest test -q`，3 个测试类共 14 项通过，Failures/Errors/Skipped 均为 0；预期异常隔离用例输出一条完整 ERROR 堆栈作为日志合同证据。
+- 静态检查：本轮相关 Java 文件 `git diff --check` 通过。
+- 跳过项：按用户偏好未执行全量 Maven/Vite 构建，未启动 Admin/Flow、未连接 MySQL/Redis，也未执行真实审批通过后的动态字段更新；本轮未启动任何服务。

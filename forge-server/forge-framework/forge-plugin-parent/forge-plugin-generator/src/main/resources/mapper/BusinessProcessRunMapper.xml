@@ -124,6 +124,18 @@
         ORDER BY r.create_time DESC, r.id DESC
     </select>
 
+    <select id="selectActiveByBusinessKeys" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_business_process_run
+        WHERE tenant_id = #{tenantId}
+          AND status IN ('PENDING', 'RUNNING', 'WAITING')
+          AND business_key IN
+          <foreach collection="businessKeys" item="businessKey" open="(" separator="," close=")">
+              #{businessKey}
+          </foreach>
+        ORDER BY update_time DESC, id DESC
+    </select>
+
     <select id="selectRunById" resultMap="BaseResultMap">
         SELECT <include refid="Base_Columns"/>
         FROM ai_business_process_run
@@ -147,6 +159,17 @@
         WHERE tenant_id = #{tenantId}
           AND flow_process_instance_id = #{processInstanceId}
           AND status = 'WAITING'
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestByBusinessKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_business_process_run
+        WHERE tenant_id = #{tenantId}
+          AND business_key = #{businessKey}
+          AND flow_process_instance_id IS NOT NULL
+          AND flow_process_instance_id != ''
+        ORDER BY create_time DESC, id DESC
         LIMIT 1
     </select>
 

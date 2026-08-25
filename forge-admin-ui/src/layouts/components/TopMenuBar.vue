@@ -38,7 +38,8 @@
             @click="handleItemClick(item)"
           >
             <span v-if="item.icon" class="forge-top-menu-icon">
-              <component :is="item.icon" />
+              <IconRenderer v-if="typeof item.icon === 'string'" :icon="item.icon" :size="16" />
+              <component :is="item.icon" v-else />
             </span>
             <span class="forge-top-menu-label">{{ item.label }}</span>
             <span v-if="dropdown && hasChildren(item)" class="forge-top-menu-caret">
@@ -79,6 +80,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import IconRenderer from '@/components/IconRenderer.vue'
 import TopMenuDropdown from './TopMenuDropdown.vue'
 
 const props = defineProps({

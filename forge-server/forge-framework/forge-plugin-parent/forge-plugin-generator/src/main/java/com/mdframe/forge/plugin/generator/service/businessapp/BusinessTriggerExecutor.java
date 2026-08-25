@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResul
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
+import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -52,25 +53,36 @@ public class BusinessTriggerExecutor {
      */
     @Async
     public void executeTriggersAsync(BusinessEvent event) {
+        Long tenantId = event == null || event.getTenantId() == null ? 1L : event.getTenantId();
         try {
-            List<AiBusinessTrigger> triggers = triggerService.selectActiveByObjectAndEvent(
-                    event.getTenantId(), event.getObjectCode(), event.getEventType());
-
-            if (triggers == null || triggers.isEmpty()) {
-                return;
-            }
-
-            for (AiBusinessTrigger trigger : triggers) {
-                executeSingleTrigger(trigger, event);
-            }
+            TenantContextHolder.executeWithTenant(tenantId, () -> executeMatchingTriggers(event, tenantId));
         } catch (Exception e) {
-            log.error("触发器执行异常, objectCode={}, eventType={}", event.getObjectCode(), event.getEventType(), e);
+            log.error("触发器执行异常, objectCode={}, eventType={}",
+                    event == null ? null : event.getObjectCode(),
+                    event == null ? null : event.getEventType(), e);
+        }
+    }
+
+    private void executeMatchingTriggers(BusinessEvent event, Long tenantId) {
+        if (event == null) {
+            return;
+        }
+        List<AiBusinessTrigger> triggers = triggerService.selectActiveByObjectAndEvent(
+                tenantId, event.getObjectCode(), event.getEventType());
+
+        if (triggers == null || triggers.isEmpty()) {
+            return;
+        }
+
+        for (AiBusinessTrigger trigger : triggers) {
+            executeSingleTrigger(trigger, event);
         }
     }
 
     @Async
     public void executeTriggerAsync(AiBusinessTrigger trigger, BusinessEvent event) {
-        executeSingleTrigger(trigger, event);
+        Long tenantId = event == null || event.getTenantId() == null ? 1L : event.getTenantId();
+        TenantContextHolder.executeWithTenant(tenantId, () -> executeSingleTrigger(trigger, event));
     }
 
     public void executeTrigger(AiBusinessTrigger trigger, BusinessEvent event) {
@@ -204,9 +216,7 @@ public class BusinessTriggerExecutor {
         }
         op = op.trim().toLowerCase(Locale.ROOT);
 
-        Map<String, Object> recordData = event.getRecordData();
-        Map<String, Object> previousData = event.getPreviousData();
-        Object actualValue = recordData != null ? recordData.get(field) : null;
+        Object actualValue = event.readRecordValue(field);
 
         return switch (op) {
             case "eq" -> Objects.equals(String.valueOf(actualValue), String.valueOf(expectedValue));
@@ -222,16 +232,16 @@ public class BusinessTriggerExecutor {
             case "contains" -> actualValue != null && expectedValue != null
                     && String.valueOf(actualValue).contains(String.valueOf(expectedValue));
             case "changed" -> {
-                Object prevValue = previousData != null ? previousData.get(field) : null;
+                Object prevValue = event.readPreviousValue(field);
                 yield !Objects.equals(String.valueOf(prevValue), String.valueOf(actualValue));
             }
             case "changed_to" -> {
-                Object prevValue = previousData != null ? previousData.get(field) : null;
+                Object prevValue = event.readPreviousValue(field);
                 yield !Objects.equals(String.valueOf(prevValue), String.valueOf(expectedValue))
                         && Objects.equals(String.valueOf(actualValue), String.valueOf(expectedValue));
             }
             case "changed_from" -> {
-                Object prevValue = previousData != null ? previousData.get(field) : null;
+                Object prevValue = event.readPreviousValue(field);
                 yield Objects.equals(String.valueOf(prevValue), String.valueOf(expectedValue));
             }
             default -> true;
@@ -844,32 +854,38 @@ public class BusinessTriggerExecutor {
         if (recordData == null || StringUtils.isBlank(field)) {
             return false;
         }
-        return recordData.containsKey(field)
+        if (recordData.containsKey(field)
                 || recordData.containsKey(DynamicQueryGenerator.snakeToCamel(field))
-                || recordData.containsKey(DynamicQueryGenerator.camelToSnake(field));
+                || recordData.containsKey(DynamicQueryGenerator.camelToSnake(field))) {
+            return true;
+        }
+        Object main = recordData.get("main");
+        if (!(main instanceof Map<?, ?> mainMap)) {
+            return false;
+        }
+        String mainField = field.startsWith("main.") ? field.substring("main.".length()) : field;
+        return mainMap.containsKey(mainField)
+                || mainMap.containsKey(DynamicQueryGenerator.snakeToCamel(mainField))
+                || mainMap.containsKey(DynamicQueryGenerator.camelToSnake(mainField));
     }
 
     private Object readRecordValue(Map<String, Object> recordData, String field) {
-        if (recordData == null || StringUtils.isBlank(field)) {
-            return null;
-        }
-        if (recordData.containsKey(field)) {
-            return recordData.get(field);
-        }
-        String camelField = DynamicQueryGenerator.snakeToCamel(field);
-        if (recordData.containsKey(camelField)) {
-            return recordData.get(camelField);
-        }
-        String snakeField = DynamicQueryGenerator.camelToSnake(field);
-        if (recordData.containsKey(snakeField)) {
-            return recordData.get(snakeField);
-        }
-        return null;
+        return BusinessEvent.readValue(recordData, field);
     }
 
     private String renderTemplate(String template, Map<String, Object> recordData) {
         if (StringUtils.isBlank(template) || recordData == null || recordData.isEmpty()) {
             return template;
+        }
+        Object main = recordData.get("main");
+        if (main instanceof Map<?, ?> mainMap) {
+            Map<String, Object> mainRecord = new LinkedHashMap<>();
+            mainMap.forEach((key, value) -> {
+                if (key != null) {
+                    mainRecord.put(String.valueOf(key), value);
+                }
+            });
+            template = renderTemplate(template, mainRecord);
         }
         String result = template;
         for (Map.Entry<String, Object> entry : recordData.entrySet()) {

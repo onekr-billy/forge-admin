@@ -12,6 +12,7 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeModelSchemaNormalizer;
+import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeComponentCatalog;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeSchemaValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -113,6 +115,69 @@ class BusinessObjectDesignerPageSchemaTest {
         pageSchema.setZones(List.of(zone("edit", List.of("name", "amountCent"))));
 
         assertDoesNotThrow(() -> new LowcodeSchemaValidator().validatePage(pageSchema, modelSchema));
+    }
+
+    @Test
+    @DisplayName("accepts every form designer field component")
+    void acceptsEveryFormDesignerFieldComponent() {
+        LowcodeSchemaValidator validator = new LowcodeSchemaValidator();
+
+        for (String componentType : LowcodeComponentCatalog.FIELD_COMPONENT_KEYS) {
+            LowcodeModelSchema modelSchema = modelSchema();
+            modelSchema.setFields(List.of(
+                    field("name"),
+                    field("componentValue", "component_value", componentType, "varchar")
+            ));
+
+            assertDoesNotThrow(() -> validator.validateModel(modelSchema), componentType);
+        }
+    }
+
+    @Test
+    @DisplayName("compiles extended fields and page widgets into runtime form layout")
+    @SuppressWarnings("unchecked")
+    void compilesExtendedFieldsAndPageWidgetsIntoRuntimeFormLayout() throws Exception {
+        List<String> componentTypes = List.of(
+                "slider", "rate", "color", "radioButton", "transfer", "customSelect", "daterange",
+                "datetimerange", "month", "year", "timerange", "treeSelect", "text"
+        );
+        List<Map<String, Object>> components = new ArrayList<>();
+        Set<String> modelFields = new java.util.LinkedHashSet<>();
+        int index = 0;
+        for (String componentType : componentTypes) {
+            String fieldCode = "field" + index++;
+            modelFields.add(fieldCode);
+            components.add(Map.of(
+                    "id", "cmp_" + fieldCode,
+                    "componentKey", componentType,
+                    "fieldBinding", Map.of("mode", "field", "fieldCode", fieldCode),
+                    "layout", Map.of("span", 1)
+            ));
+        }
+        for (String componentType : LowcodeComponentCatalog.PAGE_WIDGET_COMPONENT_KEYS) {
+            components.add(Map.of(
+                    "id", "widget_" + componentType,
+                    "componentKey", componentType,
+                    "fieldBinding", Map.of("mode", "virtual", "fieldCode", ""),
+                    "props", Map.of("title", componentType),
+                    "layout", Map.of("span", 2)
+            ));
+        }
+
+        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
+                "buildRuntimeFormLayout", List.class, Set.class, int.class);
+        method.setAccessible(true);
+        List<Map<String, Object>> layout = (List<Map<String, Object>>) method.invoke(
+                designerService(), components, modelFields, 2);
+
+        assertEquals(componentTypes.size() + LowcodeComponentCatalog.PAGE_WIDGET_COMPONENT_KEYS.size(), layout.size());
+        assertEquals(componentTypes.size(), layout.stream()
+                .filter(node -> "field".equals(node.get("nodeType")))
+                .count());
+        assertEquals(LowcodeComponentCatalog.PAGE_WIDGET_COMPONENT_KEYS.size(), layout.stream()
+                .filter(node -> "widget".equals(node.get("nodeType")))
+                .filter(node -> LowcodeComponentCatalog.PAGE_WIDGET_COMPONENT_KEYS.contains(node.get("componentKey")))
+                .count());
     }
 
     @Test

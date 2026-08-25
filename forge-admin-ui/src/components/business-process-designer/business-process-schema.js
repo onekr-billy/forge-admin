@@ -219,6 +219,18 @@ export function validateBusinessProcessGraph(input) {
       issues.push(issue('NODE_TYPE_UNKNOWN', '节点类型不在业务流程注册表中', node.id, 'nodes'))
     if (node.type === BUSINESS_PROCESS_NODE_TYPE.CONDITION)
       validateConditionNode(node, issues)
+    if (node.type === BUSINESS_PROCESS_NODE_TYPE.APPROVAL) {
+      const formMode = String(node.config?.formAsset?.formMode || node.config?.formAsset?.type || '').toUpperCase()
+      const statusField = String(node.config?.statusField || '')
+      if (formMode === 'BUSINESS_OBJECT_FORM' && !['flowStatus', 'flow_status'].includes(statusField)) {
+        issues.push(issue(
+          'APPROVAL_FLOW_STATUS_REQUIRED',
+          '低代码审批必须绑定独立流程状态字段 flowStatus',
+          node.id,
+          `nodes.${node.id}.config.statusField`,
+        ))
+      }
+    }
     if (isBusinessProcessStartType(node.type))
       startNodes.push(node)
     if (node.type === BUSINESS_PROCESS_NODE_TYPE.END)

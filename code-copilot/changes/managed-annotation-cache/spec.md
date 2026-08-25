@@ -27,7 +27,7 @@ Forge 已有 `forge-starter-cache`，底层同时依赖 Redisson 与 Caffeine，
 - 新增 `@ForgeCacheConfig`、`@ForgeCacheable`、`@ForgeCachePut`、`@ForgeCacheEvict`。
 - 新增缓存模式、作用域、定义、策略覆盖、查找结果和统计快照模型。
 - 新增 AOP、SpEL 键解析、SHA-256 键摘要、事务提交后动作协调。
-- LOCAL 使用 Caffeine；REDIS 使用 Redisson `RMapCache`；MULTI 使用 `RLocalCachedMapCache`，本地提供方固定为 Caffeine，跨实例同步固定为失效通知，重连固定清空本地层。
+- LOCAL 使用 Caffeine；REDIS 使用 Redisson `RMapCache`；MULTI 使用社区版兼容的 Caffeine 本地层与 `RMapCache` Redis 层组合，跨实例通过类型化 Topic 发送失效通知，Topic 重连订阅时固定清空本地层。禁止调用仅 Redisson PRO 提供的 `RLocalCachedMapCache`。
 - 运行时将代码定义与策略覆盖注册到 Redis 控制面，本地持有有效策略快照；策略变更通过 Redisson Topic 分发。
 - 新增 `sys_cache_policy` 逻辑删除表、Mapper XML、Service、Controller、Flyway 和资源权限。
 - 管理端缓存页只保留受管缓存策略工作台，不展示 entry key/value。
@@ -52,7 +52,7 @@ Forge 已有 `forge-starter-cache`，底层同时依赖 Redisson 与 Caffeine，
         -> ForgeManagedCacheManager（代码定义 + 管理覆盖）
             -> LOCAL: Caffeine
             -> REDIS: RMapCache
-            -> MULTI: RLocalCachedMapCache(CAFFEINE, INVALIDATE, CLEAR)
+            -> MULTI: Caffeine + RMapCache + typed invalidation Topic
 
 管理端
     -> sys_cache_policy（权威覆盖）
@@ -87,13 +87,13 @@ Forge 已有 `forge-starter-cache`，底层同时依赖 Redisson 与 Caffeine，
 
 ### 3.4 一致性与故障策略
 
-- MULTI 使用 Redisson 本地缓存失效同步，Redis 重连后清空本地层；它属于有界最终一致。
+- MULTI 使用 Redisson Topic 同步本地缓存失效，Topic 初次订阅或重连订阅后清空本地层；它属于有界最终一致。
 - `@ForgeCachePut` 与 `@ForgeCacheEvict` 在活动事务提交后执行；回滚时不改变缓存。
 - `@ForgeCacheable` 在活动事务内加载的值同样延迟到提交后写入，避免缓存未提交数据。
 - 读取、写入、删除、注册或策略通知失败时记录受控日志和失败计数，业务调用继续执行。
 - 管理端停用、恢复默认或改变关键策略时清理当前缓存，避免重新启用后读取旧值。
 - Redis TTL 必须大于 0；MULTI 模式本地 TTL 必须小于等于 Redis TTL。
-- 数据、定义、策略和控制事件必须使用显式类型化 codec，并复用应用 `ObjectMapper` 模块；不得依赖全局 codec 推断 final record 类型。
+- 数据、定义、策略、控制事件和多级缓存失效事件必须使用显式类型化 codec，并复用应用 `ObjectMapper` 模块；不得依赖全局 codec 推断 final record 类型。
 - 缓存定义只在本地首次注册时通过 Redis `putIfAbsent` 发布；运行与隔离字段不兼容时拒绝使用且不得覆盖远端定义，描述和声明来源不影响兼容性。
 - 本地策略覆盖以不可变 Map 快照原子发布，刷新期间不得暴露临时空状态。
 
@@ -167,6 +167,7 @@ Forge 已有 `forge-starter-cache`，底层同时依赖 Redisson 与 Caffeine，
 - [x] Review 发现的 codec、定义解析/注册和策略快照问题已修复并完成增量验证。
 - [x] 受管缓存列表规整与 Redis 诊断安全下线已完成增量验证。
 - [x] 业务字典消费链路已统一经过受管缓存，管理页已补齐写入与失败统计。
+- [x] MULTI 已替换为 Redisson 社区版兼容实现，不再调用 PRO 专属接口。
 - [ ] 真实 MySQL Flyway、双实例失效同步和普通管理员 403 E2E 由用户执行。
 
 代码实现、Review 修复、管理页规整、Redis 诊断安全下线和字典消费链路收口均已完成。自动化验证覆盖 starter、系统控制面、字典迁移、诊断下线合同、Mapper/Flyway 静态合同、Admin 聚合编译、前端测试/构建及桌面/移动页面回归；本地已运行 Admin/Redis 完成字典请求和统计增长验证，但真实 MySQL Flyway、双实例同步与普通管理员 403 仍未覆盖。

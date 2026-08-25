@@ -6,6 +6,8 @@ import com.mdframe.forge.plugin.ai.agenttool.domain.AiAgentToolConfig;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface AiAgentToolConfigMapper extends BaseMapper<AiAgentToolConfig> {
 
@@ -18,4 +20,9 @@ public interface AiAgentToolConfigMapper extends BaseMapper<AiAgentToolConfig> {
                            @Param("toolSource") String toolSource,
                            @Param("toolKey") String toolKey,
                            @Param("excludeId") Long excludeId);
+
+    /**
+     * 按 Agent 查询已启用(enabled='1')的工具绑定，供引擎运行时声明工具。
+     */
+    List<AiAgentToolConfig> selectEnabledByAgentId(@Param("agentId") Long agentId);
 }

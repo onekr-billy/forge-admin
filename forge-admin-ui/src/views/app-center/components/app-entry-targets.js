@@ -1,5 +1,29 @@
 const RUNTIME_TARGET_ENTRY_MODES = new Set(['RUNTIME', 'H5'])
 
+export const DEFAULT_H5_BASE_URL = String(import.meta.env?.VITE_H5_BASE_URL || '').trim().replace(/\/$/, '')
+  || 'http://localhost:3009'
+
+export function resolveH5BaseUrl(explicit = '') {
+  return String(explicit || '').trim().replace(/\/$/, '') || DEFAULT_H5_BASE_URL
+}
+
+export function buildH5RuntimeUrl({
+  h5BaseUrl = '',
+  configKey = '',
+  appId = '',
+  runtimeOpenMode = 'LIST',
+} = {}) {
+  if (!String(configKey || '').trim())
+    return ''
+  const preview = buildRuntimeTargetPreview({
+    entryMode: 'H5',
+    appId,
+    configKey,
+    runtimeOpenMode,
+  })
+  return `${resolveH5BaseUrl(h5BaseUrl)}${preview.value}`
+}
+
 export function supportsRuntimeTarget(entryMode) {
   return RUNTIME_TARGET_ENTRY_MODES.has(String(entryMode || '').trim().toUpperCase())
 }
@@ -131,10 +155,13 @@ export function buildEntryOpenUrl(entry = {}) {
       targetPageKey: options.targetPageKey || '',
       targetFormKey: options.targetFormKey || '',
     })
-    // 移动端 / H5 入口：用用户配置的 h5BaseUrl 拼完整 URL，默认 http://localhost:3001
     if (preview.mobile) {
-      const h5BaseUrl = String(options.h5BaseUrl || '').trim() || 'http://localhost:3001'
-      return `${h5BaseUrl}${preview.value}`
+      return buildH5RuntimeUrl({
+        h5BaseUrl: options.h5BaseUrl,
+        configKey,
+        appId: entry.id,
+        runtimeOpenMode: entry.runtimeOpenMode || options.runtimeOpenMode || 'LIST',
+      })
     }
     return preview.value
   }

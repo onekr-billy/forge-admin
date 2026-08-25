@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.ai.chat.mapper.AiChatRecordMapper">
+
+    <resultMap id="recordResultMap" type="com.mdframe.forge.plugin.ai.chat.domain.AiChatRecord">
+        <id property="id" column="id"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="agentCode" column="agent_code"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="role" column="role"/>
+        <result property="content" column="content"/>
+        <result property="reasoning" column="reasoning"/>
+        <result property="tokenUsage" column="token_usage"/>
+        <result property="usageJson" column="usage_json"/>
+        <result property="firstTokenMs" column="first_token_ms"/>
+        <result property="totalMs" column="total_ms"/>
+        <result property="attachmentJson" column="attachment_json"/>
+        <result property="status" column="status"/>
+        <result property="interruptId" column="interrupt_id"/>
+        <result property="errorMsg" column="error_msg"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="delFlag" column="del_flag"/>
+    </resultMap>
+
+    <sql id="recordColumns">
+        id, tenant_id, user_id, agent_code, session_id, role, content, reasoning,
+        token_usage, usage_json, first_token_ms, total_ms, attachment_json, status,
+        interrupt_id, error_msg, create_time, update_time, del_flag
+    </sql>
+
+    <select id="selectByInterruptId" resultMap="recordResultMap">
+        SELECT <include refid="recordColumns"/>
+        FROM ai_chat_record
+        WHERE interrupt_id = #{interruptId}
+          AND role = 'assistant'
+          AND status = 'waiting_confirm'
+          AND del_flag = 0
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestBySessionAndRole" resultMap="recordResultMap">
+        SELECT <include refid="recordColumns"/>
+        FROM ai_chat_record
+        WHERE session_id = #{sessionId}
+          AND role = #{role}
+          AND del_flag = 0
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectRecentBySession" resultMap="recordResultMap">
+        SELECT <include refid="recordColumns"/>
+        FROM ai_chat_record
+        WHERE session_id = #{sessionId}
+          AND del_flag = 0
+        ORDER BY id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectRecentBySessionBeforeRecord" resultMap="recordResultMap">
+        SELECT <include refid="recordColumns"/>
+        FROM ai_chat_record
+        WHERE session_id = #{sessionId}
+          AND id &lt; #{beforeRecordId}
+          AND del_flag = 0
+        ORDER BY id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

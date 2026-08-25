@@ -61,7 +61,8 @@ public class AiCrudConfigController {
     public RespInfo<AiCrudConfigRenderVO> render(
             @PathVariable String configKey,
             @RequestParam(defaultValue = "false") boolean designPreview,
-            @RequestParam(required = false) Long appId) {
+            @RequestParam(required = false) Long appId,
+            @RequestParam(required = false) Long applicationId) {
         if (designPreview) {
             crudConfigService.assertDesignPreviewPermission();
             var businessObject = businessObjectService.findByConfigKey(configKey);
@@ -70,7 +71,8 @@ public class AiCrudConfigController {
             }
         }
         AiCrudConfigRenderVO renderConfig = crudConfigService.getRenderConfig(configKey, designPreview);
-        return RespInfo.success(runtimeConfigOverlayService.overlay(configKey, appId, renderConfig));
+        return RespInfo.success(runtimeConfigOverlayService.overlay(
+                configKey, appId, applicationId, renderConfig, designPreview));
     }
 
     @PostMapping

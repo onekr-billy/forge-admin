@@ -73,3 +73,7 @@ export function updateBusinessExtensionStatus(id, status) {
 export function businessExtensionServerHandlers() {
   return request.get('/ai/business/extension/server-handlers', ENCRYPTED_REQUEST)
 }
+
+export function executePublishedExtensionHook(data) {
+  return request.post('/ai/business/extension/runtime/hook', data, ENCRYPTED_REQUEST)
+}

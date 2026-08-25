@@ -30,6 +30,17 @@ import { useAuthStore, useUserStore } from '@/store'
 import { resolveRenderableFileUrl } from '@/utils/file'
 import { isSilentAuthError } from '@/utils/http/helpers'
 
+const props = defineProps({
+  /**
+   * 应用门户提供应用内个人资料入口，避免把用户带回系统布局。
+   * 未传入时保持系统布局原有的 /profile 路由。
+   */
+  profileRoute: {
+    type: [String, Object, Function],
+    default: null,
+  },
+})
+
 const router = useRouter()
 const userStore = useUserStore()
 const authStore = useAuthStore()
@@ -78,7 +89,15 @@ function handleAvatarError() {
 function handleSelect(key) {
   switch (key) {
     case 'profile':
-      router.push('/profile')
+      {
+        const target = typeof props.profileRoute === 'function'
+          ? props.profileRoute()
+          : props.profileRoute
+        if (target)
+          router.push(target)
+        else
+          router.push('/profile')
+      }
       break
     case 'logout':
       $dialog.confirm({

@@ -2,12 +2,15 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessOrchestrator;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.event.EventListener;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -25,7 +28,9 @@ public class BusinessEventPublisher {
 
     private final BusinessTriggerExecutor triggerExecutor;
     private final AiCrudConfigMapper crudConfigMapper;
+    private final BusinessObjectMapper businessObjectMapper;
     private final DynamicCrudService dynamicCrudService;
+    private final ObjectProvider<BusinessProcessOrchestrator> processOrchestratorProvider;
 
     /**
      * 发布记录创建事件
@@ -33,6 +38,7 @@ public class BusinessEventPublisher {
     public void publishRecordCreated(String configKey, Map<String, Object> data) {
         BusinessEvent event = buildEvent(configKey, BusinessEvent.RECORD_CREATED, data, null);
         publish(event);
+        publish(buildEvent(configKey, BusinessEvent.FORM_SUBMITTED, data, null));
     }
 
     /**
@@ -47,6 +53,7 @@ public class BusinessEventPublisher {
             if (previousData != null && data != null) {
                 checkStatusChange(event, data, previousData);
             }
+            publish(buildEvent(configKey, BusinessEvent.FORM_SUBMITTED, data, previousData));
         }
     }
 
@@ -91,8 +98,8 @@ public class BusinessEventPublisher {
         // 常见状态字段名
         String[] statusFields = {"status", "state", "audit_status", "approval_status", "documentStatus", "document_status"};
         for (String field : statusFields) {
-            Object newVal = data.get(field);
-            Object oldVal = previousData.get(field);
+            Object newVal = baseEvent.readRecordValue(field);
+            Object oldVal = baseEvent.readPreviousValue(field);
             if (newVal != null && !newVal.equals(oldVal)) {
                 BusinessEvent statusEvent = BusinessEvent.builder()
                         .eventType(BusinessEvent.STATUS_CHANGED)
@@ -116,7 +123,24 @@ public class BusinessEventPublisher {
         if (event == null || StringUtils.isBlank(event.getObjectCode()) || StringUtils.isBlank(event.getEventType())) {
             return;
         }
+        // Keep legacy action triggers and application-level START_EVENT flows
+        // on the same successful CRUD event. The orchestrator is optional so
+        // installations that do not enable business-process support keep the
+        // existing trigger behavior.
         triggerExecutor.executeTriggersAsync(event);
+        BusinessProcessOrchestrator orchestrator = processOrchestratorProvider.getIfAvailable();
+        if (orchestrator != null) {
+            try {
+                orchestrator.startEvent(event);
+            } catch (Exception exception) {
+                // The business row is already committed. A transient process
+                // start failure is recorded in logs and can be retried from
+                // the process runtime; it must not turn a successful save
+                // into a misleading CRUD error response.
+                log.error("事件开始业务流程失败, objectCode={}, eventType={}, recordId={}",
+                        event.getObjectCode(), event.getEventType(), event.getRecordId(), exception);
+            }
+        }
     }
 
     private BusinessEvent buildFlowResultEvent(String objectCode, String recordId,
@@ -171,7 +195,8 @@ public class BusinessEventPublisher {
             Long tenantId = SessionHelper.getTenantId();
 
             // 从运行配置中获取对象编码
-            String objectCode = resolveObjectCode(configKey, tenantId);
+            ResolvedBusinessObject resolvedObject = resolveObject(configKey, tenantId);
+            String objectCode = resolvedObject == null ? null : resolvedObject.objectCode();
             if (objectCode == null) {
                 return null; // 非业务对象的动态CRUD，不触发
             }
@@ -180,6 +205,7 @@ public class BusinessEventPublisher {
 
             return BusinessEvent.builder()
                     .eventType(eventType)
+                    .suiteCode(resolvedObject.suiteCode())
                     .objectCode(objectCode)
                     .configKey(configKey)
                     .recordId(recordId)
@@ -217,16 +243,27 @@ public class BusinessEventPublisher {
     /**
      * 通过 configKey 查询关联的业务对象编码
      */
-    private String resolveObjectCode(String configKey, Long tenantId) {
+    private ResolvedBusinessObject resolveObject(String configKey, Long tenantId) {
         try {
-            // 通过 ai_crud_config 的 object_code 字段获取
+            // 业务对象表的 object_code 才是流程/触发器绑定使用的规范编码。
+            // ai_crud_config.object_code 在历史低代码数据中通常保存模型/配置编码，
+            // 直接使用它会导致事件无法命中已发布流程的 subject_object_code。
+            var businessObject = businessObjectMapper.selectByConfigKey(tenantId, configKey);
+            if (businessObject != null && StringUtils.isNotBlank(businessObject.getObjectCode())) {
+                return new ResolvedBusinessObject(
+                        businessObject.getSuiteCode(), businessObject.getObjectCode());
+            }
+            // 兼容尚未迁移到业务对象表的旧 CONFIG 配置。
             AiCrudConfig config = crudConfigMapper.selectByConfigKey(tenantId, configKey);
             if (config != null && config.getObjectCode() != null && !config.getObjectCode().isBlank()) {
-                return config.getObjectCode();
+                return new ResolvedBusinessObject(config.getDomainCode(), config.getObjectCode());
             }
         } catch (Exception e) {
-            log.debug("resolveObjectCode 失败: configKey={}", configKey);
+            log.debug("resolveObject 失败: configKey={}", configKey);
         }
         return null;
+    }
+
+    private record ResolvedBusinessObject(String suiteCode, String objectCode) {
     }
 }

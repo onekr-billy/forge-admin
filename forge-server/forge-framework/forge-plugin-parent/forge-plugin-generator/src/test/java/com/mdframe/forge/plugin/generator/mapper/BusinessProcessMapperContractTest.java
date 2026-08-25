@@ -143,6 +143,31 @@ class BusinessProcessMapperContractTest {
     }
 
     @Test
+    @DisplayName("active process lookup is batched tenant scoped and status constrained")
+    void activeProcessLookupIsBatchedAndScoped() throws IOException {
+        String query = statement(resource("mapper/BusinessProcessRunMapper.xml"),
+                "select", "selectActiveByBusinessKeys");
+
+        assertTrue(query.contains("tenant_id = #{tenantId}"));
+        assertTrue(query.contains("status IN ('PENDING', 'RUNNING', 'WAITING')"));
+        assertTrue(query.contains("collection=\"businessKeys\""));
+        assertFalse(query.contains("LIMIT"));
+    }
+
+    @Test
+    @DisplayName("detail flow history can recover the latest correlated process run")
+    void latestBusinessProcessHistoryIsTenantAndBusinessKeyScoped() throws IOException {
+        String query = statement(resource("mapper/BusinessProcessRunMapper.xml"),
+                "select", "selectLatestByBusinessKey");
+
+        assertTrue(query.contains("tenant_id = #{tenantId}"));
+        assertTrue(query.contains("business_key = #{businessKey}"));
+        assertTrue(query.contains("flow_process_instance_id IS NOT NULL"));
+        assertTrue(query.contains("ORDER BY create_time DESC, id DESC"));
+        assertTrue(query.contains("LIMIT 1"));
+    }
+
+    @Test
     @DisplayName("node attempts are claimed once and waiting callbacks match correlation")
     void nodeAttemptsUseStrongCas() throws IOException {
         String xml = resource("mapper/BusinessProcessNodeRunMapper.xml");

@@ -15,8 +15,12 @@ public class AiSessionVO {
     private String sessionName;
     private String agentCode;
     private String status;
+    private Integer pinned;
     private Integer messageCount;
     private Long tokenUsage;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime pinnedTime;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;

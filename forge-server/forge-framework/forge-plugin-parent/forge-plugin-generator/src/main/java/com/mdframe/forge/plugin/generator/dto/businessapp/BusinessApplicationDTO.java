@@ -12,6 +12,8 @@ public class BusinessApplicationDTO {
 
     private String applicationCode;
 
+    private String portalSlug;
+
     private String applicationName;
 
     private String suiteCode;
@@ -23,4 +25,8 @@ public class BusinessApplicationDTO {
     private Integer status;
 
     private String options;
+
+    private String portalConfig;
+
+    private String aiAssistantConfig;
 }

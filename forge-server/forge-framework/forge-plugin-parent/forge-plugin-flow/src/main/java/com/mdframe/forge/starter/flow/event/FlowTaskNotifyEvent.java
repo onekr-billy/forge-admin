@@ -26,12 +26,14 @@ public class FlowTaskNotifyEvent {
      * 通知类型
      */
     public enum Type {
-        /** 待办创建/分配：推送站内信 + 企业协同卡片 */
+        /** 待办创建/分配：按模型通知配置推送（站内信/邮件/短信/企微卡片） */
         TASK_TODO,
         /** 任务完成/取消：待办站内信自动置已读 */
         TASK_TODO_READ,
         /** 流程通过：按角色抄送 */
         PROCESS_CC,
+        /** 流程结束（通过/驳回）：按模型通知配置向发起人推送审批结果 */
+        PROCESS_RESULT,
         /** FlowModel 配置化事件通知（Redis Pub/Sub / HTTP Webhook） */
         EVENT_PUBLISH
     }
@@ -53,12 +55,15 @@ public class FlowTaskNotifyEvent {
     /** 流程定义 Key（EVENT_PUBLISH 使用） */
     private final String processDefKey;
 
-    /** 流程变量快照（PROCESS_CC 使用） */
+    /** 流程变量快照（TASK_TODO/PROCESS_CC/PROCESS_RESULT 使用） */
     private final Map<String, Object> variables;
+
+    /** 审批结果是否驳回（PROCESS_RESULT 使用，null 表示非结果事件） */
+    private final Boolean rejected;
 
     private FlowTaskNotifyEvent(Type type, FlowTask flowTask, FlowBusiness business, String taskId,
                                 FlowEventMessage eventMessage, String processDefKey,
-                                Map<String, Object> variables) {
+                                Map<String, Object> variables, Boolean rejected) {
         this.type = type;
         this.flowTask = flowTask;
         this.business = business;
@@ -66,33 +71,48 @@ public class FlowTaskNotifyEvent {
         this.eventMessage = eventMessage;
         this.processDefKey = processDefKey;
         this.variables = variables;
+        this.rejected = rejected;
     }
 
     /**
      * 待办创建/分配通知（站内信 + 企微卡片）
      */
     public static FlowTaskNotifyEvent todo(FlowTask flowTask, FlowBusiness business) {
-        return new FlowTaskNotifyEvent(Type.TASK_TODO, flowTask, business, null, null, null, null);
+        return todo(flowTask, business, null);
+    }
+
+    /**
+     * 待办创建/分配通知，携带流程变量（用于消息模板业务变量注入）
+     */
+    public static FlowTaskNotifyEvent todo(FlowTask flowTask, FlowBusiness business, Map<String, Object> variables) {
+        return new FlowTaskNotifyEvent(Type.TASK_TODO, flowTask, business, null, null, null, variables, null);
     }
 
     /**
      * 待办站内信置已读
      */
     public static FlowTaskNotifyEvent todoRead(String taskId, FlowBusiness business) {
-        return new FlowTaskNotifyEvent(Type.TASK_TODO_READ, null, business, taskId, null, null, null);
+        return new FlowTaskNotifyEvent(Type.TASK_TODO_READ, null, business, taskId, null, null, null, null);
     }
 
     /**
      * 流程通过抄送
      */
     public static FlowTaskNotifyEvent processCc(FlowBusiness business, Map<String, Object> variables) {
-        return new FlowTaskNotifyEvent(Type.PROCESS_CC, null, business, null, null, null, variables);
+        return new FlowTaskNotifyEvent(Type.PROCESS_CC, null, business, null, null, null, variables, null);
+    }
+
+    /**
+     * 流程结束审批结果通知（向发起人推送）
+     */
+    public static FlowTaskNotifyEvent processResult(FlowBusiness business, Map<String, Object> variables, boolean rejected) {
+        return new FlowTaskNotifyEvent(Type.PROCESS_RESULT, null, business, null, null, null, variables, rejected);
     }
 
     /**
      * FlowModel 配置化事件通知
      */
     public static FlowTaskNotifyEvent eventPublish(FlowEventMessage message, String processDefKey) {
-        return new FlowTaskNotifyEvent(Type.EVENT_PUBLISH, null, null, null, message, processDefKey, null);
+        return new FlowTaskNotifyEvent(Type.EVENT_PUBLISH, null, null, null, message, processDefKey, null, null);
     }
 }

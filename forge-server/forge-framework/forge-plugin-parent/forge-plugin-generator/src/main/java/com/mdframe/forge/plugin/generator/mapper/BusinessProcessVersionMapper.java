@@ -41,5 +41,9 @@ public interface BusinessProcessVersionMapper extends BaseMapper<AiBusinessProce
             @Param("tenantId") Long tenantId,
             @Param("applicationId") Long applicationId);
 
+    List<AiBusinessProcessVersion> selectCurrentPublishedBySubjectObjectCode(
+            @Param("tenantId") Long tenantId,
+            @Param("objectCode") String objectCode);
+
     int insertImmutable(AiBusinessProcessVersion version);
 }

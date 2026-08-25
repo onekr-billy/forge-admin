@@ -14,6 +14,8 @@ public class BusinessApplicationVO {
 
     private String applicationCode;
 
+    private String portalSlug;
+
     private String applicationName;
 
     private String suiteCode;
@@ -34,6 +36,10 @@ public class BusinessApplicationVO {
 
     private String options;
 
+    private String portalConfig;
+
+    private String aiAssistantConfig;
+
     private Long objectCount;
 
     private Long entryCount;
@@ -44,9 +50,15 @@ public class BusinessApplicationVO {
 
     private Long extensionCount;
 
+    private Long pageCount;
+
     private Long problemCount;
 
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
+
+    /** 创建人，用于“我创建的”与应用可见范围的可信判定。 */
+    private Long createBy;
+
 }

@@ -7,8 +7,11 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -22,6 +25,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class LowcodeSchemaValidator {
+
+    private static final Logger log = LoggerFactory.getLogger(LowcodeSchemaValidator.class);
 
     private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{1,63}$");
     private static final Pattern COLUMN_NAME_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{0,63}$");
@@ -41,13 +46,7 @@ public class LowcodeSchemaValidator {
     private static final Set<String> DATA_TYPES = Set.of(
             "varchar", "char", "text", "longtext", "int", "bigint", "decimal", "date", "datetime", "time", "tinyint"
     );
-    private static final Set<String> COMPONENT_TYPES = Set.of(
-            "input", "barcodeScanner", "textarea", "select", "radio", "checkbox", "switch", "date", "datetime", "time",
-            "number", "input-number", "inputNumber", "inputnumber",
-            "money", "integer",
-            "upload", "imageUpload", "fileUpload", "cascader", "treeSelect",
-            "dictSelect", "orgTreeSelect", "userSelect", "regionTreeSelect", "objectReference", "recordSelector"
-    );
+    private static final Set<String> COMPONENT_TYPES = LowcodeComponentCatalog.FIELD_COMPONENT_KEYS;
     private static final Set<String> QUERY_TYPES = Set.of(
             "eq", "ne", "like", "left_like", "right_like", "gt", "ge", "gte", "lt", "le", "lte", "in", "between"
     );
@@ -247,11 +246,19 @@ public class LowcodeSchemaValidator {
         if (refs == null) {
             return;
         }
+        // 草稿页可能引用尚未落库或已删除的字段。设计预览不能因此中断，过滤后继续编译。
+        List<String> kept = new ArrayList<>();
         for (String ref : refs) {
-            if (!modelFields.contains(ref)) {
-                throw new BusinessException("页面区域引用了不存在的字段: " + ref);
+            if (StringUtils.isBlank(ref)) {
+                continue;
             }
+            if (!modelFields.contains(ref)) {
+                log.warn("页面区域 {} 引用了不存在的字段: {}，已自动忽略", zone.getZoneKey(), ref);
+                continue;
+            }
+            kept.add(ref);
         }
+        zone.setFieldRefs(kept);
     }
 
     private Set<String> buildAllowedPageRefs(Set<String> modelFields, LowcodePageSchema pageSchema) {

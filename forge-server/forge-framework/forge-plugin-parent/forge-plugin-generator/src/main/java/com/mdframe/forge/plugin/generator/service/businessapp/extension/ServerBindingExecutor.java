@@ -70,6 +70,33 @@ public class ServerBindingExecutor implements AutoCloseable {
         }
     }
 
+    /**
+     * 正式页面只允许把处理器已声明的输入从当前表单记录中投影出来。
+     * 浏览器提交的整条记录仍属于不可信业务输入，未声明字段不会进入处理器上下文。
+     */
+    public ExtensionExecutionResult executeRuntime(ExtensionExecutionContext context,
+                                                   Map<String, Object> runtimeInput) {
+        validateTrustedContext(context);
+        LowcodeExtensionHandler handler = registry.require(context.getHandlerCode());
+        context.setInput(projectDeclaredRuntimeInput(handler.inputSchema(), runtimeInput));
+        return execute(context);
+    }
+
+    private Map<String, Object> projectDeclaredRuntimeInput(Map<String, ExtensionInputField> schema,
+                                                            Map<String, Object> runtimeInput) {
+        Map<String, ExtensionInputField> safeSchema = schema == null ? Map.of() : schema;
+        Map<String, Object> safeInput = runtimeInput == null ? Map.of() : runtimeInput;
+        Map<?, ?> record = safeInput.get("record") instanceof Map<?, ?> value ? value : Map.of();
+        Map<String, Object> projected = new LinkedHashMap<>();
+        for (String field : safeSchema.keySet()) {
+            Object value = safeInput.containsKey(field) ? safeInput.get(field) : record.get(field);
+            if (value != null) {
+                projected.put(field, value);
+            }
+        }
+        return projected;
+    }
+
     private void validateTrustedContext(ExtensionExecutionContext context) {
         if (context == null || context.getApplicationId() == null || context.getExtensionId() == null) {
             throw new BusinessException("扩展执行上下文不完整");

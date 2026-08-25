@@ -177,21 +177,28 @@
                 <p>常用业务搭建与应用入口。</p>
               </div>
             </div>
-            <div class="app-list">
-              <button
-                v-for="app in appShortcuts"
-                :key="app.title"
-                type="button"
-                class="app-item"
-                @click="goTo(app.path)"
-              >
-                <span class="app-icon"><i :class="app.icon" /></span>
-                <span>
-                  <strong>{{ app.title }}</strong>
-                  <em>{{ app.desc }}</em>
-                </span>
-              </button>
-            </div>
+            <n-spin :show="appLoading">
+              <div v-if="!appLoading && appShortcuts.length === 0" class="empty-state small app-empty-state">
+                <i class="i-material-symbols:apps-rounded" />
+                <strong>暂无已投放应用</strong>
+                <span>应用发布后可在发布页添加到 Forge 工作台。</span>
+              </div>
+              <div v-else class="app-list">
+                <button
+                  v-for="app in appShortcuts"
+                  :key="app.id"
+                  type="button"
+                  class="app-item"
+                  @click="goTo(app.path)"
+                >
+                  <span class="app-icon"><i :class="app.icon" /></span>
+                  <span>
+                    <strong>{{ app.title }}</strong>
+                    <em>{{ app.desc }}</em>
+                  </span>
+                </button>
+              </div>
+            </n-spin>
           </div>
 
           <div class="dashboard-pane chart-pane">
@@ -310,6 +317,7 @@
 import * as echarts from 'echarts'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { businessApplicationWorkbench } from '@/api/business-application'
 import flowApi from '@/api/flow'
 import wechatGroupQrAlt from '@/assets/images/forge-wechat-group1.png'
 import wechatGroupQr from '@/assets/images/forge-wechat-group.png'
@@ -332,8 +340,10 @@ const pendingStarted = ref(0)
 
 const unreadNotice = ref(0)
 const todoLoading = ref(false)
+const appLoading = ref(false)
 const todoList = ref([])
 const noticeList = ref([])
+const distributedApplications = ref([])
 
 const showNoticeModal = ref(false)
 const currentNotice = ref(null)
@@ -368,12 +378,13 @@ const guideSteps = [
   { title: '发布授权', desc: '菜单发布并配置权限', path: '/system/menu', icon: 'i-material-symbols:shield-person-rounded' },
 ]
 
-const appShortcuts = [
-  { title: '应用中心', desc: '创建和维护业务应用', path: '/app-center', icon: 'i-material-symbols:apps-rounded' },
-  { title: '低代码建模', desc: '业务对象与页面设计', path: '/ai/lowcode-apps', icon: 'i-material-symbols:data-object-rounded' },
-  { title: '数据统计', desc: '业务数据看板入口', path: '/app-center/stats', icon: 'i-material-symbols:query-stats-rounded' },
-  { title: '流程配置', desc: '流程模型和表单配置', path: '/flow/model', icon: 'i-material-symbols:conversion-path-rounded' },
-]
+const appShortcuts = computed(() => distributedApplications.value.map(application => ({
+  id: application.id,
+  title: application.applicationName || application.applicationCode || '未命名应用',
+  desc: application.description || '已发布业务应用',
+  path: `/app/${encodeURIComponent(application.portalSlug || application.applicationCode)}`,
+  icon: application.icon || 'i-material-symbols:apps-rounded',
+})))
 
 const quickLinks = [
   { title: '用户管理', icon: 'i-material-symbols:person-rounded', path: '/system/user' },
@@ -478,6 +489,20 @@ async function loadNoticeList() {
   }
   catch {
     console.error('加载通知公告失败')
+  }
+}
+
+async function loadWorkbenchApplications() {
+  appLoading.value = true
+  try {
+    const response = await businessApplicationWorkbench()
+    distributedApplications.value = response.data || []
+  }
+  catch {
+    distributedApplications.value = []
+  }
+  finally {
+    appLoading.value = false
   }
 }
 
@@ -658,6 +683,7 @@ onMounted(() => {
   loadFlowData()
   loadTodoList()
   loadNoticeList()
+  loadWorkbenchApplications()
 
   nextTick(() => {
     initVisitChart()

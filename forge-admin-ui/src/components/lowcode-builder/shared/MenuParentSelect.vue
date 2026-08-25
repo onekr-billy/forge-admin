@@ -38,6 +38,11 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  /** 菜单客户端作用域：pc 管理端，h5 移动端。 */
+  clientCode: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['update:value', 'loaded'])
@@ -47,10 +52,12 @@ const treeData = ref([])
 const normalizedValue = computed(() => normalizeTreeKey(props.value))
 
 watch(
-  () => props.autoLoad,
+  () => [props.autoLoad, props.clientCode],
   (value) => {
-    if (value && !treeData.value.length)
+    if (value[0]) {
+      treeData.value = []
       loadMenuTree()
+    }
   },
 )
 
@@ -62,7 +69,8 @@ onMounted(() => {
 async function loadMenuTree() {
   loading.value = true
   try {
-    const res = await request.get('/system/resource/tree')
+    const params = props.clientCode ? { clientCode: props.clientCode } : undefined
+    const res = await request.get('/system/resource/tree', params ? { params } : undefined)
     const data = Array.isArray(res?.data) ? res.data : []
     treeData.value = convertToTree(data)
     emit('loaded', treeData.value)

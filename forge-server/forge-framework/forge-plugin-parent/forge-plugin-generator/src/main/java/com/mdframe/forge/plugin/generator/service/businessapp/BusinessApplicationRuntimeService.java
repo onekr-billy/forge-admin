@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessAppVO;
@@ -21,11 +22,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** 从不可变应用版本构建当前用户的正式运行配置。 */
 @Service
 @RequiredArgsConstructor
 public class BusinessApplicationRuntimeService {
+
+    private static final Pattern LEGACY_PAGE_ID_UNSAFE = Pattern.compile("[^a-z0-9_]+");
 
     private final BusinessApplicationService applicationService;
     private final BusinessApplicationVersionService versionService;
@@ -35,6 +39,30 @@ public class BusinessApplicationRuntimeService {
     public BusinessApplicationRuntimeVO runtimeByCode(String applicationCode) {
         BusinessApplicationVO current = applicationService.detailByCode(applicationCode);
         return runtime(current);
+    }
+
+    public BusinessApplicationRuntimeVO runtimeByCodeOrSlug(String identifier) {
+        return runtime(applicationService.detailByPublishedCodeOrSlug(identifier));
+    }
+
+    /**
+     * 使用正式门户的同一发布快照、应用可见范围和页面权限链路构建工作台应用。
+     */
+    public List<BusinessApplicationVO> workbenchApplications() {
+        List<BusinessApplicationVO> result = new ArrayList<>();
+        for (BusinessApplicationVO candidate : applicationService.workbenchDistributionCandidates()) {
+            try {
+                BusinessApplicationRuntimeVO runtime = runtime(candidate);
+                if (hasReachableHomePage(runtime)
+                        && applicationService.isCurrentUserDistributedToWorkbench(
+                                runtime.getApplication().getPortalConfig())) {
+                    result.add(runtime.getApplication());
+                }
+            } catch (BusinessException ignored) {
+                // 单个应用无权访问、快照失效或没有可达页面时不影响其它工作台入口。
+            }
+        }
+        return List.copyOf(result);
     }
 
     /**
@@ -55,17 +83,139 @@ public class BusinessApplicationRuntimeService {
                 current.getId(), current.getLastPublishVersion());
         Map<String, Object> snapshot = snapshotService.parse(version.getSnapshotJson());
         Map<String, Object> applicationSnapshot = map(snapshot.get("application"));
+        if (!applicationService.canCurrentUserAccessPortal(JSON.toJSONString(
+                applicationSnapshot.get("portalConfig")))) {
+            throw new BusinessException("暂无访问该应用门户的权限");
+        }
         Map<String, Object> options = map(applicationSnapshot.get("options"));
+        List<Map<String, Object>> objectSnapshots = maps(snapshot.get("objects"));
+        Map<String, Object> restoredBuilder = restoreLegacyPrimaryObjectPage(
+                map(options.get("inAppBuilder")), options, applicationSnapshot, objectSnapshots);
         options.put("inAppBuilder", filterBuilder(
-                map(options.get("inAppBuilder")), current.getApplicationCode(),
-                resolvePermissionCodes(), resolveAdminAccess()));
+                restoredBuilder, current.getApplicationCode(),
+                resolvePermissionCodes(), applicationService.currentUserIsApplicationAdministrator(
+                        JSON.toJSONString(applicationSnapshot.get("portalConfig")))));
         applicationSnapshot.put("options", options);
 
         BusinessApplicationRuntimeVO runtime = new BusinessApplicationRuntimeVO();
         runtime.setVersionNo(version.getVersionNo());
         runtime.setApplication(toApplication(applicationSnapshot, current, version.getVersionNo()));
-        runtime.setObjects(maps(snapshot.get("objects")).stream().map(this::toObject).toList());
+        runtime.setObjects(objectSnapshots.stream().map(this::toObject).toList());
         runtime.setEntries(maps(snapshot.get("entries")).stream().map(this::toEntry).toList());
+        runtime.setExtensions(maps(snapshot.get("extensions")).stream()
+                .filter(this::isRuntimeExtension)
+                .map(this::runtimeExtension)
+                .toList());
+        return runtime;
+    }
+
+    /**
+     * 改版前的对象型应用直接由主对象进入 CRUD 运行页，没有独立页面树。
+     * 当不可变发布快照仍是这种结构时，按 primaryObjectCode 恢复一个新版对象页；
+     * 一旦新版草稿保存迁移标记，后续用户主动清空页面不会再被自动补回。
+     */
+    private Map<String, Object> restoreLegacyPrimaryObjectPage(
+            Map<String, Object> builder,
+            Map<String, Object> options,
+            Map<String, Object> application,
+            List<Map<String, Object>> objects) {
+        if (Boolean.TRUE.equals(builder.get("legacyObjectPageMigrated"))
+                || !maps(builder.get("nodes")).isEmpty()
+                || !map(builder.get("pages")).isEmpty()) {
+            return builder;
+        }
+        String primaryObjectCode = StringUtils.trimToNull(string(options.get("primaryObjectCode")));
+        if (primaryObjectCode == null) {
+            return builder;
+        }
+        Map<String, Object> primaryObject = objects.stream()
+                .filter(object -> primaryObjectCode.equals(string(object.get("objectCode"))))
+                .filter(object -> "PRIMARY".equalsIgnoreCase(StringUtils.defaultIfBlank(
+                        string(object.get("objectRole")), "PRIMARY")))
+                .findFirst().orElse(null);
+        String configKey = primaryObject == null
+                ? null : StringUtils.trimToNull(string(primaryObject.get("configKey")));
+        if (primaryObject == null || configKey == null) {
+            return builder;
+        }
+
+        String objectCode = StringUtils.defaultIfBlank(
+                string(primaryObject.get("objectCode")), primaryObjectCode);
+        String objectName = StringUtils.defaultIfBlank(
+                string(primaryObject.get("objectName")),
+                StringUtils.defaultIfBlank(string(application.get("applicationName")), objectCode));
+        String pageId = "page_" + legacyPageToken(objectCode);
+        Map<String, Object> objectOptions = primaryObject.get("options") instanceof String text
+                ? readJsonObject(text) : map(primaryObject.get("options"));
+
+        Map<String, Object> objectRef = new LinkedHashMap<>();
+        objectRef.put("objectId", primaryObject.get("objectId"));
+        objectRef.put("objectCode", objectCode);
+        objectRef.put("objectName", objectName);
+        objectRef.put("configKey", configKey);
+        objectRef.put("pageKey", StringUtils.defaultIfBlank(
+                string(objectOptions.get("pageKey")), "list"));
+        objectRef.put("pageMode", "crud");
+        objectRef.put("hasBusinessData", true);
+        objectRef.put("valid", true);
+
+        Map<String, Object> node = new LinkedHashMap<>();
+        node.put("id", pageId);
+        node.put("type", "page");
+        node.put("title", objectName);
+        node.put("icon", StringUtils.defaultString(string(application.get("icon"))));
+        node.put("parentId", null);
+        node.put("sort", 0);
+        node.put("pageType", "object");
+        node.put("pageTemplate", "master-detail-crud".equalsIgnoreCase(
+                string(primaryObject.get("layoutType"))) ? "master-detail" : "crud");
+        node.put("objectRef", objectRef);
+        node.put("mountTarget", "BOTH");
+        node.put("systemMenuVisible", false);
+        node.put("navigationVisible", true);
+        node.put("access", Map.of("mode", "inherit", "roleIds", List.of()));
+        node.put("legacyObjectPage", true);
+
+        Map<String, Object> pageLayout = new LinkedHashMap<>();
+        pageLayout.put("items", List.of());
+        pageLayout.put("pageTitleComponentInitialized", true);
+        Map<String, Object> page = new LinkedHashMap<>();
+        page.put("title", objectName);
+        page.put("description", "");
+        page.put("layout", pageLayout);
+
+        Map<String, Object> restored = new LinkedHashMap<>(builder);
+        restored.put("schemaVersion", 2);
+        restored.put("legacyObjectPageMigrated", true);
+        restored.put("homePageId", pageId);
+        restored.put("nodes", List.of(node));
+        restored.put("pages", Map.of(pageId, page));
+        restored.putIfAbsent("formAssets", List.of());
+        return restored;
+    }
+
+    private String legacyPageToken(String objectCode) {
+        String normalized = LEGACY_PAGE_ID_UNSAFE.matcher(
+                StringUtils.lowerCase(StringUtils.trimToEmpty(objectCode))).replaceAll("_");
+        normalized = StringUtils.strip(normalized, "_");
+        return StringUtils.defaultIfBlank(normalized, "legacy_object");
+    }
+
+    private boolean isRuntimeExtension(Map<String, Object> extension) {
+        return "ENABLED".equalsIgnoreCase(string(extension.get("status")))
+                && integer(extension.get("enabledVersion")) > 0;
+    }
+
+    private Map<String, Object> runtimeExtension(Map<String, Object> extension) {
+        Map<String, Object> runtime = new LinkedHashMap<>(extension);
+        if ("SERVER_BINDING".equalsIgnoreCase(string(runtime.get("extensionType")))) {
+            runtime.remove("content");
+            runtime.remove("processedContent");
+            runtime.remove("configJson");
+        }
+        runtime.remove("draftVersion");
+        runtime.remove("releaseVersion");
+        runtime.remove("contentHash");
         return runtime;
     }
 
@@ -165,7 +315,11 @@ public class BusinessApplicationRuntimeService {
                                   String applicationCode,
                                   Set<String> permissionCodes,
                                   boolean bypassRoleAccess) {
-        if (bypassRoleAccess || !systemMenuVisible(node)) {
+        if (bypassRoleAccess) {
+            return true;
+        }
+        // 存量对象页没有页面级 sys_resource；它继承应用门户和对象接口权限。
+        if (Boolean.TRUE.equals(node.get("legacyObjectPage"))) {
             return true;
         }
         String nodeId = StringUtils.trimToNull(string(node.get("id")));
@@ -179,20 +333,15 @@ public class BusinessApplicationRuntimeService {
                 || permissionCodes.contains("**");
     }
 
-    private boolean systemMenuVisible(Map<String, Object> node) {
-        Object value = node.get("systemMenuVisible");
-        if (value == null) {
-            value = map(node.get("settings")).get("systemMenuVisible");
-        }
-        return Boolean.TRUE.equals(value);
-    }
-
     private BusinessApplicationVO toApplication(Map<String, Object> snapshot,
                                                 BusinessApplicationVO current,
                                                 Integer versionNo) {
         BusinessApplicationVO application = new BusinessApplicationVO();
         application.setId(longValue(snapshot.get("id")));
-        application.setApplicationCode(string(snapshot.get("applicationCode")));
+        application.setApplicationCode(StringUtils.defaultIfBlank(
+                string(snapshot.get("applicationCode")), current.getApplicationCode()));
+        application.setPortalSlug(StringUtils.defaultIfBlank(
+                string(snapshot.get("portalSlug")), application.getApplicationCode()));
         application.setApplicationName(string(snapshot.get("applicationName")));
         application.setSuiteCode(string(snapshot.get("suiteCode")));
         application.setSuiteName(current.getSuiteName());
@@ -203,7 +352,19 @@ public class BusinessApplicationRuntimeService {
                 string(snapshot.get("designStatus")), "PUBLISHED"));
         application.setLastPublishVersion(versionNo);
         application.setOptions(writeJson(snapshot.get("options")));
+        application.setPortalConfig(writeJson(snapshot.get("portalConfig")));
+        application.setAiAssistantConfig(writeJson(snapshot.get("aiAssistantConfig")));
         return application;
+    }
+
+    private boolean hasReachableHomePage(BusinessApplicationRuntimeVO runtime) {
+        if (runtime == null || runtime.getApplication() == null) {
+            return false;
+        }
+        Map<String, Object> options = readJsonObject(runtime.getApplication().getOptions());
+        Map<String, Object> builder = map(options.get("inAppBuilder"));
+        String homePageId = StringUtils.trimToNull(string(builder.get("homePageId")));
+        return homePageId != null && map(builder.get("pages")).containsKey(homePageId);
     }
 
     private BusinessApplicationObjectVO toObject(Map<String, Object> snapshot) {
@@ -231,14 +392,6 @@ public class BusinessApplicationRuntimeService {
         }
     }
 
-    private boolean resolveAdminAccess() {
-        try {
-            return SessionHelper.isAdmin();
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
     private String writeJson(Object value) {
         if (value == null) {
             return null;
@@ -247,6 +400,18 @@ public class BusinessApplicationRuntimeService {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
             throw new BusinessException("应用运行配置序列化失败");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readJsonObject(String value) {
+        if (StringUtils.isBlank(value)) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return map(objectMapper.readValue(value, Map.class));
+        } catch (Exception ignored) {
+            return new LinkedHashMap<>();
         }
     }
 

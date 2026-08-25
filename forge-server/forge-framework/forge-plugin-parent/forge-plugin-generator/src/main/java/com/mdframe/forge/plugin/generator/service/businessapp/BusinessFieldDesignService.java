@@ -36,6 +36,9 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class BusinessFieldDesignService {
 
+    private static final String MANAGED_BY_KEY = "managedBy";
+    private static final String MANAGED_BY_BUSINESS_FLOW = "BUSINESS_FLOW";
+
     private static final Map<String, String> ZONE_COMPONENTS = Map.of(
             "search", "search-form",
             "table", "data-table",
@@ -82,6 +85,9 @@ public class BusinessFieldDesignService {
         if (Boolean.TRUE.equals(existing.getSystemField())) {
             throw new BusinessException("系统字段不可修改");
         }
+        if (isBusinessFlowManagedField(existing)) {
+            throw new BusinessException("流程状态字段由平台托管，不支持手工修改");
+        }
         String nextFieldCode = resolveRequestedFieldCode(existing, dto);
         String nextColumnName = resolveRequestedColumnName(existing, dto, nextFieldCode);
         boolean identityChanged = !StringUtils.equals(nextFieldCode, existing.getField())
@@ -119,6 +125,9 @@ public class BusinessFieldDesignService {
         LowcodeFieldSchema field = requireBusinessField(context.getModelSchema(), fieldCode);
         if (Boolean.TRUE.equals(field.getSystemField())) {
             throw new BusinessException("系统字段不可删除");
+        }
+        if (isBusinessFlowManagedField(field)) {
+            throw new BusinessException("流程状态字段由平台托管，不支持手工删除");
         }
         List<String> blockingReferences = collectBlockingReferences(context, field.getField());
         if (!blockingReferences.isEmpty()) {
@@ -200,6 +209,11 @@ public class BusinessFieldDesignService {
             return existing == null ? new LinkedHashMap<>() : new LinkedHashMap<>(existing);
         }
         return new LinkedHashMap<>(requested);
+    }
+
+    private boolean isBusinessFlowManagedField(LowcodeFieldSchema field) {
+        return field != null && field.getAdvancedProps() != null
+                && MANAGED_BY_BUSINESS_FLOW.equals(String.valueOf(field.getAdvancedProps().get(MANAGED_BY_KEY)));
     }
 
     private String resolveRequestedFieldCode(LowcodeFieldSchema existing, BusinessFieldDTO dto) {

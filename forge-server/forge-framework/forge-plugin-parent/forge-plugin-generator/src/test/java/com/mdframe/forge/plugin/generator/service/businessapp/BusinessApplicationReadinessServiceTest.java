@@ -72,6 +72,7 @@ class BusinessApplicationReadinessServiceTest {
         objectCheck.setPublishable(true);
 
         when(applicationService.publishContext(101L)).thenReturn(application);
+        when(applicationService.slugAvailable("leave_center", 101L)).thenReturn(true);
         when(selectionService.resolveContext(101L, null)).thenReturn(resolved);
         when(pageDependencyInspector.inspect(application, List.of(object)))
                 .thenReturn(new BusinessApplicationPageDependencyInspector.InspectionResult(false, List.of()));
@@ -179,6 +180,7 @@ class BusinessApplicationReadinessServiceTest {
         BusinessApplicationVO application = new BusinessApplicationVO();
         application.setId(101L);
         application.setApplicationCode("leave_center");
+        application.setPortalSlug("leave_center");
         application.setApplicationName("离职管理");
         application.setSuiteName("人力资源");
         application.setStatus(1);

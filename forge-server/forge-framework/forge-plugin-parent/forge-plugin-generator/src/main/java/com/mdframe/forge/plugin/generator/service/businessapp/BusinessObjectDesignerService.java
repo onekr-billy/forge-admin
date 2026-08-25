@@ -36,6 +36,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessObjectRelationMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDomainService;
+import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeComponentCatalog;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeModelSchemaNormalizer;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeSchemaValidator;
@@ -75,16 +76,10 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private static final String LINKAGE_SCHEMA_MANAGED_BY = "linkageSchema";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE_ID = "runtimeDatasourceId";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE = "runtimeDatasource";
-    private static final Set<String> FORM_FIELD_COMPONENT_KEYS = Set.of(
-            "input", "barcodeScanner", "textarea", "number", "inputNumber", "input-number", "inputnumber",
-            "integer", "money", "date", "datetime", "time",
-            "switch", "select", "radio", "checkbox", "dictSelect", "cascader",
-            "regionTreeSelect", "orgTreeSelect", "orgSelect", "departmentSelect", "departmentTreeSelect",
-            "deptSelect", "deptTreeSelect", "elTreeSelect", "orgName", "deptName", "userSelect",
-            "userPicker", "userName", "fileUpload", "imageUpload", "upload", "objectReference", "recordSelector"
-    );
+    private static final Set<String> FORM_FIELD_COMPONENT_KEYS = LowcodeComponentCatalog.FIELD_COMPONENT_KEYS;
     private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "SELECT", "RADIO", "CHECKBOX", "MULTI_SELECT");
-    private static final Set<String> DICT_COMPONENT_TYPES = Set.of("dictSelect", "select", "radio", "checkbox", "cascader");
+    private static final Set<String> DICT_COMPONENT_TYPES = Set.of(
+            "dictSelect", "select", "radio", "radioButton", "checkbox", "transfer", "cascader", "treeSelect", "customSelect");
     private static final Map<String, String> PAGE_ZONE_ALIASES = Map.ofEntries(
             Map.entry("search", "search"),
             Map.entry("search-form", "search"),
@@ -123,21 +118,35 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             Map.entry("inputnumber", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
             Map.entry("integer", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
             Map.entry("money", new ComponentFieldDefaults("MONEY", "decimal", 18, 2, "eq")),
+            Map.entry("slider", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("rate", new ComponentFieldDefaults("NUMBER", "decimal", 4, 1, "eq")),
+            Map.entry("color", new ComponentFieldDefaults("TEXT", "varchar", 32, 2, "eq")),
             Map.entry("date", new ComponentFieldDefaults("DATE", "date", null, null, "eq")),
             Map.entry("datetime", new ComponentFieldDefaults("DATETIME", "datetime", null, null, "eq")),
+            Map.entry("daterange", new ComponentFieldDefaults("TEXT", "text", null, null, "eq")),
+            Map.entry("datetimerange", new ComponentFieldDefaults("TEXT", "text", null, null, "eq")),
+            Map.entry("month", new ComponentFieldDefaults("TEXT", "varchar", 7, null, "eq")),
+            Map.entry("year", new ComponentFieldDefaults("TEXT", "varchar", 4, null, "eq")),
             Map.entry("switch", new ComponentFieldDefaults("SWITCH", "tinyint", 1, 0, "eq")),
             Map.entry("select", new ComponentFieldDefaults("DICT", "varchar", 64, 2, "eq")),
             Map.entry("dictSelect", new ComponentFieldDefaults("DICT", "varchar", 64, 2, "eq")),
             Map.entry("radio", new ComponentFieldDefaults("RADIO", "varchar", 64, 2, "eq")),
+            Map.entry("radioButton", new ComponentFieldDefaults("RADIO", "varchar", 64, 2, "eq")),
             Map.entry("checkbox", new ComponentFieldDefaults("CHECKBOX", "varchar", 255, 2, "in")),
+            Map.entry("transfer", new ComponentFieldDefaults("MULTI_SELECT", "text", null, null, "in")),
             Map.entry("cascader", new ComponentFieldDefaults("DICT", "varchar", 128, 2, "eq")),
+            Map.entry("treeSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
+            Map.entry("customSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
             Map.entry("regionTreeSelect", new ComponentFieldDefaults("REGION", "varchar", 32, 2, "eq")),
             Map.entry("orgTreeSelect", new ComponentFieldDefaults("DEPT", "bigint", null, null, "eq")),
             Map.entry("userSelect", new ComponentFieldDefaults("USER", "bigint", null, null, "eq")),
             Map.entry("fileUpload", new ComponentFieldDefaults("FILE", "varchar", 512, 2, "eq")),
             Map.entry("imageUpload", new ComponentFieldDefaults("IMAGE", "varchar", 512, 2, "eq")),
             Map.entry("objectReference", new ComponentFieldDefaults("REFERENCE", "bigint", null, null, "eq")),
-            Map.entry("recordSelector", new ComponentFieldDefaults("RECORD_SELECTOR", "bigint", null, null, "eq"))
+            Map.entry("recordSelector", new ComponentFieldDefaults("RECORD_SELECTOR", "bigint", null, null, "eq")),
+            Map.entry("text", new ComponentFieldDefaults("TEXT", "varchar", 255, 2, "like")),
+            Map.entry("timerange", new ComponentFieldDefaults("TEXT", "text", null, null, "eq")),
+            Map.entry("time", new ComponentFieldDefaults("TEXT", "varchar", 32, null, "eq"))
     );
     private static final Set<String> BUSINESS_COMPONENT_TYPES = Set.of(
             "select", "dictSelect", "radio", "checkbox", "cascader",
@@ -313,6 +322,17 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     @Transactional(rollbackFor = Exception.class)
     public DesignerContext saveDraft(DesignerContext context, String designStatus) {
+        return saveDraft(context, designStatus, true);
+    }
+
+    /**
+     * 保存运行草稿。预览/发布前的运行时物化只同步派生配置，不应把应用重新标记为
+     * “有未发布变更”；真正的设计器保存仍通过默认的 {@code markApplicationChanged=true}
+     * 分支传播变更状态。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public DesignerContext saveDraft(DesignerContext context, String designStatus,
+                                     boolean markApplicationChanged) {
         if (context == null || context.getObject() == null) {
             throw new BusinessException("业务对象设计上下文不能为空");
         }
@@ -337,7 +357,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         businessObjectMapper.updateById(object);
         businessAppService.syncRuntimeAppsForObject(object.getSuiteCode(), object.getObjectCode(), config.getConfigKey());
-        applicationChangeTracker.markObjectChanged(object.getId());
+        if (markApplicationChanged) {
+            applicationChangeTracker.markObjectChanged(object.getId());
+        }
 
         context.setModel(model);
         context.setConfig(config);
@@ -365,7 +387,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 && StringUtils.equals(beforePageSchema, preparedPageSchema)) {
             return context.getConfig();
         }
-        return saveDraft(context, BusinessObjectDesignStatus.CHANGED).getConfig();
+        String currentStatus = StringUtils.defaultIfBlank(
+                context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT);
+        return saveDraft(context, currentStatus, false).getConfig();
     }
 
     public DesignerContext compileFormFirstRuntimeSchema(DesignerContext context) {
@@ -2263,6 +2287,10 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private String resolveFormComponentKey(LowcodeFieldSchema field) {
         String componentType = StringUtils.defaultString(field.getComponentType());
         String businessType = StringUtils.defaultString(field.getBusinessFieldType()).toUpperCase(Locale.ROOT);
+        if (Set.of("slider", "rate", "color", "radioButton", "transfer", "customSelect", "daterange",
+                "datetimerange", "month", "year", "timerange", "treeSelect", "text").contains(componentType)) {
+            return componentType;
+        }
         if ("barcodeScanner".equals(componentType)) {
             return "barcodeScanner";
         }
@@ -2691,7 +2719,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 continue;
             }
             String componentKey = text(component.get("componentKey"));
-            if (FORM_FIELD_COMPONENT_KEYS.contains(componentKey)) {
+            if (FORM_FIELD_COMPONENT_KEYS.contains(componentKey)
+                    && !"virtual".equals(StringUtils.defaultIfBlank(text(mapValue(component.get("fieldBinding")).get("mode")), "field"))) {
                 Map<String, Object> binding = mapValue(component.get("fieldBinding"));
                 String fieldCode = text(binding.get("fieldCode"));
                 if (StringUtils.isBlank(fieldCode) || !modelFields.contains(fieldCode)) {
@@ -2748,7 +2777,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         String componentKey = text(component.get("componentKey"));
         String key = StringUtils.defaultIfBlank(text(component.get("id")), componentKey + "_" + index);
-        if (FORM_FIELD_COMPONENT_KEYS.contains(componentKey)) {
+        if (FORM_FIELD_COMPONENT_KEYS.contains(componentKey)
+                && !"virtual".equals(StringUtils.defaultIfBlank(text(mapValue(component.get("fieldBinding")).get("mode")), "field"))) {
             Map<String, Object> binding = mapValue(component.get("fieldBinding"));
             String fieldCode = text(binding.get("fieldCode"));
             if (StringUtils.isBlank(fieldCode) || !modelFields.contains(fieldCode)
@@ -2792,8 +2822,28 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (Set.of("elCollapseItem", "collapseItem").contains(componentKey)) {
             return runtimeLayoutNode("collapseItem", key, label, props, children, gridColumns);
         }
-        if (Set.of("elDivider", "divider", "fcTitle", "title").contains(componentKey)) {
+        if ("button".equals(componentKey)) {
+            Map<String, Object> node = runtimeLayoutNode("button", key, label, props, List.of(), span);
+            node.put("align", normalizeAlign(text(mapValue(component.get("layout")).get("align"))));
+            return node;
+        }
+        if (Set.of("table", "tableGrid").contains(componentKey)) {
+            return runtimeLayoutNode(componentKey, key, label, props, children,
+                    "table".equals(componentKey) ? gridColumns : span);
+        }
+        if (Set.of("AiCrudPage", "aiCrudPage", "crud", "crudBlock").contains(componentKey)) {
+            return runtimeLayoutNode("AiCrudPage", key, label, props, children, gridColumns);
+        }
+        if (LowcodeComponentCatalog.isPageWidgetComponent(componentKey)) {
+            Map<String, Object> node = runtimeLayoutNode("widget", key, label, props, children, span);
+            node.put("componentKey", componentKey);
+            return node;
+        }
+        if (Set.of("elDivider", "divider", "AiFormSectionTitle").contains(componentKey)) {
             return runtimeLayoutNode("divider", key, label, props, List.of(), gridColumns);
+        }
+        if (Set.of("fcTitle", "title", "groupTitle").contains(componentKey)) {
+            return runtimeLayoutNode("groupTitle", key, label, props, List.of(), gridColumns);
         }
         return children.isEmpty() ? null : children;
     }

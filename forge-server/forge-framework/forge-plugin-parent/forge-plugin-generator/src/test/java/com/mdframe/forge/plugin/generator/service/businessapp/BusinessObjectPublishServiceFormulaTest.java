@@ -72,7 +72,7 @@ class BusinessObjectPublishServiceFormulaTest {
                 new CrossObjectRecomputeTaskService(), ddlService,
                 runtimeDataSourceResolver,
                 crudConfigMapper, businessAppMapper, businessObjectMapper,
-                triggerMapper, documentConfigService, permissionService, objectMapper);
+                triggerMapper, documentConfigService, permissionService, null, objectMapper);
         // Stub document config to disabled so checkDocumentConfig skips early
         BusinessDocumentConfigVO docConfig = new BusinessDocumentConfigVO();
         docConfig.setDocumentEnabled(false);

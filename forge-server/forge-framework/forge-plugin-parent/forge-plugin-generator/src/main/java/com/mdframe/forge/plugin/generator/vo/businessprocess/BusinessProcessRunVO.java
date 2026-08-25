@@ -41,6 +41,9 @@ public class BusinessProcessRunVO {
 
     private String currentNodeId;
 
+    /** 从流程 schema 解析的节点名称，列表展示用。 */
+    private String currentNodeName;
+
     private Integer retryCount;
 
     private String errorCode;

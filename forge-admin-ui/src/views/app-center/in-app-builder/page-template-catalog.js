@@ -13,7 +13,7 @@ export const inAppPageTemplateCatalog = [
     description: '适合说明业务目标和入口',
     pageTypes: ['intro', 'content', 'home'],
     pageType: 'intro',
-    blockTypes: ['page-title', 'info-panel'],
+    blockTypes: ['info-panel'],
   },
   {
     key: 'overview',
@@ -21,7 +21,7 @@ export const inAppPageTemplateCatalog = [
     description: '标题、指标和提示信息',
     pageTypes: ['home', 'content', 'intro'],
     pageType: 'content',
-    blockTypes: ['page-title', 'stats-strip', 'info-panel'],
+    blockTypes: ['stats-strip', 'info-panel'],
   },
   {
     key: 'data',
@@ -29,7 +29,7 @@ export const inAppPageTemplateCatalog = [
     description: '适合后续添加数据列表',
     pageTypes: ['content'],
     pageType: 'content',
-    blockTypes: ['page-title', 'AiCrudPage'],
+    blockTypes: ['AiCrudPage'],
   },
   {
     key: 'crud',

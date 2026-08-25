@@ -46,6 +46,26 @@ public interface SysResourceMapper extends BaseMapper<SysResource> {
                                  @Param("resourceType") Integer resourceType,
                                  @Param("perms") String perms);
 
+    /** 按权限标识和客户端查询单个资源，允许 pc/h5 同时存在同一权限码的菜单。 */
+    SysResource selectOneByPermsAndClientCode(@Param("tenantId") Long tenantId,
+                                              @Param("resourceType") Integer resourceType,
+                                              @Param("perms") String perms,
+                                              @Param("clientCode") String clientCode);
+
+    /**
+     * 按权限码和客户端查询有效菜单资源，兼容目录/菜单类型调整。
+     * resource_type 仅限目录和菜单，不会误复用按钮或 API 资源。
+     */
+    SysResource selectOneByPermsAndClientCodeAnyType(@Param("tenantId") Long tenantId,
+                                                     @Param("perms") String perms,
+                                                     @Param("clientCode") String clientCode);
+
+    /** 按路由和客户端查询单个有效菜单资源。 */
+    SysResource selectOneByPathAndClientCode(@Param("tenantId") Long tenantId,
+                                             @Param("resourceType") Integer resourceType,
+                                             @Param("path") String path,
+                                             @Param("clientCode") String clientCode);
+
     /**
      * 按路由查询单个资源。
      */

@@ -50,6 +50,7 @@ import { normalizeRecordSelectorConfig } from '@/components/ai-form/record-selec
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from '@/components/lowcode-builder/page/crud-hook-rules'
 import ListPageGridDesigner from '@/components/lowcode-builder/page/ListPageGridDesigner.vue'
 import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRenderer.vue'
+import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
 import { hasRuntimeVisibilityRules } from '@/components/lowcode-builder/shared/runtime-rules'
 import { getDictData } from '@/composables/useDict'
 import { useTabStore, useUserStore } from '@/store'
@@ -942,7 +943,11 @@ function isLegacyGroupTitleRuntimeLayoutNode(node = {}) {
 }
 
 function isStandaloneRuntimeLayoutNode(node = {}) {
-  return isSectionTitleRuntimeLayoutNode(node) || isGroupTitleRuntimeLayoutNode(node) || isActionRuntimeLayoutNode(node)
+  return isSectionTitleRuntimeLayoutNode(node)
+    || isGroupTitleRuntimeLayoutNode(node)
+    || isActionRuntimeLayoutNode(node)
+    || node.nodeType === 'widget'
+    || isPageWidgetComponentKey(node.componentKey || node.type || node.nodeType)
 }
 
 function isActionRuntimeLayoutNode(node = {}) {
@@ -1093,6 +1098,7 @@ const crudProps = computed(() => {
     enableCustomQuery: options.enableCustomQuery !== false,
     customQueryConfigKey: cfg.configKey,
     toolbarActions: normalizeRuntimePageActions(options.toolbarActions || [], 'toolbar'),
+    runtimeActions: normalizeRuntimePageActions(options.runtimeActions || [], 'row'),
     businessObjectCode: resolveBusinessObjectCode(cfg),
     publicParams: treeTable
       ? { ...configuredPublicParams, ...defaultSortParams, loadMode: treeLoadMode }

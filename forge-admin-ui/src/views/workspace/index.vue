@@ -102,9 +102,10 @@ function openNav(item) {
 
 <style scoped>
 .workspace-shell-page {
-  min-height: calc(100vh - 96px);
-  padding: 16px;
-  background: #f5f7fb;
+  min-height: 0;
+  flex: 1;
+  padding: 0;
+  background: transparent;
 }
 
 .workspace-shell-head {
@@ -113,10 +114,9 @@ function openNav(item) {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
-  padding: 16px 18px;
-  border: 1px solid #e5eaf3;
-  border-radius: 8px;
-  background: #fff;
+  padding: 0 0 14px;
+  border: 0;
+  background: transparent;
 }
 
 .workspace-shell-head h1 {
@@ -144,10 +144,9 @@ function openNav(item) {
   flex-direction: column;
   gap: 8px;
   align-self: start;
-  padding: 10px;
-  border: 1px solid #e5eaf3;
-  border-radius: 8px;
-  background: #fff;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .workspace-side-item {
@@ -167,13 +166,13 @@ function openNav(item) {
 }
 
 .workspace-side-item:hover {
-  background: #f7faff;
+  background: #f2f3f5;
 }
 
 .workspace-side-item.active {
-  border-color: #2563eb;
-  background: #e8f1ff;
-  color: #1d4ed8;
+  border-color: #c9cdd4;
+  background: #f2f3f5;
+  color: #1f2329;
 }
 
 .workspace-side-item.disabled {
@@ -188,14 +187,14 @@ function openNav(item) {
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  background: #eef2f7;
-  color: #475467;
+  background: #f2f3f5;
+  color: #4e5969;
   font-size: 18px;
 }
 
 .workspace-side-item.active .workspace-side-icon {
-  background: #2563eb;
-  color: #fff;
+  background: #e5e6eb;
+  color: #1f2329;
 }
 
 .workspace-side-item strong,

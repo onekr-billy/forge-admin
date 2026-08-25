@@ -517,4 +517,40 @@ input:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
+
+@container node-config (max-width: 620px) {
+  .condition-config-head,
+  .branch-card-head,
+  .logic-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .branch-name-field {
+    flex-basis: 100%;
+  }
+
+  .logic-row select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .logic-row button {
+    margin-left: 0;
+  }
+
+  .condition-rule-row {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(96px, 0.7fr);
+  }
+
+  .condition-rule-row .rule-value,
+  .condition-rule-row .rule-no-value {
+    grid-column: 2 / -1;
+  }
+
+  .condition-rule-row .remove-rule-button {
+    justify-self: end;
+    grid-column: 2 / -1;
+  }
+}
 </style>

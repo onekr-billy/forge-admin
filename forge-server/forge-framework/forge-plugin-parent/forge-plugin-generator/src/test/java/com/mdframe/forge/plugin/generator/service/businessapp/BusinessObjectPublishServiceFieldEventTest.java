@@ -29,7 +29,7 @@ class BusinessObjectPublishServiceFieldEventTest {
     void setUp() throws Exception {
         service = new BusinessObjectPublishService(
                 null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, new ObjectMapper());
+                null, null, null, null, null, null, null, null, new ObjectMapper());
         checkFieldEvents = BusinessObjectPublishService.class.getDeclaredMethod(
                 "checkFieldEvents", Object.class, Set.class, List.class);
         checkFieldEvents.setAccessible(true);

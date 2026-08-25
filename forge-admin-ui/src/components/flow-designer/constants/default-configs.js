@@ -21,6 +21,7 @@ export const DEFAULT_CONFIGS = Object.freeze({
     documentation: '',
     taskType: 'assignee',
     assignee: '',
+    assigneeUserId: '',
     assigneeExpr: '',
     assigneeUserName: '',
     candidateUsers: [],

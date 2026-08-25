@@ -1,7 +1,7 @@
 package com.mdframe.forge.plugin.ai.agent.engine.event;
 
 /**
- * Agent 事件类型枚举（28种 + CUSTOM）
+ * Agent 事件类型枚举（29种 + CUSTOM）
  */
 public enum AgentEventType {
 
@@ -42,6 +42,14 @@ public enum AgentEventType {
     SUBAGENT_EXPOSED("SUBAGENT_EXPOSED"),
     HINT_BLOCK("HINT_BLOCK"),
     ALL_TOOLS_DENIED("ALL_TOOLS_DENIED"),
+
+    /**
+     * 持久化元信息（流首下发）：携带本轮落库的 user/assistant recordId，
+     * 供前端在未重载会话时即可将 live 消息关联到 DB 行，支撑重新生成/编辑重发/单条删除。
+     * 由 {@code AgentEngineService} 在请求线程 concat 进 SSE 流首，不经过 eventPublisher，
+     * 因此持久化监听器不会收到它。
+     */
+    PERSIST_META("PERSIST_META"),
 
     CUSTOM("CUSTOM");
 

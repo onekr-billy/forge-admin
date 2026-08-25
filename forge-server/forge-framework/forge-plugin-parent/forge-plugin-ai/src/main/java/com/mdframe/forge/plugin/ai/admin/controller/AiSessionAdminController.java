@@ -1,14 +1,14 @@
 package com.mdframe.forge.plugin.ai.admin.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.mdframe.forge.plugin.ai.chat.domain.AiChatRecord;
-import com.mdframe.forge.plugin.ai.chat.service.AiChatRecordService;
+import com.mdframe.forge.plugin.ai.chat.service.AiChatMessageAssembler;
+import com.mdframe.forge.plugin.ai.chat.vo.AiChatMessageVO;
 import com.mdframe.forge.plugin.ai.session.dto.AiSessionPageQuery;
 import com.mdframe.forge.plugin.ai.session.service.AiChatSessionService;
+import com.mdframe.forge.plugin.ai.session.vo.AiExperienceMetricsVO;
 import com.mdframe.forge.plugin.ai.session.vo.AiSessionStatisticsVO;
 import com.mdframe.forge.plugin.ai.session.vo.AiSessionVO;
 import com.mdframe.forge.plugin.ai.session.domain.AiChatSession;
-import com.mdframe.forge.plugin.ai.session.service.AiChatSessionService;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -28,7 +28,7 @@ import java.util.Map;
 public class AiSessionAdminController {
 
     private final AiChatSessionService sessionService;
-    private final AiChatRecordService recordService;
+    private final AiChatMessageAssembler messageAssembler;
 
     @GetMapping("/page")
     public RespInfo<Page<AiSessionVO>> page(AiSessionPageQuery query) {
@@ -36,8 +36,8 @@ public class AiSessionAdminController {
     }
 
     @GetMapping("/{sessionId}/messages")
-    public RespInfo<List<AiChatRecord>> messages(@PathVariable String sessionId) {
-        return RespInfo.success(recordService.listBySession(sessionId));
+    public RespInfo<List<AiChatMessageVO>> messages(@PathVariable String sessionId) {
+        return RespInfo.success(messageAssembler.assembleSessionMessages(sessionId));
     }
 
     @DeleteMapping("/{sessionId}")
@@ -49,6 +49,11 @@ public class AiSessionAdminController {
     @GetMapping("/statistics")
     public RespInfo<AiSessionStatisticsVO> statistics() {
         return RespInfo.success(sessionService.getStatistics());
+    }
+
+    @GetMapping("/experience-metrics")
+    public RespInfo<AiExperienceMetricsVO> experienceMetrics() {
+        return RespInfo.success(sessionService.getExperienceMetrics());
     }
 
     @PutMapping("/{sessionId}/metadata")

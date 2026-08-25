@@ -31,6 +31,9 @@ public interface FlowModelMapper extends BaseMapper<FlowModel> {
                                                @Param("category") String category,
                                                @Param("createBy") String createBy);
 
+    /** 按流程定义 Key 查询模型（通知监听器使用）。 */
+    FlowModel selectByModelKey(@Param("modelKey") String modelKey);
+
     /**
      * 查询当前租户已发布流程模型目录。
      */

@@ -30,4 +30,12 @@
       AND id != #{excludeId}
     </if>
   </select>
+
+  <!-- 按 Agent 查询已启用(enabled='1')的工具绑定，供引擎运行时声明工具使用 -->
+  <select id="selectEnabledByAgentId" resultType="com.mdframe.forge.plugin.ai.agenttool.domain.AiAgentToolConfig">
+    SELECT <include refid="toolColumns" />
+    FROM ai_agent_tool_config
+    WHERE del_flag = 0 AND agent_id = #{agentId} AND enabled = '1'
+    ORDER BY create_time ASC
+  </select>
 </mapper>

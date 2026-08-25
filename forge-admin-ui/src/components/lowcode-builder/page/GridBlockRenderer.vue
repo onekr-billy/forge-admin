@@ -285,6 +285,7 @@
                 :show-data-source-guide="showDataSourceGuide"
                 :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
                 :runtime-interactive="runtimeInteractive"
+                :runtime-extension-hooks="runtimeExtensionHooks"
                 :runtime-record="runtimeRecord"
                 :active-drop-cell="activeDropCell"
                 :nested-moving-block-id="nestedMovingBlockId"
@@ -464,6 +465,7 @@
           :enable-collapse="block.props?.enableCollapse === true"
           :max-visible-fields="block.props?.maxVisibleFields || 6"
           :show-feedback="block.props?.showFeedback !== false"
+          @update:value="handleStandaloneAiFormValueUpdate"
           @submit="handleAiFormSubmit"
         />
       </div>
@@ -924,6 +926,7 @@
           :show-data-source-guide="showDataSourceGuide"
           :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
           :runtime-interactive="runtimeInteractive"
+          :runtime-extension-hooks="runtimeExtensionHooks"
           :runtime-record="runtimeRecord"
           :catalog-drag-block-type="catalogDragBlockType"
           :block-fields-resolver="blockFieldsResolver"
@@ -1027,6 +1030,7 @@
               :show-data-source-guide="showDataSourceGuide"
               :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
               :runtime-interactive="runtimeInteractive"
+              :runtime-extension-hooks="runtimeExtensionHooks"
               :runtime-record="runtimeRecord"
               :active-drop-cell="activeDropCell"
               :nested-moving-block-id="nestedMovingBlockId"
@@ -1128,6 +1132,7 @@
                   :show-data-source-guide="showDataSourceGuide"
                   :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
                   :runtime-interactive="runtimeInteractive"
+                  :runtime-extension-hooks="runtimeExtensionHooks"
                   :runtime-record="runtimeRecord"
                   :active-drop-cell="activeDropCell"
                   :nested-moving-block-id="nestedMovingBlockId"
@@ -1196,7 +1201,7 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import InlineRichText from '@/components/lowcode-builder/shared/InlineRichText.vue'
 import { pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
-import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, includeManagedRuntimeFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi } from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { useUserStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
@@ -1283,6 +1288,10 @@ const props = defineProps({
   catalogDragBlockType: {
     type: String,
     default: '',
+  },
+  runtimeExtensionHooks: {
+    type: [Object, Function],
+    default: () => ({}),
   },
 })
 
@@ -1723,6 +1732,9 @@ const designerCrudPublicParams = computed(() => ({
   ...(props.block.props?.publicParams || {}),
   ...(hasExplicitSearchFieldRefs.value ? crudSearchTypeRequestParams.value : {}),
 }))
+const runtimeExtensionHandlers = computed(() => (typeof props.runtimeExtensionHooks === 'function'
+  ? props.runtimeExtensionHooks(props.block) || {}
+  : props.runtimeExtensionHooks || {}))
 const aiFormSchema = computed(() => {
   const formFields = configuredFieldRefs.value.length
     ? visibleResolvedFields.value
@@ -1760,7 +1772,13 @@ const effectiveRuntimeCrudProps = computed(() => {
       handlers[target.value] = data => applyCrudHookRules(data, list)
     return handlers
   }, {})
+  const extensionHooks = runtimeExtensionHandlers.value
   const runtimeConfigKey = props.runtimeCrudProps.configKey || ''
+  const runtimeTableFieldRefs = includeManagedRuntimeFieldRefs(
+    configuredFieldRefs.value,
+    props.runtimeCrudProps.fieldCatalog,
+    blockProps.fieldSettings,
+  )
   const runtimeBlockApi = resolveRuntimeBlockApi(blockProps.api, runtimeConfigKey, designPreview)
   const runtimeBlockApiConfig = Object.fromEntries(Object.entries(blockApiConfig.value)
     .map(([key, value]) => {
@@ -1771,19 +1789,58 @@ const effectiveRuntimeCrudProps = computed(() => {
   return {
     ...props.runtimeCrudProps,
     ...hookHandlers,
+    ...(typeof extensionHooks.beforeSubmit === 'function'
+      ? {
+          beforeSubmit: data => extensionHooks.beforeSubmit(
+            hookHandlers.beforeSubmit ? hookHandlers.beforeSubmit(data) : data,
+            extensionRuntimeApi(),
+          ),
+        }
+      : {}),
+    ...(typeof extensionHooks.afterSubmit === 'function'
+      ? { afterSubmit: payload => extensionHooks.afterSubmit(payload, extensionRuntimeApi()) }
+      : {}),
+    ...(typeof extensionHooks.formChange === 'function'
+      ? { formChange: payload => extensionHooks.formChange(payload, extensionRuntimeApi()) }
+      : {}),
+    ...(typeof extensionHooks.beforeRowAction === 'function'
+      ? { beforeRowAction: payload => extensionHooks.beforeRowAction(payload, extensionRuntimeApi()) }
+      : {}),
     ...(staticDesignPreview ? { beforeSubmit: preventStaticCrudSubmit } : {}),
     lazy: staticDesignPreview,
     api: runtimeBlockApi || props.runtimeCrudProps.api || '',
     rowKey: blockProps.rowKey || props.runtimeCrudProps.rowKey || 'id',
     title: blockProps.title || props.runtimeCrudProps.title,
     columns: applyTableColumnLayout(
-      props.runtimeCrudProps.columns?.length ? props.runtimeCrudProps.columns : aiTableColumns.value,
+      filterCrudItemsByFieldRefs(
+        props.runtimeCrudProps.columns?.length ? props.runtimeCrudProps.columns : aiTableColumns.value,
+        runtimeTableFieldRefs,
+      ),
       blockProps,
     ),
+    runtimeActions: Array.isArray(props.runtimeCrudProps.runtimeActions)
+      ? props.runtimeCrudProps.runtimeActions
+      : [],
+    toolbarActions: Array.isArray(blockProps.toolbarActions)
+      ? blockProps.toolbarActions
+      : (props.runtimeCrudProps.toolbarActions || []),
+    detailActions: Array.isArray(blockProps.detailActions)
+      ? blockProps.detailActions
+      : (props.runtimeCrudProps.detailActions || []),
+    formActions: Array.isArray(blockProps.formActions)
+      ? blockProps.formActions
+      : (props.runtimeCrudProps.formActions || []),
+    businessObjectCode: props.runtimeCrudProps.businessObjectCode || props.runtimeCrudProps.objectCode || '',
     searchSchema: hasExplicitSearchFieldRefs.value
       ? aiSearchSchema.value
-      : (props.runtimeCrudProps.searchSchema?.length ? props.runtimeCrudProps.searchSchema : aiSearchSchema.value),
-    editSchema: props.runtimeCrudProps.editSchema?.length ? props.runtimeCrudProps.editSchema : aiFormSchema.value,
+      : filterCrudItemsByFieldRefs(
+          props.runtimeCrudProps.searchSchema?.length ? props.runtimeCrudProps.searchSchema : aiSearchSchema.value,
+          configuredFieldRefs.value,
+        ),
+    editSchema: filterCrudItemsByFieldRefs(
+      props.runtimeCrudProps.editSchema?.length ? props.runtimeCrudProps.editSchema : aiFormSchema.value,
+      configuredFieldRefs.value,
+    ),
     apiConfig: {
       ...(props.runtimeCrudProps.apiConfig || {}),
       ...runtimeBlockApiConfig,
@@ -1856,6 +1913,13 @@ const effectiveRuntimeCrudProps = computed(() => {
     },
   }
 })
+
+function extensionRuntimeApi() {
+  return {
+    triggerAction: (actionCode, payload = {}) => runtimeCrudRef.value?.triggerAction?.(actionCode, payload),
+    refresh: () => runtimeCrudRef.value?.refresh?.(),
+  }
+}
 
 function resolveEffectiveFormOpenMode(blockProps = {}, runtimeProps = {}) {
   const blockMode = normalizeFormOpenMode(blockProps.formOpenMode)
@@ -2889,16 +2953,26 @@ async function handleAiFormSubmit(formData = {}) {
   aiFormSubmitting.value = true
   try {
     const { method, url } = parseRuntimeApiConfig(aiFormCreateApi.value)
-    const data = {
+    let data = {
       ...(props.runtimeCrudProps?.submitDefaultParams || {}),
       ...(props.block.props?.submitDefaultParams || {}),
       ...(formData || {}),
     }
+    const extensionHooks = runtimeExtensionHandlers.value
+    if (typeof extensionHooks.beforeSubmit === 'function') {
+      const result = await extensionHooks.beforeSubmit(data, extensionRuntimeApi())
+      if (result === false)
+        return
+      if (result && typeof result === 'object' && !Array.isArray(result))
+        data = { ...result }
+    }
+    previewFormValue.value = { ...data }
+    let response
     if (method === 'postencrypt') {
-      await postEncrypt(url, data, { needTip: false })
+      response = await postEncrypt(url, data, { needTip: false })
     }
     else {
-      await request({
+      response = await request({
         method,
         url,
         ...(method === 'get' ? { params: data } : { data }),
@@ -2906,6 +2980,13 @@ async function handleAiFormSubmit(formData = {}) {
       })
     }
     window.$message?.success('提交成功')
+    if (typeof extensionHooks.afterSubmit === 'function') {
+      await extensionHooks.afterSubmit({
+        data,
+        response,
+        isEdit: false,
+      }, extensionRuntimeApi())
+    }
     aiFormRef.value?.reset?.()
   }
   catch (error) {
@@ -2913,6 +2994,31 @@ async function handleAiFormSubmit(formData = {}) {
   }
   finally {
     aiFormSubmitting.value = false
+  }
+}
+
+let standaloneFormChangeSequence = 0
+async function handleStandaloneAiFormValueUpdate(value = {}) {
+  const record = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {}
+  previewFormValue.value = record
+  const formChange = runtimeExtensionHandlers.value.formChange
+  if (!props.runtimeInteractive || typeof formChange !== 'function')
+    return
+  const sequence = ++standaloneFormChangeSequence
+  try {
+    const result = await formChange({
+      data: record,
+      record,
+      modalStatus: 'create',
+    }, extensionRuntimeApi())
+    if (sequence !== standaloneFormChangeSequence || result === false)
+      return
+    const next = result?.record || result?.data || result
+    if (next && typeof next === 'object' && !Array.isArray(next))
+      previewFormValue.value = { ...next }
+  }
+  catch (error) {
+    window.$message?.error(error?.message || '字段联动增强执行失败')
   }
 }
 

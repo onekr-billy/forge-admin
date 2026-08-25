@@ -23,6 +23,9 @@ public class LowcodePublishDTO {
     /** 是否同步旧低代码系统菜单；未传保持历史默认行为。 */
     private Boolean syncMenu;
 
+    /** 菜单挂载位置：ADMIN-管理端，MOBILE-移动端，BOTH-两端同时；默认 ADMIN。 */
+    private String mountTarget;
+
     private Long domainId;
 
     private String domainCode;

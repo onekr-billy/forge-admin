@@ -17,6 +17,10 @@ const processApiMocks = vi.hoisted(() => ({
   publishBusinessProcess: vi.fn(),
   updateBusinessProcessStatus: vi.fn(),
   deleteBusinessProcess: vi.fn(),
+  businessProcessRunPage: vi.fn(),
+  businessProcessRunDetail: vi.fn(),
+  retryBusinessProcessRun: vi.fn(),
+  cancelBusinessProcessRun: vi.fn(),
 }))
 
 const applicationApiMocks = vi.hoisted(() => ({
@@ -335,6 +339,35 @@ describe('application business process panel', () => {
 
     expect(processApiMocks.publishBusinessProcess).not.toHaveBeenCalled()
     expect(window.$message.warning).toHaveBeenCalled()
+  })
+
+  it('loads runtime records from the run page endpoint', async () => {
+    processApiMocks.businessProcessRunPage.mockResolvedValue({
+      data: {
+        records: [{
+          id: '1900000000000009001',
+          processCode: 'submit_approval',
+          processName: '提交审批',
+          subjectObjectCode: 'order',
+          subjectRecordId: '12',
+          status: 'SUCCESS',
+          currentNodeId: 'end',
+        }],
+        total: 1,
+      },
+    })
+    const wrapper = mount(ApplicationProcessPanel, panelMountOptions())
+    await flushPromises()
+    await wrapper.find('[data-process-section="runs"]').trigger('click')
+    await flushPromises()
+
+    expect(processApiMocks.businessProcessRunPage).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: application.id,
+      pageNum: 1,
+      pageSize: 10,
+    }))
+    expect(wrapper.text()).toContain('提交审批')
+    expect(wrapper.text()).toContain('order')
   })
 })
 

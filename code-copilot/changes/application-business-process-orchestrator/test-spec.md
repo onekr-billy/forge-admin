@@ -337,3 +337,12 @@ NODE_OPTIONS=--max-old-space-size=8192 pnpm build
 - 必跑命令：审批模型目录后端定向测试；业务流程设计器与 ConditionConfig 定向 Vitest；目标 ESLint；`git diff --check`；Node `v20.19.0` 生产构建。
 - 浏览器验证：先执行 `scripts/with_server.py --help`，再以受控 API 装配真实全屏路由，依次新增条件、添加分支、配置规则、插入下游节点和卡片删除；截图检查连线与按钮，console/page error 必须为 0。
 - 环境门禁：不启动真实 Admin/Flow、不写 MySQL/Flyway/Flowable；真实部署与应用发布结果继续作为 Task 19 联调项，未执行不得标记通过。
+
+## 18. 审批终态恢复事务边界增量验证
+
+- 流程回调方法必须建立本地事务，内部审批结果事件只能在该事务 `AFTER_COMMIT` 后恢复应用业务流程。
+- `BusinessProcessOrchestrator.resumeApprovalResult` 必须使用 `REQUIRES_NEW`，不能继续加入已经完成业务状态回写的回调事务。
+- 动作节点使用独立 `REQUIRES_NEW`；动作异常只回滚本节点数据写入，外层恢复事务仍要把业务流程运行记录和节点记录更新为 `FAILED`，并保存原始错误摘要。
+- 监听器恢复异常必须保留完整堆栈、恢复租户上下文且不向已完成的 Flowable 回调反抛。
+- 必跑定向类：`BusinessProcessApprovalResultListenerTest`、`BusinessProcessOrchestratorTest`、`BusinessProcessActionExecutorTest`；另执行相关文件 `git diff --check`。
+- 遵循用户要求不执行全量 Maven/Vite 构建；真实 MySQL 保存点、Redis 回调和审批后动态字段更新留给运行环境复验。

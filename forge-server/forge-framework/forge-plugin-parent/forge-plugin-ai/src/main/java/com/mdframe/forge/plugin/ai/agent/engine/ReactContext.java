@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.ai.agent.engine;
 
 import com.alibaba.fastjson2.JSON;
 import com.mdframe.forge.plugin.ai.agent.domain.AiAgent;
+import com.mdframe.forge.plugin.ai.agent.engine.tool.AgentTool;
 import lombok.Data;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -24,6 +25,8 @@ public class ReactContext {
     private String agentCode;
     private Long agentId;
     private Long tenantId;
+    /** 发起用户ID（请求线程注入，供埋点归属；loop 线程无 Sa-Token 上下文） */
+    private Long userId;
     private String sessionId;
     private int turnIndex;
     private int maxIters;
@@ -51,9 +54,22 @@ public class ReactContext {
     private List<Message> history = new ArrayList<>();
 
     /**
+     * 取消标识
+     */
+    private volatile boolean cancelled;
+
+    /**
      * 当前轮次的工具调用和结果（用于构造下一轮消息）
      */
     private List<String> toolCallResults = new ArrayList<>();
+
+    /**
+     * 本 Agent 运行时应向模型声明的工具列表（已解析为 AgentTool，去重）。
+     * 由 AgentEngineService.buildContext 依据「工具绑定表 + 知识库绑定」解析注入；
+     * 空列表表示本次不声明任何工具（普通对话 Agent，行为与历史一致）。
+     * ReactLoop.callModel 据此构造 OpenAiChatOptions.toolCallbacks。
+     */
+    private List<AgentTool> boundTools = new ArrayList<>();
 
     public void addToolResult(String toolName, String toolArgs, String result) {
         toolCallResults.add("{\"tool\":\"" + toolName + "\",\"args\":" + toolArgs + ",\"result\":\"" + result + "\"}");

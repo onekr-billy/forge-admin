@@ -21,6 +21,9 @@ public interface AiCrudConfigMapper extends BaseMapper<AiCrudConfig> {
     AiCrudConfig selectPublishedByObjectCodeOrConfigKey(@Param("tenantId") Long tenantId,
                                                         @Param("objectCodeOrConfigKey") String objectCodeOrConfigKey);
 
+    AiCrudConfig selectRuntimeByObjectCodeOrConfigKey(@Param("tenantId") Long tenantId,
+                                                      @Param("objectCodeOrConfigKey") String objectCodeOrConfigKey);
+
     Page<LowcodeAppDetailVO> selectLowcodePage(Page<LowcodeAppDetailVO> page,
                                                @Param("tenantId") Long tenantId,
                                                @Param("keyword") String keyword,

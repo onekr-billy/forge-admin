@@ -78,3 +78,18 @@
 - [x] 字典变更只失效 `system:dict-data`，不再维护第二套清理协议。
 - [x] 桌面和移动端统计同时展示命中、未命中、写入和失败，非零失败使用当前主题错误色。
 - [x] 补充前后端回归测试，完成 ESLint、生产构建、Admin 聚合编译和运行页面验证。
+
+## Task 11：运行态泛型缓存兼容修复
+
+- [x] 在 `ForgeCacheAspect` 命中边界按业务方法声明返回类型恢复集合/Map/数组元素类型。
+- [x] 类型恢复失败时清理异常 entry 并穿透业务方法，避免坏缓存持续触发运行时强转异常。
+- [x] `SytemDictValueProvider` 兼容历史 `Map` 字典项，去除增强 `for` 循环的裸泛型强转风险。
+- [x] 新增 AOP 泛型集合和字典历史缓存回归测试，完成 Admin 45 模块聚合编译。
+- [ ] 用户重启 Admin 后在真实 Redis 命中场景复验 `SysOrgTreeVO.orgType` 翻译。
+
+## Task 12：Redisson 社区版多级缓存兼容修复
+
+- [x] 确认 `RLocalCachedMapCache` 在 Redisson 3.50 社区版直接抛出 PRO 功能异常，并冻结社区版兼容实现边界。
+- [x] 将 MULTI 句柄替换为 Caffeine 本地层、`RMapCache` Redis 层和类型化 Topic 失效通知的组合实现。
+- [x] 补充本地/远端 TTL、单 key/全量跨实例失效、重订阅清空和 codec 往返回归测试。
+- [x] 执行 starter 定向测试与差异检查，回填执行日志；不执行完整项目构建。

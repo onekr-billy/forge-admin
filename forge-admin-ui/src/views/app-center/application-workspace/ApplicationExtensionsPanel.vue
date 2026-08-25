@@ -135,6 +135,7 @@
       :extension="editingExtension"
       :objects="objects"
       :entries="entries"
+      :pages="pages"
       :handlers="handlers"
       :start-with-test="startWithTest"
       @saved="handleSaved"
@@ -186,6 +187,10 @@ const props = defineProps({
     type: Array,
     default: null,
   },
+  initialPages: {
+    type: Array,
+    default: null,
+  },
   embedded: {
     type: Boolean,
     default: false,
@@ -199,6 +204,7 @@ const loading = ref(false)
 const extensions = ref([])
 const objects = ref([])
 const entries = ref([])
+const pages = ref([])
 const handlers = ref([])
 const editorDependencyLoading = ref(false)
 const editorDependenciesLoaded = ref(false)
@@ -244,6 +250,11 @@ watch(() => props.initialObjects, (value) => {
 watch(() => props.initialEntries, (value) => {
   if (Array.isArray(value))
     entries.value = [...value]
+}, { immediate: true })
+
+watch(() => props.initialPages, (value) => {
+  if (Array.isArray(value))
+    pages.value = [...value]
 }, { immediate: true })
 
 async function loadExtensions() {

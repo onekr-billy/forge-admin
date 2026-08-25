@@ -24,9 +24,9 @@ const props = defineProps({
   },
 })
 
-function execute(script, context = {}, allowedFields = []) {
+function execute(script, context = {}, allowedFields = [], allowedWritableFields = allowedFields) {
   validateClientScript(script)
-  const safeContext = sanitizeExtensionContext(context, allowedFields)
+  const safeContext = sanitizeExtensionContext(context, allowedFields, allowedWritableFields)
   const nonce = createNonce()
   let worker
   try {

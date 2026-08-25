@@ -132,10 +132,10 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
     @Transactional(rollbackFor = Exception.class)
     public FlowModel createModel(FlowModel flowModel) {
         flowModel.setDesignerType(normalizeDesignerType(flowModel.getDesignerType()));
-        // 生成唯一 KEY
-        if (flowModel.getModelKey() == null || flowModel.getModelKey().isEmpty()) {
-            flowModel.setModelKey("model_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8));
-        }
+        // 新建流程统一使用 Redis 事件通知；管理端不再暴露通知方式选择。
+        flowModel.setNotifyType("redis");
+        // 模型 Key 是系统技术标识，始终由服务端生成，不能接受用户提交的值。
+        flowModel.setModelKey(generateModelKey());
         if (flowModel.getBpmnXml() != null && !flowModel.getBpmnXml().isBlank()) {
             flowModel.setBpmnXml(normalizeBpmnXml(flowModel.getBpmnXml(), "创建流程模型"));
         }
@@ -186,6 +186,14 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
 
     private String normalizeDesignerType(String designerType) {
         return "business".equals(designerType) ? "business" : "approval";
+    }
+
+    private String generateModelKey() {
+        String modelKey;
+        do {
+            modelKey = "model_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        } while (checkModelKeyExists(modelKey, null));
+        return modelKey;
     }
 
     @Override
@@ -580,6 +588,10 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         newModel.setFormType(source.getFormType());
         newModel.setFormId(source.getFormId());
         newModel.setFormJson(source.getFormJson());
+        newModel.setNotifyType(source.getNotifyType());
+        newModel.setWebhookUrl(source.getWebhookUrl());
+        newModel.setTodoDetailUrlTemplate(source.getTodoDetailUrlTemplate());
+        newModel.setNotifyConfig(source.getNotifyConfig());
         newModel.setBpmnXml(normalizeBpmnXml(source.getBpmnXml(), "复制流程模型"));
         newModel.setStatus(0);
         newModel.setVersion(1);

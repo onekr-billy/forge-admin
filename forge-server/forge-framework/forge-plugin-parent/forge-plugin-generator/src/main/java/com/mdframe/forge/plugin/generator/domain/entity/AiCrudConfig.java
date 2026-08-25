@@ -41,6 +41,8 @@ public class AiCrudConfig extends TenantEntity {
     private Long menuParentId;
     private Integer menuSort;
     private Long menuResourceId;
+    /** 菜单挂载位置：ADMIN-管理端，MOBILE-移动端，BOTH-两端同时 */
+    private String mountTarget;
     private String dictConfig;
     private String desensitizeConfig;
     private String encryptConfig;

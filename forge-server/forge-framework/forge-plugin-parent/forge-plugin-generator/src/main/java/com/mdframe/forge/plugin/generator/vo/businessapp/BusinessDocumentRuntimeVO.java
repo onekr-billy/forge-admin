@@ -31,6 +31,9 @@ public class BusinessDocumentRuntimeVO {
 
     private List<RuntimeActionVO> runtimeActions = new ArrayList<>();
 
+    /** 当前业务记录正在运行的应用级业务流程编码。 */
+    private List<String> activeProcessCodes = new ArrayList<>();
+
     private String nextAction;
 
     private String message;

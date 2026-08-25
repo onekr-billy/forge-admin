@@ -13,7 +13,8 @@ const SAMPLE_ASSIGNEE = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn">',
   '  <bpmn:process id="P">',
-  `    <bpmn:userTask id="T_custom" flowable:assignee="${DOLLAR}{user_1001}" flowable:assigneeName="张三"/>`,
+  `    <bpmn:userTask id="T_custom_legacy" flowable:assignee="${DOLLAR}{user_1001}" flowable:assigneeName="张三"/>`,
+  '    <bpmn:userTask id="T_custom_literal" flowable:assignee="2090384244139360257" flowable:assigneeType="custom" flowable:assigneeName="李四"/>',
   `    <bpmn:userTask id="T_initiator" flowable:assignee="${DOLLAR}{initiator}"/>`,
   `    <bpmn:userTask id="T_leader" flowable:assignee="${DOLLAR}{initiatorLeader}"/>`,
   `    <bpmn:userTask id="T_dept" flowable:assignee="${DOLLAR}{deptManager}"/>`,
@@ -28,12 +29,21 @@ const SAMPLE_ASSIGNEE = [
 ].join('\n')
 
 describe('parseUserTaskConfig - assignee 4 种模式', () => {
-  it('custom：${user_xxx} → assignee=custom + assigneeExpr 保留 + assigneeUserName 回填', () => {
-    const cfg = parseUserTaskConfig(getTask(SAMPLE_ASSIGNEE, 'T_custom'))
+  it(`旧 custom：${DOLLAR}{user_xxx} → 固定用户 ID，后续保存可规范化`, () => {
+    const cfg = parseUserTaskConfig(getTask(SAMPLE_ASSIGNEE, 'T_custom_legacy'))
     expect(cfg.taskType).toBe('assignee')
     expect(cfg.assignee).toBe('custom')
-    expect(cfg.assigneeExpr).toBe(`${DOLLAR}{user_1001}`)
+    expect(cfg.assigneeUserId).toBe('1001')
+    expect(cfg.assigneeExpr).toBe('')
     expect(cfg.assigneeUserName).toBe('张三')
+  })
+
+  it('新 custom：固定字符串 ID 原样读取，不转换 Snowflake Long', () => {
+    const cfg = parseUserTaskConfig(getTask(SAMPLE_ASSIGNEE, 'T_custom_literal'))
+    expect(cfg.taskType).toBe('assignee')
+    expect(cfg.assignee).toBe('custom')
+    expect(cfg.assigneeUserId).toBe('2090384244139360257')
+    expect(cfg.assigneeUserName).toBe('李四')
   })
 
   it('static：4 种预定义变量直接保留原值', () => {
@@ -50,7 +60,7 @@ describe('parseUserTaskConfig - assignee 4 种模式', () => {
     expect(cfg.spelTemplate).toBe('DEPT_LEADER')
   })
 
-  it('spel 推断：${...} 表达式但无 assigneeType 标记 → 兜底为 spel', () => {
+  it(`spel 推断：${DOLLAR}{...} 表达式但无 assigneeType 标记 → 兜底为 spel`, () => {
     const cfg = parseUserTaskConfig(getTask(SAMPLE_ASSIGNEE, 'T_spel_inferred'))
     expect(cfg.assignee).toBe('spel')
     expect(cfg.assigneeExpr).toBe(`${DOLLAR}{some.method(arg)}`)

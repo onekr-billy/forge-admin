@@ -22,6 +22,7 @@ const props = defineProps({
   saveState: { type: String, default: 'idle' },
   saveError: { type: String, default: '' },
   serverValidation: { type: Object, default: null },
+  objectId: { type: String, default: '' },
   objectName: { type: String, default: '' },
   fields: { type: Array, default: () => [] },
   objects: { type: Array, default: () => [] },
@@ -40,6 +41,7 @@ const emit = defineEmits([
   'validate',
   'openFlowDesigner',
   'refreshFlowModel',
+  'refreshFields',
   'editAction',
   'dirtyChange',
   'locateIssue',
@@ -103,6 +105,12 @@ watch(() => props.schema, (value) => {
   designer.clearHistory()
 }, { deep: true })
 
+// 旧流程草稿可能只保存了流程模型，没有保存应用页面级表单引用。
+// 表单资产目录加载后，为已有审批节点自动补齐当前应用页面资产，避免用户再手工找 formKey。
+watch(() => props.formAssets, () => {
+  bindDefaultApprovalForms()
+}, { deep: true })
+
 watch(() => props.saveState, (value, previous) => {
   if (value === 'saved' && previous !== 'saved') {
     designer.markSaved()
@@ -127,10 +135,7 @@ function handleAddNode(type) {
 function handleInsertNode({ edgeId, type }) {
   operationError.value = ''
   try {
-    const overrides = type === 'ACTION'
-      ? { config: { objectCode: designer.schema.value.subject?.objectCode } }
-      : {}
-    const nodeId = designer.insertNodeOnEdge(edgeId, type, overrides)
+    const nodeId = designer.insertNodeOnEdge(edgeId, type, buildInsertOverrides(type))
     designer.selectNode(nodeId)
     drawerVisible.value = true
     draggingNodeType.value = ''
@@ -138,6 +143,37 @@ function handleInsertNode({ edgeId, type }) {
   catch (error) {
     operationError.value = error.message
     draggingNodeType.value = ''
+  }
+}
+
+function buildInsertOverrides(type) {
+  const objectCode = designer.schema.value.subject?.objectCode
+  if (type === 'ACTION')
+    return { config: { objectCode } }
+  if (type !== 'APPROVAL')
+    return {}
+  const source = (props.formAssets || []).find(item => item?.formKey)
+  if (!source)
+    return {}
+  const formKey = String(source.formKey || '')
+  if (!formKey)
+    return {}
+  return {
+    config: {
+      versionPolicy: 'PINNED_AT_APPLICATION_PUBLISH',
+      formAsset: {
+        formKey,
+        formName: source.formName || source.name || source.label || formKey,
+        formMode: source.formMode || source.type || 'BUSINESS_OBJECT_FORM',
+        providerKey: source.providerKey || undefined,
+        applicationId: source.applicationId || undefined,
+        pageId: source.pageId || undefined,
+        pageCode: source.pageCode || undefined,
+        pageName: source.pageName || undefined,
+        pageType: source.pageType || undefined,
+        sourceFormKey: source.sourceFormKey || undefined,
+      },
+    },
   }
 }
 
@@ -160,7 +196,63 @@ function handlePaletteDragEnd() {
 
 function handleNodeSelect(node) {
   designer.selectNode(node.id)
+  bindDefaultApprovalForm(node.id)
   drawerVisible.value = true
+}
+
+function bindDefaultApprovalForm(nodeId) {
+  const node = designer.getNode(nodeId)
+  if (node?.type !== 'APPROVAL' || node.config?.formAsset?.formKey)
+    return
+  const formAsset = buildInsertOverrides('APPROVAL').config?.formAsset
+  if (!formAsset?.formKey)
+    return
+  designer.updateNode(nodeId, {
+    config: {
+      ...(node.config || {}),
+      formAsset,
+    },
+  })
+}
+
+function bindDefaultApprovalForms() {
+  if (props.readonly || !Array.isArray(props.formAssets) || !props.formAssets.length)
+    return
+  const source = props.formAssets.find(item => item?.formKey)
+  if (!source)
+    return
+  const formAsset = toFormAssetRef(source)
+  designer.schema.value.nodes
+    .filter(node => node?.type === 'APPROVAL')
+    .forEach((node) => {
+      const currentKey = String(node.config?.formAsset?.formKey || '')
+      const currentApplicationId = String(node.config?.formAsset?.applicationId || '')
+      const currentPageId = String(node.config?.formAsset?.pageId || '')
+      // 已经绑定当前应用页面时保留用户的节点权限配置。
+      if (currentKey && currentApplicationId && currentPageId)
+        return
+      designer.updateNode(node.id, {
+        config: {
+          ...(node.config || {}),
+          formAsset,
+        },
+      })
+    })
+}
+
+function toFormAssetRef(item) {
+  return {
+    formKey: String(item.formKey || ''),
+    formName: item.formName || item.name || item.label || item.formKey,
+    formMode: item.formMode || item.type || 'BUSINESS_OBJECT_FORM',
+    providerKey: item.providerKey || undefined,
+    applicationId: item.applicationId || undefined,
+    pageId: item.pageId || undefined,
+    pageCode: item.pageCode || undefined,
+    pageName: item.pageName || undefined,
+    pageType: item.pageType || undefined,
+    sourceFormKey: item.sourceFormKey || undefined,
+  }
 }
 
 function handleCopyNode() {
@@ -223,7 +315,7 @@ function handleDrawerSave(node, metadata = {}) {
       name: node.name,
       ports: node.ports,
       config: node.config,
-    })
+    }, { replaceConfig: true })
   }
   catch (error) {
     metadata.reject?.()
@@ -273,6 +365,47 @@ function issueLocation(item) {
   return node ? `节点：${node.name || '未命名节点'}` : '流程结构'
 }
 
+function issuePath(item) {
+  return item?.fieldPath || item?.path || ''
+}
+
+function issueSuggestion(item) {
+  return item?.suggestion || item?.action || ''
+}
+
+function issueCopyText(item) {
+  return [
+    item?.message,
+    issueLocation(item),
+    item?.code ? `错误编码：${item.code}` : '',
+    issuePath(item) ? `配置位置：${issuePath(item)}` : '',
+    issueSuggestion(item) ? `处理建议：${issueSuggestion(item)}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+async function copyIssue(item) {
+  const content = issueCopyText(item)
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(content)
+    }
+    else {
+      const textarea = document.createElement('textarea')
+      textarea.value = content
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      textarea.remove()
+    }
+    window.$message?.success('流程问题已复制')
+  }
+  catch {
+    window.$message?.error('复制失败，请选中文本后复制')
+  }
+}
+
 function handleBeforeUnload(event) {
   if (!designer.isDirty.value)
     return
@@ -281,10 +414,17 @@ function handleBeforeUnload(event) {
 }
 
 function mergeIssues(...lists) {
+  const items = lists.flat()
+  const nodeIssueCodes = new Set(items
+    .filter(item => item?.nodeId)
+    .map(item => item.code)
+    .filter(Boolean))
   const result = []
   const keys = new Set()
-  for (const item of lists.flat()) {
-    const key = `${item.code || ''}\u0000${item.nodeId || ''}\u0000${item.path || ''}`
+  for (const item of items) {
+    if (!item?.nodeId && issuePath(item).startsWith('dependencies.') && nodeIssueCodes.has(item.code))
+      continue
+    const key = `${item.code || ''}\u0000${item.nodeId || ''}\u0000${issuePath(item)}`
     if (keys.has(key))
       continue
     keys.add(key)
@@ -360,93 +500,114 @@ defineExpose({
       {{ operationError }}
     </NAlert>
 
-    <div class="designer-body min-h-0 flex flex-1">
-      <aside class="node-palette">
-        <div class="pane-heading">
-          <strong>添加节点</strong>
-          <span>拖到画布连线，或单击插入到选中节点后</span>
-        </div>
-        <button
-          v-for="item in palette"
-          :key="item.type"
-          type="button"
-          class="palette-item"
-          :data-node-type="item.type"
-          :disabled="readonly"
-          :draggable="!readonly"
-          @dragstart="handlePaletteDragStart($event, item.type)"
-          @dragend="handlePaletteDragEnd"
-          @click="handleAddNode(item.type)"
-        >
-          <span :class="`tone-${item.tone}`" />
-          <strong>{{ item.label }}</strong>
-          <small>{{ item.type === 'APPROVAL' ? '等待 Flowable 审批结果' : '业务编排节点' }}</small>
-        </button>
-        <div class="palette-boundary">
-          审批节点只引用已发布模型；会签、驳回、退回和字段权限仍在真实流程设计器中配置。
-        </div>
-      </aside>
-
-      <main class="canvas-pane min-w-0 flex-1">
-        <BusinessProcessCanvas
-          :schema="designer.schema.value"
-          :selected-node-id="designer.selectedNodeId.value"
-          :readonly="readonly"
-          :palette="palette"
-          :dragging-node-type="draggingNodeType"
-          @node-select="handleNodeSelect"
-          @node-delete="handleDeleteNode"
-          @insert-node="handleInsertNode"
-        />
-      </main>
-
-      <aside class="issue-pane" :class="{ 'is-collapsed': !issuesExpanded }">
-        <button type="button" class="issue-pane-head" @click="issuesExpanded = !issuesExpanded">
-          <span>
-            <strong>流程问题</strong>
-            <em>{{ issues.length }}</em>
-          </span>
-          <span>{{ issuesExpanded ? '收起' : '展开' }}</span>
-        </button>
-        <div v-if="issuesExpanded" class="issue-list">
-          <button
-            v-for="(item, index) in issues"
-            :key="`${item.code}-${item.nodeId}-${index}`"
-            type="button"
-            class="issue-item"
-            @click="locateIssue(item)"
-          >
-            <strong>{{ item.message }}</strong>
-            <span>{{ issueLocation(item) }}</span>
-          </button>
-          <div v-if="!issues.length" class="issue-empty">
-            当前图结构完整；发布前仍需执行服务端依赖与权限校验。
+    <div class="designer-stage min-h-0 flex flex-col flex-1">
+      <div class="designer-body min-h-0 flex flex-1">
+        <aside class="node-palette">
+          <div class="pane-heading">
+            <strong>添加节点</strong>
+            <span>拖到画布连线，或单击插入到选中节点后</span>
           </div>
-        </div>
-      </aside>
-    </div>
+          <button
+            v-for="item in palette"
+            :key="item.type"
+            type="button"
+            class="palette-item"
+            :data-node-type="item.type"
+            :disabled="readonly"
+            :draggable="!readonly"
+            @dragstart="handlePaletteDragStart($event, item.type)"
+            @dragend="handlePaletteDragEnd"
+            @click="handleAddNode(item.type)"
+          >
+            <span :class="`tone-${item.tone}`" />
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.type === 'APPROVAL' ? '等待 Flowable 审批结果' : '业务编排节点' }}</small>
+          </button>
+          <div class="palette-boundary">
+            审批节点只引用已发布模型；会签、驳回、退回和字段权限仍在真实流程设计器中配置。
+          </div>
+        </aside>
 
-    <BusinessProcessNodeConfigDrawer
-      :visible="drawerVisible"
-      :node="selectedNode"
-      :readonly="readonly"
-      :object-code="designer.schema.value.subject?.objectCode"
-      :object-name="objectName"
-      :fields="fields"
-      :objects="objects"
-      :flow-models="flowModels"
-      :form-assets="formAssets"
-      :business-actions="businessActions"
-      :message-templates="messageTemplates"
-      :capabilities="capabilities"
-      :sub-processes="subProcesses"
-      :service-actors="serviceActors"
-      @update:visible="drawerVisible = $event"
-      @save="handleDrawerSave"
-      @open-flow-designer="emit('openFlowDesigner', $event)"
-      @refresh-flow-model="emit('refreshFlowModel', $event)"
-      @edit-action="emit('editAction', $event)"
-    />
+        <main class="canvas-pane min-w-0 flex-1">
+          <BusinessProcessCanvas
+            :schema="designer.schema.value"
+            :selected-node-id="designer.selectedNodeId.value"
+            :readonly="readonly"
+            :palette="palette"
+            :dragging-node-type="draggingNodeType"
+            @node-select="handleNodeSelect"
+            @node-delete="handleDeleteNode"
+            @insert-node="handleInsertNode"
+          />
+        </main>
+
+        <aside class="issue-pane" :class="{ 'is-collapsed': !issuesExpanded }">
+          <button type="button" class="issue-pane-head" @click="issuesExpanded = !issuesExpanded">
+            <span>
+              <strong>流程问题</strong>
+              <em>{{ issues.length }}</em>
+            </span>
+            <span>{{ issuesExpanded ? '收起' : '展开' }}</span>
+          </button>
+          <div v-if="issuesExpanded" class="issue-list">
+            <div
+              v-for="(item, index) in issues"
+              :key="`${item.code}-${item.nodeId}-${index}`"
+              class="issue-item"
+            >
+              <button
+                type="button"
+                class="issue-locate"
+                data-issue-locate
+                @click="locateIssue(item)"
+              >
+                <strong>{{ item.message }}</strong>
+                <span>{{ issueLocation(item) }}</span>
+                <span v-if="item.code">错误编码：{{ item.code }}</span>
+                <span v-if="issuePath(item)">配置位置：{{ issuePath(item) }}</span>
+                <span v-if="issueSuggestion(item)">处理建议：{{ issueSuggestion(item) }}</span>
+              </button>
+              <button
+                type="button"
+                class="issue-copy"
+                data-issue-copy
+                title="复制完整问题"
+                @click.stop="copyIssue(item)"
+              >
+                复制
+              </button>
+            </div>
+            <div v-if="!issues.length" class="issue-empty">
+              当前图结构完整；发布前仍需执行服务端依赖与权限校验。
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <BusinessProcessNodeConfigDrawer
+        :visible="drawerVisible"
+        :node="selectedNode"
+        :readonly="readonly"
+        :object-id="objectId"
+        :object-code="designer.schema.value.subject?.objectCode"
+        :object-name="objectName"
+        :fields="fields"
+        :objects="objects"
+        :flow-models="flowModels"
+        :form-assets="formAssets"
+        :business-actions="businessActions"
+        :message-templates="messageTemplates"
+        :capabilities="capabilities"
+        :sub-processes="subProcesses"
+        :service-actors="serviceActors"
+        @update:visible="drawerVisible = $event"
+        @save="handleDrawerSave"
+        @open-flow-designer="emit('openFlowDesigner', $event)"
+        @refresh-flow-model="emit('refreshFlowModel', $event)"
+        @refresh-fields="emit('refreshFields', $event)"
+        @edit-action="emit('editAction', $event)"
+      />
+    </div>
   </section>
 </template>
 
@@ -535,6 +696,10 @@ defineExpose({
 
 .designer-body {
   background: var(--body-color, #f7f9fa);
+}
+
+.designer-stage {
+  position: relative;
 }
 
 .node-palette {
@@ -705,27 +870,62 @@ defineExpose({
 }
 
 .issue-item {
+  position: relative;
   display: flex;
   width: 100%;
-  flex-direction: column;
-  gap: 4px;
   margin-bottom: 7px;
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 6px;
   background: rgba(254, 242, 242, 0.5);
-  padding: 8px 9px;
   text-align: left;
+  user-select: text;
 }
 
-.issue-item strong {
+.issue-locate {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 8px 48px 8px 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.issue-locate:hover {
+  background: rgba(254, 226, 226, 0.4);
+}
+
+.issue-locate strong {
   color: var(--text-color-1, #0f172a);
   font-size: 12px;
   line-height: 1.45;
+  user-select: text;
 }
 
-.issue-item span {
+.issue-locate span {
   color: var(--text-color-3, #64748b);
   font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.issue-copy {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--primary-color, #2563eb);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.issue-copy:hover {
+  text-decoration: underline;
 }
 
 .issue-empty {

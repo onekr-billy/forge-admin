@@ -4,7 +4,7 @@
       v-for="application in applications"
       :key="application.id"
       class="application-card"
-      :class="{ 'has-problem': Number(application.problemCount || 0) > 0 }"
+      :class="{ 'has-problem': isUnpublishedApplication(application) || Number(application.problemCount || 0) > 0 }"
       role="listitem"
       tabindex="0"
       @click="emit('enter', application)"
@@ -43,19 +43,16 @@
       </div>
 
       <div class="application-assets" aria-label="应用资产统计">
-        <span><strong>{{ application.objectCount || 0 }}</strong><small>对象</small></span>
-        <span><strong>{{ application.entryCount || 0 }}</strong><small>入口</small></span>
-        <span><strong>{{ application.flowCount || 0 }}</strong><small>流程</small></span>
-        <span><strong>{{ application.extensionCount || 0 }}</strong><small>扩展</small></span>
+        <span><strong>{{ application.pageCount || 0 }}</strong><small>页面</small></span>
       </div>
 
       <footer class="application-card-foot">
         <div class="application-runtime-state">
           <DictTag dict-type="sys_enable_disable" :value="application.status" :bordered="false" />
-          <span v-if="Number(application.problemCount || 0) > 0" class="problem-text">
-            {{ application.problemCount }} 项待处理
+          <span v-if="isUnpublishedApplication(application)" class="problem-text">
+            有变更未发布
           </span>
-          <span v-else-if="application.lastPublishVersion">
+          <span v-else-if="application.lastPublishVersion && !isUnpublishedApplication(application)">
             v{{ application.lastPublishVersion }}
           </span>
           <span v-else>尚未发布</span>
@@ -69,7 +66,7 @@
                 circle
                 size="small"
                 class="action-icon-button enter-application-button"
-                aria-label="打开应用工作台"
+                aria-label="打开页面管理"
                 @click="emit('enter', application)"
               >
                 <template #icon>
@@ -77,7 +74,24 @@
                 </template>
               </n-button>
             </template>
-            打开应用工作台
+            页面管理
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                quaternary
+                circle
+                size="small"
+                class="action-icon-button"
+                aria-label="运行应用"
+                @click="emit('run', application)"
+              >
+                <template #icon>
+                  <n-icon><PlayOutline /></n-icon>
+                </template>
+              </n-button>
+            </template>
+            运行应用
           </n-tooltip>
           <n-tooltip v-if="isDraftApplication(application)" trigger="hover">
             <template #trigger>
@@ -115,7 +129,7 @@
 </template>
 
 <script setup>
-import { AppsOutline, EllipsisHorizontal, OpenOutline, RocketOutline } from '@vicons/ionicons5'
+import { AppsOutline, EllipsisHorizontal, OpenOutline, PlayOutline, RocketOutline } from '@vicons/ionicons5'
 import DictTag from '@/components/DictTag.vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 
@@ -126,7 +140,7 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['enter', 'edit', 'code', 'publish', 'toggle', 'delete'])
+const emit = defineEmits(['enter', 'run', 'edit', 'code', 'publish', 'toggle', 'delete'])
 const APPLICATION_ICON_HUES = [171, 28, 262, 340, 198, 86, 221, 12]
 
 function applicationIconStyle(application) {
@@ -140,8 +154,11 @@ function applicationIconStyle(application) {
 
 function actionOptions(application) {
   return [
+    { label: '页面管理', key: 'enter' },
+    { label: '运行应用', key: 'run' },
+    { label: '发布应用', key: 'publish' },
     { label: '预览与下载代码', key: 'code' },
-    { label: '编辑应用', key: 'edit' },
+    { label: '应用设置', key: 'edit' },
     { label: Number(application.status) === 1 ? '停用应用' : '启用应用', key: 'toggle' },
     { type: 'divider', key: 'divider' },
     { label: '删除应用', key: 'delete' },
@@ -149,11 +166,23 @@ function actionOptions(application) {
 }
 
 function isDraftApplication(application) {
-  return String(application?.designStatus || '').toUpperCase() === 'DRAFT'
+  const status = String(application?.designStatus || '').toUpperCase()
+  return !application?.lastPublishVersion || ['DRAFT', 'READY', 'CHANGED'].includes(status)
+}
+
+function isUnpublishedApplication(application) {
+  const status = String(application?.designStatus || '').toUpperCase()
+  return Boolean(application?.lastPublishVersion) && ['DRAFT', 'READY', 'CHANGED'].includes(status)
 }
 
 function handleAction(key, application) {
-  if (key === 'code')
+  if (key === 'enter')
+    emit('enter', application)
+  else if (key === 'run')
+    emit('run', application)
+  else if (key === 'publish')
+    emit('publish', application)
+  else if (key === 'code')
     emit('code', application)
   else if (key === 'edit')
     emit('edit', application)
@@ -297,7 +326,7 @@ function formatDate(value) {
 
 .application-assets {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--n-border-color, var(--border-light, #e5e6eb));
   border-radius: 6px;

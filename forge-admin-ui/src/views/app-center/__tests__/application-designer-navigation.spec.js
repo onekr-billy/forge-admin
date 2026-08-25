@@ -4,6 +4,7 @@ import {
   findApplicationDesignerResource,
   normalizeApplicationDesignerSection,
   resolveApplicationDesignerObject,
+  resolveObjectDesignerNavigationTarget,
   resolveObjectDesignerSectionConfig,
 } from '../application-designer-navigation'
 import {
@@ -27,7 +28,7 @@ describe('application designer navigation', () => {
     expect(resolveObjectDesignerSectionConfig('business-flow')).toBe(null)
   })
 
-  it('builds explicit form, list, custom page and object resource nodes', () => {
+  it('builds one user page node plus object data resources', () => {
     const objects = [
       { objectId: '1910000000000000001', objectCode: 'ORDER', objectName: '订单', objectRole: 'PRIMARY' },
     ]
@@ -39,18 +40,16 @@ describe('application designer navigation', () => {
           viewSchema: { list: { enabled: true, fieldRefs: ['name'] } },
         },
       },
-      pages: [{ id: 'home', title: '工作台首页', type: 'page' }],
+      pages: [{ id: 'home', title: '客户管理', type: 'page', objectRef: { objectId: '1910000000000000001', objectCode: 'ORDER' } }],
     })
 
-    expect(groups.map(group => group.key)).toEqual(['pages', 'data', 'automation', 'settings'])
-    expect(groups[0].nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: 'page-form:1910000000000000001', label: '订单（表单页）', configured: true }),
-      expect.objectContaining({ key: 'page-list:1910000000000000001', label: '订单（列表页）', configured: true }),
-      expect.objectContaining({ key: 'page-custom:home', label: '工作台首页（自由编排）', pageId: 'home' }),
-    ]))
+    expect(groups.map(group => group.key)).toEqual(['pages', 'data', 'automation'])
+    expect(groups[0].nodes).toEqual([
+      expect.objectContaining({ key: 'page-custom:home', label: '客户管理', pageId: 'home', objectCode: 'ORDER' }),
+    ])
+    expect(groups[0].nodes.some(node => node.kind === 'page-form' || node.kind === 'page-list')).toBe(false)
     expect(findApplicationDesignerResource(groups, '', 'events')).toMatchObject({
-      key: 'page-form:1910000000000000001',
-      objectCode: 'ORDER',
+      key: 'page-custom:home',
     })
     expect(findApplicationDesignerResource(groups, '', 'page')).toMatchObject({ key: 'page-custom:home' })
     expect(findApplicationDesignerResource(groups, '', 'business-flow')).toMatchObject({
@@ -73,9 +72,9 @@ describe('application designer navigation', () => {
       key: 'data-fields:1910000000000000001',
     })
     expect(groups[1].nodes.map(node => node.kind)).toEqual(['data-fields', 'data-relations'])
+    // settings 分组已移除，旧入口回退到第一个页面节点
     expect(findApplicationDesignerResource(groups, '', 'settings')).toMatchObject({
-      key: 'settings',
-      kind: 'settings',
+      key: 'page-custom:home',
     })
   })
 
@@ -144,8 +143,29 @@ describe('application designer navigation', () => {
       designersByObjectId: { 1: { viewSchema: { list: { enabled: false, columns: [{ fieldCode: 'name' }] } } } },
     })
 
-    expect(configured[0].nodes.find(node => node.kind === 'page-list')).toMatchObject({ configured: true })
-    expect(disabled[0].nodes.find(node => node.kind === 'page-list')).toMatchObject({ configured: false })
+    expect(configured[1].nodes.find(node => node.kind === 'data-fields')).toMatchObject({ configured: true })
+    expect(disabled[1].nodes.find(node => node.kind === 'data-fields')).toMatchObject({ configured: true })
+    expect(configured[0].nodes.some(node => node.kind === 'page-list')).toBe(false)
+  })
+
+  it('prefers workspace objectCode over a generic business_object fallback', () => {
+    const objects = [
+      { objectId: '2089974506884993026', objectCode: 'presale_registration_apply', objectName: '请假申请' },
+      { objectId: '1910000000000000001', objectCode: 'business_object', objectName: '打卡' },
+    ]
+    expect(resolveObjectDesignerNavigationTarget({
+      objectId: '2089974506884993026',
+      objectCode: 'business_object',
+    }, objects)).toEqual({
+      objectCode: 'presale_registration_apply',
+      objectId: '2089974506884993026',
+    })
+    expect(resolveObjectDesignerNavigationTarget({
+      objectCode: 'business_object',
+    }, objects)).toEqual({
+      objectCode: 'business_object',
+      objectId: undefined,
+    })
   })
 })
 

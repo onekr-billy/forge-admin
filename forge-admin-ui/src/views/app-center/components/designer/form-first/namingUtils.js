@@ -161,7 +161,8 @@ export function generateFieldCode(label = '') {
 
 export function generateObjectCode(name = '') {
   const words = inferNameWords(name)
-  return normalizeSnakeCode(words.length ? words.join('_') : name, 'business_object', 48)
+  const base = normalizeSnakeCode(words.length ? words.join('_') : name, 'business_object', 43)
+  return `${base}_${randomCodeSuffix()}`
 }
 
 export function generateSuiteCode(name = '') {
@@ -270,6 +271,14 @@ function ensureLeadingLetter(value = '', prefix = 'field') {
   if (/^[a-z]/i.test(normalized))
     return normalized
   return `${prefix}_${normalized}`.replace(/_+/g, '_')
+}
+
+function randomCodeSuffix(length = 4) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let suffix = ''
+  for (let index = 0; index < length; index += 1)
+    suffix += alphabet.charAt(Math.floor(Math.random() * alphabet.length))
+  return suffix
 }
 
 function stableHash(value = '') {

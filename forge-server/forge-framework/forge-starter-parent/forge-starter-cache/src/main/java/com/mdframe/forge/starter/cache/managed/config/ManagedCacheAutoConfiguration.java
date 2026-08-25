@@ -75,7 +75,9 @@ public class ManagedCacheAutoConfiguration {
                                              CacheDefinitionResolver definitionResolver,
                                              ForgeCacheKeyResolver keyResolver,
                                              CacheTransactionExecutor transactionExecutor,
-                                             ManagedCacheProperties properties) {
-        return new ForgeCacheAspect(cacheManager, definitionResolver, keyResolver, transactionExecutor, properties);
+                                             ManagedCacheProperties properties,
+                                             ObjectMapper objectMapper) {
+        return new ForgeCacheAspect(
+                cacheManager, definitionResolver, keyResolver, transactionExecutor, properties, objectMapper);
     }
 }

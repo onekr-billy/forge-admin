@@ -313,6 +313,7 @@ import {
   isReadonlySystemField,
   syncPageSchemaWithModel,
 } from '@/components/lowcode-builder/page/page-schema'
+import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
 import { hasRuntimeVisibilityRules } from '@/components/lowcode-builder/shared/runtime-rules'
 import BusinessDetailDesigner from './BusinessDetailDesigner.vue'
 import BusinessFormCreateDesigner from './BusinessFormCreateDesigner.vue'
@@ -326,6 +327,7 @@ import {
 import ChildTableSectionWizard from './ChildTableSectionWizard.vue'
 import ForgeFormDesigner from './forge-form-designer/ForgeFormDesigner.vue'
 import { buildAutoFieldAssets } from './form-first/autoFieldRegistry'
+import { FIELD_COMPONENT_DEFAULTS as COMPONENT_FIELD_DEFAULTS, FORM_FIELD_COMPONENT_KEYS } from './form-first/fieldComponentCatalog'
 import { extractForgeSchemaFieldRefs, forgeSchemaToFormCreate } from './form-first/forgeToFormCreate'
 import { applyGridColumnsToFormDesignerSchema, generateFieldCode, normalizeFormDesignerSchema, normalizeFormDesignerSchemaForSave } from './form-first/formDesignerSchema'
 
@@ -390,69 +392,18 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'update:formDesignerSchema', 'update:viewSchema', 'update:linkageSchema', 'saved', 'fieldsUpdated', 'dirtyChange', 'createField', 'openRelations'])
 
-const FORM_FIELD_COMPONENT_KEYS = new Set([
-  'input',
-  'barcodeScanner',
-  'textarea',
-  'number',
-  'inputNumber',
-  'integer',
-  'money',
-  'date',
-  'datetime',
-  'time',
-  'switch',
+const DICT_FIELD_TYPES = new Set(['DICT', 'SELECT', 'RADIO', 'CHECKBOX', 'MULTI_SELECT'])
+const DICT_COMPONENT_TYPES = new Set([
+  'dictSelect',
   'select',
   'radio',
+  'radioButton',
   'checkbox',
-  'dictSelect',
+  'transfer',
   'cascader',
-  'regionTreeSelect',
-  'orgTreeSelect',
-  'orgSelect',
-  'departmentSelect',
-  'departmentTreeSelect',
-  'deptSelect',
-  'deptTreeSelect',
-  'elTreeSelect',
-  'orgName',
-  'deptName',
-  'userSelect',
-  'userPicker',
-  'userName',
-  'fileUpload',
-  'imageUpload',
-  'upload',
-  'objectReference',
-  'recordSelector',
+  'treeSelect',
+  'customSelect',
 ])
-
-const DICT_FIELD_TYPES = new Set(['DICT', 'SELECT', 'RADIO', 'CHECKBOX', 'MULTI_SELECT'])
-const DICT_COMPONENT_TYPES = new Set(['dictSelect', 'select', 'radio', 'checkbox', 'cascader'])
-const COMPONENT_FIELD_DEFAULTS = {
-  input: { fieldType: 'TEXT', businessFieldType: 'TEXT', dataType: 'varchar', componentType: 'input', length: 128, precision: 2, queryType: 'like' },
-  barcodeScanner: { fieldType: 'TEXT', businessFieldType: 'TEXT', dataType: 'varchar', componentType: 'barcodeScanner', length: 2048, precision: 2, queryType: 'eq' },
-  textarea: { fieldType: 'MULTILINE', businessFieldType: 'MULTILINE', dataType: 'text', componentType: 'textarea', length: null, precision: 2, queryType: 'like' },
-  number: { fieldType: 'NUMBER', businessFieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
-  inputNumber: { fieldType: 'NUMBER', businessFieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
-  integer: { fieldType: 'NUMBER', businessFieldType: 'NUMBER', dataType: 'int', componentType: 'number', length: 11, precision: 0, queryType: 'eq' },
-  money: { fieldType: 'MONEY', businessFieldType: 'MONEY', dataType: 'decimal', componentType: 'number', length: 18, precision: 2, queryType: 'eq' },
-  date: { fieldType: 'DATE', businessFieldType: 'DATE', dataType: 'date', componentType: 'date', length: null, precision: null, queryType: 'eq' },
-  datetime: { fieldType: 'DATETIME', businessFieldType: 'DATETIME', dataType: 'datetime', componentType: 'datetime', length: null, precision: null, queryType: 'eq' },
-  switch: { fieldType: 'SWITCH', businessFieldType: 'SWITCH', dataType: 'tinyint', componentType: 'switch', length: 1, precision: 0, queryType: 'eq' },
-  select: { fieldType: 'DICT', businessFieldType: 'DICT', dataType: 'varchar', componentType: 'select', length: 64, precision: 2, queryType: 'eq' },
-  dictSelect: { fieldType: 'DICT', businessFieldType: 'DICT', dataType: 'varchar', componentType: 'dictSelect', length: 64, precision: 2, queryType: 'eq' },
-  radio: { fieldType: 'RADIO', businessFieldType: 'RADIO', dataType: 'varchar', componentType: 'radio', length: 64, precision: 2, queryType: 'eq' },
-  checkbox: { fieldType: 'CHECKBOX', businessFieldType: 'CHECKBOX', dataType: 'varchar', componentType: 'checkbox', length: 255, precision: 2, queryType: 'in' },
-  cascader: { fieldType: 'DICT', businessFieldType: 'DICT', dataType: 'varchar', componentType: 'cascader', length: 128, precision: 2, queryType: 'eq' },
-  regionTreeSelect: { fieldType: 'REGION', businessFieldType: 'REGION', dataType: 'varchar', componentType: 'regionTreeSelect', length: 32, precision: 2, queryType: 'eq' },
-  orgTreeSelect: { fieldType: 'DEPT', businessFieldType: 'DEPT', dataType: 'bigint', componentType: 'orgTreeSelect', length: null, precision: null, queryType: 'eq' },
-  userSelect: { fieldType: 'USER', businessFieldType: 'USER', dataType: 'bigint', componentType: 'userSelect', length: null, precision: null, queryType: 'eq' },
-  fileUpload: { fieldType: 'FILE', businessFieldType: 'FILE', dataType: 'varchar', componentType: 'fileUpload', length: 512, precision: 2, queryType: 'eq' },
-  imageUpload: { fieldType: 'IMAGE', businessFieldType: 'IMAGE', dataType: 'varchar', componentType: 'imageUpload', length: 512, precision: 2, queryType: 'eq' },
-  objectReference: { fieldType: 'REFERENCE', businessFieldType: 'REFERENCE', dataType: 'bigint', componentType: 'objectReference', length: null, precision: null, queryType: 'eq' },
-  recordSelector: { fieldType: 'RECORD_SELECTOR', businessFieldType: 'RECORD_SELECTOR', dataType: 'bigint', componentType: 'recordSelector', length: null, precision: null, queryType: 'eq' },
-}
 
 const message = useMessage()
 const saving = ref(false)
@@ -769,7 +720,7 @@ function buildFormRuntimeFieldSettings(schema, fieldSet, gridColumns, defaultLab
   const settings = {}
   collectRuntimeFieldComponents(schema.components, gridColumns).forEach(({ component, inheritedSpan }) => {
     const componentKey = component?.componentKey || 'input'
-    if (!FORM_FIELD_COMPONENT_KEYS.has(componentKey))
+    if (!FORM_FIELD_COMPONENT_KEYS.has(componentKey) || component?.fieldBinding?.mode === 'virtual')
       return
     const fieldCode = component?.fieldBinding?.fieldCode || ''
     if (!fieldCode || !fieldSet.has(fieldCode) || (component?.visibility?.hidden && !hasRuntimeVisibilityRules(component)))
@@ -827,7 +778,7 @@ function collectRuntimeFieldComponents(components = [], gridColumns = 2, inherit
       if (!component || typeof component !== 'object')
         return
       const componentKey = component.componentKey || ''
-      if (FORM_FIELD_COMPONENT_KEYS.has(componentKey)) {
+      if (FORM_FIELD_COMPONENT_KEYS.has(componentKey) && component?.fieldBinding?.mode !== 'virtual') {
         result.push({ component, inheritedSpan: parentSpan })
         return
       }
@@ -863,7 +814,7 @@ function buildRuntimeFormLayoutNode(component = {}, index = 0, fieldSet, gridCol
     return null
   const componentKey = component.componentKey || ''
   const key = component.id || `${componentKey || 'node'}_${index}`
-  if (FORM_FIELD_COMPONENT_KEYS.has(componentKey)) {
+  if (FORM_FIELD_COMPONENT_KEYS.has(componentKey) && component?.fieldBinding?.mode !== 'virtual') {
     const fieldCode = component.fieldBinding?.fieldCode || ''
     if (!fieldCode || !fieldSet.has(fieldCode) || (component.visibility?.hidden && !hasRuntimeVisibilityRules(component)))
       return null
@@ -920,6 +871,9 @@ function buildRuntimeFormLayoutNode(component = {}, index = 0, fieldSet, gridCol
   }
   if (['AiCrudPage', 'aiCrudPage', 'crud', 'crudBlock'].includes(componentKey)) {
     return { nodeType: 'AiCrudPage', componentKey, key, label, props, children, span: gridColumns, ...meta }
+  }
+  if (isPageWidgetComponentKey(componentKey)) {
+    return { nodeType: 'widget', componentKey, key, label, props, children, span, ...meta }
   }
   if (['elDivider', 'divider', 'AiFormSectionTitle'].includes(componentKey)) {
     return { nodeType: 'divider', componentKey, key, label, props, span: gridColumns, ...meta }

@@ -191,7 +191,7 @@
                 </n-form-item>
                 <template v-if="sceneKey === 'MOBILE'">
                   <n-form-item label="移动端站点地址">
-                    <n-input v-model:value="form.h5BaseUrl" placeholder="http://localhost:3001" />
+                    <n-input v-model:value="form.h5BaseUrl" :placeholder="DEFAULT_H5_BASE_URL" />
                   </n-form-item>
                 </template>
                 <n-form-item label="启用状态">
@@ -256,8 +256,10 @@ import { businessObjectDesigner, businessObjectList, createBusinessApp, updateBu
 import IconSelector from '@/components/IconSelector.vue'
 import { useDict } from '@/composables/useDict'
 import {
+  DEFAULT_H5_BASE_URL,
   buildRuntimePageOptions,
   buildRuntimeTargetPreview,
+  resolveH5BaseUrl,
   supportsRuntimeTarget,
 } from './app-entry-targets'
 import { normalizeMultiFormDesignerSchema } from './designer/form-first/formDesignerSchema'
@@ -511,9 +513,7 @@ const runtimeTargetFullUrl = computed(() => {
   const preview = runtimeTargetPreview.value
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   if (preview.mobile) {
-    // 移动端预览走独立移动站点（用户可在「更多设置」配置），默认 http://localhost:3001
-    const h5Origin = String(form.h5BaseUrl || '').trim() || 'http://localhost:3001'
-    return `${h5Origin}${preview.value}`
+    return `${resolveH5BaseUrl(form.h5BaseUrl)}${preview.value}`
   }
   const resolved = router.resolve({ path: preview.path, query: Object.fromEntries(new URLSearchParams(preview.query)) })
   return `${origin}${resolved.href}`
@@ -907,7 +907,7 @@ function buildOptions() {
     delete options.allowedDomains
 
   if (sceneKey.value === 'MOBILE') {
-    options.h5BaseUrl = String(form.h5BaseUrl || '').trim() || 'http://localhost:3001'
+    options.h5BaseUrl = resolveH5BaseUrl(form.h5BaseUrl)
   }
   else {
     delete options.mobileScene
@@ -955,7 +955,7 @@ function hydrateOptions() {
   form.suiteAsMenuParent = adminMenu.suiteAsParent !== false
   form.menuSort = Number(adminMenu.sort || form.sortOrder || 0)
   form.allowedDomains = Array.isArray(options.allowedDomains) ? options.allowedDomains.join('\n') : ''
-  form.h5BaseUrl = options.h5BaseUrl || 'http://localhost:3001'
+  form.h5BaseUrl = options.h5BaseUrl || DEFAULT_H5_BASE_URL
   form.platformType = options.platformType || 'api'
   form.integrationResource = options.integrationResource || stripApiPrefix(form.entryUrl)
   form.integrationEvents = Array.isArray(options.integrationEvents) ? options.integrationEvents.join(',') : options.integrationEvents || ''
@@ -1062,7 +1062,7 @@ function defaultForm() {
     permissionCode: '',
     targetPageKey: 'list',
     targetFormKey: '',
-    h5BaseUrl: 'http://localhost:3001',
+    h5BaseUrl: DEFAULT_H5_BASE_URL,
   }
 }
 </script>

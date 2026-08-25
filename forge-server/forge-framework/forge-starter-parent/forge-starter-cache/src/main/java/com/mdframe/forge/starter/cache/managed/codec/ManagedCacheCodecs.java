@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.starter.cache.managed.model.CacheControlMessage;
 import com.mdframe.forge.starter.cache.managed.model.CacheDefinition;
 import com.mdframe.forge.starter.cache.managed.model.CachePolicyOverride;
+import com.mdframe.forge.starter.cache.managed.model.ManagedCacheInvalidationMessage;
 import com.mdframe.forge.starter.cache.managed.model.ManagedCacheValue;
 import org.redisson.client.codec.Codec;
 import org.redisson.codec.TypedJsonJacksonCodec;
@@ -33,6 +34,12 @@ public final class ManagedCacheCodecs {
     public static Codec controlMessages(ObjectMapper objectMapper) {
         return new TypedJsonJacksonCodec(
                 CacheControlMessage.class,
+                Objects.requireNonNull(objectMapper, "objectMapper不能为空"));
+    }
+
+    public static Codec invalidationMessages(ObjectMapper objectMapper) {
+        return new TypedJsonJacksonCodec(
+                ManagedCacheInvalidationMessage.class,
                 Objects.requireNonNull(objectMapper, "objectMapper不能为空"));
     }
 

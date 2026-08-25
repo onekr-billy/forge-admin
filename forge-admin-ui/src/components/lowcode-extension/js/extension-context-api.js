@@ -58,7 +58,7 @@ export function validateClientScript(source) {
   return { valid: true }
 }
 
-export function sanitizeExtensionContext(context = {}, allowedFields = []) {
+export function sanitizeExtensionContext(context = {}, allowedFields = [], allowedWritableFields = allowedFields) {
   const record = isPlainObject(context.record) ? context.record : {}
   const safeFields = normalizeCodes(allowedFields).filter(field => !SENSITIVE_KEY_PATTERN.test(field))
   const fields = Object.create(null)
@@ -73,6 +73,8 @@ export function sanitizeExtensionContext(context = {}, allowedFields = []) {
     recordId: cloneSafeValue(record.id ?? context.recordId ?? null),
     fields: { ...fields },
     allowedFields: safeFields,
+    allowedWritableFields: normalizeCodes(allowedWritableFields)
+      .filter(field => safeFields.includes(field)),
     allowedActions: normalizeCodes(context.allowedActions || []),
   }
 }

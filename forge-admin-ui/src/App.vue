@@ -29,7 +29,7 @@
             <!--        </transition> -->
           </component>
 
-          <LayoutSetting v-if="layoutSettingVisible" class="fixed right-12 top-1/2 z-999" />
+          <LayoutSetting v-if="showLayoutSetting" class="fixed right-12 top-1/2 z-999" />
         </router-view>
 
         <!-- 全局水印 -->
@@ -85,6 +85,7 @@ const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 const userStore = useUserStore()
 const isSystemRoute = computed(() => route.path.startsWith('/system/'))
+const showLayoutSetting = computed(() => layoutSettingVisible && route.meta?.layout !== 'app-portal')
 
 // 监听布局变化，及时更新布局组件
 watch(() => route.meta?.layout || appStore.layout, (layoutName) => {

@@ -19,7 +19,7 @@ vi.mock('vue-router', () => ({
 const STUBS = {
   AiForm: {
     name: 'AiForm',
-    props: ['schema', 'showSubmit', 'submitLoading'],
+    props: ['schema', 'showSubmit', 'submitLoading', 'value'],
     emits: ['submit'],
     template: `
       <div class="ai-form-stub">
@@ -211,6 +211,68 @@ describe('grid block renderer data source experience', () => {
       needTip: false,
     })
     expect(window.$message.success).toHaveBeenCalledWith('提交成功')
+  })
+
+  it('runs standalone form extension hooks before and after submission', async () => {
+    requestMock.mockResolvedValue({ data: { id: '1' } })
+    const beforeSubmit = vi.fn(async data => ({ ...data, enhanced: true }))
+    const afterSubmit = vi.fn()
+    const wrapper = mountAiForm({
+      dataSourceConfigured: true,
+      readonly: true,
+      runtimeInteractive: true,
+      runtimeExtensionHooks: { beforeSubmit, afterSubmit },
+      block: {
+        id: 'form_1',
+        blockType: 'AiForm',
+        fieldRefs: ['customerName'],
+        props: { createApi: 'post@/ai/crud/customer' },
+      },
+      fields: [{ field: 'customerName', label: '客户名称', formVisible: true }],
+    })
+
+    await wrapper.find('.ai-form-submit-stub').trigger('click')
+    await flushPromises()
+
+    expect(beforeSubmit).toHaveBeenCalledWith(
+      { customerName: '新客户' },
+      expect.objectContaining({ triggerAction: expect.any(Function) }),
+    )
+    expect(requestMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: { customerName: '新客户', enhanced: true },
+    }))
+    expect(afterSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { customerName: '新客户', enhanced: true },
+        response: { data: { id: '1' } },
+        isEdit: false,
+      }),
+      expect.objectContaining({ triggerAction: expect.any(Function) }),
+    )
+  })
+
+  it('blocks standalone form submission when a pre-submit extension fails', async () => {
+    const wrapper = mountAiForm({
+      dataSourceConfigured: true,
+      readonly: true,
+      runtimeInteractive: true,
+      runtimeExtensionHooks: {
+        beforeSubmit: vi.fn().mockRejectedValue(new Error('增强校验失败')),
+      },
+      block: {
+        id: 'form_1',
+        blockType: 'AiForm',
+        fieldRefs: ['customerName'],
+        props: { createApi: 'post@/ai/crud/customer' },
+      },
+      fields: [{ field: 'customerName', label: '客户名称', formVisible: true }],
+    })
+
+    await wrapper.find('.ai-form-submit-stub').trigger('click')
+    await flushPromises()
+
+    expect(requestMock).not.toHaveBeenCalled()
+    expect(window.$message.error).toHaveBeenCalledWith('增强校验失败')
   })
 
   it('keeps form data and reports an error when runtime submission fails', async () => {

@@ -76,10 +76,18 @@ import messageApi from '@/api/message'
 import { AiCrudPage } from '@/components/ai-form'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
+import { mergeMessageNavigationTarget } from '@/layouts/components/message-notification-utils'
 import { request } from '@/utils'
 import { toNumberDictOptions } from '@/utils/dict-options'
 
 defineOptions({ name: 'MessageList' })
+
+const props = defineProps({
+  todoRoute: {
+    type: [String, Object],
+    default: '',
+  },
+})
 
 const router = useRouter()
 const crudRef = ref(null)
@@ -268,14 +276,11 @@ function isFlowTodoMessage(message) {
 function handleJumpToBiz(message) {
   if (isFlowTodoMessage(message)) {
     showDetail.value = false
-    router.push({
-      path: '/flow/todo',
-      query: {
-        taskId: message.bizKey,
-        source: 'message',
-        t: Date.now(),
-      },
-    })
+    router.push(mergeMessageNavigationTarget(props.todoRoute || '/flow/todo', {
+      taskId: message.bizKey,
+      source: 'message',
+      t: Date.now(),
+    }))
     return
   }
 

@@ -13,7 +13,8 @@ function baseJson() {
       { id: 'T_appr', nodeType: 'approver', name: '部门经理审批', config: {
         taskType: 'assignee',
         assignee: 'custom',
-        assigneeExpr: `${DOLLAR}{user_1001}`,
+        assigneeUserId: '2090384244139360257',
+        assigneeExpr: '',
         assigneeUserName: '张三',
         allowApprove: true,
         allowReject: true,
@@ -84,7 +85,8 @@ describe('convertJsonToBpmn - 主结构', () => {
     const xml = convertJsonToBpmn(baseJson())
     const doc = parseBpmnXml(xml)
     const t = findElementsByLocalName(doc, 'userTask')[0]
-    expect(getFlowableAttr(t, 'assignee')).toBe(`${DOLLAR}{user_1001}`)
+    expect(getFlowableAttr(t, 'assignee')).toBe('2090384244139360257')
+    expect(getFlowableAttr(t, 'assigneeType')).toBe('custom')
     expect(getFlowableAttr(t, 'assigneeName')).toBe('张三')
     expect(getFlowableAttr(t, 'allowReturn')).toBe('true')
     // 默认权限不出现

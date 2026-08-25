@@ -528,6 +528,10 @@ export function businessFlowFormAssets(objectCode, params = {}) {
   return request.get(`/ai/business/flow/form-assets/${objectCode}`, { params })
 }
 
+export function ensureBusinessFlowStatusField(objectId) {
+  return request.post(`/ai/business/flow/status-field/${objectId}/ensure`)
+}
+
 export function businessTaskFormContext(params = {}) {
   return request.get('/ai/business/flow/task-form-context', { params })
 }

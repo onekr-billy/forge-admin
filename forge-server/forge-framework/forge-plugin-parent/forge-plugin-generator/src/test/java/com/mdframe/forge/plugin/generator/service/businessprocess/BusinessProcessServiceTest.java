@@ -16,6 +16,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessNamingService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessVO;
@@ -31,6 +32,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
+import java.lang.reflect.Field;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -67,6 +69,7 @@ class BusinessProcessServiceTest {
             validator,
             contextResolver,
             new BusinessNamingService());
+    private final BusinessFlowService businessFlowService = mock(BusinessFlowService.class);
 
     private ExecutionIdentityContextHolder.Scope identityScope;
 
@@ -80,6 +83,13 @@ class BusinessProcessServiceTest {
         identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
                 user, "USER", 101L, null, 301L,
                 "business_process_test", "token-test", Set.of()));
+        try {
+            Field field = BusinessProcessService.class.getDeclaredField("businessFlowService");
+            field.setAccessible(true);
+            field.set(service, businessFlowService);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     @AfterEach
@@ -266,6 +276,37 @@ class BusinessProcessServiceTest {
     }
 
     @Test
+    @DisplayName("designer read repairs an unbound approval node to the unique application page form")
+    void designerReadRepairsLegacyApprovalFormBinding() throws Exception {
+        AiBusinessProcess process = process();
+        process.setDraftSchemaJson(approvalSchema("order_created_update"));
+        process.setDraftSchemaHash(validator.schemaHash(validator.normalize(process.getDraftSchemaJson())));
+        when(processMapper.selectActiveById(1L, 1001L)).thenReturn(process);
+        when(contextResolver.resolve(eq(1L), eq(10L), eq("order_created_update"), any()))
+                .thenReturn(validationContext("order_created_update"));
+        when(businessFlowService.getFormAssets("order", true, 10L)).thenReturn(Map.of(
+                "formAssets", List.of(Map.of(
+                        "formKey", "app_10_page_page_page_form_order_form",
+                        "formName", "订单页面",
+                        "formMode", "BUSINESS_OBJECT_FORM",
+                        "applicationId", "10",
+                        "pageId", "page_order",
+                        "pageName", "订单"))));
+        BusinessProcessVO result = service.getDesigner(1001L);
+
+        Map<String, Object> config = result.getBusinessProcessJson().getNodes().stream()
+                .filter(node -> "APPROVAL".equals(node.getType()))
+                .findFirst().orElseThrow().getConfig();
+        assertEquals("app_10_page_page_page_form_order_form",
+                ((Map<?, ?>) config.get("formAsset")).get("formKey"));
+        assertEquals("page_order", ((Map<?, ?>) config.get("formAsset")).get("pageId"));
+        assertTrue(result.getBusinessProcessJson().getDependencies().getFormAssets()
+                .contains("app_10_page_page_page_form_order_form"));
+        verify(processMapper, never()).updateDraftSchema(
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("any run record blocks logical deletion")
     void runRecordBlocksDeletion() {
         when(processMapper.selectActiveById(1L, 1001L)).thenReturn(process());
@@ -354,6 +395,30 @@ class BusinessProcessServiceTest {
                   ],
                   "policies":{"approvalConcurrency":"ONE_ACTIVE_PER_BUSINESS_KEY","maxSubProcessDepth":5,"retry":{"mode":"LIMITED","maxAttempts":3,"backoffSeconds":[30,120,600]}},
                   "dependencies":{"objects":["order"],"flowModels":[],"formAssets":[],"businessActions":[],"messageTemplates":[],"capabilities":[],"subProcesses":[]}
+                }
+                """.formatted(processCode);
+    }
+
+    private String approvalSchema(String processCode) {
+        return """
+                {
+                  "schemaVersion":"1.0",
+                  "processCode":"%s",
+                  "subject":{"objectId":"20","objectCode":"order","objectVersionId":"120","recordIdSource":"RUNTIME_RECORD"},
+                  "nodes":[
+                    {"id":"start","type":"START_MANUAL","name":"发起","config":{}},
+                    {"id":"approval","type":"APPROVAL","name":"审批","ports":["APPROVED","REJECTED","CANCELED","FAILED"],"config":{"flowModelKey":"order_approval","versionPolicy":"PINNED_AT_APPLICATION_PUBLISH","statusField":"flowStatus","formAsset":{}}},
+                    {"id":"end","type":"END","name":"完成","config":{"result":"SUCCESS"}}
+                  ],
+                  "edges":[
+                    {"id":"e1","source":"start","target":"approval","sourcePort":"NEXT"},
+                    {"id":"e2","source":"approval","target":"end","sourcePort":"APPROVED"},
+                    {"id":"e3","source":"approval","target":"end","sourcePort":"REJECTED"},
+                    {"id":"e4","source":"approval","target":"end","sourcePort":"CANCELED"},
+                    {"id":"e5","source":"approval","target":"end","sourcePort":"FAILED"}
+                  ],
+                  "policies":{"approvalConcurrency":"ONE_ACTIVE_PER_BUSINESS_KEY","maxSubProcessDepth":5,"retry":{"mode":"LIMITED","maxAttempts":3,"backoffSeconds":[30,120,600]}},
+                  "dependencies":{"objects":["order"],"flowModels":["order_approval"],"formAssets":[],"businessActions":[],"messageTemplates":[],"capabilities":[],"subProcesses":[]}
                 }
                 """.formatted(processCode);
     }

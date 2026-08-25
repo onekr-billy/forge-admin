@@ -19,6 +19,7 @@ import com.mdframe.forge.starter.flow.service.FlowModelService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.ProcessEngine;
 import org.flowable.engine.RuntimeService;
@@ -102,6 +103,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
                                 String title, Map<String, Object> variables, String userId,
                                 String userName, String deptId, String deptName) {
         Long tenantId = resolveTenantId();
+        String displayUserName = resolveUserDisplayName(userId, userName);
         ReentrantLock startLock = acquireFlowStartLock(tenantId, businessKey);
         boolean unlockInFinally = true;
         try {
@@ -146,7 +148,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         // 内置变量：发起人信息
         vars.put("initiator", userId);
         vars.put("startUserId", userId);
-        vars.put("startUserName", userName);
+        vars.put("startUserName", displayUserName);
         vars.put("startDeptId", deptId);
         vars.put("startDeptName", deptName);
 
@@ -157,6 +159,15 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
 
         // 内置变量：流程标题
         vars.put("processTitle", title);
+
+        // 兼容历史设计器把固定审批人写成 ${user_45}。新模型直接保存用户 ID，
+        // 这里仅对已部署旧模型的严格数字表达式补变量，不影响正常动态表达式。
+        BpmnModel bpmnModel = processEngine.getRepositoryService().getBpmnModel(processDefinition.getId());
+        int legacyFixedAssigneeCount = LegacyFixedAssigneeVariableSupport.enrich(bpmnModel, vars);
+        if (legacyFixedAssigneeCount > 0) {
+            log.warn("[流程启动兼容] 已补齐历史固定审批人变量: processDefinitionId={}, count={}",
+                    processDefinition.getId(), legacyFixedAssigneeCount);
+        }
 
         // 自动注入上级领导变量（兼容 BPMN 中直接使用 ${initiatorLeader} 的老式写法）
         if (userId != null && !userId.isEmpty() && flowOrgIntegrationService != null) {
@@ -247,7 +258,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         business.setTitle(title);
         business.setStatus("running");
         business.setApplyUserId(userId);
-        business.setApplyUserName(userName);
+        business.setApplyUserName(displayUserName);
         business.setApplyDeptId(deptId);
         business.setApplyDeptName(deptName);
         business.setApplyTime(LocalDateTime.now());
@@ -384,6 +395,56 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             tenantId = SessionHelper.getTenantId();
         }
         return tenantId == null ? DEFAULT_TENANT_ID : tenantId;
+    }
+
+    /**
+     * 流程业务数据中的姓名必须使用真实姓名，不能把登录账号直接落库。
+     * 兼容外部调用方仍传入账号的场景：优先按用户 ID 从组织服务反查姓名。
+     */
+    private String resolveUserDisplayName(String userId, String candidateName) {
+        String fallback = isBlank(candidateName) ? userId : candidateName.trim();
+        if (isBlank(userId)) {
+            return fallback;
+        }
+        if (flowOrgIntegrationService != null) {
+            try {
+                Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId);
+                if (userInfo != null) {
+                    String realName = firstNonBlank(
+                            userInfo.get("realName"), userInfo.get("name"), userInfo.get("nickname"));
+                    if (!isBlank(realName)) {
+                        return realName;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("反查流程发起人姓名失败: userId={}", userId, e);
+            }
+        }
+        if (sysUserService != null) {
+            try {
+                SysUser user = sysUserService.getById(Long.valueOf(userId));
+                if (user != null && !isBlank(user.getRealName())) {
+                    return user.getRealName().trim();
+                }
+            } catch (NumberFormatException ignored) {
+                // 外部系统可能使用非数字用户标识，保留调用方传入值。
+            } catch (Exception e) {
+                log.debug("从用户表反查流程发起人姓名失败: userId={}", userId, e);
+            }
+        }
+        return fallback;
+    }
+
+    private String firstNonBlank(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value != null && !String.valueOf(value).trim().isEmpty()) {
+                return String.valueOf(value).trim();
+            }
+        }
+        return null;
     }
 
     private ReentrantLock acquireFlowStartLock(Long tenantId, String businessKey) {

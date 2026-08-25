@@ -232,6 +232,15 @@
         v-bind="buildCrudProps(node)"
       />
 
+      <PageWidgetRenderer
+        v-else-if="isWidgetNode(node)"
+        :component-key="resolveWidgetKey(node)"
+        :props-data="node.props || {}"
+        :data-context="formValue || {}"
+        :readonly="resolveNodeDisabled(node)"
+        @update:props-data="handleWidgetUpdate(node, $event)"
+      />
+
       <AiFormLayoutNodes
         v-else
         :nodes="node.children || []"
@@ -257,6 +266,8 @@
 <script setup>
 import { computed, defineAsyncComponent, useSlots } from 'vue'
 import { useRoute } from 'vue-router'
+import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
+import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
 import { applyRuntimeControl, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import AiFormGroupTitle from './AiFormGroupTitle.vue'
 import AiFormItem from './AiFormItem.vue'
@@ -388,6 +399,15 @@ function isKnownLayoutNode(node = {}) {
     || isCrudNode(node)
     || isSectionTitleNode(node)
     || isGroupTitleNode(node)
+    || isWidgetNode(node)
+}
+
+function resolveWidgetKey(node = {}) {
+  return node.componentKey || node.type || node.nodeType || ''
+}
+
+function isWidgetNode(node = {}) {
+  return node.nodeType === 'widget' || isPageWidgetComponentKey(resolveWidgetKey(node))
 }
 
 function isRowNode(node = {}) {
@@ -454,6 +474,10 @@ function handleButtonClick(node = {}) {
     return
   }
   clickEvents.forEach(event => emit('nodeAction', { node, event, action: event.action || 'click' }))
+}
+
+function handleWidgetUpdate(node, value) {
+  emit('nodeAction', { node, event: null, action: 'update:props-data', value })
 }
 
 function resolveNodeDisabled(node = {}) {

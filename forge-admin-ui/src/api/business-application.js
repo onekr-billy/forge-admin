@@ -28,6 +28,47 @@ export function businessApplicationDetailByCode(applicationCode) {
   return request.get(`/ai/business/application/by-code/${encodeURIComponent(applicationCode)}`, ENCRYPTED_REQUEST)
 }
 
+export function businessApplicationDetailBySlug(portalSlug) {
+  return request.get(`/ai/business/application/by-slug/${encodeURIComponent(portalSlug)}`, ENCRYPTED_REQUEST)
+}
+
+export function checkBusinessApplicationSlugAvailable(portalSlug, excludeId) {
+  return request.get('/ai/business/application/slug-available', encryptedParams({
+    portalSlug,
+    excludeId,
+  }))
+}
+
+export function saveBusinessApplicationPortalConfig(id, config) {
+  return request.put(`/ai/business/application/${id}/portal-config`, config || {}, ENCRYPTED_REQUEST)
+}
+
+export function saveBusinessApplicationAiAssistantConfig(id, config) {
+  return request.put(`/ai/business/application/${id}/ai-assistant-config`, {
+    aiAssistantConfig: config || {},
+  }, ENCRYPTED_REQUEST)
+}
+
+export function businessApplicationAiAssistantStatus(id) {
+  return request.get(`/ai/business/application/${id}/ai-assistant-status`, ENCRYPTED_REQUEST)
+}
+
+export function chatBusinessApplicationAssistant(applicationCodeOrSlug, data) {
+  return request.post(
+    `/ai/business/application/portal/${encodeURIComponent(applicationCodeOrSlug)}/assistant/chat`,
+    data,
+    ENCRYPTED_REQUEST,
+  )
+}
+
+export function distributeBusinessApplicationToWorkbench(id, data) {
+  return request.post(`/ai/business/application/${id}/distribute/workbench`, data || {}, ENCRYPTED_REQUEST)
+}
+
+export function businessApplicationWorkbench() {
+  return request.get('/ai/business/application/workbench', ENCRYPTED_REQUEST)
+}
+
 export function createBusinessApplication(data) {
   return request.post('/ai/business/application', data, ENCRYPTED_REQUEST)
 }
@@ -56,8 +97,43 @@ export function provisionBusinessApplicationFormData(id, data) {
   return request.post(`/ai/business/application/${id}/form-data/provision`, data, ENCRYPTED_REQUEST)
 }
 
+export function designBusinessApplicationPage(id, data) {
+  return request.post(`/ai/business/application/${id}/design-page`, data, ENCRYPTED_REQUEST)
+}
+
 export function initializeBusinessApplicationTemplate(id, data) {
   return request.post(`/ai/business/application/${id}/initialize-template`, data, ENCRYPTED_REQUEST)
+}
+
+export function initializeBusinessApplicationAi(id, data) {
+  return request.post(`/ai/business/application/${id}/initialize-ai`, data, ENCRYPTED_REQUEST)
+}
+
+export function previewBusinessApplicationExcel(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request({
+    method: 'post',
+    url: '/ai/business/application/excel/preview',
+    data: formData,
+    encrypt: false,
+  })
+}
+
+export function initializeBusinessApplicationExcel(id, file, config = {}) {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (config.objectName)
+    formData.append('objectName', config.objectName)
+  if (config.objectCode)
+    formData.append('objectCode', config.objectCode)
+  formData.append('fields', JSON.stringify(config.fields || []))
+  return request({
+    method: 'post',
+    url: `/ai/business/application/${id}/import-excel`,
+    data: formData,
+    encrypt: false,
+  })
 }
 
 export function businessApplicationWorkspace(id) {
@@ -74,6 +150,13 @@ export function businessApplicationWorkspaceByCode(applicationCode) {
 export function businessApplicationRuntimeByCode(applicationCode) {
   return request.get(
     `/ai/business/application/by-code/${encodeURIComponent(applicationCode)}/runtime`,
+    ENCRYPTED_REQUEST,
+  )
+}
+
+export function businessApplicationRuntimeByCodeOrSlug(identifier) {
+  return request.get(
+    `/ai/business/application/portal/${encodeURIComponent(identifier)}/runtime`,
     ENCRYPTED_REQUEST,
   )
 }

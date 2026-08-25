@@ -1,10 +1,13 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -49,6 +52,59 @@ public class BusinessEvent {
     /** 租户ID */
     private Long tenantId;
 
+    /**
+     * 读取当前业务记录字段。动态 CRUD 的单表返回是平铺 Map，主子表返回则是
+     * {@code {main, children}}；事件消费者不应感知这两种返回协议的差异。
+     */
+    public Object readRecordValue(String field) {
+        return readValue(recordData, field);
+    }
+
+    public Object readPreviousValue(String field) {
+        return readValue(previousData, field);
+    }
+
+    public static Object readValue(Map<String, Object> data, String field) {
+        if (data == null || StringUtils.isBlank(field)) {
+            return null;
+        }
+        String normalizedField = field.trim();
+        String mainField = normalizedField.startsWith("main.")
+                ? normalizedField.substring("main.".length()) : normalizedField;
+        if (!normalizedField.startsWith("main.") && containsField(data, normalizedField)) {
+            return readFlatValue(data, normalizedField);
+        }
+        Object main = data.get("main");
+        if (main instanceof Map<?, ?> mainMap) {
+            Map<String, Object> mainRecord = new LinkedHashMap<>();
+            mainMap.forEach((key, value) -> {
+                if (key != null) {
+                    mainRecord.put(String.valueOf(key), value);
+                }
+            });
+            return readFlatValue(mainRecord, mainField);
+        }
+        return readFlatValue(data, mainField);
+    }
+
+    private static boolean containsField(Map<String, Object> data, String field) {
+        return data.containsKey(field)
+                || data.containsKey(DynamicQueryGenerator.snakeToCamel(field))
+                || data.containsKey(DynamicQueryGenerator.camelToSnake(field));
+    }
+
+    private static Object readFlatValue(Map<String, Object> data, String field) {
+        if (data.containsKey(field)) {
+            return data.get(field);
+        }
+        String camelField = DynamicQueryGenerator.snakeToCamel(field);
+        if (data.containsKey(camelField)) {
+            return data.get(camelField);
+        }
+        String snakeField = DynamicQueryGenerator.camelToSnake(field);
+        return data.get(snakeField);
+    }
+
     // ========== 事件类型常量 ==========
 
     public static final String RECORD_CREATED = "RECORD_CREATED";
@@ -56,6 +112,7 @@ public class BusinessEvent {
     public static final String RECORD_DELETED = "RECORD_DELETED";
     public static final String STATUS_CHANGED = "STATUS_CHANGED";
     public static final String FIELD_CHANGED = "FIELD_CHANGED";
+    public static final String FORM_SUBMITTED = "FORM_SUBMITTED";
     public static final String FLOW_APPROVED = "FLOW_APPROVED";
     public static final String FLOW_REJECTED = "FLOW_REJECTED";
     public static final String FLOW_CANCELED = "FLOW_CANCELED";

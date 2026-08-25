@@ -151,8 +151,15 @@
                e.status AS status,
                e.draft_version AS draftVersion,
                e.enabled_version AS enabledVersion,
+               v.content AS content,
+               v.processed_content AS processedContent,
                e.update_time AS updateTime
         FROM ai_business_extension e
+        LEFT JOIN ai_business_extension_version v
+          ON v.tenant_id = e.tenant_id
+         AND v.extension_id = e.id
+         AND v.version_no = e.enabled_version
+         AND v.del_flag = '0'
         LEFT JOIN ai_business_object o
           ON o.tenant_id = e.tenant_id
          AND o.id = e.object_id

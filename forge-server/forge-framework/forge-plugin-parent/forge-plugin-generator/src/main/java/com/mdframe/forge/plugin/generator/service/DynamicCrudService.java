@@ -24,6 +24,7 @@ import com.mdframe.forge.plugin.generator.service.formula.VirtualFormulaRuntime;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessDocumentConfigService;
 import com.mdframe.forge.plugin.generator.service.businessapp.CodeRuleService;
 import com.mdframe.forge.plugin.generator.service.crypto.LowcodeEncryptConfigParser;
+import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeComponentCatalog;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
@@ -495,7 +496,24 @@ public class DynamicCrudService {
      * 根据ID查询
      */
     public Map<String, Object> selectById(String configKey, Object id) {
-        AiCrudConfig config = getConfig(configKey);
+        return readRecordByConfig(getConfig(configKey), id);
+    }
+
+    /**
+     * 业务流程审批节点读取业务记录：优先已发布配置，工作台草稿对象也允许按当前配置读取。
+     */
+    public Map<String, Object> selectByIdAllowDraft(String configKey, Object id) {
+        AiCrudConfig config = configService.getByConfigKey(configKey);
+        if (config == null || "1".equals(config.getStatus())) {
+            throw new BusinessException("CRUD配置不存在或已停用: " + configKey);
+        }
+        if (!"CONFIG".equals(config.getMode())) {
+            throw new BusinessException("该配置不是配置驱动模式: " + configKey);
+        }
+        return readRecordByConfig(config, id);
+    }
+
+    private Map<String, Object> readRecordByConfig(AiCrudConfig config, Object id) {
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
         String tableName = config.getTableName();
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
@@ -643,6 +661,7 @@ public class DynamicCrudService {
         
         // 应用加密
         applyMoneyStorageWrite(filteredData, config);
+        applyStructuredFieldStorageWrite(filteredData, config);
         applyEncrypt(filteredData, config.getEncryptConfig());
         
         // 执行插入
@@ -690,6 +709,7 @@ public class DynamicCrudService {
             throw new BusinessException("没有可写入的字段");
         }
         validateUniqueConstraints(config, tableName, data, null, null);
+        applyStructuredFieldStorageWrite(filteredData, config);
         applyEncrypt(filteredData, config.getEncryptConfig());
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
         Object id = repository.insertReturningKey(
@@ -730,6 +750,7 @@ public class DynamicCrudService {
                 throw new BusinessException("没有可写入的字段");
             }
             validateUniqueConstraints(config, tableName, data, null, null);
+            applyStructuredFieldStorageWrite(filteredData, config);
             applyEncrypt(filteredData, config.getEncryptConfig());
             LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
             Object id = repository.insertReturningKey(
@@ -811,6 +832,7 @@ public class DynamicCrudService {
         
         // 应用加密
         applyMoneyStorageWrite(filteredData, config);
+        applyStructuredFieldStorageWrite(filteredData, config);
         applyEncrypt(filteredData, config.getEncryptConfig());
         
         // 执行更新
@@ -829,13 +851,28 @@ public class DynamicCrudService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateInternalFieldsById(String configKey, Object id, Map<String, Object> data) {
+        updateInternalFieldsByConfig(getConfig(configKey), id, data);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void updateInternalFieldsByIdAllowDraft(String configKey, Object id, Map<String, Object> data) {
+        AiCrudConfig config = configService.getByConfigKey(configKey);
+        if (config == null || "1".equals(config.getStatus())) {
+            throw new BusinessException("CRUD配置不存在或已停用: " + configKey);
+        }
+        if (!"CONFIG".equals(config.getMode())) {
+            throw new BusinessException("该配置不是配置驱动模式: " + configKey);
+        }
+        updateInternalFieldsByConfig(config, id, data);
+    }
+
+    private void updateInternalFieldsByConfig(AiCrudConfig config, Object id, Map<String, Object> data) {
         if (id == null) {
             throw new BusinessException("更新操作缺少id");
         }
         if (data == null || data.isEmpty()) {
             throw new BusinessException("没有可更新的字段");
         }
-        AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
         String tableName = config.getTableName();
@@ -866,6 +903,7 @@ public class DynamicCrudService {
             throw new BusinessException("没有可更新的字段");
         }
 
+        applyStructuredFieldStorageWrite(filteredData, config);
         applyEncrypt(filteredData, config.getEncryptConfig());
         int affected = repository.updateById(tableName, primaryKeyColumn(primaryKey), id, filteredData, dataScopeCondition);
         if (affected <= 0) {
@@ -898,6 +936,7 @@ public class DynamicCrudService {
         if (filteredData.isEmpty()) {
             throw new BusinessException("没有可更新的字段");
         }
+        applyStructuredFieldStorageWrite(filteredData, config);
         applyEncrypt(filteredData, config.getEncryptConfig());
         removePrimaryKeyColumns(filteredData, primaryKey);
         int affected = repository.updateById(tableName, primaryKeyColumn(primaryKey), id, filteredData, dataScopeCondition);
@@ -935,6 +974,7 @@ public class DynamicCrudService {
             if (filteredData.isEmpty()) {
                 throw new BusinessException("没有可更新的字段");
             }
+            applyStructuredFieldStorageWrite(filteredData, config);
             applyEncrypt(filteredData, config.getEncryptConfig());
             removePrimaryKeyColumns(filteredData, primaryKey);
             DynamicCrudRepository.SqlCondition expected = buildCommandExpectedCondition(
@@ -1269,6 +1309,7 @@ public class DynamicCrudService {
         }
 
         applyMoneyStorageWrite(primaryData, config);
+        applyStructuredFieldStorageWrite(primaryData, config);
         applyEncrypt(primaryData, config.getEncryptConfig());
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
         Object mainId = repository.insertReturningKey(
@@ -1325,6 +1366,7 @@ public class DynamicCrudService {
         removeMaskedDesensitizedWriteColumns(primaryData, config, config.getTableName());
         if (!primaryData.isEmpty()) {
             applyMoneyStorageWrite(primaryData, config);
+            applyStructuredFieldStorageWrite(primaryData, config);
             applyEncrypt(primaryData, config.getEncryptConfig());
             int affected = repository.updateById(config.getTableName(), id, primaryData, dataScopeCondition);
             if (affected <= 0) {
@@ -1731,6 +1773,7 @@ public class DynamicCrudService {
             throw new BusinessException("没有可写入的主表字段");
         }
         applyMoneyStorageWrite(primaryData, config);
+        applyStructuredFieldStorageWrite(primaryData, config);
         applyEncrypt(primaryData, config.getEncryptConfig());
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
         Object mainId = repository.insertReturningKey(
@@ -1778,6 +1821,7 @@ public class DynamicCrudService {
 
         if (!primaryData.isEmpty()) {
             applyMoneyStorageWrite(primaryData, config);
+            applyStructuredFieldStorageWrite(primaryData, config);
             applyEncrypt(primaryData, config.getEncryptConfig());
             int affected = repository.updateById(config.getTableName(), id, primaryData, dataScopeCondition);
             if (affected <= 0) {
@@ -3569,6 +3613,7 @@ public class DynamicCrudService {
         applyRuntimeFieldAliases(rows, config);
         applyDecrypt(rows, config.getEncryptConfig());
         applyMoneyDisplayProjection(rows, config);
+        applyStructuredFieldDisplayProjection(rows, config);
         applyVirtualFormulas(config, rows);
         applyDictTranslation(rows, buildEffectiveTransConfig(config));
         applyDesensitize(rows, config.getDesensitizeConfig());
@@ -3589,6 +3634,116 @@ public class DynamicCrudService {
             }
             data.put(key, toMinorMoney(field, data.get(key)));
         }
+    }
+
+    /**
+     * 数组型控件统一以 JSON 数组写入文本列，避免 JDBC 将 List 直接绑定到 varchar/text。
+     */
+    private void applyStructuredFieldStorageWrite(Map<String, Object> data, AiCrudConfig config) {
+        if (data == null || data.isEmpty() || config == null) {
+            return;
+        }
+        for (StructuredFieldContract field : resolveStructuredFields(config)) {
+            String key = resolveStructuredDataKey(data, field);
+            Object value = key == null ? null : data.get(key);
+            if (value == null || value instanceof String) {
+                continue;
+            }
+            try {
+                data.put(key, objectMapper.writeValueAsString(value));
+            } catch (Exception e) {
+                throw new BusinessException("字段值序列化失败: " + field.fieldName());
+            }
+        }
+    }
+
+    private void applyStructuredFieldDisplayProjection(List<Map<String, Object>> rows, AiCrudConfig config) {
+        if (rows == null || rows.isEmpty() || config == null) {
+            return;
+        }
+        List<StructuredFieldContract> fields = resolveStructuredFields(config);
+        for (Map<String, Object> row : rows) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            for (StructuredFieldContract field : fields) {
+                String key = resolveStructuredDataKey(row, field);
+                Object value = key == null ? null : row.get(key);
+                if (value == null || value instanceof Collection<?>) {
+                    continue;
+                }
+                row.put(key, parseStructuredValue(value));
+            }
+        }
+    }
+
+    private Object parseStructuredValue(Object rawValue) {
+        if (rawValue instanceof String value) {
+            String text = value.trim();
+            if (text.isEmpty()) {
+                return new ArrayList<>();
+            }
+            try {
+                JsonNode node = objectMapper.readTree(text);
+                if (node != null && node.isArray()) {
+                    return objectMapper.convertValue(node, new TypeReference<List<Object>>() { });
+                }
+            } catch (Exception ignored) {
+                // 兼容早期以逗号分隔保存的历史值。
+            }
+            if (text.contains(",")) {
+                return Arrays.stream(text.split(","))
+                        .map(String::trim)
+                        .filter(StringUtils::isNotBlank)
+                        .toList();
+            }
+            return List.of(value);
+        }
+        if (rawValue instanceof JsonNode node && node.isArray()) {
+            return objectMapper.convertValue(node, new TypeReference<List<Object>>() { });
+        }
+        return rawValue;
+    }
+
+    private String resolveStructuredDataKey(Map<String, Object> data, StructuredFieldContract field) {
+        String camelColumn = DynamicQueryGenerator.snakeToCamel(field.columnName());
+        for (String candidate : List.of(field.fieldName(), field.columnName(), camelColumn)) {
+            if (StringUtils.isNotBlank(candidate) && data.containsKey(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private List<StructuredFieldContract> resolveStructuredFields(AiCrudConfig config) {
+        LowcodeModelSchema modelSchema = parseModelSchema(config);
+        if (modelSchema == null || modelSchema.getFields() == null) {
+            return List.of();
+        }
+        List<StructuredFieldContract> result = new ArrayList<>();
+        for (LowcodeFieldSchema field : modelSchema.getFields()) {
+            if (field == null) {
+                continue;
+            }
+            String componentType = StringUtils.trimToNull(field.getComponentType());
+            String businessType = StringUtils.upperCase(StringUtils.trimToEmpty(field.getBusinessFieldType()));
+            if (componentType == null && "CHECKBOX".equals(businessType)) {
+                componentType = "checkbox";
+            } else if (componentType == null && "MULTI_SELECT".equals(businessType)) {
+                componentType = "transfer";
+            }
+            if (!LowcodeComponentCatalog.isStructuredValueComponent(componentType)
+                    || StringUtils.isBlank(field.getField())) {
+                continue;
+            }
+            String columnName = StringUtils.defaultIfBlank(field.getColumnName(),
+                    DynamicQueryGenerator.camelToSnake(field.getField()));
+            result.add(new StructuredFieldContract(field.getField(), columnName, componentType));
+        }
+        return result;
+    }
+
+    private record StructuredFieldContract(String fieldName, String columnName, String componentType) {
     }
 
     private void applyMoneyDisplayProjection(List<Map<String, Object>> rows, AiCrudConfig config) {

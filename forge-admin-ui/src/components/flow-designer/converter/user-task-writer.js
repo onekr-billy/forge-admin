@@ -72,7 +72,9 @@ export function writeUserTaskConfig(config) {
       typeMark = 'spel'
     }
     else if (cfg.assignee === 'custom') {
-      val = cfg.assigneeExpr || ''
+      val = normalizeFixedAssigneeUserId(cfg.assigneeUserId)
+        || extractLegacyFixedAssigneeUserId(cfg.assigneeExpr)
+      typeMark = 'custom'
     }
     else if (STATIC_ASSIGNEES.has(cfg.assignee)) {
       val = cfg.assignee
@@ -195,6 +197,16 @@ export function writeUserTaskConfig(config) {
     attrs: attrs.join(' '),
     children: children.join(''),
   }
+}
+
+function normalizeFixedAssigneeUserId(value) {
+  const text = String(value || '').trim()
+  return /^\d+$/.test(text) ? text : ''
+}
+
+function extractLegacyFixedAssigneeUserId(value) {
+  const match = String(value || '').match(/^\$\{user_(\d+)\}$/)
+  return match?.[1] || ''
 }
 
 function normalizeFormFieldPermission(item = {}) {

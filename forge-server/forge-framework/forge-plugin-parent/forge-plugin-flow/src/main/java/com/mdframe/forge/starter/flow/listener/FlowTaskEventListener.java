@@ -185,12 +185,19 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
             if (business != null) {
+                String normalizedApplyUserName = resolveUserDisplayName(
+                        business.getApplyUserId(), business.getApplyUserName());
+                if (!Objects.equals(normalizedApplyUserName, business.getApplyUserName())
+                        && normalizedApplyUserName != null) {
+                    business.setApplyUserName(normalizedApplyUserName);
+                    flowBusinessMapper.updateById(business);
+                }
                 flowTask.setTenantId(business.getTenantId());
                 flowTask.setTitle(business.getTitle());
                 flowTask.setBusinessKey(business.getBusinessKey());
                 flowTask.setBusinessType(business.getBusinessType());
                 flowTask.setStartUserId(business.getApplyUserId());
-                flowTask.setStartUserName(business.getApplyUserName());
+                flowTask.setStartUserName(normalizedApplyUserName);
                 flowTask.setStartDeptId(business.getApplyDeptId());
                 flowTask.setStartDeptName(business.getApplyDeptName());
                 log.debug("业务信息: title={}, businessKey={}, applyUserId={}, applyUserName={}",
@@ -205,8 +212,8 @@ public class FlowTaskEventListener implements FlowableEventListener {
             flowTaskMapper.insert(flowTask);
             log.info("创建待办任务成功：taskId={}, title={}, assignee={}, candidateUsers={}, candidateGroups={}",
                     task.getId(), flowTask.getTitle(), flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
-            // 事务提交后异步推送站内信 + 企微卡片，不阻塞审批主链路
-            eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, business));
+            // 事务提交后异步推送站内信/企微卡片等（按模型通知配置），不阻塞审批主链路
+            eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, business, readTaskVariables(task)));
     
             // 发布 TASK_CREATED 事件，业务侧可监听并处理（如：发送待办通知、记录日志等）
             if (business != null) {
@@ -264,7 +271,8 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     flowTask.setBusinessKey(completedBusiness.getBusinessKey());
                     flowTask.setBusinessType(completedBusiness.getBusinessType());
                     flowTask.setStartUserId(completedBusiness.getApplyUserId());
-                    flowTask.setStartUserName(completedBusiness.getApplyUserName());
+                    flowTask.setStartUserName(resolveUserDisplayName(
+                            completedBusiness.getApplyUserId(), completedBusiness.getApplyUserName()));
                 }
                 
                 flowTaskMapper.insert(flowTask);
@@ -322,6 +330,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 String assignee = normalizeTaskUserId(task.getAssignee(), task.getId(), "assignee");
                 String owner = normalizeTaskUserId(task.getOwner(), task.getId(), "owner");
                 flowTask.setAssignee(assignee);
+                flowTask.setAssigneeName(resolveUserDisplayName(assignee, flowTask.getAssigneeName()));
                 flowTask.setOwner(owner);
                 
                 if (assignee != null) {
@@ -347,7 +356,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     if (flowTask.getTenantId() == null && assignedBusiness.getTenantId() != null) {
                         flowTask.setTenantId(assignedBusiness.getTenantId());
                     }
-                    eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, assignedBusiness));
+                    eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, assignedBusiness, readTaskVariables(task)));
                     FlowEventMessage msg = FlowEventMessage.ofTask(
                             FlowEventMessage.TASK_ASSIGNED,
                             task.getProcessInstanceId(),
@@ -469,6 +478,9 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     msg.setVariables(processVariables);
                     fillTenantId(msg, business);
                     publishEvent(msg, business.getProcessDefKey());
+                    // 按模型通知配置向发起人推送审批结果（未配置 result 事件时无动作）
+                    eventPublisher.publishEvent(
+                            FlowTaskNotifyEvent.processResult(business, processVariables, rejected));
                     if (!rejected) {
                         eventPublisher.publishEvent(FlowTaskNotifyEvent.processCc(business, processVariables));
                     }
@@ -646,6 +658,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
         flowTask.setProcessDefId(task.getProcessDefinitionId());
         flowTask.setProcessDefKey(extractProcessKey(task.getProcessDefinitionId()));
         flowTask.setAssignee(normalizeTaskUserId(task.getAssignee(), task.getId(), "assignee"));
+        flowTask.setAssigneeName(resolveUserDisplayName(flowTask.getAssignee(), null));
         flowTask.setOwner(normalizeTaskUserId(task.getOwner(), task.getId(), "owner"));
         flowTask.setCreateTime(LocalDateTime.now());
         
@@ -751,6 +764,38 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
         }
         return true;
+    }
+
+    private String resolveUserDisplayName(String userId, String fallback) {
+        if (userId != null && !userId.isBlank() && flowOrgIntegrationService != null) {
+            try {
+                Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());
+                if (userInfo != null) {
+                    String name = firstNonBlank(
+                            userInfo.get("realName"), userInfo.get("name"), userInfo.get("nickname"));
+                    if (name != null && !name.isBlank()) {
+                        return name;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("反查流程用户姓名失败: userId={}", userId, e);
+            }
+        }
+        return fallback != null && !fallback.isBlank()
+                ? fallback.trim()
+                : userId;
+    }
+
+    private String firstNonBlank(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value != null && !String.valueOf(value).trim().isEmpty()) {
+                return String.valueOf(value).trim();
+            }
+        }
+        return null;
     }
 
     /**

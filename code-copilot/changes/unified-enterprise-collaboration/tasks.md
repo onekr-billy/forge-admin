@@ -194,6 +194,7 @@
 ## Task 5：重构 OAuth state、回调票据与企业身份登录（P0）
 
 - **目标**：消除前端自报第三方身份，登录严格绑定连接、租户和已同步用户映射。
+- **回归修复（2026-08-24）**：授权地址生成与授权码换身份统一读取 LOGIN 应用配置，通过 `decryptAppSecret` 解密 `secretCipher` 并使用非缓存请求；修复旧连接 Secret 清空后企业微信自建应用无法发起授权的问题，同时保留未迁移连接的旧字段回退。
 - **涉及文件**：
   - `forge-server/forge-framework/forge-starter-parent/forge-starter-social/src/main/java/com/mdframe/forge/starter/social/service/SocialOAuthStateService.java` — Redis 一次性 state 和 `socialTicket`。
   - `forge-server/forge-framework/forge-starter-parent/forge-starter-social/src/main/java/com/mdframe/forge/starter/social/controller/SocialController.java` — 按 `connectionCode` 发起授权，回调只返回票据，不记录/返回 `AuthUser`。

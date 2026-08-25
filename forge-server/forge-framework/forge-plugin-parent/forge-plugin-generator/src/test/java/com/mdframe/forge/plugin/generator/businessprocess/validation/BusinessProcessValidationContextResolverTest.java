@@ -65,7 +65,7 @@ class BusinessProcessValidationContextResolverTest {
         when(processVersionMapper.selectCurrentPublishedByApplication(1L, 10L))
                 .thenReturn(List.of(childVersion));
         when(flowClientProvider.getIfAvailable()).thenReturn(flowClient);
-        when(flowClient.getModelList(null, 1)).thenReturn(FlowResult.success(List.of(Map.of(
+        List<Map<String, Object>> publishedModels = List.of(Map.of(
                 "status", 1,
                 "id", "model-100",
                 "modelKey", "order_approval",
@@ -73,8 +73,10 @@ class BusinessProcessValidationContextResolverTest {
                 "designerType", "approval",
                 "version", 3,
                 "processDefinitionId", "order_approval:3:100",
-                "deploymentId", "deployment-1"))));
-        when(flowService.getFormAssets("order")).thenReturn(Map.of(
+                "deploymentId", "deployment-1"));
+        when(flowClient.getModelList(null, 1)).thenReturn(FlowResult.success(publishedModels));
+        when(flowClient.getModelList(null, null)).thenReturn(FlowResult.success(publishedModels));
+        when(flowService.getFormAssets("order", true, 10L)).thenReturn(Map.of(
                 "formAssets", List.of(Map.of("formKey", "order_form"))));
         when(permissionMapper.selectExistingPermissions(
                 1L, List.of("ai:businessProcess:start")))

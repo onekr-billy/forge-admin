@@ -6,7 +6,7 @@
  *   - taskType: assignee / candidateUsers / candidateGroups
  *   - assignee（taskType=assignee 下）：4 种静态变量 / custom / spel
  *   - candidateUsers / candidateGroups + 对应名称列表
- *   - SPEL 模板选择后自动维护 assigneeExpr
+ *   - 指定人员保存固定字符串用户 ID；SPEL 模板单独维护 assigneeExpr
  */
 import { computed, ref, watch } from 'vue'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
@@ -38,6 +38,7 @@ const ASSIGNEE_OPTIONS = [
 
 const taskType = useField('taskType', 'assignee')
 const assignee = useField('assignee', '')
+const assigneeUserId = useField('assigneeUserId', '')
 const assigneeExpr = useField('assigneeExpr', '')
 const assigneeUserName = useField('assigneeUserName', '')
 const spelTemplate = useField('spelTemplate', '')
@@ -49,11 +50,12 @@ const spelLoading = ref(false)
 const spelLoaded = ref(false)
 
 const selectedAssigneeUserId = computed({
-  get: () => extractUserId(assigneeExpr.value),
+  get: () => normalizeUserId(assigneeUserId.value) || extractLegacyUserId(assigneeExpr.value),
   set: (value) => {
-    const userId = isFilledValue(value) ? String(value) : ''
+    const userId = normalizeUserId(value)
     emit('update:config', {
-      assigneeExpr: userId ? formatUserExpression(userId) : '',
+      assigneeUserId: userId,
+      assigneeExpr: '',
       assigneeUserName: userId ? assigneeUserName.value : '',
     })
   },
@@ -120,18 +122,26 @@ function handleAssigneeChange(value) {
   const patch = { assignee: value }
   if (value === 'custom') {
     patch.spelTemplate = ''
-    if (!extractUserId(assigneeExpr.value)) {
+    const legacyUserId = extractLegacyUserId(assigneeExpr.value)
+    if (legacyUserId) {
+      patch.assigneeUserId = legacyUserId
+    }
+    else if (!normalizeUserId(assigneeUserId.value)) {
+      patch.assigneeUserId = ''
       patch.assigneeExpr = ''
       patch.assigneeUserName = ''
     }
+    patch.assigneeExpr = ''
   }
   else if (value === 'spel') {
+    patch.assigneeUserId = ''
     patch.assigneeUserName = ''
-    if (extractUserId(assigneeExpr.value))
+    if (extractLegacyUserId(assigneeExpr.value))
       patch.assigneeExpr = ''
     ensureSpelTemplatesLoaded()
   }
   else {
+    patch.assigneeUserId = ''
     patch.assigneeExpr = ''
     patch.assigneeUserName = ''
     patch.spelTemplate = ''
@@ -141,13 +151,14 @@ function handleAssigneeChange(value) {
 
 function handleAssigneeUserSelect(user) {
   if (!user || !isFilledValue(user.id)) {
-    emit('update:config', { assigneeExpr: '', assigneeUserName: '' })
+    emit('update:config', { assigneeUserId: '', assigneeExpr: '', assigneeUserName: '' })
     return
   }
   const userId = String(user.id)
   emit('update:config', {
     assignee: 'custom',
-    assigneeExpr: formatUserExpression(userId),
+    assigneeUserId: userId,
+    assigneeExpr: '',
     assigneeUserName: resolveUserLabel(user),
   })
 }
@@ -287,13 +298,14 @@ function normalizeValueList(value) {
   return String(value).split(/[,，\s]+/).map(item => item.trim()).filter(Boolean)
 }
 
-function extractUserId(expression) {
-  const match = String(expression || '').match(/^\$\{user_(.+)\}$/)
+function extractLegacyUserId(expression) {
+  const match = String(expression || '').match(/^\$\{user_(\d+)\}$/)
   return match?.[1] || ''
 }
 
-function formatUserExpression(userId) {
-  return `${DOLLAR}{user_${userId}}`
+function normalizeUserId(value) {
+  const userId = String(value ?? '').trim()
+  return /^\d+$/.test(userId) ? userId : ''
 }
 
 function resolveUserLabel(user) {

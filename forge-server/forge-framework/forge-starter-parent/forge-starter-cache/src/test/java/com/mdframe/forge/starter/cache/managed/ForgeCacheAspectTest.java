@@ -10,10 +10,14 @@ import com.mdframe.forge.starter.cache.managed.definition.CacheDefinitionResolve
 import com.mdframe.forge.starter.cache.managed.enums.CacheMode;
 import com.mdframe.forge.starter.cache.managed.enums.CacheScope;
 import com.mdframe.forge.starter.cache.managed.key.ForgeCacheKeyResolver;
+import com.mdframe.forge.starter.cache.managed.model.CacheDefinition;
 import com.mdframe.forge.starter.cache.managed.properties.ManagedCacheProperties;
 import com.mdframe.forge.starter.cache.managed.transaction.CacheTransactionExecutor;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -121,6 +125,83 @@ class ForgeCacheAspectTest {
         assertEquals(2, target.loadCount);
     }
 
+    @Test
+    void shouldRestoreGenericCollectionElementsFromJsonCacheHit() throws NoSuchMethodException {
+        ManagedCacheProperties properties = new ManagedCacheProperties();
+        properties.setApplicationCode("forge-admin");
+        ForgeManagedCacheManager manager = new ForgeManagedCacheManager(null, properties);
+        CacheDefinitionResolver definitionResolver = new CacheDefinitionResolver(properties);
+        GenericCollectionService target = new GenericCollectionService();
+        CacheDefinition definition = definitionResolver.resolve(
+                GenericCollectionService.class, "generic:collection-cache");
+        String key = new ForgeCacheKeyResolver(
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                () -> new CacheIdentity(null, null, null))
+                .resolve(
+                        GenericCollectionService.class.getDeclaredMethod("load", String.class),
+                        target,
+                        new Object[]{"a"},
+                        "#key",
+                        CacheScope.GLOBAL,
+                        null)
+                .orElseThrow();
+        manager.put(definition, key, List.of(Map.of("name", "cached")));
+        ForgeCacheAspect aspect = new ForgeCacheAspect(
+                manager,
+                definitionResolver,
+                new ForgeCacheKeyResolver(
+                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        () -> new CacheIdentity(null, null, null)),
+                new CacheTransactionExecutor(),
+                properties);
+
+        AspectJProxyFactory factory = new AspectJProxyFactory(target);
+        factory.addAspect(aspect);
+        GenericCollectionService proxy = factory.getProxy();
+
+        List<SamplePayload> result = proxy.load("a");
+
+        assertEquals("cached", result.get(0).name());
+        assertEquals(0, target.loadCount);
+    }
+
+    @Test
+    void shouldEvictAndReloadGenericCollectionWhenCachedValueCannotBeRestored() throws NoSuchMethodException {
+        ManagedCacheProperties properties = new ManagedCacheProperties();
+        properties.setApplicationCode("forge-admin");
+        ForgeManagedCacheManager manager = new ForgeManagedCacheManager(null, properties);
+        CacheDefinitionResolver definitionResolver = new CacheDefinitionResolver(properties);
+        GenericCollectionService target = new GenericCollectionService();
+        CacheDefinition definition = definitionResolver.resolve(
+                GenericCollectionService.class, "generic:collection-cache");
+        ForgeCacheKeyResolver keyResolver = new ForgeCacheKeyResolver(
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                () -> new CacheIdentity(null, null, null));
+        String key = keyResolver.resolve(
+                        GenericCollectionService.class.getDeclaredMethod("load", String.class),
+                        target,
+                        new Object[]{"a"},
+                        "#key",
+                        CacheScope.GLOBAL,
+                        null)
+                .orElseThrow();
+        manager.put(definition, key, List.of(Map.of("name", Map.of("invalid", true))));
+        ForgeCacheAspect aspect = new ForgeCacheAspect(
+                manager,
+                definitionResolver,
+                keyResolver,
+                new CacheTransactionExecutor(),
+                properties);
+
+        AspectJProxyFactory factory = new AspectJProxyFactory(target);
+        factory.addAspect(aspect);
+        GenericCollectionService proxy = factory.getProxy();
+
+        assertEquals("loaded", proxy.load("a").get(0).name());
+        assertEquals("loaded", proxy.load("a").get(0).name());
+        assertEquals(1, target.loadCount);
+    }
+
     @ForgeCacheConfig(
             name = "sample:cache",
             mode = CacheMode.LOCAL,
@@ -191,5 +272,24 @@ class ForgeCacheAspectTest {
             loadCount++;
             return "value-" + loadCount;
         }
+    }
+
+    @ForgeCacheConfig(
+            name = "generic:collection-cache",
+            mode = CacheMode.LOCAL,
+            allowedModes = CacheMode.LOCAL,
+            scope = CacheScope.GLOBAL)
+    static class GenericCollectionService {
+
+        private int loadCount;
+
+        @ForgeCacheable(cacheName = "generic:collection-cache", key = "#key")
+        public List<SamplePayload> load(String key) {
+            loadCount++;
+            return List.of(new SamplePayload("loaded"));
+        }
+    }
+
+    private record SamplePayload(String name) {
     }
 }

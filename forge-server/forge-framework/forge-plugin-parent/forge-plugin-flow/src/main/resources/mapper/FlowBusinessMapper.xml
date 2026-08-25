@@ -67,7 +67,6 @@
         FROM sys_flow_business
         WHERE process_instance_id = #{processInstanceId}
           AND tenant_id = #{tenantId}
-        LIMIT 1
         FOR UPDATE
     </select>
 
