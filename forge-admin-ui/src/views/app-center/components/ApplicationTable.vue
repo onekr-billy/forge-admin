@@ -4,16 +4,15 @@
       v-for="application in applications"
       :key="application.id"
       class="application-card"
-      :class="{ 'has-problem': isUnpublishedApplication(application) || Number(application.problemCount || 0) > 0 }"
       role="listitem"
       tabindex="0"
       @click="emit('enter', application)"
       @keydown.enter.self.prevent="emit('enter', application)"
     >
       <header class="application-card-head">
-        <span class="application-icon" :style="applicationIconStyle(application)">
-          <IconRenderer v-if="application.icon" :icon="application.icon" :size="18" />
-          <n-icon v-else><AppsOutline /></n-icon>
+        <span class="application-icon">
+          <IconRenderer v-if="application.icon" :icon="application.icon" :size="16" />
+          <i v-else class="i-lucide:layout-dashboard" />
         </span>
         <span class="application-copy">
           <strong>{{ application.applicationName || application.applicationCode }}</strong>
@@ -27,100 +26,79 @@
             dict-type="ai_business_application_design_status"
             :value="application.designStatus"
             :bordered="false"
+            force-tag
           />
         </span>
       </header>
 
-      <p class="application-description">
-        {{ application.description || '尚未补充应用说明' }}
-      </p>
-
-      <div class="application-meta">
-        <span :title="application.suiteCode">
+      <div class="application-tags">
+        <span class="application-badge" :title="application.suiteCode">
           {{ application.suiteName || application.suiteCode || '未关联业务域' }}
         </span>
-        <span>更新 {{ formatDate(application.updateTime) }}</span>
+        <span class="application-badge">{{ application.pageCount || 0 }} 个页面</span>
       </div>
 
-      <div class="application-assets" aria-label="应用资产统计">
-        <span><strong>{{ application.pageCount || 0 }}</strong><small>页面</small></span>
-      </div>
-
-      <footer class="application-card-foot">
-        <div class="application-runtime-state">
-          <DictTag dict-type="sys_enable_disable" :value="application.status" :bordered="false" />
+      <div class="application-body">
+        <div
+          class="application-binding"
+          :class="{ empty: !application.lastPublishVersion, warning: isUnpublishedApplication(application) }"
+        >
+          <i class="i-lucide:git-branch" />
           <span v-if="isUnpublishedApplication(application)" class="problem-text">
             有变更未发布
           </span>
-          <span v-else-if="application.lastPublishVersion && !isUnpublishedApplication(application)">
-            v{{ application.lastPublishVersion }}
+          <span v-else-if="application.lastPublishVersion">
+            已发布 {{ publishVersionText(application) }}
           </span>
           <span v-else>尚未发布</span>
         </div>
+        <p class="application-description">
+          {{ application.description || '尚未补充应用说明' }}
+        </p>
+      </div>
+
+      <footer class="application-card-foot">
+        <div class="application-meta">
+          <span>
+            <i class="i-lucide:calendar" />
+            {{ formatDate(application.updateTime) }}
+          </span>
+          <span>
+            <i class="i-lucide:git-commit" />
+            {{ publishVersionText(application) }}
+          </span>
+        </div>
 
         <div class="application-actions" @click.stop>
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                size="small"
-                class="action-icon-button enter-application-button"
-                aria-label="打开页面管理"
-                @click="emit('enter', application)"
-              >
-                <template #icon>
-                  <n-icon><OpenOutline /></n-icon>
-                </template>
-              </n-button>
-            </template>
-            页面管理
-          </n-tooltip>
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                size="small"
-                class="action-icon-button"
-                aria-label="运行应用"
-                @click="emit('run', application)"
-              >
-                <template #icon>
-                  <n-icon><PlayOutline /></n-icon>
-                </template>
-              </n-button>
-            </template>
-            运行应用
-          </n-tooltip>
-          <n-tooltip v-if="isDraftApplication(application)" trigger="hover">
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                type="primary"
-                size="small"
-                class="action-icon-button"
-                aria-label="发布应用"
-                @click="emit('publish', application)"
-              >
-                <template #icon>
-                  <n-icon><RocketOutline /></n-icon>
-                </template>
-              </n-button>
-            </template>
-            发布应用
-          </n-tooltip>
+          <button type="button" class="application-action-link" @click="emit('enter', application)">
+            编辑
+          </button>
+          <span class="application-action-separator" />
+          <button
+            v-if="isDraftApplication(application)"
+            type="button"
+            class="application-action-link"
+            @click="emit('publish', application)"
+          >
+            发布
+          </button>
+          <button
+            v-else
+            type="button"
+            class="application-action-link"
+            @click="emit('run', application)"
+          >
+            运行
+          </button>
+          <span class="application-action-separator" />
           <n-dropdown
             trigger="click"
             :options="actionOptions(application)"
             @select="key => handleAction(key, application)"
           >
-            <n-button quaternary circle size="small" aria-label="更多应用操作">
-              <template #icon>
-                <n-icon><EllipsisHorizontal /></n-icon>
-              </template>
-            </n-button>
+            <button type="button" class="application-more-action" aria-label="更多应用操作">
+              <i class="i-lucide:more-horizontal" />
+            </button>
           </n-dropdown>
         </div>
       </footer>
@@ -129,7 +107,6 @@
 </template>
 
 <script setup>
-import { AppsOutline, EllipsisHorizontal, OpenOutline, PlayOutline, RocketOutline } from '@vicons/ionicons5'
 import DictTag from '@/components/DictTag.vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 
@@ -141,22 +118,11 @@ defineProps({
 })
 
 const emit = defineEmits(['enter', 'run', 'edit', 'code', 'publish', 'toggle', 'delete'])
-const APPLICATION_ICON_HUES = [171, 28, 262, 340, 198, 86, 221, 12]
-
-function applicationIconStyle(application) {
-  const identity = application?.applicationCode || application?.applicationName || application?.id || 'application'
-  let hash = 0
-  const text = String(identity)
-  for (let index = 0; index < text.length; index += 1)
-    hash = (hash * 31 + text.charCodeAt(index)) % 2147483647
-  return { '--application-icon-hue': String(APPLICATION_ICON_HUES[hash % APPLICATION_ICON_HUES.length]) }
-}
 
 function actionOptions(application) {
+  const isDraft = isDraftApplication(application)
   return [
-    { label: '页面管理', key: 'enter' },
-    { label: '运行应用', key: 'run' },
-    { label: '发布应用', key: 'publish' },
+    { label: isDraft ? '运行应用' : '发布应用', key: isDraft ? 'run' : 'publish' },
     { label: '预览与下载代码', key: 'code' },
     { label: '应用设置', key: 'edit' },
     { label: Number(application.status) === 1 ? '停用应用' : '启用应用', key: 'toggle' },
@@ -173,6 +139,10 @@ function isDraftApplication(application) {
 function isUnpublishedApplication(application) {
   const status = String(application?.designStatus || '').toUpperCase()
   return Boolean(application?.lastPublishVersion) && ['DRAFT', 'READY', 'CHANGED'].includes(status)
+}
+
+function publishVersionText(application) {
+  return application?.lastPublishVersion ? `v${application.lastPublishVersion}` : '未发布'
 }
 
 function handleAction(key, application) {
@@ -211,23 +181,22 @@ function formatDate(value) {
 <style scoped>
 .application-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 268px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   align-content: start;
   gap: 10px;
   min-width: 0;
   min-height: 100%;
-  padding: 12px;
+  padding: 10px;
 }
 
 .application-card {
-  display: grid;
-  grid-template-rows: auto auto auto auto auto;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 166px;
-  padding: 10px 11px 8px;
-  border: 1px solid var(--n-border-color, var(--border-default, #c9cdd4));
-  border-radius: 7px;
+  min-height: 158px;
+  overflow: hidden;
+  border: 1px solid var(--n-border-color, var(--border-light, #e5e7eb));
+  border-radius: 2px;
   outline: none;
   color: var(--n-text-color, var(--text-primary, #1d2129));
   background: var(--n-color, var(--bg-primary, #fff));
@@ -240,43 +209,38 @@ function formatDate(value) {
 
 .application-card:hover,
 .application-card:focus-visible {
-  border-color: color-mix(
-    in srgb,
-    var(--n-primary-color, var(--primary-color, #165dff)) 55%,
-    var(--n-border-color, #c9cdd4)
-  );
-  box-shadow: 0 5px 14px rgb(29 33 41 / 8%);
+  border-color: color-mix(in srgb, var(--primary-color, #165dff) 32%, var(--border-default, #c9cdd4));
+  box-shadow: 0 7px 18px rgb(15 23 42 / 7%);
   transform: translateY(-1px);
-}
-
-.application-card.has-problem {
-  border-top-color: var(--warning-color, #ff7d00);
 }
 
 .application-card-head {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
   min-width: 0;
+  padding: 14px 14px 9px;
 }
 
 .application-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid hsl(var(--application-icon-hue, 171) 24% 85%);
-  border-radius: 7px;
-  color: hsl(var(--application-icon-hue, 171) 34% 39%);
-  background: hsl(var(--application-icon-hue, 171) 28% 95%);
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--primary-color, #165dff) 18%, var(--border-light, #e5e7eb));
+  border-radius: 2px;
+  color: var(--primary-color, #165dff);
+  background: color-mix(in srgb, var(--primary-color, #165dff) 7%, var(--bg-primary, #fff));
+  font-size: 16px;
 }
 
 .application-copy {
   display: grid;
-  gap: 1px;
+  gap: 4px;
   min-width: 0;
+  padding-top: 1px;
 }
 
 .application-copy strong,
@@ -290,18 +254,22 @@ function formatDate(value) {
 
 .application-copy strong {
   color: var(--n-text-color, var(--text-primary, #1d2129));
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
 .application-copy code {
   color: var(--n-text-color-3, var(--text-tertiary, #86909c));
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 14px;
 }
 
 .application-card-head :deep(.n-tag) {
-  max-width: 72px;
+  max-width: 84px;
+  height: 20px;
+  border-radius: 2px;
 }
 
 .application-design-status.is-draft :deep(.n-tag) {
@@ -309,53 +277,105 @@ function formatDate(value) {
   background-color: color-mix(in srgb, var(--warning-color, #ff7d00) 14%, transparent);
 }
 
-.application-description {
-  margin: 0;
+.application-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 14px 9px;
+}
+
+.application-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 20px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
   color: var(--n-text-color-2, var(--text-secondary, #4e5969));
   font-size: 11px;
-  line-height: 18px;
+  line-height: 20px;
+  padding: 0 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.application-body {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 14px 10px;
+}
+
+.application-binding {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--n-border-color, var(--border-light, #eef0f4));
+  border-radius: 2px;
+  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
+  color: var(--n-text-color-3, var(--text-tertiary, #6b7280));
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 8px;
+}
+
+.application-binding i {
+  flex: 0 0 auto;
+  color: var(--n-text-color-3, var(--text-tertiary, #9ca3af));
+  font-size: 14px;
+}
+
+.application-binding.empty {
+  color: var(--n-text-color-3, var(--text-tertiary, #9ca3af));
+}
+
+.application-binding.warning {
+  border-color: color-mix(in srgb, var(--warning-color, #ff7d00) 20%, var(--border-light, #eef0f4));
+  background: color-mix(in srgb, var(--warning-color, #ff7d00) 6%, var(--bg-secondary, #f7f8fa));
+}
+
+.application-binding span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.application-description {
+  margin: 0;
+  color: var(--n-text-color-3, var(--text-tertiary, #6b7280));
+  font-size: 12px;
+  line-height: 17px;
 }
 
 .application-meta {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  color: var(--n-text-color-3, var(--text-tertiary, #86909c));
-  font-size: 10px;
-}
-
-.application-assets {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--n-border-color, var(--border-light, #e5e6eb));
-  border-radius: 6px;
-  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
-}
-
-.application-assets span {
   display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 3px;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
-  padding: 5px 3px;
-  border-right: 1px solid var(--n-border-color, var(--border-light, #e5e6eb));
-}
-
-.application-assets span:last-child {
-  border-right: 0;
-}
-
-.application-assets strong {
-  color: var(--n-text-color, var(--text-primary, #1d2129));
-  font-size: 13px;
+  color: var(--n-text-color-3, var(--text-tertiary, #86909c));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.application-assets small {
-  color: var(--n-text-color-3, var(--text-tertiary, #86909c));
-  font-size: 10px;
+.application-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.application-meta i {
+  flex: 0 0 auto;
+  color: var(--n-text-color-3, var(--text-tertiary, #9ca3af));
+  font-size: 12px;
 }
 
 .application-card-foot {
@@ -363,23 +383,20 @@ function formatDate(value) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-top: auto;
   min-width: 0;
-  padding-top: 1px;
+  border-top: 1px solid var(--n-border-color, var(--border-light, #eef0f4));
+  background: var(--n-color-embedded, var(--bg-secondary, #f7f8fa));
+  padding: 8px 14px;
 }
 
-.application-runtime-state,
 .application-actions {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 7px;
   min-width: 0;
-}
-
-.application-runtime-state {
-  gap: 6px;
-  overflow: hidden;
-  color: var(--n-text-color-3, var(--text-tertiary, #86909c));
-  font-size: 10px;
-  white-space: nowrap;
 }
 
 .problem-text {
@@ -388,20 +405,51 @@ function formatDate(value) {
   text-overflow: ellipsis;
 }
 
-.application-actions {
-  flex: 0 0 auto;
-  justify-content: flex-end;
-  gap: 2px;
+.application-action-link,
+.application-more-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.16s ease;
 }
 
-.enter-application-button {
-  color: var(--n-text-color, var(--text-primary, #1d2129));
+.application-action-link {
+  height: 20px;
+  color: var(--primary-color, #165dff);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  padding: 0;
+}
+
+.application-action-link:hover,
+.application-more-action:hover,
+.application-action-link:focus-visible,
+.application-more-action:focus-visible {
+  color: var(--primary-color-hover, #4080ff);
+}
+
+.application-action-separator {
+  width: 1px;
+  height: 12px;
+  background: var(--n-border-color, var(--border-default, #d9dde5));
+}
+
+.application-more-action {
+  width: 18px;
+  height: 20px;
+  color: var(--n-text-color-3, var(--text-tertiary, #86909c));
+  font-size: 14px;
+  padding: 0;
 }
 
 :global(.dark) .application-icon {
-  border-color: hsl(var(--application-icon-hue, 171) 18% 34%);
-  color: hsl(var(--application-icon-hue, 171) 35% 70%);
-  background: hsl(var(--application-icon-hue, 171) 20% 21%);
+  border-color: color-mix(in srgb, var(--primary-color, #4080ff) 28%, #303540);
+  background: color-mix(in srgb, var(--primary-color, #4080ff) 12%, var(--n-color, #18181c));
 }
 
 @media (max-width: 620px) {
@@ -411,7 +459,7 @@ function formatDate(value) {
   }
 
   .application-card {
-    min-height: 160px;
+    min-height: 154px;
   }
 }
 </style>

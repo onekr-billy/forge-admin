@@ -103,6 +103,7 @@ pnpm lint:fix
 - **触发即读取**：当用户请求明确命中某个 Skill 描述，或任务类型明显匹配该 Skill（例如 CRUD 生成、流程开发、UI 检查），执行前必须完整读取对应 `SKILL.md`。
 - **最小必要原则**：只读取本轮任务需要的 Skill；多个 Skill 同时适用时按任务链路排序读取，避免无关上下文污染判断。
 - **Forge 编码类任务默认遵循本文件第 5 章关键约定**；需要更细规范时继续读取 `code-copilot/rules/coding-style.md` 和 `forge-docs/guide/conventions.md`。若当前环境额外暴露用户级 `forge-coding-standards` Skill，可作为补充，但不得替代本文件和项目级 `.agents/skills/`。
+- **前端 UI/交互/样式变更必须先读取 `forge-admin-ui/DESIGN.md`**，遵循其中的界面设计、公共组件、列表卡片、按钮操作区和禁用项规范；涉及 `/flow/model` 或同类资产卡片时，必须遵循其“流程/资产卡片列表规范”，禁止左侧装饰色条、随机彩色图标块和营销化发布图标。
 - **CRUD 代码生成/审查优先使用 `.agents/skills/forge-codegen-crud/SKILL.md`**；流程业务开发/审查优先使用 `.agents/skills/forge-business-flow-development/SKILL.md`。
 - **Skill 规范优先级**：`AGENTS.md` > 当前变更 `spec.md` > `.agents/skills/*/SKILL.md` > `code-copilot/rules/*` > 其它参考文档。若 Skill 与本文件冲突，以本文件为准。
 
@@ -562,13 +563,14 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 2. **`code-copilot/changes/[变更名]/spec.md`** — 当前变更的 Spec（如在进行 `/apply` 时）
 3. **`code-copilot/rules/project-context.md`** — 工程上下文详细版
 4. **`code-copilot/rules/coding-style.md`** — 编码规范
-5. **`code-copilot/rules/domain-rules.md`** — 业务领域约束
-6. **`code-copilot/rules/security.md`** — 安全红线
-7. **`code-copilot/rules/automated-testing-standard.md`** — 自动化测试与验证标准（执行 `/test` 和阶段验证时必读）
-8. **`code-copilot/memory/pitfalls.md`** — 踩坑记录（每次新对话必读）
-9. **`code-copilot/memory/decisions.md`** — 项目决策记录
-10. **`code-copilot/memory/preferences.md`** — 用户偏好记录
-11. **`forge-docs/guide/conventions.md`** — 完整编码规范
+5. **`forge-admin-ui/DESIGN.md`** — 前端界面设计、公共组件、资产卡片和交互规范（前端 UI/样式变更必读）
+6. **`code-copilot/rules/domain-rules.md`** — 业务领域约束
+7. **`code-copilot/rules/security.md`** — 安全红线
+8. **`code-copilot/rules/automated-testing-standard.md`** — 自动化测试与验证标准（执行 `/test` 和阶段验证时必读）
+9. **`code-copilot/memory/pitfalls.md`** — 踩坑记录（每次新对话必读）
+10. **`code-copilot/memory/decisions.md`** — 项目决策记录
+11. **`code-copilot/memory/preferences.md`** — 用户偏好记录
+12. **`forge-docs/guide/conventions.md`** — 完整编码规范
 
 **优先级规则**：本文件与子文件冲突时，以本文件为准；Spec 文档与通用规则冲突时，以 Spec 为准。
 
@@ -579,6 +581,7 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | 项目 README | `README.md` | 项目介绍、截图、快速开始 |
+| 前端设计规范 | `forge-admin-ui/DESIGN.md` | 界面设计、公共组件、资产卡片和交互禁用项 |
 | 编码规范 | `forge-docs/guide/conventions.md` | 完整命名、异常、日志、数据库规范 |
 | SDD 工作流 | `forge-docs/guide/sdd-workflow.md` | Spec 驱动开发全流程 |
 | 工程上下文 | `code-copilot/rules/project-context.md` | 技术栈、模块依赖、详细配置 |
