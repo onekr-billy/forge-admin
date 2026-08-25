@@ -285,7 +285,7 @@ pnpm preview
 ### 6.3 数据库命令
 ```sql
 -- 创建数据库
-CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- 导入初始数据
 USE forge;

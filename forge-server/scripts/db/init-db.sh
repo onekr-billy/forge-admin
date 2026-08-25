@@ -85,12 +85,15 @@ if ! command -v mysql >/dev/null 2>&1; then
   exit 1
 fi
 
-MYSQL=(mysql --host="$HOST" --port="$PORT" --user="$USER")
+MYSQL=(mysql --host="$HOST" --port="$PORT" --user="$USER" --default-character-set=utf8mb4)
 if [[ -n "$PASSWORD" ]]; then
   MYSQL+=(--password="$PASSWORD")
 fi
 
-"${MYSQL[@]}" --execute="CREATE DATABASE IF NOT EXISTS \`$DATABASE\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+"${MYSQL[@]}" --execute="
+CREATE DATABASE IF NOT EXISTS \`$DATABASE\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+ALTER DATABASE \`$DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+"
 MYSQL_DB=("${MYSQL[@]}" "$DATABASE")
 
 run_sql_file() {

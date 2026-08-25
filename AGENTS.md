@@ -450,7 +450,7 @@ ORDER BY installed_rank DESC;
 
 ```bash
 # 1. 数据库
-mysql -u root -p -e "CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+mysql -u root -p -e "CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 mysql -u root -p forge < forge/forge-admin-server/src/main/resources/sql/forge.sql
 
 # 2. 后端配置
