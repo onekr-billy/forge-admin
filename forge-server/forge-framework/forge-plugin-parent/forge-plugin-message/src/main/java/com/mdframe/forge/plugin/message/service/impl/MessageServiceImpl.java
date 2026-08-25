@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.plugin.message.domain.MessageSendScope;
+import com.mdframe.forge.plugin.message.domain.MessageSendStatus;
 import com.mdframe.forge.plugin.message.domain.dto.MessageQueryDTO;
 import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
@@ -55,12 +56,6 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
     private static final String CHANNEL_COLLABORATION = "COLLABORATION";
 
     private static final String DELIVERY_STATUS_PENDING = "PENDING";
-
-    private static final int SEND_STATUS_SUCCESS = 1;
-
-    private static final int SEND_STATUS_FAILED = 2;
-
-    private static final int SEND_STATUS_PARTIAL = 3;
 
     private final SysMessageMapper messageMapper;
     private final SysMessageReceiverMapper receiverMapper;
@@ -143,7 +138,7 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
 
     /**
      * 事务提交后执行渠道发送（远程调用在事务外，不占用 DB 连接）。
-     * 发送失败仅标记状态为 SEND_STATUS_FAILED 并告警，不回滚已落库消息记录。
+     * 发送失败仅标记状态为失败并告警，不回滚已落库消息记录。
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleMessageSendEvent(MessageSendEvent event) {
@@ -165,7 +160,7 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
                     msg.getId(), event.getChannel(), e);
             SysMessage updateMsg = new SysMessage();
             updateMsg.setId(msg.getId());
-            updateMsg.setStatus(SEND_STATUS_FAILED);
+            updateMsg.setStatus(MessageSendStatus.FAILED.getCode());
             messageMapper.updateById(updateMsg);
         }
     }
@@ -236,7 +231,7 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
         msg.setBizKey(req.getBizKey());
         msg.setConnectionId(req.getConnectionId());
         msg.setIdempotencyKey(StrUtil.blankToDefault(req.getIdempotencyKey(), null));
-        msg.setStatus(0); // 初始状态：发送中
+        msg.setStatus(MessageSendStatus.SENDING.getCode());
         messageMapper.insert(msg);
         return msg;
     }
@@ -398,9 +393,9 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
         record.setReceiverCount(receiverCount);
         record.setSuccessCount(outcome.sentCount());
         record.setFailCount(outcome.failedCount());
-        int sendStatus = resolveCollaborationStatus(receiverCount, outcome.sentCount(),
+        MessageSendStatus sendStatus = resolveCollaborationStatus(receiverCount, outcome.sentCount(),
                 outcome.failedCount(), outcome.skippedCount());
-        record.setStatus(sendStatus);
+        record.setStatus(sendStatus.getCode());
         record.setErrorMsg(outcome.firstErrorMsg());
         record.setSendTime(LocalDateTime.now());
         recordMapper.insert(record);
@@ -408,7 +403,7 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
         // 同时回写企业协同平台编码，供消息列表/投递记录区分平台
         SysMessage updateMsg = new SysMessage();
         updateMsg.setId(msg.getId());
-        updateMsg.setStatus(sendStatus);
+        updateMsg.setStatus(sendStatus.getCode());
         updateMsg.setPlatform(outcome.platform());
         messageMapper.updateById(updateMsg);
         // 同步回写返回实例，调用方可据此判断投递结果（逐人失败不抛异常）
@@ -416,17 +411,17 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
         msg.setPlatform(outcome.platform());
     }
 
-    static int resolveCollaborationStatus(int receiverCount, int sentCount, int failedCount, int skippedCount) {
+    static MessageSendStatus resolveCollaborationStatus(int receiverCount, int sentCount, int failedCount, int skippedCount) {
         if (receiverCount <= 0) {
-            return SEND_STATUS_SUCCESS;
+            return MessageSendStatus.SUCCESS;
         }
         if (sentCount <= 0) {
-            return SEND_STATUS_FAILED;
+            return MessageSendStatus.FAILED;
         }
         if (sentCount < receiverCount || failedCount > 0 || skippedCount > 0) {
-            return SEND_STATUS_PARTIAL;
+            return MessageSendStatus.PARTIAL;
         }
-        return SEND_STATUS_SUCCESS;
+        return MessageSendStatus.SUCCESS;
     }
     
     /**
@@ -442,7 +437,7 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
         record.setSuccessCount(result.success ? receiverCount : 0);
         record.setFailCount(result.success ? 0 : receiverCount);
         record.setExternalId(result.externalId);
-        record.setStatus(result.success ? 1 : 2);
+        record.setStatus(result.success ? MessageSendStatus.SUCCESS.getCode() : MessageSendStatus.FAILED.getCode());
         record.setErrorMsg(result.msg);
         record.setSendTime(LocalDateTime.now());
         recordMapper.insert(record);
@@ -450,7 +445,7 @@ public class MessageServiceImpl extends ServiceImpl<SysMessageMapper,SysMessage>
         // 更新消息状态
         SysMessage updateMsg = new SysMessage();
         updateMsg.setId(messageId);
-        updateMsg.setStatus(result.success ? 1 : 2); // 1-已发送，2-发送失败
+        updateMsg.setStatus(result.success ? MessageSendStatus.SUCCESS.getCode() : MessageSendStatus.FAILED.getCode());
         messageMapper.updateById(updateMsg);
     }
     

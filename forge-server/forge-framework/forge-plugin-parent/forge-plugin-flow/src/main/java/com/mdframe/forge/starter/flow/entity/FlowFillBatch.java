@@ -39,6 +39,9 @@ public class FlowFillBatch extends TenantEntity {
 
     private Integer allowResubmit;
 
+    /**
+     * 批次状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowFillBatchStatus}。
+     */
     private String status;
 
     @TableLogic

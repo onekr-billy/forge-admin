@@ -17,6 +17,7 @@ import org.springframework.web.util.pattern.PathPattern;
 
 import java.lang.reflect.Method;
 import java.util.*;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * API配置扫描器
@@ -131,7 +132,7 @@ public class ApiConfigScanner {
         // 默认值
         meta.setApiVersion("v1.0.0");
         meta.setLimitFlag(0);
-        meta.setStatus(1);
+        meta.setStatus(EnableStatus.ENABLED.getCode());
 
         return meta;
     }

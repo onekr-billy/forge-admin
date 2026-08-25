@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务访问入口打开方式解析服务。
@@ -82,7 +83,7 @@ public class BusinessAppOpenService {
         vo.setRuntimeStatus(runtimeMessage == null ? "AVAILABLE" : "MISSING");
         vo.setRuntimeMessage(runtimeMessage);
 
-        boolean enabled = Integer.valueOf(1).equals(app.getStatus());
+        boolean enabled = EnableStatus.ENABLED.matches(app.getStatus());
         boolean hasTarget = StringUtils.isNotBlank(vo.getTargetUrl());
         boolean runtimeValid = runtimeMessage == null;
         String securityMessage = validateOpenSecurity(app, vo.getOpenType(), vo.getTargetUrl());
@@ -138,7 +139,7 @@ public class BusinessAppOpenService {
         if (config == null) {
             return "运行配置不存在，请先发布应用";
         }
-        if ("1".equals(config.getStatus())) {
+        if (EnableStatus.ENABLED.matches(config.getStatus())) {
             return "运行配置已停用，请先启用运行配置";
         }
         if (!"PUBLISHED".equals(config.getPublishStatus())) {

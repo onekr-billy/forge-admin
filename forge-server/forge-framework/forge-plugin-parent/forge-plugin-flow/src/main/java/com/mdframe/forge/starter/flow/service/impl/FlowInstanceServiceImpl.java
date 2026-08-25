@@ -11,6 +11,8 @@ import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
+import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
+import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
@@ -256,7 +258,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         business.setProcessDefId(processDefinition.getId());
         business.setProcessDefKey(processDefinition.getKey());
         business.setTitle(title);
-        business.setStatus("running");
+        business.setStatus(FlowBusinessStatus.RUNNING.getCode());
         business.setApplyUserId(userId);
         business.setApplyUserName(displayUserName);
         business.setApplyDeptId(deptId);
@@ -337,8 +339,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         if (isRuntimeProcessActive(business.getProcessInstanceId())) {
             return true;
         }
-        String status = normalizeStatus(business.getStatus());
-        return "running".equals(status) || "draft".equals(status) || "suspended".equals(status);
+        return FlowBusinessStatus.isReusable(business.getStatus());
     }
 
     private ProcessDefinition deployModelOnDemand(String modelKey, Long tenantId) {
@@ -381,12 +382,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     }
 
     private boolean isEndedStatus(String status) {
-        String normalized = normalizeStatus(status);
-        return "approved".equals(normalized)
-                || "rejected".equals(normalized)
-                || "canceled".equals(normalized)
-                || "terminated".equals(normalized)
-                || "completed".equals(normalized);
+        return FlowBusinessStatus.isEnded(status);
     }
 
     private Long resolveTenantId() {
@@ -483,10 +479,6 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         return String.valueOf(value).replaceAll("[^A-Za-z0-9:_-]", "_");
     }
 
-    private String normalizeStatus(String status) {
-        return status == null ? "" : status.trim().toLowerCase();
-    }
-
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
     }
@@ -502,7 +494,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         try {
             runtimeService.deleteProcessInstance(business.getProcessInstanceId(), reason);
 
-            business.setStatus("canceled");
+            business.setStatus(FlowBusinessStatus.CANCELED.getCode());
             business.setEndTime(LocalDateTime.now());
             flowBusinessMapper.updateById(business);
 
@@ -638,7 +630,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             if (flowTask != null) {
                 flowTask.setAssignee(newAssignee);
                 flowTask.setOwner(owner);
-                flowTask.setStatus(0);
+                flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
                 flowTask.setComment(reason);
                 flowTaskMapper.updateById(flowTask);
             }
@@ -687,7 +679,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             // 删除流程实例
             runtimeService.deleteProcessInstance(processInstanceId, reason);
 
-            business.setStatus("terminated");
+            business.setStatus(FlowBusinessStatus.TERMINATED.getCode());
             business.setEndTime(LocalDateTime.now());
             flowBusinessMapper.updateById(business);
 

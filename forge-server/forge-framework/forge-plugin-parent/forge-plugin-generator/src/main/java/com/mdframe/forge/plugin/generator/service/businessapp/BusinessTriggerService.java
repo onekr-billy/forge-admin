@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 触发器管理服务。
@@ -261,7 +262,7 @@ public class BusinessTriggerService {
             trigger.setDeveloperMode(0);
         }
         if (trigger.getStatus() == null) {
-            trigger.setStatus(1);
+            trigger.setStatus(EnableStatus.ENABLED.getCode());
         }
         if (trigger.getSortOrder() == null) {
             trigger.setSortOrder(0);

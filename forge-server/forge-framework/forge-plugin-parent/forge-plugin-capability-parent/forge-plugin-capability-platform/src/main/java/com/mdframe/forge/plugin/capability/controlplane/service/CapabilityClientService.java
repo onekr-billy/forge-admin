@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.capability.controlplane.vo.CapabilitySigningKeyV
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.crypto.persistence.PersistentCryptoService;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,7 +82,7 @@ public class CapabilityClientService {
         client.setCredentialVersion(1);
         client.setServiceUserId(dto.serviceUserId());
         client.setActiveOrgId(dto.activeOrgId());
-        client.setOauthEnabled(authModes.contains(AUTH_MODE_OAUTH) ? 1 : 0);
+        client.setOauthEnabled(authModes.contains(AUTH_MODE_OAUTH) ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         client.setOauthClientType("CONFIDENTIAL");
         client.setAuthModes(authModes);
         client.setActorMode(actorMode.name());
@@ -89,7 +90,7 @@ public class CapabilityClientService {
             client.setSigningKeyCipher(persistentCryptoService.encrypt(signingKey, null));
             client.setSigningKeyVersion(1);
         }
-        client.setUserAssertionEnabled(0);
+        client.setUserAssertionEnabled(EnableStatus.DISABLED.getCode());
         client.setUserAssertionMappingMode("PREBOUND");
         client.setStatus("ENABLED");
         client.setExpiresAt(dto.expiresAt());

@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 将任意代码生成入口传入的配置规范化为独立、可重放的下载协议配置。
@@ -66,7 +67,7 @@ public class GeneratedLowcodeRuntimeConfigBuilder {
         options.put("codegen", codegen);
 
         target.setConfigKey(runtimeConfigKey);
-        target.setStatus("0");
+        target.setStatus(EnableStatus.DISABLED.codeAsString());
         target.setMode("CONFIG");
         target.setBuildMode("LOWCODE");
         target.setPublishStatus("PUBLISHED");

@@ -41,6 +41,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 系统编码规则结构化管理接口。
@@ -146,7 +147,7 @@ public class SystemCodeRuleController {
             @RequestParam(required = false) Long sourceObjectId) {
         CodeRuleCapabilityVO result = codeRuleService.capabilities();
         BusinessObjectQueryDTO query = new BusinessObjectQueryDTO();
-        query.setStatus(1);
+        query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
         result.setBusinessObjects(businessObjectService.list(query).stream()
                 .map(object -> option(
                         StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode())
@@ -156,7 +157,7 @@ public class SystemCodeRuleController {
                 .toList());
         if (sourceObjectId != null) {
             BusinessObjectVO object = businessObjectService.detail(sourceObjectId);
-            if (Integer.valueOf(1).equals(object.getStatus())) {
+            if (EnableStatus.ENABLED.matches(object.getStatus())) {
                 result.setBusinessFields(availableBusinessFields(sourceObjectId).stream()
                         .map(field -> option(
                                 StringUtils.defaultIfBlank(field.getFieldName(), field.getFieldCode())
@@ -193,7 +194,7 @@ public class SystemCodeRuleController {
             throw new BusinessException("低代码业务变量必须选择字段来源业务对象");
         }
         BusinessObjectVO object = businessObjectService.detail(dto.getSourceObjectId());
-        if (!Integer.valueOf(1).equals(object.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(object.getStatus())) {
             throw new BusinessException("字段来源业务对象已停用");
         }
         Set<String> availableFieldCodes = availableBusinessFields(dto.getSourceObjectId()).stream()

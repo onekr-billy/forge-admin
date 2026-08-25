@@ -26,6 +26,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Slf4j
 @RestController
@@ -105,7 +106,7 @@ public class DataConnectionController {
         if (connection == null) {
             throw new BusinessException("数据连接不存在或已删除");
         }
-        if (connection.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("数据连接已禁用");
         }
         boolean success = doTestConnection(connection);
@@ -134,7 +135,7 @@ public class DataConnectionController {
         if (connection == null) {
             throw new BusinessException("数据连接不存在或已删除");
         }
-        if (connection.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("数据连接已禁用");
         }
         List<DataConnectionTableVO> tables = queryTables(connection, keyword);
@@ -149,7 +150,7 @@ public class DataConnectionController {
         if (connection == null) {
             throw new BusinessException("数据连接不存在或已删除");
         }
-        if (connection.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("数据连接已禁用");
         }
         List<DataConnectionFieldVO> fields = queryFields(connection, tableName);

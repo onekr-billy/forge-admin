@@ -65,8 +65,8 @@ class BusinessApplicationPublishRunServiceTest {
         service.markFailed(run, BusinessApplicationPublishStep.PAGE_MENUS,
                 "PAGE_MENU_FAILED", "页面菜单同步失败");
 
-        assertEquals(BusinessApplicationPublishStatus.PARTIAL, progressStatus.get());
-        assertEquals(BusinessApplicationPublishStatus.PARTIAL, run.getRunStatus());
+        assertEquals(BusinessApplicationPublishStatus.PARTIAL.getCode(), progressStatus.get());
+        assertEquals(BusinessApplicationPublishStatus.PARTIAL.getCode(), run.getRunStatus());
     }
 
     private static void injectMapper(BusinessApplicationPublishRunService service,

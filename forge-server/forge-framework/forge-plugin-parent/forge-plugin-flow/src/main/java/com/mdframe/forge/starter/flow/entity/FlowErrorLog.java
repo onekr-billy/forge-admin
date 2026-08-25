@@ -95,7 +95,7 @@ public class FlowErrorLog {
     private Integer jobRetries;
 
     /**
-     * 状态：0-未处理/1-已重试/2-已解决/3-重试失败
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowErrorLogStatus}。
      */
     private Integer status;
 

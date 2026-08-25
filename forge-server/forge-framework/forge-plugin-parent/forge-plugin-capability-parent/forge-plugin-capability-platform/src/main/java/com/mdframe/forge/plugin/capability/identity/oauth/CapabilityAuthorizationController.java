@@ -12,6 +12,7 @@ import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -127,7 +128,7 @@ public class CapabilityAuthorizationController {
                 || user.getUserId() == null || user.getUserId() <= 0
                 || user.getTenantId() == null || user.getTenantId() <= 0
                 || user.getActiveOrgId() == null || user.getActiveOrgId() <= 0
-                || !Integer.valueOf(1).equals(user.getUserStatus())
+                || !EnableStatus.ENABLED.matches(user.getUserStatus())
                 || Boolean.TRUE.equals(user.getForcePasswordChange())) {
             throw new BusinessException(401, "当前用户登录态不满足 MCP 授权要求");
         }

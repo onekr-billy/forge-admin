@@ -76,16 +76,16 @@ public class BusinessApplicationRollbackService {
         BusinessApplicationAssetSelectionVO selection = resolveSelection(candidateMap);
         AiBusinessApplicationPublishRun run = runService.reserve(applicationId, idempotencyKey,
                 "ROLLBACK", sourceVersionNo, candidate, selection);
-        if (BusinessApplicationPublishStatus.SUCCESS.equals(run.getRunStatus())
-                || BusinessApplicationPublishStatus.PARTIAL.equals(run.getRunStatus())
-                || BusinessApplicationPublishStatus.FAILED.equals(run.getRunStatus())
-                || BusinessApplicationPublishStatus.RUNNING.equals(run.getRunStatus())) {
+        if (BusinessApplicationPublishStatus.SUCCESS.matches(run.getRunStatus())
+                || BusinessApplicationPublishStatus.PARTIAL.matches(run.getRunStatus())
+                || BusinessApplicationPublishStatus.FAILED.matches(run.getRunStatus())
+                || BusinessApplicationPublishStatus.RUNNING.matches(run.getRunStatus())) {
             return toResult(run, existingRunMessage(run));
         }
         if (!runService.tryClaimCreated(applicationId, run.getId())) {
             return toResult(runService.requireRun(applicationId, run.getId()), "相同幂等回滚已由另一执行器处理");
         }
-        run.setRunStatus(BusinessApplicationPublishStatus.RUNNING);
+        run.setRunStatus(BusinessApplicationPublishStatus.RUNNING.getCode());
         return resume(run, dto);
     }
 
@@ -153,7 +153,7 @@ public class BusinessApplicationRollbackService {
                 SnapshotBundle finalSnapshot = snapshotService.bundle(snapshotService.parse(run.getSnapshotJson()));
                 AiBusinessApplicationVersion version = versionService.commitImmutable(
                         run.getApplicationId(), run.getTargetVersionNo(), finalSnapshot,
-                        BusinessApplicationPublishStatus.ROLLBACK, run.getSourceVersionNo(),
+                        BusinessApplicationPublishStatus.ROLLBACK.getCode(), run.getSourceVersionNo(),
                         StringUtils.defaultIfBlank(dto == null ? null : dto.getRemark(),
                                 "从应用 v" + run.getSourceVersionNo() + " 回滚"));
                 run = runService.markSuccess(run, version.getId(), finalSnapshot);
@@ -361,8 +361,8 @@ public class BusinessApplicationRollbackService {
         result.setRunStatus(run.getRunStatus());
         result.setTargetVersionNo(run.getTargetVersionNo());
         result.setResultVersionId(run.getResultVersionId());
-        result.setRecoverable(Set.of(BusinessApplicationPublishStatus.PARTIAL,
-                BusinessApplicationPublishStatus.FAILED).contains(run.getRunStatus()));
+        result.setRecoverable(Set.of(BusinessApplicationPublishStatus.PARTIAL.getCode(),
+                BusinessApplicationPublishStatus.FAILED.getCode()).contains(run.getRunStatus()));
         result.setCurrentStep(run.getCurrentStep());
         result.setMessage(message);
         result.setSteps(detail.getSteps());
@@ -370,10 +370,14 @@ public class BusinessApplicationRollbackService {
     }
 
     private String existingRunMessage(AiBusinessApplicationPublishRun run) {
-        return switch (run.getRunStatus()) {
-            case BusinessApplicationPublishStatus.SUCCESS -> "相同幂等回滚已成功完成";
-            case BusinessApplicationPublishStatus.PARTIAL -> "相同幂等回滚部分完成，请执行恢复";
-            case BusinessApplicationPublishStatus.FAILED -> "相同幂等回滚已失败，请修复后执行恢复";
+        BusinessApplicationPublishStatus status = BusinessApplicationPublishStatus.of(run.getRunStatus());
+        if (status == null) {
+            return "相同幂等回滚正在执行";
+        }
+        return switch (status) {
+            case SUCCESS -> "相同幂等回滚已成功完成";
+            case PARTIAL -> "相同幂等回滚部分完成，请执行恢复";
+            case FAILED -> "相同幂等回滚已失败，请修复后执行恢复";
             default -> "相同幂等回滚正在执行";
         };
     }

@@ -58,6 +58,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 用户Service实现类
@@ -1536,14 +1537,14 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             member.setTenantId(tenantId);
             member.setMemberType(normalizeMemberType(memberType));
             member.setIsDefault(defaultTenant ? 1 : 0);
-            member.setStatus(1);
+            member.setStatus(EnableStatus.ENABLED.getCode());
             TenantContextHolder.executeIgnore(() -> userTenantMapper.insert(member));
             return;
         }
 
         existing.setMemberType(normalizeMemberType(memberType));
         existing.setIsDefault(defaultTenant ? 1 : 0);
-        existing.setStatus(1);
+        existing.setStatus(EnableStatus.ENABLED.getCode());
         TenantContextHolder.executeIgnore(() -> userTenantMapper.updateById(existing));
     }
 

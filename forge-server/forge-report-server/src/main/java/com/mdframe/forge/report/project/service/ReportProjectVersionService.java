@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.Date;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 大屏项目版本服务。
@@ -74,7 +75,7 @@ public class ReportProjectVersionService extends ServiceImpl<ReportProjectVersio
         project.setCanvasHeight(sourceVersion.getCanvasHeight());
         project.setBackgroundColor(sourceVersion.getBackgroundColor());
         project.setComponentData(sourceVersion.getComponentData());
-        project.setPublishStatus("1");
+        project.setPublishStatus(EnableStatus.ENABLED.codeAsString());
         project.setPublishUrl(sourceVersion.getPublishUrl());
         project.setPublishTime(new Date());
 

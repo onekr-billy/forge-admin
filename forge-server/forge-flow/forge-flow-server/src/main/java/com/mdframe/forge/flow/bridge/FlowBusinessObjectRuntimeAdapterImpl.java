@@ -2,6 +2,7 @@ package com.mdframe.forge.flow.bridge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
+import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.starter.core.session.LoginUser;
@@ -43,7 +44,7 @@ public class FlowBusinessObjectRuntimeAdapterImpl implements FlowBusinessObjectR
         if (recordData.isEmpty()) {
             throw new RuntimeException("业务对象字段映射为空，无法落表");
         }
-        recordData.putIfAbsent("documentStatus", "IN_PROCESS");
+        recordData.putIfAbsent("documentStatus", BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         Map<String, Object> saved = dynamicCrudService.insertInternal(configKey, recordData);
         Long recordId = resolveRecordId(saved);
         if (recordId == null) {
@@ -82,7 +83,7 @@ public class FlowBusinessObjectRuntimeAdapterImpl implements FlowBusinessObjectR
         link.setBusinessKey(firstText(record.getBusinessKey(), link.getObjectCode() + ":" + record.getRecordId()));
         link.setFlowModelKey(entry.getModelKey());
         link.setProcessInstanceId(processInstanceId);
-        link.setFlowStatus("RUNNING");
+        link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
         link.setStartUserId(resolveUserId());
         link.setStartTime(LocalDateTime.now());
         link.setVariablesSnapshot(toJson(variables));

@@ -8,6 +8,7 @@ import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.auth.exception.AccountLockedException;
 import com.mdframe.forge.starter.auth.service.ILoginLockService;
 import com.mdframe.forge.starter.auth.strategy.IAuthStrategy;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -117,7 +118,7 @@ public abstract class AbstractAuthStrategy implements IAuthStrategy {
             throw new RuntimeException("用户不存在");
         }
 
-        if (loginUser.getUserStatus() == null || loginUser.getUserStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(loginUser.getUserStatus())) {
             throw new RuntimeException("用户已被禁用或锁定");
         }
     }

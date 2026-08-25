@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 技能包 CRUD 服务
@@ -219,7 +220,7 @@ public class AiSkillService extends ServiceImpl<AiSkillMapper, AiSkill> {
         skill.setSkillCode(skillCode);
         skill.setDescription(description);
         skill.setVersion(version);
-        skill.setStatus("0");
+        skill.setStatus(EnableStatus.DISABLED.codeAsString());
 
         validateSkillCode(skillCode, null);
         if (!save(skill)) {

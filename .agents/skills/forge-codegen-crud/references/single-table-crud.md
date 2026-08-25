@@ -113,6 +113,8 @@ Add class-level or method-level `@ApiDecrypt` and `@ApiEncrypt` when fields or t
 ## Service and Mapper Rules
 
 - Service methods handle validation, uniqueness checks, DTO-to-entity mapping, and transaction boundaries.
+- Controller `@RequestBody` must be the generated DTO, never `Map`.
+- Persist status/enable values with `EnableStatus` or a module enum (`getCode()` / `matches()`), not raw `0`/`1` literals.
 - Mapper XML handles page/list/detail queries and any joins required for VO rendering.
 - Batch delete must validate `ids != null && ids.length > 0`, then use `removeByIds(Arrays.asList(ids))` or a Mapper XML delete only if custom constraints require it.
 - Do not inject two Services into each other. Put orchestration in the Controller or a Manager class.

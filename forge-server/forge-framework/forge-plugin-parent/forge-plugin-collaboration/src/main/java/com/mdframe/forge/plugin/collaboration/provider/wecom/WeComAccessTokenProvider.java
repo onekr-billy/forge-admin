@@ -26,6 +26,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 企业微信访问 Token 提供者。
@@ -165,7 +166,7 @@ public class WeComAccessTokenProvider implements AccessTokenProvider {
         return appConfigService.listApps(context.tenantId(), context.connectionId()).stream()
                 .filter(app -> appId.equals(app.getId()))
                 .findFirst()
-                .filter(app -> Integer.valueOf(1).equals(app.getStatus()))
+                .filter(app -> EnableStatus.ENABLED.matches(app.getStatus()))
                 .orElseThrow(() -> new BusinessException("企业协同应用不存在或已停用"));
     }
 

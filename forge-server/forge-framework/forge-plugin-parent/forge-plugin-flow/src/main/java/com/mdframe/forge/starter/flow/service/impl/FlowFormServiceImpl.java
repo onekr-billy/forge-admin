@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FormFieldCatalogItemDTO;
 import com.mdframe.forge.starter.flow.entity.FlowForm;
+import com.mdframe.forge.starter.flow.enums.FlowEnableStatus;
+import com.mdframe.forge.starter.flow.enums.FlowFormPublishStatus;
 import com.mdframe.forge.starter.flow.entity.FlowFormVersion;
 import com.mdframe.forge.starter.flow.mapper.FlowFormMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormVersionMapper;
@@ -69,8 +71,8 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         }
 
         form.setVersion(1);
-        form.setStatus(form.getStatus() == null ? 1 : form.getStatus());
-        form.setPublishStatus(0);
+        form.setStatus(form.getStatus() == null ? FlowEnableStatus.ENABLED.getCode() : form.getStatus());
+        form.setPublishStatus(FlowFormPublishStatus.DRAFT.getCode());
         if (form.getTenantId() == null) {
             form.setTenantId(resolveTenantId());
         }
@@ -98,7 +100,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
 
         if (form.getFormSchema() != null && !Objects.equals(form.getFormSchema(), existing.getFormSchema())) {
             form.setVersion(existing.getVersion() == null ? 1 : existing.getVersion() + 1);
-            form.setPublishStatus(0);
+            form.setPublishStatus(FlowFormPublishStatus.DRAFT.getCode());
             form.setFieldRegistry(buildFieldRegistryJson(form.getFormSchema()));
         } else {
             form.setVersion(existing.getVersion());
@@ -124,7 +126,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     public boolean enableForm(Long id) {
         FlowForm form = new FlowForm();
         form.setId(id);
-        form.setStatus(1);
+        form.setStatus(FlowEnableStatus.ENABLED.getCode());
         return updateById(form);
     }
 
@@ -133,7 +135,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     public boolean disableForm(Long id) {
         FlowForm form = new FlowForm();
         form.setId(id);
-        form.setStatus(0);
+        form.setStatus(FlowEnableStatus.DISABLED.getCode());
         return updateById(form);
     }
 
@@ -160,8 +162,8 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         newForm.setDefaultDataMode(source.getDefaultDataMode());
         newForm.setTenantId(resolveTenantId());
         newForm.setVersion(1);
-        newForm.setStatus(1);
-        newForm.setPublishStatus(0);
+        newForm.setStatus(FlowEnableStatus.ENABLED.getCode());
+        newForm.setPublishStatus(FlowFormPublishStatus.DRAFT.getCode());
         newForm.setDescription(source.getDescription());
 
         save(newForm);
@@ -191,7 +193,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         form.setFormSchema(formSchema);
         form.setFieldRegistry(buildFieldRegistryJson(formSchema));
         form.setVersion(existing.getVersion() == null ? 1 : existing.getVersion() + 1);
-        form.setPublishStatus(0);
+        form.setPublishStatus(FlowFormPublishStatus.DRAFT.getCode());
 
         return updateById(form);
     }
@@ -239,7 +241,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         update.setId(form.getId());
         update.setVersion(nextVersion);
         update.setFieldRegistry(fieldRegistry);
-        update.setPublishStatus(1);
+        update.setPublishStatus(FlowFormPublishStatus.PUBLISHED.getCode());
         update.setCurrentVersionId(version.getId());
         updateById(update);
 

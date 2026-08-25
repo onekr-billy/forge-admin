@@ -1,5 +1,6 @@
 package com.mdframe.forge.mock.controller;
 
+import com.mdframe.forge.mock.dto.ReportMockFinanceQueryDTO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -32,7 +33,7 @@ public class ReportMockDataController {
      * 财务月度营收支出数据。
      */
     @PostMapping("/finance/monthly-revenue-expense")
-    public RespInfo<Map<String, Object>> monthlyRevenueExpense(@RequestBody Map<String, Object> params) {
+    public RespInfo<Map<String, Object>> monthlyRevenueExpense(@RequestBody(required = false) ReportMockFinanceQueryDTO params) {
         
         log.info("finance/monthly-revenue-expense:{}", params);
         Map<String, Object> dataset = new LinkedHashMap<>();

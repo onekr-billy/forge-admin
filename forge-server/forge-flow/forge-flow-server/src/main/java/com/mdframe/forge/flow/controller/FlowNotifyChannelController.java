@@ -64,7 +64,7 @@ public class FlowNotifyChannelController {
             CollaborationProviderRegistry providerRegistry = collaborationProviderRegistryProvider.getIfAvailable();
             if (socialConfigService != null) {
                 SysSocialConfig query = new SysSocialConfig();
-                query.setStatus(1);
+                query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
                 List<SysSocialConfig> connections = socialConfigService.selectConfigList(query);
                 if (connections != null) {
                     for (SysSocialConfig connection : connections) {

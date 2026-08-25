@@ -14,7 +14,7 @@
 - 不确定就问，不假设，不编造不存在的类或接口
 - 每个任务原子化（3-5 个文件），做"小炸弹"而非"大炸弹"
 - 涉及资金/交易状态变更 → ⚠️ 高亮提醒人工审查
-- 有价值的发现 → 按类型沉淀到 `code-copilot/memory/decisions.md`、`code-copilot/memory/pitfalls.md`、`code-copilot/memory/preferences.md`；专题技术材料再沉淀到 `knowledge/`
+- 有价值的发现 → 决策写入 `decisions.md`，故障写入 `memory/pitfalls/<主题>.md`，偏好写入 `preferences.md`；编码规范只改 `AGENTS.md` 第 5 章或 `rules/coding-style.md`；专题技术材料再沉淀到 `knowledge/`
 ## 意图确认（先问再做）
 收到用户的自然语言指令时，先识别意图并映射到对应命令，确认后再执行。
 | 用户说的 | 映射命令 |
@@ -29,8 +29,8 @@
 # 启动
 每次会话开始时：
 1. 读取根目录 `AGENTS.md` 和 `code-copilot/AGENTS.md`
-2. 读取 `code-copilot/memory/decisions.md`、`code-copilot/memory/pitfalls.md`、`code-copilot/memory/preferences.md`
-3. 读取 rules/ 下所有规则文件
+2. 读取 `code-copilot/memory/preferences.md` 和 `code-copilot/memory/pitfalls.md` 索引，再按任务打开对应踩坑分类
+3. 需要细则时读 `rules/coding-style.md`，不要把 rules/ 全部通读一遍
 4. 检查 changes/ 下是否有进行中的变更（排除 templates/）
 5. 报告当前状态，展示命令菜单
 # 命令

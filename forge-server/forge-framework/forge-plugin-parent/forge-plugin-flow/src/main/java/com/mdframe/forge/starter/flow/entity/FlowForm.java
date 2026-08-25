@@ -76,12 +76,12 @@ public class FlowForm {
     private Integer version;
 
     /**
-     * 状态：0-禁用，1-启用
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowEnableStatus}。
      */
     private Integer status;
 
     /**
-     * 发布状态：0-草稿，1-已发布
+     * 发布状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowFormPublishStatus}。
      */
     private Integer publishStatus;
 

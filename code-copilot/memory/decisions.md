@@ -670,3 +670,11 @@ Forge 缓存统一治理采用自有 `@ForgeCacheConfig`、`@ForgeCacheable`、`
 低代码 Flowable 终态回调先在本地事务中完成业务状态、实例关联和结果事件写入，应用级业务流程的恢复只通过 `AFTER_COMMIT` 内部事件触发。恢复方法使用 `REQUIRES_NEW`，保证审批回调已提交后才认领唯一 `WAITING` 节点；恢复失败只能影响应用业务流程运行，不能反向回滚已经完成的审批结果。
 
 审批后动作节点使用独立 `REQUIRES_NEW` 事务。失败只回滚动作写入并把原始错误落到节点和运行记录，避免下游 `REQUIRED` 事务先把恢复事务标记为 rollback-only；成功副作用必须具备 `runId + nodeId` 稳定幂等语义，不能依赖跨事务回滚。终态事件继续依赖 `processInstanceId`、CAS 和等待节点关联保证重复投递幂等。
+
+## 75. 写接口用 DTO，状态和启用开关用枚举
+
+**记录日期**：2026-08-25
+
+Controller 写接口的 `@RequestBody` 必须是具体 DTO/VO，禁止用 `Map` 接收固定字段后再 `params.get("xxx")`。允许保留 Map 的只有流程 `variables`、低代码动态记录体和真正动态键值元数据。
+
+Java 生产代码禁止状态/启用硬编码。通用 0/1 开关使用 `EnableStatus.getCode()` / `matches()`；多状态字段使用本模块枚举。实体字段继续用 `Integer`/`String` 对齐数据库。Mapper XML 和测试可以使用字面量，禁止在 XML 绑定 Java 类全名。存量代码不再继续全库清扫，后续开发按本决策执行。

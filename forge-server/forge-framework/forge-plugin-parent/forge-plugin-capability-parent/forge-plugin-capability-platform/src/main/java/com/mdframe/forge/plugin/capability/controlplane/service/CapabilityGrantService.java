@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
+import com.mdframe.forge.plugin.capability.controlplane.enums.CapabilityPublishStatus;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityClient;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityGrant;
 import com.mdframe.forge.plugin.capability.controlplane.dto.CapabilityGrantCreateDTO;
@@ -199,7 +200,7 @@ public class CapabilityGrantService {
             throw new BusinessException("不支持的授权版本策略");
         }
         var version = versionMapper.selectVersion(tenantId, capability.getId(), fixedVersion);
-        if (version == null || !"PUBLISHED".equals(version.getStatus())) {
+        if (version == null || !CapabilityPublishStatus.PUBLISHED.matches(version.getStatus())) {
             throw new BusinessException("授权基准版本不存在或未发布");
         }
         if ("ACTION".equals(capability.getBehavior())

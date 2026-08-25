@@ -1,24 +1,48 @@
 package com.mdframe.forge.plugin.generator.constant;
 
+import lombok.Getter;
+
 import java.util.Set;
 
 /**
  * 应用协调发布运行与不可变版本状态。
  */
-public final class BusinessApplicationPublishStatus {
+@Getter
+public enum BusinessApplicationPublishStatus {
 
-    public static final String CREATED = "CREATED";
-    public static final String RUNNING = "RUNNING";
-    public static final String PARTIAL = "PARTIAL";
-    public static final String FAILED = "FAILED";
-    public static final String SUCCESS = "SUCCESS";
-    public static final String PUBLISHED = "PUBLISHED";
-    public static final String ROLLBACK = "ROLLBACK";
+    CREATED("CREATED"),
+    RUNNING("RUNNING"),
+    PENDING("PENDING"),
+    PARTIAL("PARTIAL"),
+    FAILED("FAILED"),
+    SUCCESS("SUCCESS"),
+    PUBLISHED("PUBLISHED"),
+    ROLLBACK("ROLLBACK");
 
-    private static final Set<String> RUN_STATUSES = Set.of(CREATED, RUNNING, PARTIAL, FAILED, SUCCESS);
-    private static final Set<String> VERSION_STATUSES = Set.of(PUBLISHED, ROLLBACK);
+    private static final Set<String> RUN_STATUSES = Set.of(
+            CREATED.code, RUNNING.code, PARTIAL.code, FAILED.code, SUCCESS.code);
+    private static final Set<String> VERSION_STATUSES = Set.of(PUBLISHED.code, ROLLBACK.code);
 
-    private BusinessApplicationPublishStatus() {
+    private final String code;
+
+    BusinessApplicationPublishStatus(String code) {
+        this.code = code;
+    }
+
+    public boolean matches(String value) {
+        return value != null && this.code.equalsIgnoreCase(value.trim());
+    }
+
+    public static BusinessApplicationPublishStatus of(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        for (BusinessApplicationPublishStatus status : values()) {
+            if (status.code.equalsIgnoreCase(code.trim())) {
+                return status;
+            }
+        }
+        return null;
     }
 
     public static Set<String> runStatuses() {

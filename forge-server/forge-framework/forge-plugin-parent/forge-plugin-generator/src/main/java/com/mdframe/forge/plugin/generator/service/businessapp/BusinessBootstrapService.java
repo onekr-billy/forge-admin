@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 低代码历史数据到业务应用平台的幂等映射服务。
@@ -54,7 +55,8 @@ public class BusinessBootstrapService {
             suite.setSuiteName(StringUtils.defaultIfBlank(domain.getDomainName(), domain.getDomainCode()));
             suite.setIcon(domain.getIcon());
             suite.setDescription(domain.getDomainDesc());
-            suite.setStatus("DISABLED".equals(domain.getStatus()) ? 0 : 1);
+            suite.setStatus("DISABLED".equals(domain.getStatus())
+                    ? EnableStatus.DISABLED.getCode() : EnableStatus.ENABLED.getCode());
             suite.setSortOrder(domain.getSort() == null ? 0 : domain.getSort());
             suite.setOptions("{\"source\":\"ai_lowcode_domain\"}");
             businessSuiteMapper.insert(suite);
@@ -84,7 +86,8 @@ public class BusinessBootstrapService {
             object.setModelId(model.getId());
             object.setModelCode(model.getModelCode());
             object.setDescription(model.getModelDesc());
-            object.setStatus("DISABLED".equals(model.getStatus()) ? 0 : 1);
+            object.setStatus("DISABLED".equals(model.getStatus())
+                    ? EnableStatus.DISABLED.getCode() : EnableStatus.ENABLED.getCode());
             object.setSortOrder(0);
             object.setOptions("{\"source\":\"ai_lowcode_model\"}");
             businessObjectMapper.insert(object);
@@ -120,7 +123,8 @@ public class BusinessBootstrapService {
             app.setConfigKey(config.getConfigKey());
             app.setIcon("ionicons5:AppsOutline");
             app.setDescription(StringUtils.defaultIfBlank(config.getTableComment(), "低代码已发布应用入口"));
-            app.setStatus("STOPPED".equals(config.getPublishStatus()) ? 0 : 1);
+            app.setStatus("STOPPED".equals(config.getPublishStatus())
+                    ? EnableStatus.DISABLED.getCode() : EnableStatus.ENABLED.getCode());
             app.setSortOrder(config.getMenuSort() == null ? 0 : config.getMenuSort());
             app.setOptions("{\"source\":\"ai_crud_config\"}");
             businessAppMapper.insert(app);
@@ -136,7 +140,7 @@ public class BusinessBootstrapService {
         suite.setSuiteCode(suiteCode);
         suite.setSuiteName(suiteCode);
         suite.setDescription("低代码历史数据自动生成的业务套件");
-        suite.setStatus(1);
+        suite.setStatus(EnableStatus.ENABLED.getCode());
         suite.setSortOrder(99);
         suite.setOptions("{\"source\":\"lowcode_compat\"}");
         businessSuiteMapper.insert(suite);
@@ -154,7 +158,7 @@ public class BusinessBootstrapService {
         object.setObjectType("TRANSACTION");
         object.setModelCode(config.getObjectCode());
         object.setDescription(config.getTableComment());
-        object.setStatus(1);
+        object.setStatus(EnableStatus.ENABLED.getCode());
         object.setSortOrder(0);
         object.setOptions("{\"source\":\"ai_crud_config\"}");
         businessObjectMapper.insert(object);

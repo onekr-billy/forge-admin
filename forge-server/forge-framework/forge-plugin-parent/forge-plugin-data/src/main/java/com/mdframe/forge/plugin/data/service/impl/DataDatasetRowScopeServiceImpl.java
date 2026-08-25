@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.data.support.DbDialect;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,7 +61,7 @@ public class DataDatasetRowScopeServiceImpl extends ServiceImpl<DataDatasetRowSc
             return DataDatasetRowScopeCondition.disabled();
         }
         DataDatasetRowScope rowScope = getByDatasetId(dataset.getId());
-        if (rowScope == null || !Integer.valueOf(1).equals(rowScope.getEnabled())) {
+        if (rowScope == null || !EnableStatus.ENABLED.matches(rowScope.getEnabled())) {
             return DataDatasetRowScopeCondition.disabled();
         }
         LoginUser loginUser = SessionHelper.getLoginUser();
@@ -86,7 +87,7 @@ public class DataDatasetRowScopeServiceImpl extends ServiceImpl<DataDatasetRowSc
         DataDatasetRowScope entity = new DataDatasetRowScope();
         entity.setTenantId(SessionHelper.getTenantId());
         entity.setDatasetId(datasetId);
-        entity.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : 0);
+        entity.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : EnableStatus.DISABLED.getCode());
         entity.setScopeMode(isBlank(dto.getScopeMode()) ? DEFAULT_SCOPE_MODE : dto.getScopeMode());
         entity.setTenantColumn(trimToNull(dto.getTenantColumn()));
         entity.setOrgColumn(trimToNull(dto.getOrgColumn()));

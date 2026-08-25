@@ -15,7 +15,7 @@
 按顺序读取：
 
 1. `AGENTS.md` 或当前会话注入的项目规则。
-2. `code-copilot/memory/preferences.md`、`code-copilot/memory/pitfalls.md`、`code-copilot/memory/decisions.md`。
+2. `code-copilot/memory/preferences.md`，以及 `code-copilot/memory/pitfalls.md` 索引中与本轮验证相关的分类。
 3. `code-copilot/rules/automated-testing-standard.md`。
 4. 当前变更的 `spec.md`、`tasks.md`。
 5. 当前变更已存在的 `test-spec.md`、`execution-log.md`。
@@ -74,7 +74,7 @@
 
 - `tasks.md` 只更新本轮相关 Task 的执行结果。
 - `spec.md` 只更新执行日志、审查结论、HARD-GATE 或风险状态。
-- 新踩坑写入 `code-copilot/memory/pitfalls.md`。
+- 新踩坑写入对应的 `code-copilot/memory/pitfalls/<主题>.md`，并在索引补一行。
 - 可复用决策写入 `code-copilot/memory/decisions.md`。
 - 用户偏好写入 `code-copilot/memory/preferences.md`。
 

@@ -51,7 +51,7 @@ public class FlowBusiness {
     private String title;
 
     /**
-     * 业务状态（draft-草稿/running-审批中/approved-已通过/rejected-已驳回/canceled-已取消）
+     * 业务状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowBusinessStatus}。
      */
     private String status;
 

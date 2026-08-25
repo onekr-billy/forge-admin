@@ -3,6 +3,9 @@ package com.mdframe.forge.starter.flow.listener;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
+import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
+import com.mdframe.forge.starter.flow.enums.FlowFormInstanceStatus;
+import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.core.domain.FlowEventMessage;
 import com.mdframe.forge.starter.flow.event.FlowTaskNotifyEvent;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
@@ -136,7 +139,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             // 创建任务记录
             FlowTask flowTask = buildFlowTask(task);
-            flowTask.setStatus(0); // 待办状态
+            flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
             
             log.debug("任务处理人: {}, 候选人: {}, 候选组: {}",
                     flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
@@ -255,14 +258,14 @@ public class FlowTaskEventListener implements FlowableEventListener {
             // 更新任务状态
             FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
             if (flowTask != null) {
-                flowTask.setStatus(2); // 已完成
+                flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
                 flowTask.setCompleteTime(LocalDateTime.now());
                 flowTaskMapper.updateById(flowTask);
                 log.info("更新任务状态为已完成：taskId={}", task.getId());
             } else {
                 // 任务不存在，创建已完成的记录
                 flowTask = buildFlowTask(task);
-                flowTask.setStatus(2); // 已完成
+                flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
                 flowTask.setCompleteTime(LocalDateTime.now());
                 
                 if (completedBusiness != null) {
@@ -337,11 +340,11 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     if (owner != null && !owner.equals(assignee)) {
                         log.info("转派任务（owner存在且不同于assignee），保持待办状态：taskId={}, owner={}, assignee={}", 
                                 task.getId(), owner, assignee);
-                        flowTask.setStatus(0);
+                        flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
                     } else {
                         log.info("任务签收（无owner或owner=assignee），设为已签收状态：taskId={}, assignee={}", 
                                 task.getId(), assignee);
-                        flowTask.setStatus(1);
+                        flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
                         flowTask.setClaimTime(LocalDateTime.now());
                     }
                 }
@@ -397,7 +400,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 // 更新任务状态为已取消
                 FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
                 if (flowTask != null) {
-                    flowTask.setStatus(5); // 已取消
+                    flowTask.setStatus(FlowTaskStatus.CANCELED.getCode());
                     flowTask.setCompleteTime(LocalDateTime.now());
                     flowTaskMapper.updateById(flowTask);
                     log.info("更新任务状态为已取消：taskId={}", task.getId());
@@ -448,7 +451,9 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 // 更新 FlowBusiness 状态
                 FlowBusiness business = getFlowBusiness(processInstanceId);
                 if (business != null) {
-                    business.setStatus(rejected ? "rejected" : "approved");
+                    business.setStatus(rejected
+                            ? FlowBusinessStatus.REJECTED.getCode()
+                            : FlowBusinessStatus.APPROVED.getCode());
                     business.setEndTime(LocalDateTime.now());
                     if (business.getApplyTime() != null) {
                         long duration = java.time.Duration.between(
@@ -459,7 +464,11 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     }
                     flowBusinessMapper.updateById(business);
                     updateFormInstanceStatus(
-                            processInstanceId, rejected ? "REJECTED" : "APPROVED", business.getTenantId());
+                            processInstanceId,
+                            rejected
+                                    ? FlowFormInstanceStatus.REJECTED.getCode()
+                                    : FlowFormInstanceStatus.APPROVED.getCode(),
+                            business.getTenantId());
                     log.info("更新流程业务状态为{}：processInstanceId={}",
                             rejected ? "已驳回" : "已通过", processInstanceId);
 
@@ -558,7 +567,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 // 更新 FlowBusiness 状态为已取消
                 FlowBusiness business = getFlowBusiness(processInstanceId);
                 if (business != null) {
-                    business.setStatus("canceled"); // 已取消
+                    business.setStatus(FlowBusinessStatus.CANCELED.getCode());
                     business.setEndTime(LocalDateTime.now());
                     if (business.getApplyTime() != null) {
                         long duration = java.time.Duration.between(
@@ -568,7 +577,8 @@ public class FlowTaskEventListener implements FlowableEventListener {
                         business.setDuration(duration);
                     }
                     flowBusinessMapper.updateById(business);
-                    updateFormInstanceStatus(processInstanceId, "CANCELED", business.getTenantId());
+                    updateFormInstanceStatus(
+                            processInstanceId, FlowFormInstanceStatus.CANCELED.getCode(), business.getTenantId());
                     log.info("更新流程业务状态为已取消：processInstanceId={}", processInstanceId);
 
                     // 发布事件

@@ -1,23 +1,35 @@
 package com.mdframe.forge.plugin.generator.constant;
 
+import lombok.Getter;
+
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 应用设计状态。
  */
-public final class BusinessApplicationDesignStatus {
+@Getter
+public enum BusinessApplicationDesignStatus {
 
-    public static final String DRAFT = "DRAFT";
-    public static final String READY = "READY";
-    public static final String PUBLISHED = "PUBLISHED";
-    public static final String CHANGED = "CHANGED";
+    DRAFT("DRAFT"),
+    READY("READY"),
+    PUBLISHED("PUBLISHED"),
+    CHANGED("CHANGED");
 
-    private static final Set<String> SUPPORTED_STATUSES = Set.of(DRAFT, READY, PUBLISHED, CHANGED);
+    private final String code;
 
-    private BusinessApplicationDesignStatus() {
+    BusinessApplicationDesignStatus(String code) {
+        this.code = code;
+    }
+
+    public boolean matches(String value) {
+        return value != null && this.code.equalsIgnoreCase(value.trim());
     }
 
     public static Set<String> supportedStatuses() {
-        return SUPPORTED_STATUSES;
+        return Stream.of(values())
+                .map(BusinessApplicationDesignStatus::getCode)
+                .collect(Collectors.toUnmodifiableSet());
     }
 }

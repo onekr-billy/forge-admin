@@ -134,7 +134,7 @@ public class FlowModel {
     private String notifyConfig;
 
     /**
-     * 状态（0-设计/1-已发布/2-已挂起/3-已禁用）
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowModelStatus}。
      */
     private Integer status;
     

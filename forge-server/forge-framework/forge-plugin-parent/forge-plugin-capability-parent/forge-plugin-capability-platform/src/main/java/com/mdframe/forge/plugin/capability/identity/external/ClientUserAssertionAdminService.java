@@ -12,6 +12,7 @@ import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,7 +88,7 @@ public class ClientUserAssertionAdminService {
     @Transactional(rollbackFor = Exception.class)
     public void disable(Long tenantId, Long clientId) {
         AiCapabilityClient client = requireManageableClient(tenantId, clientId);
-        if (!Integer.valueOf(1).equals(client.getUserAssertionEnabled())) {
+        if (!EnableStatus.ENABLED.matches(client.getUserAssertionEnabled())) {
             return;
         }
         if (clientMapper.disableUserAssertion(
@@ -196,7 +197,7 @@ public class ClientUserAssertionAdminService {
     private ClientUserAssertionConfigVO config(AiCapabilityClient client) {
         return new ClientUserAssertionConfigVO(
                 client.getId(), client.getClientCode(), client.getClientName(),
-                Integer.valueOf(1).equals(client.getUserAssertionEnabled()),
+                EnableStatus.ENABLED.matches(client.getUserAssertionEnabled()),
                 client.getUserAssertionKeyId(), client.getUserAssertionKeyVersion(),
                 ClientUserAssertionProtocol.issuer(client), properties.validatedIssuer(),
                 ClientUserAssertionProtocol.SUBJECT_TOKEN_TYPE,
@@ -224,7 +225,7 @@ public class ClientUserAssertionAdminService {
                 "," + StringUtils.defaultString(client.getAuthModes()) + ",", ",OAUTH,");
         if (!"ENABLED".equals(client.getStatus())
                 || !actorMode.allowsUserDelegation()
-                || !Integer.valueOf(1).equals(client.getOauthEnabled())
+                || !EnableStatus.ENABLED.matches(client.getOauthEnabled())
                 || !oauthMode) {
             throw new BusinessException("只有启用 OAuth 的用户委托或混合模式客户端可配置用户断言");
         }
@@ -246,7 +247,7 @@ public class ClientUserAssertionAdminService {
         }
         if (user == null || user.getUserId() == null || !tenantId.equals(user.getTenantId())
                 || user.isAdmin() || user.isTenantAdmin()
-                || !Integer.valueOf(1).equals(user.getUserStatus())
+                || !EnableStatus.ENABLED.matches(user.getUserStatus())
                 || Boolean.TRUE.equals(user.getForcePasswordChange())
                 || user.getActiveOrgId() == null || user.getActiveOrgId() <= 0
                 || user.getRoleIds() == null || user.getRoleIds().isEmpty()) {

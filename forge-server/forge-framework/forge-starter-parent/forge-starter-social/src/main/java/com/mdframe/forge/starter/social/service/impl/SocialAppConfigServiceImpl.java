@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 企业协同物理应用配置服务实现
@@ -208,7 +209,7 @@ public class SocialAppConfigServiceImpl extends ServiceImpl<SysSocialAppConfigMa
                 .selectActiveBinding(app.getTenantId(), connectionId, capability.name());
         if (existing != null) {
             existing.setAppConfigId(appConfigId);
-            existing.setStatus(1);
+            existing.setStatus(EnableStatus.ENABLED.getCode());
             return capabilityBindingMapper.updateById(existing) > 0;
         }
         SysSocialCapabilityBinding binding = new SysSocialCapabilityBinding();
@@ -216,7 +217,7 @@ public class SocialAppConfigServiceImpl extends ServiceImpl<SysSocialAppConfigMa
         binding.setConnectionId(connectionId);
         binding.setCapability(capability.name());
         binding.setAppConfigId(appConfigId);
-        binding.setStatus(1);
+        binding.setStatus(EnableStatus.ENABLED.getCode());
         try {
             return capabilityBindingMapper.insert(binding) > 0;
         } catch (DuplicateKeyException e) {

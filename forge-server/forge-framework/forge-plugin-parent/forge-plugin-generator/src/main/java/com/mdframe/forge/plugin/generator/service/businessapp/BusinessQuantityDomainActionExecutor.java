@@ -38,7 +38,7 @@ public class BusinessQuantityDomainActionExecutor implements BusinessDomainActio
         BusinessQuantityOperationResultVO operationResult = quantityLedgerService.operate(dto);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage(StringUtils.defaultIfBlank(operationResult.getMessage(), "数量台账动作执行成功"));
         result.getResult().putAll(toMap(operationResult));
         return result;

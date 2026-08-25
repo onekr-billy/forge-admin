@@ -61,6 +61,9 @@ public class FlowFormInstance extends TenantEntity {
 
     private String startDeptName;
 
+    /**
+     * 表单实例状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowFormInstanceStatus}。
+     */
     private String status;
 
     private LocalDateTime submitTime;

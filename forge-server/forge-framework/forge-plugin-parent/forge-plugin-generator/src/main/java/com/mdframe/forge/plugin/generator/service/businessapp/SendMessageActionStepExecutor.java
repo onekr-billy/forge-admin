@@ -55,7 +55,7 @@ public class SendMessageActionStepExecutor implements BusinessActionStepExecutor
 
         SysMessage message = messageChannelService.sendInternalMessage(request);
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("消息已发送");
         result.getResult().put("templateCode", templateCode);
         result.getResult().put("channel", channelStatus.getChannelCode());
@@ -68,7 +68,7 @@ public class SendMessageActionStepExecutor implements BusinessActionStepExecutor
         result.setStepCode(step.getStepCode());
         result.setStepName(step.getStepName());
         result.setStepType(step.getStepType());
-        result.setStatus("TODO");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.TODO.getCode());
         result.setMessage(todo.getString("message"));
         result.getResult().putAll(todo);
         return result;

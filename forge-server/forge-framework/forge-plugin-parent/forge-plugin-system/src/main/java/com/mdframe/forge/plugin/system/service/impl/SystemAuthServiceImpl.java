@@ -39,6 +39,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 系统认证服务实现
@@ -247,7 +248,7 @@ public class SystemAuthServiceImpl implements IAuthService {
             log.warn("客户端不存在或不可用: client={}", clientCode);
             throw new RuntimeException(CLIENT_AUTHENTICATION_FAILED);
         }
-        if (client.getStatus() == null || client.getStatus() == 0) {
+        if (!EnableStatus.ENABLED.matches(client.getStatus())) {
             log.warn("客户端不存在或不可用: client={}", clientCode);
             throw new RuntimeException(CLIENT_AUTHENTICATION_FAILED);
         }
@@ -600,7 +601,7 @@ public class SystemAuthServiceImpl implements IAuthService {
         user.setEmail(request.getEmail());
         user.setTenantId(request.getTenantId());
         user.setUserType(2); // 普通用户
-        user.setUserStatus(1); // 正常
+        user.setUserStatus(EnableStatus.ENABLED.getCode()); // 正常
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
         
@@ -693,7 +694,7 @@ public class SystemAuthServiceImpl implements IAuthService {
         if (user == null) {
             throw new RuntimeException("用户不存在");
         }
-        if (user.getUserStatus() == null || user.getUserStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(user.getUserStatus())) {
             throw new RuntimeException("用户已被禁用或锁定");
         }
 

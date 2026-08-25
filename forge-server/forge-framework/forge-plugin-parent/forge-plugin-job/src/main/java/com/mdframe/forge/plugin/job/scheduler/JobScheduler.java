@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.TimeZone;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 任务调度管理器
@@ -370,7 +371,7 @@ public class JobScheduler {
     }
 
     private void applyStatus(JobConfig jobConfig) throws SchedulerException {
-        if (Integer.valueOf(0).equals(jobConfig.getStatus())) {
+        if (EnableStatus.DISABLED.matches(jobConfig.getStatus())) {
             scheduler.pauseJob(jobKey(jobConfig));
         } else {
             scheduler.resumeJob(jobKey(jobConfig));

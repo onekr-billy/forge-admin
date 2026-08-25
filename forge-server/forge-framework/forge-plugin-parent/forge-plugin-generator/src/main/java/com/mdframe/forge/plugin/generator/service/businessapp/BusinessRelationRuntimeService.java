@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 对象关系运行解析服务
@@ -102,7 +103,7 @@ public class BusinessRelationRuntimeService {
         vo.setTargetAppCode(targetApp.getAppCode());
 
         // 校验应用入口状态
-        if (Integer.valueOf(0).equals(targetApp.getStatus())) {
+        if (EnableStatus.DISABLED.matches(targetApp.getStatus())) {
             vo.setCanOpen(false);
             vo.setMessage("目标应用入口已停用");
             vo.setNextAction("ENABLE_APP_ENTRY");
@@ -131,7 +132,7 @@ public class BusinessRelationRuntimeService {
             vo.setNextActionLabel("发布应用");
             return vo;
         }
-        if ("1".equals(config.getStatus())) {
+        if (EnableStatus.ENABLED.matches(config.getStatus())) {
             vo.setCanOpen(false);
             vo.setMessage("目标运行配置已停用");
             vo.setNextAction("ENABLE_RUNTIME");

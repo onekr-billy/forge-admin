@@ -46,7 +46,7 @@ public class StartFlowActionStepExecutor implements BusinessActionStepExecutor {
                 resolveUserId(), resolveUsername(), context.getTenantId(), variables);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("流程已发起");
         result.getResult().put("businessKey", businessKey);
         result.getResult().put("flowModelKey", runtime == null ? flowModelKey : runtime.getFlowModelKey());

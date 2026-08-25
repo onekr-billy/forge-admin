@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 通用数量台账服务。
@@ -266,7 +267,7 @@ public class BusinessQuantityLedgerService {
         created.setDimensionKey(dimensionKey);
         created.setQuantity(0L);
         created.setLockedQuantity(0L);
-        created.setStatus(1);
+        created.setStatus(EnableStatus.ENABLED.getCode());
         try {
             balanceMapper.insert(created);
             return created;

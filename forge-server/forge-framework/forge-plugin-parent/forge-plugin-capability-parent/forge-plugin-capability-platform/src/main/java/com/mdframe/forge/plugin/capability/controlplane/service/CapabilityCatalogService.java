@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
+import com.mdframe.forge.plugin.capability.controlplane.enums.CapabilityPublishStatus;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityVersion;
 import com.mdframe.forge.plugin.capability.controlplane.dto.CapabilityPublishDTO;
 import com.mdframe.forge.plugin.capability.controlplane.dto.CapabilityUpdateDTO;
@@ -18,6 +19,7 @@ import com.mdframe.forge.plugin.capability.naming.CapabilityToolNameMapper;
 import com.mdframe.forge.plugin.capability.schema.CapabilitySchemaValidator;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,7 +78,7 @@ public class CapabilityCatalogService {
         }
         AiCapabilityVersion version = versionMapper.selectVersion(
                 safeTenantId, capability.getId(), currentVersion);
-        if (version == null || !"PUBLISHED".equals(version.getStatus())) {
+        if (version == null || !CapabilityPublishStatus.PUBLISHED.matches(version.getStatus())) {
             throw new BusinessException("当前能力版本不存在或未发布，无法创建新版本");
         }
         return new CapabilityVersionDraftVO(
@@ -199,7 +201,7 @@ public class CapabilityCatalogService {
 
     public void disable(Long tenantId, Long id) {
         AiCapability capability = getById(tenantId, id);
-        capability.setEnabled(0);
+        capability.setEnabled(EnableStatus.DISABLED.getCode());
         capability.setPublishStatus("DISABLED");
         capabilityMapper.updateById(capability);
     }
@@ -213,11 +215,11 @@ public class CapabilityCatalogService {
         }
         AiCapabilityVersion version = versionMapper.selectVersion(
                 safeTenantId, capability.getId(), currentVersion);
-        if (version == null || !"PUBLISHED".equals(version.getStatus())) {
+        if (version == null || !CapabilityPublishStatus.PUBLISHED.matches(version.getStatus())) {
             throw new BusinessException("当前能力版本不存在或未发布，无法重新启用");
         }
-        capability.setEnabled(1);
-        capability.setPublishStatus("PUBLISHED");
+        capability.setEnabled(EnableStatus.ENABLED.getCode());
+        capability.setPublishStatus(CapabilityPublishStatus.PUBLISHED.getCode());
         capabilityMapper.updateById(capability);
     }
 
@@ -240,8 +242,8 @@ public class CapabilityCatalogService {
     public void delete(Long tenantId, Long id) {
         Long safeTenantId = requireTenant(tenantId);
         AiCapability capability = getById(safeTenantId, id);
-        if (Integer.valueOf(1).equals(capability.getEnabled())
-                || "PUBLISHED".equals(capability.getPublishStatus())) {
+        if (EnableStatus.ENABLED.matches(capability.getEnabled())
+                || CapabilityPublishStatus.PUBLISHED.matches(capability.getPublishStatus())) {
             throw new BusinessException("请先停用能力，再执行删除");
         }
         if (grantMapper.countActiveByCapability(safeTenantId, id) > 0) {
@@ -263,8 +265,8 @@ public class CapabilityCatalogService {
         capability.setBehavior(dto.behavior());
         capability.setRiskLevel(dto.riskLevel());
         capability.setVisibility(dto.visibility());
-        capability.setPublishStatus("PUBLISHED");
-        capability.setEnabled(1);
+        capability.setPublishStatus(CapabilityPublishStatus.PUBLISHED.getCode());
+        capability.setEnabled(EnableStatus.ENABLED.getCode());
     }
 
     private AiCapabilityVersion buildVersion(
@@ -288,7 +290,7 @@ public class CapabilityCatalogService {
         version.setVisibility(dto.visibility());
         version.setPolicySnapshot(dto.policySnapshot() == null ? null : writeJson(dto.policySnapshot()));
         version.setSchemaChecksum(checksum);
-        version.setStatus("PUBLISHED");
+        version.setStatus(CapabilityPublishStatus.PUBLISHED.getCode());
         version.setDelFlag(0L);
         return version;
     }

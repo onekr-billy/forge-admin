@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 应用级发布门禁，聚合对象、数据库、入口、流程、扩展和权限状态。
@@ -102,7 +103,7 @@ public class BusinessApplicationReadinessService {
         List<BusinessApplicationObjectVO> selectedObjectList = allObjects.stream()
                 .filter(object -> selectedObjects.contains(object.getObjectId())).toList();
 
-        if (!Integer.valueOf(1).equals(application.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(application.getStatus())) {
             issues.add(issue("APPLICATION_DISABLED", BLOCK, "应用已停用",
                     "停用应用不能发布，请先启用应用。", "overview", "overview", "APPLICATION",
                     application.getId(), application.getApplicationCode()));
@@ -125,13 +126,13 @@ public class BusinessApplicationReadinessService {
                         com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApp::getId,
                         java.util.function.Function.identity()));
         if (selection.getEntryIds().isEmpty() || selectedEntries.values().stream()
-                .noneMatch(entry -> Integer.valueOf(1).equals(entry.getStatus()))) {
+                .noneMatch(entry -> EnableStatus.ENABLED.matches(entry.getStatus()))) {
             issues.add(issue("ACTIVE_ENTRY_MISSING", WARN, "尚未配置页面入口",
                     "页面入口不是发布必需项；应用仍可发布对象、预览草稿或生成代码。", "entries", "entries", "APPLICATION",
                     application.getId(), application.getApplicationCode()));
         }
         selectedEntries.values().forEach(entry -> {
-            if (!Integer.valueOf(1).equals(entry.getStatus())) {
+            if (!EnableStatus.ENABLED.matches(entry.getStatus())) {
                 issues.add(issue("ENTRY_DISABLED", BLOCK, "发布入口已停用",
                         entry.getAppName() + " 当前处于停用状态。", "entries", "entries", "ENTRY",
                         entry.getId(), entry.getAppCode()));
@@ -153,14 +154,14 @@ public class BusinessApplicationReadinessService {
         }
         for (AiBusinessExtension extension : resolved.extensions()) {
             boolean selected = selectedExtensions.contains(extension.getId());
-            if (BusinessExtensionStatus.DRAFT.equals(extension.getStatus())) {
+            if (BusinessExtensionStatus.DRAFT.matches(extension.getStatus())) {
                 issues.add(issue("EXTENSION_UNTESTED", selected ? BLOCK : WARN,
                         selected ? "扩展尚未测试" : "未测试扩展已跳过",
                         extension.getExtensionName() + (selected
                                 ? " 的当前草稿未通过受限测试。"
                                 : " 仍保留为草稿，本次发布不会包含该扩展。"),
                         "enhancements", "enhancements", "EXTENSION", extension.getId(), extension.getExtensionCode()));
-            } else if (selected && BusinessExtensionStatus.ENABLED.equals(extension.getStatus())
+            } else if (selected && BusinessExtensionStatus.ENABLED.matches(extension.getStatus())
                     && !java.util.Objects.equals(extension.getDraftVersion(), extension.getEnabledVersion())) {
                 issues.add(issue("EXTENSION_VERSION_MISMATCH", BLOCK, "扩展运行版本落后",
                         extension.getExtensionName() + " 的当前草稿尚未启用。",
@@ -274,7 +275,7 @@ public class BusinessApplicationReadinessService {
             }
             String processName = StringUtils.defaultIfBlank(
                     process.getProcessName(), process.getProcessCode());
-            if (!Integer.valueOf(1).equals(process.getStatus())) {
+            if (!EnableStatus.ENABLED.matches(process.getStatus())) {
                 issues.add(issue("PROCESS_DISABLED", BLOCK, "业务流程已停用",
                         processName + " 当前处于停用状态。", "automation", "automation", "PROCESS",
                         process.getId(), process.getProcessCode()));

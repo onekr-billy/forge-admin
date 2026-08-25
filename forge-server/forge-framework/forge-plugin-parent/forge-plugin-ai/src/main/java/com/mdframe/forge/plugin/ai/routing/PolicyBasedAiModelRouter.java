@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Component
 @RequiredArgsConstructor
@@ -79,7 +80,7 @@ public class PolicyBasedAiModelRouter implements AiModelRouter {
         Long policyId = request.agent().getRoutePolicyId();
         if (policyId == null) throw new BusinessException("路由模式 Agent 未配置路由策略");
         AiModelRoutePolicy policy = policyMapper.selectById(policyId);
-        if (policy == null || !"0".equals(policy.getStatus())) throw new BusinessException("模型路由策略不存在或已停用");
+        if (policy == null || !EnableStatus.DISABLED.matches(policy.getStatus())) throw new BusinessException("模型路由策略不存在或已停用");
         requireSameTenant(tenantId, policy.getTenantId());
         Set<String> required = parseCapabilities(policy.getRequiredCapabilities());
         List<RouteCandidateSkip> skips = new ArrayList<>();
@@ -123,7 +124,7 @@ public class PolicyBasedAiModelRouter implements AiModelRouter {
     private AiProvider requireProvider(Long id) {
         AiProvider provider = providerService.getById(id);
         if (provider == null) throw new BusinessException("AI 供应商不存在");
-        if (!"0".equals(provider.getStatus())) throw new BusinessException("AI 供应商已停用: " + provider.getProviderName());
+        if (!EnableStatus.DISABLED.matches(provider.getStatus())) throw new BusinessException("AI 供应商已停用: " + provider.getProviderName());
         return provider;
     }
     private String requireDefaultModel(Long providerId) {

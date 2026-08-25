@@ -79,7 +79,7 @@ public class AdjustNumberActionStepExecutor implements BusinessActionStepExecuto
                 targetConfigKey, targetRecordId, deltas, minimums, maximums, expected);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("数值字段已原子调整");
         result.getResult().put("targetConfigKey", targetConfigKey);
         result.getResult().put("targetRecordId", targetRecordId);

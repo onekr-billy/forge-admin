@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.flow.dto.VersionCompareDTO;
 import com.mdframe.forge.starter.flow.dto.VersionRevertDTO;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.enums.FlowModelStatus;
 import com.mdframe.forge.starter.flow.entity.FlowModelVersion;
 import com.mdframe.forge.starter.flow.helper.BpmnXmlUtils;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
@@ -240,7 +241,7 @@ public class FlowModelVersionServiceImpl extends ServiceImpl<FlowModelVersionMap
         model.setDeploymentId(newDeploymentId);
         model.setDeploymentKey(deploymentKey);
         model.setProcessDefinitionId(newProcessDefinitionId);
-        model.setStatus(1);
+        model.setStatus(FlowModelStatus.PUBLISHED.getCode());
         model.setDeployTime(now);
         model.setUpdateTime(now);
         flowModelMapper.updateById(model);

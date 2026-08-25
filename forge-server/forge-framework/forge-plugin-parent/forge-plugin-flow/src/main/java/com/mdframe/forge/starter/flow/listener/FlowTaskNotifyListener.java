@@ -18,6 +18,7 @@ import com.mdframe.forge.starter.flow.support.FlowNotifyConfig;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialConfig;
 import com.mdframe.forge.starter.social.service.ISocialConfigService;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -387,10 +388,10 @@ public class FlowTaskNotifyListener {
      */
     private SysSocialConfig resolveTodoPushConnection(boolean requireTodoPushEnabled) {
         SysSocialConfig query = new SysSocialConfig();
-        query.setStatus(1);
+        query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
         List<SysSocialConfig> candidates = socialConfigService.selectConfigList(query).stream()
                 .filter(conn -> !requireTodoPushEnabled
-                        || (conn.getTodoPushEnabled() != null && conn.getTodoPushEnabled() == 1))
+                        || (conn.getTodoPushEnabled() != null && EnableStatus.ENABLED.matches(conn.getTodoPushEnabled())))
                 .toList();
         if (candidates.isEmpty()) {
             return null;

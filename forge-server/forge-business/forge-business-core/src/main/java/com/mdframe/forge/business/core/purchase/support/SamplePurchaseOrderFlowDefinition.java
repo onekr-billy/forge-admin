@@ -1,5 +1,6 @@
 package com.mdframe.forge.business.core.purchase.support;
 
+import com.mdframe.forge.business.core.purchase.enums.SamplePurchaseOrderStatus;
 import com.mdframe.forge.business.core.purchase.dto.SamplePurchaseOrderTaskSaveDTO;
 import com.mdframe.forge.business.core.purchase.vo.SamplePurchaseOrderVO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormContextQueryDTO;
@@ -47,12 +48,12 @@ public class SamplePurchaseOrderFlowDefinition {
     public static final String FORM_MODE_BUSINESS_CODE = "BUSINESS_CODE_FORM";
     public static final String TASK_FORM_TYPE_BUSINESS_CODE = "business-code";
 
-    public static final String STATUS_DRAFT = "DRAFT";
-    public static final String STATUS_IN_PROCESS = "IN_PROCESS";
-    public static final String STATUS_NEED_MODIFY = "NEED_MODIFY";
-    public static final String STATUS_APPROVED = "APPROVED";
-    public static final String STATUS_REJECTED = "REJECTED";
-    public static final String STATUS_CANCELED = "CANCELED";
+    public static final String STATUS_DRAFT = SamplePurchaseOrderStatus.DRAFT.getCode();
+    public static final String STATUS_IN_PROCESS = SamplePurchaseOrderStatus.IN_PROCESS.getCode();
+    public static final String STATUS_NEED_MODIFY = SamplePurchaseOrderStatus.NEED_MODIFY.getCode();
+    public static final String STATUS_APPROVED = SamplePurchaseOrderStatus.APPROVED.getCode();
+    public static final String STATUS_REJECTED = SamplePurchaseOrderStatus.REJECTED.getCode();
+    public static final String STATUS_CANCELED = SamplePurchaseOrderStatus.CANCELED.getCode();
 
     public static final String NODE_DEPT_LEADER_APPROVE = "dept_leader_approve";
     public static final String NODE_ENGINEERING_MANAGER_APPROVE = "engineering_manager_approve";

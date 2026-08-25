@@ -72,7 +72,7 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
         }
         AiBusinessExtension extension = new AiBusinessExtension();
         copyMetadata(dto, extension, true);
-        extension.setStatus(BusinessExtensionStatus.DRAFT);
+        extension.setStatus(BusinessExtensionStatus.DRAFT.getCode());
         extension.setDraftVersion(1);
         extension.setEnabledVersion(null);
         save(extension);
@@ -91,7 +91,7 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
         }
         AiBusinessExtension extension = requireEntity(dto.getId());
         copyMetadata(dto, extension, false);
-        extension.setStatus(BusinessExtensionStatus.DRAFT);
+        extension.setStatus(BusinessExtensionStatus.DRAFT.getCode());
         updateById(extension);
         applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
     }
@@ -99,7 +99,7 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         AiBusinessExtension extension = requireEntity(id);
-        if (BusinessExtensionStatus.ENABLED.equals(extension.getStatus())) {
+        if (BusinessExtensionStatus.ENABLED.matches(extension.getStatus())) {
             throw new BusinessException("已启用扩展不能删除，请先停用");
         }
         removeById(extension.getId());

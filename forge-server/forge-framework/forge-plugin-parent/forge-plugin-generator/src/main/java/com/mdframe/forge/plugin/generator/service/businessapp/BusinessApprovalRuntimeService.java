@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 审批运行服务
@@ -38,7 +39,7 @@ public class BusinessApprovalRuntimeService {
         if (!Boolean.TRUE.equals(runtime.getDocumentEnabled())) {
             boolean hasFlow = binding != null
                     && StringUtils.isNotBlank(binding.getFlowModelKey())
-                    && !Integer.valueOf(0).equals(binding.getStatus());
+                    && !EnableStatus.DISABLED.matches(binding.getStatus());
             vo.setHasFlow(hasFlow);
             vo.setCanStart(hasFlow && recordId != null);
             if (binding != null) {

@@ -39,7 +39,7 @@ public class UpdateFieldActionStepExecutor implements BusinessActionStepExecutor
         dynamicCrudService.updateCommandFields(targetConfigKey, targetRecordId, fields, expected);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("字段已更新");
         result.getResult().put("targetConfigKey", targetConfigKey);
         result.getResult().put("targetRecordId", targetRecordId);

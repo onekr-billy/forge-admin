@@ -70,7 +70,7 @@ public class TransitionStatusActionStepExecutor implements BusinessActionStepExe
         }
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("单据状态已变更");
         result.getResult().putAll(audit);
         return result;

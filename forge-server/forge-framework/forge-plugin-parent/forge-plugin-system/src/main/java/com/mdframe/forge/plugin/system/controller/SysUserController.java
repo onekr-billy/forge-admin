@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 用户管理Controller
@@ -82,7 +83,7 @@ public class SysUserController {
         if (loginUser != null && loginUser.isAdmin()) {
             List<SysUserTenantVO> userTenants = userService.selectUserTenants(id);
             List<SysUserTenantVO> enabledUserTenants = userTenants.stream()
-                    .filter(item -> item.getStatus() == null || item.getStatus() != 0)
+                    .filter(item -> item.getStatus() == null || !EnableStatus.DISABLED.matches(item.getStatus()))
                     .toList();
             user.setTenantIds(enabledUserTenants.stream()
                     .map(SysUserTenantVO::getTenantId)

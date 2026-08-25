@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Slf4j
 @RestController
@@ -74,7 +75,7 @@ public class SocialUserController {
         }
 
         SysSocialConfig config = socialConfigService.selectConfigById(intent.getConnectionId());
-        if (config == null || config.getStatus() == null || config.getStatus() != 1) {
+        if (config == null || !EnableStatus.ENABLED.matches(config.getStatus())) {
             return RespInfo.error("该平台登录未启用");
         }
         if (tenantId != null && !tenantId.equals(config.getTenantId())) {

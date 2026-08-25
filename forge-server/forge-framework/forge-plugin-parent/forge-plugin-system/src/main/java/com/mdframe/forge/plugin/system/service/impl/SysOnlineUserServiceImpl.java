@@ -29,6 +29,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.*;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 在线用户管理服务实现
@@ -458,7 +459,7 @@ public class SysOnlineUserServiceImpl extends ServiceImpl<SysOnlineUserMapper,Sy
             throw new BusinessException("在线会话不存在或无权操作");
         }
         SysOnlineUser onlineUser = sysOnlineUserMapper.selectById(sessionId);
-        if (onlineUser == null || !Integer.valueOf(1).equals(onlineUser.getStatus())) {
+        if (onlineUser == null || !EnableStatus.ENABLED.matches(onlineUser.getStatus())) {
             throw new BusinessException("在线会话不存在或无权操作");
         }
         return onlineUser;

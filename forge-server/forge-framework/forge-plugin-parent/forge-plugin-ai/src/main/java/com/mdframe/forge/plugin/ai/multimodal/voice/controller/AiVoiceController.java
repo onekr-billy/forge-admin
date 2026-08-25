@@ -3,12 +3,11 @@ package com.mdframe.forge.plugin.ai.multimodal.voice.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.mdframe.forge.plugin.ai.multimodal.voice.AiAsrService;
 import com.mdframe.forge.plugin.ai.multimodal.voice.AiTtsService;
+import com.mdframe.forge.plugin.ai.multimodal.voice.dto.AiVoiceSynthesizeDTO;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.Map;
 
 /**
  * AI语音控制器（ASR/TTS）
@@ -38,11 +37,8 @@ public class AiVoiceController {
      */
     @SaCheckPermission("ai:voice:tts")
     @PostMapping("/tts")
-    public RespInfo<Long> synthesize(@RequestBody Map<String, Object> params) {
-        String text = (String) params.get("text");
-        Long agentId = params.get("agentId") != null
-                ? ((Number) params.get("agentId")).longValue() : null;
-        Long fileId = ttsService.synthesize(text, agentId);
+    public RespInfo<Long> synthesize(@RequestBody AiVoiceSynthesizeDTO params) {
+        Long fileId = ttsService.synthesize(params.getText(), params.getAgentId());
         return RespInfo.success(fileId);
     }
 }

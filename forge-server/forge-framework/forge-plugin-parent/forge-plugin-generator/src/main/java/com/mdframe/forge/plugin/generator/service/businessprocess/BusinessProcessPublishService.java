@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 随应用发布生成不可变业务流程版本，并固定对象、Flowable 和受治理能力依赖。
@@ -247,7 +248,7 @@ public class BusinessProcessPublishService {
         version.setDependencySnapshotJson(writeJson(dependencies));
         version.setPublishTime(LocalDateTime.now());
         version.setPublishedBy(userId);
-        version.setStatus(1);
+        version.setStatus(EnableStatus.ENABLED.getCode());
         version.setDelFlag(0L);
         version.setCreateBy(userId);
         version.setCreateDept(resolveActiveOrgId());

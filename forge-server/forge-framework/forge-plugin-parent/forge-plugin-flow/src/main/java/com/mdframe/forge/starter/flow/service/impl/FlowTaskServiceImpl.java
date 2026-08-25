@@ -20,6 +20,9 @@ import com.mdframe.forge.starter.flow.entity.FlowFormInstance;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowNodeConfig;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
+import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
+import com.mdframe.forge.starter.flow.enums.FlowDiagramStatus;
+import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
@@ -353,7 +356,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         FlowTask task = new FlowTask();
         task.setTaskId(taskId);
         task.setAssignee(userId);
-        task.setStatus(1);
+        task.setStatus(FlowTaskStatus.CLAIMED.getCode());
         task.setClaimTime(LocalDateTime.now());
         
         lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(task);
@@ -372,7 +375,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                         Map<String, Object> variables, Long tenantId,
                         String idempotencyKey, String requestDigest) {
         FlowTask storedTask = authorizeTaskAction(
-                taskId, userId, tenantId, "APPROVE", idempotencyKey, requestDigest, 2);
+                taskId, userId, tenantId, "APPROVE", idempotencyKey, requestDigest, FlowTaskStatus.APPROVED);
         if (storedTask == null) {
             return;
         }
@@ -393,7 +396,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             completeTask(task, completeVariables);
 
             FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(2);
+            flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
             flowTask.setComment(comment);
             flowTask.setSignature(signature);
             flowTask.setCompleteTime(LocalDateTime.now());
@@ -422,7 +425,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     public void reject(String taskId, String userId, String comment, String signature,
                        Long tenantId, String idempotencyKey, String requestDigest) {
         FlowTask storedTask = authorizeTaskAction(
-                taskId, userId, tenantId, "REJECT", idempotencyKey, requestDigest, 3);
+                taskId, userId, tenantId, "REJECT", idempotencyKey, requestDigest, FlowTaskStatus.REJECTED);
         if (storedTask == null) {
             return;
         }
@@ -441,7 +444,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             completeTask(task, mergeActionVariables(null, false));
 
             FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(3);
+            flowTask.setStatus(FlowTaskStatus.REJECTED.getCode());
             flowTask.setComment(comment);
             flowTask.setSignature(signature);
             flowTask.setCompleteTime(LocalDateTime.now());
@@ -464,7 +467,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
      */
     private FlowTask authorizeTaskAction(String taskId, String userId, Long tenantId,
                                          String actionType, String idempotencyKey,
-                                         String requestDigest, int completedStatus) {
+                                         String requestDigest, FlowTaskStatus completedStatus) {
         FlowTask storedTask = baseMapper.selectByTaskIdForUpdate(taskId);
         if (FlowTaskActionAuthorization.authorize(
                 storedTask, userId, tenantId, actionType,
@@ -505,7 +508,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             taskService.setAssignee(taskId, targetUserId);
 
             FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(0);
+            flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
             flowTask.setComment(comment);
             flowTask.setSignature(signature);
             flowTask.setAssignee(targetUserId);
@@ -549,7 +552,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                     .changeState();
 
             FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(7);
+            flowTask.setStatus(FlowTaskStatus.RETURNED.getCode());
             flowTask.setComment(comment);
             flowTask.setSignature(signature);
             flowTask.setCompleteTime(LocalDateTime.now());
@@ -579,14 +582,14 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
             FlowBusiness business = flowBusinessMapper.selectByProcessInstanceId(task.getProcessInstanceId());
             if (business != null) {
-                business.setStatus("terminated");
+                business.setStatus(FlowBusinessStatus.TERMINATED.getCode());
                 business.setEndTime(LocalDateTime.now());
                 business.setUpdateTime(LocalDateTime.now());
                 flowBusinessMapper.updateById(business);
             }
 
             FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(8);
+            flowTask.setStatus(FlowTaskStatus.TERMINATED.getCode());
             flowTask.setComment(comment);
             flowTask.setSignature(signature);
             flowTask.setCompleteTime(LocalDateTime.now());
@@ -705,7 +708,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         completeTask(task, mergeActionVariables(null, true));
 
         FlowTask flowTask = new FlowTask();
-        flowTask.setStatus(2);
+        flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
         flowTask.setComment(comment);
         flowTask.setCompleteTime(LocalDateTime.now());
         lambdaUpdate().eq(FlowTask::getTaskId, task.getId()).update(flowTask);
@@ -728,7 +731,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             runtimeService.deleteProcessInstance(processInstanceId, "用户撤回");
 
             FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(6);
+            flowTask.setStatus(FlowTaskStatus.WITHDRAWN.getCode());
             flowTask.setCompleteTime(LocalDateTime.now());
             lambdaUpdate().eq(FlowTask::getProcessInstanceId, processInstanceId).update(flowTask);
 
@@ -1138,11 +1141,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             
             // 判断流程状态
             if (historicProcessInstance.getEndTime() == null) {
-                diagramInfo.setStatus("running");
+                diagramInfo.setStatus(FlowDiagramStatus.RUNNING.getCode());
             } else if (historicProcessInstance.getDeleteReason() != null) {
-                diagramInfo.setStatus("terminated");
+                diagramInfo.setStatus(FlowDiagramStatus.TERMINATED.getCode());
             } else {
-                diagramInfo.setStatus("completed");
+                diagramInfo.setStatus(FlowDiagramStatus.COMPLETED.getCode());
             }
             log.info("流程状态: {}", diagramInfo.getStatus());
             
@@ -1267,9 +1270,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             
             // 设置节点状态
             if (currentActivityIds.contains(flowNode.getId())) {
-                nodeInfo.setStatus("running");
+                nodeInfo.setStatus(FlowDiagramStatus.RUNNING.getCode());
             } else if (completedActivityMap.containsKey(flowNode.getId())) {
-                nodeInfo.setStatus("completed");
+                nodeInfo.setStatus(FlowDiagramStatus.COMPLETED.getCode());
                 HistoricActivityInstance activity = completedActivityMap.get(flowNode.getId());
                 nodeInfo.setStartTime(activity.getStartTime());
                 nodeInfo.setEndTime(activity.getEndTime());
@@ -1277,7 +1280,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                     nodeInfo.setDuration(activity.getDurationInMillis());
                 }
             } else {
-                nodeInfo.setStatus("pending");
+                nodeInfo.setStatus(FlowDiagramStatus.PENDING.getCode());
             }
             
             // 设置处理人信息（仅用户任务）
@@ -2324,18 +2327,6 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         }
 
         // 4. 加入每个任务节点
-        // 状态到 action 的映射
-        Map<Integer, String> statusActionMap = new HashMap<>();
-        statusActionMap.put(0, "pending");
-        statusActionMap.put(1, "claim");
-        statusActionMap.put(2, "approve");
-        statusActionMap.put(3, "reject");
-        statusActionMap.put(4, "delegate");
-        statusActionMap.put(5, "delegate");
-        statusActionMap.put(6, "withdraw");
-        statusActionMap.put(7, "return");
-        statusActionMap.put(8, "terminate");
-
         for (FlowTask task : tasks) {
             // 待办且未完成的节点也要展示（表示当前处理中）
             Map<String, Object> node = new HashMap<>();
@@ -2345,7 +2336,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             String assigneeName = resolveUserDisplayName(task.getAssignee(), task.getAssigneeName());
             node.put("assigneeName", assigneeName);
             node.put("assigneeId", task.getAssignee());
-            node.put("action", statusActionMap.getOrDefault(task.getStatus(), "pending"));
+            node.put("action", FlowTaskStatus.historyActionOf(task.getStatus()));
             node.put("comment", task.getComment() != null ? task.getComment() : "");
             node.put("signature", task.getSignature());
             node.put("createTime", task.getCreateTime() != null ? task.getCreateTime().toString() : null);

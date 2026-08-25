@@ -72,7 +72,7 @@ public class BusinessApplicationPublishRunService
         run.setOperationType(operationType);
         run.setTargetVersionNo(maxVersion + 1);
         run.setSourceVersionNo(sourceVersionNo);
-        run.setRunStatus(BusinessApplicationPublishStatus.CREATED);
+        run.setRunStatus(BusinessApplicationPublishStatus.CREATED.getCode());
         run.setCurrentStep(BusinessApplicationPublishStep.PRECHECK);
         run.setSnapshotJson(snapshot.json());
         run.setSnapshotHash(snapshot.hash());
@@ -109,10 +109,10 @@ public class BusinessApplicationPublishRunService
     @Transactional(rollbackFor = Exception.class)
     public AiBusinessApplicationPublishRun beginRecovery(Long applicationId, Long runId) {
         AiBusinessApplicationPublishRun run = requireRun(applicationId, runId);
-        if (BusinessApplicationPublishStatus.SUCCESS.equals(run.getRunStatus())) {
+        if (BusinessApplicationPublishStatus.SUCCESS.matches(run.getRunStatus())) {
             return run;
         }
-        if (BusinessApplicationPublishStatus.RUNNING.equals(run.getRunStatus())) {
+        if (BusinessApplicationPublishStatus.RUNNING.matches(run.getRunStatus())) {
             throw new BusinessException("发布运行单仍在执行，不能重复恢复");
         }
         if (baseMapper.incrementAttempt(resolveTenantId(), applicationId, runId, resolveUserId()) == 0) {
@@ -128,7 +128,7 @@ public class BusinessApplicationPublishRunService
         step.setMessage(null);
         step.setStartedTime(LocalDateTime.now());
         step.setFinishedTime(null);
-        return update(run, BusinessApplicationPublishStatus.RUNNING, stepCode, steps,
+        return update(run, BusinessApplicationPublishStatus.RUNNING.getCode(), stepCode, steps,
                 null, null, null, null, null, null);
     }
 
@@ -139,7 +139,7 @@ public class BusinessApplicationPublishRunService
         step.setStatus("SUCCESS");
         step.setMessage(StringUtils.abbreviate(message, 500));
         step.setFinishedTime(LocalDateTime.now());
-        return update(run, BusinessApplicationPublishStatus.RUNNING, stepCode, steps,
+        return update(run, BusinessApplicationPublishStatus.RUNNING.getCode(), stepCode, steps,
                 null, null, null, null, null, null);
     }
 
@@ -173,8 +173,8 @@ public class BusinessApplicationPublishRunService
                 BusinessApplicationPublishStep.OBJECTS, BusinessApplicationPublishStep.ENTRIES,
                 BusinessApplicationPublishStep.PAGE_MENUS,
                 BusinessApplicationPublishStep.EXTENSIONS).contains(item.getStepCode()));
-        String status = hasSideEffect ? BusinessApplicationPublishStatus.PARTIAL
-                : BusinessApplicationPublishStatus.FAILED;
+        String status = hasSideEffect ? BusinessApplicationPublishStatus.PARTIAL.getCode()
+                : BusinessApplicationPublishStatus.FAILED.getCode();
         return update(run, status, stepCode, steps, null, null, null,
                 errorCode, StringUtils.abbreviate(errorSummary, 500), LocalDateTime.now());
     }
@@ -187,7 +187,7 @@ public class BusinessApplicationPublishRunService
         commit.setStatus("SUCCESS");
         commit.setMessage("不可变应用版本已提交");
         commit.setFinishedTime(LocalDateTime.now());
-        return update(run, BusinessApplicationPublishStatus.SUCCESS, BusinessApplicationPublishStep.COMMIT, steps,
+        return update(run, BusinessApplicationPublishStatus.SUCCESS.getCode(), BusinessApplicationPublishStep.COMMIT, steps,
                 finalSnapshot.json(), finalSnapshot.hash(), resultVersionId,
                 null, null, LocalDateTime.now());
     }

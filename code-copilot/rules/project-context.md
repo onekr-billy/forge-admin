@@ -435,7 +435,7 @@ pnpm dev
 1. **首次配置**: 后端需要复制 `application-dev.example.yml` 为 `application-dev.yml` 并配置数据库和Redis
 2. **前端配置**: 前端需要复制 `.env.example` 为 `.env.local` 配置本地环境
 3. **代码规范**: 遵循 `code-copilot/rules/coding-style.md` 编码规范
-4. **领域规则**: 遵循 `code-copilot/rules/domain-rules.md` 业务规则
+4. **领域规则**: 金额、时间、状态机等以根目录 `AGENTS.md` 第 5 章为准
 5. **渐进式开发**: 使用 `/propose` 命令创建变更提案，遵循 No Spec No Code 原则
 6. **分支管理**: 禁止直接提交到master分支，使用feature分支开发
 7. **代码生成**: 优先使用代码生成器，避免手写CRUD代码

@@ -154,7 +154,7 @@ public class FlowTask {
     private Integer priority;
 
     /**
-     * 状态（0-待办/1-已签收/2-已通过/3-已驳回/4-已转办/5-已委派/6-已撤回/7-已退回/8-已终结）
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowTaskStatus}。
      */
     private Integer status;
 

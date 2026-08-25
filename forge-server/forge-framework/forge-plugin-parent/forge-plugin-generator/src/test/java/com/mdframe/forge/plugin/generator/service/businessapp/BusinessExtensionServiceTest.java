@@ -67,7 +67,7 @@ class BusinessExtensionServiceTest {
         assertEquals(20L, id);
         assertNotNull(extensionRef.get());
         assertEquals(1L, extensionRef.get().getTenantId());
-        assertEquals(BusinessExtensionStatus.DRAFT, extensionRef.get().getStatus());
+        assertEquals(BusinessExtensionStatus.DRAFT.getCode(), extensionRef.get().getStatus());
         assertEquals(1, extensionRef.get().getDraftVersion());
         assertNotNull(versionRef.get());
         assertEquals(1, versionRef.get().getVersionNo());

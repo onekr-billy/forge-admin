@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.business.core.purchase.domain.SamplePurchaseOrder;
+import com.mdframe.forge.business.core.purchase.enums.SamplePurchaseOrderStatus;
 import com.mdframe.forge.business.core.purchase.dto.SamplePurchaseOrderDTO;
 import com.mdframe.forge.business.core.purchase.dto.SamplePurchaseOrderQuery;
 import com.mdframe.forge.business.core.purchase.dto.SamplePurchaseOrderSubmitDTO;
@@ -118,7 +119,7 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
         entity.setId(identifierGenerator.nextId(entity).longValue());
         entity.setTenantId(resolveTenantId());
         applyBaseFields(entity, dto);
-        entity.setStatus(STATUS_DRAFT);
+        entity.setStatus(SamplePurchaseOrderStatus.DRAFT.getCode());
         entity.setApplicantId(SessionHelper.getUserId());
         entity.setApplicantName(resolveUsername());
         entity.setApplicantDeptId(SessionHelper.getMainOrgId());
@@ -138,7 +139,8 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
         }
         validateBase(dto);
         SamplePurchaseOrder entity = requireEntity(dto.getId());
-        if (!STATUS_DRAFT.equals(entity.getStatus()) && !STATUS_NEED_MODIFY.equals(entity.getStatus())) {
+        if (!SamplePurchaseOrderStatus.DRAFT.matches(entity.getStatus())
+                && !SamplePurchaseOrderStatus.NEED_MODIFY.matches(entity.getStatus())) {
             throw new BusinessException("只有草稿或待修改采购单允许编辑");
         }
         applyBaseFields(entity, dto);
@@ -149,7 +151,7 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         SamplePurchaseOrder entity = requireEntity(id);
-        if (!List.of(STATUS_DRAFT, STATUS_REJECTED, STATUS_CANCELED).contains(entity.getStatus())) {
+        if (!SamplePurchaseOrderStatus.deletableCodes().contains(entity.getStatus())) {
             throw new BusinessException("当前状态不允许删除");
         }
         removeById(id);
@@ -158,7 +160,7 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
     @Override
     public String submit(Long id, SamplePurchaseOrderSubmitDTO dto) {
         SamplePurchaseOrder entity = requireEntity(id);
-        if (!STATUS_DRAFT.equals(entity.getStatus())) {
+        if (!SamplePurchaseOrderStatus.DRAFT.matches(entity.getStatus())) {
             throw new BusinessException("只有草稿采购单允许发起流程");
         }
         validateSubmit(dto);
@@ -371,7 +373,7 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
 
     private void handleTaskCreated(SamplePurchaseOrder entity, FlowEventContext context) {
         if (SamplePurchaseOrderFlowDefinition.isApplicantModifyNode(context.getTaskDefKey())) {
-            if (!STATUS_IN_PROCESS.equals(entity.getStatus())) {
+            if (!SamplePurchaseOrderStatus.IN_PROCESS.matches(entity.getStatus())) {
                 return;
             }
             markNeedModify(entity, firstText(context.getComment(), context.getLastComment(), entity.getRejectReason()));
@@ -381,7 +383,7 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
             return;
         }
         if (SamplePurchaseOrderFlowDefinition.isApprovalNode(context.getTaskDefKey())
-                && STATUS_NEED_MODIFY.equals(entity.getStatus())) {
+                && SamplePurchaseOrderStatus.NEED_MODIFY.matches(entity.getStatus())) {
             markInProcess(entity);
             updateById(entity);
             log.info("采购单进入审批节点，状态自动切换为审批中: businessKey={}, taskId={}, taskDefKey={}",
@@ -429,7 +431,7 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
     }
 
     private void ensureApplicantModifyState(SamplePurchaseOrder entity, SamplePurchaseOrderTaskSaveDTO dto) {
-        if (STATUS_IN_PROCESS.equals(entity.getStatus())
+        if (SamplePurchaseOrderStatus.IN_PROCESS.matches(entity.getStatus())
                 && dto != null
                 && SamplePurchaseOrderFlowDefinition.isApplicantModifyNode(dto.getTaskDefKey())) {
             markNeedModify(entity, entity.getRejectReason());
@@ -437,13 +439,13 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
                     entity.getBusinessKey(), dto.getTaskId());
             return;
         }
-        if (!STATUS_NEED_MODIFY.equals(entity.getStatus())) {
+        if (!SamplePurchaseOrderStatus.NEED_MODIFY.matches(entity.getStatus())) {
             throw new BusinessException("当前采购单不是待修改状态，不能执行申请人修改节点");
         }
     }
 
     private void ensureApprovalState(SamplePurchaseOrder entity, SamplePurchaseOrderTaskSaveDTO dto) {
-        if (STATUS_NEED_MODIFY.equals(entity.getStatus())
+        if (SamplePurchaseOrderStatus.NEED_MODIFY.matches(entity.getStatus())
                 && dto != null
                 && SamplePurchaseOrderFlowDefinition.isApprovalNode(dto.getTaskDefKey())) {
             markInProcess(entity);
@@ -451,13 +453,13 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
                     entity.getBusinessKey(), dto.getTaskId(), dto.getTaskDefKey());
             return;
         }
-        if (!STATUS_IN_PROCESS.equals(entity.getStatus())) {
+        if (!SamplePurchaseOrderStatus.IN_PROCESS.matches(entity.getStatus())) {
             throw new BusinessException("当前采购单不是审批中状态，不能保存审批节点字段");
         }
     }
 
     private void markInProcess(SamplePurchaseOrder entity) {
-        entity.setStatus(STATUS_IN_PROCESS);
+        entity.setStatus(SamplePurchaseOrderStatus.IN_PROCESS.getCode());
     }
 
     private void reconcileStatusesWithActiveTasks(List<SamplePurchaseOrderVO> records) {
@@ -506,35 +508,36 @@ public class SamplePurchaseOrderServiceImpl extends ServiceImpl<SamplePurchaseOr
     }
 
     private boolean isRunningStatus(String status) {
-        return STATUS_IN_PROCESS.equals(status) || STATUS_NEED_MODIFY.equals(status);
+        return SamplePurchaseOrderStatus.IN_PROCESS.matches(status)
+                || SamplePurchaseOrderStatus.NEED_MODIFY.matches(status);
     }
 
     private String expectedStatusByActiveTask(String taskDefKey) {
         if (SamplePurchaseOrderFlowDefinition.isApplicantModifyNode(taskDefKey)) {
-            return STATUS_NEED_MODIFY;
+            return SamplePurchaseOrderStatus.NEED_MODIFY.getCode();
         }
         if (SamplePurchaseOrderFlowDefinition.isApprovalNode(taskDefKey)) {
-            return STATUS_IN_PROCESS;
+            return SamplePurchaseOrderStatus.IN_PROCESS.getCode();
         }
         return null;
     }
 
     private void markNeedModify(SamplePurchaseOrder entity, String rejectReason) {
-        entity.setStatus(STATUS_NEED_MODIFY);
+        entity.setStatus(SamplePurchaseOrderStatus.NEED_MODIFY.getCode());
         entity.setRejectReason(rejectReason);
     }
 
     private void markApproved(SamplePurchaseOrder entity) {
-        entity.setStatus(STATUS_APPROVED);
+        entity.setStatus(SamplePurchaseOrderStatus.APPROVED.getCode());
     }
 
     private void markRejected(SamplePurchaseOrder entity, String rejectReason) {
-        entity.setStatus(STATUS_REJECTED);
+        entity.setStatus(SamplePurchaseOrderStatus.REJECTED.getCode());
         entity.setRejectReason(rejectReason);
     }
 
     private void markCanceled(SamplePurchaseOrder entity, String rejectReason) {
-        entity.setStatus(STATUS_CANCELED);
+        entity.setStatus(SamplePurchaseOrderStatus.CANCELED.getCode());
         entity.setRejectReason(rejectReason);
     }
 

@@ -2,6 +2,11 @@ package com.mdframe.forge.flow.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.flow.dto.FlowTaskActionDTO;
+import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
+import com.mdframe.forge.flow.dto.FlowTaskDelegateDTO;
+import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
+import com.mdframe.forge.flow.dto.FlowTaskWithdrawDTO;
 import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -118,19 +123,12 @@ public class FlowTaskController {
      */
     @PostMapping("/approve")
     @ApiPermissionIgnore
-    public RespInfo<Void> approve(@RequestBody Map<String, Object> params) {
-        String taskId = String.valueOf(params.get("taskId"));
-        String userId = resolveTrustedUser(params.get("userId"));
-        String comment = params.get("comment") != null ? String.valueOf(params.get("comment")) : null;
-        String signature = params.get("signature") != null ? String.valueOf(params.get("signature")) : null;
-        @SuppressWarnings("unchecked")
-        Map<String, Object> variables = (Map<String, Object>) params.get("variables");
-        
-        Long tenantId = resolveTrustedTenant(params.get("tenantId"));
-        String idempotencyKey = optionalText(params.get("idempotencyKey"));
-        String requestDigest = optionalText(params.get("requestDigest"));
-        flowTaskService.approve(taskId, userId, comment, signature, variables,
-                tenantId, idempotencyKey, requestDigest);
+    public RespInfo<Void> approve(@RequestBody FlowTaskApproveDTO dto) {
+        String userId = resolveTrustedUser(dto.getUserId());
+        Long tenantId = resolveTrustedTenant(dto.getTenantId());
+        flowTaskService.approve(dto.getTaskId(), userId, optionalText(dto.getComment()),
+                optionalText(dto.getSignature()), dto.getVariables(),
+                tenantId, optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()));
         return RespInfo.success("审批通过", null);
     }
 
@@ -139,33 +137,27 @@ public class FlowTaskController {
      */
     @PostMapping("/reject")
     @ApiPermissionIgnore
-    public RespInfo<Void> reject(@RequestBody Map<String, Object> params) {
-        String taskId = String.valueOf(params.get("taskId"));
-        String userId = resolveTrustedUser(params.get("userId"));
-        String comment = params.get("comment") != null ? String.valueOf(params.get("comment")) : null;
-        String signature = params.get("signature") != null ? String.valueOf(params.get("signature")) : null;
-        
-        Long tenantId = resolveTrustedTenant(params.get("tenantId"));
-        String idempotencyKey = optionalText(params.get("idempotencyKey"));
-        String requestDigest = optionalText(params.get("requestDigest"));
-        flowTaskService.reject(taskId, userId, comment, signature,
-                tenantId, idempotencyKey, requestDigest);
+    public RespInfo<Void> reject(@RequestBody FlowTaskRejectDTO dto) {
+        String userId = resolveTrustedUser(dto.getUserId());
+        Long tenantId = resolveTrustedTenant(dto.getTenantId());
+        flowTaskService.reject(dto.getTaskId(), userId, optionalText(dto.getComment()),
+                optionalText(dto.getSignature()), tenantId,
+                optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()));
         return RespInfo.success("已驳回", null);
     }
 
-    private Long resolveTrustedTenant(Object requestedTenant) {
+    private Long resolveTrustedTenant(Long requestedTenant) {
         Long sessionTenant = SessionHelper.getTenantId();
-        Long parsedTenant = requestedTenant == null ? null : Long.valueOf(String.valueOf(requestedTenant));
         if (sessionTenant == null || sessionTenant <= 0) {
             throw new IllegalArgumentException("FLOW_TASK_TENANT_REQUIRED");
         }
-        if (parsedTenant != null && !sessionTenant.equals(parsedTenant)) {
+        if (requestedTenant != null && !sessionTenant.equals(requestedTenant)) {
             throw new IllegalArgumentException("FLOW_TASK_TENANT_MISMATCH");
         }
         return sessionTenant;
     }
 
-    private String resolveTrustedUser(Object requestedUser) {
+    private String resolveTrustedUser(String requestedUser) {
         Long sessionUserId = SessionHelper.getUserId();
         if (sessionUserId == null || sessionUserId <= 0) {
             throw new IllegalArgumentException("FLOW_TASK_ASSIGNEE_REQUIRED");
@@ -178,12 +170,16 @@ public class FlowTaskController {
         return trusted;
     }
 
-    private String optionalText(Object value) {
+    private String optionalText(String value) {
         if (value == null) {
             return null;
         }
-        String text = String.valueOf(value).trim();
+        String text = value.trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private boolean isBlankId(String value) {
+        return value == null || value.isBlank();
     }
 
     /**
@@ -191,24 +187,19 @@ public class FlowTaskController {
      */
     @PostMapping("/delegate")
     @ApiPermissionIgnore
-    public RespInfo<Void> delegate(@RequestBody Map<String, Object> params) {
-        String taskId = String.valueOf(params.get("taskId"));
-        String userId = String.valueOf(params.get("userId"));
-        String targetUserId = String.valueOf(params.get("targetUserId"));
-        String comment = params.get("comment") != null ? String.valueOf(params.get("comment")) : null;
-        String signature = params.get("signature") != null ? String.valueOf(params.get("signature")) : null;
-
-        if (taskId == null || taskId.isBlank() || "null".equals(taskId)) {
+    public RespInfo<Void> delegate(@RequestBody FlowTaskDelegateDTO dto) {
+        if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
-        if (userId == null || userId.isBlank() || "null".equals(userId)) {
+        if (isBlankId(dto.getUserId())) {
             return RespInfo.error("当前用户ID不能为空");
         }
-        if (targetUserId == null || targetUserId.isBlank() || "null".equals(targetUserId)) {
+        if (isBlankId(dto.getTargetUserId())) {
             return RespInfo.error("转办人ID不能为空");
         }
-        
-        flowTaskService.delegate(taskId, userId, targetUserId, comment, signature);
+
+        flowTaskService.delegate(dto.getTaskId(), dto.getUserId(), dto.getTargetUserId(),
+                optionalText(dto.getComment()), optionalText(dto.getSignature()));
         return RespInfo.success("转办成功", null);
     }
 
@@ -216,20 +207,16 @@ public class FlowTaskController {
      * 退回上一审批节点
      */
     @PostMapping("/return")
-    public RespInfo<Void> returnTask(@RequestBody Map<String, Object> params) {
-        String taskId = String.valueOf(params.get("taskId"));
-        String userId = String.valueOf(params.get("userId"));
-        String comment = params.get("comment") != null ? String.valueOf(params.get("comment")) : null;
-        String signature = params.get("signature") != null ? String.valueOf(params.get("signature")) : null;
-
-        if (taskId == null || taskId.isBlank() || "null".equals(taskId)) {
+    public RespInfo<Void> returnTask(@RequestBody FlowTaskActionDTO dto) {
+        if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
-        if (userId == null || userId.isBlank() || "null".equals(userId)) {
+        if (isBlankId(dto.getUserId())) {
             return RespInfo.error("当前用户ID不能为空");
         }
 
-        flowTaskService.returnTask(taskId, userId, comment, signature);
+        flowTaskService.returnTask(dto.getTaskId(), dto.getUserId(),
+                optionalText(dto.getComment()), optionalText(dto.getSignature()));
         return RespInfo.success("已退回", null);
     }
 
@@ -237,20 +224,16 @@ public class FlowTaskController {
      * 终结流程
      */
     @PostMapping("/terminate")
-    public RespInfo<Void> terminateTask(@RequestBody Map<String, Object> params) {
-        String taskId = String.valueOf(params.get("taskId"));
-        String userId = String.valueOf(params.get("userId"));
-        String comment = params.get("comment") != null ? String.valueOf(params.get("comment")) : null;
-        String signature = params.get("signature") != null ? String.valueOf(params.get("signature")) : null;
-
-        if (taskId == null || taskId.isBlank() || "null".equals(taskId)) {
+    public RespInfo<Void> terminateTask(@RequestBody FlowTaskActionDTO dto) {
+        if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
-        if (userId == null || userId.isBlank() || "null".equals(userId)) {
+        if (isBlankId(dto.getUserId())) {
             return RespInfo.error("当前用户ID不能为空");
         }
 
-        flowTaskService.terminateTask(taskId, userId, comment, signature);
+        flowTaskService.terminateTask(dto.getTaskId(), dto.getUserId(),
+                optionalText(dto.getComment()), optionalText(dto.getSignature()));
         return RespInfo.success("流程已终结", null);
     }
 
@@ -258,17 +241,15 @@ public class FlowTaskController {
      * 撤回流程
      */
     @PostMapping("/withdraw")
-    public RespInfo<Void> withdraw(@RequestBody Map<String, Object> params) {
-        String processInstanceId = String.valueOf(params.get("processInstanceId"));
-        String userId = String.valueOf(params.get("userId"));
-        if (processInstanceId == null || processInstanceId.isBlank() || "null".equals(processInstanceId)) {
+    public RespInfo<Void> withdraw(@RequestBody FlowTaskWithdrawDTO dto) {
+        if (isBlankId(dto.getProcessInstanceId())) {
             return RespInfo.error("流程实例ID不能为空");
         }
-        if (userId == null || userId.isBlank() || "null".equals(userId)) {
+        if (isBlankId(dto.getUserId())) {
             return RespInfo.error("当前用户ID不能为空");
         }
-        
-        flowTaskService.withdraw(processInstanceId, userId);
+
+        flowTaskService.withdraw(dto.getProcessInstanceId(), dto.getUserId());
         return RespInfo.success("撤回成功", null);
     }
 

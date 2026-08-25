@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /** 从不可变应用版本构建当前用户的正式运行配置。 */
 @Service
@@ -73,7 +74,7 @@ public class BusinessApplicationRuntimeService {
     }
 
     private BusinessApplicationRuntimeVO runtime(BusinessApplicationVO current) {
-        if (!Integer.valueOf(1).equals(current.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(current.getStatus())) {
             throw new BusinessException("应用已停用，暂时无法访问");
         }
         if (current.getLastPublishVersion() == null) {

@@ -9,6 +9,8 @@ import com.mdframe.forge.starter.flow.entity.FlowEntry;
 import com.mdframe.forge.starter.flow.entity.FlowEntryFieldMapping;
 import com.mdframe.forge.starter.flow.entity.FlowFillBatchItem;
 import com.mdframe.forge.starter.flow.entity.FlowFormInstance;
+import com.mdframe.forge.starter.flow.enums.FlowFillItemStatus;
+import com.mdframe.forge.starter.flow.enums.FlowFormInstanceStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowEntryFieldMappingMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFillBatchItemMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
@@ -120,7 +122,7 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         instance.setStartUserName(starter.userName);
         instance.setStartDeptId(starter.deptId);
         instance.setStartDeptName(starter.deptName);
-        instance.setStatus("DRAFT");
+        instance.setStatus(FlowFormInstanceStatus.DRAFT.getCode());
         instance.setSubmitTime(LocalDateTime.now());
         formInstanceMapper.insert(instance);
 
@@ -139,7 +141,7 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
                 toStringValue(starter.deptId),
                 starter.deptName);
 
-        formInstanceMapper.updateProcessInstance(instanceId, processInstanceId, "RUNNING");
+        formInstanceMapper.updateProcessInstance(instanceId, processInstanceId, FlowFormInstanceStatus.RUNNING.getCode());
 
         FlowStartResultVO result = new FlowStartResultVO();
         result.setFormInstanceId(instanceId);
@@ -178,8 +180,8 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         update.setObjectCode(result.getObjectCode());
         update.setRecordId(result.getRecordId());
         update.setProcessInstanceId(result.getProcessInstanceId());
-        update.setSubmitStatus("SUBMITTED");
-        update.setFlowStatus("RUNNING");
+        update.setSubmitStatus(FlowFillItemStatus.SUBMITTED.getCode());
+        update.setFlowStatus(FlowFillItemStatus.RUNNING.getCode());
         update.setSubmitTime(LocalDateTime.now());
         fillBatchItemMapper.updateById(update);
         return result;
@@ -249,7 +251,7 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
             instance.setStartUserName(starter.userName);
             instance.setStartDeptId(starter.deptId);
             instance.setStartDeptName(starter.deptName);
-            instance.setStatus("DRAFT");
+            instance.setStatus(FlowFormInstanceStatus.DRAFT.getCode());
             instance.setSubmitTime(LocalDateTime.now());
             formInstanceMapper.insert(instance);
             variables.put("flowFormInstanceId", String.valueOf(formInstanceId));
@@ -267,7 +269,7 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
                 starter.deptName);
 
         if (formInstanceId != null) {
-            formInstanceMapper.updateProcessInstance(formInstanceId, processInstanceId, "RUNNING");
+            formInstanceMapper.updateProcessInstance(formInstanceId, processInstanceId, FlowFormInstanceStatus.RUNNING.getCode());
         }
         businessObjectRuntimeAdapter.afterProcessStarted(entry, record, processInstanceId, variables);
 

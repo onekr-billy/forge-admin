@@ -9,6 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.Comparator;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 基于不可变业务对象发布快照生成能力注册候选项。
@@ -57,7 +58,7 @@ public class BusinessActionSourceService {
 
     private BusinessActionRegistrationAction toRegistrationAction(BusinessObjectActionVO action) {
         SecureActionStepValidator.ValidationResult validation = stepValidator.inspect(action);
-        boolean enabled = !Integer.valueOf(0).equals(action.getStatus());
+        boolean enabled = !EnableStatus.DISABLED.matches(action.getStatus());
         String unavailableReason = enabled
                 ? validation.unavailableReason()
                 : "业务动作「" + actionDisplayName(action)

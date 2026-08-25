@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 应用级业务流程定义控制面。
@@ -601,7 +602,7 @@ public class BusinessProcessService {
 
     private AiBusinessApplication requireActiveApplication(Long tenantId, Long applicationId) {
         AiBusinessApplication application = applicationMapper.selectEntityById(tenantId, applicationId);
-        if (application == null || !Integer.valueOf(1).equals(application.getStatus())) {
+        if (application == null || !EnableStatus.ENABLED.matches(application.getStatus())) {
             throw new BusinessException("业务应用不存在或已停用");
         }
         return application;

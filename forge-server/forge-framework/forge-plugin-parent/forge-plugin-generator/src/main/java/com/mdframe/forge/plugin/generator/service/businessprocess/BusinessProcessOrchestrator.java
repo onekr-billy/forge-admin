@@ -12,6 +12,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcess;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessNodeRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessVersion;
+import com.mdframe.forge.plugin.generator.enums.BusinessProcessRunStatus;
 import com.mdframe.forge.plugin.generator.dto.businessprocess.BusinessProcessManualStartDTO;
 import com.mdframe.forge.plugin.generator.dto.businessprocess.BusinessProcessRunQueryDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务流程运行状态机：先落 run，再按已发布 DAG 执行到等待或结束。
@@ -54,7 +56,7 @@ public class BusinessProcessOrchestrator {
     private static final int MAX_RETRY = 5;
     private static final int MAX_PAGE_SIZE = 100;
     private static final Set<String> START_TYPES = Set.of("START_MANUAL", "START_EVENT", "START_SCHEDULE");
-    private static final Set<String> ACTIVE_STATUSES = Set.of("PENDING", "RUNNING", "WAITING");
+    private static final Set<String> ACTIVE_STATUSES = BusinessProcessRunStatus.ACTIVE_CODES;
 
     private final BusinessApplicationMapper applicationMapper;
     private final BusinessProcessMapper processMapper;
@@ -100,12 +102,12 @@ public class BusinessProcessOrchestrator {
         Long tenantId = requireTenantId();
         Long userId = requireUserId();
         AiBusinessApplication application = applicationMapper.selectEntityByCode(tenantId, StringUtils.trimToEmpty(applicationCode));
-        if (application == null || !Integer.valueOf(1).equals(application.getStatus())) {
+        if (application == null || !EnableStatus.ENABLED.matches(application.getStatus())) {
             throw new BusinessException("业务应用不存在或已停用");
         }
         AiBusinessProcess process = processMapper.selectActiveByCode(
                 tenantId, application.getId(), StringUtils.trimToEmpty(processCode));
-        if (process == null || !Integer.valueOf(1).equals(process.getStatus())) {
+        if (process == null || !EnableStatus.ENABLED.matches(process.getStatus())) {
             throw new BusinessException("业务流程不存在或已停用");
         }
         if (process.getPublishedVersion() == null) {
@@ -134,14 +136,14 @@ public class BusinessProcessOrchestrator {
         String idempotencyKey = "MANUAL:" + objectCode + ":" + recordId;
         AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
         if (existing != null) {
-            if (ACTIVE_STATUSES.contains(existing.getStatus()) || "SUCCESS".equals(existing.getStatus())) {
-                if ("PENDING".equals(existing.getStatus())) {
+            if (ACTIVE_STATUSES.contains(existing.getStatus()) || BusinessProcessRunStatus.SUCCESS.matches(existing.getStatus())) {
+                if (BusinessProcessRunStatus.PENDING.matches(existing.getStatus())) {
                     execute(existing.getId());
                     existing = requireRun(existing.getId());
                 }
                 return completedStart(existing, process.getProcessName());
             }
-            if ("FAILED".equals(existing.getStatus())) {
+            if (BusinessProcessRunStatus.FAILED.matches(existing.getStatus())) {
                 return retry(existing.getId());
             }
             return completedStart(existing, process.getProcessName());
@@ -161,7 +163,7 @@ public class BusinessProcessOrchestrator {
         run.setActorType("USER");
         run.setActorUserId(userId);
         run.setActiveOrgId(SessionHelper.getActiveOrgId());
-        run.setStatus("PENDING");
+        run.setStatus(BusinessProcessRunStatus.PENDING.getCode());
         run.setContextSnapshot(safeContextSnapshot(objectCode, recordId));
         run.setRetryCount(0);
         run.setCreateBy(userId);
@@ -216,7 +218,7 @@ public class BusinessProcessOrchestrator {
                     + schema.getSubject().getObjectCode() + ":" + recordId;
             AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
             if (existing != null) {
-                if ("PENDING".equals(existing.getStatus())) {
+                if (BusinessProcessRunStatus.PENDING.matches(existing.getStatus())) {
                     execute(tenantId, existing.getId());
                 }
                 continue;
@@ -235,7 +237,7 @@ public class BusinessProcessOrchestrator {
             run.setIdempotencyKey(idempotencyKey);
             run.setActorType("USER");
             run.setActorUserId(event.getOperatorId());
-            run.setStatus("PENDING");
+            run.setStatus(BusinessProcessRunStatus.PENDING.getCode());
             run.setContextSnapshot(safeContextSnapshot(schema.getSubject().getObjectCode(), recordId));
             run.setRetryCount(0);
             run.setCreateBy(event.getOperatorId());
@@ -255,12 +257,12 @@ public class BusinessProcessOrchestrator {
 
     private void execute(Long tenantId, Long runId) {
         AiBusinessProcessRun run = requireRun(tenantId, runId);
-        if (!"PENDING".equals(run.getStatus()) && !"RUNNING".equals(run.getStatus())) {
+        if (!BusinessProcessRunStatus.PENDING.matches(run.getStatus()) && !BusinessProcessRunStatus.RUNNING.matches(run.getStatus())) {
             return;
         }
-        if ("PENDING".equals(run.getStatus())) {
+        if (BusinessProcessRunStatus.PENDING.matches(run.getStatus())) {
             int claimed = runMapper.compareAndSetStatus(
-                    run.getTenantId(), run.getId(), "PENDING", null, null,
+                    run.getTenantId(), run.getId(), BusinessProcessRunStatus.PENDING.getCode(), null, null,
                     "RUNNING", null, null, null, null, null);
             if (claimed != 1) {
                 return;
@@ -365,7 +367,9 @@ public class BusinessProcessOrchestrator {
         if (claimed != 1) {
             return;
         }
-        String attemptStatus = "FAILED".equals(outputPort) ? "FAILED" : "SUCCESS";
+        String attemptStatus = "FAILED".equals(outputPort)
+                ? BusinessProcessRunStatus.FAILED.getCode()
+                : BusinessProcessRunStatus.SUCCESS.getCode();
         int attemptUpdated = nodeRunMapper.completeAttempt(
                 tenantId,
                 waitingAttempt.getId(),
@@ -539,7 +543,9 @@ public class BusinessProcessOrchestrator {
         if (latest == null) {
             return;
         }
-        String nextStatus = result.isFailed() ? "FAILED" : (result.isWaiting() ? "WAITING" : "SUCCESS");
+        String nextStatus = result.isFailed()
+                ? BusinessProcessRunStatus.FAILED.getCode()
+                : (result.isWaiting() ? BusinessProcessRunStatus.WAITING.getCode() : BusinessProcessRunStatus.SUCCESS.getCode());
         nodeRunMapper.completeAttempt(
                 run.getTenantId(),
                 latest.getId(),
@@ -574,20 +580,20 @@ public class BusinessProcessOrchestrator {
 
     private void succeedRun(AiBusinessProcessRun run, String nodeId) {
         runMapper.compareAndSetStatus(
-                run.getTenantId(), run.getId(), "RUNNING", run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                "SUCCESS", nodeId, run.getFlowProcessInstanceId(), null, null, null);
+                run.getTenantId(), run.getId(), BusinessProcessRunStatus.RUNNING.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
+                BusinessProcessRunStatus.SUCCESS.getCode(), nodeId, run.getFlowProcessInstanceId(), null, null, null);
     }
 
     private void waitRun(AiBusinessProcessRun run, String nodeId, String processInstanceId) {
         runMapper.compareAndSetStatus(
-                run.getTenantId(), run.getId(), "RUNNING", run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                "WAITING", nodeId, processInstanceId, null, null, null);
+                run.getTenantId(), run.getId(), BusinessProcessRunStatus.RUNNING.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
+                BusinessProcessRunStatus.WAITING.getCode(), nodeId, processInstanceId, null, null, null);
     }
 
     private void failRun(AiBusinessProcessRun run, String errorCode, String errorSummary) {
         runMapper.compareAndSetStatus(
                 run.getTenantId(), run.getId(), run.getStatus(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                "FAILED", run.getCurrentNodeId(), run.getFlowProcessInstanceId(), null,
+                BusinessProcessRunStatus.FAILED.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(), null,
                 errorCode, truncate(errorSummary));
     }
 
@@ -723,7 +729,7 @@ public class BusinessProcessOrchestrator {
 
     private BusinessProcessRunVO completedStart(AiBusinessProcessRun run, String processName) {
         BusinessProcessRunVO vo = toVo(run, processName);
-        if ("FAILED".equals(vo.getStatus())) {
+        if (BusinessProcessRunStatus.FAILED.matches(vo.getStatus())) {
             throw new BusinessException(StringUtils.defaultIfBlank(vo.getErrorSummary(), "业务流程执行失败"));
         }
         return vo;

@@ -67,7 +67,7 @@ public class ForeachActionStepExecutor implements BusinessActionStepExecutor {
             }
         }
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("循环步骤执行完成，共 " + items.size() + " 行");
         result.getResult().put("itemCount", items.size());
         result.getResult().put("rowResults", rowResults);

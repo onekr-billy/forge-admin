@@ -67,7 +67,7 @@ public class CollaborationCallbackRetryJobHandler implements IJobExecutor {
 
     private Set<Long> resolveTenantIds() {
         SysSocialConfig query = new SysSocialConfig();
-        query.setStatus(1);
+        query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
         Set<Long> tenantIds = new LinkedHashSet<>();
         for (SysSocialConfig connection : configService.selectConfigList(query)) {
             if (connection.getTenantId() != null) {

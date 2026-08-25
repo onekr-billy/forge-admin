@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessDocumentConfig
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
+import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowBindingDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowCallbackDTO;
@@ -65,6 +66,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务流程服务。
@@ -581,7 +583,7 @@ public class BusinessFlowService {
             binding.setTargetCode(objectCode);
             binding.setBindingType("FLOW");
             binding.setBindingName(objectCode + "业务表单资产配置");
-            binding.setStatus(1);
+            binding.setStatus(EnableStatus.ENABLED.getCode());
             binding.setSortOrder(0);
             created = true;
         }
@@ -808,7 +810,7 @@ public class BusinessFlowService {
             vo.setRecordId(runtime == null ? null : runtime.recordId());
             vo.setBusinessKey(businessKey);
             vo.setProcessInstanceId(processInstanceId);
-            vo.setFlowStatus("IN_PROCESS");
+            vo.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
             vo.setMessage("业务待办已办理，未找到低代码流程实例关联");
             return vo;
         }
@@ -828,8 +830,8 @@ public class BusinessFlowService {
             return toRuntimeVO(link, "业务待办已办理，流程已结束");
         }
 
-        if (!"IN_PROCESS".equalsIgnoreCase(link.getFlowStatus())) {
-            link.setFlowStatus("IN_PROCESS");
+        if (!BusinessDocumentFlowStatus.IN_PROCESS.matches(link.getFlowStatus())) {
+            link.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
             flowInstanceLinkMapper.updateById(link);
         }
         return toRuntimeVO(link, "业务待办已办理，流程继续流转");
@@ -918,7 +920,7 @@ public class BusinessFlowService {
             vo.setRecordId(runtime.recordId());
             vo.setBusinessKey(runtime.businessKey());
             vo.setProcessInstanceId(query.getProcessInstanceId());
-            vo.setFlowStatus("IN_PROCESS");
+            vo.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
             vo.setMessage("已重提");
             return vo;
         }
@@ -931,9 +933,9 @@ public class BusinessFlowService {
         AiBusinessBinding binding = selectMainFlowBindingForConfig(link.getTenantId(), link.getObjectCode());
         JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
         ensureBusinessBinding(bindingConfig, link.getTenantId(), link.getObjectCode());
-        updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), "IN_PROCESS");
+        updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
 
-        link.setFlowStatus("IN_PROCESS");
+        link.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         link.setResult(null);
         link.setEndTime(null);
         if (!variables.isEmpty()) {
@@ -3343,7 +3345,7 @@ public class BusinessFlowService {
             existing.setBindingConfig(config.toJSONString());
             existing.setBindingKey(flowModelKey);
             existing.setBindingName(resolveBindingName(config));
-            existing.setStatus(1);
+            existing.setStatus(EnableStatus.ENABLED.getCode());
             bindingMapper.updateById(existing);
             log.info("[低代码流程绑定] 更新主流程绑定: tenantId={}, objectCode={}, bindingId={}, flowModelKey={}",
                     tenantId, objectCode, existing.getId(), flowModelKey);
@@ -3356,7 +3358,7 @@ public class BusinessFlowService {
             binding.setBindingKey(flowModelKey);
             binding.setBindingName(resolveBindingName(config));
             binding.setBindingConfig(config.toJSONString());
-            binding.setStatus(1);
+            binding.setStatus(EnableStatus.ENABLED.getCode());
             binding.setSortOrder(0);
             bindingMapper.insert(binding);
             log.info("[低代码流程绑定] 创建主流程绑定: tenantId={}, objectCode={}, bindingId={}, flowModelKey={}",
@@ -3474,7 +3476,7 @@ public class BusinessFlowService {
             vo.setObjectCode(canonicalObjectCode);
             vo.setRecordId(recordId);
             vo.setBusinessKey(businessKey);
-            vo.setFlowStatus("NOT_STARTED");
+            vo.setFlowStatus(BusinessDocumentFlowStatus.NOT_STARTED.getCode());
             vo.setMessage("尚未发起主流程");
             return vo;
         }
@@ -3693,7 +3695,7 @@ public class BusinessFlowService {
         link.setBusinessKey(businessKey);
         link.setFlowModelKey(flowModelKey);
         link.setProcessInstanceId(result.getData());
-        link.setFlowStatus("RUNNING");
+        link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
         link.setStartUserId(userId);
         link.setStartTime(LocalDateTime.now());
         link.setVariablesSnapshot(JSON.toJSONString(flowVariables));
@@ -3702,9 +3704,9 @@ public class BusinessFlowService {
         AiCrudConfig statusRuntimeConfig = runtimeConfig != null
                 ? runtimeConfig : resolvePublishedRuntimeConfig(tenantId, objectCode);
         if (StringUtils.isBlank(configuredStatusField(dto.getVariables()))) {
-            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), "IN_PROCESS");
+            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         }
-        syncConfiguredStatusField(statusRuntimeConfig, dto.getRecordId(), dto.getVariables(), "IN_PROCESS");
+        syncConfiguredStatusField(statusRuntimeConfig, dto.getRecordId(), dto.getVariables(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         return toRuntimeVO(link, "流程已发起");
     }
 
@@ -4333,7 +4335,7 @@ public class BusinessFlowService {
     }
 
     private boolean isBindingEnabled(AiBusinessBinding binding) {
-        return binding != null && !Integer.valueOf(0).equals(binding.getStatus());
+        return binding != null && !EnableStatus.DISABLED.matches(binding.getStatus());
     }
 
     private String describeBinding(AiBusinessBinding binding) {
@@ -4594,7 +4596,7 @@ public class BusinessFlowService {
         vo.setFlowModelName(documentConfig.getDefaultFlowKey());
         vo.setStartMode("MANUAL");
         vo.setBusinessBinding(defaultBusinessBinding(null, documentConfig));
-        vo.setStatus(1);
+        vo.setStatus(EnableStatus.ENABLED.getCode());
         vo.setCompatibilitySource("DOCUMENT_DEFAULT_FLOW");
         vo.setComplete(false);
         vo.setGaps(List.of("历史默认流程缺少变量映射，请在流程与自动化中保存一次主流程"));

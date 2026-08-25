@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.stream.Stream;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 三方登录认证策略实现
@@ -96,7 +97,7 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
 
         // 2. 复核连接状态（票据签发后连接可能被停用）
         SysSocialConfig connection = socialConfigService.selectConfigById(identity.connectionId());
-        if (connection == null || connection.getStatus() == null || connection.getStatus() != 1) {
+        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new RuntimeException("该连接已停用，无法登录");
         }
         if (!tenantId.equals(connection.getTenantId())) {
@@ -206,7 +207,7 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
         // 三方自动注册不生成共享默认密码，避免账号可被密码登录横向利用。
         newUser.setPassword(PasswordUtil.encrypt(IdUtil.fastSimpleUUID()));
         newUser.setForcePasswordChange(false);
-        newUser.setUserStatus(1);
+        newUser.setUserStatus(EnableStatus.ENABLED.getCode());
         newUser.setAvatar(identity.avatar());
 
         userMapper.insert(newUser);
@@ -289,7 +290,7 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
         userTenant.setUserId(userId);
         userTenant.setMemberType(2);
         userTenant.setIsDefault(1);
-        userTenant.setStatus(1);
+        userTenant.setStatus(EnableStatus.ENABLED.getCode());
         userTenantMapper.insert(userTenant);
         log.info("三方登录补齐租户成员: userId={}, tenantId={}", userId, tenantId);
     }

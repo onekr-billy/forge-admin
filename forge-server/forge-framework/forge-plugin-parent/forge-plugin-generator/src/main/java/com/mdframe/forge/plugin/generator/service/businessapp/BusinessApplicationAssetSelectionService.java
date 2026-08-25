@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 解析用户选择并自动补齐主对象、入口对象和扩展对象依赖。
@@ -31,9 +32,9 @@ import java.util.stream.Collectors;
 public class BusinessApplicationAssetSelectionService {
 
     private static final Set<String> DEFAULT_PUBLISHABLE_EXTENSION_STATUSES = Set.of(
-            BusinessExtensionStatus.TESTED,
-            BusinessExtensionStatus.ENABLED,
-            BusinessExtensionStatus.DISABLED
+            BusinessExtensionStatus.TESTED.getCode(),
+            BusinessExtensionStatus.ENABLED.getCode(),
+            BusinessExtensionStatus.DISABLED.getCode()
     );
 
     private final BusinessApplicationObjectService applicationObjectService;
@@ -92,7 +93,7 @@ public class BusinessApplicationAssetSelectionService {
         validateOwned("业务扩展", extensionIds, extensionMap.keySet());
         validateOwned("业务流程", processIds, processMap.keySet());
         long skippedDraftCount = extensions.stream()
-                .filter(extension -> BusinessExtensionStatus.DRAFT.equals(extension.getStatus()))
+                .filter(extension -> BusinessExtensionStatus.DRAFT.matches(extension.getStatus()))
                 .filter(extension -> !extensionIds.contains(extension.getId()))
                 .count();
         if (skippedDraftCount > 0L) {
@@ -178,7 +179,7 @@ public class BusinessApplicationAssetSelectionService {
 
     static boolean isPublishableEntry(AiBusinessApp entry) {
         return entry != null
-                && Integer.valueOf(1).equals(entry.getStatus())
+                && EnableStatus.ENABLED.matches(entry.getStatus())
                 && (!"RUNTIME".equalsIgnoreCase(entry.getEntryMode())
                 || org.apache.commons.lang3.StringUtils.isNotBlank(entry.getConfigKey()));
     }
@@ -188,7 +189,7 @@ public class BusinessApplicationAssetSelectionService {
             return new LinkedHashSet<>();
         }
         return processes.stream()
-                .filter(process -> Integer.valueOf(1).equals(process.getStatus()))
+                .filter(process -> EnableStatus.ENABLED.matches(process.getStatus()))
                 .map(AiBusinessProcess::getId)
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));

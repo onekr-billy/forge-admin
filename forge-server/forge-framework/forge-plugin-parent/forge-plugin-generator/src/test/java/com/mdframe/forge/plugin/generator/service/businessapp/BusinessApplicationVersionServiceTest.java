@@ -45,7 +45,7 @@ class BusinessApplicationVersionServiceTest {
                 = new BusinessApplicationSnapshotService.SnapshotBundle("{}", "same-hash", Map.of());
 
         AiBusinessApplicationVersion result = service.commitImmutable(
-                10L, 3, snapshot, BusinessApplicationPublishStatus.PUBLISHED, null, "重试发布");
+                10L, 3, snapshot, BusinessApplicationPublishStatus.PUBLISHED.getCode(), null, "重试发布");
 
         assertEquals(99L, result.getId());
         assertEquals(3, markedVersion.get());

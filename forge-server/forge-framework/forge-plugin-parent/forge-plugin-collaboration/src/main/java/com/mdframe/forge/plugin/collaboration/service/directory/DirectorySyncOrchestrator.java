@@ -1,5 +1,7 @@
 package com.mdframe.forge.plugin.collaboration.service.directory;
 
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationDirectoryStatus;
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationSyncStatus;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialOrgMapping;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialSyncLog;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialTag;
@@ -41,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 目录全量同步编排器（Task 9）。
@@ -146,7 +149,7 @@ public class DirectorySyncOrchestrator {
         int created = writeResult.createdCount() + plan.tagCreates().size();
         int updated = writeResult.updatedCount() + (tagChanged - plan.tagCreates().size());
         int issues = writeResult.issueCount();
-        String status = issues > 0 ? "PARTIAL" : "SUCCESS";
+        String status = issues > 0 ? CollaborationSyncStatus.PARTIAL.getCode() : CollaborationSyncStatus.SUCCESS.getCode();
         completeLog(syncLog, snapshot, status, created, updated, inactivated, issues, null, null);
         log.info("目录同步批次完成: connectionId={}, syncLogId={}, status={}, created={}, updated={}, inactivated={}, issues={}",
                 connectionId, runId, status, created, updated, inactivated, issues);
@@ -285,7 +288,7 @@ public class DirectorySyncOrchestrator {
         if (connection == null) {
             throw new BusinessException("企业协同连接不存在");
         }
-        if (!Integer.valueOf(1).equals(connection.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("企业协同连接已停用");
         }
         return connection;
@@ -306,7 +309,7 @@ public class DirectorySyncOrchestrator {
         syncLog.setSyncType(command.syncType());
         syncLog.setTriggerSource(command.triggerSource());
         syncLog.setStage("FETCH");
-        syncLog.setStatus("RUNNING");
+        syncLog.setStatus(CollaborationSyncStatus.RUNNING.getCode());
         syncLog.setStartTime(LocalDateTime.now());
         syncLog.setCreateBy(command.operatorId());
         syncLog.setCreateTime(LocalDateTime.now());
@@ -335,7 +338,7 @@ public class DirectorySyncOrchestrator {
 
     private void failLog(SocialSyncLog syncLog, Exception exception) {
         try {
-            completeLog(syncLog, null, "FAILED", 0, 0, 0, 0,
+            completeLog(syncLog, null, CollaborationSyncStatus.FAILED.getCode(), 0, 0, 0, 0,
                     exception.getClass().getSimpleName(), sanitizeSummary(exception));
         } catch (Exception logException) {
             log.error("目录同步批次失败状态写入异常: syncLogId={}", syncLog.getId(), logException);
@@ -362,7 +365,7 @@ public class DirectorySyncOrchestrator {
         entity.setConnectionId(connectionId);
         entity.setExternalTagId(tag.externalTagId());
         entity.setTagName(tag.name());
-        entity.setStatus("ACTIVE");
+        entity.setStatus(CollaborationDirectoryStatus.ACTIVE.getCode());
         entity.setLastSeenRunId(runId);
         entity.setSourceHash(tag.sourceHash());
         return entity;

@@ -8,6 +8,7 @@ import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.enums.FlowModelStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
@@ -146,7 +147,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         }
         
         // 初始状态为设计态
-        flowModel.setStatus(0);
+        flowModel.setStatus(FlowModelStatus.DESIGNING.getCode());
         flowModel.setVersion(1);
         flowModel.setDelFlag(0);
         flowModel.setCreateTime(LocalDateTime.now());
@@ -171,7 +172,8 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         }
         
         // 已发布的模型不允许修改Key
-        if (existing.getStatus() == 1 && !existing.getModelKey().equals(flowModel.getModelKey())) {
+        if (FlowModelStatus.PUBLISHED.matches(existing.getStatus())
+                && !existing.getModelKey().equals(flowModel.getModelKey())) {
             throw new RuntimeException("已发布的模型不允许修改Key");
         }
         if (flowModel.getBpmnXml() != null && !flowModel.getBpmnXml().isBlank()) {
@@ -265,7 +267,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             
             // 如果已发布，增加版本号后重新部署
             int newVersion = model.getVersion();
-            if (model.getStatus() == 1) {
+            if (FlowModelStatus.PUBLISHED.matches(model.getStatus())) {
                 // 已发布的模型，版本号+1后重新部署
                 newVersion = model.getVersion() + 1;
                 log.info("重新部署流程模型：{}，新版本：{}", model.getModelKey(), newVersion);
@@ -319,7 +321,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             model.setProcessDefinitionId(processDefinition != null ? processDefinition.getId() : null);
             model.setVersion(newVersion);
             model.setBpmnXml(bpmnXml);
-            model.setStatus(1);
+            model.setStatus(FlowModelStatus.PUBLISHED.getCode());
             model.setDeployTime(LocalDateTime.now());
             updateById(model);
 
@@ -415,7 +417,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             throw new RuntimeException("流程模型不存在");
         }
         
-        if (model.getStatus() != 1) {
+        if (!FlowModelStatus.PUBLISHED.matches(model.getStatus())) {
             throw new RuntimeException("只有已发布的模型才能挂起");
         }
         
@@ -424,7 +426,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             repositoryService.suspendProcessDefinitionById(model.getProcessDefinitionId());
         }
         
-        model.setStatus(2); // 已挂起
+        model.setStatus(FlowModelStatus.SUSPENDED.getCode());
         updateById(model);
         log.info("挂起流程模型：{}", model.getModelKey());
     }
@@ -437,7 +439,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             throw new RuntimeException("流程模型不存在");
         }
         
-        if (model.getStatus() != 2) {
+        if (!FlowModelStatus.SUSPENDED.matches(model.getStatus())) {
             throw new RuntimeException("只有已挂起的模型才能激活");
         }
         
@@ -446,7 +448,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             repositoryService.activateProcessDefinitionById(model.getProcessDefinitionId());
         }
         
-        model.setStatus(1); // 已发布
+        model.setStatus(FlowModelStatus.PUBLISHED.getCode());
         updateById(model);
         log.info("激活流程模型：{}", model.getModelKey());
     }
@@ -456,7 +458,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
     public void disableModel(String id) {
         FlowModel model = getById(id);
         if (model != null) {
-            model.setStatus(3); // 已禁用
+            model.setStatus(FlowModelStatus.DISABLED.getCode());
             updateById(model);
             log.info("禁用流程模型：{}", model.getModelKey());
         }
@@ -467,7 +469,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
     public void enableModel(String id) {
         FlowModel model = getById(id);
         if (model != null) {
-            model.setStatus(0); // 设计态
+            model.setStatus(FlowModelStatus.DESIGNING.getCode());
             updateById(model);
             log.info("启用流程模型：{}", model.getModelKey());
         }
@@ -548,7 +550,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         model.setCategory(category);
         model.setDesignerType("business");
         model.setBpmnXml(bpmnXml);
-        model.setStatus(0);
+        model.setStatus(FlowModelStatus.DESIGNING.getCode());
         model.setVersion(1);
         model.setDelFlag(0);
         model.setCreateTime(LocalDateTime.now());
@@ -593,7 +595,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         newModel.setTodoDetailUrlTemplate(source.getTodoDetailUrlTemplate());
         newModel.setNotifyConfig(source.getNotifyConfig());
         newModel.setBpmnXml(normalizeBpmnXml(source.getBpmnXml(), "复制流程模型"));
-        newModel.setStatus(0);
+        newModel.setStatus(FlowModelStatus.DESIGNING.getCode());
         newModel.setVersion(1);
         newModel.setDelFlag(0);
         newModel.setCreateTime(LocalDateTime.now());

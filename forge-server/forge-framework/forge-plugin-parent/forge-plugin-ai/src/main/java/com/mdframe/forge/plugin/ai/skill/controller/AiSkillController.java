@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.ai.skill.domain.AiAgentSkill;
 import com.mdframe.forge.plugin.ai.skill.domain.AiSkill;
 import com.mdframe.forge.plugin.ai.skill.domain.AiSkillFile;
+import com.mdframe.forge.plugin.ai.skill.dto.AiSkillBindDTO;
 import com.mdframe.forge.plugin.ai.skill.service.AiSkillService;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 技能包管理控制器
@@ -54,8 +54,8 @@ public class AiSkillController {
 
     @PostMapping("/agent/{agentId}")
     @SaCheckPermission("ai:skill:add")
-    public RespInfo<Void> bindAgentSkill(@PathVariable Long agentId, @RequestBody Map<String, Long> body) {
-        skillService.bindAgentSkill(agentId, body.get("skillId"));
+    public RespInfo<Void> bindAgentSkill(@PathVariable Long agentId, @RequestBody AiSkillBindDTO body) {
+        skillService.bindAgentSkill(agentId, body.getSkillId());
         return RespInfo.success();
     }
 

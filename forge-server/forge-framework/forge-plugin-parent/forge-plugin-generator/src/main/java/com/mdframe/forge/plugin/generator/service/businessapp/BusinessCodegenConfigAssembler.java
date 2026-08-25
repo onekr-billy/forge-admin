@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 将统一低代码运行配置装配为可独立部署的业务代码生成配置。
@@ -52,7 +53,7 @@ public class BusinessCodegenConfigAssembler {
         String generatedConfigKey = buildGeneratedConfigKey(apiBase, sourceConfigKey);
         String frontendRoute = "/" + generatedConfigKey.replace("_", "/");
         prepared.setConfigKey(generatedConfigKey);
-        prepared.setStatus("0");
+        prepared.setStatus(EnableStatus.DISABLED.codeAsString());
         prepared.setMode("CONFIG");
         prepared.setBuildMode("LOWCODE");
         prepared.setPublishStatus("PUBLISHED");

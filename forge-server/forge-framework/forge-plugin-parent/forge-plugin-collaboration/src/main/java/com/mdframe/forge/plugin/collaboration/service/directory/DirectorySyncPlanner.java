@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.collaboration.service.directory;
 
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationDirectoryStatus;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialOrgMapping;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialTag;
 import com.mdframe.forge.plugin.collaboration.domain.model.DirectoryMappingSnapshot;
@@ -39,7 +40,7 @@ public class DirectorySyncPlanner {
             if (mapping == null) {
                 deptCreates.add(dept);
             } else if (!Objects.equals(mapping.getSourceHash(), dept.sourceHash())
-                    || !"ACTIVE".equals(mapping.getStatus())) {
+                    || !CollaborationDirectoryStatus.ACTIVE.matches(mapping.getStatus())) {
                 deptUpdates.add(dept);
             } else {
                 deptUnchanged.add(dept.externalId());
@@ -79,7 +80,7 @@ public class DirectorySyncPlanner {
             if (existing == null) {
                 tagCreates.add(tag);
             } else if (!Objects.equals(existing.getSourceHash(), tag.sourceHash())
-                    || !"ACTIVE".equals(existing.getStatus())) {
+                    || !CollaborationDirectoryStatus.ACTIVE.matches(existing.getStatus())) {
                 tagUpdates.add(tag);
             } else {
                 tagUnchanged.add(tag.externalTagId());

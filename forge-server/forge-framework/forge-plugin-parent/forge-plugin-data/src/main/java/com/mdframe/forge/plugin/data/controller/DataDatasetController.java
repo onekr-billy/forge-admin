@@ -23,6 +23,7 @@ import com.mdframe.forge.plugin.data.support.DbDialect;
 import com.mdframe.forge.plugin.data.support.DbDialectFactory;
 import com.mdframe.forge.plugin.data.support.JdbcDataSourceProvider;
 import com.mdframe.forge.plugin.data.support.SqlParameterBinder;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.plugin.data.support.SqlSafetyValidator;
 import com.mdframe.forge.plugin.data.vo.DataConnectionFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetDetailVO;
@@ -260,7 +261,7 @@ public class DataDatasetController {
         if (connection == null) {
             throw new BusinessException("数据连接不存在或已删除");
         }
-        if (connection.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("数据连接已禁用");
         }
         return connection;
@@ -327,9 +328,9 @@ public class DataDatasetController {
         entity.setDefaultOrderJson(dto.getDefaultOrderJson());
         entity.setMaxRows(dto.getMaxRows() != null ? dto.getMaxRows() : existing != null ? existing.getMaxRows() : 1000);
         entity.setTimeoutSeconds(dto.getTimeoutSeconds() != null ? dto.getTimeoutSeconds() : existing != null ? existing.getTimeoutSeconds() : 15);
-        entity.setCacheEnabled(dto.getCacheEnabled() != null ? dto.getCacheEnabled() : existing != null ? existing.getCacheEnabled() : 0);
+        entity.setCacheEnabled(dto.getCacheEnabled() != null ? dto.getCacheEnabled() : existing != null ? existing.getCacheEnabled() : EnableStatus.DISABLED.getCode());
         entity.setCacheTtlSeconds(dto.getCacheTtlSeconds());
-        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : existing != null ? existing.getStatus() : 1);
+        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : existing != null ? existing.getStatus() : EnableStatus.ENABLED.getCode());
         entity.setAccessMode(DataDatasetAccessModeEnum.normalize(
             dto.getAccessMode() != null ? dto.getAccessMode() : existing != null ? existing.getAccessMode() : null));
         entity.setDescription(dto.getDescription());
@@ -352,7 +353,7 @@ public class DataDatasetController {
         if (!DatasetPublishStatusEnum.isPublished(dataset.getPublishStatus())) {
             throw new BusinessException("数据集未发布，暂不可使用");
         }
-        if (dataset.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(dataset.getStatus())) {
             throw new BusinessException("数据集已禁用");
         }
     }
@@ -407,8 +408,8 @@ public class DataDatasetController {
         entity.setDataType(dto.getDataType() != null ? dto.getDataType() : "STRING");
         entity.setFieldRole(dto.getFieldRole() != null ? dto.getFieldRole() : "DIMENSION");
         entity.setDefaultAgg(dto.getDefaultAgg());
-        entity.setQueryEnabled(dto.getQueryEnabled() != null ? dto.getQueryEnabled() : 1);
-        entity.setDisplayEnabled(dto.getDisplayEnabled() != null ? dto.getDisplayEnabled() : 1);
+        entity.setQueryEnabled(dto.getQueryEnabled() != null ? dto.getQueryEnabled() : EnableStatus.ENABLED.getCode());
+        entity.setDisplayEnabled(dto.getDisplayEnabled() != null ? dto.getDisplayEnabled() : EnableStatus.ENABLED.getCode());
         entity.setSensitiveLevel(dto.getSensitiveLevel() != null ? dto.getSensitiveLevel() : "NONE");
         entity.setMaskRule(dto.getMaskRule());
         entity.setDictType(dto.getDictType());
@@ -434,8 +435,8 @@ public class DataDatasetController {
                 field.setDbType(col.getColumnType());
                 field.setDataType(mapDataType(col.getColumnType()));
                 field.setFieldRole(isNumericType(col.getColumnType()) ? "MEASURE" : "DIMENSION");
-                field.setQueryEnabled(1);
-                field.setDisplayEnabled(1);
+                field.setQueryEnabled(EnableStatus.ENABLED.getCode());
+                field.setDisplayEnabled(EnableStatus.ENABLED.getCode());
                 field.setSensitiveLevel("NONE");
                 field.setSort(sort++);
                 fields.add(field);
@@ -452,8 +453,8 @@ public class DataDatasetController {
                     field.setFieldLabel(key);
                     field.setDataType(mapValueDataType(firstRow.get(key)));
                     field.setFieldRole(firstRow.get(key) instanceof Number ? "MEASURE" : "DIMENSION");
-                    field.setQueryEnabled(1);
-                    field.setDisplayEnabled(1);
+                    field.setQueryEnabled(EnableStatus.ENABLED.getCode());
+                    field.setDisplayEnabled(EnableStatus.ENABLED.getCode());
                     field.setSensitiveLevel("NONE");
                     field.setSort(sort++);
                     fields.add(field);

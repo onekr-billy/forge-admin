@@ -5,6 +5,7 @@ import com.mdframe.forge.plugin.capability.identity.config.CapabilityIdentityPro
 import com.mdframe.forge.plugin.capability.identity.security.CapabilityIdentityInfrastructureException;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.openapi.security.replay.OpenApiReplayGuard;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -80,8 +81,8 @@ public final class ClientUserAssertionVerifier {
     private void requireUsableClient(AiCapabilityClient client) {
         if (client == null || client.getId() == null || client.getTenantId() == null
                 || !"ENABLED".equals(client.getStatus())
-                || !Integer.valueOf(1).equals(client.getOauthEnabled())
-                || !Integer.valueOf(1).equals(client.getUserAssertionEnabled())
+                || !EnableStatus.ENABLED.matches(client.getOauthEnabled())
+                || !EnableStatus.ENABLED.matches(client.getUserAssertionEnabled())
                 || !Set.of("USER_DELEGATION", "HYBRID").contains(client.getActorMode())
                 || (client.getExpiresAt() != null
                 && !client.getExpiresAt().isAfter(LocalDateTime.now(clock)))

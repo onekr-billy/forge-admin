@@ -1,6 +1,7 @@
 package com.mdframe.forge.plugin.data.support;
 
 import com.mdframe.forge.plugin.data.entity.DataDatasetField;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -17,7 +18,7 @@ public class TableQueryBuilder {
         StringBuilder sql = new StringBuilder();
         
         List<DataDatasetField> displayFields = fields.stream()
-                .filter(f -> f.getDisplayEnabled() == 1)
+                .filter(f -> EnableStatus.ENABLED.matches(f.getDisplayEnabled()))
                 .collect(Collectors.toList());
         
         if (displayFields.isEmpty()) {

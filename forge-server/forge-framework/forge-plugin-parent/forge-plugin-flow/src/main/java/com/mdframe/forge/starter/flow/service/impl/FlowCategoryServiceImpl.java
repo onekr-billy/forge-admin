@@ -3,6 +3,7 @@ package com.mdframe.forge.starter.flow.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.flow.entity.FlowCategory;
+import com.mdframe.forge.starter.flow.enums.FlowEnableStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowCategoryMapper;
 import com.mdframe.forge.starter.flow.service.FlowCategoryService;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +25,7 @@ public class FlowCategoryServiceImpl extends ServiceImpl<FlowCategoryMapper, Flo
     @Override
     public List<FlowCategory> listEnabled() {
         LambdaQueryWrapper<FlowCategory> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(FlowCategory::getStatus, 1)
+        wrapper.eq(FlowCategory::getStatus, FlowEnableStatus.ENABLED.getCode())
                 .orderByAsc(FlowCategory::getSortOrder);
         return list(wrapper);
     }
@@ -129,7 +130,7 @@ public class FlowCategoryServiceImpl extends ServiceImpl<FlowCategoryMapper, Flo
         }
 
         if (category.getStatus() == null) {
-            category.setStatus(1);
+            category.setStatus(FlowEnableStatus.ENABLED.getCode());
         }
         if (category.getSortOrder() == null) {
             category.setSortOrder(0);
@@ -170,7 +171,7 @@ public class FlowCategoryServiceImpl extends ServiceImpl<FlowCategoryMapper, Flo
     public void enableCategory(String id) {
         FlowCategory category = getById(id);
         if (category != null) {
-            category.setStatus(1);
+            category.setStatus(FlowEnableStatus.ENABLED.getCode());
             updateById(category);
             log.info("启用流程分类：{}", category.getCategoryCode());
         }
@@ -181,7 +182,7 @@ public class FlowCategoryServiceImpl extends ServiceImpl<FlowCategoryMapper, Flo
     public void disableCategory(String id) {
         FlowCategory category = getById(id);
         if (category != null) {
-            category.setStatus(0);
+            category.setStatus(FlowEnableStatus.DISABLED.getCode());
             updateById(category);
             log.info("禁用流程分类：{}", category.getCategoryCode());
         }

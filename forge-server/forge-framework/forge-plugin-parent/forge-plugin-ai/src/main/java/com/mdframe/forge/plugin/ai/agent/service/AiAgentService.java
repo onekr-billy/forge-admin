@@ -14,6 +14,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Service
 @RequiredArgsConstructor
@@ -55,7 +56,7 @@ public class AiAgentService extends ServiceImpl<AiAgentMapper, AiAgent> {
         } else {
             if (agent.getRoutePolicyId() == null) throw new BusinessException("路由策略模式必须选择策略");
             AiModelRoutePolicy policy = policyMapper.selectById(agent.getRoutePolicyId());
-            if (policy == null || !"0".equals(policy.getStatus())) throw new BusinessException("路由策略不存在或已停用");
+            if (policy == null || !EnableStatus.DISABLED.matches(policy.getStatus())) throw new BusinessException("路由策略不存在或已停用");
         }
     }
 }
