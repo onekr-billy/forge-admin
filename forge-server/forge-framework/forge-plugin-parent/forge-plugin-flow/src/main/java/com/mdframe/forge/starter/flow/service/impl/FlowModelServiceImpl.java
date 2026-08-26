@@ -18,6 +18,7 @@ import com.mdframe.forge.starter.flow.helper.BpmnXmlUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.common.engine.impl.util.io.BytesStreamSource;
 import org.flowable.engine.HistoryService;
@@ -157,7 +158,11 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         flowModel.setCreateTime(LocalDateTime.now());
         flowModel.setUpdateTime(LocalDateTime.now());
         flowModel.setCreateBy(SessionHelper.getLoginUser().getUsername());
-        save(flowModel);
+        try {
+            save(flowModel);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException("模型Key已存在：" + flowModel.getModelKey(), exception);
+        }
         log.info("创建流程模型成功：{}", flowModel.getModelKey());
         return flowModel;
     }
@@ -195,7 +200,11 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         }
         flowModel.setLastUpdateBy(SessionHelper.getLoginUser().getUsername());
         flowModel.setUpdateTime(LocalDateTime.now());
-        updateById(flowModel);
+        try {
+            updateById(flowModel);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException("模型Key已存在：" + nextModelKey, exception);
+        }
         log.info("更新流程模型成功：{}", flowModel.getModelKey());
         return flowModel;
     }
@@ -503,9 +512,11 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
 
     @Override
     public FlowModel getModelByKey(String modelKey) {
-        LambdaQueryWrapper<FlowModel> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(FlowModel::getModelKey, modelKey);
-        return getOne(wrapper);
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0 || modelKey == null || modelKey.isBlank()) {
+            return null;
+        }
+        return getBaseMapper().selectByModelKeyAndTenantId(modelKey.trim(), tenantId);
     }
 
     @Override
@@ -633,6 +644,7 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         newModel.setWebhookUrl(source.getWebhookUrl());
         newModel.setTodoDetailUrlTemplate(source.getTodoDetailUrlTemplate());
         newModel.setNotifyConfig(source.getNotifyConfig());
+        newModel.setAllowMultiReturn(source.getAllowMultiReturn());
         newModel.setBpmnXml(normalizeBpmnXml(source.getBpmnXml(), "复制流程模型"));
         newModel.setStatus(FlowModelStatus.DESIGNING.getCode());
         newModel.setVersion(1);
@@ -648,12 +660,11 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
 
     @Override
     public boolean checkModelKeyExists(String modelKey, String excludeId) {
-        LambdaQueryWrapper<FlowModel> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(FlowModel::getModelKey, modelKey);
-        if (excludeId != null && !excludeId.isEmpty()) {
-            wrapper.ne(FlowModel::getId, excludeId);
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0 || modelKey == null || modelKey.isBlank()) {
+            return false;
         }
-        return count(wrapper) > 0;
+        return getBaseMapper().countByModelKeyAndTenantId(modelKey.trim(), tenantId, excludeId) > 0;
     }
 
     /**

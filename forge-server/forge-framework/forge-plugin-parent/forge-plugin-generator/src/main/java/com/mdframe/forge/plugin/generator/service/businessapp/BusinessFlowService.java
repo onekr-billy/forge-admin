@@ -84,6 +84,9 @@ public class BusinessFlowService {
 
     private static final String FLOW_START_LOCK_PREFIX = "forge:business-flow:start:";
     private static final long FLOW_START_LOCK_WAIT_SECONDS = 5L;
+    private static final Set<String> SERVER_OWNED_FLOW_VARIABLES = Set.of(
+            "objectCode", "configKey", "recordId", "businessKey",
+            "documentBusinessKey", "recordBusinessKey", "flowBusinessKey");
 
     @Autowired(required = false)
     private FlowClient flowClient;
@@ -158,9 +161,7 @@ public class BusinessFlowService {
 
         // 2. 构建流程变量
         Map<String, Object> flowVariables = buildFlowVariables(bindingConfig, recordData);
-        if (requestedVariables != null) {
-            flowVariables.putAll(requestedVariables);
-        }
+        mergeRequestedFlowVariables(flowVariables, requestedVariables);
 
         // 3. 构建业务Key和标题
         String businessKey = objectCode + ":" + recordId;
@@ -3740,17 +3741,15 @@ public class BusinessFlowService {
                 binding == null ? null : binding.getId(), binding == null ? null : binding.getBindingType());
 
         Map<String, Object> flowVariables = buildFlowVariables(bindingConfig, recordData);
-        if (dto.getVariables() != null) {
-            flowVariables.putAll(dto.getVariables());
-        }
-        flowVariables.putIfAbsent("objectCode", objectCode);
-        flowVariables.putIfAbsent("configKey", configKey);
-        flowVariables.putIfAbsent("recordId", dto.getRecordId());
-        flowVariables.putIfAbsent("businessKey", businessKey);
+        mergeRequestedFlowVariables(flowVariables, dto.getVariables());
+        flowVariables.put("objectCode", objectCode);
+        flowVariables.put("configKey", configKey);
+        flowVariables.put("recordId", dto.getRecordId());
+        flowVariables.put("businessKey", businessKey);
         String flowBusinessKey = stableBusinessKey
                 ? businessKey : resolveFlowBusinessKeyForStart(tenantId, businessKey);
-        flowVariables.putIfAbsent("documentBusinessKey", businessKey);
-        flowVariables.putIfAbsent("recordBusinessKey", businessKey);
+        flowVariables.put("documentBusinessKey", businessKey);
+        flowVariables.put("recordBusinessKey", businessKey);
         flowVariables.put("flowBusinessKey", flowBusinessKey);
 
         String title = applyTitleTemplate(
@@ -4518,6 +4517,20 @@ public class BusinessFlowService {
         }
 
         return variables;
+    }
+
+    private void mergeRequestedFlowVariables(Map<String, Object> target, Map<String, Object> requestedVariables) {
+        if (requestedVariables == null || requestedVariables.isEmpty()) {
+            return;
+        }
+        List<String> reserved = requestedVariables.keySet().stream()
+                .filter(SERVER_OWNED_FLOW_VARIABLES::contains)
+                .sorted()
+                .toList();
+        if (!reserved.isEmpty()) {
+            throw new BusinessException("启动变量不能覆盖服务端业务上下文：" + String.join(", ", reserved));
+        }
+        target.putAll(requestedVariables);
     }
 
     private void putBusinessFieldVariable(Map<String, Object> variables, String field, Object value) {

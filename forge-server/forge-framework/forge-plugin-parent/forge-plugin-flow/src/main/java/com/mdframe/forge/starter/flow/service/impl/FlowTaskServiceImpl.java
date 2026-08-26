@@ -423,7 +423,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
             Map<String, Object> completeVariables = mergeActionVariables(variables, true);
             completeTask(task, completeVariables);
-            directSendAfterReturn(task, completeVariables);
+            directSendAfterReturn(task, completeVariables, userId);
 
             FlowTask flowTask = new FlowTask();
             flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
@@ -615,9 +615,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             if (currentActivityIds == null || currentActivityIds.isEmpty()) {
                 currentActivityIds = Collections.singletonList(task.getTaskDefinitionKey());
             }
+            if (currentActivityIds.size() != 1
+                    || !Objects.equals(currentActivityIds.get(0), task.getTaskDefinitionKey())) {
+                throw new RuntimeException("当前流程存在多个活动分支，不能安全退回指定节点");
+            }
             runtimeService.createChangeActivityStateBuilder()
                     .processInstanceId(task.getProcessInstanceId())
-                    .moveActivityIdsToSingleActivityId(currentActivityIds, targetActivityId)
+                    .moveActivityIdTo(task.getTaskDefinitionKey(), targetActivityId)
                     .changeState();
 
             FlowTask flowTask = new FlowTask();
@@ -664,6 +668,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (!allowed) {
             throw new RuntimeException("仅当前处理人、任务拥有人或流程发起人可以改派");
         }
+        validateReassignTarget(targetUserId.trim());
         String owner = !isBlank(task.getAssignee()) ? task.getAssignee() : userId;
         taskService.setOwner(taskId, owner);
         taskService.setAssignee(taskId, targetUserId.trim());
@@ -730,7 +735,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
      * 退回节点修正后，按用户选择将新任务直接送回原驳回节点，跳过中间节点。
      * Flowable complete 后才会创建后继任务，因此这里基于完成后的活动列表做一次状态迁移。
      */
-    private void directSendAfterReturn(Task completedTask, Map<String, Object> actionVariables) {
+    private void directSendAfterReturn(Task completedTask, Map<String, Object> actionVariables, String userId) {
         String processInstanceId = completedTask.getProcessInstanceId();
         Object source = runtimeService.getVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
         Object target = runtimeService.getVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
@@ -748,6 +753,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
             return;
         }
+        if (Boolean.TRUE.equals(readBoolean(returnToStartPending))
+                && !isProcessStarterTask(completedTask, userId)) {
+            throw new RuntimeException("仅流程发起人可以执行驳回后的直送");
+        }
         String sourceActivityId = String.valueOf(source);
         List<String> activeActivityIds = runtimeService.getActiveActivityIds(processInstanceId);
         if (activeActivityIds == null || activeActivityIds.isEmpty()) {
@@ -759,9 +768,12 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
             return;
         }
+        if (activeActivityIds.size() != 1) {
+            throw new RuntimeException("当前流程存在多个活动分支，不能安全直送");
+        }
         runtimeService.createChangeActivityStateBuilder()
                 .processInstanceId(processInstanceId)
-                .moveActivityIdsToSingleActivityId(activeActivityIds, sourceActivityId)
+                .moveActivityIdTo(activeActivityIds.get(0), sourceActivityId)
                 .changeState();
         runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
         runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
@@ -1864,6 +1876,28 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         return target;
     }
 
+    private boolean isProcessStarterTask(Task task, String userId) {
+        if (task == null || isBlank(userId)) {
+            return false;
+        }
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            return false;
+        }
+        FlowBusiness business = flowBusinessMapper.selectByProcessInstanceIdAndTenantId(
+                task.getProcessInstanceId(), tenantId);
+        return business != null
+                && !isBlank(business.getApplyUserId())
+                && Objects.equals(business.getApplyUserId(), userId.trim());
+    }
+
+    private void validateReassignTarget(String targetUserId) {
+        if (flowOrgIntegrationService == null
+                || !flowOrgIntegrationService.isUserAvailableForTenant(targetUserId, SessionHelper.getTenantId())) {
+            throw new RuntimeException("新处理人不存在、已停用或不属于当前租户");
+        }
+    }
+
     /**
      * return 接口位于 @IgnoreTenant 的 Flow 服务边界，必须在本地表和流程实例
      * 两侧再次锁定并校验租户，不能只依赖调用方传入的 taskId。
@@ -1989,6 +2023,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         String sourceId = String.valueOf(source);
         FlowElement element = resolveFormFlowNode(task.getProcessDefinitionId(), sourceId);
         if (!(element instanceof UserTask)) {
+            formInfo.setAllowDirectSend(false);
+            return;
+        }
+        if (returnedToStart && !isProcessStarterTask(task, task.getAssignee())) {
             formInfo.setAllowDirectSend(false);
             return;
         }

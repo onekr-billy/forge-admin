@@ -98,6 +98,9 @@ export function writeUserTaskConfig(config) {
     else if (cfg.assignee === 'spel') {
       attrs.push('flowable:assigneeType="spel"')
     }
+    if (cfg.assignee === 'initiatorSelect') {
+      attrs.push(`flowable:assignee="${DOLLAR}{assignee}"`)
+    }
   }
   else if (cfg.taskType === 'candidateUsers' && cfg.candidateUsers?.length) {
     attrs.push(`flowable:candidateUsers="${escapeXmlAttr(cfg.candidateUsers.join(','))}"`)

@@ -113,7 +113,7 @@ describe('convertJsonToBpmn - 主结构', () => {
     const task = findElementsByLocalName(doc, 'userTask')[0]
     const loop = findElementsByLocalName(task, 'multiInstanceLoopCharacteristics')[0]
 
-    expect(getFlowableAttr(task, 'assignee')).toBe(null)
+    expect(getFlowableAttr(task, 'assignee')).toBe(`${DOLLAR}{assignee}`)
     expect(getFlowableAttr(loop, 'collection')).toBe(`${DOLLAR}{PROCESS_START_USER['T_appr']}`)
     expect(getFlowableAttr(loop, 'elementVariable')).toBe('assignee')
   })

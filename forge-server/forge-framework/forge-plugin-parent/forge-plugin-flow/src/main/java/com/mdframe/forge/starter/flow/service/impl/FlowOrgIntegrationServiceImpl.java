@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.system.mapper.*;
 import com.mdframe.forge.plugin.system.service.*;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class FlowOrgIntegrationServiceImpl implements FlowOrgIntegrationService 
     // 直接使用Mapper操作关联表
     private final SysUserOrgRoleMapper sysUserOrgRoleMapper;
     private final SysUserPostMapper sysUserPostMapper;
+    private final SysUserTenantMapper sysUserTenantMapper;
 
     @Override
     public Map<String, Object> getUserInfo(String userId) {
@@ -71,6 +73,23 @@ public class FlowOrgIntegrationServiceImpl implements FlowOrgIntegrationService 
         } catch (NumberFormatException e) {
             log.warn("无效的用户ID格式: {}", userId);
             return Collections.emptyMap();
+        }
+    }
+
+    @Override
+    public boolean isUserAvailableForTenant(String userId, Long tenantId) {
+        if (userId == null || userId.isBlank() || tenantId == null || tenantId <= 0) {
+            return false;
+        }
+        try {
+            Long id = Long.parseLong(userId.trim());
+            SysUser user = TenantContextHolder.executeIgnore(() -> sysUserService.getById(id));
+            return user != null
+                    && (user.getDelFlag() == null || user.getDelFlag() == 0)
+                    && EnableStatus.ENABLED.matches(user.getUserStatus())
+                    && sysUserTenantMapper.countEnabledMembership(id, tenantId) > 0;
+        } catch (NumberFormatException exception) {
+            return false;
         }
     }
 

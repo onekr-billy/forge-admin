@@ -606,6 +606,11 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         if (taskId == null || newAssignee == null) {
             throw new RuntimeException("任务ID和新处理人ID不能为空");
         }
+        Long tenantId = resolveTenantId();
+        if (flowOrgIntegrationService == null
+                || !flowOrgIntegrationService.isUserAvailableForTenant(newAssignee.trim(), tenantId)) {
+            throw new BusinessException(400, "新处理人不存在、已停用或不属于当前租户");
+        }
 
         Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
         if (task == null || task.getProcessInstanceId() == null) {
