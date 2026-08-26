@@ -192,7 +192,6 @@ import AiTabs from '@/components/AiTabs.vue'
 import PageSectionRenderer from '@/components/lowcode/PageSectionRenderer.vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
-import { ensureLogin } from '@/utils/auth-guard'
 import { showConfirmDialog } from '@/utils/dialog'
 import { toast } from '@/utils/notify'
 import { normalizeDictOptions } from '@/utils/lowcode-runtime'
@@ -310,8 +309,7 @@ const blockedReason = computed(() => {
 onLoad(async (options = {}) => {
   taskId.value = String(options.taskId || '')
   pageMode.value = options.mode === 'readonly' ? 'readonly' : 'todo'
-  const ok = await ensureLogin({ redirect: `/pages/todo-detail?taskId=${encodeURIComponent(taskId.value)}` })
-  if (ok) await refresh()
+  await refresh()
 })
 
 async function refresh() {

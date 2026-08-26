@@ -2,26 +2,21 @@
   <section class="flow-task-card-list">
     <div class="task-list-toolbar">
       <div class="task-list-titlebar">
-        <n-checkbox
-          v-if="selectable"
-          :checked="allCurrentPageSelected"
-          :indeterminate="partiallySelected"
-          @update:checked="toggleCurrentPage"
-        />
         <div class="task-list-title">
           {{ title }}
         </div>
-        <span v-if="selectedKeys.length > 0" class="task-list-selected">
-          已选 {{ selectedKeys.length }} 条
-        </span>
-        <button v-if="selectedKeys.length > 0" class="task-list-clear" type="button" @click="clearSelection">
-          清空
-        </button>
-        <slot name="batch-actions" :selected-keys="selectedKeys" />
+        <div class="task-list-divider" />
+        <template v-if="selectedKeys.length > 0">
+          <span class="task-list-selected">已选 {{ selectedKeys.length }} 项</span>
+          <slot name="batch-actions" :selected-keys="selectedKeys" />
+          <button class="task-list-clear" type="button" @click="clearSelection">
+            清空
+          </button>
+        </template>
+        <span v-else class="task-list-count">共 {{ pagination?.itemCount ?? items.length }} 项</span>
       </div>
 
       <div class="task-list-tools">
-        <slot name="filters" />
         <n-input
           v-if="showSearch"
           :value="searchValue"
@@ -35,6 +30,7 @@
             <i class="i-material-symbols:search" />
           </template>
         </n-input>
+        <slot name="filters" />
         <n-button quaternary class="task-list-icon-btn" title="刷新" aria-label="刷新列表" @click="emit('refresh')">
           <n-icon :size="18">
             <RefreshOutline />
@@ -43,45 +39,104 @@
       </div>
     </div>
 
-    <n-spin :show="loading">
-      <div v-if="items.length > 0" class="task-card-stack">
+    <div class="task-table-header">
+      <div class="task-table-cell task-table-entity">
+        <button
+          v-if="selectable"
+          type="button"
+          class="task-table-check"
+          :class="{ checked: allCurrentPageSelected, indeterminate: partiallySelected }"
+          aria-label="选择当前页"
+          @click.stop="toggleCurrentPage(!allCurrentPageSelected)"
+        >
+          <i v-if="allCurrentPageSelected" class="i-material-symbols:check-small-rounded" />
+          <i v-else-if="partiallySelected" class="i-material-symbols:remove-rounded" />
+        </button>
+        <span>{{ entityTitle }}</span>
+      </div>
+      <div class="task-table-cell">
+        {{ statusTitle }}
+      </div>
+      <div class="task-table-cell">
+        {{ nodeTitle }}
+      </div>
+      <div class="task-table-cell">
+        {{ userTitle }}
+      </div>
+      <div class="task-table-cell task-table-actions-head">
+        {{ actionTitle }}
+      </div>
+    </div>
+
+    <n-spin :show="loading" class="task-table-spin">
+      <div v-if="items.length > 0" class="task-table-body">
         <article
           v-for="item in items"
           :key="getRowKey(item)"
-          class="task-card-row"
+          class="task-table-row"
           :class="{ selected: isSelected(item), unread: isUnread(item) }"
           @click="emit('rowClick', item)"
         >
-          <div v-if="selectable" class="task-card-check" @click.stop>
-            <n-checkbox :checked="isSelected(item)" @update:checked="checked => toggleRow(item, checked)" />
-          </div>
-
-          <div class="task-card-main">
-            <div class="task-card-heading">
-              <slot name="status" :row="item" />
-              <button type="button" class="task-card-title" @click.stop="emit('rowClick', item)">
+          <div class="task-table-cell task-table-entity">
+            <button
+              v-if="selectable"
+              type="button"
+              class="task-table-check"
+              :class="{ checked: isSelected(item) }"
+              aria-label="选择行"
+              @click.stop="toggleRow(item, !isSelected(item))"
+            >
+              <i v-if="isSelected(item)" class="i-material-symbols:check-small-rounded" />
+            </button>
+            <div class="task-table-title-block">
+              <button type="button" class="task-table-title" @click.stop="emit('rowClick', item)">
                 <slot name="title" :row="item">
                   {{ item.title || item.taskName || '-' }}
                 </slot>
               </button>
-            </div>
-            <div class="task-card-meta">
-              <slot name="meta" :row="item" />
-            </div>
-            <div v-if="$slots.summary" class="task-card-summary">
-              <slot name="summary" :row="item" />
+              <div class="task-table-subtitle">
+                <slot name="identifier" :row="item">
+                  {{ getRowIdentifier(item) }}
+                </slot>
+              </div>
+              <div v-if="$slots.summary" class="task-table-summary">
+                <slot name="summary" :row="item" />
+              </div>
             </div>
           </div>
 
-          <div v-if="$slots.actions" class="task-card-actions" @click.stop>
+          <div class="task-table-cell task-table-status">
+            <slot name="status" :row="item" />
+          </div>
+
+          <div class="task-table-cell task-table-node">
+            <slot name="node" :row="item">
+              {{ item.currentNode || item.taskName || item.nodeName || '-' }}
+            </slot>
+          </div>
+
+          <div class="task-table-cell task-table-user">
+            <slot name="user" :row="item">
+              <span>{{ item.startUserName || item.userName || '-' }}</span>
+              <small>{{ item.createTime || item.submitTime || '-' }}</small>
+            </slot>
+          </div>
+
+          <div v-if="$slots.actions" class="task-table-cell task-table-actions" @click.stop>
             <slot name="actions" :row="item" />
           </div>
+          <div v-else class="task-table-cell task-table-actions" />
         </article>
       </div>
-      <n-empty v-else class="task-list-empty" :description="emptyText" size="small" />
+      <div v-else class="task-table-body empty">
+        <n-empty class="task-list-empty" :description="emptyText" size="small" />
+      </div>
     </n-spin>
 
     <div v-if="pagination && pagination.itemCount > 0" class="task-list-pagination">
+      <div class="task-list-total">
+        共 {{ pagination.itemCount }} 条记录
+      </div>
       <n-pagination
         :page="pagination.page"
         :page-size="pagination.pageSize"
@@ -112,6 +167,11 @@ const props = defineProps({
   selectable: { type: Boolean, default: true },
   showSearch: { type: Boolean, default: true },
   unreadKey: { type: String, default: '' },
+  entityTitle: { type: String, default: '任务详情' },
+  statusTitle: { type: String, default: '当前状态' },
+  nodeTitle: { type: String, default: '当前节点' },
+  userTitle: { type: String, default: '申请人' },
+  actionTitle: { type: String, default: '操作' },
 })
 
 const emit = defineEmits([
@@ -141,6 +201,10 @@ function isSelected(row) {
 
 function isUnread(row) {
   return props.unreadKey ? row?.[props.unreadKey] === 0 : false
+}
+
+function getRowIdentifier(row) {
+  return row?.businessKey || row?.processInstanceId || row?.taskId || row?.id || '-'
 }
 
 function toggleRow(row, checked) {
@@ -176,104 +240,115 @@ function clearSelection() {
   box-sizing: border-box;
   display: flex;
   flex: 1;
-  width: 100%;
-  max-width: none;
-  min-height: 0;
   flex-direction: column;
+  width: 100%;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  background: var(--bg-primary);
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
 }
 
 :deep(.n-spin-container),
 :deep(.n-spin-content) {
   display: flex;
-  min-height: 0;
   flex: 1;
   flex-direction: column;
   width: 100%;
+  min-height: 0;
 }
 
 .task-list-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
   flex: 0 0 auto;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  gap: 12px;
+  min-height: 50px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-primary, #fff);
 }
 
 .task-list-titlebar {
   display: flex;
-  min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .task-list-title {
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+  font-size: 14px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
+.task-list-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--border-default, #cbd5e1);
+}
+
+.task-list-count,
 .task-list-selected {
-  color: var(--primary-color);
-  font-size: 13px;
+  color: var(--text-tertiary, #64748b);
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
 }
 
 .task-list-clear {
-  color: var(--primary-color);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary-color, #2563eb);
   cursor: pointer;
-  font-size: 13px;
+  font: inherit;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
 }
 
 .task-list-tools {
   display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .task-list-search {
-  width: 300px;
+  width: 240px;
+}
+
+.task-list-search :deep(.n-input__input-el) {
+  font-size: 12px;
 }
 
 .task-list-icon-btn {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  font-size: 18px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-default, #cbd5e1);
+  border-radius: 2px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-secondary, #475569);
   transition:
     border-color 160ms ease,
-    background-color 160ms ease,
     color 160ms ease;
 }
 
 .task-list-icon-btn:hover {
-  border-color: color-mix(in srgb, var(--primary-color) 34%, var(--border-light));
-  background: color-mix(in srgb, var(--primary-color) 7%, var(--bg-primary));
-  color: var(--primary-color);
+  border-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
 }
 
 :deep(.task-list-icon-btn .n-button__content) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
   line-height: 1;
 }
 
@@ -286,218 +361,298 @@ function clearSelection() {
   line-height: 1;
 }
 
-.task-card-stack {
-  display: flex;
-  width: 100%;
+.task-table-header,
+.task-table-row {
+  display: grid;
+  grid-template-columns:
+    minmax(280px, 4fr)
+    minmax(112px, 1.35fr)
+    minmax(132px, 1.55fr)
+    minmax(150px, 1.7fr)
+    minmax(150px, 1.7fr);
+  gap: 16px;
+  align-items: center;
+  min-width: 920px;
+}
+
+.task-table-header {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+  background: color-mix(in srgb, var(--bg-secondary, #f8fafc) 82%, var(--bg-primary, #fff));
+  color: var(--text-tertiary, #64748b);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.task-table-spin {
+  flex: 1;
   min-height: 0;
+  min-width: 0;
+}
+
+.task-table-body {
+  display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 12px;
+  min-height: 0;
+  overflow: auto;
 }
 
-.task-card-row {
-  box-sizing: border-box;
-  display: grid;
+.task-table-body.empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.task-table-row {
   flex: 0 0 auto;
-  width: 100%;
-  min-height: 82px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  column-gap: 12px;
-  border: 1px solid var(--border-light);
-  border-radius: 7px;
-  background: var(--bg-primary);
-  padding: 12px 14px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-light, #eef2f7);
+  background: var(--bg-primary, #fff);
   cursor: pointer;
   transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.task-table-row:hover {
+  background: var(--bg-secondary, #f8fafc);
+}
+
+.task-table-row.selected {
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 5%, var(--bg-primary, #fff));
+}
+
+.task-table-row.unread {
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 4%, var(--bg-primary, #fff));
+}
+
+.task-table-cell {
+  min-width: 0;
   overflow: hidden;
 }
 
-.task-card-row:hover,
-.task-card-row.selected {
-  border-color: color-mix(in srgb, var(--primary-color) 30%, var(--border-light));
-  background: color-mix(in srgb, var(--primary-color) 4%, var(--bg-primary));
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
-  transform: translateY(-1px);
-}
-
-.task-card-row.unread {
-  background: color-mix(in srgb, var(--primary-color) 5%, var(--bg-primary));
-}
-
-.task-card-check {
+.task-table-entity {
   display: flex;
   align-items: flex-start;
-  align-self: stretch;
-  padding-top: 4px;
+  gap: 12px;
 }
 
-.task-card-main {
-  min-width: 0;
-  overflow: hidden;
+.task-table-actions-head {
+  text-align: right;
 }
 
-.task-card-heading {
-  display: flex;
-  min-width: 0;
+.task-table-check {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  padding: 0;
+  border: 1px solid var(--border-default, #cbd5e1);
+  border-radius: 2px;
+  background: var(--bg-primary, #fff);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
 }
 
-.task-card-title {
+.task-table-check:hover {
+  border-color: var(--primary-color, #2563eb);
+}
+
+.task-table-check.checked,
+.task-table-check.indeterminate {
+  border-color: var(--primary-color, #2563eb);
+  background: var(--primary-color, #2563eb);
+}
+
+.task-table-check i {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.task-table-title-block {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  color: var(--text-primary);
+}
+
+.task-table-title {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary, #1e293b);
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 150ms ease;
 }
 
-.task-card-title:hover {
-  color: var(--primary-color);
+.task-table-title:hover {
+  color: var(--primary-color, #2563eb);
 }
 
-.task-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px 18px;
-  margin-top: 9px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 20px;
+.task-table-subtitle,
+.task-table-user small {
+  margin-top: 2px;
+  color: var(--text-quaternary, #94a3b8);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.task-card-summary {
+.task-table-summary {
   display: -webkit-box;
-  max-width: 100%;
+  margin-top: 3px;
+  color: var(--text-tertiary, #64748b);
+  font-size: 12px;
+  line-height: 18px;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+  -webkit-line-clamp: 1;
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
-.task-card-summary > * {
-  min-width: 0;
-}
-
-.task-card-actions {
+.task-table-status {
   display: flex;
-  flex: 0 0 auto;
-  align-items: flex-start;
+  align-items: center;
+}
+
+.task-table-node {
+  color: var(--text-secondary, #475569);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-table-user {
+  display: flex;
+  flex-direction: column;
+  color: var(--text-secondary, #475569);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.task-table-user span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-table-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
-  justify-self: end;
-  gap: 8px;
-  min-width: 168px;
-  max-width: 260px;
-  flex-wrap: wrap;
+  gap: 10px;
 }
 
 :global(.task-row-link-action) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  gap: 2px;
+  padding: 0;
+  border: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--primary-color, #2563eb);
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease;
+  transition: color 150ms ease;
 }
 
 :global(.task-row-link-action:hover) {
-  border-color: color-mix(in srgb, var(--primary-color) 24%, var(--border-light));
-  background: color-mix(in srgb, var(--primary-color) 7%, transparent);
-  color: var(--primary-color);
-}
-
-:global(.task-row-link-action.primary) {
-  color: var(--primary-color);
+  color: color-mix(in srgb, var(--primary-color, #2563eb) 82%, #0f172a);
 }
 
 :global(.task-row-link-action.info) {
   color: #2563eb;
 }
 
-:global(.task-row-link-action.info:hover) {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
 :global(.task-row-link-action.success) {
-  color: #15803d;
-}
-
-:global(.task-row-link-action.success:hover) {
-  background: #ecfdf3;
-  color: #166534;
+  color: #2563eb;
 }
 
 :global(.task-row-link-action.danger) {
-  color: #b42318;
+  color: var(--text-secondary, #475569);
 }
 
 :global(.task-row-link-action.danger:hover) {
-  background: #fff1f2;
-  color: #9f1239;
+  color: var(--error-color, #dc2626);
+}
+
+:global(.task-row-link-action.muted) {
+  color: var(--text-tertiary, #64748b);
+}
+
+:global(.task-row-link-action.muted:hover) {
+  color: var(--text-secondary, #475569);
+}
+
+:global(.task-row-action-separator) {
+  width: 1px;
+  height: 12px;
+  background: var(--border-light, #e2e8f0);
 }
 
 :global(.task-row-link-action i) {
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1;
 }
 
 .task-list-empty {
-  flex: 1;
-  padding: 72px 0;
+  padding: 56px 0;
 }
 
 .task-list-pagination {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex: 0 0 auto;
-  justify-content: flex-end;
-  padding: 10px 14px;
-  border-top: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  gap: 12px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-primary, #fff);
+}
+
+.task-list-total {
+  color: var(--text-tertiary, #64748b);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 :global(.task-status-pill) {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 4px;
-  background: #fff8e8;
-  color: #c07b16;
-  font-size: 12px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 11px;
   font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -505,11 +660,12 @@ function clearSelection() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
-  padding: 0 9px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--primary-color) 8%, transparent);
-  color: var(--primary-color);
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 2px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-secondary, #475569);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -529,32 +685,26 @@ function clearSelection() {
 :global(.task-status-pill.read) {
   background: #ecfdf3;
   color: #15803d;
+  border-color: #bbf7d0;
 }
 
 :global(.task-status-pill.error),
 :global(.task-status-pill.unread) {
   background: #fff1f2;
   color: #be123c;
+  border-color: #fecdd3;
 }
 
 :global(.task-status-pill.info) {
   background: #eff6ff;
   color: #2563eb;
+  border-color: #bfdbfe;
 }
 
 :global(.task-status-pill.default) {
   background: #f1f5f9;
   color: #64748b;
-}
-
-:global(.task-meta-label) {
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
-:global(.task-meta-value) {
-  color: var(--text-primary);
-  font-weight: 500;
+  border-color: #e2e8f0;
 }
 
 @media (max-width: 900px) {
@@ -565,23 +715,22 @@ function clearSelection() {
 
   .task-list-tools {
     flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .task-list-search {
-    width: min(100%, 328px);
+    width: min(100%, 260px);
   }
 
-  .task-card-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    row-gap: 14px;
-    min-height: 0;
-    padding: 12px;
-  }
-
-  .task-card-actions {
-    grid-column: 1 / -1;
-    min-width: 0;
-    justify-content: flex-end;
+  .task-table-header,
+  .task-table-row {
+    min-width: 820px;
+    grid-template-columns:
+      minmax(260px, 4fr)
+      minmax(100px, 1.2fr)
+      minmax(120px, 1.4fr)
+      minmax(140px, 1.6fr)
+      minmax(140px, 1.6fr);
   }
 }
 </style>

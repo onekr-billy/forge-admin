@@ -37,27 +37,27 @@ function handleClick() {
       title="添加条件分支"
       @click.stop="handleClick"
     >
-      <i class="i-mdi-plus text-xl" />
+      <i class="i-lucide:plus text-sm" />
     </button>
   </div>
 </template>
 
 <style scoped>
 .branch-add-btn {
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(32, 178, 170, 0.32);
-  border-radius: 999px;
-  color: #159a9a;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #94a3b8;
   cursor: pointer;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
 }
 
 .branch-add-btn:hover:not(:disabled) {
-  border-color: #20b2aa;
-  color: #0f8b8b;
-  box-shadow: 0 10px 24px rgba(32, 178, 170, 0.16);
-  transform: translateY(-1px);
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.14);
 }
 
 .branch-add-btn:disabled {

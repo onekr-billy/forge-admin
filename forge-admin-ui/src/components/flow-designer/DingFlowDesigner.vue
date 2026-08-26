@@ -221,9 +221,9 @@ function findMatchingFormAsset(assets, config = {}) {
   return assets.find(asset => asset.formKey === formKey
     && asset.formMode === formMode
     && asset.providerKey === providerKey)
-    || assets.find(asset => asset.formKey === formKey && asset.providerKey === providerKey)
-    || assets.find(asset => asset.formKey === formKey)
-    || null
+  || assets.find(asset => asset.formKey === formKey && asset.providerKey === providerKey)
+  || assets.find(asset => asset.formKey === formKey)
+  || null
 }
 
 function normalizeBusinessFormMode(value) {
@@ -508,13 +508,36 @@ const addButtonPositions = computed(() => {
     const pos = layoutResult.value.nodePositions.get(node.id)
     if (!pos)
       continue
+    const targetPos = findNearestDownstreamPosition(node.id, pos)
     list.push({
       id: node.id,
-      position: { x: pos.x + pos.width / 2, y: pos.y + pos.height + 25 },
+      position: {
+        x: pos.x + pos.width / 2,
+        y: verticalSegmentMidpoint(pos, targetPos),
+      },
     })
   }
   return list
 })
+
+function findNearestDownstreamPosition(nodeId, sourcePos) {
+  if (!sourcePos)
+    return null
+  const sourceBottomY = sourcePos.y + sourcePos.height
+  return designer.getOutgoingEdges(nodeId)
+    .map(edge => layoutResult.value.nodePositions.get(edge.target))
+    .filter(pos => pos && pos.y >= sourceBottomY)
+    .sort((a, b) => a.y - b.y)[0] || null
+}
+
+function verticalSegmentMidpoint(sourcePos, targetPos) {
+  const sourceBottomY = sourcePos.y + sourcePos.height
+  if (!targetPos)
+    return sourceBottomY + 28
+  const targetTopY = targetPos.y
+  const gap = Math.max(targetTopY - sourceBottomY, 44)
+  return sourceBottomY + gap / 2
+}
 
 const branchHeaders = computed(() => {
   const out = []
@@ -565,7 +588,7 @@ const branchAddButtons = computed(() => {
       gatewayId: node.id,
       position: {
         x: nodeCenterX(gwPos),
-        y: anchorTarget ? Math.min(branchLaneY(gwPos, anchorTarget), gatewayBottomY + 32) : gatewayBottomY + 32,
+        y: anchorTarget ? Math.min(branchLaneY(gwPos, anchorTarget), gatewayBottomY + 40) : gatewayBottomY + 40,
       },
     })
   }

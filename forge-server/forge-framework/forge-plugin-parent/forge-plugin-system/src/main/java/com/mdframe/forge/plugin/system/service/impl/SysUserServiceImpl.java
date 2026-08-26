@@ -189,6 +189,11 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 upsertUserTenant(user.getId(), tenantId, user.getUserType(), true);
             }
         }
+        // 同步绑定组织。orgIds 为空时保持原组织不变，避免误清空用户归属。
+        if (updated && dto.getOrgIds() != null && !dto.getOrgIds().isEmpty()) {
+            Long mainOrgId = dto.getMainOrgId() != null ? dto.getMainOrgId() : dto.getOrgIds().get(0);
+            bindUserOrgs(user.getId(), dto.getOrgIds(), mainOrgId, tenantId);
+        }
         // 同步绑定角色。roleIds 传空数组表示清空当前可管理范围内的角色。
         if (updated && dto.getRoleIds() != null) {
             syncUserRoles(user.getId(), dto.getRoleIds(), tenantId);
@@ -1633,7 +1638,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean bindUserPosts(Long userId, List<Long> postIds, Long mainPostId, Long requestedTenantId) {
-        if (userId == null || postIds == null || postIds.isEmpty()) {
+        if (userId == null || postIds == null) {
             return false;
         }
 
@@ -1645,10 +1650,16 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
         Long tenantId = resolveTenantScopedOperationTenantId(user, requestedTenantId);
         ensureUserTenantBound(user.getId(), tenantId, user.getUserType(), Objects.equals(user.getTenantId(), tenantId));
-        validatePostTenant(postIds, tenantId);
+        List<Long> normalizedPostIds = postIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (!normalizedPostIds.isEmpty()) {
+            validatePostTenant(normalizedPostIds, tenantId);
+        }
 
         // 验证主岗位是否在岗位列表中
-        if (mainPostId != null && !postIds.contains(mainPostId)) {
+        if (mainPostId != null && !normalizedPostIds.contains(mainPostId)) {
             mainPostId = null;
         }
 
@@ -1663,7 +1674,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
         // 删除不再需要的岗位
         List<Long> toDelete = existingPostIds.stream()
-                .filter(postId -> !postIds.contains(postId))
+                .filter(postId -> !normalizedPostIds.contains(postId))
                 .collect(Collectors.toList());
         if (!toDelete.isEmpty()) {
             LambdaQueryWrapper<SysUserPost> deleteWrapper = new LambdaQueryWrapper<>();
@@ -1674,7 +1685,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
 
         // 添加新岗位或更新现有岗位
-        for (Long postId : postIds) {
+        for (Long postId : normalizedPostIds) {
             SysUserPost userPost = existingPosts.stream()
                     .filter(p -> p.getPostId().equals(postId))
                     .findFirst()

@@ -180,7 +180,7 @@
       </template>
     </n-modal>
 
-    <!-- 用户关联配置弹窗（整合授权/组织/岗位/租户） -->
+    <!-- 高级关系维护弹窗（仅处理复杂授权/组织/岗位/租户关系） -->
     <n-modal
       v-model:show="relationModalVisible"
       title=""
@@ -198,8 +198,8 @@
               {{ (currentUser.username || currentUser.realName || '用').slice(0, 1).toUpperCase() }}
             </div>
             <div class="relation-sidebar-copy">
-              <span>用户关联配置</span>
-              <small>正在配置：@{{ currentUser.username || '-' }}</small>
+              <span>高级关系维护</span>
+              <small>仅用于复杂场景：{{ currentUser.username || '-' }}</small>
             </div>
           </div>
 
@@ -212,8 +212,9 @@
               :class="{ 'is-active': relationActiveTab === tab.key }"
               @click="handleRelationTabChange(tab.key)"
             >
-              <i v-if="tab.key === 'auth'" class="i-material-symbols:verified-user-outline-rounded" aria-hidden="true" />
+              <i v-if="tab.key === 'overview'" class="i-material-symbols:manage-accounts-outline-rounded" aria-hidden="true" />
               <i v-else-if="tab.key === 'org'" class="i-material-symbols:account-tree-rounded" aria-hidden="true" />
+              <i v-else-if="tab.key === 'auth'" class="i-material-symbols:verified-user-outline-rounded" aria-hidden="true" />
               <i v-else-if="tab.key === 'post'" class="ai-icon:briefcase" aria-hidden="true" />
               <i v-else class="i-material-symbols:business-center" aria-hidden="true" />
               <div class="relation-nav-copy">
@@ -236,82 +237,204 @@
 
           <div class="relation-content-header">
             <div class="relation-content-title">
-              <strong>{{ currentRelationTabMeta?.label || '用户关联配置' }}</strong>
-              <span>{{ currentRelationTabMeta?.desc || '配置用户的角色、组织、岗位和租户关系' }}</span>
+              <strong>{{ currentRelationTabMeta?.label || '高级关系维护' }}</strong>
+              <span>{{ currentRelationTabMeta?.desc || '只处理复杂组织、角色、岗位和租户关系' }}</span>
             </div>
           </div>
 
           <div class="relation-content-body">
+            <n-alert type="info" :bordered="false" class="batch-action-alert">
+              普通新增/编辑已经可以一次性设置组织、角色和岗位。这里仅用于多组织、多租户、历史数据修正等高级维护场景。
+            </n-alert>
+
+            <!-- 授权概览 -->
+            <div v-show="relationActiveTab === 'overview'" class="relation-section relation-overview-section">
+              <div class="relation-overview-user">
+                <div class="relation-overview-avatar">
+                  {{ (currentUser.realName || currentUser.username || '用').slice(0, 1).toUpperCase() }}
+                </div>
+                <div class="relation-overview-copy">
+                  <strong>{{ currentUser.realName || currentUser.username || '-' }}</strong>
+                  <span>@{{ currentUser.username || '-' }} · {{ resolveOptionLabel(userTypeOptions, normalizeSingleNumber(currentUser.userType)) || '用户' }}</span>
+                </div>
+              </div>
+
+              <div class="relation-summary-grid">
+                <section class="relation-summary-card">
+                  <div class="relation-summary-heading">
+                    <i class="i-material-symbols:account-tree-rounded" />
+                    <strong>组织关系</strong>
+                    <button type="button" @click="handleRelationTabChange('org')">
+                      维护
+                    </button>
+                  </div>
+                  <div class="relation-summary-body">
+                    <template v-if="relationOrgSummaryItems.length > 0">
+                      <div
+                        v-for="item in relationOrgSummaryItems"
+                        :key="item.key"
+                        class="relation-summary-line"
+                      >
+                        <span>{{ item.label }}</span>
+                        <small v-if="item.meta">{{ item.meta }}</small>
+                      </div>
+                    </template>
+                    <span v-else class="relation-summary-empty">未绑定组织</span>
+                  </div>
+                </section>
+
+                <section class="relation-summary-card">
+                  <div class="relation-summary-heading">
+                    <i class="i-material-symbols:verified-user-outline-rounded" />
+                    <strong>角色授权</strong>
+                    <button type="button" @click="handleRelationTabChange('auth')">
+                      维护
+                    </button>
+                  </div>
+                  <div class="relation-summary-body">
+                    <template v-if="relationRoleSummaryItems.length > 0">
+                      <div
+                        v-for="item in relationRoleSummaryItems"
+                        :key="item.key"
+                        class="relation-summary-line"
+                      >
+                        <span>{{ item.label }}</span>
+                        <small>{{ item.meta }}</small>
+                      </div>
+                    </template>
+                    <span v-else class="relation-summary-empty">未授权角色</span>
+                  </div>
+                </section>
+
+                <section class="relation-summary-card">
+                  <div class="relation-summary-heading">
+                    <i class="ai-icon:briefcase" />
+                    <strong>岗位关系</strong>
+                    <button type="button" @click="handleRelationTabChange('post')">
+                      维护
+                    </button>
+                  </div>
+                  <div class="relation-summary-body">
+                    <template v-if="relationPostSummaryItems.length > 0">
+                      <div
+                        v-for="item in relationPostSummaryItems"
+                        :key="item.key"
+                        class="relation-summary-line"
+                      >
+                        <span>{{ item.label }}</span>
+                        <small v-if="item.meta">{{ item.meta }}</small>
+                      </div>
+                    </template>
+                    <span v-else class="relation-summary-empty">未设置岗位</span>
+                  </div>
+                </section>
+
+                <section v-if="userStore.isAdmin" class="relation-summary-card">
+                  <div class="relation-summary-heading">
+                    <i class="i-material-symbols:business-center" />
+                    <strong>租户关系</strong>
+                    <button type="button" @click="handleRelationTabChange('tenant')">
+                      维护
+                    </button>
+                  </div>
+                  <div class="relation-summary-body">
+                    <template v-if="relationTenantSummaryItems.length > 0">
+                      <div
+                        v-for="item in relationTenantSummaryItems"
+                        :key="item.key"
+                        class="relation-summary-line"
+                      >
+                        <span>{{ item.label }}</span>
+                        <small v-if="item.meta">{{ item.meta }}</small>
+                      </div>
+                    </template>
+                    <span v-else class="relation-summary-empty">未加入租户</span>
+                  </div>
+                </section>
+              </div>
+            </div>
+
             <!-- 角色授权 -->
             <div v-show="relationActiveTab === 'auth'" class="relation-section auth-modal-content">
               <n-alert type="info" :bordered="false" class="batch-action-alert">
-                角色授权按组织生效，切换授权组织后会分别加载该组织可用角色和用户已拥有角色。
+                角色授权按组织生效。先选授权组织，再查看该组织可用角色和当前已拥有角色。
               </n-alert>
-              <n-form label-placement="left" label-width="90" class="batch-action-form">
-                <n-form-item label="授权组织">
-                  <n-select
-                    v-model:value="authOrgId"
-                    :options="authOrgOptions"
-                    placeholder="请选择授权组织"
-                    filterable
-                    :disabled="authOrgOptions.length === 0"
-                  />
-                </n-form-item>
-              </n-form>
 
-              <div class="auth-toolbar">
-                <n-input
-                  v-model:value="roleSearchKeyword"
-                  class="auth-role-search"
-                  clearable
-                  size="small"
-                  placeholder="按角色名称搜索"
-                  @clear="handleRoleSearch"
-                  @keyup.enter="handleRoleSearch"
-                >
-                  <template #prefix>
-                    <i class="i-material-symbols:search-rounded" />
-                  </template>
-                </n-input>
-                <n-space size="small" class="auth-toolbar-actions">
-                  <n-button size="small" @click="handleRoleSearch">
-                    <template #icon>
+              <div v-if="authOrgOptions.length === 0" class="relation-empty-action">
+                <i class="i-material-symbols:account-tree-rounded" />
+                <strong>还没有可授权组织</strong>
+                <span>角色需要挂在具体组织下。先在当前弹窗维护组织关系，再回来设置角色。</span>
+                <n-button size="small" type="primary" secondary @click="handleRelationTabChange('org')">
+                  先维护组织关系
+                </n-button>
+              </div>
+
+              <template v-else>
+                <n-form label-placement="left" label-width="90" class="batch-action-form">
+                  <n-form-item label="授权组织">
+                    <n-select
+                      v-model:value="authOrgId"
+                      :options="authOrgOptions"
+                      placeholder="请选择授权组织"
+                      filterable
+                    />
+                  </n-form-item>
+                </n-form>
+
+                <div class="auth-toolbar">
+                  <n-input
+                    v-model:value="roleSearchKeyword"
+                    class="auth-role-search"
+                    clearable
+                    size="small"
+                    placeholder="按角色名称搜索"
+                    @clear="handleRoleSearch"
+                    @keyup.enter="handleRoleSearch"
+                  >
+                    <template #prefix>
                       <i class="i-material-symbols:search-rounded" />
                     </template>
-                    查询
-                  </n-button>
-                  <n-button size="small" @click="handleCheckAll">
-                    <template #icon>
-                      <i class="i-material-symbols:check-box-outline" />
-                    </template>
-                    全选本页
-                  </n-button>
-                  <n-button size="small" @click="handleUncheckAll">
-                    <template #icon>
-                      <i class="i-material-symbols:check-box-outline-blank" />
-                    </template>
-                    清空选择
-                  </n-button>
-                </n-space>
-              </div>
+                  </n-input>
+                  <n-space size="small" class="auth-toolbar-actions">
+                    <n-button size="small" @click="handleRoleSearch">
+                      <template #icon>
+                        <i class="i-material-symbols:search-rounded" />
+                      </template>
+                      查询
+                    </n-button>
+                    <n-button size="small" @click="handleCheckAll">
+                      <template #icon>
+                        <i class="i-material-symbols:check-box-outline" />
+                      </template>
+                      全选本页
+                    </n-button>
+                    <n-button size="small" @click="handleUncheckAll">
+                      <template #icon>
+                        <i class="i-material-symbols:check-box-outline-blank" />
+                      </template>
+                      清空选择
+                    </n-button>
+                  </n-space>
+                </div>
 
-              <div class="auth-tree-container">
-                <n-spin :show="authLoading">
-                  <n-data-table
-                    :columns="authRoleColumns"
-                    :data="orderedRoleTableData"
-                    :checked-row-keys="checkedRoleKeys"
-                    :pagination="rolePaginationConfig"
-                    :row-key="row => row.id"
-                    remote
-                    striped
-                    size="small"
-                    @update:checked-row-keys="handleCheckedKeysChange"
-                    @update:page="handleRolePageChange"
-                    @update:page-size="handleRolePageSizeChange"
-                  />
-                </n-spin>
-              </div>
+                <div class="auth-tree-container">
+                  <n-spin :show="authLoading">
+                    <n-data-table
+                      :columns="authRoleColumns"
+                      :data="orderedRoleTableData"
+                      :checked-row-keys="checkedRoleKeys"
+                      :pagination="rolePaginationConfig"
+                      :row-key="row => row.id"
+                      remote
+                      striped
+                      size="small"
+                      @update:checked-row-keys="handleCheckedKeysChange"
+                      @update:page="handleRolePageChange"
+                      @update:page-size="handleRolePageSizeChange"
+                    />
+                  </n-spin>
+                </div>
+              </template>
             </div>
 
             <!-- 组织绑定 -->
@@ -487,9 +610,10 @@
 
           <div class="relation-footer">
             <n-button @click="relationModalVisible = false">
-              取消
+              {{ relationActiveTab === 'overview' ? '关闭' : '取消' }}
             </n-button>
             <n-button
+              v-if="relationActiveTab !== 'overview'"
               type="primary"
               :loading="relationSubmitLoading"
               @click="handleRelationSubmit"
@@ -682,6 +806,8 @@ const USER_SEX_DICT = 'sys_user_sex'
 const ROLE_DATA_SCOPE_DICT = 'sys_role_data_scope'
 const ROLE_TYPE_DICT = 'sys_role_type'
 const NORMAL_DISABLE_DICT = 'sys_normal_disable'
+const FORM_TENANT_ID_EXPR = '$' + '{tenantId}'
+const FORM_MAIN_ORG_ID_EXPR = '$' + '{mainOrgId}'
 
 const crudRef = ref(null)
 const userStore = useUserStore()
@@ -697,31 +823,36 @@ const selectedOrgKeys = ref([])
 const selectedOrgNode = ref(null)
 const isShowAllUsers = ref(true)
 
-// 用户关联配置弹窗（整合授权/组织/岗位/租户）
+// 高级关系维护弹窗（仅处理复杂授权/组织/岗位/租户关系）
 const relationModalVisible = ref(false)
-const relationActiveTab = ref('auth')
+const relationActiveTab = ref('overview')
 const relationSubmitLoading = ref(false)
 const relationTabItems = computed(() => [
   {
-    key: 'auth',
-    label: '角色授权',
-    desc: '配置系统操作权限',
+    key: 'overview',
+    label: '授权概览',
+    desc: '查看当前用户关系',
   },
   {
     key: 'org',
-    label: '组织架构',
-    desc: '管理所属部门及团队',
+    label: '组织关系',
+    desc: '维护主组织与成员组织',
+  },
+  {
+    key: 'auth',
+    label: '按组织授权',
+    desc: '维护组织内的角色权限',
   },
   {
     key: 'post',
-    label: '岗位职级',
-    desc: '设定具体职务名称',
+    label: '岗位关系',
+    desc: '维护主岗位与兼职岗位',
   },
   ...(userStore.isAdmin
     ? [{
         key: 'tenant',
-        label: '租户空间',
-        desc: '分配系统工作区',
+        label: '租户关系',
+        desc: '维护可访问工作区',
       }]
     : []),
 ])
@@ -928,6 +1059,67 @@ const selectedOrgOptions = computed(() => flattenOrgNodes(orgTreeData.value)
     label: item.orgName,
     value: normalizeSingleNumber(item.id),
   })))
+const relationOrgSummaryItems = computed(() => {
+  const bindings = currentUserOrgBindings.value || []
+  if (bindings.length > 0) {
+    return bindings.map((item, index) => ({
+      key: `${item.orgId || index}`,
+      label: item.orgName || String(item.orgId || '-'),
+      meta: Number(item.isMain) === 1 ? '主组织' : '',
+    }))
+  }
+  return splitTableCellValues(currentUser.value?.orgName || currentUser.value?.orgNames).map((label, index) => ({
+    key: `row-org-${index}`,
+    label,
+    meta: index === 0 ? '主组织' : '',
+  }))
+})
+const relationRoleSummaryItems = computed(() => {
+  const items = []
+  currentUserOrgBindings.value.forEach((binding, index) => {
+    const roleNames = Array.isArray(binding.roleNames) ? binding.roleNames.filter(Boolean) : []
+    roleNames.forEach((roleName, roleIndex) => {
+      items.push({
+        key: `${binding.orgId || index}-${roleName}-${roleIndex}`,
+        label: roleName,
+        meta: binding.orgName || '组织内授权',
+      })
+    })
+  })
+  return items
+})
+const relationPostSummaryItems = computed(() => {
+  const selectedNames = postList.value
+    .filter(item => checkedPostKeys.value.includes(normalizeSingleNumber(item.id)))
+    .map((item, index) => ({
+      key: `post-${item.id || index}`,
+      label: item.postName || String(item.id || '-'),
+      meta: index === 0 ? '主岗位' : '',
+    }))
+  if (selectedNames.length > 0)
+    return selectedNames
+  return splitTableCellValues(currentUser.value?.postName || currentUser.value?.postNames).map((label, index) => ({
+    key: `row-post-${index}`,
+    label,
+    meta: index === 0 ? '主岗位' : '',
+  }))
+})
+const relationTenantSummaryItems = computed(() => {
+  const selectedNames = tenantOptions.value
+    .filter(item => checkedTenantKeys.value.includes(normalizeSingleNumber(item.id)))
+    .map(item => ({
+      key: `tenant-${item.id}`,
+      label: item.tenantName || String(item.id || '-'),
+      meta: isSameKey(item.id, defaultTenantId.value) ? '默认租户' : '',
+    }))
+  if (selectedNames.length > 0)
+    return selectedNames
+  return formatTenantNameList(currentUser.value).map((label, index) => ({
+    key: `row-tenant-${index}`,
+    label,
+    meta: index === 0 ? '默认租户' : '',
+  }))
+})
 
 watch(checkedOrgKeys, (keys) => {
   if (mainOrgId.value && !keys.includes(mainOrgId.value)) {
@@ -1109,9 +1301,6 @@ const tableColumns = computed(() => [
     fixed: 'right',
     actions: [
       { label: '编辑', key: 'edit', onClick: handleEdit },
-      { label: '禁用', key: 'disable', type: 'warning', onClick: row => handleUpdateStatus(row, 0), visible: row => row.id !== 1 && !isCurrentLoginUser(row.id) && row.userStatus === 1 },
-      { label: '启用', key: 'enable', type: 'success', onClick: handleUntieDisable, visible: row => row.id !== 1 && !isCurrentLoginUser(row.id) && row.userStatus !== 1 },
-      { label: '用户关联配置', key: 'relation', onClick: handleRelation, visible: row => !isCurrentLoginUser(row.id) },
       {
         label: '重置密码',
         key: 'resetPwd',
@@ -1122,6 +1311,9 @@ const tableColumns = computed(() => [
           resetPwdModalVisible.value = true
         },
       },
+      { label: '高级关系维护', key: 'relation', type: 'info', onClick: handleRelation, visible: row => !isCurrentLoginUser(row.id) },
+      { label: '禁用', key: 'disable', type: 'warning', onClick: row => handleUpdateStatus(row, 0), visible: row => row.id !== 1 && !isCurrentLoginUser(row.id) && row.userStatus === 1 },
+      { label: '启用', key: 'enable', type: 'success', onClick: handleUntieDisable, visible: row => row.id !== 1 && !isCurrentLoginUser(row.id) && row.userStatus !== 1 },
       { label: '删除', key: 'delete', type: 'error', onClick: handleDelete, visible: row => row.id !== 1 && !isCurrentLoginUser(row.id) },
     ],
   },
@@ -1217,6 +1409,93 @@ const editSchema = computed(() => [
   },
   {
     type: 'divider',
+    label: '组织与授权',
+    props: {
+      titlePlacement: 'left',
+    },
+    span: 2,
+  },
+  {
+    field: 'orgIds',
+    label: '所属组织',
+    type: 'treeSelect',
+    span: 2,
+    required: true,
+    labelTip: '首个选中组织会自动作为主组织',
+    onChange: ({ value, context }) => {
+      const orgIds = normalizeNumberList(value)
+      context?.patchFormData?.({
+        mainOrgId: orgIds[0] || null,
+      })
+    },
+    optionSource: {
+      type: 'tree',
+      api: 'get@/system/org/lazyTree',
+      params: {
+        tenantId: FORM_TENANT_ID_EXPR,
+      },
+      valueField: 'id',
+      keyField: 'id',
+      labelField: 'orgName',
+      fallbackLabelFields: ['name'],
+      childrenField: 'children',
+    },
+    props: {
+      placeholder: '请选择所属组织',
+      multiple: true,
+      clearable: true,
+      filterable: true,
+      cascade: false,
+      showPath: false,
+    },
+  },
+  {
+    field: 'roleIds',
+    label: '角色',
+    type: 'select',
+    span: 1,
+    labelTip: '不选组织时展示全部角色，选组织后会按主组织刷新',
+    optionSource: {
+      api: 'get@/system/role/page',
+      params: {
+        tenantId: FORM_TENANT_ID_EXPR,
+        orgId: FORM_MAIN_ORG_ID_EXPR,
+        pageNum: 1,
+        pageSize: 200,
+      },
+      valueField: 'id',
+      labelField: 'roleName',
+      recordsField: 'data.list',
+    },
+    props: {
+      placeholder: '请选择角色',
+      multiple: true,
+      clearable: true,
+      filterable: true,
+    },
+  },
+  {
+    field: 'postIds',
+    label: '岗位',
+    type: 'select',
+    span: 1,
+    optionSource: {
+      api: 'get@/system/post/list',
+      params: {
+        tenantId: FORM_TENANT_ID_EXPR,
+      },
+      valueField: 'id',
+      labelField: 'postName',
+    },
+    props: {
+      placeholder: '请选择岗位',
+      multiple: true,
+      clearable: true,
+      filterable: true,
+    },
+  },
+  {
+    type: 'divider',
     label: '联系信息',
     props: {
       titlePlacement: 'left',
@@ -1301,26 +1580,6 @@ const editSchema = computed(() => [
     vIf: formData => !isCurrentLoginUser(formData.id),
     props: {
       options: userStatusOptions.value,
-    },
-  },
-  {
-    field: 'postIds',
-    label: '岗位',
-    type: 'select',
-    span: 2,
-    vIf: formData => !isCurrentLoginUser(formData.id),
-    optionSource: {
-      api: 'get@/system/post/list',
-      // eslint-disable-next-line no-template-curly-in-string
-      params: { tenantId: '${tenantId}' },
-      valueField: 'id',
-      labelField: 'postName',
-    },
-    props: {
-      placeholder: '请选择岗位',
-      multiple: true,
-      clearable: true,
-      filterable: true,
     },
   },
   {
@@ -1444,6 +1703,12 @@ function normalizeUserFormData(data = {}, fallbackTenantId = null) {
     next.roleIds = normalizeNumberList(next.roleIds)
   if (next.postIds !== null && next.postIds !== undefined)
     next.postIds = normalizeNumberList(next.postIds)
+  if (next.orgIds !== null && next.orgIds !== undefined)
+    next.orgIds = normalizeNumberList(next.orgIds)
+  if (next.mainOrgId !== null && next.mainOrgId !== undefined)
+    next.mainOrgId = normalizeSingleNumber(next.mainOrgId)
+  if (next.mainOrgId === null && next.orgIds?.length > 0)
+    next.mainOrgId = next.orgIds[0]
   return next
 }
 
@@ -1837,7 +2102,18 @@ async function beforeSearch(params) {
 }
 
 function beforeRenderUserForm(row) {
-  const normalized = normalizeUserFormData(row || {}, userStore.userInfo?.tenantId)
+  const defaultOrgId = !row?.id
+    ? normalizeSingleNumber(selectedOrgNode.value?.id || userStore.activeOrgId || userStore.userInfo?.activeOrgId)
+    : null
+  const normalized = normalizeUserFormData({
+    ...row,
+    orgIds: row?.orgIds?.length
+      ? row.orgIds
+      : defaultOrgId !== null
+        ? [defaultOrgId]
+        : row?.orgIds,
+    mainOrgId: row?.mainOrgId ?? defaultOrgId,
+  } || {}, userStore.userInfo?.tenantId)
   editingUserTenantId.value = normalized.tenantId || null
   return normalized
 }
@@ -1857,20 +2133,6 @@ async function beforeRenderUserDetail(data) {
   }
   if (!userStore.isAdmin && isCurrentLoginUser(data.id)) {
     return next
-  }
-  if (!tenantId) {
-    return next
-  }
-  try {
-    const params = buildTenantParams(tenantId)
-    const [postRes] = await Promise.all([
-      request.get(`/system/user/${data.id}/posts`, { params }),
-    ])
-    if (postRes.code === 200)
-      next.postIds = normalizeNumberList(postRes.data || [])
-  }
-  catch (error) {
-    console.error('加载用户租户关联信息失败:', error)
   }
   return next
 }
@@ -1954,7 +2216,6 @@ async function handleUntieDisable(row) {
 // 表单提交前处理
 function beforeSubmit(formData) {
   Object.assign(formData, normalizeUserFormData(formData, userStore.userInfo?.tenantId))
-  delete formData.roleIds
   if (!userStore.isAdmin) {
     formData.tenantId = userStore.userInfo?.tenantId
     formData.tenantIds = [userStore.userInfo?.tenantId].filter(Boolean)
@@ -1968,6 +2229,9 @@ function beforeSubmit(formData) {
   }
   else if (!formData.tenantId) {
     formData.tenantId = formData.tenantIds[0] || userStore.userInfo?.tenantId
+  }
+  if (!formData.mainOrgId && Array.isArray(formData.orgIds) && formData.orgIds.length > 0) {
+    formData.mainOrgId = formData.orgIds[0]
   }
   return formData
 }
@@ -2032,15 +2296,18 @@ async function handleOpenBatchAuth() {
 async function handleRelation(row) {
   currentUser.value = row
   relationModalVisible.value = true
-  relationActiveTab.value = 'auth'
-  await loadRelationTab('auth', row)
+  relationActiveTab.value = 'overview'
+  await loadRelationTab('overview', row)
 }
 
 async function loadRelationTab(tab, row) {
   const user = row || currentUser.value
   if (!user?.id)
     return
-  if (tab === 'auth') {
+  if (tab === 'overview') {
+    await loadRelationOverview(user)
+  }
+  else if (tab === 'auth') {
     roleSearchKeyword.value = ''
     rolePagination.value.page = 1
     checkedRoleKeys.value = []
@@ -2067,6 +2334,23 @@ async function loadRelationTab(tab, row) {
   else if (tab === 'tenant') {
     checkedTenantKeys.value = []
     defaultTenantId.value = null
+    if (tenantOptions.value.length === 0) {
+      await loadTenantOptions()
+    }
+    await loadUserTenants(user.id)
+  }
+}
+
+async function loadRelationOverview(user) {
+  currentUserOrgBindings.value = []
+  checkedPostKeys.value = []
+  checkedTenantKeys.value = []
+  defaultTenantId.value = null
+
+  await loadUserOrgBindings(user.id, resolveOperationTenantId(user))
+  await loadPostList(resolveOperationTenantId(user))
+  await loadUserPosts(user.id)
+  if (userStore.isAdmin) {
     if (tenantOptions.value.length === 0) {
       await loadTenantOptions()
     }
@@ -2886,7 +3170,7 @@ async function handleSubmitBatchTenant() {
   font-weight: 500;
 }
 
-/* 用户关联配置弹窗 */
+/* 高级关系维护弹窗 */
 .user-relation-modal :deep(.n-card) {
   display: flex;
   flex-direction: column;
@@ -3123,14 +3407,18 @@ async function handleSubmitBatchTenant() {
 }
 
 .relation-content-body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  gap: 0;
   min-height: 0;
   overflow: hidden;
   padding: 10px 12px;
 }
 
 .relation-section {
-  height: 100%;
+  flex: 1;
+  height: auto;
   min-height: 0;
 }
 
@@ -3150,6 +3438,170 @@ async function handleSubmitBatchTenant() {
 .relation-section :deep(.n-spin-content) {
   height: 100%;
   min-height: 0;
+}
+
+.relation-overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.relation-overview-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.relation-overview-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #eef2f7;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.relation-overview-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.relation-overview-copy strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-overview-copy span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.relation-summary-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 172px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.relation-summary-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+}
+
+.relation-summary-heading > i {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 16px;
+}
+
+.relation-summary-heading strong {
+  flex: 1;
+  min-width: 0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.relation-summary-heading button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.relation-summary-heading button:hover {
+  color: #1d4ed8;
+}
+
+.relation-summary-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.relation-summary-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.relation-summary-line span {
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-summary-line small {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.relation-summary-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 92px;
+  border: 1px dashed #dbe3ee;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .post-modal-content :deep(.n-spin-content),
@@ -3323,6 +3775,48 @@ async function handleSubmitBatchTenant() {
   flex: 0 0 auto;
   color: #2563eb;
   font-size: 18px;
+}
+
+.relation-empty-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  flex-direction: column;
+  min-height: 240px;
+  gap: 8px;
+  padding: 24px;
+  border: 1px dashed #dbe3ee;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+}
+
+.relation-empty-action > i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 18px;
+}
+
+.relation-empty-action strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.relation-empty-action span {
+  max-width: 360px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .relation-footer {
@@ -3664,6 +4158,14 @@ async function handleSubmitBatchTenant() {
 .dark .org-tree-container,
 .dark .relation-primary-setting,
 .dark .relation-option-card,
+.dark .relation-overview-user,
+.dark .relation-overview-avatar,
+.dark .relation-summary-card,
+.dark .relation-summary-heading,
+.dark .relation-summary-line,
+.dark .relation-summary-empty,
+.dark .relation-empty-action,
+.dark .relation-empty-action > i,
 .dark .relation-org-current,
 .dark .relation-option-count {
   border-color: #334155;
@@ -3671,9 +4173,20 @@ async function handleSubmitBatchTenant() {
 
 .dark .relation-primary-setting,
 .dark .relation-option-card,
+.dark .relation-overview-user,
+.dark .relation-summary-card,
 .dark .relation-org-current,
 .dark .relation-option-count {
   background: #111827;
+}
+
+.dark .relation-overview-avatar,
+.dark .relation-summary-heading,
+.dark .relation-summary-line,
+.dark .relation-summary-empty,
+.dark .relation-empty-action,
+.dark .relation-empty-action > i {
+  background: #1e293b;
 }
 
 .dark .relation-org-stat {
@@ -3695,6 +4208,10 @@ async function handleSubmitBatchTenant() {
 .dark .relation-primary-copy strong,
 .dark .relation-option-heading strong,
 .dark .relation-option-main strong,
+.dark .relation-overview-copy strong,
+.dark .relation-summary-heading strong,
+.dark .relation-summary-line span,
+.dark .relation-empty-action strong,
 .dark .relation-org-current strong {
   color: #f8fafc;
 }
@@ -3702,6 +4219,13 @@ async function handleSubmitBatchTenant() {
 .dark .relation-primary-copy span,
 .dark .relation-option-heading span,
 .dark .relation-option-main small,
+.dark .relation-overview-copy span,
+.dark .relation-summary-heading > i,
+.dark .relation-summary-line small,
+.dark .relation-summary-empty,
+.dark .relation-empty-action,
+.dark .relation-empty-action > i,
+.dark .relation-empty-action span,
 .dark .relation-org-stat span,
 .dark .relation-org-current span,
 .dark .relation-option-count {

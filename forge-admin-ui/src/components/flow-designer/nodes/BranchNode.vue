@@ -15,12 +15,12 @@ const props = defineProps({
   readonly: Boolean,
 })
 
-const emit = defineEmits(['click', 'delete', 'context-menu'])
+const emit = defineEmits(['click', 'delete', 'contextMenu'])
 
 const META = {
-  condition: { icon: 'i-mdi-close', color: 'warning', label: '条件分支' },
-  parallel: { icon: 'i-mdi-call-split', color: 'info', label: '并行分支' },
-  inclusive: { icon: 'i-mdi-set-merge', color: 'success', label: '包容分支' },
+  condition: { icon: 'i-lucide:git-branch', color: 'warning', label: '条件分支' },
+  parallel: { icon: 'i-lucide:split', color: 'success', label: '并行分支' },
+  inclusive: { icon: 'i-lucide:git-merge', color: 'success', label: '包容分支' },
 }
 
 const meta = computed(() => META[props.node?.nodeType] || META.condition)
@@ -51,7 +51,7 @@ function handleDelete(event) {
 
 function handleContextMenu(event) {
   event.preventDefault()
-  emit('context-menu', { event, node: props.node })
+  emit('contextMenu', { event, node: props.node })
 }
 </script>
 
@@ -82,7 +82,7 @@ function handleContextMenu(event) {
         aria-label="删除网关"
         @click.stop="handleDelete"
       >
-        <i class="i-mdi-close text-sm" />
+        <i class="i-lucide:x text-xs" />
       </button>
     </div>
   </div>
@@ -109,12 +109,12 @@ function handleContextMenu(event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #fff;
-  border-radius: 8px;
-  background: #ff7a1a;
+  border: 1px solid #f59e0b;
+  border-radius: 7px;
+  background: #fff7ed;
   box-shadow:
-    0 0 0 1px rgba(255, 122, 26, 0.28),
-    0 8px 18px rgba(255, 122, 26, 0.24);
+    0 0 0 1px rgba(245, 158, 11, 0.14),
+    0 2px 6px rgba(15, 23, 42, 0.08);
   transform: rotate(45deg);
   transition:
     box-shadow 160ms ease,
@@ -122,52 +122,62 @@ function handleContextMenu(event) {
 }
 
 .branch-node-shell.is-info .branch-node-diamond {
-  background: #3b82f6;
+  border-color: #4f46e5;
+  background: #eef2ff;
   box-shadow:
-    0 0 0 1px rgba(59, 130, 246, 0.28),
-    0 8px 18px rgba(59, 130, 246, 0.22);
+    0 0 0 1px rgba(79, 70, 229, 0.14),
+    0 2px 6px rgba(15, 23, 42, 0.08);
 }
 
 .branch-node-shell.is-success .branch-node-diamond {
-  background: #20b2aa;
+  border-color: #10b981;
+  background: #ecfdf5;
   box-shadow:
-    0 0 0 1px rgba(32, 178, 170, 0.28),
-    0 8px 18px rgba(32, 178, 170, 0.22);
+    0 0 0 1px rgba(16, 185, 129, 0.14),
+    0 2px 6px rgba(15, 23, 42, 0.08);
 }
 
 .branch-node-shell:not(.is-readonly):hover .branch-node-diamond {
   box-shadow:
-    0 0 0 3px rgba(255, 122, 26, 0.14),
-    0 12px 24px rgba(255, 122, 26, 0.28);
+    0 0 0 3px rgba(245, 158, 11, 0.12),
+    0 4px 10px rgba(15, 23, 42, 0.12);
   transform: rotate(45deg) scale(1.04);
 }
 
 .branch-node-shell.is-selected .branch-node-diamond {
   box-shadow:
-    0 0 0 4px rgba(255, 122, 26, 0.18),
-    0 12px 24px rgba(255, 122, 26, 0.3);
+    0 0 0 3px rgba(37, 99, 235, 0.18),
+    0 4px 10px rgba(15, 23, 42, 0.12);
 }
 
 .branch-node-icon {
   display: inline-flex;
-  color: #fff;
+  color: #d97706;
   line-height: 1;
   transform: rotate(-45deg);
 }
 
+.branch-node-shell.is-info .branch-node-icon {
+  color: #4f46e5;
+}
+
+.branch-node-shell.is-success .branch-node-icon {
+  color: #059669;
+}
+
 .branch-node-delete {
   position: absolute;
-  right: -14px;
-  top: -14px;
-  width: 22px;
-  height: 22px;
+  right: -13px;
+  top: -13px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(239, 68, 68, 0.16);
-  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
   background: #fff;
-  color: #ef4444;
+  color: #94a3b8;
   opacity: 0;
   transform: rotate(-45deg);
   transition:
@@ -181,8 +191,8 @@ function handleContextMenu(event) {
 }
 
 .branch-node-delete:hover {
-  background: #fee2e2;
-  color: #ef4444;
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .branch-node-shell.is-readonly {

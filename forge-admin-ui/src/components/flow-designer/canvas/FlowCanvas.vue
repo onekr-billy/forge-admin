@@ -178,17 +178,17 @@ defineExpose({
       <slot name="edges" />
       <slot name="nodes" />
     </div>
-    <div class="canvas-toolbar absolute bottom-4 left-4 z-10 flex items-center gap-1 bg-white/95 p-1 shadow-md">
+    <div class="canvas-toolbar absolute left-4 top-4 z-10 flex items-center bg-white shadow-sm">
       <button class="canvas-tool-btn" aria-label="缩小" :disabled="!navigationEnabled" @click="zoomOut()">
-        <i class="i-mdi-minus" />
+        <i class="i-lucide:minus" />
       </button>
       <span class="canvas-zoom-text text-sm min-w-12 text-center">{{ scalePercent }}%</span>
       <button class="canvas-tool-btn" aria-label="放大" :disabled="!navigationEnabled" @click="zoomIn()">
-        <i class="i-mdi-plus" />
+        <i class="i-lucide:plus" />
       </button>
       <span class="canvas-toolbar-divider" />
       <button class="canvas-tool-btn" aria-label="适应画布" :disabled="!navigationEnabled" @click="resetView()">
-        <i class="i-mdi-fit-to-page-outline" />
+        <i class="i-lucide:maximize" />
       </button>
       <slot name="toolbar" />
     </div>
@@ -198,32 +198,32 @@ defineExpose({
 <style scoped>
 .flow-canvas {
   outline: none;
-  background-color: #f7f9fa;
+  background-color: #f3f4f6;
   background-image:
-    radial-gradient(circle, rgba(148, 163, 184, 0.32) 1px, transparent 1.2px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 248, 250, 0.9));
+    radial-gradient(circle, rgba(203, 213, 225, 0.62) 1px, transparent 1.1px),
+    linear-gradient(180deg, rgba(243, 244, 246, 0.96), rgba(243, 244, 246, 0.96));
   background-position:
     0 0,
     0 0;
   background-size:
-    18px 18px,
+    20px 20px,
     auto;
 }
 
 .canvas-toolbar {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
-  backdrop-filter: blur(10px);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .canvas-tool-btn {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-right: 1px solid #e2e8f0;
   color: #64748b;
   transition:
     color 160ms ease,
@@ -231,8 +231,8 @@ defineExpose({
 }
 
 .canvas-tool-btn:hover:not(:disabled) {
-  background: rgba(22, 93, 255, 0.08);
-  color: var(--primary-600, #165dff);
+  background: #f8fafc;
+  color: #1e293b;
 }
 
 .canvas-tool-btn:disabled {
@@ -241,15 +241,16 @@ defineExpose({
 }
 
 .canvas-zoom-text {
+  height: 32px;
+  padding: 0 12px;
+  border-right: 1px solid #e2e8f0;
   color: #475569;
   font-weight: 500;
+  line-height: 32px;
 }
 
 .canvas-toolbar-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 3px;
-  background: rgba(148, 163, 184, 0.35);
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

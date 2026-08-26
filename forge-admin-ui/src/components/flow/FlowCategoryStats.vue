@@ -1,7 +1,7 @@
 <template>
   <div class="flow-category-stats">
     <div class="stats-row">
-      <div class="stat-card" @click="$emit('filter', 'all')">
+      <button type="button" class="stat-card" @click="$emit('filter', 'all')">
         <div class="stat-icon total">
           <i class="i-material-symbols:category-outline" />
         </div>
@@ -9,9 +9,9 @@
           <span class="stat-label">全部分类</span>
           <span class="stat-value">{{ totalCount }}</span>
         </div>
-      </div>
+      </button>
 
-      <div class="stat-card enabled" @click="$emit('filter', 1)">
+      <button type="button" class="stat-card" @click="$emit('filter', 1)">
         <div class="stat-icon enabled">
           <i class="i-material-symbols:check-circle" />
         </div>
@@ -19,9 +19,9 @@
           <span class="stat-label">已启用</span>
           <span class="stat-value">{{ enabledCount }}</span>
         </div>
-      </div>
+      </button>
 
-      <div class="stat-card disabled" @click="$emit('filter', 0)">
+      <button type="button" class="stat-card" @click="$emit('filter', 0)">
         <div class="stat-icon disabled">
           <i class="i-material-symbols:cancel" />
         </div>
@@ -29,7 +29,7 @@
           <span class="stat-label">已禁用</span>
           <span class="stat-value">{{ disabledCount }}</span>
         </div>
-      </div>
+      </button>
     </div>
   </div>
 </template>
@@ -46,75 +46,77 @@ defineEmits(['filter'])
 
 <style scoped>
 .flow-category-stats {
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 16px;
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .stats-row {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: #fff;
-  border-radius: 10px;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid #e2e8f0;
+  gap: 10px;
   flex: 1;
-  min-width: 140px;
+  min-width: 132px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
 }
 
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 30%, var(--border-light, #e2e8f0));
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 3%, #fff);
 }
 
 .stat-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 16px;
   color: #fff;
 }
 
 .stat-icon.total {
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  background: #64748b;
 }
 
 .stat-icon.enabled {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  background: #16a34a;
 }
 
 .stat-icon.disabled {
-  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+  background: #dc2626;
 }
 
 .stat-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .stat-label {
-  font-size: 12px;
-  color: #64748b;
+  font-size: 11px;
+  color: var(--text-tertiary, #64748b);
   font-weight: 500;
 }
 
 .stat-value {
-  font-size: 20px;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary, #0f172a);
 }
 </style>

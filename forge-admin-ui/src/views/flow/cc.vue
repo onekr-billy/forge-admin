@@ -30,8 +30,11 @@
       :selectable="activeTab === 'received'"
       row-key="id"
       unread-key="isRead"
-      search-placeholder="通过名称搜索"
+      search-placeholder="搜索流程名称或编号..."
       empty-text="暂无抄送记录"
+      status-title="阅读状态"
+      node-title="抄送内容"
+      :user-title="activeTab === 'received' ? '发送人' : '抄送人'"
       @search="handleSearch"
       @refresh="loadData"
       @row-click="openCcDetail"
@@ -68,23 +71,30 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #meta="{ row }">
-        <span>
-          <span class="task-meta-label">{{ activeTab === 'received' ? '发送人' : '抄送人' }}</span>
-          <span class="task-meta-value">{{ activeTab === 'received' ? (row.sendUserName || '-') : (row.ccUserName || '-') }}</span>
-        </span>
-        <span><span class="task-meta-label">抄送时间</span> <span class="task-meta-value">{{ row.ccTime || '-' }}</span></span>
+      <template #identifier="{ row }">
+        {{ row.businessKey || row.processInstanceId || row.id }}
       </template>
-      <template #summary="{ row }">
+      <template #node="{ row }">
         {{ row.content || '暂无内容' }}
       </template>
+      <template #user="{ row }">
+        <span>{{ activeTab === 'received' ? (row.sendUserName || '-') : (row.ccUserName || '-') }}</span>
+        <small>{{ row.ccTime || '-' }}</small>
+      </template>
       <template #actions="{ row }">
-        <NButton size="small" type="primary" secondary @click="openCcDetail(row)">
+        <button type="button" class="task-row-link-action" aria-label="查看抄送" @click="openCcDetail(row)">
           查看
-        </NButton>
-        <NButton v-if="activeTab === 'received' && row.isRead === 0" size="small" type="primary" @click="handleMarkRead(row.id)">
-          已读
-        </NButton>
+        </button>
+        <template v-if="activeTab === 'received' && row.isRead === 0">
+          <span class="task-row-action-separator" />
+          <button type="button" class="task-row-link-action" aria-label="标记已读" @click="handleMarkRead(row.id)">
+            已读
+          </button>
+        </template>
+        <span class="task-row-action-separator" />
+        <button type="button" class="task-row-link-action muted" aria-label="更多操作" @click="openCcDetail(row)">
+          <i class="i-lucide:more-horizontal" />
+        </button>
       </template>
     </FlowTaskCardList>
 
@@ -381,10 +391,10 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow: hidden;
   background: var(--bg-secondary);
 }

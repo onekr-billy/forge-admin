@@ -20,11 +20,11 @@
 import { calculateLayout as baseLayout } from '../converter/layout-algorithm.js'
 
 const DEFAULT_OPTS = {
-  NODE_WIDTH: 300,
-  NODE_HEIGHT: 104,
+  NODE_WIDTH: 224,
+  NODE_HEIGHT: 82,
   GATEWAY_SIZE: 44,
-  V_GAP: 66,
-  H_GAP: 80,
+  V_GAP: 56,
+  H_GAP: 72,
   MARGIN_TOP: 56,
   MARGIN_LEFT: 240,
 }

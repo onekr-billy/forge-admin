@@ -35,7 +35,12 @@ function handleClick(type) {
 
 <template>
   <div class="add-node-popover">
-    <div v-for="group in groups" :key="group.label" class="add-node-group">
+    <div
+      v-for="group in groups"
+      :key="group.label"
+      class="add-node-group"
+      :class="{ 'is-branch-group': group.label === '分支' }"
+    >
       <div class="add-node-group-title">
         {{ group.label }}
       </div>
@@ -47,8 +52,8 @@ function handleClick(type) {
           :data-type="item.type"
           @click.stop="handleClick(item.type)"
         >
-          <span class="add-node-menu-icon">
-            <i :class="[item.icon, item.color]" />
+          <span class="add-node-menu-icon" :data-tone="item.tone || 'slate'">
+            <i :class="item.icon" />
           </span>
           <span class="add-node-menu-label">
             {{ item.label }}
@@ -61,12 +66,15 @@ function handleClick(type) {
 
 <style scoped>
 .add-node-popover {
-  width: 360px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   color: #1f2937;
 }
 
 .add-node-group {
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .add-node-group:last-child {
@@ -74,7 +82,7 @@ function handleClick(type) {
 }
 
 .add-node-group-title {
-  padding: 0 2px 8px;
+  padding: 0 4px 8px;
   color: #64748b;
   font-size: 12px;
   font-weight: 600;
@@ -87,17 +95,21 @@ function handleClick(type) {
   gap: 8px;
 }
 
+.add-node-group.is-branch-group .add-node-menu-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .add-node-menu-item {
   display: flex;
   min-width: 0;
-  min-height: 46px;
+  min-height: 36px;
   box-sizing: border-box;
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 4px;
   appearance: none;
   background: #fff;
   color: #1f2937;
@@ -109,9 +121,18 @@ function handleClick(type) {
     color 160ms ease;
 }
 
+.add-node-group.is-branch-group .add-node-menu-item {
+  min-height: 64px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  text-align: center;
+}
+
 .add-node-menu-item:hover {
-  border-color: rgba(22, 93, 255, 0.12);
-  background: #f7faff;
+  border-color: #e2e8f0;
+  background: #f8fafc;
 }
 
 .add-node-menu-item:focus-visible {
@@ -121,19 +142,61 @@ function handleClick(type) {
 
 .add-node-menu-icon {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
-  background: #f2f5f8;
+  color: #64748b;
+}
+
+.add-node-menu-icon[data-tone='blue'] {
+  color: #2563eb;
+}
+
+.add-node-menu-icon[data-tone='teal'] {
+  color: #0d9488;
+}
+
+.add-node-menu-icon[data-tone='amber'] {
+  color: #d97706;
+}
+
+.add-node-menu-icon[data-tone='emerald'] {
+  color: #059669;
+}
+
+.add-node-menu-icon[data-tone='indigo'] {
+  color: #4f46e5;
+}
+
+.add-node-menu-icon[data-tone='violet'] {
+  color: #7c3aed;
+}
+
+.add-node-menu-icon[data-tone='cyan'] {
+  color: #0891b2;
+}
+
+.add-node-menu-icon[data-tone='sky'] {
+  color: #0284c7;
+}
+
+.add-node-group.is-branch-group .add-node-menu-icon {
+  width: 22px;
+  height: 22px;
 }
 
 .add-node-menu-icon :deep(i) {
-  width: 15px;
-  height: 15px;
-  font-size: 15px;
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+}
+
+.add-node-group.is-branch-group .add-node-menu-icon :deep(i) {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
 }
 
 .add-node-menu-label {
@@ -146,6 +209,12 @@ function handleClick(type) {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.add-node-group.is-branch-group .add-node-menu-label {
+  flex: none;
+  width: 100%;
+  font-size: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {

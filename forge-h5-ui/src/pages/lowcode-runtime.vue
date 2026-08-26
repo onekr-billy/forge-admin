@@ -305,7 +305,6 @@ import LowcodeForm from '@/components/lowcode/LowcodeForm.vue'
 import PageSectionRenderer from '@/components/lowcode/PageSectionRenderer.vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
-import { ensureLogin } from '@/utils/auth-guard'
 import { toast } from '@/utils/notify'
 import {
   actionInputSchema,
@@ -427,8 +426,7 @@ onLoad(async query => {
   const requestedMode = String(query?.mode || '').toLowerCase()
   mode.value = requestedMode === 'create' ? 'create' : requestedMode === 'detail' ? 'detail' : requestedMode === 'edit' ? 'edit' : 'list'
   currentId.value = String(query?.recordId || query?.id || '')
-  const ok = await ensureLogin({ redirect: `/pages/lowcode-runtime?${queryString(query)}` })
-  if (ok) await loadRuntime()
+  await loadRuntime()
 })
 
 onUnload(() => {

@@ -277,7 +277,6 @@ import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiTabBar from '@/components/AiTabBar.vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
-import { ensureLogin } from '@/utils/auth-guard'
 import { resetKeyExchange } from '@/utils/crypto/key-exchange'
 import { showConfirmDialog } from '@/utils/dialog'
 import { DEFAULT_AVATAR_URL } from '@/utils/file'
@@ -457,10 +456,6 @@ const menuGroups = computed(() => [
 onShow(async () => {
   hideNativeTabBar()
   messageQuietMode.value = uni.getStorageSync('forge_h5_quiet_mode') === '1'
-  const ok = await ensureLogin({ redirect: '/pages/mine/index' })
-  if (!ok) {
-    return
-  }
   if (!authStore.menus.length && !authStore.permissions.length) {
     await authStore.fetchAccessSnapshot()
   }

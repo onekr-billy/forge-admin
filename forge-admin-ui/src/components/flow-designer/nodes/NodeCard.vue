@@ -26,19 +26,20 @@ const props = defineProps({
   subtitle: { type: String, default: '' },
   showActions: { type: Boolean, default: true },
   deletable: { type: Boolean, default: true },
-  width: { type: Number, default: 300 },
-  height: { type: Number, default: 104 },
+  width: { type: Number, default: 224 },
+  height: { type: Number, default: 82 },
 })
 
 const emit = defineEmits(['click', 'delete', 'contextMenu'])
 
 const COLOR_META = {
-  primary: { color: '#356dff', soft: 'rgba(53, 109, 255, 0.1)', shadow: 'rgba(53, 109, 255, 0.22)' },
-  success: { color: '#1aa6a6', soft: 'rgba(26, 166, 166, 0.1)', shadow: 'rgba(26, 166, 166, 0.22)' },
-  warning: { color: '#f59e0b', soft: 'rgba(245, 158, 11, 0.12)', shadow: 'rgba(245, 158, 11, 0.2)' },
-  info: { color: '#3b82f6', soft: 'rgba(59, 130, 246, 0.1)', shadow: 'rgba(59, 130, 246, 0.2)' },
-  error: { color: '#ef4444', soft: 'rgba(239, 68, 68, 0.1)', shadow: 'rgba(239, 68, 68, 0.2)' },
-  gray: { color: '#a3aab4', soft: 'rgba(148, 163, 184, 0.14)', shadow: 'rgba(148, 163, 184, 0.18)' },
+  primary: { color: '#2563eb', soft: '#dbeafe', content: '#2563eb' },
+  success: { color: '#64748b', soft: '#e2e8f0', content: '#475569' },
+  warning: { color: '#f59e0b', soft: '#fef3c7', content: '#d97706' },
+  info: { color: '#4f46e5', soft: '#e0e7ff', content: '#4f46e5' },
+  error: { color: '#dc2626', soft: '#fee2e2', content: '#dc2626' },
+  gray: { color: '#64748b', soft: '#e2e8f0', content: '#475569' },
+  teal: { color: '#0d9488', soft: '#ccfbf1', content: '#0f766e' },
 }
 
 const STATUS_BADGE = {
@@ -55,7 +56,7 @@ const cardStyle = computed(() => ({
   'minHeight': `${props.height}px`,
   '--flow-node-color': colorMeta.value.color,
   '--flow-node-soft': colorMeta.value.soft,
-  '--flow-node-shadow': colorMeta.value.shadow,
+  '--flow-node-content-color': colorMeta.value.content,
 }))
 const statusBadge = computed(() => STATUS_BADGE[props.status] || null)
 const canDelete = computed(() => props.deletable && props.showActions && !props.readonly)
@@ -78,7 +79,7 @@ function handleContextMenu(e) {
 
 <template>
   <div
-    class="flow-node-card flex flex-col cursor-pointer gap-2.5 bg-white px-3.5 py-3 transition-all duration-200"
+    class="flow-node-card flex flex-col cursor-pointer bg-white transition-all duration-200"
     :class="[
       selected ? 'is-selected' : '',
       readonly ? 'is-readonly' : '',
@@ -91,20 +92,20 @@ function handleContextMenu(e) {
   >
     <div class="flow-node-title w-full flex items-center gap-2">
       <span
-        class="flow-node-icon h-11 w-11 flex shrink-0 items-center justify-center text-white"
+        class="flow-node-icon flex shrink-0 items-center justify-center"
       >
-        <i :class="icon" class="text-2xl" />
+        <i :class="icon" />
       </span>
       <div class="flow-node-main min-w-0 flex flex-col flex-1 gap-1">
         <div class="flow-node-heading min-w-0 flex items-center gap-1.5">
-          <span class="flow-node-name text-sm truncate text-gray-800 font-semibold">
+          <span class="flow-node-name text-xs truncate text-slate-700 font-semibold">
             {{ node?.name || '未命名节点' }}
           </span>
           <slot v-if="!readonly" name="title-extra" />
         </div>
         <div v-if="statusBadge" class="flow-node-meta flex items-center">
           <span
-            class="flow-node-status shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+            class="flow-node-status shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium"
             :class="statusBadge.class"
           >{{ statusBadge.label }}</span>
         </div>
@@ -112,41 +113,47 @@ function handleContextMenu(e) {
 
       <button
         v-if="canDelete"
-        class="shrink-0 rounded p-1 text-gray-300 transition-colors hover:bg-red-100 hover:text-red-500"
+        class="flow-node-delete shrink-0 rounded-sm p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600"
         aria-label="删除节点"
         @click.stop="handleDelete"
       >
-        <i class="i-mdi-close text-base" />
+        <i class="i-lucide:x text-sm" />
       </button>
     </div>
 
-    <div v-if="subtitle && !readonly" class="flow-node-summary text-xs w-full truncate text-gray-500">
-      {{ subtitle }}
-    </div>
-    <div v-if="$slots.default && !readonly" class="flow-node-extra text-xs w-full truncate text-gray-500">
-      <slot />
+    <div class="flow-node-body">
+      <div v-if="subtitle && !readonly" class="flow-node-summary">
+        {{ subtitle }}
+      </div>
+      <div v-if="$slots.default && !readonly" class="flow-node-extra">
+        <slot />
+      </div>
+      <i class="i-lucide:chevron-right flow-node-chevron" />
     </div>
   </div>
 </template>
 
 <style scoped>
 .flow-node-card {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid var(--flow-node-color);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .flow-node-card:not(.is-readonly):hover {
-  border-color: rgba(53, 109, 255, 0.2);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
-  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  border-left-color: var(--flow-node-color);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.1);
 }
 
 .flow-node-card.is-selected {
-  border-color: #38b8b2;
+  border-color: #3b82f6;
+  border-left-color: var(--flow-node-color);
   box-shadow:
-    0 0 0 2px rgba(56, 184, 178, 0.18),
-    0 12px 30px rgba(15, 23, 42, 0.12);
+    0 0 0 1px rgba(59, 130, 246, 0.9),
+    0 3px 10px rgba(15, 23, 42, 0.12);
 }
 
 .flow-node-card.is-readonly {
@@ -154,52 +161,88 @@ function handleContextMenu(e) {
 }
 
 .flow-node-icon {
-  background: var(--flow-node-color);
-  border-radius: 7px;
-  box-shadow: 0 8px 18px var(--flow-node-shadow);
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--flow-node-soft);
+  color: var(--flow-node-color);
+}
+
+.flow-node-icon i {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
 }
 
 .flow-node-title {
-  min-height: 46px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.flow-node-delete {
+  opacity: 0;
+}
+
+.flow-node-card:hover .flow-node-delete,
+.flow-node-card.is-selected .flow-node-delete {
+  opacity: 1;
+}
+
+.flow-node-body {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff;
 }
 
 .flow-node-summary {
-  display: block;
-  min-height: 34px;
-  padding: 8px 10px;
-  border: 1px solid rgba(15, 23, 42, 0.03);
-  border-radius: 4px;
-  background: linear-gradient(180deg, #fafbfc 0%, #f6f8fa 100%);
-  line-height: 1.45;
-  white-space: normal;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--flow-node-content-color);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .flow-node-extra {
+  min-width: 0;
   color: #64748b;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.flow-node-chevron {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: #cbd5e1;
 }
 
 .flow-node-card.is-readonly {
-  gap: 10px;
-  padding: 13px 15px;
-  justify-content: center;
+  justify-content: stretch;
 }
 
 .flow-node-card.is-readonly .flow-node-title {
   align-items: center;
-  gap: 10px;
-  min-height: 54px;
+  min-height: 34px;
 }
 
 .flow-node-card.is-readonly .flow-node-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
-  box-shadow: 0 10px 22px var(--flow-node-shadow);
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
 }
 
 .flow-node-card.is-readonly .flow-node-icon i {
-  font-size: 30px;
+  font-size: 14px;
   line-height: 1;
 }
 
@@ -209,7 +252,6 @@ function handleContextMenu(e) {
 
 .flow-node-card.is-readonly .flow-node-summary {
   color: #475569;
-  background: #f8fafc;
 }
 
 @media (prefers-reduced-motion: reduce) {

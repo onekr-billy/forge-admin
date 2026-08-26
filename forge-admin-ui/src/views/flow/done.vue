@@ -9,8 +9,10 @@
       :pagination="pagination"
       :selectable="false"
       row-key="id"
-      search-placeholder="通过名称搜索"
+      search-placeholder="搜索任务名称或编号..."
       empty-text="暂无已办任务"
+      status-title="审批结果"
+      node-title="处理节点"
       @search="handleSearch"
       @refresh="loadData"
       @row-click="openDrawer"
@@ -32,19 +34,26 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #meta="{ row }">
-        <span><span class="task-meta-label">申请人</span> <span class="task-meta-value">{{ row.startUserName || '-' }}</span></span>
-        <span><span class="task-meta-label">完成时间</span> <span class="task-meta-value">{{ row.completeTime || '-' }}</span></span>
-        <span><span class="task-meta-label">处理节点</span> <span class="task-meta-value">{{ getTaskDisplayName(row) }}</span></span>
-        <span><span class="task-meta-label">流程分类</span> <span class="task-meta-value">{{ getCategoryDisplayName(row) }}</span></span>
+      <template #identifier="{ row }">
+        {{ row.businessKey || row.processInstanceId || row.taskId || row.id }}
+      </template>
+      <template #node="{ row }">
+        {{ getTaskDisplayName(row) }}
+      </template>
+      <template #user="{ row }">
+        <span>{{ row.startUserName || '-' }}</span>
+        <small>{{ row.completeTime || '-' }}</small>
       </template>
       <template #summary="{ row }">
         <span v-if="row.comment">审批意见：{{ row.comment }}</span>
       </template>
       <template #actions="{ row }">
         <button type="button" class="task-row-link-action" aria-label="查看详情" @click="openDrawer(row)">
-          <span>详情</span>
-          <i class="i-material-symbols:chevron-right" />
+          详情
+        </button>
+        <span class="task-row-action-separator" />
+        <button type="button" class="task-row-link-action muted" aria-label="更多操作" @click="openDrawer(row)">
+          <i class="i-lucide:more-horizontal" />
         </button>
       </template>
     </FlowTaskCardList>
@@ -666,10 +675,10 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow: hidden;
   background: var(--bg-secondary);
 }

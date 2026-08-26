@@ -114,7 +114,6 @@ import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiTabBar from '@/components/AiTabBar.vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
-import { ensureLogin } from '@/utils/auth-guard'
 import { toast } from '@/utils/notify'
 
 const authStore = useAuthStore()
@@ -150,10 +149,12 @@ const emptyDescription = computed(() => flowServiceUnavailable.value
   : keyword.value ? `没有符合当前条件的${scopeLabel.value}` : `当前没有${scopeLabel.value}`)
 
 onShow(async () => {
-  const ok = await ensureLogin({ redirect: '/pages/todo' })
-  if (!ok) return
-  if (!tasks.value.length) await loadTasks({ reset: true })
-  if (categoryOptions.value.length === 1) loadCategories()
+  if (!tasks.value.length) {
+    await loadTasks({ reset: true })
+  }
+  if (categoryOptions.value.length === 1) {
+    loadCategories()
+  }
 })
 
 onPullDownRefresh(async () => {

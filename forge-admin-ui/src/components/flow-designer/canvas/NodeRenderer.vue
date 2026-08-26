@@ -13,7 +13,7 @@
  *   - readonly
  *   - outgoingCount    供 BranchNode 显示分支数（外层从 useFlowDesigner.getOutgoingEdges 取）
  *
- * Events 全部透传：click / delete / context-menu
+ * Events 全部透传：click / delete / contextMenu
  */
 import { computed } from 'vue'
 import AdvancedNode from '../nodes/AdvancedNode.vue'
@@ -36,7 +36,7 @@ const props = defineProps({
   outgoingCount: { type: Number, default: 0 },
 })
 
-defineEmits(['click', 'delete', 'context-menu'])
+defineEmits(['click', 'delete', 'contextMenu'])
 
 const RENDERER_MAP = {
   start: StartNode,
@@ -79,7 +79,7 @@ const wrapStyle = computed(() => {
       :outgoing-count="isBranch ? outgoingCount : undefined"
       @click="$emit('click', $event)"
       @delete="$emit('delete', $event)"
-      @context-menu="$emit('context-menu', $event)"
+      @context-menu="$emit('contextMenu', $event)"
     />
   </div>
 </template>

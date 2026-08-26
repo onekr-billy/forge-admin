@@ -14,7 +14,7 @@ const props = defineProps({
   readonly: Boolean,
 })
 
-defineEmits(['click', 'delete', 'context-menu'])
+defineEmits(['click', 'delete', 'contextMenu'])
 
 const subtitle = computed(() => {
   return props.node?.config?.endType === 'terminate' ? '强制终止流程' : '正常结束'
@@ -27,11 +27,11 @@ const subtitle = computed(() => {
     :selected="selected"
     :status="status"
     :readonly="readonly"
-    icon="i-mdi-stop"
+    icon="i-lucide:square"
     color-var="gray"
     :subtitle="subtitle"
     :deletable="false"
     @click="$emit('click', $event)"
-    @context-menu="$emit('context-menu', $event)"
+    @context-menu="$emit('contextMenu', $event)"
   />
 </template>

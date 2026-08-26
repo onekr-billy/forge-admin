@@ -1,83 +1,86 @@
 <template>
   <div class="flow-page">
-    <!-- 统计卡片 -->
-    <FlowCategoryStats
-      :total-count="totalCount"
-      :enabled-count="enabledCount"
-      :disabled-count="disabledCount"
-      @filter="handleFilter"
-    />
+    <div class="flow-workbench">
+      <!-- 统计卡片 -->
+      <FlowCategoryStats
+        :total-count="totalCount"
+        :enabled-count="enabledCount"
+        :disabled-count="disabledCount"
+        @filter="handleFilter"
+      />
 
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-left">
-        <div class="title-row">
-          <div class="title-icon">
-            <i class="i-material-symbols:category-outline" />
+      <!-- 页面头部 -->
+      <div class="page-header">
+        <div class="header-left">
+          <div class="title-row">
+            <div class="title-icon">
+              <i class="i-material-symbols:category-outline" />
+            </div>
+            <h2 class="page-title">
+              流程分类
+            </h2>
           </div>
-          <h2 class="page-title">
-            流程分类
-          </h2>
+        </div>
+        <div class="header-right">
+          <n-input
+            v-model:value="queryParams.categoryName"
+            placeholder="搜索分类名称"
+            clearable
+            class="search-input"
+            @keydown.enter="handleSearch"
+          >
+            <template #prefix>
+              <i class="i-material-symbols:search" />
+            </template>
+          </n-input>
+          <n-input
+            v-model:value="queryParams.categoryCode"
+            placeholder="搜索分类编码"
+            clearable
+            class="code-input"
+            @keydown.enter="handleSearch"
+          >
+            <template #prefix>
+              <i class="i-material-symbols:code" />
+            </template>
+          </n-input>
+          <n-select
+            v-model:value="queryParams.status"
+            placeholder="状态"
+            clearable
+            class="status-select"
+            :options="statusOptions"
+          />
+          <NButton quaternary size="small" class="search-btn" @click="handleSearch">
+            <i class="i-material-symbols:search mr-2" />
+            搜索
+          </NButton>
+          <NButton quaternary size="small" class="reset-btn" @click="handleReset">
+            <i class="i-material-symbols:refresh mr-2" />
+            重置
+          </NButton>
+          <NButton type="primary" size="small" class="add-btn" @click="handleAdd">
+            <i class="i-material-symbols:add mr-2" />
+            新增分类
+          </NButton>
         </div>
       </div>
-      <div class="header-right">
-        <n-input
-          v-model:value="queryParams.categoryName"
-          placeholder="搜索分类名称"
-          clearable
-          class="search-input"
-          @keydown.enter="handleSearch"
-        >
-          <template #prefix>
-            <i class="i-material-symbols:search" />
-          </template>
-        </n-input>
-        <n-input
-          v-model:value="queryParams.categoryCode"
-          placeholder="搜索分类编码"
-          clearable
-          class="code-input"
-          @keydown.enter="handleSearch"
-        >
-          <template #prefix>
-            <i class="i-material-symbols:code" />
-          </template>
-        </n-input>
-        <n-select
-          v-model:value="queryParams.status"
-          placeholder="状态"
-          clearable
-          class="status-select"
-          :options="statusOptions"
-        />
-        <NButton type="primary" class="search-btn" @click="handleSearch">
-          <i class="i-material-symbols:search mr-2" />
-          搜索
-        </NButton>
-        <NButton class="reset-btn" @click="handleReset">
-          <i class="i-material-symbols:refresh mr-2" />
-          重置
-        </NButton>
-        <NButton type="primary" class="add-btn" @click="handleAdd">
-          <i class="i-material-symbols:add mr-2" />
-          新增分类
-        </NButton>
-      </div>
-    </div>
 
-    <!-- 数据表格（树形） -->
-    <div class="table-container">
-      <n-data-table
-        :columns="columns"
-        :data="dataSource"
-        :loading="loading"
-        :row-key="row => row.id"
-        :expandable="{
-          expandedRowKeys,
-          onUpdateExpandedRowKeys: handleExpandedChange,
-        }"
-        striped
-      />
+      <!-- 数据表格（树形） -->
+      <div class="table-container">
+        <n-data-table
+          size="small"
+          :columns="columns"
+          :data="dataSource"
+          :loading="loading"
+          :row-key="row => row.id"
+          :expandable="{
+            expandedRowKeys,
+            onUpdateExpandedRowKeys: handleExpandedChange,
+          }"
+          striped
+        />
+      </div>
     </div>
 
     <!-- 新增/编辑弹窗 -->
@@ -175,7 +178,7 @@ const columns = [
   {
     title: '分类名称',
     key: 'categoryName',
-    width: 100,
+    width: 120,
     render: (row) => {
       return h('span', { class: 'category-name' }, row.categoryName)
     },
@@ -212,13 +215,13 @@ const columns = [
   {
     title: '创建时间',
     key: 'createTime',
-    width: 180,
+    width: 160,
   },
   {
     title: '操作',
     key: 'actions',
-    width: 160,
-    render: row => h(NSpace, { size: 12 }, {
+    width: 128,
+    render: row => h(NSpace, { size: 8 }, {
       default: () => [
         h(NButton, {
           size: 'small',
@@ -439,83 +442,96 @@ onMounted(() => {
 
 <style scoped>
 .flow-page {
-  padding: 20px;
+  padding: 8px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.flow-workbench {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary, #fff);
 }
 
 .page-header {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-  margin-bottom: 16px;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+  background: #fff;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .title-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: #f3f4f6;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 18px;
+  color: #475569;
+  font-size: 16px;
 }
 
 .page-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
   margin: 0;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .search-input {
-  width: 200px;
+  width: 180px;
 }
 
 .code-input {
-  width: 150px;
+  width: 140px;
 }
 
 .status-select {
-  width: 120px;
+  width: 110px;
 }
 
 .table-container {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px 20px;
+  display: flex;
   flex: 1;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+  min-height: 0;
+  overflow: hidden;
+  padding: 6px 8px 8px;
 }
 
 :deep(.category-name) {
-  font-weight: 600;
+  font-weight: 500;
   color: #0f172a;
 }
 
@@ -526,10 +542,13 @@ onMounted(() => {
 }
 
 :deep(.status-tag) {
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 6px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -551,24 +570,24 @@ onMounted(() => {
 :deep(.level-tag) {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 2px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   background: #f1f5f9;
   color: #64748b;
 }
 
 :deep(.n-data-table-th) {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 :deep(.n-data-table-td) {
-  padding: 12px 16px;
+  padding: 8px 10px;
 }
 
 :deep(.n-data-table-expand-icon) {
-  margin-right: 8px;
-  font-size: 16px;
+  margin-right: 6px;
+  font-size: 14px;
   color: #64748b;
   transition: transform 0.2s ease;
 }
@@ -590,5 +609,31 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.search-btn,
+.reset-btn {
+  color: #475569;
+}
+
+.search-btn:hover,
+.reset-btn:hover {
+  color: #2563eb;
+}
+
+.add-btn {
+  margin-left: 2px;
+}
+
+:deep(.table-container .n-data-table) {
+  min-height: 0;
+}
+
+:deep(.table-container .n-data-table .n-data-table-wrapper) {
+  min-height: 0;
+}
+
+:deep(.table-container .n-data-table .n-data-table-base-table) {
+  min-height: 0;
 }
 </style>

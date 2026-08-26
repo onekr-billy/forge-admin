@@ -75,135 +75,139 @@
     </div>
 
     <!-- 模型列表 -->
-    <n-spin :show="loading" class="model-list-spin">
-      <div v-if="dataSource.length > 0" class="model-grid">
-        <div
-          v-for="item in dataSource"
-          :key="item.id"
-          class="model-card"
-        >
-          <div class="card-header">
-            <div class="card-title-block">
-              <div class="card-title-row">
-                <div class="card-title-icon-box">
-                  <i class="i-lucide:git-merge card-title-icon" />
-                </div>
-                <div class="card-title-main">
-                  <div class="card-title">
-                    {{ item.modelName }}
+    <section class="model-workbench">
+      <n-spin :show="loading" class="model-list-spin">
+        <div class="model-list-body">
+          <div v-if="dataSource.length > 0" class="model-grid">
+            <div
+              v-for="item in dataSource"
+              :key="item.id"
+              class="model-card"
+            >
+              <div class="card-header">
+                <div class="card-title-block">
+                  <div class="card-title-row">
+                    <div class="card-title-icon-box">
+                      <i class="i-lucide:git-merge card-title-icon" />
+                    </div>
+                    <div class="card-title-main">
+                      <div class="card-title">
+                        {{ item.modelName }}
+                      </div>
+                      <div class="card-key">
+                        {{ item.modelKey }}
+                      </div>
+                    </div>
                   </div>
-                  <div class="card-key">
-                    {{ item.modelKey }}
+                </div>
+                <span class="status-tag" :class="statusClass(item.status)">
+                  {{ getLabel('flow_model_status', item.status) }}
+                </span>
+              </div>
+              <div class="card-body">
+                <div class="card-tags">
+                  <span class="designer-type-badge" :class="designerTypeClass(item.designerType)">
+                    {{ designerTypeLabel(item.designerType) }}
+                  </span>
+                  <span v-if="getCategoryDisplayName(item)" class="category-badge">
+                    {{ getCategoryDisplayName(item) }}
+                  </span>
+                </div>
+                <div class="card-binding" :class="{ empty: !item.businessBindings?.length }">
+                  <i class="i-lucide:link-2" />
+                  <span>{{ formatBusinessBindings(item) }}</span>
+                </div>
+                <div class="card-desc">
+                  {{ item.description || '暂无描述' }}
+                </div>
+              </div>
+              <div class="card-footer">
+                <div class="card-metadata">
+                  <div class="meta-item">
+                    <i class="i-lucide:calendar" />
+                    {{ formatDate(item.updateTime) || '未更新' }}
                   </div>
+                  <div class="meta-item">
+                    <i class="i-lucide:git-commit" />
+                    v{{ item.version || 1 }}
+                  </div>
+                </div>
+                <div class="card-actions">
+                  <button
+                    type="button"
+                    class="card-action-link"
+                    @click.stop="handleDesign(item)"
+                  >
+                    编辑
+                  </button>
+                  <template v-if="item.status === 0 || item.status === 1">
+                    <span class="card-action-separator" />
+                    <button
+                      v-if="item.status === 0"
+                      type="button"
+                      class="card-action-link"
+                      @click.stop="handleDeploy(item)"
+                    >
+                      发布
+                    </button>
+                    <button
+                      v-else
+                      type="button"
+                      class="card-action-link"
+                      @click.stop="handleViewInstances(item)"
+                    >
+                      实例
+                    </button>
+                  </template>
+                  <span class="card-action-separator" />
+                  <n-dropdown
+                    trigger="click"
+                    :options="getActionOptions(item)"
+                    @select="key => handleActionSelect(key, item)"
+                  >
+                    <button type="button" class="card-more-action" aria-label="更多操作" @click.stop>
+                      <i class="i-lucide:more-horizontal" />
+                    </button>
+                  </n-dropdown>
                 </div>
               </div>
             </div>
-            <span class="status-tag" :class="statusClass(item.status)">
-              {{ getLabel('flow_model_status', item.status) }}
-            </span>
           </div>
-          <div class="card-body">
-            <div class="card-tags">
-              <span class="designer-type-badge" :class="designerTypeClass(item.designerType)">
-                {{ designerTypeLabel(item.designerType) }}
-              </span>
-              <span v-if="getCategoryDisplayName(item)" class="category-badge">
-                {{ getCategoryDisplayName(item) }}
-              </span>
-            </div>
-            <div class="card-binding" :class="{ empty: !item.businessBindings?.length }">
-              <i class="i-lucide:link-2" />
-              <span>{{ formatBusinessBindings(item) }}</span>
-            </div>
-            <div class="card-desc">
-              {{ item.description || '暂无描述' }}
-            </div>
-          </div>
-          <div class="card-footer">
-            <div class="card-metadata">
-              <div class="meta-item">
-                <i class="i-lucide:calendar" />
-                {{ formatDate(item.updateTime) || '未更新' }}
-              </div>
-              <div class="meta-item">
-                <i class="i-lucide:git-commit" />
-                v{{ item.version || 1 }}
-              </div>
-            </div>
-            <div class="card-actions">
-              <button
-                type="button"
-                class="card-action-link"
-                @click.stop="handleDesign(item)"
-              >
-                编辑
-              </button>
-              <template v-if="item.status === 0 || item.status === 1">
-                <span class="card-action-separator" />
-                <button
-                  v-if="item.status === 0"
-                  type="button"
-                  class="card-action-link"
-                  @click.stop="handleDeploy(item)"
-                >
-                  发布
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  class="card-action-link"
-                  @click.stop="handleViewInstances(item)"
-                >
-                  实例
-                </button>
-              </template>
-              <span class="card-action-separator" />
-              <n-dropdown
-                trigger="click"
-                :options="getActionOptions(item)"
-                @select="key => handleActionSelect(key, item)"
-              >
-                <button type="button" class="card-more-action" aria-label="更多操作" @click.stop>
-                  <i class="i-lucide:more-horizontal" />
-                </button>
-              </n-dropdown>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- 加载占位：首次加载无数据时撑开高度，保证 loading 可见 -->
-      <div v-else-if="loading" class="model-list-loading" />
+          <!-- 加载占位：首次加载无数据时撑开高度，保证 loading 可见 -->
+          <div v-else-if="loading" class="model-list-loading" />
 
-      <!-- 空状态 -->
-      <n-empty
-        v-else
-        description="暂无流程模型，点击「新增模型」开始设计"
-        class="empty-state"
-      >
-        <template #extra>
-          <n-button type="primary" @click="handleAdd">
-            <template #icon>
-              <i class="i-material-symbols:add" />
+          <!-- 空状态 -->
+          <n-empty
+            v-else
+            description="暂无流程模型，点击「新增模型」开始设计"
+            class="empty-state"
+          >
+            <template #extra>
+              <n-button type="primary" @click="handleAdd">
+                <template #icon>
+                  <i class="i-material-symbols:add" />
+                </template>
+                新增模型
+              </n-button>
             </template>
-            新增模型
-          </n-button>
-        </template>
-      </n-empty>
-    </n-spin>
+          </n-empty>
+        </div>
+      </n-spin>
 
-    <!-- 分页 -->
-    <div v-if="pagination.itemCount > 0" class="pagination-wrapper">
-      <n-pagination
-        v-model:page="pagination.page"
-        v-model:page-size="pagination.pageSize"
-        :item-count="pagination.itemCount"
-        :page-sizes="[12, 24, 48]"
-        show-size-picker
-        @update:page="fetchData"
-        @update:page-size="handlePageSizeChange"
-      />
-    </div>
+      <!-- 分页 -->
+      <div v-if="pagination.itemCount > 0" class="pagination-wrapper">
+        <n-pagination
+          v-model:page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :item-count="pagination.itemCount"
+          :page-sizes="[12, 24, 48]"
+          show-size-picker
+          @update:page="fetchData"
+          @update:page-size="handlePageSizeChange"
+        />
+      </div>
+    </section>
 
     <!-- 新增/编辑弹窗 -->
     <Teleport to="body">
@@ -986,20 +990,20 @@ onMounted(() => {
 .flow-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  background: #f5f7fb;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .page-header {
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 14px 16px;
+  border-radius: 4px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1076,11 +1080,11 @@ onMounted(() => {
 
 .model-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   align-content: start;
   gap: 10px;
-  padding: 2px;
   min-width: 0;
+  padding: 0;
 }
 
 .model-card {
@@ -1390,27 +1394,66 @@ onMounted(() => {
   font-size: 14px;
 }
 
+.model-workbench {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.model-list-spin {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.model-list-spin :deep(.n-spin-container) {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.model-list-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding: 10px;
+}
+
 .model-list-loading {
   min-height: 280px;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: 4px;
   width: 100%;
 }
 
 .empty-state {
   padding: 48px 0;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid #e5e7eb;
   width: 100%;
 }
 
 .pagination-wrapper {
   display: flex;
-  justify-content: end;
+  justify-content: flex-end;
+  padding: 10px 14px;
+  border-top: 1px solid #eef2f7;
   flex-shrink: 0;
-  padding-top: 2px;
   max-width: 100%;
   overflow-x: auto;
 }
@@ -1575,14 +1618,12 @@ onMounted(() => {
 }
 
 .model-list-spin {
-  display: flex;
-  max-width: 100%;
+  display: block;
   min-width: 0;
-  overflow-x: auto;
+  max-width: 100%;
 }
 
 .model-list-spin :deep(.n-spin-container) {
-  flex: 1;
   min-width: 0;
 }
 

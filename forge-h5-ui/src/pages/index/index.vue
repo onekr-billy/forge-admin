@@ -188,7 +188,6 @@ import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiTabBar from '@/components/AiTabBar.vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
-import { ensureLogin } from '@/utils/auth-guard'
 import { resolveStaticUrl } from '@/utils/assets'
 import { DEFAULT_AVATAR_URL } from '@/utils/file'
 import { toast } from '@/utils/notify'
@@ -424,10 +423,6 @@ function normalizeSearchText(value) {
 
 onShow(async () => {
   hideNativeTabBar()
-  const ok = await ensureLogin({ redirect: '/pages/index/index' })
-  if (!ok) {
-    return
-  }
   await refreshWorkspace({ silent: true })
 })
 

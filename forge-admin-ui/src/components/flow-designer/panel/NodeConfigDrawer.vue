@@ -17,7 +17,7 @@
  *   - formFieldCatalog 流程动态表单字段目录，条件分支配置时用于生成表达式
  *   - focusEdgeId    从画布分支标签进入时聚焦的分支边 ID
  *   - readonly       只读模式（查看器场景）
- *   - width          抽屉宽度，默认 520
+ *   - width          抽屉宽度，默认 400
  *
  * Events:
  *   - update:visible (boolean)
@@ -43,7 +43,7 @@ const props = defineProps({
   formFieldCatalog: { type: Array, default: () => [] },
   focusEdgeId: { type: String, default: '' },
   readonly: { type: Boolean, default: false },
-  width: { type: Number, default: 520 },
+  width: { type: Number, default: 400 },
 })
 
 const emit = defineEmits(['update:visible', 'save', 'update:edge'])
@@ -90,16 +90,16 @@ const headerIcon = computed(() => {
   const map = {
     start: 'i-mdi-flag-variant-outline',
     end: 'i-mdi-flag-checkered',
-    approver: 'i-mdi-account-check',
-    carbonCopy: 'i-mdi-email-outline',
-    condition: 'i-mdi-source-branch',
-    parallel: 'i-mdi-call-split',
-    inclusive: 'i-mdi-set-merge',
-    service: 'i-mdi-cog-outline',
-    script: 'i-mdi-code-tags',
-    subProcess: 'i-mdi-sitemap-outline',
-    callActivity: 'i-mdi-phone-forward-outline',
-    advanced: 'i-mdi-shield-alert-outline',
+    approver: 'i-lucide:user',
+    carbonCopy: 'i-lucide:copy',
+    condition: 'i-lucide:git-branch',
+    parallel: 'i-lucide:split',
+    inclusive: 'i-lucide:git-merge',
+    service: 'i-lucide:settings',
+    script: 'i-lucide:code',
+    subProcess: 'i-lucide:network',
+    callActivity: 'i-lucide:phone',
+    advanced: 'i-lucide:shield',
   }
   return map[draftNode.value?.nodeType] || 'i-mdi-square-outline'
 })
@@ -219,7 +219,8 @@ defineExpose({
 
 .node-config-empty {
   margin: 18px;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
   padding: 16px;
   background: #f8fafc;
   color: #94a3b8;

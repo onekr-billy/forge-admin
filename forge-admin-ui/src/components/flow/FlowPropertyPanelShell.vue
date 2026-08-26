@@ -50,17 +50,17 @@ defineEmits(['close'])
   display: flex;
   flex-direction: column;
   background: #fff;
-  color: #172033;
+  color: #1e293b;
 }
 
 .flow-property-panel-shell__header {
-  min-height: 52px;
+  min-height: 48px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 9px 14px;
   border-bottom: 1px solid #e2e8f0;
   background: #f8fafc;
 }
@@ -73,16 +73,16 @@ defineEmits(['close'])
 }
 
 .flow-property-panel-shell__icon {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
-  border-radius: 7px;
+  border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #e6fffb;
-  color: #0f9488;
-  font-size: 18px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 16px;
 }
 
 .flow-property-panel-shell__text {
@@ -99,7 +99,7 @@ defineEmits(['close'])
   white-space: nowrap;
   color: #0f172a;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .flow-property-panel-shell__desc {
@@ -113,11 +113,11 @@ defineEmits(['close'])
 }
 
 .flow-property-panel-shell__close {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -150,14 +150,14 @@ defineEmits(['close'])
 
 .flow-property-panel-shell__footer {
   flex-shrink: 0;
-  padding: 12px 18px;
-  border-top: 1px solid #eef2f7;
-  background: #fff;
+  padding: 12px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .flow-property-panel-shell__empty {
   margin: 18px;
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 16px;
   background: #f8fafc;
   color: #94a3b8;
@@ -165,34 +165,34 @@ defineEmits(['close'])
 }
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-nav) {
-  min-height: 46px;
-  padding: 0 18px;
-  border-bottom: 1px solid #eef2f7;
+  min-height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid #e2e8f0;
   background: #fff;
 }
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-tab) {
-  min-height: 46px;
-  padding: 0 14px;
+  min-height: 42px;
+  padding: 0 12px;
   color: #64748b;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-tab.n-tabs-tab--active) {
-  color: #14b8a6;
+  color: #2563eb;
 }
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-bar) {
-  background-color: #14b8a6;
+  background-color: #2563eb;
 }
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tab-pane) {
-  padding: 16px 18px 20px;
+  padding: 14px 16px 18px;
 }
 
 .flow-property-panel-shell__content :deep(.n-form-item) {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .flow-property-panel-shell__content :deep(.n-form-item:last-child) {
@@ -202,9 +202,9 @@ defineEmits(['close'])
 .flow-property-panel-shell__content :deep(.n-form-item .n-form-item-label) {
   min-height: 22px;
   padding: 0 0 6px;
-  color: #111827;
-  font-size: 13px;
-  font-weight: 700;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .flow-property-panel-shell__content :deep(.n-form-item .n-form-item-label__asterisk) {
@@ -219,13 +219,13 @@ defineEmits(['close'])
 
 .flow-property-panel-shell__content :deep(.n-input .n-input-wrapper),
 .flow-property-panel-shell__content :deep(.n-base-selection .n-base-selection-label) {
-  min-height: 38px;
+  min-height: 32px;
 }
 
 .flow-property-panel-shell__content :deep(.n-input__input-el),
 .flow-property-panel-shell__content :deep(.n-base-selection-input),
 .flow-property-panel-shell__content :deep(.n-base-selection-placeholder) {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .flow-property-panel-shell__content :deep(.basic-config),
@@ -241,18 +241,19 @@ defineEmits(['close'])
 }
 
 .flow-property-panel-shell__content :deep(.config-section-block) {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .flow-property-panel-shell__content :deep(.config-section-title) {
   margin-bottom: 10px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 700;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .flow-property-panel-shell__content :deep(.config-hint) {
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
   padding: 10px 12px;
   background: #f8fafc;
   color: #64748b;

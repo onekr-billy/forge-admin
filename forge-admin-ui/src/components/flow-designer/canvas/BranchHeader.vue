@@ -79,7 +79,7 @@ function normalizeConditionExpression(value) {
 
 <template>
   <div
-    class="branch-header text-xs absolute z-30 flex cursor-pointer items-center px-2.5 py-1"
+    class="branch-header text-xs absolute z-30 flex cursor-pointer items-center px-2 py-0.5"
     :class="colorClass"
     :style="{
       left: `${position.x}px`,
@@ -89,7 +89,6 @@ function normalizeConditionExpression(value) {
     :title="labelTitle"
     @click.stop="$emit('click', edge)"
   >
-    <span class="branch-header-dot" />
     <span class="branch-header-text">{{ labelText }}</span>
   </div>
 </template>
@@ -99,21 +98,12 @@ function normalizeConditionExpression(value) {
   max-width: 112px;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 999px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: box-shadow 160ms ease;
-}
-
-.branch-header-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.7;
 }
 
 .branch-header-text {
@@ -124,7 +114,7 @@ function normalizeConditionExpression(value) {
 }
 
 .branch-header:hover {
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.1);
 }
 
 .branch-header.is-default {
@@ -150,7 +140,7 @@ function normalizeConditionExpression(value) {
   }
 
   .branch-header:hover {
-    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   }
 }
 </style>

@@ -13,7 +13,7 @@ const props = defineProps({
   status: { type: String, default: null },
   readonly: Boolean,
 })
-defineEmits(['click', 'delete', 'context-menu'])
+defineEmits(['click', 'delete', 'contextMenu'])
 
 const subtitle = computed(() => {
   const t = props.node?.bpmnElementType || 'bpmn:Activity'
@@ -24,8 +24,8 @@ const subtitle = computed(() => {
 <template>
   <NodeCard
     :node="node" :selected="selected" :status="status" :readonly="readonly"
-    icon="i-mdi-shield-alert-outline" color-var="warning" :subtitle="subtitle"
-    @click="$emit('click', $event)" @delete="$emit('delete', $event)" @context-menu="$emit('context-menu', $event)"
+    icon="i-lucide:shield" color-var="warning" :subtitle="subtitle"
+    @click="$emit('click', $event)" @delete="$emit('delete', $event)" @context-menu="$emit('contextMenu', $event)"
   >
     <template #title-extra>
       <span class="shrink-0 rounded bg-orange-100 px-1.5 py-0.5 text-[10px] text-orange-600">

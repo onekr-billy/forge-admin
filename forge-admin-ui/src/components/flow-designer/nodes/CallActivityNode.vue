@@ -11,7 +11,7 @@ const props = defineProps({
   status: { type: String, default: null },
   readonly: Boolean,
 })
-defineEmits(['click', 'delete', 'context-menu'])
+defineEmits(['click', 'delete', 'contextMenu'])
 
 const subtitle = computed(() => {
   const c = props.node?.config?.calledElement
@@ -22,7 +22,7 @@ const subtitle = computed(() => {
 <template>
   <NodeCard
     :node="node" :selected="selected" :status="status" :readonly="readonly"
-    icon="i-mdi-phone-forward-outline" color-var="info" :subtitle="subtitle"
-    @click="$emit('click', $event)" @delete="$emit('delete', $event)" @context-menu="$emit('context-menu', $event)"
+    icon="i-lucide:phone" color-var="info" :subtitle="subtitle"
+    @click="$emit('click', $event)" @delete="$emit('delete', $event)" @context-menu="$emit('contextMenu', $event)"
   />
 </template>

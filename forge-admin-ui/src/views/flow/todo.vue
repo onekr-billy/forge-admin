@@ -4,12 +4,12 @@
     <FlowTaskCardList
       v-model:selected-keys="selectedTaskKeys"
       v-model:search-value="queryParams.title"
-      title="待办"
+      title="我的待办任务"
       :items="dataSource"
       :loading="loading"
       :pagination="pagination"
       row-key="id"
-      search-placeholder="通过名称搜索"
+      search-placeholder="搜索任务名称或编号..."
       empty-text="暂无待办任务"
       @search="handleSearch"
       @refresh="loadData"
@@ -70,25 +70,37 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #meta="{ row }">
-        <span><span class="task-meta-label">申请人</span> <span class="task-meta-value">{{ row.startUserName || '-' }}</span></span>
-        <span><span class="task-meta-label">提交时间</span> <span class="task-meta-value">{{ row.createTime || '-' }}</span></span>
-        <span><span class="task-meta-label">当前节点</span> <span class="task-meta-value">{{ getTaskDisplayName(row) }}</span></span>
-        <span><span class="task-meta-label">流程分类</span> <span class="task-meta-value">{{ getCategoryDisplayName(row) }}</span></span>
+      <template #identifier="{ row }">
+        {{ row.businessKey || row.processInstanceId || row.taskId || row.id }}
+      </template>
+      <template #node="{ row }">
+        {{ getTaskDisplayName(row) }}
+      </template>
+      <template #user="{ row }">
+        <span>{{ row.startUserName || '-' }}</span>
+        <small>{{ row.createTime || '-' }}</small>
       </template>
       <template #actions="{ row }">
-        <button v-if="row.status === 0 && !row.assignee" type="button" class="task-row-link-action info" aria-label="签收任务" @click="handleClaim(row)">
-          签收
-        </button>
-        <button type="button" class="task-row-link-action danger" aria-label="驳回任务" @click="openQuickAction('reject', [row])">
-          驳回
-        </button>
         <button type="button" class="task-row-link-action success" aria-label="同意任务" @click="openQuickAction('approve', [row])">
           同意
         </button>
-        <button type="button" class="task-row-link-action primary" aria-label="去审批" @click="openDrawer(row)">
-          <span>审批</span>
-          <i class="i-material-symbols:chevron-right" />
+        <span class="task-row-action-separator" />
+        <button type="button" class="task-row-link-action danger" aria-label="驳回任务" @click="openQuickAction('reject', [row])">
+          驳回
+        </button>
+        <span class="task-row-action-separator" />
+        <button type="button" class="task-row-link-action" aria-label="去审批" @click="openDrawer(row)">
+          审批
+        </button>
+        <template v-if="row.status === 0 && !row.assignee">
+          <span class="task-row-action-separator" />
+          <button type="button" class="task-row-link-action info" aria-label="签收任务" @click="handleClaim(row)">
+            签收
+          </button>
+        </template>
+        <span class="task-row-action-separator" />
+        <button type="button" class="task-row-link-action muted" aria-label="更多操作" @click="openDrawer(row)">
+          <i class="i-lucide:more-horizontal" />
         </button>
       </template>
     </FlowTaskCardList>
@@ -1460,10 +1472,10 @@ watch(
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow: hidden;
   background: var(--bg-secondary);
 }

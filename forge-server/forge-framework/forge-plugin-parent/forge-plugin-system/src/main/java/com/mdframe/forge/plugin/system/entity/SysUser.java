@@ -172,4 +172,16 @@ public class SysUser extends TenantEntity {
      */
     @TableField(exist = false)
     private List<Long> roleIds;
+
+    /**
+     * 所属组织ID列表（查询详情时填充）
+     */
+    @TableField(exist = false)
+    private List<Long> orgIds;
+
+    /**
+     * 主组织ID（查询详情时填充）
+     */
+    @TableField(exist = false)
+    private Long mainOrgId;
 }

@@ -9,8 +9,11 @@
       :pagination="pagination"
       :selectable="false"
       row-key="id"
-      search-placeholder="通过名称搜索"
+      search-placeholder="搜索流程名称或编号..."
       empty-text="暂无发起的流程"
+      status-title="流程状态"
+      node-title="当前任务"
+      user-title="处理人"
       @search="handleSearch"
       @refresh="loadData"
       @row-click="openDrawer"
@@ -38,16 +41,23 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #meta="{ row }">
-        <span><span class="task-meta-label">当前任务</span> <span class="task-meta-value">{{ getTaskDisplayName(row, '已结束') }}</span></span>
-        <span><span class="task-meta-label">处理人</span> <span class="task-meta-value">{{ row.assigneeName || '-' }}</span></span>
-        <span><span class="task-meta-label">发起时间</span> <span class="task-meta-value">{{ row.createTime || '-' }}</span></span>
-        <span><span class="task-meta-label">流程分类</span> <span class="task-meta-value">{{ getCategoryDisplayName(row) }}</span></span>
+      <template #identifier="{ row }">
+        {{ row.businessKey || row.processInstanceId || row.id }}
+      </template>
+      <template #node="{ row }">
+        {{ getTaskDisplayName(row, '已结束') }}
+      </template>
+      <template #user="{ row }">
+        <span>{{ row.assigneeName || '-' }}</span>
+        <small>{{ row.createTime || '-' }}</small>
       </template>
       <template #actions="{ row }">
         <button type="button" class="task-row-link-action" aria-label="查看进度" @click="openDrawer(row)">
-          <span>进度</span>
-          <i class="i-material-symbols:chevron-right" />
+          进度
+        </button>
+        <span class="task-row-action-separator" />
+        <button type="button" class="task-row-link-action muted" aria-label="更多操作" @click="openDrawer(row)">
+          <i class="i-lucide:more-horizontal" />
         </button>
       </template>
     </FlowTaskCardList>
@@ -318,10 +328,10 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow: hidden;
   background: var(--bg-secondary);
 }

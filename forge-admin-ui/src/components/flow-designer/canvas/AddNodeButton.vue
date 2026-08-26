@@ -47,10 +47,11 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="add-node-button-wrap absolute z-20"
+    :class="{ 'is-open': popoverVisible }"
     :style="{
       left: `${position.x}px`,
       top: `${position.y}px`,
-      transform: 'translate(-50%, 0)',
+      transform: 'translate(-50%, -50%)',
     }"
   >
     <button
@@ -62,11 +63,11 @@ onBeforeUnmount(() => {
       :title="`添加${label}节点`"
       @click.stop="toggle"
     >
-      <i class="i-mdi-plus text-xl" />
+      <i class="i-lucide:plus text-sm" />
     </button>
     <div
       v-if="popoverVisible"
-      class="add-node-popover-anchor absolute left-1/2 top-full z-30 mt-2 bg-white p-2 shadow-lg -translate-x-1/2"
+      class="add-node-popover-anchor absolute left-1/2 top-full z-90 mt-2 bg-white p-3 shadow-xl -translate-x-1/2"
     >
       <AddNodePopover :allow-types="allowTypes" @select="handleSelect" />
     </div>
@@ -74,27 +75,37 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.add-node-button-wrap {
+  width: 20px;
+  height: 20px;
+}
+
+.add-node-button-wrap.is-open {
+  z-index: 90;
+}
+
 .add-node-btn {
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(32, 178, 170, 0.32);
-  border-radius: 999px;
-  color: #159a9a;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  width: 20px;
+  height: 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #94a3b8;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
 }
 
 .add-node-btn:hover:not(:disabled),
 .add-node-btn[aria-expanded='true'] {
-  border-color: #20b2aa;
-  color: #0f8b8b;
-  box-shadow: 0 10px 24px rgba(32, 178, 170, 0.16);
-  transform: translateY(-1px);
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.14);
 }
 
 .add-node-popover-anchor {
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  z-index: 91;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
 }
 
 @media (prefers-reduced-motion: reduce) {

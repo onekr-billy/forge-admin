@@ -11,25 +11,25 @@ export const NODE_MENU_GROUPS = Object.freeze([
   Object.freeze({
     label: '审批流',
     items: Object.freeze([
-      { type: NODE_TYPE.APPROVER, label: '审批人', icon: 'i-mdi-account-check', color: 'text-primary' },
-      { type: NODE_TYPE.CARBON_COPY, label: '抄送人', icon: 'i-mdi-email-outline', color: 'text-info' },
+      { type: NODE_TYPE.APPROVER, label: '审批人', icon: 'i-lucide:user', tone: 'blue' },
+      { type: NODE_TYPE.CARBON_COPY, label: '抄送人', icon: 'i-lucide:copy', tone: 'teal' },
     ]),
   }),
   Object.freeze({
     label: '分支',
     items: Object.freeze([
-      { type: NODE_TYPE.CONDITION, label: '条件分支', icon: 'i-mdi-source-branch', color: 'text-warning' },
-      { type: NODE_TYPE.PARALLEL, label: '并行分支', icon: 'i-mdi-call-split', color: 'text-success' },
-      { type: NODE_TYPE.INCLUSIVE, label: '包容分支', icon: 'i-mdi-set-merge', color: 'text-success' },
+      { type: NODE_TYPE.CONDITION, label: '条件分支', icon: 'i-lucide:git-branch', tone: 'amber' },
+      { type: NODE_TYPE.PARALLEL, label: '并行分支', icon: 'i-lucide:split', tone: 'emerald' },
+      { type: NODE_TYPE.INCLUSIVE, label: '包容分支', icon: 'i-lucide:git-merge', tone: 'emerald' },
     ]),
   }),
   Object.freeze({
     label: '高级',
     items: Object.freeze([
-      { type: NODE_TYPE.SERVICE, label: '服务任务', icon: 'i-mdi-cog-outline', color: 'text-info' },
-      { type: NODE_TYPE.SCRIPT, label: '脚本任务', icon: 'i-mdi-code-tags', color: 'text-info' },
-      { type: NODE_TYPE.SUB_PROCESS, label: '子流程', icon: 'i-mdi-sitemap-outline', color: 'text-info' },
-      { type: NODE_TYPE.CALL_ACTIVITY, label: '调用活动', icon: 'i-mdi-phone-forward-outline', color: 'text-info' },
+      { type: NODE_TYPE.SERVICE, label: '服务任务', icon: 'i-lucide:settings', tone: 'indigo' },
+      { type: NODE_TYPE.SCRIPT, label: '脚本任务', icon: 'i-lucide:code', tone: 'violet' },
+      { type: NODE_TYPE.SUB_PROCESS, label: '子流程', icon: 'i-lucide:network', tone: 'cyan' },
+      { type: NODE_TYPE.CALL_ACTIVITY, label: '调用活动', icon: 'i-lucide:phone', tone: 'sky' },
     ]),
   }),
 ])

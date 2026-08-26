@@ -3,6 +3,7 @@ import { HOME_PAGE } from '@/utils/route'
 import { setupDebugConsole } from '@/utils/debug-console'
 import { loadRuntimeCryptoConfig } from '@/utils/crypto/crypto-config'
 import { isWeComBrowser, startWeComAutoLogin, consumeWeComLoginRedirect } from '@/utils/wecom'
+import { ensureLaunchRouteAccess, setupNavigationGuard } from '@/utils/navigation-guard'
 
 function hideNativeTabBar() {
   if (typeof uni === 'undefined' || typeof uni.hideTabBar !== 'function') {
@@ -15,23 +16,22 @@ function hideNativeTabBar() {
 }
 
 // 企业微信客户端内自动免登：授权跳转或回调换票完成后进入深链目标页或首页
-function bootstrapWeComAutoLogin() {
+async function bootstrapWeComAutoLogin() {
   if (!isWeComBrowser()) {
-    return
+    return { status: 'skip', reason: 'not-wecom' }
   }
-  startWeComAutoLogin().then((result) => {
-    if (result?.status === 'logged-in') {
-      // 优先恢复授权前暂存的深链（企微卡片跳待办详情等），否则回首页
-      const redirect = consumeWeComLoginRedirect()
-      const url = redirect || HOME_PAGE
-      uni.reLaunch({
-        url,
-        fail: () => {
-          uni.reLaunch({ url: HOME_PAGE, fail: () => {} })
-        },
-      })
-    }
-  })
+  const result = await startWeComAutoLogin()
+  if (result?.status === 'logged-in') {
+    const redirect = consumeWeComLoginRedirect()
+    const url = redirect || HOME_PAGE
+    uni.reLaunch({
+      url,
+      fail: () => {
+        uni.reLaunch({ url: HOME_PAGE, fail: () => {} })
+      },
+    })
+  }
+  return result
 }
 
 export default {
@@ -39,8 +39,19 @@ export default {
     // 优先加载页内调试面板（?vdebug=1 开启），确保后续 console 可见
     await setupDebugConsole()
     await loadRuntimeCryptoConfig()
+    setupNavigationGuard()
     hideNativeTabBar()
-    bootstrapWeComAutoLogin()
+    const wecomResult = await bootstrapWeComAutoLogin()
+    if (wecomResult?.status === 'redirecting') {
+      return
+    }
+    if (wecomResult?.status === 'logged-in') {
+      return
+    }
+    const launchAllowed = await ensureLaunchRouteAccess()
+    if (launchAllowed === false) {
+      return
+    }
     console.log('App Launch')
   },
   onShow: function () {

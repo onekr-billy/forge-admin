@@ -20,20 +20,20 @@ const props = defineProps({
 const emit = defineEmits(['update:config'])
 
 const TASK_TYPE_OPTIONS = [
-  { label: '人工审批', value: 'assignee' },
-  { label: '候选人员', value: 'candidateUsers' },
-  { label: '候选角色', value: 'candidateGroups' },
+  { label: '人工审批', value: 'assignee', icon: 'i-lucide:user' },
+  { label: '候选人员', value: 'candidateUsers', icon: 'i-lucide:users' },
+  { label: '候选角色', value: 'candidateGroups', icon: 'i-lucide:shield' },
 ]
 
 const DOLLAR = '$'
 
 const ASSIGNEE_OPTIONS = [
-  { label: '发起人', value: `${DOLLAR}{initiator}` },
-  { label: '上级领导', value: `${DOLLAR}{initiatorLeader}` },
-  { label: '部门主管', value: `${DOLLAR}{deptManager}` },
-  { label: 'HR', value: `${DOLLAR}{hr}` },
-  { label: '指定人员', value: 'custom' },
-  { label: 'SPEL 模板', value: 'spel' },
+  { label: '发起人', value: `${DOLLAR}{initiator}`, icon: 'i-lucide:user-circle' },
+  { label: '上级领导', value: `${DOLLAR}{initiatorLeader}`, icon: 'i-lucide:building-2' },
+  { label: '部门主管', value: `${DOLLAR}{deptManager}`, icon: 'i-lucide:building-2' },
+  { label: 'HR', value: `${DOLLAR}{hr}`, icon: 'i-lucide:shield' },
+  { label: '指定人员', value: 'custom', icon: 'i-lucide:user-plus' },
+  { label: 'SPEL 模板', value: 'spel', icon: 'i-lucide:braces' },
 ]
 
 const taskType = useField('taskType', 'assignee')
@@ -320,22 +320,38 @@ function isFilledValue(value) {
 <template>
   <div class="approver-assignee-form">
     <n-form-item label="审批类型" label-placement="top" required :show-feedback="false">
-      <n-select
-        v-model:value="taskType"
-        :options="TASK_TYPE_OPTIONS"
-        :disabled="readonly"
-      />
+      <div class="option-card-grid is-three">
+        <button
+          v-for="option in TASK_TYPE_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="option-card"
+          :class="{ active: taskType === option.value }"
+          :disabled="readonly"
+          @click="taskType = option.value"
+        >
+          <i :class="option.icon" />
+          <span>{{ option.label }}</span>
+        </button>
+      </div>
     </n-form-item>
 
     <template v-if="taskType === 'assignee'">
       <n-form-item label="审批人" label-placement="top" required :show-feedback="false">
-        <n-select
-          :value="assignee"
-          :options="ASSIGNEE_OPTIONS"
-          :disabled="readonly"
-          placeholder="请选择审批人"
-          @update:value="handleAssigneeChange"
-        />
+        <div class="option-card-grid">
+          <button
+            v-for="option in ASSIGNEE_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="option-card"
+            :class="{ active: assignee === option.value }"
+            :disabled="readonly"
+            @click="handleAssigneeChange(option.value)"
+          >
+            <i :class="option.icon" />
+            <span>{{ option.label }}</span>
+          </button>
+        </div>
       </n-form-item>
 
       <n-form-item v-if="isCustomAssignee" label="指定人员" label-placement="top" required :show-feedback="false">
@@ -407,10 +423,65 @@ function isFilledValue(value) {
 .approver-assignee-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .approver-assignee-form :deep(.n-form-item) {
   margin-bottom: 0;
+}
+
+.option-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.option-card-grid.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.option-card {
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.option-card:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.option-card.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.option-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.option-card i {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  font-size: 14px;
 }
 </style>

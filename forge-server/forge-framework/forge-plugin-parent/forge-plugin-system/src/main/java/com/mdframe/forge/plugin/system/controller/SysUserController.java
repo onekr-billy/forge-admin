@@ -101,6 +101,18 @@ public class SysUserController {
         user.setPostIds(userService.selectUserPostIds(id));
         // 填充用户角色ID列表，支持新增/编辑表单直接维护角色
         user.setRoleIds(userService.selectUserRoleIds(id));
+        // 填充用户组织ID列表，支持新增/编辑表单直接维护组织与主组织
+        List<UserOrgBindingVO> orgBindings = userService.selectUserOrgBindings(id, user.getTenantId());
+        user.setOrgIds(orgBindings.stream()
+                .map(UserOrgBindingVO::getOrgId)
+                .filter(Objects::nonNull)
+                .toList());
+        user.setMainOrgId(orgBindings.stream()
+                .filter(item -> Objects.equals(item.getIsMain(), 1))
+                .map(UserOrgBindingVO::getOrgId)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(user.getOrgIds().isEmpty() ? null : user.getOrgIds().get(0)));
         return RespInfo.success(user);
     }
 

@@ -133,7 +133,6 @@ import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
 import AiTag from '@/components/AiTag.vue'
 import api from '@/api'
-import { ensureLogin } from '@/utils/auth-guard'
 import { showConfirmDialog } from '@/utils/dialog'
 import { toast } from '@/utils/notify'
 
@@ -180,10 +179,6 @@ onLoad((query = {}) => {
 })
 
 onShow(async () => {
-  const ok = await ensureLogin({ redirect: '/pages/message/index' })
-  if (!ok) {
-    return
-  }
   await refresh()
   if (pendingOpenId.value) {
     const target = messages.value.find(item => String(item.id) === pendingOpenId.value)
