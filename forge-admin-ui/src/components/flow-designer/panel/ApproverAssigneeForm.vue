@@ -4,7 +4,7 @@
  *
  * 字段：
  *   - taskType: assignee / candidateUsers / candidateGroups
- *   - assignee（taskType=assignee 下）：4 种静态变量 / custom / spel
+ *   - assignee（taskType=assignee 下）：发起人自选 / 4 种静态变量 / custom / spel
  *   - candidateUsers / candidateGroups + 对应名称列表
  *   - 指定人员保存固定字符串用户 ID；SPEL 模板单独维护 assigneeExpr
  */
@@ -28,6 +28,7 @@ const TASK_TYPE_OPTIONS = [
 const DOLLAR = '$'
 
 const ASSIGNEE_OPTIONS = [
+  { label: '发起人自选', value: 'initiatorSelect' },
   { label: '发起人', value: `${DOLLAR}{initiator}` },
   { label: '上级领导', value: `${DOLLAR}{initiatorLeader}` },
   { label: '部门主管', value: `${DOLLAR}{deptManager}` },
@@ -107,6 +108,7 @@ function useField(name, fallback = '') {
 
 const isCustomAssignee = computed(() => assignee.value === 'custom')
 const isSpelAssignee = computed(() => assignee.value === 'spel')
+const isInitiatorSelect = computed(() => assignee.value === 'initiatorSelect')
 
 watch(taskType, (value) => {
   if (value === 'candidateGroups')
@@ -120,7 +122,21 @@ watch(assignee, (value) => {
 
 function handleAssigneeChange(value) {
   const patch = { assignee: value }
-  if (value === 'custom') {
+  if (value === 'initiatorSelect') {
+    emit('update:config', {
+      assignee: 'initiatorSelect',
+      assigneeUserId: '',
+      assigneeExpr: '',
+      assigneeUserName: '',
+      multiInstanceType: 'parallel',
+      multiInstanceCollection: '',
+      multiInstanceElementVariable: 'assignee',
+      completionCondition: 'all',
+      passRate: 100,
+    })
+    return
+  }
+  else if (value === 'custom') {
     patch.spelTemplate = ''
     const legacyUserId = extractLegacyUserId(assigneeExpr.value)
     if (legacyUserId) {
@@ -364,6 +380,9 @@ function isFilledValue(value) {
           @update:value="handleSpelTemplateChange"
         />
       </n-form-item>
+      <n-alert v-if="isInitiatorSelect" type="info" :show-icon="false">
+        发起流程时由申请人在表单中选择本节点审批人，启动变量使用 PROCESS_START_USER，节点会为所选人员并行生成待办。
+      </n-alert>
     </template>
 
     <template v-else-if="taskType === 'candidateUsers'">

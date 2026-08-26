@@ -165,6 +165,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         // 兼容历史设计器把固定审批人写成 ${user_45}。新模型直接保存用户 ID，
         // 这里仅对已部署旧模型的严格数字表达式补变量，不影响正常动态表达式。
         BpmnModel bpmnModel = processEngine.getRepositoryService().getBpmnModel(processDefinition.getId());
+        InitiatorSelectedApproverSupport.validateAndNormalize(bpmnModel, vars);
         int legacyFixedAssigneeCount = LegacyFixedAssigneeVariableSupport.enrich(bpmnModel, vars);
         if (legacyFixedAssigneeCount > 0) {
             log.warn("[流程启动兼容] 已补齐历史固定审批人变量: processDefinitionId={}, count={}",

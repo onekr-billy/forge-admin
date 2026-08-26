@@ -508,6 +508,10 @@ export function businessFlowBinding(objectCode) {
   return request.get(`/ai/business/flow/binding/${objectCode}`)
 }
 
+export function businessFlowStartConfig(objectCode) {
+  return request.get(`/ai/business/flow/start-config/${objectCode}`)
+}
+
 export function saveBusinessFlowBinding(objectCode, data) {
   return request.put(`/ai/business/flow/binding/${objectCode}`, data)
 }

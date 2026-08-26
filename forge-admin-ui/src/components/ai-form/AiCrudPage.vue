@@ -848,6 +848,41 @@
         />
       </n-drawer-content>
     </n-drawer>
+
+    <n-modal
+      v-model:show="flowStartApproverModalVisible"
+      preset="card"
+      title="选择流程审批人"
+      style="width: min(560px, calc(100vw - 32px))"
+      :mask-closable="false"
+    >
+      <div class="flow-start-approver-modal">
+        <p class="flow-start-approver-modal__tip">
+          该流程有节点需要由申请人在发起时指定审批人，选定后将作为流程变量传入。
+        </p>
+        <n-form label-placement="top">
+          <n-form-item v-for="node in flowStartApproverNodes" :key="node.nodeKey" :label="node.nodeName || node.nodeKey" required>
+            <UserSelectPicker
+              v-model="flowStartApproverSelections[node.nodeKey]"
+              v-model:label-value="flowStartApproverLabels[node.nodeKey]"
+              :multiple="true"
+              :title="`选择${node.nodeName || node.nodeKey}审批人`"
+              placeholder="请选择一名或多名审批人"
+            />
+          </n-form-item>
+        </n-form>
+      </div>
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="flowStartApproverSubmitting" @click="flowStartApproverModalVisible = false">
+            取消
+          </n-button>
+          <n-button type="primary" :loading="flowStartApproverSubmitting" @click="submitFlowStartWithApprovers">
+            发起流程
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -867,11 +902,12 @@ import { NButton, NDropdown, NIcon, NProgress, NTag } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { crudConfigRender, customQueryExecute } from '@/api/ai'
-import { businessDocumentRuntimeBatch, executeBusinessAction } from '@/api/business-app'
-import { startBusinessProcess } from '@/api/business-process'
+import { businessDocumentRuntimeBatch, businessFlowStartConfig, executeBusinessAction } from '@/api/business-app'
+import { businessProcessStartConfig, startBusinessProcess } from '@/api/business-process'
 import { previewFormula } from '@/api/formula'
 import AuthImage from '@/components/common/AuthImage.vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
+import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import DictTag from '@/components/DictTag.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useUserStore } from '@/store'
@@ -986,6 +1022,12 @@ const detailRuntimeLoading = ref(false)
 const detailActiveTab = ref('business')
 const actionLoadingKeys = ref(new Set())
 const flowStartPageLoading = ref(false)
+const flowStartApproverModalVisible = ref(false)
+const flowStartApproverSubmitting = ref(false)
+const flowStartApproverNodes = ref([])
+const flowStartApproverSelections = ref({})
+const flowStartApproverLabels = ref({})
+const flowStartApproverContext = ref(null)
 const commandActionModalVisible = ref(false)
 const commandActionSubmitting = ref(false)
 const commandActionFormData = ref({})
@@ -1659,6 +1701,28 @@ async function startProcessAction(action, row) {
   setActionLoading(loadingKey, true)
   flowStartPageLoading.value = true
   try {
+    const processStartConfig = await businessProcessStartConfig(applicationCode, processCode)
+    const processNodes = Array.isArray(processStartConfig?.data?.initiatorSelectNodes)
+      ? processStartConfig.data.initiatorSelectNodes
+      : []
+    if (processStartConfig?.code === 200 && processNodes.length) {
+      flowStartApproverNodes.value = processNodes
+      flowStartApproverSelections.value = {}
+      flowStartApproverLabels.value = {}
+      flowStartApproverContext.value = {
+        objectCode,
+        recordId,
+        row,
+        loadingKey,
+        submit: variables => startBusinessProcess(applicationCode, processCode, {
+          recordId: String(recordId),
+          objectCode: objectCode || undefined,
+          variables,
+        }),
+      }
+      flowStartApproverModalVisible.value = true
+      return
+    }
     await startBusinessProcess(applicationCode, processCode, {
       recordId: String(recordId),
       objectCode: objectCode || undefined,
@@ -1697,15 +1761,19 @@ async function startFlowAction(action, row) {
   setActionLoading(loadingKey, true)
   flowStartPageLoading.value = true
   try {
-    const res = await request.post('/ai/business/flow/start', {
-      objectCode,
-      recordId,
-    })
-    if (row)
-      row._documentRuntime = res?.data || row?._documentRuntime || null
-    window.$message.success('流程已发起')
-    await refreshCurrentDetailRuntime(row)
-    await loadList()
+    const configRes = await businessFlowStartConfig(objectCode)
+    const nodes = Array.isArray(configRes?.data?.initiatorSelectNodes)
+      ? configRes.data.initiatorSelectNodes
+      : []
+    if (configRes?.code === 200 && nodes.length) {
+      flowStartApproverNodes.value = nodes
+      flowStartApproverSelections.value = {}
+      flowStartApproverLabels.value = {}
+      flowStartApproverContext.value = { objectCode, recordId, row, loadingKey }
+      flowStartApproverModalVisible.value = true
+      return
+    }
+    await submitFlowStartRequest({ objectCode, recordId, row })
   }
   catch (error) {
     window.$message.error(error.message || '发起主流程失败')
@@ -1714,6 +1782,65 @@ async function startFlowAction(action, row) {
     flowStartPageLoading.value = false
     setActionLoading(loadingKey, false)
   }
+}
+
+async function submitFlowStartWithApprovers() {
+  const context = flowStartApproverContext.value
+  if (!context)
+    return
+  const selections = {}
+  for (const node of flowStartApproverNodes.value) {
+    const ids = Array.isArray(flowStartApproverSelections.value[node.nodeKey])
+      ? flowStartApproverSelections.value[node.nodeKey].filter(value => value !== null && value !== undefined && String(value).trim() !== '').map(value => String(value))
+      : []
+    if (!ids.length) {
+      window.$message.warning(`请选择${node.nodeName || node.nodeKey}审批人`)
+      return
+    }
+    selections[node.nodeKey] = ids
+  }
+  flowStartApproverSubmitting.value = true
+  try {
+    if (typeof context.submit === 'function') {
+      const res = await context.submit({ PROCESS_START_USER: selections })
+      if (res?.code !== 200)
+        throw new Error(res?.message || '发起流程失败')
+      window.$message.success('流程已发起')
+      await refreshCurrentDetailRuntime(context.row)
+      await loadList()
+    }
+    else {
+      await submitFlowStartRequest({
+        objectCode: context.objectCode,
+        recordId: context.recordId,
+        row: context.row,
+        variables: { PROCESS_START_USER: selections },
+      })
+    }
+    flowStartApproverModalVisible.value = false
+    flowStartApproverContext.value = null
+  }
+  catch (error) {
+    window.$message.error(error?.message || '发起流程失败')
+  }
+  finally {
+    flowStartApproverSubmitting.value = false
+  }
+}
+
+async function submitFlowStartRequest({ objectCode, recordId, row, variables = {} }) {
+  const res = await request.post('/ai/business/flow/start', {
+    objectCode,
+    recordId,
+    variables,
+  })
+  if (res?.code !== 200)
+    throw new Error(res?.message || '发起流程失败')
+  if (row)
+    row._documentRuntime = res?.data || row?._documentRuntime || null
+  window.$message.success('流程已发起')
+  await refreshCurrentDetailRuntime(row)
+  await loadList()
 }
 
 async function refreshCurrentDetailRuntime(row = {}) {

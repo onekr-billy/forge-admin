@@ -76,6 +76,11 @@
         <span><span class="task-meta-label">当前节点</span> <span class="task-meta-value">{{ getTaskDisplayName(row) }}</span></span>
         <span><span class="task-meta-label">流程分类</span> <span class="task-meta-value">{{ getCategoryDisplayName(row) }}</span></span>
       </template>
+      <template #summary="{ row }">
+        <span v-if="row.businessObjectName || row.businessSummary" class="task-business-summary">
+          {{ row.businessObjectName || row.businessType }}<span v-if="row.businessSummary">：{{ row.businessSummary }}</span>
+        </span>
+      </template>
       <template #actions="{ row }">
         <button v-if="row.status === 0 && !row.assignee" type="button" class="task-row-link-action info" aria-label="签收任务" @click="handleClaim(row)">
           签收
@@ -208,7 +213,23 @@
             <span>加载表单中...</span>
           </div>
 
-          <template v-else-if="useComponentTaskForm">
+          <div v-if="!formInfoLoading && canReturn && (canChooseReturnTarget || canDirectSend)" class="flow-routing-options">
+            <n-form :model="approveForm" label-placement="top">
+              <n-form-item v-if="canChooseReturnTarget" label="退回节点" :show-feedback="false">
+                <n-select
+                  v-model:value="selectedReturnTarget"
+                  :options="returnTargetOptions"
+                  placeholder="请选择退回到哪个已审批节点"
+                  clearable
+                />
+              </n-form-item>
+              <n-checkbox v-if="canDirectSend" v-model:checked="directSendAfterReturn">
+                修正后直送至 {{ taskPolicySource.returnSourceActivityName || taskPolicySource.returnSourceActivityId }}
+              </n-checkbox>
+            </n-form>
+          </div>
+
+          <template v-if="useComponentTaskForm">
             <FlowBusinessForm
               :form-url="componentTaskFormUrl"
               :task-id="componentTaskFormInfo.taskId"
@@ -367,6 +388,16 @@
                   </NButton>
                 </template>
                 确认驳回该审批？
+              </n-popconfirm>
+
+              <n-popconfirm v-if="canRejectToStart" @positive-click="() => submitApprove('rejectToStart')">
+                <template #trigger>
+                  <NButton type="warning" ghost size="large" :loading="isActionLoading('rejectToStart')" :disabled="isApprovalBusy">
+                    <i class="i-material-symbols:person-return mr-2" />
+                    驳回至发起人
+                  </NButton>
+                </template>
+                确认驳回至发起人修改路径？
               </n-popconfirm>
 
               <n-popconfirm v-if="canReturn" @positive-click="() => submitApprove('return')">
@@ -585,8 +616,17 @@ const businessFormRenderContext = computed(() => ({
 const taskPolicySource = computed(() => taskFormInfo.value || businessFormContext.value || {})
 const canApprove = computed(() => taskPolicySource.value?.allowApprove !== false)
 const canReject = computed(() => taskPolicySource.value?.allowReject !== false)
+const canRejectToStart = computed(() => taskPolicySource.value?.allowRejectToStart === true)
 const canDelegate = computed(() => taskPolicySource.value?.allowDelegate !== false)
 const canReturn = computed(() => taskPolicySource.value?.allowReturn === true)
+const canChooseReturnTarget = computed(() => taskPolicySource.value?.allowMultiReturn === true)
+const canDirectSend = computed(() => taskPolicySource.value?.allowDirectSend === true)
+const returnTargetOptions = computed(() => (Array.isArray(taskPolicySource.value?.returnTargets)
+  ? taskPolicySource.value.returnTargets
+  : []).map(item => ({
+  label: item.activityName || item.activityId,
+  value: item.activityId,
+})))
 const canTerminate = computed(() => taskPolicySource.value?.allowTerminate === true)
 const requireComment = computed(() => taskPolicySource.value?.requireComment !== false)
 const requireSignature = computed(() => taskPolicySource.value?.requireSignature === true)
@@ -598,11 +638,16 @@ const approvalPolicy = computed(() => ({
   allowTerminate: canTerminate.value,
   requireComment: requireComment.value,
   requireSignature: requireSignature.value,
+  allowDirectSend: canDirectSend.value,
+  returnSourceActivityId: taskPolicySource.value?.returnSourceActivityId,
+  returnSourceActivityName: taskPolicySource.value?.returnSourceActivityName,
 }))
 
 // 审批表单
 const approveLoading = ref(false)
 const approveForm = reactive({ action: '', comment: '', signature: '' })
+const selectedReturnTarget = ref(null)
+const directSendAfterReturn = ref(false)
 const approveSignatureRef = ref(null)
 const approveSignatureKey = ref(0)
 const claimLoadingTaskId = ref('')
@@ -854,7 +899,7 @@ async function saveBusinessTaskFormFields(options = {}) {
 }
 
 async function persistBusinessTaskFormBeforeAction(action) {
-  if (!['approve', 'reject'].includes(action))
+  if (!['approve', 'reject', 'rejectToStart', 'return'].includes(action))
     return
   if (!useBusinessManagedForm.value || !businessFormHasWritableFields.value)
     return
@@ -876,7 +921,8 @@ function buildBusinessTaskActionPayload(action, comment, signature, variables = 
     userId: userStore.userId,
     comment,
     signature,
-    variables,
+    variables: buildActionVariables(action, variables),
+    targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
     data: { ...businessFormData.value },
   })
 }
@@ -891,8 +937,16 @@ async function submitTaskAction(action, comment, signature, variables = {}) {
     userId: userStore.userId,
     comment,
     signature,
-    variables,
+    variables: buildActionVariables(action, variables),
+    targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
   })
+}
+
+function buildActionVariables(action, variables = {}) {
+  const result = variables && typeof variables === 'object' ? { ...variables } : {}
+  if (action === 'approve' && canDirectSend.value)
+    result.directSend = directSendAfterReturn.value
+  return result
 }
 
 function openBusinessCodeForm() {
@@ -933,6 +987,8 @@ async function openDrawer(row) {
   approveForm.comment = ''
   approveForm.action = ''
   approveForm.signature = ''
+  selectedReturnTarget.value = null
+  directSendAfterReturn.value = false
   approveSignatureKey.value += 1
   approvalHistory.value = []
   taskFormInfo.value = null
@@ -1002,6 +1058,7 @@ function canRunAction(action) {
   const allowed = {
     approve: canApprove.value,
     reject: canReject.value,
+    rejectToStart: canRejectToStart.value,
     return: canReturn.value,
     terminate: canTerminate.value,
     delegate: canDelegate.value,
@@ -1047,6 +1104,7 @@ function resolveActionApi(action) {
   const apiMap = {
     approve: flowApi.approveTask,
     reject: flowApi.rejectTask,
+    rejectToStart: flowApi.rejectToStartTask,
     return: flowApi.returnTask,
     terminate: flowApi.terminateTask,
   }
@@ -1057,6 +1115,7 @@ function getActionSuccessText(action) {
   const textMap = {
     approve: '审批通过',
     reject: '已驳回',
+    rejectToStart: '已驳回至发起人修改路径',
     return: '已退回',
     terminate: '流程已终结',
   }
@@ -1139,6 +1198,8 @@ function assertQuickActionAllowed(action, formInfo, businessFormContext = null) 
     throw new Error('当前节点不允许同意')
   if (action === 'reject' && formInfo?.allowReject === false)
     throw new Error('当前节点不允许驳回')
+  if (action === 'rejectToStart' && formInfo?.allowRejectToStart !== true)
+    throw new Error('当前节点不允许驳回至发起人')
   if (formInfo?.requireSignature === true)
     throw new Error('需要手写签名，请进入详情处理')
   if (action === 'approve' && !businessManaged && formInfo?.formType === 'dynamic' && formInfo?.formJson)

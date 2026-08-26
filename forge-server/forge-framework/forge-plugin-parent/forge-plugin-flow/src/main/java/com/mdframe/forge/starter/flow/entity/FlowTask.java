@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 流程任务实体（我的待办/已办）
@@ -112,6 +113,12 @@ public class FlowTask {
      */
     @TableField(exist = false)
     private String businessSummary;
+
+    @TableField(exist = false)
+    private Map<String, Object> businessParams;
+
+    @TableField(exist = false)
+    private Map<String, Object> displayExtensions;
 
     /**
      * 任务标题

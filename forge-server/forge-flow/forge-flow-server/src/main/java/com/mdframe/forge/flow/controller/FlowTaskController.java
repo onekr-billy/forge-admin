@@ -7,6 +7,7 @@ import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
 import com.mdframe.forge.flow.dto.FlowTaskDelegateDTO;
 import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
 import com.mdframe.forge.flow.dto.FlowTaskWithdrawDTO;
+import com.mdframe.forge.flow.dto.FlowTaskReassignDTO;
 import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -146,6 +147,21 @@ public class FlowTaskController {
         return RespInfo.success("已驳回", null);
     }
 
+    /**
+     * 驳回至流程设计中标记的发起人修改路径。目标节点由 BPMN 回路决定，
+     * 本接口只保留动作语义并写入 rejectToStart 流程变量。
+     */
+    @PostMapping("/reject-to-start")
+    @ApiPermissionIgnore
+    public RespInfo<Void> rejectToStart(@RequestBody FlowTaskRejectDTO dto) {
+        String userId = resolveTrustedUser(dto.getUserId());
+        Long tenantId = resolveTrustedTenant(dto.getTenantId());
+        flowTaskService.rejectToStart(dto.getTaskId(), userId, optionalText(dto.getComment()),
+                optionalText(dto.getSignature()), tenantId,
+                optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()));
+        return RespInfo.success("已驳回至发起人修改路径", null);
+    }
+
     private Long resolveTrustedTenant(Long requestedTenant) {
         Long sessionTenant = SessionHelper.getTenantId();
         if (sessionTenant == null || sessionTenant <= 0) {
@@ -215,9 +231,29 @@ public class FlowTaskController {
             return RespInfo.error("当前用户ID不能为空");
         }
 
-        flowTaskService.returnTask(dto.getTaskId(), dto.getUserId(),
-                optionalText(dto.getComment()), optionalText(dto.getSignature()));
+        String userId = resolveTrustedUser(dto.getUserId());
+        flowTaskService.returnTask(dto.getTaskId(), userId,
+                optionalText(dto.getComment()), optionalText(dto.getSignature()),
+                optionalText(dto.getTargetActivityId()));
         return RespInfo.success("已退回", null);
+    }
+
+    /**
+     * 流程发起人、当前处理人或任务拥有人改派当前任务。
+     */
+    @PostMapping("/reassign")
+    @ApiPermissionIgnore
+    public RespInfo<Void> reassign(@RequestBody FlowTaskReassignDTO dto) {
+        if (isBlankId(dto.getTaskId())) {
+            return RespInfo.error("任务ID不能为空");
+        }
+        if (isBlankId(dto.getNewAssignee())) {
+            return RespInfo.error("新处理人ID不能为空");
+        }
+        String userId = resolveTrustedUser(dto.getUserId());
+        flowTaskService.reassignByInitiator(dto.getTaskId(), userId,
+                dto.getNewAssignee(), optionalText(dto.getReason()));
+        return RespInfo.success("任务已改派", null);
     }
 
     /**

@@ -234,9 +234,18 @@
             <n-form-item-gi label="模型Key" path="modelKey">
               <n-input
                 v-model:value="formData.modelKey"
-                placeholder="系统自动生成"
-                disabled
+                placeholder="请输入有意义的模型Key，留空自动生成"
+                :disabled="isEdit && [1, 2].includes(Number(formData.status))"
               />
+              <div class="text-12px mt-1 text-gray-400">
+                以字母开头，只能包含字母、数字、下划线或短横线；已发布或挂起模型不能修改。
+              </div>
+            </n-form-item-gi>
+            <n-form-item-gi label="审批退回" path="allowMultiReturn" :span="2">
+              <n-switch v-model:value="formData.allowMultiReturn">
+                <template #checked>允许多级退回</template>
+                <template #unchecked>仅允许退回上一节点</template>
+              </n-switch>
             </n-form-item-gi>
             <n-form-item-gi label="流程分类" path="category" :span="2">
               <NTreeSelect
@@ -317,6 +326,26 @@
             :schema="startTestFormSchema"
           />
           <n-empty v-else size="small" description="当前模型没有可渲染的动态表单，将以空变量发起测试流程" />
+          <div v-if="startTestApproverNodes.length" class="start-test-approver-section">
+            <div class="start-test-approver-title">发起人自选审批人</div>
+            <div class="start-test-approver-tip">请为流程设计中标记为“发起人自选”的节点选择审批人。</div>
+            <n-form label-placement="top">
+              <n-form-item
+                v-for="node in startTestApproverNodes"
+                :key="node.nodeKey"
+                :label="node.nodeName || node.nodeKey"
+                required
+              >
+                <UserSelectPicker
+                  v-model="startTestApproverSelections[node.nodeKey]"
+                  v-model:label-value="startTestApproverLabels[node.nodeKey]"
+                  :multiple="true"
+                  :title="`选择${node.nodeName || node.nodeKey}审批人`"
+                  placeholder="请选择一名或多名审批人"
+                />
+              </n-form-item>
+            </n-form>
+          </div>
         </div>
 
         <template #footer>
@@ -378,6 +407,7 @@ import { computed, defineAsyncComponent, h, onMounted, reactive, ref } from 'vue
 import { useRouter } from 'vue-router'
 import { businessFlowModelBindings } from '@/api/business-app'
 import flowApi from '@/api/flow'
+import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import FlowModelStats from '@/components/flow/FlowModelStats.vue'
 import { useDict } from '@/composables/useDict'
 import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
@@ -577,6 +607,9 @@ const startTestLoading = ref(false)
 const startTestFormRef = ref(null)
 const startTestFormData = ref({})
 const startTestFormSchema = ref([])
+const startTestApproverNodes = ref([])
+const startTestApproverSelections = ref({})
+const startTestApproverLabels = ref({})
 const currentStartModel = ref(null)
 const startTestTitle = computed(() => `发起测试 - ${currentStartModel.value?.modelName || '流程模型'}`)
 const startTestAlert = computed(() => {
@@ -715,6 +748,7 @@ const formData = reactive({
   webhookUrl: '',
   todoDetailUrlTemplate: '',
   notifyConfig: null,
+  allowMultiReturn: false,
 })
 const rules = {
   modelName: { required: true, message: '请输入模型名称', trigger: 'blur' },
@@ -725,7 +759,7 @@ const rules = {
 function handleAdd() {
   isEdit.value = false
   modalTitle.value = '新增模型'
-  Object.assign(formData, { id: '', modelName: '', modelKey: generateModelKey(), category: '', flowType: '', designerType: 'approval', formType: 'dynamic', description: '', notifyType: 'redis', webhookUrl: '', todoDetailUrlTemplate: '', notifyConfig: null })
+  Object.assign(formData, { id: '', modelName: '', modelKey: generateModelKey(), category: '', flowType: '', designerType: 'approval', formType: 'dynamic', description: '', notifyType: 'redis', webhookUrl: '', todoDetailUrlTemplate: '', notifyConfig: null, allowMultiReturn: false })
   showModal.value = true
 }
 
@@ -741,6 +775,7 @@ function handleEdit(row) {
     designerType: normalizeDesignerType(row.designerType),
     category: resolveFlowCategoryValue(row.category, categoryTreeOptions.value),
     notifyConfig: row.notifyConfig || null,
+    allowMultiReturn: row.allowMultiReturn === true || row.allowMultiReturn === 1 || String(row.allowMultiReturn) === '1',
   })
   showModal.value = true
 }
@@ -823,12 +858,21 @@ async function handleStartTest(row) {
   currentStartModel.value = row
   startTestFormData.value = {}
   startTestFormSchema.value = []
+  startTestApproverNodes.value = []
+  startTestApproverSelections.value = {}
+  startTestApproverLabels.value = {}
   showStartTestModal.value = true
   try {
     const res = await flowApi.getModelDetail(row.id)
     if (res.code === 200 && res.data) {
       currentStartModel.value = { ...row, ...res.data }
       startTestFormSchema.value = parseFormSchema(res.data.formJson)
+    }
+    const startConfig = await flowApi.getModelStartConfig(row.modelKey)
+    if (startConfig.code === 200) {
+      startTestApproverNodes.value = Array.isArray(startConfig.data?.initiatorSelectNodes)
+        ? startConfig.data.initiatorSelectNodes
+        : []
     }
   }
   catch (error) {
@@ -856,9 +900,24 @@ async function handleSubmitStartTest() {
     return
   startTestLoading.value = true
   try {
-    const variables = startTestFormSchema.value.length
+    const variables = (startTestFormSchema.value.length
       ? await startTestFormRef.value?.submit?.()
-      : {}
+      : {}) || {}
+    const selectedApprovers = {}
+    for (const node of startTestApproverNodes.value) {
+      const ids = Array.isArray(startTestApproverSelections.value[node.nodeKey])
+        ? startTestApproverSelections.value[node.nodeKey]
+            .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
+            .map(value => String(value))
+        : []
+      if (!ids.length) {
+        window.$message?.warning(`请选择${node.nodeName || node.nodeKey}审批人`)
+        return
+      }
+      selectedApprovers[node.nodeKey] = ids
+    }
+    if (Object.keys(selectedApprovers).length)
+      variables.PROCESS_START_USER = selectedApprovers
     const now = Date.now()
     const businessKey = `FLOW_TEST:${currentStartModel.value.modelKey}:${now}`
     const title = `${currentStartModel.value.modelName || currentStartModel.value.modelKey}-测试发起`
@@ -997,6 +1056,25 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.start-test-approver-section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.start-test-approver-title {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.start-test-approver-tip {
+  margin: 4px 0 12px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .flow-page {
   display: flex;
   flex-direction: column;

@@ -16,6 +16,9 @@ public class BusinessTriggerFlowStartDTO {
 
     private Map<String, Object> recordData;
 
+    /** 申请人自选审批人等流程运行参数。 */
+    private Map<String, Object> variables;
+
     public String recordIdText() {
         return recordId == null ? null : String.valueOf(recordId);
     }

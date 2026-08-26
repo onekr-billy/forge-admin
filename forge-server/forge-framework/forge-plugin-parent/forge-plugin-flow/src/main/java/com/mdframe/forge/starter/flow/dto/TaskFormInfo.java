@@ -3,6 +3,7 @@ package com.mdframe.forge.starter.flow.dto;
 import lombok.Data;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 任务表单信息DTO
@@ -181,6 +182,21 @@ public class TaskFormInfo {
      */
     private Boolean allowReturn;
 
+    /** 是否允许从当前流程历史中选择任意节点退回。 */
+    private Boolean allowMultiReturn;
+
+    /** 当前任务可退回的历史用户任务。 */
+    private List<ReturnTarget> returnTargets;
+
+    /** 是否存在可直送的退回源节点。 */
+    private Boolean allowDirectSend;
+
+    /** 退回源节点定义 Key。 */
+    private String returnSourceActivityId;
+
+    /** 退回源节点名称。 */
+    private String returnSourceActivityName;
+
     /**
      * 是否允许终结流程
      */
@@ -195,4 +211,11 @@ public class TaskFormInfo {
      * 是否需要审批意见
      */
     private Boolean requireComment;
+
+    @Data
+    public static class ReturnTarget {
+        private String activityId;
+        private String activityName;
+        private java.util.Date endTime;
+    }
 }

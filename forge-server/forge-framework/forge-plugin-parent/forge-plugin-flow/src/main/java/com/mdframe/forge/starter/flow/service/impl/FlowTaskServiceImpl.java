@@ -76,6 +76,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private static final String FLOWABLE_NS = "http://flowable.org/bpmn";
     private static final String ACTION_APPROVE = "approve";
     private static final String ACTION_REJECT = "reject";
+    private static final String ACTION_REJECT_TO_START = "rejectToStart";
     private static final String ACTION_DELEGATE = "delegate";
     private static final String ACTION_RETURN = "return";
     private static final String ACTION_TERMINATE = "terminate";
@@ -83,6 +84,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private static final String AUTO_APPROVAL_CONSECUTIVE = "consecutive";
     private static final String AUTO_APPROVAL_NONE = "none";
     private static final String FORM_TYPE_BUSINESS = "business";
+    private static final String RETURN_SOURCE_ACTIVITY_ID = "FLOW_RETURN_SOURCE_ACTIVITY_ID";
+    private static final String RETURN_TARGET_ACTIVITY_ID = "FLOW_RETURN_TARGET_ACTIVITY_ID";
+    private static final String DIRECT_SEND_VARIABLE = "directSend";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Autowired
@@ -215,6 +219,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 || page.getRecords().isEmpty()) {
             return page;
         }
+        enrichTaskBusinessParams(page.getRecords());
         List<FlowBusinessListDisplayItem> items = page.getRecords().stream()
                 .map(this::toDisplayItem)
                 .collect(Collectors.toList());
@@ -227,6 +232,23 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             log.warn("补齐流程任务业务摘要失败，继续返回流程基础信息: {}", e.getMessage());
         }
         return page;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void enrichTaskBusinessParams(List<FlowTask> tasks) {
+        for (FlowTask task : tasks) {
+            if (task == null || isBlank(task.getProcessInstanceId())) {
+                continue;
+            }
+            try {
+                Object params = runtimeService.getVariable(task.getProcessInstanceId(), "businessParams");
+                if (params instanceof Map<?, ?> map) {
+                    task.setBusinessParams((Map<String, Object>) map);
+                }
+            } catch (Exception e) {
+                log.debug("读取待办业务参数失败：processInstanceId={}", task.getProcessInstanceId(), e);
+            }
+        }
     }
 
     /**
@@ -317,6 +339,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         item.setRecordId(task.getRecordId());
         item.setBusinessObjectName(task.getBusinessObjectName());
         item.setBusinessSummary(task.getBusinessSummary());
+        item.setBusinessType(task.getBusinessType());
+        item.setBusinessParams(task.getBusinessParams());
+        item.setDisplayExtensions(task.getDisplayExtensions());
         return item;
     }
 
@@ -328,6 +353,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         task.setRecordId(item.getRecordId() != null ? item.getRecordId() : task.getRecordId());
         task.setBusinessObjectName(firstNonBlank(item.getBusinessObjectName(), task.getBusinessObjectName()));
         task.setBusinessSummary(firstNonBlank(item.getBusinessSummary(), task.getBusinessSummary()));
+        task.setBusinessType(firstNonBlank(item.getBusinessType(), task.getBusinessType()));
+        task.setBusinessParams(item.getBusinessParams() != null ? item.getBusinessParams() : task.getBusinessParams());
+        task.setDisplayExtensions(item.getDisplayExtensions() != null ? item.getDisplayExtensions() : task.getDisplayExtensions());
         task.setProcessName(firstNonBlank(task.getProcessName(), item.getProcessName()));
         task.setProcessDefinitionName(firstNonBlank(
                 task.getProcessDefinitionName(),
@@ -394,6 +422,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
             Map<String, Object> completeVariables = mergeActionVariables(variables, true);
             completeTask(task, completeVariables);
+            directSendAfterReturn(task, completeVariables);
 
             FlowTask flowTask = new FlowTask();
             flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
@@ -424,8 +453,22 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void reject(String taskId, String userId, String comment, String signature,
                        Long tenantId, String idempotencyKey, String requestDigest) {
+        rejectInternal(taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void rejectToStart(String taskId, String userId, String comment, String signature,
+                              Long tenantId, String idempotencyKey, String requestDigest) {
+        rejectInternal(taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, true);
+    }
+
+    private void rejectInternal(String taskId, String userId, String comment, String signature,
+                                Long tenantId, String idempotencyKey, String requestDigest,
+                                boolean rejectToStart) {
         FlowTask storedTask = authorizeTaskAction(
-                taskId, userId, tenantId, "REJECT", idempotencyKey, requestDigest, FlowTaskStatus.REJECTED);
+                taskId, userId, tenantId, rejectToStart ? "REJECT_TO_START" : "REJECT",
+                idempotencyKey, requestDigest, FlowTaskStatus.REJECTED);
         if (storedTask == null) {
             return;
         }
@@ -434,14 +477,18 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
         validateFlowableAssignee(task, userId);
-        validateTaskAction(task, ACTION_REJECT, comment, signature);
+        validateTaskAction(task, rejectToStart ? ACTION_REJECT_TO_START : ACTION_REJECT, comment, signature);
 
         try {
             if (comment != null && !comment.isEmpty()) {
                 taskService.addComment(taskId, task.getProcessInstanceId(), comment);
             }
 
-            completeTask(task, mergeActionVariables(null, false));
+            Map<String, Object> variables = mergeActionVariables(null, false);
+            if (rejectToStart) {
+                variables.put("rejectToStart", true);
+            }
+            completeTask(task, variables);
 
             FlowTask flowTask = new FlowTask();
             flowTask.setStatus(FlowTaskStatus.REJECTED.getCode());
@@ -450,13 +497,14 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             flowTask.setCompleteTime(LocalDateTime.now());
             flowTask.setActionIdempotencyKey(idempotencyKey);
             flowTask.setActionRequestDigest(requestDigest);
-            flowTask.setActionType(idempotencyKey == null ? null : "REJECT");
+            flowTask.setActionType(idempotencyKey == null ? null
+                    : (rejectToStart ? "REJECT_TO_START" : "REJECT"));
             updateTaskActionResultRequired(taskId, flowTask);
 
             log.info("审批驳回：taskId={}, userId={}", taskId, userId);
         } catch (Exception e) {
             recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
-                    task.getName(), "TASK_REJECT", e);
+                    task.getName(), rejectToStart ? "TASK_REJECT_TO_START" : "TASK_REJECT", e);
             throw e;
         }
     }
@@ -526,14 +574,23 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void returnTask(String taskId, String userId, String comment, String signature) {
+        returnTask(taskId, userId, comment, signature, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void returnTask(String taskId, String userId, String comment, String signature,
+                           String requestedTargetActivityId) {
+        assertTaskTenantForAction(taskId);
         Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
         if (task == null) {
             throw new RuntimeException("任务不存在或已处理");
         }
+        validateFlowableAssignee(task, userId);
         validateTaskAction(task, ACTION_RETURN, comment, signature);
 
         try {
-            String targetActivityId = findPreviousUserTaskActivityId(task);
+            String targetActivityId = resolveReturnTarget(task, requestedTargetActivityId);
             if (targetActivityId == null || targetActivityId.isEmpty()) {
                 throw new RuntimeException("当前任务没有可退回的上一审批节点");
             }
@@ -541,6 +598,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             if (comment != null && !comment.isEmpty()) {
                 taskService.addComment(taskId, task.getProcessInstanceId(), "退回：" + comment);
             }
+
+            // 保存“谁发起退回、退回到哪里”，供修正节点选择直送时使用。
+            runtimeService.setVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID,
+                    task.getTaskDefinitionKey());
+            runtimeService.setVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID, targetActivityId);
 
             List<String> currentActivityIds = runtimeService.getActiveActivityIds(task.getProcessInstanceId());
             if (currentActivityIds == null || currentActivityIds.isEmpty()) {
@@ -564,6 +626,52 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                     task.getName(), "TASK_RETURN", e);
             throw e;
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void reassignByInitiator(String taskId, String userId, String targetUserId, String reason) {
+        if (isBlank(targetUserId)) {
+            throw new RuntimeException("任务不存在或新处理人不能为空");
+        }
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new RuntimeException("FLOW_TASK_TENANT_REQUIRED");
+        }
+        FlowTask localTask = baseMapper.selectByTaskIdForUpdate(taskId);
+        if (localTask == null || !tenantId.equals(localTask.getTenantId())) {
+            throw new RuntimeException("FLOW_TASK_TENANT_MISMATCH");
+        }
+        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (task == null || !Objects.equals(localTask.getProcessInstanceId(), task.getProcessInstanceId())) {
+            throw new RuntimeException("FLOW_TASK_NOT_FOUND");
+        }
+        FlowBusiness business = flowBusinessMapper.selectByProcessInstanceIdAndTenantIdForUpdate(
+                task.getProcessInstanceId(), tenantId);
+        if (business == null || !Objects.equals(business.getProcessInstanceId(), task.getProcessInstanceId())) {
+            throw new RuntimeException("FLOW_TASK_TENANT_MISMATCH");
+        }
+        boolean allowed = Objects.equals(userId, task.getAssignee())
+                || Objects.equals(userId, task.getOwner())
+                || (business != null && Objects.equals(userId, business.getApplyUserId()));
+        if (!allowed) {
+            throw new RuntimeException("仅当前处理人、任务拥有人或流程发起人可以改派");
+        }
+        String owner = !isBlank(task.getAssignee()) ? task.getAssignee() : userId;
+        taskService.setOwner(taskId, owner);
+        taskService.setAssignee(taskId, targetUserId.trim());
+        if (!isBlank(reason)) {
+            taskService.addComment(taskId, task.getProcessInstanceId(), "改派", reason.trim());
+        }
+        FlowTask flowTask = new FlowTask();
+        flowTask.setAssignee(targetUserId.trim());
+        flowTask.setOwner(owner);
+        flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
+        flowTask.setComment(reason);
+        if (!lambdaUpdate().eq(FlowTask::getTaskId, taskId).update(flowTask)) {
+            throw new IllegalStateException("改派任务状态同步失败");
+        }
+        log.info("流程任务改派：taskId={}, from={}, to={}", taskId, userId, targetUserId);
     }
 
     @Override
@@ -609,6 +717,59 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         completeVariables.put("approved", approved);
         completeVariables.put("approvalResult", approved ? "approve" : "reject");
         return completeVariables;
+    }
+
+    /**
+     * 退回节点修正后，按用户选择将新任务直接送回原驳回节点，跳过中间节点。
+     * Flowable complete 后才会创建后继任务，因此这里基于完成后的活动列表做一次状态迁移。
+     */
+    private void directSendAfterReturn(Task completedTask, Map<String, Object> actionVariables) {
+        String processInstanceId = completedTask.getProcessInstanceId();
+        Object source = runtimeService.getVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
+        Object target = runtimeService.getVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+        if (source == null || target == null || !Objects.equals(String.valueOf(target), completedTask.getTaskDefinitionKey())) {
+            return;
+        }
+        boolean directSend = Boolean.TRUE.equals(readBoolean(
+                actionVariables == null ? null : actionVariables.get(DIRECT_SEND_VARIABLE)));
+        if (!directSend) {
+            runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
+            runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+            return;
+        }
+        String sourceActivityId = String.valueOf(source);
+        List<String> activeActivityIds = runtimeService.getActiveActivityIds(processInstanceId);
+        if (activeActivityIds == null || activeActivityIds.isEmpty()) {
+            return;
+        }
+        if (activeActivityIds.contains(sourceActivityId)) {
+            runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
+            runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+            return;
+        }
+        runtimeService.createChangeActivityStateBuilder()
+                .processInstanceId(processInstanceId)
+                .moveActivityIdsToSingleActivityId(activeActivityIds, sourceActivityId)
+                .changeState();
+        runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
+        runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+    }
+
+    private Boolean readBoolean(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        if ("true".equalsIgnoreCase(text) || "1".equals(text) || "yes".equalsIgnoreCase(text)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(text) || "0".equals(text) || "no".equalsIgnoreCase(text)) {
+            return false;
+        }
+        return null;
     }
 
     /**
@@ -1505,6 +1666,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (allowApprove != null) policy.allowApprove = allowApprove;
         Boolean allowReject = readBooleanFlowableAttribute(flowNode, "allowReject");
         if (allowReject != null) policy.allowReject = allowReject;
+        Boolean allowRejectToStart = readBooleanFlowableAttribute(flowNode, "allowRejectToStart");
+        if (allowRejectToStart != null) policy.allowRejectToStart = allowRejectToStart;
         Boolean allowDelegate = readBooleanFlowableAttribute(flowNode, "allowDelegate");
         if (allowDelegate != null) policy.allowDelegate = allowDelegate;
         Boolean allowReturn = readBooleanFlowableAttribute(flowNode, "allowReturn");
@@ -1520,6 +1683,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private void applyNodeConfigPolicy(TaskApprovalPolicy policy, FlowNodeConfig nodeConfig) {
         if (nodeConfig.getAllowApprove() != null) policy.allowApprove = nodeConfig.getAllowApprove();
         if (nodeConfig.getAllowReject() != null) policy.allowReject = nodeConfig.getAllowReject();
+        if (nodeConfig.getAllowRejectToStart() != null) {
+            policy.allowRejectToStart = nodeConfig.getAllowRejectToStart();
+        }
         if (nodeConfig.getAllowDelegate() != null) policy.allowDelegate = nodeConfig.getAllowDelegate();
         if (nodeConfig.getAllowReturn() != null) policy.allowReturn = nodeConfig.getAllowReturn();
         if (nodeConfig.getAllowTerminate() != null) policy.allowTerminate = nodeConfig.getAllowTerminate();
@@ -1659,6 +1825,55 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         return null;
     }
 
+    private String resolveReturnTarget(Task task, String requestedTargetActivityId) {
+        String previous = findPreviousUserTaskActivityId(task);
+        if (isBlank(requestedTargetActivityId)) {
+            return previous;
+        }
+        String target = requestedTargetActivityId.trim();
+        if (Objects.equals(target, task.getTaskDefinitionKey())) {
+            throw new RuntimeException("不能退回当前任务节点");
+        }
+        FlowModel model = flowModelService.getModelByKey(
+                resolveProcessDefinitionKey(task.getProcessDefinitionId(), null));
+        if (model == null || !Boolean.TRUE.equals(model.getAllowMultiReturn())) {
+            throw new RuntimeException("当前流程未开启多级退回");
+        }
+        List<HistoricActivityInstance> activities = historyService.createHistoricActivityInstanceQuery()
+                .processInstanceId(task.getProcessInstanceId())
+                .activityType("userTask")
+                .finished()
+                .list();
+        boolean found = activities.stream().anyMatch(activity -> target.equals(activity.getActivityId()));
+        if (!found) {
+            throw new RuntimeException("目标节点不是当前流程已完成的用户任务");
+        }
+        return target;
+    }
+
+    /**
+     * return 接口位于 @IgnoreTenant 的 Flow 服务边界，必须在本地表和流程实例
+     * 两侧再次锁定并校验租户，不能只依赖调用方传入的 taskId。
+     */
+    private void assertTaskTenantForAction(String taskId) {
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new RuntimeException("FLOW_TASK_TENANT_REQUIRED");
+        }
+        FlowTask localTask = baseMapper.selectByTaskIdForUpdate(taskId);
+        Task flowableTask = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (localTask == null || (localTask.getTenantId() != null
+                && !tenantId.equals(localTask.getTenantId()))
+                || flowableTask == null) {
+            throw new RuntimeException("FLOW_TASK_TENANT_MISMATCH");
+        }
+        FlowBusiness business = flowBusinessMapper.selectByProcessInstanceIdAndTenantIdForUpdate(
+                flowableTask.getProcessInstanceId(), tenantId);
+        if (business == null || !Objects.equals(business.getProcessInstanceId(), flowableTask.getProcessInstanceId())) {
+            throw new RuntimeException("FLOW_TASK_TENANT_MISMATCH");
+        }
+    }
+
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
     }
@@ -1709,15 +1924,64 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setAllowReject(policy.allowReject);
         formInfo.setAllowDelegate(policy.allowDelegate);
         formInfo.setAllowReturn(policy.allowReturn);
+        formInfo.setAllowMultiReturn(flowModel != null && Boolean.TRUE.equals(flowModel.getAllowMultiReturn()));
+        formInfo.setReturnTargets(buildReturnTargets(task, formInfo.getAllowMultiReturn()));
+        populateDirectSendInfo(formInfo, task, flowModel);
         formInfo.setAllowTerminate(policy.allowTerminate);
         formInfo.setRequireSignature(policy.requireSignature);
         formInfo.setRequireComment(policy.requireComment);
-        formInfo.setAllowRejectToStart(true);
+        formInfo.setAllowRejectToStart(policy.allowRejectToStart);
 
         log.info("获取任务表单信息：taskId={}, formType={}, formKey={}",
                 taskId, formInfo.getFormType(), formInfo.getFormKey());
 
         return formInfo;
+    }
+
+    private List<TaskFormInfo.ReturnTarget> buildReturnTargets(Task task, Boolean allowMultiReturn) {
+        if (!Boolean.TRUE.equals(allowMultiReturn)) {
+            return Collections.emptyList();
+        }
+        return historyService.createHistoricActivityInstanceQuery()
+                .processInstanceId(task.getProcessInstanceId())
+                .activityType("userTask")
+                .finished()
+                .orderByHistoricActivityInstanceEndTime()
+                .desc()
+                .list()
+                .stream()
+                .filter(activity -> !Objects.equals(activity.getActivityId(), task.getTaskDefinitionKey()))
+                .collect(Collectors.toMap(HistoricActivityInstance::getActivityId,
+                        activity -> {
+                            TaskFormInfo.ReturnTarget target = new TaskFormInfo.ReturnTarget();
+                            target.setActivityId(activity.getActivityId());
+                            target.setActivityName(activity.getActivityName());
+                            target.setEndTime(activity.getEndTime());
+                            return target;
+                        }, (first, ignored) -> first, LinkedHashMap::new))
+                .values().stream().toList();
+    }
+
+    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task, FlowModel flowModel) {
+        if (flowModel == null || !Boolean.TRUE.equals(flowModel.getAllowMultiReturn())) {
+            formInfo.setAllowDirectSend(false);
+            return;
+        }
+        Object source = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID);
+        Object target = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID);
+        if (source == null || target == null || !Objects.equals(String.valueOf(target), task.getTaskDefinitionKey())) {
+            formInfo.setAllowDirectSend(false);
+            return;
+        }
+        String sourceId = String.valueOf(source);
+        FlowElement element = resolveFormFlowNode(task.getProcessDefinitionId(), sourceId);
+        if (!(element instanceof UserTask)) {
+            formInfo.setAllowDirectSend(false);
+            return;
+        }
+        formInfo.setAllowDirectSend(true);
+        formInfo.setReturnSourceActivityId(sourceId);
+        formInfo.setReturnSourceActivityName(element.getName());
     }
 
     @Override
@@ -2392,6 +2656,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private static class TaskApprovalPolicy {
         private boolean allowApprove;
         private boolean allowReject;
+        private boolean allowRejectToStart;
         private boolean allowDelegate;
         private boolean allowReturn;
         private boolean allowTerminate;
@@ -2402,6 +2667,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             TaskApprovalPolicy policy = new TaskApprovalPolicy();
             policy.allowApprove = true;
             policy.allowReject = true;
+            policy.allowRejectToStart = false;
             policy.allowDelegate = true;
             policy.allowReturn = false;
             policy.allowTerminate = false;
@@ -2416,6 +2682,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                     return allowApprove;
                 case ACTION_REJECT:
                     return allowReject;
+                case ACTION_REJECT_TO_START:
+                    return allowRejectToStart;
                 case ACTION_DELEGATE:
                     return allowDelegate;
                 case ACTION_RETURN:

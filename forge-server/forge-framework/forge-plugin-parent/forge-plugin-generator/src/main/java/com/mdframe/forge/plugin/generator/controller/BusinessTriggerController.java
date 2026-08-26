@@ -120,7 +120,7 @@ public class BusinessTriggerController {
      */
     @PostMapping("/flow/start")
     public RespInfo<JSONObject> startFlow(@RequestBody BusinessTriggerFlowStartDTO dto) {
-        return RespInfo.success(flowService.startFlow(dto.getObjectCode(), dto.recordIdText(), dto.getRecordData()));
+        return RespInfo.success(flowService.startFlow(dto.getObjectCode(), dto.recordIdText(), dto.getRecordData(), dto.getVariables()));
     }
 
     /**

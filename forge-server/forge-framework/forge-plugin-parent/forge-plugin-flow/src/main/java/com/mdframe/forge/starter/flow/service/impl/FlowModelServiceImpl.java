@@ -8,6 +8,7 @@ import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.dto.FlowStartConfig;
 import com.mdframe.forge.starter.flow.enums.FlowModelStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
@@ -43,6 +44,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel> implements FlowModelService {
+
+    private static final String MODEL_KEY_PATTERN = "^[A-Za-z][A-Za-z0-9_-]{1,63}$";
 
     @Autowired(required = false)
     private RepositoryService repositoryService;
@@ -135,8 +138,9 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         flowModel.setDesignerType(normalizeDesignerType(flowModel.getDesignerType()));
         // 新建流程统一使用 Redis 事件通知；管理端不再暴露通知方式选择。
         flowModel.setNotifyType("redis");
-        // 模型 Key 是系统技术标识，始终由服务端生成，不能接受用户提交的值。
-        flowModel.setModelKey(generateModelKey());
+        String requestedModelKey = flowModel.getModelKey() == null ? null : flowModel.getModelKey().trim();
+        flowModel.setModelKey(requestedModelKey == null || requestedModelKey.isEmpty()
+                ? generateModelKey() : validateModelKey(requestedModelKey));
         if (flowModel.getBpmnXml() != null && !flowModel.getBpmnXml().isBlank()) {
             flowModel.setBpmnXml(normalizeBpmnXml(flowModel.getBpmnXml(), "创建流程模型"));
         }
@@ -170,12 +174,22 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         } else {
             flowModel.setDesignerType(normalizeDesignerType(flowModel.getDesignerType()));
         }
-        
-        // 已发布的模型不允许修改Key
-        if (FlowModelStatus.PUBLISHED.matches(existing.getStatus())
-                && !existing.getModelKey().equals(flowModel.getModelKey())) {
+
+        String requestedModelKey = flowModel.getModelKey() == null ? "" : flowModel.getModelKey().trim();
+        String nextModelKey = requestedModelKey.isEmpty()
+                ? existing.getModelKey() : validateModelKey(requestedModelKey);
+        if (!Objects.equals(existing.getModelKey(), nextModelKey)
+                && checkModelKeyExists(nextModelKey, flowModel.getId())) {
+            throw new IllegalArgumentException("模型Key已存在：" + nextModelKey);
+        }
+
+        // 已发布或挂起的模型已经被运行实例/部署引用，不允许修改 Key。
+        if ((FlowModelStatus.PUBLISHED.matches(existing.getStatus())
+                || FlowModelStatus.SUSPENDED.matches(existing.getStatus()))
+                && !existing.getModelKey().equals(nextModelKey)) {
             throw new RuntimeException("已发布的模型不允许修改Key");
         }
+        flowModel.setModelKey(nextModelKey);
         if (flowModel.getBpmnXml() != null && !flowModel.getBpmnXml().isBlank()) {
             flowModel.setBpmnXml(normalizeBpmnXml(flowModel.getBpmnXml(), "更新流程模型"));
         }
@@ -195,6 +209,13 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         do {
             modelKey = "model_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         } while (checkModelKeyExists(modelKey, null));
+        return modelKey;
+    }
+
+    private String validateModelKey(String modelKey) {
+        if (!modelKey.matches(MODEL_KEY_PATTERN)) {
+            throw new IllegalArgumentException("模型Key必须以字母开头，且只能包含字母、数字、下划线或短横线，长度为2-64位");
+        }
         return modelKey;
     }
 
@@ -485,6 +506,24 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         LambdaQueryWrapper<FlowModel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FlowModel::getModelKey, modelKey);
         return getOne(wrapper);
+    }
+
+    @Override
+    public FlowStartConfig getStartConfig(String modelKey) {
+        FlowModel model = getModelByKey(modelKey);
+        if (model == null) {
+            throw new IllegalArgumentException("流程模型不存在：" + modelKey);
+        }
+        FlowStartConfig config = new FlowStartConfig();
+        config.setModelKey(model.getModelKey());
+        if (model.getBpmnXml() == null || model.getBpmnXml().isBlank()) {
+            return config;
+        }
+        BpmnModel bpmnModel = new org.flowable.bpmn.converter.BpmnXMLConverter()
+                .convertToBpmnModel(new BytesStreamSource(
+                        model.getBpmnXml().getBytes(java.nio.charset.StandardCharsets.UTF_8)), false, true);
+        config.setInitiatorSelectNodes(InitiatorSelectedApproverSupport.discover(bpmnModel));
+        return config;
     }
 
     @Override

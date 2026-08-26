@@ -99,7 +99,7 @@ export function useFlow(processKey, businessKeyRef) {
         statusData.value = null
       }
     }
-    catch (e) {
+    catch {
       statusData.value = null
     }
     finally {
@@ -113,9 +113,11 @@ export function useFlow(processKey, businessKeyRef) {
    * @param {string} options.title        流程标题（必填）
    * @param {string} [options.businessType]  业务类型（可选，用于分类过滤）
    * @param {object} [options.variables]  流程变量（可选）
+   * @param {object} [options.initiatorSelections] 发起人自选节点审批人，key 为节点 Key
+   * @param {Function} [options.selectInitiatorApprovers] 没有预选值时的业务侧用户选择器回调
    * @returns {Promise<{success: boolean, processInstanceId: string}>}
    */
-  async function startFlow({ title, businessType, variables = {} } = {}) {
+  async function startFlow({ title, businessType, variables = {}, initiatorSelections, selectInitiatorApprovers } = {}) {
     const businessKey = getBusinessKey()
     if (!businessKey)
       throw new Error('businessKey 不能为空')
@@ -124,11 +126,32 @@ export function useFlow(processKey, businessKeyRef) {
 
     submitting.value = true
     try {
+      const startConfigRes = await flowApi.getModelStartConfig(processKey)
+      const nodes = startConfigRes?.code === 200 && Array.isArray(startConfigRes.data?.initiatorSelectNodes)
+        ? startConfigRes.data.initiatorSelectNodes
+        : []
+      const startVariables = { ...(variables || {}) }
+      if (nodes.length) {
+        let selections = initiatorSelections
+        if (!selections && typeof selectInitiatorApprovers === 'function')
+          selections = await selectInitiatorApprovers(nodes)
+        if (!selections || typeof selections !== 'object')
+          throw new Error('该流程需要先选择发起人自选审批人')
+        const normalized = {}
+        for (const node of nodes) {
+          const values = Array.isArray(selections[node.nodeKey]) ? selections[node.nodeKey] : []
+          const ids = values.map(value => String(value ?? '').trim()).filter(Boolean)
+          if (!ids.length)
+            throw new Error(`请选择${node.nodeName || node.nodeKey}审批人`)
+          normalized[node.nodeKey] = [...new Set(ids)]
+        }
+        startVariables.PROCESS_START_USER = normalized
+      }
       const res = await flowApi.startProcess(processKey, {
         businessKey,
         businessType: businessType || processKey,
         title,
-        variables,
+        variables: startVariables,
         userId: userStore.userId,
         userName: userStore.userInfo?.nickName || userStore.userInfo?.userName,
         deptId: userStore.userInfo?.deptId,

@@ -105,7 +105,7 @@ function writeNode(node) {
       break
     }
     case NODE_TYPE.APPROVER: {
-      const w = writeUserTaskConfig(node.config || {})
+      const w = writeUserTaskConfig({ ...(node.config || {}), bpmnElementId: node.id })
       if (w.attrs)
         attrs.push(w.attrs)
       if (w.children)

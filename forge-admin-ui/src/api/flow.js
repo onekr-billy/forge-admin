@@ -45,6 +45,9 @@ export default {
   rejectTask: data =>
     request.post('/api/flow/task/reject', data),
 
+  rejectToStartTask: data =>
+    request.post('/api/flow/task/reject-to-start', data),
+
   /**
    * 转办任务
    */
@@ -56,6 +59,10 @@ export default {
    */
   returnTask: data =>
     request.post('/api/flow/task/return', data),
+
+  /** 流程发起人/当前处理人改派任务 */
+  reassignTask: data =>
+    request.post('/api/flow/task/reassign', data),
 
   /**
    * 终结流程
@@ -162,6 +169,10 @@ export default {
    */
   getModelDetail: id =>
     request.get(`/api/flow/model/${id}`),
+
+  /** 获取发起人自选审批节点 */
+  getModelStartConfig: modelKey =>
+    request.get(`/api/flow/model/key/${modelKey}/start-config`),
 
   /**
    * 创建流程模型

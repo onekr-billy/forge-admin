@@ -1,10 +1,10 @@
 <script setup>
 /**
- * PermissionConfig — 7 个操作权限布尔开关
+ * PermissionConfig — 8 个操作权限布尔开关
  *
  * 字段名 1:1 对齐 user-task-parser DEFAULT_PERMISSIONS：
  *   allowApprove / allowReject / allowDelegate / allowReturn /
- *   allowTerminate / requireSignature / requireComment
+ *   allowRejectToStart / allowTerminate / requireSignature / requireComment
  */
 import { computed } from 'vue'
 
@@ -18,6 +18,7 @@ const emit = defineEmits(['update:config'])
 const FIELDS = [
   { key: 'allowApprove', label: '允许通过', desc: '审批人可点击 "通过"' },
   { key: 'allowReject', label: '允许驳回', desc: '审批人可点击 "驳回"' },
+  { key: 'allowRejectToStart', label: '驳回至发起人', desc: '按流程设计的发起人修改路径退回' },
   { key: 'allowDelegate', label: '允许委派', desc: '审批人可委托他人代审' },
   { key: 'allowReturn', label: '允许退回', desc: '可退回到任意已审节点' },
   { key: 'allowTerminate', label: '允许终止', desc: '可直接终止流程' },

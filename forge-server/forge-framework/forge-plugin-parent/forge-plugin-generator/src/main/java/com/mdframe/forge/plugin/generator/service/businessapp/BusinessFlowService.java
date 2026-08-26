@@ -110,6 +110,18 @@ public class BusinessFlowService {
     private final ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider;
     private final Map<String, ReentrantLock> localFlowStartLocks = new ConcurrentHashMap<>();
 
+    /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
+    public Map<String, Object> getFlowStartConfig(String modelKey) {
+        if (flowClient == null || StringUtils.isBlank(modelKey)) {
+            return Map.of("modelKey", modelKey, "initiatorSelectNodes", List.of());
+        }
+        FlowResult<Map<String, Object>> result = flowClient.getModelStartConfig(modelKey.trim());
+        if (result == null || !result.isSuccess() || result.getData() == null) {
+            return Map.of("modelKey", modelKey.trim(), "initiatorSelectNodes", List.of());
+        }
+        return new LinkedHashMap<>(result.getData());
+    }
+
     /**
      * 从业务记录发起流程
      *
@@ -119,6 +131,11 @@ public class BusinessFlowService {
      * @return 流程发起结果
      */
     public JSONObject startFlow(String objectCode, String recordId, Map<String, Object> recordData) {
+        return startFlow(objectCode, recordId, recordData, null);
+    }
+
+    public JSONObject startFlow(String objectCode, String recordId, Map<String, Object> recordData,
+                                Map<String, Object> requestedVariables) {
         if (flowClient == null) {
             throw new RuntimeException("流程服务未配置，无法发起主流程");
         }
@@ -141,6 +158,9 @@ public class BusinessFlowService {
 
         // 2. 构建流程变量
         Map<String, Object> flowVariables = buildFlowVariables(bindingConfig, recordData);
+        if (requestedVariables != null) {
+            flowVariables.putAll(requestedVariables);
+        }
 
         // 3. 构建业务Key和标题
         String businessKey = objectCode + ":" + recordId;
@@ -183,6 +203,23 @@ public class BusinessFlowService {
             return legacyDocumentFlowToVO(canonicalObjectCode, documentConfig);
         }
         return toVO(canonicalObjectCode, binding);
+    }
+
+    /**
+     * 查询正式业务发起入口需要补充的流程参数。
+     */
+    public Map<String, Object> getBusinessStartConfig(String objectCode) {
+        BusinessFlowBindingVO binding = getFlowBinding(objectCode);
+        if (binding == null || StringUtils.isBlank(binding.getFlowModelKey())) {
+            throw new BusinessException("业务对象未配置主流程");
+        }
+        FlowResult<Map<String, Object>> result = flowClient.getModelStartConfig(binding.getFlowModelKey());
+        if (result == null || !result.isSuccess()) {
+            throw new BusinessException(result == null
+                    ? "读取流程发起配置失败"
+                    : StringUtils.defaultIfBlank(result.getMsg(), "读取流程发起配置失败"));
+        }
+        return result.getData() == null ? Map.of() : result.getData();
     }
 
     /**
@@ -708,8 +745,9 @@ public class BusinessFlowService {
             throw new BusinessException("业务待办办理参数不能为空");
         }
         String action = StringUtils.defaultIfBlank(dto.getAction(), "approve").trim().toLowerCase();
-        if (!"approve".equals(action) && !"reject".equals(action)) {
-            throw new BusinessException("当前业务待办仅支持同意或驳回");
+        if (!"approve".equals(action) && !"reject".equals(action)
+                && !"rejecttostart".equals(action) && !"return".equals(action)) {
+            throw new BusinessException("当前业务待办仅支持同意、驳回、驳回至发起人或退回");
         }
         if (flowClient == null) {
             throw new BusinessException("流程服务未配置，无法办理业务待办");
@@ -730,11 +768,20 @@ public class BusinessFlowService {
         Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
         String userId = String.valueOf(resolveUserId());
 
-        FlowResult<Void> result = "reject".equals(action)
-                ? flowClient.reject(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
-                        resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest())
-                : flowClient.approve(query.getTaskId(), userId, dto.getComment(), dto.getSignature(), variables,
-                        resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
+        FlowResult<Void> result;
+        if ("rejecttostart".equals(action)) {
+            result = flowClient.rejectToStart(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
+                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
+        } else if ("reject".equals(action)) {
+            result = flowClient.reject(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
+                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
+        } else if ("return".equals(action)) {
+            result = flowClient.returnTask(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
+                    StringUtils.trimToNull(dto.getTargetActivityId()));
+        } else {
+            result = flowClient.approve(query.getTaskId(), userId, dto.getComment(), dto.getSignature(), variables,
+                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
+        }
         if (result == null || !result.isSuccess()) {
             throw new BusinessException(result == null
                     ? "业务待办办理失败"
@@ -1740,6 +1787,22 @@ public class BusinessFlowService {
         vo.setAllowReject(readNullableBooleanValue(source.get("allowReject")));
         vo.setAllowRejectToStart(readNullableBooleanValue(source.get("allowRejectToStart")));
         vo.setAllowReturn(readNullableBooleanValue(source.get("allowReturn")));
+        vo.setAllowMultiReturn(readNullableBooleanValue(source.get("allowMultiReturn")));
+        vo.setAllowDirectSend(readNullableBooleanValue(source.get("allowDirectSend")));
+        vo.setReturnSourceActivityId(StringUtils.trimToNull(textValue(source.get("returnSourceActivityId"))));
+        vo.setReturnSourceActivityName(StringUtils.trimToNull(textValue(source.get("returnSourceActivityName"))));
+        Object targets = source.get("returnTargets");
+        if (targets instanceof List<?> list) {
+            List<Map<String, Object>> returnTargets = new ArrayList<>();
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    Map<String, Object> target = new LinkedHashMap<>();
+                    map.forEach((key, value) -> target.put(String.valueOf(key), value));
+                    returnTargets.add(target);
+                }
+            }
+            vo.setReturnTargets(returnTargets);
+        }
         vo.setAllowTerminate(readNullableBooleanValue(source.get("allowTerminate")));
         vo.setRequireSignature(readNullableBooleanValue(source.get("requireSignature")));
         vo.setRequireComment(readNullableBooleanValue(source.get("requireComment")));
@@ -2048,6 +2111,8 @@ public class BusinessFlowService {
                     objectCode, runtime.recordId(), runtime.businessKey(), configKey, bindingConfig);
             item.setObjectCode(objectCode);
             item.setRecordId(runtime.recordId());
+            item.setBusinessType(StringUtils.firstNonBlank(item.getBusinessType(), objectCode));
+            item.setBusinessParams(recordData);
             item.setBusinessObjectName(objectName);
             item.setBusinessSummary(StringUtils.firstNonBlank(
                     resolveBusinessSummary(object, taskRuntime, recordData),
@@ -2100,6 +2165,8 @@ public class BusinessFlowService {
             FlowBusinessListDisplayItem item = runtime.item();
             item.setObjectCode(objectCode);
             item.setRecordId(runtime.recordId());
+            item.setBusinessType(StringUtils.firstNonBlank(item.getBusinessType(), objectCode));
+            item.setBusinessParams(Map.of("recordId", runtime.recordId(), "businessKey", runtime.businessKey()));
             item.setBusinessObjectName(objectName);
             item.setBusinessSummary(StringUtils.firstNonBlank(summaries.get(runtime.recordId()), item.getBusinessSummary()));
             item.setProcessDefinitionName(StringUtils.firstNonBlank(
@@ -2197,6 +2264,13 @@ public class BusinessFlowService {
                 putBoolean(defaultNodeForm, formInfo, "allowReject");
                 putBoolean(defaultNodeForm, formInfo, "allowRejectToStart");
                 putBoolean(defaultNodeForm, formInfo, "allowReturn");
+                putBoolean(defaultNodeForm, formInfo, "allowMultiReturn");
+                putBoolean(defaultNodeForm, formInfo, "allowDirectSend");
+                putText(defaultNodeForm, "returnSourceActivityId", textValue(formInfo.get("returnSourceActivityId")));
+                putText(defaultNodeForm, "returnSourceActivityName", textValue(formInfo.get("returnSourceActivityName")));
+                if (formInfo.get("returnTargets") instanceof List<?> targets) {
+                    defaultNodeForm.put("returnTargets", targets);
+                }
                 putBoolean(defaultNodeForm, formInfo, "allowTerminate");
                 putBoolean(defaultNodeForm, formInfo, "requireSignature");
                 putBoolean(defaultNodeForm, formInfo, "requireComment");
@@ -2241,6 +2315,13 @@ public class BusinessFlowService {
         putBoolean(nodeForm, formInfo, "allowReject");
         putBoolean(nodeForm, formInfo, "allowRejectToStart");
         putBoolean(nodeForm, formInfo, "allowReturn");
+        putBoolean(nodeForm, formInfo, "allowMultiReturn");
+        putBoolean(nodeForm, formInfo, "allowDirectSend");
+        putText(nodeForm, "returnSourceActivityId", textValue(formInfo.get("returnSourceActivityId")));
+        putText(nodeForm, "returnSourceActivityName", textValue(formInfo.get("returnSourceActivityName")));
+        if (formInfo.get("returnTargets") instanceof List<?> targets) {
+            nodeForm.put("returnTargets", targets);
+        }
         putBoolean(nodeForm, formInfo, "allowTerminate");
         putBoolean(nodeForm, formInfo, "requireSignature");
         putBoolean(nodeForm, formInfo, "requireComment");

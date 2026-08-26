@@ -98,6 +98,21 @@
           </div>
         </section>
 
+        <section v-if="canReassign" class="approval-detail-section">
+          <div class="approval-warning-section">
+            <div class="approval-section-header">
+              <i class="i-material-symbols:person-edit-outline" />
+              更换当前审批人
+            </div>
+            <p class="approval-reassign-tip">
+              审批人休假或长期未处理时，可由流程发起人将当前任务改派给其他人员。
+            </p>
+            <NButton type="primary" secondary :disabled="withdrawLoading" @click="openReassignModal">
+              选择新审批人
+            </NButton>
+          </div>
+        </section>
+
         <section class="approval-detail-section">
           <n-collapse arrow-placement="right">
             <n-collapse-item title="查看流程图" name="diagram">
@@ -131,6 +146,32 @@
         </section>
       </template>
     </FlowTaskDetailShell>
+
+    <n-modal v-model:show="reassignVisible" preset="card" title="更换当前审批人" style="width: 480px" :mask-closable="false">
+      <n-form label-placement="top">
+        <n-form-item label="新审批人" required>
+          <UserSelectPicker
+            v-model="reassignUserId"
+            v-model:label-value="reassignUserName"
+            title="选择新审批人"
+            placeholder="请选择新审批人"
+          />
+        </n-form-item>
+        <n-form-item label="改派原因">
+          <n-input v-model:value="reassignReason" type="textarea" :rows="3" :maxlength="200" show-count placeholder="例如：原审批人休假" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <NButton :disabled="reassignLoading" @click="reassignVisible = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="reassignLoading" @click="submitReassign">
+            确认改派
+          </NButton>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -139,6 +180,7 @@ import { NButton, NTreeSelect } from 'naive-ui'
 import { computed, onMounted, reactive, ref } from 'vue'
 import flowApi from '@/api/flow'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
 import FlowTaskCardList from '@/components/flow/FlowTaskCardList.vue'
 import FlowTaskDetailShell from '@/components/flow/FlowTaskDetailShell.vue'
@@ -180,6 +222,12 @@ const approvalHistory = ref([])
 const withdrawComment = ref('')
 const withdrawLoading = ref(false)
 const canWithdraw = computed(() => currentTask.value && [0, 1].includes(currentTask.value.status))
+const canReassign = computed(() => currentTask.value?.taskId && [0, 1].includes(currentTask.value.status))
+const reassignVisible = ref(false)
+const reassignLoading = ref(false)
+const reassignUserId = ref(null)
+const reassignUserName = ref('')
+const reassignReason = ref('')
 
 const statusOptions = computed(() => toNumberOptions(dict.value.flow_started_status).filter(item => [0, 1, 2, 3, 6].includes(item.value)))
 
@@ -249,6 +297,43 @@ async function submitWithdraw() {
   }
   finally {
     withdrawLoading.value = false
+  }
+}
+
+function openReassignModal() {
+  reassignUserId.value = null
+  reassignUserName.value = ''
+  reassignReason.value = ''
+  reassignVisible.value = true
+}
+
+async function submitReassign() {
+  if (!reassignUserId.value) {
+    window.$message.warning('请选择新审批人')
+    return
+  }
+  reassignLoading.value = true
+  try {
+    const res = await flowApi.reassignTask({
+      taskId: currentTask.value.taskId,
+      userId: String(userStore.userId),
+      newAssignee: String(reassignUserId.value),
+      reason: reassignReason.value || undefined,
+    })
+    if (res.code !== 200) {
+      window.$message.error(res.message || '改派失败')
+      return
+    }
+    window.$message.success('当前任务已改派')
+    reassignVisible.value = false
+    showDrawer.value = false
+    loadData()
+  }
+  catch (error) {
+    window.$message.error(error?.message || '改派失败')
+  }
+  finally {
+    reassignLoading.value = false
   }
 }
 

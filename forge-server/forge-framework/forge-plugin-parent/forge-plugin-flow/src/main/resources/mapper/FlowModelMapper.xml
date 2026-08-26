@@ -110,6 +110,7 @@
                m.notify_type,
                m.webhook_url,
                m.todo_detail_url_template,
+               m.allow_multi_return,
                m.notify_config,
                m.status,
                m.importance_level,
