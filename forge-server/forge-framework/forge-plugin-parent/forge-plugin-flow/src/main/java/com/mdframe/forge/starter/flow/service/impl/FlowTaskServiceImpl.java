@@ -86,6 +86,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private static final String FORM_TYPE_BUSINESS = "business";
     private static final String RETURN_SOURCE_ACTIVITY_ID = "FLOW_RETURN_SOURCE_ACTIVITY_ID";
     private static final String RETURN_TARGET_ACTIVITY_ID = "FLOW_RETURN_TARGET_ACTIVITY_ID";
+    private static final String RETURN_TO_START_PENDING = "FLOW_RETURN_TO_START_PENDING";
     private static final String DIRECT_SEND_VARIABLE = "directSend";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -487,6 +488,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             Map<String, Object> variables = mergeActionVariables(null, false);
             if (rejectToStart) {
                 variables.put("rejectToStart", true);
+                // 保留原驳回节点，供发起人修改后选择直送；具体修改节点仍由业务 BPMN 回路决定。
+                runtimeService.setVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID,
+                        task.getTaskDefinitionKey());
+                runtimeService.removeVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID);
+                runtimeService.setVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING, true);
             }
             completeTask(task, variables);
 
@@ -603,6 +609,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             runtimeService.setVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID,
                     task.getTaskDefinitionKey());
             runtimeService.setVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID, targetActivityId);
+            runtimeService.removeVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING);
 
             List<String> currentActivityIds = runtimeService.getActiveActivityIds(task.getProcessInstanceId());
             if (currentActivityIds == null || currentActivityIds.isEmpty()) {
@@ -727,7 +734,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         String processInstanceId = completedTask.getProcessInstanceId();
         Object source = runtimeService.getVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
         Object target = runtimeService.getVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
-        if (source == null || target == null || !Objects.equals(String.valueOf(target), completedTask.getTaskDefinitionKey())) {
+        Object returnToStartPending = runtimeService.getVariable(processInstanceId, RETURN_TO_START_PENDING);
+        boolean returnedToHistoricalNode = target != null
+                && Objects.equals(String.valueOf(target), completedTask.getTaskDefinitionKey());
+        if (source == null || (!returnedToHistoricalNode && !Boolean.TRUE.equals(readBoolean(returnToStartPending)))) {
             return;
         }
         boolean directSend = Boolean.TRUE.equals(readBoolean(
@@ -735,6 +745,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (!directSend) {
             runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
             runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+            runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
             return;
         }
         String sourceActivityId = String.valueOf(source);
@@ -745,6 +756,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (activeActivityIds.contains(sourceActivityId)) {
             runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
             runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+            runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
             return;
         }
         runtimeService.createChangeActivityStateBuilder()
@@ -753,6 +765,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 .changeState();
         runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
         runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
+        runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
     }
 
     private Boolean readBoolean(Object value) {
@@ -1926,7 +1939,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setAllowReturn(policy.allowReturn);
         formInfo.setAllowMultiReturn(flowModel != null && Boolean.TRUE.equals(flowModel.getAllowMultiReturn()));
         formInfo.setReturnTargets(buildReturnTargets(task, formInfo.getAllowMultiReturn()));
-        populateDirectSendInfo(formInfo, task, flowModel);
+        populateDirectSendInfo(formInfo, task);
         formInfo.setAllowTerminate(policy.allowTerminate);
         formInfo.setRequireSignature(policy.requireSignature);
         formInfo.setRequireComment(policy.requireComment);
@@ -1962,14 +1975,14 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 .values().stream().toList();
     }
 
-    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task, FlowModel flowModel) {
-        if (flowModel == null || !Boolean.TRUE.equals(flowModel.getAllowMultiReturn())) {
-            formInfo.setAllowDirectSend(false);
-            return;
-        }
+    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task) {
         Object source = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID);
         Object target = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID);
-        if (source == null || target == null || !Objects.equals(String.valueOf(target), task.getTaskDefinitionKey())) {
+        Object returnToStartPending = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING);
+        boolean returnedToHistoricalNode = target != null
+                && Objects.equals(String.valueOf(target), task.getTaskDefinitionKey());
+        boolean returnedToStart = Boolean.TRUE.equals(readBoolean(returnToStartPending));
+        if (source == null || (!returnedToHistoricalNode && !returnedToStart)) {
             formInfo.setAllowDirectSend(false);
             return;
         }

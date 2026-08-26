@@ -2,6 +2,21 @@
 
 ## 2026-08-26
 
+### 驳回至发起人直送链路补充复验
+
+补充修复：`rejectToStart` 现在保存原审批节点和待修改路径标记；发起人修改任务完成时可选择 `directSend=true`，平台会将后续活动迁移回原驳回节点。普通指定节点退回仍复用同一套直送状态清理逻辑。
+
+命令：
+
+```bash
+cd forge-server
+JAVA_HOME=$(/usr/libexec/java_home -v 17) PATH="$JAVA_HOME/bin:$PATH" \
+  mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator,forge-framework/forge-plugin-parent/forge-plugin-flow,forge-flow/forge-flow-client,forge-flow/forge-flow-server \
+  -am -DskipTests compile
+```
+
+结果：`BUILD SUCCESS`，37 个 Reactor 模块完成编译；保留项目既有 deprecated/unchecked 警告，无本轮编译错误。
+
 ### 收尾复跑
 
 命令：
