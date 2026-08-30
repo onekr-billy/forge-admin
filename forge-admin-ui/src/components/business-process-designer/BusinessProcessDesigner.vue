@@ -221,15 +221,20 @@ function bindDefaultApprovalForms() {
   const source = props.formAssets.find(item => item?.formKey)
   if (!source)
     return
-  const formAsset = toFormAssetRef(source)
   designer.schema.value.nodes
     .filter(node => node?.type === 'APPROVAL')
     .forEach((node) => {
-      const currentKey = String(node.config?.formAsset?.formKey || '')
-      const currentApplicationId = String(node.config?.formAsset?.applicationId || '')
-      const currentPageId = String(node.config?.formAsset?.pageId || '')
-      // 已经绑定当前应用页面时保留用户的节点权限配置。
-      if (currentKey && currentApplicationId && currentPageId)
+      const current = node.config?.formAsset || {}
+      const currentKey = String(current.formKey || '')
+      if (currentKey && resolveAvailableFormAsset(props.formAssets, current))
+        return
+      // 历史草稿可能保存 sourceFormKey/formAssetId 或旧页面 formKey；
+      // 目录返回稳定 app_* formKey 后，按唯一匹配结果修复引用并保留节点其它配置。
+      const repaired = currentKey
+        ? resolveLegacyFormAsset(props.formAssets, current)
+        : null
+      const formAsset = toFormAssetRef(repaired || source)
+      if (currentKey && !repaired)
         return
       designer.updateNode(node.id, {
         config: {
@@ -238,6 +243,30 @@ function bindDefaultApprovalForms() {
         },
       })
     })
+}
+
+function resolveAvailableFormAsset(assets, current = {}) {
+  const key = stringValue(current.formKey)
+  if (!key)
+    return null
+  return (assets || []).find(asset => stringValue(asset?.formKey) === key) || null
+}
+
+function resolveLegacyFormAsset(assets, current = {}) {
+  const key = stringValue(current.formKey)
+  const pageId = stringValue(current.pageId)
+  const candidates = (assets || []).filter((asset) => {
+    const assetKey = stringValue(asset?.formKey)
+    if (!assetKey || assetKey === key)
+      return false
+    const sourceKey = stringValue(asset?.sourceFormKey)
+    const sourceAssetId = stringValue(asset?.sourceAssetId)
+    return sourceKey === key
+      || sourceAssetId === key
+      || assetKey.endsWith(`_form_${key}`)
+      || (pageId && stringValue(asset?.pageId) === pageId)
+  })
+  return candidates.length === 1 ? candidates[0] : null
 }
 
 function toFormAssetRef(item) {
@@ -253,6 +282,10 @@ function toFormAssetRef(item) {
     pageType: item.pageType || undefined,
     sourceFormKey: item.sourceFormKey || undefined,
   }
+}
+
+function stringValue(value) {
+  return value == null ? '' : String(value)
 }
 
 function handleCopyNode() {

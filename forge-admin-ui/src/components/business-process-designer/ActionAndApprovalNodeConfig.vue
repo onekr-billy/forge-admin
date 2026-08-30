@@ -268,12 +268,14 @@ function ensureDefaultApprovalBindings() {
     formAssetKey(item) === currentFormKey
     && (!currentProviderKey || stringValue(item.providerKey) === currentProviderKey),
   )
-  if (resolvedFormAssets.value[0] && (!currentFormKey || !currentFormAvailable)) {
+  if (resolvedFormAssets.value[0] && (!currentFormKey || (!currentFormAvailable
+    && !isStableApplicationFormRef(localConfig.value.formAsset)))) {
     patch.formAsset = toFormAssetRef(resolvedFormAssets.value[0])
   }
   else if (!resolvedFormAssets.value.length
     && currentFormKey
-    && String(localConfig.value.formAsset?.formMode || 'BUSINESS_OBJECT_FORM').toUpperCase() !== 'EXTERNAL') {
+    && String(localConfig.value.formAsset?.formMode || 'BUSINESS_OBJECT_FORM').toUpperCase() !== 'EXTERNAL'
+    && !isStableApplicationFormRef(localConfig.value.formAsset)) {
     patch.formAsset = {}
   }
   if (!usesIndependentFlowStatus.value && suggestedStatusField.value) {
@@ -284,6 +286,20 @@ function ensureDefaultApprovalBindings() {
   }
   if (Object.keys(patch).length)
     patchConfig(patch)
+}
+
+/**
+ * 应用页面表单的 formKey 同时携带 applicationId/pageId，属于可恢复的稳定引用。
+ * 资产目录异步加载失败或暂时为空时不能把它当成已删除表单清掉，否则用户重新打开
+ * 流程草稿会看到“任务表单”消失，保存还会覆盖原有绑定。
+ */
+function isStableApplicationFormRef(formAsset = {}) {
+  if (!formAsset || typeof formAsset !== 'object')
+    return false
+  const formKey = stringValue(formAsset.formKey)
+  const applicationId = stringValue(formAsset.applicationId)
+  const pageId = stringValue(formAsset.pageId)
+  return formKey.startsWith('app_') || (Boolean(applicationId) && Boolean(pageId))
 }
 
 async function ensureFlowStatusField() {

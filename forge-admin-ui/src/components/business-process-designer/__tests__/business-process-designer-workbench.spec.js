@@ -458,6 +458,67 @@ describe('structured business node configuration', () => {
     wrapper.unmount()
   })
 
+  it('keeps a stable application page form reference when the catalog is temporarily empty', async () => {
+    const wrapper = mount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'approval_application_form',
+          type: 'APPROVAL',
+          name: '审批',
+          ports: ['APPROVED', 'REJECTED', 'CANCELED', 'FAILED'],
+          config: {
+            formAsset: {
+              formKey: 'app_2089968247981060098_page_page_page_form_form_form',
+              formMode: 'BUSINESS_OBJECT_FORM',
+              applicationId: '2089968247981060098',
+              pageId: 'page_page',
+              formName: '测试',
+            },
+          },
+        },
+        objectCode: 'bo_2089974506884993026',
+        formAssets: [],
+      },
+      global: { stubs: FORM_ASSET_STUBS },
+    })
+
+    expect(wrapper.emitted('update:config') || []).not.toSatisfy(events => events.some(([config]) =>
+      config?.formAsset?.formKey === '',
+    ))
+    expect(wrapper.find('.asset-card').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not replace a stable application page form with an unrelated catalog asset', async () => {
+    const wrapper = mount(ActionAndApprovalNodeConfig, {
+      props: {
+        node: {
+          id: 'approval_application_form_catalog_mismatch',
+          type: 'APPROVAL',
+          name: '审批',
+          ports: ['APPROVED', 'REJECTED', 'CANCELED', 'FAILED'],
+          config: {
+            formAsset: {
+              formKey: 'app_2089968247981060098_page_page_page_form_form_form',
+              formMode: 'BUSINESS_OBJECT_FORM',
+              applicationId: '2089968247981060098',
+              pageId: 'page_page',
+              formName: '测试',
+            },
+          },
+        },
+        objectCode: 'bo_2089974506884993026',
+        formAssets: [{ formKey: 'app_other_page_page_form_form_other', formName: '其他页面' }],
+      },
+      global: { stubs: FORM_ASSET_STUBS },
+    })
+
+    expect(wrapper.emitted('update:config') || []).not.toSatisfy(events => events.some(([config]) =>
+      config?.formAsset?.formKey === 'app_other_page_page_form_form_other',
+    ))
+    wrapper.unmount()
+  })
+
   it('creates a business-form approval model bound to the object form', async () => {
     const wrapper = mount(ActionAndApprovalNodeConfig, {
       props: {

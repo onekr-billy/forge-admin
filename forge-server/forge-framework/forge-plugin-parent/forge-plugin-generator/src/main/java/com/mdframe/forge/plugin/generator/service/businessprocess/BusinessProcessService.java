@@ -36,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -239,8 +240,8 @@ public class BusinessProcessService {
 
     /**
      * 老流程草稿只保存了审批模型，没有保存应用页面表单引用。
-     * 当当前应用对该业务对象只有一个页面表单资产时，服务端可确定唯一绑定，
-     * 自动写入具体的页面和资产身份，避免用户手填 formKey 或依赖浏览器 watcher。
+     * 当当前应用对该业务对象只有一个页面表单资产时自动补齐默认绑定；
+     * 对已有旧 formKey，则按 sourceFormKey/pageId 唯一匹配升级为稳定页面资产身份。
      */
     private boolean bindDefaultApplicationPageFormAssets(AiBusinessProcess process,
                                                           BusinessProcessSchema schema) {
@@ -258,25 +259,14 @@ public class BusinessProcessService {
             return false;
         }
         Object rawAssets = catalog == null ? null : catalog.get("formAssets");
-        if (!(rawAssets instanceof List<?> assets) || assets.size() != 1) {
-            // 多个页面表单无法安全猜测，仍交给设计器选择，避免错误绑定。
+        if (!(rawAssets instanceof List<?> assets) || assets.isEmpty()) {
             return false;
         }
-        Object rawAsset = assets.get(0);
-        if (!(rawAsset instanceof Map<?, ?> source)
-                || StringUtils.isBlank(text(source.get("formKey")))) {
-            return false;
+        Map<String, Object> defaultFormAsset = null;
+        if (assets.size() == 1 && assets.get(0) instanceof Map<?, ?> source
+                && StringUtils.isNotBlank(text(source.get("formKey")))) {
+            defaultFormAsset = copyApplicationFormAsset(mapValue(source));
         }
-        Map<String, Object> formAsset = new LinkedHashMap<>();
-        for (String key : List.of("formKey", "formName", "formMode", "type", "providerKey",
-                "formUrl", "viewKey", "applicationId", "pageId", "pageCode", "pageName",
-                "pageType", "sourceFormKey")) {
-            Object value = source.get(key);
-            if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
-                formAsset.put(key, value);
-            }
-        }
-        formAsset.putIfAbsent("formMode", "BUSINESS_OBJECT_FORM");
         boolean changed = false;
         for (BusinessProcessNode node : safeList(schema.getNodes())) {
             if (node == null || !"APPROVAL".equalsIgnoreCase(node.getType())) {
@@ -285,10 +275,22 @@ public class BusinessProcessService {
             Map<String, Object> config = node.getConfig() == null
                     ? new LinkedHashMap<>() : new LinkedHashMap<>(node.getConfig());
             Map<String, Object> current = mapValue(config.get("formAsset"));
-            if (StringUtils.isNotBlank(text(current.get("formKey")))) {
+            String currentFormKey = StringUtils.trimToNull(text(current.get("formKey")));
+            if (currentFormKey != null) {
+                Map<String, Object> repaired = resolveExistingApplicationFormAsset(assets, current);
+                if (repaired != null && !StringUtils.equals(currentFormKey, text(repaired.get("formKey")))) {
+                    config.put("formAsset", repaired);
+                    config.putIfAbsent("versionPolicy", "PINNED_AT_APPLICATION_PUBLISH");
+                    node.setConfig(config);
+                    changed = true;
+                }
                 continue;
             }
-            config.put("formAsset", formAsset);
+            if (defaultFormAsset == null) {
+                // 多个页面表单无法安全猜测默认项，仍交给设计器选择，避免错误绑定。
+                continue;
+            }
+            config.put("formAsset", defaultFormAsset);
             config.putIfAbsent("versionPolicy", "PINNED_AT_APPLICATION_PUBLISH");
             node.setConfig(config);
             changed = true;
@@ -299,15 +301,68 @@ public class BusinessProcessService {
                 dependencies = new BusinessProcessSchema.Dependencies();
                 schema.setDependencies(dependencies);
             }
-            String formKey = text(formAsset.get("formKey"));
-            if (dependencies.getFormAssets() == null) {
-                dependencies.setFormAssets(new ArrayList<>());
+            LinkedHashSet<String> formKeys = new LinkedHashSet<>();
+            for (BusinessProcessNode node : safeList(schema.getNodes())) {
+                Map<String, Object> nodeConfig = node == null ? null : node.getConfig();
+                String formKey = text(mapValue(nodeConfig == null ? null : nodeConfig.get("formAsset")).get("formKey"));
+                if (StringUtils.isNotBlank(formKey)) {
+                    formKeys.add(formKey);
+                }
             }
-            if (!dependencies.getFormAssets().contains(formKey)) {
-                dependencies.getFormAssets().add(formKey);
-            }
+            dependencies.setFormAssets(new ArrayList<>(formKeys));
         }
         return changed;
+    }
+
+    /**
+     * 将旧版只保存 sourceFormKey/pageId 的表单引用升级为应用页面生成的稳定 formKey。
+     * 仅在匹配结果唯一时修复，避免多页面同名表单被错误替换。
+     */
+    private Map<String, Object> resolveExistingApplicationFormAsset(List<?> assets,
+                                                                     Map<String, Object> current) {
+        if (assets == null || assets.isEmpty() || current == null || current.isEmpty()) {
+            return null;
+        }
+        String currentKey = StringUtils.trimToNull(text(current.get("formKey")));
+        String currentPageId = StringUtils.trimToNull(text(current.get("pageId")));
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (Object rawAsset : assets) {
+            if (!(rawAsset instanceof Map<?, ?> source)) {
+                continue;
+            }
+            Map<String, Object> asset = mapValue(source);
+            String assetFormKey = StringUtils.trimToNull(text(asset.get("formKey")));
+            if (assetFormKey == null || StringUtils.equals(currentKey, assetFormKey)) {
+                continue;
+            }
+            String sourceFormKey = StringUtils.trimToNull(text(asset.get("sourceFormKey")));
+            String assetPageId = StringUtils.trimToNull(text(asset.get("pageId")));
+            boolean keyMatchesLegacy = StringUtils.equals(currentKey, sourceFormKey)
+                    || StringUtils.equals(currentKey, text(asset.get("sourceAssetId")))
+                    || StringUtils.endsWith(assetFormKey, "_form_" + currentKey);
+            boolean pageMatches = currentPageId != null && StringUtils.equals(currentPageId, assetPageId);
+            if (keyMatchesLegacy || pageMatches) {
+                candidates.add(asset);
+            }
+        }
+        if (candidates.size() != 1) {
+            return null;
+        }
+        return copyApplicationFormAsset(candidates.get(0));
+    }
+
+    private Map<String, Object> copyApplicationFormAsset(Map<String, Object> source) {
+        Map<String, Object> repaired = new LinkedHashMap<>();
+        for (String key : List.of("formKey", "formName", "formMode", "type", "providerKey",
+                "formUrl", "viewKey", "applicationId", "pageId", "pageCode", "pageName",
+                "pageType", "sourceFormKey")) {
+            Object value = source.get(key);
+            if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
+                repaired.put(key, value);
+            }
+        }
+        repaired.putIfAbsent("formMode", "BUSINESS_OBJECT_FORM");
+        return repaired;
     }
 
     private void persistDesignerCompatibilityBinding(Long tenantId,

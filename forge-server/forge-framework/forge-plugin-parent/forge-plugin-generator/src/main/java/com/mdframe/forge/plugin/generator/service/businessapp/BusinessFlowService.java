@@ -249,7 +249,21 @@ public class BusinessFlowService {
                 continue;
             }
             AiBusinessFlowInstanceLink link = linkByBusinessKey.get(StringUtils.trimToEmpty(item.getBusinessKey()));
+            Map<String, Object> snapshotParams = readBusinessParamsSnapshot(link);
+            if (!snapshotParams.isEmpty() && (item.getBusinessParams() == null || item.getBusinessParams().isEmpty())) {
+                item.setBusinessParams(snapshotParams);
+            }
+            BusinessTaskFormContextQueryDTO itemQuery = new BusinessTaskFormContextQueryDTO();
+            itemQuery.setObjectCode(item.getObjectCode());
+            itemQuery.setConfigKey(firstNonBlankValue(
+                    extractSnapshotValue(link, "configKey"),
+                    extractSnapshotValue(link, "runtimeConfigKey"),
+                    item.getBusinessParams() == null ? null : item.getBusinessParams().get("configKey")));
+            itemQuery.setSuiteCode(item.getBusinessParams() == null
+                    ? null : textValue(item.getBusinessParams().get("suiteCode")));
+            AiBusinessObject taskObject = resolveTaskBusinessObject(tenantId, itemQuery, link);
             String objectCode = StringUtils.firstNonBlank(
+                    taskObject == null ? null : taskObject.getObjectCode(),
                     link == null ? null : link.getObjectCode(),
                     StringUtils.trimToNull(item.getObjectCode()),
                     parseBusinessKeyObjectCode(item.getBusinessKey()));
@@ -268,7 +282,11 @@ public class BusinessFlowService {
                         item.getProcessDefinitionName(), item.getProcessName(), item.getProcessDefKey()));
                 continue;
             }
-            BusinessRuntimeContext context = contextCache.computeIfAbsent(objectCode,
+            String runtimeLookupKey = StringUtils.firstNonBlank(
+                    taskObject == null ? null : taskObject.getConfigKey(),
+                    itemQuery.getConfigKey(),
+                    objectCode);
+            BusinessRuntimeContext context = contextCache.computeIfAbsent(runtimeLookupKey,
                     code -> resolveBusinessRuntimeContext(tenantId, code));
             String canonicalObjectCode = StringUtils.firstNonBlank(context.objectCode(), objectCode);
             grouped.computeIfAbsent(canonicalObjectCode,
@@ -322,15 +340,19 @@ public class BusinessFlowService {
         }
 
         if (applicationId != null && applicationId > 0 && businessApplicationService != null) {
+            String canonicalObjectCode = resolveCanonicalObjectCode(resolveTenantId(), objectCode);
             Map<String, Object> applicationAssets = collectApplicationPageFormAssets(
-                    applicationId, objectCode);
+                    applicationId, canonicalObjectCode);
             if (!applicationAssets.isEmpty()) {
                 result.putAll(applicationAssets);
-                result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(objectCode, includeInternal));
+                result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(
+                        canonicalObjectCode, includeInternal));
                 return result;
             }
             result.put("warnings", List.of("当前应用尚未配置属于该业务对象的表单页面，请先在应用中新增表单页面"));
-            result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(objectCode, includeInternal));
+            result.put("objectCode", canonicalObjectCode);
+            result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(
+                    canonicalObjectCode, includeInternal));
             return result;
         }
 
@@ -423,8 +445,9 @@ public class BusinessFlowService {
                     continue;
                 }
                 JSONObject objectRef = readNestedObject(node.get("objectRef"));
-                if (!StringUtils.equals(objectCode,
-                        StringUtils.firstNonBlank(objectRef.getString("objectCode"), node.getString("objectCode")))) {
+                String pageObjectCode = StringUtils.firstNonBlank(
+                        objectRef.getString("objectCode"), node.getString("objectCode"));
+                if (!matchesApplicationObject(applicationId, objectCode, pageObjectCode, objectRef)) {
                     continue;
                 }
                 String pageId = StringUtils.trimToNull(node.getString("id"));
@@ -462,7 +485,7 @@ public class BusinessFlowService {
                         continue;
                     }
                     Map<String, Object> item = buildApplicationPageFormAsset(
-                            applicationId, node, objectRef, source, pageId);
+                            applicationId, objectCode, node, objectRef, source, pageId);
                     String formKey = StringUtils.trimToNull(textValue(item.get("formKey")));
                     if (formKey != null && seen.add(formKey)) {
                         formAssets.add(item);
@@ -480,6 +503,30 @@ public class BusinessFlowService {
             log.debug("读取应用页面表单资产失败: applicationId={}, objectCode={}", applicationId, objectCode, error);
         }
         return result;
+    }
+
+    /**
+     * 兼容业务对象编码唯一化前保存的页面引用。页面仍携带稳定 configKey/objectId 时，
+     * 即使调用方传入旧 objectCode，也应解析到当前应用的规范对象编码。
+     */
+    private boolean matchesApplicationObject(Long applicationId,
+                                             String requestedObjectCode,
+                                             String pageObjectCode,
+                                             JSONObject objectRef) {
+        if (StringUtils.equals(requestedObjectCode, pageObjectCode)) {
+            return true;
+        }
+        if (applicationId == null || StringUtils.isBlank(requestedObjectCode) || objectRef == null) {
+            return false;
+        }
+        String configKey = StringUtils.trimToNull(objectRef.getString("configKey"));
+        if (configKey == null) {
+            return false;
+        }
+        AiBusinessObject canonical = businessObjectMapper.selectByConfigKey(resolveTenantId(), configKey);
+        return canonical != null
+                && StringUtils.equals(canonical.getObjectCode(), pageObjectCode)
+                && !StringUtils.equals(canonical.getObjectCode(), requestedObjectCode);
     }
 
     private String resolveDefaultPageFormAssetId(JSONObject pageNode,
@@ -524,6 +571,7 @@ public class BusinessFlowService {
     }
 
     private Map<String, Object> buildApplicationPageFormAsset(Long applicationId,
+                                                               String canonicalObjectCode,
                                                                JSONObject pageNode,
                                                                JSONObject objectRef,
                                                                JSONObject source,
@@ -553,7 +601,9 @@ public class BusinessFlowService {
         item.put("type", "BUSINESS_OBJECT_FORM");
         item.put("formMode", "BUSINESS_OBJECT_FORM");
         item.put("applicationId", String.valueOf(applicationId));
-        item.put("objectCode", objectRef.getString("objectCode"));
+        item.put("objectId", objectRef.getString("objectId"));
+        item.put("objectCode", StringUtils.firstNonBlank(
+                canonicalObjectCode, objectRef.getString("objectCode")));
         item.put("objectName", objectName);
         item.put("configKey", objectRef.getString("configKey"));
         item.put("formKey", formKey);
@@ -675,6 +725,7 @@ public class BusinessFlowService {
     /**
      * 保存待办任务允许编辑的业务字段，并返回最新上下文。
      */
+    @Transactional(rollbackFor = Exception.class)
     public BusinessTaskFormContextVO saveTaskFormContext(BusinessTaskFormSaveDTO dto) {
         if (dto == null) {
             throw new BusinessException("业务待办表单参数不能为空");
@@ -686,6 +737,9 @@ public class BusinessFlowService {
         query.setProcessDefKey(dto.getProcessDefKey());
         query.setTaskDefKey(dto.getTaskDefKey());
         query.setObjectCode(dto.getObjectCode());
+        query.setObjectId(dto.getObjectId());
+        query.setConfigKey(dto.getConfigKey());
+        query.setSuiteCode(dto.getSuiteCode());
         query.setRecordId(dto.getRecordId());
         query.setFormKey(dto.getFormKey());
 
@@ -710,7 +764,7 @@ public class BusinessFlowService {
             String formKey = StringUtils.firstNonBlank(
                     StringUtils.trimToNull(query.getFormKey()),
                     StringUtils.trimToNull(nodeForm.getString("formKey")));
-            BusinessObjectVO object = queryBusinessObject(resolveTenantId(), runtime.objectCode());
+            BusinessObjectVO object = queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
             JSONObject formSchema = resolveBusinessFormSchema(object, formKey, runtime.configKey());
             List<Map<String, Object>> fieldCatalog = resolveBusinessTaskCrudPageFields(runtime.configKey(), formKey, formSchema);
             permissions = normalizeBusinessObjectTaskPermissions(fieldCatalog, permissions);
@@ -730,6 +784,24 @@ public class BusinessFlowService {
         validateRequiredTaskFields(permissions, updateData, input);
         if (updateData.isEmpty()) {
             throw new BusinessException("未提交可编辑业务字段");
+        }
+
+        if (runtime.recordId() == null) {
+            if (StringUtils.isBlank(runtime.configKey())) {
+                throw new BusinessException("业务对象缺少已发布运行配置，无法保存业务字段");
+            }
+            Map<String, Object> created = dynamicCrudService.insertInternal(runtime.configKey(), updateData);
+            Long createdId = extractCreatedRecordId(created);
+            if (createdId == null) {
+                throw new BusinessException("保存业务单据失败");
+            }
+            ensureRuntimeLink(runtime, query, createdId);
+            query.setRecordId(createdId);
+            query.setObjectCode(runtime.objectCode());
+            query.setBusinessKey(buildBusinessKey(runtime.objectCode(), createdId));
+            TaskFormRuntimeContext createdRuntime = new TaskFormRuntimeContext(
+                    runtime.objectCode(), createdId, query.getBusinessKey(), runtime.configKey(), runtime.bindingConfig());
+            return buildTaskFormContext(query, createdRuntime);
         }
 
         dynamicCrudService.updateInternalFieldsById(runtime.configKey(), runtime.recordId(), updateData);
@@ -761,6 +833,9 @@ public class BusinessFlowService {
         query.setProcessDefKey(dto.getProcessDefKey());
         query.setTaskDefKey(dto.getTaskDefKey());
         query.setObjectCode(dto.getObjectCode());
+        query.setObjectId(dto.getObjectId());
+        query.setConfigKey(dto.getConfigKey());
+        query.setSuiteCode(dto.getSuiteCode());
         query.setRecordId(dto.getRecordId());
         query.setFormKey(dto.getFormKey());
 
@@ -781,7 +856,8 @@ public class BusinessFlowService {
                     StringUtils.trimToNull(dto.getTargetActivityId()));
         } else {
             result = flowClient.approve(query.getTaskId(), userId, dto.getComment(), dto.getSignature(), variables,
-                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
+                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest(),
+                    dto.getApprovalPointResults());
         }
         if (result == null || !result.isSuccess()) {
             throw new BusinessException(result == null
@@ -1035,8 +1111,15 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(query.getProcessInstanceId())) {
             query.setProcessInstanceId(StringUtils.trimToNull(textValue(task.get("processInstanceId"))));
         }
-        if (StringUtils.isBlank(query.getBusinessKey())) {
-            query.setBusinessKey(StringUtils.trimToNull(textValue(task.get("businessKey"))));
+        String taskBusinessKey = StringUtils.trimToNull(textValue(task.get("businessKey")));
+        if (isSyntheticTestBusinessKey(taskBusinessKey)) {
+            // 发起测试尚未绑定低代码单据，后续按流程实例补建记录，不能用请求里的 objectCode:id 覆盖任务 Key。
+            query.setBusinessKey(taskBusinessKey);
+            if (query.getRecordId() != null && StringUtils.isBlank(query.getProcessInstanceId())) {
+                query.setRecordId(null);
+            }
+        } else if (StringUtils.isBlank(query.getBusinessKey())) {
+            query.setBusinessKey(taskBusinessKey);
         }
         if (StringUtils.isBlank(query.getTaskDefKey())) {
             query.setTaskDefKey(StringUtils.trimToNull(textValue(task.get("taskDefKey"))));
@@ -1079,7 +1162,17 @@ public class BusinessFlowService {
         if (isSameDocumentBusinessKey(requested, actual)) {
             return;
         }
+        // 流程模型「发起测试」写入 FLOW_TEST:modelKey:ts，此时还没有 objectCode:recordId。
+        // 待办暂存会按业务对象补建单据，请求 Key 可能是测试 Key 或单据 Key，不能当成串单。
+        if (isSyntheticTestBusinessKey(actual)) {
+            return;
+        }
         throw new BusinessException("业务Key与当前任务不匹配");
+    }
+
+    private boolean isSyntheticTestBusinessKey(String businessKey) {
+        String text = StringUtils.trimToNull(businessKey);
+        return text != null && (text.startsWith("FLOW_TEST:") || "FLOW_TEST".equals(text));
     }
 
     private boolean isSameDocumentBusinessKey(String left, String right) {
@@ -1198,8 +1291,8 @@ public class BusinessFlowService {
         vo.setConfigKey(runtime.configKey());
         vo.setFormType("none");
 
-        if (StringUtils.isBlank(runtime.objectCode()) || runtime.recordId() == null) {
-            vo.getWarnings().add("未解析到业务对象或记录");
+        if (StringUtils.isBlank(runtime.objectCode())) {
+            vo.getWarnings().add("未解析到业务对象");
             return vo;
         }
 
@@ -1233,7 +1326,7 @@ public class BusinessFlowService {
         String formKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(query.getFormKey()),
                 StringUtils.trimToNull(nodeForm.getString("formKey")));
-        BusinessObjectVO object = queryBusinessObject(resolveTenantId(), runtime.objectCode());
+        BusinessObjectVO object = queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
         vo.setBusinessObjectName(object == null ? runtime.objectCode() : object.getObjectName());
         JSONObject formSchema = resolveBusinessFormSchema(object, formKey, runtime.configKey());
         if (formSchema.isEmpty()) {
@@ -1245,7 +1338,9 @@ public class BusinessFlowService {
         List<Map<String, Object>> permissions = normalizeBusinessObjectTaskPermissions(
                 fieldCatalog, normalizeFieldPermissions(nodeForm.get("fieldPermissions")));
         List<Map<String, Object>> fields = buildTaskFormFields(fieldCatalog, permissions);
-        Map<String, Object> recordData = dynamicCrudService.selectById(runtime.configKey(), runtime.recordId());
+        Map<String, Object> recordData = runtime.recordId() == null
+                ? loadTaskVariablesAsRecord(query)
+                : dynamicCrudService.selectById(runtime.configKey(), runtime.recordId());
         Map<String, Object> visibleRecordData = filterVisibleRecordData(recordData, fields);
         List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey());
         logBusinessTaskChildren("raw", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
@@ -1979,6 +2074,9 @@ public class BusinessFlowService {
         filtered.setProcessDefKey(dto.getProcessDefKey());
         filtered.setTaskDefKey(dto.getTaskDefKey());
         filtered.setObjectCode(dto.getObjectCode());
+        filtered.setObjectId(dto.getObjectId());
+        filtered.setConfigKey(dto.getConfigKey());
+        filtered.setSuiteCode(dto.getSuiteCode());
         filtered.setRecordId(dto.getRecordId());
         filtered.setFormKey(dto.getFormKey());
         filtered.setData(filteredData);
@@ -1987,15 +2085,21 @@ public class BusinessFlowService {
 
     private TaskFormRuntimeContext resolveTaskFormRuntimeContext(BusinessTaskFormContextQueryDTO query, boolean strict) {
         Long tenantId = resolveTenantId();
+        hydrateTaskFormQuery(query);
+        hydrateApplicationPageFormIdentity(query);
+        boolean syntheticTestKey = isSyntheticTestBusinessKey(query.getBusinessKey());
         AiBusinessFlowInstanceLink link = null;
         if (StringUtils.isNotBlank(query.getProcessInstanceId())) {
             link = flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, query.getProcessInstanceId());
         }
-        if (link == null && StringUtils.isNotBlank(query.getBusinessKey())) {
+        if (link == null && StringUtils.isNotBlank(query.getBusinessKey()) && !syntheticTestKey) {
             link = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, query.getBusinessKey());
         }
 
+        AiBusinessObject taskObject = resolveTaskBusinessObject(tenantId, query, link);
+
         String objectCode = StringUtils.firstNonBlank(
+                taskObject == null ? null : taskObject.getObjectCode(),
                 link == null ? null : link.getObjectCode(),
                 StringUtils.trimToNull(query.getObjectCode()),
                 parseBusinessKeyObjectCode(query.getBusinessKey()));
@@ -2005,21 +2109,35 @@ public class BusinessFlowService {
         if (recordId == null) {
             recordId = parseBusinessKeyRecordId(query.getBusinessKey());
         }
+        if (syntheticTestKey && link == null) {
+            // 测试流程尚未绑单据时，忽略请求里的 recordId，避免误更新其它单据。
+            recordId = null;
+        }
         String businessKey = StringUtils.firstNonBlank(
                 link == null ? null : link.getBusinessKey(),
                 StringUtils.trimToNull(query.getBusinessKey()),
                 objectCode != null && recordId != null ? buildBusinessKey(objectCode, recordId) : null);
 
-        if (StringUtils.isBlank(objectCode) || recordId == null) {
+        if (StringUtils.isBlank(objectCode)) {
             if (strict) {
                 throw new BusinessException("未解析到业务对象或记录ID");
             }
             return new TaskFormRuntimeContext(null, null, businessKey, null, null);
         }
+        if (recordId == null && strict) {
+            // 发起测试等场景可能尚未落单据，保存时再创建记录。
+        }
 
-        BusinessRuntimeContext businessContext = resolveBusinessRuntimeContext(tenantId, objectCode);
+        String runtimeLookupKey = StringUtils.firstNonBlank(
+                taskObject == null ? null : taskObject.getConfigKey(),
+                StringUtils.trimToNull(query.getConfigKey()),
+                objectCode);
+        BusinessRuntimeContext businessContext = resolveBusinessRuntimeContext(tenantId, runtimeLookupKey);
         String canonicalObjectCode = StringUtils.firstNonBlank(businessContext.objectCode(), objectCode);
-        String configKey = businessContext.configKey();
+        String configKey = StringUtils.firstNonBlank(
+                taskObject == null ? null : taskObject.getConfigKey(),
+                StringUtils.trimToNull(query.getConfigKey()),
+                businessContext.configKey());
         AiBusinessBinding binding = selectMainFlowBindingForConfig(tenantId, canonicalObjectCode, objectCode);
         JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
         ensureBusinessBinding(bindingConfig, tenantId, canonicalObjectCode);
@@ -2030,6 +2148,229 @@ public class BusinessFlowService {
         return new TaskFormRuntimeContext(canonicalObjectCode, recordId, businessKey, configKey, bindingConfig);
     }
 
+    /**
+     * 已部署的历史 Flowable 定义可能只携带旧 objectCode，但应用页面表单 key 中包含稳定的
+     * applicationId/pageId。优先从该页面资产恢复 objectId/configKey，避免待办再次落到同编码的其它对象。
+     */
+    private void hydrateApplicationPageFormIdentity(BusinessTaskFormContextQueryDTO query) {
+        if (query == null || StringUtils.isBlank(query.getFormKey())) {
+            return;
+        }
+        JSONObject asset = resolveApplicationPageFormAsset(query.getFormKey());
+        if (asset == null || asset.isEmpty()) {
+            return;
+        }
+        Long objectId = parseLongValue(asset.getString("objectId"));
+        if (query.getObjectId() == null && objectId != null) {
+            query.setObjectId(objectId);
+        }
+        String configKey = StringUtils.trimToNull(asset.getString("configKey"));
+        if (StringUtils.isBlank(query.getConfigKey()) && configKey != null) {
+            query.setConfigKey(configKey);
+        }
+        String objectCode = StringUtils.trimToNull(asset.getString("objectCode"));
+        if (objectCode != null && objectId != null) {
+            query.setObjectCode(objectCode);
+        }
+    }
+
+    private void hydrateTaskFormQuery(BusinessTaskFormContextQueryDTO query) {
+        if (query == null || StringUtils.isBlank(query.getTaskId())) {
+            return;
+        }
+        boolean missingIdentity = StringUtils.isBlank(query.getProcessInstanceId())
+                || StringUtils.isBlank(query.getBusinessKey())
+                || StringUtils.isBlank(query.getObjectCode())
+                || query.getObjectId() == null
+                || StringUtils.isBlank(query.getConfigKey())
+                || query.getRecordId() == null;
+        if (!missingIdentity) {
+            return;
+        }
+        Map<String, Object> formInfo = loadTaskFormInfo(query.getTaskId());
+        if (formInfo == null || formInfo.isEmpty()) {
+            return;
+        }
+        Map<String, Object> formRef = readNestedObject(formInfo.get("formRef"));
+        JSONObject variables = readNestedObject(formInfo.get("variables"));
+        JSONObject variableFormRef = readNestedObject(variables.get("businessFormRef"));
+        if (StringUtils.isBlank(query.getProcessInstanceId())) {
+            query.setProcessInstanceId(StringUtils.trimToNull(textValue(formInfo.get("processInstanceId"))));
+        }
+        if (StringUtils.isBlank(query.getBusinessKey())) {
+            query.setBusinessKey(StringUtils.trimToNull(textValue(formInfo.get("businessKey"))));
+        }
+        if (StringUtils.isBlank(query.getProcessDefKey())) {
+            query.setProcessDefKey(StringUtils.trimToNull(textValue(formInfo.get("processDefKey"))));
+        }
+        if (StringUtils.isBlank(query.getTaskDefKey())) {
+            query.setTaskDefKey(StringUtils.trimToNull(textValue(formInfo.get("taskDefKey"))));
+        }
+        if (StringUtils.isBlank(query.getFormKey())) {
+            query.setFormKey(StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(formInfo.get("formKey"))),
+                    StringUtils.trimToNull(textValue(formRef.get("formKey")))));
+        }
+        if (StringUtils.isBlank(query.getObjectCode())) {
+            query.setObjectCode(StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(formInfo.get("objectCode"))),
+                    StringUtils.trimToNull(textValue(formRef.get("objectCode"))),
+                    StringUtils.trimToNull(textValue(variables.get("objectCode"))),
+                    StringUtils.trimToNull(textValue(variableFormRef.get("objectCode")))));
+        }
+        if (query.getObjectId() == null) {
+            query.setObjectId(firstLongValue(
+                    formInfo.get("objectId"), formInfo.get("businessObjectId"), formRef.get("objectId"),
+                    variables.get("objectId"), variables.get("businessObjectId"), variableFormRef.get("objectId")));
+        }
+        if (StringUtils.isBlank(query.getConfigKey())) {
+            query.setConfigKey(StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(formInfo.get("configKey"))),
+                    StringUtils.trimToNull(textValue(formRef.get("configKey"))),
+                    StringUtils.trimToNull(textValue(variables.get("configKey"))),
+                    StringUtils.trimToNull(textValue(variableFormRef.get("configKey")))));
+        }
+        if (StringUtils.isBlank(query.getSuiteCode())) {
+            query.setSuiteCode(StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(formInfo.get("suiteCode"))),
+                    StringUtils.trimToNull(textValue(formRef.get("suiteCode"))),
+                    StringUtils.trimToNull(textValue(variables.get("suiteCode"))),
+                    StringUtils.trimToNull(textValue(variableFormRef.get("suiteCode")))));
+        }
+        if (query.getRecordId() == null) {
+            query.setRecordId(parseLongValue(textValue(formInfo.get("recordId"))));
+            if (query.getRecordId() == null) {
+                query.setRecordId(parseLongValue(textValue(formRef.get("recordId"))));
+            }
+        }
+    }
+
+    /**
+     * 从流程关联和启动变量中恢复业务对象稳定身份。历史任务可能只有重复的 objectCode，
+     * 因此 objectId/configKey/suiteCode 的解析必须先于编码兜底。
+     */
+    private AiBusinessObject resolveTaskBusinessObject(Long tenantId,
+                                                       BusinessTaskFormContextQueryDTO query,
+                                                       AiBusinessFlowInstanceLink link) {
+        Map<String, Object> snapshot = link == null
+                ? Map.of()
+                : readJsonObject(link.getVariablesSnapshot());
+        JSONObject snapshotFormRef = readNestedObject(snapshot.get("businessFormRef"));
+        Long objectId = firstLongValue(
+                query == null ? null : query.getObjectId(),
+                snapshot.get("objectId"), snapshot.get("businessObjectId"), snapshot.get("targetObjectId"),
+                snapshotFormRef.get("objectId"));
+        if (objectId != null) {
+            AiBusinessObject object = businessObjectMapper.selectByIdForTenant(tenantId, objectId);
+            if (object != null) {
+                return object;
+            }
+        }
+        String configKey = StringUtils.firstNonBlank(
+                query == null ? null : query.getConfigKey(),
+                textValue(snapshot.get("configKey")),
+                textValue(snapshot.get("runtimeConfigKey")),
+                textValue(snapshotFormRef.get("configKey")));
+        if (StringUtils.isNotBlank(configKey)) {
+            AiBusinessObject object = businessObjectMapper.selectByConfigKey(tenantId, configKey);
+            if (object != null) {
+                return object;
+            }
+        }
+        String objectCode = StringUtils.firstNonBlank(
+                query == null ? null : query.getObjectCode(),
+                textValue(snapshot.get("objectCode")),
+                textValue(snapshotFormRef.get("objectCode")));
+        String suiteCode = StringUtils.firstNonBlank(
+                query == null ? null : query.getSuiteCode(),
+                textValue(snapshot.get("suiteCode")),
+                textValue(snapshotFormRef.get("suiteCode")));
+        if (StringUtils.isNotBlank(objectCode) && StringUtils.isNotBlank(suiteCode)) {
+            AiBusinessObject object = businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode);
+            if (object != null) {
+                return object;
+            }
+        }
+        return StringUtils.isBlank(objectCode)
+                ? null
+                : businessObjectMapper.selectFirstByObjectCode(tenantId, objectCode);
+    }
+
+    private Long firstLongValue(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            Long parsed = value instanceof Number number
+                    ? number.longValue()
+                    : parseLongValue(textValue(value));
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> loadTaskVariablesAsRecord(BusinessTaskFormContextQueryDTO query) {
+        Map<String, Object> formInfo = loadTaskFormInfo(query == null ? null : query.getTaskId());
+        Object variables = formInfo.get("variables");
+        if (!(variables instanceof Map<?, ?> map)) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        map.forEach((key, value) -> {
+            if (key != null) {
+                result.put(String.valueOf(key), value);
+            }
+        });
+        return result;
+    }
+
+    private Long extractCreatedRecordId(Map<String, Object> record) {
+        if (record == null || record.isEmpty()) {
+            return null;
+        }
+        Object id = record.get("id");
+        if (id == null) {
+            id = record.get("ID");
+        }
+        return parseLongValue(textValue(id));
+    }
+
+    private void ensureRuntimeLink(TaskFormRuntimeContext runtime,
+                                   BusinessTaskFormContextQueryDTO query,
+                                   Long recordId) {
+        if (runtime == null || query == null || recordId == null || StringUtils.isBlank(runtime.objectCode())) {
+            return;
+        }
+        Long tenantId = resolveTenantId();
+        String processInstanceId = StringUtils.trimToNull(query.getProcessInstanceId());
+        String businessKey = buildBusinessKey(runtime.objectCode(), recordId);
+        AiBusinessFlowInstanceLink existing = StringUtils.isBlank(processInstanceId)
+                ? null
+                : flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, processInstanceId);
+        if (existing != null) {
+            existing.setObjectCode(runtime.objectCode());
+            existing.setRecordId(recordId);
+            existing.setBusinessKey(businessKey);
+            flowInstanceLinkMapper.updateById(existing);
+            return;
+        }
+        AiBusinessFlowInstanceLink link = new AiBusinessFlowInstanceLink();
+        link.setTenantId(tenantId);
+        link.setObjectCode(runtime.objectCode());
+        link.setRecordId(recordId);
+        link.setBusinessKey(businessKey);
+        link.setFlowModelKey(StringUtils.firstNonBlank(
+                StringUtils.trimToNull(query.getProcessDefKey()),
+                resolveFlowModelKey(runtime.bindingConfig())));
+        link.setProcessInstanceId(processInstanceId);
+        link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
+        link.setStartUserId(resolveUserId());
+        link.setStartTime(LocalDateTime.now());
+        flowInstanceLinkMapper.insert(link);
+    }
+
     private boolean isBusinessCodeTaskForm(String objectCode, JSONObject bindingConfig, BusinessTaskFormContextQueryDTO query) {
         JSONObject nodeForm = resolveTaskNodeForm(
                 new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig), query);
@@ -2037,6 +2378,19 @@ public class BusinessFlowService {
     }
 
     private BusinessObjectVO queryBusinessObject(Long tenantId, String objectCode) {
+        return queryBusinessObject(tenantId, objectCode, null);
+    }
+
+    /**
+     * 查询待办展示对象。配置键是运行时的稳定身份，必须优先于可能来自历史数据的 objectCode。
+     */
+    private BusinessObjectVO queryBusinessObject(Long tenantId, String objectCode, String configKey) {
+        if (StringUtils.isNotBlank(configKey)) {
+            AiBusinessObject byConfigKey = businessObjectMapper.selectByConfigKey(tenantId, configKey);
+            if (byConfigKey != null) {
+                return toBusinessObjectVO(byConfigKey);
+            }
+        }
         if (StringUtils.isBlank(objectCode)) {
             return null;
         }
@@ -2044,6 +2398,32 @@ public class BusinessFlowService {
         query.setObjectCode(objectCode);
         List<BusinessObjectVO> objects = businessObjectMapper.selectObjectList(tenantId, query);
         return objects == null || objects.isEmpty() ? null : objects.get(0);
+    }
+
+    private BusinessObjectVO toBusinessObjectVO(AiBusinessObject object) {
+        if (object == null) {
+            return null;
+        }
+        BusinessObjectVO vo = new BusinessObjectVO();
+        vo.setId(object.getId());
+        vo.setSuiteCode(object.getSuiteCode());
+        vo.setObjectCode(object.getObjectCode());
+        vo.setObjectName(object.getObjectName());
+        vo.setObjectType(object.getObjectType());
+        vo.setModelId(object.getModelId());
+        vo.setModelCode(object.getModelCode());
+        vo.setDisplayField(object.getDisplayField());
+        vo.setIcon(object.getIcon());
+        vo.setDescription(object.getDescription());
+        vo.setStatus(object.getStatus());
+        vo.setSortOrder(object.getSortOrder());
+        vo.setOptions(object.getOptions());
+        vo.setDesignStatus(object.getDesignStatus());
+        vo.setConfigKey(object.getConfigKey());
+        vo.setLastPublishTime(object.getLastPublishTime());
+        vo.setLastPublishVersion(object.getLastPublishVersion());
+        vo.setDesignerOptions(object.getDesignerOptions());
+        return vo;
     }
 
     private Map<String, AiBusinessFlowInstanceLink> loadLinksByBusinessKey(Long tenantId,
@@ -2075,7 +2455,7 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(objectCode) || runtimes == null || runtimes.isEmpty()) {
             return;
         }
-        BusinessObjectVO object = queryBusinessObject(tenantId, objectCode);
+        BusinessObjectVO object = queryBusinessObject(tenantId, objectCode, context == null ? null : context.configKey());
         AiCrudConfig runtimeConfig = context.runtimeConfig();
         AiBusinessDocumentConfig documentConfig = context.documentConfig();
         String configKey = context.configKey();
@@ -2110,10 +2490,12 @@ public class BusinessFlowService {
             Map<String, Object> recordData = findBatchRecord(records, runtime.recordId());
             TaskFormRuntimeContext taskRuntime = new TaskFormRuntimeContext(
                     objectCode, runtime.recordId(), runtime.businessKey(), configKey, bindingConfig);
+            Map<String, Object> startParams = item.getBusinessParams();
             item.setObjectCode(objectCode);
             item.setRecordId(runtime.recordId());
             item.setBusinessType(StringUtils.firstNonBlank(item.getBusinessType(), objectCode));
-            item.setBusinessParams(recordData);
+            item.setBusinessParams(mergeBusinessListParams(startParams, recordData));
+            applyStartDisplayExtensions(item, startParams);
             item.setBusinessObjectName(objectName);
             item.setBusinessSummary(StringUtils.firstNonBlank(
                     resolveBusinessSummary(object, taskRuntime, recordData),
@@ -2136,6 +2518,85 @@ public class BusinessFlowService {
         }
         record = records.get(String.valueOf(recordId));
         return record == null ? Map.of() : record;
+    }
+
+    /**
+     * 流程实例关联表保存的是完整启动变量快照，而列表扩展点历史上接收的是
+     * businessParams 变量本身。优先提取嵌套值；旧数据没有该变量时保留整个快照，
+     * 由列表扩展点自行忽略流程上下文字段。
+     */
+    private Map<String, Object> readBusinessParamsSnapshot(AiBusinessFlowInstanceLink link) {
+        if (link == null || StringUtils.isBlank(link.getVariablesSnapshot())) {
+            return Map.of();
+        }
+        JSONObject snapshot = readJsonObject(link.getVariablesSnapshot());
+        Object businessParams = snapshot.get("businessParams");
+        if (businessParams instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, value) -> {
+                if (key != null) {
+                    result.put(String.valueOf(key), value);
+                }
+            });
+            return result;
+        }
+        return snapshot.isEmpty() ? Map.of() : new LinkedHashMap<>(snapshot);
+    }
+
+    private String extractSnapshotValue(AiBusinessFlowInstanceLink link, String key) {
+        if (link == null || StringUtils.isBlank(key)) {
+            return null;
+        }
+        JSONObject snapshot = readJsonObject(link.getVariablesSnapshot());
+        return StringUtils.trimToNull(textValue(snapshot.get(key)));
+    }
+
+    private String firstNonBlankValue(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            String text = StringUtils.trimToNull(textValue(value));
+            if (text != null) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> mergeBusinessListParams(Map<String, Object> startParams,
+                                                        Map<String, Object> recordData) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (startParams != null && !startParams.isEmpty()) {
+            merged.putAll(startParams);
+        }
+        if (recordData != null && !recordData.isEmpty()) {
+            merged.putAll(recordData);
+        }
+        return merged.isEmpty() ? startParams : merged;
+    }
+
+    /**
+     * 发起时传入的 displayFields 不能被业务记录覆盖。
+     * 待办列表只渲染 displayExtensions，业务记录仍留在 businessParams 给自定义 SPI 使用。
+     */
+    private void applyStartDisplayExtensions(FlowBusinessListDisplayItem item, Map<String, Object> startParams) {
+        if (item == null || (item.getDisplayExtensions() != null && !item.getDisplayExtensions().isEmpty())) {
+            return;
+        }
+        if (startParams == null || startParams.isEmpty()) {
+            return;
+        }
+        Object fields = startParams.get("displayFields");
+        if (fields == null) {
+            fields = startParams.get("fields");
+        }
+        if (!(fields instanceof List<?> || fields instanceof Map<?, ?>)) {
+            return;
+        }
+        Map<String, Object> extensions = new LinkedHashMap<>();
+        extensions.put("fields", fields);
+        item.setDisplayExtensions(extensions);
     }
 
     private void enrichCodeBusinessListGroup(String objectCode,
@@ -2164,10 +2625,14 @@ public class BusinessFlowService {
         }
         for (BusinessListRuntime runtime : runtimes) {
             FlowBusinessListDisplayItem item = runtime.item();
+            Map<String, Object> startParams = item.getBusinessParams();
             item.setObjectCode(objectCode);
             item.setRecordId(runtime.recordId());
             item.setBusinessType(StringUtils.firstNonBlank(item.getBusinessType(), objectCode));
-            item.setBusinessParams(Map.of("recordId", runtime.recordId(), "businessKey", runtime.businessKey()));
+            item.setBusinessParams(mergeBusinessListParams(startParams, Map.of(
+                    "recordId", runtime.recordId(),
+                    "businessKey", runtime.businessKey())));
+            applyStartDisplayExtensions(item, startParams);
             item.setBusinessObjectName(objectName);
             item.setBusinessSummary(StringUtils.firstNonBlank(summaries.get(runtime.recordId()), item.getBusinessSummary()));
             item.setProcessDefinitionName(StringUtils.firstNonBlank(
@@ -2534,13 +2999,31 @@ public class BusinessFlowService {
                 Set<String> referencedIds = new LinkedHashSet<>();
                 collectFormAssetIds(page, referencedIds);
                 JSONObject objectRef = readNestedObject(pageNode.get("objectRef"));
+                String directAssetId = StringUtils.firstNonBlank(
+                        pageNode.getString("formAssetId"), objectRef.getString("formAssetId"));
+                if (directAssetId != null) {
+                    referencedIds.add(directAssetId);
+                }
+                // 历史对象页面可能只有 CRUD 区块，没有在区块上保存 formAssetId。
+                // 当应用仍只维护一个表单资产时，可以安全恢复该页面的默认表单，
+                // 避免任务运行时因为引用链缺一段而回退到错误的对象表单。
+                if (referencedIds.isEmpty()) {
+                    String defaultAssetId = resolveDefaultPageFormAssetId(
+                            pageNode, objectRef, assets);
+                    if (defaultAssetId != null) {
+                        referencedIds.add(defaultAssetId);
+                    }
+                }
                 for (int assetIndex = 0; assetIndex < assets.size(); assetIndex++) {
                     JSONObject source = assets.getJSONObject(assetIndex);
                     if (source == null || !referencedIds.contains(source.getString("id"))) {
                         continue;
                     }
                     JSONObject resolved = readNestedObject(buildApplicationPageFormAsset(
-                            applicationId, pageNode, objectRef, source, pageId));
+                            applicationId,
+                            resolveCanonicalObjectCode(resolveTenantId(), StringUtils.firstNonBlank(
+                                    objectRef.getString("objectCode"), objectRef.getString("configKey"))),
+                            pageNode, objectRef, source, pageId));
                     if (StringUtils.equals(key, resolved.getString("formKey"))) {
                         return resolved;
                     }
@@ -3352,14 +3835,14 @@ public class BusinessFlowService {
     }
 
     private String parseBusinessKeyObjectCode(String businessKey) {
-        if (StringUtils.isBlank(businessKey) || !businessKey.contains(":")) {
+        if (StringUtils.isBlank(businessKey) || !businessKey.contains(":") || isSyntheticTestBusinessKey(businessKey)) {
             return null;
         }
         return StringUtils.trimToNull(businessKey.split(":", 2)[0]);
     }
 
     private Long parseBusinessKeyRecordId(String businessKey) {
-        if (StringUtils.isBlank(businessKey) || !businessKey.contains(":")) {
+        if (StringUtils.isBlank(businessKey) || !businessKey.contains(":") || isSyntheticTestBusinessKey(businessKey)) {
             return null;
         }
         String value = StringUtils.trimToNull(businessKey.split(":", 2)[1]);
