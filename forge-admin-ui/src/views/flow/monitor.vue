@@ -265,68 +265,181 @@
       />
     </n-modal>
 
-    <!-- 流程详情抽屉 -->
-    <n-drawer v-model:show="detailDrawerVisible" :width="600" title="流程详情">
-      <n-drawer-content title="流程实例详情">
-        <n-descriptions :column="2" label-placement="left">
-          <n-descriptions-item label="流程名称">
-            {{ currentInstance.processName }}
-          </n-descriptions-item>
-          <n-descriptions-item label="流程状态">
-            <DictTag dict-type="flow_instance_status" :value="currentInstance.status" />
-          </n-descriptions-item>
-          <n-descriptions-item label="发起人">
-            {{ currentInstance.initiatorName }}
-          </n-descriptions-item>
-          <n-descriptions-item label="发起时间">
-            {{ currentInstance.startTime }}
-          </n-descriptions-item>
-          <n-descriptions-item label="当前节点">
-            {{ currentInstance.currentNode }}
-          </n-descriptions-item>
-          <n-descriptions-item label="处理人">
-            {{ currentInstance.currentAssignee }}
-          </n-descriptions-item>
-        </n-descriptions>
+    <FlowTaskDetailShell
+      v-model:show="detailDrawerVisible"
+      :title="currentInstance.processName || '流程实例详情'"
+      :subtitle="currentInstance.currentNode ? `当前节点：${currentInstance.currentNode}` : ''"
+      :status-text="getInstanceStatusText(currentInstance.status)"
+      :status-class="getInstanceStatusClass(currentInstance.status)"
+      :status-icon="getInstanceStatusIcon(currentInstance.status)"
+      :records="approvalHistory"
+      record-title="审批记录"
+      fullscreen
+    >
+      <template v-if="currentInstance?.id">
+        <section class="approval-detail-section">
+          <div class="approval-section-header">
+            <i class="i-material-symbols:info-outline" />
+            基本信息
+          </div>
+          <div class="approval-field-grid">
+            <div class="approval-field">
+              <span class="approval-label">流程名称</span>
+              <span class="approval-value">{{ currentInstance.processName || '-' }}</span>
+            </div>
+            <div class="approval-field">
+              <span class="approval-label">流程状态</span>
+              <span class="approval-value">
+                <DictTag dict-type="flow_instance_status" :value="currentInstance.status" />
+              </span>
+            </div>
+            <div class="approval-field">
+              <span class="approval-label">发起人</span>
+              <span class="approval-value approval-user-inline">
+                <UserAvatar :name="currentInstance.initiatorName || '未知'" :size="24" />
+                {{ currentInstance.initiatorName || '-' }}
+              </span>
+            </div>
+            <div class="approval-field">
+              <span class="approval-label">发起时间</span>
+              <span class="approval-value">{{ currentInstance.startTime || '-' }}</span>
+            </div>
+            <div class="approval-field">
+              <span class="approval-label">当前节点</span>
+              <span class="approval-value">{{ currentInstance.currentNode || '-' }}</span>
+            </div>
+            <div class="approval-field">
+              <span class="approval-label">处理人</span>
+              <span class="approval-value">{{ currentInstance.currentAssignee || '-' }}</span>
+            </div>
+          </div>
+        </section>
 
-        <n-divider>处理历史</n-divider>
+        <section class="approval-detail-section">
+          <div class="approval-section-header">
+            <i class="i-material-symbols:fact-check" />
+            表单内容
+          </div>
+          <FlowReadonlyFormPanel :row="monitorFormRow" source="flowMonitor" />
+        </section>
 
-        <n-timeline>
-          <n-timeline-item
-            v-for="(item, index) in approvalHistory"
-            :key="index"
-            :type="getTimelineType(item.action)"
-            :title="item.taskName"
-            :time="item.createTime"
-          >
-            <p>处理人：{{ item.assigneeName }}</p>
-            <p>
-              处理结果：
-              <NTag :type="getTimelineType(item.action)" size="small">
-                {{ { approve: '同意', reject: '驳回', return: '退回', terminate: '终结', start: '发起', claim: '签收', delegate: '转办', withdraw: '撤回', pending: '待处理' }[item.action] || item.action || '处理中' }}
-              </NTag>
-            </p>
-            <p v-if="item.comment">
-              处理意见：{{ item.comment }}
-            </p>
-          </n-timeline-item>
-        </n-timeline>
-
-        <template #footer>
-          <NSpace>
-            <NButton v-if="canManage && currentInstance.status === 'running'" type="warning" @click="handleSuspend">
+        <section v-if="canManage && canInterveneCurrent" class="approval-detail-section">
+          <div class="approval-section-header">
+            <i class="i-material-symbols:admin-panel-settings" />
+            管理员干预
+          </div>
+          <n-alert v-if="isSuspendedCurrent" type="warning" class="monitor-admin-alert">
+            流程已挂起。可以激活或终止；回退和转派需要先激活。
+          </n-alert>
+          <NSpace class="monitor-admin-status-actions">
+            <NButton v-if="canMutateCurrent" type="warning" @click="handleSuspend">
               挂起流程
             </NButton>
-            <NButton v-if="canManage && currentInstance.status === 'suspended'" type="primary" @click="handleActivate">
+            <NButton v-if="isSuspendedCurrent" type="primary" @click="handleActivate">
               激活流程
             </NButton>
-            <NButton v-if="canManage && currentInstance.status === 'running'" type="error" @click="handleTerminate">
-              终止流程
-            </NButton>
           </NSpace>
-        </template>
-      </n-drawer-content>
-    </n-drawer>
+          <NSpace vertical size="large">
+            <n-card title="终止流程" size="small">
+              <template #header-extra>
+                <NTag type="error" size="small">
+                  危险操作
+                </NTag>
+              </template>
+              <NSpace vertical>
+                <n-text depth="3">
+                  终止后流程立即结束，无法恢复。
+                </n-text>
+                <n-input
+                  v-model:value="terminateReason"
+                  type="textarea"
+                  placeholder="请输入终止原因"
+                  :rows="2"
+                />
+                <NButton type="error" :disabled="!terminateReason.trim()" @click="confirmTerminate">
+                  确认终止
+                </NButton>
+              </NSpace>
+            </n-card>
+
+            <n-card title="节点回退" size="small">
+              <NSpace vertical>
+                <n-text depth="3">
+                  {{ canMutateCurrent ? '将流程回退到指定的历史节点。' : '请先激活流程后再回退。' }}
+                </n-text>
+                <n-select
+                  v-model:value="rollbackTargetActivity"
+                  :options="activityOptions"
+                  placeholder="请选择目标节点"
+                  :loading="activitiesLoading"
+                  :disabled="!canMutateCurrent"
+                />
+                <n-input
+                  v-model:value="rollbackReason"
+                  type="textarea"
+                  placeholder="请输入回退原因"
+                  :rows="2"
+                  :disabled="!canMutateCurrent"
+                />
+                <NButton type="warning" :disabled="!canMutateCurrent || !rollbackTargetActivity" @click="confirmRollback">
+                  确认回退
+                </NButton>
+              </NSpace>
+            </n-card>
+
+            <n-card title="任务转派" size="small">
+              <NSpace vertical>
+                <n-text depth="3">
+                  {{ canMutateCurrent ? '将当前任务转派给其他用户处理。' : '请先激活流程后再转派。' }}
+                </n-text>
+                <n-select
+                  v-if="currentTaskOptions.length > 1"
+                  v-model:value="currentTaskId"
+                  :options="currentTaskOptions"
+                  placeholder="请选择要转派的任务"
+                  :disabled="!canMutateCurrent"
+                />
+                <n-input
+                  v-model:value="reassignUserName"
+                  placeholder="请选择新处理人"
+                  readonly
+                  :disabled="!canMutateCurrent"
+                  @click="openReassignUserSelect"
+                >
+                  <template #suffix>
+                    <i class="i-material-symbols:person-search cursor-pointer" @click="openReassignUserSelect" />
+                  </template>
+                </n-input>
+                <n-input
+                  v-model:value="reassignReason"
+                  type="textarea"
+                  placeholder="请输入转派原因"
+                  :rows="2"
+                  :disabled="!canMutateCurrent"
+                />
+                <NButton type="primary" :disabled="!canMutateCurrent || !reassignUserId" @click="confirmReassign">
+                  确认转派
+                </NButton>
+              </NSpace>
+            </n-card>
+          </NSpace>
+        </section>
+
+        <section class="approval-detail-section">
+          <n-collapse arrow-placement="right">
+            <n-collapse-item title="查看流程图" name="diagram">
+              <div class="approval-diagram">
+                <DingFlowViewer
+                  v-if="currentInstance.id"
+                  :process-instance-id="currentInstance.id"
+                  :compact="true"
+                />
+              </div>
+            </n-collapse-item>
+          </n-collapse>
+        </section>
+      </template>
+    </FlowTaskDetailShell>
 
     <!-- 流程变量查看弹窗 -->
     <n-modal v-model:show="variablesModalVisible" preset="card" title="流程变量" style="width: 800px;">
@@ -340,86 +453,6 @@
           </n-descriptions-item>
         </n-descriptions>
       </n-spin>
-    </n-modal>
-
-    <!-- 管理员操作弹窗 -->
-    <n-modal v-model:show="adminActionsModalVisible" preset="card" title="管理员操作" style="width: 600px;">
-      <NSpace vertical size="large">
-        <!-- 终止流程 -->
-        <n-card title="终止流程" size="small" hoverable>
-          <template #header-extra>
-            <NTag type="error" size="small">
-              危险操作
-            </NTag>
-          </template>
-          <NSpace vertical>
-            <n-text depth="3">
-              终止流程后，流程将立即结束，无法恢复。
-            </n-text>
-            <n-input
-              v-model:value="terminateReason"
-              type="textarea"
-              placeholder="请输入终止原因"
-              :rows="2"
-            />
-            <NButton type="error" @click="confirmTerminate">
-              确认终止
-            </NButton>
-          </NSpace>
-        </n-card>
-
-        <!-- 节点回退 -->
-        <n-card title="节点回退" size="small" hoverable>
-          <NSpace vertical>
-            <n-text depth="3">
-              将流程回退到指定的历史节点。
-            </n-text>
-            <n-select
-              v-model:value="rollbackTargetActivity"
-              :options="activityOptions"
-              placeholder="请选择目标节点"
-              :loading="activitiesLoading"
-            />
-            <n-input
-              v-model:value="rollbackReason"
-              type="textarea"
-              placeholder="请输入回退原因"
-              :rows="2"
-            />
-            <NButton type="warning" :disabled="!rollbackTargetActivity" @click="confirmRollback">
-              确认回退
-            </NButton>
-          </NSpace>
-        </n-card>
-
-        <!-- 任务转派 -->
-        <n-card title="任务转派" size="small" hoverable>
-          <NSpace vertical>
-            <n-text depth="3">
-              将当前任务转派给其他用户处理。
-            </n-text>
-            <n-input
-              v-model:value="reassignUserName"
-              placeholder="请选择新处理人"
-              readonly
-              @click="userSelectModalVisible = true"
-            >
-              <template #suffix>
-                <i class="i-material-symbols:person-search cursor-pointer" @click="userSelectModalVisible = true" />
-              </template>
-            </n-input>
-            <n-input
-              v-model:value="reassignReason"
-              type="textarea"
-              placeholder="请输入转派原因"
-              :rows="2"
-            />
-            <NButton type="primary" :disabled="!reassignUserId" @click="confirmReassign">
-              确认转派
-            </NButton>
-          </NSpace>
-        </n-card>
-      </NSpace>
     </n-modal>
 
     <!-- 用户选择弹窗 -->
@@ -438,12 +471,22 @@ import { NButton, NDropdown, NSpace, NTag } from 'naive-ui'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import UserSelectModal from '@/components/common/UserSelectModal.vue'
 import DictTag from '@/components/DictTag.vue'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
+import FlowReadonlyFormPanel from '@/components/flow/FlowReadonlyFormPanel.vue'
+import FlowTaskDetailShell from '@/components/flow/FlowTaskDetailShell.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
 import { request } from '@/utils'
+import {
+  buildCurrentTaskOptions,
+  buildMonitorFormQuery,
+  canInterveneInstance,
+  canMutateRunningInstance,
+  isSuspendedInstance,
+} from './utils/monitorAdmin'
 
 defineOptions({ name: 'FlowMonitor' })
 
@@ -544,10 +587,6 @@ const columns = [
         { label: '变量', key: 'variables' },
         { label: '错误日志', key: 'errors' },
       ]
-      if (canManage.value && row.status === 'running') {
-        options.push({ type: 'divider', key: 'd1' })
-        options.push({ label: '管理', key: 'admin' })
-      }
       if (canCleanup.value) {
         options.push({ type: 'divider', key: 'd2' })
         options.push({
@@ -577,7 +616,6 @@ const columns = [
               diagram: () => showDiagram(row),
               variables: () => showVariables(row),
               errors: () => showInstanceErrorLogs(row),
-              admin: () => showAdminActions(row),
               delete: () => handleDeleteInstance(row),
             }
             map[key]?.()
@@ -599,23 +637,21 @@ const columns = [
   },
 ]
 
-// 详情抽屉
 const detailDrawerVisible = ref(false)
 const currentInstance = ref({})
 const approvalHistory = ref([])
+const monitorFormRow = computed(() => buildMonitorFormQuery(currentInstance.value))
+const canInterveneCurrent = computed(() => canInterveneInstance(currentInstance.value?.status))
+const canMutateCurrent = computed(() => canMutateRunningInstance(currentInstance.value?.status))
+const isSuspendedCurrent = computed(() => isSuspendedInstance(currentInstance.value?.status))
 
-// 流程图弹窗
 const diagramModalVisible = ref(false)
 const currentDiagramInstanceId = ref(null)
 
-// 流程变量弹窗
 const variablesModalVisible = ref(false)
 const variablesLoading = ref(false)
 const processVariables = ref({})
 
-// 管理员操作弹窗
-const adminActionsModalVisible = ref(false)
-const currentAdminInstance = ref({})
 const terminateReason = ref('')
 const rollbackTargetActivity = ref(null)
 const rollbackReason = ref('')
@@ -625,6 +661,7 @@ const reassignReason = ref('')
 const activityOptions = ref([])
 const activitiesLoading = ref(false)
 const currentTaskId = ref(null)
+const currentTaskOptions = ref([])
 const userSelectModalVisible = ref(false)
 
 // 图表引用
@@ -1113,7 +1150,6 @@ function handleDeleteInstance(row) {
         if (res.code === 200) {
           message.success('流程数据已删除')
           detailDrawerVisible.value = false
-          adminActionsModalVisible.value = false
           refreshMonitorData()
         }
         else {
@@ -1147,21 +1183,78 @@ function handlePageSizeChange(pageSize) {
   loadData()
 }
 
-// 显示详情
+function getInstanceStatusText(status) {
+  return dict.value.flow_instance_status?.find(item => String(item.value) === String(status))?.label || status || '-'
+}
+
+function getInstanceStatusClass(status) {
+  const map = {
+    running: 'info',
+    active: 'info',
+    suspended: 'warning',
+    completed: 'success',
+    approved: 'success',
+    rejected: 'error',
+    terminated: 'error',
+    canceled: 'default',
+  }
+  return map[String(status || '').toLowerCase()] || 'default'
+}
+
+function getInstanceStatusIcon(status) {
+  const map = {
+    running: 'i-material-symbols:play-circle',
+    active: 'i-material-symbols:play-circle',
+    suspended: 'i-material-symbols:pause-circle',
+    completed: 'i-material-symbols:check-circle',
+    approved: 'i-material-symbols:check-circle',
+    rejected: 'i-material-symbols:cancel',
+    terminated: 'i-material-symbols:stop-circle',
+    canceled: 'i-material-symbols:block',
+  }
+  return map[String(status || '').toLowerCase()] || 'i-material-symbols:info'
+}
+
+function resetAdminActionForm() {
+  terminateReason.value = ''
+  rollbackTargetActivity.value = null
+  rollbackReason.value = ''
+  reassignUserId.value = ''
+  reassignUserName.value = ''
+  reassignReason.value = ''
+  activityOptions.value = []
+  currentTaskId.value = null
+  currentTaskOptions.value = []
+}
+
+async function loadAdminActionContext(processInstanceId) {
+  if (!canManage.value || !canInterveneInstance(currentInstance.value?.status) || !processInstanceId)
+    return
+  await Promise.all([
+    loadActivities(processInstanceId),
+    loadCurrentTasks(processInstanceId),
+  ])
+}
+
 async function showDetail(row) {
   currentInstance.value = row
+  approvalHistory.value = []
+  resetAdminActionForm()
   detailDrawerVisible.value = true
 
-  // 加载审批时间轴
-  try {
-    const res = await request.get(`/api/flow/task/history/${row.id}`)
-    if (res.code === 200) {
-      approvalHistory.value = res.data || []
-    }
+  const jobs = []
+  if (row.id) {
+    jobs.push(
+      request.get(`/api/flow/task/history/${row.id}`)
+        .then((res) => {
+          if (res.code === 200)
+            approvalHistory.value = res.data || []
+        })
+        .catch(error => console.error('加载审批历史失败', error)),
+    )
+    jobs.push(loadAdminActionContext(row.id))
   }
-  catch (error) {
-    console.error('加载审批历史失败', error)
-  }
+  await Promise.all(jobs)
 }
 
 async function openRoutedInstance(processInstanceId) {
@@ -1194,7 +1287,7 @@ function showDiagram(row) {
 // 挂起流程
 async function handleSuspend() {
   // 验证流程状态
-  if (currentInstance.value.status !== 'running') {
+  if (!canMutateRunningInstance(currentInstance.value.status)) {
     message.warning('只能挂起运行中的流程')
     return
   }
@@ -1208,8 +1301,9 @@ async function handleSuspend() {
     const res = await request.post(`/api/flow/monitor/suspend/${currentInstance.value.id}`)
     if (res.code === 200) {
       message.success('流程已挂起')
-      detailDrawerVisible.value = false
+      currentInstance.value = { ...currentInstance.value, status: 'suspended' }
       loadData()
+      loadStatistics()
     }
     else {
       message.error(res.msg || '挂起流程失败')
@@ -1224,7 +1318,7 @@ async function handleSuspend() {
 // 激活流程
 async function handleActivate() {
   // 验证流程状态
-  if (currentInstance.value.status !== 'suspended') {
+  if (!isSuspendedInstance(currentInstance.value.status)) {
     message.warning('只能激活已挂起的流程')
     return
   }
@@ -1238,8 +1332,10 @@ async function handleActivate() {
     const res = await request.post(`/api/flow/monitor/activate/${currentInstance.value.id}`)
     if (res.code === 200) {
       message.success('流程已激活')
-      detailDrawerVisible.value = false
+      currentInstance.value = { ...currentInstance.value, status: 'running' }
+      await loadAdminActionContext(currentInstance.value.id)
       loadData()
+      loadStatistics()
     }
     else {
       message.error(res.msg || '激活流程失败')
@@ -1247,38 +1343,6 @@ async function handleActivate() {
   }
   catch (error) {
     console.error('激活流程失败:', error)
-    message.error(error.response?.data?.msg || '操作失败')
-  }
-}
-
-// 终止流程
-async function handleTerminate() {
-  // 验证流程状态 - 只能终止运行中或挂起的流程
-  if (currentInstance.value.status !== 'running' && currentInstance.value.status !== 'suspended') {
-    message.warning('只能终止运行中或已挂起的流程')
-    return
-  }
-
-  if (!currentInstance.value.id) {
-    message.warning('无法获取流程实例ID')
-    return
-  }
-
-  try {
-    const res = await request.post(`/api/flow/monitor/terminate/${currentInstance.value.id}`, {
-      reason: '管理员终止流程',
-    })
-    if (res.code === 200) {
-      message.success('流程已终止')
-      detailDrawerVisible.value = false
-      loadData()
-    }
-    else {
-      message.error(res.msg || '终止流程失败')
-    }
-  }
-  catch (error) {
-    console.error('终止流程失败:', error)
     message.error(error.response?.data?.msg || '操作失败')
   }
 }
@@ -1315,29 +1379,15 @@ function formatVariableValue(value) {
   return String(value)
 }
 
-// 显示管理员操作面板
-async function showAdminActions(row) {
-  currentAdminInstance.value = row
-  adminActionsModalVisible.value = true
-
-  // 重置表单
-  terminateReason.value = ''
-  rollbackTargetActivity.value = null
-  rollbackReason.value = ''
-  reassignUserId.value = ''
-  reassignUserName.value = ''
-  reassignReason.value = ''
-  activityOptions.value = []
+async function loadCurrentTasks(processInstanceId) {
+  currentTaskOptions.value = []
   currentTaskId.value = null
-
-  // 加载历史活动节点
-  await loadActivities(row.id)
-
-  // 获取当前任务ID（用于转派）
   try {
-    const res = await request.get(`/api/flow/monitor/current-tasks/${row.id}`)
-    if (res.code === 200 && res.data && res.data.length > 0) {
-      currentTaskId.value = res.data[0].id
+    const res = await request.get(`/api/flow/monitor/current-tasks/${processInstanceId}`)
+    if (res.code === 200) {
+      currentTaskOptions.value = buildCurrentTaskOptions(res.data || [])
+      if (currentTaskOptions.value.length === 1)
+        currentTaskId.value = currentTaskOptions.value[0].value
     }
   }
   catch (error) {
@@ -1346,6 +1396,12 @@ async function showAdminActions(row) {
 }
 
 // 用户选择回调
+function openReassignUserSelect() {
+  if (!canMutateCurrent.value)
+    return
+  userSelectModalVisible.value = true
+}
+
 function handleUserSelect(user) {
   if (user) {
     reassignUserId.value = String(user.id)
@@ -1374,32 +1430,27 @@ async function loadActivities(processInstanceId) {
   }
 }
 
-// 确认终止流程
 async function confirmTerminate() {
   if (!terminateReason.value.trim()) {
     message.warning('请输入终止原因')
     return
   }
-
-  // 验证流程状态
-  if (!currentAdminInstance.value.id) {
+  if (!currentInstance.value.id) {
     message.warning('无法获取流程实例ID')
     return
   }
-
-  const status = currentAdminInstance.value.status
-  if (status !== 'running' && status !== 'suspended') {
+  if (!canInterveneInstance(currentInstance.value.status)) {
     message.warning('只能终止运行中或已挂起的流程')
     return
   }
 
   try {
-    const res = await request.post(`/api/flow/monitor/terminate/${currentAdminInstance.value.id}`, {
+    const res = await request.post(`/api/flow/monitor/terminate/${currentInstance.value.id}`, {
       reason: terminateReason.value,
     })
     if (res.code === 200) {
       message.success('流程已终止')
-      adminActionsModalVisible.value = false
+      detailDrawerVisible.value = false
       loadData()
       loadStatistics()
     }
@@ -1413,8 +1464,11 @@ async function confirmTerminate() {
   }
 }
 
-// 确认节点回退
 async function confirmRollback() {
+  if (!canMutateRunningInstance(currentInstance.value.status)) {
+    message.warning('请先激活流程后再回退')
+    return
+  }
   if (!rollbackTargetActivity.value) {
     message.warning('请选择目标节点')
     return
@@ -1425,14 +1479,18 @@ async function confirmRollback() {
   }
 
   try {
-    const res = await request.post(`/api/flow/monitor/rollback/${currentAdminInstance.value.id}`, {
+    const res = await request.post(`/api/flow/monitor/rollback/${currentInstance.value.id}`, {
       targetActivityId: rollbackTargetActivity.value,
       reason: rollbackReason.value,
     })
     if (res.code === 200) {
       message.success('流程已回退')
-      adminActionsModalVisible.value = false
+      await showDetail(currentInstance.value)
       loadData()
+      loadStatistics()
+    }
+    else {
+      message.error(res.msg || '回退流程失败')
     }
   }
   catch (error) {
@@ -1441,10 +1499,13 @@ async function confirmRollback() {
   }
 }
 
-// 确认任务转派
 async function confirmReassign() {
+  if (!canMutateRunningInstance(currentInstance.value.status)) {
+    message.warning('请先激活流程后再转派')
+    return
+  }
   if (!reassignUserId.value.trim()) {
-    message.warning('请输入新处理人用户ID')
+    message.warning('请选择新处理人')
     return
   }
   if (!reassignReason.value.trim()) {
@@ -1452,19 +1513,25 @@ async function confirmReassign() {
     return
   }
   if (!currentTaskId.value) {
-    message.error('无法获取当前任务ID')
+    message.error('请选择要转派的任务')
     return
   }
 
   try {
     const res = await request.post(`/api/flow/monitor/reassign/${currentTaskId.value}`, {
-      newAssignee: reassignUserId.value,
+      newAssignee: String(reassignUserId.value),
       reason: reassignReason.value,
     })
     if (res.code === 200) {
       message.success('任务已转派')
-      adminActionsModalVisible.value = false
+      reassignUserId.value = ''
+      reassignUserName.value = ''
+      reassignReason.value = ''
+      await showDetail(currentInstance.value)
       loadData()
+    }
+    else {
+      message.error(res.msg || '转派任务失败')
     }
   }
   catch (error) {
@@ -1643,19 +1710,6 @@ function handleResize() {
   processChart?.resize()
 }
 
-// 获取时间线类型
-function getTimelineType(action) {
-  const map = {
-    approve: 'success',
-    reject: 'error',
-    start: 'success',
-    claim: 'info',
-    delegate: 'warning',
-    withdraw: 'default',
-  }
-  return map[action] || 'default'
-}
-
 onMounted(() => {
   if (route.query.modelKey) {
     searchForm.modelKey = route.query.modelKey
@@ -1781,7 +1835,15 @@ onUnmounted(() => {
   padding: 6px 8px;
 }
 
-:deep(.n-drawer-body-content-wrapper) {
-  overflow-x: auto;
+.monitor-admin-alert {
+  margin-bottom: 12px;
+}
+
+.monitor-admin-status-actions {
+  margin-bottom: 16px;
+}
+
+.approval-diagram {
+  min-height: 280px;
 }
 </style>
