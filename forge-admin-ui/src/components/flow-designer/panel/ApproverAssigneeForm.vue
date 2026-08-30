@@ -28,7 +28,7 @@ const TASK_TYPE_OPTIONS = [
 const DOLLAR = '$'
 
 const ASSIGNEE_OPTIONS = [
-  { label: '发起人自选', value: 'initiatorSelect' },
+  { label: '发起人自选', value: 'initiatorSelect', icon: 'i-lucide:user-cog' },
   { label: '发起人', value: `${DOLLAR}{initiator}`, icon: 'i-lucide:user-circle' },
   { label: '上级领导', value: `${DOLLAR}{initiatorLeader}`, icon: 'i-lucide:building-2' },
   { label: '部门主管', value: `${DOLLAR}{deptManager}`, icon: 'i-lucide:building-2' },
@@ -128,11 +128,8 @@ function handleAssigneeChange(value) {
       assigneeUserId: '',
       assigneeExpr: '',
       assigneeUserName: '',
-      multiInstanceType: 'parallel',
       multiInstanceCollection: '',
       multiInstanceElementVariable: 'assignee',
-      completionCondition: 'all',
-      passRate: 100,
     })
     return
   }
@@ -397,7 +394,7 @@ function isFilledValue(value) {
         />
       </n-form-item>
       <n-alert v-if="isInitiatorSelect" type="info" :show-icon="false">
-        发起流程时由申请人在表单中选择本节点审批人，启动变量使用 PROCESS_START_USER，节点会为所选人员并行生成待办。
+        与「发起人」不同：本节点审批人在发起时由申请人选择，不是发起人自己审批。多人审批方式为「不会签」时只选一人；选择会签后可同时选择多人。
       </n-alert>
     </template>
 

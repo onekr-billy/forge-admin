@@ -26,10 +26,12 @@ const STUBS = {
   },
   'BasicConfig': true,
   'ApproverAssigneeForm': true,
+  'ApprovalDutyConfig': true,
   'MultiInstanceConfig': true,
   'PermissionConfig': true,
   'OverdueReminderConfig': true,
   'ListenerConfig': true,
+  'n-alert': { template: '<div class="n-alert"><slot /></div>' },
 }
 
 function mountApproverConfig(options = {}) {
@@ -181,6 +183,35 @@ describe('approverConfig', () => {
     expect(wrapper.vm.node.config.providerKey).toBe('samplePurchaseOrder')
     expect(wrapper.vm.node.config.formUrl).toBe('/business/purchase-order-test')
 
+    wrapper.unmount()
+  })
+
+  it('流程内置表单不会默认写成业务对象表单模式', async () => {
+    const wrapper = mountApproverConfig({
+      nodeConfig: {
+        formMode: '',
+        formKey: '',
+        formName: '',
+        providerKey: '',
+        formUrl: '',
+        formRef: {},
+        formFieldPermissions: [],
+      },
+      formAssetOptions: [
+        {
+          formKey: 'leave_form',
+          formName: '请假单',
+          source: 'flowForm',
+          fieldCatalog: [{ field: 'days', label: '天数' }],
+        },
+      ],
+    })
+
+    await wrapper.find('.asset-card').trigger('click')
+
+    expect(wrapper.vm.node.config.formKey).toBe('leave_form')
+    expect(wrapper.vm.node.config.formMode).toBe('')
+    expect(wrapper.vm.node.config.formType).toBe('dynamic')
     wrapper.unmount()
   })
 })

@@ -2,6 +2,8 @@ package com.mdframe.forge.starter.flow.service.impl;
 
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.runtime.ChangeActivityStateBuilder;
+import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.engine.runtime.ProcessInstanceQuery;
 import org.flowable.task.api.Task;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -78,6 +80,22 @@ class FlowTaskServiceImplStateChangeTest {
         verify(runtimeService).removeVariable("process-1", "FLOW_RETURN_TO_START_PENDING");
     }
 
+    @Test
+    @DisplayName("process already ended skips direct-send variable reads")
+    void endedProcessSkipsDirectSend() throws Exception {
+        Task completedTask = returnedTask();
+        ProcessInstanceQuery query = mock(ProcessInstanceQuery.class);
+        when(runtimeService.createProcessInstanceQuery()).thenReturn(query);
+        when(query.processInstanceId("process-1")).thenReturn(query);
+        when(query.singleResult()).thenReturn(null);
+
+        directSendAfterReturn.invoke(
+                service, completedTask, Map.of("directSend", true), "100");
+
+        verify(runtimeService, never()).getVariable("process-1", "FLOW_RETURN_SOURCE_ACTIVITY_ID");
+        verify(runtimeService, never()).createChangeActivityStateBuilder();
+    }
+
     private Task returnedTask() {
         Task task = mock(Task.class);
         when(task.getProcessInstanceId()).thenReturn("process-1");
@@ -86,6 +104,10 @@ class FlowTaskServiceImplStateChangeTest {
     }
 
     private void stubReturnVariables() {
+        ProcessInstanceQuery query = mock(ProcessInstanceQuery.class);
+        when(runtimeService.createProcessInstanceQuery()).thenReturn(query);
+        when(query.processInstanceId("process-1")).thenReturn(query);
+        when(query.singleResult()).thenReturn(mock(ProcessInstance.class));
         when(runtimeService.getVariable("process-1", "FLOW_RETURN_SOURCE_ACTIVITY_ID"))
                 .thenReturn("original-approve");
         when(runtimeService.getVariable("process-1", "FLOW_RETURN_TARGET_ACTIVITY_ID"))

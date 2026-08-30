@@ -40,6 +40,9 @@ public class FlowBusinessListDisplayItem {
     /** 发起流程时传入的业务参数，业务侧可按需解释。 */
     private Map<String, Object> businessParams;
 
-    /** 业务侧回填的扩展展示数据。 */
+    /**
+     * 业务侧回填的扩展展示数据。推荐 {@code fields:[{label,value}]}，
+     * 待办列表按此渲染，不直接展示全部 businessParams。
+     */
     private Map<String, Object> displayExtensions;
 }

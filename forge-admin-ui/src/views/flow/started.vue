@@ -41,15 +41,15 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #identifier="{ row }">
-        {{ row.businessKey || row.processInstanceId || row.id }}
-      </template>
       <template #node="{ row }">
         {{ getTaskDisplayName(row, '已结束') }}
       </template>
       <template #user="{ row }">
         <span>{{ row.assigneeName || '-' }}</span>
         <small>{{ row.createTime || '-' }}</small>
+      </template>
+      <template #summary="{ row }">
+        <FlowTaskBusinessSummary :row="row" />
       </template>
       <template #actions="{ row }">
         <button type="button" class="task-row-link-action" aria-label="查看进度" @click="openDrawer(row)">
@@ -192,6 +192,7 @@ import flowApi from '@/api/flow'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
+import FlowTaskBusinessSummary from '@/components/flow/FlowTaskBusinessSummary.vue'
 import FlowTaskCardList from '@/components/flow/FlowTaskCardList.vue'
 import FlowTaskDetailShell from '@/components/flow/FlowTaskDetailShell.vue'
 import { useDict } from '@/composables/useDict'

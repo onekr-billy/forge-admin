@@ -5,6 +5,7 @@ import {
   canInterveneInstance,
   canMutateRunningInstance,
   compactParams,
+  hasMonitorPermission,
   isSuspendedInstance,
 } from '../monitorAdmin'
 
@@ -48,5 +49,28 @@ describe('monitorAdmin', () => {
       { label: '部门负责人审批 · 45', value: '1001', task: { id: '1001', name: '部门负责人审批', assignee: '45' } },
       { label: '会签 · 张三', value: '1002', task: { taskId: '1002', taskName: '会签', assigneeName: '张三' } },
     ])
+  })
+
+  it('超级管理员不依赖路由按钮权限', () => {
+    expect(hasMonitorPermission({ isAdmin: true, permissions: [] }, { meta: { btns: [] } }, 'flow:monitor:manage')).toBe(true)
+    expect(hasMonitorPermission({ userType: 0, permissions: [] }, null, 'flow:monitor:cleanup')).toBe(true)
+  })
+
+  it('普通用户按登录权限码判断，不能只看空的路由按钮', () => {
+    expect(hasMonitorPermission(
+      { isAdmin: false, permissions: ['*:*:*'] },
+      { meta: { btns: [{ code: 'flow:monitor:view' }] } },
+      'flow:monitor:manage',
+    )).toBe(true)
+    expect(hasMonitorPermission(
+      { isAdmin: false, permissions: [] },
+      { meta: { btns: [{ code: 'flow:monitor:view' }] } },
+      'flow:monitor:manage',
+    )).toBe(false)
+    expect(hasMonitorPermission(
+      { isAdmin: false, permissions: ['flow:monitor:manage'] },
+      { meta: { btns: [] } },
+      'flow:monitor:manage',
+    )).toBe(true)
   })
 })

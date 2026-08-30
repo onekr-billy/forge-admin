@@ -71,15 +71,15 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #identifier="{ row }">
-        {{ row.businessKey || row.processInstanceId || row.id }}
-      </template>
       <template #node="{ row }">
         {{ row.content || '暂无内容' }}
       </template>
       <template #user="{ row }">
         <span>{{ activeTab === 'received' ? (row.sendUserName || '-') : (row.ccUserName || '-') }}</span>
         <small>{{ row.ccTime || '-' }}</small>
+      </template>
+      <template #summary="{ row }">
+        <FlowTaskBusinessSummary :row="row" />
       </template>
       <template #actions="{ row }">
         <button type="button" class="task-row-link-action" aria-label="查看抄送" @click="openCcDetail(row)">
@@ -199,6 +199,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import flowApi from '@/api/flow'
 import FlowBusinessForm from '@/components/common/FlowBusinessForm.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import FlowTaskBusinessSummary from '@/components/flow/FlowTaskBusinessSummary.vue'
 import FlowTaskCardList from '@/components/flow/FlowTaskCardList.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'

@@ -99,7 +99,12 @@ export function writeUserTaskConfig(config) {
       attrs.push('flowable:assigneeType="spel"')
     }
     if (cfg.assignee === 'initiatorSelect') {
-      attrs.push(`flowable:assignee="${DOLLAR}{assignee}"`)
+      const nodeKey = normalizeOptionalText(cfg.initiatorSelectNodeKey || cfg.bpmnElementId || cfg.nodeId)
+      const useCountersign = cfg.multiInstanceType && cfg.multiInstanceType !== 'none'
+      attrs.push(`flowable:assigneeType="initiatorSelect"`)
+      attrs.push(`flowable:assignee="${useCountersign
+        ? `${DOLLAR}{assignee}`
+        : `${DOLLAR}{INITIATOR_SELECT_${sanitizeVariableName(nodeKey)}}`}"`)
     }
   }
   else if (cfg.taskType === 'candidateUsers' && cfg.candidateUsers?.length) {
@@ -168,10 +173,18 @@ export function writeUserTaskConfig(config) {
     attrs.push(`flowable:${key}="${v}"`)
   }
 
-  // multiInstance
+  writeApprovalDuty(cfg, attrs)
+
+  const multiInstanceType = cfg.multiInstanceType && cfg.multiInstanceType !== 'none'
+    ? cfg.multiInstanceType
+    : 'none'
+  if (multiInstanceType !== 'none')
+    attrs.push(`flowable:multiInstanceType="${escapeXmlAttr(multiInstanceType)}"`)
+
+  // multiInstance：不会签不写 loop，避免回读后又变成会签。
   const initiatorSelect = cfg.assignee === 'initiatorSelect'
-  if ((cfg.multiInstanceType && cfg.multiInstanceType !== 'none') || initiatorSelect) {
-    const seq = !initiatorSelect && cfg.multiInstanceType === 'sequential' ? 'true' : 'false'
+  if (multiInstanceType !== 'none') {
+    const seq = multiInstanceType === 'sequential' ? 'true' : 'false'
     const expr = buildCompletionExpression(cfg.completionCondition, cfg.passRate)
     const nodeKey = normalizeOptionalText(cfg.initiatorSelectNodeKey || cfg.bpmnElementId || cfg.nodeId)
     const collection = initiatorSelect
@@ -296,6 +309,38 @@ function normalizePositiveInt(value, fallback) {
 function normalizeOptionalText(value) {
   const text = String(value == null ? '' : value).trim()
   return text || ''
+}
+
+function sanitizeVariableName(value) {
+  const text = normalizeOptionalText(value).replace(/\W/g, '_')
+  return text || 'node'
+}
+
+function writeApprovalDuty(cfg, attrs) {
+  const description = normalizeOptionalText(cfg.responsibilityDescription)
+  if (description)
+    attrs.push(`flowable:responsibilityDescription="${escapeXmlAttr(description)}"`)
+  const points = normalizeApprovalPoints(cfg.approvalPoints)
+  if (points.length) {
+    attrs.push(`flowable:approvalPoints="${escapeXmlAttr(JSON.stringify(points))}"`)
+    attrs.push(`flowable:responsibility="${escapeXmlAttr(points.map(item => item.content).join('\n'))}"`)
+  }
+}
+
+function normalizeApprovalPoints(source = []) {
+  return (Array.isArray(source) ? source : [])
+    .map((item, index) => {
+      const content = String(item?.content || '').trim()
+      if (!content)
+        return null
+      return {
+        id: String(item?.id || `point-${index + 1}`),
+        content,
+        required: item?.required === true,
+        sort: Number.isFinite(Number(item?.sort)) ? Number(item.sort) : index + 1,
+      }
+    })
+    .filter(Boolean)
 }
 
 function buildListener(tag, l) {

@@ -23,6 +23,12 @@ public class BusinessTaskFormSaveDTO {
 
     private String objectCode;
 
+    private Long objectId;
+
+    private String configKey;
+
+    private String suiteCode;
+
     private Long recordId;
 
     private String formKey;

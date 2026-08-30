@@ -6,6 +6,13 @@
     </div>
 
     <template v-else>
+      <FlowApprovalChecklist
+        :responsibility-description="taskFormInfo?.responsibilityDescription || ''"
+        :approval-points="taskFormInfo?.approvalPoints || []"
+        :legacy-approval-point="taskFormInfo?.approvalPoint || ''"
+        readonly
+      />
+
       <FlowBusinessForm
         v-if="useExternalForm"
         :form-url="taskFormInfo.formUrl"
@@ -89,6 +96,7 @@ import flowApi from '@/api/flow'
 import { AiForm } from '@/components/ai-form'
 import { formCreateToAiSchema } from '@/components/ai-form/adapters/formCreate'
 import FlowBusinessForm from '@/components/common/FlowBusinessForm.vue'
+import FlowApprovalChecklist from '@/components/flow/FlowApprovalChecklist.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { pickFirstNonEmptyFieldPermissions } from '@/utils/field-permissions'
 import { compactParams } from '@/views/flow/utils/monitorAdmin'
@@ -120,10 +128,14 @@ const readonlyApprovalPolicy = {
 }
 
 const dynamicFormSchema = computed(() => formCreateToAiSchema(taskFormInfo.value?.formJson || []))
-const useDynamicForm = computed(() => taskFormInfo.value?.formType === 'dynamic' && dynamicFormSchema.value.length > 0)
 const useBusinessObjectForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-object')
 const useBusinessCodeForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-code')
 const useBusinessManagedForm = computed(() => useBusinessObjectForm.value || useBusinessCodeForm.value)
+const useDynamicForm = computed(() => {
+  if (useBusinessManagedForm.value)
+    return false
+  return dynamicFormSchema.value.length > 0
+})
 const useExternalForm = computed(() => !useBusinessManagedForm.value && taskFormInfo.value?.formType === 'external' && taskFormInfo.value?.formUrl)
 const businessFormTitle = computed(() => getBusinessFormDisplayTitle(businessFormContext.value, '业务表单'))
 const businessFormWarnings = computed(() => Array.isArray(businessFormContext.value?.warnings) ? businessFormContext.value.warnings : [])
@@ -163,7 +175,10 @@ const readonlyBusinessFormFields = computed(() => {
 const showNoFormContent = computed(() => {
   if (formInfoLoading.value || businessFormLoading.value)
     return false
-  return !useExternalForm.value && !useDynamicForm.value && !useBusinessManagedForm.value
+  const hasDuty = Boolean(taskFormInfo.value?.responsibilityDescription)
+    || Boolean(taskFormInfo.value?.approvalPoint)
+    || (Array.isArray(taskFormInfo.value?.approvalPoints) && taskFormInfo.value.approvalPoints.length > 0)
+  return !useExternalForm.value && !useDynamicForm.value && !useBusinessManagedForm.value && !hasDuty
 })
 
 function toReadonlyField(field = {}) {

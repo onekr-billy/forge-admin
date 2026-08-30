@@ -166,17 +166,29 @@ defineEmits(['close'])
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-nav) {
   min-height: 42px;
-  padding: 0 14px;
+  padding: 0;
   border-bottom: 1px solid #e2e8f0;
   background: #fff;
 }
 
+.flow-property-panel-shell__content :deep(.n-tabs .n-tabs-nav-scroll-wrapper),
+.flow-property-panel-shell__content :deep(.n-tabs .n-tabs-nav-scroll-content) {
+  overflow-x: auto;
+}
+
+.flow-property-panel-shell__content :deep(.n-tabs .n-tabs-nav-scroll-content) {
+  min-width: max-content;
+  padding: 0 14px;
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-tab) {
   min-height: 42px;
-  padding: 0 12px;
+  padding: 0 10px;
   color: #64748b;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .flow-property-panel-shell__content :deep(.n-tabs .n-tabs-tab.n-tabs-tab--active) {

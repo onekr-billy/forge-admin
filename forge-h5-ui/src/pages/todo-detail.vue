@@ -65,6 +65,25 @@
               <text>该流程未返回可展示的业务字段配置，已隐藏内部字段和技术标识。</text>
             </view>
 
+            <view v-if="responsibilityDescription || approvalPoints.length" class="approval-duty-panel">
+              <view v-if="responsibilityDescription" class="duty-block">
+                <text class="form-label">审批职责</text>
+                <text class="duty-copy">{{ responsibilityDescription }}</text>
+              </view>
+              <view v-if="approvalPoints.length" class="duty-block">
+                <text class="form-label">审批要点</text>
+                <view
+                  v-for="point in approvalPoints"
+                  :key="point.id"
+                  class="approval-point-row"
+                  @click="toggleApprovalPoint(point)"
+                >
+                  <text class="approval-point-check">{{ approvalPointChecks[point.id] ? '☑' : '☐' }}</text>
+                  <text class="approval-point-copy">{{ point.content }}</text>
+                  <text class="approval-point-tag">{{ point.required ? '必审' : '非必审' }}</text>
+                </view>
+              </view>
+            </view>
             <view v-if="!readonlyMode" class="comment-row">
               <text class="form-label">审批意见<text v-if="requireComment" class="required-mark"> *</text></text>
               <textarea v-model="comment" class="form-textarea comment" maxlength="500" placeholder="请输入审批意见" />
@@ -114,25 +133,37 @@
     <view v-if="task && !readonlyMode" class="action-bar">
       <AiButton v-if="isCandidateTask" block size="sm" :loading="claimLoading" @click="claimTask">签收后处理</AiButton>
       <template v-else>
-        <AiButton v-if="canDelegate || canTerminate || canReturn" class="more-action" size="sm" variant="secondary" :disabled="actionLoading" @click="moreVisible = true">
+        <AiButton v-if="canDelegate || canTerminate" class="more-action" size="sm" variant="secondary" :disabled="actionLoading" @click="moreVisible = true">
           <template #leftIcon><AiIcon icon="/static/icons/ai-icon/more-horizontal.svg" color="#475569" size="sm" /></template>
           更多
         </AiButton>
-        <AiButton v-if="canReject" size="sm" variant="danger" :disabled="Boolean(blockedReason) || actionLoading" @click="submitAction('reject')">驳回</AiButton>
+        <AiButton v-if="canReject" size="sm" variant="danger" :disabled="Boolean(blockedReason) || actionLoading" @click="canChooseReturnTarget ? openRejectTarget() : submitAction('reject')">驳回</AiButton>
         <AiButton v-if="canApprove" size="sm" :loading="actionLoading && pendingAction === 'approve'" :disabled="Boolean(blockedReason) || actionLoading" @click="submitAction('approve')">同意</AiButton>
       </template>
     </view>
+
+    <AiPopupSheet v-model="rejectTargetVisible" title="选择驳回节点" description="流程会从所选节点继续，而不是整单结束">
+      <view class="return-target-list">
+        <button
+          v-for="option in returnTargetOptions"
+          :key="option.value"
+          class="return-target-item"
+          :class="{ active: selectedReturnTarget === option.value }"
+          @click="selectedReturnTarget = option.value"
+        >
+          {{ option.label }}
+        </button>
+      </view>
+      <view class="delegate-comment" style="margin-top: 24rpx;">
+        <AiButton block :disabled="!selectedReturnTarget" :loading="actionLoading && pendingAction === 'return'" @click="submitAction('return')">确认驳回</AiButton>
+      </view>
+    </AiPopupSheet>
 
     <AiPopupSheet v-model="moreVisible" title="更多操作" description="操作权限以当前审批节点配置为准">
       <view class="more-list">
         <button v-if="canDelegate" class="more-row" @click="openDelegate">
           <view class="more-row__icon"><AiIcon icon="/static/icons/ai-icon/user-plus.svg" color="#2563eb" size="sm" /></view>
           <view class="more-row__copy"><text>转办</text><text>交由其他成员继续处理</text></view>
-          <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#94a3b8" size="sm" />
-        </button>
-        <button v-if="canReturn" class="more-row" @click="submitAction('return')">
-          <view class="more-row__icon"><AiIcon icon="/static/icons/ai-icon/corner-up-left.svg" color="#2563eb" size="sm" /></view>
-          <view class="more-row__copy"><text>退回上一节点</text><text>退回至前一处理环节</text></view>
           <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#94a3b8" size="sm" />
         </button>
         <button v-if="canTerminate" class="more-row danger" @click="submitAction('terminate')">
@@ -221,6 +252,7 @@ const diagramInfo = ref(null)
 const activeTabIndex = ref(0)
 const detailTabs = ['业务内容', '审批记录', '流程进度']
 const pageMode = ref('todo')
+const approvalPointChecks = ref({})
 const comment = ref('')
 const signature = ref('')
 const approvalSignatureRef = ref(null)
@@ -248,10 +280,26 @@ const delegateSignatureRef = ref(null)
 const userId = computed(() => String(authStore.userInfo?.id || authStore.userInfo?.userId || authStore.userInfo?.user_id || ''))
 const taskPolicySource = computed(() => formInfo.value || businessContext.value || {})
 const requireComment = computed(() => taskPolicySource.value?.requireComment !== false)
+const responsibilityDescription = computed(() => formInfo.value?.responsibilityDescription || '')
+const approvalPoints = computed(() => Array.isArray(formInfo.value?.approvalPoints) ? formInfo.value.approvalPoints : [])
 const isCandidateTask = computed(() => Number(task.value?.status) === 0 && !task.value?.assignee)
 const canApprove = computed(() => taskPolicySource.value?.allowApprove !== false)
 const canReject = computed(() => taskPolicySource.value?.allowReject !== false)
 const canReturn = computed(() => taskPolicySource.value?.allowReturn === true)
+const returnTargetOptions = computed(() => (Array.isArray(taskPolicySource.value?.returnTargets)
+  ? taskPolicySource.value.returnTargets
+  : []).map(item => ({
+  label: item.activityName || item.activityId,
+  value: item.activityId,
+})))
+const canChooseReturnTarget = computed(() => taskPolicySource.value?.allowMultiReturn === true && returnTargetOptions.value.length > 0)
+const selectedReturnTarget = ref('')
+const rejectTargetVisible = ref(false)
+
+function openRejectTarget() {
+  selectedReturnTarget.value = ''
+  rejectTargetVisible.value = true
+}
 const canDelegate = computed(() => taskPolicySource.value?.allowDelegate !== false)
 const canTerminate = computed(() => taskPolicySource.value?.allowTerminate === true)
 const readonlyMode = computed(() => pageMode.value === 'readonly')
@@ -345,6 +393,7 @@ async function refresh() {
         ? await api.getFlowProcessForm(compact({ taskId: currentTaskId, processInstanceId: task.value.processInstanceId, businessKey: task.value.businessKey, processDefKey: task.value.processDefKey || task.value.processDefinitionKey, taskDefKey: task.value.taskDefKey || task.value.taskDefinitionKey }))
         : await api.getFlowTaskForm(currentTaskId)
       formInfo.value = formResult?.data || null
+      seedApprovalPointChecks(formInfo.value)
       seedMainData(formInfo.value?.variables)
     }
     if (historyResult.status === 'fulfilled') history.value = Array.isArray(historyResult.value?.data) ? historyResult.value.data : []
@@ -415,6 +464,21 @@ function hasBusinessContextQuery(query) {
 
 function isConfiguredBusinessTaskForm(context) {
   return context?.configured === true && ['business-object', 'business-code'].includes(context?.formType)
+}
+
+function seedApprovalPointChecks(info) {
+  approvalPointChecks.value = Object.fromEntries(
+    (Array.isArray(info?.approvalPoints) ? info.approvalPoints : []).map(point => [point.id, false]),
+  )
+}
+
+function toggleApprovalPoint(point) {
+  if (readonlyMode.value || !point?.id)
+    return
+  approvalPointChecks.value = {
+    ...approvalPointChecks.value,
+    [point.id]: !approvalPointChecks.value[point.id],
+  }
 }
 
 function seedMainData(source = {}) {
@@ -542,11 +606,23 @@ async function submitAction(action) {
     toast('请选择转办人员', { type: 'warning' })
     return
   }
+  if (action === 'reject' && canChooseReturnTarget.value) {
+    openRejectTarget()
+    return
+  }
+  if (action === 'return' && canChooseReturnTarget.value && !selectedReturnTarget.value) {
+    toast('请选择驳回至哪个已审批节点', { type: 'warning' })
+    return
+  }
   const actionComment = action === 'delegate' ? delegateComment.value : comment.value
   const actionSignature = action === 'delegate' ? delegateSignature.value : signature.value
   const signatureRef = action === 'delegate' ? delegateSignatureRef.value : approvalSignatureRef.value
   if (requireComment.value && !actionComment.trim()) {
     toast('请输入审批意见', { type: 'warning' })
+    return
+  }
+  if (action === 'approve' && approvalPoints.value.some(point => point?.required === true && !approvalPointChecks.value?.[point.id])) {
+    toast('请完成全部必审要点', { type: 'warning' })
     return
   }
   if (!validateRequiredFields() || !hasSignature(actionSignature, signatureRef)) return
@@ -567,11 +643,12 @@ async function submitAction(action) {
     }
     else if (action === 'approve') await api.approveFlowTask(payload)
     else if (action === 'reject') await api.rejectFlowTask(payload)
-    else if (action === 'return') await api.returnFlowTask(payload)
+    else if (action === 'return') await api.returnFlowTask({ ...payload, targetActivityId: selectedReturnTarget.value || undefined })
     else if (action === 'terminate') await api.terminateFlowTask(payload)
     else await api.delegateFlowTask(payload)
     toast(`${labels[action]}成功`, { type: 'success' })
     delegateVisible.value = false
+    rejectTargetVisible.value = false
     setTimeout(() => uni.navigateBack(), 350)
   }
   catch (error) {
@@ -601,12 +678,18 @@ function buildActionPayload(action, actionComment = comment.value.trim(), action
     signature: actionSignature || undefined,
     targetUserId: action === 'delegate' ? String(delegateUser.value?.id || '') : undefined,
     variables: { ...(info.variables || {}), ...mainData },
+    approvalPointResults: approvalPoints.value.map(point => ({
+      id: point.id,
+      content: point.content,
+      required: point.required === true,
+      checked: Boolean(approvalPointChecks.value?.[point.id]),
+    })),
   })
   return base
 }
 
 async function saveBusinessFieldsIfNeeded(action) {
-  if (!['approve', 'reject'].includes(action) || !isConfiguredBusinessTaskForm(businessContext.value) || !businessFormHasWritableFields.value) return null
+  if (!['approve', 'reject', 'return'].includes(action) || !isConfiguredBusinessTaskForm(businessContext.value) || !businessFormHasWritableFields.value) return null
   const payload = buildActionPayload(action)
   const res = await api.saveBusinessTaskFormContext({ ...payload, data: { ...mainData } })
   businessContext.value = res?.data || businessContext.value
@@ -723,12 +806,22 @@ function goBack() { uni.navigateBack({ fail: () => uni.switchTab({ url: '/pages/
 .save-form-button[disabled] { opacity: .55; }
 .field-list { display: flex; flex-direction: column; gap: 26rpx; }
 .form-row, .comment-row { display: flex; flex-direction: column; gap: 14rpx; }
+.approval-duty-panel { display: flex; flex-direction: column; gap: 20rpx; margin-bottom: 16rpx; }
+.duty-block { display: flex; flex-direction: column; gap: 10rpx; padding: 18rpx; border: 1px solid #eadfc9; border-radius: 12rpx; background: #fffaf0; }
+.duty-copy { color: #475569; font-size: 26rpx; line-height: 1.6; white-space: pre-wrap; }
+.approval-point-row { display: flex; align-items: flex-start; gap: 12rpx; }
+.approval-point-check { color: #1677ff; font-size: 30rpx; line-height: 1.2; }
+.approval-point-copy { flex: 1; color: #334155; font-size: 26rpx; line-height: 1.5; }
+.approval-point-tag { color: #b42318; font-size: 22rpx; }
 .form-label { color: #4e5969; font-size: 25rpx; }
 .required-mark { color: #f53f3f; }
 .form-input, .form-textarea { width: 100%; padding: 18rpx; border: 1rpx solid var(--border-color); border-radius: 8rpx; color: var(--text-strong); font-size: 27rpx; background: #fff; box-sizing: border-box; }
 .form-input { height: 78rpx; }
 .form-textarea { min-height: 148rpx; line-height: 1.5; }
 .form-textarea.comment { margin-top: 4rpx; }
+.return-target-list { display: flex; flex-direction: column; gap: 12rpx; margin-top: 8rpx; }
+.return-target-item { width: 100%; min-height: 72rpx; padding: 16rpx 18rpx; border: 1rpx solid var(--border-color); border-radius: 10rpx; color: var(--text-strong); font-size: 26rpx; text-align: left; background: #fff; }
+.return-target-item.active { border-color: var(--primary-color); color: var(--primary-color); background: #eff6ff; }
 .form-select { width: 100%; }
 .form-radio-group { padding: 2rpx 0; }
 .form-date-picker, .form-file-value { display: flex; min-height: 78rpx; align-items: center; justify-content: space-between; gap: 16rpx; padding: 0 18rpx; border: 1rpx solid var(--border-color); border-radius: 8rpx; color: var(--text-strong); font-size: 27rpx; background: #fff; box-sizing: border-box; }

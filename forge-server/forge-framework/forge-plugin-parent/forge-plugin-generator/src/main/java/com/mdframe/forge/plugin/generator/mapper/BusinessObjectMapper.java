@@ -37,6 +37,30 @@ public interface BusinessObjectMapper extends BaseMapper<AiBusinessObject> {
     AiBusinessObject selectByConfigKey(@Param("tenantId") Long tenantId,
                                        @Param("configKey") String configKey);
 
+    AiBusinessObject selectByModelId(@Param("tenantId") Long tenantId,
+                                     @Param("modelId") Long modelId);
+
+    AiBusinessObject selectBySuiteAndModelCode(@Param("tenantId") Long tenantId,
+                                               @Param("suiteCode") String suiteCode,
+                                               @Param("modelCode") String modelCode);
+
+    /**
+     * 按租户读取未删除业务对象，避免只使用 MyBatis-Plus 的 selectById 绕过租户和逻辑删除条件。
+     */
+    AiBusinessObject selectByIdForTenant(@Param("tenantId") Long tenantId,
+                                         @Param("id") Long id);
+
+    /**
+     * 对象编码是流程业务 Key 的全局身份，同一租户内不能跨业务套件重复。
+     */
+    Long countActiveByObjectCode(@Param("tenantId") Long tenantId,
+                                 @Param("objectCode") String objectCode,
+                                 @Param("excludeId") Long excludeId);
+
+    int bindConfigKey(@Param("tenantId") Long tenantId,
+                      @Param("objectId") Long objectId,
+                      @Param("configKey") String configKey);
+
     Long countByObjectCode(@Param("tenantId") Long tenantId,
                            @Param("suiteCode") String suiteCode,
                            @Param("objectCode") String objectCode,

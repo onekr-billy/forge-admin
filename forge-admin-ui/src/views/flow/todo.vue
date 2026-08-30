@@ -11,6 +11,7 @@
       row-key="id"
       search-placeholder="搜索任务名称或编号..."
       empty-text="暂无待办任务"
+      user-title="当前处理人"
       @search="handleSearch"
       @refresh="loadData"
       @row-click="openDrawer"
@@ -70,20 +71,16 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #identifier="{ row }">
-        {{ row.businessKey || row.processInstanceId || row.taskId || row.id }}
-      </template>
       <template #node="{ row }">
         {{ getTaskDisplayName(row) }}
       </template>
       <template #user="{ row }">
-        <span>{{ row.startUserName || '-' }}</span>
+        <span>{{ getTaskHandlerName(row) }}</span>
+        <small v-if="row.startUserName">申请人 {{ row.startUserName }}</small>
         <small>{{ row.createTime || '-' }}</small>
       </template>
       <template #summary="{ row }">
-        <span v-if="row.businessObjectName || row.businessSummary" class="task-business-summary">
-          {{ row.businessObjectName || row.businessType }}<span v-if="row.businessSummary">：{{ row.businessSummary }}</span>
-        </span>
+        <FlowTaskBusinessSummary :row="row" />
       </template>
       <template #actions="{ row }">
         <button type="button" class="task-row-link-action success" aria-label="同意任务" @click="openQuickAction('approve', [row])">
@@ -112,38 +109,105 @@
 
     <n-modal
       v-model:show="quickActionVisible"
-      preset="card"
-      class="quick-action-modal"
-      :title="quickActionTitle"
-      :bordered="false"
-      :segmented="{ content: true, footer: true }"
-      content-style="padding: 18px;"
+      :auto-focus="false"
+      :closable="false"
+      :mask-closable="!quickActionLoading"
+      :close-on-esc="!quickActionLoading"
     >
-      <div class="quick-action-body">
-        <div class="quick-action-summary">
-          已选择 <strong>{{ quickActionTargets.length }}</strong> 条待办，提交后会按顺序处理。
+      <div
+        class="quick-action-panel"
+        :data-action="quickActionType"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="quickActionTitleId"
+      >
+        <div class="quick-action-head">
+          <div class="quick-action-head-text">
+            <strong :id="quickActionTitleId">{{ quickActionTitle }}</strong>
+            <p>
+              {{ quickActionSubject }}<span v-if="quickActionMeta"> · {{ quickActionMeta }}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            class="quick-action-close"
+            aria-label="关闭"
+            :disabled="quickActionLoading"
+            @click="quickActionVisible = false"
+          >
+            <i class="i-material-symbols:close" />
+          </button>
         </div>
         <n-input
+          ref="quickActionInputRef"
           v-model:value="quickActionForm.comment"
           type="textarea"
-          :rows="4"
-          :maxlength="500"
+          :rows="3"
+          :maxlength="200"
           show-count
-          :placeholder="quickActionType === 'approve' ? '请输入同意意见' : '请输入驳回原因'"
+          :placeholder="quickActionIsApprove ? '审批意见，可直接提交' : '驳回原因'"
+          @keydown.ctrl.enter.prevent="submitQuickAction"
+          @keydown.meta.enter.prevent="submitQuickAction"
         />
-        <div class="quick-action-tip">
-          需要填写动态表单或手写签名的任务会自动跳过，请进入详情处理。
+        <div class="quick-action-presets" role="group" :aria-label="quickActionIsApprove ? '常用同意意见' : '常用驳回原因'">
+          <button
+            v-for="preset in quickActionCommentPresets"
+            :key="preset"
+            type="button"
+            class="quick-action-preset"
+            :class="{ active: quickActionForm.comment === preset }"
+            :disabled="quickActionLoading"
+            @click="applyQuickActionPreset(preset)"
+          >
+            {{ preset }}
+          </button>
         </div>
-      </div>
-      <template #footer>
-        <div class="quick-action-footer">
-          <NButton :disabled="quickActionLoading" @click="quickActionVisible = false">
+        <p v-if="quickActionTargets.length > 1" class="quick-action-tip">
+          需填表或签名的任务会跳过
+        </p>
+        <div class="quick-action-actions">
+          <NButton size="small" :disabled="quickActionLoading" @click="quickActionVisible = false">
             取消
           </NButton>
-          <NButton :type="quickActionType === 'approve' ? 'primary' : 'error'" :loading="quickActionLoading" @click="submitQuickAction">
-            {{ quickActionType === 'approve' ? '同意' : '驳回' }}
+          <NButton
+            size="small"
+            :type="quickActionIsApprove ? 'primary' : 'error'"
+            :loading="quickActionLoading"
+            :disabled="quickActionLoading"
+            @click="submitQuickAction"
+          >
+            {{ quickActionTitle }}
           </NButton>
         </div>
+      </div>
+    </n-modal>
+
+    <n-modal
+      v-model:show="rejectTargetVisible"
+      preset="card"
+      title="选择驳回节点"
+      style="width: 480px"
+      :mask-closable="false"
+    >
+      <NSpace vertical>
+        <n-text depth="3">
+          请选择驳回到哪个已审批节点。流程会从该节点继续，而不是整单结束。
+        </n-text>
+        <n-select
+          v-model:value="selectedReturnTarget"
+          :options="returnTargetOptions"
+          placeholder="请选择已审批节点"
+        />
+      </NSpace>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton :disabled="approveLoading" @click="rejectTargetVisible = false">
+            取消
+          </NButton>
+          <NButton type="error" :disabled="!selectedReturnTarget" :loading="approveLoading" @click="confirmRejectToTarget">
+            确认驳回
+          </NButton>
+        </NSpace>
       </template>
     </n-modal>
 
@@ -225,17 +289,17 @@
             <span>加载表单中...</span>
           </div>
 
-          <div v-if="!formInfoLoading && canReturn && (canChooseReturnTarget || canDirectSend)" class="flow-routing-options">
+          <FlowApprovalChecklist
+            v-if="!formInfoLoading"
+            v-model="approvalPointChecks"
+            :responsibility-description="taskFormInfo?.responsibilityDescription || ''"
+            :approval-points="taskFormInfo?.approvalPoints || []"
+            :legacy-approval-point="taskFormInfo?.approvalPoint || ''"
+          />
+
+          <div v-if="!formInfoLoading && canDirectSend" class="flow-routing-options">
             <n-form :model="approveForm" label-placement="top">
-              <n-form-item v-if="canChooseReturnTarget" label="退回节点" :show-feedback="false">
-                <n-select
-                  v-model:value="selectedReturnTarget"
-                  :options="returnTargetOptions"
-                  placeholder="请选择退回到哪个已审批节点"
-                  clearable
-                />
-              </n-form-item>
-              <n-checkbox v-if="canDirectSend" v-model:checked="directSendAfterReturn">
+              <n-checkbox v-model:checked="directSendAfterReturn">
                 修正后直送至 {{ taskPolicySource.returnSourceActivityName || taskPolicySource.returnSourceActivityId }}
               </n-checkbox>
             </n-form>
@@ -259,20 +323,17 @@
               @cancel="showDrawer = false"
             >
               <template #actions>
-                <NButton v-if="canDelegate" size="large" :disabled="isApprovalBusy" @click="handleDelegate">
-                  <i class="i-material-symbols:person-add mr-2" />
+                <NButton v-if="canDelegate" size="small" :disabled="isApprovalBusy" @click="handleDelegate">
                   转办
                 </NButton>
 
                 <NButton
                   v-if="currentTask.status === 0 && !currentTask.assignee"
-                  type="info"
-                  size="large"
+                  size="small"
                   :loading="isClaimingTask(currentTask)"
                   :disabled="isApprovalBusy"
                   @click="handleClaim(currentTask)"
                 >
-                  <i class="i-material-symbols:assignment-ind mr-2" />
                   签收
                 </NButton>
               </template>
@@ -344,6 +405,13 @@
               </div>
             </div>
 
+            <n-empty
+              v-if="!formInfoLoading && !businessFormLoading && !useBusinessManagedForm && !useDynamicForm && !useComponentTaskForm"
+              :description="businessFormMissingText"
+              size="small"
+              class="form-empty"
+            />
+
             <div v-if="useDynamicForm" class="dynamic-form-section">
               <div class="approval-form-title">
                 节点动态表单
@@ -360,15 +428,15 @@
               />
             </div>
 
-            <n-form :model="approveForm" label-placement="top">
-              <n-form-item label="审批意见" :required="requireComment">
+            <n-form class="approve-comment-form" :model="approveForm" label-placement="left" :label-width="72">
+              <n-form-item label="审批意见" :required="requireComment" :show-feedback="false">
                 <n-input
                   v-model:value="approveForm.comment"
                   type="textarea"
-                  :rows="3"
-                  :placeholder="requireComment ? '请输入审批意见' : '请输入审批意见（可选）'"
-                  :maxlength="500"
-                  show-count
+                  size="small"
+                  :rows="2"
+                  :placeholder="requireComment ? '请输入审批意见' : '审批意见（可选）'"
+                  :maxlength="200"
                 />
               </n-form-item>
               <n-form-item v-if="requireSignature" label="审批签名" required>
@@ -384,18 +452,26 @@
             <div class="action-buttons">
               <n-popconfirm v-if="canApprove" @positive-click="() => submitApprove('approve')">
                 <template #trigger>
-                  <NButton type="success" size="large" :loading="isActionLoading('approve')" :disabled="isApprovalBusy">
-                    <i class="i-material-symbols:check-circle mr-2" />
+                  <NButton type="primary" size="small" :loading="isActionLoading('approve')" :disabled="isApprovalBusy">
                     同意
                   </NButton>
                 </template>
                 确认同意该审批？
               </n-popconfirm>
 
-              <n-popconfirm v-if="canReject" @positive-click="() => submitApprove('reject')">
+              <NButton
+                v-if="canReject && canChooseReturnTarget"
+                type="error"
+                size="small"
+                :loading="isActionLoading('reject') || isActionLoading('return')"
+                :disabled="isApprovalBusy"
+                @click="openRejectTargetModal"
+              >
+                驳回
+              </NButton>
+              <n-popconfirm v-else-if="canReject" @positive-click="() => submitApprove('reject')">
                 <template #trigger>
-                  <NButton type="error" size="large" :loading="isActionLoading('reject')" :disabled="isApprovalBusy">
-                    <i class="i-material-symbols:cancel mr-2" />
+                  <NButton type="error" size="small" :loading="isActionLoading('reject')" :disabled="isApprovalBusy">
                     驳回
                   </NButton>
                 </template>
@@ -404,48 +480,33 @@
 
               <n-popconfirm v-if="canRejectToStart" @positive-click="() => submitApprove('rejectToStart')">
                 <template #trigger>
-                  <NButton type="warning" ghost size="large" :loading="isActionLoading('rejectToStart')" :disabled="isApprovalBusy">
-                    <i class="i-material-symbols:person-return mr-2" />
+                  <NButton type="warning" ghost size="small" :loading="isActionLoading('rejectToStart')" :disabled="isApprovalBusy">
                     驳回至发起人
                   </NButton>
                 </template>
                 确认驳回至发起人修改路径？
               </n-popconfirm>
 
-              <n-popconfirm v-if="canReturn" @positive-click="() => submitApprove('return')">
-                <template #trigger>
-                  <NButton type="warning" size="large" :loading="isActionLoading('return')" :disabled="isApprovalBusy">
-                    <i class="i-material-symbols:keyboard-return mr-2" />
-                    退回
-                  </NButton>
-                </template>
-                确认退回上一审批节点？
-              </n-popconfirm>
-
               <n-popconfirm v-if="canTerminate" @positive-click="() => submitApprove('terminate')">
                 <template #trigger>
-                  <NButton type="error" ghost size="large" :loading="isActionLoading('terminate')" :disabled="isApprovalBusy">
-                    <i class="i-material-symbols:stop-circle mr-2" />
+                  <NButton type="error" ghost size="small" :loading="isActionLoading('terminate')" :disabled="isApprovalBusy">
                     终结
                   </NButton>
                 </template>
                 确认终结该流程？
               </n-popconfirm>
 
-              <NButton v-if="canDelegate" size="large" :disabled="isApprovalBusy" @click="handleDelegate">
-                <i class="i-material-symbols:person-add mr-2" />
+              <NButton v-if="canDelegate" size="small" :disabled="isApprovalBusy" @click="handleDelegate">
                 转办
               </NButton>
 
               <NButton
                 v-if="currentTask.status === 0 && !currentTask.assignee"
-                type="info"
-                size="large"
+                size="small"
                 :loading="isClaimingTask(currentTask)"
                 :disabled="isApprovalBusy"
                 @click="handleClaim(currentTask)"
               >
-                <i class="i-material-symbols:assignment-ind mr-2" />
                 签收
               </NButton>
             </div>
@@ -515,9 +576,9 @@
 
 <script setup>
 import { NButton, NSpace, NTreeSelect } from 'naive-ui'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { businessTaskFormContext, completeBusinessTaskAction, saveBusinessTaskFormContext } from '@/api/business-app'
+import { businessFlowFormAssets, businessTaskFormContext, completeBusinessTaskAction, saveBusinessTaskFormContext } from '@/api/business-app'
 import flowApi from '@/api/flow'
 import { AiForm } from '@/components/ai-form'
 import { formCreateToAiSchema } from '@/components/ai-form/adapters/formCreate'
@@ -525,16 +586,18 @@ import FlowBusinessForm from '@/components/common/FlowBusinessForm.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import UserSelectModal from '@/components/common/UserSelectModal.vue'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
+import FlowApprovalChecklist from '@/components/flow/FlowApprovalChecklist.vue'
+import FlowTaskBusinessSummary from '@/components/flow/FlowTaskBusinessSummary.vue'
 import FlowTaskCardList from '@/components/flow/FlowTaskCardList.vue'
 import FlowTaskDetailShell from '@/components/flow/FlowTaskDetailShell.vue'
 import SignaturePad from '@/components/flow/SignaturePad.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
-import { pickFirstNonEmptyFieldPermissions } from '@/utils/field-permissions'
+import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions } from '@/utils/field-permissions'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
 import { FLOW_PRIORITY_LABEL_FALLBACK, getFlowPriorityClass, isUrgentFlowPriority, resolveFlowPriorityLevel, shouldShowFlowPriority } from './utils/priority'
-import { getBusinessFormDisplayTitle, getRowDisplayTitle, getTaskDisplayName } from './utils/processDisplay'
+import { getBusinessFormDisplayTitle, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -572,11 +635,11 @@ const approvalHistory = ref([])
 
 // 业务自定义表单
 const taskFormInfo = ref(null)
+const approvalPointChecks = ref({})
 const formInfoLoading = ref(false)
 const dynamicFormRef = ref(null)
 const dynamicFormData = ref({})
 const dynamicFormSchema = computed(() => formCreateToAiSchema(taskFormInfo.value?.formJson || []))
-const useDynamicForm = computed(() => taskFormInfo.value?.formType === 'dynamic' && dynamicFormSchema.value.length > 0)
 const businessFormContext = ref(null)
 const businessFormData = ref({})
 const businessChildFormData = ref({})
@@ -586,6 +649,11 @@ const businessFormSaving = ref(false)
 const useBusinessObjectForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-object')
 const useBusinessCodeForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-code')
 const useBusinessManagedForm = computed(() => useBusinessObjectForm.value || useBusinessCodeForm.value)
+const useDynamicForm = computed(() => {
+  if (useBusinessManagedForm.value && Array.isArray(businessFormContext.value?.fields) && businessFormContext.value.fields.length > 0)
+    return false
+  return dynamicFormSchema.value.length > 0
+})
 const useExternalForm = computed(() => !useBusinessManagedForm.value && taskFormInfo.value?.formType === 'external' && taskFormInfo.value?.formUrl)
 const businessFormTitle = computed(() => getBusinessFormDisplayTitle(businessFormContext.value, '业务表单'))
 const businessFormWarnings = computed(() => Array.isArray(businessFormContext.value?.warnings) ? businessFormContext.value.warnings : [])
@@ -602,6 +670,14 @@ const businessFormLabelPlacement = computed(() => ['left', 'top'].includes(busin
 const businessFormLabelWidth = computed(() => businessFormContext.value?.labelWidth || '100')
 const useBusinessCodeComponentForm = computed(() => useBusinessCodeForm.value && Boolean(businessCodeFormUrl.value))
 const useComponentTaskForm = computed(() => useExternalForm.value || useBusinessCodeComponentForm.value)
+const businessFormMissingText = computed(() => {
+  const warnings = Array.isArray(businessFormContext.value?.warnings)
+    ? businessFormContext.value.warnings.filter(Boolean)
+    : []
+  if (warnings.length)
+    return warnings[0]
+  return '当前节点未加载到可渲染的业务应用表单。请确认流程已部署，且待办能关联到业务单据。'
+})
 const componentTaskFormUrl = computed(() => useBusinessCodeComponentForm.value ? businessCodeFormUrl.value : taskFormInfo.value?.formUrl)
 const componentTaskFormInfo = computed(() => ({
   taskId: businessFormContext.value?.taskId || taskFormInfo.value?.taskId,
@@ -631,14 +707,16 @@ const canReject = computed(() => taskPolicySource.value?.allowReject !== false)
 const canRejectToStart = computed(() => taskPolicySource.value?.allowRejectToStart === true)
 const canDelegate = computed(() => taskPolicySource.value?.allowDelegate !== false)
 const canReturn = computed(() => taskPolicySource.value?.allowReturn === true)
-const canChooseReturnTarget = computed(() => taskPolicySource.value?.allowMultiReturn === true)
-const canDirectSend = computed(() => taskPolicySource.value?.allowDirectSend === true)
 const returnTargetOptions = computed(() => (Array.isArray(taskPolicySource.value?.returnTargets)
   ? taskPolicySource.value.returnTargets
   : []).map(item => ({
   label: item.activityName || item.activityId,
   value: item.activityId,
 })))
+const canChooseReturnTarget = computed(() => {
+  return taskPolicySource.value?.allowMultiReturn === true && returnTargetOptions.value.length > 0
+})
+const canDirectSend = computed(() => taskPolicySource.value?.allowDirectSend === true)
 const canTerminate = computed(() => taskPolicySource.value?.allowTerminate === true)
 const requireComment = computed(() => taskPolicySource.value?.requireComment !== false)
 const requireSignature = computed(() => taskPolicySource.value?.requireSignature === true)
@@ -659,6 +737,8 @@ const approvalPolicy = computed(() => ({
 const approveLoading = ref(false)
 const approveForm = reactive({ action: '', comment: '', signature: '' })
 const selectedReturnTarget = ref(null)
+const rejectTargetVisible = ref(false)
+const pendingRejectSubmit = ref(null)
 const directSendAfterReturn = ref(false)
 const approveSignatureRef = ref(null)
 const approveSignatureKey = ref(0)
@@ -668,7 +748,31 @@ const quickActionLoading = ref(false)
 const quickActionType = ref('approve')
 const quickActionTargets = ref([])
 const quickActionForm = reactive({ comment: '' })
-const quickActionTitle = computed(() => quickActionType.value === 'approve' ? '同意审批' : '驳回审批')
+const quickActionInputRef = ref(null)
+const quickActionIsApprove = computed(() => quickActionType.value === 'approve')
+const quickActionTitle = computed(() => quickActionIsApprove.value ? '同意' : '驳回')
+const quickActionTitleId = 'flow-todo-quick-action-title'
+const quickActionCommentPresets = computed(() => quickActionIsApprove.value
+  ? ['同意', '已阅', '情况属实']
+  : ['驳回', '请补充材料', '请修改后重提'])
+const quickActionSubject = computed(() => {
+  if (quickActionTargets.value.length === 1)
+    return getRowDisplayTitle(quickActionTargets.value[0])
+  return `处理 ${quickActionTargets.value.length} 条待办`
+})
+const quickActionMeta = computed(() => {
+  const rows = quickActionTargets.value
+  if (rows.length === 1) {
+    const row = rows[0]
+    const node = getTaskDisplayName(row, '')
+    const applicant = row?.startUserName
+    return [node, applicant ? `申请人 ${applicant}` : ''].filter(Boolean).join(' · ')
+  }
+  if (!rows.length)
+    return ''
+  const names = rows.slice(0, 2).map(row => getRowDisplayTitle(row)).filter(Boolean)
+  return names.join('、') + (rows.length > 2 ? ` 等${rows.length}条` : '')
+})
 
 // 转办
 const showDelegateModal = ref(false)
@@ -777,18 +881,54 @@ function summarizeBusinessChildren(children) {
   ]))
 }
 
+function isSyntheticTestBusinessKey(value) {
+  const text = String(value || '').trim()
+  return text === 'FLOW_TEST' || text.startsWith('FLOW_TEST:')
+}
+
+function resolveTaskIdentityBusinessKey(context = {}, formInfo = {}, row = {}) {
+  const taskKey = formInfo.businessKey || row.businessKey || taskFormInfo.value?.businessKey || currentTask.value?.businessKey
+  const contextKey = context.businessKey
+  if (context.recordId && contextKey && !isSyntheticTestBusinessKey(contextKey) && !isSyntheticTestBusinessKey(taskKey))
+    return contextKey
+  return taskKey || contextKey
+}
+
 function buildBusinessTaskFormQuery(row = {}, formInfo = {}) {
+  const formRef = resolveTaskFormRef(formInfo)
   const taskId = formInfo.taskId || row.taskId || row.id
+  const businessKey = resolveTaskIdentityBusinessKey({}, formInfo, row)
   return compactParams({
     taskId,
-    businessKey: formInfo.businessKey || row.businessKey,
+    businessKey,
     processInstanceId: formInfo.processInstanceId || row.processInstanceId,
-    processDefKey: formInfo.processDefKey,
+    processDefKey: formInfo.processDefKey || row.processDefKey || row.processDefinitionKey,
     taskDefKey: formInfo.taskDefKey || row.taskDefKey || row.taskDefinitionKey,
-    objectCode: formInfo.objectCode || row.objectCode,
-    recordId: formInfo.recordId || row.recordId,
-    formKey: formInfo.formKey,
+    objectCode: formInfo.objectCode || formRef.objectCode || row.objectCode,
+    recordId: isSyntheticTestBusinessKey(businessKey)
+      ? undefined
+      : (formInfo.recordId || formRef.recordId || row.recordId),
+    formKey: formInfo.formKey || formRef.formKey,
   })
+}
+
+function resolveTaskFormRef(formInfo = {}) {
+  if (formInfo.formRef && typeof formInfo.formRef === 'object' && !Array.isArray(formInfo.formRef))
+    return formInfo.formRef
+  const raw = formInfo.formJson
+  if (raw && typeof raw === 'object' && !Array.isArray(raw))
+    return raw.formRef && typeof raw.formRef === 'object' ? { ...raw, ...raw.formRef } : raw
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        return parsed.formRef && typeof parsed.formRef === 'object' ? { ...parsed, ...parsed.formRef } : parsed
+    }
+    catch {
+      return {}
+    }
+  }
+  return {}
 }
 
 function compactParams(source = {}) {
@@ -849,6 +989,9 @@ async function loadTaskFormInfo(taskId) {
     if (res.code === 200) {
       taskFormInfo.value = res.data
       dynamicFormData.value = { ...(res.data?.variables || {}) }
+      approvalPointChecks.value = Object.fromEntries(
+        (res.data?.approvalPoints || []).map(point => [point.id, false]),
+      )
       return taskFormInfo.value
     }
   }
@@ -862,16 +1005,105 @@ function isConfiguredBusinessTaskForm(context) {
   return context?.configured === true && ['business-object', 'business-code'].includes(context?.formType)
 }
 
+async function hydrateBusinessFormFromAssets(formInfo) {
+  if (!formInfo || isConfiguredBusinessTaskForm(businessFormContext.value))
+    return
+  const formRef = resolveTaskFormRef(formInfo)
+  const objectCode = String(formInfo.objectCode || formRef.objectCode || '').trim()
+  const formKey = String(formInfo.formKey || formRef.formKey || '').trim()
+  const formType = String(formInfo.formType || formRef.formMode || formRef.type || '').toLowerCase()
+  const isBusinessForm = formType === 'business'
+    || formType === 'business_object_form'
+    || formType === 'business-object'
+    || String(formRef.formMode || formRef.type || '').toUpperCase() === 'BUSINESS_OBJECT_FORM'
+  if (!isBusinessForm || !objectCode)
+    return
+  try {
+    const res = await businessFlowFormAssets(objectCode, {
+      includeInternal: true,
+      applicationId: formRef.applicationId || undefined,
+    })
+    const assets = Array.isArray(res.data) ? res.data : res.data?.formAssets || []
+    const selected = assets.find(item => String(item?.formKey || '') === formKey) || assets[0]
+    const fieldPermissions = pickFirstNonEmptyFieldPermissions([
+      formInfo.formFieldPermissions,
+      formInfo.fieldPermissions,
+    ])
+    const fields = normalizeFallbackBusinessFields(selected, fieldPermissions)
+    if (!fields.length)
+      return
+    businessFormContext.value = {
+      configured: true,
+      formType: 'business-object',
+      formKey: selected?.formKey || formKey,
+      formName: selected?.formName || formInfo.formName || formKey,
+      objectCode,
+      taskId: formInfo.taskId,
+      processInstanceId: formInfo.processInstanceId,
+      processDefKey: formInfo.processDefKey,
+      taskDefKey: formInfo.taskDefKey,
+      businessKey: formInfo.businessKey,
+      fields,
+      formAssets: assets,
+      fieldPermissions,
+      recordData: formInfo.variables || {},
+    }
+    businessFormData.value = { ...(formInfo.variables || {}) }
+  }
+  catch (error) {
+    console.error('按表单资产回退渲染失败', error)
+  }
+}
+
+function normalizeFallbackBusinessFields(asset = null, permissions = []) {
+  if (!asset || typeof asset !== 'object')
+    return []
+  const catalog = Array.isArray(asset.fieldCatalog) && asset.fieldCatalog.length
+    ? asset.fieldCatalog
+    : Array.isArray(asset.fields) ? asset.fields : []
+  const permissionMap = new Map(normalizeFieldPermissions(permissions).map(item => [item.field, item]))
+  const seen = new Set()
+  return catalog
+    .map((field) => {
+      const fieldCode = String(field?.field || field?.fieldCode || field?.name || field?.key || '').trim()
+      if (!fieldCode || seen.has(fieldCode))
+        return null
+      seen.add(fieldCode)
+      const permission = permissionMap.get(fieldCode)
+      const readable = permission ? permission.readable !== false : true
+      if (!readable)
+        return null
+      const writable = permission ? permission.writable === true : false
+      const required = writable && permission?.required === true
+      return {
+        field: fieldCode,
+        code: fieldCode,
+        prop: fieldCode,
+        label: String(field?.label || field?.title || field?.fieldName || fieldCode).trim(),
+        type: field?.type || field?.componentType || 'input',
+        required,
+        readonly: !writable,
+        disabled: !writable,
+        writable,
+        visible: true,
+      }
+    })
+    .filter(Boolean)
+}
+
 function buildBusinessTaskFormSavePayload() {
   const context = businessFormContext.value || {}
+  const businessKey = resolveTaskIdentityBusinessKey(context, taskFormInfo.value, currentTask.value)
   return compactParams({
     taskId: context.taskId || taskFormInfo.value?.taskId || currentTask.value?.taskId || currentTask.value?.id,
-    businessKey: context.businessKey || taskFormInfo.value?.businessKey,
+    businessKey,
     processInstanceId: context.processInstanceId || taskFormInfo.value?.processInstanceId || currentTask.value?.processInstanceId,
     processDefKey: context.processDefKey || taskFormInfo.value?.processDefKey || currentTask.value?.processDefKey || currentTask.value?.processDefinitionKey,
     taskDefKey: context.taskDefKey || taskFormInfo.value?.taskDefKey || currentTask.value?.taskDefKey || currentTask.value?.taskDefinitionKey,
     objectCode: context.objectCode || taskFormInfo.value?.objectCode || currentTask.value?.objectCode,
-    recordId: context.recordId || taskFormInfo.value?.recordId || currentTask.value?.recordId,
+    recordId: isSyntheticTestBusinessKey(businessKey)
+      ? context.recordId
+      : (context.recordId || taskFormInfo.value?.recordId || currentTask.value?.recordId),
     formKey: context.formKey || taskFormInfo.value?.formKey,
     data: { ...businessFormData.value },
   })
@@ -923,7 +1155,7 @@ function buildBusinessTaskActionPayload(action, comment, signature, variables = 
   return compactParams({
     action,
     taskId: context.taskId || taskFormInfo.value?.taskId || currentTask.value?.taskId || currentTask.value?.id,
-    businessKey: context.businessKey || taskFormInfo.value?.businessKey || currentTask.value?.businessKey,
+    businessKey: resolveTaskIdentityBusinessKey(context, taskFormInfo.value, currentTask.value),
     processInstanceId: context.processInstanceId || taskFormInfo.value?.processInstanceId || currentTask.value?.processInstanceId,
     processDefKey: context.processDefKey || taskFormInfo.value?.processDefKey || currentTask.value?.processDefKey || currentTask.value?.processDefinitionKey,
     taskDefKey: context.taskDefKey || taskFormInfo.value?.taskDefKey || currentTask.value?.taskDefKey || currentTask.value?.taskDefinitionKey,
@@ -936,6 +1168,7 @@ function buildBusinessTaskActionPayload(action, comment, signature, variables = 
     variables: buildActionVariables(action, variables),
     targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
     data: { ...businessFormData.value },
+    approvalPointResults: buildApprovalPointResults(),
   })
 }
 
@@ -951,6 +1184,7 @@ async function submitTaskAction(action, comment, signature, variables = {}) {
     signature,
     variables: buildActionVariables(action, variables),
     targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
+    approvalPointResults: buildApprovalPointResults(),
   })
 }
 
@@ -1004,6 +1238,7 @@ async function openDrawer(row) {
   approveSignatureKey.value += 1
   approvalHistory.value = []
   taskFormInfo.value = null
+  approvalPointChecks.value = {}
   dynamicFormData.value = {}
   resetBusinessTaskForm()
   showDrawer.value = true
@@ -1023,15 +1258,17 @@ async function openDrawer(row) {
   const taskId = row.taskId || row.id
   if (taskId) {
     formInfoLoading.value = true
-    promises.push(
-      loadBusinessTaskFormContext({}, { taskId })
-        .then((context) => {
-          if (isConfiguredBusinessTaskForm(context))
-            return null
-          return loadTaskFormInfo(taskId)
-        })
-        .finally(() => { formInfoLoading.value = false }),
-    )
+    promises.push((async () => {
+      try {
+        const formInfo = await loadTaskFormInfo(taskId)
+        await loadBusinessTaskFormContext(row, formInfo || { taskId })
+        if (!isConfiguredBusinessTaskForm(businessFormContext.value))
+          await hydrateBusinessFormFromAssets(formInfo)
+      }
+      finally {
+        formInfoLoading.value = false
+      }
+    })())
   }
 
   await Promise.all(promises)
@@ -1039,9 +1276,14 @@ async function openDrawer(row) {
 
 async function handleExternalFormSubmit({ action, comment, signature, variables }) {
   const approvalSignature = signature || variables?.signature
+  if (action === 'reject' && canChooseReturnTarget.value) {
+    pendingRejectSubmit.value = { comment, signature: approvalSignature, variables }
+    openRejectTargetModal()
+    return
+  }
   if (!canRunAction(action))
     return
-  if (!validateApprovalInput(comment, approvalSignature))
+  if (!validateApprovalInput(comment, approvalSignature, null, action))
     return
 
   approveForm.action = action
@@ -1071,7 +1313,7 @@ function canRunAction(action) {
     approve: canApprove.value,
     reject: canReject.value,
     rejectToStart: canRejectToStart.value,
-    return: canReturn.value,
+    return: canReturn.value || canChooseReturnTarget.value,
     terminate: canTerminate.value,
     delegate: canDelegate.value,
   }
@@ -1100,7 +1342,32 @@ async function resolveSignature(signatureRef, signature) {
   }
 }
 
-function validateApprovalInput(comment, signature, signatureRef = null) {
+function currentApprovalPoints() {
+  return Array.isArray(taskFormInfo.value?.approvalPoints) ? taskFormInfo.value.approvalPoints : []
+}
+
+function requiredApprovalPointsIncomplete() {
+  return currentApprovalPoints()
+    .filter(point => point?.required === true)
+    .some(point => !approvalPointChecks.value?.[point.id])
+}
+
+function buildApprovalPointResults() {
+  return currentApprovalPoints()
+    .filter(point => point?.id)
+    .map(point => ({
+      id: point.id,
+      content: point.content,
+      required: point.required === true,
+      checked: Boolean(approvalPointChecks.value?.[point.id]),
+    }))
+}
+
+function validateApprovalInput(comment, signature, signatureRef = null, action = '') {
+  if (action === 'approve' && requiredApprovalPointsIncomplete()) {
+    window.$message.warning('请完成全部必审要点')
+    return false
+  }
   if (requireComment.value && !comment?.trim()) {
     window.$message.warning('请输入审批意见')
     return false
@@ -1134,10 +1401,34 @@ function getActionSuccessText(action) {
   return textMap[action] || '操作成功'
 }
 
+function openRejectTargetModal() {
+  selectedReturnTarget.value = null
+  rejectTargetVisible.value = true
+}
+
+async function confirmRejectToTarget() {
+  if (!selectedReturnTarget.value) {
+    window.$message.warning('请选择驳回至哪个已审批节点')
+    return
+  }
+  const pending = pendingRejectSubmit.value
+  pendingRejectSubmit.value = null
+  rejectTargetVisible.value = false
+  if (pending)
+    await handleExternalFormSubmit({ action: 'return', ...pending })
+  else
+    await submitApprove('return')
+}
+
 async function submitApprove(action) {
+  if (action === 'reject' && canChooseReturnTarget.value) {
+    pendingRejectSubmit.value = null
+    openRejectTargetModal()
+    return
+  }
   if (!canRunAction(action))
     return
-  if (!validateApprovalInput(approveForm.comment, approveForm.signature, approveSignatureRef.value))
+  if (!validateApprovalInput(approveForm.comment, approveForm.signature, approveSignatureRef.value, action))
     return
   approveForm.action = action
   approveLoading.value = true
@@ -1179,6 +1470,11 @@ function resolveQuickActionTargets(targets = []) {
     .filter(Boolean)
 }
 
+function applyQuickActionPreset(preset) {
+  quickActionForm.comment = preset
+  nextTick(() => quickActionInputRef.value?.focus?.())
+}
+
 function openQuickAction(action, targets) {
   const resolvedTargets = resolveQuickActionTargets(targets)
   if (resolvedTargets.length === 0) {
@@ -1189,6 +1485,7 @@ function openQuickAction(action, targets) {
   quickActionTargets.value = resolvedTargets
   quickActionForm.comment = action === 'approve' ? '同意' : '驳回'
   quickActionVisible.value = true
+  nextTick(() => quickActionInputRef.value?.focus?.())
 }
 
 function isCandidateTask(row) {
@@ -1210,6 +1507,8 @@ function assertQuickActionAllowed(action, formInfo, businessFormContext = null) 
     throw new Error('当前节点不允许同意')
   if (action === 'reject' && formInfo?.allowReject === false)
     throw new Error('当前节点不允许驳回')
+  if (action === 'reject' && formInfo?.allowMultiReturn === true && Array.isArray(formInfo.returnTargets) && formInfo.returnTargets.length)
+    throw new Error('该流程已开启指定节点驳回，请进入详情选择驳回节点')
   if (action === 'rejectToStart' && formInfo?.allowRejectToStart !== true)
     throw new Error('当前节点不允许驳回至发起人')
   if (formInfo?.requireSignature === true)
@@ -1222,6 +1521,8 @@ function assertQuickActionAllowed(action, formInfo, businessFormContext = null) 
     throw new Error('需要进入业务表单处理')
   if (action === 'approve' && businessFormContext?.configured === true && hasWritableBusinessFormFields(businessFormContext))
     throw new Error('需要填写业务表单，请进入详情处理')
+  if (action === 'approve' && Array.isArray(formInfo?.approvalPoints) && formInfo.approvalPoints.some(point => point?.required === true))
+    throw new Error('需要勾选审批要点，请进入详情处理')
 }
 
 async function executeQuickAction(action, row, comment) {
@@ -1619,36 +1920,137 @@ watch(
   width: 132px;
 }
 
-.quick-action-modal {
-  width: min(520px, calc(100vw - 32px));
+.quick-action-panel {
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
 }
 
-.quick-action-body {
+.quick-action-panel :deep(.n-input) {
+  --n-padding-left: 10px;
+  --n-padding-right: 10px;
+  --n-padding-vertical: 8px;
+}
+
+.quick-action-panel :deep(textarea.n-input__textarea-el) {
+  min-height: 72px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.quick-action-head {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-.quick-action-summary {
-  color: #334155;
+.quick-action-head-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.quick-action-head-text strong {
+  display: block;
+  color: var(--text-primary, #0f172a);
   font-size: 14px;
+  font-weight: 600;
   line-height: 22px;
 }
 
-.quick-action-summary strong {
-  color: #0f766e;
+.quick-action-panel[data-action='reject'] .quick-action-head-text strong {
+  color: var(--error-color, #d03050);
 }
 
-.quick-action-tip {
-  color: #64748b;
+.quick-action-head-text p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-tertiary, #64748b);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-action-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary, #94a3b8);
+  cursor: pointer;
+}
+
+.quick-action-close:hover:not(:disabled) {
+  background: var(--bg-secondary, #f8fafc);
+  color: var(--text-primary, #0f172a);
+}
+
+.quick-action-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.quick-action-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quick-action-preset {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #475569);
+  cursor: pointer;
   font-size: 12px;
   line-height: 20px;
 }
 
-.quick-action-footer {
+.quick-action-preset:hover:not(:disabled) {
+  border-color: var(--border-dark, #cbd5e1);
+  background: var(--bg-secondary, #f8fafc);
+}
+
+.quick-action-preset.active {
+  border-color: var(--primary-color, #2080f0);
+  color: var(--primary-color, #2080f0);
+}
+
+.quick-action-panel[data-action='reject'] .quick-action-preset.active {
+  border-color: var(--error-color, #d03050);
+  color: var(--error-color, #d03050);
+}
+
+.quick-action-preset:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.quick-action-tip {
+  margin: 8px 0 0;
+  color: var(--text-tertiary, #94a3b8);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.quick-action-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  margin-top: 10px;
 }
 
 .search-btn,
@@ -1989,11 +2391,25 @@ watch(
   white-space: nowrap;
 }
 
+.approve-comment-form {
+  margin-top: 8px;
+}
+
+.approve-comment-form :deep(.n-form-item) {
+  margin-bottom: 8px;
+}
+
+.approve-comment-form :deep(.n-form-item-label) {
+  height: 28px;
+  padding-top: 4px;
+  font-size: 13px;
+}
+
 .action-buttons {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .delegate-user-row {

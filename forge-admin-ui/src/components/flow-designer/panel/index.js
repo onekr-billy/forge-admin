@@ -13,6 +13,7 @@
  */
 
 export { default as AdvancedConfig } from './AdvancedConfig.vue'
+export { default as ApprovalDutyConfig } from './ApprovalDutyConfig.vue'
 export { default as ApproverAssigneeForm } from './ApproverAssigneeForm.vue'
 export { default as ApproverConfig } from './ApproverConfig.vue'
 export { default as BasicConfig } from './BasicConfig.vue'

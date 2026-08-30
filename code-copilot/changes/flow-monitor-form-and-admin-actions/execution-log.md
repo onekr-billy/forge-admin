@@ -7,6 +7,7 @@
 | 2026-08-29 | propose | 用户确认按只读表单 + 详情内干预实施 | 对话确认 |
 | 2026-08-29 | apply | 完成监控详情表单渲染和管理员干预入口 | Vitest 7 通过，eslint 通过，pnpm build 通过 |
 | 2026-08-29 | verify | 浏览器点选 | 跳过：本机 `localhost:3000` 与 `8580` 未监听 |
+| 2026-08-30 | fix | 超级管理员被监控页 hasPermission 误拦 | 改为 isAdmin / userType=0 / `*:*:*` 放行，不再只看 route.meta.btns |
 
 ## 技术决策
 

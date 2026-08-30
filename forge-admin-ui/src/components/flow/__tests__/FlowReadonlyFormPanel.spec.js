@@ -33,6 +33,10 @@ vi.mock('@/components/common/FlowBusinessForm.vue', () => ({
   default: defineComponent({ name: 'FlowBusinessForm', setup: () => () => h('div', 'external-form') }),
 }))
 
+vi.mock('@/components/flow/FlowApprovalChecklist.vue', () => ({
+  default: defineComponent({ name: 'FlowApprovalChecklist', setup: () => () => h('div', 'checklist') }),
+}))
+
 vi.mock('@/components/page-templates/ChildTableEditor.vue', () => ({
   default: defineComponent({ name: 'ChildTableEditor', setup: () => () => h('div', 'child-table') }),
 }))

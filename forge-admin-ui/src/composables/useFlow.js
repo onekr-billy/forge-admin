@@ -10,6 +10,7 @@
 import { computed, readonly, ref, watch } from 'vue'
 import flowApi from '@/api/flow'
 import { useUserStore } from '@/store'
+import { collectInitiatorSelectSelections } from '@/utils/initiatorSelect'
 
 /**
  * 业务流程集成
@@ -137,15 +138,7 @@ export function useFlow(processKey, businessKeyRef) {
           selections = await selectInitiatorApprovers(nodes)
         if (!selections || typeof selections !== 'object')
           throw new Error('该流程需要先选择发起人自选审批人')
-        const normalized = {}
-        for (const node of nodes) {
-          const values = Array.isArray(selections[node.nodeKey]) ? selections[node.nodeKey] : []
-          const ids = values.map(value => String(value ?? '').trim()).filter(Boolean)
-          if (!ids.length)
-            throw new Error(`请选择${node.nodeName || node.nodeKey}审批人`)
-          normalized[node.nodeKey] = [...new Set(ids)]
-        }
-        startVariables.PROCESS_START_USER = normalized
+        startVariables.PROCESS_START_USER = collectInitiatorSelectSelections(nodes, selections)
       }
       const res = await flowApi.startProcess(processKey, {
         businessKey,

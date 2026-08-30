@@ -203,6 +203,60 @@
         LIMIT 1
     </select>
 
+    <select id="selectByModelId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_business_object
+        WHERE tenant_id = #{tenantId}
+          AND model_id = #{modelId}
+          AND del_flag = '0'
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectBySuiteAndModelCode" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_business_object
+        WHERE tenant_id = #{tenantId}
+          AND suite_code = #{suiteCode}
+          AND model_code = #{modelCode}
+          AND del_flag = '0'
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByIdForTenant" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_business_object
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND del_flag = '0'
+        LIMIT 1
+    </select>
+
+    <select id="countActiveByObjectCode" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ai_business_object
+        WHERE tenant_id = #{tenantId}
+          AND object_code = #{objectCode}
+          AND del_flag = '0'
+        <if test="excludeId != null">
+          AND id != #{excludeId}
+        </if>
+    </select>
+
+    <update id="bindConfigKey">
+        UPDATE ai_business_object
+        SET config_key = #{configKey},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND id = #{objectId}
+          AND del_flag = '0'
+          AND (config_key IS NULL OR config_key = '')
+    </update>
+
     <select id="countByObjectCode" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM ai_business_object

@@ -47,3 +47,29 @@ export function buildCurrentTaskOptions(tasks = []) {
     task,
   })).filter(item => item.value)
 }
+
+export function isPlatformAdmin(userStore) {
+  if (userStore?.isAdmin)
+    return true
+  const userType = userStore?.userType ?? userStore?.userInfo?.userType
+  return Number(userType) === 0
+}
+
+export function hasMonitorPermission(userStore, route, permission) {
+  if (isPlatformAdmin(userStore))
+    return true
+  const grants = new Set([
+    ...(Array.isArray(userStore?.permissions) ? userStore.permissions : []),
+    ...resolveRouteButtonCodes(route),
+  ])
+  return grants.has(permission) || grants.has('**') || grants.has('*:*:*')
+}
+
+function resolveRouteButtonCodes(route) {
+  const buttons = route?.meta?.btns
+  if (!Array.isArray(buttons))
+    return []
+  return buttons
+    .map(item => typeof item === 'string' ? item : item?.code)
+    .filter(Boolean)
+}

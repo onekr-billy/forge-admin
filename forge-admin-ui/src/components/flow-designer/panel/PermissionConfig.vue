@@ -2,9 +2,8 @@
 /**
  * PermissionConfig — 8 个操作权限布尔开关
  *
- * 字段名 1:1 对齐 user-task-parser DEFAULT_PERMISSIONS：
- *   allowApprove / allowReject / allowDelegate / allowReturn /
- *   allowRejectToStart / allowTerminate / requireSignature / requireComment
+ * 字段名对齐 user-task-parser DEFAULT_PERMISSIONS。
+ * 指定节点驳回由流程级 allowMultiReturn 控制，不再在节点上展示 allowReturn。
  */
 import { computed } from 'vue'
 
@@ -16,11 +15,10 @@ const props = defineProps({
 const emit = defineEmits(['update:config'])
 
 const FIELDS = [
-  { key: 'allowApprove', label: '允许通过', desc: '审批人可点击 "通过"' },
-  { key: 'allowReject', label: '允许驳回', desc: '审批人可点击 "驳回"' },
+  { key: 'allowApprove', label: '允许通过', desc: '审批人可点击“通过”' },
+  { key: 'allowReject', label: '允许驳回', desc: '审批人可点击“驳回”。若流程开启了指定节点驳回，点驳回后再选择回到哪个已审节点' },
   { key: 'allowRejectToStart', label: '驳回至发起人', desc: '按流程设计的发起人修改路径退回' },
   { key: 'allowDelegate', label: '允许委派', desc: '审批人可委托他人代审' },
-  { key: 'allowReturn', label: '允许退回', desc: '可退回到任意已审节点' },
   { key: 'allowTerminate', label: '允许终止', desc: '可直接终止流程' },
   { key: 'requireSignature', label: '强制签名', desc: '审批时必须电子签名' },
   { key: 'requireComment', label: '审批意见', desc: '同意或驳回流程时必须填写审批意见' },

@@ -13,6 +13,7 @@
       empty-text="暂无已办任务"
       status-title="审批结果"
       node-title="处理节点"
+      user-title="当前处理人"
       @search="handleSearch"
       @refresh="loadData"
       @row-click="openDrawer"
@@ -34,18 +35,16 @@
       <template #title="{ row }">
         {{ getRowDisplayTitle(row) }}
       </template>
-      <template #identifier="{ row }">
-        {{ row.businessKey || row.processInstanceId || row.taskId || row.id }}
-      </template>
       <template #node="{ row }">
         {{ getTaskDisplayName(row) }}
       </template>
       <template #user="{ row }">
-        <span>{{ row.startUserName || '-' }}</span>
+        <span>{{ getTaskHandlerName(row) }}</span>
+        <small v-if="row.startUserName">申请人 {{ row.startUserName }}</small>
         <small>{{ row.completeTime || '-' }}</small>
       </template>
       <template #summary="{ row }">
-        <span v-if="row.comment">审批意见：{{ row.comment }}</span>
+        <FlowTaskBusinessSummary :row="row" />
       </template>
       <template #actions="{ row }">
         <button type="button" class="task-row-link-action" aria-label="查看详情" @click="openDrawer(row)">
@@ -156,13 +155,14 @@ import flowApi from '@/api/flow'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
 import FlowReadonlyFormPanel from '@/components/flow/FlowReadonlyFormPanel.vue'
+import FlowTaskBusinessSummary from '@/components/flow/FlowTaskBusinessSummary.vue'
 import FlowTaskCardList from '@/components/flow/FlowTaskCardList.vue'
 import FlowTaskDetailShell from '@/components/flow/FlowTaskDetailShell.vue'
 import SignatureImage from '@/components/flow/SignatureImage.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
-import { getRowDisplayTitle, getTaskDisplayName } from './utils/processDisplay'
+import { getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
 
 const userStore = useUserStore()
 const { dict, getLabel } = useDict('flow_done_status')

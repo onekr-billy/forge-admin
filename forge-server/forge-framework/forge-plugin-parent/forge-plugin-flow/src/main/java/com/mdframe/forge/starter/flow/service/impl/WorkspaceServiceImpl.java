@@ -4,6 +4,7 @@ import com.mdframe.forge.starter.flow.mapper.FlowCcMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.service.WorkspaceService;
 import com.mdframe.forge.starter.flow.vo.WorkspaceSummaryVO;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -27,15 +28,17 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     public WorkspaceSummaryVO summary(String userId) {
         WorkspaceSummaryVO summary = new WorkspaceSummaryVO();
         summary.setTodoCount(todoCount(userId));
-        summary.setDoneWeekCount(defaultZero(flowTaskMapper.countWorkspaceDoneSince(userId, startOfWeek())));
-        summary.setStartedRunningCount(defaultZero(flowTaskMapper.countWorkspaceStartedRunning(userId)));
+        Long tenantId = SessionHelper.getTenantId();
+        summary.setDoneWeekCount(defaultZero(flowTaskMapper.countWorkspaceDoneSince(userId, startOfWeek(), tenantId)));
+        summary.setStartedRunningCount(defaultZero(flowTaskMapper.countWorkspaceStartedRunning(userId, tenantId)));
         summary.setCcUnreadCount(defaultZero(flowCcMapper.countWorkspaceUnread(userId)));
         return summary;
     }
 
     @Override
     public Long todoCount(String userId) {
-        return defaultZero(flowTaskMapper.countWorkspaceTodo(userId));
+        return defaultZero(flowTaskMapper.countWorkspaceTodo(userId, SessionHelper.getTenantId(),
+                SessionHelper.getActiveOrgId()));
     }
 
     private LocalDateTime startOfWeek() {

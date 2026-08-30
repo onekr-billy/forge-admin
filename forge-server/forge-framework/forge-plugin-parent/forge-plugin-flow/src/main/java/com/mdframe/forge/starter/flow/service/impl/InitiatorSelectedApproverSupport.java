@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 final class InitiatorSelectedApproverSupport {
 
     static final String VARIABLE_NAME = "PROCESS_START_USER";
+    static final String FLOWABLE_NS = "http://flowable.org/bpmn";
     private static final Pattern COLLECTION_PATTERN = Pattern.compile(
             "^\\$\\{PROCESS_START_USER\\[['\"]([^'\"\\]]+)['\"]\\]\\}$");
 
@@ -36,7 +37,7 @@ final class InitiatorSelectedApproverSupport {
             FlowStartConfig.ApproverNode node = new FlowStartConfig.ApproverNode();
             node.setNodeKey(nodeKey);
             node.setNodeName(task.getName());
-            node.setMultiple(true);
+            node.setMultiple(task.getLoopCharacteristics() != null);
             result.add(node);
         }
         return result;
@@ -53,33 +54,62 @@ final class InitiatorSelectedApproverSupport {
         }
         Map<String, List<String>> normalized = new LinkedHashMap<>();
         for (FlowStartConfig.ApproverNode node : nodes) {
-            Object value = selections.get(node.getNodeKey());
-            Collection<?> users = value instanceof Collection<?> collection ? collection : List.of();
-            List<String> ids = users.stream()
-                    .filter(item -> item != null && !String.valueOf(item).isBlank())
-                    .map(item -> String.valueOf(item).trim())
-                    .distinct()
-                    .toList();
+            List<String> ids = readUserIds(selections.get(node.getNodeKey()));
             if (ids.isEmpty()) {
                 String name = node.getNodeName() == null || node.getNodeName().isBlank()
                         ? node.getNodeKey() : node.getNodeName();
                 throw new IllegalArgumentException("请选择节点「" + name + "」的审批人");
             }
+            if (!Boolean.TRUE.equals(node.getMultiple()) && ids.size() > 1) {
+                ids = List.of(ids.get(0));
+            }
             normalized.put(node.getNodeKey(), ids);
+            if (!Boolean.TRUE.equals(node.getMultiple())) {
+                variables.put(singleAssigneeVariable(node.getNodeKey()), ids.get(0));
+            }
         }
         variables.put(VARIABLE_NAME, normalized);
     }
 
+    static List<String> readUserIds(Object value) {
+        if (value instanceof Collection<?> collection) {
+            return collection.stream()
+                    .filter(item -> item != null && !String.valueOf(item).isBlank())
+                    .map(item -> String.valueOf(item).trim())
+                    .distinct()
+                    .toList();
+        }
+        if (value == null) {
+            return List.of();
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? List.of() : List.of(text);
+    }
+
+    static String singleAssigneeVariable(String nodeKey) {
+        String sanitized = nodeKey == null ? "" : nodeKey.replaceAll("[^A-Za-z0-9_]", "_");
+        if (sanitized.isBlank()) {
+            sanitized = "node";
+        }
+        return "INITIATOR_SELECT_" + sanitized;
+    }
+
     private static String resolveNodeKey(UserTask task) {
         MultiInstanceLoopCharacteristics loop = task.getLoopCharacteristics();
-        if (loop == null) {
-            return null;
+        if (loop != null) {
+            String collection = loop.getCollectionString();
+            if (collection == null || collection.isBlank()) {
+                collection = loop.getInputDataItem();
+            }
+            Matcher matcher = COLLECTION_PATTERN.matcher(collection == null ? "" : collection.trim());
+            if (matcher.matches()) {
+                return matcher.group(1);
+            }
         }
-        String collection = loop.getCollectionString();
-        if (collection == null || collection.isBlank()) {
-            collection = loop.getInputDataItem();
+        String assigneeType = task.getAttributeValue(FLOWABLE_NS, "assigneeType");
+        if ("initiatorSelect".equals(assigneeType == null ? "" : assigneeType.trim())) {
+            return task.getId();
         }
-        Matcher matcher = COLLECTION_PATTERN.matcher(collection == null ? "" : collection.trim());
-        return matcher.matches() ? matcher.group(1) : null;
+        return null;
     }
 }

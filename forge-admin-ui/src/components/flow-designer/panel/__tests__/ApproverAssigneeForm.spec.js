@@ -7,6 +7,7 @@ const DOLLAR = '$'
 
 const STUBS = {
   'n-form-item': { template: '<div><slot /></div>' },
+  'n-alert': { template: '<div class="n-alert"><slot /></div>' },
   'n-select': true,
   'UserSelectPicker': {
     props: ['modelValue', 'labelValue'],
@@ -69,6 +70,21 @@ describe('approverAssigneeForm', () => {
       assigneeUserName: '审批用户',
     })
 
+    wrapper.unmount()
+  })
+
+  it('选择发起人自选时不强制改成会签', async () => {
+    const wrapper = mountAssigneeForm({
+      assignee: 'custom',
+      multiInstanceType: 'none',
+    })
+
+    const buttons = wrapper.findAll('.option-card')
+    const initiatorSelect = buttons.find(button => button.text().includes('发起人自选'))
+    await initiatorSelect.trigger('click')
+
+    expect(wrapper.vm.config.assignee).toBe('initiatorSelect')
+    expect(wrapper.vm.config.multiInstanceType).toBe('none')
     wrapper.unmount()
   })
 })

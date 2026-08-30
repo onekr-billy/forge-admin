@@ -167,28 +167,34 @@ function normalizeNumber(value, fallback) {
           处理时限
         </div>
         <div class="duration-grid">
-          <div class="duration-item">
-            <span class="duration-label">天数</span>
+          <n-form-item label="天数" :show-feedback="false">
             <n-input-number
               v-model:value="dueDateDays"
               :min="0"
               :max="365"
+              :show-button="false"
               :disabled="readonly"
               class="duration-input"
-            />
-            <span class="duration-unit">天</span>
-          </div>
-          <div class="duration-item">
-            <span class="duration-label">小时</span>
+            >
+              <template #suffix>
+                天
+              </template>
+            </n-input-number>
+          </n-form-item>
+          <n-form-item label="小时" :show-feedback="false">
             <n-input-number
               v-model:value="dueDateHours"
               :min="0"
               :max="23"
+              :show-button="false"
               :disabled="readonly"
               class="duration-input"
-            />
-            <span class="duration-unit">小时</span>
-          </div>
+            >
+              <template #suffix>
+                小时
+              </template>
+            </n-input-number>
+          </n-form-item>
         </div>
       </div>
 
@@ -278,26 +284,6 @@ function normalizeNumber(value, fallback) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
-}
-
-.duration-item {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 32px;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.duration-label,
-.duration-unit {
-  color: var(--n-text-color-2);
-  font-size: 13px;
-  line-height: 34px;
-  white-space: nowrap;
-}
-
-.duration-unit {
-  text-align: left;
 }
 
 .duration-input {

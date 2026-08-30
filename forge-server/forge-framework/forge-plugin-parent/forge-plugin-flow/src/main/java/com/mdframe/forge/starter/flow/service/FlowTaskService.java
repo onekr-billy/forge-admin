@@ -2,6 +2,7 @@ package com.mdframe.forge.starter.flow.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.starter.flow.dto.FlowApprovalPointResultDTO;
 import com.mdframe.forge.starter.flow.dto.ProcessDiagramInfo;
 import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
@@ -61,9 +62,19 @@ public interface FlowTaskService {
     /**
      * 带可信租户与远程幂等凭证的审批入口。
      */
+    default void approve(String taskId, String userId, String comment, String signature,
+                         Map<String, Object> variables, Long tenantId,
+                         String idempotencyKey, String requestDigest) {
+        approve(taskId, userId, comment, signature, variables, tenantId, idempotencyKey, requestDigest, null);
+    }
+
+    /**
+     * 带审批要点勾选结果的审批入口。
+     */
     void approve(String taskId, String userId, String comment, String signature,
                  Map<String, Object> variables, Long tenantId,
-                 String idempotencyKey, String requestDigest);
+                 String idempotencyKey, String requestDigest,
+                 List<FlowApprovalPointResultDTO> approvalPointResults);
 
     /**
      * 审批驳回

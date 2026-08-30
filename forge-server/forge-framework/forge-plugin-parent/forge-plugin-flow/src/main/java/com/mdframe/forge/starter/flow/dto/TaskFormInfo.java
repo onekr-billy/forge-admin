@@ -2,8 +2,8 @@ package com.mdframe.forge.starter.flow.dto;
 
 import lombok.Data;
 
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 任务表单信息DTO
@@ -211,6 +211,21 @@ public class TaskFormInfo {
      * 是否需要审批意见
      */
     private Boolean requireComment;
+
+    /**
+     * 节点审批职责说明。
+     */
+    private String responsibilityDescription;
+
+    /**
+     * 兼容旧版单条审批要点文本。
+     */
+    private String approvalPoint;
+
+    /**
+     * 节点审批要点清单。
+     */
+    private List<FlowApprovalPointDTO> approvalPoints;
 
     @Data
     public static class ReturnTarget {

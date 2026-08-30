@@ -331,6 +331,13 @@ public class FlowClient {
     public FlowResult<Void> approve(String taskId, String userId, String comment, String signature,
                                     Map<String, Object> variables, Long tenantId,
                                     String idempotencyKey, String requestDigest) {
+        return approve(taskId, userId, comment, signature, variables, tenantId, idempotencyKey, requestDigest, null);
+    }
+
+    public FlowResult<Void> approve(String taskId, String userId, String comment, String signature,
+                                    Map<String, Object> variables, Long tenantId,
+                                    String idempotencyKey, String requestDigest,
+                                    List<?> approvalPointResults) {
         String url = flowServiceUrl + "/api/flow/task/approve";
         Map<String, Object> params = new HashMap<>();
         params.put("taskId", taskId);
@@ -341,6 +348,7 @@ public class FlowClient {
         if (tenantId != null) params.put("tenantId", tenantId);
         if (idempotencyKey != null) params.put("idempotencyKey", idempotencyKey);
         if (requestDigest != null) params.put("requestDigest", requestDigest);
+        if (approvalPointResults != null) params.put("approvalPointResults", approvalPointResults);
         return post(url, params, new TypeReference<FlowResult<Void>>() {});
     }
 

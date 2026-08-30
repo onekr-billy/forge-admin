@@ -129,7 +129,8 @@ public class FlowTaskController {
         Long tenantId = resolveTrustedTenant(dto.getTenantId());
         flowTaskService.approve(dto.getTaskId(), userId, optionalText(dto.getComment()),
                 optionalText(dto.getSignature()), dto.getVariables(),
-                tenantId, optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()));
+                tenantId, optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()),
+                dto.getApprovalPointResults());
         return RespInfo.success("审批通过", null);
     }
 

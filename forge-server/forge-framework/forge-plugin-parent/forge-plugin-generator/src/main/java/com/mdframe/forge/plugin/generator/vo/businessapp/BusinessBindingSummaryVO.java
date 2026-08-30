@@ -18,6 +18,11 @@ public class BusinessBindingSummaryVO {
 
     private String objectName;
 
+    /** 业务对象所属的主业务应用（共享对象取排序最靠前的应用）。 */
+    private Long applicationId;
+
+    private String applicationName;
+
     private String suiteName;
 
     private Boolean codeApp;

@@ -18,9 +18,11 @@
  * Events:
  *   - update:config   增量 patch，外层 NodeConfigDrawer 合并到 draftNode.config
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { normalizeFieldPermissions } from '@/utils/field-permissions'
+import { loadFlowBusinessFormFieldCatalog } from '@/utils/flow-form-loader'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
+import ApprovalDutyConfig from './ApprovalDutyConfig.vue'
 import ApproverAssigneeForm from './ApproverAssigneeForm.vue'
 import BasicConfig from './BasicConfig.vue'
 import FormPermissionConfig from './FormPermissionConfig.vue'
@@ -39,6 +41,8 @@ const props = defineProps({
 const emit = defineEmits(['update:config', 'update:node'])
 
 const tab = ref('basic')
+const externalFieldCatalog = ref([])
+const externalFieldCatalogError = ref('')
 
 const config = computed(() => props.node?.config || {})
 const normalizedFormAssetOptions = computed(() => (props.formAssetOptions || [])
@@ -76,6 +80,8 @@ const selectedFormAsset = computed(() => {
 const activeFormFieldCatalog = computed(() => {
   if (selectedFormAsset.value?.fieldCatalog?.length)
     return selectedFormAsset.value.fieldCatalog
+  if (externalFieldCatalog.value.length)
+    return externalFieldCatalog.value
   return props.formFieldCatalog
 })
 const nodeFormForAssetSelect = computed(() => ({
@@ -91,8 +97,35 @@ const nodeFormForAssetSelect = computed(() => ({
   formRef: config.value.formRef || selectedFormAsset.value?.formRef || {},
 }))
 
+watch(
+  () => [config.value.formMode, config.value.formUrl, selectedFormAsset.value?.fieldCatalog?.length],
+  () => {
+    refreshExternalFieldCatalog()
+  },
+  { immediate: true },
+)
+
 function patch(part) {
   emit('update:config', part)
+}
+
+async function refreshExternalFieldCatalog() {
+  externalFieldCatalogError.value = ''
+  const formUrl = String(config.value.formUrl || selectedFormAsset.value?.formUrl || '').trim()
+  const formMode = normalizeFormMode(config.value.formMode || selectedFormAsset.value?.formMode)
+  if (selectedFormAsset.value?.fieldCatalog?.length || formMode !== 'EXTERNAL' || !formUrl) {
+    externalFieldCatalog.value = []
+    return
+  }
+  try {
+    externalFieldCatalog.value = await loadFlowBusinessFormFieldCatalog(formUrl)
+    if (!externalFieldCatalog.value.length)
+      externalFieldCatalogError.value = '该外置表单尚未登记字段目录，请在表单组件中配置 flowFieldCatalog'
+  }
+  catch (error) {
+    externalFieldCatalog.value = []
+    externalFieldCatalogError.value = error?.message || '外置表单字段目录加载失败'
+  }
 }
 
 function updateNode(node) {
@@ -115,7 +148,7 @@ function handleFormAssetUpdate(partial = {}) {
     return
   }
   const asset = findFormAsset(partial)
-  const formMode = partial.formMode || asset?.formMode || asset?.type || 'BUSINESS_OBJECT_FORM'
+  const formMode = resolveSelectedFormMode(partial, asset)
   patch({
     formType: 'dynamic',
     formMode,
@@ -203,9 +236,21 @@ function normalizeFieldCatalog(fieldCatalog = []) {
     .filter(Boolean)
 }
 
+function resolveSelectedFormMode(partial = {}, asset = null) {
+  const source = asset?.source || partial.source || ''
+  if (source === 'flowForm')
+    return ''
+  const raw = partial.formMode || partial.formRef?.formMode || partial.formRef?.type || asset?.formMode || asset?.type || ''
+  return normalizeFormMode(raw)
+}
+
 function normalizeFormMode(value) {
-  const normalized = String(value || 'BUSINESS_OBJECT_FORM').toUpperCase()
+  const normalized = String(value || '').trim().toUpperCase()
+  if (!normalized || normalized === 'DYNAMIC' || normalized === 'NONE')
+    return ''
   if (normalized === 'BUSINESS_CODE_FORM' || normalized === 'EXTERNAL')
+    return normalized
+  if (normalized === 'BUSINESS_OBJECT_FORM')
     return normalized
   return 'BUSINESS_OBJECT_FORM'
 }
@@ -235,7 +280,7 @@ function buildFormRefFromAsset(asset, formMode) {
 
 <template>
   <div class="approver-config">
-    <n-tabs v-model:value="tab" type="line" size="large" animated>
+    <n-tabs v-model:value="tab" class="approver-config-tabs" type="line" size="medium" animated>
       <n-tab-pane name="basic" tab="审批办理">
         <BasicConfig
           :node="node"
@@ -252,6 +297,16 @@ function buildFormRefFromAsset(asset, formMode) {
             多人审批方式
           </div>
           <MultiInstanceConfig
+            :config="config"
+            :readonly="readonly"
+            @update:config="patch"
+          />
+        </div>
+        <div class="config-section-block">
+          <div class="config-section-title">
+            审批职责与要点
+          </div>
+          <ApprovalDutyConfig
             :config="config"
             :readonly="readonly"
             @update:config="patch"
@@ -276,8 +331,11 @@ function buildFormRefFromAsset(asset, formMode) {
             </n-tag>
           </div>
           <div class="node-form-asset-hint">
-            运行时按节点 formKey 加载表单资产，并按下方字段权限控制该节点可见、可编辑和必填字段。
+            运行时按节点 formKey 加载表单资产。外置表单会读取组件上的 flowFieldCatalog，自动生成下方字段权限。
           </div>
+          <n-alert v-if="externalFieldCatalogError" type="warning" :show-icon="false" class="node-form-asset-alert">
+            {{ externalFieldCatalogError }}
+          </n-alert>
         </div>
         <FormPermissionConfig
           :config="config"
@@ -332,5 +390,13 @@ function buildFormRefFromAsset(asset, formMode) {
   color: #64748b;
   font-size: 12px;
   line-height: 18px;
+}
+
+.node-form-asset-alert {
+  margin-top: 8px;
+}
+
+.approver-config-tabs :deep(.n-tabs-nav-scroll-wrapper) {
+  overflow-x: auto;
 }
 </style>

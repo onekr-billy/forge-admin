@@ -40,6 +40,16 @@ describe('buildApproverSummary - taskType=assignee', () => {
     expect(buildApproverSummary({})).toBe('点击配置审批人')
     expect(buildApproverSummary({ taskType: 'assignee' })).toBe('点击配置审批人')
   })
+
+  it('发起人自选与发起人区分开，且不追加会签文案', () => {
+    expect(buildApproverSummary({
+      taskType: 'assignee',
+      assignee: 'initiatorSelect',
+      multiInstanceType: 'parallel',
+      completionCondition: 'all',
+    })).toBe('发起人自选')
+    expect(buildApproverSummary({ taskType: 'assignee', assignee: `${DOLLAR}{initiator}` })).toBe('发起人')
+  })
 })
 
 describe('buildApproverSummary - candidateUsers / candidateGroups', () => {

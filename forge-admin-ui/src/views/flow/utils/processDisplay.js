@@ -1,5 +1,6 @@
 export function getRowDisplayTitle(row = {}) {
   return firstText(
+    row.title,
     row.businessSummary,
     row.businessObjectName,
     row.processName,
@@ -7,9 +8,6 @@ export function getRowDisplayTitle(row = {}) {
     row.modelName,
     row.processDefinitionName,
     row.taskName,
-    row.title,
-    row.processDefinitionKey,
-    row.processDefKey,
     '-',
   )
 }
@@ -20,6 +18,12 @@ export function getBusinessFormDisplayTitle(context = {}, fallback = '业务表�
   if (objectName && summary && !summary.includes(objectName))
     return `${objectName} · ${summary}`
   return firstText(summary, objectName, context.formName, fallback)
+}
+
+export function getTaskHandlerName(row = {}, fallback = '-') {
+  if (!row?.assignee && row?.candidateUsers)
+    return firstText(row.assigneeName, '待认领')
+  return firstText(row.assigneeName, row.assignee, fallback)
 }
 
 export function getTaskDisplayName(rowOrName = {}, fallback = '-') {
@@ -37,6 +41,99 @@ export function getTaskDisplayName(rowOrName = {}, fallback = '-') {
     row.nodeKey,
   )
   return firstText(stripTrailingTaskCode(taskName, taskCode), fallback)
+}
+
+const MAX_TASK_DISPLAY_FIELDS = 6
+const DISPLAY_FIELD_SKIP_KEYS = new Set([
+  'id',
+  'tenantid',
+  'delflag',
+  'createby',
+  'createtime',
+  'updateby',
+  'updatetime',
+  'createdept',
+  'recordid',
+  'businesskey',
+  'processinstanceid',
+  'processdefkey',
+  'displayfields',
+  'fields',
+  'items',
+  'displayextensions',
+])
+
+export function buildTaskBusinessHeadline(row = {}) {
+  const objectName = firstText(row.businessObjectName, row.businessType)
+  const summary = firstText(row.businessSummary)
+  if (objectName && summary && !summary.includes(objectName))
+    return `${objectName}：${summary}`
+  return firstText(summary, objectName)
+}
+
+export function buildTaskDisplayFields(row = {}) {
+  const fromExtensions = normalizeDisplayFields(row?.displayExtensions)
+  if (fromExtensions.length)
+    return fromExtensions.slice(0, MAX_TASK_DISPLAY_FIELDS)
+  const params = row?.businessParams && typeof row.businessParams === 'object' && !Array.isArray(row.businessParams)
+    ? row.businessParams
+    : {}
+  const fromParams = normalizeDisplayFields(params.displayFields || params.fields || params.items)
+  return fromParams.slice(0, MAX_TASK_DISPLAY_FIELDS)
+}
+
+export function hasTaskBusinessSummary(row = {}) {
+  return Boolean(buildTaskBusinessHeadline(row) || buildTaskDisplayFields(row).length)
+}
+
+function normalizeDisplayFields(source) {
+  if (source == null)
+    return []
+  if (Array.isArray(source))
+    return source.map((item, index) => toDisplayField(item, index)).filter(Boolean)
+  if (typeof source !== 'object')
+    return []
+  if (Array.isArray(source.fields))
+    return normalizeDisplayFields(source.fields)
+  if (Array.isArray(source.items))
+    return normalizeDisplayFields(source.items)
+  return Object.entries(source)
+    .filter(([key]) => !shouldSkipDisplayKey(key))
+    .map(([key, value], index) => toDisplayField({ label: key, value }, index))
+    .filter(Boolean)
+}
+
+function toDisplayField(item, index) {
+  if (item == null)
+    return null
+  if (typeof item !== 'object') {
+    const value = formatDisplayValue(item)
+    return value ? { key: `field-${index}`, label: '', value } : null
+  }
+  const label = firstText(item.label, item.name, item.title, item.fieldLabel, item.key, item.field)
+  const value = formatDisplayValue(item.value ?? item.text ?? item.displayValue)
+  if (!value)
+    return null
+  return {
+    key: firstText(item.key, item.field, label, `field-${index}`),
+    label,
+    value,
+  }
+}
+
+function formatDisplayValue(value) {
+  if (value == null || value === '')
+    return ''
+  if (Array.isArray(value))
+    return value.map(item => formatDisplayValue(item)).filter(Boolean).join('、')
+  if (typeof value === 'object')
+    return ''
+  return String(value).trim()
+}
+
+function shouldSkipDisplayKey(key) {
+  const normalized = String(key || '').replace(/[_-]/g, '').toLowerCase()
+  return !normalized || DISPLAY_FIELD_SKIP_KEYS.has(normalized) || normalized.startsWith('process')
 }
 
 export function firstText(...values) {

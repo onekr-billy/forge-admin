@@ -114,8 +114,45 @@ describe('convertJsonToBpmn - 主结构', () => {
     const loop = findElementsByLocalName(task, 'multiInstanceLoopCharacteristics')[0]
 
     expect(getFlowableAttr(task, 'assignee')).toBe(`${DOLLAR}{assignee}`)
+    expect(getFlowableAttr(task, 'assigneeType')).toBe('initiatorSelect')
     expect(getFlowableAttr(loop, 'collection')).toBe(`${DOLLAR}{PROCESS_START_USER['T_appr']}`)
     expect(getFlowableAttr(loop, 'elementVariable')).toBe('assignee')
+  })
+
+  it('发起人自选 + 不会签不写会签循环', () => {
+    const json = baseJson()
+    Object.assign(json.nodes[1].config, {
+      assignee: 'initiatorSelect',
+      assigneeUserId: '',
+      multiInstanceType: 'none',
+    })
+    const xml = convertJsonToBpmn(json)
+    const doc = parseBpmnXml(xml)
+    const task = findElementsByLocalName(doc, 'userTask')[0]
+    const loop = findElementsByLocalName(task, 'multiInstanceLoopCharacteristics')[0]
+
+    expect(getFlowableAttr(task, 'assigneeType')).toBe('initiatorSelect')
+    expect(getFlowableAttr(task, 'assignee')).toBe(`${DOLLAR}{INITIATOR_SELECT_T_appr}`)
+    expect(loop).toBeUndefined()
+    expect(xml).not.toContain('multiInstanceLoopCharacteristics')
+  })
+
+  it('审批职责与要点写入 BPMN 扩展属性', () => {
+    const json = baseJson()
+    Object.assign(json.nodes[1].config, {
+      responsibilityDescription: '核对金额和附件',
+      approvalPoints: [
+        { id: 'p1', content: '核对金额', required: true, sort: 1 },
+        { id: 'p2', content: '核对附件', required: false, sort: 2 },
+      ],
+    })
+    const doc = parseBpmnXml(convertJsonToBpmn(json))
+    const task = findElementsByLocalName(doc, 'userTask')[0]
+    expect(getFlowableAttr(task, 'responsibilityDescription')).toBe('核对金额和附件')
+    expect(JSON.parse(getFlowableAttr(task, 'approvalPoints'))).toEqual([
+      { id: 'p1', content: '核对金额', required: true, sort: 1 },
+      { id: 'p2', content: '核对附件', required: false, sort: 2 },
+    ])
   })
 
   it('userTask 写入表单字段权限配置', () => {

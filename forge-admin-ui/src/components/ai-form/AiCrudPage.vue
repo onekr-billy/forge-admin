@@ -865,9 +865,9 @@
             <UserSelectPicker
               v-model="flowStartApproverSelections[node.nodeKey]"
               v-model:label-value="flowStartApproverLabels[node.nodeKey]"
-              :multiple="true"
+              :multiple="node.multiple !== false"
               :title="`选择${node.nodeName || node.nodeKey}审批人`"
-              placeholder="请选择一名或多名审批人"
+              :placeholder="node.multiple === false ? '请选择一名审批人' : '请选择一名或多名审批人'"
             />
           </n-form-item>
         </n-form>
@@ -913,6 +913,7 @@ import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useUserStore } from '@/store'
 import { downloadFile, request } from '@/utils'
 import { postEncrypt } from '@/utils/encrypt-request'
+import { collectInitiatorSelectSelections } from '@/utils/initiatorSelect'
 import AiCrudFlowDetail from './AiCrudFlowDetail.vue'
 import AiCrudImportModal from './AiCrudImportModal.vue'
 import { aiCrudPageProps } from './AiCrudPageProps'
@@ -1788,16 +1789,16 @@ async function submitFlowStartWithApprovers() {
   const context = flowStartApproverContext.value
   if (!context)
     return
-  const selections = {}
-  for (const node of flowStartApproverNodes.value) {
-    const ids = Array.isArray(flowStartApproverSelections.value[node.nodeKey])
-      ? flowStartApproverSelections.value[node.nodeKey].filter(value => value !== null && value !== undefined && String(value).trim() !== '').map(value => String(value))
-      : []
-    if (!ids.length) {
-      window.$message.warning(`请选择${node.nodeName || node.nodeKey}审批人`)
-      return
-    }
-    selections[node.nodeKey] = ids
+  let selections = {}
+  try {
+    selections = collectInitiatorSelectSelections(
+      flowStartApproverNodes.value,
+      flowStartApproverSelections.value,
+    )
+  }
+  catch (error) {
+    window.$message.warning(error?.message || '请选择审批人')
+    return
   }
   flowStartApproverSubmitting.value = true
   try {

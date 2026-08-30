@@ -35,21 +35,23 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
      */
     IPage<FlowTask> selectTodoTasks(Page<FlowTask> page, @Param("userId") String userId,
                                      @Param("title") String title, @Param("category") String category,
-                                     @Param("status") Integer status);
+                                     @Param("status") Integer status, @Param("tenantId") Long tenantId,
+                                     @Param("activeOrgId") Long activeOrgId);
 
     /**
      * 分页查询已办任务（带分类关联）
      */
     IPage<FlowTask> selectDoneTasks(Page<FlowTask> page, @Param("userId") String userId,
                                       @Param("title") String title, @Param("category") String category,
-                                      @Param("status") Integer status);
+                                      @Param("status") Integer status, @Param("tenantId") Long tenantId,
+                                      @Param("activeOrgId") Long activeOrgId);
 
     /**
      * 分页查询我发起的任务（带分类关联）
      */
     IPage<FlowTask> selectStartedTasks(Page<FlowTask> page, @Param("userId") String userId,
                                          @Param("title") String title, @Param("category") String category,
-                                         @Param("status") Integer status);
+                                         @Param("status") Integer status, @Param("tenantId") Long tenantId);
 
     /**
      * 分页查询已逾期但仍未完成的任务。
@@ -59,17 +61,19 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
     /**
      * 统计工作台待办数。
      */
-    Long countWorkspaceTodo(@Param("userId") String userId);
+    Long countWorkspaceTodo(@Param("userId") String userId, @Param("tenantId") Long tenantId,
+                            @Param("activeOrgId") Long activeOrgId);
 
     /**
      * 统计指定时间后的已办数。
      */
-    Long countWorkspaceDoneSince(@Param("userId") String userId, @Param("since") LocalDateTime since);
+    Long countWorkspaceDoneSince(@Param("userId") String userId, @Param("since") LocalDateTime since,
+                                 @Param("tenantId") Long tenantId);
 
     /**
      * 统计我发起且仍在流转中的流程数。
      */
-    Long countWorkspaceStartedRunning(@Param("userId") String userId);
+    Long countWorkspaceStartedRunning(@Param("userId") String userId, @Param("tenantId") Long tenantId);
 
     int deleteByProcessInstanceIdPhysically(@Param("processInstanceId") String processInstanceId,
                                             @Param("tenantId") Long tenantId);

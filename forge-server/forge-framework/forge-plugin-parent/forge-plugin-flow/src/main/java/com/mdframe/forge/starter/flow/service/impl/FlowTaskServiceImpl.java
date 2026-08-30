@@ -8,11 +8,12 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayAdapter;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayItem;
 import com.mdframe.forge.plugin.message.service.MessageService;
-import com.mdframe.forge.plugin.system.entity.SysUser;
-import com.mdframe.forge.plugin.system.service.ISysUserService;
+import com.mdframe.forge.starter.flow.dto.FlowApprovalPointDTO;
+import com.mdframe.forge.starter.flow.dto.FlowApprovalPointResultDTO;
 import com.mdframe.forge.starter.flow.dto.ProcessDiagramInfo;
 import com.mdframe.forge.starter.flow.dto.ProcessNodeInfo;
 import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
+import com.mdframe.forge.starter.flow.helper.FlowNodePolicyParser;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowForm;
@@ -46,6 +47,7 @@ import org.flowable.engine.ProcessEngineConfiguration;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
+import org.flowable.engine.task.Comment;
 import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
@@ -88,6 +90,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private static final String RETURN_TARGET_ACTIVITY_ID = "FLOW_RETURN_TARGET_ACTIVITY_ID";
     private static final String RETURN_TO_START_PENDING = "FLOW_RETURN_TO_START_PENDING";
     private static final String DIRECT_SEND_VARIABLE = "directSend";
+    private static final String COMMENT_TYPE_APPROVAL_POINTS = "approvalPoints";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Autowired
@@ -136,9 +139,6 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private FlowBusinessMapper flowBusinessMapper;
     
     @Autowired
-    private ISysUserService sysUserService;
-
-    @Autowired
     private FlowErrorLogService flowErrorLogService;
 
     @Autowired(required = false)
@@ -152,17 +152,20 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
     @Override
     public IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
-        return enrichTaskPage(this.getBaseMapper().selectTodoTasks(page, userId, title, category, status));
+        return enrichTaskPage(this.getBaseMapper().selectTodoTasks(page, userId, title, category, status,
+                SessionHelper.getTenantId(), SessionHelper.getActiveOrgId()));
     }
 
     @Override
     public IPage<FlowTask> doneTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
-        return enrichTaskPage(this.getBaseMapper().selectDoneTasks(page, userId, title, category, status));
+        return enrichTaskPage(this.getBaseMapper().selectDoneTasks(page, userId, title, category, status,
+                SessionHelper.getTenantId(), SessionHelper.getActiveOrgId()));
     }
 
     @Override
     public IPage<FlowTask> startedTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
-        return enrichTaskPage(this.getBaseMapper().selectStartedTasks(page, userId, title, category, status));
+        return enrichTaskPage(this.getBaseMapper().selectStartedTasks(page, userId, title, category, status,
+                SessionHelper.getTenantId()));
     }
 
     @Override
@@ -215,12 +218,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private IPage<FlowTask> enrichTaskPage(IPage<FlowTask> page) {
-        enrichTaskUserNames(page);
         if (flowBusinessListDisplayAdapter == null || page == null || page.getRecords() == null
                 || page.getRecords().isEmpty()) {
             return page;
         }
-        enrichTaskBusinessParams(page.getRecords());
         List<FlowBusinessListDisplayItem> items = page.getRecords().stream()
                 .map(this::toDisplayItem)
                 .collect(Collectors.toList());
@@ -233,97 +234,6 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             log.warn("补齐流程任务业务摘要失败，继续返回流程基础信息: {}", e.getMessage());
         }
         return page;
-    }
-
-    @SuppressWarnings("unchecked")
-    private void enrichTaskBusinessParams(List<FlowTask> tasks) {
-        for (FlowTask task : tasks) {
-            if (task == null || isBlank(task.getProcessInstanceId())) {
-                continue;
-            }
-            try {
-                Object params = runtimeService.getVariable(task.getProcessInstanceId(), "businessParams");
-                if (params instanceof Map<?, ?> map) {
-                    task.setBusinessParams((Map<String, Object>) map);
-                }
-            } catch (Exception e) {
-                log.debug("读取待办业务参数失败：processInstanceId={}", task.getProcessInstanceId(), e);
-            }
-        }
-    }
-
-    /**
-     * 任务表历史上同时保存过账号和姓名，且低代码流程曾把 username 写入 start_user_name。
-     * 列表返回前统一按稳定的用户 ID 反查真实姓名，保证待办、已办和我发起的展示一致。
-     */
-    private void enrichTaskUserNames(IPage<FlowTask> page) {
-        if (page == null || page.getRecords() == null || page.getRecords().isEmpty()) {
-            return;
-        }
-        for (FlowTask task : page.getRecords()) {
-            if (task == null) {
-                continue;
-            }
-            task.setStartUserName(resolveUserDisplayName(task.getStartUserId(), task.getStartUserName()));
-
-            String assigneeName = resolveUserDisplayName(task.getAssignee(), task.getAssigneeName());
-            if (isBlank(assigneeName) && !isBlank(task.getCandidateUsers())) {
-                assigneeName = resolveUserNames(task.getCandidateUsers());
-            }
-            task.setAssigneeName(assigneeName);
-        }
-    }
-
-    private String resolveUserNames(String userIds) {
-        return Arrays.stream(userIds.split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .map(value -> resolveUserDisplayName(value, value))
-                .filter(value -> !isBlank(value))
-                .distinct()
-                .collect(Collectors.joining(", "));
-    }
-
-    private String resolveUserDisplayName(String userId, String fallback) {
-        if (!isBlank(userId) && flowOrgIntegrationService != null) {
-            try {
-                Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());
-                if (userInfo != null) {
-                    String name = firstNonBlank(
-                            userInfo.get("realName"), userInfo.get("name"), userInfo.get("nickname"));
-                    if (!isBlank(name)) {
-                        return name;
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("反查任务用户姓名失败: userId={}", userId, e);
-            }
-        }
-        if (!isBlank(userId) && sysUserService != null) {
-            try {
-                SysUser user = sysUserService.getById(Long.valueOf(userId.trim()));
-                if (user != null && !isBlank(user.getRealName())) {
-                    return user.getRealName().trim();
-                }
-            } catch (NumberFormatException ignored) {
-                // 非数字用户标识由外部组织服务负责解析。
-            } catch (Exception e) {
-                log.debug("从用户表反查任务用户姓名失败: userId={}", userId, e);
-            }
-        }
-        return isBlank(fallback) ? userId : fallback.trim();
-    }
-
-    private String firstNonBlank(Object... values) {
-        if (values == null) {
-            return null;
-        }
-        for (Object value : values) {
-            if (value != null && !String.valueOf(value).trim().isEmpty()) {
-                return String.valueOf(value).trim();
-            }
-        }
-        return null;
     }
 
     private FlowBusinessListDisplayItem toDisplayItem(FlowTask task) {
@@ -402,7 +312,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void approve(String taskId, String userId, String comment, String signature,
                         Map<String, Object> variables, Long tenantId,
-                        String idempotencyKey, String requestDigest) {
+                        String idempotencyKey, String requestDigest,
+                        List<FlowApprovalPointResultDTO> approvalPointResults) {
         FlowTask storedTask = authorizeTaskAction(
                 taskId, userId, tenantId, "APPROVE", idempotencyKey, requestDigest, FlowTaskStatus.APPROVED);
         if (storedTask == null) {
@@ -415,11 +326,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         validateFlowableAssignee(task, userId);
         validateTaskAction(task, ACTION_APPROVE, comment, signature);
         validateRequiredVariables(task, variables);
+        validateApprovalPoints(task, approvalPointResults);
 
         try {
             if (comment != null && !comment.isEmpty()) {
                 taskService.addComment(taskId, task.getProcessInstanceId(), comment);
             }
+            recordApprovalPointResults(task, approvalPointResults);
 
             Map<String, Object> completeVariables = mergeActionVariables(variables, true);
             completeTask(task, completeVariables);
@@ -593,7 +506,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
         validateFlowableAssignee(task, userId);
-        validateTaskAction(task, ACTION_RETURN, comment, signature);
+        validateReturnAction(task, comment, signature, requestedTargetActivityId);
 
         try {
             String targetActivityId = resolveReturnTarget(task, requestedTargetActivityId);
@@ -737,6 +650,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
      */
     private void directSendAfterReturn(Task completedTask, Map<String, Object> actionVariables, String userId) {
         String processInstanceId = completedTask.getProcessInstanceId();
+        if (!isProcessRunning(processInstanceId)) {
+            return;
+        }
         Object source = runtimeService.getVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
         Object target = runtimeService.getVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
         Object returnToStartPending = runtimeService.getVariable(processInstanceId, RETURN_TO_START_PENDING);
@@ -808,21 +724,45 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             taskService.resolveTask(taskId);
         }
 
-        if (variables != null && !variables.isEmpty()) {
-            runtimeService.setVariables(task.getProcessInstanceId(), variables);
-            taskService.complete(taskId, variables);
-        } else {
-            taskService.complete(taskId);
+        try {
+            if (variables != null && !variables.isEmpty()) {
+                if (isProcessRunning(task.getProcessInstanceId())) {
+                    runtimeService.setVariables(task.getProcessInstanceId(), variables);
+                }
+                taskService.complete(taskId, variables);
+            } else {
+                taskService.complete(taskId);
+            }
+        } catch (org.flowable.common.engine.api.FlowableObjectNotFoundException e) {
+            throw new RuntimeException("任务已处理或流程已结束，请刷新后重试", e);
+        }
+    }
+
+    private boolean isProcessRunning(String processInstanceId) {
+        if (isBlank(processInstanceId)) {
+            return false;
+        }
+        try {
+            return runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .singleResult() != null;
+        } catch (Exception e) {
+            log.debug("判断流程是否仍在运行失败: processInstanceId={}", processInstanceId);
+            return false;
         }
     }
 
     private void autoApproveRepeatedTasks(String processInstanceId) {
-        if (isBlank(processInstanceId)) {
+        ProcessInstance instance;
+        try {
+            instance = isBlank(processInstanceId)
+                    ? null
+                    : runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .singleResult();
+        } catch (Exception e) {
             return;
         }
-        ProcessInstance instance = runtimeService.createProcessInstanceQuery()
-                .processInstanceId(processInstanceId)
-                .singleResult();
         if (instance == null) {
             return;
         }
@@ -1641,6 +1581,90 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (!policy.isAllowed(action)) {
             throw new RuntimeException("当前节点不允许执行该审批操作");
         }
+        validateCommentAndSignature(policy, comment, signature);
+    }
+
+    /**
+     * 指定节点驳回走“驳回”语义，不能再要求节点单独开启 allowReturn。
+     * 未指定目标时仍按退回上一节点校验 allowReturn。
+     */
+    private void validateReturnAction(Task task, String comment, String signature, String requestedTargetActivityId) {
+        TaskApprovalPolicy policy = getTaskApprovalPolicy(task);
+        boolean specifiedNode = !isBlank(requestedTargetActivityId);
+        boolean allowed = specifiedNode
+                ? (policy.allowReject || policy.allowReturn || policy.allowMultiReturn)
+                : (policy.allowReturn || policy.allowMultiReturn);
+        if (!allowed) {
+            throw new RuntimeException(specifiedNode ? "当前节点不允许驳回" : "当前节点不允许退回");
+        }
+        validateCommentAndSignature(policy, comment, signature);
+    }
+
+    private void applyNodePolicy(TaskFormInfo formInfo, FlowNode flowNode) {
+        List<FlowApprovalPointDTO> approvalPoints = FlowNodePolicyParser.resolveApprovalPoints(flowNode);
+        String approvalPoint = approvalPoints.stream()
+                .map(FlowApprovalPointDTO::getContent)
+                .collect(Collectors.joining("\n"));
+        formInfo.setApprovalPoints(approvalPoints);
+        formInfo.setApprovalPoint(isBlank(approvalPoint) ? null : approvalPoint);
+        formInfo.setResponsibilityDescription(FlowNodePolicyParser.resolveResponsibilityDescription(flowNode));
+    }
+
+    private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults) {
+        FlowNode flowNode = getFlowNode(task);
+        List<FlowApprovalPointDTO> required = FlowNodePolicyParser.resolveApprovalPoints(flowNode).stream()
+                .filter(point -> Boolean.TRUE.equals(point.getRequired()))
+                .toList();
+        if (required.isEmpty()) {
+            return;
+        }
+        Map<String, Boolean> checked = new HashMap<>();
+        if (approvalPointResults != null) {
+            for (FlowApprovalPointResultDTO result : approvalPointResults) {
+                if (result != null && !isBlank(result.getId())) {
+                    checked.put(result.getId(), Boolean.TRUE.equals(result.getChecked()));
+                }
+            }
+        }
+        boolean incomplete = required.stream().anyMatch(point -> !Boolean.TRUE.equals(checked.get(point.getId())));
+        if (incomplete) {
+            throw new RuntimeException("请完成全部必审要点");
+        }
+    }
+
+    private void recordApprovalPointResults(Task task, List<FlowApprovalPointResultDTO> approvalPointResults) {
+        if (task == null || approvalPointResults == null || approvalPointResults.isEmpty()) {
+            return;
+        }
+        try {
+            String json = OBJECT_MAPPER.writeValueAsString(approvalPointResults);
+            taskService.addComment(task.getId(), task.getProcessInstanceId(), COMMENT_TYPE_APPROVAL_POINTS, json);
+        } catch (Exception e) {
+            log.warn("保存审批要点结果失败: taskId={}", task.getId(), e);
+        }
+    }
+
+    private List<Map<String, Object>> readApprovalPointResults(String taskId) {
+        if (isBlank(taskId)) {
+            return Collections.emptyList();
+        }
+        try {
+            List<Comment> comments = taskService.getTaskComments(taskId, COMMENT_TYPE_APPROVAL_POINTS);
+            if (comments == null || comments.isEmpty()) {
+                return Collections.emptyList();
+            }
+            String message = comments.get(0).getFullMessage();
+            if (isBlank(message)) {
+                return Collections.emptyList();
+            }
+            return OBJECT_MAPPER.readValue(message, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            log.debug("读取审批要点结果失败: taskId={}", taskId);
+            return Collections.emptyList();
+        }
+    }
+
+    private void validateCommentAndSignature(TaskApprovalPolicy policy, String comment, String signature) {
         if (policy.requireComment && isBlank(comment)) {
             throw new RuntimeException("请输入审批意见");
         }
@@ -1664,6 +1688,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 ? flowModel
                 : flowModelService.getModelByKey(resolveProcessDefinitionKey(task.getProcessDefinitionId(), null));
         if (effectiveFlowModel != null) {
+            policy.allowMultiReturn = Boolean.TRUE.equals(effectiveFlowModel.getAllowMultiReturn());
             FlowNodeConfig nodeConfig = flowNodeConfigService.getByModelAndNode(
                     effectiveFlowModel.getId(), task.getTaskDefinitionKey());
             if (nodeConfig != null) {
@@ -1925,6 +1950,30 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         return value == null || value.trim().isEmpty();
     }
 
+    /**
+     * 详情/审批历史仍需兼容历史业务数据中的账号或姓名；列表页已由 Mapper SQL 直接关联用户，
+     * 不会走这里的逐条组织服务查询。
+     */
+    private String resolveUserDisplayName(String userId, String fallback) {
+        if (!isBlank(userId) && flowOrgIntegrationService != null) {
+            try {
+                Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());
+                if (userInfo != null) {
+                    String name = firstNonBlank(
+                            textValue(userInfo.get("realName")),
+                            textValue(userInfo.get("name")),
+                            textValue(userInfo.get("nickname")));
+                    if (!isBlank(name)) {
+                        return name;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("反查任务用户姓名失败: userId={}", userId, e);
+            }
+        }
+        return isBlank(fallback) ? userId : fallback.trim();
+    }
+
     @Override
     public TaskFormInfo getTaskFormInfo(String taskId) {
         // 1. 获取任务信息
@@ -1978,6 +2027,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setRequireSignature(policy.requireSignature);
         formInfo.setRequireComment(policy.requireComment);
         formInfo.setAllowRejectToStart(policy.allowRejectToStart);
+        applyNodePolicy(formInfo, flowNode);
 
         log.info("获取任务表单信息：taskId={}, formType={}, formKey={}",
                 taskId, formInfo.getFormType(), formInfo.getFormKey());
@@ -2269,11 +2319,16 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void applyFormConfiguration(TaskFormInfo formInfo, FlowModel flowModel, FlowNode flowNode) {
+        applyNodePolicy(formInfo, flowNode);
         NodeFormConfig nodeForm = readNodeFormConfig(flowNode);
         formInfo.setFormFieldPermissions(nodeForm.formFieldPermissions);
 
-        if (isBusinessNodeForm(flowModel, nodeForm.formKey, nodeForm.formMode)) {
+        if (isBusinessNodeForm(flowModel, nodeForm)) {
             applyBusinessNodeFormConfiguration(formInfo, flowModel, nodeForm);
+            hydrateResolvedFormSchema(formInfo, nodeForm);
+            if (shouldExposeAsDynamicForm(formInfo, flowModel, nodeForm)) {
+                formInfo.setFormType("dynamic");
+            }
         } else if (!isBlank(nodeForm.formUrl)) {
             formInfo.setFormType("external");
             formInfo.setFormUrl(nodeForm.formUrl);
@@ -2286,6 +2341,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             applyNodeFormReference(formInfo, nodeForm, Map.of());
         } else if (flowModel != null) {
             applyModelFormConfiguration(formInfo, flowModel);
+            hydrateResolvedFormSchema(formInfo, nodeForm);
         } else if (!isBlank(formInfo.getFormJson()) || !isBlank(formInfo.getFormKey())) {
             formInfo.setFormType("dynamic");
             formInfo.setFormJson(resolveFormJson(formInfo.getFormKey(), formInfo.getFormJson()));
@@ -2314,6 +2370,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (FORM_TYPE_BUSINESS.equals(formType)) {
             Map<String, Object> formRef = readBusinessGlobalFormRef(flowModel.getFormJson());
             formInfo.setFormType(FORM_TYPE_BUSINESS);
+            formInfo.setObjectCode(textValue(formRef.get("objectCode")));
             formInfo.setFormKey(firstNonBlank(textValue(formRef.get("formKey")), flowModel.getFormId()));
             formInfo.setFormMode(firstNonBlank(
                     textValue(formRef.get("formMode")),
@@ -2355,17 +2412,69 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setFormRef(mergedFormRef);
         formInfo.setFormTarget("modal");
         formInfo.setFormJson(flowModel == null ? null : flowModel.getFormJson());
+        if (isBlank(formInfo.getObjectCode())) {
+            formInfo.setObjectCode(firstNonBlank(
+                    textValue(mergedFormRef.get("objectCode")),
+                    flowModel == null ? null : textValue(readBusinessGlobalFormRef(flowModel.getFormJson()).get("objectCode"))));
+        }
     }
 
-    private boolean isBusinessNodeForm(FlowModel flowModel, String formKey, String formMode) {
-        String normalizedMode = normalizeFormMode(formMode);
-        if ("BUSINESS_CODE_FORM".equals(normalizedMode) || "BUSINESS_OBJECT_FORM".equals(normalizedMode)) {
+    private boolean isBusinessNodeForm(FlowModel flowModel, NodeFormConfig nodeForm) {
+        String normalizedMode = normalizeFormMode(nodeForm == null ? null : nodeForm.formMode);
+        if ("BUSINESS_CODE_FORM".equals(normalizedMode)) {
             return true;
         }
-        if (flowModel == null || !FORM_TYPE_BUSINESS.equalsIgnoreCase(flowModel.getFormType())) {
+        if ("EXTERNAL".equals(normalizedMode)) {
+            return false;
+        }
+        if ("BUSINESS_OBJECT_FORM".equals(normalizedMode)) {
+            return !isBlank(nodeForm.providerKey)
+                    || (flowModel != null && FORM_TYPE_BUSINESS.equalsIgnoreCase(flowModel.getFormType()));
+        }
+        return flowModel != null && FORM_TYPE_BUSINESS.equalsIgnoreCase(flowModel.getFormType());
+    }
+
+    private void hydrateResolvedFormSchema(TaskFormInfo formInfo, NodeFormConfig nodeForm) {
+        if (formInfo == null) {
+            return;
+        }
+        if (looksLikeFormSchema(formInfo.getFormJson())) {
+            return;
+        }
+        String schema = resolveFormJson(
+                formInfo.getFormKey(),
+                nodeForm == null ? formInfo.getFormJson() : firstNonBlank(nodeForm.formJson, formInfo.getFormJson()));
+        if (looksLikeFormSchema(schema)) {
+            formInfo.setFormJson(schema);
+        }
+    }
+
+    private boolean shouldExposeAsDynamicForm(TaskFormInfo formInfo, FlowModel flowModel, NodeFormConfig nodeForm) {
+        if (!looksLikeFormSchema(formInfo.getFormJson())) {
+            return false;
+        }
+        if (!isBlank(formInfo.getProviderKey()) || !isBlank(nodeForm == null ? null : nodeForm.providerKey)) {
+            return false;
+        }
+        if (flowModel != null && FORM_TYPE_BUSINESS.equalsIgnoreCase(flowModel.getFormType())) {
             return false;
         }
         return true;
+    }
+
+    private boolean looksLikeFormSchema(String formJson) {
+        if (isBlank(formJson)) {
+            return false;
+        }
+        String text = formJson.trim();
+        if (text.startsWith("[")) {
+            return true;
+        }
+        if (!text.startsWith("{")) {
+            return false;
+        }
+        return text.contains("\"field\"") || text.contains("\"rule\"") || text.contains("\"rules\"")
+                || text.contains("\"schema\"") || text.contains("\"children\"");
     }
 
     private String normalizeFormMode(String value) {
@@ -2654,6 +2763,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             node.put("action", FlowTaskStatus.historyActionOf(task.getStatus()));
             node.put("comment", task.getComment() != null ? task.getComment() : "");
             node.put("signature", task.getSignature());
+            node.put("approvalPointResults", readApprovalPointResults(task.getTaskId()));
             node.put("createTime", task.getCreateTime() != null ? task.getCreateTime().toString() : null);
             node.put("completeTime", task.getCompleteTime() != null ? task.getCompleteTime().toString() : null);
             result.add(node);
@@ -2710,6 +2820,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         private boolean allowRejectToStart;
         private boolean allowDelegate;
         private boolean allowReturn;
+        private boolean allowMultiReturn;
         private boolean allowTerminate;
         private boolean requireSignature;
         private boolean requireComment;
@@ -2738,7 +2849,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 case ACTION_DELEGATE:
                     return allowDelegate;
                 case ACTION_RETURN:
-                    return allowReturn;
+                    return allowReturn || allowMultiReturn;
                 case ACTION_TERMINATE:
                     return allowTerminate;
                 default:

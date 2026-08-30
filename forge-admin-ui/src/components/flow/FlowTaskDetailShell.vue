@@ -79,6 +79,18 @@
                   <div v-if="item.comment" class="approval-record-comment">
                     {{ item.comment }}
                   </div>
+                  <div v-if="hasApprovalPointResults(item)" class="approval-record-points">
+                    <div class="approval-record-points-title">
+                      审批要点
+                    </div>
+                    <p
+                      v-for="point in item.approvalPointResults"
+                      :key="point.id || point.content"
+                      class="approval-record-point"
+                    >
+                      {{ point.checked ? '已核' : '未核' }} · {{ point.content }}
+                    </p>
+                  </div>
                   <div v-if="item.signature" class="approval-record-signature">
                     <span>签名</span>
                     <SignatureImage :value="String(item.signature)" compact />
@@ -118,6 +130,10 @@ const emit = defineEmits(['update:show'])
 
 function getRecordKey(item, index) {
   return item.id || item.historyId || `${item.taskId || item.taskName || 'record'}-${index}`
+}
+
+function hasApprovalPointResults(item) {
+  return Array.isArray(item?.approvalPointResults) && item.approvalPointResults.length > 0
 }
 
 function normalizeAction(action) {
@@ -588,6 +604,27 @@ function formatRecordTime(time) {
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.approval-record-points {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid #eadfc9;
+  border-radius: 6px;
+  background: #fffaf0;
+}
+
+.approval-record-points-title {
+  color: #9a5700;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.approval-record-point {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .approval-record-signature {

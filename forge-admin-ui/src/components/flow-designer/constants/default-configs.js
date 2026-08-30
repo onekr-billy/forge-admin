@@ -64,6 +64,8 @@ export const DEFAULT_CONFIGS = Object.freeze({
     allowTerminate: false,
     requireSignature: false,
     requireComment: true,
+    responsibilityDescription: '',
+    approvalPoints: [],
   }),
   carbonCopy: () => ({
     documentation: '',

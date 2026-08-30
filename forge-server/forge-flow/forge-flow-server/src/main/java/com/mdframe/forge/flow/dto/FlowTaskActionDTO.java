@@ -1,6 +1,9 @@
 package com.mdframe.forge.flow.dto;
 
+import com.mdframe.forge.starter.flow.dto.FlowApprovalPointResultDTO;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * 流程任务办理公共请求。
@@ -25,4 +28,9 @@ public class FlowTaskActionDTO {
      * 退回节点修正后是否跳过中间节点，直接送回原驳回节点。
      */
     private Boolean directSend;
+
+    /**
+     * 审批要点勾选结果。
+     */
+    private List<FlowApprovalPointResultDTO> approvalPointResults;
 }

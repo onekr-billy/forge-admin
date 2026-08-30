@@ -94,11 +94,6 @@
                   {{ item.title || item.taskName || '-' }}
                 </slot>
               </button>
-              <div class="task-table-subtitle">
-                <slot name="identifier" :row="item">
-                  {{ getRowIdentifier(item) }}
-                </slot>
-              </div>
               <div v-if="$slots.summary" class="task-table-summary">
                 <slot name="summary" :row="item" />
               </div>
@@ -201,10 +196,6 @@ function isSelected(row) {
 
 function isUnread(row) {
   return props.unreadKey ? row?.[props.unreadKey] === 0 : false
-}
-
-function getRowIdentifier(row) {
-  return row?.businessKey || row?.processInstanceId || row?.taskId || row?.id || '-'
 }
 
 function toggleRow(row, checked) {
@@ -504,7 +495,6 @@ function clearSelection() {
   color: var(--primary-color, #2563eb);
 }
 
-.task-table-subtitle,
 .task-table-user small {
   margin-top: 2px;
   color: var(--text-quaternary, #94a3b8);
@@ -518,15 +508,8 @@ function clearSelection() {
 }
 
 .task-table-summary {
-  display: -webkit-box;
-  margin-top: 3px;
-  color: var(--text-tertiary, #64748b);
-  font-size: 12px;
-  line-height: 18px;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  overflow-wrap: anywhere;
+  margin-top: 4px;
+  min-width: 0;
 }
 
 .task-table-status {

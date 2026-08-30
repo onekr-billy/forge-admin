@@ -11,10 +11,12 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRuntimeInfoVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +24,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务应用平台业务对象服务。
@@ -31,7 +32,7 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 @RequiredArgsConstructor
 public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiBusinessObject> {
 
-    private static final Pattern CODE_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_]{1,63}$");
+    private static final Pattern CODE_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_]{1,47}$");
     private static final Set<String> OBJECT_TYPES = Set.of("MASTER", "DETAIL", "LOOKUP", "TRANSACTION");
 
     private final BusinessSuiteService suiteService;
@@ -127,7 +128,11 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         }
         AiBusinessObject object = new AiBusinessObject();
         copyDtoToEntity(dto, object, true);
-        save(object);
+        try {
+            save(object);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException("业务对象编码已存在（编码必须在租户内唯一）: " + object.getObjectCode(), exception);
+        }
         return object.getId();
     }
 
@@ -144,7 +149,11 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (!StringUtils.equals(oldSuiteCode, object.getSuiteCode())) {
             assertSuiteMoveAllowed(tenantId, object.getId(), oldSuiteCode, oldObjectCode);
         }
-        updateById(object);
+        try {
+            updateById(object);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException("业务对象编码已存在（编码必须在租户内唯一）: " + object.getObjectCode(), exception);
+        }
         if (!StringUtils.equals(oldSuiteCode, object.getSuiteCode())) {
             syncSuiteMoveReferences(tenantId, object.getId(), oldSuiteCode, object.getSuiteCode(), object.getObjectCode());
         }
@@ -215,7 +224,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         String objectType = StringUtils.defaultIfBlank(dto.getObjectType(), "MASTER").toUpperCase();
         suiteService.requireByCode(suiteCode);
         if (StringUtils.isBlank(objectCode) || !CODE_PATTERN.matcher(objectCode).matches()) {
-            throw new BusinessException("对象编码格式不正确（字母开头，仅含字母、数字和下划线，2-64字符）");
+            throw new BusinessException("对象编码格式不正确（字母开头，仅含字母、数字和下划线，2-48字符）");
         }
         if (StringUtils.isBlank(objectName)) {
             throw new BusinessException("对象名称不能为空");
@@ -224,8 +233,8 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
             throw new BusinessException("对象类型不正确");
         }
         Long excludeId = create ? null : object.getId();
-        if (baseMapper.countByObjectCode(resolveTenantId(), suiteCode, objectCode, excludeId) > 0) {
-            throw new BusinessException("同一业务套件下对象编码已存在: " + objectCode);
+        if (baseMapper.countActiveByObjectCode(resolveTenantId(), objectCode, excludeId) > 0) {
+            throw new BusinessException("业务对象编码已存在（编码必须在租户内唯一）: " + objectCode);
         }
         object.setTenantId(resolveTenantId());
         object.setSuiteCode(suiteCode);

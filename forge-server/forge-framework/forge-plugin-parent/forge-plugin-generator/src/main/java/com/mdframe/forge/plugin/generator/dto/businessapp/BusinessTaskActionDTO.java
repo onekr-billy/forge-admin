@@ -25,6 +25,12 @@ public class BusinessTaskActionDTO {
 
     private String objectCode;
 
+    private Long objectId;
+
+    private String configKey;
+
+    private String suiteCode;
+
     private Long recordId;
 
     private String formKey;
@@ -56,4 +62,9 @@ public class BusinessTaskActionDTO {
     private Map<String, Object> variables = new LinkedHashMap<>();
 
     private Map<String, Object> data = new LinkedHashMap<>();
+
+    /**
+     * 审批要点勾选结果。
+     */
+    private java.util.List<Map<String, Object>> approvalPointResults;
 }

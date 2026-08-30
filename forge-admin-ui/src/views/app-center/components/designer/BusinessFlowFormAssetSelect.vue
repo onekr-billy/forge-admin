@@ -102,10 +102,11 @@ function handleAssetChange(value) {
     })
     return
   }
-  const normalizedMode = normalizeMode(asset.formMode || asset.type)
+  const normalizedMode = normalizeMode(asset.formMode || asset.type, asset.source)
   const providerKey = asset.providerKey || ''
   emit('update', {
-    formMode: normalizedMode,
+    formMode: normalizedMode === 'DYNAMIC' ? '' : normalizedMode,
+    source: asset.source || '',
     formKey: asset.formKey || '',
     formName: asset.formName || asset.formKey || '',
     providerKey,
@@ -129,21 +130,29 @@ function handleAssetChange(value) {
           formUrl: asset.formUrl || '',
           viewKey: asset.viewKey || 'default',
         }
-      : {
-          type: 'BUSINESS_OBJECT_FORM',
-          formMode: 'BUSINESS_OBJECT_FORM',
-          objectCode: asset.objectCode || '',
-          objectName: asset.objectName || '',
-          applicationId: asset.applicationId || '',
-          pageId: asset.pageId || '',
-          pageCode: asset.pageCode || '',
-          pageName: asset.pageName || '',
-          pageType: asset.pageType || '',
-          sourceFormKey: asset.sourceFormKey || '',
-          formKey: asset.formKey || '',
-          formName: asset.formName || asset.formKey || '',
-          viewKey: asset.viewKey || 'default',
-        },
+      : normalizedMode === 'DYNAMIC'
+        ? {
+            type: 'DYNAMIC',
+            formMode: '',
+            formKey: asset.formKey || '',
+            formName: asset.formName || asset.formKey || '',
+            viewKey: asset.viewKey || 'default',
+          }
+        : {
+            type: 'BUSINESS_OBJECT_FORM',
+            formMode: 'BUSINESS_OBJECT_FORM',
+            objectCode: asset.objectCode || '',
+            objectName: asset.objectName || '',
+            applicationId: asset.applicationId || '',
+            pageId: asset.pageId || '',
+            pageCode: asset.pageCode || '',
+            pageName: asset.pageName || '',
+            pageType: asset.pageType || '',
+            sourceFormKey: asset.sourceFormKey || '',
+            formKey: asset.formKey || '',
+            formName: asset.formName || asset.formKey || '',
+            viewKey: asset.viewKey || 'default',
+          },
   })
 }
 
@@ -162,7 +171,9 @@ function assetKey(asset = {}) {
 
 function sourceLabel(asset = {}) {
   const type = String(asset.sourceType || asset.source || asset.formMode || asset.type || '').toLowerCase()
-  if (type.includes('code') || normalizeMode(asset.formMode || asset.type) === 'BUSINESS_CODE_FORM')
+  if (type.includes('flow'))
+    return '流程表单'
+  if (type.includes('code') || normalizeMode(asset.formMode || asset.type, asset.source) === 'BUSINESS_CODE_FORM')
     return asset.providerName || '代码 Provider'
   if (type.includes('external'))
     return '外部地址'
@@ -198,10 +209,12 @@ function fieldPreviewText(asset = {}) {
   return preview.length ? `字段：${preview.join(' / ')}` : '暂无字段预览'
 }
 
-function normalizeMode(value) {
-  const normalized = String(value || 'BUSINESS_OBJECT_FORM').toUpperCase()
-  if (normalized === 'BUSINESS_CODE_FORM' || normalized === 'EXTERNAL')
+function normalizeMode(value, source = '') {
+  const normalized = String(value || '').trim().toUpperCase()
+  if (normalized === 'BUSINESS_CODE_FORM' || normalized === 'EXTERNAL' || normalized === 'BUSINESS_OBJECT_FORM')
     return normalized
+  if (normalized === 'DYNAMIC' || String(source || '').toLowerCase() === 'flowform')
+    return 'DYNAMIC'
   return 'BUSINESS_OBJECT_FORM'
 }
 

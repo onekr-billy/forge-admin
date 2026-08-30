@@ -250,21 +250,15 @@
             <n-form-item-gi label="模型名称" path="modelName" :span="2">
               <n-input v-model:value="formData.modelName" placeholder="请输入模型名称" />
             </n-form-item-gi>
-            <n-form-item-gi label="模型Key" path="modelKey">
+            <n-form-item-gi label="模型Key" path="modelKey" :span="2" class="model-key-form-item">
               <n-input
                 v-model:value="formData.modelKey"
                 placeholder="请输入有意义的模型Key，留空自动生成"
                 :disabled="isEdit && [1, 2].includes(Number(formData.status))"
               />
-              <div class="text-12px mt-1 text-gray-400">
+              <div class="model-key-help">
                 以字母开头，只能包含字母、数字、下划线或短横线；已发布或挂起模型不能修改。
               </div>
-            </n-form-item-gi>
-            <n-form-item-gi label="审批退回" path="allowMultiReturn" :span="2">
-              <n-switch v-model:value="formData.allowMultiReturn">
-                <template #checked>允许多级退回</template>
-                <template #unchecked>仅允许退回上一节点</template>
-              </n-switch>
             </n-form-item-gi>
             <n-form-item-gi label="流程分类" path="category" :span="2">
               <NTreeSelect
@@ -273,18 +267,6 @@
                 :options="categoryTreeOptions"
                 :default-expand-all="true"
               />
-            </n-form-item-gi>
-            <n-form-item-gi label="待办跳转" path="todoDetailUrlTemplate" :span="2">
-              <div class="w-full">
-                <n-input
-                  v-model:value="formData.todoDetailUrlTemplate"
-                  placeholder="留空默认跳待办详情页；可填相对路径或完整链接"
-                  clearable
-                />
-                <div class="text-12px mt-1 text-gray-400">
-                  企业协同待办卡片点击后的跳转地址，支持占位符 {taskId}/{businessKey}/{processInstanceId}（自动替换并 URL 编码）。例：/#/pages/order-detail?bizKey={businessKey}
-                </div>
-              </div>
             </n-form-item-gi>
             <n-form-item-gi label="描述" path="description" :span="2">
               <n-input
@@ -338,13 +320,36 @@
             {{ startTestAlert.text }}
           </n-alert>
 
+          <div v-if="startTestBusinessFormLoading" class="start-test-form-loading">
+            <n-spin size="small" />
+            <span>正在加载业务应用表单...</span>
+          </div>
+          <AiForm
+            v-else-if="startTestBusinessFormActive && startTestFormSchema.length"
+            ref="startTestFormRef"
+            v-model:value="startTestFormData"
+            :schema="startTestFormSchema"
+            :grid-cols="startTestBusinessFormLayout.gridCols"
+            :label-placement="startTestBusinessFormLayout.labelPlacement"
+            :label-width="startTestBusinessFormLayout.labelWidth"
+            :show-actions="false"
+            :show-feedback="true"
+            :context="{ formAssets: startTestBusinessFormAssets }"
+            :form-assets="startTestBusinessFormAssets"
+          />
           <FlowFormCreateRenderer
-            v-if="showStartTestModal && startTestFormSchema.length"
+            v-else-if="showStartTestModal && startTestFormSchema.length"
             ref="startTestFormRef"
             v-model="startTestFormData"
             :schema="startTestFormSchema"
           />
-          <n-empty v-else size="small" description="当前模型没有可渲染的动态表单，将以空变量发起测试流程" />
+          <n-empty
+            v-else
+            size="small"
+            :description="startTestBusinessFormActive
+              ? '当前业务应用表单没有可渲染字段，将以空变量发起测试流程'
+              : '当前模型没有可渲染的动态表单，将以空变量发起测试流程'"
+          />
           <div v-if="startTestApproverNodes.length" class="start-test-approver-section">
             <div class="start-test-approver-title">发起人自选审批人</div>
             <div class="start-test-approver-tip">请为流程设计中标记为“发起人自选”的节点选择审批人。</div>
@@ -358,9 +363,9 @@
                 <UserSelectPicker
                   v-model="startTestApproverSelections[node.nodeKey]"
                   v-model:label-value="startTestApproverLabels[node.nodeKey]"
-                  :multiple="true"
+                  :multiple="node.multiple !== false"
                   :title="`选择${node.nodeName || node.nodeKey}审批人`"
-                  placeholder="请选择一名或多名审批人"
+                  :placeholder="node.multiple === false ? '请选择一名审批人' : '请选择一名或多名审批人'"
                 />
               </n-form-item>
             </n-form>
@@ -399,6 +404,7 @@
             :model-id="currentDesignModelId"
             :business-object-code="currentDesignBinding?.objectCode || ''"
             :business-object-name="currentDesignBinding?.objectName || ''"
+            :application-id="currentDesignBinding?.applicationId || ''"
             :business-entry-route="currentDesignBinding?.entryRoute || ''"
             :code-app="isCodeAppBinding(currentDesignBinding)"
             @close="handleDesignModalClose"
@@ -424,15 +430,19 @@ import { CopyOutline, CreateOutline, PauseCircleOutline, PlayCircleOutline, Time
 import { NIcon, NModal, NTreeSelect } from 'naive-ui'
 import { computed, defineAsyncComponent, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { businessFlowModelBindings } from '@/api/business-app'
+import { businessFlowFormAssets, businessFlowModelBindings } from '@/api/business-app'
 import flowApi from '@/api/flow'
+import AiForm from '@/components/ai-form/AiForm.vue'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import FlowModelStats from '@/components/flow/FlowModelStats.vue'
 import { useDict } from '@/composables/useDict'
+import { collectInitiatorSelectSelections } from '@/utils/initiatorSelect'
 import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel, resolveFlowCategoryValue } from './utils/categoryOptions'
 
 const router = useRouter()
+
+const DEFAULT_TODO_DETAIL_URL_TEMPLATE = '/#/pages/todo-detail?taskId={taskId}'
 
 const { dict, getLabel } = useDict('flow_model_status', 'flow_process_form_type', 'flow_designer_type')
 
@@ -597,6 +607,14 @@ const startTestLoading = ref(false)
 const startTestFormRef = ref(null)
 const startTestFormData = ref({})
 const startTestFormSchema = ref([])
+const startTestBusinessFormActive = ref(false)
+const startTestBusinessFormLoading = ref(false)
+const startTestBusinessFormAssets = ref([])
+const startTestBusinessFormLayout = reactive({
+  gridCols: 1,
+  labelPlacement: 'left',
+  labelWidth: '100',
+})
 const startTestApproverNodes = ref([])
 const startTestApproverSelections = ref({})
 const startTestApproverLabels = ref({})
@@ -610,6 +628,9 @@ const startTestAlert = computed(() => {
   }
   if (currentStartModel.value.formType === 'external') {
     return { type: 'warning', text: '当前模型使用外置表单，测试工具不会渲染外置页面，将以空变量发起。' }
+  }
+  if (startTestBusinessFormActive.value) {
+    return { type: 'info', text: '测试发起会使用当前业务应用表单收集变量；测试流程不创建真实业务单据。' }
   }
   if (!startTestFormSchema.value.length) {
     return { type: 'info', text: '当前模型没有动态表单字段，发起后仅使用系统内置流程变量。' }
@@ -736,7 +757,7 @@ const formData = reactive({
   description: '',
   notifyType: 'redis',
   webhookUrl: '',
-  todoDetailUrlTemplate: '',
+  todoDetailUrlTemplate: DEFAULT_TODO_DETAIL_URL_TEMPLATE,
   notifyConfig: null,
   allowMultiReturn: false,
 })
@@ -749,7 +770,7 @@ const rules = {
 function handleAdd() {
   isEdit.value = false
   modalTitle.value = '新增模型'
-  Object.assign(formData, { id: '', modelName: '', modelKey: generateModelKey(), category: '', flowType: '', designerType: 'approval', formType: 'dynamic', description: '', notifyType: 'redis', webhookUrl: '', todoDetailUrlTemplate: '', notifyConfig: null, allowMultiReturn: false })
+  Object.assign(formData, { id: '', modelName: '', modelKey: generateModelKey(), category: '', flowType: '', designerType: 'approval', formType: 'dynamic', description: '', notifyType: 'redis', webhookUrl: '', todoDetailUrlTemplate: DEFAULT_TODO_DETAIL_URL_TEMPLATE, notifyConfig: null, allowMultiReturn: false })
   showModal.value = true
 }
 
@@ -765,6 +786,7 @@ function handleEdit(row) {
     designerType: normalizeDesignerType(row.designerType),
     category: resolveFlowCategoryValue(row.category, categoryTreeOptions.value),
     notifyConfig: row.notifyConfig || null,
+    todoDetailUrlTemplate: textValue(row.todoDetailUrlTemplate) || DEFAULT_TODO_DETAIL_URL_TEMPLATE,
     allowMultiReturn: row.allowMultiReturn === true || row.allowMultiReturn === 1 || String(row.allowMultiReturn) === '1',
   })
   showModal.value = true
@@ -801,21 +823,83 @@ async function enrichModelBusinessBindings(records = []) {
     }
     try {
       const res = await businessFlowModelBindings(row.modelKey)
-      row.businessBindings = res.code === 200 && Array.isArray(res.data) ? res.data : []
+      const bindings = extractBusinessBindingRows(res)
+      row.businessBindings = mergeModelBusinessBindings(bindings, buildModelFormBinding(row))
     }
     catch (error) {
       console.warn('[FlowModel] 加载业务绑定失败:', row.modelKey, error?.message || error)
-      row.businessBindings = []
+      row.businessBindings = buildModelFormBinding(row)
     }
   }))
   return records
+}
+
+function mergeModelBusinessBindings(bindings = [], formBindings = []) {
+  const normalizedBindings = Array.isArray(bindings) ? bindings : []
+  const configuredBinding = Array.isArray(formBindings) ? formBindings[0] : null
+  if (!configuredBinding)
+    return normalizedBindings
+
+  // 表单引用保存了用户实际选择的应用。对象被多个应用复用时，接口反查的
+  // “主应用”不一定就是当前流程配置中的应用，因此优先展示表单引用中的应用。
+  const hasApplicationContext = textValue(configuredBinding.applicationId)
+    || textValue(configuredBinding.applicationName)
+  if (!hasApplicationContext)
+    return normalizedBindings.length ? normalizedBindings : formBindings
+
+  const configuredObjectCode = textValue(configuredBinding.objectCode)
+  return [
+    configuredBinding,
+    ...normalizedBindings.filter(item => textValue(item?.objectCode) !== configuredObjectCode),
+  ]
+}
+
+function extractBusinessBindingRows(res) {
+  if (Array.isArray(res))
+    return res.filter(item => item && typeof item === 'object')
+  if (res?.code !== undefined && res.code !== 200)
+    return []
+  const data = res?.data
+  if (Array.isArray(data))
+    return data.filter(item => item && typeof item === 'object')
+  if (Array.isArray(data?.records))
+    return data.records.filter(item => item && typeof item === 'object')
+  if (Array.isArray(data?.list))
+    return data.list.filter(item => item && typeof item === 'object')
+  return []
+}
+
+function buildModelFormBinding(row = {}) {
+  const reference = parseBusinessFormReference(row.formJson)
+  const objectCode = textValue(reference.objectCode)
+  const applicationId = textValue(reference.applicationId)
+  const applicationName = textValue(reference.applicationName || reference.applicationCode)
+  if (!objectCode && !applicationId)
+    return []
+  return [{
+    flowModelKey: row.modelKey,
+    bindingName: applicationName || textValue(reference.formName) || row.modelName,
+    applicationId,
+    applicationName,
+    objectCode,
+    objectName: textValue(reference.objectName || objectCode),
+    entryRoute: textValue(reference.entryRoute),
+  }]
 }
 
 function formatBusinessBindings(row = {}) {
   const bindings = Array.isArray(row.businessBindings) ? row.businessBindings : []
   if (!bindings.length)
     return '未绑定业务应用'
-  const names = bindings.map(item => item.objectName || item.objectCode).filter(Boolean)
+  const names = bindings.map((item) => {
+    const application = textValue(item.applicationName || item.applicationCode)
+    const object = textValue(item.objectName || item.objectCode)
+    return application && object && application !== object
+      ? `${application} · ${object}`
+      : application || object || textValue(item.suiteName) || textValue(item.bindingName)
+  }).filter(Boolean)
+  if (!names.length)
+    return '未绑定业务应用'
   return names.length > 2 ? `${names.slice(0, 2).join('、')} 等 ${names.length} 个业务应用` : names.join('、')
 }
 
@@ -848,6 +932,10 @@ async function handleStartTest(row) {
   currentStartModel.value = row
   startTestFormData.value = {}
   startTestFormSchema.value = []
+  startTestBusinessFormActive.value = false
+  startTestBusinessFormLoading.value = false
+  startTestBusinessFormAssets.value = []
+  resetStartTestBusinessFormLayout()
   startTestApproverNodes.value = []
   startTestApproverSelections.value = {}
   startTestApproverLabels.value = {}
@@ -856,7 +944,12 @@ async function handleStartTest(row) {
     const res = await flowApi.getModelDetail(row.id)
     if (res.code === 200 && res.data) {
       currentStartModel.value = { ...row, ...res.data }
-      startTestFormSchema.value = parseFormSchema(res.data.formJson)
+      if (isBusinessStartTestForm(currentStartModel.value)) {
+        await loadStartTestBusinessForm(currentStartModel.value)
+      }
+      else {
+        startTestFormSchema.value = parseFormSchema(res.data.formJson)
+      }
     }
     const startConfig = await flowApi.getModelStartConfig(row.modelKey)
     if (startConfig.code === 200) {
@@ -869,6 +962,319 @@ async function handleStartTest(row) {
     console.error('加载流程模型表单失败:', error)
     window.$message?.warning('加载流程模型表单失败，将以空变量发起')
   }
+}
+
+function isBusinessStartTestForm(model = {}) {
+  const formType = String(model.formType || '').trim().toLowerCase()
+  if (['business', 'business_object_form', 'business_code_form'].includes(formType))
+    return true
+  const formRef = parseBusinessFormReference(model.formJson)
+  const mode = String(formRef.formMode || formRef.type || '').trim().toUpperCase()
+  if (mode === 'BUSINESS_OBJECT_FORM' || mode === 'BUSINESS_CODE_FORM')
+    return true
+  // 兼容早期已保存的业务引用：历史数据可能把 formType 写成 dynamic，
+  // 但 formJson 仍保留 objectCode/formKey 两个业务资产身份。
+  return Boolean(textValue(formRef.objectCode) && textValue(formRef.formKey))
+}
+
+async function loadStartTestBusinessForm(model = {}) {
+  startTestBusinessFormActive.value = true
+  startTestBusinessFormLoading.value = true
+  try {
+    const formRef = parseBusinessFormReference(model.formJson)
+    const bindings = Array.isArray(model.businessBindings) ? model.businessBindings : []
+    // 历史流程模型的 formJson 可能还保存旧 objectCode。优先使用同一应用下
+    // 由业务绑定接口返回的规范编码，避免按旧编码查询不到应用页面表单资产。
+    const formApplicationId = textValue(formRef.applicationId)
+    const configuredObjectCode = textValue(formRef.objectCode)
+    const fallbackBinding = bindings.find(binding =>
+      textValue(binding?.objectCode)
+      && (!configuredObjectCode || textValue(binding.objectCode) !== configuredObjectCode)
+      && (!formApplicationId || textValue(binding?.applicationId) === formApplicationId),
+    ) || bindings.find(binding => textValue(binding?.objectCode)) || null
+    const formKey = textValue(formRef.formKey)
+    const objectCode = textValue(fallbackBinding?.objectCode || formRef.objectCode)
+    const applicationId = textValue(
+      formRef.applicationId
+      || fallbackBinding?.applicationId
+      || resolveApplicationIdFromFormKey(formKey),
+    )
+    if (!objectCode) {
+      window.$message?.warning('业务表单缺少业务对象信息，将以空变量发起测试')
+      return
+    }
+
+    const res = await businessFlowFormAssets(objectCode, {
+      includeInternal: true,
+      applicationId: applicationId || undefined,
+    })
+    if (res.code !== undefined && res.code !== 200)
+      throw new Error(res.message || '业务表单资产查询失败')
+    const assetData = Array.isArray(res.data) ? res.data : res.data?.formAssets
+    const assets = normalizeStartTestBusinessAssets(assetData || [])
+    startTestBusinessFormAssets.value = assets
+    const selectedAsset = assets.find(asset => asset.formKey === formKey)
+      || assets[0]
+      || null
+    startTestFormSchema.value = normalizeStartTestBusinessFields(resolveStartTestBusinessFields(selectedAsset))
+    applyStartTestBusinessFormLayout(selectedAsset)
+  }
+  catch (error) {
+    console.warn('[FlowModel] 加载测试业务表单失败:', error?.message || error)
+    startTestBusinessFormAssets.value = []
+    startTestFormSchema.value = []
+    window.$message?.warning('加载业务应用表单失败，将以空变量发起测试')
+  }
+  finally {
+    startTestBusinessFormLoading.value = false
+  }
+}
+
+function parseBusinessFormReference(formJson) {
+  if (!formJson)
+    return {}
+  if (typeof formJson === 'object' && !Array.isArray(formJson)) {
+    const nested = formJson.formRef && typeof formJson.formRef === 'object' ? formJson.formRef : {}
+    return normalizeBusinessFormReference(nested, formJson)
+  }
+  try {
+    const parsed = JSON.parse(formJson)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return {}
+    const nested = parsed.formRef && typeof parsed.formRef === 'object' ? parsed.formRef : {}
+    return normalizeBusinessFormReference(nested, parsed)
+  }
+  catch {
+    return {}
+  }
+}
+
+function normalizeBusinessFormReference(nested = {}, root = {}) {
+  const firstText = (...values) => values.map(textValue).find(Boolean) || ''
+  return {
+    ...nested,
+    ...root,
+    objectCode: firstText(nested.objectCode, root.objectCode),
+    objectName: firstText(nested.objectName, root.objectName),
+    applicationId: firstText(nested.applicationId, root.applicationId),
+    applicationName: firstText(nested.applicationName, root.applicationName),
+    formKey: firstText(nested.formKey, root.formKey),
+    formName: firstText(nested.formName, root.formName),
+    providerKey: firstText(nested.providerKey, root.providerKey),
+    formMode: firstText(nested.formMode, nested.type, root.formMode, root.type),
+    type: firstText(nested.type, nested.formMode, root.type, root.formMode),
+  }
+}
+
+function resolveApplicationIdFromFormKey(formKey) {
+  const match = textValue(formKey).match(/^app_([^_]+)_page_/i)
+  return match ? textValue(match[1]) : ''
+}
+
+function normalizeStartTestBusinessAssets(assets = []) {
+  return (Array.isArray(assets) ? assets : [])
+    .map((asset) => {
+      const schema = normalizeStartTestAssetSchema(
+        hasStartTestAssetSchema(asset?.schema) ? asset.schema : asset?.formDesignerSchema,
+      )
+      const normalized = {
+        ...asset,
+        schema,
+        formKey: textValue(asset.formKey || asset.key || asset.id || schema.formKey),
+        formName: textValue(asset.formName || asset.name || asset.label || asset.formKey || schema.formName),
+        fieldCatalog: Array.isArray(asset.fieldCatalog)
+          ? asset.fieldCatalog
+          : Array.isArray(asset.fields) ? asset.fields : [],
+      }
+      if (!normalized.fieldCatalog.length)
+        normalized.fieldCatalog = resolveStartTestBusinessFields(normalized)
+      return normalized
+    })
+    .filter(asset => asset.formKey)
+}
+
+/**
+ * 业务表单资产在不同来源下的字段位置不完全一致：
+ * - 业务对象页面通常返回 fieldCatalog/fields；
+ * - 旧版本或代码 Provider 可能只返回 schema.components；
+ * - 部分资产会保留空的 fieldCatalog，同时把字段放在 fields 中。
+ * 统一在发起测试入口展开，避免空数组优先级导致表单被误判为无字段。
+ */
+function resolveStartTestBusinessFields(asset = null) {
+  if (!asset || typeof asset !== 'object')
+    return []
+  const fieldCatalog = Array.isArray(asset.fieldCatalog) ? asset.fieldCatalog : []
+  const fields = Array.isArray(asset.fields) ? asset.fields : []
+  if (fieldCatalog.length)
+    return fieldCatalog
+  if (fields.length)
+    return fields
+
+  const schema = normalizeStartTestAssetSchema(
+    hasStartTestAssetSchema(asset.schema) ? asset.schema : asset.formDesignerSchema,
+  )
+  const schemaFields = Array.isArray(schema.fieldCatalog) ? schema.fieldCatalog : []
+  if (schemaFields.length)
+    return schemaFields
+  if (Array.isArray(schema.fields) && schema.fields.length)
+    return schema.fields
+  return flattenStartTestBusinessComponents(schema.components)
+}
+
+function normalizeStartTestAssetSchema(value) {
+  if (Array.isArray(value))
+    return { components: value }
+  if (value && typeof value === 'object')
+    return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? { components: parsed } : (parsed && typeof parsed === 'object' ? parsed : {})
+    }
+    catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+function hasStartTestAssetSchema(value) {
+  if (Array.isArray(value))
+    return value.length > 0
+  if (value && typeof value === 'object')
+    return Object.keys(value).length > 0
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function flattenStartTestBusinessComponents(components, result = []) {
+  if (!Array.isArray(components))
+    return result
+  components.forEach((component) => {
+    if (!component || typeof component !== 'object')
+      return
+    const binding = component.fieldBinding && typeof component.fieldBinding === 'object'
+      ? component.fieldBinding
+      : {}
+    const props = component.props && typeof component.props === 'object' ? component.props : {}
+    const fieldCode = textValue(binding.fieldCode || component.field || props.field)
+    // 布局节点没有字段编码，只递归其子节点。
+    if (fieldCode) {
+      result.push({
+        ...component,
+        ...props,
+        field: fieldCode,
+        fieldCode,
+        componentType: component.componentType || component.componentKey || component.type,
+        type: component.type || component.componentType || component.componentKey,
+        label: component.label || props.label || props.title,
+        required: component.required ?? component.validation?.required,
+        validation: component.validation,
+      })
+    }
+    flattenStartTestBusinessComponents(component.children, result)
+  })
+  return result
+}
+
+function normalizeStartTestBusinessFields(fields = []) {
+  const seen = new Set()
+  return (Array.isArray(fields) ? fields : [])
+    .filter(field => field && field.visible !== false && field.formVisible !== false
+      && field.internal !== true && field.systemField !== true)
+    .map((field) => {
+      const binding = field.fieldBinding && typeof field.fieldBinding === 'object' ? field.fieldBinding : {}
+      const fieldProps = field.props && typeof field.props === 'object' ? field.props : {}
+      const fieldCode = textValue(
+        field.field || field.fieldCode || binding.fieldCode || fieldProps.field || field.code || field.name,
+      )
+      if (!fieldCode || seen.has(fieldCode))
+        return null
+      seen.add(fieldCode)
+      const type = normalizeStartTestFieldType(
+        field.type || field.componentType || field.componentKey || field.fieldType,
+      )
+      const props = { ...fieldProps }
+      const options = Array.isArray(field.options)
+        ? field.options
+        : Array.isArray(props.options) ? props.options : undefined
+      delete props.disabled
+      delete props.readonly
+      return {
+        ...field,
+        field: fieldCode,
+        code: fieldCode,
+        prop: fieldCode,
+        label: textValue(field.label || field.fieldName || field.title || fieldProps.label || fieldProps.title || fieldCode),
+        type,
+        required: field.required === true || field.validation?.required === true,
+        readonly: false,
+        disabled: false,
+        props,
+        ...(options ? { options } : {}),
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeStartTestFieldType(value) {
+  const raw = textValue(value)
+  const normalized = raw.replace(/[-_\s]/g, '').toLowerCase()
+  if (['inputnumber', 'integer', 'decimal', 'money', 'number'].includes(normalized))
+    return 'number'
+  if (['dict', 'dictselect', 'dictionary'].includes(normalized))
+    return 'dictSelect'
+  if (['textarea', 'textareafield'].includes(normalized))
+    return 'textarea'
+  if (['datepicker', 'date'].includes(normalized))
+    return 'date'
+  if (['datetimepicker', 'datetime'].includes(normalized))
+    return 'datetime'
+  if (['datetimerange'].includes(normalized))
+    return 'datetimerange'
+  if (['daterange'].includes(normalized))
+    return 'daterange'
+  if (['timepicker', 'time'].includes(normalized))
+    return 'time'
+  if (['select', 'radio', 'radiobutton', 'checkbox', 'switch', 'cascader', 'treeselect', 'orgtreeselect', 'orgselect', 'regiontreeselect', 'userselect', 'userpicker', 'recordselector', 'objectreference', 'slider', 'rate', 'color', 'colorpicker', 'upload', 'fileupload', 'imageupload', 'customselect', 'transfer', 'month', 'year', 'timerange', 'barcodescanner', 'text'].includes(normalized)) {
+    const aliases = {
+      radiobutton: 'radioButton',
+      treeselect: 'treeSelect',
+      orgtreeselect: 'orgTreeSelect',
+      orgselect: 'orgTreeSelect',
+      regiontreeselect: 'regionTreeSelect',
+      userselect: 'userSelect',
+      userpicker: 'userSelect',
+      recordselector: 'recordSelector',
+      objectreference: 'objectReference',
+      fileupload: 'fileUpload',
+      imageupload: 'imageUpload',
+      colorpicker: 'color',
+      barcodescanner: 'barcodeScanner',
+      customselect: 'customSelect',
+    }
+    return aliases[normalized] || normalized
+  }
+  return 'input'
+}
+
+function applyStartTestBusinessFormLayout(asset) {
+  const schema = asset?.schema && typeof asset.schema === 'object' ? asset.schema : {}
+  const settings = schema.settings && typeof schema.settings === 'object' ? schema.settings : {}
+  const layout = settings.layout && typeof settings.layout === 'object' ? settings.layout : {}
+  const gridCols = Number(layout.gridCols || layout.gridColumns || settings.gridCols || settings.gridColumns)
+  startTestBusinessFormLayout.gridCols = Number.isFinite(gridCols) && gridCols > 0 ? gridCols : 1
+  startTestBusinessFormLayout.labelPlacement = ['left', 'top'].includes(layout.labelPlacement || settings.labelPlacement)
+    ? (layout.labelPlacement || settings.labelPlacement)
+    : 'left'
+  startTestBusinessFormLayout.labelWidth = layout.labelWidth || settings.labelWidth || '100'
+}
+
+function resetStartTestBusinessFormLayout() {
+  Object.assign(startTestBusinessFormLayout, { gridCols: 1, labelPlacement: 'left', labelWidth: '100' })
+}
+
+function textValue(value) {
+  return String(Array.isArray(value) ? value[0] || '' : value || '').trim()
 }
 
 function parseFormSchema(formJson) {
@@ -890,24 +1296,19 @@ async function handleSubmitStartTest() {
     return
   startTestLoading.value = true
   try {
-    const variables = (startTestFormSchema.value.length
-      ? await startTestFormRef.value?.submit?.()
-      : {}) || {}
-    const selectedApprovers = {}
-    for (const node of startTestApproverNodes.value) {
-      const ids = Array.isArray(startTestApproverSelections.value[node.nodeKey])
-        ? startTestApproverSelections.value[node.nodeKey]
-            .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
-            .map(value => String(value))
-        : []
-      if (!ids.length) {
-        window.$message?.warning(`请选择${node.nodeName || node.nodeKey}审批人`)
+    const variables = await collectStartTestFormData()
+    if (startTestApproverNodes.value.length) {
+      try {
+        variables.PROCESS_START_USER = collectInitiatorSelectSelections(
+          startTestApproverNodes.value,
+          startTestApproverSelections.value,
+        )
+      }
+      catch (error) {
+        window.$message?.warning(error?.message || '请选择审批人')
         return
       }
-      selectedApprovers[node.nodeKey] = ids
     }
-    if (Object.keys(selectedApprovers).length)
-      variables.PROCESS_START_USER = selectedApprovers
     const now = Date.now()
     const businessKey = `FLOW_TEST:${currentStartModel.value.modelKey}:${now}`
     const title = `${currentStartModel.value.modelName || currentStartModel.value.modelKey}-测试发起`
@@ -934,6 +1335,16 @@ async function handleSubmitStartTest() {
   finally {
     startTestLoading.value = false
   }
+}
+
+async function collectStartTestFormData() {
+  if (!startTestFormSchema.value.length)
+    return {}
+  if (startTestBusinessFormActive.value) {
+    await startTestFormRef.value?.validate?.()
+    return startTestFormRef.value?.getFormData?.() || { ...startTestFormData.value }
+  }
+  return (await startTestFormRef.value?.submit?.()) || {}
 }
 
 function handleViewStarted() {
@@ -1075,6 +1486,21 @@ onMounted(() => {
   min-width: 0;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.model-key-form-item :deep(.n-form-item-blank) {
+  display: block;
+}
+
+.model-key-form-item :deep(.n-input) {
+  width: 100%;
+}
+
+.model-key-help {
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .page-header {
@@ -1676,6 +2102,16 @@ onMounted(() => {
 
 .start-test-alert {
   border-radius: 8px;
+}
+
+.start-test-form-loading {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .radio-group {

@@ -82,6 +82,8 @@ export function parseUserTaskConfig(taskElement) {
     taskListeners: [],
     executionListeners: [],
     formFieldPermissions: [],
+    responsibilityDescription: '',
+    approvalPoints: [],
     ...DEFAULT_PERMISSIONS,
     ...DEFAULT_OVERDUE_REMINDER,
   }
@@ -93,6 +95,7 @@ export function parseUserTaskConfig(taskElement) {
   applyFormFieldPermissions(taskElement, config)
   applyPriorityAndDueDate(taskElement, config)
   applyPermissions(taskElement, config)
+  applyApprovalDuty(taskElement, config)
   applyMultiInstance(taskElement, config)
   applyListeners(taskElement, config)
   return config
@@ -165,7 +168,10 @@ function applyAssignee(el, config) {
     config.taskType = 'assignee'
     config.assigneeUserName = assigneeName
 
-    if (assigneeType === 'spel') {
+    if (assigneeType === 'initiatorSelect' || isInitiatorSelectAssignee(assignee)) {
+      config.assignee = 'initiatorSelect'
+    }
+    else if (assigneeType === 'spel') {
       config.assignee = 'spel'
       config.assigneeExpr = assignee
     }
@@ -190,6 +196,10 @@ function applyAssignee(el, config) {
     else {
       config.assignee = assignee
     }
+  }
+  else if (assigneeType === 'initiatorSelect') {
+    config.taskType = 'assignee'
+    config.assignee = 'initiatorSelect'
   }
   else if (assigneeType === 'spel') {
     config.taskType = 'assignee'
@@ -350,16 +360,64 @@ function applyPermissions(el, config) {
   }
 }
 
+function applyApprovalDuty(el, config) {
+  config.responsibilityDescription = getFlowableAttr(el, 'responsibilityDescription') || ''
+  const raw = getFlowableAttr(el, 'approvalPoints') || readExtensionText(el, 'approvalPoints')
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        config.approvalPoints = parsed
+          .map((item, index) => {
+            const content = String(item?.content || '').trim()
+            if (!content)
+              return null
+            return {
+              id: String(item?.id || `point-${index + 1}`),
+              content,
+              required: item?.required === true,
+              sort: Number.isFinite(Number(item?.sort)) ? Number(item.sort) : index + 1,
+            }
+          })
+          .filter(Boolean)
+      }
+    }
+    catch {
+      config.approvalPoints = []
+    }
+  }
+  if (!config.approvalPoints.length) {
+    const legacy = getFlowableAttr(el, 'responsibility') || ''
+    if (legacy) {
+      config.approvalPoints = [{
+        id: 'legacy-responsibility',
+        content: legacy,
+        required: false,
+        sort: 1,
+      }]
+    }
+  }
+}
+
+function isInitiatorSelectAssignee(assignee) {
+  return /^\$\{INITIATOR_SELECT_\w+\}$/.test(String(assignee || ''))
+}
+
 function applyMultiInstance(el, config) {
+  const explicitType = getFlowableAttr(el, 'multiInstanceType')
   const loop = getChild(el, 'multiInstanceLoopCharacteristics')
   if (!loop) {
-    config.multiInstanceType = 'none'
+    config.multiInstanceType = explicitType === 'parallel' || explicitType === 'sequential'
+      ? explicitType
+      : 'none'
     config.completionCondition = 'all'
     config.passRate = 100
     return
   }
 
-  config.multiInstanceType = getAttr(loop, 'isSequential') === 'true' ? 'sequential' : 'parallel'
+  config.multiInstanceType = explicitType === 'none'
+    ? 'none'
+    : (getAttr(loop, 'isSequential') === 'true' ? 'sequential' : 'parallel')
 
   const ccEl = getChild(loop, 'completionCondition')
   const expr = ccEl ? getTextContent(ccEl) : ''

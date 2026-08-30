@@ -323,108 +323,6 @@
           <FlowReadonlyFormPanel :row="monitorFormRow" source="flowMonitor" />
         </section>
 
-        <section v-if="canManage && canInterveneCurrent" class="approval-detail-section">
-          <div class="approval-section-header">
-            <i class="i-material-symbols:admin-panel-settings" />
-            管理员干预
-          </div>
-          <n-alert v-if="isSuspendedCurrent" type="warning" class="monitor-admin-alert">
-            流程已挂起。可以激活或终止；回退和转派需要先激活。
-          </n-alert>
-          <NSpace class="monitor-admin-status-actions">
-            <NButton v-if="canMutateCurrent" type="warning" @click="handleSuspend">
-              挂起流程
-            </NButton>
-            <NButton v-if="isSuspendedCurrent" type="primary" @click="handleActivate">
-              激活流程
-            </NButton>
-          </NSpace>
-          <NSpace vertical size="large">
-            <n-card title="终止流程" size="small">
-              <template #header-extra>
-                <NTag type="error" size="small">
-                  危险操作
-                </NTag>
-              </template>
-              <NSpace vertical>
-                <n-text depth="3">
-                  终止后流程立即结束，无法恢复。
-                </n-text>
-                <n-input
-                  v-model:value="terminateReason"
-                  type="textarea"
-                  placeholder="请输入终止原因"
-                  :rows="2"
-                />
-                <NButton type="error" :disabled="!terminateReason.trim()" @click="confirmTerminate">
-                  确认终止
-                </NButton>
-              </NSpace>
-            </n-card>
-
-            <n-card title="节点回退" size="small">
-              <NSpace vertical>
-                <n-text depth="3">
-                  {{ canMutateCurrent ? '将流程回退到指定的历史节点。' : '请先激活流程后再回退。' }}
-                </n-text>
-                <n-select
-                  v-model:value="rollbackTargetActivity"
-                  :options="activityOptions"
-                  placeholder="请选择目标节点"
-                  :loading="activitiesLoading"
-                  :disabled="!canMutateCurrent"
-                />
-                <n-input
-                  v-model:value="rollbackReason"
-                  type="textarea"
-                  placeholder="请输入回退原因"
-                  :rows="2"
-                  :disabled="!canMutateCurrent"
-                />
-                <NButton type="warning" :disabled="!canMutateCurrent || !rollbackTargetActivity" @click="confirmRollback">
-                  确认回退
-                </NButton>
-              </NSpace>
-            </n-card>
-
-            <n-card title="任务转派" size="small">
-              <NSpace vertical>
-                <n-text depth="3">
-                  {{ canMutateCurrent ? '将当前任务转派给其他用户处理。' : '请先激活流程后再转派。' }}
-                </n-text>
-                <n-select
-                  v-if="currentTaskOptions.length > 1"
-                  v-model:value="currentTaskId"
-                  :options="currentTaskOptions"
-                  placeholder="请选择要转派的任务"
-                  :disabled="!canMutateCurrent"
-                />
-                <n-input
-                  v-model:value="reassignUserName"
-                  placeholder="请选择新处理人"
-                  readonly
-                  :disabled="!canMutateCurrent"
-                  @click="openReassignUserSelect"
-                >
-                  <template #suffix>
-                    <i class="i-material-symbols:person-search cursor-pointer" @click="openReassignUserSelect" />
-                  </template>
-                </n-input>
-                <n-input
-                  v-model:value="reassignReason"
-                  type="textarea"
-                  placeholder="请输入转派原因"
-                  :rows="2"
-                  :disabled="!canMutateCurrent"
-                />
-                <NButton type="primary" :disabled="!canMutateCurrent || !reassignUserId" @click="confirmReassign">
-                  确认转派
-                </NButton>
-              </NSpace>
-            </n-card>
-          </NSpace>
-        </section>
-
         <section class="approval-detail-section">
           <n-collapse arrow-placement="right">
             <n-collapse-item title="查看流程图" name="diagram">
@@ -453,6 +351,104 @@
           </n-descriptions-item>
         </n-descriptions>
       </n-spin>
+    </n-modal>
+
+    <n-modal v-model:show="adminActionsModalVisible" preset="card" title="管理员干预" style="width: 600px;">
+      <n-alert v-if="isSuspendedCurrent" type="warning" class="monitor-admin-alert">
+        流程已挂起。可以激活或终止；回退和转派需要先激活。
+      </n-alert>
+      <NSpace class="monitor-admin-status-actions">
+        <NButton v-if="canMutateCurrent" type="warning" @click="handleSuspend">
+          挂起流程
+        </NButton>
+        <NButton v-if="isSuspendedCurrent" type="primary" @click="handleActivate">
+          激活流程
+        </NButton>
+      </NSpace>
+      <NSpace vertical size="large">
+        <n-card title="终止流程" size="small">
+          <template #header-extra>
+            <NTag type="error" size="small">
+              危险操作
+            </NTag>
+          </template>
+          <NSpace vertical>
+            <n-text depth="3">
+              终止后流程立即结束，无法恢复。
+            </n-text>
+            <n-input
+              v-model:value="terminateReason"
+              type="textarea"
+              placeholder="请输入终止原因"
+              :rows="2"
+            />
+            <NButton type="error" :disabled="!terminateReason.trim()" @click="confirmTerminate">
+              确认终止
+            </NButton>
+          </NSpace>
+        </n-card>
+
+        <n-card title="节点回退" size="small">
+          <NSpace vertical>
+            <n-text depth="3">
+              {{ canMutateCurrent ? '将流程回退到指定的历史节点。' : '请先激活流程后再回退。' }}
+            </n-text>
+            <n-select
+              v-model:value="rollbackTargetActivity"
+              :options="activityOptions"
+              placeholder="请选择目标节点"
+              :loading="activitiesLoading"
+              :disabled="!canMutateCurrent"
+            />
+            <n-input
+              v-model:value="rollbackReason"
+              type="textarea"
+              placeholder="请输入回退原因"
+              :rows="2"
+              :disabled="!canMutateCurrent"
+            />
+            <NButton type="warning" :disabled="!canMutateCurrent || !rollbackTargetActivity" @click="confirmRollback">
+              确认回退
+            </NButton>
+          </NSpace>
+        </n-card>
+
+        <n-card title="任务转派" size="small">
+          <NSpace vertical>
+            <n-text depth="3">
+              {{ canMutateCurrent ? '将当前任务转派给其他用户处理。' : '请先激活流程后再转派。' }}
+            </n-text>
+            <n-select
+              v-if="currentTaskOptions.length > 1"
+              v-model:value="currentTaskId"
+              :options="currentTaskOptions"
+              placeholder="请选择要转派的任务"
+              :disabled="!canMutateCurrent"
+            />
+            <n-input
+              v-model:value="reassignUserName"
+              placeholder="请选择新处理人"
+              readonly
+              :disabled="!canMutateCurrent"
+              @click="openReassignUserSelect"
+            >
+              <template #suffix>
+                <i class="i-material-symbols:person-search cursor-pointer" @click="openReassignUserSelect" />
+              </template>
+            </n-input>
+            <n-input
+              v-model:value="reassignReason"
+              type="textarea"
+              placeholder="请输入转派原因"
+              :rows="2"
+              :disabled="!canMutateCurrent"
+            />
+            <NButton type="primary" :disabled="!canMutateCurrent || !reassignUserId" @click="confirmReassign">
+              确认转派
+            </NButton>
+          </NSpace>
+        </n-card>
+      </NSpace>
     </n-modal>
 
     <!-- 用户选择弹窗 -->
@@ -485,6 +481,7 @@ import {
   buildMonitorFormQuery,
   canInterveneInstance,
   canMutateRunningInstance,
+  hasMonitorPermission,
   isSuspendedInstance,
 } from './utils/monitorAdmin'
 
@@ -494,9 +491,8 @@ const route = useRoute()
 const userStore = useUserStore()
 const message = window.$message
 const { dict } = useDict('flow_instance_status', 'flow_error_log_status')
-const routePermissionCodes = computed(() => (route.meta?.btns || []).map(item => item.code))
-const canManage = computed(() => hasPermission('flow:monitor:manage'))
-const canCleanup = computed(() => hasPermission('flow:monitor:cleanup'))
+const canManage = computed(() => hasMonitorPermission(userStore, route, 'flow:monitor:manage'))
+const canCleanup = computed(() => hasMonitorPermission(userStore, route, 'flow:monitor:cleanup'))
 
 // 统计数据
 const statistics = reactive({
@@ -587,6 +583,10 @@ const columns = [
         { label: '变量', key: 'variables' },
         { label: '错误日志', key: 'errors' },
       ]
+      if (canManage.value && canInterveneInstance(row.status)) {
+        options.push({ type: 'divider', key: 'd1' })
+        options.push({ label: '管理', key: 'admin' })
+      }
       if (canCleanup.value) {
         options.push({ type: 'divider', key: 'd2' })
         options.push({
@@ -616,6 +616,7 @@ const columns = [
               diagram: () => showDiagram(row),
               variables: () => showVariables(row),
               errors: () => showInstanceErrorLogs(row),
+              admin: () => showAdminActions(row),
               delete: () => handleDeleteInstance(row),
             }
             map[key]?.()
@@ -641,7 +642,6 @@ const detailDrawerVisible = ref(false)
 const currentInstance = ref({})
 const approvalHistory = ref([])
 const monitorFormRow = computed(() => buildMonitorFormQuery(currentInstance.value))
-const canInterveneCurrent = computed(() => canInterveneInstance(currentInstance.value?.status))
 const canMutateCurrent = computed(() => canMutateRunningInstance(currentInstance.value?.status))
 const isSuspendedCurrent = computed(() => isSuspendedInstance(currentInstance.value?.status))
 
@@ -651,6 +651,7 @@ const currentDiagramInstanceId = ref(null)
 const variablesModalVisible = ref(false)
 const variablesLoading = ref(false)
 const processVariables = ref({})
+const adminActionsModalVisible = ref(false)
 
 const terminateReason = ref('')
 const rollbackTargetActivity = ref(null)
@@ -763,13 +764,6 @@ function toNumberOptions(options = []) {
     ...item,
     value: Number(item.value),
   }))
-}
-
-function hasPermission(code) {
-  if (routePermissionCodes.value.length)
-    return routePermissionCodes.value.includes(code)
-  const permissions = userStore.getDataPermission || []
-  return permissions.includes('**') || permissions.includes('*:*:*') || permissions.includes(code)
 }
 
 function getErrorStageText(stage) {
@@ -1150,6 +1144,7 @@ function handleDeleteInstance(row) {
         if (res.code === 200) {
           message.success('流程数据已删除')
           detailDrawerVisible.value = false
+          adminActionsModalVisible.value = false
           refreshMonitorData()
         }
         else {
@@ -1239,22 +1234,33 @@ async function loadAdminActionContext(processInstanceId) {
 async function showDetail(row) {
   currentInstance.value = row
   approvalHistory.value = []
-  resetAdminActionForm()
   detailDrawerVisible.value = true
 
-  const jobs = []
-  if (row.id) {
-    jobs.push(
-      request.get(`/api/flow/task/history/${row.id}`)
-        .then((res) => {
-          if (res.code === 200)
-            approvalHistory.value = res.data || []
-        })
-        .catch(error => console.error('加载审批历史失败', error)),
-    )
-    jobs.push(loadAdminActionContext(row.id))
+  if (!row.id)
+    return
+  try {
+    const res = await request.get(`/api/flow/task/history/${row.id}`)
+    if (res.code === 200)
+      approvalHistory.value = res.data || []
   }
-  await Promise.all(jobs)
+  catch (error) {
+    console.error('加载审批历史失败', error)
+  }
+}
+
+async function showAdminActions(row) {
+  if (!canManage.value) {
+    message.warning('没有流程管理权限')
+    return
+  }
+  if (!canInterveneInstance(row.status)) {
+    message.warning('只能干预运行中或已挂起的流程')
+    return
+  }
+  currentInstance.value = row
+  resetAdminActionForm()
+  adminActionsModalVisible.value = true
+  await loadAdminActionContext(row.id)
 }
 
 async function openRoutedInstance(processInstanceId) {
@@ -1450,6 +1456,7 @@ async function confirmTerminate() {
     })
     if (res.code === 200) {
       message.success('流程已终止')
+      adminActionsModalVisible.value = false
       detailDrawerVisible.value = false
       loadData()
       loadStatistics()
@@ -1485,7 +1492,7 @@ async function confirmRollback() {
     })
     if (res.code === 200) {
       message.success('流程已回退')
-      await showDetail(currentInstance.value)
+      adminActionsModalVisible.value = false
       loadData()
       loadStatistics()
     }
@@ -1524,10 +1531,7 @@ async function confirmReassign() {
     })
     if (res.code === 200) {
       message.success('任务已转派')
-      reassignUserId.value = ''
-      reassignUserName.value = ''
-      reassignReason.value = ''
-      await showDetail(currentInstance.value)
+      adminActionsModalVisible.value = false
       loadData()
     }
     else {

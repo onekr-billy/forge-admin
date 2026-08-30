@@ -97,4 +97,15 @@ describe('parseUserTaskConfig - assignee 4 种模式', () => {
     expect(cfg.initiatorSelectNodeKey).toBe('T_select')
     expect(cfg.multiInstanceType).toBe('parallel')
   })
+
+  it('initiatorSelect 不会签回读后仍为 none', () => {
+    const cfg = parseUserTaskConfig(getTask([
+      '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn">',
+      '<bpmn:process id="P"><bpmn:userTask id="T_select" flowable:assigneeType="initiatorSelect"',
+      ` flowable:assignee="${DOLLAR}{INITIATOR_SELECT_T_select}">`,
+      '</bpmn:userTask></bpmn:process></bpmn:definitions>',
+    ].join(''), 'T_select'))
+    expect(cfg.assignee).toBe('initiatorSelect')
+    expect(cfg.multiInstanceType).toBe('none')
+  })
 })

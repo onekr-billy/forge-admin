@@ -6,6 +6,7 @@
  *
  * 规则：
  *   1) taskType=assignee
+ *      - 发起人自选：'发起人自选'（启动时由申请人指定，区别于「发起人」自己审批）
  *      - 静态变量：'发起人' / '上级领导' / '部门主管' / 'HR'
  *      - custom：'指定人员：张三'（assigneeUserName 优先）/ '指定人员：1001'
  *      - spel：'SPEL 模板：DEPT_LEADER' / 'SPEL 表达式：${...}'
@@ -30,6 +31,8 @@ const STATIC_LABELS = {
 
 export function buildApproverSummary(config) {
   const c = config || {}
+  if (c.assignee === 'initiatorSelect')
+    return '发起人自选'
   const main = buildAssigneeText(c)
   const mi = buildMultiInstanceText(c)
   return mi ? `${main} · ${mi}` : main
@@ -43,6 +46,8 @@ function buildAssigneeText(c) {
       return formatList('候选角色', c.candidateGroupNames || c.candidateGroups || [])
     case 'assignee':
     default: {
+      if (c.assignee === 'initiatorSelect')
+        return '发起人自选'
       // 静态变量
       if (STATIC_LABELS[c.assignee])
         return STATIC_LABELS[c.assignee]
