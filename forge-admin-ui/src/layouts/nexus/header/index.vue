@@ -42,6 +42,13 @@ import BreadCrumb from '../BreadCrumb.vue'
   align-items: center;
   padding: 0 16px;
   gap: 12px;
+  color: var(--text-secondary);
+  --layout-header-text-color: var(--text-secondary);
+  --top-menu-text-color: var(--text-secondary);
+  --top-menu-text-color-hover: var(--text-primary);
+  --top-menu-text-color-active: var(--text-primary);
+  --top-menu-text-color-active-hover: var(--text-primary);
+  --top-menu-text-color-active-horizontal: var(--text-primary);
 }
 
 /* 左侧面包屑 */
