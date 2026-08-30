@@ -2,6 +2,8 @@ package com.mdframe.forge.flow.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.mdframe.forge.flow.dto.FlowInstanceStartDTO;
+import com.mdframe.forge.flow.dto.FlowInstanceTerminateDTO;
 import com.mdframe.forge.starter.auth.config.FlowDelegationSessionVerifier;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -18,7 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,8 +46,8 @@ public class FlowInstanceController {
     @PostMapping("/start/{modelKey}")
     public RespInfo<String> start(
             @PathVariable String modelKey,
-            @RequestBody Map<String, Object> params) {
-        return startInternal(modelKey, params, false);
+            @RequestBody FlowInstanceStartDTO dto) {
+        return startInternal(modelKey, dto, false);
     }
 
     /**
@@ -57,9 +58,9 @@ public class FlowInstanceController {
     @SaCheckPermission("ai:businessFlow:start")
     public RespInfo<String> startDelegated(
             @PathVariable String modelKey,
-            @RequestBody Map<String, Object> params) {
+            @RequestBody FlowInstanceStartDTO dto) {
         flowDelegationSessionVerifier.requireTrustedDelegation();
-        return startInternal(modelKey, params, true);
+        return startInternal(modelKey, dto, true);
     }
 
     /**
@@ -69,41 +70,25 @@ public class FlowInstanceController {
     @SaCheckPermission("ai:capability:approval:submit")
     public RespInfo<String> startDelegatedApproval(
             @PathVariable String modelKey,
-            @RequestBody Map<String, Object> params) {
+            @RequestBody FlowInstanceStartDTO dto) {
         flowDelegationSessionVerifier.requireTrustedDelegation();
-        return startInternal(modelKey, params, true);
+        return startInternal(modelKey, dto, true);
     }
 
     private RespInfo<String> startInternal(
             String modelKey,
-            Map<String, Object> params,
+            FlowInstanceStartDTO dto,
             boolean trustedDelegationRequired) {
-        String businessKey = (String) params.get("businessKey");
-        String businessType = (String) params.get("businessType");
-        String title = (String) params.get("title");
-        
-        // 提取变量（排除特殊字段）
-        Map<String, Object> variables = new HashMap<>(params);
-        variables.remove("businessKey");
-        variables.remove("businessType");
-        variables.remove("title");
-        variables.remove("userId");
-        variables.remove("userName");
-        variables.remove("deptId");
-        variables.remove("deptName");
-        // FlowClient 发送的 body 中包含 variables 嵌套字段，需要把展开后删除外层 key
-        Object nestedVars = variables.remove("variables");
-        if (nestedVars instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> innerVars = (Map<String, Object>) nestedVars;
-            variables.putAll(innerVars);
-        }
-        
+        String businessKey = dto.getBusinessKey();
+        String businessType = dto.getBusinessType();
+        String title = dto.getTitle();
+        Map<String, Object> variables = dto.resolveVariables();
+
         // FlowClient 会显式传入业务发起人；Session 仅作为人工从流程中心发起时的兜底。
-        String requestUserId = toText(params.get("userId"));
-        String requestUserName = toText(params.get("userName"));
-        String requestDeptId = toText(params.get("deptId"));
-        String requestDeptName = toText(params.get("deptName"));
+        String requestUserId = toText(dto.getUserId());
+        String requestUserName = toText(dto.getUserName());
+        String requestDeptId = toText(dto.getDeptId());
+        String requestDeptName = toText(dto.getDeptName());
         LoginUser loginUser = SessionHelper.getLoginUser();
         if (trustedDelegationRequired && (loginUser == null
                 || loginUser.getUserId() == null
@@ -158,11 +143,11 @@ public class FlowInstanceController {
         return RespInfo.success("流程发起成功", processInstanceId);
     }
 
-    private String toText(Object value) {
+    private String toText(String value) {
         if (value == null) {
             return null;
         }
-        String text = String.valueOf(value).trim();
+        String text = value.trim();
         return text.isEmpty() ? null : text;
     }
 
@@ -181,13 +166,8 @@ public class FlowInstanceController {
     @PostMapping("/terminate/{businessKey}")
     public RespInfo<Void> terminate(
             @PathVariable String businessKey,
-            @RequestBody Map<String, Object> params) {
-        
-        String userId = (String) params.get("userId");
-        String reason = (String) params.get("reason");
-        
-        flowInstanceService.terminateProcess(businessKey, userId, reason);
-        
+            @RequestBody FlowInstanceTerminateDTO dto) {
+        flowInstanceService.terminateProcess(businessKey, dto.getUserId(), dto.getReason());
         return RespInfo.success("流程已终止", null);
     }
 

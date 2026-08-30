@@ -43,8 +43,14 @@ public class FlowFillBatchItem extends TenantEntity {
 
     private String processInstanceId;
 
+    /**
+     * 填报状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowFillItemStatus}。
+     */
     private String submitStatus;
 
+    /**
+     * 流程状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowFillItemStatus}。
+     */
     private String flowStatus;
 
     private LocalDateTime deadlineTime;

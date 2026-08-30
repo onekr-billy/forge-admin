@@ -170,7 +170,7 @@ public class BusinessActionExecutionService {
                     result.setStepCode(step.getStepCode());
                     result.setStepName(step.getStepName());
                     result.setStepType(step.getStepType());
-                    result.setStatus("PENDING");
+                    result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.PENDING.getCode());
                     result.setMessage("待执行");
                     return result;
                 })

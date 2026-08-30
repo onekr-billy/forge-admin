@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 报表素材 Service。
@@ -93,7 +94,7 @@ public class ReportMaterialService extends ServiceImpl<ReportMaterialMapper, Rep
         material.setFileId(fileId);
         material.setMaterialCategory(category);
         material.setIsPrivate(materialPrivate);
-        material.setStatus(1);
+        material.setStatus(EnableStatus.ENABLED.getCode());
         Long ownerId = metadata.getUploaderId() != null ? metadata.getUploaderId() : SessionHelper.getUserId();
         material.setCreateBy(ownerId);
         material.setUpdateBy(ownerId);

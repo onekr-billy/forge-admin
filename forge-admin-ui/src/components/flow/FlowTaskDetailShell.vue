@@ -130,7 +130,7 @@ function getActionClass(action) {
     return 'success'
   if (['reject', 'rejected', 'terminate', 'terminated', 'cancel'].includes(value))
     return 'error'
-  if (['return', 'returned', 'delegate', 'delegated', 'withdraw'].includes(value))
+  if (['return', 'returned', 'delegate', 'delegated', 'reassign', 'rollback', 'withdraw'].includes(value))
     return 'warning'
   if (['claim', 'pending'].includes(value))
     return 'info'
@@ -150,6 +150,8 @@ function getActionIcon(action) {
     returned: 'i-material-symbols:keyboard-return',
     delegate: 'i-material-symbols:arrow-forward',
     delegated: 'i-material-symbols:arrow-forward',
+    reassign: 'i-material-symbols:person-edit',
+    rollback: 'i-material-symbols:undo',
     terminate: 'i-material-symbols:stop',
     terminated: 'i-material-symbols:stop',
     withdraw: 'i-material-symbols:undo',
@@ -172,6 +174,8 @@ function getActionText(action) {
     returned: '已退回',
     delegate: '已转办',
     delegated: '已转办',
+    reassign: '已转派',
+    rollback: '已回退',
     terminate: '已终结',
     terminated: '已终结',
     withdraw: '已撤回',

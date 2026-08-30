@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.message.service.impl;
 
+import com.mdframe.forge.plugin.message.domain.MessageSendStatus;
 import com.mdframe.forge.plugin.message.mapper.SysMessageMapper;
 import com.mdframe.forge.plugin.message.mapper.SysMessageReceiverMapper;
 import com.mdframe.forge.plugin.message.mapper.SysMessageSendRecordMapper;
@@ -13,6 +14,7 @@ import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,7 +46,8 @@ class MessageServiceImplTest {
                 mock(MessageTemplateEngine.class),
                 mock(MessageReceiverResolver.class),
                 mock(SysMessageReceiverService.class),
-                mock(ISysUserService.class));
+                mock(ISysUserService.class),
+                mock(ApplicationEventPublisher.class));
     }
 
     @AfterEach
@@ -54,16 +57,16 @@ class MessageServiceImplTest {
 
     @Test
     void shouldExposePartialStatusWhenSomeRecipientsFail() {
-        assertThat(MessageServiceImpl.resolveCollaborationStatus(3, 2, 1, 0)).isEqualTo(3);
-        assertThat(MessageServiceImpl.resolveCollaborationStatus(3, 2, 0, 1)).isEqualTo(3);
+        assertThat(MessageServiceImpl.resolveCollaborationStatus(3, 2, 1, 0)).isEqualTo(MessageSendStatus.PARTIAL);
+        assertThat(MessageServiceImpl.resolveCollaborationStatus(3, 2, 0, 1)).isEqualTo(MessageSendStatus.PARTIAL);
     }
 
     @Test
     void shouldKeepSuccessAndCompleteFailureStatuses() {
-        assertThat(MessageServiceImpl.resolveCollaborationStatus(2, 2, 0, 0)).isEqualTo(1);
-        assertThat(MessageServiceImpl.resolveCollaborationStatus(2, 0, 2, 0)).isEqualTo(2);
-        assertThat(MessageServiceImpl.resolveCollaborationStatus(2, 0, 0, 2)).isEqualTo(2);
-        assertThat(MessageServiceImpl.resolveCollaborationStatus(3, 0, 1, 2)).isEqualTo(2);
+        assertThat(MessageServiceImpl.resolveCollaborationStatus(2, 2, 0, 0)).isEqualTo(MessageSendStatus.SUCCESS);
+        assertThat(MessageServiceImpl.resolveCollaborationStatus(2, 0, 2, 0)).isEqualTo(MessageSendStatus.FAILED);
+        assertThat(MessageServiceImpl.resolveCollaborationStatus(2, 0, 0, 2)).isEqualTo(MessageSendStatus.FAILED);
+        assertThat(MessageServiceImpl.resolveCollaborationStatus(3, 0, 1, 2)).isEqualTo(MessageSendStatus.FAILED);
     }
 
     @Test

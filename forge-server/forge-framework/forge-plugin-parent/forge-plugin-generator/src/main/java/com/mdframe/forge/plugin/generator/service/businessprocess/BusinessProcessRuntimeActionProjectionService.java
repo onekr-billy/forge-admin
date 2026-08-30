@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 按当前对象/应用投影已发布或设计预览中的手动开始按钮。
@@ -124,12 +125,12 @@ public class BusinessProcessRuntimeActionProjectionService {
         Long tenantId = resolveTenantId();
         List<Map<String, Object>> actions = new ArrayList<>();
         for (BusinessObjectProcessVO summary : safeDrafts(processMapper.selectBySubjectObjectCode(tenantId, objectCode))) {
-            if (summary == null || !Integer.valueOf(1).equals(summary.getStatus()) || StringUtils.isBlank(summary.getDraftSchemaJson())) {
+            if (summary == null || !EnableStatus.ENABLED.matches(summary.getStatus()) || StringUtils.isBlank(summary.getDraftSchemaJson())) {
                 continue;
             }
             Long processId = parseId(summary.getId());
             AiBusinessProcess process = processId == null ? null : processMapper.selectActiveById(tenantId, processId);
-            if (process == null || !Integer.valueOf(1).equals(process.getStatus())) {
+            if (process == null || !EnableStatus.ENABLED.matches(process.getStatus())) {
                 continue;
             }
             String applicationCode = resolveApplicationCode(process.getApplicationId());

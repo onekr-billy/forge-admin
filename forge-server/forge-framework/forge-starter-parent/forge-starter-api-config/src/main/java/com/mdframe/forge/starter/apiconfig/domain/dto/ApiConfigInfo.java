@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * API配置信息DTO（用于缓存和返回）
@@ -120,7 +121,7 @@ public class ApiConfigInfo implements Serializable {
         info.setNeedEncrypt(entity.getEncryptFlag() != null && entity.getEncryptFlag() == 1);
         info.setNeedTenant(entity.getTenantFlag() != null && entity.getTenantFlag() == 1);
         info.setNeedLimit(entity.getLimitFlag() != null && entity.getLimitFlag() == 1);
-        info.setEnabled(entity.getStatus() != null && entity.getStatus() == 1);
+        info.setEnabled(EnableStatus.ENABLED.matches(entity.getStatus()));
         info.setRemark(entity.getRemark());
         info.setCacheTime(System.currentTimeMillis());
         return info;

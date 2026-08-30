@@ -10,6 +10,7 @@ import com.mdframe.forge.plugin.generator.mapper.AiPageTemplateMapper;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -71,7 +72,7 @@ public class AiPageTemplateService extends ServiceImpl<AiPageTemplateMapper, AiP
         AiPageTemplate template = new AiPageTemplate();
         copyDtoToEntity(dto, template);
         template.setIsBuiltin(0);
-        if (template.getEnabled() == null) template.setEnabled(1);
+        if (template.getEnabled() == null) template.setEnabled(EnableStatus.ENABLED.getCode());
         if (template.getSort() == null) template.setSort(99);
         save(template);
     }

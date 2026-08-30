@@ -17,6 +17,7 @@ import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.crypto.persistence.PersistentCryptoService;
 import com.mdframe.forge.starter.openapi.security.replay.OpenApiReplayGuard;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -200,7 +201,7 @@ public class OpenGatewayAuthenticator {
                 && client.getServiceUserId().equals(loginUser.getUserId())
                 && client.getTenantId().equals(loginUser.getTenantId())
                 && client.getActiveOrgId().equals(loginUser.getActiveOrgId())
-                && Integer.valueOf(1).equals(loginUser.getUserStatus())
+                && EnableStatus.ENABLED.matches(loginUser.getUserStatus())
                 && !Boolean.TRUE.equals(loginUser.getForcePasswordChange());
         if (!exactIdentity
                 || loginUser.isAdmin()

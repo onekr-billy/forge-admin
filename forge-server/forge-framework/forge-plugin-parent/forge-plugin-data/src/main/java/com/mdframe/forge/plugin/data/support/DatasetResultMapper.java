@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.data.support;
 
 import com.mdframe.forge.plugin.data.entity.DataDatasetField;
 import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -40,7 +41,7 @@ public class DatasetResultMapper {
         Map<String, Object> result = new LinkedHashMap<>();
         
         List<DataDatasetField> displayFields = fields.stream()
-                .filter(f -> f.getDisplayEnabled() == 1)
+                .filter(f -> EnableStatus.ENABLED.matches(f.getDisplayEnabled()))
                 .filter(f -> !"HIDDEN".equals(f.getSensitiveLevel()))
                 .collect(Collectors.toList());
         

@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /** 将用户确认后的 AI 结构化方案写入业务应用设计态。 */
 @Service
@@ -97,7 +98,7 @@ public class BusinessApplicationAiInitializeService {
             object.setOptions(JSON.toJSONString(Map.of(
                     "createMode", "AI_GENERATE",
                     "requirementSummary", StringUtils.defaultString(plan.getRequirementSummary()))));
-            object.setStatus(1);
+            object.setStatus(EnableStatus.ENABLED.getCode());
             Long objectId = objectCreateService.create(object);
             generatedObjectIds.put(rawCode, objectId);
             generatedObjectIds.put(objectCode, objectId);
@@ -105,7 +106,7 @@ public class BusinessApplicationAiInitializeService {
             DesignerContext context = designerService.loadContext(objectId);
             context.setModelSchema(modelSchema);
             context.setPageSchema(pageSchema);
-            designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+            designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
 
             BusinessApplicationObjectDTO binding = new BusinessApplicationObjectDTO();
             binding.setObjectId(objectId);
@@ -161,7 +162,7 @@ public class BusinessApplicationAiInitializeService {
             dto.setProcessCode(StringUtils.trimToNull(suggestion.getProcessCode()));
             dto.setProcessName(processName);
             dto.setProcessDescription(StringUtils.trimToNull(suggestion.getProcessDescription()));
-            dto.setStatus(1);
+            dto.setStatus(EnableStatus.ENABLED.getCode());
             processes.add(businessProcessService.create(dto));
         }
         return List.copyOf(processes);

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.flow.entity.FlowSpelTemplate;
+import com.mdframe.forge.starter.flow.enums.FlowEnableStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowSpelTemplateMapper;
 import com.mdframe.forge.starter.flow.service.FlowSpelTemplateService;
 import lombok.RequiredArgsConstructor;
@@ -54,7 +55,7 @@ public class FlowSpelTemplateServiceImpl extends ServiceImpl<FlowSpelTemplateMap
         
         // 设置初始值
         if (template.getStatus() == null) {
-            template.setStatus(1);
+            template.setStatus(FlowEnableStatus.ENABLED.getCode());
         }
         if (template.getSort() == null) {
             template.setSort(100);
@@ -90,7 +91,7 @@ public class FlowSpelTemplateServiceImpl extends ServiceImpl<FlowSpelTemplateMap
         if (template == null) {
             throw new RuntimeException("模板不存在");
         }
-        template.setStatus(1);
+        template.setStatus(FlowEnableStatus.ENABLED.getCode());
         return updateById(template);
     }
 
@@ -101,7 +102,7 @@ public class FlowSpelTemplateServiceImpl extends ServiceImpl<FlowSpelTemplateMap
         if (template == null) {
             throw new RuntimeException("模板不存在");
         }
-        template.setStatus(0);
+        template.setStatus(FlowEnableStatus.DISABLED.getCode());
         return updateById(template);
     }
 }

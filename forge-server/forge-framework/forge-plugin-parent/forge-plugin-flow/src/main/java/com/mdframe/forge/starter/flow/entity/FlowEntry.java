@@ -50,6 +50,9 @@ public class FlowEntry extends TenantEntity {
 
     private String submitStrategy;
 
+    /**
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowEnableStatus}。
+     */
     private Integer status;
 
     private Integer sort;

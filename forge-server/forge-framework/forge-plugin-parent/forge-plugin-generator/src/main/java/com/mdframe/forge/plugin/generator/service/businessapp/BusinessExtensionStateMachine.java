@@ -32,13 +32,13 @@ public class BusinessExtensionStateMachine {
         if (!Integer.valueOf(extension.getDraftVersion()).equals(version.getVersionNo())) {
             throw new BusinessException("扩展测试版本与当前草稿不一致");
         }
-        if (!BusinessExtensionStatus.TESTED.equals(extension.getStatus())) {
+        if (!BusinessExtensionStatus.TESTED.matches(extension.getStatus())) {
             throw new BusinessException("只有已测试的扩展才能启用");
         }
     }
 
     public String statusAfterContentChange(String currentStatus) {
-        return BusinessExtensionStatus.DRAFT;
+        return BusinessExtensionStatus.DRAFT.getCode();
     }
 
     public void validateFailurePolicy(String hookCode, String riskLevel, String failurePolicy) {

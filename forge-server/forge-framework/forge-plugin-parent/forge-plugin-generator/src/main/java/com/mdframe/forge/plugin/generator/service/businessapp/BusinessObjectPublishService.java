@@ -53,6 +53,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象发布检查和发布门面服务。
@@ -208,7 +209,7 @@ public class BusinessObjectPublishService {
             context.setPageSchema(dto.getPageSchema());
         }
         designerService.applyRelationsToModel(context);
-        context = designerService.saveDraft(context, BusinessObjectDesignStatus.READY);
+        context = designerService.saveDraft(context, BusinessObjectDesignStatus.READY.getCode());
         BusinessPublishCheckVO check = publishCheck(context, permissionSummary);
         boolean force = dto != null && Boolean.TRUE.equals(dto.getForce());
         if (Boolean.FALSE.equals(check.getPublishable())
@@ -225,7 +226,7 @@ public class BusinessObjectPublishService {
         AiBusinessObject object = businessObjectMapper.selectById(objectId);
         object.setConfigKey(publishedConfig.getConfigKey());
         object.setModelCode(publishedConfig.getObjectCode());
-        object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED);
+        object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
         object.setLastPublishVersion(publishedConfig.getPublishedVersion());
         object.setLastPublishTime(publishedConfig.getPublishTime());
         businessObjectMapper.updateById(object);
@@ -323,7 +324,7 @@ public class BusinessObjectPublishService {
         if (object == null) {
             throw new BusinessException("业务对象不存在");
         }
-        object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED);
+        object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
         if (context.getConfig() != null) {
             object.setLastPublishVersion(context.getConfig().getPublishedVersion());
             object.setLastPublishTime(context.getConfig().getPublishTime());
@@ -735,7 +736,7 @@ public class BusinessObjectPublishService {
         }
         Set<String> keys = new LinkedHashSet<>();
         for (BusinessObjectRelationVO relation : context.getRelations()) {
-            if (relation == null || Integer.valueOf(0).equals(relation.getStatus())
+            if (relation == null || EnableStatus.DISABLED.matches(relation.getStatus())
                     || !StringUtils.equals(context.getObject().getObjectCode(), relation.getSourceObjectCode())) {
                 continue;
             }
@@ -1756,7 +1757,7 @@ public class BusinessObjectPublishService {
                     "CONFIG_APP_ENTRY", "配置入口", "publish", 320);
             return;
         }
-        if (Integer.valueOf(0).equals(app.getStatus())) {
+        if (EnableStatus.DISABLED.matches(app.getStatus())) {
             add(items, "APP_ENTRY_DISABLED", "APP_ENTRY", BusinessPublishCheckLevel.WARN,
                     "应用入口已停用", "当前业务应用入口已停用，菜单点击后不会进入运行态", null, null,
                     "ENABLE_APP_ENTRY", "启用入口", "publish", 321);

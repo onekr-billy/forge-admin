@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 应用工作台首屏摘要与就绪度编排服务。
@@ -111,7 +112,7 @@ public class BusinessApplicationWorkspaceService {
             List<BusinessApplicationObjectVO> objects,
             List<BusinessAppVO> entries) {
         List<BusinessApplicationReadinessIssueVO> issues = new ArrayList<>();
-        if (!Integer.valueOf(1).equals(application.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(application.getStatus())) {
             issues.add(issue("APPLICATION_DISABLED", LEVEL_BLOCK, "应用已停用",
                     "请先启用应用后再继续配置和发布。", "overview", "APPLICATION",
                     application.getId(), application.getApplicationCode()));
@@ -126,7 +127,7 @@ public class BusinessApplicationWorkspaceService {
         dependencyInspection.issues().forEach(item -> issues.add(issue(
                 item.code(), LEVEL_BLOCK, item.title(), item.message(), "objects", "PAGE",
                 application.getId(), item.pageId())));
-        if (entries.stream().noneMatch(item -> Integer.valueOf(1).equals(item.getStatus()))) {
+        if (entries.stream().noneMatch(item -> EnableStatus.ENABLED.matches(item.getStatus()))) {
             issues.add(issue("ACTIVE_ENTRY_MISSING", LEVEL_WARN, "尚未配置页面入口",
                     "页面入口可按需配置；当前仍可预览草稿、发布对象或生成代码。", "entries", "APPLICATION",
                     application.getId(), application.getApplicationCode()));

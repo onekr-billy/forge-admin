@@ -12,7 +12,7 @@ CREATE TABLE `sys_notice_org` (
   KEY `idx_notice_id` (`notice_id`),
   KEY `idx_org_id` (`org_id`),
   KEY `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='通知公告组织关联表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='通知公告组织关联表';
 
 -- ----------------------------
 -- 通知公告已读记录表
@@ -33,7 +33,7 @@ CREATE TABLE `sys_notice_read_record` (
   KEY `idx_notice_id` (`notice_id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='通知公告已读记录表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='通知公告已读记录表';
 
 -- ----------------------------
 -- 扩展sys_notice表字段

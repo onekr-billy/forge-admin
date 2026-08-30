@@ -16,6 +16,7 @@ import com.mdframe.forge.plugin.generator.util.DynamicDataSourceUtil;
 import com.mdframe.forge.plugin.generator.util.GenDatasourcePasswordCodec;
 import com.mdframe.forge.plugin.generator.util.GenUtils;
 import com.mdframe.forge.starter.core.domain.PageQuery;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -288,7 +289,7 @@ public class GenDatasourceServiceImpl extends ServiceImpl<GenDatasourceMapper, G
         if (datasource == null) {
             throw new RuntimeException("数据源不存在: datasourceId=" + datasourceId);
         }
-        if (datasource.getIsEnabled() == 0) {
+        if (EnableStatus.DISABLED.matches(datasource.getIsEnabled())) {
             throw new RuntimeException("数据源已禁用: " + datasource.getDatasourceName());
         }
         // 解密密码用于连接

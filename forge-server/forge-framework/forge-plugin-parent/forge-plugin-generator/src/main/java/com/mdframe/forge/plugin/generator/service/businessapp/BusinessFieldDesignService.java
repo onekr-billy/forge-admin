@@ -74,7 +74,7 @@ public class BusinessFieldDesignService {
         }
         context.setModelSchema(modelSchema);
         context.setPageSchema(syncFieldVisibility(context.getPageSchema(), newField));
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
         return findFieldVO(objectId, newField.getField());
     }
 
@@ -115,7 +115,7 @@ public class BusinessFieldDesignService {
         context.setModelSchema(schemaNormalizer.normalizeModelFields(context.getModelSchema(), true));
         LowcodeFieldSchema normalized = requireField(context.getModelSchema(), updated.getField());
         context.setPageSchema(syncFieldVisibility(context.getPageSchema(), normalized));
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
         return findFieldVO(objectId, normalized.getField());
     }
 
@@ -142,7 +142,7 @@ public class BusinessFieldDesignService {
         context.setPageSchema(removeFieldRefs(context.getPageSchema(), field.getField()));
         removeDesignerOptionsFieldRefs(context, field.getField());
         context.setModelSchema(schemaNormalizer.normalizeModelFields(context.getModelSchema(), true));
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -165,7 +165,7 @@ public class BusinessFieldDesignService {
                 field == null || field.getSortOrder() == null ? Integer.MAX_VALUE : field.getSortOrder()));
         reorderPageRefs(context.getPageSchema(), fieldCodes);
         context.setModelSchema(schemaNormalizer.normalizeModelFields(context.getModelSchema(), true));
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
         return listFields(objectId);
     }
 

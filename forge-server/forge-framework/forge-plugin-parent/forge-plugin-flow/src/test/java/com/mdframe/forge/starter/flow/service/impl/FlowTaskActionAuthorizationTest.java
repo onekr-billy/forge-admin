@@ -1,6 +1,7 @@
 package com.mdframe.forge.starter.flow.service.impl;
 
 import com.mdframe.forge.starter.flow.entity.FlowTask;
+import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,73 +12,73 @@ class FlowTaskActionAuthorizationTest {
     @Test
     void shouldAuthorizeClaimedTaskForSameTenantAndAssignee() {
         assertThat(FlowTaskActionAuthorization.authorize(
-                task(1L, "101", 1), "101", 1L,
-                "APPROVE", "key-1", "sha256:digest", 2)).isFalse();
+                task(1L, "101", FlowTaskStatus.CLAIMED), "101", 1L,
+                "APPROVE", "key-1", "sha256:digest", FlowTaskStatus.APPROVED)).isFalse();
     }
 
     @Test
     void shouldKeepDirectUiCompatibilityForAutoAssignedPendingTask() {
         assertThat(FlowTaskActionAuthorization.authorize(
-                task(1L, "101", 0), "101", 1L,
-                "APPROVE", null, null, 2)).isFalse();
+                task(1L, "101", FlowTaskStatus.PENDING), "101", 1L,
+                "APPROVE", null, null, FlowTaskStatus.APPROVED)).isFalse();
     }
 
     @Test
     void shouldRejectCrossTenantTask() {
         assertThatThrownBy(() -> FlowTaskActionAuthorization.authorize(
-                task(2L, "101", 1), "101", 1L,
-                "APPROVE", "key-1", "sha256:digest", 2))
+                task(2L, "101", FlowTaskStatus.CLAIMED), "101", 1L,
+                "APPROVE", "key-1", "sha256:digest", FlowTaskStatus.APPROVED))
                 .hasMessage("FLOW_TASK_TENANT_MISMATCH");
     }
 
     @Test
     void shouldRejectTaskTransferredAfterConfirmation() {
         assertThatThrownBy(() -> FlowTaskActionAuthorization.authorize(
-                task(1L, "202", 1), "101", 1L,
-                "APPROVE", "key-1", "sha256:digest", 2))
+                task(1L, "202", FlowTaskStatus.CLAIMED), "101", 1L,
+                "APPROVE", "key-1", "sha256:digest", FlowTaskStatus.APPROVED))
                 .hasMessage("FLOW_TASK_ASSIGNEE_MISMATCH");
     }
 
     @Test
     void shouldRejectCompletedTaskWithDifferentRequest() {
-        FlowTask task = task(1L, "101", 2);
+        FlowTask task = task(1L, "101", FlowTaskStatus.APPROVED);
         task.setActionIdempotencyKey("key-old");
         task.setActionRequestDigest("sha256:old");
         task.setActionType("APPROVE");
 
         assertThatThrownBy(() -> FlowTaskActionAuthorization.authorize(
-                task, "101", 1L, "APPROVE", "key-new", "sha256:new", 2))
+                task, "101", 1L, "APPROVE", "key-new", "sha256:new", FlowTaskStatus.APPROVED))
                 .hasMessage("FLOW_TASK_IDEMPOTENCY_CONFLICT");
     }
 
     @Test
     void shouldReturnIdempotentSuccessForSameCompletedRequest() {
-        FlowTask task = task(1L, "101", 2);
+        FlowTask task = task(1L, "101", FlowTaskStatus.APPROVED);
         task.setActionIdempotencyKey("key-1");
         task.setActionRequestDigest("sha256:digest");
         task.setActionType("APPROVE");
 
         assertThat(FlowTaskActionAuthorization.authorize(
-                task, "101", 1L, "APPROVE", "key-1", "sha256:digest", 2)).isTrue();
+                task, "101", 1L, "APPROVE", "key-1", "sha256:digest", FlowTaskStatus.APPROVED)).isTrue();
     }
 
     @Test
     void shouldNotExposeIdempotentSuccessToAnotherActor() {
-        FlowTask task = task(1L, "101", 2);
+        FlowTask task = task(1L, "101", FlowTaskStatus.APPROVED);
         task.setActionIdempotencyKey("key-1");
         task.setActionRequestDigest("sha256:digest");
         task.setActionType("APPROVE");
 
         assertThatThrownBy(() -> FlowTaskActionAuthorization.authorize(
-                task, "202", 1L, "APPROVE", "key-1", "sha256:digest", 2))
+                task, "202", 1L, "APPROVE", "key-1", "sha256:digest", FlowTaskStatus.APPROVED))
                 .hasMessage("FLOW_TASK_ASSIGNEE_MISMATCH");
     }
 
-    private FlowTask task(Long tenantId, String assignee, Integer status) {
+    private FlowTask task(Long tenantId, String assignee, FlowTaskStatus status) {
         FlowTask task = new FlowTask();
         task.setTenantId(tenantId);
         task.setAssignee(assignee);
-        task.setStatus(status);
+        task.setStatus(status.getCode());
         return task;
     }
 }

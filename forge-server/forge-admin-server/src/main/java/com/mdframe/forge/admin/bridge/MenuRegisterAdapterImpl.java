@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.system.mapper.SysResourceMapper;
 import com.mdframe.forge.plugin.system.mapper.SysRoleResourceMapper;
 import com.mdframe.forge.plugin.system.service.ISysResourceService;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -67,8 +68,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setComponent("ai/crud-page");
         resource.setIsExternal(0);
         resource.setIsPublic(0);
-        resource.setMenuStatus(1);
-        resource.setVisible(1);
+        resource.setMenuStatus(EnableStatus.ENABLED.getCode());
+        resource.setVisible(EnableStatus.ENABLED.getCode());
         resource.setPerms(perms);
         resource.setKeepAlive(0);
         resource.setAlwaysShow(0);
@@ -110,8 +111,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         }
         SysResource resource = new SysResource();
         resource.setId(menuResourceId);
-        resource.setMenuStatus(0);
-        resource.setVisible(0);
+        resource.setMenuStatus(EnableStatus.DISABLED.getCode());
+        resource.setVisible(EnableStatus.DISABLED.getCode());
         resourceService.updateById(resource);
         log.info("[MenuRegisterAdapter] 禁用菜单成功: menuId={}", menuResourceId);
     }
@@ -161,8 +162,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setComponent(component);
         resource.setIsExternal(0);
         resource.setIsPublic(0);
-        resource.setMenuStatus(enabled ? 1 : 0);
-        resource.setVisible(enabled ? 1 : 0);
+        resource.setMenuStatus(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
+        resource.setVisible(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         resource.setPerms(perms);
         resource.setIcon(StringUtils.defaultIfBlank(icon, "ionicons5:AppsOutline"));
         resource.setKeepAlive(0);
@@ -195,8 +196,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setPerms(perms);
         resource.setIcon(StringUtils.defaultIfBlank(icon, "ionicons5:AppsOutline"));
         resource.setSort(sort != null ? sort : 0);
-        resource.setMenuStatus(enabled ? 1 : 0);
-        resource.setVisible(enabled ? 1 : 0);
+        resource.setMenuStatus(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
+        resource.setVisible(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         resource.setClientCode(StringUtils.defaultIfBlank(clientCode, DEFAULT_CLIENT_CODE));
         resourceService.updateById(resource);
         log.info("[MenuRegisterAdapter] 更新应用入口菜单成功: menuId={}, menuName={}, parentId={}, clientCode={}",
@@ -249,8 +250,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setComponent(null);
         resource.setIsExternal(0);
         resource.setIsPublic(0);
-        resource.setMenuStatus(1);
-        resource.setVisible(1);
+        resource.setMenuStatus(EnableStatus.ENABLED.getCode());
+        resource.setVisible(EnableStatus.ENABLED.getCode());
         resource.setPerms(perms);
         resource.setIcon("ionicons5:FolderOpenOutline");
         resource.setKeepAlive(0);
@@ -289,8 +290,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setComponent(null);
         resource.setIsExternal(0);
         resource.setIsPublic(0);
-        resource.setMenuStatus(1);
-        resource.setVisible(1);
+        resource.setMenuStatus(EnableStatus.ENABLED.getCode());
+        resource.setVisible(EnableStatus.ENABLED.getCode());
         resource.setPerms(perms);
         resource.setIcon(StringUtils.defaultIfBlank(icon, "ionicons5:AlbumsOutline"));
         resource.setKeepAlive(0);
@@ -357,8 +358,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
                     StringUtils.defaultIfBlank(stale.getClientCode(), DEFAULT_CLIENT_CODE)))) {
                 SysResource disabled = new SysResource();
                 disabled.setId(stale.getId());
-                disabled.setMenuStatus(0);
-                disabled.setVisible(0);
+                disabled.setMenuStatus(EnableStatus.DISABLED.getCode());
+                disabled.setVisible(EnableStatus.DISABLED.getCode());
                 resourceService.updateById(disabled);
             }
         }
@@ -426,8 +427,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setSort(sort);
         resource.setIsExternal(0);
         resource.setIsPublic(0);
-        resource.setMenuStatus(1);
-        resource.setVisible(1);
+        resource.setMenuStatus(EnableStatus.ENABLED.getCode());
+        resource.setVisible(EnableStatus.ENABLED.getCode());
         resource.setPerms(perms);
         resource.setKeepAlive(0);
         resource.setAlwaysShow(0);
@@ -458,8 +459,8 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setComponent(item.isDirectory() ? null : item.getComponent());
         resource.setIsExternal(0);
         resource.setIsPublic(0);
-        resource.setMenuStatus(item.isVisible() ? 1 : 0);
-        resource.setVisible(item.isVisible() ? 1 : 0);
+        resource.setMenuStatus(item.isVisible() ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
+        resource.setVisible(item.isVisible() ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         resource.setPerms(item.getPerms());
         resource.setIcon(StringUtils.defaultIfBlank(item.getIcon(), item.isDirectory()
                 ? "ionicons5:FolderOpenOutline" : "ionicons5:AppsOutline"));
@@ -495,12 +496,12 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             resource.setSort(sort);
             changed = true;
         }
-        if (!Integer.valueOf(1).equals(existing.getMenuStatus())) {
-            resource.setMenuStatus(1);
+        if (!EnableStatus.ENABLED.matches(existing.getMenuStatus())) {
+            resource.setMenuStatus(EnableStatus.ENABLED.getCode());
             changed = true;
         }
-        if (!Integer.valueOf(1).equals(existing.getVisible())) {
-            resource.setVisible(1);
+        if (!EnableStatus.ENABLED.matches(existing.getVisible())) {
+            resource.setVisible(EnableStatus.ENABLED.getCode());
             changed = true;
         }
         if (changed) {
@@ -539,12 +540,12 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             resource.setSort(sort);
             changed = true;
         }
-        if (!Integer.valueOf(1).equals(existing.getMenuStatus())) {
-            resource.setMenuStatus(1);
+        if (!EnableStatus.ENABLED.matches(existing.getMenuStatus())) {
+            resource.setMenuStatus(EnableStatus.ENABLED.getCode());
             changed = true;
         }
-        if (!Integer.valueOf(1).equals(existing.getVisible())) {
-            resource.setVisible(1);
+        if (!EnableStatus.ENABLED.matches(existing.getVisible())) {
+            resource.setVisible(EnableStatus.ENABLED.getCode());
             changed = true;
         }
         if (changed) {

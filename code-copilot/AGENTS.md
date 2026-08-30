@@ -19,18 +19,21 @@
 | 类型 | 权威文件 |
 |------|----------|
 | 项目决策 | `code-copilot/memory/decisions.md` |
-| 踩坑记录 | `code-copilot/memory/pitfalls.md` |
+| 踩坑索引 | `code-copilot/memory/pitfalls.md` |
+| 踩坑正文 | `code-copilot/memory/pitfalls/<主题>.md` |
 | 用户偏好 | `code-copilot/memory/preferences.md` |
+| 编码规范 | 根目录 `AGENTS.md` 第 5 章 + `code-copilot/rules/coding-style.md` |
 
-每次新会话、执行 `/test`、阶段验证、Review 修复或归档前验收时，必须先读取这三个文件，再读取当前变更的 spec/tasks/log。
+每次新会话先读 `preferences.md` 和 `pitfalls.md` 索引，再按任务打开对应踩坑分类；不要通读全部踩坑或全部决策。执行 `/test`、阶段验证、Review 修复或归档前验收时，再叠加当前变更的 spec/tasks/log。
 
 ## 3. 写入规则
 
 - 架构、产品、技术路线等长期选择写入 `code-copilot/memory/decisions.md`。
-- 可复用问题、根因、规避方式写入 `code-copilot/memory/pitfalls.md`。
+- 可复用故障、根因、规避方式写入对应的 `code-copilot/memory/pitfalls/<主题>.md`，并在索引里加一行标题。
 - 用户明确偏好、环境偏好、验证偏好写入 `code-copilot/memory/preferences.md`。
+- 编码规范只改 `AGENTS.md` 第 5 章或 `code-copilot/rules/coding-style.md`，不要再抄到踩坑、决策、偏好或 Skill 正文。
 - `code-copilot/knowledge/` 只保留专题知识材料，不再承载上述三类会话记忆。
 
 ## 4. Agent Prompt 同步
 
-修改 `code-copilot/agents/*.md` 时，涉及启动上下文、知识沉淀、验证前置读取的描述，都必须指向 `code-copilot/memory/decisions.md`、`code-copilot/memory/pitfalls.md`、`code-copilot/memory/preferences.md`。
+修改 `code-copilot/agents/*.md` 时，启动上下文改为：读 `preferences.md` + `pitfalls.md` 索引，再按任务打开 `pitfalls/<主题>.md`；不要要求通读全部踩坑或全部决策。

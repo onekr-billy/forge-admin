@@ -16,6 +16,7 @@ import me.zhyd.oauth.request.AuthRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * OAuth 授权码换取服务端已验证身份。
@@ -35,7 +36,7 @@ public class SocialOAuthLoginService {
      * 使用授权码向平台换取身份并映射为已验证身份
      */
     public VerifiedSocialIdentity exchange(SysSocialConfig connection, String code, String state) {
-        if (connection == null || connection.getStatus() == null || connection.getStatus() != 1) {
+        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("连接不存在或已停用");
         }
         if (StrUtil.isBlank(code)) {
@@ -80,7 +81,7 @@ public class SocialOAuthLoginService {
      * 使用不同的 clientId/redirectUri 导致平台校验失败。
      */
     public String buildAuthorizeUrl(SysSocialConfig connection, String state) {
-        if (connection == null || connection.getStatus() == null || connection.getStatus() != 1) {
+        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("连接不存在或已停用");
         }
         return buildAuthRequest(connection).authorize(state);

@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 定时任务运行概览和监控聚合。
@@ -42,7 +43,7 @@ public class JobObservabilityManager {
         overview.setLastExecutionStatus(config.getLastExecutionStatus());
         overview.setLastExecutionTime(config.getLastExecutionTime());
         overview.setConsecutiveFailures(defaultInteger(config.getConsecutiveFailures()));
-        if (Integer.valueOf(1).equals(config.getStatus()) && "SYNCED".equals(config.getSyncStatus())) {
+        if (EnableStatus.ENABLED.matches(config.getStatus()) && "SYNCED".equals(config.getSyncStatus())) {
             overview.setNextFireTime(jobScheduler.nextFireTime(
                     config.getJobName(), config.getJobGroup(), config.getTimezone()));
         }

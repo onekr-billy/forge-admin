@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.GenTemplate;
+import com.mdframe.forge.plugin.generator.dto.GenTemplatePreviewDTO;
 import com.mdframe.forge.plugin.generator.service.IGenTemplateService;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -13,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 代码生成模板管理Controller
@@ -107,13 +107,11 @@ public class GenTemplateController {
      * 预览模板渲染结果
      */
     @PostMapping("/preview")
-    public RespInfo<String> preview(@RequestBody Map<String, Long> params) {
-        Long templateId = params.get("templateId");
-        Long tableId = params.get("tableId");
-        if (templateId == null || tableId == null) {
+    public RespInfo<String> preview(@RequestBody GenTemplatePreviewDTO dto) {
+        if (dto.getTemplateId() == null || dto.getTableId() == null) {
             return RespInfo.error("参数不完整");
         }
-        String result = genTemplateService.previewTemplate(templateId, tableId);
+        String result = genTemplateService.previewTemplate(dto.getTemplateId(), dto.getTableId());
         return RespInfo.success(result);
     }
 

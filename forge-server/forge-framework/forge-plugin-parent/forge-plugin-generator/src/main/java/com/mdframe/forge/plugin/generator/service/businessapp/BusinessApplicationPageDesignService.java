@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 页面形态、对象结构与应用导航的原子元数据保存服务。
@@ -236,7 +237,7 @@ public class BusinessApplicationPageDesignService {
         object.setModelCode(namingService.buildModelCode(application.getSuiteCode(), request.objectCode()));
         object.setDisplayField(resolveDisplayField(request.fields()));
         object.setDescription("由应用“" + application.getApplicationName() + "”中的页面自动管理");
-        object.setStatus(1);
+        object.setStatus(EnableStatus.ENABLED.getCode());
         object.setOptions(buildObjectOptions(application.getId(), request, datasource));
         return objectCreateService.create(object);
     }

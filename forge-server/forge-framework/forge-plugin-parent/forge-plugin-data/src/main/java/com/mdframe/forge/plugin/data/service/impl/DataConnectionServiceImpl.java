@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.data.dto.DataConnectionSaveDTO;
 import com.mdframe.forge.plugin.data.entity.DataConnection;
 import com.mdframe.forge.plugin.data.mapper.DataConnectionMapper;
 import com.mdframe.forge.plugin.data.service.DataConnectionService;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.crypto.persistence.PersistentCryptoService;
@@ -84,7 +85,7 @@ public class DataConnectionServiceImpl extends ServiceImpl<DataConnectionMapper,
         entity.setSchemaName(dto.getSchemaName());
         entity.setTestSql(dto.getTestSql() != null ? dto.getTestSql() : "SELECT 1");
         entity.setPoolConfigJson(dto.getPoolConfigJson());
-        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : 1);
+        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : EnableStatus.ENABLED.getCode());
         entity.setDescription(dto.getDescription());
         return entity;
     }

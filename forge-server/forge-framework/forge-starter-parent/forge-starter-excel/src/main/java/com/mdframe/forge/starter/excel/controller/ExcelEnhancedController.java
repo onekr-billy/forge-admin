@@ -1,5 +1,6 @@
 package com.mdframe.forge.starter.excel.controller;
 
+import com.mdframe.forge.starter.excel.enums.AsyncExportStatus;
 import com.mdframe.forge.starter.excel.model.AsyncExportTask;
 import com.mdframe.forge.starter.excel.model.GenericRowData;
 import com.mdframe.forge.starter.excel.model.ImportResult;
@@ -197,7 +198,7 @@ public class ExcelEnhancedController {
         response.put("createTime", task.getCreateTime());
         response.put("finishTime", task.getFinishTime());
         
-        if (task.getStatus() == 2) {
+        if (AsyncExportStatus.FAILED.matches(task.getStatus())) {
             response.put("errorMessage", AsyncExportTask.PUBLIC_FAILURE_MESSAGE);
         }
         
@@ -212,7 +213,7 @@ public class ExcelEnhancedController {
         target.setStatus(source.getStatus());
         target.setFileSize(source.getFileSize());
         target.setDataCount(source.getDataCount());
-        target.setErrorMessage(Integer.valueOf(2).equals(source.getStatus())
+        target.setErrorMessage(AsyncExportStatus.FAILED.matches(source.getStatus())
                 ? AsyncExportTask.PUBLIC_FAILURE_MESSAGE : null);
         target.setCreateBy(source.getCreateBy());
         target.setCreateTime(source.getCreateTime());
@@ -222,14 +223,6 @@ public class ExcelEnhancedController {
     }
     
     private String getStatusText(Integer status) {
-        if (status == null) {
-            return "未知";
-        }
-        switch (status) {
-            case 0: return "处理中";
-            case 1: return "完成";
-            case 2: return "失败";
-            default: return "未知";
-        }
+        return AsyncExportStatus.labelOf(status);
     }
 }

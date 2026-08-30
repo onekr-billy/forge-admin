@@ -30,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 低代码应用草稿与详情服务。
@@ -116,7 +117,7 @@ public class LowcodeAppService {
         previewConfig.setMenuName(resolveMenuName(existing, draft, previewConfig.getAppName()));
         previewConfig.setMode("CONFIG");
         previewConfig.setBuildMode("LOWCODE");
-        previewConfig.setStatus("0");
+        previewConfig.setStatus(EnableStatus.DISABLED.codeAsString());
         previewConfig.setPublishStatus("DRAFT");
         previewConfig.setLayoutType(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "simple-crud"));
         previewConfig.setModelSchema(writeJson(modelSchema, "modelSchema"));
@@ -251,7 +252,7 @@ public class LowcodeAppService {
         config.setMenuSort(dto.getMenuSort() != null ? dto.getMenuSort() : 0);
         config.setMode("CONFIG");
         config.setBuildMode("LOWCODE");
-        config.setStatus("0");
+        config.setStatus(EnableStatus.DISABLED.codeAsString());
         config.setPublishStatus("DRAFT");
         config.setDraftVersion(1);
         config.setPublishedVersion(0);
@@ -288,7 +289,7 @@ public class LowcodeAppService {
         }
         config.setMode("CONFIG");
         config.setBuildMode("LOWCODE");
-        config.setStatus("0");
+        config.setStatus(EnableStatus.DISABLED.codeAsString());
         if (StringUtils.isBlank(config.getPublishStatus())) {
             config.setPublishStatus("DRAFT");
         }

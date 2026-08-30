@@ -18,6 +18,8 @@
 
 ## Backend
 
+- [ ] Controller `@RequestBody` parameters are typed DTO/VO classes, never `Map`.
+- [ ] Status and enable/disable writes/comparisons use `EnableStatus` or a module enum (`getCode()` / `matches()`), not `0`/`1`/`"DRAFT"` literals.
 - [ ] Controller uses `RespInfo.success(data)` / `RespInfo.success()` and Forge codegen-safe routes.
 - [ ] Generated detail/update/delete endpoints use POST (`/getById`, `/edit`, `/remove/{id}`); no `@PutMapping` or `@DeleteMapping` is generated.
 - [ ] Pagination uses `PageQuery` or `pageNum` + `pageSize`, not `page`.

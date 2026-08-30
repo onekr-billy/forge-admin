@@ -18,6 +18,7 @@ import com.mdframe.forge.plugin.data.service.DataDatasetAccessService;
 import com.mdframe.forge.plugin.data.service.DataDatasetFieldService;
 import com.mdframe.forge.plugin.data.service.DataDatasetService;
 import com.mdframe.forge.plugin.data.support.DataDatasetFieldViewAssembler;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.plugin.data.vo.DataBusinessAiContextVO;
 import com.mdframe.forge.plugin.data.vo.DataBusinessDatasetVO;
 import com.mdframe.forge.plugin.data.vo.DataBusinessDefinitionDetailVO;
@@ -111,7 +112,7 @@ public class DataBusinessDefinitionServiceImpl
     @Override
     public DataBusinessAiContextVO getAiContext(Long id) {
         DataBusinessDefinition business = requireBusiness(id);
-        if (business.getStatus() == null || business.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(business.getStatus())) {
             throw new BusinessException("业务定义已禁用");
         }
         List<DataBusinessDatasetVO> datasets = listBusinessDatasets(id, true);
@@ -167,7 +168,7 @@ public class DataBusinessDefinitionServiceImpl
             if (dataset == null) {
                 throw new BusinessException("数据集不存在或已删除");
             }
-            if (dataset.getStatus() == null || dataset.getStatus() != 1) {
+            if (!EnableStatus.ENABLED.matches(dataset.getStatus())) {
                 throw new BusinessException("数据集已禁用：" + dataset.getDatasetName());
             }
             if (!DatasetPublishStatusEnum.isPublished(dataset.getPublishStatus())) {
@@ -186,7 +187,7 @@ public class DataBusinessDefinitionServiceImpl
         entity.setMetricDefinition(trimToNull(dto.getMetricDefinition()));
         entity.setDimensionDefinition(trimToNull(dto.getDimensionDefinition()));
         entity.setUsageGuide(trimToNull(dto.getUsageGuide()));
-        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : existing != null ? existing.getStatus() : 1);
+        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : existing != null ? existing.getStatus() : EnableStatus.ENABLED.getCode());
         return entity;
     }
 

@@ -37,7 +37,7 @@ public class ProcessDiagramInfo {
     private String startUserName;
     
     /**
-     * 流程状态（running-运行中, completed-已完成, terminated-已终止）
+     * 流程状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowDiagramStatus}。
      */
     private String status;
     

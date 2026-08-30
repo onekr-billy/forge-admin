@@ -49,6 +49,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 动态CRUD服务
@@ -504,7 +505,7 @@ public class DynamicCrudService {
      */
     public Map<String, Object> selectByIdAllowDraft(String configKey, Object id) {
         AiCrudConfig config = configService.getByConfigKey(configKey);
-        if (config == null || "1".equals(config.getStatus())) {
+        if (config == null || EnableStatus.ENABLED.matches(config.getStatus())) {
             throw new BusinessException("CRUD配置不存在或已停用: " + configKey);
         }
         if (!"CONFIG".equals(config.getMode())) {
@@ -857,7 +858,7 @@ public class DynamicCrudService {
     @Transactional(rollbackFor = Exception.class)
     public void updateInternalFieldsByIdAllowDraft(String configKey, Object id, Map<String, Object> data) {
         AiCrudConfig config = configService.getByConfigKey(configKey);
-        if (config == null || "1".equals(config.getStatus())) {
+        if (config == null || EnableStatus.ENABLED.matches(config.getStatus())) {
             throw new BusinessException("CRUD配置不存在或已停用: " + configKey);
         }
         if (!"CONFIG".equals(config.getMode())) {
@@ -4923,7 +4924,7 @@ public class DynamicCrudService {
      */
     private AiCrudConfig getConfig(String configKey) {
         AiCrudConfig config = configService.getByConfigKey(configKey);
-        if (config == null || "1".equals(config.getStatus())) {
+        if (config == null || EnableStatus.ENABLED.matches(config.getStatus())) {
             throw new BusinessException("CRUD配置不存在或已停用: " + configKey);
         }
         if (!"CONFIG".equals(config.getMode())) {

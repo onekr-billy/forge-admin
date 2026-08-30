@@ -1,5 +1,8 @@
 package com.mdframe.forge.flow.controller;
 
+import com.mdframe.forge.flow.dto.FlowInstanceStartDTO;
+import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
+import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
 import com.mdframe.forge.starter.auth.config.FlowDelegationSessionVerifier;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
@@ -13,7 +16,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -43,14 +45,14 @@ class FlowDelegatedIdentityControllerTest {
         FlowInstanceController controller = new FlowInstanceController(
                 flowInstanceService, mock(FlowMonitorService.class), mock(FlowOrgIntegrationService.class),
                 delegationVerifier);
-        Map<String, Object> request = new LinkedHashMap<>();
-        request.put("businessKey", "order:1001");
-        request.put("businessType", "order");
-        request.put("title", "采购审批");
-        request.put("variables", Map.of("amount", 100));
-        request.put("userId", "999999");
-        request.put("userName", "伪造用户");
-        request.put("deptId", "888888");
+        FlowInstanceStartDTO request = new FlowInstanceStartDTO();
+        request.setBusinessKey("order:1001");
+        request.setBusinessType("order");
+        request.setTitle("采购审批");
+        request.setVariables(Map.of("amount", 100));
+        request.setUserId("999999");
+        request.setUserName("伪造用户");
+        request.setDeptId("888888");
 
         try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
             controller.startDelegated("order_approval", request);
@@ -73,8 +75,11 @@ class FlowDelegatedIdentityControllerTest {
                 flowTaskService, mock(FlowOverdueReminderService.class));
 
         try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
-            assertThatThrownBy(() -> controller.approve(Map.of(
-                    "taskId", "task-1", "userId", "202", "tenantId", 1L)))
+            FlowTaskApproveDTO request = new FlowTaskApproveDTO();
+            request.setTaskId("task-1");
+            request.setUserId("202");
+            request.setTenantId(1L);
+            assertThatThrownBy(() -> controller.approve(request))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("FLOW_TASK_ASSIGNEE_MISMATCH");
         }
@@ -90,10 +95,14 @@ class FlowDelegatedIdentityControllerTest {
                 flowTaskService, mock(FlowOverdueReminderService.class));
 
         try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
-            controller.reject(Map.of(
-                    "taskId", "task-1", "userId", "101", "tenantId", 1L,
-                    "comment", "不同意", "idempotencyKey", "flow-action-key-1001",
-                    "requestDigest", "sha256:digest"));
+            FlowTaskRejectDTO request = new FlowTaskRejectDTO();
+            request.setTaskId("task-1");
+            request.setUserId("101");
+            request.setTenantId(1L);
+            request.setComment("不同意");
+            request.setIdempotencyKey("flow-action-key-1001");
+            request.setRequestDigest("sha256:digest");
+            controller.reject(request);
         }
 
         verify(flowTaskService).reject(

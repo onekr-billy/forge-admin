@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * AI 模型服务
@@ -279,7 +280,7 @@ public class AiModelService extends ServiceImpl<AiModelMapper, AiModel> {
         if (codes == null) return;
         for (String code : new HashSet<>(codes)) {
             AiModelCapability capability = new AiModelCapability();
-            capability.setModelId(modelId); capability.setCapabilityCode(AiModelCapabilityCode.require(code)); capability.setStatus("0"); capabilityMapper.insert(capability);
+            capability.setModelId(modelId); capability.setCapabilityCode(AiModelCapabilityCode.require(code)); capability.setStatus(EnableStatus.DISABLED.codeAsString()); capabilityMapper.insert(capability);
         }
     }
 

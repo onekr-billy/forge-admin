@@ -69,7 +69,7 @@ public class BusinessObjectCreateService {
         context.setObject(object);
         context.setModelSchema(modelSchema);
         context.setPageSchema(null);
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     private LowcodeModelImportRequest buildImportRequest(AiBusinessObject object, Long datasourceId, String tableName) {

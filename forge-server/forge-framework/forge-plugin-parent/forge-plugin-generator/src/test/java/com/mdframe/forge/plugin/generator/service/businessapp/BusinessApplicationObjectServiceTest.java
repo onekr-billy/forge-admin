@@ -210,7 +210,7 @@ class BusinessApplicationObjectServiceTest {
         application.setTenantId(1L);
         application.setSuiteCode("crm");
         application.setApplicationCode("crm_center");
-        application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT);
+        application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT.getCode());
         return application;
     }
 

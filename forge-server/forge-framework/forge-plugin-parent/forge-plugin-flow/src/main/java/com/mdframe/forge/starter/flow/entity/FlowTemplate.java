@@ -77,7 +77,7 @@ public class FlowTemplate {
     private Integer version;
 
     /**
-     * 状态（0-禁用/1-启用）
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowEnableStatus}。
      */
     private Integer status;
 

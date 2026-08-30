@@ -8,6 +8,7 @@ import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFieldVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,8 +16,9 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +26,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -38,6 +41,7 @@ class BusinessFlowServiceFormAssetMergeTest {
     private Method buildObjectFieldRegistryFormSchema;
     private Method resolveRuntimeBusinessFormRef;
     private Method resolveBusinessTaskFormAsset;
+    private Method mergeRequestedFlowVariables;
     private BusinessApplicationService applicationService;
 
     @BeforeEach
@@ -76,6 +80,9 @@ class BusinessFlowServiceFormAssetMergeTest {
         resolveBusinessTaskFormAsset = BusinessFlowService.class.getDeclaredMethod(
                 "resolveBusinessTaskFormAsset", String.class, String.class);
         resolveBusinessTaskFormAsset.setAccessible(true);
+        mergeRequestedFlowVariables = BusinessFlowService.class.getDeclaredMethod(
+                "mergeRequestedFlowVariables", Map.class, Map.class);
+        mergeRequestedFlowVariables.setAccessible(true);
     }
 
     @Test
@@ -293,6 +300,38 @@ class BusinessFlowServiceFormAssetMergeTest {
         assertEquals("attendance", schema.get("formKey"));
         assertEquals(1, ((List<?>) schema.get("components")).size());
         assertEquals("employeeName", ((Map<?, ?>) ((List<?>) schema.get("components")).get(0)).get("field"));
+    }
+
+    @Test
+    @DisplayName("requested start variables cannot override server-owned business context")
+    void requestedVariablesCannotOverrideServerOwnedContext() {
+        Map<String, Object> target = new LinkedHashMap<>(Map.of("businessKey", "order:100"));
+        Map<String, Object> requested = Map.of(
+                "objectCode", "forged_object",
+                "businessKey", "forged:999");
+
+        InvocationTargetException exception = assertThrows(InvocationTargetException.class,
+                () -> mergeRequestedFlowVariables.invoke(service, target, requested));
+
+        assertTrue(exception.getCause() instanceof BusinessException);
+        assertEquals("启动变量不能覆盖服务端业务上下文：businessKey, objectCode",
+                exception.getCause().getMessage());
+        assertEquals(Map.of("businessKey", "order:100"), target);
+    }
+
+    @Test
+    @DisplayName("requested start variables may include initiator-selected approvers")
+    void requestedVariablesMayIncludeInitiatorSelectedApprovers() throws Exception {
+        Map<String, Object> target = new LinkedHashMap<>(Map.of("businessKey", "order:100"));
+        Map<String, Object> selectedApprovers = Map.of("managerApprove", List.of("101", "102"));
+
+        mergeRequestedFlowVariables.invoke(service, target, Map.of(
+                "PROCESS_START_USER", selectedApprovers,
+                "urgent", true));
+
+        assertEquals(selectedApprovers, target.get("PROCESS_START_USER"));
+        assertEquals(true, target.get("urgent"));
+        assertEquals("order:100", target.get("businessKey"));
     }
 
     private Map<String, Object> asset(String formKey, String formName, List<Map<String, Object>> fields) {

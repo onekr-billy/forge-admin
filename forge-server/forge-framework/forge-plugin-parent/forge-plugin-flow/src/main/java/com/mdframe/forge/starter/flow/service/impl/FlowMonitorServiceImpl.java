@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
+import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowCcMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowCommentMapper;
@@ -173,7 +174,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         List<ProcessInstance> processInstances;
         long total;
         
-        if ("running".equals(status)) {
+        if (FlowBusinessStatus.RUNNING.matches(status)) {
             processInstances = runtimeService.createProcessInstanceQuery()
                     .processDefinitionKey(processDefinitionKey)
                     .active()
@@ -182,7 +183,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
                     .processDefinitionKey(processDefinitionKey)
                     .active()
                     .count();
-        } else if ("suspended".equals(status)) {
+        } else if (FlowBusinessStatus.SUSPENDED.matches(status)) {
             processInstances = runtimeService.createProcessInstanceQuery()
                     .processDefinitionKey(processDefinitionKey)
                     .suspended()
@@ -191,7 +192,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
                     .processDefinitionKey(processDefinitionKey)
                     .suspended()
                     .count();
-        } else if ("completed".equals(status)) {
+        } else if (FlowBusinessStatus.COMPLETED.matches(status)) {
             List<HistoricProcessInstance> historicInstances = historyService.createHistoricProcessInstanceQuery()
                     .processDefinitionKey(processDefinitionKey)
                     .finished()
@@ -209,7 +210,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
                 instance.put("endTime", hpi.getEndTime());
                 instance.put("durationInMillis", hpi.getDurationInMillis());
                 instance.put("startUserId", hpi.getStartUserId());
-                instance.put("status", "completed");
+                instance.put("status", FlowBusinessStatus.COMPLETED.getCode());
                 instances.add(instance);
             }
             
@@ -238,7 +239,9 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
             instance.put("processDefinitionName", pi.getProcessDefinitionName());
             instance.put("startTime", pi.getStartTime());
             instance.put("startUserId", pi.getStartUserId());
-            instance.put("status", pi.isSuspended() ? "suspended" : "running");
+            instance.put("status", pi.isSuspended()
+                    ? FlowBusinessStatus.SUSPENDED.getCode()
+                    : FlowBusinessStatus.RUNNING.getCode());
             instance.put("businessKey", pi.getBusinessKey());
             instances.add(instance);
         }
@@ -265,7 +268,9 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
             result.put("startTime", processInstance.getStartTime());
             result.put("startUserId", processInstance.getStartUserId());
             result.put("businessKey", processInstance.getBusinessKey());
-            result.put("status", processInstance.isSuspended() ? "suspended" : "running");
+            result.put("status", processInstance.isSuspended()
+                    ? FlowBusinessStatus.SUSPENDED.getCode()
+                    : FlowBusinessStatus.RUNNING.getCode());
         } else {
             // 从历史获取
             HistoricProcessInstance hpi = historyService.createHistoricProcessInstanceQuery()
@@ -282,7 +287,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
                 result.put("durationInMillis", hpi.getDurationInMillis());
                 result.put("startUserId", hpi.getStartUserId());
                 result.put("businessKey", hpi.getBusinessKey());
-                result.put("status", "completed");
+                result.put("status", FlowBusinessStatus.COMPLETED.getCode());
             }
         }
         
@@ -656,7 +661,8 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         }
 
         runtimeService.suspendProcessInstanceById(processInstanceId);
-        flowBusinessMapper.updateStatusByProcessInstanceId(processInstanceId, "suspended", tenantId);
+        flowBusinessMapper.updateStatusByProcessInstanceId(
+                processInstanceId, FlowBusinessStatus.SUSPENDED.getCode(), tenantId);
         log.info("流程挂起成功：processInstanceId={}", processInstanceId);
     }
 
@@ -676,7 +682,8 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         }
 
         runtimeService.activateProcessInstanceById(processInstanceId);
-        flowBusinessMapper.updateStatusByProcessInstanceId(processInstanceId, "running", tenantId);
+        flowBusinessMapper.updateStatusByProcessInstanceId(
+                processInstanceId, FlowBusinessStatus.RUNNING.getCode(), tenantId);
         log.info("流程激活成功：processInstanceId={}", processInstanceId);
     }
 
@@ -755,7 +762,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
         item.put("currentNode", "-");
         item.put("currentAssignee", "-");
-        if ("running".equals(business.getStatus()) || "active".equals(business.getStatus())) {
+        if (FlowBusinessStatus.isPending(business.getStatus())) {
             try {
                 List<Task> tasks = taskService.createTaskQuery()
                         .processInstanceId(business.getProcessInstanceId())

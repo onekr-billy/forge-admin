@@ -17,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务消息通道服务。
@@ -52,7 +53,7 @@ public class BusinessMessageChannelService {
                 .toUpperCase(Locale.ROOT);
         if ("INTERNAL".equals(channelType)) {
             BusinessMessageChannelStatus status = internalStatus(channel.getChannelCode(), channel.getChannelName());
-            status.setEnabled(Integer.valueOf(1).equals(channel.getStatus()));
+            status.setEnabled(EnableStatus.ENABLED.matches(channel.getStatus()));
             if (!Boolean.TRUE.equals(status.getEnabled())) {
                 status.setTodo(true);
                 status.setTodoCode("INTERNAL_CHANNEL_DISABLED");

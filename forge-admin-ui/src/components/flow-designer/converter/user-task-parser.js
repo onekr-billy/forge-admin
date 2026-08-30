@@ -9,7 +9,7 @@
  * - candidateUsers / candidateGroups 数组 + 名称列表
  * - 优先级 / 截止时间
  * - 表单（formKey / formJson / formUrl + 表单类型）
- * - 操作权限（7 个布尔字段，默认值与现有面板一致）
+ * - 操作权限（8 个布尔字段，默认值与现有面板一致）
  * - 多实例（会签）：parallel / sequential，completionCondition：all / any / ratio + passRate
  * - 任务监听器 + 执行监听器（每个含 event + type + value）
  */
@@ -33,6 +33,7 @@ const STATIC_ASSIGNEES = new Set([
 const DEFAULT_PERMISSIONS = Object.freeze({
   allowApprove: true,
   allowReject: true,
+  allowRejectToStart: false,
   allowDelegate: true,
   allowReturn: false,
   allowTerminate: false,
@@ -75,6 +76,7 @@ export function parseUserTaskConfig(taskElement) {
     viewKey: 'default',
     formRef: {},
     multiInstanceType: 'none',
+    initiatorSelectNodeKey: '',
     completionCondition: 'all',
     passRate: 100,
     taskListeners: [],
@@ -366,8 +368,14 @@ function applyMultiInstance(el, config) {
   config.passRate = parsed.passRate
 
   const collection = getAttr(loop, 'collection') || getFlowableAttr(loop, 'collection')
-  if (collection)
+  if (collection) {
     config.multiInstanceCollection = collection
+    const match = String(collection).match(/^\$\{PROCESS_START_USER\[['"]([^'"\]]+)['"]\]\}$/)
+    if (match) {
+      config.assignee = 'initiatorSelect'
+      config.initiatorSelectNodeKey = match[1]
+    }
+  }
   const elementVariable = getAttr(loop, 'elementVariable') || getFlowableAttr(loop, 'elementVariable')
   if (elementVariable)
     config.multiInstanceElementVariable = elementVariable

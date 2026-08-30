@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.capability.identity.security.CapabilityIdentityI
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DataAccessException;
@@ -175,7 +176,7 @@ public class ExternalIdentityMappingService {
                 || !tenantId.equals(user.getTenantId())
                 || user.getActiveOrgId() == null || user.getActiveOrgId() <= 0
                 || user.getRoleIds() == null || user.getRoleIds().isEmpty()
-                || !Integer.valueOf(1).equals(user.getUserStatus())
+                || !EnableStatus.ENABLED.matches(user.getUserStatus())
                 || Boolean.TRUE.equals(user.getForcePasswordChange())) {
             throw new BusinessException(400, "invalid_grant");
         }

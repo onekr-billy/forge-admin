@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.collaboration.service;
 
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationCallbackProcessStatus;
 import com.mdframe.forge.plugin.collaboration.domain.callback.CallbackAcceptResult;
 import com.mdframe.forge.plugin.collaboration.domain.callback.VerifiedCallback;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialCallbackEvent;
@@ -21,6 +22,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 企业协同回调事件收件箱服务（Task 7）。
@@ -40,8 +42,6 @@ public class CollaborationCallbackInboxService {
 
     private static final String PAYLOAD_CREDENTIAL_TYPE = "CALLBACK_PAYLOAD";
     private static final String SIGNATURE_VERIFIED = "VERIFIED";
-    private static final String STATUS_PENDING = "PENDING";
-
     private final ISocialConfigService socialConfigService;
     private final ISocialAppConfigService socialAppConfigService;
     private final SocialAppCredentialService credentialService;
@@ -52,7 +52,7 @@ public class CollaborationCallbackInboxService {
      */
     public SysSocialConfig requireConnection(String connectionCode) {
         SysSocialConfig connection = socialConfigService.selectConnectionByCode(connectionCode);
-        if (connection == null || connection.getStatus() == null || connection.getStatus() != 1) {
+        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("协同连接不存在或未启用");
         }
         return connection;
@@ -64,7 +64,7 @@ public class CollaborationCallbackInboxService {
     public SysSocialAppConfig requireApp(SysSocialConfig connection, String appCode) {
         return socialAppConfigService.listApps(connection.getTenantId(), connection.getId()).stream()
                 .filter(app -> appCode != null && appCode.equals(app.getAppCode()))
-                .filter(app -> app.getStatus() != null && app.getStatus() == 1)
+                .filter(app -> EnableStatus.ENABLED.matches(app.getStatus()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("协同应用不存在或未启用"));
     }
@@ -92,7 +92,7 @@ public class CollaborationCallbackInboxService {
         event.setEventTime(callback.eventTime());
         event.setSignatureStatus(SIGNATURE_VERIFIED);
         event.setPayloadCipher(encryptPayload(connection, app, callback.plaintext()));
-        event.setProcessStatus(STATUS_PENDING);
+        event.setProcessStatus(CollaborationCallbackProcessStatus.PENDING.getCode());
         event.setRetryCount(0);
         try {
             callbackEventMapper.insert(event);

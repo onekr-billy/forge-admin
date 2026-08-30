@@ -49,7 +49,7 @@ public class AssertRecordActionStepExecutor implements BusinessActionStepExecuto
         }
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("记录状态门禁通过");
         result.setResult(new LinkedHashMap<>(Map.of(
                 "targetConfigKey", targetConfigKey,

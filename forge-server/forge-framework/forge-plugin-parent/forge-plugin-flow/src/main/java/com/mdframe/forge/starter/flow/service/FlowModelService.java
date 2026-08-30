@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.dto.FlowStartConfig;
 
 import java.util.List;
 import java.util.Map;
@@ -79,6 +80,9 @@ public interface FlowModelService extends IService<FlowModel> {
      * 根据ModelKey获取模型
      */
     FlowModel getModelByKey(String modelKey);
+
+    /** 获取发起人需要选择的审批节点。 */
+    FlowStartConfig getStartConfig(String modelKey);
 
     /**
      * 获取模型版本历史

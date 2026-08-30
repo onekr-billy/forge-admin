@@ -1,6 +1,10 @@
 package com.mdframe.forge.flow.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.mdframe.forge.flow.dto.FlowMonitorCleanupDTO;
+import com.mdframe.forge.flow.dto.FlowMonitorReasonDTO;
+import com.mdframe.forge.flow.dto.FlowMonitorReassignDTO;
+import com.mdframe.forge.flow.dto.FlowMonitorRollbackDTO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -112,13 +116,13 @@ public class FlowMonitorController {
     @PostMapping("/terminate/{processInstanceId}")
     public RespInfo<Void> terminateProcess(
             @PathVariable String processInstanceId,
-            @RequestBody Map<String, Object> params) {
+            @RequestBody(required = false) FlowMonitorReasonDTO dto) {
 
         LoginUser loginUser = SessionHelper.getLoginUser();
         String userId = loginUser != null ? String.valueOf(loginUser.getUserId()) : null;
-        String reason = (String) params.get("reason");
+        String reason = optionalText(dto == null ? null : dto.getReason());
 
-        if (reason == null || reason.isEmpty()) {
+        if (reason == null) {
             reason = "管理员终止流程";
         }
 
@@ -134,18 +138,18 @@ public class FlowMonitorController {
     @PostMapping("/rollback/{processInstanceId}")
     public RespInfo<Void> rollbackProcess(
             @PathVariable String processInstanceId,
-            @RequestBody Map<String, Object> params) {
+            @RequestBody FlowMonitorRollbackDTO dto) {
 
         LoginUser loginUser = SessionHelper.getLoginUser();
         String userId = loginUser != null ? String.valueOf(loginUser.getUserId()) : null;
-        String targetActivityId = (String) params.get("targetActivityId");
-        String reason = (String) params.get("reason");
+        String targetActivityId = optionalText(dto.getTargetActivityId());
+        String reason = optionalText(dto.getReason());
 
-        if (targetActivityId == null || targetActivityId.isEmpty()) {
+        if (targetActivityId == null) {
             return RespInfo.error("目标节点ID不能为空");
         }
 
-        if (reason == null || reason.isEmpty()) {
+        if (reason == null) {
             reason = "管理员回退流程";
         }
 
@@ -161,18 +165,18 @@ public class FlowMonitorController {
     @PostMapping("/reassign/{taskId}")
     public RespInfo<Void> reassignTask(
             @PathVariable String taskId,
-            @RequestBody Map<String, Object> params) {
+            @RequestBody FlowMonitorReassignDTO dto) {
 
         LoginUser loginUser = SessionHelper.getLoginUser();
         String userId = loginUser != null ? String.valueOf(loginUser.getUserId()) : null;
-        String newAssignee = (String) params.get("newAssignee");
-        String reason = (String) params.get("reason");
+        String newAssignee = optionalText(dto.getNewAssignee());
+        String reason = optionalText(dto.getReason());
 
-        if (newAssignee == null || newAssignee.isEmpty()) {
+        if (newAssignee == null) {
             return RespInfo.error("新处理人ID不能为空");
         }
 
-        if (reason == null || reason.isEmpty()) {
+        if (reason == null) {
             reason = "管理员转派任务";
         }
 
@@ -188,13 +192,13 @@ public class FlowMonitorController {
     @PostMapping("/instance/{processInstanceId}/delete")
     public RespInfo<Map<String, Object>> deleteProcessInstance(
             @PathVariable String processInstanceId,
-            @RequestBody(required = false) Map<String, Object> params) {
+            @RequestBody(required = false) FlowMonitorReasonDTO dto) {
         if (isBlank(processInstanceId)) {
             throw new BusinessException(400, "流程实例ID不能为空");
         }
 
-        String reason = stringParam(params, "reason");
-        if (isBlank(reason)) {
+        String reason = optionalText(dto == null ? null : dto.getReason());
+        if (reason == null) {
             reason = "管理员删除流程数据";
         }
 
@@ -207,21 +211,21 @@ public class FlowMonitorController {
      */
     @SaCheckPermission("flow:monitor:cleanup")
     @PostMapping("/instances/cleanup")
-    public RespInfo<Map<String, Object>> cleanupProcessInstances(@RequestBody Map<String, Object> params) {
-        String confirmText = stringParam(params, "confirmText");
+    public RespInfo<Map<String, Object>> cleanupProcessInstances(@RequestBody FlowMonitorCleanupDTO dto) {
+        String confirmText = optionalText(dto.getConfirmText());
         if (!"确认删除流程数据".equals(confirmText)) {
             throw new BusinessException(400, "确认文本不正确，无法删除流程数据");
         }
 
-        String processName = stringParam(params, "processName");
-        String initiator = stringParam(params, "initiator");
-        String status = stringParam(params, "status");
-        String modelKey = stringParam(params, "modelKey");
-        Long startTime = longParam(params, "startTime");
-        Long endTime = longParam(params, "endTime");
+        String processName = optionalText(dto.getProcessName());
+        String initiator = optionalText(dto.getInitiator());
+        String status = optionalText(dto.getStatus());
+        String modelKey = optionalText(dto.getModelKey());
+        Long startTime = dto.getStartTime();
+        Long endTime = dto.getEndTime();
 
-        String reason = stringParam(params, "reason");
-        if (isBlank(reason)) {
+        String reason = optionalText(dto.getReason());
+        if (reason == null) {
             reason = "管理员批量删除流程数据";
         }
 
@@ -377,24 +381,12 @@ public class FlowMonitorController {
         }
     }
 
-    private String stringParam(Map<String, Object> params, String key) {
-        if (params == null || params.get(key) == null) {
+    private String optionalText(String value) {
+        if (value == null) {
             return null;
         }
-        String value = String.valueOf(params.get(key)).trim();
-        return value.isEmpty() ? null : value;
-    }
-
-    private Long longParam(Map<String, Object> params, String key) {
-        String value = stringParam(params, key);
-        if (isBlank(value)) {
-            return null;
-        }
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            throw new BusinessException(400, key + " 参数格式错误");
-        }
+        String text = value.trim();
+        return text.isEmpty() ? null : text;
     }
 
     private LocalDateTime toLocalDateTime(Long timestamp) {

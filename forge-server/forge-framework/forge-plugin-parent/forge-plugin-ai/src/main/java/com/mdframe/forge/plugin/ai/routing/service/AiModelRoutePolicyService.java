@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.ai.routing.dto.AiModelRoutePolicySaveDTO;
 import com.mdframe.forge.plugin.ai.routing.mapper.AiModelRoutePolicyMapper;
 import com.mdframe.forge.plugin.ai.routing.mapper.AiModelRouteTargetMapper;
 import com.mdframe.forge.plugin.ai.routing.vo.AiModelRoutePolicyVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -91,10 +92,10 @@ public class AiModelRoutePolicyService {
         AiModelRoutePolicy policy = new AiModelRoutePolicy();
         policy.setId(dto.getId()); policy.setPolicyCode(dto.getPolicyCode().trim()); policy.setPolicyName(dto.getPolicyName().trim());
         policy.setRequiredCapabilities(writeJson(dto.getRequiredCapabilities() == null ? List.of() : dto.getRequiredCapabilities().stream().distinct().toList()));
-        policy.setStatus(StringUtils.hasText(dto.getStatus()) ? dto.getStatus() : "0"); policy.setRemark(dto.getRemark()); return policy;
+        policy.setStatus(StringUtils.hasText(dto.getStatus()) ? dto.getStatus() : EnableStatus.DISABLED.codeAsString()); policy.setRemark(dto.getRemark()); return policy;
     }
     private void saveTargets(Long policyId, List<AiModelRoutePolicySaveDTO.Target> targets) {
-        for (AiModelRoutePolicySaveDTO.Target dto : targets) { AiModelRouteTarget target = new AiModelRouteTarget(); target.setPolicyId(policyId); target.setModelId(dto.getModelId()); target.setPriority(dto.getPriority() == null ? 100 : dto.getPriority()); target.setStatus(StringUtils.hasText(dto.getStatus()) ? dto.getStatus() : "0"); targetMapper.insert(target); }
+        for (AiModelRoutePolicySaveDTO.Target dto : targets) { AiModelRouteTarget target = new AiModelRouteTarget(); target.setPolicyId(policyId); target.setModelId(dto.getModelId()); target.setPriority(dto.getPriority() == null ? 100 : dto.getPriority()); target.setStatus(StringUtils.hasText(dto.getStatus()) ? dto.getStatus() : EnableStatus.DISABLED.codeAsString()); targetMapper.insert(target); }
     }
     private AiModelRoutePolicyVO toView(AiModelRoutePolicy policy, List<AiModelRoutePolicyVO.Target> targets) {
         AiModelRoutePolicyVO vo = new AiModelRoutePolicyVO();

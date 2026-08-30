@@ -6,10 +6,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
+import com.mdframe.forge.plugin.capability.controlplane.enums.CapabilityPublishStatus;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityVersion;
 import com.mdframe.forge.plugin.capability.controlplane.mapper.AiCapabilityMapper;
 import com.mdframe.forge.plugin.capability.controlplane.mapper.AiCapabilityVersionMapper;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -108,7 +110,7 @@ public class CapabilityOpenApiDocumentService {
         }
         AiCapabilityVersion capabilityVersion = versionMapper.selectVersion(
                 tenantId, capabilityId, version);
-        if (capabilityVersion == null || !"PUBLISHED".equals(capabilityVersion.getStatus())) {
+        if (capabilityVersion == null || !CapabilityPublishStatus.PUBLISHED.matches(capabilityVersion.getStatus())) {
             throw new BusinessException("能力授权版本不存在或未发布");
         }
         JsonNode inputSchema = sanitizeRequestSchema(
@@ -121,14 +123,14 @@ public class CapabilityOpenApiDocumentService {
             throw new BusinessException("能力文档参数无效");
         }
         AiCapability capability = capabilityMapper.selectTenantById(tenantId, capabilityId);
-        if (capability == null || !"PUBLISHED".equals(capability.getPublishStatus())
-                || !Integer.valueOf(1).equals(capability.getEnabled())
+        if (capability == null || !CapabilityPublishStatus.PUBLISHED.matches(capability.getPublishStatus())
+                || !EnableStatus.ENABLED.matches(capability.getEnabled())
                 || StringUtils.isBlank(capability.getCurrentVersion())) {
             throw new BusinessException("能力未发布或不可用");
         }
         AiCapabilityVersion version = versionMapper.selectVersion(
                 tenantId, capabilityId, capability.getCurrentVersion());
-        if (version == null || !"PUBLISHED".equals(version.getStatus())) {
+        if (version == null || !CapabilityPublishStatus.PUBLISHED.matches(version.getStatus())) {
             throw new BusinessException("能力当前发布版本不存在");
         }
         JsonNode inputSchema = sanitizeRequestSchema(readObject(version.getInputSchema(), "输入"));

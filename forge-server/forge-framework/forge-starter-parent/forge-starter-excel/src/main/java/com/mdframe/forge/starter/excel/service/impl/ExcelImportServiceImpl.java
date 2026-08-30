@@ -34,6 +34,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * Excel 导入服务实现
@@ -175,7 +176,7 @@ public class ExcelImportServiceImpl implements ExcelImportService {
         if (metadata == null) {
             return true;
         }
-        if (Integer.valueOf(0).equals(metadata.getStatus())) {
+        if (EnableStatus.DISABLED.matches(metadata.getStatus())) {
             return false;
         }
         if ("EXPORT".equalsIgnoreCase(metadata.getConfigType())) {

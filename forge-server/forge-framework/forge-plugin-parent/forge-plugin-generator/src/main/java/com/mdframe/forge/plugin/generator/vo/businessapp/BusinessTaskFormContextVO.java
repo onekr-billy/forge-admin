@@ -88,6 +88,16 @@ public class BusinessTaskFormContextVO {
 
     private Boolean allowReturn;
 
+    private Boolean allowMultiReturn;
+
+    private List<Map<String, Object>> returnTargets = new ArrayList<>();
+
+    private Boolean allowDirectSend;
+
+    private String returnSourceActivityId;
+
+    private String returnSourceActivityName;
+
     private Boolean allowTerminate;
 
     private Boolean requireSignature;

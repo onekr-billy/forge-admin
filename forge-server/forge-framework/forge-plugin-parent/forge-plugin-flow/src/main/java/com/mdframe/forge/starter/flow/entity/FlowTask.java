@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 流程任务实体（我的待办/已办）
@@ -113,6 +114,12 @@ public class FlowTask {
     @TableField(exist = false)
     private String businessSummary;
 
+    @TableField(exist = false)
+    private Map<String, Object> businessParams;
+
+    @TableField(exist = false)
+    private Map<String, Object> displayExtensions;
+
     /**
      * 任务标题
      */
@@ -154,7 +161,7 @@ public class FlowTask {
     private Integer priority;
 
     /**
-     * 状态（0-待办/1-已签收/2-已通过/3-已驳回/4-已转办/5-已委派/6-已撤回/7-已退回/8-已终结）
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowTaskStatus}。
      */
     private Integer status;
 

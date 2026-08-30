@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.flow.client.FlowClient;
 import com.mdframe.forge.flow.client.FlowResult;
+import com.mdframe.forge.plugin.capability.flowaction.enums.CapabilityExecuteStatus;
 import com.mdframe.forge.plugin.capability.flowaction.mapper.FlowProcessSystemServiceMapper;
 import com.mdframe.forge.plugin.capability.schema.CapabilitySchemaValidator;
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
@@ -183,7 +184,7 @@ public class FlowProcessStartSystemService implements SystemServiceCapabilityDef
                     + (result == null ? "流程服务无返回" : result.getMsg()));
         }
         Map<String, Object> output = new LinkedHashMap<>();
-        output.put("executeStatus", "SUCCESS");
+        output.put("executeStatus", CapabilityExecuteStatus.SUCCESS.getCode());
         output.put("message", "流程已启动");
         output.put("processInstanceId", result.getData());
         output.put("businessKey", businessKey);

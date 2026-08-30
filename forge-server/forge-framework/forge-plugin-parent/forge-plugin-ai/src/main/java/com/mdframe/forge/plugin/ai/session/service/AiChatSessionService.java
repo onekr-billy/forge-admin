@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * AI 会话管理 Service
@@ -124,7 +125,7 @@ public class AiChatSessionService extends ServiceImpl<AiChatSessionMapper, AiCha
             return false;
         }
         AiChatSession session = getById(sessionId);
-        if (session == null || !"0".equals(session.getStatus())) {
+        if (session == null || !EnableStatus.DISABLED.matches(session.getStatus())) {
             return false;
         }
         if (userId != null && !userId.equals(session.getUserId())) {
@@ -177,7 +178,7 @@ public class AiChatSessionService extends ServiceImpl<AiChatSessionMapper, AiCha
             return false;
         }
         AiChatSession session = getById(sessionId);
-        if (session == null || !"0".equals(session.getStatus())) {
+        if (session == null || !EnableStatus.DISABLED.matches(session.getStatus())) {
             return false;
         }
         if (userId != null && !userId.equals(session.getUserId())) {

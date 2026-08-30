@@ -84,6 +84,13 @@ public interface FlowTaskService {
                 Long tenantId, String idempotencyKey, String requestDigest);
 
     /**
+     * 驳回至流程设计中标记的发起人修改路径。具体目标节点由 BPMN 网关/回路决定，
+     * 服务端通过 rejectToStart 变量保留动作语义，不强行改写用户设计的流程图。
+     */
+    void rejectToStart(String taskId, String userId, String comment, String signature,
+                       Long tenantId, String idempotencyKey, String requestDigest);
+
+    /**
      * 转办
      */
     default void delegate(String taskId, String userId, String targetUserId, String comment) {
@@ -99,6 +106,17 @@ public interface FlowTaskService {
      * 退回上一审批节点
      */
     void returnTask(String taskId, String userId, String comment, String signature);
+
+    /**
+     * 退回指定历史用户任务节点。targetActivityId 为空时等同于上一节点退回。
+     */
+    void returnTask(String taskId, String userId, String comment, String signature,
+                   String targetActivityId);
+
+    /**
+     * 由当前处理人、任务拥有人或流程发起人改派任务。
+     */
+    void reassignByInitiator(String taskId, String userId, String targetUserId, String reason);
 
     /**
      * 终结流程

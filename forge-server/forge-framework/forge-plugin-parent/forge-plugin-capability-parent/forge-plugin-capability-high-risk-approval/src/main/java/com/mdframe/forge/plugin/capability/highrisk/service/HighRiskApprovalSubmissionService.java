@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.capability.controlplane.mapper.AiCapabilityClien
 import com.mdframe.forge.plugin.capability.highrisk.crypto.CapabilityPayloadCrypto;
 import com.mdframe.forge.plugin.capability.highrisk.crypto.EncryptedCapabilityPayload;
 import com.mdframe.forge.plugin.capability.highrisk.domain.AiCapabilityApproval;
+import com.mdframe.forge.plugin.capability.highrisk.enums.HighRiskExecuteStatus;
 import com.mdframe.forge.plugin.capability.highrisk.domain.AiCapabilityPolicy;
 import com.mdframe.forge.plugin.capability.highrisk.mapper.CapabilityApprovalMapper;
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
@@ -94,7 +95,7 @@ public class HighRiskApprovalSubmissionService {
                 || !client.getCredentialVersion().equals(approval.getCredentialVersion())) {
             throw new BusinessException(409, "IDEMPOTENCY_CONFLICT");
         }
-        if ("RESERVED".equals(approval.getExecuteStatus())) {
+        if (HighRiskExecuteStatus.RESERVED.matches(approval.getExecuteStatus())) {
             startApprovalFlow(approval, descriptor, policy);
         }
         return result(approval, true);
@@ -116,8 +117,8 @@ public class HighRiskApprovalSubmissionService {
             throw new BusinessException("APPROVAL_FLOW_UNAVAILABLE");
         }
         approval.setProcessInstanceId(started.getData());
-        approval.setExecuteStatus("PENDING_APPROVAL");
-        approval.setResultCode("PENDING_APPROVAL");
+        approval.setExecuteStatus(HighRiskExecuteStatus.PENDING_APPROVAL.getCode());
+        approval.setResultCode(HighRiskExecuteStatus.PENDING_APPROVAL.getCode());
         requiresNew().executeWithoutResult(status -> updateRequired(approval));
     }
 
@@ -144,8 +145,8 @@ public class HighRiskApprovalSubmissionService {
         approval.setRequestDigest(digest);
         approval.setBusinessStateDigest(businessStateService.snapshot(descriptor, input));
         approval.setFlowModelKey(policy.getApprovalFlowModelKey());
-        approval.setExecuteStatus("RESERVED");
-        approval.setResultCode("RESERVED");
+        approval.setExecuteStatus(HighRiskExecuteStatus.RESERVED.getCode());
+        approval.setResultCode(HighRiskExecuteStatus.RESERVED.getCode());
         approval.setExpiresAt(LocalDateTime.now().plusSeconds(policy.getExpireSeconds()));
         approval.setDelFlag(0L);
         byte[] aad = aad(approval);

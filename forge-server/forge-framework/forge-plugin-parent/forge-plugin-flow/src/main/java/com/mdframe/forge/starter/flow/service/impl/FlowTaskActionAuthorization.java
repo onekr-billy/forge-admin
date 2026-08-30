@@ -1,8 +1,7 @@
 package com.mdframe.forge.starter.flow.service.impl;
 
 import com.mdframe.forge.starter.flow.entity.FlowTask;
-
-import java.util.Objects;
+import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 
 /**
  * Flow 服务最终任务动作授权规则。
@@ -17,7 +16,7 @@ final class FlowTaskActionAuthorization {
      */
     static boolean authorize(FlowTask task, String userId, Long tenantId,
                              String actionType, String idempotencyKey,
-                             String requestDigest, int completedStatus) {
+                             String requestDigest, FlowTaskStatus completedStatus) {
         if (tenantId == null || tenantId <= 0) {
             throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
         }
@@ -38,8 +37,8 @@ final class FlowTaskActionAuthorization {
         }
         boolean governedAction = idempotencyKey != null || requestDigest != null;
         boolean actionableStatus = governedAction
-                ? Objects.equals(task.getStatus(), 1)
-                : Objects.equals(task.getStatus(), 0) || Objects.equals(task.getStatus(), 1);
+                ? FlowTaskStatus.CLAIMED.matches(task.getStatus())
+                : FlowTaskStatus.isActionable(task.getStatus());
         if (!actionableStatus) {
             throw new IllegalStateException("FLOW_TASK_NOT_ACTIONABLE");
         }
@@ -54,14 +53,14 @@ final class FlowTaskActionAuthorization {
 
     private static boolean isIdempotentReplay(FlowTask task, String actionType,
                                               String idempotencyKey, String requestDigest,
-                                              int completedStatus) {
+                                              FlowTaskStatus completedStatus) {
         if (idempotencyKey == null || requestDigest == null) {
             return false;
         }
         boolean same = idempotencyKey.equals(task.getActionIdempotencyKey())
                 && requestDigest.equals(task.getActionRequestDigest())
                 && actionType.equals(task.getActionType());
-        if (same && Objects.equals(task.getStatus(), completedStatus)) {
+        if (same && completedStatus != null && completedStatus.matches(task.getStatus())) {
             return true;
         }
         if (task.getActionIdempotencyKey() != null) {

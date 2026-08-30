@@ -47,7 +47,7 @@ class BusinessExtensionExecutionServiceTest {
     @Test
     @DisplayName("validated visual rule test moves the current draft to TESTED")
     void visualRuleTestMovesDraftToTested() {
-        AiBusinessExtension extension = extension(BusinessExtensionStatus.DRAFT);
+        AiBusinessExtension extension = extension(BusinessExtensionStatus.DRAFT.getCode());
         AiBusinessExtensionVersion version = version(false, false);
         AtomicReference<String> lifecycleStatus = new AtomicReference<>();
         BusinessExtensionMapper extensionMapper = proxy(BusinessExtensionMapper.class, (method, args) -> {
@@ -67,13 +67,13 @@ class BusinessExtensionExecutionServiceTest {
         var result = service.test(extension.getId(), new BusinessExtensionTestDTO());
 
         assertTrue(result.isPassed());
-        assertEquals(BusinessExtensionStatus.TESTED, lifecycleStatus.get());
+        assertEquals(BusinessExtensionStatus.TESTED.getCode(), lifecycleStatus.get());
     }
 
     @Test
     @DisplayName("tested version enables exactly the current draft version")
     void testedVersionEnablesCurrentDraft() {
-        AiBusinessExtension extension = extension(BusinessExtensionStatus.TESTED);
+        AiBusinessExtension extension = extension(BusinessExtensionStatus.TESTED.getCode());
         AiBusinessExtensionVersion version = version(true, true);
         AtomicReference<Integer> enabledVersion = new AtomicReference<>();
         BusinessExtensionMapper extensionMapper = proxy(BusinessExtensionMapper.class, (method, args) -> {
@@ -90,7 +90,7 @@ class BusinessExtensionExecutionServiceTest {
                 "selectVersion".equals(method) ? version : defaultValue(method));
         BusinessExtensionExecutionService service = service(extensionMapper, versionMapper);
 
-        service.updateStatus(extension.getId(), BusinessExtensionStatus.ENABLED);
+        service.updateStatus(extension.getId(), BusinessExtensionStatus.ENABLED.getCode());
 
         assertEquals(extension.getDraftVersion(), enabledVersion.get());
     }
@@ -98,7 +98,7 @@ class BusinessExtensionExecutionServiceTest {
     @Test
     @DisplayName("a structured Java handler failure fails the extension test and writes failed audit")
     void structuredHandlerFailureFailsTestAndWritesAudit() {
-        AiBusinessExtension extension = extension(BusinessExtensionStatus.DRAFT);
+        AiBusinessExtension extension = extension(BusinessExtensionStatus.DRAFT.getCode());
         extension.setExtensionCode("purchase_validation");
         extension.setExtensionType("SERVER_BINDING");
         AiBusinessExtensionVersion version = version(false, false);
@@ -346,7 +346,7 @@ class BusinessExtensionExecutionServiceTest {
     }
 
     private AiBusinessExtension serverExtension(String failurePolicy) {
-        AiBusinessExtension extension = extension(BusinessExtensionStatus.ENABLED);
+        AiBusinessExtension extension = extension(BusinessExtensionStatus.ENABLED.getCode());
         extension.setExtensionCode("purchase_validation");
         extension.setExtensionType("SERVER_BINDING");
         extension.setFailurePolicy(failurePolicy);

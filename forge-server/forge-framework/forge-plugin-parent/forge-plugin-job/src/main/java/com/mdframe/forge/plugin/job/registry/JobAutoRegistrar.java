@@ -19,6 +19,7 @@ import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Method;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 任务注解自动注册处理器
@@ -102,7 +103,7 @@ public class JobAutoRegistrar implements BeanPostProcessor {
         jobConfig.setCronExpression(scheduledJob.cron());
         jobConfig.setTimezone(JobScheduleType.DEFAULT_TIMEZONE);
         jobConfig.setExecuteMode("BEAN");
-        jobConfig.setStatus(1);
+        jobConfig.setStatus(EnableStatus.ENABLED.getCode());
         jobConfig.setConcurrentPolicy(JobConcurrentPolicy.DEFAULT);
         jobConfig.setMisfirePolicy(JobMisfirePolicy.DEFAULT);
         jobConfig.setIdempotentFlag(0);

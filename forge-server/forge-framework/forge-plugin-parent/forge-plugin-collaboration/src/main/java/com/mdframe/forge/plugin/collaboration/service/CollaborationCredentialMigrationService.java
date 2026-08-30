@@ -23,6 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 旧登录凭据兼容迁移服务（Task 4C）
@@ -173,7 +174,7 @@ public class CollaborationCredentialMigrationService {
                 command.setScope(connection.getScope());
                 // 旧明文只在此处短暂传递，由应用配置服务加密落库
                 command.setSecret(connection.getClientSecret());
-                command.setStatus(1);
+                command.setStatus(EnableStatus.ENABLED.getCode());
                 command.setRemark("旧登录凭据自动迁移生成");
                 appConfigService.createApp(command);
                 app = findAppByCode(tenantId, connectionId, LEGACY_LOGIN_APP_CODE);
@@ -205,7 +206,7 @@ public class CollaborationCredentialMigrationService {
     private SysSocialCapabilityBinding findActiveLoginBinding(Long tenantId, Long connectionId) {
         return appConfigService.listBindings(tenantId, connectionId).stream()
                 .filter(binding -> CollaborationCapability.LOGIN.name().equals(binding.getCapability()))
-                .filter(binding -> Integer.valueOf(1).equals(binding.getStatus()))
+                .filter(binding -> EnableStatus.ENABLED.matches(binding.getStatus()))
                 .findFirst()
                 .orElse(null);
     }

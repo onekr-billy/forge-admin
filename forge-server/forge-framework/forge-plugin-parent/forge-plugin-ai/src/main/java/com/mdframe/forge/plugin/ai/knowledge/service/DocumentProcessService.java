@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.ai.knowledge.chunker.ChunkerRegistry;
 import com.mdframe.forge.plugin.ai.knowledge.chunker.dto.ChunkResult;
 import com.mdframe.forge.plugin.ai.knowledge.domain.*;
+import com.mdframe.forge.plugin.ai.knowledge.enums.AiDocumentProcessStatus;
 import com.mdframe.forge.plugin.ai.knowledge.mapper.AiKnowledgeChunkMapper;
 import com.mdframe.forge.plugin.ai.knowledge.mapper.AiKnowledgeDocumentMapper;
 import com.mdframe.forge.plugin.ai.knowledge.mapper.AiKnowledgeMapper;
@@ -135,7 +136,7 @@ public class DocumentProcessService {
         document.setSourceUrl(request.getSourceUrl());
         document.setContentHash(contentHash);
         document.setChunkCount(0);
-        document.setProcessStatus("pending");
+        document.setProcessStatus(AiDocumentProcessStatus.PENDING.getCode());
         documentMapper.insert(document);
 
         // 两步上传模式：不自动处理，等待确认
@@ -156,7 +157,7 @@ public class DocumentProcessService {
         if (document == null) {
             throw new BusinessException("文档不存在");
         }
-        if (!"pending".equals(document.getProcessStatus())) {
+        if (!AiDocumentProcessStatus.PENDING.matches(document.getProcessStatus())) {
             throw new BusinessException("文档不在待处理状态");
         }
         AiKnowledge knowledge = knowledgeMapper.selectById(document.getKnowledgeId());
@@ -174,7 +175,7 @@ public class DocumentProcessService {
         if (document == null) {
             throw new BusinessException("文档不存在");
         }
-        if (!"failed".equals(document.getProcessStatus())) {
+        if (!AiDocumentProcessStatus.FAILED.matches(document.getProcessStatus())) {
             throw new BusinessException("仅失败状态的文档可重新处理");
         }
         AiKnowledge knowledge = knowledgeMapper.selectById(document.getKnowledgeId());
@@ -182,7 +183,7 @@ public class DocumentProcessService {
             throw new BusinessException("知识库不存在");
         }
         // 重置状态为待处理并清空错误信息
-        documentMapper.updateProcessStatus(documentId, "pending", null, null);
+        documentMapper.updateProcessStatus(documentId, AiDocumentProcessStatus.PENDING.getCode(), null, null);
         processDocumentAsync(documentId, knowledge);
     }
 
@@ -218,8 +219,8 @@ public class DocumentProcessService {
                 processDocument(documentId, knowledge);
             } catch (Exception e) {
                 log.error("[文档处理] 异步处理失败: documentId={}", documentId, e);
-                documentMapper.updateProcessStatus(documentId, "failed", e.getMessage(), null);
-                emitProgress(documentId, "", "failed", 0, "处理失败: " + e.getMessage(), "failed");
+                documentMapper.updateProcessStatus(documentId, AiDocumentProcessStatus.FAILED.getCode(), e.getMessage(), null);
+                emitProgress(documentId, "", "failed", 0, "处理失败: " + e.getMessage(), AiDocumentProcessStatus.FAILED.getCode());
             }
         });
     }
@@ -233,8 +234,8 @@ public class DocumentProcessService {
 
         try {
             // 1. 更新状态为处理中
-            documentMapper.updateProcessStatus(documentId, "processing", null, null);
-            emitProgress(documentId, document.getDocName(), "parsing", 10, "开始解析文档", "processing");
+            documentMapper.updateProcessStatus(documentId, AiDocumentProcessStatus.PROCESSING.getCode(), null, null);
+            emitProgress(documentId, document.getDocName(), "parsing", 10, "开始解析文档", AiDocumentProcessStatus.PROCESSING.getCode());
 
             // 2. 解析文档
             ParsedDocument parsed;
@@ -244,7 +245,7 @@ public class DocumentProcessService {
             } else {
                 parsed = parseDocument(document);
             }
-            emitProgress(documentId, document.getDocName(), "parsing", 30, "文档解析完成", "processing");
+            emitProgress(documentId, document.getDocName(), "parsing", 30, "文档解析完成", AiDocumentProcessStatus.PROCESSING.getCode());
 
             // 3. 分块
             List<ChunkResult> chunks = chunkerRegistry.chunk(
@@ -253,20 +254,20 @@ public class DocumentProcessService {
                     knowledge.getChunkConfigJson()
             );
             emitProgress(documentId, document.getDocName(), "chunking", 50,
-                    "分块完成，共" + chunks.size() + "个分块", "processing");
+                    "分块完成，共" + chunks.size() + "个分块", AiDocumentProcessStatus.PROCESSING.getCode());
 
             // 4. 向量化 + 入库
             embedAndStore(documentId, knowledge, chunks);
-            emitProgress(documentId, document.getDocName(), "embedding", 90, "向量化入库完成", "processing");
+            emitProgress(documentId, document.getDocName(), "embedding", 90, "向量化入库完成", AiDocumentProcessStatus.PROCESSING.getCode());
 
             // 5. 更新文档状态
-            documentMapper.updateProcessStatus(documentId, "success", null, chunks.size());
-            emitProgress(documentId, document.getDocName(), "complete", 100, "处理完成", "success");
+            documentMapper.updateProcessStatus(documentId, AiDocumentProcessStatus.SUCCESS.getCode(), null, chunks.size());
+            emitProgress(documentId, document.getDocName(), "complete", 100, "处理完成", AiDocumentProcessStatus.SUCCESS.getCode());
 
         } catch (Exception e) {
             log.error("[文档处理] 处理失败: documentId={}", documentId, e);
-            documentMapper.updateProcessStatus(documentId, "failed", e.getMessage(), null);
-            emitProgress(documentId, document.getDocName(), "failed", 0, "处理失败: " + e.getMessage(), "failed");
+            documentMapper.updateProcessStatus(documentId, AiDocumentProcessStatus.FAILED.getCode(), e.getMessage(), null);
+            emitProgress(documentId, document.getDocName(), "failed", 0, "处理失败: " + e.getMessage(), AiDocumentProcessStatus.FAILED.getCode());
         }
     }
 

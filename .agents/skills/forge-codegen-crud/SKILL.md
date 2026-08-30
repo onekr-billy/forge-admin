@@ -11,7 +11,7 @@ Generate Forge-compliant CRUD artifacts from business requirements without re-di
 
 ## Workflow
 
-1. Read `AGENTS.md`, `code-copilot/memory/pitfalls.md`, `code-copilot/memory/decisions.md`, and `code-copilot/memory/preferences.md` before generating code.
+1. Read `AGENTS.md` chapter 5, `code-copilot/rules/coding-style.md`, `code-copilot/memory/preferences.md`, and the relevant `code-copilot/memory/pitfalls/` category before generating code.
 2. Identify the page pattern: `single-table`, `master-detail`, or `left-tree-right-table`.
 3. Before generating or reviewing any table or Flyway migration, read `references/sql-seeds.md` and `references/validation-checklist.md`. For single-table CRUD, also read `references/single-table-crud.md`.
 4. If the request involves master-detail or left-tree-right-table, enforce the same schema, logical-delete, dictionary, Excel, resource, tenant, encryption, and validation rules, then inspect existing page-template components before implementation.
@@ -32,6 +32,8 @@ Generate Forge-compliant CRUD artifacts from business requirements without re-di
   - update: `POST /edit`
   - delete: `POST /remove/{id}` and `post@.../remove/:id`
   Do not generate `PUT` or `DELETE` endpoints for generated CRUD modules.
+- Controller `@RequestBody` must be a typed DTO/VO. Do not generate `@RequestBody Map<String, Object>` or `params.get("xxx")` for fixed-field APIs.
+- Java status and enable/disable flags must use enums: `EnableStatus` for 0/1 switches, a module enum with `getCode()`/`matches()` for multi-state fields. Do not write `setStatus(1)` or `getEnabled() == 1` in generated production code.
 - Use `DictSelect`, `DictTag`, and `useDict()` for dictionary fields. Do not hardcode frontend options or status label maps.
 - Generate `sys_dict_type` and `sys_dict_data` seed SQL for new dictionaries, or explicitly reuse an existing dictionary type discovered in migrations.
 - Generate `sys_excel_export_config` and `sys_excel_column_config` seed SQL when import/export is enabled.

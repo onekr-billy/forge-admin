@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Slf4j
 @Service
@@ -220,7 +221,7 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
 
     public AiCrudConfigRenderVO getRenderConfig(String configKey, boolean designPreview) {
         AiCrudConfig config = getByConfigKey(configKey);
-        if (config == null || "1".equals(config.getStatus())) {
+        if (config == null || EnableStatus.ENABLED.matches(config.getStatus())) {
             throw new BusinessException("CRUD配置不存在或已停用");
         }
         if (!"CONFIG".equals(config.getMode())) {

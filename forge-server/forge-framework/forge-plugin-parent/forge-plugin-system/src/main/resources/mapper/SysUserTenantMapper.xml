@@ -2,6 +2,17 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.mdframe.forge.plugin.system.mapper.SysUserTenantMapper">
 
+    <select id="countEnabledMembership" resultType="int">
+        SELECT COUNT(1)
+        FROM sys_user_tenant sut
+        INNER JOIN sys_tenant t ON t.id = sut.tenant_id AND t.del_flag = 0
+        WHERE sut.user_id = #{userId}
+          AND sut.tenant_id = #{tenantId}
+          AND sut.status = 1
+          AND t.tenant_status = 1
+          AND (t.expire_time IS NULL OR t.expire_time &gt; NOW())
+    </select>
+
     <select id="selectUserTenants" resultType="com.mdframe.forge.plugin.system.vo.SysUserTenantVO">
         SELECT sut.user_id,
                sut.tenant_id,

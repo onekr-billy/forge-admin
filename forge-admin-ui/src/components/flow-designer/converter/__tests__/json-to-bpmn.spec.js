@@ -93,6 +93,31 @@ describe('convertJsonToBpmn - 主结构', () => {
     expect(getFlowableAttr(t, 'allowApprove')).toBe(null)
   })
 
+  it('userTask 写入驳回至发起人权限开关', () => {
+    const json = baseJson()
+    json.nodes[1].config.allowRejectToStart = true
+    const doc = parseBpmnXml(convertJsonToBpmn(json))
+    const task = findElementsByLocalName(doc, 'userTask')[0]
+    expect(getFlowableAttr(task, 'allowRejectToStart')).toBe('true')
+  })
+
+  it('发起人自选审批人写入 PROCESS_START_USER 多实例集合', () => {
+    const json = baseJson()
+    Object.assign(json.nodes[1].config, {
+      assignee: 'initiatorSelect',
+      assigneeUserId: '',
+      multiInstanceType: 'parallel',
+      multiInstanceElementVariable: 'assignee',
+    })
+    const doc = parseBpmnXml(convertJsonToBpmn(json))
+    const task = findElementsByLocalName(doc, 'userTask')[0]
+    const loop = findElementsByLocalName(task, 'multiInstanceLoopCharacteristics')[0]
+
+    expect(getFlowableAttr(task, 'assignee')).toBe(`${DOLLAR}{assignee}`)
+    expect(getFlowableAttr(loop, 'collection')).toBe(`${DOLLAR}{PROCESS_START_USER['T_appr']}`)
+    expect(getFlowableAttr(loop, 'elementVariable')).toBe('assignee')
+  })
+
   it('userTask 写入表单字段权限配置', () => {
     const json = baseJson()
     json.nodes[1].config.formFieldPermissions = [

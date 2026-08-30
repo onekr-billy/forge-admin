@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 动态导出引擎
@@ -61,7 +62,7 @@ public class DynamicExportEngine {
         try {
             // 1. 加载导出元数据
             ExcelExportMetadata metadata = loadMetadata(configKey);
-            if (metadata == null || Integer.valueOf(0).equals(metadata.getStatus())) {
+            if (metadata == null || EnableStatus.DISABLED.matches(metadata.getStatus())) {
                 throw new RuntimeException("导出配置不存在或已禁用: " + configKey);
             }
             if (!isExportAllowed(metadata)) {
@@ -627,7 +628,7 @@ public class DynamicExportEngine {
     public void exportToStream(java.io.OutputStream outputStream, String configKey, Map<String, Object> queryParams) {
         try {
             ExcelExportMetadata metadata = loadMetadata(configKey);
-            if (metadata == null || Integer.valueOf(0).equals(metadata.getStatus())) {
+            if (metadata == null || EnableStatus.DISABLED.matches(metadata.getStatus())) {
                 throw new RuntimeException("导出配置不存在或已禁用：" + configKey);
             }
             if (!isExportAllowed(metadata)) {

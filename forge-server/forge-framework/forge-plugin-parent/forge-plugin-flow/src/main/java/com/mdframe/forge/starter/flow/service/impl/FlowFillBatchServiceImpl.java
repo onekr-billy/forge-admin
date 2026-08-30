@@ -13,6 +13,8 @@ import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FlowFillBatchQueryDTO;
 import com.mdframe.forge.starter.flow.entity.FlowFillBatch;
+import com.mdframe.forge.starter.flow.enums.FlowFillBatchStatus;
+import com.mdframe.forge.starter.flow.enums.FlowFillItemStatus;
 import com.mdframe.forge.starter.flow.entity.FlowFillBatchItem;
 import com.mdframe.forge.starter.flow.mapper.FlowFillBatchItemMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFillBatchMapper;
@@ -60,7 +62,7 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
             batch.setTenantId(resolveTenantId());
         }
         if (batch.getStatus() == null) {
-            batch.setStatus("DRAFT");
+            batch.setStatus(FlowFillBatchStatus.DRAFT.getCode());
         }
         if (batch.getAllowResubmit() == null) {
             batch.setAllowResubmit(1);
@@ -104,8 +106,8 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
             item.setOrgName(org.getOrgName());
             item.setOwnerUserId(org.getLeaderId());
             item.setOwnerUserName(org.getLeaderName());
-            item.setSubmitStatus("PENDING");
-            item.setFlowStatus("PENDING");
+            item.setSubmitStatus(FlowFillItemStatus.PENDING.getCode());
+            item.setFlowStatus(FlowFillItemStatus.PENDING.getCode());
             item.setDeadlineTime(batch.getDeadlineTime());
             flowFillBatchItemMapper.insert(item);
             created++;
@@ -114,7 +116,7 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
 
         FlowFillBatch update = new FlowFillBatch();
         update.setId(batch.getId());
-        update.setStatus("PUBLISHED");
+        update.setStatus(FlowFillBatchStatus.PUBLISHED.getCode());
         updateById(update);
         log.info("组织填报批次发布完成: batchId={}, targetCount={}, created={}", id, targetOrgs.size(), created);
     }

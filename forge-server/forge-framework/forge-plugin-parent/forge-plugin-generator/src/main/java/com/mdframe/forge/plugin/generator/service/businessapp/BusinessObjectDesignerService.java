@@ -60,6 +60,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象设计器聚合服务。
@@ -273,7 +274,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 applyRelationsToModel(context);
             }
         }
-        saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     @Override
@@ -370,7 +371,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     @Transactional(rollbackFor = Exception.class)
     public AiCrudConfig ensureRuntimeDraft(Long objectId) {
-        return saveDraft(loadContext(objectId), BusinessObjectDesignStatus.CHANGED).getConfig();
+        return saveDraft(loadContext(objectId), BusinessObjectDesignStatus.CHANGED.getCode()).getConfig();
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -388,7 +389,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             return context.getConfig();
         }
         String currentStatus = StringUtils.defaultIfBlank(
-                context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT);
+                context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT.getCode());
         return saveDraft(context, currentStatus, false).getConfig();
     }
 
@@ -437,7 +438,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     public void syncModelRelations(Long objectId) {
         DesignerContext context = loadContext(objectId);
         applyRelationsToModel(context);
-        saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -452,7 +453,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         context.setPageSchema(readJson(version.getPageSnapshot(), LowcodePageSchema.class, "pageSnapshot"));
         restoreRelationsFromSnapshot(context.getObject(), version.getRelationSnapshot());
         restoreDesignerOptionsFromSnapshot(context.getObject(), version.getDesignerOptionsSnapshot());
-        saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     private AiLowcodeModel resolveModel(AiBusinessObject object, AiCrudConfig config) {
@@ -797,7 +798,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         target.setMenuSort(target.getMenuSort() == null ? object.getSortOrder() : target.getMenuSort());
         target.setMode("CONFIG");
         target.setBuildMode("LOWCODE");
-        target.setStatus("0");
+        target.setStatus(EnableStatus.DISABLED.codeAsString());
         target.setPublishStatus(StringUtils.defaultIfBlank(target.getPublishStatus(), "DRAFT"));
         target.setLayoutType(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "simple-crud"));
         target.setDraftVersion((target.getDraftVersion() == null ? 0 : target.getDraftVersion()) + 1);
@@ -837,7 +838,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             return;
         }
         GenDatasource datasource = datasourceService.getById(datasourceId);
-        if (datasource == null || !Integer.valueOf(1).equals(datasource.getIsEnabled())) {
+        if (datasource == null || !EnableStatus.ENABLED.matches(datasource.getIsEnabled())) {
             throw new BusinessException("运行数据源不存在或已禁用");
         }
         schema.setRuntimeDatasource(runtimeDataSourceResolver.buildSnapshot(
@@ -1370,7 +1371,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     }
 
     private boolean isEmbeddedRelation(AiBusinessObjectRelation relation) {
-        if (relation == null || Integer.valueOf(0).equals(relation.getStatus())) {
+        if (relation == null || EnableStatus.DISABLED.matches(relation.getStatus())) {
             return false;
         }
         String relationType = StringUtils.defaultString(relation.getRelationType()).toUpperCase(Locale.ROOT);
@@ -1384,7 +1385,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     }
 
     private boolean isReferenceLookupRelation(AiBusinessObjectRelation relation) {
-        if (relation == null || Integer.valueOf(0).equals(relation.getStatus())) {
+        if (relation == null || EnableStatus.DISABLED.matches(relation.getStatus())) {
             return false;
         }
         String relationType = StringUtils.defaultString(relation.getRelationType()).toUpperCase(Locale.ROOT);
@@ -1732,16 +1733,16 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             return object.getDesignStatus();
         }
         if (config != null && "PUBLISHED".equals(config.getPublishStatus())) {
-            return BusinessObjectDesignStatus.PUBLISHED;
+            return BusinessObjectDesignStatus.PUBLISHED.getCode();
         }
-        return BusinessObjectDesignStatus.DRAFT;
+        return BusinessObjectDesignStatus.DRAFT.getCode();
     }
 
     private boolean hasUnpublishedChanges(AiBusinessObject object, AiCrudConfig config) {
         String designStatus = BusinessObjectDesignStatus.normalize(object.getDesignStatus());
-        if (BusinessObjectDesignStatus.CHANGED.equals(designStatus)
-                || BusinessObjectDesignStatus.DESIGNING.equals(designStatus)
-                || BusinessObjectDesignStatus.READY.equals(designStatus)) {
+        if (BusinessObjectDesignStatus.CHANGED.matches(designStatus)
+                || BusinessObjectDesignStatus.DESIGNING.matches(designStatus)
+                || BusinessObjectDesignStatus.READY.matches(designStatus)) {
             return true;
         }
         if (config == null) {
@@ -1750,7 +1751,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (!"PUBLISHED".equals(config.getPublishStatus())) {
             return true;
         }
-        if (BusinessObjectDesignStatus.PUBLISHED.equals(designStatus)) {
+        if (BusinessObjectDesignStatus.PUBLISHED.matches(designStatus)) {
             return false;
         }
         return object.getLastPublishVersion() == null && config.getPublishedVersion() == null;

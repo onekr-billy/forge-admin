@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 连接维度的目录同步定时任务托管器（需求3）。
@@ -49,9 +50,9 @@ public class CollaborationSyncJobManager {
         }
         String jobName = JOB_NAME_PREFIX + connection.getId();
         SysJobConfig existing = jobConfigService.findByJobKey(jobName, JOB_GROUP);
-        boolean wantEnabled = Integer.valueOf(1).equals(connection.getSyncScheduleEnabled())
+        boolean wantEnabled = EnableStatus.ENABLED.matches(connection.getSyncScheduleEnabled())
                 && StringUtils.isNotBlank(connection.getSyncCron())
-                && Integer.valueOf(1).equals(connection.getStatus());
+                && EnableStatus.ENABLED.matches(connection.getStatus());
         if (!wantEnabled) {
             if (existing != null) {
                 jobConfigService.deleteJob(existing.getId());
@@ -96,12 +97,12 @@ public class CollaborationSyncJobManager {
         request.setScheduleType("CRON");
         request.setCronExpression(connection.getSyncCron());
         request.setJobParam(String.valueOf(connection.getId()));
-        request.setStatus(1);
+        request.setStatus(EnableStatus.ENABLED.getCode());
         request.setConcurrentPolicy("SKIP_IF_RUNNING");
         request.setMisfirePolicy("DO_NOTHING");
         request.setIdempotentFlag(0);
         request.setRetryCount(0);
-        request.setAlarmEnabled(0);
+        request.setAlarmEnabled(EnableStatus.DISABLED.getCode());
         return request;
     }
 }

@@ -63,7 +63,7 @@ class BusinessApplicationServiceTest {
         assertEquals("crm_center", result.getApplicationCode());
         assertNotNull(inserted.get());
         assertEquals(1L, inserted.get().getTenantId());
-        assertEquals(BusinessApplicationDesignStatus.DRAFT, inserted.get().getDesignStatus());
+        assertEquals(BusinessApplicationDesignStatus.DRAFT.getCode(), inserted.get().getDesignStatus());
         assertEquals("crm_center", inserted.get().getApplicationCode());
         assertEquals("crm_center", inserted.get().getPortalSlug());
     }
@@ -593,7 +593,7 @@ class BusinessApplicationServiceTest {
         application.setApplicationName("客户经营");
         application.setSuiteCode("crm");
         application.setStatus(1);
-        application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT);
+        application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT.getCode());
         return application;
     }
 

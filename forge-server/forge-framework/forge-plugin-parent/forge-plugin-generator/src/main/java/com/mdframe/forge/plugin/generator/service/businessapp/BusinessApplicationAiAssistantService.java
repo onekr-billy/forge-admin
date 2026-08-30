@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /** 在应用发布态和当前用户页面权限边界内调用已绑定智能体。 */
 @Service
@@ -39,7 +40,7 @@ public class BusinessApplicationAiAssistantService {
         BusinessApplicationVO current = applicationService.detail(applicationId);
         Map<String, Object> currentConfig = readObject(current.getAiAssistantConfig(), "AI 助理配置");
         Map<String, Object> publishedConfig = Map.of();
-        if (current.getLastPublishVersion() != null && Integer.valueOf(1).equals(current.getStatus())) {
+        if (current.getLastPublishVersion() != null && EnableStatus.ENABLED.matches(current.getStatus())) {
             try {
                 publishedConfig = readObject(
                         runtimeService.runtimeById(applicationId).getApplication().getAiAssistantConfig(),

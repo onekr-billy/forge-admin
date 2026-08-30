@@ -155,8 +155,8 @@ public class GenController {
      */
     @PostMapping("/executeSql")
     @OperationLog(module = "代码生成", type = OperationType.ADD, desc = "执行建表SQL")
-    public RespInfo<Void> executeSql(@RequestBody Map<String, String> body) {
-        String sql = body.get("sql");
+    public RespInfo<Void> executeSql(@RequestBody GenExecuteSqlDTO body) {
+        String sql = body.getSql();
         if (StringUtils.isBlank(sql)) {
             throw new BusinessException("SQL 不能为空");
         }

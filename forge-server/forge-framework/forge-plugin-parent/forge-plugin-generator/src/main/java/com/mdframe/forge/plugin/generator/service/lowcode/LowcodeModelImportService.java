@@ -18,6 +18,7 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTenantStrategy;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -103,7 +104,7 @@ public class LowcodeModelImportService {
         }
         AiLowcodeDomain domain = domainService.requireEnabledDomain(request.getDomainId());
         GenDatasource datasource = datasourceService.getById(request.getDatasourceId());
-        if (datasource == null || datasource.getIsEnabled() == null || datasource.getIsEnabled() != 1) {
+        if (datasource == null || !EnableStatus.ENABLED.matches(datasource.getIsEnabled())) {
             throw new BusinessException("数据源不存在或已禁用");
         }
         GenTable table = datasourceService.selectDbTableByName(request.getDatasourceId(), tableName);

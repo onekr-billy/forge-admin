@@ -42,6 +42,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 低代码应用发布、版本和回滚服务。
@@ -271,7 +272,7 @@ public class LowcodePublishService {
         config.setAppName(StringUtils.defaultIfBlank(config.getAppName(), runtimeConfig.getTableComment()));
         config.setMode("CONFIG");
         config.setBuildMode("LOWCODE");
-        config.setStatus("0");
+        config.setStatus(EnableStatus.DISABLED.codeAsString());
         config.setLayoutType(runtimeConfig.getLayoutType());
         config.setModelSchema(appService.writeJson(modelSchema, "modelSchema"));
         config.setPageSchema(appService.writeJson(pageSchema, "pageSchema"));
@@ -485,7 +486,7 @@ public class LowcodePublishService {
             app.setEntryUrl(resolveEntryUrl(config));
             app.setIcon(StringUtils.defaultIfBlank(businessObject.getIcon(), "ionicons5:AppsOutline"));
             app.setDescription(StringUtils.defaultIfBlank(config.getTableComment(), "低代码发布生成的标准业务应用入口"));
-            app.setStatus(1);
+            app.setStatus(EnableStatus.ENABLED.getCode());
             app.setSortOrder(config.getMenuSort() == null ? 0 : config.getMenuSort());
             app.setOptions("{\"source\":\"lowcode_publish\"}");
         }

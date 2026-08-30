@@ -361,7 +361,19 @@ public class FlowClient {
 
     public FlowResult<Void> reject(String taskId, String userId, String comment, String signature,
                                    Long tenantId, String idempotencyKey, String requestDigest) {
-        String url = flowServiceUrl + "/api/flow/task/reject";
+        return reject(taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, false);
+    }
+
+    /** 驳回至流程设计中标记的发起人修改路径。 */
+    public FlowResult<Void> rejectToStart(String taskId, String userId, String comment, String signature,
+                                          Long tenantId, String idempotencyKey, String requestDigest) {
+        return reject(taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, true);
+    }
+
+    private FlowResult<Void> reject(String taskId, String userId, String comment, String signature,
+                                    Long tenantId, String idempotencyKey, String requestDigest,
+                                    boolean rejectToStart) {
+        String url = flowServiceUrl + (rejectToStart ? "/api/flow/task/reject-to-start" : "/api/flow/task/reject");
         Map<String, Object> params = new HashMap<>();
         params.put("taskId", taskId);
         params.put("userId", userId);
@@ -370,6 +382,21 @@ public class FlowClient {
         if (tenantId != null) params.put("tenantId", tenantId);
         if (idempotencyKey != null) params.put("idempotencyKey", idempotencyKey);
         if (requestDigest != null) params.put("requestDigest", requestDigest);
+        return post(url, params, new TypeReference<FlowResult<Void>>() {});
+    }
+
+    /**
+     * 将任务退回历史用户任务节点；目标为空时退回上一审批节点。
+     */
+    public FlowResult<Void> returnTask(String taskId, String userId, String comment,
+                                       String signature, String targetActivityId) {
+        String url = flowServiceUrl + "/api/flow/task/return";
+        Map<String, Object> params = new HashMap<>();
+        params.put("taskId", taskId);
+        params.put("userId", userId);
+        params.put("comment", comment);
+        if (signature != null) params.put("signature", signature);
+        if (targetActivityId != null) params.put("targetActivityId", targetActivityId);
         return post(url, params, new TypeReference<FlowResult<Void>>() {});
     }
 
@@ -445,6 +472,12 @@ public class FlowClient {
      */
     public FlowResult<Map<String, Object>> getModelByKey(String modelKey) {
         String url = flowServiceUrl + "/api/flow/model/key/" + modelKey;
+        return get(url, new TypeReference<FlowResult<Map<String, Object>>>() {});
+    }
+
+    /** 获取流程启动时需要补充的审批人配置。 */
+    public FlowResult<Map<String, Object>> getModelStartConfig(String modelKey) {
+        String url = flowServiceUrl + "/api/flow/model/key/" + modelKey + "/start-config";
         return get(url, new TypeReference<FlowResult<Map<String, Object>>>() {});
     }
 

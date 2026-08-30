@@ -2,6 +2,7 @@ package com.mdframe.forge.starter.flow.job;
 
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
+import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
 import com.mdframe.forge.starter.job.flow.JobFlowBindingSnapshot;
@@ -172,7 +173,7 @@ public class JobFlowRuntimeService {
         business.setProcessDefId(binding.processDefinitionId());
         business.setProcessDefKey(binding.modelKey());
         business.setTitle("定时任务流程-" + request.jobConfigId());
-        business.setStatus("running");
+        business.setStatus(FlowBusinessStatus.RUNNING.getCode());
         business.setApplyUserId(identityProperties.getUserId());
         business.setApplyUserName(identityProperties.getUserName());
         business.setApplyDeptId(String.valueOf(identityProperties.getActiveOrgId()));

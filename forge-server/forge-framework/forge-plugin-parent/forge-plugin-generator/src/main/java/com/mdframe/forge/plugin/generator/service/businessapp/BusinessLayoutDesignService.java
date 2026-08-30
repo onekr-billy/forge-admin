@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象表单、列表和详情布局设计服务。
@@ -67,7 +68,7 @@ public class BusinessLayoutDesignService {
         config.setObjectName(context.getObject().getObjectName());
         config.setMode("CONFIG");
         config.setBuildMode("LOWCODE");
-        config.setStatus("0");
+        config.setStatus(EnableStatus.DISABLED.codeAsString());
         config.setPublishStatus("DRAFT");
         config.setLayoutType(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "simple-crud"));
         config.setModelSchema(designerService.writeJson(context.getModelSchema(), "modelSchema"));
@@ -91,7 +92,7 @@ public class BusinessLayoutDesignService {
         LowcodePageSchema pageSchema = resolvePageSchema(context.getPageSchema(), dto, zoneKeys);
         validatePage(context.getModelSchema(), pageSchema);
         context.setPageSchema(pageSchema);
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     private LowcodePageSchema resolvePageSchema(LowcodePageSchema current, BusinessLayoutDTO dto, Set<String> zoneKeys) {

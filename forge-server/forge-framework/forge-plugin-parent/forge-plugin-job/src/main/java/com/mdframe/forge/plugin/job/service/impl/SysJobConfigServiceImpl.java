@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 任务配置Service实现
@@ -242,7 +243,7 @@ public class SysJobConfigServiceImpl extends ServiceImpl<SysJobConfigMapper, Sys
     private void enrichScheduleFields(JobConfigVO config) {
         config.setScheduleSummary(jobCronService.describe(config.getCronExpression()));
         if (JobScheduleCoordinator.SYNCED.equals(config.getSyncStatus())
-                && Integer.valueOf(1).equals(config.getStatus())) {
+                && EnableStatus.ENABLED.matches(config.getStatus())) {
             config.setNextFireTime(jobScheduler.nextFireTime(
                     config.getJobName(), config.getJobGroup(), config.getTimezone()));
         }

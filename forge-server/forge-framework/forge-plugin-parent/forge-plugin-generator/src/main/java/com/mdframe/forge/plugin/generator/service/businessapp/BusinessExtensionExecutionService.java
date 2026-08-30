@@ -92,7 +92,7 @@ public class BusinessExtensionExecutionService {
                 result.isPassed() ? 1 : 0, result.getSummary());
         if (result.isPassed()) {
             extensionMapper.updateLifecycle(resolveTenantId(), extensionId,
-                    BusinessExtensionStatus.TESTED, extension.getEnabledVersion());
+                    BusinessExtensionStatus.TESTED.getCode(), extension.getEnabledVersion());
             applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
         }
         return result;
@@ -101,20 +101,20 @@ public class BusinessExtensionExecutionService {
     @Transactional(rollbackFor = Exception.class)
     public void updateStatus(Long extensionId, String targetStatus) {
         AiBusinessExtension extension = requireExtension(extensionId);
-        if (BusinessExtensionStatus.ENABLED.equals(targetStatus)) {
+        if (BusinessExtensionStatus.ENABLED.matches(targetStatus)) {
             AiBusinessExtensionVersion version = requireDraftVersion(extension);
             stateMachine.assertCanEnable(extension, version);
             extensionMapper.updateLifecycle(resolveTenantId(), extensionId,
-                    BusinessExtensionStatus.ENABLED, extension.getDraftVersion());
+                    BusinessExtensionStatus.ENABLED.getCode(), extension.getDraftVersion());
             applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
             return;
         }
-        if (BusinessExtensionStatus.DISABLED.equals(targetStatus)) {
-            if (!BusinessExtensionStatus.ENABLED.equals(extension.getStatus())) {
+        if (BusinessExtensionStatus.DISABLED.matches(targetStatus)) {
+            if (!BusinessExtensionStatus.ENABLED.matches(extension.getStatus())) {
                 throw new BusinessException("只有已启用扩展才能停用");
             }
             extensionMapper.updateLifecycle(resolveTenantId(), extensionId,
-                    BusinessExtensionStatus.DISABLED, extension.getEnabledVersion());
+                    BusinessExtensionStatus.DISABLED.getCode(), extension.getEnabledVersion());
             applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
             return;
         }

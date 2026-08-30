@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.collaboration.message;
 
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationDirectoryStatus;
 import com.mdframe.forge.starter.social.domain.entity.SysUserSocial;
 import com.mdframe.forge.starter.social.mapper.SysUserSocialMapper;
 import lombok.RequiredArgsConstructor;
@@ -25,11 +26,6 @@ import java.util.Set;
 @Component
 @RequiredArgsConstructor
 public class CollaborationRecipientResolver {
-
-    /** 外部账号已停用 */
-    private static final String EXTERNAL_STATUS_DISABLED = "DISABLED";
-    /** 外部账号已删除 */
-    private static final String EXTERNAL_STATUS_DELETED = "DELETED";
 
     private final SysUserSocialMapper userSocialMapper;
 
@@ -75,8 +71,8 @@ public class CollaborationRecipientResolver {
     }
 
     private boolean isInactive(String externalStatus) {
-        return EXTERNAL_STATUS_DISABLED.equalsIgnoreCase(externalStatus)
-                || EXTERNAL_STATUS_DELETED.equalsIgnoreCase(externalStatus);
+        return CollaborationDirectoryStatus.DISABLED.matches(externalStatus)
+                || CollaborationDirectoryStatus.DELETED.matches(externalStatus);
     }
 
     /**

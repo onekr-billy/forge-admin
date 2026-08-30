@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 /**
  * 应用级业务流程运行接口。
  */
@@ -33,6 +35,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class BusinessProcessRuntimeController {
 
     private final BusinessProcessOrchestrator orchestrator;
+
+    @GetMapping("/runtime/{applicationCode}/{processCode}/start-config")
+    @SaCheckPermission("ai:businessProcess:start")
+    @OperationLog(module = "业务流程", type = OperationType.QUERY, desc = "查询业务流程发起配置")
+    public RespInfo<Map<String, Object>> startConfig(
+            @PathVariable String applicationCode,
+            @PathVariable String processCode) {
+        return RespInfo.success(orchestrator.startConfig(applicationCode, processCode));
+    }
 
     @PostMapping("/runtime/{applicationCode}/{processCode}/start")
     @SaCheckPermission("ai:businessProcess:start")

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
+import com.mdframe.forge.plugin.capability.controlplane.enums.CapabilityPublishStatus;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityClient;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityGrant;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityVersion;
@@ -16,6 +17,7 @@ import com.mdframe.forge.plugin.capability.controlplane.vo.CapabilityCallGuideVO
 import com.mdframe.forge.plugin.capability.controlplane.vo.CapabilityClientVO;
 import com.mdframe.forge.plugin.capability.controlplane.vo.CapabilityFieldVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -103,8 +105,8 @@ public class CapabilityCallGuideService {
 
         add(checks, "GATEWAY", "开放网关", gatewayEnabled, true,
                 gatewayEnabled ? "已启用" : "未启用，请设置 forge.capability.open-gateway.enabled=true");
-        boolean capabilityAvailable = "PUBLISHED".equals(capability.getPublishStatus())
-                && Integer.valueOf(1).equals(capability.getEnabled())
+        boolean capabilityAvailable = CapabilityPublishStatus.PUBLISHED.matches(capability.getPublishStatus())
+                && EnableStatus.ENABLED.matches(capability.getEnabled())
                 && !"HIGH".equals(capability.getRiskLevel());
         add(checks, "CAPABILITY", "能力状态", capabilityAvailable, true,
                 capabilityAvailable ? "能力已发布且可授权" : "能力未发布、已停用或属于 HIGH 风险");
@@ -138,13 +140,13 @@ public class CapabilityCallGuideService {
         String resolvedVersion = resolveVersion(capability, grant);
         AiCapabilityVersion version = resolvedVersion == null ? null
                 : versionMapper.selectVersion(tenantId, capability.getId(), resolvedVersion);
-        boolean versionAvailable = version != null && "PUBLISHED".equals(version.getStatus());
+        boolean versionAvailable = version != null && CapabilityPublishStatus.PUBLISHED.matches(version.getStatus());
         String currentVersion = capability.getCurrentVersion();
         AiCapabilityVersion currentPublishedVersion = Objects.equals(resolvedVersion, currentVersion)
                 ? version
                 : versionMapper.selectVersion(tenantId, capability.getId(), currentVersion);
         boolean currentVersionAvailable = currentPublishedVersion != null
-                && "PUBLISHED".equals(currentPublishedVersion.getStatus());
+                && CapabilityPublishStatus.PUBLISHED.matches(currentPublishedVersion.getStatus());
         boolean versionUpgradeAvailable = grantAvailable
                 && grant.getId() != null
                 && currentVersionAvailable
@@ -211,7 +213,7 @@ public class CapabilityCallGuideService {
         }
         boolean tokenExchangeRequired = requiresTokenExchange(capability, client);
         boolean userAssertionEnabled = tokenExchangeRequired
-                && Integer.valueOf(1).equals(client.getUserAssertionEnabled())
+                && EnableStatus.ENABLED.matches(client.getUserAssertionEnabled())
                 && StringUtils.isNotBlank(client.getUserAssertionKeyId())
                 && client.getUserAssertionKeyVersion() != null
                 && client.getUserAssertionKeyVersion() > 0;
@@ -425,7 +427,7 @@ public class CapabilityCallGuideService {
         if (!"FLOW_ACTION".equals(capability.getSourceType())) {
             return;
         }
-        if (resolvedVersion == null || !"PUBLISHED".equals(resolvedVersion.getStatus())) {
+        if (resolvedVersion == null || !CapabilityPublishStatus.PUBLISHED.matches(resolvedVersion.getStatus())) {
             add(checks, "FLOW_BINDING", "流程绑定", false, true,
                     "授权版本可用后才能核对流程绑定快照");
             return;
@@ -435,7 +437,7 @@ public class CapabilityCallGuideService {
                     "实际调用版本与能力当前版本的流程绑定一致");
             return;
         }
-        if (currentVersion == null || !"PUBLISHED".equals(currentVersion.getStatus())) {
+        if (currentVersion == null || !CapabilityPublishStatus.PUBLISHED.matches(currentVersion.getStatus())) {
             add(checks, "FLOW_BINDING", "流程绑定", false, true,
                     "能力当前版本不存在或未发布，无法核对流程绑定快照");
             return;
@@ -511,7 +513,7 @@ public class CapabilityCallGuideService {
             Set<String> configured,
             AiCapabilityClient client) {
         List<String> result = new ArrayList<>();
-        if (configured.contains("OAUTH") && Integer.valueOf(1).equals(client.getOauthEnabled())
+        if (configured.contains("OAUTH") && EnableStatus.ENABLED.matches(client.getOauthEnabled())
                 && (("USER".equals(requiredActorType) && actorMode != null && actorMode.allowsUserDelegation())
                 || ("SERVICE".equals(requiredActorType) && actorMode != null && actorMode.requiresServiceIdentity())
                 || "BOTH".equals(requiredActorType))) {

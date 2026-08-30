@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
+import com.mdframe.forge.plugin.generator.dto.BusinessTriggerFlowStartDTO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessPermissionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessTriggerService;
@@ -118,12 +119,8 @@ public class BusinessTriggerController {
      * 手动发起业务流程
      */
     @PostMapping("/flow/start")
-    public RespInfo<JSONObject> startFlow(@RequestBody Map<String, Object> params) {
-        String objectCode = (String) params.get("objectCode");
-        String recordId = String.valueOf(params.get("recordId"));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> recordData = (Map<String, Object>) params.get("recordData");
-        return RespInfo.success(flowService.startFlow(objectCode, recordId, recordData));
+    public RespInfo<JSONObject> startFlow(@RequestBody BusinessTriggerFlowStartDTO dto) {
+        return RespInfo.success(flowService.startFlow(dto.getObjectCode(), dto.recordIdText(), dto.getRecordData(), dto.getVariables()));
     }
 
     /**

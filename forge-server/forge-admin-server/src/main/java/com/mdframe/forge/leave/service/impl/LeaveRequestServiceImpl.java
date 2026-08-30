@@ -11,6 +11,7 @@ import com.mdframe.forge.flow.client.annotation.FlowEventContext;
 import com.mdframe.forge.flow.client.annotation.FlowStart;
 import com.mdframe.forge.leave.dto.LeaveRequestDTO;
 import com.mdframe.forge.leave.entity.LeaveRequest;
+import com.mdframe.forge.leave.enums.LeaveRequestStatus;
 import com.mdframe.forge.leave.mapper.LeaveRequestMapper;
 import com.mdframe.forge.leave.service.LeaveRequestService;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -64,7 +65,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
         LeaveRequest leave = new LeaveRequest();
         BeanUtils.copyProperties(dto, leave);
         leave.setBusinessKey(businessKey);
-        leave.setStatus("pending");
+        leave.setStatus(LeaveRequestStatus.PENDING.getCode());
         leave.setCreateTime(LocalDateTime.now());
 
         // 设置申请人信息（如果未提供）
@@ -89,7 +90,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
         LeaveRequest leave = new LeaveRequest();
         BeanUtils.copyProperties(dto, leave);
         leave.setBusinessKey(businessKey);
-        leave.setStatus("draft");
+        leave.setStatus(LeaveRequestStatus.DRAFT.getCode());
         leave.setCreateTime(LocalDateTime.now());
         
         // 设置申请人信息
@@ -114,7 +115,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
     @Transactional(rollbackFor = Exception.class)
     public void cancelLeave(String businessKey) {
         LeaveRequest leave = getByBusinessKey(businessKey);
-        if (leave != null && "pending".equals(leave.getStatus())) {
+        if (leave != null && LeaveRequestStatus.PENDING.matches(leave.getStatus())) {
             // 通过 FlowClient 终止流程
             FlowResult<Void> result = flowClient.terminateProcess(
                     businessKey,
@@ -125,7 +126,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
             }
 
             // 更新状态
-            leave.setStatus("canceled");
+            leave.setStatus(LeaveRequestStatus.CANCELED.getCode());
             leave.setUpdateTime(LocalDateTime.now());
             updateById(leave);
 
@@ -142,7 +143,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
     public void onLeaveApproved(FlowEventContext ctx) {
         LeaveRequest leave = getByBusinessKey(ctx.getBusinessKey());
         if (leave != null) {
-            leave.setStatus("approved");
+            leave.setStatus(LeaveRequestStatus.APPROVED.getCode());
             leave.setApproveComment(ctx.getLastComment());
             leave.setApproveTime(LocalDateTime.now());
             leave.setUpdateTime(LocalDateTime.now());
@@ -158,7 +159,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
     public void onLeaveRejected(FlowEventContext ctx) {
         LeaveRequest leave = getByBusinessKey(ctx.getBusinessKey());
         if (leave != null) {
-            leave.setStatus("rejected");
+            leave.setStatus(LeaveRequestStatus.REJECTED.getCode());
             leave.setApproveComment(ctx.getLastComment());
             leave.setApproveTime(LocalDateTime.now());
             leave.setUpdateTime(LocalDateTime.now());
@@ -173,8 +174,8 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
     @FlowCallback(on = FlowCallback.ON_CANCELED)
     public void onLeaveCanceled(FlowEventContext ctx) {
         LeaveRequest leave = getByBusinessKey(ctx.getBusinessKey());
-        if (leave != null && !"canceled".equals(leave.getStatus())) {
-            leave.setStatus("canceled");
+        if (leave != null && !LeaveRequestStatus.CANCELED.matches(leave.getStatus())) {
+            leave.setStatus(LeaveRequestStatus.CANCELED.getCode());
             leave.setUpdateTime(LocalDateTime.now());
             updateById(leave);
             log.info("请假申请已取消，businessKey: {}", ctx.getBusinessKey());
@@ -201,7 +202,7 @@ public class LeaveRequestServiceImpl extends ServiceImpl<LeaveRequestMapper, Lea
     @Transactional(rollbackFor = Exception.class)
     public String updateDraft(LeaveRequestDTO dto) {
         LeaveRequest leave = getByBusinessKey(dto.getBusinessKey());
-        if (leave != null && "draft".equals(leave.getStatus())) {
+        if (leave != null && LeaveRequestStatus.DRAFT.matches(leave.getStatus())) {
             BeanUtils.copyProperties(dto, leave, "id", "businessKey", "status", "createTime");
             leave.setUpdateTime(LocalDateTime.now());
             updateById(leave);

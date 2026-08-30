@@ -123,6 +123,11 @@ public class FlowModel {
     private String todoDetailUrlTemplate;
 
     /**
+     * 是否允许审批人从当前流程历史用户任务中选择任意节点退回。
+     */
+    private Boolean allowMultiReturn;
+
+    /**
      * 通知配置（事件×渠道矩阵）。
      * <p>JSON 结构，key 为事件类型（todo-新待办 / result-审批结果 / cc-抄送），
      * value 为 {@code {"channels": ["WEB","EMAIL","SMS","COLLABORATION"], "templateCode": "模板编码覆盖"}}。</p>
@@ -134,7 +139,7 @@ public class FlowModel {
     private String notifyConfig;
 
     /**
-     * 状态（0-设计/1-已发布/2-已挂起/3-已禁用）
+     * 状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowModelStatus}。
      */
     private Integer status;
     

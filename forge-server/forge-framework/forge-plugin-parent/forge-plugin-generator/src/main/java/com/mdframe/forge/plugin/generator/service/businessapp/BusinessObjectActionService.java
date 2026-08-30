@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象自定义操作和权限流程摘要服务。
@@ -69,7 +70,7 @@ public class BusinessObjectActionService {
                 .filter(item -> normalizedActionCode.equalsIgnoreCase(item.getActionCode()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("业务动作不存在: " + normalizedActionCode));
-        if (Integer.valueOf(0).equals(action.getStatus())) {
+        if (EnableStatus.DISABLED.matches(action.getStatus())) {
             throw new BusinessException("业务动作已停用: " + action.getActionName());
         }
         return new ResolvedBusinessAction(object, action);
@@ -87,7 +88,7 @@ public class BusinessObjectActionService {
                 .filter(item -> normalizedActionCode.equalsIgnoreCase(item.getActionCode()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("发布版本中不存在业务动作: " + normalizedActionCode));
-        if (Integer.valueOf(0).equals(action.getStatus())) {
+        if (EnableStatus.DISABLED.matches(action.getStatus())) {
             throw new BusinessException("发布版本中的业务动作已停用: " + action.getActionName());
         }
         return new ResolvedPublishedBusinessAction(resolved.object(), action, resolved.version());
@@ -111,7 +112,7 @@ public class BusinessObjectActionService {
         AiBusinessObject object = StringUtils.isNotBlank(suiteCode)
                 ? businessObjectMapper.selectByObjectCode(tenantId, suiteCode.trim(), normalizedObjectCode)
                 : businessObjectMapper.selectFirstByObjectCode(tenantId, normalizedObjectCode);
-        if (object == null || !Integer.valueOf(1).equals(object.getStatus())) {
+        if (object == null || !EnableStatus.ENABLED.matches(object.getStatus())) {
             throw new BusinessException("已发布业务对象不存在或已停用: " + normalizedObjectCode);
         }
         AiBusinessObjectDesignVersion version = designVersionMapper.selectPublishedVersion(
@@ -129,7 +130,7 @@ public class BusinessObjectActionService {
         Map<String, Object> options = readOptions(context.getObject().getDesignerOptions());
         options.put(DESIGNER_ACTIONS_KEY, normalizeActions(actions));
         context.getObject().setDesignerOptions(writeJson(options));
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     public BusinessReadinessItemVO permissionSummary(Long objectId) {
@@ -145,7 +146,7 @@ public class BusinessObjectActionService {
         item.setItemCode("PERMISSION_SUMMARY");
         item.setItemName("对象权限");
         if (!missingRequiredActions.isEmpty()) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("权限缺口");
             item.setMessage("关键单据动作权限未配置: " + String.join("、", missingRequiredActions));
             item.setNextAction("CONFIGURE_PERMISSION");
@@ -154,7 +155,7 @@ public class BusinessObjectActionService {
             return item;
         }
         if (permissionBinding == null) {
-            item.setStatus(BusinessReadinessStatus.CONFIGURED);
+            item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
             item.setStatusLabel("基础权限已就绪");
             item.setMessage("关键单据动作权限已存在，对象权限尚未挂接，发布后将依赖菜单和接口默认权限");
             item.setNextAction("CONFIGURE_PERMISSION");
@@ -162,12 +163,12 @@ public class BusinessObjectActionService {
             item.setNextActionUrl("/system/role");
             return item;
         }
-        if (Integer.valueOf(1).equals(permissionBinding.getStatus())) {
-            item.setStatus(BusinessReadinessStatus.RUNNABLE);
+        if (EnableStatus.ENABLED.matches(permissionBinding.getStatus())) {
+            item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
             item.setStatusLabel("已配置");
             item.setMessage("对象权限已挂接: " + permissionBinding.getBindingName());
         } else {
-            item.setStatus(BusinessReadinessStatus.ERROR);
+            item.setStatus(BusinessReadinessStatus.ERROR.getCode());
             item.setStatusLabel("已停用");
             item.setMessage("对象权限挂接已停用: " + permissionBinding.getBindingName());
             item.setNextAction("ENABLE_PERMISSION");
@@ -273,7 +274,7 @@ public class BusinessObjectActionService {
         vo.setActionPosition(position);
         vo.setActionType("OPEN_PAGE");
         vo.setConfirmRequired("delete".equals(code));
-        vo.setStatus(1);
+        vo.setStatus(EnableStatus.ENABLED.getCode());
         vo.setSortOrder(sortOrder);
         return vo;
     }

@@ -10,6 +10,7 @@ import com.mdframe.forge.plugin.job.support.JobOpenApiException;
 import com.mdframe.forge.plugin.job.vo.JobOpenApiExecutionVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Service
 @RequiredArgsConstructor
@@ -24,7 +25,7 @@ public class JobApiExecutionService {
             JobApiPrincipal principal,
             JobApiTriggerTarget target,
             String idempotencyKey) {
-        if (!Integer.valueOf(1).equals(target.getStatus())
+        if (!EnableStatus.ENABLED.matches(target.getStatus())
                 || !JobScheduleCoordinator.SYNCED.equals(target.getSyncStatus())) {
             throw JobOpenApiException.conflict("job_not_triggerable");
         }

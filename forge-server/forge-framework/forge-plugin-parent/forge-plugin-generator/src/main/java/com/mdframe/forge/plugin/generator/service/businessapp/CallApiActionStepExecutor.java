@@ -1,6 +1,7 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
+import com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus;
 import com.mdframe.forge.plugin.generator.dto.lowcode.query.LowcodeQuerySourceExecuteDTO;
 import com.mdframe.forge.plugin.generator.service.lowcode.query.LowcodeQuerySourceService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResultVO;
@@ -57,7 +58,7 @@ public class CallApiActionStepExecutor implements BusinessActionStepExecutor {
             context.getScopedVariables().put(scopeKey, mapped);
 
             BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-            result.setStatus("SUCCESS");
+            result.setStatus(BusinessActionStepStatus.SUCCESS.getCode());
             result.setMessage("外部接口调用完成");
             result.getResult().put("sourceType", SOURCE_TYPE);
             result.getResult().put("sourceKey", sourceResult.getSourceKey());
@@ -72,7 +73,7 @@ public class CallApiActionStepExecutor implements BusinessActionStepExecutor {
                         BusinessActionStepConfigHelper.firstText(config, "sourceKey", "querySourceKey"),
                         context == null ? null : context.getCorrelationId(), exception.getMessage());
                 BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-                result.setStatus("FAILED");
+                result.setStatus(BusinessActionStepStatus.FAILED.getCode());
                 result.setMessage("外部接口调用失败，已继续后续步骤");
                 result.setErrorMessage(exception.getMessage());
                 result.getResult().put("sourceType", SOURCE_TYPE);

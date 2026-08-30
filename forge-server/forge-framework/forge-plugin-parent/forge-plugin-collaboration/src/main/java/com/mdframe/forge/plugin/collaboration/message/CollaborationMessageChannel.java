@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 企业协同消息渠道（Task 13）。
@@ -93,7 +94,7 @@ public class CollaborationMessageChannel implements MessageChannel {
             }
         } else {
             connection = socialConfigService.selectConfigById(request.connectionId());
-            if (connection == null || connection.getStatus() == null || connection.getStatus() != 1) {
+            if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
                 return allFailed(userIds, ERROR_CONNECTION_UNAVAILABLE, "企业协同连接不存在或已停用", null);
             }
         }
@@ -177,7 +178,7 @@ public class CollaborationMessageChannel implements MessageChannel {
     private SysSocialConfig resolveDefaultConnection(Long tenantId) {
         SysSocialConfig query = new SysSocialConfig();
         query.setTenantId(tenantId);
-        query.setStatus(1);
+        query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
         List<SysSocialConfig> candidates = socialConfigService.selectConfigList(query).stream()
                 .filter(conn -> providerRegistry.supports(conn.getPlatform(), CollaborationCapability.MESSAGE))
                 .filter(conn -> {

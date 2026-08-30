@@ -7,6 +7,7 @@ import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FlowEntryDTO;
 import com.mdframe.forge.starter.flow.dto.FlowEntryQueryDTO;
 import com.mdframe.forge.starter.flow.entity.FlowEntry;
+import com.mdframe.forge.starter.flow.enums.FlowEnableStatus;
 import com.mdframe.forge.starter.flow.entity.FlowEntryFieldMapping;
 import com.mdframe.forge.starter.flow.entity.FlowFormVersion;
 import com.mdframe.forge.starter.flow.mapper.FlowEntryFieldMappingMapper;
@@ -64,7 +65,7 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
     @Override
     public FlowEntryRuntimeVO getRuntimeEntry(String entryCode) {
         FlowEntry entry = getByEntryCode(entryCode);
-        if (entry == null || entry.getStatus() == null || entry.getStatus() != 1) {
+        if (entry == null || !FlowEnableStatus.ENABLED.matches(entry.getStatus())) {
             throw new RuntimeException("流程入口不存在或未启用：" + entryCode);
         }
         FlowFormVersion version = formVersionMapper.selectByIdForRuntime(entry.getFormVersionId());
@@ -102,7 +103,7 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
             entry.setDataMode(version.getDefaultDataMode());
         }
         if (entry.getStatus() == null) {
-            entry.setStatus(1);
+            entry.setStatus(FlowEnableStatus.ENABLED.getCode());
         }
         if (entry.getSort() == null) {
             entry.setSort(0);

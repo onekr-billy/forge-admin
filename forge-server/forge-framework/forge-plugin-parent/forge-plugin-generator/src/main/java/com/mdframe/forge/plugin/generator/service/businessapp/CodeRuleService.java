@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 编码规则事务编排与兼容门面。
@@ -241,7 +242,8 @@ public class CodeRuleService extends ServiceImpl<CodeRuleMapper, AiCodeRule> {
         AiCodeRule update = new AiCodeRule();
         update.setId(existing.getId());
         update.setTenantId(tenantId);
-        update.setStatus(Integer.valueOf(1).equals(dto.getStatus()) ? 1 : 0);
+        update.setStatus(EnableStatus.ENABLED.matches(dto.getStatus())
+                ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         update.setVersionNo(dto.getVersionNo());
         if (!updateById(update)) {
             throw new BusinessException("编码规则已被其他用户修改，请刷新后重试");
@@ -378,7 +380,8 @@ public class CodeRuleService extends ServiceImpl<CodeRuleMapper, AiCodeRule> {
         dto.setRuleName(StringUtils.trimToNull(dto.getRuleName()));
         dto.setScene(StringUtils.defaultIfBlank(StringUtils.trimToNull(dto.getScene()), "COMMON"));
         dto.setCategory(StringUtils.defaultIfBlank(StringUtils.trimToNull(dto.getCategory()), "COMMON"));
-        dto.setStatus(Integer.valueOf(0).equals(dto.getStatus()) ? 0 : 1);
+        dto.setStatus(EnableStatus.DISABLED.matches(dto.getStatus())
+                ? EnableStatus.DISABLED.getCode() : EnableStatus.ENABLED.getCode());
         dto.setInCodeList(Integer.valueOf(0).equals(dto.getInCodeList()) ? 0 : 1);
         dto.setRemark(StringUtils.trimToNull(dto.getRemark()));
         if (StringUtils.isBlank(dto.getRuleCode()) || !RULE_CODE_PATTERN.matcher(dto.getRuleCode()).matches()) {
@@ -582,7 +585,7 @@ public class CodeRuleService extends ServiceImpl<CodeRuleMapper, AiCodeRule> {
         if (rule == null) {
             throw new BusinessException("编码规则不存在: " + normalized);
         }
-        if (enabledOnly && !Integer.valueOf(1).equals(rule.getStatus())) {
+        if (enabledOnly && !EnableStatus.ENABLED.matches(rule.getStatus())) {
             throw new BusinessException("编码规则已停用: " + normalized);
         }
         return rule;

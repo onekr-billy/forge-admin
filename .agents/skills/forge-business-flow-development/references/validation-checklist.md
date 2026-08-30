@@ -9,6 +9,8 @@ Use this before finalizing a Forge business workflow change.
 - Run whitespace check on new SQL: `git diff --check -- <migration.sql>`.
 - Verify all SQL inserts use explicit columns and duplicate guards.
 - Verify complex business queries are in Mapper XML, not Service `LambdaQueryWrapper`.
+- Verify write APIs take typed DTOs, not `@RequestBody Map`. Flow `variables` may stay a Map field inside the DTO.
+- Verify status writes/comparisons use a business status enum (`getCode()` / `matches()`), not string or number literals.
 - Verify frontend URL placeholders in `AiCrudPage` use `:id`, not `{id}`.
 
 ## Backend Compile
