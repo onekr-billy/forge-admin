@@ -20,6 +20,7 @@ import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessFlow
 import com.mdframe.forge.plugin.message.domain.entity.SysMessageTemplate;
 import com.mdframe.forge.plugin.message.service.MessageTemplateService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -326,7 +327,7 @@ public class BusinessProcessValidationContextResolver {
         for (String templateCode : safeList(schema.getDependencies().getMessageTemplates())) {
             try {
                 SysMessageTemplate template = templateService.getByCode(templateCode);
-                if (template != null && Integer.valueOf(1).equals(template.getEnabled())) {
+                if (template != null && EnableStatus.ENABLED.matches(template.getEnabled())) {
                     available.add(templateCode);
                 }
             } catch (Exception exception) {

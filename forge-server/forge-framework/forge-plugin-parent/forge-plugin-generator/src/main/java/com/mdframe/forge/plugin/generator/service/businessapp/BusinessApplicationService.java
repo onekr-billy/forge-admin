@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务应用聚合服务。
@@ -236,7 +237,7 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
         status.put("bound", bound);
         status.put("enabled", enabled);
         status.put("published", application.getLastPublishVersion() != null);
-        status.put("available", bound && enabled && Integer.valueOf(1).equals(application.getStatus())
+        status.put("available", bound && enabled && EnableStatus.ENABLED.matches(application.getStatus())
                 && application.getLastPublishVersion() != null);
         status.put("config", config);
         return status;
@@ -306,7 +307,7 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
         }
         AiBusinessApplication application = new AiBusinessApplication();
         copyDtoToEntity(dto, application, true);
-        application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT);
+        application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT.getCode());
         save(application);
         return new BusinessApplicationCreateVO(application.getId(), application.getApplicationCode());
     }

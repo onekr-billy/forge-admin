@@ -2,6 +2,7 @@ package com.mdframe.forge.flow.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.flow.dto.FlowCcSendDTO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
@@ -35,23 +36,12 @@ public class FlowCcController {
      * 发送抄送
      */
     @PostMapping("/send")
-    public RespInfo<Void> sendCc(@RequestBody Map<String, Object> params) {
-        String processInstanceId = (String) params.get("processInstanceId");
-        String processDefKey = (String) params.get("processDefKey");
-        String taskId = (String) params.get("taskId");
-        String title = (String) params.get("title");
-        String content = (String) params.get("content");
-        String businessKey = (String) params.get("businessKey");
-        @SuppressWarnings("unchecked")
-        List<String> ccUserIds = (List<String>) params.get("ccUserIds");
-        @SuppressWarnings("unchecked")
-        List<String> ccUserNames = (List<String>) params.get("ccUserNames");
-        String sendUserId = (String) params.get("sendUserId");
-        String sendUserName = (String) params.get("sendUserName");
-        
-        flowCcService.sendCc(processInstanceId, processDefKey, taskId, title, content,
-                businessKey, ccUserIds, ccUserNames, sendUserId, sendUserName);
-        
+    public RespInfo<Void> sendCc(@RequestBody FlowCcSendDTO dto) {
+        flowCcService.sendCc(
+                dto.getProcessInstanceId(), dto.getProcessDefKey(), dto.getTaskId(),
+                dto.getTitle(), dto.getContent(), dto.getBusinessKey(),
+                dto.getCcUserIds(), dto.getCcUserNames(),
+                dto.getSendUserId(), dto.getSendUserName());
         return RespInfo.success("抄送成功", null);
     }
 

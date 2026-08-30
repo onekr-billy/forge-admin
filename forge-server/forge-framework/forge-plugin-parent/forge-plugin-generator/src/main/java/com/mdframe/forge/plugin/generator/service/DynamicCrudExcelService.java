@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudExportTask;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudExportResult;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudImportResult;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
+import com.mdframe.forge.plugin.generator.enums.DynamicCrudExportStatus;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudExportTaskMapper;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -77,10 +78,6 @@ public class DynamicCrudExcelService {
     private static final int DEFAULT_ASYNC_THRESHOLD = 5000;
     private static final int DEFAULT_EXPORT_BATCH_SIZE = 1000;
     private static final int DEFAULT_FILE_KEEP_HOURS = 24;
-    private static final String EXPORT_STATUS_PENDING = "PENDING";
-    private static final String EXPORT_STATUS_RUNNING = "RUNNING";
-    private static final String EXPORT_STATUS_SUCCESS = "SUCCESS";
-    private static final String EXPORT_STATUS_FAILED = "FAILED";
     private static final String EXPORT_BUSINESS_TYPE = "ai_crud_export";
     private static final String XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String CONFIG_ASYNC_THRESHOLD = "sys.export.async.threshold";
@@ -196,7 +193,7 @@ public class DynamicCrudExcelService {
 
             AiCrudExportTask success = new AiCrudExportTask();
             success.setId(taskId);
-            success.setStatus(EXPORT_STATUS_SUCCESS);
+            success.setStatus(DynamicCrudExportStatus.SUCCESS.getCode());
             success.setProgress(100);
             success.setExportedCount(context.totalCount());
             success.setFileId(metadata.getFileId());
@@ -209,7 +206,7 @@ public class DynamicCrudExcelService {
             log.error("[DynamicCrudExcelService] 异步导出失败, taskId={}", taskId, e);
             AiCrudExportTask failed = new AiCrudExportTask();
             failed.setId(taskId);
-            failed.setStatus(EXPORT_STATUS_FAILED);
+            failed.setStatus(DynamicCrudExportStatus.FAILED.getCode());
             failed.setErrorMessage(StringUtils.left(e.getMessage(), 1000));
             failed.setFinishTime(LocalDateTime.now());
             exportTaskMapper.updateById(failed);
@@ -820,7 +817,7 @@ public class DynamicCrudExcelService {
         task.setExportName(StringUtils.defaultIfBlank(config.getAppName(),
                 StringUtils.defaultIfBlank(config.getTableComment(), config.getConfigKey())));
         task.setFileName(buildFileName(config, "导出数据"));
-        task.setStatus(EXPORT_STATUS_PENDING);
+        task.setStatus(DynamicCrudExportStatus.PENDING.getCode());
         task.setTotalCount(totalCount);
         task.setExportedCount(0L);
         task.setProgress(0);
@@ -836,7 +833,7 @@ public class DynamicCrudExcelService {
     private void markTaskRunning(Long taskId) {
         AiCrudExportTask update = new AiCrudExportTask();
         update.setId(taskId);
-        update.setStatus(EXPORT_STATUS_RUNNING);
+        update.setStatus(DynamicCrudExportStatus.RUNNING.getCode());
         update.setProgress(0);
         update.setExportedCount(0L);
         exportTaskMapper.updateById(update);

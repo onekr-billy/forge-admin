@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务应用平台业务对象服务。
@@ -85,8 +86,8 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
                 vo.setRoutePath(app.getEntryUrl());
             }
         }
-        boolean enabled = Integer.valueOf(1).equals(object.getStatus());
-        boolean appEnabled = app != null && Integer.valueOf(1).equals(app.getStatus());
+        boolean enabled = EnableStatus.ENABLED.matches(object.getStatus());
+        boolean appEnabled = app != null && EnableStatus.ENABLED.matches(app.getStatus());
         boolean configured = app != null && (StringUtils.isNotBlank(app.getConfigKey()) || StringUtils.isNotBlank(app.getEntryUrl()));
         vo.setCanOpen(enabled && appEnabled && configured && Boolean.TRUE.equals(vo.getPermissionGranted()));
         vo.setImportEnabled(enabled && appEnabled && StringUtils.isNotBlank(vo.getConfigKey()));

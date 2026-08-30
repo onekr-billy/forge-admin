@@ -53,6 +53,8 @@ When building a new workflow, produce or update:
 
 - Do not build a second node configuration UI outside the real flow designer.
 - Do not hardcode dictionary options or status labels in Vue pages.
+- Controller write APIs must take typed DTOs, not `@RequestBody Map`. Flow `variables` may stay a Map field inside the DTO.
+- Java status transitions must use a business status enum (`getCode()` / `matches()`), not string/number literals like `"IN_PROCESS"` or `setStatus(2)`. Enable/disable flags use `EnableStatus`.
 - Do not seed business data with `tenant_id = 0`.
 - Do not overwrite an existing BPMN XML during sample/init logic just because it differs from code defaults; preserve designer-edited node config.
 - Do not rely only on `PROCESS_COMPLETED` variables for final status; task-completed and task-created callbacks must also maintain the business state.

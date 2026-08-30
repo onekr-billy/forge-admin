@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 把页面表单自动转换为应用内部托管的数据存储。
@@ -188,7 +189,7 @@ public class BusinessApplicationFormDataService {
         dto.setModelCode(namingService.buildModelCode(application.getSuiteCode(), objectCode));
         dto.setDisplayField(request.fields().get(0).getFieldCode());
         dto.setDescription("由应用“" + application.getApplicationName() + "”中的表单自动管理");
-        dto.setStatus(1);
+        dto.setStatus(EnableStatus.ENABLED.getCode());
         dto.setOptions(buildObjectOptions(application, request.formAssetId(), datasource));
         return objectCreateService.create(dto);
     }

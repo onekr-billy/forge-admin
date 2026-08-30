@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS `sys_sms_config` (
     `remark` varchar(500) DEFAULT NULL COMMENT '备注',
     PRIMARY KEY (`id`),
     KEY `idx_tenant_status` (`tenant_id`, `status`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='短信配置表';
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='短信配置表';
 
 -- 邮件配置表
 CREATE TABLE IF NOT EXISTS `sys_email_config` (
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS `sys_email_config` (
     `remark` varchar(500) DEFAULT NULL COMMENT '备注',
     PRIMARY KEY (`id`),
     KEY `idx_tenant_status` (`tenant_id`, `status`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邮件配置表';
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邮件配置表';
 
 -- 初始化示例模板数据
 INSERT INTO sys_message_template (tenant_id, template_code, template_name, type, title_template, content_template, default_channel, remark) VALUES

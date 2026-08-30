@@ -6,6 +6,8 @@ import com.mdframe.forge.plugin.ai.agent.engine.ReactRequest;
 import com.mdframe.forge.plugin.ai.agent.engine.event.AgentEvent;
 import com.mdframe.forge.plugin.ai.agent.engine.event.AgentEventType;
 import com.mdframe.forge.plugin.ai.agent.engine.event.sse.AgentEventWebFluxStream;
+import com.mdframe.forge.plugin.ai.agent.engine.dto.AgentEngineResumeDTO;
+import com.mdframe.forge.plugin.ai.agent.engine.dto.AgentEngineStopDTO;
 import com.mdframe.forge.plugin.ai.agent.engine.service.AgentEngineService;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,7 +19,6 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 
 /**
  * Agent 引擎控制器（新入口，不替代 AiClientController）
@@ -45,11 +46,9 @@ public class AgentEngineController {
      */
     @PostMapping(value = "/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @SaCheckPermission("ai:engine:resume")
-    public Flux<ServerSentEvent<String>> resume(@RequestBody Map<String, Object> body, HttpServletResponse response) {
+    public Flux<ServerSentEvent<String>> resume(@RequestBody AgentEngineResumeDTO body, HttpServletResponse response) {
         prepareSse(response);
-        String interruptId = (String) body.get("interruptId");
-        Boolean confirmed = (Boolean) body.get("confirmed");
-        return engineService.resume(interruptId, confirmed != null && confirmed);
+        return engineService.resume(body.getInterruptId(), Boolean.TRUE.equals(body.getConfirmed()));
     }
 
     /**
@@ -57,9 +56,8 @@ public class AgentEngineController {
      */
     @PostMapping("/stop")
     @SaCheckPermission("ai:engine:stream")
-    public RespInfo<Void> stop(@RequestBody Map<String, String> body) {
-        String sessionId = body.get("sessionId");
-        engineService.stop(sessionId);
+    public RespInfo<Void> stop(@RequestBody AgentEngineStopDTO body) {
+        engineService.stop(body.getSessionId());
         return RespInfo.success();
     }
 

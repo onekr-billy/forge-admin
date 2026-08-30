@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.service.MessageService;
 import com.mdframe.forge.starter.message.channel.MessageChannel;
 import com.mdframe.forge.starter.message.sdk.MessageClient;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,7 +51,7 @@ public class JobFailureAlarmService {
 
     private void doNotifyFinalFailure(Long executionId) {
         JobFailureAlarmContextVO context = jobLogMapper.selectFailureAlarmContext(executionId);
-        if (context == null || !Integer.valueOf(1).equals(context.getAlarmEnabled())) {
+        if (context == null || !EnableStatus.ENABLED.matches(context.getAlarmEnabled())) {
             return;
         }
         Set<String> channels = parseCsv(context.getAlarmChannels());

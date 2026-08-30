@@ -1,8 +1,10 @@
 package com.mdframe.forge.plugin.capability.controlplane.security;
 
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
+import com.mdframe.forge.plugin.capability.controlplane.enums.CapabilityPublishStatus;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityClient;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityGrant;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -49,8 +51,8 @@ public final class CapabilityGrantPolicy {
         if (expired(client.getExpiresAt(), now)) {
             return CapabilityGrantDecision.deny("CLIENT_EXPIRED");
         }
-        if (!"PUBLISHED".equals(capability.getPublishStatus())
-                || !Integer.valueOf(1).equals(capability.getEnabled())) {
+        if (!CapabilityPublishStatus.PUBLISHED.matches(capability.getPublishStatus())
+                || !EnableStatus.ENABLED.matches(capability.getEnabled())) {
             return CapabilityGrantDecision.deny("CAPABILITY_DISABLED");
         }
         if ("HIGH".equals(capability.getRiskLevel())) {

@@ -139,7 +139,7 @@ public class BusinessApplicationPermissionService {
         }
         modelSchema.setPolicies(lowcodePolicyService.normalizePolicies(modelSchema, policies));
         context.setModelSchema(modelSchema);
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
 
         applicationObject.setModelSchema(writeModelSchema(modelSchema));
         Set<String> actionPermissions = OBJECT_ACTION_NAMES.keySet().stream()

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mdframe.forge.plugin.capability.flowaction.enums.CapabilityExecuteStatus;
 import com.mdframe.forge.plugin.capability.flowaction.source.FlowActionSourceService;
 import com.mdframe.forge.plugin.capability.flowaction.source.FlowActionSourceService.ResolvedFlowActionSource;
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
@@ -190,7 +191,7 @@ public class FlowActionExecutionAdapter implements GovernedOpenGatewayAdapter {
                 runtime = complete(descriptor, identity, input, replayOrRecovery);
             }
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("executeStatus", "SUCCESS");
+            result.put("executeStatus", CapabilityExecuteStatus.SUCCESS.getCode());
             result.put("message", StringUtils.defaultIfBlank(runtime.getMessage(),
                     "SUBMIT".equals(descriptor.actionCode()) ? "申请已提交" : "流程动作执行成功"));
             result.put("correlationId", requestId);

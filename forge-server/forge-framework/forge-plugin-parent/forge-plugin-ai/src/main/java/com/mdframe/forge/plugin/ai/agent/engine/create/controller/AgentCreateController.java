@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.ai.agent.engine.create.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.ai.agent.engine.create.AgentCreateService;
+import com.mdframe.forge.plugin.ai.agent.engine.create.dto.AgentCreateStreamDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -25,9 +26,8 @@ public class AgentCreateController {
      */
     @SaCheckPermission("ai:agent:ai-create")
     @PostMapping(produces = "text/event-stream")
-    public Flux<ServerSentEvent<String>> streamCreate(@RequestBody Map<String, String> params) {
-        String description = params.get("description");
-        return agentCreateService.streamCreate(description);
+    public Flux<ServerSentEvent<String>> streamCreate(@RequestBody AgentCreateStreamDTO params) {
+        return agentCreateService.streamCreate(params.getDescription());
     }
 
     /**

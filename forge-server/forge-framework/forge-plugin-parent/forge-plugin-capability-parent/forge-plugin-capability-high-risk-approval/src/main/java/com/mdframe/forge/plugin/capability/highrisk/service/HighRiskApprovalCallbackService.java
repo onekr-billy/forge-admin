@@ -7,6 +7,7 @@ import com.mdframe.forge.flow.client.annotation.FlowEventContext;
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityClient;
 import com.mdframe.forge.plugin.capability.controlplane.mapper.AiCapabilityClientMapper;
 import com.mdframe.forge.plugin.capability.highrisk.domain.AiCapabilityApproval;
+import com.mdframe.forge.plugin.capability.highrisk.enums.HighRiskExecuteStatus;
 import com.mdframe.forge.plugin.capability.highrisk.domain.AiCapabilityPolicy;
 import com.mdframe.forge.plugin.capability.highrisk.mapper.CapabilityApprovalMapper;
 import com.mdframe.forge.plugin.capability.highrisk.support.HighRiskApprovalFlowDefinition;
@@ -23,6 +24,7 @@ import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -106,7 +108,7 @@ public class HighRiskApprovalCallbackService {
         }
         LoginUser user = userLoadService.loadUserByUserId(
                 approval.getActorUserId(), approval.getTenantId(), approval.getActiveOrgId());
-        if (user == null || !Integer.valueOf(1).equals(user.getUserStatus())
+        if (user == null || !EnableStatus.ENABLED.matches(user.getUserStatus())
                 || !approval.getTenantId().equals(user.getTenantId())
                 || !approval.getActiveOrgId().equals(user.getActiveOrgId())) {
             finish(approval, "FAILED", "FAILED", "AUTHORIZATION_REVOKED");
@@ -114,7 +116,7 @@ public class HighRiskApprovalCallbackService {
         }
         LoginUser serviceUser = userLoadService.loadUserByUserId(
                 approval.getServiceUserId(), approval.getTenantId(), approval.getActiveOrgId());
-        if (serviceUser == null || !Integer.valueOf(1).equals(serviceUser.getUserStatus())
+        if (serviceUser == null || !EnableStatus.ENABLED.matches(serviceUser.getUserStatus())
                 || !approval.getTenantId().equals(serviceUser.getTenantId())
                 || !approval.getActiveOrgId().equals(serviceUser.getActiveOrgId())) {
             finish(approval, "FAILED", "FAILED", "AUTHORIZATION_REVOKED");
@@ -147,11 +149,11 @@ public class HighRiskApprovalCallbackService {
                 throw new BusinessException(409, "POLICY_MISMATCH");
             }
             if (!approval.getBusinessStateDigest().equals(stateService.snapshot(descriptor, input))) {
-                finish(approval, "FAILED", "FAILED", "BUSINESS_STATE_CHANGED");
+                finish(approval, HighRiskExecuteStatus.FAILED.getCode(), HighRiskExecuteStatus.FAILED.getCode(), "BUSINESS_STATE_CHANGED");
                 return;
             }
-            approval.setExecuteStatus("EXECUTING");
-            approval.setResultCode("EXECUTING");
+            approval.setExecuteStatus(HighRiskExecuteStatus.EXECUTING.getCode());
+            approval.setResultCode(HighRiskExecuteStatus.EXECUTING.getCode());
             approval.setErrorCode(null);
             if (approvalMapper.updateState(approval) != 1) {
                 throw new BusinessException("APPROVAL_AUDIT_UNAVAILABLE");
@@ -171,14 +173,14 @@ public class HighRiskApprovalCallbackService {
             safe.put("correlationId", result.getCorrelationId());
             safe.put("idempotentHit", Boolean.TRUE.equals(result.getIdempotentHit()));
             approval.setResultSnapshot(writeJson(safe));
-            if (!"SUCCESS".equals(result.getExecuteStatus())) {
-                finish(approval, "FAILED", "FAILED", "BUSINESS_EXECUTION_NOT_SUCCESS");
+            if (!HighRiskExecuteStatus.SUCCESS.matches(result.getExecuteStatus())) {
+                finish(approval, HighRiskExecuteStatus.FAILED.getCode(), HighRiskExecuteStatus.FAILED.getCode(), "BUSINESS_EXECUTION_NOT_SUCCESS");
                 return;
             }
-            finish(approval, "SUCCESS", "SUCCESS", null);
+            finish(approval, HighRiskExecuteStatus.SUCCESS.getCode(), HighRiskExecuteStatus.SUCCESS.getCode(), null);
         }
         catch (RuntimeException exception) {
-            finish(approval, "FAILED", "FAILED", stableError(exception));
+            finish(approval, HighRiskExecuteStatus.FAILED.getCode(), HighRiskExecuteStatus.FAILED.getCode(), stableError(exception));
         }
     }
 

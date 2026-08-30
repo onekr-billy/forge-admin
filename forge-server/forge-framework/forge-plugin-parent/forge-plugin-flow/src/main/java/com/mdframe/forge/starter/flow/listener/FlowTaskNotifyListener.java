@@ -18,6 +18,7 @@ import com.mdframe.forge.starter.flow.support.FlowNotifyConfig;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialConfig;
 import com.mdframe.forge.starter.social.service.ISocialConfigService;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -387,10 +388,10 @@ public class FlowTaskNotifyListener {
      */
     private SysSocialConfig resolveTodoPushConnection(boolean requireTodoPushEnabled) {
         SysSocialConfig query = new SysSocialConfig();
-        query.setStatus(1);
+        query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
         List<SysSocialConfig> candidates = socialConfigService.selectConfigList(query).stream()
                 .filter(conn -> !requireTodoPushEnabled
-                        || (conn.getTodoPushEnabled() != null && conn.getTodoPushEnabled() == 1))
+                        || (conn.getTodoPushEnabled() != null && EnableStatus.ENABLED.matches(conn.getTodoPushEnabled())))
                 .toList();
         if (candidates.isEmpty()) {
             return null;
@@ -445,9 +446,11 @@ public class FlowTaskNotifyListener {
             Long tenantId = business.getTenantId();
             if (tenantId != null && tenantId > 0) {
                 return TenantContextHolder.executeWithTenant(tenantId,
-                        () -> flowModelMapper.selectByModelKey(business.getProcessDefKey()));
+                        () -> flowModelMapper.selectByModelKeyAndTenantId(
+                                business.getProcessDefKey(), tenantId));
             }
-            return flowModelMapper.selectByModelKey(business.getProcessDefKey());
+            log.warn("查询流程模型时缺少可信租户上下文: processDefKey={}", business.getProcessDefKey());
+            return null;
         } catch (Exception e) {
             log.debug("查询流程模型失败: processDefKey={}", business.getProcessDefKey(), e);
             return null;
@@ -997,15 +1000,16 @@ public class FlowTaskNotifyListener {
         }
         Long tenantId = parseTenantId(message == null ? null : message.getTenantId());
         if (tenantId != null) {
-            TenantContextHolder.executeWithTenant(tenantId, () -> doPublishEvent(message, processDefKey));
+            TenantContextHolder.executeWithTenant(
+                    tenantId, () -> doPublishEvent(message, processDefKey, tenantId));
             return;
         }
-        doPublishEvent(message, processDefKey);
+        log.warn("[FlowEvent] 缺少可信租户上下文，跳过通知: processDefKey={}", processDefKey);
     }
 
-    private void doPublishEvent(FlowEventMessage message, String processDefKey) {
+    private void doPublishEvent(FlowEventMessage message, String processDefKey, Long tenantId) {
         try {
-            FlowModel model = flowModelMapper.selectByModelKey(processDefKey);
+            FlowModel model = flowModelMapper.selectByModelKeyAndTenantId(processDefKey, tenantId);
             if (model == null) {
                 log.debug("[FlowEvent] 未找到 FlowModel 配置，跳过通知: processDefKey={}", processDefKey);
                 return;

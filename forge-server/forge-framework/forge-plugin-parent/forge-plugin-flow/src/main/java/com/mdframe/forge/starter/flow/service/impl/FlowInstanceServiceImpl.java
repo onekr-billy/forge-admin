@@ -11,6 +11,8 @@ import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
+import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
+import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
@@ -163,6 +165,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         // 兼容历史设计器把固定审批人写成 ${user_45}。新模型直接保存用户 ID，
         // 这里仅对已部署旧模型的严格数字表达式补变量，不影响正常动态表达式。
         BpmnModel bpmnModel = processEngine.getRepositoryService().getBpmnModel(processDefinition.getId());
+        InitiatorSelectedApproverSupport.validateAndNormalize(bpmnModel, vars);
         int legacyFixedAssigneeCount = LegacyFixedAssigneeVariableSupport.enrich(bpmnModel, vars);
         if (legacyFixedAssigneeCount > 0) {
             log.warn("[流程启动兼容] 已补齐历史固定审批人变量: processDefinitionId={}, count={}",
@@ -256,7 +259,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         business.setProcessDefId(processDefinition.getId());
         business.setProcessDefKey(processDefinition.getKey());
         business.setTitle(title);
-        business.setStatus("running");
+        business.setStatus(FlowBusinessStatus.RUNNING.getCode());
         business.setApplyUserId(userId);
         business.setApplyUserName(displayUserName);
         business.setApplyDeptId(deptId);
@@ -337,8 +340,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         if (isRuntimeProcessActive(business.getProcessInstanceId())) {
             return true;
         }
-        String status = normalizeStatus(business.getStatus());
-        return "running".equals(status) || "draft".equals(status) || "suspended".equals(status);
+        return FlowBusinessStatus.isReusable(business.getStatus());
     }
 
     private ProcessDefinition deployModelOnDemand(String modelKey, Long tenantId) {
@@ -381,12 +383,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     }
 
     private boolean isEndedStatus(String status) {
-        String normalized = normalizeStatus(status);
-        return "approved".equals(normalized)
-                || "rejected".equals(normalized)
-                || "canceled".equals(normalized)
-                || "terminated".equals(normalized)
-                || "completed".equals(normalized);
+        return FlowBusinessStatus.isEnded(status);
     }
 
     private Long resolveTenantId() {
@@ -483,10 +480,6 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         return String.valueOf(value).replaceAll("[^A-Za-z0-9:_-]", "_");
     }
 
-    private String normalizeStatus(String status) {
-        return status == null ? "" : status.trim().toLowerCase();
-    }
-
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
     }
@@ -502,7 +495,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         try {
             runtimeService.deleteProcessInstance(business.getProcessInstanceId(), reason);
 
-            business.setStatus("canceled");
+            business.setStatus(FlowBusinessStatus.CANCELED.getCode());
             business.setEndTime(LocalDateTime.now());
             flowBusinessMapper.updateById(business);
 
@@ -613,6 +606,11 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         if (taskId == null || newAssignee == null) {
             throw new RuntimeException("任务ID和新处理人ID不能为空");
         }
+        Long tenantId = resolveTenantId();
+        if (flowOrgIntegrationService == null
+                || !flowOrgIntegrationService.isUserAvailableForTenant(newAssignee.trim(), tenantId)) {
+            throw new BusinessException(400, "新处理人不存在、已停用或不属于当前租户");
+        }
 
         Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
         if (task == null || task.getProcessInstanceId() == null) {
@@ -638,7 +636,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             if (flowTask != null) {
                 flowTask.setAssignee(newAssignee);
                 flowTask.setOwner(owner);
-                flowTask.setStatus(0);
+                flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
                 flowTask.setComment(reason);
                 flowTaskMapper.updateById(flowTask);
             }
@@ -687,7 +685,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             // 删除流程实例
             runtimeService.deleteProcessInstance(processInstanceId, reason);
 
-            business.setStatus("terminated");
+            business.setStatus(FlowBusinessStatus.TERMINATED.getCode());
             business.setEndTime(LocalDateTime.now());
             flowBusinessMapper.updateById(business);
 

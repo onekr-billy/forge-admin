@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.ai.agent.domain.AiAgent;
 import com.mdframe.forge.plugin.ai.agent.engine.create.domain.AiAgentGenerateRecord;
+import com.mdframe.forge.plugin.ai.agent.engine.create.enums.AiAgentGenerateStatus;
 import com.mdframe.forge.plugin.ai.agent.engine.create.mapper.AiAgentGenerateRecordMapper;
 import com.mdframe.forge.plugin.ai.agent.service.AiAgentService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -18,6 +19,7 @@ import reactor.core.publisher.Sinks;
 
 import java.util.List;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * AI 创建 Agent 服务。
@@ -45,7 +47,7 @@ public class AgentCreateService {
         // 先插入记录获取ID
         AiAgentGenerateRecord genRecord = new AiAgentGenerateRecord();
         genRecord.setDescription(description);
-        genRecord.setStatus("generating");
+        genRecord.setStatus(AiAgentGenerateStatus.GENERATING.getCode());
         recordMapper.insert(genRecord);
         Long recordId = genRecord.getId();
 
@@ -78,7 +80,7 @@ public class AgentCreateService {
 
                 // 5. 保存生成结果
                 genRecord.setGeneratedConfigJson(config.toJSONString());
-                genRecord.setStatus("success");
+                genRecord.setStatus(AiAgentGenerateStatus.SUCCESS.getCode());
                 recordMapper.updateById(genRecord);
 
                 // 6. 发送 done 事件
@@ -86,7 +88,7 @@ public class AgentCreateService {
 
             } catch (Exception e) {
                 log.error("[AgentCreate] 生成失败, recordId={}", recordId, e);
-                genRecord.setStatus("failed");
+                genRecord.setStatus(AiAgentGenerateStatus.FAILED.getCode());
                 genRecord.setErrorMsg(truncate(e.getMessage(), 1000));
                 recordMapper.updateById(genRecord);
                 emit(sink, "error", JSON.toJSONString(Map.of("message", e.getMessage())));
@@ -126,7 +128,7 @@ public class AgentCreateService {
         agent.setMaxIters(config.getIntValue("maxIters") > 0 ? config.getIntValue("maxIters") : 10);
         agent.setRagMode("none");
         agent.setToolGroupMode("all");
-        agent.setStatus("0");
+        agent.setStatus(EnableStatus.DISABLED.codeAsString());
 
         // 供应商和模型（从配置中获取，或使用默认）
         Long providerId = config.getLong("providerId");

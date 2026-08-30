@@ -2,6 +2,7 @@ package com.mdframe.forge.starter.excel.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.starter.excel.core.DynamicExportEngine;
+import com.mdframe.forge.starter.excel.enums.AsyncExportStatus;
 import com.mdframe.forge.starter.excel.model.AsyncExportTask;
 import com.mdframe.forge.starter.excel.service.AsyncExportService;
 import com.mdframe.forge.starter.excel.service.impl.AsyncExportServiceImpl;
@@ -30,7 +31,7 @@ class AsyncExportSecurityContractTest {
         String taskId = service.submitExportTask("users", Map.of(), "users.xlsx");
         AsyncExportTask storedTask = service.getTaskStatus(taskId);
 
-        assertThat(storedTask.getStatus()).isEqualTo(2);
+        assertThat(storedTask.getStatus()).isEqualTo(AsyncExportStatus.FAILED.getCode());
         assertThat(storedTask.getErrorMessage())
                 .isEqualTo(AsyncExportTask.PUBLIC_FAILURE_MESSAGE)
                 .doesNotContain(internalMessage);
@@ -52,7 +53,7 @@ class AsyncExportSecurityContractTest {
         String internalPath = "/private/export/users.xlsx";
         AsyncExportTask internalTask = new AsyncExportTask();
         internalTask.setTaskId("task-1");
-        internalTask.setStatus(1);
+        internalTask.setStatus(AsyncExportStatus.COMPLETED.getCode());
         internalTask.setFilePath(internalPath);
 
         AsyncExportService service = new AsyncExportService() {

@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * Go-View 项目 Service
@@ -59,10 +60,10 @@ public class ReportProjectService extends ServiceImpl<ReportProjectMapper, Repor
             project.setProjectName("新项目");
         }
         if (!StringUtils.hasText(project.getStatus())) {
-            project.setStatus("0");
+            project.setStatus(EnableStatus.DISABLED.codeAsString());
         }
         if (!StringUtils.hasText(project.getPublishStatus())) {
-            project.setPublishStatus("0");
+            project.setPublishStatus(EnableStatus.DISABLED.codeAsString());
         }
         save(project);
         return project;
@@ -124,7 +125,7 @@ public class ReportProjectService extends ServiceImpl<ReportProjectMapper, Repor
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
-        project.setPublishStatus("1");
+        project.setPublishStatus(EnableStatus.ENABLED.codeAsString());
         project.setPublishUrl(publishUrl);
         project.setPublishTime(new Date());
         boolean updated = updateById(project);

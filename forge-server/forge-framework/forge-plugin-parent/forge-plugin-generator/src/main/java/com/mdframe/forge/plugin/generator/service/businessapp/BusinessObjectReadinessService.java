@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象就绪度服务
@@ -128,19 +129,19 @@ public class BusinessObjectReadinessService {
         item.setItemName("业务对象状态");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在");
             item.setNextAction("CREATE_OBJECT");
             item.setNextActionLabel("创建业务对象");
-        } else if (Integer.valueOf(0).equals(object.getStatus())) {
-            item.setStatus(BusinessReadinessStatus.ERROR);
+        } else if (EnableStatus.DISABLED.matches(object.getStatus())) {
+            item.setStatus(BusinessReadinessStatus.ERROR.getCode());
             item.setStatusLabel("已停用");
             item.setMessage("业务对象已停用");
             item.setNextAction("ENABLE_OBJECT");
             item.setNextActionLabel("启用业务对象");
         } else {
-            item.setStatus(BusinessReadinessStatus.RUNNABLE);
+            item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
             item.setStatusLabel("正常");
             item.setMessage("业务对象已启用");
         }
@@ -154,7 +155,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("低代码模型");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查模型");
             return item;
@@ -162,11 +163,11 @@ public class BusinessObjectReadinessService {
 
         boolean hasModel = StringUtils.isNotBlank(object.getModelCode());
         if (hasModel) {
-            item.setStatus(BusinessReadinessStatus.RUNNABLE);
+            item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
             item.setStatusLabel("已关联");
             item.setMessage("低代码模型已关联，可以支撑运行配置");
         } else {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未配置");
             item.setMessage("低代码模型未关联");
             item.setNextAction("CONFIGURE_MODEL");
@@ -182,7 +183,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("应用入口");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查应用入口");
             return item;
@@ -192,19 +193,19 @@ public class BusinessObjectReadinessService {
                 tenantId, object.getSuiteCode(), object.getObjectCode());
 
         if (app == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("应用入口未创建");
             item.setNextAction("CREATE_APP_ENTRY");
             item.setNextActionLabel("生成应用入口");
-        } else if (Integer.valueOf(0).equals(app.getStatus())) {
-            item.setStatus(BusinessReadinessStatus.ERROR);
+        } else if (EnableStatus.DISABLED.matches(app.getStatus())) {
+            item.setStatus(BusinessReadinessStatus.ERROR.getCode());
             item.setStatusLabel("已停用");
             item.setMessage("应用入口已停用");
             item.setNextAction("ENABLE_APP_ENTRY");
             item.setNextActionLabel("启用应用入口");
         } else {
-            item.setStatus(BusinessReadinessStatus.RUNNABLE);
+            item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
             item.setStatusLabel("正常");
             item.setMessage("应用入口已启用");
             item.setNextActionUrl(StringUtils.defaultIfBlank(app.getEntryUrl(), "/ai/crud-page/" + app.getConfigKey()));
@@ -219,7 +220,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("运行配置");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查运行配置");
             return item;
@@ -229,7 +230,7 @@ public class BusinessObjectReadinessService {
                 tenantId, object.getSuiteCode(), object.getObjectCode());
 
         if (app == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("应用入口不存在，无法检查运行配置");
             item.setNextAction("CREATE_APP_ENTRY");
@@ -239,7 +240,7 @@ public class BusinessObjectReadinessService {
 
         String configKey = app.getConfigKey();
         if (StringUtils.isBlank(configKey)) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未配置");
             item.setMessage("应用入口未配置 configKey");
             item.setNextAction("CONFIGURE_RUNTIME");
@@ -249,25 +250,25 @@ public class BusinessObjectReadinessService {
 
         AiCrudConfig config = aiCrudConfigMapper.selectByConfigKey(tenantId, configKey);
         if (config == null) {
-            item.setStatus(BusinessReadinessStatus.ERROR);
+            item.setStatus(BusinessReadinessStatus.ERROR.getCode());
             item.setStatusLabel("配置缺失");
             item.setMessage("运行配置不存在，请先发布应用");
             item.setNextAction("PUBLISH_APP");
             item.setNextActionLabel("发布应用");
-        } else if ("1".equals(config.getStatus())) {
-            item.setStatus(BusinessReadinessStatus.ERROR);
+        } else if (EnableStatus.ENABLED.matches(config.getStatus())) {
+            item.setStatus(BusinessReadinessStatus.ERROR.getCode());
             item.setStatusLabel("已停用");
             item.setMessage("运行配置已停用，请先启用运行配置");
             item.setNextAction("ENABLE_RUNTIME");
             item.setNextActionLabel("启用运行配置");
         } else if (!"PUBLISHED".equals(config.getPublishStatus())) {
-            item.setStatus(BusinessReadinessStatus.CONFIGURED);
+            item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
             item.setStatusLabel("未发布");
             item.setMessage("运行配置未发布");
             item.setNextAction("PUBLISH_APP");
             item.setNextActionLabel("发布应用");
         } else {
-            item.setStatus(BusinessReadinessStatus.RUNNABLE);
+            item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
             item.setStatusLabel("已发布");
             item.setMessage("运行配置已发布");
             item.setNextActionUrl("/ai/crud-page/" + configKey);
@@ -282,7 +283,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("导入导出");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查导入导出");
             return item;
@@ -292,7 +293,7 @@ public class BusinessObjectReadinessService {
                 tenantId, object.getSuiteCode(), object.getObjectCode());
 
         if (app == null || StringUtils.isBlank(app.getConfigKey())) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未配置");
             item.setMessage("运行配置不存在，无法启用导入导出");
             item.setNextAction("CONFIGURE_RUNTIME");
@@ -301,8 +302,8 @@ public class BusinessObjectReadinessService {
         }
 
         AiCrudConfig config = aiCrudConfigMapper.selectByConfigKey(tenantId, app.getConfigKey());
-        if (config == null || "1".equals(config.getStatus()) || !"PUBLISHED".equals(config.getPublishStatus())) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+        if (config == null || EnableStatus.ENABLED.matches(config.getStatus()) || !"PUBLISHED".equals(config.getPublishStatus())) {
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("不可用");
             item.setMessage("运行配置未发布或已停用，无法启用导入导出");
             item.setNextAction("PUBLISH_APP");
@@ -314,11 +315,11 @@ public class BusinessObjectReadinessService {
             boolean exportEnabled = optionEnabled(options, "exportEnabled") || optionEnabled(options, "showExport");
 
             if (importEnabled || exportEnabled) {
-                item.setStatus(BusinessReadinessStatus.RUNNABLE);
+                item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
                 item.setStatusLabel("已启用");
                 item.setMessage("导入导出功能已启用");
             } else {
-                item.setStatus(BusinessReadinessStatus.CONFIGURED);
+                item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
                 item.setStatusLabel("未启用");
                 item.setMessage("导入导出功能未启用");
                 item.setNextAction("ENABLE_IMPORT_EXPORT");
@@ -335,7 +336,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("单据闭环");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查单据闭环");
             return item;
@@ -343,7 +344,7 @@ public class BusinessObjectReadinessService {
 
         BusinessDocumentConfigVO config = documentConfigService.getConfig(object.getId());
         if (!Boolean.TRUE.equals(config.getDocumentEnabled())) {
-            item.setStatus(BusinessReadinessStatus.REGISTERED);
+            item.setStatus(BusinessReadinessStatus.REGISTERED.getCode());
             item.setStatusLabel("未启用");
             item.setMessage("当前对象按普通 CRUD 运行，未启用单据闭环");
             item.setNextAction("CONFIGURE_DOCUMENT");
@@ -352,7 +353,7 @@ public class BusinessObjectReadinessService {
             return item;
         }
         if (StringUtils.isBlank(config.getStatusField())) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("缺状态字段");
             item.setMessage("单据模式已启用，但未配置状态字段");
             item.setNextAction("CONFIGURE_DOCUMENT");
@@ -363,7 +364,7 @@ public class BusinessObjectReadinessService {
 
         Map<String, Object> mainFlow = config.getMainFlowSummary();
         if (mainFlow == null || !Boolean.TRUE.equals(mainFlow.get("configured"))) {
-            item.setStatus(BusinessReadinessStatus.CONFIGURED);
+            item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
             item.setStatusLabel("缺主流程");
             item.setMessage("单据已配置，尚未绑定主流程");
             item.setNextAction("CONFIGURE_FLOW");
@@ -372,7 +373,7 @@ public class BusinessObjectReadinessService {
             return item;
         }
         if (!Boolean.TRUE.equals(mainFlow.get("complete"))) {
-            item.setStatus(BusinessReadinessStatus.CONFIGURED);
+            item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
             item.setStatusLabel("流程待完善");
             item.setMessage("主流程仍有缺口: " + summarizeGaps(mainFlow.get("gaps")));
             item.setNextAction("CONFIGURE_FLOW");
@@ -385,7 +386,7 @@ public class BusinessObjectReadinessService {
         if (requiresTrigger(startMode)) {
             Long triggerCount = triggerMapper.countActiveByObjectAndAction(tenantId, object.getObjectCode(), "START_FLOW");
             if (triggerCount == null || triggerCount <= 0) {
-                item.setStatus(BusinessReadinessStatus.CONFIGURED);
+                item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
                 item.setStatusLabel("缺触发器");
                 item.setMessage("发起方式包含触发器，但未配置启用的发起主流程触发器");
                 item.setNextAction("CONFIGURE_TRIGGER");
@@ -394,7 +395,7 @@ public class BusinessObjectReadinessService {
                 return item;
             }
         }
-        item.setStatus(BusinessReadinessStatus.RUNNABLE);
+        item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
         item.setStatusLabel("已闭环");
         item.setMessage("单据设置、主流程、发起方式和触发器配置已具备闭环能力");
         return item;
@@ -406,7 +407,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("对象关系");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查关系");
             return item;
@@ -417,11 +418,11 @@ public class BusinessObjectReadinessService {
                 tenantId, object.getSuiteCode(), object.getObjectCode());
 
         if (relationCount != null && relationCount > 0) {
-            item.setStatus(BusinessReadinessStatus.RUNNABLE);
+            item.setStatus(BusinessReadinessStatus.RUNNABLE.getCode());
             item.setStatusLabel("已配置");
             item.setMessage("已配置 " + relationCount + " 个对象关系");
         } else {
-            item.setStatus(BusinessReadinessStatus.REGISTERED);
+            item.setStatus(BusinessReadinessStatus.REGISTERED.getCode());
             item.setStatusLabel("未配置");
             item.setMessage("对象关系未配置");
             item.setNextAction("CONFIGURE_RELATIONS");
@@ -437,7 +438,7 @@ public class BusinessObjectReadinessService {
         item.setItemName("能力挂接");
 
         if (object == null) {
-            item.setStatus(BusinessReadinessStatus.MISSING);
+            item.setStatus(BusinessReadinessStatus.MISSING.getCode());
             item.setStatusLabel("未创建");
             item.setMessage("业务对象不存在，无法检查能力挂接");
             return item;
@@ -448,11 +449,11 @@ public class BusinessObjectReadinessService {
                 tenantId, object.getSuiteCode(), object.getObjectCode());
 
         if (bindingCount != null && bindingCount > 0) {
-            item.setStatus(BusinessReadinessStatus.CONFIGURED);
+            item.setStatus(BusinessReadinessStatus.CONFIGURED.getCode());
             item.setStatusLabel("已配置");
             item.setMessage("已配置 " + bindingCount + " 个能力挂接");
         } else {
-            item.setStatus(BusinessReadinessStatus.REGISTERED);
+            item.setStatus(BusinessReadinessStatus.REGISTERED.getCode());
             item.setStatusLabel("未配置");
             item.setMessage("能力挂接未配置");
             item.setNextAction("CONFIGURE_BINDINGS");
@@ -463,13 +464,13 @@ public class BusinessObjectReadinessService {
     }
 
     private int getItemScore(String status) {
-        if (BusinessReadinessStatus.RUNNABLE.equals(status)) {
+        if (BusinessReadinessStatus.RUNNABLE.matches(status)) {
             return 100;
-        } else if (BusinessReadinessStatus.CONFIGURED.equals(status)) {
+        } else if (BusinessReadinessStatus.CONFIGURED.matches(status)) {
             return 75;
-        } else if (BusinessReadinessStatus.REGISTERED.equals(status)) {
+        } else if (BusinessReadinessStatus.REGISTERED.matches(status)) {
             return 50;
-        } else if (BusinessReadinessStatus.ERROR.equals(status)) {
+        } else if (BusinessReadinessStatus.ERROR.matches(status)) {
             return 25;
         } else {
             return 0;
@@ -485,35 +486,35 @@ public class BusinessObjectReadinessService {
 
         for (BusinessReadinessItemVO item : items) {
             String status = item.getStatus();
-            if (BusinessReadinessStatus.MISSING.equals(status)) {
+            if (BusinessReadinessStatus.MISSING.matches(status)) {
                 hasMissing = true;
                 allRunnable = false;
-            } else if (BusinessReadinessStatus.ERROR.equals(status)) {
+            } else if (BusinessReadinessStatus.ERROR.matches(status)) {
                 hasError = true;
                 allRunnable = false;
-            } else if (BusinessReadinessStatus.CONFIGURED.equals(status)) {
+            } else if (BusinessReadinessStatus.CONFIGURED.matches(status)) {
                 hasConfigured = true;
                 allRunnable = false;
-            } else if (BusinessReadinessStatus.REGISTERED.equals(status)) {
+            } else if (BusinessReadinessStatus.REGISTERED.matches(status)) {
                 hasRegistered = true;
                 allRunnable = false;
             }
         }
 
         if (runtimeItemsReady(items)) {
-            return BusinessReadinessStatus.RUNNABLE;
+            return BusinessReadinessStatus.RUNNABLE.getCode();
         } else if (allRunnable) {
-            return BusinessReadinessStatus.RUNNABLE;
+            return BusinessReadinessStatus.RUNNABLE.getCode();
         } else if (hasMissing) {
-            return BusinessReadinessStatus.MISSING;
+            return BusinessReadinessStatus.MISSING.getCode();
         } else if (hasError) {
-            return BusinessReadinessStatus.ERROR;
+            return BusinessReadinessStatus.ERROR.getCode();
         } else if (hasConfigured) {
-            return BusinessReadinessStatus.CONFIGURED;
+            return BusinessReadinessStatus.CONFIGURED.getCode();
         } else if (hasRegistered) {
-            return BusinessReadinessStatus.REGISTERED;
+            return BusinessReadinessStatus.REGISTERED.getCode();
         } else {
-            return BusinessReadinessStatus.MISSING;
+            return BusinessReadinessStatus.MISSING.getCode();
         }
     }
 
@@ -524,13 +525,13 @@ public class BusinessObjectReadinessService {
             }
             String status = item.getStatus();
             if ("MODEL_STATUS".equals(item.getItemCode())) {
-                if (!BusinessReadinessStatus.RUNNABLE.equals(status)
-                        && !BusinessReadinessStatus.CONFIGURED.equals(status)) {
+                if (!BusinessReadinessStatus.RUNNABLE.matches(status)
+                        && !BusinessReadinessStatus.CONFIGURED.matches(status)) {
                     return false;
                 }
                 continue;
             }
-            if (!BusinessReadinessStatus.RUNNABLE.equals(status)) {
+            if (!BusinessReadinessStatus.RUNNABLE.matches(status)) {
                 return false;
             }
         }
@@ -575,7 +576,7 @@ public class BusinessObjectReadinessService {
     }
 
     private void setNextAction(BusinessObjectReadinessVO vo, List<BusinessReadinessItemVO> items, String overallStatus) {
-        if (BusinessReadinessStatus.RUNNABLE.equals(overallStatus)) {
+        if (BusinessReadinessStatus.RUNNABLE.matches(overallStatus)) {
             vo.setNextAction("OPEN_RUNTIME");
             vo.setNextActionLabel("打开业务入口");
             vo.setNextActionUrl("/ai/crud-page/" + getConfigKey(items));
@@ -596,7 +597,7 @@ public class BusinessObjectReadinessService {
         // 从配置状态项中获取 configKey
         for (BusinessReadinessItemVO item : items) {
             if ("CONFIG_STATUS".equals(item.getItemCode()) && 
-                BusinessReadinessStatus.RUNNABLE.equals(item.getStatus())) {
+                BusinessReadinessStatus.RUNNABLE.matches(item.getStatus())) {
                 String url = item.getNextActionUrl();
                 if (StringUtils.isNotBlank(url) && url.contains("/ai/crud-page/")) {
                     return StringUtils.substringAfter(url, "/ai/crud-page/");

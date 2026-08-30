@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.capability.identity.security.CapabilityTenantCon
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -207,7 +208,7 @@ public class CapabilityAccessTokenService {
                 && token.getActorUserId().equals(loginUser.getUserId())
                 && token.getTenantId().equals(loginUser.getTenantId())
                 && token.getActiveOrgId().equals(loginUser.getActiveOrgId())
-                && Integer.valueOf(1).equals(loginUser.getUserStatus())
+                && EnableStatus.ENABLED.matches(loginUser.getUserStatus())
                 && !Boolean.TRUE.equals(loginUser.getForcePasswordChange());
         if (!exactIdentity) {
             throw unauthorized();
@@ -230,7 +231,7 @@ public class CapabilityAccessTokenService {
         CapabilityActorType actorType = actorType(token.getActorType());
         if (client == null || actorMode == null || actorType == null
                 || !"ENABLED".equals(client.getStatus())
-                || !Integer.valueOf(1).equals(client.getOauthEnabled())
+                || !EnableStatus.ENABLED.matches(client.getOauthEnabled())
                 || !Objects.equals(token.getCredentialVersion(), client.getCredentialVersion())
                 || (client.getExpiresAt() != null && !client.getExpiresAt().isAfter(now))) {
             return false;

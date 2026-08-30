@@ -28,10 +28,10 @@ class BusinessApplicationAssetSelectionServiceTest {
     @DisplayName("default publish selection skips untested extension drafts")
     void defaultSelectionSkipsUntestedDrafts() {
         Set<Long> selected = BusinessApplicationAssetSelectionService.defaultPublishableExtensionIds(List.of(
-                extension(1L, BusinessExtensionStatus.DRAFT),
-                extension(2L, BusinessExtensionStatus.TESTED),
-                extension(3L, BusinessExtensionStatus.ENABLED),
-                extension(4L, BusinessExtensionStatus.DISABLED)
+                extension(1L, BusinessExtensionStatus.DRAFT.getCode()),
+                extension(2L, BusinessExtensionStatus.TESTED.getCode()),
+                extension(3L, BusinessExtensionStatus.ENABLED.getCode()),
+                extension(4L, BusinessExtensionStatus.DISABLED.getCode())
         ));
 
         assertEquals(Set.of(2L, 3L, 4L), selected);

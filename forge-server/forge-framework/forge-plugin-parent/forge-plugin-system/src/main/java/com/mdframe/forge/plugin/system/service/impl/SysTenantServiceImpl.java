@@ -37,6 +37,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 租户Service实现类
@@ -112,7 +113,7 @@ public class SysTenantServiceImpl extends ServiceImpl<SysTenantMapper, SysTenant
                         vo.setExpireTime(tenant.getExpireTime());
                         vo.setMemberType(1);
                         vo.setIsDefault(tenant.getId().equals(loginUser.getTenantId()) ? 1 : 0);
-                        vo.setStatus(1);
+                        vo.setStatus(EnableStatus.ENABLED.getCode());
                         return vo;
                     })
                     .toList();

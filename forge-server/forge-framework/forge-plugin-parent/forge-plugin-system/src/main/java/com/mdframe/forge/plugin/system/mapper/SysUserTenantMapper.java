@@ -14,6 +14,9 @@ import java.util.List;
 @Mapper
 public interface SysUserTenantMapper extends BaseMapper<SysUserTenant> {
 
+    /** 校验用户是否为指定租户的有效成员。 */
+    int countEnabledMembership(@Param("userId") Long userId, @Param("tenantId") Long tenantId);
+
     /**
      * 查询用户可访问租户
      *

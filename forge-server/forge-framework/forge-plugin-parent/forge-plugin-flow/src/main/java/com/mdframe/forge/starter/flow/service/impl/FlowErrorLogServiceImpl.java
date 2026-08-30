@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
+import com.mdframe.forge.starter.flow.enums.FlowErrorLogStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowErrorLogMapper;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
@@ -60,7 +61,7 @@ public class FlowErrorLogServiceImpl extends ServiceImpl<FlowErrorLogMapper, Flo
             errorLog.setErrorType("FLOW_RUNTIME_ERROR");
         }
         if (errorLog.getStatus() == null) {
-            errorLog.setStatus(0);
+            errorLog.setStatus(FlowErrorLogStatus.UNRESOLVED.getCode());
         }
         if (errorLog.getRetryCount() == null) {
             errorLog.setRetryCount(0);
@@ -249,7 +250,7 @@ public class FlowErrorLogServiceImpl extends ServiceImpl<FlowErrorLogMapper, Flo
         if (errorLog == null) {
             return;
         }
-        baseMapper.updateRetryState(errorLog.getId(), tenantId, 1, userId,
+        baseMapper.updateRetryState(errorLog.getId(), tenantId, FlowErrorLogStatus.RETRIED.getCode(), userId,
                 truncate(reason, MAX_TEXT_LENGTH));
     }
 
@@ -257,7 +258,7 @@ public class FlowErrorLogServiceImpl extends ServiceImpl<FlowErrorLogMapper, Flo
         if (errorLog == null) {
             return;
         }
-        baseMapper.updateRetryState(errorLog.getId(), tenantId, 3, userId,
+        baseMapper.updateRetryState(errorLog.getId(), tenantId, FlowErrorLogStatus.RETRY_FAILED.getCode(), userId,
                 truncate(message, MAX_TEXT_LENGTH));
     }
 

@@ -12,6 +12,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcess;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessNodeRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessVersion;
+import com.mdframe.forge.plugin.generator.enums.BusinessProcessRunStatus;
 import com.mdframe.forge.plugin.generator.dto.businessprocess.BusinessProcessManualStartDTO;
 import com.mdframe.forge.plugin.generator.dto.businessprocess.BusinessProcessRunQueryDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务流程运行状态机：先落 run，再按已发布 DAG 执行到等待或结束。
@@ -54,7 +56,7 @@ public class BusinessProcessOrchestrator {
     private static final int MAX_RETRY = 5;
     private static final int MAX_PAGE_SIZE = 100;
     private static final Set<String> START_TYPES = Set.of("START_MANUAL", "START_EVENT", "START_SCHEDULE");
-    private static final Set<String> ACTIVE_STATUSES = Set.of("PENDING", "RUNNING", "WAITING");
+    private static final Set<String> ACTIVE_STATUSES = BusinessProcessRunStatus.ACTIVE_CODES;
 
     private final BusinessApplicationMapper applicationMapper;
     private final BusinessProcessMapper processMapper;
@@ -100,12 +102,12 @@ public class BusinessProcessOrchestrator {
         Long tenantId = requireTenantId();
         Long userId = requireUserId();
         AiBusinessApplication application = applicationMapper.selectEntityByCode(tenantId, StringUtils.trimToEmpty(applicationCode));
-        if (application == null || !Integer.valueOf(1).equals(application.getStatus())) {
+        if (application == null || !EnableStatus.ENABLED.matches(application.getStatus())) {
             throw new BusinessException("业务应用不存在或已停用");
         }
         AiBusinessProcess process = processMapper.selectActiveByCode(
                 tenantId, application.getId(), StringUtils.trimToEmpty(processCode));
-        if (process == null || !Integer.valueOf(1).equals(process.getStatus())) {
+        if (process == null || !EnableStatus.ENABLED.matches(process.getStatus())) {
             throw new BusinessException("业务流程不存在或已停用");
         }
         if (process.getPublishedVersion() == null) {
@@ -134,14 +136,14 @@ public class BusinessProcessOrchestrator {
         String idempotencyKey = "MANUAL:" + objectCode + ":" + recordId;
         AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
         if (existing != null) {
-            if (ACTIVE_STATUSES.contains(existing.getStatus()) || "SUCCESS".equals(existing.getStatus())) {
-                if ("PENDING".equals(existing.getStatus())) {
+            if (ACTIVE_STATUSES.contains(existing.getStatus()) || BusinessProcessRunStatus.SUCCESS.matches(existing.getStatus())) {
+                if (BusinessProcessRunStatus.PENDING.matches(existing.getStatus())) {
                     execute(existing.getId());
                     existing = requireRun(existing.getId());
                 }
                 return completedStart(existing, process.getProcessName());
             }
-            if ("FAILED".equals(existing.getStatus())) {
+            if (BusinessProcessRunStatus.FAILED.matches(existing.getStatus())) {
                 return retry(existing.getId());
             }
             return completedStart(existing, process.getProcessName());
@@ -161,8 +163,8 @@ public class BusinessProcessOrchestrator {
         run.setActorType("USER");
         run.setActorUserId(userId);
         run.setActiveOrgId(SessionHelper.getActiveOrgId());
-        run.setStatus("PENDING");
-        run.setContextSnapshot(safeContextSnapshot(objectCode, recordId));
+        run.setStatus(BusinessProcessRunStatus.PENDING.getCode());
+        run.setContextSnapshot(safeContextSnapshot(objectCode, recordId, dto.getVariables()));
         run.setRetryCount(0);
         run.setCreateBy(userId);
         run.setUpdateBy(userId);
@@ -177,6 +179,63 @@ public class BusinessProcessOrchestrator {
         }
         execute(run.getId());
         return completedStart(requireRun(run.getId()), process.getProcessName());
+    }
+
+    /** 查询应用级流程中所有审批模型的发起人自选节点。 */
+    public Map<String, Object> startConfig(String applicationCode, String processCode) {
+        Long tenantId = requireTenantId();
+        AiBusinessApplication application = applicationMapper.selectEntityByCode(
+                tenantId, StringUtils.trimToEmpty(applicationCode));
+        if (application == null || !EnableStatus.ENABLED.matches(application.getStatus())) {
+            throw new BusinessException("业务应用不存在或已停用");
+        }
+        AiBusinessProcess process = processMapper.selectActiveByCode(
+                tenantId, application.getId(), StringUtils.trimToEmpty(processCode));
+        if (process == null || !EnableStatus.ENABLED.matches(process.getStatus())
+                || process.getPublishedVersion() == null) {
+            throw new BusinessException("业务流程不存在、已停用或尚未发布");
+        }
+        AiBusinessProcessVersion version = versionMapper.selectPublishedVersion(
+                tenantId, process.getId(), process.getPublishedVersion());
+        if (version == null) {
+            throw new BusinessException("业务流程发布版本不存在");
+        }
+        BusinessProcessSchema schema = normalizeSchema(version.getSchemaJson());
+        Map<String, Map<String, Object>> nodesByKey = new LinkedHashMap<>();
+        List<BusinessProcessNode> schemaNodes = schema.getNodes() == null ? List.of() : schema.getNodes();
+        for (BusinessProcessNode node : schemaNodes) {
+            if (!"APPROVAL".equals(upper(node.getType()))) {
+                continue;
+            }
+            String modelKey = text(node.getConfig(), "flowModelKey");
+            if (StringUtils.isBlank(modelKey)) {
+                continue;
+            }
+            Map<String, Object> config = flowService.getFlowStartConfig(modelKey);
+            Object rawNodes = config.get("initiatorSelectNodes");
+            if (rawNodes instanceof List<?> list) {
+                for (Object rawNode : list) {
+                    if (rawNode instanceof Map<?, ?> map) {
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        map.forEach((key, value) -> item.put(String.valueOf(key), value));
+                        String nodeKey = StringUtils.trimToNull(String.valueOf(item.get("nodeKey")));
+                        if (nodeKey != null) {
+                            // PROCESS_START_USER is keyed only by userTask node key. If an
+                            // application embeds the same approval model more than once,
+                            // expose one selector and reuse the same selection for both
+                            // occurrences instead of rendering duplicate controls that
+                            // would overwrite one another in the variables map.
+                            nodesByKey.putIfAbsent(nodeKey, item);
+                        }
+                    }
+                }
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("applicationCode", applicationCode);
+        result.put("processCode", processCode);
+        result.put("initiatorSelectNodes", new ArrayList<>(nodesByKey.values()));
+        return result;
     }
 
     /**
@@ -216,7 +275,7 @@ public class BusinessProcessOrchestrator {
                     + schema.getSubject().getObjectCode() + ":" + recordId;
             AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
             if (existing != null) {
-                if ("PENDING".equals(existing.getStatus())) {
+                if (BusinessProcessRunStatus.PENDING.matches(existing.getStatus())) {
                     execute(tenantId, existing.getId());
                 }
                 continue;
@@ -235,7 +294,7 @@ public class BusinessProcessOrchestrator {
             run.setIdempotencyKey(idempotencyKey);
             run.setActorType("USER");
             run.setActorUserId(event.getOperatorId());
-            run.setStatus("PENDING");
+            run.setStatus(BusinessProcessRunStatus.PENDING.getCode());
             run.setContextSnapshot(safeContextSnapshot(schema.getSubject().getObjectCode(), recordId));
             run.setRetryCount(0);
             run.setCreateBy(event.getOperatorId());
@@ -255,12 +314,12 @@ public class BusinessProcessOrchestrator {
 
     private void execute(Long tenantId, Long runId) {
         AiBusinessProcessRun run = requireRun(tenantId, runId);
-        if (!"PENDING".equals(run.getStatus()) && !"RUNNING".equals(run.getStatus())) {
+        if (!BusinessProcessRunStatus.PENDING.matches(run.getStatus()) && !BusinessProcessRunStatus.RUNNING.matches(run.getStatus())) {
             return;
         }
-        if ("PENDING".equals(run.getStatus())) {
+        if (BusinessProcessRunStatus.PENDING.matches(run.getStatus())) {
             int claimed = runMapper.compareAndSetStatus(
-                    run.getTenantId(), run.getId(), "PENDING", null, null,
+                    run.getTenantId(), run.getId(), BusinessProcessRunStatus.PENDING.getCode(), null, null,
                     "RUNNING", null, null, null, null, null);
             if (claimed != 1) {
                 return;
@@ -365,7 +424,9 @@ public class BusinessProcessOrchestrator {
         if (claimed != 1) {
             return;
         }
-        String attemptStatus = "FAILED".equals(outputPort) ? "FAILED" : "SUCCESS";
+        String attemptStatus = "FAILED".equals(outputPort)
+                ? BusinessProcessRunStatus.FAILED.getCode()
+                : BusinessProcessRunStatus.SUCCESS.getCode();
         int attemptUpdated = nodeRunMapper.completeAttempt(
                 tenantId,
                 waitingAttempt.getId(),
@@ -477,6 +538,10 @@ public class BusinessProcessOrchestrator {
                 text(node.getConfig(), "approvalTitle"),
                 text(node.getConfig(), "title")));
         JSONObject variables = new JSONObject();
+        JSONObject contextVariables = parseContextVariables(run.getContextSnapshot());
+        if (!contextVariables.isEmpty()) {
+            variables.putAll(contextVariables);
+        }
         variables.put("processCode", run.getProcessCode());
         variables.put("processRunId", String.valueOf(run.getId()));
         variables.put("nodeId", node.getId());
@@ -539,7 +604,9 @@ public class BusinessProcessOrchestrator {
         if (latest == null) {
             return;
         }
-        String nextStatus = result.isFailed() ? "FAILED" : (result.isWaiting() ? "WAITING" : "SUCCESS");
+        String nextStatus = result.isFailed()
+                ? BusinessProcessRunStatus.FAILED.getCode()
+                : (result.isWaiting() ? BusinessProcessRunStatus.WAITING.getCode() : BusinessProcessRunStatus.SUCCESS.getCode());
         nodeRunMapper.completeAttempt(
                 run.getTenantId(),
                 latest.getId(),
@@ -574,20 +641,20 @@ public class BusinessProcessOrchestrator {
 
     private void succeedRun(AiBusinessProcessRun run, String nodeId) {
         runMapper.compareAndSetStatus(
-                run.getTenantId(), run.getId(), "RUNNING", run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                "SUCCESS", nodeId, run.getFlowProcessInstanceId(), null, null, null);
+                run.getTenantId(), run.getId(), BusinessProcessRunStatus.RUNNING.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
+                BusinessProcessRunStatus.SUCCESS.getCode(), nodeId, run.getFlowProcessInstanceId(), null, null, null);
     }
 
     private void waitRun(AiBusinessProcessRun run, String nodeId, String processInstanceId) {
         runMapper.compareAndSetStatus(
-                run.getTenantId(), run.getId(), "RUNNING", run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                "WAITING", nodeId, processInstanceId, null, null, null);
+                run.getTenantId(), run.getId(), BusinessProcessRunStatus.RUNNING.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
+                BusinessProcessRunStatus.WAITING.getCode(), nodeId, processInstanceId, null, null, null);
     }
 
     private void failRun(AiBusinessProcessRun run, String errorCode, String errorSummary) {
         runMapper.compareAndSetStatus(
                 run.getTenantId(), run.getId(), run.getStatus(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                "FAILED", run.getCurrentNodeId(), run.getFlowProcessInstanceId(), null,
+                BusinessProcessRunStatus.FAILED.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(), null,
                 errorCode, truncate(errorSummary));
     }
 
@@ -723,7 +790,7 @@ public class BusinessProcessOrchestrator {
 
     private BusinessProcessRunVO completedStart(AiBusinessProcessRun run, String processName) {
         BusinessProcessRunVO vo = toVo(run, processName);
-        if ("FAILED".equals(vo.getStatus())) {
+        if (BusinessProcessRunStatus.FAILED.matches(vo.getStatus())) {
             throw new BusinessException(StringUtils.defaultIfBlank(vo.getErrorSummary(), "业务流程执行失败"));
         }
         return vo;
@@ -846,11 +913,31 @@ public class BusinessProcessOrchestrator {
     }
 
     private String safeContextSnapshot(String objectCode, String recordId) {
+        return safeContextSnapshot(objectCode, recordId, Map.of());
+    }
+
+    private String safeContextSnapshot(String objectCode, String recordId, Map<String, Object> variables) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("objectCode", objectCode);
         snapshot.put("recordId", recordId);
         snapshot.put("triggerType", "MANUAL");
+        if (variables != null && !variables.isEmpty()) {
+            snapshot.put("startVariables", new LinkedHashMap<>(variables));
+        }
         return JSONObject.toJSONString(snapshot);
+    }
+
+    private JSONObject parseContextVariables(String snapshot) {
+        if (StringUtils.isBlank(snapshot)) {
+            return new JSONObject();
+        }
+        try {
+            JSONObject json = JSONObject.parseObject(snapshot);
+            Object value = json == null ? null : json.get("startVariables");
+            return value instanceof Map<?, ?> map ? new JSONObject(map) : new JSONObject();
+        } catch (Exception ignored) {
+            return new JSONObject();
+        }
     }
 
     private Map<String, Object> formAssetRef(Map<String, Object> config) {

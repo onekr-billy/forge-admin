@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.data.entity.DataDataset;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -59,7 +60,7 @@ public class DataQueryRuntimeCache {
     }
 
     public boolean cacheable(DataDataset dataset) {
-        return dataset != null && Integer.valueOf(1).equals(dataset.getCacheEnabled())
+        return dataset != null && EnableStatus.ENABLED.matches(dataset.getCacheEnabled())
                 && SessionHelper.getTenantId() != null && SessionHelper.getUserId() != null;
     }
 

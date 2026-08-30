@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.collaboration.service.directory;
 
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationDirectoryStatus;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialOrgMapping;
 import com.mdframe.forge.plugin.collaboration.domain.model.DirectorySyncPlan;
 import com.mdframe.forge.plugin.collaboration.domain.model.DirectoryWriteContext;
@@ -42,6 +43,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * Forge 目录写入适配器实现（Task 10）。
@@ -65,8 +67,6 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
     private static final String ISSUE_USER_BINDING_MISSING = "USER_BINDING_MISSING";
     private static final String ISSUE_USERNAME_CONFLICT = "USERNAME_CONFLICT";
     private static final String AUTHORITY_EXTERNAL = "EXTERNAL";
-    private static final String STATUS_ACTIVE = "ACTIVE";
-    private static final String STATUS_DISABLED = "DISABLED";
     private static final String ROOT_ANCESTORS = "0";
 
     private final ISocialConfigService configService;
@@ -209,7 +209,7 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
             mapping.setExternalDeptName(dept.name());
             mapping.setSourceHash(dept.sourceHash());
             mapping.setLastSeenRunId(context.syncLogId());
-            mapping.setStatus(STATUS_ACTIVE);
+            mapping.setStatus(CollaborationDirectoryStatus.ACTIVE.getCode());
             mappingMapper.updateOrgMappingByExternalId(mapping);
             counter.updated++;
         }
@@ -311,7 +311,7 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
         mapping.setOrgId(orgId);
         mapping.setSourceHash(dept.sourceHash());
         mapping.setLastSeenRunId(context.syncLogId());
-        mapping.setStatus(STATUS_ACTIVE);
+        mapping.setStatus(CollaborationDirectoryStatus.ACTIVE.getCode());
         return mapping;
     }
 
@@ -385,7 +385,9 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
         SysUserSocial update = new SysUserSocial();
         update.setId(bindingId);
         update.setManagedBySync(1);
-        update.setExternalStatus(user.active() ? STATUS_ACTIVE : STATUS_DISABLED);
+        update.setExternalStatus(user.active()
+                ? CollaborationDirectoryStatus.ACTIVE.getCode()
+                : CollaborationDirectoryStatus.DISABLED.getCode());
         update.setSourceHash(user.sourceHash());
         update.setLastSyncTime(LocalDateTime.now());
         update.setNickname(user.name());
@@ -426,7 +428,7 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
         sysUser.setAvatar(user.avatar());
         sysUser.setPassword(PasswordUtil.encrypt(UUID.randomUUID().toString()));
         sysUser.setForcePasswordChange(true);
-        sysUser.setUserStatus(user.active() ? 1 : 0);
+        sysUser.setUserStatus(user.active() ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         userMapper.insert(sysUser);
 
         SysUserTenant userTenant = new SysUserTenant();
@@ -434,7 +436,7 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
         userTenant.setUserId(sysUser.getId());
         userTenant.setMemberType(2);
         userTenant.setIsDefault(1);
-        userTenant.setStatus(1);
+        userTenant.setStatus(EnableStatus.ENABLED.getCode());
         userTenantMapper.insert(userTenant);
 
         SysUserSocial binding = new SysUserSocial();
@@ -445,7 +447,9 @@ public class ForgeDirectoryWriterImpl implements ForgeDirectoryWriter {
         binding.setUuid(user.externalUserId());
         binding.setUserId(sysUser.getId());
         binding.setManagedBySync(1);
-        binding.setExternalStatus(user.active() ? STATUS_ACTIVE : STATUS_DISABLED);
+        binding.setExternalStatus(user.active()
+                ? CollaborationDirectoryStatus.ACTIVE.getCode()
+                : CollaborationDirectoryStatus.DISABLED.getCode());
         binding.setSourceHash(user.sourceHash());
         binding.setNickname(user.name());
         binding.setAvatar(user.avatar());

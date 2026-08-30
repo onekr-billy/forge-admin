@@ -16,6 +16,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Slf4j @Service @RequiredArgsConstructor
 public class AiModelConnectionTestService {
@@ -29,7 +30,7 @@ public class AiModelConnectionTestService {
         AiModel model = modelMapper.selectEnabledById(modelPk);
         if (model == null) throw new BusinessException("模型不存在或已停用");
         AiProvider provider = providerService.getById(model.getProviderId());
-        if (provider == null || !"0".equals(provider.getStatus())) throw new BusinessException("模型供应商不存在或已停用");
+        if (provider == null || !EnableStatus.DISABLED.matches(provider.getStatus())) throw new BusinessException("模型供应商不存在或已停用");
         Long tenantId = model.getTenantId() != null ? model.getTenantId() : SessionHelper.getTenantId();
         if (tenantId == null) throw new BusinessException("无法确定当前模型所属租户");
 

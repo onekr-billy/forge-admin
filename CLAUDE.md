@@ -91,7 +91,8 @@ Flyway 迁移只在 **`forge-admin-server` 启动时**执行（`forge-report-ser
 - **禁止 Service 互相注入**，跨 Service 协调逻辑上提到 Controller 层。
 - **字典禁止硬编码**在前端 options 或标签映射里 —— 必须用 `DictSelect`/`DictTag`/`useDict`。新增内置字典通过 Flyway 迁移写入（带 `NOT EXISTS` 防重复，`tenant_id = 1`）。
 - **逻辑删除为默认**：业务/配置/设计态表加 `del_flag`（0 = 未删除；数值主键表用 `@TableLogic(value = "0", delval = "<主键列>")`）。Mapper XML 查询必须显式过滤（`AND del_flag = 0`）。仅框架表/关联重建表/临时表或留存清理任务允许物理删除（需在变更说明中写明理由）。禁止只给实体加 `@TableLogic` 但数据库缺字段。
-- **接口风格**：`RespInfo.success(data)` / `RespInfo.error(msg)`；REST 路径 `GET /page`、`GET /:id`、`POST /`、`PUT /`、`DELETE /:id`；敏感接口用 `@ApiDecrypt`/`@ApiEncrypt`。
+- **接口风格**：`RespInfo.success(data)` / `RespInfo.error(msg)`；REST 路径 `GET /page`、`GET /:id`、`POST /`、`PUT /`、`DELETE /:id`；敏感接口用 `@ApiDecrypt`/`@ApiEncrypt`。Controller `@RequestBody` 必须用 DTO/VO，禁止 `@RequestBody Map` 再 `params.get("xxx")`。例外仅限流程 `variables`、低代码动态记录体、真正动态元数据；固定字段必须进 DTO。
+- **业务状态必须用枚举**：Java 禁止 `setStatus(2)`、`getStatus() == 1`、`setEnabled(1)`。通用 0/1 启用开关用 `EnableStatus.getCode()` / `matches()`；多状态字段建本模块枚举。实体字段继续用 `Integer`/`String`。Mapper XML 允许数字字面量，禁止把 Java 类全名绑进 SQL。测试可用字面量，生产代码不行。
 - **安全红线**：禁止硬编码密钥/AK/SK/数据库密码；日志中禁止打印手机号、身份证、银行卡；返回前端的 API Key/Secret 必须脱敏（保留前4后4，中间 `****`）。`application-dev.yml` / `.env.local` 属本地配置（已 gitignore），通用配置同步到 `application-dev.example.yml` / `.env.example` 并用占位符。
 - **必备字段**：业务表必须含 `id`、`tenant_id`、`create_by`、`create_time`、`create_dept`、`update_by`、`update_time`；字符集 `utf8mb4`、引擎 `InnoDB`；金额用 `long` 单位分；时间用 `LocalDateTime`。
 
@@ -112,8 +113,8 @@ Flyway 迁移只在 **`forge-admin-server` 启动时**执行（`forge-report-ser
 
 - `README.md` — 产品介绍、架构图、快速开始（注意：命令写的是 `forge/`，真实路径是 `forge-server/`）。
 - `AGENTS.md` — 详细约定（本文件总结了其中的关键规则；完整编码规范、安全、自动化测试标准请阅读它）。
-- `code-copilot/rules/` — `coding-style.md`、`domain-rules.md`、`security.md`、`project-context.md`、`button-style-guide.md`、`automated-testing-standard.md`。
-- `code-copilot/memory/` — `pitfalls.md`（新任务开始时先读）、`decisions.md`、`preferences.md`。
+- `code-copilot/rules/` — 编码细则只读 `coding-style.md`；工程上下文读 `project-context.md`；测试读 `automated-testing-standard.md`。
+- `code-copilot/memory/` — 新任务读 `preferences.md` 和 `pitfalls.md` 索引，再按主题打开 `pitfalls/<主题>.md`；`decisions.md` 按需检索。编码规范以 `AGENTS.md` 第 5 章和 `code-copilot/rules/coding-style.md` 为准，不要往记忆文件里再抄一遍。
 - `.agents/skills/` — 项目级技能：`forge-codegen-crud`（CRUD 代码生成/审查）、`forge-business-flow-development`（流程业务开发）。做 CRUD/流程任务前先读对应 `SKILL.md`。
 - `NGINX_CONFIG.md` — 生产环境 Nginx 配置。
 

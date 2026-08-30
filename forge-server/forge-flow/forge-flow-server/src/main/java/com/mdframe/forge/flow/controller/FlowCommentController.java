@@ -1,5 +1,6 @@
 package com.mdframe.forge.flow.controller;
 
+import com.mdframe.forge.flow.dto.FlowCommentAddDTO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
@@ -10,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 流程审批意见接口
@@ -29,19 +29,11 @@ public class FlowCommentController {
      * 添加审批意见
      */
     @PostMapping
-    public RespInfo<FlowComment> addComment(@RequestBody Map<String, Object> params) {
-        String processInstanceId = (String) params.get("processInstanceId");
-        String processDefKey = (String) params.get("processDefKey");
-        String taskId = (String) params.get("taskId");
-        String taskName = (String) params.get("taskName");
-        String type = (String) params.get("type");
-        String message = (String) params.get("message");
-        String userId = (String) params.get("userId");
-        String userName = (String) params.get("userName");
-        
-        FlowComment comment = flowCommentService.addComment(processInstanceId, processDefKey,
-                taskId, taskName, type, message, userId, userName);
-        
+    public RespInfo<FlowComment> addComment(@RequestBody FlowCommentAddDTO dto) {
+        FlowComment comment = flowCommentService.addComment(
+                dto.getProcessInstanceId(), dto.getProcessDefKey(),
+                dto.getTaskId(), dto.getTaskName(), dto.getType(),
+                dto.getMessage(), dto.getUserId(), dto.getUserName());
         return RespInfo.success("添加成功", comment);
     }
 
@@ -67,16 +59,10 @@ public class FlowCommentController {
      * 添加流程事件
      */
     @PostMapping("/event")
-    public RespInfo<FlowComment> addEvent(@RequestBody Map<String, Object> params) {
-        String processInstanceId = (String) params.get("processInstanceId");
-        String processDefKey = (String) params.get("processDefKey");
-        String message = (String) params.get("message");
-        String userId = (String) params.get("userId");
-        String userName = (String) params.get("userName");
-        
-        FlowComment event = flowCommentService.addEvent(processInstanceId, processDefKey,
-                message, userId, userName);
-        
+    public RespInfo<FlowComment> addEvent(@RequestBody FlowCommentAddDTO dto) {
+        FlowComment event = flowCommentService.addEvent(
+                dto.getProcessInstanceId(), dto.getProcessDefKey(),
+                dto.getMessage(), dto.getUserId(), dto.getUserName());
         return RespInfo.success("添加成功", event);
     }
 }

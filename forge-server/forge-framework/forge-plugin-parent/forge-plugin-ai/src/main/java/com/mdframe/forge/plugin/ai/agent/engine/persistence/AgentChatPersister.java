@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.ai.agent.engine.ReactRequest;
 import com.mdframe.forge.plugin.ai.agent.engine.event.AgentEvent;
 import com.mdframe.forge.plugin.ai.agent.engine.event.AgentEventListener;
 import com.mdframe.forge.plugin.ai.chat.domain.AiChatMessageToolCall;
+import com.mdframe.forge.plugin.ai.chat.enums.AiChatMessageStatus;
 import com.mdframe.forge.plugin.ai.chat.domain.AiChatRecord;
 import com.mdframe.forge.plugin.ai.chat.service.AiChatMessageToolCallService;
 import com.mdframe.forge.plugin.ai.chat.service.AiChatRecordService;
@@ -86,7 +87,7 @@ public class AgentChatPersister implements AgentEventListener {
                         .sessionId(sessionId).agentCode(agentCode)
                         .userId(userId).tenantId(tenantId)
                         .role("assistant").content("")
-                        .status("streaming").createTime(now).updateTime(now)
+                        .status(AiChatMessageStatus.STREAMING.getCode()).createTime(now).updateTime(now)
                         .build();
                 recordService.save(assistantRow);
 
@@ -126,14 +127,14 @@ public class AgentChatPersister implements AgentEventListener {
             if (!confirmed) {
                 // 用户拒绝：等待中的工具行 → aborted，assistant 行 → aborted
                 for (AiChatMessageToolCall tc : prior) {
-                    if ("waiting_confirm".equals(tc.getStatus()) || "running".equals(tc.getStatus())) {
-                        tc.setStatus("aborted");
+                    if (AiChatMessageStatus.WAITING_CONFIRM.matches(tc.getStatus()) || AiChatMessageStatus.RUNNING.matches(tc.getStatus())) {
+                        tc.setStatus(AiChatMessageStatus.ABORTED.getCode());
                         tc.setErrorMsg("用户拒绝执行工具");
                         tc.setUpdateTime(LocalDateTime.now());
                         toolCallService.updateById(tc);
                     }
                 }
-                assistant.setStatus("aborted");
+                assistant.setStatus(AiChatMessageStatus.ABORTED.getCode());
                 assistant.setInterruptId(null);
                 assistant.setErrorMsg("用户拒绝执行工具");
                 assistant.setUpdateTime(LocalDateTime.now());
@@ -146,7 +147,7 @@ public class AgentChatPersister implements AgentEventListener {
             if (!prior.isEmpty()) {
                 toolCallService.removeByIds(prior.stream().map(AiChatMessageToolCall::getId).toList());
             }
-            assistant.setStatus("streaming");
+            assistant.setStatus(AiChatMessageStatus.STREAMING.getCode());
             assistant.setInterruptId(null);
             assistant.setContent("");
             assistant.setReasoning(null);
@@ -195,8 +196,8 @@ public class AgentChatPersister implements AgentEventListener {
 
             case TOOL_CALL_START -> openToolCall(state, data);
             case TOOL_RESULT_TEXT_DELTA, TOOL_RESULT_DATA_DELTA -> appendIfPresent(state.toolResult, data, "content");
-            case TOOL_RESULT_END -> closeToolCall(state, "success", null);
-            case ALL_TOOLS_DENIED -> closeToolCall(state, "aborted", "工具被拒绝执行");
+            case TOOL_RESULT_END -> closeToolCall(state, AiChatMessageStatus.SUCCESS.getCode(), null);
+            case ALL_TOOLS_DENIED -> closeToolCall(state, AiChatMessageStatus.ABORTED.getCode(), "工具被拒绝执行");
 
             case REQUIRE_USER_CONFIRM -> markWaitingConfirm(state, data);
 
@@ -219,13 +220,13 @@ public class AgentChatPersister implements AgentEventListener {
 
             case AGENT_END -> {
                 if (data != null && data.getBooleanValue("aborted")) {
-                    settle(state, "aborted", null);
+                    settle(state, AiChatMessageStatus.ABORTED.getCode(), null);
                 } else if (data != null && data.containsKey("error")) {
-                    settle(state, "error", data.getString("error"));
+                    settle(state, AiChatMessageStatus.ERROR.getCode(), data.getString("error"));
                 } else if (state.modelError != null) {
-                    settle(state, "error", state.modelError);
+                    settle(state, AiChatMessageStatus.ERROR.getCode(), state.modelError);
                 } else {
-                    settle(state, "done", null);
+                    settle(state, AiChatMessageStatus.DONE.getCode(), null);
                 }
             }
             default -> {
@@ -238,7 +239,7 @@ public class AgentChatPersister implements AgentEventListener {
     private void openToolCall(StreamState state, JSONObject data) {
         // 防御：上一个工具调用未正常收尾时先收口
         if (state.openToolCall != null) {
-            closeToolCall(state, "success", null);
+            closeToolCall(state, AiChatMessageStatus.SUCCESS.getCode(), null);
         }
         state.toolResult.setLength(0);
         String toolName = data != null ? data.getString("tool") : null;
@@ -251,7 +252,7 @@ public class AgentChatPersister implements AgentEventListener {
                 .seq(state.toolSeq++)
                 .toolName(toolName)
                 .toolArgsJson(argsJson)
-                .status("running")
+                .status(AiChatMessageStatus.RUNNING.getCode())
                 .createBy(state.userId).createTime(now)
                 .updateBy(state.userId).updateTime(now)
                 .build();
@@ -266,7 +267,7 @@ public class AgentChatPersister implements AgentEventListener {
         }
         call.setStatus(status);
         call.setErrorMsg(error);
-        if ("success".equals(status) && state.toolResult.length() > 0) {
+        if (AiChatMessageStatus.SUCCESS.matches(status) && state.toolResult.length() > 0) {
             call.setToolResultJson(state.toolResult.toString());
         }
         call.setUpdateTime(LocalDateTime.now());
@@ -278,13 +279,13 @@ public class AgentChatPersister implements AgentEventListener {
     private void markWaitingConfirm(StreamState state, JSONObject data) {
         String interruptId = data != null ? data.getString("interruptId") : null;
         if (state.openToolCall != null) {
-            state.openToolCall.setStatus("waiting_confirm");
+            state.openToolCall.setStatus(AiChatMessageStatus.WAITING_CONFIRM.getCode());
             state.openToolCall.setUpdateTime(LocalDateTime.now());
             toolCallService.updateById(state.openToolCall);
             state.openToolCall = null;
         }
         AiChatRecord assistant = state.assistant;
-        assistant.setStatus("waiting_confirm");
+        assistant.setStatus(AiChatMessageStatus.WAITING_CONFIRM.getCode());
         assistant.setInterruptId(interruptId);
         assistant.setContent(state.content.toString());
         assistant.setReasoning(nullIfEmpty(state.reasoning));
@@ -308,7 +309,9 @@ public class AgentChatPersister implements AgentEventListener {
         }
         try {
             if (state.openToolCall != null) {
-                closeToolCall(state, "aborted".equals(status) ? "aborted" : "error", error);
+                closeToolCall(state, AiChatMessageStatus.ABORTED.matches(status)
+                        ? AiChatMessageStatus.ABORTED.getCode()
+                        : AiChatMessageStatus.ERROR.getCode(), error);
             }
             AiChatRecord assistant = state.assistant;
             assistant.setStatus(status);
@@ -374,7 +377,7 @@ public class AgentChatPersister implements AgentEventListener {
                 .sessionId(request.getSessionId()).agentCode(agentCode)
                 .userId(userId).tenantId(tenantId)
                 .role("assistant").content("")
-                .status("streaming").createTime(now).updateTime(now)
+                .status(AiChatMessageStatus.STREAMING.getCode()).createTime(now).updateTime(now)
                 .build();
         recordService.save(assistantRow);
         stateBySession.put(request.getSessionId(), new StreamState(request.getSessionId(), userId, tenantId, assistantRow));
@@ -399,7 +402,7 @@ public class AgentChatPersister implements AgentEventListener {
                 .sessionId(request.getSessionId()).agentCode(agentCode)
                 .userId(userId).tenantId(tenantId)
                 .role("assistant").content("")
-                .status("streaming").createTime(now).updateTime(now)
+                .status(AiChatMessageStatus.STREAMING.getCode()).createTime(now).updateTime(now)
                 .build();
         recordService.save(assistantRow);
         stateBySession.put(request.getSessionId(), new StreamState(request.getSessionId(), userId, tenantId, assistantRow));

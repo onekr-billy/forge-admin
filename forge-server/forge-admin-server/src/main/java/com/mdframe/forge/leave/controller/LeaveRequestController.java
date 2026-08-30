@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.leave.dto.LeaveRequestDTO;
 import com.mdframe.forge.leave.entity.LeaveRequest;
+import com.mdframe.forge.leave.enums.LeaveRequestStatus;
 import com.mdframe.forge.leave.service.LeaveRequestService;
 import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -106,7 +107,7 @@ public class LeaveRequestController {
     @DeleteMapping("/{businessKey}")
     public RespInfo<Void> delete(@PathVariable String businessKey) {
         LeaveRequest leave = leaveRequestService.getByBusinessKey(businessKey);
-        if (leave != null && "draft".equals(leave.getStatus())) {
+        if (leave != null && LeaveRequestStatus.DRAFT.matches(leave.getStatus())) {
             leaveRequestService.removeById(leave.getId());
             return RespInfo.success("删除成功", null);
         }

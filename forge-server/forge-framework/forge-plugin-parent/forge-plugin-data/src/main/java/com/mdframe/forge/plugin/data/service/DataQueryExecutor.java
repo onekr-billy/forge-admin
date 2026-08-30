@@ -11,6 +11,7 @@ import com.mdframe.forge.plugin.data.vo.DataDatasetFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -55,12 +56,12 @@ public class DataQueryExecutor {
         int pageSize = query.getPageSize() == null ? maxRows : Math.min(normalizeMaxRows(query.getPageSize()), maxRows);
         
         List<DataDatasetField> displayFields = fieldConfigs.stream()
-                .filter(f -> f.getDisplayEnabled() == 1)
+                .filter(f -> EnableStatus.ENABLED.matches(f.getDisplayEnabled()))
                 .filter(f -> !"HIDDEN".equals(f.getSensitiveLevel()))
                 .collect(Collectors.toList());
 
         List<DataDatasetField> queryFields = fieldConfigs.stream()
-                .filter(f -> f.getQueryEnabled() == null || f.getQueryEnabled() == 1)
+                .filter(f -> (f.getQueryEnabled() == null || EnableStatus.ENABLED.matches(f.getQueryEnabled())))
                 .collect(Collectors.toList());
 
         if (queryFields.isEmpty()) {

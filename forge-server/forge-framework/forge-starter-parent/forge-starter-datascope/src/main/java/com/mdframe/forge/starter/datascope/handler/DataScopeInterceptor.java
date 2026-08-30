@@ -9,6 +9,7 @@ import com.mdframe.forge.starter.datascope.config.DataScopeProperties;
 import com.mdframe.forge.starter.datascope.entity.SysDataScopeConfig;
 import com.mdframe.forge.starter.datascope.enums.DataScopeType;
 import com.mdframe.forge.starter.datascope.service.IDataScopeService;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
@@ -97,7 +98,7 @@ public class DataScopeInterceptor implements InnerInterceptor {
             handleUnconfiguredMapper(actualMapperId);
             return;
         }
-        if (!Integer.valueOf(1).equals(config.getEnabled())) {
+        if (!EnableStatus.ENABLED.matches(config.getEnabled())) {
             log.debug("数据权限拦截器：方法 {} 的数据权限已显式禁用", actualMapperId);
             return;
         }

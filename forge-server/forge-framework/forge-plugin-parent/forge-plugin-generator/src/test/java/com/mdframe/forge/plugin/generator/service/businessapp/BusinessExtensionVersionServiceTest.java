@@ -61,7 +61,7 @@ class BusinessExtensionVersionServiceTest {
         Integer versionNo = service.saveDraft(extension.getId(), dto);
 
         assertEquals(4, versionNo);
-        assertEquals(BusinessExtensionStatus.DRAFT, nextStatus.get());
+        assertEquals(BusinessExtensionStatus.DRAFT.getCode(), nextStatus.get());
         assertEquals(3, extension.getEnabledVersion());
         assertEquals(4, inserted.get().getVersionNo());
     }
@@ -114,7 +114,7 @@ class BusinessExtensionVersionServiceTest {
         extension.setTenantId(1L);
         extension.setExtensionCode("client_rule");
         extension.setExtensionType("CLIENT_JS");
-        extension.setStatus(BusinessExtensionStatus.ENABLED);
+        extension.setStatus(BusinessExtensionStatus.ENABLED.getCode());
         extension.setDraftVersion(3);
         extension.setEnabledVersion(3);
         return extension;

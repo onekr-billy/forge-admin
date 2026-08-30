@@ -2,6 +2,8 @@
 
 Forge business workflow status must be maintained by the business module, not inferred only from Flowable screens.
 
+Java production code must write and compare status through a module enum (`getCode()` / `matches()`), not `"DRAFT"` / `"IN_PROCESS"` string literals or magic numbers. Enable/disable flags use `EnableStatus`. Mapper XML may keep SQL literals. Controller write APIs take typed DTOs; only the flow `variables` field may stay a Map.
+
 ## Recommended Status Set
 
 Use these values unless the domain has a strong reason to extend them:

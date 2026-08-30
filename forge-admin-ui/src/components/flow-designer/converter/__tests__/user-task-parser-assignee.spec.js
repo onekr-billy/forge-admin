@@ -85,4 +85,16 @@ describe('parseUserTaskConfig - assignee 4 种模式', () => {
     expect(cfg.candidateGroups).toEqual(['role_admin', 'role_audit'])
     expect(cfg.candidateGroupNames).toEqual(['管理员', '审核员'])
   })
+
+  it('PROCESS_START_USER 多实例集合解析为发起人自选', () => {
+    const cfg = parseUserTaskConfig(getTask([
+      '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn">',
+      '<bpmn:process id="P"><bpmn:userTask id="T_select">',
+      `<bpmn:multiInstanceLoopCharacteristics isSequential="false" flowable:collection="${DOLLAR}{PROCESS_START_USER['T_select']}" flowable:elementVariable="assignee"/>`,
+      '</bpmn:userTask></bpmn:process></bpmn:definitions>',
+    ].join(''), 'T_select'))
+    expect(cfg.assignee).toBe('initiatorSelect')
+    expect(cfg.initiatorSelectNodeKey).toBe('T_select')
+    expect(cfg.multiInstanceType).toBe('parallel')
+  })
 })

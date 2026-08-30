@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 企业微信回调 Connector。
@@ -74,7 +75,7 @@ public class WeComCallbackConnector implements CallbackConnector {
     private SysSocialAppConfig resolveApp(CollaborationExecutionContext context) {
         return socialAppConfigService.listApps(context.tenantId(), context.connectionId()).stream()
                 .filter(app -> app.getId() != null && app.getId().equals(context.appId()))
-                .filter(app -> app.getStatus() != null && app.getStatus() == 1)
+                .filter(app -> EnableStatus.ENABLED.matches(app.getStatus()))
                 .findFirst()
                 .orElseThrow(() -> new WeComCallbackException("回调应用不存在或未启用"));
     }

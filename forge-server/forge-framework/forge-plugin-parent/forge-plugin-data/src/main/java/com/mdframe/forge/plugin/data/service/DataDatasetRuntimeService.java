@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Service
 @RequiredArgsConstructor
@@ -100,7 +101,7 @@ public class DataDatasetRuntimeService {
         if (!DatasetPublishStatusEnum.isPublished(dataset.getPublishStatus())) {
             throw new BusinessException("数据集未发布，暂不可使用");
         }
-        if (!Integer.valueOf(1).equals(dataset.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(dataset.getStatus())) {
             throw new BusinessException("数据集已禁用");
         }
     }
@@ -110,7 +111,7 @@ public class DataDatasetRuntimeService {
         if (connection == null) {
             throw new BusinessException("数据连接不存在或已删除");
         }
-        if (!Integer.valueOf(1).equals(connection.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("数据连接已禁用");
         }
         return connection;

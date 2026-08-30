@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.capability.flowaction.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.capability.flowaction.domain.AiCapabilityFlowActionLog;
+import com.mdframe.forge.plugin.capability.flowaction.enums.CapabilityExecuteStatus;
 import com.mdframe.forge.plugin.capability.flowaction.mapper.FlowActionExecutionLogMapper;
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
 import com.mdframe.forge.plugin.capability.execution.SecureActionUnavailableException;
@@ -107,7 +108,7 @@ public class FlowActionExecutionLogService {
             result = actionTransaction.execute(status -> {
                 Map<String, Object> actionResult = Map.copyOf(
                         action.apply(new ExecutionAttempt(activeReservation)));
-                activeReservation.setExecuteStatus("SUCCESS");
+                activeReservation.setExecuteStatus(CapabilityExecuteStatus.SUCCESS.getCode());
                 activeReservation.setResultCode("SUCCESS");
                 activeReservation.setResultSnapshot(writeJson(actionResult));
                 activeReservation.setErrorCode(null);
@@ -148,7 +149,7 @@ public class FlowActionExecutionLogService {
         if (!requestDigest(descriptor, input).equals(existing.getRequestDigest())) {
             throw new BusinessException(409, "IDEMPOTENCY_CONFLICT");
         }
-        if ("SUCCESS".equals(existing.getExecuteStatus())) {
+        if (CapabilityExecuteStatus.SUCCESS.matches(existing.getExecuteStatus())) {
             return true;
         }
         requireRecoverable(existing);
@@ -174,7 +175,7 @@ public class FlowActionExecutionLogService {
         if (!digest.equals(existing.getRequestDigest())) {
             throw new BusinessException(409, "IDEMPOTENCY_CONFLICT");
         }
-        if ("SUCCESS".equals(existing.getExecuteStatus())) {
+        if (CapabilityExecuteStatus.SUCCESS.matches(existing.getExecuteStatus())) {
             try {
                 Map<String, Object> result = objectMapper.readValue(existing.getResultSnapshot(), MAP_TYPE);
                 result = new LinkedHashMap<>(result);
@@ -189,7 +190,7 @@ public class FlowActionExecutionLogService {
     }
 
     private void markRecovering(AiCapabilityFlowActionLog log, long startedAt) {
-        log.setExecuteStatus("RUNNING");
+        log.setExecuteStatus(CapabilityExecuteStatus.RUNNING.getCode());
         log.setResultCode("RECOVERY_PENDING");
         log.setResultSnapshot(null);
         log.setErrorCode(null);
@@ -203,12 +204,12 @@ public class FlowActionExecutionLogService {
     }
 
     private void requireRecoverable(AiCapabilityFlowActionLog existing) {
-        if ("FAILED".equals(existing.getExecuteStatus())) {
+        if (CapabilityExecuteStatus.FAILED.matches(existing.getExecuteStatus())) {
             return;
         }
         LocalDateTime lastTouched = existing.getUpdateTime() != null
                 ? existing.getUpdateTime() : existing.getCreateTime();
-        if ("RUNNING".equals(existing.getExecuteStatus())
+        if (CapabilityExecuteStatus.RUNNING.matches(existing.getExecuteStatus())
                 && lastTouched != null
                 && lastTouched.isBefore(LocalDateTime.now().minusSeconds(RECOVERY_STALE_SECONDS))) {
             return;
@@ -241,7 +242,7 @@ public class FlowActionExecutionLogService {
         log.setActorUserId(identity.actorUserId());
         log.setServiceUserId(identity.serviceUserId());
         log.setActiveOrgId(identity.loginUser().getActiveOrgId());
-        log.setExecuteStatus("RUNNING");
+        log.setExecuteStatus(CapabilityExecuteStatus.RUNNING.getCode());
         log.setResultCode("EXECUTION_PENDING");
         log.setDurationMs(0L);
         log.setDelFlag(0L);
@@ -263,7 +264,7 @@ public class FlowActionExecutionLogService {
     }
 
     private void markFailed(AiCapabilityFlowActionLog log, String errorCode, long startedAt) {
-        log.setExecuteStatus("FAILED");
+        log.setExecuteStatus(CapabilityExecuteStatus.FAILED.getCode());
         log.setResultCode("FAILED");
         log.setResultSnapshot(null);
         log.setErrorCode(errorCode);

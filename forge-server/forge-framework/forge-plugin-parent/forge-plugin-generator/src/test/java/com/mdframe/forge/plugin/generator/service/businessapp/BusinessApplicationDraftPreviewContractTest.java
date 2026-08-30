@@ -27,7 +27,7 @@ class BusinessApplicationDraftPreviewContractTest {
         assertTrue(designerSource.contains("saveDraft(context, currentStatus, false)"));
         assertTrue(designerSource.contains("if (markApplicationChanged)"));
         assertFalse(designerSource.contains(
-                "return saveDraft(context, BusinessObjectDesignStatus.CHANGED).getConfig();"));
+                "return saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode()).getConfig();"));
     }
 
     @Test

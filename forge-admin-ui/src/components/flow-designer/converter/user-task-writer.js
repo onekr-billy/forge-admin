@@ -5,7 +5,7 @@
  *
  * 写出范围：
  * - 属性：flowable:assignee / assigneeType / assigneeName / candidateUsers / candidateGroups
- *   / formKey / formJson / formUrl / priority / dueDate / 7 个权限布尔
+ *   / formKey / formJson / formUrl / priority / dueDate / 8 个权限布尔
  * - 子元素：multiInstanceLoopCharacteristics + completionCondition
  * - extensionElements：taskListener[] + executionListener[]
  *
@@ -19,6 +19,7 @@ import { escapeXmlAttr, escapeXmlText } from './xml-escape.js'
 const PERMISSION_KEYS = [
   'allowApprove',
   'allowReject',
+  'allowRejectToStart',
   'allowDelegate',
   'allowReturn',
   'allowTerminate',
@@ -29,6 +30,7 @@ const PERMISSION_KEYS = [
 const PERMISSION_DEFAULTS = {
   allowApprove: true,
   allowReject: true,
+  allowRejectToStart: false,
   allowDelegate: true,
   allowReturn: false,
   allowTerminate: false,
@@ -67,7 +69,11 @@ export function writeUserTaskConfig(config) {
   if (cfg.taskType === 'assignee') {
     let val = cfg.assignee
     let typeMark = null
-    if (cfg.assignee === 'spel') {
+    if (cfg.assignee === 'initiatorSelect') {
+      // 发起时由申请人选择本节点审批人，实际任务通过 PROCESS_START_USER 多实例集合创建。
+      val = ''
+    }
+    else if (cfg.assignee === 'spel') {
       val = cfg.assigneeExpr || ''
       typeMark = 'spel'
     }
@@ -91,6 +97,9 @@ export function writeUserTaskConfig(config) {
     }
     else if (cfg.assignee === 'spel') {
       attrs.push('flowable:assigneeType="spel"')
+    }
+    if (cfg.assignee === 'initiatorSelect') {
+      attrs.push(`flowable:assignee="${DOLLAR}{assignee}"`)
     }
   }
   else if (cfg.taskType === 'candidateUsers' && cfg.candidateUsers?.length) {
@@ -160,10 +169,14 @@ export function writeUserTaskConfig(config) {
   }
 
   // multiInstance
-  if (cfg.multiInstanceType && cfg.multiInstanceType !== 'none') {
-    const seq = cfg.multiInstanceType === 'sequential' ? 'true' : 'false'
+  const initiatorSelect = cfg.assignee === 'initiatorSelect'
+  if ((cfg.multiInstanceType && cfg.multiInstanceType !== 'none') || initiatorSelect) {
+    const seq = !initiatorSelect && cfg.multiInstanceType === 'sequential' ? 'true' : 'false'
     const expr = buildCompletionExpression(cfg.completionCondition, cfg.passRate)
-    const collection = normalizeOptionalText(cfg.multiInstanceCollection)
+    const nodeKey = normalizeOptionalText(cfg.initiatorSelectNodeKey || cfg.bpmnElementId || cfg.nodeId)
+    const collection = initiatorSelect
+      ? `${DOLLAR}{PROCESS_START_USER['${nodeKey}']}`
+      : normalizeOptionalText(cfg.multiInstanceCollection)
     const elementVariable = normalizeOptionalText(cfg.multiInstanceElementVariable) || 'assignee'
     const loopAttrs = [`isSequential="${seq}"`]
     let loopCardinalityXml = ''

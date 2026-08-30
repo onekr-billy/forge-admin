@@ -1,6 +1,7 @@
 package com.mdframe.forge.starter.excel.service.impl;
 
 import com.mdframe.forge.starter.excel.core.DynamicExportEngine;
+import com.mdframe.forge.starter.excel.enums.AsyncExportStatus;
 import com.mdframe.forge.starter.excel.model.AsyncExportTask;
 import com.mdframe.forge.starter.excel.service.AsyncExportService;
 import lombok.RequiredArgsConstructor;
@@ -57,7 +58,7 @@ public class AsyncExportServiceImpl implements AsyncExportService {
         task.setTaskId(taskId);
         task.setConfigKey(configKey);
         task.setFileName(fileName != null ? fileName : configKey + "_" + System.currentTimeMillis() + ".xlsx");
-        task.setStatus(0); // 处理中
+        task.setStatus(AsyncExportStatus.PROCESSING.getCode());
         task.setCreateTime(LocalDateTime.now());
         task.setExpireTime(LocalDateTime.now().plusHours(24)); // 24 小时后过期
         
@@ -92,7 +93,7 @@ public class AsyncExportServiceImpl implements AsyncExportService {
             }
             
             // 更新任务状态
-            task.setStatus(1); // 完成
+            task.setStatus(AsyncExportStatus.COMPLETED.getCode());
             task.setFilePath(filePath);
             task.setFileSize(file.length());
             task.setFinishTime(LocalDateTime.now());
@@ -101,7 +102,7 @@ public class AsyncExportServiceImpl implements AsyncExportService {
             
         } catch (Exception e) {
             log.error("异步导出失败：taskId={}", taskId, e);
-            task.setStatus(2); // 失败
+            task.setStatus(AsyncExportStatus.FAILED.getCode());
             task.setErrorMessage(AsyncExportTask.PUBLIC_FAILURE_MESSAGE);
             task.setFinishTime(LocalDateTime.now());
         }
@@ -115,7 +116,7 @@ public class AsyncExportServiceImpl implements AsyncExportService {
     @Override
     public byte[] downloadFile(String taskId) {
         AsyncExportTask task = taskStore.get(taskId);
-        if (task == null || task.getStatus() != 1 || task.getFilePath() == null) {
+        if (task == null || !AsyncExportStatus.COMPLETED.matches(task.getStatus()) || task.getFilePath() == null) {
             throw new RuntimeException("任务不存在或文件未生成");
         }
         

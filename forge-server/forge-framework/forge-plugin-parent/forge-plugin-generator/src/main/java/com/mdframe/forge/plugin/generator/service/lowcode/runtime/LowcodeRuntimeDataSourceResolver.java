@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeSourceTableRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTenantStrategy;
 import com.mdframe.forge.plugin.generator.mapper.GenDatasourceMapper;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -175,7 +176,7 @@ public class LowcodeRuntimeDataSourceResolver {
                 snapshot.getDatasourceCode(),
                 snapshot.getDatasourceId() == null ? null : String.valueOf(snapshot.getDatasourceId())));
         }
-        if (Integer.valueOf(0).equals(datasource.getIsEnabled())) {
+        if (EnableStatus.DISABLED.matches(datasource.getIsEnabled())) {
             throw new BusinessException("运行数据源已禁用: " + datasource.getDatasourceName());
         }
         String effectiveTableName = StringUtils.firstNonBlank(tableName, snapshot.getTableName());

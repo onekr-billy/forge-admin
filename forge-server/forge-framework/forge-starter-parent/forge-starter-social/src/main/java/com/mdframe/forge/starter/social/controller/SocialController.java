@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 三方登录控制器
@@ -65,7 +66,7 @@ public class SocialController {
                                                 @RequestParam(required = false) String action,
                                                 @RequestParam(required = false) String userClient) {
         SysSocialConfig config = resolveConnection(platform, tenantId);
-        if (config == null || config.getStatus() == null || config.getStatus() != 1) {
+        if (config == null || !EnableStatus.ENABLED.matches(config.getStatus())) {
             return RespInfo.error("该平台登录未启用");
         }
 
@@ -113,7 +114,7 @@ public class SocialController {
         }
 
         SysSocialConfig config = socialConfigService.selectConfigById(intent.getConnectionId());
-        if (config == null || config.getStatus() == null || config.getStatus() != 1) {
+        if (config == null || !EnableStatus.ENABLED.matches(config.getStatus())) {
             return RespInfo.error("该平台登录未启用");
         }
 

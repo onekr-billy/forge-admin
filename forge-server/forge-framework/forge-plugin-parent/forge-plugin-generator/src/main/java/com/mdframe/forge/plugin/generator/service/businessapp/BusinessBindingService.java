@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务应用平台能力挂接服务。
@@ -179,7 +180,7 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         );
         String openType = firstNonBlank(text(config.get("openType")), defaults.openType());
         String actionLabel = firstNonBlank(text(config.get("actionLabel")), defaults.actionLabel());
-        boolean enabled = Integer.valueOf(1).equals(binding.getStatus());
+        boolean enabled = EnableStatus.ENABLED.matches(binding.getStatus());
 
         binding.setEntryUrl(entryUrl);
         binding.setOpenType(StringUtils.defaultIfBlank(openType, "ROUTE").toUpperCase(Locale.ROOT));

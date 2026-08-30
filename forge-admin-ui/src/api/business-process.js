@@ -67,6 +67,13 @@ export function startBusinessProcess(applicationCode, processCode, data) {
   )
 }
 
+export function businessProcessStartConfig(applicationCode, processCode) {
+  return request.get(
+    `/ai/business/process/runtime/${encodeURIComponent(applicationCode)}/${encodeURIComponent(processCode)}/start-config`,
+    ENCRYPTED_REQUEST,
+  )
+}
+
 export function businessProcessRunPage(params) {
   return request.get('/ai/business/process/run/page', encryptedParams(params))
 }

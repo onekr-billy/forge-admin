@@ -18,6 +18,9 @@ public interface FlowOrgIntegrationService {
      */
     Map<String, Object> getUserInfo(String userId);
 
+    /** 校验用户存在、启用且属于指定租户。 */
+    boolean isUserAvailableForTenant(String userId, Long tenantId);
+
     /**
      * 根据用户ID获取上级领导用户ID列表
      * @param userId 用户ID

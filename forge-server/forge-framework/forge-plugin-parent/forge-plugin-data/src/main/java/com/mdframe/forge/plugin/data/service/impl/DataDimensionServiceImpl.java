@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Service
 @RequiredArgsConstructor
@@ -167,7 +168,7 @@ public class DataDimensionServiceImpl extends ServiceImpl<DataDimensionMapper, D
         entity.setDimensionCode(dto.getDimensionCode() != null ? dto.getDimensionCode().trim() : null);
         entity.setDimensionName(dto.getDimensionName() != null ? dto.getDimensionName().trim() : null);
         entity.setSourceType(sourceType);
-        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : existing != null ? existing.getStatus() : 1);
+        entity.setStatus(dto.getStatus() != null ? dto.getStatus() : existing != null ? existing.getStatus() : EnableStatus.ENABLED.getCode());
         entity.setDescription(dto.getDescription());
         if (SOURCE_SQL.equals(sourceType)) {
             entity.setConnectionId(dto.getConnectionId());
@@ -203,7 +204,7 @@ public class DataDimensionServiceImpl extends ServiceImpl<DataDimensionMapper, D
         if (connection == null) {
             throw new BusinessException("数据连接不存在或已删除");
         }
-        if (connection.getStatus() == null || connection.getStatus() != 1) {
+        if (!EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new BusinessException("数据连接已禁用");
         }
         return connection;
@@ -226,7 +227,7 @@ public class DataDimensionServiceImpl extends ServiceImpl<DataDimensionMapper, D
             item.setItemValue(dto.getItemValue().trim());
             item.setItemLabel(dto.getItemLabel().trim());
             item.setSort(dto.getSort() != null ? dto.getSort() : index);
-            item.setStatus(dto.getStatus() != null ? dto.getStatus() : 1);
+            item.setStatus(dto.getStatus() != null ? dto.getStatus() : EnableStatus.ENABLED.getCode());
             item.setExtraJson(dto.getExtraJson());
             items.add(item);
             index++;
@@ -261,7 +262,7 @@ public class DataDimensionServiceImpl extends ServiceImpl<DataDimensionMapper, D
                     item.setItemValue(String.valueOf(value));
                     item.setItemLabel(label != null ? String.valueOf(label) : String.valueOf(value));
                     item.setSort(sort++);
-                    item.setStatus(1);
+                    item.setStatus(EnableStatus.ENABLED.getCode());
                     items.add(item);
                 }
                 rs.close();

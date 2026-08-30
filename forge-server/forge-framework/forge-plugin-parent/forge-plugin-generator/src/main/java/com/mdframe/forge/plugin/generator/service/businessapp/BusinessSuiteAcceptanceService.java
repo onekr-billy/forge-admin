@@ -67,16 +67,16 @@ public class BusinessSuiteAcceptanceService {
             try {
                 BusinessObjectReadinessVO readiness = businessObjectReadinessService.readiness(object.getId());
                 objectAcceptance.setReadinessStatus(readiness.getOverallStatus());
-                objectAcceptance.setRunnable(BusinessReadinessStatus.RUNNABLE.equals(readiness.getOverallStatus()));
+                objectAcceptance.setRunnable(BusinessReadinessStatus.RUNNABLE.matches(readiness.getOverallStatus()));
                 objectAcceptance.setMessage(getObjectStatusMessage(readiness.getOverallStatus()));
                 objectAcceptance.setStatusLabel(getStatusLabel(readiness.getOverallStatus()));
 
-                if (BusinessReadinessStatus.RUNNABLE.equals(readiness.getOverallStatus())) {
+                if (BusinessReadinessStatus.RUNNABLE.matches(readiness.getOverallStatus())) {
                     runnableCount++;
                 }
             } catch (Exception e) {
                 log.warn("检查对象就绪度失败: {}", object.getObjectCode(), e);
-                objectAcceptance.setReadinessStatus(BusinessReadinessStatus.ERROR);
+                objectAcceptance.setReadinessStatus(BusinessReadinessStatus.ERROR.getCode());
                 objectAcceptance.setRunnable(false);
                 objectAcceptance.setMessage("检查失败: " + e.getMessage());
                 objectAcceptance.setStatusLabel("异常");
@@ -120,7 +120,7 @@ public class BusinessSuiteAcceptanceService {
         approvalEngine.setRunnableCount(0);
         approvalEngine.setPendingCount(0);
         approvalEngine.setErrorCount(0);
-        approvalEngine.setStatus(BusinessReadinessStatus.MISSING);
+        approvalEngine.setStatus(BusinessReadinessStatus.MISSING.getCode());
         engines.add(approvalEngine);
 
         // 报表引擎
@@ -131,7 +131,7 @@ public class BusinessSuiteAcceptanceService {
         reportEngine.setRunnableCount(0);
         reportEngine.setPendingCount(0);
         reportEngine.setErrorCount(0);
-        reportEngine.setStatus(BusinessReadinessStatus.MISSING);
+        reportEngine.setStatus(BusinessReadinessStatus.MISSING.getCode());
         engines.add(reportEngine);
 
         // 消息引擎
@@ -142,7 +142,7 @@ public class BusinessSuiteAcceptanceService {
         messageEngine.setRunnableCount(0);
         messageEngine.setPendingCount(0);
         messageEngine.setErrorCount(0);
-        messageEngine.setStatus(BusinessReadinessStatus.MISSING);
+        messageEngine.setStatus(BusinessReadinessStatus.MISSING.getCode());
         engines.add(messageEngine);
 
         // 权限引擎
@@ -153,7 +153,7 @@ public class BusinessSuiteAcceptanceService {
         permissionEngine.setRunnableCount(0);
         permissionEngine.setPendingCount(0);
         permissionEngine.setErrorCount(0);
-        permissionEngine.setStatus(BusinessReadinessStatus.MISSING);
+        permissionEngine.setStatus(BusinessReadinessStatus.MISSING.getCode());
         engines.add(permissionEngine);
 
         // 触发器引擎
@@ -164,7 +164,7 @@ public class BusinessSuiteAcceptanceService {
         triggerEngine.setRunnableCount(0);
         triggerEngine.setPendingCount(0);
         triggerEngine.setErrorCount(0);
-        triggerEngine.setStatus(BusinessReadinessStatus.MISSING);
+        triggerEngine.setStatus(BusinessReadinessStatus.MISSING.getCode());
         engines.add(triggerEngine);
 
         return engines;
@@ -179,7 +179,7 @@ public class BusinessSuiteAcceptanceService {
         mobileChannel.setChannelName("移动端");
         mobileChannel.setTotalCount(0);
         mobileChannel.setAvailableCount(0);
-        mobileChannel.setStatus(BusinessReadinessStatus.MISSING);
+        mobileChannel.setStatus(BusinessReadinessStatus.MISSING.getCode());
         channels.add(mobileChannel);
 
         // 嵌入应用渠道
@@ -188,7 +188,7 @@ public class BusinessSuiteAcceptanceService {
         embeddedChannel.setChannelName("嵌入应用");
         embeddedChannel.setTotalCount(0);
         embeddedChannel.setAvailableCount(0);
-        embeddedChannel.setStatus(BusinessReadinessStatus.MISSING);
+        embeddedChannel.setStatus(BusinessReadinessStatus.MISSING.getCode());
         channels.add(embeddedChannel);
 
         // 集成渠道
@@ -197,7 +197,7 @@ public class BusinessSuiteAcceptanceService {
         integrationChannel.setChannelName("第三方集成");
         integrationChannel.setTotalCount(0);
         integrationChannel.setAvailableCount(0);
-        integrationChannel.setStatus(BusinessReadinessStatus.MISSING);
+        integrationChannel.setStatus(BusinessReadinessStatus.MISSING.getCode());
         channels.add(integrationChannel);
 
         return channels;
@@ -217,17 +217,17 @@ public class BusinessSuiteAcceptanceService {
             List<BusinessSuiteAcceptanceVO.ChannelAcceptanceVO> channels) {
         
         boolean allObjectsRunnable = objects.stream()
-                .allMatch(obj -> BusinessReadinessStatus.RUNNABLE.equals(obj.getReadinessStatus()));
+                .allMatch(obj -> BusinessReadinessStatus.RUNNABLE.matches(obj.getReadinessStatus()));
         
         boolean anyObjectMissing = objects.stream()
-                .anyMatch(obj -> BusinessReadinessStatus.MISSING.equals(obj.getReadinessStatus()));
+                .anyMatch(obj -> BusinessReadinessStatus.MISSING.matches(obj.getReadinessStatus()));
 
         if (allObjectsRunnable) {
-            return BusinessReadinessStatus.PASSED;
+            return BusinessReadinessStatus.PASSED.getCode();
         } else if (anyObjectMissing) {
-            return BusinessReadinessStatus.FAILED;
+            return BusinessReadinessStatus.FAILED.getCode();
         } else {
-            return BusinessReadinessStatus.PARTIAL;
+            return BusinessReadinessStatus.PARTIAL.getCode();
         }
     }
 
@@ -245,13 +245,13 @@ public class BusinessSuiteAcceptanceService {
 
         for (BusinessSuiteAcceptanceVO.ObjectAcceptanceVO obj : objects) {
             String status = obj.getReadinessStatus();
-            if (BusinessReadinessStatus.RUNNABLE.equals(status)) {
+            if (BusinessReadinessStatus.RUNNABLE.matches(status)) {
                 totalScore += 100;
-            } else if (BusinessReadinessStatus.CONFIGURED.equals(status)) {
+            } else if (BusinessReadinessStatus.CONFIGURED.matches(status)) {
                 totalScore += 75;
-            } else if (BusinessReadinessStatus.REGISTERED.equals(status)) {
+            } else if (BusinessReadinessStatus.REGISTERED.matches(status)) {
                 totalScore += 50;
-            } else if (BusinessReadinessStatus.ERROR.equals(status)) {
+            } else if (BusinessReadinessStatus.ERROR.matches(status)) {
                 totalScore += 25;
             }
         }
@@ -265,13 +265,13 @@ public class BusinessSuiteAcceptanceService {
             List<BusinessSuiteAcceptanceVO.EngineAcceptanceVO> engines,
             List<BusinessSuiteAcceptanceVO.ChannelAcceptanceVO> channels) {
         
-        if (BusinessReadinessStatus.PASSED.equals(vo.getOverallStatus())) {
+        if (BusinessReadinessStatus.PASSED.matches(vo.getOverallStatus())) {
             vo.setNextAction("VIEW_ACCEPTANCE_REPORT");
             vo.setNextActionLabel("查看验收报告");
         } else {
             // 找到第一个未就绪的对象
             for (BusinessSuiteAcceptanceVO.ObjectAcceptanceVO obj : objects) {
-                if (!BusinessReadinessStatus.RUNNABLE.equals(obj.getReadinessStatus())) {
+                if (!BusinessReadinessStatus.RUNNABLE.matches(obj.getReadinessStatus())) {
                     vo.setNextAction("FIX_OBJECT");
                     vo.setNextActionLabel("修复 " + obj.getObjectName());
                     break;
@@ -281,37 +281,33 @@ public class BusinessSuiteAcceptanceService {
     }
 
     private String getObjectStatusMessage(String status) {
-        switch (status) {
-            case BusinessReadinessStatus.RUNNABLE:
-                return "可运行";
-            case BusinessReadinessStatus.CONFIGURED:
-                return "已配置，待发布";
-            case BusinessReadinessStatus.REGISTERED:
-                return "已登记，待配置";
-            case BusinessReadinessStatus.MISSING:
-                return "缺少必要配置";
-            case BusinessReadinessStatus.ERROR:
-                return "配置异常";
-            default:
-                return "未知状态";
+        BusinessReadinessStatus readiness = BusinessReadinessStatus.of(status);
+        if (readiness == null) {
+            return "未知状态";
         }
+        return switch (readiness) {
+            case RUNNABLE -> "可运行";
+            case CONFIGURED -> "已配置，待发布";
+            case REGISTERED -> "已登记，待配置";
+            case MISSING -> "缺少必要配置";
+            case ERROR -> "配置异常";
+            default -> "未知状态";
+        };
     }
 
     private String getStatusLabel(String status) {
-        switch (status) {
-            case BusinessReadinessStatus.RUNNABLE:
-                return "可运行";
-            case BusinessReadinessStatus.CONFIGURED:
-                return "已配置";
-            case BusinessReadinessStatus.REGISTERED:
-                return "已登记";
-            case BusinessReadinessStatus.MISSING:
-                return "未配置";
-            case BusinessReadinessStatus.ERROR:
-                return "异常";
-            default:
-                return "未知";
+        BusinessReadinessStatus readiness = BusinessReadinessStatus.of(status);
+        if (readiness == null) {
+            return "未知";
         }
+        return switch (readiness) {
+            case RUNNABLE -> "可运行";
+            case CONFIGURED -> "已配置";
+            case REGISTERED -> "已登记";
+            case MISSING -> "未配置";
+            case ERROR -> "异常";
+            default -> "未知";
+        };
     }
 
     private Long resolveTenantId() {

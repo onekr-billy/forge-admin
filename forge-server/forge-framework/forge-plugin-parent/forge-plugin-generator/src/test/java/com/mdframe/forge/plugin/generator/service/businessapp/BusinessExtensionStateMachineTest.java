@@ -19,7 +19,7 @@ class BusinessExtensionStateMachineTest {
     @Test
     @DisplayName("untested draft cannot be enabled")
     void untestedDraftCannotBeEnabled() {
-        AiBusinessExtension extension = extension(BusinessExtensionStatus.DRAFT);
+        AiBusinessExtension extension = extension(BusinessExtensionStatus.DRAFT.getCode());
         AiBusinessExtensionVersion version = version(true, false);
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -31,7 +31,7 @@ class BusinessExtensionStateMachineTest {
     @Test
     @DisplayName("tested draft can be enabled")
     void testedDraftCanBeEnabled() {
-        AiBusinessExtension extension = extension(BusinessExtensionStatus.TESTED);
+        AiBusinessExtension extension = extension(BusinessExtensionStatus.TESTED.getCode());
         AiBusinessExtensionVersion version = version(true, true);
 
         stateMachine.assertCanEnable(extension, version);
@@ -40,10 +40,10 @@ class BusinessExtensionStateMachineTest {
     @Test
     @DisplayName("content changes always return governance state to draft")
     void contentChangeReturnsToDraft() {
-        assertEquals(BusinessExtensionStatus.DRAFT,
-                stateMachine.statusAfterContentChange(BusinessExtensionStatus.ENABLED));
-        assertEquals(BusinessExtensionStatus.DRAFT,
-                stateMachine.statusAfterContentChange(BusinessExtensionStatus.TESTED));
+        assertEquals(BusinessExtensionStatus.DRAFT.getCode(),
+                stateMachine.statusAfterContentChange(BusinessExtensionStatus.ENABLED.getCode()));
+        assertEquals(BusinessExtensionStatus.DRAFT.getCode(),
+                stateMachine.statusAfterContentChange(BusinessExtensionStatus.TESTED.getCode()));
     }
 
     @Test

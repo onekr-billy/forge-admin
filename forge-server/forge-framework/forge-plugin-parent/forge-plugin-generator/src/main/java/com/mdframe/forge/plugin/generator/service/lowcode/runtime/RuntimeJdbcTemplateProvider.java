@@ -4,6 +4,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.GenDatasource;
 import com.mdframe.forge.plugin.generator.util.DynamicDataSourceUtil;
 import com.mdframe.forge.plugin.generator.util.GenDatasourcePasswordCodec;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -47,7 +48,7 @@ public class RuntimeJdbcTemplateProvider {
         if (datasource == null) {
             throw new BusinessException("运行数据源不存在: " + context.getDatasourceId());
         }
-        if (Integer.valueOf(0).equals(datasource.getIsEnabled())) {
+        if (EnableStatus.DISABLED.matches(datasource.getIsEnabled())) {
             throw new BusinessException("运行数据源已禁用: " + datasource.getDatasourceName());
         }
         datasource.setPassword(GenDatasourcePasswordCodec.decrypt(datasource.getPassword()));

@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Service
 @RequiredArgsConstructor
@@ -48,7 +49,7 @@ public class DataDatasetCategoryServiceImpl extends ServiceImpl<DataDatasetCateg
         DataDatasetCategory entity = convertToEntity(dto);
         entity.setTenantId(SessionHelper.getTenantId());
         if (entity.getStatus() == null) {
-            entity.setStatus(1);
+            entity.setStatus(EnableStatus.ENABLED.getCode());
         }
         if (entity.getSortOrder() == null) {
             entity.setSortOrder(0);

@@ -36,7 +36,7 @@ public class CreateRecordActionStepExecutor implements BusinessActionStepExecuto
         Object createdRecordId = created == null ? null : dynamicCrudService.resolveRecordId(targetConfigKey, created);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
-        result.setStatus("SUCCESS");
+        result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
         result.setMessage("记录已创建");
         result.getResult().put("targetConfigKey", targetConfigKey);
         result.getResult().put("createdRecordId", createdRecordId);

@@ -20,6 +20,7 @@ import com.mdframe.forge.plugin.mcp.security.ForgeMcpAuthenticationFilter;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -235,7 +236,7 @@ public class CapabilityTokenController {
             throw oauthError("invalid_client");
         }
         if (!client.getId().equals(principal.clientId())
-                || !Integer.valueOf(1).equals(client.getOauthEnabled())) {
+                || !EnableStatus.ENABLED.matches(client.getOauthEnabled())) {
             throw oauthError("invalid_client");
         }
     }
@@ -251,7 +252,7 @@ public class CapabilityTokenController {
                 () -> clientMapper.selectCredentialById(id));
         if (client == null
                 || !"ENABLED".equals(client.getStatus())
-                || !Integer.valueOf(1).equals(client.getOauthEnabled())
+                || !EnableStatus.ENABLED.matches(client.getOauthEnabled())
                 || client.getTenantId() == null || client.getTenantId() <= 0) {
             throw oauthError("invalid_client");
         }

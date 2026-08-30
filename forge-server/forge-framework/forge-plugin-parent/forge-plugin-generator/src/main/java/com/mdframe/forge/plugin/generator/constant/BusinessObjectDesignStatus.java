@@ -1,30 +1,38 @@
 package com.mdframe.forge.plugin.generator.constant;
 
+import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- * 业务对象设计状态常量。
+ * 业务对象设计状态。
  */
-public class BusinessObjectDesignStatus {
+@Getter
+public enum BusinessObjectDesignStatus {
 
-    public static final String DRAFT = "DRAFT";
+    DRAFT("DRAFT"),
+    DESIGNING("DESIGNING"),
+    READY("READY"),
+    PUBLISHED("PUBLISHED"),
+    CHANGED("CHANGED"),
+    DISABLED("DISABLED");
 
-    public static final String DESIGNING = "DESIGNING";
+    private static final Set<String> VALUES = Stream.of(values())
+            .map(BusinessObjectDesignStatus::getCode)
+            .collect(Collectors.toUnmodifiableSet());
 
-    public static final String READY = "READY";
+    private final String code;
 
-    public static final String PUBLISHED = "PUBLISHED";
+    BusinessObjectDesignStatus(String code) {
+        this.code = code;
+    }
 
-    public static final String CHANGED = "CHANGED";
-
-    public static final String DISABLED = "DISABLED";
-
-    private static final Set<String> VALUES = Set.of(DRAFT, DESIGNING, READY, PUBLISHED, CHANGED, DISABLED);
-
-    private BusinessObjectDesignStatus() {
+    public boolean matches(String value) {
+        return value != null && this.code.equalsIgnoreCase(value.trim());
     }
 
     public static boolean isValid(String status) {
@@ -32,6 +40,6 @@ public class BusinessObjectDesignStatus {
     }
 
     public static String normalize(String status) {
-        return StringUtils.defaultIfBlank(status, DRAFT).trim().toUpperCase(Locale.ROOT);
+        return StringUtils.defaultIfBlank(status, DRAFT.code).trim().toUpperCase(Locale.ROOT);
     }
 }

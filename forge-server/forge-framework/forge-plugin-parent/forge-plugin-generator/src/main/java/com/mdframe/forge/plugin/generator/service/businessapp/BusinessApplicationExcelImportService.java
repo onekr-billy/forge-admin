@@ -31,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 将 Excel 首个 Sheet 转换为业务对象设计草稿。
@@ -108,7 +109,7 @@ public class BusinessApplicationExcelImportService {
                 "createMode", "EXCEL_IMPORT",
                 "sourceFileName", safeFileName(file.getOriginalFilename()),
                 "sourceSheetName", StringUtils.defaultString(sheet.sheetName()))));
-        object.setStatus(1);
+        object.setStatus(EnableStatus.ENABLED.getCode());
         Long objectId = objectCreateService.create(object);
 
         BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();

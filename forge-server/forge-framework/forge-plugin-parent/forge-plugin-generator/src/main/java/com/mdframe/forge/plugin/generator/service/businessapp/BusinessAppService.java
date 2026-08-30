@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务应用平台访问入口服务。
@@ -165,7 +166,7 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
             if (!selected.contains(entry.getId())) {
                 continue;
             }
-            if (!Integer.valueOf(1).equals(entry.getStatus())) {
+            if (!EnableStatus.ENABLED.matches(entry.getStatus())) {
                 log.warn("访问入口未启用，跳过发布: applicationId={}, entryId={}, appName={}",
                         applicationId, entry.getId(), entry.getAppName());
                 continue;
@@ -329,7 +330,7 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         String mountTarget = StringUtils.defaultIfBlank(options.getString("mountTarget"), deriveMountTarget(app));
         String clientCode = resolveMenuClientCode(mountTarget);
         Long menuResourceId = readLong(firstNonNull(adminMenu.get("menuResourceId"), options.get("menuResourceId")));
-        if (!Integer.valueOf(1).equals(app.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(app.getStatus())) {
             if (menuResourceId != null) {
                 menuRegisterAdapter.disableMenu(menuResourceId);
             }
@@ -373,7 +374,7 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         String path = resolveManagementMenuPath(app, options);
         String component = resolveManagementMenuComponent(app, options);
         String perms = buildAppMenuPerms(app);
-        boolean enabled = Integer.valueOf(1).equals(app.getStatus());
+        boolean enabled = EnableStatus.ENABLED.matches(app.getStatus());
         if (menuResourceId == null) {
             menuResourceId = menuRegisterAdapter.registerAppMenu(
                     app.getAppName(), parentId, path, component, perms, app.getIcon(), sort, enabled, clientCode);

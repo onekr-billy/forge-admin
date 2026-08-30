@@ -55,6 +55,13 @@ public class BusinessFlowController {
         return RespInfo.success(flowService.getFlowBinding(objectCode));
     }
 
+    /** 业务发起页获取发起人自选审批节点，不暴露设计态配置权限。 */
+    @GetMapping("/start-config/{objectCode}")
+    @OperationLog(module = "业务流程", type = OperationType.QUERY, desc = "查询业务流程发起配置")
+    public RespInfo<Map<String, Object>> getStartConfig(@PathVariable String objectCode) {
+        return RespInfo.success(flowService.getBusinessStartConfig(objectCode));
+    }
+
     @GetMapping("/model/{modelKey}/variables")
     @SaCheckPermission("ai:businessFlow:config")
     @OperationLog(module = "业务流程", type = OperationType.QUERY, desc = "查询流程变量候选项")

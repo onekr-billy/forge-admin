@@ -1,3 +1,6 @@
+ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
 -- forge_admin_new.ai_agent definition
 
 CREATE TABLE `ai_agent` (
@@ -2115,7 +2118,7 @@ CREATE TABLE `ai_report_material` (
   `id` bigint NOT NULL COMMENT '主键ID',
   `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT '租户ID',
   `file_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '通用文件ID',
-  `material_category` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'background' COMMENT '素材分类(background/panel/icon/illustration)',
+  `material_category` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL DEFAULT 'background' COMMENT '素材分类(background/panel/icon/illustration)',
   `is_private` tinyint(1) NOT NULL DEFAULT '1' COMMENT '是否私有(1私有 0公共)',
   `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT '状态(1正常 0删除)',
   `create_by` bigint DEFAULT NULL COMMENT '创建者',
@@ -5489,7 +5492,7 @@ CREATE TABLE `sys_role_org` (
   KEY `idx_org_role` (`tenant_id`,`org_id`,`role_id`),
   KEY `idx_role_id` (`role_id`),
   KEY `idx_org_id` (`org_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=126 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='角色适用组织范围表';
+) ENGINE=InnoDB AUTO_INCREMENT=126 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色适用组织范围表';
 
 
 -- forge_admin_new.sys_role_resource definition
@@ -5923,7 +5926,7 @@ CREATE TABLE `sys_user_org_role` (
   KEY `idx_role_id` (`role_id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_org_id` (`org_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户组织内角色授权表';
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户组织内角色授权表';
 
 
 -- forge_admin_new.sys_user_post definition

@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务应用平台业务套件服务。
@@ -220,7 +221,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
     }
 
     private void syncMenuStatusBySuiteStatus(AiBusinessSuite suite) {
-        if (Integer.valueOf(1).equals(suite.getStatus())) {
+        if (EnableStatus.ENABLED.matches(suite.getStatus())) {
             syncMenuDirectory(suite);
             restoreEnabledAppMenus(resolveSuiteTreeCodes(suite));
             return;
@@ -322,7 +323,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
 
     private void restoreEnabledAppMenus(List<String> suiteCodes) {
         for (AiBusinessApp app : selectAppsBySuiteCodes(suiteCodes)) {
-            if (!Integer.valueOf(1).equals(app.getStatus())) {
+            if (!EnableStatus.ENABLED.matches(app.getStatus())) {
                 continue;
             }
             JSONObject options = readOptions(app.getOptions());

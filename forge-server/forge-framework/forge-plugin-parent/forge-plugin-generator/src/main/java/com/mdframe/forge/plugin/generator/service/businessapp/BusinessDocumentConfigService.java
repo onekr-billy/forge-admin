@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象单据配置服务。
@@ -160,7 +161,7 @@ public class BusinessDocumentConfigService {
         config.setSuiteCode(object.getSuiteCode());
         config.setObjectCode(object.getObjectCode());
         config.setConfigKey(object.getConfigKey());
-        config.setDocumentEnabled(enabled ? 1 : 0);
+        config.setDocumentEnabled(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         config.setDocumentName(StringUtils.defaultIfBlank(dto.getDocumentName(), object.getObjectName() + "单据"));
         config.setDocumentNoRule(StringUtils.trimToNull(documentNoRule));
         config.setStatusField(StringUtils.trimToNull(dto.getStatusField()));
@@ -193,7 +194,7 @@ public class BusinessDocumentConfigService {
         }
         AiBusinessDocumentConfig config = documentConfigMapper.selectByObjectCode(
                 tenantId != null ? tenantId : resolveTenantId(), objectCode);
-        if (config == null || !Integer.valueOf(1).equals(config.getDocumentEnabled())) {
+        if (config == null || !EnableStatus.ENABLED.matches(config.getDocumentEnabled())) {
             return null;
         }
         return config;
@@ -205,7 +206,7 @@ public class BusinessDocumentConfigService {
         }
         AiBusinessDocumentConfig config = documentConfigMapper.selectByConfigKey(
                 tenantId != null ? tenantId : resolveTenantId(), configKey);
-        if (config == null || !Integer.valueOf(1).equals(config.getDocumentEnabled())) {
+        if (config == null || !EnableStatus.ENABLED.matches(config.getDocumentEnabled())) {
             return null;
         }
         return config;
@@ -225,7 +226,7 @@ public class BusinessDocumentConfigService {
         vo.setSuiteCode(config.getSuiteCode());
         vo.setObjectCode(config.getObjectCode());
         vo.setConfigKey(config.getConfigKey());
-        vo.setDocumentEnabled(Integer.valueOf(1).equals(config.getDocumentEnabled()));
+        vo.setDocumentEnabled(EnableStatus.ENABLED.matches(config.getDocumentEnabled()));
         vo.setDocumentName(config.getDocumentName());
         String normalizedDocumentNoRule = normalizeNoRuleTemplate(config.getDocumentNoRule());
         vo.setDocumentNoRule(normalizedDocumentNoRule);
@@ -389,7 +390,7 @@ public class BusinessDocumentConfigService {
     }
 
     public String generateDocumentNo(AiBusinessDocumentConfig config, Map<String, Object> recordData) {
-        if (config == null || !Integer.valueOf(1).equals(config.getDocumentEnabled())) {
+        if (config == null || !EnableStatus.ENABLED.matches(config.getDocumentEnabled())) {
             return null;
         }
         String template = normalizeNoRuleTemplate(config.getDocumentNoRule());
@@ -817,7 +818,7 @@ public class BusinessDocumentConfigService {
             if (variableMapping.isEmpty()) {
                 gaps.add("变量映射缺失");
             }
-            if (Integer.valueOf(0).equals(binding.getStatus())) {
+            if (EnableStatus.DISABLED.matches(binding.getStatus())) {
                 gaps.add("主流程绑定已停用");
             }
             summary.put("configured", StringUtils.isNotBlank(flowModelKey));
@@ -872,7 +873,7 @@ public class BusinessDocumentConfigService {
     }
 
     private boolean isBindingEnabled(AiBusinessBinding binding) {
-        return binding != null && !Integer.valueOf(0).equals(binding.getStatus());
+        return binding != null && !EnableStatus.DISABLED.matches(binding.getStatus());
     }
 
     private String normalizeStartMode(String startMode) {
@@ -916,7 +917,7 @@ public class BusinessDocumentConfigService {
         binding.setBindingKey(requestedFlowKey);
         binding.setBindingName(requestedFlowKey + " 流程");
         binding.setBindingConfig(writeJson(config, "流程绑定兼容配置"));
-        binding.setStatus(1);
+        binding.setStatus(EnableStatus.ENABLED.getCode());
         binding.setSortOrder(0);
         bindingMapper.insert(binding);
     }

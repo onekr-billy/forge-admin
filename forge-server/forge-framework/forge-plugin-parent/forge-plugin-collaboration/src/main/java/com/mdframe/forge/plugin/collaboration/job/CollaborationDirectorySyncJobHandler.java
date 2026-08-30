@@ -88,7 +88,7 @@ public class CollaborationDirectorySyncJobHandler implements IJobExecutor {
             return targets;
         }
         SysSocialConfig query = new SysSocialConfig();
-        query.setStatus(1);
+        query.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.ENABLED.getCode());
         return configService.selectConfigList(query).stream()
                 .filter(c -> !CONNECTION_TYPE_OAUTH_ONLY.equals(c.getConnectionType()))
                 .toList();

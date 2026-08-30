@@ -29,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 定时任务配置权威校验器。
@@ -83,7 +84,7 @@ public class JobConfigValidator {
         if (!JobInvokeMode.isSupported(request.getInvokeMode())) {
             throw new BusinessException("调用方式仅支持 SINGLE 或 FLOW");
         }
-        if (request.getStatus() == null || (request.getStatus() != 0 && request.getStatus() != 1)) {
+        if (request.getStatus() == null || (!EnableStatus.DISABLED.matches(request.getStatus()) && !EnableStatus.ENABLED.matches(request.getStatus()))) {
             throw new BusinessException("任务状态仅支持0或1");
         }
         validateExecutionPolicy(request);
@@ -125,7 +126,7 @@ public class JobConfigValidator {
         request.setAlarmRecipientUserIds(normalizeUserIds(request.getAlarmRecipientUserIds()));
         request.setAlarmEmail(normalizeCsv(request.getAlarmEmail(), false));
         if (request.getStatus() == null) {
-            request.setStatus(1);
+            request.setStatus(EnableStatus.ENABLED.getCode());
         }
         if (request.getRetryCount() == null) {
             request.setRetryCount(0);
@@ -134,7 +135,7 @@ public class JobConfigValidator {
             request.setIdempotentFlag(0);
         }
         if (request.getAlarmEnabled() == null) {
-            request.setAlarmEnabled(0);
+            request.setAlarmEnabled(EnableStatus.DISABLED.getCode());
         }
         if (JobInvokeMode.FLOW.equals(request.getInvokeMode())) {
             request.setExecuteMode(null);
@@ -149,7 +150,7 @@ public class JobConfigValidator {
     }
 
     private void validateAlarm(JobConfigSaveRequest request) {
-        if (request.getAlarmEnabled() != 0 && request.getAlarmEnabled() != 1) {
+        if (!EnableStatus.DISABLED.matches(request.getAlarmEnabled()) && !EnableStatus.ENABLED.matches(request.getAlarmEnabled())) {
             throw new BusinessException("告警开关仅支持0或1");
         }
         Set<String> channels = splitCsv(request.getAlarmChannels());
@@ -171,7 +172,7 @@ public class JobConfigValidator {
                 throw new BusinessException("告警邮箱格式不正确");
             }
         }
-        if (request.getAlarmEnabled() == 0) {
+        if (EnableStatus.DISABLED.matches(request.getAlarmEnabled())) {
             return;
         }
         if (channels.isEmpty()) {

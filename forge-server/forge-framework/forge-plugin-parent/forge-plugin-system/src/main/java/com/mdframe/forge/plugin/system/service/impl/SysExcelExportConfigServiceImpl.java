@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * Excel导出配置Service实现
@@ -94,7 +95,7 @@ public class SysExcelExportConfigServiceImpl extends ServiceImpl<SysExcelExportC
         newConfig.setId(null);
         newConfig.setConfigKey(newConfigKey);
         newConfig.setExportName(source.getExportName() + "_副本");
-        newConfig.setStatus(0); // 默认禁用
+        newConfig.setStatus(EnableStatus.DISABLED.getCode()); // 默认禁用
         this.save(newConfig);
         
         // 复制列配置
@@ -144,7 +145,7 @@ public class SysExcelExportConfigServiceImpl extends ServiceImpl<SysExcelExportC
 
         config.setAllowImport(importEnabled);
         if (config.getStatus() == null) {
-            config.setStatus(1);
+            config.setStatus(EnableStatus.ENABLED.getCode());
         }
         if (config.getAutoTrans() == null) {
             config.setAutoTrans(true);

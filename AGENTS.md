@@ -347,22 +347,40 @@ forge-admin-ui/src/
 - RESTful：`GET /page`(分页)、`GET /:id`(详情)、`POST /`(新增)、`PUT /`(修改)、`DELETE /:id`(删除)
 - 统一返回：`RespInfo.success(data)` / `RespInfo.error(msg)`
 - 敏感接口：`@ApiDecrypt` / `@ApiEncrypt`
+- **请求体禁止 `Map`**：Controller 写接口必须用明确的 DTO/VO 接收 `@RequestBody`，禁止 `@RequestBody Map<String, Object>` 再 `params.get("xxx")`
+- 正确：`public RespInfo<?> approve(@RequestBody FlowTaskApproveDTO dto)`
+- 错误：`public RespInfo<?> approve(@RequestBody Map<String, Object> params)`
+- 允许的例外只有：低代码动态记录体、流程变量字段 `variables`、真正动态键值的元数据；`taskId`、`comment`、`userId`、`action` 等固定字段必须是 DTO 属性，不能整份请求都用 Map
+- 新增或修改写接口时，先建 DTO/VO，再写 Controller；禁止先用 Map 占位再回头补类型
 
-### 5.9 安全红线
+### 5.9 业务状态必须用枚举
+
+- Java 业务代码中的状态值**禁止魔法数字/字符串**（如 `setStatus(2)`、`getStatus() == 1`、`"terminated"`），必须使用枚举
+- 通用启用/停用（`enabled`、`visible`、`userStatus`、`isEnabled` 及同类 0/1 开关）统一用 `com.mdframe.forge.starter.core.enums.EnableStatus`：写入走 `EnableStatus.ENABLED.getCode()`，比较走 `EnableStatus.ENABLED.matches(value)`
+- 多状态业务字段必须建本模块枚举，提供 `getCode()` / `matches()`；正确示例：`entity.setStatus(FlowTaskStatus.APPROVED.getCode())`、`FlowTaskStatus.APPROVED.matches(entity.getStatus())`
+- 实体字段可继续用 `Integer`/`String` 与数据库列对齐，禁止把实体字段改成枚举类型只为了少写 `getCode()`
+- **Mapper XML / SQL 允许字面量**（`status = 0`、`status IN (2, 3, 7)`），禁止在 XML 里写 Java 类全名（`${@...Enum@XXX}`），避免改包路径后运行时才失败
+- 前端展示走字典（`DictSelect` / `DictTag` / `useDict`），`dict_value` 必须与后端枚举码一致
+- 不要套 `EnableStatus` 的字段：Boolean 开关、编码规则段配置、`readonly` / `isDefault` / `validationPassed` 等非启用语义；这些要么保持原类型，要么建专用枚举
+- 测试可用字面量 0/1 作为存储码，生产代码不行
+
+### 5.10 安全红线
 
 - 禁止硬编码密钥、AK/SK、数据库密码
+- 禁止提交包含用户个人信息的测试数据
 - 禁止在日志中打印手机号、身份证、银行卡
 - API Key/Secret 返回前端必须脱敏（保留前4后4，中间 `****`）
 - 涉及资金/状态流转/权限变更，必须在 Spec 中标注并经人工审查
+- 外部接口调用必须设置超时（默认 3s）并做降级；状态变更必须走状态机
 
-### 5.10 数据库规范
+### 5.11 数据库规范
 
 - 所有业务表必须包含：`id`, `tenant_id`, `create_by`, `create_time`, `create_dept`, `update_by`, `update_time`
 - 字符集 `utf8mb4`，引擎 `InnoDB`
 - 金额字段用 `long`，单位**分**
 - 时间字段用 `LocalDateTime`
 
-### 5.11 逻辑删除规范
+### 5.12 逻辑删除规范
 
 > Forge 项目默认优先逻辑删除，只有明确属于运行时中间表、关系重建表、框架表或留存清理任务的场景才允许物理删除。
 
@@ -400,7 +418,7 @@ forge-admin-ui/src/
 - 日志归档和留存清理任务可以物理清理超期历史数据；普通行级删除仍按该表的逻辑删除规则执行。
 - 任何新增物理删除点必须在 Spec 或任务说明中写明原因、影响范围和回滚方式。
 
-### 5.12 数据库脚本维护规范
+### 5.13 数据库脚本维护规范
 
 所有数据库结构和内置数据变更必须走统一脚本，不允许只改实体、Mapper 或本地数据库。
 
@@ -451,7 +469,7 @@ ORDER BY installed_rank DESC;
 
 ```bash
 # 1. 数据库
-mysql -u root -p -e "CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+mysql -u root -p -e "CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 mysql -u root -p forge < forge/forge-admin-server/src/main/resources/sql/forge.sql
 
 # 2. 后端配置
@@ -559,7 +577,7 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 
 本项目 AI 编程助手的工作优先级（从高到低）：
 
-1. **本文件（AGENTS.md）** — 最高优先级，项目核心约定
+1. **本文件（AGENTS.md）** — 最高优先级；第 5 章是“违反会出问题”的短清单
 2. **`code-copilot/changes/[变更名]/spec.md`** — 当前变更的 Spec（如在进行 `/apply` 时）
 3. **`code-copilot/rules/project-context.md`** — 工程上下文详细版
 4. **`code-copilot/rules/coding-style.md`** — 编码规范
@@ -571,6 +589,8 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 10. **`code-copilot/memory/decisions.md`** — 项目决策记录
 11. **`code-copilot/memory/preferences.md`** — 用户偏好记录
 12. **`forge-docs/guide/conventions.md`** — 完整编码规范
+
+**规范只维护两处**：本文件第 5 章，以及 `code-copilot/rules/coding-style.md`。Skill、踩坑、决策、偏好不要再抄同一条规范。踩坑只记真实故障和根因。
 
 **优先级规则**：本文件与子文件冲突时，以本文件为准；Spec 文档与通用规则冲突时，以 Spec 为准。
 
@@ -585,15 +605,10 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 | 编码规范 | `forge-docs/guide/conventions.md` | 完整命名、异常、日志、数据库规范 |
 | SDD 工作流 | `forge-docs/guide/sdd-workflow.md` | Spec 驱动开发全流程 |
 | 工程上下文 | `code-copilot/rules/project-context.md` | 技术栈、模块依赖、详细配置 |
-| code-copilot 目录规则 | `code-copilot/AGENTS.md` | code-copilot 记忆文件迁移与写入规则 |
-| 编码规范（规则） | `code-copilot/rules/coding-style.md` | Java/前端编码规则速查 |
-| 业务领域约束 | `code-copilot/rules/domain-rules.md` | 金额、时间、状态机规则 |
-| 安全红线 | `code-copilot/rules/security.md` | 代码安全 + 业务安全 |
-| 按钮样式规范 | `code-copilot/rules/button-style-guide.md` | UnoCSS 操作按钮颜色 |
-| 踩坑记录 | `code-copilot/memory/pitfalls.md` | 常见错误 & 解决方案 |
+| code-copilot 目录规则 | `code-copilot/AGENTS.md` | 记忆文件写入规则 |
+| 踩坑索引 | `code-copilot/memory/pitfalls.md` | 分类目录；正文在 `memory/pitfalls/` |
 | 项目决策 | `code-copilot/memory/decisions.md` | 架构决策记录 |
 | 用户偏好 | `code-copilot/memory/preferences.md` | 编码风格偏好 |
-| 代码规则 | `.opencode/instructions/code-rules.md` | Java 基础规范 |
 | 更新日志 | `CHANGELOG.md` | 版本变更记录 |
 | Nginx 部署 | `NGINX_CONFIG.md` | 生产环境 Nginx 配置 |
 | 字典管理 | `forge-admin-ui/DICT_MANAGEMENT_SETUP.md` | 字典功能配置说明 |
@@ -627,9 +642,9 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 
 ## 附录 B：记忆知识图谱
 
-每次新对话开始，先读取以下文件：
-- `code-copilot/memory/pitfalls.md` — 踩坑记录
-- `code-copilot/memory/decisions.md` — 项目决策
-- `code-copilot/memory/preferences.md` — 用户偏好
+每次新对话开始：
+- 必读 `code-copilot/memory/preferences.md`
+- 浏览 `code-copilot/memory/pitfalls.md` 索引，只打开与当前任务相关的 `memory/pitfalls/<主题>.md`
+- 需要架构背景时再检索 `code-copilot/memory/decisions.md`，不要通读
 
-发现有价值信息时主动写入对应文件。实体类型：踩坑记录、项目决策、用户偏好、环境配置、业务知识。
+发现有价值信息时写入对应文件：真实故障写入 `memory/pitfalls/<主题>.md`，架构选择写入 `decisions.md`，用户偏好写入 `preferences.md`。编码规范只改第 5 章或 `code-copilot/rules/coding-style.md`。

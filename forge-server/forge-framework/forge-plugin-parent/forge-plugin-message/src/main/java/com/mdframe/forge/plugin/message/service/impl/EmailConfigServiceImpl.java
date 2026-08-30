@@ -45,7 +45,7 @@ public class EmailConfigServiceImpl extends ServiceImpl<SysEmailConfigMapper, Sy
             config.setMaxRetries(1);
         }
         if (config.getStatus() == null) {
-            config.setStatus(0);
+            config.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.DISABLED.getCode());
         }
         return super.save(config);
     }

@@ -17,7 +17,4 @@
 - **表单设计器Schema转换**: form-create 临时 ref_ id 需归一化为稳定 cmp_ id，表单配置优先同步字段资产 → `tech-form-create-forge-schema-normalization.md`
 - **组织上下文角色权限**: 数据中心和当前组织分层，用户角色授权落 `sys_user_org_role`，数据权限只使用 `activeOrgId` → `tech-org-scoped-role-permission.md`
 ## 踩坑记录
-- **多余依赖**: 注入未使用的依赖会导致不必要的依赖要求
-- **SpEL解析异常**: SpEL表达式解析失败会影响主业务，需要异常处理
-- **参数名获取失效**: StandardReflectionParameterNameDiscoverer在无-parameters编译参数时会失效，改用DefaultParameterNameDiscoverer
-- **切面全局开关**: 仅靠自动配置条件注解不够，建议在切面中再次检查开关状态
+真实故障按主题写在 `code-copilot/memory/pitfalls/`，先看 `code-copilot/memory/pitfalls.md` 索引。

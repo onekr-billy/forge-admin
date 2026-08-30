@@ -11,6 +11,7 @@ import com.mdframe.forge.starter.file.spi.FileMetadataPersistence;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 文件元数据持久化实现
@@ -26,7 +27,7 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
     public void save(FileMetadata metadata) {
         SysFileMetadata entity = new SysFileMetadata();
         BeanUtil.copyProperties(metadata, entity);
-        entity.setStatus(1);
+        entity.setStatus(EnableStatus.ENABLED.getCode());
         metadataMapper.insert(entity);
     }
     

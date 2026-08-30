@@ -3,6 +3,7 @@ package com.mdframe.forge.flow.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.flow.dto.FlowErrorLogRetryDTO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -100,23 +101,34 @@ public class FlowErrorLogController {
     @PostMapping("/error-logs/{logId}/retry")
     public RespInfo<Void> retryNode(
             @PathVariable String logId,
-            @RequestBody Map<String, Object> params) {
+            @RequestBody(required = false) FlowErrorLogRetryDTO dto) {
+        if (dto == null) {
+            dto = new FlowErrorLogRetryDTO();
+        }
 
         LoginUser loginUser = SessionHelper.getLoginUser();
         String userId = loginUser != null ? String.valueOf(loginUser.getUserId()) : null;
-        String processInstanceId = (String) params.get("processInstanceId");
-        String activityId = (String) params.get("activityId");
-        String reason = (String) params.get("reason");
+        String processInstanceId = optionalText(dto.getProcessInstanceId());
+        String activityId = optionalText(dto.getActivityId());
+        String reason = optionalText(dto.getReason());
 
-        if (processInstanceId == null || processInstanceId.isEmpty()) {
+        if (processInstanceId == null) {
             return RespInfo.error("流程实例ID不能为空");
         }
-        if (reason == null || reason.isEmpty()) {
+        if (reason == null) {
             reason = "管理员手动重试";
         }
 
         flowErrorLogService.retryNode(processInstanceId, activityId, logId, userId, reason);
         return RespInfo.success("重试成功", null);
+    }
+
+    private String optionalText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.trim();
+        return text.isEmpty() ? null : text;
     }
 
     /**

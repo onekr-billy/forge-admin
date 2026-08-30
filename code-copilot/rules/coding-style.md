@@ -20,9 +20,13 @@ alwaysApply: true
 - 异常打 ERROR，含完整堆栈
 - 禁止在日志中打印用户敏感信息
 ## 4. 其他
+- 所有 if/else/for/while 必须加大括号，禁止 `if (x) return;`
 - 写接口必须考虑幂等
 - 涉及并发场景必须说明同步策略
 - 魔法值必须定义为常量
+- 外部接口调用必须设置超时（默认 3s）并做降级
+- 状态变更必须走状态机，禁止业务代码直接乱改状态字段
+- 禁止提交包含用户个人信息的测试数据
 ## 5. git提交规范
 - 禁止 master 分支变更：编码前检查当前分支，master 上立即停止
 - 自动 Commit：每个 task/fix 完成后自动 commit，保持一个 task 一个 commit
@@ -90,3 +94,23 @@ alwaysApply: true
 ### 8.2 API Key 等敏感字段
 - 接口返回中包含 API Key、Secret 等敏感字段时，**必须脱敏处理**
 - 脱敏方式：保留前4后4位，中间用 `****` 替代
+
+### 8.3 请求体禁止 Map
+- Controller 写接口必须用明确的 DTO/VO 接收 `@RequestBody`，禁止 `@RequestBody Map<String, Object>` 再 `params.get("xxx")`
+- 正确：`public RespInfo<?> approve(@RequestBody FlowTaskApproveDTO dto)`
+- 错误：`public RespInfo<?> approve(@RequestBody Map<String, Object> params)`
+- 允许例外：低代码动态记录体、流程变量字段 `variables`、真正动态键值的元数据
+- 固定字段（如 `taskId`、`comment`、`userId`、`action`）必须进 DTO，不能整份请求都用 Map
+- 新增写接口先建 DTO/VO 再写 Controller，禁止用 Map 占位
+
+### 8.4 业务状态必须用枚举
+- Java 业务代码禁止魔法数字/字符串状态（如 `setStatus(2)`、`getStatus() == 1`、`setEnabled(1)`、`"terminated"`），必须使用枚举
+- 通用启用/停用（`enabled`、`visible`、`userStatus`、`isEnabled` 及同类 0/1 开关）用 `com.mdframe.forge.starter.core.enums.EnableStatus`
+  - 写入：`entity.setEnabled(EnableStatus.ENABLED.getCode())`
+  - 比较：`EnableStatus.ENABLED.matches(entity.getEnabled())`
+- 多状态业务字段必须建本模块枚举，提供 `getCode()` / `matches()`
+- 实体字段可继续用 `Integer`/`String` 与数据库列对齐，不要把实体字段改成枚举类型
+- Mapper XML / SQL 允许字面量，禁止在 XML 中绑定 Java 类全名
+- 前端展示走字典，`dict_value` 必须与后端枚举码一致
+- 不要套 `EnableStatus`：Boolean 开关、编码规则段配置、`readonly` / `isDefault` / `validationPassed` 等非启用语义
+- 测试可用字面量 0/1 作为存储码，生产代码不行

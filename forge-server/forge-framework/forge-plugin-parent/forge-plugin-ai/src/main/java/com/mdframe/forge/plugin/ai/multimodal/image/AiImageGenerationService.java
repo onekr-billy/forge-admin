@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.ai.model.domain.AiModel;
 import com.mdframe.forge.plugin.ai.model.service.AiModelService;
 import com.mdframe.forge.plugin.ai.multimodal.image.adapter.AiImageModelAdapter;
 import com.mdframe.forge.plugin.ai.multimodal.image.domain.AiImageGenerateRecord;
+import com.mdframe.forge.plugin.ai.multimodal.image.enums.AiImageGenerateStatus;
 import com.mdframe.forge.plugin.ai.multimodal.image.mapper.AiImageGenerateRecordMapper;
 import com.mdframe.forge.plugin.ai.provider.domain.AiProvider;
 import com.mdframe.forge.plugin.ai.provider.mapper.AiProviderMapper;
@@ -63,7 +64,7 @@ public class AiImageGenerationService {
         }
 
         record.setProviderId(provider.getId());
-        record.setStatus("pending");
+        record.setStatus(AiImageGenerateStatus.PENDING.getCode());
         recordMapper.insert(record);
 
         // 异步执行生成
@@ -99,7 +100,7 @@ public class AiImageGenerationService {
         }
 
         try {
-            record.setStatus("generating");
+            record.setStatus(AiImageGenerateStatus.GENERATING.getCode());
             recordMapper.updateById(record);
 
             // 解密 API Key
@@ -118,13 +119,13 @@ public class AiImageGenerationService {
             Long fileId = storeImage(imageUrlOrBase64, record.getPrompt());
 
             record.setResultFileId(fileId);
-            record.setStatus("success");
+            record.setStatus(AiImageGenerateStatus.SUCCESS.getCode());
             recordMapper.updateById(record);
 
             log.info("[AI Image] 图片生成成功, recordId={}, fileId={}", recordId, fileId);
         } catch (Exception e) {
             log.error("[AI Image] 图片生成失败, recordId={}", recordId, e);
-            record.setStatus("failed");
+            record.setStatus(AiImageGenerateStatus.FAILED.getCode());
             record.setErrorMsg(truncate(e.getMessage(), 1000));
             recordMapper.updateById(record);
         }

@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 复用业务对象设计协议初始化常用应用模板。
@@ -201,7 +202,7 @@ public class BusinessApplicationTemplateService {
         String displayField = resolveDisplayField(fields);
         object.setDisplayField(displayField);
         object.setDescription(description);
-        object.setStatus(1);
+        object.setStatus(EnableStatus.ENABLED.getCode());
         Long objectId = objectCreateService.create(object);
 
         BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();
@@ -210,7 +211,7 @@ public class BusinessApplicationTemplateService {
         designerService.saveDesigner(objectId, designer);
         DesignerContext context = designerService.loadContext(objectId);
         context.setPageSchema(null);
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
         return new CreatedObject(
                 objectId, objectCode, objectName, resolveModelCode(application.getSuiteCode(), objectCode));
     }
@@ -244,7 +245,7 @@ public class BusinessApplicationTemplateService {
         if (!StringUtils.equals(application.getSuiteCode(), object.getSuiteCode())) {
             throw new BusinessException("所选业务对象不属于当前应用业务域");
         }
-        if (!Integer.valueOf(1).equals(object.getStatus())) {
+        if (!EnableStatus.ENABLED.matches(object.getStatus())) {
             throw new BusinessException("所选业务对象已停用");
         }
         return new CreatedObject(
@@ -264,7 +265,7 @@ public class BusinessApplicationTemplateService {
             throw new BusinessException("请选择数据源和数据表");
         }
         GenDatasource datasource = datasourceService.getById(source.getDatasourceId());
-        if (datasource == null || !Integer.valueOf(1).equals(datasource.getIsEnabled())) {
+        if (datasource == null || !EnableStatus.ENABLED.matches(datasource.getIsEnabled())) {
             throw new BusinessException("所选数据源不存在或已停用");
         }
         GenTable table = datasourceService.selectDbTableByName(
@@ -288,7 +289,7 @@ public class BusinessApplicationTemplateService {
         object.setImportTableName(table.getTableName());
         object.setDescription(description + "，来源表 " + table.getTableName());
         object.setOptions(databaseObjectOptions(datasource, table));
-        object.setStatus(1);
+        object.setStatus(EnableStatus.ENABLED.getCode());
         Long objectId = objectCreateService.create(object);
         return new CreatedObject(objectId, objectCode, objectName, modelCode);
     }
@@ -416,7 +417,7 @@ public class BusinessApplicationTemplateService {
         }
         context.setModelSchema(modelSchema);
         context.setPageSchema(pageSchema);
-        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED);
+        designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
     }
 
     private List<BusinessFieldDTO> primaryFields(
@@ -557,7 +558,7 @@ public class BusinessApplicationTemplateService {
         relation.setSourceFieldCode(sourceField);
         relation.setTargetFieldCode(targetField);
         relation.setRelationConfig(JSON.toJSONString(config));
-        relation.setStatus(1);
+        relation.setStatus(EnableStatus.ENABLED.getCode());
         relation.setSortOrder(0);
         return relation;
     }

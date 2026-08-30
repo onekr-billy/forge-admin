@@ -93,16 +93,16 @@ public class BusinessApplicationPublishService {
         }
         AiBusinessApplicationPublishRun run = runService.reserve(applicationId, idempotencyKey,
                 "PUBLISH", null, candidate, check.getSelection());
-        if (BusinessApplicationPublishStatus.SUCCESS.equals(run.getRunStatus())
-                || BusinessApplicationPublishStatus.PARTIAL.equals(run.getRunStatus())
-                || BusinessApplicationPublishStatus.FAILED.equals(run.getRunStatus())
-                || BusinessApplicationPublishStatus.RUNNING.equals(run.getRunStatus())) {
+        if (BusinessApplicationPublishStatus.SUCCESS.matches(run.getRunStatus())
+                || BusinessApplicationPublishStatus.PARTIAL.matches(run.getRunStatus())
+                || BusinessApplicationPublishStatus.FAILED.matches(run.getRunStatus())
+                || BusinessApplicationPublishStatus.RUNNING.matches(run.getRunStatus())) {
             return toResult(run, existingRunMessage(run));
         }
         if (!runService.tryClaimCreated(applicationId, run.getId())) {
             return toResult(runService.requireRun(applicationId, run.getId()), "相同幂等请求已由另一执行器处理");
         }
-        run.setRunStatus(BusinessApplicationPublishStatus.RUNNING);
+        run.setRunStatus(BusinessApplicationPublishStatus.RUNNING.getCode());
         return resume(run,
                 dto == null ? new BusinessApplicationPublishDTO() : dto, resolvedCheck, false);
     }
@@ -202,7 +202,7 @@ public class BusinessApplicationPublishService {
                         run.getSnapshotJson(), objectVersions, selection, run.getTargetVersionNo(), "PUBLISH");
                 AiBusinessApplicationVersion version = versionService.commitImmutable(
                         run.getApplicationId(), run.getTargetVersionNo(), finalSnapshot,
-                        BusinessApplicationPublishStatus.PUBLISHED, null,
+                        BusinessApplicationPublishStatus.PUBLISHED.getCode(), null,
                         StringUtils.defaultIfBlank(dto.getRemark(), "应用协调发布成功"));
                 run = runService.markSuccess(run, version.getId(), finalSnapshot);
             }
@@ -275,12 +275,12 @@ public class BusinessApplicationPublishService {
             if (extension == null) {
                 throw new BusinessException("发布扩展不属于当前应用: " + extensionId);
             }
-            if (BusinessExtensionStatus.TESTED.equals(extension.getStatus())) {
-                extensionExecutionService.updateStatus(extensionId, BusinessExtensionStatus.ENABLED);
-            } else if (BusinessExtensionStatus.DISABLED.equals(extension.getStatus())) {
+            if (BusinessExtensionStatus.TESTED.matches(extension.getStatus())) {
+                extensionExecutionService.updateStatus(extensionId, BusinessExtensionStatus.ENABLED.getCode());
+            } else if (BusinessExtensionStatus.DISABLED.matches(extension.getStatus())) {
                 count++;
                 continue;
-            } else if (!BusinessExtensionStatus.ENABLED.equals(extension.getStatus())
+            } else if (!BusinessExtensionStatus.ENABLED.matches(extension.getStatus())
                     || !java.util.Objects.equals(extension.getDraftVersion(), extension.getEnabledVersion())) {
                 throw new BusinessException("扩展未通过测试或运行版本落后: " + extension.getExtensionName());
             }
@@ -357,8 +357,8 @@ public class BusinessApplicationPublishService {
         result.setRunStatus(run.getRunStatus());
         result.setTargetVersionNo(run.getTargetVersionNo());
         result.setResultVersionId(run.getResultVersionId());
-        result.setRecoverable(Set.of(BusinessApplicationPublishStatus.PARTIAL,
-                BusinessApplicationPublishStatus.FAILED).contains(run.getRunStatus()));
+        result.setRecoverable(Set.of(BusinessApplicationPublishStatus.PARTIAL.getCode(),
+                BusinessApplicationPublishStatus.FAILED.getCode()).contains(run.getRunStatus()));
         result.setCurrentStep(run.getCurrentStep());
         result.setErrorCode(run.getErrorCode());
         result.setMessage(message);
@@ -374,10 +374,14 @@ public class BusinessApplicationPublishService {
     }
 
     private String existingRunMessage(AiBusinessApplicationPublishRun run) {
-        return switch (run.getRunStatus()) {
-            case BusinessApplicationPublishStatus.SUCCESS -> "相同幂等请求已成功完成";
-            case BusinessApplicationPublishStatus.PARTIAL -> "相同幂等请求部分完成，请执行恢复";
-            case BusinessApplicationPublishStatus.FAILED -> "相同幂等请求已失败，请修复后执行恢复";
+        BusinessApplicationPublishStatus status = BusinessApplicationPublishStatus.of(run.getRunStatus());
+        if (status == null) {
+            return "相同幂等请求正在执行";
+        }
+        return switch (status) {
+            case SUCCESS -> "相同幂等请求已成功完成";
+            case PARTIAL -> "相同幂等请求部分完成，请执行恢复";
+            case FAILED -> "相同幂等请求已失败，请修复后执行恢复";
             default -> "相同幂等请求正在执行";
         };
     }

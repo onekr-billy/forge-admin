@@ -7,6 +7,7 @@ import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.dto.FlowStartConfig;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -82,6 +83,11 @@ public class FlowModelController {
     public RespInfo<FlowModel> getByKey(@PathVariable String modelKey) {
         FlowModel model = flowModelService.getModelByKey(modelKey);
         return RespInfo.success(model);
+    }
+
+    @GetMapping("/key/{modelKey}/start-config")
+    public RespInfo<FlowStartConfig> getStartConfig(@PathVariable String modelKey) {
+        return RespInfo.success(flowModelService.getStartConfig(modelKey));
     }
 
     /**

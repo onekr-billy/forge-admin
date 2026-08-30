@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 通用记录选择器服务。
@@ -123,7 +124,7 @@ public class BusinessRecordSelectorService {
         if (object == null) {
             throw new BusinessException("业务对象不存在: " + query.getObjectCode());
         }
-        if (Integer.valueOf(0).equals(object.getStatus())) {
+        if (EnableStatus.DISABLED.matches(object.getStatus())) {
             throw new BusinessException("业务对象已停用: " + object.getObjectName());
         }
         return object;

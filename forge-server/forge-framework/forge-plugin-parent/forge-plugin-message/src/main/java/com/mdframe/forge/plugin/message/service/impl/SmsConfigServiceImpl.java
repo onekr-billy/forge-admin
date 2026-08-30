@@ -42,7 +42,7 @@ public class SmsConfigServiceImpl extends ServiceImpl<SysSmsConfigMapper, SysSms
             config.setMaxRetries(0);
         }
         if (config.getStatus() == null) {
-            config.setStatus(0);
+            config.setStatus(com.mdframe.forge.starter.core.enums.EnableStatus.DISABLED.getCode());
         }
         return super.save(config);
     }

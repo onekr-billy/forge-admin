@@ -1,5 +1,7 @@
 package com.mdframe.forge.plugin.collaboration.service.directory;
 
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationDirectoryStatus;
+import com.mdframe.forge.plugin.collaboration.domain.CollaborationIssueProcessStatus;
 import com.mdframe.forge.plugin.collaboration.domain.entity.SocialSyncIssue;
 import com.mdframe.forge.plugin.collaboration.domain.model.SyncIssueResolution;
 import com.mdframe.forge.plugin.collaboration.mapper.SocialSyncLogMapper;
@@ -34,9 +36,6 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class DirectorySyncIssueService {
 
-    private static final String STATUS_PENDING = "PENDING";
-    private static final String STATUS_RESOLVED = "RESOLVED";
-    private static final String STATUS_IGNORED = "IGNORED";
     private static final String OBJECT_TYPE_USER = "USER";
 
     private final SocialSyncLogMapper syncLogMapper;
@@ -64,7 +63,7 @@ public class DirectorySyncIssueService {
         issue.setExternalId(externalId);
         issue.setIssueCode(issueCode);
         issue.setIssueSummary(issueSummary);
-        issue.setProcessStatus(STATUS_PENDING);
+        issue.setProcessStatus(CollaborationIssueProcessStatus.PENDING.getCode());
         issue.setRetryCount(0);
         syncLogMapper.insertIssue(issue);
         log.info("目录同步问题单创建: tenantId={}, connectionId={}, objectType={}, externalId={}, issueCode={}",
@@ -85,7 +84,7 @@ public class DirectorySyncIssueService {
         if (issue == null) {
             throw new BusinessException("问题单不存在");
         }
-        if (!STATUS_PENDING.equals(issue.getProcessStatus())) {
+        if (!CollaborationIssueProcessStatus.PENDING.matches(issue.getProcessStatus())) {
             throw new BusinessException("问题单已处理，禁止重复流转");
         }
         String action = command.action();
@@ -98,10 +97,10 @@ public class DirectorySyncIssueService {
                     throw new BusinessException("人工绑定必须指定目标用户");
                 }
                 bindExternalUser(issue, command.targetUserId(), tenantId);
-                casResolve(issueId, tenantId, STATUS_RESOLVED, action, operatorId);
+                casResolve(issueId, tenantId, CollaborationIssueProcessStatus.RESOLVED.getCode(), action, operatorId);
             }
-            case SyncIssueResolution.ACTION_IGNORE -> casResolve(issueId, tenantId, STATUS_IGNORED, action, operatorId);
-            case SyncIssueResolution.ACTION_RETRY -> casResolve(issueId, tenantId, STATUS_RESOLVED, action, operatorId);
+            case SyncIssueResolution.ACTION_IGNORE -> casResolve(issueId, tenantId, CollaborationIssueProcessStatus.IGNORED.getCode(), action, operatorId);
+            case SyncIssueResolution.ACTION_RETRY -> casResolve(issueId, tenantId, CollaborationIssueProcessStatus.RESOLVED.getCode(), action, operatorId);
             default -> throw new BusinessException("不支持的处理动作: " + action);
         }
         log.info("目录同步问题单处理完成: issueId={}, action={}, operatorId={}", issueId, action, operatorId);
@@ -135,7 +134,7 @@ public class DirectorySyncIssueService {
             created.setUuid(issue.getExternalId());
             created.setUserId(targetUserId);
             created.setManagedBySync(1);
-            created.setExternalStatus("ACTIVE");
+            created.setExternalStatus(CollaborationDirectoryStatus.ACTIVE.getCode());
             created.setBindTime(LocalDateTime.now());
             created.setLastSyncTime(LocalDateTime.now());
             userSocialMapper.insert(created);

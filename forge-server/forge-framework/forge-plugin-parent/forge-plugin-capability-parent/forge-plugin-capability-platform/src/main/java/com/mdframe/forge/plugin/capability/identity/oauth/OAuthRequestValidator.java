@@ -4,6 +4,7 @@ import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapabilityClien
 import com.mdframe.forge.plugin.capability.controlplane.security.CapabilityClientActorMode;
 import com.mdframe.forge.plugin.capability.identity.config.CapabilityIdentityProperties;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -155,7 +156,7 @@ public final class OAuthRequestValidator {
     private void requireUsableOAuthClient(AiCapabilityClient client) {
         LocalDateTime now = LocalDateTime.now(clock);
         if (client == null
-                || !Integer.valueOf(1).equals(client.getOauthEnabled())
+                || !EnableStatus.ENABLED.matches(client.getOauthEnabled())
                 || !"ENABLED".equals(client.getStatus())
                 || client.getCredentialVersion() == null
                 || client.getCredentialVersion() <= 0

@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.Date;
 import java.util.List;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * Go-View 模板 Service
@@ -83,7 +84,7 @@ public class ReportTemplateService extends ServiceImpl<ReportTemplateMapper, Rep
             stored = new ReportTemplate();
             stored.setId(sourceProject.getId());
             stored.setSourceProjectId(sourceProject.getId());
-            stored.setPublishStatus("0");
+            stored.setPublishStatus(EnableStatus.DISABLED.codeAsString());
             stored.setTemplateScope("0");
             stored.setCopiedCount(0);
         }
@@ -218,7 +219,7 @@ public class ReportTemplateService extends ServiceImpl<ReportTemplateMapper, Rep
         project.setProjectName(firstText(copyDTO.getProjectName(), template.getTemplateName(), "新项目"));
         project.setRemark(firstText(template.getRemark(), sourceProject != null ? sourceProject.getRemark() : null));
         project.setIndexImg(firstText(template.getIndexImg(), sourceProject != null ? sourceProject.getIndexImg() : null));
-        project.setStatus("0");
+        project.setStatus(EnableStatus.DISABLED.codeAsString());
         project.setCanvasWidth(firstPositive(template.getCanvasWidth(),
                 sourceProject != null ? sourceProject.getCanvasWidth() : null, 1920));
         project.setCanvasHeight(firstPositive(template.getCanvasHeight(),
@@ -226,7 +227,7 @@ public class ReportTemplateService extends ServiceImpl<ReportTemplateMapper, Rep
         project.setBackgroundColor(firstText(template.getBackgroundColor(),
                 sourceProject != null ? sourceProject.getBackgroundColor() : null, ""));
         project.setComponentData(componentData);
-        project.setPublishStatus("0");
+        project.setPublishStatus(EnableStatus.DISABLED.codeAsString());
 
         ReportProject created = projectService.createProject(project);
         template.setCopiedCount((template.getCopiedCount() == null ? 0 : template.getCopiedCount()) + 1);
@@ -251,7 +252,7 @@ public class ReportTemplateService extends ServiceImpl<ReportTemplateMapper, Rep
         }
         stored.setComponentData(componentData);
         if (!StringUtils.hasText(stored.getPublishStatus())) {
-            stored.setPublishStatus("0");
+            stored.setPublishStatus(EnableStatus.DISABLED.codeAsString());
         }
         if (!StringUtils.hasText(stored.getTemplateScope())) {
             stored.setTemplateScope("0");

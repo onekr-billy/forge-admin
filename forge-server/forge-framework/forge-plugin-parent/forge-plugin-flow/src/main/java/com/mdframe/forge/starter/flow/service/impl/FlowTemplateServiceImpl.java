@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
+import com.mdframe.forge.starter.flow.enums.FlowEnableStatus;
+import com.mdframe.forge.starter.flow.enums.FlowModelStatus;
 import com.mdframe.forge.starter.flow.entity.FlowTemplate;
 import com.mdframe.forge.starter.flow.mapper.FlowTemplateMapper;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
@@ -45,7 +47,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
     @Override
     public List<FlowTemplate> getEnabledTemplates(String category) {
         LambdaQueryWrapper<FlowTemplate> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(FlowTemplate::getStatus, 1)
+        wrapper.eq(FlowTemplate::getStatus, FlowEnableStatus.ENABLED.getCode())
                 .eq(category != null && !category.isEmpty(), FlowTemplate::getCategory, category)
                 .orderByAsc(FlowTemplate::getSortOrder);
         return list(wrapper);
@@ -73,7 +75,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
         
         // 设置默认值
         if (template.getStatus() == null) {
-            template.setStatus(1);
+            template.setStatus(FlowEnableStatus.ENABLED.getCode());
         }
         if (template.getVersion() == null) {
             template.setVersion(1);
@@ -127,7 +129,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
     public void enableTemplate(String id) {
         FlowTemplate template = getById(id);
         if (template != null) {
-            template.setStatus(1);
+            template.setStatus(FlowEnableStatus.ENABLED.getCode());
             template.setUpdateTime(LocalDateTime.now());
             updateById(template);
             log.info("启用流程模板：{}", template.getTemplateKey());
@@ -139,7 +141,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
     public void disableTemplate(String id) {
         FlowTemplate template = getById(id);
         if (template != null) {
-            template.setStatus(0);
+            template.setStatus(FlowEnableStatus.DISABLED.getCode());
             template.setUpdateTime(LocalDateTime.now());
             updateById(template);
             log.info("禁用流程模板：{}", template.getTemplateKey());
@@ -154,7 +156,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
             throw new RuntimeException("模板不存在：" + templateKey);
         }
         
-        if (template.getStatus() != 1) {
+        if (!FlowEnableStatus.ENABLED.matches(template.getStatus())) {
             throw new RuntimeException("模板已禁用，无法使用");
         }
         
@@ -167,7 +169,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
         model.setFormType(template.getFormType());
         model.setFormJson(template.getFormJson());
         model.setBpmnXml(template.getBpmnXml());
-        model.setStatus(0); // 设计态
+        model.setStatus(FlowModelStatus.DESIGNING.getCode());
         model.setVersion(1);
         model.setDelFlag(0);
         
@@ -207,7 +209,7 @@ public class FlowTemplateServiceImpl extends ServiceImpl<FlowTemplateMapper, Flo
         newTemplate.setFormJson(source.getFormJson());
         newTemplate.setBpmnXml(source.getBpmnXml());
         newTemplate.setVariables(source.getVariables());
-        newTemplate.setStatus(1);
+        newTemplate.setStatus(FlowEnableStatus.ENABLED.getCode());
         newTemplate.setVersion(1);
         newTemplate.setUsageCount(0);
         newTemplate.setIsSystem(0);

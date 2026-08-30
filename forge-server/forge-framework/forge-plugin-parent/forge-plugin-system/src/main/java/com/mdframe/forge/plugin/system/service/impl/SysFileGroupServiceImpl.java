@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 文件分组Service实现
@@ -35,7 +36,7 @@ public class SysFileGroupServiceImpl extends ServiceImpl<SysFileGroupMapper, Sys
     public boolean createGroup(SysFileGroup group) {
         // 设置默认值
         if (group.getStatus() == null) {
-            group.setStatus(1);
+            group.setStatus(EnableStatus.ENABLED.getCode());
         }
         if (group.getSort() == null) {
             group.setSort(0);

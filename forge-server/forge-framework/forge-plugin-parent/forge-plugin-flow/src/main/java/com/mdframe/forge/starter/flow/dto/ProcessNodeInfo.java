@@ -29,7 +29,7 @@ public class ProcessNodeInfo {
     private String nodeType;
     
     /**
-     * 节点状态（pending-待处理, running-处理中, completed-已完成, skipped-已跳过）
+     * 节点状态，取值见 {@link com.mdframe.forge.starter.flow.enums.FlowDiagramStatus}。
      */
     private String status;
     

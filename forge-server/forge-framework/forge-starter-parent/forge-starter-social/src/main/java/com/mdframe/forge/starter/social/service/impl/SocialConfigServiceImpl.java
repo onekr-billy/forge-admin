@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 三方登录配置服务实现
@@ -112,7 +113,7 @@ public class SocialConfigServiceImpl extends ServiceImpl<SysSocialConfigMapper, 
                             .platformName(config.getPlatformName())
                             .platformLogo(config.getPlatformLogo())
                             .platformLogoBase64(logoBase64)
-                            .enabled(config.getStatus() == 1)
+                            .enabled(EnableStatus.ENABLED.matches(config.getStatus()))
                             .build();
                 })
                 .collect(Collectors.toList());

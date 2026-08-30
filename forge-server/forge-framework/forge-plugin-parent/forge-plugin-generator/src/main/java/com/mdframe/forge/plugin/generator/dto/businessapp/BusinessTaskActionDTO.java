@@ -50,6 +50,9 @@ public class BusinessTaskActionDTO {
 
     private String signature;
 
+    /** 指定退回的历史用户任务定义 Key。 */
+    private String targetActivityId;
+
     private Map<String, Object> variables = new LinkedHashMap<>();
 
     private Map<String, Object> data = new LinkedHashMap<>();
