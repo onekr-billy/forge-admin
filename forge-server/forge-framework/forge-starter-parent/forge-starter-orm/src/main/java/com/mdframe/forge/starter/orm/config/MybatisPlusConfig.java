@@ -7,8 +7,8 @@ import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.InnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.mdframe.forge.starter.orm.handler.InjectionMetaObjectHandler;
+import com.mdframe.forge.starter.orm.interceptor.CountOnePaginationInnerInterceptor;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.InitializingBean;
@@ -61,8 +61,8 @@ public class MybatisPlusConfig implements InitializingBean {
     /**
      * 分页插件，自动识别数据库类型
      */
-    public PaginationInnerInterceptor paginationInnerInterceptor() {
-        PaginationInnerInterceptor paginationInnerInterceptor = new PaginationInnerInterceptor();
+    public CountOnePaginationInnerInterceptor paginationInnerInterceptor() {
+        CountOnePaginationInnerInterceptor paginationInnerInterceptor = new CountOnePaginationInnerInterceptor();
         // 分页合理化
         //paginationInnerInterceptor.setOverflow(true);
         return paginationInnerInterceptor;

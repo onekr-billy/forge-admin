@@ -195,7 +195,7 @@
 - 167. DAG 分支路由必须同时处理跨层穿卡和三种顺序一致性
 - 183. 捕获参与当前事务的下游异常不能清除 rollback-only
 
-### [后端框架 / Spring / Maven](pitfalls/backend.md)（32）
+### [后端框架 / Spring / Maven](pitfalls/backend.md)（33）
 
 - Redisson 接口存在不代表社区版可以运行
 - 受管 JSON 缓存不能只恢复容器外层类型
@@ -218,6 +218,7 @@
 - 139. 已验签手机号不等于可以用 LIMIT 1 任意映射用户
 - 143. Spring Service 增加测试便利构造器后必须显式选择注入构造器
 - 147. 带 `@Transactional` 的无接口 Bean 不能声明为 final
+- 分页复杂查询的 COUNT(*) 可能触发 JSqlParser 解析失败
 - 148. MyBatis InnerInterceptor 创建期不能直接注入依赖 Mapper 的 Service
 - 156. 幂等模板不能把受保护 action 的业务异常归类为基础设施故障
 - 160. 画布 JSON 能解析不等于流程样例合法

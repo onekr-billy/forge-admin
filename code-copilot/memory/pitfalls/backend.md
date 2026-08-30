@@ -519,3 +519,22 @@ OR column LIKE CONCAT('%,', #{userId}, ',%')
 同一依赖存在 `resolve(LowcodeModelSchema)`、`resolve(AiCrudConfig)` 等重载时，`when(resolver.resolve(any()))` 会在 Java 测试编译阶段报“引用不明确”，即使测试运行逻辑只会传其中一种类型。
 
 处理原则：对重载方法使用带类型的匹配器，例如 `any(LowcodeModelSchema.class)`，或通过显式类型变量消除重载歧义。新增重载后应至少触发一次 `testCompile`，避免仅运行主代码 `compile` 漏掉测试源码问题。
+
+## 分页复杂查询的 COUNT(*) 可能触发 JSqlParser 解析失败
+
+**发现日期**: 2026-08-30
+
+**问题描述**:
+待办列表增加候选组关联和多层 `EXISTS` 后，分页请求报
+`net.sf.jsqlparser.parser.ParseException: Encountered unexpected token: "("`，位置通常是
+`SELECT COUNT(` 的左括号。原始列表 SQL 可以解析，但 MyBatis-Plus 分页自动生成的
+`SELECT COUNT(*) ...` 在租户/数据权限拦截器再次解析时失败。
+
+**解决方案**:
+统一使用 `PaginationInnerInterceptor` 的兼容子类，将自动 count SQL 的首个
+`COUNT(*)` 替换为语义等价的 `COUNT(1)`；保留原有 count 优化、租户隔离和数据权限改写，
+并用包含嵌套候选组条件的 SQL 解析测试回归。新增复杂分页 SQL 时应同时验证原始查询和
+分页 count 查询经过所有拦截器后的可解析性。
+
+**影响范围**:
+所有使用 MyBatis-Plus 分页且 SQL 含深层嵌套条件、函数或子查询的列表接口。
