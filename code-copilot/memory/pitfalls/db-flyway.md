@@ -1,6 +1,6 @@
 # 踩坑：数据库 / Flyway / 索引
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 10 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 11 条。
 
 ## 15. Flyway 已执行版本脚本不能二次修改
 
@@ -202,3 +202,15 @@ Detected resolved migration not applied to database: 1.0.56
 数值主键墓碑逻辑删除使用 `UNIQUE (tenant_id, 业务键, del_flag)` 时，迁移回填新业务键后若只按 `(tenant_id, 业务键)` 去重，会把“已删除历史 + 当前有效记录”误判为冲突。若历史行 ID 更小，去重脚本甚至会保留历史值、改写当前有效行，导致正式访问地址等业务标识意外变化。
 
 处理原则：存量冲突检测、`GROUP BY`、回写 JOIN 和最终唯一索引必须使用完全相同的键维度；主键墓碑模式下包含 `del_flag`。有效行之间的真实冲突仍需确定性改名，删除历史与有效行可以保留相同业务键。迁移静态审查应同时核对去重维度、JOIN 条件和索引列顺序。
+
+## 企业协同连接根的 client_id/client_secret 不能继续 NOT NULL
+
+**发现日期**: 2026-08-31
+
+**问题描述**:
+企业协同「新建连接」报错，根因是 `sys_social_config.client_id`、`client_secret` 仍为 `NOT NULL`。连接升级为多应用模型后，新增连接不再填写这两列；MyBatis-Plus 省略 null 字段，MySQL 严格模式就会拒绝插入。
+
+**解决方案**:
+- 用新的 Flyway 脚本把这两列改为 `DEFAULT NULL`，已执行脚本不要回改。
+- 连接保存 DTO 继续不透传凭据；应用 ID/Secret 只写 `sys_social_app_config`。
+- 登录解析可以继续「应用优先、连接回退」，但新连接必须依赖应用凭据。

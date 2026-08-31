@@ -115,12 +115,14 @@ public class SysSocialConfig {
     private String syncCron;
 
     /**
-     * 应用ID/Key（旧登录配置字段，兼容期保留）
+     * 应用ID/Key（旧登录配置字段，兼容期保留，可空）。
+     * 新连接不再在连接根填写该值，改由 sys_social_app_config.client_id 保存。
      */
     private String clientId;
 
     /**
-     * 应用Secret（旧登录配置明文字段，兼容期只读，新凭据统一存 sys_social_app_config 密文）
+     * 应用Secret（旧登录配置明文字段，兼容期可空只读）。
+     * 新凭据统一存 sys_social_app_config 密文，新增连接无需填写本列。
      */
     private String clientSecret;
 

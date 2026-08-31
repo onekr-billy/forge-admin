@@ -252,7 +252,7 @@
 - 159. REQUIRES_NEW 建单后外层 REPEATABLE_READ 可能仍看不到新记录
 - 171. 动作路径 `record.*` 的单测必须构造服务端权威记录上下文
 
-### [数据库 / Flyway / 索引](pitfalls/db-flyway.md)（10）
+### [数据库 / Flyway / 索引](pitfalls/db-flyway.md)（11）
 
 - 15. Flyway 已执行版本脚本不能二次修改
 - 23. 菜单活跃项函数签名不一致导致选中状态停留
@@ -264,6 +264,7 @@
 - 146. 字典请求失败结果不能写入全局缓存
 - 163. 删除业务应用后保留的停用入口不能永久阻断业务域删除
 - 179. 逻辑删除业务键回填去重必须与最终唯一索引使用相同维度
+- 企业协同连接根的 client_id/client_secret 不能继续 NOT NULL
 
 ### [能力开放 / MCP / 动作发布](pitfalls/capability.md)（21）
 
