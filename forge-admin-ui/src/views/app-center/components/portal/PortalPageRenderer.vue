@@ -17,8 +17,8 @@
     <div
       v-else-if="blocks.length"
       class="portal-page-flow"
-      :class="{ 'is-fill': fillHost }"
-      :style="fillHost ? undefined : { minHeight: `${pageHeight}px` }"
+      :class="{ 'is-fill': fillHost, 'is-content-sized': contentSizedFlow }"
+      :style="fillHost || contentSizedFlow ? undefined : { minHeight: `${pageHeight}px` }"
     >
       <section
         v-for="(block, index) in blocks"
@@ -26,7 +26,7 @@
         class="portal-page-block"
         :class="{
           'is-fill': fillHost && blocks.length === 1,
-          'is-runtime-form': block.blockType === 'AiForm',
+          'is-runtime-form': isRuntimeAutoHeightBlock(block),
         }"
         :style="resolveBlockShellStyle(block, index)"
       >
@@ -71,6 +71,7 @@ import {
 } from '@/components/lowcode-extension/runtime/application-extension-runtime'
 import RuntimeScopedStyles from '@/components/lowcode-extension/runtime/RuntimeScopedStyles'
 import PortalEmptyState from './PortalEmptyState.vue'
+import { isRuntimeAutoHeightBlock, shouldUseContentSizedFlow } from './portal-page-runtime-layout'
 
 const props = defineProps({
   node: { type: Object, default: null },
@@ -146,6 +147,8 @@ const externalUrl = computed(() => {
     return ''
   }
 })
+
+const contentSizedFlow = computed(() => shouldUseContentSizedFlow(blocks.value, { fillHost: props.fillHost }))
 
 const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => {
   const style = block.props?.style || {}
@@ -395,29 +398,28 @@ function resolveBlockShellStyle(block, index) {
   const customX = finiteNumber(style.pageFlowX, 24)
   const customY = finiteNumber(style.pageFlowY, resolveDefaultBlockY(block, index))
   const customHeight = finiteNumber(style.pageFlowHeight, readLength(style.height) || resolveDefaultBlockHeight(block))
-  const runtimeAutoHeight = block.blockType === 'AiForm'
+  const runtimeAutoHeight = isRuntimeAutoHeightBlock(block)
+  const contentSized = contentSizedFlow.value
   const position = {
-    position: 'absolute',
-    left: `${customX}px`,
-    top: `${customY}px`,
-    height: runtimeAutoHeight || heightMode === 'auto' ? 'auto' : `${customHeight}px`,
+    position: contentSized ? 'relative' : 'absolute',
+    left: contentSized ? 'auto' : `${customX}px`,
+    top: contentSized ? 'auto' : `${customY}px`,
+    height: runtimeAutoHeight || heightMode === 'auto' || contentSized ? 'auto' : `${customHeight}px`,
     textAlign: style.textAlign || block.props?.textAlign || block.props?.align || 'left',
   }
-  if (runtimeAutoHeight)
-    position.minHeight = `${customHeight}px`
-  if (!runtimeAutoHeight && heightMode === 'full') {
+  if (!runtimeAutoHeight && !contentSized && heightMode === 'full') {
     position.height = 'auto'
     position.bottom = '24px'
   }
   if (widthMode === 'full')
-    return { ...position, left: '24px', width: 'calc(100% - 48px)' }
+    return { ...position, left: contentSized ? 'auto' : '24px', width: contentSized ? '100%' : 'calc(100% - 48px)' }
   const rawWidth = String(style.pageFlowWidth || '').trim()
   const frameWidth = readLength(style.width)
   if (widthMode === 'auto')
     return { ...position, width: rawWidth || `min(${Math.max(280, Math.min(560, frameWidth || 520))}px, calc(100% - 48px))` }
   if (widthMode === 'fixed' && frameWidth > 0)
     return { ...position, width: rawWidth || `min(${frameWidth}px, calc(100% - 48px))` }
-  return { ...position, width: rawWidth || 'calc(100% - 48px)' }
+  return { ...position, width: rawWidth || (contentSized ? '100%' : 'calc(100% - 48px)') }
 }
 
 function resolveDefaultBlockHeight(block = {}) {
@@ -505,6 +507,15 @@ function readLength(value) {
   overflow: visible;
 }
 
+.portal-page-flow.is-content-sized {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 24px;
+  box-sizing: border-box;
+}
+
 .portal-page-flow.is-fill {
   display: flex;
   height: 100%;
@@ -530,7 +541,45 @@ function readLength(value) {
 }
 
 .portal-page-block.is-runtime-form :deep(.grid-block.block-AiForm),
-.portal-page-block.is-runtime-form :deep(.system-component-preview) {
+.portal-page-block.is-runtime-form :deep(.grid-block.block-AiCrudPage),
+.portal-page-block.is-runtime-form :deep(.system-component-preview),
+.portal-page-block.is-runtime-form :deep(.ai-crud-page) {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible;
+}
+
+.portal-page-flow.is-content-sized .portal-page-block {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.portal-page-flow.is-content-sized .portal-page-block :deep(.grid-block) {
+  height: auto !important;
+}
+
+.portal-page-flow:has(.ai-crud-page.is-inline-form-active) {
+  display: flex;
+  min-height: 0 !important;
+  height: auto;
+  flex-direction: column;
+  padding: 16px 24px 24px;
+  box-sizing: border-box;
+}
+
+.portal-page-block:has(.ai-crud-page.is-inline-form-active) {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  bottom: auto !important;
+  min-height: 0 !important;
+}
+
+.portal-page-block:has(.ai-crud-page.is-inline-form-active) :deep(.grid-block) {
   height: auto !important;
   overflow: visible;
 }

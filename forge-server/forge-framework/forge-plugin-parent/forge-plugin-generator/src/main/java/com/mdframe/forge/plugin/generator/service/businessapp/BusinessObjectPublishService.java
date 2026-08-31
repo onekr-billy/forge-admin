@@ -1183,10 +1183,12 @@ public class BusinessObjectPublishService {
                     "CONFIG_FORM", "设计表单", "form", 131);
             return;
         }
+        // 默认 4 列栅格会把字段放进 row/col.children，发布检查必须展平后再统计业务字段。
+        List<Map<String, Object>> flattened = flattenFormComponents(components);
         int fieldComponentCount = 0;
         Set<String> componentIds = new LinkedHashSet<>();
-        for (int index = 0; index < components.size(); index++) {
-            Map<String, Object> component = components.get(index);
+        for (int index = 0; index < flattened.size(); index++) {
+            Map<String, Object> component = flattened.get(index);
             String componentId = text(component.get("id"));
             String componentKey = text(component.get("componentKey"));
             if (StringUtils.isNotBlank(componentId) && !isGenericFormComponentId(componentId, componentKey)
@@ -1196,7 +1198,7 @@ public class BusinessObjectPublishService {
                         "FIX_FORM", "修复表单", "form", 132);
             }
             if (FORM_VIRTUAL_COMPONENT_KEYS.contains(componentKey)) {
-                // 布局容器承载分区结构，不绑定业务字段（前端保存会 normalize 为 virtual，种子数据可能缺省）。
+                // 布局容器承载分区结构，不绑定业务字段；子组件已在 flatten 后单独校验。
                 continue;
             }
             Map<String, Object> binding = mapValue(component.get("fieldBinding"));
@@ -2513,6 +2515,25 @@ public class BusinessObjectPublishService {
                 .filter(Map.class::isInstance)
                 .map(this::mapValue)
                 .toList();
+    }
+
+    private List<Map<String, Object>> flattenFormComponents(List<Map<String, Object>> components) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        collectFormComponents(components, result);
+        return result;
+    }
+
+    private void collectFormComponents(List<Map<String, Object>> components, List<Map<String, Object>> result) {
+        if (components == null) {
+            return;
+        }
+        for (Map<String, Object> component : components) {
+            if (component == null) {
+                continue;
+            }
+            result.add(component);
+            collectFormComponents(listOfMap(component.get("children")), result);
+        }
     }
 
     private boolean isFalse(Object value) {

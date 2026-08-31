@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
+import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessRecordSelectorQueryDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
@@ -114,6 +115,31 @@ class BusinessRecordSelectorServiceTest {
         ArgumentCaptor<PageQuery> pageQueryCaptor = ArgumentCaptor.forClass(PageQuery.class);
         verify(dynamicCrudService).selectPage(eq("runtime_supplier"), pageQueryCaptor.capture(), any(DynamicCrudQuery.class));
         assertEquals(null, pageQueryCaptor.getValue().getOrderByColumn());
+    }
+
+    @Test
+    @DisplayName("query uses object field labels when display fields have no explicit labels")
+    void queryUsesObjectFieldLabelsWhenDisplayFieldsHaveNoExplicitLabels() {
+        when(businessObjectMapper.selectFirstByObjectCode(1L, "supplier")).thenReturn(object("supplier"));
+        when(permissionService.hasDocumentActionPermission("supplier", "VIEW")).thenReturn(true);
+        Page<Map<String, Object>> page = new Page<>(1, 10, 0);
+        page.setRecords(List.of());
+        when(dynamicCrudService.selectPage(eq("runtime_supplier"), any(PageQuery.class), any(DynamicCrudQuery.class)))
+                .thenReturn(page);
+        AiCrudConfig config = new AiCrudConfig();
+        config.setEditSchema("[{\"field\":\"fieldInput\",\"label\":\"产品\"},{\"field\":\"fieldInput2\",\"label\":\"编码\"}]");
+        when(dynamicCrudService.getRuntimeConfig("runtime_supplier")).thenReturn(config);
+
+        BusinessRecordSelectorQueryDTO dto = new BusinessRecordSelectorQueryDTO();
+        dto.setObjectCode("supplier");
+        dto.setDisplayFields(List.of("fieldInput", "fieldInput2"));
+
+        BusinessRecordSelectorResultVO result = service.query(dto, new PageQuery());
+
+        assertEquals(2, result.getColumns().size());
+        assertEquals("fieldInput", result.getColumns().get(0).getField());
+        assertEquals("产品", result.getColumns().get(0).getLabel());
+        assertEquals("编码", result.getColumns().get(1).getLabel());
     }
 
     private AiBusinessObject object(String objectCode) {

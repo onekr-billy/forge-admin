@@ -1,5 +1,5 @@
 <template>
-  <div v-if="blockRuntimeVisible" class="grid-block" :class="[`block-${block.blockType}`, { selected }]" :style="blockStyle" :data-block-id="block.id">
+  <div v-if="blockRuntimeVisible" class="grid-block" :class="[`block-${block.blockType}`, { selected, 'is-form-only': !!block.props?.formOnly }]" :style="blockStyle" :data-block-id="block.id">
     <template v-if="isDataFieldBlock && runtimeCrudLoading">
       <div class="runtime-crud-loading">
         <n-spin size="small" />
@@ -3178,6 +3178,12 @@ watch(
    * 否则当用户缩小区块时内容会越出自己的框并压住相邻组件。 */
   min-height: 0;
   overflow: hidden;
+}
+
+.grid-block.block-AiCrudPage.is-form-only,
+.grid-block.block-AiCrudPage:has(.ai-crud-page.is-inline-form-active) {
+  height: auto !important;
+  overflow: visible !important;
 }
 
 .grid-block.block-page-title,

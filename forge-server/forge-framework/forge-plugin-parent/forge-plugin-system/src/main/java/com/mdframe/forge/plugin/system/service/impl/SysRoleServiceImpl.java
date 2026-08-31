@@ -861,8 +861,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     private void normalizeRoleQueryTenant(SysRoleQuery query) {
         LoginUser loginUser = requireLoginUser();
+        query.setTenantId(resolveWriteTenantId(null));
         if (!loginUser.isAdmin()) {
-            query.setTenantId(loginUser.getTenantId());
             query.setAccessibleRoleIds(loginUser.getRoleIds() == null
                     ? Collections.emptyList()
                     : loginUser.getRoleIds());
@@ -920,9 +920,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     private Long resolveWriteTenantId(Long requestedTenantId) {
         LoginUser loginUser = requireLoginUser();
-        Long tenantId = loginUser.isAdmin()
-                ? (requestedTenantId != null ? requestedTenantId : loginUser.getTenantId())
-                : loginUser.getTenantId();
+        Long tenantId = loginUser.getTenantId();
         validateTenantEnabled(tenantId);
         return tenantId;
     }

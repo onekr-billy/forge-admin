@@ -139,7 +139,6 @@ const NORMAL_DISABLE_DICT = 'sys_normal_disable'
 
 const crudRef = ref(null)
 const userStore = useUserStore()
-const tenantOptions = ref([])
 const leftOrgTreeData = ref([])
 const leftOrgTreeLoading = ref(false)
 const leftOrgExpandAll = ref(true)
@@ -153,25 +152,9 @@ const { dict } = useDict(POST_TYPE_DICT, NORMAL_DISABLE_DICT)
 
 const postTypeOptions = computed(() => toNumberOptions(dict.value[POST_TYPE_DICT]))
 const postStatusOptions = computed(() => toNumberOptions(dict.value[NORMAL_DISABLE_DICT]))
-const tenantSelectOptions = computed(() => tenantOptions.value.map(item => ({
-  label: item.tenantName,
-  value: item.id,
-})))
 
 // 搜索表单配置
 const searchSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        props: {
-          placeholder: '请选择租户',
-          clearable: true,
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
   {
     field: 'postName',
     label: '岗位名称',
@@ -210,14 +193,6 @@ const searchSchema = computed(() => [
 
 // 表格列配置
 const tableColumns = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        prop: 'tenantId',
-        label: '所属租户',
-        width: 160,
-        render: row => findTenantName(row.tenantId) || row.tenantId || '-',
-      }]
-    : []),
   {
     prop: 'postName',
     label: '岗位',
@@ -278,20 +253,6 @@ const tableColumns = computed(() => [
 
 // 编辑表单配置
 const editSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        defaultValue: userStore.userInfo?.tenantId,
-        rules: [{ required: true, type: 'number', message: '请选择所属租户', trigger: 'change' }],
-        props: {
-          placeholder: '请选择所属租户',
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
-  // 基础信息
   {
     type: 'divider',
     label: '基础信息',
@@ -399,10 +360,8 @@ function toNumberOptions(options = []) {
   }))
 }
 
-// 组件挂载时加载租户选项
 onMounted(() => {
   loadLeftOrgTree()
-  loadTenantOptions()
 })
 
 const orgTreeSummaryText = computed(() => {
@@ -412,19 +371,17 @@ const orgTreeSummaryText = computed(() => {
   return `${total} 个组织节点`
 })
 
-function buildTenantParams(tenantId) {
-  const resolvedTenantId = userStore.isAdmin ? tenantId : userStore.userInfo?.tenantId
+function buildTenantParams() {
+  const resolvedTenantId = userStore.userInfo?.tenantId
   return resolvedTenantId ? { tenantId: resolvedTenantId } : {}
 }
 
-function resolveSelectedTenantId(row) {
-  return row?.tenantId
-    || (userStore.isAdmin ? crudRef.value?.getSearchParams?.()?.tenantId : null)
-    || userStore.userInfo?.tenantId
+function resolveSelectedTenantId() {
+  return userStore.userInfo?.tenantId
 }
 
 function beforeLoadList(params) {
-  Object.assign(params, buildTenantParams(params.tenantId))
+  Object.assign(params, buildTenantParams())
   if (selectedOrgNode.value && !isShowAllPosts.value) {
     params.orgId = selectedOrgNode.value.id
   }
@@ -435,17 +392,12 @@ async function beforeSearch(params) {
   selectedOrgKeys.value = []
   selectedOrgNode.value = null
   isShowAllPosts.value = true
-  await loadLeftOrgTree(params?.tenantId)
+  await loadLeftOrgTree()
   return params
 }
 
 function beforeSubmit(formData) {
-  if (!userStore.isAdmin) {
-    formData.tenantId = userStore.userInfo?.tenantId
-  }
-  else if (!formData.tenantId) {
-    formData.tenantId = userStore.userInfo?.tenantId
-  }
+  formData.tenantId = userStore.userInfo?.tenantId
   return formData
 }
 
@@ -456,22 +408,6 @@ function beforeRenderForm(row) {
   return {
     tenantId: resolveSelectedTenantId(),
     orgId: selectedOrgNode.value?.id,
-  }
-}
-
-function findTenantName(tenantId) {
-  return tenantOptions.value.find(item => String(item.id) === String(tenantId))?.tenantName
-}
-
-async function loadTenantOptions() {
-  try {
-    const res = await request.get('/system/tenant/assignable/options')
-    if (res.code === 200) {
-      tenantOptions.value = res.data || []
-    }
-  }
-  catch (error) {
-    console.error('加载租户选项失败:', error)
   }
 }
 

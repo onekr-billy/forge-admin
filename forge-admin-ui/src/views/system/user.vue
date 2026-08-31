@@ -1179,18 +1179,6 @@ watch(checkedPostKeys, (keys) => {
 
 // 搜索表单配置
 const searchSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        props: {
-          placeholder: '请选择租户',
-          clearable: true,
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
   {
     field: 'username',
     label: '用户名',
@@ -1273,15 +1261,6 @@ const tableColumns = computed(() => [
       values: splitTableCellValues(row.postName || row.postNames),
     }),
   },
-  ...(userStore.isAdmin
-    ? [{
-        prop: 'tenantName',
-        label: '所属租户',
-        width: 160,
-        ellipsis: false,
-        render: row => renderTenantNames(row),
-      }]
-    : []),
   {
     prop: 'userType',
     label: '用户类型',
@@ -1357,43 +1336,6 @@ const editSchema = computed(() => [
       placeholder: '请输入密码',
     },
     vIf: formData => !formData.id,
-  },
-  {
-    field: 'tenantIds',
-    label: '所属租户',
-    type: 'select',
-    defaultValue: userStore.userInfo?.tenantId ? [userStore.userInfo.tenantId] : [],
-    multiple: true,
-    rules: [{ required: true, type: 'array', message: '请选择所属租户', trigger: 'change' }],
-    onChange: ({ value, formData, context }) => {
-      const tenantIds = normalizeNumberList(value)
-      const tenantId = normalizeSingleNumber(formData?.tenantId)
-      if (tenantIds.length === 0) {
-        context?.patchFormData?.({ tenantId: null })
-        return
-      }
-      if (tenantId === null || !tenantIds.includes(tenantId)) {
-        context?.patchFormData?.({ tenantId: tenantIds[0] })
-      }
-    },
-    props: {
-      placeholder: '请选择所属租户',
-      options: tenantSelectOptions.value,
-      multiple: true,
-      disabled: !userStore.isAdmin,
-    },
-  },
-  {
-    field: 'tenantId',
-    label: '默认租户',
-    type: 'select',
-    defaultValue: userStore.userInfo?.tenantId,
-    rules: [{ required: true, type: 'number', message: '请选择默认租户', trigger: 'change' }],
-    options: ({ formData }) => resolveDefaultTenantOptions(formData),
-    props: {
-      placeholder: '请选择默认租户',
-      disabled: !userStore.isAdmin,
-    },
   },
   {
     field: 'userType',
@@ -1685,13 +1627,6 @@ function resolveSingleTenantId(data = {}, fallbackTenantId = null) {
   return tenantIds[0]
 }
 
-function resolveDefaultTenantOptions(formData = {}) {
-  const tenantIds = resolveTenantIds(formData, userStore.userInfo?.tenantId)
-  if (tenantIds.length === 0)
-    return tenantSelectOptions.value
-  return tenantSelectOptions.value.filter(option => tenantIds.includes(normalizeSingleNumber(option.value)))
-}
-
 function normalizeUserFormData(data = {}, fallbackTenantId = null) {
   const next = { ...(data || {}) }
   next.tenantIds = resolveTenantIds(next, fallbackTenantId)
@@ -1813,10 +1748,6 @@ function formatTenantNameList(row = {}) {
   return []
 }
 
-function renderTenantNames(row = {}) {
-  return h(SystemTableCell, { values: formatTenantNameList(row) })
-}
-
 function splitTableCellValues(value) {
   const rawValues = Array.isArray(value) ? value : [value]
   return rawValues
@@ -1875,8 +1806,8 @@ function getUserOrgNodeMeta(node = {}) {
   return null
 }
 
-function buildTenantParams(tenantId) {
-  const resolvedTenantId = userStore.isAdmin ? tenantId : userStore.userInfo?.tenantId
+function buildTenantParams() {
+  const resolvedTenantId = userStore.userInfo?.tenantId
   return resolvedTenantId ? { tenantId: resolvedTenantId } : {}
 }
 
@@ -2086,7 +2017,7 @@ function handleSelectAllUsers() {
 
 // 加载列表数据前的钩子（用于添加组织ID参数）
 function beforeLoadList(params) {
-  Object.assign(params, buildTenantParams(params.tenantId))
+  Object.assign(params, buildTenantParams())
   if (selectedOrgNode.value && !isShowAllUsers.value) {
     params.orgId = selectedOrgNode.value.id
   }
@@ -2097,7 +2028,7 @@ async function beforeSearch(params) {
   selectedOrgKeys.value = []
   selectedOrgNode.value = null
   isShowAllUsers.value = true
-  await loadLeftOrgTree(params?.tenantId)
+  await loadLeftOrgTree()
   return params
 }
 
@@ -2216,19 +2147,10 @@ async function handleUntieDisable(row) {
 // 表单提交前处理
 function beforeSubmit(formData) {
   Object.assign(formData, normalizeUserFormData(formData, userStore.userInfo?.tenantId))
+  formData.tenantId = userStore.userInfo?.tenantId
+  formData.tenantIds = [userStore.userInfo?.tenantId].filter(Boolean)
   if (!userStore.isAdmin) {
-    formData.tenantId = userStore.userInfo?.tenantId
-    formData.tenantIds = [userStore.userInfo?.tenantId].filter(Boolean)
     formData.userType = 2
-  }
-  else if (!formData.tenantIds || formData.tenantIds.length === 0) {
-    formData.tenantIds = formData.tenantId ? [formData.tenantId] : [userStore.userInfo?.tenantId].filter(Boolean)
-  }
-  if (formData.tenantIds.length > 0 && !formData.tenantIds.includes(formData.tenantId)) {
-    formData.tenantId = formData.tenantIds[0]
-  }
-  else if (!formData.tenantId) {
-    formData.tenantId = formData.tenantIds[0] || userStore.userInfo?.tenantId
   }
   if (!formData.mainOrgId && Array.isArray(formData.orgIds) && formData.orgIds.length > 0) {
     formData.mainOrgId = formData.orgIds[0]

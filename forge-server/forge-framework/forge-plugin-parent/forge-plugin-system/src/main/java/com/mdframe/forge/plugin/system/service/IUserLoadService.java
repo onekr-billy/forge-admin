@@ -28,6 +28,12 @@ public interface IUserLoadService {
     LoginUser loadUserByUsername(String username, Long tenantId, Long preferredActiveOrgId);
 
     /**
+     * 用户名密码登录：先校验密码，再按该账号可进入的工作区消歧。
+     * 多个工作区且未指定 tenantId 时抛出业务码 {@code AuthResultCodes.TENANT_SELECTION_REQUIRED}。
+     */
+    LoginUser authenticateByUsernamePassword(String username, String rawPassword, Long requestedTenantId);
+
+    /**
      * 根据手机号加载用户信息
      *
      * @param phone    手机号

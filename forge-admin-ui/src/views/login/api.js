@@ -2,7 +2,7 @@ import { request } from '@/utils'
 
 export default {
   // 登录接口 - 使用新的统一登录入口
-  login: data => request.post('/auth/login', data, { needToken: false }),
+  login: data => request.post('/auth/login', data, { needToken: false, needTip: false }),
 
   // 获取图文验证码
   getCaptcha: () => request.get('/auth/captcha', { needToken: false }),

@@ -42,19 +42,6 @@
             </div>
           </div>
 
-          <div v-show="!leftOrgPanelCollapsed && userStore.isAdmin" class="org-tree-tools">
-            <n-select
-              v-if="userStore.isAdmin"
-              v-model:value="selectedTenantId"
-              :options="tenantSelectOptions"
-              clearable
-              filterable
-              size="small"
-              placeholder="全部租户"
-              @update:value="handleTenantChange"
-            />
-          </div>
-
           <div v-show="!leftOrgPanelCollapsed" class="org-tree-content">
             <n-spin :show="leftOrgTreeLoading">
               <PremiumTree
@@ -316,8 +303,6 @@ const orgCrudRef = ref(null)
 const postCrudRef = ref(null)
 const userCrudRef = ref(null)
 
-const tenantOptions = ref([])
-const selectedTenantId = ref(userStore.userInfo?.tenantId || null)
 const leftOrgTreeData = ref([])
 const leftOrgTreeLoading = ref(false)
 const leftOrgExpandAll = ref(false)
@@ -338,10 +323,6 @@ const selectedPostNode = ref(null)
 const orgWorkspaceTab = ref('members')
 const userSelectVisible = ref(false)
 
-const tenantSelectOptions = computed(() => tenantOptions.value.map(item => ({
-  label: item.tenantName,
-  value: item.id,
-})))
 const orgStatusOptions = computed(() => toNumberOptions(dict.value[NORMAL_DISABLE_DICT]))
 const postTypeOptions = computed(() => toNumberOptions(dict.value[POST_TYPE_DICT]))
 const postStatusOptions = computed(() => toNumberOptions(dict.value[NORMAL_DISABLE_DICT]))
@@ -375,19 +356,6 @@ const postDriverColumns = computed(() => [
 ])
 
 const orgEditSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        defaultValue: resolveSelectedTenantId(),
-        rules: [{ required: true, type: 'number', message: '请选择所属租户', trigger: 'change' }],
-        props: {
-          placeholder: '请选择所属租户',
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
   {
     type: 'divider',
     label: '基础信息',
@@ -516,19 +484,6 @@ const orgEditSchema = computed(() => [
 ])
 
 const postEditSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        defaultValue: resolveSelectedTenantId(),
-        rules: [{ required: true, type: 'number', message: '请选择所属租户', trigger: 'change' }],
-        props: {
-          placeholder: '请选择所属租户',
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
   {
     type: 'divider',
     label: '基础信息',
@@ -724,7 +679,6 @@ const userTableColumns = computed(() => [
 ])
 
 onMounted(async () => {
-  await loadTenantOptions()
   await loadRegionOptions()
   await loadParentOrgOptions()
   await loadLeftOrgTree()
@@ -759,42 +713,13 @@ function resolveOptionLabel(options = [], value) {
   return match?.label
 }
 
-function buildTenantParams(tenantId = resolveSelectedTenantId()) {
-  const resolvedTenantId = userStore.isAdmin ? tenantId : userStore.userInfo?.tenantId
+function buildTenantParams() {
+  const resolvedTenantId = userStore.userInfo?.tenantId
   return resolvedTenantId ? { tenantId: resolvedTenantId } : {}
 }
 
-function resolveSelectedTenantId(row) {
-  return row?.tenantId
-    || selectedTenantId.value
-    || userStore.userInfo?.tenantId
-}
-
-async function loadTenantOptions() {
-  try {
-    const res = await request.get('/system/tenant/assignable/options')
-    if (res.code === 200) {
-      tenantOptions.value = res.data || []
-      if (userStore.isAdmin && !selectedTenantId.value && tenantOptions.value.length > 0) {
-        selectedTenantId.value = tenantOptions.value[0].id
-      }
-    }
-  }
-  catch (error) {
-    console.error('加载租户选项失败:', error)
-  }
-}
-
-async function handleTenantChange() {
-  selectedOrgKeys.value = []
-  selectedOrgNode.value = null
-  isShowAllOrganizations.value = true
-  selectedPostKey.value = ALL_POST_KEY
-  selectedPostNode.value = null
-  await loadParentOrgOptions()
-  await loadLeftOrgTree()
-  await loadPostList()
-  refreshRightPanels()
+function resolveSelectedTenantId() {
+  return userStore.userInfo?.tenantId
 }
 
 async function loadParentOrgOptions(tenantId = resolveSelectedTenantId()) {
@@ -1056,12 +981,7 @@ function handleOrgDriverLoad(node) {
 }
 
 function beforeSubmitOrg(formData) {
-  if (!userStore.isAdmin) {
-    formData.tenantId = userStore.userInfo?.tenantId
-  }
-  else if (!formData.tenantId) {
-    formData.tenantId = resolveSelectedTenantId()
-  }
+  formData.tenantId = userStore.userInfo?.tenantId
   return formData
 }
 
@@ -1189,12 +1109,7 @@ function beforeLoadPostDriverList(params) {
 }
 
 function beforeSubmitPost(formData) {
-  if (!userStore.isAdmin) {
-    formData.tenantId = userStore.userInfo?.tenantId
-  }
-  else if (!formData.tenantId) {
-    formData.tenantId = resolveSelectedTenantId()
-  }
+  formData.tenantId = userStore.userInfo?.tenantId
   return formData
 }
 

@@ -1,6 +1,17 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 82 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 83 条。
+
+## 表单发布检查必须展平 row/col 子组件
+
+
+**发现日期**: 2026-08-31
+
+**问题描述**:
+默认 4 列栅格会把业务字段放进 `formDesignerSchema.components[0].children[].children`。发布检查如果只遍历顶层 `components`，会把唯一的 `row` 当成布局容器跳过，然后误报 `FORM_FIELD_COMPONENT_EMPTY`（表单中没有绑定业务字段的组件）。电商应用的店铺、产品、订单都因此被阻断，但字段其实已经绑定。
+
+**解决方案**:
+`BusinessObjectPublishService.checkFormDesignerSchema` 必须先展平 `children`，再跳过 `row`/`col`/`card` 等虚拟组件并统计 `fieldBinding.mode=field` 的字段。空栅格仍然阻断；嵌套未绑定或不存在字段继续分别报 `FORM_FIELD_BINDING_EMPTY` / `FORM_FIELD_MISSING`。
 
 ## 预览/发布前的派生运行配置不能传播应用设计变更
 

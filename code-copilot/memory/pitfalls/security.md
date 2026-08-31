@@ -1,6 +1,6 @@
 # 踩坑：安全 / 加密 / 租户 / 鉴权
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 18 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 19 条。
 
 ## 多租户拦截器会破坏 LIMIT 1 FOR UPDATE 顺序
 
@@ -365,3 +365,15 @@ Table 'forge_admin_test.sys_data_scope_config' doesn't exist
 `BusinessActionStepConfigHelper.resolvePath("record.id", context)` 读取的是执行服务按 `recordId` 和数据权限重新查询后写入的 `recordData`，不是客户端请求 DTO 的 `recordId`。单测若只设置 `context.request.recordId`，却配置 `targetRecordIdField=record.id`，会得到“缺少目标记录 ID”；把解析器降级为读取客户端 request 会破坏可信数据边界。
 
 测试执行器时应显式构造与 `BusinessActionExecutionService.buildContext` 一致的 `recordData`；测试请求回退语义时则不要配置 `targetRecordIdField`。主子表动作还应分别构造权威 `parentRecordData` 和子行 `recordData`，避免用浏览器自报父子记录模拟服务端关系校验。
+
+## 超级管理员不能全局忽略租户隔离
+
+**发现日期**: 2026-08-31
+
+**问题描述**:
+`TenantInterceptor` 对超级管理员 `setIgnore(true)` 后，右上角切换租户只改 Session，用户/组织/角色列表仍可能看到全部租户。页面再铺「所属租户」筛选和下拉，普通用户也无法理解。
+
+**解决方案**:
+- 超级管理员也把当前 Session 租户当作工作区，SQL 按该租户隔离。
+- 平台表（如 `sys_tenant`）继续走 ignoreTables；跨租户绑定只留在租户管理和用户高级关系。
+- 登录页和顶栏仅在可切换租户数 > 1 时展示选择器。

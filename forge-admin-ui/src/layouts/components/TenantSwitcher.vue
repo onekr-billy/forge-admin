@@ -1,12 +1,13 @@
 <template>
   <n-dropdown
+    v-if="switchableTenantCount > 1"
     trigger="click"
     :options="dropdownOptions"
     :disabled="dropdownOptions.length === 0"
     :render-label="renderDropdownLabel"
     @select="handleSelect"
   >
-    <div class="tenant-switcher" :class="{ 'is-single': switchableTenantCount <= 1 }">
+    <div class="tenant-switcher">
       <i class="i-material-symbols:domain-rounded tenant-icon" />
       <span class="tenant-name">{{ currentTenantName }}</span>
       <i v-if="switchableTenantCount > 1" class="i-material-symbols:expand-more-rounded tenant-arrow" />

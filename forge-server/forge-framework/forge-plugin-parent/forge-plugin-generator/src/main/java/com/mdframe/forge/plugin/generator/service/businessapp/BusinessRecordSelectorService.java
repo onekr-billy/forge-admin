@@ -1,7 +1,9 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
+import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessRecordSelectorQueryDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
@@ -41,6 +43,7 @@ public class BusinessRecordSelectorService {
     private final BusinessObjectMapper businessObjectMapper;
     private final DynamicCrudService dynamicCrudService;
     private final BusinessPermissionService permissionService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public BusinessRecordSelectorResultVO query(BusinessRecordSelectorQueryDTO dto, PageQuery pageQuery) {
         BusinessRecordSelectorQueryDTO query = dto == null ? new BusinessRecordSelectorQueryDTO() : dto;
@@ -67,7 +70,7 @@ public class BusinessRecordSelectorService {
         dynamicQuery.setSearchParams(buildSearchParams(query));
         Page<Map<String, Object>> page = dynamicCrudService.selectPage(object.getConfigKey(), effectivePage, dynamicQuery);
 
-        List<BusinessRecordSelectorResultVO.SelectorColumnVO> columns = resolveColumns(query, requestedFields);
+        List<BusinessRecordSelectorResultVO.SelectorColumnVO> columns = resolveColumns(query, requestedFields, object);
         Set<String> allowedFields = resolveAllowedFields(query, columns);
         List<Map<String, Object>> records = page.getRecords().stream()
                 .map(row -> normalizeRecord(row, columns, allowedFields))
@@ -180,8 +183,11 @@ public class BusinessRecordSelectorService {
     }
 
     private List<BusinessRecordSelectorResultVO.SelectorColumnVO> resolveColumns(BusinessRecordSelectorQueryDTO query,
-                                                                                 Set<String> requestedFields) {
-        List<BusinessRecordSelectorResultVO.SelectorColumnVO> configured = columnsFromDisplayFields(query.getDisplayFields());
+                                                                                 Set<String> requestedFields,
+                                                                                 AiBusinessObject object) {
+        Map<String, String> fieldLabels = resolveFieldLabels(object);
+        List<BusinessRecordSelectorResultVO.SelectorColumnVO> configured = columnsFromDisplayFields(
+                query.getDisplayFields(), fieldLabels);
         if (!configured.isEmpty()) {
             return configured;
         }
@@ -189,12 +195,13 @@ public class BusinessRecordSelectorService {
                 .filter(field -> !"id".equals(field))
                 .filter(field -> !isInternalField(field))
                 .limit(8)
-                .map(field -> column(field, field, null, null))
+                .map(field -> column(field, fieldLabels.get(field), null, null))
                 .toList();
         return columns.isEmpty() ? List.of(column("id", "id", null, null)) : columns;
     }
 
-    private List<BusinessRecordSelectorResultVO.SelectorColumnVO> columnsFromDisplayFields(List<String> displayFields) {
+    private List<BusinessRecordSelectorResultVO.SelectorColumnVO> columnsFromDisplayFields(List<String> displayFields,
+                                                                                            Map<String, String> fieldLabels) {
         if (displayFields == null || displayFields.isEmpty()) {
             return List.of();
         }
@@ -208,10 +215,87 @@ public class BusinessRecordSelectorService {
             if (StringUtils.isBlank(field) || isInternalField(field)) {
                 continue;
             }
-            String label = parts.length > 1 ? parts[1].trim() : field;
+            String explicitLabel = parts.length > 1 ? StringUtils.trimToNull(parts[1]) : null;
+            String label = StringUtils.firstNonBlank(explicitLabel, fieldLabels.get(field), field);
             columns.add(column(field, label, null, null));
         }
         return columns;
+    }
+
+    private Map<String, String> resolveFieldLabels(AiBusinessObject object) {
+        Map<String, String> labels = new LinkedHashMap<>();
+        if (object == null) {
+            return labels;
+        }
+        if (StringUtils.isNotBlank(object.getConfigKey()) && dynamicCrudService != null) {
+            try {
+                AiCrudConfig config = dynamicCrudService.getRuntimeConfig(object.getConfigKey());
+                if (config != null) {
+                    collectFieldLabels(labels, config.getEditSchema());
+                    collectFieldLabels(labels, config.getColumnsSchema());
+                    collectFieldLabels(labels, config.getModelSchema());
+                    collectFieldLabels(labels, config.getOptions());
+                }
+            } catch (RuntimeException ignored) {
+                // 选择器表头回退到字段编码
+            }
+        }
+        collectFieldLabels(labels, object.getDesignerOptions());
+        collectFieldLabels(labels, object.getOptions());
+        return labels;
+    }
+
+    private void collectFieldLabels(Map<String, String> labels, String json) {
+        if (StringUtils.isBlank(json)) {
+            return;
+        }
+        try {
+            collectFieldLabels(labels, objectMapper.readValue(json, Object.class));
+        } catch (Exception ignored) {
+            // 忽略无法解析的协议 JSON
+        }
+    }
+
+    private void collectFieldLabels(Map<String, String> labels, Object node) {
+        if (node instanceof List<?> list) {
+            for (Object item : list) {
+                collectFieldLabels(labels, item);
+            }
+            return;
+        }
+        if (!(node instanceof Map<?, ?> map)) {
+            return;
+        }
+        String field = firstText(map.get("field"), map.get("fieldCode"), map.get("key"));
+        String label = firstText(map.get("label"), map.get("title"), map.get("fieldName"), map.get("columnComment"));
+        if (StringUtils.isNotBlank(field) && StringUtils.isNotBlank(label)) {
+            labels.putIfAbsent(field, label);
+        }
+        Object binding = map.get("fieldBinding");
+        if (binding instanceof Map<?, ?> bindingMap) {
+            String boundField = firstText(bindingMap.get("fieldCode"), bindingMap.get("field"));
+            if (StringUtils.isNotBlank(boundField) && StringUtils.isNotBlank(label)) {
+                labels.putIfAbsent(boundField, label);
+            }
+        }
+        collectFieldLabels(labels, map.get("fields"));
+        collectFieldLabels(labels, map.get("editSchema"));
+        collectFieldLabels(labels, map.get("columnsSchema"));
+        collectFieldLabels(labels, map.get("components"));
+        collectFieldLabels(labels, map.get("formDesignerSchema"));
+    }
+
+    private String firstText(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            String text = value == null ? null : StringUtils.trimToNull(String.valueOf(value));
+            if (text != null) {
+                return text;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> normalizeRecord(Map<String, Object> row,

@@ -341,11 +341,18 @@ function isFieldNode(node = {}) {
 }
 
 function resolveNodeSpan(node = {}) {
+  const cols = Math.max(1, Number(props.gridCols) || 1)
   if (isRowNode(node) || isCardNode(node) || isTabsNode(node) || isCollapseNode(node) || isCrudNode(node) || isSectionTitleNode(node) || isGroupTitleNode(node))
-    return props.gridCols
+    return cols
+  const raw = Number(node.layout?.span || node.props?.span || node.span)
   if (isTableNode(node))
-    return Math.max(1, Math.min(props.gridCols, Number(node.layout?.span || node.props?.span || node.span || props.gridCols)))
-  return Math.max(1, Math.min(props.gridCols, Number(node.layout?.span || node.props?.span || node.span || 1)))
+    return Math.max(1, Math.min(cols, Number.isFinite(raw) && raw > 0 ? raw : cols))
+  if (!Number.isFinite(raw) || raw <= 0)
+    return 1
+  // 设计器常按 24 栅格写入 span=24/整行。运行列数更少时按一格平铺，避免每个字段独占一行。
+  if (isFieldNode(node) && cols > 1 && (raw >= 24 || raw >= cols))
+    return 1
+  return Math.max(1, Math.min(cols, raw))
 }
 
 function resolveNodeKey(node = {}) {

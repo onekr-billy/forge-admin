@@ -9,7 +9,15 @@
 -->
 
 <template>
-  <div ref="crudRootRef" class="ai-crud-page" :class="{ 'is-form-only': formOnly }" :style="pageHeightStyle">
+  <div
+    ref="crudRootRef"
+    class="ai-crud-page"
+    :class="{
+      'is-form-only': formOnly,
+      'is-inline-form-active': showInlineFormWorkspacePane && !isTabWorkspaceMode,
+    }"
+    :style="pageHeightStyle"
+  >
     <div v-if="flowStartPageLoading" class="ai-crud-page-loading-mask">
       <n-spin size="large">
         <template #description>
@@ -64,7 +72,7 @@
           :class="resolvedEditFormClass"
           :style="editFormStyle"
           :schema="modalFormSchema"
-          :grid-cols="editGridCols"
+          :grid-cols="tiledEditGridCols"
           :label-width="editLabelWidth"
           :label-placement="editLabelPlacement"
           :label-align="editLabelAlign"
@@ -347,7 +355,7 @@
                   :class="resolvedEditFormClass"
                   :style="editFormStyle"
                   :schema="modalFormSchema"
-                  :grid-cols="editGridCols"
+                  :grid-cols="tiledEditGridCols"
                   :label-width="editLabelWidth"
                   :label-placement="editLabelPlacement"
                   :label-align="editLabelAlign"
@@ -402,7 +410,7 @@
                 :class="resolvedEditFormClass"
                 :style="editFormStyle"
                 :schema="modalFormSchema"
-                :grid-cols="editGridCols"
+                :grid-cols="tiledEditGridCols"
                 :label-width="editLabelWidth"
                 :label-placement="editLabelPlacement"
                 :label-align="editLabelAlign"
@@ -2913,6 +2921,13 @@ const showInlineListPane = computed(() => {
 const showInlineFormWorkspacePane = computed(() => {
   return inlineWorkspaceVisible.value
     && (!isTabWorkspaceMode.value || activeInlineWorkspaceKey.value !== INLINE_WORKSPACE_LIST_KEY)
+})
+const tiledEditGridCols = computed(() => {
+  const configured = Number(props.editGridCols || 1)
+  if (configured > 1)
+    return configured
+  const fieldCount = flattenRuntimeFormFields(props.editSchema || []).filter(field => field?.field && field.hidden !== true).length
+  return fieldCount >= 2 ? 2 : 1
 })
 const activeInlineFormTab = computed(() => inlineFormTabs.value.find(tab => tab.key === activeInlineFormTabKey.value) || null)
 const activeInlineFormTitle = computed(() => activeInlineFormTab.value?.title || modalTitle.value || '编辑')
@@ -5942,10 +5957,21 @@ watch(() => stableSerialize(props.publicQuery || {}), () => {
   margin-right: 4px;
 }
 
+.ai-crud-page.is-form-only,
+.ai-crud-page.is-inline-form-active {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+}
+
+.ai-crud-page.is-inline-form-active .ai-crud-main {
+  flex: 0 0 auto;
+}
+
 .ai-crud-page.is-form-only {
-  overflow: auto;
-  background: #f6f8fb;
-  padding: 16px;
+  background: transparent;
+  padding: 0;
 }
 
 .ai-crud-form-only,
@@ -6295,10 +6321,22 @@ watch(() => stableSerialize(props.publicQuery || {}), () => {
 }
 
 .ai-crud-main.is-form-workspace-active:not(.is-tab-workspace) .ai-crud-inline-workspace {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  height: auto;
   min-height: 0;
   max-height: none;
+  overflow: visible;
   box-shadow: none;
+}
+
+.ai-crud-main.is-form-workspace-active:not(.is-tab-workspace) .ai-crud-inline-form-panel {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.ai-crud-main.is-form-workspace-active:not(.is-tab-workspace) .inline-form-panel-body {
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .ai-crud-workspace-tabs,

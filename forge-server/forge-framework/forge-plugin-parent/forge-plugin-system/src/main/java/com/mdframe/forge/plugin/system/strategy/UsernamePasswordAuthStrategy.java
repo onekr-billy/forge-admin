@@ -25,28 +25,13 @@ public class UsernamePasswordAuthStrategy extends AbstractAuthStrategy {
 
     @Override
     protected LoginUser doAuthenticate(LoginRequest request) {
-        String username = request.getUsername();
-
-        // 1. 加载用户信息
-        LoginUser loginUser = userLoadService.loadUserByUsername(username, request.getTenantId());
-
-        // 2. 检查账号是否被锁定
-        checkAccountLocked(loginUser);
-
-        // 3. 校验用户是否存在
-        if (loginUser == null) {
-            recordLoginFailure(null, "用户不存在");
-        }
-
-        // 4. 解密密码；启用加密时失败关闭，禁止静默降级明文
         String rawPassword = loginPasswordDecoder.decode(request.getPassword());
-
-        // 5. 验证密码
-        String encodedPassword = userLoadService.getUserPassword(loginUser.getUserId());
-        if (!userLoadService.matchPassword(rawPassword, encodedPassword)) {
-            recordLoginFailure(loginUser, "密码错误");
+        LoginUser loginUser = userLoadService.authenticateByUsernamePassword(
+                request.getUsername(), rawPassword, request.getTenantId());
+        checkAccountLocked(loginUser);
+        if (loginUser == null) {
+            recordLoginFailure(null, "用户名或密码错误");
         }
-
         return loginUser;
     }
 

@@ -345,20 +345,14 @@ public class SysOrgServiceImpl extends ServiceImpl<SysOrgMapper, SysOrg> impleme
     private Long resolveQueryTenantId(Long requestedTenantId) {
         LoginUser loginUser = requireLoginUser();
         assertOrgReadAllowed(loginUser);
-        if (!loginUser.isAdmin()) {
-            return loginUser.getTenantId();
-        }
-        if (requestedTenantId != null) {
-            validateTenantEnabled(requestedTenantId);
-        }
-        return requestedTenantId;
+        Long tenantId = loginUser.getTenantId();
+        validateTenantEnabled(tenantId);
+        return tenantId;
     }
 
     private Long resolveWriteTenantId(Long requestedTenantId, Long fallbackTenantId) {
         LoginUser loginUser = requireLoginUser();
-        Long tenantId = loginUser.isAdmin()
-                ? (requestedTenantId != null ? requestedTenantId : (fallbackTenantId != null ? fallbackTenantId : loginUser.getTenantId()))
-                : loginUser.getTenantId();
+        Long tenantId = loginUser.getTenantId();
         validateTenantEnabled(tenantId);
         return tenantId;
     }

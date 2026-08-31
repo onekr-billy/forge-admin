@@ -92,24 +92,6 @@
           </div>
 
           <div class="form-body">
-            <!-- Tenant -->
-            <div v-if="tenantSelectOptions.length > 0" class="form-group tenant-form-group">
-              <label for="tenant" class="form-label">登录租户</label>
-              <div class="tenant-select-wrapper">
-                <n-select
-                  id="tenant"
-                  v-model:value="selectedTenantId"
-                  class="modern-select"
-                  :options="tenantSelectOptions"
-                  :loading="tenantConfigApplying"
-                  :disabled="tenantConfigApplying"
-                  filterable
-                  size="large"
-                  placeholder="请选择登录租户"
-                />
-              </div>
-            </div>
-
             <!-- Username -->
             <div class="form-group">
               <label for="username" class="form-label">用户名</label>
@@ -367,6 +349,48 @@
       </div>
     </div>
   </Transition>
+
+  <Transition name="modal">
+    <div
+      v-if="showWorkspaceModal"
+      class="slider-modal-overlay"
+      @click.self="closeWorkspaceModal"
+    >
+      <div
+        class="workspace-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="workspace-modal-title"
+      >
+        <button type="button" class="slider-modal-close" aria-label="关闭" @click="closeWorkspaceModal">
+          <i class="ai-icon:x" />
+        </button>
+        <div class="workspace-modal-header">
+          <h3 id="workspace-modal-title">
+            选择工作区
+          </h3>
+          <p>该账号可进入多个工作区，请选择后继续登录</p>
+        </div>
+        <div class="workspace-modal-list">
+          <button
+            v-for="item in tenantOptions"
+            :key="item.value"
+            type="button"
+            class="workspace-option"
+            :class="{ 'is-current': String(item.value) === String(lastUsedTenantId) }"
+            :disabled="loading"
+            @click="confirmWorkspace(item)"
+          >
+            <span class="workspace-option-copy">
+              <strong>{{ item.label }}</strong>
+              <small v-if="item.systemName && item.systemName !== item.label">{{ item.systemName }}</small>
+            </span>
+            <em v-if="String(item.value) === String(lastUsedTenantId)">上次使用</em>
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
 </template>
 
 <script setup>
@@ -394,21 +418,26 @@ const route = useRoute()
 const userClient = import.meta.env.VITE_USER_CLIENT || 'pc'
 const LOGIN_TENANT_STORAGE_KEY = 'login_selected_tenant_id'
 const SOCIAL_TENANT_MAP_KEY = 'login_social_tenant_map'
+const LOGIN_TENANT_SELECTION_REQUIRED = 4091
 
 const tenantOptions = ref([])
 const selectedTenantId = ref(null)
+const showWorkspaceModal = ref(false)
+const lastUsedTenantId = ref(null)
+const skipTenantContextRefresh = ref(false)
 const tenantConfigApplying = ref(false)
 const brandLogoUrl = ref(defaultLogoUrl)
 const loginConfig = ref(null)
 const selectedTenantOption = computed(() => tenantOptions.value.find(item => String(item.value) === String(selectedTenantId.value)) || null)
-const loginSubtitle = computed(() => selectedTenantOption.value?.tenantName
-  ? `${selectedTenantOption.value.tenantName} 租户入口`
-  : '请输入账号密码')
-const copyrightInfo = computed(() => normalizePageTitle(loginConfig.value?.copyrightInfo))
 const tenantSelectOptions = computed(() => tenantOptions.value.map(item => ({
   label: item.label,
   value: item.value,
 })))
+const showTenantSelect = computed(() => tenantSelectOptions.value.length > 1)
+const loginSubtitle = computed(() => showTenantSelect.value && selectedTenantOption.value?.tenantName
+  ? `${selectedTenantOption.value.tenantName} 工作区`
+  : '请输入账号密码')
+const copyrightInfo = computed(() => normalizePageTitle(loginConfig.value?.copyrightInfo))
 let tenantInitCompleted = false
 
 const loginInfo = ref({
@@ -451,7 +480,7 @@ const socialPlatforms = ref([])
 const socialLoading = ref(false)
 
 watch(selectedTenantId, (tenantId) => {
-  if (!tenantInitCompleted || tenantConfigApplying.value)
+  if (!tenantInitCompleted || tenantConfigApplying.value || skipTenantContextRefresh.value)
     return
   syncSelectedTenantToStorage(tenantId)
   tenantConfigApplying.value = true
@@ -523,31 +552,39 @@ async function applyLoginPageConfig(config) {
   applyBrandLogo(config)
 }
 
-async function loadLoginTenantOptions() {
+function applyWorkspaceChallenge(payload) {
+  const code = payload?.code
+  const rawOptions = payload?.error?.data ?? payload?.data
+  if (code !== LOGIN_TENANT_SELECTION_REQUIRED || !Array.isArray(rawOptions) || rawOptions.length <= 1)
+    return false
+  tenantOptions.value = rawOptions.map(item => ({
+    ...item,
+    value: normalizeTenantId(item.tenantId),
+    label: item.tenantName || item.systemName || item.browserTitle || String(item.tenantId),
+  })).filter(item => item.value !== null)
+  lastUsedTenantId.value = getSelectedTenantFromStorage()
+  selectedTenantId.value = null
+  showWorkspaceModal.value = true
+  return true
+}
+
+function closeWorkspaceModal() {
+  showWorkspaceModal.value = false
+}
+
+async function confirmWorkspace(option) {
+  const tenantId = normalizeTenantId(option?.value)
+  if (tenantId === null || loading.value)
+    return
+  skipTenantContextRefresh.value = true
+  selectedTenantId.value = tenantId
+  syncSelectedTenantToStorage(tenantId)
+  showWorkspaceModal.value = false
   try {
-    const res = await api.getLoginTenantOptions()
-    if (res.code !== 200) {
-      tenantOptions.value = []
-      return
-    }
-
-    tenantOptions.value = (res.data || []).map(item => ({
-      ...item,
-      value: normalizeTenantId(item.tenantId),
-      label: item.tenantName || item.systemName || item.browserTitle || String(item.tenantId),
-    })).filter(item => item.value !== null)
-
-    const storedTenantId = getSelectedTenantFromStorage()
-    const initialTenantId = tenantOptions.value.find(item => String(item.value) === String(storedTenantId))?.value
-      ?? tenantOptions.value[0]?.value
-      ?? null
-    if (initialTenantId !== null) {
-      selectedTenantId.value = initialTenantId
-      syncSelectedTenantToStorage(initialTenantId)
-    }
+    await handleLogin()
   }
-  catch (error) {
-    console.error('获取登录租户列表失败:', error)
+  finally {
+    skipTenantContextRefresh.value = false
   }
 }
 
@@ -814,8 +851,9 @@ async function handleLogin() {
   if (!username || !password)
     return $message.warning('请输入用户名和密码')
 
-  if (tenantOptions.value.length > 0 && tenantId === null) {
-    return $message.warning('请选择登录租户')
+  if (tenantSelectOptions.value.length > 1 && tenantId === null) {
+    showWorkspaceModal.value = true
+    return
   }
 
   if (captchaEnabled.value) {
@@ -856,10 +894,10 @@ async function handleLogin() {
       code,
       codeKey,
       phone, // 短信验证码时需要
-      tenantId,
       authType: captchaEnabled.value ? 'password_captcha' : 'password',
       userClient,
       appId: import.meta.env.VITE_APP_ID || 'forge_pc_001', // 客户端AppId
+      ...(tenantId != null ? { tenantId } : {}),
     }
 
     const res = await api.login(params)
@@ -873,16 +911,19 @@ async function handleLogin() {
       }
       onLoginSuccess(res.data)
     }
+    else if (applyWorkspaceChallenge(res)) {
+      $message.destroy('login')
+    }
     else {
-      // 登录失败后刷新验证码
       await handleLoginFailure()
     }
   }
   catch (error) {
     $message.destroy('login')
-    console.error(error)
-    // 登录失败后刷新验证码
-    await handleLoginFailure()
+    if (!applyWorkspaceChallenge(error)) {
+      console.error(error)
+      await handleLoginFailure()
+    }
   }
   loading.value = false
 }
@@ -1002,11 +1043,18 @@ async function handleSocialLoginMessage(event) {
 }
 
 // 页面加载时获取登录配置和验证码
+watch(() => loginInfo.value.username, () => {
+  if (tenantOptions.value.length === 0)
+    return
+  tenantOptions.value = []
+  selectedTenantId.value = null
+  showWorkspaceModal.value = false
+})
+
 onMounted(() => {
   ;(async () => {
     try {
       tenantConfigApplying.value = true
-      await loadLoginTenantOptions()
       await refreshLoginContext()
     }
     finally {
@@ -1808,6 +1856,95 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
   color: #cbd5e1;
 }
 
+.workspace-modal {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  padding: 24px 20px 18px;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 12%);
+}
+
+.workspace-modal-header {
+  padding-right: 28px;
+  margin-bottom: 14px;
+}
+
+.workspace-modal-header h3 {
+  margin: 0 0 4px;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.workspace-modal-header p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workspace-modal-list {
+  display: flex;
+  max-height: min(52vh, 360px);
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.workspace-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-option:hover,
+.workspace-option.is-current {
+  border-color: var(--primary-color, #3b82f6);
+  background: #f8fbff;
+}
+
+.workspace-option:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.workspace-option-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workspace-option-copy strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workspace-option-copy small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.workspace-option em {
+  flex-shrink: 0;
+  color: var(--primary-color, #3b82f6);
+  font-size: 12px;
+  font-style: normal;
+}
+
 /* SMS button */
 .sms-button {
   min-width: 120px;
@@ -2077,6 +2214,26 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
 
 .dark .slider-modal-title {
   color: #f1f5f9;
+}
+
+.dark .workspace-modal {
+  border-color: #334155;
+  background: #1e293b;
+}
+
+.dark .workspace-modal-header h3,
+.dark .workspace-option-copy strong {
+  color: #f1f5f9;
+}
+
+.dark .workspace-option {
+  border-color: #334155;
+  background: #1e293b;
+}
+
+.dark .workspace-option:hover,
+.dark .workspace-option.is-current {
+  background: #16304f;
 }
 
 /* Reduced motion */

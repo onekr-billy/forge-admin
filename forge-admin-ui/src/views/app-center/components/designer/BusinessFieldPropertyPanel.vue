@@ -763,7 +763,9 @@ const isRecordSelectorField = computed(() => form.fieldType === 'RECORD_SELECTOR
 const isObjectReferenceField = computed(() => form.fieldType === 'REFERENCE' || form.componentType === 'objectReference')
 const businessObjectOptions = ref([])
 const businessObjectLoading = ref(false)
+let businessObjectLoadPromise = null
 const referenceTargetFieldsMap = ref({})
+const referenceTargetFieldLoadPromises = {}
 
 // ─── Unified Relation Field Computeds ────────────────────────────────────────
 const isRelationField = computed(() => isRecordSelectorField.value || isObjectReferenceField.value)
@@ -2109,57 +2111,74 @@ function applyFieldTypeDefaults(fieldType) {
 }
 
 async function loadBusinessObjectOptions() {
-  if (businessObjectOptions.value.length || businessObjectLoading.value)
+  if (businessObjectOptions.value.length)
     return
+  if (businessObjectLoadPromise)
+    return businessObjectLoadPromise
   businessObjectLoading.value = true
-  try {
-    const res = await businessObjectList({})
-    const list = Array.isArray(res.data) ? res.data : []
-    const seen = new Set()
-    businessObjectOptions.value = list
-      .filter((item) => {
-        if (!item.objectCode || seen.has(item.objectCode))
-          return false
-        seen.add(item.objectCode)
-        return true
-      })
-      .map(item => ({
-        label: `${item.objectName || item.objectCode}（${item.objectCode}）`,
-        value: item.objectCode,
-        object: item,
-      }))
-  }
-  catch {
-    businessObjectOptions.value = []
-  }
-  finally {
-    businessObjectLoading.value = false
-  }
+  businessObjectLoadPromise = (async () => {
+    try {
+      const res = await businessObjectList({})
+      const list = Array.isArray(res.data) ? res.data : []
+      const seen = new Set()
+      businessObjectOptions.value = list
+        .filter((item) => {
+          if (!item.objectCode || seen.has(item.objectCode))
+            return false
+          seen.add(item.objectCode)
+          return true
+        })
+        .map(item => ({
+          label: `${item.objectName || item.objectCode}（${item.objectCode}）`,
+          value: item.objectCode,
+          object: item,
+        }))
+    }
+    catch {
+      businessObjectOptions.value = []
+    }
+    finally {
+      businessObjectLoading.value = false
+      businessObjectLoadPromise = null
+    }
+  })()
+  return businessObjectLoadPromise
 }
 
 async function loadReferenceTargetFields(objectCode) {
-  if (!objectCode || referenceTargetFieldsMap.value[objectCode])
+  if (!objectCode)
     return
-  const target = businessObjectOptions.value.find(item => item.value === objectCode)?.object
-  if (!target?.id) {
-    referenceTargetFieldsMap.value = { ...referenceTargetFieldsMap.value, [objectCode]: { options: [] } }
+  const cached = referenceTargetFieldsMap.value[objectCode]
+  if (Array.isArray(cached?.options) && cached.options.length)
     return
-  }
-  try {
-    const res = await businessObjectDesigner(target.id)
-    const fields = res.data?.fields || res.data?.modelSchema?.fields || []
-    const options = fields
-      .filter(field => !['tenantId', 'tenant_id', 'createBy', 'create_by', 'createTime', 'create_time', 'updateBy', 'update_by', 'updateTime', 'update_time', 'delFlag', 'del_flag'].includes(field.fieldCode || field.field))
-      .map(field => ({
-        label: `${field.fieldName || field.label || field.fieldCode || field.field}（${field.fieldCode || field.field}）`,
-        value: field.fieldCode || field.field,
-        field,
-      }))
-    referenceTargetFieldsMap.value = { ...referenceTargetFieldsMap.value, [objectCode]: { options } }
-  }
-  catch {
-    referenceTargetFieldsMap.value = { ...referenceTargetFieldsMap.value, [objectCode]: { options: [] } }
-  }
+  if (referenceTargetFieldLoadPromises[objectCode])
+    return referenceTargetFieldLoadPromises[objectCode]
+  referenceTargetFieldLoadPromises[objectCode] = (async () => {
+    if (!businessObjectOptions.value.length)
+      await loadBusinessObjectOptions()
+    const target = businessObjectOptions.value.find(item => item.value === objectCode)?.object
+    if (!target?.id)
+      return
+    try {
+      const res = await businessObjectDesigner(target.id)
+      const fields = res.data?.fields || res.data?.modelSchema?.fields || []
+      const options = fields
+        .filter(field => !['tenantId', 'tenant_id', 'createBy', 'create_by', 'createTime', 'create_time', 'updateBy', 'update_by', 'updateTime', 'update_time', 'delFlag', 'del_flag'].includes(field.fieldCode || field.field))
+        .map(field => ({
+          label: `${field.fieldName || field.label || field.fieldCode || field.field}（${field.fieldCode || field.field}）`,
+          value: field.fieldCode || field.field,
+          field,
+        }))
+      referenceTargetFieldsMap.value = { ...referenceTargetFieldsMap.value, [objectCode]: { options } }
+    }
+    catch {
+      // 失败时不缓存空结果，下次进入编辑仍可重试
+    }
+    finally {
+      delete referenceTargetFieldLoadPromises[objectCode]
+    }
+  })()
+  return referenceTargetFieldLoadPromises[objectCode]
 }
 
 watch(
@@ -2180,8 +2199,10 @@ watch(
       return
     if (!businessObjectOptions.value.length)
       await loadBusinessObjectOptions()
-    form.referenceDisplayField = ''
-    form.referenceValueField = ''
+    if (oldValue)
+      form.referenceDisplayField = ''
+    if (oldValue)
+      form.referenceValueField = ''
     await loadReferenceTargetFields(value)
   },
 )
@@ -2296,6 +2317,16 @@ watch(
     const objectCode = unifiedRelationObjectCode.value
     if (objectCode)
       await loadReferenceTargetFields(objectCode)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => unifiedRelationObjectCode.value,
+  async (objectCode) => {
+    if (!isRelationField.value || !objectCode)
+      return
+    await loadReferenceTargetFields(objectCode)
   },
 )
 

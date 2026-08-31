@@ -110,6 +110,28 @@
         <text>{{ requestPrefix }}</text>
       </view>
     </view>
+
+    <view v-if="showWorkspaceModal" class="workspace-modal-overlay" @click="closeWorkspaceModal">
+      <view class="workspace-modal" @click.stop>
+        <text class="workspace-modal-title">选择工作区</text>
+        <text class="workspace-modal-desc">该账号可进入多个工作区，请选择后继续登录</text>
+        <view class="workspace-modal-list">
+          <view
+            v-for="item in tenantOptions"
+            :key="String(item.tenantId)"
+            class="workspace-option"
+            :class="{ 'is-current': String(item.tenantId) === String(lastUsedTenantId) }"
+            @click="confirmWorkspace(item)"
+          >
+            <view class="workspace-option-copy">
+              <text class="workspace-option-name">{{ item.tenantName || item.systemName || item.tenantId }}</text>
+            </view>
+            <text v-if="String(item.tenantId) === String(lastUsedTenantId)" class="workspace-option-tag">上次使用</text>
+          </view>
+        </view>
+        <view class="workspace-modal-cancel" @click="closeWorkspaceModal">取消</view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -120,12 +142,21 @@ import { resolveStaticUrl } from '@/utils/assets'
 import { notify, toast } from '@/utils/notify'
 import { getWeComAutoLoginPromise, isWeComAutoLoginPending } from '@/utils/wecom'
 
+const LOGIN_TENANT_SELECTION_REQUIRED = 4091
+
 function normalizeLoginError(error) {
   const rawMessage = error?.message || error?.error?.message || error?.error?.msg || '登录失败，请稍后重试'
   return String(rawMessage)
     .replace(/^com\.[\w.$]+Exception:\s*/i, '')
     .replace(/^.*BusinessException:\s*/i, '')
     .trim() || '登录失败，请稍后重试'
+}
+
+function extractWorkspaceOptions(error) {
+  if (Number(error?.code) !== LOGIN_TENANT_SELECTION_REQUIRED)
+    return []
+  const raw = error?.error?.data ?? error?.data
+  return Array.isArray(raw) ? raw : []
 }
 
 export default {
@@ -143,12 +174,30 @@ export default {
         image: '',
         codeKey: '',
       },
+      tenantOptions: [],
+      showWorkspaceModal: false,
+      lastUsedTenantId: null,
       form: {
         username: '',
         password: '',
         code: '',
+        tenantId: null,
       },
     }
+  },
+  computed: {
+    showTenantSelect() {
+      return this.tenantOptions.length > 1
+    },
+  },
+  watch: {
+    'form.username'() {
+      if (!this.tenantOptions.length)
+        return
+      this.tenantOptions = []
+      this.form.tenantId = null
+      this.showWorkspaceModal = false
+    },
   },
   onLoad(options = {}) {
     this.redirect = options.redirect ? decodeURIComponent(options.redirect) : '/pages/index/index'
@@ -223,12 +272,36 @@ export default {
       }
       uni.reLaunch({ url })
     },
+    closeWorkspaceModal() {
+      this.showWorkspaceModal = false
+    },
+    confirmWorkspace(option) {
+      if (!option?.tenantId || this.loading)
+        return
+      this.form.tenantId = option.tenantId
+      this.showWorkspaceModal = false
+      this.handleLogin()
+    },
+    applyWorkspaceChallenge(error) {
+      const options = extractWorkspaceOptions(error).filter(item => item?.tenantId != null)
+      if (options.length <= 1)
+        return false
+      this.tenantOptions = options
+      this.lastUsedTenantId = this.form.tenantId
+      this.form.tenantId = null
+      this.showWorkspaceModal = true
+      return true
+    },
     async handleLogin() {
       const username = this.form.username.trim()
       const password = this.form.password
       const code = this.form.code.trim()
       if (!username || !password || !code) {
         toast('请输入用户名、密码和验证码', { type: 'warning' })
+        return
+      }
+      if (this.showTenantSelect && !this.form.tenantId) {
+        this.showWorkspaceModal = true
         return
       }
       if (!this.captcha.codeKey) {
@@ -244,11 +317,14 @@ export default {
           password,
           code,
           codeKey: this.captcha.codeKey,
+          tenantId: this.form.tenantId || undefined,
         })
         toast('登录成功', { type: 'success' })
         this.goTarget()
       }
       catch (error) {
+        if (this.applyWorkspaceChallenge(error))
+          return
         console.error('登录失败:', error)
         notify({
           title: '登录失败',
@@ -618,6 +694,11 @@ export default {
   font-size: 30rpx;
   font-weight: 500;
   line-height: 96rpx;
+}
+
+.tenant-picker {
+  display: flex;
+  align-items: center;
 }
 
 .field-placeholder {
@@ -1058,5 +1139,83 @@ export default {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.workspace-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 32rpx;
+  background: rgb(15 23 42 / 46%);
+  box-sizing: border-box;
+}
+
+.workspace-modal {
+  width: 100%;
+  max-width: 680rpx;
+  padding: 28rpx 24rpx 18rpx;
+  border-radius: 20rpx 20rpx 16rpx 16rpx;
+  background: #fff;
+}
+
+.workspace-modal-title {
+  display: block;
+  color: #111827;
+  font-size: 32rpx;
+  font-weight: 650;
+}
+
+.workspace-modal-desc {
+  display: block;
+  margin: 8rpx 0 20rpx;
+  color: #6b7280;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.workspace-modal-list {
+  display: flex;
+  max-height: 52vh;
+  flex-direction: column;
+  gap: 12rpx;
+  overflow: auto;
+}
+
+.workspace-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 22rpx 20rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  background: #fff;
+}
+
+.workspace-option.is-current {
+  border-color: #2563eb;
+  background: #f8fbff;
+}
+
+.workspace-option-name {
+  color: #111827;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.workspace-option-tag {
+  color: #2563eb;
+  font-size: 22rpx;
+}
+
+.workspace-modal-cancel {
+  margin-top: 16rpx;
+  padding: 18rpx 0 6rpx;
+  color: #6b7280;
+  font-size: 26rpx;
+  text-align: center;
 }
 </style>

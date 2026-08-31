@@ -87,15 +87,7 @@ public class TenantInterceptor implements HandlerInterceptor {
                 Long tenantId = (Long) getTenantIdMethod.invoke(loginUser);
                 Method isAdminMethod = loginUser.getClass().getMethod("isAdmin");
                 Boolean admin = (Boolean) isAdminMethod.invoke(loginUser);
-                if (Boolean.TRUE.equals(admin)) {
-                    TenantContextHolder.setIgnore(true);
-                    log.debug("超级管理员跳过租户SQL隔离，当前租户ID: {}", tenantId);
-                    return true;
-                }
-                if (tenantId != null) {
-                    TenantContextHolder.setTenantId(tenantId);
-                    log.debug("设置租户上下文，租户ID: {}", tenantId);
-                }
+                applyWorkspaceTenant(tenantId, Boolean.TRUE.equals(admin));
             }
         } catch (ClassNotFoundException e) {
             // 如果没有引入auth模块，尝试从请求头获取
@@ -114,6 +106,19 @@ public class TenantInterceptor implements HandlerInterceptor {
         }
         
         return true;
+    }
+
+    /**
+     * 当前登录租户即工作区。超级管理员也按 Session 租户隔离业务表，
+     * 不再全局 ignore；平台表由 ignoreTables / {@code @IgnoreTenant} 放行。
+     */
+    static void applyWorkspaceTenant(Long tenantId, boolean admin) {
+        if (tenantId != null) {
+            TenantContextHolder.setTenantId(tenantId);
+            log.debug("设置租户上下文，租户ID: {}，超级管理员: {}", tenantId, admin);
+        } else if (admin) {
+            log.warn("超级管理员缺少当前租户ID，未建立租户上下文");
+        }
     }
 
     private boolean isNotLoginException(Throwable throwable) {

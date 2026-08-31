@@ -7,9 +7,14 @@ import com.mdframe.forge.plugin.system.constant.SystemConstants;
 import com.mdframe.forge.plugin.system.entity.*;
 import com.mdframe.forge.plugin.system.mapper.*;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
-import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.plugin.system.vo.SysUserTenantVO;
+import com.mdframe.forge.starter.auth.constant.AuthResultCodes;
+import com.mdframe.forge.starter.auth.domain.LoginTenantOption;
 import com.mdframe.forge.starter.auth.service.ICaptchaService;
 import com.mdframe.forge.starter.auth.util.PasswordUtil;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +23,9 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -61,6 +68,41 @@ public class UserLoadServiceImpl implements IUserLoadService {
         }
 
         return buildLoginUser(user, resolveEffectiveTenantId(user, tenantId), preferredActiveOrgId);
+    }
+
+    @Override
+    public LoginUser authenticateByUsernamePassword(String username, String rawPassword, Long requestedTenantId) {
+        List<SysUser> candidates = TenantContextHolder.executeIgnore(() ->
+                userMapper.selectUsersByUsernameForLogin(username));
+        if (CollUtil.isEmpty(candidates)) {
+            throw new RuntimeException("用户名或密码错误");
+        }
+
+        List<SysUser> matched = candidates.stream()
+                .filter(user -> matchPassword(rawPassword, user.getPassword()))
+                .toList();
+        if (matched.isEmpty()) {
+            throw new RuntimeException("用户名或密码错误");
+        }
+
+        if (requestedTenantId != null) {
+            SysUser matchedUser = findUserForTenant(matched, requestedTenantId);
+            if (matchedUser == null) {
+                throw new RuntimeException("用户名或密码错误");
+            }
+            return loadUserByUserId(matchedUser.getId(), requestedTenantId);
+        }
+
+        List<LoginTenantOption> options = collectWorkspaceOptions(matched);
+        if (options.size() == 1) {
+            LoginTenantOption only = options.get(0);
+            SysUser matchedUser = findUserForTenant(matched, only.getTenantId());
+            if (matchedUser == null) {
+                throw new RuntimeException("用户名或密码错误");
+            }
+            return loadUserByUserId(matchedUser.getId(), only.getTenantId());
+        }
+        throw new BusinessException(AuthResultCodes.TENANT_SELECTION_REQUIRED, "请选择要进入的工作区", options);
     }
 
     @Override
@@ -466,6 +508,66 @@ public class UserLoadServiceImpl implements IUserLoadService {
             return SystemConstants.UserType.NORMAL_USER;
         }
         return userType;
+    }
+
+    private SysUser findUserForTenant(List<SysUser> matchedUsers, Long tenantId) {
+        for (SysUser user : matchedUsers) {
+            if (listWorkspaceOptions(user).stream().anyMatch(option -> tenantId.equals(option.getTenantId()))) {
+                return user;
+            }
+        }
+        return null;
+    }
+
+    private List<LoginTenantOption> collectWorkspaceOptions(List<SysUser> matchedUsers) {
+        Map<Long, LoginTenantOption> options = new LinkedHashMap<>();
+        for (SysUser user : matchedUsers) {
+            for (LoginTenantOption option : listWorkspaceOptions(user)) {
+                options.putIfAbsent(option.getTenantId(), option);
+            }
+        }
+        return new ArrayList<>(options.values());
+    }
+
+    private List<LoginTenantOption> listWorkspaceOptions(SysUser user) {
+        if (user.getUserType() != null && user.getUserType() == SystemConstants.UserType.SYSTEM_ADMIN) {
+            return TenantContextHolder.executeIgnore(() -> tenantMapper.selectList(
+                            new LambdaQueryWrapper<SysTenant>()
+                                    .eq(SysTenant::getTenantStatus, EnableStatus.ENABLED.getCode())
+                                    .orderByAsc(SysTenant::getId)
+                                    .select(SysTenant::getId, SysTenant::getTenantName,
+                                            SysTenant::getSystemName, SysTenant::getBrowserTitle)))
+                    .stream()
+                    .map(this::toLoginTenantOption)
+                    .toList();
+        }
+        List<SysUserTenantVO> memberships = TenantContextHolder.executeIgnore(() ->
+                userTenantMapper.selectUserTenants(user.getId(), true));
+        if (CollUtil.isEmpty(memberships)) {
+            if (user.getTenantId() == null) {
+                return List.of();
+            }
+            SysTenant tenant = TenantContextHolder.executeIgnore(() -> tenantMapper.selectById(user.getTenantId()));
+            if (tenant != null && EnableStatus.ENABLED.matches(tenant.getTenantStatus())) {
+                return List.of(toLoginTenantOption(tenant));
+            }
+            return List.of();
+        }
+        return memberships.stream()
+                .map(item -> LoginTenantOption.builder()
+                        .tenantId(item.getTenantId())
+                        .tenantName(item.getTenantName())
+                        .build())
+                .toList();
+    }
+
+    private LoginTenantOption toLoginTenantOption(SysTenant tenant) {
+        return LoginTenantOption.builder()
+                .tenantId(tenant.getId())
+                .tenantName(tenant.getTenantName())
+                .systemName(tenant.getSystemName())
+                .browserTitle(tenant.getBrowserTitle())
+                .build();
     }
 
     private Long resolveEffectiveTenantId(SysUser user, Long requestedTenantId) {

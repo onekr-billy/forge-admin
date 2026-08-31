@@ -440,7 +440,6 @@ const YES_NO_DICT = 'sys_yes_no'
 const crudRef = ref(null)
 const roleUserCrudRef = ref(null)
 const userStore = useUserStore()
-const tenantOptions = ref([])
 const roleList = ref([])
 const roleListLoading = ref(false)
 const roleKeyword = ref('')
@@ -498,10 +497,6 @@ const manageableDataScopeOptions = computed(() => {
 const roleTypeOptions = computed(() => toNumberOptions(dict.value[ROLE_TYPE_DICT]))
 const roleStatusOptions = computed(() => toNumberOptions(dict.value[NORMAL_DISABLE_DICT]))
 const yesNoOptions = computed(() => toNumberOptions(dict.value[YES_NO_DICT]))
-const tenantSelectOptions = computed(() => tenantOptions.value.map(item => ({
-  label: item.tenantName,
-  value: item.id,
-})))
 const roleTypeTabs = computed(() => {
   const options = roleTypeOptions.value || []
   if (options.length > 0)
@@ -718,18 +713,6 @@ watch(roleTypeTabs, (tabs) => {
 
 // 搜索表单配置
 const searchSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        props: {
-          placeholder: '请选择租户',
-          clearable: true,
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
   {
     field: 'roleName',
     label: '角色名称',
@@ -768,14 +751,6 @@ const searchSchema = computed(() => [
 
 // 表格列配置
 const tableColumns = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        prop: 'tenantName',
-        label: '所属租户',
-        width: 160,
-        render: row => row.tenantName || row.tenantId || '-',
-      }]
-    : []),
   {
     prop: 'roleName',
     label: '角色名称',
@@ -846,19 +821,6 @@ const tableColumns = computed(() => [
 
 // 编辑表单配置
 const editSchema = computed(() => [
-  ...(userStore.isAdmin
-    ? [{
-        field: 'tenantId',
-        label: '所属租户',
-        type: 'select',
-        defaultValue: userStore.userInfo?.tenantId,
-        rules: [{ required: true, type: 'number', message: '请选择所属租户', trigger: 'change' }],
-        props: {
-          placeholder: '请选择所属租户',
-          options: tenantSelectOptions.value,
-        },
-      }]
-    : []),
   {
     field: 'roleName',
     label: '角色名称',
@@ -1074,8 +1036,8 @@ function getOrgNodeTone(node = {}) {
   return node.children?.length ? 'folder' : 'menu'
 }
 
-function buildRoleTenantParams(tenantId = currentRole.value?.tenantId) {
-  const resolvedTenantId = userStore.isAdmin ? tenantId : userStore.userInfo?.tenantId
+function buildRoleTenantParams() {
+  const resolvedTenantId = userStore.userInfo?.tenantId
   return resolvedTenantId ? { tenantId: resolvedTenantId } : {}
 }
 
@@ -1108,29 +1070,14 @@ async function loadRoleApplicableOrgIds(roleId = currentRole.value?.id) {
 function beforeSubmit(formData) {
   if (!formData.id && formData.orgScopeType == null)
     formData.orgScopeType = ROLE_ORG_SCOPE_GLOBAL
+  formData.tenantId = userStore.userInfo?.tenantId
   if (!userStore.isAdmin) {
-    formData.tenantId = userStore.userInfo?.tenantId
     if (Number(userStore.userType) === 2 && [1, 2].includes(Number(formData.dataScope)))
       formData.dataScope = 5
     else if (Number(formData.dataScope) === 1)
       formData.dataScope = 2
   }
-  else if (!formData.tenantId) {
-    formData.tenantId = userStore.userInfo?.tenantId
-  }
   return formData
-}
-
-async function loadTenantOptions() {
-  try {
-    const res = await request.get('/system/tenant/assignable/options')
-    if (res.code === 200) {
-      tenantOptions.value = res.data || []
-    }
-  }
-  catch (error) {
-    console.error('加载租户选项失败:', error)
-  }
 }
 
 async function loadRoleList() {
@@ -1716,7 +1663,6 @@ async function saveRoleDataScopesIfSupported() {
 }
 
 onMounted(() => {
-  loadTenantOptions()
   loadRoleList()
 })
 </script>

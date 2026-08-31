@@ -77,24 +77,13 @@ public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
             }
         }
 
-        // 3. 加载用户信息
-        LoginUser loginUser = userLoadService.loadUserByUsername(username, request.getTenantId());
-
-        // 4. 检查账号是否被锁定
-        checkAccountLocked(loginUser);
-
-        // 5. 校验用户是否存在
-        if (loginUser == null) {
-            recordLoginFailure(null, "用户不存在");
-        }
-
-        // 6. 验证密码
-        String encodedPassword = userLoadService.getUserPassword(loginUser.getUserId());
         String rawPassword = loginPasswordDecoder.decode(request.getPassword());
-        if (!userLoadService.matchPassword(rawPassword, encodedPassword)) {
-            recordLoginFailure(loginUser, "密码错误");
+        LoginUser loginUser = userLoadService.authenticateByUsernamePassword(
+                username, rawPassword, request.getTenantId());
+        checkAccountLocked(loginUser);
+        if (loginUser == null) {
+            recordLoginFailure(null, "用户名或密码错误");
         }
-
         return loginUser;
     }
 

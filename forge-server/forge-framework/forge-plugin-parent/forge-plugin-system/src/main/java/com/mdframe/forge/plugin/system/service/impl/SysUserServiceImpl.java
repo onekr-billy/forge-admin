@@ -111,10 +111,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     public boolean insertUser(SysUserDTO dto) {
         assertUserManagementAllowed();
         LoginUser loginUser = requireLoginUser();
-        List<Long> tenantIds = dto.getTenantIds() == null
-                ? List.of(resolveWriteTenantId(dto.getTenantId()))
-                : resolveWriteTenantIds(dto.getTenantIds(), dto.getTenantId(), loginUser);
-        Long tenantId = resolveDefaultTenantId(tenantIds, dto.getTenantId());
+        Long tenantId = resolveWriteTenantId(null);
+        List<Long> tenantIds = List.of(tenantId);
         validateUserTypeForWrite(dto);
         SysUser user = new SysUser();
         BeanUtil.copyProperties(dto, user);
@@ -161,35 +159,16 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         // 修改时不更新密码
         user.setPassword(null);
 
-        Long tenantId = null;
-        List<Long> tenantIds = null;
+        Long tenantId = resolveWriteTenantId(null);
         if (loginUser.isAdmin()) {
-            if (dto.getTenantIds() != null) {
-                tenantIds = resolveWriteTenantIds(dto.getTenantIds(), dto.getTenantId(), loginUser);
-                tenantId = resolveDefaultTenantId(tenantIds, dto.getTenantId());
-            } else {
-                tenantId = resolveWriteTenantId(dto.getTenantId());
-            }
-            user.setTenantId(tenantId);
             user.setUserType(resolveWriteUserType(dto.getUserType()));
         } else {
-            // 租户管理员只维护当前租户成员资料，不改变用户默认租户和全局用户类型。
-            user.setTenantId(null);
             user.setUserType(null);
         }
+        // 普通编辑不改默认租户和跨租户绑定；多租户绑定只走 bindUserTenants。
+        user.setTenantId(null);
 
         boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.updateById(user) > 0);
-        if (updated && loginUser.isAdmin()) {
-            if (tenantIds != null) {
-                UserTenantBindDTO tenantBindDTO = new UserTenantBindDTO();
-                tenantBindDTO.setTenantIds(tenantIds);
-                tenantBindDTO.setDefaultTenantId(tenantId);
-                tenantBindDTO.setMemberType(user.getUserType());
-                bindUserTenants(user.getId(), tenantBindDTO);
-            } else {
-                upsertUserTenant(user.getId(), tenantId, user.getUserType(), true);
-            }
-        }
         // 同步绑定组织。orgIds 为空时保持原组织不变，避免误清空用户归属。
         if (updated && dto.getOrgIds() != null && !dto.getOrgIds().isEmpty()) {
             Long mainOrgId = dto.getMainOrgId() != null ? dto.getMainOrgId() : dto.getOrgIds().get(0);
@@ -832,9 +811,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     private void normalizeUserQueryTenant(SysUserQuery query) {
         LoginUser loginUser = requireLoginUser();
         assertUserManagementAllowed(loginUser);
-        if (!loginUser.isAdmin()) {
-            query.setTenantId(loginUser.getTenantId());
-        }
+        query.setTenantId(resolveWriteTenantId(null));
     }
 
     private LoginUser requireLoginUser() {
@@ -847,9 +824,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     private Long resolveWriteTenantId(Long requestedTenantId) {
         LoginUser loginUser = requireLoginUser();
-        Long tenantId = loginUser.isAdmin()
-                ? (requestedTenantId != null ? requestedTenantId : loginUser.getTenantId())
-                : loginUser.getTenantId();
+        Long tenantId = loginUser.getTenantId();
         validateTenantEnabled(tenantId);
         return tenantId;
     }

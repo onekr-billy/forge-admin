@@ -32,6 +32,11 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
     SysUser selectByUsernameForLogin(@Param("username") String username, @Param("tenantId") Long tenantId);
 
     /**
+     * 登录消歧：按用户名查出全部未删除账号（同一用户名可存在于不同租户）。
+     */
+    List<SysUser> selectUsersByUsernameForLogin(@Param("username") String username);
+
+    /**
      * 登录时按手机号和当前租户查询用户
      */
     SysUser selectByPhoneForLogin(@Param("phone") String phone, @Param("tenantId") Long tenantId);
