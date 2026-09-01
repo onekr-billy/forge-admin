@@ -9,7 +9,7 @@
           <div class="logo-lockup">
             <img :src="brandLogoUrl" class="logo-img" alt="Logo" @error="handleBrandLogoError">
             <div class="logo-text">
-              ForgeAdmin
+              {{ brandSystemName }}
             </div>
           </div>
 
@@ -84,7 +84,7 @@
         <div class="login-form">
           <div class="form-header">
             <h2 class="form-title">
-              登录ForgeAdmin
+              登录{{ brandSystemName }}
             </h2>
             <p class="form-subtitle">
               {{ loginSubtitle }}
@@ -434,6 +434,7 @@ const tenantSelectOptions = computed(() => tenantOptions.value.map(item => ({
   value: item.value,
 })))
 const showTenantSelect = computed(() => tenantSelectOptions.value.length > 1)
+const brandSystemName = computed(() => normalizePageTitle(loginConfig.value?.systemName) || 'ForgeAdmin')
 const loginSubtitle = computed(() => showTenantSelect.value && selectedTenantOption.value?.tenantName
   ? `${selectedTenantOption.value.tenantName} 工作区`
   : '请输入账号密码')
