@@ -186,18 +186,38 @@ public class ExcelImportServiceImpl implements ExcelImportService {
     }
 
     private ImportTemplateColumn toImportTemplateColumn(ExcelColumnConfig config) {
+        List<String> dropdownOptions = resolveDropdownOptions(config);
         return new ImportTemplateColumn(
                 config.getFieldName(),
                 config.getColumnName(),
                 Boolean.TRUE.equals(config.getRequired()),
-                resolveTemplateExample(config),
-                resolveTemplateDescription(config)
+                resolveTemplateExample(config, dropdownOptions),
+                resolveTemplateDescription(config, dropdownOptions),
+                dropdownOptions
         );
     }
 
-    private String resolveTemplateExample(ExcelColumnConfig config) {
+    private List<String> resolveDropdownOptions(ExcelColumnConfig config) {
+        if (config == null || config.getDictType() == null || config.getDictType().isBlank() || dictValueProvider == null) {
+            return List.of();
+        }
+        List<String> labels = dictValueProvider.listLabels(config.getDictType());
+        if (labels == null || labels.isEmpty()) {
+            return List.of();
+        }
+        return labels.stream()
+                .filter(label -> label != null && !label.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    private String resolveTemplateExample(ExcelColumnConfig config, List<String> dropdownOptions) {
         if (config.getExampleValue() != null && !config.getExampleValue().isBlank()) {
             return config.getExampleValue();
+        }
+        if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
+            return dropdownOptions.get(0);
         }
         if (config.getDictType() != null && !config.getDictType().isBlank()) {
             return "字典选项示例";
@@ -211,10 +231,14 @@ public class ExcelImportServiceImpl implements ExcelImportService {
         return normalizeTemplateText(config.getColumnName(), "示例值") + "示例";
     }
 
-    private String resolveTemplateDescription(ExcelColumnConfig config) {
+    private String resolveTemplateDescription(ExcelColumnConfig config, List<String> dropdownOptions) {
         List<String> descriptions = new ArrayList<>();
         if (config.getDictType() != null && !config.getDictType().isBlank()) {
-            descriptions.add("填写字典标签或字典值，字典类型：" + config.getDictType());
+            if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
+                descriptions.add("请从下拉列表中选择字典标签，也可填写字典值。字典类型：" + config.getDictType());
+            } else {
+                descriptions.add("填写字典标签或字典值，字典类型：" + config.getDictType());
+            }
         }
         if (config.getDateFormat() != null && !config.getDateFormat().isBlank()) {
             descriptions.add("日期格式：" + config.getDateFormat());

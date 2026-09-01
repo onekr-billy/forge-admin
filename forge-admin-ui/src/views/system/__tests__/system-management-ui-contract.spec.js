@@ -26,6 +26,16 @@ describe('system management control sizing', () => {
   })
 })
 
+describe('excel column config dictionary linkage', () => {
+  it('binds dictType with the system dictionary catalog instead of free text', () => {
+    const source = readSource('../excel-column-config.vue')
+
+    expect(source).toContain('import DictTypeSelect from \'@/components/lowcode-builder/shared/DictTypeSelect.vue\'')
+    expect(source).toMatch(/<DictTypeSelect\s+v-model:value="editForm.dictType"/)
+    expect(source).not.toMatch(/<NInput[^>]*v-model:value="editForm.dictType"/)
+  })
+})
+
 describe('system organization tree scrolling', () => {
   it.each(['../org.vue', '../user.vue', '../post.vue'])(
     'keeps the left tree independently scrollable in %s',

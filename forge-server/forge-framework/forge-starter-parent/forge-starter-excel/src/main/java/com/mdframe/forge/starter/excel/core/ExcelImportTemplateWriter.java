@@ -37,7 +37,9 @@ public final class ExcelImportTemplateWriter {
             throw new IllegalArgumentException("导入模板字段不能为空");
         }
 
-        ExcelWriter excelWriter = EasyExcel.write(outputStream).build();
+        ExcelWriter excelWriter = EasyExcel.write(outputStream)
+                .registerWriteHandler(new ImportTemplateDropdownWriteHandler(columns))
+                .build();
         try {
             WriteSheet dataSheet = EasyExcel.writerSheet(normalizeSheetName(dataSheetName))
                     .head(buildDataHeaders(columns))

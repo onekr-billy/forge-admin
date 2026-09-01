@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +40,25 @@ public class SytemDictValueProvider implements DictValueProvider {
         }
         Map<String, String> valueLabelMap = loadValueLabelMap(dictType);
         return valueLabelMap.get(key);
+    }
+
+    @Override
+    public List<String> listLabels(String dictType) {
+        if (dictType == null || dictType.isBlank()) {
+            return List.of();
+        }
+        LinkedHashSet<String> labels = new LinkedHashSet<>();
+        for (Object rawDictData : sysDictDataService.selectDictDataByType(dictType)) {
+            SysDictData dictData = normalizeDictData(rawDictData);
+            if (dictData == null || dictData.getDictLabel() == null) {
+                continue;
+            }
+            String label = dictData.getDictLabel().trim();
+            if (!label.isEmpty()) {
+                labels.add(label);
+            }
+        }
+        return List.copyOf(labels);
     }
 
     @Override

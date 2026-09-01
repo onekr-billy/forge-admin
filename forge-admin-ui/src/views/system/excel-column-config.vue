@@ -105,10 +105,7 @@
           />
         </NFormItem>
         <NFormItem label="字典类型" path="dictType">
-          <NInput
-            v-model:value="editForm.dictType"
-            placeholder="字典类型，如：user_status"
-          />
+          <DictTypeSelect v-model:value="editForm.dictType" />
         </NFormItem>
         <NFormItem v-if="importEnabled" label="示例值" path="exampleValue">
           <NInput
@@ -140,6 +137,7 @@
 import { NButton, NDataTable, NForm, NFormItem, NInput, NInputNumber, NModal, NSwitch } from 'naive-ui'
 import { computed, h, onMounted, ref, watch } from 'vue'
 import DictTag from '@/components/DictTag.vue'
+import DictTypeSelect from '@/components/lowcode-builder/shared/DictTypeSelect.vue'
 import { useDict } from '@/composables/useDict'
 import { request } from '@/utils'
 

@@ -7,6 +7,10 @@ public interface DictValueProvider {
 
     String getLabel(String dictType, String key);
 
+    default List<String> listLabels(String dictType) {
+        return List.of();
+    }
+
     default String getValue(String dictType, String labelOrValue) {
         return null;
     }

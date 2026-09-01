@@ -685,22 +685,26 @@ public class DynamicCrudExcelService {
     }
 
     private ImportTemplateColumn toImportTemplateColumn(ExcelColumnMeta column) {
+        List<String> dropdownOptions = selectDictLabels(column.getDictType());
         return new ImportTemplateColumn(
                 column.getField(),
                 column.getLabel(),
                 column.isRequired(),
-                resolveImportTemplateExample(column),
-                resolveImportTemplateDescription(column)
+                resolveImportTemplateExample(column, dropdownOptions),
+                resolveImportTemplateDescription(column, dropdownOptions),
+                dropdownOptions
         );
     }
 
-    private String resolveImportTemplateExample(ExcelColumnMeta column) {
+    private String resolveImportTemplateExample(ExcelColumnMeta column, List<String> dropdownOptions) {
         if (StringUtils.isNotBlank(column.getExampleValue())) {
             return column.getExampleValue();
         }
+        if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
+            return dropdownOptions.get(0);
+        }
         if (StringUtils.isNotBlank(column.getDictType())) {
-            String dictLabel = selectFirstDictLabel(column.getDictType());
-            return StringUtils.defaultIfBlank(dictLabel, "字典选项示例");
+            return "字典选项示例";
         }
 
         String dataType = StringUtils.defaultIfBlank(column.getDataType(), "").toLowerCase(Locale.ROOT);
@@ -724,13 +728,17 @@ public class DynamicCrudExcelService {
         return StringUtils.defaultIfBlank(column.getLabel(), column.getField()) + "示例";
     }
 
-    private String resolveImportTemplateDescription(ExcelColumnMeta column) {
+    private String resolveImportTemplateDescription(ExcelColumnMeta column, List<String> dropdownOptions) {
         List<String> descriptions = new ArrayList<>();
         if (StringUtils.isNotBlank(column.getDescription())) {
             descriptions.add(column.getDescription());
         }
         if (StringUtils.isNotBlank(column.getDictType())) {
-            descriptions.add("填写字典标签或字典值，字典类型：" + column.getDictType());
+            if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
+                descriptions.add("请从下拉列表中选择字典标签，也可填写字典值。字典类型：" + column.getDictType());
+            } else {
+                descriptions.add("填写字典标签或字典值，字典类型：" + column.getDictType());
+            }
         }
 
         String dataType = StringUtils.defaultIfBlank(column.getDataType(), "").toLowerCase(Locale.ROOT);
@@ -748,23 +756,31 @@ public class DynamicCrudExcelService {
         return String.join("；", descriptions);
     }
 
-    private String selectFirstDictLabel(String dictType) {
+    private List<String> selectDictLabels(String dictType) {
         if (StringUtils.isBlank(dictType)) {
-            return null;
+            return List.of();
         }
         StringBuilder sql = new StringBuilder("""
                 SELECT dict_label
                 FROM sys_dict_data
                 WHERE dict_type = :dictType
-                  AND status = 1
+                  AND dict_status = 1
+                  AND del_flag = 0
                 """);
-        sql.append(" AND tenant_id = :tenantId");
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("dictType", dictType)
-                .addValue("tenantId", resolveTenantId());
-        sql.append(" ORDER BY dict_sort ASC, id ASC LIMIT 1");
+                .addValue("dictType", dictType);
+        Long tenantId = resolveTenantId();
+        if (tenantId != null) {
+            sql.append(" AND tenant_id = :tenantId");
+            params.addValue("tenantId", tenantId);
+        }
+        sql.append(" ORDER BY dict_sort ASC, dict_code ASC");
         List<String> labels = namedJdbcTemplate.queryForList(sql.toString(), params, String.class);
-        return labels.isEmpty() ? null : labels.get(0);
+        return labels.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(String::trim)
+                .distinct()
+                .toList();
     }
 
     private void writeAsyncWorkbook(Path targetFile,

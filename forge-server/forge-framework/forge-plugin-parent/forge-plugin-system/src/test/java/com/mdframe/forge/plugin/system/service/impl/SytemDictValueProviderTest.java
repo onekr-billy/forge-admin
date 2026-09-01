@@ -32,8 +32,9 @@ class SytemDictValueProviderTest {
 
         assertThat(provider.getLabel("sys_normal_disable", "1")).isEqualTo("启用");
         assertThat(provider.getLabel("sys_normal_disable", "1")).isEqualTo("启用");
+        assertThat(provider.listLabels("sys_normal_disable")).containsExactly("启用", "停用");
 
-        verify(dictDataService, times(2)).selectDictDataByType("sys_normal_disable");
+        verify(dictDataService, times(3)).selectDictDataByType("sys_normal_disable");
     }
 
     private SysDictData dictData(String value, String label) {
