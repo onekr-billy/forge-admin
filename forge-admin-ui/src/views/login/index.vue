@@ -84,7 +84,7 @@
         <div class="login-form">
           <div class="form-header">
             <h2 class="form-title">
-              {{ showResetForm ? '找回密码' : '登录'brandSystemName }}
+              {{ showResetForm ? '找回密码' : '登录' }}
             </h2>
             <p class="form-subtitle">
               {{ showResetForm ? resetSubtitle : loginSubtitle }}
