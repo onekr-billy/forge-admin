@@ -204,7 +204,8 @@ import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
-import { request, resolveRenderableFileUrl } from '@/utils'
+import { request } from '@/utils'
+import { resolveTenantPublicAssetUrl, setDocumentFavicon } from '@/utils/tenant-config'
 
 defineOptions({ name: 'SystemTenant' })
 
@@ -1239,22 +1240,8 @@ async function handleSubmitSuccess() {
     }
 
     // 应用浏览器图标
-    if (tenantConfig.browserIcon) {
-      const link = document.querySelector('link[rel*=\'icon\']') || document.createElement('link')
-      link.type = 'image/x-icon'
-      link.rel = 'shortcut icon'
-      // 浏览器图标可能只返回相对路径，先解析成可直接访问的地址再挂载到 head。
-      const iconUrl = tenantConfig.browserIcon
-      resolveRenderableFileUrl(iconUrl)
-        .then((url) => {
-          link.href = url || iconUrl
-          document.getElementsByTagName('head')[0].appendChild(link)
-        })
-        .catch(() => {
-          link.href = iconUrl
-          document.getElementsByTagName('head')[0].appendChild(link)
-        })
-    }
+    const iconUrl = resolveTenantPublicAssetUrl(tenantConfig, 'icon')
+    setDocumentFavicon(iconUrl || tenantConfig.browserIcon)
 
     window.$message.success('主题配置已更新')
   }

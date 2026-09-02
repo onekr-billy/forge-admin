@@ -37,12 +37,49 @@ function isManagedFileReference(value = '') {
   return !text.startsWith('/') && !text.includes('/') && !text.includes('\\') && MANAGED_FILE_ID_PATTERN.test(text)
 }
 
+function extractManagedFileId(value = '') {
+  const text = String(value || '').trim()
+  if (!text)
+    return ''
+
+  const normalizedText = text.toLowerCase()
+  let fileId = ''
+
+  if (normalizedText.includes('/api/file/download/')) {
+    fileId = text.split('/api/file/download/').pop() || ''
+  }
+  else if (normalizedText.includes('/api/file/url/')) {
+    fileId = text.split('/api/file/url/').pop() || ''
+  }
+  else if (!text.startsWith('/') && !text.includes('/') && !text.includes('\\')) {
+    fileId = text
+  }
+
+  if (!fileId)
+    return ''
+
+  const queryIndex = fileId.indexOf('?')
+  if (queryIndex >= 0)
+    fileId = fileId.slice(0, queryIndex)
+
+  const hashIndex = fileId.indexOf('#')
+  if (hashIndex >= 0)
+    fileId = fileId.slice(0, hashIndex)
+
+  return MANAGED_FILE_ID_PATTERN.test(fileId) ? fileId : ''
+}
+
 function resolveAssetReference(tenantConfig, assetType) {
   if (!tenantConfig)
     return ''
   if (assetType === 'logo')
     return tenantConfig.systemLogo || ''
   return tenantConfig.browserIcon || ''
+}
+
+function buildAssetCacheBuster(assetReference) {
+  const fileId = extractManagedFileId(assetReference)
+  return fileId ? `?v=${encodeURIComponent(fileId)}` : ''
 }
 
 export function resolveTenantPublicAssetUrl(tenantConfig, assetType = 'logo') {
@@ -59,7 +96,21 @@ export function resolveTenantPublicAssetUrl(tenantConfig, assetType = 'logo') {
     return ''
 
   const normalizedAssetType = assetType === 'favicon' ? 'icon' : assetType
-  return `${getRequestPrefix()}/auth/tenant/assets/${tenantId}/${normalizedAssetType}`
+  return `${getRequestPrefix()}/auth/tenant/assets/${tenantId}/${normalizedAssetType}${buildAssetCacheBuster(assetReference)}`
+}
+
+export function setDocumentFavicon(iconUrl = '/favicon.ico') {
+  const head = document.head || document.getElementsByTagName('head')[0]
+  if (!head)
+    return
+
+  document.querySelectorAll("link[rel*='icon']").forEach(link => link.remove())
+
+  const link = document.createElement('link')
+  link.type = 'image/x-icon'
+  link.rel = 'shortcut icon'
+  link.href = iconUrl || '/favicon.ico'
+  head.appendChild(link)
 }
 
 function parseThemeConfig(tenantConfig, tenantStore) {
@@ -127,19 +178,16 @@ export async function applyTenantConfig(tenantConfig, appStore) {
     setDocumentTitle(pageBaseTitle)
   }
 
+  let iconUrl = ''
   if (tenantConfig.browserIcon) {
-    const link = document.querySelector('link[rel*=\'icon\']') || document.createElement('link')
-    link.type = 'image/x-icon'
-    link.rel = 'shortcut icon'
     try {
-      let iconUrl = resolveTenantPublicAssetUrl(tenantConfig, 'icon')
+      iconUrl = resolveTenantPublicAssetUrl(tenantConfig, 'icon')
       if (!iconUrl)
         iconUrl = await resolveRenderableFileUrl(tenantConfig.browserIcon)
-      link.href = iconUrl || tenantConfig.browserIcon
     }
     catch {
-      link.href = resolveTenantPublicAssetUrl(tenantConfig, 'icon') || tenantConfig.browserIcon
+      iconUrl = resolveTenantPublicAssetUrl(tenantConfig, 'icon') || tenantConfig.browserIcon
     }
-    document.getElementsByTagName('head')[0].appendChild(link)
   }
+  setDocumentFavicon(iconUrl || tenantConfig.browserIcon)
 }
