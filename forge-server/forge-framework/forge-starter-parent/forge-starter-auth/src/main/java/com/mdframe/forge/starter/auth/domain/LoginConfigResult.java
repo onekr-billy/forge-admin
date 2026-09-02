@@ -55,6 +55,16 @@ public class LoginConfigResult implements Serializable {
     private String clientCaptchaType;
 
     /**
+     * 是否开放匿名注册
+     */
+    private Boolean enableRegister;
+
+    /**
+     * 已启用的找回密码通道：sms / email。空表示未启用找回。
+     */
+    private List<String> resetPasswordChannels;
+
+    /**
      * 是否启用记住我功能
      */
     private Boolean enableRememberMe;

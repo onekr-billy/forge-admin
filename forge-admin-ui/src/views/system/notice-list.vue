@@ -43,7 +43,7 @@
 
         <n-divider />
 
-        <div class="detail-content" v-html="currentNotice.noticeContent" />
+        <div class="detail-content" v-html="sanitizedNoticeContent" />
 
         <div v-if="currentNotice.attachments && currentNotice.attachments.length > 0" class="detail-attachments">
           <n-divider />
@@ -76,6 +76,7 @@ import { AiCrudPage } from '@/components/ai-form'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
 import { request } from '@/utils'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 
 defineOptions({ name: 'NoticeList' })
 
@@ -89,6 +90,7 @@ const unreadCount = ref(0)
 const { dict } = useDict(NOTICE_TYPE_DICT)
 
 const noticeTypeOptions = computed(() => dict.value[NOTICE_TYPE_DICT] || [])
+const sanitizedNoticeContent = computed(() => sanitizeHtml(currentNotice.value?.noticeContent))
 
 // 搜索表单配置
 const searchSchema = computed(() => [

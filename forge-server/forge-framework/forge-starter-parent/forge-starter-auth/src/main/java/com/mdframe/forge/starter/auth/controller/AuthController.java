@@ -119,14 +119,22 @@ public class AuthController {
     }
 
     /**
-     * 重置密码
+     * 发送找回密码验证码。通道由全局短信/邮件配置决定。
+     */
+    @PostMapping("/resetPassword/code")
+    @IgnoreTenant
+    public RespInfo<Void> sendResetPasswordCode(@RequestBody SendResetPasswordCodeRequest request) {
+        authService.sendResetPasswordCode(request);
+        return RespInfo.success("验证码已发送", null);
+    }
+
+    /**
+     * 通过短信或邮箱验证码重置密码。
      */
     @PostMapping("/resetPassword")
-    public RespInfo<Void> resetPassword(@RequestParam String username,
-                                         @RequestParam String newPassword,
-                                         @RequestParam String code,
-                                         @RequestParam String codeKey) {
-        boolean success = authService.resetPassword(username, newPassword, code, codeKey);
+    @IgnoreTenant
+    public RespInfo<Void> resetPassword(@RequestBody ResetPasswordRequest request) {
+        boolean success = authService.resetPassword(request);
         return success ? RespInfo.success() : RespInfo.error("重置密码失败");
     }
 

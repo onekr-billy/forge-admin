@@ -1,4 +1,5 @@
 import { resolveResError } from './helpers'
+import { stripNullRequestBody } from './empty-body'
 import { useAuthStore } from '@/store'
 import { cryptoConfig, decryptResponse, encryptRequest, matchPath, shouldEncrypt } from '@/utils/crypto'
 import { initKeyExchange, resetKeyExchange } from '@/utils/crypto/key-exchange'
@@ -191,6 +192,7 @@ async function reqResolve(config, axiosInstance) {
 
   // 设置默认headers
   config.headers = config.headers || {}
+  stripNullRequestBody(config)
 
   // 生成traceid: 时间戳+5位随机数
   const timestamp = Date.now()

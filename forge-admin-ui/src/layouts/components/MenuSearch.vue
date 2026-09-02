@@ -141,6 +141,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 import { useMenu } from '@/composables'
 import { usePermissionStore } from '@/store'
+import { escapeHtml } from '@/utils/sanitize-html'
 
 const permissionStore = usePermissionStore()
 const { handleMenuSelect: baseHandleMenuSelect } = useMenu()
@@ -206,11 +207,12 @@ const filteredMenus = computed(() => {
 
 // 高亮匹配文本
 function highlightText(text) {
-  if (!searchKeyword.value.trim() || !text)
-    return text
+  const escaped = escapeHtml(text)
   const keyword = searchKeyword.value.trim()
-  const regex = new RegExp(`(${keyword})`, 'gi')
-  return text.replace(regex, '<mark>$1</mark>')
+  if (!keyword || !escaped)
+    return escaped
+  const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  return escaped.replace(regex, '<mark>$1</mark>')
 }
 
 function getMenuIcon(item) {

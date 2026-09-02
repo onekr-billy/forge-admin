@@ -54,6 +54,13 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
                                          @Param("status") Integer status, @Param("tenantId") Long tenantId);
 
     /**
+     * 分页查询未签收的候选任务
+     */
+    IPage<FlowTask> selectCandidateTasks(Page<FlowTask> page, @Param("userId") String userId,
+                                          @Param("groupId") String groupId, @Param("title") String title,
+                                          @Param("tenantId") Long tenantId);
+
+    /**
      * 分页查询已逾期但仍未完成的任务。
      */
     IPage<FlowTask> selectOverduePendingTasks(Page<FlowTask> page, @Param("now") LocalDateTime now);

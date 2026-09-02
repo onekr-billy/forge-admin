@@ -3,6 +3,7 @@ package com.mdframe.forge.flow.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.flow.dto.FlowCcSendDTO;
+import com.mdframe.forge.flow.identity.FlowSessionIdentity;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
@@ -37,11 +38,12 @@ public class FlowCcController {
      */
     @PostMapping("/send")
     public RespInfo<Void> sendCc(@RequestBody FlowCcSendDTO dto) {
+        String sendUserId = FlowSessionIdentity.requireUserId(dto.getSendUserId());
         flowCcService.sendCc(
                 dto.getProcessInstanceId(), dto.getProcessDefKey(), dto.getTaskId(),
                 dto.getTitle(), dto.getContent(), dto.getBusinessKey(),
                 dto.getCcUserIds(), dto.getCcUserNames(),
-                dto.getSendUserId(), dto.getSendUserName());
+                sendUserId, dto.getSendUserName());
         return RespInfo.success("抄送成功", null);
     }
 
@@ -52,11 +54,11 @@ public class FlowCcController {
     public RespInfo<IPage<FlowCc>> myCc(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam String userId,
+            @RequestParam(required = false) String userId,
             @RequestParam(required = false) Integer isRead) {
-        
-        Page<FlowCc> page = new Page<>(pageNum, pageSize);
-        IPage<FlowCc> result = flowCcService.myCc(page, userId, isRead);
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        Page<FlowCc> page = FlowSessionIdentity.page(pageNum, pageSize);
+        IPage<FlowCc> result = flowCcService.myCc(page, trustedUserId, isRead);
         return RespInfo.success(result);
     }
 
@@ -67,10 +69,10 @@ public class FlowCcController {
     public RespInfo<IPage<FlowCc>> sentCc(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam String userId) {
-        
-        Page<FlowCc> page = new Page<>(pageNum, pageSize);
-        IPage<FlowCc> result = flowCcService.sentCc(page, userId);
+            @RequestParam(required = false) String userId) {
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        Page<FlowCc> page = FlowSessionIdentity.page(pageNum, pageSize);
+        IPage<FlowCc> result = flowCcService.sentCc(page, trustedUserId);
         return RespInfo.success(result);
     }
 
@@ -114,8 +116,8 @@ public class FlowCcController {
      * 获取未读抄送数量
      */
     @GetMapping("/unread/count")
-    public RespInfo<Map<String, Object>> countUnread(@RequestParam String userId) {
-        long count = flowCcService.countUnread(userId);
+    public RespInfo<Map<String, Object>> countUnread(@RequestParam(required = false) String userId) {
+        long count = flowCcService.countUnread(FlowSessionIdentity.requireUserId(userId));
         Map<String, Object> result = new HashMap<>();
         result.put("count", count);
         return RespInfo.success(result);

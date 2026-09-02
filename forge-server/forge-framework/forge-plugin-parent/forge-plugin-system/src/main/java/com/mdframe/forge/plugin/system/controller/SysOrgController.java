@@ -24,7 +24,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysOrgController {
 
     private final ISysOrgService orgService;
@@ -42,18 +41,21 @@ public class SysOrgController {
      * 查询组织树形列表
      */
     @GetMapping("/tree")
+    @ApiPermissionIgnore
     public RespInfo<List<SysOrg>> tree(SysOrgQuery query) {
         List<SysOrg> list = orgService.selectOrgTree(query);
         return RespInfo.success(list);
     }
     
     @GetMapping("/lazyTree")
+    @ApiPermissionIgnore
     public RespInfo<List<SysOrgTreeVO>> lazyTree(SysOrgQuery query) {
         List<SysOrgTreeVO> list = orgService.selectOrgLazyTree(query);
         return RespInfo.success(list);
     }
     
     @GetMapping("/children/{parentId}")
+    @ApiPermissionIgnore
     public RespInfo<List<SysOrgTreeVO>> children(@PathVariable Long parentId,
                                                  @RequestParam(required = false) Long tenantId) {
         List<SysOrgTreeVO> list = orgService.selectOrgChildrenByParentId(parentId, tenantId);
@@ -64,6 +66,7 @@ public class SysOrgController {
      * 查询当前用户可切换组织。
      */
     @GetMapping("/current/options")
+    @ApiPermissionIgnore
     public RespInfo<List<SysOrgTreeVO>> currentOptions() {
         return RespInfo.success(orgService.selectCurrentUserOrgOptions());
     }
@@ -72,6 +75,7 @@ public class SysOrgController {
      * 切换当前组织。
      */
     @PostMapping("/switch")
+    @ApiPermissionIgnore
     public RespInfo<LoginUser> switchOrg(@RequestParam Long orgId) {
         return RespInfo.success(orgService.switchCurrentOrg(orgId));
     }

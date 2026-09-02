@@ -20,13 +20,22 @@ class FlowTaskMapperSqlContractTest {
     @Test
     void taskListsMustFilterTenantAndJoinDisplayUsers() throws IOException {
         String xml = resource();
-        for (String statementId : List.of("selectTodoTasks", "selectDoneTasks", "selectStartedTasks")) {
+        for (String statementId : List.of("selectTodoTasks", "selectDoneTasks", "selectStartedTasks", "selectCandidateTasks")) {
             String statement = statement(xml, statementId);
             assertTrue(statement.contains("t.tenant_id = #{tenantId}"),
                     () -> statementId + " must filter by the request tenant");
             assertTrue(statement.contains("TaskListUserJoins"),
                     () -> statementId + " must use the SQL user/model joins");
         }
+    }
+
+    @Test
+    void candidateListMustStayUnassignedAndAvoidFlowableFullList() throws IOException {
+        String xml = resource();
+        String statement = statement(xml, "selectCandidateTasks");
+        assertTrue(statement.contains("t.status = 0"));
+        assertTrue(statement.contains("t.assignee IS NULL OR t.assignee = ''"));
+        assertTrue(statement.contains("t.candidate_users"));
     }
 
     @Test

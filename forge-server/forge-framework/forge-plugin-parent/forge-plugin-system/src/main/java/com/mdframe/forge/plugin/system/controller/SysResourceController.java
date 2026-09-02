@@ -6,7 +6,6 @@ import com.mdframe.forge.plugin.system.dto.SysResourceDTO;
 import com.mdframe.forge.plugin.system.dto.SysResourceQuery;
 import com.mdframe.forge.plugin.system.entity.SysResource;
 import com.mdframe.forge.plugin.system.service.ISysResourceService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -25,7 +24,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysResourceController {
 
     private final ISysResourceService resourceService;

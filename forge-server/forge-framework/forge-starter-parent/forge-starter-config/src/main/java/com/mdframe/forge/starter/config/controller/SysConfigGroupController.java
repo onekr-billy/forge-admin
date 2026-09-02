@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.starter.config.entity.SysConfigGroup;
 import com.mdframe.forge.starter.config.security.CryptoConfigSanitizer;
 import com.mdframe.forge.starter.config.service.ISysConfigGroupService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
@@ -28,7 +27,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiEncrypt
 @ApiDecrypt
-@ApiPermissionIgnore
 @IgnoreTenant
 public class SysConfigGroupController {
 

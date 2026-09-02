@@ -29,7 +29,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysNoticeController {
 
     private final ISysNoticeService noticeService;
@@ -145,6 +144,7 @@ public class SysNoticeController {
      * 查询用户可见的公告列表（前台展示）
      */
     @GetMapping("/user/page")
+    @ApiPermissionIgnore
     public RespInfo<Page<SysNoticeVO>> userPage(PageQuery pageQuery, SysNoticeQuery query) {
         Page<SysNoticeVO> page = noticeService.selectUserNoticePage(pageQuery, query);
         return RespInfo.success(page);
@@ -154,6 +154,7 @@ public class SysNoticeController {
      * 查询当前用户未读公告数量
      */
     @GetMapping("/user/unread-count")
+    @ApiPermissionIgnore
     public RespInfo<Integer> getUserUnreadCount() {
         Integer count = noticeService.getUserUnreadCount();
         return RespInfo.success(count);
@@ -163,6 +164,7 @@ public class SysNoticeController {
      * 标记公告为已读
      */
     @PostMapping("/markAsRead")
+    @ApiPermissionIgnore
     public RespInfo<Void> markAsRead(@RequestParam Long noticeId) {
         boolean result = noticeReadRecordService.markAsRead(noticeId);
         return result ? RespInfo.success() : RespInfo.error("标记失败");

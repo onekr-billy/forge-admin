@@ -3,7 +3,6 @@ package com.mdframe.forge.plugin.system.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.system.entity.SysFileStorageConfig;
 import com.mdframe.forge.plugin.system.service.ISysFileStorageConfigService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -23,7 +22,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysFileStorageConfigController {
     
     private final ISysFileStorageConfigService storageConfigService;

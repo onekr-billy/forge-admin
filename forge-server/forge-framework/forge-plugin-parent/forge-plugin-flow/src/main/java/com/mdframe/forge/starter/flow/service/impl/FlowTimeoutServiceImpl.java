@@ -29,6 +29,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class FlowTimeoutServiceImpl implements FlowTimeoutService {
 
+    private static final int TIMEOUT_SCAN_BATCH = 100;
+
     private final TaskService taskService;
     private final RuntimeService runtimeService;
     private final HistoryService historyService;
@@ -45,20 +47,29 @@ public class FlowTimeoutServiceImpl implements FlowTimeoutService {
         
         TenantContextHolder.executeIgnore(() -> {
             try {
-                // 查询所有活动任务
-                List<Task> activeTasks = taskService.createTaskQuery()
-                        .active()
-                        .list();
-                
-                for (Task task : activeTasks) {
-                    try {
-                        checkTaskTimeout(task);
-                    } catch (Exception e) {
-                        log.error("检查任务超时失败: taskId={}, error={}", task.getId(), e.getMessage());
+                int first = 0;
+                int checked = 0;
+                while (true) {
+                    List<Task> batch = taskService.createTaskQuery()
+                            .active()
+                            .listPage(first, TIMEOUT_SCAN_BATCH);
+                    if (batch == null || batch.isEmpty()) {
+                        break;
                     }
+                    for (Task task : batch) {
+                        try {
+                            checkTaskTimeout(task);
+                        } catch (Exception e) {
+                            log.error("检查任务超时失败: taskId={}, error={}", task.getId(), e.getMessage());
+                        }
+                    }
+                    checked += batch.size();
+                    if (batch.size() < TIMEOUT_SCAN_BATCH) {
+                        break;
+                    }
+                    first += TIMEOUT_SCAN_BATCH;
                 }
-                
-                log.debug("超时任务检查完成，共检查 {} 个任务", activeTasks.size());
+                log.debug("超时任务检查完成，共检查 {} 个任务", checked);
             } catch (Exception e) {
                 log.error("检查超时任务异常", e);
             }
@@ -193,20 +204,27 @@ public class FlowTimeoutServiceImpl implements FlowTimeoutService {
 
     @Override
     public List<String> getUpcomingTimeoutTasks(int advanceMinutes) {
-        List<Task> activeTasks = taskService.createTaskQuery()
-                .active()
-                .list();
-        
         List<String> upcomingTaskIds = new ArrayList<>();
         long advanceMillis = advanceMinutes * 60L * 1000;
-        
-        for (Task task : activeTasks) {
-            Long remainingTime = getRemainingTime(task.getId());
-            if (remainingTime != null && remainingTime > 0 && remainingTime <= advanceMillis) {
-                upcomingTaskIds.add(task.getId());
+        int first = 0;
+        while (true) {
+            List<Task> batch = taskService.createTaskQuery()
+                    .active()
+                    .listPage(first, TIMEOUT_SCAN_BATCH);
+            if (batch == null || batch.isEmpty()) {
+                break;
             }
+            for (Task task : batch) {
+                Long remainingTime = getRemainingTime(task.getId());
+                if (remainingTime != null && remainingTime > 0 && remainingTime <= advanceMillis) {
+                    upcomingTaskIds.add(task.getId());
+                }
+            }
+            if (batch.size() < TIMEOUT_SCAN_BATCH) {
+                break;
+            }
+            first += TIMEOUT_SCAN_BATCH;
         }
-        
         return upcomingTaskIds;
     }
 

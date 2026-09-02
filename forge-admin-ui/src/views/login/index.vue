@@ -84,14 +84,14 @@
         <div class="login-form">
           <div class="form-header">
             <h2 class="form-title">
-              登录ForgeAdmin
+              {{ showResetForm ? '找回密码' : '登录ForgeAdmin' }}
             </h2>
             <p class="form-subtitle">
-              {{ loginSubtitle }}
+              {{ showResetForm ? resetSubtitle : loginSubtitle }}
             </p>
           </div>
 
-          <div class="form-body">
+          <div v-if="!showResetForm" class="form-body">
             <!-- Username -->
             <div class="form-group">
               <label for="username" class="form-label">用户名</label>
@@ -242,6 +242,14 @@
               >
                 <span class="checkbox-label">记住我</span>
               </n-checkbox>
+              <button
+                v-if="canResetPassword"
+                type="button"
+                class="forgot-link"
+                @click="openResetForm"
+              >
+                忘记密码
+              </button>
             </div>
 
             <!-- Submit button -->
@@ -286,6 +294,111 @@
                 </button>
               </div>
             </div>
+          </div>
+
+          <div v-else class="form-body">
+            <div v-if="resetPasswordChannels.length > 1" class="form-group">
+              <label class="form-label">验证方式</label>
+              <n-radio-group v-model:value="resetForm.channel" name="resetChannel">
+                <n-radio v-if="resetPasswordChannels.includes('sms')" value="sms">
+                  手机号
+                </n-radio>
+                <n-radio v-if="resetPasswordChannels.includes('email')" value="email">
+                  邮箱
+                </n-radio>
+              </n-radio-group>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ resetAccountLabel }}</label>
+              <div class="input-wrapper">
+                <n-input
+                  v-model:value="resetForm.account"
+                  class="modern-input"
+                  :placeholder="resetAccountPlaceholder"
+                  size="large"
+                >
+                  <template #prefix>
+                    <i class="input-icon" :class="resetForm.channel === 'email' ? 'ai-icon:mail' : 'ai-icon:phone'" />
+                  </template>
+                </n-input>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">验证码</label>
+              <div class="captcha-wrapper">
+                <div class="input-wrapper flex-1">
+                  <n-input
+                    v-model:value="resetForm.code"
+                    class="modern-input"
+                    placeholder="请输入验证码"
+                    :maxlength="6"
+                    size="large"
+                  >
+                    <template #prefix>
+                      <i class="input-icon ai-icon:key" />
+                    </template>
+                  </n-input>
+                </div>
+                <n-button
+                  :disabled="resetCountdown > 0 || resetSending || !resetAccountValid"
+                  class="sms-button"
+                  size="large"
+                  :loading="resetSending"
+                  @click="sendResetCode"
+                >
+                  {{ resetCountdown > 0 ? `${resetCountdown}s后重发` : '获取验证码' }}
+                </n-button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">新密码</label>
+              <div class="input-wrapper">
+                <n-input
+                  v-model:value="resetForm.newPassword"
+                  class="modern-input"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="请输入新密码"
+                  :maxlength="20"
+                  size="large"
+                >
+                  <template #prefix>
+                    <i class="input-icon ai-icon:lock" />
+                  </template>
+                </n-input>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">确认密码</label>
+              <div class="input-wrapper">
+                <n-input
+                  v-model:value="resetForm.confirmPassword"
+                  class="modern-input"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="请再次输入新密码"
+                  :maxlength="20"
+                  size="large"
+                >
+                  <template #prefix>
+                    <i class="input-icon ai-icon:lock" />
+                  </template>
+                </n-input>
+              </div>
+            </div>
+            <n-button
+              class="login-button"
+              type="primary"
+              size="large"
+              :loading="resetSubmitting"
+              block
+              @click="submitResetPassword"
+            >
+              <span class="button-text">重置密码</span>
+            </n-button>
+            <button type="button" class="back-login-link" @click="closeResetForm">
+              返回登录
+            </button>
           </div>
         </div>
       </div>
@@ -454,6 +567,29 @@ const captchaExpires = ref(0) // 验证码过期时间
 // 验证码类型：graphical(图形验证码), slider(滑块验证码), sms(短信验证码)
 const captchaType = ref('graphical')
 const captchaEnabled = computed(() => loginConfig.value?.enableCaptcha !== false)
+const resetPasswordChannels = computed(() => loginConfig.value?.resetPasswordChannels || [])
+const canResetPassword = computed(() => resetPasswordChannels.value.includes('sms') || resetPasswordChannels.value.includes('email'))
+const showResetForm = ref(false)
+const resetSending = ref(false)
+const resetSubmitting = ref(false)
+const resetCountdown = ref(0)
+const resetTimer = ref(null)
+const resetForm = ref({
+  channel: 'sms',
+  account: '',
+  code: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+const resetSubtitle = computed(() => (resetForm.value.channel === 'email' ? '通过邮箱验证码重置密码' : '通过手机验证码重置密码'))
+const resetAccountLabel = computed(() => (resetForm.value.channel === 'email' ? '邮箱' : '手机号'))
+const resetAccountPlaceholder = computed(() => (resetForm.value.channel === 'email' ? '请输入绑定邮箱' : '请输入绑定手机号'))
+const resetAccountValid = computed(() => {
+  const account = (resetForm.value.account || '').trim()
+  if (resetForm.value.channel === 'email')
+    return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(account)
+  return /^1[3-9]\d{9}$/.test(account)
+})
 
 // 滑块验证码相关 (vue3-slide-verify)
 const slideVerifyRef = ref(null)
@@ -478,6 +614,11 @@ const loading = ref(false)
 // 三方登录平台列表
 const socialPlatforms = ref([])
 const socialLoading = ref(false)
+
+watch(resetPasswordChannels, (channels) => {
+  if (!channels.includes(resetForm.value.channel))
+    resetForm.value.channel = channels.includes('sms') ? 'sms' : 'email'
+}, { immediate: true })
 
 watch(selectedTenantId, (tenantId) => {
   if (!tenantInitCompleted || tenantConfigApplying.value || skipTenantContextRefresh.value)
@@ -746,6 +887,84 @@ function onLoginClick() {
     return
   }
   handleLogin()
+}
+
+function openResetForm() {
+  showResetForm.value = true
+}
+
+function closeResetForm() {
+  showResetForm.value = false
+  resetForm.value.code = ''
+  resetForm.value.newPassword = ''
+  resetForm.value.confirmPassword = ''
+}
+
+function startResetCountdown() {
+  resetCountdown.value = 60
+  if (resetTimer.value)
+    clearInterval(resetTimer.value)
+  resetTimer.value = setInterval(() => {
+    resetCountdown.value -= 1
+    if (resetCountdown.value <= 0) {
+      clearInterval(resetTimer.value)
+      resetTimer.value = null
+    }
+  }, 1000)
+}
+
+async function sendResetCode() {
+  if (!resetAccountValid.value)
+    return $message.warning(`请输入正确的${resetAccountLabel.value}`)
+  try {
+    resetSending.value = true
+    await api.sendResetPasswordCode({
+      channel: resetForm.value.channel,
+      account: resetForm.value.account.trim(),
+      ...(selectedTenantId.value != null ? { tenantId: selectedTenantId.value } : {}),
+    })
+    startResetCountdown()
+  }
+  catch (error) {
+    console.error(error)
+  }
+  finally {
+    resetSending.value = false
+  }
+}
+
+async function submitResetPassword() {
+  if (!resetAccountValid.value)
+    return $message.warning(`请输入正确的${resetAccountLabel.value}`)
+  if (!resetForm.value.code)
+    return $message.warning('请输入验证码')
+  if (!resetForm.value.newPassword)
+    return $message.warning('请输入新密码')
+  if (resetForm.value.newPassword !== resetForm.value.confirmPassword)
+    return $message.warning('两次输入的密码不一致')
+  try {
+    resetSubmitting.value = true
+    await loadRuntimeCryptoConfig()
+    const passwordEncryptionEnabled = loginConfig.value?.enablePasswordEncryption !== false
+    const submittedPassword = await encryptPassword(resetForm.value.newPassword, request, passwordEncryptionEnabled)
+    const res = await api.resetPassword({
+      channel: resetForm.value.channel,
+      account: resetForm.value.account.trim(),
+      code: resetForm.value.code.trim(),
+      newPassword: submittedPassword,
+      ...(selectedTenantId.value != null ? { tenantId: selectedTenantId.value } : {}),
+    })
+    if (res.code === 200) {
+      $message.success('密码已重置，请使用新密码登录')
+      closeResetForm()
+    }
+  }
+  catch (error) {
+    console.error(error)
+  }
+  finally {
+    resetSubmitting.value = false
+  }
 }
 
 // 滑块验证成功回调
@@ -1071,6 +1290,8 @@ onUnmounted(() => {
   if (smsTimer.value) {
     clearInterval(smsTimer.value)
   }
+  if (resetTimer.value)
+    clearInterval(resetTimer.value)
   // 移除消息监听
   window.removeEventListener('message', handleSocialLoginMessage)
 })
@@ -1958,7 +2179,27 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
 
 /* Form options */
 .form-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 24px;
+}
+
+.forgot-link,
+.back-login-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.back-login-link {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  text-align: center;
 }
 
 .checkbox-label {

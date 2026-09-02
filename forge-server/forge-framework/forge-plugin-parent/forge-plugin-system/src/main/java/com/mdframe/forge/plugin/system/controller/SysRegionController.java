@@ -22,7 +22,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysRegionController {
 
     private final ISysRegionService regionService;
@@ -31,6 +30,7 @@ public class SysRegionController {
      * 获取行政区划树形结构
      */
     @GetMapping("/tree")
+    @ApiPermissionIgnore
     public RespInfo<List<SysRegionTreeVO>> tree() {
         List<SysRegionTreeVO> tree = regionService.selectRegionTree();
         return RespInfo.success(tree);
@@ -79,6 +79,7 @@ public class SysRegionController {
      * 获取子级列表
      */
     @GetMapping("/children/{parentCode}")
+    @ApiPermissionIgnore
     public RespInfo<List<SysRegion>> getChildren(@PathVariable String parentCode) {
         List<SysRegion> children = regionService.selectChildrenByParentCode(parentCode);
         return RespInfo.success(children);
@@ -88,6 +89,7 @@ public class SysRegionController {
      * 获取子级VO列表（懒加载）
      */
     @GetMapping("/childrenVO/{parentCode}")
+    @ApiPermissionIgnore
     public RespInfo<List<SysRegionTreeVO>> getChildrenVO(@PathVariable String parentCode) {
         List<SysRegionTreeVO> children = regionService.selectChildrenVOByParentCode(parentCode);
         return RespInfo.success(children);
@@ -97,6 +99,7 @@ public class SysRegionController {
      * 搜索行政区划
      */
     @GetMapping("/search")
+    @ApiPermissionIgnore
     public RespInfo<List<SysRegion>> search(@RequestParam String name) {
         List<SysRegion> regions = regionService.searchRegionByName(name);
         return RespInfo.success(regions);
@@ -110,6 +113,7 @@ public class SysRegionController {
      * @param dataRight  是否启用数据权限过滤，默认true
      */
     @GetMapping("/treeAll")
+    @ApiPermissionIgnore
     public RespInfo<List<SysRegionTreeVO>> treeAll(
             @RequestParam(required = false) String rootCode,
             @RequestParam(defaultValue = "true") Boolean dataRight) {

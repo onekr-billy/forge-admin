@@ -5,7 +5,6 @@ import com.mdframe.forge.plugin.system.dto.SysCachePolicyEditDTO;
 import com.mdframe.forge.plugin.system.dto.SysCachePolicyQuery;
 import com.mdframe.forge.plugin.system.service.ISysManagedCachePolicyService;
 import com.mdframe.forge.plugin.system.vo.SysManagedCachePolicyVO;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
@@ -27,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysManagedCachePolicyController {
 
     private final ISysManagedCachePolicyService cachePolicyService;

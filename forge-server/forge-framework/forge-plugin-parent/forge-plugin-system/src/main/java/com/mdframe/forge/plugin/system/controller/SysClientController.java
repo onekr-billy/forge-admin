@@ -8,7 +8,6 @@ import com.mdframe.forge.plugin.system.service.IClientService;
 import com.mdframe.forge.plugin.system.service.ISysOnlineUserService;
 import com.mdframe.forge.plugin.system.vo.SysClientVO;
 import com.mdframe.forge.plugin.system.vo.SysOnlineUserVO;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -24,7 +23,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysClientController {
     
     private final IClientService clientService;

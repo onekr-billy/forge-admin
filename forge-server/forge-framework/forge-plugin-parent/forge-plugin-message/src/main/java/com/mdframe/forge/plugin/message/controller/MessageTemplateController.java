@@ -2,7 +2,6 @@ package com.mdframe.forge.plugin.message.controller;
 
 import com.mdframe.forge.plugin.message.domain.entity.SysMessageTemplate;
 import com.mdframe.forge.plugin.message.service.MessageTemplateService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/message/template")
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class MessageTemplateController {
 
     private final MessageTemplateService templateService;

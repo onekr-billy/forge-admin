@@ -105,7 +105,7 @@ import { ref, computed, watch, toRef, toRefs, toRaw, reactive } from 'vue'
 import { useTargetData } from '../../../hooks/useTargetData.hook'
 import { MonacoEditor } from '@/components/Pages/MonacoEditor'
 import { icon } from '@/plugins'
-import { goDialog, toString } from '@/utils'
+import { assertSafeFilterScript, goDialog, toString } from '@/utils'
 import { customizeHttp } from '@/api/http'
 import cloneDeep from 'lodash/cloneDeep'
 
@@ -146,6 +146,7 @@ const fetchTargetData = async () => {
 // 过滤结果
 const filterRes = computed(() => {
   try {
+    assertSafeFilterScript(filter.value)
     const fn = new Function('data', 'res', filter.value)
     const response = cloneDeep(sourceData.value)
     const res = fn(response?.data, response)

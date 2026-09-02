@@ -2,6 +2,7 @@ package com.mdframe.forge.flow.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.flow.identity.FlowSessionIdentity;
 import com.mdframe.forge.flow.dto.FlowTaskActionDTO;
 import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
 import com.mdframe.forge.flow.dto.FlowTaskDelegateDTO;
@@ -49,13 +50,13 @@ public class FlowTaskController {
     public RespInfo<IPage<FlowTask>> todo(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam String userId,
+            @RequestParam(required = false) String userId,
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer status) {
-        
-        Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.todoTasks(page, userId, title, category, status);
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        Page<FlowTask> page = FlowSessionIdentity.page(pageNum, pageSize);
+        IPage<FlowTask> result = flowTaskService.todoTasks(page, trustedUserId, title, category, status);
         return RespInfo.success(result);
     }
 
@@ -66,13 +67,13 @@ public class FlowTaskController {
     public RespInfo<IPage<FlowTask>> done(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam String userId,
+            @RequestParam(required = false) String userId,
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer status) {
-        
-        Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.doneTasks(page, userId, title, category, status);
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        Page<FlowTask> page = FlowSessionIdentity.page(pageNum, pageSize);
+        IPage<FlowTask> result = flowTaskService.doneTasks(page, trustedUserId, title, category, status);
         return RespInfo.success(result);
     }
 
@@ -83,13 +84,13 @@ public class FlowTaskController {
     public RespInfo<IPage<FlowTask>> started(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam String userId,
+            @RequestParam(required = false) String userId,
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer status) {
-        
-        Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.startedTasks(page, userId, title, category, status);
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        Page<FlowTask> page = FlowSessionIdentity.page(pageNum, pageSize);
+        IPage<FlowTask> result = flowTaskService.startedTasks(page, trustedUserId, title, category, status);
         return RespInfo.success(result);
     }
 
@@ -100,12 +101,12 @@ public class FlowTaskController {
     public RespInfo<IPage<FlowTask>> candidateTasks(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam String userId,
+            @RequestParam(required = false) String userId,
             @RequestParam(required = false) String groupId,
             @RequestParam(required = false) String title) {
-        
-        Page<FlowTask> page = new Page<>(pageNum, pageSize);
-        IPage<FlowTask> result = flowTaskService.candidateTasks(page, userId, groupId, title);
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        Page<FlowTask> page = FlowSessionIdentity.page(pageNum, pageSize);
+        IPage<FlowTask> result = flowTaskService.candidateTasks(page, trustedUserId, groupId, title);
         return RespInfo.success(result);
     }
 
@@ -114,8 +115,8 @@ public class FlowTaskController {
      */
     @PostMapping("/claim")
     @ApiPermissionIgnore
-    public RespInfo<Void> claim(@RequestParam String taskId, @RequestParam String userId) {
-        flowTaskService.claimTask(taskId, userId);
+    public RespInfo<Void> claim(@RequestParam String taskId, @RequestParam(required = false) String userId) {
+        flowTaskService.claimTask(taskId, FlowSessionIdentity.requireUserId(userId));
         return RespInfo.success("签收成功", null);
     }
 
@@ -125,7 +126,7 @@ public class FlowTaskController {
     @PostMapping("/approve")
     @ApiPermissionIgnore
     public RespInfo<Void> approve(@RequestBody FlowTaskApproveDTO dto) {
-        String userId = resolveTrustedUser(dto.getUserId());
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
         Long tenantId = resolveTrustedTenant(dto.getTenantId());
         flowTaskService.approve(dto.getTaskId(), userId, optionalText(dto.getComment()),
                 optionalText(dto.getSignature()), dto.getVariables(),
@@ -140,7 +141,7 @@ public class FlowTaskController {
     @PostMapping("/reject")
     @ApiPermissionIgnore
     public RespInfo<Void> reject(@RequestBody FlowTaskRejectDTO dto) {
-        String userId = resolveTrustedUser(dto.getUserId());
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
         Long tenantId = resolveTrustedTenant(dto.getTenantId());
         flowTaskService.reject(dto.getTaskId(), userId, optionalText(dto.getComment()),
                 optionalText(dto.getSignature()), tenantId,
@@ -155,7 +156,7 @@ public class FlowTaskController {
     @PostMapping("/reject-to-start")
     @ApiPermissionIgnore
     public RespInfo<Void> rejectToStart(@RequestBody FlowTaskRejectDTO dto) {
-        String userId = resolveTrustedUser(dto.getUserId());
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
         Long tenantId = resolveTrustedTenant(dto.getTenantId());
         flowTaskService.rejectToStart(dto.getTaskId(), userId, optionalText(dto.getComment()),
                 optionalText(dto.getSignature()), tenantId,
@@ -172,19 +173,6 @@ public class FlowTaskController {
             throw new IllegalArgumentException("FLOW_TASK_TENANT_MISMATCH");
         }
         return sessionTenant;
-    }
-
-    private String resolveTrustedUser(String requestedUser) {
-        Long sessionUserId = SessionHelper.getUserId();
-        if (sessionUserId == null || sessionUserId <= 0) {
-            throw new IllegalArgumentException("FLOW_TASK_ASSIGNEE_REQUIRED");
-        }
-        String requested = optionalText(requestedUser);
-        String trusted = String.valueOf(sessionUserId);
-        if (requested != null && !trusted.equals(requested)) {
-            throw new IllegalArgumentException("FLOW_TASK_ASSIGNEE_MISMATCH");
-        }
-        return trusted;
     }
 
     private String optionalText(String value) {
@@ -208,14 +196,12 @@ public class FlowTaskController {
         if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
-        if (isBlankId(dto.getUserId())) {
-            return RespInfo.error("当前用户ID不能为空");
-        }
         if (isBlankId(dto.getTargetUserId())) {
             return RespInfo.error("转办人ID不能为空");
         }
 
-        flowTaskService.delegate(dto.getTaskId(), dto.getUserId(), dto.getTargetUserId(),
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
+        flowTaskService.delegate(dto.getTaskId(), userId, dto.getTargetUserId(),
                 optionalText(dto.getComment()), optionalText(dto.getSignature()));
         return RespInfo.success("转办成功", null);
     }
@@ -228,11 +214,8 @@ public class FlowTaskController {
         if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
-        if (isBlankId(dto.getUserId())) {
-            return RespInfo.error("当前用户ID不能为空");
-        }
 
-        String userId = resolveTrustedUser(dto.getUserId());
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
         flowTaskService.returnTask(dto.getTaskId(), userId,
                 optionalText(dto.getComment()), optionalText(dto.getSignature()),
                 optionalText(dto.getTargetActivityId()));
@@ -251,7 +234,7 @@ public class FlowTaskController {
         if (isBlankId(dto.getNewAssignee())) {
             return RespInfo.error("新处理人ID不能为空");
         }
-        String userId = resolveTrustedUser(dto.getUserId());
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
         flowTaskService.reassignByInitiator(dto.getTaskId(), userId,
                 dto.getNewAssignee(), optionalText(dto.getReason()));
         return RespInfo.success("任务已改派", null);
@@ -265,11 +248,9 @@ public class FlowTaskController {
         if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
-        if (isBlankId(dto.getUserId())) {
-            return RespInfo.error("当前用户ID不能为空");
-        }
 
-        flowTaskService.terminateTask(dto.getTaskId(), dto.getUserId(),
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
+        flowTaskService.terminateTask(dto.getTaskId(), userId,
                 optionalText(dto.getComment()), optionalText(dto.getSignature()));
         return RespInfo.success("流程已终结", null);
     }
@@ -282,11 +263,9 @@ public class FlowTaskController {
         if (isBlankId(dto.getProcessInstanceId())) {
             return RespInfo.error("流程实例ID不能为空");
         }
-        if (isBlankId(dto.getUserId())) {
-            return RespInfo.error("当前用户ID不能为空");
-        }
 
-        flowTaskService.withdraw(dto.getProcessInstanceId(), dto.getUserId());
+        String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
+        flowTaskService.withdraw(dto.getProcessInstanceId(), userId);
         return RespInfo.success("撤回成功", null);
     }
 

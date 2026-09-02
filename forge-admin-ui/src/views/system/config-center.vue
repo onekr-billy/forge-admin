@@ -76,6 +76,18 @@
                 <DictSelect v-model:value="configForms.login.captchaType" dict-type="captcha_type" class="config-select" />
               </div>
               <div class="config-item">
+                <div class="config-copy">
+                  <div class="config-label">
+                    <i class="i-material-symbols:person-add-outline" />
+                    开放匿名注册
+                  </div>
+                  <div class="config-help">
+                    默认关闭。找回密码不走此开关，由已启用的短信/邮件通道决定。
+                  </div>
+                </div>
+                <n-switch v-model:value="configForms.login.enableRegister" />
+              </div>
+              <div class="config-item">
                 <div class="config-label">
                   <i class="i-material-symbols:remember-me" />
                   启用记住我
@@ -767,6 +779,7 @@ const configForms = ref({
     enablePasswordEncryption: true,
     enableCaptcha: true,
     captchaType: 'char',
+    enableRegister: false,
     enableRememberMe: true,
     rememberMeDays: 30,
   },

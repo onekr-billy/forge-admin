@@ -11,6 +11,7 @@ import type { RequestGlobalConfigType, RequestConfigType } from '@/store/modules
 import { resolveDynamicRequestParams } from '@/utils/requestDynamicParams'
 import type { DynamicPageContext, DynamicParamComponent } from '@/utils/requestDynamicParams'
 import { queryDataDataset } from './data/dataset'
+import { assertSafeFilterScript } from '@/utils/utils'
 
 export const get = (url: string, params?: object) => {
   return axiosInstance({
@@ -109,6 +110,7 @@ export const translateStr = (target: string | object) => {
       const funcStr = target.split(prefix)[1]
       let result;
       try {
+        assertSafeFilterScript(funcStr)
         result = new Function(`${funcStr}`)()
       } catch (error) {
         console.log(error)
@@ -273,7 +275,9 @@ export const customizeHttp = async (
   }
 
   try {
-    const url =  (new Function("return `" + `${requestOriginUrl}${requestUrl}`.trim() + "`"))();
+    const urlTemplate = `${requestOriginUrl}${requestUrl}`.trim()
+    assertSafeFilterScript(urlTemplate)
+    const url = (new Function('return `' + urlTemplate + '`'))()
     return axiosInstance({
         url,
         method: requestHttpType,

@@ -4,12 +4,12 @@ import com.mdframe.forge.plugin.message.domain.entity.SysEmailConfig;
 import com.mdframe.forge.plugin.message.domain.entity.SysSmsConfig;
 import com.mdframe.forge.plugin.message.service.EmailConfigService;
 import com.mdframe.forge.plugin.message.service.SmsConfigService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,13 +19,17 @@ import java.util.Map;
 @RestController
 @RequestMapping("/system/message-config")
 @RequiredArgsConstructor
-@ApiPermissionIgnore
 @ApiDecrypt
 @ApiEncrypt
 public class MessageConfigController {
 
     private final SmsConfigService smsConfigService;
     private final EmailConfigService emailConfigService;
+
+    @ModelAttribute
+    public void assertPlatformAdmin() {
+        SessionHelper.assertAdmin("只有超级管理员可以管理短信和邮件通道");
+    }
 
     @GetMapping("/sms")
     @OperationLog(module = "消息配置管理", type = OperationType.QUERY, desc = "获取短信配置")

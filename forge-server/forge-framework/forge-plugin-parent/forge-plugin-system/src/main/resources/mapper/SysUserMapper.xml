@@ -27,9 +27,9 @@
         <result column="create_dept" property="createDept" />
         <result column="del_flag" property="delFlag" />
         <result column="org_name" property="orgName" />
+        <result column="org_name" property="deptName" />
         <result column="post_name" property="postName" />
         <result column="tenant_name" property="tenantName" />
-        <result column="dept_name" property="deptName" />
         <result column="create_by" property="createBy" />
         <result column="create_time" property="createTime" />
         <result column="update_by" property="updateBy" />
@@ -60,9 +60,39 @@
         u.id_card, u.gender, u.password, u.salt, u.user_status, u.avatar, u.region_code,
         u.last_login_time, u.last_login_ip, u.login_count, u.force_password_change, u.remark, u.create_dept,
         u.create_by, u.create_time, u.update_by, u.update_time, u.del_flag,
-        COALESCE(tenant_names.tenant_names, t.tenant_name) AS tenant_name,
-        orgs.org_name, orgs.org_name AS dept_name,
-        posts.post_name
+        COALESCE((
+            SELECT GROUP_CONCAT(tn.tenant_name ORDER BY sut.is_default DESC, tn.id ASC SEPARATOR ',')
+            FROM sys_user_tenant sut
+            INNER JOIN sys_tenant tn
+                ON tn.id = sut.tenant_id
+               AND tn.del_flag = 0
+            WHERE sut.user_id = u.id
+              AND sut.status = 1
+              AND tn.tenant_status = 1
+        ), t.tenant_name) AS tenant_name,
+        (
+            SELECT GROUP_CONCAT(o.org_name ORDER BY o.sort SEPARATOR ',')
+            FROM sys_user_org uo
+            LEFT JOIN sys_org o
+                ON o.id = uo.org_id
+               AND o.tenant_id = uo.tenant_id
+               AND o.del_flag = 0
+            WHERE uo.user_id = u.id
+            <if test="query != null and query.tenantId != null">
+              AND uo.tenant_id = #{query.tenantId}
+            </if>
+        ) AS org_name,
+        (
+            SELECT GROUP_CONCAT(p.post_name ORDER BY p.sort SEPARATOR ',')
+            FROM sys_user_post up
+            LEFT JOIN sys_post p
+                ON p.id = up.post_id
+               AND p.del_flag = 0
+            WHERE up.user_id = u.id
+            <if test="query != null and query.tenantId != null">
+              AND up.tenant_id = #{query.tenantId}
+            </if>
+        ) AS post_name
     </sql>
 
     <!-- 通用查询条件 -->
@@ -174,44 +204,6 @@
                AND sut_current.tenant_id = #{query.tenantId}
                AND sut_current.status = 1
         </if>
-        LEFT JOIN (
-            SELECT sut.user_id,
-                   GROUP_CONCAT(tn.tenant_name ORDER BY sut.is_default DESC, tn.id ASC SEPARATOR ',') AS tenant_names
-            FROM sys_user_tenant sut
-            INNER JOIN sys_tenant tn
-                ON tn.id = sut.tenant_id
-               AND tn.del_flag = 0
-            WHERE sut.status = 1
-              AND tn.tenant_status = 1
-            GROUP BY sut.user_id
-        ) tenant_names ON tenant_names.user_id = u.id
-        LEFT JOIN (
-            SELECT uo.user_id, GROUP_CONCAT(o.org_name ORDER BY o.sort SEPARATOR ',') AS org_name
-            FROM sys_user_org uo
-            LEFT JOIN sys_org o
-                ON o.id = uo.org_id
-               AND o.tenant_id = uo.tenant_id
-               AND o.del_flag = 0
-            <where>
-                <if test="query.tenantId != null">
-                    uo.tenant_id = #{query.tenantId}
-                </if>
-            </where>
-            GROUP BY uo.user_id
-        ) orgs ON orgs.user_id = u.id
-        LEFT JOIN (
-            SELECT up.user_id, GROUP_CONCAT(p.post_name ORDER BY p.sort SEPARATOR ',') AS post_name
-            FROM sys_user_post up
-            LEFT JOIN sys_post p
-                ON p.id = up.post_id
-               AND p.del_flag = 0
-            <where>
-                <if test="query.tenantId != null">
-                    up.tenant_id = #{query.tenantId}
-                </if>
-            </where>
-            GROUP BY up.user_id
-        ) posts ON posts.user_id = u.id
         <where>
             <include refid="queryCondition" />
         </where>
@@ -231,44 +223,6 @@
                AND sut_current.tenant_id = #{query.tenantId}
                AND sut_current.status = 1
         </if>
-        LEFT JOIN (
-            SELECT sut.user_id,
-                   GROUP_CONCAT(tn.tenant_name ORDER BY sut.is_default DESC, tn.id ASC SEPARATOR ',') AS tenant_names
-            FROM sys_user_tenant sut
-            INNER JOIN sys_tenant tn
-                ON tn.id = sut.tenant_id
-               AND tn.del_flag = 0
-            WHERE sut.status = 1
-              AND tn.tenant_status = 1
-            GROUP BY sut.user_id
-        ) tenant_names ON tenant_names.user_id = u.id
-        LEFT JOIN (
-            SELECT uo.user_id, GROUP_CONCAT(o.org_name ORDER BY o.sort SEPARATOR ',') AS org_name
-            FROM sys_user_org uo
-            LEFT JOIN sys_org o
-                ON o.id = uo.org_id
-               AND o.tenant_id = uo.tenant_id
-               AND o.del_flag = 0
-            <where>
-                <if test="query.tenantId != null">
-                    uo.tenant_id = #{query.tenantId}
-                </if>
-            </where>
-            GROUP BY uo.user_id
-        ) orgs ON orgs.user_id = u.id
-        LEFT JOIN (
-            SELECT up.user_id, GROUP_CONCAT(p.post_name ORDER BY p.sort SEPARATOR ',') AS post_name
-            FROM sys_user_post up
-            LEFT JOIN sys_post p
-                ON p.id = up.post_id
-               AND p.del_flag = 0
-            <where>
-                <if test="query.tenantId != null">
-                    up.tenant_id = #{query.tenantId}
-                </if>
-            </where>
-            GROUP BY up.user_id
-        ) posts ON posts.user_id = u.id
         <where>
             <include refid="queryCondition" />
         </where>

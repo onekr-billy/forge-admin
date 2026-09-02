@@ -88,13 +88,42 @@ class SaTokenFlowTokenProviderTest {
     }
 
     @Test
-    void shouldKeepExistingSaTokenBehaviorOutsideExecutionIdentity() {
+    void shouldKeepExistingSaTokenBehaviorWhenLoginUserUnavailable() {
         StpLogic stpLogic = mock(StpLogic.class);
         when(stpLogic.isLogin()).thenReturn(true);
         when(stpLogic.getTokenValue()).thenReturn("interactive-token");
-        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic);
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, () -> {
+            throw new IllegalStateException("no session");
+        });
 
         assertThat(provider.getToken()).isEqualTo("interactive-token");
+        verify(stpLogic, never()).createLoginSession(any(), any(SaLoginModel.class));
+    }
+
+    @Test
+    void shouldIssueDelegatedTokenForLoggedInUserWithoutExecutionIdentity() {
+        StpLogic stpLogic = mock(StpLogic.class);
+        SaSession tokenSession = mock(SaSession.class);
+        when(stpLogic.isLogin()).thenReturn(true);
+        when(stpLogic.getTokenValue()).thenReturn("interactive-token");
+        when(stpLogic.createLoginSession(eq(88L), any(SaLoginModel.class)))
+                .thenReturn("session-delegated-token");
+        when(stpLogic.getTokenSessionByToken("session-delegated-token", true))
+                .thenReturn(tokenSession);
+
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(88L);
+        loginUser.setTenantId(1L);
+        loginUser.setActiveOrgId(201L);
+        loginUser.setUserClient("pc");
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, () -> loginUser);
+
+        assertThat(provider.getToken()).isEqualTo("session-delegated-token");
+        verify(tokenSession).set(FlowDelegationSessionVerifier.MARKER_KEY, Boolean.TRUE);
+        verify(tokenSession).set(FlowDelegationSessionVerifier.ACTOR_USER_ID_KEY, 88L);
+        verify(tokenSession).set(FlowDelegationSessionVerifier.TENANT_ID_KEY, 1L);
+        verify(tokenSession).set(FlowDelegationSessionVerifier.ACTIVE_ORG_ID_KEY, 201L);
+        verify(tokenSession).set(FlowDelegationSessionVerifier.CLIENT_ID_KEY, 1L);
     }
 
     private ExecutionIdentity identity(String actorType, Long userId) {

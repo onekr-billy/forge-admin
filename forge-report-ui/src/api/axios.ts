@@ -6,6 +6,7 @@ import { decryptResponse, encryptRequest } from '@/utils/api-crypto/crypto-inter
 import { cryptoConfig, matchPath, shouldEncrypt } from '@/utils/api-crypto/crypto-config'
 import { ensureKeyExchanged, getCurrentCryptoSessionId, resetKeyExchange } from '@/utils/api-crypto/key-exchange'
 import router from '@/router'
+import { stripNullRequestBody } from '@/utils/empty-body'
 
 interface ApiResponse<T = any> {
   code?: number
@@ -67,6 +68,7 @@ const createAxiosRequestError = (error: AxiosError<ApiResponse>): RequestError =
 axiosInstance.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     config.headers = config.headers || {}
+    stripNullRequestBody(config)
 
     // Authorization token
     const token = getLocalStorage(StorageEnum.GO_ACCESS_TOKEN_STORE)

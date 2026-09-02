@@ -23,7 +23,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysFileMetadataController {
     
     private final ISysFileMetadataService fileMetadataService;
@@ -48,6 +47,7 @@ public class SysFileMetadataController {
     /**
      * 根据 fileId（字符串）查询元数据
      */
+    @ApiPermissionIgnore
     @GetMapping("/byFileId/{fileId}")
     public RespInfo<SysFileMetadata> getByFileId(@PathVariable String fileId) {
         return RespInfo.success(fileMetadataService.getByFileId(fileId));
@@ -100,6 +100,7 @@ public class SysFileMetadataController {
     /**
      * 重命名文件
      */
+    @ApiPermissionIgnore
     @PutMapping("/rename")
     public RespInfo<Void> rename(@RequestParam String fileId, @RequestParam String originalName) {
         fileMetadataService.rename(fileId, originalName);

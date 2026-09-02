@@ -53,7 +53,6 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 @Slf4j
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysUserController {
 
     private final ISysUserService userService;
@@ -395,6 +394,7 @@ public class SysUserController {
      */
     @OperationLog(module = "个人资料", type = OperationType.UPDATE, desc = "更新用户资料")
     @PostMapping("/updateProfile")
+    @ApiPermissionIgnore
     public RespInfo<Void> updateProfile(@RequestBody SysUserDTO dto) {
         Long currentUserId = SessionHelper.getUserId();
         Map<String, Object> beforeData = buildUserAuditData(currentUserId);
@@ -410,6 +410,7 @@ public class SysUserController {
      * 获取当前登录用户的基本资料（直接查数据库，非缓存）
      */
     @GetMapping("/profile")
+    @ApiPermissionIgnore
     public RespInfo<SysUser> profile() {
         Long userId = SessionHelper.getUserId();
         SysUser user = userService.getById(userId);

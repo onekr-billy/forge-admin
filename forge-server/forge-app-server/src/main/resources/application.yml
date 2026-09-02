@@ -98,3 +98,12 @@ sa-token:
     timeout: 10000
 sms:
   config-type: interface
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

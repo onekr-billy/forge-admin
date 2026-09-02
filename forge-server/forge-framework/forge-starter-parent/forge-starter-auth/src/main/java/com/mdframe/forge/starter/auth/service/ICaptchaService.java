@@ -2,6 +2,7 @@ package com.mdframe.forge.starter.auth.service;
 
 import com.mdframe.forge.starter.auth.domain.CaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SliderCaptchaResult;
+import com.mdframe.forge.starter.auth.domain.EmailCaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SmsCaptchaResult;
 
 import java.time.Duration;
@@ -25,6 +26,11 @@ public interface ICaptchaService {
      * 短信验证码缓存key前缀
      */
     String SMS_CAPTCHA_KEY_PREFIX = "captcha:sms:";
+
+    /**
+     * 邮箱验证码缓存key前缀
+     */
+    String EMAIL_CAPTCHA_KEY_PREFIX = "captcha:email:";
 
     /**
      * 生成验证码
@@ -170,4 +176,41 @@ public interface ICaptchaService {
      * @return 是否正确
      */
     boolean validateAndDeleteSmsCaptcha(String phone, String code);
+
+    // ==================== 邮箱验证码 ====================
+
+    /**
+     * 发送邮箱验证码
+     *
+     * @param email 邮箱
+     * @return 发送结果
+     */
+    EmailCaptchaResult sendEmailCaptcha(String email);
+
+    /**
+     * 发送邮箱验证码
+     *
+     * @param email    邮箱
+     * @param duration 过期时间
+     * @return 发送结果
+     */
+    EmailCaptchaResult sendEmailCaptcha(String email, Duration duration);
+
+    /**
+     * 验证邮箱验证码
+     *
+     * @param email 邮箱
+     * @param code  验证码
+     * @return 是否正确
+     */
+    boolean validateEmailCaptcha(String email, String code);
+
+    /**
+     * 验证邮箱验证码（验证后删除）
+     *
+     * @param email 邮箱
+     * @param code  验证码
+     * @return 是否正确
+     */
+    boolean validateAndDeleteEmailCaptcha(String email, String code);
 }

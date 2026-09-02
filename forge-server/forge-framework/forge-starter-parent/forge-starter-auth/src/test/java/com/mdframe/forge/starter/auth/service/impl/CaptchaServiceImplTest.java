@@ -2,7 +2,9 @@ package com.mdframe.forge.starter.auth.service.impl;
 
 import com.mdframe.forge.starter.auth.config.CaptchaProperties;
 import com.mdframe.forge.starter.auth.domain.CaptchaResult;
+import com.mdframe.forge.starter.auth.domain.EmailCaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SmsCaptchaResult;
+import com.mdframe.forge.starter.auth.email.EmailCaptchaSender;
 import com.mdframe.forge.starter.auth.sms.SmsCaptchaSender;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import org.junit.jupiter.api.Test;
@@ -25,8 +27,11 @@ import static org.mockito.Mockito.when;
 class CaptchaServiceImplTest {
 
     private static final String PHONE = "13800138000";
+    private static final String EMAIL = "user@example.com";
     private static final String SMS_CACHE_KEY = "captcha:sms:" + PHONE;
     private static final String SMS_INTERVAL_KEY = "captcha:sms:interval:" + PHONE;
+    private static final String EMAIL_CACHE_KEY = "captcha:email:" + EMAIL;
+    private static final String EMAIL_INTERVAL_KEY = "captcha:email:interval:" + EMAIL;
     private static final Duration DURATION = Duration.ofMinutes(5);
 
     @Test
@@ -159,14 +164,53 @@ class CaptchaServiceImplTest {
         verify(cacheService).delete(SMS_CACHE_KEY);
     }
 
+    @Test
+    void shouldFailClosedWhenEmailSenderIsUnavailable() {
+        ICacheService cacheService = mock(ICacheService.class);
+
+        EmailCaptchaResult result = service(cacheService, false, "prod", Optional.empty())
+                .sendEmailCaptcha(EMAIL, DURATION);
+
+        assertThat(result.getStatus()).isEqualTo("fail");
+        assertThat(result.getCode()).isNull();
+        verify(cacheService).delete(EMAIL_CACHE_KEY);
+        verify(cacheService, never()).set(eq(EMAIL_INTERVAL_KEY), any(), any(Duration.class));
+    }
+
+    @Test
+    void shouldKeepCachedCodeAfterEmailSenderSucceeds() {
+        ICacheService cacheService = mock(ICacheService.class);
+        EmailCaptchaSender sender = mock(EmailCaptchaSender.class);
+        when(sender.sendVerificationCode(eq(EMAIL), anyString(), eq(DURATION))).thenReturn(true);
+
+        EmailCaptchaResult result = serviceWithEmail(cacheService, false, "prod", Optional.of(sender))
+                .sendEmailCaptcha(EMAIL, DURATION);
+
+        assertThat(result.getStatus()).isEqualTo("success");
+        assertThat(result.getCode()).isNull();
+        verify(cacheService).set(eq(EMAIL_CACHE_KEY), anyString(), eq(DURATION));
+        verify(cacheService).set(eq(EMAIL_INTERVAL_KEY), anyString(), eq(Duration.ofSeconds(60)));
+    }
+
     private CaptchaServiceImpl service(ICacheService cacheService, boolean echoEnabled,
                                        String profile, Optional<SmsCaptchaSender> sender) {
+        return service(cacheService, echoEnabled, profile, sender, Optional.empty());
+    }
+
+    private CaptchaServiceImpl serviceWithEmail(ICacheService cacheService, boolean echoEnabled,
+                                                String profile, Optional<EmailCaptchaSender> emailSender) {
+        return service(cacheService, echoEnabled, profile, Optional.empty(), emailSender);
+    }
+
+    private CaptchaServiceImpl service(ICacheService cacheService, boolean echoEnabled,
+                                       String profile, Optional<SmsCaptchaSender> sender,
+                                       Optional<EmailCaptchaSender> emailSender) {
         CaptchaProperties properties = new CaptchaProperties();
         properties.setDevEchoCode(echoEnabled);
         MockEnvironment environment = new MockEnvironment();
         if (profile != null) {
             environment.setActiveProfiles(profile);
         }
-        return new CaptchaServiceImpl(cacheService, properties, environment, sender);
+        return new CaptchaServiceImpl(cacheService, properties, environment, sender, emailSender);
     }
 }

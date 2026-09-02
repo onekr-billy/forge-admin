@@ -26,7 +26,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysTenantController {
 
     private final ISysTenantService tenantService;
@@ -53,6 +52,7 @@ public class SysTenantController {
      * 查询用户当前租户的配置
      */
     @PostMapping("/userTenantConfig")
+    @ApiPermissionIgnore
     public RespInfo<SysTenant> selectUserTenantConfig(@RequestParam(required = false) Long id) {
         SysTenant tenant = tenantService.selectUserTenantConfig(id);
         return RespInfo.success(tenant);
@@ -62,6 +62,7 @@ public class SysTenantController {
      * 查询当前用户可切换租户
      */
     @GetMapping("/current/options")
+    @ApiPermissionIgnore
     public RespInfo<List<SysUserTenantVO>> currentTenantOptions() {
         return RespInfo.success(tenantService.selectCurrentUserTenants());
     }
@@ -95,6 +96,7 @@ public class SysTenantController {
      * 切换当前登录租户
      */
     @PostMapping("/switch")
+    @ApiPermissionIgnore
     public RespInfo<LoginUser> switchTenant(@RequestParam Long tenantId) {
         return RespInfo.success(tenantService.switchTenant(tenantId));
     }

@@ -889,7 +889,7 @@
           </div>
           <div
             class="notification-template-preview-content"
-            v-html="renderNotificationTemplate(notificationPreview.contentTemplate) || '暂无模板内容'"
+            v-html="sanitizeHtml(renderNotificationTemplate(notificationPreview.contentTemplate) || '暂无模板内容')"
           />
           <div class="notification-template-preview-tip">
             预览变量：流程名称「{{ modelInfo.modelName || '示例流程' }}」、发起人「张三」、结果「已通过」
@@ -945,6 +945,7 @@ import FlowFormCreateRenderer from '@/components/form-create/FlowFormCreateRende
 import { useDict } from '@/composables/useDict'
 import { useTabStore } from '@/store'
 import { toNumberDictOptions } from '@/utils/dict-options'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 import { loadFlowBusinessFormFieldCatalog } from '@/utils/flow-form-loader'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryValue } from './utils/categoryOptions'

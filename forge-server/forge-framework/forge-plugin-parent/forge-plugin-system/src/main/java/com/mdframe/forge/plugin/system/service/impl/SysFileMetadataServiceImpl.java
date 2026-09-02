@@ -10,6 +10,7 @@ import com.mdframe.forge.plugin.system.entity.SysFileStorageConfig;
 import com.mdframe.forge.plugin.system.mapper.SysFileMetadataMapper;
 import com.mdframe.forge.plugin.system.service.ISysFileMetadataService;
 import com.mdframe.forge.starter.core.domain.PageQuery;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.file.core.FileManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -98,11 +99,15 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
     }
 
     private void checkOwnership(SysFileMetadata metadata) {
-        if (metadata == null) return;
-        if (StpUtil.hasPermission("*:*:*")) return;
+        if (metadata == null) {
+            throw new BusinessException("素材不存在");
+        }
+        if (StpUtil.hasPermission("*:*:*")) {
+            return;
+        }
         Long currentUserId = StpUtil.getLoginIdAsLong();
         if (metadata.getUploaderId() != null && !currentUserId.equals(metadata.getUploaderId())) {
-            throw new RuntimeException("无权操作他人素材");
+            throw new BusinessException(403, "无权操作他人素材");
         }
     }
 
@@ -112,9 +117,6 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
                 .eq(SysFileMetadata::getFileId, fileId)
                 .eq(SysFileMetadata::getStatus, 1)
                 .one();
-        if (metadata == null) {
-            throw new RuntimeException("素材不存在");
-        }
         checkOwnership(metadata);
         // 文件 IO 在事务外执行，避免长事务占用 DB 连接
         fileManager.delete(metadata.getFileId());
@@ -123,14 +125,27 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
     @Override
     public void removeBatch(String[] fileIds) {
         for (String fileId : fileIds) {
+            SysFileMetadata fileMetadata = this.getById(fileId);
+            if (fileMetadata == null) {
+                continue;
+            }
+            checkOwnership(fileMetadata);
             try {
-                SysFileMetadata fileMetadata = this.getById(fileId);
-                // 文件 IO 在事务外执行，异常只告警不阻断后续文件删除
                 fileManager.delete(fileMetadata.getFileId());
+            } catch (BusinessException e) {
+                throw e;
             } catch (Exception e) {
                 log.error("删除文件失败: {}", fileId, e);
             }
         }
+    }
+
+    @Override
+    public boolean updateById(SysFileMetadata metadata) {
+        if (metadata != null && metadata.getId() != null) {
+            checkOwnership(this.getById(metadata.getId()));
+        }
+        return super.updateById(metadata);
     }
 
     @Override

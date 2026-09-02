@@ -6,6 +6,7 @@ import { loadRuntimeCryptoConfig } from '@/utils/crypto/crypto-config'
 import { getSessionKey, initKeyExchange, resetKeyExchange } from '@/utils/crypto/key-exchange'
 import { getTenantPageBaseTitle } from '@/utils/page-title'
 import { isAuthErrorCode, resolveResError, shouldSilenceAuthError } from './helpers'
+import { stripNullRequestBody } from './empty-body'
 
 // 生成 UUID
 function generateUUID() {
@@ -529,6 +530,7 @@ async function reqResolve(config, axiosInstance) {
 
     // 设置默认headers
     config.headers = config.headers || {}
+    stripNullRequestBody(config)
 
     // 生成traceid: 时间戳+5位随机数
     const timestamp = Date.now()

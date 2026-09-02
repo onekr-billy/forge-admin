@@ -22,6 +22,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,7 +35,7 @@ class CryptoMigrationControllerTest {
         assertArrayEquals(new String[]{"/api/config/manage/crypto/migration"}, mapping.value());
         assertNotNull(CryptoMigrationController.class.getAnnotation(ApiEncrypt.class));
         assertNotNull(CryptoMigrationController.class.getAnnotation(ApiDecrypt.class));
-        assertNotNull(CryptoMigrationController.class.getAnnotation(ApiPermissionIgnore.class));
+        assertNull(CryptoMigrationController.class.getAnnotation(ApiPermissionIgnore.class));
 
         Method inventory = CryptoMigrationController.class.getDeclaredMethod("inventory", CryptoMigrationRequest.class);
         Method execute = CryptoMigrationController.class.getDeclaredMethod("execute", CryptoMigrationRequest.class);

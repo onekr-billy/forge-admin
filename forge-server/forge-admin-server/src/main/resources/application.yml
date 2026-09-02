@@ -216,3 +216,12 @@ forge:
     datasource:
       enabled: true
       tenant-routing-enabled-default: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

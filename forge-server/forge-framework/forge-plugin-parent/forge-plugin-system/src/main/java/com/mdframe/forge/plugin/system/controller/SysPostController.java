@@ -22,7 +22,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysPostController {
 
     private final ISysPostService postService;
@@ -40,6 +39,7 @@ public class SysPostController {
      * 查询岗位列表
      */
     @GetMapping("/list")
+    @ApiPermissionIgnore
     public RespInfo<List<SysPost>> list(SysPostQuery query) {
         List<SysPost> list = postService.selectPostList(query);
         return RespInfo.success(list);

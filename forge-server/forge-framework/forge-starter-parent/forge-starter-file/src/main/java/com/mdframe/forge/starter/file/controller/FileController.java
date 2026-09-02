@@ -3,6 +3,7 @@ package com.mdframe.forge.starter.file.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.RespInfo;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.file.core.FileManager;
 import com.mdframe.forge.starter.file.model.FileMetadata;
 import lombok.RequiredArgsConstructor;
@@ -23,14 +24,16 @@ import java.util.List;
 @RequestMapping("/api/file")
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "forge.file.enable-generic-api", havingValue = "true", matchIfMissing = true)
-@ApiPermissionIgnore
 public class FileController {
+
+    private static final String BUCKET_ADMIN_MESSAGE = "只有超级管理员可以管理存储桶";
     
     private final FileManager fileManager;
     
     /**
      * 上传文件
      */
+    @ApiPermissionIgnore
     @PostMapping("/upload")
     public RespInfo<FileMetadata> upload(
             @RequestParam("file") MultipartFile file,
@@ -51,6 +54,7 @@ public class FileController {
     /**
      * 下载文件
      */
+    @ApiPermissionIgnore
     @GetMapping("/download/{fileId}")
     public void download(@PathVariable String fileId, HttpServletResponse response) {
         fileManager.download(fileId, response);
@@ -59,6 +63,7 @@ public class FileController {
     /**
      * 获取文件访问URL
      */
+    @ApiPermissionIgnore
     @GetMapping("/url/{fileId}")
     public RespInfo<String> getAccessUrl(
             @PathVariable String fileId,
@@ -71,6 +76,7 @@ public class FileController {
     /**
      * 删除文件
      */
+    @ApiPermissionIgnore
     @DeleteMapping("/{fileId}")
     public RespInfo<Boolean> delete(@PathVariable String fileId) {
         boolean success = fileManager.delete(fileId);
@@ -84,6 +90,7 @@ public class FileController {
     public RespInfo<Boolean> createBucket(
             @RequestParam("storageType") String storageType,
             @RequestParam("bucketName") String bucketName) {
+        SessionHelper.assertAdmin(BUCKET_ADMIN_MESSAGE);
         return RespInfo.success(fileManager.createBucket(storageType, bucketName));
     }
 
@@ -94,6 +101,7 @@ public class FileController {
     public RespInfo<Boolean> deleteBucket(
             @RequestParam("storageType") String storageType,
             @RequestParam("bucketName") String bucketName) {
+        SessionHelper.assertAdmin(BUCKET_ADMIN_MESSAGE);
         return RespInfo.success(fileManager.deleteBucket(storageType, bucketName));
     }
 
@@ -104,12 +112,14 @@ public class FileController {
     public RespInfo<Boolean> bucketExists(
             @RequestParam("storageType") String storageType,
             @RequestParam("bucketName") String bucketName) {
+        SessionHelper.assertAdmin(BUCKET_ADMIN_MESSAGE);
         return RespInfo.success(fileManager.bucketExists(storageType, bucketName));
     }
     
     /**
      * 分片上传 - 初始化
      */
+    @ApiPermissionIgnore
     @PostMapping("/multipart/init")
     public RespInfo<String> initMultipartUpload(
             @RequestParam("fileName") String fileName,
@@ -124,6 +134,7 @@ public class FileController {
     /**
      * 分片上传 - 上传分片
      */
+    @ApiPermissionIgnore
     @PostMapping("/multipart/upload")
     public RespInfo<String> uploadPart(
             @RequestParam("uploadId") String uploadId,
@@ -140,6 +151,7 @@ public class FileController {
     /**
      * 分片上传 - 完成
      */
+    @ApiPermissionIgnore
     @PostMapping("/multipart/complete")
     public RespInfo<FileMetadata> completeMultipartUpload(
             @RequestParam("uploadId") String uploadId,

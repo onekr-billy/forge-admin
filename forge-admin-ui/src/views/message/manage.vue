@@ -149,7 +149,7 @@
       </n-descriptions>
 
       <n-divider>消息内容</n-divider>
-      <div class="message-content" v-html="currentDetail?.message?.content" />
+      <div class="message-content" v-html="sanitizedMessageContent" />
 
       <n-divider>接收人列表</n-divider>
       <n-data-table
@@ -169,6 +169,7 @@ import { AiCrudPage } from '@/components/ai-form'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 
 defineOptions({ name: 'MessageManage' })
 
@@ -184,6 +185,7 @@ const showSendModal = ref(false)
 const sending = ref(false)
 const showDetail = ref(false)
 const currentDetail = ref(null)
+const sanitizedMessageContent = computed(() => sanitizeHtml(currentDetail.value?.message?.content))
 const bizTypeOptions = ref([])
 const connectionOptions = ref([])
 

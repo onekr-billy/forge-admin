@@ -120,15 +120,16 @@ public interface IAuthService {
     boolean changePassword(String oldPassword, String newPassword);
 
     /**
-     * 重置密码（通过验证码）
-     *
-     * @param username    用户名
-     * @param newPassword 新密码
-     * @param code        验证码
-     * @param codeKey     验证码key
-     * @return 是否成功
+     * 发送找回密码验证码。仅当全局短信/邮件通道已启用时可用。
      */
-    boolean resetPassword(String username, String newPassword, String code, String codeKey);
+    default void sendResetPasswordCode(SendResetPasswordCodeRequest request) {
+        throw new UnsupportedOperationException("不支持找回密码");
+    }
+
+    /**
+     * 通过短信或邮箱验证码重置密码。禁止图形验证码改密。
+     */
+    boolean resetPassword(ResetPasswordRequest request);
 
     /**
      * 获取验证码

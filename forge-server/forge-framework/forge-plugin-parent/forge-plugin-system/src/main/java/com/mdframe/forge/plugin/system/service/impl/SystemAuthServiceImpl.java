@@ -11,7 +11,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.mdframe.forge.plugin.system.auth.LoginCaptchaPolicy;
 import com.mdframe.forge.plugin.system.auth.LoginCaptchaPolicyResolver;
+import com.mdframe.forge.plugin.system.auth.LoginPasswordDecoder;
 import com.mdframe.forge.plugin.system.auth.LoginPasswordEncryptionPolicy;
+import com.mdframe.forge.plugin.system.auth.RecoveryChannelSupport;
 import com.mdframe.forge.plugin.system.entity.*;
 import com.mdframe.forge.plugin.system.mapper.*;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
@@ -28,6 +30,7 @@ import com.mdframe.forge.starter.auth.service.ICaptchaService;
 import com.mdframe.forge.starter.auth.strategy.AuthStrategyFactory;
 import com.mdframe.forge.starter.auth.strategy.IAuthStrategy;
 import com.mdframe.forge.starter.auth.util.PasswordUtil;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -67,6 +71,8 @@ public class SystemAuthServiceImpl implements IAuthService {
     private final LoginCaptchaPolicyResolver captchaPolicyResolver;
     private final LoginPasswordEncryptionPolicy passwordEncryptionPolicy;
     private final SysTenantMapper tenantMapper;
+    private final RecoveryChannelSupport recoveryChannelSupport;
+    private final LoginPasswordDecoder loginPasswordDecoder;
 
     // ==================== 核心认证方法 ====================
 
@@ -372,6 +378,11 @@ public class SystemAuthServiceImpl implements IAuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public LoginUser register(RegisterRequest request) {
+        LoginConfig loginConfig = configManagerService.getLoginConfig();
+        if (loginConfig == null || !Boolean.TRUE.equals(loginConfig.getEnableRegister())) {
+            throw new BusinessException("系统未开放注册");
+        }
+
         // 1. 参数校验
         validateRegisterRequest(request);
         
@@ -428,30 +439,72 @@ public class SystemAuthServiceImpl implements IAuthService {
     }
 
     @Override
+    public void sendResetPasswordCode(SendResetPasswordCodeRequest request) {
+        if (request == null || StrUtil.isBlank(request.getAccount())) {
+            throw new BusinessException("账号不能为空");
+        }
+        if (recoveryChannelSupport.enabledChannels().isEmpty()) {
+            throw new BusinessException("未启用找回密码通道");
+        }
+        String channel = StrUtil.trim(request.getChannel());
+        String account = StrUtil.trim(request.getAccount());
+        recoveryChannelSupport.requireChannel(channel);
+
+        String intervalKey = "auth:reset:interval:" + channel + ":" + account;
+        if (cacheService.get(intervalKey) != null) {
+            throw new BusinessException("发送过于频繁，请稍后再试");
+        }
+        cacheService.set(intervalKey, "1", Duration.ofSeconds(60));
+
+        SysUser user = findUserByRecoveryAccount(channel, account, request.getTenantId());
+        if (user == null) {
+            log.info("找回密码发码跳过：账号未匹配到用户, channel={}", channel);
+            return;
+        }
+        if (RecoveryChannelSupport.CHANNEL_SMS.equals(channel)) {
+            captchaService.sendSmsCaptcha(account);
+            return;
+        }
+        captchaService.sendEmailCaptcha(account);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean resetPassword(String username, String newPassword, String code, String codeKey) {
-        // 1. 验证验证码
-        if (!captchaService.validateAndDelete(codeKey, code)) {
-            throw new RuntimeException("验证码错误或已过期");
+    public boolean resetPassword(ResetPasswordRequest request) {
+        if (request == null || StrUtil.hasBlank(request.getAccount(), request.getCode(), request.getNewPassword())) {
+            throw new BusinessException("参数不完整");
         }
-        
-        // 2. 查询用户
-        LoginUser loginUser = loadUserByUsername(username, null);
-        if (loginUser == null) {
-            throw new RuntimeException("用户不存在");
+        if (recoveryChannelSupport.enabledChannels().isEmpty()) {
+            throw new BusinessException("未启用找回密码通道");
         }
-        
-        // 3. 加密新密码
-        String encodedPassword = PasswordUtil.encrypt(newPassword);
-        
-        // 4. 更新密码
-        boolean success = updateUserPassword(loginUser.getUserId(), encodedPassword);
-        
+        String channel = StrUtil.trim(request.getChannel());
+        String account = StrUtil.trim(request.getAccount());
+        String code = StrUtil.trim(request.getCode());
+        recoveryChannelSupport.requireChannel(channel);
+
+        boolean codeValid = RecoveryChannelSupport.CHANNEL_SMS.equals(channel)
+                ? captchaService.validateAndDeleteSmsCaptcha(account, code)
+                : captchaService.validateAndDeleteEmailCaptcha(account, code);
+        SysUser user = findUserByRecoveryAccount(channel, account, request.getTenantId());
+        if (!codeValid || user == null || user.getId() == null) {
+            throw new BusinessException("验证码错误或已过期");
+        }
+
+        String encodedPassword = PasswordUtil.encrypt(loginPasswordDecoder.decode(request.getNewPassword()));
+        boolean success = updateUserPassword(user.getId(), encodedPassword);
         if (success) {
-            log.info("用户重置密码成功: username={}", username);
+            log.info("用户重置密码成功: userId={}, channel={}", user.getId(), channel);
         }
-        
         return success;
+    }
+
+    private SysUser findUserByRecoveryAccount(String channel, String account, Long tenantId) {
+        return TenantContextHolder.executeIgnore(() -> {
+            if (RecoveryChannelSupport.CHANNEL_SMS.equals(channel)) {
+                return userMapper.selectByPhoneForLogin(account, tenantId);
+            }
+            return userMapper.selectByEmailForLogin(account, tenantId);
+        });
     }
 
     // ==================== 验证码和Token管理 ====================
@@ -506,6 +559,8 @@ public class SystemAuthServiceImpl implements IAuthService {
                 .enableRememberMe(config.getEnableRememberMe())
                 .enableLoginLog(config.getEnableLoginLog())
                 .enableIpLimit(config.getEnableIpLimit())
+                .enableRegister(Boolean.TRUE.equals(config.getEnableRegister()))
+                .resetPasswordChannels(recoveryChannelSupport.enabledChannels())
                 .tenantId(tenant == null ? null : tenant.getId())
                 .tenantName(tenant == null ? null : tenant.getTenantName())
                 .browserIcon(tenant == null ? null : tenant.getBrowserIcon())

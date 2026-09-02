@@ -16,6 +16,16 @@ export default {
     params: { phone },
   }),
 
+  sendResetPasswordCode: data => request.post('/auth/resetPassword/code', data, {
+    needToken: false,
+    needTip: true,
+  }),
+
+  resetPassword: data => request.post('/auth/resetPassword', data, {
+    needToken: false,
+    needTip: true,
+  }),
+
   // 获取登录配置
   getLoginConfig: (userClient, tenantId) => request.get('/auth/loginConfig', {
     needToken: false,

@@ -307,7 +307,7 @@
           <span>发布时间：{{ currentNotice.publishTime }}</span>
         </div>
         <n-divider />
-        <div class="detail-content" v-html="currentNotice.noticeContent" />
+        <div class="detail-content" v-html="sanitizedNoticeContent" />
       </div>
     </n-modal>
   </div>
@@ -325,6 +325,7 @@ import wechatSupportQr from '@/assets/images/forge-wechat-support.png'
 import welcomeAvatar from '@/assets/images/home-welcome-avatar.png'
 import { useUserStore } from '@/store'
 import { request } from '@/utils'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -347,6 +348,7 @@ const distributedApplications = ref([])
 
 const showNoticeModal = ref(false)
 const currentNotice = ref(null)
+const sanitizedNoticeContent = computed(() => sanitizeHtml(currentNotice.value?.noticeContent))
 
 const visitChartRef = ref(null)
 const userChartRef = ref(null)

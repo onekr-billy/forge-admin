@@ -4,7 +4,6 @@ import com.mdframe.forge.starter.config.config.*;
 import com.mdframe.forge.starter.config.service.ConfigManagerService;
 import com.mdframe.forge.starter.core.context.AuthProperties;
 import com.mdframe.forge.starter.core.context.LogProperties;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
@@ -24,7 +23,6 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @ApiEncrypt
 @ApiDecrypt
-@ApiPermissionIgnore
 @IgnoreTenant
 public class ConfigManageController {
     private final ConfigManagerService configManagerService;

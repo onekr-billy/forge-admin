@@ -5,7 +5,6 @@ import com.mdframe.forge.plugin.system.service.ISysFileGroupService;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +17,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/system/file/group")
 @RequiredArgsConstructor
-@ApiPermissionIgnore
 @ApiDecrypt
 @ApiEncrypt
 public class SysFileGroupController {

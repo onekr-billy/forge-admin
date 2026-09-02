@@ -25,6 +25,11 @@ public class LoginConfig {
     private String captchaType = "graphical";
 
     /**
+     * 是否开放匿名注册。默认关闭。
+     */
+    private Boolean enableRegister = false;
+
+    /**
      * 是否启用记住我功能
      */
     private Boolean enableRememberMe = true;

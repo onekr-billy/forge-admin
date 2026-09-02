@@ -5,7 +5,6 @@ import com.mdframe.forge.plugin.system.dto.SysConfigDTO;
 import com.mdframe.forge.plugin.system.dto.SysConfigQuery;
 import com.mdframe.forge.plugin.system.entity.SysConfig;
 import com.mdframe.forge.plugin.system.service.ISysConfigService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -27,7 +26,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysConfigController {
 
     private final ISysConfigService configService;

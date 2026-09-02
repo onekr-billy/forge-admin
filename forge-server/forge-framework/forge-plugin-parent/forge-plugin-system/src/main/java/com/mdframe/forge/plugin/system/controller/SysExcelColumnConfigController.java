@@ -2,7 +2,6 @@ package com.mdframe.forge.plugin.system.controller;
 
 import com.mdframe.forge.plugin.system.entity.SysExcelColumnConfig;
 import com.mdframe.forge.plugin.system.service.ISysExcelColumnConfigService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -20,7 +19,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysExcelColumnConfigController {
     
     private final ISysExcelColumnConfigService columnConfigService;

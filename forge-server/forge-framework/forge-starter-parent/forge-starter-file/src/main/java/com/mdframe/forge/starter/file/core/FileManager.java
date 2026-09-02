@@ -1,5 +1,6 @@
 package com.mdframe.forge.starter.file.core;
 
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.file.model.FileMetadata;
 import com.mdframe.forge.starter.file.model.StorageConfig;
 import com.mdframe.forge.starter.file.spi.FileMetadataPersistence;
@@ -337,7 +338,10 @@ public class FileManager {
         if (metadata == null) {
             return false;
         }
-        
+        if (!metadataPersistence.canModify(fileId, null)) {
+            throw new BusinessException(403, "无权删除该文件");
+        }
+
         FileStorage storage = getStorage(metadata.getStorageType());
         if (storage != null) {
             storage.delete(fileId);

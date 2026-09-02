@@ -1,6 +1,5 @@
 package com.mdframe.forge.admin.crypto;
 
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @ApiEncrypt
 @ApiDecrypt
-@ApiPermissionIgnore
 public class CryptoMigrationController {
 
     private final CryptoMigrationCoordinator coordinator;

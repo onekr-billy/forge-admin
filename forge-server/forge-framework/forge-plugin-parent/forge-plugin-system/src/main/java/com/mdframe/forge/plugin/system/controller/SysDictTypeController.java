@@ -5,7 +5,6 @@ import com.mdframe.forge.plugin.system.dto.SysDictTypeDTO;
 import com.mdframe.forge.plugin.system.dto.SysDictTypeQuery;
 import com.mdframe.forge.plugin.system.entity.SysDictType;
 import com.mdframe.forge.plugin.system.service.ISysDictTypeService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -23,7 +22,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysDictTypeController {
 
     private final ISysDictTypeService dictTypeService;

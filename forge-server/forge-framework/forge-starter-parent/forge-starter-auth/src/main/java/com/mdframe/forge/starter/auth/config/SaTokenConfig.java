@@ -46,6 +46,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     .notMatch("/auth/register")
                     // 排除重置密码接口
                     .notMatch("/auth/resetPassword")
+                    .notMatch("/auth/resetPassword/code")
                     // 排除 SSO 票据交换接口
                     .notMatch("/auth/sso/exchange")
                     // 排除密钥交换相关接口（未登录时也需要先完成协商）
@@ -70,10 +71,8 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     .notMatch("/auth/captcha/sms")
                     // 排除静态资源
                     .notMatch("/static/**", "/css/**", "/js/**", "/images/**")
-                    // 排除Swagger文档
-                    .notMatch("/doc.html", "/webjars/**")
                     // 排除健康检查
-                    .notMatch("/actuator/**", "/health")
+                    .notMatch("/actuator/health", "/health")
                     .notMatch("/ws/**")
                     // 执行登录校验
                     .check(r -> StpUtil.checkLogin());
@@ -84,6 +83,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 .addPathPatterns("/**")
                 // 排除登录相关接口
                 .excludePathPatterns("/auth/login", "/auth/logout", "/auth/loginConfig", "/auth/tenant/options", "/auth/tenant/assets/**", "/auth/register", "/auth/resetPassword",
+                        "/auth/resetPassword/code",
                         "/auth/captcha", "/auth/captcha/slider", "/auth/captcha/sms", "/auth/sso/exchange")
                 .excludePathPatterns("/crypto/config", "/crypto/public-key", "/crypto/exchange")
                 .excludePathPatterns("/.well-known/oauth-protected-resource",
@@ -94,10 +94,8 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/openapi/v1/capabilities/**")
                 // 排除静态资源
                 .excludePathPatterns("/static/**", "/css/**", "/js/**", "/images/**")
-                // 排除Swagger文档
-                .excludePathPatterns("/swagger-ui/**", "/v3/api-docs/**", "/doc.html", "/webjars/**")
                 // 排除健康检查
-                .excludePathPatterns("/actuator/**", "/health")
+                .excludePathPatterns("/actuator/health", "/health")
                 .excludePathPatterns(authProperties.getApiPermissionExcludePaths())
                 .order(2);  // 优先级2，在登录校验之后执行
     }

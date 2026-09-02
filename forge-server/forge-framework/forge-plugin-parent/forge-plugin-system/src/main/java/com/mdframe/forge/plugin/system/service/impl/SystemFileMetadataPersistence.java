@@ -83,22 +83,41 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
     
     @Override
     public boolean checkPermission(String fileId, Long userId) {
-        SysFileMetadata entity = metadataMapper.selectOne(
+        SysFileMetadata entity = findEnabled(fileId);
+        if (entity == null) {
+            return false;
+        }
+        if (!Boolean.TRUE.equals(entity.getIsPrivate())) {
+            return true;
+        }
+        return isAdminOrUploader(entity, userId);
+    }
+
+    @Override
+    public boolean canModify(String fileId, Long userId) {
+        SysFileMetadata entity = findEnabled(fileId);
+        if (entity == null) {
+            return false;
+        }
+        return isAdminOrUploader(entity, userId);
+    }
+
+    private SysFileMetadata findEnabled(String fileId) {
+        return metadataMapper.selectOne(
             new LambdaQueryWrapper<SysFileMetadata>()
                 .eq(SysFileMetadata::getFileId, fileId)
                 .eq(SysFileMetadata::getStatus, 1)
         );
-        
-        if (entity == null) {
-            return false;
+    }
+
+    private boolean isAdminOrUploader(SysFileMetadata entity, Long userId) {
+        try {
+            if (StpUtil.hasPermission("*:*:*")) {
+                return true;
+            }
+        } catch (Exception ignored) {
+            // 无登录上下文时按上传者判断
         }
-        
-        // 公开文件，所有人可访问
-        if (!Boolean.TRUE.equals(entity.getIsPrivate())) {
-            return true;
-        }
-        
-        // 私有文件，检查是否是上传者
         if (userId == null) {
             try {
                 userId = StpUtil.getLoginIdAsLong();
@@ -106,7 +125,6 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
                 return false;
             }
         }
-        
         return entity.getUploaderId() != null && entity.getUploaderId().equals(userId);
     }
     

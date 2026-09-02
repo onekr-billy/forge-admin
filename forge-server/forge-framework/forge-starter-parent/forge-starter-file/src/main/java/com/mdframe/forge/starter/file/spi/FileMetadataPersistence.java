@@ -34,7 +34,12 @@ public interface FileMetadataPersistence {
     void delete(String fileId);
     
     /**
-     * 检查文件权限
+     * 检查文件读取权限
      */
     boolean checkPermission(String fileId, Long userId);
+
+    /**
+     * 检查是否允许修改或删除文件
+     */
+    boolean canModify(String fileId, Long userId);
 }

@@ -1,6 +1,7 @@
 package com.mdframe.forge.flow.controller;
 
 import com.mdframe.forge.flow.dto.FlowInstanceStartDTO;
+import com.mdframe.forge.flow.dto.FlowInstanceTerminateDTO;
 import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
 import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
 import com.mdframe.forge.starter.auth.config.FlowDelegationSessionVerifier;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -108,6 +110,86 @@ class FlowDelegatedIdentityControllerTest {
         verify(flowTaskService).reject(
                 "task-1", "101", "不同意", null, 1L,
                 "flow-action-key-1001", "sha256:digest");
+    }
+
+    @Test
+    void shouldQueryTodoAsTrustedSessionUserAndCapPageSize() {
+        FlowTaskService flowTaskService = mock(FlowTaskService.class);
+        FlowTaskController controller = new FlowTaskController(
+                flowTaskService, mock(FlowOverdueReminderService.class));
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            controller.todo(1, 500, "101", null, null, null);
+        }
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<com.baomidou.mybatisplus.extension.plugins.pagination.Page> pageCaptor =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.extension.plugins.pagination.Page.class);
+        verify(flowTaskService).todoTasks(pageCaptor.capture(), eq("101"), isNull(), isNull(), isNull());
+        assertThat(pageCaptor.getValue().getSize()).isEqualTo(100);
+    }
+
+    @Test
+    void shouldRejectTodoIdentityThatDiffersFromTrustedSession() {
+        FlowTaskService flowTaskService = mock(FlowTaskService.class);
+        FlowTaskController controller = new FlowTaskController(
+                flowTaskService, mock(FlowOverdueReminderService.class));
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            assertThatThrownBy(() -> controller.todo(1, 10, "202", null, null, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("FLOW_TASK_ASSIGNEE_MISMATCH");
+        }
+
+        verify(flowTaskService, never()).todoTasks(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldClaimAsTrustedSessionUser() {
+        FlowTaskService flowTaskService = mock(FlowTaskService.class);
+        FlowTaskController controller = new FlowTaskController(
+                flowTaskService, mock(FlowOverdueReminderService.class));
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            controller.claim("task-1", "101");
+        }
+
+        verify(flowTaskService).claimTask("task-1", "101");
+    }
+
+    @Test
+    void shouldTerminateAndDeleteProcessAsTrustedSessionUser() {
+        FlowInstanceService flowInstanceService = mock(FlowInstanceService.class);
+        FlowInstanceController controller = new FlowInstanceController(
+                flowInstanceService, mock(FlowMonitorService.class), mock(FlowOrgIntegrationService.class),
+                mock(FlowDelegationSessionVerifier.class));
+        FlowInstanceTerminateDTO request = new FlowInstanceTerminateDTO();
+        request.setUserId("101");
+        request.setReason("取消");
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            controller.terminate("order:1001", request);
+            controller.delete("order:1001", "101");
+        }
+
+        verify(flowInstanceService).terminateProcess("order:1001", "101", "取消");
+        verify(flowInstanceService).deleteProcess("order:1001", "101");
+    }
+
+    @Test
+    void shouldRejectDeleteProcessIdentityThatDiffersFromTrustedSession() {
+        FlowInstanceService flowInstanceService = mock(FlowInstanceService.class);
+        FlowInstanceController controller = new FlowInstanceController(
+                flowInstanceService, mock(FlowMonitorService.class), mock(FlowOrgIntegrationService.class),
+                mock(FlowDelegationSessionVerifier.class));
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            assertThatThrownBy(() -> controller.delete("order:1001", "202"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("FLOW_TASK_ASSIGNEE_MISMATCH");
+        }
+
+        verify(flowInstanceService, never()).deleteProcess(any(), any());
     }
 
     private ExecutionIdentity identity() {

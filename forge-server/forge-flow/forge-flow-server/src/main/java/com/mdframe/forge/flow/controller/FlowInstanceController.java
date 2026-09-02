@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.mdframe.forge.flow.dto.FlowInstanceStartDTO;
 import com.mdframe.forge.flow.dto.FlowInstanceTerminateDTO;
+import com.mdframe.forge.flow.identity.FlowSessionIdentity;
 import com.mdframe.forge.starter.auth.config.FlowDelegationSessionVerifier;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -167,7 +168,8 @@ public class FlowInstanceController {
     public RespInfo<Void> terminate(
             @PathVariable String businessKey,
             @RequestBody FlowInstanceTerminateDTO dto) {
-        flowInstanceService.terminateProcess(businessKey, dto.getUserId(), dto.getReason());
+        String userId = FlowSessionIdentity.requireUserId(dto == null ? null : dto.getUserId());
+        flowInstanceService.terminateProcess(businessKey, userId, dto == null ? null : dto.getReason());
         return RespInfo.success("流程已终止", null);
     }
 
@@ -177,9 +179,8 @@ public class FlowInstanceController {
     @DeleteMapping("/{businessKey}")
     public RespInfo<Void> delete(
             @PathVariable String businessKey,
-            @RequestParam String userId) {
-        
-        flowInstanceService.deleteProcess(businessKey, userId);
+            @RequestParam(required = false) String userId) {
+        flowInstanceService.deleteProcess(businessKey, FlowSessionIdentity.requireUserId(userId));
         
         return RespInfo.success("删除成功", null);
     }

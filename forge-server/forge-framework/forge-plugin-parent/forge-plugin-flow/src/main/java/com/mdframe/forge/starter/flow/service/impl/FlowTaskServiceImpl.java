@@ -170,51 +170,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
     @Override
     public IPage<FlowTask> candidateTasks(Page<FlowTask> page, String userId, String groupId, String title) {
-        // 1. 查询 Flowable 候选任务
-        List<Task> flowableTasks = new ArrayList<>();
-        
-        // 按候选人查询
-        if (userId != null && !userId.isEmpty()) {
-            List<Task> userCandidateTasks = taskService.createTaskQuery()
-                    .taskCandidateUser(userId)
-                    .taskUnassigned()
-                    .list();
-            flowableTasks.addAll(userCandidateTasks);
+        if ((userId == null || userId.isEmpty()) && (groupId == null || groupId.isEmpty())) {
+            return page;
         }
-        
-        // 按候选组查询
-        if (groupId != null && !groupId.isEmpty()) {
-            List<Task> groupCandidateTasks = taskService.createTaskQuery()
-                    .taskCandidateGroup(groupId)
-                    .taskUnassigned()
-                    .list();
-            // 去重合并
-            Set<String> existingTaskIds = flowableTasks.stream()
-                    .map(Task::getId)
-                    .collect(Collectors.toSet());
-            for (Task task : groupCandidateTasks) {
-                if (!existingTaskIds.contains(task.getId())) {
-                    flowableTasks.add(task);
-                }
-            }
-        }
-        
-        // 2. 获取任务ID列表
-        if (flowableTasks.isEmpty()) {
-            return page; // 返回空页
-        }
-        
-        List<String> taskIds = flowableTasks.stream()
-                .map(Task::getId)
-                .collect(Collectors.toList());
-        
-        // 3. 从本地表查询任务详情（带分页）
-        LambdaQueryWrapper<FlowTask> wrapper = new LambdaQueryWrapper<>();
-        wrapper.in(FlowTask::getTaskId, taskIds)
-                .like(title != null, FlowTask::getTitle, title)
-                .orderByDesc(FlowTask::getCreateTime);
-        
-        return enrichTaskPage(page(page, wrapper));
+        return enrichTaskPage(this.getBaseMapper().selectCandidateTasks(
+                page, userId, groupId, title, SessionHelper.getTenantId()));
     }
 
     private IPage<FlowTask> enrichTaskPage(IPage<FlowTask> page) {

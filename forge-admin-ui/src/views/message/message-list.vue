@@ -49,7 +49,7 @@
               </div>
             </div>
             <n-divider />
-            <div class="message-content" v-html="currentMessage?.content" />
+            <div class="message-content" v-html="sanitizedMessageContent" />
             <n-divider v-if="currentMessage?.bizType && currentMessage?.bizKey" />
             <div v-if="currentMessage?.bizType && currentMessage?.bizKey" class="biz-info">
               <n-space align="center" justify="space-between">
@@ -78,6 +78,7 @@ import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
 import { mergeMessageNavigationTarget } from '@/layouts/components/message-notification-utils'
 import { request } from '@/utils'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 import { toNumberDictOptions } from '@/utils/dict-options'
 
 defineOptions({ name: 'MessageList' })
@@ -93,6 +94,7 @@ const router = useRouter()
 const crudRef = ref(null)
 const showDetail = ref(false)
 const currentMessage = ref(null)
+const sanitizedMessageContent = computed(() => sanitizeHtml(currentMessage.value?.content))
 const selectedRowKeys = ref([])
 const bizTypeOptions = ref([])
 const { dict } = useDict('sys_message_type', 'sys_message_read_status')

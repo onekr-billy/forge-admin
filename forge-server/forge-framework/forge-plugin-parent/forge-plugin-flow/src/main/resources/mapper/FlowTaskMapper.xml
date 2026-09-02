@@ -278,6 +278,50 @@
         ORDER BY t.create_time DESC
     </select>
 
+    <!-- 未签收候选任务。只匹配 candidate_users / candidate_groups，不把已签收待办算进来。 -->
+    <select id="selectCandidateTasks" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
+        SELECT <include refid="TaskListColumns" />
+        FROM sys_flow_task t
+        <include refid="TaskListUserJoins" />
+        <where>
+            AND t.tenant_id = #{tenantId}
+            AND t.status = 0
+            AND (t.assignee IS NULL OR t.assignee = '')
+            AND (
+                <if test="userId != null and userId != ''">
+                (
+                    t.candidate_users IS NOT NULL
+                    AND t.candidate_users != ''
+                    AND FIND_IN_SET(
+                        REPLACE(REPLACE(REPLACE(REPLACE(#{userId}, ';', ','), '；', ','), '，', ','), ' ', ''),
+                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.candidate_users, ';', ','), '；', ','), '，', ','), '、', ','), ' ', '')
+                    ) &gt; 0
+                )
+                </if>
+                <if test="userId != null and userId != '' and groupId != null and groupId != ''">
+                OR
+                </if>
+                <if test="groupId != null and groupId != ''">
+                (
+                    t.candidate_groups IS NOT NULL
+                    AND t.candidate_groups != ''
+                    AND FIND_IN_SET(
+                        REPLACE(REPLACE(REPLACE(REPLACE(#{groupId}, ';', ','), '；', ','), '，', ','), ' ', ''),
+                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.candidate_groups, ';', ','), '；', ','), '，', ','), '、', ','), ' ', '')
+                    ) &gt; 0
+                )
+                </if>
+                <if test="(userId == null or userId == '') and (groupId == null or groupId == '')">
+                1 = 0
+                </if>
+            )
+            <if test="title != null and title != ''">
+                AND t.title LIKE CONCAT('%', #{title}, '%')
+            </if>
+        </where>
+        ORDER BY t.create_time DESC
+    </select>
+
     <!-- 已逾期且仍待办理的任务 -->
     <select id="selectOverduePendingTasks" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
         SELECT t.*, m.category AS category, c.category_name AS category_name,

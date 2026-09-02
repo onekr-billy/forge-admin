@@ -7,7 +7,9 @@ import cn.hutool.core.util.StrUtil;
 import com.mdframe.forge.starter.auth.config.CaptchaProperties;
 import com.mdframe.forge.starter.auth.domain.CaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SliderCaptchaResult;
+import com.mdframe.forge.starter.auth.domain.EmailCaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SmsCaptchaResult;
+import com.mdframe.forge.starter.auth.email.EmailCaptchaSender;
 import com.mdframe.forge.starter.auth.service.ICaptchaService;
 import com.mdframe.forge.starter.auth.sms.SmsCaptchaSender;
 import com.mdframe.forge.starter.cache.service.ICacheService;
@@ -41,6 +43,7 @@ public class CaptchaServiceImpl implements ICaptchaService {
     private final CaptchaProperties captchaProperties;
     private final Environment environment;
     private final Optional<SmsCaptchaSender> smsCaptchaSender;
+    private final Optional<EmailCaptchaSender> emailCaptchaSender;
 
     /**
      * 验证码缓存key前缀
@@ -581,6 +584,101 @@ public class CaptchaServiceImpl implements ICaptchaService {
         return valid;
     }
 
+    // ==================== 邮箱验证码 ====================
+
+    @Override
+    public EmailCaptchaResult sendEmailCaptcha(String email) {
+        return sendEmailCaptcha(email, DEFAULT_DURATION);
+    }
+
+    @Override
+    public EmailCaptchaResult sendEmailCaptcha(String email, Duration duration) {
+        if (StrUtil.isBlank(email)) {
+            return EmailCaptchaResult.builder()
+                    .email(email)
+                    .status("fail")
+                    .message("邮箱不能为空")
+                    .build();
+        }
+
+        String intervalKey = EMAIL_CAPTCHA_KEY_PREFIX + "interval:" + email;
+        String lastSendTime = cacheService.get(intervalKey);
+        if (lastSendTime != null) {
+            return EmailCaptchaResult.builder()
+                    .email(email)
+                    .status("fail")
+                    .message("发送过于频繁，请稍后再试")
+                    .interval(SMS_SEND_INTERVAL)
+                    .build();
+        }
+
+        String code = generateSmsCode();
+        String key = UUID.randomUUID().toString().replace("-", "");
+        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
+        boolean developmentEcho = isDevelopmentEchoEnabled();
+
+        try {
+            cacheService.set(cacheKey, code, duration);
+            boolean sendSuccess = developmentEcho || emailCaptchaSender
+                    .map(sender -> sender.sendVerificationCode(email, code, duration))
+                    .orElse(false);
+            if (!sendSuccess) {
+                rollbackEmailCaptcha(cacheKey, email);
+                log.warn("邮箱验证码发送失败: email={}", SensitiveDataUtil.maskEmail(email));
+                return emailFailure(email);
+            }
+
+            cacheService.set(intervalKey, String.valueOf(System.currentTimeMillis()),
+                    Duration.ofSeconds(SMS_SEND_INTERVAL));
+            log.info("邮箱验证码发送成功: email={}, mode={}", SensitiveDataUtil.maskEmail(email),
+                    developmentEcho ? "development" : "provider");
+            return EmailCaptchaResult.builder()
+                    .codeKey(key)
+                    .email(email)
+                    .status("success")
+                    .message("验证码发送成功")
+                    .code(developmentEcho ? code : null)
+                    .expiresIn(duration.getSeconds())
+                    .interval(SMS_SEND_INTERVAL)
+                    .captchaType("email")
+                    .build();
+        } catch (Exception e) {
+            rollbackEmailCaptcha(cacheKey, email);
+            log.error("邮箱验证码发送异常: email={}, errorType={}",
+                    SensitiveDataUtil.maskEmail(email), e.getClass().getSimpleName(), sanitizedException(e));
+            return emailFailure(email);
+        }
+    }
+
+    @Override
+    public boolean validateEmailCaptcha(String email, String code) {
+        if (StrUtil.isBlank(email) || StrUtil.isBlank(code)) {
+            return false;
+        }
+
+        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
+        String cacheCode = cacheService.get(cacheKey);
+
+        if (cacheCode == null) {
+            log.warn("邮箱验证码不存在或已过期: email={}", SensitiveDataUtil.maskEmail(email));
+            return false;
+        }
+
+        boolean match = code.equals(cacheCode);
+        log.debug("邮箱验证码校验: email={}, result={}", SensitiveDataUtil.maskEmail(email), match);
+        return match;
+    }
+
+    @Override
+    public boolean validateAndDeleteEmailCaptcha(String email, String code) {
+        boolean valid = validateEmailCaptcha(email, code);
+        if (valid) {
+            String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
+            cacheService.delete(cacheKey);
+        }
+        return valid;
+    }
+
     private boolean isDevelopmentEchoEnabled() {
         return captchaProperties.isDevEchoCode()
                 && environment.acceptsProfiles(Profiles.of("dev", "local"));
@@ -604,8 +702,18 @@ public class CaptchaServiceImpl implements ICaptchaService {
         }
     }
 
+    private void rollbackEmailCaptcha(String cacheKey, String email) {
+        try {
+            cacheService.delete(cacheKey);
+        } catch (RuntimeException rollbackException) {
+            log.error("邮箱验证码缓存回滚失败: email={}, errorType={}",
+                    SensitiveDataUtil.maskEmail(email),
+                    rollbackException.getClass().getSimpleName(), sanitizedException(rollbackException));
+        }
+    }
+
     private RuntimeException sanitizedException(Exception exception) {
-        RuntimeException sanitized = new RuntimeException("SMS_CAPTCHA_OPERATION_FAILED");
+        RuntimeException sanitized = new RuntimeException("CAPTCHA_OPERATION_FAILED");
         sanitized.setStackTrace(exception.getStackTrace());
         return sanitized;
     }
@@ -613,6 +721,14 @@ public class CaptchaServiceImpl implements ICaptchaService {
     private SmsCaptchaResult smsFailure(String phone) {
         return SmsCaptchaResult.builder()
                 .phone(phone)
+                .status("fail")
+                .message("验证码发送失败，请稍后重试")
+                .build();
+    }
+
+    private EmailCaptchaResult emailFailure(String email) {
+        return EmailCaptchaResult.builder()
+                .email(email)
                 .status("fail")
                 .message("验证码发送失败，请稍后重试")
                 .build();

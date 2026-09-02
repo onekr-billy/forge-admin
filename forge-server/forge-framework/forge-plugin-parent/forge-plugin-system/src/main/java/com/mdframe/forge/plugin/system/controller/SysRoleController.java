@@ -9,7 +9,6 @@ import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.entity.SysRole;
 import com.mdframe.forge.plugin.system.service.ISysRoleService;
 import com.mdframe.forge.plugin.system.vo.RoleDataScopeSettingsVO;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -26,7 +25,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysRoleController {
 
     private final ISysRoleService roleService;

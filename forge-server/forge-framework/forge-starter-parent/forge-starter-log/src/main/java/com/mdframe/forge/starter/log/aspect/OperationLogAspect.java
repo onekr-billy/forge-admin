@@ -66,6 +66,7 @@ public class OperationLogAspect {
             "/auth/register",
             "/auth/changePassword",
             "/auth/resetPassword",
+            "/auth/resetPassword/code",
             "/auth/online/kickout",
             "/auth/online/batchKickout",
             "/oauth2/token",

@@ -23,7 +23,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysDictDataController {
 
     private final ISysDictDataService dictDataService;
@@ -50,6 +49,7 @@ public class SysDictDataController {
      * 根据字典类型查询字典数据
      */
     @GetMapping("/type/{dictType}")
+    @ApiPermissionIgnore
     public RespInfo<List<SysDictData>> getByType(@PathVariable String dictType) {
         List<SysDictData> list = dictDataService.selectDictDataByType(dictType);
         return RespInfo.success(list);

@@ -26,6 +26,7 @@ class ClientCredentialSurfaceContractTest {
                 "\"/auth/register\"",
                 "\"/auth/changePassword\"",
                 "\"/auth/resetPassword\"",
+                "\"/auth/resetPassword/code\"",
                 "\"/auth/online/kickout\"",
                 "\"/auth/online/batchKickout\"",
                 "requestUrl.replaceAll(\";[^/]*\", \"\").replaceAll(\"/+$\", \"\")");

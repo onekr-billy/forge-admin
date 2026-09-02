@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.system.entity.SysExcelExportConfig;
 import com.mdframe.forge.plugin.system.service.ISysExcelColumnConfigService;
 import com.mdframe.forge.plugin.system.service.ISysExcelExportConfigService;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -27,7 +26,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 @ApiDecrypt
 @ApiEncrypt
-@ApiPermissionIgnore
 public class SysExcelExportConfigController {
     
     private final ISysExcelExportConfigService exportConfigService;

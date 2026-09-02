@@ -4,7 +4,6 @@ import com.mdframe.forge.starter.apiconfig.domain.dto.ApiConfigInfo;
 import com.mdframe.forge.starter.apiconfig.domain.event.ApiConfigRefreshEvent;
 import com.mdframe.forge.starter.apiconfig.registry.ApiConfigAutoRegistrar;
 import com.mdframe.forge.starter.apiconfig.service.IApiConfigManager;
-import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
@@ -25,7 +24,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/apiConfig")
 @RequiredArgsConstructor
-@ApiPermissionIgnore
 @ApiDecrypt
 @ApiEncrypt
 public class ApiConfigManageController {

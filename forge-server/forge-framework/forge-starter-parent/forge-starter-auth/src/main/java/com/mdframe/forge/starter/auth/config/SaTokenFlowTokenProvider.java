@@ -9,11 +9,13 @@ import com.mdframe.forge.flow.client.FlowTokenProvider;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -34,15 +36,22 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
 
     private static final String LOGIN_USER_KEY = "loginUser";
     private static final long DELEGATED_TOKEN_TIMEOUT_SECONDS = 60L;
+    private static final long INTERACTIVE_CLIENT_ID = 1L;
 
     private final Supplier<StpLogic> stpLogicSupplier;
+    private final Supplier<LoginUser> loginUserSupplier;
 
     public SaTokenFlowTokenProvider() {
-        this(StpUtil::getStpLogic);
+        this(StpUtil::getStpLogic, SessionHelper::getLoginUser);
     }
 
     SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier) {
+        this(stpLogicSupplier, SessionHelper::getLoginUser);
+    }
+
+    SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier, Supplier<LoginUser> loginUserSupplier) {
         this.stpLogicSupplier = stpLogicSupplier;
+        this.loginUserSupplier = loginUserSupplier;
     }
 
     @Override
@@ -53,13 +62,57 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
         }
         try {
             StpLogic stpLogic = stpLogicSupplier.get();
-            if (stpLogic.isLogin()) {
-                return stpLogic.getTokenValue();
+            if (!stpLogic.isLogin()) {
+                return null;
             }
+            try {
+                ExecutionIdentity sessionIdentity = toSessionExecutionIdentity(
+                        loginUserSupplier.get(), stpLogic.getTokenValue());
+                if (sessionIdentity != null) {
+                    return createDelegatedFlowToken(sessionIdentity);
+                }
+            }
+            catch (FlowTokenAcquisitionException exception) {
+                throw exception;
+            }
+            catch (Exception exception) {
+                log.debug("[FlowTokenProvider] 无法从当前登录用户构建流程委托身份，回退透传 token: {}",
+                        exception.getMessage());
+            }
+            return stpLogic.getTokenValue();
+        } catch (FlowTokenAcquisitionException e) {
+            throw e;
         } catch (Exception e) {
             log.debug("[FlowTokenProvider] 获取 Sa-Token 失败（当前线程无登录上下文）: {}", e.getMessage());
         }
         return null;
+    }
+
+    private ExecutionIdentity toSessionExecutionIdentity(LoginUser loginUser, String tokenValue) {
+        if (loginUser == null
+                || loginUser.getUserId() == null
+                || loginUser.getTenantId() == null
+                || loginUser.getTenantId() <= 0
+                || loginUser.getActiveOrgId() == null
+                || loginUser.getActiveOrgId() <= 0) {
+            return null;
+        }
+        String clientCode = loginUser.getUserClient();
+        if (clientCode == null || clientCode.isBlank()) {
+            clientCode = "pc";
+        }
+        String tokenId = tokenValue != null && !tokenValue.isBlank()
+                ? tokenValue
+                : UUID.randomUUID().toString();
+        return new ExecutionIdentity(
+                loginUser,
+                "USER",
+                loginUser.getUserId(),
+                null,
+                INTERACTIVE_CLIENT_ID,
+                clientCode,
+                tokenId,
+                Set.of());
     }
 
     private String createDelegatedFlowToken(ExecutionIdentity identity) {

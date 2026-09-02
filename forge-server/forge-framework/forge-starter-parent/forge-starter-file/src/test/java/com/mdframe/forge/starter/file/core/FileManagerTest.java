@@ -1,6 +1,9 @@
 package com.mdframe.forge.starter.file.core;
 
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.file.model.FileMetadata;
 import com.mdframe.forge.starter.file.model.StorageConfig;
+import com.mdframe.forge.starter.file.spi.FileMetadataPersistence;
 import com.mdframe.forge.starter.file.spi.StorageConfigProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -12,7 +15,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +47,74 @@ class FileManagerTest {
                 () -> fileManager.upload(file, "test", "1", "local"));
 
         assertTrue(exception.getMessage().contains("不支持的文件类型: jpg"));
+    }
+
+    @Test
+    @DisplayName("rejects delete when caller cannot modify the file")
+    void rejectsDeleteWhenCannotModify() throws Exception {
+        FileManager fileManager = new FileManager();
+        AtomicBoolean deleted = new AtomicBoolean(false);
+        setPersistence(fileManager, persistence(false, deleted));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> fileManager.delete("file-1"));
+
+        assertEquals(403, exception.getCode());
+        assertTrue(exception.getMessage().contains("无权删除该文件"));
+        assertTrue(!deleted.get());
+    }
+
+    @Test
+    @DisplayName("deletes metadata when caller can modify the file")
+    void deletesWhenCanModify() throws Exception {
+        FileManager fileManager = new FileManager();
+        AtomicBoolean deleted = new AtomicBoolean(false);
+        setPersistence(fileManager, persistence(true, deleted));
+
+        assertTrue(fileManager.delete("file-1"));
+        assertTrue(deleted.get());
+    }
+
+    private void setPersistence(FileManager fileManager, FileMetadataPersistence persistence) throws Exception {
+        Field field = FileManager.class.getDeclaredField("metadataPersistence");
+        field.setAccessible(true);
+        field.set(fileManager, persistence);
+    }
+
+    private FileMetadataPersistence persistence(boolean allowedToModify, AtomicBoolean deleted) {
+        return new FileMetadataPersistence() {
+            @Override
+            public void save(FileMetadata metadata) {
+            }
+
+            @Override
+            public FileMetadata getById(String fileId) {
+                return FileMetadata.builder().fileId(fileId).storageType("local").build();
+            }
+
+            @Override
+            public FileMetadata getByMd5(String md5) {
+                return null;
+            }
+
+            @Override
+            public void incrementDownloadCount(String fileId) {
+            }
+
+            @Override
+            public void delete(String fileId) {
+                deleted.set(true);
+            }
+
+            @Override
+            public boolean checkPermission(String fileId, Long userId) {
+                return true;
+            }
+
+            @Override
+            public boolean canModify(String fileId, Long userId) {
+                return allowedToModify;
+            }
+        };
     }
 
     private FileManager fileManagerWithAllowedTypes(String allowedTypes) throws Exception {
