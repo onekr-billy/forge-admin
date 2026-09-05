@@ -16,6 +16,9 @@
         <result property="regionCodeColumn" column="region_code_column"/>
         <result property="userRegionColumn" column="user_region_column"/>
         <result property="userTableAlias" column="user_table_alias"/>
+        <result property="flowRelatedVisible" column="flow_related_visible"/>
+        <result property="flowBusinessType" column="flow_business_type"/>
+        <result property="recordIdColumn" column="record_id_column"/>
         <result property="enabled" column="enabled"/>
         <result property="remark" column="remark"/>
         <result property="createBy" column="create_by"/>
@@ -40,6 +43,9 @@
             region_code_column,
             user_region_column,
             user_table_alias,
+            flow_related_visible,
+            flow_business_type,
+            record_id_column,
             enabled,
             remark,
             create_by,
@@ -67,6 +73,9 @@
             region_code_column,
             user_region_column,
             user_table_alias,
+            flow_related_visible,
+            flow_business_type,
+            record_id_column,
             enabled,
             remark,
             create_by,

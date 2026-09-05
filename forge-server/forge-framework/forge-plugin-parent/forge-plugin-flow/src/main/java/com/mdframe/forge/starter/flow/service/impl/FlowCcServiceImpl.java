@@ -7,9 +7,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayAdapter;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayItem;
+import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowCc;
+import com.mdframe.forge.starter.flow.entity.FlowRecordParticipant;
+import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowCcMapper;
 import com.mdframe.forge.starter.flow.service.FlowCcService;
+import com.mdframe.forge.starter.flow.service.FlowRecordParticipantService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,6 +32,12 @@ public class FlowCcServiceImpl extends ServiceImpl<FlowCcMapper, FlowCc> impleme
 
     @Autowired(required = false)
     private FlowBusinessListDisplayAdapter flowBusinessListDisplayAdapter;
+
+    @Autowired(required = false)
+    private FlowRecordParticipantService flowRecordParticipantService;
+
+    @Autowired(required = false)
+    private FlowBusinessMapper flowBusinessMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -58,9 +68,26 @@ public class FlowCcServiceImpl extends ServiceImpl<FlowCcMapper, FlowCc> impleme
             cc.setIsRead(0);
             
             save(cc);
+            recordCcParticipant(processInstanceId, businessKey, ccUserIds.get(i));
         }
         
         log.info("发送抄送：processInstanceId={}, ccUserIds={}", processInstanceId, ccUserIds);
+    }
+
+    private void recordCcParticipant(String processInstanceId, String businessKey, String ccUserId) {
+        if (flowRecordParticipantService == null) {
+            return;
+        }
+        FlowBusiness business = null;
+        if (flowBusinessMapper != null && processInstanceId != null) {
+            business = flowBusinessMapper.selectByProcessInstanceId(processInstanceId);
+        }
+        if (business != null) {
+            flowRecordParticipantService.record(business, ccUserId, FlowRecordParticipant.CC);
+            return;
+        }
+        flowRecordParticipantService.record(null, null, businessKey, processInstanceId,
+                ccUserId, FlowRecordParticipant.CC);
     }
 
     @Override

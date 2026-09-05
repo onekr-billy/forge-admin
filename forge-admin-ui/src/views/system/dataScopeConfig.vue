@@ -365,6 +365,14 @@ function renderScopeFields(row) {
     { label: '区划', value: row.regionCodeColumn, type: 'primary' },
   ].filter(item => item.value)
 
+  if (Number(row.flowRelatedVisible) === 1) {
+    fields.push({
+      label: '经手',
+      value: row.flowBusinessType || '已开启',
+      type: 'info',
+    })
+  }
+
   if (!fields.length) {
     return h('span', { class: 'empty-text' }, '未配置')
   }
@@ -573,7 +581,45 @@ const editSchema = [
   },
   {
     type: 'divider',
-    label: '③ 备注',
+    label: '③ 流程经手可见（可选）',
+    props: {
+      titlePlacement: 'left',
+    },
+    span: 2,
+  },
+  {
+    field: 'flowRelatedVisible',
+    label: '经手可见',
+    type: 'radioButton',
+    span: 2,
+    defaultValue: 0,
+    props: {
+      options: enabledOptions,
+      clearable: false,
+    },
+  },
+  {
+    field: 'flowBusinessType',
+    label: '流程业务类型',
+    type: 'input',
+    span: 1,
+    props: {
+      placeholder: '与发起流程的 businessKey 前缀一致，如 sample_purchase_order',
+    },
+  },
+  {
+    field: 'recordIdColumn',
+    label: '单据主键列',
+    type: 'input',
+    span: 1,
+    defaultValue: 'id',
+    props: {
+      placeholder: '默认 id，对应 businessKey 冒号后的记录ID',
+    },
+  },
+  {
+    type: 'divider',
+    label: '④ 备注',
     props: {
       titlePlacement: 'left',
     },

@@ -1396,14 +1396,44 @@ function sameAction(left, right) {
 }
 
 function isActionDisabled(action, row) {
+  if (isFlowRelatedReadOnly(action, row))
+    return true
   if (typeof action.disabled === 'function')
     return !!action.disabled(row)
   return !!action.disabled
 }
 
+function isFlowRelatedReadOnly(action, row) {
+  if (row?._dataScopeAccess !== 'RELATED')
+    return false
+  const key = String(action.key || action.label || '').toLowerCase()
+  return ['edit', 'delete', 'remove', '编辑', '删除'].includes(key)
+}
+
+function renderFlowRelationTags(row) {
+  const tags = []
+  if (row?._dataScopeAccess === 'OWN')
+    tags.push({ label: '我的', type: 'info' })
+  else if (Array.isArray(row?._flowRelations) && row._flowRelations.includes('INITIATOR'))
+    tags.push({ label: '我发起', type: 'info' })
+  if (Array.isArray(row?._flowRelations) && row._flowRelations.includes('ASSIGNEE'))
+    tags.push({ label: '我审批', type: 'success' })
+  if (Array.isArray(row?._flowRelations) && row._flowRelations.includes('CC'))
+    tags.push({ label: '抄送', type: 'warning' })
+  if (!tags.length)
+    return h('span', { style: { color: '#94a3b8' } }, '-')
+  return h('div', { class: 'flow-relation-tags' }, tags.map(tag => h(NTag, {
+    size: 'small',
+    bordered: false,
+    type: tag.type,
+  }, { default: () => tag.label })))
+}
+
 function actionDisabledReason(action, row) {
   if (isActionLoading(action, row))
     return resolveActionTextValue(action.loadingReason, row) || '操作执行中，请稍候'
+  if (isFlowRelatedReadOnly(action, row))
+    return '流程经手可见仅支持查看，不能修改或删除'
   if (typeof action.disabledReason === 'function')
     return action.disabledReason(row)
   return action.disabledReason || '当前状态不可执行'
@@ -2699,6 +2729,15 @@ const tableColumns = computed(() => {
   // 判断是否是操作列（兼容 action / actions / operation 等写法）
   const isActionCol = (col) => {
     return isActionColumnConfig(col)
+  }
+
+  if ((dataSource.value || []).some(row => Array.isArray(row?._flowRelations) ? row._flowRelations.length : row?._dataScopeAccess === 'RELATED')) {
+    cols.push({
+      prop: '_flowRelations',
+      label: '与我相关',
+      width: 128,
+      render: row => renderFlowRelationTags(row),
+    })
   }
 
   activeSourceColumns.value.forEach((col) => {
@@ -4924,6 +4963,10 @@ function isPlainRecord(value) {
  * 编辑
  */
 async function handleEdit(row) {
+  if (row?._dataScopeAccess === 'RELATED') {
+    window.$message?.warning('流程经手可见仅支持查看，不能修改或删除')
+    return
+  }
   if (activateReusableInlineFormTab('edit', row)) {
     emit('edit', row)
     emit('modal-open', { status: 'edit', row })
@@ -5112,6 +5155,10 @@ async function loadDetail(row) {
  * 删除
  */
 async function handleDelete(row) {
+  if (row?._dataScopeAccess === 'RELATED') {
+    window.$message?.warning('流程经手可见仅支持查看，不能修改或删除')
+    return
+  }
   const rows = [row]
   const key = resolveRowKeyValue(row)
   if (!isUsableKeyValue(key)) {

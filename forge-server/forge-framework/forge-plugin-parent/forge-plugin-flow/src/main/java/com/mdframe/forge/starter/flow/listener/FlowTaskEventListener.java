@@ -11,8 +11,10 @@ import com.mdframe.forge.starter.flow.event.FlowTaskNotifyEvent;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
+import com.mdframe.forge.starter.flow.entity.FlowRecordParticipant;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
+import com.mdframe.forge.starter.flow.service.FlowRecordParticipantService;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.common.engine.api.delegate.event.FlowableEngineEvent;
 import org.flowable.common.engine.api.delegate.event.FlowableEntityEvent;
@@ -87,6 +89,10 @@ public class FlowTaskEventListener implements FlowableEventListener {
     @Autowired(required = false)
     @Lazy
     private FlowFormInstanceMapper flowFormInstanceMapper;
+
+    @Autowired(required = false)
+    @Lazy
+    private FlowRecordParticipantService flowRecordParticipantService;
 
     @Override
     public void onEvent(FlowableEvent event) {
@@ -311,6 +317,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 msg.setVariables(readTaskVariables(task));
                 fillTenantId(msg, completedBusiness);
                 publishEvent(msg, flowTask.getProcessDefKey());
+                recordAssignee(completedBusiness, task, flowTask);
             }
             
         } catch (Exception e) {
@@ -863,6 +870,16 @@ public class FlowTaskEventListener implements FlowableEventListener {
         if (message != null && business != null && business.getTenantId() != null) {
             message.setTenantId(String.valueOf(business.getTenantId()));
         }
+    }
+
+    private void recordAssignee(FlowBusiness business, TaskEntity task, FlowTask flowTask) {
+        if (flowRecordParticipantService == null || business == null) {
+            return;
+        }
+        String userId = task != null && task.getAssignee() != null && !task.getAssignee().isBlank()
+                ? task.getAssignee()
+                : (flowTask == null ? null : flowTask.getAssignee());
+        flowRecordParticipantService.record(business, userId, FlowRecordParticipant.ASSIGNEE);
     }
 
     /**

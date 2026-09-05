@@ -9,6 +9,7 @@ import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
+import com.mdframe.forge.starter.flow.entity.FlowRecordParticipant;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
@@ -19,6 +20,7 @@ import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowInstanceService;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
+import com.mdframe.forge.starter.flow.service.FlowRecordParticipantService;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.bpmn.model.BpmnModel;
@@ -87,6 +89,9 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
 
     @Autowired(required = false)
     private FlowModelService flowModelService;
+
+    @Autowired(required = false)
+    private FlowRecordParticipantService flowRecordParticipantService;
 
     private final Map<String, ReentrantLock> localFlowStartLocks = new ConcurrentHashMap<>();
 
@@ -299,6 +304,9 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
 
         log.info("启动流程成功：businessKey={}, processInstanceId={}",
                 businessKey, processInstance.getId());
+        if (flowRecordParticipantService != null) {
+            flowRecordParticipantService.record(business, userId, FlowRecordParticipant.INITIATOR);
+        }
 
         return processInstance.getId();
         } finally {
