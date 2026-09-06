@@ -193,6 +193,11 @@ const props = defineProps({
     type: String,
     default: 'medium', // 'small' | 'medium' | 'large'
   },
+  // 是否隐藏左侧分组导航（分组≥3时默认显示，可用此关闭）
+  hideSectionNav: {
+    type: Boolean,
+    default: false,
+  },
   // 栅格布局
   gridCols: {
     type: Number,
@@ -553,7 +558,7 @@ onBeforeUnmount(() => {
 
 const showCollapseToggle = computed(() => props.enableCollapse && visibleFieldSchema.value.length > props.maxVisibleFields)
 const sectionNavItems = computed(() => collectSectionNavItems(visibleSchema.value))
-const showSectionNav = computed(() => sectionNavItems.value.length >= 3)
+const showSectionNav = computed(() => !props.hideSectionNav && sectionNavItems.value.length >= 3)
 const hasInlineActions = computed(() => !!slots.formAction || showCollapseToggle.value)
 const isSearchForm = computed(() => props.context?.isSearch === true)
 const actionCellSpan = computed(() => {

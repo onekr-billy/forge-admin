@@ -1,5 +1,13 @@
 <template>
   <div class="flow-page">
+    <n-alert v-if="loadError" type="error" class="mb-3" :show-icon="true">
+      待办任务加载失败，请重试。
+      <template #action>
+        <NButton text type="primary" @click="loadData">
+          重试
+        </NButton>
+      </template>
+    </n-alert>
     <!-- 任务列表 -->
     <FlowTaskCardList
       v-model:selected-keys="selectedTaskKeys"
@@ -165,6 +173,9 @@
         <p v-if="quickActionTargets.length > 1" class="quick-action-tip">
           需填表或签名的任务会跳过
         </p>
+        <n-alert v-if="quickActionFailedTargets.length" type="warning" :show-icon="true" class="quick-action-result">
+          {{ quickActionFailedTargets.length }} 条任务未处理，可修改意见后重试。
+        </n-alert>
         <div class="quick-action-actions">
           <NButton size="small" :disabled="quickActionLoading" @click="quickActionVisible = false">
             取消
@@ -176,7 +187,7 @@
             :disabled="quickActionLoading"
             @click="submitQuickAction"
           >
-            {{ quickActionTitle }}
+            {{ quickActionFailedTargets.length ? '重试未处理任务' : quickActionTitle }}
           </NButton>
         </div>
       </div>
@@ -595,6 +606,7 @@ import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
 import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions } from '@/utils/field-permissions'
+import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
 import { FLOW_PRIORITY_LABEL_FALLBACK, getFlowPriorityClass, isUrgentFlowPriority, resolveFlowPriorityLevel, shouldShowFlowPriority } from './utils/priority'
 import { getBusinessFormDisplayTitle, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
@@ -604,6 +616,7 @@ const route = useRoute()
 const router = useRouter()
 const { dict, getLabel } = useDict('flow_todo_status', 'flow_priority')
 const loading = ref(false)
+const loadError = ref(false)
 const dataSource = ref([])
 const pagination = reactive({
   page: 1,
@@ -747,6 +760,7 @@ const quickActionVisible = ref(false)
 const quickActionLoading = ref(false)
 const quickActionType = ref('approve')
 const quickActionTargets = ref([])
+const quickActionFailedTargets = ref([])
 const quickActionForm = reactive({ comment: '' })
 const quickActionInputRef = ref(null)
 const quickActionIsApprove = computed(() => quickActionType.value === 'approve')
@@ -1150,11 +1164,13 @@ async function persistBusinessTaskFormBeforeAction(action) {
   await saveBusinessTaskFormFields({ validate: true, silent: true })
 }
 
-function buildBusinessTaskActionPayload(action, comment, signature, variables = {}) {
+async function buildBusinessTaskActionPayload(action, comment, signature, variables = {}) {
   const context = businessFormContext.value || {}
+  const taskId = context.taskId || taskFormInfo.value?.taskId || currentTask.value?.taskId || currentTask.value?.id
+  const credentials = await createFlowActionCredentials(action, taskId, { comment, signature, variables })
   return compactParams({
     action,
-    taskId: context.taskId || taskFormInfo.value?.taskId || currentTask.value?.taskId || currentTask.value?.id,
+    taskId,
     businessKey: resolveTaskIdentityBusinessKey(context, taskFormInfo.value, currentTask.value),
     processInstanceId: context.processInstanceId || taskFormInfo.value?.processInstanceId || currentTask.value?.processInstanceId,
     processDefKey: context.processDefKey || taskFormInfo.value?.processDefKey || currentTask.value?.processDefKey || currentTask.value?.processDefinitionKey,
@@ -1169,22 +1185,26 @@ function buildBusinessTaskActionPayload(action, comment, signature, variables = 
     targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
     data: { ...businessFormData.value },
     approvalPointResults: buildApprovalPointResults(),
+    ...credentials,
   })
 }
 
 async function submitTaskAction(action, comment, signature, variables = {}) {
   if (isConfiguredBusinessTaskForm(businessFormContext.value)) {
-    return completeBusinessTaskAction(buildBusinessTaskActionPayload(action, comment, signature, variables))
+    return completeBusinessTaskAction(await buildBusinessTaskActionPayload(action, comment, signature, variables))
   }
   const api = resolveActionApi(action)
+  const taskId = currentTask.value.taskId || currentTask.value.id
+  const credentials = await createFlowActionCredentials(action, taskId, { comment, signature, variables })
   return api({
-    taskId: currentTask.value.taskId || currentTask.value.id,
+    taskId,
     userId: userStore.userId,
     comment,
     signature,
     variables: buildActionVariables(action, variables),
     targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
     approvalPointResults: buildApprovalPointResults(),
+    ...credentials,
   })
 }
 
@@ -1483,6 +1503,7 @@ function openQuickAction(action, targets) {
   }
   quickActionType.value = action
   quickActionTargets.value = resolvedTargets
+  quickActionFailedTargets.value = []
   quickActionForm.comment = action === 'approve' ? '同意' : '驳回'
   quickActionVisible.value = true
   nextTick(() => quickActionInputRef.value?.focus?.())
@@ -1554,12 +1575,14 @@ async function executeQuickAction(action, row, comment) {
         userId: userStore.userId,
         comment,
         variables: formInfo.variables || undefined,
+        ...(await createFlowActionCredentials(action, taskId, { comment, variables: formInfo.variables || undefined })),
       }))
     : await (action === 'approve' ? flowApi.approveTask : flowApi.rejectTask)({
         taskId,
         userId: userStore.userId,
         comment,
         variables: formInfo.variables || undefined,
+        ...(await createFlowActionCredentials(action, taskId, { comment, variables: formInfo.variables || undefined })),
       })
   if (res.code !== 200)
     throw new Error(res.message || '操作失败')
@@ -1576,6 +1599,7 @@ async function submitQuickAction() {
   const action = quickActionType.value
   const targets = [...quickActionTargets.value]
   const errors = []
+  const failedTargets = []
   let successCount = 0
 
   try {
@@ -1587,17 +1611,19 @@ async function submitQuickAction() {
       catch (error) {
         const taskName = getTaskDisplayName(row, row.title || row.taskId || row.id || '未知任务')
         errors.push(`${taskName}：${error?.message || '操作失败'}`)
+        failedTargets.push(row)
       }
     }
 
     if (successCount > 0) {
       window.$message.success(`${getActionSuccessText(action)} ${successCount} 条`)
       selectedTaskKeys.value = []
-      quickActionVisible.value = false
       await loadData()
     }
 
     if (errors.length > 0) {
+      quickActionFailedTargets.value = failedTargets
+      quickActionTargets.value = failedTargets
       const content = errors.slice(0, 6).join('\n')
       if (window.$dialog?.warning) {
         window.$dialog.warning({
@@ -1609,6 +1635,10 @@ async function submitQuickAction() {
       else {
         window.$message.warning(errors[0])
       }
+    }
+    else {
+      quickActionFailedTargets.value = []
+      quickActionVisible.value = false
     }
   }
   finally {
@@ -1650,12 +1680,18 @@ async function submitDelegate() {
   try {
     const signature = await resolveSignature(delegateSignatureRef.value, delegateForm.signature)
     delegateForm.signature = signature
+    const taskId = currentTask.value.taskId
     const res = await flowApi.delegateTask({
-      taskId: currentTask.value.taskId,
+      taskId,
       userId: String(userStore.userId),
       targetUserId: String(delegateTargetUser.value.id),
       comment: delegateForm.comment,
       signature,
+      ...(await createFlowActionCredentials('delegate', taskId, {
+        targetUserId: String(delegateTargetUser.value.id),
+        comment: delegateForm.comment,
+        signature,
+      })),
     })
     if (res.code === 200) {
       window.$message.success('转办成功')
@@ -1709,6 +1745,7 @@ function isClaimingTask(row) {
 
 async function loadData() {
   loading.value = true
+  loadError.value = false
   try {
     const res = await flowApi.getTodoTasks({
       pageNum: pagination.page,
@@ -1723,9 +1760,13 @@ async function loadData() {
       pagination.itemCount = res.data.total || 0
       urgentCount.value = dataSource.value.filter(r => isUrgentFlowPriority(r.priority)).length
     }
+    else {
+      loadError.value = true
+    }
   }
   catch {
     console.error('加载待办任务失败')
+    loadError.value = true
   }
   finally {
     loading.value = false

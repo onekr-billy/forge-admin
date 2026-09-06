@@ -5,6 +5,7 @@ import com.mdframe.forge.starter.file.model.FileMetadata;
 import com.mdframe.forge.starter.file.model.StorageConfig;
 import com.mdframe.forge.starter.file.spi.FileMetadataPersistence;
 import com.mdframe.forge.starter.file.spi.StorageConfigProvider;
+import com.mdframe.forge.starter.file.storage.FileStorage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @DisplayName("FileManager upload policy")
 @Tag("dev")
@@ -72,6 +75,81 @@ class FileManagerTest {
 
         assertTrue(fileManager.delete("file-1"));
         assertTrue(deleted.get());
+    }
+
+    @Test
+    @DisplayName("rejects private file download when caller lacks permission")
+    void rejectsPrivateDownloadWhenCallerLacksPermission() throws Exception {
+        FileManager fileManager = new FileManager();
+        setPersistence(fileManager, new FileMetadataPersistence() {
+            @Override
+            public void save(FileMetadata metadata) {
+            }
+
+            @Override
+            public FileMetadata getById(String fileId) {
+                return FileMetadata.builder().fileId(fileId).storageType("local").isPrivate(true).build();
+            }
+
+            @Override
+            public FileMetadata getByMd5(String md5) {
+                return null;
+            }
+
+            @Override
+            public void incrementDownloadCount(String fileId) {
+            }
+
+            @Override
+            public void delete(String fileId) {
+            }
+
+            @Override
+            public boolean checkPermission(String fileId, Long userId) {
+                return false;
+            }
+
+            @Override
+            public boolean canModify(String fileId, Long userId) {
+                return false;
+            }
+        });
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> fileManager.download("file-1", new org.springframework.mock.web.MockHttpServletResponse()));
+
+        assertEquals(403, exception.getCode());
+        assertTrue(exception.getMessage().contains("无权读取"));
+    }
+
+    @Test
+    @DisplayName("sets no-store headers for private downloads")
+    void setsNoStoreHeadersForPrivateDownloads() throws Exception {
+        FileManager fileManager = new FileManager();
+        FileMetadata metadata = FileMetadata.builder().fileId("file-1").storageType("local")
+                .isPrivate(true).originalName("secret.txt").mimeType("text/plain").build();
+        setPersistence(fileManager, new FileMetadataPersistence() {
+            @Override public void save(FileMetadata value) { }
+            @Override public FileMetadata getById(String fileId) { return metadata; }
+            @Override public FileMetadata getByMd5(String md5) { return null; }
+            @Override public void incrementDownloadCount(String fileId) { }
+            @Override public void delete(String fileId) { }
+            @Override public boolean checkPermission(String fileId, Long userId) { return true; }
+            @Override public boolean canModify(String fileId, Long userId) { return true; }
+        });
+        FileStorage storage = mock(FileStorage.class);
+        when(storage.download("file-1")).thenReturn(new ByteArrayInputStream("secret".getBytes()));
+        Field storageField = FileManager.class.getDeclaredField("storageMap");
+        storageField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, FileStorage> storageMap = (java.util.Map<String, FileStorage>) storageField.get(fileManager);
+        storageMap.put("local", storage);
+
+        org.springframework.mock.web.MockHttpServletResponse response = new org.springframework.mock.web.MockHttpServletResponse();
+        fileManager.download("file-1", response);
+
+        assertEquals("private, no-store", response.getHeader("Cache-Control"));
+        assertEquals("no-cache", response.getHeader("Pragma"));
     }
 
     private void setPersistence(FileManager fileManager, FileMetadataPersistence persistence) throws Exception {

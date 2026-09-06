@@ -80,6 +80,7 @@
           :x-gap="editXGap"
           :y-gap="editYGap"
           :show-feedback="editShowFeedback"
+          :hide-section-nav="hideFormSectionNav"
           :show-actions="false"
           :context="formContext"
           :form-assets="formAssets"
@@ -363,6 +364,7 @@
                   :x-gap="editXGap"
                   :y-gap="editYGap"
                   :show-feedback="editShowFeedback"
+                  :hide-section-nav="hideFormSectionNav"
                   :show-actions="false"
                   :context="formContext"
                   :form-assets="formAssets"
@@ -418,6 +420,7 @@
                 :x-gap="editXGap"
                 :y-gap="editYGap"
                 :show-feedback="editShowFeedback"
+                :hide-section-nav="hideFormSectionNav"
                 :show-actions="false"
                 :context="formContext"
                 :form-assets="formAssets"
@@ -495,9 +498,10 @@
     <n-modal
       v-if="!formOnly && !usesInlineFormWorkspace && (resolvedFormOpenMode === 'modal' || isDetailMode)"
       v-model:show="modalVisible"
+      class="ai-crud-form-modal"
       :title="modalTitle"
       preset="card"
-      :style="{ width: activeModalWidth }"
+      :style="{ width: activeModalWidth, maxHeight: 'calc(100vh - 24px)' }"
       :segmented="{ content: 'soft', footer: 'soft' }"
       :closable="true"
       :mask-closable="false"
@@ -526,6 +530,7 @@
             :x-gap="editXGap"
             :y-gap="editYGap"
             :show-feedback="editShowFeedback"
+            :hide-section-nav="hideFormSectionNav"
             :show-actions="false"
             :context="formContext"
             :form-assets="formAssets"
@@ -581,6 +586,7 @@
           :x-gap="editXGap"
           :y-gap="editYGap"
           :show-feedback="editShowFeedback"
+          :hide-section-nav="hideFormSectionNav"
           :show-actions="false"
           :context="formContext"
           :form-assets="formAssets"
@@ -679,6 +685,7 @@
           :x-gap="editXGap"
           :y-gap="editYGap"
           :show-feedback="editShowFeedback"
+          :hide-section-nav="hideFormSectionNav"
           :show-actions="false"
           :context="formContext"
           :form-assets="formAssets"
@@ -3948,8 +3955,10 @@ function isParentHeightContentDriven(el) {
 
 function measurePageHeight() {
   const el = crudRootRef.value
-  // formOnly 是文档流布局；显式传了 maxHeight 时表格自带确定高度，都无需接管
-  if (!el || props.formOnly || props.maxHeight !== undefined)
+  // formOnly 是文档流布局。显式 maxHeight 只约束表格，页签/内嵌表单仍需要页面高度接管，否则会被 overflow:hidden 裁掉且无法滚动。
+  if (!el || props.formOnly)
+    return
+  if (props.maxHeight !== undefined && !showInlineFormWorkspacePane.value)
     return
   // 隐藏状态（如未激活的 n-tab-pane）测不到真实位置，等可见后由 ResizeObserver 再触发
   if (!el.offsetParent)
@@ -3985,6 +3994,11 @@ function scheduleMeasurePageHeight() {
     measurePageHeight()
   })
 }
+
+watch(showInlineFormWorkspacePane, () => {
+  heightProbeDone = false
+  scheduleMeasurePageHeight()
+})
 
 onMounted(() => {
   nextTick(scheduleMeasurePageHeight)
@@ -6359,9 +6373,10 @@ watch(() => stableSerialize(props.publicQuery || {}), () => {
 }
 
 .ai-crud-inline-workspace.is-tab-workspace {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
   max-height: none;
+  overflow: hidden;
   border-top: 0;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   box-shadow: none;
@@ -6694,5 +6709,25 @@ watch(() => stableSerialize(props.publicQuery || {}), () => {
   :deep(.n-pagination .n-pagination-item__button) {
     padding: 0 4px;
   }
+}
+</style>
+
+<style>
+.ai-crud-form-modal.n-card {
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-crud-form-modal .n-card-content,
+.ai-crud-form-modal .n-card__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ai-crud-form-modal .n-card-footer,
+.ai-crud-form-modal .n-card__footer {
+  flex: 0 0 auto;
 }
 </style>

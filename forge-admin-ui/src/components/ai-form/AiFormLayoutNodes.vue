@@ -27,8 +27,9 @@
         :item-context="itemContext"
         :grid-cols="resolveRowColumns(node)"
         :x-gap="resolveGap(node.props?.gutter, xGap)"
-        :y-gap="yGap"
+        :y-gap="resolveGap(node.props?.rowGap, yGap)"
         :show-feedback="showFeedback"
+        :keep-empty-layout-nodes="keepEmptyLayoutNodes"
         @field-change="(...args) => emit('fieldChange', ...args)"
         @node-action="(...args) => emit('nodeAction', ...args)"
       >
@@ -46,6 +47,7 @@
         :x-gap="xGap"
         :y-gap="yGap"
         :show-feedback="showFeedback"
+        :keep-empty-layout-nodes="keepEmptyLayoutNodes"
         @field-change="(...args) => emit('fieldChange', ...args)"
         @node-action="(...args) => emit('nodeAction', ...args)"
       >
@@ -70,6 +72,7 @@
           :x-gap="xGap"
           :y-gap="yGap"
           :show-feedback="showFeedback"
+          :keep-empty-layout-nodes="keepEmptyLayoutNodes"
           @field-change="(...args) => emit('fieldChange', ...args)"
           @node-action="(...args) => emit('nodeAction', ...args)"
         >
@@ -101,6 +104,7 @@
             :x-gap="xGap"
             :y-gap="yGap"
             :show-feedback="showFeedback"
+            :keep-empty-layout-nodes="keepEmptyLayoutNodes"
             @field-change="(...args) => emit('fieldChange', ...args)"
             @node-action="(...args) => emit('nodeAction', ...args)"
           >
@@ -132,6 +136,7 @@
             :x-gap="xGap"
             :y-gap="yGap"
             :show-feedback="showFeedback"
+            :keep-empty-layout-nodes="keepEmptyLayoutNodes"
             @field-change="(...args) => emit('fieldChange', ...args)"
             @node-action="(...args) => emit('nodeAction', ...args)"
           >
@@ -195,6 +200,7 @@
           :x-gap="0"
           :y-gap="0"
           :show-feedback="showFeedback"
+          :keep-empty-layout-nodes="keepEmptyLayoutNodes"
           @field-change="(...args) => emit('fieldChange', ...args)"
           @node-action="(...args) => emit('nodeAction', ...args)"
         >
@@ -217,6 +223,7 @@
           :x-gap="xGap"
           :y-gap="yGap"
           :show-feedback="showFeedback"
+          :keep-empty-layout-nodes="keepEmptyLayoutNodes"
           @field-change="(...args) => emit('fieldChange', ...args)"
           @node-action="(...args) => emit('nodeAction', ...args)"
         >
@@ -250,6 +257,7 @@
         :x-gap="xGap"
         :y-gap="yGap"
         :show-feedback="showFeedback"
+        :keep-empty-layout-nodes="keepEmptyLayoutNodes"
         @field-change="(...args) => emit('fieldChange', ...args)"
         @node-action="(...args) => emit('nodeAction', ...args)"
       >
@@ -257,6 +265,15 @@
           <slot :name="slotName" v-bind="slotProps" />
         </template>
       </AiFormLayoutNodes>
+    </n-gi>
+
+    <!-- 设计器预览：空容器（刚拖入的栅格列/卡片/标签页等）渲染可见占位，避免预览一片空白 -->
+    <n-gi
+      v-if="keepEmptyLayoutNodes && !visibleNodes.length"
+      :span="gridCols"
+      class="af-empty-layout-placeholder"
+    >
+      空容器
     </n-gi>
 
     <slot name="gridAppend" />
@@ -306,6 +323,11 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  // 设计器预览模式：空布局容器渲染可见占位（与 AiForm.keepEmptyLayoutNodes 配套）
+  keepEmptyLayoutNodes: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['fieldChange', 'nodeAction'])
@@ -349,14 +371,21 @@ function resolveNodeSpan(node = {}) {
     return Math.max(1, Math.min(cols, Number.isFinite(raw) && raw > 0 ? raw : cols))
   if (!Number.isFinite(raw) || raw <= 0)
     return 1
-  // 设计器常按 24 栅格写入 span=24/整行。运行列数更少时按一格平铺，避免每个字段独占一行。
-  if (isFieldNode(node) && cols > 1 && (raw >= 24 || raw >= cols))
-    return 1
+  // span 语义 = 相对父容器列数（与设计器画布 ForgeFormCanvasNode 的 min(parentCols, span) 一致）：
+  // n-grid(cols=N) + n-gi(span=S<=N) 与 CSS grid repeat(N,1fr) + grid-column:span S 完全同义。
+  // 历史上这里曾有「span>=24 或 span>=cols 时强制归 1」的补丁，导致设计态整行(span=24)预览变 1/24、
+  // 半行(span>=cols)预览变一格，设计/预览严重不一致，已按统一语义移除。
   return Math.max(1, Math.min(cols, raw))
 }
 
 function resolveNodeKey(node = {}) {
-  return node.key || node.field || node.id || `${node.nodeType || node.type || 'node'}_${node.label || ''}`
+  // key 唯一性优先级：显式 key > 组件 id > field。
+  // 设计器复制组件（duplicateDesignerComponent→rewriteComponentIds）只重写 id、保留
+  // fieldBinding.fieldCode，运行态 node.field 与原件相同；若 field 优先会产生重复 key，
+  // 导致预览 diff 时丢节点/崩溃（isSameVNodeType null、patchElement 设置 __vnode 于 null el）。
+  // 设计器 schema 的组件 id 由 normalizeFormDesignerSchema 保证唯一；无 id 的手写 schema
+  // 仍回退 field，与历史行为一致。
+  return node.key || node.id || node.field || `${node.nodeType || node.type || 'node'}_${node.label || ''}`
 }
 
 function resolveGap(value, fallback) {
@@ -633,6 +662,17 @@ function isLegacyGroupTitleNode(node = {}) {
   min-width: 0;
 }
 
+.af-empty-layout-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  font-size: 12px;
+  color: #94a3b8;
+  border: 1px dashed #cbd5e1;
+  border-radius: 3px;
+}
+
 .af-layout-card,
 .af-layout-tabs,
 .af-layout-collapse {
@@ -685,7 +725,7 @@ function isLegacyGroupTitleNode(node = {}) {
   min-height: 56px;
   padding: 12px;
   border-right: 1px solid #e2e8f0;
-  //border-bottom: 1px solid #e2e8f0;
+  /* border-bottom: 1px solid #e2e8f0; */
 }
 
 .af-layout-table-cell.is-borderless {
