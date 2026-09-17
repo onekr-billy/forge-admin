@@ -8,6 +8,7 @@ import { setupStore } from './store'
 import { setupNaiveDiscreteApi } from './utils'
 import { loadRuntimeCryptoConfig } from './utils/crypto/crypto-config'
 import { setupDebugConsole } from './utils/debug-console'
+import { setupDynamicImportRecovery } from './utils/dynamic-import-recovery'
 import { runWeComAutoLogin } from './utils/wecom'
 import '@/styles/reset.css'
 import '@/styles/design-tokens.css'
@@ -16,6 +17,10 @@ import '@/styles/global.css'
 import '@/styles/theme.css'
 import '@/styles/responsive-vars.css'
 import 'uno.css'
+
+// 用户在发布期间保持旧页面打开时，懒加载路由可能仍引用已被替换的旧 hash chunk。
+// 尽早监听 Vite 的预加载异常，以便刷新到最新 index.html。
+setupDynamicImportRecovery()
 
 async function bootstrap() {
   // 优先加载页内调试面板（?vdebug=1 开启），确保后续 console 可见

@@ -36,8 +36,9 @@
 
 ## 分类目录
 
-### [前端 / 构建 / 路由](pitfalls/frontend.md)（21）
+### [前端 / 构建 / 路由](pitfalls/frontend.md)（22）
 
+- SPA fallback 不能吞掉缺失的哈希静态资源
 - naive-ui FormItem 挂载测量会清空字段级固定 labelWidth
 - window.$message 是 class 实例，方法不能分离调用
 - computed 每次返回新对象时 watch 引用比较恒不等

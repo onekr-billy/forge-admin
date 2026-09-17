@@ -1,6 +1,14 @@
 # 踩坑：前端 / 构建 / 路由
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 17 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 18 条。
+
+## SPA fallback 不能吞掉缺失的哈希静态资源
+
+**发现日期**：2026-09-17
+
+生产发布替换前端产物后，仍打开旧页面的浏览器可能在后续访问懒加载路由时请求上一版 chunk。若 Nginx 对 `/assets/*.js` 也使用 SPA fallback，不存在的 JavaScript 会返回 `200 text/html`，浏览器最终报 `Failed to fetch dynamically imported module`，且状态码会误导排查。
+
+处理原则：哈希资源目录使用独立 `location`，只允许真实文件并在缺失时返回 404，同时设置 `immutable` 长缓存；HTML 使用 `no-cache/no-store`。客户端监听 Vite 预加载错误并由 Router 兜底，在会话级冷却窗口内最多自动刷新一次，避免网络故障造成刷新死循环。
 
 ## Naive UI 表格居中不能只设置 `text-align`
 
