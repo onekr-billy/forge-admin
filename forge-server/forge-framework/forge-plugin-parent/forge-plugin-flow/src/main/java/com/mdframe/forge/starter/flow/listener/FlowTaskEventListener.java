@@ -166,7 +166,21 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             // 创建任务记录
             FlowTask flowTask = buildFlowTask(task);
-            flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
+            // 创建时已直接指定处理人的任务（assignee 非空）视同已签收，避免"有 assignee 却要求先签收"的死锁；
+            // 判断条件与 handleTaskAssigned 的「无 owner 或 owner=assignee → CLAIMED」保持一致。
+            // 注意：Flowable 的 TASK_ASSIGNED 事件先于 TASK_CREATED 派发（assignee 表达式在 handleAssignments
+            // 阶段求值后才派发 TASK_CREATED），创建场景下 handleTaskAssigned 因镜像尚未插入而不可达，
+            // 必须在创建时刻直接落状态（spec: flow-auto-claim-created-task）。
+            String initialAssignee = flowTask.getAssignee();
+            String initialOwner = flowTask.getOwner();
+            if (initialAssignee != null && !initialAssignee.isEmpty()
+                    && (initialOwner == null || initialOwner.equals(initialAssignee))) {
+                flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
+                flowTask.setClaimTime(LocalDateTime.now());
+                log.info("创建即指定处理人的任务自动签收：taskId={}, assignee={}", task.getId(), initialAssignee);
+            } else {
+                flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
+            }
             
             log.debug("任务处理人: {}, 候选人: {}, 候选组: {}",
                     flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
@@ -241,8 +255,9 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             flowTaskMapper.insert(flowTask);
             syncCandidateRelations(flowTask);
-            log.info("创建待办任务成功：taskId={}, title={}, assignee={}, candidateUsers={}, candidateGroups={}",
-                    task.getId(), flowTask.getTitle(), flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
+            log.info("创建待办任务成功：taskId={}, title={}, assignee={}, status={}, candidateUsers={}, candidateGroups={}",
+                    task.getId(), flowTask.getTitle(), flowTask.getAssignee(), flowTask.getStatus(),
+                    flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
             // 事务提交后异步推送站内信/企微卡片等（按模型通知配置），不阻塞审批主链路
             eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, business, readTaskVariables(task)));
     
