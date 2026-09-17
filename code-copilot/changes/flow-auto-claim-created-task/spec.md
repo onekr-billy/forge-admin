@@ -1,7 +1,7 @@
 # 流程创建时直接指定处理人的任务自动签收 Spec
 
 > 变更名：`flow-auto-claim-created-task`
-> 状态：`apply`
+> 状态：`review`（T1/T2 编码与测试已完成；Phase 3 存量修复依赖待澄清 1，Phase 4 端到端断言待部署后执行）
 > 创建日期：2026-09-17
 > 参考基线：当前 forge-plugin-flow 源码、Flowable 7.0.1（本地字节码验证）、Flowable 6.7.2-xugu 源码、`AGENTS.md`、`.agents/skills/forge-business-flow-development/SKILL.md`
 
