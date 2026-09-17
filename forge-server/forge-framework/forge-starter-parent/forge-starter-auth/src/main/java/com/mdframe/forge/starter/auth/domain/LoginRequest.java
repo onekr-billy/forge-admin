@@ -65,6 +65,13 @@ public class LoginRequest implements Serializable {
     private String phone;
 
     /**
+     * 前端选择的验证码类型（可选，用于群二维码等可选验证码切换）
+     * 当用户在登录页选择了不同于默认配置的验证码方式时，前端传入此字段告知后端
+     * 可选值：graphical / slider / sms / group
+     */
+    private String captchaType;
+
+    /**
      * 邮箱（邮箱登录时使用）
      */
     private String email;

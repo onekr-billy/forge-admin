@@ -5,6 +5,7 @@ import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.stp.StpUtil;
 import com.mdframe.forge.starter.auth.interceptor.ApiPermissionInterceptor;
 import com.mdframe.forge.starter.auth.interceptor.ApiRateLimitInterceptor;
+import com.mdframe.forge.starter.auth.session.LoginSessionRenewal;
 import com.mdframe.forge.starter.core.context.AuthProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
@@ -46,6 +47,8 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     .notMatch("/auth/logout")
                     // 排除登录页配置接口
                     .notMatch("/auth/loginConfig")
+                    // 排除登录页群二维码公开图片接口
+                    .notMatch("/auth/loginQrcode")
                     // 排除登录页租户选项接口
                     .notMatch("/auth/tenant/options")
                     // 排除登录页租户品牌图接口
@@ -82,15 +85,17 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     // 排除健康检查
                     .notMatch("/actuator/health", "/health")
                     .notMatch("/ws/**")
-                    // 执行登录校验
-                    .check(r -> StpUtil.checkLogin());
+                    .check(r -> {
+                        StpUtil.checkLogin();
+                        LoginSessionRenewal.renewIfHalfwayExpired();
+                    });
         })).addPathPatterns("/**").order(1);  // 优先级1，先执行登录校验
 
         // 2. 注册 API 接口权限拦截器（基于数据库资源表配置）
         registry.addInterceptor(apiPermissionInterceptor)
                 .addPathPatterns("/**")
                 // 排除登录相关接口
-                .excludePathPatterns("/auth/login", "/auth/logout", "/auth/loginConfig", "/auth/tenant/options", "/auth/tenant/assets/**", "/auth/register", "/auth/resetPassword",
+                .excludePathPatterns("/auth/login", "/auth/logout", "/auth/loginConfig", "/auth/loginQrcode", "/auth/tenant/options", "/auth/tenant/assets/**", "/auth/register", "/auth/resetPassword",
                         "/auth/resetPassword/code",
                         "/auth/captcha", "/auth/captcha/slider", "/auth/captcha/sms", "/auth/sso/exchange")
                 .excludePathPatterns("/crypto/config", "/crypto/public-key", "/crypto/exchange")

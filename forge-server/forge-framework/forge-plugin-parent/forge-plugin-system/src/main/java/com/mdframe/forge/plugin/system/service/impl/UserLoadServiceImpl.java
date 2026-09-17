@@ -201,6 +201,7 @@ public class UserLoadServiceImpl implements IUserLoadService {
         loginUser.setUserId(user.getId());
         loginUser.setTenantId(effectiveTenantId);
         loginUser.setTenantName(tenant != null ? tenant.getTenantName() : null);
+        loginUser.setSystemName(tenant != null ? tenant.getSystemName() : null);
         loginUser.setUsername(user.getUsername());
         loginUser.setRealName(user.getRealName());
         loginUser.setUserType(resolveEffectiveUserType(user, tenantMember));

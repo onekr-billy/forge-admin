@@ -40,8 +40,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
@@ -103,6 +105,9 @@ public class SystemAuthServiceImpl implements IAuthService {
                 strategy.getClass().getSimpleName());
 
         LoginUser loginUser = strategy.authenticate(request);
+
+        // 校验用户是否允许从当前客户端登录
+        validateUserClientAccess(loginUser, request.getUserClient());
 
         return issueTokenForUser(loginUser, client, request.getUserClient());
     }
@@ -245,6 +250,45 @@ public class SystemAuthServiceImpl implements IAuthService {
 
         log.info("客户端验证通过: client={}", userClient);
         return client;
+    }
+
+    /**
+     * 校验用户是否允许从当前客户端登录。
+     * allowedClients 为空表示不限制（默认所有客户端均可登录）。
+     */
+    private void validateUserClientAccess(LoginUser loginUser, String userClient) {
+        if (loginUser == null || loginUser.getUserId() == null) {
+            return;
+        }
+        String resolvedClient = StrUtil.blankToDefault(userClient, DEFAULT_USER_CLIENT);
+        String[] allowedHolder = new String[1];
+        Boolean previousIgnore = TenantContextHolder.getIgnoreValue();
+        try {
+            TenantContextHolder.setIgnore(false);
+            TenantContextHolder.executeWithTenant(loginUser.getTenantId(), () -> {
+                SysUser user = userMapper.selectById(loginUser.getUserId());
+                allowedHolder[0] = user != null ? user.getAllowedClients() : null;
+            });
+        } finally {
+            if (previousIgnore == null) {
+                TenantContextHolder.clearIgnore();
+            } else {
+                TenantContextHolder.setIgnore(previousIgnore);
+            }
+        }
+        String allowedClients = allowedHolder[0];
+        if (StrUtil.isBlank(allowedClients)) {
+            return;
+        }
+        Set<String> allowed = Arrays.stream(allowedClients.split(","))
+                .map(String::trim)
+                .filter(StrUtil::isNotBlank)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!allowed.isEmpty() && !allowed.contains(resolvedClient)) {
+            log.warn("用户不允许从当前客户端登录: userId={}, client={}, allowed={}",
+                    loginUser.getUserId(), resolvedClient, allowedClients);
+            throw new RuntimeException("该账号未授权此客户端登录权限");
+        }
     }
 
     private SysClient loadEnabledClient(String userClient) {
@@ -572,6 +616,10 @@ public class SystemAuthServiceImpl implements IAuthService {
                 .systemLayout(tenant == null ? null : tenant.getSystemLayout())
                 .systemTheme(tenant == null ? null : tenant.getSystemTheme())
                 .themeConfig(tenant == null ? null : tenant.getThemeConfig())
+                .groupQrcodeEnabled(captchaPolicy.getGroupQrcodeEnabled())
+                .groupQrcodeImage(config.getGroupQrcodeImage())
+                .groupQrcodeName(config.getGroupQrcodeName())
+                .groupQrcodeHint(config.getGroupQrcodeHint())
                 .build();
     }
 

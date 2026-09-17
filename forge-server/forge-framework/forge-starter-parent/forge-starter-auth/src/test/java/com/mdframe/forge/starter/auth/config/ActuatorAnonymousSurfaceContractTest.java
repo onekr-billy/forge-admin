@@ -17,6 +17,8 @@ class ActuatorAnonymousSurfaceContractTest {
         assertThat(config)
                 .contains(".notMatch(\"/actuator/health\", \"/health\")")
                 .contains(".excludePathPatterns(\"/actuator/health\", \"/health\")")
+                .contains("StpUtil.checkLogin()")
+                .contains("LoginSessionRenewal.renewIfHalfwayExpired()")
                 .doesNotContain(".notMatch(\"/actuator/**\", \"/health\")")
                 .doesNotContain("/doc.html")
                 .doesNotContain("/swagger-ui/**")

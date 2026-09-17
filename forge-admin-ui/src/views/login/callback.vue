@@ -154,8 +154,21 @@ async function handleCallback() {
     if (callbackRes.code !== 200 || !callbackRes.data) {
       loading.value = false
       success.value = false
+      const errMsg = callbackRes.msg || ''
+      // Gitee Star 检查失败：提示并自动跳转到仓库点 Star
+      if (/star/i.test(errMsg)) {
+        message.value = '请先给 Gitee 仓库点 Star'
+        detailMessage.value = '正在跳转到 Gitee 仓库，点 Star 后请重新登录…'
+        // 尝试从错误信息中提取仓库 URL，回退默认地址
+        const urlMatch = errMsg.match(/https?:\/\/gitee\.com\/\S+/)
+        const repoUrl = urlMatch ? urlMatch[0] : 'https://gitee.com/ForgeLab/forge-admin'
+        setTimeout(() => {
+          window.location.href = repoUrl
+        }, 2000)
+        return
+      }
       message.value = '授权失败'
-      detailMessage.value = callbackRes.msg || '第三方平台授权失败'
+      detailMessage.value = errMsg || '第三方平台授权失败'
       setTimeout(() => {
         router.push('/login')
       }, 2000)
@@ -199,6 +212,17 @@ async function handleCallback() {
     console.error('三方登录回调处理失败:', error)
     loading.value = false
     success.value = false
+    const errMsg = error?.message || error?.response?.data?.msg || ''
+    if (/star/i.test(errMsg)) {
+      message.value = '请先给 Gitee 仓库点 Star'
+      detailMessage.value = '正在跳转到 Gitee 仓库，点 Star 后请重新登录…'
+      const urlMatch = errMsg.match(/https?:\/\/gitee\.com\/\S+/)
+      const repoUrl = urlMatch ? urlMatch[0] : 'https://gitee.com/ForgeLab/forge-admin'
+      setTimeout(() => {
+        window.location.href = repoUrl
+      }, 2000)
+      return
+    }
     message.value = '登录异常'
     detailMessage.value = '处理登录时发生错误，请重新尝试'
     setTimeout(() => {

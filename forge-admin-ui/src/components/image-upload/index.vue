@@ -216,11 +216,16 @@ const headers = computed(() => {
 
 // 上传附加数据
 const uploadData = computed(() => {
-  return {
+  const data = {
     businessType: props.businessType,
     businessId: props.businessId,
-    storageType: props.storageType || serverStorageType.value,
   }
+  // 只在有明确值时才传 storageType，否则后端 FileManager 会从默认配置取
+  const resolvedType = props.storageType || serverStorageType.value
+  if (resolvedType) {
+    data.storageType = resolvedType
+  }
+  return data
 })
 
 // 监听 modelValue 变化，初始化文件列表

@@ -3,8 +3,58 @@ import { showRequestErrorDialog } from './error-dialog'
 
 let isConfirming = false
 
+const SESSION_INVALID_MESSAGES = [
+  '登录凭证无效',
+  '登录已过期',
+  '未提供登录凭证',
+  '您的账号已在其他地方登录',
+  '您已被强制下线',
+  '未登录或登录已过期，请重新登录',
+  '登录闲置超时，请重新登录',
+  'token 已被冻结',
+  '未能读取到有效 token',
+]
+
+const SESSION_INVALID_CODES = new Set([-8, '-8', 11007, 11008, 11011, 11012, 11013, 11014, 11015, 11017])
+
+const NON_SESSION_AUTH_PATHS = [
+  '/api/flow',
+  '/api/workspace',
+  '/openapi/v1/jobs',
+  '/openapi/v1/executions',
+  '/openapi/v1/capabilities',
+  '/oauth2/',
+  '/mcp',
+]
+
 export function isAuthErrorCode(code) {
   return code === '-8' || code === 401 || code === '401' || code === 11007 || code === 11008
+}
+
+export function isSessionInvalidMessage(message) {
+  const text = String(message || '').trim()
+  if (!text) {
+    return false
+  }
+  return SESSION_INVALID_MESSAGES.some(item => text.includes(item))
+}
+
+export function isNonSessionAuthPath(url) {
+  const path = String(url || '')
+  return NON_SESSION_AUTH_PATHS.some(prefix => path.includes(prefix))
+}
+
+export function shouldForceReLogin(code, message, detail = null) {
+  if (isNonSessionAuthPath(detail?.url)) {
+    return false
+  }
+  if (SESSION_INVALID_CODES.has(code)) {
+    return true
+  }
+  if (code !== 401 && code !== '401') {
+    return false
+  }
+  return isSessionInvalidMessage(message)
 }
 
 export function shouldSilenceAuthError() {
@@ -50,31 +100,38 @@ function showCommonErrorTip(code, message, detail) {
 }
 
 export function resolveResError(code, message, needTip = true, detail = null) {
-  // 检查是否在登录页面
   const isLoginPage = window.location.pathname === '/login'
   const authStore = useAuthStore()
 
   switch (code) {
-    case '-8': // 令牌无效
+    case '-8':
     case 401:
+    case '401':
     case 11007:
     case 11008:
-      // 退出流程或登录页上的鉴权失效属于预期状态，静默处理。
       if (authStore.isLoggingOut || isLoginPage) {
         authStore.resetToken()
         return false
       }
-      if (isConfirming || !needTip) {
-        return
+      if (shouldForceReLogin(code, message, detail)) {
+        if (isConfirming) {
+          return false
+        }
+        isConfirming = true
+        if (needTip) {
+          window.$message?.error(message || '登录已过期，请重新登录')
+        }
+        authStore.logout()
+        window.setTimeout(() => {
+          isConfirming = false
+        }, 1200)
+        return false
       }
-      isConfirming = true
-      // 凭证已失效，无需用户确认，直接退出并跳转登录页
-      window.$message?.error(message || '登录已过期，请重新登录')
-      authStore.logout()
-      window.setTimeout(() => {
-        isConfirming = false
-      }, 1200)
-      return false
+      if (isNonSessionAuthPath(detail?.url) && isSessionInvalidMessage(message)) {
+        return false
+      }
+      message = message || '请求未授权'
+      break
     case 403:
       message = message || '请求被拒绝'
       break

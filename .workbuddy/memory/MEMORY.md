@@ -6,7 +6,8 @@
 3. **头条连续低量时禁止盲猜选题**，先看后台数据（展现量级）再动笔
 
 ## 1. 账号与渠道现状
-- **头条**：新号，粉丝 <500，展现量长期只有几百 → **连初始流量池都没进**。已写 23+ 篇，换过 3 条赛道（低代码实测 → AI Coding 借势 → 合规等保）全部无效，根因是**账号冷启动 + 头条泛资讯属性**，不是选题
+- **头条**：新号，粉丝 <500，展现量长期只有几百 → **连初始流量池都没进**。已写 25 篇，换过 4 条赛道（低代码实测 → AI Coding 借势 → 合规等保 → 大众话题+技术落点）全部无效，根因是**账号冷启动 + 头条泛资讯属性**，不是选题
+- **0916 起头条改走"微头条测钩子"策略**：长文 2000 字成本太高不适合做实验；微头条 300 字、流量池门槛低、可高频测试。已交付 `output/头条-微头条测试5条（养号实验用）.md`（数字反差/反常识/求助提问/场景共鸣/清单盘点 5 类钩子 + 数据记录表）。判断标准：展现 >2000 扩写长文，<500 则长文暂停只发微头条养号
 - **掘金**：唯一有正反馈的渠道，有阅读但赞少。系列连载（源码拆解）是点赞主要来源
 - 演示站可从外部抓取（curl 200 / agent-browser 截图成功），需要素材可直接截图
 
@@ -36,11 +37,11 @@
 ① 开头玄学 Bug 钩子 ② 坑表四列（坑/现象/根因/解法）③ "可带走的 N 条诀窍"独立小节 ④ 结尾明确求赞 + 赌局式互动。**系列文必须兑现上一篇预告并预告下一篇**
 字数 4500-5500（含代码）。标签：`#低代码` `#Spring Boot` `#Java` `#架构设计` `#企业开发`
 
-### 已写 14 篇（避免重复）
-订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / **幂等starter 1279行 5坑(0915)**
+### 已写 15 篇（避免重复）
+订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / **log操作日志 1383行 5个反直觉设计(0916)**
 
 ### "框架源码拆解"系列进度
-① datascope SQL 改写 → ② tenant 多租户 → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ **log 操作日志（已预告：切点拦所有 Controller + 2 线程池拖慢）**
+① datascope SQL 改写 → ② tenant 多租户 → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log 操作日志（0916）→ ⑥ **auth 登录链路（已预告：认证策略链 + 账号锁定正确实现 + 多租户用户匹配）**
 
 ### 可复用硬核事实
 - **MyBatis-Plus 3.5.7**；`MybatisPlusConfig` 用 `List<InnerInterceptor>` 注入
@@ -53,14 +54,19 @@
 - plugin-ai：`PermissionEngine` 63 行三态判决（工具名含 delete/submit/commit 触发人工审批）；`AiModelInvocationLog` 记 token + 调用时单价快照（按"分"存）
 
 ### starter 剩余矿脉（按行数）
-tenant（已写）| idempotent 幂等（已写 0915）| **log 操作日志 1383 行（已挖素材待写）** | websocket | config 动态配置 | excel | orm | cache
+tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已写 0916）| **excel 4223 行（已挖素材待写：@Async 自调用 + 异步导出）** | **auth 登录链路（已预告）** | websocket | config 动态配置 | orm | cache
 
-### 已核实待用的硬核事实（log / idempotent）
+### 已核实待用的硬核事实（log / idempotent / excel / auth）
 - **log**：`OperationLogAspect` 676 行，切点 `@within(@Controller)||@within(@RestController)`（`@annotation` 版被注释掉）→ 所有 Controller 方法进切面；skip 判定前已完成 4 件事含 `apiConfigManager.getApiConfig()`；线程池默认 **core=2/max=5/queue=500 + CallerRunsPolicy**（高峰期业务线程自己写日志）；QUERY 全跳过；URL 后缀自动分类（/page /list /tree /detail /getbyid /options /profile /query→QUERY）；8 个敏感凭证路径直接 exclude（/auth/login 等）；`@ApiDecrypt` 接口的 `@RequestBody` 参数替换为 `[DECRYPTED_REQUEST_BODY_OMITTED]`；`OperationAuditContext` 是**普通 ThreadLocal**（切面在主线程 fillAuditSnapshot 拷贝进 POJO 再异步提交，规避了跨线程丢失）；**OperationLogInfo 无 traceId 字段**（只进 MDC），且 finally 里先 saveLogAsync 再 MDC.remove → 异步线程无 traceId；LogProperties 默认 requestParams/responseResult 截断 2000 字符
 - **idempotent**：见 2026-09-15 日志。核心：**STRICT 的 `annotation.expire()` 是死变量，锁租期固定 5s 且 Redisson 不启动 watchdog**；`extractToken()` 强转 bug（见下）
+- **log（补充）**：两条独立链路（AOP 切面 + `LoginLogListener implements SaTokenListener`），共用同一个 `logTaskExecutor`；**`ILogService` 是 SPI，框架层无实现**，两个入口都 `@ConditionalOnBean(ILogService.class)`（不实现就不注册，零开销）；Sa-Token `doLogin` **只在登录成功时回调** → 失败登录不进 `sys_login_log`（失败只调 `loginLockService` 计数）；`doKickout/doReplaced/doDisable/doUntieDisable` 4 个方法漏了 `enableLoginLog` 开关检查
+- **excel**：4223 行 / 30 类；`AsyncExportServiceImpl.submitExportTask` **内部自调用** `@Async protected executeExportAsync()` → 不走代理 → 异步完全失效；`taskStore` 用 ConcurrentHashMap（注释自认"生产建议用 Redis"，多实例/重启丢任务）；`downloadFile` 用 `Files.readAllBytes` 一次性读入内存（大文件 OOM）
+- **auth**：`UserLoadServiceImpl.authenticateByUsernamePassword` 密码错误时**抛 RuntimeException 而非返回 null**
 
-### ⚠️ 待修真实缺陷（0915 发现，尚未修复）
-`forge-starter-idempotent/.../strategy/TokenRequiredStrategyHandler.java` 的 `extractToken()` 把 `RequestContextHolder.getRequestAttributes()`（RequestAttributes）强转成 `RequestContextHolder` → 必然 ClassCastException 被 catch 吞 → token 恒 null → **TOKEN_REQUIRED 模式 100% 抛 TokenInvalidException**。正确写法见 output/掘金-幂等Starter源码拆解1279行里的5个隐蔽坑.md 坑 4
+### ⚠️ 待修真实缺陷（累计 3 个，均未修复，按严重度排序）
+1. **【高危】账号锁定在密码错误场景下完全失效**：`UsernamePasswordAuthStrategy.doAuthenticate` 里 `if (loginUser == null)` 是**死代码**（`authenticateByUsernamePassword` 失败时抛异常，永远不返回 null）；且即便进入分支，`recordLoginFailure(null, ...)` 也会因 `loginUser == null` 在第一行直接 `throw`，不计数不锁定。**结论：暴力破解密码不会被锁定**。修复思路：认证方法失败时返回可区分结果（Optional / 带错误码包装），不要用异常表达失败路径
+2. `forge-starter-idempotent/.../TokenRequiredStrategyHandler.extractToken()` 把 `getRequestAttributes()`（RequestAttributes）强转成 `RequestContextHolder` → 必然 ClassCastException 被 catch 吞 → token 恒 null → **TOKEN_REQUIRED 模式 100% 抛 TokenInvalidException**
+3. `forge-starter-excel/.../AsyncExportServiceImpl` `@Async` 自调用失效 → "异步导出"实为同步
 
 ### 其他候选切面
 能力开放网关 SPI（capability-parent，REST+MCP 双出口）/ 11 个 plugin 注册顺序 / CRUD Velocity 模板扩展点 / 部署上线踩坑 / 运维故障救回

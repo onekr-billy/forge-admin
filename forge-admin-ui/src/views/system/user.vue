@@ -1437,6 +1437,25 @@ const editSchema = computed(() => [
     },
   },
   {
+    field: 'allowedClients',
+    label: '允许客户端',
+    type: 'select',
+    span: 2,
+    labelTip: '不选则默认所有客户端均可登录',
+    optionSource: {
+      api: 'get@/system/client/list',
+      valueField: 'clientCode',
+      labelField: 'clientName',
+      recordsField: 'data',
+    },
+    props: {
+      placeholder: '请选择允许登录的客户端（不选则不限制）',
+      multiple: true,
+      clearable: true,
+      filterable: true,
+    },
+  },
+  {
     type: 'divider',
     label: '联系信息',
     props: {
@@ -1644,6 +1663,12 @@ function normalizeUserFormData(data = {}, fallbackTenantId = null) {
     next.mainOrgId = normalizeSingleNumber(next.mainOrgId)
   if (next.mainOrgId === null && next.orgIds?.length > 0)
     next.mainOrgId = next.orgIds[0]
+  // allowedClients: 后端逗号分隔字符串 → 前端数组
+  if (typeof next.allowedClients === 'string' && next.allowedClients.trim()) {
+    next.allowedClients = next.allowedClients.split(',').map(s => s.trim()).filter(Boolean)
+  } else if (!Array.isArray(next.allowedClients)) {
+    next.allowedClients = []
+  }
   return next
 }
 
@@ -2154,6 +2179,10 @@ function beforeSubmit(formData) {
   }
   if (!formData.mainOrgId && Array.isArray(formData.orgIds) && formData.orgIds.length > 0) {
     formData.mainOrgId = formData.orgIds[0]
+  }
+  // allowedClients: 前端数组 → 后端逗号分隔字符串，空数组表示不限制
+  if (Array.isArray(formData.allowedClients)) {
+    formData.allowedClients = formData.allowedClients.filter(Boolean).join(',') || null
   }
   return formData
 }

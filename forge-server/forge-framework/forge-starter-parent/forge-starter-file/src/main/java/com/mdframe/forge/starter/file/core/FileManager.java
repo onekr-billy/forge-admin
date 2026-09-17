@@ -326,6 +326,29 @@ public class FileManager {
             return null;
         }
     }
+
+    /**
+     * 获取文件内容的字节数组（用于服务端内部消费，如 Excel 图片导出）。
+     */
+    public byte[] getFileBytes(String fileId) {
+        if (metadataPersistence == null) {
+            throw new RuntimeException("未配置FileMetadataPersistence");
+        }
+        FileMetadata metadata = metadataPersistence.getById(fileId);
+        if (metadata == null) {
+            return null;
+        }
+        FileStorage storage = getStorage(metadata.getStorageType());
+        if (storage == null) {
+            return null;
+        }
+        try (InputStream inputStream = storage.download(fileId)) {
+            return inputStream.readAllBytes();
+        } catch (Exception e) {
+            log.error("获取文件字节失败: {}", fileId, e);
+            return null;
+        }
+    }
     
     /**
      * 获取文件元数据

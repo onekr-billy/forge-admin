@@ -10,6 +10,7 @@
         <result column="real_name" property="realName" />
         <result column="user_type" property="userType" />
         <result column="user_client" property="userClient" />
+        <result column="allowed_clients" property="allowedClients" />
         <result column="email" property="email" />
         <result column="phone" property="phone" />
         <result column="id_card" property="idCard" />
@@ -56,7 +57,7 @@
                 u.user_type,
             </otherwise>
         </choose>
-        u.user_client, u.email, u.phone,
+        u.user_client, u.allowed_clients, u.email, u.phone,
         u.id_card, u.gender, u.password, u.salt, u.user_status, u.avatar, u.region_code,
         u.last_login_time, u.last_login_ip, u.login_count, u.force_password_change, u.remark, u.create_dept,
         u.create_by, u.create_time, u.update_by, u.update_time, u.del_flag,

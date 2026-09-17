@@ -93,4 +93,30 @@ public class LoginConfig {
      * 调用 Gitee API 超时毫秒。
      */
     private Integer giteeCommunityTimeoutMs = 3000;
+
+    /**
+     * 是否启用群二维码引流验证码。独立于 enableCaptcha 总开关：
+     * 总开关开启时与图形/滑块/短信并存、用户自选；总开关关闭时仅保留群二维码验证码。
+     */
+    private Boolean groupQrcodeEnabled = false;
+
+    /**
+     * 群二维码图片（fileId，登录页通过 /auth/loginQrcode 匿名接口展示，也支持完整 URL）
+     */
+    private String groupQrcodeImage;
+
+    /**
+     * 群名称（显示在二维码下方）
+     */
+    private String groupQrcodeName;
+
+    /**
+     * 群验证码（固定码，管理员定期更新）
+     */
+    private String groupCaptchaCode;
+
+    /**
+     * 引导文案（如"扫码进群获取验证码"）
+     */
+    private String groupQrcodeHint = "扫码加入用户群，获取验证码并完成登录";
 }

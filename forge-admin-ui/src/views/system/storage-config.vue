@@ -39,6 +39,7 @@
         max-height="var(--storage-table-max-height)"
         :search-y-gap="8"
         :before-submit="normalizeSubmitData"
+        @modal-close="invalidateCache"
       >
         <!-- 自定义表单项：允许的文件类型 -->
         <template #form-allowedTypes="{ value, updateValue }">
@@ -90,6 +91,7 @@ import { AiCrudPage } from '@/components/ai-form'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
+import { useStorageConfig } from '@/composables/useStorageConfig'
 import { request } from '@/utils'
 
 defineOptions({ name: 'StorageConfig' })
@@ -102,6 +104,7 @@ const inputRef = ref(null)
 const fileTypeInput = ref('')
 
 const { dict } = useDict(STORAGE_TYPE_DICT)
+const { invalidateCache } = useStorageConfig()
 
 const storageTypeOptions = computed(() => dict.value[STORAGE_TYPE_DICT] || [])
 
@@ -544,6 +547,7 @@ function handleDelete(row) {
         if (res.code === 200) {
           window.$message.success('删除成功')
           crudRef.value?.refresh()
+          invalidateCache()
         }
       }
       catch {
@@ -566,6 +570,7 @@ function handleSetDefault(row) {
         if (res.code === 200) {
           window.$message.success('设置成功')
           crudRef.value?.refresh()
+          invalidateCache()
         }
       }
       catch {
@@ -589,6 +594,7 @@ function handleToggleEnabled(row) {
         if (res.code === 200) {
           window.$message.success(`${action}成功`)
           crudRef.value?.refresh()
+          invalidateCache()
         }
       }
       catch {

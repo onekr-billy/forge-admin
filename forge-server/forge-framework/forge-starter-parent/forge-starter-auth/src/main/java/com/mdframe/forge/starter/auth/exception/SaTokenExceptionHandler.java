@@ -45,6 +45,10 @@ public class SaTokenExceptionHandler {
             message = "您的账号已在其他地方登录";
         } else if (e.getType().equals(NotLoginException.KICK_OUT)) {
             message = "您已被强制下线";
+        } else if (e.getType().equals(NotLoginException.TOKEN_FREEZE)) {
+            message = "登录闲置超时，请重新登录";
+        } else if (e.getType().equals(NotLoginException.NO_PREFIX)) {
+            message = "未提供登录凭证";
         }
         
         return RespInfo.error(401, message);

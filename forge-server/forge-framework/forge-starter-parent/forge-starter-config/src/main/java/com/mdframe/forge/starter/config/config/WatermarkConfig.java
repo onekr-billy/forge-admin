@@ -72,4 +72,34 @@ public class WatermarkConfig {
      * 时间戳格式
      */
     private String timestampFormat = "yyyy-MM-dd HH:mm:ss";
+
+    /**
+     * 是否给 Excel 导出加水印
+     */
+    private Boolean excelWatermark = false;
+
+    /**
+     * Excel 水印是否包含租户配置的系统名称（sys_tenant.system_name）
+     */
+    private Boolean excelShowSystemName = true;
+
+    /**
+     * Excel 水印是否包含操作人姓名
+     */
+    private Boolean excelShowUsername = true;
+
+    /**
+     * Excel 水印是否包含登录账号（username）
+     */
+    private Boolean excelShowAccount = false;
+
+    /**
+     * Excel 水印是否包含手机号（完整显示，用于泄露追溯）
+     */
+    private Boolean excelShowPhone = false;
+
+    /**
+     * Excel 水印是否包含导出时间（复用 timestampFormat）
+     */
+    private Boolean excelShowTime = false;
 }

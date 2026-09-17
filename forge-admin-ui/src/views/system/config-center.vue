@@ -48,98 +48,211 @@
                 控制登录验证、记住我等登录相关功能
               </div>
             </div>
-            <div class="config-grid">
-              <div class="config-item password-encryption-item">
-                <div class="config-copy">
+            <!-- 基础登录配置 -->
+            <div class="config-group">
+              <div class="group-title">
+                <i class="i-material-symbols:login-outline" />
+                基础登录配置
+              </div>
+              <div class="config-grid">
+                <div class="config-item password-encryption-item">
+                  <div class="config-copy">
+                    <div class="config-label">
+                      <i class="i-material-symbols:password" />
+                      登录密码 RSA 加密
+                    </div>
+                    <div class="config-help">
+                      独立于通用接口传输加密。开启后登录密码必须使用服务端公钥加密；关闭时请确保系统仅通过 HTTPS 访问。
+                    </div>
+                  </div>
+                  <n-switch v-model:value="configForms.login.enablePasswordEncryption" />
+                </div>
+                <div class="config-item">
                   <div class="config-label">
-                    <i class="i-material-symbols:password" />
-                    登录密码 RSA 加密
+                    <i class="i-material-symbols:verified-user-outline" />
+                    启用验证码
                   </div>
-                  <div class="config-help">
-                    独立于通用接口传输加密。开启后登录密码必须使用服务端公钥加密；关闭时请确保系统仅通过 HTTPS 访问。
-                  </div>
+                  <n-switch v-model:value="configForms.login.enableCaptcha" />
                 </div>
-                <n-switch v-model:value="configForms.login.enablePasswordEncryption" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:verified-user-outline" />
-                  启用验证码
-                </div>
-                <n-switch v-model:value="configForms.login.enableCaptcha" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:passkey-outline" />
-                  验证码类型
-                </div>
-                <DictSelect v-model:value="configForms.login.captchaType" dict-type="captcha_type" class="config-select" />
-              </div>
-              <div class="config-item">
-                <div class="config-copy">
+                <div class="config-item">
                   <div class="config-label">
-                    <i class="i-material-symbols:person-add-outline" />
-                    开放匿名注册
+                    <i class="i-material-symbols:passkey-outline" />
+                    验证码类型
                   </div>
-                  <div class="config-help">
-                    默认关闭。找回密码不走此开关，由已启用的短信/邮件通道决定。
+                  <DictSelect v-model:value="configForms.login.captchaType" dict-type="captcha_type" class="config-select" />
+                </div>
+                <div class="config-item">
+                  <div class="config-copy">
+                    <div class="config-label">
+                      <i class="i-material-symbols:person-add-outline" />
+                      开放匿名注册
+                    </div>
+                    <div class="config-help">
+                      默认关闭。找回密码不走此开关，由已启用的短信/邮件通道决定。
+                    </div>
                   </div>
+                  <n-switch v-model:value="configForms.login.enableRegister" />
                 </div>
-                <n-switch v-model:value="configForms.login.enableRegister" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:remember-me" />
-                  启用记住我
-                </div>
-                <n-switch v-model:value="configForms.login.enableRememberMe" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:schedule-outline" />
-                  记住我有效天数
-                </div>
-                <n-input-number v-model:value="configForms.login.rememberMeDays" :min="1" :max="365" class="config-input" />
-              </div>
-              <div class="config-item">
-                <div class="config-copy">
+                <div class="config-item">
                   <div class="config-label">
-                    <i class="i-material-symbols:star-outline" />
-                    Gitee 社区体验登录
+                    <i class="i-material-symbols:remember-me" />
+                    启用记住我
                   </div>
-                  <div class="config-help">
-                    打开后，Gitee 登录会校验仓库 Star，新用户进入隔离体验租户。关闭后仍可用账号密码登录。
-                  </div>
+                  <n-switch v-model:value="configForms.login.enableRememberMe" />
                 </div>
-                <n-switch v-model:value="configForms.login.giteeCommunityEnabled" />
-              </div>
-              <div v-if="configForms.login.giteeCommunityEnabled" class="config-item">
-                <div class="config-copy">
+                <div class="config-item">
                   <div class="config-label">
-                    <i class="i-material-symbols:verified-outline" />
-                    要求仓库 Star
+                    <i class="i-material-symbols:schedule-outline" />
+                    记住我有效天数
                   </div>
-                  <div class="config-help">
-                    未点 Star 的 Gitee 账号不能登录，也不会自动建号。
+                  <n-input-number v-model:value="configForms.login.rememberMeDays" :min="1" :max="365" class="config-input" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Gitee 社区体验登录 -->
+            <div class="config-group">
+              <div class="group-title">
+                <i class="i-simple-icons:gitee" />
+                Gitee 社区体验登录
+              </div>
+              <div class="config-grid">
+                <div class="config-item">
+                  <div class="config-copy">
+                    <div class="config-label">
+                      <i class="i-material-symbols:star-outline" />
+                      启用社区体验登录
+                    </div>
+                    <div class="config-help">
+                      打开后，Gitee 登录会校验仓库 Star，新用户进入隔离体验租户。关闭后仍可用账号密码登录。
+                    </div>
+                  </div>
+                  <n-switch v-model:value="configForms.login.giteeCommunityEnabled" />
+                </div>
+                <div v-if="configForms.login.giteeCommunityEnabled" class="config-item">
+                  <div class="config-copy">
+                    <div class="config-label">
+                      <i class="i-material-symbols:verified-outline" />
+                      要求仓库 Star
+                    </div>
+                    <div class="config-help">
+                      未点 Star 的 Gitee 账号不能登录，也不会自动建号。
+                    </div>
+                  </div>
+                  <n-switch v-model:value="configForms.login.giteeCommunityRequireStar" />
+                </div>
+                <div v-if="configForms.login.giteeCommunityEnabled" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:link" />
+                    仓库地址
+                  </div>
+                  <n-input v-model:value="configForms.login.giteeCommunityRepoUrl" placeholder="https://gitee.com/ForgeLab/forge-admin" class="config-input" />
+                </div>
+                <div v-if="configForms.login.giteeCommunityEnabled" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:folder-outline" />
+                    仓库空间 / 仓库名
+                  </div>
+                  <div class="config-input-row">
+                    <n-input v-model:value="configForms.login.giteeCommunityOwner" placeholder="ForgeLab" />
+                    <n-input v-model:value="configForms.login.giteeCommunityRepo" placeholder="forge-admin" />
                   </div>
                 </div>
-                <n-switch v-model:value="configForms.login.giteeCommunityRequireStar" />
               </div>
-              <div v-if="configForms.login.giteeCommunityEnabled" class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:link" />
-                  仓库地址
-                </div>
-                <n-input v-model:value="configForms.login.giteeCommunityRepoUrl" placeholder="https://gitee.com/ForgeLab/forge-admin" class="config-input" />
+            </div>
+
+            <!-- 群二维码引流 -->
+            <div class="config-group">
+              <div class="group-title">
+                <i class="i-material-symbols:qr-code-2-outline" />
+                群二维码引流
               </div>
-              <div v-if="configForms.login.giteeCommunityEnabled" class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:folder-outline" />
-                  仓库空间 / 仓库名
+              <div class="config-grid">
+                <div class="config-item">
+                  <div class="config-copy">
+                    <div class="config-label">
+                      <i class="i-material-symbols:toggle-on-outline" />
+                      启用群二维码验证码
+                    </div>
+                    <div class="config-help">
+                      独立于“启用验证码”总开关：总开关开启时与图形/滑块/短信验证码并存、登录页自选；总开关关闭时仅保留群二维码验证码。
+                    </div>
+                  </div>
+                  <n-switch v-model:value="configForms.login.groupQrcodeEnabled" />
                 </div>
-                <div class="config-input-row">
-                  <n-input v-model:value="configForms.login.giteeCommunityOwner" placeholder="ForgeLab" />
-                  <n-input v-model:value="configForms.login.giteeCommunityRepo" placeholder="forge-admin" />
+                <div v-if="configForms.login.groupQrcodeEnabled" class="config-item full-width">
+                  <div class="config-copy">
+                    <div class="config-label">
+                      <i class="i-material-symbols:image-outline" />
+                      群二维码图片
+                    </div>
+                    <div class="config-help">
+                      上传二维码或直接填外部图片地址，登录页会自动展示。
+                    </div>
+                  </div>
+                  <div class="qrcode-source-row">
+                    <n-radio-group v-model:value="qrcodeInputMode" size="small">
+                      <n-radio-button value="upload">
+                        上传图片
+                      </n-radio-button>
+                      <n-radio-button value="url">
+                        图片地址
+                      </n-radio-button>
+                    </n-radio-group>
+                  </div>
+                  <!-- 上传模式：ImageUpload 自带缩略图/预览/删除，不重复展示额外预览 -->
+                  <div v-if="qrcodeInputMode === 'upload'" class="qrcode-upload-area">
+                    <ImageUpload
+                      :model-value="isQrcodeUrlValue ? '' : configForms.login.groupQrcodeImage"
+                      :limit="1"
+                      :file-size="5"
+                      :file-type="['png', 'jpg', 'jpeg', 'webp', 'gif']"
+                      business-type="login-qrcode"
+                      value-type="string"
+                      @update:model-value="val => configForms.login.groupQrcodeImage = Array.isArray(val) ? (val[0] || '') : (val || '')"
+                    />
+                  </div>
+                  <!-- URL 模式无其它视觉反馈，保留小预览校验地址可渲染 -->
+                  <template v-else>
+                    <div class="qrcode-url-input">
+                      <n-input
+                        v-model:value="configForms.login.groupQrcodeImage"
+                        placeholder="https://example.com/qrcode.png"
+                        clearable
+                        class="config-input-full"
+                      />
+                    </div>
+                    <div v-if="qrcodePreviewSrc" class="qrcode-preview">
+                      <AuthImage :src="qrcodePreviewSrc" alt="群二维码预览" preview />
+                    </div>
+                  </template>
+                </div>
+                <div v-if="configForms.login.groupQrcodeEnabled" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:groups-outline" />
+                    群名称
+                  </div>
+                  <n-input v-model:value="configForms.login.groupQrcodeName" placeholder="Forge 用户交流群" class="config-input" />
+                </div>
+                <div v-if="configForms.login.groupQrcodeEnabled" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:password-outline" />
+                    群验证码
+                  </div>
+                  <n-input
+                    v-model:value="configForms.login.groupCaptchaCode"
+                    type="password"
+                    show-password-on="click"
+                    placeholder="固定码，管理员定期更新"
+                    class="config-input"
+                  />
+                </div>
+                <div v-if="configForms.login.groupQrcodeEnabled" class="config-item full-width">
+                  <div class="config-label">
+                    <i class="i-material-symbols:chat-outline" />
+                    引导文案
+                  </div>
+                  <n-input v-model:value="configForms.login.groupQrcodeHint" placeholder="扫码加入用户群，获取验证码并完成登录" class="config-input-full" />
                 </div>
               </div>
             </div>
@@ -177,79 +290,143 @@
                 配置系统水印显示效果，支持透明度、字体、旋转等参数
               </div>
             </div>
-            <div class="config-grid">
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:toggle-on-outline" />
-                  启用水印
-                </div>
-                <n-switch v-model:value="configForms.watermark.enable" />
+            <!-- 全局水印 -->
+            <div class="config-group">
+              <div class="group-title">
+                <i class="i-material-symbols:view-in-ar-outline" />
+                全局水印
               </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:text-fields-outline" />
-                  水印内容
+              <div class="config-grid">
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:toggle-on-outline" />
+                    启用水印
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.enable" />
                 </div>
-                <DictSelect v-model:value="configForms.watermark.content" dict-type="water_marker_content" class="config-select" />
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:text-fields-outline" />
+                    水印内容
+                  </div>
+                  <n-input
+                    v-model:value="configForms.watermark.content"
+                    placeholder="UI 水印与 Excel 水印共用此文本"
+                    clearable
+                    class="config-input-full"
+                  />
+                </div>
+                <div class="config-item full-width">
+                  <div class="config-label">
+                    <i class="i-material-symbols:opacity-outline" />
+                    水印透明度
+                  </div>
+                  <div class="config-slider-wrapper">
+                    <n-slider v-model:value="configForms.watermark.opacity" :min="0.1" :max="1" :step="0.1" />
+                    <span class="slider-value">{{ Math.round(configForms.watermark.opacity * 100) }}%</span>
+                  </div>
+                </div>
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:format-size-outline" />
+                    字体大小
+                  </div>
+                  <n-input-number v-model:value="configForms.watermark.fontSize" :min="10" :max="50" class="config-input" />
+                </div>
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:palette-outline" />
+                    字体颜色
+                  </div>
+                  <n-color-picker v-model:value="configForms.watermark.fontColor" :modes="['hex']" />
+                </div>
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:rotate-right-outline" />
+                    旋转角度
+                  </div>
+                  <n-input-number v-model:value="configForms.watermark.rotate" :min="-180" :max="180" class="config-input" />
+                </div>
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:horizontal-rule-outline" />
+                    X轴间距
+                  </div>
+                  <n-input-number v-model:value="configForms.watermark.gapX" :min="0" :max="200" class="config-input" />
+                </div>
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:vertical-rule-outline" />
+                    Y轴间距
+                  </div>
+                  <n-input-number v-model:value="configForms.watermark.gapY" :min="0" :max="200" class="config-input" />
+                </div>
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:schedule-outline" />
+                    显示时间戳
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.showTimestamp" />
+                </div>
+                <div v-if="configForms.watermark.showTimestamp" class="config-item full-width">
+                  <div class="config-label">
+                    <i class="i-material-symbols:date-range-outline" />
+                    时间戳格式
+                  </div>
+                  <n-input v-model:value="configForms.watermark.timestampFormat" placeholder="yyyy-MM-dd HH:mm:ss" class="config-input-full" />
+                </div>
               </div>
-              <div class="config-item full-width">
-                <div class="config-label">
-                  <i class="i-material-symbols:opacity-outline" />
-                  水印透明度
-                </div>
-                <div class="config-slider-wrapper">
-                  <n-slider v-model:value="configForms.watermark.opacity" :min="0.1" :max="1" :step="0.1" />
-                  <span class="slider-value">{{ Math.round(configForms.watermark.opacity * 100) }}%</span>
-                </div>
+            </div>
+
+            <!-- Excel 导出水印 -->
+            <div class="config-group">
+              <div class="group-title">
+                <i class="i-material-symbols:table-chart-outline" />
+                Excel 导出水印
               </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:format-size-outline" />
-                  字体大小
+              <div class="config-grid">
+                <div class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:table-chart-outline" />
+                    启用导出水印
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.excelWatermark" />
                 </div>
-                <n-input-number v-model:value="configForms.watermark.fontSize" :min="10" :max="50" class="config-input" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:palette-outline" />
-                  字体颜色
+                <div v-if="configForms.watermark.excelWatermark" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:badge-outline" />
+                    包含系统名称（租户配置）
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.excelShowSystemName" />
                 </div>
-                <n-color-picker v-model:value="configForms.watermark.fontColor" :modes="['hex']" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:rotate-right-outline" />
-                  旋转角度
+                <div v-if="configForms.watermark.excelWatermark" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:person-outline" />
+                    包含操作人姓名
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.excelShowUsername" />
                 </div>
-                <n-input-number v-model:value="configForms.watermark.rotate" :min="-180" :max="180" class="config-input" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:horizontal-rule-outline" />
-                  X轴间距
+                <div v-if="configForms.watermark.excelWatermark" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:alternate-email-outline" />
+                    包含登录账号
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.excelShowAccount" />
                 </div>
-                <n-input-number v-model:value="configForms.watermark.gapX" :min="0" :max="200" class="config-input" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:vertical-rule-outline" />
-                  Y轴间距
+                <div v-if="configForms.watermark.excelWatermark" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:phone-outline" />
+                    包含手机号
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.excelShowPhone" />
                 </div>
-                <n-input-number v-model:value="configForms.watermark.gapY" :min="0" :max="200" class="config-input" />
-              </div>
-              <div class="config-item">
-                <div class="config-label">
-                  <i class="i-material-symbols:schedule-outline" />
-                  显示时间戳
+                <div v-if="configForms.watermark.excelWatermark" class="config-item">
+                  <div class="config-label">
+                    <i class="i-material-symbols:schedule-outline" />
+                    包含导出时间
+                  </div>
+                  <n-switch v-model:value="configForms.watermark.excelShowTime" />
                 </div>
-                <n-switch v-model:value="configForms.watermark.showTimestamp" />
-              </div>
-              <div v-if="configForms.watermark.showTimestamp" class="config-item full-width">
-                <div class="config-label">
-                  <i class="i-material-symbols:date-range-outline" />
-                  时间戳格式
-                </div>
-                <n-input v-model:value="configForms.watermark.timestampFormat" placeholder="yyyy-MM-dd HH:mm:ss" class="config-input-full" />
               </div>
             </div>
             <div class="section-footer">
@@ -774,7 +951,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   getAuthConfig,
   getConfigByGroup,
@@ -793,7 +970,9 @@ import {
   updateWatermarkConfig,
 } from '@/api/config'
 import { DictSelect } from '@/components'
+import AuthImage from '@/components/common/AuthImage.vue'
 import DictTag from '@/components/DictTag.vue'
+import ImageUpload from '@/components/image-upload/index.vue'
 import { useDict } from '@/composables/useDict'
 import { applyRuntimeCryptoConfig } from '@/utils/crypto/crypto-config'
 import { initKeyExchange } from '@/utils/crypto/key-exchange'
@@ -829,6 +1008,11 @@ const configForms = ref({
     giteeCommunityRepo: 'forge-admin',
     giteeCommunityRepoUrl: 'https://gitee.com/ForgeLab/forge-admin',
     giteeCommunityTenantId: 9001,
+    groupQrcodeEnabled: false,
+    groupQrcodeImage: '',
+    groupQrcodeName: '',
+    groupCaptchaCode: '',
+    groupQrcodeHint: '扫码加入用户群，获取验证码并完成登录',
   },
   watermark: {
     enable: true,
@@ -841,6 +1025,12 @@ const configForms = ref({
     gapY: 100,
     showTimestamp: false,
     timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    excelWatermark: false,
+    excelShowSystemName: true,
+    excelShowUsername: true,
+    excelShowAccount: false,
+    excelShowPhone: false,
+    excelShowTime: false,
   },
   security: {
     saToken: {
@@ -899,6 +1089,20 @@ const configForms = ref({
     threadPoolQueueCapacity: 500,
   },
 })
+
+// 群二维码图片来源双模式：upload（上传存 fileId）/ url（手填完整 URL）
+const qrcodeInputMode = ref('upload')
+const isQrcodeUrlValue = computed(() => {
+  const value = String(configForms.value.login.groupQrcodeImage || '').trim().toLowerCase()
+  return value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:') || value.startsWith('blob:')
+})
+const qrcodePreviewSrc = computed(() => configForms.value.login.groupQrcodeImage || '')
+
+// 已存值为完整 URL 时自动切到 URL 模式，避免上传模式回显为空
+watch(isQrcodeUrlValue, (isUrl) => {
+  if (isUrl)
+    qrcodeInputMode.value = 'url'
+}, { immediate: true })
 
 async function getConfig(groupCode) {
   try {
@@ -1275,5 +1479,40 @@ onMounted(async () => {
   padding-top: 16px;
   border-top: 1px solid #f1f5f9;
   margin-top: 16px;
+}
+
+.qrcode-source-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.qrcode-upload-area {
+  width: 100%;
+  padding: 8px 0 0;
+}
+
+.qrcode-url-input {
+  width: 100%;
+}
+
+.qrcode-preview {
+  padding: 8px 0 0;
+}
+
+.qrcode-preview :deep(.auth-image-host) {
+  width: 140px;
+  height: 140px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.qrcode-preview :deep(img) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 </style>
