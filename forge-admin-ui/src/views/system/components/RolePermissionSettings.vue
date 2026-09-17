@@ -118,6 +118,29 @@
 
           <div class="toolbar-divider" />
 
+          <div class="batch-pill-control" role="group" aria-label="全局批量授权">
+            <button
+              type="button"
+              :disabled="globalSelectAllDisabled"
+              title="勾选全部业务模块的菜单入口和功能权限"
+              @click="selectAllPermissions()"
+            >
+              <i class="i-material-symbols:done-all" aria-hidden="true" />
+              全选
+            </button>
+            <button
+              type="button"
+              :disabled="globalClearDisabled"
+              title="清空全部业务模块的授权"
+              @click="clearAllPermissions()"
+            >
+              <i class="i-material-symbols:delete-sweep" aria-hidden="true" />
+              清空
+            </button>
+          </div>
+
+          <div class="toolbar-divider" />
+
           <n-dropdown
             v-if="defaultScopeEditable"
             trigger="click"
@@ -552,6 +575,13 @@ const defaultScopeDropdownOptions = computed(() => props.dataScopeOptions.map(op
 })))
 const globalBatchOptions = computed(() => batchOptions('global', props.loading || workspaceModules.value.length === 0))
 const moduleBatchOptions = computed(() => batchOptions('module', props.loading || activePages.value.length === 0))
+// 全局全选/清空按钮的可用态：与「全局授权」下拉同源，但作为显眼一级操作暴露在工具栏
+const globalBatchResourceIds = computed(() => uniqueIds(workspaceModules.value.flatMap(module =>
+  module.pages.flatMap(page => page.resourceIds))))
+const globalSelectAllDisabled = computed(() => props.loading
+  || globalBatchResourceIds.value.length === 0
+  || globalBatchResourceIds.value.every(id => checkedKeySet.value.has(String(id))))
+const globalClearDisabled = computed(() => props.loading || props.checkedKeys.length === 0)
 
 watch(filteredNavigationModules, (modules) => {
   if (modules.some(module => module.key === activeModuleKey.value))
@@ -1533,7 +1563,8 @@ function updateModuleScope(moduleCode, value) {
   background: #cbd5e1;
 }
 
-.collapse-pill-control {
+.collapse-pill-control,
+.batch-pill-control {
   display: inline-flex;
   align-items: center;
   gap: 0;
@@ -1544,7 +1575,8 @@ function updateModuleScope(moduleCode, value) {
   background: #f1f5f9;
 }
 
-.collapse-pill-control button {
+.collapse-pill-control button,
+.batch-pill-control button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1566,18 +1598,21 @@ function updateModuleScope(moduleCode, value) {
     box-shadow 0.18s ease;
 }
 
-.collapse-pill-control button:hover:not(:disabled) {
+.collapse-pill-control button:hover:not(:disabled),
+.batch-pill-control button:hover:not(:disabled) {
   background: #fff;
   color: #3730a3;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
-.collapse-pill-control button:disabled {
+.collapse-pill-control button:disabled,
+.batch-pill-control button:disabled {
   color: #cbd5e1;
   cursor: not-allowed;
 }
 
-.collapse-pill-control i {
+.collapse-pill-control i,
+.batch-pill-control i {
   font-size: 14px;
 }
 
@@ -2156,11 +2191,13 @@ function updateModuleScope(moduleCode, value) {
 :global(.dark) .page-card-header,
 :global(.dark) .data-scope-panel,
 :global(.dark) .collapse-pill-control,
+:global(.dark) .batch-pill-control,
 :global(.dark) .sidebar-legend {
   background: #1e293b;
 }
 
-:global(.dark) .collapse-pill-control {
+:global(.dark) .collapse-pill-control,
+:global(.dark) .batch-pill-control {
   border-color: #334155;
 }
 
@@ -2185,11 +2222,13 @@ function updateModuleScope(moduleCode, value) {
   color: #93c5fd;
 }
 
-:global(.dark) .collapse-pill-control button {
+:global(.dark) .collapse-pill-control button,
+:global(.dark) .batch-pill-control button {
   color: #cbd5e1;
 }
 
-:global(.dark) .collapse-pill-control button:hover:not(:disabled) {
+:global(.dark) .collapse-pill-control button:hover:not(:disabled),
+:global(.dark) .batch-pill-control button:hover:not(:disabled) {
   background: #0f172a;
   color: #c7d2fe;
 }
@@ -2290,11 +2329,13 @@ function updateModuleScope(moduleCode, value) {
 
   .default-scope-button,
   .toolbar-controls :deep(.n-button),
-  .collapse-pill-control {
+  .collapse-pill-control,
+  .batch-pill-control {
     width: 100%;
   }
 
-  .collapse-pill-control button {
+  .collapse-pill-control button,
+  .batch-pill-control button {
     flex: 1;
   }
 
