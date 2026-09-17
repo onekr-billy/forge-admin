@@ -393,8 +393,9 @@ public class UserLoadServiceImpl implements IUserLoadService {
             if (CollUtil.isNotEmpty(resourceIds)) {
                 LambdaQueryWrapper<SysResource> resourceWrapper = new LambdaQueryWrapper<>();
                 resourceWrapper.in(SysResource::getId, resourceIds)
-                        .eq(SysResource::getVisible, 1)
                         .isNotNull(SysResource::getPerms);
+                // 不按 visible 过滤：visible 只控制菜单显隐，隐藏菜单承载的接口权限（如应用门户）
+                // 同样需要进 permissions，否则已授权的接口会被鉴权层拦成 403
                 applyUserTypeScope(resourceWrapper, loginUser);
                 List<SysResource> resources = resourceMapper.selectList(resourceWrapper);
 

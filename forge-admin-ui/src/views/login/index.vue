@@ -1337,6 +1337,8 @@ async function handleLogin() {
       $message.destroy('login')
     }
     else {
+      // 登录接口 needTip: false 屏蔽了全局错误弹窗，失败原因必须在登录页自行提示
+      $message.error(res.message || '登录失败，请重试', { key: 'login' })
       await handleLoginFailure()
     }
   }
@@ -1344,6 +1346,7 @@ async function handleLogin() {
     $message.destroy('login')
     if (!applyWorkspaceChallenge(error)) {
       console.error(error)
+      $message.error(error?.message || '登录失败，请重试', { key: 'login' })
       await handleLoginFailure()
     }
   }
@@ -1456,8 +1459,9 @@ async function handleSocialLoginMessage(event) {
     $message.success('登录成功')
 
     // 使用 window.location.href 强制刷新页面跳转
+    // resolve() 会自动拼上路由 base（生产环境为 /forge），直接赋 '/' 会跳出 SPA 落到站点根路径
     const defaultRedirectPath = import.meta.env.VITE_HOME_PATH || '/'
-    window.location.href = defaultRedirectPath
+    window.location.href = router.resolve(defaultRedirectPath).href
   }
   else if (event.data?.type === 'SOCIAL_LOGIN_FAILED') {
     $message.error('三方登录失败，请重试')

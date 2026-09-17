@@ -67,7 +67,9 @@ export function distributeBusinessApplicationToWorkbench(id, data) {
 }
 
 export function businessApplicationWorkbench() {
-  return request.get('/ai/business/application/workbench', ENCRYPTED_REQUEST)
+  // needTip:false：工作台首页必调，无 portal 权限（如社区角色）时静默降级为空列表，
+  // 避免全局 403 错误弹窗轰炸首页；调用方（home/index.vue）已自带 catch 兑底
+  return request.get('/ai/business/application/workbench', { encrypt: true, needTip: false })
 }
 
 export function createBusinessApplication(data) {

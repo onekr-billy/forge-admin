@@ -67,7 +67,8 @@ public class SocialOAuthLoginService {
         }
 
         if (giteeCommunityLoginSupport.appliesTo(connection)) {
-            giteeStarCheckService.assertStarred(resolveAccessToken(authUser));
+            // Gitee 社区登录 Star 校验需要 login 拉取 /users/{login}/starred 列表
+            giteeStarCheckService.assertStarred(resolveAccessToken(authUser), authUser.getUsername());
         }
 
         Long tenantId = connection.getTenantId();

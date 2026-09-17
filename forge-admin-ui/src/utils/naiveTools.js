@@ -26,7 +26,10 @@ export function setupMessage(NMessage) {
     }
 
     destroy(key, duration = 200) {
-      setTimeout(() => {
+      // 先取消同 key 已有的自动销毁计时，并跟踪本次销毁计时，
+      // 避免紧随其后的同 key 消息（如 destroy loading 后立即 error）被连带销毁
+      this.removeTimer[key] && clearTimeout(this.removeTimer[key])
+      this.removeTimer[key] = setTimeout(() => {
         this.message[key]?.destroy()
       }, duration)
     }
