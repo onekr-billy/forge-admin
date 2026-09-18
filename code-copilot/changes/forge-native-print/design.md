@@ -216,3 +216,12 @@ M3b 绑定解除补充：`DELETE /print/bindings/{id}?expectedRevision=...` 按�
 M3b 输出协议细化：prepare 返回规范化 `schemaJson`，浏览器按同一 v1 校验器解析，避免 Java record 的可选 null 属性改变协议。context 按 main/children/flow 投影，前端 system.generatedAt 取服务端时刻。文件下载复用鉴权 HTTP 客户端和 getFileUrl，限定 fileId、二进制响应、10 秒超时及取消；M5 继续补流程签名/附件特有授权。服务端模式设计器预览不可直接发起打印，实际单据打印必须经 prepare。
 
 M3b 审查补充：图片元素的 FIELD 绑定只能使用目录类型 IMAGE；静态资源别名先归一到 fileId，再做设计/运行资源授权。流程请求可省略运行 ID 交由 Provider 解析，但授权结果的流程 context 必须含 processRunId。动态数据 context JSON 用限长输出流检查 4MiB，避免先分配超大序列化数组；schemaJson 仍独立受 v1 的 1MiB 上限约束。
+
+## M4a 接入前置约束（2026-09-19）
+
+- 低代码 pageId 使用 1–128 位受控字符串 `[A-Za-z0-9][A-Za-z0-9_.:-]*`，支持工作台 `page_*` 标识；已有数字 ID 转为等值十进制字符串，source_key 摘要算法不变。两张打印表通过新增迁移扩展列，不修改 V168。回退保留 VARCHAR 列，不能强制降回 BIGINT 丢失新页面标识。
+- 应用侧实现 PrintApplicationAccess：分别叠加应用 list/edit/publish 与 print view/manage/publish 权限，按应用当前可见范围检查；租户/用户来自 PrintIdentity，与 SPI actor 必须一致。此处是设计权限，不用于业务运行授权。
+- 应用版本提交与打印修改/删除统一先锁应用行，随后读模板/版本。历史引用查询使用锁定读，避免 MySQL REPEATABLE READ 的先前快照漏掉刚发布的引用；查询显式 tenant_id/del_flag，锁查询不使用 LIMIT。
+- 应用快照扩展 `printing = {schemaVersion: 1, bindings: [...]}`。每项固定 source、scene、templateId、templateVersionId、schemaHash、isDefault、sortOrder；无正文，无最新版本回退。同来源/场景/模板不能重复，每范围默认至多一个。旧快照缺少 printing 视为空；显式 null、未知版本、坏结构拒绝。
+- 最终提交/回滚提交均校验固定版本仍存在、模板启用、应用来源一致及规范协议 SHA-256 一致。模板删除扫描全部未删除应用版本，任何历史引用均阻止删除，错误不回显历史正文。候选快照生成、来源字段变更检查由 M4b 完成；本阶段不开放真实数据 Provider。
+- 本阶段无权限资源新增、无角色自动授权、无业务状态/数据修复 SQL。应用版本新增与发布指针仍由原事务处理，打印校验失败整体回滚该事务；既有协调发布前置步骤的副作用仍沿用原恢复机制，不承诺全系统原子回滚。

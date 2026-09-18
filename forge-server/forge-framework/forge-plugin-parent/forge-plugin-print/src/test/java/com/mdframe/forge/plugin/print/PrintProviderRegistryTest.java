@@ -10,7 +10,7 @@ import static org.mockito.Mockito.*;
 
 class PrintProviderRegistryTest {
 
-    private final PrintSourceRequest source = new PrintSourceRequest(1L, PrintSourceType.LOWCODE, 2L, null, "purchase");
+    private final PrintSourceRequest source = new PrintSourceRequest(1L, PrintSourceType.LOWCODE, "2", null, "purchase");
 
     @Test
     void missingProvidersFailClosedWithoutBreakingStartup() {

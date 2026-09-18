@@ -8,7 +8,7 @@ export function printSourceFromQuery(query) {
     return null
   const source = { applicationId, objectCode, sourceType: query.sourceType, pageId: null, formKey: null }
   if (source.sourceType === 'LOWCODE')
-    source.pageId = positive(query.pageId)
+    source.pageId = typeof query.pageId === 'string' && /^[A-Z0-9][\w.:-]{0,127}$/i.test(query.pageId) ? query.pageId : null
   else source.formKey = text(query.formKey)
   return source.pageId || source.formKey ? source : null
 }

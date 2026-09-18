@@ -46,7 +46,7 @@ class PrintBindingServiceTest extends PrintServiceFixture {
         var two = create("two");
         var first = bindings.save(bind(null, null, one.id(), true, 1));
         bindings.save(bind(null, null, two.id(), true, 1));
-        var all = bindings.list(new PrintBindingQueryDTO(2L, PrintSourceType.LOWCODE, 3L, null, "purchase", PrintScene.DETAIL));
+        var all = bindings.list(new PrintBindingQueryDTO(2L, PrintSourceType.LOWCODE, "page_purchase", null, "purchase", PrintScene.DETAIL));
         assertThat(all.stream().filter(b -> b.isDefault())).hasSize(1);
         fails(409, () -> bindings.save(bind(first.id(), first.bindingRevision(), one.id(), true, 1)));
     }

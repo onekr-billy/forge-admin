@@ -12,10 +12,10 @@ class PrintTemplateDtoTest {
     void validatesRequiredFieldsRevisionsAndSourceIdentity() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            assertThat(validator.validate(new PrintTemplateCreateDTO(1L, "purchase", "采购单", PrintSourceType.LOWCODE, 2L, null, "purchase", "{}"))).isEmpty();
+            assertThat(validator.validate(new PrintTemplateCreateDTO(1L, "purchase", "采购单", PrintSourceType.LOWCODE, "2", null, "purchase", "{}"))).isEmpty();
             assertThat(validator.validate(new PrintTemplateCreateDTO(1L, "purchase", "采购单", PrintSourceType.CODE, null, "purchaseForm", "purchase", "{}"))).isEmpty();
-            assertThat(validator.validate(new PrintTemplateCreateDTO(1L, "purchase", "采购单", PrintSourceType.CODE, 2L, "purchaseForm", "purchase", "{}"))).anySatisfy(error -> assertThat(error.getPropertyPath().toString()).isEqualTo("sourceValid"));
-            assertThat(validator.validate(new PrintTemplateCreateDTO(null, "../invalid", " ", null, -1L, null, "", ""))).hasSizeGreaterThanOrEqualTo(6);
+            assertThat(validator.validate(new PrintTemplateCreateDTO(1L, "purchase", "采购单", PrintSourceType.CODE, "2", "purchaseForm", "purchase", "{}"))).anySatisfy(error -> assertThat(error.getPropertyPath().toString()).isEqualTo("sourceValid"));
+            assertThat(validator.validate(new PrintTemplateCreateDTO(null, "../invalid", " ", null, "bad/page", null, "", ""))).hasSizeGreaterThanOrEqualTo(6);
             assertThat(validator.validate(new PrintTemplateUpdateDTO(0L, "模板", "{}"))).isNotEmpty();
             assertThat(validator.validate(new PrintTemplatePublishDTO(Long.MAX_VALUE))).isNotEmpty();
             assertThat(validator.validate(new PrintTemplateStatusDTO(1L, 2))).isNotEmpty();

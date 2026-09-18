@@ -43,6 +43,10 @@ class PrintPersistenceTest {
                 }
             }
         }
+        try (var statement = session.getConnection().createStatement()) {
+            statement.execute("ALTER TABLE sys_print_template MODIFY page_id VARCHAR(128)");
+            statement.execute("ALTER TABLE sys_print_binding MODIFY page_id VARCHAR(128)");
+        }
         templates = session.getMapper(PrintTemplateMapper.class);
         versions = session.getMapper(PrintTemplateVersionMapper.class);
     }
@@ -71,7 +75,7 @@ class PrintPersistenceTest {
         row.setTemplateName("采购单");
         row.setSourceType("LOWCODE");
         row.setSourceKey("page:3");
-        row.setPageId(3L);
+        row.setPageId("page_purchase");
         row.setObjectCode("purchase");
         row.setDraftSchema("{}");
         row.setDraftRevision(1L);
@@ -79,6 +83,7 @@ class PrintPersistenceTest {
         row.setStatus(1);
         row.setDelFlag(0L);
         templates.insert(row);
+        assertThat(templates.selectScoped(1L, row.getId()).getPageId()).isEqualTo("page_purchase");
         return row;
     }
 
@@ -136,7 +141,7 @@ class PrintPersistenceTest {
         binding.setApplicationId(2L);
         binding.setSourceType("LOWCODE");
         binding.setSourceKey("page:3");
-        binding.setPageId(3L);
+        binding.setPageId("3");
         binding.setObjectCode("purchase");
         binding.setTemplateId(row.getId());
         binding.setScene("DETAIL");
@@ -193,7 +198,7 @@ class PrintPersistenceTest {
         binding.setApplicationId(2L);
         binding.setSourceType("LOWCODE");
         binding.setSourceKey("page:3");
-        binding.setPageId(3L);
+        binding.setPageId("3");
         binding.setObjectCode("purchase");
         binding.setTemplateId(row.getId());
         binding.setScene("DETAIL");

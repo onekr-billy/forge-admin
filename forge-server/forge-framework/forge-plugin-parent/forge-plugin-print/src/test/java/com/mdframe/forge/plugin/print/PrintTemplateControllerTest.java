@@ -39,7 +39,7 @@ class PrintTemplateControllerTest extends PrintServiceFixture {
         var row = published();
         mvc.perform(get("/print/templates/page").param("applicationId", "2").param("pageNum", "1").param("pageSize", "20")).andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.records[0].schemaJson").isEmpty());
         mvc.perform(put("/print/templates/" + row.id()).contentType(MediaType.APPLICATION_JSON).content("{\"expectedRevision\":0,\"templateName\":\"invalid\",\"schemaJson\":\"{}\"}")).andExpect(status().isBadRequest());
-        mvc.perform(get("/print/bindings").param("applicationId", "2").param("sourceType", "LOWCODE").param("pageId", "3").param("objectCode", "purchase").param("scene", "DETAIL")).andExpect(status().isOk());
+        mvc.perform(get("/print/bindings").param("applicationId", "2").param("sourceType", "LOWCODE").param("pageId", "page_purchase").param("objectCode", "purchase").param("scene", "DETAIL")).andExpect(status().isOk());
         permissions.clear();
         permissions.add("print:execute");
         adapter.designDenied = true;

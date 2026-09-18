@@ -47,7 +47,7 @@ public class PrintTemplate extends TenantEntity {
     /**
      * 低代码页面。
      */
-    private Long pageId;
+    private String pageId;
 
     /**
      * 代码表单标识。

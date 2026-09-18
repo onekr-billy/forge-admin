@@ -127,6 +127,18 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 | [ ] T33 应用快照扩展 | T30 | GJ `service/printing/PrintApplicationSnapshotContributor.java`、现有 `BusinessApplicationSnapshotService.java`/`BusinessApplicationPublishService.java`、对应测试 | 固定模板版本/引用/hash，失败无半发布，回滚恢复 |
 | [ ] T34 下载协议扩展 | T33 | 现有 `LowcodeProtocolSnapshotBuilder.java`、拟新增打印导出贡献器、生成依赖模板、对应导出测试 | 下载代码包含协议/模板/绑定且复用运行时，无漏字段 |
 
+### M4 实施拆分（2026-09-19，编码前）
+
+当前分支为 `forge-native-print`。仓库核对发现：工作台页面 ID 是字符串（如 `page_purchase`），M3 的 Long pageId 不能接入；应用版本提交与打印删除尚未共享应用行锁。先完成 M4a，再接 M4b/M4c；不将基础适配计作真实单据打印完成。
+
+- [x] M4a-1（T29 前置）：`PrintSourceRequest`、两个来源 DTO、两个实体改用受控字符串 pageId（拆为 DTO 组与持久化组）；新增 V1.0.171 扩展两表 page_id，保持旧数字身份摘要不变。路由解析同步，补 DTO/HTTP/Mapper/路由验证。
+- [ ] M4a-2（T33 前置）：应用 Mapper 行锁、版本 Mapper 历史快照当前读（4 文件）；新增 `service/printing/{PrintApplicationAccessAdapter,PrintApplicationSnapshotCodec,PrintApplicationLock}.java`。应用设计权限与应用可见范围同时核验，删除检查全部保留的历史应用版本。
+- [ ] M4a-3（T33 前置）：新增 `PrintApplicationVersionGuard`，接入 `BusinessApplicationVersionService`；共享应用行锁下核验固定模板版本/归属/hash，失败不提交应用版本或发布指针。补服务与事务/Mapper 测试。
+- [ ] M4b：T29/T30/T33 余项，已发布元数据、主子表读取与字段权限、候选快照生成/发布校验。特别验证 DynamicCrudService 的子表读取后处理，不能沿用未翻译/未脱敏子表结果。
+- [ ] M4c：T31/T32/T34，工作台入口、运行动作、下载协议及浏览器验收；进入前落实 R01。
+
+M4a 的 `printing` 快照协议先定义并在最终应用版本提交时守卫；候选快照生成和业务字段验证属于 M4b，M4a 不提前安装不完整 DataProvider。现存不含 printing 的应用版本兼容为空绑定。
+
 ### 存量超大组件接入条件任务
 
 - [ ] R01（M4 前检查）：确认 T32 是否能完全使用既有 route/配置路径，不改 AiCrudPage。能则记录“不适用”，不能则先拆成 R01a/R01b…，完成被修改 SFC 的合规规模与回归后再接入，不豁免根 AGENTS.md 5.14。

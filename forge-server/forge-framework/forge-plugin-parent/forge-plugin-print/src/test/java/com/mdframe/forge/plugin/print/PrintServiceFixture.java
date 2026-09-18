@@ -33,7 +33,7 @@ import static org.mockito.Mockito.*;
  */
 abstract class PrintServiceFixture {
 
-    final PrintSourceRequest source = new PrintSourceRequest(2L, PrintSourceType.LOWCODE, 3L, null, "purchase");
+    final PrintSourceRequest source = new PrintSourceRequest(2L, PrintSourceType.LOWCODE, "page_purchase", null, "purchase");
 
     final ObjectMapper json = new ObjectMapper().registerModule(new JavaTimeModule()).disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
@@ -94,6 +94,8 @@ abstract class PrintServiceFixture {
                 jdbc.execute(statement);
             }
         }
+        jdbc.execute("ALTER TABLE sys_print_template MODIFY page_id VARCHAR(128)");
+        jdbc.execute("ALTER TABLE sys_print_binding MODIFY page_id VARCHAR(128)");
         jdbc.execute("CREATE TABLE synthetic_application (id BIGINT PRIMARY KEY,tenant_id BIGINT)");
         jdbc.update("INSERT INTO synthetic_application VALUES (2,1)");
         var config = PrintMapperContractTest.configuration();
@@ -147,7 +149,7 @@ abstract class PrintServiceFixture {
     }
 
     PrintTemplateVO create(String code) {
-        return service.create(new PrintTemplateCreateDTO(2L, code, "合成模板", PrintSourceType.LOWCODE, 3L, null, "purchase", schema));
+        return service.create(new PrintTemplateCreateDTO(2L, code, "合成模板", PrintSourceType.LOWCODE, "page_purchase", null, "purchase", schema));
     }
 
     PrintTemplateVO publish(PrintTemplateVO row) {

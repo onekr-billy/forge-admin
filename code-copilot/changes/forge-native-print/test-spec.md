@@ -167,3 +167,7 @@ M3a 增强：H2 MySQL 模式加载同一 V1.0.168 DDL，仅去除 ENGINE/CHARSET
 - 浏览器测试使用独立 `--persistence` 验证服务器；生产页面和 store 保持原实现，仅 API/字典/用户来源在验证 Vite 配置中替换。已观察服务器失败时没有本地数据兜底。
 - 前端 12 个测试文件、定向 ESLint、Vite 生产构建、46 模块 Maven Admin package 通过；API 路径统一为 `/print/templates/page` 后增量跑 2 项契约测试并重建前端。
 - 真实 MySQL 锁语义/迁移、租户拦截器、应用/记录/流程授权适配器、PDF 与物理打印仍未执行，不能由 H2 或浏览器 mock 代替。
+
+## M4a 增量验证
+
+复用 M3b 基线：新增字符串页面身份的 DTO/HTTP/真实 Mapper/路由行为测试；兼容旧数字身份 hash；应用可见范围/权限/actor 租户检查；历史版本引用保护、锁与事务边界；固定版本归属/hash/停用失败不提交发布指针、旧快照兼容。执行相关 Print 和 generator 目标单测、Admin 聚合 package、前端 lint/打印单测/build。仅路由解析逻辑调整，不改可视组件；真实 MySQL 迁移与锁并发验收仍待用户环境，不启动 Admin/Flow。

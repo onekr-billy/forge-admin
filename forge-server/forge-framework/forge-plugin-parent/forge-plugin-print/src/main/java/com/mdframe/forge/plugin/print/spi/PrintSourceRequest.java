@@ -12,7 +12,7 @@ import java.util.HexFormat;
 /**
  * 稳定来源身份；展示名称、客户端 sourceKey 和 provider 名不参与授权。
  */
-public record PrintSourceRequest(@NotNull @Positive Long applicationId, @NotNull PrintSourceType sourceType, @Positive Long pageId, @Size(max = 128) String formKey, @NotBlank @Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,99}") String objectCode) {
+public record PrintSourceRequest(@NotNull @Positive Long applicationId, @NotNull PrintSourceType sourceType, @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}") String pageId, @Size(max = 128) String formKey, @NotBlank @Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,99}") String objectCode) {
 
     @JsonIgnore
     @AssertTrue(message = "来源身份无效")

@@ -258,3 +258,13 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 合成浏览器标签已关闭；本轮唯一验证服务器 127.0.0.1:4318 已 Ctrl+C（130）退出并确认无监听，没有修改 viewport。未停止其他用户进程。
 - 未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway/真实鉴权加密/低代码或流程 E2E，未输出 PDF 或操作物理打印机。H2 并发结果不能替代 MySQL 锁与实际租户拦截器验收。
 - 本阶段只做本地 commit，不 push；下一阶段从 M4 的真实应用授权、低代码 Provider 与发布快照集成开始。
+
+## 2026-09-19 · M4a-1 页面身份兼容
+
+用户要求新分支继续打印，随后指定去掉 codex 和 M4；当前分支 `forge-native-print`，从 882ff8e1 延续，未改动主分支、未 push。已有 .DS_Store 改动不纳入提交。
+
+实际修改 PrintSourceRequest / PrintTemplateCreateDTO / PrintBindingQueryDTO、PrintTemplate / PrintBinding；V1.0.171 扩展 page_id 为 VARCHAR(128)，数字 ID 的旧 source_key 保持一致。路由解析接受工作台 page_* 标识，拒绝路径和超限值。H2 夹具先建 V168 再运行 V171 对应 ALTER；MySQL information_schema/PREPARE 防重分支未在真实库执行。
+
+验证：Java 17/Maven 3.9.9，既有 /private/tmp/forge-print-toolchain/env.sh 和 Maven settings，`-pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='Print*Test' -Dsurefire.failIfNoSpecifiedTests=false`：106 项全部通过（包括 DTO→MockMvc→事务 Service→Mapper 的字符串页面身份）。前端 Node 24.21，`vitest run src/components/print src/stores/print`：12 文件 77 项通过；目标 ESLint 首轮提示正则风格，--fix 后通过；`node --max-old-space-size=8192 node_modules/vite/bin/vite.js build` 成功，46.44 秒，保留既有构建警告。未启动任何服务/未执行真实迁移。
+
+M4a-2/3 正在实现，不将数据 Provider、应用发布快照生成或工作台入口标为完成。
