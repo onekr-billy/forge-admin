@@ -13,7 +13,7 @@ const config = {
   root,
   cacheDir: '/private/tmp/forge-print-verification-cache',
   plugins: [vue()],
-  resolve: { alias: { vue: path.join(ui, 'node_modules/vue/dist/vue.runtime.esm-bundler.js'), 'naive-ui': path.join(ui, 'node_modules/naive-ui/es/index.mjs') } },
+  resolve: { alias: { '@': path.join(ui, 'src'), pinia: path.join(ui, 'node_modules/pinia/dist/pinia.mjs'), vue: path.join(ui, 'node_modules/vue/dist/vue.runtime.esm-bundler.js'), 'naive-ui': path.join(ui, 'node_modules/naive-ui/es/index.mjs') } },
   server: { host: '127.0.0.1', port: 4318, strictPort: true, fs: { allow: [repo] } },
   build: { outDir: '/private/tmp/forge-print-verification-dist', emptyOutDir: true },
 }

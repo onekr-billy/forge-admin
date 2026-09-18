@@ -176,3 +176,12 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 单位换算/分页/状态/权限用针对性测试；真实浏览器验证字体、分页位置与资源加载；应用/流程真实联调及打印机验收由用户回填。完整矩阵见 test-spec.md。
 
 迁移和权限资源只在编码阶段生成。上线时模板为空，不自动生成真实业务样本或给全员开权限。回退停用入口和模板、回滚应用版本，保留所有用户设计与历史记录。
+
+## M2 实施落位（2026-09-19）
+
+- `stores/print/printDesignerStore.js` 是模板、选中项、缩放、预览开关、错误和历史的共享来源。props 只在工作台入口加载协议/字段目录，内部面板直接使用 store。
+- `commands.js` 负责毫米几何命令，`history.js` 保存最多 50 次文档历史。pointermove 不入历史，pointerup 原子提交，取消/卸载恢复手势前状态；字段目录与业务预览上下文不进入撤销记录。
+- 编辑器内部固定带使用 header/footer，正文使用 `section:<协议 ID>`，避免合法导入 ID 与固定带重名；序列化协议不增加内部属性。
+- Canvas/SelectionOverlay/CanvasElement 与 drag/resize/keyboard 拆分；Palette/FieldTree/SectionList 提供物料、受控字段、顺序编辑；六个小属性面板含表头横向合并拆分与合计绑定。
+- `draftStorage.js` 校验导入体积和协议、只存模板。`PrintDesigner` 支持注入 `saveDraft(document)`，M3 接口就绪后替换默认本地适配器。`views/print/designer.vue` 提供页面组件与路由离开保护；菜单种子留给 M3。
+- 当前一个页面只挂载一个 PrintDesigner；验证入口专用独立 Pinia。每次加载模板清空旧选择/历史/剪贴板，保存通过 generation 避免异步回调污染后来加载的文档。

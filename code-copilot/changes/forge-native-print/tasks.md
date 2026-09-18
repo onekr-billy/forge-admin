@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1 已迁入 forge-admin 并完成目标仓库复验，按阶段提交；M2–M6 未开始。禁止 push。
+> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3–M6 未开始。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -58,11 +58,23 @@ M1 必须补真实浏览器分页验证，不能只凭纯函数测试进入 M2�
 
 | 状态/任务 | 依赖 | 拟涉及文件（U 下） | 验收与证据 |
 |---|---|---|---|
-| [ ] T09 Pinia 设计状态 | T08 | `stores/print/printDesignerStore.js`、`designer/{commands,history}.js`、`designer/__tests__/history.spec.js` | 选择/跨面板状态、撤销重做、拖动一次提交一次命令 |
-| [ ] T10 画布交互 | T09 | `designer/{PrintCanvas,PrintSelectionOverlay}.vue`、`designer/{usePrintDrag,usePrintResize}.js` | 缩放下坐标准确、多选、键盘移动、移出边界处理 |
-| [ ] T11 物料与字段区 | T10 | `designer/{PrintElementPalette,PrintFieldTree,PrintSectionList}.vue`、`designer/elementCatalog.js` | 主字段/明细/审批字段可拖入；区块顺序可调 |
-| [ ] T12 属性面板 | T11 | `designer/panels/{PaperPanel,TextPanel,TablePanel,BindingPanel}.vue` | 属性即时作用、物理单位清楚、失效字段定位；不堆单文件 |
-| [ ] T13 编辑工作台 | T12 | `designer/{PrintDesigner,PrintDesignerToolbar}.vue`、`views/print/designer.vue`、`designer/__tests__/PrintDesigner.spec.js` | 新建/复制/保存草稿/预览入口、未保存提示、明暗主题 |
+| [x] T09 Pinia 设计状态 | T08 | `stores/print/printDesignerStore.js`、`designer/{commands,history}.js`、`designer/__tests__/history.spec.js` | 选择/跨面板状态、撤销重做、拖动一次提交一次命令 |
+| [x] T10 画布交互 | T09 | `designer/{PrintCanvas,PrintSelectionOverlay}.vue`、`designer/{usePrintDrag,usePrintResize}.js` | 缩放下坐标准确、多选、键盘移动、移出边界处理 |
+| [x] T11 物料与字段区 | T10 | `designer/{PrintElementPalette,PrintFieldTree,PrintSectionList}.vue`、`designer/elementCatalog.js` | 主字段/明细/审批字段可拖入；区块顺序可调 |
+| [x] T12 属性面板 | T11 | `designer/panels/{PaperPanel,TextPanel,TablePanel,BindingPanel}.vue` | 属性即时作用、物理单位清楚、失效字段定位；不堆单文件 |
+| [x] T13 编辑工作台 | T12 | `designer/{PrintDesigner,PrintDesignerToolbar}.vue`、`views/print/designer.vue`、`designer/__tests__/PrintDesigner.spec.js` | 新建/复制/保存草稿/预览入口、未保存提示、明暗主题 |
+
+### M2 实施拆分与保存边界（编码前补充）
+
+- T09 增量测试覆盖历史上限、无效编辑原子拒绝、拖动取消、组合移动边界、保存并发；主要文件保持原计划。
+- T10a：画布、选择层、拖动和缩放 composable；T10b：`designer/{PrintCanvasElement.vue,usePrintKeyboard.js}` 与交互测试，负责框选/键盘和元素展示。
+- T11：物料与字段区、区块列表和 elementCatalog；仅字段目录允许的字段可拖入，明细字段加入对应表格。
+- T12a：PaperPanel、TextPanel、BindingPanel；T12b：TablePanel、`TableBandsPanel.vue` 与 `ElementGeometryPanel.vue`，负责明细列、多行合并表头/合计绑定和元素几何尺寸。
+- T13a：工作台、工具栏、页面入口、组件测试；T13b：`designer/{draftStorage,usePrintDesignerLifecycle}.js` 与验证入口，负责草稿往返与离开保护。
+- M2 的“保存草稿”明确为当前浏览器本地模板草稿，只存协议，不存预览业务数据；界面明确显示本地保存。服务端模板/版本持久化仍由 T28 接入，不把本地草稿视为业务接入完成。
+- 预览继续复用 M1 的真实分页；画布为区块编辑视图，实际页数以预览为准。主项目入口先以现有视图解析方式注册源码，资源菜单与权限由 M3 迁移统一落地。
+
+M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），T09 的 9 项状态测试、T10–T13 的 10 项编辑行为测试通过；打印模块累计 10 文件 58 项通过。浏览器证据见 `verification/browser-results-m2.json`。本地草稿不包含运行上下文，服务端持久化未提前勾选。主项目与独立验证入口均构建通过；最大新增 SFC 为 277 行。具体命令、边界修复和服务清理见 execution-log。
 
 ## M3：模板后端、版本和数据提供方
 

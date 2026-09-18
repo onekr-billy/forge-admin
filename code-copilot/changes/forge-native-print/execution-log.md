@@ -129,3 +129,51 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 迁移后逐字节核对 36 个源文件完全一致；误写的 LawHub 打印模块和 SDD 目录已移至 `/private/tmp/forge-native-print-misplaced-backup-20260918/{print,sdd}`，不再留在 LawHub 活跃源码/变更目录中，未修改其它 LawHub 文件。
 - 已关闭本次 Forge 浏览器标签并 Ctrl+C 停止本次 Vite 进程（退出码 130）。目标主项目构建为 9275 模块、37.52s；独立打印构建为 2867 模块、1.70s。
 - 最终提交前执行 `git diff --cached --check`，只允许 `forge-admin-ui/src/components/print/` 和当前 SDD 目录进入 M1 提交。
+
+## 2026-09-18 23:35 — 2026-09-19 00:05：M2 原生打印设计器
+
+### 范围与实现
+
+- 目标始终为 `/Users/mini32g/Desktop/project/forge-admin`，分支 `codex/forge-native-print`；延续用户“只 commit、不 push”。未修改 LawHub，未将既有 `.DS_Store` 加入提交。
+- 编码前读取目标仓库规范、DESIGN、用户偏好和测试标准，复用 M1 验证基线，在 tasks 中细分 T10/T12/T13，明确 M2 本地草稿边界。
+- T09–T13：Pinia 状态、受限历史、缩放拖动、组合边界、框选/多选、复制/粘贴、删除/对齐、物料/字段拖入、区块排序、纸张/元素/表格属性、多行合并表头和合计、工作台、草稿/协议往返、未保存离开保护。
+- 新增 SFC 最大 277 行；共享设计状态均在 Pinia，面板无多层 props/emit 透传。没有引入 hiprint 代码/依赖，没有修改 package.json 或 lockfile。
+- M2 保存明确为本地模板草稿；真实服务端版本和低代码/流程 Provider 均未实现，不把合成演示视为业务接入。
+
+### RED / GREEN 和复查修复
+
+- 23:36 先写 history.spec，因未实现 store 得到 RED；实现后 8 项通过。首轮测试 import 多退一级，同时纠正为实际 src/stores 路径。
+- 23:46 工作台行为测试先得到缺少 PrintDesigner/draftStorage 的 RED。实现时修复 Vue 插值中嵌套双花括号引发的模板解析错误；13 项增量测试通过。
+- 后续补框选/键盘、非法纸张调整、字段失效、存储配额失败、表头合并拆分与合计撤销。
+- 00:00 复查新增“正文区块 ID 等于 header”行为测试，实际失败；正文编辑键改为 section:<id> 后通过，协议内容不变。
+- 独立验证入口首次误用 Pinia 物理路径与别名混合加载，出现两个 Pinia 实例；统一通过别名导入后重新加载验证通过。此问题只在新验证入口，不涉及现有主应用。
+- 修复分数坐标在边界四舍五入后的潜在越界；缩放手势遵循鼠标开始时比例。预览弹窗限制内容区高度并独立滚动。
+
+### 最终验证命令与结果
+
+工作目录 `/Users/mini32g/Desktop/project/forge-admin/forge-admin-ui`，均先执行 `source ~/.nvm/nvm.sh && nvm use v24.21.0`：
+
+1. `node node_modules/vitest/vitest.mjs run src/components/print`：00:01，10 文件 58 项通过，1.95s；包含 M1 39 项和 M2 19 项。
+2. `node node_modules/eslint/bin/eslint.js src/components/print/designer src/stores/print src/views/print --fix`：退出码 0，最终无诊断；提交前再只读检查整个打印范围。
+3. `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build`：最终退出码 0，9339 模块，39.53s；日志 `/private/tmp/forge-print-m2-final-build.log`。现有 Vite native config 提示和存量 CSS 注释警告仍在，未修改无关文件。
+4. 根目录 `node code-copilot/changes/forge-native-print/verification/serve.mjs --build`：退出码 0，2909 模块，353ms，临时产物。合成入口把整个组件栈打在一起，出现 chunk >500KB 提示；主应用使用页面分包，未为该验证提示调整业务构建。日志 `/private/tmp/forge-print-m2-verification-build.log`。
+
+### 浏览器阶段证据
+
+- `http://127.0.0.1:4318/?designer`，Chromium，合成 100 行数据。
+- 80% 缩放拖动 60/24 px → x/y 19.844/7.938 mm；一条历史，撤销恢复原位。
+- Shift 选中两项，方向键让 x 从 0/80 变为 1/81；框选实际选中 barcode/qrcode/synthetic-image 三项。
+- 50% 缩放调整二维码 19 px：宽 25→35.054 mm，高度被区块限制到 30 mm；撤销恢复 25×25。
+- 主字段拖入固定区块自动 FIELD 绑定，超出落点被夹到 x=145/y=20；复制生成新 ID，偏移 3 mm；恢复本地草稿保持先前位置。
+- 新建时出现未保存提示，“继续编辑”保留模板；同一模板 JSON 校验导入后 dirty=false、无新增历史。切换失效字段禁用预览并定位对应表格，恢复目录后可预览。
+- 100 行真实预览 4 页、3 图片 complete=true 且自然尺寸非零；与 M1 使用同一 PrintPreview。纸张保持白底，明暗主题、1280/960 px 宽窗口已目视截图检查。
+- 添加表头行成功、区块上/下移动及两步撤销恢复原顺序；最后修改后的内部区块键选择与导入往返再次验证通过。
+- 浏览器工具虚拟剪贴板阻止直接模拟粘贴快捷键，未将这次工具调用记为通过；浏览器的复制/粘贴按钮与单测复制 ID/撤销路径通过。没有操作用户系统剪贴板。
+- 结构化证据 `verification/browser-results-m2.json`；截图在本次工具记录中已查看，没有伪造截图文件。
+
+### 清理与未执行项
+
+- 本次仅启动验证 Vite，PID 45377，监听 127.0.0.1:4318。最终 Ctrl+C 退出码 130；浏览器标签已关闭，临时 viewport 已 reset。
+- 未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、真实接口/权限/业务流程 E2E、保存 PDF 或物理打印。
+- M2 完成阶段出口，M3–M6 保持未开始；新打印功能还不能宣称已接入真实业务。
+- 提交只包含本阶段打印源码/测试与对应 SDD 文档、合成验证入口；commit 标题为 `[forge-native-print] 完成 M2 原生打印设计器与草稿编辑`，不 push。

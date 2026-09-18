@@ -26,3 +26,11 @@ node code-copilot/changes/forge-native-print/verification/serve.mjs --build
 已知边界：首期只支持本地已安装字体及系统通用字体族；显式指定但未安装的字体会失败。`keepWithNext` 保持整个区块与下一区块首片一起，无法在一页容纳时明确失败。页眉/页脚 `repeat=false` 只在首/末页显示，仍为各页保留相同物理正文区域。
 
 2026-09-18 目标纠正后，在 forge-admin 重新执行单测/构建及浏览器验证，实际结果见 [browser-results-forge-admin.json](browser-results-forge-admin.json)。原 browser-results.json 明确标注为 LawHub 来源记录，不混用两次结果。
+
+## M2 设计器验证
+
+使用相同 serve.mjs 启动后访问 `http://127.0.0.1:4318/?designer`。提供 100 行合成明细、主字段、图片解析器和主题/字段失效开关。默认草稿只存在该浏览器 origin 的 localStorage，键为 `forge:print:local-draft:v1`；不会请求真实 API。
+
+检查：元素拖动/右下角缩放、Shift 多选和空白区框选、方向键、元素复制粘贴、字段拖入、区块上下排序、属性修改、多行表头合并拆分与合计、保存/恢复/导入导出、新建取消、失效字段定位、真实分页预览、明暗主题和窄窗口。底部“验证状态”显示实际 Pinia 状态的只读摘要。
+
+本轮证据：[browser-results-m2.json](browser-results-m2.json)。主页面组件落在 `forge-admin-ui/src/views/print/designer.vue`；正式模板列表、权限菜单、数据源绑定与 API 保存仍待 M3/T28、M4 接入。
