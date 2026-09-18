@@ -347,9 +347,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
         validateFlowableAssignee(task, userId);
-        validateTaskAction(task, ACTION_APPROVE, comment, signature);
-        validateRequiredVariables(task, variables);
-        validateApprovalPoints(task, approvalPointResults);
+        // 一次 BPMN 节点解析复用给动作校验/必填变量/审批要点，避免同一请求内重复 getBpmnModel 解析三次
+        FlowNode actionFlowNode = getFlowNode(task);
+        validateTaskAction(task, ACTION_APPROVE, comment, signature, actionFlowNode);
+        validateRequiredVariables(task, variables, actionFlowNode);
+        validateApprovalPoints(task, approvalPointResults, actionFlowNode);
 
         try {
             if (comment != null && !comment.isEmpty()) {
@@ -2033,7 +2035,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void validateTaskAction(Task task, String action, String comment, String signature) {
-        TaskApprovalPolicy policy = getTaskApprovalPolicy(task);
+        validateTaskAction(task, action, comment, signature, getFlowNode(task));
+    }
+
+    private void validateTaskAction(Task task, String action, String comment, String signature, FlowNode flowNode) {
+        TaskApprovalPolicy policy = getTaskApprovalPolicy(task, null, flowNode);
         if (!policy.isAllowed(action)) {
             throw new RuntimeException("当前节点不允许执行该审批操作");
         }
@@ -2067,7 +2073,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults) {
-        FlowNode flowNode = getFlowNode(task);
+        validateApprovalPoints(task, approvalPointResults, getFlowNode(task));
+    }
+
+    private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults,
+            FlowNode flowNode) {
         List<FlowApprovalPointDTO> required = FlowNodePolicyParser.resolveApprovalPoints(flowNode).stream()
                 .filter(point -> Boolean.TRUE.equals(point.getRequired()))
                 .toList();
@@ -2216,7 +2226,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void validateRequiredVariables(Task task, Map<String, Object> variables) {
-        FlowNode flowNode = getFlowNode(task);
+        validateRequiredVariables(task, variables, getFlowNode(task));
+    }
+
+    private void validateRequiredVariables(Task task, Map<String, Object> variables, FlowNode flowNode) {
         if (flowNode == null) {
             return;
         }
@@ -2528,7 +2541,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setAllowReturn(policy.allowReturn);
         formInfo.setAllowMultiReturn(flowModel != null && Boolean.TRUE.equals(flowModel.getAllowMultiReturn()));
         formInfo.setReturnTargets(buildReturnTargets(task, formInfo.getAllowMultiReturn()));
-        populateDirectSendInfo(formInfo, task);
+        populateDirectSendInfo(formInfo, task, variables);
         formInfo.setAllowTerminate(policy.allowTerminate);
         formInfo.setRequireSignature(policy.requireSignature);
         formInfo.setRequireComment(policy.requireComment);
@@ -2565,10 +2578,12 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 .values().stream().toList();
     }
 
-    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task) {
-        Object source = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID);
-        Object target = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID);
-        Object returnToStartPending = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING);
+    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task, Map<String, Object> variables) {
+        // 直送标记变量已随任务全量取得（getTaskFormInfo 第 3 步），直接从 Map 读取，
+        // 避免三次独立的 runtimeService.getVariable 数据库往返
+        Object source = variables == null ? null : variables.get(RETURN_SOURCE_ACTIVITY_ID);
+        Object target = variables == null ? null : variables.get(RETURN_TARGET_ACTIVITY_ID);
+        Object returnToStartPending = variables == null ? null : variables.get(RETURN_TO_START_PENDING);
         boolean returnedToHistoricalNode = target != null
                 && Objects.equals(String.valueOf(target), task.getTaskDefinitionKey());
         boolean returnedToStart = Boolean.TRUE.equals(readBoolean(returnToStartPending));

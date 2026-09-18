@@ -281,20 +281,20 @@
             审批处理
           </div>
 
-          <div v-if="formInfoLoading" class="form-loading">
+          <div v-if="taskFormLoading" class="form-loading">
             <n-spin size="small" />
             <span>加载表单中...</span>
           </div>
 
           <FlowApprovalChecklist
-            v-if="!formInfoLoading"
+            v-if="!taskFormLoading"
             v-model="approvalPointChecks"
             :responsibility-description="taskFormInfo?.responsibilityDescription || ''"
             :approval-points="taskFormInfo?.approvalPoints || []"
             :legacy-approval-point="taskFormInfo?.approvalPoint || ''"
           />
 
-          <div v-if="!formInfoLoading && canDirectSend" class="flow-routing-options">
+          <div v-if="!taskFormLoading && canDirectSend" class="flow-routing-options">
             <n-form :model="approveForm" label-placement="top">
               <n-checkbox v-model:checked="directSendAfterReturn">
                 修正后直送至 {{ taskPolicySource.returnSourceActivityName || taskPolicySource.returnSourceActivityId }}
@@ -338,12 +338,7 @@
           </template>
 
           <template v-else>
-            <div v-if="businessFormLoading" class="form-loading">
-              <n-spin size="small" />
-              <span>加载业务表单中...</span>
-            </div>
-
-            <div v-else-if="useBusinessManagedForm" class="business-task-form-section">
+            <div v-if="!taskFormLoading && useBusinessManagedForm" class="business-task-form-section">
               <div class="approval-form-title">
                 <span>{{ businessFormTitle }}</span>
                 <small v-if="businessFormContext?.pageName || businessFormContext?.formRef?.pageName">
@@ -403,7 +398,7 @@
             </div>
 
             <n-empty
-              v-if="!formInfoLoading && !businessFormLoading && !useBusinessManagedForm && !useDynamicForm && !useComponentTaskForm"
+              v-if="!taskFormLoading && !useBusinessManagedForm && !useDynamicForm && !useComponentTaskForm"
               :description="businessFormMissingText"
               size="small"
               class="form-empty"
@@ -644,6 +639,8 @@ const businessFormData = ref({})
 const businessChildFormData = ref({})
 const businessFormRef = ref(null)
 const businessFormLoading = ref(false)
+// 统一的表单加载态：表单信息与业务上下文并行加载，模板只展示这一个 loading，避免先后两次转圈
+const taskFormLoading = computed(() => formInfoLoading.value || businessFormLoading.value)
 const businessFormSaving = ref(false)
 const useBusinessObjectForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-object')
 const useBusinessCodeForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-code')
@@ -1263,13 +1260,20 @@ async function openDrawer(row) {
     formInfoLoading.value = true
     promises.push((async () => {
       try {
-        const formInfo = await loadTaskFormInfo(taskId)
-        await loadBusinessTaskFormContext(row, formInfo || { taskId })
+        // 任务表单信息与业务表单上下文并行加载（待办行自带 taskId/processInstanceId，足以定位业务上下文）；
+        // 原先串行 await 是打开弹窗慢的主因，formInfo 的精确字段仅在首次定位失败时兜底重查
+        const [formInfo, businessContext] = await Promise.all([
+          loadTaskFormInfo(taskId),
+          loadBusinessTaskFormContext(row, {}),
+        ])
+        if (!isConfiguredBusinessTaskForm(businessContext) && formInfo)
+          await loadBusinessTaskFormContext(row, formInfo)
         if (!isConfiguredBusinessTaskForm(businessFormContext.value))
           await hydrateBusinessFormFromAssets(formInfo)
       }
       finally {
         formInfoLoading.value = false
+        businessFormLoading.value = false
       }
     })())
   }
