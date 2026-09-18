@@ -586,11 +586,12 @@ import SignaturePad from '@/components/flow/SignaturePad.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
-import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions } from '@/utils/field-permissions'
+import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions, pickFirstNonEmptyPermissionSource } from '@/utils/field-permissions'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
 import { FLOW_PRIORITY_LABEL_FALLBACK, getFlowPriorityClass, isUrgentFlowPriority, resolveFlowPriorityLevel, shouldShowFlowPriority } from './utils/priority'
 import { getBusinessFormDisplayTitle, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
+import { loadTaskFormBundle } from './utils/task-form-bundle'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -688,7 +689,7 @@ const businessFormFieldPermissions = computed(() => pickFirstNonEmptyFieldPermis
   taskFormInfo.value?.fieldPermissions,
   taskFormInfo.value?.formFieldPermissions,
 ]))
-const dynamicFormFieldPermissions = computed(() => pickFirstNonEmptyFieldPermissions([
+const dynamicFormFieldPermissions = computed(() => pickFirstNonEmptyPermissionSource([
   taskFormInfo.value?.fieldPermissions,
   taskFormInfo.value?.formFieldPermissions,
 ]))
@@ -970,6 +971,8 @@ async function loadBusinessTaskFormContext(row, formInfo) {
       return null
     }
     businessFormContext.value = res.data || null
+    if (res.data?.taskFormInfo && typeof res.data.taskFormInfo === 'object')
+      applyTaskFormInfo(res.data.taskFormInfo)
     businessFormData.value = normalizeBusinessRecordData(res.data?.recordData)
     businessChildFormData.value = normalizeBusinessChildrenData(res.data?.recordData)
     logBusinessApprovalChildren('todo', res.data?.recordData)
@@ -990,18 +993,24 @@ async function loadTaskFormInfo(taskId) {
   try {
     const res = await flowApi.getTaskFormInfo(taskId)
     if (res.code === 200) {
-      taskFormInfo.value = res.data
-      dynamicFormData.value = { ...(res.data?.variables || {}) }
-      approvalPointChecks.value = Object.fromEntries(
-        (res.data?.approvalPoints || []).map(point => [point.id, false]),
-      )
-      return taskFormInfo.value
+      return applyTaskFormInfo(res.data)
     }
   }
   catch (error) {
     console.error('加载表单信息失败', error)
   }
   return null
+}
+
+function applyTaskFormInfo(formInfo) {
+  if (!formInfo || typeof formInfo !== 'object')
+    return null
+  taskFormInfo.value = formInfo
+  dynamicFormData.value = { ...(formInfo.variables || {}) }
+  approvalPointChecks.value = Object.fromEntries(
+    (formInfo.approvalPoints || []).map(point => [point.id, false]),
+  )
+  return taskFormInfo.value
 }
 
 function isConfiguredBusinessTaskForm(context) {
@@ -1179,18 +1188,19 @@ async function saveBusinessTaskFormFields(options = {}) {
   }
 }
 
-async function persistBusinessTaskFormBeforeAction(action) {
-  if (!['approve', 'reject', 'rejectToStart', 'return'].includes(action))
-    return
-  if (!useBusinessManagedForm.value || !businessFormHasWritableFields.value)
-    return
-  await saveBusinessTaskFormFields({ validate: true, silent: true })
-}
-
 async function buildBusinessTaskActionPayload(action, comment, signature, variables = {}) {
   const context = businessFormContext.value || {}
   const taskId = context.taskId || taskFormInfo.value?.taskId || currentTask.value?.taskId || currentTask.value?.id
-  const credentials = await createFlowActionCredentials(action, taskId, { comment, signature, variables })
+  const actionVariables = buildActionVariables(action, variables)
+  const data = useBusinessManagedForm.value && businessFormHasWritableFields.value
+    ? buildBusinessTaskFormSavePayload().data
+    : undefined
+  const credentials = await createFlowActionCredentials(action, taskId, {
+    comment,
+    signature,
+    variables: actionVariables,
+    data,
+  })
   return compactParams({
     action,
     taskId,
@@ -1204,9 +1214,9 @@ async function buildBusinessTaskActionPayload(action, comment, signature, variab
     userId: userStore.userId,
     comment,
     signature,
-    variables: buildActionVariables(action, variables),
+    variables: actionVariables,
     targetActivityId: action === 'return' ? selectedReturnTarget.value : undefined,
-    data: { ...businessFormData.value },
+    data,
     approvalPointResults: buildApprovalPointResults(),
     ...credentials,
   })
@@ -1303,14 +1313,14 @@ async function openDrawer(row) {
     formInfoLoading.value = true
     promises.push((async () => {
       try {
-        // 任务表单信息与业务表单上下文并行加载（待办行自带 taskId/processInstanceId，足以定位业务上下文）；
-        // 原先串行 await 是打开弹窗慢的主因，formInfo 的精确字段仅在首次定位失败时兜底重查
-        const [formInfo, businessContext] = await Promise.all([
-          loadTaskFormInfo(taskId),
-          loadBusinessTaskFormContext(row, {}),
-        ])
-        if (!isConfiguredBusinessTaskForm(businessContext) && formInfo)
-          await loadBusinessTaskFormContext(row, formInfo)
+        // 业务上下文已携带服务端本次解析过的 Flow 表单快照，常规路径只发一个请求；
+        // 直连 Flow 仅作为新旧服务滚动升级期间的兼容兜底。
+        const { formInfo } = await loadTaskFormBundle({
+          row,
+          loadBusinessContext: loadBusinessTaskFormContext,
+          loadFlowFormInfo: () => loadTaskFormInfo(taskId),
+          isConfiguredBusinessContext: isConfiguredBusinessTaskForm,
+        })
         if (!isConfiguredBusinessTaskForm(businessFormContext.value))
           await hydrateBusinessFormFromAssets(formInfo)
       }
@@ -1486,7 +1496,10 @@ async function submitApprove(action) {
     const signature = await resolveSignature(approveSignatureRef.value, approveForm.signature)
     approveForm.signature = signature
     const variables = await collectDynamicFormVariables(action)
-    await persistBusinessTaskFormBeforeAction(action)
+    if (useBusinessManagedForm.value && businessFormHasWritableFields.value) {
+      await businessFormRef.value?.validate?.()
+      await businessChildFormRef.value?.validate?.()
+    }
     const res = await submitTaskAction(action, approveForm.comment, signature, variables)
     if (res.code === 200) {
       window.$message.success(getActionSuccessText(action))
@@ -1578,12 +1591,17 @@ async function executeQuickAction(action, row, comment) {
 
   await claimTaskBeforeQuickAction(row, taskId)
 
-  const formRes = await flowApi.getTaskFormInfo(taskId)
-  if (formRes.code !== 200)
-    throw new Error(formRes.message || '审批策略加载失败')
-
-  const formInfo = formRes.data || {}
-  const businessContext = await loadQuickBusinessTaskFormContext(row, formInfo)
+  const { businessContext, formInfo } = await loadTaskFormBundle({
+    row,
+    loadBusinessContext: loadQuickBusinessTaskFormContext,
+    loadFlowFormInfo: async () => {
+      const formRes = await flowApi.getTaskFormInfo(taskId)
+      if (formRes.code !== 200)
+        throw new Error(formRes.message || '审批策略加载失败')
+      return formRes.data || {}
+    },
+    isConfiguredBusinessContext: isConfiguredBusinessTaskForm,
+  })
   assertQuickActionAllowed(action, formInfo, businessContext)
 
   const res = isConfiguredBusinessTaskForm(businessContext)

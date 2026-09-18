@@ -190,4 +190,37 @@ describe('parseUserTaskConfig - 表单 / 优先级 / dueDate', () => {
       writable: true,
     })
   })
+
+  it('数组明细 v3 权限能解析并写回行字段和行操作', () => {
+    const permissions = {
+      version: 3,
+      fields: [
+        { scope: 'main', field: 'expenseItems', readable: true, writable: true },
+        { scope: 'array', arrayKey: 'expenseItems', itemField: 'amount', field: 'amount', readable: true, writable: true },
+      ],
+      arrays: [
+        { arrayKey: 'expenseItems', readable: true, allowCreate: true, allowUpdate: true, allowDelete: false },
+      ],
+    }
+    const escaped = JSON.stringify(permissions).replaceAll('&', '&amp;').replaceAll('"', '&quot;')
+    const xml = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn"><bpmn:process id="P"><bpmn:userTask id="T_array" flowable:formFieldPermissions="${escaped}"/></bpmn:process></bpmn:definitions>`
+    const parsed = parseUserTaskConfig(getTask(xml, 'T_array'))
+
+    expect(parsed.formFieldPermissions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'array', arrayKey: 'expenseItems', itemField: 'amount', writable: true }),
+    ]))
+    expect(parsed.formArrayPermissions).toEqual([
+      expect.objectContaining({ arrayKey: 'expenseItems', allowCreate: true, allowUpdate: true, allowDelete: false }),
+    ])
+
+    const written = writeUserTaskConfig(parsed)
+    const roundTripXml = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn"><bpmn:process id="P"><bpmn:userTask id="T_array" ${written.attrs}/></bpmn:process></bpmn:definitions>`
+    const roundTrip = parseUserTaskConfig(getTask(roundTripXml, 'T_array'))
+    expect(roundTrip.formArrayPermissions[0]).toMatchObject({
+      arrayKey: 'expenseItems',
+      allowCreate: true,
+      allowUpdate: true,
+      allowDelete: false,
+    })
+  })
 })

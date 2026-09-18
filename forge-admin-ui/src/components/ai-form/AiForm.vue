@@ -147,13 +147,13 @@
 
 <script setup>
 import { ChevronDownOutline, ChevronUpOutline } from '@vicons/ionicons5'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
+import { computed, getCurrentInstance, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
 import { resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { scan as scanCollaborationCode } from '@/utils/collaboration-runtime'
-import { createFieldPermissionMap } from '@/utils/field-permissions'
+import { createArrayPermissionMap, createFieldPermissionMap } from '@/utils/field-permissions'
 import { normalizeRulePattern, normalizeValidationRules } from '@/utils/validation-presets'
 import AiFormLayoutNodes from './AiFormLayoutNodes.vue'
 import { appendSelectionLabelContextDefaults, buildContextDefaultsPatch } from './data-source-binding-runtime'
@@ -164,7 +164,6 @@ const props = defineProps({
   // 表单配置 schema
   schema: {
     type: Array,
-    required: true,
     default: () => [],
   },
   // 表单数据 (v-model)
@@ -295,6 +294,7 @@ const props = defineProps({
 const emit = defineEmits(['update:value', 'submit', 'reset', 'cancel', 'nodeAction', 'fieldEvent'])
 const slots = useSlots()
 const route = useRoute()
+const aiFormComponent = markRaw(getCurrentInstance()?.type)
 
 const formRef = ref(null)
 const formValue = ref({})
@@ -305,8 +305,11 @@ const actionModalTitle = ref('业务弹窗')
 const actionModalSchema = ref([])
 const actionModalValue = ref({})
 const actionModalLayout = ref({})
+const fieldValidators = new Map()
 
 const fieldPermissionMap = computed(() => createFieldPermissionMap(props.fieldPermissions))
+const arrayPermissionMap = computed(() => createArrayPermissionMap(props.fieldPermissions))
+const hasExplicitFieldPermissions = computed(() => fieldPermissionMap.value.size > 0 || arrayPermissionMap.value.size > 0)
 
 // 初始化表单数据
 watch(() => props.value, (newVal) => {
@@ -460,6 +463,7 @@ function isSelectionLikeType(type) {
     'upload',
     'imageUpload',
     'fileUpload',
+    'array',
   ].includes(normalizedType)
 }
 
@@ -534,6 +538,11 @@ const itemContext = computed(() => ({
   schema: visibleFieldSchema.value,
   allSchema: allFieldSchema.value,
   formAssets: resolveFormAssets(),
+  aiFormComponent,
+  fieldPermissions: props.fieldPermissions,
+  hasExplicitFieldPermissions: hasExplicitFieldPermissions.value,
+  registerFieldValidator,
+  unregisterFieldValidator,
   patchFormData,
   scanField,
   dispatchFieldEvent,
@@ -933,12 +942,25 @@ async function handleSubmit() {
 
 async function validateForm() {
   try {
-    return await formRef.value?.validate()
+    await formRef.value?.validate()
+    for (const validate of fieldValidators.values())
+      await validate?.()
+    return true
   }
   catch (error) {
     await revealFirstValidationError(error)
     throw error
   }
+}
+
+function registerFieldValidator(field, validate) {
+  if (field && typeof validate === 'function')
+    fieldValidators.set(String(field), validate)
+}
+
+function unregisterFieldValidator(field) {
+  if (field)
+    fieldValidators.delete(String(field))
 }
 
 async function revealFirstValidationError(error) {
@@ -1077,6 +1099,9 @@ function applyFieldPermissionsToNodes(nodes = []) {
           : node
       }
       const permission = fieldPermissionMap.value.get(field)
+      const arrayPermission = node.type === 'array' ? arrayPermissionMap.value.get(field) : null
+      if (arrayPermission?.readable === false)
+        return null
       if (!permission)
         return children ? { ...node, children } : node
       if (permission.visible === false)

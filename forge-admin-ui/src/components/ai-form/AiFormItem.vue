@@ -77,6 +77,17 @@
           @update:props-data="handleRuntimePageWidgetUpdate"
         />
 
+        <AiFormArrayField
+          v-else-if="field.type === 'array'"
+          ref="arrayFieldRef"
+          :model-value="Array.isArray(value) ? value : []"
+          :field="field"
+          :form-data="formData"
+          :context="context"
+          :disabled="disabledHandler(field)"
+          @update:model-value="handleUpdate"
+        />
+
         <!-- 输入框 -->
         <n-input
           v-else-if="field.type === 'input'"
@@ -817,7 +828,7 @@
 <script setup>
 import { CopyOutline } from '@vicons/ionicons5'
 import { useClipboard } from '@vueuse/core'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { queryBusinessRecordSelector } from '@/api/business-app'
 import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
@@ -833,6 +844,7 @@ import RegionTreeSelect from '@/components/RegionTreeSelect.vue'
 import { getDictData } from '@/composables/useDict'
 import { request } from '@/utils'
 import AiCustomSelect from './AiCustomSelect.vue'
+import AiFormArrayField from './AiFormArrayField.vue'
 import AiFormGroupTitle from './AiFormGroupTitle.vue'
 import AiFormSectionTitle from './AiFormSectionTitle.vue'
 import AiRecordSelectorModal from './AiRecordSelectorModal.vue'
@@ -912,6 +924,7 @@ const fieldRuntimeControl = computed(() => resolveRuntimeControl(props.field || 
 const fieldRuntimeVisible = computed(() => fieldRuntimeControl.value.visible !== false)
 
 const formItemRef = ref(null)
+const arrayFieldRef = ref(null)
 
 /**
  * 将字段级固定 labelWidth 显式写回 label 元素的 inline style。
@@ -934,11 +947,29 @@ function restoreFixedLabelWidth() {
 onMounted(async () => {
   await nextTick()
   restoreFixedLabelWidth()
+  registerArrayValidator()
+})
+
+onBeforeUnmount(() => {
+  props.context?.unregisterFieldValidator?.(props.field?.field)
 })
 
 watch(() => props.field?.labelWidth, () => {
   nextTick(restoreFixedLabelWidth)
 })
+
+watch(() => props.field?.type, () => nextTick(registerArrayValidator))
+
+function registerArrayValidator() {
+  const field = props.field?.field
+  if (!field)
+    return
+  if (props.field?.type !== 'array') {
+    props.context?.unregisterFieldValidator?.(field)
+    return
+  }
+  props.context?.registerFieldValidator?.(field, () => arrayFieldRef.value?.validate?.())
+}
 
 /**
  * 获取占位符文本

@@ -308,78 +308,67 @@
               AND c.tenant_id = t.tenant_id
     </sql>
 
-    <!-- candidate_groups 兼容角色 ID、角色编码和部门 ID，且只匹配当前用户在当前租户的有效关系。 -->
+    <!--
+      候选关系优先走标准化关系表及覆盖索引。只有完全没有标准化关系的历史任务
+      才进入 CSV 兼容分支；候选组已由服务层按当前会话解析，避免对每条任务重复
+      关联角色、组织和用户组表。
+    -->
     <sql id="TodoCandidateCondition">
         AND (
             t.assignee = #{userId}
+            OR EXISTS (
+                SELECT 1
+                FROM sys_flow_task_candidate tc
+                WHERE tc.tenant_id = t.tenant_id
+                  AND tc.task_id = t.task_id
+                  AND tc.candidate_type = 'USER'
+                  AND tc.candidate_value = #{userId}
+                  AND tc.status = 1
+            )
+            <if test="candidateGroupValues != null and candidateGroupValues.size() > 0">
+            OR EXISTS (
+                SELECT 1
+                FROM sys_flow_task_candidate tc
+                WHERE tc.tenant_id = t.tenant_id
+                  AND tc.task_id = t.task_id
+                  AND tc.candidate_type = 'GROUP'
+                  AND tc.status = 1
+                  AND tc.candidate_value IN
+                  <foreach collection="candidateGroupValues" item="groupValue" open="(" separator="," close=")">
+                      #{groupValue}
+                  </foreach>
+            )
+            </if>
             OR (
-                EXISTS (
+                NOT EXISTS (
                     SELECT 1
-                    FROM sys_flow_task_candidate tc
-                    WHERE tc.tenant_id = t.tenant_id
-                      AND tc.task_id = t.task_id
-                      AND tc.candidate_type = 'USER'
-                      AND tc.candidate_value = #{userId}
-                      AND tc.status = 1
+                    FROM sys_flow_task_candidate normalized_candidate
+                    WHERE normalized_candidate.tenant_id = t.tenant_id
+                      AND normalized_candidate.task_id = t.task_id
                 )
-                OR (
+                AND (
+                    (
                     t.candidate_users IS NOT NULL
                     AND t.candidate_users != ''
                     AND FIND_IN_SET(
                         REPLACE(REPLACE(REPLACE(REPLACE(#{userId}, ';', ','), '；', ','), '，', ','), ' ', ''),
                         REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.candidate_users, ';', ','), '；', ','), '，', ','), '、', ','), ' ', '')
                     ) > 0
-                )
-            )
-            OR (
-                t.candidate_groups IS NOT NULL
-                AND t.candidate_groups != ''
-                AND (
-                    EXISTS (
-                        SELECT 1
-                        FROM sys_user_org_role current_user_role
-                        INNER JOIN sys_role candidate_role
-                                ON candidate_role.id = current_user_role.role_id
-                               AND candidate_role.tenant_id = current_user_role.tenant_id
-                               AND candidate_role.role_status = 1
-                               AND candidate_role.del_flag = 0
-                        LEFT JOIN sys_role_org candidate_role_org
-                               ON candidate_role_org.tenant_id = current_user_role.tenant_id
-                              AND candidate_role_org.role_id = current_user_role.role_id
-                              AND candidate_role_org.org_id = current_user_role.org_id
-                        WHERE current_user_role.tenant_id = t.tenant_id
-                          AND current_user_role.user_id = CAST(NULLIF(#{userId}, '') AS UNSIGNED)
-                          <if test="activeOrgId != null">
-                              AND current_user_role.org_id = #{activeOrgId}
-                          </if>
-                          <if test="activeOrgId == null">
-                              AND 1 = 0
-                          </if>
-                          AND (candidate_role.org_scope_type = 1 OR candidate_role_org.id IS NOT NULL)
-                          AND (
+                    )
+                    <if test="candidateGroupValues != null and candidateGroupValues.size() > 0">
+                    OR (
+                        t.candidate_groups IS NOT NULL
+                        AND t.candidate_groups != ''
+                        AND (
+                            <foreach collection="candidateGroupValues" item="groupValue" separator=" OR ">
                               FIND_IN_SET(
-                                  CAST(current_user_role.role_id AS CHAR),
+                                  #{groupValue},
                                   REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.candidate_groups, ';', ','), '；', ','), '，', ','), '、', ','), ' ', '')
                               ) > 0
-                              OR FIND_IN_SET(
-                                  candidate_role.role_key,
-                                  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.candidate_groups, ';', ','), '；', ','), '，', ','), '、', ','), ' ', '')
-                              ) > 0
-                          )
+                            </foreach>
+                        )
                     )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM sys_user_org current_user_org
-                        WHERE current_user_org.tenant_id = t.tenant_id
-                          AND current_user_org.user_id = CAST(NULLIF(#{userId}, '') AS UNSIGNED)
-                          <if test="activeOrgId == null">
-                              AND 1 = 0
-                          </if>
-                          AND FIND_IN_SET(
-                              CAST(current_user_org.org_id AS CHAR),
-                              REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.candidate_groups, ';', ','), '；', ','), '，', ','), '、', ','), ' ', '')
-                          ) > 0
-                    )
+                    </if>
                 )
             )
         )

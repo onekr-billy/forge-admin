@@ -7,6 +7,7 @@
  */
 import { computed } from 'vue'
 import {
+  normalizeFlowArrayPermission,
   normalizeFlowChildPermission,
   normalizeFlowFieldCatalog,
   normalizeFlowFieldPermission,
@@ -22,7 +23,20 @@ const props = defineProps({
 
 const emit = defineEmits(['update:config'])
 
-const savedPermissionBundle = computed(() => normalizeFlowFormPermissions(props.config?.formFieldPermissions))
+const savedPermissionBundle = computed(() => {
+  const embedded = normalizeFlowFormPermissions(props.config?.formFieldPermissions)
+  const children = Array.isArray(props.config?.formChildPermissions) && props.config.formChildPermissions.length
+    ? props.config.formChildPermissions
+    : embedded.children
+  const arrays = Array.isArray(props.config?.formArrayPermissions) && props.config.formArrayPermissions.length
+    ? props.config.formArrayPermissions
+    : embedded.arrays
+  return normalizeFlowFormPermissions({
+    fields: embedded.fields,
+    children,
+    arrays,
+  })
+})
 
 const savedPermissions = computed(() => {
   const map = new Map()
@@ -51,7 +65,7 @@ const rows = computed(() => {
       ...normalizeFlowFieldPermission(saved || {
         ...field,
         readable: true,
-        writable: field.scope === 'main',
+        writable: field.scope !== 'child',
       }),
     }
   })
@@ -95,10 +109,35 @@ const childPermissionRows = computed(() => {
   }))
 })
 
+const arrayPermissionRows = computed(() => {
+  const source = new Map()
+  formFields.value.filter(field => field.scope === 'array').forEach((field) => {
+    if (!source.has(field.arrayKey)) {
+      source.set(field.arrayKey, {
+        arrayKey: field.arrayKey,
+        label: field.arrayLabel || field.arrayKey,
+      })
+    }
+  })
+  savedPermissionBundle.value.arrays.forEach((array) => {
+    if (!array.arrayKey)
+      return
+    source.set(array.arrayKey, {
+      ...(source.get(array.arrayKey) || {}),
+      ...array,
+    })
+  })
+  return Array.from(source.values()).map(array => ({
+    ...normalizeFlowArrayPermission(array),
+    fieldCount: formFields.value.filter(field => field.scope === 'array' && field.arrayKey === array.arrayKey).length,
+  }))
+})
+
 const configuredCount = computed(() => {
   const fieldCount = rows.value.filter(row => row.configured && (row.readable === false || row.writable === false || row.required === true)).length
   const childCount = childPermissionRows.value.filter(row => row.configured && (row.allowCreate || row.allowUpdate || row.allowDelete || row.readable === false)).length
-  return fieldCount + childCount
+  const arrayCount = arrayPermissionRows.value.filter(row => row.configured && (row.allowCreate || row.allowDelete || row.readable === false || row.allowUpdate === false)).length
+  return fieldCount + childCount + arrayCount
 })
 
 function update(permissionKey, patch) {
@@ -158,7 +197,7 @@ function update(permissionKey, patch) {
     next.editable = next.writable
     return next
   })
-  emitPermissions(nextRows, childPermissionRows.value)
+  emitPermissions(nextRows, childPermissionRows.value, arrayPermissionRows.value)
 }
 
 function updateChild(childKey, patch) {
@@ -177,12 +216,35 @@ function updateChild(childKey, patch) {
       next.readable = true
     return normalizeFlowChildPermission(next)
   })
-  emitPermissions(rows.value, nextChildren)
+  emitPermissions(rows.value, nextChildren, arrayPermissionRows.value)
 }
 
-function emitPermissions(fields, children) {
+function updateArray(arrayKey, patch) {
+  if (props.readonly)
+    return
+  const nextArrays = arrayPermissionRows.value.map((array) => {
+    if (array.arrayKey !== arrayKey)
+      return array
+    const next = { ...array, ...patch, configured: true }
+    if (next.readable === false) {
+      next.allowCreate = false
+      next.allowUpdate = false
+      next.allowDelete = false
+    }
+    if (next.allowCreate || next.allowUpdate || next.allowDelete)
+      next.readable = true
+    return normalizeFlowArrayPermission(next)
+  })
+  emitPermissions(rows.value, childPermissionRows.value, nextArrays)
+}
+
+function emitPermissions(fields, children, arrays) {
+  const normalizedChildren = children.map(normalizeFlowChildPermission)
+  const normalizedArrays = arrays.map(normalizeFlowArrayPermission)
   emit('update:config', {
-    formFieldPermissions: serializeFlowFormPermissions(fields, children),
+    formFieldPermissions: serializeFlowFormPermissions(fields, normalizedChildren, normalizedArrays),
+    formChildPermissions: normalizedChildren,
+    formArrayPermissions: normalizedArrays,
   })
 }
 </script>
@@ -239,7 +301,7 @@ function emitPermissions(fields, children) {
             </n-tag>
           </div>
           <div class="form-field-code">
-            {{ row.scope === 'child' ? `${row.childKey}.${row.field}` : row.field }}
+            {{ row.scope === 'child' ? `${row.childKey}.${row.field}` : (row.scope === 'array' ? `${row.arrayKey}[].${row.field}` : row.field) }}
           </div>
         </div>
         <n-checkbox
@@ -278,6 +340,25 @@ function emitPermissions(fields, children) {
           <label><span>新增</span><n-checkbox data-test="child-allow-create" :checked="child.allowCreate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowCreate: $event })" /></label>
           <label><span>修改</span><n-checkbox data-test="child-allow-update" :checked="child.allowUpdate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowUpdate: $event })" /></label>
           <label><span>删除</span><n-checkbox data-test="child-allow-delete" :checked="child.allowDelete" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowDelete: $event })" /></label>
+        </div>
+      </div>
+      <div v-if="arrayPermissionRows.length" class="child-permission-section">
+        <div class="child-permission-title">
+          数组明细行操作
+        </div>
+        <div v-for="array in arrayPermissionRows" :key="array.arrayKey" class="child-permission-row">
+          <div>
+            <div class="form-field-label">
+              {{ array.label || array.arrayKey }}
+            </div>
+            <div class="form-field-code">
+              {{ array.arrayKey }} · {{ array.fieldCount }} 个行字段
+            </div>
+          </div>
+          <label><span>可见</span><n-checkbox :checked="array.readable" :disabled="readonly" @update:checked="updateArray(array.arrayKey, { readable: $event })" /></label>
+          <label><span>新增</span><n-checkbox data-test="array-allow-create" :checked="array.allowCreate" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowCreate: $event })" /></label>
+          <label><span>修改</span><n-checkbox data-test="array-allow-update" :checked="array.allowUpdate" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowUpdate: $event })" /></label>
+          <label><span>删除</span><n-checkbox data-test="array-allow-delete" :checked="array.allowDelete" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowDelete: $event })" /></label>
         </div>
       </div>
     </div>

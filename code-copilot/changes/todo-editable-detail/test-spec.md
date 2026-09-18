@@ -1,11 +1,11 @@
 # 待办中的可编辑明细 Test Spec
 
 > 变更：`todo-editable-detail`  
-> 当前状态：实现完成，后端定向测试受仓库既有测试编译基线阻断
+> 当前状态：路线 A、路线 B 已实现；待真实服务 E2E
 
 ## 1. 测试范围
 
-本变更第一期只覆盖路线 A：低代码业务对象主子表在当前待办中的受控编辑。动态表单数组字段不属于本轮测试范围。
+本变更覆盖路线 A（低代码业务对象主子表）和路线 B（动态表单 `group/tableForm` 对象数组）。路线 B 重点验证 schema 转换、节点权限、嵌套校验、流程变量保存和服务端越权拒绝。
 
 ## 2. 前端测试
 
@@ -37,6 +37,15 @@ pnpm --ignore-workspace exec vitest run \
 - 服务端回填后主表和子表数据均更新。
 - 输入、回写和校验不会导致子表输入框失焦。
 
+### 2.3 动态数组明细
+
+- `group.props.rule`、`group.children`、`tableForm.props.columns[].rule` 均转换为一个数组父字段。
+- 不同数组内同名行字段按 `arrayKey + itemField` 区分。
+- 父字段只读、数组 `allowUpdate=false`、行字段 `writable=false` 任一成立时对应输入禁用。
+- `allowCreate/allowDelete` 分别控制新增和删除入口；已办/历史强制关闭全部操作。
+- 外层 `AiForm.validate()` 能发现第 N 行的必填错误。
+- 同意提交变量保留对象数组，不产生摊平的伪顶层字段。
+
 UI 改动至少运行：
 
 ```bash
@@ -64,6 +73,14 @@ pnpm --ignore-workspace build
 - 主表或子表失败时事务整体回滚。
 - 并发更新时间/版本不一致时拒绝覆盖。
 
+### 3.3 动态数组变量
+
+- 服务端从当前 BPMN 重新读取权限，不接受客户端权限标记。
+- 不可写数组父字段或行字段发生变化时拒绝。
+- 新增/删除行分别要求 `allowCreate/allowDelete=true`。
+- 数组元素不是对象、超过 schema `max` 或低于 `min` 时拒绝。
+- 校验失败时任务仍为待办，原流程变量不变。
+
 建议命令：
 
 ```bash
@@ -71,6 +88,10 @@ JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/H
 PATH=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home/bin:$PATH \
 mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test \
   -Dtest=BusinessFlowService*Test,DynamicCrudService*Test \
+  -DfailIfNoTests=false
+
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am test \
+  -Dtest=DynamicFormArrayPermissionValidatorTest,FlowFormServiceImplFieldCatalogTest \
   -DfailIfNoTests=false
 ```
 
@@ -104,3 +125,19 @@ mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test \
 
 - 后端开启测试编译后，仓库既有测试基线无法编译：`FormulaExecutionEngineTest.java` 存在 UTF-8 不可映射字符；`DynamicCrudRepositoryTest`、`DbAggregateDataProviderTest` 使用已变更构造器。错误发生在测试源码编译阶段，未进入本变更目标测试执行；本轮未修改这些无关测试。
 - 未启动 Admin/Flow、未连接数据库，未执行真实待办 E2E；按照项目约定由用户在可用开发环境补验。
+
+## 7. 路线 B 增量验证（2026-09-18）
+
+已执行：
+
+- 前端 Vitest：数组 schema、字段目录、v3 权限 round-trip、设计器自动绑定、AiForm 数组运行时、只读回显和路线 A 回归共 10 个文件、68 tests passed。
+- 前端定向 ESLint：本轮涉及的 Vue/JS/测试文件 0 errors、0 warnings。
+- 前端生产构建：项目本地 `vite build` 通过；仅保留仓库既有 Vite configLoader 和 CSS 注释警告。
+- `git diff --check`：通过。
+
+已补但当前主机未执行：
+
+- 新增 `DynamicFormArrayPermissionValidatorTest`，覆盖父/行字段越权、未授权增删、顺序删除、对象数组类型、min/max、必填和历史未知字段保护。
+- 新增 `FlowFormServiceImplFieldCatalogTest`，覆盖数组父字段、两个数组同名行字段的目录隔离。
+- 当前主机没有 Java Runtime，且没有 `mvn` 命令，因此无法编译或运行新增后端测试；上面的 Flow 模块命令可在 JDK 17 + Maven 环境直接复跑。
+- 未启动 Admin/Flow、未连接数据库，未执行真实动态数组待办 E2E。

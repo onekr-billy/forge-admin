@@ -11,6 +11,7 @@
  * pitfalls #8 BPMNPlane 修复：JSON→XML 时 convertJsonToBpmn 总写真实 process id。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { normalizeFlowFieldCatalog, serializeFlowFormPermissions } from '@/utils/flow-field-permissions'
 import {
   AddNodeButton,
   BranchAddButton,
@@ -25,7 +26,6 @@ import {
 import { useFlowDesigner, useFlowHistory } from './composables/index.js'
 import { convertBpmnToJson, convertJsonToBpmn } from './converter/index.js'
 import { NodeConfigDrawer } from './panel/index.js'
-import { normalizeFlowFieldCatalog } from '@/utils/flow-field-permissions'
 
 const props = defineProps({
   xml: { type: String, default: '' },
@@ -257,14 +257,17 @@ function buildBusinessFormRef(asset) {
 
 function buildDefaultFieldPermissions(fieldCatalog = []) {
   const seen = new Set()
-  return normalizeFlowFieldCatalog(fieldCatalog)
+  const catalog = normalizeFlowFieldCatalog(fieldCatalog)
+  const fields = catalog
     .map((item) => {
       const field = String(item?.field || '').trim()
-      if (!field || seen.has(field))
+      if (!field)
         return null
       const permissionKey = item.scope === 'child'
         ? `child:${item.childKey}:${item.childField || field}`
-        : `main:${field}`
+        : item.scope === 'array'
+          ? `array:${item.arrayKey}:${item.itemField || field}`
+          : `main:${field}`
       if (seen.has(permissionKey))
         return null
       seen.add(permissionKey)
@@ -275,15 +278,30 @@ function buildDefaultFieldPermissions(fieldCatalog = []) {
         label: String(item?.label || item?.title || item?.fieldName || field).trim(),
         ...(item.scope === 'child'
           ? { scope: 'child', childKey: item.childKey, childField: item.childField || field }
-          : {}),
+          : (item.scope === 'array'
+              ? { scope: 'array', arrayKey: item.arrayKey, itemField: item.itemField || field }
+              : {})),
         visible: true,
-        editable: item.scope === 'main',
+        editable: item.scope !== 'child',
         readable: true,
-        writable: item.scope === 'main',
+        writable: item.scope !== 'child',
         required,
       }
     })
     .filter(Boolean)
+
+  const arrays = Array.from(new Map(catalog
+    .filter(item => item.scope === 'array' && item.arrayKey)
+    .map(item => [item.arrayKey, {
+      arrayKey: item.arrayKey,
+      label: item.arrayLabel || item.arrayKey,
+      readable: true,
+      allowCreate: false,
+      allowUpdate: true,
+      allowDelete: false,
+    }])).values())
+
+  return serializeFlowFormPermissions(fields, [], arrays)
 }
 
 let emitTimer = null

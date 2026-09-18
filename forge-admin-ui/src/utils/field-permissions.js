@@ -7,7 +7,7 @@ export function normalizeFieldPermissions(source, options = {}) {
     .map((item) => {
       if (!item || typeof item !== 'object')
         return null
-      const field = String(item.field || item.fieldCode || item.code || item.name || '').trim()
+      const field = String(item.itemField || item.childField || item.field || item.fieldCode || item.code || item.name || '').trim()
       if (!field)
         return null
       const readable = readPermissionBoolean(item.readable, readPermissionBoolean(item.visible, true))
@@ -29,10 +29,54 @@ export function normalizeFieldPermissions(source, options = {}) {
 export function createFieldPermissionMap(source, options = {}) {
   const map = new Map()
   for (const item of normalizeFieldPermissions(source, options)) {
+    const scope = String(item.scope || 'main').toLowerCase()
+    if ((options.scope || 'main') !== scope)
+      continue
     for (const key of permissionFieldAliases(item.field))
       map.set(key, item)
   }
   return map
+}
+
+export function normalizeArrayPermissions(source, options = {}) {
+  const bundle = parsePermissionBundle(source)
+  return (Array.isArray(bundle.arrays) ? bundle.arrays : [])
+    .map((item) => {
+      if (!item || typeof item !== 'object')
+        return null
+      const arrayKey = String(item.arrayKey || item.field || item.key || '').trim()
+      if (!arrayKey)
+        return null
+      const readable = readPermissionBoolean(item.readable, true)
+      return {
+        ...item,
+        arrayKey,
+        readable,
+        allowCreate: readable && !options.readOnly && readPermissionBoolean(item.allowCreate, false),
+        allowUpdate: readable && !options.readOnly && readPermissionBoolean(item.allowUpdate, true),
+        allowDelete: readable && !options.readOnly && readPermissionBoolean(item.allowDelete, false),
+      }
+    })
+    .filter(Boolean)
+}
+
+export function createArrayPermissionMap(source, options = {}) {
+  return new Map(normalizeArrayPermissions(source, options).map(item => [item.arrayKey, item]))
+}
+
+export function normalizeArrayItemPermissions(source, arrayKey, options = {}) {
+  const key = String(arrayKey || '').trim()
+  if (!key)
+    return []
+  return normalizeFieldPermissions(source, options)
+    .filter(item => String(item.scope || '').toLowerCase() === 'array' && String(item.arrayKey || '').trim() === key)
+    .map(item => ({
+      ...item,
+      scope: 'main',
+      field: String(item.itemField || item.field || '').trim(),
+      fieldCode: String(item.itemField || item.field || '').trim(),
+    }))
+    .filter(item => item.field)
 }
 
 export function pickFirstNonEmptyFieldPermissions(sources = [], options = {}) {
@@ -41,6 +85,15 @@ export function pickFirstNonEmptyFieldPermissions(sources = [], options = {}) {
     const permissions = normalizeFieldPermissions(source, options)
     if (permissions.length)
       return permissions
+  }
+  return []
+}
+
+export function pickFirstNonEmptyPermissionSource(sources = []) {
+  const list = Array.isArray(sources) ? sources : [sources]
+  for (const source of list) {
+    if (normalizeFieldPermissions(source).length || normalizeArrayPermissions(source).length)
+      return source
   }
   return []
 }
@@ -69,6 +122,23 @@ function parsePermissionList(source) {
     return parsePermissionSelections(source)
   }
   return []
+}
+
+function parsePermissionBundle(source) {
+  if (typeof source === 'string') {
+    const text = source.trim()
+    if (!text)
+      return {}
+    try {
+      return parsePermissionBundle(JSON.parse(text))
+    }
+    catch {
+      return {}
+    }
+  }
+  if (source && typeof source === 'object' && !Array.isArray(source))
+    return source
+  return {}
 }
 
 function parsePermissionSelections(source = {}) {

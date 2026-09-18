@@ -38,6 +38,8 @@ import com.mdframe.forge.starter.flow.service.FlowNodeConfigService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
 import com.mdframe.forge.starter.flow.service.FlowTaskService;
 import com.mdframe.forge.starter.flow.security.FlowAccessGuard;
+import com.mdframe.forge.starter.flow.security.FlowCandidateMembershipResolver;
+import com.mdframe.forge.starter.flow.service.support.DynamicFormArrayPermissionValidator;
 import com.mdframe.forge.starter.flow.vo.FlowHistoryItemVO;
 import com.mdframe.forge.starter.flow.vo.FlowHistoryPageVO;
 import com.mdframe.forge.starter.flow.vo.FlowTaskSignRelationVO;
@@ -170,10 +172,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Autowired(required = false)
     private FlowTaskCandidateMapper flowTaskCandidateMapper;
 
+    @Autowired
+    private FlowCandidateMembershipResolver candidateMembershipResolver;
+
     @Override
     public IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
         return enrichTaskPage(this.getBaseMapper().selectTodoTasks(page, userId, title, category, status,
-                SessionHelper.getTenantId(), SessionHelper.getActiveOrgId()));
+                SessionHelper.getTenantId(), candidateMembershipResolver.resolveCurrentSessionGroups()));
     }
 
     @Override
@@ -303,16 +308,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (taskService.createTaskQuery().taskId(runtimeTask.getId()).taskCandidateUser(userId).singleResult() != null) {
             return true;
         }
-        Set<String> groups = new HashSet<>();
-        if (SessionHelper.getRoleIds() != null) {
-            SessionHelper.getRoleIds().forEach(id -> groups.add(String.valueOf(id)));
-        }
-        if (SessionHelper.getRoleKeys() != null) {
-            groups.addAll(SessionHelper.getRoleKeys());
-        }
-        if (SessionHelper.getOrgIds() != null) {
-            SessionHelper.getOrgIds().forEach(id -> groups.add(String.valueOf(id)));
-        }
+        Set<String> groups = candidateMembershipResolver.resolveCurrentSessionGroups();
         for (String group : splitIds(localTask.getCandidateGroups())) {
             if (groups.contains(group)) {
                 return true;
@@ -352,6 +348,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         BpmnModel actionBpmnModel = repositoryService.getBpmnModel(task.getProcessDefinitionId());
         FlowNode actionFlowNode = getFlowNode(actionBpmnModel, task.getTaskDefinitionKey());
         validateTaskAction(task, ACTION_APPROVE, comment, signature, actionFlowNode);
+        validateDynamicFormArrayVariables(task, actionFlowNode, variables);
         validateRequiredVariables(task, variables, actionFlowNode);
         validateApprovalPoints(task, approvalPointResults, actionFlowNode);
 
@@ -719,6 +716,32 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         completeVariables.put("approved", approved);
         completeVariables.put("approvalResult", approved ? "approve" : "reject");
         return completeVariables;
+    }
+
+    private void validateDynamicFormArrayVariables(Task task,
+                                                   FlowNode flowNode,
+                                                   Map<String, Object> submittedVariables) {
+        if (task == null || submittedVariables == null || submittedVariables.isEmpty()) {
+            return;
+        }
+        NodeFormConfig nodeForm = readNodeFormConfig(flowNode);
+        String schemaJson = resolveFormJson(nodeForm.formKey, nodeForm.formJson);
+        if (!looksLikeFormSchema(schemaJson)) {
+            String processDefKey = resolveProcessDefinitionKey(task.getProcessDefinitionId(), null);
+            FlowModel flowModel = !isBlank(processDefKey) ? flowModelService.getModelByKey(processDefKey) : null;
+            if (flowModel != null && "dynamic".equalsIgnoreCase(flowModel.getFormType())) {
+                schemaJson = resolveModelFormJson(flowModel.getFormId(), flowModel.getFormJson());
+            }
+        }
+        if (!looksLikeFormSchema(schemaJson)) {
+            return;
+        }
+        DynamicFormArrayPermissionValidator.validate(
+                OBJECT_MAPPER,
+                schemaJson,
+                nodeForm.formFieldPermissions,
+                taskService.getVariables(task.getId()),
+                submittedVariables);
     }
 
     /**
@@ -2522,6 +2545,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setTaskName(task.getName());
         formInfo.setTaskDefKey(task.getTaskDefinitionKey());
         formInfo.setProcessInstanceId(task.getProcessInstanceId());
+        formInfo.setStatus(visibleTask.getStatus());
+        formInfo.setAssignee(visibleTask.getAssignee());
+        formInfo.setCandidateUsers(visibleTask.getCandidateUsers());
+        formInfo.setCandidateGroups(visibleTask.getCandidateGroups());
 
         // 2. 获取流程定义Key
         String processDefKey = resolveProcessDefinitionKey(task.getProcessDefinitionId(), null);

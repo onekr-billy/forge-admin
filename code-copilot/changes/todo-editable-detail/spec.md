@@ -2,13 +2,12 @@
 
 > 变更名：`todo-editable-detail`  
 > 优先级：P1（平台能力，不阻断当前 KPI 平铺槽位方案）  
-> 状态：`implemented-with-validation-limitations`
-> 实施范围：第一期路线 A——低代码业务对象主子表在待办中的受控编辑  
-> 排除范围：路线 B 动态表单数组字段，本期只保留兼容设计，不进入实现
+> 状态：`route-a-b-implemented-pending-e2e`
+> 实施范围：路线 A——低代码业务对象主子表；路线 B——动态表单数组/明细字段在待办中的受控编辑
 
 ## 1. 背景与问题
 
-Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办上下文中的 `ChildTableEditor` 被固定为只读，且待办保存接口只更新主表字段。节点字段权限目录也只覆盖主表字段，因此审批人无法在待办中修正采购数量、报销明细或考评行数据，只能驳回后重新提交。
+Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办上下文中的 `ChildTableEditor` 原先被固定为只读，且待办保存接口只更新主表字段。路线 A 已补齐这条链路。动态表单的 form-create `group/tableForm` 仍会被 `formCreateToAiSchema` 错误摊平成普通主字段，数组父字段、行级校验和新增/删除语义全部丢失，因此路线 B 继续补齐动态表单数组明细。
 
 现有普通 CRUD 已具备主子表新增、修改、删除、`_deleted` 标记和必填校验能力。本变更把这些能力接入流程节点权限和待办保存链路，同时保持普通 CRUD、老流程和已办/历史场景行为不变。
 
@@ -20,13 +19,16 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 4. 明细修改、增加、删除结果在审批动作前安全保存到业务对象，下一节点能读取最新数据。
 5. 服务端重新解析当前节点权限并校验主子表行归属，前端篡改权限或跨单据行 ID 不能越权。
 6. 老流程没有子表权限配置时继续只读；已办、历史任务继续完整展示但不可编辑。
+7. form-create `group/tableForm` 转换为稳定的 AiForm 数组字段协议，保留数组父字段和行字段 schema。
+8. 动态表单数组支持行字段权限、行新增/修改/删除权限、嵌套校验和只读历史回显。
+9. 服务端按当前任务节点权限校验动态数组变量，不信任前端传入的可写或行操作标记。
 
 ## 3. 非目标
 
-1. 本期不实现动态表单 `AiForm` 的数组/明细字段类型，不改 `formCreateToAiSchema` 的数组协议。
-2. 本期不把动态表单数组自动回写低代码业务对象；该能力另立路线 B 变更。
-3. 本期不修改普通业务对象 CRUD 的默认主子表保存语义。
-4. 本期不改变 Flowable 节点权限的存储位置，仍以真实流程设计器写入的 BPMN 节点配置为准。
+1. 动态表单数组作为 Flowable 流程变量保存，不自动映射为低代码业务对象关系子表。
+2. 本期不修改普通业务对象 CRUD 的默认主子表保存语义。
+3. 本期不改变 Flowable 节点权限的存储位置，仍以真实流程设计器写入的 BPMN 节点配置为准。
+4. 数组行以顺序语义保存；不在本期为任意动态行引入数据库主键或业务对象关系。
 
 ## 4. 设计
 
@@ -67,6 +69,21 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 }
 ```
 
+路线 B 在同一协议上增加 `scope=array` 和 `arrays`，仅当存在数组权限时输出 v3；v1/v2 继续兼容：
+
+```json
+{
+  "version": 3,
+  "fields": [
+    {"scope": "main", "field": "expenseItems", "readable": true, "writable": true},
+    {"scope": "array", "arrayKey": "expenseItems", "itemField": "amount", "field": "amount", "readable": true, "writable": true, "required": true}
+  ],
+  "arrays": [
+    {"arrayKey": "expenseItems", "readable": true, "allowCreate": true, "allowUpdate": true, "allowDelete": true}
+  ]
+}
+```
+
 兼容和默认规则：
 
 - 旧格式数组继续表示主表字段权限。
@@ -74,6 +91,8 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 - 子表字段只有 `writable=true` 且子表 `allowUpdate=true` 时已有行可编辑。
 - `readable=false` 的字段不下发到待办上下文；保存时服务端从数据库保留原值。
 - 新增行的主表外键、租户字段、审计字段由服务端补齐，客户端不能指定。
+- 动态数组没有 `arrays` 配置时，父字段仍按旧字段权限显示；存量行允许随父字段写权限修改，但默认不开放新增和删除。
+- 数组行字段只有 `writable=true` 且数组 `allowUpdate=true` 时可修改；新增行只接受可写行字段。
 
 ### 4.2 待办保存协议
 
@@ -123,11 +142,28 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 
 权限配置继续由真实流程设计器的 `FormPermissionConfig.vue` 写入 `formFieldPermissions`，不新增 App Center 私有配置入口。BPMN 节点已有配置优先，业务绑定 `nodeForms` 只作为兼容回退。
 
+### 4.6 AiForm 数组运行时协议
+
+`formCreateToAiSchema` 对 form-create 数组控件进行结构化转换：
+
+- `group`：输出 `type=array`，子项来自 `props.rule`（兼容设计态 `children`）。
+- `tableForm`：输出 `type=array`，按 `props.columns[].rule` 生成行字段并保留列标题。
+- 数组字段值统一为 `Array<Record<string, unknown>>`，父字段名保持原 form-create `field`。
+- `AiFormArrayField` 负责稳定行 key、新增/删除、只读投影和逐行嵌套 `AiForm` 校验。
+- 外层 `AiForm.validate()` 必须同时等待数组子表单校验，不能只校验数组非空。
+
+动态表单审批时，前端只提交当前表单数据；Flow 服务读取当前任务 BPMN 的 schema 和 `formFieldPermissions`，校验父字段、行字段和行数量变化。不可写字段不得被覆盖，未授权新增/删除必须拒绝。已办/历史仅回显流程变量快照并强制只读。
+
 ## 5. 影响范围
 
 ### 前端
 
 - `forge-admin-ui/src/views/flow/todo.vue`
+- `forge-admin-ui/src/components/ai-form/AiForm.vue`
+- `forge-admin-ui/src/components/ai-form/AiFormItem.vue`
+- `forge-admin-ui/src/components/ai-form/AiFormArrayField.vue`
+- `forge-admin-ui/src/components/ai-form/adapters/formCreate.js`
+- `forge-admin-ui/src/views/flow/utils/form-field-catalog.js`
 - `forge-admin-ui/src/components/page-templates/ChildTableEditor.vue`
 - `forge-admin-ui/src/components/flow-designer/panel/FormPermissionConfig.vue`
 - `forge-admin-ui/src/components/flow-designer/panel/ApproverConfig.vue`
@@ -142,6 +178,8 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 - `DynamicCrudService.java`
 - 动态 CRUD 子表 Mapper/Repository 复用或新增任务保存辅助方法
 - 对应服务测试和契约测试
+- `FlowFormServiceImpl.java`（数组字段目录）
+- `FlowTaskServiceImpl.java`（动态表单数组变量权限校验）
 
 ### 数据库
 
@@ -155,6 +193,7 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 - 保存结果记录任务身份和业务记录关联，禁止通过替换 `businessKey` 绕过校验。
 - 第一期沿用当前任务签收校验、租户/数据权限和事务边界；更新时间/版本快照字段尚未纳入保存协议，乐观并发拒绝留待后续增量。
 - 普通 CRUD、业务代码表单和历史只读路径不改变。
+- 动态数组保存继续使用 Flowable 事务边界；数组行权限校验在 `taskService.complete` 前完成，失败不写流程变量、不完成任务。
 
 ## 7. 验收标准
 
@@ -166,6 +205,9 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 6. 跨单据行 ID、不可读字段、不可写字段和未签收任务请求均失败。
 7. replace 配置下只提交部分字段不会丢失只读字段或未提交明细。
 8. 已办、历史任务展示完整明细且不能编辑。
+9. `group/tableForm` 不再摊平成顶层字段，数组值能新增、编辑、删除并随同意动作进入流程变量。
+10. 数组行必填校验能定位到具体行；驳回、已办和历史不会误开放编辑。
+11. 伪造不可写行字段或未授权新增/删除时，Flow 服务拒绝请求且任务不流转。
 
 ## 8. 发布和回滚
 
@@ -177,4 +219,4 @@ Forge 已支持低代码业务对象主子表进入 Flowable 流程，但待办�
 
 1. 是否需要在审批日志中展示每一行明细的字段变更前后值；本期先保留现有操作日志能力，不阻断主功能。
 2. 是否需要“保存并办理”原子接口；本期沿用保存后执行 `task-action`，后续按实际并发和失败反馈决定是否增加。
-3. 动态表单数组字段和业务对象回写另立路线 B Spec。
+3. 若后续要求动态数组自动回写业务对象关系子表，需要单独定义字段映射、行身份和冲突解决协议。

@@ -110,7 +110,7 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
     IPage<FlowTask> selectTodoTasks(Page<FlowTask> page, @Param("userId") String userId,
                                      @Param("title") String title, @Param("category") String category,
                                      @Param("status") Integer status, @Param("tenantId") Long tenantId,
-                                     @Param("activeOrgId") Long activeOrgId);
+                                     @Param("candidateGroupValues") Collection<String> candidateGroupValues);
 
     /**
      * 分页查询已办任务（带分类关联）
@@ -146,7 +146,7 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
      * 统计工作台待办数。
      */
     Long countWorkspaceTodo(@Param("userId") String userId, @Param("tenantId") Long tenantId,
-                            @Param("activeOrgId") Long activeOrgId);
+                            @Param("candidateGroupValues") Collection<String> candidateGroupValues);
 
     /**
      * 统计指定时间后的已办数。

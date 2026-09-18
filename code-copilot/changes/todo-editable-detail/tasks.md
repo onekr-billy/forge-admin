@@ -118,3 +118,41 @@
 - [ ] 验证旧流程无子表权限、单字段写权限、增删权限、跨单据行和 replace/merge 不丢数据的后端自动化场景（测试编译基线阻断）。
 - [x] 记录失败命令的根因或明确跳过原因，不把未运行的真实服务 E2E 写成通过。
 - [x] 更新 Spec 状态、Tasks 勾选状态和执行日志。
+
+## T8. 建立 AiForm 数组协议和字段目录
+
+**目标**：form-create `group/tableForm` 保留数组父字段和行字段，不再被摊平成普通字段。
+
+- [x] 为 `formCreateToAiSchema` 增加 group、tableForm、旧 children/新 props.rule 的转换测试。
+- [x] 定义 `type=array + itemSchema + arrayConfig` 运行时协议。
+- [x] 前后端表单字段目录输出数组父字段与 `scope=array` 行字段。
+- [x] 字段目录去重使用 `arrayKey + itemField`，避免不同数组同名列冲突。
+
+## T9. 扩展节点数组权限协议
+
+**目标**：真实流程设计器可配置数组行字段与新增、修改、删除权限，BPMN 可稳定 round-trip。
+
+- [x] `flow-field-permissions` 兼容 v1/v2，并在数组权限存在时输出 v3。
+- [x] `FormPermissionConfig` 增加数组行操作区，保持现有子表区行为不变。
+- [x] parser/writer 增加 `formArrayPermissions`，覆盖 XML round-trip 测试。
+- [x] 老动态表单只配置父字段时保持兼容，不自动开放新增/删除。
+
+## T10. 实现 AiForm 数组明细运行时
+
+**目标**：待办可编辑数组行，已办/历史只读，父表单提交前完成逐行校验。
+
+- [x] 新增 `AiFormArrayField`，支持卡片/表格模式、稳定行 key、增删行和空态。
+- [x] AiForm 注册数组子校验器，并在 `validate()` 中等待所有行表单完成。
+- [x] 数组父权限、行字段权限和行操作权限共同决定运行态可编辑性。
+- [x] todo/readonly panel 传递完整权限 bundle，提交和历史回显保留对象数组。
+- [x] 增加组件测试覆盖只读、单列可写、新增/删除和嵌套必填。
+
+## T11. 动态数组服务端安全校验与回归
+
+**目标**：Flow 服务按当前节点 schema/权限校验动态数组变量，拒绝前端越权。
+
+- [x] 审批前从当前 BPMN 节点重新读取 form schema 与权限。
+- [x] 拒绝不可写父字段、不可写行字段、未授权新增/删除和非对象数组元素。
+- [x] 校验失败发生在 `taskService.complete` 前，不写流程变量、不完成任务。
+- [x] 增加纯权限校验和后端字段目录单元测试；当前主机无 JDK/Maven，已记录可复跑命令和阻断原因。
+- [x] 运行前端定向测试、ESLint、生产构建和 `git diff --check`；后端编译/测试因当前主机无 JDK/Maven 未执行。

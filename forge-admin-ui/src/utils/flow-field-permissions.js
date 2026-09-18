@@ -1,4 +1,4 @@
-const FLOW_PERMISSION_VERSION = 2
+const FLOW_PERMISSION_VERSION = 3
 
 export function normalizeFlowFormPermissions(source) {
   const parsed = parseSource(source)
@@ -6,6 +6,7 @@ export function normalizeFlowFormPermissions(source) {
     ? parsed
     : Array.isArray(parsed?.fields) ? parsed.fields : []
   const rawChildren = Array.isArray(parsed?.children) ? parsed.children : []
+  const rawArrays = Array.isArray(parsed?.arrays) ? parsed.arrays : []
   const fields = []
   const seen = new Set()
 
@@ -27,30 +28,47 @@ export function normalizeFlowFormPermissions(source) {
     children.push(normalized)
   })
 
+  const arrays = []
+  const arraySeen = new Set()
+  rawArrays.forEach((item) => {
+    const normalized = normalizeFlowArrayPermission(item)
+    if (!normalized.arrayKey || arraySeen.has(normalized.arrayKey))
+      return
+    arraySeen.add(normalized.arrayKey)
+    arrays.push(normalized)
+  })
+
   return {
     version: parsed && !Array.isArray(parsed) && Number(parsed.version) > 0
       ? Number(parsed.version)
       : 1,
     fields,
     children,
+    arrays,
   }
 }
 
-export function serializeFlowFormPermissions(fields = [], children = []) {
+export function serializeFlowFormPermissions(fields = [], children = [], arrays = []) {
   const normalizedFields = (Array.isArray(fields) ? fields : [])
     .map(normalizeFlowFieldPermission)
     .filter(item => item.field)
   const normalizedChildren = (Array.isArray(children) ? children : [])
     .map(normalizeFlowChildPermission)
     .filter(item => item.childKey)
+  const normalizedArrays = (Array.isArray(arrays) ? arrays : [])
+    .map(normalizeFlowArrayPermission)
+    .filter(item => item.arrayKey)
 
-  if (!normalizedChildren.length && normalizedFields.every(item => item.scope === 'main'))
+  if (!normalizedChildren.length && !normalizedArrays.length && normalizedFields.every(item => item.scope === 'main'))
     return normalizedFields.map(stripPermissionKey)
 
   return {
-    version: FLOW_PERMISSION_VERSION,
+    version: normalizedArrays.length || normalizedFields.some(item => item.scope === 'array')
+      ? FLOW_PERMISSION_VERSION
+      : 2,
     fields: normalizedFields.map(stripPermissionKey),
     children: normalizedChildren,
+    ...(normalizedArrays.length ? { arrays: normalizedArrays } : {}),
   }
 }
 
@@ -75,24 +93,34 @@ export function normalizeFlowFieldCatalog(catalog = []) {
       const field = String(item.field || item.fieldCode || item.fieldName || item.name || item.key || '').trim()
       if (!field)
         return
+      const arrayKey = String(item.arrayKey || '').trim()
       const effectiveChildKey = childKey || parentChild?.childKey || ''
-      const effectiveScope = effectiveChildKey || item.scope === 'child' ? 'child' : 'main'
+      const effectiveArrayKey = arrayKey || parentChild?.arrayKey || ''
+      const effectiveScope = effectiveArrayKey || item.scope === 'array'
+        ? 'array'
+        : (effectiveChildKey || item.scope === 'child' ? 'child' : 'main')
       const childField = String(item.childField || (effectiveScope === 'child' ? field : '') || '').trim()
+      const itemField = String(item.itemField || (effectiveScope === 'array' ? field : '') || '').trim()
       const permissionKey = effectiveScope === 'child'
         ? `child:${effectiveChildKey}:${childField || field}`
-        : `main:${field}`
+        : effectiveScope === 'array'
+          ? `array:${effectiveArrayKey}:${itemField || field}`
+          : `main:${field}`
       if (!effectiveChildKey && effectiveScope === 'child')
+        return
+      if (!effectiveArrayKey && effectiveScope === 'array')
         return
       if (seen.has(permissionKey))
         return
       seen.add(permissionKey)
       result.push({
         ...item,
-        field: effectiveScope === 'child' ? childField || field : field,
-        fieldCode: effectiveScope === 'child' ? childField || field : field,
+        field: effectiveScope === 'child' ? childField || field : (effectiveScope === 'array' ? itemField || field : field),
+        fieldCode: effectiveScope === 'child' ? childField || field : (effectiveScope === 'array' ? itemField || field : field),
         label: String(item.label || item.title || item.fieldName || field).trim(),
         scope: effectiveScope,
         ...(effectiveScope === 'child' ? { childKey: effectiveChildKey, childField: childField || field } : {}),
+        ...(effectiveScope === 'array' ? { arrayKey: effectiveArrayKey, itemField: itemField || field } : {}),
         permissionKey,
       })
     })
@@ -102,18 +130,21 @@ export function normalizeFlowFieldCatalog(catalog = []) {
 }
 
 export function normalizeFlowFieldPermission(item = {}) {
-  const scope = String(item.scope || (item.childKey ? 'child' : 'main')).trim().toLowerCase() === 'child'
-    ? 'child'
-    : 'main'
+  const rawScope = String(item.scope || (item.arrayKey ? 'array' : (item.childKey ? 'child' : 'main'))).trim().toLowerCase()
+  const scope = rawScope === 'child' ? 'child' : (rawScope === 'array' ? 'array' : 'main')
   const childKey = String(item.childKey || item.relationKey || '').trim()
   const childField = String(item.childField || (scope === 'child' ? item.field : '') || '').trim()
-  const field = String(item.field || item.fieldCode || item.code || childField).trim()
-  const normalizedField = scope === 'child' ? childField || field : field
+  const arrayKey = String(item.arrayKey || '').trim()
+  const itemField = String(item.itemField || (scope === 'array' ? item.field : '') || '').trim()
+  const field = String(item.field || item.fieldCode || item.code || childField || itemField).trim()
+  const normalizedField = scope === 'child' ? childField || field : (scope === 'array' ? itemField || field : field)
   const readable = readBoolean(item.readable, readBoolean(item.visible, true))
-  const writable = readable && readBoolean(item.writable, readBoolean(item.editable, scope === 'main'))
+  const writable = readable && readBoolean(item.writable, readBoolean(item.editable, scope !== 'child'))
   const permissionKey = scope === 'child'
     ? `child:${childKey}:${normalizedField}`
-    : `main:${normalizedField}`
+    : scope === 'array'
+      ? `array:${arrayKey}:${normalizedField}`
+      : `main:${normalizedField}`
   return {
     ...item,
     field: normalizedField,
@@ -121,12 +152,27 @@ export function normalizeFlowFieldPermission(item = {}) {
     label: String(item.label || normalizedField || '').trim(),
     scope,
     ...(scope === 'child' ? { childKey, childField: normalizedField } : {}),
+    ...(scope === 'array' ? { arrayKey, itemField: normalizedField } : {}),
     visible: readable,
     editable: writable,
     readable,
     writable,
     required: writable && readBoolean(item.required, false),
     permissionKey,
+  }
+}
+
+export function normalizeFlowArrayPermission(item = {}) {
+  const arrayKey = String(item.arrayKey || item.field || item.key || '').trim()
+  const readable = readBoolean(item.readable, true)
+  return {
+    ...item,
+    arrayKey,
+    label: String(item.label || item.title || arrayKey).trim(),
+    readable,
+    allowCreate: readable && readBoolean(item.allowCreate, false),
+    allowUpdate: readable && readBoolean(item.allowUpdate, true),
+    allowDelete: readable && readBoolean(item.allowDelete, false),
   }
 }
 
@@ -158,6 +204,11 @@ function stripPermissionKey(item) {
     result.scope = 'child'
     result.childKey = item.childKey
     result.childField = item.childField || item.field
+  }
+  else if (item.scope === 'array') {
+    result.scope = 'array'
+    result.arrayKey = item.arrayKey
+    result.itemField = item.itemField || item.field
   }
   return result
 }

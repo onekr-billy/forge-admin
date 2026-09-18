@@ -44,10 +44,16 @@ class FlowTaskMapperSqlContractTest {
         String statement = statement(xml, "selectTodoTasks");
         assertFalse(statement.matches("(?s).*OR\\s*\\(\\s*t\\.candidate_groups\\s+IS\\s+NOT\\s+NULL\\s+AND\\s+t\\.candidate_groups\\s*!=\\s*''\\s*\\).*"),
                 "todo candidate group filtering must verify the current user's group membership");
-        assertTrue(xml.contains("current_user_role.user_id"),
-                "todo candidate group filtering must bind the current user");
-        assertTrue(xml.contains("current_user_org.user_id"),
-                "todo department candidate filtering must bind the current user");
+        assertTrue(xml.contains("tc.candidate_type = 'GROUP'"),
+                "todo candidate group filtering must use normalized candidate relations");
+        assertTrue(xml.contains("tc.candidate_value IN"),
+                "todo candidate groups must bind the resolved session memberships");
+        assertTrue(xml.contains("NOT EXISTS"),
+                "legacy CSV matching must be gated behind the absence of normalized relations");
+        assertFalse(xml.contains("sys_user_org_role current_user_role"),
+                "todo pagination must not rebuild role memberships for every task row");
+        assertFalse(xml.contains("sys_user_org current_user_org"),
+                "todo pagination must not rebuild organization memberships for every task row");
     }
 
     @Test

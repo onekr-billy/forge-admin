@@ -9,12 +9,10 @@ import com.mdframe.forge.starter.flow.mapper.FlowCcMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskCandidateMapper;
 import com.mdframe.forge.starter.flow.entity.FlowTaskCandidate;
-import com.mdframe.forge.starter.flow.service.FlowUserGroupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.HashSet;
 import java.util.Set;
 
 /** Central tenant and participant checks for flow read APIs. */
@@ -25,7 +23,7 @@ public class FlowAccessGuard {
     private final FlowBusinessMapper flowBusinessMapper;
     private final FlowCcMapper flowCcMapper;
     private final FlowTaskCandidateMapper flowTaskCandidateMapper;
-    private final FlowUserGroupService flowUserGroupService;
+    private final FlowCandidateMembershipResolver candidateMembershipResolver;
 
     public Long requireTenant() {
         Long tenantId = SessionHelper.getTenantId();
@@ -74,7 +72,7 @@ public class FlowAccessGuard {
 
     private boolean hasCandidateGroup(FlowTask task) {
         String candidateGroups = task.getCandidateGroups();
-        Set<String> memberships = sessionGroupMemberships();
+        Set<String> memberships = candidateMembershipResolver.resolveCurrentSessionGroups();
         if (!StringUtils.hasText(candidateGroups)) {
             return hasCandidateRelationForSessionGroups(task, memberships);
         }
@@ -105,24 +103,6 @@ public class FlowAccessGuard {
                 && StringUtils.hasText(task.getTaskId())
                 && flowTaskCandidateMapper.countActiveByTaskAndValue(
                 task.getTenantId(), task.getTaskId(), candidateType, candidateValue) > 0;
-    }
-
-    private Set<String> sessionGroupMemberships() {
-        Set<String> memberships = new HashSet<>();
-        if (SessionHelper.getRoleIds() != null) {
-            SessionHelper.getRoleIds().forEach(id -> memberships.add(String.valueOf(id)));
-        }
-        if (SessionHelper.getRoleKeys() != null) {
-            memberships.addAll(SessionHelper.getRoleKeys());
-        }
-        if (SessionHelper.getOrgIds() != null) {
-            SessionHelper.getOrgIds().forEach(id -> memberships.add(String.valueOf(id)));
-        }
-        Long userId = SessionHelper.getUserId();
-        if (userId != null && flowUserGroupService != null) {
-            memberships.addAll(flowUserGroupService.resolveGroupCodesByUserId(userId));
-        }
-        return memberships;
     }
 
     private boolean containsCsv(String csv, String value) {

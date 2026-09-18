@@ -76,6 +76,12 @@ public class BusinessTaskFormContextVO {
 
     private Map<String, Object> recordData = new LinkedHashMap<>();
 
+    /**
+     * Flow task form snapshot already loaded and authorized for this request.
+     * The todo client reuses it instead of issuing a duplicate Flow request.
+     */
+    private Map<String, Object> taskFormInfo = new LinkedHashMap<>();
+
     private List<String> warnings = new ArrayList<>();
 
     private Boolean allowApprove;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions } from '../field-permissions.js'
+import { normalizeArrayPermissions, normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions } from '../field-permissions.js'
 
 describe('field permissions', () => {
   it('优先读取 readable/writable，兼容 visible/editable 旧字段', () => {
@@ -64,5 +64,17 @@ describe('field permissions', () => {
         required: false,
       },
     ])
+  })
+
+  it('数组不可见时强制关闭全部行操作', () => {
+    const permissions = normalizeArrayPermissions({
+      arrays: [{ arrayKey: 'items', readable: false, allowCreate: true, allowUpdate: true, allowDelete: true }],
+    })
+    expect(permissions[0]).toMatchObject({
+      readable: false,
+      allowCreate: false,
+      allowUpdate: false,
+      allowDelete: false,
+    })
   })
 })

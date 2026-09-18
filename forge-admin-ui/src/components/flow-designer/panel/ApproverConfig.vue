@@ -19,8 +19,7 @@
  *   - update:config   增量 patch，外层 NodeConfigDrawer 合并到 draftNode.config
  */
 import { computed, ref, watch } from 'vue'
-import { normalizeFieldPermissions } from '@/utils/field-permissions'
-import { normalizeFlowFieldCatalog, normalizeFlowFormPermissions } from '@/utils/flow-field-permissions'
+import { normalizeFlowFieldCatalog, normalizeFlowFormPermissions, serializeFlowFormPermissions } from '@/utils/flow-field-permissions'
 import { loadFlowBusinessFormFieldCatalog } from '@/utils/flow-form-loader'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
 import ApprovalDutyConfig from './ApprovalDutyConfig.vue'
@@ -145,11 +144,18 @@ function handleFormAssetUpdate(partial = {}) {
       formUrl: '',
       formRef: {},
       formFieldPermissions: [],
+      formChildPermissions: [],
+      formArrayPermissions: [],
     })
     return
   }
   const asset = findFormAsset(partial)
   const formMode = resolveSelectedFormMode(partial, asset)
+  const formFieldPermissions = buildFormFieldPermissionsForCatalog(
+    config.value.formFieldPermissions,
+    asset?.fieldCatalog,
+  )
+  const permissionBundle = normalizeFlowFormPermissions(formFieldPermissions)
   patch({
     formType: 'dynamic',
     formMode,
@@ -160,10 +166,9 @@ function handleFormAssetUpdate(partial = {}) {
     formUrl: partial.formUrl || asset?.formUrl || '',
     viewKey: partial.viewKey || asset?.viewKey || 'default',
     formRef: partial.formRef || asset?.formRef || buildFormRefFromAsset(asset, formMode),
-    formFieldPermissions: buildFormFieldPermissionsForCatalog(
-      config.value.formFieldPermissions,
-      asset?.fieldCatalog,
-    ),
+    formFieldPermissions,
+    formChildPermissions: permissionBundle.children,
+    formArrayPermissions: permissionBundle.arrays,
   })
 }
 
@@ -190,18 +195,21 @@ function findFormAsset(partial = {}) {
 }
 
 function buildFormFieldPermissionsForCatalog(currentPermissions, fieldCatalog = []) {
+  const currentBundle = normalizeFlowFormPermissions(currentPermissions)
   const current = new Map()
-  for (const permission of normalizeFlowFormPermissions(currentPermissions).fields) {
+  for (const permission of currentBundle.fields) {
     if (permission.field)
       current.set(permission.permissionKey, permission)
   }
   const catalog = normalizeFlowFieldCatalog(fieldCatalog)
   if (!catalog.length)
-    return Array.from(current.values())
-  return catalog.map((field) => {
+    return serializeFlowFormPermissions(Array.from(current.values()), currentBundle.children, currentBundle.arrays)
+  const fields = catalog.map((field) => {
     const permissionKey = field.scope === 'child'
       ? `child:${field.childKey}:${field.childField || field.field}`
-      : `main:${field.field}`
+      : field.scope === 'array'
+        ? `array:${field.arrayKey}:${field.itemField || field.field}`
+        : `main:${field.field}`
     const saved = current.get(permissionKey)
     if (saved) {
       return {
@@ -216,22 +224,28 @@ function buildFormFieldPermissionsForCatalog(currentPermissions, fieldCatalog = 
       label: field.label || field.field,
       ...(field.scope === 'child'
         ? { scope: 'child', childKey: field.childKey, childField: field.childField || field.field }
-        : {}),
+        : (field.scope === 'array'
+            ? { scope: 'array', arrayKey: field.arrayKey, itemField: field.itemField || field.field }
+            : {})),
       visible: true,
-      editable: field.scope === 'main',
+      editable: field.scope !== 'child',
       readable: true,
-      writable: field.scope === 'main',
+      writable: field.scope !== 'child',
       required,
     }
   })
-}
-
-function normalizeFieldCatalog(fieldCatalog = []) {
-  return normalizeFlowFieldCatalog(fieldCatalog).map(item => ({
-    ...item,
-    label: String(item?.label || item?.title || item?.fieldName || item?.field || '').trim(),
-    required: item?.required === true || item?.sourceRequired === true,
-  }))
+  const currentArrays = new Map(currentBundle.arrays.map(item => [item.arrayKey, item]))
+  const arrays = Array.from(new Set(catalog.filter(field => field.scope === 'array').map(field => field.arrayKey)))
+    .filter(Boolean)
+    .map(arrayKey => currentArrays.get(arrayKey) || {
+      arrayKey,
+      label: catalog.find(field => field.scope === 'array' && field.arrayKey === arrayKey)?.arrayLabel || arrayKey,
+      readable: true,
+      allowCreate: false,
+      allowUpdate: true,
+      allowDelete: false,
+    })
+  return serializeFlowFormPermissions(fields, currentBundle.children, arrays)
 }
 
 function resolveSelectedFormMode(partial = {}, asset = null) {

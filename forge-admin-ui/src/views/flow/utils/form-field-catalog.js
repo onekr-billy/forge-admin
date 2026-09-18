@@ -1,7 +1,7 @@
 export function buildLocalFormFieldCatalog(source) {
   const root = parseSchema(source)
   const fields = []
-  collectFields(root, fields)
+  collectFields(root, fields, null)
   return mergeByField(fields)
 }
 
@@ -21,11 +21,11 @@ function parseSchema(source) {
   return []
 }
 
-function collectFields(node, fields) {
+function collectFields(node, fields, arrayContext) {
   if (!node)
     return
   if (Array.isArray(node)) {
-    node.forEach(child => collectFields(child, fields))
+    node.forEach(child => collectFields(child, fields, arrayContext))
     return
   }
   if (typeof node !== 'object')
@@ -33,22 +33,56 @@ function collectFields(node, fields) {
 
   const field = resolveField(node)
   if (field && !field.startsWith('ref_')) {
+    const arrayField = !arrayContext && isArrayRule(node)
     fields.push({
       field,
       label: resolveLabel(node, field),
       componentType: textValue(node, 'type') || textValue(node, 'component') || textValue(node, 'componentKey') || '',
-      dataType: inferFieldDataType(node),
+      dataType: arrayField ? 'array' : inferFieldDataType(node),
       required: resolveRequired(node),
       optionSource: resolveOptionSource(node),
       source: 'model-inline',
+      ...(arrayContext
+        ? {
+            scope: 'array',
+            arrayKey: arrayContext.arrayKey,
+            arrayLabel: arrayContext.arrayLabel,
+            itemField: field,
+          }
+        : {}),
     })
+    if (arrayField) {
+      collectArrayFields(node, fields, {
+        arrayKey: field,
+        arrayLabel: resolveLabel(node, field),
+      })
+      return
+    }
   }
 
   Object.entries(node).forEach(([key, value]) => {
     if (['props', '_fc_drag_tag'].includes(key))
       return
-    collectFields(value, fields)
+    collectFields(value, fields, arrayContext)
   })
+}
+
+function collectArrayFields(node, fields, context) {
+  const type = normalizeType(node.type || node.component || node.componentKey)
+  if (type === 'tableform') {
+    const columns = Array.isArray(node.props?.columns) ? node.props.columns : (Array.isArray(node.columns) ? node.columns : [])
+    columns.forEach(column => collectFields(column?.rule || [], fields, context))
+    return
+  }
+  collectFields(node.props?.rule || node.rule || node.children || [], fields, context)
+}
+
+function isArrayRule(node = {}) {
+  return ['group', 'tableform', 'subform', 'array'].includes(normalizeType(node.type || node.component || node.componentKey))
+}
+
+function normalizeType(value) {
+  return String(value || '').replace(/[-_\s]/g, '').toLowerCase()
 }
 
 function resolveField(node) {
@@ -117,8 +151,11 @@ function inferFieldDataType(node) {
 function mergeByField(fields) {
   const merged = new Map()
   fields.forEach((item) => {
-    if (item?.field && !merged.has(item.field))
-      merged.set(item.field, item)
+    const key = item?.scope === 'array'
+      ? `array:${item.arrayKey}:${item.itemField || item.field}`
+      : `main:${item?.field || ''}`
+    if (item?.field && !merged.has(key))
+      merged.set(key, item)
   })
   return Array.from(merged.values())
 }

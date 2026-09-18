@@ -26,3 +26,21 @@
 - 后端最终复核：会话 `30511` 完成，JDK 17 下 `mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am compile -DskipTests` 返回 `BUILD SUCCESS`（32 个 reactor 模块，约 45 秒）。
 - 服务级验证：未启动 Admin/Flow，未修改数据库或运行中流程；真实待办 E2E 留给用户开发环境补验。
 - 工作区：未能提交 commit，`.git/index.lock` 写入被沙箱拒绝；保留全部工作区改动。
+
+## 2026-09-18：路线 B 继续实施
+
+- 状态：用户确认原需求只完成一半，继续实现动态表单 AiForm 数组明细。
+- 根因确认：form-create `group/tableForm` 的值是对象数组，但 `formCreateToAiSchema` 当前会递归摊平内部字段，数组父字段和行操作语义丢失；流程字段目录也把内部字段误识别为普通主字段。
+- 方案：在现有权限协议上增加数组行字段和数组操作权限；前端新增 AiForm 数组运行时与嵌套校验；Flow 服务在完成任务前按当前 BPMN 权限校验数组变量。
+- 兼容边界：路线 A 主子表协议不变；v1/v2 权限继续读取，仅在数组权限存在时写出 v3；动态数组不自动映射业务对象关系子表。
+
+## 2026-09-18：路线 B 实现完成与验证
+
+- Schema/目录：`group`、`tableForm`、旧 `children` 和新 `props.rule/columns` 均保留为数组父字段；前后端目录输出 `scope=array + arrayKey + itemField`，不同数组同名字段不再冲突。
+- 设计器：节点权限协议升级到 v3，增加数组可见、新增、修改、删除和行字段权限；修复自动绑定与 BPMN writer 中空分离权限覆盖 bundle 的问题，v1/v2 继续兼容。
+- 运行时：新增 `AiFormArrayField`，支持列表/卡片/表格式布局、稳定行 key、增删行、空态、字段权限、嵌套校验；已办和历史通过父级只读投影关闭全部编辑。
+- 安全：Flow 服务在 `taskService.complete` 前读取当前节点 schema/权限，对数组父字段、行字段、行操作、对象类型、min/max、必填和历史未知字段执行服务端校验；未显式授权的 v3 行字段默认只读。
+- 前端测试：最终定向集合 10 个文件、68 tests passed；定向 ESLint 0 errors、0 warnings；本地 `vite build` 通过。
+- 后端测试：新增 2 个测试类，但当前主机无 Java Runtime 且无 Maven，未能执行本轮新增后端编译/测试；保留 JDK 17 环境可复跑命令。
+- 服务级验证：未启动 Admin/Flow、未连接数据库，未执行真实待办 E2E。
+- 工作区：保留用户已有 `.DS_Store` 修改，未纳入本需求处理；本轮未创建 Git commit。

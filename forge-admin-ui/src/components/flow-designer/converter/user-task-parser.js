@@ -84,6 +84,7 @@ export function parseUserTaskConfig(taskElement) {
     executionListeners: [],
     formFieldPermissions: [],
     formChildPermissions: [],
+    formArrayPermissions: [],
     responsibilityDescription: '',
     approvalPoints: [],
     ...DEFAULT_PERMISSIONS,
@@ -113,9 +114,12 @@ function applyFormFieldPermissions(el, config) {
       .map(normalizeFormFieldPermission)
       .filter(item => item.field)
     config.formChildPermissions = normalized.children
+    config.formArrayPermissions = normalized.arrays
   }
   catch {
     config.formFieldPermissions = []
+    config.formChildPermissions = []
+    config.formArrayPermissions = []
   }
 }
 
@@ -142,6 +146,11 @@ function normalizeFormFieldPermission(item = {}) {
     normalized.scope = 'child'
     normalized.childKey = String(item.childKey || item.relationKey || '').trim()
     normalized.childField = String(item.childField || field).trim()
+  }
+  else if (String(item.scope || '').toLowerCase() === 'array' || item.arrayKey) {
+    normalized.scope = 'array'
+    normalized.arrayKey = String(item.arrayKey || '').trim()
+    normalized.itemField = String(item.itemField || field).trim()
   }
   return normalized
 }

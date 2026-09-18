@@ -243,6 +243,7 @@ public class BusinessFlowService {
         Long tenantId = resolveTenantId();
         Map<String, AiBusinessFlowInstanceLink> linkByBusinessKey = loadLinksByBusinessKey(tenantId, items);
         Map<String, BusinessRuntimeContext> contextCache = new HashMap<>();
+        Map<String, AiBusinessObject> objectLookupCache = new HashMap<>();
         Map<String, BusinessListGroup> grouped = new LinkedHashMap<>();
         for (FlowBusinessListDisplayItem item : items) {
             if (item == null) {
@@ -255,18 +256,26 @@ public class BusinessFlowService {
             }
             BusinessTaskFormContextQueryDTO itemQuery = new BusinessTaskFormContextQueryDTO();
             itemQuery.setObjectCode(item.getObjectCode());
-            itemQuery.setConfigKey(firstNonBlankValue(
+            String snapshotConfigKey = firstNonBlankValue(
                     extractSnapshotValue(link, "configKey"),
                     extractSnapshotValue(link, "runtimeConfigKey"),
-                    item.getBusinessParams() == null ? null : item.getBusinessParams().get("configKey")));
+                    item.getBusinessParams() == null ? null : item.getBusinessParams().get("configKey"));
+            itemQuery.setConfigKey(snapshotConfigKey);
             itemQuery.setSuiteCode(item.getBusinessParams() == null
                     ? null : textValue(item.getBusinessParams().get("suiteCode")));
-            AiBusinessObject taskObject = resolveTaskBusinessObject(tenantId, itemQuery, link);
-            String objectCode = StringUtils.firstNonBlank(
-                    taskObject == null ? null : taskObject.getObjectCode(),
+            String hintedObjectCode = StringUtils.firstNonBlank(
                     link == null ? null : link.getObjectCode(),
                     StringUtils.trimToNull(item.getObjectCode()),
                     parseBusinessKeyObjectCode(item.getBusinessKey()));
+            AiBusinessObject taskObject = null;
+            if (StringUtils.isBlank(snapshotConfigKey) || StringUtils.isBlank(hintedObjectCode)) {
+                String objectLookupKey = buildBusinessListObjectLookupKey(itemQuery, link, hintedObjectCode);
+                taskObject = objectLookupCache.computeIfAbsent(objectLookupKey,
+                        ignored -> resolveTaskBusinessObject(tenantId, itemQuery, link));
+            }
+            String objectCode = StringUtils.firstNonBlank(
+                    taskObject == null ? null : taskObject.getObjectCode(),
+                    hintedObjectCode);
             Long recordId = link == null || link.getRecordId() == null
                     ? item.getRecordId()
                     : link.getRecordId();
@@ -284,12 +293,13 @@ public class BusinessFlowService {
             }
             String runtimeLookupKey = StringUtils.firstNonBlank(
                     taskObject == null ? null : taskObject.getConfigKey(),
-                    itemQuery.getConfigKey(),
+                    snapshotConfigKey,
                     objectCode);
             BusinessRuntimeContext context = contextCache.computeIfAbsent(runtimeLookupKey,
                     code -> resolveBusinessRuntimeContext(tenantId, code));
             String canonicalObjectCode = StringUtils.firstNonBlank(context.objectCode(), objectCode);
-            grouped.computeIfAbsent(canonicalObjectCode,
+            String groupKey = StringUtils.firstNonBlank(context.configKey(), runtimeLookupKey, canonicalObjectCode);
+            grouped.computeIfAbsent(groupKey,
                             key -> new BusinessListGroup(context, new ArrayList<>()))
                     .runtimes()
                     .add(new BusinessListRuntime(item, canonicalObjectCode, recordId, businessKey));
@@ -694,9 +704,10 @@ public class BusinessFlowService {
      */
     public BusinessTaskFormContextVO getTaskFormContext(BusinessTaskFormContextQueryDTO query) {
         BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        validateTaskAccess(effectiveQuery, false);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false);
-        return buildTaskFormContext(effectiveQuery, runtime);
+        Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
+        validateTaskAccess(effectiveQuery, false, taskFormInfo);
+        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo);
+        return buildTaskFormContext(effectiveQuery, runtime, taskFormInfo);
     }
 
     /**
@@ -707,9 +718,10 @@ public class BusinessFlowService {
      */
     public BusinessTaskFormContextVO getActionableTaskFormContext(BusinessTaskFormContextQueryDTO query) {
         BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        validateTaskAccess(effectiveQuery, true);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, true);
-        return buildTaskFormContext(effectiveQuery, runtime);
+        Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
+        validateTaskAccess(effectiveQuery, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, true, taskFormInfo);
+        return buildTaskFormContext(effectiveQuery, runtime, taskFormInfo);
     }
 
     /**
@@ -744,9 +756,21 @@ public class BusinessFlowService {
         query.setRecordId(dto.getRecordId());
         query.setFormKey(dto.getFormKey());
 
-        validateTaskAccess(query, true);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true);
-        JSONObject nodeForm = resolveTaskNodeForm(runtime, query);
+        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        validateTaskAccess(query, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
+        JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
+        TaskFormSaveResult saveResult = persistTaskFormData(dto, query, runtime, nodeForm);
+        if (saveResult.context() != null) {
+            return saveResult.context();
+        }
+        return buildTaskFormContext(query, saveResult.runtime(), taskFormInfo);
+    }
+
+    private TaskFormSaveResult persistTaskFormData(BusinessTaskFormSaveDTO dto,
+                                                   BusinessTaskFormContextQueryDTO query,
+                                                   TaskFormRuntimeContext runtime,
+                                                   JSONObject nodeForm) {
         if (nodeForm == null || nodeForm.isEmpty()) {
             throw new BusinessException("当前流程节点未配置业务表单权限");
         }
@@ -755,7 +779,7 @@ public class BusinessFlowService {
             List<Map<String, Object>> permissions = normalizeFieldPermissions(nodeForm.get("fieldPermissions"));
             BusinessTaskFormSaveDTO filteredDto = filterSaveDataByPermissions(dto, permissions);
             validateRequiredTaskFields(permissions, filteredDto.getData(), dto.getData() == null ? Map.of() : dto.getData());
-            return saveBusinessCodeFormContext(filteredDto, nodeForm);
+            return new TaskFormSaveResult(runtime, saveBusinessCodeFormContext(filteredDto, nodeForm));
         }
         if (!"BUSINESS_OBJECT_FORM".equals(formMode)) {
             throw new BusinessException("当前节点不是平台可保存的业务表单，不能通过平台保存业务字段");
@@ -812,7 +836,7 @@ public class BusinessFlowService {
             query.setBusinessKey(buildBusinessKey(runtime.objectCode(), createdId));
             TaskFormRuntimeContext createdRuntime = new TaskFormRuntimeContext(
                     runtime.objectCode(), createdId, query.getBusinessKey(), runtime.configKey(), runtime.bindingConfig());
-            return buildTaskFormContext(query, createdRuntime);
+            return new TaskFormSaveResult(createdRuntime, null);
         }
 
         Map<String, Object> taskData = new LinkedHashMap<>();
@@ -822,7 +846,7 @@ public class BusinessFlowService {
         }
         dynamicCrudService.updateTaskEditableData(runtime.configKey(), runtime.recordId(), taskData,
                 writableFields, childPermissions);
-        return buildTaskFormContext(query, runtime);
+        return new TaskFormSaveResult(runtime, null);
     }
 
     /**
@@ -856,8 +880,15 @@ public class BusinessFlowService {
         query.setRecordId(dto.getRecordId());
         query.setFormKey(dto.getFormKey());
 
-        validateTaskAccess(query, true);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true);
+        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        validateTaskAccess(query, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
+        if (dto.getData() != null && !dto.getData().isEmpty()) {
+            JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
+            TaskFormSaveResult saveResult = persistTaskFormData(
+                    toTaskFormSaveDTO(dto, query), query, runtime, nodeForm);
+            runtime = saveResult.runtime();
+        }
         Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
         String userId = String.valueOf(resolveUserId());
 
@@ -883,6 +914,24 @@ public class BusinessFlowService {
         }
 
         return syncBusinessFlowStatusAfterTaskAction(runtime, query, action, variables);
+    }
+
+    private BusinessTaskFormSaveDTO toTaskFormSaveDTO(BusinessTaskActionDTO dto,
+                                                      BusinessTaskFormContextQueryDTO query) {
+        BusinessTaskFormSaveDTO saveDTO = new BusinessTaskFormSaveDTO();
+        saveDTO.setTaskId(query.getTaskId());
+        saveDTO.setBusinessKey(query.getBusinessKey());
+        saveDTO.setProcessInstanceId(query.getProcessInstanceId());
+        saveDTO.setProcessDefKey(query.getProcessDefKey());
+        saveDTO.setTaskDefKey(query.getTaskDefKey());
+        saveDTO.setObjectCode(query.getObjectCode());
+        saveDTO.setObjectId(query.getObjectId());
+        saveDTO.setConfigKey(query.getConfigKey());
+        saveDTO.setSuiteCode(query.getSuiteCode());
+        saveDTO.setRecordId(query.getRecordId());
+        saveDTO.setFormKey(query.getFormKey());
+        saveDTO.setData(dto.getData());
+        return saveDTO;
     }
 
     /**
@@ -1042,8 +1091,9 @@ public class BusinessFlowService {
         query.setProcessDefKey(dto.getProcessDefKey());
         query.setTaskDefKey(dto.getTaskDefKey());
 
-        validateTaskAccess(query, true);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true);
+        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        validateTaskAccess(query, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
         Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
         FlowResult<Void> result = flowClient.approve(
                 query.getTaskId(),
@@ -1087,6 +1137,15 @@ public class BusinessFlowService {
     }
 
     private void validateTaskAccess(BusinessTaskFormContextQueryDTO query, boolean writeRequired) {
+        validateTaskAccess(query, writeRequired, loadTaskFormInfo(query == null ? null : query.getTaskId()));
+    }
+
+    private void validateTaskAccess(BusinessTaskFormContextQueryDTO query,
+                                    boolean writeRequired,
+                                    Map<String, Object> task) {
+        if (query == null) {
+            throw new BusinessException("业务待办表单参数不能为空");
+        }
         String taskId = StringUtils.trimToNull(query.getTaskId());
         if (taskId == null) {
             throw new BusinessException("任务ID不能为空");
@@ -1100,7 +1159,9 @@ public class BusinessFlowService {
             throw new BusinessException("当前登录用户不能为空");
         }
 
-        Map<String, Object> task = loadFlowTaskDetail(taskId);
+        if (task == null || task.isEmpty()) {
+            throw new BusinessException("任务不存在或无权访问");
+        }
         Integer status = readIntegerValue(task.get("status"));
         if (status == null || (status != 0 && status != 1)) {
             throw new BusinessException("当前任务已处理，不能访问待办业务表单");
@@ -1143,22 +1204,6 @@ public class BusinessFlowService {
         }
         if (StringUtils.isBlank(query.getProcessDefKey())) {
             query.setProcessDefKey(StringUtils.trimToNull(textValue(task.get("processDefKey"))));
-        }
-    }
-
-    private Map<String, Object> loadFlowTaskDetail(String taskId) {
-        try {
-            FlowResult<Map<String, Object>> result = flowClient.getTaskDetail(taskId);
-            if (result == null || !result.isSuccess() || result.getData() == null) {
-                String message = result == null ? null : result.getMsg();
-                throw new BusinessException(StringUtils.defaultIfBlank(message, "任务不存在或无权访问"));
-            }
-            return result.getData();
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.warn("业务待办表单任务身份校验失败: taskId={}, error={}", taskId, e.getMessage());
-            throw new BusinessException("任务身份校验失败，请稍后重试");
         }
     }
 
@@ -1297,6 +1342,12 @@ public class BusinessFlowService {
 
     private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
                                                            TaskFormRuntimeContext runtime) {
+        return buildTaskFormContext(query, runtime, Map.of());
+    }
+
+    private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
+                                                           TaskFormRuntimeContext runtime,
+                                                           Map<String, Object> taskFormInfo) {
         BusinessTaskFormContextVO vo = new BusinessTaskFormContextVO();
         vo.setTaskId(StringUtils.trimToNull(query.getTaskId()));
         vo.setBusinessKey(runtime.businessKey());
@@ -1307,13 +1358,16 @@ public class BusinessFlowService {
         vo.setRecordId(runtime.recordId());
         vo.setConfigKey(runtime.configKey());
         vo.setFormType("none");
+        if (taskFormInfo != null && !taskFormInfo.isEmpty()) {
+            vo.setTaskFormInfo(new LinkedHashMap<>(taskFormInfo));
+        }
 
         if (StringUtils.isBlank(runtime.objectCode())) {
             vo.getWarnings().add("未解析到业务对象");
             return vo;
         }
 
-        JSONObject nodeForm = resolveTaskNodeForm(runtime, query);
+        JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
         if (nodeForm == null || nodeForm.isEmpty()) {
             vo.getWarnings().add("当前节点未配置业务表单策略");
             return vo;
@@ -1356,7 +1410,7 @@ public class BusinessFlowService {
                 fieldCatalog, normalizeFieldPermissions(nodeForm.get("fieldPermissions")));
         List<Map<String, Object>> fields = buildTaskFormFields(fieldCatalog, permissions);
         Map<String, Object> recordData = runtime.recordId() == null
-                ? loadTaskVariablesAsRecord(query)
+                ? loadTaskVariablesAsRecord(query, taskFormInfo)
                 : dynamicCrudService.selectById(runtime.configKey(), runtime.recordId());
         Map<String, Object> visibleRecordData = filterVisibleRecordData(recordData, fields);
         List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey(), nodeForm);
@@ -2366,8 +2420,14 @@ public class BusinessFlowService {
     }
 
     private TaskFormRuntimeContext resolveTaskFormRuntimeContext(BusinessTaskFormContextQueryDTO query, boolean strict) {
+        return resolveTaskFormRuntimeContext(query, strict, Map.of());
+    }
+
+    private TaskFormRuntimeContext resolveTaskFormRuntimeContext(BusinessTaskFormContextQueryDTO query,
+                                                                 boolean strict,
+                                                                 Map<String, Object> taskFormInfo) {
         Long tenantId = resolveTenantId();
-        hydrateTaskFormQuery(query);
+        hydrateTaskFormQuery(query, taskFormInfo);
         hydrateApplicationPageFormIdentity(query);
         boolean syntheticTestKey = isSyntheticTestBusinessKey(query.getBusinessKey());
         AiBusinessFlowInstanceLink link = null;
@@ -2424,7 +2484,8 @@ public class BusinessFlowService {
         JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
         ensureBusinessBinding(bindingConfig, tenantId, canonicalObjectCode);
 
-        if (StringUtils.isBlank(configKey) && strict && !isBusinessCodeTaskForm(canonicalObjectCode, bindingConfig, query)) {
+        if (StringUtils.isBlank(configKey) && strict
+                && !isBusinessCodeTaskForm(canonicalObjectCode, bindingConfig, query, taskFormInfo)) {
             throw new BusinessException("业务对象缺少已发布运行配置，无法保存待办业务字段");
         }
         return new TaskFormRuntimeContext(canonicalObjectCode, recordId, businessKey, configKey, bindingConfig);
@@ -2457,6 +2518,11 @@ public class BusinessFlowService {
     }
 
     private void hydrateTaskFormQuery(BusinessTaskFormContextQueryDTO query) {
+        hydrateTaskFormQuery(query, Map.of());
+    }
+
+    private void hydrateTaskFormQuery(BusinessTaskFormContextQueryDTO query,
+                                      Map<String, Object> preloadedTaskFormInfo) {
         if (query == null || StringUtils.isBlank(query.getTaskId())) {
             return;
         }
@@ -2469,7 +2535,9 @@ public class BusinessFlowService {
         if (!missingIdentity) {
             return;
         }
-        Map<String, Object> formInfo = loadTaskFormInfo(query.getTaskId());
+        Map<String, Object> formInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
+                ? loadTaskFormInfo(query.getTaskId())
+                : preloadedTaskFormInfo;
         if (formInfo == null || formInfo.isEmpty()) {
             return;
         }
@@ -2594,7 +2662,14 @@ public class BusinessFlowService {
     }
 
     private Map<String, Object> loadTaskVariablesAsRecord(BusinessTaskFormContextQueryDTO query) {
-        Map<String, Object> formInfo = loadTaskFormInfo(query == null ? null : query.getTaskId());
+        return loadTaskVariablesAsRecord(query, Map.of());
+    }
+
+    private Map<String, Object> loadTaskVariablesAsRecord(BusinessTaskFormContextQueryDTO query,
+                                                           Map<String, Object> preloadedTaskFormInfo) {
+        Map<String, Object> formInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
+                ? loadTaskFormInfo(query == null ? null : query.getTaskId())
+                : preloadedTaskFormInfo;
         Object variables = formInfo.get("variables");
         if (!(variables instanceof Map<?, ?> map)) {
             return new LinkedHashMap<>();
@@ -2654,8 +2729,15 @@ public class BusinessFlowService {
     }
 
     private boolean isBusinessCodeTaskForm(String objectCode, JSONObject bindingConfig, BusinessTaskFormContextQueryDTO query) {
+        return isBusinessCodeTaskForm(objectCode, bindingConfig, query, Map.of());
+    }
+
+    private boolean isBusinessCodeTaskForm(String objectCode,
+                                           JSONObject bindingConfig,
+                                           BusinessTaskFormContextQueryDTO query,
+                                           Map<String, Object> taskFormInfo) {
         JSONObject nodeForm = resolveTaskNodeForm(
-                new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig), query);
+                new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig), query, taskFormInfo);
         return nodeForm != null && "BUSINESS_CODE_FORM".equals(normalizeNodeFormMode(nodeForm.getString("formMode")));
     }
 
@@ -2737,7 +2819,9 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(objectCode) || runtimes == null || runtimes.isEmpty()) {
             return;
         }
-        BusinessObjectVO object = queryBusinessObject(tenantId, objectCode, context == null ? null : context.configKey());
+        BusinessObjectVO object = context.businessObject() == null
+                ? queryBusinessObject(tenantId, objectCode, context.configKey())
+                : toBusinessObjectVO(context.businessObject());
         AiCrudConfig runtimeConfig = context.runtimeConfig();
         AiBusinessDocumentConfig documentConfig = context.documentConfig();
         String configKey = context.configKey();
@@ -2754,6 +2838,22 @@ public class BusinessFlowService {
             return;
         }
         enrichCodeBusinessListGroup(objectCode, objectName, runtimes);
+    }
+
+    private String buildBusinessListObjectLookupKey(BusinessTaskFormContextQueryDTO query,
+                                                    AiBusinessFlowInstanceLink link,
+                                                    String hintedObjectCode) {
+        String suiteObjectKey = query == null
+                || StringUtils.isBlank(query.getSuiteCode())
+                || StringUtils.isBlank(hintedObjectCode)
+                ? null
+                : query.getSuiteCode() + ":" + hintedObjectCode;
+        return StringUtils.firstNonBlank(
+                textValue(extractSnapshotValue(link, "objectId")),
+                query == null ? null : query.getConfigKey(),
+                suiteObjectKey,
+                hintedObjectCode,
+                "unknown");
     }
 
     private void enrichLowcodeBusinessListGroup(String objectCode,
@@ -2960,7 +3060,13 @@ public class BusinessFlowService {
     }
 
     private JSONObject resolveTaskNodeForm(TaskFormRuntimeContext runtime, BusinessTaskFormContextQueryDTO query) {
-        JSONObject flowNodeForm = resolveFlowNodeForm(runtime, query);
+        return resolveTaskNodeForm(runtime, query, Map.of());
+    }
+
+    private JSONObject resolveTaskNodeForm(TaskFormRuntimeContext runtime,
+                                           BusinessTaskFormContextQueryDTO query,
+                                           Map<String, Object> taskFormInfo) {
+        JSONObject flowNodeForm = resolveFlowNodeForm(runtime, query, taskFormInfo);
         if (!flowNodeForm.isEmpty()) {
             return flowNodeForm;
         }
@@ -2968,11 +3074,17 @@ public class BusinessFlowService {
     }
 
     private JSONObject resolveFlowNodeForm(TaskFormRuntimeContext runtime, BusinessTaskFormContextQueryDTO query) {
+        return resolveFlowNodeForm(runtime, query, Map.of());
+    }
+
+    private JSONObject resolveFlowNodeForm(TaskFormRuntimeContext runtime,
+                                           BusinessTaskFormContextQueryDTO query,
+                                           Map<String, Object> taskFormInfo) {
         String objectCode = StringUtils.trimToNull(runtime.objectCode());
         if (StringUtils.isBlank(objectCode)) {
             return new JSONObject();
         }
-        Map<String, Object> formInfo = loadFlowNodeFormInfo(runtime, query);
+        Map<String, Object> formInfo = loadFlowNodeFormInfo(runtime, query, taskFormInfo);
         String taskDefKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(textValue(formInfo.get("taskDefKey"))),
                 StringUtils.trimToNull(query.getTaskDefKey()));
@@ -3130,7 +3242,15 @@ public class BusinessFlowService {
 
     private Map<String, Object> loadFlowNodeFormInfo(TaskFormRuntimeContext runtime,
                                                      BusinessTaskFormContextQueryDTO query) {
-        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        return loadFlowNodeFormInfo(runtime, query, Map.of());
+    }
+
+    private Map<String, Object> loadFlowNodeFormInfo(TaskFormRuntimeContext runtime,
+                                                     BusinessTaskFormContextQueryDTO query,
+                                                     Map<String, Object> preloadedTaskFormInfo) {
+        Map<String, Object> taskFormInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
+                ? loadTaskFormInfo(query.getTaskId())
+                : preloadedTaskFormInfo;
         if (isCompleteFlowNodeFormInfo(taskFormInfo)) {
             return taskFormInfo;
         }
@@ -6880,6 +7000,10 @@ public class BusinessFlowService {
                                        String objectCode,
                                        Long recordId,
                                        String businessKey) {
+    }
+
+    private record TaskFormSaveResult(TaskFormRuntimeContext runtime,
+                                      BusinessTaskFormContextVO context) {
     }
 
     private record TaskFormRuntimeContext(String objectCode,

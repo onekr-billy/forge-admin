@@ -139,11 +139,17 @@ export function writeUserTaskConfig(config) {
     attrs.push(`flowable:formRef="${escapeXmlAttr(formRef)}"`)
   if ((Array.isArray(cfg.formFieldPermissions) && cfg.formFieldPermissions.length)
     || (cfg.formFieldPermissions && typeof cfg.formFieldPermissions === 'object')
-    || (Array.isArray(cfg.formChildPermissions) && cfg.formChildPermissions.length)) {
+    || (Array.isArray(cfg.formChildPermissions) && cfg.formChildPermissions.length)
+    || (Array.isArray(cfg.formArrayPermissions) && cfg.formArrayPermissions.length)) {
     const existing = normalizeFlowFormPermissions(cfg.formFieldPermissions)
     const permissions = serializeFlowFormPermissions(
       existing.fields,
-      Array.isArray(cfg.formChildPermissions) ? cfg.formChildPermissions : existing.children,
+      Array.isArray(cfg.formChildPermissions) && cfg.formChildPermissions.length
+        ? cfg.formChildPermissions
+        : existing.children,
+      Array.isArray(cfg.formArrayPermissions) && cfg.formArrayPermissions.length
+        ? cfg.formArrayPermissions
+        : existing.arrays,
     )
     if ((Array.isArray(permissions) && permissions.length) || (permissions && Object.keys(permissions).length))
       attrs.push(`flowable:formFieldPermissions="${escapeXmlAttr(JSON.stringify(permissions))}"`)

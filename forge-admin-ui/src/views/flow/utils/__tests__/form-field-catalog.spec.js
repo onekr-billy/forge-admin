@@ -79,4 +79,34 @@ describe('buildLocalFormFieldCatalog', () => {
 
     expect(catalog.map(item => item.field)).toEqual(['title'])
   })
+
+  it('保留数组父字段并按 arrayKey 标记行字段', () => {
+    const catalog = buildLocalFormFieldCatalog([
+      {
+        type: 'group',
+        field: 'expenseItems',
+        title: '费用明细',
+        props: {
+          rule: [
+            { type: 'input', field: 'name', title: '名称' },
+            { type: 'inputNumber', field: 'amount', title: '金额' },
+          ],
+        },
+      },
+      {
+        type: 'group',
+        field: 'otherItems',
+        title: '其他明细',
+        props: { rule: [{ type: 'input', field: 'name', title: '名称' }] },
+      },
+    ])
+
+    expect(catalog).toEqual([
+      expect.objectContaining({ field: 'expenseItems', dataType: 'array' }),
+      expect.objectContaining({ scope: 'array', arrayKey: 'expenseItems', itemField: 'name' }),
+      expect.objectContaining({ scope: 'array', arrayKey: 'expenseItems', itemField: 'amount' }),
+      expect.objectContaining({ field: 'otherItems', dataType: 'array' }),
+      expect.objectContaining({ scope: 'array', arrayKey: 'otherItems', itemField: 'name' }),
+    ])
+  })
 })
