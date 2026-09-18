@@ -93,6 +93,10 @@
             <groupId>com.mdframe.forge</groupId>
             <artifactId>forge-plugin-data</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.mdframe.forge</groupId>
+            <artifactId>forge-plugin-print</artifactId>
+        </dependency>
 
         <!-- 编码规则定义本地缓存 -->
         <dependency>

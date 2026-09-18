@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3–M6 未开始。禁止 push。
+> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）已完成阶段验证，M3b 与 M4–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -82,14 +82,14 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 
 | 状态/任务 | 依赖 | 拟涉及文件 | 验收与证据 |
 |---|---|---|---|
-| [ ] T14 插件装配 | D02 | `P/pom.xml`、plugin-parent/pom.xml、generator/pom.xml、admin-server/pom.xml | 单向依赖、Admin 聚合编译、无 Service 环 |
-| [ ] T15 数据结构迁移 | T14 | 新 Flyway 迁移、PJ `entity/{PrintTemplate,PrintTemplateVersion,PrintBinding}.java` | 表/索引可重复；显式 TableLogic；当前版本号唯一 |
-| [ ] T16 审计实体和状态 | T15 | PJ `entity/PrintExecution.java`、`enums/{PrintDesignStatus,PrintExecutionResult,PrintScene}.java` | 状态 getCode/matches；无物理打印成功误报 |
-| [ ] T17 业务枚举与资源种子 | T16 | 新 Flyway 迁移、PJ `enums/PrintSourceType.java`、PT `PrintResourceContractTest.java` | sys_print_* 字典/权限 NOT EXISTS、tenant=1、无全员授权 |
-| [ ] T18 模板读写 Mapper | T15 | PJ `mapper/{PrintTemplateMapper,PrintTemplateVersionMapper}.java`、对应两个 Mapper XML | 查询租户/逻辑删除；CAS；唯一编码和版本约束 |
-| [ ] T19 绑定/执行 Mapper | T16 | PJ `mapper/{PrintBindingMapper,PrintExecutionMapper}.java`、对应两个 Mapper XML | 默认绑定事务范围、关联索引、日志不存业务正文 |
-| [ ] T20 模板 DTO | T18 | PJ `dto/{PrintTemplateCreateDTO,PrintTemplateUpdateDTO,PrintTemplatePublishDTO,PrintTemplateStatusDTO,PrintTemplateCopyDTO}.java` | 固定字段类型、长度/体积/修订号约束 |
-| [ ] T21 协议后端验证 | T20 | PJ `protocol/{PrintTemplateDocument,PrintSection,PrintElement,PrintProtocolValidator}.java`、PT `PrintProtocolValidatorTest.java` | schema 白名单、禁脚本、版本拒绝、前后端协议一致 |
+| [x] T14 插件装配 | D02 | `P/pom.xml`、plugin-parent/pom.xml、BOM/pom.xml、generator/pom.xml、admin-server/pom.xml | 单向依赖、Admin 聚合编译、无 Service 环 |
+| [x] T15 数据结构迁移 | T14 | 新 Flyway 迁移、PJ `entity/{PrintTemplate,PrintTemplateVersion,PrintBinding}.java` | 表/索引可重复；显式 TableLogic；当前版本号唯一 |
+| [x] T16 审计实体和状态 | T15 | PJ `entity/PrintExecution.java`、`enums/{PrintDesignStatus,PrintExecutionResult,PrintScene}.java` | 状态 getCode/matches；无物理打印成功误报 |
+| [x] T17 业务枚举与资源种子 | T16 | 新 Flyway 迁移、PJ `enums/PrintSourceType.java`、PT `PrintResourceContractTest.java` | sys_print_* 字典/权限 NOT EXISTS、tenant=1、无全员授权 |
+| [x] T18 模板读写 Mapper | T15 | PJ `mapper/{PrintTemplateMapper,PrintTemplateVersionMapper}.java`、对应两个 Mapper XML | 查询租户/逻辑删除；CAS；唯一编码和版本约束 |
+| [x] T19 绑定/执行 Mapper | T16 | PJ `mapper/{PrintBindingMapper,PrintExecutionMapper}.java`、对应两个 Mapper XML | 默认绑定事务范围、关联索引、日志不存业务正文 |
+| [x] T20 模板 DTO | T18 | PJ `dto/{PrintTemplateCreateDTO,PrintTemplateUpdateDTO,PrintTemplatePublishDTO,PrintTemplateStatusDTO,PrintTemplateCopyDTO}.java` | 固定字段类型、长度/体积/修订号约束 |
+| [x] T21 协议后端验证 | T20 | PJ `protocol/{PrintTemplateDocument,PrintSection,PrintElement,PrintProtocolValidator}.java`、PT `PrintProtocolValidatorTest.java` | schema 白名单、禁脚本、版本拒绝、前后端协议一致 |
 | [ ] T22 模板服务/API | T21 | PJ `service/{PrintTemplateService,PrintTemplateVersionService}.java`、`controller/PrintTemplateController.java`、`vo/PrintTemplateVO.java` | 草稿/复制/状态/发布，失败不污染已发布版本 |
 | [ ] T23 模板服务行为验证 | T22 | PT `{PrintTemplateServiceTest,PrintTemplateVersionServiceTest,PrintTemplateControllerTest}.java` | 同时编辑冲突、重复发布、被引用删除、停用旧版本 |
 | [ ] T24 绑定服务/API | T19,T22 | PJ `dto/{PrintBindingQueryDTO,PrintBindingSaveDTO}.java`、`service/PrintBindingService.java`、`controller/PrintBindingController.java` | 来源核验、默认唯一、应用归属不能伪造 |
@@ -98,6 +98,19 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 | [ ] T27a 运行查询/事件 DTO | T25 | PJ `dto/{PrintCatalogQueryDTO,PrintAvailableTemplatesDTO,PrintExecutionEventDTO}.java` | 固定字段类型与场景参数校验，不接受任意 Map |
 | [ ] T27b 运行授权验证 | T26 | PT `{PrintPrepareAuthorizationTest,PrintProviderRegistryTest,PrintExecutionServiceTest}.java` | 运行接口无设计权依赖；跨租户/伪造版本/执行事件拒绝 |
 | [ ] T28 模板前端持久化 | T22,T24,T27b,T13 | U `api/print.js`、`views/print/index.vue`、`runtime/PrintTemplatePicker.vue`、`stores/print/printRuntimeStore.js` | 真实 API 草稿保存/版本选择；业务枚举使用字典 |
+
+### M3 实施拆分（编码前补充）
+
+- M3a：T14–T21，插件依赖、迁移/实体/字典权限、Mapper、输入 DTO 和后端协议验证。单独 commit；不新增可被调用但缺少来源授权的 Controller。
+- M3b：T22–T28，模板发布/授权/引用保护、Provider SPI、运行编排与前端持久化。完成后才验收 M3 完整链路。
+- T14 实际包含 BOM dependencyManagement，共 5 个 POM；依赖单向 generator → print → 技术 starter。
+- T17 的权限仅加入现有应用中心菜单下的权限资源，不提前加入尚未完成的模板列表菜单，不自动授予角色。
+- T18/T19 另加 `PrintMapperContractTest`，加载真实 MyBatis XML 并校验租户、逻辑删除、CAS 和锁条件；MySQL 并发/索引仍待真实库验收。
+- T20 另加 `PrintTemplateDtoTest` 验证 Bean Validation 的固定字段边界；schemaJson 是大小受限的协议字符串，由 T21 原样验证后转为明确模型，不能依赖 Jackson 默默忽略未知属性。
+- T21a：`protocol/{PrintTemplateDocument,PrintSection,PrintElement}.java` 明确模型；`PrintProtocolValidatorTest` 和 JSON 合成样例先写后实现。
+- T21b：`protocol/{PrintProtocolValidator,PrintProtocolRules,PrintTableRules,PrintValueRules}.java`，分离入口/几何/表格/绑定样式校验；异常与验证结果作为入口内的静态类型，不新增泛化框架。
+- 默认绑定互斥将在 T24 对同一应用行加锁后执行（锁能力由应用侧 SPI 提供）；M3a Mapper 不声称自身已解决空集合并发插入。
+- 版本 Mapper 不提供 update/delete；最大版本号查询包含已删除历史，避免版本号复用。所有业务查询显式 tenant_id 和 del_flag，审计状态更新绑定创建 actor 并使用期望状态 CAS。
 
 局部顺序明确为 `T25 → T27a → T26 → T27b → T28`，按依赖执行，不按编号机械执行。
 
@@ -151,3 +164,13 @@ R01/R02 为条件化实施检查，不得勾选后绕过拆分；如果需要的
 ## 后续独立提案
 
 H01 审批业务快照/归档与历史重打；H02 批量与静默客户端；H03 复杂表格/合同排版。未纳入本次完成口径。
+
+M3a 验证拆分补充：T18b/T19b 使用 `PrintPersistenceTest.java` + test-scope H2 验证真实 Mapper 的 stale revision、跨租户、删除重建、永久版本号与执行事件 CAS。内存数据库由测试创建/关闭，不连接 Admin 配置。T16 额外包含 PrintDataMode，共 5 个主要文件。
+
+T21b 增加 `PrintProtocolLimits.java` 汇总与前端一致的技术限制，主要文件共 5 个。T21 验证另含 PrintProtocolSmokeTest、PrintProtocolCompatibilityTest、共享 compatibility-cases.json 和 verification/protocol-compatibility.mjs。
+
+### M3a 阶段结果
+
+T14–T21 源码与阶段验证完成：打印插件、4 表/5 个业务字典/4 项权限、实体与 Mapper、模板 DTO、协议模型和白名单校验。72 项 Java 测试通过；29 个共享前端协议样例通过；Admin 46 模块聚合 package 成功。实际文件、命令和审查证据见 execution-log 及 verification/m3a-results.json。
+
+本阶段只有协议校验 Component 与 Mapper，没有提前暴露未授权 Controller。T22–T28 不勾选，M3 完整模板/授权/运行链路仍未完成。H2 验证不能替代 MySQL 方言、真实租户拦截器及运行授权验收；新增迁移没有自动执行。

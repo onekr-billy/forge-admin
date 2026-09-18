@@ -619,3 +619,11 @@ Surefire 的分组参数需要从测试 classpath 选择 JUnit 4、JUnit 5 或 T
 
 **影响范围**：
 所有依赖 `sys_user.user_type` 与 `sys_user_tenant.member_type` 一致性的读写路径（角色数据范围校验、成员类型展示、绑定租户、批量授权）；新增编辑入口时必须成对维护两个字段。
+
+## 冷缓存 Maven 并行构建出现依赖锁获取失败
+
+**发现日期**：2026-09-19
+
+打印插件阶段验证中，Maven 3.9.9 使用临时空依赖缓存，Admin reactor 的 `-T 2 package` 报 `Could not acquire lock(s)`，没有 Java 编译诊断；相同依赖/源码用串行 `package` 重试通过。未进一步确认 resolver 内部哪项锁导致失败，不应直接归因为代码或缺失依赖。
+
+遇到同类构建基础设施错误，保留首次日志，确认没有另一构建共用该缓存后去掉 `-T` 重试；测试仍显式启用 `-Penable-tests` 并检查真实 Tests run 计数。不要修改业务源码或跳过校验来掩盖依赖锁错误。

@@ -177,3 +177,43 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、真实接口/权限/业务流程 E2E、保存 PDF 或物理打印。
 - M2 完成阶段出口，M3–M6 保持未开始；新打印功能还不能宣称已接入真实业务。
 - 提交只包含本阶段打印源码/测试与对应 SDD 文档、合成验证入口；commit 标题为 `[forge-native-print] 完成 M2 原生打印设计器与草稿编辑`，不 push。
+
+## 2026-09-19：M3a 后端持久化与协议验证
+
+### 范围与阶段拆分
+
+- 正确目录 `/Users/mini32g/Desktop/project/forge-admin`，分支 `codex/forge-native-print`；原 `.DS_Store` 不改动、不提交。只做本地 commit，未 push。
+- 执行前复用根 AGENTS、code-copilot/AGENTS、preferences、pitfalls/backend、automated-testing-standard、当前 SDD；应用 `.agents/skills/forge-codegen-crud/SKILL.md` 的实体、SQL、字典权限约定。先补 T14 的 BOM 文件与 T21 拆分，再编码。
+- M3a 单独交付 T14–T21；M3b T22–T28 仍待实现。没有 Controller、Provider 运行接口或真实前端保存，不将本阶段写成全部 M3 完成。
+- POM 单向 generator → print → 技术 starter，Admin 显式聚合；打印插件只有技术依赖，H2 为 test scope。没有 hiprint 源码/依赖或新的生产端打印库。
+- 新迁移 V1.0.168 建四表，V1.0.169 建 5 个 sys_print_* 字典和四项权限；不向角色自动授权、不创建未完成的列表菜单。没有执行迁移，没有修改历史 SQL。
+- Mapper 使用明确租户/逻辑删除条件、CAS 修订号、模板行锁、版本归属验证与审计 actor 限定；版本仅 insert/select，历史最大版本号包含删除记录以保持永久唯一。默认绑定应用行锁和应用快照引用保护留 T24/T22 的服务/SPI 完成。
+- 文档模型与验证器拆成 8 个小类；统一技术限制，UTF-8 1MiB/深度/重复 JSON 键/尾随 JSON/字段与样式白名单/图片来源/几何/表格跨度；输出规范化 JSON 与 SHA-256，不执行表达式。失败诊断不记录原始模板值或 parser 原文。
+
+### RED / GREEN 与修复
+
+- 先写 PrintProtocolValidatorTest/合成模板；在实现缺失时用 Java 17 编译 PrintProtocolSmokeTest，确实报 PrintProtocolValidator 不存在（3 个错误，退出码 1），记录 `/private/tmp/forge-print-protocol-red.log`；再实现验证器。
+- 首次协议编译发现 Java 正则字符串转义错误，修正后独立 javac 通过；未将此轮失败当成功。
+- 冷缓存 Maven 构建启动后才加入 H2 测试依赖，首次 reactor 使用旧 POM 快照，testCompile 缺 org.h2.jdbcx；重新执行完整命令加载当前 POM 后通过。独立 JUnit 先后 34/43 项通过，最终以正式 Maven 的 72 项报告为准。
+- 审查补回发布事务 rollback、错模板版本、绑定修订失效、全局元素/UTF-8/内联图片限制和 29 组共享兼容样例；按 coding-style 用 AST 给所有新增 Java 控制语句补齐大括号，再复跑测试。
+- 首次 Admin `-T 2` 聚合因 Maven resolver `Could not acquire lock(s)` 失败；串行重试成功，不归因为打印源码。没有为工具故障更改产品代码、POM 版本或降低测试断言。
+
+### 实际验证
+
+工具：本机无可用 Java/Maven，临时下载 [Adoptium Java 17](https://adoptium.net/installation/archives) 与 [Apache Maven 3.9.9](https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/)，校验 SHA-256/SHA-512 后使用。JDK 17.0.20.1+1，Maven 3.9.9；均位于 `/private/tmp/forge-print-toolchain`，未安装系统软件或改 shell 配置。初期下载超时后续传完成，备用 Corretto 下载已停止。
+
+后端工作目录 `forge-server`，先 `source /private/tmp/forge-print-toolchain/env.sh`；临时 settings 仅使用 Maven Central 和 `/private/tmp/forge-print-maven-repository` 隔离缓存：
+
+1. `mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='Print*Test' -Dsurefire.failIfNoSpecifiedTests=false`：最终 BUILD SUCCESS，72 tests，0 failures/errors/skipped。日志 `/private/tmp/forge-print-m3-tests-final.log`。
+2. `mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -e -pl forge-admin-server -am package -DskipTests`：串行 46 模块 BUILD SUCCESS，含 Print、Generator、Admin，耗时见结构化证据。日志 `/private/tmp/forge-print-m3-admin-package-serial.log`。Package 按用户偏好跳过测试，不能用它替代第 1 项。
+3. 根目录 Node v24.21.0 执行 `node code-copilot/changes/forge-native-print/verification/protocol-compatibility.mjs`：前端实际协议 bundle 验证 29/29，临时 bundle 已自动清理；未启动端口/浏览器。共享样例来自插件 test/resources/print。
+4. XML/POM 静态解析、迁移版本唯一、Flyway placeholder、Git whitespace 检查通过；提交前再次核对 staged allowlist。
+
+已有 auth 两处 Lombok @Builder 默认值警告保留，未扩大改动。H2 用 MySQL 模式执行同一 DDL，去掉 ENGINE/CHARSET/COLLATE；证明 SQL 边界行为，不代表 MySQL、Flyway 或真实租户拦截器已验收。没有生成或提交包含环境属性的原始测试报告，只提交计数与检查结果。
+
+### 两阶段自审与未执行项
+
+- Spec 合规：T14–T21 与已补拆分匹配；低代码/流程权限、不可变应用引用、prepare/运行权限和前端 API 持久化仍保持未完成，不能通过本阶段绕开这些前置条件。
+- 代码质量：复核 4 表索引、删除墓碑、版本永不复用、DTO 固定字段、SQL 无动态拼接、协议未知字段拒绝、异常隐私和资源边界；审查改动后的 72 项全部通过。
+- 未启动 Admin/Flow/MySQL/Redis、未执行真实数据库迁移或接口 E2E，未重做 M1/M2 浏览器验证、PDF/打印机。没有修改 LawHub，也没有停止其它用户进程。
+- 阶段提交名 `[forge-native-print] 完成 M3a 打印持久化与协议校验`；后续从 T22–T28 开始，不跳到真实业务接入。

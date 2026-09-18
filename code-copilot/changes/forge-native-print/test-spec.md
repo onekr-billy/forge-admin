@@ -134,3 +134,21 @@ node --max-old-space-size=8192 node_modules/vite/bin/vite.js build
 - 本轮只扩大打印模块测试范围；执行目标 ESLint、主项目构建和验证入口构建。
 
 M2 最终结果：10 文件 58 项通过（M1 39 + M2 19）；状态历史、手势缩放/取消/卸载、框选键盘、复制/无效导入/异步保存/存储失败/字段失效/表头合并与合计撤销已覆盖。区块 ID 重名回归先 RED 后 GREEN。ESLint、主项目和合成入口构建通过。浏览器增量及未执行范围见 execution-log 与 verification/browser-results-m2.json。
+
+## 10. M3a 增量验证计划
+
+- 先新增协议行为用例再实现：合成完整模板、零/假/null、大数、顺序无关哈希、未知/重复键、脚本属性、原型路径、外部图片、越界元素、页码上下文、表格合并和尺寸、1MiB/数量限制。
+- DTO 使用 Jakarta Validator 验证必填、ID/revision/枚举/长度；MyBatis 解析真实 XML 检查绑定参数与租户/删除/CAS/行锁条件；迁移静态核对四表审计字段、活动唯一键、版本永久唯一、字典与权限防重复、无自动角色授予。
+- 后端目标单测必须启用 -Penable-tests；编译打印模块并尝试 Admin 聚合 package -DskipTests。不启动 Admin/Flow/MySQL/Redis，不实跑迁移，真实事务竞争/租户拦截/DDL 留用户后续验收。
+- 本机没有 Java/Maven，临时下载官方发行版并校验摘要，仅 process-local JAVA_HOME/PATH 与临时 Maven 缓存，不修改系统或提交工具二进制。
+
+M3a 增强：H2 MySQL 模式加载同一 V1.0.168 DDL，仅去除 ENGINE/CHARSET/COLLATE 后运行 Mapper 行为测试；不会据此宣称 MySQL Flyway 已执行或已验证租户拦截器。
+
+### M3a 最终结果
+
+- Java：7 个测试类、72 项、0 失败/错误/跳过；包含 29 项跨语言共享协议样例、5 项 H2 Mapper 行为测试。使用根 enable-tests profile，确认 Surefire 实际运行。
+- 前端兼容：`source ~/.nvm/nvm.sh && nvm use v24.21.0 && node code-copilot/changes/forge-native-print/verification/protocol-compatibility.mjs`，29/29。服务端额外拒绝未使用属性中的非法格式，与设计中严格边界一致。
+- 构建：Java 17，打印模块及依赖测试成功；`mvn -pl forge-admin-server -am package -DskipTests` 串行聚合 46 模块通过（本机实际命令另有临时 Maven settings，见 execution-log）。
+- 静态：4 个 Mapper XML 与 5 个 POM 解析、Flyway 版本唯一性、V1.0.168/V1.0.169 无业务占位符、空白检查通过。
+- 不扩大前端页面回归：本轮未改任何 UI 源码，独立构建实际前端协议模块验证兼容；M1/M2 页面和 58 项既有测试没有重跑，沿用上一阶段证据。
+- 未执行真实 MySQL/Flyway、Admin/Flow 启动、API/低代码/流程 E2E、浏览器打印、PDF 或物理打印。详见 verification/m3a-results.json。

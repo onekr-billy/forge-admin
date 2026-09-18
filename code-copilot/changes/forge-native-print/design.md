@@ -185,3 +185,14 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 - Canvas/SelectionOverlay/CanvasElement 与 drag/resize/keyboard 拆分；Palette/FieldTree/SectionList 提供物料、受控字段、顺序编辑；六个小属性面板含表头横向合并拆分与合计绑定。
 - `draftStorage.js` 校验导入体积和协议、只存模板。`PrintDesigner` 支持注入 `saveDraft(document)`，M3 接口就绪后替换默认本地适配器。`views/print/designer.vue` 提供页面组件与路由离开保护；菜单种子留给 M3。
 - 当前一个页面只挂载一个 PrintDesigner；验证入口专用独立 Pinia。每次加载模板清空旧选择/历史/剪贴板，保存通过 generation 避免异步回调污染后来加载的文档。
+
+## M3a 落位细化（2026-09-19，编码前）
+
+- Flyway 使用当前下一个版本 V1.0.168（四张表）与 V1.0.169（字典/权限）。不执行真实迁移；不覆盖任何历史脚本。
+- 模板来源保留 page_id、form_key、object_code 及 source_type/source_key；source_key 长度 191，由后续授权 Provider 规范化，创建 DTO 不接受客户端 source_key 或 tenant/actor/status。
+- 来源类型 LOWCODE/CODE；场景 LIST/DETAIL/FLOW_TODO/FLOW_DONE/FLOW_STARTED；数据模式 CURRENT。均有模块枚举和 sys_print_* 字典。
+- template_code 长度 80，模板名 100，revision 使用 Long；启停也递增 draft_revision，避免停用与发布并发覆盖。版本仅可插入/读取。
+- 执行表补 application_id、template_id、source_key、scene、task_id，方便归属校验和索引；不保存正文、请求快照、文件 URL 或异常堆栈。result 仅 PREPARED/DIALOG_OPENED/FAILED，page_count 最大 50。
+- 协议服务直接解析 schemaJson，限制 UTF-8 1MiB、JSON 深度 64、重复键/尾随内容，按白名单拒绝未知字段并输出 path/code/message。仅返回规范化 JSON、SHA-256 与类型化文档，不执行模板内容。哈希对对象键排序、数字规范化，数组顺序保持；不用于跨语言签名。
+- 明确模型使用 Java 17 record，绑定常量使用 JsonNode 保留 null/false/0，不做弱类型强转。服务端严格检查所有已提供属性（包括当前 kind/type 未使用的属性），避免隐藏无效内容；前端正常生成的模板不受影响。
+- 迁移只增加表、字典和四项权限，无授权放开。回滚先移除应用依赖与停用权限；已有模板/版本/审计数据保留，禁止自动 drop 或覆盖。实际数据库恢复由备份和人工脚本执行。
