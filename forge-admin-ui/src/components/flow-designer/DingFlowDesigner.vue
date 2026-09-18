@@ -25,6 +25,7 @@ import {
 import { useFlowDesigner, useFlowHistory } from './composables/index.js'
 import { convertBpmnToJson, convertJsonToBpmn } from './converter/index.js'
 import { NodeConfigDrawer } from './panel/index.js'
+import { normalizeFlowFieldCatalog } from '@/utils/flow-field-permissions'
 
 const props = defineProps({
   xml: { type: String, default: '' },
@@ -256,21 +257,29 @@ function buildBusinessFormRef(asset) {
 
 function buildDefaultFieldPermissions(fieldCatalog = []) {
   const seen = new Set()
-  return (Array.isArray(fieldCatalog) ? fieldCatalog : [])
+  return normalizeFlowFieldCatalog(fieldCatalog)
     .map((item) => {
-      const field = String(item?.field || item?.fieldCode || item?.fieldName || item?.name || item?.key || '').trim()
+      const field = String(item?.field || '').trim()
       if (!field || seen.has(field))
         return null
-      seen.add(field)
+      const permissionKey = item.scope === 'child'
+        ? `child:${item.childKey}:${item.childField || field}`
+        : `main:${field}`
+      if (seen.has(permissionKey))
+        return null
+      seen.add(permissionKey)
       const required = item?.required === true || item?.sourceRequired === true
       return {
         field,
         fieldCode: field,
         label: String(item?.label || item?.title || item?.fieldName || field).trim(),
+        ...(item.scope === 'child'
+          ? { scope: 'child', childKey: item.childKey, childField: item.childField || field }
+          : {}),
         visible: true,
-        editable: true,
+        editable: item.scope === 'main',
         readable: true,
-        writable: true,
+        writable: item.scope === 'main',
         required,
       }
     })

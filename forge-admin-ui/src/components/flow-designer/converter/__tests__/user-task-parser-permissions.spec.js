@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseUserTaskConfig } from '../user-task-parser.js'
+import { writeUserTaskConfig } from '../user-task-writer.js'
 import { findElementsByLocalName, parseBpmnXml } from '../xml-utils.js'
 
 function getTask(xml, id) {
@@ -155,5 +156,38 @@ describe('parseUserTaskConfig - 表单 / 优先级 / dueDate', () => {
     expect(cfg.dueDateDays).toBe(0)
     expect(cfg.dueDateHours).toBe(0)
     expect(cfg.overdueReminderEnabled).toBe(false)
+  })
+
+  it('主子表 v2 权限能解析并写回，保留子表行操作权限', () => {
+    const taskXml = [
+      '<bpmn:userTask id="T_detail"',
+      ' flowable:formMode="BUSINESS_OBJECT_FORM"',
+      ' flowable:formFieldPermissions=\'{"version":2,"fields":[{"scope":"main","field":"amount","readable":true,"writable":true},{"scope":"child","childKey":"items","childField":"quantity","readable":true,"writable":true}],"children":[{"childKey":"items","readable":true,"allowCreate":true,"allowUpdate":true,"allowDelete":false}]}\'/>',
+    ].join('')
+    const xml = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn"><bpmn:process id="P">${taskXml}</bpmn:process></bpmn:definitions>`
+    const parsed = parseUserTaskConfig(getTask(xml, 'T_detail'))
+
+    expect(parsed.formFieldPermissions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'amount', writable: true }),
+      expect.objectContaining({ scope: 'child', childKey: 'items', childField: 'quantity', writable: true }),
+    ]))
+    expect(parsed.formChildPermissions).toEqual([
+      expect.objectContaining({ childKey: 'items', allowCreate: true, allowUpdate: true, allowDelete: false }),
+    ])
+
+    const written = writeUserTaskConfig(parsed)
+    const roundTripXml = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn"><bpmn:process id="P"><bpmn:userTask id="T_detail" ${written.attrs}/></bpmn:process></bpmn:definitions>`
+    const roundTrip = parseUserTaskConfig(getTask(roundTripXml, 'T_detail'))
+    expect(roundTrip.formChildPermissions[0]).toMatchObject({
+      childKey: 'items',
+      allowCreate: true,
+      allowUpdate: true,
+      allowDelete: false,
+    })
+    expect(roundTrip.formFieldPermissions.find(item => item.scope === 'child')).toMatchObject({
+      childKey: 'items',
+      childField: 'quantity',
+      writable: true,
+    })
   })
 })

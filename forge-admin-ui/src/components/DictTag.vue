@@ -44,6 +44,7 @@
   >
     {{ currentDict.label }}
   </n-tag>
+  <span v-else-if="loading" aria-label="字典加载中">—</span>
   <!-- 没有找到字典项，显示原始值 -->
   <span v-else>{{ displayFallback }}</span>
 </template>
@@ -51,6 +52,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { getDictData } from '@/composables/useDict'
+import { useDictStore } from '@/stores/system/dictStore'
 
 const props = defineProps({
   // 字典选项列表（优先使用）
@@ -117,7 +119,9 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-const dictList = ref([])
+const dictStore = useDictStore()
+const dictList = computed(() => dictStore.dictCache.get(props.dictType) || [])
+const loading = ref(false)
 
 const resolvedValue = computed(() => {
   if (props.value !== null && props.value !== undefined && props.value !== '')
@@ -203,25 +207,30 @@ const shouldShowAsText = computed(() => {
   return !listClass || listClass === 'default'
 })
 
-// 加载字典数据
-async function loadDict() {
-  if (props.options) {
-    // 如果传入了 options，直接使用
+// 切换类型或从 options 切回自加载时重新请求，旧请求不影响当前加载状态。
+watch([() => props.dictType, () => Boolean(props.options)], async ([dictType, hasOptions], _, onCleanup) => {
+  let active = true
+  onCleanup(() => {
+    active = false
+  })
+  loading.value = false
+
+  if (hasOptions) {
     return
   }
-
-  if (!props.dictType) {
+  if (!dictType) {
     console.warn('DictTag: 未指定 options 或 dictType')
     return
   }
 
-  dictList.value = await getDictData(props.dictType)
-}
-
-// 监听 dictType 变化
-watch(() => props.dictType, () => {
-  if (!props.options) {
-    loadDict()
+  loading.value = true
+  try {
+    await getDictData(dictType)
+  }
+  finally {
+    if (active) {
+      loading.value = false
+    }
   }
 }, { immediate: true })
 

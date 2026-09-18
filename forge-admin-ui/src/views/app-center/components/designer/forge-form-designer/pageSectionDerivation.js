@@ -6,7 +6,20 @@ const SECTION_CONTAINER_KEYS = ['card', 'elCard', 'collapse', 'elCollapse']
 const SUB_TABLE_COMPONENT_KEY = 'subTable'
 const DEFAULT_SECTION_ID = 'section_default'
 // 分区骨架键：派生时重新计算；其余键（visibleInModes、collapsible 等）按 sectionId 从存量分区继承。
-const SECTION_SKELETON_KEYS = new Set(['sectionId', 'sectionType', 'title', 'fields', 'relationKey', 'displayMode'])
+const SECTION_SKELETON_KEYS = new Set([
+  'sectionId',
+  'sectionType',
+  'title',
+  'fields',
+  'relationKey',
+  'displayMode',
+  'modelCode',
+  'allowCreate',
+  'allowSelectExisting',
+  'selectorMultiple',
+  'selectorDisplayFields',
+  'selectorFilterFields',
+])
 
 /**
  * 从表单布局组件树派生 pageSections：
@@ -23,13 +36,24 @@ export function derivePageSectionsFromLayout(components = [], legacySections = [
 
   visitSectionScope(Array.isArray(components) ? components : [], (component) => {
     if (component.componentKey === SUB_TABLE_COMPONENT_KEY) {
-      childTableSections.push(buildSection({
+      const subTableProps = component.props || {}
+      const sectionSkeleton = {
         sectionId: resolveChildTableSectionId(component, legacyList),
         sectionType: 'child_table',
-        title: component.props?.header || component.label || '关联子表',
-        relationKey: String(component.props?.relationKey || ''),
-        displayMode: component.props?.displayMode || 'inline_grid',
-      }, legacyList))
+        title: subTableProps.header || component.label || '关联子表',
+        relationKey: String(subTableProps.relationKey || ''),
+        displayMode: subTableProps.displayMode || 'inline_grid',
+      }
+      const optionalKeys = ['modelCode', 'allowCreate', 'allowSelectExisting', 'selectorMultiple']
+      optionalKeys.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(subTableProps, key))
+          sectionSkeleton[key] = key === 'modelCode' ? subTableProps[key] || '' : subTableProps[key]
+      })
+      if (Object.prototype.hasOwnProperty.call(subTableProps, 'selectorDisplayFields'))
+        sectionSkeleton.selectorDisplayFields = Array.isArray(subTableProps.selectorDisplayFields) ? subTableProps.selectorDisplayFields : []
+      if (Object.prototype.hasOwnProperty.call(subTableProps, 'selectorFilterFields'))
+        sectionSkeleton.selectorFilterFields = Array.isArray(subTableProps.selectorFilterFields) ? subTableProps.selectorFilterFields : []
+      childTableSections.push(buildSection(sectionSkeleton, legacyList))
       return false
     }
     if (SECTION_CONTAINER_KEYS.includes(component.componentKey)) {

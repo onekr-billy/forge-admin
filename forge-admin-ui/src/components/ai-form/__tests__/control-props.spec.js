@@ -15,4 +15,13 @@ describe('resolveControlProps', () => {
       maxlength: 64,
     })
   })
+
+  it('drops kebab-case update listeners from schema props as well', () => {
+    expect(resolveControlProps({
+      'on-update:value': () => {},
+      'on-update:model-value': () => {},
+      'on-update:label-value': () => {},
+      'clearable': true,
+    })).toEqual({ clearable: true })
+  })
 })

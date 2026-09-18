@@ -154,7 +154,12 @@ const selectorDialogShow = ref(false)
 const fieldsDialogShow = ref(false)
 let fieldRequestId = 0
 
-const localProps = computed(() => props.component.props || {})
+const localProps = computed(() => {
+  const selected = designerStore.selectedComponent
+  if (selected?.id === props.component.id)
+    return selected.props || {}
+  return props.component.props || {}
+})
 
 const objectOptions = computed(() => {
   const currentCode = designerStore.objectCode || ''
@@ -318,17 +323,11 @@ function handleObjectChange(objectCode) {
     selectorFilterFields: [],
   })
 
-  syncBridge({
-    action: 'update',
-    config: buildConfig(objectCode, relKey, header, localProps.value.displayMode, []),
-  })
-
   loadFields(objectCode)
 }
 
 function handleRelationChange(relationKey) {
   patchProps({ relationKey })
-  syncCurrentConfig()
 }
 
 /** 显示字段弹窗确定回调 */
@@ -338,7 +337,6 @@ function handleFieldsConfirm(codes) {
     return { fieldCode: code, fieldLabel: f ? fl(f) : code }
   })
   patchProps({ columns: cols })
-  syncCurrentConfig()
 }
 
 /** 选择器设置弹窗确定回调 */
@@ -351,30 +349,35 @@ function handleSelectorConfirm(config) {
 }
 
 function patchProps(patch) {
+  const nextProps = {
+    ...localProps.value,
+    ...patch,
+  }
   designerStore.updateComponent(props.component.id, { props: patch })
+  syncCurrentConfig(nextProps)
 }
 
-function syncCurrentConfig() {
-  const p = localProps.value
+function syncCurrentConfig(overrides = {}) {
+  const p = {
+    ...localProps.value,
+    ...overrides,
+  }
   syncBridge({
     action: 'update',
-    config: buildConfig(
-      p.modelCode,
-      p.relationKey,
-      p.header,
-      p.displayMode,
-      Array.isArray(p.columns) ? p.columns : [],
-      p.allowCreate,
-      p.allowSelectExisting,
-    ),
+    config: buildConfig(p),
   })
 }
 
-function buildConfig(modelCode, relationKey, title, displayMode, columns, allowCreate, allowSelectExisting) {
-  const matched = matchedRelations.value.find(r => resolveRelKey(r) === relationKey)
-    || matchedRelations.value[0]
+function buildConfig(source = {}) {
+  const modelCode = source.modelCode || ''
+  const relationKey = source.relationKey || modelCode
+  const relationsForObject = relations.value.filter(r =>
+    r.targetObjectCode === modelCode || r.sourceObjectCode === modelCode,
+  )
+  const matched = relationsForObject.find(r => resolveRelKey(r) === relationKey)
+    || relationsForObject[0]
     || null
-  const fields = (columns || []).map(c => ({
+  const fields = (Array.isArray(source.columns) ? source.columns : []).map(c => ({
     fieldCode: c.fieldCode || c,
     fieldName: c.fieldLabel || c.fieldCode || c,
     label: c.fieldLabel || c.fieldCode || c,
@@ -382,14 +385,17 @@ function buildConfig(modelCode, relationKey, title, displayMode, columns, allowC
   return {
     relation: matched,
     relationKey: relationKey || modelCode || '',
-    title: title || '关联子表',
-    displayMode: displayMode || 'inline_grid',
+    title: source.header || '关联子表',
+    displayMode: source.displayMode || 'inline_grid',
     modelCode: modelCode || '',
     modelName: objectCache.value.find(o => o.objectCode === modelCode)?.objectName || modelCode || '',
     tableName: '',
     fields,
-    allowCreate: allowCreate !== false,
-    allowSelectExisting: allowSelectExisting === true,
+    allowCreate: source.allowCreate !== false,
+    allowSelectExisting: source.allowSelectExisting === true,
+    selectorMultiple: source.selectorMultiple !== false,
+    selectorDisplayFields: Array.isArray(source.selectorDisplayFields) ? source.selectorDisplayFields : [],
+    selectorFilterFields: Array.isArray(source.selectorFilterFields) ? source.selectorFilterFields : [],
   }
 }
 

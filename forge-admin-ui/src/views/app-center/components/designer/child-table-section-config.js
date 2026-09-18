@@ -14,6 +14,24 @@ export function upsertChildTableSectionConfig(source = {}, input = {}) {
   const modelRefs = Array.isArray(pageSchema.modelRefs) ? pageSchema.modelRefs : []
   const modelRefIndex = modelRefs.findIndex(ref => matchesRelation(ref, config))
   const currentModelRef = modelRefIndex >= 0 ? modelRefs[modelRefIndex] : {}
+  const currentModelRefProps = currentModelRef.props || {}
+  const nextModelRefProps = {
+    ...currentModelRefProps,
+    relationKey: config.relationKey,
+    relationName: config.title,
+    tabTitle: config.title,
+    saveMode: 'CASCADE',
+    inlineCreateEnabled: config.allowCreate !== false,
+    inlineEditEnabled: true,
+    showInDetail: true,
+    allowSelectExisting: config.allowSelectExisting === true,
+  }
+  if (config.allowSelectExisting === true) {
+    nextModelRefProps.recordSelector = buildChildRecordSelector(config, currentModelRefProps.recordSelector)
+  }
+  else {
+    delete nextModelRefProps.recordSelector
+  }
   const nextModelRef = {
     ...currentModelRef,
     modelCode: config.modelCode,
@@ -22,16 +40,7 @@ export function upsertChildTableSectionConfig(source = {}, input = {}) {
     primary: false,
     relations: resolveModelRefRelations(currentModelRef, config),
     fields: config.fields.map(field => normalizeModelRefField(field, config)),
-    props: {
-      ...(currentModelRef.props || {}),
-      relationKey: config.relationKey,
-      relationName: config.title,
-      tabTitle: config.title,
-      saveMode: 'CASCADE',
-      inlineCreateEnabled: true,
-      inlineEditEnabled: true,
-      showInDetail: true,
-    },
+    props: nextModelRefProps,
   }
   pageSchema.modelRefs = upsertAt(modelRefs, modelRefIndex, nextModelRef)
 
@@ -54,8 +63,19 @@ export function upsertChildTableSectionConfig(source = {}, input = {}) {
     showInCreate: true,
     showInEdit: true,
     showInDetail: true,
-    inlineCreateEnabled: true,
+    inlineCreateEnabled: config.allowCreate !== false,
     inlineEditEnabled: true,
+    allowCreate: config.allowCreate !== false,
+    allowSelectExisting: config.allowSelectExisting === true,
+    selectorMultiple: Object.prototype.hasOwnProperty.call(config, 'selectorMultiple')
+      ? config.selectorMultiple !== false
+      : currentChild.selectorMultiple !== false,
+    selectorDisplayFields: Array.isArray(config.selectorDisplayFields)
+      ? config.selectorDisplayFields
+      : (Array.isArray(currentChild.selectorDisplayFields) ? currentChild.selectorDisplayFields : []),
+    selectorFilterFields: Array.isArray(config.selectorFilterFields)
+      ? config.selectorFilterFields
+      : (Array.isArray(currentChild.selectorFilterFields) ? currentChild.selectorFilterFields : []),
     rowActions: Array.isArray(currentChild.rowActions) ? currentChild.rowActions : [],
     toolbarActions: Array.isArray(currentChild.toolbarActions) ? currentChild.toolbarActions : [],
   }
@@ -80,6 +100,18 @@ export function upsertChildTableSectionConfig(source = {}, input = {}) {
     title: config.title,
     displayMode: config.displayMode,
     relationKey: config.relationKey,
+    modelCode: config.modelCode,
+    allowCreate: config.allowCreate !== false,
+    allowSelectExisting: config.allowSelectExisting === true,
+    selectorMultiple: Object.prototype.hasOwnProperty.call(config, 'selectorMultiple')
+      ? config.selectorMultiple !== false
+      : currentSection.selectorMultiple !== false,
+    selectorDisplayFields: Array.isArray(config.selectorDisplayFields)
+      ? config.selectorDisplayFields
+      : (Array.isArray(currentSection.selectorDisplayFields) ? currentSection.selectorDisplayFields : []),
+    selectorFilterFields: Array.isArray(config.selectorFilterFields)
+      ? config.selectorFilterFields
+      : (Array.isArray(currentSection.selectorFilterFields) ? currentSection.selectorFilterFields : []),
     visibleInModes: Array.isArray(currentSection.visibleInModes)
       ? currentSection.visibleInModes
       : ['create', 'edit', 'detail'],
@@ -118,6 +150,13 @@ export function resolveChildTableSectionEditConfig(source = {}, section = {}) {
     modelName: firstNonBlank(child.modelName, modelRef.modelName),
     tableName: firstNonBlank(child.tableName, modelRef.tableName),
     fieldCodes: fields.map(resolveFieldCode).filter(Boolean),
+    allowCreate: child.allowCreate !== undefined
+      ? child.allowCreate !== false
+      : child.inlineCreateEnabled !== false,
+    allowSelectExisting: child.allowSelectExisting === true || section.allowSelectExisting === true,
+    selectorMultiple: child.selectorMultiple !== false,
+    selectorDisplayFields: Array.isArray(child.selectorDisplayFields) ? child.selectorDisplayFields : [],
+    selectorFilterFields: Array.isArray(child.selectorFilterFields) ? child.selectorFilterFields : [],
   }
 }
 
@@ -256,6 +295,37 @@ function normalizeRuntimeChildField(field = {}) {
     type: componentType,
     componentType,
   }
+}
+
+function buildChildRecordSelector(config = {}, previous = {}) {
+  const current = previous && typeof previous === 'object' ? previous : {}
+  const displayFields = Array.isArray(config.selectorDisplayFields)
+    ? config.selectorDisplayFields
+    : (Array.isArray(current.displayFields) ? current.displayFields : [])
+  const filterFields = Array.isArray(config.selectorFilterFields)
+    ? config.selectorFilterFields
+    : (Array.isArray(current.filterFields) ? current.filterFields : [])
+  const selector = {
+    ...current,
+    objectCode: config.modelCode,
+    businessObjectCode: config.modelCode,
+    multiple: Object.prototype.hasOwnProperty.call(config, 'selectorMultiple')
+      ? config.selectorMultiple !== false
+      : current.multiple !== false,
+  }
+  if (displayFields.length) {
+    selector.displayFields = displayFields
+    selector.keywordFields = displayFields
+  }
+  else {
+    delete selector.displayFields
+    delete selector.keywordFields
+  }
+  if (filterFields.length)
+    selector.filterFields = filterFields
+  else
+    delete selector.filterFields
+  return selector
 }
 
 function matchesRelation(item = {}, config = {}) {

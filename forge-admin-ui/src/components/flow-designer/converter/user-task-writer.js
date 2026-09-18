@@ -13,6 +13,7 @@
  * 调用方负责把 attribute 拼到开标签上、子元素拼到 <userTask> ... </userTask> 之间。
  */
 
+import { normalizeFlowFormPermissions, serializeFlowFormPermissions } from '@/utils/flow-field-permissions'
 import { buildCompletionExpression } from './completion-condition.js'
 import { escapeXmlAttr, escapeXmlText } from './xml-escape.js'
 
@@ -136,11 +137,15 @@ export function writeUserTaskConfig(config) {
   const formRef = stringifyFormRef(cfg.formRef)
   if (formRef)
     attrs.push(`flowable:formRef="${escapeXmlAttr(formRef)}"`)
-  if (Array.isArray(cfg.formFieldPermissions) && cfg.formFieldPermissions.length) {
-    const permissions = cfg.formFieldPermissions
-      .map(normalizeFormFieldPermission)
-      .filter(item => item.field)
-    if (permissions.length)
+  if ((Array.isArray(cfg.formFieldPermissions) && cfg.formFieldPermissions.length)
+    || (cfg.formFieldPermissions && typeof cfg.formFieldPermissions === 'object')
+    || (Array.isArray(cfg.formChildPermissions) && cfg.formChildPermissions.length)) {
+    const existing = normalizeFlowFormPermissions(cfg.formFieldPermissions)
+    const permissions = serializeFlowFormPermissions(
+      existing.fields,
+      Array.isArray(cfg.formChildPermissions) ? cfg.formChildPermissions : existing.children,
+    )
+    if ((Array.isArray(permissions) && permissions.length) || (permissions && Object.keys(permissions).length))
       attrs.push(`flowable:formFieldPermissions="${escapeXmlAttr(JSON.stringify(permissions))}"`)
   }
 
@@ -233,37 +238,6 @@ function normalizeFixedAssigneeUserId(value) {
 function extractLegacyFixedAssigneeUserId(value) {
   const match = String(value || '').match(/^\$\{user_(\d+)\}$/)
   return match?.[1] || ''
-}
-
-function normalizeFormFieldPermission(item = {}) {
-  const field = String(item.field || item.fieldCode || item.code || '').trim()
-  const readable = readBoolean(item.readable, readBoolean(item.visible, true))
-  const writable = readable && readBoolean(item.writable, readBoolean(item.editable, true))
-  return {
-    field,
-    fieldCode: field,
-    label: String(item.label || field || '').trim(),
-    visible: readable,
-    editable: writable,
-    readable,
-    writable,
-    required: writable && item.required === true,
-  }
-}
-
-function readBoolean(value, defaultValue) {
-  if (value === undefined || value === null || value === '')
-    return defaultValue
-  if (typeof value === 'boolean')
-    return value
-  if (typeof value === 'number')
-    return value !== 0
-  const text = String(value).trim().toLowerCase()
-  if (['true', '1', 'yes'].includes(text))
-    return true
-  if (['false', '0', 'no'].includes(text))
-    return false
-  return defaultValue
 }
 
 function buildDueDateDuration(cfg) {

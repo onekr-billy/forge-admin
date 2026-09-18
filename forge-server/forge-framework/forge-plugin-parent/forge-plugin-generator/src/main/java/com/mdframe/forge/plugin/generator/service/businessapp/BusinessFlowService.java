@@ -770,24 +770,34 @@ public class BusinessFlowService {
             List<Map<String, Object>> fieldCatalog = resolveBusinessTaskCrudPageFields(runtime.configKey(), formKey, formSchema);
             permissions = normalizeBusinessObjectTaskPermissions(fieldCatalog, permissions);
         }
+        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey(), nodeForm);
+        Map<String, DynamicCrudService.TaskChildPermission> childPermissions = buildTaskChildPermissions(childrenConfig);
         Set<String> writableFields = collectPermissionFields(permissions, "writable", true);
-        if (writableFields.isEmpty()) {
+        boolean hasWritableChildren = childPermissions.values().stream()
+                .anyMatch(permission -> !permission.writableFields().isEmpty()
+                        || permission.allowCreate() || permission.allowUpdate() || permission.allowDelete());
+        if (writableFields.isEmpty() && !hasWritableChildren) {
             throw new BusinessException("当前节点没有可编辑业务字段");
         }
 
         Map<String, Object> input = dto.getData() == null ? Map.of() : dto.getData();
         Map<String, Object> updateData = new LinkedHashMap<>();
+        Map<String, Object> mainInput = extractTaskMainPayload(input);
+        Map<String, Object> childrenInput = extractTaskChildrenPayload(input);
         for (String field : writableFields) {
-            if (input.containsKey(field)) {
-                updateData.put(field, input.get(field));
+            if (mainInput.containsKey(field)) {
+                updateData.put(field, mainInput.get(field));
             }
         }
-        validateRequiredTaskFields(permissions, updateData, input);
-        if (updateData.isEmpty()) {
+        validateRequiredTaskFields(permissions, updateData, mainInput);
+        if (updateData.isEmpty() && childrenInput.isEmpty()) {
             throw new BusinessException("未提交可编辑业务字段");
         }
 
         if (runtime.recordId() == null) {
+            if (!childrenInput.isEmpty()) {
+                throw new BusinessException("业务待办尚未关联主记录，暂不支持新增子表明细");
+            }
             if (StringUtils.isBlank(runtime.configKey())) {
                 throw new BusinessException("业务对象缺少已发布运行配置，无法保存业务字段");
             }
@@ -805,7 +815,13 @@ public class BusinessFlowService {
             return buildTaskFormContext(query, createdRuntime);
         }
 
-        dynamicCrudService.updateInternalFieldsById(runtime.configKey(), runtime.recordId(), updateData);
+        Map<String, Object> taskData = new LinkedHashMap<>();
+        taskData.put("main", updateData);
+        if (!childrenInput.isEmpty()) {
+            taskData.put("children", childrenInput);
+        }
+        dynamicCrudService.updateTaskEditableData(runtime.configKey(), runtime.recordId(), taskData,
+                writableFields, childPermissions);
         return buildTaskFormContext(query, runtime);
     }
 
@@ -1343,7 +1359,7 @@ public class BusinessFlowService {
                 ? loadTaskVariablesAsRecord(query)
                 : dynamicCrudService.selectById(runtime.configKey(), runtime.recordId());
         Map<String, Object> visibleRecordData = filterVisibleRecordData(recordData, fields);
-        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey());
+        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey(), nodeForm);
         logBusinessTaskChildren("raw", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
         filterVisibleRecordChildren(visibleRecordData, childrenConfig);
         logBusinessTaskChildren("filtered", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
@@ -1408,7 +1424,8 @@ public class BusinessFlowService {
     private List<Map<String, Object>> resolveBusinessTaskCrudPageFields(String configKey,
                                                                         String formKey,
                                                                         JSONObject formSchema) {
-        List<Map<String, Object>> fallback = collectBusinessFormFieldCatalog(formSchema);
+        List<Map<String, Object>> fallback = new ArrayList<>(collectBusinessFormFieldCatalog(formSchema));
+        appendRuntimeChildFieldCatalog(configKey, fallback);
         if (StringUtils.isBlank(configKey)) {
             return fallback;
         }
@@ -1427,10 +1444,57 @@ public class BusinessFlowService {
             }
             List<Map<String, Object>> layoutFields = applyRuntimeCrudFormLayout(
                     runtimeFields, readNestedArray(options.get("editFormLayout")));
-            return layoutFields.isEmpty() ? runtimeFields : layoutFields;
+            List<Map<String, Object>> result = new ArrayList<>(layoutFields.isEmpty() ? runtimeFields : layoutFields);
+            appendRuntimeChildFieldCatalog(options, result);
+            return result;
         } catch (Exception e) {
             log.debug("读取动态 CRUD 详情表单 schema 失败: configKey={}, error={}", configKey, e.getMessage());
             return fallback;
+        }
+    }
+
+    private void appendRuntimeChildFieldCatalog(String configKey, List<Map<String, Object>> fields) {
+        if (StringUtils.isBlank(configKey) || fields == null) {
+            return;
+        }
+        try {
+            AiCrudConfig runtimeConfig = dynamicCrudService.getRuntimeConfig(configKey);
+            appendRuntimeChildFieldCatalog(readJsonObject(runtimeConfig == null ? null : runtimeConfig.getOptions()), fields);
+        } catch (Exception e) {
+            log.debug("读取待办子表字段目录失败: configKey={}, error={}", configKey, e.getMessage());
+        }
+    }
+
+    private void appendRuntimeChildFieldCatalog(JSONObject options, List<Map<String, Object>> fields) {
+        if (options == null || fields == null) {
+            return;
+        }
+        Set<String> seen = fields.stream()
+                .map(field -> StringUtils.firstNonBlank(textValue(field.get("field")), textValue(field.get("fieldCode"))))
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        JSONObject masterDetailConfig = readNestedObject(options.get("masterDetailConfig"));
+        for (Map<String, Object> child : readMapList(readNestedArray(masterDetailConfig.get("children")))) {
+            String childKey = resolveBusinessTaskChildKey(child);
+            for (Map<String, Object> rawField : readMapList(readNestedArray(child.get("fields")))) {
+                Map<String, Object> field = normalizeRuntimeCrudFormField(rawField);
+                if (field == null) {
+                    continue;
+                }
+                String childField = StringUtils.firstNonBlank(
+                        textValue(field.get("field")), textValue(field.get("fieldCode")));
+                String permissionField = childKey + "." + childField;
+                if (StringUtils.isBlank(childKey) || StringUtils.isBlank(childField) || !seen.add(permissionField)) {
+                    continue;
+                }
+                field.put("scope", "child");
+                field.put("childKey", childKey);
+                field.put("childField", childField);
+                field.put("field", childField);
+                field.put("fieldCode", childField);
+                field.put("label", StringUtils.defaultIfBlank(textValue(rawField.get("label")), childField));
+                fields.add(field);
+            }
         }
     }
 
@@ -1594,7 +1658,7 @@ public class BusinessFlowService {
         }
     }
 
-    private List<Map<String, Object>> resolveBusinessTaskChildrenConfig(String configKey) {
+    private List<Map<String, Object>> resolveBusinessTaskChildrenConfig(String configKey, JSONObject nodeForm) {
         if (StringUtils.isBlank(configKey)) {
             return List.of();
         }
@@ -1602,13 +1666,187 @@ public class BusinessFlowService {
             AiCrudConfig runtimeConfig = dynamicCrudService.getRuntimeConfig(configKey);
             JSONObject options = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
             JSONObject masterDetailConfig = readNestedObject(options.get("masterDetailConfig"));
-            return readMapList(readNestedArray(masterDetailConfig.get("children"))).stream()
+            List<Map<String, Object>> rawChildren = readMapList(readNestedArray(masterDetailConfig.get("children"))).stream()
                     .filter(this::isBusinessTaskDetailChild)
                     .toList();
+            Map<String, Map<String, Object>> childPermissions = normalizeTaskChildPermissionMap(nodeForm);
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Map<String, Object> rawChild : rawChildren) {
+                String childKey = resolveBusinessTaskChildKey(rawChild);
+                Map<String, Object> childPermission = childPermissions.get(childKey);
+                if (childPermission != null && !readBooleanValue(childPermission.get("readable"), true)) {
+                    continue;
+                }
+                Map<String, Object> child = new LinkedHashMap<>(rawChild);
+                child.put("allowCreate", childPermission != null
+                        && readBooleanValue(childPermission.get("allowCreate"), false));
+                child.put("allowUpdate", childPermission != null
+                        ? readBooleanValue(childPermission.get("allowUpdate"), hasWritableTaskChildField(rawChild, nodeForm, childKey))
+                        : hasWritableTaskChildField(rawChild, nodeForm, childKey));
+                child.put("allowDelete", childPermission != null
+                        && readBooleanValue(childPermission.get("allowDelete"), false));
+                child.put("readable", true);
+                List<Map<String, Object>> visibleFields = applyTaskChildFieldPermissions(
+                        readMapList(readNestedArray(rawChild.get("fields"))), nodeForm, childKey);
+                child.put("fields", visibleFields);
+                if (!visibleFields.isEmpty()) {
+                    result.add(child);
+                }
+            }
+            return result;
         } catch (Exception e) {
             log.debug("读取业务表单子表配置失败: configKey={}, error={}", configKey, e.getMessage());
             return List.of();
         }
+    }
+
+    private List<Map<String, Object>> applyTaskChildFieldPermissions(List<Map<String, Object>> fields,
+                                                                       JSONObject nodeForm,
+                                                                       String childKey) {
+        Map<String, Map<String, Object>> permissions = normalizeTaskFieldPermissionMap(nodeForm);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> source : fields) {
+            String field = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(source.get("field"))),
+                    StringUtils.trimToNull(textValue(source.get("fieldCode"))),
+                    StringUtils.trimToNull(textValue(source.get("sourceField"))));
+            if (field == null) {
+                continue;
+            }
+            Map<String, Object> permission = permissions.get(taskChildPermissionKey(childKey, field));
+            boolean readable = permission == null || readBooleanValue(permission.get("readable"), true);
+            if (!readable) {
+                continue;
+            }
+            boolean writable = permission != null && readBooleanValue(permission.get("writable"), false);
+            Map<String, Object> fieldConfig = new LinkedHashMap<>(source);
+            fieldConfig.put("field", field);
+            fieldConfig.put("fieldCode", field);
+            fieldConfig.put("readable", true);
+            fieldConfig.put("writable", writable);
+            fieldConfig.put("readonly", !writable);
+            fieldConfig.put("disabled", !writable);
+            fieldConfig.put("required", writable && permission != null
+                    && readBooleanValue(permission.get("required"), false));
+            fieldConfig.put("scope", "child");
+            fieldConfig.put("childKey", childKey);
+            fieldConfig.put("childField", field);
+            result.add(fieldConfig);
+        }
+        return result;
+    }
+
+    private boolean hasWritableTaskChildField(Map<String, Object> child,
+                                               JSONObject nodeForm,
+                                               String childKey) {
+        Map<String, Map<String, Object>> permissions = normalizeTaskFieldPermissionMap(nodeForm);
+        for (Map<String, Object> field : readMapList(readNestedArray(child.get("fields")))) {
+            String fieldName = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(field.get("field"))),
+                    StringUtils.trimToNull(textValue(field.get("fieldCode"))),
+                    StringUtils.trimToNull(textValue(field.get("sourceField"))));
+            Map<String, Object> permission = permissions.get(taskChildPermissionKey(childKey, fieldName));
+            if (permission != null && readBooleanValue(permission.get("writable"), false)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Map<String, DynamicCrudService.TaskChildPermission> buildTaskChildPermissions(
+            List<Map<String, Object>> childrenConfig) {
+        Map<String, DynamicCrudService.TaskChildPermission> result = new LinkedHashMap<>();
+        for (Map<String, Object> child : childrenConfig) {
+            String childKey = resolveBusinessTaskChildKey(child);
+            if (StringUtils.isBlank(childKey)) {
+                continue;
+            }
+            Set<String> writableFields = readMapList(readNestedArray(child.get("fields"))).stream()
+                    .filter(field -> readBooleanValue(field.get("writable"), false))
+                    .flatMap(field -> java.util.stream.Stream.of(
+                            textValue(field.get("field")),
+                            textValue(field.get("fieldCode")),
+                            textValue(field.get("sourceField"))))
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            result.put(childKey, new DynamicCrudService.TaskChildPermission(
+                    readBooleanValue(child.get("readable"), true),
+                    readBooleanValue(child.get("allowCreate"), false),
+                    readBooleanValue(child.get("allowUpdate"), false),
+                    readBooleanValue(child.get("allowDelete"), false),
+                    writableFields));
+        }
+        return result;
+    }
+
+    private Map<String, Map<String, Object>> normalizeTaskChildPermissionMap(JSONObject nodeForm) {
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        Object source = nodeForm == null ? null : nodeForm.get("childPermissions");
+        if (source == null && nodeForm != null) {
+            source = nodeForm.get("fieldPermissions");
+        }
+        JSONObject object = readNestedObject(source);
+        JSONArray childArray = source instanceof List<?> || source instanceof JSONArray
+                ? readNestedArray(source)
+                : readNestedArray(object.get("children"));
+        for (Map<String, Object> item : readMapList(childArray)) {
+            String childKey = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(item.get("childKey"))),
+                    StringUtils.trimToNull(textValue(item.get("relationKey"))),
+                    StringUtils.trimToNull(textValue(item.get("key"))));
+            if (childKey != null) {
+                Map<String, Object> normalized = new LinkedHashMap<>(item);
+                normalized.put("childKey", childKey);
+                result.put(childKey, normalized);
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Map<String, Object>> normalizeTaskFieldPermissionMap(JSONObject nodeForm) {
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        Object source = nodeForm == null ? null : nodeForm.get("fieldPermissions");
+        if (source == null && nodeForm != null) {
+            source = nodeForm.get("childPermissions");
+        }
+        for (Map<String, Object> item : normalizeFieldPermissions(source)) {
+            if (!"child".equalsIgnoreCase(textValue(item.get("scope")))) {
+                continue;
+            }
+            String childKey = StringUtils.trimToNull(textValue(item.get("childKey")));
+            String childField = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(item.get("childField"))),
+                    StringUtils.trimToNull(textValue(item.get("field"))));
+            if (childKey != null && childField != null) {
+                result.put(taskChildPermissionKey(childKey, childField), item);
+            }
+        }
+        return result;
+    }
+
+    private String taskChildPermissionKey(String childKey, String field) {
+        return StringUtils.defaultString(childKey) + ":" + StringUtils.defaultString(field);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractTaskMainPayload(Map<String, Object> data) {
+        if (data != null && data.get("main") instanceof Map<?, ?> main) {
+            return (Map<String, Object>) main;
+        }
+        if (data == null) {
+            return Map.of();
+        }
+        Map<String, Object> result = new LinkedHashMap<>(data);
+        result.remove("children");
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractTaskChildrenPayload(Map<String, Object> data) {
+        if (data != null && data.get("children") instanceof Map<?, ?> children) {
+            return (Map<String, Object>) children;
+        }
+        return Map.of();
     }
 
     private boolean isBusinessTaskDetailChild(Map<String, Object> child) {
@@ -1641,16 +1879,39 @@ public class BusinessFlowService {
         if (!(childrenValue instanceof Map<?, ?> children)) {
             return;
         }
-        Set<String> allowedKeys = childrenConfig.stream()
-                .map(this::resolveBusinessTaskChildKey)
-                .filter(StringUtils::isNotBlank)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
         Map<String, Object> filtered = new LinkedHashMap<>();
-        for (String key : allowedKeys) {
-            Object value = children.get(key);
-            if (value instanceof List<?>) {
-                filtered.put(key, value);
+        for (Map<String, Object> childConfig : childrenConfig) {
+            String key = resolveBusinessTaskChildKey(childConfig);
+            if (StringUtils.isBlank(key)) {
+                continue;
             }
+            Object value = children.get(key);
+            if (!(value instanceof List<?> rows)) {
+                continue;
+            }
+            Set<String> visibleFields = readMapList(readNestedArray(childConfig.get("fields"))).stream()
+                    .map(field -> StringUtils.firstNonBlank(
+                            StringUtils.trimToNull(textValue(field.get("field"))),
+                            StringUtils.trimToNull(textValue(field.get("fieldCode")))))
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            List<Map<String, Object>> visibleRows = new ArrayList<>();
+            for (Object rowValue : rows) {
+                if (!(rowValue instanceof Map<?, ?> row)) {
+                    continue;
+                }
+                Map<String, Object> visibleRow = new LinkedHashMap<>();
+                row.forEach((rowKey, rowItem) -> {
+                    String field = String.valueOf(rowKey);
+                    if (visibleFields.contains(field)
+                            || "id".equalsIgnoreCase(field)
+                            || "_deleted".equalsIgnoreCase(field)) {
+                        visibleRow.put(field, rowItem);
+                    }
+                });
+                visibleRows.add(visibleRow);
+            }
+            filtered.put(key, visibleRows);
         }
         recordData.put("children", filtered);
     }
@@ -1719,8 +1980,9 @@ public class BusinessFlowService {
             return null;
         }
         return StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(child.get("key"))),
                 StringUtils.trimToNull(textValue(child.get("modelCode"))),
+                StringUtils.trimToNull(textValue(child.get("relationKey"))),
+                StringUtils.trimToNull(textValue(child.get("key"))),
                 StringUtils.trimToNull(textValue(child.get("tableName"))),
                 "children");
     }
@@ -1790,6 +2052,25 @@ public class BusinessFlowService {
                 permission.put("writable", false);
                 permission.put("readonly", true);
                 permission.put("disabled", true);
+            }
+        }
+        if (context.getChildrenConfig() != null) {
+            for (Map<String, Object> child : context.getChildrenConfig()) {
+                if (child == null) {
+                    continue;
+                }
+                child.put("allowCreate", false);
+                child.put("allowUpdate", false);
+                child.put("allowDelete", false);
+                child.put("readable", true);
+                for (Map<String, Object> field : readMapList(readNestedArray(child.get("fields")))) {
+                    if (field == null) {
+                        continue;
+                    }
+                    field.put("writable", false);
+                    field.put("readonly", true);
+                    field.put("disabled", true);
+                }
             }
         }
     }
@@ -2703,7 +2984,9 @@ public class BusinessFlowService {
         JSONObject runtimeAsset = resolveBusinessTaskFormAsset(objectCode, runtimeFormKey);
         boolean useRuntimePageForm = StringUtils.isNotBlank(runtimeFormKey) && !runtimeAsset.isEmpty();
         String formKey = useRuntimePageForm ? runtimeFormKey : configuredFormKey;
-        List<Map<String, Object>> permissions = normalizeFieldPermissions(formInfo.get("formFieldPermissions"));
+        Object rawFormPermissions = formInfo.get("formFieldPermissions");
+        List<Map<String, Object>> permissions = normalizeFieldPermissions(rawFormPermissions);
+        List<Map<String, Object>> childPermissions = normalizeTaskChildPermissions(rawFormPermissions);
         JSONObject flowFormRef = readNestedObject(formInfo.get("formRef"));
         if (useRuntimePageForm) {
             JSONObject effectiveRuntimeRef = new JSONObject();
@@ -2715,6 +2998,7 @@ public class BusinessFlowService {
             // application page, rebuild permissions from that page's field catalog.
             if (!StringUtils.equals(runtimeFormKey, configuredFormKey)) {
                 permissions = List.of();
+                childPermissions = List.of();
             }
         }
         JSONObject asset = resolveBusinessTaskFormAsset(objectCode, formKey);
@@ -2815,6 +3099,9 @@ public class BusinessFlowService {
         }
         if (!permissions.isEmpty()) {
             nodeForm.put("fieldPermissions", permissions);
+        }
+        if (!childPermissions.isEmpty()) {
+            nodeForm.put("childPermissions", childPermissions);
         }
         return nodeForm;
     }
@@ -3581,6 +3868,9 @@ public class BusinessFlowService {
                                                           List<Map<String, Object>> permissions) {
         Map<String, Map<String, Object>> permissionMap = new LinkedHashMap<>();
         for (Map<String, Object> permission : permissions) {
+            if ("child".equalsIgnoreCase(textValue(permission.get("scope")))) {
+                continue;
+            }
             String field = StringUtils.trimToNull(textValue(permission.get("field")));
             if (field != null) {
                 putPermissionAliases(permissionMap, field, permission);
@@ -3799,6 +4089,9 @@ public class BusinessFlowService {
             return result;
         }
         for (Map<String, Object> permission : permissions) {
+            if ("child".equalsIgnoreCase(textValue(permission.get("scope")))) {
+                continue;
+            }
             if (readBooleanValue(permission.get(permissionKey), false) == expected) {
                 String field = StringUtils.trimToNull(textValue(permission.get("field")));
                 if (field != null) {
@@ -3816,6 +4109,9 @@ public class BusinessFlowService {
             return;
         }
         for (Map<String, Object> permission : permissions) {
+            if ("child".equalsIgnoreCase(textValue(permission.get("scope")))) {
+                continue;
+            }
             boolean required = readBooleanValue(permission.get("required"), false);
             boolean writable = readBooleanValue(permission.get("writable"), false);
             if (!required || !writable) {
@@ -5785,10 +6081,16 @@ public class BusinessFlowService {
         if (!fields.isEmpty()) {
             List<Map<String, Object>> layoutFields = applyRuntimeCrudFormLayout(
                     fields, readNestedArray(options.get("editFormLayout")));
-            return normalizeRuntimeCrudFormFields(layoutFields.isEmpty() ? fields : layoutFields);
+            List<Map<String, Object>> result = new ArrayList<>(normalizeRuntimeCrudFormFields(
+                    layoutFields.isEmpty() ? fields : layoutFields));
+            appendRuntimeChildFieldCatalog(options, result);
+            return result;
         }
         JSONObject modelSchema = readJsonObject(runtimeConfig.getModelSchema());
-        return normalizeRuntimeCrudFormFields(readMapList(readNestedArray(modelSchema.get("fields"))));
+        List<Map<String, Object>> result = new ArrayList<>(normalizeRuntimeCrudFormFields(
+                readMapList(readNestedArray(modelSchema.get("fields")))));
+        appendRuntimeChildFieldCatalog(options, result);
+        return result;
     }
 
     private List<Map<String, Object>> normalizeRuntimeCrudFormFields(List<Map<String, Object>> fields) {
@@ -6241,12 +6543,25 @@ public class BusinessFlowService {
                     StringUtils.trimToNull(source.getString("field")),
                     StringUtils.trimToNull(source.getString("fieldCode")),
                     StringUtils.trimToNull(source.getString("code")));
-            if (field == null || !seen.add(field)) {
+            String scope = "child".equalsIgnoreCase(source.getString("scope")) || source.getString("childKey") != null
+                    ? "child" : "main";
+            String childKey = StringUtils.trimToNull(source.getString("childKey"));
+            String childField = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(source.getString("childField")), field);
+            String permissionKey = "child".equals(scope)
+                    ? "child:" + StringUtils.defaultString(childKey) + ":" + StringUtils.defaultString(childField)
+                    : "main:" + StringUtils.defaultString(field);
+            if (field == null || !seen.add(permissionKey)) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("field", field);
-            item.put("fieldCode", field);
+            item.put("field", "child".equals(scope) ? childField : field);
+            item.put("fieldCode", "child".equals(scope) ? childField : field);
+            if ("child".equals(scope)) {
+                item.put("scope", "child");
+                item.put("childKey", childKey);
+                item.put("childField", childField);
+            }
             putIfText(item, "label", source.getString("label"));
             boolean readable = readBooleanValue(source.get("readable"), readBooleanValue(source.get("visible"), true));
             boolean writable = readable && readBooleanValue(source.get("writable"), readBooleanValue(source.get("editable"), true));
@@ -6255,6 +6570,39 @@ public class BusinessFlowService {
             item.put("readable", readable);
             item.put("writable", writable);
             item.put("required", writable && readBooleanValue(source.get("required"), false));
+            result.add(item);
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> normalizeTaskChildPermissions(Object source) {
+        JSONObject object = readNestedObject(source);
+        JSONArray children = source instanceof List<?> || source instanceof JSONArray
+                ? readNestedArray(source)
+                : readNestedArray(object.get("children"));
+        if (children.isEmpty() && source instanceof String stringSource) {
+            children = readNestedArray(stringSource);
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (int i = 0; i < children.size(); i++) {
+            JSONObject child = children.getJSONObject(i);
+            if (child == null) {
+                continue;
+            }
+            String childKey = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(child.getString("childKey")),
+                    StringUtils.trimToNull(child.getString("relationKey")),
+                    StringUtils.trimToNull(child.getString("key")));
+            if (childKey == null || !seen.add(childKey)) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>(child);
+            item.put("childKey", childKey);
+            item.put("readable", readBooleanValue(child.get("readable"), true));
+            item.put("allowCreate", readBooleanValue(child.get("allowCreate"), false));
+            item.put("allowUpdate", readBooleanValue(child.get("allowUpdate"), false));
+            item.put("allowDelete", readBooleanValue(child.get("allowDelete"), false));
             result.add(item);
         }
         return result;

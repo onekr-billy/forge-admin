@@ -12,12 +12,9 @@
  * dict.case_status // [{ label: '待处理', value: '1', ... }, ...]
  */
 
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { useDictStore } from '@/stores/system/dictStore'
 import { request } from '@/utils'
-
-// 全局字典缓存
-const dictCache = new Map()
-const dictPendingCache = new Map()
 
 /**
  * 加载字典数据
@@ -71,6 +68,7 @@ async function loadDictData(dictType) {
  * @returns {Promise<Array>} 字典数据列表
  */
 function getDictRequest(dictType, forceReload = false) {
+  const { dictCache, dictPendingCache } = useDictStore()
   if (!forceReload && dictCache.has(dictType))
     return Promise.resolve(dictCache.get(dictType))
 
@@ -79,8 +77,18 @@ function getDictRequest(dictType, forceReload = false) {
     return dictPendingCache.get(dictType)
 
   const pending = loadDictData(dictType)
+    .catch((error) => {
+      // 同一字典的所有调用方共享一次重试；清缓存后的旧请求不再重试。
+      if (dictPendingCache.get(dictType) !== pending) {
+        throw error
+      }
+      return loadDictData(dictType)
+    })
     .then((data) => {
-      dictCache.set(dictType, data)
+      // 清缓存或切换登录上下文后，迟到的响应不能覆盖新数据。
+      if (dictPendingCache.get(dictType) === pending) {
+        dictCache.set(dictType, data)
+      }
       return data
     })
     .finally(() => {
@@ -112,6 +120,7 @@ async function getDictData(dictType, forceReload = false) {
  * @param {string} dictType - 字典类型，不传则清除所有
  */
 function clearDictCache(dictType) {
+  const { dictCache, dictPendingCache } = useDictStore()
   if (dictType) {
     dictCache.delete(dictType)
     dictPendingCache.delete(dictType)
@@ -132,38 +141,33 @@ export function useDict(...dictTypes) {
   const loading = ref(false)
   const errors = ref({})
 
-  function applySettledResults(types, results) {
-    const nextErrors = { ...errors.value }
-    const failedTypes = []
+  const dictStore = useDictStore()
+  const subscribedTypes = ref([...new Set(dictTypes)])
 
-    types.forEach((type, index) => {
-      const result = results[index]
-      if (result.status === 'fulfilled') {
-        dict.value[type] = result.value
-        delete nextErrors[type]
-        return
+  // 保持 dict 对象引用稳定，每个字典一返回就更新，并订阅其他组件的刷新结果。
+  watch(
+    () => subscribedTypes.value.map(type => dictStore.dictCache.get(type)),
+    (lists, previousLists = []) => {
+      subscribedTypes.value.forEach((type, index) => {
+        dict.value[type] = lists[index] || []
+        if (lists[index] && lists[index] !== previousLists[index]) {
+          delete errors.value[type]
+        }
+      })
+    },
+    { immediate: true, flush: 'sync' },
+  )
+
+  async function loadDictTypes(types, forceReload = false) {
+    await Promise.all(types.map(async (type) => {
+      try {
+        await getDictRequest(type, forceReload)
+        delete errors.value[type]
       }
-
-      failedTypes.push(type)
-      nextErrors[type] = result.reason?.message || `字典 ${type} 加载失败`
-    })
-
-    errors.value = nextErrors
-    return failedTypes
-  }
-
-  async function loadDictTypes(types, forceReload = false, retryOnce = false) {
-    const results = await Promise.allSettled(
-      types.map(type => getDictRequest(type, forceReload)),
-    )
-    const failedTypes = applySettledResults(types, results)
-
-    if (retryOnce && failedTypes.length > 0) {
-      const retryResults = await Promise.allSettled(
-        failedTypes.map(type => getDictRequest(type, true)),
-      )
-      applySettledResults(failedTypes, retryResults)
-    }
+      catch (error) {
+        errors.value[type] = error?.message || `字典 ${type} 加载失败`
+      }
+    }))
   }
 
   /**
@@ -176,7 +180,7 @@ export function useDict(...dictTypes) {
     loading.value = true
 
     try {
-      await loadDictTypes(dictTypes, false, true)
+      await loadDictTypes(dictTypes)
     }
     catch (error) {
       console.error('加载字典失败:', error)
@@ -192,6 +196,7 @@ export function useDict(...dictTypes) {
    */
   async function reload(...types) {
     const typesToReload = types.length > 0 ? types : dictTypes
+    subscribedTypes.value = [...new Set([...subscribedTypes.value, ...typesToReload])]
 
     loading.value = true
 

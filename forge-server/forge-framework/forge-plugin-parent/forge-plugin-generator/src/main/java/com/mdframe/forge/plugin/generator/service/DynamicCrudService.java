@@ -103,6 +103,20 @@ public class DynamicCrudService {
                                          BigDecimal maxValue) {
     }
 
+    /**
+     * 当前流程节点对子表的最小写权限投影。权限来源由 BusinessFlowService
+     * 从 BPMN 节点解析，动态 CRUD 服务只负责执行安全写入。
+     */
+    public record TaskChildPermission(boolean readable,
+                                      boolean allowCreate,
+                                      boolean allowUpdate,
+                                      boolean allowDelete,
+                                      Set<String> writableFields) {
+        public TaskChildPermission {
+            writableFields = writableFields == null ? Set.of() : Set.copyOf(writableFields);
+        }
+    }
+
     private record RuntimeJoinContext(Map<String, RuntimeFieldRef> fields,
                                       List<RuntimeChildRelation> childRelations,
                                       List<DynamicCrudRepository.JoinField> selectFields,
@@ -850,6 +864,331 @@ public class DynamicCrudService {
     }
 
     /**
+     * 保存流程待办允许编辑的主子表字段。
+     *
+     * <p>该入口与普通 CRUD 更新隔离：子表永远按 merge 语义处理，节点未授权的
+     * 字段、行新增和行删除会在进入 repository 前拒绝，避免部分 payload 触发
+     * replace 模式的数据丢失。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateTaskEditableData(String configKey,
+                                       Object id,
+                                       Map<String, Object> data,
+                                       Set<String> writableMainFields,
+                                       Map<String, TaskChildPermission> childPermissions) {
+        if (id == null) {
+            throw new BusinessException("更新操作缺少id");
+        }
+        if (data == null || data.isEmpty()) {
+            throw new BusinessException("没有可更新的字段");
+        }
+        AiCrudConfig config = getConfig(configKey);
+        assertRuntimeWritable(config);
+        Set<String> allowedMain = writableMainFields == null ? Set.of() : Set.copyOf(writableMainFields);
+        Map<String, TaskChildPermission> allowedChildren = childPermissions == null ? Map.of() : childPermissions;
+        try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            Map<String, Object> mainPayload = extractMainPayload(data);
+            validateTaskMainPayload(mainPayload, allowedMain);
+            RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
+            Map<String, Object> childrenPayload = extractChildrenPayload(data);
+            if (!childrenPayload.isEmpty() && (joinContext == null || !isMasterDetailRuntime(config))) {
+                throw new BusinessException("当前业务对象不支持待办子表编辑");
+            }
+            if (joinContext != null && !childrenPayload.isEmpty()) {
+                allowedChildren = normalizeTaskChildPermissions(config, joinContext, allowedChildren);
+                childrenPayload = normalizeTaskChildrenPayload(config, joinContext, childrenPayload);
+            }
+            validateTaskChildrenPayload(childrenPayload, joinContext, allowedChildren);
+            if (joinContext != null && isMasterDetailRuntime(config)) {
+                updateTaskMasterDetailData(config, id, mainPayload, childrenPayload, allowedMain,
+                        allowedChildren, joinContext);
+                return;
+            }
+            Map<String, Object> updateData = new LinkedHashMap<>(mainPayload);
+            updateData.put(primaryKeyField(currentPrimaryKey()), id);
+            if (updateData.size() <= 1) {
+                throw new BusinessException("未提交可编辑业务字段");
+            }
+            updateById(configKey, updateData);
+        }
+    }
+
+    private Map<String, TaskChildPermission> normalizeTaskChildPermissions(
+            AiCrudConfig config,
+            RuntimeJoinContext joinContext,
+            Map<String, TaskChildPermission> permissions) {
+        if (joinContext == null || permissions == null || permissions.isEmpty()) {
+            return permissions == null ? Map.of() : permissions;
+        }
+        Map<String, TaskChildPermission> result = new LinkedHashMap<>();
+        for (RuntimeChildRelation relation : joinContext.childRelations()) {
+            TaskChildPermission permission = permissions.get(relation.modelCode());
+            if (permission == null) {
+                for (String alias : runtimeChildKeyAliases(config, relation)) {
+                    permission = permissions.get(alias);
+                    if (permission != null) {
+                        break;
+                    }
+                }
+            }
+            if (permission != null) {
+                result.put(relation.modelCode(), permission);
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Object> normalizeTaskChildrenPayload(
+            AiCrudConfig config,
+            RuntimeJoinContext joinContext,
+            Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty() || joinContext == null) {
+            return payload == null ? Map.of() : payload;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : payload.entrySet()) {
+            RuntimeChildRelation relation = resolveTaskChildRelation(config, joinContext, entry.getKey());
+            String canonicalKey = relation == null ? entry.getKey() : relation.modelCode();
+            if (result.containsKey(canonicalKey)) {
+                throw new BusinessException("子表 payload 重复指定关系: " + entry.getKey());
+            }
+            result.put(canonicalKey, entry.getValue());
+        }
+        return result;
+    }
+
+    private RuntimeChildRelation resolveTaskChildRelation(AiCrudConfig config,
+                                                           RuntimeJoinContext joinContext,
+                                                           String childKey) {
+        if (joinContext == null || StringUtils.isBlank(childKey)) {
+            return null;
+        }
+        for (RuntimeChildRelation relation : joinContext.childRelations()) {
+            if (runtimeChildKeyAliases(config, relation).stream()
+                    .anyMatch(alias -> StringUtils.equalsIgnoreCase(alias, childKey))) {
+                return relation;
+            }
+        }
+        return null;
+    }
+
+    private Set<String> runtimeChildKeyAliases(AiCrudConfig config, RuntimeChildRelation relation) {
+        Set<String> aliases = new LinkedHashSet<>();
+        if (relation == null) {
+            return aliases;
+        }
+        addNonBlankAlias(aliases, relation.modelCode());
+        addNonBlankAlias(aliases, relation.tableName());
+        JsonNode childNode = findMasterDetailChildNode(config, relation);
+        if (childNode != null && childNode.isObject()) {
+            for (String fieldName : List.of("modelCode", "relationKey", "key", "tableName", "field")) {
+                addNonBlankAlias(aliases, firstText(childNode, fieldName));
+            }
+        }
+        return aliases;
+    }
+
+    private void addNonBlankAlias(Set<String> aliases, String value) {
+        if (StringUtils.isNotBlank(value)) {
+            aliases.add(value.trim());
+        }
+    }
+
+    private void validateTaskMainPayload(Map<String, Object> payload, Set<String> writableFields) {
+        if (payload == null || payload.isEmpty()) {
+            return;
+        }
+        for (String field : payload.keySet()) {
+            if (isImmutableWriteField(field)) {
+                continue;
+            }
+            if (!containsFieldAlias(writableFields, field)) {
+                throw new BusinessException("当前节点不允许编辑字段: " + field);
+            }
+        }
+    }
+
+    private void validateTaskChildrenPayload(Map<String, Object> payload,
+                                             RuntimeJoinContext joinContext,
+                                             Map<String, TaskChildPermission> permissions) {
+        if (payload == null || payload.isEmpty()) {
+            return;
+        }
+        if (joinContext == null) {
+            throw new BusinessException("当前业务对象未配置可编辑子表");
+        }
+        Map<String, RuntimeChildRelation> relations = joinContext.childRelations().stream()
+                .collect(Collectors.toMap(RuntimeChildRelation::modelCode, relation -> relation,
+                        (left, right) -> left, LinkedHashMap::new));
+        for (Map.Entry<String, Object> entry : payload.entrySet()) {
+            RuntimeChildRelation relation = relations.get(entry.getKey());
+            TaskChildPermission permission = permissions.get(entry.getKey());
+            if (relation == null || permission == null || !permission.readable()) {
+                throw new BusinessException("当前节点不允许编辑子表: " + entry.getKey());
+            }
+            for (Map<String, Object> row : normalizeChildRows(entry.getValue())) {
+                validateTaskChildRowPayload(row, relation, permission);
+            }
+        }
+    }
+
+    private void validateTaskChildRowPayload(Map<String, Object> row,
+                                             RuntimeChildRelation relation,
+                                             TaskChildPermission permission) {
+        if (row == null) {
+            throw new BusinessException("子表行数据不能为空");
+        }
+        Object rowId = resolveChildRowId(row);
+        boolean deleted = isDeletedChildRow(row);
+        if (deleted && !permission.allowDelete()) {
+            throw new BusinessException("当前节点不允许删除子表行");
+        }
+        if (!deleted && rowId == null && !permission.allowCreate()) {
+            throw new BusinessException("当前节点不允许新增子表行");
+        }
+        if (!deleted && rowId != null && !permission.allowUpdate()) {
+            throw new BusinessException("当前节点不允许修改子表行");
+        }
+        for (String key : row.keySet()) {
+            if (isImmutableWriteField(key) || "_deleted".equals(key) || "__deleted".equals(key)) {
+                continue;
+            }
+            if (resolveChildWritableField(relation, key, permission.writableFields()) == null) {
+                throw new BusinessException("当前节点不允许编辑子表字段: " + key);
+            }
+        }
+    }
+
+    private void updateTaskMasterDetailData(AiCrudConfig config,
+                                             Object id,
+                                             Map<String, Object> mainPayload,
+                                             Map<String, Object> childrenPayload,
+                                             Set<String> writableMainFields,
+                                             Map<String, TaskChildPermission> permissions,
+                                             RuntimeJoinContext joinContext) {
+        DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, config.getTableName(), null);
+        Map<String, Object> authorizedMainRecord = repository.selectById(config.getTableName(), id, dataScopeCondition);
+        if (authorizedMainRecord == null) {
+            throw new BusinessException("无权限更新该数据或数据不存在");
+        }
+        applyStoredFormulasForUpdate(config, config.getTableName(), id, mainPayload, dataScopeCondition, authorizedMainRecord);
+        validateUniqueConstraints(config, config.getTableName(), mainPayload, authorizedMainRecord, id);
+        Map<String, Object> primaryData = filterPrimaryWriteData(mainPayload, writableMainFields, joinContext);
+        removePrimaryKeyColumns(primaryData, currentPrimaryKey());
+        removeMaskedDesensitizedWriteColumns(primaryData, config, config.getTableName());
+        if (!primaryData.isEmpty()) {
+            applyMoneyStorageWrite(primaryData, config);
+            applyStructuredFieldStorageWrite(primaryData, config);
+            applyEncrypt(primaryData, config.getEncryptConfig());
+            int affected = repository.updateById(config.getTableName(), id, primaryData, dataScopeCondition);
+            if (affected <= 0) {
+                throw new BusinessException("无权限更新该数据或数据不存在");
+            }
+        }
+
+        Map<String, Object> currentMainRecord = authorizedMainRecord;
+        boolean childrenChanged = false;
+        for (RuntimeChildRelation relation : joinContext.childRelations()) {
+            if (!childrenPayload.containsKey(relation.modelCode())) {
+                continue;
+            }
+            TaskChildPermission permission = permissions.get(relation.modelCode());
+            Object relationValue = resolveMainRelationValue(relation, primaryData, id, currentMainRecord);
+            if (relationValue == null) {
+                throw new BusinessException("无法解析子表归属字段: " + relation.modelCode());
+            }
+            for (Map<String, Object> row : normalizeChildRows(childrenPayload.get(relation.modelCode()))) {
+                Object rowId = resolveChildRowId(row);
+                if (isDeletedChildRow(row)) {
+                    if (rowId == null) {
+                        throw new BusinessException("删除子表行缺少id");
+                    }
+                    assertChildRowBelongsToMain(relation, rowId, relationValue);
+                    int affected = repository.deleteById(relation.tableName(), "id", rowId,
+                            repository.hasDelFlag(relation.tableName()), null);
+                    if (affected <= 0) {
+                        throw new BusinessException("子表行删除失败或数据不存在");
+                    }
+                    childrenChanged = true;
+                    continue;
+                }
+                Map<String, Object> childData = filterTaskChildWriteData(row, relation, permission.writableFields());
+                validateChildRow(relation, row, rowId == null);
+                if (rowId == null) {
+                    childData.put(relation.childFkColumn(), relationValue);
+                    repository.insert(relation.tableName(), childData);
+                } else {
+                    assertChildRowBelongsToMain(relation, rowId, relationValue);
+                    if (childData.isEmpty()) {
+                        continue;
+                    }
+                    int affected = repository.updateById(relation.tableName(), "id", rowId, childData, null);
+                    if (affected <= 0) {
+                        throw new BusinessException("子表行更新失败或数据不存在");
+                    }
+                }
+                childrenChanged = true;
+            }
+        }
+        if (primaryData.isEmpty() && !childrenChanged) {
+            throw new BusinessException("未提交可编辑业务字段");
+        }
+        if (childrenChanged) {
+            refreshRecordById(config, id);
+        }
+    }
+
+    private Map<String, Object> filterTaskChildWriteData(Map<String, Object> data,
+                                                         RuntimeChildRelation relation,
+                                                         Set<String> writableFields) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (RuntimeFieldRef fieldRef : relation.fields().values()) {
+            if (fieldRef.primary() || isImmutableWriteField(fieldRef.fieldName())
+                    || isImmutableWriteField(fieldRef.sourceField())
+                    || fieldRef.columnName().equals(relation.childFkColumn())) {
+                continue;
+            }
+            String grantedField = resolveChildWritableField(relation, fieldRef.fieldName(), writableFields);
+            if (grantedField == null) {
+                continue;
+            }
+            Object value = firstPresent(data, fieldRef.sourceField(), fieldRef.fieldName(), fieldRef.columnName());
+            if (value != null || containsAnyKey(data, fieldRef.sourceField(), fieldRef.fieldName(), fieldRef.columnName())) {
+                result.put(fieldRef.columnName(), value);
+            }
+        }
+        return result;
+    }
+
+    private String resolveChildWritableField(RuntimeChildRelation relation,
+                                             String inputField,
+                                             Set<String> writableFields) {
+        if (StringUtils.isBlank(inputField) || writableFields == null || writableFields.isEmpty()) {
+            return null;
+        }
+        RuntimeFieldRef fieldRef = relation.fields().get(inputField);
+        String sourceField = fieldRef == null ? inputField : fieldRef.sourceField();
+        String fieldName = fieldRef == null ? inputField : fieldRef.fieldName();
+        String columnName = fieldRef == null ? inputField : fieldRef.columnName();
+        for (String allowed : writableFields) {
+            if (StringUtils.equalsAnyIgnoreCase(allowed, inputField, sourceField, fieldName, columnName,
+                    DynamicQueryGenerator.camelToSnake(inputField),
+                    DynamicQueryGenerator.snakeToCamel(inputField))) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+    private boolean containsFieldAlias(Set<String> fields, String field) {
+        if (fields == null || fields.isEmpty() || StringUtils.isBlank(field)) {
+            return false;
+        }
+        return fields.stream().anyMatch(item -> StringUtils.equalsAnyIgnoreCase(item, field,
+                DynamicQueryGenerator.camelToSnake(field), DynamicQueryGenerator.snakeToCamel(field)));
+    }
+
+    /**
      * 内部运行态字段更新。用于单据状态等系统驱动字段，不受编辑表单 schema 限制，
      * 但仍校验动态表真实列名、租户条件和数据权限。
      */
@@ -1176,6 +1515,7 @@ public class DynamicCrudService {
         }
         return StringUtils.equalsAny(relation.modelCode(),
                 firstText(child, "modelCode"),
+                firstText(child, "relationKey"),
                 firstText(child, "key"),
                 firstText(child, "field"))
                 || StringUtils.equals(relation.tableName(), firstText(child, "tableName"));

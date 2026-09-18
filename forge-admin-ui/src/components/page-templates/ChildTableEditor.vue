@@ -13,7 +13,7 @@
               {{ child.tabTitle || child.relationName || child.modelName || child.modelCode || '子表明细' }}
             </div>
             <n-space v-if="!props.readonly || visibleToolbarActions(child).length" size="small">
-              <n-button v-if="hasRecordSelector(child) && !props.readonly" size="small" secondary @click="openRecordSelector(child)">
+              <n-button v-if="hasRecordSelector(child) && canCreateRows(child)" size="small" secondary @click="openRecordSelector(child)">
                 {{ resolveSelectorButtonText(child) }}
               </n-button>
               <n-button
@@ -28,7 +28,7 @@
                 {{ action.label || action.actionName || action.actionCode }}
               </n-button>
               <n-button
-                v-if="!props.readonly && child.showInCreate !== false"
+                v-if="canCreateRows(child) && child.showInCreate !== false && child.inlineCreateEnabled !== false"
                 size="small"
                 type="primary"
                 secondary
@@ -64,7 +64,7 @@
                   <td v-for="field in child.fields" :key="field.field" :data-label="field.label || field.field">
                     <div v-if="useRuntimeCell(field, child)" class="child-runtime-cell">
                       <AiFormItem
-                        :field="toRuntimeCellField(field)"
+                        :field="toRuntimeCellField(field, child, row)"
                         :value="row[field.field]"
                         :form-data="row"
                         :context="buildRuntimeCellContext(child, rowIndex)"
@@ -77,61 +77,61 @@
                       v-bind="resolveInputProps(field)"
                       :value="resolveInputValue(row[field.field])"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :autosize="{ minRows: 1, maxRows: 3 }"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-input-number
                       v-else-if="field.type === 'number' || field.type === 'inputNumber'"
+                      v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :precision="field.props?.precision ?? field.precision"
                       style="width: 100%"
-                      v-bind="field.props"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-select
                       v-else-if="field.type === 'select'"
+                      v-bind="resolveInputProps(field)"
                       :value="resolveSelectCellValue(row[field.field], field)"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :options="field.props?.options || field.options || []"
                       clearable
                       filterable
-                      v-bind="field.props"
                       :multiple="field.multiple === true || field.props?.multiple === true"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <UserSelectPicker
                       v-else-if="field.type === 'userSelect'"
+                      v-bind="resolveInputProps(field)"
                       :model-value="row[field.field]"
                       :label-value="resolveUserLabel(row, field)"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :multiple="field.multiple === true || field.props?.multiple === true"
                       :clearable="field.clearable !== false"
-                      v-bind="field.props"
                       @update:model-value="updateCell(child, rowIndex, field, $event)"
                       @update:label-value="updateCellLabel(child, rowIndex, field, $event)"
                     />
                     <n-date-picker
                       v-else-if="field.type === 'date' || field.type === 'datetime'"
+                      v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
                       :type="field.type === 'datetime' ? 'datetime' : 'date'"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       style="width: 100%"
-                      v-bind="field.props"
                       :format="field.props?.format || (field.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
                       :value-format="field.props?.valueFormat || (field.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-switch
                       v-else-if="field.type === 'switch'"
+                      v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
-                      :disabled="props.readonly || field.disabled || field.readonly"
-                      v-bind="field.props"
+                      :disabled="isCellReadonly(child, row, field)"
                       :checked-value="field.props?.checkedValue ?? field.checkedValue ?? true"
                       :unchecked-value="field.props?.uncheckedValue ?? field.uncheckedValue ?? false"
                       @update:value="updateCell(child, rowIndex, field, $event)"
@@ -141,7 +141,7 @@
                       v-bind="resolveInputProps(field)"
                       :value="resolveInputValue(row[field.field])"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       clearable
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
@@ -161,7 +161,7 @@
                       >
                         {{ action.label || action.actionName || action.actionCode }}
                       </n-button>
-                      <n-button v-if="!props.readonly" text type="error" size="small" @click="removeRow(child, rowIndex)">
+                      <n-button v-if="canDeleteRows(child)" text type="error" size="small" @click="removeRow(child, rowIndex)">
                         删除
                       </n-button>
                     </n-space>
@@ -286,7 +286,7 @@ onBeforeUnmount(() => {
 })
 
 function resolveChildKey(child) {
-  return child.key || child.modelCode || child.tableName || 'children'
+  return child.modelCode || child.relationKey || child.key || child.tableName || 'children'
 }
 
 /** 设计器“数据展示”配置：卡片/抽屉形态用卡片布局呈现 */
@@ -354,7 +354,25 @@ function isToolbarActionLoading(action, child) {
 }
 
 function hasActionColumn(child) {
-  return !props.readonly || configuredRowActions(child).length > 0
+  return canDeleteRows(child) || configuredRowActions(child).length > 0
+}
+
+function canCreateRows(child = {}) {
+  return !props.readonly && child.allowCreate !== false
+}
+
+function canUpdateRows(child = {}) {
+  return !props.readonly && child.allowUpdate !== false
+}
+
+function canDeleteRows(child = {}) {
+  return !props.readonly && child.allowDelete !== false
+}
+
+function isCellReadonly(child, row, field = {}) {
+  if (props.readonly || field.writable === false || field.readonly === true || field.disabled === true)
+    return true
+  return hasPersistedRowId(row) ? !canUpdateRows(child) : !canCreateRows(child)
 }
 
 function childActionContext(child, row) {
@@ -529,10 +547,14 @@ function removeRow(child, rowIndex) {
 }
 
 function updateCell(child, rowIndex, field, value) {
+  if (isCellReadonly(child, rowsFor(child)[rowIndex], field))
+    return
   updateRow(child, rowIndex, { [field.field]: normalizeCellValueForType(field, value) })
 }
 
 function updateCellLabel(child, rowIndex, field, value) {
+  if (isCellReadonly(child, rowsFor(child)[rowIndex], field))
+    return
   const labelField = resolveUserLabelField(field)
   if (!labelField)
     return
@@ -594,11 +616,12 @@ function useRuntimeCell(field = {}, child = {}) {
   ].includes(field.type)
 }
 
-function toRuntimeCellField(field = {}) {
+function toRuntimeCellField(field = {}, child = {}, row = {}) {
+  const readonly = isCellReadonly(child, row, field)
   return {
     ...field,
-    disabled: props.readonly || field.disabled || field.readonly,
-    readonly: props.readonly || field.readonly,
+    disabled: readonly,
+    readonly,
     showLabel: false,
     showFeedback: false,
     size: field.size || 'small',

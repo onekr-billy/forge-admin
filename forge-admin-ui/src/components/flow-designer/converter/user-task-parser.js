@@ -14,6 +14,7 @@
  * - 任务监听器 + 执行监听器（每个含 event + type + value）
  */
 
+import { normalizeFlowFormPermissions } from '@/utils/flow-field-permissions'
 import {
   getAttr,
   getChild,
@@ -82,6 +83,7 @@ export function parseUserTaskConfig(taskElement) {
     taskListeners: [],
     executionListeners: [],
     formFieldPermissions: [],
+    formChildPermissions: [],
     responsibilityDescription: '',
     approvalPoints: [],
     ...DEFAULT_PERMISSIONS,
@@ -106,12 +108,11 @@ function applyFormFieldPermissions(el, config) {
   if (!raw)
     return
   try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed))
-      return
-    config.formFieldPermissions = parsed
+    const normalized = normalizeFlowFormPermissions(JSON.parse(raw))
+    config.formFieldPermissions = normalized.fields
       .map(normalizeFormFieldPermission)
       .filter(item => item.field)
+    config.formChildPermissions = normalized.children
   }
   catch {
     config.formFieldPermissions = []
@@ -127,7 +128,7 @@ function normalizeFormFieldPermission(item = {}) {
   const field = String(item.field || item.fieldCode || item.code || '').trim()
   const readable = readBoolean(item.readable, readBoolean(item.visible, true))
   const writable = readable && readBoolean(item.writable, readBoolean(item.editable, true))
-  return {
+  const normalized = {
     field,
     fieldCode: field,
     label: String(item.label || field || '').trim(),
@@ -137,6 +138,12 @@ function normalizeFormFieldPermission(item = {}) {
     writable,
     required: writable && item.required === true,
   }
+  if (String(item.scope || '').toLowerCase() === 'child' || item.childKey) {
+    normalized.scope = 'child'
+    normalized.childKey = String(item.childKey || item.relationKey || '').trim()
+    normalized.childField = String(item.childField || field).trim()
+  }
+  return normalized
 }
 
 function readBoolean(value, defaultValue) {

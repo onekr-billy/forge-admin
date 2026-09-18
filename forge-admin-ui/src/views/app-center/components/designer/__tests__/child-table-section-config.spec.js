@@ -123,6 +123,47 @@ describe('child table section config', () => {
     })
   })
 
+  it('keeps child-table behavior and selector settings in the main schema', () => {
+    const result = upsertChildTableSectionConfig({ pageSchema: {}, formDesignerSchema: {} }, {
+      relationKey: 'order_items',
+      title: '商品明细',
+      modelCode: 'order_item',
+      allowCreate: false,
+      allowSelectExisting: true,
+      selectorMultiple: false,
+      selectorDisplayFields: ['sku', 'name'],
+      selectorFilterFields: [{ fieldCode: 'status', defaultValue: 'ACTIVE' }],
+      fields: [{ fieldCode: 'sku', fieldName: '商品编码' }],
+    })
+
+    expect(result.pageSchema.options.masterDetailConfig.children[0]).toMatchObject({
+      showInCreate: true,
+      inlineCreateEnabled: false,
+      allowCreate: false,
+      allowSelectExisting: true,
+      selectorMultiple: false,
+      selectorDisplayFields: ['sku', 'name'],
+      selectorFilterFields: [{ fieldCode: 'status', defaultValue: 'ACTIVE' }],
+    })
+    expect(result.pageSchema.modelRefs[0].props).toMatchObject({
+      inlineCreateEnabled: false,
+      allowSelectExisting: true,
+      recordSelector: {
+        objectCode: 'order_item',
+        businessObjectCode: 'order_item',
+        multiple: false,
+        displayFields: ['sku', 'name'],
+        keywordFields: ['sku', 'name'],
+        filterFields: [{ fieldCode: 'status', defaultValue: 'ACTIVE' }],
+      },
+    })
+    expect(result.formDesignerSchema.pageSections[0]).toMatchObject({
+      modelCode: 'order_item',
+      allowCreate: false,
+      allowSelectExisting: true,
+    })
+  })
+
   it('keeps separate relations that point to the same child object', () => {
     const first = upsertChildTableSectionConfig({ pageSchema: {}, formDesignerSchema: {} }, {
       relationKey: 'sale_items',

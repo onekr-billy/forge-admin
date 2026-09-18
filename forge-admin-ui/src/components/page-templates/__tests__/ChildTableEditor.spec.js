@@ -18,6 +18,15 @@ describe('child table editor runtime cells', () => {
     expect(childTableEditorSource).toContain('previousRows[index]?.__rowKey')
   })
 
+  it('sanitizes controlled props for every inline child-table control', () => {
+    expect(childTableEditorSource).not.toContain('v-bind="field.props"')
+    expect(childTableEditorSource).toContain('v-bind="resolveInputProps(field)"')
+    expect(childTableEditorSource).toContain('child.allowCreate !== false')
+    expect(childTableEditorSource).toContain('function isCellReadonly(child, row, field = {})')
+    expect(childTableEditorSource).toContain('hasPersistedRowId(row) ? !canUpdateRows(child) : !canCreateRows(child)')
+    expect(childTableEditorSource).toContain('child.modelCode || child.relationKey || child.key || child.tableName')
+  })
+
   it('lets AiFormItem inherit class/style onto n-form-item instead of a fragment root', () => {
     expect(aiFormItemSource).toContain('defineOptions({ inheritAttrs: false })')
     expect(aiFormItemSource).toMatch(/<n-form-item[\s\S]*v-bind="\$attrs"/)

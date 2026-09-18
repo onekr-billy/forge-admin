@@ -20,6 +20,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { normalizeFieldPermissions } from '@/utils/field-permissions'
+import { normalizeFlowFieldCatalog, normalizeFlowFormPermissions } from '@/utils/flow-field-permissions'
 import { loadFlowBusinessFormFieldCatalog } from '@/utils/flow-form-loader'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
 import ApprovalDutyConfig from './ApprovalDutyConfig.vue'
@@ -190,15 +191,18 @@ function findFormAsset(partial = {}) {
 
 function buildFormFieldPermissionsForCatalog(currentPermissions, fieldCatalog = []) {
   const current = new Map()
-  for (const permission of normalizeFieldPermissions(currentPermissions)) {
+  for (const permission of normalizeFlowFormPermissions(currentPermissions).fields) {
     if (permission.field)
-      current.set(permission.field, permission)
+      current.set(permission.permissionKey, permission)
   }
-  const catalog = normalizeFieldCatalog(fieldCatalog)
+  const catalog = normalizeFlowFieldCatalog(fieldCatalog)
   if (!catalog.length)
     return Array.from(current.values())
   return catalog.map((field) => {
-    const saved = current.get(field.field)
+    const permissionKey = field.scope === 'child'
+      ? `child:${field.childKey}:${field.childField || field.field}`
+      : `main:${field.field}`
+    const saved = current.get(permissionKey)
     if (saved) {
       return {
         ...saved,
@@ -210,30 +214,24 @@ function buildFormFieldPermissionsForCatalog(currentPermissions, fieldCatalog = 
       field: field.field,
       fieldCode: field.field,
       label: field.label || field.field,
+      ...(field.scope === 'child'
+        ? { scope: 'child', childKey: field.childKey, childField: field.childField || field.field }
+        : {}),
       visible: true,
-      editable: true,
+      editable: field.scope === 'main',
       readable: true,
-      writable: true,
+      writable: field.scope === 'main',
       required,
     }
   })
 }
 
 function normalizeFieldCatalog(fieldCatalog = []) {
-  const seen = new Set()
-  return (Array.isArray(fieldCatalog) ? fieldCatalog : [])
-    .map((item) => {
-      const field = String(item?.field || item?.fieldCode || item?.fieldName || item?.name || item?.key || '').trim()
-      if (!field || seen.has(field))
-        return null
-      seen.add(field)
-      return {
-        field,
-        label: String(item?.label || item?.title || item?.fieldName || field).trim(),
-        required: item?.required === true || item?.sourceRequired === true,
-      }
-    })
-    .filter(Boolean)
+  return normalizeFlowFieldCatalog(fieldCatalog).map(item => ({
+    ...item,
+    label: String(item?.label || item?.title || item?.fieldName || item?.field || '').trim(),
+    required: item?.required === true || item?.sourceRequired === true,
+  }))
 }
 
 function resolveSelectedFormMode(partial = {}, asset = null) {

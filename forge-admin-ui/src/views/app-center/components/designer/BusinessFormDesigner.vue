@@ -1207,13 +1207,35 @@ function upsertSubTableContainer(formDesignerSchema = {}, config = {}) {
   if (!relationKey)
     return formDesignerSchema
   const containerId = `subtable_${safeKey(relationKey)}`
+  const index = components.findIndex(component => component?.componentKey === 'subTable'
+    && (component.id === containerId || String(component.props?.relationKey || '') === relationKey))
+  const currentProps = index >= 0 ? components[index].props || {} : {}
+  const selectorMultiple = Object.prototype.hasOwnProperty.call(config, 'selectorMultiple')
+    ? config.selectorMultiple !== false
+    : currentProps.selectorMultiple !== false
+  const selectorDisplayFields = Array.isArray(config.selectorDisplayFields)
+    ? config.selectorDisplayFields
+    : (Array.isArray(currentProps.selectorDisplayFields) ? currentProps.selectorDisplayFields : [])
+  const selectorFilterFields = Array.isArray(config.selectorFilterFields)
+    ? config.selectorFilterFields
+    : (Array.isArray(currentProps.selectorFilterFields) ? currentProps.selectorFilterFields : [])
   const nextProps = {
     header: config.title || '关联子表',
     relationKey,
     displayMode: ['inline_grid', 'card_list', 'bottom_sheet'].includes(config.displayMode) ? config.displayMode : 'inline_grid',
+    modelCode: config.modelCode || '',
+    columns: Array.isArray(config.fields)
+      ? config.fields.map(field => ({
+          fieldCode: field.fieldCode || field.sourceField || field.field || '',
+          fieldLabel: field.fieldName || field.label || field.fieldCode || field.sourceField || field.field || '',
+        })).filter(field => field.fieldCode)
+      : [],
+    allowCreate: config.allowCreate !== false,
+    allowSelectExisting: config.allowSelectExisting === true,
+    selectorMultiple,
+    selectorDisplayFields,
+    selectorFilterFields,
   }
-  const index = components.findIndex(component => component?.componentKey === 'subTable'
-    && (component.id === containerId || String(component.props?.relationKey || '') === relationKey))
   if (index >= 0) {
     const current = components[index]
     components[index] = { ...current, label: nextProps.header, props: { ...(current.props || {}), ...nextProps } }

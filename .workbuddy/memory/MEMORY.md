@@ -7,7 +7,9 @@
 
 ## 1. 账号与渠道现状
 - **头条：账号没有权重问题**（0917 实测推翻此前"新号冷启动"的诊断）。同号同天同样 300 字微头条：数字反差型 **7981 展现 / 1330 阅读 = 点击率 16.7%**；反常识型 319 展现 / 15 阅读 = 4.7%。**差 25 倍 → 系统愿意给量，之前是钩子没打中**
-- **微头条 > 长文**：300 字完读率高，长文 2000 字完读率低。当前策略：**微头条主打，长文低频**（长文仅用于验证"钩子 vs 完读率"谁是瓶颈）。每天发 2 条、间隔 4h+，发后 2h 内自己先补一条评论
+- **【0918 定论】长文停掉，只发微头条**。同时间同账号同用已验证钩子实测：微头条 13.4% vs 长文 0.67%，**差 20 倍**。26 篇长文没量的变量就是"长文本身"——微头条在信息流正文直铺（决策成本低），长文只有标题+缩略图（技术标题对泛用户无点击冲动）。要发长文必须配封面，且一周 ≤1 篇
+- **【0918 定论】一次只发一条，间隔 ≥6h**。第 1 条单独发 7981 展现 vs 第 6 条与长文同发 528 展现，**差 15 倍**。账号单时间窗推荐配额有限，同时发两条互相抢池子
+- 发布纪律：单条 / 间隔 6h+ / 发后 2h 内自己补评论 / 所有评论必回 / 记录发布时间测时段。**评论数权重高于点击率**（决定能否进下一级流量池）
 - **掘金**：唯一有正反馈的渠道，有阅读但赞少。系列连载（源码拆解）是点赞主要来源
 - 演示站可从外部抓取（curl 200 / agent-browser 截图成功），需要素材可直接截图
 
@@ -45,10 +47,10 @@
 字数 4500-5500（含代码）。标签：`#低代码` `#Spring Boot` `#Java` `#架构设计` `#企业开发`
 
 ### 已写 15 篇（避免重复）
-订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / log操作日志 1383行 5个反直觉设计(0916) / **auth认证链路 4091行 账号锁定为何完全失效(0917)**
+订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / log操作日志 1383行 5个反直觉设计(0916) / auth认证链路 4091行 账号锁定为何完全失效(0917) / **excel 4223行 @Async三重叠加失效(0918)**
 
 ### "框架源码拆解"系列进度
-① datascope SQL 改写 → ② tenant 多租户 → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log 操作日志（0916）→ ⑥ auth 认证链路（0917）→ ⑦ **excel 4223 行（已预告：@Async 自调用 + 异步导出）**
+① datascope SQL 改写 → ② tenant 多租户 → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log 操作日志（0916）→ ⑥ auth 认证链路（0917）→ ⑦ excel 4223 行（0918）→ ⑧ **websocket（已预告：连接管理/心跳/断线重连）**
 
 ### 可复用硬核事实
 - **MyBatis-Plus 3.5.7**；`MybatisPlusConfig` 用 `List<InnerInterceptor>` 注入
@@ -61,13 +63,19 @@
 - plugin-ai：`PermissionEngine` 63 行三态判决（工具名含 delete/submit/commit 触发人工审批）；`AiModelInvocationLog` 记 token + 调用时单价快照（按"分"存）
 
 ### starter 剩余矿脉（按行数）
-tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已写 0916）| auth 认证链路（已写 0917）| **excel 4223 行（已预告：@Async 自调用 + 异步导出）** | websocket | config 动态配置 | orm | cache
+tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已写 0916）| auth 认证链路（已写 0917）| excel（已写 0918）| **websocket（已预告：连接管理/心跳/断线重连）** | config 动态配置 | orm | cache
 
 ### 已核实待用的硬核事实（log / idempotent / excel / auth）
 - **log**：`OperationLogAspect` 676 行，切点 `@within(@Controller)||@within(@RestController)`（`@annotation` 版被注释掉）→ 所有 Controller 方法进切面；skip 判定前已完成 4 件事含 `apiConfigManager.getApiConfig()`；线程池默认 **core=2/max=5/queue=500 + CallerRunsPolicy**（高峰期业务线程自己写日志）；QUERY 全跳过；URL 后缀自动分类（/page /list /tree /detail /getbyid /options /profile /query→QUERY）；8 个敏感凭证路径直接 exclude（/auth/login 等）；`@ApiDecrypt` 接口的 `@RequestBody` 参数替换为 `[DECRYPTED_REQUEST_BODY_OMITTED]`；`OperationAuditContext` 是**普通 ThreadLocal**（切面在主线程 fillAuditSnapshot 拷贝进 POJO 再异步提交，规避了跨线程丢失）；**OperationLogInfo 无 traceId 字段**（只进 MDC），且 finally 里先 saveLogAsync 再 MDC.remove → 异步线程无 traceId；LogProperties 默认 requestParams/responseResult 截断 2000 字符
 - **idempotent**：见 2026-09-15 日志。核心：**STRICT 的 `annotation.expire()` 是死变量，锁租期固定 5s 且 Redisson 不启动 watchdog**；`extractToken()` 强转 bug（见下）
 - **log（补充）**：两条独立链路（AOP 切面 + `LoginLogListener implements SaTokenListener`），共用同一个 `logTaskExecutor`；**`ILogService` 是 SPI，框架层无实现**，两个入口都 `@ConditionalOnBean(ILogService.class)`（不实现就不注册，零开销）；Sa-Token `doLogin` **只在登录成功时回调** → 失败登录不进 `sys_login_log`（失败只调 `loginLockService` 计数）；`doKickout/doReplaced/doDisable/doUntieDisable` 4 个方法漏了 `enableLoginLog` 开关检查
-- **excel**：4223 行 / 30 类；`AsyncExportServiceImpl.submitExportTask` **内部自调用** `@Async protected executeExportAsync()` → 不走代理 → 异步完全失效；`taskStore` 用 ConcurrentHashMap（注释自认"生产建议用 Redis"，多实例/重启丢任务）；`downloadFile` 用 `Files.readAllBytes` 一次性读入内存（大文件 OOM）
+- **excel**（4223 行 / 30 类，0918 全量核实）：`DynamicExportEngine` 803 行 / `ExcelImportServiceImpl` 732 / `GenericRowDataListener` 232 / `ExcelEnhancedController` 228 / `AsyncExportServiceImpl` 178
+  - **【高危】`@Async` 三重叠加失效**（不止自调用）：① 同类内部调用 `executeExportAsync(...)` ② 方法是 `protected` ③ **不在 `AsyncExportService` 接口里 → Spring 用 JDK 动态代理（类实现了接口），代理对象上根本没这方法**。三条全改才生效
+  - **测试测不出来**：`AsyncExportSecurityContractTest` 直接 `new AsyncExportServiceImpl(...)`，绕过容器无代理 → 测试和生产的坏法一致，断言永远通过
+  - **`cleanupExpiredTasks()` 无任何调度**：全项目只有接口声明 + 实现 + 测试 mock，无 `@Scheduled` → 临时文件 + taskStore 永不清理
+  - `taskStore` 本地 ConcurrentHashMap（注释自认"生产建议用 Redis"）、无容量上限；`downloadFile` 用 `Files.readAllBytes` 返回 byte[]（大文件 OOM）
+  - **死物件**：`dataCount` 字段无 setter（Controller 有 getter，永远 null）；`MockHttpServletResponse` 私有静态内部类从未被引用
+  - **做得对**：安全契约测试（内部异常含 jdbc 密码不外泄，对外只返回 `PUBLIC_FAILURE_MESSAGE`；`filePath` 用 `@JsonIgnore`）；SPI 全 `@Autowired(required=false)` + 全部 Bean `@ConditionalOnMissingBean`
 - **auth**（4091 行 starter + 927 行 strategy，0917 全量核实）：
   - `AuthType` **7 种**：password / password_captcha / phone_captcha / wechat / email_captcha / oauth2 / social
   - 模板方法 `AbstractAuthStrategy.authenticate()` 四步：validateRequest → doAuthenticate → checkUserStatus → handleLoginSuccess
@@ -83,15 +91,18 @@ tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已�
 4. **安全开关 fail-open**：`loginLockService` 是 `@Autowired(required=false)`，Bean 缺失时 `isLoginLockEnabled()` 静默返回 false，防护消失且无任何日志
 5. **提示泄露剩余次数**："还剩 N 次尝试机会" → 用户名枚举漏洞（用户不存在 vs 密码错误返回不同信息）
 6. `forge-starter-idempotent/.../TokenRequiredStrategyHandler.extractToken()` 把 `getRequestAttributes()`（RequestAttributes）强转成 `RequestContextHolder` → 必然 ClassCastException 被 catch 吞 → token 恒 null → **TOKEN_REQUIRED 模式 100% 抛 TokenInvalidException**
-7. `forge-starter-excel/.../AsyncExportServiceImpl` `@Async` 自调用失效 → "异步导出"实为同步
+7. **【高危】`forge-starter-excel/.../AsyncExportServiceImpl` `@Async` 三重叠加失效**（自调用 + protected + 不在接口）→ "异步导出"实为同步，接口卡死。修法：拆到独立 Bean + public + 跨 Bean 调用
 8. idempotent STRICT 的 `annotation.expire()` 是死变量，锁租期固定 5s 且 Redisson 不启动 watchdog
+9. **`cleanupExpiredTasks()` 无调度**：写了清理逻辑但全项目无调用点 → 临时文件 + taskStore 永不释放
+10. **`downloadFile` 用 `Files.readAllBytes` 返回 byte[]** → 大文件 OOM，应改流式 `transferTo`
+11. **`dataCount` 死字段**（有 getter 无 setter，永远 null）+ **`MockHttpServletResponse` 死类**（从未引用）
 
 ### 其他候选切面
 能力开放网关 SPI（capability-parent，REST+MCP 双出口）/ 11 个 plugin 注册顺序 / CRUD Velocity 模板扩展点 / 部署上线踩坑 / 运维故障救回
 
 ## 4. 头条已写 26 篇长文 + 8 条微头条（角度清单）
 踩坑8个 / 4框架横评 / 协议驱动vs代码生成 / 业务闭环更新 / 反常识观点 / ForgeAdmin实测能力全景(0725 唯一热过) / 搭审批系统实战(0726) / 接私活8000块2天 / 半天搞定CRM / 企业集成与开放平台(0804) / AI-Agent安全操作后台(0826) / 开源项目介绍横评(0903) / 同事离职3天重构(0906) / 一张表生成多少代码2123行实测(0907) / 企业6大真实业务场景(0907) / AI写完100万行怎么管(0908) / DHH那篇反共识(0908) / GitSpawn 7款工具中毒(0909) / DeepSeek降价算账(0909) / 等保测评师查5样(0910) / 手机号明文3行SQL(0911) / 操作日志接口慢10倍676行(0915) / 异步导出卡3分钟@Async失效(0916) / **500并发同订单扣3次款1279行幂等(0917)**
-- **微头条**：0916 第1批 5 条（数字反差 7981展现✓ / 反常识 319 展现✗ / 求助提问 / 场景共鸣 / 清单盘点 未测）+ 0917 第2批 3 条（账号锁定 / 死常量 / 日志性能，全部数字反差型）
+- **微头条**：0916 第1批 5 条（数字反差 **7981展现/1330阅读/16.7%**✓ / 反常识 319展现/15阅读/4.7%✗ / 求助提问 / 场景共鸣 / 清单盘点 未测）+ 0917 第2批 3 条（账号锁定 **528展现/71阅读/13.4%**✓ / 死常量 / 日志性能）+ 0918 第3批 3 条（锁定窗口vs计数窗口 / 一张表生成2123行 / 63行代码管住AI）
 
 ### 关键事实备查
 - 实际 starter **23 个**（非 README 的 20），plugin **11 个**

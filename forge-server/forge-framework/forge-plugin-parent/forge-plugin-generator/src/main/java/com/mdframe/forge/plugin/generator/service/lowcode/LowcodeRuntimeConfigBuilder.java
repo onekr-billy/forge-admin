@@ -593,7 +593,10 @@ public class LowcodeRuntimeConfigBuilder {
             child.put("relationKey", StringUtils.defaultIfBlank(text(refProps.get("relationKey")), ref.getModelCode()));
             child.put("sourceField", childFkField);
             child.put("targetField", resolveMainRelationField(primaryModelCode, relation));
-            child.put("showInCreate", booleanWithDefault(refProps.get("inlineCreateEnabled"), true));
+            boolean inlineCreateEnabled = booleanWithDefault(refProps.get("inlineCreateEnabled"), true);
+            child.put("showInCreate", inlineCreateEnabled);
+            child.put("allowCreate", inlineCreateEnabled);
+            child.put("inlineCreateEnabled", inlineCreateEnabled);
             child.put("showInEdit", booleanWithDefault(refProps.get("inlineEditEnabled"), true));
             child.put("showInDetail", booleanWithDefault(refProps.get("showInDetail"), true));
             child.put("saveMode", normalizeChildSaveMode(refProps.get("saveMode")));

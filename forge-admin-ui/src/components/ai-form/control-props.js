@@ -12,6 +12,10 @@ export function resolveControlProps(props = {}) {
     'onUpdate:modelValue': _onUpdateModelValue,
     onUpdateValue: _onUpdateValueCamel,
     onUpdateModelValue: _onUpdateModelValueCamel,
+    'on-update:value': _onUpdateValueKebab,
+    'on-update:model-value': _onUpdateModelValueKebab,
+    'onUpdate:label-value': _onUpdateLabelValue,
+    'on-update:label-value': _onUpdateLabelValueKebab,
     ...rest
   } = source
   return rest

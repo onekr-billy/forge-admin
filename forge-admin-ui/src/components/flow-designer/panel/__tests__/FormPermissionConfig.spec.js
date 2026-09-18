@@ -147,4 +147,28 @@ describe('formPermissionConfig', () => {
 
     wrapper.unmount()
   })
+
+  it('子表字段和行级新增/修改/删除权限输出 v2 配置', async () => {
+    const wrapper = mountConfig({
+      formFieldCatalog: [
+        ...fields,
+        { scope: 'child', childKey: 'items', childField: 'quantity', field: 'quantity', label: '数量' },
+      ],
+    })
+
+    expect(wrapper.text()).toContain('items.quantity')
+    await wrapper.find('[data-test="child-allow-create"]').setValue(true)
+    await wrapper.find('[data-test="child-allow-update"]').setValue(true)
+    await wrapper.find('[data-test="child-allow-delete"]').setValue(true)
+
+    expect(wrapper.vm.config.formFieldPermissions).toMatchObject({
+      version: 2,
+      children: [{ childKey: 'items', allowCreate: true, allowUpdate: true, allowDelete: true }],
+    })
+    expect(wrapper.vm.config.formFieldPermissions.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'child', childKey: 'items', childField: 'quantity' }),
+    ]))
+
+    wrapper.unmount()
+  })
 })

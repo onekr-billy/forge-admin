@@ -6,6 +6,13 @@
  * config.formFieldPermissions: [{ field, label, readable, writable, required }]
  */
 import { computed } from 'vue'
+import {
+  normalizeFlowChildPermission,
+  normalizeFlowFieldCatalog,
+  normalizeFlowFieldPermission,
+  normalizeFlowFormPermissions,
+  serializeFlowFormPermissions,
+} from '@/utils/flow-field-permissions'
 
 const props = defineProps({
   config: { type: Object, required: true },
@@ -15,47 +22,45 @@ const props = defineProps({
 
 const emit = defineEmits(['update:config'])
 
+const savedPermissionBundle = computed(() => normalizeFlowFormPermissions(props.config?.formFieldPermissions))
+
 const savedPermissions = computed(() => {
   const map = new Map()
-  const source = Array.isArray(props.config?.formFieldPermissions) ? props.config.formFieldPermissions : []
-  for (const item of source) {
-    const normalized = normalizePermission(item)
-    if (normalized.field)
-      map.set(normalized.field, normalized)
+  for (const item of savedPermissionBundle.value.fields) {
+    if (item.field)
+      map.set(item.permissionKey, item)
   }
   return map
 })
 
 const formFields = computed(() => {
-  const map = new Map()
-  for (const item of props.formFieldCatalog || []) {
-    const field = String(item?.field || item?.fieldName || item?.name || item?.key || '').trim()
-    if (!field || map.has(field))
-      continue
-    map.set(field, {
-      field,
-      label: item?.label || item?.title || field,
-      componentType: item?.componentType || item?.type || '',
-      dataType: item?.dataType || '',
-      sourceRequired: item?.required === true,
-    })
-  }
-  return Array.from(map.values())
+  return normalizeFlowFieldCatalog(props.formFieldCatalog || []).map(item => ({
+    ...item,
+    componentType: item?.componentType || item?.type || '',
+    dataType: item?.dataType || '',
+    sourceRequired: item?.required === true || item?.sourceRequired === true,
+  }))
 })
 
 const rows = computed(() => {
   const output = formFields.value.map((field) => {
-    const saved = savedPermissions.value.get(field.field)
+    const saved = savedPermissions.value.get(field.permissionKey)
     return {
       ...field,
-      ...normalizePermission(saved || field),
+      configured: Boolean(saved),
+      ...normalizeFlowFieldPermission(saved || {
+        ...field,
+        readable: true,
+        writable: field.scope === 'main',
+      }),
     }
   })
 
   for (const saved of savedPermissions.value.values()) {
-    if (!output.some(row => row.field === saved.field)) {
+    if (!output.some(row => row.permissionKey === saved.permissionKey)) {
       output.push({
         ...saved,
+        configured: true,
         sourceRequired: false,
         componentType: '',
         dataType: '',
@@ -66,46 +71,41 @@ const rows = computed(() => {
   return output
 })
 
-const configuredCount = computed(() => {
-  return rows.value.filter(row => row.readable === false || row.writable === false || row.required === true).length
+const childPermissionRows = computed(() => {
+  const source = new Map()
+  formFields.value.filter(field => field.scope === 'child').forEach((field) => {
+    if (!source.has(field.childKey)) {
+      source.set(field.childKey, {
+        childKey: field.childKey,
+        label: field.childLabel || field.relationName || field.childKey,
+      })
+    }
+  })
+  savedPermissionBundle.value.children.forEach((child) => {
+    if (!child.childKey)
+      return
+    source.set(child.childKey, {
+      ...(source.get(child.childKey) || {}),
+      ...child,
+    })
+  })
+  return Array.from(source.values()).map(child => ({
+    ...normalizeFlowChildPermission(child),
+    fieldCount: formFields.value.filter(field => field.scope === 'child' && field.childKey === child.childKey).length,
+  }))
 })
 
-function normalizePermission(item = {}) {
-  const field = String(item.field || item.fieldCode || item.code || '').trim()
-  const readable = readBoolean(item.readable, readBoolean(item.visible, true))
-  const writable = readable && readBoolean(item.writable, readBoolean(item.editable, true))
-  return {
-    field,
-    fieldCode: field,
-    label: String(item.label || field || '').trim(),
-    visible: readable,
-    editable: writable,
-    readable,
-    writable,
-    required: writable && item.required === true,
-  }
-}
+const configuredCount = computed(() => {
+  const fieldCount = rows.value.filter(row => row.configured && (row.readable === false || row.writable === false || row.required === true)).length
+  const childCount = childPermissionRows.value.filter(row => row.configured && (row.allowCreate || row.allowUpdate || row.allowDelete || row.readable === false)).length
+  return fieldCount + childCount
+})
 
-function readBoolean(value, defaultValue) {
-  if (value === undefined || value === null || value === '')
-    return defaultValue
-  if (typeof value === 'boolean')
-    return value
-  if (typeof value === 'number')
-    return value !== 0
-  const text = String(value).trim().toLowerCase()
-  if (['true', '1', 'yes'].includes(text))
-    return true
-  if (['false', '0', 'no'].includes(text))
-    return false
-  return defaultValue
-}
-
-function update(field, patch) {
+function update(permissionKey, patch) {
   if (props.readonly)
     return
   const nextRows = rows.value.map((row) => {
-    if (row.field !== field)
+    if (row.permissionKey !== permissionKey)
       return row
     const next = { ...row, ...patch }
 
@@ -158,8 +158,31 @@ function update(field, patch) {
     next.editable = next.writable
     return next
   })
+  emitPermissions(nextRows, childPermissionRows.value)
+}
+
+function updateChild(childKey, patch) {
+  if (props.readonly)
+    return
+  const nextChildren = childPermissionRows.value.map((child) => {
+    if (child.childKey !== childKey)
+      return child
+    const next = { ...child, ...patch }
+    if (next.readable === false) {
+      next.allowCreate = false
+      next.allowUpdate = false
+      next.allowDelete = false
+    }
+    if (next.allowCreate || next.allowUpdate || next.allowDelete)
+      next.readable = true
+    return normalizeFlowChildPermission(next)
+  })
+  emitPermissions(rows.value, nextChildren)
+}
+
+function emitPermissions(fields, children) {
   emit('update:config', {
-    formFieldPermissions: nextRows.map(normalizePermission).filter(item => item.field),
+    formFieldPermissions: serializeFlowFormPermissions(fields, children),
   })
 }
 </script>
@@ -201,7 +224,7 @@ function update(field, patch) {
       </div>
       <div
         v-for="row in rows"
-        :key="row.field"
+        :key="row.permissionKey"
         class="form-permission-row"
         :class="{ stale: row.stale }"
       >
@@ -216,27 +239,46 @@ function update(field, patch) {
             </n-tag>
           </div>
           <div class="form-field-code">
-            {{ row.field }}
+            {{ row.scope === 'child' ? `${row.childKey}.${row.field}` : row.field }}
           </div>
         </div>
         <n-checkbox
           data-test="permission-readable"
           :checked="row.readable"
           :disabled="readonly"
-          @update:checked="update(row.field, { readable: $event })"
+          @update:checked="update(row.permissionKey, { readable: $event })"
         />
         <n-checkbox
           data-test="permission-writable"
           :checked="row.writable"
           :disabled="readonly || !row.readable"
-          @update:checked="update(row.field, { writable: $event })"
+          @update:checked="update(row.permissionKey, { writable: $event })"
         />
         <n-checkbox
           data-test="permission-required"
           :checked="row.required"
           :disabled="readonly || !row.readable"
-          @update:checked="update(row.field, { required: $event })"
+          @update:checked="update(row.permissionKey, { required: $event })"
         />
+      </div>
+      <div v-if="childPermissionRows.length" class="child-permission-section">
+        <div class="child-permission-title">
+          子表行操作
+        </div>
+        <div v-for="child in childPermissionRows" :key="child.childKey" class="child-permission-row">
+          <div>
+            <div class="form-field-label">
+              {{ child.label || child.childKey }}
+            </div>
+            <div class="form-field-code">
+              {{ child.childKey }} · {{ child.fieldCount }} 个字段
+            </div>
+          </div>
+          <label><span>可见</span><n-checkbox :checked="child.readable" :disabled="readonly" @update:checked="updateChild(child.childKey, { readable: $event })" /></label>
+          <label><span>新增</span><n-checkbox data-test="child-allow-create" :checked="child.allowCreate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowCreate: $event })" /></label>
+          <label><span>修改</span><n-checkbox data-test="child-allow-update" :checked="child.allowUpdate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowUpdate: $event })" /></label>
+          <label><span>删除</span><n-checkbox data-test="child-allow-delete" :checked="child.allowDelete" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowDelete: $event })" /></label>
+        </div>
       </div>
     </div>
   </div>
@@ -313,6 +355,37 @@ function update(field, patch) {
   padding: 8px 12px;
   background: #fff;
   border-top: 1px solid #eef2f7;
+}
+
+.child-permission-section {
+  margin-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.child-permission-title {
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.child-permission-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(4, 64px);
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 8px 0;
+  color: #475569;
+  font-size: 12px;
+}
+
+.child-permission-row label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .form-permission-row:first-child {

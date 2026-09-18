@@ -360,9 +360,9 @@
               />
               <ChildTableEditor
                 v-if="businessFormChildrenConfig.length"
+                ref="businessChildFormRef"
                 v-model:value="businessChildFormData"
                 :children-config="businessFormChildrenConfig"
-                readonly
                 :parent-form-data="businessFormData"
                 :context="businessFormRenderContext"
               />
@@ -638,6 +638,7 @@ const businessFormContext = ref(null)
 const businessFormData = ref({})
 const businessChildFormData = ref({})
 const businessFormRef = ref(null)
+const businessChildFormRef = ref(null)
 const businessFormLoading = ref(false)
 // 统一的表单加载态：表单信息与业务上下文并行加载，模板只展示这一个 loading，避免先后两次转圈
 const taskFormLoading = computed(() => formInfoLoading.value || businessFormLoading.value)
@@ -840,7 +841,7 @@ function normalizeBusinessChildrenData(recordData) {
 }
 
 function resolveBusinessChildKey(child = {}) {
-  return child.key || child.modelCode || child.tableName || 'children'
+  return child.modelCode || child.relationKey || child.key || child.tableName || 'children'
 }
 
 function logBusinessApprovalChildren(source, recordData) {
@@ -939,9 +940,17 @@ function hasBusinessTaskFormQuery(query = {}) {
 }
 
 function hasWritableBusinessFormFields(context) {
-  return Array.isArray(context?.fields) && context.fields.some(field =>
+  const mainWritable = Array.isArray(context?.fields) && context.fields.some(field =>
     field?.writable === true && field?.readonly !== true && field?.disabled !== true,
   )
+  const childWritable = Array.isArray(context?.childrenConfig) && context.childrenConfig.some((child) => {
+    if (child?.allowCreate === true || child?.allowDelete === true || child?.allowUpdate === true)
+      return true
+    return Array.isArray(child?.fields) && child.fields.some(field =>
+      field?.writable === true && field?.readonly !== true && field?.disabled !== true,
+    )
+  })
+  return mainWritable || childWritable
 }
 
 async function loadBusinessTaskFormContext(row, formInfo) {
@@ -1088,6 +1097,33 @@ function normalizeFallbackBusinessFields(asset = null, permissions = []) {
 function buildBusinessTaskFormSavePayload() {
   const context = businessFormContext.value || {}
   const businessKey = resolveTaskIdentityBusinessKey(context, taskFormInfo.value, currentTask.value)
+  const writableMainData = {}
+  ;(Array.isArray(context.fields) ? context.fields : []).forEach((field) => {
+    if (field?.writable === true && field?.readonly !== true && field?.disabled !== true) {
+      const code = field.field || field.fieldCode
+      if (code && Object.prototype.hasOwnProperty.call(businessFormData.value, code))
+        writableMainData[code] = businessFormData.value[code]
+    }
+  })
+  const childValue = businessChildFormRef.value?.getValue?.() || businessChildFormData.value
+  const childPayload = {}
+  businessFormChildrenConfig.value.forEach((child) => {
+    const key = resolveBusinessChildKey(child)
+    const writableFields = new Set((Array.isArray(child.fields) ? child.fields : [])
+      .filter(field => field?.writable === true && field?.readonly !== true && field?.disabled !== true)
+      .flatMap(field => [field.field, field.fieldCode].filter(Boolean)))
+    const rows = Array.isArray(childValue?.[key]) ? childValue[key] : []
+    if (!writableFields.size && child.allowCreate !== true && child.allowUpdate !== true && child.allowDelete !== true)
+      return
+    childPayload[key] = rows.map((row) => {
+      const next = {}
+      Object.entries(row || {}).forEach(([field, value]) => {
+        if (field === 'id' || field === 'ID' || field === '_deleted' || field === '__deleted' || writableFields.has(field))
+          next[field] = value
+      })
+      return next
+    })
+  })
   return compactParams({
     taskId: context.taskId || taskFormInfo.value?.taskId || currentTask.value?.taskId || currentTask.value?.id,
     businessKey,
@@ -1099,7 +1135,12 @@ function buildBusinessTaskFormSavePayload() {
       ? context.recordId
       : (context.recordId || taskFormInfo.value?.recordId || currentTask.value?.recordId),
     formKey: context.formKey || taskFormInfo.value?.formKey,
-    data: { ...businessFormData.value },
+    data: {
+      main: writableMainData,
+      ...(businessFormChildrenConfig.value.length
+        ? { children: childPayload }
+        : {}),
+    },
   })
 }
 
@@ -1112,6 +1153,8 @@ async function saveBusinessTaskFormFields(options = {}) {
   try {
     if (validate)
       await businessFormRef.value?.validate?.()
+    if (validate)
+      await businessChildFormRef.value?.validate?.()
 
     const res = await saveBusinessTaskFormContext(buildBusinessTaskFormSavePayload())
     if (res.code !== 200)
