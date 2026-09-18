@@ -10,13 +10,11 @@ import com.mdframe.forge.starter.core.constant.FlowDelegationConstants;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.session.LoginUser;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
@@ -27,11 +25,21 @@ import java.util.function.Supplier;
  * <p>
  * 在引入 {@code forge-starter-auth} 的服务中自动注册。
  * 每次 {@link com.mdframe.forge.flow.client.FlowClient} 发起 HTTP 请求前，
- * 自动从当前请求上下文中取出 Sa-Token，透传到 Authorization 请求头，
- * 解决服务内调用流程服务时出现"未登录"的问题。
+ * 自动为当前调用取出可用的 Sa-Token，透传到 Authorization 请求头。
  * <p>
- * 委托 Token 按身份（用户+租户+组织+客户端）在进程内短窗口复用，
- * 避免每次调用都新建会话挤占账号会话池上限（见 {@link #reuseOrIssueDelegatedToken}）。
+ * 取 Token 策略分两条路径：
+ * <ul>
+ *     <li>浏览器在线会话（绝大多数调用）：直接透传现有 token，
+ *     flow 服务与其共享 Redis 会话，标准登录校验即可识别，
+ *     不为常规调用制造任何新会话；</li>
+ *     <li>MCP / 开放网关 / 高危回调等无浏览器会话的程序化调用：
+ *     签发短时效委托 Token（设备名 {@code mcp-flow:} 前缀，60s TTL），
+ *     按身份（用户+租户+组织+客户端）在进程内短窗口复用，
+ *     避免每次调用都新建会话挤占账号会话池上限。</li>
+ * </ul>
+ * 曾把浏览器路径也改为签发委托会话，结果常规页面操作持续新增临时会话，
+ * 与开发期频繁重登（is-share=false、timeout=1800s 内旧会话仍占位）叠加后
+ * 触发 logoutByMaxLoginCount 把最早的浏览器会话挤下线，故回归透传设计。
  *
  * @author forge
  */
@@ -44,10 +52,8 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
     private static final long DELEGATED_TOKEN_TIMEOUT_SECONDS = 60L;
     /** 委托 Token 剩余有效期低于该值时换发新 Token，避免把临近过期的 Token 交给调用方 */
     private static final long DELEGATED_TOKEN_REFRESH_MARGIN_MS = 10_000L;
-    private static final long INTERACTIVE_CLIENT_ID = 1L;
 
     private final Supplier<StpLogic> stpLogicSupplier;
-    private final Supplier<LoginUser> loginUserSupplier;
     private final LongSupplier clock;
 
     /** 委托 Token 进程内缓存：key=userId:tenantId:orgId:clientId，过期条目在下次访问时被惰性换发 */
@@ -56,83 +62,38 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
     private final ConcurrentHashMap<String, Object> delegationCreationLocks = new ConcurrentHashMap<>();
 
     public SaTokenFlowTokenProvider() {
-        this(StpUtil::getStpLogic, SessionHelper::getLoginUser);
+        this(StpUtil::getStpLogic, System::currentTimeMillis);
     }
 
     SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier) {
-        this(stpLogicSupplier, SessionHelper::getLoginUser);
+        this(stpLogicSupplier, System::currentTimeMillis);
     }
 
-    SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier, Supplier<LoginUser> loginUserSupplier) {
-        this(stpLogicSupplier, loginUserSupplier, System::currentTimeMillis);
-    }
-
-    SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier, Supplier<LoginUser> loginUserSupplier,
-            LongSupplier clock) {
+    SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier, LongSupplier clock) {
         this.stpLogicSupplier = stpLogicSupplier;
-        this.loginUserSupplier = loginUserSupplier;
         this.clock = clock;
     }
 
     @Override
     public String getToken() {
+        // 程序化委托身份（MCP / 开放网关 / 高危回调 / 异步身份装饰器）：签发短时效委托 Token
         ExecutionIdentity identity = ExecutionIdentityContextHolder.current().orElse(null);
         if (identity != null) {
             return createDelegatedFlowToken(identity);
         }
+        // 浏览器在线会话：直接透传现有 token，零新增会话。
+        // 不得在此路径签发委托会话：常规页面操作高频发生，任何签发都会持续挤占
+        // 账号会话池（max-login-count 达到上限时 logoutByMaxLoginCount 注销最早会话，
+        // 表现为用户"未点击退出却自动被注销"）
         try {
             StpLogic stpLogic = stpLogicSupplier.get();
-            if (!stpLogic.isLogin()) {
-                return null;
+            if (stpLogic.isLogin()) {
+                return stpLogic.getTokenValue();
             }
-            try {
-                ExecutionIdentity sessionIdentity = toSessionExecutionIdentity(
-                        loginUserSupplier.get(), stpLogic.getTokenValue());
-                if (sessionIdentity != null) {
-                    return createDelegatedFlowToken(sessionIdentity);
-                }
-            }
-            catch (FlowTokenAcquisitionException exception) {
-                throw exception;
-            }
-            catch (Exception exception) {
-                log.debug("[FlowTokenProvider] 无法从当前登录用户构建流程委托身份，回退透传 token: {}",
-                        exception.getMessage());
-            }
-            return stpLogic.getTokenValue();
-        } catch (FlowTokenAcquisitionException e) {
-            throw e;
         } catch (Exception e) {
             log.debug("[FlowTokenProvider] 获取 Sa-Token 失败（当前线程无登录上下文）: {}", e.getMessage());
         }
         return null;
-    }
-
-    private ExecutionIdentity toSessionExecutionIdentity(LoginUser loginUser, String tokenValue) {
-        if (loginUser == null
-                || loginUser.getUserId() == null
-                || loginUser.getTenantId() == null
-                || loginUser.getTenantId() <= 0
-                || loginUser.getActiveOrgId() == null
-                || loginUser.getActiveOrgId() <= 0) {
-            return null;
-        }
-        String clientCode = loginUser.getUserClient();
-        if (clientCode == null || clientCode.isBlank()) {
-            clientCode = "pc";
-        }
-        String tokenId = tokenValue != null && !tokenValue.isBlank()
-                ? tokenValue
-                : UUID.randomUUID().toString();
-        return new ExecutionIdentity(
-                loginUser,
-                "USER",
-                loginUser.getUserId(),
-                null,
-                INTERACTIVE_CLIENT_ID,
-                clientCode,
-                tokenId,
-                Set.of());
     }
 
     private String createDelegatedFlowToken(ExecutionIdentity identity) {

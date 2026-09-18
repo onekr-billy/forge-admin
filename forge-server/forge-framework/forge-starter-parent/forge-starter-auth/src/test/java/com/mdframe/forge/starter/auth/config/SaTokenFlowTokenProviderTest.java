@@ -90,42 +90,27 @@ class SaTokenFlowTokenProviderTest {
     }
 
     @Test
-    void shouldKeepExistingSaTokenBehaviorWhenLoginUserUnavailable() {
+    void shouldPassThroughBrowserTokenWithoutIssuingDelegation() {
+        // 浏览器在线会话必须直接透传现有 token：常规页面操作高频发生，
+        // 任何签发都会持续挤占账号会话池，堆积到 max-login-count 后
+        // logoutByMaxLoginCount 会把最早的浏览器会话挤下线
         StpLogic stpLogic = mock(StpLogic.class);
         when(stpLogic.isLogin()).thenReturn(true);
         when(stpLogic.getTokenValue()).thenReturn("interactive-token");
-        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, () -> {
-            throw new IllegalStateException("no session");
-        });
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic);
 
         assertThat(provider.getToken()).isEqualTo("interactive-token");
         verify(stpLogic, never()).createLoginSession(any(), any(SaLoginModel.class));
     }
 
     @Test
-    void shouldIssueDelegatedTokenForLoggedInUserWithoutExecutionIdentity() {
+    void shouldReturnNullWhenNoIdentityAndNotLoggedIn() {
         StpLogic stpLogic = mock(StpLogic.class);
-        SaSession tokenSession = mock(SaSession.class);
-        when(stpLogic.isLogin()).thenReturn(true);
-        when(stpLogic.getTokenValue()).thenReturn("interactive-token");
-        when(stpLogic.createLoginSession(eq(88L), any(SaLoginModel.class)))
-                .thenReturn("session-delegated-token");
-        when(stpLogic.getTokenSessionByToken("session-delegated-token", true))
-                .thenReturn(tokenSession);
+        when(stpLogic.isLogin()).thenReturn(false);
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic);
 
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(88L);
-        loginUser.setTenantId(1L);
-        loginUser.setActiveOrgId(201L);
-        loginUser.setUserClient("pc");
-        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, () -> loginUser);
-
-        assertThat(provider.getToken()).isEqualTo("session-delegated-token");
-        verify(tokenSession).set(FlowDelegationSessionVerifier.MARKER_KEY, Boolean.TRUE);
-        verify(tokenSession).set(FlowDelegationSessionVerifier.ACTOR_USER_ID_KEY, 88L);
-        verify(tokenSession).set(FlowDelegationSessionVerifier.TENANT_ID_KEY, 1L);
-        verify(tokenSession).set(FlowDelegationSessionVerifier.ACTIVE_ORG_ID_KEY, 201L);
-        verify(tokenSession).set(FlowDelegationSessionVerifier.CLIENT_ID_KEY, 1L);
+        assertThat(provider.getToken()).isNull();
+        verify(stpLogic, never()).createLoginSession(any(), any(SaLoginModel.class));
     }
 
     @Test
@@ -138,7 +123,7 @@ class SaTokenFlowTokenProviderTest {
                 .thenReturn("delegated-token-1", "delegated-token-2");
         when(stpLogic.getTokenSessionByToken(any(), eq(true))).thenReturn(tokenSession);
         AtomicLong clock = new AtomicLong();
-        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, () -> null, clock::get);
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, clock::get);
         ExecutionIdentity identity = identity("USER", 101L);
 
         try (var ignored = ExecutionIdentityContextHolder.open(identity)) {
