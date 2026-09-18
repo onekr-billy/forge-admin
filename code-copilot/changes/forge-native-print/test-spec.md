@@ -1,6 +1,6 @@
 # 测试与验收基线
 
-> 状态：M1/M2/M3a/M3b 阶段验证完成；真实应用/低代码/流程 E2E 和实机打印仍待后续阶段验收。
+> 状态：M1/M2/M3a/M3b/M4a 阶段验证完成；真实应用/低代码/流程 E2E 和实机打印仍待后续阶段验收。
 >
 > 依据：[spec.md](spec.md)、[tasks.md](tasks.md)、`code-copilot/rules/automated-testing-standard.md`
 
@@ -171,3 +171,7 @@ M3a 增强：H2 MySQL 模式加载同一 V1.0.168 DDL，仅去除 ENGINE/CHARSET
 ## M4a 增量验证
 
 复用 M3b 基线：新增字符串页面身份的 DTO/HTTP/真实 Mapper/路由行为测试；兼容旧数字身份 hash；应用可见范围/权限/actor 租户检查；历史版本引用保护、锁与事务边界；固定版本归属/hash/停用失败不提交发布指针、旧快照兼容。执行相关 Print 和 generator 目标单测、Admin 聚合 package、前端 lint/打印单测/build。仅路由解析逻辑调整，不改可视组件；真实 MySQL 迁移与锁并发验收仍待用户环境，不启动 Admin/Flow。
+
+M4a 实际结果：Print 106 + generator 30 项通过，PrintIdentityTest 扩充 current 方法断言后单独复验 1 项通过（不重复计入总数）；前端 77 项通过，ESLint 正则修复后路由 8 项复验通过；Admin 46 模块 package 与 Vite build 通过。无视觉组件修改，本次仅验证路由解析，不重复上一阶段浏览器截图。H2 覆盖 SQL/事务/并发阻塞，不能代替 MySQL REPEATABLE READ 与 V171 information_schema/PREPARE 实跑。
+
+真实环境下一轮新增验收：先运行 V171，检查两表旧数字 page_id 仍等值且 source_key 未改变；应用发布、停用/删除模板并发时不能生成悬空引用；保留历史应用版本时解除当前绑定仍不能删除模板。候选打印快照生成和 DataProvider 在 M4b 安装后才执行完整真实业务链路。

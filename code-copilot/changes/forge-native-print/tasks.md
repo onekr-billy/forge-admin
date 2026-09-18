@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，真实业务接入 M4–M6 未完成。禁止 push。
+> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，M4a 接入前置已完成，真实业务接入 M4b/M4c–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -132,8 +132,8 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 当前分支为 `forge-native-print`。仓库核对发现：工作台页面 ID 是字符串（如 `page_purchase`），M3 的 Long pageId 不能接入；应用版本提交与打印删除尚未共享应用行锁。先完成 M4a，再接 M4b/M4c；不将基础适配计作真实单据打印完成。
 
 - [x] M4a-1（T29 前置）：`PrintSourceRequest`、两个来源 DTO、两个实体改用受控字符串 pageId（拆为 DTO 组与持久化组）；新增 V1.0.171 扩展两表 page_id，保持旧数字身份摘要不变。路由解析同步，补 DTO/HTTP/Mapper/路由验证。
-- [ ] M4a-2（T33 前置）：应用 Mapper 行锁、版本 Mapper 历史快照当前读（4 文件）；新增 `service/printing/{PrintApplicationAccessAdapter,PrintApplicationSnapshotCodec,PrintApplicationLock}.java`。应用设计权限与应用可见范围同时核验，删除检查全部保留的历史应用版本。
-- [ ] M4a-3（T33 前置）：新增 `PrintApplicationVersionGuard`，接入 `BusinessApplicationVersionService`；共享应用行锁下核验固定模板版本/归属/hash，失败不提交应用版本或发布指针。补服务与事务/Mapper 测试。
+- [x] M4a-2（T33 前置）：应用 Mapper 行锁、版本 Mapper 历史快照当前读（4 文件）；新增 `service/printing/{PrintApplicationAccessAdapter,PrintApplicationSnapshotCodec,PrintApplicationLock}.java`。应用设计权限与应用可见范围同时核验，删除检查全部保留的历史应用版本。
+- [x] M4a-3（T33 前置）：新增 `PrintApplicationVersionGuard`，接入 `BusinessApplicationVersionService`；共享应用行锁下核验固定模板版本/归属/hash，失败不提交应用版本或发布指针。补服务与事务/Mapper 测试。
 - [ ] M4b：T29/T30/T33 余项，已发布元数据、主子表读取与字段权限、候选快照生成/发布校验。特别验证 DynamicCrudService 的子表读取后处理，不能沿用未翻译/未脱敏子表结果。
 - [ ] M4c：T31/T32/T34，工作台入口、运行动作、下载协议及浏览器验收；进入前落实 R01。
 
@@ -214,3 +214,9 @@ T22–T28 的上述子任务均已实现并验证，实际新增内容包括模�
 - 真正 Spring 事务代理 + H2 Mapper 覆盖并发默认绑定、发布插入后 rollback、旧修订冲突、跨租户/操作者、图片字段授权与 4MiB 输出边界；MockMvc 覆盖明确 DTO 和规范化 schemaJson 响应。缺少 Provider 的 Spring 构造注入验证通过。
 - 合成 HTTP 浏览器验证包括创建/保存/冲突/等待中编辑/名称离开保护/版本/绑定/仅运行权限/预览/缺少适配器/数据清理，详见 verification/m3b-results.json 和 browser-results-m3b.json。
 - 本阶段可进入 M4，但真实业务闭环未验收：应用授权 SPI 实现、低代码 Provider、应用发布快照固定模板引用仍由 T29–T34 完成。M4–M6 和真实 E2E 不勾选。
+
+### M4a 阶段结果
+
+M4a-1 已提交 d90b720b；M4a-2/3 的应用适配和提交守卫使用同一事务锁，作为同一安全闭环提交。字符串页面 ID、当前身份、应用设计权限、历史引用检查、固定模板版本/hash 验证已实现。Print 106 项、generator 30 项目标测试通过；其中 5 项采用生产 XML/MyBatis-Plus 和真实 Spring/H2 事务验证。前端 77 项与生产构建通过，Admin 46 模块聚合 package 通过。identity 新增断言另增量复验通过。
+
+T29/T30/T33 总任务保持未完成：候选 printing 清单生成、已发布业务字段目录及真实数据 Provider 仍属 M4b；T31/T32/T34 和 R01 保留待办。无真实库迁移或业务 E2E，不将 M4a 视为可打印业务单据。

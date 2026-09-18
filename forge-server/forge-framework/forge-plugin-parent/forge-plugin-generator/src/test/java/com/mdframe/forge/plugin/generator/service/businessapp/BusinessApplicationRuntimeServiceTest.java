@@ -415,7 +415,7 @@ class BusinessApplicationRuntimeServiceTest {
         private final AiBusinessApplicationVersion version;
 
         StubVersionService(AiBusinessApplicationVersion version) {
-            super(null, null, null);
+            super(null, null, null, null);
             this.version = version;
         }
 

@@ -22,9 +22,11 @@ class PrintIdentityTest {
             user.setUserId(9L);
             user.setMainOrgId(3L);
             session.when(SessionHelper::getLoginUser).thenReturn(user);
+            assertThat(identity.current().userId()).isEqualTo(9L);
             assertThatThrownBy(() -> identity.require("print:execute")).isInstanceOf(BusinessException.class);
             session.when(() -> SessionHelper.hasPermission("print:execute")).thenReturn(true);
             TenantContextHolder.setTenantId(2L);
+            assertThatThrownBy(identity::current).isInstanceOf(BusinessException.class);
             assertThatThrownBy(() -> identity.require("print:execute")).isInstanceOf(BusinessException.class);
             TenantContextHolder.setTenantId(1L);
             assertThat(identity.require("print:execute").userId()).isEqualTo(9L);

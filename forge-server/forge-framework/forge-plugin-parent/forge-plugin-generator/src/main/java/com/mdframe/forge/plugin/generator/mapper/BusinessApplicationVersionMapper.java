@@ -21,6 +21,10 @@ public interface BusinessApplicationVersionMapper extends BaseMapper<AiBusinessA
                                                     @Param("applicationId") Long applicationId,
                                                     @Param("versionId") Long versionId);
 
+    /** 锁定读全部保留快照，避免删除检查受之前一致性读快照影响。 */
+    List<AiBusinessApplicationVersion> lockRetainedSnapshots(@Param("tenantId") Long tenantId,
+                                                            @Param("applicationId") Long applicationId);
+
     Integer selectMaxVersionNo(@Param("tenantId") Long tenantId,
                                @Param("applicationId") Long applicationId);
 }

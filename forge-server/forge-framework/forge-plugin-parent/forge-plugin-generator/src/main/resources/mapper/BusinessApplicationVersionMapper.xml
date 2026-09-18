@@ -71,4 +71,11 @@
           AND del_flag = '0'
     </select>
 
+    <select id="lockRetainedSnapshots" resultMap="BaseResultMap">
+        SELECT id, tenant_id, application_id, version_no, snapshot_json
+        FROM ai_business_application_version
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND del_flag = '0'
+        ORDER BY id
+        FOR UPDATE
+    </select>
 </mapper>

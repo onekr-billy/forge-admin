@@ -225,3 +225,5 @@ M3b 审查补充：图片元素的 FIELD 绑定只能使用目录类型 IMAGE；
 - 应用快照扩展 `printing = {schemaVersion: 1, bindings: [...]}`。每项固定 source、scene、templateId、templateVersionId、schemaHash、isDefault、sortOrder；无正文，无最新版本回退。同来源/场景/模板不能重复，每范围默认至多一个。旧快照缺少 printing 视为空；显式 null、未知版本、坏结构拒绝。
 - 最终提交/回滚提交均校验固定版本仍存在、模板启用、应用来源一致及规范协议 SHA-256 一致。模板删除扫描全部未删除应用版本，任何历史引用均阻止删除，错误不回显历史正文。候选快照生成、来源字段变更检查由 M4b 完成；本阶段不开放真实数据 Provider。
 - 本阶段无权限资源新增、无角色自动授权、无业务状态/数据修复 SQL。应用版本新增与发布指针仍由原事务处理，打印校验失败整体回滚该事务；既有协调发布前置步骤的副作用仍沿用原恢复机制，不承诺全系统原子回滚。
+
+M4a 落位：`PrintApplicationAccessAdapter`、`PrintApplicationLock`、`PrintApplicationSnapshotCodec`、`PrintApplicationVersionGuard` 均在 generator 的 `service/printing/`，不使 print 反向依赖 generator。Codec 每个应用最多 1000 条引用、每来源/场景最多 100 个模板；IDs 支持 Long 范围字符串，拒绝小数/溢出与未知字段。`BusinessApplicationVersionService.commitImmutable` 在查询/写入版本之前调用守卫，因此幂等重试、正常提交和回滚提交均走共同锁。引用守卫不是候选字段合法性校验的替代，后者继续由 M4b 实现。

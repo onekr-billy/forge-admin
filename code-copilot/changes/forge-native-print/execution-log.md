@@ -268,3 +268,21 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 验证：Java 17/Maven 3.9.9，既有 /private/tmp/forge-print-toolchain/env.sh 和 Maven settings，`-pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='Print*Test' -Dsurefire.failIfNoSpecifiedTests=false`：106 项全部通过（包括 DTO→MockMvc→事务 Service→Mapper 的字符串页面身份）。前端 Node 24.21，`vitest run src/components/print src/stores/print`：12 文件 77 项通过；目标 ESLint 首轮提示正则风格，--fix 后通过；`node --max-old-space-size=8192 node_modules/vite/bin/vite.js build` 成功，46.44 秒，保留既有构建警告。未启动任何服务/未执行真实迁移。
 
 M4a-2/3 正在实现，不将数据 Provider、应用发布快照生成或工作台入口标为完成。
+
+## 2026-09-19 · M4a-2/3 应用权限与发布引用保护
+
+落位：generator 新增 PrintApplicationAccessAdapter、PrintApplicationLock、PrintApplicationSnapshotCodec、PrintApplicationVersionGuard；扩展两组 Application Mapper/XML；BusinessApplicationVersionService 最终提交挂接引用守卫；PrintIdentity 提取 current() 供当前登录身份校验。新增 4 个测试类和 1 个合成数据工具，generator 增加 test-scope H2（无生产依赖新增）；既有 2 个应用版本/运行测试适配构造器。
+
+结果与证据：
+- `mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest='PrintApplication*Test,BusinessApplicationVersionServiceTest,BusinessApplicationRuntimeServiceTest,BusinessApplicationPhaseFiveSecurityTest' -Dsurefire.failIfNoSpecifiedTests=false`：30 项通过，28.726 秒。其中应用锁/版本事务 5 项、固定版本守卫 4 项、应用授权/历史引用 3 项、快照协议 4 项、既有应用版本/运行/快照安全 14 项。
+- 前一轮 `-Dtest='Print*Test,...'` 中打印插件 106 项通过。新 current() 断言再按 `-Dtest=PrintIdentityTest` 增量复验 1 项通过。
+- `mvn ... -pl forge-admin-server -am package -DskipTests`：46 模块 BUILD SUCCESS，29.232 秒。未启动 Admin。
+- V171 静态检查：版本号唯一、两处 information_schema 防重、无 Flyway 业务占位符；git diff --check 通过。
+
+验证中修正：新增守卫依赖后，旧 RuntimeService 测试子类 super 构造器遗漏参数导致 testCompile 失败，已适配；H2 合成模板最初漏写非空 create_by，导致 5 项夹具初始化失败，补齐 create_by/update_by/create_dept 后全部通过，未放宽表约束。
+
+Spec 审查：本轮仅完成 M4a；应用候选快照生成、字段版本校验与真实 Provider 未提前勾选。旧应用快照缺少 printing 兼容为空；显式坏结构和未知版本拒绝。没有新增 Controller、角色授权、业务数据修改或流程动作。
+
+代码审查：所有查询在 XML，tenant_id/del_flag 显式过滤；应用锁在前，模板锁在后；历史引用用锁定读，避免之前一致性读快照漏项；固定模板版本不读最新指针；错误不携带快照正文；没有 Service 循环依赖。H2 证明同一应用并发阻塞及事务回滚，MySQL 方言/隔离级别仍待真实环境验收。
+
+本轮无新启动的服务。未运行真实迁移、MySQL、Redis、Admin、Flow；没有 push。既有 .DS_Store 保留。后续从 M4b（已发布模型目录、主子表权限/展示转换与候选快照贡献器）继续。
