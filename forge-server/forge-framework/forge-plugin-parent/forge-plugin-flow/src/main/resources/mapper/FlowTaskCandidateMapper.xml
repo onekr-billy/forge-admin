@@ -96,6 +96,20 @@
           AND status = 1
     </select>
 
+    <!-- 会话组可见性检查：一次 IN 替代逐组 COUNT（角色/组织/用户组常见 5-15 个，逐个 COUNT 在远程库下是 N+1 放大器） -->
+    <select id="countActiveByTaskAndValues" resultType="int">
+        SELECT COUNT(1)
+        FROM sys_flow_task_candidate
+        WHERE tenant_id = #{tenantId}
+          AND task_id = #{taskId}
+          AND candidate_type = #{candidateType}
+          AND status = 1
+          AND candidate_value IN
+        <foreach collection="candidateValues" item="value" open="(" separator="," close=")">
+            #{value}
+        </foreach>
+    </select>
+
     <select id="selectDynamicSignRelations" resultType="com.mdframe.forge.starter.flow.vo.FlowTaskSignRelationVO">
         SELECT id,
                task_id AS taskId,

@@ -571,9 +571,13 @@ public class FlowTaskEventListener implements FlowableEventListener {
             Map<String, Object> runtimeVariables = runtimeService.getVariables(processInstanceId);
             if (runtimeVariables != null && !runtimeVariables.isEmpty()) {
                 variables.putAll(runtimeVariables);
+                // 运行态变量已覆盖全部流程级变量，直接返回：
+                // 历史 variables 按 processInstanceId 全量拉取，是事件链路里最重的一次往返，
+                // 仅在流程已结束、运行变量不可读时才需要兑底
+                return variables;
             }
         } catch (Exception e) {
-            log.debug("从运行实例读取流程变量失败，尝试从历史变量兜底: processInstanceId={}", processInstanceId);
+            log.debug("从运行实例读取流程变量失败，尝试从历史变量兑底: processInstanceId={}", processInstanceId);
         }
 
         try {
@@ -894,6 +898,11 @@ public class FlowTaskEventListener implements FlowableEventListener {
     }
 
     private String resolveUserDisplayName(String userId, String fallback) {
+        // fallback 已有显示名时直接使用，避免每个任务事件都反查一次用户表；
+        // 只有名字缺失（首次写入/历史脏数据）时才走 getUserInfo 反查
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback.trim();
+        }
         if (userId != null && !userId.isBlank() && flowOrgIntegrationService != null) {
             try {
                 Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());

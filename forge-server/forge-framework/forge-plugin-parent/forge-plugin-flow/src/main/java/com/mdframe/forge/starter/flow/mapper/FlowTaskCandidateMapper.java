@@ -44,6 +44,11 @@ public interface FlowTaskCandidateMapper extends BaseMapper<FlowTaskCandidate> {
                                   @Param("candidateType") String candidateType,
                                   @Param("candidateValue") String candidateValue);
 
+    int countActiveByTaskAndValues(@Param("tenantId") Long tenantId,
+                                   @Param("taskId") String taskId,
+                                   @Param("candidateType") String candidateType,
+                                   @Param("candidateValues") java.util.Collection<String> candidateValues);
+
     java.util.List<FlowTaskSignRelationVO> selectDynamicSignRelations(@Param("tenantId") Long tenantId,
                                                                        @Param("parentTaskId") String parentTaskId);
 

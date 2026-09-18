@@ -74,29 +74,29 @@ public class FlowAccessGuard {
 
     private boolean hasCandidateGroup(FlowTask task) {
         String candidateGroups = task.getCandidateGroups();
-        if (!StringUtils.hasText(candidateGroups)) {
-            return hasCandidateRelationForSessionGroups(task);
-        }
         Set<String> memberships = sessionGroupMemberships();
+        if (!StringUtils.hasText(candidateGroups)) {
+            return hasCandidateRelationForSessionGroups(task, memberships);
+        }
         for (String group : candidateGroups.split(",")) {
             if (memberships.contains(group.trim())) {
                 return true;
             }
         }
-        return hasCandidateRelationForSessionGroups(task);
+        return hasCandidateRelationForSessionGroups(task, memberships);
     }
 
-    private boolean hasCandidateRelationForSessionGroups(FlowTask task) {
-        if (flowTaskCandidateMapper == null || task.getTenantId() == null || !StringUtils.hasText(task.getTaskId())) {
+    /**
+     * 会话组（角色/组织/用户组）与任务候选组的命中检查：一次 IN 查询替代逐组 COUNT，
+     * 避免可见性检查退化为会话组数量的 N+1 往返。
+     */
+    private boolean hasCandidateRelationForSessionGroups(FlowTask task, Set<String> memberships) {
+        if (flowTaskCandidateMapper == null || task.getTenantId() == null
+                || !StringUtils.hasText(task.getTaskId()) || memberships.isEmpty()) {
             return false;
         }
-        for (String group : sessionGroupMemberships()) {
-            if (flowTaskCandidateMapper.countActiveByTaskAndValue(
-                    task.getTenantId(), task.getTaskId(), FlowTaskCandidate.TYPE_GROUP, group) > 0) {
-                return true;
-            }
-        }
-        return false;
+        return flowTaskCandidateMapper.countActiveByTaskAndValues(
+                task.getTenantId(), task.getTaskId(), FlowTaskCandidate.TYPE_GROUP, memberships) > 0;
     }
 
     private boolean hasCandidateRelation(FlowTask task, String candidateType, String candidateValue) {
