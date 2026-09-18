@@ -118,24 +118,24 @@
 
           <div class="toolbar-divider" />
 
-          <div class="batch-pill-control" role="group" aria-label="全局批量授权">
+          <div class="batch-pill-control" role="group" aria-label="当前模块批量授权">
             <button
               type="button"
-              :disabled="globalSelectAllDisabled"
-              title="勾选全部业务模块的菜单入口和功能权限"
-              @click="selectAllPermissions()"
+              :disabled="moduleSelectAllDisabled"
+              title="勾选当前业务模块的全部菜单入口和功能权限；跨模块批量请用左侧「全局授权」"
+              @click="selectAllInActiveModule()"
             >
               <i class="i-material-symbols:done-all" aria-hidden="true" />
-              全选
+              模块全选
             </button>
             <button
               type="button"
-              :disabled="globalClearDisabled"
-              title="清空全部业务模块的授权"
-              @click="clearAllPermissions()"
+              :disabled="moduleClearDisabled"
+              title="清空当前业务模块的授权"
+              @click="deselectAllInActiveModule()"
             >
               <i class="i-material-symbols:delete-sweep" aria-hidden="true" />
-              清空
+              模块清空
             </button>
           </div>
 
@@ -575,13 +575,17 @@ const defaultScopeDropdownOptions = computed(() => props.dataScopeOptions.map(op
 })))
 const globalBatchOptions = computed(() => batchOptions('global', props.loading || workspaceModules.value.length === 0))
 const moduleBatchOptions = computed(() => batchOptions('module', props.loading || activePages.value.length === 0))
-// 全局全选/清空按钮的可用态：与「全局授权」下拉同源，但作为显眼一级操作暴露在工具栏
-const globalBatchResourceIds = computed(() => uniqueIds(workspaceModules.value.flatMap(module =>
-  module.pages.flatMap(page => page.resourceIds))))
-const globalSelectAllDisabled = computed(() => props.loading
-  || globalBatchResourceIds.value.length === 0
-  || globalBatchResourceIds.value.every(id => checkedKeySet.value.has(String(id))))
-const globalClearDisabled = computed(() => props.loading || props.checkedKeys.length === 0)
+// 工具栏全选/清空作用于当前激活的业务模块（贴合工作区上下文）；跨模块批量保留在侧栏「全局授权」下拉
+const activeModuleResourceIds = computed(() => {
+  if (!activeModule.value)
+    return []
+  return uniqueIds(activeModule.value.pages.flatMap(page => page.resourceIds))
+})
+const moduleSelectAllDisabled = computed(() => props.loading
+  || activeModuleResourceIds.value.length === 0
+  || activeModuleResourceIds.value.every(id => checkedKeySet.value.has(String(id))))
+const moduleClearDisabled = computed(() => props.loading
+  || !activeModuleResourceIds.value.some(id => checkedKeySet.value.has(String(id))))
 
 watch(filteredNavigationModules, (modules) => {
   if (modules.some(module => module.key === activeModuleKey.value))
