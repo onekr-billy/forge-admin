@@ -100,6 +100,16 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
     }
 
     @Override
+    public List<FlowModel> getModels(String category, Integer status) {
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            log.warn("查询流程模型设计目录时缺少可信租户上下文");
+            return List.of();
+        }
+        return this.getBaseMapper().selectModels(tenantId, category, status);
+    }
+
+    @Override
     public FlowModelStatisticsVO getStatusStatistics(String modelName, String category) {
         String currentUsername = SessionHelper.getUsername();
         Long tenantId = SessionHelper.getTenantId();

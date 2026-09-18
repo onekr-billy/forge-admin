@@ -75,6 +75,8 @@ describe('business process node renderer', () => {
 describe('structured business node configuration', () => {
   beforeEach(() => {
     businessAppApiMocks.ensureBusinessFlowStatusField.mockReset()
+    flowApi.createModel.mockClear()
+    flowApi.getModelDetail.mockClear()
     businessAppApiMocks.ensureBusinessFlowStatusField.mockResolvedValue({
       data: { fieldCode: 'flowStatus', fieldName: '流程状态' },
     })
@@ -366,6 +368,8 @@ describe('structured business node configuration', () => {
       modelId: '1900000000000002001',
       modelKey: 'sample_purchase_order_approval',
     })
+    expect(wrapper.emitted('openFlowDesigner')).toHaveLength(1)
+    expect(wrapper.find('.flow-designer-fullscreen').exists()).toBe(false)
     expect(wrapper.text()).toContain('审批人、会签、驳回和字段权限在真实流程设计器中维护')
     expect(wrapper.text()).toContain('在本页设计')
     expect(wrapper.text()).not.toMatch(/SpEL|Java|SQL|Webhook/)
@@ -545,6 +549,19 @@ describe('structured business node configuration', () => {
       formType: 'business',
     }))
     expect(flowApi.createModel.mock.calls.at(-1)[0].formJson).toContain('purchase_form')
+    expect(wrapper.emitted('update:config').at(-1)[0]).toMatchObject({
+      flowModelId: 'model-new',
+      flowModelKey: 'created_approval',
+      flowModelName: '采购单审批',
+    })
+    expect(wrapper.emitted('openFlowDesigner')).toHaveLength(1)
+    expect(wrapper.emitted('openFlowDesigner')[0][0]).toMatchObject({
+      modelId: 'model-new',
+      modelKey: 'created_approval',
+      businessFormKey: 'purchase_form',
+    })
+    expect(wrapper.find('.flow-designer-fullscreen').exists()).toBe(false)
+    expect(wrapper.text()).toContain('待发布，可继续设计')
     wrapper.unmount()
   })
 

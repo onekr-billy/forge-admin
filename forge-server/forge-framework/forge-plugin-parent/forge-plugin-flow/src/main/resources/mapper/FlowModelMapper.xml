@@ -154,6 +154,49 @@
         ORDER BY m.sort_order ASC, m.create_time DESC, m.id ASC
     </select>
 
+    <select id="selectModels" resultType="com.mdframe.forge.starter.flow.entity.FlowModel">
+        SELECT m.id,
+               m.tenant_id,
+               m.model_key,
+               m.model_name,
+               m.description,
+               m.category,
+               m.flow_type,
+               m.designer_type,
+               m.form_type,
+               m.form_id,
+               m.form_json,
+               m.bpmn_xml,
+               m.version,
+               m.process_definition_id,
+               m.deployment_id,
+               m.deployment_key,
+               m.notify_type,
+               m.webhook_url,
+               m.todo_detail_url_template,
+               m.allow_multi_return,
+               m.notify_config,
+               m.status,
+               m.importance_level,
+               m.sort_order,
+               m.deploy_time,
+               m.last_update_by,
+               m.create_by,
+               m.create_time,
+               m.update_time,
+               m.del_flag
+        FROM sys_flow_model m
+        WHERE m.tenant_id = #{tenantId}
+          AND m.del_flag = 0
+        <if test="category != null and category != ''">
+            AND m.category = #{category}
+        </if>
+        <if test="status != null">
+            AND m.status = #{status}
+        </if>
+        ORDER BY m.sort_order ASC, m.create_time DESC, m.id ASC
+    </select>
+
     <select id="selectByIdsForUpdate" resultType="com.mdframe.forge.starter.flow.entity.FlowModel">
         SELECT m.*
         FROM sys_flow_model m

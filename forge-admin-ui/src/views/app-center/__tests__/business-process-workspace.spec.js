@@ -127,13 +127,14 @@ vi.mock('@/components/business-process-designer/BusinessProcessDesigner.vue', ()
       'messageTemplates',
       'subProcesses',
     ],
-    emits: ['update:schema', 'save', 'validate', 'dirtyChange', 'refreshFlowModel'],
+    emits: ['update:schema', 'save', 'validate', 'dirtyChange', 'refreshFlowModel', 'openFlowDesigner'],
     template: `
       <div data-process-designer :data-save-state="saveState">
         <button data-dirty @click="$emit('dirtyChange', true)">dirty</button>
         <button data-save @click="$emit('save', schema, { reason: 'manual', hashInput: 'client-dirty-hash' })">save</button>
         <button data-validate @click="$emit('validate', schema, { valid: true, issues: [] })">validate</button>
         <button data-refresh-flow @click="$emit('refreshFlowModel', 'sample_purchase_order_approval')">refresh</button>
+        <button data-open-flow @click="$emit('openFlowDesigner', { modelId: '2001', modelKey: 'sample_purchase_order_approval', businessFormKey: 'purchase_form' })">open flow</button>
       </div>
     `,
   },
@@ -284,6 +285,21 @@ function designerMountOptions() {
         NSpin: { template: '<div><slot /></div>' },
         NResult: { template: '<div><slot /><slot name="footer" /></div>' },
         NButton: { template: '<button v-bind="$attrs" @click="$emit(\'click\')"><slot /></button>' },
+        NModal: {
+          props: ['show'],
+          template: '<div v-if="show" class="n-modal"><slot /></div>',
+        },
+        FlowDesignPage: {
+          props: ['modelId', 'businessFormKey'],
+          emits: ['close', 'saved', 'deployed'],
+          template: `
+            <div data-flow-design-page :data-model-id="modelId" :data-form-key="businessFormKey">
+              <button data-flow-save @click="$emit('saved', { id: modelId, modelKey: 'sample_purchase_order_approval', status: 0 })">save</button>
+              <button data-flow-deploy @click="$emit('deployed', { id: modelId, modelKey: 'sample_purchase_order_approval', status: 1, deploymentId: 'dep-2' })">deploy</button>
+              <button data-flow-close @click="$emit('close')">close</button>
+            </div>
+          `,
+        },
       },
     },
   }
@@ -680,6 +696,35 @@ describe('full-screen business process designer page', () => {
       expectedSchemaHash: 'a'.repeat(64),
     })
     expect(wrapper.find('[data-process-designer]').attributes('data-save-state')).toBe('saved')
+  })
+
+  it('owns one embedded approval designer and keeps it open while refreshing after save or deploy', async () => {
+    const wrapper = mount(BusinessProcessPage, {
+      ...designerMountOptions(),
+      props: { embedded: true, processId: processRecord.id },
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-open-flow]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-flow-design-page]')).toHaveLength(1)
+    expect(wrapper.find('[data-flow-design-page]').attributes('data-model-id')).toBe('2001')
+    expect(wrapper.find('[data-flow-design-page]').attributes('data-form-key')).toBe('purchase_form')
+
+    const callsBeforeSave = processApiMocks.businessProcessFlowModels.mock.calls.length
+    await wrapper.find('[data-flow-save]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-flow-design-page]')).toHaveLength(1)
+    expect(processApiMocks.businessProcessFlowModels.mock.calls.length).toBeGreaterThan(callsBeforeSave)
+
+    await wrapper.find('[data-flow-deploy]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-flow-design-page]')).toHaveLength(1)
+
+    await wrapper.find('[data-flow-close]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-flow-design-page]').exists()).toBe(false)
   })
 
   it('saves dirty content before validation and exposes HTTP 409 as a conflict', async () => {

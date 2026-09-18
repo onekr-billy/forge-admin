@@ -1,6 +1,6 @@
 <script setup>
 import { NButton, NEmpty, NSelect, NTag } from 'naive-ui'
-import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { ensureBusinessFlowStatusField } from '@/api/business-app'
 import flowApi from '@/api/flow'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
@@ -25,10 +25,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:config', 'openFlowDesigner', 'refreshFlowModel', 'refreshFields', 'editAction'])
 
-const FlowDesignPage = defineAsyncComponent(() => import('@/views/flow/design.vue'))
-
 const localConfig = ref(clone(props.node.config))
-const flowDesignerVisible = ref(false)
+const optimisticFlowModel = ref(null)
 const selectedTemplate = ref('')
 const creatingModel = ref(false)
 const previewXml = ref('')
@@ -38,16 +36,40 @@ const ensuringStatusField = ref(false)
 
 const designableFlowModels = computed(() => (props.flowModels || []).filter((item) => {
   const designerType = String(item.designerType || '').toLowerCase()
-  // 只显示已发布/已部署的模型，避免用户选择草稿模型后触发 FLOW_MODEL_UNAVAILABLE
-  const deployed = item.deployed === true || Boolean(item.deploymentId)
-  return designerType !== 'business' && Boolean(modelKey(item)) && deployed
+  return designerType !== 'business' && Boolean(modelKey(item))
 }))
 
-const flowModelOptions = computed(() => designableFlowModels.value.map(item => ({
-  label: item.modelName || item.name || modelKey(item),
+const selectedFlowModel = computed(() => {
+  const key = stringValue(localConfig.value.flowModelKey)
+  if (!key)
+    return null
+  return designableFlowModels.value.find(item => modelKey(item) === key)
+    || (modelKey(optimisticFlowModel.value) === key ? optimisticFlowModel.value : null)
+    || {
+      modelId: stringValue(localConfig.value.flowModelId),
+      modelKey: key,
+      modelName: localConfig.value.flowModelName || key,
+      deployed: false,
+      pending: true,
+    }
+})
+
+const selectableFlowModels = computed(() => {
+  const published = designableFlowModels.value.filter(isDeployedFlowModel)
+  const selected = selectedFlowModel.value
+  if (!selected || published.some(item => modelKey(item) === modelKey(selected)))
+    return published
+  return [selected, ...published]
+})
+
+const flowModelOptions = computed(() => selectableFlowModels.value.map(item => ({
+  label: isDeployedFlowModel(item)
+    ? (item.modelName || item.name || modelKey(item))
+    : `${item.modelName || item.name || modelKey(item)}（待发布）`,
   value: modelKey(item),
   modelKey: modelKey(item),
   version: item.version,
+  deployed: isDeployedFlowModel(item),
   // 支持按名称或 modelKey 搜索（默认只匹配 label）
   filter: (pattern) => {
     const keyword = String(pattern || '').toLowerCase()
@@ -74,13 +96,9 @@ const suggestedStatusField = computed(() => {
 const hasIndependentFlowStatus = computed(() => Boolean(suggestedStatusField.value))
 const usesIndependentFlowStatus = computed(() => isFlowStatusField(localConfig.value.statusField))
 
-const selectedFlowModel = computed(() => designableFlowModels.value.find(item =>
-  modelKey(item) === localConfig.value.flowModelKey,
-) || null)
-
 const selectedFlowModelId = computed(() => {
   const item = selectedFlowModel.value
-  return stringValue(item?.modelId || item?.id)
+  return stringValue(item?.modelId || item?.id || localConfig.value.flowModelId)
 })
 
 watch(() => props.node, (value) => {
@@ -92,6 +110,12 @@ watch(() => props.node, (value) => {
   }
 }, { deep: true, immediate: true })
 
+watch(() => props.flowModels, (models) => {
+  const optimisticKey = modelKey(optimisticFlowModel.value)
+  if (optimisticKey && (models || []).some(item => modelKey(item) === optimisticKey))
+    optimisticFlowModel.value = null
+}, { deep: true })
+
 watch(() => props.formAssets, () => {
   if (props.node?.type === 'APPROVAL' && !stringValue(localConfig.value.formAsset?.formKey))
     ensureDefaultApprovalBindings()
@@ -102,7 +126,8 @@ watch(() => props.fields, async () => {
     await ensureDefaultApprovalBindings()
 }, { deep: true })
 
-watch(selectedFlowModelId, async (modelId) => {
+watch(selectedFlowModel, async (model) => {
+  const modelId = stringValue(model?.modelId || model?.id || localConfig.value.flowModelId)
   previewXml.value = ''
   if (!modelId)
     return
@@ -145,7 +170,7 @@ function handleActionType(event) {
 }
 
 function handleFlowModelKey(key) {
-  const item = designableFlowModels.value.find(model => modelKey(model) === key)
+  const item = selectableFlowModels.value.find(model => modelKey(model) === key)
   const defaultTitle = localConfig.value.titleTemplate || defaultApprovalTitle()
   patchConfig({
     flowModelKey: key || '',
@@ -173,8 +198,9 @@ function openFlowDesigner() {
   const payload = {
     modelId: selectedFlowModelId.value,
     modelKey: modelKey(selectedFlowModel.value),
+    businessFormKey: stringValue(localConfig.value.formAsset?.formKey),
+    applicationId: stringValue(localConfig.value.formAsset?.applicationId),
   }
-  flowDesignerVisible.value = true
   emit('openFlowDesigner', payload)
 }
 
@@ -216,8 +242,18 @@ async function createAndDesign() {
     })
     const created = response?.data || {}
     const modelId = stringValue(created.id || created.modelId)
+    const createdModelKey = created.modelKey || modelKeyValue
+    optimisticFlowModel.value = {
+      ...created,
+      modelId,
+      modelKey: createdModelKey,
+      modelName: created.modelName || `${objectLabel}审批`,
+      deployed: false,
+      status: created.status ?? 0,
+      pending: true,
+    }
     patchConfig({
-      flowModelKey: created.modelKey || modelKeyValue,
+      flowModelKey: createdModelKey,
       flowModelName: created.modelName || `${objectLabel}审批`,
       flowModelId: modelId,
       versionPolicy: 'PINNED_AT_APPLICATION_PUBLISH',
@@ -225,10 +261,14 @@ async function createAndDesign() {
       statusField: localConfig.value.statusField || suggestedStatusField.value,
       formAsset: defaultForm.formKey ? defaultForm : {},
     })
-    emit('refreshFlowModel', created.modelKey || modelKeyValue)
+    emit('refreshFlowModel', createdModelKey)
     if (modelId) {
-      flowDesignerVisible.value = true
-      emit('openFlowDesigner', { modelId, modelKey: created.modelKey || modelKeyValue })
+      emit('openFlowDesigner', {
+        modelId,
+        modelKey: createdModelKey,
+        businessFormKey: stringValue(defaultForm.formKey),
+        applicationId: stringValue(defaultForm.applicationId),
+      })
     }
   }
   catch (error) {
@@ -237,11 +277,6 @@ async function createAndDesign() {
   finally {
     creatingModel.value = false
   }
-}
-
-function handleFlowDesignerClosed() {
-  flowDesignerVisible.value = false
-  emit('refreshFlowModel', modelKey(selectedFlowModel.value))
 }
 
 function updateSingleReference(key, event) {
@@ -358,6 +393,7 @@ function renderFlowModelOption({ node, option }) {
   const subtitle = [
     option.modelKey || '',
     option.version ? `v${option.version}` : '',
+    option.deployed ? '已部署' : '待发布',
   ].filter(Boolean).join(' · ')
   return h('div', { class: 'flow-model-option' }, [
     node,
@@ -408,6 +444,10 @@ function removeFieldMapping(index) {
 
 function modelKey(item) {
   return stringValue(item?.modelKey || item?.key || item?.value)
+}
+
+function isDeployedFlowModel(item) {
+  return item?.deployed === true || Boolean(item?.deploymentId)
 }
 
 function optionValue(item) {
@@ -605,10 +645,10 @@ function clone(value) {
               </NButton>
             </div>
             <small>
-              只展示已部署的模型；新建模型请先在流程设计器中完成配置并部署。
+              可选择已部署模型；新建模型会自动绑定当前节点，完成设计并发布后即可随业务流程发布。
             </small>
             <div v-if="!flowModelOptions.length && !creatingModel" class="flow-model-empty-guide">
-              <span>暂无已发布的审批模型。点击「新建并设计」创建模型，完成部署后即可在此选择。</span>
+              <span>暂无已发布的审批模型。点击「新建并设计」创建，当前节点会自动绑定并等待发布。</span>
             </div>
           </label>
 
@@ -677,10 +717,10 @@ function clone(value) {
               <NTag
                 v-if="selectedFlowModel"
                 size="small"
-                :type="(selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? 'success' : 'warning'"
+                :type="isDeployedFlowModel(selectedFlowModel) ? 'success' : 'warning'"
                 :bordered="false"
               >
-                {{ (selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? '已部署' : '草稿，可在本页设计后部署' }}
+                {{ isDeployedFlowModel(selectedFlowModel) ? '已部署' : '待发布，可继续设计' }}
               </NTag>
             </div>
             <button
@@ -725,20 +765,6 @@ function clone(value) {
         <small>服务端会检查直接或间接循环，并限制最大调用深度。</small>
       </label>
     </template>
-
-    <div v-if="flowDesignerVisible" class="flow-designer-fullscreen">
-      <FlowDesignPage
-        embedded
-        :model-id="selectedFlowModelId"
-        :business-object-code="objectCode"
-        :business-object-name="objectName || objectCode"
-        :business-form-key="localConfig.formAsset?.formKey || ''"
-        :application-id="localConfig.formAsset?.applicationId || ''"
-        @close="handleFlowDesignerClosed"
-        @saved="handleFlowDesignerClosed"
-        @deployed="handleFlowDesignerClosed"
-      />
-    </div>
   </div>
 </template>
 
@@ -1026,16 +1052,6 @@ function clone(value) {
   overflow: auto;
   background: #fff;
   border-radius: 6px;
-}
-
-.flow-designer-fullscreen {
-  position: fixed;
-  inset: 12px;
-  z-index: 1000;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--card-color, #fff);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
 }
 
 .action-edit-hint {

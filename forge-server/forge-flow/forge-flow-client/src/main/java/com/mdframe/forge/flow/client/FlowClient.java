@@ -463,7 +463,7 @@ public class FlowClient {
     // ==================== 模型接口 ====================
 
     /**
-     * 获取已部署的流程模型列表
+     * 获取流程模型列表。status 为空时用于设计态目录并显式包含草稿；status=1 时只获取已部署模型。
      *
      * @param category 分类（可为 null）
      * @param status   状态（可为 null，1=已部署）
@@ -471,7 +471,11 @@ public class FlowClient {
     public FlowResult<List<Map<String, Object>>> getModelList(String category, Integer status) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(flowServiceUrl + "/api/flow/model/list");
         Optional.ofNullable(category).ifPresent(v -> builder.queryParam("category", v));
-        Optional.ofNullable(status).ifPresent(v -> builder.queryParam("status", v));
+        if (status == null) {
+            builder.queryParam("includeDraft", true);
+        } else {
+            builder.queryParam("status", status);
+        }
         return get(builder.toUriString(), new TypeReference<FlowResult<List<Map<String, Object>>>>() {});
     }
 

@@ -75,7 +75,15 @@ class BusinessProcessValidationContextResolverTest {
                 "processDefinitionId", "order_approval:3:100",
                 "deploymentId", "deployment-1"));
         when(flowClient.getModelList(null, 1)).thenReturn(FlowResult.success(publishedModels));
-        when(flowClient.getModelList(null, null)).thenReturn(FlowResult.success(publishedModels));
+        List<Map<String, Object>> designableModels = new java.util.ArrayList<>(publishedModels);
+        designableModels.add(Map.of(
+                "status", 0,
+                "id", "model-101",
+                "modelKey", "order_approval_draft",
+                "modelName", "订单审批草稿",
+                "designerType", "approval",
+                "version", 1));
+        when(flowClient.getModelList(null, null)).thenReturn(FlowResult.success(designableModels));
         when(flowService.getFormAssets("order", true, 10L)).thenReturn(Map.of(
                 "formAssets", List.of(Map.of("formKey", "order_form"))));
         when(permissionMapper.selectExistingPermissions(
@@ -105,10 +113,12 @@ class BusinessProcessValidationContextResolverTest {
         assertFalse(context.isCapabilityBridgeAvailable());
 
         var availableModels = resolver.resolveAvailableFlowModels(1L, 10L);
-        assertEquals(1, availableModels.size());
+        assertEquals(2, availableModels.size());
         assertEquals("model-100", availableModels.get(0).getModelId());
         assertEquals("order_approval", availableModels.get(0).getModelKey());
         assertEquals("订单审批", availableModels.get(0).getModelName());
+        assertEquals("order_approval_draft", availableModels.get(1).getModelKey());
+        assertFalse(Boolean.TRUE.equals(availableModels.get(1).getDeployed()));
         when(flowClient.getModelList(null, 1)).thenReturn(FlowResult.success(List.of(Map.of(
                 "status", 0,
                 "modelKey", "order_approval",

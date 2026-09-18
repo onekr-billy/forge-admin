@@ -3,7 +3,7 @@ package com.mdframe.forge.plugin.generator.vo.businessprocess;
 import lombok.Data;
 
 /**
- * 当前租户可供应用编排节点引用的已发布审批模型。
+ * 当前租户可供应用编排节点设计或发布校验引用的审批模型。
  */
 @Data
 public class BusinessProcessFlowModelVO {

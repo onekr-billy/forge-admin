@@ -52,6 +52,11 @@ public interface FlowModelMapper extends BaseMapper<FlowModel> {
     List<FlowModel> selectEnabledModels(@Param("tenantId") Long tenantId,
                                         @Param("category") String category);
 
+    /** 查询当前租户未删除流程模型目录，可按状态过滤。 */
+    List<FlowModel> selectModels(@Param("tenantId") Long tenantId,
+                                 @Param("category") String category,
+                                 @Param("status") Integer status);
+
     /** 锁定当前租户内待排序模型，防止并发排序覆盖其他请求。 */
     List<FlowModel> selectByIdsForUpdate(@Param("ids") List<String> ids,
                                          @Param("tenantId") Long tenantId);

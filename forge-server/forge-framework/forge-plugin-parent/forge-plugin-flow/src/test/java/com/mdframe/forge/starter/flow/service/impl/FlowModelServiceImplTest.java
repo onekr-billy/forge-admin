@@ -44,6 +44,23 @@ class FlowModelServiceImplTest {
     }
 
     @Test
+    @DisplayName("design model catalog includes drafts through a tenant-scoped status query")
+    void designModelsUseTrustedTenantAndOptionalStatus() {
+        FlowModelMapper mapper = mock(FlowModelMapper.class);
+        TestFlowModelService service = new TestFlowModelService(mapper);
+        FlowModel draft = new FlowModel();
+        draft.setModelKey("leave_approval_draft");
+        when(mapper.selectModels(7L, "approval", null)).thenReturn(List.of(draft));
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(7L);
+
+            assertEquals(List.of(draft), service.getModels("approval", null));
+            verify(mapper).selectModels(7L, "approval", null);
+        }
+    }
+
+    @Test
     @DisplayName("missing tenant context fails closed without querying the catalog")
     void missingTenantContextFailsClosed() {
         FlowModelMapper mapper = mock(FlowModelMapper.class);
