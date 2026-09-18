@@ -60,9 +60,7 @@ const ignoredFileNames = new Set([
   '.flattened-pom.xml',
 ])
 
-const ignoredTemplatePathPrefixes = [
-  'forge-server/db/migration',
-]
+const ignoredTemplatePathPrefixes = []
 
 const projectContextNames = [
   'AGENTS.md',
@@ -140,6 +138,9 @@ async function main() {
   await renameFilesByBasename(outputRoot, applicationClassMap, '.java')
   await renameArtifactDirectories(serverRoot, artifactMap)
   await writeSelectedSqlBundle(serverRoot, catalog, selection, replacements, options)
+  if (options.excludeLogData) {
+    await stripLogSeedData(path.join(serverRoot, 'db/全量初始化SQL.sql'), options.javaName)
+  }
 
   printSummary(outputRoot, options, selection, catalog, adminServerArtifactId)
 }
@@ -192,12 +193,14 @@ function normalizeOptions(args, catalog) {
   const moduleArtifactPrefix = normalizeProjectName(
     args['module-artifact-prefix'] || deriveModuleArtifactPrefix(artifactPrefix, stripModulePrefix),
   )
+  const javaName = String(args['java-name'] || toPascalCase(projectName)).trim()
   const displayName = String(args['display-name'] || projectName)
   const preset = String(args.preset || 'ai-report')
   const basePackage = String(args['base-package'] || '').trim()
   const groupId = String(args['group-id'] || basePackage).trim()
   const databaseName = String(args['database-name'] || toSnakeCase(projectName)).trim()
   const includeModuleIds = parseModuleList(args.include || args['include-modules'])
+  const excludeLogData = args['exclude-log-data'] === true || args['exclude-log-data'] === 'true'
   
   // 前端配置参数
   const adminTitle = String(args['admin-title'] || displayName)
@@ -221,6 +224,9 @@ function normalizeOptions(args, catalog) {
   if (!isValidJavaPackage(groupId)) {
     throw new Error('请通过 --group-id 指定合法 Maven groupId，默认等于 --base-package')
   }
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(javaName)) {
+    throw new Error('--java-name 必须是合法的大驼峰 Java 名称，例如 LawHub')
+  }
   if (!/^[a-z][a-z0-9_]*$/.test(databaseName)) {
     throw new Error('数据库名只能使用小写字母、数字和下划线，并且必须以字母开头')
   }
@@ -235,7 +241,9 @@ function normalizeOptions(args, catalog) {
     groupId,
     databaseName,
     includeModuleIds,
+    excludeLogData,
     moduleArtifactPrefix,
+    javaName,
     stripModulePrefix,
     force: args.force === true || args.force === 'true',
     // 前端配置
@@ -367,7 +375,7 @@ function buildArtifactMap(catalog, options) {
 }
 
 function buildApplicationClassMap(options) {
-  const prefix = toPascalCase(options.projectName)
+  const prefix = options.javaName
   return {
     ForgeAdminApplication: `${prefix}AdminApplication`,
     ForgeReportApplication: `${prefix}ReportApplication`,
@@ -686,8 +694,12 @@ function buildTextReplacements(artifactMap, applicationClassMap, options, select
   const replacements = [
     ['com.mdframe.forge', options.basePackage],
     ['com/mdframe/forge', options.basePackage.replaceAll('.', '/')],
+    ['Forge AI', options.javaName],
+    ['ForgeAdmin', options.javaName],
     ['Forge Admin', options.displayName],
+    ['Forge 工作台', `${options.javaName} 工作台`],
     ['企业级中后台基础框架', options.displayName],
+    ['企业级中后台管理系统', options.adminTitle || options.displayName],
     ['forge-project', options.projectName],
     ['cd forge-server &&', `cd ${serverDirName} &&`],
     ['cd forge-server ', `cd ${serverDirName} `],
@@ -755,6 +767,8 @@ function buildTextReplacements(artifactMap, applicationClassMap, options, select
       ['"forge_website_report":', `"${snakeName}_website_report":`],
       ['VITE_REPORT_UI_PATH_PREFIX=/forge-report', `VITE_REPORT_UI_PATH_PREFIX=/${options.projectName}-report`],
       ['VITE_SSO_BRIDGE_ROUTE=/report/design', `VITE_SSO_BRIDGE_ROUTE=/${options.projectName}-report/design`],
+      [`http://www.dlforgelab.com:8084${reportPath}`, reportPath],
+      ['VITE_REPORT_UI_HOST_FALLBACK=www.dlforgelab.com:8084', 'VITE_REPORT_UI_HOST_FALLBACK='],
       ['http://81.70.22.48:8084/forge-report', `http://localhost:8084/${options.projectName}-report`],
       ['http://localhost:3021/forge-report', `http://localhost:8084/${options.projectName}-report`],
       ['localhost:3021', `localhost:8084`],
@@ -930,6 +944,143 @@ async function copyOptionalRootFiles(outputRoot) {
   }
 }
 
+async function stripLogSeedData(sqlFile, systemName) {
+  if (!(await exists(sqlFile))) {
+    throw new Error(`启用了 --exclude-log-data，但未找到全量初始化 SQL：${sqlFile}`)
+  }
+
+  const content = await fs.readFile(sqlFile, 'utf8')
+  const statements = splitSqlStatements(content)
+  const removed = new Map()
+  const kept = []
+
+  for (const statement of statements) {
+    const table = extractInsertTable(statement)
+    if (table && isLogOrRuntimeTable(table)) {
+      removed.set(table, (removed.get(table) || 0) + 1)
+      continue
+    }
+    kept.push(statement)
+  }
+
+  const summary = [...removed.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([table, count]) => `--   ${table}: ${count} INSERT statement(s)`)
+    .join('\n')
+  const header = [
+    `-- ${systemName} initialization policy: log/runtime/history table DDL is retained,`,
+    '-- while historical INSERT data is intentionally excluded.',
+    summary,
+  ].filter(Boolean).join('\n')
+
+  await fs.writeFile(sqlFile, `${header}\n\n${kept.join('')}`)
+  console.log(`[forge:create] 已从全量 SQL 移除 ${[...removed.values()].reduce((sum, count) => sum + count, 0)} 条日志/运行历史 INSERT`)
+}
+
+function splitSqlStatements(content) {
+  const statements = []
+  let start = 0
+  let state = 'normal'
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index]
+    const next = content[index + 1]
+
+    if (state === 'single') {
+      if (char === '\\') {
+        index += 1
+      }
+      else if (char === "'" && next === "'") {
+        index += 1
+      }
+      else if (char === "'") {
+        state = 'normal'
+      }
+      continue
+    }
+    if (state === 'double') {
+      if (char === '\\') {
+        index += 1
+      }
+      else if (char === '"' && next === '"') {
+        index += 1
+      }
+      else if (char === '"') {
+        state = 'normal'
+      }
+      continue
+    }
+    if (state === 'backtick') {
+      if (char === '`' && next === '`') {
+        index += 1
+      }
+      else if (char === '`') {
+        state = 'normal'
+      }
+      continue
+    }
+    if (state === 'line-comment') {
+      if (char === '\n') {
+        state = 'normal'
+      }
+      continue
+    }
+    if (state === 'block-comment') {
+      if (char === '*' && next === '/') {
+        state = 'normal'
+        index += 1
+      }
+      continue
+    }
+
+    if (char === "'") {
+      state = 'single'
+    }
+    else if (char === '"') {
+      state = 'double'
+    }
+    else if (char === '`') {
+      state = 'backtick'
+    }
+    else if (char === '-' && next === '-') {
+      state = 'line-comment'
+      index += 1
+    }
+    else if (char === '#') {
+      state = 'line-comment'
+    }
+    else if (char === '/' && next === '*') {
+      state = 'block-comment'
+      index += 1
+    }
+    else if (char === ';') {
+      statements.push(content.slice(start, index + 1))
+      start = index + 1
+    }
+  }
+
+  if (start < content.length) {
+    statements.push(content.slice(start))
+  }
+  return statements
+}
+
+function extractInsertTable(statement) {
+  const match = statement.match(/^\s*(?:(?:--[^\n]*(?:\n|$))|(?:#[^\n]*(?:\n|$))|(?:\/\*[\s\S]*?\*\/\s*))*INSERT\s+INTO\s+`?([A-Za-z0-9_]+)`?/i)
+  return match?.[1]?.toLowerCase() || ''
+}
+
+function isLogOrRuntimeTable(table) {
+  return /(^|_)(log|logs)($|_)/.test(table)
+    || table.endsWith('_history')
+    || /^qrtz_(fired_triggers|scheduler_state|locks)$/.test(table)
+    || table === 'worker_node'
+    || table === 'sys_auth_online_user'
+    || table === 'ai_crud_export_task'
+    || /^ai_chat_(record|session)$/.test(table)
+    || table === 'ai_dashboard_generate_record'
+}
+
 async function copyProjectContextFiles(outputRoot) {
   for (const name of projectContextNames) {
     const source = path.join(repoRoot, name)
@@ -942,6 +1093,7 @@ async function copyProjectContextFiles(outputRoot) {
 async function writeGeneratedConfig(outputRoot, options, selection, catalog) {
   const config = {
     projectName: options.projectName,
+    javaName: options.javaName,
     displayName: options.displayName,
     basePackage: options.basePackage,
     groupId: options.groupId,
@@ -951,6 +1103,7 @@ async function writeGeneratedConfig(outputRoot, options, selection, catalog) {
     databaseName: options.databaseName,
     preset: options.preset,
     includedModules: options.includeModuleIds,
+    excludeLogData: options.excludeLogData,
     modules: [...selection.selectedModuleIds].sort(),
     frontends: [...selection.frontendIds].sort(),
   }
@@ -1193,6 +1346,7 @@ function printHelp(catalog) {
 参数：
   --preset            ${Object.keys(catalog.presets).join(' | ')}，默认 ai-report
   --project-name      项目英文名，默认取目标目录名
+  --java-name         Java 类名前缀，默认由 project-name 转大驼峰，例如 LawHub
   --display-name      系统中文名，默认等于项目英文名
   --base-package      新 Java 包名，必填，例如 com.company.smartfactory
   --group-id          Maven groupId，默认等于 base-package
@@ -1201,6 +1355,7 @@ function printHelp(catalog) {
   --strip-module-prefix 从子模块 artifactId 前缀中剥离指定前缀，例如 nmg-lt
   --database-name     数据库名，默认由 project-name 转 snake_case
   --include           额外模块 ID，逗号分隔，例如 business-core
+  --exclude-log-data  保留日志/运行历史表结构，但从全量 SQL 移除其初始化数据
   --force             目标目录非空时覆盖
 
 示例：

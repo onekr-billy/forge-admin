@@ -46,6 +46,9 @@
         "plugin-job",
         "plugin-message",
         "plugin-flow",
+        "plugin-collaboration",
+        "plugin-capability-parent",
+        "plugin-mcp",
         "plugin-generator",
         "plugin-ai",
         "plugin-external",
@@ -154,7 +157,8 @@
         "starter-tenant",
         "starter-crypto",
         "starter-social",
-        "starter-message"
+        "starter-message",
+        "starter-outbound"
       ]
     },
     "plugin-job": {
@@ -163,7 +167,8 @@
       "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-job",
       "dependencies": [
         "starter-job",
-        "starter-crypto"
+        "starter-crypto",
+        "starter-outbound"
       ]
     },
     "plugin-message": {
@@ -184,7 +189,99 @@
       "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-flow",
       "dependencies": [
         "starter-core",
-        "plugin-message"
+        "plugin-message",
+        "starter-outbound"
+      ]
+    },
+    "plugin-collaboration": {
+      "type": "plugin",
+      "artifactId": "forge-plugin-collaboration",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-collaboration",
+      "dependencies": [
+        "starter-collaboration",
+        "starter-social",
+        "starter-crypto",
+        "starter-cache",
+        "starter-outbound",
+        "starter-message",
+        "starter-orm",
+        "starter-auth",
+        "starter-tenant",
+        "plugin-system",
+        "starter-job",
+        "plugin-job"
+      ]
+    },
+    "plugin-capability-parent": {
+      "type": "plugin",
+      "artifactId": "forge-plugin-capability-parent",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-capability-parent",
+      "dependencies": [
+        "plugin-capability-core",
+        "plugin-capability-platform",
+        "plugin-capability-actions",
+        "plugin-capability-high-risk-approval"
+      ]
+    },
+    "plugin-capability-core": {
+      "type": "plugin-child",
+      "artifactId": "forge-plugin-capability-core",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-capability-parent/forge-plugin-capability-core",
+      "dependencies": [
+        "starter-core"
+      ]
+    },
+    "plugin-capability-platform": {
+      "type": "plugin-child",
+      "artifactId": "forge-plugin-capability-platform",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-capability-parent/forge-plugin-capability-platform",
+      "dependencies": [
+        "plugin-capability-core",
+        "plugin-mcp",
+        "plugin-system",
+        "starter-tenant",
+        "starter-datascope",
+        "starter-web",
+        "starter-auth",
+        "starter-log",
+        "starter-crypto",
+        "starter-cache",
+        "starter-openapi-security",
+        "starter-job",
+        "plugin-job"
+      ]
+    },
+    "plugin-capability-actions": {
+      "type": "plugin-child",
+      "artifactId": "forge-plugin-capability-actions",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-capability-parent/forge-plugin-capability-actions",
+      "dependencies": [
+        "plugin-capability-core",
+        "plugin-capability-platform",
+        "plugin-mcp",
+        "plugin-generator",
+        "flow-client"
+      ]
+    },
+    "plugin-capability-high-risk-approval": {
+      "type": "plugin-child",
+      "artifactId": "forge-plugin-capability-high-risk-approval",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-capability-parent/forge-plugin-capability-high-risk-approval",
+      "dependencies": [
+        "plugin-capability-actions",
+        "plugin-capability-platform",
+        "plugin-mcp",
+        "plugin-generator",
+        "flow-client"
+      ]
+    },
+    "plugin-mcp": {
+      "type": "plugin",
+      "artifactId": "forge-plugin-mcp",
+      "path": "forge-server/forge-framework/forge-plugin-parent/forge-plugin-mcp",
+      "dependencies": [
+        "plugin-capability-core",
+        "starter-web"
       ]
     },
     "plugin-generator": {
@@ -231,7 +328,8 @@
         "starter-log",
         "starter-tenant",
         "starter-crypto",
-        "starter-cache"
+        "starter-cache",
+        "starter-outbound"
       ]
     },
     "plugin-data": {
@@ -417,7 +515,35 @@
         "starter-cache",
         "starter-auth",
         "starter-file",
-        "starter-orm"
+        "starter-orm",
+        "starter-collaboration"
+      ]
+    },
+    "starter-openapi-security": {
+      "type": "starter",
+      "artifactId": "forge-starter-openapi-security",
+      "path": "forge-server/forge-framework/forge-starter-parent/forge-starter-openapi-security",
+      "dependencies": [
+        "starter-core",
+        "starter-cache"
+      ]
+    },
+    "starter-outbound": {
+      "type": "starter",
+      "artifactId": "forge-starter-outbound",
+      "path": "forge-server/forge-framework/forge-starter-parent/forge-starter-outbound",
+      "dependencies": [
+        "starter-core",
+        "starter-orm",
+        "starter-tenant"
+      ]
+    },
+    "starter-collaboration": {
+      "type": "starter",
+      "artifactId": "forge-starter-collaboration",
+      "path": "forge-server/forge-framework/forge-starter-parent/forge-starter-collaboration",
+      "dependencies": [
+        "starter-core"
       ]
     },
     "starter-idempotent": {
