@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：目标仓库已纠正为 forge-admin，M1 迁移复验与提交中；M2–M6 未开始，不 push
+> 当前阶段：目标仓库已纠正为 forge-admin，M1 完成并分阶段提交；M2–M6 未开始，不 push
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 

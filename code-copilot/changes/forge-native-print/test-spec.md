@@ -116,3 +116,12 @@ node --max-old-space-size=8192 node_modules/vite/bin/vite.js build
 实际浏览器：0/10/100/500 行分别为 1/1/4/17 页，行顺序和数量一致；100/500 行隔离打印 DOM 无溢出且 iframe 释放后为 0。字体不存在、图片损坏和超高行返回预期错误；按钮调用输出 DIALOG_OPENED 客户端事件。证据见 [verification/browser-results.json](verification/browser-results.json)。
 
 仍未执行：保存 PDF、物理打印机、罕见字字形逐项检查、真实数据/权限/数据库/流程 E2E。目标已纠正为现有 forge-admin Git 仓库，不再需要初始化确认；复验和提交结果见后续追加，M2–M6 未开始。
+
+## 8. 本轮增量：目标纠正与 Forge 仓库复验
+
+- 执行目录：`/Users/mini32g/Desktop/project/forge-admin/forge-admin-ui`。
+- 相同 M1 代码在目标依赖环境重新运行：8 文件 39 项测试通过；ESLint 无错误/警告。
+- 主项目生产构建通过；独立验证入口构建通过，避免未接入路由的打印源码漏检。
+- 目标浏览器验证：100 行 4 页、500 行 17 页；隔离输出 500 行，无溢出，3 图片就绪，释放后 iframe 为 0。三类故障按预期阻断。
+- 前序不自动初始化 Git 的疑问已解除：正确项目有现成 Git，本地分支 `codex/forge-native-print`。SDD 文档提交为 `bc72aafc`，M1 代码随后单独提交，禁止 push。
+- 未执行数据库、真实流程、物理打印或保存 PDF；后续阶段保持未开始。

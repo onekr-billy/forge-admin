@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1 已迁入 forge-admin，目标仓库复验与阶段 commit 进行中；M2–M6 未开始。禁止 push。
+> 状态：implementing，M1 已迁入 forge-admin 并完成目标仓库复验，按阶段提交；M2–M6 未开始。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >

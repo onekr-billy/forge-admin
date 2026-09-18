@@ -1,0 +1,86 @@
+import { createApp, h, nextTick } from 'vue'
+import { abortable } from '../engine/resources'
+import { PRINT_LIMITS, PrintError } from '../protocol/types'
+import PrintPage from './PrintPage.vue'
+
+/** A disposable document owns all print CSS; the application page is never restyled. */
+export async function createBrowserPrintSession(result, options = {}) {
+  const owner = options.document || document
+  const frame = owner.createElement('iframe')
+  frame.dataset.forgePrint = ''
+  frame.title = '打印文档'
+  frame.style.cssText = 'position:fixed;left:-100000px;top:0;width:1000px;height:1000px;border:0;'
+  const controller = new AbortController()
+  const cancel = () => controller.abort(new PrintError('PRINT_CANCELLED', '打印会话已取消'))
+  options.signal?.addEventListener('abort', cancel, { once: true })
+  if (options.signal?.aborted) {
+    cancel()
+  }
+  const timer = setTimeout(() => controller.abort(new PrintError('RESOURCE_TIMEOUT', '打印文档准备超时')), PRINT_LIMITS.resourceTimeoutMs)
+  let app
+  let disposed = false
+  let printWindow
+  const dispose = () => {
+    if (disposed) {
+      return
+    }
+    disposed = true
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', cancel)
+    controller.signal.removeEventListener('abort', dispose)
+    printWindow?.removeEventListener('afterprint', dispose)
+    app?.unmount()
+    frame.remove()
+  }
+  try {
+    if (controller.signal.aborted) {
+      throw controller.signal.reason
+    }
+    owner.body.append(frame)
+    const paperDocument = frame.contentDocument
+    printWindow = frame.contentWindow
+    if (!paperDocument || !printWindow) {
+      throw new PrintError('PRINT_UNAVAILABLE', '浏览器无法创建打印文档')
+    }
+    const style = paperDocument.createElement('style')
+    style.textContent = `@page { size: ${result.geometry.widthMm}mm ${result.geometry.heightMm}mm; margin: 0; }
+html, body { margin: 0; padding: 0; background: white; }
+* { box-sizing: border-box; }
+[data-print-page] { break-after: page; page-break-after: always; }
+[data-print-page]:last-child { break-after: auto; page-break-after: auto; }`
+    paperDocument.head.append(style)
+    const host = paperDocument.createElement('div')
+    paperDocument.body.append(host)
+    app = createApp({ render: () => result.pages.map(page => h(PrintPage, { key: page.number, page, geometry: result.geometry })) })
+    app.mount(host)
+    await nextTick()
+    if (paperDocument.fonts) {
+      await abortable(paperDocument.fonts.ready, controller.signal)
+    }
+    await abortable(Promise.all([...paperDocument.images].map(image => image.decode())), controller.signal)
+    clearTimeout(timer)
+    controller.signal.addEventListener('abort', dispose, { once: true })
+    printWindow.addEventListener('afterprint', dispose, { once: true })
+    return {
+      dispose,
+      print() {
+        if (disposed) {
+          throw new PrintError('PRINT_SESSION_CLOSED', '打印会话已关闭')
+        }
+        try {
+          printWindow.focus()
+          printWindow.print()
+          options.onEvent?.({ result: 'DIALOG_OPENED', pageCount: result.pages.length })
+        }
+        catch {
+          dispose()
+          throw new PrintError('PRINT_UNAVAILABLE', '无法打开浏览器打印对话框')
+        }
+      },
+    }
+  }
+  catch (error) {
+    dispose()
+    throw error
+  }
+}

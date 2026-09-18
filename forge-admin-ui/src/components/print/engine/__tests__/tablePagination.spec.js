@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest'
+import { createPrintDocument } from '../../protocol/types'
+import { layoutPrintDocument } from '../layout'
+
+function setup(count, footer = false) {
+  const doc = createPrintDocument()
+  doc.paper = { widthMm: 100, heightMm: 100, orientation: 'PORTRAIT', marginMm: { top: 10, right: 10, bottom: 10, left: 10 } }
+  const table = { id: 'items', kind: 'TABLE', collectionPath: 'children.items', repeatHeader: true, columns: [{ id: 'name', field: 'name', title: '名称', widthMm: 80 }] }
+  if (footer) {
+    table.footer = { cells: [{ span: 1, binding: { source: 'CONSTANT', value: '合计' } }] }
+  }
+  doc.body = [table]
+  const context = { children: { items: Array.from({ length: count }, (_, i) => ({ name: String(i) })) } }
+  const options = { catalog: [{ path: 'children.items', type: 'COLLECTION' }, { path: 'children.items.name', type: 'TEXT' }], measure: { row: () => 10, text: value => ({ lines: [value], lineHeightMm: 5, insetMm: 0, heightMm: 5 }) } }
+  return { doc, context, options }
+}
+
+describe('whole-row pagination', () => {
+  it('repeats table headers and preserves every row once in order', () => {
+    const { doc, context, options } = setup(14)
+    const result = layoutPrintDocument(doc, context, options)
+    expect(result.pages).toHaveLength(2)
+    const rows = result.pages.flatMap(page => page.fragments.flatMap(fragment => fragment.rows))
+    expect(rows.filter(row => row.kind === 'header')).toHaveLength(2)
+    expect(rows.filter(row => row.kind === 'data').map(row => row.cells[0].text)).toEqual(context.children.items.map(row => row.name))
+  })
+  it('places a footer on its own continuation page when the last row exactly fills the body', () => {
+    const { doc, context, options } = setup(7, true)
+    const result = layoutPrintDocument(doc, context, options)
+    expect(result.pages).toHaveLength(2)
+    expect(result.pages[1].fragments[0].rows.map(row => row.kind)).toEqual(['header', 'footer'])
+  })
+  it('renders explicit empty content and its footer once', () => {
+    const { doc, context, options } = setup(0, true)
+    const result = layoutPrintDocument(doc, context, options)
+    expect(result.pages).toHaveLength(1)
+    expect(result.pages[0].fragments[0].rows.map(row => row.kind)).toEqual(['header', 'empty', 'footer'])
+  })
+  it('rejects a row that cannot fit with its header without an empty-page loop', () => {
+    const { doc, context, options } = setup(1)
+    options.measure.row = cells => cells[0].text === '名称' ? 10 : 71
+    expect(() => layoutPrintDocument(doc, context, options)).toThrow(expect.objectContaining({ code: 'ELEMENT_TOO_TALL' }))
+  })
+  it('accepts 500 rows within 50 pages and rejects a 501st row', () => {
+    const { doc, context, options } = setup(500)
+    options.measure.row = () => 5
+    expect(layoutPrintDocument(doc, context, options).pages.length).toBeLessThanOrEqual(50)
+    context.children.items.push({ name: '501' })
+    expect(() => layoutPrintDocument(doc, context, options)).toThrow(expect.objectContaining({ code: 'ROW_LIMIT' }))
+  })
+})

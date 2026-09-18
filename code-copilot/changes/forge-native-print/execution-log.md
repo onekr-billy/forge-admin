@@ -113,3 +113,19 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 只复制本次新增的 `src/components/print/` 与 `code-copilot/changes/forge-native-print/`，目标两个目录此前均不存在。其余 LawHub 文件不迁入。
 - 当前设计/任务/验收命令调整为 forge-admin-ui、forge-server 和 com.mdframe.forge；前序原始执行记录保留，避免把来源仓库结果当成目标仓库结果。
 - 复验、阶段提交与来源目录清理结果待追加；本轮继续遵守不 push。
+
+### Forge 目标仓库复验与提交
+
+- 分支：`codex/forge-native-print`，从原 main 建立；SDD 文档提交 `bc72aafc`（6 文件）。
+- 本轮读取目标 AGENTS.md、code-copilot/AGENTS.md、DESIGN.md、用户偏好、测试标准和 SDD 规则，核验 Spec 中目标目录与主子表/设计预览/动作接口实际存在。
+- 在 `forge-admin-ui` 运行 `source ~/.nvm/nvm.sh && nvm use v24.21.0 && node node_modules/vitest/vitest.mjs run src/components/print`：8 文件 39 项通过，23:23 执行，1.32s。
+- 同目录 `node node_modules/eslint/bin/eslint.js src/components/print`：退出码 0，无警告。
+- 同目录 `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build`：退出码 0；原有 Vite 导入兼容提示与 CSS 注释警告未扩大修改。日志 `/private/tmp/forge-native-print-target-build.log`。
+- 根目录 `node code-copilot/changes/forge-native-print/verification/serve.mjs --build`：退出码 0，产物位于临时目录；日志 `/private/tmp/forge-native-print-target-verification-build.log`。
+- 本轮验证服务仅监听 127.0.0.1:4318；没有启动 Admin/Flow/数据库。Chromium 153 的目标复验证据写入 `verification/browser-results-forge-admin.json`。
+- 源码 36 文件逐字节迁移；验证脚本路径与设计中的目录/包名按目标工程修正。目标依赖文件、lockfile、现有页面、后端及迁移均未修改。
+- M1 阶段提交覆盖打印模块、合成验证入口和更新后的 SDD 进度，`.DS_Store` 不进入提交；M2–M6 仍未开始。
+
+- 迁移后逐字节核对 36 个源文件完全一致；误写的 LawHub 打印模块和 SDD 目录已移至 `/private/tmp/forge-native-print-misplaced-backup-20260918/{print,sdd}`，不再留在 LawHub 活跃源码/变更目录中，未修改其它 LawHub 文件。
+- 已关闭本次 Forge 浏览器标签并 Ctrl+C 停止本次 Vite 进程（退出码 130）。目标主项目构建为 9275 模块、37.52s；独立打印构建为 2867 模块、1.70s。
+- 最终提交前执行 `git diff --cached --check`，只允许 `forge-admin-ui/src/components/print/` 和当前 SDD 目录进入 M1 提交。
