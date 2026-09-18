@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mdframe.forge.plugin.generator.constant.BusinessObjectDesignStatus;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApp;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplication;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessBinding;
@@ -166,6 +167,18 @@ public class BusinessApplicationSnapshotService {
         application.put("publishedVersion", versionNo);
         snapshot.put("application", application);
         snapshot.put("operationType", operationType);
+
+        List<Map<String, Object>> objectSnapshots = listOfMap(snapshot.get("objects"));
+        for (Map<String, Object> objectSnapshot : objectSnapshots) {
+            Long objectId = longValue(objectSnapshot.get("objectId"));
+            Long designVersionId = objectVersionIds.get(objectId);
+            if (designVersionId == null) {
+                continue;
+            }
+            objectSnapshot.put("designStatus", BusinessObjectDesignStatus.PUBLISHED.getCode());
+            objectSnapshot.put("publishedDesignVersionId", String.valueOf(designVersionId));
+        }
+        snapshot.put("objects", objectSnapshots);
 
         List<Map<String, Object>> publishedObjects = new ArrayList<>();
         for (Map.Entry<Long, Long> item : objectVersionIds.entrySet()) {

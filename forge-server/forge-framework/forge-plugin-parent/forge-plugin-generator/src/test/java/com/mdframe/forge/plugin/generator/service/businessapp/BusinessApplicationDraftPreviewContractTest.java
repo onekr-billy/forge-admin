@@ -35,11 +35,11 @@ class BusinessApplicationDraftPreviewContractTest {
     void applicationPublishSynchronizesManagedDatabasesBeforeReadiness() throws Exception {
         String source = readSource("service/businessapp/BusinessApplicationPublishService.java");
 
-        assertTrue(source.contains("preparePrimaryObjectDraft(applicationId);"));
+        assertEquals(2, countOccurrences(source, "prepareApplicationObjectDrafts(applicationId);"));
         assertEquals(2, countOccurrences(
                 source, "formDataService.synchronizeManagedDatabases(applicationId);"));
-        assertTrue(source.contains("\"PRIMARY\".equalsIgnoreCase(item.getObjectRole())"));
-        assertTrue(source.contains("ifPresent(objectDesignerService::prepareRuntimeDraft)"));
+        assertTrue(source.contains(".forEach(objectDesignerService::prepareRuntimeDraft)"));
+        assertTrue(source.contains("verifyPublishedObjects(run.getApplicationId(), selection.getObjectIds(), result)"));
     }
 
     @Test

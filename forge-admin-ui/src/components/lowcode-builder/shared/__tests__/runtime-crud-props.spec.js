@@ -11,6 +11,7 @@ import {
   resolveCrudSearchFieldCatalog,
   resolveDesignerFormGovernance,
   resolveRuntimeBlockApi,
+  shouldUseStaticCrudPreview,
 } from '../runtime-crud-props'
 
 describe('runtime CRUD design preview props', () => {
@@ -65,6 +66,42 @@ describe('runtime CRUD design preview props', () => {
     expect(isDesignPreviewCrudProps({ designPreview: true })).toBe(true)
     expect(isDesignPreviewCrudProps({ draftOnly: true })).toBe(true)
     expect(isDesignPreviewCrudProps({ designPreview: false })).toBe(false)
+  })
+
+  it('keeps static preview protection on a non-interactive design canvas', () => {
+    expect(shouldUseStaticCrudPreview({
+      blockType: 'AiCrudPage',
+      runtimeInteractive: false,
+      previewLiveData: false,
+      hasConfiguredRequest: true,
+    })).toBe(true)
+  })
+
+  it('does not treat a published interactive application as static preview', () => {
+    expect(shouldUseStaticCrudPreview({
+      blockType: 'AiCrudPage',
+      runtimeInteractive: true,
+      previewLiveData: false,
+      hasConfiguredRequest: true,
+    })).toBe(false)
+  })
+
+  it('allows an explicitly enabled live preview to call configured APIs', () => {
+    expect(shouldUseStaticCrudPreview({
+      blockType: 'AiCrudPage',
+      runtimeInteractive: false,
+      previewLiveData: true,
+      hasConfiguredRequest: true,
+    })).toBe(false)
+  })
+
+  it('passes published master-detail children through runtime CRUD props', () => {
+    const children = [{ relationKey: 'order_items', modelCode: 'ORDER_ITEM' }]
+    const props = buildRuntimeCrudProps({
+      options: { masterDetailConfig: { children } },
+    })
+
+    expect(props.childrenConfig).toEqual(children)
   })
 
   it('uses explicit search field refs independently from table columns', () => {

@@ -406,6 +406,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         DesignerContext context = loadContext(objectId);
         String beforeModelSchema = writeJson(context.getModelSchema(), "modelSchema");
         String beforePageSchema = writeJson(context.getPageSchema(), "pageSchema");
+        synchronizeFormChildRelations(context);
         applyRelationsToModel(context);
         compileFormFirstRuntimeSchema(context);
         String preparedModelSchema = writeJson(context.getModelSchema(), "modelSchema");
@@ -418,6 +419,32 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         String currentStatus = StringUtils.defaultIfBlank(
                 context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT.getCode());
         return saveDraft(context, currentStatus, false).getConfig();
+    }
+
+    /**
+     * 从持久化表单 Schema 恢复自动管理的子表关系。
+     *
+     * <p>除设计器保存外，发布链路也会调用本方法，兼容历史上表单已保存但关系未
+     * 生成的草稿。关系变化后立即回填页面 modelRefs，确保随后编译出的
+     * masterDetailConfig 与当前表单一致。</p>
+     */
+    public boolean synchronizeFormChildRelations(DesignerContext context) {
+        if (context == null || context.getObject() == null) {
+            return false;
+        }
+        Map<String, Object> designerOptions = resolveDesignerOptions(context.getObject(), context.getConfig());
+        if (!hasDesignerOption(designerOptions, FORM_DESIGNER_SCHEMA_OPTION_KEY)) {
+            return false;
+        }
+        FormDesignerSchemaDTO formSchema = resolveFormDesignerSchema(
+                context.getObject(), context.getModelSchema(), context.getPageSchema(), designerOptions);
+        boolean changed = ensureChildTableRelations(context, formSchema);
+        if (changed) {
+            context.setRelations(relationMapper.selectRelationsByObject(
+                    resolveTenantId(), context.getObject().getSuiteCode(), context.getObject().getObjectCode()));
+            applyRelationsToModel(context);
+        }
+        return changed;
     }
 
     public DesignerContext compileFormFirstRuntimeSchema(DesignerContext context) {
@@ -1798,6 +1825,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 result.add(component);
             }
             collectSubTableComponents(listOfMap(component.get("children")), result);
+            // 多表单协议的节点形如 { formKey, schema: { components: [...] } }；
+            // 同时兼容少量历史数据把 components 直接放在表单节点上的结构。
+            collectSubTableComponents(listOfMap(component.get("components")), result);
+            Map<String, Object> nestedSchema = mapValue(component.get("schema"));
+            collectSubTableComponents(listOfMap(nestedSchema.get("components")), result);
         }
     }
 

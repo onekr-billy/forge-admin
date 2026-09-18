@@ -208,6 +208,7 @@ public class BusinessObjectPublishService {
         if (dto != null && dto.getPageSchema() != null) {
             context.setPageSchema(dto.getPageSchema());
         }
+        designerService.synchronizeFormChildRelations(context);
         designerService.applyRelationsToModel(context);
         context = designerService.saveDraft(context, BusinessObjectDesignStatus.READY.getCode());
         BusinessPublishCheckVO check = publishCheck(context, permissionSummary);
@@ -224,12 +225,17 @@ public class BusinessObjectPublishService {
             throw new BusinessException("发布后运行配置不存在");
         }
         AiBusinessObject object = businessObjectMapper.selectById(objectId);
+        if (object == null) {
+            throw new BusinessException("发布后业务对象不存在");
+        }
         object.setConfigKey(publishedConfig.getConfigKey());
         object.setModelCode(publishedConfig.getObjectCode());
         object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
         object.setLastPublishVersion(publishedConfig.getPublishedVersion());
         object.setLastPublishTime(publishedConfig.getPublishTime());
-        businessObjectMapper.updateById(object);
+        if (businessObjectMapper.updateById(object) == 0) {
+            throw new BusinessException("业务对象发布状态更新失败");
+        }
 
         BusinessObjectDesignVersionDTO versionDTO = new BusinessObjectDesignVersionDTO();
         versionDTO.setObjectId(objectId);

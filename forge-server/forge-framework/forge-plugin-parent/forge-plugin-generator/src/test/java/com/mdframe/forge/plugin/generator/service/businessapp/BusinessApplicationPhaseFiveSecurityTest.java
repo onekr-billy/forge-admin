@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStep;
 import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessSnapshot;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAssetSelectionVO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -67,5 +68,31 @@ class BusinessApplicationPhaseFiveSecurityTest {
         assertTrue(bundle.json().contains("2900000000000001001"));
         assertTrue(bundle.json().contains("deployment-2"));
         assertTrue(bundle.snapshot().containsKey("runtimeActions"));
+    }
+
+    @Test
+    @DisplayName("published snapshot exposes the final business object status")
+    @SuppressWarnings("unchecked")
+    void publishedSnapshotMarksSelectedObjectsPublished() {
+        BusinessApplicationSnapshotService service = new BusinessApplicationSnapshotService(
+                new ObjectMapper(), null, null, null, null, null, null, null, null);
+        String candidate = """
+                {
+                  "application":{"designStatus":"CHANGED"},
+                  "objects":[
+                    {"objectId":"101","objectCode":"ORDER","designStatus":"CHANGED"},
+                    {"objectId":"102","objectCode":"UNSELECTED","designStatus":"DRAFT"}
+                  ]
+                }
+                """;
+
+        BusinessApplicationSnapshotService.SnapshotBundle bundle = service.finalizePublished(
+                candidate, Map.of(101L, 9001L), new BusinessApplicationAssetSelectionVO(),
+                3, "PUBLISH");
+        List<Map<String, Object>> objects = (List<Map<String, Object>>) bundle.snapshot().get("objects");
+
+        assertEquals("PUBLISHED", objects.get(0).get("designStatus"));
+        assertEquals("9001", objects.get(0).get("publishedDesignVersionId"));
+        assertEquals("DRAFT", objects.get(1).get("designStatus"));
     }
 }

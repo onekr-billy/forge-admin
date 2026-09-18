@@ -266,6 +266,31 @@ class BusinessObjectDesignerPageSchemaTest {
     }
 
     @Test
+    @DisplayName("finds child tables inside root, nested and multi-form schemas")
+    @SuppressWarnings("unchecked")
+    void findsChildTablesAcrossAllFormSchemaShapes() throws Exception {
+        Map<String, Object> rootSubTable = Map.of(
+                "id", "root_child", "componentKey", "subTable", "props", Map.of("modelCode", "ROOT_ITEM"));
+        Map<String, Object> nestedSubTable = Map.of(
+                "id", "nested_child", "componentKey", "forgeSubTable", "props", Map.of("modelCode", "NESTED_ITEM"));
+        Map<String, Object> multiFormSubTable = Map.of(
+                "id", "multi_child", "componentKey", "subTable", "props", Map.of("modelCode", "MULTI_ITEM"));
+        List<Map<String, Object>> nodes = List.of(
+                rootSubTable,
+                Map.of("id", "card", "componentKey", "card", "children", List.of(nestedSubTable)),
+                Map.of("formKey", "detail", "schema", Map.of("components", List.of(multiFormSubTable))));
+
+        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
+                "collectSubTableComponents", List.class, List.class);
+        method.setAccessible(true);
+        List<Map<String, Object>> result = new ArrayList<>();
+        method.invoke(designerService(), nodes, result);
+
+        assertEquals(List.of("root_child", "nested_child", "multi_child"),
+                result.stream().map(item -> String.valueOf(item.get("id"))).toList());
+    }
+
+    @Test
     @DisplayName("loads seed form schema from edit zone and merges it into runtime options")
     void loadsAndMergesSeedFormSchema() throws Exception {
         BusinessObjectDesignerService service = designerService();

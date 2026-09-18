@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStatus;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStep;
 import com.mdframe.forge.plugin.generator.constant.BusinessExtensionStatus;
+import com.mdframe.forge.plugin.generator.constant.BusinessObjectDesignStatus;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationPublishRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessExtension;
@@ -59,6 +60,7 @@ public class BusinessApplicationPublishService {
     private final LowcodeDdlService ddlService;
 
     public BusinessApplicationPublishCheckVO check(Long applicationId, BusinessApplicationPublishDTO dto) {
+        prepareApplicationObjectDrafts(applicationId);
         formDataService.synchronizeManagedDatabases(applicationId);
         return ddlService.withStructureCheckCache(() -> readinessService.publishCheck(applicationId, dto));
     }
@@ -76,7 +78,7 @@ public class BusinessApplicationPublishService {
         if (existing != null) {
             return toResult(existing, existingRunMessage(existing));
         }
-        preparePrimaryObjectDraft(applicationId);
+        prepareApplicationObjectDrafts(applicationId);
         formDataService.synchronizeManagedDatabases(applicationId);
         BusinessApplicationReadinessService.ResolvedPublishCheck resolvedCheck
                 = readinessService.resolvePublishCheck(applicationId, dto);
@@ -253,16 +255,40 @@ public class BusinessApplicationPublishService {
             result.put(objectId, objectPublishService.publish(
                     objectId, objectDto, permissionSummaries.get(objectId), objectContexts.get(objectId)));
         }
+        verifyPublishedObjects(run.getApplicationId(), selection.getObjectIds(), result);
         return new PublishObjectsResult(run, result);
     }
 
-    private void preparePrimaryObjectDraft(Long applicationId) {
+    private void prepareApplicationObjectDrafts(Long applicationId) {
         applicationObjectService.list(applicationId).stream()
-                .filter(item -> "PRIMARY".equalsIgnoreCase(item.getObjectRole()))
                 .map(BusinessApplicationObjectVO::getObjectId)
                 .filter(java.util.Objects::nonNull)
-                .findFirst()
-                .ifPresent(objectDesignerService::prepareRuntimeDraft);
+                .distinct()
+                .forEach(objectDesignerService::prepareRuntimeDraft);
+    }
+
+    private void verifyPublishedObjects(Long applicationId,
+                                        List<Long> selectedObjectIds,
+                                        Map<Long, Long> objectVersions) {
+        Map<Long, BusinessApplicationObjectVO> currentObjects = applicationObjectService.list(applicationId).stream()
+                .collect(Collectors.toMap(BusinessApplicationObjectVO::getObjectId, Function.identity()));
+        List<String> incomplete = selectedObjectIds.stream()
+                .filter(objectId -> {
+                    BusinessApplicationObjectVO object = currentObjects.get(objectId);
+                    return object == null
+                            || !BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())
+                            || objectVersions.get(objectId) == null;
+                })
+                .map(objectId -> {
+                    BusinessApplicationObjectVO object = currentObjects.get(objectId);
+                    return object == null
+                            ? String.valueOf(objectId)
+                            : StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode());
+                })
+                .toList();
+        if (!incomplete.isEmpty()) {
+            throw new BusinessException("业务对象发布状态未完成: " + String.join("、", incomplete));
+        }
     }
 
     private int enableExtensions(Long applicationId, List<Long> extensionIds) {

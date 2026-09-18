@@ -109,6 +109,23 @@ export function isDesignPreviewCrudProps(runtimeCrudProps = {}) {
   return runtimeCrudProps.designPreview === true || runtimeCrudProps.draftOnly === true
 }
 
+/**
+ * 静态结构预览只属于不可交互的设计画布。
+ *
+ * 正式应用运行页即使没有保存 previewLiveData（该字段只是设计器开关），也必须
+ * 正常查询和提交；否则会被误判成静态预览并触发 beforeSubmit 拦截。
+ */
+export function shouldUseStaticCrudPreview({
+  blockType = '',
+  runtimeInteractive = false,
+  previewLiveData = false,
+  hasConfiguredRequest = false,
+} = {}) {
+  if (blockType !== 'AiCrudPage' || runtimeInteractive === true)
+    return false
+  return !(previewLiveData === true && hasConfiguredRequest === true)
+}
+
 export function resolveCurrentConfigPlaceholder(value, configKey) {
   const text = String(value || '').trim()
   if (!text)

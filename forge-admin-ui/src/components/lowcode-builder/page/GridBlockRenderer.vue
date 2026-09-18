@@ -1230,7 +1230,7 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import InlineRichText from '@/components/lowcode-builder/shared/InlineRichText.vue'
 import { isPageWidgetComponentKey, pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
-import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, includeManagedRuntimeFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, includeManagedRuntimeFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { hydrateRuntimeFormLayout } from '@/components/lowcode-builder/shared/runtime-form-layout'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { useUserStore } from '@/store'
@@ -2024,7 +2024,12 @@ const hasConfiguredCrudRequest = computed(() => {
     || Object.values(runtimeApiConfig).some(Boolean))
 })
 const shouldRequestCrudPreviewApi = computed(() => props.block.props?.previewLiveData === true && hasConfiguredCrudRequest.value)
-const isStaticCrudPreview = computed(() => props.block.blockType === 'AiCrudPage' && !shouldRequestCrudPreviewApi.value)
+const isStaticCrudPreview = computed(() => shouldUseStaticCrudPreview({
+  blockType: props.block.blockType,
+  runtimeInteractive: props.runtimeInteractive,
+  previewLiveData: props.block.props?.previewLiveData === true,
+  hasConfiguredRequest: hasConfiguredCrudRequest.value,
+}))
 const staticCrudPreviewMessage = computed(() => hasConfiguredCrudRequest.value
   ? '静态结构预览 · 已连接数据存储，可在右侧开启真实数据预览'
   : '静态结构预览 · 连接数据存储后即可提交、查询数据')
