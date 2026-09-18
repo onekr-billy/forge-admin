@@ -5,6 +5,7 @@ import cn.dev33.satoken.stp.SaLoginModel;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.useragent.UserAgent;
 import cn.hutool.http.useragent.UserAgentUtil;
+import com.mdframe.forge.starter.core.constant.FlowDelegationConstants;
 import com.mdframe.forge.starter.core.context.LogProperties;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -47,6 +48,13 @@ public class LoginLogListener implements SaTokenListener {
      */
     @Override
     public void doLogin(String loginType, Object loginId, String tokenValue, SaLoginModel loginModel) {
+        // 流程委托临时会话（mcp-flow 设备）不是用户登录行为，不写登录日志，
+        // 否则高频流程调用会刷满登录日志表并干扰真实登录审计
+        if (loginModel != null && loginModel.getDevice() != null
+                && loginModel.getDevice().startsWith(FlowDelegationConstants.FLOW_DELEGATION_DEVICE_PREFIX)) {
+            return;
+        }
+
         // 检查是否启用登录日志
         if (logProperties.getEnableLoginLog() == null || !logProperties.getEnableLoginLog()) {
             return;

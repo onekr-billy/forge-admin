@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -124,6 +126,50 @@ class SaTokenFlowTokenProviderTest {
         verify(tokenSession).set(FlowDelegationSessionVerifier.TENANT_ID_KEY, 1L);
         verify(tokenSession).set(FlowDelegationSessionVerifier.ACTIVE_ORG_ID_KEY, 201L);
         verify(tokenSession).set(FlowDelegationSessionVerifier.CLIENT_ID_KEY, 1L);
+    }
+
+    @Test
+    void shouldReuseDelegatedTokenWithinRefreshWindowAndRotateNearExpiry() {
+        // 同一身份在复用窗口内不得重复 createLoginSession（否则会挤占账号会话池上限，
+        // 触发 logoutByMaxLoginCount 把浏览器会话挤下线）；临近过期才换发新 Token
+        StpLogic stpLogic = mock(StpLogic.class);
+        SaSession tokenSession = mock(SaSession.class);
+        when(stpLogic.createLoginSession(eq(101L), any(SaLoginModel.class)))
+                .thenReturn("delegated-token-1", "delegated-token-2");
+        when(stpLogic.getTokenSessionByToken(any(), eq(true))).thenReturn(tokenSession);
+        AtomicLong clock = new AtomicLong();
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic, () -> null, clock::get);
+        ExecutionIdentity identity = identity("USER", 101L);
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity)) {
+            assertThat(provider.getToken()).isEqualTo("delegated-token-1");
+            clock.set(30_000L);
+            assertThat(provider.getToken()).isEqualTo("delegated-token-1");
+            clock.set(55_000L);
+            assertThat(provider.getToken()).isEqualTo("delegated-token-2");
+        }
+
+        verify(stpLogic, times(2)).createLoginSession(eq(101L), any(SaLoginModel.class));
+    }
+
+    @Test
+    void shouldIssueSeparateDelegatedTokensForDifferentIdentityScopes() {
+        StpLogic stpLogic = mock(StpLogic.class);
+        SaSession tokenSession = mock(SaSession.class);
+        when(stpLogic.createLoginSession(eq(101L), any(SaLoginModel.class))).thenReturn("delegated-token-101");
+        when(stpLogic.createLoginSession(eq(202L), any(SaLoginModel.class))).thenReturn("delegated-token-202");
+        when(stpLogic.getTokenSessionByToken(any(), eq(true))).thenReturn(tokenSession);
+        SaTokenFlowTokenProvider provider = new SaTokenFlowTokenProvider(() -> stpLogic);
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity("USER", 101L))) {
+            assertThat(provider.getToken()).isEqualTo("delegated-token-101");
+        }
+        try (var ignored = ExecutionIdentityContextHolder.open(identity("USER", 202L))) {
+            assertThat(provider.getToken()).isEqualTo("delegated-token-202");
+        }
+
+        verify(stpLogic, times(1)).createLoginSession(eq(101L), any(SaLoginModel.class));
+        verify(stpLogic, times(1)).createLoginSession(eq(202L), any(SaLoginModel.class));
     }
 
     private ExecutionIdentity identity(String actorType, Long userId) {

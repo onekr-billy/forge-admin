@@ -6,6 +6,7 @@ import cn.dev33.satoken.stp.StpLogic;
 import cn.dev33.satoken.stp.StpUtil;
 import com.mdframe.forge.flow.client.FlowTokenAcquisitionException;
 import com.mdframe.forge.flow.client.FlowTokenProvider;
+import com.mdframe.forge.starter.core.constant.FlowDelegationConstants;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.session.LoginUser;
@@ -17,6 +18,8 @@ import org.springframework.stereotype.Component;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -26,6 +29,9 @@ import java.util.function.Supplier;
  * 每次 {@link com.mdframe.forge.flow.client.FlowClient} 发起 HTTP 请求前，
  * 自动从当前请求上下文中取出 Sa-Token，透传到 Authorization 请求头，
  * 解决服务内调用流程服务时出现"未登录"的问题。
+ * <p>
+ * 委托 Token 按身份（用户+租户+组织+客户端）在进程内短窗口复用，
+ * 避免每次调用都新建会话挤占账号会话池上限（见 {@link #reuseOrIssueDelegatedToken}）。
  *
  * @author forge
  */
@@ -36,10 +42,18 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
 
     private static final String LOGIN_USER_KEY = "loginUser";
     private static final long DELEGATED_TOKEN_TIMEOUT_SECONDS = 60L;
+    /** 委托 Token 剩余有效期低于该值时换发新 Token，避免把临近过期的 Token 交给调用方 */
+    private static final long DELEGATED_TOKEN_REFRESH_MARGIN_MS = 10_000L;
     private static final long INTERACTIVE_CLIENT_ID = 1L;
 
     private final Supplier<StpLogic> stpLogicSupplier;
     private final Supplier<LoginUser> loginUserSupplier;
+    private final LongSupplier clock;
+
+    /** 委托 Token 进程内缓存：key=userId:tenantId:orgId:clientId，过期条目在下次访问时被惰性换发 */
+    private final ConcurrentHashMap<String, CachedDelegationToken> delegatedTokenCache = new ConcurrentHashMap<>();
+    /** 签发串行化锁：按身份键持有，条目随身份数量有界，无需清理 */
+    private final ConcurrentHashMap<String, Object> delegationCreationLocks = new ConcurrentHashMap<>();
 
     public SaTokenFlowTokenProvider() {
         this(StpUtil::getStpLogic, SessionHelper::getLoginUser);
@@ -50,8 +64,14 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
     }
 
     SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier, Supplier<LoginUser> loginUserSupplier) {
+        this(stpLogicSupplier, loginUserSupplier, System::currentTimeMillis);
+    }
+
+    SaTokenFlowTokenProvider(Supplier<StpLogic> stpLogicSupplier, Supplier<LoginUser> loginUserSupplier,
+            LongSupplier clock) {
         this.stpLogicSupplier = stpLogicSupplier;
         this.loginUserSupplier = loginUserSupplier;
+        this.clock = clock;
     }
 
     @Override
@@ -130,29 +150,71 @@ public class SaTokenFlowTokenProvider implements FlowTokenProvider {
                     || loginUser.getActiveOrgId() <= 0) {
                 throw new IllegalStateException("MCP_FLOW_DELEGATION_IDENTITY_INVALID");
             }
-            StpLogic stpLogic = stpLogicSupplier.get();
-            String delegationSessionId = UUID.randomUUID().toString();
-            SaLoginModel loginModel = SaLoginModel.create()
-                    .setDevice("mcp-flow:" + identity.clientId() + ":"
-                            + loginUser.getActiveOrgId() + ":" + delegationSessionId)
-                    .setTimeout(DELEGATED_TOKEN_TIMEOUT_SECONDS)
-                    .setActiveTimeout(DELEGATED_TOKEN_TIMEOUT_SECONDS)
-                    .setIsLastingCookie(false)
-                    .setIsWriteHeader(false);
-            String token = stpLogic.createLoginSession(identity.actorUserId(), loginModel);
-            if (token == null || token.isBlank()) {
-                throw new IllegalStateException("MCP_FLOW_DELEGATION_TOKEN_EMPTY");
-            }
-            SaSession tokenSession = stpLogic.getTokenSessionByToken(token, true);
-            if (tokenSession == null) {
-                throw new IllegalStateException("MCP_FLOW_DELEGATION_SESSION_UNAVAILABLE");
-            }
-            tokenSession.set(LOGIN_USER_KEY, loginUser);
-            FlowDelegationSessionVerifier.bind(tokenSession, identity);
-            return token;
+            return reuseOrIssueDelegatedToken(identity, loginUser);
         }
         catch (Exception exception) {
             throw new FlowTokenAcquisitionException("MCP_FLOW_DELEGATION_TOKEN_UNAVAILABLE", exception);
         }
+    }
+
+    /**
+     * 同一委托身份在有效期内复用同一枚临时 Token，避免每次流程调用都 createLoginSession。
+     * <p>
+     * Sa-Token 1.38 默认 max-login-count=12，委托会话与浏览器会话共用同一账号会话池；
+     * 若每次调用都用随机设备名新建会话（isShare 复用永远不命中），一次页面加载的
+     * 并发流程请求即可在 60s TTL 内堆积超过上限，触发 logoutByMaxLoginCount
+     * 把最早的浏览器会话挤下线（表现为用户"未点击退出却自动被注销"）。
+     * 复用后每个进程同一身份同时最多存活约 2 枚委托会话（换发窗口内的新旧重叠），远离上限。
+     */
+    private String reuseOrIssueDelegatedToken(ExecutionIdentity identity, LoginUser loginUser) {
+        String cacheKey = identity.actorUserId() + ":" + loginUser.getTenantId() + ":"
+                + loginUser.getActiveOrgId() + ":" + identity.clientId();
+        CachedDelegationToken cached = delegatedTokenCache.get(cacheKey);
+        if (isReusable(cached)) {
+            return cached.token();
+        }
+        // 并发流程调用（如同一次页面加载的多个请求）可能同时未命中缓存，
+        // 必须按身份串行化签发，否则突发调用依旧会堆积会话触发挤下线
+        Object lock = delegationCreationLocks.computeIfAbsent(cacheKey, key -> new Object());
+        synchronized (lock) {
+            cached = delegatedTokenCache.get(cacheKey);
+            if (isReusable(cached)) {
+                return cached.token();
+            }
+            String token = issueDelegatedToken(identity, loginUser);
+            delegatedTokenCache.put(cacheKey, new CachedDelegationToken(
+                    token, clock.getAsLong() + DELEGATED_TOKEN_TIMEOUT_SECONDS * 1000L));
+            return token;
+        }
+    }
+
+    private boolean isReusable(CachedDelegationToken cached) {
+        return cached != null && cached.expiresAt() - clock.getAsLong() > DELEGATED_TOKEN_REFRESH_MARGIN_MS;
+    }
+
+    private String issueDelegatedToken(ExecutionIdentity identity, LoginUser loginUser) {
+        StpLogic stpLogic = stpLogicSupplier.get();
+        String delegationSessionId = UUID.randomUUID().toString();
+        SaLoginModel loginModel = SaLoginModel.create()
+                .setDevice(FlowDelegationConstants.FLOW_DELEGATION_DEVICE_PREFIX + identity.clientId() + ":"
+                        + loginUser.getActiveOrgId() + ":" + delegationSessionId)
+                .setTimeout(DELEGATED_TOKEN_TIMEOUT_SECONDS)
+                .setActiveTimeout(DELEGATED_TOKEN_TIMEOUT_SECONDS)
+                .setIsLastingCookie(false)
+                .setIsWriteHeader(false);
+        String token = stpLogic.createLoginSession(identity.actorUserId(), loginModel);
+        if (token == null || token.isBlank()) {
+            throw new IllegalStateException("MCP_FLOW_DELEGATION_TOKEN_EMPTY");
+        }
+        SaSession tokenSession = stpLogic.getTokenSessionByToken(token, true);
+        if (tokenSession == null) {
+            throw new IllegalStateException("MCP_FLOW_DELEGATION_SESSION_UNAVAILABLE");
+        }
+        tokenSession.set(LOGIN_USER_KEY, loginUser);
+        FlowDelegationSessionVerifier.bind(tokenSession, identity);
+        return token;
+    }
+
+    private record CachedDelegationToken(String token, long expiresAt) {
     }
 }
