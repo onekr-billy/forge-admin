@@ -1,0 +1,17 @@
+.ai-crud-form-modal.n-card {
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-crud-form-modal .n-card-content,
+.ai-crud-form-modal .n-card__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ai-crud-form-modal .n-card-footer,
+.ai-crud-form-modal .n-card__footer {
+  flex: 0 0 auto;
+}
