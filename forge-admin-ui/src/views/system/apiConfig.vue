@@ -8,7 +8,7 @@
         detail: 'post@/system/apiConfig/getById',
         add: 'post@/system/apiConfig/add',
         update: 'post@/system/apiConfig/edit',
-        delete: 'post@/system/apiConfig/remove',
+        delete: 'post@/system/apiConfig/removeBatch',
       }"
       :search-schema="searchSchema"
       :columns="tableColumns"

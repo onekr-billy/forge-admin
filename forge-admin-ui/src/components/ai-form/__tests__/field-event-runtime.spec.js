@@ -187,6 +187,113 @@ describe('field event protocol', () => {
       maxRows: 50,
     })
   })
+
+  it('skips the request when a required param is blank and keeps old values', async () => {
+    const execute = vi.fn()
+    const patches = []
+    const states = []
+    const runtime = createFieldEventRuntime({
+      rules: [buildRule({
+        trigger: 'BLUR',
+        debounceMs: 0,
+        paramMappings: [
+          { param: 'mobile', source: 'FORM_FIELD', field: 'mobile' },
+          { param: 'orgId', source: 'FORM_FIELD', field: 'orgId', required: true },
+        ],
+        clearTargetsOnTrigger: true,
+      })],
+      fields: ['mobile', 'orgId', 'contactName'],
+      execute,
+      getFormData: () => ({ mobile: '13800000000', orgId: '' }),
+      applyPatch: patch => patches.push(patch),
+      onStateChange: state => states.push(state),
+    })
+
+    const result = await runtime.dispatch('BLUR', 'mobile')
+    expect(result[0]).toMatchObject({ status: 'skipped_params', missing: ['orgId'] })
+    expect(execute).not.toHaveBeenCalled()
+    // 与 skipWhenEmpty 的清空语义不同：必填缺参仅跳过请求，保留旧回填值
+    expect(patches).toEqual([])
+    expect(states.at(-1)).toMatchObject({ status: 'idle', ruleId: 'query_contact' })
+  })
+
+  it('executes normally once the required param is filled', async () => {
+    let formData = { mobile: '13800000000', orgId: '' }
+    const execute = vi.fn(async payload => ({ data: { data: { contact: { name: payload.params.orgId } } } }))
+    const runtime = createFieldEventRuntime({
+      rules: [buildRule({
+        trigger: 'BLUR',
+        debounceMs: 0,
+        paramMappings: [
+          { param: 'orgId', source: 'FORM_FIELD', field: 'orgId', required: true },
+        ],
+      })],
+      fields: ['mobile', 'orgId', 'contactName'],
+      execute,
+      getFormData: () => formData,
+    })
+
+    await runtime.dispatch('BLUR', 'mobile')
+    expect(execute).not.toHaveBeenCalled()
+
+    formData = { mobile: '13800000000', orgId: 'ORG-1' }
+    await runtime.dispatch('BLUR', 'mobile')
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute.mock.calls[0][0].params).toEqual({ orgId: 'ORG-1' })
+  })
+
+  it('freezes the base context per rule when snapshotContext is enabled', async () => {
+    let context = { currentUser: { userId: 'u-1' } }
+    const execute = vi.fn(async payload => ({ data: { data: { contact: { name: payload.params.operator } } } }))
+    const patches = []
+    const runtime = createFieldEventRuntime({
+      rules: [buildRule({
+        trigger: 'BLUR',
+        debounceMs: 0,
+        paramMappings: [
+          { param: 'operator', source: 'CONTEXT_PATH', path: 'currentUser.userId' },
+        ],
+      })],
+      fields: ['mobile', 'contactName'],
+      execute,
+      getFormData: () => ({ mobile: '13800000000' }),
+      getContext: () => context,
+      applyPatch: patch => patches.push(patch),
+      snapshotContext: true,
+    })
+
+    await runtime.dispatch('BLUR', 'mobile')
+    expect(execute.mock.calls[0][0].params).toEqual({ operator: 'u-1' })
+
+    context = { currentUser: { userId: 'u-2' } }
+    await runtime.dispatch('BLUR', 'mobile')
+    // 快照语义：同一规则后续执行仍读取首次冻结的上下文，避免参数漂移
+    expect(execute.mock.calls[1][0].params).toEqual({ operator: 'u-1' })
+    expect(patches).toContainEqual({ contactName: 'u-1' })
+  })
+
+  it('reads live context when snapshotContext is disabled', async () => {
+    let context = { currentUser: { userId: 'u-1' } }
+    const execute = vi.fn(async payload => ({ data: { data: { contact: { name: payload.params.operator } } } }))
+    const runtime = createFieldEventRuntime({
+      rules: [buildRule({
+        trigger: 'BLUR',
+        debounceMs: 0,
+        paramMappings: [
+          { param: 'operator', source: 'CONTEXT_PATH', path: 'currentUser.userId' },
+        ],
+      })],
+      fields: ['mobile', 'contactName'],
+      execute,
+      getFormData: () => ({ mobile: '13800000000' }),
+      getContext: () => context,
+    })
+
+    await runtime.dispatch('BLUR', 'mobile')
+    context = { currentUser: { userId: 'u-2' } }
+    await runtime.dispatch('BLUR', 'mobile')
+    expect(execute.mock.calls[1][0].params).toEqual({ operator: 'u-2' })
+  })
 })
 
 describe('field event runtime concurrency', () => {

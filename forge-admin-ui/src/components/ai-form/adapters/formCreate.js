@@ -35,6 +35,8 @@ function collectFields(node, result, seen) {
   if (field && !seen.has(field) && !isLayoutRule(node)) {
     seen.add(field)
     result.push(toAiField(node, field))
+    if (isArrayRule(node))
+      return
   }
 
   const children = Array.isArray(node.children) ? node.children : []
@@ -52,6 +54,7 @@ function toAiField(rule, field) {
   delete props.options
   const required = resolveRequired(rule)
   const rules = normalizeRules(rule, required)
+  const arraySchema = type === 'array' ? normalizeArraySchema(rule) : null
   return {
     field,
     code: field,
@@ -64,6 +67,7 @@ function toAiField(rule, field) {
     ...normalizeFieldAttrs(rule),
     ...(options.length ? { options } : {}),
     ...(rules.length ? { rules } : {}),
+    ...(arraySchema || {}),
   }
 }
 
@@ -93,6 +97,8 @@ function normalizeFieldType(rule = {}) {
   const rawType = normalizeTypeName(rule.type || rule.component || rule.componentKey)
   const propType = normalizeTypeName(rule.props?.type)
   const fieldType = normalizeTypeName(rule.fieldType || rule.componentType)
+  if (['group', 'tableform', 'subform', 'array'].includes(rawType))
+    return 'array'
   if (['textarea'].includes(propType) || rawType === 'textarea')
     return 'textarea'
   if (['inputnumber', 'number', 'elinputnumber', 'ninputnumber'].includes(rawType) || fieldType === 'number')
@@ -129,6 +135,76 @@ function normalizeFieldType(rule = {}) {
   if (['colorpicker', 'elcolorpicker', 'ncolorpicker'].includes(rawType))
     return 'color'
   return 'input'
+}
+
+function isArrayRule(rule = {}) {
+  return normalizeFieldType(rule) === 'array'
+}
+
+function normalizeArraySchema(rule = {}) {
+  const rawType = normalizeTypeName(rule.type || rule.component || rule.componentKey)
+  const props = rule.props || {}
+  const tableMode = rawType === 'tableform'
+  const itemSchema = tableMode
+    ? collectTableFormFields(props.columns || rule.columns)
+    : collectArrayItemFields(props.rule || rule.rule || rule.children)
+  const allowCreate = props.addable !== undefined
+    ? props.addable !== false
+    : props.button !== false
+  const allowDelete = props.deletable !== undefined
+    ? props.deletable !== false
+    : props.button !== false
+  return {
+    itemSchema,
+    arrayConfig: {
+      displayMode: tableMode ? 'table' : (props.type === 'card' ? 'card' : 'list'),
+      allowCreate,
+      allowUpdate: props.disabled !== true,
+      allowDelete,
+      sortable: props.sortBtn === true,
+      min: normalizeArrayLimit(props.min, 0),
+      max: normalizeArrayLimit(props.max, 0),
+      itemTitle: text(props.title) || '第{index}项',
+      addText: text(props.addText) || '新增明细',
+    },
+    defaultValue: Array.isArray(rule.value)
+      ? rule.value
+      : (Array.isArray(props.defaultValue) ? props.defaultValue : []),
+  }
+}
+
+function collectArrayItemFields(source) {
+  const result = []
+  collectFields(parseSchema(source), result, new Set())
+  return result
+}
+
+function collectTableFormFields(columns) {
+  if (!Array.isArray(columns))
+    return []
+  const result = []
+  const seen = new Set()
+  columns.forEach((column) => {
+    const rules = Array.isArray(column?.rule) ? column.rule : []
+    const before = result.length
+    collectFields(rules, result, seen)
+    if (result.length === before)
+      return
+    const columnLabel = text(column?.label)
+    if (columnLabel && result.length === before + 1 && result[before]?.label === result[before]?.field)
+      result[before].label = columnLabel
+    const width = text(column?.style?.width)
+    if (width) {
+      for (let index = before; index < result.length; index++)
+        result[index].columnWidth = width
+    }
+  })
+  return result
+}
+
+function normalizeArrayLimit(value, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? number : fallback
 }
 
 function normalizeTypeName(value) {

@@ -9,14 +9,16 @@ import com.mdframe.forge.starter.auth.enums.AuthType;
 import com.mdframe.forge.starter.auth.service.ICaptchaService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
  * 用户名+密码+验证码认证策略
- * 支持多种验证码类型：图形验证码、滑块验证码、短信验证码
+ * 支持多种验证码类型：图形验证码、滑块验证码、短信验证码、群二维码验证码
  * 验证码类型由全局登录配置和客户端覆盖配置统一解析
  */
+@Slf4j
 @Component
 public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
 
@@ -29,6 +31,9 @@ public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
     @Autowired
     private LoginCaptchaPolicyResolver captchaPolicyResolver;
 
+    @Autowired
+    private com.mdframe.forge.starter.config.service.ConfigManagerService configManagerService;
+
     @Override
     protected void validateRequest(LoginRequest request) {
         validateUsername(request.getUsername());
@@ -36,11 +41,10 @@ public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
 
         // 根据验证码类型校验不同参数
         LoginCaptchaPolicy captchaPolicy = captchaPolicyResolver.resolve(request.getUserClient());
-        if (!Boolean.TRUE.equals(captchaPolicy.getEnableCaptcha())) {
+        String captchaType = resolveEffectiveCaptchaType(request, captchaPolicy);
+        if (!isCaptchaRequired(captchaPolicy, captchaType)) {
             return;
         }
-
-        String captchaType = captchaPolicy.getCaptchaType();
 
         if ("sms".equals(captchaType)) {
             // 短信验证码需要手机号和验证码
@@ -54,6 +58,11 @@ public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
             if (StrUtil.isBlank(request.getCode()) || StrUtil.isBlank(request.getCodeKey())) {
                 throw new RuntimeException("请完成滑块验证");
             }
+        } else if ("group".equals(captchaType)) {
+            // 群二维码验证码：只需要 code（codeKey 前端传固定值 "group_captcha"）
+            if (StrUtil.isBlank(request.getCode())) {
+                throw new RuntimeException("请输入群验证码");
+            }
         } else {
             // 图形验证码需要codeKey和code
             validateCaptcha(request.getCode(), request.getCodeKey());
@@ -66,10 +75,11 @@ public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
 
         // 1. 获取登录配置，确定验证码类型
         LoginCaptchaPolicy captchaPolicy = captchaPolicyResolver.resolve(request.getUserClient());
+        String effectiveType = resolveEffectiveCaptchaType(request, captchaPolicy);
 
-        // 2. 根据验证码类型进行验证
-        if (Boolean.TRUE.equals(captchaPolicy.getEnableCaptcha())) {
-            boolean captchaValid = validateCaptchaByType(request, captchaPolicy.getCaptchaType());
+        // 2. 根据验证码类型进行验证（群二维码引流验证码独立于验证码总开关生效）
+        if (isCaptchaRequired(captchaPolicy, effectiveType)) {
+            boolean captchaValid = validateCaptchaByType(request, effectiveType);
             if (!captchaValid) {
                 throw new BusinessException("验证码错误或已过期");
             }
@@ -108,10 +118,60 @@ public class UsernamePasswordCaptchaAuthStrategy extends AbstractAuthStrategy {
             case "sms":
                 // 短信验证码：使用手机号验证
                 return captchaService.validateAndDeleteSmsCaptcha(request.getPhone(), request.getCode());
+            case "group":
+                // 群二维码验证码：比对配置中心固定码（不区分大小写，trim）
+                return validateGroupCaptcha(request.getCode());
             case "graphical":
             default:
                 // 图形验证码
                 return userLoadService.validateCode(request.getCodeKey(), request.getCode());
+        }
+    }
+
+    /**
+     * 解析实际生效的验证码类型。
+     * 当群二维码引流已启用且前端明确传了 captchaType="group" 时，以前端选择为准；
+     * 否则使用后端配置的默认类型。
+     */
+    private String resolveEffectiveCaptchaType(LoginRequest request, LoginCaptchaPolicy captchaPolicy) {
+        String configuredType = captchaPolicy.getCaptchaType();
+        String requestType = request.getCaptchaType();
+        if ("group".equals(requestType) && Boolean.TRUE.equals(captchaPolicy.getGroupQrcodeEnabled())) {
+            return "group";
+        }
+        return configuredType;
+    }
+
+    /**
+     * 判断本次登录是否需要校验验证码。
+     * 验证码总开关开启时按解析出的类型校验；
+     * 总开关关闭时，仅群二维码引流验证码独立生效。
+     */
+    private boolean isCaptchaRequired(LoginCaptchaPolicy captchaPolicy, String captchaType) {
+        if (Boolean.TRUE.equals(captchaPolicy.getEnableCaptcha())) {
+            return true;
+        }
+        return "group".equals(captchaType) && Boolean.TRUE.equals(captchaPolicy.getGroupQrcodeEnabled());
+    }
+
+    /**
+     * 校验群二维码验证码（固定码，从 LoginConfig 读取）
+     */
+    private boolean validateGroupCaptcha(String code) {
+        if (StrUtil.isBlank(code)) {
+            return false;
+        }
+        try {
+            com.mdframe.forge.starter.config.config.LoginConfig loginConfig =
+                    configManagerService.getLoginConfig();
+            if (loginConfig == null || StrUtil.isBlank(loginConfig.getGroupCaptchaCode())) {
+                log.warn("群验证码未配置或为空，拒绝登录");
+                return false;
+            }
+            return code.trim().equalsIgnoreCase(loginConfig.getGroupCaptchaCode().trim());
+        } catch (Exception e) {
+            log.error("校验群验证码失败: {}", e.getMessage());
+            return false;
         }
     }
 

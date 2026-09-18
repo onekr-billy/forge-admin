@@ -75,9 +75,10 @@ class FlowTaskServiceImplStateChangeTest {
 
         verify(builder).moveActivityIdTo("next-review", "original-approve");
         verify(builder).changeState();
-        verify(runtimeService).removeVariable("process-1", "FLOW_RETURN_SOURCE_ACTIVITY_ID");
-        verify(runtimeService).removeVariable("process-1", "FLOW_RETURN_TARGET_ACTIVITY_ID");
-        verify(runtimeService).removeVariable("process-1", "FLOW_RETURN_TO_START_PENDING");
+        // 三枚直送标记收敛为一次批量清除，替代逐 key removeVariable 的 3 次往返
+        verify(runtimeService).removeVariables("process-1", List.of(
+                "FLOW_RETURN_SOURCE_ACTIVITY_ID", "FLOW_RETURN_TARGET_ACTIVITY_ID",
+                "FLOW_RETURN_TO_START_PENDING"));
     }
 
     @Test
@@ -92,7 +93,7 @@ class FlowTaskServiceImplStateChangeTest {
         directSendAfterReturn.invoke(
                 service, completedTask, Map.of("directSend", true), "100");
 
-        verify(runtimeService, never()).getVariable("process-1", "FLOW_RETURN_SOURCE_ACTIVITY_ID");
+        verify(runtimeService, never()).getVariables("process-1");
         verify(runtimeService, never()).createChangeActivityStateBuilder();
     }
 
@@ -108,11 +109,10 @@ class FlowTaskServiceImplStateChangeTest {
         when(runtimeService.createProcessInstanceQuery()).thenReturn(query);
         when(query.processInstanceId("process-1")).thenReturn(query);
         when(query.singleResult()).thenReturn(mock(ProcessInstance.class));
-        when(runtimeService.getVariable("process-1", "FLOW_RETURN_SOURCE_ACTIVITY_ID"))
-                .thenReturn("original-approve");
-        when(runtimeService.getVariable("process-1", "FLOW_RETURN_TARGET_ACTIVITY_ID"))
-                .thenReturn("fix-node");
-        when(runtimeService.getVariable("process-1", "FLOW_RETURN_TO_START_PENDING"))
-                .thenReturn(false);
+        // 实现改为一次 getVariables 全量取回三枚直送标记，mock 随之收敛为单次调用
+        when(runtimeService.getVariables("process-1")).thenReturn(Map.of(
+                "FLOW_RETURN_SOURCE_ACTIVITY_ID", "original-approve",
+                "FLOW_RETURN_TARGET_ACTIVITY_ID", "fix-node",
+                "FLOW_RETURN_TO_START_PENDING", false));
     }
 }

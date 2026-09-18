@@ -1,6 +1,26 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 83 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 85 条。
+
+## 子表运行时单元格不能把 class 落到 AiFormItem 碎片根上
+
+**发现日期**: 2026-09-18
+
+**问题描述**:
+`ChildTableEditor` 把 `class="child-runtime-cell"` 直接打在 `AiFormItem` 上。`AiFormItem` 模板是多根节点（分隔线 / 分组标题 / `n-form-item`），Vue 无法自动继承 class，控制台报 `Extraneous non-props attributes (class)`；隐藏校验反馈的单元格样式也不生效。同时 `props.value` 的 deep watch 在每次输入回写后重建行对象，未保留 `__rowKey` 时表格行会重挂载，抽屉里子表输入框表现为点不动、一输入就失焦。
+
+**解决方案**:
+用 `<div class="child-runtime-cell">` 包住 `AiFormItem`，不要把 class 落到碎片根上。`AiFormItem` 设 `inheritAttrs: false`，把 `$attrs` 绑到 `n-form-item`。回写父级后若编辑器值未变则跳过本地重建，并用上一行的 `__rowKey` 兜底。
+
+## 表单字段资产未使用列表不能只从当前画布抽字段
+
+**发现日期**: 2026-09-17
+
+**问题描述**:
+低代码应用「表单设计」里，字段资产货架的字段来自 `resolveFormAssetFields(formDesignerSchema)`，也就是当前画布上已经放了的字段。因此「未使用」在已有表单对象时恒为空；从画布删除字段组件后，该字段同时从货架消失，未使用列表仍没有数据。对象设计器上下文只缓存了 relations/actions，没有把对象字段目录交给货架。表单设计 Tab 默认不进 `formDesignerMode`，还会把对象字段合并整段跳过。
+
+**解决方案**:
+字段资产货架以对象字段目录为事实源，当前画布字段只补充尚未保存的新字段。`activeFormDesignerObjectRef` 在表单设计 Tab 也要解析绑定对象；`ensureFormDesignerObjectContext` 必须缓存 `designer.fields` / `modelSchema.fields`，再用 `mergePageFieldCatalogs` 合并进 `activeFormFields`。删除画布组件只移除表单展示，字段资产留在未使用列表，可重新拖入。
 
 ## 表单发布检查必须展平 row/col 子组件
 

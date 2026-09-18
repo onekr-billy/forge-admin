@@ -250,7 +250,9 @@ export function useBusinessProcessDesigner(initialSchema, options = {}) {
   }
 
   function exportSchema() {
-    return cloneBusinessProcessSchema(schema.value)
+    // 导出前重新计算 dependencies，确保节点引用的 flowModelKey/formAsset/businessAction 等
+    // 与 dependencies 列表保持同步，避免后端校验 FLOW_MODEL_UNDECLARED 等依赖缺失报错。
+    return synchronizeBusinessProcessDependencies(cloneBusinessProcessSchema(schema.value))
   }
 
   function undo() {

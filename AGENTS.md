@@ -51,6 +51,8 @@ code-copilot/                   # AI 辅助编码规则 & 变更管理
 
 ### 2.2 后端
 
+以下命令分别从仓库根目录执行，不要把多个 `cd` 命令依次粘贴到同一终端。
+
 ```bash
 # 构建全项目（跳过测试加速）
 cd forge-server && mvn clean install -DskipTests
@@ -58,7 +60,7 @@ cd forge-server && mvn clean install -DskipTests
 # 启动 admin 服务（默认 localhost:8580）
 cd forge-server/forge-admin-server && mvn spring-boot:run
 
-# 启动 flow 服务（默认 localhost:8581）
+# 启动 flow 服务（默认 localhost:8081）
 cd forge-server/forge-flow/forge-flow-server && mvn spring-boot:run
 
 # 指定环境
@@ -73,7 +75,7 @@ cd forge-admin-ui
 # 安装依赖
 pnpm install
 
-# 开发模式（默认 localhost:5173）
+# 开发模式（当前 .env.development 默认 localhost:3000）
 pnpm dev
 
 # 生产构建
@@ -91,7 +93,8 @@ pnpm lint:fix
 |------|------|
 | `forge-server/forge-admin-server/src/main/resources/application-dev.yml` | 后端本地配置（数据库/Redis） |
 | `forge-server/forge-admin-server/src/main/resources/application-dev.example.yml` | 后端配置模板（可提交） |
-| `forge-admin-ui/.env.local` | 前端本地环境变量 |
+| `forge-admin-ui/.env.local` | 前端通用本地环境变量 |
+| `forge-admin-ui/.env.development.local` | 开发环境覆盖项（端口、代理等，优先于 `.env.development`） |
 | `forge-admin-ui/.env.example` | 前端环境变量模板（可提交） |
 
 ### 2.5 Agent 与 Skill 使用规范
@@ -114,7 +117,7 @@ pnpm lint:fix
 ### 3.1 完整模块树
 
 ```
-forge/
+forge-server/
 ├── forge-admin-server/                         # 【主应用】Spring Boot 入口，聚合所有插件
 │   └── src/main/java/com/mdframe/forge/admin/
 │       ├── controller/                          # REST 控制器
@@ -337,7 +340,7 @@ forge-admin-ui/src/
 - 下拉选项、状态标签 **必须使用字典组件**（`DictSelect` / `DictTag` / `useDict`）
 - Schema 必须定义为 `computed`，确保字典异步加载后响应式更新
 - 业务枚举和可配置枚举必须维护到 `sys_dict_type` + `sys_dict_data`，禁止在前端页面写死 `options` 或标签映射
-- 新增内置字典必须通过 `forge/db/migration/` 的 Flyway 脚本写入，脚本需具备 `NOT EXISTS` 防重复保护，`tenant_id` 必须为 `1`
+- 新增内置字典必须通过 `forge-server/db/migration/` 的 Flyway 脚本写入，脚本需具备 `NOT EXISTS` 防重复保护，`tenant_id` 必须为 `1`
 - 字典类型命名使用小写下划线，系统级字典建议使用 `sys_` 前缀；文件存储类型统一使用 `sys_file_storage_type`
 - 前端读取字典时使用 `useDict('<dict_type>')`，表格回显优先使用 `DictTag`，下拉选项使用 `computed(() => dict.value.<dict_type> || [])`
 - 字典数据的 `dict_value` 必须与后端枚举/存储策略/业务状态值保持一致，`dict_label` 只负责展示文案，`list_class` 负责标签样式
@@ -426,10 +429,10 @@ forge-admin-ui/src/
 
 | 目录 | 用途 |
 |------|------|
-| `forge/db/migration/` | Flyway 版本化迁移脚本，放表结构、索引、字段、系统资源等正式变更 |
-| `forge/db/seed/required/` | 系统运行必需初始化数据 |
-| `forge/db/seed/demo/` | 演示数据，默认不导入 |
-| `forge/db/seed/optional/` | 可选模块数据 |
+| `forge-server/db/migration/` | Flyway 版本化迁移脚本，放表结构、索引、字段、系统资源等正式变更 |
+| `forge-server/db/seed/required/` | 系统运行必需初始化数据 |
+| `forge-server/db/seed/demo/` | 演示数据，默认不导入 |
+| `forge-server/db/seed/optional/` | 可选模块数据 |
 
 #### Flyway 命名规范
 
@@ -450,8 +453,8 @@ forge-admin-ui/src/
 
 #### 启动与验证
 
-- `forge-admin-server` 启动时由 Flyway 执行 `forge/db/migration` 脚本；`forge-report-server` 单独启动不会执行这些迁移
-- 默认配置兼容不同启动目录：`filesystem:./db/migration,filesystem:../db/migration,filesystem:forge/db/migration`
+- `forge-admin-server` 启动时由 Flyway 执行 `forge-server/db/migration` 脚本；`forge-report-server` 单独启动不会执行这些迁移
+- 默认配置兼容不同启动目录：`filesystem:./db/migration,filesystem:../db/migration,filesystem:forge-server/db/migration`
 - 若设置了 `FORGE_FLYWAY_LOCATIONS` 或 `FORGE_FLYWAY_ENABLED`，会覆盖默认配置；迁移未执行时优先检查这两个环境变量
 - 验证迁移结果：
 
@@ -485,24 +488,33 @@ ORDER BY installed_rank DESC;
 
 ### 6.1 首次环境搭建
 
+仅用于新建空库，禁止对已有业务库重跑全量 SQL。推荐按 [README 初始化步骤](./README.md#2-初始化数据库) 使用 `init-db.sh`，统一导入全量 SQL 与 required seed；以下为手工全量导入示例。
+
+`V1.0.0__baseline.sql` 仅含基线注释，不会建表。后续增量迁移由 Admin 启动时执行。Admin 与 Flow 使用同一数据库（模板默认 `forge_admin`），不要另建 Flow 库。
+
+以下命令从仓库根目录执行；服务启动命令分别在不同终端运行。
+
 ```bash
 # 1. 数据库
-mysql -u root -p -e "CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
-mysql -u root -p forge < forge-server/db/migration/V1.0.0__baseline.sql
+mysql -u root -p -e "CREATE DATABASE forge_admin DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+mysql -u root -p forge_admin < forge-server/db/全量初始化SQL.sql
 
 # 2. 后端配置
 cp forge-server/forge-admin-server/src/main/resources/application-dev.example.yml \
    forge-server/forge-admin-server/src/main/resources/application-dev.yml
 # 编辑 application-dev.yml，填入数据库/Redis 连接信息
+cp forge-server/forge-flow/forge-flow-server/src/main/resources/application-dev.example.yml \
+   forge-server/forge-flow/forge-flow-server/src/main/resources/application-dev.yml
+# Flow 使用与 Admin 相同的数据库及 Redis 连接信息
 
 # 3. 前端配置
-cd forge-admin-ui
-cp .env.example .env.local
-# 编辑 .env.local（可选，默认代理到 localhost:8580）
+cp forge-admin-ui/.env.example forge-admin-ui/.env.local
+# 如需覆盖开发端口/代理，编辑 forge-admin-ui/.env.development.local
 
-# 4. 启动
-cd forge-server/forge-admin-server && mvn spring-boot:run       # 后端 :8580
-cd forge-admin-ui && pnpm install && pnpm dev             # 前端 :5173
+# 4. 启动（每条命令分别运行）
+(cd forge-server/forge-admin-server && mvn spring-boot:run)       # 后端 :8580
+(cd forge-server/forge-flow/forge-flow-server && mvn spring-boot:run) # 流程 :8081
+(cd forge-admin-ui && pnpm install && pnpm dev)                 # 前端 :3000
 ```
 
 ### 6.2 改 → 构建 → 验证闭环
@@ -528,7 +540,7 @@ vim forge-admin-ui/src/views/system/xxx/index.vue
 # Lint 检查
 cd forge-admin-ui && pnpm lint:fix
 
-# HMR 自动热更新，浏览器验证 http://localhost:5173
+# HMR 自动热更新，浏览器验证 http://localhost:3000（以 Vite 输出为准）
 ```
 
 ### 6.3 Token 获取与 API 验证模板
@@ -585,9 +597,11 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 |--------|---------|---------|
 | 编译 | `cd forge-server && mvn clean compile` | `cd forge-admin-ui && pnpm build` |
 | Lint | — | `pnpm lint:fix` |
-| 测试 | `cd forge-server && mvn test` | — |
+| 测试 | `cd forge-server && mvn test -Penable-tests` | `cd forge-admin-ui && pnpm test` |
 | 全量构建 | `cd forge-server && mvn clean install` | `cd forge-admin-ui && pnpm build` |
 | 跳过测试构建 | `mvn clean install -DskipTests` | — |
+
+后端根 POM 默认 `forge.tests.skip=true`，普通 `mvn test` 不代表执行了测试；自动化测试必须显式加 `-Penable-tests`，发布构建保持默认跳过。
 
 ---
 

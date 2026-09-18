@@ -38,6 +38,8 @@ import com.mdframe.forge.starter.flow.service.FlowNodeConfigService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
 import com.mdframe.forge.starter.flow.service.FlowTaskService;
 import com.mdframe.forge.starter.flow.security.FlowAccessGuard;
+import com.mdframe.forge.starter.flow.security.FlowCandidateMembershipResolver;
+import com.mdframe.forge.starter.flow.service.support.DynamicFormArrayPermissionValidator;
 import com.mdframe.forge.starter.flow.vo.FlowHistoryItemVO;
 import com.mdframe.forge.starter.flow.vo.FlowHistoryPageVO;
 import com.mdframe.forge.starter.flow.vo.FlowTaskSignRelationVO;
@@ -170,10 +172,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Autowired(required = false)
     private FlowTaskCandidateMapper flowTaskCandidateMapper;
 
+    @Autowired
+    private FlowCandidateMembershipResolver candidateMembershipResolver;
+
     @Override
     public IPage<FlowTask> todoTasks(Page<FlowTask> page, String userId, String title, String category, Integer status) {
         return enrichTaskPage(this.getBaseMapper().selectTodoTasks(page, userId, title, category, status,
-                SessionHelper.getTenantId(), SessionHelper.getActiveOrgId()));
+                SessionHelper.getTenantId(), candidateMembershipResolver.resolveCurrentSessionGroups()));
     }
 
     @Override
@@ -303,16 +308,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (taskService.createTaskQuery().taskId(runtimeTask.getId()).taskCandidateUser(userId).singleResult() != null) {
             return true;
         }
-        Set<String> groups = new HashSet<>();
-        if (SessionHelper.getRoleIds() != null) {
-            SessionHelper.getRoleIds().forEach(id -> groups.add(String.valueOf(id)));
-        }
-        if (SessionHelper.getRoleKeys() != null) {
-            groups.addAll(SessionHelper.getRoleKeys());
-        }
-        if (SessionHelper.getOrgIds() != null) {
-            SessionHelper.getOrgIds().forEach(id -> groups.add(String.valueOf(id)));
-        }
+        Set<String> groups = candidateMembershipResolver.resolveCurrentSessionGroups();
         for (String group : splitIds(localTask.getCandidateGroups())) {
             if (groups.contains(group)) {
                 return true;
@@ -347,9 +343,14 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
         validateFlowableAssignee(task, userId);
-        validateTaskAction(task, ACTION_APPROVE, comment, signature);
-        validateRequiredVariables(task, variables);
-        validateApprovalPoints(task, approvalPointResults);
+        // 整个审批事务只解析一次 BPMN：动作校验/必填变量/审批要点与自动同意模式共用，
+        // 避免 getBpmnModel（每次一条命令往返）在同一请求内重复执行
+        BpmnModel actionBpmnModel = repositoryService.getBpmnModel(task.getProcessDefinitionId());
+        FlowNode actionFlowNode = getFlowNode(actionBpmnModel, task.getTaskDefinitionKey());
+        validateTaskAction(task, ACTION_APPROVE, comment, signature, actionFlowNode);
+        validateDynamicFormArrayVariables(task, actionFlowNode, variables);
+        validateRequiredVariables(task, variables, actionFlowNode);
+        validateApprovalPoints(task, approvalPointResults, actionFlowNode);
 
         try {
             if (comment != null && !comment.isEmpty()) {
@@ -372,7 +373,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             updateTaskActionResultRequired(taskId, flowTask);
 
             log.info("审批通过：taskId={}, userId={}", taskId, userId);
-            autoApproveRepeatedTasks(task.getProcessInstanceId());
+            autoApproveRepeatedTasks(task.getProcessInstanceId(),
+                    actionBpmnModel == null ? null : actionBpmnModel.getMainProcess());
         } catch (Exception e) {
             recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
                     task.getName(), "TASK_APPROVE", e);
@@ -716,6 +718,32 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         return completeVariables;
     }
 
+    private void validateDynamicFormArrayVariables(Task task,
+                                                   FlowNode flowNode,
+                                                   Map<String, Object> submittedVariables) {
+        if (task == null || submittedVariables == null || submittedVariables.isEmpty()) {
+            return;
+        }
+        NodeFormConfig nodeForm = readNodeFormConfig(flowNode);
+        String schemaJson = resolveFormJson(nodeForm.formKey, nodeForm.formJson);
+        if (!looksLikeFormSchema(schemaJson)) {
+            String processDefKey = resolveProcessDefinitionKey(task.getProcessDefinitionId(), null);
+            FlowModel flowModel = !isBlank(processDefKey) ? flowModelService.getModelByKey(processDefKey) : null;
+            if (flowModel != null && "dynamic".equalsIgnoreCase(flowModel.getFormType())) {
+                schemaJson = resolveModelFormJson(flowModel.getFormId(), flowModel.getFormJson());
+            }
+        }
+        if (!looksLikeFormSchema(schemaJson)) {
+            return;
+        }
+        DynamicFormArrayPermissionValidator.validate(
+                OBJECT_MAPPER,
+                schemaJson,
+                nodeForm.formFieldPermissions,
+                taskService.getVariables(task.getId()),
+                submittedVariables);
+    }
+
     /**
      * 退回节点修正后，按用户选择将新任务直接送回原驳回节点，跳过中间节点。
      * Flowable complete 后才会创建后继任务，因此这里基于完成后的活动列表做一次状态迁移。
@@ -725,9 +753,14 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (!isProcessRunning(processInstanceId)) {
             return;
         }
-        Object source = runtimeService.getVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
-        Object target = runtimeService.getVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
-        Object returnToStartPending = runtimeService.getVariable(processInstanceId, RETURN_TO_START_PENDING);
+        Object source;
+        Object target;
+        Object returnToStartPending;
+        // 三枚直送标记一次全量取回，替代逐 key getVariable 的 3 次独立往返（语义一致：均为流程级变量）
+        Map<String, Object> returnVariables = runtimeService.getVariables(processInstanceId);
+        source = returnVariables == null ? null : returnVariables.get(RETURN_SOURCE_ACTIVITY_ID);
+        target = returnVariables == null ? null : returnVariables.get(RETURN_TARGET_ACTIVITY_ID);
+        returnToStartPending = returnVariables == null ? null : returnVariables.get(RETURN_TO_START_PENDING);
         boolean returnedToHistoricalNode = target != null
                 && Objects.equals(String.valueOf(target), completedTask.getTaskDefinitionKey());
         if (source == null || (!returnedToHistoricalNode && !Boolean.TRUE.equals(readBoolean(returnToStartPending)))) {
@@ -736,9 +769,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         boolean directSend = Boolean.TRUE.equals(readBoolean(
                 actionVariables == null ? null : actionVariables.get(DIRECT_SEND_VARIABLE)));
         if (!directSend) {
-            runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
-            runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
-            runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
+            clearDirectSendMarks(processInstanceId);
             return;
         }
         if (Boolean.TRUE.equals(readBoolean(returnToStartPending))
@@ -751,9 +782,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             return;
         }
         if (activeActivityIds.contains(sourceActivityId)) {
-            runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
-            runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
-            runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
+            clearDirectSendMarks(processInstanceId);
             return;
         }
         if (activeActivityIds.size() != 1) {
@@ -763,9 +792,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 .processInstanceId(processInstanceId)
                 .moveActivityIdTo(activeActivityIds.get(0), sourceActivityId)
                 .changeState();
-        runtimeService.removeVariable(processInstanceId, RETURN_SOURCE_ACTIVITY_ID);
-        runtimeService.removeVariable(processInstanceId, RETURN_TARGET_ACTIVITY_ID);
-        runtimeService.removeVariable(processInstanceId, RETURN_TO_START_PENDING);
+        clearDirectSendMarks(processInstanceId);
+    }
+
+    /** 三枚直送标记一次批量清除，替代逐 key removeVariable 的 3 次独立往返 */
+    private void clearDirectSendMarks(String processInstanceId) {
+        runtimeService.removeVariables(processInstanceId, List.of(
+                RETURN_SOURCE_ACTIVITY_ID, RETURN_TARGET_ACTIVITY_ID, RETURN_TO_START_PENDING));
     }
 
     private Boolean readBoolean(Object value) {
@@ -798,9 +831,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
         try {
             if (variables != null && !variables.isEmpty()) {
-                if (isProcessRunning(task.getProcessInstanceId())) {
-                    runtimeService.setVariables(task.getProcessInstanceId(), variables);
-                }
+                // 调用方（approve/reject/autoApprove）的 task 均刚从 taskQuery 查出，
+                // ACT_RU_TASK 有行则流程实例必然在运行，isProcessRunning 守卫恒真且多一次往返，
+                // 直接写变量；若并发下流程恰好被终止，setVariables 与 complete 抛出的
+                // FlowableObjectNotFoundException 均会转为同一提示，行为等价
+                runtimeService.setVariables(task.getProcessInstanceId(), variables);
                 taskService.complete(taskId, variables);
             } else {
                 taskService.complete(taskId);
@@ -824,7 +859,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         }
     }
 
-    private void autoApproveRepeatedTasks(String processInstanceId) {
+    private void autoApproveRepeatedTasks(String processInstanceId, Process resolvedProcess) {
         ProcessInstance instance;
         try {
             instance = isBlank(processInstanceId)
@@ -839,7 +874,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             return;
         }
 
-        String mode = readProcessStringAttribute(instance.getProcessDefinitionId(), "autoApprovalMode");
+        String mode = readProcessStringAttribute(
+                resolvedProcess != null ? resolvedProcess : getBpmnProcess(instance.getProcessDefinitionId()),
+                "autoApprovalMode");
         if (!AUTO_APPROVAL_FIRST_ONLY.equals(mode) && !AUTO_APPROVAL_CONSECUTIVE.equals(mode)) {
             return;
         }
@@ -2033,7 +2070,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void validateTaskAction(Task task, String action, String comment, String signature) {
-        TaskApprovalPolicy policy = getTaskApprovalPolicy(task);
+        validateTaskAction(task, action, comment, signature, getFlowNode(task));
+    }
+
+    private void validateTaskAction(Task task, String action, String comment, String signature, FlowNode flowNode) {
+        TaskApprovalPolicy policy = getTaskApprovalPolicy(task, null, flowNode);
         if (!policy.isAllowed(action)) {
             throw new RuntimeException("当前节点不允许执行该审批操作");
         }
@@ -2067,7 +2108,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults) {
-        FlowNode flowNode = getFlowNode(task);
+        validateApprovalPoints(task, approvalPointResults, getFlowNode(task));
+    }
+
+    private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults,
+            FlowNode flowNode) {
         List<FlowApprovalPointDTO> required = FlowNodePolicyParser.resolveApprovalPoints(flowNode).stream()
                 .filter(point -> Boolean.TRUE.equals(point.getRequired()))
                 .toList();
@@ -2155,7 +2200,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private FlowNode getFlowNode(Task task) {
-        BpmnModel bpmnModel = repositoryService.getBpmnModel(task.getProcessDefinitionId());
+        return getFlowNode(
+                isBlank(task.getProcessDefinitionId()) ? null
+                        : repositoryService.getBpmnModel(task.getProcessDefinitionId()),
+                task.getTaskDefinitionKey());
+    }
+
+    private FlowNode getFlowNode(BpmnModel bpmnModel, String taskDefinitionKey) {
         if (bpmnModel == null) {
             return null;
         }
@@ -2163,7 +2214,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (process == null) {
             return null;
         }
-        FlowElement element = process.getFlowElement(task.getTaskDefinitionKey());
+        FlowElement element = process.getFlowElement(taskDefinitionKey);
         return element instanceof FlowNode ? (FlowNode) element : null;
     }
 
@@ -2216,7 +2267,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void validateRequiredVariables(Task task, Map<String, Object> variables) {
-        FlowNode flowNode = getFlowNode(task);
+        validateRequiredVariables(task, variables, getFlowNode(task));
+    }
+
+    private void validateRequiredVariables(Task task, Map<String, Object> variables, FlowNode flowNode) {
         if (flowNode == null) {
             return;
         }
@@ -2265,7 +2319,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private String readProcessStringAttribute(String processDefinitionId, String name) {
-        Process process = getBpmnProcess(processDefinitionId);
+        return readProcessStringAttribute(getBpmnProcess(processDefinitionId), name);
+    }
+
+    private String readProcessStringAttribute(Process process, String name) {
         if (process == null) {
             return null;
         }
@@ -2488,6 +2545,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setTaskName(task.getName());
         formInfo.setTaskDefKey(task.getTaskDefinitionKey());
         formInfo.setProcessInstanceId(task.getProcessInstanceId());
+        formInfo.setStatus(visibleTask.getStatus());
+        formInfo.setAssignee(visibleTask.getAssignee());
+        formInfo.setCandidateUsers(visibleTask.getCandidateUsers());
+        formInfo.setCandidateGroups(visibleTask.getCandidateGroups());
 
         // 2. 获取流程定义Key
         String processDefKey = resolveProcessDefinitionKey(task.getProcessDefinitionId(), null);
@@ -2516,7 +2577,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
         // 5. 读取流程模型和 BPMN 节点表单配置，同一次请求内复用给审批策略解析。
         FlowModel flowModel = !isBlank(processDefKey) ? flowModelService.getModelByKey(processDefKey) : null;
-        FlowNode flowNode = resolveFormFlowNode(task.getProcessDefinitionId(), task.getTaskDefinitionKey());
+        // 主节点与直送源节点共用同一次 BPMN 解析（getBpmnModel 每次一条命令往返）
+        BpmnModel bpmnModel = isBlank(task.getProcessDefinitionId()) ? null
+                : repositoryService.getBpmnModel(task.getProcessDefinitionId());
+        FlowNode flowNode = resolveFormFlowNode(bpmnModel, task.getTaskDefinitionKey());
         applyFormConfiguration(formInfo, flowModel, flowNode);
         hydrateFormInstanceSnapshotIfNecessary(formInfo, task.getProcessInstanceId(), taskTenantId);
 
@@ -2528,7 +2592,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         formInfo.setAllowReturn(policy.allowReturn);
         formInfo.setAllowMultiReturn(flowModel != null && Boolean.TRUE.equals(flowModel.getAllowMultiReturn()));
         formInfo.setReturnTargets(buildReturnTargets(task, formInfo.getAllowMultiReturn()));
-        populateDirectSendInfo(formInfo, task);
+        populateDirectSendInfo(formInfo, task, bpmnModel, variables);
         formInfo.setAllowTerminate(policy.allowTerminate);
         formInfo.setRequireSignature(policy.requireSignature);
         formInfo.setRequireComment(policy.requireComment);
@@ -2565,10 +2629,13 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 .values().stream().toList();
     }
 
-    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task) {
-        Object source = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID);
-        Object target = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID);
-        Object returnToStartPending = runtimeService.getVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING);
+    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task, BpmnModel bpmnModel,
+            Map<String, Object> variables) {
+        // 直送标记变量已随任务全量取得（getTaskFormInfo 第 3 步），直接从 Map 读取，
+        // 避免三次独立的 runtimeService.getVariable 数据库往返
+        Object source = variables == null ? null : variables.get(RETURN_SOURCE_ACTIVITY_ID);
+        Object target = variables == null ? null : variables.get(RETURN_TARGET_ACTIVITY_ID);
+        Object returnToStartPending = variables == null ? null : variables.get(RETURN_TO_START_PENDING);
         boolean returnedToHistoricalNode = target != null
                 && Objects.equals(String.valueOf(target), task.getTaskDefinitionKey());
         boolean returnedToStart = Boolean.TRUE.equals(readBoolean(returnToStartPending));
@@ -2577,7 +2644,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             return;
         }
         String sourceId = String.valueOf(source);
-        FlowElement element = resolveFormFlowNode(task.getProcessDefinitionId(), sourceId);
+        FlowElement element = resolveFormFlowNode(bpmnModel, sourceId);
         if (!(element instanceof UserTask)) {
             formInfo.setAllowDirectSend(false);
             return;
@@ -3063,7 +3130,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (isBlank(processDefinitionId)) {
             return null;
         }
-        BpmnModel bpmnModel = repositoryService.getBpmnModel(processDefinitionId);
+        return resolveFormFlowNode(repositoryService.getBpmnModel(processDefinitionId), taskDefKey);
+    }
+
+    private FlowNode resolveFormFlowNode(BpmnModel bpmnModel, String taskDefKey) {
         if (bpmnModel == null || bpmnModel.getMainProcess() == null) {
             return null;
         }

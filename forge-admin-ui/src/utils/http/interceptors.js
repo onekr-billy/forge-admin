@@ -5,8 +5,9 @@ import { cryptoConfig, decryptResponse, encryptRequest, matchPath, shouldEncrypt
 import { loadRuntimeCryptoConfig } from '@/utils/crypto/crypto-config'
 import { getSessionKey, initKeyExchange, resetKeyExchange } from '@/utils/crypto/key-exchange'
 import { getTenantPageBaseTitle } from '@/utils/page-title'
-import { isAuthErrorCode, resolveResError, shouldSilenceAuthError } from './helpers'
 import { stripNullRequestBody } from './empty-body'
+import { isAuthErrorCode, resolveResError, shouldSilenceAuthError } from './helpers'
+import { maybeRefreshSession } from './session-keepalive'
 
 // 生成 UUID
 function generateUUID() {
@@ -352,6 +353,7 @@ export function setupInterceptors(axiosInstance) {
 
     // 成功响应 (code === 200 或在 SUCCESS_CODES 中)
     if (data && (data.code === 200 || SUCCESS_CODES.includes(data?.code))) {
+      maybeRefreshSession(axiosInstance, useAuthStore().accessToken, config)
       return Promise.resolve(data)
     }
 

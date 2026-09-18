@@ -47,3 +47,36 @@ git diff --check
 | `git diff --check` | 通过 |
 | ShellCheck | 跳过，本机未安装 |
 | 真实 MySQL 8 / Flyway | 按计划留给用户侧环境验收 |
+
+## 2026-09-17 增量验证：脚本失败分支与安装指引
+
+保留以上历史结果。本轮仅验证校验脚本、初始化脚本和关联文档，不重复执行数据库初始化。
+
+| 级别 | 增量场景 | 验收条件 |
+|---|---|---|
+| P0 | 真实仓库扫描 | 在脚本目录调用也成功，stderr 为空 |
+| P0 | guide / SQL 负向扫描 | rg 返回 0 表示违规、1 表示无匹配、2 表示执行错误；只有 1 可继续通过 |
+| P0 | 必需模式、依赖及路径 | 必需模式缺失、rg 不可用、扫描路径缺失均返回 1，不能输出通过 |
+| P0 | 预检后的扫描错误 | 内存中给真实 rg 增加缺失路径，必须报告退出码 2 并阻断通过 |
+| P0 | 必需全量 SQL 输入 | 缺失路径或 `/dev/null` 空输入桩在任何 MySQL 调用前被拒绝；后者不是普通空文件的独立测试 |
+| P0 | 初始化执行与跳过 | 正常输入交给 MySQL 桩；显式跳过保持原语义；MySQL 桩失败不得输出完成 |
+| P1 | 安装与配置说明 | 使用实际全量 SQL、新库限制、Admin/Flow 共库、8081 代理和 `-Penable-tests`；开发覆盖使用 `.env.development.local` |
+| P1 | 语法与差异边界 | Bash/Node 语法、Compose 解析、差异检查通过；工作区和暂存区均未改历史迁移 |
+
+从仓库根目录复跑：
+
+```bash
+node --test --test-reporter=spec forge-server/scripts/db/check-collation-consistency.test.mjs forge-server/scripts/db/init-db.test.mjs
+bash -n forge-server/scripts/db/check-collation-consistency.sh
+bash -n forge-server/scripts/db/init-db.sh
+bash forge-server/scripts/db/check-collation-consistency.sh
+node --check scripts/forge-create/create-project.mjs
+docker compose -f docker-forge-admin/docker-compose.yml config --quiet
+git diff --check
+git diff --quiet -- forge-server/db/migration
+git diff --cached --quiet -- forge-server/db/migration
+```
+
+结果：17 项测试通过，0 失败；上述语法、静态扫描、Compose 解析与迁移保护检查均通过。测试只在子 Shell 中模拟 MySQL、在内存中替换脚本参数，不连接真实数据库。
+
+未覆盖：真实 MySQL/Flyway 初始化、完整脚手架生成与编译、前后端全量构建及 E2E。本轮没有修改前后端运行时代码；脚手架只校验了语法与说明模板，不能据此认定生成工程已完成端到端验收。

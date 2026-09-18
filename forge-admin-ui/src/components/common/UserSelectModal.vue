@@ -20,8 +20,8 @@
           />
           <n-tree-select
             v-model:value="searchForm.deptId"
-            :options="deptTreeOptions"
-            placeholder="选择部门"
+            :options="scopedDeptTreeOptions"
+            :placeholder="lockedOrgId ? '默认当前组织范围' : '选择部门'"
             clearable
             style="width: 200px"
           />
@@ -109,6 +109,16 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // 级联锁定组织：传入后人员选择范围限定在该组织内（可进一步选子组织）
+  orgId: {
+    type: [String, Number],
+    default: null,
+  },
+  // 是否包含子组织人员：false 时仅查询直属该组织的用户
+  includeChildren: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(['update:show', 'confirm'])
@@ -120,6 +130,31 @@ const userList = ref([])
 const checkedKeys = ref([])
 const deptTreeOptions = ref([])
 const deptNameMap = ref(new Map())
+
+const lockedOrgId = computed(() => {
+  return props.orgId === null || props.orgId === undefined || props.orgId === '' ? null : props.orgId
+})
+
+// 锁定组织时部门树只展示该组织子树，用户可在范围内进一步缩小到子组织
+const scopedDeptTreeOptions = computed(() => {
+  if (!lockedOrgId.value)
+    return deptTreeOptions.value
+  const subtree = findDeptSubtree(deptTreeOptions.value, lockedOrgId.value)
+  return subtree ? [subtree] : []
+})
+
+function findDeptSubtree(nodes = [], orgId) {
+  for (const node of nodes) {
+    if (String(node.value) === String(orgId))
+      return node
+    const matched = Array.isArray(node.children) && node.children.length
+      ? findDeptSubtree(node.children, orgId)
+      : null
+    if (matched)
+      return matched
+  }
+  return null
+}
 
 // 搜索条件
 const searchForm = reactive({
@@ -177,6 +212,8 @@ const columns = computed(() => [
 watch(() => props.show, async (val) => {
   visible.value = val
   if (val) {
+    // 级联锁定组织时默认选中该组织，保证打开即按组织范围加载人员
+    searchForm.deptId = lockedOrgId.value
     await loadDeptTree()
     loadUserList()
     // 初始化已选中的用户
@@ -235,12 +272,14 @@ function normalizeUser(user) {
 async function loadUserList() {
   loading.value = true
   try {
+    const effectiveOrgId = searchForm.deptId || lockedOrgId.value
     const res = await request.get('/system/user/page', {
       params: {
         pageNum: pagination.page,
         pageSize: pagination.pageSize,
         keyword: searchForm.keyword || undefined,
-        orgId: searchForm.deptId || undefined,
+        orgId: effectiveOrgId || undefined,
+        directOrgOnly: effectiveOrgId && !props.includeChildren ? true : undefined,
         userStatus: props.userStatus ?? undefined,
       },
     })
@@ -266,7 +305,7 @@ function handleSearch() {
 // 重置
 function handleReset() {
   searchForm.keyword = ''
-  searchForm.deptId = null
+  searchForm.deptId = lockedOrgId.value
   pagination.page = 1
   loadUserList()
 }

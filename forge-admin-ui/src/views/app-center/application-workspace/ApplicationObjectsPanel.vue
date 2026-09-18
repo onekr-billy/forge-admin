@@ -341,6 +341,7 @@ function syncLabel(status) {
   const labels = {
     IN_SYNC: '结构已同步',
     FAILED: '上次同步失败',
+    PARTIAL: '部分同步，字段调整待确认',
     OUT_OF_SYNC: '存在未同步变更',
     TABLE_MISSING: '物理表未创建',
     CHECK_FAILED: '结构检查失败',

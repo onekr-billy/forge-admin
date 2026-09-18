@@ -176,10 +176,13 @@ defineExpose({
 
 <style scoped>
 .business-process-canvas {
-  background: var(--body-color, #f7f9fa);
+  background-color: var(--body-color, #f7f9fa);
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
 .business-process-canvas.is-dragging-node {
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.14);
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.2);
+  background-color: rgba(37, 99, 235, 0.015);
 }
 </style>

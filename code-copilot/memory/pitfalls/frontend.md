@@ -1,6 +1,48 @@
 # 踩坑：前端 / 构建 / 路由
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 17 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 24 条。
+
+## Vitest 结构测试读取源码时 new URL 不能内联字面量路径
+
+**发现日期**：2026-09-17
+
+**问题描述**:
+用户管理页拆分后新增结构测试，在测试文件里用 `new URL('../user/components/', import.meta.url)` 读取目录并断言 SFC 行数与样式命名空间。Vitest 经 Vite 转换测试文件时，会把 `new URL(<字面量相对路径>, import.meta.url)` 当成静态资源引用处理，运行时 URL 从 `file:` 被改写成 `http://localhost:...`，`readdirSync`/`readFileSync` 抛 `TypeError: The URL must be of scheme file`，结构测试失败但产品代码无问题。
+
+**解决方案**:
+把 URL 构造包进帮助函数再调用，让路径以变量形式传入，Vite 无法静态改写：
+
+```js
+function sourceUrl(relativePath) {
+  return new URL(relativePath, import.meta.url)
+}
+```
+
+也可改用 `fileURLToPath` 组合 `__dirname` 绝对路径。读取源码文件的结构测试统一走帮助函数，避免内联字面量。
+
+## pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
+
+**发现日期**：2026-09-17
+
+**问题描述**:
+在 `forge-admin-ui` 目录执行 `pnpm dev`、`pnpm --dir forge-admin-ui exec vitest ...` 等命令时报 `ERROR  packages field missing or empty`，命令直接退出；Vitest、生产构建、启动 dev server 全部被卡住。根因是仓库 `forge-admin-ui/pnpm-workspace.yaml` 缺少有效 `packages` 字段，pnpm 按空工作区处理。
+
+**解决方案**:
+前端 pnpm 命令统一加 `--ignore-workspace`：
+
+```bash
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm --dir forge-admin-ui --ignore-workspace exec vitest run <spec>
+```
+
+不要为此擅自修改仓库的 `pnpm-workspace.yaml`；若该文件后续被修复为有效工作区，再去掉 `--ignore-workspace` 复验。
+
+## SPA fallback 不能吞掉缺失的哈希静态资源
+
+**发现日期**：2026-09-17
+
+生产发布替换前端产物后，仍打开旧页面的浏览器可能在后续访问懒加载路由时请求上一版 chunk。若 Nginx 对 `/assets/*.js` 也使用 SPA fallback，不存在的 JavaScript 会返回 `200 text/html`，浏览器最终报 `Failed to fetch dynamically imported module`，且状态码会误导排查。
+
+处理原则：哈希资源目录使用独立 `location`，只允许真实文件并在缺失时返回 404，同时设置 `immutable` 长缓存；HTML 使用 `no-cache/no-store`。客户端监听 Vite 预加载错误并由 Router 兜底，在会话级冷却窗口内最多自动刷新一次，避免网络故障造成刷新死循环。
 
 ## Naive UI 表格居中不能只设置 `text-align`
 
@@ -361,4 +403,56 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 
 在 Vue SFC 的 `<template>` 中使用 `<style v-for>` 动态装载业务 CSS，会触发 `Tags with side effect (<script> and <style>) are ignored in client component templates`，标签会被编译器忽略；开发服务可能只显示警告，但正式运行时样式不会可靠生效。
 
-处理原则：动态 CSS 应由受控组件通过渲染函数创建 `style` VNode，并 Teleport 到 `document.head`；CSS 内容必须先经过平台校验与作用域重写。回归测试应覆盖样式挂载、更新时移除旧节点、空内容跳过和卸载清理，不能只断言 CSS 字符串生成正确。
+处理原则：动态 CSS 应由受控组件通过渲染函数创建 `style` VNode，并 Teleport 到 `document.head`；CSS 内容必须先经过平台校验与作用域重写。回归测试应覆盖样式挂载、 更新时移除旧节点、空内容跳过和卸载清理，不能只断言 CSS 字符串生成正确。
+
+## naive-ui FormItem 挂载测量会清空字段级固定 labelWidth
+
+**发现日期**：2026-09-15
+
+**问题描述**:
+动态表单出现 label 列不对齐：空表单时各 label 宽度参差（39.8/53.7/67.6/81.5/100 混杂），随便输入内容后部分"自愈"，详情查看模式全乱。根因是 naive-ui FormItem 的原生缺陷：挂载时的 `invalidateLabelWidth` 为测量 label 自然宽度，会执行 `labelElement.style.width = ''` 直接清空 DOM inline width，事后只恢复 whiteSpace。当「表单级 `label-width='auto'` + 字段级数字 labelWidth」时，`isAutoLabelWidth` 判定只看 form/item 的 labelWidth 是否为字符串 `'auto'`（与字段级数字无关），所以挂载即清空；而 `mergedLabelWidth` 恒为该固定值不再变化，Vue patchStyle 发现新旧值相同直接跳过写入，DOM 宽度就此永久丢失，label 塌缩为各自内容宽。值加载后"自愈"是因为部分字段的 labelWidth prop 异步从 undefined 变为数字，值变化触发了重新 patch；详情模式值填充 + readonly 切换让大量字段落入"清空后值不再变化"死区，故全乱。
+
+**解决方案**:
+- 项目层兜底（禁止改 node_modules）：`AiFormItem.vue` 给 n-form-item 加 ref，`restoreFixedLabelWidth` 在挂载后与 `field.labelWidth` 变化后把固定宽度显式写回 label 元素 inline style；`AiForm.vue` 的 `remeasureAutoLabelWidth` 在 `formRef.invalidateLabelWidth()`（Form 级重测同样会清空）之后按 `allFieldSchema` 遍历 `[data-ai-field]` 统一写回（`restoreFixedLabelWidths`）。
+- 诊断方法论：「组件响应式值正确但 DOM 不对」类问题，用 Playwright 实测对比 Vue 组件实例 `setupState.mergedLabelStyle` 与 DOM `label.style.width`——两者不一致即证明有代码绕过 Vue 直接操作 DOM。此 bug 当初按"字体加载时序"猜测修复无效，教训是渲染类异常必须先实测复现、拿到证据再改代码。
+
+**影响范围**:
+- 所有「表单级 labelWidth='auto' 混用字段级数字 labelWidth」的 naive-ui 表单；AiForm/AiFormItem 已内置兜底，其它直接使用 naive-ui 表单的场景需自行注意。
+
+## window.$message 是 class 实例，方法不能分离调用
+
+**发现日期**：2026-09-09
+
+**问题描述**:
+字段事件通知触发控制台报错 `naiveTools.js:69 Uncaught TypeError: Cannot read properties of undefined (reading 'showMessage')`。`window.$message` 是 naiveTools 中 class `Message` 的**实例**（原型方法 error/success/info/warning），写出 `const notify = window.$message?.[type]; notify(message)` 后分离调用，class 严格模式下 `this === undefined`，方法内部 `this.showMessage` 即崩溃。该崩溃还会吞掉真正的业务错误消息，让人误判问题。
+
+**解决方案**:
+- 必须在对象上链式调用：`window.$message?.[type]?.(message)`。全库 grep 检查同类写法，其余处均为正确链式调用，只有一处分离调用（AiForm.vue 的 handleFieldEventNotify）。
+- 排查口诀：见到 `Cannot read properties of undefined (reading 'xxx方法名')` 且调用目标是全局工具对象时，优先怀疑方法被取出分离调用。
+
+## computed 每次返回新对象时 watch 引用比较恒不等
+
+**发现日期**：2026-09-09
+
+**问题描述**:
+表单里点选任意一个远程下拉后，其它所有远程下拉的 loading 图标都转一下（真实重新发起了请求，不是样式联动）。根因：`remoteOptionSource` computed 依赖 `props.formData`（解析 `${field}` 引用参数 + 级联参数），每次重算都**返回新对象**；`watch([remoteOptionSource, ...])` 按引用比较，新对象 !== 旧对象恒成立，于是任意字段值变化都触发所有远程下拉重新加载。watch 数组里虽配了"只盯引用字段值"的第二项，但因第一项恒变而完全失效。
+
+**解决方案**:
+- computed 返回新对象时，watch 盯**内容签名**而非对象本身：`JSON.stringify` 关键字段 + 解析后的 params 组成签名 computed，再 `watch(签名, ...)`。
+- 签名必须包含 `${field}` 引用解析后的值（params），否则引用字段值变化不会触发对应下拉重载。
+- 识别特征：多个实例"集体响应"某个单点变化（全量 loading 闪烁、全量重发请求），基本可断定存在引用比较失效的 watch。
+
+## AiCrudPage 的 api-config.delete 必须指向批量删除接口（数组入参）
+
+**发现日期**：2026-09-17
+
+**问题描述**：
+通知公告页批量删除报"缺少必需参数: noticeId"。原因是 `api-config.delete` 写成了单删接口 `post@/system/notice/remove`（后端 `@RequestParam noticeId`）；AiCrudPage 的 `performDelete` 对"无 :id 占位符"的 delete 配置一律按批量契约发请求（POST 配置 URL + body 传主键数组），于是后端参数绑定报缺失。行内单删若也复用了该配置同样会报错，且无 :id 占位符时不会走组件的 `/batch` 分支。
+
+**解决方案**：
+- `api-config.delete` 统一指向模块的批量删除接口并传数组，如 `delete: 'post@/system/xxx/removeBatch'`（post/dictType/config/tenant/role/user 等标准页均为此模式）；后端 `removeBatch(@RequestBody Long[] ids)` 天然兼容单条与批量。
+- 行内单删如需单独走 `@RequestParam` 接口，用自定义 `onClick: handleDelete`（POST + params）实现，不要复用 api-config.delete。
+- 排查口令：批量删除报"缺少必需参数: xxx" == delete 配置指向了 `@RequestParam` 单删接口。
+
+**影响范围**：
+所有使用 AiCrudPage 且启用工具栏批量删除的页面（apiConfig、dataScopeConfig 已同步修正为 removeBatch）。

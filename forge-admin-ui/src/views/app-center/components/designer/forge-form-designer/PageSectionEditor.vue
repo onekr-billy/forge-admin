@@ -442,7 +442,6 @@ const sectionAddOptions = [
 const displayModeOptions = [
   { label: '行内表格', value: 'inline_grid' },
   { label: '卡片列表', value: 'card_list' },
-  { label: '底部抽屉', value: 'bottom_sheet' },
 ]
 
 const draft = ref(createEditorDraft(props.modelValue))

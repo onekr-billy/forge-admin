@@ -2324,7 +2324,10 @@ function toAiFormField(field, mode = 'form') {
     placeholder: field.placeholder || (mode === 'search' ? `请输入${field.label || field.field}` : `请输入${field.label || field.field}`),
     span: field.span || 1,
     clearable: true,
-    multiple: field.multiple ?? queryType === 'in',
+    multiple: field.multiple === true
+      || field.props?.multiple === true
+      || field.basicProps?.multiple === true
+      || queryType === 'in',
     options: field.options || [],
     dictType: field.dictType || '',
     props: field.props || {},

@@ -95,7 +95,7 @@ final class SelectionIdentifierValidator {
                                       String componentType,
                                       LowcodeFieldSchema modelField,
                                       Map<String, Object> data) {
-        if (modelField == null || !"bigint".equalsIgnoreCase(modelField.getDataType())) {
+        if (modelField == null) {
             return;
         }
         String normalizedComponent = StringUtils.firstNonBlank(componentType, modelField.getComponentType(), "")
@@ -108,7 +108,14 @@ final class SelectionIdentifierValidator {
             return;
         }
         Object value = payloadValue(data, fieldName, modelField.getColumnName());
-        if (value == null || StringUtils.isBlank(String.valueOf(value)) || isIntegerIdentifier(value)) {
+        if (value == null || StringUtils.isBlank(String.valueOf(value))) {
+            return;
+        }
+        if (isIntegerIdentifier(value) || isCommaSeparatedIdentifiers(value)) {
+            return;
+        }
+        boolean bigintField = "bigint".equalsIgnoreCase(modelField.getDataType());
+        if (!bigintField && !modelField.isMultipleSelection()) {
             return;
         }
         String fieldLabel = StringUtils.firstNonBlank(label, modelField.getLabel(), fieldName);
@@ -147,6 +154,26 @@ final class SelectionIdentifierValidator {
             }
         }
         return String.valueOf(value).trim().matches("\\d+");
+    }
+
+    private static boolean isCommaSeparatedIdentifiers(Object value) {
+        if (value instanceof java.util.Collection<?> collection) {
+            return !collection.isEmpty() && collection.stream().allMatch(SelectionIdentifierValidator::isIntegerIdentifier);
+        }
+        String text = String.valueOf(value).trim();
+        if (!text.contains(",")) {
+            return false;
+        }
+        String[] parts = text.split(",");
+        if (parts.length == 0) {
+            return false;
+        }
+        for (String part : parts) {
+            if (!isIntegerIdentifier(part.trim())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String text(JsonNode node, String fieldName) {

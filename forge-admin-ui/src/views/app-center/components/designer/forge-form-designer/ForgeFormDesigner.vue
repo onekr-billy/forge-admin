@@ -922,6 +922,7 @@ defineExpose({
   resetFromFields,
   repairRefs,
   appendField,
+  selectComponent: openPropertyPanel,
 })
 const renameDialogVisible = ref(false)
 const renameFormName = ref('')

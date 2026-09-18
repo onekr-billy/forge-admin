@@ -135,7 +135,28 @@
             </div>
 
             <!-- 验证码区域 - 根据配置显示不同类型的验证码 -->
-            <div v-if="captchaEnabled" class="form-group">
+            <!-- Tab 切换（如果启用群二维码引流） -->
+            <div v-if="captchaEnabled && groupQrcodeEnabled" class="captcha-tab-switch">
+              <button
+                type="button"
+                class="captcha-tab-btn"
+                :class="{ active: activeCaptchaTab === 'default' }"
+                @click="activeCaptchaTab = 'default'"
+              >
+                图形验证码
+              </button>
+              <button
+                type="button"
+                class="captcha-tab-btn"
+                :class="{ active: activeCaptchaTab === 'group' }"
+                @click="activeCaptchaTab = 'group'"
+              >
+                群二维码
+              </button>
+            </div>
+
+            <!-- 默认验证码（图形/滑块/短信） -->
+            <div v-if="captchaEnabled && activeCaptchaTab === 'default'" class="form-group">
               <!-- 图形验证码 -->
               <template v-if="captchaType === 'graphical'">
                 <label for="captcha" class="form-label">验证码</label>
@@ -234,6 +255,72 @@
               </template>
             </div>
 
+            <!-- 群二维码验证码：独立于验证码总开关，点“获取验证码”在下方浮出二维码 -->
+            <div v-if="groupQrcodeEnabled && activeCaptchaTab === 'group'" class="form-group group-qrcode-verify">
+              <label for="groupCaptchaCode" class="form-label">验证码</label>
+              <div class="captcha-wrapper">
+                <div class="input-wrapper flex-1">
+                  <n-input
+                    id="groupCaptchaCode"
+                    v-model:value="loginInfo.code"
+                    class="modern-input"
+                    placeholder="请输入验证码"
+                    :maxlength="10"
+                    size="large"
+                    @keydown.enter="handleLogin()"
+                  >
+                    <template #prefix>
+                      <i class="input-icon ai-icon:key" />
+                    </template>
+                  </n-input>
+                </div>
+                <button
+                  type="button"
+                  class="qrcode-trigger-btn"
+                  :class="{ active: qrcodePopoverVisible }"
+                  :aria-expanded="qrcodePopoverVisible"
+                  title="点击展示群二维码"
+                  @click="toggleQrcodePopover"
+                >
+                  <i class="i-material-symbols:qr-code-2-outline" />
+                  <span>{{ qrcodePopoverVisible ? '收起' : '获取验证码' }}</span>
+                </button>
+              </div>
+              <Transition name="qrcode-pop">
+                <div v-if="qrcodePopoverVisible" class="qrcode-popover">
+                  <div
+                    class="qrcode-container"
+                    :class="{ zoomable: !!groupQrcodeImage }"
+                    :role="groupQrcodeImage ? 'button' : undefined"
+                    :tabindex="groupQrcodeImage ? 0 : undefined"
+                    title="点击放大二维码"
+                    @click="groupQrcodeImage && (qrcodePreviewVisible = true)"
+                    @keydown.enter="groupQrcodeImage && (qrcodePreviewVisible = true)"
+                  >
+                    <img
+                      v-if="groupQrcodeImage"
+                      :src="groupQrcodeImage"
+                      :alt="groupQrcodeName"
+                      class="qrcode-image"
+                    >
+                    <div v-else class="qrcode-placeholder">
+                      <i class="ai-icon:image" />
+                      <span>群二维码未配置</span>
+                    </div>
+                    <i v-if="groupQrcodeImage" class="qrcode-zoom-hint ai-icon:zoom-in" />
+                  </div>
+                  <div class="qrcode-info">
+                    <h4 class="qrcode-title">
+                      {{ groupQrcodeName }}
+                    </h4>
+                    <p class="qrcode-hint">
+                      {{ groupQrcodeHint }}
+                    </p>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+
             <!-- Remember me -->
             <div class="form-options">
               <n-checkbox
@@ -272,13 +359,25 @@
             </div>
 
             <!-- Social login buttons -->
-            <div v-if="socialPlatforms.length > 0" class="social-login-section">
+            <div v-if="displaySocialPlatforms.length > 0" class="social-login-section">
               <div class="social-divider">
                 <span class="divider-text">其他登录方式</span>
               </div>
-              <div class="social-buttons">
+              <!-- Gitee 社区登录：突出展示 -->
+              <button
+                v-if="giteeCommunity.enabled"
+                class="social-button-gitee"
+                @click="handleSocialLogin('GITEE')"
+              >
+                <svg class="gitee-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2C6.475 2 2 6.475 2 12a9.994 9.994 0 0 0 6.838 9.488c.5.087.687-.213.687-.476 0-.237-.013-1.024-.013-1.862-2.512.463-3.162-.612-3.362-1.175-.113-.288-.6-1.175-1.025-1.413-.35-.187-.85-.65-.013-.662.788-.013 1.35.725 1.538 1.025.9 1.512 2.338 1.087 2.912.825.088-.65.35-1.088.638-1.338-2.225-.25-4.55-1.112-4.55-4.937 0-1.088.387-1.987 1.025-2.688-.1-.25-.45-1.275.1-2.65 0 0 .837-.262 2.75 1.026a9.29 9.29 0 0 1 2.5-.338c.85 0 1.7.112 2.5.337 1.912-1.3 2.75-1.024 2.75-1.024.55 1.375.2 2.4.1 2.65.637.7 1.025 1.587 1.025 2.687 0 3.838-2.337 4.688-4.562 4.938.362.312.675.912.675 1.85 0 1.337-.013 2.412-.013 2.75 0 .262.188.574.688.474A10.016 10.016 0 0 0 22 12c0-5.525-4.475-10-10-10Z" fill="currentColor" />
+                </svg>
+                <span class="gitee-label">Gitee 免密登录</span>
+              </button>
+              <!-- 其他三方平台 -->
+              <div v-if="nonGiteePlatforms.length > 0" class="social-buttons">
                 <button
-                  v-for="platform in socialPlatforms"
+                  v-for="platform in nonGiteePlatforms"
                   :key="platform.platform"
                   class="social-button"
                   :title="platform.platformName"
@@ -290,7 +389,9 @@
                     :alt="platform.platformName"
                     class="social-icon"
                   >
-                  <i v-else class="social-icon-fallback ai-icon:link" />
+                  <span v-else class="social-icon-letter">
+                    {{ (platform.platformName || platform.platform).charAt(0) }}
+                  </span>
                 </button>
               </div>
             </div>
@@ -410,6 +511,28 @@
       <a v-else href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">蒙ICP备2026004895号</a>
     </div>
   </div>
+
+  <!-- 群二维码放大预览浮层 -->
+  <Transition name="modal">
+    <div
+      v-if="qrcodePreviewVisible"
+      class="slider-modal-overlay qrcode-preview-overlay"
+      role="dialog"
+      aria-label="群二维码放大预览"
+      @click.self="qrcodePreviewVisible = false"
+    >
+      <div class="qrcode-preview-modal">
+        <button type="button" class="slider-modal-close" aria-label="关闭" @click="qrcodePreviewVisible = false">
+          <i class="ai-icon:x" />
+        </button>
+        <div class="qrcode-preview-header">
+          <h3>{{ groupQrcodeName }}</h3>
+          <p>{{ groupQrcodeHint }}</p>
+        </div>
+        <img :src="groupQrcodeImage" :alt="groupQrcodeName" class="qrcode-preview-image" @click.stop>
+      </div>
+    </div>
+  </Transition>
 
   <!-- 滑块验证浮层 -->
   <Transition name="modal">
@@ -568,6 +691,32 @@ const captchaExpires = ref(0) // 验证码过期时间
 // 验证码类型：graphical(图形验证码), slider(滑块验证码), sms(短信验证码)
 const captchaType = ref('graphical')
 const captchaEnabled = computed(() => loginConfig.value?.enableCaptcha !== false)
+
+// 群二维码引流验证码：独立于验证码总开关生效，未配置图片时回退占位符
+const groupQrcodeEnabled = computed(() => loginConfig.value?.groupQrcodeEnabled === true)
+const activeCaptchaTab = ref('default') // 'default' 或 'group'
+const groupQrcodeImage = computed(() => {
+  const value = String(loginConfig.value?.groupQrcodeImage || '').trim()
+  if (!value)
+    return ''
+  const lowerValue = value.toLowerCase()
+  if (lowerValue.startsWith('http://') || lowerValue.startsWith('https://')
+    || lowerValue.startsWith('data:') || lowerValue.startsWith('blob:')) {
+    return value
+  }
+  // fileId 走登录页专用匿名图片接口，带 cache buster 避免换图后读到旧缓存
+  const prefix = import.meta.env.VITE_REQUEST_PREFIX || ''
+  return `${prefix}/auth/loginQrcode?v=${encodeURIComponent(value)}`
+})
+const groupQrcodeName = computed(() => loginConfig.value?.groupQrcodeName || '用户交流群')
+const groupQrcodeHint = computed(() => loginConfig.value?.groupQrcodeHint || '扫码加入用户群，获取验证码并完成登录')
+// 群二维码浮层交互：点“获取验证码”展开浮动二维码，点二维码可放大
+const qrcodePopoverVisible = ref(false)
+const qrcodePreviewVisible = ref(false)
+
+function toggleQrcodePopover() {
+  qrcodePopoverVisible.value = !qrcodePopoverVisible.value
+}
 const resetPasswordChannels = computed(() => loginConfig.value?.resetPasswordChannels || [])
 const canResetPassword = computed(() => resetPasswordChannels.value.includes('sms') || resetPasswordChannels.value.includes('email'))
 const showResetForm = ref(false)
@@ -615,6 +764,26 @@ const loading = ref(false)
 // 三方登录平台列表
 const socialPlatforms = ref([])
 const socialLoading = ref(false)
+const giteeCommunity = ref({
+  enabled: false,
+  requireStar: false,
+  repoUrl: 'https://gitee.com/ForgeLab/forge-admin',
+  owner: 'ForgeLab',
+  repo: 'forge-admin',
+})
+const nonGiteePlatforms = computed(() =>
+  (socialPlatforms.value || []).filter(item => item.enabled && item.platform !== 'GITEE'),
+)
+const displaySocialPlatforms = computed(() => {
+  const list = (socialPlatforms.value || []).filter(item => item.enabled)
+  if (!giteeCommunity.value.enabled)
+    return list
+  const withoutGitee = list.filter(item => item.platform !== 'GITEE')
+  return [
+    { platform: 'GITEE', platformName: 'Gitee', enabled: true },
+    ...withoutGitee,
+  ]
+})
 
 watch(resetPasswordChannels, (channels) => {
   if (!channels.includes(resetForm.value.channel))
@@ -630,6 +799,14 @@ watch(selectedTenantId, (tenantId) => {
     .finally(() => {
       tenantConfigApplying.value = false
     })
+})
+
+// 验证码 Tab 切换时清空输入，避免混用
+watch(activeCaptchaTab, () => {
+  loginInfo.value.code = ''
+  // 切换验证码 tab 时收起群二维码浮层与放大预览
+  qrcodePopoverVisible.value = false
+  qrcodePreviewVisible.value = false
 })
 
 // 手机号验证
@@ -739,6 +916,11 @@ async function loadLoginConfig() {
       await applyLoginPageConfig(res.data)
       captchaType.value = res.data.captchaType || 'graphical'
 
+      // 验证码总开关关闭但群二维码启用时，直接进入群二维码验证，不再展示默认验证码
+      if (!captchaEnabled.value && groupQrcodeEnabled.value) {
+        activeCaptchaTab.value = 'group'
+      }
+
       // 根据验证码类型加载对应的验证码
       if (captchaEnabled.value) {
         await loadCaptchaByType()
@@ -762,9 +944,14 @@ async function loadLoginConfig() {
 async function loadSocialPlatforms() {
   try {
     socialLoading.value = true
-    const res = await api.getSocialPlatforms(normalizeTenantId(selectedTenantId.value))
-    if (res.code === 200 && res.data) {
-      socialPlatforms.value = res.data.filter(p => p.enabled)
+    const [platformRes, communityRes] = await Promise.all([
+      api.getSocialPlatforms(normalizeTenantId(selectedTenantId.value)),
+      api.getGiteeCommunityLogin().catch(() => null),
+    ])
+    if (platformRes.code === 200 && platformRes.data)
+      socialPlatforms.value = platformRes.data.filter(p => p.enabled)
+    if (communityRes?.code === 200 && communityRes.data) {
+      giteeCommunity.value = { ...giteeCommunity.value, ...communityRes.data }
     }
   }
   catch (error) {
@@ -778,7 +965,8 @@ async function loadSocialPlatforms() {
 // 处理三方登录
 async function handleSocialLogin(platform) {
   try {
-    const tenantId = normalizeTenantId(selectedTenantId.value)
+    const communityGitee = giteeCommunity.value.enabled && platform === 'GITEE'
+    const tenantId = communityGitee ? undefined : normalizeTenantId(selectedTenantId.value)
     const res = await api.getSocialAuthUrl(platform, tenantId)
     if (res.code === 200 && res.data) {
       rememberSocialTenant(res.data.state, tenantId)
@@ -883,7 +1071,8 @@ function closeSliderModal() {
 
 // 登录按钮点击处理
 function onLoginClick() {
-  if (captchaEnabled.value && captchaType.value === 'slider' && !sliderSuccess.value) {
+  // 滑块验证仅在默认验证码 tab 且类型为 slider 时触发
+  if (captchaEnabled.value && activeCaptchaTab.value === 'default' && captchaType.value === 'slider' && !sliderSuccess.value) {
     openSliderModal()
     return
   }
@@ -1001,6 +1190,12 @@ async function handleLoginFailure() {
   if (!captchaEnabled.value)
     return
 
+  // 群二维码 tab：清空验证码即可，无需刷新图片
+  if (activeCaptchaTab.value === 'group') {
+    loginInfo.value.code = ''
+    return
+  }
+
   // 根据验证码类型处理
   if (captchaType.value === 'slider') {
     // 滑块验证码需要重置组件
@@ -1077,14 +1272,17 @@ async function handleLogin() {
     return
   }
 
-  if (captchaEnabled.value) {
-    // 根据验证码类型进行验证
+  // 群二维码验证码独立于验证码总开关生效
+  if (activeCaptchaTab.value === 'group' && groupQrcodeEnabled.value) {
+    if (!code)
+      return $message.warning('请输入群验证码')
+  }
+  // 默认验证码 tab
+  else if (captchaEnabled.value) {
     if (captchaType.value === 'slider') {
       if (!sliderSuccess.value) {
         return $message.warning('请完成滑块验证')
       }
-      // 滑块验证码使用组件自带的验证，这里只需要确认已通过
-      // 为了安全，可以添加一个临时的token或codeKey
     }
     else if (captchaType.value === 'sms') {
       if (!phone)
@@ -1109,13 +1307,16 @@ async function handleLogin() {
     const submittedPassword = await encryptPassword(password, request, passwordEncryptionEnabled)
 
     // 构造登录参数 - 使用新的后端接口格式
+    const usingGroupCaptcha = activeCaptchaTab.value === 'group' && groupQrcodeEnabled.value
     const params = {
       username,
       password: submittedPassword,
       code,
-      codeKey,
+      codeKey: usingGroupCaptcha ? 'group_captcha' : codeKey,
       phone, // 短信验证码时需要
-      authType: captchaEnabled.value ? 'password_captcha' : 'password',
+      // 群二维码验证码独立生效时也必须走验证码认证策略
+      authType: (captchaEnabled.value || usingGroupCaptcha) ? 'password_captcha' : 'password',
+      captchaType: usingGroupCaptcha ? 'group' : undefined, // 群二维码时告知后端
       userClient,
       appId: import.meta.env.VITE_APP_ID || 'forge_pc_001', // 客户端AppId
       ...(tenantId != null ? { tenantId } : {}),
@@ -1136,6 +1337,8 @@ async function handleLogin() {
       $message.destroy('login')
     }
     else {
+      // 登录接口 needTip: false 屏蔽了全局错误弹窗，失败原因必须在登录页自行提示
+      $message.error(res.message || '登录失败，请重试', { key: 'login' })
       await handleLoginFailure()
     }
   }
@@ -1143,6 +1346,7 @@ async function handleLogin() {
     $message.destroy('login')
     if (!applyWorkspaceChallenge(error)) {
       console.error(error)
+      $message.error(error?.message || '登录失败，请重试', { key: 'login' })
       await handleLoginFailure()
     }
   }
@@ -1255,8 +1459,9 @@ async function handleSocialLoginMessage(event) {
     $message.success('登录成功')
 
     // 使用 window.location.href 强制刷新页面跳转
+    // resolve() 会自动拼上路由 base（生产环境为 /forge），直接赋 '/' 会跳出 SPA 落到站点根路径
     const defaultRedirectPath = import.meta.env.VITE_HOME_PATH || '/'
-    window.location.href = defaultRedirectPath
+    window.location.href = router.resolve(defaultRedirectPath).href
   }
   else if (event.data?.type === 'SOCIAL_LOGIN_FAILED') {
     $message.error('三方登录失败，请重试')
@@ -1834,6 +2039,277 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
   align-items: center;
 }
 
+/* Captcha Tab 切换 */
+.captcha-tab-switch {
+  display: flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border: 1px solid #e0e0e6;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.captcha-tab-btn {
+  flex: 1;
+  padding: 7px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.captcha-tab-btn:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: #e0e0e6;
+}
+
+.captcha-tab-btn.active {
+  color: #3b82f6;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+.captcha-tab-btn.active::after {
+  display: none;
+}
+
+.captcha-tab-btn:hover:not(.active) {
+  color: #475569;
+  background: #f1f5f9;
+}
+
+/* 群二维码验证码区域 */
+.group-qrcode-verify {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* “获取验证码”按钮与输入框同行，高度对齐 size=large 输入框 */
+.qrcode-trigger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 40px;
+  min-width: 110px;
+  white-space: nowrap;
+  border-radius: 2px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+  user-select: none;
+}
+
+.qrcode-trigger-btn i {
+  font-size: 1rem;
+}
+
+.qrcode-trigger-btn:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.qrcode-trigger-btn.active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+/* 浮动二维码卡片：点“获取验证码”后在输入框下方浮出 */
+.qrcode-popover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 16px 36px rgba(15, 23, 42, 0.12),
+    0 4px 10px rgba(15, 23, 42, 0.06);
+}
+
+/* 浮层展开/收起过渡 */
+.qrcode-pop-enter-active,
+.qrcode-pop-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.qrcode-pop-enter-from,
+.qrcode-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+}
+
+.qrcode-container {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 12px;
+  border: 1px solid #e0e0e6;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.qrcode-container.zoomable {
+  cursor: zoom-in;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.qrcode-container.zoomable:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 3px rgba(59, 130, 246, 0.12),
+    0 12px 24px rgba(37, 99, 235, 0.14);
+}
+
+.qrcode-zoom-hint {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  pointer-events: none;
+}
+
+.qrcode-container.zoomable:hover .qrcode-zoom-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.qrcode-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qrcode-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.qrcode-placeholder i {
+  font-size: 28px;
+}
+
+.qrcode-info {
+  text-align: center;
+}
+
+.qrcode-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.qrcode-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.group-qrcode-verify .form-label {
+  align-self: flex-start;
+  width: 100%;
+}
+
+/* 群二维码放大预览浮层 */
+.qrcode-preview-modal {
+  position: relative;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 1.75rem 1.5rem 1.5rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow:
+    0 24px 48px rgba(15, 23, 42, 0.15),
+    0 8px 16px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.qrcode-preview-header {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.qrcode-preview-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.qrcode-preview-header p {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.qrcode-preview-image {
+  width: 100%;
+  max-width: 300px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  display: block;
+  object-fit: contain;
+}
+
 .captcha-image {
   position: relative;
   width: 120px;
@@ -2345,12 +2821,17 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
 /* Social login section */
 .social-login-section {
   margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
 .social-divider {
   position: relative;
   text-align: center;
-  margin-bottom: 20px;
+  width: 100%;
+  margin-bottom: 8px;
 }
 
 .social-divider::before {
@@ -2372,6 +2853,45 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
   color: #94a3b8;
 }
 
+/* Gitee prominent button */
+.social-button-gitee {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 20px;
+  border: 1.5px solid #c71d24;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+
+.social-button-gitee:hover {
+  border-color: #c71d24;
+  background: linear-gradient(135deg, #fff0f0 0%, #fef2f2 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(199, 29, 36, 0.15);
+}
+
+.gitee-icon {
+  width: 22px;
+  height: 22px;
+  color: #c71d24;
+  flex-shrink: 0;
+}
+
+.gitee-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #c71d24;
+  line-height: 1;
+}
+
+/* Other social buttons */
 .social-buttons {
   display: flex;
   justify-content: center;
@@ -2381,7 +2901,7 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
 .social-button {
   width: 44px;
   height: 44px;
-  border-radius: 2px;
+  border-radius: 8px;
   border: 1.5px solid #e2e8f0;
   background: #f8fafc;
   cursor: pointer;
@@ -2405,12 +2925,14 @@ async function loadAndSetMenuData(loginTenantId = selectedTenantId.value) {
   object-fit: contain;
 }
 
-.social-icon-fallback {
-  font-size: 20px;
+.social-icon-letter {
+  font-size: 16px;
+  font-weight: 600;
   color: #64748b;
+  line-height: 1;
 }
 
-.social-button:hover .social-icon-fallback {
+.social-button:hover .social-icon-letter {
   color: #3b82f6;
 }
 

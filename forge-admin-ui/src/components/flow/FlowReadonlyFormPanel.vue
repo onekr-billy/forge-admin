@@ -98,7 +98,7 @@ import { formCreateToAiSchema } from '@/components/ai-form/adapters/formCreate'
 import FlowBusinessForm from '@/components/common/FlowBusinessForm.vue'
 import FlowApprovalChecklist from '@/components/flow/FlowApprovalChecklist.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
-import { pickFirstNonEmptyFieldPermissions } from '@/utils/field-permissions'
+import { pickFirstNonEmptyFieldPermissions, pickFirstNonEmptyPermissionSource } from '@/utils/field-permissions'
 import { compactParams } from '@/views/flow/utils/monitorAdmin'
 import { getBusinessFormDisplayTitle } from '@/views/flow/utils/processDisplay'
 
@@ -163,10 +163,10 @@ const readonlyBusinessFormFieldPermissions = computed(() => {
   ], { readOnly: true })
 })
 const readonlyDynamicFormFieldPermissions = computed(() => {
-  return pickFirstNonEmptyFieldPermissions([
+  return pickFirstNonEmptyPermissionSource([
     taskFormInfo.value?.fieldPermissions,
     taskFormInfo.value?.formFieldPermissions,
-  ], { readOnly: true })
+  ])
 })
 const readonlyDynamicFormSchema = computed(() => dynamicFormSchema.value.map(toReadonlyField))
 const readonlyBusinessFormFields = computed(() => {

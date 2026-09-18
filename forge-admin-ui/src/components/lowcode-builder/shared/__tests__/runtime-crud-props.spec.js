@@ -9,6 +9,7 @@ import {
   isDesignPreviewCrudProps,
   resolveCrudPreviewReloadKey,
   resolveCrudSearchFieldCatalog,
+  resolveDesignerFormGovernance,
   resolveRuntimeBlockApi,
 } from '../runtime-crud-props'
 
@@ -355,5 +356,65 @@ describe('runtime CRUD design preview props', () => {
     expect(props.editSize).toBe('small')
     expect(props.editEnableCollapse).toBe(true)
     expect(props.detailModalWidth).toBe('min(1080px, 92vw)')
+  })
+
+  it('passes form designer governance fieldEvents and formInit through to AiCrudPage', () => {
+    const formInit = {
+      contextDefaults: [
+        { id: 'd1', field: 'ownerUser', source: 'CONTEXT_PATH', path: 'currentUser.userId', enabled: true },
+      ],
+    }
+    const props = buildRuntimeCrudProps({
+      options: {
+        formDesignerSchema: {
+          defaultFormKey: 'order_edit_form',
+          forms: [
+            {
+              formKey: 'order_create_form',
+              schema: { settings: { governance: { formInit: { contextDefaults: [{ id: 'legacy' }] } } } },
+            },
+            {
+              formKey: 'order_edit_form',
+              schema: {
+                settings: {
+                  governance: {
+                    fieldEvents: [{ id: 'evt1', trigger: 'FORM_LOAD' }],
+                    formInit,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    })
+
+    // governance 必须与 layout 一样取 defaultFormKey 选中的表单，而非第一个表单
+    expect(props.fieldEvents).toEqual([{ id: 'evt1', trigger: 'FORM_LOAD' }])
+    expect(props.formInit).toEqual(formInit)
+  })
+
+  it('resolves governance from a single-form designer schema with legacy top-level fallback', () => {
+    const governance = { fieldEvents: [{ id: 'evt1' }], formInit: { contextDefaults: [] } }
+
+    expect(resolveDesignerFormGovernance({
+      formKey: 'default',
+      layout: {},
+      settings: { governance },
+    })).toBe(governance)
+
+    expect(resolveDesignerFormGovernance({
+      layout: {},
+      governance,
+    })).toBe(governance)
+  })
+
+  it('returns safe empty governance defaults when the designer schema is missing', () => {
+    expect(resolveDesignerFormGovernance(null)).toEqual({})
+    expect(resolveDesignerFormGovernance({ forms: [] })).toEqual({})
+
+    const props = buildRuntimeCrudProps({ options: {} })
+    expect(props.fieldEvents).toEqual([])
+    expect(props.formInit).toEqual({})
   })
 })

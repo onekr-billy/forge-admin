@@ -1,45 +1,74 @@
 <template>
   <div class="application-publish-page">
-    <header class="publish-page-header">
-      <div class="publish-page-title">
+    <header class="publish-header">
+      <div class="publish-header-left">
         <n-button quaternary circle aria-label="返回页面管理" @click="returnWorkspace">
           <template #icon>
             <n-icon><ArrowBackOutline /></n-icon>
           </template>
         </n-button>
-        <div><span>{{ application?.applicationName || '应用' }}</span><h1>发布与分发</h1></div>
+        <button type="button" class="publish-breadcrumb" @click="returnWorkspace">
+          <span>应用中心</span>
+          <span aria-hidden="true">›</span>
+        </button>
+        <div class="publish-header-title">
+          <span>应用发布</span>
+          <strong>{{ application?.applicationName || '未命名应用' }}</strong>
+        </div>
       </div>
-      <n-space>
+      <nav class="publish-header-tabs">
+        <button type="button" class="publish-header-tab" @click="goRuntime">
+          页面管理
+        </button>
+        <button type="button" class="publish-header-tab" @click="openSettings">
+          应用设置
+        </button>
+        <button type="button" class="publish-header-tab active">
+          应用发布
+        </button>
+      </nav>
+      <div class="publish-header-actions">
         <n-button secondary :disabled="!application" @click="openSettings">
           应用设置
         </n-button>
         <n-button type="primary" :disabled="!application || application.status !== 1" @click="historyRef?.preparePublish()">
           立即发布
         </n-button>
-      </n-space>
+      </div>
     </header>
-    <nav class="publish-app-tabs" aria-label="应用导航">
-      <button type="button" class="publish-app-tab" @click="goRuntime">
-        页面管理
-      </button>
-      <button type="button" class="publish-app-tab" @click="openSettings">
-        应用设置
-      </button>
-      <button type="button" class="publish-app-tab active">
-        应用发布
-      </button>
-    </nav>
 
     <n-spin :show="loading">
-      <main v-if="application" class="publish-page-content">
+      <div v-if="application" class="publish-page-body">
         <AppPublishStatusCard :application="application" :toggling="toggling" @toggle="toggleStatus" @publish="historyRef?.preparePublish()" />
-        <div class="publish-page-grid">
-          <AppPublishAccess :application="application" />
-          <AppPublishAiAssistant :application="application" :pages="pages" @changed="loadApplication" />
+        <div class="publish-section-layout">
+          <aside class="publish-section-nav">
+            <button
+              v-for="item in publishSections"
+              :key="item.key"
+              type="button"
+              :class="{ active: activePublishSection === item.key }"
+              @click="activePublishSection = item.key"
+            >
+              <n-icon><component :is="item.icon" /></n-icon>
+              <span>{{ item.label }}</span>
+            </button>
+          </aside>
+          <main class="publish-section-content">
+            <div v-show="activePublishSection === 'access'">
+              <AppPublishAccess :application="application" />
+            </div>
+            <div v-show="activePublishSection === 'ai'">
+              <AppPublishAiAssistant :application="application" :pages="pages" @changed="loadApplication" />
+            </div>
+            <div v-show="activePublishSection === 'distribute'">
+              <AppPublishDistribute :application="application" @changed="loadApplication" />
+            </div>
+            <div v-show="activePublishSection === 'history'">
+              <AppPublishVersionHistory ref="historyRef" :application="application" @changed="loadApplication" @navigate="handleNavigate" />
+            </div>
+          </main>
         </div>
-        <AppPublishDistribute :application="application" @changed="loadApplication" />
-        <AppPublishVersionHistory ref="historyRef" :application="application" @changed="loadApplication" @navigate="handleNavigate" />
-      </main>
+      </div>
       <n-result v-else-if="!loading" status="error" title="应用发布信息加载失败" :description="loadError">
         <template #footer>
           <n-button @click="loadApplication">
@@ -52,7 +81,13 @@
 </template>
 
 <script setup>
-import { ArrowBackOutline } from '@vicons/ionicons5'
+import {
+  ArrowBackOutline,
+  LinkOutline,
+  RocketOutline,
+  ShareSocialOutline,
+  SparklesOutline,
+} from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -76,6 +111,13 @@ const loading = ref(false)
 const toggling = ref(false)
 const loadError = ref('')
 const historyRef = ref(null)
+const activePublishSection = ref('history')
+const publishSections = [
+  { key: 'access', label: '访问地址', icon: LinkOutline },
+  { key: 'ai', label: 'AI 助理', icon: SparklesOutline },
+  { key: 'distribute', label: '应用分发', icon: ShareSocialOutline },
+  { key: 'history', label: '发布历史', icon: RocketOutline },
+]
 const pages = computed(() => parseJsonObject(application.value?.options)?.inAppBuilder?.nodes || [])
 
 watch(() => String(route.params.applicationCode || ''), loadApplication, { immediate: true })
@@ -146,31 +188,74 @@ function handleNavigate(section) {
   inset: 0;
 }
 
-.publish-page-header {
-  position: sticky;
-  z-index: 20;
-  top: 0;
-  display: flex;
+.publish-header {
+  flex: 0 0 auto;
   height: 56px;
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) auto minmax(240px, 1fr);
   align-items: center;
-  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px;
   border-bottom: 1px solid #e5e6eb;
   background: #fff;
-  padding: 0 20px;
 }
-.publish-app-tabs {
-  position: sticky;
-  z-index: 19;
-  top: 56px;
+
+.publish-header-left {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  border-bottom: 1px solid #e5e6eb;
-  background: #fff;
-  padding: 6px 20px;
+  gap: 6px;
+  min-width: 0;
 }
-.publish-app-tab {
+
+.publish-breadcrumb {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: #86909c;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.publish-breadcrumb:hover {
+  background: #f2f3f5;
+  color: #1f2329;
+}
+
+.publish-breadcrumb span:first-child {
+  color: #86909c;
+}
+
+.publish-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.publish-header-title span {
+  color: #86909c;
+  font-size: 13px;
+}
+
+.publish-header-title strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publish-header-tabs {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+  gap: 2px;
+}
+
+.publish-header-tab {
   cursor: pointer;
   border: 0;
   border-radius: 6px;
@@ -181,53 +266,93 @@ function handleNavigate(section) {
   line-height: 20px;
   white-space: nowrap;
 }
-.publish-app-tab:hover {
+
+.publish-header-tab:hover {
   color: #1f2329;
 }
-.publish-app-tab.active {
+
+.publish-header-tab.active {
   background: #f2f3f5;
   color: #1f2329;
   font-weight: 600;
 }
 
-.publish-page-title {
+.publish-header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-self: end;
+  gap: 8px;
 }
 
-.publish-page-title span {
-  color: #86909c;
-  font-size: 12px;
-}
-
-.publish-page-title h1 {
-  margin: 1px 0 0;
-  font-size: 18px;
-}
-
-.publish-page-content {
+.publish-page-body {
   display: grid;
   width: min(1280px, calc(100% - 48px));
   gap: 20px;
   margin: 20px auto 32px;
 }
 
-.publish-page-grid {
+/* 左侧 tab 分区布局 */
+.publish-section-layout {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 180px minmax(0, 1fr);
   gap: 16px;
+  align-items: start;
 }
 
-.publish-page-content :deep(.publish-section-card) {
+.publish-section-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #e5e6eb;
+  border-radius: 10px;
+  background: #fff;
+  position: sticky;
+  top: 72px;
+}
+
+.publish-section-nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4e5969;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.publish-section-nav button:hover {
+  background: #f2f3f5;
+  color: #1f2329;
+}
+
+.publish-section-nav button.active {
+  background: #e8f1ff;
+  color: #1677ff;
+  font-weight: 600;
+}
+
+.publish-section-content {
+  min-width: 0;
+}
+
+.publish-section-content :deep(.publish-section-card) {
   min-width: 0;
   border: 1px solid #e5e6eb;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #fff;
-  padding: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgb(31 35 41 / 4%);
 }
 
-.publish-page-content :deep(.publish-section-card > header) {
+.publish-section-content :deep(.publish-section-card > header) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -235,24 +360,30 @@ function handleNavigate(section) {
   margin-bottom: 20px;
 }
 
-.publish-page-content :deep(.publish-section-card > header h2) {
+.publish-section-content :deep(.publish-section-card > header h2) {
   margin: 0;
   font-size: 17px;
+  font-weight: 650;
 }
 
-.publish-page-content :deep(.publish-section-card > header p) {
+.publish-section-content :deep(.publish-section-card > header p) {
   margin: 5px 0 0;
   color: #86909c;
   font-size: 12px;
 }
 
-.publish-page-content :deep(.publish-card-alert) {
+.publish-section-content :deep(.publish-card-alert) {
   margin-bottom: 18px;
 }
 
 @media (max-width: 768px) {
-  .publish-page-grid {
+  .publish-section-layout {
     grid-template-columns: 1fr;
+  }
+  .publish-section-nav {
+    flex-direction: row;
+    position: static;
+    overflow-x: auto;
   }
 }
 </style>

@@ -149,9 +149,15 @@ public class SysOnlineUserServiceImpl extends ServiceImpl<SysOnlineUserMapper,Sy
                     .set(SysOnlineUser::getLogoutTime, LocalDateTime.now())
                     .set(SysOnlineUser::getLogoutType, 1); // 主动登出
 
+            // 委托会话等无在线记录的临时 Token 更新行数为 0，不能谎报"移除成功"
+            int[] updatedRows = {0};
             if (executeWithTokenTenant(tokenValue,
-                    () -> sysOnlineUserMapper.update(null, updateWrapper))) {
-                log.info("移除在线用户成功");
+                    () -> updatedRows[0] = sysOnlineUserMapper.update(null, updateWrapper))) {
+                if (updatedRows[0] > 0) {
+                    log.info("移除在线用户成功");
+                } else {
+                    log.debug("未命中在线用户记录，跳过移除（可能为流程委托临时会话）");
+                }
             }
         } catch (Exception e) {
             log.error("移除在线用户失败", e);

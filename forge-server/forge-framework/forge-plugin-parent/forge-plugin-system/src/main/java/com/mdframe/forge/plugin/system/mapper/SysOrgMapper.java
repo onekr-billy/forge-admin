@@ -64,6 +64,9 @@ public interface SysOrgMapper extends BaseMapper<SysOrg> {
     /** 流程选人组织树使用的租户限定有效组织列表。 */
     List<SysOrg> selectFlowOrgList(@Param("tenantId") Long tenantId);
 
+    /** 租户根组织（parent_id=0），供三方登录自动挂组织。 */
+    SysOrg selectRootOrgByTenant(@Param("tenantId") Long tenantId);
+
     /**
      * 协同目录同步：仅更新同步拥有的组织字段（名称/父级/层级/排序），不触碰负责人等手工资产
      */

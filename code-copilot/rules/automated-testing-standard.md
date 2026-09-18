@@ -105,8 +105,10 @@ rg -n '\$\{[^}]+\}' forge-server/db/migration
 ### 前端
 
 ```bash
-source ~/.nvm/nvm.sh && nvm use v20.19.0 && NODE_OPTIONS=--max-old-space-size=8192 pnpm build
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && NODE_OPTIONS=--max-old-space-size=8192 pnpm --ignore-workspace build
 ```
+
+> `forge-admin-ui/pnpm-workspace.yaml` 缺有效 `packages` 字段期间，所有前端 pnpm 命令（含 vitest、dev）必须加 `--ignore-workspace`，否则报 `packages field missing or empty`；详见 `memory/pitfalls/frontend.md`。
 
 ### 常用接口验证
 

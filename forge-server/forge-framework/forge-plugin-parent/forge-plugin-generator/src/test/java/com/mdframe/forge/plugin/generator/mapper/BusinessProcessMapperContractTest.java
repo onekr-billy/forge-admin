@@ -79,17 +79,14 @@ class BusinessProcessMapperContractTest {
     }
 
     @Test
-    @DisplayName("deletion reference checks are explicit and tenant scoped")
-    void deletionReferenceChecksAreExplicitAndTenantScoped() throws IOException {
-        String versionXml = resource("mapper/BusinessProcessVersionMapper.xml");
+    @DisplayName("deletion run check is tenant scoped and only counts active records")
+    void deletionRunCheckIsTenantScopedAndActiveOnly() throws IOException {
         String runXml = resource("mapper/BusinessProcessRunMapper.xml");
 
-        assertTrue(versionXml.contains("<select id=\"countActiveReferences\""));
-        assertTrue(versionXml.contains("status = 1"));
-        assertTrue(versionXml.contains("del_flag = 0"));
         assertTrue(runXml.contains("<select id=\"countByProcessId\""));
         assertTrue(runXml.contains("tenant_id = #{tenantId}"));
         assertTrue(runXml.contains("process_id = #{processId}"));
+        assertTrue(runXml.contains("status IN ('PENDING', 'RUNNING', 'WAITING')"));
     }
 
     @Test

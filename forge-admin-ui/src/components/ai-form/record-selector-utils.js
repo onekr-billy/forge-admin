@@ -155,7 +155,45 @@ export function normalizeRecordSelectorConfig(source = {}) {
     keywordFields: firstArray(config.keywordFields, field.keywordFields, field.props?.keywordFields, field.basicProps?.keywordFields),
     fieldMappings: config.fieldMappings || config.mappings || field.fieldMappings || field.mappings || field.props?.fieldMappings || field.props?.mappings || field.basicProps?.fieldMappings || field.basicProps?.mappings || [],
     searchParams: config.searchParams || field.searchParams || field.props?.searchParams || field.basicProps?.searchParams || {},
+    filterFields: firstFilterFields(config.filterFields, field.filterFields, field.props?.filterFields, field.basicProps?.filterFields),
+    multiple: config.multiple === true || field.multiple === true || field.props?.multiple === true || field.basicProps?.multiple === true,
+    // 受管查询源（DataSourceBinding 协议对齐）：配置后选择器可查数据集/接口，不再依赖业务对象编码
+    querySourceType: firstText(
+      config.querySource?.sourceType,
+      config.querySourceType,
+      field.querySource?.sourceType,
+      field.querySourceType,
+      field.props?.querySource?.sourceType,
+      field.props?.querySourceType,
+      field.basicProps?.querySource?.sourceType,
+      field.basicProps?.querySourceType,
+    ),
+    querySourceKey: firstText(
+      config.querySource?.sourceKey,
+      config.querySourceKey,
+      field.querySource?.sourceKey,
+      field.querySourceKey,
+      field.props?.querySource?.sourceKey,
+      field.props?.querySourceKey,
+      field.basicProps?.querySource?.sourceKey,
+      field.basicProps?.querySourceKey,
+    ),
+    keywordParam: firstText(
+      config.keywordParam,
+      field.keywordParam,
+      field.props?.keywordParam,
+      field.basicProps?.keywordParam,
+    ),
   }
+}
+
+/** 筛选字段为对象数组，不能走 firstArray 的字符串拆分逻辑 */
+function firstFilterFields(...values) {
+  for (const value of values) {
+    if (Array.isArray(value))
+      return value
+  }
+  return []
 }
 
 export function extractSelectorRawRecord(record = {}) {

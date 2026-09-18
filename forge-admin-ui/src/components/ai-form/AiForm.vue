@@ -147,15 +147,16 @@
 
 <script setup>
 import { ChevronDownOutline, ChevronUpOutline } from '@vicons/ionicons5'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
+import { computed, getCurrentInstance, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
 import { resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { scan as scanCollaborationCode } from '@/utils/collaboration-runtime'
-import { createFieldPermissionMap } from '@/utils/field-permissions'
+import { createArrayPermissionMap, createFieldPermissionMap } from '@/utils/field-permissions'
 import { normalizeRulePattern, normalizeValidationRules } from '@/utils/validation-presets'
 import AiFormLayoutNodes from './AiFormLayoutNodes.vue'
+import { appendSelectionLabelContextDefaults, buildContextDefaultsPatch } from './data-source-binding-runtime'
 import { createFieldEventRuntime } from './field-event-runtime'
 import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
 
@@ -163,7 +164,6 @@ const props = defineProps({
   // 表单配置 schema
   schema: {
     type: Array,
-    required: true,
     default: () => [],
   },
   // 表单数据 (v-model)
@@ -277,6 +277,12 @@ const props = defineProps({
     type: [String, Number],
     default: '',
   },
+  // 表单初始化配置（数据源统一架构 P0）：
+  // contextDefaults 把 Session / URL 参数填到字段（零请求），recordLoad 在 AiCrudPage 层接管存量加载
+  formInit: {
+    type: Object,
+    default: null,
+  },
   // 设计器预览模式：保留空布局容器（刚拖入、尚未放置字段的栅格/卡片/标签页等），
   // 默认 false 维持运行态语义——发布后的表单里空容器不渲染。
   keepEmptyLayoutNodes: {
@@ -288,6 +294,7 @@ const props = defineProps({
 const emit = defineEmits(['update:value', 'submit', 'reset', 'cancel', 'nodeAction', 'fieldEvent'])
 const slots = useSlots()
 const route = useRoute()
+const aiFormComponent = markRaw(getCurrentInstance()?.type)
 
 const formRef = ref(null)
 const formValue = ref({})
@@ -298,8 +305,11 @@ const actionModalTitle = ref('业务弹窗')
 const actionModalSchema = ref([])
 const actionModalValue = ref({})
 const actionModalLayout = ref({})
+const fieldValidators = new Map()
 
 const fieldPermissionMap = computed(() => createFieldPermissionMap(props.fieldPermissions))
+const arrayPermissionMap = computed(() => createArrayPermissionMap(props.fieldPermissions))
+const hasExplicitFieldPermissions = computed(() => fieldPermissionMap.value.size > 0 || arrayPermissionMap.value.size > 0)
 
 // 初始化表单数据
 watch(() => props.value, (newVal) => {
@@ -346,6 +356,18 @@ const resolvedFieldEvents = computed(() => (
     : (Array.isArray(props.context?.fieldEvents) ? props.context.fieldEvents : [])
 ))
 const resolvedFieldEventLoadToken = computed(() => props.fieldEventLoadToken || props.context?.fieldEventLoadToken || '')
+const resolvedFormInitConfig = computed(() => {
+  if (props.formInit && typeof props.formInit === 'object' && Object.keys(props.formInit).length)
+    return props.formInit
+  const fromContext = props.context?.formInit
+  return fromContext && typeof fromContext === 'object' ? fromContext : null
+})
+/** 字段静态默认值表：用于判断字段当前值是否仍是组件默认值（可被初始化默认值覆盖） */
+const fieldStaticDefaults = computed(() => allFieldSchema.value.reduce((map, field) => {
+  if (field?.field && field.defaultValue !== undefined && field.defaultValue !== null)
+    map[field.field] = field.defaultValue
+  return map
+}, {}))
 const fieldEventStates = reactive({})
 let formMounted = false
 let initialFormLoadDispatched = false
@@ -441,6 +463,7 @@ function isSelectionLikeType(type) {
     'upload',
     'imageUpload',
     'fileUpload',
+    'array',
   ].includes(normalizedType)
 }
 
@@ -515,6 +538,11 @@ const itemContext = computed(() => ({
   schema: visibleFieldSchema.value,
   allSchema: allFieldSchema.value,
   formAssets: resolveFormAssets(),
+  aiFormComponent,
+  fieldPermissions: props.fieldPermissions,
+  hasExplicitFieldPermissions: hasExplicitFieldPermissions.value,
+  registerFieldValidator,
+  unregisterFieldValidator,
   patchFormData,
   scanField,
   dispatchFieldEvent,
@@ -557,6 +585,7 @@ watch(resolvedFieldEventLoadToken, (nextToken, previousToken) => {
 onMounted(() => {
   formMounted = true
   dispatchInitialFormLoad()
+  remeasureAutoLabelWidth()
 })
 
 onBeforeUnmount(() => {
@@ -622,6 +651,16 @@ async function dispatchInitialFormLoad(force = false) {
     return
   if (!isFieldEventSessionReady())
     return
+
+  // 表单初始化第一步：先落 Session / URL 默认值（零请求），
+  // 再执行 FORM_LOAD 自动查询——查询回填的优先级天然高于初始化默认值。
+  // 值合并规则：存量记录值 > 查询回填值 > 初始化默认值 > 静态默认值。
+  if (resolvedFormInitConfig.value && hasEnabledContextDefaults()) {
+    initialFormLoadDispatched = true
+    await nextTick()
+    applyFormInitContextDefaults()
+  }
+
   if (!fieldEventRuntime.hasRule('FORM_LOAD'))
     return
   initialFormLoadDispatched = true
@@ -629,10 +668,79 @@ async function dispatchInitialFormLoad(force = false) {
   await fieldEventRuntime.dispatch('FORM_LOAD')
 }
 
+function hasEnabledContextDefaults() {
+  const defaults = resolvedFormInitConfig.value?.contextDefaults
+  return Array.isArray(defaults) && defaults.some(item => item && item.enabled !== false)
+}
+
+function applyFormInitContextDefaults() {
+  const runtime = {
+    formData: formValue.value,
+    context: itemContext.value,
+    routeQuery: route.query || {},
+    fieldStaticDefaults: fieldStaticDefaults.value,
+    fields: allFieldSchema.value,
+  }
+  const patch = buildContextDefaultsPatch(resolvedFormInitConfig.value, runtime)
+  // 选择器默认值补 label 伴随字段：currentUser.userId 填入人员选择器时
+  // 同步把 currentUser.realName 写入 xxxName / labelValueField，避免只显示数字 ID。
+  appendSelectionLabelContextDefaults(patch, resolvedFormInitConfig.value, runtime)
+  if (Object.keys(patch).length)
+    patchFormData(patch)
+}
+
 function isFieldEventSessionReady() {
   if (!Object.prototype.hasOwnProperty.call(props.context || {}, 'modalStatus'))
     return true
   return Boolean(props.context?.modalStatus) || Boolean(resolvedFieldEventLoadToken.value)
+}
+
+/**
+ * label-width='auto' 时，naive-ui 在每个 FormItem 挂载瞬间测量 label 宽度取 max 作为整列宽度，
+ * 之后不再重测。首屏字体/图标异步加载或 label 插槽内容晚渲染时，初始测量值偏小，
+ * 会出现 label 不对齐、随便输入后布局恢复的现象。字体就绪后主动触发全量重测修正列宽。
+ */
+async function remeasureAutoLabelWidth() {
+  if (String(props.labelWidth) !== 'auto')
+    return
+  await nextTick()
+  try {
+    await document.fonts?.ready
+  }
+  catch {
+    // 字体 API 不可用时直接重测，不阻断
+  }
+  await nextTick()
+  formRef.value?.invalidateLabelWidth?.()
+  // Form 级重测同样会清空字段级固定 labelWidth 的 DOM 宽度（见 AiFormItem.restoreFixedLabelWidth 注释），
+  // 重测后按 schema 写回，避免固定宽度 label 塌缩。
+  await nextTick()
+  restoreFixedLabelWidths()
+}
+
+/**
+ * 恢复所有字段级固定 labelWidth 的 label 元素宽度。
+ *
+ * AiForm 内的 n-form-item 由 AiFormItem 渲染并带 data-ai-field 标记，
+ * 按 allFieldSchema 中的 labelWidth 配置写回 inline width。
+ */
+function restoreFixedLabelWidths() {
+  const rootEl = formRef.value?.$el
+  if (!rootEl)
+    return
+  const labelWidthMap = new Map(
+    allFieldSchema.value
+      .filter(field => field?.field)
+      .map(field => [String(field.field), field.labelWidth]),
+  )
+  rootEl.querySelectorAll('.n-form-item[data-ai-field]').forEach((el) => {
+    const labelWidth = labelWidthMap.get(el.dataset.aiField)
+    if (labelWidth === undefined || labelWidth === null || labelWidth === '' || labelWidth === 'auto')
+      return
+    const labelEl = el.querySelector(':scope > .n-form-item-label')
+    if (labelEl)
+      labelEl.style.width = typeof labelWidth === 'number' ? `${labelWidth}px` : String(labelWidth)
+  })
 }
 
 function scanField(field) {
@@ -670,9 +778,8 @@ function handleFieldEventStateChange(state) {
 function handleFieldEventNotify({ message, type }) {
   if (typeof window === 'undefined' || !message)
     return
-  const notify = window.$message?.[type]
-  if (typeof notify === 'function')
-    notify(message)
+  // 必须在 window.$message 对象上直接调用：class 原型方法脱离对象调用会丢失 this（showMessage 报 undefined）
+  window.$message?.[type]?.(message)
 }
 
 async function validateChangedField(field) {
@@ -835,12 +942,25 @@ async function handleSubmit() {
 
 async function validateForm() {
   try {
-    return await formRef.value?.validate()
+    await formRef.value?.validate()
+    for (const validate of fieldValidators.values())
+      await validate?.()
+    return true
   }
   catch (error) {
     await revealFirstValidationError(error)
     throw error
   }
+}
+
+function registerFieldValidator(field, validate) {
+  if (field && typeof validate === 'function')
+    fieldValidators.set(String(field), validate)
+}
+
+function unregisterFieldValidator(field) {
+  if (field)
+    fieldValidators.delete(String(field))
 }
 
 async function revealFirstValidationError(error) {
@@ -979,6 +1099,9 @@ function applyFieldPermissionsToNodes(nodes = []) {
           : node
       }
       const permission = fieldPermissionMap.value.get(field)
+      const arrayPermission = node.type === 'array' ? arrayPermissionMap.value.get(field) : null
+      if (arrayPermission?.readable === false)
+        return null
       if (!permission)
         return children ? { ...node, children } : node
       if (permission.visible === false)

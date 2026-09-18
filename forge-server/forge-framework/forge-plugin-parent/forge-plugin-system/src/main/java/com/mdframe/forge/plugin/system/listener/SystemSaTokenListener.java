@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.service.ISysOnlineUserService;
 import com.mdframe.forge.plugin.system.service.ISysUserService;
 import com.mdframe.forge.starter.auth.service.ILoginLockService;
+import com.mdframe.forge.starter.core.constant.FlowDelegationConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,12 @@ public class SystemSaTokenListener implements SaTokenListener {
     
     @Override
     public void doLogin(String loginType, Object loginId, String tokenValue, SaLoginModel loginModel) {
+        // 流程委托临时会话（60s）不是用户登录行为，不计入登录日志，避免误导排障
+        if (loginModel != null && loginModel.getDevice() != null
+                && loginModel.getDevice().startsWith(FlowDelegationConstants.FLOW_DELEGATION_DEVICE_PREFIX)) {
+            log.info("流程委托临时会话签发 - loginId: {}, device: {}", loginId, loginModel.getDevice());
+            return;
+        }
         log.info("用户登录成功 - loginType: {}, loginId: {}", loginType, loginId);
     }
     

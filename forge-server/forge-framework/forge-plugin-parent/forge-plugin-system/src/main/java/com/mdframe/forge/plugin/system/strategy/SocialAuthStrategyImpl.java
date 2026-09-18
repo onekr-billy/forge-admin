@@ -3,10 +3,14 @@ package com.mdframe.forge.plugin.system.strategy;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.mdframe.forge.plugin.system.entity.SysOrg;
+import com.mdframe.forge.plugin.system.entity.SysRole;
 import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.entity.SysUserOrg;
 import com.mdframe.forge.plugin.system.entity.SysUserOrgRole;
 import com.mdframe.forge.plugin.system.entity.SysUserTenant;
+import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
+import com.mdframe.forge.plugin.system.mapper.SysRoleMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserOrgMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserOrgRoleMapper;
@@ -17,6 +21,7 @@ import com.mdframe.forge.starter.auth.util.PasswordUtil;
 import com.mdframe.forge.starter.collaboration.model.VerifiedSocialIdentity;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
+import com.mdframe.forge.starter.social.community.GiteeCommunityLoginSupport;
 import com.mdframe.forge.starter.social.context.SocialProperties;
 import com.mdframe.forge.starter.social.domain.dto.LoginClientContext;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialConfig;
@@ -77,6 +82,15 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
     @Autowired
     private SysUserOrgRoleMapper userOrgRoleMapper;
 
+    @Autowired
+    private SysOrgMapper orgMapper;
+
+    @Autowired
+    private SysRoleMapper roleMapper;
+
+    @Autowired
+    private GiteeCommunityLoginSupport giteeCommunityLoginSupport;
+
     @Override
     protected void validateRequest(LoginRequest request) {
         if (StrUtil.isBlank(request.getSocialTicket())) {
@@ -92,15 +106,30 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
                 request.getSocialTicket(),
                 new LoginClientContext(request.getTenantId(), request.getUserClient()));
         Long tenantId = identity.tenantId();
+        Long previousTenantId = TenantContextHolder.getTenantId();
+        TenantContextHolder.setTenantId(tenantId);
 
-        log.info("三方登录开始: connectionId={}, platform={}", identity.connectionId(), identity.platform());
+        log.info("三方登录开始: connectionId={}, platform={}, tenantId={}",
+                identity.connectionId(), identity.platform(), tenantId);
 
+        try {
+            return authenticateWithTenant(request, identity, tenantId);
+        } finally {
+            if (previousTenantId == null) {
+                TenantContextHolder.setTenantId(null);
+            } else {
+                TenantContextHolder.setTenantId(previousTenantId);
+            }
+        }
+    }
+
+    private LoginUser authenticateWithTenant(LoginRequest request, VerifiedSocialIdentity identity, Long tenantId) {
         // 2. 复核连接状态（票据签发后连接可能被停用）
         SysSocialConfig connection = socialConfigService.selectConfigById(identity.connectionId());
         if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
             throw new RuntimeException("该连接已停用，无法登录");
         }
-        if (!tenantId.equals(connection.getTenantId())) {
+        if (!tenantId.equals(connection.getTenantId()) && !isCommunityTenantOverride(connection, tenantId)) {
             throw new RuntimeException("连接归属租户不一致");
         }
 
@@ -118,8 +147,9 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
             // 头像增量补齐：已绑定用户本地无头像时，用本次授权获取的头像回填
             backfillAvatarIfBlank(sysUser, identity);
 
-            // 补齐租户成员 + 默认角色（幂等：已存在则跳过，仅首次有效）
+            // 补齐租户成员 + 默认组织 + 默认角色（幂等：已存在则跳过，仅首次有效）
             ensureUserTenant(sysUser.getId(), tenantId);
+            ensureUserOrg(sysUser.getId(), tenantId, connection);
             assignDefaultRoles(sysUser.getId(), tenantId, connection);
 
             // OAuth 场景持久化清除改密标记，防止 /auth/userInfo 从 DB 重加载时覆盖
@@ -154,7 +184,10 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
         // 5.1 补齐租户成员关系
         ensureUserTenant(newUser.getId(), tenantId);
 
-        // 5.2 分配默认角色（连接级优先，全局兜底）
+        // 5.2 社区体验登录必须挂上默认组织，否则角色写不进去、菜单是空的
+        ensureUserOrg(newUser.getId(), tenantId, connection);
+
+        // 5.3 分配默认角色（连接级优先，社区角色/全局兜底）
         assignDefaultRoles(newUser.getId(), tenantId, connection);
 
         // 5.3 清除改密标记（registerConsumerUser 如命中已有用户，可能带有目录同步设的 true）
@@ -296,6 +329,38 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
     }
 
     /**
+     * 补齐用户主组织。社区体验租户依赖这个组织才能写入角色。
+     */
+    private void ensureUserOrg(Long userId, Long tenantId, SysSocialConfig connection) {
+        if (resolveUserMainOrgId(userId, tenantId) != null) {
+            return;
+        }
+        Long orgId = connection == null ? null : connection.getDefaultOrgId();
+        if (orgId == null) {
+            SysOrg root = orgMapper.selectRootOrgByTenant(tenantId);
+            orgId = root == null ? null : root.getId();
+        }
+        if (orgId == null) {
+            log.warn("三方登录无法挂组织：租户没有默认组织: userId={}, tenantId={}", userId, tenantId);
+            return;
+        }
+        SysUserOrg userOrg = new SysUserOrg();
+        userOrg.setTenantId(tenantId);
+        userOrg.setUserId(userId);
+        userOrg.setOrgId(orgId);
+        userOrg.setIsMain(1);
+        userOrgMapper.insert(userOrg);
+        log.info("三方登录补齐主组织: userId={}, tenantId={}, orgId={}", userId, tenantId, orgId);
+    }
+
+    private boolean isCommunityTenantOverride(SysSocialConfig connection, Long tenantId) {
+        return giteeCommunityLoginSupport != null
+                && giteeCommunityLoginSupport.appliesTo(connection)
+                && tenantId != null
+                && tenantId.equals(giteeCommunityLoginSupport.communityTenantId());
+    }
+
+    /**
      * 分配默认角色：连接级 defaultRoleIds 优先，为空时回退全局 forge.social.default-role-ids。
      * 写入 sys_user_org_role（用户-组织-角色三元组），已有则跳过（幂等）。
      */
@@ -370,6 +435,14 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
                     .filter(StrUtil::isNotBlank)
                     .map(Long::valueOf)
                     .toArray(Long[]::new);
+        }
+        if (giteeCommunityLoginSupport != null && giteeCommunityLoginSupport.appliesTo(connection)) {
+            SysRole communityRole = roleMapper.selectActiveFlowRoleByKey(
+                    giteeCommunityLoginSupport.communityTenantId(),
+                    giteeCommunityLoginSupport.roleKey());
+            if (communityRole != null) {
+                return new Long[]{communityRole.getId()};
+            }
         }
         return socialProperties.getDefaultRoleIds();
     }

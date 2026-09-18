@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { routes as autoRoutes } from 'vue-router/auto-routes'
+import { recoverFromDynamicImportError } from '@/utils/dynamic-import-recovery'
 import { SSO_BRIDGE_ROUTE } from '@/utils/sso-target'
 import { setupRouterGuards } from './guards'
 
@@ -164,12 +165,8 @@ export const manualRoutes = [
   {
     name: 'BusinessApplicationPublish',
     path: '/app-center/application/:applicationCode/publish',
-    redirect: to => ({
-      name: 'BusinessApplicationRuntime',
-      params: { applicationCode: to.params.applicationCode },
-      query: { ...(to.query || {}), view: 'publish' },
-    }),
-    meta: { title: '应用发布', layout: 'empty', skipTab: true, preserveOnQuery: true, deprecated: true },
+    component: () => import('@/views/app-center/application-publish.[applicationCode].vue'),
+    meta: { title: '应用发布', layout: 'empty', skipTab: true, preserveOnQuery: true },
   },
   {
     name: 'BusinessProcessDesigner',
@@ -278,6 +275,11 @@ export const router = createRouter({
         : createWebHistory(import.meta.env.VITE_PUBLIC_PATH || '/'),
   routes,
   scrollBehavior: () => ({ left: 0, top: 0 }),
+})
+
+// 某些浏览器不会为路由 import 失败派发 vite:preloadError，路由层再兜底一次。
+router.onError((error) => {
+  recoverFromDynamicImportError(error)
 })
 
 export async function setupRouter(app) {

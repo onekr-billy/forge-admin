@@ -10,6 +10,7 @@
         <result column="real_name" property="realName" />
         <result column="user_type" property="userType" />
         <result column="user_client" property="userClient" />
+        <result column="allowed_clients" property="allowedClients" />
         <result column="email" property="email" />
         <result column="phone" property="phone" />
         <result column="id_card" property="idCard" />
@@ -56,7 +57,7 @@
                 u.user_type,
             </otherwise>
         </choose>
-        u.user_client, u.email, u.phone,
+        u.user_client, u.allowed_clients, u.email, u.phone,
         u.id_card, u.gender, u.password, u.salt, u.user_status, u.avatar, u.region_code,
         u.last_login_time, u.last_login_ip, u.login_count, u.force_password_change, u.remark, u.create_dept,
         u.create_by, u.create_time, u.update_by, u.update_time, u.del_flag,
@@ -420,7 +421,17 @@
         <where>
             <include refid="queryCondition" />
         </where>
-        ORDER BY u.create_time DESC
+        <choose>
+            <!-- 排序与显示口径对齐：租户视图下“租户管理员”来自 sut_current.member_type，
+                 直接按 u.user_type 排会出现显示与排序不一致 -->
+            <when test="query.tenantId != null">
+                ORDER BY CASE WHEN u.user_type = 0 THEN 0 WHEN sut_current.member_type = 1 THEN 1 ELSE 2 END,
+                    u.create_time DESC
+            </when>
+            <otherwise>
+                ORDER BY u.user_type, u.create_time DESC
+            </otherwise>
+        </choose>
     </select>
 
     <!-- 导出查询用户列表（不分页） -->
@@ -439,7 +450,17 @@
         <where>
             <include refid="queryCondition" />
         </where>
-        ORDER BY u.create_time DESC
+        <choose>
+            <!-- 排序与显示口径对齐：租户视图下“租户管理员”来自 sut_current.member_type，
+                 直接按 u.user_type 排会出现显示与排序不一致 -->
+            <when test="query.tenantId != null">
+                ORDER BY CASE WHEN u.user_type = 0 THEN 0 WHEN sut_current.member_type = 1 THEN 1 ELSE 2 END,
+                    u.create_time DESC
+            </when>
+            <otherwise>
+                ORDER BY u.user_type, u.create_time DESC
+            </otherwise>
+        </choose>
     </select>
 
     <select id="selectUsersByUsernameForLogin" resultMap="BaseResultMap">

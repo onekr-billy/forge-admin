@@ -9,8 +9,25 @@
 -->
 
 <template>
+  <span v-if="currentDictItems.length > 1 && shouldShowAsText" class="dict-tag-text">
+    {{ currentDictItems.map(item => item.label).join('、') }}
+  </span>
+  <span v-else-if="currentDictItems.length > 1" class="dict-tag-list">
+    <n-tag
+      v-for="item in currentDictItems"
+      :key="String(item.value)"
+      class="dict-tag"
+      :class="`dict-tag--${resolveTagType(item)}`"
+      :type="resolveTagType(item)"
+      :size="size"
+      :round="round"
+      :bordered="bordered"
+    >
+      {{ item.label }}
+    </n-tag>
+  </span>
   <!-- 如果是 default 类型且没有强制指定 type，显示普通文字 -->
-  <span v-if="currentDict && shouldShowAsText">
+  <span v-else-if="currentDict && shouldShowAsText">
     {{ currentDict.label }}
   </span>
   <!-- 否则显示标签 -->
@@ -27,13 +44,15 @@
   >
     {{ currentDict.label }}
   </n-tag>
+  <span v-else-if="loading" aria-label="字典加载中">—</span>
   <!-- 没有找到字典项，显示原始值 -->
-  <span v-else>{{ resolvedValue }}</span>
+  <span v-else>{{ displayFallback }}</span>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { getDictData } from '@/composables/useDict'
+import { useDictStore } from '@/stores/system/dictStore'
 
 const props = defineProps({
   // 字典选项列表（优先使用）
@@ -48,9 +67,9 @@ const props = defineProps({
     default: '',
   },
 
-  // 字典值
+  // 字典值，多选时支持逗号分隔或数组
   value: {
-    type: [String, Number],
+    type: [String, Number, Array],
     default: '',
   },
 
@@ -100,7 +119,9 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-const dictList = ref([])
+const dictStore = useDictStore()
+const dictList = computed(() => dictStore.dictCache.get(props.dictType) || [])
+const loading = ref(false)
 
 const resolvedValue = computed(() => {
   if (props.value !== null && props.value !== undefined && props.value !== '')
@@ -108,14 +129,27 @@ const resolvedValue = computed(() => {
   return props.dictValue
 })
 
-// 当前字典项
-const currentDict = computed(() => {
+const resolvedValueList = computed(() => {
+  const raw = resolvedValue.value
+  if (Array.isArray(raw))
+    return raw.map(item => String(item ?? '').trim()).filter(Boolean)
+  if (raw === null || raw === undefined || raw === '')
+    return []
+  return String(raw).split(/[、,，]/).map(item => item.trim()).filter(Boolean)
+})
+
+const displayFallback = computed(() => resolvedValueList.value.join('、') || resolvedValue.value)
+
+const currentDictItems = computed(() => {
   const list = props.options || dictList.value
   if (!list || list.length === 0)
-    return null
-
-  return list.find(item => String(item.value) === String(resolvedValue.value))
+    return []
+  return resolvedValueList.value
+    .map(value => list.find(item => String(item.value) === String(value)))
+    .filter(Boolean)
 })
+
+const currentDict = computed(() => currentDictItems.value[0] || null)
 
 // 标签类型
 const tagType = computed(() => {
@@ -123,12 +157,17 @@ const tagType = computed(() => {
     return props.type
   }
 
-  if (!currentDict.value) {
+  return resolveTagType(currentDict.value)
+})
+
+function resolveTagType(dictItem) {
+  if (props.type)
+    return props.type
+  if (!dictItem)
     return 'default'
-  }
 
   // 根据 listClass 映射标签类型
-  const listClass = currentDict.value.listClass || currentDict.value.raw?.listClass
+  const listClass = dictItem.listClass || dictItem.raw?.listClass
 
   // 如果没有 listClass，返回默认类型
   if (!listClass) {
@@ -148,7 +187,7 @@ const tagType = computed(() => {
   }
 
   return typeMap[listClass] || 'default'
-})
+}
 
 // 是否显示为普通文字（当 listClass 为 default 且没有强制指定 type 时）
 const shouldShowAsText = computed(() => {
@@ -168,25 +207,30 @@ const shouldShowAsText = computed(() => {
   return !listClass || listClass === 'default'
 })
 
-// 加载字典数据
-async function loadDict() {
-  if (props.options) {
-    // 如果传入了 options，直接使用
+// 切换类型或从 options 切回自加载时重新请求，旧请求不影响当前加载状态。
+watch([() => props.dictType, () => Boolean(props.options)], async ([dictType, hasOptions], _, onCleanup) => {
+  let active = true
+  onCleanup(() => {
+    active = false
+  })
+  loading.value = false
+
+  if (hasOptions) {
     return
   }
-
-  if (!props.dictType) {
+  if (!dictType) {
     console.warn('DictTag: 未指定 options 或 dictType')
     return
   }
 
-  dictList.value = await getDictData(props.dictType)
-}
-
-// 监听 dictType 变化
-watch(() => props.dictType, () => {
-  if (!props.options) {
-    loadDict()
+  loading.value = true
+  try {
+    await getDictData(dictType)
+  }
+  finally {
+    if (active) {
+      loading.value = false
+    }
   }
 }, { immediate: true })
 
@@ -197,6 +241,13 @@ function handleClose() {
 </script>
 
 <style>
+.dict-tag-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
 .dict-tag.n-tag {
   --n-border-radius: 3px !important;
   --n-font-weight-strong: 500 !important;

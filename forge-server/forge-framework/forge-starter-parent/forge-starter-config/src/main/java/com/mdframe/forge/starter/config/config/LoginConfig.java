@@ -53,4 +53,70 @@ public class LoginConfig {
      * 允许的IP白名单（逗号分隔）
      */
     private String ipWhitelist = "";
+
+    /**
+     * Gitee 社区体验登录总开关。关闭后仍可用账号密码登录。
+     */
+    private Boolean giteeCommunityEnabled = false;
+
+    /**
+     * 是否要求已给指定仓库点 Star。
+     */
+    private Boolean giteeCommunityRequireStar = true;
+
+    /**
+     * 仓库所属空间，例如 ForgeLab。
+     */
+    private String giteeCommunityOwner = "ForgeLab";
+
+    /**
+     * 仓库路径，例如 forge-admin。
+     */
+    private String giteeCommunityRepo = "forge-admin";
+
+    /**
+     * 未 Star 时展示给用户的仓库地址。
+     */
+    private String giteeCommunityRepoUrl = "https://gitee.com/ForgeLab/forge-admin";
+
+    /**
+     * 社区体验租户 ID，需与种子数据一致。
+     */
+    private Long giteeCommunityTenantId = 9001L;
+
+    /**
+     * 社区体验角色编码。
+     */
+    private String giteeCommunityRoleKey = "gitee_community";
+
+    /**
+     * 调用 Gitee API 超时毫秒。
+     */
+    private Integer giteeCommunityTimeoutMs = 3000;
+
+    /**
+     * 是否启用群二维码引流验证码。独立于 enableCaptcha 总开关：
+     * 总开关开启时与图形/滑块/短信并存、用户自选；总开关关闭时仅保留群二维码验证码。
+     */
+    private Boolean groupQrcodeEnabled = false;
+
+    /**
+     * 群二维码图片（fileId，登录页通过 /auth/loginQrcode 匿名接口展示，也支持完整 URL）
+     */
+    private String groupQrcodeImage;
+
+    /**
+     * 群名称（显示在二维码下方）
+     */
+    private String groupQrcodeName;
+
+    /**
+     * 群验证码（固定码，管理员定期更新）
+     */
+    private String groupCaptchaCode;
+
+    /**
+     * 引导文案（如"扫码进群获取验证码"）
+     */
+    private String groupQrcodeHint = "扫码加入用户群，获取验证码并完成登录";
 }

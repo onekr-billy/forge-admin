@@ -139,11 +139,13 @@ function actionLabel(actionType) {
 
 <style scoped>
 .business-process-node {
-  border: 1px solid rgba(100, 116, 139, 0.28);
-  border-radius: 9px;
+  border: 1px solid rgba(100, 116, 139, 0.22);
+  border-radius: 10px;
   background: var(--card-color, #fff);
   color: var(--text-color-base, #0f172a);
-  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.07);
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.06),
+    0 1px 2px rgba(15, 23, 42, 0.04);
   transition:
     border-color 150ms ease,
     box-shadow 150ms ease,
@@ -152,16 +154,16 @@ function actionLabel(actionType) {
 }
 
 .business-process-node:hover:not([aria-disabled='true']) {
-  border-color: rgba(37, 99, 235, 0.42);
-  box-shadow: 0 9px 24px rgba(15, 23, 42, 0.1);
+  border-color: rgba(37, 99, 235, 0.36);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
   transform: translateY(-1px);
 }
 
 .business-process-node.is-selected {
   border-color: var(--primary-color, #2563eb);
   box-shadow:
-    0 0 0 2px rgba(37, 99, 235, 0.12),
-    0 9px 24px rgba(15, 23, 42, 0.1);
+    0 0 0 2px rgba(37, 99, 235, 0.15),
+    0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 .business-process-node[aria-disabled='true'] {
@@ -207,30 +209,33 @@ function actionLabel(actionType) {
 .node-rail {
   width: 4px;
   flex: 0 0 4px;
-  background: #64748b;
+  background: #94a3b8;
 }
 
 .is-manual .node-rail,
 .is-event .node-rail,
 .is-schedule .node-rail {
-  background: #0f766e;
+  background: linear-gradient(180deg, #14b8a6, #0f766e);
 }
 
 .is-condition .node-rail {
-  background: #c17a16;
+  background: linear-gradient(180deg, #f59e0b, #d97706);
 }
 
-.is-action .node-rail,
+.is-action .node-rail {
+  background: linear-gradient(180deg, #3b82f6, #2563eb);
+}
+
 .is-sub-process .node-rail {
-  background: #2563eb;
+  background: linear-gradient(180deg, #6366f1, #4f46e5);
 }
 
 .is-approval .node-rail {
-  background: #7c3aed;
+  background: linear-gradient(180deg, #8b5cf6, #7c3aed);
 }
 
 .is-end .node-rail {
-  background: #475569;
+  background: linear-gradient(180deg, #64748b, #475569);
 }
 
 .node-kicker {

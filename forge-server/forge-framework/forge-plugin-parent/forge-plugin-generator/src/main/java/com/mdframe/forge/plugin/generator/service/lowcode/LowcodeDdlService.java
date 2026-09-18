@@ -128,6 +128,47 @@ public class LowcodeDdlService {
     }
 
     /**
+     * 仅执行预览结果中的安全追加式 DDL（ADD COLUMN / CREATE TABLE / CREATE INDEX），
+     * 跳过 MODIFY / DROP / CHANGE 等非追加式语句，避免一条 unsafe DDL 阻断全部安全变更。
+     * 返回实际执行的安全语句条数。
+     */
+    public int executeSafeDdlOnly(LowcodeModelSchema modelSchema) {
+        LowcodeDdlPreviewVO preview = previewCreateTable(modelSchema);
+        if (!Boolean.TRUE.equals(preview.getExecutable())) {
+            throw new BusinessException("DDL预览不可执行");
+        }
+        LowcodeRuntimeDataSourceContext context = runtimeDataSourceResolver.resolve(modelSchema);
+        if (!context.isAllowDdl()) {
+            throw new BusinessException("运行数据源不允许在线DDL");
+        }
+        List<String> safeStatements = preview.getDdlStatements() == null ? List.of()
+                : preview.getDdlStatements().stream()
+                        .filter(this::isSafeOnlineDdl)
+                        .toList();
+        for (String ddl : safeStatements) {
+            ddlRepository.executeDdl(context, ddl);
+        }
+        if (!safeStatements.isEmpty()) {
+            invalidateStructureCheckCache();
+            dynamicCrudRepository.clearTableMetadataCache(context, context.getTableName());
+        }
+        return safeStatements.size();
+    }
+
+    /**
+     * 统计预览结果中的非追加式 DDL 条数。
+     */
+    public int countUnsafeDdl(LowcodeModelSchema modelSchema) {
+        LowcodeDdlPreviewVO preview = previewCreateTable(modelSchema);
+        if (preview.getDdlStatements() == null) {
+            return 0;
+        }
+        return (int) preview.getDdlStatements().stream()
+                .filter(statement -> !isSafeOnlineDdl(statement))
+                .count();
+    }
+
+    /**
      * 仅追加一个指定业务列，供平台托管字段在用户明确确认后安全补齐存储结构。
      * 不创建表、不修改已有列，也不会顺带执行模型中的其它待同步差异。
      */
@@ -302,6 +343,7 @@ public class LowcodeDdlService {
             DdlColumn column = buildColumn(field, false, dialect);
             columns.add(column);
             definitions.add(dialect.columnDefinition(column));
+            appendReferenceDisplayColumn(columns, definitions, field, dialect);
         }
         appendSystemColumn(columns, definitions, dialect, "del_flag", "char", true, "0", "删除标志");
         appendSystemColumn(columns, definitions, dialect, "create_by", "bigint", false, null, "创建人ID");
@@ -348,6 +390,17 @@ public class LowcodeDdlService {
             ddlList.add(dialect.addColumnSql(context.getTableName(), column));
             ddlList.addAll(dialect.afterAddColumnSql(context.getTableName(), column));
             addedColumns.add(field.getColumnName());
+        }
+        // 引用字段伴随列缺失时补齐（存量引用字段升级场景），ADD COLUMN 属于安全追加式 DDL。
+        for (LowcodeFieldSchema field : businessFields(modelSchema)) {
+            String displayColumn = referenceDisplayColumnName(field);
+            if (!isSelectionLabelFieldSchema(field) || existingColumns.contains(displayColumn)) {
+                continue;
+            }
+            DdlColumn column = buildReferenceDisplayColumn(field, dialect);
+            ddlList.add(dialect.addColumnSql(context.getTableName(), column));
+            ddlList.addAll(dialect.afterAddColumnSql(context.getTableName(), column));
+            addedColumns.add(displayColumn);
         }
         if (!addedColumns.isEmpty()) {
             warnings.add("新增字段发布时将追加数据表列: " + String.join("、", addedColumns));
@@ -623,6 +676,49 @@ public class LowcodeDdlService {
         int length = "char".equals(dataType) ? 1 : 255;
         String sqlType = dialect.resolveSqlType(dataType, length, "18,2");
         return new DdlColumn(columnName, sqlType, required, defaultValue, extra, comment, false);
+    }
+
+    /**
+     * 引用类字段（对象引用/记录选择器）选中记录的显示名称会冗余写入伴随列，
+     * 列表与详情回显零关联查询；伴随列缺失值时前端退化显示原始 ID。
+     */
+    private boolean isSelectionLabelFieldSchema(LowcodeFieldSchema field) {
+        return field != null && field.isSelectionLabelField();
+    }
+
+    private String referenceDisplayColumnName(LowcodeFieldSchema field) {
+        String columnName = field.referenceDisplayColumnName();
+        if (columnName == null) {
+            throw new BusinessException("引用字段缺少列名: " + field.getLabel());
+        }
+        return columnName;
+    }
+
+    private void appendReferenceDisplayColumn(List<DdlColumn> columns,
+                                               List<String> definitions,
+                                               LowcodeFieldSchema field,
+                                               RuntimeDatabaseDialect dialect) {
+        if (!isSelectionLabelFieldSchema(field)) {
+            return;
+        }
+        DdlColumn column = buildReferenceDisplayColumn(field, dialect);
+        columns.add(column);
+        definitions.add(dialect.columnDefinition(column));
+    }
+
+    private DdlColumn buildReferenceDisplayColumn(LowcodeFieldSchema field, RuntimeDatabaseDialect dialect) {
+        String columnName = referenceDisplayColumnName(field);
+        validateIdentifier(columnName, "字段列名");
+        int length = field.isMultipleSelection() ? LowcodeFieldSchema.MULTI_SELECT_VARCHAR_LENGTH : 255;
+        return new DdlColumn(
+                columnName,
+                dialect.resolveSqlType("varchar", length, "18,2"),
+                false,
+                null,
+                null,
+                StringUtils.defaultIfBlank(field.getLabel(), field.getColumnName()) + "显示名称",
+                false
+        );
     }
 
     private DdlColumn buildColumn(LowcodeFieldSchema field, boolean forceNullable, RuntimeDatabaseDialect dialect) {

@@ -1110,6 +1110,7 @@ const objectReference = {
     // 常用 · 选择行为
     targetObject: { group: '选择行为', priority: 'common', type: 'string', title: '目标对象' },
     displayField: { group: '选择行为', priority: 'common', type: 'string', title: '展示字段' },
+    multiple: { group: '选择行为', priority: 'common', type: 'boolean', title: '多选', default: false, desc: '多选时以逗号分隔存储值，并同步保存对应名称' },
     clearable: { group: '选择行为', priority: 'common', type: 'boolean', title: '可清空', default: true },
     placeholder: { group: '选择行为', priority: 'common', type: 'string', title: '占位提示' },
     // 常用 · 外观

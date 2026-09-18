@@ -1,6 +1,6 @@
 <template>
   <div v-if="normalizedChildren.length" class="child-table-editor">
-    <n-tabs type="line" animated>
+    <n-tabs type="line">
       <n-tab-pane
         v-for="child in normalizedChildren"
         :key="resolveChildKey(child)"
@@ -13,7 +13,7 @@
               {{ child.tabTitle || child.relationName || child.modelName || child.modelCode || '子表明细' }}
             </div>
             <n-space v-if="!props.readonly || visibleToolbarActions(child).length" size="small">
-              <n-button v-if="hasRecordSelector(child) && !props.readonly" size="small" secondary @click="openRecordSelector(child)">
+              <n-button v-if="hasRecordSelector(child) && canCreateRows(child)" size="small" secondary @click="openRecordSelector(child)">
                 {{ resolveSelectorButtonText(child) }}
               </n-button>
               <n-button
@@ -27,14 +27,20 @@
               >
                 {{ action.label || action.actionName || action.actionCode }}
               </n-button>
-              <n-button v-if="!props.readonly" size="small" type="primary" secondary @click="addRow(child)">
+              <n-button
+                v-if="canCreateRows(child) && child.showInCreate !== false && child.inlineCreateEnabled !== false"
+                size="small"
+                type="primary"
+                secondary
+                @click="addRow(child)"
+              >
                 {{ resolveAddButtonText(child) }}
               </n-button>
             </n-space>
           </div>
 
-          <div class="child-table-scroll">
-            <table class="child-edit-table" :style="resolveTableStyle(child)">
+          <div class="child-table-scroll" :class="{ 'card-scroll': isCardMode(child) }">
+            <table class="child-edit-table" :class="{ 'card-mode': isCardMode(child) }" :style="resolveTableStyle(child)">
               <thead>
                 <tr>
                   <th
@@ -55,76 +61,77 @@
                   v-for="{ row, rowIndex } in visibleRowsFor(child)"
                   :key="row.__rowKey"
                 >
-                  <td v-for="field in child.fields" :key="field.field">
-                    <AiFormItem
-                      v-if="useRuntimeCell(field, child)"
-                      class="child-runtime-cell"
-                      :field="toRuntimeCellField(field)"
-                      :value="row[field.field]"
-                      :form-data="row"
-                      :context="buildRuntimeCellContext(child, rowIndex)"
-                      @update:value="updateCell(child, rowIndex, field, $event)"
-                    />
+                  <td v-for="field in child.fields" :key="field.field" :data-label="field.label || field.field">
+                    <div v-if="useRuntimeCell(field, child)" class="child-runtime-cell">
+                      <AiFormItem
+                        :field="toRuntimeCellField(field, child, row)"
+                        :value="row[field.field]"
+                        :form-data="row"
+                        :context="buildRuntimeCellContext(child, rowIndex)"
+                        @update:value="updateCell(child, rowIndex, field, $event)"
+                      />
+                    </div>
                     <n-input
                       v-else-if="field.type === 'textarea'"
                       type="textarea"
                       v-bind="resolveInputProps(field)"
                       :value="resolveInputValue(row[field.field])"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :autosize="{ minRows: 1, maxRows: 3 }"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-input-number
                       v-else-if="field.type === 'number' || field.type === 'inputNumber'"
+                      v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :precision="field.props?.precision ?? field.precision"
                       style="width: 100%"
-                      v-bind="field.props"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-select
                       v-else-if="field.type === 'select'"
-                      :value="row[field.field]"
+                      v-bind="resolveInputProps(field)"
+                      :value="resolveSelectCellValue(row[field.field], field)"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       :options="field.props?.options || field.options || []"
                       clearable
                       filterable
-                      v-bind="field.props"
+                      :multiple="field.multiple === true || field.props?.multiple === true"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <UserSelectPicker
                       v-else-if="field.type === 'userSelect'"
+                      v-bind="resolveInputProps(field)"
                       :model-value="row[field.field]"
                       :label-value="resolveUserLabel(row, field)"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
-                      :multiple="field.multiple"
+                      :disabled="isCellReadonly(child, row, field)"
+                      :multiple="field.multiple === true || field.props?.multiple === true"
                       :clearable="field.clearable !== false"
-                      v-bind="field.props"
                       @update:model-value="updateCell(child, rowIndex, field, $event)"
                       @update:label-value="updateCellLabel(child, rowIndex, field, $event)"
                     />
                     <n-date-picker
                       v-else-if="field.type === 'date' || field.type === 'datetime'"
+                      v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
                       :type="field.type === 'datetime' ? 'datetime' : 'date'"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       style="width: 100%"
-                      v-bind="field.props"
                       :format="field.props?.format || (field.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
                       :value-format="field.props?.valueFormat || (field.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-switch
                       v-else-if="field.type === 'switch'"
+                      v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
-                      :disabled="props.readonly || field.disabled || field.readonly"
-                      v-bind="field.props"
+                      :disabled="isCellReadonly(child, row, field)"
                       :checked-value="field.props?.checkedValue ?? field.checkedValue ?? true"
                       :unchecked-value="field.props?.uncheckedValue ?? field.uncheckedValue ?? false"
                       @update:value="updateCell(child, rowIndex, field, $event)"
@@ -134,7 +141,7 @@
                       v-bind="resolveInputProps(field)"
                       :value="resolveInputValue(row[field.field])"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
-                      :disabled="props.readonly || field.disabled || field.readonly"
+                      :disabled="isCellReadonly(child, row, field)"
                       clearable
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
@@ -154,7 +161,7 @@
                       >
                         {{ action.label || action.actionName || action.actionCode }}
                       </n-button>
-                      <n-button v-if="!props.readonly" text type="error" size="small" @click="removeRow(child, rowIndex)">
+                      <n-button v-if="canDeleteRows(child)" text type="error" size="small" @click="removeRow(child, rowIndex)">
                         删除
                       </n-button>
                     </n-space>
@@ -185,11 +192,15 @@
       :ref-object-code="activeSelectorConfig.refObjectCode"
       :source-object-code="activeSelectorConfig.sourceObjectCode"
       :target-code="activeSelectorConfig.targetCode"
-      :multiple="true"
+      :multiple="resolveSelectorMultiple(activeSelectorChild)"
       :display-fields="activeSelectorConfig.displayFields"
       :keyword-fields="activeSelectorConfig.keywordFields"
       :field-mappings="activeSelectorConfig.fieldMappings"
       :search-params="activeSelectorConfig.searchParams"
+      :filter-fields="activeSelectorConfig.filterFields"
+      :query-source-type="activeSelectorConfig.querySourceType"
+      :query-source-key="activeSelectorConfig.querySourceKey"
+      :keyword-param="activeSelectorConfig.keywordParam"
       :runtime-context="activeSelectorRuntimeContext"
       @confirm="handleSelectorConfirm"
     />
@@ -203,8 +214,10 @@ import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import AiFormItem from '@/components/ai-form/AiFormItem.vue'
 import AiRecordSelectorModal from '@/components/ai-form/AiRecordSelectorModal.vue'
 import { buildChildRowActionContext } from '@/components/ai-form/business-action-runtime'
+import { resolveControlProps } from '@/components/ai-form/control-props'
 import { createFieldEventRuntime } from '@/components/ai-form/field-event-runtime'
-import { applyRecordFieldMappings, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
+import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
+import { isFieldMultiple, parseSelectionValues, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import { hasRuntimeVisibilityRules, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { scan as scanCollaborationCode } from '@/utils/collaboration-runtime'
@@ -259,7 +272,10 @@ const normalizedChildren = computed(() => (props.childrenConfig || [])
 watch(
   () => props.value,
   (value) => {
-    localValue.value = normalizeInputValue(value)
+    const next = normalizeInputValue(value)
+    if (isSameEditorValue(localValue.value, next))
+      return
+    localValue.value = next
   },
   { immediate: true, deep: true },
 )
@@ -270,7 +286,13 @@ onBeforeUnmount(() => {
 })
 
 function resolveChildKey(child) {
-  return child.key || child.modelCode || child.tableName || 'children'
+  return child.modelCode || child.relationKey || child.key || child.tableName || 'children'
+}
+
+/** 设计器“数据展示”配置：卡片/抽屉形态用卡片布局呈现 */
+function isCardMode(child) {
+  const mode = String(child?.displayMode || '').toLowerCase()
+  return mode === 'card_list' || mode === 'bottom_sheet'
 }
 
 function resolveAddButtonText(child) {
@@ -298,7 +320,8 @@ const activeSelectorRuntimeContext = computed(() => ({
 }))
 
 function hasRecordSelector(child) {
-  return Boolean(normalizeRecordSelectorConfig(child).objectCode)
+  const config = normalizeRecordSelectorConfig(child)
+  return Boolean(config.objectCode || config.querySourceKey)
 }
 
 function resolveSelectorButtonText(child) {
@@ -331,7 +354,25 @@ function isToolbarActionLoading(action, child) {
 }
 
 function hasActionColumn(child) {
-  return !props.readonly || configuredRowActions(child).length > 0
+  return canDeleteRows(child) || configuredRowActions(child).length > 0
+}
+
+function canCreateRows(child = {}) {
+  return !props.readonly && child.allowCreate !== false
+}
+
+function canUpdateRows(child = {}) {
+  return !props.readonly && child.allowUpdate !== false
+}
+
+function canDeleteRows(child = {}) {
+  return !props.readonly && child.allowDelete !== false
+}
+
+function isCellReadonly(child, row, field = {}) {
+  if (props.readonly || field.writable === false || field.readonly === true || field.disabled === true)
+    return true
+  return hasPersistedRowId(row) ? !canUpdateRows(child) : !canCreateRows(child)
 }
 
 function childActionContext(child, row) {
@@ -442,15 +483,48 @@ function handleSelectorConfirm({ rows = [], mappings = {} } = {}) {
   if (!child || !rows.length)
     return
   const key = resolveChildKey(child)
+  const hasMappings = mappings && Object.keys(mappings).length
   const nextRows = rows.map(row => ({
     ...createEmptyRow(child),
-    ...normalizeMappedRow(child, applyRecordFieldMappings(row, mappings || activeSelectorConfig.value.fieldMappings)),
+    ...normalizeMappedRow(child, hasMappings
+      ? applyRecordFieldMappings(row, mappings)
+      : autoMapSelectedRow(child, row)),
   }))
   localValue.value = {
     ...localValue.value,
     [key]: [...rowsFor(child), ...nextRows],
   }
   commit()
+}
+
+/**
+ * 未配置字段映射时按子表字段名自动匹配选中记录：
+ * 先同名取值，再尝试 snake_case 列名，兼容不同接口返回的键风格。
+ */
+function autoMapSelectedRow(child, row) {
+  const source = extractSelectorRawRecord(row)
+  const patch = {}
+  ;(child.fields || []).forEach((field) => {
+    const key = field.field || field.sourceField
+    if (!key)
+      return
+    let value = source[key]
+    if (value === undefined)
+      value = source[key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()]
+    if (value === undefined)
+      value = source[key.replace(/_([a-z])/g, (_, ch) => ch.toUpperCase())]
+    if (value !== undefined && value !== null)
+      patch[key] = value
+  })
+  return patch
+}
+
+/** 选择器单/多选：recordSelector.multiple，默认多选 */
+function resolveSelectorMultiple(child) {
+  const selector = child?.recordSelector
+  if (selector && typeof selector === 'object' && 'multiple' in selector)
+    return selector.multiple !== false
+  return true
 }
 
 function removeRow(child, rowIndex) {
@@ -473,10 +547,14 @@ function removeRow(child, rowIndex) {
 }
 
 function updateCell(child, rowIndex, field, value) {
+  if (isCellReadonly(child, rowsFor(child)[rowIndex], field))
+    return
   updateRow(child, rowIndex, { [field.field]: normalizeCellValueForType(field, value) })
 }
 
 function updateCellLabel(child, rowIndex, field, value) {
+  if (isCellReadonly(child, rowsFor(child)[rowIndex], field))
+    return
   const labelField = resolveUserLabelField(field)
   if (!labelField)
     return
@@ -518,13 +596,16 @@ function useRuntimeCell(field = {}, child = {}) {
   if (field.type === 'barcodeScanner' || runtimeRules.length || hasCurrentChildrenSource || hasFieldEvents)
     return true
   if (field.type === 'select') {
-    return Boolean(field.dictType || field.props?.dictType || field.optionSource || field.props?.optionSource)
+    return Boolean(field.dictType || field.props?.dictType || field.optionSource || field.props?.optionSource
+      || field.multiple === true || field.props?.multiple === true)
   }
   return [
     'dictSelect',
+    'userSelect',
     'orgTreeSelect',
     'regionTreeSelect',
     'objectReference',
+    'recordSelector',
     'fileUpload',
     'imageUpload',
     'cascader',
@@ -535,16 +616,17 @@ function useRuntimeCell(field = {}, child = {}) {
   ].includes(field.type)
 }
 
-function toRuntimeCellField(field = {}) {
+function toRuntimeCellField(field = {}, child = {}, row = {}) {
+  const readonly = isCellReadonly(child, row, field)
   return {
     ...field,
-    disabled: props.readonly || field.disabled || field.readonly,
-    readonly: props.readonly || field.readonly,
+    disabled: readonly,
+    readonly,
     showLabel: false,
     showFeedback: false,
     size: field.size || 'small',
     props: {
-      ...(field.props || {}),
+      ...resolveControlProps(field.props),
       size: field.props?.size || field.size || 'small',
     },
   }
@@ -690,6 +772,8 @@ function normalizeCellValueForType(field = {}, value) {
     const numberValue = Number(value)
     return Number.isNaN(numberValue) ? null : numberValue
   }
+  if (isFieldMultiple(field))
+    return serializeSelectionValues(value, true) || null
   return value
 }
 
@@ -708,16 +792,14 @@ function resolveInputValue(value) {
   return typeof value === 'string' ? value : String(value)
 }
 
+function resolveSelectCellValue(value, field = {}) {
+  if (!isFieldMultiple(field))
+    return value
+  return parseSelectionValues(value, true)
+}
+
 function resolveInputProps(field = {}) {
-  const {
-    value,
-    defaultValue,
-    modelValue,
-    'onUpdate:value': _onUpdateValue,
-    'onUpdate:modelValue': _onUpdateModelValue,
-    ...rest
-  } = field.props || {}
-  return rest
+  return resolveControlProps(field.props)
 }
 
 function normalizeInputValue(value) {
@@ -725,12 +807,22 @@ function normalizeInputValue(value) {
   const result = {}
   normalizedChildren.value.forEach((child) => {
     const key = resolveChildKey(child)
-    result[key] = (Array.isArray(source[key]) ? source[key] : []).map(row => ({
-      __rowKey: row.__rowKey || `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    const previousRows = Array.isArray(localValue.value?.[key]) ? localValue.value[key] : []
+    result[key] = (Array.isArray(source[key]) ? source[key] : []).map((row, index) => ({
       ...row,
+      __rowKey: row.__rowKey || previousRows[index]?.__rowKey || `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     }))
   })
   return result
+}
+
+function isSameEditorValue(left, right) {
+  try {
+    return JSON.stringify(left || {}) === JSON.stringify(right || {})
+  }
+  catch {
+    return false
+  }
 }
 
 function commit() {
@@ -892,6 +984,58 @@ defineExpose({
   border-radius: 8px;
 }
 
+.child-table-scroll.card-scroll {
+  border: 0;
+  border-radius: 0;
+  overflow-x: visible;
+}
+
+.child-edit-table.card-mode,
+.child-edit-table.card-mode tbody,
+.child-edit-table.card-mode tr,
+.child-edit-table.card-mode td {
+  display: block;
+  width: 100%;
+}
+
+.child-edit-table.card-mode {
+  min-width: 0 !important;
+}
+
+.child-edit-table.card-mode thead {
+  display: none;
+}
+
+.child-edit-table.card-mode tr {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  padding: 4px 14px 12px;
+  background: #fff;
+}
+
+.child-edit-table.card-mode td {
+  border-bottom: 0;
+  padding: 7px 0 0;
+}
+
+.child-edit-table.card-mode td::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 2px;
+  color: #86909c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.child-edit-table.card-mode td.action-col {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed #eef2f7;
+  text-align: right;
+  width: auto;
+}
+
 .child-edit-table {
   width: 100%;
   min-width: 720px;
@@ -924,7 +1068,11 @@ defineExpose({
 }
 
 .child-runtime-cell {
+  position: relative;
+  z-index: 1;
   width: 100%;
+  min-width: 0;
+  pointer-events: auto;
 }
 
 .child-runtime-cell :deep(.n-form-item) {

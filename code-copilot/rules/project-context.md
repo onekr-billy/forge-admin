@@ -283,46 +283,40 @@ pnpm preview
 ```
 
 ### 6.3 数据库命令
+
+首次安装推荐按 [README](../../README.md#2-初始化数据库) 使用 `forge-server/scripts/db/init-db.sh`（全量 SQL + required seed）。以下手工导入只适用于新建空库；已有业务库禁止重跑全量初始化，后续增量由 Admin 启动时执行 Flyway。
+
 ```sql
 -- 创建数据库
-CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE DATABASE forge_admin DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- 导入初始数据
-USE forge;
-SOURCE /path/to/forge-server/db/migration/V1.0.0__baseline.sql;
+USE forge_admin;
+SOURCE /path/to/forge-server/db/全量初始化SQL.sql;
 ```
 
 ## 7. 开发环境配置
 
 ### 7.1 后端配置 (application-dev.yml)
-```yaml
-# 数据源配置
-spring:
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/forge?useUnicode=true&characterEncoding=utf8
-    username: root
-    password: root
 
-# Redis配置
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password: 
-      database: 0
+配置结构以各服务的可提交模板为准，复制为同目录的 `application-dev.yml` 后填写本地连接信息：
 
-# 服务端口
-server:
-  port: 8580
-```
+- [Admin 配置模板](../../forge-server/forge-admin-server/src/main/resources/application-dev.example.yml)
+- [Flow 配置模板](../../forge-server/forge-flow/forge-flow-server/src/main/resources/application-dev.example.yml)
+- 主库配置位于 `spring.datasource.dynamic.datasource.master`，不能改用普通 `spring.datasource.url` 代替。
+- Admin 与 Flow 共用同一数据库，模板默认 `forge_admin`；部署到其它库时同步修改两个服务，不单独创建 Flow 数据库。
+- 两个服务使用同一 Redis 实例及逻辑库，普通 Redis 和 Redisson 的连接配置均需一致；模板保留占位符，真实凭据只保存在本地配置或环境变量。
+- 默认服务端口：Admin `8580`、Flow `8081`；以各自 `application.yml` 为准。
 
-### 7.2 前端配置 (.env.local)
+### 7.2 前端配置 (.env.development.local)
+
+覆盖开发端口或代理请使用 `.env.development.local`；`.env.development` 的同名配置优先于通用 `.env.local`。
 ```bash
 # API代理配置
-VITE_REQUEST_PREFIX=/api
+VITE_HTTP_PORT=3000
+VITE_REQUEST_PREFIX=/dev-api
 VITE_HTTP_PROXY_TARGET=http://localhost:8580
-VITE_FLOW_PROXY_TARGET=http://localhost:8581
+VITE_FLOW_PROXY_TARGET=http://localhost:8081
 ```
 
 ## 8. 关键设计约定
@@ -392,21 +386,19 @@ redis-server --version
 ```
 
 ### 10.2 后端启动
+
+从仓库根目录执行，初始化只用于新库。`V1.0.0__baseline.sql` 仅含注释，不能代替全量初始化。
+
 ```bash
-# 1. 创建数据库
-mysql -u root -p
-CREATE DATABASE forge DEFAULT CHARACTER SET utf8mb4;
+# 1. 初始化全量 SQL 与 required seed（将占位符替换为本地密码）
+bash forge-server/scripts/db/init-db.sh --database forge_admin --user root --password your_password
 
-# 2. 导入SQL脚本
-USE forge;
-SOURCE forge-server/db/migration/V1.0.0__baseline.sql;
-
-# 3. 配置数据库连接
+# 2. 配置数据库连接
 cp forge-server/forge-admin-server/src/main/resources/application-dev.example.yml \
    forge-server/forge-admin-server/src/main/resources/application-dev.yml
 # 编辑application-dev.yml，配置数据库和Redis
 
-# 4. 启动服务
+# 3. 启动服务
 cd forge-server/forge-admin-server
 mvn spring-boot:run
 

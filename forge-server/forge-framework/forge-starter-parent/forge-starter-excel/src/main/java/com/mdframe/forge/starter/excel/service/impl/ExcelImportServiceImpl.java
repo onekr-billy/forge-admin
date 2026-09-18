@@ -17,7 +17,14 @@ import com.mdframe.forge.starter.trans.spi.DictValueProvider;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
+import org.apache.poi.xssf.usermodel.XSSFDrawing;
+import org.apache.poi.xssf.usermodel.XSSFPicture;
+import org.apache.poi.xssf.usermodel.XSSFPictureData;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -52,6 +59,9 @@ public class ExcelImportServiceImpl implements ExcelImportService {
 
     @Autowired(required = false)
     private DictValueProvider dictValueProvider;
+
+    @Autowired(required = false)
+    private ApplicationContext applicationContext;
     
     /**
      * 临时文件目录
@@ -116,9 +126,18 @@ public class ExcelImportServiceImpl implements ExcelImportService {
                 throw new RuntimeException("未配置可导入列: " + configKey);
             }
 
+            // 将输入流缓存到字节数组，以便 EasyExcel 和 POI 各读取一次
+            byte[] fileBytes = inputStream.readAllBytes();
+
             ImportResult<GenericRowData> genericResult = new ImportResult<>();
             GenericRowDataListener listener = new GenericRowDataListener(columnConfigs, genericResult, dictValueProvider);
-            EasyExcel.read(inputStream, listener).sheet().doRead();
+            EasyExcel.read(new ByteArrayInputStream(fileBytes), listener).sheet().doRead();
+
+            // 如果存在 IMAGE 类型列，使用 POI 提取嵌入图片并合并到数据中
+            if (hasImageColumns(listener.getHeaderMapping())) {
+                extractAndMergeImages(fileBytes, listener.getHeaderMapping(), genericResult.getSuccessData());
+            }
+
             genericResult.setTotalRows(listener.getRowCount());
             genericResult.setSuccessRows(genericResult.getSuccessData().size());
             genericResult.setFailedRows(genericResult.getErrors().size());
@@ -232,6 +251,12 @@ public class ExcelImportServiceImpl implements ExcelImportService {
     }
 
     private String resolveTemplateDescription(ExcelColumnConfig config, List<String> dropdownOptions) {
+        // IMAGE 列特殊描述
+        if ("IMAGE".equalsIgnoreCase(config.getColumnType())) {
+            int maxCount = config.getImageMaxCount() != null ? config.getImageMaxCount() : 5;
+            return "请在此列单元格中嵌入图片，最多" + maxCount + "张";
+        }
+
         List<String> descriptions = new ArrayList<>();
         if (config.getDictType() != null && !config.getDictType().isBlank()) {
             if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
@@ -535,6 +560,166 @@ public class ExcelImportServiceImpl implements ExcelImportService {
         }
     }
     
+    /**
+     * 判断表头映射中是否存在 IMAGE 类型列
+     */
+    private boolean hasImageColumns(Map<Integer, ExcelColumnConfig> headerMapping) {
+        if (headerMapping == null) {
+            return false;
+        }
+        for (ExcelColumnConfig config : headerMapping.values()) {
+            if ("IMAGE".equalsIgnoreCase(config.getColumnType())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 使用 POI 从 Excel 中提取嵌入图片，上传后合并到 GenericRowData。
+     */
+    private void extractAndMergeImages(byte[] fileBytes,
+                                       Map<Integer, ExcelColumnConfig> headerMapping,
+                                       List<GenericRowData> successData) {
+        // 收集 IMAGE 类型列：列索引 → 列配置
+        Map<Integer, ExcelColumnConfig> imageColumns = new LinkedHashMap<>();
+        for (Map.Entry<Integer, ExcelColumnConfig> entry : headerMapping.entrySet()) {
+            if ("IMAGE".equalsIgnoreCase(entry.getValue().getColumnType())) {
+                imageColumns.put(entry.getKey(), entry.getValue());
+            }
+        }
+        if (imageColumns.isEmpty()) {
+            return;
+        }
+
+        // 获取 FileManager Bean（反射，跨模块依赖）
+        Object fileManager = getFileManagerBean();
+        if (fileManager == null) {
+            log.warn("FileManager 不可用，跳过图片导入");
+            return;
+        }
+
+        // 使用 POI 读取嵌入图片
+        // key = "rowNum_colIndex" → value = fileId 列表
+        Map<String, List<String>> imageMap = new LinkedHashMap<>();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(fileBytes))) {
+            XSSFSheet sheet = workbook.getSheetAt(0);
+            XSSFDrawing drawing = sheet.getDrawingPatriarch();
+            if (drawing == null) {
+                log.info("Excel 中无嵌入图片");
+                return;
+            }
+
+            // 获取 Sheet 中所有图片数据，按顺序与 Drawing 中的图片形状一一对应
+            List<XSSFPictureData> allPictures = sheet.getWorkbook().getAllPictures();
+            List<XSSFPicture> pictureShapes = new ArrayList<>();
+            for (Object shape : drawing.getShapes()) {
+                if (shape instanceof XSSFPicture pic) {
+                    pictureShapes.add(pic);
+                }
+            }
+
+            if (allPictures.isEmpty() || pictureShapes.isEmpty()) {
+                log.info("Excel 中无嵌入图片");
+                return;
+            }
+
+            // 图片形状与图片数据按索引一一对应
+            int count = Math.min(pictureShapes.size(), allPictures.size());
+            for (int i = 0; i < count; i++) {
+                XSSFPicture picture = pictureShapes.get(i);
+                XSSFPictureData pictureData = allPictures.get(i);
+
+                XSSFClientAnchor anchor = picture.getClientAnchor();
+                if (anchor == null) {
+                    continue;
+                }
+                int col = anchor.getCol1();
+                int row = anchor.getRow1();
+
+                ExcelColumnConfig imageConfig = imageColumns.get(col);
+                if (imageConfig == null) {
+                    continue;
+                }
+
+                byte[] imageBytes = pictureData.getData();
+                if (imageBytes == null || imageBytes.length == 0) {
+                    continue;
+                }
+
+                // 上传图片获取 fileId
+                String ext = "." + (pictureData.suggestFileExtension() != null ? pictureData.suggestFileExtension() : "png");
+                String fileId = uploadImageFile(fileManager, imageBytes, ext);
+                if (fileId == null) {
+                    continue;
+                }
+
+                // POI 行号从 0 开始（0=表头），GenericRowDataListener 中 rowNum = rowIndex + 1
+                // 所以 POI row=1（第一条数据行）→ rowNum=2
+                int dataRowNum = row + 1;
+
+                String key = dataRowNum + "_" + col;
+                imageMap.computeIfAbsent(key, k -> new ArrayList<>()).add(fileId);
+            }
+        } catch (Exception e) {
+            log.warn("提取 Excel 嵌入图片失败", e);
+            return;
+        }
+
+        // 合并 fileId 到 GenericRowData
+        for (GenericRowData data : successData) {
+            for (Map.Entry<Integer, ExcelColumnConfig> entry : imageColumns.entrySet()) {
+                int col = entry.getKey();
+                ExcelColumnConfig config = entry.getValue();
+                String key = data.getRowNum() + "_" + col;
+                List<String> fileIds = imageMap.get(key);
+                if (fileIds != null && !fileIds.isEmpty()) {
+                    data.setField(config.getFieldName(), String.join(",", fileIds));
+                }
+            }
+        }
+
+        log.info("图片导入完成，共提取{}张图片", imageMap.values().stream().mapToInt(List::size).sum());
+    }
+
+    /**
+     * 通过反射获取 FileManager Bean。
+     */
+    private Object getFileManagerBean() {
+        if (applicationContext == null) {
+            return null;
+        }
+        try {
+            return applicationContext.getBean(
+                    Class.forName("com.mdframe.forge.starter.file.core.FileManager"));
+        } catch (Exception e) {
+            log.debug("FileManager 不可用: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 通过反射调用 FileManager.upload() 上传图片。
+     */
+    private String uploadImageFile(Object fileManager, byte[] imageBytes, String ext) {
+        try {
+            Method uploadMethod = fileManager.getClass().getMethod("upload",
+                    InputStream.class, String.class, String.class, String.class, String.class);
+            String fileName = "import_" + System.nanoTime() + ext;
+            String contentType = "image/" + ext.replace(".", "");
+            Object fileMetadata = uploadMethod.invoke(fileManager,
+                    new ByteArrayInputStream(imageBytes), fileName, contentType, "excel-import", null);
+            if (fileMetadata != null) {
+                Method getFileId = fileMetadata.getClass().getMethod("getFileId");
+                return (String) getFileId.invoke(fileMetadata);
+            }
+        } catch (Exception e) {
+            log.warn("上传图片失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
     /**
      * 导入错误数据类
      */

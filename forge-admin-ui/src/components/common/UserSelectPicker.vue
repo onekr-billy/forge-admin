@@ -34,6 +34,8 @@
       :title="title"
       :multiple="multiple"
       :selected-users="selectedUsers"
+      :org-id="orgId"
+      :include-children="includeChildren"
       @confirm="handleConfirm"
     />
   </div>
@@ -76,6 +78,16 @@ const props = defineProps({
     type: String,
     default: undefined,
   },
+  // 级联锁定组织：传入后人员选择范围限定在该组织内（可进一步选子组织）
+  orgId: {
+    type: [String, Number],
+    default: null,
+  },
+  // 是否包含子组织人员：false 时仅查询直属该组织的用户
+  includeChildren: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'update:labelValue', 'select', 'clear'])
@@ -111,8 +123,8 @@ function openModal() {
 }
 
 function handleClear() {
-  emit('update:modelValue', props.multiple ? [] : null)
-  emit('update:labelValue', props.multiple ? [] : '')
+  emit('update:modelValue', props.multiple ? '' : null)
+  emit('update:labelValue', '')
   emit('clear')
 }
 
@@ -124,8 +136,8 @@ function handleConfirm(value) {
   const labels = users.map(resolveUserLabel).filter(Boolean)
 
   if (props.multiple) {
-    emit('update:modelValue', ids)
-    emit('update:labelValue', labels)
+    emit('update:modelValue', ids.map(id => String(id).trim()).join(','))
+    emit('update:labelValue', labels.join(','))
     emit('select', users)
     return
   }

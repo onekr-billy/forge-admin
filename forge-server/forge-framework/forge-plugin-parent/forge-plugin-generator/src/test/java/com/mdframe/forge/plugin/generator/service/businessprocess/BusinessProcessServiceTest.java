@@ -307,31 +307,41 @@ class BusinessProcessServiceTest {
     }
 
     @Test
-    @DisplayName("any run record blocks logical deletion")
-    void runRecordBlocksDeletion() {
+    @DisplayName("an active run record blocks logical deletion")
+    void activeRunRecordBlocksDeletion() {
         when(processMapper.selectActiveById(1L, 1001L)).thenReturn(process());
         when(runMapper.countByProcessId(1L, 1001L)).thenReturn(1L);
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> service.logicalDelete(1001L));
 
-        assertTrue(error.getMessage().contains("运行记录"));
-        verify(versionMapper, never()).countActiveReferences(any(), any());
+        assertTrue(error.getMessage().contains("活跃运行记录"));
         verify(processMapper, never()).logicalDelete(any(), any(), any());
     }
 
     @Test
-    @DisplayName("an effective published version blocks logical deletion")
-    void publishedVersionBlocksDeletion() {
+    @DisplayName("terminal run records (CANCELED/SUCCESS/FAILED) do not block logical deletion")
+    void terminalRunRecordsDoNotBlockDeletion() {
+        when(processMapper.selectActiveById(1L, 1001L)).thenReturn(process());
+        // SQL only counts PENDING/RUNNING/WAITING; terminal records are excluded
+        when(runMapper.countByProcessId(1L, 1001L)).thenReturn(0L);
+        when(processMapper.logicalDelete(eq(1L), eq(1001L), any())).thenReturn(1);
+
+        service.logicalDelete(1001L);
+
+        verify(processMapper).logicalDelete(eq(1L), eq(1001L), any());
+    }
+
+    @Test
+    @DisplayName("published versions are retained as history and do not block logical deletion")
+    void publishedVersionsDoNotBlockDeletion() {
         when(processMapper.selectActiveById(1L, 1001L)).thenReturn(process());
         when(runMapper.countByProcessId(1L, 1001L)).thenReturn(0L);
-        when(versionMapper.countActiveReferences(1L, 1001L)).thenReturn(1L);
+        when(processMapper.logicalDelete(eq(1L), eq(1001L), any())).thenReturn(1);
 
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.logicalDelete(1001L));
+        service.logicalDelete(1001L);
 
-        assertTrue(error.getMessage().contains("发布版本"));
-        verify(processMapper, never()).logicalDelete(any(), any(), any());
+        verify(processMapper).logicalDelete(eq(1L), eq(1001L), any());
     }
 
     private AiBusinessApplication application() {

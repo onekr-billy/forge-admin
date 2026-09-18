@@ -3,6 +3,7 @@ package com.mdframe.forge.starter.flow.service.impl;
 import com.mdframe.forge.starter.flow.mapper.FlowCcMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.service.WorkspaceService;
+import com.mdframe.forge.starter.flow.security.FlowCandidateMembershipResolver;
 import com.mdframe.forge.starter.flow.vo.WorkspaceSummaryVO;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
     private final FlowTaskMapper flowTaskMapper;
     private final FlowCcMapper flowCcMapper;
+    private final FlowCandidateMembershipResolver candidateMembershipResolver;
 
     @Override
     public WorkspaceSummaryVO summary(String userId) {
@@ -38,7 +40,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     public Long todoCount(String userId) {
         return defaultZero(flowTaskMapper.countWorkspaceTodo(userId, SessionHelper.getTenantId(),
-                SessionHelper.getActiveOrgId()));
+                candidateMembershipResolver.resolveCurrentSessionGroups()));
     }
 
     private LocalDateTime startOfWeek() {

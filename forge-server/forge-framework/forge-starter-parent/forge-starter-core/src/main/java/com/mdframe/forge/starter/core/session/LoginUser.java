@@ -33,6 +33,11 @@ public class LoginUser implements Serializable {
     private String tenantName;
 
     /**
+     * 当前租户配置的系统名称（取自 sys_tenant.system_name）
+     */
+    private String systemName;
+
+    /**
      * 可访问租户ID列表
      */
     private List<Long> tenantIds;

@@ -166,7 +166,21 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             // 创建任务记录
             FlowTask flowTask = buildFlowTask(task);
-            flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
+            // 创建时已直接指定处理人的任务（assignee 非空）视同已签收，避免"有 assignee 却要求先签收"的死锁；
+            // 判断条件与 handleTaskAssigned 的「无 owner 或 owner=assignee → CLAIMED」保持一致。
+            // 注意：Flowable 的 TASK_ASSIGNED 事件先于 TASK_CREATED 派发（assignee 表达式在 handleAssignments
+            // 阶段求值后才派发 TASK_CREATED），创建场景下 handleTaskAssigned 因镜像尚未插入而不可达，
+            // 必须在创建时刻直接落状态（spec: flow-auto-claim-created-task）。
+            String initialAssignee = flowTask.getAssignee();
+            String initialOwner = flowTask.getOwner();
+            if (initialAssignee != null && !initialAssignee.isEmpty()
+                    && (initialOwner == null || initialOwner.equals(initialAssignee))) {
+                flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
+                flowTask.setClaimTime(LocalDateTime.now());
+                log.info("创建即指定处理人的任务自动签收：taskId={}, assignee={}", task.getId(), initialAssignee);
+            } else {
+                flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
+            }
             
             log.debug("任务处理人: {}, 候选人: {}, 候选组: {}",
                     flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
@@ -241,8 +255,9 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             flowTaskMapper.insert(flowTask);
             syncCandidateRelations(flowTask);
-            log.info("创建待办任务成功：taskId={}, title={}, assignee={}, candidateUsers={}, candidateGroups={}",
-                    task.getId(), flowTask.getTitle(), flowTask.getAssignee(), flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
+            log.info("创建待办任务成功：taskId={}, title={}, assignee={}, status={}, candidateUsers={}, candidateGroups={}",
+                    task.getId(), flowTask.getTitle(), flowTask.getAssignee(), flowTask.getStatus(),
+                    flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
             // 事务提交后异步推送站内信/企微卡片等（按模型通知配置），不阻塞审批主链路
             eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, business, readTaskVariables(task)));
     
@@ -556,9 +571,13 @@ public class FlowTaskEventListener implements FlowableEventListener {
             Map<String, Object> runtimeVariables = runtimeService.getVariables(processInstanceId);
             if (runtimeVariables != null && !runtimeVariables.isEmpty()) {
                 variables.putAll(runtimeVariables);
+                // 运行态变量已覆盖全部流程级变量，直接返回：
+                // 历史 variables 按 processInstanceId 全量拉取，是事件链路里最重的一次往返，
+                // 仅在流程已结束、运行变量不可读时才需要兑底
+                return variables;
             }
         } catch (Exception e) {
-            log.debug("从运行实例读取流程变量失败，尝试从历史变量兜底: processInstanceId={}", processInstanceId);
+            log.debug("从运行实例读取流程变量失败，尝试从历史变量兑底: processInstanceId={}", processInstanceId);
         }
 
         try {
@@ -879,6 +898,11 @@ public class FlowTaskEventListener implements FlowableEventListener {
     }
 
     private String resolveUserDisplayName(String userId, String fallback) {
+        // fallback 已有显示名时直接使用，避免每个任务事件都反查一次用户表；
+        // 只有名字缺失（首次写入/历史脏数据）时才走 getUserInfo 反查
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback.trim();
+        }
         if (userId != null && !userId.isBlank() && flowOrgIntegrationService != null) {
             try {
                 Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());

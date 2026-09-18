@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSON;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.collaboration.model.VerifiedSocialIdentity;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.social.community.GiteeCommunityLoginSupport;
 import com.mdframe.forge.starter.social.domain.dto.LoginClientContext;
 import com.mdframe.forge.starter.social.domain.dto.SocialOAuthIntent;
 import lombok.Data;
@@ -41,6 +42,7 @@ public class SocialOAuthStateService {
     public static final long TICKET_TTL_SECONDS = 120;
 
     private final ICacheService cacheService;
+    private final GiteeCommunityLoginSupport giteeCommunityLoginSupport;
 
     /**
      * 签发 state 并保存授权意图。
@@ -137,9 +139,15 @@ public class SocialOAuthStateService {
                     && !payload.getUserClient().equals(client.userClient())) {
                 throw new BusinessException("登录客户端与授权客户端不一致");
             }
-            // 登录请求声明租户时必须与连接归属租户一致
+            // 登录请求声明租户时必须与票据租户一致。Gitee 社区体验登录会把身份改写到隔离租户。
             if (client.tenantId() != null && !client.tenantId().equals(payload.getTenantId())) {
-                throw new BusinessException("登录租户与授权租户不一致");
+                boolean communityTicket = giteeCommunityLoginSupport != null
+                        && giteeCommunityLoginSupport.isEnabled()
+                        && "GITEE".equalsIgnoreCase(payload.getPlatform())
+                        && payload.getTenantId().equals(giteeCommunityLoginSupport.communityTenantId());
+                if (!communityTicket) {
+                    throw new BusinessException("登录租户与授权租户不一致");
+                }
             }
         }
         return new VerifiedSocialIdentity(

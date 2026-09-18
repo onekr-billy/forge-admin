@@ -117,12 +117,20 @@
   animation: runtime-progress-done 0.4s ease forwards;
 }
 @keyframes runtime-progress-bar {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 @keyframes runtime-progress-done {
-  0% { opacity: 1; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 .runtime-load-result {
   padding: 96px 24px;
@@ -250,47 +258,12 @@
   padding: 24px 32px 40px;
   background: #f5f7fa;
 }
-.runtime-publish-stack {
-  display: grid;
-  gap: 16px;
-  width: min(1120px, 100%);
-  margin: 0 auto;
-}
-
-.runtime-publish-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-  background: #e5e6eb;
-}
-
-.runtime-publish-summary > div {
-  display: grid;
-  gap: 5px;
+.runtime-inline-panel.runtime-process-panel {
+  display: flex;
   min-width: 0;
-  padding: 14px 16px;
-  background: #fff;
-}
-
-.runtime-publish-summary span {
-  color: #86909c;
-  font-size: 12px;
-}
-
-.runtime-publish-summary strong {
   overflow: hidden;
-  font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 620px) {
-  .runtime-publish-summary {
-    grid-template-columns: 1fr;
-  }
+  padding: 8px;
+  background: var(--bg-secondary, #f5f7fa);
 }
 .runtime-body {
   display: grid;
@@ -575,10 +548,10 @@
   min-width: 0;
   padding: 0 6px;
 }
-.navigation-page:hover{
+.navigation-page:hover {
   background: #f2f3f5;
 }
-.navigation-page.active{
+.navigation-page.active {
   background: #e8f1ff;
 }
 
@@ -675,7 +648,9 @@
   color: #86909c;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease;
 }
 .navigation-row:hover .navigation-action,
 .navigation-row:focus-within .navigation-action,

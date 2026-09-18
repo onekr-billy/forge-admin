@@ -47,6 +47,12 @@ public class ConfigConverter {
         putIfNotNull(configMap, "forge.auth.lock-time-minutes", rootNode, "lockTimeMinutes");
         putIfNotNull(configMap, "forge.auth.remember-me.enabled", rootNode, "enableRememberMe");
         putIfNotNull(configMap, "forge.auth.remember-me.days", rootNode, "rememberMeDays");
+        putIfNotNull(configMap, "forge.login.gitee-community-enabled", rootNode, "giteeCommunityEnabled");
+        putIfNotNull(configMap, "forge.login.gitee-community-require-star", rootNode, "giteeCommunityRequireStar");
+        putIfNotNull(configMap, "forge.login.gitee-community-owner", rootNode, "giteeCommunityOwner");
+        putIfNotNull(configMap, "forge.login.gitee-community-repo", rootNode, "giteeCommunityRepo");
+        putIfNotNull(configMap, "forge.login.gitee-community-repo-url", rootNode, "giteeCommunityRepoUrl");
+        putIfNotNull(configMap, "forge.login.gitee-community-tenant-id", rootNode, "giteeCommunityTenantId");
 
         return configMap;
     }

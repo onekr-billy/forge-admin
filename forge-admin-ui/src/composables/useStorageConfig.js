@@ -56,13 +56,24 @@ export function useStorageConfig() {
     return pending
   }
 
-  // 返回 computed 引用，组件可以安全地读默认值
-  const storageType = computed(() => configRef.value?.storageType ?? 'local')
+  /**
+   * 清除缓存，强制下次 loadConfig 重新请求后端。
+   * 在配置中心保存存储配置后调用，确保上传组件拿到最新值。
+   */
+  function invalidateCache() {
+    cached = null
+    configRef.value = null
+    try { sessionStorage.removeItem(CACHE_KEY) } catch { /* noop */ }
+  }
+
+  // storageType 不硬编码 'local' 回退值：拿不到配置时传 null，
+  // 让后端 FileManager 走 getDefaultConfig() 回退逻辑
+  const storageType = computed(() => configRef.value?.storageType ?? null)
   const fileSize = computed(() => configRef.value?.maxFileSize ?? 10)
   const allowedTypes = computed(() => {
     const types = configRef.value?.allowedTypes
     return types ? types.split(',').map(s => s.trim()).filter(Boolean) : []
   })
 
-  return { config: configRef, loadConfig, storageType, fileSize, allowedTypes }
+  return { config: configRef, loadConfig, invalidateCache, storageType, fileSize, allowedTypes }
 }

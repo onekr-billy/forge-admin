@@ -113,6 +113,10 @@ export function setDocumentFavicon(iconUrl = '/favicon.ico') {
   head.appendChild(link)
 }
 
+function isHexColor(value) {
+  return typeof value === 'string' && /^#(?:[\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i.test(value.trim())
+}
+
 function parseThemeConfig(tenantConfig, tenantStore) {
   const rawThemeConfig = tenantConfig?.themeConfig
   if (rawThemeConfig) {
@@ -168,7 +172,9 @@ export async function applyTenantConfig(tenantConfig, appStore) {
       },
     })
   }
-  else if (tenantConfig.systemTheme) {
+  else if (tenantConfig.systemTheme && isHexColor(tenantConfig.systemTheme)) {
+    // systemTheme 只接受十六进制主色；历史数据可能存主题模式值（如 'light'），
+    // 非法颜色会让 colorPalette 抛异常并中断整个菜单加载流程，必须跳过
     appStore.setPrimaryColor(tenantConfig.systemTheme)
     appStore.setThemeColor(tenantConfig.systemTheme)
   }

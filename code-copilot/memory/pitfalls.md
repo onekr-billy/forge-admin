@@ -36,8 +36,14 @@
 
 ## 分类目录
 
-### [前端 / 构建 / 路由](pitfalls/frontend.md)（18）
+### [前端 / 构建 / 路由](pitfalls/frontend.md)（24）
 
+- Vitest 结构测试读取源码时 new URL 不能内联字面量路径
+- pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
+- SPA fallback 不能吞掉缺失的哈希静态资源
+- naive-ui FormItem 挂载测量会清空字段级固定 labelWidth
+- window.$message 是 class 实例，方法不能分离调用
+- computed 每次返回新对象时 watch 引用比较恒不等
 - Naive UI 表格居中不能只设置 `text-align`
 - Naive Dialog 取消回调不能意外返回 false
 - 8. 异步弹窗使用 v-if 首次打开无响应
@@ -57,8 +63,10 @@
 - 169. CSS 尺寸变量在独立挂载场景需要兜底
 - 182. Vue 客户端组件模板不能直接承载运行时 style 标签
 
-### [低代码 / 设计器 / 业务对象](pitfalls/lowcode.md)（83）
+### [低代码 / 设计器 / 业务对象](pitfalls/lowcode.md)（85）
 
+- 子表运行时单元格不能把 class 落到 AiFormItem 碎片根上
+- 表单字段资产未使用列表不能只从当前画布抽字段
 - 表单发布检查必须展平 row/col 子组件
 - 预览/发布前的派生运行配置不能传播应用设计变更
 - 存量对象型应用不能只按新版页面树判空
@@ -143,8 +151,9 @@
 - 177. 业务对象发布不能重置应用入口配置
 - 180. 运行字段基线会掩盖表单组件的结构变更
 
-### [流程 / Flowable / BPMN](pitfalls/flow.md)（51）
+### [流程 / Flowable / BPMN](pitfalls/flow.md)（52）
 
+- 嵌入式流程设计器不能由父子组件同时持有
 - 门户外层 deep 样式不能覆盖嵌套加载容器
 - 动态 CRUD 事件不能把运行配置对象码当作流程标准对象码
 - Flowable 固定审批人不能保存为用户变量表达式
@@ -197,8 +206,9 @@
 - 167. DAG 分支路由必须同时处理跨层穿卡和三种顺序一致性
 - 183. 捕获参与当前事务的下游异常不能清除 rollback-only
 
-### [后端框架 / Spring / Maven](pitfalls/backend.md)（33）
+### [后端框架 / Spring / Maven](pitfalls/backend.md)（34）
 
+- 插件模块改动后从 admin-server 直接 spring-boot:run 会跑旧代码
 - Redisson 接口存在不代表社区版可以运行
 - 受管 JSON 缓存不能只恢复容器外层类型
 - 消息“批量接口”仍需检查数据库是否逐条更新

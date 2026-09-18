@@ -1,3 +1,36 @@
+/** 人员选择器组件类型（与 AiFormItem 渲染分支保持同步，勿单侧修改） */
+export const USER_SELECT_FIELD_TYPES = new Set([
+  'userSelect',
+  'userPicker',
+  'user',
+  'userName',
+  'sysUserSelect',
+  'forgeUserSelect',
+])
+
+/** 组织/部门选择器组件类型（与 AiFormItem 渲染分支保持同步，勿单侧修改） */
+export const ORG_SELECT_FIELD_TYPES = new Set([
+  'orgTreeSelect',
+  'orgSelect',
+  'organizationSelect',
+  'departmentSelect',
+  'departmentTreeSelect',
+  'deptSelect',
+  'deptTreeSelect',
+  'elTreeSelect',
+  'orgName',
+  'deptName',
+  'forgeOrgTreeSelect',
+])
+
+export function isUserSelectLikeField(field = {}) {
+  return USER_SELECT_FIELD_TYPES.has(String(field.type || field.componentType || '').trim())
+}
+
+export function isOrgSelectLikeField(field = {}) {
+  return ORG_SELECT_FIELD_TYPES.has(String(field.type || field.componentType || '').trim())
+}
+
 export function resolveSelectionLabelFields(field = {}, selectionType = '') {
   const fieldName = String(field.field || '').trim()
   const candidates = [

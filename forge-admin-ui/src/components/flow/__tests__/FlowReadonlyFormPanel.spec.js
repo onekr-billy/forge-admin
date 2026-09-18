@@ -43,6 +43,10 @@ vi.mock('@/components/page-templates/ChildTableEditor.vue', () => ({
 
 vi.mock('@/utils/field-permissions', () => ({
   pickFirstNonEmptyFieldPermissions: () => [],
+  pickFirstNonEmptyPermissionSource: sources => sources.find(source => (
+    (Array.isArray(source) && source.length)
+    || (source && typeof source === 'object' && Object.keys(source).length)
+  )) || [],
 }))
 
 describe('flowReadonlyFormPanel', () => {

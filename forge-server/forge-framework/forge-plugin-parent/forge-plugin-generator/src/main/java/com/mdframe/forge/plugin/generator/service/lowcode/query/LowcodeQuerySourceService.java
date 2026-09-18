@@ -10,15 +10,21 @@ import com.mdframe.forge.plugin.data.vo.DataDatasetMetadataVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
 import com.mdframe.forge.plugin.external.entity.ExternalApi;
 import com.mdframe.forge.plugin.external.service.ExternalQuerySourceService;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.dto.lowcode.query.LowcodeQuerySourceExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.query.LowcodeQuerySourceRefDTO;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessRecordSelectorService;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessRecordSelectorResultVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.query.LowcodeQuerySourceCatalogVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.query.LowcodeQuerySourceFieldVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.query.LowcodeQuerySourceMetadataVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.query.LowcodeQuerySourceResultVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -35,15 +41,19 @@ public class LowcodeQuerySourceService {
 
     public static final String EXTERNAL_API = "EXTERNAL_API";
     public static final String DATASET = "DATASET";
+    public static final String BUSINESS_OBJECT = "BUSINESS_OBJECT";
 
     private final ExternalQuerySourceService externalQuerySourceService;
     private final DataDatasetRuntimeService datasetRuntimeService;
+    private final BusinessObjectMapper businessObjectMapper;
+    private final BusinessRecordSelectorService businessRecordSelectorService;
     private final ObjectMapper objectMapper;
 
     public List<LowcodeQuerySourceCatalogVO> catalog(String keyword) {
         List<LowcodeQuerySourceCatalogVO> sources = new ArrayList<>();
         externalQuerySourceService.listAvailable().forEach(api -> sources.add(externalCatalog(api)));
         datasetRuntimeService.listAvailable().forEach(dataset -> sources.add(datasetCatalog(dataset)));
+        publishedBusinessObjects().forEach(object -> sources.add(businessObjectCatalog(object)));
         String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         return sources.stream()
                 .filter(item -> matchesKeyword(item, normalizedKeyword))
@@ -60,6 +70,9 @@ public class LowcodeQuerySourceService {
         if (EXTERNAL_API.equals(sourceType)) {
             return externalMetadata(externalQuerySourceService.requireMetadata(sourceKey));
         }
+        if (BUSINESS_OBJECT.equals(sourceType)) {
+            return businessObjectMetadata(sourceKey);
+        }
         DataDatasetMetadataVO metadata = datasetRuntimeService.metadataByCode(sourceKey);
         return datasetMetadata(metadata);
     }
@@ -70,7 +83,7 @@ public class LowcodeQuerySourceService {
         long startedAt = System.currentTimeMillis();
         if (EXTERNAL_API.equals(sourceType)) {
             ExternalApi metadata = externalQuerySourceService.requireMetadata(sourceKey);
-            Object data = externalQuerySourceService.execute(sourceKey, dto.getParams());
+            Object data = normalizeExternalData(externalQuerySourceService.execute(sourceKey, dto.getParams()));
             logResult(sourceType, metadata.getId(), data, startedAt);
             return LowcodeQuerySourceResultVO.builder()
                     .sourceType(sourceType)
@@ -79,6 +92,9 @@ public class LowcodeQuerySourceService {
                     .data(data)
                     .fields(externalFields(metadata.getOutputSchemaJson()))
                     .build();
+        }
+        if (BUSINESS_OBJECT.equals(sourceType)) {
+            return executeBusinessObject(sourceKey, dto, startedAt);
         }
 
         DataDatasetMetadataVO metadata = datasetRuntimeService.metadataByCode(sourceKey);
@@ -95,6 +111,20 @@ public class LowcodeQuerySourceService {
                 .pageSize(result.getPageSize())
                 .fields(datasetFields(result.getFields()))
                 .build();
+    }
+
+    /**
+     * 外部接口返回统一规范为数组：代理层已按 responseDataPath 提取数据，
+     * 若提取结果为单个对象则包装为单元素列表，保证前端始终收到数组。
+     */
+    private Object normalizeExternalData(Object data) {
+        if (data == null) {
+            return List.of();
+        }
+        if (data instanceof List) {
+            return data;
+        }
+        return List.of(data);
     }
 
     private LowcodeQuerySourceCatalogVO externalCatalog(ExternalApi api) {
@@ -117,6 +147,96 @@ public class LowcodeQuerySourceService {
                 .sourceGroup(dataset.getCategoryName())
                 .description(dataset.getDescription())
                 .build();
+    }
+
+    private LowcodeQuerySourceCatalogVO businessObjectCatalog(AiBusinessObject object) {
+        return LowcodeQuerySourceCatalogVO.builder()
+                .sourceType(BUSINESS_OBJECT)
+                .sourceKey(object.getObjectCode())
+                .sourceId(object.getId())
+                .sourceName(object.getObjectName())
+                .sourceGroup("业务对象")
+                .description(object.getDescription())
+                .build();
+    }
+
+    private List<AiBusinessObject> publishedBusinessObjects() {
+        Long tenantId;
+        try {
+            tenantId = SessionHelper.getTenantId();
+        } catch (Exception exception) {
+            return List.of();
+        }
+        if (tenantId == null) {
+            return List.of();
+        }
+        return businessObjectMapper.selectPublishedObjects(tenantId);
+    }
+
+    private LowcodeQuerySourceMetadataVO businessObjectMetadata(String objectCode) {
+        AiBusinessObject object = businessRecordSelectorService.requireObjectByCode(objectCode);
+        if (StringUtils.isBlank(object.getConfigKey())) {
+            throw new BusinessException("业务对象未发布运行配置: " + object.getObjectCode());
+        }
+        Map<String, String> labels = businessRecordSelectorService.fieldLabels(object);
+        return LowcodeQuerySourceMetadataVO.builder()
+                .sourceType(BUSINESS_OBJECT)
+                .sourceKey(object.getObjectCode())
+                .sourceId(object.getId())
+                .sourceName(object.getObjectName())
+                .fields(businessObjectFields(labels))
+                .build();
+    }
+
+    private List<LowcodeQuerySourceFieldVO> businessObjectFields(Map<String, String> labels) {
+        if (labels == null || labels.isEmpty()) {
+            return List.of();
+        }
+        return labels.entrySet().stream()
+                .map(entry -> LowcodeQuerySourceFieldVO.builder()
+                        .field(entry.getKey())
+                        .label(StringUtils.defaultIfBlank(entry.getValue(), entry.getKey()))
+                        .type("string")
+                        .path(entry.getKey())
+                        .sensitive(false)
+                        .build())
+                .toList();
+    }
+
+    private LowcodeQuerySourceResultVO executeBusinessObject(String sourceKey,
+                                                              LowcodeQuerySourceExecuteDTO dto,
+                                                              long startedAt) {
+        BusinessRecordSelectorResultVO result = businessRecordSelectorService.queryByObjectCode(
+                sourceKey, dto.getParams(), dto.getPageNum(), dto.getPageSize());
+        logResult(BUSINESS_OBJECT, null, result.getRecords(), startedAt);
+        return LowcodeQuerySourceResultVO.builder()
+                .sourceType(BUSINESS_OBJECT)
+                .sourceKey(sourceKey)
+                .data(result.getRecords())
+                .total(result.getTotal())
+                .pageNum(toInt(result.getCurrent()))
+                .pageSize(toInt(result.getSize()))
+                .fields(selectorColumnsToFields(result.getColumns()))
+                .build();
+    }
+
+    private Integer toInt(Long value) {
+        return value == null ? null : Math.toIntExact(value);
+    }
+
+    private List<LowcodeQuerySourceFieldVO> selectorColumnsToFields(List<BusinessRecordSelectorResultVO.SelectorColumnVO> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return List.of();
+        }
+        return columns.stream()
+                .map(column -> LowcodeQuerySourceFieldVO.builder()
+                        .field(column.getField())
+                        .label(StringUtils.defaultIfBlank(column.getLabel(), column.getField()))
+                        .type(StringUtils.defaultIfBlank(column.getType(), "string"))
+                        .path(column.getField())
+                        .sensitive(false)
+                        .build())
+                .toList();
     }
 
     private LowcodeQuerySourceMetadataVO externalMetadata(ExternalApi api) {
@@ -174,9 +294,18 @@ public class LowcodeQuerySourceService {
                         .label(defaultText(field.getFieldLabel(), field.getFieldName()))
                         .type(defaultText(field.getDataType(), field.getDbType()))
                         .path(field.getFieldName())
-                        .sensitive(!"PUBLIC".equalsIgnoreCase(defaultText(field.getSensitiveLevel(), "PUBLIC")))
+                        // 数据集敏感级别字典值：NONE=不脱敏、MASK=脱敏展示、HIDDEN=隐藏字段
+                        // 只有 MASK / HIDDEN 才视为敏感，NONE（默认）和空值均不敏感
+                        .sensitive(isSensitiveLevel(field.getSensitiveLevel()))
                         .build())
                 .toList();
+    }
+
+    private static boolean isSensitiveLevel(String level) {
+        if (StringUtils.isBlank(level) || "NONE".equalsIgnoreCase(level)) {
+            return false;
+        }
+        return "MASK".equalsIgnoreCase(level) || "HIDDEN".equalsIgnoreCase(level);
     }
 
     private DataDatasetQueryDTO datasetQuery(LowcodeQuerySourceExecuteDTO source) {
@@ -205,7 +334,7 @@ public class LowcodeQuerySourceService {
             throw new BusinessException("低代码查询源类型不能为空");
         }
         String sourceType = ref.getSourceType().trim().toUpperCase(Locale.ROOT);
-        if (!EXTERNAL_API.equals(sourceType) && !DATASET.equals(sourceType)) {
+        if (!EXTERNAL_API.equals(sourceType) && !DATASET.equals(sourceType) && !BUSINESS_OBJECT.equals(sourceType)) {
             throw new BusinessException("不支持的低代码查询源类型");
         }
         return sourceType;

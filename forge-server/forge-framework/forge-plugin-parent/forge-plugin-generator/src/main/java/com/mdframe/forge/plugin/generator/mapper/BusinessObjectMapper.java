@@ -101,4 +101,9 @@ public interface BusinessObjectMapper extends BaseMapper<AiBusinessObject> {
 
     List<AiBusinessObject> selectBySuiteCode(@Param("tenantId") Long tenantId,
                                              @Param("suiteCode") String suiteCode);
+
+    /**
+     * 查询已发布且启用的业务对象，供低代码查询源目录使用。
+     */
+    List<AiBusinessObject> selectPublishedObjects(@Param("tenantId") Long tenantId);
 }

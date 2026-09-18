@@ -79,22 +79,44 @@
         v-else-if="isTitle"
         v-bind="buildGroupTitleProps(component)"
       />
-      <div v-else-if="isSubTableComponent" class="subtable-preview" :class="{ unconfigured: !component.props?.relationKey }">
+      <div v-else-if="isSubTableComponent" class="subtable-preview" :class="{ unconfigured: !subTableConfigured }">
         <div class="subtable-preview-header">
-          <strong>{{ component.props?.header || '关联子表' }}</strong>
+          <div class="subtable-preview-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z" fill="currentColor" />
+            </svg>
+            <strong>{{ component.props?.header || '关联子表' }}</strong>
+          </div>
           <span class="subtable-preview-actions">
-            <span>{{ subTableDisplayModeLabel }}</span>
+            <span class="subtable-mode-badge">{{ subTableDisplayModeLabel }}</span>
             <n-button size="tiny" secondary @click.stop="emit('configureSubTable', component.props?.relationKey || '')">
-              配置
+              {{ subTableConfigured ? '编辑' : '配置' }}
             </n-button>
           </span>
         </div>
-        <div v-if="!component.props?.relationKey" class="subtable-preview-empty">
-          在右侧属性面板选择关联关系，或点击「配置」打开子表分区向导
+        <div v-if="!subTableConfigured" class="subtable-preview-empty">
+          点击「配置」选择目标对象和可见字段
         </div>
-        <div v-else class="subtable-preview-grid">
-          <span v-for="column in 4" :key="column" class="subtable-preview-cell" />
-        </div>
+        <template v-else>
+          <div v-if="component.props?.modelCode" class="subtable-preview-meta">
+            {{ component.props.modelCode }}
+          </div>
+          <div v-if="subTableColumns.length" class="subtable-preview-fields">
+            <span
+              v-for="col in subTableColumns.slice(0, 6)"
+              :key="col.fieldCode || col"
+              class="subtable-field-tag"
+            >
+              {{ col.fieldLabel || col.fieldCode || col }}
+            </span>
+            <span v-if="subTableColumns.length > 6" class="subtable-field-more">
+              +{{ subTableColumns.length - 6 }}
+            </span>
+          </div>
+          <div v-else class="subtable-preview-grid">
+            <span v-for="column in 4" :key="column" class="subtable-preview-cell" />
+          </div>
+        </template>
       </div>
       <div v-else-if="isButton" class="button-preview">
         <n-button
@@ -500,6 +522,14 @@ const subTableDisplayModeLabel = computed(() => {
   const labels = { inline_grid: '行内表格', card_list: '卡片列表', bottom_sheet: '底部抽屉' }
   return labels[props.component.props?.displayMode] || '行内表格'
 })
+const subTableColumns = computed(() => {
+  const cols = props.component.props?.columns
+  return Array.isArray(cols) ? cols : []
+})
+const subTableConfigured = computed(() => {
+  const p = props.component.props
+  return Boolean(p?.relationKey || p?.modelCode)
+})
 const isButton = computed(() => ['button', 'elButton'].includes(props.component.componentKey))
 const isCrudBlock = computed(() => ['AiCrudPage', 'crudBlock'].includes(props.component.componentKey))
 const isGridRow = computed(() => ['row', 'fcRow'].includes(props.component.componentKey))
@@ -659,6 +689,7 @@ const previewField = computed(() => {
     clearable: true,
     disabled: false,
     readonly: false,
+    multiple: rawProps.multiple === true || rawProps.recordSelector?.multiple === true,
     dictType: rawProps.dictType,
     options: resolvePreviewOptions(rawProps, componentKey),
     props: {
@@ -1653,6 +1684,7 @@ function toCrudFormField(component = {}, area = 'edit') {
     required: Boolean(component.validation?.required),
     clearable: rawProps.clearable !== false,
     disabled: false,
+    multiple: rawProps.multiple === true || rawProps.recordSelector?.multiple === true,
     readonly: area === 'edit' ? Boolean(crudConfig.edit?.readonly) : false,
     span: Math.max(1, Math.min(6, Number(areaConfig.span || component.layout?.span || 1))),
     dictType: rawProps.dictType,
@@ -2009,7 +2041,7 @@ function buildFormDividerProps(component) {
 .subtable-preview {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   padding: 10px 12px;
   border: 1px dashed var(--n-border-color, #d9dfe8);
@@ -2017,18 +2049,34 @@ function buildFormDividerProps(component) {
   background: rgba(32, 128, 240, 0.03);
 }
 
+.subtable-preview.unconfigured {
+  border-style: dashed;
+  border-color: #e5e7eb;
+  background: #fafbfc;
+}
+
 .subtable-preview-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.subtable-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: #1f2329;
 }
 
-.subtable-preview-header span {
-  font-size: 12px;
-  color: #8a919f;
+.subtable-preview-title svg {
+  flex-shrink: 0;
+  color: var(--primary-color, #2080f0);
+}
+
+.subtable-preview-title strong {
+  font-weight: 500;
 }
 
 .subtable-preview-actions {
@@ -2037,8 +2085,48 @@ function buildFormDividerProps(component) {
   gap: 6px;
 }
 
+.subtable-mode-badge {
+  font-size: 11px;
+  color: #8a919f;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .subtable-preview-empty {
   font-size: 12px;
+  color: #8a919f;
+  padding: 4px 0 2px;
+}
+
+.subtable-preview-meta {
+  font-size: 11px;
+  color: #64748b;
+  padding: 0 2px;
+}
+
+.subtable-preview-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.subtable-field-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #334155;
+  background: rgba(32, 128, 240, 0.06);
+  border: 1px solid rgba(32, 128, 240, 0.12);
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
+.subtable-field-more {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
   color: #8a919f;
 }
 

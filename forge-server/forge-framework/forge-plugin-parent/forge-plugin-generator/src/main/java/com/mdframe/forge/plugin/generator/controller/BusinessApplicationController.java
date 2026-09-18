@@ -118,7 +118,6 @@ public class BusinessApplicationController {
     }
 
     @GetMapping("/workbench")
-    @SaCheckPermission("ai:businessApplication:portal")
     @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询当前用户工作台应用")
     public RespInfo<List<BusinessApplicationVO>> workbenchApplications() {
         return RespInfo.success(runtimeService.workbenchApplications());

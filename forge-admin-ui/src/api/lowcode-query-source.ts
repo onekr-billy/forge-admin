@@ -1,7 +1,7 @@
 import type { AxiosRequestConfig } from 'axios'
 import { request } from '@/utils'
 
-export type LowcodeQuerySourceType = 'EXTERNAL_API' | 'DATASET'
+export type LowcodeQuerySourceType = 'EXTERNAL_API' | 'DATASET' | 'BUSINESS_OBJECT'
 
 export interface LowcodeQuerySourceRef {
   sourceType: LowcodeQuerySourceType

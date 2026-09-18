@@ -103,6 +103,14 @@ alwaysApply: true
 - 拆出的子组件与父组件同域放置：如 `forge-form-designer/panels/FooPanel.vue`，禁止散落在无关目录。
 - 新增功能禁止继续往巨型 SFC 里追加模板/逻辑；发现所在文件已超限时，先拆分再实现。
 
+### 7.6 Naive UI 与 Vue 响应式陷阱（强制）
+
+> 根因分析见 `code-copilot/memory/pitfalls/frontend.md` 对应条目，此为编码层规避规则。
+
+- **表单 labelWidth 两种模式不要混用**：`n-form` 设 `label-width="auto"` 时若再给字段级数字 `label-width`，naive-ui 挂载测量会清空 label 的 DOM 宽度且 Vue 不会再写回（patch 新旧值相同），导致 label 永久塌缩不对齐。`AiForm`/`AiFormItem` 已内置写回兜底；绕过 AiForm 直接使用 naive-ui 表单时，要么统一 auto、要么统一固定宽度，混用必须自行兜底。
+- **全局消息必须链式调用**：`window.$message` 是 class 实例，禁止 `const notify = window.$message?.[type]; notify(msg)` 分离调用（this 丢失直接崩溃）；必须写 `window.$message?.[type]?.(msg)`。
+- **watch 禁止盯"每次返回新对象"的 computed**：computed 依赖 formData/props 并在重算时构造新对象/数组的，直接 watch 该 computed 引用比较恒不等，任意依赖变化都会全量触发（典型症状：多个下拉集体 loading 闪烁/重发请求）。必须 watch 内容签名（`JSON.stringify` 关键字段），且签名要包含 `${field}` 等动态参数解析后的值，保证引用值变化仍能触发。
+
 ## 8. 后端架构规范
 ### 8.1 循环依赖
 - Service 之间**禁止相互注入**导致循环依赖

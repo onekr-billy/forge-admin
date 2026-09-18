@@ -345,6 +345,26 @@ class LowcodeRuntimeConfigBuilderTest {
     }
 
     @Test
+    @DisplayName("publishes child create permission into master-detail runtime")
+    void publishesChildCreatePermissionIntoMasterDetailRuntime() throws Exception {
+        LowcodePageSchema pageSchema = purchaseOrderMasterDetailPageSchema();
+        LowcodePageModelRef childRef = pageSchema.getModelRefs().get(1);
+        childRef.setProps(Map.of(
+                "relationKey", "pw_purchase_order_item",
+                "inlineCreateEnabled", false));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
+                "pw_purchase_order", purchaseOrderModelSchema(), pageSchema);
+        Map<String, Object> options = objectMapper.readValue(runtimeConfig.getOptions(), new TypeReference<>() { });
+        Map<?, ?> masterDetail = assertInstanceOf(Map.class, options.get("masterDetailConfig"));
+        List<?> children = assertInstanceOf(List.class, masterDetail.get("children"));
+        Map<?, ?> child = assertInstanceOf(Map.class, children.get(0));
+        assertEquals(false, child.get("showInCreate"));
+        assertEquals(false, child.get("allowCreate"));
+        assertEquals(false, child.get("inlineCreateEnabled"));
+    }
+
+    @Test
     @DisplayName("publishes primary object code into runtime config")
     void publishesPrimaryObjectCodeIntoRuntimeConfig() throws Exception {
         LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("pw_purchase_order", purchaseOrderModelSchema(), pageSchema());

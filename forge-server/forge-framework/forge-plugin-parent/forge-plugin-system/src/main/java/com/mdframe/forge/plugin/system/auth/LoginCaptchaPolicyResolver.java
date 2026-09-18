@@ -46,6 +46,7 @@ public class LoginCaptchaPolicyResolver {
                 .captchaTypeSource(useClientCaptchaType ? SOURCE_CLIENT : SOURCE_GLOBAL)
                 .globalCaptchaType(globalCaptchaType)
                 .clientCaptchaType(clientCaptchaType)
+                .groupQrcodeEnabled(Boolean.TRUE.equals(loginConfig.getGroupQrcodeEnabled()))
                 .build();
     }
 }

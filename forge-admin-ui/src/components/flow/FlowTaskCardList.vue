@@ -5,15 +5,14 @@
         <div class="task-list-title">
           {{ title }}
         </div>
-        <div class="task-list-divider" />
-        <template v-if="selectedKeys.length > 0">
+        <span v-if="!selectedKeys.length" class="task-list-count">共 {{ pagination?.itemCount ?? items.length }} 项</span>
+        <template v-else>
           <span class="task-list-selected">已选 {{ selectedKeys.length }} 项</span>
           <slot name="batch-actions" :selected-keys="selectedKeys" />
           <button class="task-list-clear" type="button" @click="clearSelection">
             清空
           </button>
         </template>
-        <span v-else class="task-list-count">共 {{ pagination?.itemCount ?? items.length }} 项</span>
       </div>
 
       <div class="task-list-tools">
@@ -32,98 +31,58 @@
         </n-input>
         <slot name="filters" />
         <n-button quaternary class="task-list-icon-btn" title="刷新" aria-label="刷新列表" @click="emit('refresh')">
-          <n-icon :size="18">
+          <n-icon :size="16">
             <RefreshOutline />
           </n-icon>
         </n-button>
       </div>
     </div>
 
-    <div class="task-table-header">
-      <div class="task-table-cell task-table-entity">
-        <button
-          v-if="selectable"
-          type="button"
-          class="task-table-check"
-          :class="{ checked: allCurrentPageSelected, indeterminate: partiallySelected }"
-          aria-label="选择当前页"
-          @click.stop="toggleCurrentPage(!allCurrentPageSelected)"
-        >
-          <i v-if="allCurrentPageSelected" class="i-material-symbols:check-small-rounded" />
-          <i v-else-if="partiallySelected" class="i-material-symbols:remove-rounded" />
-        </button>
-        <span>{{ entityTitle }}</span>
-      </div>
-      <div class="task-table-cell">
-        {{ statusTitle }}
-      </div>
-      <div class="task-table-cell">
-        {{ nodeTitle }}
-      </div>
-      <div class="task-table-cell">
-        {{ userTitle }}
-      </div>
-      <div class="task-table-cell task-table-actions-head">
-        {{ actionTitle }}
-      </div>
-    </div>
-
-    <n-spin :show="loading" class="task-table-spin">
-      <div v-if="items.length > 0" class="task-table-body">
+    <n-spin :show="loading" class="task-list-spin">
+      <div v-if="items.length > 0" class="task-card-list">
         <article
           v-for="item in items"
           :key="getRowKey(item)"
-          class="task-table-row"
+          class="task-card-item"
           :class="{ selected: isSelected(item), unread: isUnread(item) }"
           @click="emit('rowClick', item)"
         >
-          <div class="task-table-cell task-table-entity">
-            <button
-              v-if="selectable"
-              type="button"
-              class="task-table-check"
-              :class="{ checked: isSelected(item) }"
-              aria-label="选择行"
-              @click.stop="toggleRow(item, !isSelected(item))"
-            >
-              <i v-if="isSelected(item)" class="i-material-symbols:check-small-rounded" />
+          <div class="task-card-header">
+            <button type="button" class="task-card-title" @click.stop="emit('rowClick', item)">
+              <slot name="title" :row="item">
+                {{ item.title || item.taskName || '-' }}
+              </slot>
             </button>
-            <div class="task-table-title-block">
-              <button type="button" class="task-table-title" @click.stop="emit('rowClick', item)">
-                <slot name="title" :row="item">
-                  {{ item.title || item.taskName || '-' }}
-                </slot>
-              </button>
-              <div v-if="$slots.summary" class="task-table-summary">
-                <slot name="summary" :row="item" />
-              </div>
+            <div class="task-card-status">
+              <slot name="status" :row="item" />
             </div>
           </div>
 
-          <div class="task-table-cell task-table-status">
-            <slot name="status" :row="item" />
-          </div>
-
-          <div class="task-table-cell task-table-node">
+          <div class="task-card-node">
+            当前所在节点：
             <slot name="node" :row="item">
               {{ item.currentNode || item.taskName || item.nodeName || '-' }}
             </slot>
           </div>
 
-          <div class="task-table-cell task-table-user">
-            <slot name="user" :row="item">
-              <span>{{ item.startUserName || item.userName || '-' }}</span>
-              <small>{{ item.createTime || item.submitTime || '-' }}</small>
-            </slot>
+          <div class="task-card-footer">
+            <div class="task-card-user">
+              <slot name="user" :row="item">
+                <span class="user-avatar-small">{{ (item.startUserName || item.userName || '?').charAt(0) }}</span>
+                <span>{{ item.startUserName || item.userName || '-' }}</span>
+              </slot>
+            </div>
+            <div class="task-card-time">
+              提交于 {{ item.createTime || item.submitTime || '-' }}
+            </div>
           </div>
 
-          <div v-if="$slots.actions" class="task-table-cell task-table-actions" @click.stop>
+          <div v-if="$slots.actions" class="task-card-actions" @click.stop>
             <slot name="actions" :row="item" />
           </div>
-          <div v-else class="task-table-cell task-table-actions" />
         </article>
       </div>
-      <div v-else class="task-table-body empty">
+      <div v-else class="task-card-list empty">
         <n-empty class="task-list-empty" :description="emptyText" size="small" />
       </div>
     </n-spin>
@@ -180,9 +139,6 @@ const emit = defineEmits([
 ])
 
 const selectedSet = computed(() => new Set(props.selectedKeys))
-const currentPageKeys = computed(() => props.items.map(item => getRowKey(item)).filter(key => key !== undefined && key !== null))
-const allCurrentPageSelected = computed(() => currentPageKeys.value.length > 0 && currentPageKeys.value.every(key => selectedSet.value.has(key)))
-const partiallySelected = computed(() => currentPageKeys.value.some(key => selectedSet.value.has(key)) && !allCurrentPageSelected.value)
 
 function getRowKey(row) {
   if (typeof props.rowKey === 'function')
@@ -196,29 +152,6 @@ function isSelected(row) {
 
 function isUnread(row) {
   return props.unreadKey ? row?.[props.unreadKey] === 0 : false
-}
-
-function toggleRow(row, checked) {
-  const key = getRowKey(row)
-  if (key === undefined || key === null)
-    return
-  const next = new Set(props.selectedKeys)
-  if (checked)
-    next.add(key)
-  else
-    next.delete(key)
-  emit('update:selectedKeys', [...next])
-}
-
-function toggleCurrentPage(checked) {
-  const next = new Set(props.selectedKeys)
-  currentPageKeys.value.forEach((key) => {
-    if (checked)
-      next.add(key)
-    else
-      next.delete(key)
-  })
-  emit('update:selectedKeys', [...next])
 }
 
 function clearSelection() {
@@ -235,10 +168,9 @@ function clearSelection() {
   width: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-light, #e2e8f0);
-  border-radius: 6px;
+  border: 1px solid var(--border-light, #e8ecf1);
+  border-radius: 8px;
   background: var(--bg-primary, #fff);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
 }
 
 :deep(.n-spin-container),
@@ -252,41 +184,33 @@ function clearSelection() {
 
 .task-list-toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   flex: 0 0 auto;
-  gap: 12px;
-  min-height: 50px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-light, #e2e8f0);
+  padding: 12px;
+  border-bottom: 1px solid var(--border-light, #e8ecf1);
   background: var(--bg-primary, #fff);
 }
 
 .task-list-titlebar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .task-list-title {
-  color: var(--text-primary, #1e293b);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--text-primary, #1a1a2e);
+  font-size: 15px;
+  font-weight: 600;
   white-space: nowrap;
-}
-
-.task-list-divider {
-  width: 1px;
-  height: 12px;
-  background: var(--border-default, #cbd5e1);
 }
 
 .task-list-count,
 .task-list-selected {
-  color: var(--text-tertiary, #64748b);
+  color: var(--text-tertiary, #8c8c9a);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -305,34 +229,33 @@ function clearSelection() {
 .task-list-tools {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .task-list-search {
-  width: 240px;
+  width: 200px;
+  flex-shrink: 0;
 }
 
 .task-list-search :deep(.n-input__input-el) {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .task-list-icon-btn {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  border: 1px solid var(--border-default, #cbd5e1);
-  border-radius: 2px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-secondary, #475569);
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #5c5c6e);
   transition:
-    border-color 160ms ease,
+    background-color 160ms ease,
     color 160ms ease;
 }
 
 .task-list-icon-btn:hover {
-  border-color: var(--primary-color, #2563eb);
+  background: var(--bg-secondary, #f5f5fa);
   color: var(--primary-color, #2563eb);
 }
 
@@ -348,142 +271,81 @@ function clearSelection() {
 }
 
 :deep(.task-list-icon-btn i) {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 
-.task-table-header,
-.task-table-row {
-  display: grid;
-  grid-template-columns:
-    minmax(280px, 4fr)
-    minmax(112px, 1.35fr)
-    minmax(132px, 1.55fr)
-    minmax(150px, 1.7fr)
-    minmax(150px, 1.7fr);
-  gap: 16px;
-  align-items: center;
-  min-width: 920px;
-}
-
-.task-table-header {
-  flex: 0 0 auto;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--border-light, #e2e8f0);
-  background: color-mix(in srgb, var(--bg-secondary, #f8fafc) 82%, var(--bg-primary, #fff));
-  color: var(--text-tertiary, #64748b);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.task-table-spin {
+.task-list-spin {
   flex: 1;
   min-height: 0;
   min-width: 0;
 }
 
-.task-table-body {
+.task-card-list {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  gap: 8px;
 }
 
-.task-table-body.empty {
+.task-card-list.empty {
   align-items: center;
   justify-content: center;
 }
 
-.task-table-row {
-  flex: 0 0 auto;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border-light, #eef2f7);
+.task-card-item {
+  position: relative;
+  padding: 12px;
+  border: 1px solid var(--border-light, #e8ecf1);
+  border-radius: 8px;
   background: var(--bg-primary, #fff);
-  cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    color 150ms ease;
-}
-
-.task-table-row:hover {
-  background: var(--bg-secondary, #f8fafc);
-}
-
-.task-table-row.selected {
-  background: color-mix(in srgb, var(--primary-color, #2563eb) 5%, var(--bg-primary, #fff));
-}
-
-.task-table-row.unread {
-  background: color-mix(in srgb, var(--primary-color, #2563eb) 4%, var(--bg-primary, #fff));
-}
-
-.task-table-cell {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.task-table-entity {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.task-table-actions-head {
-  text-align: right;
-}
-
-.task-table-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  margin-top: 3px;
-  padding: 0;
-  border: 1px solid var(--border-default, #cbd5e1);
-  border-radius: 2px;
-  background: var(--bg-primary, #fff);
-  color: #fff;
   cursor: pointer;
   transition:
     border-color 150ms ease,
-    background-color 150ms ease;
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
-.task-table-check:hover {
+.task-card-item:hover {
   border-color: var(--primary-color, #2563eb);
+  background: var(--bg-secondary, #fafbff);
+  box-shadow: 0 1px 4px rgb(37 99 235 / 8%);
 }
 
-.task-table-check.checked,
-.task-table-check.indeterminate {
+.task-card-item.selected {
+  border-left: 3px solid var(--primary-color, #2563eb);
   border-color: var(--primary-color, #2563eb);
-  background: var(--primary-color, #2563eb);
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 4%, var(--bg-primary, #fff));
 }
 
-.task-table-check i {
-  font-size: 12px;
-  line-height: 1;
+.task-card-item.unread {
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 3%, var(--bg-primary, #fff));
 }
 
-.task-table-title-block {
+.task-card-header {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-.task-table-title {
-  max-width: 100%;
+.task-card-title {
+  flex: 1;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text-primary, #1e293b);
+  color: var(--text-primary, #1a1a2e);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 18px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
@@ -491,66 +353,169 @@ function clearSelection() {
   transition: color 150ms ease;
 }
 
-.task-table-title:hover {
+.task-card-title:hover {
   color: var(--primary-color, #2563eb);
 }
 
-.task-table-user small {
-  margin-top: 2px;
-  color: var(--text-quaternary, #94a3b8);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  line-height: 16px;
+.task-card-status {
+  flex: 0 0 auto;
+}
+
+.task-card-node {
+  color: var(--text-secondary, #5c5c6e);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-table-summary {
-  margin-top: 4px;
+.task-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-card-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-}
-
-.task-table-status {
-  display: flex;
-  align-items: center;
-}
-
-.task-table-node {
-  color: var(--text-secondary, #475569);
+  color: var(--text-secondary, #5c5c6e);
   font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.task-table-user {
-  display: flex;
-  flex-direction: column;
-  color: var(--text-secondary, #475569);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.task-table-user span {
+.task-card-user span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-table-actions {
+.user-avatar-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.task-card-time {
+  color: var(--text-tertiary, #8c8c9a);
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card-actions {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light, #e8ecf1);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.task-list-empty {
+  padding: 40px 0;
+}
+
+.task-list-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-light, #e8ecf1);
+  background: var(--bg-primary, #fff);
+}
+
+.task-list-total {
+  color: var(--text-tertiary, #8c8c9a);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+:global(.task-status-pill) {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+:global(.task-list-hint) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 4px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-secondary, #475569);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+:global(.task-list-hint.urgent) {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+:global(.task-list-hint.pending) {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+:global(.task-status-pill.success),
+:global(.task-status-pill.read) {
+  background: #ecfdf3;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+:global(.task-status-pill.error),
+:global(.task-status-pill.unread) {
+  background: #fff1f2;
+  color: #be123c;
+  border-color: #fecdd3;
+}
+
+:global(.task-status-pill.info) {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+:global(.task-status-pill.default) {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
 }
 
 :global(.task-row-link-action) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -603,117 +568,17 @@ function clearSelection() {
   line-height: 1;
 }
 
-.task-list-empty {
-  padding: 56px 0;
-}
-
-.task-list-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 0 0 auto;
-  gap: 12px;
-  padding: 9px 14px;
-  border-top: 1px solid var(--border-light, #e2e8f0);
-  background: var(--bg-primary, #fff);
-}
-
-.task-list-total {
-  color: var(--text-tertiary, #64748b);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-:global(.task-status-pill) {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  background: #fff7ed;
-  color: #c2410c;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-:global(.task-list-hint) {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 7px;
-  border: 1px solid var(--border-light, #e2e8f0);
-  border-radius: 2px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-secondary, #475569);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-:global(.task-list-hint.urgent) {
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-:global(.task-list-hint.pending) {
-  background: #eff6ff;
-  color: #2563eb;
-}
-
-:global(.task-status-pill.success),
-:global(.task-status-pill.read) {
-  background: #ecfdf3;
-  color: #15803d;
-  border-color: #bbf7d0;
-}
-
-:global(.task-status-pill.error),
-:global(.task-status-pill.unread) {
-  background: #fff1f2;
-  color: #be123c;
-  border-color: #fecdd3;
-}
-
-:global(.task-status-pill.info) {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #bfdbfe;
-}
-
-:global(.task-status-pill.default) {
-  background: #f1f5f9;
-  color: #64748b;
-  border-color: #e2e8f0;
-}
-
 @media (max-width: 900px) {
   .task-list-toolbar {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .task-list-tools {
     flex-wrap: wrap;
-    justify-content: flex-start;
   }
 
   .task-list-search {
-    width: min(100%, 260px);
-  }
-
-  .task-table-header,
-  .task-table-row {
-    min-width: 820px;
-    grid-template-columns:
-      minmax(260px, 4fr)
-      minmax(100px, 1.2fr)
-      minmax(120px, 1.4fr)
-      minmax(140px, 1.6fr)
-      minmax(140px, 1.6fr);
+    width: 100%;
   }
 }
 </style>

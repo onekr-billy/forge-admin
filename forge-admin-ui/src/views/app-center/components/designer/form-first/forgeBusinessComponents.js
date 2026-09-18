@@ -256,6 +256,7 @@ function createForgeBusinessComponentRules(fields = []) {
       inputRule('optionSource>recordsField', '列表路径', '默认 records'),
       inputRule('optionSource>valueField', '值字段', '默认 id'),
       inputRule('optionSource>labelField', '显示字段', '默认 name'),
+      switchRule('multiple', '多选'),
       switchRule('filterable', '可搜索', true),
       switchRule('clearable', '可清空', true),
     ],
@@ -268,6 +269,7 @@ function createForgeBusinessComponentRules(fields = []) {
     select: () => [
       ...fieldBindingRules(),
       dictTypeRule('dictType', '系统字典'),
+      switchRule('multiple', '多选'),
     ],
     radio: () => [
       ...fieldBindingRules(),

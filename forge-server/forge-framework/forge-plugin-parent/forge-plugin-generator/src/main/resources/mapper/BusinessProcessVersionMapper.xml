@@ -142,15 +142,6 @@
           AND del_flag = 0
     </select>
 
-    <select id="countActiveReferences" resultType="java.lang.Long">
-        SELECT COUNT(1)
-        FROM ai_business_process_version
-        WHERE tenant_id = #{tenantId}
-          AND process_id = #{processId}
-          AND status = 1
-          AND del_flag = 0
-    </select>
-
     <select id="selectCurrentPublishedByApplication" resultMap="BaseResultMap">
         SELECT
           v.id,

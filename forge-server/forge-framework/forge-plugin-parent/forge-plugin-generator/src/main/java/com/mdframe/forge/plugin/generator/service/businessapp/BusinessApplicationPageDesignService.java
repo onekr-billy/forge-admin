@@ -25,8 +25,10 @@ import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntime
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationPageDesignVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRelationVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -50,11 +52,13 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class BusinessApplicationPageDesignService {
 
     private static final String MANAGED_BY_PAGE_FORM = "PAGE_FORM";
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
     private static final Set<String> PAGE_TYPES = Set.of("form", "list", "list-form", "custom");
+    private static final Set<String> EMBEDDED_RELATION_TYPES = Set.of("CHILD_LIST", "DETAIL");
 
     private final ObjectMapper objectMapper;
     private final BusinessApplicationService applicationService;
@@ -82,12 +86,61 @@ public class BusinessApplicationPageDesignService {
                 tableMappingService.syncManagedDatabase(
                         saved.objectId(), applicationId, normalized.formAssetId());
             } catch (RuntimeException error) {
+                // DDL 同步失败不阻断保存：元数据已在事务中提交成功，
+                // 用户可稍后在高级数据设置中手动同步数据库结构。
+                log.warn("[页面设计保存] DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
+                        saved.objectId(), normalized.formAssetId(), error.getMessage());
                 String detail = StringUtils.defaultIfBlank(error.getMessage(), "目标数据存储暂时不可用");
-                throw new BusinessException(
-                        "页面设计已保存，但数据表同步失败：" + detail + "；请直接重试保存", error);
+                saved.result().setDdlWarning("数据表结构同步失败：" + detail + "。页面设计已保存，可在高级数据设置中确认数据库调整。");
             }
+            syncChildManagedTables(saved.objectId());
         }
         return saved.result();
+    }
+
+    /**
+     * 表单子表组件保存时会自动给子对象补外键字段；这里在元数据事务提交后同步
+     * 页面表单托管的子对象数据表，避免运行时子表写入时外键列缺失。
+     */
+    private void syncChildManagedTables(Long objectId) {
+        BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
+        AiBusinessObject object = context.getObject();
+        List<BusinessObjectRelationVO> relations = context.getRelations();
+        if (object == null || relations == null || relations.isEmpty()) {
+            return;
+        }
+        Set<String> synced = new LinkedHashSet<>();
+        for (BusinessObjectRelationVO relation : relations) {
+            if (relation == null
+                    || !object.getObjectCode().equals(relation.getSourceObjectCode())
+                    || !EMBEDDED_RELATION_TYPES.contains(
+                            StringUtils.defaultString(relation.getRelationType()).toUpperCase(Locale.ROOT))
+                    || !EnableStatus.ENABLED.matches(relation.getStatus())
+                    || StringUtils.isBlank(relation.getTargetObjectCode())
+                    || !synced.add(relation.getTargetObjectCode())) {
+                continue;
+            }
+            AiBusinessObject child;
+            try {
+                child = objectService.requireByCode(object.getSuiteCode(), relation.getTargetObjectCode());
+            } catch (BusinessException missing) {
+                continue;
+            }
+            JSONObject marker = readOptions(child.getOptions());
+            Long childApplicationId = marker.getLong("sourceApplicationId");
+            String childFormAssetId = marker.getString("sourceFormAssetId");
+            if (!MANAGED_BY_PAGE_FORM.equals(marker.getString("managedBy"))
+                    || childApplicationId == null || StringUtils.isBlank(childFormAssetId)) {
+                continue;
+            }
+            try {
+                tableMappingService.syncManagedDatabase(child.getId(), childApplicationId, childFormAssetId);
+            } catch (RuntimeException error) {
+                // 子表 DDL 同步失败同样不阻断主表保存流程
+                log.warn("[页面设计保存] 子表 DDL 同步失败，已降级为警告: childObject={}, error={}",
+                        child.getObjectCode(), error.getMessage());
+            }
+        }
     }
 
     private MetadataResult saveMetadata(Long applicationId, PageDesignRequest request) {
@@ -110,14 +163,19 @@ public class BusinessApplicationPageDesignService {
 
         BusinessObjectDesignerService.DesignerContext current = designerService.loadContext(object.getId());
         LowcodeModelSchema currentModel = current.getModelSchema();
-        boolean hasBusinessData = hasBusinessData(currentModel);
+        // 数据量快照：守卫报错时附带真实条数与表名，用户能定位数据来源
+        BusinessDataSnapshot businessData = inspectBusinessData(currentModel);
+        java.util.function.Function<String, Boolean> columnDataChecker =
+                createColumnDataChecker(currentModel, businessData);
         BusinessApplicationPageFieldGuard.assertCompatible(
-                hasBusinessData,
+                businessData.count(),
+                businessData.tableName(),
                 currentModel == null ? List.of() : currentModel.getFields(),
-                request.fields());
+                request.fields(),
+                columnDataChecker);
 
         FormDesignerSchemaDTO formSchema = request.formDesignerSchema();
-        if (hasBusinessData) {
+        if (businessData.hasData()) {
             Object persistedFormSchema = current.getObject() == null
                     ? null
                     : readOptions(current.getObject().getDesignerOptions()).get("formDesignerSchema");
@@ -125,7 +183,10 @@ public class BusinessApplicationPageDesignService {
                     persistedFormSchema,
                     objectMapper.convertValue(formSchema, new TypeReference<Map<String, Object>>() {
                     }),
-                    currentModel == null ? List.of() : currentModel.getFields());
+                    currentModel == null ? List.of() : currentModel.getFields(),
+                    businessData.count(),
+                    businessData.tableName(),
+                    columnDataChecker);
             lockPersistedFieldBindings(formSchema);
         }
         BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();
@@ -140,8 +201,8 @@ public class BusinessApplicationPageDesignService {
         attachVisiblePageObject(applicationId, associations, savedObject.getId(), request);
         Map<String, Object> builder = cloneBuilder(request.builder());
         synchronizeBuilderFormAsset(builder, request.formAssetId(), formSchema);
-        patchBuilderObjectReference(builder, request, savedObject, hasBusinessData);
-        if (hasBusinessData) {
+        patchBuilderObjectReference(builder, request, savedObject, businessData.hasData());
+        if (businessData.hasData()) {
             lockBuilderFormFields(builder, request.formAssetId());
         }
         saveApplicationBuilder(application, builder);
@@ -152,7 +213,7 @@ public class BusinessApplicationPageDesignService {
         result.setObjectName(savedObject.getObjectName());
         result.setConfigKey(savedObject.getConfigKey());
         result.setObjectCreated(created);
-        result.setHasBusinessData(hasBusinessData);
+        result.setHasBusinessData(businessData.hasData());
         return new MetadataResult(savedObject.getId(), result);
     }
 
@@ -263,20 +324,66 @@ public class BusinessApplicationPageDesignService {
         objectService.update(object);
     }
 
-    private boolean hasBusinessData(LowcodeModelSchema modelSchema) {
+    /** 业务数据量快照：count 为真实行数，tableName 为实际统计的数据表 */
+    private record BusinessDataSnapshot(long count, String tableName) {
+        boolean hasData() {
+            return count > 0;
+        }
+    }
+
+    private BusinessDataSnapshot inspectBusinessData(LowcodeModelSchema modelSchema) {
         if (modelSchema == null || StringUtils.isBlank(modelSchema.getTableName())
                 || !hasBusinessFields(modelSchema)) {
-            return false;
+            return new BusinessDataSnapshot(0, StringUtils.defaultString(
+                    modelSchema == null ? null : modelSchema.getTableName()));
         }
         if (!Boolean.TRUE.equals(ddlService.previewCreateTable(modelSchema).getTableExists())) {
-            return false;
+            return new BusinessDataSnapshot(0, modelSchema.getTableName());
         }
         LowcodeRuntimeDataSourceContext context = runtimeDataSourceResolver.resolve(modelSchema);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored =
                      LowcodeRuntimeDataSourceContextHolder.use(context)) {
-            return dynamicCrudRepository.countList(
-                    context.getTableName(), Map.of(), Set.of(), Map.of(), Map.of(), null) > 0;
+            return new BusinessDataSnapshot(
+                    dynamicCrudRepository.countList(
+                            context.getTableName(), Map.of(), Set.of(), Map.of(), Map.of(), null),
+                    context.getTableName());
         }
+    }
+
+    /**
+     * 创建字段级数据存在性检查器：按列名探测非空数据是否存在（LIMIT 1，大表安全）。
+     * 物理列不存在时返回 false（无数据可丢失）；查询异常时降级返回 true（保守阻断）。
+     */
+    private java.util.function.Function<String, Boolean> createColumnDataChecker(
+            LowcodeModelSchema modelSchema, BusinessDataSnapshot businessData) {
+        if (modelSchema == null || StringUtils.isBlank(modelSchema.getTableName())
+                || !businessData.hasData()) {
+            return null;
+        }
+        LowcodeRuntimeDataSourceContext context;
+        try {
+            context = runtimeDataSourceResolver.resolve(modelSchema);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        return columnName -> {
+            if (StringUtils.isBlank(columnName)) {
+                return true;
+            }
+            try (LowcodeRuntimeDataSourceContextHolder.Scope ignored =
+                         LowcodeRuntimeDataSourceContextHolder.use(context)) {
+                Set<String> columns = dynamicCrudRepository.getTableColumns(context.getTableName());
+                if (!columns.contains(columnName.toLowerCase(Locale.ROOT))) {
+                    // 物理列不存在，该字段无数据
+                    return false;
+                }
+                return dynamicCrudRepository.hasColumnData(context.getTableName(), columnName);
+            } catch (RuntimeException e) {
+                log.warn("[字段守卫] 字段级数据探测失败，降级为保守阻断: column={}, error={}",
+                        columnName, e.getMessage());
+                return true;
+            }
+        };
     }
 
     private boolean hasBusinessFields(LowcodeModelSchema modelSchema) {

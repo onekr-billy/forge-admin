@@ -31,6 +31,12 @@ class SocialOAuthLoginServiceTest {
     @Mock
     private AuthRequest authRequest;
 
+    @Mock
+    private com.mdframe.forge.starter.social.community.GiteeCommunityLoginSupport giteeCommunityLoginSupport;
+
+    @Mock
+    private com.mdframe.forge.starter.social.community.GiteeStarCheckService giteeStarCheckService;
+
     @InjectMocks
     private SocialOAuthLoginService service;
 

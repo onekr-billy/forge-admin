@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useAppStore, usePermissionStore, useRouterStore, useTabStore, useTenantStore, useUserStore } from '@/store'
 import { resetKeyExchange } from '@/utils/crypto'
+import { resetSessionKeepalive } from '@/utils/http/session-keepalive'
 import { lStorage } from '@/utils/storage'
 import { disconnectWebSocketClient } from '@/utils/websocket'
 
@@ -39,6 +40,7 @@ export const useAuthStore = defineStore('auth', {
       const keepLoggingOut = this.isLoggingOut
       this.$reset()
       this.isLoggingOut = keepLoggingOut
+      resetSessionKeepalive()
     },
     beginLogout() {
       this.isLoggingOut = true

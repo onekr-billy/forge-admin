@@ -26,7 +26,7 @@ Options:
   --with-demo              Import demo seed data
   --with-optional          Import optional seed data
   --with-module            Import module SQL from db/module
-  --skip-admin-init        Skip forge-admin-server/sql/初始化脚本.sql
+  --skip-admin-init        跳过 db/全量初始化SQL.sql（仅用于已完成基础初始化的库）
 USAGE
 }
 
@@ -80,6 +80,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+ADMIN_INIT_SQL="$FORGE_DIR/db/全量初始化SQL.sql"
+if [[ "$SKIP_ADMIN_INIT" != "true" && ( ! -f "$ADMIN_INIT_SQL" || ! -r "$ADMIN_INIT_SQL" || ! -s "$ADMIN_INIT_SQL" ) ]]; then
+  echo "ERROR: 必需的初始化 SQL 不存在、不可读或为空：$ADMIN_INIT_SQL" >&2
+  exit 1
+fi
+
 if ! command -v mysql >/dev/null 2>&1; then
   echo "mysql client is required. Install MySQL client and retry." >&2
   exit 1
@@ -114,7 +120,7 @@ run_sql_dir() {
 }
 
 if [[ "$SKIP_ADMIN_INIT" != "true" ]]; then
-  run_sql_file "$FORGE_DIR/db/全量初始化SQL.sql"
+  run_sql_file "$ADMIN_INIT_SQL"
 fi
 run_sql_dir "$FORGE_DIR/db/seed/required"
 

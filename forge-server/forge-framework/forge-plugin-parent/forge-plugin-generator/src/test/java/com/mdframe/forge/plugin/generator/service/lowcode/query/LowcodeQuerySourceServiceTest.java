@@ -35,7 +35,7 @@ class LowcodeQuerySourceServiceTest {
     void setUp() {
         externalService = mock(ExternalQuerySourceService.class);
         datasetService = mock(DataDatasetRuntimeService.class);
-        service = new LowcodeQuerySourceService(externalService, datasetService, new ObjectMapper());
+        service = new LowcodeQuerySourceService(externalService, datasetService, null, null, new ObjectMapper());
     }
 
     @Test
@@ -112,6 +112,50 @@ class LowcodeQuerySourceServiceTest {
         LowcodeQuerySourceRefDTO missing = new LowcodeQuerySourceRefDTO();
         missing.setSourceType("DATASET");
         assertThrows(BusinessException.class, () -> service.metadata(missing));
+    }
+
+    @Test
+    void shouldWrapSingleObjectResponseIntoList() {
+        ExternalApi api = externalApi();
+        when(externalService.requireMetadata("crm/member_lookup")).thenReturn(api);
+        when(externalService.execute("crm/member_lookup", Map.of("mobile", "13800138000")))
+                .thenReturn(Map.of("name", "张三"));
+        LowcodeQuerySourceExecuteDTO dto = executeDto("EXTERNAL_API", "crm/member_lookup");
+        dto.setParams(Map.of("mobile", "13800138000"));
+
+        LowcodeQuerySourceResultVO result = service.execute(dto);
+
+        assertEquals(1, ((List<?>) result.getData()).size());
+    }
+
+    @Test
+    void shouldPassThroughListResponseUnchanged() {
+        ExternalApi api = externalApi();
+        when(externalService.requireMetadata("crm/member_lookup")).thenReturn(api);
+        List<Map<String, String>> rows = List.of(Map.of("name", "张三"), Map.of("name", "李四"));
+        when(externalService.execute("crm/member_lookup", Map.of("mobile", "13800138000")))
+                .thenReturn(rows);
+        LowcodeQuerySourceExecuteDTO dto = executeDto("EXTERNAL_API", "crm/member_lookup");
+        dto.setParams(Map.of("mobile", "13800138000"));
+
+        LowcodeQuerySourceResultVO result = service.execute(dto);
+
+        assertEquals(2, ((List<?>) result.getData()).size());
+        assertEquals(rows, result.getData());
+    }
+
+    @Test
+    void shouldNormalizeNullResponseToEmptyList() {
+        ExternalApi api = externalApi();
+        when(externalService.requireMetadata("crm/member_lookup")).thenReturn(api);
+        when(externalService.execute("crm/member_lookup", Map.of("mobile", "13800138000")))
+                .thenReturn(null);
+        LowcodeQuerySourceExecuteDTO dto = executeDto("EXTERNAL_API", "crm/member_lookup");
+        dto.setParams(Map.of("mobile", "13800138000"));
+
+        LowcodeQuerySourceResultVO result = service.execute(dto);
+
+        assertEquals(0, ((List<?>) result.getData()).size());
     }
 
     private ExternalApi externalApi() {

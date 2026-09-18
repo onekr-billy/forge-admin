@@ -62,12 +62,14 @@ const serviceActors = ref([])
 const flowDesignerVisible = ref(false)
 const flowDesignerModelId = ref('')
 const flowDesignerContext = ref({
+  modelKey: '',
   businessObjectCode: '',
   businessObjectName: '',
   applicationId: '',
   businessFormKey: '',
 })
 let activeSavePromise = null
+let flowCatalogRequestId = 0
 
 const processId = computed(() => props.embedded ? stringValue(props.processId) : stringValue(route.params.processId))
 const subjectObject = computed(() => applicationObjects.value.find(item => (
@@ -169,6 +171,7 @@ async function loadCatalogs() {
 }
 
 async function refreshFlowCatalog() {
+  const requestId = ++flowCatalogRequestId
   const objectId = stringValue(process.value?.subjectObjectId)
   const objectCode = process.value?.subjectObjectCode || ''
   const [fieldsResult, modelsResult, assetsResult] = await Promise.allSettled([
@@ -181,8 +184,10 @@ async function refreshFlowCatalog() {
         })
       : Promise.resolve({ data: { formAssets: [] } }),
   ])
+  if (requestId !== flowCatalogRequestId)
+    return
   fields.value = settledData(fieldsResult, fields.value).map(normalizeIds)
-  flowModels.value = settledData(modelsResult, [])
+  flowModels.value = settledData(modelsResult, flowModels.value)
     .map(item => normalizeIds({
       ...item,
       modelId: item.modelId || item.id,
@@ -403,10 +408,11 @@ function openFlowDesigner(payload = {}) {
   if (props.embedded) {
     flowDesignerModelId.value = modelId
     flowDesignerContext.value = {
+      modelKey: stringValue(payload.modelKey),
       businessObjectCode: objectCode,
       businessObjectName: stringValue(subjectObject.value?.objectName || objectCode),
-      applicationId,
-      businessFormKey: defaultFormKey,
+      applicationId: stringValue(payload.applicationId || applicationId),
+      businessFormKey: stringValue(payload.businessFormKey || defaultFormKey),
     }
     flowDesignerVisible.value = true
     return
@@ -417,8 +423,8 @@ function openFlowDesigner(payload = {}) {
       id: modelId,
       businessObjectCode: objectCode || undefined,
       businessObjectName: stringValue(subjectObject.value?.objectName || objectCode) || undefined,
-      applicationId: applicationId || undefined,
-      businessFormKey: defaultFormKey || undefined,
+      applicationId: stringValue(payload.applicationId || applicationId) || undefined,
+      businessFormKey: stringValue(payload.businessFormKey || defaultFormKey) || undefined,
       returnTo: route.fullPath,
     },
   })
@@ -426,11 +432,37 @@ function openFlowDesigner(payload = {}) {
 
 function handleFlowDesignerClose() {
   flowDesignerVisible.value = false
-  refreshFlowCatalog()
+  void refreshFlowCatalog()
 }
 
-function handleFlowDesignerSaved() {
-  refreshFlowCatalog()
+async function handleFlowDesignerSaved(model = {}) {
+  mergeFlowModelSnapshot(model)
+  await refreshFlowCatalog()
+}
+
+function mergeFlowModelSnapshot(model = {}) {
+  const modelId = stringValue(model.id || model.modelId || flowDesignerModelId.value)
+  const modelKey = stringValue(model.modelKey || flowDesignerContext.value.modelKey)
+  if (!modelId && !modelKey)
+    return
+  const normalized = normalizeIds({
+    ...model,
+    modelId,
+    modelKey,
+    modelName: model.modelName || model.name || modelKey,
+    deployed: model.deployed === true || Boolean(model.deploymentId),
+  })
+  const index = flowModels.value.findIndex(item => (
+    stringValue(item.modelId || item.id) === modelId
+    || (modelKey && stringValue(item.modelKey) === modelKey)
+  ))
+  if (index < 0) {
+    flowModels.value = [normalized, ...flowModels.value]
+    return
+  }
+  const next = [...flowModels.value]
+  next[index] = { ...next[index], ...normalized }
+  flowModels.value = next
 }
 
 function returnToApplication() {
@@ -687,7 +719,7 @@ function notify(type, message) {
       />
     </n-modal>
 
-    <!-- 内嵌审批流程设计器（二级弹窗） -->
+    <!-- 审批流程设计器的唯一内嵌容器；节点配置只发出打开事件，不再自行叠加遮罩。 -->
     <n-modal
       v-model:show="flowDesignerVisible"
       :mask-closable="false"
@@ -728,14 +760,15 @@ function notify(type, message) {
 
 .process-page-header {
   display: grid;
-  min-height: 58px;
+  min-height: 52px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 16px;
-  padding: 8px 14px;
+  gap: 12px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--border-color, #e5e7eb);
   background: var(--card-color, #fff);
   grid-template-columns: auto minmax(0, 1fr) auto;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
 .back-button {
@@ -799,12 +832,13 @@ function notify(type, message) {
 .process-page-main {
   min-height: 0;
   flex: 1;
-  padding: 10px;
+  padding: 12px;
 }
 
 .process-page-main > :deep(.business-process-designer) {
-  height: calc(100vh - 78px);
+  height: calc(100vh - 72px);
   min-height: 620px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
 .process-designer-embedded .process-page-main > :deep(.business-process-designer) {

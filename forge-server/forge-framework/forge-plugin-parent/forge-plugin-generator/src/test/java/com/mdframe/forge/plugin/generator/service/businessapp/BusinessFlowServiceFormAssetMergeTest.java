@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
@@ -28,6 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +39,7 @@ class BusinessFlowServiceFormAssetMergeTest {
 
     private BusinessFlowService service;
     private BusinessFieldDesignService fieldDesignService;
+    private BusinessObjectMapper businessObjectMapper;
     private Method appendUniqueFormAssets;
     private Method appendObjectFieldRegistryFallback;
     private Method buildObjectFieldRegistryFormSchema;
@@ -47,11 +51,12 @@ class BusinessFlowServiceFormAssetMergeTest {
     @BeforeEach
     void setUp() throws Exception {
         fieldDesignService = mock(BusinessFieldDesignService.class);
+        businessObjectMapper = mock(BusinessObjectMapper.class);
         service = new BusinessFlowService(
                 mock(BusinessBindingMapper.class),
                 mock(BusinessFlowInstanceLinkMapper.class),
                 mock(AiCrudConfigMapper.class),
-                mock(BusinessObjectMapper.class),
+                businessObjectMapper,
                 mock(BusinessDocumentConfigService.class),
                 mock(BusinessDocumentRuntimeService.class),
                 mock(DynamicCrudService.class),
@@ -113,6 +118,51 @@ class BusinessFlowServiceFormAssetMergeTest {
         assertEquals("app_10_page_page_page_form_asset_1", asset.get("formKey"));
         assertEquals(1, asset.get("fieldCount"));
         assertEquals("employeeName", ((List<Map<String, Object>>) asset.get("fields")).get(0).get("field"));
+    }
+
+    @Test
+    @DisplayName("pages bound to other objects never join the requested object catalog")
+    @SuppressWarnings("unchecked")
+    void crossObjectPagesAreExcludedFromCatalog() {
+        BusinessApplicationVO application = new BusinessApplicationVO();
+        application.setId(10L);
+        application.setOptions("""
+                {"inAppBuilder":{
+                  "nodes":[
+                    {"id":"page_main","type":"page","pageType":"form","pageName":"主表单页",
+                     "objectRef":{"objectCode":"business_object","objectName":"主对象","configKey":"main_key"}},
+                    {"id":"page_detail","type":"page","pageType":"form","pageName":"子表页",
+                     "objectRef":{"objectCode":"detail_object","objectName":"子表对象","configKey":"detail_key"}},
+                    {"id":"page_legacy","type":"page","pageType":"form","pageName":"旧编码页",
+                     "objectRef":{"objectCode":"legacy_code","objectName":"主对象","configKey":"main_key"}}],
+                  "pages":{
+                    "page_main":{"children":[{"type":"form","props":{"formAssetId":"asset_main"}}]},
+                    "page_detail":{"children":[{"type":"form","props":{"formAssetId":"asset_detail"}}]},
+                    "page_legacy":{"children":[{"type":"form","props":{"formAssetId":"asset_legacy"}}]}},
+                  "formAssets":[
+                    {"id":"asset_main","formName":"主表单",
+                     "formDesignerSchema":{"components":[{"type":"input","fieldBinding":{"fieldCode":"fieldA"},"props":{"label":"A"}}]}},
+                    {"id":"asset_detail","formName":"子表表单",
+                     "formDesignerSchema":{"components":[{"type":"input","fieldBinding":{"fieldCode":"fieldB"},"props":{"label":"B"}}]}},
+                    {"id":"asset_legacy","formName":"旧编码表单",
+                     "formDesignerSchema":{"components":[{"type":"input","fieldBinding":{"fieldCode":"fieldC"},"props":{"label":"C"}}]}}]
+                }}
+                """);
+        when(applicationService.detail(10L)).thenReturn(application);
+        AiBusinessObject mainObject = new AiBusinessObject();
+        mainObject.setObjectCode("business_object");
+        AiBusinessObject detailObject = new AiBusinessObject();
+        detailObject.setObjectCode("detail_object");
+        when(businessObjectMapper.selectByConfigKey(any(), eq("main_key"))).thenReturn(mainObject);
+        when(businessObjectMapper.selectByConfigKey(any(), eq("detail_key"))).thenReturn(detailObject);
+
+        Map<String, Object> catalog = service.getFormAssets("business_object", true, 10L);
+        List<Map<String, Object>> assets = (List<Map<String, Object>>) catalog.get("formAssets");
+
+        assertEquals(2, assets.size());
+        assertTrue(assets.stream().anyMatch(asset -> "page_main".equals(asset.get("pageId"))));
+        assertTrue(assets.stream().anyMatch(asset -> "page_legacy".equals(asset.get("pageId"))));
+        assertFalse(assets.stream().anyMatch(asset -> "page_detail".equals(asset.get("pageId"))));
     }
 
     @Test

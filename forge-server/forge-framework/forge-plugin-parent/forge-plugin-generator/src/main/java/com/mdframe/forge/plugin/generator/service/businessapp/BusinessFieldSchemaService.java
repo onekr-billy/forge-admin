@@ -132,6 +132,7 @@ public class BusinessFieldSchemaService {
         if (StringUtils.isNotBlank(dto.getPlaceholder())) {
             schema.getBasicProps().put("placeholder", dto.getPlaceholder());
         }
+        schema.applyMultipleSelectionStorage();
         return schema;
     }
 

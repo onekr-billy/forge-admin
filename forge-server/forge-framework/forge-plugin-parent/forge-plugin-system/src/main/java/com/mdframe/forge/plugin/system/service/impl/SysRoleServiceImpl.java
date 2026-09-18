@@ -155,6 +155,9 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             userOrgRoleMapper.delete(new LambdaQueryWrapper<SysUserOrgRole>()
                     .eq(SysUserOrgRole::getRoleId, id)
                     .eq(SysUserOrgRole::getTenantId, role.getTenantId()));
+            userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
+                    .eq(SysUserRole::getRoleId, id)
+                    .eq(SysUserRole::getTenantId, role.getTenantId()));
             return roleMapper.deleteById(id) > 0;
         });
     }
@@ -289,6 +292,12 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (StringUtils.isNotBlank(clientCode) && !clientAssignableResourceIdSet.containsAll(finalResourceIdSet)) {
             throw new RuntimeException("权限溢出：不能分配其他客户端的父级资源权限");
         }
+
+        // 存储前归一化：目录和页面父链只为明确勾选的页面入口保留。
+        // 授权弹窗会把角色历史绑定（含其下页面已全部取消的"孤儿目录"）回填后原样提交，
+        // 全量替换会把这些目录反复写回，导致角色出现点开为空的菜单入口（如已废弃模块）。
+        finalResourceIdSet = RoleResourceSelectionNormalizer.normalize(
+                finalResourceIdSet, resourceIdSet, resourceMap);
 
         // 1. 先删除该角色的资源关联。指定客户端时仅替换当前客户端资源，避免清空其他客户端权限。
         LambdaQueryWrapper<SysRoleResource> deleteWrapper = new LambdaQueryWrapper<>();
@@ -770,7 +779,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 parentId = normalizeParentId(parent.getParentId());
             }
         }
-        return result;
+        return RoleResourceSelectionNormalizer.normalize(result, selectedResourceIds, resourceMap);
     }
 
     private Map<String, Integer> normalizeScopedModuleDataScopes(

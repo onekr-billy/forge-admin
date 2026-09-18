@@ -232,8 +232,11 @@ public class FlowModelController {
     @GetMapping("/list")
     public RespInfo<List<FlowModel>> list(
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) Integer status) {
-        List<FlowModel> models = flowModelService.getEnabledModels(category);
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "false") Boolean includeDraft) {
+        List<FlowModel> models = Boolean.TRUE.equals(includeDraft) || status != null
+                ? flowModelService.getModels(category, status)
+                : flowModelService.getEnabledModels(category);
         return RespInfo.success(models);
     }
 

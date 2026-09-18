@@ -37,7 +37,7 @@ describe('excel column config dictionary linkage', () => {
 })
 
 describe('system organization tree scrolling', () => {
-  it.each(['../org.vue', '../user.vue', '../post.vue'])(
+  it.each(['../org.vue', '../user/styles/organization.css', '../post.vue'])(
     'keeps the left tree independently scrollable in %s',
     (relativeUrl) => {
       const source = readSource(relativeUrl)

@@ -654,87 +654,259 @@
                         :consistent-menu-width="false"
                         @update:value="updateOptionSourceType"
                       />
+                      <!-- ────── 子表明细：从画布已配置的子表中选择 ────── -->
                       <template v-if="selectedOptionSourceType === 'CURRENT_CHILDREN'">
-                        <n-input
-                          :value="selectedComponent.props?.optionSource?.relationKey || ''"
-                          placeholder="子表关系编码，例如 presale_items"
-                          @update:value="updatePageWidgetOptionSource({ relationKey: $event || '' })"
-                        />
-                        <div class="option-editor-row two-columns">
-                          <n-input
-                            :value="selectedComponent.props?.optionSource?.valueField || 'id'"
-                            placeholder="值字段"
-                            @update:value="updatePageWidgetOptionSource({ valueField: $event || 'id' })"
-                          />
-                          <n-input
-                            :value="selectedComponent.props?.optionSource?.labelField || 'label'"
-                            placeholder="显示字段"
-                            @update:value="updatePageWidgetOptionSource({ labelField: $event || 'label' })"
-                          />
-                        </div>
-                        <div class="switch-line compact">
-                          <span>仅已保存明细</span>
-                          <n-switch
-                            size="small"
-                            :value="selectedComponent.props?.optionSource?.persistedOnly !== false"
-                            @update:value="updatePageWidgetOptionSource({ persistedOnly: $event })"
-                          />
+                        <div class="option-source-card">
+                          <div class="option-source-field">
+                            <label>关联子表</label>
+                            <n-select
+                              :value="selectedComponent.props?.optionSource?.relationKey || ''"
+                              :options="childTableRelationOptions"
+                              filterable
+                              :disabled="!childTableRelationOptions.length"
+                              :placeholder="childTableRelationOptions.length ? '选择子表' : '请先在「主子表配置」中添加子表'"
+                              @update:value="updatePageWidgetOptionSource({ relationKey: $event || '' })"
+                            />
+                          </div>
+                          <div class="option-source-field two-col">
+                            <div class="option-source-field">
+                              <label>值字段</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.valueField || 'id'"
+                                :options="childTableFieldOptions"
+                                filterable
+                                tag
+                                size="small"
+                                placeholder="选择字段"
+                                @update:value="updatePageWidgetOptionSource({ valueField: $event || 'id' })"
+                              />
+                            </div>
+                            <div class="option-source-field">
+                              <label>显示字段</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.labelField || 'label'"
+                                :options="childTableFieldOptions"
+                                filterable
+                                tag
+                                size="small"
+                                placeholder="选择字段"
+                                @update:value="updatePageWidgetOptionSource({ labelField: $event || 'label' })"
+                              />
+                            </div>
+                          </div>
+                          <div class="option-source-toggle">
+                            <n-switch
+                              size="small"
+                              :value="selectedComponent.props?.optionSource?.persistedOnly !== false"
+                              @update:value="updatePageWidgetOptionSource({ persistedOnly: $event })"
+                            />
+                            <span>仅已保存明细</span>
+                          </div>
                         </div>
                       </template>
+                      <!-- ────── 手写系统接口：直接配置当前系统的后台接口 ────── -->
                       <template v-else-if="selectedOptionSourceType === 'REMOTE'">
-                        <!-- 级联接口模式下接口地址由「级联选项」统一接管，避免两处输入框编辑同一个值 -->
-                        <div v-if="optionLinkageApiManaged" class="option-linkage-hint">
-                          选项接口由下方「级联选项」统一配置：{{ optionLinkageApi || '尚未填写' }}
+                        <div class="option-source-card">
+                          <div class="option-source-hint">
+                            调用当前系统后台接口，格式为 方法@路径，如 get@/api/system/user/list
+                          </div>
+                          <!-- 级联接口模式下接口地址由「级联选项」统一接管 -->
+                          <div v-if="optionLinkageApiManaged" class="option-linkage-hint">
+                            选项接口由下方「级联选项」统一配置：{{ optionLinkageApi || '尚未填写' }}
+                          </div>
+                          <div v-else class="option-source-field">
+                            <label>接口地址</label>
+                            <n-input
+                              :value="selectedComponent.props?.optionSource?.api || ''"
+                              size="small"
+                              placeholder="方法@路径，如 get@/api/system/user/options"
+                              @update:value="updatePageWidgetOptionSource({ api: $event || '' })"
+                            />
+                          </div>
+                          <div class="option-source-field two-col">
+                            <div class="option-source-field">
+                              <label>请求方式</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.method || 'get'"
+                                :options="requestMethodOptions"
+                                size="small"
+                                @update:value="updatePageWidgetOptionSource({ method: $event || 'get' })"
+                              />
+                            </div>
+                            <div class="option-source-field">
+                              <label>列表路径</label>
+                              <n-input
+                                :value="selectedComponent.props?.optionSource?.recordsField || 'records'"
+                                size="small"
+                                placeholder="如 records"
+                                @update:value="updatePageWidgetOptionSource({ recordsField: $event || 'records' })"
+                              />
+                            </div>
+                          </div>
+                          <div class="option-source-field two-col">
+                            <div class="option-source-field">
+                              <label>显示字段</label>
+                              <n-input
+                                :value="selectedComponent.props?.optionSource?.labelField || 'label'"
+                                size="small"
+                                placeholder="如 label"
+                                @update:value="updatePageWidgetOptionSource({ labelField: $event || 'label' })"
+                              />
+                            </div>
+                            <div class="option-source-field">
+                              <label>值字段</label>
+                              <n-input
+                                :value="selectedComponent.props?.optionSource?.valueField || 'value'"
+                                size="small"
+                                placeholder="如 value"
+                                @update:value="updatePageWidgetOptionSource({ valueField: $event || 'value' })"
+                              />
+                            </div>
+                          </div>
+                          <!-- 参数可视化编辑器 -->
+                          <div class="option-source-field">
+                            <label>
+                              请求参数
+                              <n-tooltip trigger="hover">
+                                <template #trigger>
+                                  <span class="option-source-help">?</span>
+                                </template>
+                                值支持 ${字段名} 引用表单当前值，如 ${deptId}
+                              </n-tooltip>
+                            </label>
+                            <div class="option-source-params">
+                              <div
+                                v-for="param in optionSourceParamRows"
+                                :key="param.key"
+                                class="option-source-param-row"
+                              >
+                                <n-input
+                                  :value="param.key"
+                                  size="small"
+                                  placeholder="参数名"
+                                  :disabled="true"
+                                  class="param-key-input"
+                                />
+                                <n-input
+                                  :value="param.value"
+                                  size="small"
+                                  placeholder="参数值"
+                                  class="param-value-input"
+                                  @update:value="updateOptionSourceParam(param.key, $event)"
+                                />
+                                <button
+                                  type="button"
+                                  class="option-source-param-remove"
+                                  title="删除参数"
+                                  @click="removeOptionSourceParam(param.key)"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                              <n-button size="tiny" dashed block @click="addOptionSourceParam">
+                                + 添加参数
+                              </n-button>
+                            </div>
+                          </div>
                         </div>
-                        <n-input
-                          v-else
-                          :value="selectedComponent.props?.optionSource?.api || ''"
-                          placeholder="接口地址，例如 get@/api/options"
-                          @update:value="updatePageWidgetOptionSource({ api: $event || '' })"
-                        />
-                        <div class="option-editor-row two-columns">
-                          <n-select
-                            :value="selectedComponent.props?.optionSource?.method || 'get'"
-                            :options="requestMethodOptions"
-                            @update:value="updatePageWidgetOptionSource({ method: $event || 'get' })"
-                          />
-                          <n-input
-                            :value="selectedComponent.props?.optionSource?.recordsField || 'records'"
-                            placeholder="列表路径"
-                            @update:value="updatePageWidgetOptionSource({ recordsField: $event || 'records' })"
-                          />
+                      </template>
+                      <!-- ────── 受管查询源：选查询源后自动加载元数据 ────── -->
+                      <template v-else-if="selectedOptionSourceType === 'QUERY_SOURCE'">
+                        <div class="option-source-card">
+                          <div class="option-source-field">
+                            <label>查询源</label>
+                            <n-select
+                              :value="querySourceSelection"
+                              :options="querySourceCatalogOptions"
+                              :loading="querySourceCatalogLoading"
+                              filterable
+                              clearable
+                              placeholder="选择数据集、业务对象或接口"
+                              @update:value="updateQuerySourceSelection"
+                            />
+                          </div>
+                          <div v-if="querySourceSelection" class="option-source-field two-col">
+                            <div class="option-source-field">
+                              <label>值字段</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.valueField || 'id'"
+                                :options="querySourceMetaFields"
+                                :loading="querySourceMetaLoading"
+                                filterable
+                                size="small"
+                                placeholder="选择字段"
+                                @update:value="updatePageWidgetOptionSource({ valueField: $event || 'id' })"
+                              />
+                            </div>
+                            <div class="option-source-field">
+                              <label>显示字段</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.labelField || 'name'"
+                                :options="querySourceMetaFields"
+                                :loading="querySourceMetaLoading"
+                                filterable
+                                size="small"
+                                placeholder="选择字段"
+                                @update:value="updatePageWidgetOptionSource({ labelField: $event || 'name' })"
+                              />
+                            </div>
+                          </div>
+                          <div v-if="querySourceMetaError && !querySourceMetaLoading" class="query-source-meta-error">
+                            {{ querySourceMetaError }}
+                          </div>
+                          <!-- 查询参数：摘要 + 弹窗配置 -->
+                          <div v-if="querySourceSelection && !querySourceMetaLoading" class="option-source-field">
+                            <label>
+                              查询参数
+                              <n-tooltip trigger="hover">
+                                <template #trigger>
+                                  <span class="option-source-help">?</span>
+                                </template>
+                                参数列表由查询源输入契约自动生成，点击配置按钮选择表单字段引用或输入固定值
+                              </n-tooltip>
+                            </label>
+                            <div class="query-source-param-summary">
+                              <span class="query-source-param-summary-text">
+                                <template v-if="querySourceParamRows.length">
+                                  {{ querySourceParamFilledCount }} / {{ querySourceParamRows.length }} 已配置
+                                  <span v-if="querySourceParamMissingRequired" class="query-source-param-warn">
+                                    （{{ querySourceParamMissingRequired }} 项必填未填）
+                                  </span>
+                                </template>
+                                <template v-else>
+                                  该查询源无需输入参数
+                                </template>
+                              </span>
+                              <n-button
+                                v-if="querySourceParamRows.length"
+                                size="tiny"
+                                secondary
+                                type="primary"
+                                @click="openQueryParamModal"
+                              >
+                                配置参数
+                              </n-button>
+                            </div>
+                          </div>
+                          <div v-if="querySourceMetaLoading" class="option-source-meta-loading">
+                            正在加载查询源元数据…
+                          </div>
                         </div>
-                        <div class="option-editor-row two-columns">
-                          <n-input
-                            :value="selectedComponent.props?.optionSource?.labelField || 'label'"
-                            placeholder="显示字段"
-                            @update:value="updatePageWidgetOptionSource({ labelField: $event || 'label' })"
-                          />
-                          <n-input
-                            :value="selectedComponent.props?.optionSource?.valueField || 'value'"
-                            placeholder="值字段"
-                            @update:value="updatePageWidgetOptionSource({ valueField: $event || 'value' })"
-                          />
-                        </div>
-                        <n-input
-                          :value="selectedComponent.props?.optionSource?.paramsText || '{}'"
-                          placeholder="固定参数 JSON，如 {&quot;type&quot;:&quot;user&quot;}；高级用法可用 ${字段名} 引用表单值"
-                          @update:value="updatePageWidgetOptionSource({ paramsText: $event || '{}' })"
-                        />
                       </template>
                     </div>
                   </n-form-item>
                   <!-- 级联选项：下拉级联一站式步骤式配置（运行时消费 props.cascade + optionSource）。
-                       场景：选了部门后，人员下拉按部门参数重新加载；按①②③顺序配置即可生效 -->
-                  <n-form-item v-if="isOptionField && selectedComponent.componentKey !== 'transfer'">
+                       场景：选了部门后，人员下拉按部门参数重新加载；按①②③顺序配置即可生效。
+                       人员组件（userSelect）也支持：选了组织后，人员只能从该组织范围内选择。 -->
+                  <n-form-item v-if="(isOptionField && selectedComponent.componentKey !== 'transfer') || isUserSelectCascadeField">
                     <template #label>
                       <span class="option-list-label option-linkage-label">
-                        <span>级联选项</span>
+                        <span>{{ isUserSelectCascadeField ? '组织级联' : '级联选项' }}</span>
                         <n-tooltip trigger="hover">
                           <template #trigger>
                             <span class="help-icon">?</span>
                           </template>
-                          本字段选项跟随另一个字段的值变化。例如：先选省份，市列表只显示该省的城市。
+                          {{ isUserSelectCascadeField ? '选了组织后，人员只能从该组织范围内选择，组织重选时人员同步刷新。' : '本字段选项跟随另一个字段的值变化。例如：先选省份，市列表只显示该省的城市。' }}
                         </n-tooltip>
                         <n-switch
                           size="small"
@@ -744,76 +916,118 @@
                       </span>
                     </template>
                     <div v-if="optionLinkageConfig.enabled" class="option-linkage-steps">
-                      <div class="option-linkage-step">
-                        <span class="option-linkage-step-label">① 上级字段</span>
-                        <n-select
-                          :value="optionLinkageConfig.sourceField"
-                          :options="optionLinkageSourceFieldOptions"
-                          :consistent-menu-width="false"
-                          filterable
-                          clearable
-                          placeholder="选谁变化时刷新本字段，如：部门"
-                          @update:value="updateOptionLinkageSourceField"
-                        />
-                        <span class="option-linkage-step-hint">不限下拉：输入框、日期、数字等任意组件的值变化都会触发联动</span>
-                      </div>
-                      <div class="option-linkage-step">
-                        <span class="option-linkage-step-label">② 联动方式</span>
-                        <div class="option-linkage-modes">
-                          <button
-                            type="button"
-                            class="option-linkage-mode"
-                            :class="{ active: optionLinkageConfig.mode === 'remoteParam' }"
-                            @click="updateOptionLinkageMode('remoteParam')"
-                          >
-                            <strong>接口加载</strong>
-                            <span>选了上级后按参数请求接口刷新选项（省市区、按部门选人等常用）</span>
-                          </button>
-                          <button
-                            type="button"
-                            class="option-linkage-mode"
-                            :class="{ active: optionLinkageConfig.mode === 'parentDictCode' }"
-                            @click="updateOptionLinkageMode('parentDictCode')"
-                          >
-                            <strong>本地过滤</strong>
-                            <span>从已配置的选项里按上级值筛选（选项数据需含父级编码）</span>
-                          </button>
-                        </div>
-                      </div>
-                      <template v-if="optionLinkageConfig.mode === 'remoteParam'">
+                      <!-- userSelect：组织级联简化配置 -->
+                      <template v-if="isUserSelectCascadeField">
                         <div class="option-linkage-step">
-                          <span class="option-linkage-step-label">③ 选项接口</span>
-                          <n-input
-                            :value="optionLinkageApi"
-                            placeholder="方法@地址，如 get@/api/system/user/list"
-                            @update:value="updateOptionLinkageApi"
-                          />
-                        </div>
-                        <div class="option-linkage-step">
-                          <span class="option-linkage-step-label">④ 参数名</span>
-                          <n-input
-                            :value="optionLinkageConfig.paramName"
-                            placeholder="接口接收上级值的参数，如 deptId"
-                            @update:value="updateOptionLinkage({ paramName: $event || '' })"
-                          />
-                        </div>
-                        <div class="option-linkage-step">
-                          <span class="option-linkage-step-label">⑤ 上级为空时</span>
+                          <span class="option-linkage-step-label">① 组织字段</span>
                           <n-select
-                            :value="optionLinkageConfig.emptyStrategy"
-                            :options="optionLinkageEmptyStrategyOptions"
+                            :value="optionLinkageConfig.sourceField"
+                            :options="userSelectCascadeSourceFieldOptions"
                             :consistent-menu-width="false"
-                            @update:value="updateOptionLinkage({ emptyStrategy: $event || 'empty' })"
+                            filterable
+                            clearable
+                            :placeholder="hasOrgFieldInSchema ? '选哪个字段代表组织' : '未找到组织组件字段，可手动选择其他字段'"
+                            @update:value="updateOptionLinkageSourceField"
                           />
+                          <span class="option-linkage-step-hint">人员选择范围会按所选组织过滤（{{ optionLinkageConfig.includeChildren === false ? '仅本组织直属人员' : '含子组织人员' }}）</span>
+                        </div>
+                        <div class="option-linkage-step">
+                          <span class="option-linkage-step-label">② 组织范围</span>
+                          <div class="option-linkage-modes">
+                            <button
+                              type="button"
+                              class="option-linkage-mode"
+                              :class="{ active: optionLinkageConfig.includeChildren !== false }"
+                              @click="updateOptionLinkage({ includeChildren: true })"
+                            >
+                              <strong>含子组织</strong>
+                              <span>该组织及其全部下级的人员都可选</span>
+                            </button>
+                            <button
+                              type="button"
+                              class="option-linkage-mode"
+                              :class="{ active: optionLinkageConfig.includeChildren === false }"
+                              @click="updateOptionLinkage({ includeChildren: false })"
+                            >
+                              <strong>仅本组织</strong>
+                              <span>只能选择该组织直属人员</span>
+                            </button>
+                          </div>
                         </div>
                       </template>
-                      <div v-else class="option-linkage-hint">
-                        按上级字段值过滤本字段已有选项（静态选项或字典数据需包含父级编码）。
-                      </div>
+                      <!-- 通用下拉级联：原有配置流程 -->
+                      <template v-else>
+                        <div class="option-linkage-step">
+                          <span class="option-linkage-step-label">① 上级字段</span>
+                          <n-select
+                            :value="optionLinkageConfig.sourceField"
+                            :options="optionLinkageSourceFieldOptions"
+                            :consistent-menu-width="false"
+                            filterable
+                            clearable
+                            placeholder="选谁变化时刷新本字段，如：部门"
+                            @update:value="updateOptionLinkageSourceField"
+                          />
+                          <span class="option-linkage-step-hint">不限下拉：输入框、日期、数字等任意组件的值变化都会触发联动</span>
+                        </div>
+                        <div class="option-linkage-step">
+                          <span class="option-linkage-step-label">② 联动方式</span>
+                          <div class="option-linkage-modes">
+                            <button
+                              type="button"
+                              class="option-linkage-mode"
+                              :class="{ active: optionLinkageConfig.mode === 'remoteParam' }"
+                              @click="updateOptionLinkageMode('remoteParam')"
+                            >
+                              <strong>接口加载</strong>
+                              <span>选了上级后按参数请求接口刷新选项（省市区、按部门选人等常用）</span>
+                            </button>
+                            <button
+                              type="button"
+                              class="option-linkage-mode"
+                              :class="{ active: optionLinkageConfig.mode === 'parentDictCode' }"
+                              @click="updateOptionLinkageMode('parentDictCode')"
+                            >
+                              <strong>本地过滤</strong>
+                              <span>从已配置的选项里按上级值筛选（选项数据需含父级编码）</span>
+                            </button>
+                          </div>
+                        </div>
+                        <template v-if="optionLinkageConfig.mode === 'remoteParam'">
+                          <div class="option-linkage-step">
+                            <span class="option-linkage-step-label">③ 选项接口</span>
+                            <n-input
+                              :value="optionLinkageApi"
+                              placeholder="方法@地址，如 get@/api/system/user/list"
+                              @update:value="updateOptionLinkageApi"
+                            />
+                          </div>
+                          <div class="option-linkage-step">
+                            <span class="option-linkage-step-label">④ 参数名</span>
+                            <n-input
+                              :value="optionLinkageConfig.paramName"
+                              placeholder="接口接收上级值的参数，如 deptId"
+                              @update:value="updateOptionLinkage({ paramName: $event || '' })"
+                            />
+                          </div>
+                          <div class="option-linkage-step">
+                            <span class="option-linkage-step-label">⑤ 上级为空时</span>
+                            <n-select
+                              :value="optionLinkageConfig.emptyStrategy"
+                              :options="optionLinkageEmptyStrategyOptions"
+                              :consistent-menu-width="false"
+                              @update:value="updateOptionLinkage({ emptyStrategy: $event || 'empty' })"
+                            />
+                          </div>
+                        </template>
+                        <div v-else class="option-linkage-hint">
+                          按上级字段值过滤本字段已有选项（静态选项或字典数据需包含父级编码）。
+                        </div>
+                      </template>
                       <div
                         v-if="optionLinkageSummary"
                         class="option-linkage-summary"
-                        :class="{ 'is-warning': !optionLinkageConfig.sourceField || (optionLinkageConfig.mode === 'remoteParam' && !optionLinkageApi) }"
+                        :class="{ 'is-warning': !optionLinkageConfig.sourceField || (!isUserSelectCascadeField && optionLinkageConfig.mode === 'remoteParam' && !optionLinkageApi) }"
                       >
                         {{ optionLinkageSummary }}
                       </div>
@@ -827,7 +1041,7 @@
                       </div>
                     </div>
                     <div v-else class="option-linkage-hint">
-                      未开启：选项固定不变。需要“先选 A、B 的选项跟着变”时开启。
+                      {{ isUserSelectCascadeField ? '未开启：人员组件显示全部用户。开启后可按组织范围筛选人员。' : '未开启：选项固定不变。需要“先选 A、B 的选项跟着变”时开启。' }}
                     </div>
                   </n-form-item>
                   <!-- 选项列表：紧跟选项来源（仅静态来源时手动维护，不再放独立折叠项 — 用户反馈"太分散"）
@@ -1000,40 +1214,68 @@
                       @update:value="updateDictType"
                     />
                   </n-form-item>
-                  <template v-if="isObjectReferenceField">
-                    <n-form-item label="引用对象">
+                  <template v-if="isRelationField">
+                    <n-form-item :label="isObjectReferenceField ? '引用对象' : '目标对象'">
                       <n-select
-                        :value="referenceObjectCode"
+                        :value="isObjectReferenceField ? referenceObjectCode : recordSelectorObjectCode"
                         :options="businessObjectOptions"
                         :loading="businessObjectLoading"
+                        :render-label="renderReferenceObjectLabel"
                         filterable
                         clearable
                         placeholder="选择目标业务对象"
-                        @update:value="updateReferenceObjectCode"
+                        @update:value="isObjectReferenceField ? updateReferenceObjectCode($event) : updateRecordSelectorObjectCode($event)"
                       />
                     </n-form-item>
-                    <n-form-item v-if="referenceObjectCode" label="显示字段">
-                      <n-select
-                        :value="referenceDisplayField"
-                        :options="referenceTargetFieldOptions"
-                        :loading="referenceTargetFieldLoading"
-                        filterable
-                        clearable
-                        placeholder="选择下拉选项中显示的字段"
-                        @update:value="updateReferenceDisplayField"
-                      />
-                    </n-form-item>
-                    <n-form-item v-if="referenceObjectCode" label="值字段">
-                      <n-select
-                        :value="referenceValueField"
-                        :options="referenceTargetFieldOptions"
-                        :loading="referenceTargetFieldLoading"
-                        filterable
-                        clearable
-                        placeholder="选择保存到当前字段的值字段，默认 id"
-                        @update:value="updateReferenceValueField"
-                      />
-                    </n-form-item>
+                    <!-- 下拉模式（objectReference）：显示字段 + 值字段 -->
+                    <template v-if="isObjectReferenceField">
+                      <n-form-item v-if="referenceObjectCode" label="显示字段">
+                        <n-select
+                          :value="referenceDisplayField"
+                          :options="referenceTargetFieldOptions"
+                          :loading="referenceTargetFieldLoading"
+                          filterable
+                          clearable
+                          placeholder="选择下拉选项中显示的字段"
+                          @update:value="updateReferenceDisplayField"
+                        />
+                      </n-form-item>
+                      <n-form-item v-if="referenceObjectCode" label="值字段">
+                        <n-select
+                          :value="referenceValueField"
+                          :options="referenceTargetFieldOptions"
+                          :loading="referenceTargetFieldLoading"
+                          filterable
+                          clearable
+                          placeholder="选择保存到当前字段的值字段，默认 id"
+                          @update:value="updateReferenceValueField"
+                        />
+                      </n-form-item>
+                    </template>
+                    <!-- 弹窗模式（recordSelector）：值字段 + 选择器设置（搜索字段/展示列/过滤/映射） -->
+                    <template v-if="isRecordSelectorField">
+                      <n-form-item v-if="recordSelectorObjectCode" label="值字段">
+                        <n-select
+                          :value="recordSelectorValueField"
+                          :options="recordSelectorTargetFieldOptions"
+                          :loading="recordSelectorTargetFieldLoading"
+                          filterable
+                          clearable
+                          placeholder="保存到当前字段的值字段，默认 id"
+                          @update:value="updateRecordSelectorValueField"
+                        />
+                      </n-form-item>
+                      <n-form-item v-if="recordSelectorObjectCode" label="选择器设置">
+                        <div class="record-selector-advanced">
+                          <n-button size="small" @click="rsConfigDialogShow = true">
+                            配置
+                          </n-button>
+                          <span class="record-selector-advanced-summary">
+                            {{ rsConfigSummary }}
+                          </span>
+                        </div>
+                      </n-form-item>
+                    </template>
                   </template>
                   <!-- 通用属性后置：选项类核心配置（选项来源/字典/引用对象/transfer 数据源）置顶后，
                        占位提示/默认值等通用项紧随其后（主次分明，参考钉钉宜搭属性面板分区） -->
@@ -1242,6 +1484,14 @@
                     </n-button>
                   </n-form-item>
                   <div class="switch-list">
+                    <label v-if="supportsMultipleSelect">
+                      <span>多选</span>
+                      <n-switch
+                        size="small"
+                        :value="selectedMultipleEnabled"
+                        @update:value="updateMultipleSelect"
+                      />
+                    </label>
                     <label>
                       <span>可清空</span>
                       <n-switch
@@ -1259,6 +1509,9 @@
                       />
                     </label>
                   </div>
+                  <p v-if="supportsMultipleSelect && selectedMultipleEnabled" class="field-multiple-hint">
+                    多选值按逗号分隔存储，并同步保存对应名称。保存并发布后生效。
+                  </p>
                 </section>
               </n-collapse-item>
 
@@ -3356,33 +3609,9 @@
       </n-drawer>
     </template>
 
-    <!-- 子表组件选中时：内联编辑器，替代空的通用属性 Tab -->
+    <!-- 子表组件选中时：一站式内联编辑器 -->
     <div v-else-if="isSubTable" class="subtable-inline-editor">
-      <div class="subtable-inline-hint">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="currentColor"/></svg>
-        <div>
-          <strong>子表关联工作流</strong>
-          <p>子表标识需对应「关系与级联」中的 ER 图关系。先建关系，再绑定子表。完整配置在「表单属性 → 主子表配置」中管理。</p>
-        </div>
-      </div>
-      <n-form label-placement="top" :show-feedback="false" class="property-form" style="padding: 0 10px 10px;">
-        <n-form-item label="子表标题">
-          <n-input :value="selectedComponent.props?.header || ''" size="small" placeholder="子表标题"
-            @update:value="designerStore.updateComponent(selectedComponent.id, { props: { header: $event || '关联子表' } })" />
-        </n-form-item>
-        <n-form-item label="子表标识（relationKey）">
-          <n-input :value="selectedComponent.props?.relationKey || ''" size="small" clearable placeholder="对应 ER 图中的关系标识，如 order_item"
-            @update:value="designerStore.updateComponent(selectedComponent.id, { props: { relationKey: String($event || '').trim() } })" />
-        </n-form-item>
-        <n-form-item label="展示方式">
-          <n-select :value="selectedComponent.props?.displayMode || 'inline_grid'" size="small"
-            :options="[{ label: '行内表格', value: 'inline_grid' }, { label: '卡片列表', value: 'card_list' }, { label: '底部抽屉', value: 'bottom_sheet' }]"
-            @update:value="designerStore.updateComponent(selectedComponent.id, { props: { displayMode: $event || 'inline_grid' } })" />
-        </n-form-item>
-      </n-form>
-      <div class="subtable-inline-nav-hint">
-        返回「表单属性」可管理所有子表（添加/删除/关系选择）
-      </div>
+      <SubTableInlineEditor :component="selectedComponent" />
     </div>
 
     <n-tabs v-else v-model:value="formPropertyActiveTab" type="line" size="medium" animated class="property-tabs form-property-tabs">
@@ -3632,13 +3861,14 @@
           <span class="property-tab-label">
             <n-icon><FlashOutline /></n-icon>
             自动化
-            <i v-if="formFieldEventRows.length || formFieldLinkageRows.length || formEventRows.length" class="property-tab-configured-dot" title="已有自动化配置" />
+            <i v-if="formFieldEventRows.length || formFieldLinkageRows.length || formEventRows.length || hasFormInitConfig" class="property-tab-configured-dot" title="已有自动化配置" />
           </span>
         </template>
         <div class="form-event-primary-panel">
           <p class="form-automation-intro">
-            表单的自动行为都在这里配置，按场景分为三类：字段自动查询、字段联动、表单打开或提交时执行动作。
+            表单的自动行为都在这里配置，按场景分为四类：表单初始化、字段自动查询、字段联动、表单打开或提交时执行动作。
           </p>
+          <FormInitPanel />
           <FieldEventRulesEditor
             :model-value="formFieldEventRows"
             :field-options="formFieldOptions"
@@ -4180,6 +4410,20 @@
       />
     </n-modal>
 
+    <!-- recordSelector 选择器设置弹窗：选择方式 / 搜索字段 / 展示列 / 过滤参数 / 字段映射 -->
+    <RecordSelectorConfigDialog
+      v-model:show="rsConfigDialogShow"
+      :field-options="recordSelectorTargetFieldOptions"
+      :main-field-options="formFieldOptions"
+      :multiple="recordSelectorMultiple"
+      :keyword-fields="recordSelectorKeywordFields"
+      :display-fields="recordSelectorDisplayFields"
+      :filters="rsDialogFilters"
+      :mappings="rsDialogMappings"
+      :loading="recordSelectorTargetFieldLoading"
+      @confirm="handleRsConfigConfirm"
+    />
+
     <n-modal v-model:show="sourceModalVisible" preset="card" class="form-source-modal" :bordered="false" title="源码编辑">
       <section class="panel-item source-panel">
         <div class="panel-title-row">
@@ -4222,6 +4466,60 @@
         </div>
       </template>
     </n-modal>
+
+    <!-- 查询源参数配置弹窗 -->
+    <n-modal
+      v-model:show="queryParamModalVisible"
+      preset="card"
+      class="query-source-param-modal"
+      :bordered="false"
+      :mask-closable="false"
+      style="width: min(560px, calc(100vw - 40px))"
+      title="查询参数配置"
+    >
+      <div class="query-param-modal-body">
+        <div class="query-param-modal-hint">
+          为每个参数选择表单字段引用（运行时自动取值），或输入固定值。
+        </div>
+        <div class="query-param-modal-list">
+          <div
+            v-for="param in querySourceParamRows"
+            :key="param.name"
+            class="query-param-modal-row"
+          >
+            <div class="query-param-modal-row-header">
+              <span v-if="param.required" class="schema-param-required">*</span>
+              <span class="query-param-modal-row-label">{{ param.label }}</span>
+              <span class="query-param-modal-row-code">{{ param.name }}</span>
+              <span v-if="param.type" class="query-param-modal-row-type">{{ param.type }}</span>
+            </div>
+            <n-select
+              :value="queryParamModalDraft[param.name] || null"
+              :options="getQuerySourceParamOptions(queryParamModalDraft[param.name])"
+              size="small"
+              filterable
+              tag
+              clearable
+              placeholder="选择表单字段或输入固定值"
+              @update:value="updateQueryParamDraft(param.name, $event)"
+            />
+            <div v-if="param.required && !queryParamModalDraft[param.name]" class="schema-param-empty-hint">
+              必填：请选择表单字段引用或输入固定值
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="query-param-modal-footer">
+          <n-button @click="cancelQueryParamModal">
+            取消
+          </n-button>
+          <n-button type="primary" @click="confirmQueryParamModal">
+            确认
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -4240,9 +4538,14 @@ import {
   SettingsOutline,
   ToggleOutline,
 } from '@vicons/ionicons5'
+import { NTag, useMessage } from 'naive-ui'
 import { computed, h, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { businessObjectDesigner, businessObjectList, codeRuleList, previewCodeRule } from '@/api/business-app'
+import { getLowcodeQuerySourceCatalog, getLowcodeQuerySourceMetadata } from '@/api/lowcode-query-source'
+import { parseQuerySourceInputSchema } from '@/components/ai-form/query-source-schema'
+import { supportsMultipleSelect as isMultiSelectComponent, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
+import IconRenderer from '@/components/IconRenderer.vue'
 import { getComponentSpec } from '@/components/lowcode-builder/designer-core'
 import SpecPropertyPanel from '@/components/lowcode-builder/designer-core/panel/SpecPropertyPanel.vue'
 import DictTypeSelect from '@/components/lowcode-builder/shared/DictTypeSelect.vue'
@@ -4259,8 +4562,11 @@ import FieldEventRulesEditor from './FieldEventRulesEditor.vue'
 import FieldLinkageRulesEditor from './FieldLinkageRulesEditor.vue'
 import { GRID_COLUMN_MARKS as gridColumnMarks, MAX_FORM_GRID_COLUMNS, normalizeGridCount } from './formLayoutConfig'
 import FormAssetsPanel from './panels/FormAssetsPanel.vue'
+import FormInitPanel from './panels/FormInitPanel.vue'
 import FormLayoutPanel from './panels/FormLayoutPanel.vue'
 import FormSubTablePanel from './panels/FormSubTablePanel.vue'
+import RecordSelectorConfigDialog from './panels/RecordSelectorConfigDialog.vue'
+import SubTableInlineEditor from './panels/SubTableInlineEditor.vue'
 import { buildDefaultPlaceholder, buildFieldAssetPlaceholderPatch, shouldSyncPlaceholder } from './placeholder-utils'
 
 const props = defineProps({
@@ -4296,6 +4602,7 @@ const emit = defineEmits(['update:schema', 'update:selectedId', 'close', 'fieldA
 // 面板子组件（panels/*）统一读写 useFormDesignerStore，不再 props/emit 透传；
 // 本组件作为入口保留 props/emit 接口，兼容存量父组件（ForgeFormDesigner / BusinessFormDesigner / application-runtime）。
 const designerStore = useFormDesignerStore()
+const message = useMessage()
 
 watch(
   () => [props.schema, props.selectedId, props.fields, props.relations, props.objectCode],
@@ -4447,6 +4754,14 @@ const formPermissionConfig = computed(() => formGovernanceSettings.value.permiss
 const formFieldRuleRows = computed(() => Array.isArray(formGovernanceSettings.value.fieldRules) ? formGovernanceSettings.value.fieldRules : [])
 const formEventRows = computed(() => Array.isArray(formGovernanceSettings.value.events) ? formGovernanceSettings.value.events : [])
 const formFieldEventRows = computed(() => Array.isArray(formGovernanceSettings.value.fieldEvents) ? formGovernanceSettings.value.fieldEvents : [])
+const hasFormInitConfig = computed(() => {
+  const config = formGovernanceSettings.value.formInit
+  return Boolean(
+    config && typeof config === 'object'
+    && ((Array.isArray(config.contextDefaults) && config.contextDefaults.length)
+      || config.recordLoad?.enabled === true),
+  )
+})
 const formFieldLinkageRows = computed(() => Array.isArray(formGovernanceSettings.value.fieldLinkages) ? formGovernanceSettings.value.fieldLinkages : [])
 const formOfflineDraftConfig = computed(() => {
   const source = formGovernanceSettings.value.offlineDraft
@@ -4682,8 +4997,38 @@ const widgetDataSourceOptions = [
 const optionSourceTypeOptions = [
   { label: '静态选项', value: 'STATIC' },
   { label: '子表明细', value: 'CURRENT_CHILDREN' },
-  { label: '远程接口', value: 'REMOTE' },
+  { label: '数据集 / 系统接口', value: 'QUERY_SOURCE' },
+  { label: '手写系统接口', value: 'REMOTE' },
 ]
+// ─── 子表关系下拉：从画布上已配置的子表组件读取，避免用户手写编码 ─────
+const childTableRelationOptions = computed(() => {
+  return designerStore.subTableComponents
+    .map((comp) => {
+      const p = comp.props || {}
+      const relationKey = p.relationKey || ''
+      if (!relationKey)
+        return null
+      const header = p.header || comp.label || relationKey
+      return { label: `${header}（${relationKey}）`, value: relationKey }
+    })
+    .filter(Boolean)
+})
+// ─── 子表字段下拉：选中子表后从其 columns 提取可选字段，供值字段/显示字段选择 ─────
+const childTableFieldOptions = computed(() => {
+  const relationKey = selectedComponent.value?.props?.optionSource?.relationKey
+  if (!relationKey)
+    return []
+  const comp = designerStore.subTableComponents.find(c => c.props?.relationKey === relationKey)
+  if (!comp)
+    return []
+  const columns = Array.isArray(comp.props?.columns) ? comp.props.columns : []
+  return columns
+    .map(c => ({
+      label: `${c.fieldLabel || c.fieldCode || c}（${c.fieldCode || c}）`,
+      value: c.fieldCode || c,
+    }))
+    .filter(item => item.value)
+})
 const dataBindablePageWidgetKeys = [
   'rich-text',
   'watermark',
@@ -4948,11 +5293,15 @@ const selectedOptions = computed(() => selectedComponent.value?.props?.options |
 const isFieldInsideCrud = computed(() => isField.value && hasAncestorComponent(props.schema, props.selectedId, ['AiCrudPage', 'crudBlock']))
 const selectedCrudFieldConfig = computed(() => isFieldInsideCrud.value ? selectedComponent.value?.props?.__crudConfig || {} : null)
 const isOptionField = computed(() => ['select', 'radio', 'radioButton', 'checkbox', 'transfer', 'cascader', 'treeSelect'].includes(selectedComponent.value?.componentKey || ''))
+// 人员组件（userSelect）也支持级联：按组织范围过滤人员
+const isUserSelectCascadeField = computed(() => selectedComponent.value?.componentKey === 'userSelect')
 const selectedOptionSourceType = computed(() => {
   const source = selectedComponent.value?.props?.optionSource || {}
   const type = String(source.type || '')
   if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(type))
     return 'CURRENT_CHILDREN'
+  if (type === 'QUERY_SOURCE' || type === 'query_source')
+    return 'QUERY_SOURCE'
   // 优先按 type 字段判断：切换到 REMOTE 时 api 初始为空字符串，
   // 若依赖 api 非空判断，computed 会立刻回落 STATIC，表现为"点了没反应"
   if (type === 'REMOTE' || type === 'remote')
@@ -4961,6 +5310,205 @@ const selectedOptionSourceType = computed(() => {
     return 'REMOTE'
   return 'STATIC'
 })
+
+// ─── 受管查询源选项：下拉选项从平台登记的查询源目录加载 ─────
+const QUERY_SOURCE_TYPE_LABELS = { DATASET: '数据集', EXTERNAL_API: '系统接口' }
+const querySourceCatalog = ref([])
+const querySourceCatalogLoading = ref(false)
+const querySourceCatalogOptions = computed(() => querySourceCatalog.value
+  .filter(item => item.sourceType !== 'BUSINESS_OBJECT')
+  .map(item => ({
+    label: `${QUERY_SOURCE_TYPE_LABELS[item.sourceType] || item.sourceType} · ${item.sourceName || item.sourceKey}`,
+    value: `${item.sourceType}::${item.sourceKey}`,
+  })))
+const querySourceSelection = computed(() => {
+  const source = selectedComponent.value?.props?.optionSource || {}
+  return source.sourceType && source.sourceKey ? `${source.sourceType}::${source.sourceKey}` : ''
+})
+
+async function loadQuerySourceCatalog() {
+  if (querySourceCatalogLoading.value)
+    return
+  querySourceCatalogLoading.value = true
+  try {
+    const response = await getLowcodeQuerySourceCatalog()
+    querySourceCatalog.value = Array.isArray(response?.data) ? response.data : []
+  }
+  catch {
+    querySourceCatalog.value = []
+  }
+  finally {
+    querySourceCatalogLoading.value = false
+  }
+}
+
+watch(selectedOptionSourceType, (type) => {
+  if (type === 'QUERY_SOURCE' && !querySourceCatalog.value.length)
+    loadQuerySourceCatalog()
+}, { immediate: true })
+
+function updateQuerySourceSelection(value) {
+  const [sourceType = '', ...sourceKeyParts] = String(value || '').split('::')
+  updatePageWidgetOptionSource({
+    sourceType,
+    sourceKey: sourceKeyParts.join('::'),
+  })
+  if (sourceType && sourceKeyParts.join('::'))
+    loadQuerySourceMeta(sourceType, sourceKeyParts.join('::'))
+}
+
+// ─── 受管查询源元数据：选中查询源后自动加载字段列表，供值字段/显示字段下拉选择 ─────
+const querySourceMetaFields = ref([])
+const querySourceMetaParams = ref([])
+const querySourceMetaLoading = ref(false)
+const querySourceMetaError = ref('')
+
+async function loadQuerySourceMeta(sourceType, sourceKey) {
+  if (!sourceType || !sourceKey)
+    return
+  querySourceMetaLoading.value = true
+  querySourceMetaError.value = ''
+  try {
+    const res = await getLowcodeQuerySourceMetadata({ sourceType, sourceKey })
+    const meta = res?.data || {}
+    const allFields = Array.isArray(meta.fields) ? meta.fields : []
+    const visibleFields = allFields.filter(f => !f.sensitive)
+    querySourceMetaFields.value = visibleFields.map(f => ({
+      label: `${f.label || f.field}（${f.field}）`,
+      value: f.field,
+    }))
+    // 空字段提示：帮用户定位问题
+    if (allFields.length === 0) {
+      querySourceMetaError.value = '该查询源未配置返回字段，请在数据管理 → 数据集中维护字段定义'
+    }
+    else if (visibleFields.length === 0) {
+      querySourceMetaError.value = `共 ${allFields.length} 个字段均被标记为敏感，无法用于选项映射`
+    }
+    querySourceMetaParams.value = parseQuerySourceInputSchema(meta.inputSchemaJson)
+    // 切换查询源后自动清理无效参数：仅保留契约声明的 key，避免运行时报“未声明字段”错误
+    const allowedNames = new Set(querySourceMetaParams.value.map(p => p.name))
+    const saved = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+    const cleaned = {}
+    let changed = false
+    for (const [key, value] of Object.entries(saved)) {
+      if (allowedNames.has(key))
+        cleaned[key] = value
+      else
+        changed = true
+    }
+    if (changed)
+      updatePageWidgetOptionSource({ paramsText: JSON.stringify(cleaned) })
+  }
+  catch (err) {
+    console.warn('[ForgePropertyPanel] 查询源元数据加载失败:', sourceType, sourceKey, err)
+    querySourceMetaFields.value = []
+    querySourceMetaParams.value = []
+    querySourceMetaError.value = `元数据加载失败：${err?.message || '请稍后重试'}`
+  }
+  finally {
+    querySourceMetaLoading.value = false
+  }
+}
+
+watch(querySourceSelection, (val) => {
+  if (!val) {
+    querySourceMetaFields.value = []
+    querySourceMetaParams.value = []
+    querySourceMetaError.value = ''
+    return
+  }
+  const [sourceType = '', ...rest] = String(val).split('::')
+  loadQuerySourceMeta(sourceType, rest.join('::'))
+}, { immediate: true })
+
+// ─── 选项来源参数编辑器：结构化 key-value 行，替代手写 JSON ─────
+function readJsonParams(text) {
+  try {
+    const parsed = JSON.parse(String(text || '{}'))
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {}
+  }
+  catch { return {} }
+}
+
+const optionSourceParamRows = computed(() => {
+  const obj = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+  return Object.entries(obj).map(([key, value]) => ({ key, value: String(value ?? '') }))
+})
+
+function updateOptionSourceParam(key, newValue) {
+  const obj = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+  obj[key] = newValue
+  updatePageWidgetOptionSource({ paramsText: JSON.stringify(obj) })
+}
+
+function addOptionSourceParam() {
+  const obj = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+  const n = Object.keys(obj).length
+  let key = `param${n + 1}`
+  while (key in obj) key = `param${Number(key.replace(/\D/g, '') || n) + 1}`
+  obj[key] = ''
+  updatePageWidgetOptionSource({ paramsText: JSON.stringify(obj) })
+}
+
+function removeOptionSourceParam(key) {
+  const obj = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+  delete obj[key]
+  updatePageWidgetOptionSource({ paramsText: JSON.stringify(obj) })
+}
+
+// 查询源参数：由 inputSchema 驱动，只展示契约声明的参数，用户只填值。
+// 解析实现收敛到 @/components/ai-form/query-source-schema，与 FieldEventRulesEditor 同源。
+const querySourceParamRows = computed(() => {
+  const saved = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+  return querySourceMetaParams.value.map(p => ({
+    name: p.name,
+    label: p.label,
+    type: p.type,
+    required: p.required,
+    value: saved[p.name] !== undefined ? String(saved[p.name]) : '',
+  }))
+})
+
+function getQuerySourceParamOptions(currentValue = '') {
+  const currentField = selectedFieldCode.value
+  const options = formFieldOptions.value
+    .filter(f => f.value !== currentField)
+    .map(f => ({
+      label: `${f.label}  →  \${${f.value}}`,
+      value: `\${${f.value}}`,
+    }))
+  // 如果当前值是固定值（非 ${...} 引用），加入选项列表以便 select 正确回显
+  if (currentValue && !/^\$\{.+\}$/.test(currentValue)) {
+    options.unshift({ label: `固定值：${currentValue}`, value: currentValue })
+  }
+  return options
+}
+
+// ─── 查询参数弹窗：摘要统计 + 弹窗状态 ─────
+const querySourceParamFilledCount = computed(() => querySourceParamRows.value.filter(p => p.value).length)
+const querySourceParamMissingRequired = computed(() => querySourceParamRows.value.filter(p => p.required && !p.value).length)
+const queryParamModalVisible = ref(false)
+const queryParamModalDraft = ref({})
+
+function openQueryParamModal() {
+  const saved = readJsonParams(selectedComponent.value?.props?.optionSource?.paramsText)
+  queryParamModalDraft.value = { ...saved }
+  queryParamModalVisible.value = true
+}
+
+function updateQueryParamDraft(name, value) {
+  queryParamModalDraft.value = { ...queryParamModalDraft.value, [name]: value ?? '' }
+}
+
+function confirmQueryParamModal() {
+  updatePageWidgetOptionSource({ paramsText: JSON.stringify(queryParamModalDraft.value) })
+  queryParamModalVisible.value = false
+}
+
+function cancelQueryParamModal() {
+  queryParamModalVisible.value = false
+}
+
 const isManualOptionField = computed(() => isOptionField.value && !selectedComponent.value?.props?.dictType && selectedComponent.value?.props?.dataSourceType !== 'remote')
 
 // ─── 级联选项（下拉级联）：一站式产出运行时 AiFormItem 消费的 props.cascade ─────
@@ -4977,18 +5525,66 @@ const optionLinkageConfig = computed(() => {
     paramName: raw.paramName || '',
     emptyStrategy: raw.emptyStrategy || 'empty',
     clearOnParentChange: raw.clearOnParentChange !== false,
+    includeChildren: raw.includeChildren !== false,
   }
 })
 const optionLinkageSourceFieldOptions = computed(() => collectRuntimeRuleFieldOptions(props.schema?.components || [])
   .filter(option => option.value !== selectedFieldCode.value))
+// userSelect 级联：优先列出组织字段（orgTreeSelect），其它字段也允许选择
+function walkComponentTree(components = [], visitor) {
+  const walk = (items = []) => {
+    (Array.isArray(items) ? items : []).forEach((comp) => {
+      if (!comp || typeof comp !== 'object')
+        return
+      visitor(comp)
+      walk(comp.children || [])
+    })
+  }
+  walk(components)
+}
+function findComponentByFieldCode(components = [], fieldCode) {
+  let found = null
+  walkComponentTree(components, (comp) => {
+    const field = comp.fieldBinding?.fieldCode || comp.field || comp.props?.field
+    if (field === fieldCode)
+      found = comp
+  })
+  return found
+}
+const hasOrgFieldInSchema = computed(() => {
+  let found = false
+  walkComponentTree(props.schema?.components, (comp) => {
+    if (comp.componentKey === 'orgTreeSelect' && comp !== selectedComponent.value)
+      found = true
+  })
+  return found
+})
+const userSelectCascadeSourceFieldOptions = computed(() => {
+  const allOptions = collectRuntimeRuleFieldOptions(props.schema?.components || [])
+    .filter(option => option.value !== selectedFieldCode.value)
+  const orgFields = []
+  const others = []
+  allOptions.forEach((option) => {
+    const comp = findComponentByFieldCode(props.schema?.components, option.value)
+    if (comp?.componentKey === 'orgTreeSelect')
+      orgFields.push({ ...option, label: `${option.label} ★组织字段` })
+    else
+      others.push(option)
+  })
+  return [...orgFields, ...others]
+})
 const optionLinkageApi = computed(() => String(selectedComponent.value?.props?.optionSource?.api || ''))
 // 接口加载模式下选项来源的 api 输入框由级联卡片接管，避免两处输入框编辑同一个值
 const optionLinkageApiManaged = computed(() => optionLinkageConfig.value.enabled && optionLinkageConfig.value.mode === 'remoteParam')
 const optionLinkageSummary = computed(() => {
   const config = optionLinkageConfig.value
   if (!config.sourceField)
-    return '先选择①上级字段，级联才会生效'
+    return isUserSelectCascadeField.value ? '先选择①组织字段，人员将按该组织范围过滤' : '先选择①上级字段，级联才会生效'
   const sourceLabel = resolveOptionLinkageFieldLabel(config.sourceField)
+  if (isUserSelectCascadeField.value) {
+    const scope = config.includeChildren === false ? '直属人员' : '含子组织人员'
+    return `选了【${sourceLabel}】后，人员仅展示该组织${scope}；组织重选时已选人员自动清空`
+  }
   if (config.mode === 'remoteParam') {
     if (!optionLinkageApi.value)
       return `选了【${sourceLabel}】后自动请求接口刷新选项 —— 请在③中填写选项接口`
@@ -5002,10 +5598,14 @@ function resolveOptionLinkageFieldLabel(fieldCode) {
   return matched ? matched.label.replace(/（[^）]*）$/, '') : fieldCode
 }
 function buildOptionLinkageDefaults() {
-  return { enabled: false, sourceField: '', mode: 'remoteParam', paramName: '', emptyStrategy: 'empty', clearOnParentChange: true }
+  return { enabled: false, sourceField: '', mode: 'remoteParam', paramName: '', emptyStrategy: 'empty', clearOnParentChange: true, includeChildren: true }
 }
 function toggleOptionLinkage(enabled) {
-  updateOptionLinkage({ enabled })
+  // userSelect 组件开启级联时自动锁定 orgFilter 模式
+  const basePatch = { enabled }
+  if (enabled && isUserSelectCascadeField.value)
+    basePatch.mode = 'orgFilter'
+  updateOptionLinkage(basePatch)
 }
 function updateOptionLinkage(patch = {}) {
   const current = selectedComponent.value?.props?.cascade || {}
@@ -5013,6 +5613,13 @@ function updateOptionLinkage(patch = {}) {
 }
 function updateOptionLinkageSourceField(field) {
   const patch = { sourceField: field || '' }
+  // userSelect 组件级联自动锁定 orgFilter 模式，不需要 paramName
+  if (isUserSelectCascadeField.value) {
+    patch.mode = 'orgFilter'
+    patch.paramName = ''
+    updateOptionLinkage(patch)
+    return
+  }
   // 参数名默认跟随上级字段名（多数接口参数名与字段同名），用户已填过则不覆盖
   if (field && !optionLinkageConfig.value.paramName)
     patch.paramName = field
@@ -5043,7 +5650,19 @@ function updateOptionLinkageApi(api = '') {
   // 联动接口直接落到选项来源，运行时按此接口动态加载选项
   updatePageWidgetOptionSource({ type: 'REMOTE', api: api || '' })
 }
-const defaultValueSelectMultiple = computed(() => ['checkbox'].includes(selectedComponent.value?.componentKey || ''))
+const supportsMultipleSelect = computed(() => isMultiSelectComponent(selectedComponent.value?.componentKey || ''))
+const selectedMultipleEnabled = computed(() => {
+  const propsData = selectedComponent.value?.props || {}
+  return propsData.multiple === true || propsData.recordSelector?.multiple === true
+})
+const defaultValueSelectMultiple = computed(() => {
+  const key = selectedComponent.value?.componentKey || ''
+  if (key === 'checkbox')
+    return true
+  if (['select', 'dictSelect'].includes(key))
+    return selectedMultipleEnabled.value
+  return false
+})
 const defaultValueSelectEnabled = computed(() => {
   const key = selectedComponent.value?.componentKey || ''
   if (!['select', 'dictSelect', 'radio', 'radioButton', 'checkbox'].includes(key))
@@ -5070,6 +5689,8 @@ const selectedDefaultValueForSelect = computed(() => {
     return value
   if (value === undefined || value === null || value === '')
     return []
+  if (typeof value === 'string')
+    return value.split(',').map(item => item.trim()).filter(Boolean)
   return [value]
 })
 const selectedGenerationConfig = computed(() => selectedComponent.value?.props?.generation || {})
@@ -5100,6 +5721,8 @@ const specPanelExcludedProps = computed(() => {
   // 选项类组件的选项由"选项来源"统一管理 —— 抽屉只保留主面板没有的属性，避免重复入口
   if (isField.value) {
     const excluded = ['placeholder', 'size', 'clearable', 'showFeedback']
+    if (supportsMultipleSelect.value)
+      excluded.push('multiple')
     if (isOptionField.value)
       excluded.push('options')
     return excluded
@@ -5143,9 +5766,18 @@ const isDictLikeField = computed(() => {
   return ['select', 'dictSelect', 'radio', 'checkbox', 'cascader'].includes(key)
 })
 const isObjectReferenceField = computed(() => selectedComponent.value?.componentKey === 'objectReference')
+const isRecordSelectorField = computed(() => selectedComponent.value?.componentKey === 'recordSelector')
+const isRelationField = computed(() => isObjectReferenceField.value || isRecordSelectorField.value)
 const referenceObjectCode = computed(() => selectedComponent.value?.props?.referenceObjectCode || '')
 const referenceDisplayField = computed(() => selectedComponent.value?.props?.referenceDisplayField || '')
 const referenceValueField = computed(() => selectedComponent.value?.props?.referenceValueField || '')
+// recordSelector 配置（弹窗模式）
+const recordSelectorConfigObj = computed(() => selectedComponent.value?.props?.recordSelector || {})
+const recordSelectorObjectCode = computed(() => recordSelectorConfigObj.value.objectCode || '')
+const recordSelectorDisplayFields = computed(() => recordSelectorConfigObj.value.displayFields || [])
+const recordSelectorKeywordFields = computed(() => recordSelectorConfigObj.value.keywordFields || [])
+const recordSelectorValueField = computed(() => recordSelectorConfigObj.value.valueField || '')
+const recordSelectorMultiple = computed(() => recordSelectorConfigObj.value.multiple === true)
 const businessObjectOptions = ref([])
 const businessObjectLoading = ref(false)
 const referenceTargetFieldsMap = ref({})
@@ -5153,6 +5785,10 @@ const referenceTargetFieldLoading = computed(() => {
   return !!referenceTargetFieldsMap.value[referenceObjectCode.value]?.loading
 })
 const referenceTargetFieldOptions = computed(() => referenceTargetFieldsMap.value[referenceObjectCode.value]?.options || [])
+const recordSelectorTargetFieldLoading = computed(() => {
+  return !!referenceTargetFieldsMap.value[recordSelectorObjectCode.value]?.loading
+})
+const recordSelectorTargetFieldOptions = computed(() => referenceTargetFieldsMap.value[recordSelectorObjectCode.value]?.options || [])
 
 const generationFillPolicyOptions = [
   { label: '为空时生成', value: 'EMPTY_ONLY' },
@@ -5210,7 +5846,7 @@ function updateComponent(patch) {
 }
 
 function pickSwitchableCommonProps(sourceProps = {}, newKey = '') {
-  const commonKeys = ['defaultValue', 'placeholder', 'disabled', 'clearable', 'required', 'dictType']
+  const commonKeys = ['defaultValue', 'placeholder', 'disabled', 'clearable', 'required', 'dictType', 'multiple']
   const nextProps = {}
   commonKeys.forEach((key) => {
     if (sourceProps[key] !== undefined)
@@ -5468,6 +6104,22 @@ function updateOptionSourceType(type = 'STATIC') {
     })
     return
   }
+  if (type === 'QUERY_SOURCE') {
+    const previous = selectedComponent.value?.props?.optionSource || {}
+    const wasQuerySource = String(previous.type || '') === 'QUERY_SOURCE'
+    updatePageWidgetOptionSource({
+      type: 'QUERY_SOURCE',
+      api: undefined,
+      url: undefined,
+      sourceType: wasQuerySource ? previous.sourceType : '',
+      sourceKey: wasQuerySource ? previous.sourceKey : '',
+      valueField: wasQuerySource ? previous.valueField : 'id',
+      labelField: wasQuerySource ? previous.labelField : 'name',
+      paramsText: wasQuerySource ? previous.paramsText : '{}',
+      pageSize: wasQuerySource ? previous.pageSize : 50,
+    })
+    return
+  }
   updateComponent({ props: { optionSource: undefined } })
 }
 
@@ -5564,8 +6216,13 @@ async function loadBusinessObjectOptions() {
         return true
       })
       .map(item => ({
-        label: `${item.objectName || item.objectCode}（${item.objectCode}）`,
+        label: item.objectName || item.objectCode,
         value: item.objectCode,
+        icon: item.icon || '',
+        // 无运行配置的对象任何场景都查不到数据，直接禁选；
+        // 已生成配置但未发布的仅设计预览可用（预览请求会带 designPreview 放行草稿配置）
+        disabled: !item.configKey,
+        runtimePublished: Boolean(item.lastPublishTime),
         object: item,
       }))
   }
@@ -5575,6 +6232,38 @@ async function loadBusinessObjectOptions() {
   finally {
     businessObjectLoading.value = false
   }
+}
+
+/**
+ * 引用对象下拉选项：图标 + 名称 + 发布状态标签，未生成运行配置的禁选。
+ * 下拉菜单经 Teleport 渲染，scoped 样式无法命中，这里用内联样式。
+ */
+function renderReferenceObjectLabel(option) {
+  const tag = option.disabled
+    ? { type: 'default', label: '未生成配置' }
+    : option.runtimePublished
+      ? { type: 'success', label: '已发布' }
+      : { type: 'warning', label: '未发布' }
+  return h('div', {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      minWidth: 0,
+    },
+  }, [
+    h(IconRenderer, { icon: option.icon, size: 15 }),
+    h('span', {
+      style: {
+        flex: '1',
+        minWidth: '0',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      },
+    }, option.label),
+    h(NTag, { size: 'small', bordered: false, type: tag.type, style: { flexShrink: '0' } }, { default: () => tag.label }),
+  ])
 }
 
 async function loadReferenceTargetFields(objectCode, force = false) {
@@ -5600,7 +6289,7 @@ async function loadReferenceTargetFields(objectCode, force = false) {
     const options = fields
       .filter(field => !['tenantId', 'tenant_id', 'createBy', 'create_by', 'createTime', 'create_time', 'updateBy', 'update_by', 'updateTime', 'update_time', 'delFlag', 'del_flag'].includes(field.fieldCode || field.field))
       .map(field => ({
-        label: `${field.fieldName || field.label || field.fieldCode || field.field}（${field.fieldCode || field.field}）`,
+        label: field.fieldName || field.label || field.fieldCode || field.field,
         value: field.fieldCode || field.field,
         field,
       }))
@@ -5618,6 +6307,9 @@ async function loadReferenceTargetFields(objectCode, force = false) {
 }
 
 async function updateReferenceObjectCode(value) {
+  const target = businessObjectOptions.value.find(item => item.value === value)
+  if (value && target && !target.runtimePublished)
+    message.warning(`「${target.label}」尚未发布运行配置：设计预览可正常选数据，正式运行前请先发布其所在应用`)
   updateComponent({
     props: {
       referenceObjectCode: value || '',
@@ -5639,14 +6331,147 @@ function updateReferenceDisplayField(value) {
 function updateReferenceValueField(value) {
   updateComponent({ props: { referenceValueField: value || '' } })
 }
+// recordSelector 更新函数
+function updateRecordSelectorObjectCode(value) {
+  const target = businessObjectOptions.value.find(item => item.value === value)
+  if (value && target && !target.runtimePublished)
+    message.warning(`「${target.label}」尚未发布运行配置：设计预览可正常选数据，正式运行前请先发布其所在应用`)
+  const current = { ...(selectedComponent.value?.props?.recordSelector || {}) }
+  current.objectCode = value || ''
+  updateComponent({ props: { recordSelector: current } })
+  if (value) {
+    if (!businessObjectOptions.value.length)
+      loadBusinessObjectOptions()
+    loadReferenceTargetFields(value, true)
+  }
+}
+function updateRecordSelectorValueField(value) {
+  const current = { ...(selectedComponent.value?.props?.recordSelector || {}) }
+  current.valueField = value || ''
+  updateComponent({ props: { recordSelector: current } })
+}
+
+// ── recordSelector 高级配置弹窗 ────────────────────────
+const rsConfigDialogShow = ref(false)
+
+/** 将 filterFields（优先）或 searchParams（兼容旧配置）转换为弹窗所需的 filter 数组 */
+const rsDialogFilters = computed(() => {
+  const filterFields = recordSelectorConfigObj.value.filterFields
+  if (Array.isArray(filterFields) && filterFields.length)
+    return filterFields.map(f => ({ fieldCode: f.fieldCode || '', fieldLabel: f.fieldLabel || '', defaultType: f.defaultType || 'none', formField: f.formField || '', defaultValue: f.defaultValue || '' }))
+  // 兼容旧配置：从 searchParams 还原
+  const params = recordSelectorConfigObj.value.searchParams || {}
+  return Object.entries(params).map(([key, val]) => {
+    const strVal = String(val || '')
+    const formMatch = strVal.match(/^\$\{formData\.(.+?)\}$/)
+    if (formMatch)
+      return { fieldCode: key, fieldLabel: '', defaultType: 'form', formField: formMatch[1], defaultValue: '' }
+    if (strVal)
+      return { fieldCode: key, fieldLabel: '', defaultType: 'fixed', defaultValue: strVal, formField: '' }
+    return { fieldCode: key, fieldLabel: '', defaultType: 'none', defaultValue: '', formField: '' }
+  })
+})
+
+/** 将 fieldMappings 数组直接传给弹窗（兼容 source/sourceField 两种键名） */
+const rsDialogMappings = computed(() => {
+  const mappings = recordSelectorConfigObj.value.fieldMappings || []
+  return mappings.map(m => ({ source: m.sourceField || m.source || '', target: m.targetField || m.target || '' }))
+})
+
+/** 选择器设置摘要 */
+const rsConfigSummary = computed(() => {
+  const cfg = recordSelectorConfigObj.value
+  const mode = cfg.multiple === true ? '多选' : '单选'
+  const keywordCount = (cfg.keywordFields || []).length
+  const displayCount = (cfg.displayFields || []).length
+  const filterFields = cfg.filterFields
+  const filterCount = Array.isArray(filterFields) ? filterFields.length : Object.keys(cfg.searchParams || {}).length
+  const mappingCount = (cfg.fieldMappings || []).length
+  const parts = [mode, `展示 ${displayCount} 列`]
+  if (keywordCount)
+    parts.push(`搜索 ${keywordCount} 字段`)
+  if (filterCount)
+    parts.push(`筛选 ${filterCount} 条`)
+  if (mappingCount)
+    parts.push(`映射 ${mappingCount} 条`)
+  return parts.join(' · ')
+})
+
+/** 弹窗确认回调：将结构化配置写入 recordSelector */
+function handleRsConfigConfirm(config) {
+  const current = { ...(selectedComponent.value?.props?.recordSelector || {}) }
+  // 选择方式
+  current.multiple = config.multiple === true
+  // 搜索字段
+  current.keywordFields = config.keywordFields || []
+  // 展示列
+  current.displayFields = config.displayFields || []
+  // 从字段选项构建查找表，用于补全 fieldLabel
+  const fieldLabelMap = {}
+  recordSelectorTargetFieldOptions.value.forEach((opt) => {
+    if (opt.value)
+      fieldLabelMap[opt.value] = opt.label || opt.value
+  })
+  // 过滤参数：存储为 filterFields（运行时在弹窗中显示为可编辑筛选 UI）
+  current.filterFields = (config.filters || []).filter(f => f.fieldCode).map(f => ({
+    fieldCode: f.fieldCode,
+    fieldLabel: f.fieldLabel || fieldLabelMap[f.fieldCode] || '',
+    defaultType: f.defaultType || 'none',
+    formField: f.formField || '',
+    defaultValue: f.defaultValue || '',
+    // 字段元数据，供运行时搜索表单类型感知渲染
+    dictType: f.dictType || '',
+    componentType: f.componentType || '',
+    fieldType: f.fieldType || '',
+  }))
+  // 同时生成 searchParams 作为无 UI 的预过滤条件（兼容未读取 filterFields 的场景）
+  const searchParams = {}
+  current.filterFields.forEach((f) => {
+    if (f.defaultType === 'form' && f.formField)
+      searchParams[f.fieldCode] = `\${formData.${f.formField}}`
+    else if (f.defaultType === 'fixed' && f.defaultValue !== undefined && f.defaultValue !== null && String(f.defaultValue).trim() !== '')
+      searchParams[f.fieldCode] = f.defaultValue
+  })
+  current.searchParams = searchParams
+  // 字段映射（后端 DTO 期望 sourceField / targetField 键名）
+  current.fieldMappings = (config.mappings || []).filter(m => m.source && m.target).map(m => ({ sourceField: m.source, targetField: m.target }))
+  updateComponent({ props: { recordSelector: current, multiple: current.multiple === true } })
+}
+
+function updateMultipleSelect(enabled) {
+  const next = enabled === true
+  const currentDefault = selectedComponent.value?.props?.defaultValue
+  const patch = {
+    multiple: next,
+    defaultValue: next
+      ? (serializeSelectionValues(currentDefault, true) || undefined)
+      : normalizeSingleDefaultValue(currentDefault),
+  }
+  if (isRecordSelectorField.value) {
+    patch.recordSelector = {
+      ...(selectedComponent.value?.props?.recordSelector || {}),
+      multiple: next,
+    }
+  }
+  updateComponent({ props: patch })
+}
+
+function normalizeSingleDefaultValue(value) {
+  if (Array.isArray(value))
+    return value.length ? value[0] : undefined
+  if (typeof value === 'string' && value.includes(','))
+    return value.split(',')[0].trim() || undefined
+  return value === null || value === '' ? undefined : value
+}
 
 watch(
   () => selectedComponent.value?.componentKey,
   async (key) => {
-    if (key === 'objectReference') {
+    if (key === 'objectReference' || key === 'recordSelector') {
       await loadBusinessObjectOptions()
-      if (referenceObjectCode.value)
-        await loadReferenceTargetFields(referenceObjectCode.value)
+      const objCode = key === 'objectReference' ? referenceObjectCode.value : recordSelectorObjectCode.value
+      if (objCode)
+        await loadReferenceTargetFields(objCode)
     }
   },
   { immediate: true },
@@ -5657,6 +6482,8 @@ watch(
   () => {
     if (isObjectReferenceField.value && referenceObjectCode.value && !referenceTargetFieldsMap.value[referenceObjectCode.value])
       loadReferenceTargetFields(referenceObjectCode.value)
+    if (isRecordSelectorField.value && recordSelectorObjectCode.value && !referenceTargetFieldsMap.value[recordSelectorObjectCode.value])
+      loadReferenceTargetFields(recordSelectorObjectCode.value)
   },
 )
 
@@ -6099,12 +6926,8 @@ function formatDefaultValueOptionLabel(label, value) {
 
 function updateDefaultValue(value) {
   if (defaultValueSelectMultiple.value) {
-    const nextValue = Array.isArray(value)
-      ? value
-      : value === undefined || value === null || value === ''
-        ? []
-        : [value]
-    updateComponent({ props: { defaultValue: nextValue.length ? nextValue : undefined } })
+    const serialized = serializeSelectionValues(value, true)
+    updateComponent({ props: { defaultValue: serialized || undefined } })
     return
   }
   updateComponent({ props: { defaultValue: value === null || value === undefined || value === '' ? undefined : value } })
@@ -7353,7 +8176,9 @@ onBeforeUnmount(() => {
   font-size: 18px;
   line-height: 1;
   flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .panel-back-button:hover {
@@ -7363,43 +8188,7 @@ onBeforeUnmount(() => {
 
 .subtable-inline-editor {
   border-bottom: 1px solid #e4e4e7;
-}
-
-.subtable-inline-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   padding: 10px 12px;
-  margin: 8px 10px;
-  border-radius: 8px;
-  background: #f0f5ff;
-  border: 1px solid #d6e4ff;
-  color: #1d39c4;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.subtable-inline-hint strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.subtable-inline-hint p {
-  margin: 0;
-  color: #434343;
-}
-
-.subtable-inline-nav-hint {
-  padding: 6px 12px;
-  margin: 0 10px 10px;
-  border-radius: 6px;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
-  color: #389e0d;
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .property-search-box {
@@ -9418,6 +10207,289 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* ── 选项来源卡片：结构化配置区，替代纯堆叠输入框 ── */
+.option-source-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+  min-width: 0;
+}
+
+.option-source-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.option-source-field > label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #3f3f46;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.option-source-field.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.option-source-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e4e4e7;
+  color: #71717a;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: help;
+  line-height: 1;
+}
+
+.option-source-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #52525b;
+}
+
+.option-source-params {
+  display: grid;
+  gap: 5px;
+}
+
+.option-source-param-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.7fr) minmax(0, 1fr) 22px;
+  gap: 4px;
+  align-items: center;
+}
+
+.option-source-param-row .param-key-input :deep(.n-input__border),
+.option-source-param-row .param-key-input :deep(.n-input__state-border) {
+  opacity: 0.5;
+}
+
+.option-source-param-remove {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #a1a1aa;
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.option-source-param-remove:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.option-source-param-hints {
+  padding: 6px 8px;
+  background: #f4f4f5;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.option-source-param-tag {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.option-source-param-tag:hover {
+  opacity: 0.75;
+}
+
+/* ── 查询源 schema 驱动参数行 ── */
+.option-source-schema-param {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 1.2fr);
+  gap: 6px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.option-source-schema-param + .option-source-schema-param {
+  border-top: 1px solid #f0f0f0;
+}
+
+.schema-param-label {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.schema-param-required {
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.schema-param-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #3f3f46;
+}
+
+.schema-param-code {
+  font-size: 10px;
+  color: #a1a1aa;
+  font-family: ui-monospace, monospace;
+}
+
+.schema-param-input-wrap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.schema-param-empty-hint {
+  font-size: 11px;
+  color: #d97706;
+  line-height: 1.4;
+}
+
+.option-source-hint {
+  padding: 7px 10px;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  color: #1e40af;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.option-source-no-params {
+  padding: 8px 10px;
+  background: #f9fafb;
+  border-radius: 6px;
+  color: #a1a1aa;
+  font-size: 12px;
+  text-align: center;
+}
+
+.option-source-meta-loading {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #71717a;
+  text-align: center;
+}
+
+/* 查询参数摘要行 */
+.query-source-param-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+}
+
+.query-source-param-summary-text {
+  font-size: 12px;
+  color: #52525b;
+  line-height: 1.5;
+}
+
+.query-source-param-warn {
+  color: #d97706;
+  font-weight: 500;
+}
+
+.query-source-meta-error {
+  font-size: 12px;
+  color: #dc2626;
+  padding: 6px 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+/* 查询参数弹窗 */
+.query-param-modal-body {
+  display: grid;
+  gap: 12px;
+}
+
+.query-param-modal-hint {
+  font-size: 12px;
+  color: #71717a;
+  line-height: 1.5;
+}
+
+.query-param-modal-list {
+  display: grid;
+  gap: 14px;
+}
+
+.query-param-modal-row {
+  display: grid;
+  gap: 5px;
+}
+
+.query-param-modal-row-header {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.query-param-modal-row-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #27272a;
+}
+
+.query-param-modal-row-code {
+  font-size: 11px;
+  color: #a1a1aa;
+  font-family: ui-monospace, monospace;
+}
+
+.query-param-modal-row-type {
+  margin-left: auto;
+  padding: 1px 6px;
+  background: #f4f4f5;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #71717a;
+  font-family: ui-monospace, monospace;
+}
+
+.query-param-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .property-help {
   padding: 7px 9px;
   border: 1px dashed #d4d4d8;
@@ -9527,6 +10599,13 @@ onBeforeUnmount(() => {
 .switch-list {
   display: grid;
   gap: 8px;
+}
+
+.field-multiple-hint {
+  margin: 6px 0 0;
+  color: #71717a;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .switch-list.compact {
@@ -9793,5 +10872,17 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 500;
   line-height: 20px;
+}
+
+/* ── recordSelector 高级配置入口 ── */
+.record-selector-advanced {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.record-selector-advanced-summary {
+  font-size: 12px;
+  color: #999;
 }
 </style>

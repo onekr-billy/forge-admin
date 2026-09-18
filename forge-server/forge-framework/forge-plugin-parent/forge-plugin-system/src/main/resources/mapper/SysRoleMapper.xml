@@ -179,22 +179,43 @@
                u.create_time,
                u.update_by,
                u.update_time
-        FROM sys_user_org_role ur
-        INNER JOIN sys_user u
-            ON u.id = ur.user_id
-           AND u.del_flag = 0
+        FROM sys_user u
         INNER JOIN sys_user_tenant sut
             ON sut.user_id = u.id
-           AND sut.tenant_id = ur.tenant_id
+           AND sut.tenant_id = #{query.tenantId}
            AND sut.status = 1
         INNER JOIN sys_tenant t
-            ON t.id = ur.tenant_id
+            ON t.id = #{query.tenantId}
            AND t.del_flag = 0
-        WHERE ur.role_id = #{query.roleId}
-          AND ur.tenant_id = #{query.tenantId}
-        <if test="query.orgId != null">
-          AND ur.org_id = #{query.orgId}
-        </if>
+        WHERE u.del_flag = 0
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM sys_user_org_role ur
+                  WHERE ur.user_id = u.id
+                    AND ur.role_id = #{query.roleId}
+                    AND ur.tenant_id = #{query.tenantId}
+                  <if test="query.orgId != null">
+                    AND ur.org_id = #{query.orgId}
+                  </if>
+              )
+              OR (
+                  EXISTS (
+                      SELECT 1
+                      FROM sys_user_role usr
+                      WHERE usr.user_id = u.id
+                        AND usr.role_id = #{query.roleId}
+                        AND usr.tenant_id = #{query.tenantId}
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM sys_user_org_role ur2
+                      WHERE ur2.user_id = u.id
+                        AND ur2.role_id = #{query.roleId}
+                        AND ur2.tenant_id = #{query.tenantId}
+                  )
+              )
+          )
         <if test="query.username != null and query.username != ''">
           AND u.username LIKE CONCAT('%', #{query.username}, '%')
         </if>
@@ -211,10 +232,41 @@
     </select>
 
     <select id="countUsersByRole" resultType="java.lang.Long">
-        SELECT COUNT(1)
-        FROM sys_user_org_role
-        WHERE role_id = #{roleId}
-          AND tenant_id = #{tenantId}
+        SELECT COUNT(DISTINCT u.id)
+        FROM sys_user u
+        INNER JOIN sys_user_tenant sut
+            ON sut.user_id = u.id
+           AND sut.tenant_id = #{tenantId}
+           AND sut.status = 1
+        INNER JOIN sys_tenant t
+            ON t.id = #{tenantId}
+           AND t.del_flag = 0
+        WHERE u.del_flag = 0
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM sys_user_org_role ur
+                  WHERE ur.user_id = u.id
+                    AND ur.role_id = #{roleId}
+                    AND ur.tenant_id = #{tenantId}
+              )
+              OR (
+                  EXISTS (
+                      SELECT 1
+                      FROM sys_user_role usr
+                      WHERE usr.user_id = u.id
+                        AND usr.role_id = #{roleId}
+                        AND usr.tenant_id = #{tenantId}
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM sys_user_org_role ur2
+                      WHERE ur2.user_id = u.id
+                        AND ur2.role_id = #{roleId}
+                        AND ur2.tenant_id = #{tenantId}
+                  )
+              )
+          )
     </select>
 
     <select id="countAssignableTargetUsers" resultType="java.lang.Long">

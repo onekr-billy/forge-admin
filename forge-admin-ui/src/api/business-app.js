@@ -1,11 +1,13 @@
 import { normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
 import { managedFetch } from '@/composables/useGlobalLoading'
+import { router } from '@/router'
 import { useAuthStore } from '@/store/modules/auth'
 import { request } from '@/utils'
 import { generateUUID } from '@/utils/common'
 
 const BASE_URL = import.meta.env.VITE_REQUEST_PREFIX || ''
 const ENCRYPTED_REQUEST = { encrypt: true }
+const DESIGN_SAVE_TIMEOUT = 60_000
 
 function encryptedParams(params) {
   return { params, encrypt: true }
@@ -265,7 +267,10 @@ export function businessObjectDesigner(objectId) {
 }
 
 export function saveBusinessObjectDesigner(objectId, data) {
-  return request.put(`/ai/business/object/${objectId}/designer`, data || {}, { encrypt: true })
+  return request.put(`/ai/business/object/${objectId}/designer`, data || {}, {
+    encrypt: true,
+    timeout: DESIGN_SAVE_TIMEOUT,
+  })
 }
 
 export function businessObjectFields(objectId) {
@@ -293,15 +298,24 @@ export function businessObjectLayout(objectId, layoutKey) {
 }
 
 export function saveBusinessObjectFormLayout(objectId, data) {
-  return request.put(`/ai/business/object/${objectId}/layout/form`, data || {}, { encrypt: true })
+  return request.put(`/ai/business/object/${objectId}/layout/form`, data || {}, {
+    encrypt: true,
+    timeout: DESIGN_SAVE_TIMEOUT,
+  })
 }
 
 export function saveBusinessObjectListLayout(objectId, data) {
-  return request.put(`/ai/business/object/${objectId}/layout/list`, data || {}, { encrypt: true })
+  return request.put(`/ai/business/object/${objectId}/layout/list`, data || {}, {
+    encrypt: true,
+    timeout: DESIGN_SAVE_TIMEOUT,
+  })
 }
 
 export function saveBusinessObjectDetailLayout(objectId, data) {
-  return request.put(`/ai/business/object/${objectId}/layout/detail`, data || {}, { encrypt: true })
+  return request.put(`/ai/business/object/${objectId}/layout/detail`, data || {}, {
+    encrypt: true,
+    timeout: DESIGN_SAVE_TIMEOUT,
+  })
 }
 
 export function previewBusinessObjectLayout(objectId, data) {
@@ -386,6 +400,19 @@ export function businessActionLogs(params) {
 
 // ==================== 通用记录选择器 ====================
 
+/**
+ * 设计预览场景（crud-page 预览 designPreview=1 / 应用草稿预览 draft=1）下，
+ * 引用的对象可能尚未发布运行配置；后端凭 designPreview 参数放行草稿配置。
+ * 权限仍由后端 hasDesignPreviewPermission 校验，无权限时与现状一致报错。
+ */
+function withDesignPreviewParams(params = {}) {
+  if (params.designPreview !== undefined)
+    return params
+  const query = router.currentRoute.value?.query || {}
+  const isDesignPreview = String(query.designPreview || '') === '1' || String(query.draft || '') === '1'
+  return isDesignPreview ? { ...params, designPreview: '1' } : params
+}
+
 export function queryBusinessRecordSelector(data, params = {}) {
   const payload = data && typeof data === 'object' ? { ...data } : {}
   const normalized = normalizeRecordSelectorConfig(payload)
@@ -401,7 +428,7 @@ export function queryBusinessRecordSelector(data, params = {}) {
   payload.objectCode = objectCode
   payload.businessObjectCode = payload.businessObjectCode || normalized.businessObjectCode || objectCode
   payload.targetObjectCode = payload.targetObjectCode || normalized.targetObjectCode || objectCode
-  return request.post('/ai/business/selector/query', payload, { params })
+  return request.post('/ai/business/selector/query', payload, { params: withDesignPreviewParams(params) })
 }
 
 // ==================== 通用数量台账查询 ====================

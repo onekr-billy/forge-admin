@@ -38,6 +38,13 @@ public class GenericRowDataListener extends AnalysisEventListener<Map<Integer, O
         this.dictValueProvider = dictValueProvider;
     }
 
+    /**
+     * 获取表头映射（列索引 → 列配置），供外部获取。
+     */
+    public Map<Integer, ExcelColumnConfig> getHeaderMapping() {
+        return headerMapping;
+    }
+
     @Override
     public void invokeHeadMap(Map<Integer, String> headMap, AnalysisContext context) {
         headerMapping.clear();
@@ -78,6 +85,10 @@ public class GenericRowDataListener extends AnalysisEventListener<Map<Integer, O
             if (config == null || !Boolean.TRUE.equals(config.getImportable())) {
                 continue;
             }
+            // IMAGE 列的数据从嵌入图片中提取，不参与文本必填校验
+            if ("IMAGE".equalsIgnoreCase(config.getColumnType())) {
+                continue;
+            }
             if (Boolean.TRUE.equals(config.getRequired()) && !presentFields.contains(config.getFieldName())) {
                 result.addError(buildError(1, config.getColumnName(), null, "模板错误",
                         "导入模板缺少必填列: " + config.getColumnName(), "请下载最新导入模板"));
@@ -95,6 +106,12 @@ public class GenericRowDataListener extends AnalysisEventListener<Map<Integer, O
 
         for (Map.Entry<Integer, ExcelColumnConfig> entry : headerMapping.entrySet()) {
             ExcelColumnConfig config = entry.getValue();
+
+            // IMAGE 列的数据从嵌入图片中提取，跳过文本处理
+            if ("IMAGE".equalsIgnoreCase(config.getColumnType())) {
+                continue;
+            }
+
             Object rawValue = rowData.get(entry.getKey());
             String textValue = toCellText(rawValue);
 

@@ -28,6 +28,11 @@ public interface FlowModelService extends IService<FlowModel> {
     List<FlowModel> getEnabledModels(String category);
 
     /**
+     * 获取当前租户流程模型目录，可按状态过滤；status 为空时包含草稿与已发布模型。
+     */
+    List<FlowModel> getModels(String category, Integer status);
+
+    /**
      * 获取流程模型状态统计
      */
     FlowModelStatisticsVO getStatusStatistics(String modelName, String category);

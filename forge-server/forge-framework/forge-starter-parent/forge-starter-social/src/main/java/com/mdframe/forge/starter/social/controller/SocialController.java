@@ -6,6 +6,8 @@ import com.mdframe.forge.starter.core.annotation.tenant.IgnoreTenant;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.social.community.GiteeCommunityLoginSupport;
+import com.mdframe.forge.starter.social.domain.dto.GiteeCommunityLoginVO;
 import com.mdframe.forge.starter.social.domain.dto.LoginClientContext;
 import com.mdframe.forge.starter.social.domain.dto.SocialAuthUrl;
 import com.mdframe.forge.starter.social.domain.dto.SocialLoginRequest;
@@ -39,6 +41,7 @@ public class SocialController {
     private final ISocialConfigService socialConfigService;
     private final SocialOAuthStateService oauthStateService;
     private final SocialOAuthLoginService oauthLoginService;
+    private final GiteeCommunityLoginSupport giteeCommunityLoginSupport;
 
     /**
      * 获取已启用的三方登录平台/连接列表
@@ -49,6 +52,25 @@ public class SocialController {
     public RespInfo<List<SocialPlatformInfo>> getPlatforms(@RequestParam(required = false) Long tenantId) {
         List<SocialPlatformInfo> platforms = socialConfigService.selectEnabledPlatforms(tenantId);
         return RespInfo.success(platforms);
+    }
+
+    /**
+     * 登录页读取 Gitee 社区体验登录开关。关闭后不展示该入口，账号密码登录不受影响。
+     */
+    @GetMapping("/gitee-community")
+    @IgnoreTenant
+    @SaIgnore
+    public RespInfo<GiteeCommunityLoginVO> giteeCommunityLogin() {
+        var config = giteeCommunityLoginSupport.config();
+        boolean enabled = giteeCommunityLoginSupport.isEnabled();
+        return RespInfo.success(GiteeCommunityLoginVO.builder()
+                .enabled(enabled)
+                .requireStar(enabled && config != null && config.isRequireStar())
+                .repoUrl(config == null ? null : config.getRepoUrl())
+                .owner(config == null ? null : config.getOwner())
+                .repo(config == null ? null : config.getRepo())
+                .tenantId(enabled ? giteeCommunityLoginSupport.communityTenantId() : null)
+                .build());
     }
 
     /**
@@ -65,7 +87,13 @@ public class SocialController {
                                                 @RequestParam(required = false) Long tenantId,
                                                 @RequestParam(required = false) String action,
                                                 @RequestParam(required = false) String userClient) {
-        SysSocialConfig config = resolveConnection(platform, tenantId);
+        Long resolvedTenantId = tenantId;
+        if (giteeCommunityLoginSupport.isEnabled()
+                && "GITEE".equalsIgnoreCase(platform)
+                && StrUtil.isBlank(action)) {
+            resolvedTenantId = null;
+        }
+        SysSocialConfig config = resolveConnection(platform, resolvedTenantId);
         if (config == null || !EnableStatus.ENABLED.matches(config.getStatus())) {
             return RespInfo.error("该平台登录未启用");
         }
@@ -120,7 +148,7 @@ public class SocialController {
 
         VerifiedSocialIdentity identity = oauthLoginService.exchange(config, request.getCode(), request.getState());
 
-        LoginClientContext client = new LoginClientContext(config.getTenantId(),
+        LoginClientContext client = new LoginClientContext(identity.tenantId(),
                 StrUtil.blankToDefault(request.getUserClient(), intent.getUserClient()));
         String ticket = oauthStateService.issueLoginTicket(identity, client);
         log.info("三方登录回调换票成功: connectionId={}, platform={}", config.getId(), config.getPlatform());
@@ -129,7 +157,7 @@ public class SocialController {
                 .socialTicket(ticket)
                 .connectionCode(config.getConnectionCode())
                 .platform(config.getPlatform())
-                .tenantId(config.getTenantId())
+                .tenantId(identity.tenantId())
                 .expiresIn(SocialOAuthStateService.TICKET_TTL_SECONDS)
                 .build());
     }

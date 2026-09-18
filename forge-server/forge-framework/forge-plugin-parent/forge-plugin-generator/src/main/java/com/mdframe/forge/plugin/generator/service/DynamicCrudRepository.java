@@ -258,6 +258,23 @@ public class DynamicCrudRepository {
     }
 
     /**
+     * 判断指定列是否存在非空数据（含租户隔离与逻辑删除过滤）。
+     * 使用 LIMIT 1 存在性探测，避免大表 COUNT 全扫的性能开销。
+     * 用于字段删除守卫：只需知道有无数据，无需精确计数。
+     */
+    public boolean hasColumnData(String tableName, String columnName) {
+        validateTableName(tableName);
+        if (StringUtils.isBlank(columnName) || !SAFE_IDENTIFIER.matcher(columnName).matches()) {
+            throw new BusinessException("非法列名: " + columnName);
+        }
+        StringBuilder whereClause = buildBaseWhereClause(tableName);
+        appendWhereCondition(whereClause, columnName + " IS NOT NULL");
+        MapSqlParameterSource params = buildBaseQueryParams();
+        String sql = buildSelectSql("SELECT 1", tableName, whereClause) + " LIMIT 1";
+        return !jdbc().queryForList(sql, params).isEmpty();
+    }
+
+    /**
      * 分页查询动态列表记录，不执行 count，用于异步导出分批读取。
      */
     public List<Map<String, Object>> selectPageRecords(String tableName,
@@ -885,6 +902,29 @@ public class DynamicCrudRepository {
         return results.isEmpty() ? null : results.get(0);
     }
 
+    /**
+     * 批量查询：IN (:ids) 一次取回多条记录
+     */
+    public List<Map<String, Object>> selectByIds(String tableName,
+                                                  String primaryKeyColumn,
+                                                  List<?> ids,
+                                                  SqlCondition dataScopeCondition) {
+        validateTableName(tableName);
+        validateIdentifier(primaryKeyColumn);
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        MapSqlParameterSource params = buildBaseQueryParams();
+        params.addValue("ids", ids);
+        StringBuilder whereClause = new StringBuilder(primaryKeyColumn + " IN (:ids)");
+        appendBaseQueryConditions(whereClause, params, tableName);
+        appendSqlCondition(whereClause, params, dataScopeCondition);
+
+        String sql = buildSelectSql("SELECT *", tableName, whereClause);
+        return jdbc().queryForList(sql, params);
+    }
+
     /** 事务命令状态门禁使用的行锁读取，条件与普通详情查询完全一致。 */
     public Map<String, Object> selectByIdForUpdate(String tableName,
                                                    String primaryKeyColumn,
@@ -1258,6 +1298,30 @@ public class DynamicCrudRepository {
             params.addValue("deletedValue", logicDeletedValue());
         }
         String sql = appendTenantCondition(buildDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
+        sql = appendSqlCondition(sql, params, dataScopeCondition);
+        return jdbc().update(sql, params);
+    }
+
+    /**
+     * 批量删除（IN 子句），一条 SQL 处理多条记录
+     */
+    public int deleteByIds(String tableName,
+                           String primaryKeyColumn,
+                           List<?> ids,
+                           boolean logicDelete,
+                           SqlCondition dataScopeCondition) {
+        validateTableName(tableName);
+        validateIdentifier(primaryKeyColumn);
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("ids", ids);
+        if (logicDelete) {
+            params.addValue("deletedValue", logicDeletedValue());
+        }
+        String sql = appendTenantCondition(buildBatchDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);
         return jdbc().update(sql, params);
     }
@@ -1658,6 +1722,14 @@ public class DynamicCrudRepository {
                     + primaryKeyColumn + " = :id";
         }
         return "DELETE FROM " + tableName + " WHERE " + primaryKeyColumn + " = :id";
+    }
+
+    private String buildBatchDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
+        if (logicDelete) {
+            return "UPDATE " + tableName + " SET " + logicDeleteSetClause(tableName) + " WHERE "
+                    + primaryKeyColumn + " IN (:ids)";
+        }
+        return "DELETE FROM " + tableName + " WHERE " + primaryKeyColumn + " IN (:ids)";
     }
 
     private String logicDeleteSetClause(String tableName) {

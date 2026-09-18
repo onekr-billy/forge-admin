@@ -77,4 +77,24 @@ public class ExcelColumnConfig {
      * 校验失败提示信息
      */
     private String validationMessage;
+
+    /**
+     * 列类型：TEXT/IMAGE
+     */
+    private String columnType;
+
+    /**
+     * 图片列导出宽度(像素)
+     */
+    private Integer imageWidth;
+
+    /**
+     * 图片列导出高度(像素)
+     */
+    private Integer imageHeight;
+
+    /**
+     * 图片列最大图片数量
+     */
+    private Integer imageMaxCount;
 }

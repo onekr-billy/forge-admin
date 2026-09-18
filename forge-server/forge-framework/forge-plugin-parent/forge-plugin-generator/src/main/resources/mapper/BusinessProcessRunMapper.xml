@@ -199,6 +199,7 @@
         FROM ai_business_process_run
         WHERE tenant_id = #{tenantId}
           AND process_id = #{processId}
+          AND status IN ('PENDING', 'RUNNING', 'WAITING')
     </select>
 
     <update id="compareAndSetStatus">

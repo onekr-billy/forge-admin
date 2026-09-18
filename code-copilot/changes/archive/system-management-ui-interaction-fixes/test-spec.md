@@ -73,3 +73,41 @@
 - 关键接口：接口协议无变更；真实资源树数据验证视本地后端可用性执行。
 - 关键数据库检查：无数据库变更，不执行。
 - 服务启动与停止：前端 Vite 服务保留在 `http://127.0.0.1:3000/`，PID `26346`，供验收使用。
+
+## 7. 增量验证：用户管理巨型组件拆分（2026-09-17）
+
+### 7.1 新增用例
+
+| Suite | 用例数 | 覆盖内容 |
+|-------|--------|----------|
+| `user-management-store.spec.js` | 14 | 组织筛选与清除、新增/编辑表单转换与 allowedClients、提交强制登录租户与 userType 保护、字典异步响应式、当前登录用户保护、已拥有角色优先与跨页选择、角色分页参数、批量授权追加不覆盖、单用户授权失败弹窗保留、主组织/主岗位/默认租户约束、空组织不提交、超管租户页签响应、密码草稿清理与组件实例隔离、卸载重进旧请求不污染新 store |
+| `user-management-components.spec.js` | 3 交互 + 2 结构 | 首挂载 CRUD 协议与树列表共享状态、关系工作台五页签与角色表、密码弹窗与卸载释放；全部 SFC ≤800 行且位于路由排除目录、领域样式无 `:deep` 且限定命名空间 |
+
+### 7.2 增量验证记录
+
+| 时间 | 变更范围 | 实际命令 | 结果 | 跳过/警告 |
+|------|----------|----------|------|-----------|
+| 2026-09-17 | 状态测试 Red | `pnpm exec vitest run src/views/system/__tests__/user-management-store.spec.js` | expected failed | store 未实现，符合 TDD Red 基线 |
+| 2026-09-17 | 4 个目标 suite | `pnpm exec vitest run user-management-store + user-management-components + user-role-order + system-management-ui-contract` | passed，26/26 | 首轮 2 项结构测试因测试内 `new URL` 被 Vite 改写为 HTTP 失败，修复为 `sourceUrl()` 后通过 |
+| 2026-09-17 | 目标 ESLint | `pnpm exec eslint <user.vue+user 目录+store+测试>` | passed | 无告警 |
+| 2026-09-17 | 前端生产构建 | `pnpm --ignore-workspace build` | passed，built in 49.16s | 无本轮新增错误 |
+| 2026-09-17 | 补丁完整性 | `git diff --check` | passed | 无输出 |
+| 2026-09-17 | 浏览器只读验证 | Browser 子代理访问 `http://localhost:3002`（Admin 8580 已启动） | passed | 布局、组织树滚动、树筛选联动、折叠、新增/编辑、五页签工作台、批量授权、重置密码弹窗全部通过；Console 零告警；暗色模式无切换入口未执行 |
+| 2026-09-17 | 敏感写操作 | 不执行 | skipped | 授权提交、保存关系、重置密码、删除均留给用户人工验收 |
+
+## 8. 增量验证：系统管理员不受自我维护限制（2026-09-17）
+
+### 8.1 用例调整
+
+| Suite | 用例数 | 变更内容 |
+|-------|--------|----------|
+| `user-management-store.spec.js` | 14 → 15 | 原“当前登录用户隐藏敏感操作”用例改名“非管理员用户隐藏自己的敏感操作”并补充状态字段 vIf 断言；新增“系统管理员可维护自己：操作可见、状态可改、批量可包含自己”，覆盖五个操作可见性、`id=1` 防自毁保护仍生效、批量授权含自己正常提交 |
+
+### 8.2 增量验证记录
+
+| 时间 | 变更范围 | 实际命令 | 结果 | 跳过/警告 |
+|------|----------|----------|------|-----------|
+| 2026-09-17 | 4 个目标 suite | `pnpm --ignore-workspace exec vitest run user-management-store + user-management-components + user-role-order + system-management-ui-contract` | passed，27/27 | 无 |
+| 2026-09-17 | 目标 ESLint | `pnpm --ignore-workspace exec eslint core.js form.js user-management-store.spec.js` | passed | 无告警 |
+| 2026-09-17 | 后端编译 | `mvn -pl forge-framework/forge-plugin-parent/forge-plugin-system -am compile -DskipTests`（Java 17） | passed | 静默模式无输出 |
+| 2026-09-17 | 浏览器验证 | 用户自行验证 | deferred | 管理员维护自己的真实交互由用户验收 |

@@ -11,6 +11,7 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFieldDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDesignerDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectQueryDTO;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
@@ -373,7 +374,25 @@ class BusinessApplicationFormDataServiceTest {
                 namingService,
                 datasourceService,
                 tableMappingService,
+                noOpObjectMapper(),
                 transactionManager);
+    }
+
+    /** 签名写入仅用到 updateById；其余方法全部返回默认值即可 */
+    private static BusinessObjectMapper noOpObjectMapper() {
+        return (BusinessObjectMapper) Proxy.newProxyInstance(
+                BusinessObjectMapper.class.getClassLoader(),
+                new Class<?>[] {BusinessObjectMapper.class},
+                (proxy, method, args) -> {
+                    Class<?> returnType = method.getReturnType();
+                    if (returnType == boolean.class)
+                        return false;
+                    if (returnType == int.class)
+                        return 0;
+                    if (returnType == long.class)
+                        return 0L;
+                    return null;
+                });
     }
 
     private AiBusinessApplication application() {
@@ -555,10 +574,11 @@ class BusinessApplicationFormDataServiceTest {
         }
 
         @Override
-        public void saveDesigner(Long objectId, BusinessObjectDesignerDTO dto) {
+        public BusinessObjectDesignerService.DesignerContext saveDesigner(Long objectId, BusinessObjectDesignerDTO dto) {
             calls++;
             this.objectId = objectId;
             designer = dto;
+            return new BusinessObjectDesignerService.DesignerContext();
         }
     }
 

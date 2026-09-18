@@ -1,21 +1,25 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   businessProcessPage,
-  businessProcessRunDetail,
-  businessProcessRunPage,
-  cancelBusinessProcessRun,
   copyBusinessProcess,
   createBusinessProcess,
   deleteBusinessProcess,
   publishBusinessProcess,
-  retryBusinessProcessRun,
   updateBusinessProcessStatus,
   validateBusinessProcess,
 } from '@/api/business-process'
+import AiForm from '@/components/ai-form/AiForm.vue'
+import AiSearch from '@/components/ai-form/AiSearch.vue'
+import AiTable from '@/components/ai-form/AiTable.vue'
+import AiModal from '@/components/ai-modal/index.vue'
+import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
+import { useProcessListStore } from '@/stores/business-process/processListStore'
+import ApplicationProcessRunsPanel from './ApplicationProcessRunsPanel.vue'
 
 const props = defineProps({
   application: {
@@ -31,45 +35,30 @@ const props = defineProps({
 const emit = defineEmits(['changed', 'navigate', 'openDesigner'])
 const route = useRoute()
 const router = useRouter()
-const { dict } = useDict('sys_normal_disable', 'ai_business_process_design_status', 'ai_business_process_run_status')
+const { dict } = useDict('sys_normal_disable')
+const store = useProcessListStore()
+const { objectOptions, activeSection } = storeToRefs(store)
+const createModalRef = ref(null)
+const createFormRef = ref(null)
+const searchRef = ref(null)
+const validating = ref(false)
+const loadError = ref('')
+let listRequest = 0
 
 const loading = ref(false)
 const creating = ref(false)
 const actionId = ref('')
-const createVisible = ref(false)
 const records = ref([])
 const total = ref(0)
 const pageNum = ref(normalizePage(route.query.processPage))
 const pageSize = ref(10)
 const keyword = ref(String(route.query.processKeyword || ''))
 const status = ref(normalizeOptionalStatus(route.query.processStatus))
-const createForm = reactive(createEmptyForm())
-const activeSection = ref('list')
-const runLoading = ref(false)
-const runRecords = ref([])
-const runTotal = ref(0)
-const runPageNum = ref(1)
-const runPageSize = ref(10)
-const runStatus = ref(null)
-const runProcessId = ref(null)
-const runObjectCode = ref(null)
-const runDetailVisible = ref(false)
-const runDetail = ref(null)
-const runDetailLoading = ref(false)
+const createForm = ref(createEmptyForm())
 
-const objectOptions = computed(() => (props.initialObjects || [])
-  .map(item => ({
-    label: item.objectName || item.objectCode,
-    code: item.objectCode,
-    role: item.objectRole,
-    value: stringValue(item.objectId || item.id),
-  }))
-  .filter(item => item.value))
-
-const processOptions = computed(() => records.value.map(item => ({
-  label: item.processName || item.processCode,
-  value: stringValue(item.id),
-})))
+watch([() => props.application?.id, () => props.initialObjects], () => {
+  store.syncContext(props.application, props.initialObjects)
+}, { immediate: true })
 
 const statusOptions = computed(() => (dict.value?.sys_normal_disable || [])
   .map(item => ({
@@ -85,14 +74,29 @@ const applicationVersion = computed(() => (
   || 0
 ))
 
-watch(() => props.application?.id, (applicationId) => {
+watch(() => props.application?.id, (applicationId, previousId) => {
+  if (previousId && applicationId !== previousId) {
+    pageNum.value = 1
+    keyword.value = ''
+    status.value = null
+    records.value = []
+    total.value = 0
+    createModalRef.value?.close()
+    syncRouteFilters()
+  }
   if (!applicationId) {
+    listRequest += 1
+    loading.value = false
     records.value = []
     total.value = 0
     return
   }
   loadProcesses()
 }, { immediate: true })
+
+onBeforeUnmount(() => {
+  listRequest += 1
+})
 
 // 从流程画布返回时（returnTo 携带 processRefresh），重载列表同步最新草稿状态。
 watch(() => route.query.processRefresh, () => {
@@ -101,9 +105,11 @@ watch(() => route.query.processRefresh, () => {
 })
 
 async function loadProcesses() {
-  if (!props.application?.id || loading.value)
+  if (!props.application?.id)
     return
+  const requestId = ++listRequest
   loading.value = true
+  loadError.value = ''
   try {
     const response = await businessProcessPage({
       applicationId: stringValue(props.application.id),
@@ -112,36 +118,52 @@ async function loadProcesses() {
       pageNum: pageNum.value,
       pageSize: pageSize.value,
     })
+    if (requestId !== listRequest)
+      return
     const data = response.data || {}
     records.value = Array.isArray(data.records) ? data.records : (data.list || [])
-    total.value = Number(data.total || records.value.length)
+    total.value = Number(data.total ?? records.value.length)
   }
   catch (error) {
-    records.value = []
-    total.value = 0
-    notify('error', errorMessage(error, '业务流程加载失败'))
+    if (requestId === listRequest) {
+      records.value = []
+      total.value = 0
+      loadError.value = errorMessage(error, '业务流程加载失败')
+    }
   }
   finally {
-    loading.value = false
+    if (requestId === listRequest)
+      loading.value = false
   }
 }
 
 function openCreate() {
   if (!objectOptions.value.length)
     return
-  Object.assign(createForm, createEmptyForm())
   const primary = objectOptions.value.find(item => item.role === 'PRIMARY') || objectOptions.value[0]
-  createForm.subjectObjectId = primary?.value || ''
-  createVisible.value = true
+  createForm.value = { ...createEmptyForm(), subjectObjectId: primary?.value || '' }
+  createModalRef.value?.open({ title: '新建业务流程', width: '560px', modalStyle: { maxWidth: 'calc(100vw - 32px)' } })
 }
 
 async function confirmCreate() {
-  const processName = createForm.processName.trim()
+  if (creating.value || validating.value)
+    return
+  validating.value = true
+  try {
+    await createFormRef.value?.validate()
+  }
+  catch {
+    return // 字段错误由公共表单显示。
+  }
+  finally {
+    validating.value = false
+  }
+  const processName = String(createForm.value.processName || '').trim()
   if (!processName) {
     notify('warning', '请输入流程名称')
     return
   }
-  if (!createForm.subjectObjectId) {
+  if (!createForm.value.subjectObjectId) {
     notify('warning', '请选择主业务对象')
     return
   }
@@ -150,18 +172,20 @@ async function confirmCreate() {
     const response = await createBusinessProcess({
       applicationId: stringValue(props.application.id),
       processName,
-      processDescription: createForm.processDescription.trim(),
-      subjectObjectId: stringValue(createForm.subjectObjectId),
+      processDescription: String(createForm.value.processDescription || '').trim(),
+      subjectObjectId: stringValue(createForm.value.subjectObjectId),
       status: 1,
     })
-    createVisible.value = false
+    createModalRef.value?.close()
     notify('success', '业务流程已创建')
     emit('changed')
     const processId = stringValue(response.data?.id)
+    await loadProcesses()
     if (processId)
       openDesigner(processId)
-    else
-      await loadProcesses()
+  }
+  catch (error) {
+    notify('error', errorMessage(error, '业务流程创建失败'))
   }
   finally {
     creating.value = false
@@ -182,6 +206,9 @@ async function copyProcess(item) {
     if (copiedId)
       openDesigner(copiedId)
   }
+  catch (error) {
+    notify('error', errorMessage(error, '复制流程失败'))
+  }
   finally {
     actionId.value = ''
   }
@@ -198,6 +225,9 @@ async function toggleStatus(item) {
     notify('success', nextStatus === 1 ? '业务流程已启用' : '业务流程已停用')
     emit('changed')
     await loadProcesses()
+  }
+  catch (error) {
+    notify('error', errorMessage(error, '更新流程状态失败'))
   }
   finally {
     actionId.value = ''
@@ -216,7 +246,12 @@ function removeProcess(item) {
       emit('changed')
       if (records.value.length === 1 && pageNum.value > 1)
         pageNum.value -= 1
+      await syncRouteFilters()
       await loadProcesses()
+    }
+    catch (error) {
+      notify('error', errorMessage(error, '删除流程失败'))
+      return false
     }
     finally {
       actionId.value = ''
@@ -226,7 +261,7 @@ function removeProcess(item) {
     return
   window.$dialog.warning({
     title: '删除业务流程',
-    content: `确认删除“${item.processName || item.processCode}”吗？存在发布版本或运行记录时，服务端会拒绝删除。`,
+    content: `确认删除“${item.processName || item.processCode}”吗？删除后不能再触发新运行，历史版本和运行记录会保留。存在未结束的运行时不能删除。`,
     positiveText: '确认删除',
     negativeText: '取消',
     onPositiveClick: performDelete,
@@ -235,103 +270,6 @@ function removeProcess(item) {
 
 function openDesigner(processId) {
   emit('openDesigner', { processId: stringValue(processId) })
-}
-
-async function applyRunFilters() {
-  runPageNum.value = 1
-  await loadRuns()
-}
-
-function switchSection(section) {
-  activeSection.value = section
-  if (section === 'runs' && props.application?.id)
-    loadRuns()
-}
-
-async function loadRuns() {
-  if (!props.application?.id || runLoading.value)
-    return
-  runLoading.value = true
-  try {
-    const response = await businessProcessRunPage({
-      applicationId: stringValue(props.application.id),
-      processId: runProcessId.value || undefined,
-      subjectObjectCode: runObjectCode.value || undefined,
-      status: runStatus.value || undefined,
-      pageNum: runPageNum.value,
-      pageSize: runPageSize.value,
-    })
-    const data = response.data || {}
-    runRecords.value = Array.isArray(data.records) ? data.records : (data.list || [])
-    runTotal.value = Number(data.total || runRecords.value.length)
-  }
-  catch (error) {
-    runRecords.value = []
-    runTotal.value = 0
-    notify('error', errorMessage(error, '运行记录加载失败'))
-  }
-  finally {
-    runLoading.value = false
-  }
-}
-
-async function openRunDetail(runId) {
-  const id = stringValue(runId)
-  if (!id)
-    return
-  runDetailVisible.value = true
-  runDetailLoading.value = true
-  try {
-    const response = await businessProcessRunDetail(id)
-    runDetail.value = response.data || null
-  }
-  catch (error) {
-    runDetail.value = null
-    notify('error', errorMessage(error, '运行详情加载失败'))
-  }
-  finally {
-    runDetailLoading.value = false
-  }
-}
-
-async function retryRun(item) {
-  const runId = stringValue(item.id)
-  if (!runId || actionId.value)
-    return
-  actionId.value = `retry:${runId}`
-  try {
-    await retryBusinessProcessRun(runId)
-    notify('success', '已提交重试')
-    await loadRuns()
-  }
-  catch (error) {
-    notify('error', errorMessage(error, '重试失败'))
-  }
-  finally {
-    actionId.value = ''
-  }
-}
-
-async function cancelRun(item) {
-  const runId = stringValue(item.id)
-  if (!runId || actionId.value)
-    return
-  actionId.value = `cancel:${runId}`
-  try {
-    await cancelBusinessProcessRun(runId)
-    notify('success', '运行已取消')
-    await loadRuns()
-  }
-  catch (error) {
-    notify('error', errorMessage(error, '取消失败'))
-  }
-  finally {
-    actionId.value = ''
-  }
-}
-
-function previewMigration() {
-  notify('info', '迁移预览将在存量配置迁移服务接入后开放')
 }
 
 function requestApplicationPublish() {
@@ -366,7 +304,8 @@ async function executePublish(item) {
       notify('warning', errorCount
         ? `流程检查发现 ${errorCount} 项错误，请修正后再发布`
         : '流程检查未通过，请修正后再发布')
-      return
+      await loadProcesses()
+      return false
     }
     const response = await publishBusinessProcess(processId)
     const versionNo = Number(response.data?.versionNo || 0)
@@ -376,10 +315,72 @@ async function executePublish(item) {
   }
   catch (error) {
     notify('error', errorMessage(error, '业务流程发布失败'))
+    return false
   }
   finally {
     actionId.value = ''
   }
+}
+
+const searchSchema = computed(() => [
+  { field: 'keyword', label: '流程', type: 'input', props: { placeholder: '名称或编码', clearable: true } },
+  { field: 'status', label: '启停状态', type: 'select', props: { placeholder: '全部状态', clearable: true, options: statusOptions.value } },
+])
+const createSchema = computed(() => [
+  { field: 'processName', label: '流程名称', type: 'input', required: true, props: { 'maxlength': 128, 'placeholder': '例如：采购提交审批', 'data-process-field': 'name' } },
+  { field: 'subjectObjectId', label: '主业务对象', type: 'select', required: true, props: { options: objectOptions.value, filterable: true, placeholder: '请选择主业务对象' } },
+  { field: 'processDescription', label: '说明', type: 'textarea', props: { maxlength: 500, showCount: true, rows: 3, placeholder: '说明流程适用场景' } },
+])
+const columns = computed(() => [
+  { prop: 'processName', label: '流程', minWidth: 220, slot: 'identity' },
+  { prop: 'subjectObjectCode', label: '主业务对象', minWidth: 170, slot: 'subject' },
+  { prop: 'designStatus', label: '设计状态', width: 120, slot: 'designStatus' },
+  { prop: 'publishedVersion', label: '版本', width: 110, slot: 'version' },
+  { prop: 'status', label: '启停状态', width: 100, slot: 'status' },
+  { prop: 'updateTime', label: '更新时间', width: 170 },
+  { prop: 'action', label: '操作', width: 172, fixed: 'right', slot: 'actions' },
+])
+const pagination = computed(() => ({
+  page: pageNum.value,
+  pageSize: pageSize.value,
+  itemCount: total.value,
+  showSizePicker: true,
+  pageSizes: [10, 20, 50],
+  showQuickJumper: true,
+  prefix: ({ itemCount }) => `共 ${itemCount} 项`,
+}))
+const hasFilters = computed(() => Boolean(keyword.value || status.value != null))
+const emptyTitle = computed(() => loadError.value ? '业务流程加载失败' : hasFilters.value ? '没有匹配的业务流程' : '当前应用还没有业务流程')
+const emptyDescription = computed(() => loadError.value || (hasFilters.value ? '请调整搜索条件或点击重置。' : (objectOptions.value.length ? '点击“新建流程”开始编排业务。' : '请先在数据对象分区加入主业务对象。')))
+
+function moreOptions(item) {
+  return [
+    { label: '运行记录', key: 'runs' },
+    { label: '复制流程', key: 'copy', disabled: Boolean(actionId.value) },
+    { label: Number(item.status) === 1 ? '停用流程' : '启用流程', key: 'status', disabled: Boolean(actionId.value) },
+    { type: 'divider', key: 'divider' },
+    { label: '删除流程', key: 'delete', disabled: Boolean(actionId.value), props: { class: 'text-error' } },
+  ]
+}
+function handleMore(key, item) {
+  if (key === 'runs')
+    store.viewRuns(item)
+  else if (key === 'copy')
+    copyProcess(item)
+  else if (key === 'status')
+    toggleStatus(item)
+  else if (key === 'delete')
+    removeProcess(item)
+}
+
+function searchProcesses(values = {}) {
+  keyword.value = String(values.keyword || '').trim()
+  status.value = normalizeOptionalStatus(values.status)
+  return applyFilters()
+}
+function changePageSize(value) {
+  pageSize.value = value
+  return applyFilters()
 }
 
 async function applyFilters() {
@@ -450,723 +451,190 @@ function notify(type, message) {
 <template>
   <section class="process-panel" data-workspace-process>
     <header class="process-panel-header">
-      <div>
-        <div class="header-title-row">
-          <h2>业务流程</h2>
-          <span v-if="applicationVersion">应用版本 {{ applicationVersion }}</span>
-        </div>
-        <p>在当前应用内统一编排触发、条件、Flowable 审批和自动化动作。</p>
-      </div>
-      <div class="header-actions">
-        <n-button size="small" secondary :loading="loading" @click="loadProcesses">
-          刷新
-        </n-button>
-        <n-button size="small" secondary @click="requestApplicationPublish">
-          应用发布
-        </n-button>
-        <n-button
-          data-process-action="create"
-          size="small"
-          type="primary"
-          :disabled="!objectOptions.length"
-          @click="openCreate"
-        >
-          新建流程
-        </n-button>
-      </div>
+      <h2>业务流程</h2>
+      <span v-if="applicationVersion" class="panel-meta">应用版本 V{{ applicationVersion }}</span>
     </header>
-
-    <div class="process-sections" aria-label="业务流程功能区">
-      <button
-        type="button"
-        class="section-tab"
-        :class="{ 'is-active': activeSection === 'list' }"
-        data-process-section="list"
-        @click="switchSection('list')"
-      >
+    <n-tabs v-model:value="activeSection" type="line" size="small" class="process-tabs">
+      <n-tab name="list" data-process-section="list">
         流程列表
-        <span>{{ total }}</span>
-      </button>
-      <button
-        type="button"
-        class="section-tab"
-        :class="{ 'is-active': activeSection === 'runs' }"
-        data-process-section="runs"
-        @click="switchSection('runs')"
-      >
+      </n-tab>
+      <n-tab name="runs" data-process-section="runs">
         运行记录
-        <span>{{ runTotal }}</span>
-      </button>
-      <button
-        type="button"
-        class="section-tab is-reserved"
-        disabled
-        title="等待存量配置迁移服务接入"
-        @click="previewMigration"
-      >
-        迁移与问题
-        <small>待接入</small>
-      </button>
-    </div>
+      </n-tab>
+    </n-tabs>
 
-    <div v-if="activeSection === 'list'" class="process-filter-bar">
-      <label class="keyword-field">
-        <span class="sr-only">搜索业务流程</span>
-        <input
-          v-model="keyword"
-          type="search"
-          placeholder="搜索流程名称或编码"
-          @keyup.enter="applyFilters"
-        >
-      </label>
-      <label>
-        <span class="sr-only">流程状态</span>
-        <select v-model="status" @change="applyFilters">
-          <option :value="null">全部状态</option>
-          <option v-for="item in statusOptions" :key="item.value" :value="item.value">
-            {{ item.label }}
-          </option>
-        </select>
-      </label>
-      <n-button size="small" @click="applyFilters">
-        查询
-      </n-button>
-    </div>
-
-    <template v-if="activeSection === 'list'">
-    <n-spin :show="loading">
-      <div v-if="records.length" class="process-table-wrap">
-        <table class="process-table">
-          <thead>
-            <tr>
-              <th>流程</th>
-              <th>主业务对象</th>
-              <th>设计状态</th>
-              <th>版本</th>
-              <th>启停状态</th>
-              <th class="operation-heading">
-                操作
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in records" :key="String(item.id)">
-              <td>
-                <button
-                  type="button"
-                  class="process-identity"
-                  :data-process-open="String(item.id)"
-                  @click="openDesigner(item.id)"
-                >
-                  <strong>{{ item.processName || item.processCode }}</strong>
-                  <code>{{ item.processCode }}</code>
-                </button>
-              </td>
-              <td>
-                <div class="subject-cell">
-                  <strong>{{ subjectName(item) }}</strong>
-                  <small>{{ item.subjectObjectCode }}</small>
-                </div>
-              </td>
-              <td>
-                <DictTag
-                  dict-type="ai_business_process_design_status"
-                  :value="item.designStatus"
-                  :bordered="false"
-                />
-              </td>
-              <td>
-                <div class="version-cell">
-                  <strong>{{ item.publishedVersion ? `V${item.publishedVersion}` : '未发布' }}</strong>
-                  <small>草稿 {{ item.currentVersion || 0 }}</small>
-                </div>
-              </td>
-              <td>
-                <DictTag dict-type="sys_normal_disable" :value="item.status" :bordered="false" />
-              </td>
-              <td>
-                <div class="row-actions">
-                  <button type="button" class="text-primary" @click="openDesigner(item.id)">
-                    设计
-                  </button>
-                  <button
-                    type="button"
-                    class="text-success"
-                    :data-process-publish="String(item.id)"
-                    :disabled="Boolean(actionId)"
-                    @click="publishProcess(item)"
-                  >
-                    发布
-                  </button>
-                  <button
-                    type="button"
-                    class="text-primary"
-                    :data-process-copy="String(item.id)"
-                    :disabled="Boolean(actionId)"
-                    @click="copyProcess(item)"
-                  >
-                    复制
-                  </button>
-                  <button
-                    type="button"
-                    :class="Number(item.status) === 1 ? 'text-warning' : 'text-success'"
-                    :data-process-status="String(item.id)"
-                    :disabled="Boolean(actionId)"
-                    @click="toggleStatus(item)"
-                  >
-                    {{ Number(item.status) === 1 ? '停用' : '启用' }}
-                  </button>
-                  <button
-                    type="button"
-                    class="text-error"
-                    :data-process-delete="String(item.id)"
-                    :disabled="Boolean(actionId)"
-                    @click="removeProcess(item)"
-                  >
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <n-empty
-        v-else-if="!loading"
-        :description="objectOptions.length ? '当前应用还没有业务流程' : '请先在业务对象分区加入主业务对象'"
+    <div v-if="activeSection === 'list'" class="process-workspace">
+      <AiSearch
+        :key="application?.id"
+        ref="searchRef"
+        :schema="searchSchema"
+        :model-value="{ keyword, status }"
+        :grid-cols="3"
+        :label-width="80"
+        :enable-collapse="false"
+        :y-gap="8"
+        @search="searchProcesses"
+        @reset="searchProcesses()"
+        @keydown.enter.prevent="searchRef?.handleSearch()"
+      />
+      <AiTable
+        :columns="columns"
+        :data-source="records"
+        :row-key="row => String(row.id)"
+        :loading="loading"
+        :pagination="pagination"
+        :scroll-x="1062"
+        :empty-title="emptyTitle"
+        :empty-description="emptyDescription"
+        :show-render-mode-switch="false"
+        :show-search-toggle="false"
+        :show-fullscreen="false"
+        hide-selection
+        @refresh="loadProcesses"
+        @page-change="changePage"
+        @page-size-change="changePageSize"
       >
-        <template v-if="objectOptions.length" #extra>
-          <n-button size="small" type="primary" @click="openCreate">
-            新建第一个流程
+        <template #toolbar-left>
+          <n-button data-process-action="create" size="small" type="primary" :disabled="!objectOptions.length" @click="openCreate">
+            <template #icon>
+              <i class="i-lucide:plus" />
+            </template>
+            新建流程
+          </n-button>
+          <n-button size="small" @click="requestApplicationPublish">
+            应用发布
           </n-button>
         </template>
-      </n-empty>
-    </n-spin>
+        <template #identity="{ row }">
+          <SystemTableCell :title="row.processName || row.processCode" :subtitle="row.processCode" interactive :data-process-open="String(row.id)" @activate="openDesigner(row.id)" />
+        </template>
+        <template #subject="{ row }">
+          <div class="entity-cell">
+            <SystemTableCell :title="subjectName(row)" /><span class="panel-meta">{{ row.subjectObjectCode }}</span>
+          </div>
+        </template>
+        <template #designStatus="{ row }">
+          <DictTag dict-type="ai_business_process_design_status" :value="row.designStatus" :bordered="false" />
+        </template>
+        <template #version="{ row }">
+          <div class="entity-cell">
+            <span>{{ row.publishedVersion ? `V${row.publishedVersion}` : '未发布' }}</span><span class="panel-meta">草稿 {{ row.currentVersion || 0 }}</span>
+          </div>
+        </template>
+        <template #status="{ row }">
+          <DictTag dict-type="sys_normal_disable" :value="row.status" :bordered="false" />
+        </template>
+        <template #actions="{ row }">
+          <div class="row-actions">
+            <n-button text type="primary" size="small" @click="openDesigner(row.id)">
+              设计
+            </n-button>
+            <n-divider vertical />
+            <n-button text type="primary" size="small" :data-process-publish="String(row.id)" :disabled="Boolean(actionId) || Number(row.status) !== 1" :loading="actionId === `publish:${row.id}`" :title="Number(row.status) === 1 ? '检查并发布当前流程' : '请先启用流程再发布'" @click="publishProcess(row)">
+              发布
+            </n-button>
+            <n-divider vertical />
+            <n-dropdown trigger="click" placement="bottom-end" :options="moreOptions(row)" @select="key => handleMore(key, row)">
+              <n-button quaternary size="small" aria-label="更多操作" title="更多操作" :data-process-more="String(row.id)">
+                <template #icon>
+                  <i class="i-lucide:more-horizontal" />
+                </template>
+              </n-button>
+            </n-dropdown>
+          </div>
+        </template>
+      </AiTable>
+    </div>
+    <ApplicationProcessRunsPanel v-else />
 
-    <footer v-if="total > 0" class="process-pagination">
-      <span>共 {{ total }} 项</span>
-      <n-pagination
-        :page="pageNum"
-        :page-size="pageSize"
-        :item-count="total"
-        @update:page="changePage"
-      />
-    </footer>
-    </template>
-
-    <template v-else-if="activeSection === 'runs'">
-      <div class="process-filter-bar">
-        <label>
-          <span class="sr-only">流程筛选</span>
-          <select v-model="runProcessId" @change="applyRunFilters">
-            <option :value="null">全部流程</option>
-            <option v-for="item in processOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="sr-only">业务对象筛选</span>
-          <select v-model="runObjectCode" @change="applyRunFilters">
-            <option :value="null">全部对象</option>
-            <option v-for="item in objectOptions" :key="item.code" :value="item.code">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="sr-only">运行状态</span>
-          <select v-model="runStatus" @change="applyRunFilters">
-            <option :value="null">全部运行状态</option>
-            <option
-              v-for="item in (dict.value?.ai_business_process_run_status || [])"
-              :key="item.value || item.dictValue"
-              :value="item.value || item.dictValue"
-            >
-              {{ item.label || item.dictLabel }}
-            </option>
-          </select>
-        </label>
-        <n-button size="small" :loading="runLoading" @click="applyRunFilters">
-          查询
+    <AiModal ref="createModalRef" :closable="false" :esc-closable="false" show-header-extra>
+      <template #header-extra>
+        <n-button quaternary circle size="small" :disabled="creating || validating" aria-label="关闭新建流程" title="关闭" @click="createModalRef?.close()">
+          <template #icon>
+            <i class="i-lucide:x" />
+          </template>
         </n-button>
-      </div>
-      <n-spin :show="runLoading">
-        <div v-if="runRecords.length" class="process-table-wrap">
-          <table class="process-table">
-            <thead>
-              <tr>
-                <th>流程</th>
-                <th>业务记录</th>
-                <th>状态</th>
-                <th>当前节点</th>
-                <th>开始时间</th>
-                <th class="operation-heading">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in runRecords" :key="String(item.id)">
-                <td>
-                  <strong>{{ item.processName || item.processCode }}</strong>
-                  <code>{{ item.processCode }}</code>
-                </td>
-                <td>
-                  <div class="subject-cell">
-                    <strong>{{ subjectName(item) }}</strong>
-                    <small>{{ item.subjectRecordId }}</small>
-                  </div>
-                </td>
-                <td>
-                  <DictTag
-                    dict-type="ai_business_process_run_status"
-                    :value="item.status"
-                    :bordered="false"
-                  />
-                </td>
-                <td>{{ item.currentNodeName || item.currentNodeId || '-' }}</td>
-                <td>{{ item.startTime || item.createTime || '-' }}</td>
-                <td>
-                  <div class="row-actions">
-                    <button
-                      type="button"
-                      class="text-primary"
-                      :data-run-open="String(item.id)"
-                      @click="openRunDetail(item.id)"
-                    >
-                      详情
-                    </button>
-                    <button
-                      v-if="item.status === 'FAILED'"
-                      type="button"
-                      class="text-warning"
-                      :disabled="Boolean(actionId)"
-                      @click="retryRun(item)"
-                    >
-                      重试
-                    </button>
-                    <button
-                      v-if="['PENDING', 'RUNNING', 'WAITING'].includes(item.status)"
-                      type="button"
-                      class="text-error"
-                      :disabled="Boolean(actionId)"
-                      @click="cancelRun(item)"
-                    >
-                      取消
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <n-empty v-else-if="!runLoading" description="还没有运行记录。发布流程后，在对象列表点击开始按钮即可启动。" />
-      </n-spin>
-      <footer v-if="runTotal > 0" class="process-pagination">
-        <span>共 {{ runTotal }} 项</span>
-        <n-pagination
-          :page="runPageNum"
-          :page-size="runPageSize"
-          :item-count="runTotal"
-          @update:page="(value) => { runPageNum = normalizePage(value); loadRuns() }"
-        />
-      </footer>
-    </template>
-
-    <n-modal v-model:show="runDetailVisible" preset="card" title="运行详情" class="process-create-modal">
-      <n-spin :show="runDetailLoading">
-        <div v-if="runDetail" class="create-form">
-          <div class="generated-code-note">
-            <strong>{{ runDetail.processName || runDetail.processCode }}</strong>
-            <DictTag dict-type="ai_business_process_run_status" :value="runDetail.status" :bordered="false" />
-            <span>业务键: {{ runDetail.businessKey || '-' }}</span>
-          </div>
-          <div v-if="runDetail.errorSummary" class="generated-code-note">
-            {{ runDetail.errorSummary }}
-          </div>
-          <table v-if="runDetail.timeline?.length" class="process-table">
-            <thead>
-              <tr>
-                <th>节点</th>
-                <th>类型</th>
-                <th>状态</th>
-                <th>摘要</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="node in runDetail.timeline" :key="String(node.id)">
-                <td>{{ node.nodeName || node.nodeId }}</td>
-                <td>{{ node.nodeType }}</td>
-                <td>{{ node.status }}</td>
-                <td>{{ node.outputSummary || node.errorSummary || '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </n-spin>
-    </n-modal>
-
-    <n-modal v-model:show="createVisible" preset="card" title="新建业务流程" class="process-create-modal">
-      <div class="create-form">
-        <label>
-          <span>流程名称</span>
-          <input
-            v-model="createForm.processName"
-            data-process-field="name"
-            maxlength="128"
-            placeholder="例如：采购提交审批"
-          >
-        </label>
-        <label>
-          <span>主业务对象</span>
-          <select v-model="createForm.subjectObjectId" data-process-field="subject">
-            <option v-for="item in objectOptions" :key="item.value" :value="item.value">
-              {{ item.label }}（{{ item.code }}）
-            </option>
-          </select>
-          <small>流程运行记录将以该对象的记录作为业务主体，创建后不可切换。</small>
-        </label>
-        <label>
-          <span>说明</span>
-          <textarea
-            v-model="createForm.processDescription"
-            maxlength="500"
-            rows="3"
-            placeholder="说明流程适用场景，可稍后补充"
-          />
-        </label>
-        <div class="generated-code-note">
-          流程编码由系统根据名称生成并保证应用内唯一，创建后保持稳定。
-        </div>
-      </div>
+      </template>
+      <AiForm ref="createFormRef" v-model:value="createForm" :schema="createSchema" :grid-cols="1" :label-width="100" :disabled="creating" :show-submit="false" :show-reset="false" />
+      <p class="create-hint">
+        主业务对象创建后不可切换；流程编码由系统自动生成并保持稳定。
+      </p>
       <template #footer>
         <div class="modal-actions">
-          <n-button @click="createVisible = false">
+          <n-button :disabled="creating || validating" @click="createModalRef?.close()">
             取消
           </n-button>
-          <n-button
-            data-process-action="confirm-create"
-            type="primary"
-            :loading="creating"
-            @click="confirmCreate"
-          >
+          <n-button data-process-action="confirm-create" type="primary" :loading="creating || validating" @click="confirmCreate">
             创建并设计
           </n-button>
         </div>
       </template>
-    </n-modal>
+    </AiModal>
   </section>
 </template>
 
 <style scoped>
 .process-panel {
   display: flex;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 14px;
+  background: var(--bg-primary);
 }
-
 .process-panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-light, #e5e6eb);
-}
-
-.header-title-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 10px 12px 0;
 }
-
-.header-title-row h2 {
+.process-panel-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 600;
 }
-
-.header-title-row span {
-  padding: 2px 7px;
-  border-radius: 10px;
-  color: var(--text-tertiary, #86909c);
-  background: var(--bg-tertiary, #f2f3f5);
-  font-size: 11px;
+.process-tabs {
+  flex: none;
+  padding: 0 12px;
 }
-
-.process-panel-header p {
-  margin: 5px 0 0;
-  color: var(--text-tertiary, #86909c);
-  font-size: 13px;
+.process-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
 }
-
-.header-actions,
+.entity-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.panel-meta,
+.create-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.panel-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.create-hint {
+  margin: 0;
+  line-height: 1.6;
+}
 .row-actions,
 .modal-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.process-sections {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border-bottom: 1px solid var(--border-light, #e5e6eb);
-}
-
-.section-tab {
-  display: flex;
-  min-height: 38px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 12px;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary, #4e5969);
-  font-size: 13px;
-}
-
-.section-tab.is-active {
-  border-bottom-color: var(--primary-color, #165dff);
-  color: var(--primary-color, #165dff);
-  font-weight: 600;
-}
-
-.section-tab span,
-.section-tab small {
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: var(--bg-tertiary, #f2f3f5);
-  color: var(--text-tertiary, #86909c);
-  font-size: 10px;
-  font-weight: 400;
-}
-
-.section-tab.is-reserved {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
-.process-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--border-light, #e5e6eb);
-  border-radius: 7px;
-  background: var(--bg-secondary, #f7f8fa);
-}
-
-.process-filter-bar input,
-.process-filter-bar select,
-.create-form input,
-.create-form select,
-.create-form textarea {
-  min-height: 34px;
-  border: 1px solid var(--border-default, #c9cdd4);
-  border-radius: 6px;
-  background: var(--card-color, #fff);
-  padding: 6px 9px;
-  color: var(--text-primary, #1d2129);
-  outline: none;
-}
-
-.process-filter-bar input:focus,
-.process-filter-bar select:focus,
-.create-form input:focus,
-.create-form select:focus,
-.create-form textarea:focus {
-  border-color: var(--primary-color, #165dff);
-}
-
-.keyword-field {
-  width: min(320px, 42vw);
-}
-
-.keyword-field input {
-  width: 100%;
-}
-
-.process-table-wrap {
-  overflow: auto;
-  border: 1px solid var(--border-light, #e5e6eb);
-  border-radius: 7px;
-}
-
-.process-table {
-  width: 100%;
-  min-width: 880px;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-.process-table th,
-.process-table td {
-  padding: 11px 12px;
-  border-bottom: 1px solid var(--border-light, #e5e6eb);
-  text-align: left;
-  vertical-align: middle;
-}
-
-.process-table th {
-  color: var(--text-tertiary, #86909c);
-  background: var(--bg-secondary, #f7f8fa);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.process-table th:first-child {
-  width: 25%;
-}
-
-.process-table th:nth-child(2) {
-  width: 18%;
-}
-
-.process-table th:nth-child(3),
-.process-table th:nth-child(4),
-.process-table th:nth-child(5) {
-  width: 12%;
-}
-
-.process-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.process-table tbody tr:hover {
-  background: var(--bg-hover, #f7f8fa);
-}
-
-.operation-heading {
-  width: 21%;
-  text-align: right !important;
-}
-
-.process-identity,
-.subject-cell,
-.version-cell {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  text-align: left;
-}
-
-.process-identity strong,
-.subject-cell strong,
-.version-cell strong {
-  overflow: hidden;
-  max-width: 100%;
-  color: var(--text-primary, #1d2129);
-  font-size: 13px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.process-identity:hover strong {
-  color: var(--primary-color, #165dff);
+.row-actions :deep(.n-divider) {
+  margin: 0;
 }
-
-.process-identity code,
-.subject-cell small,
-.version-cell small {
-  overflow: hidden;
-  max-width: 100%;
-  color: var(--text-tertiary, #86909c);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.row-actions {
-  justify-content: flex-end;
-  white-space: nowrap;
-}
-
-.row-actions button {
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.row-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.process-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-tertiary, #86909c);
-  font-size: 12px;
-}
-
-.create-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.create-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.create-form label > span {
-  color: var(--text-primary, #1d2129);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.create-form label > small,
-.generated-code-note {
-  color: var(--text-tertiary, #86909c);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.generated-code-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  border: 1px solid var(--border-light, #e5e6eb);
-  border-radius: 6px;
-  background: var(--bg-secondary, #f7f8fa);
-}
-
 .modal-actions {
   justify-content: flex-end;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  clip-path: inset(50%);
-}
-
-@media (max-width: 860px) {
-  .process-panel-header {
-    flex-direction: column;
-  }
-
-  .header-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .process-filter-bar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .keyword-field {
-    width: 100%;
-  }
 }
 </style>

@@ -130,11 +130,16 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         List<AiBusinessApp> apps = baseMapper.selectRuntimeAppsByObject(
                 resolveTenantId(), normalizedSuiteCode, normalizedObjectCode);
         for (AiBusinessApp app : apps) {
-            if (StringUtils.isNotBlank(configKey) && !StringUtils.equals(configKey, app.getConfigKey())) {
+            boolean configKeyChanged = StringUtils.isNotBlank(configKey)
+                    && !StringUtils.equals(configKey, app.getConfigKey());
+            if (configKeyChanged) {
                 app.setConfigKey(configKey);
                 updateById(app);
             }
-            syncManagementMenu(app);
+            // configKey 未变且菜单已绑定时跳过耗时的菜单同步
+            if (configKeyChanged || !hasMenuBinding(app)) {
+                syncManagementMenu(app);
+            }
         }
     }
 
@@ -546,6 +551,17 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         } catch (Exception e) {
             return new JSONObject();
         }
+    }
+
+    /**
+     * 检查访问入口是否已绑定管理菜单。仅通过 options JSON 中的
+     * menuResourceId 字段判断，避免每次都调用 syncManagementMenu 的开销。
+     */
+    private boolean hasMenuBinding(AiBusinessApp app) {
+        JSONObject options = readOptions(app.getOptions());
+        JSONObject adminMenu = readAdminMenu(options);
+        Long menuResourceId = readLong(firstNonNull(adminMenu.get("menuResourceId"), options.get("menuResourceId")));
+        return menuResourceId != null;
     }
 
     private JSONObject readAdminMenu(JSONObject options) {

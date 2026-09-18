@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import { findElementsByLocalName, getFlowableAttr, parseBpmnXml } from '../converter/xml-utils.js'
 import DingFlowDesigner from '../DingFlowDesigner.vue'
@@ -18,8 +19,8 @@ const SIMPLE_XML = [
 ].join('\n')
 
 const LEGACY_FORM_XML = SIMPLE_XML.replace(
-  'flowable:assignee="${initiator}"',
-  'flowable:assignee="${initiator}" flowable:formKey="Activity_069lyqd_form" flowable:formJson="[]"',
+  `flowable:assignee="${DOLLAR}{initiator}"`,
+  `flowable:assignee="${DOLLAR}{initiator}" flowable:formKey="Activity_069lyqd_form" flowable:formJson="[]"`,
 )
 
 const APPLICATION_PAGE_FORM = {
@@ -36,6 +37,24 @@ const APPLICATION_PAGE_FORM = {
   fieldCatalog: [
     { field: 'fieldSlider', label: '滑块' },
     { field: 'fieldInput', label: '输入框11' },
+  ],
+}
+
+const ARRAY_APPLICATION_PAGE_FORM = {
+  ...APPLICATION_PAGE_FORM,
+  value: 'expense_page_form',
+  formKey: 'expense_page_form',
+  formName: '费用申请',
+  fieldCatalog: [
+    { field: 'expenseItems', label: '费用明细', componentType: 'group', dataType: 'array' },
+    {
+      scope: 'array',
+      arrayKey: 'expenseItems',
+      arrayLabel: '费用明细',
+      itemField: 'amount',
+      field: 'amount',
+      label: '金额',
+    },
   ],
 }
 
@@ -70,7 +89,10 @@ const STUBS = {
 function mountDesigner(props = {}) {
   return mount(DingFlowDesigner, {
     props,
-    global: { stubs: STUBS },
+    global: {
+      plugins: [createPinia()],
+      stubs: STUBS,
+    },
   })
 }
 
@@ -232,6 +254,32 @@ describe('dingFlowDesigner - props.xml 输入加载', () => {
       sourceFormKey: 'business_object_form',
     })
     expect(permissions.map(item => item.field)).toEqual(['fieldSlider', 'fieldInput'])
+
+    w.unmount()
+  })
+
+  it('自动绑定数组表单时生成 v3 行字段和行操作权限', async () => {
+    const w = mountDesigner({
+      xml: LEGACY_FORM_XML,
+      autoBindBusinessForm: true,
+      defaultFormKey: ARRAY_APPLICATION_PAGE_FORM.formKey,
+      formAssetOptions: [ARRAY_APPLICATION_PAGE_FORM],
+    })
+    await new Promise(r => setTimeout(r, 80))
+
+    const xml = w.vm.getXML()
+    const doc = parseBpmnXml(xml)
+    const task = findElementsByLocalName(doc, 'userTask').find(item => item.getAttribute('id') === 'T1')
+    const permissions = JSON.parse(getFlowableAttr(task, 'formFieldPermissions'))
+
+    expect(permissions).toMatchObject({
+      version: 3,
+      arrays: [{ arrayKey: 'expenseItems', allowCreate: false, allowUpdate: true, allowDelete: false }],
+    })
+    expect(permissions.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'expenseItems', writable: true }),
+      expect.objectContaining({ scope: 'array', arrayKey: 'expenseItems', itemField: 'amount', writable: true }),
+    ]))
 
     w.unmount()
   })

@@ -105,6 +105,47 @@ public class BusinessRecordSelectorService {
                 StringUtils.trimToNull(query.getTargetCode()));
     }
 
+    /**
+     * 供低代码查询源网关复用：按对象编码查询记录，权限与数据过滤与选择器完全一致。
+     */
+    public BusinessRecordSelectorResultVO queryByObjectCode(String objectCode,
+                                                             Map<String, Object> searchParams,
+                                                             Integer pageNum,
+                                                             Integer pageSize) {
+        BusinessRecordSelectorQueryDTO query = new BusinessRecordSelectorQueryDTO();
+        query.setObjectCode(StringUtils.trimToNull(objectCode));
+        query.setSearchParams(searchParams == null ? Map.of() : searchParams);
+        PageQuery pageQuery = new PageQuery();
+        pageQuery.setPageNum(pageNum == null || pageNum < 1 ? 1 : Math.min(pageNum, 100000));
+        pageQuery.setPageSize(pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 100));
+        return query(query, pageQuery);
+    }
+
+    /**
+     * 供低代码查询源网关复用：按对象编码取已启用业务对象，未发布或不存在时抛业务异常。
+     */
+    public AiBusinessObject requireObjectByCode(String objectCode) {
+        String normalized = StringUtils.trimToNull(objectCode);
+        if (normalized == null) {
+            throw new BusinessException("业务对象编码不能为空");
+        }
+        AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(resolveTenantId(), normalized);
+        if (object == null) {
+            throw new BusinessException("业务对象不存在: " + normalized);
+        }
+        if (EnableStatus.DISABLED.matches(object.getStatus())) {
+            throw new BusinessException("业务对象已停用: " + object.getObjectName());
+        }
+        return object;
+    }
+
+    /**
+     * 供低代码查询源网关复用：返回对象可查询字段的编码→名称映射。
+     */
+    public Map<String, String> fieldLabels(AiBusinessObject object) {
+        return resolveFieldLabels(object);
+    }
+
     private String describeObjectCodeFields(BusinessRecordSelectorQueryDTO query) {
         if (query == null) {
             return "query=null";

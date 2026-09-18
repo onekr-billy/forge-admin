@@ -62,6 +62,7 @@ function mountSettings(overrides = {}) {
           inheritAttrs: false,
           template: '<input />',
         },
+        NTree: { template: '<div class="tree-stub" />' },
         NSkeleton: { template: '<span />' },
         NSwitch: { template: '<button type="button" />' },
       },

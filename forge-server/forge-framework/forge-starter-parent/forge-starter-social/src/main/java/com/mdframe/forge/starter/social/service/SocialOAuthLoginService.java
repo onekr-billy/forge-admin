@@ -4,6 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import com.mdframe.forge.starter.collaboration.CollaborationCapability;
 import com.mdframe.forge.starter.collaboration.model.VerifiedSocialIdentity;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.social.community.GiteeCommunityLoginSupport;
+import com.mdframe.forge.starter.social.community.GiteeStarCheckService;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialAppConfig;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialConfig;
 import com.mdframe.forge.starter.social.factory.SocialAuthRequestFactory;
@@ -11,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.zhyd.oauth.model.AuthCallback;
 import me.zhyd.oauth.model.AuthResponse;
+import me.zhyd.oauth.model.AuthToken;
 import me.zhyd.oauth.model.AuthUser;
 import me.zhyd.oauth.request.AuthRequest;
 import org.springframework.stereotype.Service;
@@ -31,6 +34,8 @@ public class SocialOAuthLoginService {
 
     private final SocialAuthRequestFactory authRequestFactory;
     private final ISocialAppConfigService appConfigService;
+    private final GiteeCommunityLoginSupport giteeCommunityLoginSupport;
+    private final GiteeStarCheckService giteeStarCheckService;
 
     /**
      * 使用授权码向平台换取身份并映射为已验证身份
@@ -61,8 +66,19 @@ public class SocialOAuthLoginService {
             throw new BusinessException("平台未返回用户唯一标识");
         }
 
+        if (giteeCommunityLoginSupport.appliesTo(connection)) {
+            // Gitee 社区登录 Star 校验需要 login 拉取 /users/{login}/starred 列表
+            giteeStarCheckService.assertStarred(resolveAccessToken(authUser), authUser.getUsername());
+        }
+
+        Long tenantId = connection.getTenantId();
+        if (giteeCommunityLoginSupport.appliesTo(connection)
+                && giteeCommunityLoginSupport.communityTenantId() != null) {
+            tenantId = giteeCommunityLoginSupport.communityTenantId();
+        }
+
         return new VerifiedSocialIdentity(
-                connection.getTenantId(),
+                tenantId,
                 connection.getId(),
                 connection.getConnectionCode(),
                 connection.getPlatform(),
@@ -72,6 +88,11 @@ public class SocialOAuthLoginService {
                 authUser.getEmail(),
                 null,
                 Instant.now());
+    }
+
+    private String resolveAccessToken(AuthUser authUser) {
+        AuthToken token = authUser == null ? null : authUser.getToken();
+        return token == null ? null : token.getAccessToken();
     }
 
     /**

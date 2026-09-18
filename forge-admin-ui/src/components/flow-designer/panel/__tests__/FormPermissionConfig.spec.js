@@ -23,6 +23,8 @@ function mountConfig(options = {}) {
     setup() {
       const config = ref({
         formFieldPermissions: options.permissions || [],
+        formArrayPermissions: options.formArrayPermissions,
+        formChildPermissions: options.formChildPermissions,
       })
       function updateConfig(patch) {
         config.value = { ...config.value, ...patch }
@@ -145,6 +147,82 @@ describe('formPermissionConfig', () => {
       writable: false,
     })
 
+    wrapper.unmount()
+  })
+
+  it('子表字段和行级新增/修改/删除权限输出 v2 配置', async () => {
+    const wrapper = mountConfig({
+      formFieldCatalog: [
+        ...fields,
+        { scope: 'child', childKey: 'items', childField: 'quantity', field: 'quantity', label: '数量' },
+      ],
+    })
+
+    expect(wrapper.text()).toContain('items.quantity')
+    await wrapper.find('[data-test="child-allow-create"]').setValue(true)
+    await wrapper.find('[data-test="child-allow-update"]').setValue(true)
+    await wrapper.find('[data-test="child-allow-delete"]').setValue(true)
+
+    expect(wrapper.vm.config.formFieldPermissions).toMatchObject({
+      version: 2,
+      children: [{ childKey: 'items', allowCreate: true, allowUpdate: true, allowDelete: true }],
+    })
+    expect(wrapper.vm.config.formFieldPermissions.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'child', childKey: 'items', childField: 'quantity' }),
+    ]))
+    expect(wrapper.vm.config.formChildPermissions).toEqual([
+      expect.objectContaining({ childKey: 'items', allowCreate: true, allowUpdate: true, allowDelete: true }),
+    ])
+
+    wrapper.unmount()
+  })
+
+  it('数组行字段和行级操作权限输出 v3 配置', async () => {
+    const wrapper = mountConfig({
+      formFieldCatalog: [
+        { field: 'expenseItems', label: '费用明细', componentType: 'group', dataType: 'array' },
+        { scope: 'array', arrayKey: 'expenseItems', arrayLabel: '费用明细', itemField: 'amount', field: 'amount', label: '金额' },
+      ],
+    })
+
+    expect(wrapper.text()).toContain('expenseItems[].amount')
+    await wrapper.find('[data-test="array-allow-create"]').setValue(true)
+    await wrapper.find('[data-test="array-allow-update"]').setValue(true)
+    await wrapper.find('[data-test="array-allow-delete"]').setValue(true)
+
+    expect(wrapper.vm.config.formFieldPermissions).toMatchObject({
+      version: 3,
+      arrays: [{ arrayKey: 'expenseItems', allowCreate: true, allowUpdate: true, allowDelete: true }],
+    })
+    expect(wrapper.vm.config.formFieldPermissions.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'array', arrayKey: 'expenseItems', itemField: 'amount' }),
+    ]))
+    expect(wrapper.vm.config.formArrayPermissions).toEqual([
+      expect.objectContaining({ arrayKey: 'expenseItems', allowCreate: true, allowUpdate: true, allowDelete: true }),
+    ])
+
+    wrapper.unmount()
+  })
+
+  it('分离数组权限为空时保留 v3 bundle 中的行操作权限', () => {
+    const wrapper = mountConfig({
+      permissions: {
+        version: 3,
+        fields: [
+          { field: 'expenseItems', readable: true, writable: true },
+          { scope: 'array', arrayKey: 'expenseItems', itemField: 'amount', readable: true, writable: true },
+        ],
+        arrays: [{ arrayKey: 'expenseItems', readable: true, allowCreate: true, allowUpdate: true, allowDelete: true }],
+      },
+      formArrayPermissions: [],
+      formFieldCatalog: [
+        { field: 'expenseItems', label: '费用明细', dataType: 'array' },
+        { scope: 'array', arrayKey: 'expenseItems', itemField: 'amount', field: 'amount', label: '金额' },
+      ],
+    })
+
+    expect(wrapper.find('[data-test="array-allow-create"]').element.checked).toBe(true)
+    expect(wrapper.find('[data-test="array-allow-delete"]').element.checked).toBe(true)
     wrapper.unmount()
   })
 })

@@ -95,6 +95,22 @@ class BusinessFieldSchemaServiceTest {
         assertEquals("DICT", schema.getBusinessFieldType());
     }
 
+    @Test
+    @DisplayName("user multi-select stores comma-separated ids in varchar")
+    void userMultiSelectUsesVarcharStorage() {
+        BusinessFieldDTO dto = baseField("负责人", "ownerUserId", "USER");
+        dto.setComponentType("userSelect");
+        dto.setDataType("bigint");
+        dto.setLength(null);
+        dto.getBasicProps().put("multiple", true);
+
+        LowcodeFieldSchema schema = service.buildFieldSchema(dto);
+
+        assertEquals("varchar", schema.getDataType());
+        assertEquals(LowcodeFieldSchema.MULTI_SELECT_VARCHAR_LENGTH, schema.getLength());
+        assertEquals(true, schema.isMultipleSelection());
+    }
+
     private BusinessFieldDTO baseDictField() {
         BusinessFieldDTO dto = baseField("跟进方式", "type", "DICT");
         dto.setComponentType("select");

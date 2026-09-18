@@ -169,4 +169,24 @@ public class LoginConfigResult implements Serializable {
          */
         private Boolean enabled;
     }
+
+    /**
+     * 是否启用群二维码引流验证码
+     */
+    private Boolean groupQrcodeEnabled;
+
+    /**
+     * 群二维码图片（fileId）
+     */
+    private String groupQrcodeImage;
+
+    /**
+     * 群名称
+     */
+    private String groupQrcodeName;
+
+    /**
+     * 引导文案
+     */
+    private String groupQrcodeHint;
 }

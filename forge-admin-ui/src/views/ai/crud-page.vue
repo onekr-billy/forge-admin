@@ -45,6 +45,7 @@ import { crudConfigRender } from '@/api/ai'
 import { businessDocumentRuntimeBatch } from '@/api/business-app'
 import catalog from '@/catalog'
 import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
+import { buildFormRuntimeContext } from '@/components/ai-form/form-runtime-context'
 import { createOfflineSchemaHash } from '@/components/ai-form/offline-form-runtime'
 import { normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from '@/components/lowcode-builder/page/crud-hook-rules'
@@ -53,7 +54,7 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
 import { hasRuntimeVisibilityRules } from '@/components/lowcode-builder/shared/runtime-rules'
 import { getDictData } from '@/composables/useDict'
-import { useTabStore, useUserStore } from '@/store'
+import { useTabStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
 import { getDefaultPageTitle } from '@/utils/page-title'
 import { normalizeMultiFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
@@ -72,7 +73,6 @@ const props = defineProps({
 const route = useRoute()
 const router = useRouter()
 const tabStore = useTabStore()
-const userStore = useUserStore()
 
 const loading = ref(false)
 const configLoaded = ref(false)
@@ -539,6 +539,12 @@ function transformFields(fields, fieldMetaMap = new Map()) {
     applyRuntimeFieldMeta(newField, fieldMeta)
     applyRuntimeFieldValidation(newField, fieldMeta)
     applyRuntimeFieldLength(newField, fieldMeta)
+    if (newField.multiple === undefined) {
+      newField.multiple = newField.props?.multiple === true
+        || newField.basicProps?.multiple === true
+        || newField.props?.recordSelector?.multiple === true
+        || newField.recordSelector?.multiple === true
+    }
 
     if (field.dictType && ['select', 'radio', 'checkbox'].includes(field.type)) {
       const options = dictCache.value[field.dictType] || []
@@ -710,6 +716,7 @@ function normalizeFormGovernance(value = {}) {
     fieldRules: Array.isArray(value.fieldRules) ? value.fieldRules : [],
     events: Array.isArray(value.events) ? value.events : [],
     fieldEvents: Array.isArray(value.fieldEvents) ? value.fieldEvents : [],
+    formInit: value.formInit && typeof value.formInit === 'object' ? value.formInit : {},
     offlineDraft: value.offlineDraft && typeof value.offlineDraft === 'object' ? value.offlineDraft : {},
   }
 }
@@ -998,7 +1005,8 @@ function resolvePageSchemaEditFormStyle(pageSchema = {}) {
 function resolveRuntimeModalWidth(options = {}, cfg = {}, formProfile = {}) {
   // 表单设计器布局里的弹窗宽度优先（后端旧版本未把 layout 平铺到 editZone.props 时仍能生效）
   const explicitWidth = normalizeRuntimeWidth(
-    formProfile.designerLayout?.modalWidth || options.modalWidth || cfg.modalWidth)
+    formProfile.designerLayout?.modalWidth || options.modalWidth || cfg.modalWidth,
+  )
   if (explicitWidth)
     return explicitWidth
   const formStyle = options.editFormStyle
@@ -1091,6 +1099,7 @@ const crudProps = computed(() => {
     editFormStyle: designerLayout.formStyle || options.editFormStyle || cfg.editFormStyle,
     formAssets: activeRuntimeFormProfile.value.formAssets || options.formAssets || cfg.formAssets || [],
     fieldEvents: activeRuntimeFormProfile.value.governance?.fieldEvents || [],
+    formInit: activeRuntimeFormProfile.value.governance?.formInit || {},
     offlineDraft: buildOfflineDraftConfig(cfg, options, activeRuntimeFormProfile.value),
     formRuntimeContext: buildFormRuntimeContext(),
     editXGap: normalizeNumberOption(designerLayout.columnGap ?? options.editXGap ?? cfg.editXGap, 12),
@@ -1168,21 +1177,6 @@ function resolveRuntimeFormOpenMode(options = {}, cfg = {}, designerLayout = {})
     return 'tabWorkspace'
   const normalized = mode.toLowerCase()
   return ['modal', 'drawer', 'flat'].includes(normalized) ? normalized : 'modal'
-}
-
-function buildFormRuntimeContext() {
-  return {
-    currentUser: {
-      userId: userStore.userId,
-      username: userStore.username,
-      realName: userStore.realName,
-      tenantId: userStore.tenantId,
-      activeOrgId: userStore.activeOrgId,
-      activeOrgName: userStore.activeOrgName,
-      staffId: userStore.staffId,
-      staffName: userStore.staffName,
-    },
-  }
 }
 
 function resolveRuntimeModalType(formOpenMode, options = {}, cfg = {}, designerLayout = {}) {

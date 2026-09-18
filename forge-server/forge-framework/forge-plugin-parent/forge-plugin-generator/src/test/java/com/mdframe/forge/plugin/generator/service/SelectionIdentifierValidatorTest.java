@@ -38,6 +38,30 @@ class SelectionIdentifierValidatorTest {
         assertEquals("所属部门必须保存组织ID，不能保存名称", orgError.getMessage());
     }
 
+    @Test
+    @DisplayName("人员多选允许逗号分隔的 ID")
+    void multipleUserSelectionAcceptsCommaSeparatedIdentifiers() {
+        AiCrudConfig config = config();
+        config.setModelSchema("""
+                {"fields":[
+                  {"field":"applicantId","columnName":"applicant_id","label":"申请人","dataType":"varchar","componentType":"userSelect","basicProps":{"multiple":true}},
+                  {"field":"applicantIdName","columnName":"applicant_id_name","label":"申请人姓名","dataType":"varchar","componentType":"input"}
+                ]}
+                """);
+        config.setEditSchema("""
+                [{"field":"applicantId","label":"申请人","type":"userSelect","multiple":true}]
+                """);
+
+        assertDoesNotThrow(() -> SelectionIdentifierValidator.validate(config, Map.of(
+                "applicantId", "1900000000000000001,1900000000000000002",
+                "applicantIdName", "张三,李四"
+        ), objectMapper));
+
+        BusinessException userError = assertThrows(BusinessException.class,
+                () -> SelectionIdentifierValidator.validate(config, Map.of("applicantId", "张三,李四"), objectMapper));
+        assertEquals("申请人必须保存人员ID，不能保存姓名", userError.getMessage());
+    }
+
     private AiCrudConfig config() {
         AiCrudConfig config = new AiCrudConfig();
         config.setConfigKey("hr_apply");

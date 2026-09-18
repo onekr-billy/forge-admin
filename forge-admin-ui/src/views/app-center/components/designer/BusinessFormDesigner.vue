@@ -52,32 +52,37 @@
 
       <div class="form-builder-grid" :class="{ 'relation-mode': !isPrimaryObjectActive, 'has-relation-summary': isPrimaryObjectActive }">
         <template v-if="isPrimaryObjectActive">
-          <section class="relation-overview-bar">
+          <section class="relation-overview-bar subtable-overview-bar">
             <div class="relation-overview-main">
-              <strong>关系与级联</strong>
-              <span v-if="relationFormRows.length">
-                已配置 {{ relationFormRows.length }} 个关联子表，可继续维护内嵌新增、编辑和详情展示。
+              <strong>关联子表</strong>
+              <span v-if="subTableSummaryRows.length">
+                已配置 {{ subTableSummaryRows.length }} 个关联子表，子表数据随主表单一起加载和保存。
               </span>
               <span v-else>
-                未配置关联子表，可在这里维护主子表关系、级联和内嵌表单。
+                添加关联子表后可在主表单中同时录入主表与子表数据，如采购订单 + 明细行。
               </span>
             </div>
-            <div v-if="relationFormRows.length" class="relation-overview-tags">
+            <div v-if="subTableSummaryRows.length" class="relation-overview-tags">
               <n-tag
-                v-for="row in relationFormRows"
+                v-for="row in subTableSummaryRows"
                 :key="row.key"
                 size="small"
                 :bordered="false"
+                class="subtable-summary-tag"
+                @click="locateSubTableOnCanvas(row.componentId)"
               >
-                {{ row.title }} · {{ row.selectedCount || 0 }}/{{ row.fieldCount || 0 }} 字段
+                {{ row.title }}
+                <template v-if="row.fieldCount">
+                  · {{ row.fieldCount }} 字段
+                </template>
               </n-tag>
             </div>
             <n-space size="small">
-              <n-button size="small" secondary @click="$emit('openRelations')">
-                配置关系与级联
+              <n-button size="small" secondary @click="relationOverviewVisible = true">
+                关系全景图
               </n-button>
               <n-button size="small" type="primary" @click="openChildTableSectionWizard">
-                添加子表分区
+                + 添加子表
               </n-button>
             </n-space>
           </section>
@@ -289,6 +294,13 @@
       :model-value="childTableWizardValue"
       @confirm="handleChildTableSectionConfirm"
     />
+    <RelationOverviewModal
+      v-model:show="relationOverviewVisible"
+      :object-code="objectCode"
+      :object-name="objectName"
+      :fields="fields"
+      :relations="relations"
+    />
     <ButtonActionConfig
       v-model:show="buttonActionConfigVisible"
       :model-value="buttonActionValue"
@@ -303,7 +315,7 @@
 <script setup>
 import { ChevronDownOutline, ChevronUpOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, provide, ref, watch } from 'vue'
 import { saveBusinessObjectDesigner, saveBusinessObjectFormLayout } from '@/api/business-app'
 import { cloneSchema, isSameSchema } from '@/components/lowcode-builder/model/model-schema'
 import {
@@ -330,6 +342,7 @@ import { buildAutoFieldAssets } from './form-first/autoFieldRegistry'
 import { FIELD_COMPONENT_DEFAULTS as COMPONENT_FIELD_DEFAULTS, FORM_FIELD_COMPONENT_KEYS } from './form-first/fieldComponentCatalog'
 import { extractForgeSchemaFieldRefs, forgeSchemaToFormCreate } from './form-first/forgeToFormCreate'
 import { applyGridColumnsToFormDesignerSchema, generateFieldCode, normalizeFormDesignerSchema, normalizeFormDesignerSchemaForSave } from './form-first/formDesignerSchema'
+import RelationOverviewModal from './RelationOverviewModal.vue'
 
 const props = defineProps({
   objectId: {
@@ -413,11 +426,19 @@ const formCreateDesignerRef = ref(null)
 const forgeFormDesignerRef = ref(null)
 const childTableWizardVisible = ref(false)
 const childTableWizardValue = ref(null)
+const relationOverviewVisible = ref(false)
 const buttonActionConfigVisible = ref(false)
 const buttonActionIndex = ref(-1)
 const buttonActionValue = ref({})
 const useLegacyFormCreateDesigner = ref(false)
 const activeFormDesignerRef = computed(() => useLegacyFormCreateDesigner.value ? formCreateDesignerRef.value : forgeFormDesignerRef.value)
+
+// ---- 子表配置桥接：provide/inject 让 FormSubTablePanel 能触发 pageSchema 三处同步 ----
+provide('subTableConfigBridge', {
+  syncSubTableConfig(payload = {}) {
+    handleSubTableBridgeSync(payload)
+  },
+})
 
 const baseModelSchema = computed(() => {
   const modelFields = props.modelSchema?.fields || []
@@ -1085,6 +1106,81 @@ function handleChildTableSectionConfirm(config) {
   nextTick(() => forgeFormDesignerRef.value?.openPageSections?.())
 }
 
+// ---- 子表桥接同步：FormSubTablePanel 通过 provide/inject 调用此函数完成三处写入 ----
+function handleSubTableBridgeSync(payload = {}) {
+  const { action, config, relationKey } = payload
+
+  if (action === 'remove') {
+    // 清理 pageSchema 中的 modelRef + masterDetailConfig + pageSection
+    if (relationKey) {
+      const result = removeChildTableSectionConfig({
+        pageSchema: localSchema.value,
+        formDesignerSchema: localFormDesignerSchema.value,
+      }, { relationKey })
+      if (result.pageSchema) {
+        assignLocalSchema(result.pageSchema)
+        localFormDesignerSchema.value = normalizeFormDesignerSchema(result.formDesignerSchema)
+        emit('dirtyChange', true)
+      }
+    }
+    return
+  }
+
+  if (!config)
+    return
+
+  // add / update: 走 upsertChildTableSectionConfig 同步三处
+  const result = upsertChildTableSectionConfig({
+    pageSchema: localSchema.value,
+    formDesignerSchema: localFormDesignerSchema.value,
+  }, config)
+  assignLocalSchema(result.pageSchema)
+  localFormDesignerSchema.value = normalizeFormDesignerSchema(
+    upsertSubTableContainer(result.formDesignerSchema, config),
+  )
+  emit('dirtyChange', true)
+  nextTick(() => forgeFormDesignerRef.value?.openPageSections?.())
+}
+
+// ---- 概览栏子表摘要行 ----
+const subTableSummaryRows = computed(() => {
+  const components = localFormDesignerSchema.value?.components || []
+  const rows = []
+  const walk = (list) => {
+    ;(Array.isArray(list) ? list : []).forEach((component) => {
+      if (!component || typeof component !== 'object')
+        return
+      if (component.componentKey === 'subTable') {
+        const p = component.props || {}
+        rows.push({
+          key: p.relationKey || component.id,
+          title: p.header || component.label || '关联子表',
+          fieldCount: Array.isArray(p.columns) ? p.columns.length : 0,
+          componentId: component.id,
+        })
+      }
+      if (Array.isArray(component.children))
+        walk(component.children)
+    })
+  }
+  walk(components)
+  return rows
+})
+
+function locateSubTableOnCanvas(componentId) {
+  // 切换到主表单 → 画布视图 → 选中子表组件
+  activeObjectKey.value = 'primary'
+  nextTick(() => {
+    forgeFormDesignerRef.value?.flushDesigner?.()
+    // store 会在 ForgeFormDesigner 内部 sync，这里直接通过 ref 触发选中
+    const store = forgeFormDesignerRef.value
+    if (store) {
+      // ForgeFormDesigner 暴露了 selectComponent 方法或通过 store 直接操作
+      store.selectComponent?.(componentId)
+    }
+  })
+}
+
 // 画布上的关联子表容器被删除（或关系被改）时，同步清理子表分区的运行时配置。
 const subTableContainerRelationKeys = computed(() => collectSubTableRelationKeys(localFormDesignerSchema.value?.components))
 watch(subTableContainerRelationKeys, (nextKeys, prevKeys) => {
@@ -1111,13 +1207,35 @@ function upsertSubTableContainer(formDesignerSchema = {}, config = {}) {
   if (!relationKey)
     return formDesignerSchema
   const containerId = `subtable_${safeKey(relationKey)}`
+  const index = components.findIndex(component => component?.componentKey === 'subTable'
+    && (component.id === containerId || String(component.props?.relationKey || '') === relationKey))
+  const currentProps = index >= 0 ? components[index].props || {} : {}
+  const selectorMultiple = Object.prototype.hasOwnProperty.call(config, 'selectorMultiple')
+    ? config.selectorMultiple !== false
+    : currentProps.selectorMultiple !== false
+  const selectorDisplayFields = Array.isArray(config.selectorDisplayFields)
+    ? config.selectorDisplayFields
+    : (Array.isArray(currentProps.selectorDisplayFields) ? currentProps.selectorDisplayFields : [])
+  const selectorFilterFields = Array.isArray(config.selectorFilterFields)
+    ? config.selectorFilterFields
+    : (Array.isArray(currentProps.selectorFilterFields) ? currentProps.selectorFilterFields : [])
   const nextProps = {
     header: config.title || '关联子表',
     relationKey,
     displayMode: ['inline_grid', 'card_list', 'bottom_sheet'].includes(config.displayMode) ? config.displayMode : 'inline_grid',
+    modelCode: config.modelCode || '',
+    columns: Array.isArray(config.fields)
+      ? config.fields.map(field => ({
+          fieldCode: field.fieldCode || field.sourceField || field.field || '',
+          fieldLabel: field.fieldName || field.label || field.fieldCode || field.sourceField || field.field || '',
+        })).filter(field => field.fieldCode)
+      : [],
+    allowCreate: config.allowCreate !== false,
+    allowSelectExisting: config.allowSelectExisting === true,
+    selectorMultiple,
+    selectorDisplayFields,
+    selectorFilterFields,
   }
-  const index = components.findIndex(component => component?.componentKey === 'subTable'
-    && (component.id === containerId || String(component.props?.relationKey || '') === relationKey))
   if (index >= 0) {
     const current = components[index]
     components[index] = { ...current, label: nextProps.header, props: { ...(current.props || {}), ...nextProps } }
@@ -2280,6 +2398,20 @@ defineExpose({
   justify-content: flex-end;
   gap: 6px;
   max-width: 420px;
+}
+
+.subtable-overview-bar {
+  background: #f6f9ff;
+  border-bottom-color: #d6e4ff;
+}
+
+.subtable-summary-tag {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.subtable-summary-tag:hover {
+  background: #e6f0ff;
 }
 
 .relation-object-workbench {

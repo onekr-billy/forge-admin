@@ -175,7 +175,14 @@ const displayValue = computed(() => {
     return start || end ? `${start || '-'} 至 ${end || '-'}` : '-'
   }
   if (props.field.type === 'dictSelect' || props.field.type === 'select' || props.field.type === 'pillSelect') {
-    return props.options.find(item => String(item.value) === String(value))?.label || value || '-'
+    const values = Array.isArray(value)
+      ? value
+      : String(value ?? '').split(',').map(item => item.trim()).filter(Boolean)
+    if (!values.length)
+      return '-'
+    return values
+      .map(item => props.options.find(option => String(option.value) === String(item))?.label || item)
+      .join('、')
   }
   if (value === undefined || value === null || value === '') return '-'
   return String(value)

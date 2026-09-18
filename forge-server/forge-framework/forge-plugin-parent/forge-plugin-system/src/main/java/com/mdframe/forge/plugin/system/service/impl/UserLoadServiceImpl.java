@@ -201,6 +201,7 @@ public class UserLoadServiceImpl implements IUserLoadService {
         loginUser.setUserId(user.getId());
         loginUser.setTenantId(effectiveTenantId);
         loginUser.setTenantName(tenant != null ? tenant.getTenantName() : null);
+        loginUser.setSystemName(tenant != null ? tenant.getSystemName() : null);
         loginUser.setUsername(user.getUsername());
         loginUser.setRealName(user.getRealName());
         loginUser.setUserType(resolveEffectiveUserType(user, tenantMember));
@@ -392,8 +393,9 @@ public class UserLoadServiceImpl implements IUserLoadService {
             if (CollUtil.isNotEmpty(resourceIds)) {
                 LambdaQueryWrapper<SysResource> resourceWrapper = new LambdaQueryWrapper<>();
                 resourceWrapper.in(SysResource::getId, resourceIds)
-                        .eq(SysResource::getVisible, 1)
                         .isNotNull(SysResource::getPerms);
+                // 不按 visible 过滤：visible 只控制菜单显隐，隐藏菜单承载的接口权限（如应用门户）
+                // 同样需要进 permissions，否则已授权的接口会被鉴权层拦成 403
                 applyUserTypeScope(resourceWrapper, loginUser);
                 List<SysResource> resources = resourceMapper.selectList(resourceWrapper);
 
@@ -455,9 +457,10 @@ public class UserLoadServiceImpl implements IUserLoadService {
                 .collect(Collectors.toList());
 
         // 4. 查询当前用户类型可访问的API资源（resourceType=4）
+        // 不按 visible 过滤：与 loadUserPermissions 同一原则，visible 只控制菜单显隐，
+        // 角色已绑定的隐藏 API 同样要进 apiPermissions，否则鉴权层会把已授权接口拦成 403
         List<SysResource> apiResources = resourceMapper.selectList(new LambdaQueryWrapper<SysResource>()
                 .in(SysResource::getId, resourceIds)
-                .eq(SysResource::getVisible, 1)
                 .eq(SysResource::getResourceType, 4)
                 .isNotNull(SysResource::getApiUrl));
         apiResources = apiResources.stream()

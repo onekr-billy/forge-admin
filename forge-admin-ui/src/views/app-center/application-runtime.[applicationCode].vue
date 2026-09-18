@@ -60,7 +60,7 @@
             <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'settings' }" @click="switchRuntimeView('settings')">
               应用设置
             </button>
-            <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'publish' }" @click="switchRuntimeView('publish')">
+            <button type="button" class="runtime-app-tab" @click="switchRuntimeView('publish')">
               应用发布
             </button>
           </template>
@@ -923,7 +923,7 @@
       </section>
 
       <!-- 业务流程面板 -->
-      <section v-else-if="runtimeViewMode === 'process'" class="runtime-inline-panel">
+      <section v-else-if="runtimeViewMode === 'process'" class="runtime-inline-panel runtime-process-panel">
         <ApplicationProcessPanel
           :application="application"
           :initial-objects="objects"
@@ -953,32 +953,6 @@
           :application="application"
           @saved="refreshWorkspaceMetadata"
         />
-      </section>
-
-      <!-- 应用发布面板 -->
-      <section v-else-if="runtimeViewMode === 'publish'" class="runtime-inline-panel">
-        <div class="runtime-publish-stack">
-          <section class="runtime-publish-summary" aria-label="应用页面统计">
-            <div>
-              <span>当前发布版本</span>
-              <strong>{{ application.lastPublishVersion ? `v${application.lastPublishVersion}` : '未发布' }}</strong>
-            </div>
-            <div>
-              <span>页面</span>
-              <strong>{{ publishedPageCount }}</strong>
-            </div>
-            <div>
-              <span>最近发布</span>
-              <strong>{{ application.lastPublishTime || '-' }}</strong>
-            </div>
-          </section>
-          <AppPublishAccess :application="application" :objects="objects" />
-          <ApplicationPublishPanel
-            :application="application"
-            show-publish-action
-            @changed="refreshWorkspaceMetadata"
-          />
-        </div>
       </section>
     </template>
     <n-result
@@ -1120,7 +1094,7 @@ import { NIcon, useMessage } from 'naive-ui'
 import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import draggable from 'vuedraggable'
-import { businessObjectDesigner, businessTriggerPage } from '@/api/business-app'
+import { businessObjectDesigner } from '@/api/business-app'
 import { businessApplicationWorkspaceByCode, designBusinessApplicationPage, initializeBusinessApplicationExcel, previewBusinessApplicationExcel, provisionBusinessApplicationFormData, updateBusinessApplication } from '@/api/business-application'
 import defaultLogo from '@/assets/images/logo.png'
 import AuthImage from '@/components/common/AuthImage.vue'
@@ -1154,7 +1128,7 @@ import {
   updateInAppFormAsset,
 } from './in-app-builder/in-app-builder-schema'
 import { bindProvisionedFormData, collectFormDataProvisionTargets, mergePageFieldCatalogs } from './in-app-builder/page-form-data-provisioning'
-import { buildBusinessObjectDesignerPayloadFromFormAsset, syncFormBoundFieldRefs } from './in-app-builder/page-form-object-promotion'
+import { buildBusinessObjectDesignerPayloadFromFormAsset, normalizeObjectDesignerFieldCatalog, syncFormBoundFieldRefs } from './in-app-builder/page-form-object-promotion'
 import {
   isPageManagementSystemPageId,
   PAGE_MANAGEMENT_SYSTEM_PAGES,
@@ -1245,10 +1219,7 @@ const ApplicationExtensionsPanel = defineAsyncComponent({
   ...asyncPanelLoader,
   loader: () => import('./application-workspace/ApplicationExtensionsPanel.vue'),
 })
-const ApplicationPublishPanel = defineAsyncComponent({
-  ...asyncPanelLoader,
-  loader: () => import('./application-workspace/ApplicationPublishPanel.vue'),
-})
+
 const ApplicationProcessPanel = defineAsyncComponent({
   ...asyncPanelLoader,
   loader: () => import('./application-workspace/ApplicationProcessPanel.vue'),
@@ -1294,10 +1265,7 @@ const PageManagementSystemView = defineAsyncComponent({
   ...asyncPanelLoader,
   loader: () => import('@/views/app-center/components/portal/PageManagementSystemView.vue'),
 })
-const AppPublishAccess = defineAsyncComponent({
-  ...asyncPanelLoader,
-  loader: () => import('@/views/app-center/components/publish/AppPublishAccess.vue'),
-})
+
 const application = ref(null)
 const objects = ref([])
 const builder = ref(null)
@@ -1305,7 +1273,7 @@ const loadError = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const editing = ref(route.query.edit === '1')
-const runtimeViewMode = ref(resolveRuntimeView(route.query.view)) // 'pages' | 'process' | 'enhance' | 'settings' | 'publish'
+const runtimeViewMode = ref(resolveRuntimeView(route.query.view)) // 'pages' | 'process' | 'enhance' | 'settings'
 const exitEditingVisible = ref(false)
 const selectedNodeId = ref('')
 const newNodePopoverVisible = ref(false)
@@ -1330,7 +1298,7 @@ const catalogDragBlockType = ref('')
 const suppressCatalogClick = ref(false)
 const activePageFlowTabTarget = ref(null)
 let catalogPointerDragCtx = null
-// 表单设计器的对象设计器上下文（relations/actions），按对象缓存，供子表分区等配置使用。
+// 表单设计器的对象设计器上下文（fields/relations/actions），按对象缓存；字段目录供字段资产货架使用。
 const formDesignerObjectContextByObjectId = ref({})
 const formDesignerObjectContextLoadingIds = reactive(new Set())
 const formDesignerMode = ref(false)
@@ -1355,7 +1323,6 @@ const formAssetSelectorKeyword = ref('')
 const formDataProvisioningByAssetId = ref({})
 const objectSetupVisible = ref(false)
 const selectedDesignerResourceKey = ref(String(route.query.designResource || ''))
-const objectDesignerSummaries = ref({})
 const workspaceExtensions = ref([])
 const workspaceEntries = ref([])
 const isDraftMode = computed(() => route.query.edit === '1' || route.query.draft === '1')
@@ -1416,7 +1383,7 @@ function resolveSystemPageIcon(icon) {
 const currentSystemPage = computed(() => resolvePageManagementSystemPage(selectedNodeId.value))
 const designerResourceGroups = computed(() => buildApplicationDesignerResourceGroups({
   objects: objects.value,
-  designersByObjectId: objectDesignerSummaries.value,
+  designersByObjectId: {},
   pages: builder.value?.nodes || [],
   extensions: workspaceExtensions.value,
 }))
@@ -1432,7 +1399,7 @@ const activeDesignerResource = computed(() => {
 })
 const designerSection = computed(() => activeDesignerResource.value?.groupKey || normalizeApplicationDesignerSection(route.query.designSection))
 const pageBuilderResourceActive = computed(() => activeDesignerResource.value?.kind === 'page-custom')
-const publishedPageCount = computed(() => (builder.value?.nodes || []).filter(node => node?.type === 'page').length)
+
 // 工作台编辑者需要维护管理端和移动端两套页面树；正式门户仍由
 // application-portal.vue 按当前客户端过滤。该权限计算放在导航树之前，
 // 避免导航树首次求值时拿到旧的客户端过滤结果。
@@ -1593,9 +1560,9 @@ const activeFormAssetBlock = computed(() => {
   return matched
 })
 const activeFormDesignerObjectRef = computed(() => {
-  if (!formDesignerMode.value || !activeFormAssetBlock.value)
-    return null
-  const objectRef = resolvePageBlockObjectRef(activeFormAssetBlock.value)
+  // 表单设计 Tab 默认不进 formDesignerMode；字段资产仍要按绑定对象补齐，
+  // 否则货架只会从当前画布抽字段，「未使用」恒为空。
+  const objectRef = resolvePageBlockObjectRef(activeFormAssetBlock.value || {})
   return isValidPageBlockObjectRef(objectRef) ? objectRef : null
 })
 const activeFormDesignerContext = computed(() => {
@@ -1610,9 +1577,11 @@ const activeFormFields = computed(() => {
   if (!objectRef)
     return assetFields
   const cacheKey = resolveRuntimeObjectCacheKey(objectRef)
+  const designerFields = formDesignerObjectContextByObjectId.value[cacheKey]?.fields || []
   const runtimeFields = runtimeCrudPropsByObjectId.value[cacheKey]?.fieldCatalog || []
-  const protectedRuntimeFields = objectRef.hasBusinessData === true
-    ? runtimeFields.map(field => ({
+  const objectFields = designerFields.length ? designerFields : runtimeFields
+  const protectedObjectFields = objectRef.hasBusinessData === true
+    ? objectFields.map(field => ({
         ...field,
         locked: true,
         fieldBinding: {
@@ -1620,8 +1589,10 @@ const activeFormFields = computed(() => {
           locked: true,
         },
       }))
-    : runtimeFields
-  return protectedRuntimeFields.length ? mergePageFieldCatalogs(assetFields, protectedRuntimeFields) : assetFields
+    : objectFields
+  // 对象字段目录是字段资产货架的事实源；画布字段只补充尚未保存的新字段。
+  // 不能只用当前表单 schema 当字段资产，否则未使用列表恒为空，删除组件后也无法回到未使用。
+  return objectFields.length ? mergePageFieldCatalogs(assetFields, protectedObjectFields) : assetFields
 })
 const activeFormDataState = computed(() => formDataProvisioningByAssetId.value[activeFormAssetId.value] || { status: 'idle', message: '' })
 const selectedPageBlockFormAssetId = computed(() => selectedPageBlock.value?.props?.formAssetId || (formAssets.value.length === 1 ? formAssets.value[0].id : ''))
@@ -1757,6 +1728,11 @@ watch(() => route.query.designResource, (resourceKey) => {
   selectedDesignerResourceKey.value = String(resourceKey || '')
 })
 watch(() => route.query.view, (view) => {
+  // 发布功能已迁移到独立发布页
+  if (String(view || '').toLowerCase() === 'publish') {
+    router.replace({ name: 'BusinessApplicationPublish', params: { applicationCode: route.params.applicationCode } })
+    return
+  }
   const next = resolveRuntimeView(view)
   if (runtimeViewMode.value !== next)
     runtimeViewMode.value = next
@@ -1815,9 +1791,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleBuilderShortcut)
 })
 
-// load 代次：快速切页时旧一轮并行任务不回写新状态
-let loadSequence = 0
-
 async function load() {
   const code = String(route.params.applicationCode || '')
   if (!code)
@@ -1834,9 +1807,6 @@ async function load() {
     workspaceExtensions.value = workspace.extensions || []
     workspaceEntries.value = workspace.entries || []
     builder.value = ensurePageTitleComponents(normalizeInAppBuilder(application.value?.options, application.value, objects.value))
-    // 对象设计器摘要只供侧边面板展示，与页面区块初始化并行加载，缩短首屏 loading
-    const sequence = ++loadSequence
-    const designerSummariesTask = loadObjectDesignerSummaries(objects.value, sequence)
     hydratePageCrudApiPlaceholders()
     bindSingleFormToCompatibleBlocks()
     savedSignature.value = JSON.stringify(builder.value)
@@ -1856,7 +1826,6 @@ async function load() {
       syncActiveFormAssetForPage(selectedNodeId.value)
     await nextTick()
     preloadCurrentPageCrudRuntimeProps()
-    await designerSummariesTask
   }
   catch (error) {
     application.value = null
@@ -1871,38 +1840,6 @@ async function load() {
     )
   }
   finally { loading.value = false }
-}
-
-async function loadObjectDesignerSummaries(sourceObjects = [], sequence = 0) {
-  const targets = (Array.isArray(sourceObjects) ? sourceObjects : [])
-    .map(item => ({
-      objectId: String(item?.objectId ?? item?.id ?? ''),
-      objectCode: String(item?.objectCode || ''),
-    }))
-    .filter(item => item.objectId)
-  const results = await Promise.all(targets.map(async (target) => {
-    const [designerResult, triggerResult] = await Promise.allSettled([
-      businessObjectDesigner(target.objectId),
-      target.objectCode
-        ? businessTriggerPage({ pageNum: 1, pageSize: 1, objectCode: target.objectCode })
-        : Promise.resolve({ data: { total: 0 } }),
-    ])
-    if (designerResult.status !== 'fulfilled')
-      return null
-    const designer = designerResult.value?.data || {}
-    const triggerCount = triggerResult.status === 'fulfilled'
-      ? Number(triggerResult.value?.data?.total || triggerResult.value?.data?.records?.length || 0)
-      : Number(designer.triggerCount || 0)
-    return [target.objectId, {
-      ...designer,
-      triggerCount,
-      triggerConfigured: triggerCount > 0 || designer.triggerConfigured === true,
-    }]
-  }))
-  // 并行加载后防止快速切页时旧任务晚到覆盖新一轮摘要
-  if (sequence && sequence !== loadSequence)
-    return
-  objectDesignerSummaries.value = Object.fromEntries(results.filter(Boolean))
 }
 
 function selectNode(nodeId) {
@@ -2710,7 +2647,7 @@ function preloadPageBlockCrudRuntimeProps(block = {}) {
 }
 
 /**
- * 表单设计器需要对象级的关系与动作上下文（子表分区、底部自定义动作）。
+ * 表单设计器需要对象级字段资产、关系与动作上下文。
  * 与对象设计器同源调用 businessObjectDesigner，按对象缓存；失败仅降级为无上下文。
  */
 async function ensureFormDesignerObjectContext(objectRef) {
@@ -2718,7 +2655,8 @@ async function ensureFormDesignerObjectContext(objectRef) {
   const objectId = objectRef?.objectId ?? objectRef?.id
   if (!cacheKey || objectId === undefined || objectId === null || objectId === '')
     return
-  if (formDesignerObjectContextByObjectId.value[cacheKey] || formDesignerObjectContextLoadingIds.has(cacheKey))
+  const cached = formDesignerObjectContextByObjectId.value[cacheKey]
+  if ((cached && Array.isArray(cached.fields)) || formDesignerObjectContextLoadingIds.has(cacheKey))
     return
   formDesignerObjectContextLoadingIds.add(cacheKey)
   try {
@@ -2730,6 +2668,7 @@ async function ensureFormDesignerObjectContext(objectRef) {
         objectName: designer.objectName || objectRef.objectName || '',
         relations: Array.isArray(designer.relations) ? designer.relations : [],
         actions: Array.isArray(designer.designerOptions?.actions) ? designer.designerOptions.actions : [],
+        fields: normalizeObjectDesignerFieldCatalog(designer.modelSchema?.fields || designer.fields || []),
       },
     }
   }
@@ -2742,8 +2681,17 @@ async function ensureFormDesignerObjectContext(objectRef) {
 }
 
 watch(activeFormDesignerObjectRef, (objectRef) => {
-  if (objectRef)
-    void ensureFormDesignerObjectContext(objectRef)
+  if (!objectRef)
+    return
+  void ensureFormDesignerObjectContext(objectRef)
+  const cacheKey = resolveRuntimeObjectCacheKey(objectRef)
+  const objectId = objectRef.objectId ?? objectRef.id
+  if (!cacheKey || objectId === undefined || objectId === null || objectId === '')
+    return
+  if (runtimeCrudPropsByObjectId.value[cacheKey] || runtimeCrudLoadingObjectIds.has(cacheKey) || runtimeCrudUnavailableObjectIds.has(cacheKey))
+    return
+  runtimeCrudLoadingObjectIds.add(cacheKey)
+  void loadRuntimeCrudProps(objectRef, cacheKey)
 }, { immediate: true })
 
 function createFormFieldVisibilitySettings(currentSettings = {}, fieldRefs = [], forceVisible = false) {
@@ -4203,6 +4151,9 @@ async function saveDraft() {
     if (provisionSummary.failed > 0) {
       message.warning(`表单草稿已保存；${provisionSummary.firstError || '数据存储暂未准备完成，可在数据配置中重试'}`)
     }
+    else if (provisionSummary.ddlWarnings > 0) {
+      message.warning('表单草稿已保存，数据表结构需手动同步（可在高级数据设置中确认）')
+    }
     else if (provisionSummary.succeeded > 0) {
       message.success('表单和数据存储已准备完成')
     }
@@ -4238,24 +4189,48 @@ async function persistApplicationDraft() {
 async function provisionPendingFormData() {
   const targets = collectFormDataProvisionTargets(builder.value, objects.value)
   const summary = { succeeded: 0, failed: 0, builderChanged: false, firstError: '' }
-  for (const target of targets) {
+
+  // 并行发起所有表单的 provision 请求，避免多表单串行叠加
+  targets.forEach((target) => {
     setFormDataProvisionState(target.formAssetId, { status: 'preparing', message: '正在准备表单数据存储' })
-    try {
-      const response = await provisionBusinessApplicationFormData(application.value.id, target.request)
-      const provisioned = response.data || {}
+  })
+  const results = await Promise.allSettled(
+    targets.map(target =>
+      provisionBusinessApplicationFormData(application.value.id, target.request)
+        .then(response => ({ target, response: response.data || {} }))
+        .catch(error => ({ target, error })),
+    ),
+  )
+
+  // 按原始顺序应用结果，避免并发写 builder 产生冲突
+  for (const result of results) {
+    if (result.status === 'fulfilled' && !result.value.error) {
+      const { target, response: provisioned } = result.value
       const bound = bindProvisionedFormData(builder.value, target.formAssetId, provisioned)
       if (bound.changed) {
         builder.value = bound.schema
         summary.builderChanged = true
       }
+      if (provisioned.unchanged) {
+        setFormDataProvisionState(target.formAssetId, { status: 'ready', message: '表单数据无变化' })
+        continue
+      }
       summary.succeeded += 1
-      setFormDataProvisionState(target.formAssetId, { status: 'ready', message: '表单数据已准备完成' })
+      if (provisioned.ddlWarning) {
+        setFormDataProvisionState(target.formAssetId, { status: 'warning', message: provisioned.ddlWarning })
+        summary.ddlWarnings = (summary.ddlWarnings || 0) + 1
+      }
+      else {
+        setFormDataProvisionState(target.formAssetId, { status: 'ready', message: '表单数据已准备完成' })
+      }
     }
-    catch (error) {
+    else {
+      const { target, error } = result.status === 'fulfilled' ? result.value : { target: null, error: result.reason }
       const errorMessage = error?.message || '数据存储准备失败，请稍后重试'
       summary.failed += 1
       summary.firstError ||= errorMessage
-      setFormDataProvisionState(target.formAssetId, { status: 'error', message: errorMessage })
+      if (target?.formAssetId)
+        setFormDataProvisionState(target.formAssetId, { status: 'error', message: errorMessage })
     }
   }
   return summary
@@ -4376,18 +4351,6 @@ function selectDesignerResource(resource) {
   })
 }
 
-function selectDesignerGroup(groupKey) {
-  if (designerSection.value === groupKey && !formDesignerMode.value)
-    return
-  const group = designerResourceGroups.value.find(item => item.key === groupKey)
-  const target = group?.nodes?.find(node => node.configured !== false) || group?.nodes?.[0]
-  if (!target) {
-    message.warning('该分区暂无可设计的资源')
-    return
-  }
-  selectDesignerResource(target)
-}
-
 function resolveResourceNodeBuilderNode(resource) {
   if (!resource?.pageId)
     return null
@@ -4431,10 +4394,11 @@ async function handleEmbeddedProcessDesignerSaved() {
   await refreshWorkspaceMetadata()
 }
 
-// 流程列表面板的"应用发布"入口：切换到应用发布 Tab，与导航栏保持一致。
+// 流程列表面板的“应用发布”入口：跳转到独立发布页
 function handleProcessPanelNavigate(section) {
-  if (section === 'releases')
-    runtimeViewMode.value = 'publish'
+  if (section === 'releases') {
+    router.push({ name: 'BusinessApplicationPublish', params: { applicationCode: route.params.applicationCode } })
+  }
 }
 
 async function handleExtensionsChanged() {
@@ -4563,13 +4527,10 @@ function openWorkspace() {
 
 async function switchRuntimeView(view) {
   const next = resolveRuntimeView(view)
-  // 发布面板读取的是服务端已保存的应用草稿。导航/挂载配置可能刚在
-  // 页面管理视图中修改，进入发布面板前先把这份草稿落库，避免发布
-  // 服务拿到旧的 systemMenuVisible 或父级路径而下线现有菜单。
-  if (next === 'publish' && dirty.value) {
-    const saved = await saveCurrentDesignerSection()
-    if (!saved)
-      return
+  // 发布功能已统一到独立发布页，runtime 不再内嵌发布面板
+  if (String(view || '').toLowerCase() === 'publish') {
+    router.push({ name: 'BusinessApplicationPublish', params: { applicationCode: route.params.applicationCode } })
+    return
   }
   runtimeViewMode.value = next
   router.replace({
@@ -4582,25 +4543,7 @@ async function switchRuntimeView(view) {
 
 function resolveRuntimeView(value) {
   const normalized = String(Array.isArray(value) ? value[0] : value || '').toLowerCase()
-  return ['pages', 'process', 'enhance', 'settings', 'publish'].includes(normalized) ? normalized : 'pages'
-}
-
-function openApplicationPortal() {
-  if (!application.value)
-    return
-  const target = router.resolve({
-    name: 'ApplicationPortal',
-    params: { applicationCodeOrSlug: application.value.portalSlug || application.value.applicationCode },
-  })
-  window.open(target.href, '_blank', 'noopener,noreferrer')
-}
-
-function openApplicationSettings() {
-  switchRuntimeView('settings')
-}
-
-function openApplicationPublish() {
-  switchRuntimeView('publish')
+  return ['pages', 'process', 'enhance', 'settings'].includes(normalized) ? normalized : 'pages'
 }
 
 // 页面级 Tab（编辑模式）
@@ -4893,12 +4836,6 @@ function openObjectResourcePreview() {
   }
 }
 
-async function openPublishPanel() {
-  if (dirty.value && !await saveDraft())
-    return
-  openApplicationPublish()
-}
-
 function openObjectDesigner(panel = 'list', targetObjectRef) {
   const objectRef = targetObjectRef || currentNode.value?.objectRef || selectedPageBlockRuntimeObjectRef.value
   const target = resolveObjectDesignerNavigationTarget(objectRef, objects.value)
@@ -4945,10 +4882,6 @@ async function handleApplicationObjectsChanged(change = null) {
   }
 }
 
-async function handleApplicationPublished() {
-  await refreshWorkspaceMetadata()
-}
-
 async function refreshWorkspaceMetadata() {
   const code = route.params.applicationCode
   if (!code)
@@ -4959,36 +4892,10 @@ async function refreshWorkspaceMetadata() {
   objects.value = workspace.objects || []
   workspaceExtensions.value = workspace.extensions || []
   workspaceEntries.value = workspace.entries || []
-  await loadObjectDesignerSummaries(objects.value)
-  // 发布后渲染配置已变化，配置级缓存一并失效
   resetRuntimeCrudConfig()
   hydratePageCrudApiPlaceholders()
   await nextTick()
   preloadCurrentPageCrudRuntimeProps()
-}
-
-function handlePublishIssueNavigate(section, issue) {
-  if (issue?.assetCode && builder.value?.nodes?.some(node => node.id === issue.assetCode)) {
-    selectNode(issue.assetCode)
-    return
-  }
-  if (section === 'objects') {
-    openObjectSetup()
-    return
-  }
-  if (section === 'permissions') {
-    openApplicationSettings()
-    return
-  }
-  if (section === 'releases') {
-    switchRuntimeView('publish')
-    return
-  }
-  router.push({
-    name: 'BusinessApplicationRuntime',
-    params: { applicationCode: application.value.applicationCode },
-    query: section ? { designSection: section, edit: '1' } : {},
-  })
 }
 </script>
 

@@ -49,6 +49,11 @@ public class SysUserDTO implements Serializable {
     private String userClient;
 
     /**
+     * 允许登录的客户端编码列表，空或null表示不限制（所有客户端均可登录）
+     */
+    private String allowedClients;
+
+    /**
      * 邮箱
      */
     private String email;

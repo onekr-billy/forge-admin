@@ -504,6 +504,7 @@ function isSafeOnlineDdl(statement) {
 function syncLabel(status) {
   const labels = {
     IN_SYNC: '数据库结构已同步',
+    PARTIAL: '部分同步，字段调整待确认',
     OUT_OF_SYNC: '存在未同步变更',
     TABLE_MISSING: '物理表尚未创建',
     CHECK_FAILED: '数据库结构检查失败',

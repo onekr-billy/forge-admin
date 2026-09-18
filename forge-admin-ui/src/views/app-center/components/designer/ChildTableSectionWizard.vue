@@ -151,7 +151,6 @@ const selectedRelation = computed(() => detailRelations.value.find((relation) =>
 const displayModeOptions = [
   { label: '内联表格', value: 'inline_grid' },
   { label: '卡片列表', value: 'card_list' },
-  { label: '底部弹窗', value: 'bottom_sheet' },
 ]
 const allFieldsSelected = computed(() => {
   return Boolean(availableFields.value.length)

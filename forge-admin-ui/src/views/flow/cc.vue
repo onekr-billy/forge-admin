@@ -456,10 +456,10 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 8px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   overflow: hidden;
   background: var(--bg-secondary);
 }

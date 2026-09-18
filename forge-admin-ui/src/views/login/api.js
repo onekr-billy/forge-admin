@@ -47,6 +47,8 @@ export default {
     params: tenantId ? { tenantId } : {},
   }),
 
+  getGiteeCommunityLogin: () => request.get('/social/gitee-community', { needToken: false }),
+
   // 获取三方登录授权链接
   getSocialAuthUrl: (platform, tenantId) => request.get(`/social/authUrl/${platform}`, {
     needToken: false,

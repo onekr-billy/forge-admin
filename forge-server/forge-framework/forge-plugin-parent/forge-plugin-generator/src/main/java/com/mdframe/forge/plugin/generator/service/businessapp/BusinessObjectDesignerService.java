@@ -49,6 +49,8 @@ import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,7 +71,10 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 @RequiredArgsConstructor
 public class BusinessObjectDesignerService implements BusinessObjectDesignContextProvider {
 
+    private static final Logger log = LoggerFactory.getLogger(BusinessObjectDesignerService.class);
     private static final String GENERAL_DOMAIN_CODE = "general";
+    /** 子表组件自动创建关系的标记，用于识别可随表单配置全量覆盖/删除的关系。 */
+    private static final String AUTO_SUBTABLE_RELATION_DESC = "表单子表组件自动创建";
     private static final String FORM_DESIGNER_SCHEMA_OPTION_KEY = "formDesignerSchema";
     private static final String DESIGNER_ACTIONS_OPTION_KEY = "actions";
     private static final String VIEW_SCHEMA_OPTION_KEY = "viewSchema";
@@ -229,7 +234,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void saveDesigner(Long objectId, BusinessObjectDesignerDTO dto) {
+    public DesignerContext saveDesigner(Long objectId, BusinessObjectDesignerDTO dto) {
         DesignerContext context = loadContext(objectId);
         AiBusinessObject object = context.getObject();
         if (dto != null) {
@@ -273,8 +278,28 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                         resolveTenantId(), object.getSuiteCode(), object.getObjectCode()));
                 applyRelationsToModel(context);
             }
+            boolean childRelationsCreated = ensureChildTableRelations(context, dto.getFormDesignerSchema());
+            log.info("[子表自动关联] objectId={} formSchema.components.size={} childRelationsCreated={}",
+                    objectId,
+                    dto.getFormDesignerSchema() == null ? 0
+                            : (dto.getFormDesignerSchema().getComponents() == null ? 0
+                            : dto.getFormDesignerSchema().getComponents().size()),
+                    childRelationsCreated);
+            if (childRelationsCreated) {
+                context.setRelations(relationMapper.selectRelationsByObject(
+                        resolveTenantId(), object.getSuiteCode(), object.getObjectCode()));
+                applyRelationsToModel(context);
+            }
+            if (context.getPageSchema() != null && context.getPageSchema().getModelRefs() != null) {
+                log.info("[子表自动关联] pageSchema.modelRefs.size={} refs={}",
+                        context.getPageSchema().getModelRefs().size(),
+                        context.getPageSchema().getModelRefs().stream()
+                                .map(r -> r.getModelCode() + ":" + (r.getRelations() == null ? 0 : r.getRelations().size()))
+                                .toList());
+            }
         }
         saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
+        return context;
     }
 
     @Override
@@ -343,7 +368,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         context.setModelSchema(modelSchema);
         context.setPageSchema(pageSchema);
         compileFormFirstRuntimeSchema(context);
-        modelSchema = enrichModelSchema(object, context.getModelSchema());
+        // compileFormFirstRuntimeSchema 内部已完成 enrich + ensure，
+        // 直接读取结果无需重复调用（原二次 enrichModelSchema 已删除）
+        modelSchema = context.getModelSchema();
         pageSchema = ensurePageSchema(context.getPageSchema(), modelSchema);
         validateDraft(modelSchema, pageSchema);
         AiLowcodeModel model = saveModelDraft(object, context.getModel(), modelSchema);
@@ -888,6 +915,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                         text(mapValue(dto.getFieldBinding()).get("fieldCode")))), dto);
                 LowcodeFieldSchema next = fieldSchemaService.buildFieldSchema(dto);
                 mergePreservedFieldMetadata(existingFields.get(next.getField()), next);
+                next.applyMultipleSelectionStorage();
                 newFields.add(next);
             }
         }
@@ -1062,6 +1090,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             if (props.containsKey("recordSelector")) {
                 Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
                 basicProps.put("recordSelector", props.get("recordSelector"));
+                field.setBasicProps(basicProps);
+            }
+            if (props.containsKey("multiple")) {
+                Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
+                basicProps.put("multiple", props.get("multiple"));
                 field.setBasicProps(basicProps);
             }
             if (props.containsKey("referenceObjectCode")) {
@@ -1409,12 +1442,36 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         props.put("inlineCreateEnabled", readBoolean(config.get("inlineCreateEnabled"), true));
         props.put("inlineEditEnabled", readBoolean(config.get("inlineEditEnabled"), true));
         props.put("saveMode", normalizeChildSaveMode(config.get("saveMode")));
+        List<String> childFieldCodes = readStringList(config.get("childFieldCodes"));
+        if (!childFieldCodes.isEmpty()) {
+            props.put("childFieldCodes", childFieldCodes);
+        }
+        boolean allowSelectExisting = readBoolean(config.get("allowSelectExisting"), false);
+        props.put("allowSelectExisting", allowSelectExisting);
+        if (StringUtils.isNotBlank(text(config.get("displayMode")))) {
+            props.put("displayMode", text(config.get("displayMode")));
+        }
         if (StringUtils.isNotBlank(text(config.get("defaultFilter")))) {
             props.put("defaultFilter", text(config.get("defaultFilter")));
         }
         Object recordSelector = config.get("recordSelector");
         if (recordSelector instanceof Map<?, ?> selector && !selector.isEmpty()) {
             props.put("recordSelector", selector);
+            // 面板读取扁平字段，这里反向拆解保证重新打开设计器时能回显
+            props.put("selectorMultiple", readBoolean(selector.get("multiple"), true));
+            List<String> displayFields = readStringList(selector.get("displayFields"));
+            if (!displayFields.isEmpty()) {
+                props.put("selectorDisplayFields", displayFields);
+            }
+            if (selector.get("filterFields") instanceof List<?> filters && !filters.isEmpty()) {
+                props.put("selectorFilterFields", filters);
+            }
+        } else if (allowSelectExisting && StringUtils.isNotBlank(relation.getTargetObjectCode())) {
+            Map<String, Object> defaultSelector = new LinkedHashMap<>();
+            defaultSelector.put("objectCode", relation.getTargetObjectCode());
+            defaultSelector.put("businessObjectCode", relation.getTargetObjectCode());
+            defaultSelector.put("buttonText", "选择记录");
+            props.put("recordSelector", defaultSelector);
         }
         Object rowActions = config.get("rowActions");
         if (rowActions instanceof List<?> actions && !actions.isEmpty()) {
@@ -1663,6 +1720,301 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             savedIds.add(relation.getId());
         }
         relationMapper.deleteMissingRelations(resolveTenantId(), object.getSuiteCode(), object.getObjectCode(), savedIds);
+    }
+
+    /**
+     * 运行时主子表渲染只依赖持久化的对象关系；表单里拖入子表组件后，这里在保存时
+     * 自动补齐子对象外键字段和 CHILD_LIST 关系，兑现设计器中“系统自动关联”的承诺。
+     * 面板配置是唯一事实来源：已存在的关系全量覆盖，表单里删掉的组件对应关系一并移除。
+     */
+    private boolean ensureChildTableRelations(DesignerContext context, FormDesignerSchemaDTO formSchema) {
+        if (context == null || context.getObject() == null || formSchema == null) {
+            return false;
+        }
+        AiBusinessObject object = context.getObject();
+        List<Map<String, Object>> subTables = new ArrayList<>();
+        collectSubTableComponents(formSchema.getComponents(), subTables);
+        collectSubTableComponents(formSchema.getForms(), subTables);
+        log.info("[子表自动关联] collected subTables.size={} componentsFrom.components={} componentsFrom.forms={}",
+                subTables.size(),
+                formSchema.getComponents() == null ? 0 : formSchema.getComponents().size(),
+                formSchema.getForms() == null ? 0 : formSchema.getForms().size());
+        List<AiBusinessObjectRelation> existing = relationMapper.selectRuntimeRelationsBySource(
+                resolveTenantId(), object.getSuiteCode(), object.getObjectCode());
+        boolean changed = false;
+        Set<String> handledTargets = new LinkedHashSet<>();
+        for (Map<String, Object> component : subTables) {
+            Map<String, Object> props = mapValue(component.get("props"));
+            String targetObjectCode = StringUtils.trimToNull(text(props.get("modelCode")));
+            if (targetObjectCode == null || targetObjectCode.equals(object.getObjectCode())
+                    || !handledTargets.add(targetObjectCode)) {
+                continue;
+            }
+            AiBusinessObjectRelation existingRelation = findEmbeddedRelationTo(existing, targetObjectCode);
+            if (existingRelation != null) {
+                if (overwriteChildRelationConfig(existingRelation, props)) {
+                    relationMapper.updateById(existingRelation);
+                    log.info("[子表自动关联] overwritten existing relation id={} target={}",
+                            existingRelation.getId(), targetObjectCode);
+                    changed = true;
+                }
+                continue;
+            }
+            AiBusinessObject child = businessObjectMapper.selectByObjectCode(
+                    resolveTenantId(), object.getSuiteCode(), targetObjectCode);
+            if (child == null) {
+                continue;
+            }
+            String foreignKeyField = ensureChildForeignKeyField(object, child);
+            if (StringUtils.isBlank(foreignKeyField)) {
+                continue;
+            }
+            insertChildTableRelation(object, child, props, foreignKeyField);
+            changed = true;
+        }
+        for (AiBusinessObjectRelation relation : existing) {
+            if (relation == null || handledTargets.contains(relation.getTargetObjectCode())
+                    || !AUTO_SUBTABLE_RELATION_DESC.equals(StringUtils.trimToEmpty(relation.getDescription()))) {
+                continue;
+            }
+            relationMapper.deleteById(relation.getId());
+            log.info("[子表自动关联] removed stale auto relation id={} target={}",
+                    relation.getId(), relation.getTargetObjectCode());
+            changed = true;
+        }
+        return changed;
+    }
+
+    private void collectSubTableComponents(List<Map<String, Object>> components, List<Map<String, Object>> result) {
+        if (components == null) {
+            return;
+        }
+        for (Map<String, Object> component : components) {
+            if (component == null) {
+                continue;
+            }
+            String componentKey = text(component.get("componentKey"));
+            if ("subTable".equals(componentKey) || "forgeSubTable".equals(componentKey)) {
+                result.add(component);
+            }
+            collectSubTableComponents(listOfMap(component.get("children")), result);
+        }
+    }
+
+    private AiBusinessObjectRelation findEmbeddedRelationTo(List<AiBusinessObjectRelation> relations,
+                                                            String targetObjectCode) {
+        if (relations == null) {
+            return null;
+        }
+        return relations.stream()
+                .filter(relation -> relation != null
+                        && targetObjectCode.equals(relation.getTargetObjectCode())
+                        && isEmbeddedRelation(relation))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 面板配置是唯一事实来源：标题、开关、展示模式、显示字段全量覆盖关系记录。
+     *
+     * @return 配置是否有变化
+     */
+    private boolean overwriteChildRelationConfig(AiBusinessObjectRelation relation, Map<String, Object> props) {
+        String relationName = StringUtils.firstNonBlank(StringUtils.trimToNull(text(props.get("header"))),
+                relation.getRelationName(), relation.getTargetObjectCode());
+        Map<String, Object> config = buildSubTableRelationConfig(
+                relation.getTargetObjectCode(), relationName, props);
+        String configJson = writeJson(config, "relationConfig");
+        boolean changed = !StringUtils.equals(relation.getRelationName(), relationName)
+                || !StringUtils.equals(relation.getRelationConfig(), configJson)
+                || !AUTO_SUBTABLE_RELATION_DESC.equals(StringUtils.trimToEmpty(relation.getDescription()));
+        relation.setRelationName(relationName);
+        relation.setRelationConfig(configJson);
+        relation.setDescription(AUTO_SUBTABLE_RELATION_DESC);
+        return changed;
+    }
+
+    private Map<String, Object> buildSubTableRelationConfig(String targetObjectCode, String relationName,
+                                                            Map<String, Object> props) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("showInDetail", true);
+        config.put("inlineCreateEnabled", readBoolean(props.get("allowCreate"), true));
+        config.put("inlineEditEnabled", true);
+        config.put("saveMode", "replace");
+        config.put("detailTabTitle", relationName);
+        config.put("allowSelectExisting", readBoolean(props.get("allowSelectExisting"), false));
+        String displayMode = StringUtils.trimToNull(text(props.get("displayMode")));
+        if (displayMode != null) {
+            config.put("displayMode", displayMode);
+        }
+        config.put("relationKey", StringUtils.defaultIfBlank(
+                StringUtils.trimToNull(text(props.get("relationKey"))), defaultRelationKey(targetObjectCode)));
+        List<String> childFieldCodes = extractChildFieldCodes(props);
+        if (!childFieldCodes.isEmpty()) {
+            config.put("childFieldCodes", childFieldCodes);
+        }
+        if (readBoolean(props.get("allowSelectExisting"), false)) {
+            Map<String, Object> defaultSelector = new LinkedHashMap<>();
+            defaultSelector.put("objectCode", targetObjectCode);
+            defaultSelector.put("businessObjectCode", targetObjectCode);
+            defaultSelector.put("buttonText", "选择记录");
+            defaultSelector.put("multiple", readBoolean(props.get("selectorMultiple"), true));
+            List<String> displayFields = readStringList(props.get("selectorDisplayFields"));
+            if (!displayFields.isEmpty()) {
+                defaultSelector.put("displayFields", displayFields);
+                defaultSelector.put("keywordFields", displayFields);
+            }
+            List<Map<String, Object>> filterFields = readSelectorFilterFields(props.get("selectorFilterFields"));
+            if (!filterFields.isEmpty()) {
+                defaultSelector.put("filterFields", filterFields);
+            }
+            config.put("recordSelector", defaultSelector);
+        }
+        return config;
+    }
+
+    /**
+     * 读取面板配置的“筛选字段”：弹窗顶部可供使用者输入的筛选条件，
+     * 每条支持默认值——固定值或 ${form.主表字段} 联动占位。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> readSelectorFilterFields(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>((Map<String, Object>) raw);
+            String fieldCode = StringUtils.trimToNull(text(row.get("fieldCode")));
+            if (fieldCode == null) {
+                continue;
+            }
+            row.put("fieldCode", fieldCode);
+            result.add(row);
+        }
+        return result;
+    }
+
+    private List<String> extractChildFieldCodes(Map<String, Object> props) {
+        Object columns = props.get("columns");
+        if (!(columns instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (Object item : list) {
+            String code = null;
+            if (item instanceof Map<?, ?> column) {
+                code = StringUtils.trimToNull(text(column.get("fieldCode")));
+                if (code == null) {
+                    code = StringUtils.trimToNull(text(column.get("field")));
+                }
+            } else {
+                code = StringUtils.trimToNull(text(item));
+            }
+            if (code != null && !result.contains(code)) {
+                result.add(code);
+            }
+        }
+        return result;
+    }
+
+    private List<String> readStringList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .map(item -> StringUtils.trimToNull(text(item)))
+                .filter(item -> item != null)
+                .toList();
+    }
+
+    /**
+     * 确保子对象存在指向主对象的外键字段；缺失时自动追加隐藏的 bigint 字段并保存子对象草稿。
+     *
+     * @return 外键字段编码（camelCase），子对象模型不可用时返回 null
+     */
+    private String ensureChildForeignKeyField(AiBusinessObject master, AiBusinessObject child) {
+        DesignerContext childContext = loadContext(child.getId());
+        LowcodeModelSchema childModel = childContext.getModelSchema();
+        if (childModel == null) {
+            return null;
+        }
+        String fieldCode = childForeignKeyFieldCode(master.getObjectCode());
+        String columnName = camelToSnakeCase(fieldCode);
+        List<LowcodeFieldSchema> fields = childModel.getFields() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(childModel.getFields());
+        for (LowcodeFieldSchema field : fields) {
+            if (field == null) {
+                continue;
+            }
+            if (fieldCode.equals(field.getField()) || columnName.equals(field.getColumnName())) {
+                return StringUtils.defaultIfBlank(field.getField(), fieldCode);
+            }
+        }
+        LowcodeFieldSchema foreignKey = new LowcodeFieldSchema();
+        foreignKey.setField(fieldCode);
+        foreignKey.setColumnName(columnName);
+        foreignKey.setLabel("所属" + StringUtils.defaultIfBlank(master.getObjectName(), master.getObjectCode()));
+        foreignKey.setDataType("bigint");
+        foreignKey.setBusinessFieldType("NUMBER");
+        foreignKey.setComponentType("number");
+        foreignKey.setRequired(false);
+        foreignKey.setListVisible(false);
+        foreignKey.setFormVisible(false);
+        foreignKey.setFieldStatus("ENABLED");
+        foreignKey.setSortOrder(fields.size());
+        foreignKey.setRemark("子表组件自动外键，关联 " + master.getObjectCode() + ".id");
+        fields.add(foreignKey);
+        childModel.setFields(fields);
+        childContext.setModelSchema(childModel);
+        saveDraft(childContext, BusinessObjectDesignStatus.CHANGED.getCode());
+        return fieldCode;
+    }
+
+    private void insertChildTableRelation(AiBusinessObject master, AiBusinessObject child,
+                                          Map<String, Object> props, String foreignKeyField) {
+        String relationName = StringUtils.firstNonBlank(StringUtils.trimToNull(text(props.get("header"))),
+                child.getObjectName(), child.getObjectCode());
+        Map<String, Object> config = buildSubTableRelationConfig(child.getObjectCode(), relationName, props);
+
+        AiBusinessObjectRelation relation = new AiBusinessObjectRelation();
+        relation.setTenantId(resolveTenantId());
+        relation.setSuiteCode(master.getSuiteCode());
+        relation.setSourceObjectCode(master.getObjectCode());
+        relation.setTargetObjectCode(child.getObjectCode());
+        relation.setRelationType("CHILD_LIST");
+        relation.setRelationName(relationName);
+        relation.setSourceFieldCode("id");
+        relation.setTargetFieldCode(foreignKeyField);
+        relation.setRelationConfig(writeJson(config, "relationConfig"));
+        relation.setDescription(AUTO_SUBTABLE_RELATION_DESC);
+        relation.setStatus(EnableStatus.ENABLED.getCode());
+        relation.setSortOrder(0);
+        relationMapper.insert(relation);
+    }
+
+    private String childForeignKeyFieldCode(String masterObjectCode) {
+        StringBuilder result = new StringBuilder();
+        boolean upperNext = false;
+        for (char ch : StringUtils.defaultString(masterObjectCode).toCharArray()) {
+            if (ch == '_') {
+                upperNext = true;
+                continue;
+            }
+            result.append(upperNext ? Character.toUpperCase(ch) : ch);
+            upperNext = false;
+        }
+        return result + "Id";
+    }
+
+    private String camelToSnakeCase(String value) {
+        return StringUtils.defaultString(value)
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .toLowerCase(Locale.ROOT);
     }
 
     @SuppressWarnings("unchecked")
@@ -2654,6 +3006,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             basicProps.remove("__fc");
             basicProps.remove("__fcType");
             field.setBasicProps(basicProps);
+            field.applyMultipleSelectionStorage();
             field.setSortOrder(order++);
         }
     }
@@ -2915,6 +3268,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         Map<String, Object> props = sanitizeRuntimeFieldProps(rawProps);
         copyRuntimeFieldProps(setting, props);
         applyRuntimeFieldMeta(setting, component, props, formCreateMeta);
+        // optionSource 存在时清除残留的静态 options，避免运行时优先级链中静态选项抢占远程数据源
+        if (props.get("optionSource") instanceof Map<?, ?> os
+                && !String.valueOf(os.get("type") != null ? os.get("type") : "").isEmpty()) {
+            props.remove("options");
+        }
         if (!props.isEmpty()) {
             setting.put("props", props);
         }

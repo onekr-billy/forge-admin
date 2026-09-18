@@ -964,9 +964,11 @@ import {
 import { flattenRuntimeFormFields, useCrudFormula } from './crud/composables/useCrudFormula'
 import { useCrudImportExport } from './crud/composables/useCrudImportExport'
 import { useCrudPageHeight } from './crud/composables/useCrudPageHeight'
+import { resolveFormInitRecordId } from './data-source-binding-runtime'
 import { normalizeExpandConfig, shouldExpandRow } from './expand-utils'
 import { isNumberFieldType } from './field-type-utils'
 import { isImageFileName, resolveFileRenderItems } from './file-render-utils'
+import { buildFormRuntimeContext } from './form-runtime-context'
 import {
   createOfflineFormRuntime,
   createOfflinePublishedSnapshot,
@@ -2617,8 +2619,12 @@ const activeSourceColumns = computed(() => {
  * 表单上下文（传递 modalStatus 等信息）
  */
 const formContext = computed(() => {
+  const runtimeContext = props.formRuntimeContext || {}
   return {
-    ...(props.formRuntimeContext || {}),
+    // 未传 formRuntimeContext 的运行链路（低代码应用页等）兜底注入登录上下文，
+    // 保证「初始化默认值 / 字段事件」的 currentUser.* 取值可用；调用方显式传入的优先。
+    ...(runtimeContext.currentUser ? {} : buildFormRuntimeContext()),
+    ...runtimeContext,
     modalStatus: modalStatus.value, // 'add' | 'edit' | 'detail'
     isEdit: modalStatus.value === 'edit',
     isAdd: modalStatus.value === 'add',
@@ -2627,6 +2633,7 @@ const formContext = computed(() => {
     formAssets: props.formAssets,
     fieldEvents: props.fieldEvents,
     fieldEventLoadToken: fieldEventLoadToken.value,
+    formInit: props.formInit,
   }
 })
 
@@ -4655,6 +4662,26 @@ async function handleBatchDelete() {
 }
 
 /**
+ * 将单条删除 API 配置转换为批量删除 URL。
+ * 例：DELETE@/ai/crud/xxx/:id → /ai/crud/xxx/batch
+ */
+function resolveBatchDeleteUrl(apiConfigStr) {
+  const atIndex = apiConfigStr.indexOf('@')
+  const urlPart = atIndex >= 0 ? apiConfigStr.slice(atIndex + 1) : apiConfigStr
+  const placeholders = [':id', `:${props.rowKey}`, '{id}', `{${props.rowKey}}`]
+  let basePath = urlPart
+  for (const ph of placeholders) {
+    const idx = basePath.indexOf(ph)
+    if (idx > 0) {
+      basePath = basePath.slice(0, idx)
+      break
+    }
+  }
+  // 去掉末尾斜杠后拼 /batch
+  return `${basePath.replace(/\/+$/, '')}/batch`
+}
+
+/**
  * 执行删除
  */
 async function performDelete(rows, keys) {
@@ -4674,59 +4701,48 @@ async function performDelete(rows, keys) {
       try {
         // 检查是否配置了带 :id 占位符的删除 URL
         const deleteApiConfig = props.apiConfig.delete
-        const hasIdPlaceholder = deleteApiConfig && deleteApiConfig.includes(':id')
-        const hasRowKeyPlaceholder = deleteApiConfig && deleteApiConfig.includes(`:${props.rowKey}`)
-        const hasBraceIdPlaceholder = deleteApiConfig && deleteApiConfig.includes('{id}')
-        const hasBraceRowKeyPlaceholder = deleteApiConfig && deleteApiConfig.includes(`{${props.rowKey}}`)
+        const hasIdPlaceholder = deleteApiConfig && (deleteApiConfig.includes(':id') || deleteApiConfig.includes(`:${props.rowKey}`) || deleteApiConfig.includes('{id}') || deleteApiConfig.includes(`{${props.rowKey}}`))
 
-        // 配置了占位符时，批量删除逐条替换 ID 调用，避免把数组提交到单条删除接口。
-        if (hasIdPlaceholder || hasRowKeyPlaceholder || hasBraceIdPlaceholder || hasBraceRowKeyPlaceholder) {
+        // 配置了占位符且多条记录时，走批量删除接口（一条 SQL）
+        if (hasIdPlaceholder && keys.length > 1) {
+          const batchUrl = resolveBatchDeleteUrl(deleteApiConfig)
+          const useEncrypt = props.isEncrypt
+          if (useEncrypt) {
+            await postEncrypt(batchUrl, keys)
+          }
+          else {
+            await request({ method: 'delete', url: batchUrl, data: keys })
+          }
+        }
+        else if (hasIdPlaceholder) {
+          // 单条删除：保持原有逐条替换 ID 逻辑
           for (const key of keys) {
             const urlParams = { id: key }
             const { method, url } = parseApiConfig('delete', props.api, 'delete', urlParams)
-
-            let requestMethod = method
             const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
-            if (useEncrypt) {
-              requestMethod = method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase()
-            }
-            else {
-              requestMethod = method.toLowerCase()
-            }
-
+            const requestMethod = useEncrypt
+              ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
+              : method.toLowerCase()
             if (useEncrypt && requestMethod === 'postEncrypt') {
               await postEncrypt(url, key)
             }
             else {
-              await request({
-                method: requestMethod,
-                url,
-              })
+              await request({ method: requestMethod, url })
             }
           }
         }
         else {
-          // 批量删除或未配置占位符时，使用原有逻辑
+          // 未配置占位符时，使用原有逻辑
           const { method, url } = parseApiConfig('delete', props.api, 'delete')
-
-          let requestMethod = method
           const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
-          if (useEncrypt) {
-            requestMethod = method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase()
-          }
-          else {
-            requestMethod = method.toLowerCase()
-          }
-
+          const requestMethod = useEncrypt
+            ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
+            : method.toLowerCase()
           if (useEncrypt && requestMethod === 'postEncrypt') {
             await postEncrypt(url, keys)
           }
           else {
-            await request({
-              method: requestMethod,
-              url,
-              data: keys,
-            })
+            await request({ method: requestMethod, url, data: keys })
           }
         }
 
@@ -5066,13 +5082,37 @@ defineExpose({
 onMounted(() => {
   window.addEventListener('online', handleBrowserOnline)
   if (props.formOnly) {
-    handleAdd()
+    openFormOnlyWithRecordInit()
     return
   }
   if (!props.lazy) {
     loadList()
   }
 })
+
+/**
+ * formOnly 页面初始化：formInit.recordLoad 命中记录 ID 时进入编辑态加载存量数据，否则保持新增默认行为。
+ * 定位参数依次从页面地址参数和登录上下文（如 currentUser.staffId）取值，命中第一个即生效。
+ */
+async function openFormOnlyWithRecordInit() {
+  const recordId = resolveFormOnlyRecordInitId()
+  if (recordId) {
+    const rowKey = typeof props.rowKey === 'string' && props.rowKey ? props.rowKey : 'id'
+    await handleEdit({ [rowKey]: recordId, __modalTitle: '编辑' })
+    return
+  }
+  handleAdd()
+}
+
+function resolveFormOnlyRecordInitId() {
+  const recordLoad = props.formInit?.recordLoad
+  if (!recordLoad || recordLoad.enabled !== true)
+    return ''
+  return resolveFormInitRecordId(props.formInit, {
+    routeQuery: route.query || {},
+    context: props.formRuntimeContext || {},
+  })
+}
 
 onBeforeUnmount(() => {
   flushOfflineDraftSave()

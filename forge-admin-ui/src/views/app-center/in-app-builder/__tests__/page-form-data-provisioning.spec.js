@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { extractForgeSchemaFieldRefs } from '@/views/app-center/components/designer/form-first/forgeToFormCreate'
 import {
   bindProvisionedFormData,
   collectFormDataProvisionTargets,
   mergePageFieldCatalogs,
 } from '../page-form-data-provisioning'
+import { normalizeObjectDesignerFieldCatalog } from '../page-form-object-promotion'
 
 function formAsset(components = [persistentField()]) {
   return {
@@ -196,6 +198,41 @@ describe('page form data provisioning', () => {
       ],
       [{ field: 'id', label: 'ID', dataType: 'bigint', systemField: true }],
     ).map(field => field.field)).toEqual(['customerName', 'orderNo', 'id'])
+  })
+
+  it('cannot populate unused field assets when the shelf is derived only from the current form canvas', () => {
+    const canvas = {
+      components: [{
+        componentKey: 'input',
+        fieldBinding: { mode: 'field', fieldCode: 'customerName' },
+      }],
+    }
+    const formOnlyFields = normalizeObjectDesignerFieldCatalog([
+      { fieldCode: 'customerName', fieldName: '客户名称' },
+    ])
+    const used = new Set(extractForgeSchemaFieldRefs(canvas))
+    expect(formOnlyFields.filter(field => !used.has(field.field)).map(field => field.field)).toEqual([])
+  })
+
+  it('keeps object field assets unused after they leave the form canvas', () => {
+    const objectFields = normalizeObjectDesignerFieldCatalog([
+      { fieldCode: 'customerName', fieldName: '客户名称' },
+      { fieldCode: 'phone', fieldName: '电话' },
+    ])
+    const canvasWithName = {
+      components: [{
+        componentKey: 'input',
+        fieldBinding: { mode: 'field', fieldCode: 'customerName' },
+      }],
+    }
+    const formFieldsOnCanvas = objectFields.filter(field => field.field === 'customerName')
+    const shelf = mergePageFieldCatalogs(formFieldsOnCanvas, objectFields)
+    const used = new Set(extractForgeSchemaFieldRefs(canvasWithName))
+    expect(shelf.filter(field => !used.has(field.field)).map(field => field.field)).toEqual(['phone'])
+
+    const shelfAfterDelete = mergePageFieldCatalogs([], objectFields)
+    const usedAfterDelete = new Set(extractForgeSchemaFieldRefs({ components: [] }))
+    expect(shelfAfterDelete.filter(field => !usedAfterDelete.has(field.field)).map(field => field.field)).toEqual(['customerName', 'phone'])
   })
 
   it('does not overwrite a CRUD block whose page is explicitly bound to an existing object', () => {

@@ -11,6 +11,7 @@ const AUTH_ROUTE_ALLOWLIST = new Set([
   '/',
   '/home',
   '/profile',
+  '/system/notice-list',
   '/mcp-authorize',
   '/403',
 ])
@@ -53,7 +54,7 @@ function isSameRoutePath(routePath, targetPath) {
   return new RegExp(`^${pattern}$`).test(normalizedTargetPath)
 }
 
-function canAccessRoute(to, permissionStore) {
+export function canAccessRoute(to, permissionStore) {
   const targetPath = normalizeRoutePath(to.path)
   if (!targetPath)
     return true

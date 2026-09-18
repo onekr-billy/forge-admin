@@ -1,29 +1,29 @@
+import {
+  buildBindingParams as buildFieldEventParams,
+  containsDangerousConfigKey,
+  DANGEROUS_CONFIG_KEYS,
+  findMissingRequiredParams,
+  IDENTIFIER_PATTERN,
+  isBlank,
+  isPlainObject,
+  isSafePath,
+  mapBindingResult as mapFieldEventResult,
+  MISSING_MODES,
+  normalizeMessage,
+  PARAM_PATTERN,
+  PARAM_SOURCE_TYPES,
+  QUERY_SOURCE_TYPES,
+  RESULT_MODES,
+  snapshotRuntimeContext,
+  SOURCE_KEY_PATTERN,
+  unwrapQuerySourceData,
+} from './data-source-binding-runtime'
+
+// 兼容存量引用：参数/结果映射从统一数据源绑定运行时复用，协议同源，避免两套映射并存
+export { buildFieldEventParams, mapFieldEventResult }
+
 const FIELD_EVENT_TRIGGERS = new Set(['FORM_LOAD', 'CHANGE', 'BLUR', 'MANUAL', 'SCAN_COMPLETE'])
-const QUERY_SOURCE_TYPES = new Set(['EXTERNAL_API', 'DATASET'])
-const PARAM_SOURCE_TYPES = new Set(['FORM_FIELD', 'CONTEXT_PATH', 'ROUTE_QUERY'])
-const RESULT_MODES = new Set(['ROOT', 'FIRST_ROW'])
-const MISSING_MODES = new Set(['CLEAR', 'KEEP'])
 const ERROR_MODES = new Set(['MESSAGE', 'SILENT'])
-const IDENTIFIER_PATTERN = /^[a-z][\w-]{0,63}$/i
-const PARAM_PATTERN = /^[a-z_][\w.-]{0,127}$/i
-const SOURCE_KEY_PATTERN = /^[a-z0-9][\w.:/-]{0,128}$/i
-const PATH_SEGMENT_PATTERN = /^[a-z_$][\w$-]*$/i
-const UNSAFE_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor'])
-const DANGEROUS_CONFIG_KEYS = new Set([
-  'url',
-  'uri',
-  'header',
-  'headers',
-  'authorization',
-  'authentication',
-  'credential',
-  'credentials',
-  'secret',
-  'token',
-  'sql',
-  'script',
-  'handler',
-])
 
 function normalizeScanRuntimeContext(runtime = {}) {
   const scan = runtime?.scan
@@ -56,56 +56,18 @@ export function normalizeFieldEventRules(rules, fields = []) {
   return result
 }
 
-export function buildFieldEventParams(rule, runtime = {}) {
-  const params = {}
-  for (const mapping of Array.isArray(rule?.paramMappings) ? rule.paramMappings : []) {
-    let root
-    let path
-    if (mapping.source === 'FORM_FIELD') {
-      root = runtime.formData || {}
-      path = mapping.field
-    }
-    else if (mapping.source === 'CONTEXT_PATH') {
-      root = runtime.context || {}
-      path = mapping.path
-    }
-    else if (mapping.source === 'ROUTE_QUERY') {
-      root = runtime.routeQuery || {}
-      path = mapping.path
-    }
-    else {
-      continue
-    }
-    params[mapping.param] = readSafePath(root, path)
-  }
-  return params
-}
-
-export function mapFieldEventResult(rule, data) {
-  const selected = selectResult(rule?.resultMode, data)
-  const found = !isEmptyResult(selected)
-  const patch = {}
-
-  for (const mapping of Array.isArray(rule?.resultMappings) ? rule.resultMappings : []) {
-    const value = found ? readSafePath(selected, mapping.from) : undefined
-    if (value !== undefined)
-      patch[mapping.to] = value
-    else if (mapping.whenMissing === 'CLEAR')
-      patch[mapping.to] = undefined
-  }
-  return { found, patch }
-}
-
 export function createFieldEventRuntime(options = {}) {
   let normalizedRules = normalizeFieldEventRules(options.rules, options.fields)
   const timers = new Map()
   const controllers = new Map()
   const sequences = new Map()
+  const contextSnapshots = new Map()
   let disposed = false
 
   function setRules(rules, fields = options.fields) {
     cancelPending()
     normalizedRules = normalizeFieldEventRules(rules, fields)
+    contextSnapshots.clear()
   }
 
   function getRules(trigger, sourceField) {
@@ -167,6 +129,19 @@ export function createFieldEventRuntime(options = {}) {
       return { status: 'skipped' }
     }
 
+    // 必填参数前置校验短路：required 参数取值为空时跳过本次请求。
+    // 与 skipWhenEmpty 的清空语义不同：这里保留旧回填值，仅不发请求。
+    const runtimeContext = resolveRuleContext(rule, runtime)
+    const missingParams = findMissingRequiredParams(rule, {
+      formData,
+      context: runtimeContext,
+      routeQuery: options.getRouteQuery?.() || {},
+    })
+    if (missingParams.length) {
+      updateState(rule, 'idle', '')
+      return { status: 'skipped_params', missing: missingParams }
+    }
+
     if (rule.clearTargetsOnTrigger) {
       const patch = buildClearPatch(rule)
       if (Object.keys(patch).length)
@@ -181,7 +156,7 @@ export function createFieldEventRuntime(options = {}) {
     try {
       const params = buildFieldEventParams(rule, {
         formData,
-        context: buildRuntimeContext(options.getContext?.() || {}, runtime),
+        context: runtimeContext,
         routeQuery: options.getRouteQuery?.() || {},
       })
       const response = await options.execute?.({
@@ -259,6 +234,21 @@ export function createFieldEventRuntime(options = {}) {
     return sequences.get(ruleId) === sequence
   }
 
+  // CONTEXT 快照语义：开启 options.snapshotContext 后，每条规则首次执行时冻结基础上下文，
+  // 后续执行复用快照，避免 CONTEXT_PATH 参数在多次触发间取值漂移（scan 等事件级数据仍实时合并）。
+  function resolveRuleContext(rule, runtime) {
+    const base = options.snapshotContext === true
+      ? resolveContextSnapshot(rule)
+      : (options.getContext?.() || {})
+    return buildRuntimeContext(base, runtime)
+  }
+
+  function resolveContextSnapshot(rule) {
+    if (!contextSnapshots.has(rule.id))
+      contextSnapshots.set(rule.id, snapshotRuntimeContext(options.getContext?.() || {}))
+    return contextSnapshots.get(rule.id)
+  }
+
   function settleTimer(ruleId, result) {
     const pending = timers.get(ruleId)
     if (!pending)
@@ -282,6 +272,7 @@ export function createFieldEventRuntime(options = {}) {
       return
     disposed = true
     cancelPending()
+    contextSnapshots.clear()
   }
 
   return {
@@ -394,7 +385,10 @@ function normalizeParamMappings(mappings, knownFields) {
     if (source !== 'FORM_FIELD' && !isSafePath(path))
       return null
     seen.add(param)
-    result.push(source === 'FORM_FIELD' ? { param, source, field } : { param, source, path })
+    const normalized = source === 'FORM_FIELD' ? { param, source, field } : { param, source, path }
+    if (item.required === true)
+      normalized.required = true
+    result.push(normalized)
   }
   return result
 }
@@ -429,93 +423,12 @@ function normalizeDebounce(value, trigger) {
   return result
 }
 
-function normalizeMessage(value, maxLength) {
-  return String(value || '').trim().slice(0, maxLength)
-}
-
-function containsDangerousConfigKey(value, visited = new Set()) {
-  if (!value || typeof value !== 'object')
-    return false
-  if (visited.has(value))
-    return true
-  visited.add(value)
-  for (const key of Object.keys(value)) {
-    if (DANGEROUS_CONFIG_KEYS.has(String(key).toLowerCase()))
-      return true
-    if (containsDangerousConfigKey(value[key], visited))
-      return true
-  }
-  visited.delete(value)
-  return false
-}
-
-function isPlainObject(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return false
-  const prototype = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
-}
-
-function isSafePath(path) {
-  const value = String(path || '').trim()
-  if (!value)
-    return false
-  return value.split('.').every(segment => PATH_SEGMENT_PATTERN.test(segment)
-    && !UNSAFE_PATH_SEGMENTS.has(segment)
-    && !DANGEROUS_CONFIG_KEYS.has(segment.toLowerCase()))
-}
-
-function readSafePath(root, path) {
-  const value = String(path || '').trim()
-  if (!value)
-    return root
-  if (!isSafePath(value))
-    return undefined
-  let current = root
-  for (const segment of value.split('.')) {
-    if (current === null || current === undefined || !Object.prototype.hasOwnProperty.call(current, segment))
-      return undefined
-    current = current[segment]
-  }
-  return current
-}
-
-function selectResult(mode, data) {
-  if (mode !== 'FIRST_ROW')
-    return data
-  if (Array.isArray(data))
-    return data[0]
-  for (const key of ['records', 'list', 'rows']) {
-    if (Array.isArray(data?.[key]))
-      return data[key][0]
-  }
-  return undefined
-}
-
-function unwrapQuerySourceData(response) {
-  if (response && typeof response === 'object' && Object.prototype.hasOwnProperty.call(response, 'code'))
-    return response.data?.data
-  if (response?.sourceType && Object.prototype.hasOwnProperty.call(response, 'data'))
-    return response.data
-  if (response?.data && typeof response.data === 'object' && Object.prototype.hasOwnProperty.call(response.data, 'data'))
-    return response.data.data
-  return response?.data ?? response
-}
-
 function buildClearPatch(rule) {
   return (Array.isArray(rule?.resultMappings) ? rule.resultMappings : []).reduce((patch, mapping) => {
     if (mapping.whenMissing === 'CLEAR')
       patch[mapping.to] = undefined
     return patch
   }, {})
-}
-
-function isBlank(value) {
-  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
-}
-
-function isEmptyResult(value) {
-  return value === undefined || value === null || (Array.isArray(value) && value.length === 0)
 }
 
 function isAbortError(error, controller) {

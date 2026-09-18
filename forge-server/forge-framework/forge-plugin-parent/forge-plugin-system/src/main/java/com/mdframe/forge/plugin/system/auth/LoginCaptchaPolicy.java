@@ -21,4 +21,9 @@ public class LoginCaptchaPolicy {
     private String globalCaptchaType;
 
     private String clientCaptchaType;
+
+    /**
+     * 是否启用群二维码引流验证码
+     */
+    private Boolean groupQrcodeEnabled;
 }

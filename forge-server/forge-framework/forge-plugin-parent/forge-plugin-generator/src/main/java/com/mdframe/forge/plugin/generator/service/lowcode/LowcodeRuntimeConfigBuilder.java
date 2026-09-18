@@ -11,6 +11,8 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRuntimeConfig;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LowcodeRuntimeConfigBuilder {
 
+    private static final Logger log = LoggerFactory.getLogger(LowcodeRuntimeConfigBuilder.class);
     private static final String MASTER_DETAIL_LAYOUT = "master-detail-crud";
     private static final Set<String> SYSTEM_FIELD_NAMES = Set.of(
             "id", "tenantId", "createBy", "createTime", "createDept", "updateBy", "updateTime", "delFlag"
@@ -539,6 +542,10 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private Map<String, Object> buildMasterDetailConfig(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
+        log.info("[子表运行时] buildMasterDetailConfig ENTER layoutType={} modelRefs.size={} primaryModelCode={}",
+                pageSchema == null ? null : pageSchema.getLayoutType(),
+                pageSchema == null || pageSchema.getModelRefs() == null ? 0 : pageSchema.getModelRefs().size(),
+                pageSchema == null ? null : pageSchema.getPrimaryModelCode());
         Map<String, Object> config = new LinkedHashMap<>();
         LowcodePageModelRef primaryRef = resolvePrimaryRef(modelSchema, pageSchema);
         String primaryModelCode = primaryRef == null
@@ -586,7 +593,10 @@ public class LowcodeRuntimeConfigBuilder {
             child.put("relationKey", StringUtils.defaultIfBlank(text(refProps.get("relationKey")), ref.getModelCode()));
             child.put("sourceField", childFkField);
             child.put("targetField", resolveMainRelationField(primaryModelCode, relation));
-            child.put("showInCreate", booleanWithDefault(refProps.get("inlineCreateEnabled"), true));
+            boolean inlineCreateEnabled = booleanWithDefault(refProps.get("inlineCreateEnabled"), true);
+            child.put("showInCreate", inlineCreateEnabled);
+            child.put("allowCreate", inlineCreateEnabled);
+            child.put("inlineCreateEnabled", inlineCreateEnabled);
             child.put("showInEdit", booleanWithDefault(refProps.get("inlineEditEnabled"), true));
             child.put("showInDetail", booleanWithDefault(refProps.get("showInDetail"), true));
             child.put("saveMode", normalizeChildSaveMode(refProps.get("saveMode")));
@@ -600,9 +610,20 @@ public class LowcodeRuntimeConfigBuilder {
             }
             putIfNotBlank(child, "tabTitle", text(refProps.get("tabTitle")));
             putIfNotBlank(child, "relationName", text(refProps.get("relationName")));
+            putIfNotBlank(child, "displayMode", text(refProps.get("displayMode")));
             child.put("fields", childFields);
             children.add(child);
+            log.info("[子表运行时] ref.modelCode={} ref.fields.size={} childFields.size={} tabTitle={} relationName={} refProps.keys={}",
+                    ref.getModelCode(),
+                    ref.getFields() == null ? 0 : ref.getFields().size(),
+                    childFields.size(),
+                    text(refProps.get("tabTitle")),
+                    text(refProps.get("relationName")),
+                    refProps.keySet());
         }
+        log.info("[子表运行时] configKey={} primaryModelCode={} masterDetailConfig.children.size={}",
+                pageSchema == null ? "?" : (pageSchema.getPrimaryModelCode() + "-" + pageSchema.getLayoutType()),
+                primaryModelCode, children.size());
         config.put("children", children);
         return config;
     }
@@ -633,6 +654,32 @@ public class LowcodeRuntimeConfigBuilder {
                                                                    String childFkField) {
         if (ref.getFields() == null) {
             return List.of();
+        }
+        // 面板“显示字段”显式指定时优先按配置过滤排序，不再受 edit 区域 fieldRefs 限制
+        List<String> configuredFieldCodes = readConfiguredChildFieldCodes(ref);
+        if (!configuredFieldCodes.isEmpty()) {
+            Map<String, Integer> configuredOrder = new LinkedHashMap<>();
+            for (int i = 0; i < configuredFieldCodes.size(); i++) {
+                configuredOrder.putIfAbsent(configuredFieldCodes.get(i), i);
+            }
+            List<Map<String, Object>> configuredFields = new ArrayList<>();
+            for (Map<String, Object> source : ref.getFields()) {
+                LowcodeFieldSchema field = buildMasterDetailChildField(ref, source);
+                if (field == null || !configuredOrder.containsKey(field.getField())
+                        || !isChildEditFieldAllowed(field, childFkField)) {
+                    continue;
+                }
+                Map<String, Object> item = buildEditField(field);
+                item.put("sourceField", field.getField());
+                item.put("fieldRef", safeKey(ref.getModelCode()) + "__" + field.getField());
+                item.put("columnName", field.getColumnName());
+                item.put("modelCode", ref.getModelCode());
+                item.put("modelName", ref.getModelName());
+                configuredFields.add(item);
+            }
+            configuredFields.sort(Comparator.comparingInt(item ->
+                    configuredOrder.getOrDefault(text(item.get("sourceField")), Integer.MAX_VALUE)));
+            return configuredFields;
         }
         Set<String> selectedEditRefSet = new LinkedHashSet<>(selectedEditRefs);
         boolean hasSelectedChildRefs = ref.getFields().stream()
@@ -671,6 +718,20 @@ public class LowcodeRuntimeConfigBuilder {
                     selectedOrder.getOrDefault(text(item.get("fieldRef")), Integer.MAX_VALUE)));
         }
         return fields;
+    }
+
+    private List<String> readConfiguredChildFieldCodes(LowcodePageModelRef ref) {
+        if (ref == null || ref.getProps() == null) {
+            return List.of();
+        }
+        Object value = ref.getProps().get("childFieldCodes");
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .map(item -> StringUtils.trimToNull(text(item)))
+                .filter(item -> item != null)
+                .toList();
     }
 
     private LowcodeFieldSchema buildMasterDetailChildField(LowcodePageModelRef ref, Map<String, Object> source) {
@@ -1533,6 +1594,12 @@ public class LowcodeRuntimeConfigBuilder {
             render.put("relationModelCode", lookupMeta.modelCode());
             render.put("displayField", lookupMeta.displayField());
             item.put("render", render);
+        } else if (field.isReferenceField()) {
+            // 字段级引用：选中记录时显示名称冗余写入伴随列，relationName 渲染优先读伴随列，存量空值退化显示 ID。
+            Map<String, Object> render = new LinkedHashMap<>();
+            render.put("type", "relationName");
+            render.put("targetField", field.referenceDisplayFieldName());
+            item.put("render", render);
         } else if ("dictTag".equals(renderType) || (StringUtils.isBlank(renderType) && StringUtils.isNotBlank(field.getDictType()))) {
             Map<String, Object> render = new LinkedHashMap<>();
             render.put("type", "dictTag");
@@ -2126,6 +2193,12 @@ public class LowcodeRuntimeConfigBuilder {
             props.putAll(sanitizedDesignerProps);
             applyFormCreateMeta(item, formCreateMeta, props);
         }
+        // optionSource 配置存在时清除残留的静态 options，避免 currentOptions 优先级链中
+        // 静态 options 抢在 remoteOptionSource 之前返回，导致 QUERY_SOURCE/REMOTE 不生效
+        if (props.containsKey("optionSource") && props.get("optionSource") instanceof Map<?, ?> os
+                && !String.valueOf(os.get("type") != null ? os.get("type") : "").isEmpty()) {
+            props.remove("options");
+        }
         copyRuntimePropsToField(item, props);
         applySelectionLabelProps(props, field.getField(), componentType);
         if (isSystemField(field) || readonly) {
@@ -2136,6 +2209,9 @@ public class LowcodeRuntimeConfigBuilder {
         if (lookupMeta != null) {
             item.put("relationLookup", buildRelationLookupConfig(lookupMeta));
             applyRelationLookupProps(item, lookupMeta, label);
+        } else if (field.isReferenceField()) {
+            // 引用字段选中时同步提交显示名称到伴随列（<field>Name），编辑回显与列表渲染使用同一套键。
+            props.putIfAbsent("labelValueField", field.referenceDisplayFieldName());
         }
 
         if (required) {
@@ -2764,7 +2840,9 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private boolean hasRecordSelectorConfig(LowcodeFieldSchema field, Map<String, Object> pageSetting) {
-        if (field != null && field.getBasicProps() != null) {
+        // 下拉模式（objectReference 组件）的 basicProps.recordSelector 只承载搜索字段/过滤参数等高级配置，不触发弹窗渲染；
+        // 页面级显式配置的 selector 仍然优先，支持单页覆盖为弹窗选择。
+        if (field != null && field.getBasicProps() != null && !"objectReference".equals(field.getComponentType())) {
             Object selector = firstPresent(
                     field.getBasicProps().get("recordSelector"),
                     field.getBasicProps().get("recordSelectorConfig"),

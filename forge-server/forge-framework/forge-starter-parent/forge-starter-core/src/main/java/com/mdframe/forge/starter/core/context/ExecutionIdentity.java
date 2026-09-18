@@ -51,6 +51,7 @@ public record ExecutionIdentity(
         target.setUserId(source.getUserId());
         target.setTenantId(source.getTenantId());
         target.setTenantName(source.getTenantName());
+        target.setSystemName(source.getSystemName());
         target.setTenantIds(copyList(source.getTenantIds()));
         target.setUsername(source.getUsername());
         target.setRealName(source.getRealName());

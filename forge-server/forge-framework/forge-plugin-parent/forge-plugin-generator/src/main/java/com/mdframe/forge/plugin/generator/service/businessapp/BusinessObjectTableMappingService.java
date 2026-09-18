@@ -138,26 +138,45 @@ public class BusinessObjectTableMappingService {
      */
     public void syncManagedDatabase(Long objectId, Long applicationId, String formAssetId) {
         BusinessObjectDesignerService.DesignerContext context = contextProvider.loadContext(objectId);
+        syncManagedDatabase(context, applicationId, formAssetId);
+    }
+
+    /**
+     * 复用已加载的 DesignerContext 执行托管数据表同步，避免重复查询数据库元数据。
+     * 当调用方（如 provision 流程）已经持有完整 context 时优先使用此方法。
+     */
+    public void syncManagedDatabase(
+            BusinessObjectDesignerService.DesignerContext context,
+            Long applicationId, String formAssetId) {
         assertManagedPageForm(context, applicationId, formAssetId);
         LowcodeModelSchema modelSchema = requireModelSchema(context);
         LowcodeDdlPreviewVO preview = ddlService.previewCreateTable(modelSchema);
         if (!Boolean.TRUE.equals(preview.getExecutable())) {
             throw new BusinessException("当前数据存储未允许自动建表，请在高级数据设置中开启自动建表");
         }
-        if (ddlService.containsUnsafeOnlineDdl(preview.getDdlStatements())) {
-            throw new BusinessException("表单包含需要调整已有字段的变化，需要在高级数据设置中确认数据库调整");
-        }
         if (!hasDdl(preview)) {
             persistSyncResult(context, "IN_SYNC", "数据表结构已是最新版本", 0);
             return;
         }
+        int totalDdl = preview.getDdlStatements().size();
+        int executed;
         try {
-            ddlService.executeCreateTable(modelSchema);
-            persistSyncResult(context, "IN_SYNC", "页面表单数据表同步成功", preview.getDdlStatements().size());
+            // 先执行安全追加式 DDL（ADD COLUMN 等），非追加式语句单独报告，
+            // 避免一条 MODIFY 阻断全部新增字段的自动同步。
+            executed = ddlService.executeSafeDdlOnly(modelSchema);
         } catch (RuntimeException e) {
-            persistSyncFailure(context, e, preview.getDdlStatements().size());
+            persistSyncFailure(context, e, totalDdl);
             throw e;
         }
+        int unsafeCount = totalDdl - executed;
+        if (unsafeCount > 0) {
+            persistSyncResult(context, "PARTIAL",
+                    "已自动同步 " + executed + " 项新增字段，" + unsafeCount + " 项字段类型调整需人工确认",
+                    executed);
+            throw new BusinessException("已自动同步 " + executed + " 项新增字段；另有 " + unsafeCount
+                    + " 项字段类型调整需在高级数据设置中确认数据库调整");
+        }
+        persistSyncResult(context, "IN_SYNC", "页面表单数据表同步成功", executed);
     }
 
     protected boolean hasDdlPermission() {

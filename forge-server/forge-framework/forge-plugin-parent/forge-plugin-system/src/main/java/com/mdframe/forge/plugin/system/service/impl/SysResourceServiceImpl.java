@@ -94,6 +94,10 @@ public class SysResourceServiceImpl extends ServiceImpl<SysResourceMapper, SysRe
         }
 
         LambdaQueryWrapper<SysResource> wrapper = buildQueryWrapper(query);
+        // 授权树剔除「彻底停用」的资源（visible=0 且 menu_status=0，如废弃目录、demo 菜单）；
+        // 仅 visible=0 的隐藏功能页（menu_status=1，如应用工作台/运行页/详情跳转页）必须保留，
+        // 否则角色无法勾选其入口权限，授权后访问会被拦 403（visible 不得一刀切进权限链路）。
+        wrapper.and(w -> w.ne(SysResource::getVisible, 0).or().ne(SysResource::getMenuStatus, 0));
         applyUserTypeScope(wrapper, loginUser);
         if (!loginUser.isAdmin()) {
             List<Long> resourceIds = selectCurrentUserResourceIds();

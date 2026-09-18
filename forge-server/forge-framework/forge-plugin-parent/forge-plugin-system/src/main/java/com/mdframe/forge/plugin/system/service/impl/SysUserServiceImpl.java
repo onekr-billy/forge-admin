@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -152,7 +153,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             return updateCurrentUserFromManagement(dto);
         }
         assertCanManageUser(dto.getId());
-        assertNotSelfManagement(dto.getId());
+        assertNotSelfManagementUnlessAdmin(dto.getId());
         validateUserTypeForWrite(dto);
         SysUser user = new SysUser();
         BeanUtil.copyProperties(dto, user);
@@ -160,7 +161,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         user.setPassword(null);
 
         Long tenantId = resolveWriteTenantId(null);
-        if (loginUser.isAdmin()) {
+        // 未显式传入用户类型时保持原值，避免编辑时将类型意外重置为普通用户。
+        if (loginUser.isAdmin() && dto.getUserType() != null) {
             user.setUserType(resolveWriteUserType(dto.getUserType()));
         } else {
             user.setUserType(null);
@@ -169,6 +171,10 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         user.setTenantId(null);
 
         boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.updateById(user) > 0);
+        // 用户类型变更时同步各租户成员类型，保证角色数据范围校验按最新身份执行。
+        if (updated && user.getUserType() != null) {
+            syncMemberTypeFromUserType(user.getId(), user.getUserType());
+        }
         // 同步绑定组织。orgIds 为空时保持原组织不变，避免误清空用户归属。
         if (updated && dto.getOrgIds() != null && !dto.getOrgIds().isEmpty()) {
             Long mainOrgId = dto.getMainOrgId() != null ? dto.getMainOrgId() : dto.getOrgIds().get(0);
@@ -189,7 +195,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteUserById(Long id) {
         assertCanManageUser(id);
-        assertNotSelfManagement(id);
+        assertNotSelfManagementUnlessAdmin(id);
         LoginUser loginUser = requireLoginUser();
         if (!loginUser.isAdmin()) {
             return removeUserFromTenant(id, loginUser.getTenantId());
@@ -242,7 +248,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
         Long tenantId = dto.getTenantId();
         for (Long userId : userIds) {
-            assertNotSelfManagement(userId);
+            assertNotSelfManagementUnlessAdmin(userId);
             Set<Long> mergedRoleIds = new HashSet<>(selectUserRoleIds(userId, tenantId));
             mergedRoleIds.addAll(roleIds);
             syncUserRoles(userId, new ArrayList<>(mergedRoleIds), tenantId);
@@ -257,7 +263,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             return false;
         }
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         Long tenantId = resolveTenantScopedOperationTenantId(userId);
         
         LambdaQueryWrapper<SysUserRole> wrapper = new LambdaQueryWrapper<>();
@@ -335,7 +341,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             return false;
         }
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         Long tenantId = resolveTenantScopedOperationTenantId(userId);
         
         LambdaQueryWrapper<SysUserOrg> wrapper = new LambdaQueryWrapper<>();
@@ -369,10 +375,23 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         wrapper.eq(SysUserRole::getUserId, userId)
                 .eq(SysUserRole::getTenantId, resolveTenantScopedOperationTenantId(userId, tenantId))
                 .select(SysUserRole::getRoleId);
-        return userRoleMapper.selectList(wrapper)
+        List<Long> roleIds = userRoleMapper.selectList(wrapper)
                 .stream()
                 .map(SysUserRole::getRoleId)
                 .filter(this::isRoleVisibleForCurrentUser)
+                .collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return roleIds;
+        }
+        Set<Long> activeRoleIds = TenantContextHolder.executeIgnore(() -> roleMapper.selectList(
+                        new LambdaQueryWrapper<SysRole>()
+                                .in(SysRole::getId, roleIds)
+                                .select(SysRole::getId)))
+                .stream()
+                .map(SysRole::getId)
+                .collect(Collectors.toSet());
+        return roleIds.stream()
+                .filter(activeRoleIds::contains)
                 .collect(Collectors.toList());
     }
 
@@ -465,7 +484,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             return false;
         }
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
 
         Long operationTenantId = resolveTenantScopedOperationTenantId(userId, tenantId);
         validateUserOrgMembership(userId, orgId, operationTenantId);
@@ -535,7 +554,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         if (loginUser == null || !loginUser.isAdmin()) {
             throw new RuntimeException("只有超级管理员可以绑定用户租户");
         }
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         if (userId == null || dto == null || dto.getTenantIds() == null || dto.getTenantIds().isEmpty()) {
             return false;
         }
@@ -623,7 +642,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                         .collect(Collectors.toSet()));
 
         for (Long userId : userIds) {
-            assertNotSelfManagement(userId);
+            assertNotSelfManagementUnlessAdmin(userId);
             SysUser user = userMap.get(userId);
             if (user == null) {
                 throw new RuntimeException("用户不存在");
@@ -736,7 +755,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Override
     public boolean resetPassword(Long userId, String newPassword) {
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         SysUser user = new SysUser();
         user.setId(userId);
         user.setPassword(PasswordUtil.encrypt(newPassword));
@@ -747,7 +766,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Override
     public boolean updateUserStatus(Long userId, Integer status) {
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         LoginUser loginUser = requireLoginUser();
         if (!loginUser.isAdmin()) {
             SysUserTenant member = new SysUserTenant();
@@ -1074,13 +1093,6 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         return false;
     }
 
-    private void assertNotSelfManagement(Long userId) {
-        LoginUser loginUser = requireLoginUser();
-        if (userId != null && Objects.equals(userId, loginUser.getUserId())) {
-            throw new RuntimeException("不能在用户管理中维护当前登录用户");
-        }
-    }
-
     private void assertNotSelfManagementUnlessAdmin(Long userId) {
         LoginUser loginUser = requireLoginUser();
         if (loginUser.isAdmin()) {
@@ -1341,8 +1353,55 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 .eq(SysRole::getTenantId, tenantId));
         for (SysRole role : roles) {
             if (!isDataScopeAllowedForUserType(role.getDataScope(), targetUserType)) {
-                throw new RuntimeException("角色数据范围超过目标用户类型上限");
+                throw new RuntimeException(buildDataScopeConflictMessage(role, targetUserType));
             }
+        }
+    }
+
+    /**
+     * 角色数据范围与目标用户类型冲突时，给出可定位、可执行的修复建议。
+     */
+    private String buildDataScopeConflictMessage(SysRole role, int userType) {
+        String roleName = role.getRoleName() != null ? role.getRoleName() : String.valueOf(role.getId());
+        String scopeLabel = resolveDataScopeLabel(role.getDataScope());
+        if (Objects.equals(role.getDataScope(), SystemConstants.RoleDataScope.ALL)) {
+            return String.format("角色【%s】的数据范围为【%s】，仅系统管理员类型的用户可绑定，请调整该角色的数据范围后重试",
+                    roleName, scopeLabel);
+        }
+        return String.format("角色【%s】的数据范围为【%s】，超出【%s】允许的上限；请调整该角色的数据范围，或将该用户的用户类型调整为【租户管理员】后重试",
+                roleName, scopeLabel, resolveUserTypeLabel(userType));
+    }
+
+    private String resolveDataScopeLabel(Integer dataScope) {
+        if (dataScope == null) {
+            return "未设置";
+        }
+        switch (dataScope) {
+            case SystemConstants.RoleDataScope.ALL:
+                return "全部数据";
+            case SystemConstants.RoleDataScope.TENANT:
+                return "本租户数据";
+            case SystemConstants.RoleDataScope.ORG:
+                return "本组织数据";
+            case SystemConstants.RoleDataScope.ORG_AND_CHILD:
+                return "本组织及子组织";
+            case SystemConstants.RoleDataScope.SELF:
+                return "个人数据";
+            case SystemConstants.RoleDataScope.REGION:
+                return "本行政区划数据";
+            default:
+                return "未知范围(" + dataScope + ")";
+        }
+    }
+
+    private String resolveUserTypeLabel(int userType) {
+        switch (userType) {
+            case SystemConstants.UserType.SYSTEM_ADMIN:
+                return "系统管理员";
+            case SystemConstants.UserType.TENANT_ADMIN:
+                return "租户管理员";
+            default:
+                return "普通用户";
         }
     }
 
@@ -1367,7 +1426,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
 
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
         if (user == null) {
             return false;
@@ -1546,6 +1605,17 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         return memberType != null && memberType == 1 ? 1 : 2;
     }
 
+    /**
+     * 用户类型变更后，同步该用户在各租户的成员类型，保持 user_type 与 member_type 口径一致。
+     */
+    private void syncMemberTypeFromUserType(Long userId, Integer userType) {
+        Integer memberType = normalizeMemberType(userType);
+        TenantContextHolder.executeIgnore(() -> userTenantMapper.update(null,
+                new LambdaUpdateWrapper<SysUserTenant>()
+                        .eq(SysUserTenant::getUserId, userId)
+                        .set(SysUserTenant::getMemberType, memberType)));
+    }
+
     private boolean removeUserFromTenant(Long userId, Long tenantId) {
         return TenantContextHolder.executeIgnore(() -> {
             userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
@@ -1557,6 +1627,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             userOrgMapper.delete(new LambdaQueryWrapper<SysUserOrg>()
                     .eq(SysUserOrg::getUserId, userId)
                     .eq(SysUserOrg::getTenantId, tenantId));
+            userPostMapper.delete(new LambdaQueryWrapper<SysUserPost>()
+                    .eq(SysUserPost::getUserId, userId)
+                    .eq(SysUserPost::getTenantId, tenantId));
 
             int deleted = userTenantMapper.delete(new LambdaQueryWrapper<SysUserTenant>()
                     .eq(SysUserTenant::getUserId, userId)
@@ -1595,14 +1668,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
         assertCanReadUser(userId);
 
-        LambdaQueryWrapper<SysUserPost> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(SysUserPost::getUserId, userId)
-                .eq(SysUserPost::getTenantId, resolveTenantScopedOperationTenantId(userId, tenantId))
-                .select(SysUserPost::getPostId);
-        return userPostMapper.selectList(wrapper)
-                .stream()
-                .map(SysUserPost::getPostId)
-                .collect(Collectors.toList());
+        Long operationTenantId = resolveTenantScopedOperationTenantId(userId, tenantId);
+        return userPostMapper.selectActivePostIdsByUser(userId, operationTenantId);
     }
 
     @Override
@@ -1619,7 +1686,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
 
         assertCanManageUser(userId);
-        assertNotSelfManagement(userId);
+        assertNotSelfManagementUnlessAdmin(userId);
         SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
         if (user == null) {
             return false;

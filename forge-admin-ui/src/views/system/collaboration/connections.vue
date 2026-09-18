@@ -320,7 +320,7 @@
             />
           </n-form-item-gi>
           <n-form-item-gi label="OAuth回调地址" path="redirectUri" :span="2">
-            <n-input v-model:value="appForm.redirectUri" placeholder="OAuth 登录回调地址，须与平台侧登记一致" />
+            <n-input v-model:value="appForm.redirectUri" placeholder="填前端登录回调页完整地址，如 http://81.70.22.48:8084/forge/login/callback；须与 Gitee 等平台侧登记的回调地址完全一致" />
           </n-form-item-gi>
           <n-form-item-gi label="授权范围" path="scope">
             <n-input v-model:value="appForm.scope" placeholder="如 snsapi_base / user_info，多个用逗号分隔" />
@@ -753,6 +753,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     field: 'enterpriseId',
     label: '外部企业ID',
     type: 'input',
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `外部平台分配给企业的唯一标识，企业型平台必填。获取位置：
 ・企业微信：管理后台 → 我的企业 → 企业信息 → 企业ID
 ・钉钉：开放平台首页右上角 CorpId
@@ -765,18 +766,20 @@ Gitee/GitHub 等仅支持扫码登录。`,
     label: '连接类型',
     type: 'select',
     defaultValue: 'CORP_INTERNAL',
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `・自建应用：企业在平台管理后台自己创建的应用（最常见）
 ・第三方应用：通过服务商市场安装的应用
 ・仅OAuth登录：只用扫码登录，不涉及通讯录和消息
 不确定时选「自建应用」即可。`,
     props: { options: connectionTypeOptions.value, clearable: false },
   },
-  { type: 'divider', label: '目录与身份', props: { titlePlacement: 'left' }, span: 2 },
+  { type: 'divider', label: '目录与身份', props: { titlePlacement: 'left' }, span: 2, vIf: formData => isEnterprisePlatform(formData.platform) },
   {
     field: 'identityPolicy',
     label: '身份匹配策略',
     type: 'select',
     defaultValue: 'BIND_ONLY',
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `外部用户首次扫码登录时如何对应到本系统账号：
 ・仅绑定：只允许绑定已有账号，未绑定无法登录（最安全）
 ・自动建号：无匹配账号时自动创建新用户
@@ -789,6 +792,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     label: '默认角色',
     type: 'select',
     span: 2,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: '自动建号时为新用户分配的角色（可多选）。留空时跟随全局默认角色配置。',
     props: {
       options: roleOptions.value,
@@ -802,6 +806,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     label: '目录权威来源',
     type: 'select',
     defaultValue: 'NONE',
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `决定组织架构和人员名单以哪边为准：
 ・外部平台：以企微/钉钉通讯录为准，定期同步到本系统（选此项才能触发同步）
 ・本系统：以本系统组织架构为准，不从外部拉取
@@ -813,6 +818,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     field: 'defaultOrgId',
     label: '默认挂载组织ID',
     type: 'input',
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `同步过来的外部部门会挂在本系统的这个组织节点下。
 组织ID可在「系统管理 → 部门管理」中查看，留空时挂在根节点下。`,
     props: { placeholder: '目录同步根组织ID，可空' },
@@ -822,11 +828,23 @@ Gitee/GitHub 等仅支持扫码登录。`,
     label: 'API基础地址',
     type: 'input',
     span: 2,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `调用平台接口的基础地址。绝大多数情况留空即可（自动使用官方地址）；
 仅平台私有化部署时填写自建网关地址。`,
     props: { placeholder: '留空使用平台官方地址，私有化部署可自定义' },
   },
-  { type: 'divider', label: '客户端免登', props: { titlePlacement: 'left' }, span: 2 },
+  // ── OAuth 平台提示（Gitee/GitHub 等纯登录平台，凭据在应用管理中配置） ──
+  {
+    type: 'divider',
+    label: 'OAuth 凭据说明',
+    span: 2,
+    vIf: formData => !isEnterprisePlatform(formData.platform),
+    props: {
+      description: '纯 OAuth 登录平台（如 Gitee、GitHub）的凭据在「应用管理」中配置。保存连接后，请点击列表中的「应用管理」按钮，新增应用并填写 Client ID / Secret / 回调地址等 OAuth 参数。',
+    },
+  },
+  // ── 企业型平台高级功能 ──
+  { type: 'divider', label: '客户端免登', props: { titlePlacement: 'left' }, span: 2, vIf: formData => isEnterprisePlatform(formData.platform) },
   {
     field: 'ssoWorkbenchEnabled',
     label: '工作台免登',
@@ -838,9 +856,10 @@ Gitee/GitHub 等仅支持扫码登录。`,
     labelTip: `开启后，用户在企业客户端（如企业微信）工作台点击本应用可自动登录，无需手动扫码。
 仅企业型平台且已正确配置 OAuth 网页授权可信域名时生效；同平台多个连接只能开启一个。
 前端会用本连接的「连接编码」发起免登，无需再在前端写死 connectionCode。`,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     props: { },
   },
-  { type: 'divider', label: '待办推送', props: { titlePlacement: 'left' }, span: 2 },
+  { type: 'divider', label: '待办推送', props: { titlePlacement: 'left' }, span: 2, vIf: formData => isEnterprisePlatform(formData.platform) },
   {
     field: 'todoPushEnabled',
     label: '待办卡片推送',
@@ -851,6 +870,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     span: 2,
     labelTip: `开启后，流程待办任务会以卡片消息推送到外部平台（如企微），点击卡片可直达待办H5页面。
 需先在能力绑定中配置「消息推送」能力。`,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     props: { },
   },
   {
@@ -858,12 +878,13 @@ Gitee/GitHub 等仅支持扫码登录。`,
     label: '待办H5访问地址',
     type: 'input',
     span: 2,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `待办卡片点击后跳转的移动端H5地址，开启推送时必填。
 填到H5应用根路径即可（如 https://h5.example.com/forge-h5），无需带 #/ 路由前缀，系统会自动拼接待办详情路径。
 注意：该域名需在平台后台登记为可信域名（企微：应用详情 → 网页授权及 JS-SDK）。`,
     props: { placeholder: '如 https://h5.example.com/forge-h5，无需带 #/，开启推送时必填' },
   },
-  { type: 'divider', label: '定时同步', props: { titlePlacement: 'left' }, span: 2 },
+  { type: 'divider', label: '定时同步', props: { titlePlacement: 'left' }, span: 2, vIf: formData => isEnterprisePlatform(formData.platform) },
   {
     field: 'syncScheduleEnabled',
     label: '定时目录同步',
@@ -874,6 +895,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     span: 2,
     labelTip: `开启后系统会按下方 Cron 周期自动全量同步该连接的组织与成员，无需再去「定时任务」模块手工配置。
 关闭后自动移除对应定时任务；连接停用时定时同步同样暂停。`,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     props: { },
   },
   {
@@ -881,6 +903,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
     label: '同步周期(Cron)',
     type: 'input',
     span: 2,
+    vIf: formData => isEnterprisePlatform(formData.platform),
     labelTip: `标准 Quartz Cron 表达式（秒 分 时 日 月 周），开启定时同步时必填。
 示例：0 0 2 * * ?（每天凌晨2点）、0 0/30 * * * ?（每30分钟）、0 0 1 * * ?（每天1点）。`,
     props: { placeholder: '如 0 0 2 * * ?（每天凌晨2点），开启定时同步时必填' },
@@ -1008,8 +1031,15 @@ function handleBeforeSubmit(formData) {
   if (!formData.apiBaseUrl && formData.platform === 'WECHAT_ENTERPRISE')
     formData.apiBaseUrl = WECOM_API_BASE_URL
   // 纯 OAuth 平台不存在自建/第三方应用形态，统一归一为仅登录连接类型
-  if (!isEnterprisePlatform(formData.platform))
+  if (!isEnterprisePlatform(formData.platform)) {
     formData.connectionType = 'OAUTH_ONLY'
+    // OAuth 凭据在应用管理中配置，清除连接维度的残留旧值
+    delete formData.clientId
+    delete formData.clientSecret
+    delete formData.redirectUri
+    delete formData.scope
+    delete formData.agentId
+  }
   return formData
 }
 

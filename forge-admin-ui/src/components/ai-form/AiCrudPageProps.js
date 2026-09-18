@@ -366,6 +366,17 @@ export const aiCrudPageProps = {
   },
 
   /**
+   * 表单初始化配置（数据源统一架构 P0）
+   * contextDefaults：Session / URL 参数 → 字段默认值；recordLoad：按定位参数加载存量记录
+   * 与 fieldEvents 同源，来自 schema.settings.governance.formInit
+   * @type {object}
+   */
+  formInit: {
+    type: Object,
+    default: () => ({}),
+  },
+
+  /**
    * 可作为查询参数使用的只读表单运行上下文，不参与服务端授权。
    * @type {object}
    */

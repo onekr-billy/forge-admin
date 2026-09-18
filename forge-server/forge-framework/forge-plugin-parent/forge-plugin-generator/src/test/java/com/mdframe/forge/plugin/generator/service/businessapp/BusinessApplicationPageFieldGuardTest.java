@@ -19,27 +19,61 @@ class BusinessApplicationPageFieldGuardTest {
     @DisplayName("fields may still be redesigned before the object contains records")
     void emptyObjectAllowsFieldChanges() {
         assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertCompatible(
-                false, List.of(existingTextField()), List.of(numberField())));
+                0, "", List.of(existingTextField()), List.of(numberField())));
     }
 
     @Test
-    @DisplayName("a persisted field cannot be removed after records exist")
+    @DisplayName("a persisted field cannot be removed when column has data")
     void dataFieldCannotBeRemoved() {
         BusinessException error = assertThrows(BusinessException.class,
                 () -> BusinessApplicationPageFieldGuard.assertCompatible(
-                        true, List.of(existingTextField()), List.of()));
+                        3, "bfma_biz_order", List.of(existingTextField()), List.of()));
 
-        assertEquals("字段“客户名称”已有数据，不能删除", error.getMessage());
+        assertEquals("字段“客户名称”已有数据，不能删除（数据表 bfma_biz_order）；可先清理该字段数据后再删除",
+                error.getMessage());
     }
 
     @Test
-    @DisplayName("a persisted field cannot change storage type after records exist")
-    void dataFieldCannotChangeType() {
+    @DisplayName("field removal is allowed when column has no data despite table having rows")
+    void dataFieldRemovalAllowedWhenColumnEmpty() {
+        // 表有 7 行数据，但该列无数据 → 允许删除
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertCompatible(
+                7, "cgou_approval_vger", List.of(existingTextField()), List.of(),
+                columnName -> false));
+    }
+
+    @Test
+    @DisplayName("field removal is blocked when column has data")
+    void dataFieldRemovalBlockedWhenColumnHasData() {
         BusinessException error = assertThrows(BusinessException.class,
                 () -> BusinessApplicationPageFieldGuard.assertCompatible(
-                        true, List.of(existingTextField()), List.of(numberField())));
+                        7, "cgou_approval_vger", List.of(existingTextField()), List.of(),
+                        columnName -> true));
 
-        assertEquals("字段“客户名称”已有数据，不能修改字段类型", error.getMessage());
+        assertEquals("字段“客户名称”已有数据，不能删除（数据表 cgou_approval_vger）；可先清理该字段数据后再删除",
+                error.getMessage());
+    }
+
+    @Test
+    @DisplayName("blank column name in field schema falls back to blocking")
+    void blankColumnNameFallsBackToBlocking() {
+        LowcodeFieldSchema field = existingTextField();
+        field.setColumnName(null);
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> BusinessApplicationPageFieldGuard.assertCompatible(
+                        5, "bfma_biz_order", List.of(field), List.of(),
+                        columnName -> columnName.isEmpty()));
+
+        assertEquals("字段“客户名称”已有数据，不能删除（数据表 bfma_biz_order）；可先清理该字段数据后再删除",
+                error.getMessage());
+    }
+
+    @Test
+    @DisplayName("field type change is allowed (warned) when records exist — DDL layer handles actual schema changes")
+    void dataFieldChangeTypeAllowed() {
+        // 字段类型差异降级为警告，不再抛异常阻断保存
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertCompatible(
+                3, "bfma_biz_order", List.of(existingTextField()), List.of(numberField())));
     }
 
     @Test
@@ -49,21 +83,22 @@ class BusinessApplicationPageFieldGuardTest {
                 () -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
                         formSchema("input", "customerName"),
                         formSchema("input", "customerAlias"),
-                        List.of(existingTextField())));
+                        List.of(existingTextField()),
+                        3, "bfma_biz_order"));
 
-        assertEquals("字段“客户名称”已有数据，不能修改字段编码", error.getMessage());
+        assertEquals("字段“客户名称”已有数据，不能修改字段编码（共 3 条数据，数据表 bfma_biz_order）",
+                error.getMessage());
     }
 
     @Test
-    @DisplayName("a persisted form component cannot change type after records exist")
-    void dataFieldComponentCannotChangeType() {
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
-                        formSchema("input", "customerName"),
-                        formSchema("number", "customerName"),
-                        List.of(existingTextField())));
-
-        assertEquals("字段“客户名称”已有数据，不能修改字段类型", error.getMessage());
+    @DisplayName("component key change is allowed when field-level storage type is unchanged")
+    void dataFieldComponentChangeAllowed() {
+        // 组件类型变更不再拦截，字段级 assertCompatible 已保证数据存储类型不变
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                formSchema("input", "customerName"),
+                formSchema("number", "customerName"),
+                List.of(existingTextField()),
+                3, "bfma_biz_order"));
     }
 
     @Test
@@ -72,7 +107,34 @@ class BusinessApplicationPageFieldGuardTest {
         assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
                 formSchema("input", "customerName"),
                 formSchema("input", "customerName"),
-                List.of(existingTextField())));
+                List.of(existingTextField()),
+                3, "bfma_biz_order"));
+    }
+
+    @Test
+    @DisplayName("component-level deletion allowed when column has no data despite table having rows")
+    void componentDeletionAllowedWhenColumnEmpty() {
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                formSchema("input", "customerName"),
+                Map.of("components", List.of()),
+                List.of(existingTextField()),
+                7, "cgou_approval_vger",
+                columnName -> false));
+    }
+
+    @Test
+    @DisplayName("component-level deletion blocked when column has data")
+    void componentDeletionBlockedWhenColumnHasData() {
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                        formSchema("input", "customerName"),
+                        Map.of("components", List.of()),
+                        List.of(existingTextField()),
+                        7, "cgou_approval_vger",
+                        columnName -> true));
+
+        assertEquals("字段“客户名称”已有数据，不能删除（数据表 cgou_approval_vger）；可先清理该字段数据后再删除",
+                error.getMessage());
     }
 
     private LowcodeFieldSchema existingTextField() {

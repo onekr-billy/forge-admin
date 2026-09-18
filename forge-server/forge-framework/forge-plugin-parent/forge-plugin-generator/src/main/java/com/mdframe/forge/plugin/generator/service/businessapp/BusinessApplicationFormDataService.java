@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationObjectRole;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplication;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
@@ -12,18 +13,22 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFieldDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDesignerDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectQueryDTO;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -33,12 +38,15 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 /**
  * 把页面表单自动转换为应用内部托管的数据存储。
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BusinessApplicationFormDataService {
 
     private static final String MANAGED_BY_PAGE_FORM = "PAGE_FORM";
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
+    /** 上次准备内容签名存放于对象 options 内，签名一致时短路高频保存草稿链路。 */
+    private static final String PROVISION_SIGNATURE_KEY = "provisionSignature";
 
     private final BusinessApplicationService applicationService;
     private final BusinessApplicationObjectService applicationObjectService;
@@ -48,6 +56,7 @@ public class BusinessApplicationFormDataService {
     private final BusinessNamingService namingService;
     private final IGenDatasourceService datasourceService;
     private final BusinessObjectTableMappingService tableMappingService;
+    private final BusinessObjectMapper businessObjectMapper;
     private final PlatformTransactionManager transactionManager;
 
     public BusinessApplicationFormDataVO provision(
@@ -58,11 +67,25 @@ public class BusinessApplicationFormDataService {
         if (provisioned == null) {
             throw new BusinessException("表单数据存储准备失败，请重试");
         }
+        if (Boolean.TRUE.equals(provisioned.result().getUnchanged())) {
+            return provisioned.result();
+        }
         try {
-            tableMappingService.syncManagedDatabase(
-                    provisioned.objectId(), applicationId, normalized.formAssetId());
+            // 复用 provisionMetadata 中已加载的 DesignerContext，避免重复查询数据库
+            if (provisioned.context() != null) {
+                tableMappingService.syncManagedDatabase(
+                        provisioned.context(), applicationId, normalized.formAssetId());
+            } else {
+                tableMappingService.syncManagedDatabase(
+                        provisioned.objectId(), applicationId, normalized.formAssetId());
+            }
         } catch (RuntimeException e) {
-            throw databaseSyncFailure(e);
+            // DDL 同步失败不阻断保存：表单设计和运行时配置已在元数据事务中提交，
+            // 用户可稍后通过“高级数据设置”手动同步数据库结构。
+            log.warn("[表单数据保存] DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
+                    provisioned.objectId(), normalized.formAssetId(), e.getMessage());
+            provisioned.result().setDdlWarning("数据表结构同步失败：" + StringUtils.defaultIfBlank(
+                    e.getMessage(), "请在高级数据设置中确认数据库调整") + "。表单设计和选项配置已保存，不影响发布。");
         }
         return provisioned.result();
     }
@@ -108,6 +131,7 @@ public class BusinessApplicationFormDataService {
         List<BusinessApplicationObjectVO> associations = applicationObjectService.list(applicationId);
         AiBusinessObject object = resolveAssociatedManagedObject(associations, normalized.formAssetId());
         boolean created = false;
+        boolean fromAssociation = object != null;
 
         if (object == null) {
             object = findReusableManagedObject(application, normalized.formAssetId());
@@ -118,15 +142,23 @@ public class BusinessApplicationFormDataService {
             created = true;
         } else {
             objectId = object.getId();
+            // 保存草稿对每个已托管表单都会触发 provision；内容未变时短路，
+            // 跳过设计器保存与后续 DDL 同步（链路中最重的两段）。
+            if (fromAssociation
+                    && StringUtils.equals(provisionSignature(normalized), readProvisionSignature(object))) {
+                return new ProvisionResult(objectId,
+                        result(normalized.formAssetId(), object, false, true));
+            }
         }
 
-        syncDesigner(objectId, normalized);
+        BusinessObjectDesignerService.DesignerContext designerContext = syncDesigner(objectId, normalized);
         if (!containsObject(associations, objectId)) {
             attachManagedObject(applicationId, associations, objectId, normalized.formAssetId());
         }
 
         AiBusinessObject saved = objectService.requireEntity(objectId);
-        return new ProvisionResult(objectId, result(normalized.formAssetId(), saved, created));
+        writeProvisionSignature(saved, provisionSignature(normalized));
+        return new ProvisionResult(objectId, result(normalized.formAssetId(), saved, created, false), designerContext);
     }
 
     private ProvisionRequest normalizeRequest(BusinessApplicationFormDataProvisionDTO request) {
@@ -254,14 +286,14 @@ public class BusinessApplicationFormDataService {
         return options.toJSONString();
     }
 
-    private void syncDesigner(Long objectId, ProvisionRequest request) {
+    private BusinessObjectDesignerService.DesignerContext syncDesigner(Long objectId, ProvisionRequest request) {
         BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();
         designer.setObjectId(objectId);
         designer.setObjectName(request.formName());
         designer.setDisplayField(request.fields().get(0).getFieldCode());
         designer.setFields(request.fields());
         designer.setFormDesignerSchema(request.formDesignerSchema());
-        designerService.saveDesigner(objectId, designer);
+        return designerService.saveDesigner(objectId, designer);
     }
 
     private void attachManagedObject(
@@ -335,6 +367,11 @@ public class BusinessApplicationFormDataService {
 
     private BusinessApplicationFormDataVO result(
             String formAssetId, AiBusinessObject object, boolean created) {
+        return result(formAssetId, object, created, false);
+    }
+
+    private BusinessApplicationFormDataVO result(
+            String formAssetId, AiBusinessObject object, boolean created, boolean unchanged) {
         BusinessApplicationFormDataVO result = new BusinessApplicationFormDataVO();
         result.setFormAssetId(formAssetId);
         result.setObjectId(object.getId());
@@ -342,7 +379,47 @@ public class BusinessApplicationFormDataService {
         result.setObjectName(object.getObjectName());
         result.setConfigKey(object.getConfigKey());
         result.setCreated(created);
+        result.setUnchanged(unchanged);
         return result;
+    }
+
+    /**
+     * 内容签名：表单名 + 字段列表 + 表单设计器 schema 的规范化 JSON 摘要。
+     * 保存草稿高频重放相同内容，签名一致即可确定设计器与数据表都无需重跑。
+     */
+    private String provisionSignature(ProvisionRequest request) {
+        JSONObject payload = new JSONObject();
+        payload.put("formName", request.formName());
+        payload.put("fields", request.fields());
+        payload.put("formDesignerSchema", request.formDesignerSchema());
+        String canonical = payload.toJSONString(JSONWriter.Feature.SortMapEntriesByKeys);
+        return sha256Hex(canonical);
+    }
+
+    private String readProvisionSignature(AiBusinessObject object) {
+        return StringUtils.trimToNull(parseOptions(object.getOptions()).getString(PROVISION_SIGNATURE_KEY));
+    }
+
+    private void writeProvisionSignature(AiBusinessObject object, String signature) {
+        JSONObject options = parseOptions(object.getOptions());
+        options.put(PROVISION_SIGNATURE_KEY, signature);
+        object.setOptions(options.toJSONString());
+        businessObjectMapper.updateById(object);
+    }
+
+    private String sha256Hex(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(Character.forDigit((b >> 4) & 0xF, 16))
+                        .append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 摘要不可用", e);
+        }
     }
 
     private record ProvisionRequest(
@@ -352,6 +429,10 @@ public class BusinessApplicationFormDataService {
             com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO formDesignerSchema) {
     }
 
-    private record ProvisionResult(Long objectId, BusinessApplicationFormDataVO result) {
+    private record ProvisionResult(Long objectId, BusinessApplicationFormDataVO result,
+                                    BusinessObjectDesignerService.DesignerContext context) {
+        ProvisionResult(Long objectId, BusinessApplicationFormDataVO result) {
+            this(objectId, result, null);
+        }
     }
 }

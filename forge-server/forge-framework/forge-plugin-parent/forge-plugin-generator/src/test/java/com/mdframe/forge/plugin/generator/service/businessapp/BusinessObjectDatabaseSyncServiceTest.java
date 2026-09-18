@@ -11,6 +11,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -136,8 +138,8 @@ class BusinessObjectDatabaseSyncServiceTest {
     }
 
     @Test
-    @DisplayName("managed page forms do not automatically execute destructive or type-changing DDL")
-    void managedPageFormRejectsUnsafeDdl() {
+    @DisplayName("managed page forms execute safe DDLs and report unsafe ones separately")
+    void managedPageFormPartialSyncsUnsafeDdl() {
         StubDdlService ddlService = new StubDdlService(
                 "ALTER TABLE crm_customer MODIFY COLUMN customer_name varchar(32)", true);
         TestableTableMappingService service = service(ddlService, false, managedContext());
@@ -145,8 +147,24 @@ class BusinessObjectDatabaseSyncServiceTest {
         BusinessException error = assertThrows(BusinessException.class,
                 () -> service.syncManagedDatabase(201L, 10L, "form_customer"));
 
-        assertTrue(error.getMessage().contains("需要在高级数据设置中确认"));
-        assertFalse(ddlService.executed);
+        assertTrue(error.getMessage().contains("需在高级数据设置中确认"));
+        assertTrue(error.getMessage().contains("已自动同步 0 项新增字段"));
+    }
+
+    @Test
+    @DisplayName("managed page forms execute safe additive DDLs even when unsafe DDLs exist")
+    void managedPageFormExecutesSafeDdlAlongsideUnsafe() {
+        StubDdlService ddlService = new StubDdlService(
+                "ALTER TABLE crm_customer ADD COLUMN new_field varchar(64)", true);
+        ddlService.addDdl("ALTER TABLE crm_customer MODIFY COLUMN old_field varchar(128)");
+        TestableTableMappingService service = service(ddlService, false, managedContext());
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.syncManagedDatabase(201L, 10L, "form_customer"));
+
+        assertTrue(error.getMessage().contains("已自动同步 1 项新增字段"));
+        assertTrue(error.getMessage().contains("1 项字段类型调整"));
+        assertTrue(ddlService.safeDdlExecuted);
     }
 
     private static BusinessObjectDesignerService.DesignerContext managedContext() {
@@ -220,14 +238,19 @@ class BusinessObjectDatabaseSyncServiceTest {
 
     private static class StubDdlService extends LowcodeDdlService {
 
-        private final String ddl;
+        private final List<String> ddls = new ArrayList<>();
         private final boolean executable;
         private boolean executed;
+        private boolean safeDdlExecuted;
 
         StubDdlService(String ddl, boolean executable) {
             super(null, null, null, null, null);
-            this.ddl = ddl;
+            this.ddls.add(ddl);
             this.executable = executable;
+        }
+
+        void addDdl(String ddl) {
+            this.ddls.add(ddl);
         }
 
         @Override
@@ -236,13 +259,24 @@ class BusinessObjectDatabaseSyncServiceTest {
             preview.setTableName(modelSchema.getTableName());
             preview.setTableExists(true);
             preview.setExecutable(executable);
-            preview.getDdlStatements().add(ddl);
+            preview.getDdlStatements().addAll(ddls);
             return preview;
         }
 
         @Override
         public void executeCreateTable(com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema modelSchema) {
             executed = true;
+        }
+
+        @Override
+        public int executeSafeDdlOnly(com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema modelSchema) {
+            int safeCount = (int) ddls.stream()
+                    .filter(ddl -> ddl.contains("ADD COLUMN") || ddl.contains("CREATE TABLE"))
+                    .count();
+            if (safeCount > 0) {
+                safeDdlExecuted = true;
+            }
+            return safeCount;
         }
     }
 }

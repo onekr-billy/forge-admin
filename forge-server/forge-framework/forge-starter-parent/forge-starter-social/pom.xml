@@ -32,6 +32,10 @@
         </dependency>
         <dependency>
             <groupId>com.mdframe.forge</groupId>
+            <artifactId>forge-starter-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mdframe.forge</groupId>
             <artifactId>forge-starter-file</artifactId>
         </dependency>
 

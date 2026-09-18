@@ -68,3 +68,31 @@
   ```
 - **验收**：实际命令、结果、警告、浏览器覆盖范围和服务清理情况全部写入 `execution-log.md`。
 - **结果**：13/13 定向测试、目标 ESLint、生产构建和补丁格式检查通过；浏览器确认 large 输入/按钮均为 `40px`、独立挂载 small 按钮均为 `28px`。后端 `8580` 未启动，未执行真实菜单删除 E2E。
+
+## Task 4: 用户管理巨型组件增量拆分（2026-09-17）
+
+- [x] **目标**：将 `system/user.vue`（约 4390 行）按领域拆分为 Pinia 状态层与职责单一子组件，保持行为、接口协议、权限语义和视觉不变。
+- **涉及文件**：
+  - `forge-admin-ui/src/views/system/user.vue` — 入口降至 78 行，只保留布局、字典同步与生命周期。
+  - `forge-admin-ui/src/stores/system/userManagementStore.js`、`stores/system/user-management/*.js` — 页面领域 store（state/core/form/organization/roles/membership/relations/actions/utils）。
+  - `forge-admin-ui/src/views/system/user/components/*.vue` — 12 个子组件（组织树/列表/密码/关系工作台五面板/批量双弹窗/角色选择器）。
+  - `forge-admin-ui/src/views/system/user/styles/*.css` — 6 个领域样式文件，按页面与 Teleport 弹窗命名空间限定。
+  - `forge-admin-ui/src/views/system/__tests__/user-management-*.spec.js` — 新增状态与组件测试；`system-management-ui-contract.spec.js` 组织树滚动目标迁至 `styles/organization.css`。
+- **验收**：
+  - [x] 所有新文件 ≤800 行（最大 CSS 623、最大 JS 438、SFC ≤121）。
+  - [x] 26/26 定向 Vitest、目标 ESLint、生产构建（49.16s）与 `git diff --check` 通过。
+  - [x] 浏览器只读验证：组织树滚动到底、筛选联动、折叠、新增/编辑、五页签工作台、批量授权/加入租户、重置密码弹窗，Console 零告警。
+  - [ ] 待用户人工验收：真实授权提交、关系保存、重置密码、删除等敏感写路径。
+
+## Task 5: 系统管理员不受自我维护限制（2026-09-17）
+
+- [x] **目标**：系统管理员（`userType=0`）可在用户管理中维护当前登录用户；非管理员保持原有自我保护。
+- **涉及文件**：
+  - `forge-server/.../service/impl/SysUserServiceImpl.java` — 12 处自我保护改为 `assertNotSelfManagementUnlessAdmin`，删除替换后无调用者的严格版私有方法。
+  - `forge-admin-ui/src/stores/system/user-management/core.js` — 新增 `isRestrictedCurrentUser`，批量选择校验改用该函数。
+  - `forge-admin-ui/src/stores/system/user-management/form.js` — 重置密码/关系维护/禁用/启用/删除 visible 与状态字段 vIf 共 6 处改用 `isRestrictedCurrentUser`。
+  - `forge-admin-ui/src/views/system/__tests__/user-management-store.spec.js` — 原保护用例补充 vIf 断言，新增管理员放行用例。
+- **验收**：
+  - [x] 4 个目标 suite（27/27）、目标 ESLint、后端 `forge-plugin-system` 模块编译通过。
+  - [x] 初始账号 `id=1` 的禁用/删除按钮保护仍保留。
+  - [ ] 浏览器与真实写路径由用户自行验证。

@@ -30,4 +30,18 @@ public record VerifiedSocialIdentity(
         String phone,
         Instant verifiedAt
 ) {
+
+    public VerifiedSocialIdentity withTenantId(Long newTenantId) {
+        return new VerifiedSocialIdentity(
+                newTenantId,
+                connectionId,
+                connectionCode,
+                platform,
+                externalUserId,
+                nickname,
+                avatar,
+                email,
+                phone,
+                verifiedAt);
+    }
 }

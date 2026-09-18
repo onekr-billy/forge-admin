@@ -19,6 +19,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessNamingService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowStatusFieldService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessFlowModelVO;
@@ -85,6 +86,13 @@ public class BusinessProcessService {
      */
     @Autowired(required = false)
     private BusinessFlowService businessFlowService;
+
+    /**
+     * 审批流程状态字段自动创建服务。可选注入保持测试和装配兼容；
+     * 当保存包含 BUSINESS_OBJECT_FORM 审批节点且未绑定 flowStatus 时自动补齐。
+     */
+    @Autowired(required = false)
+    private BusinessFlowStatusFieldService flowStatusFieldService;
 
     public Page<BusinessProcessVO> page(Integer pageNum,
                                         Integer pageSize,
@@ -365,6 +373,66 @@ public class BusinessProcessService {
         return repaired;
     }
 
+    /**
+     * 保存前自动补齐审批节点的 flowStatus 字段。
+     * 当审批节点使用 BUSINESS_OBJECT_FORM 且 statusField 未绑定时，
+     * 自动调用平台托管服务创建 flowStatus 字段并回填到 schema。
+     */
+    private void autoEnsureFlowStatusFields(BusinessProcessSchema schema, Long subjectObjectId) {
+        if (flowStatusFieldService == null || schema == null || schema.getNodes() == null
+                || subjectObjectId == null) {
+            return;
+        }
+        boolean ensured = false;
+        for (BusinessProcessNode node : schema.getNodes()) {
+            if (node == null || !"APPROVAL".equalsIgnoreCase(node.getType())) {
+                continue;
+            }
+            Map<String, Object> config = node.getConfig();
+            if (config == null) {
+                continue;
+            }
+            Map<String, Object> formAsset = config.get("formAsset") instanceof Map<?, ?> fa
+                    ? mapValue(fa) : Map.of();
+            String formMode = firstText(formAsset, "formMode", "type");
+            if (!"BUSINESS_OBJECT_FORM".equalsIgnoreCase(formMode)) {
+                continue;
+            }
+            String statusField = text(config.get("statusField"));
+            if (StringUtils.isNotBlank(statusField) && isFlowStatusFieldName(statusField)) {
+                continue;
+            }
+            if (!ensured) {
+                try {
+                    flowStatusFieldService.ensure(subjectObjectId);
+                    ensured = true;
+                    log.debug("业务流程保存时自动创建 flowStatus 字段: objectId={}", subjectObjectId);
+                } catch (Exception exception) {
+                    log.warn("自动创建 flowStatus 字段失败，跳过自动补齐: objectId={}, error={}",
+                            subjectObjectId, exception.getMessage());
+                    return;
+                }
+            }
+            Map<String, Object> mutableConfig = new LinkedHashMap<>(config);
+            mutableConfig.put("statusField", BusinessFlowStatusFieldService.FIELD_CODE);
+            node.setConfig(mutableConfig);
+        }
+    }
+
+    private boolean isFlowStatusFieldName(String value) {
+        if (value == null) return false;
+        String normalized = value.replace("_", "").replace("-", "").toLowerCase(Locale.ROOT);
+        return "flowstatus".equals(normalized);
+    }
+
+    private String firstText(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            String value = text(map.get(key));
+            if (StringUtils.isNotBlank(value)) return value;
+        }
+        return null;
+    }
+
     private void persistDesignerCompatibilityBinding(Long tenantId,
                                                       AiBusinessProcess process,
                                                       BusinessProcessSchema schema,
@@ -431,6 +499,7 @@ public class BusinessProcessService {
         String expectedHash = requireSchemaHash(dto.getExpectedSchemaHash());
         BusinessProcessSchema schema = parseSchema(dto.getBusinessProcessJson().toString());
         bindDefaultApplicationPageFormAssets(process, schema);
+        autoEnsureFlowStatusFields(schema, process.getSubjectObjectId());
         BusinessProcessValidationContext context = validationContextResolver.resolve(
                 tenantId, process.getApplicationId(), process.getProcessCode(), schema);
         BusinessProcessValidationVO validation = schemaValidator.validate(schema, context);
@@ -504,10 +573,7 @@ public class BusinessProcessService {
         Long tenantId = requireTenantId();
         AiBusinessProcess process = requireProcess(tenantId, processId);
         if (value(runMapper.countByProcessId(tenantId, processId)) > 0) {
-            throw new BusinessException("业务流程存在运行记录，不能删除；可以先停用以阻止新触发");
-        }
-        if (value(versionMapper.countActiveReferences(tenantId, processId)) > 0) {
-            throw new BusinessException("业务流程仍有有效发布版本引用，不能删除；可以先停用");
+            throw new BusinessException("业务流程存在活跃运行记录，不能删除；可先取消运行或停用流程");
         }
         int updated = processMapper.logicalDelete(tenantId, processId, requireUserId());
         if (updated != 1) {

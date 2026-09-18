@@ -223,12 +223,15 @@ export function validateBusinessProcessGraph(input) {
       const formMode = String(node.config?.formAsset?.formMode || node.config?.formAsset?.type || '').toUpperCase()
       const statusField = String(node.config?.statusField || '')
       if (formMode === 'BUSINESS_OBJECT_FORM' && !['flowStatus', 'flow_status'].includes(statusField)) {
-        issues.push(issue(
+        // 降级为 WARNING：flowStatus 会在保存时由前后端自动补齐，不再阻塞编辑
+        const flowStatusWarning = issue(
           'APPROVAL_FLOW_STATUS_REQUIRED',
-          '低代码审批必须绑定独立流程状态字段 flowStatus',
+          '低代码审批需要绑定独立流程状态字段 flowStatus（保存时将自动创建）',
           node.id,
           `nodes.${node.id}.config.statusField`,
-        ))
+        )
+        flowStatusWarning.level = 'WARNING'
+        issues.push(flowStatusWarning)
       }
     }
     if (isBusinessProcessStartType(node.type))

@@ -26,6 +26,8 @@
   <!-- 普通表单项 -->
   <n-form-item
     v-else-if="fieldRuntimeVisible"
+    v-bind="$attrs"
+    ref="formItemRef"
     :label="field.label"
     :path="field.field"
     :label-width="field.labelWidth"
@@ -75,9 +77,21 @@
           @update:props-data="handleRuntimePageWidgetUpdate"
         />
 
+        <AiFormArrayField
+          v-else-if="field.type === 'array'"
+          ref="arrayFieldRef"
+          :model-value="Array.isArray(value) ? value : []"
+          :field="field"
+          :form-data="formData"
+          :context="context"
+          :disabled="disabledHandler(field)"
+          @update:model-value="handleUpdate"
+        />
+
         <!-- 输入框 -->
         <n-input
           v-else-if="field.type === 'input'"
+          v-bind="controlProps"
           :value="value"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -85,7 +99,6 @@
           :maxlength="field.maxlength"
           :show-count="field.showCount"
           :size="field.size"
-          v-bind="field.props"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -98,7 +111,7 @@
             :disabled="disabledHandler(field)"
             :clearable="field.props?.allowManualInput !== false"
             :maxlength="field.props?.maxlength || 2048"
-            v-bind="field.props"
+            v-bind="controlProps"
             :readonly="field.props?.allowManualInput === false || fieldRuntimeControl.readonly"
             @update:value="handleUpdate"
             v-on="getComponentEvents(field)"
@@ -126,7 +139,7 @@
           :maxlength="field.maxlength"
           :show-count="field.showCount"
           :autosize="field.autosize"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -144,7 +157,7 @@
           :show-button="field.showButton !== false"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -154,15 +167,15 @@
           v-else-if="field.type === 'select'"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :options="currentOptions"
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
-          :multiple="field.multiple"
           :loading="field.loading"
           :remote="field.remote"
           :on-search="field.onSearch"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :disabled="disabledHandler(field)"
+          :multiple="fieldMultiple"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -170,16 +183,16 @@
         <!-- 字典选择器 -->
         <DictSelect
           v-else-if="field.type === 'dictSelect'"
-          :value="value"
+          :value="resolveOptionValue(value)"
           :dict-type="field.dictType || field.props?.dictType"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
-          :multiple="field.multiple"
           :form-data="formData"
           :cascade="dictCascadeConfig"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :multiple="fieldMultiple"
           @update:value="handleUpdate"
         />
 
@@ -188,7 +201,7 @@
           v-else-if="field.type === 'radio'"
           :value="resolveOptionValue(value)"
           :disabled="disabledHandler(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -209,7 +222,7 @@
           v-else-if="field.type === 'radioButton'"
           :value="resolveOptionValue(value)"
           :disabled="disabledHandler(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -230,7 +243,7 @@
           v-else-if="field.type === 'checkbox'"
           :value="resolveOptionValue(value)"
           :disabled="disabledHandler(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -257,7 +270,7 @@
           :disabled="disabledHandler(field)"
           :checked-value="field.checkedValue ?? true"
           :unchecked-value="field.uncheckedValue ?? false"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -279,7 +292,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -297,7 +310,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -317,7 +330,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -337,7 +350,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -355,7 +368,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM'"
@@ -373,7 +386,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy'"
@@ -390,7 +403,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -406,7 +419,7 @@
             :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
-            v-bind="field.props"
+            v-bind="controlProps"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -420,7 +433,7 @@
             :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
-            v-bind="field.props"
+            v-bind="controlProps"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -442,7 +455,7 @@
           :list-type="field.listType || 'text'"
           :show-file-list="field.showFileList !== false"
           :on-change="handleUploadChange"
-          v-bind="field.props"
+          v-bind="controlProps"
           v-on="getComponentEvents(field)"
         >
           <n-button>{{ field.uploadText || '点击上传' }}</n-button>
@@ -465,7 +478,7 @@
           :upload-button-text="field.uploadButtonText"
           :disabled="disabledHandler(field)"
           :value-type="field.valueType"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:model-value="handleUpdate"
           @success="(data) => handleUploadSuccess(field, data)"
           @error="(error) => handleUploadError(field, error)"
@@ -487,7 +500,7 @@
           :show-tip="field.showTip"
           :disabled="disabledHandler(field)"
           :value-type="field.valueType"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:model-value="handleUpdate"
           @success="(data) => handleUploadSuccess(field, data)"
           @error="(error) => handleUploadError(field, error)"
@@ -504,7 +517,7 @@
           :step="field.step || 1"
           :marks="field.marks || undefined"
           :tooltip="field.tooltip !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -516,7 +529,7 @@
           :disabled="disabledHandler(field)"
           :count="field.count || 5"
           :allow-half="field.allowHalf"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -528,7 +541,7 @@
           :disabled="disabledHandler(field)"
           :show-alpha="field.showAlpha"
           :modes="field.modes || ['hex']"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -538,14 +551,14 @@
           v-else-if="field.type === 'cascader'"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :options="currentOptions"
           :clearable="field.clearable !== false"
           :filterable="field.filterable"
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -553,7 +566,7 @@
         <!-- 系统组织树选择 -->
         <n-tree-select
           v-else-if="isOrgTreeSelectField(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -561,8 +574,8 @@
           :loading="remoteLoading"
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
-          :multiple="field.multiple"
           :cascade="field.cascade !== false"
+          :multiple="fieldMultiple"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
         />
@@ -570,14 +583,16 @@
         <!-- 系统用户选择 -->
         <UserSelectPicker
           v-else-if="isUserSelectField(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           :model-value="value"
           :label-value="resolveUserSelectLabel(field)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
+          :disabled="disabledHandler(field) || isCascadeDisabledByEmptyParent()"
           :clearable="field.clearable !== false"
-          :multiple="field.multiple"
           :size="field.size"
+          :org-id="userSelectCascadeOrgId"
+          :include-children="userSelectCascadeIncludeChildren"
+          :multiple="fieldMultiple"
           @update:model-value="handleUpdate"
           @update:label-value="handleUserSelectLabelUpdate(field, $event)"
           @select="handleUserSelect(field, $event)"
@@ -592,7 +607,7 @@
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
           :virtual-disabled="field.props?.virtualDisabled ?? !context?.isSearch"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:model-value="handleRegionTreeSelectUpdate(field, $event)"
         />
 
@@ -601,7 +616,6 @@
           v-else-if="field.type === 'treeSelect'"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :options="currentOptions"
           :loading="remoteLoading"
           :clearable="field.clearable !== false"
@@ -609,7 +623,8 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
         />
@@ -618,10 +633,10 @@
         <n-transfer
           v-else-if="field.type === 'transfer'"
           :value="resolveOptionValue(value)"
-          :disabled="disabledHandler(field)"
           :options="currentOptions"
           :filterable="field.filterable"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -631,7 +646,6 @@
           v-else-if="field.type === 'customSelect'"
           :value="value"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           :api="field.api"
           :method="field.method"
@@ -643,38 +657,39 @@
           :options="field.options"
           :params="field.params"
           :transform="field.transform"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
 
-        <!-- 业务对象引用选择 -->
+        <!-- 关联选择（下拉模式）：对象引用/记录选择器统一渲染 -->
         <n-select
-          v-else-if="field.type === 'objectReference'"
+          v-else-if="isRelationSelectorField && relationSelectorMode === 'dropdown'"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :options="currentOptions"
           :loading="remoteLoading"
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
           :remote="objectReferenceRemoteEnabled"
-          :multiple="field.multiple"
-          v-bind="field.props"
+          v-bind="controlProps"
+          :disabled="disabledHandler(field)"
+          :multiple="fieldMultiple"
           @search="handleObjectReferenceSearch"
           @update:value="handleObjectReferenceUpdate"
           v-on="getComponentEvents(field)"
         />
 
-        <!-- 通用业务记录选择器 -->
-        <n-input-group v-else-if="field.type === 'recordSelector'">
+        <!-- 关联选择（弹窗模式）：支持展示列/筛选条件/字段映射 -->
+        <n-input-group v-else-if="isRelationSelectorField && relationSelectorMode === 'popup'">
           <n-input
             :value="recordSelectorDisplayText"
             :placeholder="getPlaceholder(field)"
             :disabled="disabledHandler(field)"
             readonly
             clearable
-            v-bind="field.props"
+            v-bind="controlProps"
             @clear="clearRecordSelectorValue"
           />
           <n-button :disabled="disabledHandler(field)" @click="openRecordSelector">
@@ -729,7 +744,7 @@
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -786,7 +801,7 @@
   </n-form-item>
 
   <AiRecordSelectorModal
-    v-if="field.type === 'recordSelector'"
+    v-if="isRelationSelectorField && relationSelectorMode === 'popup'"
     v-model:show="recordSelectorVisible"
     :title="field.props?.selectorTitle || field.selectorTitle || `选择${field.label || '记录'}`"
     :suite-code="recordSelectorConfig.suiteCode"
@@ -799,11 +814,12 @@
     :ref-object-code="recordSelectorConfig.refObjectCode"
     :source-object-code="recordSelectorConfig.sourceObjectCode"
     :target-code="recordSelectorConfig.targetCode"
-    :multiple="false"
+    :multiple="recordSelectorConfig.multiple === true"
     :display-fields="recordSelectorConfig.displayFields"
     :keyword-fields="recordSelectorConfig.keywordFields"
     :field-mappings="recordSelectorConfig.fieldMappings"
     :search-params="recordSelectorConfig.searchParams"
+    :filter-fields="recordSelectorConfig.filterFields"
     :runtime-context="recordSelectorRuntimeContext"
     @confirm="handleRecordSelectorConfirm"
   />
@@ -812,9 +828,10 @@
 <script setup>
 import { CopyOutline } from '@vicons/ionicons5'
 import { useClipboard } from '@vueuse/core'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { queryBusinessRecordSelector } from '@/api/business-app'
+import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import FileUpload from '@/components/file-upload/index.vue'
@@ -827,12 +844,17 @@ import RegionTreeSelect from '@/components/RegionTreeSelect.vue'
 import { getDictData } from '@/composables/useDict'
 import { request } from '@/utils'
 import AiCustomSelect from './AiCustomSelect.vue'
+import AiFormArrayField from './AiFormArrayField.vue'
 import AiFormGroupTitle from './AiFormGroupTitle.vue'
 import AiFormSectionTitle from './AiFormSectionTitle.vue'
 import AiRecordSelectorModal from './AiRecordSelectorModal.vue'
+import { resolveControlProps } from './control-props'
 import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
-import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig } from './record-selector-utils'
-import { resolveSelectionLabelFields as buildSelectionLabelFields } from './selection-label-fields'
+import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, resolveSelectorSearchParams } from './record-selector-utils'
+import { resolveSelectionLabelFields as buildSelectionLabelFields, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
+import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
+
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   field: {
@@ -867,27 +889,10 @@ const scanFeedback = ref({ status: 'idle', message: '' })
 const pickerDefaultTimestamp = Date.now()
 let remoteRequestSeq = 0
 
-const ORG_TREE_SELECT_TYPES = new Set([
-  'orgTreeSelect',
-  'orgSelect',
-  'organizationSelect',
-  'departmentSelect',
-  'departmentTreeSelect',
-  'deptSelect',
-  'deptTreeSelect',
-  'elTreeSelect',
-  'orgName',
-  'deptName',
-  'forgeOrgTreeSelect',
-])
-const USER_SELECT_TYPES = new Set([
-  'userSelect',
-  'userPicker',
-  'user',
-  'userName',
-  'sysUserSelect',
-  'forgeUserSelect',
-])
+// 人员/组织选择器类型集合与选择器 label 适配共享（见 selection-label-fields.js，勿在此另建副本）
+const ORG_TREE_SELECT_TYPES = ORG_SELECT_FIELD_TYPES
+const USER_SELECT_TYPES = USER_SELECT_FIELD_TYPES
+
 const READONLY_SELECTION_TYPES = new Set([
   'select',
   'dictSelect',
@@ -901,6 +906,7 @@ const READONLY_SELECTION_TYPES = new Set([
   'objectReference',
 ])
 
+const controlProps = computed(() => resolveControlProps(props.field?.props))
 const fieldRuntimeControl = computed(() => resolveRuntimeControl(props.field || {}, {
   ...(props.context || {}),
   record: props.formData || {},
@@ -916,6 +922,54 @@ const fieldRuntimeControl = computed(() => resolveRuntimeControl(props.field || 
   },
 }))
 const fieldRuntimeVisible = computed(() => fieldRuntimeControl.value.visible !== false)
+
+const formItemRef = ref(null)
+const arrayFieldRef = ref(null)
+
+/**
+ * 将字段级固定 labelWidth 显式写回 label 元素的 inline style。
+ *
+ * naive-ui FormItem 挂载时的 invalidateLabelWidth 为测量 label 自然宽度，会直接清空
+ * label 元素的 inline width 且事后只恢复 whiteSpace；当字段配置了固定 labelWidth 且表单级
+ * labelWidth 为 'auto' 时，mergedLabelWidth 恒为该固定值，Vue 后续 patch 因新旧值相同而
+ * 跳过 width 写入，DOM 宽度就此丢失，label 塌缩为内容宽度导致整列不对齐。
+ * 这里在挂载与 labelWidth 变化后写回，兜底该原生缺陷。
+ */
+function restoreFixedLabelWidth() {
+  const labelWidth = props.field?.labelWidth
+  if (labelWidth === undefined || labelWidth === null || labelWidth === '' || labelWidth === 'auto')
+    return
+  const labelEl = formItemRef.value?.$el?.querySelector?.(':scope > .n-form-item-label')
+  if (labelEl)
+    labelEl.style.width = typeof labelWidth === 'number' ? `${labelWidth}px` : String(labelWidth)
+}
+
+onMounted(async () => {
+  await nextTick()
+  restoreFixedLabelWidth()
+  registerArrayValidator()
+})
+
+onBeforeUnmount(() => {
+  props.context?.unregisterFieldValidator?.(props.field?.field)
+})
+
+watch(() => props.field?.labelWidth, () => {
+  nextTick(restoreFixedLabelWidth)
+})
+
+watch(() => props.field?.type, () => nextTick(registerArrayValidator))
+
+function registerArrayValidator() {
+  const field = props.field?.field
+  if (!field)
+    return
+  if (props.field?.type !== 'array') {
+    props.context?.unregisterFieldValidator?.(field)
+    return
+  }
+  props.context?.registerFieldValidator?.(field, () => arrayFieldRef.value?.validate?.())
+}
 
 /**
  * 获取占位符文本
@@ -971,6 +1025,7 @@ const componentControlClass = computed(() => [
   props.field?.componentClass,
 ].filter(Boolean))
 const recordSelectorConfig = computed(() => normalizeRecordSelectorConfig(props.field))
+const fieldMultiple = computed(() => isFieldMultiple(props.field) || recordSelectorConfig.value.multiple === true)
 const recordSelectorRuntimeContext = computed(() => ({
   ...(props.context || {}),
   formData: props.formData || {},
@@ -987,9 +1042,17 @@ const recordSelectorRuntimeContext = computed(() => ({
     name: route.name,
   },
 }))
+/** 引用字段显示名称冗余键（<field>Name）：选中时随主列一起提交，回显零关联查询。 */
+const relationLabelValueField = computed(() => {
+  const field = props.field || {}
+  return firstNonBlank(field.props?.labelValueField, field.labelValueField, field.field ? `${field.field}Name` : '')
+})
 const recordSelectorDisplayText = computed(() => {
   const config = recordSelectorConfig.value
   const labelField = props.field?.labelField || props.field?.props?.labelField || props.field?.props?.targetLabelField || config.targetLabelField || config.labelTargetField
+  // 伴随列冗余值（<field>Name）来自详情接口，优先展示；其次用户配置的回显目标字段
+  if (relationLabelValueField.value && props.formData?.[relationLabelValueField.value])
+    return props.formData[relationLabelValueField.value]
   if (labelField && props.formData?.[labelField])
     return props.formData[labelField]
   return normalizeDisplayText(props.value)
@@ -1043,6 +1106,30 @@ const remoteOptionSource = computed(() => {
     return null
   return resolveDynamicOptionSource(props.field)
 })
+
+/**
+ * 远程选项源的内容签名：params 已含 ${field} 引用解析后的值与级联参数值，
+ * 值不变则签名不变。remoteOptionSource 每次重算都返回新对象（引用比较恒不等），
+ * 若直接 watch 对象本身，任意字段值变化都会让所有远程下拉重新请求、loading 闪烁。
+ */
+const remoteOptionSourceKey = computed(() => {
+  const source = remoteOptionSource.value
+  if (!source)
+    return ''
+  return JSON.stringify([
+    source.type,
+    source.api,
+    source.dictType,
+    source.sourceType,
+    source.sourceKey,
+    source.pageNum,
+    source.pageSize,
+    source.waitForParent === true,
+    Array.isArray(source.waitForFields) ? source.waitForFields.join(',') : '',
+    source.params || {},
+  ])
+})
+
 const runtimePageWidgetKey = computed(() => {
   const field = props.field || {}
   const componentKey = String(field.componentKey || '').trim()
@@ -1096,6 +1183,16 @@ const cascadeSourceValue = computed(() => {
 const sourceFieldConfig = computed(() => findSchemaField(cascadeConfig.value?.sourceField))
 const sourceDictType = computed(() => cascadeConfig.value?.sourceDictType || sourceFieldConfig.value?.dictType || sourceFieldConfig.value?.props?.dictType || '')
 
+// 组织→人员级联：源组织字段的值作为人员弹窗的过滤范围，组织重选时人员组件同步刷新
+const userSelectCascadeOrgId = computed(() => {
+  const cascade = cascadeConfig.value
+  if (!cascade?.enabled || !cascade.sourceField || !isUserSelectField(props.field))
+    return null
+  const orgId = props.formData?.[cascade.sourceField]
+  return orgId === null || orgId === undefined || orgId === '' ? null : orgId
+})
+const userSelectCascadeIncludeChildren = computed(() => cascadeConfig.value?.includeChildren !== false)
+
 function isCascadeDisabledByEmptyParent() {
   const cascade = cascadeConfig.value
   if (!cascade?.enabled || cascade.emptyStrategy !== 'disabled' || !cascade.sourceField)
@@ -1105,15 +1202,16 @@ function isCascadeDisabledByEmptyParent() {
 }
 
 watch(
-  remoteOptionSource,
-  (source) => {
+  remoteOptionSourceKey,
+  () => {
+    const source = remoteOptionSource.value
     if (!source) {
       remoteOptions.value = []
       return
     }
     loadRemoteOptions(source)
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 )
 
 watch(fieldDictType, loadDictOptions, { immediate: true })
@@ -1204,8 +1302,8 @@ function withCurrentValueOption(options = []) {
     return result
   const values = Array.isArray(props.value)
     ? props.value
-    : field.multiple && typeof props.value === 'string'
-      ? props.value.split(',').map(item => item.trim()).filter(Boolean)
+    : fieldMultiple.value && typeof props.value === 'string'
+      ? parseSelectionValues(props.value, true)
       : [props.value]
   const labels = Array.isArray(labelValue)
     ? labelValue
@@ -1302,6 +1400,8 @@ function hasEffectiveOptionSource(source) {
     return false
   if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || '')))
     return true
+  if (String(source.type || '') === 'QUERY_SOURCE')
+    return Boolean(String(source.sourceKey || '').trim())
   return Boolean(
     String(source.api || source.url || '').trim()
     || Array.isArray(source.options)
@@ -1393,10 +1493,27 @@ function resolveDynamicOptionSource(field = {}) {
   const source = resolveOptionSource(field)
   if (!source)
     return null
+  const resolvedParams = resolveDynamicParams(source.params || {})
+  // 记录哪些参数来自 ${field} 引用且当前为空，QUERY_SOURCE 需要等这些字段有值后再发起请求
+  const waitForFields = []
+  if (source.type === 'QUERY_SOURCE') {
+    for (const [key, rawValue] of Object.entries(source.params || {})) {
+      if (typeof rawValue !== 'string')
+        continue
+      const matched = rawValue.match(/^\$\{(.+)\}$/) || rawValue.match(/^\$form\.(.+)$/)
+      if (matched) {
+        const resolved = resolvedParams[key]
+        if (resolved === undefined || resolved === null || resolved === '')
+          waitForFields.push(matched[1])
+      }
+    }
+  }
   const next = {
     ...source,
-    params: resolveDynamicParams(source.params || {}),
+    params: resolvedParams,
   }
+  if (waitForFields.length)
+    next.waitForFields = waitForFields
   ensureSelectorQueryObjectCode(next, field)
   const cascade = cascadeConfig.value
   if (cascade?.enabled && cascade.mode === 'remoteParam' && cascade.sourceField && cascade.paramName) {
@@ -1482,6 +1599,57 @@ async function loadRemoteOptions(source, keyword = '') {
       if (requestSeq !== remoteRequestSeq)
         return
       remoteOptions.value = normalizeRemoteOptions(res?.data || {}, source)
+      return
+    }
+
+    if (source.type === 'QUERY_SOURCE') {
+      // 设计器预览模式下不调用 execute 接口，只展示元数据（请求参数 / 返回字段）供用户配置映射
+      if (isDesignerPreviewContext()) {
+        remoteOptions.value = []
+        return
+      }
+      // 配置了参数但解析后全部为空时阻断请求，避免后端报必填参数错误；
+      // 字段填值后 watch 自动重新触发。无参数或任一参数有值时正常发出。
+      const resolvedEntries = Object.entries(source.params || {})
+      const hasAnyParamValue = resolvedEntries.some(([, v]) => v !== undefined && v !== null && v !== '')
+      if (resolvedEntries.length > 0 && !hasAnyParamValue) {
+        remoteOptions.value = []
+        return
+      }
+      // 过滤空值参数：${字段名} 引用解析后为空时自动剥离
+      const rawParams = source.params || {}
+      const params = {}
+      for (const [key, value] of Object.entries(rawParams)) {
+        if (value !== undefined && value !== null && value !== '')
+          params[key] = value
+      }
+      if (keyword && source.keywordParam)
+        params[source.keywordParam] = keyword
+      try {
+        const res = await executeLowcodeQuerySource({
+          sourceType: source.sourceType,
+          sourceKey: source.sourceKey,
+          params,
+          pageNum: source.pageNum || 1,
+          pageSize: source.pageSize || 50,
+        })
+        if (requestSeq !== remoteRequestSeq)
+          return
+        const result = res?.data || {}
+        const normalized = normalizeRemoteOptions(result, source)
+        remoteOptions.value = normalized
+      }
+      catch (err) {
+        if (requestSeq !== remoteRequestSeq)
+          return
+        console.warn(
+          `[AiFormItem] 查询源加载失败 [${source.sourceType}/${source.sourceKey}]，已发送参数:`,
+          params,
+          '错误:',
+          err?.message || err,
+        )
+        remoteOptions.value = []
+      }
       return
     }
 
@@ -1594,6 +1762,9 @@ function extractOptionRows(data, source = {}, depth = 0) {
     return data.data
   if (data.data && typeof data.data === 'object')
     return extractOptionRows(data.data, source, depth + 1)
+  // 外部接口常返回单个对象而非数组：递归进入的内部对象无包装层 key 时视为单行数据
+  if (depth > 0 && !('data' in data) && Object.keys(data).length > 0)
+    return [data]
   return []
 }
 
@@ -1658,6 +1829,8 @@ function resolveCascadeConfig(field = {}) {
     linkedDictType: raw.linkedDictType || '',
     mode: raw.mode || raw.matchMode || 'linkedDict',
     paramName: raw.paramName || '',
+    // 组织→人员级联：是否包含子组织人员，默认包含
+    includeChildren: raw.includeChildren !== false,
     emptyStrategy: raw.emptyStrategy || 'empty',
     clearOnParentChange: raw.clearOnParentChange !== false && raw.clearOnSourceChange !== false,
   }
@@ -1741,7 +1914,10 @@ function normalizeAlign(value) {
 function clearCurrentValue() {
   if (props.value === null || props.value === undefined || props.value === '')
     return
-  emit('update:value', props.field?.multiple ? [] : null)
+  emit('update:value', fieldMultiple.value ? '' : null)
+  // 级联清空时同步清掉人员选中名称回显（<field>Name），避免组织重选后显示残留旧名称
+  if (isUserSelectField(props.field))
+    patchSelectionLabelValue(props.field, '')
 }
 
 function getNestedValue(source, path) {
@@ -1752,7 +1928,7 @@ function getNestedValue(source, path) {
 }
 
 function resolveOptionValue(rawValue) {
-  return normalizeOptionValue(rawValue, currentOptions.value, props.field?.multiple)
+  return normalizeOptionValue(rawValue, currentOptions.value, fieldMultiple.value)
 }
 
 /**
@@ -1770,18 +1946,20 @@ function resolveSliderValue(rawValue, field = {}) {
 }
 
 function normalizeOptionValue(rawValue, options = [], multiple = false) {
-  if (rawValue === null || rawValue === undefined || rawValue === '' || !Array.isArray(options) || !options.length)
-    return rawValue
+  if (rawValue === null || rawValue === undefined || rawValue === '')
+    return multiple ? [] : rawValue
 
-  if (Array.isArray(rawValue)) {
-    return rawValue.map(item => findOptionValue(options, item)).filter(item => item !== undefined)
-  }
+  const values = multiple
+    ? parseSelectionValues(rawValue, true)
+    : rawValue
 
-  if (multiple && typeof rawValue === 'string') {
-    return rawValue.split(',').map(item => item.trim()).filter(Boolean).map(item => findOptionValue(options, item)).filter(item => item !== undefined)
-  }
+  if (!Array.isArray(options) || !options.length)
+    return values
 
-  return findOptionValue(options, rawValue)
+  if (Array.isArray(values))
+    return values.map(item => findOptionValue(options, item)).filter(item => item !== undefined)
+
+  return findOptionValue(options, values)
 }
 
 function findOptionValue(options = [], rawValue) {
@@ -1838,6 +2016,17 @@ function isObjectReferenceField(field = {}) {
 function isRecordSelectorField(field = {}) {
   return normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey) === 'recordSelector'
 }
+
+/** 关联选择统一渲染：objectReference 默认下拉、recordSelector 默认弹窗，selectorMode 配置可覆盖。 */
+const isRelationSelectorField = computed(() => isObjectReferenceField(props.field) || isRecordSelectorField(props.field))
+
+const relationSelectorMode = computed(() => {
+  const field = props.field || {}
+  const mode = field.selectorMode || field.props?.selectorMode || field.basicProps?.selectorMode
+  if (mode === 'dropdown' || mode === 'popup')
+    return mode
+  return isObjectReferenceField(field) ? 'dropdown' : 'popup'
+})
 
 function resolveObjectReferenceConfig(field = {}) {
   const props = field.props || {}
@@ -1898,7 +2087,8 @@ function buildObjectReferenceOptionSource(field = {}) {
 // objectReference remote search support
 const objectReferenceRemoteEnabled = computed(() => {
   return !isDesignerPreviewContext()
-    && isObjectReferenceField(props.field)
+    && isRelationSelectorField.value
+    && relationSelectorMode.value === 'dropdown'
     && Boolean(resolveObjectReferenceConfig(props.field).objectCode)
 })
 const objectReferenceSearchKeyword = ref('')
@@ -1927,11 +2117,22 @@ async function reloadObjectReferenceOptions(keyword = '') {
     return
   remoteLoading.value = true
   try {
+    // 过滤参数支持 ${formData.xxx} 模板，与弹窗选择器共用同一套解析逻辑；
+    // 搜索字段优先用选择器配置，未配置时退回显示字段。
+    const selectorConfig = recordSelectorConfig.value
+    const searchParams = resolveSelectorSearchParams(
+      selectorConfig.searchParams || {},
+      recordSelectorRuntimeContext.value,
+    )
+    const keywordFields = (selectorConfig.keywordFields || []).length
+      ? selectorConfig.keywordFields
+      : [config.labelField]
     const res = await queryBusinessRecordSelector({
       objectCode: config.objectCode,
       keyword: keyword || undefined,
-      keywordFields: [config.labelField],
+      keywordFields,
       displayFields: [`${config.labelField}:${config.labelField}`],
+      searchParams,
     }, { pageNum: 1, pageSize: 50 })
     const records = res.data?.records || []
     remoteOptions.value = records.map(record => ({
@@ -1966,8 +2167,13 @@ function patchSelectionLabelValue(field = {}, labelValue) {
   if (!candidates.length || typeof props.context?.patchFormData !== 'function')
     return
   const normalizedLabel = normalizeLabelValue(labelValue)
+  // 显式配置的 labelValueField（引用字段伴随列）优先，确保显示名称落到随主列一起提交的键上。
+  const explicitLabelField = firstNonBlank(field.props?.labelValueField, field.labelValueField)
+  const patchTargets = explicitLabelField && candidates.includes(explicitLabelField)
+    ? [explicitLabelField, ...candidates.filter(candidate => candidate !== explicitLabelField)]
+    : candidates
   const patch = {}
-  candidates.forEach((candidate, index) => {
+  patchTargets.forEach((candidate, index) => {
     if (index === 0 || Object.prototype.hasOwnProperty.call(props.formData || {}, candidate))
       patch[candidate] = isFilledValue(normalizedLabel) ? normalizedLabel : undefined
   })
@@ -1975,22 +2181,19 @@ function patchSelectionLabelValue(field = {}, labelValue) {
 }
 
 function syncSelectionLabelFromOptions(field = {}, value) {
-  const values = Array.isArray(value)
-    ? value
-    : field.multiple && typeof value === 'string'
-      ? value.split(',').map(item => item.trim()).filter(Boolean)
-      : [value]
+  const multiple = isFieldMultiple(field) || fieldMultiple.value
+  const values = parseSelectionValues(value, true)
   const labels = values
     .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
     .filter(Boolean)
-  if (labels.length)
-    patchSelectionLabelValue(field, field.multiple ? labels : labels[0])
+  const isCleared = values.length === 0
+    || values.every(item => item === null || item === undefined || item === '')
+  if (labels.length || isCleared)
+    patchSelectionLabelValue(field, multiple ? labels : (labels[0] ?? ''))
 }
 
 function normalizeLabelValue(value) {
-  if (Array.isArray(value))
-    return value.map(item => String(item || '').trim()).filter(Boolean).join(',')
-  return value === null || value === undefined ? '' : String(value).trim()
+  return serializeSelectionLabels(value)
 }
 
 function shouldRenderReadonlySelectionText(field = {}) {
@@ -2009,12 +2212,9 @@ function resolveReadonlySelectionText(field = {}) {
 }
 
 function resolveSelectionDisplayLabels(field = {}) {
-  const normalizedValue = normalizeOptionValue(props.value, currentOptions.value, field?.multiple)
-  const values = Array.isArray(normalizedValue)
-    ? normalizedValue
-    : field.multiple && typeof normalizedValue === 'string'
-      ? normalizedValue.split(',').map(item => item.trim()).filter(Boolean)
-      : [normalizedValue]
+  const multiple = isFieldMultiple(field) || fieldMultiple.value
+  const normalizedValue = normalizeOptionValue(props.value, currentOptions.value, multiple)
+  const values = parseSelectionValues(normalizedValue, true)
   return values
     .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
     .filter(Boolean)
@@ -2042,7 +2242,8 @@ function isFilledValue(value) {
 }
 
 function handleTreeSelectUpdate(field, newValue) {
-  const normalizedValue = normalizeOptionValue(newValue, currentOptions.value, field?.multiple)
+  const multiple = isFieldMultiple(field) || fieldMultiple.value
+  const normalizedValue = normalizeOptionValue(newValue, currentOptions.value, multiple)
   syncIncludeChildrenFlag(field, normalizedValue)
   if (isOrgTreeSelectField(field) || field?.type === 'treeSelect') {
     if (isFilledValue(normalizedValue))
@@ -2050,7 +2251,7 @@ function handleTreeSelectUpdate(field, newValue) {
     else
       patchSelectionLabelValue(field, '')
   }
-  emit('update:value', normalizedValue)
+  emit('update:value', serializeSelectionValues(normalizedValue, multiple))
 }
 
 function handleRegionTreeSelectUpdate(field, newValue) {
@@ -2085,8 +2286,9 @@ function handleUserSelectLabelUpdate(field, labelValue) {
 function handleUserSelect(field, users) {
   const selectedUsers = Array.isArray(users) ? users : users ? [users] : []
   const labels = selectedUsers.map(resolveUserLabel).filter(Boolean)
-  if (labels.length)
-    patchSelectionLabelValue(field, field?.multiple ? labels : labels[0])
+  const multiple = isFieldMultiple(field) || fieldMultiple.value
+  if (labels.length || !selectedUsers.length)
+    patchSelectionLabelValue(field, multiple ? labels : (labels[0] ?? ''))
   const events = getComponentEvents(field)
   if (typeof events.select === 'function')
     events.select(users)
@@ -2139,7 +2341,20 @@ function getComponentEvents(field) {
  * 处理值更新
  */
 function handleUpdate(newValue) {
-  emit('update:value', newValue)
+  const field = props.field || {}
+  const multiple = fieldMultiple.value
+  if (shouldSyncOptionLabels(field))
+    syncSelectionLabelFromOptions(field, newValue)
+  emit('update:value', multiple ? serializeSelectionValues(newValue, true) : newValue)
+}
+
+function shouldSyncOptionLabels(field = {}) {
+  if (isUserSelectField(field))
+    return false
+  if (isRelationSelectorField.value && relationSelectorMode.value === 'popup')
+    return false
+  const type = normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey)
+  return ['select', 'dictSelect', 'objectReference', 'recordSelector', 'orgTreeSelect', 'treeSelect', 'cascader'].includes(type)
 }
 
 function handleFieldFocusout(event) {
@@ -2226,27 +2441,50 @@ function clearRecordSelectorValue() {
   const patch = { [props.field.field]: undefined }
   if (labelField)
     patch[labelField] = undefined
+  if (relationLabelValueField.value)
+    patch[relationLabelValueField.value] = undefined
   props.context?.patchFormData?.(patch)
-  emit('update:value', null)
+  emit('update:value', fieldMultiple.value ? '' : null)
 }
 
 function handleRecordSelectorConfirm({ rows = [], mappings = {} } = {}) {
-  const selected = rows[0]
-  if (!selected)
+  const selectedRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  if (!selectedRows.length)
     return
-  const rawRecord = extractSelectorRawRecord(selected)
   const config = recordSelectorConfig.value
+  const multiple = fieldMultiple.value || config.multiple === true
   const valueField = props.field?.valueField || props.field?.props?.valueField || config.valueField || 'id'
   const labelField = props.field?.labelField || props.field?.props?.labelField || props.field?.props?.targetLabelField || config.targetLabelField || config.labelTargetField
   const labelSourceField = props.field?.labelSourceField || props.field?.props?.labelSourceField || config.labelField || config.labelSourceField
+  const labelSource = labelSourceField || firstDisplayFieldName(config.displayFields) || 'name'
+  const values = []
+  const labels = []
+  selectedRows.forEach((selected) => {
+    const rawRecord = extractSelectorRawRecord(selected)
+    const value = rawRecord[valueField] ?? selected[valueField] ?? selected.id
+    if (value === null || value === undefined || String(value).trim() === '')
+      return
+    values.push(value)
+    labels.push(rawRecord[labelSource] ?? selected[labelSource] ?? selected.label ?? '')
+  })
+  const serializedValue = multiple ? serializeSelectionValues(values, true) : (values[0] ?? null)
+  const serializedLabel = multiple ? serializeSelectionLabels(labels) : (labels[0] ?? '')
   const patch = {
-    ...applyRecordFieldMappings(selected, mappings || config.fieldMappings),
-    [props.field.field]: rawRecord[valueField] ?? selected[valueField] ?? selected.id,
+    ...(multiple ? {} : applyRecordFieldMappings(selectedRows[0], mappings || config.fieldMappings)),
+    [props.field.field]: serializedValue,
   }
-  if (labelField && labelSourceField)
-    patch[labelField] = rawRecord[labelSourceField] ?? selected[labelSourceField]
+  if (labelField)
+    patch[labelField] = serializedLabel
+  if (relationLabelValueField.value)
+    patch[relationLabelValueField.value] = serializedLabel
   props.context?.patchFormData?.(patch)
-  emit('update:value', patch[props.field.field])
+  emit('update:value', serializedValue)
+}
+
+/** 弹窗展示字段配置可能是 "field:label" 冒号形式，取纯字段名。 */
+function firstDisplayFieldName(displayFields = []) {
+  const first = Array.isArray(displayFields) ? displayFields[0] : displayFields
+  return String(first || '').split(':')[0].trim() || ''
 }
 
 function handleRuntimePageWidgetUpdate(nextProps = {}) {

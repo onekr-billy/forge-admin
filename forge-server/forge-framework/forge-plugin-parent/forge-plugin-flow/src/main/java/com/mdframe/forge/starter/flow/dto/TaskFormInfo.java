@@ -47,6 +47,18 @@ public class TaskFormInfo {
      */
     private String title;
 
+    /** Current local task mirror status, returned after visibility validation. */
+    private Integer status;
+
+    /** Current assignee; blank means the task is still unclaimed. */
+    private String assignee;
+
+    /** Legacy candidate-user snapshot used by the business-form access check. */
+    private String candidateUsers;
+
+    /** Legacy candidate-group snapshot used by the business-form access check. */
+    private String candidateGroups;
+
     /**
      * 表单类型：dynamic-动态表单, external-外部表单
      */

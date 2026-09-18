@@ -65,6 +65,7 @@
         :loading="authLoading"
         :data-scope-loading="dataScopeLoading"
         :data-scope-options="manageableDataScopeOptions"
+        :link-page-and-actions="false"
       />
 
       <div class="auth-floating-actions">
@@ -224,7 +225,7 @@ async function loadRoleResources(roleId) {
       params: { clientCode: currentAuthClientCode.value, includeParents: true },
     })
     if (res.code === 200) {
-      checkedResourceKeys.value = res.data || []
+      checkedResourceKeys.value = filterAssignableCheckedKeys(res.data, resourceTreeData.value)
       return
     }
     throw new Error(res.message || '角色资源响应异常')
@@ -236,16 +237,38 @@ async function loadRoleResources(roleId) {
   }
 }
 
+/**
+ * 回填角色已授权资源时只保留授权树中真实存在的非目录资源：
+ * 目录由后端按已选页面自动补齐，若把历史绑定中的“孤儿目录”（其下页面已全部取消）
+ * 回填并原样全量提交，会让角色反复出现点开为空的菜单入口。
+ * 资源树不可用时回退为原始列表，避免误清空回填数据。
+ */
+function filterAssignableCheckedKeys(rawIds, tree) {
+  const list = Array.isArray(rawIds) ? rawIds : []
+  if (!Array.isArray(tree) || tree.length === 0)
+    return list
+  const assignableIds = new Set()
+  const walk = (nodes) => {
+    for (const node of nodes || []) {
+      if (Number(node.resourceType) !== 1)
+        assignableIds.add(String(node.id))
+      if (node.children && node.children.length > 0)
+        walk(node.children)
+    }
+  }
+  walk(tree)
+  return list.filter(id => assignableIds.has(String(id)))
+}
+
 async function loadAuthClientResources(sequence) {
   authLoading.value = true
   authLoadFailed.value = false
   checkedResourceKeys.value = []
   resourceTreeData.value = []
   try {
-    await Promise.all([
-      loadResourceTree(),
-      loadRoleResources(currentRole.value.id),
-    ])
+    // 顺序执行：回填勾选依赖资源树剔除目录类资源
+    await loadResourceTree()
+    await loadRoleResources(currentRole.value.id)
   }
   finally {
     if (sequence === loadSequence)

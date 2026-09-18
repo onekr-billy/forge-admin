@@ -114,6 +114,21 @@ public class DynamicCrudController {
         return RespInfo.success();
     }
 
+    @ApiEncrypt
+    @ApiDecrypt
+    @DeleteMapping("/batch")
+    public RespInfo<Integer> batchDelete(@PathVariable String configKey,
+                                          @RequestBody List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return RespInfo.error("请选择要删除的数据");
+        }
+        int affected = dynamicCrudService.batchDeleteByIds(configKey, ids);
+        for (String id : ids) {
+            businessEventPublisher.publishRecordDeleted(configKey, id);
+        }
+        return RespInfo.success(affected);
+    }
+
     @PostMapping("/import")
     public RespInfo<DynamicCrudImportResult> importExcel(@PathVariable String configKey,
                                                          @RequestParam("file") MultipartFile file) {

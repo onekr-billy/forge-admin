@@ -489,20 +489,26 @@ defineExpose({
         <em>{{ schema.processCode }}</em>
       </div>
       <div class="toolbar-actions">
-        <span class="save-state" :class="`is-${saveStatus.tone}`">{{ saveStatus.label }}</span>
-        <NButton size="small" :disabled="!designer.canUndo.value || readonly" @click="designer.undo()">
+        <span class="save-state" :class="`is-${saveStatus.tone}`">
+          <span class="save-state-dot" />
+          {{ saveStatus.label }}
+        </span>
+        <span class="toolbar-divider" />
+        <NButton size="small" quaternary :disabled="!designer.canUndo.value || readonly" @click="designer.undo()">
           撤销
         </NButton>
-        <NButton size="small" :disabled="!designer.canRedo.value || readonly" @click="designer.redo()">
+        <NButton size="small" quaternary :disabled="!designer.canRedo.value || readonly" @click="designer.redo()">
           重做
         </NButton>
-        <NButton size="small" :disabled="!canCopySelected" @click="handleCopyNode">
-          复制节点
+        <span class="toolbar-divider" />
+        <NButton size="small" quaternary :disabled="!canCopySelected" @click="handleCopyNode">
+          复制
         </NButton>
-        <NButton size="small" type="error" secondary :disabled="!canDeleteSelected" @click="handleDeleteNode()">
-          删除节点
+        <NButton size="small" quaternary type="error" :disabled="!canDeleteSelected" @click="handleDeleteNode()">
+          删除
         </NButton>
-        <NButton data-designer-action="validate" size="small" @click="handleValidate">
+        <span class="toolbar-divider" />
+        <NButton data-designer-action="validate" size="small" secondary @click="handleValidate">
           检查流程
         </NButton>
         <NButton
@@ -537,8 +543,8 @@ defineExpose({
       <div class="designer-body min-h-0 flex flex-1">
         <aside class="node-palette">
           <div class="pane-heading">
-            <strong>添加节点</strong>
-            <span>拖到画布连线，或单击插入到选中节点后</span>
+            <strong>节点库</strong>
+            <span>拖拽或单击添加到画布</span>
           </div>
           <button
             v-for="item in palette"
@@ -552,12 +558,20 @@ defineExpose({
             @dragend="handlePaletteDragEnd"
             @click="handleAddNode(item.type)"
           >
-            <span :class="`tone-${item.tone}`" />
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.type === 'APPROVAL' ? '等待 Flowable 审批结果' : '业务编排节点' }}</small>
+            <span class="palette-icon" :class="`tone-${item.tone}`">
+              <svg v-if="item.type === 'CONDITION'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L22 12L12 22L2 12Z" /></svg>
+              <svg v-else-if="item.type === 'ACTION'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+              <svg v-else-if="item.type === 'APPROVAL'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg>
+              <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
+            </span>
+            <span class="palette-text">
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.type === 'APPROVAL' ? '等待审批结果' : item.type === 'CONDITION' ? '分支条件判断' : item.type === 'SUB_PROCESS' ? '调用子流程' : '执行业务操作' }}</small>
+            </span>
           </button>
           <div class="palette-boundary">
-            审批节点只引用已发布模型；会签、驳回、退回和字段权限仍在真实流程设计器中配置。
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" opacity="0.5"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2.5a1 1 0 110 2 1 1 0 010-2zM7 7h2v5H7V7z" /></svg>
+            <span>审批节点引用已发布模型；会签、驳回、退回和字段权限在流程设计器中配置。</span>
           </div>
         </aside>
 
@@ -587,6 +601,7 @@ defineExpose({
               v-for="(item, index) in issues"
               :key="`${item.code}-${item.nodeId}-${index}`"
               class="issue-item"
+              :class="{ 'issue-item--warning': item.level === 'WARNING' }"
             >
               <button
                 type="button"
@@ -611,7 +626,9 @@ defineExpose({
               </button>
             </div>
             <div v-if="!issues.length" class="issue-empty">
-              当前图结构完整；发布前仍需执行服务端依赖与权限校验。
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="issue-empty-icon"><path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><path d="M22 4L12 14.01l-3-3" /></svg>
+              <span>流程结构完整</span>
+              <small>发布前仍需执行服务端依赖与权限校验</small>
             </div>
           </div>
         </aside>
@@ -694,13 +711,33 @@ defineExpose({
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 4px;
+}
+
+.toolbar-divider {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: rgba(148, 163, 184, 0.25);
+  vertical-align: middle;
 }
 
 .save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   margin-right: 4px;
   color: var(--text-color-3, #64748b);
   font-size: 12px;
+}
+
+.save-state-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .save-state.is-saved {
@@ -714,6 +751,22 @@ defineExpose({
 
 .save-state.is-saving {
   color: var(--primary-color, #2563eb);
+}
+
+.save-state.is-saving .save-state-dot {
+  animation: save-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes save-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
 }
 
 .conflict-alert {
@@ -736,24 +789,25 @@ defineExpose({
 }
 
 .node-palette {
-  width: 218px;
-  flex: 0 0 218px;
+  width: 220px;
+  flex: 0 0 220px;
   overflow-y: auto;
-  border-right: 1px solid rgba(148, 163, 184, 0.25);
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
   background: var(--card-color, #fff);
-  padding: 14px 12px;
+  padding: 16px 12px;
 }
 
 .pane-heading {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin: 0 4px 12px;
+  margin: 0 4px 14px;
 }
 
 .pane-heading strong {
   color: var(--text-color-1, #0f172a);
   font-size: 13px;
+  font-weight: 600;
 }
 
 .pane-heading span {
@@ -763,18 +817,21 @@ defineExpose({
 
 .palette-item {
   position: relative;
-  display: grid;
+  display: flex;
   width: 100%;
   align-items: center;
-  gap: 2px 9px;
-  margin-bottom: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 7px;
+  gap: 10px;
+  margin-bottom: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
   background: var(--card-color, #fff);
-  padding: 9px 10px;
+  padding: 10px 10px;
   text-align: left;
-  grid-template-columns: 4px 1fr;
   cursor: grab;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .palette-item:active:not(:disabled) {
@@ -784,57 +841,81 @@ defineExpose({
 .palette-item[draggable='true']::after {
   position: absolute;
   top: 50%;
-  right: 9px;
-  color: var(--text-color-3, #94a3b8);
+  right: 8px;
+  color: var(--text-color-3, #cbd5e1);
   content: '⋮⋮';
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: -3px;
   transform: translateY(-50%);
 }
 
 .palette-item:hover:not(:disabled) {
-  border-color: rgba(37, 99, 235, 0.42);
-  background: rgba(37, 99, 235, 0.035);
+  border-color: rgba(37, 99, 235, 0.36);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.06);
+  transform: translateX(2px);
 }
 
-.palette-item > span {
-  width: 4px;
-  height: 29px;
-  border-radius: 3px;
-  background: #64748b;
-  grid-row: 1 / 3;
+.palette-icon {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: #fff;
 }
 
-.palette-item .tone-condition {
-  background: #c17a16;
+.palette-icon.tone-condition {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
-.palette-item .tone-action,
-.palette-item .tone-sub-process {
-  background: #2563eb;
+.palette-icon.tone-action {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
 }
 
-.palette-item .tone-approval {
-  background: #7c3aed;
+.palette-icon.tone-approval {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
 }
 
-.palette-item strong {
+.palette-icon.tone-sub-process {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+}
+
+.palette-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette-text strong {
   color: var(--text-color-1, #0f172a);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
-.palette-item small {
-  color: var(--text-color-3, #64748b);
-  font-size: 10px;
+.palette-text small {
+  color: var(--text-color-3, #94a3b8);
+  font-size: 11px;
 }
 
 .palette-boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   margin-top: 14px;
-  border-top: 1px solid rgba(148, 163, 184, 0.22);
-  padding: 12px 4px 0;
-  color: var(--text-color-3, #64748b);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.06);
+  padding: 10px;
+  color: var(--text-color-3, #94a3b8);
   font-size: 11px;
-  line-height: 1.6;
+  line-height: 1.55;
+}
+
+.palette-boundary svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .canvas-pane {
@@ -908,10 +989,21 @@ defineExpose({
   width: 100%;
   margin-bottom: 7px;
   border: 1px solid rgba(239, 68, 68, 0.2);
+  border-left: 4px solid rgba(239, 68, 68, 0.6);
   border-radius: 6px;
   background: rgba(254, 242, 242, 0.5);
   text-align: left;
   user-select: text;
+}
+
+.issue-item--warning {
+  border-color: rgba(245, 158, 11, 0.2);
+  border-left-color: rgba(245, 158, 11, 0.7);
+  background: rgba(255, 251, 235, 0.6);
+}
+
+.issue-item--warning .issue-locate:hover {
+  background: rgba(254, 243, 199, 0.4);
 }
 
 .issue-locate {
@@ -962,10 +1054,30 @@ defineExpose({
 }
 
 .issue-empty {
-  padding: 16px 4px;
-  color: var(--text-color-3, #64748b);
-  font-size: 12px;
-  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 8px;
+  text-align: center;
+}
+
+.issue-empty-icon {
+  color: var(--success-color, #15803d);
+  opacity: 0.5;
+  margin-bottom: 2px;
+}
+
+.issue-empty span {
+  color: var(--text-color-2, #334155);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.issue-empty small {
+  color: var(--text-color-3, #94a3b8);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1100px) {

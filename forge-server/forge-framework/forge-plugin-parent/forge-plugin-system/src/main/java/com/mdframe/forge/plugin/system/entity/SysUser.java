@@ -48,6 +48,11 @@ public class SysUser extends TenantEntity {
     private String userClient;
 
     /**
+     * 允许登录的客户端编码，逗号分隔（如 pc,app），空表示不限制
+     */
+    private String allowedClients;
+
+    /**
      * 邮箱
      */
     private String email;

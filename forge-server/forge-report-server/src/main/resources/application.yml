@@ -72,6 +72,10 @@ sa-token:
   active-timeout: ${FORGE_AUTH_ACTIVE_TIMEOUT:7200}
   is-concurrent: ${FORGE_AUTH_ALLOW_CONCURRENT:true}
   is-share: false
+  # 同一账号最大会话数：默认 12 过小，频繁重登/多端登录/委托临时会话共存时会被堆满，
+  # logoutByMaxLoginCount 会把最早的浏览器会话挤下线；调大作防御纵深
+  # （根治靠 SaTokenFlowTokenProvider 的浏览器透传与委托 Token 复用）
+  max-login-count: ${FORGE_AUTH_MAX_LOGIN_COUNT:100}
   is-read-header: true
   is-read-cookie: false
   # 使用Redis存储Session

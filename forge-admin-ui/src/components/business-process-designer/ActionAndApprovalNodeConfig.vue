@@ -1,6 +1,6 @@
 <script setup>
 import { NButton, NEmpty, NSelect, NTag } from 'naive-ui'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { ensureBusinessFlowStatusField } from '@/api/business-app'
 import flowApi from '@/api/flow'
 import DingFlowViewer from '@/components/flow-designer/viewer/DingFlowViewer.vue'
@@ -25,10 +25,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:config', 'openFlowDesigner', 'refreshFlowModel', 'refreshFields', 'editAction'])
 
-const FlowDesignPage = defineAsyncComponent(() => import('@/views/flow/design.vue'))
-
 const localConfig = ref(clone(props.node.config))
-const flowDesignerVisible = ref(false)
+const optimisticFlowModel = ref(null)
 const selectedTemplate = ref('')
 const creatingModel = ref(false)
 const previewXml = ref('')
@@ -41,10 +39,44 @@ const designableFlowModels = computed(() => (props.flowModels || []).filter((ite
   return designerType !== 'business' && Boolean(modelKey(item))
 }))
 
-const flowModelOptions = computed(() => designableFlowModels.value.map(item => ({
-  label: item.modelName || item.name || modelKey(item),
+const selectedFlowModel = computed(() => {
+  const key = stringValue(localConfig.value.flowModelKey)
+  if (!key)
+    return null
+  return designableFlowModels.value.find(item => modelKey(item) === key)
+    || (modelKey(optimisticFlowModel.value) === key ? optimisticFlowModel.value : null)
+    || {
+      modelId: stringValue(localConfig.value.flowModelId),
+      modelKey: key,
+      modelName: localConfig.value.flowModelName || key,
+      deployed: false,
+      pending: true,
+    }
+})
+
+const selectableFlowModels = computed(() => {
+  const published = designableFlowModels.value.filter(isDeployedFlowModel)
+  const selected = selectedFlowModel.value
+  if (!selected || published.some(item => modelKey(item) === modelKey(selected)))
+    return published
+  return [selected, ...published]
+})
+
+const flowModelOptions = computed(() => selectableFlowModels.value.map(item => ({
+  label: isDeployedFlowModel(item)
+    ? (item.modelName || item.name || modelKey(item))
+    : `${item.modelName || item.name || modelKey(item)}（待发布）`,
   value: modelKey(item),
-  deployed: item.deployed === true || Boolean(item.deploymentId),
+  modelKey: modelKey(item),
+  version: item.version,
+  deployed: isDeployedFlowModel(item),
+  // 支持按名称或 modelKey 搜索（默认只匹配 label）
+  filter: (pattern) => {
+    const keyword = String(pattern || '').toLowerCase()
+    return !keyword
+      || String(item.modelName || item.name || '').toLowerCase().includes(keyword)
+      || modelKey(item).toLowerCase().includes(keyword)
+  },
 })))
 
 const resolvedFormAssets = computed(() => (props.formAssets || []).filter(item => stringValue(item?.formKey)))
@@ -64,13 +96,9 @@ const suggestedStatusField = computed(() => {
 const hasIndependentFlowStatus = computed(() => Boolean(suggestedStatusField.value))
 const usesIndependentFlowStatus = computed(() => isFlowStatusField(localConfig.value.statusField))
 
-const selectedFlowModel = computed(() => designableFlowModels.value.find(item =>
-  modelKey(item) === localConfig.value.flowModelKey,
-) || null)
-
 const selectedFlowModelId = computed(() => {
   const item = selectedFlowModel.value
-  return stringValue(item?.modelId || item?.id)
+  return stringValue(item?.modelId || item?.id || localConfig.value.flowModelId)
 })
 
 watch(() => props.node, (value) => {
@@ -82,17 +110,24 @@ watch(() => props.node, (value) => {
   }
 }, { deep: true, immediate: true })
 
+watch(() => props.flowModels, (models) => {
+  const optimisticKey = modelKey(optimisticFlowModel.value)
+  if (optimisticKey && (models || []).some(item => modelKey(item) === optimisticKey))
+    optimisticFlowModel.value = null
+}, { deep: true })
+
 watch(() => props.formAssets, () => {
   if (props.node?.type === 'APPROVAL' && !stringValue(localConfig.value.formAsset?.formKey))
     ensureDefaultApprovalBindings()
 })
 
-watch(() => props.fields, () => {
+watch(() => props.fields, async () => {
   if (props.node?.type === 'APPROVAL')
-    ensureDefaultApprovalBindings()
+    await ensureDefaultApprovalBindings()
 }, { deep: true })
 
-watch(selectedFlowModelId, async (modelId) => {
+watch(selectedFlowModel, async (model) => {
+  const modelId = stringValue(model?.modelId || model?.id || localConfig.value.flowModelId)
   previewXml.value = ''
   if (!modelId)
     return
@@ -135,7 +170,7 @@ function handleActionType(event) {
 }
 
 function handleFlowModelKey(key) {
-  const item = designableFlowModels.value.find(model => modelKey(model) === key)
+  const item = selectableFlowModels.value.find(model => modelKey(model) === key)
   const defaultTitle = localConfig.value.titleTemplate || defaultApprovalTitle()
   patchConfig({
     flowModelKey: key || '',
@@ -163,8 +198,9 @@ function openFlowDesigner() {
   const payload = {
     modelId: selectedFlowModelId.value,
     modelKey: modelKey(selectedFlowModel.value),
+    businessFormKey: stringValue(localConfig.value.formAsset?.formKey),
+    applicationId: stringValue(localConfig.value.formAsset?.applicationId),
   }
-  flowDesignerVisible.value = true
   emit('openFlowDesigner', payload)
 }
 
@@ -206,8 +242,18 @@ async function createAndDesign() {
     })
     const created = response?.data || {}
     const modelId = stringValue(created.id || created.modelId)
+    const createdModelKey = created.modelKey || modelKeyValue
+    optimisticFlowModel.value = {
+      ...created,
+      modelId,
+      modelKey: createdModelKey,
+      modelName: created.modelName || `${objectLabel}审批`,
+      deployed: false,
+      status: created.status ?? 0,
+      pending: true,
+    }
     patchConfig({
-      flowModelKey: created.modelKey || modelKeyValue,
+      flowModelKey: createdModelKey,
       flowModelName: created.modelName || `${objectLabel}审批`,
       flowModelId: modelId,
       versionPolicy: 'PINNED_AT_APPLICATION_PUBLISH',
@@ -215,10 +261,14 @@ async function createAndDesign() {
       statusField: localConfig.value.statusField || suggestedStatusField.value,
       formAsset: defaultForm.formKey ? defaultForm : {},
     })
-    emit('refreshFlowModel', created.modelKey || modelKeyValue)
+    emit('refreshFlowModel', createdModelKey)
     if (modelId) {
-      flowDesignerVisible.value = true
-      emit('openFlowDesigner', { modelId, modelKey: created.modelKey || modelKeyValue })
+      emit('openFlowDesigner', {
+        modelId,
+        modelKey: createdModelKey,
+        businessFormKey: stringValue(defaultForm.formKey),
+        applicationId: stringValue(defaultForm.applicationId),
+      })
     }
   }
   catch (error) {
@@ -227,11 +277,6 @@ async function createAndDesign() {
   finally {
     creatingModel.value = false
   }
-}
-
-function handleFlowDesignerClosed() {
-  flowDesignerVisible.value = false
-  emit('refreshFlowModel', modelKey(selectedFlowModel.value))
 }
 
 function updateSingleReference(key, event) {
@@ -258,8 +303,11 @@ function handleFormAssetUpdate(payload) {
   })
 }
 
-function ensureDefaultApprovalBindings() {
+async function ensureDefaultApprovalBindings() {
   if (props.node?.type !== 'APPROVAL')
+    return
+  // 防止 ensureFlowStatusField 异步过程中重复进入
+  if (ensuringStatusField.value)
     return
   const patch = {}
   const currentFormKey = stringValue(localConfig.value.formAsset?.formKey)
@@ -286,6 +334,9 @@ function ensureDefaultApprovalBindings() {
   }
   if (Object.keys(patch).length)
     patchConfig(patch)
+  // 自动创建 flowStatus 字段（无需用户手动点击）；静默失败，创建成功后由 fields 刷新重入本函数
+  if (!hasIndependentFlowStatus.value && props.objectId)
+    await ensureFlowStatusField({ silent: true })
 }
 
 /**
@@ -302,11 +353,12 @@ function isStableApplicationFormRef(formAsset = {}) {
   return formKey.startsWith('app_') || (Boolean(applicationId) && Boolean(pageId))
 }
 
-async function ensureFlowStatusField() {
+async function ensureFlowStatusField({ silent = false } = {}) {
   if (ensuringStatusField.value)
     return
   if (!props.objectId) {
-    window.$message?.warning('当前流程未关联有效业务对象，无法添加流程状态字段')
+    if (!silent)
+      window.$message?.warning('当前流程未关联有效业务对象，无法添加流程状态字段')
     return
   }
   ensuringStatusField.value = true
@@ -316,10 +368,13 @@ async function ensureFlowStatusField() {
     const fieldCode = stringValue(field.fieldCode || field.field || 'flowStatus')
     patchConfig({ statusField: isFlowStatusField(fieldCode) ? fieldCode : 'flowStatus' })
     emit('refreshFields', field)
-    window.$message?.success('流程状态字段已添加，数据库列已安全同步')
+    if (!silent)
+      window.$message?.success('流程状态字段已添加')
   }
   catch (error) {
-    window.$message?.error(error?.response?.data?.message || error?.message || '添加流程状态字段失败')
+    // 自动触发时静默失败（如缺少 DDL 权限），仅手动点击时提示
+    if (!silent)
+      window.$message?.error(error?.response?.data?.message || error?.message || '添加流程状态字段失败')
   }
   finally {
     ensuringStatusField.value = false
@@ -331,6 +386,19 @@ function isFlowStatusField(value) {
     ? [value.value, value.fieldCode, value.field, value.columnName, value.column]
     : [value]
   return candidates.some(candidate => stringValue(candidate).replace(/[-_]/g, '').toLowerCase() === 'flowstatus')
+}
+
+function renderFlowModelOption({ node, option }) {
+  // 必须渲染 naive-ui 传入的默认 node（已绑定点击选择与选中态），仅在下方追加副标题
+  const subtitle = [
+    option.modelKey || '',
+    option.version ? `v${option.version}` : '',
+    option.deployed ? '已部署' : '待发布',
+  ].filter(Boolean).join(' · ')
+  return h('div', { class: 'flow-model-option' }, [
+    node,
+    subtitle ? h('span', { class: 'flow-model-option-key' }, subtitle) : null,
+  ])
 }
 
 function toFormAssetRef(item) {
@@ -376,6 +444,10 @@ function removeFieldMapping(index) {
 
 function modelKey(item) {
   return stringValue(item?.modelKey || item?.key || item?.value)
+}
+
+function isDeployedFlowModel(item) {
+  return item?.deployed === true || Boolean(item?.deploymentId)
 }
 
 function optionValue(item) {
@@ -564,7 +636,8 @@ function clone(value) {
                 filterable
                 clearable
                 :options="flowModelOptions"
-                placeholder="搜索已有审批模型"
+                placeholder="搜索已发布的审批模型"
+                :render-option="renderFlowModelOption"
                 @update:value="handleFlowModelKey"
               />
               <NButton size="small" secondary :loading="creatingModel" @click="createAndDesign">
@@ -572,8 +645,11 @@ function clone(value) {
               </NButton>
             </div>
             <small>
-              可选已有模型，或直接在本页新建。发布业务流程前请先部署审批模型。
+              可选择已部署模型；新建模型会自动绑定当前节点，完成设计并发布后即可随业务流程发布。
             </small>
+            <div v-if="!flowModelOptions.length && !creatingModel" class="flow-model-empty-guide">
+              <span>暂无已发布的审批模型。点击「新建并设计」创建，当前节点会自动绑定并等待发布。</span>
+            </div>
           </label>
 
           <label class="config-field">
@@ -641,10 +717,10 @@ function clone(value) {
               <NTag
                 v-if="selectedFlowModel"
                 size="small"
-                :type="(selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? 'success' : 'warning'"
+                :type="isDeployedFlowModel(selectedFlowModel) ? 'success' : 'warning'"
                 :bordered="false"
               >
-                {{ (selectedFlowModel.deployed || selectedFlowModel.deploymentId) ? '已部署' : '草稿，可在本页设计后部署' }}
+                {{ isDeployedFlowModel(selectedFlowModel) ? '已部署' : '待发布，可继续设计' }}
               </NTag>
             </div>
             <button
@@ -689,20 +765,6 @@ function clone(value) {
         <small>服务端会检查直接或间接循环，并限制最大调用深度。</small>
       </label>
     </template>
-
-    <div v-if="flowDesignerVisible" class="flow-designer-fullscreen">
-      <FlowDesignPage
-        embedded
-        :model-id="selectedFlowModelId"
-        :business-object-code="objectCode"
-        :business-object-name="objectName || objectCode"
-        :business-form-key="localConfig.formAsset?.formKey || ''"
-        :application-id="localConfig.formAsset?.applicationId || ''"
-        @close="handleFlowDesignerClosed"
-        @saved="handleFlowDesignerClosed"
-        @deployed="handleFlowDesignerClosed"
-      />
-    </div>
   </div>
 </template>
 
@@ -710,7 +772,7 @@ function clone(value) {
 .execution-node-config {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .template-section {
@@ -835,10 +897,11 @@ function clone(value) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid rgba(245, 158, 11, 0.32);
-  border-radius: 7px;
-  background: rgba(245, 158, 11, 0.07);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.04);
   padding: 11px 12px;
+  transition: opacity 200ms ease;
 }
 
 .flow-status-provision > div {
@@ -905,14 +968,14 @@ function clone(value) {
 
 .approval-config-layout {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   grid-template-columns: minmax(0, 1fr);
 }
 
 .approval-config-main {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   min-width: 0;
 }
 
@@ -929,10 +992,11 @@ function clone(value) {
 
 .approval-preview-card {
   min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 7px;
-  background: rgba(241, 245, 249, 0.58);
-  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.6);
+  padding: 14px;
+  transition: opacity 200ms ease;
 }
 
 @container node-config (min-width: 700px) {
@@ -990,16 +1054,6 @@ function clone(value) {
   border-radius: 6px;
 }
 
-.flow-designer-fullscreen {
-  position: fixed;
-  inset: 12px;
-  z-index: 1000;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--card-color, #fff);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
-}
-
 .action-edit-hint {
   display: flex;
   align-items: center;
@@ -1024,5 +1078,36 @@ function clone(value) {
 .action-edit-hint .hint-text {
   font-size: 12px;
   color: #86909c;
+}
+
+.flow-model-empty-guide {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.04);
+  border: 1px dashed rgba(37, 99, 235, 0.2);
+}
+
+.flow-model-empty-guide span {
+  color: var(--text-color-3, #64748b);
+  font-size: 12px;
+  line-height: 1.55;
+}
+</style>
+
+<style>
+/* NSelect 下拉菜单 teleport 到 body，scoped 样式无法命中，需全局样式 */
+.flow-model-option {
+  display: flex;
+  flex-direction: column;
+}
+
+.flow-model-option-key {
+  padding-left: 12px;
+  padding-bottom: 3px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.4;
 }
 </style>

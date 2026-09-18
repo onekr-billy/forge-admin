@@ -12,6 +12,10 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
+vi.mock('@/api/business-app', () => ({
+  queryBusinessRecordSelector: vi.fn(),
+}))
+
 const NFormItemStub = {
   name: 'NFormItem',
   template: '<div><slot name="label" /><slot /></div>',
@@ -263,5 +267,48 @@ describe('aiFormItem managed field events', () => {
     expect(dispatchFieldEvent).toHaveBeenCalledWith('SCAN_COMPLETE', 'barcode', {
       scan: expect.objectContaining({ value: '6901234567890', platform: 'H5' }),
     })
+  })
+})
+
+describe('aiFormItem multi-select storage', () => {
+  const NSelectStub = {
+    name: 'NSelect',
+    props: ['value', 'multiple', 'options'],
+    emits: ['update:value'],
+    template: '<div class="n-select-stub" />',
+  }
+
+  it('echoes comma-separated values as arrays and stores them as comma-separated text', async () => {
+    const wrapper = mount(AiFormItem, {
+      props: {
+        field: {
+          field: 'status',
+          label: '状态',
+          type: 'select',
+          multiple: true,
+          options: [
+            { label: '草稿', value: 'draft' },
+            { label: '已发布', value: 'published' },
+          ],
+        },
+        value: 'draft,published',
+      },
+      global: {
+        stubs: {
+          ...naiveStubs,
+          NFormItem: NFormItemStub,
+          NSelect: NSelectStub,
+          AiRecordSelectorModal: true,
+        },
+      },
+    })
+
+    const select = wrapper.findComponent(NSelectStub)
+    expect(select.props('multiple')).toBe(true)
+    expect(select.props('value')).toEqual(['draft', 'published'])
+
+    select.vm.$emit('update:value', ['draft'])
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('update:value')).toEqual([['draft']])
   })
 })

@@ -10,6 +10,7 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
   const fdsSource = options.formDesignerSchema || config.formDesignerSchema
   const designerLayout = resolveDesignerFormLayout(fdsSource)
   const formOpenMode = resolveFormOpenMode(options, config, designerLayout)
+  const governance = resolveDesignerFormGovernance(fdsSource)
   const configKey = String(config.configKey || '').trim()
   const apiConfig = normalizeApiConfig(config.apiConfig, configKey, designPreview)
   return {
@@ -42,6 +43,10 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     editFormClass: designerLayout.formClass || options.editFormClass || config.editFormClass || '',
     editFormStyle: designerLayout.formStyle || options.editFormStyle || config.editFormStyle,
     formAssets: options.formAssets || config.formAssets || [],
+    // 表单设计器「自动化」配置（字段事件 / 初始化默认值）随运行配置下发，
+    // 与 views/ai/crud-page.vue 的 buildRuntimeFormProfile 产出保持同构。
+    fieldEvents: Array.isArray(governance.fieldEvents) ? governance.fieldEvents : [],
+    formInit: governance.formInit && typeof governance.formInit === 'object' ? governance.formInit : {},
     editXGap: numberOption(designerLayout.columnGap ?? options.editXGap ?? config.editXGap, 12),
     editYGap: numberOption(designerLayout.rowGap ?? options.editYGap ?? config.editYGap, 8),
     tableRowGap: normalizeTableRowGap(options.tableRowGap ?? config.tableRowGap, 8),
@@ -344,6 +349,21 @@ export function resolveDesignerFormLayout(formDesignerSchema) {
     return layout
   }
   return formDesignerSchema.layout || {}
+}
+
+/** 提取表单设计器保存的 governance（与 layout 取自同一个选中表单，兼容单表单与多表单结构）。 */
+export function resolveDesignerFormGovernance(formDesignerSchema) {
+  if (!formDesignerSchema || typeof formDesignerSchema !== 'object')
+    return {}
+  if (Array.isArray(formDesignerSchema.forms) && formDesignerSchema.forms.length) {
+    const defaultFormKey = formDesignerSchema.defaultFormKey
+      || formDesignerSchema.settings?.defaultFormKey
+    const form = formDesignerSchema.forms.find(item => item?.formKey === defaultFormKey)
+      || formDesignerSchema.forms[0]
+    const schema = form?.schema || form || {}
+    return schema.settings?.governance || schema.governance || {}
+  }
+  return formDesignerSchema.settings?.governance || formDesignerSchema.governance || {}
 }
 
 function numberOption(value, fallback) {

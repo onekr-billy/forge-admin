@@ -69,6 +69,15 @@
     >
       <NForm ref="editFormRef" :model="editForm" label-placement="top">
         <div class="column-edit-grid">
+          <NFormItem label="列类型" path="columnType">
+            <NRadioGroup v-model:value="editForm.columnType">
+              <NRadio value="TEXT">文本</NRadio>
+              <NRadio value="IMAGE">图片</NRadio>
+            </NRadioGroup>
+            <template #feedback>
+              选择"图片"后，导出时单元格内嵌入图片，导入时自动提取嵌入图片。
+            </template>
+          </NFormItem>
           <NFormItem
             label="Excel 表头"
             path="columnName"
@@ -94,6 +103,22 @@
           </NFormItem>
         </div>
 
+        <!-- 图片列配置 -->
+        <div v-if="editForm.columnType === 'IMAGE'" class="column-edit-grid" style="margin-top: -4px">
+          <NFormItem label="图片宽度(像素)" path="imageWidth">
+            <NInputNumber v-model:value="editForm.imageWidth" :min="40" :max="600" style="width: 100%" />
+          </NFormItem>
+          <NFormItem label="图片高度(像素)" path="imageHeight">
+            <NInputNumber v-model:value="editForm.imageHeight" :min="30" :max="450" style="width: 100%" />
+          </NFormItem>
+          <NFormItem label="最大图片数量" path="imageMaxCount">
+            <NInputNumber v-model:value="editForm.imageMaxCount" :min="1" :max="20" style="width: 100%" />
+            <template #feedback>
+              同一单元格内最多嵌入的图片数量。
+            </template>
+          </NFormItem>
+        </div>
+
         <div class="column-purpose">
           <div class="column-purpose__title">
             这列用于
@@ -114,7 +139,7 @@
           </div>
         </div>
 
-        <details class="column-advanced" :open="advancedOpen">
+        <details v-if="editForm.columnType !== 'IMAGE'" class="column-advanced" :open="advancedOpen">
           <summary>格式与校验（高级）</summary>
           <p>只有日期、金额、状态翻译或导入校验有特殊要求时才需要填写。</p>
           <div class="column-edit-grid">
@@ -154,7 +179,7 @@
 </template>
 
 <script setup>
-import { NButton, NDataTable, NEmpty, NForm, NFormItem, NInput, NInputNumber, NModal, NSwitch } from 'naive-ui'
+import { NButton, NDataTable, NEmpty, NForm, NFormItem, NInput, NInputNumber, NModal, NRadio, NRadioGroup, NSwitch, NSelect } from 'naive-ui'
 import { computed, h, onMounted, ref, watch } from 'vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTypeSelect from '@/components/lowcode-builder/shared/DictTypeSelect.vue'
@@ -198,7 +223,7 @@ const columns = computed(() => {
       minWidth: 210,
       render: (row, index) => h(SystemTableCell, {
         title: row.columnName || '未命名列',
-        subtitle: `对应字段：${row.fieldName || '未设置'}`,
+        subtitle: `对应字段：${row.fieldName || '未设置'}${row.columnType === 'IMAGE' ? ' · 图片列' : ''}`,
         interactive: true,
         tooltip: `编辑“${row.columnName || row.fieldName || '此列'}”`,
         onActivate: () => handleEdit(row, index),
@@ -256,6 +281,10 @@ function createEmptyColumn(orderNum = 1) {
     exampleValue: '',
     validationRule: '',
     validationMessage: '',
+    columnType: 'TEXT',
+    imageWidth: 120,
+    imageHeight: 90,
+    imageMaxCount: 5,
   }
 }
 
@@ -408,6 +437,10 @@ async function handleSave() {
       exampleValue: item.exampleValue || null,
       validationRule: item.validationRule || null,
       validationMessage: item.validationMessage || null,
+      columnType: item.columnType || 'TEXT',
+      imageWidth: item.columnType === 'IMAGE' ? item.imageWidth : null,
+      imageHeight: item.columnType === 'IMAGE' ? item.imageHeight : null,
+      imageMaxCount: item.columnType === 'IMAGE' ? item.imageMaxCount : null,
     }))
     const res = await request.post('/system/excel/column-config/batch', payload, {
       params: { configKey: props.configKey },
@@ -443,16 +476,24 @@ function requestClose() {
 
 function formatPurpose(row) {
   const labels = []
+  if (row.columnType === 'IMAGE') {
+    labels.push('图片列')
+  }
   if (exportEnabled.value && row.export !== false) {
-    labels.push('导出显示')
+    labels.push(row.columnType === 'IMAGE' ? '导出嵌入图片' : '导出显示')
   }
   if (importEnabled.value && row.importable !== false) {
-    labels.push(row.required === true ? '导入必填' : '可导入')
+    labels.push(row.columnType === 'IMAGE' ? '导入提取图片' : (row.required === true ? '导入必填' : '可导入'))
   }
   return labels.length ? labels.join(' · ') : '暂不使用'
 }
 
 function formatRule(row) {
+  if (row.columnType === 'IMAGE') {
+    const w = row.imageWidth || 120
+    const h = row.imageHeight || 90
+    return `图片 ${w}×${h}px`
+  }
   if (row.dictType) {
     return '状态/类型翻译'
   }
@@ -482,6 +523,10 @@ function normalizeColumnForMode(column) {
     exampleValue: importEnabled.value ? column.exampleValue || '' : '',
     validationRule: importEnabled.value ? column.validationRule || '' : '',
     validationMessage: importEnabled.value ? column.validationMessage || '' : '',
+    columnType: column.columnType || 'TEXT',
+    imageWidth: column.imageWidth ?? 120,
+    imageHeight: column.imageHeight ?? 90,
+    imageMaxCount: column.imageMaxCount ?? 5,
   }
 }
 

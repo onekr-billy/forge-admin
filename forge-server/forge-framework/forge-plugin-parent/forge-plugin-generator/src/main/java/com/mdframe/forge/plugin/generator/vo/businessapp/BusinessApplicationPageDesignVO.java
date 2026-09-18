@@ -30,4 +30,7 @@ public class BusinessApplicationPageDesignVO {
     private Boolean hasBusinessData;
 
     private Map<String, Object> builder = new LinkedHashMap<>();
+
+    /** DDL 同步失败时的警告信息；页面设计已保存，用户可稍后在高级数据设置中同步。 */
+    private String ddlWarning;
 }

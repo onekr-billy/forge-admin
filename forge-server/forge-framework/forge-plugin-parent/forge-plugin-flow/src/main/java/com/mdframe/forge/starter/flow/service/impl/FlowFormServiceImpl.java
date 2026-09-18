@@ -25,8 +25,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 流程表单定义服务实现。
@@ -308,11 +310,16 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     }
 
     private void collectFields(JsonNode node, List<FormFieldCatalogItemDTO> fields) {
+        collectFields(node, fields, null, null);
+    }
+
+    private void collectFields(JsonNode node, List<FormFieldCatalogItemDTO> fields,
+                               String arrayKey, String arrayLabel) {
         if (node == null || node.isNull()) {
             return;
         }
         if (node.isArray()) {
-            node.forEach(child -> collectFields(child, fields));
+            node.forEach(child -> collectFields(child, fields, arrayKey, arrayLabel));
             return;
         }
         if (!node.isObject()) {
@@ -336,7 +343,22 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         }
 
         if (StringUtils.hasText(field) && !field.startsWith("ref_")) {
-            fields.add(toCatalogItem(node, field));
+            boolean arrayField = arrayKey == null && isArrayFormRule(node);
+            FormFieldCatalogItemDTO item = toCatalogItem(node, field);
+            if (arrayField) {
+                item.setDataType("array");
+            } else if (arrayKey != null) {
+                item.setScope("array");
+                item.setArrayKey(arrayKey);
+                item.setArrayLabel(arrayLabel);
+                item.setItemField(field);
+            }
+            fields.add(item);
+            if (arrayField) {
+                collectArrayItemFields(node, fields, field,
+                        StringUtils.hasText(item.getLabel()) ? item.getLabel() : field);
+                return;
+            }
         }
 
         node.fields().forEachRemaining(entry -> {
@@ -344,8 +366,43 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
             if ("props".equals(name) || "_fc_drag_tag".equals(name)) {
                 return;
             }
-            collectFields(entry.getValue(), fields);
+            collectFields(entry.getValue(), fields, arrayKey, arrayLabel);
         });
+    }
+
+    private void collectArrayItemFields(JsonNode node, List<FormFieldCatalogItemDTO> fields,
+                                        String arrayKey, String arrayLabel) {
+        String type = normalizeComponentType(firstText(node, "type", "component", "componentKey"));
+        JsonNode props = node.path("props");
+        if ("tableform".equals(type)) {
+            JsonNode columns = props.path("columns");
+            if (!columns.isArray()) {
+                columns = node.path("columns");
+            }
+            if (columns.isArray()) {
+                for (JsonNode column : columns) {
+                    collectFields(column.path("rule"), fields, arrayKey, arrayLabel);
+                }
+            }
+            return;
+        }
+        JsonNode rules = props.path("rule");
+        if (!rules.isArray()) {
+            rules = node.path("rule");
+        }
+        if (!rules.isArray()) {
+            rules = node.path("children");
+        }
+        collectFields(rules, fields, arrayKey, arrayLabel);
+    }
+
+    private boolean isArrayFormRule(JsonNode node) {
+        String type = normalizeComponentType(firstText(node, "type", "component", "componentKey"));
+        return Set.of("group", "tableform", "subform", "array").contains(type);
+    }
+
+    private String normalizeComponentType(String value) {
+        return value == null ? "" : value.replaceAll("[-_\\s]", "").toLowerCase(Locale.ROOT);
     }
 
     private FormFieldCatalogItemDTO toCatalogItem(JsonNode node, String field) {
@@ -369,7 +426,10 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
             if (!StringUtils.hasText(field.getField())) {
                 continue;
             }
-            merged.putIfAbsent(field.getField(), field);
+            String key = "array".equals(field.getScope())
+                    ? "array:" + field.getArrayKey() + ":" + field.getItemField()
+                    : "main:" + field.getField();
+            merged.putIfAbsent(key, field);
         }
         return new ArrayList<>(merged.values());
     }

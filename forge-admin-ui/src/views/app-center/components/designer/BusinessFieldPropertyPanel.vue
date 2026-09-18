@@ -263,10 +263,10 @@
                   </n-form-item-gi>
                 </n-grid>
 
-                <!-- 弹窗选择器高级配置 -->
-                <n-collapse v-if="relationSelectionMode === 'popup' && unifiedRelationObjectCode" :default-expanded-names="[]" class="relation-advanced-collapse">
+                <!-- 关联选择高级配置：下拉/弹窗共用，搜索字段与过滤参数对两种模式都生效，弹窗专属项仅在弹窗模式展示 -->
+                <n-collapse v-if="unifiedRelationObjectCode" :default-expanded-names="[]" class="relation-advanced-collapse">
                   <n-collapse-item title="高级配置" name="advanced">
-                    <n-grid :cols="2" :x-gap="12">
+                    <n-grid v-if="relationSelectionMode === 'popup'" :cols="2" :x-gap="12">
                       <n-form-item-gi label="套件编码">
                         <n-input
                           v-model:value="form.recordSelectorSuiteCode"
@@ -284,7 +284,7 @@
                         />
                       </n-form-item-gi>
                     </n-grid>
-                    <n-form-item label="弹窗展示字段">
+                    <n-form-item v-if="relationSelectionMode === 'popup'" label="弹窗展示字段">
                       <n-select
                         v-model:value="form.recordSelectorDisplayFields"
                         :options="unifiedTargetFieldOptions"
@@ -306,7 +306,7 @@
                         placeholder="选择用于关键字搜索的字段"
                       />
                     </n-form-item>
-                    <n-form-item label="字段映射">
+                    <n-form-item v-if="relationSelectionMode === 'popup'" label="字段映射">
                       <n-input
                         v-model:value="form.recordSelectorMappingsText"
                         :disabled="field.systemField"
@@ -349,11 +349,11 @@
                 <span>表单显示、列表字段、字段顺序和查询条件，请在表单设计或列表设计中配置；这里维护字段默认值和数据约束。</span>
               </section>
 
-              <section v-if="needsDict" class="cascade-config">
+              <section v-if="showCascadeConfig" class="cascade-config">
                 <div class="cascade-config-head">
                   <div>
                     <strong>级联选项</strong>
-                    <span>本字段选项跟随上级字段的值变化，如：先选部门，再按部门加载人员。</span>
+                    <span>{{ isUserSelectCascadeField ? '选了组织后，人员只能从该组织范围内选择，组织重选时人员同步刷新。' : '本字段选项跟随上级字段的值变化，如：先选部门，再按部门加载人员。' }}</span>
                   </div>
                   <n-switch
                     :value="form.basicProps.cascade.enabled"
@@ -363,22 +363,37 @@
                   />
                 </div>
                 <div v-if="form.basicProps.cascade.enabled" class="cascade-grid">
-                  <n-form-item label="① 上级字段">
+                  <n-form-item :label="isUserSelectCascadeField ? '① 组织字段' : '① 上级字段'">
                     <n-select
                       v-model:value="form.basicProps.cascade.sourceField"
                       :options="cascadeSourceFieldOptions"
                       :disabled="field.systemField"
                       filterable
                       clearable
-                      placeholder="选谁变化时刷新本字段，如：部门"
+                      :placeholder="isUserSelectCascadeField && !hasOrgFieldForCascade ? '未找到组织组件字段，可手动选择其他字段' : '选谁变化时刷新本字段，如：部门'"
                     />
                   </n-form-item>
-                  <n-form-item label="② 联动方式">
+                  <n-form-item v-if="!isUserSelectCascadeField" label="② 联动方式">
                     <n-select
                       v-model:value="form.basicProps.cascade.mode"
                       :options="cascadeModeOptions"
                       :disabled="field.systemField"
                     />
+                  </n-form-item>
+                  <n-form-item v-if="isUserSelectCascadeField" label="② 组织范围">
+                    <n-switch
+                      :value="form.basicProps.cascade.includeChildren !== false"
+                      :disabled="field.systemField"
+                      size="small"
+                      @update:value="updateCascadeIncludeChildren"
+                    >
+                      <template #checked>
+                        含子组织
+                      </template>
+                      <template #unchecked>
+                        仅本组织
+                      </template>
+                    </n-switch>
                   </n-form-item>
                   <n-form-item v-if="form.basicProps.cascade.mode === 'remoteParam'" label="③ 参数名">
                     <n-input
@@ -392,6 +407,9 @@
                   </div>
                   <div v-else-if="form.basicProps.cascade.mode === 'parentDictCode'" class="cascade-remote-hint">
                     从本字段已有选项中按父级编码筛选，需选项数据（字典/静态选项）包含父级编码。
+                  </div>
+                  <div v-else-if="isUserSelectCascadeField" class="cascade-remote-hint">
+                    选了组织后人员选择范围限定在该组织（{{ form.basicProps.cascade.includeChildren === false ? '仅本组织直属人员' : '含全部子组织人员' }}）；组织重选时已选人员会自动清空。
                   </div>
                 </div>
               </section>
@@ -765,6 +783,9 @@ const canOpenFormulaDebugger = computed(() => Boolean(selectedFormulaField.value
 const hasFormulaToolFields = computed(() => formulaToolFields.value.some(item => item?.formulaConfig?.type))
 const changed = computed(() => JSON.stringify(payload.value) !== baseline)
 const needsDict = computed(() => ['DICT', 'RADIO', 'CHECKBOX'].includes(form.fieldType) || ['select', 'radio', 'checkbox', 'dictSelect'].includes(form.componentType))
+// 组织→人员级联：人员组件的级联配置按组织过滤语义处理，与字典级联区分
+const isUserSelectCascadeField = computed(() => form.componentType === 'userSelect')
+const showCascadeConfig = computed(() => needsDict.value || isUserSelectCascadeField.value)
 const isRecordSelectorField = computed(() => form.fieldType === 'RECORD_SELECTOR' || form.componentType === 'recordSelector')
 const isObjectReferenceField = computed(() => form.fieldType === 'REFERENCE' || form.componentType === 'objectReference')
 const businessObjectOptions = ref([])
@@ -878,12 +899,25 @@ const dependFieldOptions = computed(() => {
     }))
 })
 
-const cascadeSourceFieldOptions = computed(() => props.allFields
-  .filter(item => item && item.fieldCode !== form.fieldCode && item.fieldStatus !== 'HIDDEN')
-  .map(item => ({
+const cascadeSourceFieldOptions = computed(() => {
+  const candidates = props.allFields
+    .filter(item => item && item.fieldCode !== form.fieldCode && item.fieldStatus !== 'HIDDEN')
+  // 人员组件级联时优先引导选组织组件字段；无组织字段时回退全部字段，避免空选项死锁
+  if (isUserSelectCascadeField.value) {
+    const orgFields = candidates.filter(item => item.componentType === 'orgTreeSelect')
+    if (orgFields.length) {
+      return orgFields.map(item => ({
+        label: `${item.fieldName || item.label || item.fieldCode}（${item.fieldCode || item.field}）`,
+        value: item.fieldCode || item.field,
+      }))
+    }
+  }
+  return candidates.map(item => ({
     label: `${item.fieldName || item.label || item.fieldCode}（${item.fieldCode || item.field}）`,
     value: item.fieldCode || item.field,
-  })))
+  }))
+})
+const hasOrgFieldForCascade = computed(() => props.allFields.some(item => item && item.componentType === 'orgTreeSelect' && item.fieldCode !== form.fieldCode && item.fieldStatus !== 'HIDDEN'))
 
 watch(
   () => props.field,
@@ -1117,7 +1151,13 @@ function createDefaultConditionRule() {
 }
 
 function normalizePayload(source) {
-  const cascade = normalizeCascade(source.basicProps?.cascade)
+  // 人员组件级联固定按组织过滤，兼容存量/手改配置，避免落到字典联动语义
+  const cascade = normalizeCascade({
+    ...(source.basicProps?.cascade || {}),
+    ...(source.componentType === 'userSelect' && source.basicProps?.cascade?.enabled
+      ? { mode: 'orgFilter' }
+      : {}),
+  })
   const recordSelector = buildRecordSelectorConfig(source)
   const validation = buildValidationConfig(source)
   const basicProps = {
@@ -1908,6 +1948,15 @@ function updateCascadeEnabled(value) {
   form.basicProps.cascade = createDefaultCascade({
     ...(form.basicProps.cascade || {}),
     enabled: value,
+    // 人员组件级联固定按组织过滤，不提供接口/字典联动方式
+    mode: isUserSelectCascadeField.value ? 'orgFilter' : (form.basicProps.cascade?.mode || 'linkedDict'),
+  })
+}
+
+function updateCascadeIncludeChildren(value) {
+  form.basicProps.cascade = createDefaultCascade({
+    ...(form.basicProps.cascade || {}),
+    includeChildren: value,
   })
 }
 
@@ -1917,6 +1966,7 @@ function createDefaultCascade(source = {}) {
     sourceField: source.sourceField || '',
     mode: source.mode || source.matchMode || 'linkedDict',
     paramName: source.paramName || '',
+    includeChildren: source.includeChildren !== false,
     clearOnParentChange: source.clearOnParentChange !== false,
   }
 }
@@ -1925,6 +1975,11 @@ function normalizeCascade(source = {}) {
   const cascade = createDefaultCascade(source)
   if (!cascade.enabled || !cascade.sourceField)
     return { ...cascade, enabled: false }
+  if (cascade.mode === 'orgFilter') {
+    // 组织→人员级联：参数名无意义，仅保留组织范围开关
+    cascade.paramName = ''
+    return cascade
+  }
   if (cascade.mode !== 'remoteParam')
     cascade.paramName = ''
   return cascade
@@ -1946,7 +2001,9 @@ function createDefaultRecordSelector(source = {}) {
 }
 
 function buildRecordSelectorConfig(source) {
-  if (source.fieldType !== 'RECORD_SELECTOR' && source.componentType !== 'recordSelector')
+  const isRecordSelector = source.fieldType === 'RECORD_SELECTOR' || source.componentType === 'recordSelector'
+  // 下拉（REFERENCE/objectReference）与弹窗共用选择器高级配置；下拉模式目标对象存于 referenceObjectCode，仅需持久化搜索/过滤等配置
+  if (!isRecordSelector && source.fieldType !== 'REFERENCE' && source.componentType !== 'objectReference')
     return null
   const config = createDefaultRecordSelector({
     suiteCode: source.recordSelectorSuiteCode,
@@ -1959,9 +2016,11 @@ function buildRecordSelectorConfig(source) {
     fieldMappings: parseMappingLines(source.recordSelectorMappingsText),
     searchParams: parseSearchParamLines(source.recordSelectorSearchParamsText),
   })
-  if (!config.objectCode)
+  // 弹窗模式必须指定目标对象；下拉模式无高级配置时不落盘空对象
+  if (isRecordSelector && !config.objectCode)
     return null
-  return pruneRecordSelectorConfig(config)
+  const pruned = pruneRecordSelectorConfig(config)
+  return Object.keys(pruned).length ? pruned : null
 }
 
 function pruneRecordSelectorConfig(config = {}) {
@@ -2135,7 +2194,7 @@ async function loadBusinessObjectOptions() {
           return true
         })
         .map(item => ({
-          label: `${item.objectName || item.objectCode}（${item.objectCode}）`,
+          label: item.objectName || item.objectCode,
           value: item.objectCode,
           object: item,
         }))
@@ -2283,20 +2342,20 @@ function autoInferRelationFields(objectCode) {
       form.recordSelectorLabelField = inferredDisplay
     if (!form.recordSelectorValueField)
       form.recordSelectorValueField = inferredValue
-    // Also infer keyword fields
-    if (!form.recordSelectorKeywordFields?.length && inferredDisplay) {
-      const keywordCandidates = fieldOptions
-        .filter(f => /name|code|title/i.test(f.value))
-        .map(f => f.value)
-        .slice(0, 3)
-      form.recordSelectorKeywordFields = keywordCandidates.length ? keywordCandidates : [inferredDisplay]
-    }
   }
   else {
     if (!form.referenceDisplayField)
       form.referenceDisplayField = inferredDisplay
     if (!form.referenceValueField)
       form.referenceValueField = inferredValue
+  }
+  // 两种模式共用：未配置搜索字段时按名称/编码/标题推断，下拉搜索与弹窗关键字共用
+  if (!form.recordSelectorKeywordFields?.length && inferredDisplay) {
+    const keywordCandidates = fieldOptions
+      .filter(f => /name|code|title/i.test(f.value))
+      .map(f => f.value)
+      .slice(0, 3)
+    form.recordSelectorKeywordFields = keywordCandidates.length ? keywordCandidates : [inferredDisplay]
   }
 }
 

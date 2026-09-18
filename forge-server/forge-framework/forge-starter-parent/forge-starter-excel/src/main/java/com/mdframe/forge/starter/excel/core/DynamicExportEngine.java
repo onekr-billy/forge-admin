@@ -27,6 +27,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.session.LoginUser;
 
 /**
  * 动态导出引擎
@@ -50,6 +51,85 @@ public class DynamicExportEngine {
     
     @Autowired(required = false)
     private DictValueProvider dictValueProvider;
+
+    // ==================== 水印 & 图片扩展 ====================
+
+    /**
+     * 构建水印处理器（如果配置启用）。
+     */
+    private ExcelWatermarkWriteHandler buildWatermarkHandler(int dataRowCount, int columnCount) {
+        try {
+            Object configManagerService = applicationContext.getBean(
+                    Class.forName("com.mdframe.forge.starter.config.service.ConfigManagerService"));
+            Object watermarkConfig = configManagerService.getClass()
+                    .getMethod("getWatermarkConfig").invoke(configManagerService);
+            Boolean excelWatermark = (Boolean) watermarkConfig.getClass()
+                    .getMethod("getExcelWatermark").invoke(watermarkConfig);
+            log.info("水印配置检查: excelWatermark={}", excelWatermark);
+            if (!Boolean.TRUE.equals(excelWatermark)) {
+                log.info("Excel水印未启用，跳过");
+                return null;
+            }
+            String content = (String) watermarkConfig.getClass().getMethod("getContent").invoke(watermarkConfig);
+            Integer fontSize = (Integer) watermarkConfig.getClass().getMethod("getFontSize").invoke(watermarkConfig);
+            String fontColor = (String) watermarkConfig.getClass().getMethod("getFontColor").invoke(watermarkConfig);
+            Double opacity = (Double) watermarkConfig.getClass().getMethod("getOpacity").invoke(watermarkConfig);
+            Integer rotate = (Integer) watermarkConfig.getClass().getMethod("getRotate").invoke(watermarkConfig);
+            Integer gapX = (Integer) watermarkConfig.getClass().getMethod("getGapX").invoke(watermarkConfig);
+            Integer gapY = (Integer) watermarkConfig.getClass().getMethod("getGapY").invoke(watermarkConfig);
+            String timestampFormat = (String) watermarkConfig.getClass()
+                    .getMethod("getTimestampFormat").invoke(watermarkConfig);
+
+            LoginUser loginUser = currentLoginUser();
+
+            // 内容项按勾选组合拼接，空值与 "null" 字面量由组装器统一过滤
+            String watermarkText = ExcelWatermarkTextComposer.compose(new ExcelWatermarkTextComposer.Parts(
+                    readConfigFlag(watermarkConfig, "getExcelShowSystemName"),
+                    loginUser != null ? loginUser.getSystemName() : null,
+                    content,
+                    readConfigFlag(watermarkConfig, "getExcelShowAccount"),
+                    loginUser != null ? loginUser.getUsername() : null,
+                    readConfigFlag(watermarkConfig, "getExcelShowUsername"),
+                    loginUser != null ? loginUser.getRealName() : null,
+                    readConfigFlag(watermarkConfig, "getExcelShowPhone"),
+                    loginUser != null ? loginUser.getPhone() : null,
+                    readConfigFlag(watermarkConfig, "getExcelShowTime"),
+                    LocalDateTime.now(), timestampFormat));
+            if (watermarkText == null || watermarkText.isBlank()) {
+                log.info("Excel水印内容为空，跳过水印");
+                return null;
+            }
+
+            return new ExcelWatermarkWriteHandler(watermarkText, fontSize, fontColor,
+                    opacity.floatValue(), rotate, gapX, gapY);
+        } catch (Exception e) {
+            log.warn("水印配置不可用，跳过水印: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 读取当前登录用户；会话不可用时返回 null，水印内容项自动跳过
+     */
+    private LoginUser currentLoginUser() {
+        try {
+            Class<?> sessionHelperClass = Class.forName(
+                    "com.mdframe.forge.starter.core.session.SessionHelper");
+            Object loginUser = sessionHelperClass.getMethod("getLoginUser").invoke(null);
+            return loginUser instanceof LoginUser user ? user : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean readConfigFlag(Object config, String getter) {
+        try {
+            Object value = config.getClass().getMethod(getter).invoke(config);
+            return Boolean.TRUE.equals(value);
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     /**
      * 动态导出核心方法
@@ -503,10 +583,22 @@ public class DynamicExportEngine {
 
         // 写入Excel
         String sheetName = metadata.getSheetName() != null ? metadata.getSheetName() : "Sheet1";
-        EasyExcel.write(response.getOutputStream())
-                .head(headers)
-                .sheet(sheetName)
-                .doWrite(mappedData);
+        ExcelWriterBuilder writerBuilder = EasyExcel.write(response.getOutputStream()).head(headers);
+
+        // 注册水印处理器
+        ExcelWatermarkWriteHandler watermarkHandler = buildWatermarkHandler(
+                mappedData.size(), columnConfigs.size());
+        if (watermarkHandler != null) {
+            writerBuilder.registerWriteHandler(watermarkHandler);
+        }
+
+        // 注册图片处理器
+        ExcelImageWriteHandler imageHandler = buildImageHandler(columnConfigs);
+        if (imageHandler != null) {
+            writerBuilder.registerWriteHandler(imageHandler);
+        }
+
+        writerBuilder.sheet(sheetName).doWrite(mappedData);
     }
 
     /**
@@ -675,9 +767,37 @@ public class DynamicExportEngine {
         List<List<Object>> mappedData = mapDataToList(dataList, columnConfigs);
 
         String sheetName = metadata.getSheetName() != null ? metadata.getSheetName() : "Sheet1";
-        EasyExcel.write(outputStream)
-                .head(headers)
-                .sheet(sheetName)
-                .doWrite(mappedData);
+        ExcelWriterBuilder writerBuilder = EasyExcel.write(outputStream).head(headers);
+
+        ExcelWatermarkWriteHandler watermarkHandler = buildWatermarkHandler(
+                mappedData.size(), columnConfigs.size());
+        if (watermarkHandler != null) {
+            writerBuilder.registerWriteHandler(watermarkHandler);
+        }
+        ExcelImageWriteHandler imageHandler = buildImageHandler(columnConfigs);
+        if (imageHandler != null) {
+            writerBuilder.registerWriteHandler(imageHandler);
+        }
+
+        writerBuilder.sheet(sheetName).doWrite(mappedData);
+    }
+
+    /**
+     * 构建图片导出处理器（如果列配置中包含 IMAGE 类型列）。
+     */
+    private ExcelImageWriteHandler buildImageHandler(List<ExcelColumnConfig> columnConfigs) {
+        boolean hasImageColumn = columnConfigs.stream()
+                .anyMatch(c -> "IMAGE".equalsIgnoreCase(c.getColumnType()));
+        if (!hasImageColumn) {
+            return null;
+        }
+        try {
+            Object fileManager = applicationContext.getBean(
+                    Class.forName("com.mdframe.forge.starter.file.core.FileManager"));
+            return new ExcelImageWriteHandler(columnConfigs, fileManager);
+        } catch (Exception e) {
+            log.debug("FileManager不可用，跳过图片导出: {}", e.getMessage());
+            return null;
+        }
     }
 }

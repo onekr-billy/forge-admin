@@ -1,12 +1,17 @@
 <template>
-  <n-modal
-    :show="show"
-    :mask-closable="!busy"
-    :close-on-esc="!busy"
-    :trap-focus="false"
-    :auto-focus="false"
-    class="flow-task-detail-shell-modal"
-    @update:show="emit('update:show', $event)"
+  <component
+    :is="inline ? 'div' : NModal"
+    v-bind="inline ? {} : {
+      show,
+      maskClosable: !busy,
+      closeOnEsc: !busy,
+      trapFocus: false,
+      autoFocus: false,
+      class: 'flow-task-detail-shell-modal',
+      'onUpdate:show': (val) => emit('update:show', val)
+    }"
+    :class="inline ? 'flow-task-detail-shell inline-panel' : undefined"
+    v-show="!inline || show"
   >
     <div class="flow-task-detail-shell" :class="{ fullscreen }">
       <header class="approval-topbar">
@@ -104,15 +109,17 @@
         </aside>
       </div>
     </div>
-  </n-modal>
+  </component>
 </template>
 
 <script setup>
+import { NModal } from 'naive-ui'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import SignatureImage from '@/components/flow/SignatureImage.vue'
 
 defineProps({
   show: { type: Boolean, default: false },
+  inline: { type: Boolean, default: false },
   title: { type: String, default: '' },
   subtitle: { type: String, default: '' },
   statusText: { type: String, default: '' },
@@ -234,6 +241,17 @@ function formatRecordTime(time) {
   width: calc(100vw - 24px);
   height: calc(100vh - 24px);
   max-height: calc(100vh - 24px);
+}
+
+.flow-task-detail-shell.inline-panel {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
 }
 
 .approval-topbar {
@@ -603,7 +621,8 @@ function formatRecordTime(time) {
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .approval-record-points {
