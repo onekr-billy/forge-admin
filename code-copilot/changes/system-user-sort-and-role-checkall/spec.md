@@ -49,12 +49,28 @@ wrapper.and(w -> w.ne(SysResource::getVisible, 0).or().ne(SysResource::getMenuSt
 
 排查中发现 `UserLoadServiceImpl.loadApiPermissions` 仍按 `visible=1` 过滤 API 资源（`loadUserPermissions` 已按同一原则修复，此处为漏网残留）：角色绑定了隐藏 API（库内现有 3 个 `visible=0` 的 API）后鉴权层会 403。移除该条件，与 `loadUserPermissions` 口径对齐。
 
+### F5 角色授权按菜单目录树展示（前端）
+
+角色授权左侧不再把目录节点平铺为互相独立的业务模块，而是按 `sys_resource` 的层级构建可展开菜单目录树：
+
+- 目录节点保留父子关系，菜单页面作为目录下的页面入口叶子节点；选择目录展示其后代页面，选择页面仅展示该页面。
+- `visible=0/menu_status=1` 的功能性隐藏页继续保留原 `resourceId` 和授权能力，在树节点及页面卡片标记“导航隐藏”；不改变保存接口和鉴权口径。
+- 搜索页面时自动定位到匹配叶子并保留父目录上下文；目录级全选/清空只作用于当前选中目录范围。
+- 应用中心传入的扁平权限模块继续兼容，不要求其伪造菜单层级。
+
+### F6 页面入口与接口权限解耦
+
+- 系统角色授权页默认按“页面入口”和“功能/API”独立授权，勾选组织管理下的接口不会自动勾选组织管理页面。
+- 角色资源保存时仅对明确勾选的页面入口补齐父级菜单/目录；单独勾选 API 或按钮只保存自身资源 ID。
+- `visible`/`menu_status` 继续只控制导航显隐，不影响已绑定 API 的鉴权加载。
+- 应用中心的范围化角色授权复用同一归一化规则，避免 API 父级页面被误当成可见入口。
+
 ## 3. 影响范围
 
 | 范围 | 说明 |
 |------|------|
-| 改动文件 | `SysUserMapper.xml`、`SysUserMapperSqlContractTest.java`、`RolePermissionSettings.vue`、`SysResourceServiceImpl.java`、`UserLoadServiceImpl.java`、`SysResourceAssignableTreeContractTest.java` |
-| 行为变化 | 用户分页/导出排序用户类型优先；授权弹窗提供模块级全选/清空；授权树不再显示彻底停用资源；隐藏 API 可正常鉴权 |
+| 改动文件 | `SysUserMapper.xml`、`SysUserMapperSqlContractTest.java`、`RolePermissionSettings.vue`、`RolePermissionNavigation.vue`、`role-permission-model.js`、`SysResourceServiceImpl.java`、`UserLoadServiceImpl.java`、`SysResourceAssignableTreeContractTest.java` |
+| 行为变化 | 用户分页/导出排序用户类型优先；授权弹窗按菜单目录树展示并提供目录级全选/清空；授权树不再显示彻底停用资源；隐藏 API 可正常鉴权 |
 | 不变 | 查询条件与返回结构、"全局授权"下拉、保存接口、菜单管理树（仍显示全部资源便于维护隐藏项） |
 | 无 DB 变更 | 无表结构、无 Flyway 脚本 |
 
@@ -66,6 +82,8 @@ wrapper.and(w -> w.ne(SysResource::getVisible, 0).or().ne(SysResource::getMenuSt
 - [x] 授权树不再出现彻底停用（双隐藏）的废弃目录与 demo 菜单；功能性隐藏页（应用工作台、运行应用等）仍可见可授权
 - [x] 角色绑定 `visible=0` 的 API 后接口不再 403
 - [x] 菜单管理页树不受影响（仍能维护隐藏菜单）
+- [x] 角色授权左侧保留菜单目录层级；隐藏功能页可授权但明确标注“导航隐藏”
+- [x] API/按钮可脱离页面入口授权；仅授权组织管理接口时不生成组织管理导航
 
 ## 5. 已知数据问题（未在本变更处理）
 

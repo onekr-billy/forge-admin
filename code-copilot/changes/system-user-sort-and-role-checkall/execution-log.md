@@ -68,3 +68,99 @@ pnpm exec eslint src/views/system/components/RolePermissionSettings.vue
 pnpm exec vitest run src/views/system/__tests__/user-management-components.spec.js
 # eslint 通过；Tests 5 passed (5)
 ```
+
+## 5. Fix 轮次：角色授权改为菜单目录树（2026-09-18）
+
+### 5.1 变更范围
+
+- `RolePermissionSettings.vue` 不再平铺左侧业务模块，改为消费菜单目录树；目录节点保留嵌套关系，页面入口作为叶子节点。
+- 新增 `RolePermissionNavigation.vue`，负责树导航、搜索、目录状态和隐藏页面提示。
+- 新增 `role-permission-model.js`，负责资源树转换、目录页面收集、搜索过滤和授权状态计算。
+- 隐藏功能页不从权限数据中删除，树节点和页面卡片标记“导航隐藏”；保存的 `resourceIds` 协议不变。
+
+### 5.2 验证
+
+```bash
+cd forge-admin-ui
+source ~/.nvm/nvm.sh && nvm use v20.19.0
+pnpm --ignore-workspace exec eslint \
+  src/views/system/components/RolePermissionSettings.vue \
+  src/views/system/components/RolePermissionNavigation.vue \
+  src/views/system/components/role-permission-model.js \
+  src/views/system/__tests__/role-permission-navigation.spec.js \
+  src/views/app-center/__tests__/role-permission-settings.spec.js
+# 无输出（通过）
+
+pnpm --ignore-workspace exec vitest run \
+  src/views/system/__tests__/role-permission-navigation.spec.js \
+  src/views/app-center/__tests__/role-permission-settings.spec.js
+# Test Files 2 passed；Tests 7 passed (7)
+
+git diff --check
+# 通过
+
+NODE_OPTIONS=--max-old-space-size=8192 pnpm --ignore-workspace build
+# ✓ built in 1m 19s；存在既有 Vite/CSS/动态导入警告，无构建错误
+```
+
+### 5.3 未执行项
+
+- 未启动 Admin/Vite 服务做真实浏览器点击验证，避免在用户未授权的情况下启动并连接业务数据库；生产构建已验证模板和打包。
+- 目录树轮次未修改上述既有文件；后续解耦轮次已在 `RolePermissionModal.vue`、`role.vue`、`SysRoleServiceImpl.java` 和回归测试中补充接口/页面独立授权处理。
+
+## 6. Fix 轮次：页面入口与接口权限解耦（2026-09-18）
+
+### 6.1 改动
+
+| 文件 | 改动 |
+|------|------|
+| `RolePermissionSettings.vue` 的调用方（`role.vue`、`RolePermissionModal.vue`） | 系统角色授权默认关闭页面入口与功能/API 联动，允许只授权接口而不授权页面入口 |
+| `SysRoleServiceImpl.java` | 角色资源归一化改为：API/按钮只保留自身；明确页面入口时才补齐父级页面/目录；范围化应用授权复用同一规则 |
+| `RoleResourceSelectionNormalizer.java` | 抽离页面父链保留规则，避免授权保存与范围化保存出现两套口径 |
+| `SysRoleServiceImplBindResourcesTest.java` | 增加 API-only 资源保存回归用例 |
+| `RoleResourceSelectionNormalizerTest.java` | 增加 API-only、明确页面入口、孤儿目录 3 个无 Mock 单测 |
+
+### 6.2 验证
+
+```bash
+# 前端静态检查
+cd forge-admin-ui
+source ~/.nvm/nvm.sh && nvm use v20.19.0
+pnpm --ignore-workspace exec eslint \
+  src/views/system/role.vue \
+  src/views/system/components/RolePermissionModal.vue \
+  src/views/system/components/RolePermissionSettings.vue \
+  src/views/system/components/RolePermissionNavigation.vue \
+  src/views/system/components/role-permission-model.js
+# 无输出（通过）
+
+pnpm --ignore-workspace exec vitest run \
+  src/views/system/__tests__/role-permission-navigation.spec.js \
+  src/views/app-center/__tests__/role-permission-settings.spec.js
+# Test Files 2 passed；Tests 7 passed
+
+NODE_OPTIONS=--max-old-space-size=8192 pnpm --ignore-workspace build
+# ✓ built in 1m；存在既有 Vite/CSS/动态导入警告，无构建错误
+
+# 后端插件模块编译
+cd forge-server
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home \
+PATH=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home/bin:$PATH \
+mvn -o -pl forge-framework/forge-plugin-parent/forge-plugin-system -am package -DskipTests
+# BUILD SUCCESS
+
+# 核心归一化规则单测（不依赖 Mockito）
+mvn -o -pl forge-framework/forge-plugin-parent/forge-plugin-system test -Penable-tests \
+  -Dtest='RoleResourceSelectionNormalizerTest'
+# Tests run: 3, Failures: 0, Errors: 0 — BUILD SUCCESS
+```
+
+### 6.3 阻断项
+
+```bash
+mvn -o -pl forge-framework/forge-plugin-parent/forge-plugin-system test -Penable-tests \
+  -Dtest='SysRoleServiceImplBindResourcesTest,SysRoleServiceImplScopedPermissionTest'
+# Tests run: 8, Errors: 8；Mockito inline MockMaker 无法加载，根因是当前 JDK/macOS 无法完成 Byte Buddy agent self-attach。
+```
+
+该失败发生在测试初始化阶段，未进入断言；不影响上面的 Java 编译结果。

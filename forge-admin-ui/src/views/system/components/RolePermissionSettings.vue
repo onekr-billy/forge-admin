@@ -1,90 +1,20 @@
 <template>
   <div class="role-permission-workbench">
-    <aside class="permission-sidebar" aria-label="业务模块导航">
-      <div class="sidebar-search">
-        <n-input
-          v-model:value="keyword"
-          clearable
-          placeholder="搜索业务模块或权限"
-          aria-label="搜索业务模块或权限"
-          size="small"
-        >
-          <template #prefix>
-            <i class="i-material-symbols:search" aria-hidden="true" />
-          </template>
-        </n-input>
-
-        <n-dropdown
-          trigger="click"
-          placement="bottom-start"
-          :options="globalBatchOptions"
-          @select="handleGlobalBatchSelect"
-        >
-          <n-button
-            size="small"
-            secondary
-            :disabled="loading || workspaceModules.length === 0"
-            class="batch-menu-button is-sidebar-batch"
-          >
-            <template #icon>
-              <i class="i-material-symbols:admin-panel-settings" />
-            </template>
-            <span>全局授权</span>
-            <i class="i-material-symbols:keyboard-arrow-down batch-menu-chevron" aria-hidden="true" />
-          </n-button>
-        </n-dropdown>
-      </div>
-
-      <div class="module-nav-list">
-        <div v-if="loading" class="module-skeleton-list" aria-label="业务模块加载中">
-          <div v-for="index in 8" :key="`module-skeleton-${index}`" class="module-skeleton-item">
-            <n-skeleton circle size="small" />
-            <n-skeleton text :width="index % 3 === 0 ? '58%' : '72%'" />
-            <n-skeleton circle size="small" class="module-skeleton-status" />
-          </div>
-        </div>
-
-        <template v-else>
-          <button
-            v-for="module in filteredNavigationModules"
-            :key="module.key"
-            type="button"
-            class="module-nav-item"
-            :class="{ 'is-active': activeModuleKey === module.key }"
-            @click="activeModuleKey = module.key"
-          >
-            <span class="module-nav-main">
-              <i :class="moduleIconClass(module)" aria-hidden="true" />
-              <span>{{ module.name }}</span>
-            </span>
-            <span
-              class="module-nav-status"
-              :class="`is-${moduleStatus(module)}`"
-              :title="moduleStatusLabel(moduleStatus(module))"
-            >
-              <i :class="moduleStatusIcon(moduleStatus(module))" aria-hidden="true" />
-            </span>
-          </button>
-
-          <n-empty
-            v-if="filteredNavigationModules.length === 0"
-            description="没有匹配的业务模块"
-            size="small"
-          />
-        </template>
-      </div>
-
-      <div class="sidebar-legend">
-        <span><i class="i-material-symbols:check-circle" />已满配</span>
-        <span><i class="i-material-symbols:do-not-disturb-on" />部分配</span>
-        <span><i class="i-material-symbols:radio-button-unchecked" />未配置</span>
-      </div>
-    </aside>
+    <RolePermissionNavigation
+      :navigation-tree="permissionNavigationTree"
+      :selected-key="activeNavigationKey"
+      :checked-keys="checkedKeys"
+      :loading="loading"
+      :global-batch-options="globalBatchOptions"
+      @update:selected-key="activeNavigationKey = $event"
+      @update:checked-keys="emit('update:checkedKeys', $event)"
+      @global-action="handleGlobalBatchSelect"
+    />
 
     <main class="permission-main">
       <div class="permission-main-toolbar">
         <div class="toolbar-title">
-          <strong>{{ activeModule?.name || '业务权限' }}</strong>
+          <strong>{{ activeNavigationNode?.label || '业务权限' }}</strong>
           <span>{{ selectedActionCount }} / {{ totalActionCount }} 个功能点已授权</span>
         </div>
 
@@ -118,24 +48,24 @@
 
           <div class="toolbar-divider" />
 
-          <div class="batch-pill-control" role="group" aria-label="当前模块批量授权">
+          <div class="batch-pill-control" role="group" aria-label="当前目录批量授权">
             <button
               type="button"
               :disabled="moduleSelectAllDisabled"
-              title="勾选当前业务模块的全部菜单入口和功能权限；跨模块批量请用左侧「全局授权」"
+              title="勾选当前菜单目录的全部入口和功能权限；跨目录批量请用左侧「全局授权」"
               @click="selectAllInActiveModule()"
             >
               <i class="i-material-symbols:done-all" aria-hidden="true" />
-              模块全选
+              目录全选
             </button>
             <button
               type="button"
               :disabled="moduleClearDisabled"
-              title="清空当前业务模块的授权"
+              title="清空当前菜单目录的授权"
               @click="deselectAllInActiveModule()"
             >
               <i class="i-material-symbols:delete-sweep" aria-hidden="true" />
-              模块清空
+              目录清空
             </button>
           </div>
 
@@ -284,9 +214,14 @@
 
                 <span v-else class="page-name">{{ page.name }}</span>
 
-                <span v-if="page.accessItem" class="page-entry-tag">
-                  <i class="i-material-symbols:dashboard-customize" />
-                  页面入口
+                <span
+                  v-if="page.accessItem"
+                  class="page-entry-tag"
+                  :class="{ 'is-hidden': page.navigationHidden }"
+                  :title="page.navigationHidden ? '该菜单不会显示在用户导航中，但权限资源仍可单独授权' : '该资源会作为用户导航中的页面入口'"
+                >
+                  <i :class="page.navigationHidden ? 'i-material-symbols:visibility-off-outline' : 'i-material-symbols:dashboard-customize'" />
+                  {{ page.navigationHidden ? '导航隐藏' : '页面入口' }}
                 </span>
 
                 <span v-else-if="page.accessUnavailableLabel" class="page-entry-tag is-warning">
@@ -404,6 +339,9 @@
                   <i class="i-material-symbols:tune" aria-hidden="true" />
                   <span>业务功能权限</span>
                   <small>该页面能执行哪些操作</small>
+                  <small v-if="!linkPageAndActions" class="independent-permission-hint">
+                    接口/按钮独立授权，不会显示所属菜单
+                  </small>
                 </div>
 
                 <div v-if="page.actionItems.length > 0" class="function-section-list">
@@ -469,6 +407,16 @@
 
 <script setup>
 import { computed, h, ref, watch } from 'vue'
+import {
+  buildPermissionNavigationTree,
+  buildWorkspaceModules,
+  collectPermissionNavigationPages,
+  findPermissionNavigationNode,
+  normalizePermissionModules,
+  permissionSections,
+  uniqueIds,
+} from './role-permission-model'
+import RolePermissionNavigation from './RolePermissionNavigation.vue'
 
 defineOptions({ name: 'RolePermissionSettings' })
 
@@ -507,54 +455,40 @@ const props = defineProps({
   },
   linkPageAndActions: {
     type: Boolean,
-    default: true,
+    // 页面入口和功能/API 默认独立授权，避免“只给接口权限”把所属菜单带入导航。
+    default: false,
   },
 })
 
 const emit = defineEmits(['update:checkedKeys', 'update:dataScopeSettings', 'auxAction'])
 
 const INHERIT_SCOPE = '__inherit__'
-const keyword = ref('')
-const activeModuleKey = ref('')
+const activeNavigationKey = ref('')
 const cascadeEnabled = ref(true)
 const collapsedPageKeys = ref(new Set())
 
 const checkedKeySet = computed(() => new Set(props.checkedKeys.map(String)))
-const dataScopeModuleMap = computed(() => new Map((props.dataScopeSettings.modules || [])
-  .map(module => [module.moduleCode, module])))
 const workspaceModules = computed(() => normalizePermissionModules(
   props.permissionModules.length
     ? props.permissionModules
-    : buildWorkspaceModules(props.resourceTree),
+    : buildWorkspaceModules(props.resourceTree, props.dataScopeSettings.modules || []),
+  props.dataScopeSettings.modules || [],
+))
+const modulesByKey = computed(() => new Map(workspaceModules.value.map(module => [module.key, module])))
+const permissionNavigationTree = computed(() => buildPermissionNavigationTree(workspaceModules.value))
+const activeNavigationNode = computed(() => findPermissionNavigationNode(
+  permissionNavigationTree.value,
+  activeNavigationKey.value,
 ))
 const totalActionCount = computed(() => workspaceModules.value.reduce((total, module) =>
   total + module.pages.reduce((pageTotal, page) => pageTotal + configurableActions(page).length, 0), 0))
 const selectedActionCount = computed(() => workspaceModules.value.reduce((total, module) =>
   total + module.pages.reduce((pageTotal, page) => pageTotal + selectedActionCountInPage(page), 0), 0))
 
-const filteredNavigationModules = computed(() => {
-  const search = keyword.value.trim().toLowerCase()
-  if (!search)
-    return workspaceModules.value
-  return workspaceModules.value.filter(module => module.name.toLowerCase().includes(search)
-    || module.path.toLowerCase().includes(search)
-    || module.pages.some(page => page.name.toLowerCase().includes(search)
-      || page.path.toLowerCase().includes(search)
-      || page.actionItems.some(item => item.label.toLowerCase().includes(search))))
-})
-
-const activeModule = computed(() => filteredNavigationModules.value.find(module => module.key === activeModuleKey.value)
-  || filteredNavigationModules.value[0]
-  || null)
 const activePages = computed(() => {
-  if (!activeModule.value)
+  if (!activeNavigationNode.value)
     return []
-  const search = keyword.value.trim().toLowerCase()
-  if (!search || activeModule.value.name.toLowerCase().includes(search))
-    return activeModule.value.pages
-  return activeModule.value.pages.filter(page => page.name.toLowerCase().includes(search)
-    || page.path.toLowerCase().includes(search)
-    || page.actionItems.some(item => item.label.toLowerCase().includes(search)))
+  return collectPermissionNavigationPages(activeNavigationNode.value, modulesByKey.value)
 })
 const activeDetailPages = computed(() => activePages.value.filter(page => page.hasDetails))
 const pageScopeOptions = computed(() => [
@@ -575,11 +509,9 @@ const defaultScopeDropdownOptions = computed(() => props.dataScopeOptions.map(op
 })))
 const globalBatchOptions = computed(() => batchOptions('global', props.loading || workspaceModules.value.length === 0))
 const moduleBatchOptions = computed(() => batchOptions('module', props.loading || activePages.value.length === 0))
-// 工具栏全选/清空作用于当前激活的业务模块（贴合工作区上下文）；跨模块批量保留在侧栏「全局授权」下拉
+// 工具栏全选/清空作用于当前菜单目录；跨目录批量保留在侧栏「全局授权」下拉
 const activeModuleResourceIds = computed(() => {
-  if (!activeModule.value)
-    return []
-  return uniqueIds(activeModule.value.pages.flatMap(page => page.resourceIds))
+  return uniqueIds(activePages.value.flatMap(page => page.resourceIds))
 })
 const moduleSelectAllDisabled = computed(() => props.loading
   || activeModuleResourceIds.value.length === 0
@@ -587,10 +519,10 @@ const moduleSelectAllDisabled = computed(() => props.loading
 const moduleClearDisabled = computed(() => props.loading
   || !activeModuleResourceIds.value.some(id => checkedKeySet.value.has(String(id))))
 
-watch(filteredNavigationModules, (modules) => {
-  if (modules.some(module => module.key === activeModuleKey.value))
-    return
-  activeModuleKey.value = modules[0]?.key || ''
+watch(permissionNavigationTree, (tree) => {
+  const firstNode = tree[0]
+  if (!findPermissionNavigationNode(tree, activeNavigationKey.value))
+    activeNavigationKey.value = firstNode?.key || ''
 }, { immediate: true })
 
 watch(workspaceModules, (modules) => {
@@ -602,340 +534,12 @@ watch([workspaceModules, () => props.checkedKeys], () => {
   normalizePageAccessKeys()
 }, { immediate: true })
 
-function buildWorkspaceModules(tree) {
-  const modules = []
-  const assignedIds = new Set()
-  const dataScopeCodes = [...dataScopeModuleMap.value.keys()]
-
-  function ensureModule(rawModule) {
-    const key = rawModule?.key || 'module:default'
-    let module = modules.find(item => item.key === key)
-    if (!module) {
-      module = {
-        key,
-        name: rawModule?.name || '业务模块',
-        path: rawModule?.path || '',
-        pages: [],
-      }
-      modules.push(module)
-    }
-    return module
-  }
-
-  function walk(nodes, breadcrumbs = [], currentModule = null) {
-    for (const node of nodes || []) {
-      const type = Number(node.resourceType)
-      const nextBreadcrumbs = [1, 2].includes(type)
-        ? [...breadcrumbs, node.resourceName].filter(Boolean)
-        : breadcrumbs
-      const nextModule = type === 1
-        ? {
-            key: `module:${node.id}`,
-            name: node.resourceName || '未命名模块',
-            path: breadcrumbs.join(' / '),
-          }
-        : currentModule
-
-      if (type === 2) {
-        const ownedActions = collectOwnedActions(node)
-        const childMenus = (node.children || []).some(child => Number(child.resourceType) === 2)
-        if (ownedActions.length > 0 || !childMenus) {
-          const items = groupPermissionItems(ownedActions, node.resourceName)
-          const accessItem = {
-            key: `access:${node.id}`,
-            label: '页面入口',
-            resourceIds: [node.id],
-            permission: String(node.perms || '').trim(),
-          }
-          const actionResourceIds = uniqueIds(items.flatMap(item => item.resourceIds))
-          const resourceIds = uniqueIds([...accessItem.resourceIds, ...actionResourceIds])
-          resourceIds.forEach(id => assignedIds.add(String(id)))
-          const module = ensureModule(nextModule || {
-            key: `module:single:${node.id}`,
-            name: node.resourceName || '业务模块',
-            path: breadcrumbs.join(' / '),
-          })
-          const moduleCode = resolveDataScopeModuleCode([node, ...ownedActions], dataScopeCodes)
-          module.pages.push({
-            key: `page:${node.id}`,
-            name: node.resourceName || '未命名页面',
-            path: nextBreadcrumbs.slice(0, -1).join(' / '),
-            accessItem,
-            actionItems: items,
-            resourceIds,
-            moduleCode,
-            dataScopeModule: moduleCode ? dataScopeModuleMap.value.get(moduleCode) : null,
-          })
-        }
-      }
-
-      const structuralChildren = (node.children || []).filter(child => [1, 2].includes(Number(child.resourceType)))
-      walk(structuralChildren, nextBreadcrumbs, nextModule)
-    }
-  }
-
-  walk(tree)
-
-  const unassignedActions = collectAllActions(tree)
-    .filter(node => !assignedIds.has(String(node.id)))
-  if (unassignedActions.length > 0) {
-    const items = groupPermissionItems(unassignedActions, '')
-    const moduleCode = resolveDataScopeModuleCode(unassignedActions, dataScopeCodes)
-    ensureModule({
-      key: 'module:other',
-      name: '其他业务权限',
-      path: '',
-    }).pages.push({
-      key: 'page:other',
-      name: '未归类权限',
-      path: '',
-      accessItem: null,
-      actionItems: items,
-      resourceIds: uniqueIds(items.flatMap(item => item.resourceIds)),
-      moduleCode,
-      dataScopeModule: moduleCode ? dataScopeModuleMap.value.get(moduleCode) : null,
-    })
-  }
-
-  return modules
-    .filter(module => module.pages.length > 0)
-}
-
-function normalizePermissionModules(modules) {
-  return (modules || []).map((module, moduleIndex) => ({
-    ...module,
-    key: module.key || `module:prepared:${moduleIndex}`,
-    name: module.name || '业务模块',
-    path: module.path || '',
-    pages: (module.pages || []).map((page, pageIndex) => {
-      const actionItems = (page.actionItems || []).map((item, itemIndex) => ({
-        ...item,
-        key: item.key || `permission:${moduleIndex}:${pageIndex}:${itemIndex}`,
-        label: item.label || '使用',
-        resourceIds: uniqueIds(item.resourceIds || []),
-        permissions: uniqueIds(item.permissions || []),
-        sources: Array.isArray(item.sources) ? item.sources : [],
-        disabled: Boolean(item.disabled),
-      }))
-      const accessItem = page.accessItem
-        ? {
-            ...page.accessItem,
-            resourceIds: uniqueIds(page.accessItem.resourceIds || []),
-          }
-        : null
-      const moduleCode = page.moduleCode || page.dataScopeModule?.moduleCode || ''
-      const showDataScopePanel = page.showDataScopePanel === undefined
-        ? true
-        : Boolean(page.showDataScopePanel)
-      const showFunctionPanel = page.showFunctionPanel === undefined
-        ? true
-        : Boolean(page.showFunctionPanel)
-
-      return {
-        ...page,
-        key: page.key || `page:prepared:${moduleIndex}:${pageIndex}`,
-        name: page.name || '未命名页面',
-        path: page.path || '',
-        accessItem,
-        actionItems,
-        moduleCode,
-        dataScopeModule: moduleCode ? dataScopeModuleMap.value.get(moduleCode) || null : null,
-        resourceIds: uniqueIds([
-          ...(accessItem?.resourceIds || []),
-          ...actionItems.flatMap(item => item.resourceIds),
-        ]),
-        showDataScopePanel,
-        showFunctionPanel,
-        hasDetails: showDataScopePanel || showFunctionPanel,
-      }
-    }),
-  })).filter(module => module.pages.length > 0)
-}
-
-function collectOwnedActions(menuNode) {
-  const result = []
-  function walk(nodes) {
-    for (const node of nodes || []) {
-      const type = Number(node.resourceType)
-      if (type === 2)
-        continue
-      if ([3, 4].includes(type))
-        result.push(node)
-      walk(node.children)
-    }
-  }
-  walk(menuNode.children)
-  return result
-}
-
-function collectAllActions(nodes, result = []) {
-  for (const node of nodes || []) {
-    if ([3, 4].includes(Number(node.resourceType)))
-      result.push(node)
-    collectAllActions(node.children, result)
-  }
-  return result
-}
-
-function groupPermissionItems(nodes, pageName) {
-  const groups = new Map()
-  for (const node of nodes) {
-    const type = Number(node.resourceType)
-    const actionKey = permissionActionKey(node)
-    const key = `${permissionSectionKeyByType(type)}:${actionKey}`
-    const current = groups.get(key) || {
-      key,
-      actionKey,
-      sectionKey: permissionSectionKeyByType(type),
-      label: '',
-      resourceIds: [],
-      permissions: [],
-      resourceTypes: new Set(),
-      hasBusinessLabel: false,
-    }
-    current.resourceIds.push(node.id)
-    if (node.perms)
-      current.permissions.push(String(node.perms).trim())
-    current.resourceTypes.add(type)
-    const label = normalizePermissionLabel(node.resourceName, pageName, actionKey)
-    const isBusinessLabel = type === 3
-    if (!current.label || (isBusinessLabel && !current.hasBusinessLabel)) {
-      current.label = label
-      current.hasBusinessLabel = isBusinessLabel
-    }
-    groups.set(key, current)
-  }
-  return [...groups.values()].map(({ hasBusinessLabel, resourceTypes, ...item }) => ({
-    ...item,
-    resourceIds: uniqueIds(item.resourceIds),
-    permissions: uniqueIds(item.permissions),
-    sources: permissionSourceMetas(resourceTypes),
-  }))
-}
-
-function permissionSections(page) {
-  const sections = [
-    {
-      key: 'button',
-      label: '页面按钮',
-      items: [],
-    },
-    {
-      key: 'service',
-      label: '后台服务',
-      items: [],
-    },
-    {
-      key: 'resource',
-      label: '其他资源',
-      items: [],
-    },
-  ]
-  const sectionMap = new Map(sections.map(section => [section.key, section]))
-  for (const item of page.actionItems || []) {
-    const key = item.sectionKey || permissionSectionKeyByType(item.sources?.[0]?.type)
-    const section = sectionMap.get(key) || sectionMap.get('resource')
-    section.items.push(item)
-  }
-  return sections.filter(section => section.items.length > 0)
-}
-
-function permissionSectionKeyByType(type) {
-  if (Number(type) === 3)
-    return 'button'
-  if (Number(type) === 4)
-    return 'service'
-  return 'resource'
-}
-
-function permissionSourceMetas(resourceTypes) {
-  const sortedTypes = [...resourceTypes].sort((left, right) => left - right)
-  return sortedTypes.map((type) => {
-    if (type === 3) {
-      return {
-        type,
-        kind: 'button',
-        label: '按钮',
-      }
-    }
-    if (type === 4) {
-      return {
-        type,
-        kind: 'service',
-        label: '服务',
-      }
-    }
-    return {
-      type,
-      kind: 'resource',
-      label: '资源',
-    }
-  })
-}
-
-function permissionActionKey(node) {
-  const permission = String(node.perms || '')
-  const segments = permission.split(':').filter(segment => segment && segment !== 'api')
-  const rawAction = segments[segments.length - 1] || String(node.resourceName || node.id)
-  const normalized = rawAction.toLowerCase().replace(/_/g, '-')
-  const aliases = {
-    page: 'view',
-    list: 'view',
-    query: 'view',
-    get: 'detail',
-    getbyid: 'detail',
-    add: 'create',
-    save: 'create',
-    update: 'edit',
-    remove: 'delete',
-  }
-  return aliases[normalized] || normalized
-}
-
-function normalizePermissionLabel(resourceName, pageName, actionKey) {
-  let label = String(resourceName || '')
-    .replace(/(?:按钮权限|按钮|接口权限|接口|API)$/i, '')
-    .trim()
-  if (pageName && label.startsWith(pageName))
-    label = label.slice(pageName.length).trim()
-  const fallbackLabels = {
-    view: '查看',
-    detail: '查看详情',
-    create: '新增',
-    edit: '编辑',
-    delete: '删除',
-    export: '导出',
-    import: '导入',
-  }
-  return label || fallbackLabels[actionKey] || '使用'
-}
-
-function resolveDataScopeModuleCode(nodes, availableCodes) {
-  const permissions = nodes
-    .map(node => String(node.perms || '').trim())
-    .filter(Boolean)
-
-  return [...availableCodes]
-    .sort((left, right) => right.length - left.length)
-    .find(code => permissions.some(permission => permission === code || permission.startsWith(`${code}:`)))
-}
-
-function uniqueIds(ids) {
-  const seen = new Set()
-  return ids.filter((id) => {
-    if (id == null || seen.has(String(id)))
-      return false
-    seen.add(String(id))
-    return true
-  })
-}
-
 function renderDropdownIcon(className) {
   return () => h('i', { class: className })
 }
 
 function batchOptions(scope, disabled) {
-  const prefix = scope === 'global' ? '全部' : '当前模块'
+  const prefix = scope === 'global' ? '全部' : '当前目录'
   return [
     {
       label: `只开放${prefix}菜单入口`,
@@ -1116,20 +720,23 @@ function clearAllPermissions() {
 }
 
 function selectAllInActiveModule() {
-  if (!activeModule.value)
+  if (activePages.value.length === 0)
     return
-  updateCheckedKeys(uniqueIds(activeModule.value.pages.flatMap(page => page.resourceIds)), true)
+  updateCheckedKeys(uniqueIds(activePages.value.flatMap(page => page.resourceIds)), true)
 }
 
 function selectMenusInActiveModule() {
-  if (!activeModule.value)
+  if (activePages.value.length === 0)
     return
-  selectMenusInModules([activeModule.value])
+  selectMenusInPages(activePages.value)
 }
 
 function selectMenusInModules(modules) {
+  selectMenusInPages(modules.flatMap(module => module.pages))
+}
+
+function selectMenusInPages(pages) {
   const next = new Map(props.checkedKeys.map(id => [String(id), id]))
-  const pages = modules.flatMap(module => module.pages)
   const menuIds = pages
     .filter(page => page.accessItem)
     .flatMap(page => page.accessItem.resourceIds)
@@ -1143,52 +750,9 @@ function selectMenusInModules(modules) {
 }
 
 function deselectAllInActiveModule() {
-  if (!activeModule.value)
+  if (activePages.value.length === 0)
     return
-  updateCheckedKeys(uniqueIds(activeModule.value.pages.flatMap(page => page.resourceIds)), false)
-}
-
-function moduleStatus(module) {
-  const resourceIds = uniqueIds(module.pages.flatMap(page => page.resourceIds))
-  const selectedCount = resourceIds.filter(id => checkedKeySet.value.has(String(id))).length
-  if (selectedCount === 0)
-    return 'none'
-  if (selectedCount === resourceIds.length)
-    return 'all'
-  return 'partial'
-}
-
-function moduleStatusLabel(status) {
-  const labels = {
-    all: '已全配',
-    partial: '部分配置',
-    none: '未配置',
-  }
-  return labels[status] || '未配置'
-}
-
-function moduleStatusIcon(status) {
-  const icons = {
-    all: 'i-material-symbols:check-circle',
-    partial: 'i-material-symbols:do-not-disturb-on',
-    none: 'i-material-symbols:radio-button-unchecked',
-  }
-  return icons[status] || icons.none
-}
-
-function moduleIconClass(module) {
-  const name = module.name || ''
-  if (name.includes('系统'))
-    return 'i-material-symbols:settings'
-  if (name.includes('用户') || name.includes('人事'))
-    return 'i-material-symbols:group'
-  if (name.includes('流程') || name.includes('审批'))
-    return 'i-material-symbols:account-tree'
-  if (name.includes('合同') || name.includes('文档'))
-    return 'i-material-symbols:contract'
-  if (name.includes('财务') || name.includes('收款'))
-    return 'i-material-symbols:database'
-  return 'i-material-symbols:widgets'
+  updateCheckedKeys(uniqueIds(activePages.value.flatMap(page => page.resourceIds)), false)
 }
 
 function isCollapsed(pageKey) {
@@ -1205,10 +769,10 @@ function togglePageCollapse(pageKey) {
 }
 
 function toggleCollapseAll(collapse) {
-  if (!activeModule.value)
+  if (activePages.value.length === 0)
     return
   const next = new Set(collapsedPageKeys.value)
-  activeModule.value.pages.filter(page => page.hasDetails).forEach((page) => {
+  activePages.value.filter(page => page.hasDetails).forEach((page) => {
     if (collapse)
       next.add(page.key)
     else
@@ -1281,200 +845,6 @@ function updateModuleScope(moduleCode, value) {
   min-height: 0;
   background: #f8fafc;
   color: #0f172a;
-}
-
-.permission-sidebar {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-right: 1px solid #e2e8f0;
-  background: #fff;
-  box-shadow: 2px 0 8px rgba(15, 23, 42, 0.025);
-}
-
-.sidebar-search {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 12px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.batch-menu-button {
-  min-width: 0;
-}
-
-.batch-menu-button.is-sidebar-batch {
-  width: 100%;
-  --n-border: 1px solid #cbd5e1 !important;
-  --n-border-hover: 1px solid #94a3b8 !important;
-  --n-border-pressed: 1px solid #64748b !important;
-  --n-border-focus: 1px solid #2563eb !important;
-  --n-color: #fff !important;
-  --n-color-hover: #f8fafc !important;
-  --n-color-pressed: #f1f5f9 !important;
-}
-
-.batch-menu-button :deep(.n-button__content) {
-  min-width: 0;
-  gap: 5px;
-}
-
-.batch-menu-button span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.batch-menu-chevron {
-  flex: 0 0 auto;
-  margin-left: 2px;
-  color: #64748b;
-  font-size: 16px;
-}
-
-.module-nav-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px;
-  scrollbar-gutter: stable;
-}
-
-.module-skeleton-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.module-skeleton-item {
-  display: flex;
-  align-items: center;
-  min-height: 38px;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.module-skeleton-item :deep(.n-skeleton:nth-child(2)) {
-  flex: 1;
-  min-width: 0;
-}
-
-.module-skeleton-status {
-  margin-left: auto;
-}
-
-.module-nav-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-height: 38px;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #475569;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.4;
-  text-align: left;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
-}
-
-.module-nav-item:hover {
-  background: #f8fafc;
-  color: #0f172a;
-}
-
-.module-nav-item.is-active {
-  background: #eef2ff;
-  color: #3730a3;
-  font-weight: 600;
-}
-
-.module-nav-main {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 8px;
-}
-
-.module-nav-main i {
-  flex: 0 0 auto;
-  color: #94a3b8;
-  font-size: 16px;
-}
-
-.module-nav-item.is-active .module-nav-main i {
-  color: #4f46e5;
-}
-
-.module-nav-main span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.module-nav-status {
-  flex: 0 0 auto;
-  display: inline-flex;
-  font-size: 16px;
-}
-
-.module-nav-status.is-all {
-  color: #10b981;
-}
-
-.module-nav-status.is-partial {
-  color: #f59e0b;
-}
-
-.module-nav-status.is-none {
-  color: #cbd5e1;
-}
-
-.sidebar-legend {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 10px 12px;
-  border-top: 1px solid #f1f5f9;
-  background: rgba(248, 250, 252, 0.72);
-  color: #64748b;
-  font-size: 11px;
-}
-
-.sidebar-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-}
-
-.sidebar-legend i {
-  font-size: 13px;
-}
-
-.sidebar-legend span:nth-child(1) i {
-  color: #10b981;
-}
-
-.sidebar-legend span:nth-child(2) i {
-  color: #f59e0b;
-}
-
-.sidebar-legend span:nth-child(3) i {
-  color: #cbd5e1;
 }
 
 .permission-main {
@@ -1841,6 +1211,12 @@ function updateModuleScope(moduleCode, value) {
   color: #b45309;
 }
 
+.page-entry-tag.is-hidden {
+  border-color: var(--border-light, #cbd5e1);
+  background: var(--bg-secondary, #f8fafc);
+  color: var(--text-tertiary, #64748b);
+}
+
 .page-entry-tag.is-object {
   border-color: #dbeafe;
   background: #eff6ff;
@@ -1930,6 +1306,10 @@ function updateModuleScope(moduleCode, value) {
   color: #64748b;
   font-size: 11px;
   font-weight: 400;
+}
+
+.section-heading .independent-permission-hint {
+  color: #2563eb;
 }
 
 .scope-option-grid {
