@@ -152,7 +152,7 @@ const apiConfig = {
   detail: 'post@/system/dataScopeConfig/getById',
   add: 'post@/system/dataScopeConfig/add',
   update: 'post@/system/dataScopeConfig/edit',
-  delete: 'post@/system/dataScopeConfig/remove',
+  delete: 'post@/system/dataScopeConfig/removeBatch',
 }
 
 const mapperExamples = [

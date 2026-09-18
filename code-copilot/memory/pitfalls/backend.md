@@ -1,6 +1,27 @@
 # 踩坑：后端框架 / Spring / Maven
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 33 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 34 条。
+
+## 插件模块改动后从 admin-server 直接 spring-boot:run 会跑旧代码
+
+**发现日期**：2026-09-17
+
+**问题描述**:
+在 `forge-server/forge-admin-server` 目录执行 `mvn spring-boot:run` 时，Maven 只构建当前模块，`forge-plugin-system` 等兄弟模块依赖从 `~/.m2` 已安装 jar 解析，而非仓库内 `target/classes`。改了插件模块 Java 代码后直接重启 admin-server，进程仍加载旧 jar，表现为“代码已改、行为未变”；启动日志 classpath 里的 `forge-plugin-system-1.0.0.jar` 路径与文件 mtime 可确认。
+
+运行环境的另一坑：`kill`（SIGTERM）可能无法终止 `spring-boot:run` 的 mvn 与 Java 子进程，需 `kill -9` 后再重启。
+
+**解决方案**:
+改动插件模块后，先安装该模块再启动 admin-server：
+
+```bash
+cd forge-server
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-system install -DskipTests
+cd forge-admin-server && mvn spring-boot:run
+```
+
+验证：`ls -la ~/.m2/repository/com/mdframe/forge/forge-plugin-system/1.0.0/forge-plugin-system-1.0.0.jar` 的 mtime 应晚于源码修改时间。
 
 ## Redisson 接口存在不代表社区版可以运行
 
@@ -556,4 +577,45 @@ Surefire 的分组参数需要从测试 classpath 选择 JUnit 4、JUnit 5 或 T
 
 当根 POM 在 `maven-compiler-plugin` 的共享 `<configuration>` 中写入 `<skip>${forge.compiler.skip}</skip>` 时，`testCompile` 也会继承该值，导致即使设置 `maven.test.skip=true`，测试源码仍被编译并可能阻断发布打包。
 
-发布构建需要主源码和测试源码分别配置：主编译使用 `skipMain=${forge.compiler.skip}`，测试编译使用 `skip=${maven.test.skip}`；默认将 `maven.test.skip` 设为 `true`，测试 profile 再显式设为 `false`。这样 `package/install` 不复制测试资源、不编译测试、不运行 Surefire，同时保留显式测试入口。
+发布构建需要主源码和测试源码分别配置：主编译使用 `skipMain=${forge.compiler.skip}`，测试编译使用 `skip=${maven.test.skip}` ；默认将 `maven.test.skip` 设为 `true`，测试 profile 再显式设为 `false`。这样 `package/install` 不复制测试资源、不编译测试 、不运行 Surefire，同时保留显式测试入口。
+
+## 角色成员列表与删除校验必须共用同一有效成员口径
+
+**发现日期**：2026-09-17
+
+**问题描述**：
+角色管理页“成员列表”（`selectRoleUsers`）与“删除前绑定校验”（`countUsersByRole`）各自写 SQL：前者带用户 `del_flag`、租户成员状态过滤，后者直接裸 COUNT，再加上角色绑定存在两套表（有组织维度落 `sys_user_org_role`，无组织用户只能落外层 `sys_user_role`），出现两种矛盾现象：列表看不见成员、删除却提示“已绑定用户”；编辑弹窗能看到角色、成员列表却没有该用户。
+
+**解决方案**：
+列表与校验必须同口径：都以 `sys_user` 为主表并统一过滤 `del_flag`、租户成员状态、租户有效性；成员来源 = `sys_user_org_role`（受 orgId 过滤）+ 仅对“无组织维度记录”生效的外层 `sys_user_role` 兜底支（旧表支用 `NOT EXISTS sys_user_org_role` 限定，避免有组织记录的用户绕过组织筛选）；统计统一 `COUNT(DISTINCT u.id)`。
+
+**影响范围**：
+任何“列表 + 操作前校验”配对的功能（角色成员、岗位成员、组织成员等）；新增其中一侧查询时必须同步对侧。
+
+## 主数据逻辑删除必须级联清理关联表，读取回显必须过滤失效关联
+
+**发现日期**：2026-09-17
+
+**问题描述**：
+岗位、角色等主数据走逻辑删除（`del_flag` 写主键墓碑），但删除入口未同事务清理关联表（`sys_user_post`、`sys_user_role`），读取回显（`selectUserPostIds`、`selectUserRoleIds`）又不过滤失效关联，导致用户编辑弹窗岗位/角色出现裸 ID（如岗位显示“1”，下拉无法映射标签），提交时校验报“岗位不属于当前操作租户”阻塞保存。
+
+**解决方案**：
+删除主数据时在同一事务内清理关联表绑定（关联表属纯关系表，允许物理删除）；读取关联必须 JOIN 主表或二次查询过滤“主数据仍有效”；新增关联读取时优先用 Mapper XML JOIN `del_flag = 0`，不要用 Service 层裸 `LambdaQueryWrapper` 只按 userId 查；历史悬挂行用 Flyway 脚本修复（`LEFT JOIN 主表 ON del_flag = 0 WHERE 主键 IS NULL` 判定悬挂，幂等 DELETE）。
+
+**影响范围**：
+所有“主数据 + 用户关联表”组合（岗位、角色、组织、部门等）。
+
+## 用户类型与租户成员类型必须成对同步，校验报错必须给出可执行建议
+
+**发现日期**：2026-09-17
+
+**问题描述**：
+用户管理编辑弹窗把"用户类型"从普通用户改为租户管理员后，挂"本租户数据"范围角色仍报"角色数据范围超过目标用户类型上限"。根因：`sys_user.user_type`（全局类型）与 `sys_user_tenant.member_type`（租户内成员类型）是两条记录，`resolveEffectiveUserType` 在 user_type != 0 时以 member_type 为准；创建用户（`insertUser`）同步写了两者，但 `updateUser` 只更新 user_type、不同步 member_type，校验仍按旧的普通用户身份执行导致误拒。旧错误文案不携带角色名/数据范围/用户类型，用户无法定位问题。
+
+**解决方案**：
+- 编辑入口在管理员显式传入用户类型时，先同步该用户所有租户绑定的 member_type（`normalizeMemberType` 与创建口径一致：1→1、其余→2），再执行角色数据范围校验；同时把"admin 未传 userType 时重置为普通用户"改为保持原值，避免意外降级。
+- 数据范围校验失败时按「角色【X】的数据范围为【Y】，超出【Z】允许的上限；请调整该角色的数据范围，或调整用户类型」组织文案，明确给出两种可执行路径；"全部数据"范围单独提示"仅系统管理员类型的用户可绑定"。
+- 前端表单在"用户类型"字段加 labelTip 说明分层规则（普通用户不能绑定【本租户数据】及以上；租户管理员不能绑定【全部数据】），让用户在提交前就能看到约束。
+
+**影响范围**：
+所有依赖 `sys_user.user_type` 与 `sys_user_tenant.member_type` 一致性的读写路径（角色数据范围校验、成员类型展示、绑定租户、批量授权）；新增编辑入口时必须成对维护两个字段。

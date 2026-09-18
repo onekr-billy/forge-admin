@@ -1,9 +1,10 @@
 <template>
-  <div class="file-thumbnail" :class="{ large }">
+  <div class="file-thumbnail" :class="{ large, previewable: canPreview }" :title="canPreview ? '点击放大预览' : undefined">
     <i :class="icon" aria-hidden="true" />
     <AuthImage
       v-if="isImageFile(file)" :src="String(file.fileId)" :alt="file.originalName"
       class="thumbnail-image" :img-style="{ width: '100%', height: '100%', objectFit: large ? 'contain' : 'cover' }"
+      :preview="preview"
     />
   </div>
 </template>
@@ -13,7 +14,9 @@ import { computed } from 'vue'
 import AuthImage from '@/components/common/AuthImage.vue'
 import { isImageFile } from '../utils'
 
-const props = defineProps({ file: { type: Object, required: true }, large: Boolean })
+const props = defineProps({ file: { type: Object, required: true }, large: Boolean, preview: Boolean })
+// 图片缩略图在列表中支持点击放大，仅对已成功加载的图片生效（由 AuthImage 内部判断）。
+const canPreview = computed(() => props.preview && isImageFile(props.file))
 // 图标类放在 SFC 中，让 UnoCSS 静态扫描可发现全部文件类型。
 const icon = computed(() => {
   const file = props.file
@@ -56,6 +59,12 @@ const icon = computed(() => {
 .thumbnail-image {
   position: absolute;
   inset: 0;
+}
+.file-thumbnail.previewable .thumbnail-image {
+  transition: filter 150ms;
+}
+.file-thumbnail.previewable:hover .thumbnail-image {
+  filter: brightness(0.92);
 }
 .large {
   width: 100%;

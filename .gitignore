@@ -100,4 +100,5 @@ forge/db/community-export/
 /output/
 /docs/
 /var/
+/.tmp/
 /.tmp-test/

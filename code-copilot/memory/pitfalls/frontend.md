@@ -1,6 +1,40 @@
 # 踩坑：前端 / 构建 / 路由
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 18 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 24 条。
+
+## Vitest 结构测试读取源码时 new URL 不能内联字面量路径
+
+**发现日期**：2026-09-17
+
+**问题描述**:
+用户管理页拆分后新增结构测试，在测试文件里用 `new URL('../user/components/', import.meta.url)` 读取目录并断言 SFC 行数与样式命名空间。Vitest 经 Vite 转换测试文件时，会把 `new URL(<字面量相对路径>, import.meta.url)` 当成静态资源引用处理，运行时 URL 从 `file:` 被改写成 `http://localhost:...`，`readdirSync`/`readFileSync` 抛 `TypeError: The URL must be of scheme file`，结构测试失败但产品代码无问题。
+
+**解决方案**:
+把 URL 构造包进帮助函数再调用，让路径以变量形式传入，Vite 无法静态改写：
+
+```js
+function sourceUrl(relativePath) {
+  return new URL(relativePath, import.meta.url)
+}
+```
+
+也可改用 `fileURLToPath` 组合 `__dirname` 绝对路径。读取源码文件的结构测试统一走帮助函数，避免内联字面量。
+
+## pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
+
+**发现日期**：2026-09-17
+
+**问题描述**:
+在 `forge-admin-ui` 目录执行 `pnpm dev`、`pnpm --dir forge-admin-ui exec vitest ...` 等命令时报 `ERROR  packages field missing or empty`，命令直接退出；Vitest、生产构建、启动 dev server 全部被卡住。根因是仓库 `forge-admin-ui/pnpm-workspace.yaml` 缺少有效 `packages` 字段，pnpm 按空工作区处理。
+
+**解决方案**:
+前端 pnpm 命令统一加 `--ignore-workspace`：
+
+```bash
+source ~/.nvm/nvm.sh && nvm use v20.19.0 && pnpm --dir forge-admin-ui --ignore-workspace exec vitest run <spec>
+```
+
+不要为此擅自修改仓库的 `pnpm-workspace.yaml`；若该文件后续被修复为有效工作区，再去掉 `--ignore-workspace` 复验。
 
 ## SPA fallback 不能吞掉缺失的哈希静态资源
 
@@ -407,3 +441,18 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 - computed 返回新对象时，watch 盯**内容签名**而非对象本身：`JSON.stringify` 关键字段 + 解析后的 params 组成签名 computed，再 `watch(签名, ...)`。
 - 签名必须包含 `${field}` 引用解析后的值（params），否则引用字段值变化不会触发对应下拉重载。
 - 识别特征：多个实例"集体响应"某个单点变化（全量 loading 闪烁、全量重发请求），基本可断定存在引用比较失效的 watch。
+
+## AiCrudPage 的 api-config.delete 必须指向批量删除接口（数组入参）
+
+**发现日期**：2026-09-17
+
+**问题描述**：
+通知公告页批量删除报"缺少必需参数: noticeId"。原因是 `api-config.delete` 写成了单删接口 `post@/system/notice/remove`（后端 `@RequestParam noticeId`）；AiCrudPage 的 `performDelete` 对"无 :id 占位符"的 delete 配置一律按批量契约发请求（POST 配置 URL + body 传主键数组），于是后端参数绑定报缺失。行内单删若也复用了该配置同样会报错，且无 :id 占位符时不会走组件的 `/batch` 分支。
+
+**解决方案**：
+- `api-config.delete` 统一指向模块的批量删除接口并传数组，如 `delete: 'post@/system/xxx/removeBatch'`（post/dictType/config/tenant/role/user 等标准页均为此模式）；后端 `removeBatch(@RequestBody Long[] ids)` 天然兼容单条与批量。
+- 行内单删如需单独走 `@RequestParam` 接口，用自定义 `onClick: handleDelete`（POST + params）实现，不要复用 api-config.delete。
+- 排查口令：批量删除报"缺少必需参数: xxx" == delete 配置指向了 `@RequestParam` 单删接口。
+
+**影响范围**：
+所有使用 AiCrudPage 且启用工具栏批量删除的页面（apiConfig、dataScopeConfig 已同步修正为 removeBatch）。

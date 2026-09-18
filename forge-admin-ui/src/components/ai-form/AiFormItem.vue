@@ -26,6 +26,7 @@
   <!-- 普通表单项 -->
   <n-form-item
     v-else-if="fieldRuntimeVisible"
+    v-bind="$attrs"
     ref="formItemRef"
     :label="field.label"
     :path="field.field"
@@ -79,6 +80,7 @@
         <!-- 输入框 -->
         <n-input
           v-else-if="field.type === 'input'"
+          v-bind="controlProps"
           :value="value"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -86,7 +88,6 @@
           :maxlength="field.maxlength"
           :show-count="field.showCount"
           :size="field.size"
-          v-bind="field.props"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -99,7 +100,7 @@
             :disabled="disabledHandler(field)"
             :clearable="field.props?.allowManualInput !== false"
             :maxlength="field.props?.maxlength || 2048"
-            v-bind="field.props"
+            v-bind="controlProps"
             :readonly="field.props?.allowManualInput === false || fieldRuntimeControl.readonly"
             @update:value="handleUpdate"
             v-on="getComponentEvents(field)"
@@ -127,7 +128,7 @@
           :maxlength="field.maxlength"
           :show-count="field.showCount"
           :autosize="field.autosize"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -145,7 +146,7 @@
           :show-button="field.showButton !== false"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -161,7 +162,7 @@
           :loading="field.loading"
           :remote="field.remote"
           :on-search="field.onSearch"
-          v-bind="field.props"
+          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           :multiple="fieldMultiple"
           @update:value="handleUpdate"
@@ -179,7 +180,7 @@
           :filterable="field.filterable !== false"
           :form-data="formData"
           :cascade="dictCascadeConfig"
-          v-bind="field.props"
+          v-bind="controlProps"
           :multiple="fieldMultiple"
           @update:value="handleUpdate"
         />
@@ -189,7 +190,7 @@
           v-else-if="field.type === 'radio'"
           :value="resolveOptionValue(value)"
           :disabled="disabledHandler(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -210,7 +211,7 @@
           v-else-if="field.type === 'radioButton'"
           :value="resolveOptionValue(value)"
           :disabled="disabledHandler(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -231,7 +232,7 @@
           v-else-if="field.type === 'checkbox'"
           :value="resolveOptionValue(value)"
           :disabled="disabledHandler(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -258,7 +259,7 @@
           :disabled="disabledHandler(field)"
           :checked-value="field.checkedValue ?? true"
           :unchecked-value="field.uncheckedValue ?? false"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         >
@@ -280,7 +281,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -298,7 +299,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -318,7 +319,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -338,7 +339,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -356,7 +357,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM'"
@@ -374,7 +375,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy'"
@@ -391,7 +392,7 @@
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
-          v-bind="field.props"
+          v-bind="controlProps"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -407,7 +408,7 @@
             :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
-            v-bind="field.props"
+            v-bind="controlProps"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -421,7 +422,7 @@
             :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
-            v-bind="field.props"
+            v-bind="controlProps"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -443,7 +444,7 @@
           :list-type="field.listType || 'text'"
           :show-file-list="field.showFileList !== false"
           :on-change="handleUploadChange"
-          v-bind="field.props"
+          v-bind="controlProps"
           v-on="getComponentEvents(field)"
         >
           <n-button>{{ field.uploadText || '点击上传' }}</n-button>
@@ -466,7 +467,7 @@
           :upload-button-text="field.uploadButtonText"
           :disabled="disabledHandler(field)"
           :value-type="field.valueType"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:model-value="handleUpdate"
           @success="(data) => handleUploadSuccess(field, data)"
           @error="(error) => handleUploadError(field, error)"
@@ -488,7 +489,7 @@
           :show-tip="field.showTip"
           :disabled="disabledHandler(field)"
           :value-type="field.valueType"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:model-value="handleUpdate"
           @success="(data) => handleUploadSuccess(field, data)"
           @error="(error) => handleUploadError(field, error)"
@@ -505,7 +506,7 @@
           :step="field.step || 1"
           :marks="field.marks || undefined"
           :tooltip="field.tooltip !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -517,7 +518,7 @@
           :disabled="disabledHandler(field)"
           :count="field.count || 5"
           :allow-half="field.allowHalf"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -529,7 +530,7 @@
           :disabled="disabledHandler(field)"
           :show-alpha="field.showAlpha"
           :modes="field.modes || ['hex']"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -545,7 +546,7 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
@@ -554,7 +555,7 @@
         <!-- 系统组织树选择 -->
         <n-tree-select
           v-else-if="isOrgTreeSelectField(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
@@ -571,7 +572,7 @@
         <!-- 系统用户选择 -->
         <UserSelectPicker
           v-else-if="isUserSelectField(field)"
-          v-bind="field.props"
+          v-bind="controlProps"
           :model-value="value"
           :label-value="resolveUserSelectLabel(field)"
           :placeholder="getPlaceholder(field)"
@@ -595,7 +596,7 @@
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
           :virtual-disabled="field.props?.virtualDisabled ?? !context?.isSearch"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:model-value="handleRegionTreeSelectUpdate(field, $event)"
         />
 
@@ -611,7 +612,7 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
@@ -623,7 +624,7 @@
           :value="resolveOptionValue(value)"
           :options="currentOptions"
           :filterable="field.filterable"
-          v-bind="field.props"
+          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
@@ -645,7 +646,7 @@
           :options="field.options"
           :params="field.params"
           :transform="field.transform"
-          v-bind="field.props"
+          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
@@ -661,7 +662,7 @@
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
           :remote="objectReferenceRemoteEnabled"
-          v-bind="field.props"
+          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           :multiple="fieldMultiple"
           @search="handleObjectReferenceSearch"
@@ -677,7 +678,7 @@
             :disabled="disabledHandler(field)"
             readonly
             clearable
-            v-bind="field.props"
+            v-bind="controlProps"
             @clear="clearRecordSelectorValue"
           />
           <n-button :disabled="disabledHandler(field)" @click="openRecordSelector">
@@ -732,7 +733,7 @@
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
-          v-bind="field.props"
+          v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
         />
@@ -835,10 +836,13 @@ import AiCustomSelect from './AiCustomSelect.vue'
 import AiFormGroupTitle from './AiFormGroupTitle.vue'
 import AiFormSectionTitle from './AiFormSectionTitle.vue'
 import AiRecordSelectorModal from './AiRecordSelectorModal.vue'
+import { resolveControlProps } from './control-props'
 import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, resolveSelectorSearchParams } from './record-selector-utils'
 import { resolveSelectionLabelFields as buildSelectionLabelFields, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
+
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   field: {
@@ -890,6 +894,7 @@ const READONLY_SELECTION_TYPES = new Set([
   'objectReference',
 ])
 
+const controlProps = computed(() => resolveControlProps(props.field?.props))
 const fieldRuntimeControl = computed(() => resolveRuntimeControl(props.field || {}, {
   ...(props.context || {}),
   record: props.formData || {},
@@ -1262,10 +1267,6 @@ function withCurrentValueOption(options = []) {
   if (props.value === null || props.value === undefined || props.value === '')
     return result
   const labelValue = resolveSelectionLabelValue(field)
-  const isQuerySource = field.optionSource?.type === 'QUERY_SOURCE' || field.props?.optionSource?.type === 'QUERY_SOURCE'
-  if (isQuerySource) {
-    console.warn('[withCurrentValueOption]', field.field, 'value:', props.value, 'labelValue:', labelValue, 'existingOptions:', result.length)
-  }
   if (labelValue === null || labelValue === undefined || labelValue === '')
     return result
   const values = Array.isArray(props.value)
@@ -1581,7 +1582,6 @@ async function loadRemoteOptions(source, keyword = '') {
       const resolvedEntries = Object.entries(source.params || {})
       const hasAnyParamValue = resolvedEntries.some(([, v]) => v !== undefined && v !== null && v !== '')
       if (resolvedEntries.length > 0 && !hasAnyParamValue) {
-        console.warn('[QS:allEmpty]', props.field?.field, 'params configured but all empty, blocking')
         remoteOptions.value = []
         return
       }
@@ -1594,7 +1594,6 @@ async function loadRemoteOptions(source, keyword = '') {
       }
       if (keyword && source.keywordParam)
         params[source.keywordParam] = keyword
-      console.warn('[QS:request]', props.field?.field, 'sourceType:', source.sourceType, 'sourceKey:', source.sourceKey, 'params:', JSON.stringify(params))
       try {
         const res = await executeLowcodeQuerySource({
           sourceType: source.sourceType,
@@ -1607,7 +1606,6 @@ async function loadRemoteOptions(source, keyword = '') {
           return
         const result = res?.data || {}
         const normalized = normalizeRemoteOptions(result, source)
-        console.warn('[QUERY_SOURCE:loaded]', props.field?.field, 'sourceKey:', source.sourceKey, 'rows:', normalized.length, 'sample:', normalized[0])
         remoteOptions.value = normalized
       }
       catch (err) {
@@ -2313,7 +2311,6 @@ function getComponentEvents(field) {
  */
 function handleUpdate(newValue) {
   const field = props.field || {}
-  console.warn('[QS:handleUpdate]', field.field, 'newValue:', newValue, 'type:', typeof newValue, 'multiple:', fieldMultiple.value)
   const multiple = fieldMultiple.value
   if (shouldSyncOptionLabels(field))
     syncSelectionLabelFromOptions(field, newValue)

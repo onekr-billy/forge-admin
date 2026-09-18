@@ -1,2 +1,0 @@
-Agent-Class: DiagAgent2
-Can-Redefine-Classes: false

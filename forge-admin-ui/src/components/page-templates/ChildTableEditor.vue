@@ -1,6 +1,6 @@
 <template>
   <div v-if="normalizedChildren.length" class="child-table-editor">
-    <n-tabs type="line" animated>
+    <n-tabs type="line">
       <n-tab-pane
         v-for="child in normalizedChildren"
         :key="resolveChildKey(child)"
@@ -62,15 +62,15 @@
                   :key="row.__rowKey"
                 >
                   <td v-for="field in child.fields" :key="field.field" :data-label="field.label || field.field">
-                    <AiFormItem
-                      v-if="useRuntimeCell(field, child)"
-                      class="child-runtime-cell"
-                      :field="toRuntimeCellField(field)"
-                      :value="row[field.field]"
-                      :form-data="row"
-                      :context="buildRuntimeCellContext(child, rowIndex)"
-                      @update:value="updateCell(child, rowIndex, field, $event)"
-                    />
+                    <div v-if="useRuntimeCell(field, child)" class="child-runtime-cell">
+                      <AiFormItem
+                        :field="toRuntimeCellField(field)"
+                        :value="row[field.field]"
+                        :form-data="row"
+                        :context="buildRuntimeCellContext(child, rowIndex)"
+                        @update:value="updateCell(child, rowIndex, field, $event)"
+                      />
+                    </div>
                     <n-input
                       v-else-if="field.type === 'textarea'"
                       type="textarea"
@@ -214,6 +214,7 @@ import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
 import AiFormItem from '@/components/ai-form/AiFormItem.vue'
 import AiRecordSelectorModal from '@/components/ai-form/AiRecordSelectorModal.vue'
 import { buildChildRowActionContext } from '@/components/ai-form/business-action-runtime'
+import { resolveControlProps } from '@/components/ai-form/control-props'
 import { createFieldEventRuntime } from '@/components/ai-form/field-event-runtime'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
@@ -271,7 +272,10 @@ const normalizedChildren = computed(() => (props.childrenConfig || [])
 watch(
   () => props.value,
   (value) => {
-    localValue.value = normalizeInputValue(value)
+    const next = normalizeInputValue(value)
+    if (isSameEditorValue(localValue.value, next))
+      return
+    localValue.value = next
   },
   { immediate: true, deep: true },
 )
@@ -599,7 +603,7 @@ function toRuntimeCellField(field = {}) {
     showFeedback: false,
     size: field.size || 'small',
     props: {
-      ...(field.props || {}),
+      ...resolveControlProps(field.props),
       size: field.props?.size || field.size || 'small',
     },
   }
@@ -772,15 +776,7 @@ function resolveSelectCellValue(value, field = {}) {
 }
 
 function resolveInputProps(field = {}) {
-  const {
-    value,
-    defaultValue,
-    modelValue,
-    'onUpdate:value': _onUpdateValue,
-    'onUpdate:modelValue': _onUpdateModelValue,
-    ...rest
-  } = field.props || {}
-  return rest
+  return resolveControlProps(field.props)
 }
 
 function normalizeInputValue(value) {
@@ -788,12 +784,22 @@ function normalizeInputValue(value) {
   const result = {}
   normalizedChildren.value.forEach((child) => {
     const key = resolveChildKey(child)
-    result[key] = (Array.isArray(source[key]) ? source[key] : []).map(row => ({
-      __rowKey: row.__rowKey || `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    const previousRows = Array.isArray(localValue.value?.[key]) ? localValue.value[key] : []
+    result[key] = (Array.isArray(source[key]) ? source[key] : []).map((row, index) => ({
       ...row,
+      __rowKey: row.__rowKey || previousRows[index]?.__rowKey || `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     }))
   })
   return result
+}
+
+function isSameEditorValue(left, right) {
+  try {
+    return JSON.stringify(left || {}) === JSON.stringify(right || {})
+  }
+  catch {
+    return false
+  }
 }
 
 function commit() {
@@ -1039,7 +1045,11 @@ defineExpose({
 }
 
 .child-runtime-cell {
+  position: relative;
+  z-index: 1;
   width: 100%;
+  min-width: 0;
+  pointer-events: auto;
 }
 
 .child-runtime-cell :deep(.n-form-item) {

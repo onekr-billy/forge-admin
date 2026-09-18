@@ -10,9 +10,11 @@ import com.mdframe.forge.plugin.system.dto.SysPostQuery;
 import com.mdframe.forge.plugin.system.entity.SysOrg;
 import com.mdframe.forge.plugin.system.entity.SysPost;
 import com.mdframe.forge.plugin.system.entity.SysTenant;
+import com.mdframe.forge.plugin.system.entity.SysUserPost;
 import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
 import com.mdframe.forge.plugin.system.mapper.SysPostMapper;
 import com.mdframe.forge.plugin.system.mapper.SysTenantMapper;
+import com.mdframe.forge.plugin.system.mapper.SysUserPostMapper;
 import com.mdframe.forge.plugin.system.service.ISysPostService;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -33,6 +35,7 @@ public class SysPostServiceImpl extends ServiceImpl<SysPostMapper, SysPost> impl
     private final SysPostMapper postMapper;
     private final SysTenantMapper tenantMapper;
     private final SysOrgMapper orgMapper;
+    private final SysUserPostMapper userPostMapper;
 
     @Override
     public IPage<SysPost> selectPostPage(SysPostQuery query) {
@@ -88,7 +91,12 @@ public class SysPostServiceImpl extends ServiceImpl<SysPostMapper, SysPost> impl
             return false;
         }
         assertTenantReadable(post.getTenantId());
-        return TenantContextHolder.executeIgnore(() -> postMapper.deleteById(id) > 0);
+        return TenantContextHolder.executeIgnore(() -> {
+            userPostMapper.delete(new LambdaQueryWrapper<SysUserPost>()
+                    .eq(SysUserPost::getPostId, id)
+                    .eq(SysUserPost::getTenantId, post.getTenantId()));
+            return postMapper.deleteById(id) > 0;
+        });
     }
 
     @Override

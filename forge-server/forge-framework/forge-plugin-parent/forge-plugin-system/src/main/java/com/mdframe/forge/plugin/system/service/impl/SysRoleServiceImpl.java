@@ -155,6 +155,9 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             userOrgRoleMapper.delete(new LambdaQueryWrapper<SysUserOrgRole>()
                     .eq(SysUserOrgRole::getRoleId, id)
                     .eq(SysUserOrgRole::getTenantId, role.getTenantId()));
+            userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
+                    .eq(SysUserRole::getRoleId, id)
+                    .eq(SysUserRole::getTenantId, role.getTenantId()));
             return roleMapper.deleteById(id) > 0;
         });
     }

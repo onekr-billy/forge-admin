@@ -1128,7 +1128,7 @@ import {
   updateInAppFormAsset,
 } from './in-app-builder/in-app-builder-schema'
 import { bindProvisionedFormData, collectFormDataProvisionTargets, mergePageFieldCatalogs } from './in-app-builder/page-form-data-provisioning'
-import { buildBusinessObjectDesignerPayloadFromFormAsset, syncFormBoundFieldRefs } from './in-app-builder/page-form-object-promotion'
+import { buildBusinessObjectDesignerPayloadFromFormAsset, normalizeObjectDesignerFieldCatalog, syncFormBoundFieldRefs } from './in-app-builder/page-form-object-promotion'
 import {
   isPageManagementSystemPageId,
   PAGE_MANAGEMENT_SYSTEM_PAGES,
@@ -1298,7 +1298,7 @@ const catalogDragBlockType = ref('')
 const suppressCatalogClick = ref(false)
 const activePageFlowTabTarget = ref(null)
 let catalogPointerDragCtx = null
-// 表单设计器的对象设计器上下文（relations/actions），按对象缓存，供子表分区等配置使用。
+// 表单设计器的对象设计器上下文（fields/relations/actions），按对象缓存；字段目录供字段资产货架使用。
 const formDesignerObjectContextByObjectId = ref({})
 const formDesignerObjectContextLoadingIds = reactive(new Set())
 const formDesignerMode = ref(false)
@@ -1560,9 +1560,9 @@ const activeFormAssetBlock = computed(() => {
   return matched
 })
 const activeFormDesignerObjectRef = computed(() => {
-  if (!formDesignerMode.value || !activeFormAssetBlock.value)
-    return null
-  const objectRef = resolvePageBlockObjectRef(activeFormAssetBlock.value)
+  // 表单设计 Tab 默认不进 formDesignerMode；字段资产仍要按绑定对象补齐，
+  // 否则货架只会从当前画布抽字段，「未使用」恒为空。
+  const objectRef = resolvePageBlockObjectRef(activeFormAssetBlock.value || {})
   return isValidPageBlockObjectRef(objectRef) ? objectRef : null
 })
 const activeFormDesignerContext = computed(() => {
@@ -1577,9 +1577,11 @@ const activeFormFields = computed(() => {
   if (!objectRef)
     return assetFields
   const cacheKey = resolveRuntimeObjectCacheKey(objectRef)
+  const designerFields = formDesignerObjectContextByObjectId.value[cacheKey]?.fields || []
   const runtimeFields = runtimeCrudPropsByObjectId.value[cacheKey]?.fieldCatalog || []
-  const protectedRuntimeFields = objectRef.hasBusinessData === true
-    ? runtimeFields.map(field => ({
+  const objectFields = designerFields.length ? designerFields : runtimeFields
+  const protectedObjectFields = objectRef.hasBusinessData === true
+    ? objectFields.map(field => ({
         ...field,
         locked: true,
         fieldBinding: {
@@ -1587,8 +1589,10 @@ const activeFormFields = computed(() => {
           locked: true,
         },
       }))
-    : runtimeFields
-  return protectedRuntimeFields.length ? mergePageFieldCatalogs(assetFields, protectedRuntimeFields) : assetFields
+    : objectFields
+  // 对象字段目录是字段资产货架的事实源；画布字段只补充尚未保存的新字段。
+  // 不能只用当前表单 schema 当字段资产，否则未使用列表恒为空，删除组件后也无法回到未使用。
+  return objectFields.length ? mergePageFieldCatalogs(assetFields, protectedObjectFields) : assetFields
 })
 const activeFormDataState = computed(() => formDataProvisioningByAssetId.value[activeFormAssetId.value] || { status: 'idle', message: '' })
 const selectedPageBlockFormAssetId = computed(() => selectedPageBlock.value?.props?.formAssetId || (formAssets.value.length === 1 ? formAssets.value[0].id : ''))
@@ -2643,7 +2647,7 @@ function preloadPageBlockCrudRuntimeProps(block = {}) {
 }
 
 /**
- * 表单设计器需要对象级的关系与动作上下文（子表分区、底部自定义动作）。
+ * 表单设计器需要对象级字段资产、关系与动作上下文。
  * 与对象设计器同源调用 businessObjectDesigner，按对象缓存；失败仅降级为无上下文。
  */
 async function ensureFormDesignerObjectContext(objectRef) {
@@ -2651,7 +2655,8 @@ async function ensureFormDesignerObjectContext(objectRef) {
   const objectId = objectRef?.objectId ?? objectRef?.id
   if (!cacheKey || objectId === undefined || objectId === null || objectId === '')
     return
-  if (formDesignerObjectContextByObjectId.value[cacheKey] || formDesignerObjectContextLoadingIds.has(cacheKey))
+  const cached = formDesignerObjectContextByObjectId.value[cacheKey]
+  if ((cached && Array.isArray(cached.fields)) || formDesignerObjectContextLoadingIds.has(cacheKey))
     return
   formDesignerObjectContextLoadingIds.add(cacheKey)
   try {
@@ -2663,6 +2668,7 @@ async function ensureFormDesignerObjectContext(objectRef) {
         objectName: designer.objectName || objectRef.objectName || '',
         relations: Array.isArray(designer.relations) ? designer.relations : [],
         actions: Array.isArray(designer.designerOptions?.actions) ? designer.designerOptions.actions : [],
+        fields: normalizeObjectDesignerFieldCatalog(designer.modelSchema?.fields || designer.fields || []),
       },
     }
   }
@@ -2675,8 +2681,17 @@ async function ensureFormDesignerObjectContext(objectRef) {
 }
 
 watch(activeFormDesignerObjectRef, (objectRef) => {
-  if (objectRef)
-    void ensureFormDesignerObjectContext(objectRef)
+  if (!objectRef)
+    return
+  void ensureFormDesignerObjectContext(objectRef)
+  const cacheKey = resolveRuntimeObjectCacheKey(objectRef)
+  const objectId = objectRef.objectId ?? objectRef.id
+  if (!cacheKey || objectId === undefined || objectId === null || objectId === '')
+    return
+  if (runtimeCrudPropsByObjectId.value[cacheKey] || runtimeCrudLoadingObjectIds.has(cacheKey) || runtimeCrudUnavailableObjectIds.has(cacheKey))
+    return
+  runtimeCrudLoadingObjectIds.add(cacheKey)
+  void loadRuntimeCrudProps(objectRef, cacheKey)
 }, { immediate: true })
 
 function createFormFieldVisibilitySettings(currentSettings = {}, fieldRefs = [], forceVisible = false) {

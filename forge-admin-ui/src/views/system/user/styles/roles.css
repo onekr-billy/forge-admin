@@ -1,0 +1,187 @@
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .relation-content-body
+  .auth-modal-content {
+  max-height: none;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 600px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .batch-action-alert {
+  margin-bottom: 8px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .batch-action-form {
+  margin-bottom: 8px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background-color: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-role-search {
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-toolbar-actions {
+  flex-shrink: 0;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0;
+  min-height: 240px;
+  max-height: 500px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .relation-content-body
+  .auth-tree-container {
+  min-height: 0;
+  max-height: none;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container
+  .n-data-table {
+  min-width: 0;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 17px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.15s ease;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon:hover {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon:active {
+  transform: translateY(1px);
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 2px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon
+  i {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container::-webkit-scrollbar-track {
+  background: var(--n-scrollbar-color);
+  border-radius: 4px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container::-webkit-scrollbar-thumb {
+  background: var(--n-scrollbar-color-hover);
+  border-radius: 4px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container::-webkit-scrollbar-thumb:hover {
+  background: var(--n-border-color);
+}
+
+.dark
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container {
+  border-color: #334155;
+}
+
+.dark :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-toolbar {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+.dark
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .auth-tree-container {
+  background: #0f172a;
+}
+
+.dark
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon {
+  border-color: #1d4ed8;
+  background: rgba(30, 58, 138, 0.36);
+  color: #bfdbfe;
+}
+
+.dark
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .role-permission-action-icon:hover {
+  border-color: #60a5fa;
+  background: rgba(30, 64, 175, 0.58);
+  color: #dbeafe;
+}
+
+@media (max-width: 960px) {
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 960px) {
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .auth-role-search,
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+    .auth-toolbar-actions {
+    width: 100%;
+    max-width: none;
+  }
+}

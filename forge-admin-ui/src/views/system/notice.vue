@@ -8,7 +8,7 @@
         detail: 'post@/system/notice/getById',
         add: 'post@/system/notice/add',
         update: 'post@/system/notice/edit',
-        delete: 'post@/system/notice/remove',
+        delete: 'post@/system/notice/removeBatch',
       }"
       :search-schema="searchSchema"
       :columns="tableColumns"
@@ -409,10 +409,10 @@ const unreadUserColumns = [
   { title: '邮箱', key: 'email', ellipsis: { tooltip: true } },
 ]
 
-// 加载组织树数据
+// 加载组织树数据（无组织读取权限的用户静默降级，不阻塞公告浏览）
 async function loadOrgTree() {
   try {
-    const res = await request.get('/system/org/tree')
+    const res = await request.get('/system/org/tree', { needTip: false })
     if (res.code === 200) {
       orgTreeOptions.value = transformOrgTree(res.data)
     }

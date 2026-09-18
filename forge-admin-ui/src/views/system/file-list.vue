@@ -129,7 +129,7 @@ import FileDialogs from './file-list/components/FileDialogs.vue'
 import FileGrid from './file-list/components/FileGrid.vue'
 import FileSidebar from './file-list/components/FileSidebar.vue'
 import FileThumbnail from './file-list/components/FileThumbnail.vue'
-import { canPreviewFile, formatFileDate, formatFileSize } from './file-list/utils'
+import { canPreviewFile, formatFileDate, formatFileSize, isImageFile } from './file-list/utils'
 
 defineOptions({ name: 'FileList' })
 const store = useFileListStore()
@@ -145,7 +145,7 @@ const columns = computed(() => [
     label: '文件名称',
     minWidth: 260,
     render: file => h('div', { class: 'file-identity' }, [
-      h(FileThumbnail, { file }),
+      h(FileThumbnail, { file, preview: isImageFile(file) }),
       canPreviewFile(file)
         ? h('button', { type: 'button', class: 'file-title file-title-link', title: file.originalName, onClick: () => store.preview(file) }, file.originalName)
         : h('span', { class: 'file-title', title: file.originalName }, file.originalName),

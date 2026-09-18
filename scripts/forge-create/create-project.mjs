@@ -715,7 +715,6 @@ function buildTextReplacements(artifactMap, applicationClassMap, options, select
     ['forge/var', `${serverDirName}/var`],
     ['forge_admin_new', options.databaseName],
     ['forge_admin', options.databaseName],
-    ['forge_flow', `${options.databaseName}_flow`],
     ['forge_schema_history', `${snakeName}_schema_history`],
     ['vue-naive-admin', `${options.projectName}-admin-ui`],
     ['com.forge', options.basePackage],
@@ -1105,7 +1104,7 @@ bash scripts/db/init-db.sh \\
   --password your_password
 \`\`\`
 
-如需额外执行本目录按模块收集的 SQL，追加 \`--with-module\`。当前仓库历史大脚本 \`forge-admin-server/sql/初始化脚本.sql\` 还没有拆成 core/module 两层，默认初始化仍会先执行该大脚本，避免基础表缺失。
+以上命令仅用于新建空库，默认先执行 \`db/全量初始化SQL.sql\`，再导入 \`db/seed/required\`。如需额外执行本目录按模块收集的 SQL，追加 \`--with-module\`。\`V1.0.0__baseline.sql\` 仅含基线注释，不会建表；已有业务库不要重跑全量初始化，后续增量由主服务启动时执行 Flyway。
 `
 }
 

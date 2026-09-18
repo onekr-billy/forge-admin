@@ -1,0 +1,58 @@
+.system-user-page {
+  height: 100%;
+  /* padding: 20px; */
+  display: flex;
+  flex-direction: column;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .user-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .user-list-panel {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .user-list-panel
+  .ai-crud-page {
+  height: 100%;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .org-filter-tip {
+  margin-right: 12px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .org-filter-tip
+  .n-tag {
+  font-size: 13px;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .user-table-tag {
+  display: inline-flex;
+  align-items: center;
+}
+
+:where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .user-table-tag
+  .n-tag {
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.dark
+  :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal)
+  .org-filter-tip
+  .n-tag {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.dark :where(.system-user-page, .user-relation-modal, .user-batch-auth-modal, .user-batch-tenant-modal) .empty-state {
+  background: #0f172a;
+}

@@ -223,7 +223,10 @@ const visibleFields = computed(() => {
 })
 
 function isUsed(field = {}) {
-  return props.usedFieldSet.has(field.field || field.fieldCode)
+  const used = props.usedFieldSet
+  if (!used || typeof used.has !== 'function')
+    return false
+  return [field.field, field.fieldCode].filter(Boolean).some(code => used.has(code))
 }
 
 function isLocked(field = {}) {

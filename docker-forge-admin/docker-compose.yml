@@ -2,7 +2,7 @@
 # Forge Admin 一键部署 Docker Compose 编排
 # ============================================
 # 使用方式：
-#   cd docker
+#   cd docker-forge-admin
 #   cp .env.example .env   # 修改配置
 #   docker compose up -d
 #   访问 http://localhost/forge  默认账号: admin/123456

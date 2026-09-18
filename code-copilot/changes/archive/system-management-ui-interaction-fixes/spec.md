@@ -104,3 +104,21 @@
 - **确认时间**：2026-08-08
 - **确认人**：用户
 - **确认内容**：用户明确提出菜单、选择控件和组织树的四项修复要求，授权直接实施。
+
+## 14. 用户管理巨型组件增量拆分（2026-09-17）
+
+- 用户授权治理巨型组件，首批限定 `system/user.vue`；排除 AI 功能、后端、数据库和接口协议变更。
+- 页面入口只负责布局与生命周期；组织树、用户列表、重置密码、关系工作台及其五个面板、批量操作按职责拆分，单个 SFC 不超过 800 行。
+- 共享状态由 `stores/system/userManagementStore.js` 管理，内部按组织、角色、成员关系、表单和工作台编排拆分；纯转换函数独立。组件实例只通过非持久化私有引用连接，关闭密码弹窗和退出页面清理草稿，重新进入不复用旧状态。
+- 保持当前用户保护、登录租户参数、角色排序、批量授权追加语义、字典响应式、导入导出、关系页签及滚动行为。已有权限写操作仅迁移，不放开权限、不执行真实敏感写请求；仍需人工验收授权主路径。
+- 样式按领域迁移并限制在用户页及其 Teleport 弹窗命名空间，保留原布局、明暗模式与响应式规则。
+- 增量验证：角色排序与组织树滚动旧基线、表单转换、组织筛选、当前用户保护、授权合并、关系校验、失败 loading、组件挂载与生命周期；执行目标 ESLint、Vitest、生产构建及可用浏览器检查。
+- 验收结论（2026-09-17）：入口从约 4390 行降至 78 行，新增 12 个子组件、9 个领域 JS 模块和 6 个领域样式文件，全部低于 800 行。定向 26/26 Vitest 通过（含 14 项状态测试、3 项真实组件交互测试、旧角色排序 2 项、旧 UI 契约 5 项及结构测试）；目标 ESLint 无告警；生产构建 49.16s 成功；`git diff --check` 通过。本地启动后端 8580 与前端 3002 后完成浏览器只读验证：整体布局、组织树滚动到底、树筛选联动、面板折叠、新增/编辑弹窗、关系工作台五页签、批量授权/加入租户、重置密码弹窗、console 零告警全部通过，均未提交真实写请求。
+
+## 15. 系统管理员不受自我维护限制（2026-09-17）
+
+- 需求：系统管理员角色（`userType=0`，前端 `userStore.isAdmin`）不再受“不能在用户管理中维护当前登录用户”限制，可对自己执行编辑、重置密码、关系维护、状态变更、删除与批量授权。
+- 判定口径：被操作者恒等于操作者本人，限制条件收敛为“当前登录用户非管理员且目标为用户本人”；前端新增 `isRestrictedCurrentUser(targetUserId) = !userStore.isAdmin && isCurrentLoginUser(targetUserId)`，后端复用既有 `assertNotSelfManagementUnlessAdmin`。
+- 后端 12 处调用从严格版改为放行版，覆盖 `updateUser`、`deleteUserById`、`batchBindUserRoles`、`unbindUserRoles`、`unbindUserOrg`、`bindUserOrgRoles`、`bindUserTenants`、`batchBindUserTenant`、`resetPassword`、`updateUserStatus`、`syncUserRoles`、`bindUserPosts`；替换后删除无调用者的严格私有方法；`bindUserOrg`/`bindUserOrgs` 原本已是放行版本，未改动。
+- 保留边界：初始账号 `id=1` 的禁用/删除按钮保护不变；`updateUser` 中非管理员编辑自己的受限字段路径（`updateCurrentUserFromManagement`）不变。
+- 验证结论（2026-09-17）：4 个目标 suite 27/27 通过（含新增管理员放行用例与状态字段 vIf 断言）、目标 ESLint 无告警、后端 `forge-plugin-system` 模块编译通过；浏览器与真实写路径由用户自行验证。
