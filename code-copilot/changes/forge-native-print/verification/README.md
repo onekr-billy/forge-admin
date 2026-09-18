@@ -34,3 +34,22 @@ node code-copilot/changes/forge-native-print/verification/serve.mjs --build
 检查：元素拖动/右下角缩放、Shift 多选和空白区框选、方向键、元素复制粘贴、字段拖入、区块上下排序、属性修改、多行表头合并拆分与合计、保存/恢复/导入导出、新建取消、失效字段定位、真实分页预览、明暗主题和窄窗口。底部“验证状态”显示实际 Pinia 状态的只读摘要。
 
 本轮证据：[browser-results-m2.json](browser-results-m2.json)。主页面组件落在 `forge-admin-ui/src/views/print/designer.vue`；正式模板列表、权限菜单、数据源绑定与 API 保存仍待 M3/T28、M4 接入。
+
+
+## M3b 持久化与运行验证
+
+正式模板页现在通过服务端 API 保存，M2 本地草稿模式仅保留在独立组件验证入口。
+
+在根目录使用 Node 24.21.0 执行：
+
+```bash
+node code-copilot/changes/forge-native-print/verification/serve.mjs --persistence
+```
+
+访问 `http://127.0.0.1:4318/persistence.html`。仅在该模式中把 API、字典和当前用户替换为合成实现；生产构建不导入这些 mock。HTTP 仅监听 localhost，内存数据随进程结束清除。m3b-wire.json 是 PrintTemplateControllerTest 通过真实 Service/Mapper/事务生成的合成 prepare 响应，时间戳作为固定样例保存。
+
+依次检查：新建→设计→保存→发布→版本列表→场景默认绑定；“下次保存冲突”验证 409 保留编辑，“下次保存延迟”验证等待期间的编辑；“合成单据打印”使用固定版本 1，“仅运行权限”验证运行入口，“切换缺少适配器”验证无旧预览回退。浏览器操作只模拟页面调用，授权真实性以 Java 行为测试和后续真实 E2E 为准。
+
+结果见 [m3b-results.json](m3b-results.json) 与 [browser-results-m3b.json](browser-results-m3b.json)。本轮已关闭页面并停止验证服务器，未打印 PDF 或操作物理打印机。
+
+M4 接入时实现 PrintApplicationAccess（应用授权/事务行锁/发布引用检查）和 LOWCODE PrintDataProvider。Provider.authorize 必须从应用发布快照解析允许的不可变模板版本及字段目录，验证当前记录权限；流程场景还须解析同一业务 processRunId。缺少适配器返回 503 是当前阶段预期行为。不要以最新模板版本或设计态绑定替代发布清单。

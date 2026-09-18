@@ -1,6 +1,6 @@
 <script setup>
-import { NAlert, NButton, NEmpty, NSelect, NSpin } from 'naive-ui'
-import { ref, shallowRef, watch } from 'vue'
+import { NAlert, NButton, NEmpty, NSelect, NSpin, useThemeVars } from 'naive-ui'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { layoutPrintDocument } from '../engine/layout'
 import { createBrowserMeasurer } from '../engine/measure'
 import { preparePrintResources } from '../engine/resources'
@@ -15,9 +15,13 @@ const props = defineProps({
   context: { type: Object, required: true },
   catalog: { type: Array, default: () => [] },
   templateVersion: { type: [String, Number], default: null },
+  dataLabel: { type: String, default: '当前已保存数据' },
+  allowPrint: { type: Boolean, default: true },
   resolveFile: { type: Function, default: undefined },
 })
 const emit = defineEmits(['ready', 'error', 'execution'])
+const theme = useThemeVars()
+const themeStyle = computed(() => ({ '--bg-primary': theme.value.cardColor, '--gray-100': theme.value.bodyColor, '--text-primary': theme.value.textColor1, '--border-light': theme.value.borderColor }))
 const layout = shallowRef(null)
 const loading = ref(false)
 const printing = ref(false)
@@ -80,7 +84,7 @@ watch(() => [props.template, props.context, props.catalog, props.templateVersion
 }, { immediate: true, deep: true })
 
 async function print() {
-  if (!layout.value || printing.value) {
+  if (!props.allowPrint || !layout.value || printing.value) {
     return
   }
   printing.value = true
@@ -108,13 +112,13 @@ async function print() {
 </script>
 
 <template>
-  <section class="print-preview">
+  <section class="print-preview" :style="themeStyle">
     <div class="print-toolbar">
-      <span v-if="layout">共 {{ layout.pages.length }} 页 · 当前已保存数据 · {{ layout.generatedAt }}</span>
+      <span v-if="layout">共 {{ layout.pages.length }} 页 · {{ dataLabel }} · {{ layout.generatedAt }}</span>
       <span v-else>打印预览</span>
       <div class="print-actions">
         <NSelect v-model:value="zoom" aria-label="预览缩放" :options="zoomOptions" style="width: 100px" size="small" />
-        <NButton type="primary" :disabled="!layout || loading || !!error" :loading="printing" @click="print">
+        <NButton v-if="allowPrint" type="primary" :disabled="!layout || loading || !!error" :loading="printing" @click="print">
           打印
         </NButton>
       </div>

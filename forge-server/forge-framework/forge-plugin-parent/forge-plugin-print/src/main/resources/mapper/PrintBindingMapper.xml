@@ -28,6 +28,10 @@
         INSERT INTO sys_print_binding (tenant_id, application_id, source_type, source_key, page_id, form_key, object_code, template_id, scene, is_default, sort_order, status, binding_revision, del_flag, create_by, create_time, create_dept, update_by, update_time)
         VALUES (#{tenantId}, #{applicationId}, #{sourceType}, #{sourceKey}, #{pageId}, #{formKey}, #{objectCode}, #{templateId}, #{scene}, #{isDefault}, #{sortOrder}, #{status}, #{bindingRevision}, #{delFlag}, #{createBy}, #{createTime}, #{createDept}, #{updateBy}, #{updateTime})
     </insert>
+    <select id="selectScoped" resultMap="Row">
+        SELECT <include refid="Columns"/> FROM sys_print_binding
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND del_flag = 0
+    </select>
     <select id="selectSource" resultMap="Row">
         SELECT <include refid="Columns"/> FROM sys_print_binding
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}

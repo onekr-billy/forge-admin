@@ -25,6 +25,7 @@ const props = defineProps({
   context: { type: Object, default: () => ({}) },
   resolveFile: Function,
   saveDraft: Function,
+  externalDirty: Boolean,
   confirmDiscard: Function,
 })
 const store = usePrintDesignerStore()
@@ -47,7 +48,7 @@ function answerDiscard(answer) {
   resolveConfirm = null
 }
 onBeforeUnmount(() => answerDiscard(false))
-const { canLeave } = usePrintDesignerLifecycle(store, confirmDiscard)
+const { canLeave } = usePrintDesignerLifecycle(store, confirmDiscard, () => props.externalDirty)
 const theme = useThemeVars()
 const themeStyle = computed(() => ({ '--bg-primary': theme.value.cardColor, '--gray-100': theme.value.bodyColor, '--text-primary': theme.value.textColor1, '--text-tertiary': theme.value.textColor3, '--border-light': theme.value.borderColor, '--primary-color': theme.value.primaryColor }))
 const protocolOpen = ref(false)
@@ -133,7 +134,7 @@ defineExpose({ canLeave, save })
 
 <template>
   <div class="print-designer" :style="themeStyle">
-    <PrintDesignerToolbar :local="!saveDraft" @new="createNew" @copy="copyTemplate" @save="save" @restore="restore" @protocol="openProtocol" />
+    <PrintDesignerToolbar :local="!saveDraft" :external-dirty="externalDirty" @new="createNew" @copy="copyTemplate" @save="save" @restore="restore" @protocol="openProtocol" />
     <NAlert v-if="store.error" type="error" closable @close="store.error = ''">
       {{ store.error }}
     </NAlert>
@@ -163,7 +164,7 @@ defineExpose({ canLeave, save })
       </aside>
     </div>
     <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ maxHeight: '80vh', overflow: 'auto' }" :style="{ width: '94vw', maxWidth: '1400px' }" :mask-closable="false">
-      <PrintPreview v-if="store.previewOpen" :template="store.document" :context="context" :catalog="store.catalog" :resolve-file="resolveFile" />
+      <PrintPreview v-if="store.previewOpen" data-label="模板预览" :allow-print="!saveDraft" :template="store.document" :context="context" :catalog="store.catalog" :resolve-file="resolveFile" />
     </NModal>
     <NModal :show="confirmOpen" preset="dialog" type="warning" title="放弃未保存的修改？" content="当前打印模板有未保存的修改，放弃后将载入其他内容。" positive-text="放弃修改" negative-text="继续编辑" :mask-closable="false" @positive-click="answerDiscard(true)" @negative-click="answerDiscard(false)" @close="answerDiscard(false)" @esc="answerDiscard(false)" />
     <NModal v-model:show="protocolOpen" preset="card" title="模板导入 / 导出" :style="{ width: 'min(760px, 94vw)' }">

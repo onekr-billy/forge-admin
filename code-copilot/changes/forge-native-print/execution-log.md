@@ -217,3 +217,44 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 代码质量：复核 4 表索引、删除墓碑、版本永不复用、DTO 固定字段、SQL 无动态拼接、协议未知字段拒绝、异常隐私和资源边界；审查改动后的 72 项全部通过。
 - 未启动 Admin/Flow/MySQL/Redis、未执行真实数据库迁移或接口 E2E，未重做 M1/M2 浏览器验证、PDF/打印机。没有修改 LawHub，也没有停止其它用户进程。
 - 阶段提交名 `[forge-native-print] 完成 M3a 打印持久化与协议校验`；后续从 T22–T28 开始，不跳到真实业务接入。
+
+
+## 2026-09-19：M3b 模板事务、授权编排与前端持久化
+
+### 范围与规范
+
+- 持续在 `/Users/mini32g/Desktop/project/forge-admin`、`codex/forge-native-print` 实施；未修改 LawHub，既有 `.DS_Store` 不纳入提交。用户仍授权分阶段 commit、禁止 push。
+- 复用既有 Spec/tasks/test-spec/log、根及 code-copilot AGENTS、测试标准、UI DESIGN 与 Forge CRUD Skill；编码前补 T25/T22/T24/T26/T28 子任务和 SPI 契约。当前原生模块不使用生成器 POST-safe CRUD，遵循已审查 REST Spec。
+- 模板草稿 CAS、复制、发布不可变版本、同内容重复发布复用版本、停用、逻辑删除及引用保护均落实。写入统一应用锁→模板锁；绑定默认项在空集合并发下也由应用行锁串行化。
+- 设计依赖打印设计权限与应用/来源授权；运行仅依赖 print:execute 与 Provider 的应用/记录/场景授权。Provider 返回可信发布版本清单，不回退最新草稿或实时设计绑定。默认没有真实 Provider，503 拒绝。
+- prepare 只返回模板使用且目录允许的字段。图片元素必须绑定 IMAGE 目录字段；资源别名归一 fileId 后再授权。数据单集合 500 行、单文本 100000 字符、JSON 流式限长 4MiB。流程授权结果必须带已解析 processRunId。打印审计仅记录 PREPARED/DIALOG_OPENED/FAILED 元数据；所有端点关闭请求/响应正文日志。
+- 前端两个 Pinia store 管理异步版本和请求代次，服务端保存不落 localStorage；保存时的新编辑保留，409 不丢数据，关闭预览清理单据。模板/场景/状态展示使用字典，新增页面与面板均低于 800 行。
+- V1.0.170 仅注册 3 个隐藏页面，NOT EXISTS 防重复、tenant_id=1，不自动给角色赋权。未执行迁移。正式业务入口和应用发布集成仍在 M4。
+
+### 测试与修复记录
+
+- RED：PrintProviderRegistryTest 在 Registry 未实现时 testCompile 明确失败；实现后通过。后续逐项补事务、HTTP、前端竞态及本轮审查边界用例。
+- 前端首次回归发现旧设计器测试仍点击服务端模式已移除的“新建”；按新行为断言按钮不存在并直接验证 canLeave，另外补只改名称的离开保护。首轮格式检查发现同一行多语句，按 AST 拆分后定向 lint 通过。
+- 浏览器验证 mock 起初缺少 getDictData 导出，补齐字典缓存契约后刷新通过。首次合成样例因未安装宋体而正确禁用打印，正向 HTTP 样例改用 Arial 后渲染 1 页正常。
+- 自审补图片字段类型检查，避免普通文本字段绕过运行资源授权；补资源别名、总输出大小流式限制、并发首个默认绑定与流程 run 身份测试。按 SDD 将分页入口统一为 `/print/templates/page`。
+- 一次单独 Registry 命令误在仓库根执行，reactor 项目定位失败；更正工作目录 `forge-server` 后，包含真实 Spring 空 Provider 列表构造注入的完整 104 项测试通过。这次命令失败不计为通过。
+
+### 最终验证命令与结果
+
+后端先加载 `/private/tmp/forge-print-toolchain/env.sh`，Java 17 / Maven 3.9.9 及隔离 Maven 仓库沿用 M3a：
+
+1. `mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='Print*Test' -Dsurefire.failIfNoSpecifiedTests=false`：104 tests、0 failures/errors/skipped，BUILD SUCCESS。日志 `/private/tmp/forge-print-m3b-java.log`。
+2. `mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-admin-server -am package -DskipTests`：46 模块成功；日志 `/private/tmp/forge-print-m3b-admin-build.log`。此命令不替代实际单测。
+3. UI Node v24.21.0：`node node_modules/vitest/vitest.mjs run src/components/print src/stores/print/__tests__ src/api/__tests__/print.spec.js`：12 files、71 tests 全通过；分页路径最终修正后，`src/api/__tests__/print.spec.js` 2/2 再次通过。
+4. 对全部本轮前端改动运行项目 ESLint，0 errors/warnings；日志 `/private/tmp/forge-print-m3b-eslint.log` 和最终 API 定向日志 `/private/tmp/forge-print-m3b-api-eslint.log`。
+5. `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build`：最终生产构建成功，保留既有 Rollup/Rolldown 性能/包体积提示，未关闭规则。日志 `/private/tmp/forge-print-m3b-ui-build.log`。
+6. 浏览器实际执行合成 HTTP 场景，见 browser-results-m3b.json；真实 Service/Mapper/事务验证由 H2/MockMvc 完成，不混称真实业务 E2E。
+7. Mapper XML、迁移版本唯一/V170 防重复与无自动角色授权、SFC 行数和 git diff --check 通过；结构化计数见 verification/m3b-results.json，不提交包含环境变量的原始 Surefire 报告。
+
+### 两阶段自审、清理和交接
+
+- Spec 合规：T22–T28 已完成源码及阶段出口；字段/版本/权限/审计和 UI 保存边界与设计一致。M4–M6 不勾选，整体 Spec 保持 implementing，不提前归档。
+- 代码质量：无业务 Service 查询构造器、无 Controller Map 请求体、无服务循环依赖；租户/actor 来自服务端，版本和资源取自授权来源，写入 CAS 与事务回滚测试通过。新菜单不公开、不自动授予角色。
+- 合成浏览器标签已关闭；本轮唯一验证服务器 127.0.0.1:4318 已 Ctrl+C（130）退出并确认无监听，没有修改 viewport。未停止其他用户进程。
+- 未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway/真实鉴权加密/低代码或流程 E2E，未输出 PDF 或操作物理打印机。H2 并发结果不能替代 MySQL 锁与实际租户拦截器验收。
+- 本阶段只做本地 commit，不 push；下一阶段从 M4 的真实应用授权、低代码 Provider 与发布快照集成开始。

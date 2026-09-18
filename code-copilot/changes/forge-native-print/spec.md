@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：forge-admin 的 M1、M2 已提交；M3a 后端基础完成阶段验证；M3b（服务/API/前端持久化）及 M4–M6 待实施，不 push
+> 当前阶段：forge-admin 的 M1、M2、M3a 已本地提交；M3b 服务/API/前端持久化完成阶段验证（implemented-pending-e2e）；M4–M6 待实施，不 push
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 

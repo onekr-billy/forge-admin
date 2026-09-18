@@ -13,6 +13,8 @@ public interface PrintBindingMapper {
 
     int insert(PrintBinding row);
 
+    PrintBinding selectScoped(@Param("tenantId") Long tenantId, @Param("id") Long id);
+
     List<PrintBinding> selectSource(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId, @Param("sourceKey") String sourceKey, @Param("scene") String scene);
 
     long countTemplateReferences(@Param("tenantId") Long tenantId, @Param("templateId") Long templateId);

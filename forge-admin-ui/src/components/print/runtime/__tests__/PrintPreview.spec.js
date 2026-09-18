@@ -12,6 +12,18 @@ vi.mock('../browserPrint', () => ({ createBrowserPrintSession: vi.fn() }))
 describe('preview ownership', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('hides the print action when showing a design-only preview', async () => {
+    const wrapper = mount(PrintPreview, {
+      props: { template: createPrintDocument(), context: {}, catalog: [], allowPrint: false, dataLabel: '模板预览' },
+      global: { stubs: { NSelect: true, NSpin: { template: '<div><slot /></div>' }, NButton: { template: '<button><slot /></button>' } } },
+    })
+    await flushPromises()
+    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(wrapper.text()).toContain('模板预览')
+    expect(createBrowserPrintSession).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('disposes a pending print session when the preview unmounts and never prints stale content', async () => {
     const wrapper = mount(PrintPreview, {
       props: { template: createPrintDocument(), context: {}, catalog: [] },

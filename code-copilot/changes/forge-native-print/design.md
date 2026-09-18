@@ -92,7 +92,7 @@ M1 落地规则：显式字体使用本地 FontFace 加载校验，系统通用�
 
 实现可以组合读取/授权服务；禁止把“页面上看得到按钮”作为安全前提。代码业务提供方只接收已解析场景并再校验业务权限。
 
-输出 `PrintContextVO`：模板版本、main、children、flow.history、system、受控资源引用、warnings、dataMode=CURRENT、generatedAt。动态业务字段可以 Map 表达；固定身份和流程字段使用明确 DTO/VO。
+输出 `PrintContextVO`：执行 ID、应用/模板发布版本、schemaJson、字段目录、context（main/children/flow）、dataMode=CURRENT、generatedAt。图片值为受控 fileId；前端仅将服务端 generatedAt 放入渲染上下文 system。M3b 校验失败直接拒绝，不返回部分数据或成功警告。动态业务字段可以 Map 表达；固定身份和流程字段使用明确 DTO/VO。
 
 ### 低代码适配
 
@@ -146,11 +146,11 @@ M1 落地规则：显式字体使用本地 FontFace 加载校验，系统通用�
 | POST `/templates` | PrintTemplateCreateDTO | manage |
 | PUT `/templates/:id` | PrintTemplateUpdateDTO，含 revision | manage + CAS |
 | DELETE `/templates/:id` | 引用保护/逻辑删除 | manage |
-| POST `/templates/:id/copy` | PrintTemplateCopyDTO | 来源可见 + 目标应用 manage |
-| POST `/templates/:id/publish` | PrintTemplatePublishDTO，含 revision/hash | publish + 发布校验 |
+| POST `/templates/:id/copy` | PrintTemplateCopyDTO | 来源可见 + 同一应用 manage（不允许复制时改来源） |
+| POST `/templates/:id/publish` | PrintTemplatePublishDTO，含 expectedRevision；hash 服务端生成 | publish + 发布校验 |
 | PUT `/templates/:id/status` | PrintTemplateStatusDTO | manage |
 | GET `/templates/:id/versions` | 不可变版本列表 | view |
-| GET/PUT `/bindings` | PrintBindingQueryDTO/PrintBindingSaveDTO | 所属应用设计权限 + manage |
+| GET/PUT `/bindings` | PrintBindingQueryDTO/PrintBindingSaveDTO | 所属应用设计权限 + GET view / PUT manage |
 | POST `/catalog` | PrintCatalogQueryDTO | 场景对应的设计/运行权限 |
 | POST `/available` | PrintAvailableTemplatesDTO | execute + 场景/记录访问权；不返回草稿 |
 | POST `/prepare` | PrintPrepareDTO | execute + 模板/记录/流程/字段权限 |
@@ -196,3 +196,23 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 - 协议服务直接解析 schemaJson，限制 UTF-8 1MiB、JSON 深度 64、重复键/尾随内容，按白名单拒绝未知字段并输出 path/code/message。仅返回规范化 JSON、SHA-256 与类型化文档，不执行模板内容。哈希对对象键排序、数字规范化，数组顺序保持；不用于跨语言签名。
 - 明确模型使用 Java 17 record，绑定常量使用 JsonNode 保留 null/false/0，不做弱类型强转。服务端严格检查所有已提供属性（包括当前 kind/type 未使用的属性），避免隐藏无效内容；前端正常生成的模板不受影响。
 - 迁移只增加表、字典和四项权限，无授权放开。回滚先移除应用依赖与停用权限；已有模板/版本/审计数据保留，禁止自动 drop 或覆盖。实际数据库恢复由备份和人工脚本执行。
+
+## M3b 接口与授权细化（2026-09-19，编码前）
+
+- 所有入口由服务端 PrintIdentity 取得 actor/tenant/dept，租户上下文与登录租户不一致时拒绝。Controller 权限注解与 Service 身份检查同时保留；操作日志不保存模板请求正文或运行响应。
+- PrintApplicationAccess 独立负责应用设计可见/管理/发布范围、应用行锁和已发布快照引用保护。PrintDataProvider 负责来源、字段/文件、记录和流程授权；Registry 无默认放行，来源类型和结构化来源唯一匹配。M3 生产环境无适配器时返回明确不可用，Spring 仍能启动。
+- 来源请求嵌套固定 DTO（applicationId/sourceType/pageId/formKey/objectCode）；规范化 source_key 对类型及稳定标识组合做 SHA-256，客户端不能指定。模板来源创建后不可变。
+- 写事务统一先锁应用再锁模板，绑定写入同样遵循此顺序，避免默认绑定的空集合竞争和模板删除/绑定新增竞争。Provider 的 lockApplication 必须取得同一数据库事务内的持久化行锁。
+- 发布前同时验证协议、来源字段目录和文件授权；同内容重复发布返回当前发布版本，编辑后恢复相同内容也重用该版本。版本写入和模板指针 CAS 同事务，失败回滚。版本详情 GET /templates/:id/versions/:versionId 仅设计查看权限。
+- Runtime 请求使用 {source,recordId,scene,taskId,processInstanceId,processRunId}；prepare 另加 templateId，不接受客户端 versionId/actor/tenant/rawData。catalog 使用 source（设计）或 record（运行）二选一，分别需要 view/execute。
+- authorize 返回不可由请求构造的 AuthorizedPrintContext，包括应用发布版本、当前允许的不可变模板版本引用和字段目录。运行选项仅来自该已发布清单；不回退到最新草稿/最新发布版本，不使用设计态绑定替代应用快照。模板停用仍立即阻止新 prepare。
+- load 后再次按模板所需且目录允许的字段投影，仅保留引用到的 main/children/flow 字段；每个集合最多 500 行、输出 JSON 最多 4 MiB、标量文本最多 100000 字符。图片文件引用由 Provider 核验，不返回带长期 token 的 URL。
+- 执行事件仅接受 DIALOG_OPENED/FAILED，限制 actor/tenant、页数和错误码，重复相同事件幂等返回，终态不能互相改写，不报告物理打印成功。
+- 前端管理共享状态进入 printTemplateStore，运行上下文进入 printRuntimeStore；异步请求有代次防串数据。保存更新修订号，不回灌文档覆盖用户保存期间的新编辑。运行关闭清空正文；服务端编辑不会回退到本地保存。
+- 设计预览未提供真实授权记录时明确为模板预览；不能把空数据预览称为业务打印。M3b 菜单仅注册隐藏列表/设计/预览路由，权限由已有四项控制，不自动授予角色。
+
+M3b 绑定解除补充：`DELETE /print/bindings/{id}?expectedRevision=...` 按应用→模板锁顺序执行修订号 CAS 逻辑删除；停用绑定保留配置，解除绑定才允许模板引用检查通过。绑定列表与写入返回固定 Binding VO，不返回审计内部字段。
+
+M3b 输出协议细化：prepare 返回规范化 `schemaJson`，浏览器按同一 v1 校验器解析，避免 Java record 的可选 null 属性改变协议。context 按 main/children/flow 投影，前端 system.generatedAt 取服务端时刻。文件下载复用鉴权 HTTP 客户端和 getFileUrl，限定 fileId、二进制响应、10 秒超时及取消；M5 继续补流程签名/附件特有授权。服务端模式设计器预览不可直接发起打印，实际单据打印必须经 prepare。
+
+M3b 审查补充：图片元素的 FIELD 绑定只能使用目录类型 IMAGE；静态资源别名先归一到 fileId，再做设计/运行资源授权。流程请求可省略运行 ID 交由 Provider 解析，但授权结果的流程 context 必须含 processRunId。动态数据 context JSON 用限长输出流检查 4MiB，避免先分配超大序列化数组；schemaJson 仍独立受 v1 的 1MiB 上限约束。

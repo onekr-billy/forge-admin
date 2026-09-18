@@ -21,6 +21,14 @@ describe('designer editing workflow', () => {
     store.load(createPrintDocument(), catalog)
     localStorage.clear()
   })
+  it('guards server-side name edits even when the canvas itself is clean', async () => {
+    const confirmDiscard = vi.fn(() => false)
+    const wrapper = mount(PrintDesigner, { props: { externalDirty: true, confirmDiscard, saveDraft: vi.fn() }, global: { plugins: [createPinia()] } })
+    expect(await wrapper.vm.canLeave()).toBe(false)
+    expect(confirmDiscard).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('creates every supported element and isolates collection fields to their table', () => {
     addSection(store, 'FIXED')
     for (const type of ['TEXT', 'IMAGE', 'LINE', 'RECTANGLE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER']) {
@@ -86,7 +94,8 @@ describe('designer editing workflow', () => {
     addSection(store, 'FIXED')
     const dirty = store.serialize()
     const button = label => wrapper.findAll('button').find(b => b.text() === label)
-    await button('新建').trigger('click')
+    expect(button('新建')).toBeUndefined()
+    expect(await wrapper.vm.canLeave()).toBe(false)
     expect(confirmDiscard).toHaveBeenCalled()
     expect(store.serialize()).toBe(dirty)
     await button('保存草稿').trigger('click')

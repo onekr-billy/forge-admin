@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）已完成阶段验证，M3b 与 M4–M6 未完成。禁止 push。
+> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，真实业务接入 M4–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -90,14 +90,14 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 | [x] T19 绑定/执行 Mapper | T16 | PJ `mapper/{PrintBindingMapper,PrintExecutionMapper}.java`、对应两个 Mapper XML | 默认绑定事务范围、关联索引、日志不存业务正文 |
 | [x] T20 模板 DTO | T18 | PJ `dto/{PrintTemplateCreateDTO,PrintTemplateUpdateDTO,PrintTemplatePublishDTO,PrintTemplateStatusDTO,PrintTemplateCopyDTO}.java` | 固定字段类型、长度/体积/修订号约束 |
 | [x] T21 协议后端验证 | T20 | PJ `protocol/{PrintTemplateDocument,PrintSection,PrintElement,PrintProtocolValidator}.java`、PT `PrintProtocolValidatorTest.java` | schema 白名单、禁脚本、版本拒绝、前后端协议一致 |
-| [ ] T22 模板服务/API | T21 | PJ `service/{PrintTemplateService,PrintTemplateVersionService}.java`、`controller/PrintTemplateController.java`、`vo/PrintTemplateVO.java` | 草稿/复制/状态/发布，失败不污染已发布版本 |
-| [ ] T23 模板服务行为验证 | T22 | PT `{PrintTemplateServiceTest,PrintTemplateVersionServiceTest,PrintTemplateControllerTest}.java` | 同时编辑冲突、重复发布、被引用删除、停用旧版本 |
-| [ ] T24 绑定服务/API | T19,T22 | PJ `dto/{PrintBindingQueryDTO,PrintBindingSaveDTO}.java`、`service/PrintBindingService.java`、`controller/PrintBindingController.java` | 来源核验、默认唯一、应用归属不能伪造 |
-| [ ] T25 上下文协议/SPI | T21 | PJ `spi/{PrintDataProvider,AuthorizedPrintContext}.java`、`dto/PrintPrepareDTO.java`、`vo/{PrintContextVO,PrintFieldCatalogVO}.java` | actor/tenant 服务端获取，低代码/代码业务共用入口 |
-| [ ] T26 prepare 编排 | T24,T25,T27a | PJ `service/{PrintPrepareService,PrintProviderRegistry,PrintExecutionService}.java`、`controller/PrintRuntimeController.java` | 发布版本解析、使用权限与记录权限、执行事件真实性 |
-| [ ] T27a 运行查询/事件 DTO | T25 | PJ `dto/{PrintCatalogQueryDTO,PrintAvailableTemplatesDTO,PrintExecutionEventDTO}.java` | 固定字段类型与场景参数校验，不接受任意 Map |
-| [ ] T27b 运行授权验证 | T26 | PT `{PrintPrepareAuthorizationTest,PrintProviderRegistryTest,PrintExecutionServiceTest}.java` | 运行接口无设计权依赖；跨租户/伪造版本/执行事件拒绝 |
-| [ ] T28 模板前端持久化 | T22,T24,T27b,T13 | U `api/print.js`、`views/print/index.vue`、`runtime/PrintTemplatePicker.vue`、`stores/print/printRuntimeStore.js` | 真实 API 草稿保存/版本选择；业务枚举使用字典 |
+| [x] T22 模板服务/API | T21 | PJ `service/{PrintTemplateService,PrintTemplateVersionService}.java`、`controller/PrintTemplateController.java`、`vo/PrintTemplateVO.java` | 草稿/复制/状态/发布，失败不污染已发布版本 |
+| [x] T23 模板服务行为验证 | T22 | PT `{PrintTemplateServiceTest,PrintTemplateVersionServiceTest,PrintTemplateControllerTest}.java` | 同时编辑冲突、重复发布、被引用删除、停用旧版本 |
+| [x] T24 绑定服务/API | T19,T22 | PJ `dto/{PrintBindingQueryDTO,PrintBindingSaveDTO}.java`、`service/PrintBindingService.java`、`controller/PrintBindingController.java` | 来源核验、默认唯一、应用归属不能伪造 |
+| [x] T25 上下文协议/SPI | T21 | PJ `spi/{PrintDataProvider,AuthorizedPrintContext}.java`、`dto/PrintPrepareDTO.java`、`vo/{PrintContextVO,PrintFieldCatalogVO}.java` | actor/tenant 服务端获取，低代码/代码业务共用入口 |
+| [x] T26 prepare 编排 | T24,T25,T27a | PJ `service/{PrintPrepareService,PrintProviderRegistry,PrintExecutionService}.java`、`controller/PrintRuntimeController.java` | 发布版本解析、使用权限与记录权限、执行事件真实性 |
+| [x] T27a 运行查询/事件 DTO | T25 | PJ `dto/{PrintCatalogQueryDTO,PrintAvailableTemplatesDTO,PrintExecutionEventDTO}.java` | 固定字段类型与场景参数校验，不接受任意 Map |
+| [x] T27b 运行授权验证 | T26 | PT `{PrintPrepareAuthorizationTest,PrintProviderRegistryTest,PrintExecutionServiceTest}.java` | 运行接口无设计权依赖；跨租户/伪造版本/执行事件拒绝 |
+| [x] T28 模板前端持久化 | T22,T24,T27b,T13 | U `api/print.js`、`views/print/index.vue`、`runtime/PrintTemplatePicker.vue`、`stores/print/printRuntimeStore.js` | 真实 API 草稿保存/版本选择；业务枚举使用字典 |
 
 ### M3 实施拆分（编码前补充）
 
@@ -174,3 +174,31 @@ T21b 增加 `PrintProtocolLimits.java` 汇总与前端一致的技术限制，�
 T14–T21 源码与阶段验证完成：打印插件、4 表/5 个业务字典/4 项权限、实体与 Mapper、模板 DTO、协议模型和白名单校验。72 项 Java 测试通过；29 个共享前端协议样例通过；Admin 46 模块聚合 package 成功。实际文件、命令和审查证据见 execution-log 及 verification/m3a-results.json。
 
 本阶段只有协议校验 Component 与 Mapper，没有提前暴露未授权 Controller。T22–T28 不勾选，M3 完整模板/授权/运行链路仍未完成。H2 验证不能替代 MySQL 方言、真实租户拦截器及运行授权验收；新增迁移没有自动执行。
+
+## M3b 实施拆分（2026-09-19，编码前）
+
+按授权依赖先做 T25，再做模板服务与运行编排；各子任务 3–5 个主要文件，测试及文档单列。
+
+- T25a：spi/{PrintActor,PrintSourceRequest,AuthorizedPrintSource,PrintApplicationAccess,PrintDataProvider}。应用授权/事务锁/发布引用检查通过独立 SPI，缺少实现拒绝调用。
+- T25b：spi/{PrintRecordRequest,AuthorizedPrintContext,PrintBindingSelection,PrintData}、vo/PrintFieldCatalogVO；发布版本选择与字段目录由可信 Provider 返回。
+- T25c：service/{PrintIdentity,PrintProviderRegistry,PrintFailure,PrintAudit}、enums/PrintDesignAction；先测试身份缺失、Provider 缺失/重复与来源不一致。
+- T22a：service/{PrintTemplateService,PrintTemplateVersionService,PrintTemplateAccess}、vo/PrintTemplateVO；T22b：service/PrintDocumentAccess、vo/PrintVersionVO、controller/PrintTemplateController；沿用 Spec 的 REST API，非代码生成器 POST-safe CRUD。
+- T23：模板服务、版本事务、Controller 注解/DTO 协议测试；使用 H2 真实 Mapper + Spring 事务代理与合成应用授权，覆盖 rollback、CAS、被引用删除、同内容重复发布。
+- T24a：dto/{PrintBindingQueryDTO,PrintBindingSaveDTO}、service/PrintBindingService、controller/PrintBindingController；T24b：Mapper 添加 scoped binding 读取与测试，应用锁→模板锁保持一致顺序。
+- T27a：dto/{PrintPrepareDTO,PrintAvailableTemplatesDTO,PrintCatalogQueryDTO,PrintExecutionEventDTO}；GET 版本详情补入 T22，删除使用 revision 查询参数。
+- T26a：service/{PrintPrepareService,PrintDataProjector,PrintExecutionService}、vo/{PrintContextVO,PrintAvailableTemplateVO}；T26b：controller/PrintRuntimeController 与服务/授权/事件测试。
+- T28a：U api/print.js、stores/print/{printTemplateStore,printRuntimeStore}.js 和状态/API 测试；T28b：views/print/{index,designer}.vue、components/print/management/{PrintTemplateCreate,PrintTemplateVersions,PrintBindingPanel}.vue；T28c：runtime/PrintTemplatePicker.vue、views/print/preview.vue、设计器 Toolbar/生命周期小改与组件测试。
+- T28d：新 V1.0.170 权限隐藏路由种子、verification 的合成服务端验证入口/浏览器证据。模板页面需要上游应用/表单上下文，不让普通用户手输应用/业务对象 ID；正式应用内资源导航留 T31。
+
+本轮不安装生产合成 Provider，不启动真实 Admin/Flow/数据库。M3 阶段出口通过测试专用 Provider、真实 Service/Mapper/事务和模拟 HTTP 完成；真实业务适配器仍留 M4/M5。
+
+T28 补充文件：management/printRouteContext.js 解析入口标识；router/index.js 注册 3 个页面的布局和离开保护语义。V170 仅注册隐藏菜单，perms 为 NULL，继续使用 V169 四项 API 权限，不自动给角色增权。PrintIdentityTest/PrintDocumentAccessTest 覆盖登录租户一致性及资源别名。
+
+### M3b 阶段结果
+
+T22–T28 的上述子任务均已实现并验证，实际新增内容包括模板/版本/绑定事务服务与 3 个 Controller、来源与运行授权 SPI、按发布清单 prepare、字段/图片资源投影、执行事件 CAS；前端 API、两个 Pinia store、模板管理/设计/预览页及版本/绑定面板。没有向生产安装合成 Provider。
+
+- Java 104/104、前端 71/71 通过；分页路径修正后 API 契约 2/2 增量复验；定向 lint 与前后端构建通过。
+- 真正 Spring 事务代理 + H2 Mapper 覆盖并发默认绑定、发布插入后 rollback、旧修订冲突、跨租户/操作者、图片字段授权与 4MiB 输出边界；MockMvc 覆盖明确 DTO 和规范化 schemaJson 响应。缺少 Provider 的 Spring 构造注入验证通过。
+- 合成 HTTP 浏览器验证包括创建/保存/冲突/等待中编辑/名称离开保护/版本/绑定/仅运行权限/预览/缺少适配器/数据清理，详见 verification/m3b-results.json 和 browser-results-m3b.json。
+- 本阶段可进入 M4，但真实业务闭环未验收：应用授权 SPI 实现、低代码 Provider、应用发布快照固定模板引用仍由 T29–T34 完成。M4–M6 和真实 E2E 不勾选。

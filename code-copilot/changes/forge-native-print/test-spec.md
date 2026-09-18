@@ -1,6 +1,6 @@
 # 测试与验收基线
 
-> 状态：M1 增量验证中；代码单测已开始，浏览器/构建结果逐项追加。
+> 状态：M1/M2/M3a/M3b 阶段验证完成；真实应用/低代码/流程 E2E 和实机打印仍待后续阶段验收。
 >
 > 依据：[spec.md](spec.md)、[tasks.md](tasks.md)、`code-copilot/rules/automated-testing-standard.md`
 
@@ -152,3 +152,18 @@ M3a 增强：H2 MySQL 模式加载同一 V1.0.168 DDL，仅去除 ENGINE/CHARSET
 - 静态：4 个 Mapper XML 与 5 个 POM 解析、Flyway 版本唯一性、V1.0.168/V1.0.169 无业务占位符、空白检查通过。
 - 不扩大前端页面回归：本轮未改任何 UI 源码，独立构建实际前端协议模块验证兼容；M1/M2 页面和 58 项既有测试没有重跑，沿用上一阶段证据。
 - 未执行真实 MySQL/Flyway、Admin/Flow 启动、API/低代码/流程 E2E、浏览器打印、PDF 或物理打印。详见 verification/m3a-results.json。
+
+## 11. M3b 增量验证计划
+
+- 后端先写 Provider 缺失/重复的 RED 测试，再覆盖身份与来源核验、模板/版本/CAS/回滚/引用保护、绑定默认切换、runtime 不依赖设计权、旧版本与来源伪造、字段投影、500 行/4MiB、事件归属与幂等。
+- Controller 使用 MockMvc 与反射核对 DTO/加密/权限/不记录正文；Spring 事务代理配 H2 Mapper 验证服务端原子性，合成 Provider 只在 test 源码。
+- 前端 API/Pinia/编辑保存与切换并发测试、目标 ESLint、主构建和独立合成入口构建；浏览器实际保存/冲突/发布/选择模板/切换清理验证，合成 HTTP 不计真实业务 E2E。
+- 复用 M3a 临时 Java 17/Maven 和隔离缓存，串行 Admin package；不启动真实 Admin/Flow/MySQL/Redis、不执行 Flyway，继续保留人工 E2E 未验收状态。
+
+### M3b 验证结果（2026-09-19）
+
+- 104 项 Java 测试和 71 项前端测试通过；其中 M3b 新增/扩展登录权限、事务回滚、CAS、应用锁并发默认项、固定发布版本、字段/资源授权、执行事件及异步状态隔离。
+- `PrintTemplateControllerTest` 走 MockMvc→真实事务 Service→H2 Mapper；只检查加密/Sa-Token 注解契约，没有模拟成已通过真实认证或加密握手。生成的 target/print-prepare-wire.json 为合成数据，冻结样例见 verification/m3b-wire.json。
+- 浏览器测试使用独立 `--persistence` 验证服务器；生产页面和 store 保持原实现，仅 API/字典/用户来源在验证 Vite 配置中替换。已观察服务器失败时没有本地数据兜底。
+- 前端 12 个测试文件、定向 ESLint、Vite 生产构建、46 模块 Maven Admin package 通过；API 路径统一为 `/print/templates/page` 后增量跑 2 项契约测试并重建前端。
+- 真实 MySQL 锁语义/迁移、租户拦截器、应用/记录/流程授权适配器、PDF 与物理打印仍未执行，不能由 H2 或浏览器 mock 代替。

@@ -2,7 +2,7 @@
 import { NButton, NSelect } from 'naive-ui'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 
-defineProps({ local: Boolean })
+defineProps({ local: Boolean, externalDirty: Boolean })
 defineEmits(['new', 'copy', 'save', 'restore', 'protocol'])
 const store = usePrintDesignerStore()
 const zooms = [0.5, 0.65, 0.8, 1, 1.25, 1.5].map(value => ({ label: `${value * 100}%`, value }))
@@ -10,12 +10,12 @@ const zooms = [0.5, 0.65, 0.8, 1, 1.25, 1.5].map(value => ({ label: `${value * 1
 
 <template>
   <header class="designer-toolbar">
-    <strong>打印模板设计</strong><span class="save-state">{{ store.dirty ? '未保存' : '已保存' }}{{ local ? ' · 本地草稿' : '' }}</span>
+    <strong>打印模板设计</strong><span class="save-state">{{ (store.dirty || externalDirty) ? '未保存' : '已保存' }}{{ local ? ' · 本地草稿' : '' }}</span>
     <div class="toolbar-actions">
-      <NButton size="small" :disabled="store.saving" @click="$emit('new')">
+      <NButton v-if="local" size="small" :disabled="store.saving" @click="$emit('new')">
         新建
       </NButton>
-      <NButton size="small" :disabled="store.saving" @click="$emit('copy')">
+      <NButton v-if="local" size="small" :disabled="store.saving" @click="$emit('copy')">
         复制模板
       </NButton>
       <NButton size="small" :disabled="!store.canUndo" @click="store.undo()">
