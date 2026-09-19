@@ -20,6 +20,8 @@ public class PrintApplicationVersionGuard {
     private final PrintTemplateMapper templates;
     private final PrintTemplateVersionMapper versions;
     private final PrintProtocolValidator protocol;
+    private final PrintBindingValidationService validation;
+    private final PrintMetadataResolver metadata;
 
     public void lockAndValidate(Long applicationId, String snapshotJson) {
         var actor = identity.current();
@@ -37,6 +39,7 @@ public class PrintApplicationVersionGuard {
                     || !binding.schemaHash().equals(protocol.validate(version.getSchemaJson()).schemaHash())) {
                 throw PrintFailure.of(409, "PRINT_APPLICATION_VERSION_INVALID", "应用引用的打印版本不存在或内容校验失败");
             }
+            validation.validate(actor, binding, version.getSchemaJson(), metadata.parse(snapshotJson), true);
         }
     }
 }

@@ -62,6 +62,11 @@ class PrintApplicationPersistenceTest {
     private PrintTemplate template;
     private PrintTemplateVersion version;
     private String candidate;
+    private com.mdframe.forge.plugin.print.mapper.PrintBindingMapper bindingMapper;
+    private PrintBindingValidationService bindingValidation;
+    private PrintTemplateMapper templateMapper;
+    private PrintTemplateVersionMapper printVersionMapper;
+    private com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper configs;
 
     @BeforeEach void setup() throws Exception {
         var ds = new JdbcDataSource();
@@ -96,7 +101,7 @@ class PrintApplicationPersistenceTest {
         jdbc.execute("ALTER TABLE sys_print_binding MODIFY page_id VARCHAR(128)");
         var configuration = new MybatisConfiguration();
         configuration.setEnvironment(new Environment("test", new SpringManagedTransactionFactory(), ds));
-        for (String name : List.of("BusinessApplication", "BusinessApplicationVersion", "PrintTemplate", "PrintTemplateVersion")) {
+        for (String name : List.of("BusinessApplication", "BusinessApplicationVersion", "PrintTemplate", "PrintTemplateVersion", "PrintBinding", "AiCrudConfig")) {
             String resource = "mapper/" + name + "Mapper.xml";
             try (var input = getClass().getClassLoader().getResourceAsStream(resource)) {
                 new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
@@ -107,6 +112,10 @@ class PrintApplicationPersistenceTest {
         versions = session.getMapper(BusinessApplicationVersionMapper.class);
         var templates = session.getMapper(PrintTemplateMapper.class);
         var printVersions = session.getMapper(PrintTemplateVersionMapper.class);
+        bindingMapper = session.getMapper(com.mdframe.forge.plugin.print.mapper.PrintBindingMapper.class);
+        templateMapper = templates; printVersionMapper = printVersions;
+        configs = session.getMapper(com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper.class);
+        bindingValidation = mock(PrintBindingValidationService.class);
         template = new PrintTemplate(); template.setTenantId(1L); template.setApplicationId(2L);
         template.setTemplateCode("synthetic"); template.setTemplateName("合成模板"); template.setStatus(1);
         template.setSourceType("LOWCODE"); template.setPageId(SOURCE.pageId()); template.setSourceKey(SOURCE.key());
@@ -128,7 +137,8 @@ class PrintApplicationPersistenceTest {
         when(identity.current()).thenReturn(new PrintActor(1L, 9L, 1L));
         lock = new PrintApplicationLock(applications);
         guard = new PrintApplicationVersionGuard(identity, lock,
-                new PrintApplicationSnapshotCodec(validation.getValidator()), templates, printVersions, new PrintProtocolValidator());
+                new PrintApplicationSnapshotCodec(validation.getValidator()), templates, printVersions, new PrintProtocolValidator(),
+                bindingValidation, mock(PrintMetadataResolver.class));
         service = service(applications);
     }
 
@@ -198,6 +208,57 @@ class PrintApplicationPersistenceTest {
             release.countDown(); first.get(5, TimeUnit.SECONDS);
             assertThat(second.get(5, TimeUnit.SECONDS).getVersionNo()).isEqualTo(1);
         } finally { release.countDown(); executor.shutdownNow(); }
+    }
+
+    @Test void currentConfigGuardRespectsTenantDisableAndLogicalDeleteWithoutSelectingDraft() {
+        jdbc.execute("CREATE TABLE ai_crud_config(id BIGINT,tenant_id BIGINT,config_key VARCHAR(40),status CHAR(1),mode VARCHAR(20),build_mode VARCHAR(20),del_flag BIGINT)");
+        jdbc.execute("CREATE TABLE ai_business_object(id BIGINT,tenant_id BIGINT,config_key VARCHAR(40),object_code VARCHAR(40),status INT,del_flag BIGINT)");
+        jdbc.update("INSERT INTO ai_crud_config VALUES(13,1,'synthetic','0','CONFIG','LOWCODE',0)");
+        jdbc.update("INSERT INTO ai_business_object VALUES(3,1,'synthetic','purchase',1,0)");
+        assertThat(configs.countActiveRuntimeConfig(1L, 13L, "purchase")).isEqualTo(1);
+        assertThat(configs.countActiveRuntimeConfig(2L, 13L, "purchase")).isZero();
+        assertThat(configs.countActiveRuntimeConfig(1L, 13L, "other")).isZero();
+        jdbc.update("UPDATE ai_crud_config SET status='1'");
+        assertThat(configs.countActiveRuntimeConfig(1L, 13L, "purchase")).isZero();
+        jdbc.update("UPDATE ai_crud_config SET status='0'");
+        jdbc.update("UPDATE ai_business_object SET del_flag=id");
+        assertThat(configs.countActiveRuntimeConfig(1L, 13L, "purchase")).isZero();
+    }
+
+    @Test void fieldValidationFailureDoesNotAdvanceApplicationVersion() {
+        commit(service, 1, "{}", false);
+        doThrow(new BusinessException("synthetic invalid published field"))
+                .when(bindingValidation).validate(any(), any(), anyString(), any(), eq(true));
+        assertThatThrownBy(() -> commit(service, 2, candidate, false)).hasMessageContaining("published field");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_business_application_version", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT last_publish_version FROM ai_business_application WHERE id=2", Integer.class)).isEqualTo(1);
+    }
+
+    @Test void realBindingMapperCapturesOnlyActiveApplicationRowsAndPinsImmutableVersion() {
+        var row = new com.mdframe.forge.plugin.print.entity.PrintBinding();
+        row.setTenantId(1L); row.setApplicationId(2L); row.setSourceType("LOWCODE");
+        row.setPageId(SOURCE.pageId()); row.setObjectCode(SOURCE.objectCode()); row.setSourceKey(SOURCE.key());
+        row.setTemplateId(template.getId()); row.setScene("DETAIL"); row.setIsDefault(true); row.setSortOrder(0);
+        row.setStatus(1); row.setBindingRevision(1L); row.setDelFlag(0L);
+        row.setCreateBy(9L); row.setUpdateBy(9L); row.setCreateDept(1L);
+        row.setCreateTime(LocalDateTime.now()); row.setUpdateTime(LocalDateTime.now());
+        bindingMapper.insert(row);
+        jdbc.update("UPDATE sys_print_template SET published_version_id=? WHERE id=?", version.getId(), template.getId());
+        var identity = mock(PrintIdentity.class); when(identity.current()).thenReturn(new PrintActor(1L, 9L, 1L));
+        var codec = new PrintApplicationSnapshotCodec(validation.getValidator());
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var capture = new PrintApplicationSnapshotContributor(identity, lock, bindingMapper, templateMapper,
+                printVersionMapper, new PrintProtocolValidator(), codec, json, bindingValidation);
+        var result = tx.execute(status -> {
+            assertThat(bindingMapper.selectApplication(2L, 2L)).isEmpty();
+            assertThat(bindingMapper.selectApplication(1L, 3L)).isEmpty();
+            return capture.capture(2L, Map.of());
+        });
+        assertThat(((java.util.List<?>) result.get("bindings"))).hasSize(1);
+        jdbc.update("UPDATE sys_print_binding SET status=0 WHERE id=?", row.getId());
+        tx.executeWithoutResult(status -> assertThat(bindingMapper.selectApplication(1L, 2L)).isEmpty());
+        jdbc.update("UPDATE sys_print_binding SET status=1,del_flag=id WHERE id=?", row.getId());
+        tx.executeWithoutResult(status -> assertThat(bindingMapper.selectApplication(1L, 2L)).isEmpty());
     }
 
     private com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion commit(

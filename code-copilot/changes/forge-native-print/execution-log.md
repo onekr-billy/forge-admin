@@ -286,3 +286,25 @@ Spec 审查：本轮仅完成 M4a；应用候选快照生成、字段版本校�
 代码审查：所有查询在 XML，tenant_id/del_flag 显式过滤；应用锁在前，模板锁在后；历史引用用锁定读，避免之前一致性读快照漏项；固定模板版本不读最新指针；错误不携带快照正文；没有 Service 循环依赖。H2 证明同一应用并发阻塞及事务回滚，MySQL 方言/隔离级别仍待真实环境验收。
 
 本轮无新启动的服务。未运行真实迁移、MySQL、Redis、Admin、Flow；没有 push。既有 .DS_Store 保留。后续从 M4b（已发布模型目录、主子表权限/展示转换与候选快照贡献器）继续。
+
+## 2026-09-19 · M4b 低代码真实数据适配与应用发布快照
+
+用户“继续下阶段”授权下，仍在 `/Users/mini32g/Desktop/project/forge-admin` 的 `forge-native-print` 分支实施。先细分 M4b-1…5，再编码；工作目录 LawHub 没有被修改。原有 .DS_Store 保留，不纳入提交。复用既有 SDD/测试基线、Forge CRUD Skill 和自动化测试规范。
+
+实现：9 个打印适配生产类；PrintBindingMapper/XML 增加应用锁内当前读；BusinessApplicationSnapshotService 生成 printing 候选清单，PrintApplicationVersionGuard 校验发布字段/资源；AiCrudConfigMapper/XML 增加当前启停/删除检查。DynamicCrudService 增加固定配置主子表读取与严格后处理；VirtualFormulaRuntime 增加禁用正文日志/执行 trace 且错误终止的打印入口，普通 CRUD 行为不变。新增 9 个行为测试类 + 1 个合成夹具，扩展既有真实 MyBatis/Spring/H2 事务测试及必要构造器适配。
+
+验证命令（均在 forge-server，先 source /private/tmp/forge-print-toolchain/env.sh）：
+
+```bash
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest='Print*Test,LowcodePrint*Test,DynamicCrudPrintReadTest,DynamicCrudMoneyValueTest,DynamicCrudCryptoLifecycleTest,DynamicCrudStructuredValueTest,VirtualFormula*Test,BusinessApplicationRuntimeServiceTest,BusinessApplicationPhaseFiveSecurityTest,BusinessApplicationVersionServiceTest' -Dsurefire.failIfNoSpecifiedTests=false
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest='PrintMetadataResolverTest,LowcodePrintDataProviderTest' -Dsurefire.failIfNoSpecifiedTests=false
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-admin-server -am package -DskipTests
+```
+
+结果：首条最终回归 print 106 / generator 79，失败 0；增加设计版本必须 PUBLISHED 的最后断言后，第二条 15/15 通过，含新增 1 项，累计不同用例 186 项。第三条 46 模块 BUILD SUCCESS，23.833 秒。git diff --check 通过；无前端更改，不重复 M4a 前端验证。聚合构建保留现有 SmsCaptchaResult/SliderCaptchaResult Lombok @Builder 初始化值警告，不在本轮扩大范围修复。
+
+过程中修正的验证问题：子表合成模型追加外键时字符串换行导致夹具字段缺失，改为 JSON 节点追加；FileMetadata 必须用 builder；Mockito 默认返回空 Map，缺记录分支显式返回 null；公式夹具补齐 objectCode/tenantId。所有对应失败已复跑通过，没有放宽生产校验。复核又补上发布后的启停撤权、门户过滤空树不能重建隐藏页面、固定 manifest hash 对比、子表显示列过滤和严格公式执行。
+
+Spec 审查：T29/T30/T33 后端阶段出口完成；T31/T32/T34、M5/M6 保留未完成。固定快照不含业务正文；运行数据只包含当前用户可读且模板使用的字段。字段类型变化按显式格式兼容性验证，通用文本仍支持兼容标量。真实流程打印仍拒绝。
+
+代码审查：新增查询在 XML，显式 tenant/del_flag/status；绑定当前读及模板捕获遵循应用锁→模板锁。版本链固定到对象设计版本→CRUD 版本，不能选择最新草稿。文件复用下载权限并额外核验租户。服务依赖检查未发现反向环；聚合构建成功不替代真实 Spring 启动。没有启动 Admin/Flow/MySQL/Redis、运行迁移或改业务记录，没有本轮常驻进程需要清理，也没有 push。完整发布、MySQL 并发、加密 HTTP 与浏览器打印留真实环境验收。

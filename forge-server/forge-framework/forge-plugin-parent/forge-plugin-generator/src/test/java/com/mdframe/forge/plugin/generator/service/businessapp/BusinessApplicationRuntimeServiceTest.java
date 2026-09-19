@@ -302,7 +302,7 @@ class BusinessApplicationRuntimeServiceTest {
     private BusinessApplicationRuntimeService service(BusinessApplicationVO application,
                                                       AiBusinessApplicationVersion version) {
         BusinessApplicationSnapshotService snapshotService = new BusinessApplicationSnapshotService(
-                objectMapper, null, null, null, null, null, null, null, null);
+                objectMapper, null, null, null, null, null, null, null, null, null);
         return new BusinessApplicationRuntimeService(
                 new StubApplicationService(application),
                 new StubVersionService(version),

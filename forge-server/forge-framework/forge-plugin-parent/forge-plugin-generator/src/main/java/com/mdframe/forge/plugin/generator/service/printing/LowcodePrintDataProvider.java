@@ -1,0 +1,132 @@
+package com.mdframe.forge.plugin.generator.service.printing;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
+import com.mdframe.forge.plugin.print.enums.*;
+import com.mdframe.forge.plugin.print.service.PrintDocumentAccess;
+import com.mdframe.forge.plugin.print.service.PrintFailure;
+import com.mdframe.forge.plugin.print.service.PrintIdentity;
+import com.mdframe.forge.plugin.print.spi.*;
+import com.mdframe.forge.plugin.print.vo.PrintFieldCatalogVO;
+import com.mdframe.forge.starter.core.session.SessionHelper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+
+import java.util.*;
+
+/** 低代码正式入口：应用门户、页面、对象操作与记录范围逐层检查。 */
+@Component
+@RequiredArgsConstructor
+public class LowcodePrintDataProvider implements PrintDataProvider {
+    private final PrintIdentity identity;
+    private final PrintApplicationAccessAdapter applicationAccess;
+    private final BusinessApplicationRuntimeService runtime;
+    private final BusinessApplicationVersionMapper versions;
+    private final PrintApplicationSnapshotCodec snapshots;
+    private final PrintMetadataResolver metadata;
+    private final LowcodePrintSourceResolver sources;
+    private final LowcodePrintCatalogBuilder catalogs;
+    private final LowcodePrintRecordReader records;
+    private final LowcodePrintResourceAccess resources;
+    private final PrintDocumentAccess documentAccess;
+    private final ObjectMapper json;
+    private final com.mdframe.forge.plugin.print.mapper.PrintTemplateVersionMapper templateVersions;
+
+    @Override
+    public PrintSourceType sourceType() {
+        return PrintSourceType.LOWCODE;
+    }
+
+    @Override
+    public boolean supports(PrintSourceRequest source) {
+        return source != null && source.sourceType() == PrintSourceType.LOWCODE;
+    }
+
+    @Override
+    public void authorizeDesignSource(PrintActor actor, PrintSourceRequest source, PrintDesignAction action) {
+        applicationAccess.authorize(actor, source.applicationId(), action);
+        metadata.draft(actor, source);
+    }
+
+    @Override
+    public PrintFieldCatalogVO catalog(AuthorizedPrintSource source) {
+        if (!source.actor().equals(identity.current())) {
+            throw PrintFailure.denied();
+        }
+        return catalogs.build(metadata.draft(source.actor(), source.source()));
+    }
+
+    @Override
+    public void validateDesignResources(AuthorizedPrintSource source, Set<String> fileIds) {
+        resources.validate(source.actor(), fileIds);
+    }
+
+    private record Resolution(Long versionId, List<AuthorizedPrintContext.VersionRef> versions,
+                              PrintMetadataResolver.Metadata metadata) { }
+
+    private Resolution resolve(PrintActor actor, PrintRecordRequest request, Long expectedVersion) {
+        if (!actor.equals(identity.require("print:execute")) || !request.isSceneValid()
+                || (request.scene() != PrintScene.LIST && request.scene() != PrintScene.DETAIL)) {
+            throw PrintFailure.denied();
+        }
+        var source = request.source();
+        var portal = runtime.runtimeById(source.applicationId());
+        // 门户已经剔除没有页面权限的节点；来源检查只能在这个过滤后的页面树上进行。
+        var allowed = json.createObjectNode();
+        allowed.putObject("application").set("options", metadata.parse(portal.getApplication().getOptions()));
+        allowed.set("objects", json.valueToTree(portal.getObjects()));
+        sources.object(allowed, source, false);
+        if (!SessionHelper.hasPermission("ai:business:" + source.objectCode() + ":query")
+                && !SessionHelper.hasPermission("ai:business:" + source.objectCode() + ":list")) {
+            throw PrintFailure.denied();
+        }
+        var version = versions.selectVersion(actor.tenantId(), source.applicationId(), portal.getVersionNo());
+        if (version == null || (expectedVersion != null && !expectedVersion.equals(version.getId()))) {
+            throw PrintFailure.of(409, "PRINT_APPLICATION_CHANGED", "应用发布版本已变化，请重新打开打印");
+        }
+        var bindings = snapshots.read(version.getSnapshotJson(), source.applicationId());
+        var refs = bindings.stream().filter(binding -> binding.source().equals(source) && binding.scene() == request.scene())
+                .sorted(Comparator.comparing(PrintApplicationSnapshotCodec.Binding::isDefault).reversed()
+                        .thenComparingInt(PrintApplicationSnapshotCodec.Binding::sortOrder)
+                        .thenComparing(PrintApplicationSnapshotCodec.Binding::templateId))
+                .map(binding -> new AuthorizedPrintContext.VersionRef(binding.templateId(), binding.templateVersionId(),
+                        binding.isDefault(), binding.sortOrder())).toList();
+        for (var binding : bindings) {
+            if (!binding.source().equals(source) || binding.scene() != request.scene()) {
+                continue;
+            }
+            var pinned = templateVersions.selectScoped(actor.tenantId(), binding.templateId(), binding.templateVersionId());
+            if (pinned == null || !binding.schemaHash().equals(pinned.getSchemaHash())) {
+                throw PrintFailure.of(409, "PRINT_APPLICATION_VERSION_INVALID", "应用引用的打印版本校验失败");
+            }
+        }
+        var resolved = metadata.published(actor, source, metadata.parse(version.getSnapshotJson()));
+        metadata.assertRuntimeEnabled(actor, resolved);
+        return new Resolution(version.getId(), refs, resolved);
+    }
+
+    @Override
+    public AuthorizedPrintContext authorize(PrintActor actor, PrintRecordRequest request) {
+        var resolved = resolve(actor, request, null);
+        records.assertReadable(resolved.metadata(), request.recordId());
+        return new AuthorizedPrintContext(actor, request, resolved.versionId(), resolved.versions(), catalogs.build(resolved.metadata()));
+    }
+
+    @Override
+    public PrintData load(AuthorizedPrintContext context, PrintBindingSelection selection) {
+        var resolved = resolve(context.actor(), context.record(), context.applicationVersionId());
+        var types = documentAccess.catalog(catalogs.build(resolved.metadata()));
+        if (!resolved.versions().contains(selection.version())
+                || selection.fields().stream().anyMatch(field -> !types.containsKey(field) || "COLLECTION".equals(types.get(field)))
+                || selection.collections().stream().anyMatch(path -> !"COLLECTION".equals(types.get(path)))) {
+            throw PrintFailure.denied();
+        }
+        return records.read(resolved.metadata(), context.record().recordId(), selection);
+    }
+
+    @Override
+    public void validateRuntimeResources(AuthorizedPrintContext context, Set<String> fileIds) {
+        resources.validate(context.actor(), fileIds);
+    }
+}

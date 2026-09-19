@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，M4a 接入前置已完成，真实业务接入 M4b/M4c–M6 未完成。禁止 push。
+> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，M4a 接入前置和 M4b 后端低代码/快照接入已完成阶段验证，M4c–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -120,11 +120,11 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 
 | 状态/任务 | 依赖 | 拟涉及文件 | 验收与证据 |
 |---|---|---|---|
-| [ ] T29 低代码 Provider | T27b,T28 | GJ `service/printing/{LowcodePrintDataProvider,LowcodePrintCatalogBuilder,LowcodePrintValueAdapter}.java`、GT `service/printing/LowcodePrintDataProviderTest.java` | main/children 归一、子表列授权、公式/字典/关联/脱敏 |
-| [ ] T30 发布态字段校验 | T29 | GJ `service/printing/{PrintBindingValidationService,PrintMetadataResolver}.java`、GT `service/printing/PrintBindingValidationServiceTest.java` | 字段删除/改型/表单身份变更可定位，不查最新草稿代替发布态 |
+| [x] T29 低代码 Provider | T27b,T28 | GJ `service/printing/{LowcodePrintDataProvider,LowcodePrintCatalogBuilder,LowcodePrintValueAdapter}.java`、GT `service/printing/LowcodePrintDataProviderTest.java` | main/children 归一、子表列授权、公式/字典/关联/脱敏 |
+| [x] T30 发布态字段校验 | T29 | GJ `service/printing/{PrintBindingValidationService,PrintMetadataResolver}.java`、GT `service/printing/PrintBindingValidationServiceTest.java` | 字段删除/改型/表单身份变更可定位，不查最新草稿代替发布态 |
 | [ ] T31 应用资源入口 | T28,T30 | U `views/app-center/application-workspace/{ApplicationPrintPanel,ApplicationWorkspaceNav}.vue`、现有 `views/app-center/application.[applicationCode].vue`、`components/print/designer/PrintSourceSelector.vue` | 从表单进入自动绑定，独立全屏，不新增对象选择负担 |
 | [ ] T32 打印动作投影 | T29,T31 | GJ `service/printing/PrintRuntimeActionProjectionService.java`、现有动作投影接入文件、U `views/print/preview.vue`、对应投影测试 | 列表行/详情均进入统一 route；不复制打印脚本 |
-| [ ] T33 应用快照扩展 | T30 | GJ `service/printing/PrintApplicationSnapshotContributor.java`、现有 `BusinessApplicationSnapshotService.java`/`BusinessApplicationPublishService.java`、对应测试 | 固定模板版本/引用/hash，失败无半发布，回滚恢复 |
+| [x] T33 应用快照扩展 | T30 | GJ `service/printing/PrintApplicationSnapshotContributor.java`、现有 `BusinessApplicationSnapshotService.java`/`BusinessApplicationPublishService.java`、对应测试 | 固定模板版本/引用/hash，失败无半发布，回滚恢复 |
 | [ ] T34 下载协议扩展 | T33 | 现有 `LowcodeProtocolSnapshotBuilder.java`、拟新增打印导出贡献器、生成依赖模板、对应导出测试 | 下载代码包含协议/模板/绑定且复用运行时，无漏字段 |
 
 ### M4 实施拆分（2026-09-19，编码前）
@@ -134,7 +134,7 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 - [x] M4a-1（T29 前置）：`PrintSourceRequest`、两个来源 DTO、两个实体改用受控字符串 pageId（拆为 DTO 组与持久化组）；新增 V1.0.171 扩展两表 page_id，保持旧数字身份摘要不变。路由解析同步，补 DTO/HTTP/Mapper/路由验证。
 - [x] M4a-2（T33 前置）：应用 Mapper 行锁、版本 Mapper 历史快照当前读（4 文件）；新增 `service/printing/{PrintApplicationAccessAdapter,PrintApplicationSnapshotCodec,PrintApplicationLock}.java`。应用设计权限与应用可见范围同时核验，删除检查全部保留的历史应用版本。
 - [x] M4a-3（T33 前置）：新增 `PrintApplicationVersionGuard`，接入 `BusinessApplicationVersionService`；共享应用行锁下核验固定模板版本/归属/hash，失败不提交应用版本或发布指针。补服务与事务/Mapper 测试。
-- [ ] M4b：T29/T30/T33 余项，已发布元数据、主子表读取与字段权限、候选快照生成/发布校验。特别验证 DynamicCrudService 的子表读取后处理，不能沿用未翻译/未脱敏子表结果。
+- [x] M4b：T29/T30/T33 余项，已发布元数据、主子表读取与字段权限、候选快照生成/发布校验。特别验证 DynamicCrudService 的子表读取后处理，不能沿用未翻译/未脱敏子表结果。
 - [ ] M4c：T31/T32/T34，工作台入口、运行动作、下载协议及浏览器验收；进入前落实 R01。
 
 M4a 的 `printing` 快照协议先定义并在最终应用版本提交时守卫；候选快照生成和业务字段验证属于 M4b，M4a 不提前安装不完整 DataProvider。现存不含 printing 的应用版本兼容为空绑定。
@@ -220,3 +220,25 @@ T22–T28 的上述子任务均已实现并验证，实际新增内容包括模�
 M4a-1 已提交 d90b720b；M4a-2/3 的应用适配和提交守卫使用同一事务锁，作为同一安全闭环提交。字符串页面 ID、当前身份、应用设计权限、历史引用检查、固定模板版本/hash 验证已实现。Print 106 项、generator 30 项目标测试通过；其中 5 项采用生产 XML/MyBatis-Plus 和真实 Spring/H2 事务验证。前端 77 项与生产构建通过，Admin 46 模块聚合 package 通过。identity 新增断言另增量复验通过。
 
 T29/T30/T33 总任务保持未完成：候选 printing 清单生成、已发布业务字段目录及真实数据 Provider 仍属 M4b；T31/T32/T34 和 R01 保留待办。无真实库迁移或业务 E2E，不将 M4a 视为可打印业务单据。
+
+### M4b 编码拆分与边界（2026-09-19）
+
+- [x] M4b-1：PrintBindingMapper/XML、PrintApplicationSnapshotContributor、BusinessApplicationSnapshotService；候选生成时固定启用绑定的已发布模板版本/hash，后续发布重试和回滚保留固定引用，不重新读取最新模板指针。
+- [x] M4b-2：PrintMetadataResolver、LowcodePrintCatalogBuilder、LowcodePrintSourceResolver、PrintBindingValidationService；从应用版本指定的对象设计版本→CRUD 版本读取完整元数据；来源必须是该页面实际使用的对象；字段与明细可见性取发布模型/页面交集。
+- [x] M4b-3：严格读取固定配置的 LowcodePrintRecordReader、LowcodePrintValueAdapter、DynamicCrudService 小范围增量；主子表都走记录范围、解密/公式/翻译/脱敏，子表禁止猜测外键，超过 500 行拒绝。金额输出统一回到打印协议的分。
+- [x] M4b-4：LowcodePrintDataProvider、LowcodePrintResourceAccess、应用提交守卫接字段验证；仅 LIST/DETAIL，当前用户应用/页面/对象/记录权限全部通过才返回固定版本；流程场景仍拒绝，留 M5。
+- [x] M4b-5：以上服务单测、真实 Mapper/事务增量验证、Admin 聚合构建；回填本轮证据后分阶段本地提交。
+
+每个子任务主要源码不超过 5 个文件；测试、构造器兼容调整和本 SDD 文档单列。运行读取绝不回退到草稿；缺少完整历史发布配置、子对象固定版本或关系元数据时给出可定位错误，不能以猜测配置继续输出。应用发布自身的多步骤恢复机制保持现状，打印验证失败不提交新的应用版本/指针。
+
+M4b-4 补充分组：4a 为 Provider/资源授权/字段校验/最终提交守卫（4 文件）；4b 为当前对象启停守卫（AiCrudConfigMapper/XML、PrintMetadataResolver、Provider，4 文件）。只查询当前启停/删除状态，不读取最新草稿作为打印元数据。候选绑定查询使用应用锁内 FOR UPDATE 当前读，避免发布长事务的旧一致性快照。
+
+M4b-3 补充：3a 为读取器/值适配器/DynamicCrudService；3b 为虚拟公式打印执行入口（AbstractFormulaRuntime、VirtualFormulaRuntime、DynamicCrudService，3 文件）。现有普通读取会记录公式输出且吞掉执行错误；打印入口复用执行引擎，禁用输入/输出 trace 和公式执行日志，遇公式错误阻止整份输出。增加相应行为测试，不改变普通 CRUD 公式行为。
+
+### M4b 阶段结果
+
+T29/T30/T33 后端实现完成并通过阶段验证（implemented-pending-e2e）。新增 9 个打印适配生产类，挂接候选快照/最终应用版本提交；严格使用应用指定的对象设计版本→CRUD 版本，当前启停/删除只作撤权检查。主子表列目录取模型可见性、页面区域和已编译子表显示列的交集；固定子表关系不猜外键。主子表都受记录范围、解密、公式、翻译、脱敏保护；公式和脱敏失败阻止输出。复用文件下载权限且校验租户、类型与大小。
+
+验证：打印插件 106 项，generator 79 项目标回归通过；最后增加 1 项草稿版本伪装拒绝用例，并复验元数据/Provider 共 15 项通过，累计 186 个不同用例通过。Admin 46 模块 package 成功；SQL/XML、git diff --check 通过。实际边界和命令见 execution-log、verification/m4b-results.json。
+
+M4c（入口、动作投影、导出协议）和 M5 流程/代码 Provider 未完成，FLOW 场景明确拒绝。未启动真实服务、未跑 MySQL/Flyway/API/打印机验收；前端无改动，复用 M4a 基线。只做本地 commit，禁止 push。

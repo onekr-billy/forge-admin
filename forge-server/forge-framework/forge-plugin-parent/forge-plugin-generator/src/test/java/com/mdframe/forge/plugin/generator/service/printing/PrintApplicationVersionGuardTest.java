@@ -24,7 +24,8 @@ class PrintApplicationVersionGuardTest {
     private final PrintTemplateVersionMapper versions = mock(PrintTemplateVersionMapper.class);
     private final ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
     private final PrintApplicationVersionGuard guard = new PrintApplicationVersionGuard(identity, lock,
-            new PrintApplicationSnapshotCodec(factory.getValidator()), templates, versions, new PrintProtocolValidator());
+            new PrintApplicationSnapshotCodec(factory.getValidator()), templates, versions, new PrintProtocolValidator(),
+            mock(PrintBindingValidationService.class), mock(PrintMetadataResolver.class));
     private final PrintTemplate template = new PrintTemplate();
     private final PrintTemplateVersion version = new PrintTemplateVersion();
     @BeforeEach void setup() {

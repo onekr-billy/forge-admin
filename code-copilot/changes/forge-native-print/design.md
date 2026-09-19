@@ -227,3 +227,23 @@ M3b 审查补充：图片元素的 FIELD 绑定只能使用目录类型 IMAGE；
 - 本阶段无权限资源新增、无角色自动授权、无业务状态/数据修复 SQL。应用版本新增与发布指针仍由原事务处理，打印校验失败整体回滚该事务；既有协调发布前置步骤的副作用仍沿用原恢复机制，不承诺全系统原子回滚。
 
 M4a 落位：`PrintApplicationAccessAdapter`、`PrintApplicationLock`、`PrintApplicationSnapshotCodec`、`PrintApplicationVersionGuard` 均在 generator 的 `service/printing/`，不使 print 反向依赖 generator。Codec 每个应用最多 1000 条引用、每来源/场景最多 100 个模板；IDs 支持 Long 范围字符串，拒绝小数/溢出与未知字段。`BusinessApplicationVersionService.commitImmutable` 在查询/写入版本之前调用守卫，因此幂等重试、正常提交和回滚提交均走共同锁。引用守卫不是候选字段合法性校验的替代，后者继续由 M4b 实现。
+
+### M4b 编码拆分与边界（2026-09-19）
+
+- M4b-1：PrintBindingMapper/XML、PrintApplicationSnapshotContributor、BusinessApplicationSnapshotService；候选生成时固定启用绑定的已发布模板版本/hash，后续发布重试和回滚保留固定引用，不重新读取最新模板指针。
+- M4b-2：PrintMetadataResolver、LowcodePrintCatalogBuilder、LowcodePrintSourceResolver、PrintBindingValidationService；从应用版本指定的对象设计版本→CRUD 版本读取完整元数据；来源必须是该页面实际使用的对象；字段与明细可见性取发布模型/页面交集。
+- M4b-3：严格读取固定配置的 LowcodePrintRecordReader、LowcodePrintValueAdapter、DynamicCrudService 小范围增量；主子表都走记录范围、解密/公式/翻译/脱敏，子表禁止猜测外键，超过 500 行拒绝。金额输出统一回到打印协议的分。
+- M4b-4：LowcodePrintDataProvider、LowcodePrintResourceAccess、应用提交守卫接字段验证；仅 LIST/DETAIL，当前用户应用/页面/对象/记录权限全部通过才返回固定版本；流程场景仍拒绝，留 M5。
+- M4b-5：以上服务单测、真实 Mapper/事务增量验证、Admin 聚合构建；回填本轮证据后分阶段本地提交。
+
+每个子任务主要源码不超过 5 个文件；测试、构造器兼容调整和本 SDD 文档单列。运行读取绝不回退到草稿；缺少完整历史发布配置、子对象固定版本或关系元数据时给出可定位错误，不能以猜测配置继续输出。应用发布自身的多步骤恢复机制保持现状，打印验证失败不提交新的应用版本/指针。
+
+### M4b 实际落位与兼容边界
+
+- generator 的 `service/printing/` 新增 LowcodePrintSourceResolver、PrintMetadataResolver、LowcodePrintCatalogBuilder、LowcodePrintValueAdapter、LowcodePrintRecordReader、LowcodePrintResourceAccess、LowcodePrintDataProvider、PrintBindingValidationService、PrintApplicationSnapshotContributor。没有新 Controller 或请求体协议。
+- 候选快照捕获已启用绑定的 publishedVersionId/hash；最终提交仍按快照固定引用校验，不跟随最新模板指针。回滚重用历史 printing 清单。应用已有多步骤发布恢复机制保持不变，打印失败不写新的应用版本/指针，不宣称回滚先前其它资产发布步骤。
+- 运行态从门户同一过滤后页面树验证来源，要求对象 list/query 权限，并对主子表执行现有数据范围。缺失的历史安全配置、子对象固定版本、关系、已删除字段和格式类型不兼容均明确拒绝；历史缺少 printing 的应用仍为空绑定，需要重新发布后才获得打印入口资源。
+- 当前数据模式：应用/对象/模板版本固定，业务记录取已保存的当前值。金额按打印协议输出分字符串，大整数不经浮点；字典和关联优先展示值，敏感字段不得用未脱敏 Name 副本替换。
+- 字段范围使用模型的可见性与页面/子表显示列。字段改为不兼容的 MONEY/NUMBER/DATE/BOOLEAN/IMAGE 格式会拒绝；通用 TEXT 允许兼容标量类型。流程节点列权限与审批签名仍属于 M5。
+- 普通 CRUD 的宽容行为保持现状；打印新增严格翻译/脱敏、无猜测外键、501 行探测/500 行上限及无业务正文日志的虚拟公式执行入口。公式执行失败不返回部分计算结果；复用现有公式引擎，不复制表达式解释器。
+- 运行时的启停/删除检查使用 AiCrudConfigMapper/XML 的数量查询，兼容旧 CRUD 的 0=正常/1=停用与业务对象的 1=启用，不读取草稿字段作为运行配置。

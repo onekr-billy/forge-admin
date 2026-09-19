@@ -17,6 +17,9 @@ public interface PrintBindingMapper {
 
     List<PrintBinding> selectSource(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId, @Param("sourceKey") String sourceKey, @Param("scene") String scene);
 
+    /** 候选发布清单：应用行锁内使用当前读，避免读取外层事务的旧一致性快照。 */
+    List<PrintBinding> selectApplication(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId);
+
     long countTemplateReferences(@Param("tenantId") Long tenantId, @Param("templateId") Long templateId);
 
     int clearDefault(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId, @Param("sourceKey") String sourceKey, @Param("scene") String scene, @Param("actor") Long actor);
