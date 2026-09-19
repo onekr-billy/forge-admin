@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { usePrintDesignerStore } from '../../../../stores/print/printDesignerStore'
 import { createPrintDocument } from '../../protocol/types'
 import { mmToPx } from '../../protocol/units'
+import { createStaticTable } from '../staticTable'
 
 function fixture() {
   const doc = createPrintDocument()
@@ -202,5 +203,20 @@ describe('print designer commands and history', () => {
     expect(store.document.header.elements).toHaveLength(0)
     store.selectSurface('header')
     expect(store.activeSurface).toEqual(store.document.header)
+  })
+  it('edits, merges and duplicates native blank-table cells with unique nested ids', () => {
+    const table = createStaticTable(2, 2, 40, 8)
+    store.execute((document) => document.body[0].elements.push({ id: 'table', type: 'STATIC_TABLE', xMm: 0, yMm: 35, widthMm: 40, heightMm: 16, table }))
+    store.selectElement('table')
+    store.selectTableCell(store.activeElement.table.cells[0].id)
+    store.patchSelectedTableCells({ binding: { source: 'CONSTANT', value: '合同编号' } })
+    expect(store.activeTableCell.binding.value).toBe('合同编号')
+    store.selectTableCell(store.activeElement.table.cells[1].id, true)
+    expect(store.mergeStaticTableSelection()).toBe(true)
+    expect(store.activeTableCell.colSpan).toBe(2)
+    expect(store.splitStaticTableSelection()).toBe(true)
+    store.duplicateSelection()
+    const [original, copy] = store.activeSurface.elements.filter(element => element.type === 'STATIC_TABLE')
+    expect(copy.table.cells.map(cell => cell.id)).not.toEqual(original.table.cells.map(cell => cell.id))
   })
 })

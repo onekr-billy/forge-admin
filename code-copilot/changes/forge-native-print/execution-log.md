@@ -506,3 +506,13 @@ git diff --check
 结果：前端 19 文件 119 项、共享协议 34 项、Java 协议 69 项全部通过；定向 ESLint 与空白检查无输出，Vite 9372 modules 构建成功。所有触达 SFC 低于 800 行。浏览器在 `/print/designer?templateId=1&ui=t47` 确认右键菜单包含复制/旋转/镜像/层级/锁定/删除；旋转后设计元素和预览元素均为 `rotate(90deg) scaleX(1) scaleY(1)`；锁定后缩放柄消失且删除/层级禁用，元素行为属性区显示旋转和镜像配置。临时验证状态已还原，页面继续留给用户检查。
 
 第一次通过 pnpm 包装器并行执行时触发其依赖状态检查，并临时写入 `pnpm-workspace.yaml` 的占位项；该非业务变更已完整恢复，后续直接复用现有 `node_modules/.bin`。构建仅保留项目既有 native config、CSS `//` 注释、dynamic import 和插件耗时提示。未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway、PDF 或物理打印；本阶段只 commit、不 push，`.DS_Store` 不暂存。
+
+## 2026-09-19 · T50 原生空白表格与单元格编辑
+
+按用户选定的高级能力优先级，先完成空白表格。编码前已补 Spec 4.8、设计结构、T50–T53 任务与增量测试口径。实现没有接入 HTML、脚本或 hiprint JSON；`STATIC_TABLE` 是 forge-print v1 的原生声明式元素，列宽、行高、覆盖矩阵、绑定、格式和逐格样式均由前后端白名单校验。
+
+实现：基础物料增加 3×3 空白表格；Pinia 管理单元格选择和历史，支持增删行列、矩形合并、拆分、逐格文字/字段绑定、字号、对齐、颜色与边框；双击单元格可直接输入，Shift/⌘/Ctrl 可多选。缩放会同步行列物理尺寸，复制、粘贴和复制模板会重建全部嵌套 ID。设计态和正式打印共用同一表格矩阵，预览只输出纯文本。
+
+验证：前端打印域 20 文件 125 项、共享协议 36 项、Java 打印插件 116 项全部通过；定向 ESLint 与 `git diff --check` 无输出；Vite 9379 modules 构建成功，仅有项目既有构建提示。Chromium 合成工作台在 `/print/designer?templateId=1&ui=t50` 实际添加表格、选择/多选单元格、双击输入“合同编号”，正式预览显示同一 3×3 表格。原 4318 验证进程启动时的沙箱文件快照无法解析本轮新增文件，因此另启 4319 独立 localhost 验证服务；不影响生产代码。
+
+未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway、Firefox/Edge/Safari、PDF 或物理打印。本阶段仅本地 commit，不 push；既有 `.DS_Store` 不暂存。

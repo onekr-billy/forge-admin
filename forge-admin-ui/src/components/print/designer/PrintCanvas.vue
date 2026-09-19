@@ -124,6 +124,11 @@ function elementDown(event, surfaceId, id) {
   drag.start(event)
 }
 
+function tableCellChange(id, value) {
+  store.selectTableCell(id)
+  store.patchSelectedTableCells({ binding: { source: 'CONSTANT', value } })
+}
+
 function surfaceDown(event, surface) {
   if (event.button !== 0)
     return
@@ -253,8 +258,11 @@ onBeforeUnmount(() => clearMarquee())
                 :selected="store.surfaceId === surface.id && store.selectedIds.includes(element.id)"
                 :catalog="store.catalog"
                 :context="context"
+                :table-cell-ids="store.tableCellIds"
                 @pointerdown.stop="elementDown($event, surface.id, element.id)"
                 @contextmenu.stop.prevent="elementContext($event, surface.id, element.id)"
+                @table-cell-select="store.selectTableCell"
+                @table-cell-change="tableCellChange"
               />
               <div v-if="surface.kind === 'TEXT'" class="flow-text" :style="printStyle(surface.style)" @pointerdown="surfaceDown($event, surface)">
                 {{ flowText(surface) }}

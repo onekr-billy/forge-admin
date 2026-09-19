@@ -3,13 +3,16 @@ import { computed, ref, watch } from 'vue'
 import { encodePrintCode } from '../renderers/codes'
 import { printRenderers } from '../renderers/registry'
 import { designerBindingText, designerBindingValue, fieldLabel } from './designerSample'
+import PrintStaticTableDesigner from './PrintStaticTableDesigner.vue'
 
 const props = defineProps({
   element: { type: Object, required: true },
   selected: Boolean,
   catalog: { type: Array, default: () => [] },
   context: { type: Object, default: () => ({}) },
+  tableCellIds: { type: Array, default: () => [] },
 })
+const emit = defineEmits(['tableCellSelect', 'tableCellChange'])
 const codeSrc = ref('')
 const text = computed(() => {
   if (props.element.type === 'PAGE_NUMBER')
@@ -23,7 +26,14 @@ const imageSrc = computed(() => {
   const value = designerBindingValue(props.element.binding, props.context)
   return typeof value === 'string' && value.startsWith('data:image/') ? value : ''
 })
-const node = computed(() => ({ ...props.element, text: text.value, src: codeSrc.value || imageSrc.value }))
+const node = computed(() => ({
+  ...props.element,
+  text: text.value,
+  src: codeSrc.value || imageSrc.value,
+  table: props.element.table
+    ? { ...props.element.table, cells: props.element.table.cells.map(cell => ({ ...cell, text: designerBindingText(cell.binding, cell.format, props.catalog, props.context) })) }
+    : undefined,
+}))
 const renderer = computed(() => printRenderers[props.element.type])
 const style = computed(() => ({
   left: `${props.element.xMm}mm`,
@@ -60,7 +70,16 @@ watch(() => [props.element.type, props.element.barcodeFormat, props.element.widt
     :title="bindingName ? `绑定字段：${bindingName}` : undefined"
     tabindex="-1"
   >
-    <component :is="renderer" v-if="renderer" :node="node" class="element-renderer" />
+    <PrintStaticTableDesigner
+      v-if="element.type === 'STATIC_TABLE' && selected"
+      :node="node"
+      :selected-ids="tableCellIds"
+      :locked="element.locked"
+      class="element-renderer interactive"
+      @select="(id, additive) => emit('tableCellSelect', id, additive)"
+      @change="(id, value) => emit('tableCellChange', id, value)"
+    />
+    <component :is="renderer" v-else-if="renderer" :node="node" class="element-renderer" />
     <div v-if="element.type === 'IMAGE' && !imageSrc" class="resource-placeholder">
       <span class="placeholder-icon">▧</span>
       <span>{{ bindingName || '图片' }}</span>
@@ -91,6 +110,9 @@ watch(() => [props.element.type, props.element.barcodeFormat, props.element.widt
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+.element-renderer.interactive {
+  pointer-events: auto;
 }
 .resource-placeholder {
   position: absolute;

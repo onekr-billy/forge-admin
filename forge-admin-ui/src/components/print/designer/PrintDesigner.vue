@@ -12,6 +12,7 @@ import BindingPanel from './panels/BindingPanel.vue'
 import ElementGeometryPanel from './panels/ElementGeometryPanel.vue'
 import ElementOptionsPanel from './panels/ElementOptionsPanel.vue'
 import PaperPanel from './panels/PaperPanel.vue'
+import StaticTablePanel from './panels/StaticTablePanel.vue'
 import TablePanel from './panels/TablePanel.vue'
 import TextPanel from './panels/TextPanel.vue'
 import PrintCanvas from './PrintCanvas.vue'
@@ -19,6 +20,7 @@ import PrintDesignerToolbar from './PrintDesignerToolbar.vue'
 import PrintElementPalette from './PrintElementPalette.vue'
 import PrintFieldTree from './PrintFieldTree.vue'
 import PrintSectionList from './PrintSectionList.vue'
+import { renewStaticTableIds } from './staticTable'
 import { usePrintDesignerLifecycle } from './usePrintDesignerLifecycle'
 
 const props = defineProps({
@@ -93,7 +95,10 @@ function copyTemplate() {
     for (const band of [doc.header, doc.footer, ...doc.body]) {
       if (band.id)
         band.id = newPrintId()
-      for (const element of band.elements || []) element.id = newPrintId()
+      for (const element of band.elements || []) {
+        element.id = newPrintId()
+        renewStaticTableIds(element)
+      }
       for (const column of band.columns || []) column.id = newPrintId()
     }
   })
@@ -172,7 +177,7 @@ defineExpose({ canLeave, save })
         <aside v-show="store.rightPanelOpen" class="designer-properties">
           <NTabs v-model:value="panel" type="line" size="small">
             <NTabPane name="selection" tab="选中内容">
-              <ElementGeometryPanel /><ElementOptionsPanel /><BindingPanel /><TextPanel /><TablePanel />
+              <ElementGeometryPanel /><ElementOptionsPanel /><BindingPanel /><TextPanel /><StaticTablePanel /><TablePanel />
             </NTabPane>
             <NTabPane name="paper" tab="纸张">
               <PaperPanel />

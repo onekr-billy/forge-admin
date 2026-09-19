@@ -186,6 +186,10 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 - `designerSample.js` 只依据字段目录生成非业务示例上下文；真实样本存在时直接使用授权样本。Canvas 与 PrintPreview 接收同一 context，固定文本/页码/线框/椭圆调用 `renderers/registry.js` 的正式渲染组件，条码/二维码调用正式编码器；表格设计态按相同表头、列格式和表尾绑定生成预览行。内部字段路径只在字段树和绑定属性中展示，不作为纸面正文。
 - `elementCatalog.js` 用预设区分标题/固定文本、横线/竖线等设计意图，持久化仍使用受控协议类型；椭圆是新增的原生协议类型，前后端白名单同步。画布选择命令集中在 `PrintCanvasActionBar.vue`，顺序变化通过数组层级完成并进入同一撤销历史。
 - 元素协议以可选 `rotationDeg/flipX/flipY/locked` 表达中心点变换和设计锁定，样式以白名单 `objectFit/borderStyle/borderRadiusMm` 扩展图片与边框表现；Canvas 和 `PrintPage` 读取同一字段组合 transform。右键菜单、属性面板和工具栏只调用 Store 命令，锁定检查集中在手势、几何、对齐、层级和删除入口；复制出的锁定元素强制解锁。
+- `STATIC_TABLE` 是固定区块内的原生元素，`table.columns/rows/cells` 分别保存毫米列宽、行高和带 row/column/rowSpan/colSpan 的稀疏起始单元格；校验器用覆盖矩阵保证每个坐标恰好覆盖一次。生产渲染使用 CSS Grid，设计态用独立编辑组件在 Pinia 中保存选中单元格，不把选择态写进模板。
+- `PAGE_BREAK` 是正文有序区块，只表达“后续内容从新页开始”；分页游标处理显式换页，首尾或连续分页符由协议拒绝。`designerPagination.js` 使用示例内容高度生成多纸张编辑估算，页眉页脚重复展示但仍映射同一协议对象，最终页数以预览分页树为准。
+- `printComponentRegistry.js` 只接受应用代码注册的唯一 key、标签、图标和同步工厂。工厂输出标准 element/section 片段，经当前文档 `assertPrintDocument` 校验后原子写入；下载/导入协议不包含注册器或函数。平台内置审批状态、签章位置和合同条款三个示例注册项，业务插件可在启动时追加。
+- `printCalibration.js` 生成不含业务数据的 A3/A4/A5/B4/B5/自定义纸张校准结果和浏览器能力报告，复用隔离 iframe 打印会话；校准页包含 10mm 边距框、100mm 标尺、方向和缩放检查说明。物理打印结果只存用户本地验收勾选，不写服务端执行成功。
 - `draftStorage.js` 校验导入体积和协议、只存模板。`PrintDesigner` 支持注入 `saveDraft(document)`，M3 接口就绪后替换默认本地适配器。`views/print/designer.vue` 提供页面组件与路由离开保护；菜单种子留给 M3。
 - 当前一个页面只挂载一个 PrintDesigner；验证入口专用独立 Pinia。每次加载模板清空旧选择/历史/剪贴板，保存通过 generation 避免异步回调污染后来加载的文档。
 

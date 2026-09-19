@@ -27,6 +27,15 @@ export function prepareElements(elements, context, measure, resources) {
         node.text = formatValue(resolveBinding(element.binding, context), element.format)
       }
     }
+    if (element.type === 'STATIC_TABLE') {
+      node.table = {
+        ...element.table,
+        cells: element.table.cells.map(cell => ({
+          ...cell,
+          text: formatValue(resolveBinding(cell.binding, context), cell.format),
+        })),
+      }
+    }
     return node
   })
 }

@@ -22,6 +22,8 @@ final class PrintProtocolRules {
 
     private final PrintTableRules tables = new PrintTableRules(this, values);
 
+    private final PrintStaticTableRules staticTables = new PrintStaticTableRules(this, values);
+
     void issue(String path, String code, String message) {
         if (issues.size() < MAX_ISSUES) {
             issues.add(new PrintProtocolValidator.Issue(path, code, message));
@@ -173,12 +175,12 @@ final class PrintProtocolRules {
     }
 
     private void element(JsonNode e, String path, double width, double height) {
-        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "barcodeFormat", "pageNumberFormat", "rotationDeg", "flipX", "flipY", "locked")) {
+        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "table", "barcodeFormat", "pageNumberFormat", "rotationDeg", "flipX", "flipY", "locked")) {
             return;
         }
         elements++;
         identifier(e.get("id"), path + ".id");
-        choice(e.get("type"), path + ".type", "TEXT", "IMAGE", "LINE", "RECTANGLE", "ELLIPSE", "BARCODE", "QRCODE", "PAGE_NUMBER");
+        choice(e.get("type"), path + ".type", "TEXT", "IMAGE", "LINE", "RECTANGLE", "ELLIPSE", "BARCODE", "QRCODE", "PAGE_NUMBER", "STATIC_TABLE");
         for (String key : List.of("xMm", "yMm", "widthMm", "heightMm")) {
             number(e.get(key), path + "." + key, (key.equals("widthMm") || key.equals("heightMm")) ? .1 : 0, PAPER_SIZE_MM);
         }
@@ -194,6 +196,9 @@ final class PrintProtocolRules {
         }
         if (e.has("pageNumberFormat")) {
             choice(e.get("pageNumberFormat"), path + ".pageNumberFormat", "CURRENT", "CURRENT_TOTAL");
+        }
+        if (type.equals("STATIC_TABLE") || e.has("table")) {
+            staticTables.table(e.get("table"), path + ".table", n(e, "widthMm"), n(e, "heightMm"));
         }
         if (e.has("rotationDeg")) {
             number(e.get("rotationDeg"), path + ".rotationDeg", -180, 180);

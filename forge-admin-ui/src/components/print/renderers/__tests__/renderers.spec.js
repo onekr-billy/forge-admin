@@ -4,6 +4,7 @@ import PrintPage from '../../runtime/PrintPage.vue'
 import PrintImage from '../PrintImage.vue'
 import PrintTable from '../PrintTable.vue'
 import PrintText from '../PrintText.vue'
+import PrintStaticTable from '../PrintStaticTable.vue'
 
 describe('safe paper rendering', () => {
   it('renders plain text with line preservation without interpreting markup', () => {
@@ -37,5 +38,19 @@ describe('safe paper rendering', () => {
     }
     const wrapper = mount(PrintPage, { props: { page, geometry: { widthMm: 210, heightMm: 297 } } })
     expect(wrapper.get('[data-print-element="rotated"]').attributes('style')).toContain('rotate(90deg) scaleX(-1) scaleY(1)')
+  })
+  it('renders native blank-table spans as plain text with physical tracks', () => {
+    const node = {
+      table: {
+        columns: [{ id: 'a', widthMm: 25 }, { id: 'b', widthMm: 35 }],
+        rows: [{ id: 'r', heightMm: 10 }],
+        cells: [{ id: 'c', row: 0, column: 0, rowSpan: 1, colSpan: 2, text: '<script>alert(1)</script>' }],
+      },
+    }
+    const wrapper = mount(PrintStaticTable, { props: { node } })
+    expect(wrapper.get('[role=table]').attributes('style')).toContain('25mm 35mm')
+    expect(wrapper.get('[role=cell]').attributes('style')).toContain('span 2')
+    expect(wrapper.find('script').exists()).toBe(false)
+    expect(wrapper.text()).toContain('<script>alert(1)</script>')
   })
 })

@@ -145,6 +145,17 @@ export function resizeElement(document, surfaceId, id, dx, dy) {
   if (!element || !Number.isFinite(dx) || !Number.isFinite(dy)) {
     return
   }
+  const previousWidth = element.widthMm
+  const previousHeight = element.heightMm
   element.widthMm = Math.max(0.1, Math.min(paperGeometry(document).contentWidthMm - element.xMm, Number((element.widthMm + dx).toFixed(3))))
   element.heightMm = Math.max(0.1, Math.min(surface.heightMm - element.yMm, Number((element.heightMm + dy).toFixed(3))))
+  if (element.type === 'STATIC_TABLE' && element.table) {
+    const scale = (items, key, ratio, total) => {
+      items.forEach(item => item[key] = Number((item[key] * ratio).toFixed(3)))
+      const rest = Number((total - items.reduce((sum, item) => sum + item[key], 0)).toFixed(3))
+      items.at(-1)[key] = Number((items.at(-1)[key] + rest).toFixed(3))
+    }
+    scale(element.table.columns, 'widthMm', element.widthMm / previousWidth, element.widthMm)
+    scale(element.table.rows, 'heightMm', element.heightMm / previousHeight, element.heightMm)
+  }
 }

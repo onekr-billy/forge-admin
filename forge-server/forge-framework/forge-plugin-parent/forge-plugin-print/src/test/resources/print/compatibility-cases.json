@@ -395,5 +395,37 @@
     ],
     "backendValid": false,
     "frontendValid": true
+  },
+  {
+    "name": "原生空白表格",
+    "patches": [
+      { "pointer": "/body/0/elements/0/type", "value": "STATIC_TABLE" },
+      { "pointer": "/body/0/elements/0/table", "value": {
+        "columns": [{ "id": "static_col_a", "widthMm": 50 }, { "id": "static_col_b", "widthMm": 50 }],
+        "rows": [{ "id": "static_row_a", "heightMm": 10 }],
+        "cells": [
+          { "id": "static_cell_a", "row": 0, "column": 0, "rowSpan": 1, "colSpan": 1, "binding": { "source": "CONSTANT", "value": "甲" } },
+          { "id": "static_cell_b", "row": 0, "column": 1, "rowSpan": 1, "colSpan": 1, "binding": { "source": "FIELD", "path": "main.number" } }
+        ]
+      } }
+    ],
+    "backendValid": true,
+    "frontendValid": true
+  },
+  {
+    "name": "空白表格单元格重叠",
+    "patches": [
+      { "pointer": "/body/0/elements/0/type", "value": "STATIC_TABLE" },
+      { "pointer": "/body/0/elements/0/table", "value": {
+        "columns": [{ "id": "static_col_a", "widthMm": 50 }, { "id": "static_col_b", "widthMm": 50 }],
+        "rows": [{ "id": "static_row_a", "heightMm": 10 }],
+        "cells": [
+          { "id": "static_cell_a", "row": 0, "column": 0, "rowSpan": 1, "colSpan": 1, "binding": { "source": "CONSTANT", "value": "甲" } },
+          { "id": "static_cell_b", "row": 0, "column": 0, "rowSpan": 1, "colSpan": 1, "binding": { "source": "CONSTANT", "value": "乙" } }
+        ]
+      } }
+    ],
+    "backendValid": false,
+    "frontendValid": false
   }
 ]

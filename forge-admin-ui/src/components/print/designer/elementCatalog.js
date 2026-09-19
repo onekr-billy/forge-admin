@@ -1,6 +1,7 @@
 import { paperGeometry } from '../protocol/units'
 import { findSurface, newPrintId } from './commands'
 import { defaultFieldFormat } from './designerSample'
+import { createStaticTable, staticTableSize } from './staticTable'
 
 // These options describe the fixed print protocol, not configurable business enums.
 export const elementCatalog = [
@@ -14,6 +15,7 @@ export const elementCatalog = [
   { key: 'barcode', type: 'BARCODE', label: '条形码' },
   { key: 'qrcode', type: 'QRCODE', label: '二维码' },
   { key: 'page-number', type: 'PAGE_NUMBER', label: '页码' },
+  { key: 'static-table', type: 'STATIC_TABLE', label: '空白表格' },
 ]
 export const PRINT_DRAG_TYPE = 'application/x-forge-print-item'
 
@@ -29,24 +31,30 @@ export function addElement(store, type, binding, position, preset) {
       doc.body.push(surface)
       targetId = surface.id
     }
-    if (surface.heightMm < 20)
-      surface.heightMm = 20
+    if (surface.heightMm < (type === 'STATIC_TABLE' ? 34 : 20))
+      surface.heightMm = type === 'STATIC_TABLE' ? 34 : 20
     const presetSize = preset === 'TITLE'
       ? { widthMm: 90, heightMm: 14 }
       : preset === 'VERTICAL'
         ? { widthMm: 1, heightMm: 30 }
         : type === 'QRCODE'
           ? { widthMm: 18, heightMm: 18 }
-          : type === 'ELLIPSE'
-            ? { widthMm: 32, heightMm: 20 }
-            : type === 'LINE'
-              ? { widthMm: 45, heightMm: 1 }
-              : type === 'TEXT' || type === 'PAGE_NUMBER'
-                ? { widthMm: 45, heightMm: 10 }
-                : { widthMm: 45, heightMm: 18 }
+          : type === 'STATIC_TABLE'
+            ? { widthMm: 75, heightMm: 27 }
+            : type === 'ELLIPSE'
+              ? { widthMm: 32, heightMm: 20 }
+              : type === 'LINE'
+                ? { widthMm: 45, heightMm: 1 }
+                : type === 'TEXT' || type === 'PAGE_NUMBER'
+                  ? { widthMm: 45, heightMm: 10 }
+                  : { widthMm: 45, heightMm: 18 }
     const widthMm = Math.min(presetSize.widthMm, paperGeometry(doc).contentWidthMm)
     const heightMm = presetSize.heightMm
     const e = { id, type, xMm: Math.max(0, Math.min(position?.xMm ?? 3, paperGeometry(doc).contentWidthMm - widthMm)), yMm: Math.max(0, Math.min(position?.yMm ?? 3, surface.heightMm - heightMm)), widthMm, heightMm }
+    if (type === 'STATIC_TABLE') {
+      e.table = createStaticTable(3, 3, widthMm, heightMm / 3)
+      Object.assign(e, staticTableSize(e.table))
+    }
     if (['TEXT', 'IMAGE', 'BARCODE', 'QRCODE'].includes(type)) {
       e.binding = binding || { source: 'CONSTANT', value: type === 'TEXT' ? (preset === 'TITLE' ? '标题文本' : '固定文本') : type === 'IMAGE' ? '' : '123456' }
       const field = e.binding.source === 'FIELD' ? store.catalog.find(item => item.path === e.binding.path) : null

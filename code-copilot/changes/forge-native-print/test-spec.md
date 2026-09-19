@@ -227,6 +227,16 @@ M4c 结果：首轮 34 项后端、86 项前端通过；新增真实 Velocity �
 
 执行结果：前端打印组件、API 与 Store 共 19 个测试文件 119 项通过；共享跨语言协议 34/34，Java `PrintProtocolCompatibilityTest` 34 项与 `PrintProtocolValidatorTest` 35 项通过。定向 ESLint 与 `git diff --check` 无输出，Vite 9372 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。浏览器确认元素右键菜单、90° 旋转、锁定后的无缩放柄/禁用删除、元素行为属性区均可用；设计元素与预览元素的 transform 完全一致。验证产生的临时旋转与锁定已还原。真实 Admin/Flow/MySQL/Redis、PDF 和物理打印未执行。
 
+## T50–T53 高级设计能力增量验证计划
+
+- T50 空白表格：前后端同时接受完整 2×2/合并矩阵，拒绝空行列、越界、重叠、缺口、尺寸不一致和危险属性；Store 覆盖增删行列、矩形合并、拆分、逐格样式、撤销重做及复制 ID 重建；Canvas 覆盖双击直接编辑和选中反馈，PrintPage 与设计态结构一致。
+- T51 多页/分页符：分页引擎覆盖显式换页、自动换页叠加、首尾/连续分页符拒绝和 50 页上限；设计分页纯函数覆盖纸张方向、正文容量、固定/文本/表格估算及分页标识；浏览器确认多张纸张、页码和页眉页脚重复展示。
+- T52 注册机制：拒绝重复/非法 key、异步工厂、函数或非标准片段；注册项展开后必须通过现有协议，导出 JSON 不含 registry/component/function 字段；示例业务组件在无匹配字段时使用安全固定占位，有授权字段时使用字段绑定。
+- T53 校准验收：校准结果使用选择纸张真实毫米尺寸，包含 10mm 边距框、100mm 标尺与横纵方向信息；能力检查不把“支持 window.print”报告成物理成功；隔离 iframe、afterprint/取消清理、纸张 CSS 和本地验收状态均有测试。
+- 每阶段先跑触达单测和共享协议/Java 协议，再跑打印域回归、定向 ESLint、`git diff --check` 与 Vite build；UI 阶段在本地合成入口实际点击。真实 Admin/Flow/MySQL/Redis、Firefox/Edge/Safari 和物理打印机不由自动化伪造结果。
+
+T50 执行结果：前端打印域 20 个测试文件 125 项、共享协议 36/36、Java 打印插件 116 项全部通过；定向 ESLint、`git diff --check` 与 Vite 9379 modules 生产构建通过。Chromium 合成工作台实际完成空白表格添加、单元格选择/Shift 多选、双击直接输入“合同编号”，并确认正式预览输出同一 3×3 表格和文字。真实业务、其它浏览器与物理打印未执行。
+
 真实联调追加：应用发布后从实际门户的列表/详情各打印一条；同对象跨页面检查模板范围；同一次应用代码下载中并发发布新版本，检查对象协议与 application-printing.json 固定引用一致；MySQL 实跑 selectPublishedPrintSources 的 JSON_CONTAINS 与租户条件；独立部署须先完成 PRINTING.md 列出的资产导入和 Provider 适配。
 
 ## M5a 增量验证

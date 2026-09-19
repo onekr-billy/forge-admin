@@ -19,6 +19,10 @@ public final class PrintProtocolLimits {
 
     public static final int COLUMNS = 50;
 
+    public static final int STATIC_TABLE_COLUMNS = 20;
+
+    public static final int STATIC_TABLE_ROWS = 50;
+
     public static final int RESOURCES = 100;
 
     public static final int HEADER_ROWS = 10;

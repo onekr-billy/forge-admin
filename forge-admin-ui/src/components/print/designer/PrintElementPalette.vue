@@ -26,6 +26,7 @@ const elementIcons = {
   RECTANGLE: SquareOutline,
   ELLIPSE: EllipseOutline,
   TEXT: TextOutline,
+  STATIC_TABLE: GridOutline,
 }
 const sections = [
   { type: 'FIXED', label: '固定区块', icon: LayersOutline },

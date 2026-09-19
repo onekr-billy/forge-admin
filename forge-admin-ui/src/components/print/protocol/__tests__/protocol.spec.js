@@ -102,6 +102,25 @@ describe('print document protocol v1', () => {
     expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[0].elements[0].style.objectFit' }))
   })
 
+  it('accepts a native blank table and rejects overlaps or dimension drift', () => {
+    const table = {
+      columns: [{ id: 'col-a', widthMm: 30 }, { id: 'col-b', widthMm: 30 }],
+      rows: [{ id: 'row-a', heightMm: 10 }],
+      cells: [
+        { id: 'cell-a', row: 0, column: 0, rowSpan: 1, colSpan: 1, binding: { source: 'CONSTANT', value: '甲' } },
+        { id: 'cell-b', row: 0, column: 1, rowSpan: 1, colSpan: 1, binding: { source: 'FIELD', path: 'main.name' } },
+      ],
+    }
+    const doc = fixedDocument(textElement({ type: 'STATIC_TABLE', widthMm: 60, table }))
+    delete doc.body[0].elements[0].binding
+    expect(validatePrintDocument(doc)).toEqual([])
+    doc.body[0].elements[0].table.cells[1].column = 0
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ code: 'INVALID_COVERAGE' }))
+    doc.body[0].elements[0].table.cells[1].column = 1
+    doc.body[0].elements[0].widthMm = 61
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ code: 'TABLE_SIZE_MISMATCH' }))
+  })
+
   it('checks table column widths, merged header spans and safe collection paths', () => {
     const doc = createPrintDocument()
     doc.body.push({

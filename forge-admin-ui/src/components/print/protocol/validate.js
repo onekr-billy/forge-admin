@@ -169,8 +169,64 @@ export function validatePrintDocument(document) {
       issue(path, 'INVALID_PAGE_NUMBER_BINDING', '页码须绑定固定文本或使用页码元素')
     }
   }
+  function staticTable(value, path, widthMm, heightMm) {
+    if (!object(value, ['columns', 'rows', 'cells'], path))
+      return
+    if (!array(value.columns, `${path}.columns`, PRINT_LIMITS.staticTableColumns) || !array(value.rows, `${path}.rows`, PRINT_LIMITS.staticTableRows) || !array(value.cells, `${path}.cells`, PRINT_LIMITS.staticTableColumns * PRINT_LIMITS.staticTableRows))
+      return
+    if (!value.columns.length || !value.rows.length) {
+      issue(path, 'EMPTY_TABLE', '空白表格至少需要一行一列')
+      return
+    }
+    let totalWidth = 0
+    let totalHeight = 0
+    value.columns.forEach((column, index) => {
+      const location = `${path}.columns[${index}]`
+      if (!object(column, ['id', 'widthMm'], location))
+        return
+      identifier(column.id, `${location}.id`)
+      if (number(column.widthMm, `${location}.widthMm`, 0.1))
+        totalWidth += column.widthMm
+    })
+    value.rows.forEach((row, index) => {
+      const location = `${path}.rows[${index}]`
+      if (!object(row, ['id', 'heightMm'], location))
+        return
+      identifier(row.id, `${location}.id`)
+      if (number(row.heightMm, `${location}.heightMm`, 0.1))
+        totalHeight += row.heightMm
+    })
+    if (Math.abs(totalWidth - widthMm) > 0.001 || Math.abs(totalHeight - heightMm) > 0.001)
+      issue(path, 'TABLE_SIZE_MISMATCH', '表格行列尺寸必须与元素尺寸一致')
+    const coverage = Array.from({ length: value.rows.length }, () => Array.from({ length: value.columns.length }).fill(0))
+    value.cells.forEach((cell, index) => {
+      const location = `${path}.cells[${index}]`
+      if (!object(cell, ['id', 'row', 'column', 'rowSpan', 'colSpan', 'binding', 'format', 'style'], location))
+        return
+      identifier(cell.id, `${location}.id`)
+      for (const key of ['row', 'column', 'rowSpan', 'colSpan']) {
+        const limit = key === 'row' || key === 'rowSpan' ? value.rows.length : value.columns.length
+        const min = key.endsWith('Span') ? 1 : 0
+        number(cell[key], `${location}.${key}`, min, limit)
+        if (!Number.isInteger(cell[key]))
+          issue(`${location}.${key}`, 'INVALID_NUMBER', '单元格坐标和跨度必须为整数')
+      }
+      binding(cell.binding, `${location}.binding`)
+      format(cell.format, `${location}.format`)
+      style(cell.style, `${location}.style`)
+      if (!Number.isInteger(cell.row) || !Number.isInteger(cell.column) || !Number.isInteger(cell.rowSpan) || !Number.isInteger(cell.colSpan) || cell.row < 0 || cell.column < 0 || cell.row + cell.rowSpan > value.rows.length || cell.column + cell.colSpan > value.columns.length) {
+        issue(location, 'INVALID_SPAN', '单元格超出表格范围')
+        return
+      }
+      for (let row = cell.row; row < cell.row + cell.rowSpan; row++) {
+        for (let column = cell.column; column < cell.column + cell.colSpan; column++) coverage[row][column]++
+      }
+    })
+    if (coverage.some(row => row.some(value => value !== 1)))
+      issue(path, 'INVALID_COVERAGE', '单元格必须完整覆盖表格且不能重叠')
+  }
   function element(value, path, width, height) {
-    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'barcodeFormat', 'pageNumberFormat', 'rotationDeg', 'flipX', 'flipY', 'locked'], path)) {
+    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'table', 'barcodeFormat', 'pageNumberFormat', 'rotationDeg', 'flipX', 'flipY', 'locked'], path)) {
       return
     }
     identifier(value.id, `${path}.id`)
@@ -183,6 +239,8 @@ export function validatePrintDocument(document) {
     if (['TEXT', 'IMAGE', 'BARCODE', 'QRCODE'].includes(value.type)) {
       binding(value.binding, `${path}.binding`, value.type === 'IMAGE', value.type === 'TEXT')
     }
+    if (value.type === 'STATIC_TABLE' || value.table !== undefined)
+      staticTable(value.table, `${path}.table`, value.widthMm, value.heightMm)
     if (value.barcodeFormat !== undefined) {
       choice(value.barcodeFormat, ['CODE128', 'CODE39', 'EAN13', 'EAN8', 'ITF14'], `${path}.barcodeFormat`)
     }

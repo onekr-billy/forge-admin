@@ -222,4 +222,25 @@ class PrintProtocolValidatorTest {
         ((ObjectNode) doc.at("/header/elements/0/binding")).put("value", "data:image/png;base64," + "A".repeat(700000));
         rejects(doc, "header.elements[0].binding", "INVALID_RESOURCE");
     }
+
+    @Test
+    void validatesNativeBlankTableCoverageAndPhysicalTracks() throws Exception {
+        var doc = document();
+        var element = (ObjectNode) doc.at("/body/0/elements/0");
+        element.put("type", "STATIC_TABLE").put("widthMm", 60).put("heightMm", 10);
+        element.remove("binding");
+        var table = element.putObject("table");
+        table.putArray("columns").addObject().put("id", "static_col_1").put("widthMm", 30);
+        ((com.fasterxml.jackson.databind.node.ArrayNode) table.get("columns")).addObject().put("id", "static_col_2").put("widthMm", 30);
+        table.putArray("rows").addObject().put("id", "static_row_1").put("heightMm", 10);
+        var cells = table.putArray("cells");
+        cells.addObject().put("id", "static_cell_1").put("row", 0).put("column", 0).put("rowSpan", 1).put("colSpan", 1).putObject("binding").put("source", "CONSTANT").put("value", "甲");
+        cells.addObject().put("id", "static_cell_2").put("row", 0).put("column", 1).put("rowSpan", 1).put("colSpan", 1).putObject("binding").put("source", "FIELD").put("path", "main.name");
+        assertThat(validator.validate(doc.toString()).document().body().get(0).elements().get(0).table().cells()).hasSize(2);
+        ((ObjectNode) cells.get(1)).put("column", 0);
+        rejects(doc, "body[0].elements[0].table", "INVALID_COVERAGE");
+        ((ObjectNode) cells.get(1)).put("column", 1);
+        element.put("widthMm", 61);
+        rejects(doc, "body[0].elements[0].table", "TABLE_SIZE_MISMATCH");
+    }
 }

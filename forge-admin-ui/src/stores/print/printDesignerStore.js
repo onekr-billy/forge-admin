@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
 import { findSurface, newPrintId, resizeElement, selectionBounds, snapResize, snapTranslation, translateElements } from '../../components/print/designer/commands'
 import { cloneDocument, createHistory, recordChange, travelHistory } from '../../components/print/designer/history'
+import { appendStaticTableColumn, appendStaticTableRow, deleteStaticTableColumn, deleteStaticTableRow, mergeStaticTableCells, renewStaticTableIds, splitStaticTableCell, staticTableSize } from '../../components/print/designer/staticTable'
 import { validateFieldCatalog } from '../../components/print/protocol/fieldCatalog'
 import { createPrintDocument } from '../../components/print/protocol/types'
-import { screenDeltaToMm } from '../../components/print/protocol/units'
+import { paperGeometry, screenDeltaToMm } from '../../components/print/protocol/units'
 import { assertPrintDocument } from '../../components/print/protocol/validate'
 
 export const usePrintDesignerStore = defineStore('printDesigner', {
@@ -12,6 +13,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     catalog: [],
     surfaceId: 'header',
     selectedIds: [],
+    tableCellIds: [],
     zoom: 0.8,
     showGrid: true,
     history: createHistory(),
@@ -35,6 +37,12 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     activeElement() {
       return this.selectedElements.length === 1 ? this.selectedElements[0] : null
     },
+    selectedTableCells() {
+      return this.activeElement?.type === 'STATIC_TABLE' ? this.activeElement.table.cells.filter(cell => this.tableCellIds.includes(cell.id)) : []
+    },
+    activeTableCell() {
+      return this.selectedTableCells.length === 1 ? this.selectedTableCells[0] : null
+    },
     hasLockedSelection() {
       return this.selectedElements.some(element => element.locked)
     },
@@ -51,6 +59,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       this.saved = this.serialize()
       this.history = createHistory()
       this.selectedIds = []
+      this.tableCellIds = []
       this.surfaceId = document.body.length ? `section:${document.body[0].id}` : 'header'
       this.gesture = null
       this.clipboard = []
@@ -72,15 +81,26 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         this.cancelGesture()
         this.surfaceId = id
         this.selectedIds = []
+        this.tableCellIds = []
       }
     },
     selectElement(id, additive = false) {
+      const sameSingle = this.selectedIds.length === 1 && this.selectedIds[0] === id
       if (additive) {
         this.selectedIds = this.selectedIds.includes(id) ? this.selectedIds.filter(value => value !== id) : [...this.selectedIds, id]
       }
       else {
         this.selectedIds = [id]
       }
+      if (additive || !sameSingle)
+        this.tableCellIds = []
+    },
+    selectTableCell(id, additive = false) {
+      if (this.activeElement?.type !== 'STATIC_TABLE' || !this.activeElement.table.cells.some(cell => cell.id === id))
+        return
+      this.tableCellIds = additive
+        ? (this.tableCellIds.includes(id) ? this.tableCellIds.filter(value => value !== id) : [...this.tableCellIds, id])
+        : [id]
     },
     selectAll() {
       this.selectedIds = this.activeSurface?.elements?.map(element => element.id) || []
@@ -90,6 +110,9 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         this.surfaceId = this.document.body.length ? `section:${this.document.body[0].id}` : 'header'
       }
       this.selectedIds = this.selectedIds.filter(id => this.activeSurface?.elements?.some(e => e.id === id))
+      if (this.activeElement?.type !== 'STATIC_TABLE')
+        this.tableCellIds = []
+      else this.tableCellIds = this.tableCellIds.filter(id => this.activeElement.table.cells.some(cell => cell.id === id))
     },
     execute(change) {
       this.cancelGesture()
@@ -111,7 +134,47 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     },
     patchSelected(patch) {
       return this.execute((document) => {
-        findSurface(document, this.surfaceId)?.elements?.filter(e => this.selectedIds.includes(e.id)).forEach(e => Object.assign(e, cloneDocument(patch)))
+        findSurface(document, this.surfaceId)?.elements?.filter(e => this.selectedIds.includes(e.id)).forEach((e) => {
+          const next = cloneDocument(patch)
+          if (e.type === 'STATIC_TABLE' && (next.widthMm !== undefined || next.heightMm !== undefined)) {
+            resizeElement(document, this.surfaceId, e.id, (next.widthMm ?? e.widthMm) - e.widthMm, (next.heightMm ?? e.heightMm) - e.heightMm)
+            delete next.widthMm
+            delete next.heightMm
+          }
+          Object.assign(e, next)
+        })
+      })
+    },
+    patchSelectedTableCells(patch) {
+      if (!this.tableCellIds.length || this.activeElement?.locked)
+        return false
+      const elementId = this.activeElement.id
+      return this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        element.table.cells.filter(cell => this.tableCellIds.includes(cell.id)).forEach(cell => Object.assign(cell, cloneDocument(patch)))
+      })
+    },
+    patchSelectedTableCellStyle(patch) {
+      if (!this.tableCellIds.length || this.activeElement?.locked)
+        return false
+      const elementId = this.activeElement.id
+      return this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        element.table.cells.filter(cell => this.tableCellIds.includes(cell.id)).forEach(cell => cell.style = { ...cell.style, ...cloneDocument(patch) })
+      })
+    },
+    patchStaticTableTrack(axis, index, value) {
+      if (this.activeElement?.type !== 'STATIC_TABLE' || this.activeElement.locked || !['row', 'column'].includes(axis) || !Number.isFinite(value))
+        return false
+      const elementId = this.activeElement.id
+      return this.execute((document) => {
+        const surface = findSurface(document, this.surfaceId)
+        const element = surface.elements.find(item => item.id === elementId)
+        const tracks = axis === 'row' ? element.table.rows : element.table.columns
+        const key = axis === 'row' ? 'heightMm' : 'widthMm'
+        tracks[index][key] = value
+        Object.assign(element, staticTableSize(element.table))
+        surface.heightMm = Math.max(surface.heightMm, Number((element.yMm + element.heightMm).toFixed(3)))
       })
     },
     patchSurface(patch) {
@@ -185,7 +248,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       if (!this.activeSurface?.elements || !this.clipboard.length) {
         return false
       }
-      const copies = cloneDocument(this.clipboard).map(element => ({ ...element, id: newPrintId(), locked: false }))
+      const copies = cloneDocument(this.clipboard).map(element => renewStaticTableIds({ ...element, id: newPrintId(), locked: false }))
       const ok = this.execute((document) => {
         findSurface(document, this.surfaceId).elements.push(...copies)
         translateElements(document, this.surfaceId, copies.map(e => e.id), 3, 3)
@@ -198,7 +261,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     duplicateSelection() {
       if (!this.selectedElements.length)
         return false
-      const copies = cloneDocument(this.selectedElements).map(element => ({ ...element, id: newPrintId(), locked: false }))
+      const copies = cloneDocument(this.selectedElements).map(element => renewStaticTableIds({ ...element, id: newPrintId(), locked: false }))
       const ok = this.execute((document) => {
         findSurface(document, this.surfaceId).elements.push(...copies)
         translateElements(document, this.surfaceId, copies.map(element => element.id), 3, 3)
@@ -298,6 +361,105 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
           element.locked = value ?? !element.locked
         })
       })
+    },
+    addStaticTableRow() {
+      if (this.activeElement?.type !== 'STATIC_TABLE' || this.activeElement.locked)
+        return false
+      const id = this.activeElement.id
+      let created = []
+      const ok = this.execute((document) => {
+        const surface = findSurface(document, this.surfaceId)
+        const element = surface.elements.find(item => item.id === id)
+        created = appendStaticTableRow(element.table)
+        Object.assign(element, staticTableSize(element.table))
+        surface.heightMm = Math.max(surface.heightMm, Number((element.yMm + element.heightMm).toFixed(3)))
+      })
+      if (ok)
+        this.tableCellIds = created
+      return ok
+    },
+    addStaticTableColumn() {
+      if (this.activeElement?.type !== 'STATIC_TABLE' || this.activeElement.locked)
+        return false
+      const id = this.activeElement.id
+      let created = []
+      const ok = this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === id)
+        created = appendStaticTableColumn(element.table)
+        Object.assign(element, staticTableSize(element.table))
+        const available = paperGeometry(document).contentWidthMm - element.xMm
+        if (element.widthMm > available) {
+          const ratio = available / element.widthMm
+          element.table.columns.forEach(column => column.widthMm = Number((column.widthMm * ratio).toFixed(3)))
+          Object.assign(element, staticTableSize(element.table))
+          element.table.columns.at(-1).widthMm = Number((element.table.columns.at(-1).widthMm + available - element.widthMm).toFixed(3))
+          element.widthMm = available
+        }
+      })
+      if (ok)
+        this.tableCellIds = created
+      return ok
+    },
+    deleteStaticTableRow() {
+      if (!this.activeTableCell || this.activeElement.locked)
+        return false
+      const elementId = this.activeElement.id
+      const row = this.activeTableCell.row
+      const ok = this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        if (!deleteStaticTableRow(element.table, row))
+          throw new Error('空白表格至少保留一行')
+        Object.assign(element, staticTableSize(element.table))
+      })
+      if (ok)
+        this.tableCellIds = []
+      return ok
+    },
+    deleteStaticTableColumn() {
+      if (!this.activeTableCell || this.activeElement.locked)
+        return false
+      const elementId = this.activeElement.id
+      const column = this.activeTableCell.column
+      const ok = this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        if (!deleteStaticTableColumn(element.table, column))
+          throw new Error('空白表格至少保留一列')
+        Object.assign(element, staticTableSize(element.table))
+      })
+      if (ok)
+        this.tableCellIds = []
+      return ok
+    },
+    mergeStaticTableSelection() {
+      if (this.selectedTableCells.length < 2 || this.activeElement.locked)
+        return false
+      const elementId = this.activeElement.id
+      let mergedId = null
+      const ok = this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        mergedId = mergeStaticTableCells(element.table, this.tableCellIds)
+        if (!mergedId)
+          throw new Error('请选择连续的矩形单元格区域')
+      })
+      if (ok)
+        this.tableCellIds = [mergedId]
+      return ok
+    },
+    splitStaticTableSelection() {
+      if (!this.activeTableCell || this.activeElement.locked)
+        return false
+      const elementId = this.activeElement.id
+      const cellId = this.activeTableCell.id
+      let created = []
+      const ok = this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        created = splitStaticTableCell(element.table, cellId)
+        if (!created.length)
+          throw new Error('当前单元格没有合并')
+      })
+      if (ok)
+        this.tableCellIds = created
+      return ok
     },
     async save(writer) {
       if (this.saving || this.gesture) {
