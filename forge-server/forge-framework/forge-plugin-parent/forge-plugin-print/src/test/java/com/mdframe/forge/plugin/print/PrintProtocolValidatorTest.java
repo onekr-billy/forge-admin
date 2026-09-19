@@ -189,6 +189,22 @@ class PrintProtocolValidatorTest {
     }
 
     @Test
+    void validatesNativeTransformsLockingAndVisualOptions() throws Exception {
+        var doc = document();
+        var element = (ObjectNode) doc.at("/body/0/elements/0");
+        element.put("rotationDeg", -90).put("flipX", true).put("flipY", false).put("locked", true);
+        ((ObjectNode) element.get("style")).put("borderStyle", "dashed").put("borderRadiusMm", 2).put("objectFit", "cover");
+        assertThatCode(() -> validator.validate(doc.toString())).doesNotThrowAnyException();
+        element.put("rotationDeg", 181);
+        rejects(doc, "body[0].elements[0].rotationDeg", "INVALID_NUMBER");
+        element.put("rotationDeg", 0).put("locked", "true");
+        rejects(doc, "body[0].elements[0].locked", "UNSUPPORTED_VALUE");
+        element.put("locked", true);
+        ((ObjectNode) element.get("style")).put("objectFit", "none");
+        rejects(doc, "body[0].elements[0].style.objectFit", "UNSUPPORTED_VALUE");
+    }
+
+    @Test
     void enforcesGlobalElementLimitUtf8SizeAndInlineImageLimit() throws Exception {
         var doc = document();
         var body = doc.putArray("body");

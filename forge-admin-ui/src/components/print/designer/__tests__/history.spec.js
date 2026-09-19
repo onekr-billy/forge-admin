@@ -132,6 +132,25 @@ describe('print designer commands and history', () => {
     expect(store.activeSurface.elements.slice(0, 2).map(element => element.id)).toEqual(duplicates)
   })
 
+  it('rotates, mirrors and protects locked elements while keeping unlock reachable', () => {
+    expect(store.rotateSelection(90)).toBe(true)
+    expect(store.flipSelection('x')).toBe(true)
+    expect(store.activeElement).toMatchObject({ rotationDeg: 90, flipX: true })
+    expect(store.toggleSelectionLock(true)).toBe(true)
+    const locked = store.serialize()
+    expect(store.moveSelection(10, 10)).toBe(false)
+    expect(store.moveSelectionLayer('front')).toBe(false)
+    expect(store.removeSelection()).toBe(false)
+    expect(store.serialize()).toBe(locked)
+    store.copySelection()
+    expect(store.pasteSelection()).toBe(true)
+    expect(store.activeElement.locked).toBe(false)
+    store.undo()
+    store.selectElement('a')
+    expect(store.toggleSelectionLock(false)).toBe(true)
+    expect(store.activeElement.locked).toBe(false)
+  })
+
   it('limits retained history and clears redo when editing after undo', () => {
     for (let i = 0; i < 70; i++) {
       store.patchSelected({ binding: { source: 'CONSTANT', value: String(i) } })

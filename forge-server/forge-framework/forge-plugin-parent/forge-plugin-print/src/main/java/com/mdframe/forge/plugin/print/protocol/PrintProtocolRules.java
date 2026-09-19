@@ -173,7 +173,7 @@ final class PrintProtocolRules {
     }
 
     private void element(JsonNode e, String path, double width, double height) {
-        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "barcodeFormat", "pageNumberFormat")) {
+        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "barcodeFormat", "pageNumberFormat", "rotationDeg", "flipX", "flipY", "locked")) {
             return;
         }
         elements++;
@@ -194,6 +194,14 @@ final class PrintProtocolRules {
         }
         if (e.has("pageNumberFormat")) {
             choice(e.get("pageNumberFormat"), path + ".pageNumberFormat", "CURRENT", "CURRENT_TOTAL");
+        }
+        if (e.has("rotationDeg")) {
+            number(e.get("rotationDeg"), path + ".rotationDeg", -180, 180);
+        }
+        for (String key : List.of("flipX", "flipY", "locked")) {
+            if (e.has(key)) {
+                bool(e.get(key), path + "." + key);
+            }
         }
         values.style(e.get("style"), path + ".style");
         values.format(e.get("format"), path + ".format");

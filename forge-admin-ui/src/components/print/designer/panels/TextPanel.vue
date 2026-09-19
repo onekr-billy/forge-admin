@@ -56,6 +56,12 @@ function patch(key, value, group = 'style') {
       <NFormItem label="边框 mm" size="small">
         <NInputNumber :value="target.style?.borderWidthMm ?? 0" :min="0" :max="3" :step="0.1" :show-button="false" @update:value="patch('borderWidthMm', $event)" />
       </NFormItem>
+      <NFormItem label="边框样式" size="small">
+        <NSelect :value="target.style?.borderStyle || 'solid'" :options="[{ label: '实线', value: 'solid' }, { label: '虚线', value: 'dashed' }, { label: '点线', value: 'dotted' }]" @update:value="patch('borderStyle', $event)" />
+      </NFormItem>
+      <NFormItem label="圆角 mm" size="small">
+        <NInputNumber :value="target.style?.borderRadiusMm ?? 0" :min="0" :max="100" :step="0.5" :show-button="false" @update:value="patch('borderRadiusMm', $event)" />
+      </NFormItem>
       <NFormItem label="内边距 mm" size="small">
         <NInputNumber :value="target.style?.paddingMm ?? 0" :min="0" :max="20" :step="0.5" :show-button="false" @update:value="patch('paddingMm', $event)" />
       </NFormItem>

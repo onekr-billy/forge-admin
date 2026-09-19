@@ -484,3 +484,25 @@ git diff --check
 结果：前端 19 文件 114 项、共享协议 29 项、Java 协议 34 项全部通过；ESLint 与空白检查无输出，Vite 9370 modules 构建成功。浏览器在 `/print/designer?templateId=1&ui=t47` 验证组件抽屉、字段示例、画布命令、合并表头/明细/合计和文档预览；设计与预览首屏数据和表格结构一致。验证中“复制一份”产生的临时修改已撤销，页面保持未修改状态并留给用户检查。
 
 未启动真实 Admin/Flow/MySQL/Redis，未执行真实图片/签名、PDF 或物理打印。合成服务继续监听 `127.0.0.1:4318`。本阶段只 commit，不 push，`.DS_Store` 不暂存。
+
+## 2026-09-19 · T49 元素变换、锁定与右键命令
+
+用户继续指出元素级操作仍少、物料属性不足，设计与预览需要保持一致。继续对照本地 `vue-plugin-hiprint` 的默认元素、上下文菜单和属性选项，先更新 Spec 4.7、任务和增量测试计划，再实现 Forge 自有协议能力；未引入参考项目 bundle、HTML/脚本、静默客户端或 PDF 服务。
+
+实现：v1 协议新增 `rotationDeg`、`flipX`、`flipY`、`locked`，样式新增 `objectFit`、`borderStyle`、`borderRadiusMm`，前端与 Java 使用相同白名单和范围。设计 Canvas 与正式 `PrintPage` 使用同一旋转/镜像 transform，图片 renderer 读取同一适配方式。Pinia 增加旋转、镜像、锁定、层级命令；锁定后阻止拖动、缩放、方向键、对齐、分布、层级和删除，复制/粘贴副本自动解锁。Canvas 增加元素和空白区右键菜单，右侧新增元素行为属性区，并补条码制式、页码格式、图片适配及边框样式/圆角编辑。
+
+验证：
+
+```bash
+./node_modules/.bin/vitest run src/components/print src/stores/print src/views/print
+./node_modules/.bin/vitest run src/api/__tests__/print.spec.js src/api/__tests__/printRuntimeContext.spec.js
+./node_modules/.bin/eslint <本阶段 20 个前端源码/测试文件>
+node code-copilot/changes/forge-native-print/verification/protocol-compatibility.mjs
+JAVA_HOME=/private/tmp/forge-print-toolchain/jdk-17.0.20.1+1/Contents/Home /private/tmp/forge-print-toolchain/apache-maven-3.9.9/bin/mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='PrintProtocolValidatorTest,PrintProtocolCompatibilityTest' -Dsurefire.failIfNoSpecifiedTests=false
+./node_modules/.bin/vite build
+git diff --check
+```
+
+结果：前端 19 文件 119 项、共享协议 34 项、Java 协议 69 项全部通过；定向 ESLint 与空白检查无输出，Vite 9372 modules 构建成功。所有触达 SFC 低于 800 行。浏览器在 `/print/designer?templateId=1&ui=t47` 确认右键菜单包含复制/旋转/镜像/层级/锁定/删除；旋转后设计元素和预览元素均为 `rotate(90deg) scaleX(1) scaleY(1)`；锁定后缩放柄消失且删除/层级禁用，元素行为属性区显示旋转和镜像配置。临时验证状态已还原，页面继续留给用户检查。
+
+第一次通过 pnpm 包装器并行执行时触发其依赖状态检查，并临时写入 `pnpm-workspace.yaml` 的占位项；该非业务变更已完整恢复，后续直接复用现有 `node_modules/.bin`。构建仅保留项目既有 native config、CSS `//` 注释、dynamic import 和插件耗时提示。未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway、PDF 或物理打印；本阶段只 commit、不 push，`.DS_Store` 不暂存。

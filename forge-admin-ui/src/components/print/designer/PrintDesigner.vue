@@ -10,6 +10,7 @@ import { parseDraft, readDraft, writeDraft } from './draftStorage'
 import { cloneDocument } from './history'
 import BindingPanel from './panels/BindingPanel.vue'
 import ElementGeometryPanel from './panels/ElementGeometryPanel.vue'
+import ElementOptionsPanel from './panels/ElementOptionsPanel.vue'
 import PaperPanel from './panels/PaperPanel.vue'
 import TablePanel from './panels/TablePanel.vue'
 import TextPanel from './panels/TextPanel.vue'
@@ -171,7 +172,7 @@ defineExpose({ canLeave, save })
         <aside v-show="store.rightPanelOpen" class="designer-properties">
           <NTabs v-model:value="panel" type="line" size="small">
             <NTabPane name="selection" tab="选中内容">
-              <ElementGeometryPanel /><BindingPanel /><TextPanel /><TablePanel />
+              <ElementGeometryPanel /><ElementOptionsPanel /><BindingPanel /><TextPanel /><TablePanel />
             </NTabPane>
             <NTabPane name="paper" tab="纸张">
               <PaperPanel />

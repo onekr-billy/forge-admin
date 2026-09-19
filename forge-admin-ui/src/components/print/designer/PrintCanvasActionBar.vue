@@ -9,9 +9,9 @@ const actions = [
   { label: '复制', icon: CopyOutline, run: () => store.copySelection(), enabled: () => !!store.selectedIds.length },
   { label: '粘贴', icon: ClipboardOutline, run: () => store.pasteSelection(), enabled: () => !!store.clipboard.length && !!store.activeSurface?.elements },
   { label: '复制一份', icon: DuplicateOutline, run: () => store.duplicateSelection(), enabled: () => !!store.selectedIds.length },
-  { label: '置于顶层', icon: ArrowUpOutline, run: () => store.moveSelectionLayer('front'), enabled: () => !!store.selectedIds.length },
-  { label: '置于底层', icon: ArrowDownOutline, run: () => store.moveSelectionLayer('back'), enabled: () => !!store.selectedIds.length },
-  { label: '删除', icon: TrashOutline, run: () => store.removeSelection(), enabled: () => !!store.selectedIds.length, danger: true },
+  { label: '置于顶层', icon: ArrowUpOutline, run: () => store.moveSelectionLayer('front'), enabled: () => !!store.selectedIds.length && !store.hasLockedSelection },
+  { label: '置于底层', icon: ArrowDownOutline, run: () => store.moveSelectionLayer('back'), enabled: () => !!store.selectedIds.length && !store.hasLockedSelection },
+  { label: '删除', icon: TrashOutline, run: () => store.removeSelection(), enabled: () => !!store.selectedIds.length && !store.hasLockedSelection, danger: true },
 ]
 </script>
 

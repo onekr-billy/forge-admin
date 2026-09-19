@@ -4,7 +4,15 @@ import { printRenderers } from '../renderers/registry'
 defineProps({ page: { type: Object, required: true }, geometry: { type: Object, required: true } })
 
 function position(node) {
-  return { position: 'absolute', left: `${node.xMm || 0}mm`, top: `${node.yMm || 0}mm`, width: node.widthMm ? `${node.widthMm}mm` : undefined, height: node.heightMm ? `${node.heightMm}mm` : undefined }
+  return {
+    position: 'absolute',
+    left: `${node.xMm || 0}mm`,
+    top: `${node.yMm || 0}mm`,
+    width: node.widthMm ? `${node.widthMm}mm` : undefined,
+    height: node.heightMm ? `${node.heightMm}mm` : undefined,
+    transform: node.rotationDeg || node.flipX || node.flipY ? `rotate(${node.rotationDeg || 0}deg) scaleX(${node.flipX ? -1 : 1}) scaleY(${node.flipY ? -1 : 1})` : undefined,
+    transformOrigin: 'center center',
+  }
 }
 </script>
 

@@ -10,7 +10,8 @@ export function printStyle(style = {}) {
     textDecoration: style.textDecoration || 'none',
     color: style.color || '#000000',
     backgroundColor: style.backgroundColor || 'transparent',
-    border: `${style.borderWidthMm ?? 0}mm solid ${style.borderColor || '#000000'}`,
+    border: `${style.borderWidthMm ?? 0}mm ${style.borderStyle || 'solid'} ${style.borderColor || '#000000'}`,
+    borderRadius: `${style.borderRadiusMm ?? 0}mm`,
     padding: `${style.paddingMm ?? 0}mm`,
     margin: 0,
     whiteSpace: 'pre-wrap',
@@ -26,6 +27,8 @@ export function elementStyle(element) {
     top: `${element.yMm}mm`,
     width: `${element.widthMm}mm`,
     height: `${element.heightMm}mm`,
+    transform: `rotate(${element.rotationDeg || 0}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
+    transformOrigin: 'center center',
     ...printStyle(element.style),
   }
 }

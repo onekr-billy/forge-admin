@@ -1,4 +1,5 @@
 <script setup>
+import { NDropdown } from 'naive-ui'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { paperGeometry, screenDeltaToMm } from '../protocol/units'
@@ -37,7 +38,30 @@ const paperName = computed(() => {
   return '自定义'
 })
 const marquee = ref(null)
+const contextMenu = ref({ show: false, x: 0, y: 0 })
 let clearMarquee = () => {}
+const contextOptions = computed(() => {
+  const selected = store.selectedIds.length
+  const locked = store.hasLockedSelection
+  const everyLocked = selected && store.selectedElements.every(element => element.locked)
+  return [
+    { label: '全选当前区块', key: 'select-all', disabled: !store.activeSurface?.elements?.length },
+    { type: 'divider', key: 'select-divider' },
+    { label: '复制', key: 'copy', disabled: !selected },
+    { label: '粘贴', key: 'paste', disabled: !store.clipboard.length || !store.activeSurface?.elements },
+    { label: '复制一份', key: 'duplicate', disabled: !selected },
+    { type: 'divider', key: 'transform-divider' },
+    { label: '向左旋转 90°', key: 'rotate-left', disabled: !selected || locked },
+    { label: '向右旋转 90°', key: 'rotate-right', disabled: !selected || locked },
+    { label: '水平镜像', key: 'flip-x', disabled: !selected || locked },
+    { label: '垂直镜像', key: 'flip-y', disabled: !selected || locked },
+    { label: '置于顶层', key: 'front', disabled: !selected || locked },
+    { label: '置于底层', key: 'back', disabled: !selected || locked },
+    { label: everyLocked ? '解锁元素' : '锁定元素', key: everyLocked ? 'unlock' : 'lock', disabled: !selected },
+    { type: 'divider', key: 'delete-divider' },
+    { label: '删除', key: 'delete', disabled: !selected || locked },
+  ]
+})
 
 function flowText(surface) {
   return designerBindingText(surface.binding, surface.format, store.catalog, props.context)
@@ -49,6 +73,43 @@ function tableRows(surface) {
 
 function tableCellStyle(cell) {
   return { ...cellStyle(cell.style), width: `${cell.widthMm}mm`, flex: 'none' }
+}
+
+function showContextMenu(event) {
+  contextMenu.value = { show: true, x: event.clientX, y: event.clientY }
+}
+
+function elementContext(event, surfaceId, id) {
+  store.selectSurface(surfaceId)
+  if (!store.selectedIds.includes(id))
+    store.selectElement(id)
+  showContextMenu(event)
+}
+
+function surfaceContext(event, surface) {
+  store.selectSurface(surface.id)
+  store.selectedIds = []
+  showContextMenu(event)
+}
+
+function contextAction(key) {
+  const actions = {
+    'select-all': () => store.selectAll(),
+    'copy': () => store.copySelection(),
+    'paste': () => store.pasteSelection(),
+    'duplicate': () => store.duplicateSelection(),
+    'rotate-left': () => store.rotateSelection(-90),
+    'rotate-right': () => store.rotateSelection(90),
+    'flip-x': () => store.flipSelection('x'),
+    'flip-y': () => store.flipSelection('y'),
+    'front': () => store.moveSelectionLayer('front'),
+    'back': () => store.moveSelectionLayer('back'),
+    'lock': () => store.toggleSelectionLock(true),
+    'unlock': () => store.toggleSelectionLock(false),
+    'delete': () => store.removeSelection(),
+  }
+  actions[key]?.()
+  contextMenu.value.show = false
 }
 
 function elementDown(event, surfaceId, id) {
@@ -118,6 +179,16 @@ onBeforeUnmount(() => clearMarquee())
 
 <template>
   <div class="print-canvas" tabindex="0" aria-label="打印编辑画布" @keydown="keyboard">
+    <NDropdown
+      trigger="manual"
+      placement="bottom-start"
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :options="contextOptions"
+      @select="contextAction"
+      @clickoutside="contextMenu.show = false"
+    />
     <div class="canvas-note">
       <span>{{ paperName }} · {{ geometry.widthMm }} × {{ geometry.heightMm }} mm</span>
       <PrintCanvasActionBar />
@@ -170,6 +241,7 @@ onBeforeUnmount(() => clearMarquee())
                 marginBottom: `${surface.gapAfterMm || 0}mm`,
               }"
               @pointerdown.self="surfaceDown($event, surface)"
+              @contextmenu.self.prevent="surfaceContext($event, surface)"
               @dragover.prevent
               @drop.prevent.stop="drop($event, surface)"
             >
@@ -182,6 +254,7 @@ onBeforeUnmount(() => clearMarquee())
                 :catalog="store.catalog"
                 :context="context"
                 @pointerdown.stop="elementDown($event, surface.id, element.id)"
+                @contextmenu.stop.prevent="elementContext($event, surface.id, element.id)"
               />
               <div v-if="surface.kind === 'TEXT'" class="flow-text" :style="printStyle(surface.style)" @pointerdown="surfaceDown($event, surface)">
                 {{ flowText(surface) }}

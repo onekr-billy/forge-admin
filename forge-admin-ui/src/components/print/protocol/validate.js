@@ -4,7 +4,7 @@ import { paperGeometry } from './units'
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const IDENTIFIER = /^[\w-]{1,80}$/
 const COLOR = /^#[\da-f]{3}(?:[\da-f]{3})?$/i
-const STYLE_KEYS = ['fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'textAlign', 'lineHeight', 'color', 'backgroundColor', 'borderColor', 'borderWidthMm', 'paddingMm', 'textDecoration']
+const STYLE_KEYS = ['fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'textAlign', 'lineHeight', 'color', 'backgroundColor', 'borderColor', 'borderWidthMm', 'borderStyle', 'borderRadiusMm', 'paddingMm', 'textDecoration', 'objectFit']
 const SAFE_SYSTEM_PATHS = new Set(['system.generatedAt', 'system.pageNumber', 'system.totalPages'])
 
 export function isSafeFieldPath(path) {
@@ -91,6 +91,9 @@ export function validatePrintDocument(document) {
       if (key === 'borderWidthMm') {
         number(item, location, 0, 3)
       }
+      if (key === 'borderRadiusMm') {
+        number(item, location, 0, 100)
+      }
       if (key === 'fontWeight') {
         choice(item, [400, 700], location)
       }
@@ -102,6 +105,12 @@ export function validatePrintDocument(document) {
       }
       if (key === 'textDecoration') {
         choice(item, ['none', 'underline'], location)
+      }
+      if (key === 'borderStyle') {
+        choice(item, ['solid', 'dashed', 'dotted'], location)
+      }
+      if (key === 'objectFit') {
+        choice(item, ['contain', 'cover', 'fill', 'scale-down'], location)
       }
     }
   }
@@ -161,7 +170,7 @@ export function validatePrintDocument(document) {
     }
   }
   function element(value, path, width, height) {
-    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'barcodeFormat', 'pageNumberFormat'], path)) {
+    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'barcodeFormat', 'pageNumberFormat', 'rotationDeg', 'flipX', 'flipY', 'locked'], path)) {
       return
     }
     identifier(value.id, `${path}.id`)
@@ -179,6 +188,13 @@ export function validatePrintDocument(document) {
     }
     if (value.pageNumberFormat !== undefined) {
       choice(value.pageNumberFormat, ['CURRENT', 'CURRENT_TOTAL'], `${path}.pageNumberFormat`)
+    }
+    if (value.rotationDeg !== undefined) {
+      number(value.rotationDeg, `${path}.rotationDeg`, -180, 180)
+    }
+    for (const key of ['flipX', 'flipY', 'locked']) {
+      if (value[key] !== undefined)
+        choice(value[key], [true, false], `${path}.${key}`)
     }
     style(value.style, `${path}.style`)
     format(value.format, `${path}.format`)

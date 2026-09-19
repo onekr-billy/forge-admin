@@ -75,7 +75,7 @@ final class PrintValueRules {
     }
 
     void style(JsonNode s, String path) {
-        if (s == null || !r.object(s, path, "fontFamily", "fontSizePt", "fontWeight", "fontStyle", "textAlign", "lineHeight", "color", "backgroundColor", "borderColor", "borderWidthMm", "paddingMm", "textDecoration")) {
+        if (s == null || !r.object(s, path, "fontFamily", "fontSizePt", "fontWeight", "fontStyle", "textAlign", "lineHeight", "color", "backgroundColor", "borderColor", "borderWidthMm", "borderStyle", "borderRadiusMm", "paddingMm", "textDecoration", "objectFit")) {
             return;
         }
         for (String key : List.of("color", "backgroundColor", "borderColor")) {
@@ -98,6 +98,9 @@ final class PrintValueRules {
         if (s.has("borderWidthMm")) {
             r.number(s.get("borderWidthMm"), path + ".borderWidthMm", 0, 3);
         }
+        if (s.has("borderRadiusMm")) {
+            r.number(s.get("borderRadiusMm"), path + ".borderRadiusMm", 0, 100);
+        }
         if (s.has("fontWeight") && (!s.get("fontWeight").isNumber() || !Set.of(400.0, 700.0).contains(s.get("fontWeight").doubleValue()))) {
             r.issue(path + ".fontWeight", "UNSUPPORTED_VALUE", "字重只支持 400 或 700");
         }
@@ -109,6 +112,12 @@ final class PrintValueRules {
         }
         if (s.has("textDecoration")) {
             r.choice(s.get("textDecoration"), path + ".textDecoration", "none", "underline");
+        }
+        if (s.has("borderStyle")) {
+            r.choice(s.get("borderStyle"), path + ".borderStyle", "solid", "dashed", "dotted");
+        }
+        if (s.has("objectFit")) {
+            r.choice(s.get("objectFit"), path + ".objectFit", "contain", "cover", "fill", "scale-down");
         }
     }
 

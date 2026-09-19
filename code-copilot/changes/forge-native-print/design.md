@@ -185,6 +185,7 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 - Canvas/SelectionOverlay/CanvasElement 与 drag/resize/keyboard 拆分；Palette/FieldTree/SectionList 提供物料、受控字段、顺序编辑；六个小属性面板含表头横向合并拆分与合计绑定。
 - `designerSample.js` 只依据字段目录生成非业务示例上下文；真实样本存在时直接使用授权样本。Canvas 与 PrintPreview 接收同一 context，固定文本/页码/线框/椭圆调用 `renderers/registry.js` 的正式渲染组件，条码/二维码调用正式编码器；表格设计态按相同表头、列格式和表尾绑定生成预览行。内部字段路径只在字段树和绑定属性中展示，不作为纸面正文。
 - `elementCatalog.js` 用预设区分标题/固定文本、横线/竖线等设计意图，持久化仍使用受控协议类型；椭圆是新增的原生协议类型，前后端白名单同步。画布选择命令集中在 `PrintCanvasActionBar.vue`，顺序变化通过数组层级完成并进入同一撤销历史。
+- 元素协议以可选 `rotationDeg/flipX/flipY/locked` 表达中心点变换和设计锁定，样式以白名单 `objectFit/borderStyle/borderRadiusMm` 扩展图片与边框表现；Canvas 和 `PrintPage` 读取同一字段组合 transform。右键菜单、属性面板和工具栏只调用 Store 命令，锁定检查集中在手势、几何、对齐、层级和删除入口；复制出的锁定元素强制解锁。
 - `draftStorage.js` 校验导入体积和协议、只存模板。`PrintDesigner` 支持注入 `saveDraft(document)`，M3 接口就绪后替换默认本地适配器。`views/print/designer.vue` 提供页面组件与路由离开保护；菜单种子留给 M3。
 - 当前一个页面只挂载一个 PrintDesigner；验证入口专用独立 Pinia。每次加载模板清空旧选择/历史/剪贴板，保存通过 generation 避免异步回调污染后来加载的文档。
 

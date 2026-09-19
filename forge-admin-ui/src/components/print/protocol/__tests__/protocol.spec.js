@@ -83,6 +83,25 @@ describe('print document protocol v1', () => {
     expect(validatePrintDocument(doc)).toEqual([])
   })
 
+  it('validates native transforms, locking and bounded visual styles', () => {
+    const doc = fixedDocument(textElement({
+      rotationDeg: -90,
+      flipX: true,
+      flipY: false,
+      locked: true,
+      style: { borderStyle: 'dashed', borderRadiusMm: 2, objectFit: 'cover' },
+    }))
+    expect(validatePrintDocument(doc)).toEqual([])
+    doc.body[0].elements[0].rotationDeg = 181
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[0].elements[0].rotationDeg' }))
+    doc.body[0].elements[0].rotationDeg = 0
+    doc.body[0].elements[0].locked = 'true'
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[0].elements[0].locked' }))
+    doc.body[0].elements[0].locked = true
+    doc.body[0].elements[0].style.objectFit = 'none'
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[0].elements[0].style.objectFit' }))
+  })
+
   it('checks table column widths, merged header spans and safe collection paths', () => {
     const doc = createPrintDocument()
     doc.body.push({

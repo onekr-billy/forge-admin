@@ -71,6 +71,17 @@ describe('designer editing workflow', () => {
     expect(store.activeElement.widthMm).toBe(45)
     wrapper.unmount()
   })
+  it('opens the element context menu with native editing actions', async () => {
+    addSection(store, 'FIXED')
+    addElement(store, 'TEXT')
+    const wrapper = mount(PrintCanvas, { attachTo: document.body, global: { plugins: [pinia] } })
+    await wrapper.get('[data-element-id]').trigger('contextmenu', { clientX: 120, clientY: 160 })
+    await flushPromises()
+    expect(document.body.textContent).toContain('向左旋转 90°')
+    expect(document.body.textContent).toContain('水平镜像')
+    expect(document.body.textContent).toContain('锁定元素')
+    wrapper.unmount()
+  })
   it('cancels an unfinished gesture on unmount and removes pointer listeners', async () => {
     addSection(store, 'FIXED')
     addElement(store, 'TEXT')

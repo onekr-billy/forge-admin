@@ -35,6 +35,9 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     activeElement() {
       return this.selectedElements.length === 1 ? this.selectedElements[0] : null
     },
+    hasLockedSelection() {
+      return this.selectedElements.some(element => element.locked)
+    },
     dirty: state => JSON.stringify(state.document) !== state.saved,
     canUndo: state => state.history.past.length > 0,
     canRedo: state => state.history.future.length > 0,
@@ -115,12 +118,17 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       return this.execute(document => Object.assign(findSurface(document, this.surfaceId), cloneDocument(patch)))
     },
     moveSelection(dx, dy) {
+      if (this.hasLockedSelection)
+        return false
       return this.execute(document => translateElements(document, this.surfaceId, this.selectedIds, dx, dy))
     },
     beginGesture() {
+      if (this.hasLockedSelection)
+        return false
       this.cancelGesture()
       this.gesture = { before: cloneDocument(this.document), surfaceId: this.surfaceId, ids: [...this.selectedIds], zoom: this.zoom }
       this.alignmentGuides = { x: [], y: [], position: null }
+      return true
     },
     moveGesture(dx, dy, resize = false) {
       if (!this.gesture) {
@@ -177,7 +185,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       if (!this.activeSurface?.elements || !this.clipboard.length) {
         return false
       }
-      const copies = cloneDocument(this.clipboard).map(element => ({ ...element, id: newPrintId() }))
+      const copies = cloneDocument(this.clipboard).map(element => ({ ...element, id: newPrintId(), locked: false }))
       const ok = this.execute((document) => {
         findSurface(document, this.surfaceId).elements.push(...copies)
         translateElements(document, this.surfaceId, copies.map(e => e.id), 3, 3)
@@ -190,7 +198,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     duplicateSelection() {
       if (!this.selectedElements.length)
         return false
-      const copies = cloneDocument(this.selectedElements).map(element => ({ ...element, id: newPrintId() }))
+      const copies = cloneDocument(this.selectedElements).map(element => ({ ...element, id: newPrintId(), locked: false }))
       const ok = this.execute((document) => {
         findSurface(document, this.surfaceId).elements.push(...copies)
         translateElements(document, this.surfaceId, copies.map(element => element.id), 3, 3)
@@ -200,7 +208,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       return ok
     },
     moveSelectionLayer(position) {
-      if (!this.selectedElements.length || !['front', 'back'].includes(position))
+      if (!this.selectedElements.length || this.hasLockedSelection || !['front', 'back'].includes(position))
         return false
       return this.execute((document) => {
         const surface = findSurface(document, this.surfaceId)
@@ -210,6 +218,8 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       })
     },
     removeSelection() {
+      if (this.hasLockedSelection)
+        return false
       return this.execute((document) => {
         const surface = findSurface(document, this.surfaceId)
         if (surface?.elements) {
@@ -218,7 +228,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       })
     },
     alignSelection(alignment) {
-      if (this.selectedElements.length < 2) {
+      if (this.selectedElements.length < 2 || this.hasLockedSelection) {
         return false
       }
       return this.execute((document) => {
@@ -241,7 +251,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       })
     },
     distributeSelection(axis) {
-      if (this.selectedElements.length < 3) {
+      if (this.selectedElements.length < 3 || this.hasLockedSelection) {
         return false
       }
       return this.execute((document) => {
@@ -258,6 +268,35 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
           element[positionKey] = Number(cursor.toFixed(3))
           cursor += element[sizeKey] + gap
         }
+      })
+    },
+    rotateSelection(delta) {
+      if (!this.selectedElements.length || this.hasLockedSelection || !Number.isFinite(delta))
+        return false
+      return this.execute((document) => {
+        findSurface(document, this.surfaceId).elements.filter(element => this.selectedIds.includes(element.id)).forEach((element) => {
+          const value = (element.rotationDeg || 0) + delta
+          element.rotationDeg = ((value + 180) % 360 + 360) % 360 - 180
+        })
+      })
+    },
+    flipSelection(axis) {
+      if (!this.selectedElements.length || this.hasLockedSelection || !['x', 'y'].includes(axis))
+        return false
+      return this.execute((document) => {
+        const key = axis === 'x' ? 'flipX' : 'flipY'
+        findSurface(document, this.surfaceId).elements.filter(element => this.selectedIds.includes(element.id)).forEach((element) => {
+          element[key] = !element[key]
+        })
+      })
+    },
+    toggleSelectionLock(value) {
+      if (!this.selectedElements.length)
+        return false
+      return this.execute((document) => {
+        findSurface(document, this.surfaceId).elements.filter(element => this.selectedIds.includes(element.id)).forEach((element) => {
+          element.locked = value ?? !element.locked
+        })
       })
     },
     async save(writer) {

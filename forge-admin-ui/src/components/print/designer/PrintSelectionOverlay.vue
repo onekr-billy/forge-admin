@@ -11,7 +11,7 @@ const bounds = computed(() => selectionBounds(store.selectedElements))
 
 <template>
   <div v-if="bounds" class="selection-overlay" :style="{ left: `${bounds.xMm}mm`, top: `${bounds.yMm}mm`, width: `${bounds.widthMm}mm`, height: `${bounds.heightMm}mm` }">
-    <button v-if="store.selectedIds.length === 1" type="button" class="resize-handle" aria-label="调整元素尺寸" title="拖动调整尺寸" @pointerdown.stop="resize.start" />
+    <button v-if="store.selectedIds.length === 1 && !store.activeElement?.locked" type="button" class="resize-handle" aria-label="调整元素尺寸" title="拖动调整尺寸" @pointerdown.stop="resize.start" />
   </div>
 </template>
 

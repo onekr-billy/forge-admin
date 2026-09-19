@@ -9,7 +9,8 @@ export function usePrintDrag(store, resize = false) {
     }
     cleanup()
     event.preventDefault()
-    store.beginGesture()
+    if (!store.beginGesture())
+      return
     const { clientX, clientY, pointerId } = event
     const move = (next) => {
       if (next.pointerId === pointerId) {

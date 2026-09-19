@@ -11,17 +11,17 @@ const store = usePrintDesignerStore()
     <h3>{{ store.selectedIds.length ? `选中 ${store.selectedIds.length} 个元素` : '当前区块' }}</h3>
     <div v-if="store.activeElement" class="panel-grid">
       <NFormItem v-for="(label, key) in { xMm: '横坐标 mm', yMm: '纵坐标 mm', widthMm: '宽度 mm', heightMm: '高度 mm' }" :key="key" :label="label" size="small">
-        <NInputNumber :value="store.activeElement[key]" :min="key.includes('Mm') && ['widthMm', 'heightMm'].includes(key) ? 0.1 : 0" :precision="2" :show-button="false" @update:value="$event !== null && store.patchSelected({ [key]: $event })" />
+        <NInputNumber :value="store.activeElement[key]" :min="key.includes('Mm') && ['widthMm', 'heightMm'].includes(key) ? 0.1 : 0" :precision="2" :show-button="false" :disabled="store.activeElement.locked" @update:value="$event !== null && store.patchSelected({ [key]: $event })" />
       </NFormItem>
     </div>
     <div v-else-if="store.selectedIds.length > 1" class="geometry-commandbar alignment-bar">
-      <button v-for="item in [{ key: 'left', label: '左对齐' }, { key: 'center', label: '水平居中' }, { key: 'right', label: '右对齐' }, { key: 'top', label: '顶对齐' }, { key: 'middle', label: '垂直居中' }, { key: 'bottom', label: '底对齐' }]" :key="item.key" type="button" class="geometry-tool" :title="item.label" :aria-label="item.label" @click="store.alignSelection(item.key)">
+      <button v-for="item in [{ key: 'left', label: '左对齐' }, { key: 'center', label: '水平居中' }, { key: 'right', label: '右对齐' }, { key: 'top', label: '顶对齐' }, { key: 'middle', label: '垂直居中' }, { key: 'bottom', label: '底对齐' }]" :key="item.key" type="button" class="geometry-tool" :title="item.label" :aria-label="item.label" :disabled="store.hasLockedSelection" @click="store.alignSelection(item.key)">
         <span class="align-glyph" :class="item.key"><i /><i /><i /></span>
       </button>
-      <button type="button" class="geometry-tool" title="水平等距分布" aria-label="水平等距分布" :disabled="store.selectedIds.length < 3" @click="store.distributeSelection('horizontal')">
+      <button type="button" class="geometry-tool" title="水平等距分布" aria-label="水平等距分布" :disabled="store.selectedIds.length < 3 || store.hasLockedSelection" @click="store.distributeSelection('horizontal')">
         <NIcon :component="SwapHorizontalOutline" />
       </button>
-      <button type="button" class="geometry-tool" title="垂直等距分布" aria-label="垂直等距分布" :disabled="store.selectedIds.length < 3" @click="store.distributeSelection('vertical')">
+      <button type="button" class="geometry-tool" title="垂直等距分布" aria-label="垂直等距分布" :disabled="store.selectedIds.length < 3 || store.hasLockedSelection" @click="store.distributeSelection('vertical')">
         <NIcon :component="SwapVerticalOutline" />
       </button>
     </div>
@@ -32,7 +32,7 @@ const store = usePrintDesignerStore()
       <button type="button" class="geometry-tool" title="粘贴元素" aria-label="粘贴元素" :disabled="!store.clipboard.length || !store.activeSurface?.elements" @click="store.pasteSelection()">
         <NIcon :component="ClipboardOutline" />
       </button>
-      <button type="button" class="geometry-tool danger" title="删除元素" aria-label="删除元素" :disabled="!store.selectedIds.length" @click="store.removeSelection()">
+      <button type="button" class="geometry-tool danger" title="删除元素" aria-label="删除元素" :disabled="!store.selectedIds.length || store.hasLockedSelection" @click="store.removeSelection()">
         <NIcon :component="TrashOutline" />
       </button>
     </div>

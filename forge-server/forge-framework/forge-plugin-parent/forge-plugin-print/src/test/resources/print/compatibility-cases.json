@@ -6,6 +6,81 @@
     "frontendValid": true
   },
   {
+    "name": "元素变换与扩展样式",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/rotationDeg",
+        "value": 90
+      },
+      {
+        "pointer": "/body/0/elements/0/flipX",
+        "value": true
+      },
+      {
+        "pointer": "/body/0/elements/0/locked",
+        "value": true
+      },
+      {
+        "pointer": "/body/0/elements/0/style/borderStyle",
+        "value": "dashed"
+      },
+      {
+        "pointer": "/body/0/elements/0/style/borderRadiusMm",
+        "value": 2
+      },
+      {
+        "pointer": "/body/0/elements/0/style/objectFit",
+        "value": "cover"
+      }
+    ],
+    "backendValid": true,
+    "frontendValid": true
+  },
+  {
+    "name": "椭圆元素",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/type",
+        "value": "ELLIPSE"
+      }
+    ],
+    "backendValid": true,
+    "frontendValid": true
+  },
+  {
+    "name": "旋转角度越界",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/rotationDeg",
+        "value": 181
+      }
+    ],
+    "backendValid": false,
+    "frontendValid": false
+  },
+  {
+    "name": "锁定状态类型错误",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/locked",
+        "value": "true"
+      }
+    ],
+    "backendValid": false,
+    "frontendValid": false
+  },
+  {
+    "name": "图片填充方式错误",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/style/objectFit",
+        "value": "none"
+      }
+    ],
+    "backendValid": false,
+    "frontendValid": false
+  },
+  {
     "name": "常量0",
     "patches": [
       {

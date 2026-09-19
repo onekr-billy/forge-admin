@@ -218,6 +218,15 @@ M4c 结果：首轮 34 项后端、86 项前端通过；新增真实 Velocity �
 
 执行结果：前端打印组件、API 与 Store 共 19 个测试文件 114 项通过；共享跨语言协议 29/29，后端 `PrintProtocolValidatorTest` 34 项通过。定向 ESLint 与 `git diff --check` 无输出，Vite 9370 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。浏览器确认纸面不再显示字段路径，设计和预览均显示同一主表/流式文本/三行明细/合并表头/合计行；组件面板显示 10 个基础物料和 3 个内容区块，选中元素后 7 个画布命令可用。真实 Admin/Flow/MySQL/Redis、PDF 和物理打印未执行。
 
+## T49 元素级编辑增量验证
+
+- 协议：旋转限制为 -180–180 度，镜像/锁定必须为布尔值；图片适配、边框样式和圆角仅接受白名单值，未知属性继续拒绝。前后端对新增字段做相同接受/拒绝断言。
+- 命令：旋转、镜像、锁定和解锁均可撤销；锁定后拖动、缩放、方向键、对齐、层级和删除无效；复制/粘贴出的元素解锁且 ID 唯一。
+- 组件：右键菜单根据空白区/选择/锁定状态启用命令；属性面板可编辑旋转、镜像、锁定、图片适配、条码制式、页码格式、边框样式和圆角。设计 Canvas 与 PrintPage 的 transform 和图片适配一致。
+- 执行打印前端回归、共享协议检查、Java `PrintProtocolValidatorTest`、定向 ESLint、空白检查和 Vite build；浏览器实际核对右键菜单、锁定/解锁、旋转及属性面板。真实业务和物理输出边界不变。
+
+执行结果：前端打印组件、API 与 Store 共 19 个测试文件 119 项通过；共享跨语言协议 34/34，Java `PrintProtocolCompatibilityTest` 34 项与 `PrintProtocolValidatorTest` 35 项通过。定向 ESLint 与 `git diff --check` 无输出，Vite 9372 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。浏览器确认元素右键菜单、90° 旋转、锁定后的无缩放柄/禁用删除、元素行为属性区均可用；设计元素与预览元素的 transform 完全一致。验证产生的临时旋转与锁定已还原。真实 Admin/Flow/MySQL/Redis、PDF 和物理打印未执行。
+
 真实联调追加：应用发布后从实际门户的列表/详情各打印一条；同对象跨页面检查模板范围；同一次应用代码下载中并发发布新版本，检查对象协议与 application-printing.json 固定引用一致；MySQL 实跑 selectPublishedPrintSources 的 JSON_CONTAINS 与租户条件；独立部署须先完成 PRINTING.md 列出的资产导入和 Provider 适配。
 
 ## M5a 增量验证

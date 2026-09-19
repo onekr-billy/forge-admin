@@ -30,6 +30,8 @@ const style = computed(() => ({
   top: `${props.element.yMm}mm`,
   width: `${props.element.widthMm}mm`,
   height: `${props.element.heightMm}mm`,
+  transform: props.element.rotationDeg || props.element.flipX || props.element.flipY ? `rotate(${props.element.rotationDeg || 0}deg) scaleX(${props.element.flipX ? -1 : 1}) scaleY(${props.element.flipY ? -1 : 1})` : undefined,
+  transformOrigin: 'center center',
 }))
 
 watch(() => [props.element.type, props.element.barcodeFormat, props.element.widthMm, props.element.heightMm, text.value], async (_, __, onCleanup) => {
@@ -67,6 +69,7 @@ watch(() => [props.element.type, props.element.barcodeFormat, props.element.widt
       <span>{{ element.type === 'QRCODE' ? '二维码' : '条形码' }}</span>
       <small>{{ text }}</small>
     </div>
+    <span v-if="element.locked && selected" class="lock-indicator" aria-label="元素已锁定">锁</span>
   </div>
 </template>
 
@@ -114,5 +117,17 @@ watch(() => [props.element.type, props.element.barcodeFormat, props.element.widt
   font-size: 7pt;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lock-indicator {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  padding: 0 3px;
+  border-radius: 2px;
+  color: #fff;
+  background: #475569;
+  font-size: 7px;
+  line-height: 12px;
+  pointer-events: none;
 }
 </style>
