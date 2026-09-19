@@ -526,3 +526,13 @@ git diff --check
 验证：前端打印域 21 文件 131 项、共享前后端协议 38 项、Java 打印插件 120 项全部通过；定向 ESLint 和 `git diff --check` 无输出；Vite 9380 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。Chromium 在独立合成入口 `http://127.0.0.1:4320/print/designer?templateId=1&ui=t51` 实际插入分页符，设计区从一张纸变为两张纸并重复页眉页脚；正式预览显示两页，页码为 `1 / 2`、`2 / 2`，第二页从分页符后的流式文本和明细表开始。
 
 未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway、Firefox/Edge/Safari、PDF 或物理打印。本阶段只在 `forge-native-print` 分支 commit，不 push；既有 `.DS_Store` 不暂存。
+
+## 2026-09-19 · T52 可信业务打印组件注册表
+
+新增纯代码侧 `PrintComponentRegistry`。注册定义只接受唯一受限 key、标签、图标标识和同步工厂；扩展方通过 `registerBusinessPrintComponent` 在应用启动代码中追加。工厂只接收只读字段目录和正文宽度，必须同步返回 `ELEMENT` 或 `SECTION` 的纯 JSON 片段。插入前检查 Promise、函数、symbol、bigint、循环引用、非普通对象和片段外属性，随后重建区块、元素、明细列与空白表格嵌套 ID，并依靠现有完整文档协议校验原子提交；任何失败都不修改 Store。
+
+左侧新增“业务组件”分组，内置审批状态、签章位置和合同条款三个示例。审批状态与合同条款只在授权字段目录存在约定字段时写 FIELD 绑定，否则使用明确示例常量；签章只接受非明细 IMAGE 字段，否则保留空的安全图片占位。模板保存的是展开后的固定区块、流式文本、图片和绑定协议，不保存注册 key、Vue 组件、动态 import、工厂或函数。
+
+验证：前端打印域 22 文件 135 项、共享协议 38 项全部通过；注册测试覆盖非法/重复 key、async、Promise、函数字段、HTML 类型、ID 重建、字段绑定与纯协议导出；定向 ESLint 和 `git diff --check` 无输出；Vite 9382 modules 构建成功，仅保留项目既有构建提示。Chromium 在 `http://127.0.0.1:4321/print/designer?templateId=1&ui=t52` 显示三个业务组件，实际插入“审批状态”后页面结构增加普通固定区块，纸面和正式预览均显示“审批状态 / 待审批（示例）”。
+
+未启动真实 Admin/Flow/MySQL/Redis，未加载第三方业务插件，未执行 Firefox/Edge/Safari、PDF 或物理打印。本阶段只在 `forge-native-print` 分支 commit，不 push；既有 `.DS_Store` 不暂存。

@@ -1,6 +1,8 @@
 <script setup>
 import {
   BarcodeOutline,
+  CheckmarkCircleOutline,
+  DocumentLockOutline,
   DocumentTextOutline,
   EllipseOutline,
   GridOutline,
@@ -10,12 +12,16 @@ import {
   QrCodeOutline,
   RemoveOutline,
   ReturnDownForwardOutline,
+  ShieldCheckmarkOutline,
   SquareOutline,
   TextOutline,
 } from '@vicons/ionicons5'
 import { NIcon } from 'naive-ui'
+import { computed } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { addElement, addSection, elementCatalog, startItemDrag } from './elementCatalog'
+import { insertRegisteredPrintComponent, printComponentRegistry } from './printComponentRegistry'
+import './businessPrintComponents'
 
 const store = usePrintDesignerStore()
 const elementIcons = {
@@ -35,6 +41,12 @@ const sections = [
   { type: 'TABLE', label: '明细表格', icon: GridOutline },
   { type: 'PAGE_BREAK', label: '手动分页', icon: ReturnDownForwardOutline },
 ]
+const businessIcons = {
+  approval: CheckmarkCircleOutline,
+  contract: DocumentLockOutline,
+  signature: ShieldCheckmarkOutline,
+}
+const businessComponents = computed(() => printComponentRegistry.list())
 </script>
 
 <template>
@@ -59,6 +71,13 @@ const sections = [
     <div class="palette-grid section-palette">
       <button v-for="item in sections" :key="item.type" type="button" class="palette-item" @click="addSection(store, item.type)">
         <NIcon :component="item.icon" size="20" />
+        <span>{{ item.label }}</span>
+      </button>
+    </div>
+    <h3>业务组件</h3>
+    <div class="palette-grid business-palette">
+      <button v-for="item in businessComponents" :key="item.key" type="button" class="palette-item" :title="`插入${item.label}`" @click="insertRegisteredPrintComponent(store, item.key)">
+        <NIcon :component="businessIcons[item.icon] || DocumentTextOutline" size="20" />
         <span>{{ item.label }}</span>
       </button>
     </div>
