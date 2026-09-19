@@ -32,6 +32,9 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
     private final PrintDocumentAccess documentAccess;
     private final ObjectMapper json;
     private final com.mdframe.forge.plugin.print.mapper.PrintTemplateVersionMapper templateVersions;
+    private final FlowPrintContextResolver flowContexts;
+    private final FlowPrintAccessPolicy flowAccess;
+    private final FlowPrintHistoryAdapter flowHistory;
 
     @Override
     public PrintSourceType sourceType() {
@@ -54,7 +57,12 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
         if (!source.actor().equals(identity.current())) {
             throw PrintFailure.denied();
         }
-        return catalogs.build(metadata.draft(source.actor(), source.source()));
+        List<PrintFieldCatalogVO.Field> fields = new ArrayList<>(
+                catalogs.build(metadata.draft(source.actor(), source.source())).fields());
+        fields.addAll(flowHistory.catalog());
+        PrintFieldCatalogVO catalog = new PrintFieldCatalogVO(fields);
+        documentAccess.catalog(catalog);
+        return catalog;
     }
 
     @Override
@@ -62,13 +70,30 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
         resources.validate(source.actor(), fileIds);
     }
 
-    private record Resolution(Long versionId, List<AuthorizedPrintContext.VersionRef> versions,
-                              PrintMetadataResolver.Metadata metadata) { }
+    private record Resolution(Long versionId,
+                              List<AuthorizedPrintContext.VersionRef> versions,
+                              PrintMetadataResolver.Metadata metadata,
+                              PrintRecordRequest record,
+                              FlowPrintContextResolver.Context flow,
+                              PrintFieldCatalogVO catalog) { }
 
     private Resolution resolve(PrintActor actor, PrintRecordRequest request, Long expectedVersion) {
-        if (!actor.equals(identity.require("print:execute")) || !request.isSceneValid()
-                || (request.scene() != PrintScene.LIST && request.scene() != PrintScene.DETAIL)) {
+        if (!actor.equals(identity.require("print:execute")) || !request.isSceneValid()) {
             throw PrintFailure.denied();
+        }
+        boolean flowScene = request.scene() == PrintScene.FLOW_TODO
+                || request.scene() == PrintScene.FLOW_DONE
+                || request.scene() == PrintScene.FLOW_STARTED;
+        if (!flowScene && request.scene() != PrintScene.LIST && request.scene() != PrintScene.DETAIL) {
+            throw PrintFailure.denied();
+        }
+        FlowPrintContextResolver.Context flow = null;
+        if (flowScene) {
+            flow = flowContexts.resolve(actor, request);
+            flowAccess.authorize(actor, request.scene(), flow);
+            if (flow.processRunId() == null) {
+                throw PrintFailure.denied();
+            }
         }
         var source = request.source();
         var portal = runtime.runtimeById(source.applicationId());
@@ -92,6 +117,9 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
                         .thenComparing(PrintApplicationSnapshotCodec.Binding::templateId))
                 .map(binding -> new AuthorizedPrintContext.VersionRef(binding.templateId(), binding.templateVersionId(),
                         binding.isDefault(), binding.sortOrder())).toList();
+        if (flow != null) {
+            refs = flowAccess.templates(refs, flow);
+        }
         for (var binding : bindings) {
             if (!binding.source().equals(source) || binding.scene() != request.scene()) {
                 continue;
@@ -103,26 +131,41 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
         }
         var resolved = metadata.published(actor, source, metadata.parse(version.getSnapshotJson()));
         metadata.assertRuntimeEnabled(actor, resolved);
-        return new Resolution(version.getId(), refs, resolved);
+        PrintFieldCatalogVO catalog = catalogs.build(resolved);
+        PrintRecordRequest normalized = request;
+        if (flow != null) {
+            List<PrintFieldCatalogVO.Field> fields = new ArrayList<>(catalog.fields());
+            fields.addAll(flowHistory.catalog());
+            catalog = flowAccess.fields(new PrintFieldCatalogVO(fields), flow);
+            normalized = new PrintRecordRequest(source, flow.recordId(), request.scene(), flow.taskId(),
+                    flow.processInstanceId(), flow.processRunId());
+        }
+        documentAccess.catalog(catalog);
+        return new Resolution(version.getId(), refs, resolved, normalized, flow, catalog);
     }
 
     @Override
     public AuthorizedPrintContext authorize(PrintActor actor, PrintRecordRequest request) {
         var resolved = resolve(actor, request, null);
-        records.assertReadable(resolved.metadata(), request.recordId());
-        return new AuthorizedPrintContext(actor, request, resolved.versionId(), resolved.versions(), catalogs.build(resolved.metadata()));
+        records.assertReadable(resolved.metadata(), resolved.record().recordId());
+        return new AuthorizedPrintContext(actor, resolved.record(), resolved.versionId(),
+                resolved.versions(), resolved.catalog());
     }
 
     @Override
     public PrintData load(AuthorizedPrintContext context, PrintBindingSelection selection) {
         var resolved = resolve(context.actor(), context.record(), context.applicationVersionId());
-        var types = documentAccess.catalog(catalogs.build(resolved.metadata()));
+        var types = documentAccess.catalog(resolved.catalog());
         if (!resolved.versions().contains(selection.version())
                 || selection.fields().stream().anyMatch(field -> !types.containsKey(field) || "COLLECTION".equals(types.get(field)))
                 || selection.collections().stream().anyMatch(path -> !"COLLECTION".equals(types.get(path)))) {
             throw PrintFailure.denied();
         }
-        return records.read(resolved.metadata(), context.record().recordId(), selection);
+        PrintData data = records.read(resolved.metadata(), context.record().recordId(), selection);
+        if (resolved.flow() == null) {
+            return data;
+        }
+        return new PrintData(data.main(), data.children(), flowHistory.load(resolved.flow()));
     }
 
     @Override

@@ -192,3 +192,11 @@ M4c 结果：首轮 34 项后端、86 项前端通过；新增真实 Velocity �
 浏览器增量：合成 HTTP 创建请求 page_archive 自动带入；列表/详情各自传 LIST/DETAIL，特殊字符主键完整保持，无 row 正文。亮暗布局可读；390px 页面宽度仍 390，表格视区 342、内容 620，可滚动到更多操作。没有模板查看权限显示明确空态。既有分页/设计器验证基线继续沿用，不重复实机/PDF。
 
 真实联调追加：应用发布后从实际门户的列表/详情各打印一条；同对象跨页面检查模板范围；同一次应用代码下载中并发发布新版本，检查对象协议与 application-printing.json 固定引用一致；MySQL 实跑 selectPublishedPrintSources 的 JSON_CONTAINS 与租户条件；独立部署须先完成 PRINTING.md 列出的资产导入和 Provider 适配。
+
+## M5a 增量验证
+
+- 流程身份：taskId、processInstanceId、processRunId、businessKey、objectCode、recordId 和代码表单 formKey 均由 Flow 受保护接口与业务运行表反查后逐项比对；伪造任一标识拒绝。
+- 场景权限：待办只允许当前签收人或经 Flow 候选可见性校验的未签收任务；已办只允许实际办理人/owner；我发起只允许实例发起人。三类场景分别测试，不用单一只读标志代替授权。
+- 数据范围：节点显式 `readable=false` 的主表/子表字段从目录移除；RESTRICT 只保留节点模板 ID 子集。审批轨迹保持每个 taskId 独立并限制 1000 条，不按节点名合并会签或重提轮次。
+- Provider：低代码 FLOW 场景要求真实应用 processRun；采购 CODE Provider 读取业务 Service 和应用不可变发布快照，目录排除内部 ID、流程身份和上传 fileId，并增加审批轨迹目录。
+- 自动化：`FlowPrintAccessPolicyTest` 4 项、`LowcodePrintDataProviderTest` 7 项、`SamplePurchaseOrderPrintDataProviderTest` 2 项，共 13 项通过；业务核心 35 模块 compile 与流程插件 28 模块 compile 通过。真实 Flow/Admin/MySQL/Redis 未启动，真实任务/实例 E2E 留 T44。

@@ -54,7 +54,9 @@ class LowcodePrintDataProviderTest {
         var access = new PrintDocumentAccess(JSON);
         provider = new LowcodePrintDataProvider(identity, mock(PrintApplicationAccessAdapter.class), runtime, versions,
                 new PrintApplicationSnapshotCodec(factory.getValidator()), metadata, new LowcodePrintSourceResolver(),
-                new LowcodePrintCatalogBuilder(access), records, mock(LowcodePrintResourceAccess.class), access, JSON, templateVersions);
+                new LowcodePrintCatalogBuilder(access), records, mock(LowcodePrintResourceAccess.class), access, JSON,
+                templateVersions, mock(FlowPrintContextResolver.class), mock(FlowPrintAccessPolicy.class),
+                mock(FlowPrintHistoryAdapter.class));
     }
     @AfterEach void close() { session.close(); factory.close(); }
     @Test void runtimeNeedsNoDesignPermissionAndUsesOnlySnapshotVersion() {

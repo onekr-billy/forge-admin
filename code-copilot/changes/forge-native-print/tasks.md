@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，M4a 接入前置和 M4b 后端低代码/快照接入已完成阶段验证，M4c 已完成阶段验证，M5–M6 未完成。禁止 push。
+> 状态：implementing，M1–M4 已在 forge-admin 完成阶段验证并按阶段本地提交；M5a 服务端流程身份/历史与采购 CODE Provider 已完成，M5b–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -150,10 +150,17 @@ R01/R02 为条件化实施检查，不得勾选后绕过拆分；如果需要的
 
 阶段出口：待办/已办/我发起均可在授权范围打印同一实例单据与审批记录；现有审批动作不变。
 
+### M5 实施拆分（2026-09-19）
+
+- M5a（服务端）：先完成流程 task/instance/run/record 一致性解析、待办/已办/我发起分场景授权、实例审批轨迹适配，以及采购代码业务 Provider。流程上下文继续通过 Flow 服务现有可见性接口校验；运行打印只读应用已发布快照，不依赖模板设计权限。
+- M5b（前端与 BPMN）：新增独立 `FlowPrintAction` 和 `flowPrintContextStore`，从详情页当前选中记录同步稳定字符串身份；接入前拆出超限详情样式/上下文，避免继续扩大 `todo.vue`、`started.vue` 和 `FlowTaskDetailShell.vue`。节点模板策略作为审批节点现有配置的小分区保存到 BPMN 扩展属性。
+- M5c（资源与审计收口）：流程签名/图片统一走可取消、失败即阻断的鉴权资源加载器；执行事件仍只接受 DIALOG_OPENED/FAILED，打开预览或模板选择不记为出纸。
+- 本阶段不启动 Admin/Flow/MySQL/Redis，不执行真实流程或迁移；自动化覆盖模块单测、前端组件/协议测试与聚合构建，真实待办/已办/我发起 E2E 由用户环境回填。
+
 | 状态/任务 | 依赖 | 拟涉及文件 | 验收与证据 |
 |---|---|---|---|
-| [ ] T35 流程身份/数据适配 | T29,T33 | GJ `service/printing/{FlowPrintContextResolver,FlowPrintAccessPolicy,FlowPrintHistoryAdapter}.java`、GT `service/printing/FlowPrintAccessPolicyTest.java` | task/instance/run/record 一致；三类入口分别授权；重提/会签不混轮次 |
-| [ ] T36 代码业务 Provider | T35 | B 新增采购打印 Provider、采购打印字段目录、对应测试 | 复用现有业务读取，运行接口不依赖设计权，不以 formUrl 截图代替 |
+| [x] T35 流程身份/数据适配 | T29,T33 | GJ `service/printing/{FlowPrintContextResolver,FlowPrintAccessPolicy,FlowPrintHistoryAdapter}.java`、GT `service/printing/FlowPrintAccessPolicyTest.java` | task/instance/run/record 一致；三类入口分别授权；重提/会签不混轮次 |
+| [x] T36 代码业务 Provider | T35 | B 新增采购打印 Provider、采购打印字段目录、对应测试 | 复用现有业务读取，运行接口不依赖设计权，不以 formUrl 截图代替 |
 | [ ] T37 流程打印入口 | T35,R02 | U `components/flow/FlowPrintAction.vue`、U `stores/print/flowPrintContextStore.js`、拆分后的详情上下文组件、对应组件测试 | 真实选中实例上下文；切换任务不串数据；未保存修改有提示 |
 | [ ] T38 节点打印策略 | T35 | 既有流程节点面板新增小分区组件、节点配置序列化/解析文件、策略测试 | 继承默认/限制子集；随节点模型版本保存，不改审批动作 |
 | [ ] T39 鉴权资源和审计 | T37,T38 | U `runtime/printResourceLoader.js`、PJ 执行事件 DTO/Service 小改、资源授权测试 | 签名/图片鉴权，资源失败阻止输出；对话框打开不等同出纸 |

@@ -340,3 +340,25 @@ node --max-old-space-size=8192 node_modules/vite/bin/vite.js build
 独立验证入口 `serve.mjs --workspace --build` 通过。窗口视口已恢复，临时标签页关闭，验证服务 PID 92114 已停止；未启动 Admin/Flow/MySQL/Redis或执行迁移。未进行真实加密 HTTP、MySQL 并发读一致性、PDF 或物理打印。
 
 Spec 审查：T31/T32/T34 完成阶段验收，M4 为 implemented-pending-e2e；M5 流程/代码业务、M6 完整验收未完成。下载依赖明确为 REQUIRES_TARGET_ADAPTER/REQUIRES_EXTENSION，不把保存打印 JSON 宣称为目标业务数据 Provider 已实现。代码审查：新增查询在 XML，tenant/del_flag/发布指针明确；源页面与对象逐层核验；row 只取记录主键、URLSearchParams 转义；只读导出权限不包含业务数据正文；没有新增全员授权、迁移或业务状态写入。修改的 SFC 最大 680 行，AiCrudPage 本体无变动。全程未 push。
+
+## 2026-09-19 · M5a 流程身份、审批轨迹与采购 CODE Provider
+
+仍在 `/Users/mini32g/Desktop/project/forge-admin` 的 `forge-native-print` 分支执行，只 commit、不 push；既有 `.DS_Store` 保留且不暂存。按 R02 先核对页面规模：`todo.vue` 2526 行、`started.vue` 869 行、`FlowTaskDetailShell.vue` 824 行，M5b 接入前必须拆分，M5a 未修改这些超限文件。
+
+实现：FlowClient 增加实例历史分页读取；generator 增加 FlowPrintContextResolver/AccessPolicy/HistoryAdapter，并在 XML 通过 tenant_id + processInstanceId 解析应用业务 run。LOWCODE FLOW 场景要求 task/instance/run/record 完全一致，按待办/已办/我发起分别授权，节点显式隐藏字段与模板子集在服务端收敛。审批轨迹每条保留真实 taskId，最大 1000 条。流程 TaskFormInfo 返回 `printTemplatePolicy/printTemplateIds`，只读取 BPMN 节点属性，不修改任何审批动作。
+
+采购 CODE Provider 只认 `sample_purchase_order` + `sample_purchase_order_approval_form`，复用 SamplePurchaseOrderService 读取当前保存数据，绑定只来自应用已发布快照；运行不依赖打印设计权限。字段目录排除内部标识和上传 fileId，并加入 `flow.history`。静态模板图片仍走现有私有文件授权。
+
+验证（Java 17 / Maven 3.9.9，隔离 settings）：
+
+```bash
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-business/forge-business-core -am compile -DskipTests
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-business/forge-business-core -am test -Penable-tests -Dtest=FlowPrintAccessPolicyTest,LowcodePrintDataProviderTest,SamplePurchaseOrderPrintDataProviderTest -Dsurefire.failIfNoSpecifiedTests=false
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am compile -DskipTests
+```
+
+结果：业务核心聚合 35 模块编译成功；定向测试 generator 11 项、business-core 2 项，共 13 项，0 failure/error/skipped；流程插件聚合 28 模块编译成功。`git diff --check` 通过。
+
+过程中如实记录：首次把 `-Penable-tests` 与 `-DskipTests` 同时用于探测，profile 覆盖跳过设置并触发无关 system 旧测试路径失败；改用 compile 生命周期后通过。采购 Provider 首次编译出现 null 重载歧义，内部方法改名；新增测试首次有泛型断言编译错误和子表隐藏字段解析错误，分别收紧类型与按 childField 解析后复跑全绿，未放宽生产规则。
+
+未启动 Admin/Flow/MySQL/Redis，未执行迁移或真实流程；Flow 受保护接口、数据库 run 映射与实际历史数据的端到端结果留用户环境验收。M5b 前端入口与 BPMN 编辑器策略、M5c 资源加载/审计尚未完成。
