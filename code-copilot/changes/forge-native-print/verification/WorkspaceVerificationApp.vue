@@ -12,11 +12,12 @@ const model = { objectId: '3', objectCode: 'purchase', configKey: 'purchase', ob
 const application = { id: '2', applicationName: '合成采购应用', options: { inAppBuilder: { nodes: [{ id: 'page_purchase', type: 'page', title: '采购管理', objectRef: model }, { id: 'page_archive', type: 'page', title: '采购归档', objectRef: model }], pages: {} } } }
 const themeVars = computed(() => ({ '--text-tertiary': dark.value ? '#a8abb2' : '#86909c', '--text-secondary': dark.value ? '#c2c2c2' : '#4e5969', '--bg-primary': dark.value ? '#18181c' : '#fff', '--bg-tertiary': dark.value ? '#26262a' : '#f2f3f5', '--bg-hover': dark.value ? '#303034' : '#f2f3f5', '--border-default': dark.value ? '#444448' : '#c9cdd4', color: dark.value ? '#efefef' : '#1f2329', background: dark.value ? '#18181c' : '#f5f7fa' }))
 function preview(scene) { router.push({ path: '/print/preview', query: { ...store.sources[0]?.source, recordId: '合成/&?=9007199254740993', scene } }) }
+function workspace() { router.push({ path: '/app-center/application/purchase-demo', query: { section: 'printing' } }) }
 </script>
 <template>
   <NConfigProvider :theme="dark ? darkTheme : null" :style="themeVars">
-    <header><strong>采购应用 · 合成验证</strong><NButton size="small" @click="router.push('/workspace')">返回工作台</NButton><NButton size="small" @click="dark = !dark">切换明暗主题</NButton><NButton size="small" @click="preview('LIST')">合成列表打印</NButton><NButton size="small" @click="preview('DETAIL')">合成详情打印</NButton><NButton size="small" @click="user.getDataPermission = ['print:execute']">仅打印使用权限</NButton></header>
-    <div v-if="route.path === '/workspace'" class="workspace">
+    <header><strong>采购应用 · 合成验证</strong><NButton size="small" @click="workspace">返回工作台</NButton><NButton size="small" @click="dark = !dark">切换明暗主题</NButton><NButton size="small" @click="preview('LIST')">合成列表打印</NButton><NButton size="small" @click="preview('DETAIL')">合成详情打印</NButton><NButton size="small" @click="user.getDataPermission = ['print:execute']">仅打印使用权限</NButton></header>
+    <div v-if="route.name === 'workspace'" class="workspace">
       <aside><ApplicationWorkspaceNav :sections="[{ sectionKey: 'overview', sectionName: '概览' }, { sectionKey: 'printing', sectionName: '打印模板' }]" active-section="printing" /></aside>
       <main><ApplicationPrintPanel :application="application" :application-objects="[model]" /></main>
     </div>

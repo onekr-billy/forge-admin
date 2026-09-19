@@ -2,8 +2,10 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { paperGeometry, screenDeltaToMm } from '../protocol/units'
+import { selectionBounds } from './commands'
 import { addElement, addField, PRINT_DRAG_TYPE } from './elementCatalog'
 import PrintCanvasElement from './PrintCanvasElement.vue'
+import PrintRuler from './PrintRuler.vue'
 import PrintSelectionOverlay from './PrintSelectionOverlay.vue'
 import { usePrintDrag } from './usePrintDrag'
 import { usePrintKeyboard } from './usePrintKeyboard'
@@ -17,6 +19,15 @@ const surfaces = computed(() => [
   ...store.document.body.map((s, i) => ({ ...s, id: `section:${s.id}`, label: `${i + 1}. ${{ FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格' }[s.kind]}` })),
   { id: 'footer', label: '页脚', ...store.document.footer },
 ])
+const selectedBounds = computed(() => selectionBounds(store.selectedElements))
+const paperName = computed(() => {
+  const { widthMm, heightMm } = store.document.paper
+  if (widthMm === 210 && heightMm === 297)
+    return 'A4'
+  if (widthMm === 148 && heightMm === 210)
+    return 'A5'
+  return '自定义'
+})
 const marquee = ref(null)
 let clearMarquee = () => {}
 
@@ -88,24 +99,87 @@ onBeforeUnmount(() => clearMarquee())
 <template>
   <div class="print-canvas" tabindex="0" aria-label="打印编辑画布" @keydown="keyboard">
     <div class="canvas-note">
-      区块编辑视图 · 实际分页以预览为准 · Shift 多选 · 方向键移动 1 mm
+      <span>{{ paperName }} · {{ geometry.widthMm }} × {{ geometry.heightMm }} mm</span>
+      <span>标尺 5mm · Shift 多选 · 方向键移动 1mm</span>
     </div>
-    <div class="paper-holder" :style="{ zoom: store.zoom }">
-      <div class="design-paper" :style="{ width: `${geometry.widthMm}mm`, minHeight: `${geometry.heightMm}mm`, padding: `${store.document.paper.marginMm.top}mm ${store.document.paper.marginMm.right}mm ${store.document.paper.marginMm.bottom}mm ${store.document.paper.marginMm.left}mm` }">
-        <section v-for="surface in surfaces" :key="surface.id" :data-surface-id="surface.id" class="design-surface" :class="{ active: store.surfaceId === surface.id }" :style="{ minHeight: `${Math.max(surface.heightMm || 0, surface.kind === 'TABLE' ? 24 : surface.kind === 'TEXT' ? 16 : 6)}mm`, marginBottom: `${surface.gapAfterMm || 0}mm` }" @pointerdown.self="surfaceDown($event, surface)" @dragover.prevent @drop.prevent.stop="drop($event, surface)">
-          <span class="surface-label">{{ surface.label }}</span>
-          <PrintCanvasElement v-for="element in surface.elements || []" :key="element.id" :element="element" :selected="store.surfaceId === surface.id && store.selectedIds.includes(element.id)" @pointerdown.stop="elementDown($event, surface.id, element.id)" />
-          <div v-if="surface.kind === 'TEXT'" class="flow-text" @pointerdown="surfaceDown($event, surface)">
-            {{ surface.binding?.source === 'CONSTANT' ? surface.binding.value : surface.binding?.path }}
-          </div>
-          <div v-if="surface.kind === 'TABLE'" class="table-sketch" @pointerdown="surfaceDown($event, surface)">
-            <div v-for="column in surface.columns" :key="column.id" :style="{ width: `${column.widthMm}mm` }">
-              <strong>{{ column.title }}</strong><span>{{ column.field }}</span>
+    <div class="canvas-viewport">
+      <div class="paper-holder" :style="{ zoom: store.zoom }">
+        <div
+          class="ruler-frame"
+          :style="{
+            gridTemplateColumns: `7mm ${geometry.widthMm}mm`,
+            gridTemplateRows: `7mm minmax(${geometry.heightMm}mm, max-content)`,
+          }"
+        >
+          <div class="ruler-corner" />
+          <PrintRuler :length-mm="geometry.widthMm" orientation="horizontal" />
+          <PrintRuler :length-mm="geometry.heightMm" orientation="vertical" />
+          <div
+            class="design-paper"
+            :class="{ 'paper-grid': store.showGrid }"
+            :style="{
+              width: `${geometry.widthMm}mm`,
+              minHeight: `${geometry.heightMm}mm`,
+              padding: `${store.document.paper.marginMm.top}mm ${store.document.paper.marginMm.right}mm ${store.document.paper.marginMm.bottom}mm ${store.document.paper.marginMm.left}mm`,
+            }"
+          >
+            <div
+              class="margin-guide"
+              :style="{
+                top: `${store.document.paper.marginMm.top}mm`,
+                right: `${store.document.paper.marginMm.right}mm`,
+                bottom: `${store.document.paper.marginMm.bottom}mm`,
+                left: `${store.document.paper.marginMm.left}mm`,
+              }"
+            />
+            <div class="paper-guide header-guide" :style="{ top: `${store.document.paper.marginMm.top + store.document.header.heightMm}mm` }">
+              <span>页眉线</span>
             </div>
+            <div class="paper-guide footer-guide" :style="{ top: `${geometry.footerTopMm}mm` }">
+              <span>页脚线</span>
+            </div>
+            <section
+              v-for="surface in surfaces"
+              :key="surface.id"
+              :data-surface-id="surface.id"
+              class="design-surface"
+              :class="{ active: store.surfaceId === surface.id }"
+              :style="{
+                minHeight: `${Math.max(surface.heightMm || 0, surface.kind === 'TABLE' ? 24 : surface.kind === 'TEXT' ? 16 : 6)}mm`,
+                marginBottom: `${surface.gapAfterMm || 0}mm`,
+              }"
+              @pointerdown.self="surfaceDown($event, surface)"
+              @dragover.prevent
+              @drop.prevent.stop="drop($event, surface)"
+            >
+              <span class="surface-label">{{ surface.label }}</span>
+              <PrintCanvasElement
+                v-for="element in surface.elements || []"
+                :key="element.id"
+                :element="element"
+                :selected="store.surfaceId === surface.id && store.selectedIds.includes(element.id)"
+                @pointerdown.stop="elementDown($event, surface.id, element.id)"
+              />
+              <div v-if="surface.kind === 'TEXT'" class="flow-text" @pointerdown="surfaceDown($event, surface)">
+                {{ surface.binding?.source === 'CONSTANT' ? surface.binding.value : surface.binding?.path }}
+              </div>
+              <div v-if="surface.kind === 'TABLE'" class="table-sketch" @pointerdown="surfaceDown($event, surface)">
+                <div v-for="column in surface.columns" :key="column.id" :style="{ width: `${column.widthMm}mm` }">
+                  <strong>{{ column.title }}</strong><span>{{ column.field }}</span>
+                </div>
+              </div>
+              <template v-if="store.surfaceId === surface.id && selectedBounds">
+                <div class="alignment-guide vertical" :style="{ left: `${selectedBounds.xMm}mm` }" />
+                <div class="alignment-guide horizontal" :style="{ top: `${selectedBounds.yMm}mm` }" />
+                <span class="position-chip" :style="{ left: `${selectedBounds.xMm}mm`, top: `${selectedBounds.yMm}mm` }">
+                  {{ selectedBounds.xMm.toFixed(1) }}, {{ selectedBounds.yMm.toFixed(1) }} mm
+                </span>
+              </template>
+              <PrintSelectionOverlay v-if="store.surfaceId === surface.id" />
+              <div v-if="marquee?.id === surface.id" class="marquee" :style="{ left: `${marquee.x}mm`, top: `${marquee.y}mm`, width: `${marquee.w}mm`, height: `${marquee.h}mm` }" />
+            </section>
           </div>
-          <PrintSelectionOverlay v-if="store.surfaceId === surface.id" />
-          <div v-if="marquee?.id === surface.id" class="marquee" :style="{ left: `${marquee.x}mm`, top: `${marquee.y}mm`, width: `${marquee.w}mm`, height: `${marquee.h}mm` }" />
-        </section>
+        </div>
       </div>
     </div>
   </div>
@@ -113,44 +187,128 @@ onBeforeUnmount(() => clearMarquee())
 
 <style scoped>
 .print-canvas {
+  display: flex;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
-  background: var(--gray-100, #f0f2f5);
-  padding: 12px;
+  flex-direction: column;
+  overflow: hidden;
+  background: #eef1f5;
   outline: none;
 }
 .canvas-note {
-  color: var(--text-tertiary, #777);
+  display: flex;
+  min-height: 30px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #d9dee7;
+  color: #667085;
+  background: #f8fafc;
   font-size: 11px;
-  margin-bottom: 12px;
+  white-space: nowrap;
+}
+.canvas-viewport {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 24px 32px;
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 .paper-holder {
   width: max-content;
   margin: 0 auto;
-  padding: 1px;
+  transform-origin: top center;
+}
+.ruler-frame {
+  display: grid;
+  width: max-content;
+  align-items: stretch;
+  filter: drop-shadow(0 2px 5px rgb(15 23 42 / 10%));
+}
+.ruler-corner {
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  background: #e9edf3;
+}
+.print-ruler.horizontal {
+  grid-column: 2;
+  grid-row: 1;
+}
+.print-ruler.vertical {
+  grid-column: 1;
+  grid-row: 2;
 }
 .design-paper {
+  position: relative;
+  z-index: 0;
+  grid-column: 2;
+  grid-row: 2;
   box-sizing: border-box;
-  background: #fff;
-  color: #111;
-  border: 1px solid #cbd0d7;
+  color: #111827;
+  background-color: #fff;
+  border: 1px solid #b8c0cc;
+  overflow: visible;
+}
+.design-paper.paper-grid {
+  background-image:
+    linear-gradient(to right, rgb(148 163 184 / 14%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(148 163 184 / 14%) 1px, transparent 1px),
+    linear-gradient(to right, rgb(100 116 139 / 22%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(100 116 139 / 22%) 1px, transparent 1px);
+  background-size:
+    1mm 1mm,
+    1mm 1mm,
+    5mm 5mm,
+    5mm 5mm;
+}
+.margin-guide {
+  position: absolute;
+  z-index: 1;
+  border: 1px dashed rgb(37 99 235 / 45%);
+  pointer-events: none;
+}
+.paper-guide {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  left: 0;
+  height: 0;
+  border-top: 1px dashed rgb(239 68 68 / 70%);
+  pointer-events: none;
+}
+.paper-guide span {
+  position: absolute;
+  top: -14px;
+  right: 2px;
+  padding: 0 3px;
+  color: #dc2626;
+  background: rgb(255 255 255 / 88%);
+  font-size: 8px;
+  line-height: 13px;
 }
 .design-surface {
   position: relative;
+  z-index: 2;
   box-sizing: border-box;
-  outline: 1px dashed #cbd0d7;
+  outline: 1px dashed rgb(100 116 139 / 45%);
   touch-action: none;
 }
 .design-surface.active {
   outline-color: var(--primary-color, #356cde);
+  background: rgb(22 93 255 / 2%);
 }
 .surface-label {
   position: absolute;
+  z-index: 3;
+  top: 1px;
   right: 1mm;
-  top: 0;
+  padding: 0 2px;
+  color: #64748b;
+  background: rgb(255 255 255 / 78%);
   font-size: 8px;
-  color: #787e87;
   pointer-events: none;
 }
 .flow-text {
@@ -169,8 +327,9 @@ onBeforeUnmount(() => clearMarquee())
 }
 .table-sketch > div {
   box-sizing: border-box;
-  border: 1px solid #bfc4cc;
+  border: 1px solid #94a3b8;
   flex-shrink: 0;
+  background: rgb(255 255 255 / 82%);
 }
 .table-sketch strong,
 .table-sketch span {
@@ -178,15 +337,48 @@ onBeforeUnmount(() => clearMarquee())
   padding: 1mm;
   overflow-wrap: anywhere;
 }
+.table-sketch strong {
+  background: rgb(241 245 249 / 92%);
+}
 .table-sketch span {
-  border-top: 1px solid #bfc4cc;
-  color: #666;
+  border-top: 1px solid #94a3b8;
+  color: #667085;
   font-size: 9pt;
+}
+.alignment-guide {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+}
+.alignment-guide.vertical {
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed #ef4444;
+}
+.alignment-guide.horizontal {
+  right: 0;
+  left: 0;
+  border-top: 1px dashed #ef4444;
+}
+.position-chip {
+  position: absolute;
+  z-index: 21;
+  padding: 1px 4px;
+  color: #fff;
+  background: #ef4444;
+  border-radius: 2px;
+  font:
+    8px/13px Arial,
+    sans-serif;
+  transform: translate(2px, -15px);
+  pointer-events: none;
+  white-space: nowrap;
 }
 .marquee {
   position: absolute;
-  pointer-events: none;
+  z-index: 22;
   border: 1px solid var(--primary-color, #356cde);
   background: #356cde18;
+  pointer-events: none;
 }
 </style>

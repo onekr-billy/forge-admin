@@ -13,6 +13,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     surfaceId: 'header',
     selectedIds: [],
     zoom: 0.8,
+    showGrid: true,
     history: createHistory(),
     saved: '',
     gesture: null,

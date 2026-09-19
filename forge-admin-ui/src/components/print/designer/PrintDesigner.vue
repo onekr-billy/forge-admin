@@ -141,27 +141,29 @@ defineExpose({ canLeave, save })
     <NAlert v-else-if="store.notice" type="info" closable @close="store.notice = ''">
       {{ store.notice }}
     </NAlert>
-    <div class="designer-layout">
-      <aside class="designer-aside">
-        <PrintElementPalette /><PrintFieldTree /><PrintSectionList />
-      </aside>
-      <PrintCanvas />
-      <aside class="designer-properties">
-        <NTabs v-model:value="panel" type="line" size="small">
-          <NTabPane name="selection" tab="选中内容">
-            <ElementGeometryPanel /><BindingPanel /><TextPanel /><TablePanel />
-          </NTabPane>
-          <NTabPane name="paper" tab="纸张">
-            <PaperPanel />
-          </NTabPane>
-        </NTabs>
-        <section v-if="store.fieldIssues.length" class="designer-group">
-          <h3>失效字段（{{ store.fieldIssues.length }}）</h3>
-          <button v-for="issue in store.fieldIssues" :key="issue.path" type="button" class="issue-button" @click="locateIssue(issue)">
-            {{ issue.message }} · 定位
-          </button>
-        </section>
-      </aside>
+    <div class="designer-layout-scroll">
+      <div class="designer-layout">
+        <aside class="designer-aside">
+          <PrintElementPalette /><PrintFieldTree /><PrintSectionList />
+        </aside>
+        <PrintCanvas />
+        <aside class="designer-properties">
+          <NTabs v-model:value="panel" type="line" size="small">
+            <NTabPane name="selection" tab="选中内容">
+              <ElementGeometryPanel /><BindingPanel /><TextPanel /><TablePanel />
+            </NTabPane>
+            <NTabPane name="paper" tab="纸张">
+              <PaperPanel />
+            </NTabPane>
+          </NTabs>
+          <section v-if="store.fieldIssues.length" class="designer-group">
+            <h3>失效字段（{{ store.fieldIssues.length }}）</h3>
+            <button v-for="issue in store.fieldIssues" :key="issue.path" type="button" class="issue-button" @click="locateIssue(issue)">
+              {{ issue.message }} · 定位
+            </button>
+          </section>
+        </aside>
+      </div>
     </div>
     <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ maxHeight: '80vh', overflow: 'auto' }" :style="{ width: '94vw', maxWidth: '1400px' }" :mask-closable="false">
       <PrintPreview v-if="store.previewOpen" data-label="模板预览" :allow-print="!saveDraft" :template="store.document" :context="context" :catalog="store.catalog" :resolve-file="resolveFile" />
@@ -196,11 +198,18 @@ defineExpose({ canLeave, save })
   border-radius: 6px;
   overflow: hidden;
 }
-.designer-layout {
+.designer-layout-scroll {
   flex: 1;
   min-height: 0;
+  overflow: auto;
+}
+.designer-layout {
+  width: 100%;
+  min-width: 1080px;
+  height: 100%;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) 270px;
+  grid-template-columns: 216px minmax(560px, 1fr) 292px;
 }
 .designer-aside,
 .designer-properties {
@@ -211,10 +220,12 @@ defineExpose({ canLeave, save })
 }
 .designer-aside {
   border-right: 1px solid var(--border-light);
+  background: var(--bg-primary);
 }
 .designer-properties {
   border-left: 1px solid var(--border-light);
-  padding: 0 10px;
+  padding: 0 10px 12px;
+  background: var(--bg-primary);
 }
 :deep(.designer-group) {
   padding: 10px;
@@ -259,20 +270,5 @@ defineExpose({ canLeave, save })
 }
 .protocol-actions {
   margin-top: 10px;
-}
-@media (max-width: 1050px) {
-  .designer-layout {
-    grid-template-columns: 170px minmax(0, 1fr) 230px;
-  }
-}
-@media (max-width: 740px) {
-  .designer-layout {
-    grid-template-columns: 140px minmax(0, 1fr);
-  }
-  .designer-properties {
-    grid-column: 1 / -1;
-    max-height: 32vh;
-    border-top: 1px solid var(--border-light);
-  }
 }
 </style>

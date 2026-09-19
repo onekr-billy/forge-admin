@@ -418,3 +418,22 @@ mvn -s /private/tmp/forge-print-maven-settings.xml -pl forge-admin-server -am pa
 结果：前端打印域 16 文件 98 项、后端打印插件 17 类 107 项全部通过；最终合并回归进一步覆盖流程入口/BPMN 策略，前端 22 文件 133 项；后端打印插件 107 + generator 113 + 采购 CODE Provider 2，共 222 项，全部 0 failure/error/skipped。定向 ESLint 无输出；Vite 9364 modules 构建成功；Admin 46 模块 BUILD SUCCESS。第一次 Maven 探测未带 `-Penable-tests`，只编译未运行测试，不计入通过证据；启用 profile 后新增测试夹具最初仍保留模板静态资源，修正夹具清空 resources 后 7 项定向及完整回归均通过。项目既有 Vite native config、CSS `//` 注释、dynamic import、组件重复注册 stderr 和 Lombok builder 警告未扩大处理。
 
 Spec 审查：T39 完成，M1–M5 代码闭环完成；M6 的 T40/T42 仍需真实环境浏览器/流程/PDF/打印机结果。代码审查：签名仍是受控 fileId，无 URL/token 写入模板或 iframe；资源失败先于打印会话；图片行高进入分页；审计无正文/异常堆栈且终态幂等。人工验收与回滚见 `verification/user-acceptance.md`。
+
+## 2026-09-19 · T46 设计器视觉基线补强
+
+用户查看合成工作台后明确反馈 `workspace.html` 容易被理解为正式页面，且设计器与参考源码差距明显，缺少标尺和辅助线。按 SDD 先更新 F03、4.4、T46 和增量测试计划，再修改生产组件；`vue-plugin-hiprint` 只用于观察交互结构和视觉基线，没有引入依赖、复制 bundle 或兼容其 JSON 协议。
+
+实现：新增独立 `PrintRuler.vue`，按 5mm 刻度、10mm 主刻度渲染横纵毫米标尺；纸张画布增加 1mm/5mm 网格、页边距框、页眉/页脚红色辅助线，元素选中后显示横纵坐标线和毫米坐标。工具栏增加 A4/A5、横竖旋转、网格开关及缩放加减；左侧物料改为紧凑图标宫格。三栏桌面工作台保持固定结构，窄视口使用工作区横向滚动，不再把属性面板堆到画布下方。合成服务支持 `/app-center/application/purchase-demo?section=printing` 和 `/print/designer` 路由，`workspace.html` 仅保留为 Vite 内部入口。
+
+验证：
+
+```bash
+./node_modules/.bin/vitest run src/components/print src/stores/print src/api/__tests__/print.spec.js
+./node_modules/.bin/eslint src/components/print/designer/PrintRuler.vue src/components/print/designer/PrintCanvas.vue src/components/print/designer/PrintDesigner.vue src/components/print/designer/PrintDesignerToolbar.vue src/components/print/designer/PrintElementPalette.vue src/components/print/designer/__tests__/PrintRuler.spec.js src/stores/print/printDesignerStore.js
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+git diff --check
+```
+
+结果：打印域 17 文件 101 项全部通过；目标 ESLint 和 `git diff --check` 无输出；Vite 9366 modules 构建成功，只有项目既有 native config、CSS `//` 注释、dynamic import 与插件耗时警告。浏览器以 1440×900 桌面视口从应用工作台路由进入模板设计页，实际观察双向标尺、网格、纸张辅助线、三栏、物料区和选中元素坐标线；浏览器控制台 error/warn 为空，随后恢复默认视口并保留页面给用户查看。
+
+第一次按 memory 中 Node 20.19.0 命令执行时发现本机当前未安装该版本，测试尚未启动；改用此前本变更已验证的 Node 24.21.0 后通过。未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、PDF 或物理打印；用户要求查看的本地合成预览服务继续监听 `127.0.0.1:4318`，其余真实环境验收仍归 T42/T44。

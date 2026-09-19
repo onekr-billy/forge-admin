@@ -57,4 +57,4 @@ M4 接入时实现 PrintApplicationAccess（应用授权/事务行锁/发布引�
 
 ## M4c 工作台增量
 
-仓库根使用 Node 24：`node code-copilot/changes/forge-native-print/verification/serve.mjs --workspace`；打开 `http://127.0.0.1:4318/workspace.html`。`--workspace --build` 可独立构建。选择页面中的表单、新建合成模板、返回工作台、切换明暗主题；390px 验证表格水平滚动和更多按钮。列表/详情合成入口共用正式预览页，真实 AiCrudPage 点击/主键转义另由 AiCrudPage-print.spec.js 覆盖。`m4c-actions.json` 来源为后端测试输出 target/print-runtime-actions.json。所有记录/权限/API 都是合成数据，不能替代真实门户 E2E。
+仓库根使用 Node 24：`node code-copilot/changes/forge-native-print/verification/serve.mjs --workspace`；打开 `http://127.0.0.1:4318/app-center/application/purchase-demo?section=printing`。`workspace.html` 只是 Vite 的合成入口文件，浏览器使用与正式应用工作台一致的路由形态；正式环境仍需替换为真实 applicationCode。`--workspace --build` 可独立构建。选择页面中的表单、新建合成模板、返回工作台、切换明暗主题；390px 验证表格水平滚动和更多按钮。列表/详情合成入口共用正式预览页，真实 AiCrudPage 点击/主键转义另由 AiCrudPage-print.spec.js 覆盖。`m4c-actions.json` 来源为后端测试输出 target/print-runtime-actions.json。所有记录/权限/API 都是合成数据，不能替代真实门户 E2E。
