@@ -15,6 +15,7 @@ import PaperPanel from './panels/PaperPanel.vue'
 import StaticTablePanel from './panels/StaticTablePanel.vue'
 import TablePanel from './panels/TablePanel.vue'
 import TextPanel from './panels/TextPanel.vue'
+import PrintCalibration from './PrintCalibration.vue'
 import PrintCanvas from './PrintCanvas.vue'
 import PrintDesignerToolbar from './PrintDesignerToolbar.vue'
 import PrintElementPalette from './PrintElementPalette.vue'
@@ -76,6 +77,7 @@ const { canLeave } = usePrintDesignerLifecycle(store, confirmDiscard, () => prop
 const theme = useThemeVars()
 const themeStyle = computed(() => ({ '--bg-primary': theme.value.cardColor, '--gray-100': theme.value.bodyColor, '--text-primary': theme.value.textColor1, '--text-tertiary': theme.value.textColor3, '--border-light': theme.value.borderColor, '--primary-color': theme.value.primaryColor }))
 const protocolOpen = ref(false)
+const calibrationOpen = ref(false)
 const protocolText = ref('')
 const protocolError = ref('')
 const panel = ref('selection')
@@ -161,7 +163,7 @@ defineExpose({ canLeave, save })
 
 <template>
   <div class="print-designer" :style="themeStyle">
-    <PrintDesignerToolbar :local="!saveDraft" :external-dirty="externalDirty" @new="createNew" @copy="copyTemplate" @save="save" @restore="restore" @protocol="openProtocol" />
+    <PrintDesignerToolbar :local="!saveDraft" :external-dirty="externalDirty" @new="createNew" @copy="copyTemplate" @save="save" @restore="restore" @protocol="openProtocol" @calibration="calibrationOpen = true" />
     <NAlert v-if="store.error" type="error" closable @close="store.error = ''">
       {{ store.error }}
     </NAlert>
@@ -194,6 +196,9 @@ defineExpose({ canLeave, save })
     </div>
     <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ padding: 0, height: 'calc(92vh - 58px)', overflow: 'hidden' }" :style="{ width: '96vw', maxWidth: '1500px', height: '92vh' }" :mask-closable="false">
       <PrintPreview v-if="store.previewOpen" :data-label="previewDataLabel" :allow-print="!saveDraft" :template="store.document" :context="designerContext" :catalog="store.catalog" :resolve-file="resolveFile" />
+    </NModal>
+    <NModal v-model:show="calibrationOpen" preset="card" title="打印校准与本机验收" :content-style="{ padding: 0, height: 'calc(90vh - 58px)', overflow: 'hidden' }" :style="{ width: '96vw', maxWidth: '1420px', height: '90vh' }" :mask-closable="false">
+      <PrintCalibration v-if="calibrationOpen" :initial-paper="store.document.paper" />
     </NModal>
     <NModal :show="confirmOpen" preset="dialog" type="warning" title="放弃未保存的修改？" content="当前打印模板有未保存的修改，放弃后将载入其他内容。" positive-text="放弃修改" negative-text="继续编辑" :mask-closable="false" @positive-click="answerDiscard(true)" @negative-click="answerDiscard(false)" @close="answerDiscard(false)" @esc="answerDiscard(false)" />
     <NModal v-model:show="protocolOpen" preset="card" title="模板导入 / 导出" :style="{ width: 'min(760px, 94vw)' }">

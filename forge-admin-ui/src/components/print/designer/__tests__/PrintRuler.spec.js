@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { NSelect } from 'naive-ui'
+import { NDropdown, NSelect } from 'naive-ui'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
@@ -57,5 +57,11 @@ describe('print designer paper workspace', () => {
     await wrapper.get('[aria-label="显示或隐藏属性面板"]').trigger('click')
     expect(store.leftPanelOpen).toBe(false)
     expect(store.rightPanelOpen).toBe(false)
+  })
+
+  it('exposes print calibration as a low-frequency more action', async () => {
+    const wrapper = mount(PrintDesignerToolbar, { props: { local: false }, global: { plugins: [pinia] } })
+    await wrapper.getComponent(NDropdown).vm.$emit('select', 'calibration')
+    expect(wrapper.emitted('calibration')).toHaveLength(1)
   })
 })

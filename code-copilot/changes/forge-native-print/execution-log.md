@@ -536,3 +536,13 @@ git diff --check
 验证：前端打印域 22 文件 135 项、共享协议 38 项全部通过；注册测试覆盖非法/重复 key、async、Promise、函数字段、HTML 类型、ID 重建、字段绑定与纯协议导出；定向 ESLint 和 `git diff --check` 无输出；Vite 9382 modules 构建成功，仅保留项目既有构建提示。Chromium 在 `http://127.0.0.1:4321/print/designer?templateId=1&ui=t52` 显示三个业务组件，实际插入“审批状态”后页面结构增加普通固定区块，纸面和正式预览均显示“审批状态 / 待审批（示例）”。
 
 未启动真实 Admin/Flow/MySQL/Redis，未加载第三方业务插件，未执行 Firefox/Edge/Safari、PDF 或物理打印。本阶段只在 `forge-native-print` 分支 commit，不 push；既有 `.DS_Store` 不暂存。
+
+## 2026-09-19 · T53 打印校准与本机验收
+
+实现 `printCalibration.js`，统一解析 A3/A4/A5/B4/B5、横纵方向和自定义纸张，以正式 `PrintPage` 结果生成不含业务数据的校准页。校准页使用真实毫米坐标绘制距四边 10mm 的矩形框、横纵各 100mm 标尺及 10mm 刻度，并写明纸张、方向、100% 缩放、无边距和关闭浏览器页眉页脚的操作要求。自定义纸张最短边限制为 148mm，确保校准标尺可完整呈现。
+
+浏览器能力报告分别检查打印 API、隔离文档和 CSS 毫米单位，只把会话状态报告为“可打开对话框”；`physicalOutputConfirmed` 固定为 false。实际打印复用既有隔离 iframe、资源等待、`@page` 和 afterprint 清理链路，打开对话框后只记录 `DIALOG_OPENED`。本机验收包含缩放、浏览器页眉页脚、两条标尺、10mm 框和纸张方向六项，由使用者测量勾选；记录按纸张尺寸和方向隔离写入当前浏览器 localStorage，不写模板或服务端。
+
+设计器“更多”菜单新增低频入口“打印校准与验收”。弹窗采用纸张设置、正式校准页预览、本机实测验收三栏，默认继承当前模板纸张；支持 A3/A4/A5/B4/B5、纵横向和自定义短边/长边。Chromium 在独立合成入口 `http://127.0.0.1:4322/print/designer?templateId=1&ui=t53` 实际打开入口，核对 A4 纵向/横向、自定义 210×297mm、浏览器能力报告、10mm 框、100mm 标尺和未勾选状态的本机记录保存。未自动打开系统打印对话框，以免把对话框或合成浏览器行为冒充物理打印结果。
+
+验证：前端打印域 23 文件 147 项、共享协议 38/38、Java `PrintProtocolCompatibilityTest` 38 项与 `PrintProtocolValidatorTest` 37 项全部通过；定向 ESLint 与 `git diff --check` 无输出；Vite 9385 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。Firefox/Edge/Safari、真实 Admin/Flow/MySQL/Redis、PDF 与物理打印机仍由用户回填验收。本阶段只在 `forge-native-print` 分支 commit，不 push，既有 `.DS_Store` 不暂存。

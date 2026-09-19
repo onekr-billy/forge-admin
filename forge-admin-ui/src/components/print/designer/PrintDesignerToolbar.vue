@@ -11,6 +11,7 @@ import {
   OptionsOutline,
   RemoveOutline,
   SaveOutline,
+  ScaleOutline,
   SwapHorizontalOutline,
 } from '@vicons/ionicons5'
 import { NButton, NDropdown, NIcon, NSelect } from 'naive-ui'
@@ -19,7 +20,7 @@ import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { paperGeometry } from '../protocol/units'
 
 const props = defineProps({ local: Boolean, externalDirty: Boolean })
-const emit = defineEmits(['new', 'copy', 'save', 'restore', 'protocol'])
+const emit = defineEmits(['new', 'copy', 'save', 'restore', 'protocol', 'calibration'])
 const store = usePrintDesignerStore()
 const zooms = [0.5, 0.65, 0.8, 1, 1.25, 1.5].map(value => ({ label: `${value * 100}%`, value }))
 const geometry = computed(() => paperGeometry(store.document))
@@ -60,6 +61,7 @@ const moreOptions = computed(() => {
     : []
   return [
     ...localOptions,
+    { label: '打印校准与验收', key: 'calibration', icon: () => h(NIcon, null, { default: () => h(ScaleOutline) }) },
     { label: '导入 / 导出协议', key: 'protocol', icon: () => h(NIcon, null, { default: () => h(CodeSlashOutline) }) },
   ]
 })
@@ -90,7 +92,7 @@ function zoom(step) {
 }
 
 function handleMore(key) {
-  if (['new', 'copy', 'restore', 'protocol'].includes(key))
+  if (['new', 'copy', 'restore', 'protocol', 'calibration'].includes(key))
     emit(key)
 }
 </script>

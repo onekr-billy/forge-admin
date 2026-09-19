@@ -1,6 +1,6 @@
 # 测试与验收基线
 
-> 状态：M1/M2/M3a/M3b/M4a 阶段验证完成；真实应用/低代码/流程 E2E 和实机打印仍待后续阶段验收。
+> 状态：M1–M5 与 T46–T53 自动化及 Chromium 合成验证完成；真实应用/低代码/流程 E2E、其它浏览器和实机打印仍待用户验收。
 >
 > 依据：[spec.md](spec.md)、[tasks.md](tasks.md)、`code-copilot/rules/automated-testing-standard.md`
 
@@ -240,6 +240,8 @@ T50 执行结果：前端打印域 20 个测试文件 125 项、共享协议 36/
 T51 执行结果：前端打印域 21 个测试文件 131 项、共享协议 38/38、Java 打印插件 120 项全部通过；定向 ESLint、`git diff --check` 与 Vite 9380 modules 生产构建通过。Chromium 合成工作台实际在固定区块后插入分页符，设计区显示两张独立 A4 纸、手动分页标识、重复页眉页脚和 `1 / 2`、`2 / 2` 页码；正式预览同样输出两页，第二页从流式文本和明细表格开始。设计页数明确标为示例数据估算，正式预览仍由共享分页引擎测量。真实业务、其它浏览器与物理打印未执行。
 
 T52 执行结果：前端打印域 22 个测试文件 135 项、共享协议 38/38 全部通过；定向 ESLint、`git diff --check` 与 Vite 9382 modules 生产构建通过。注册器自动化覆盖非法/重复 key、声明式异步工厂、Promise 返回、函数字段、未知片段和非法协议类型的原子拒绝，并确认导出 JSON 不含注册 key、factory、registry 或函数。Chromium 合成工作台显示审批状态、签章位置、合同条款三个业务物料；实际插入审批状态后只生成 Forge 固定区块和文本元素，设计区与正式预览均显示安全示例值。真实业务插件、Admin/Flow/MySQL/Redis、其它浏览器与物理打印未执行。
+
+T53 执行结果：前端打印域 23 个测试文件 147 项、共享协议 38/38、Java 协议 75 项全部通过；定向 ESLint、`git diff --check` 与 Vite 9385 modules 生产构建通过。校准自动化覆盖 A3/A4/A5/B4/B5、横纵方向、自定义尺寸、10mm 边距框、横纵 100mm 标尺、隔离 iframe、精确 `@page`、afterprint 清理、能力报告和按纸张配置隔离的本机验收记录，并明确 `window.print` 或 `DIALOG_OPENED` 都不是物理成功。Chromium 在 `http://127.0.0.1:4322/print/designer?templateId=1&ui=t53` 从“更多”打开三栏校准工作台，核对 A4 纵向/横向、自定义纸张、浏览器能力、正式渲染页和待人工确认记录保存。没有自动打开系统打印对话框或伪造实体测量；Firefox/Edge/Safari、真实 Admin/Flow/MySQL/Redis、PDF 与物理打印仍由用户验收。
 
 真实联调追加：应用发布后从实际门户的列表/详情各打印一条；同对象跨页面检查模板范围；同一次应用代码下载中并发发布新版本，检查对象协议与 application-printing.json 固定引用一致；MySQL 实跑 selectPublishedPrintSources 的 JSON_CONTAINS 与租户条件；独立部署须先完成 PRINTING.md 列出的资产导入和 Provider 适配。
 
