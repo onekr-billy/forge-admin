@@ -2,13 +2,17 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { paperGeometry, screenDeltaToMm } from '../protocol/units'
+import { cellStyle, printStyle } from '../renderers/style'
+import { designerBindingText, designerTablePreview } from './designerSample'
 import { addElement, addField, PRINT_DRAG_TYPE } from './elementCatalog'
+import PrintCanvasActionBar from './PrintCanvasActionBar.vue'
 import PrintCanvasElement from './PrintCanvasElement.vue'
 import PrintRuler from './PrintRuler.vue'
 import PrintSelectionOverlay from './PrintSelectionOverlay.vue'
 import { usePrintDrag } from './usePrintDrag'
 import { usePrintKeyboard } from './usePrintKeyboard'
 
+const props = defineProps({ context: { type: Object, default: () => ({}) } })
 const store = usePrintDesignerStore()
 const drag = usePrintDrag(store)
 const keyboard = usePrintKeyboard(store)
@@ -20,14 +24,32 @@ const surfaces = computed(() => [
 ])
 const paperName = computed(() => {
   const { widthMm, heightMm } = store.document.paper
+  if (widthMm === 297 && heightMm === 420)
+    return 'A3'
   if (widthMm === 210 && heightMm === 297)
     return 'A4'
   if (widthMm === 148 && heightMm === 210)
     return 'A5'
+  if (widthMm === 250 && heightMm === 353)
+    return 'B4'
+  if (widthMm === 176 && heightMm === 250)
+    return 'B5'
   return '自定义'
 })
 const marquee = ref(null)
 let clearMarquee = () => {}
+
+function flowText(surface) {
+  return designerBindingText(surface.binding, surface.format, store.catalog, props.context)
+}
+
+function tableRows(surface) {
+  return designerTablePreview(surface, store.catalog, props.context)
+}
+
+function tableCellStyle(cell) {
+  return { ...cellStyle(cell.style), width: `${cell.widthMm}mm`, flex: 'none' }
+}
 
 function elementDown(event, surfaceId, id) {
   store.selectSurface(surfaceId)
@@ -85,7 +107,7 @@ function drop(event, surface) {
     if (item.field)
       addField(store, item.field, position)
     else if (item.type)
-      addElement(store, item.type, undefined, position)
+      addElement(store, item.type, undefined, position, item.preset)
   }
   catch {
     store.error = '请从左侧物料或字段区拖入内容'
@@ -98,7 +120,8 @@ onBeforeUnmount(() => clearMarquee())
   <div class="print-canvas" tabindex="0" aria-label="打印编辑画布" @keydown="keyboard">
     <div class="canvas-note">
       <span>{{ paperName }} · {{ geometry.widthMm }} × {{ geometry.heightMm }} mm</span>
-      <span>标尺 5mm · Shift 多选 · 方向键移动 1mm</span>
+      <PrintCanvasActionBar />
+      <span>Shift 多选 · ⌘/Ctrl A/C/V · 方向键移动</span>
     </div>
     <div class="canvas-viewport">
       <div class="paper-holder" :style="{ zoom: store.zoom }">
@@ -156,14 +179,16 @@ onBeforeUnmount(() => clearMarquee())
                 :key="element.id"
                 :element="element"
                 :selected="store.surfaceId === surface.id && store.selectedIds.includes(element.id)"
+                :catalog="store.catalog"
+                :context="context"
                 @pointerdown.stop="elementDown($event, surface.id, element.id)"
               />
-              <div v-if="surface.kind === 'TEXT'" class="flow-text" @pointerdown="surfaceDown($event, surface)">
-                {{ surface.binding?.source === 'CONSTANT' ? surface.binding.value : surface.binding?.path }}
+              <div v-if="surface.kind === 'TEXT'" class="flow-text" :style="printStyle(surface.style)" @pointerdown="surfaceDown($event, surface)">
+                {{ flowText(surface) }}
               </div>
               <div v-if="surface.kind === 'TABLE'" class="table-sketch" @pointerdown="surfaceDown($event, surface)">
-                <div v-for="column in surface.columns" :key="column.id" :style="{ width: `${column.widthMm}mm` }">
-                  <strong>{{ column.title }}</strong><span>{{ column.field }}</span>
+                <div v-for="(row, rowIndex) in tableRows(surface)" :key="row.key || rowIndex" class="table-sketch-row" :data-row-kind="row.kind">
+                  <span v-for="cell in row.cells" :key="cell.key" :style="tableCellStyle(cell)">{{ cell.text }}</span>
                 </div>
               </div>
               <template v-if="store.surfaceId === surface.id && store.gesture">
@@ -320,32 +345,38 @@ onBeforeUnmount(() => clearMarquee())
   cursor: pointer;
 }
 .table-sketch {
-  display: flex;
+  display: block;
   padding-top: 4mm;
   cursor: pointer;
   font:
     10pt Arial,
     sans-serif;
 }
-.table-sketch > div {
+.table-sketch-row {
+  display: flex;
+}
+.table-sketch-row > * {
   box-sizing: border-box;
   border: 1px solid #94a3b8;
   flex-shrink: 0;
   background: rgb(255 255 255 / 82%);
 }
-.table-sketch strong,
-.table-sketch span {
+.table-sketch-row strong,
+.table-sketch-row span {
   display: block;
   padding: 1mm;
   overflow-wrap: anywhere;
 }
-.table-sketch strong {
+.table-sketch-row[data-row-kind='header'] span {
   background: rgb(241 245 249 / 92%);
+  font-weight: 700;
 }
-.table-sketch span {
-  border-top: 1px solid #94a3b8;
+.table-sketch-row span {
   color: #667085;
   font-size: 9pt;
+}
+.table-sketch-row[data-row-kind='footer'] span {
+  background: rgb(248 250 252 / 92%);
 }
 .alignment-guide {
   position: absolute;

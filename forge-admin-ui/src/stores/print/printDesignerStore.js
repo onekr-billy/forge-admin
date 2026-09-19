@@ -79,6 +79,9 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         this.selectedIds = [id]
       }
     },
+    selectAll() {
+      this.selectedIds = this.activeSurface?.elements?.map(element => element.id) || []
+    },
     reconcileSelection() {
       if (!this.activeSurface) {
         this.surfaceId = this.document.body.length ? `section:${this.document.body[0].id}` : 'header'
@@ -183,6 +186,28 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         this.selectedIds = copies.map(e => e.id)
       }
       return ok
+    },
+    duplicateSelection() {
+      if (!this.selectedElements.length)
+        return false
+      const copies = cloneDocument(this.selectedElements).map(element => ({ ...element, id: newPrintId() }))
+      const ok = this.execute((document) => {
+        findSurface(document, this.surfaceId).elements.push(...copies)
+        translateElements(document, this.surfaceId, copies.map(element => element.id), 3, 3)
+      })
+      if (ok)
+        this.selectedIds = copies.map(element => element.id)
+      return ok
+    },
+    moveSelectionLayer(position) {
+      if (!this.selectedElements.length || !['front', 'back'].includes(position))
+        return false
+      return this.execute((document) => {
+        const surface = findSurface(document, this.surfaceId)
+        const selected = surface.elements.filter(element => this.selectedIds.includes(element.id))
+        const rest = surface.elements.filter(element => !this.selectedIds.includes(element.id))
+        surface.elements = position === 'front' ? [...rest, ...selected] : [...selected, ...rest]
+      })
     },
     removeSelection() {
       return this.execute((document) => {

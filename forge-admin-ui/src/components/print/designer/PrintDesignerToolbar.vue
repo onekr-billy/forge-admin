@@ -24,15 +24,24 @@ const store = usePrintDesignerStore()
 const zooms = [0.5, 0.65, 0.8, 1, 1.25, 1.5].map(value => ({ label: `${value * 100}%`, value }))
 const geometry = computed(() => paperGeometry(store.document))
 const paperOptions = [
+  { label: 'A3 · 297 × 420 mm', value: 'A3' },
   { label: 'A4 · 210 × 297 mm', value: 'A4' },
   { label: 'A5 · 148 × 210 mm', value: 'A5' },
+  { label: 'B4 · 250 × 353 mm', value: 'B4' },
+  { label: 'B5 · 176 × 250 mm', value: 'B5' },
 ]
 const paperName = computed(() => {
   const { widthMm, heightMm } = store.document.paper
+  if (widthMm === 297 && heightMm === 420)
+    return 'A3'
   if (widthMm === 210 && heightMm === 297)
     return 'A4'
   if (widthMm === 148 && heightMm === 210)
     return 'A5'
+  if (widthMm === 250 && heightMm === 353)
+    return 'B4'
+  if (widthMm === 176 && heightMm === 250)
+    return 'B5'
   return 'CUSTOM'
 })
 const paperSelectOptions = computed(() => {
@@ -63,10 +72,9 @@ function setPaper(widthMm, heightMm) {
 }
 
 function preset(value) {
-  if (value === 'A4')
-    setPaper(210, 297)
-  else if (value === 'A5')
-    setPaper(148, 210)
+  const sizes = { A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250] }
+  if (sizes[value])
+    setPaper(...sizes[value])
 }
 
 function rotate() {

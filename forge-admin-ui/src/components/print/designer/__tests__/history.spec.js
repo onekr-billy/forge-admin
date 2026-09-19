@@ -118,6 +118,20 @@ describe('print designer commands and history', () => {
     expect(store.activeSurface.elements.slice(2).map(e => e.id)).toEqual(ids)
   })
 
+  it('selects all, duplicates and changes selected stacking order atomically', () => {
+    store.selectAll()
+    expect(store.selectedIds).toEqual(['a', 'b'])
+    expect(store.duplicateSelection()).toBe(true)
+    const duplicates = store.selectedIds.slice()
+    expect(store.activeSurface.elements).toHaveLength(4)
+    expect(store.moveSelectionLayer('back')).toBe(true)
+    expect(store.activeSurface.elements.slice(0, 2).map(element => element.id)).toEqual(duplicates)
+    expect(store.moveSelectionLayer('front')).toBe(true)
+    expect(store.activeSurface.elements.slice(-2).map(element => element.id)).toEqual(duplicates)
+    store.undo()
+    expect(store.activeSurface.elements.slice(0, 2).map(element => element.id)).toEqual(duplicates)
+  })
+
   it('limits retained history and clears redo when editing after undo', () => {
     for (let i = 0; i < 70; i++) {
       store.patchSelected({ binding: { source: 'CONSTANT', value: String(i) } })

@@ -10,6 +10,7 @@ export const printRenderers = Object.freeze({
   IMAGE: PrintImage,
   LINE: PrintShape,
   RECTANGLE: PrintShape,
+  ELLIPSE: PrintShape,
   PAGE_NUMBER: PrintText,
   BARCODE: PrintBarcode,
   QRCODE: PrintQrcode,

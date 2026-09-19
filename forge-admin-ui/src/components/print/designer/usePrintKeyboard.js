@@ -21,7 +21,7 @@ export function usePrintKeyboard(store) {
       actions.c = () => store.copySelection()
       actions.v = () => store.pasteSelection()
       actions.a = () => {
-        store.selectedIds = store.activeSurface?.elements?.map(e => e.id) || []
+        store.selectAll()
       }
     }
     if (actions[key]) {

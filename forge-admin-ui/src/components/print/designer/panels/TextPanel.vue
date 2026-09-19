@@ -37,9 +37,29 @@ function patch(key, value, group = 'style') {
     <NFormItem label="字重" size="small">
       <NSelect :value="target.style?.fontWeight || 400" :options="[{ label: '常规', value: 400 }, { label: '加粗', value: 700 }]" @update:value="patch('fontWeight', $event)" />
     </NFormItem>
-    <NFormItem label="文字颜色" size="small">
-      <NColorPicker :value="target.style?.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patch('color', $event)" />
-    </NFormItem>
+    <div class="panel-grid">
+      <NFormItem label="字形" size="small">
+        <NSelect :value="target.style?.fontStyle || 'normal'" :options="[{ label: '常规', value: 'normal' }, { label: '斜体', value: 'italic' }]" @update:value="patch('fontStyle', $event)" />
+      </NFormItem>
+      <NFormItem label="装饰" size="small">
+        <NSelect :value="target.style?.textDecoration || 'none'" :options="[{ label: '无', value: 'none' }, { label: '下划线', value: 'underline' }]" @update:value="patch('textDecoration', $event)" />
+      </NFormItem>
+      <NFormItem label="文字颜色" size="small">
+        <NColorPicker :value="target.style?.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patch('color', $event)" />
+      </NFormItem>
+      <NFormItem label="背景颜色" size="small">
+        <NColorPicker :value="target.style?.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="patch('backgroundColor', $event)" />
+      </NFormItem>
+      <NFormItem label="边框颜色" size="small">
+        <NColorPicker :value="target.style?.borderColor || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patch('borderColor', $event)" />
+      </NFormItem>
+      <NFormItem label="边框 mm" size="small">
+        <NInputNumber :value="target.style?.borderWidthMm ?? 0" :min="0" :max="3" :step="0.1" :show-button="false" @update:value="patch('borderWidthMm', $event)" />
+      </NFormItem>
+      <NFormItem label="内边距 mm" size="small">
+        <NInputNumber :value="target.style?.paddingMm ?? 0" :min="0" :max="20" :step="0.5" :show-button="false" @update:value="patch('paddingMm', $event)" />
+      </NFormItem>
+    </div>
     <NFormItem v-if="target.binding" label="数据格式" size="small">
       <NSelect :value="target.format?.type || 'TEXT'" :options="formats" @update:value="patch('type', $event, 'format')" />
     </NFormItem>

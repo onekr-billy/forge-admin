@@ -1,19 +1,23 @@
 import { paperGeometry } from '../protocol/units'
 import { findSurface, newPrintId } from './commands'
+import { defaultFieldFormat } from './designerSample'
 
 // These options describe the fixed print protocol, not configurable business enums.
 export const elementCatalog = [
-  { type: 'TEXT', label: '文本' },
-  { type: 'IMAGE', label: '图片' },
-  { type: 'LINE', label: '线条' },
-  { type: 'RECTANGLE', label: '矩形' },
-  { type: 'BARCODE', label: '条形码' },
-  { type: 'QRCODE', label: '二维码' },
-  { type: 'PAGE_NUMBER', label: '页码' },
+  { key: 'title', type: 'TEXT', preset: 'TITLE', label: '标题文本' },
+  { key: 'text', type: 'TEXT', preset: 'TEXT', label: '固定文本' },
+  { key: 'image', type: 'IMAGE', label: '图片' },
+  { key: 'line-horizontal', type: 'LINE', preset: 'HORIZONTAL', label: '横线' },
+  { key: 'line-vertical', type: 'LINE', preset: 'VERTICAL', label: '竖线' },
+  { key: 'rectangle', type: 'RECTANGLE', label: '矩形' },
+  { key: 'ellipse', type: 'ELLIPSE', label: '椭圆' },
+  { key: 'barcode', type: 'BARCODE', label: '条形码' },
+  { key: 'qrcode', type: 'QRCODE', label: '二维码' },
+  { key: 'page-number', type: 'PAGE_NUMBER', label: '页码' },
 ]
 export const PRINT_DRAG_TYPE = 'application/x-forge-print-item'
 
-export function addElement(store, type, binding, position) {
+export function addElement(store, type, binding, position, preset) {
   if (!elementCatalog.some(item => item.type === type))
     return false
   const id = newPrintId()
@@ -27,12 +31,31 @@ export function addElement(store, type, binding, position) {
     }
     if (surface.heightMm < 20)
       surface.heightMm = 20
-    const widthMm = Math.min(type === 'QRCODE' ? 18 : 45, paperGeometry(doc).contentWidthMm)
-    const heightMm = type === 'LINE' ? 1 : type === 'TEXT' || type === 'PAGE_NUMBER' ? 10 : 18
+    const presetSize = preset === 'TITLE'
+      ? { widthMm: 90, heightMm: 14 }
+      : preset === 'VERTICAL'
+        ? { widthMm: 1, heightMm: 30 }
+        : type === 'QRCODE'
+          ? { widthMm: 18, heightMm: 18 }
+          : type === 'ELLIPSE'
+            ? { widthMm: 32, heightMm: 20 }
+            : type === 'LINE'
+              ? { widthMm: 45, heightMm: 1 }
+              : type === 'TEXT' || type === 'PAGE_NUMBER'
+                ? { widthMm: 45, heightMm: 10 }
+                : { widthMm: 45, heightMm: 18 }
+    const widthMm = Math.min(presetSize.widthMm, paperGeometry(doc).contentWidthMm)
+    const heightMm = presetSize.heightMm
     const e = { id, type, xMm: Math.max(0, Math.min(position?.xMm ?? 3, paperGeometry(doc).contentWidthMm - widthMm)), yMm: Math.max(0, Math.min(position?.yMm ?? 3, surface.heightMm - heightMm)), widthMm, heightMm }
     if (['TEXT', 'IMAGE', 'BARCODE', 'QRCODE'].includes(type)) {
-      e.binding = binding || { source: 'CONSTANT', value: type === 'TEXT' ? '文本' : type === 'IMAGE' ? '' : '123456' }
+      e.binding = binding || { source: 'CONSTANT', value: type === 'TEXT' ? (preset === 'TITLE' ? '标题文本' : '固定文本') : type === 'IMAGE' ? '' : '123456' }
+      const field = e.binding.source === 'FIELD' ? store.catalog.find(item => item.path === e.binding.path) : null
+      e.format = defaultFieldFormat(field)
     }
+    if (preset === 'TITLE')
+      e.style = { fontSizePt: 18, fontWeight: 700, textAlign: 'center', lineHeight: 1.2 }
+    if (['LINE', 'RECTANGLE', 'ELLIPSE'].includes(type))
+      e.style = { borderWidthMm: 0.2, borderColor: '#000000' }
     surface.elements.push(e)
   })
   if (ok) {
@@ -55,7 +78,7 @@ export function addSection(store, kind, field) {
       const fields = store.catalog.filter(f => f.type !== 'COLLECTION' && f.path.startsWith(`${collection?.path}.`)).slice(0, 6)
       if (!collection || !fields.length)
         throw new Error('请先提供包含明细列的字段目录')
-      Object.assign(section, { collectionPath: collection.path, repeatHeader: true, emptyText: '暂无明细', columns: fields.map(f => ({ id: newPrintId(), field: f.path.slice(collection.path.length + 1), title: f.label || f.path.split('.').at(-1), widthMm: Math.floor(paperGeometry(doc).contentWidthMm / fields.length * 100) / 100 })) })
+      Object.assign(section, { collectionPath: collection.path, repeatHeader: true, emptyText: '暂无明细', columns: fields.map(f => ({ id: newPrintId(), field: f.path.slice(collection.path.length + 1), title: f.label || f.path.split('.').at(-1), widthMm: Math.floor(paperGeometry(doc).contentWidthMm / fields.length * 100) / 100, format: defaultFieldFormat(f) })) })
     }
     doc.body.push(section)
   })
@@ -84,14 +107,14 @@ export function addField(store, path, position) {
         return
       if (table.headerRows || table.footer)
         throw new Error('含合并表头或表尾时，请先在表格属性中清除合并配置后再添加列')
-      table.columns.push({ id: newPrintId(), field: relativePath, title: field.label || relativePath, widthMm: 20 })
+      table.columns.push({ id: newPrintId(), field: relativePath, title: field.label || relativePath, widthMm: 20, format: defaultFieldFormat(field) })
       const width = Math.floor(paperGeometry(doc).contentWidthMm / table.columns.length * 100) / 100
       table.columns.forEach((column) => {
         column.widthMm = width
       })
     })
   }
-  return addElement(store, field.type === 'IMAGE' ? 'IMAGE' : 'TEXT', { source: 'FIELD', path }, position)
+  return addElement(store, field.type === 'IMAGE' ? 'IMAGE' : 'TEXT', { source: 'FIELD', path }, position, 'FIELD')
 }
 
 export function startItemDrag(event, item) {

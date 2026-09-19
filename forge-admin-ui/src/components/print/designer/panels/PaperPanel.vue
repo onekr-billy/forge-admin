@@ -21,10 +21,17 @@ function preset(width, height) {
   <section class="designer-group">
     <h3>纸张与页边距</h3>
     <div class="panel-row">
+      <NButton size="small" @click="preset(297, 420)">
+        A3
+      </NButton>
       <NButton size="small" @click="preset(210, 297)">
         A4
       </NButton><NButton size="small" @click="preset(148, 210)">
         A5
+      </NButton><NButton size="small" @click="preset(250, 353)">
+        B4
+      </NButton><NButton size="small" @click="preset(176, 250)">
+        B5
       </NButton>
     </div>
     <NFormItem label="方向" size="small">

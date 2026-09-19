@@ -159,7 +159,7 @@ class PrintProtocolValidatorTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "LINE", "RECTANGLE", "BARCODE", "QRCODE", "IMAGE" })
+    @ValueSource(strings = { "LINE", "RECTANGLE", "ELLIPSE", "BARCODE", "QRCODE", "IMAGE" })
     void acceptsEveryNativeElementWithoutExternalContent(String type) throws Exception {
         var doc = document();
         var element = (ObjectNode) doc.at("/header/elements/0");

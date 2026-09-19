@@ -460,3 +460,27 @@ git diff --check
 浏览器在 `/print/designer?templateId=1` 实际核对：桌面工具栏保持单行且三栏清晰；默认窄窗口自动收起左右面板，画布完整显示，组件面板可作为覆盖层打开后再次收起；预览显示纸张、页数、页码导航、适宽和缩放操作。拖动吸附的瞬态状态由 Store/组件测试覆盖，松手后浏览器页面无残留定位线。合成预览服务继续监听 `127.0.0.1:4318` 并保留新版页面给用户查看。
 
 本阶段未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、真实业务数据、PDF 或物理打印；这些继续由用户按 T44 清单验收。全程只在 `forge-native-print` 分支 commit，不 push；既有 `.DS_Store` 未暂存。
+
+## 2026-09-19 · T48 设计内容同源与基础能力补齐
+
+用户第三轮检查指出画布暴露字段路径、中央命令少、物料少，并且设计画布与预览的正文和表格结构不同。重新逐项检查本地 `vue-plugin-hiprint` 的默认物料提供器、设计 Demo、属性配置和元素命令；按 SDD 先补 Spec 4.6 与 T48，再编码。HTML、任意脚本、静默打印、服务端 PDF 和 hiprint JSON 仍在排除范围。
+
+实现：新增 `designerSample.js`，从授权字段目录生成稳定的非业务示例上下文，真实样本存在时不覆盖；Canvas 与 PrintPreview 使用同一 context。文本、页码、线框、矩形和新增椭圆复用正式 renderer，条码/二维码调用正式编码器；流式文本、表格合并表头、格式化数据行和表尾合计均使用与预览相同的值和样式规则。纸面正文从 `{{ main.number }}`、`main.remark`、`name/amount` 改为“单号示例、备注示例、名称1、1288.00”等输出内容，内部路径保留在字段树和绑定配置中。
+
+物料由 7 项扩充为标题文本、固定文本、图片、横线、竖线、矩形、椭圆、条码、二维码、页码 10 项，另有固定区块、流式文本、明细表格 3 类内容区块。纸张补 A3/B4/B5，属性补斜体、下划线、背景色、边框色/宽和内边距。画布顶部新增全选、复制、粘贴、复制一份、置顶、置底和删除；命令进入 Pinia 与撤销历史。椭圆同步前后端 v1 协议白名单。
+
+验证：
+
+```bash
+./node_modules/.bin/vitest run src/components/print src/stores/print src/api/__tests__/print.spec.js src/api/__tests__/printRuntimeContext.spec.js
+node node_modules/eslint/bin/eslint.js <打印设计器、协议、renderer 和 Store 触达文件>
+node code-copilot/changes/forge-native-print/verification/protocol-compatibility.mjs
+source /private/tmp/forge-print-toolchain/env.sh
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest=PrintProtocolValidatorTest -Dsurefire.failIfNoSpecifiedTests=false
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+git diff --check
+```
+
+结果：前端 19 文件 114 项、共享协议 29 项、Java 协议 34 项全部通过；ESLint 与空白检查无输出，Vite 9370 modules 构建成功。浏览器在 `/print/designer?templateId=1&ui=t47` 验证组件抽屉、字段示例、画布命令、合并表头/明细/合计和文档预览；设计与预览首屏数据和表格结构一致。验证中“复制一份”产生的临时修改已撤销，页面保持未修改状态并留给用户检查。
+
+未启动真实 Admin/Flow/MySQL/Redis，未执行真实图片/签名、PDF 或物理打印。合成服务继续监听 `127.0.0.1:4318`。本阶段只 commit，不 push，`.DS_Store` 不暂存。

@@ -77,6 +77,12 @@ describe('print document protocol v1', () => {
     expect(() => assertPrintDocument(doc)).toThrow()
   })
 
+  it('accepts ellipse as a native non-executable shape', () => {
+    const doc = fixedDocument(textElement({ type: 'ELLIPSE' }))
+    delete doc.body[0].elements[0].binding
+    expect(validatePrintDocument(doc)).toEqual([])
+  })
+
   it('checks table column widths, merged header spans and safe collection paths', () => {
     const doc = createPrintDocument()
     doc.body.push({

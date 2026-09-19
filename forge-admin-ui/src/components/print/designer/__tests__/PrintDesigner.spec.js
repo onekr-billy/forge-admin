@@ -31,7 +31,7 @@ describe('designer editing workflow', () => {
 
   it('creates every supported element and isolates collection fields to their table', () => {
     addSection(store, 'FIXED')
-    for (const type of ['TEXT', 'IMAGE', 'LINE', 'RECTANGLE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER']) {
+    for (const type of ['TEXT', 'IMAGE', 'LINE', 'RECTANGLE', 'ELLIPSE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER']) {
       expect(addElement(store, type)).toBe(true)
     }
     expect(addField(store, 'unknown')).toBe(false)
@@ -39,6 +39,13 @@ describe('designer editing workflow', () => {
     expect(addField(store, 'children.lines')).toBe(true)
     expect(store.activeSurface.columns[0].field).toBe('name')
     expect(store.fieldIssues).toEqual([])
+  })
+  it('creates title and vertical line presets with print-ready defaults', () => {
+    addSection(store, 'FIXED')
+    addElement(store, 'TEXT', undefined, undefined, 'TITLE')
+    expect(store.activeElement).toMatchObject({ type: 'TEXT', widthMm: 90, heightMm: 14, style: { fontSizePt: 18, fontWeight: 700, textAlign: 'center' } })
+    addElement(store, 'LINE', undefined, undefined, 'VERTICAL')
+    expect(store.activeElement).toMatchObject({ type: 'LINE', widthMm: 1, heightMm: 30 })
   })
   it('moves and resizes with pointer gestures at half scale, undoing each once', async () => {
     addSection(store, 'FIXED')

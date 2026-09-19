@@ -178,7 +178,7 @@ final class PrintProtocolRules {
         }
         elements++;
         identifier(e.get("id"), path + ".id");
-        choice(e.get("type"), path + ".type", "TEXT", "IMAGE", "LINE", "RECTANGLE", "BARCODE", "QRCODE", "PAGE_NUMBER");
+        choice(e.get("type"), path + ".type", "TEXT", "IMAGE", "LINE", "RECTANGLE", "ELLIPSE", "BARCODE", "QRCODE", "PAGE_NUMBER");
         for (String key : List.of("xMm", "yMm", "widthMm", "heightMm")) {
             number(e.get(key), path + "." + key, (key.equals("widthMm") || key.equals("heightMm")) ? .1 : 0, PAPER_SIZE_MM);
         }

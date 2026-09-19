@@ -5,6 +5,7 @@ import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { createPrintDocument } from '../protocol/types'
 import PrintPreview from '../runtime/PrintPreview.vue'
 import { newPrintId } from './commands'
+import { createDesignerSampleContext, hasDesignerData } from './designerSample'
 import { parseDraft, readDraft, writeDraft } from './draftStorage'
 import { cloneDocument } from './history'
 import BindingPanel from './panels/BindingPanel.vue'
@@ -30,6 +31,9 @@ const props = defineProps({
 })
 const store = usePrintDesignerStore()
 store.load(props.template, props.catalog)
+const hasRealPreviewData = computed(() => hasDesignerData(props.context))
+const designerContext = computed(() => hasRealPreviewData.value ? props.context : createDesignerSampleContext(store.catalog))
+const previewDataLabel = computed(() => hasRealPreviewData.value ? '当前样本数据' : '字段示例数据')
 let compactMedia
 function collapseForCompact(event) {
   if (event.matches) {
@@ -163,7 +167,7 @@ defineExpose({ canLeave, save })
         <aside v-show="store.leftPanelOpen" class="designer-aside">
           <PrintElementPalette /><PrintFieldTree /><PrintSectionList />
         </aside>
-        <PrintCanvas />
+        <PrintCanvas :context="designerContext" />
         <aside v-show="store.rightPanelOpen" class="designer-properties">
           <NTabs v-model:value="panel" type="line" size="small">
             <NTabPane name="selection" tab="选中内容">
@@ -183,7 +187,7 @@ defineExpose({ canLeave, save })
       </div>
     </div>
     <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ padding: 0, height: 'calc(92vh - 58px)', overflow: 'hidden' }" :style="{ width: '96vw', maxWidth: '1500px', height: '92vh' }" :mask-closable="false">
-      <PrintPreview v-if="store.previewOpen" data-label="模板预览" :allow-print="!saveDraft" :template="store.document" :context="context" :catalog="store.catalog" :resolve-file="resolveFile" />
+      <PrintPreview v-if="store.previewOpen" :data-label="previewDataLabel" :allow-print="!saveDraft" :template="store.document" :context="designerContext" :catalog="store.catalog" :resolve-file="resolveFile" />
     </NModal>
     <NModal :show="confirmOpen" preset="dialog" type="warning" title="放弃未保存的修改？" content="当前打印模板有未保存的修改，放弃后将载入其他内容。" positive-text="放弃修改" negative-text="继续编辑" :mask-closable="false" @positive-click="answerDiscard(true)" @negative-click="answerDiscard(false)" @close="answerDiscard(false)" @esc="answerDiscard(false)" />
     <NModal v-model:show="protocolOpen" preset="card" title="模板导入 / 导出" :style="{ width: 'min(760px, 94vw)' }">

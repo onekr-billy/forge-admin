@@ -2,6 +2,7 @@
 import {
   BarcodeOutline,
   DocumentTextOutline,
+  EllipseOutline,
   GridOutline,
   ImageOutline,
   LayersOutline,
@@ -23,6 +24,7 @@ const elementIcons = {
   PAGE_NUMBER: DocumentTextOutline,
   QRCODE: QrCodeOutline,
   RECTANGLE: SquareOutline,
+  ELLIPSE: EllipseOutline,
   TEXT: TextOutline,
 }
 const sections = [
@@ -38,15 +40,15 @@ const sections = [
     <div class="palette-grid">
       <button
         v-for="item in elementCatalog"
-        :key="item.type"
+        :key="item.key"
         type="button"
         class="palette-item"
         draggable="true"
         :title="`拖入或点击添加${item.label}`"
-        @dragstart="startItemDrag($event, { type: item.type })"
-        @click="addElement(store, item.type)"
+        @dragstart="startItemDrag($event, { type: item.type, preset: item.preset })"
+        @click="addElement(store, item.type, undefined, undefined, item.preset)"
       >
-        <NIcon :component="elementIcons[item.type]" size="21" />
+        <NIcon :component="elementIcons[item.type]" size="21" :class="{ 'vertical-line-icon': item.preset === 'VERTICAL' }" />
         <span>{{ item.label }}</span>
       </button>
     </div>
@@ -99,6 +101,9 @@ const sections = [
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.vertical-line-icon {
+  transform: rotate(90deg);
 }
 .section-palette .palette-item:last-child {
   grid-column: 1 / -1;
