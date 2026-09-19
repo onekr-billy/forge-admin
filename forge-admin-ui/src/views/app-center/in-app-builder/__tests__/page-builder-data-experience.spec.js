@@ -24,6 +24,13 @@ describe('page builder data experience', () => {
     expect(createFormSource).not.toContain('formDesignerMode.value = true')
   })
 
+  it('lets page creation choose a runtime datasource and import an existing table', () => {
+    const source = readFileSync(resolve('src/views/app-center/components/designer/PageTypeSelector.vue'), 'utf8')
+    expect(source).toContain("genDatasourceEnabled('LOWCODE_RUNTIME')")
+    expect(source).toContain('引用现有数据表')
+    expect(source).toContain('inferFormFieldsFromColumns')
+  })
+
   it('opens the data inspector when a block asks to select its source', () => {
     const source = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
 

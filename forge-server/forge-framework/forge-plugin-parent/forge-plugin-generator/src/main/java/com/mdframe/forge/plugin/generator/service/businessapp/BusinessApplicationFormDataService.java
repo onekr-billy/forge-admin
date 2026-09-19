@@ -45,6 +45,8 @@ public class BusinessApplicationFormDataService {
 
     private static final String MANAGED_BY_PAGE_FORM = "PAGE_FORM";
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
+    private static final String CREATE_MODE_BLANK = "BLANK";
+    private static final String CREATE_MODE_DB_IMPORT = "DB_IMPORT";
     /** 上次准备内容签名存放于对象 options 内，签名一致时短路高频保存草稿链路。 */
     private static final String PROVISION_SIGNATURE_KEY = "provisionSignature";
 
@@ -70,6 +72,9 @@ public class BusinessApplicationFormDataService {
         if (Boolean.TRUE.equals(provisioned.result().getUnchanged())) {
             return provisioned.result();
         }
+        if (!provisioned.shouldSyncDatabase()) {
+            return provisioned.result();
+        }
         try {
             // 复用 provisionMetadata 中已加载的 DesignerContext，避免重复查询数据库
             if (provisioned.context() != null) {
@@ -80,12 +85,14 @@ public class BusinessApplicationFormDataService {
                         provisioned.objectId(), applicationId, normalized.formAssetId());
             }
         } catch (RuntimeException e) {
-            // DDL 同步失败不阻断保存：表单设计和运行时配置已在元数据事务中提交，
-            // 用户可稍后通过“高级数据设置”手动同步数据库结构。
-            log.warn("[表单数据保存] DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
-                    provisioned.objectId(), normalized.formAssetId(), e.getMessage());
-            provisioned.result().setDdlWarning("数据表结构同步失败：" + StringUtils.defaultIfBlank(
-                    e.getMessage(), "请在高级数据设置中确认数据库调整") + "。表单设计和选项配置已保存，不影响发布。");
+            if (CREATE_MODE_DB_IMPORT.equals(normalized.createMode())) {
+                log.warn("[表单数据保存] 引用现有表时 DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
+                        provisioned.objectId(), normalized.formAssetId(), e.getMessage());
+                provisioned.result().setDdlWarning("数据表结构同步失败：" + StringUtils.defaultIfBlank(
+                        e.getMessage(), "请在高级数据设置中确认数据库调整") + "。表单设计和选项配置已保存，不影响发布。");
+                return provisioned.result();
+            }
+            throw databaseSyncFailure(e);
         }
         return provisioned.result();
     }
@@ -158,7 +165,11 @@ public class BusinessApplicationFormDataService {
 
         AiBusinessObject saved = objectService.requireEntity(objectId);
         writeProvisionSignature(saved, provisionSignature(normalized));
-        return new ProvisionResult(objectId, result(normalized.formAssetId(), saved, created, false), designerContext);
+        return new ProvisionResult(
+                objectId,
+                result(normalized.formAssetId(), saved, created, false),
+                designerContext,
+                !(created && CREATE_MODE_DB_IMPORT.equals(normalized.createMode())));
     }
 
     private ProvisionRequest normalizeRequest(BusinessApplicationFormDataProvisionDTO request) {
@@ -180,7 +191,22 @@ public class BusinessApplicationFormDataService {
             throw new BusinessException("表单还没有可保存的数据字段");
         }
         String formName = StringUtils.defaultIfBlank(request.getFormName(), "未命名表单").trim();
-        return new ProvisionRequest(formAssetId, formName, fields, request.getFormDesignerSchema());
+        String createMode = CREATE_MODE_DB_IMPORT.equalsIgnoreCase(StringUtils.trimToEmpty(request.getCreateMode()))
+                ? CREATE_MODE_DB_IMPORT
+                : CREATE_MODE_BLANK;
+        String importTableName = StringUtils.trimToNull(request.getImportTableName());
+        if (CREATE_MODE_DB_IMPORT.equals(createMode) && importTableName == null) {
+            throw new BusinessException("请选择要引用的数据表");
+        }
+        return new ProvisionRequest(
+                formAssetId,
+                formName,
+                fields,
+                request.getFormDesignerSchema(),
+                request.getRuntimeDatasourceId(),
+                createMode,
+                request.getImportDatasourceId(),
+                importTableName);
     }
 
     private AiBusinessObject resolveAssociatedManagedObject(
@@ -209,39 +235,65 @@ public class BusinessApplicationFormDataService {
 
     private Long createManagedObject(
             AiBusinessApplication application, ProvisionRequest request) {
-        GenDatasource datasource = resolveRuntimeDatasource();
+        boolean dbImport = CREATE_MODE_DB_IMPORT.equals(request.createMode());
+        GenDatasource datasource = resolveRuntimeDatasource(request.runtimeDatasourceId(), !dbImport);
         String objectCode = buildManagedObjectCode(application, request);
         BusinessObjectDTO dto = new BusinessObjectDTO();
         dto.setSuiteCode(application.getSuiteCode());
         dto.setObjectCode(objectCode);
         dto.setObjectName(request.formName());
         dto.setObjectType("MASTER");
-        dto.setCreateMode("BLANK");
+        dto.setCreateMode(dbImport ? CREATE_MODE_DB_IMPORT : CREATE_MODE_BLANK);
         dto.setRuntimeDatasourceId(datasource.getDatasourceId());
+        if (dbImport) {
+            dto.setImportDatasourceId(request.importDatasourceId() == null
+                    ? datasource.getDatasourceId()
+                    : request.importDatasourceId());
+            dto.setImportTableName(request.importTableName());
+        }
         dto.setModelCode(namingService.buildModelCode(application.getSuiteCode(), objectCode));
         dto.setDisplayField(request.fields().get(0).getFieldCode());
         dto.setDescription("由应用“" + application.getApplicationName() + "”中的表单自动管理");
         dto.setStatus(EnableStatus.ENABLED.getCode());
-        dto.setOptions(buildObjectOptions(application, request.formAssetId(), datasource));
+        dto.setOptions(buildObjectOptions(application, request, datasource));
         return objectCreateService.create(dto);
     }
 
-    private GenDatasource resolveRuntimeDatasource() {
-        return safeList(datasourceService.selectEnabledDatasources(LOWCODE_RUNTIME)).stream()
-                .filter(this::isWritableRuntimeDatasource)
+    private GenDatasource resolveRuntimeDatasource(Long requestedId, boolean requireDdl) {
+        List<GenDatasource> enabled = safeList(datasourceService.selectEnabledDatasources(LOWCODE_RUNTIME));
+        if (requestedId != null) {
+            GenDatasource selected = enabled.stream()
+                    .filter(item -> requestedId.equals(item.getDatasourceId()))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException("请选择有效的低代码运行数据源"));
+            if (!isRuntimeWritable(selected)) {
+                throw new BusinessException("当前数据源不允许写入业务数据");
+            }
+            if (requireDdl && !isWritableRuntimeDatasource(selected)) {
+                throw new BusinessException("当前数据存储未允许自动建表，请在高级数据设置中开启自动建表");
+            }
+            return selected;
+        }
+        return enabled.stream()
+                .filter(requireDdl ? this::isWritableRuntimeDatasource : this::isRuntimeWritable)
                 .min(Comparator
                         .comparingInt((GenDatasource datasource) -> Integer.valueOf(1).equals(datasource.getIsDefault()) ? 0 : 1)
                         .thenComparing(datasource -> datasource.getSort() == null ? Integer.MAX_VALUE : datasource.getSort())
                         .thenComparing(datasource -> datasource.getDatasourceId() == null ? Long.MAX_VALUE : datasource.getDatasourceId()))
-                .orElseThrow(() -> new BusinessException(
-                        "当前数据存储未允许自动建表，请在高级数据设置中开启自动建表"));
+                .orElseThrow(() -> new BusinessException(requireDdl
+                        ? "当前数据存储未允许自动建表，请在高级数据设置中开启自动建表"
+                        : "请选择有效的低代码运行数据源"));
     }
 
     private boolean isWritableRuntimeDatasource(GenDatasource datasource) {
+        return isRuntimeWritable(datasource)
+                && Integer.valueOf(1).equals(datasource.getAllowRuntimeDdl());
+    }
+
+    private boolean isRuntimeWritable(GenDatasource datasource) {
         return datasource != null
                 && datasource.getDatasourceId() != null
                 && Integer.valueOf(1).equals(datasource.getAllowRuntimeWrite())
-                && Integer.valueOf(1).equals(datasource.getAllowRuntimeDdl())
                 && !Integer.valueOf(1).equals(datasource.getReadonly());
     }
 
@@ -266,7 +318,8 @@ public class BusinessApplicationFormDataService {
     }
 
     private String buildObjectOptions(
-            AiBusinessApplication application, String formAssetId, GenDatasource datasource) {
+            AiBusinessApplication application, ProvisionRequest request, GenDatasource datasource) {
+        boolean dbImport = CREATE_MODE_DB_IMPORT.equals(request.createMode());
         JSONObject runtimeDatasource = new JSONObject();
         runtimeDatasource.put("datasourceId", datasource.getDatasourceId());
         runtimeDatasource.put("datasourceCode", datasource.getDatasourceCode());
@@ -277,12 +330,20 @@ public class BusinessApplicationFormDataService {
         runtimeDatasource.put("allowDdl", Integer.valueOf(1).equals(datasource.getAllowRuntimeDdl()));
         runtimeDatasource.put("readonly", Integer.valueOf(1).equals(datasource.getReadonly()));
         runtimeDatasource.put("riskLevel", datasource.getRiskLevel());
-        runtimeDatasource.put("tableMode", "CREATE");
+        runtimeDatasource.put("tableMode", dbImport ? "EXISTING" : "CREATE");
 
-        JSONObject options = managedMarker(application.getId(), formAssetId);
-        options.put("createMode", "BLANK");
+        JSONObject options = managedMarker(application.getId(), request.formAssetId());
+        options.put("createMode", dbImport ? CREATE_MODE_DB_IMPORT : CREATE_MODE_BLANK);
         options.put("runtimeDatasourceId", datasource.getDatasourceId());
         options.put("runtimeDatasource", runtimeDatasource);
+        if (dbImport) {
+            JSONObject sourceTable = new JSONObject();
+            sourceTable.put("datasourceId", request.importDatasourceId() == null
+                    ? datasource.getDatasourceId()
+                    : request.importDatasourceId());
+            sourceTable.put("tableName", request.importTableName());
+            options.put("sourceTable", sourceTable);
+        }
         return options.toJSONString();
     }
 
@@ -426,13 +487,23 @@ public class BusinessApplicationFormDataService {
             String formAssetId,
             String formName,
             List<BusinessFieldDTO> fields,
-            com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO formDesignerSchema) {
+            com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO formDesignerSchema,
+            Long runtimeDatasourceId,
+            String createMode,
+            Long importDatasourceId,
+            String importTableName) {
     }
 
     private record ProvisionResult(Long objectId, BusinessApplicationFormDataVO result,
-                                    BusinessObjectDesignerService.DesignerContext context) {
+                                    BusinessObjectDesignerService.DesignerContext context,
+                                    boolean shouldSyncDatabase) {
         ProvisionResult(Long objectId, BusinessApplicationFormDataVO result) {
-            this(objectId, result, null);
+            this(objectId, result, null, true);
+        }
+
+        ProvisionResult(Long objectId, BusinessApplicationFormDataVO result,
+                        BusinessObjectDesignerService.DesignerContext context) {
+            this(objectId, result, context, true);
         }
     }
 }

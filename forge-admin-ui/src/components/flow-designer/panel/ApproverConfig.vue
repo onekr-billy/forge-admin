@@ -19,7 +19,7 @@
  *   - update:config   增量 patch，外层 NodeConfigDrawer 合并到 draftNode.config
  */
 import { computed, ref, watch } from 'vue'
-import { normalizeFlowFieldCatalog, normalizeFlowFormPermissions, serializeFlowFormPermissions } from '@/utils/flow-field-permissions'
+import { appendChildTableCatalogFields, normalizeFlowFieldCatalog, normalizeFlowFormPermissions, serializeFlowFormPermissions } from '@/utils/flow-field-permissions'
 import { loadFlowBusinessFormFieldCatalog } from '@/utils/flow-form-loader'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
 import ApprovalDutyConfig from './ApprovalDutyConfig.vue'
@@ -78,11 +78,12 @@ const selectedFormAsset = computed(() => {
   }) || null
 })
 const activeFormFieldCatalog = computed(() => {
-  if (selectedFormAsset.value?.fieldCatalog?.length)
-    return selectedFormAsset.value.fieldCatalog
-  if (externalFieldCatalog.value.length)
-    return externalFieldCatalog.value
-  return props.formFieldCatalog
+  const base = selectedFormAsset.value?.fieldCatalog?.length
+    ? selectedFormAsset.value.fieldCatalog
+    : externalFieldCatalog.value.length
+      ? externalFieldCatalog.value
+      : props.formFieldCatalog
+  return appendChildTableCatalogFields(base, selectedFormAsset.value || {})
 })
 const nodeFormForAssetSelect = computed(() => ({
   formMode: config.value.formMode

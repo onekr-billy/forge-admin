@@ -933,6 +933,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, react
 import { useRoute, useRouter } from 'vue-router'
 import { modelListByProvider, providerPage } from '@/api/ai'
 import { businessFlowFormAssets, businessFlowModelBindings } from '@/api/business-app'
+import { appendChildTableCatalogFields } from '@/utils/flow-field-permissions'
 import { businessApplicationList, businessApplicationObjects } from '@/api/business-application'
 import flowApi from '@/api/flow'
 import { streamFlowGenerate } from '@/api/flow-generator'
@@ -2190,7 +2191,7 @@ function normalizeBusinessFormAssets(assets = []) {
         ...asset,
         formKey,
         formName: routeQueryText(asset?.formName || asset?.name || asset?.label) || formKey,
-        fieldCatalog: normalizeBusinessFieldCatalog(fields),
+        fieldCatalog: appendChildTableCatalogFields(normalizeBusinessFieldCatalog(fields), asset),
       }
     })
     .filter(asset => asset.formKey)
@@ -2417,16 +2418,32 @@ function collectBusinessAssetFields(assets = []) {
       : normalizeBusinessFieldCatalog(asset?.fields || [])
     fields.forEach((field) => {
       const code = routeQueryText(field?.field || field?.fieldCode || field?.code || field?.name)
-      if (!code || used.has(code))
+      const scope = routeQueryText(field?.scope || (field?.childKey ? 'child' : 'main')).toLowerCase()
+      const childKey = routeQueryText(field?.childKey || field?.relationKey)
+      const childField = routeQueryText(field?.childField || (scope === 'child' ? code : ''))
+      const permissionKey = scope === 'child'
+        ? (childKey && childField ? `child:${childKey}:${childField}` : '')
+        : (code ? `main:${code}` : '')
+      if (!permissionKey || used.has(permissionKey))
         return
-      used.add(code)
+      used.add(permissionKey)
       result.push({
-        field: code,
+        field: scope === 'child' ? childField : code,
+        fieldCode: scope === 'child' ? childField : code,
         label: field?.label || field?.fieldLabel || field?.fieldName || field?.title || code,
         componentType: field?.componentType || field?.type || field?.fieldType || '',
         dataType: field?.dataType || '',
         required: field?.required === true,
         readonly: field?.readonly === true || field?.systemField === true || field?.writable === false,
+        scope: scope === 'child' ? 'child' : 'main',
+        ...(scope === 'child'
+          ? {
+              childKey,
+              childField,
+              childLabel: field?.childLabel || field?.relationName || childKey,
+              relationName: field?.relationName || field?.childLabel || '',
+            }
+          : {}),
       })
     })
   })

@@ -217,6 +217,7 @@
       </div>
 
       <aside class="side-column">
+        <HomeNoticePanel />
         <section class="dashboard-pane quick-pane">
           <div class="dashboard-header compact">
             <div>
@@ -234,39 +235,6 @@
             >
               <span><i :class="item.icon" /></span>
               <strong>{{ item.title }}</strong>
-            </button>
-          </div>
-        </section>
-
-        <section class="dashboard-pane notice-pane">
-          <div class="dashboard-header compact">
-            <div>
-              <h2>公告消息</h2>
-              <p>{{ unreadNotice > 0 ? `${unreadNotice} 条未读` : '暂无未读消息' }}</p>
-            </div>
-            <button type="button" class="text-link" @click="goTo('/system/notice-list')">
-              更多
-            </button>
-          </div>
-
-          <div v-if="noticeList.length === 0" class="empty-state small">
-            <i class="i-material-symbols:inbox-rounded" />
-            <strong>暂无公告</strong>
-          </div>
-          <div v-else class="notice-list">
-            <button
-              v-for="notice in noticeList.slice(0, 5)"
-              :key="notice.noticeId"
-              type="button"
-              class="notice-item"
-              :class="{ unread: notice.isRead === 0 }"
-              @click="openNotice(notice)"
-            >
-              <span class="notice-dot" />
-              <span class="notice-copy">
-                <strong>{{ notice.noticeTitle }}</strong>
-                <em>{{ getNoticeTypeText(notice.noticeType) }} · {{ formatTime(notice.publishTime) }}</em>
-              </span>
             </button>
           </div>
         </section>
@@ -296,20 +264,6 @@
         </section>
       </aside>
     </section>
-
-    <n-modal v-model:show="showNoticeModal" preset="card" title="公告详情" style="width: 800px">
-      <div v-if="currentNotice" class="notice-detail">
-        <h3>{{ currentNotice.noticeTitle }}</h3>
-        <div class="detail-meta">
-          <n-tag :type="getNoticeTypeColor(currentNotice.noticeType)" size="small">
-            {{ getNoticeTypeText(currentNotice.noticeType) }}
-          </n-tag>
-          <span>发布时间：{{ currentNotice.publishTime }}</span>
-        </div>
-        <n-divider />
-        <div class="detail-content" v-html="sanitizedNoticeContent" />
-      </div>
-    </n-modal>
   </div>
 </template>
 
@@ -324,8 +278,9 @@ import wechatGroupQr from '@/assets/images/forge-wechat-group.png'
 import wechatSupportQr from '@/assets/images/forge-wechat-support.png'
 import welcomeAvatar from '@/assets/images/home-welcome-avatar.png'
 import { useUserStore } from '@/store'
+import { useNoticeStore } from '@/stores/system/noticeStore'
 import { request } from '@/utils'
-import { sanitizeHtml } from '@/utils/sanitize-html'
+import HomeNoticePanel from './components/HomeNoticePanel.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -339,16 +294,12 @@ const doneCount = ref(0)
 const startedCount = ref(0)
 const pendingStarted = ref(0)
 
-const unreadNotice = ref(0)
+const noticeStore = useNoticeStore()
+const unreadNotice = computed(() => noticeStore.unreadCount)
 const todoLoading = ref(false)
 const appLoading = ref(false)
 const todoList = ref([])
-const noticeList = ref([])
 const distributedApplications = ref([])
-
-const showNoticeModal = ref(false)
-const currentNotice = ref(null)
-const sanitizedNoticeContent = computed(() => sanitizeHtml(currentNotice.value?.noticeContent))
 
 const visitChartRef = ref(null)
 const userChartRef = ref(null)
@@ -400,7 +351,7 @@ const quickLinks = [
 const systemMetrics = computed(() => {
   const userBase = Math.max(totalUserCount.value, 1)
   const flowBase = Math.max(startedCount.value + doneCount.value + todoCount.value, 1)
-  const noticeBase = Math.max(noticeList.value.length, unreadNotice.value, 1)
+  const noticeBase = Math.max(noticeStore.total, unreadNotice.value, 1)
   return [
     { label: '用户规模', value: totalUserCount.value, percent: clampPercent((totalUserCount.value / userBase) * 100) },
     { label: '流程处理', value: doneCount.value, percent: clampPercent((doneCount.value / flowBase) * 100) },
@@ -483,17 +434,6 @@ async function loadTodoList() {
   }
 }
 
-async function loadNoticeList() {
-  try {
-    const res = await request.get('/system/notice/user/page', { params: { pageNum: 1, pageSize: 10 } })
-    noticeList.value = res.data?.records || []
-    unreadNotice.value = noticeList.value.filter(item => item.isRead === 0).length
-  }
-  catch {
-    console.error('加载通知公告失败')
-  }
-}
-
 async function loadWorkbenchApplications() {
   appLoading.value = true
   try {
@@ -528,24 +468,6 @@ function openTodoTask(task) {
   })
 }
 
-async function openNotice(notice) {
-  try {
-    const res = await request.post('/system/notice/getById', null, { params: { noticeId: notice.noticeId } })
-    if (res.data) {
-      currentNotice.value = res.data
-      showNoticeModal.value = true
-
-      if (notice.isRead === 0) {
-        await request.post('/system/notice/markAsRead', null, { params: { noticeId: notice.noticeId } })
-        loadNoticeList()
-      }
-    }
-  }
-  catch {
-    window.$message.error('获取详情失败')
-  }
-}
-
 function formatTime(time) {
   if (!time)
     return '-'
@@ -578,16 +500,6 @@ function getPriorityClass(priority) {
 function getPriorityText(priority) {
   const textMap = { 0: '低', 1: '普通', 2: '高', 3: '紧急' }
   return textMap[priority] || '普通'
-}
-
-function getNoticeTypeText(type) {
-  const typeMap = { NOTICE: '通知', ANNOUNCEMENT: '公告', NEWS: '新闻' }
-  return typeMap[type] || type || '公告'
-}
-
-function getNoticeTypeColor(type) {
-  const colorMap = { NOTICE: 'info', ANNOUNCEMENT: 'warning', NEWS: 'success' }
-  return colorMap[type] || 'default'
 }
 
 function initVisitChart() {
@@ -684,7 +596,6 @@ onMounted(() => {
   loadUserStats()
   loadFlowData()
   loadTodoList()
-  loadNoticeList()
   loadWorkbenchApplications()
 
   nextTick(() => {

@@ -9,6 +9,7 @@ import {
   insertDesignerComponent,
   normalizeFormDesignerSchema,
   normalizeFormDesignerSchemaForSave,
+  presentFormDesignerSchema,
   updateDesignerComponent,
 } from '../formDesignerSchema'
 
@@ -282,5 +283,24 @@ describe('formDesignerSchema', () => {
     })
 
     expect(schema.components.map(component => component.fieldBinding.fieldCode)).toContain('pickupAddress')
+  })
+
+  it('lifts the default form components when the root canvas is empty', () => {
+    const schema = presentFormDesignerSchema({
+      formKey: 'main_form',
+      formName: '主表单',
+      components: [],
+      defaultFormKey: 'detail_form',
+      forms: [{
+        formKey: 'detail_form',
+        formName: '明细表单',
+        schema: {
+          components: [{ id: 'field_input', componentKey: 'input', fieldBinding: { fieldCode: 'fieldInput' } }],
+        },
+      }],
+    })
+
+    expect(schema.components.map(component => component.fieldBinding.fieldCode)).toEqual(['fieldInput'])
+    expect(schema.formName).toBe('明细表单')
   })
 })

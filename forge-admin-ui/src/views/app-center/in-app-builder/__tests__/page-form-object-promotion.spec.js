@@ -47,6 +47,36 @@ describe('page form object promotion', () => {
     ])
   })
 
+  it('keeps imported table fields even when the canvas marks them as already existing columns', () => {
+    const payload = buildBusinessObjectDesignerPayloadFromFormAsset({
+      id: 'form_customer',
+      name: '客户登记表',
+      formDesignerSchema: {
+        formKey: 'customer_form',
+        formName: '客户登记表',
+        components: [{
+          id: 'field_customer_name',
+          componentKey: 'input',
+          label: '客户名称',
+          fieldBinding: {
+            mode: 'field',
+            fieldCode: 'customerName',
+            columnName: 'customer_name',
+            createIfMissing: false,
+            source: 'db_import',
+          },
+        }],
+      },
+    })
+
+    expect(payload.fields).toEqual([
+      expect.objectContaining({
+        fieldCode: 'customerName',
+        columnName: 'customer_name',
+      }),
+    ])
+  })
+
   it('ignores virtual components because they have no database field', () => {
     const payload = buildBusinessObjectDesignerPayloadFromFormAsset({
       id: 'form_intro',

@@ -121,7 +121,7 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private List<Map<String, Object>> buildEditSchema(String configKey, LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
-        Set<String> childFieldRefs = isMasterDetailRuntime(pageSchema) ? buildChildFieldRefs(pageSchema) : Set.of();
+        Set<String> childFieldRefs = buildChildFieldRefs(pageSchema);
         List<LowcodeFieldSchema> orderedFields = sortByCanvasOrder(
                 resolveFields(modelSchema, pageSchema, "edit",
                         field -> isEditFieldVisibleAtDesignTime(pageSchema, field)),

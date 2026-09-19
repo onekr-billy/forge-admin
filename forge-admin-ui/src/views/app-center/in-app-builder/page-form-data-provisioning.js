@@ -35,6 +35,7 @@ export function collectFormDataProvisionTargets(builder = {}, objects = []) {
     const designer = buildBusinessObjectDesignerPayloadFromFormAsset(asset)
     if (!designer.fields.length)
       return []
+    const objectRef = resolveFormAssetObjectRef(builder, asset.id)
     return [{
       formAssetId: String(asset.id),
       formName: asset.name || designer.formDesignerSchema?.formName || '未命名表单',
@@ -46,6 +47,10 @@ export function collectFormDataProvisionTargets(builder = {}, objects = []) {
         formName: asset.name || designer.formDesignerSchema?.formName || '未命名表单',
         fields: designer.fields,
         formDesignerSchema: designer.formDesignerSchema,
+        runtimeDatasourceId: objectRef?.runtimeDatasourceId || null,
+        createMode: objectRef?.createMode || '',
+        importDatasourceId: objectRef?.importDatasourceId || objectRef?.runtimeDatasourceId || null,
+        importTableName: objectRef?.importTableName || '',
       },
     }]
   })
@@ -191,6 +196,26 @@ function hasUsableObjectRef(block = {}, pageObjectRef) {
 
 function resolveObjectRef(block = {}, pageObjectRef) {
   return block.props?.objectRef ?? block.props?.businessObjectRef ?? pageObjectRef
+}
+
+function resolveFormAssetObjectRef(builder = {}, formAssetId) {
+  const pageNodeById = new Map((Array.isArray(builder.nodes) ? builder.nodes : [])
+    .map(node => [String(node?.id || ''), node]))
+  let matched = null
+  Object.entries(builder.pages || {}).forEach(([pageId, page]) => {
+    if (matched)
+      return
+    const pageObjectRef = page?.objectRef || pageNodeById.get(String(pageId))?.objectRef
+    const items = page?.layout?.gridLayout?.items || page?.layout?.items || []
+    visitBlocks(items, (block) => {
+      if (matched || block?.blockType !== 'AiCrudPage')
+        return
+      const blockFormAssetId = String(block.props?.formAssetId || '').trim()
+      if (blockFormAssetId && blockFormAssetId === String(formAssetId || '').trim())
+        matched = resolveObjectRef(block, pageObjectRef)
+    })
+  })
+  return matched
 }
 
 function matchesProvisionedObject(objectRef = {}, provisioned = {}) {

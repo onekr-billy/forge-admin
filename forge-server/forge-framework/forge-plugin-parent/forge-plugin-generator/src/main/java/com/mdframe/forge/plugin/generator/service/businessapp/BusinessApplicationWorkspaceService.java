@@ -44,6 +44,7 @@ public class BusinessApplicationWorkspaceService {
 
     private BusinessApplicationWorkspaceVO assembleWorkspace(BusinessApplicationVO application) {
         Long applicationId = application.getId();
+        applicationObjectService.detachOrphanPageFormObjects(applicationId);
         List<BusinessApplicationObjectVO> objects = applicationObjectService.list(applicationId);
         List<BusinessAppVO> entries = businessAppService.list(entryQuery(applicationId));
         List<BusinessExtensionVO> extensions = businessExtensionService.listWorkspaceSummaries(applicationId);

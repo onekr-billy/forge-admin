@@ -30,6 +30,14 @@ class FlowTaskMapperSqlContractTest {
     }
 
     @Test
+    void taskModelJoinMustResolveNameWhenProcessDefKeyIsDefinitionId() throws IOException {
+        String xml = resource();
+        assertTrue(xml.contains("ACT_RE_PROCDEF task_procdef"));
+        assertTrue(xml.contains("task_procdef.KEY_"));
+        assertFalse(xml.contains("COALESCE(NULLIF(m.model_name, ''), t.process_def_key)"));
+    }
+
+    @Test
     void candidateListMustStayUnassignedAndAvoidFlowableFullList() throws IOException {
         String xml = resource();
         String statement = statement(xml, "selectCandidateTasks");

@@ -320,6 +320,9 @@ public class BusinessApplicationController {
     @OperationLog(module = "业务应用", type = OperationType.UPDATE, desc = "修改业务应用")
     public RespInfo<Void> update(@RequestBody BusinessApplicationDTO dto) {
         applicationService.update(dto);
+        if (dto != null && dto.getId() != null) {
+            applicationObjectService.detachOrphanPageFormObjects(dto.getId());
+        }
         return RespInfo.success();
     }
 
@@ -343,6 +346,7 @@ public class BusinessApplicationController {
     @SaCheckPermission("ai:businessApplication:list")
     @OperationLog(module = "业务应用", type = OperationType.QUERY, desc = "查询应用业务对象")
     public RespInfo<List<BusinessApplicationObjectVO>> listObjects(@PathVariable Long id) {
+        applicationObjectService.detachOrphanPageFormObjects(id);
         return RespInfo.success(applicationObjectService.list(id));
     }
 

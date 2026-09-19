@@ -68,6 +68,40 @@ describe('page form data provisioning', () => {
     ])
   })
 
+  it('forwards the selected runtime datasource and imported table to provision', () => {
+    const builder = {
+      formAssets: [formAsset()],
+      nodes: [{ id: 'page_1', type: 'page' }],
+      pages: {
+        page_1: {
+          layout: {
+            gridLayout: {
+              items: [{
+                id: 'crud_1',
+                blockType: 'AiCrudPage',
+                props: {
+                  formAssetId: 'form_customer',
+                  objectRef: {
+                    runtimeDatasourceId: 31,
+                    createMode: 'DB_IMPORT',
+                    importTableName: 'crm_customer',
+                  },
+                },
+              }],
+            },
+          },
+        },
+      },
+    }
+
+    const targets = collectFormDataProvisionTargets(builder, [])
+    expect(targets[0].request).toMatchObject({
+      runtimeDatasourceId: 31,
+      createMode: 'DB_IMPORT',
+      importTableName: 'crm_customer',
+    })
+  })
+
   it('does not prepare storage for forms without persistent fields', () => {
     const builder = builderWithBlocks([
       { id: 'crud_1', blockType: 'AiCrudPage', props: { formAssetId: 'form_customer' } },

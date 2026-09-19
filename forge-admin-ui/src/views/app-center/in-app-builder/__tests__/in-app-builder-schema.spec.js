@@ -4,6 +4,7 @@ import {
   createNavigationNode,
   hasPendingLegacyObjectPageMigration,
   insertPageComponent,
+  isOrphanPageFormObject,
   mergeInAppBuilderOptions,
   moveNavigationNode,
   normalizeFlowInteraction,
@@ -315,6 +316,48 @@ describe('in-app builder schema', () => {
       expect.objectContaining({ id: created.formAssetId, name: '客户录入表单', formKey: 'customer_form' }),
     ])
     expect(mergeInAppBuilderOptions({}, updated).inAppBuilder.formAssets[0].formDesignerSchema.components).toHaveLength(1)
+  })
+
+  it('does not recycle page or form ids after a chinese page is removed', () => {
+    const base = normalizeInAppBuilder({}, APPLICATION, [])
+    const first = createPageShapeBuilder(base, {
+      pageName: '审批',
+      pageType: 'form',
+      objectName: '审批',
+      objectCode: 'approval',
+    })
+    const removed = removeNavigationNode(first.schema, first.pageId)
+    removed.formAssets = (removed.formAssets || []).filter(asset => asset.id !== first.formAssetId)
+    const second = createPageShapeBuilder(removed, {
+      pageName: '审批',
+      pageType: 'form',
+      objectName: '审批',
+      objectCode: 'approval_new',
+    })
+
+    expect(second.pageId).not.toBe(first.pageId)
+    expect(second.formAssetId).not.toBe(first.formAssetId)
+    expect(second.pageId).toMatch(/^page_page_[a-z0-9]{6}$/)
+    expect(second.formAssetId).toMatch(/^form_form_[a-z0-9]{6}$/)
+  })
+
+  it('hides page-form objects after their source page is removed', () => {
+    const schema = {
+      nodes: [{ id: 'page_keep', type: 'page', objectRef: { objectId: '2' } }],
+      pages: { page_keep: {} },
+    }
+    expect(isOrphanPageFormObject({
+      objectId: '1',
+      options: JSON.stringify({ managedBy: 'PAGE_FORM', sourcePageId: 'page_gone' }),
+    }, schema)).toBe(true)
+    expect(isOrphanPageFormObject({
+      objectId: '2',
+      options: JSON.stringify({ managedBy: 'PAGE_FORM', sourcePageId: 'page_gone' }),
+    }, schema)).toBe(false)
+    expect(isOrphanPageFormObject({
+      objectId: '3',
+      options: JSON.stringify({ managedBy: 'MANUAL' }),
+    }, schema)).toBe(false)
   })
 
   it('normalizes node access control and keeps roles grants across save round trips', () => {

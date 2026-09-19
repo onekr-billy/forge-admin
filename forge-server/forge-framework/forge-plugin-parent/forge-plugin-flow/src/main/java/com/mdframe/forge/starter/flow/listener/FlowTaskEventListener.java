@@ -26,8 +26,10 @@ import org.flowable.common.engine.api.delegate.event.FlowableEntityEvent;
 import org.flowable.common.engine.api.delegate.event.FlowableEvent;
 import org.flowable.common.engine.api.delegate.event.FlowableEventListener;
 import org.flowable.common.engine.api.delegate.event.FlowableEventType;
+import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
+import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.delegate.DelegateExecution;
 import org.flowable.engine.delegate.event.FlowableCancelledEvent;
 import org.flowable.engine.delegate.event.FlowableProcessEngineEvent;
@@ -84,6 +86,10 @@ public class FlowTaskEventListener implements FlowableEventListener {
     @Autowired
     @Lazy
     private RuntimeService runtimeService;
+
+    @Autowired(required = false)
+    @Lazy
+    private RepositoryService repositoryService;
 
     @Autowired
     @Lazy
@@ -237,6 +243,9 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     flowBusinessMapper.updateById(business);
                 }
                 flowTask.setTenantId(business.getTenantId());
+                if (business.getProcessDefKey() != null && !business.getProcessDefKey().isBlank()) {
+                    flowTask.setProcessDefKey(business.getProcessDefKey());
+                }
                 flowTask.setTitle(business.getTitle());
                 flowTask.setBusinessKey(business.getBusinessKey());
                 flowTask.setBusinessType(business.getBusinessType());
@@ -938,12 +947,28 @@ public class FlowTaskEventListener implements FlowableEventListener {
      * 从流程定义ID提取流程Key
      */
     private String extractProcessKey(String processDefinitionId) {
-        if (processDefinitionId == null) {
+        if (processDefinitionId == null || processDefinitionId.isBlank()) {
             return null;
         }
-        // 格式：processKey:version:id
-        String[] parts = processDefinitionId.split(":");
-        return parts.length > 0 ? parts[0] : processDefinitionId;
+        // 标准格式是 processKey:version:id。当前引擎的定义 ID 是 UUID，没有冒号，必须反查 KEY_。
+        int versionSeparator = processDefinitionId.indexOf(':');
+        if (versionSeparator > 0) {
+            return processDefinitionId.substring(0, versionSeparator);
+        }
+        if (repositoryService == null) {
+            return processDefinitionId;
+        }
+        try {
+            ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
+                    .processDefinitionId(processDefinitionId)
+                    .singleResult();
+            if (definition != null && definition.getKey() != null && !definition.getKey().isBlank()) {
+                return definition.getKey();
+            }
+        } catch (Exception e) {
+            log.debug("从流程定义ID解析流程Key失败: processDefinitionId={}", processDefinitionId, e);
+        }
+        return processDefinitionId;
     }
 
     /**

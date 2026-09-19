@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
@@ -382,6 +383,30 @@ class BusinessFlowServiceFormAssetMergeTest {
         assertEquals(selectedApprovers, target.get("PROCESS_START_USER"));
         assertEquals(true, target.get("urgent"));
         assertEquals("order:100", target.get("businessKey"));
+    }
+
+    @Test
+    @DisplayName("object-shaped form permission string keeps child writable field")
+    void objectFormPermissionStringKeepsChildWritableField() throws Exception {
+        Method buildTaskChildPermissions = BusinessFlowService.class.getDeclaredMethod(
+                "buildTaskChildPermissions", List.class, JSONObject.class);
+        buildTaskChildPermissions.setAccessible(true);
+        String permissions = """
+                {"version":2,"fields":[{"field":"fieldInput","scope":"child","childKey":"cgou_detail_ujpc","childField":"fieldInput","readable":true,"writable":true}],"children":[{"childKey":"cgou_detail_ujpc","readable":true,"allowUpdate":true}]}
+                """;
+        JSONObject nodeForm = new JSONObject();
+        nodeForm.put("fieldPermissions", permissions);
+        Map<String, Object> child = new LinkedHashMap<>();
+        child.put("modelCode", "cgou_detail_ujpc");
+        child.put("allowUpdate", true);
+        child.put("fields", List.of(Map.of("field", "fieldInput", "writable", false)));
+
+        @SuppressWarnings("unchecked")
+        Map<String, DynamicCrudService.TaskChildPermission> result =
+                (Map<String, DynamicCrudService.TaskChildPermission>) buildTaskChildPermissions.invoke(
+                        service, List.of(child), nodeForm);
+
+        assertTrue(result.get("cgou_detail_ujpc").writableFields().contains("fieldInput"));
     }
 
     private Map<String, Object> asset(String formKey, String formName, List<Map<String, Object>> fields) {

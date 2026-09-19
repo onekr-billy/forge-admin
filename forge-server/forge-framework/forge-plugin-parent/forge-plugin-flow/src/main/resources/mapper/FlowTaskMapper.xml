@@ -5,9 +5,9 @@
     <!-- 根据任务ID查询任务（带流程名称） -->
     <select id="selectByTaskId" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
         SELECT t.*, m.category AS category, c.category_name AS category_name,
-               m.model_name AS process_name, COALESCE(NULLIF(m.model_name, ''), t.process_def_key) AS process_definition_name
+               m.model_name AS process_name, COALESCE(NULLIF(m.model_name, ''), NULLIF(task_procdef.NAME_, '')) AS process_definition_name
         FROM sys_flow_task t
-        LEFT JOIN sys_flow_model m ON t.process_def_key = m.model_key
+        <include refid="TaskFlowModelJoin" />
         LEFT JOIN sys_flow_category c ON c.id = m.category
         WHERE t.task_id = #{taskId}
     </select>
@@ -15,11 +15,9 @@
     <select id="selectByTaskIdAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
         SELECT t.*, m.category AS category, c.category_name AS category_name,
                m.model_name AS process_name,
-               COALESCE(NULLIF(m.model_name, ''), t.process_def_key) AS process_definition_name
+               COALESCE(NULLIF(m.model_name, ''), NULLIF(task_procdef.NAME_, '')) AS process_definition_name
         FROM sys_flow_task t
-        LEFT JOIN sys_flow_model m
-               ON t.process_def_key = m.model_key
-              AND m.tenant_id = #{tenantId}
+        <include refid="TaskFlowModelJoin" />
         LEFT JOIN sys_flow_category c
                ON c.id = m.category
               AND c.tenant_id = #{tenantId}
@@ -46,9 +44,9 @@
     <!-- 根据 Flowable 任务ID或流程任务记录ID查询任务（带流程名称） -->
     <select id="selectByIdOrTaskId" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
         SELECT t.*, m.category AS category, c.category_name AS category_name,
-               m.model_name AS process_name, COALESCE(NULLIF(m.model_name, ''), t.process_def_key) AS process_definition_name
+               m.model_name AS process_name, COALESCE(NULLIF(m.model_name, ''), NULLIF(task_procdef.NAME_, '')) AS process_definition_name
         FROM sys_flow_task t
-        LEFT JOIN sys_flow_model m ON t.process_def_key = m.model_key
+        <include refid="TaskFlowModelJoin" />
         LEFT JOIN sys_flow_category c ON c.id = m.category
         WHERE t.task_id = #{taskId} OR t.id = #{taskId}
         ORDER BY CASE WHEN t.task_id = #{taskId} THEN 0 ELSE 1 END
@@ -58,9 +56,9 @@
     <select id="selectByIdOrTaskIdAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
         SELECT t.*, m.category AS category, c.category_name AS category_name,
                m.model_name AS process_name,
-               COALESCE(NULLIF(m.model_name, ''), t.process_def_key) AS process_definition_name
+               COALESCE(NULLIF(m.model_name, ''), NULLIF(task_procdef.NAME_, '')) AS process_definition_name
         FROM sys_flow_task t
-        LEFT JOIN sys_flow_model m ON t.process_def_key = m.model_key AND m.tenant_id = #{tenantId}
+        <include refid="TaskFlowModelJoin" />
         LEFT JOIN sys_flow_category c ON c.id = m.category AND c.tenant_id = #{tenantId}
         WHERE (t.task_id = #{taskId} OR CAST(t.id AS CHAR) = #{taskId})
           AND t.tenant_id = #{tenantId}
@@ -229,6 +227,26 @@
     </select>
 
     <!-- 列表字段。用户姓名在 SQL 中一次关联，避免服务层按任务逐条反查组织、岗位和用户。 -->
+    <!--
+      当前引擎的流程定义 ID 是 UUID，不是 key:version:id。
+      历史待办的 process_def_key 可能存的是定义 ID，只按 model_key 等值关联会失败，
+      流程名称就会回退成流程编码。先认编码，认不到再按定义 ID 反查 KEY_。
+    -->
+    <sql id="TaskFlowModelJoin">
+        LEFT JOIN ACT_RE_PROCDEF task_procdef
+               ON task_procdef.ID_ = t.process_def_id
+        LEFT JOIN sys_flow_model m
+               ON m.tenant_id = t.tenant_id
+              AND m.model_key = COALESCE(
+                    (SELECT direct.model_key
+                     FROM sys_flow_model direct
+                     WHERE direct.tenant_id = t.tenant_id
+                       AND direct.model_key = t.process_def_key
+                     LIMIT 1),
+                    task_procdef.KEY_
+                  )
+    </sql>
+
     <sql id="TaskListColumns">
         t.id,
         t.tenant_id,
@@ -274,7 +292,7 @@
         m.category AS category,
         c.category_name AS category_name,
         m.model_name AS process_name,
-        COALESCE(NULLIF(m.model_name, ''), t.process_def_key) AS process_definition_name
+        COALESCE(NULLIF(m.model_name, ''), NULLIF(task_procdef.NAME_, '')) AS process_definition_name
     </sql>
 
     <sql id="TaskListUserJoins">
@@ -300,9 +318,7 @@
                     AND start_membership.user_id = start_user.id
                     AND start_membership.status = 1
               )
-        LEFT JOIN sys_flow_model m
-               ON t.process_def_key = m.model_key
-              AND m.tenant_id = t.tenant_id
+        <include refid="TaskFlowModelJoin" />
         LEFT JOIN sys_flow_category c
                ON c.id = m.category
               AND c.tenant_id = t.tenant_id
@@ -544,9 +560,9 @@
     <!-- 已逾期且仍待办理的任务 -->
     <select id="selectOverduePendingTasks" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
         SELECT t.*, m.category AS category, c.category_name AS category_name,
-               m.model_name AS process_name, COALESCE(NULLIF(m.model_name, ''), t.process_def_key) AS process_definition_name
+               m.model_name AS process_name, COALESCE(NULLIF(m.model_name, ''), NULLIF(task_procdef.NAME_, '')) AS process_definition_name
         FROM sys_flow_task t
-        LEFT JOIN sys_flow_model m ON t.process_def_key = m.model_key
+        <include refid="TaskFlowModelJoin" />
         LEFT JOIN sys_flow_category c ON c.id = m.category
         WHERE t.due_date IS NOT NULL
           AND t.due_date &lt;= #{now}

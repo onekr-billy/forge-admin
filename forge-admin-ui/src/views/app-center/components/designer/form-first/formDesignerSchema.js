@@ -383,6 +383,31 @@ export function normalizeFormDesignerSchema(source = {}) {
   }
 }
 
+/**
+ * 画布只读根级 components。保存后的多表单会把字段放在 forms[].schema 或 settings.formAssets 里，
+ * 根级 components 为空时要抬出默认表单，否则回到表单设计看到的是空白画布。
+ */
+export function presentFormDesignerSchema(source = {}) {
+  const root = normalizeFormDesignerSchema(source)
+  if (root.components?.length)
+    return root
+  const multi = normalizeMultiFormDesignerSchema(source)
+  const active = multi.forms.find(form => form.formKey === (multi.defaultFormKey || root.formKey))
+    || multi.forms.find(form => form.schema?.components?.length)
+  if (!active?.schema?.components?.length)
+    return root
+  return normalizeFormDesignerSchema({
+    ...active.schema,
+    formKey: active.formKey || root.formKey,
+    formName: active.formName || active.schema.formName || root.formName,
+    settings: {
+      ...(active.schema.settings || {}),
+      ...(root.settings || {}),
+      formAssets: multi.settings?.formAssets || root.settings?.formAssets || [],
+    },
+  })
+}
+
 export function normalizePageSections(source = []) {
   const usedIds = new Set()
   return (Array.isArray(source) ? source : [])

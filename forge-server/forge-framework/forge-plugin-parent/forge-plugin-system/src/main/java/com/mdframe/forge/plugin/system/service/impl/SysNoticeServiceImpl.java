@@ -44,7 +44,6 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
     private final SysNoticeOrgMapper noticeOrgMapper;
     private final SysNoticeReadRecordMapper noticeReadRecordMapper;
     private final SysOrgMapper orgMapper;
-    private final SysUserOrgMapper userOrgMapper;
 
     @Override
     @DictTranslate
@@ -265,31 +264,24 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
 
     @Override
     public Page<SysNoticeVO> selectUserNoticePage(PageQuery pageQuery, SysNoticeQuery query) {
+        return selectUserNoticePage(pageQuery, query, null);
+    }
+
+    @Override
+    public SysNoticeVO selectUserNoticeById(Long noticeId) {
+        if (noticeId == null) {
+            return null;
+        }
+        PageQuery pageQuery = new PageQuery();
+        pageQuery.setPageSize(1);
+        List<SysNoticeVO> records = selectUserNoticePage(pageQuery, new SysNoticeQuery(), noticeId).getRecords();
+        return records.isEmpty() ? null : records.get(0);
+    }
+
+    private Page<SysNoticeVO> selectUserNoticePage(PageQuery pageQuery, SysNoticeQuery query, Long noticeId) {
         try {
             Long userId = SessionHelper.getUserId();
-            
-            // 查询用户所属组织
-            LambdaQueryWrapper<SysUserOrg> userOrgWrapper = new LambdaQueryWrapper<>();
-            userOrgWrapper.eq(SysUserOrg::getUserId, userId);
-            List<SysUserOrg> userOrgs = userOrgMapper.selectList(userOrgWrapper);
-            List<Long> userOrgIds = userOrgs.stream()
-                    .map(SysUserOrg::getOrgId)
-                    .collect(java.util.stream.Collectors.toList());
-            
-            // 构建查询条件
-            LambdaQueryWrapper<SysNotice> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(SysNotice::getPublishStatus, 1) // 只查询已发布的
-                   .like(StringUtils.isNotBlank(query.getNoticeTitle()), SysNotice::getNoticeTitle, query.getNoticeTitle())
-                   .eq(StringUtils.isNotBlank(query.getNoticeType()), SysNotice::getNoticeType, query.getNoticeType())
-                   .and(w -> w.eq(SysNotice::getPublishScope, 0) // 全部组织
-                           .or(w2 -> w2.eq(SysNotice::getPublishScope, 1)
-                                   .exists("SELECT 1 FROM sys_notice_org no WHERE no.notice_id = sys_notice.notice_id "
-                                           + "AND no.tenant_id = sys_notice.tenant_id "
-                                           + "AND no.org_id IN ({0})", String.join(",", userOrgIds.stream()
-                                           .map(String::valueOf).collect(java.util.stream.Collectors.toList())))))
-                   .orderByDesc(SysNotice::getIsTop, SysNotice::getTopSort, SysNotice::getPublishTime);
-            
-            Page<SysNotice> page = noticeMapper.selectPage(pageQuery.toPage(), wrapper);
+            Page<SysNotice> page = noticeMapper.selectUserNoticePage(pageQuery.toPage(), query, userId, noticeId);
             
             // 批量查询已读状态：一次 IN 查询返回用户已读的 noticeId 集合
             List<Long> noticeIds = page.getRecords().stream()
@@ -364,44 +356,12 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
             return voPage;
         } catch (Exception e) {
             log.error("查询用户公告列表失败", e);
-            return new Page<>();
+            throw e;
         }
     }
 
     @Override
     public Integer getUserUnreadCount() {
-        try {
-            Long userId = SessionHelper.getUserId();
-            
-            // 查询用户所属组织
-            LambdaQueryWrapper<SysUserOrg> userOrgWrapper = new LambdaQueryWrapper<>();
-            userOrgWrapper.eq(SysUserOrg::getUserId, userId);
-            List<SysUserOrg> userOrgs = userOrgMapper.selectList(userOrgWrapper);
-            List<Long> userOrgIds = userOrgs.stream()
-                    .map(SysUserOrg::getOrgId)
-                    .collect(java.util.stream.Collectors.toList());
-            
-            if (userOrgIds.isEmpty()) {
-                return 0;
-            }
-            
-            // 查询未读公告数量
-            LambdaQueryWrapper<SysNotice> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(SysNotice::getPublishStatus, 1)
-                   .and(w -> w.eq(SysNotice::getPublishScope, 0)
-                           .or(w2 -> w2.eq(SysNotice::getPublishScope, 1)
-                                   .exists("SELECT 1 FROM sys_notice_org no WHERE no.notice_id = sys_notice.notice_id "
-                                           + "AND no.tenant_id = sys_notice.tenant_id "
-                                           + "AND no.org_id IN ({0})", String.join(",", userOrgIds.stream()
-                                           .map(String::valueOf).collect(java.util.stream.Collectors.toList())))))
-                   .notExists("SELECT 1 FROM sys_notice_read_record r WHERE r.notice_id = sys_notice.notice_id "
-                           + "AND r.tenant_id = sys_notice.tenant_id "
-                           + "AND r.user_id = {0}", userId);
-            
-            return noticeMapper.selectCount(wrapper).intValue();
-        } catch (Exception e) {
-            log.error("查询未读公告数量失败", e);
-            return 0;
-        }
+        return noticeMapper.countUserUnreadNotices(SessionHelper.getUserId());
     }
 }

@@ -1230,7 +1230,7 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import InlineRichText from '@/components/lowcode-builder/shared/InlineRichText.vue'
 import { isPageWidgetComponentKey, pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
-import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, includeManagedRuntimeFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, includeCompiledChildColumnRefs, includeManagedRuntimeFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { hydrateRuntimeFormLayout } from '@/components/lowcode-builder/shared/runtime-form-layout'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { useUserStore } from '@/store'
@@ -1793,7 +1793,14 @@ const effectiveRuntimeCrudProps = computed(() => {
     return null
   const blockProps = props.block.props || {}
   const designPreview = isDesignPreviewCrudProps(props.runtimeCrudProps)
-  const staticDesignPreview = designPreview && blockProps.previewLiveData !== true
+  // 运行页 runtimeInteractive 为 true 时必须允许提交。designPreview 只表示读草稿配置，
+  // 不能再和“未开真实数据预览”一起当成静态画布，否则有编辑权限的运行页无法新增。
+  const staticDesignPreview = designPreview && shouldUseStaticCrudPreview({
+    blockType: 'AiCrudPage',
+    runtimeInteractive: props.runtimeInteractive,
+    previewLiveData: blockProps.previewLiveData === true,
+    hasConfiguredRequest: true,
+  })
   const rules = normalizeCrudHookRules(blockProps.crudHookRules || {}, blockProps.beforeSubmitRules || [])
   const hookHandlers = CRUD_HOOK_RULE_TARGETS.reduce((handlers, target) => {
     const list = (rules[target.value] || []).filter(rule => rule.field)
@@ -1803,10 +1810,13 @@ const effectiveRuntimeCrudProps = computed(() => {
   }, {})
   const extensionHooks = runtimeExtensionHandlers.value
   const runtimeConfigKey = props.runtimeCrudProps.configKey || ''
-  const runtimeTableFieldRefs = includeManagedRuntimeFieldRefs(
-    configuredFieldRefs.value,
-    props.runtimeCrudProps.fieldCatalog,
-    blockProps.fieldSettings,
+  const runtimeTableFieldRefs = includeCompiledChildColumnRefs(
+    includeManagedRuntimeFieldRefs(
+      configuredFieldRefs.value,
+      props.runtimeCrudProps.fieldCatalog,
+      blockProps.fieldSettings,
+    ),
+    props.runtimeCrudProps.columns,
   )
   const runtimeBlockApi = resolveRuntimeBlockApi(blockProps.api, runtimeConfigKey, designPreview)
   const runtimeBlockApiConfig = Object.fromEntries(Object.entries(blockApiConfig.value)

@@ -79,6 +79,49 @@ describe('page shape design draft', () => {
     })
   })
 
+  it('imports an existing table into the form canvas with inferred fields', () => {
+    const result = createPageShapeBuilder(emptyBuilder(), {
+      pageName: '客户档案',
+      objectName: '客户',
+      objectCode: 'customer',
+      pageType: 'list',
+      dataSourceMode: 'EXISTING_TABLE',
+      runtimeDatasourceId: 31,
+      importTableName: 'crm_customer',
+      fields: [{
+        fieldCode: 'customerName',
+        fieldName: '客户名称',
+        columnName: 'customer_name',
+        fieldType: 'TEXT',
+        componentType: 'input',
+        formVisible: true,
+      }],
+    })
+
+    expect(result.selection).toMatchObject({
+      createMode: 'DB_IMPORT',
+      runtimeDatasourceId: 31,
+      importTableName: 'crm_customer',
+    })
+    expect(result.schema.nodes[0].objectRef).toMatchObject({
+      createMode: 'DB_IMPORT',
+      runtimeDatasourceId: 31,
+      importTableName: 'crm_customer',
+    })
+    expect(result.schema.formAssets[0].formDesignerSchema.components).toEqual([
+      expect.objectContaining({
+        componentKey: 'input',
+        label: '客户名称',
+        fieldBinding: expect.objectContaining({
+          fieldCode: 'customerName',
+          columnName: 'customer_name',
+          createIfMissing: false,
+        }),
+      }),
+    ])
+    expect(result.schema.pages[result.pageId].layout.gridLayout.items[0].props.fieldRefs).toEqual(['customerName'])
+  })
+
   it('uses an inline form workspace for list-form pages and no object for custom pages', () => {
     const listForm = createPageShapeBuilder(emptyBuilder(), {
       pageName: '客户管理',

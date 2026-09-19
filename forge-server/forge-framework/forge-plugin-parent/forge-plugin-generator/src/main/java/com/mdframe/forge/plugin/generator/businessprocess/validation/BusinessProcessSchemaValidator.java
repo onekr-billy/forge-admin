@@ -313,7 +313,9 @@ public class BusinessProcessSchemaValidator {
                 "OBJECT_DEPENDENCY_UNAVAILABLE", "dependencies.objects", result);
         validateAvailable(dependencies.getObjects(),
                 safeMap(context.getPublishedObjectVersionIdsByCode()).keySet(),
-                "OBJECT_VERSION_UNAVAILABLE", "dependencies.objects", result);
+                "OBJECT_VERSION_UNAVAILABLE", "dependencies.objects",
+                "业务对象「{reference}」还没有发布版本。已发布的审批模型不算这个对象",
+                "确认「{reference}」属于当前应用且页面已保存；不要把它和已发布的审批模型当成同一项", result);
         validateAvailable(dependencies.getFlowModels(), safeSet(context.getAvailableFlowModelKeys()),
                 "FLOW_MODEL_UNAVAILABLE", "dependencies.flowModels",
                 "审批模型未发布、未部署或已失效", "重新选择当前租户可用的已发布审批模型", result);

@@ -57,6 +57,8 @@ public class BusinessApplicationPageDesignService {
 
     private static final String MANAGED_BY_PAGE_FORM = "PAGE_FORM";
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
+    private static final String CREATE_MODE_BLANK = "BLANK";
+    private static final String CREATE_MODE_DB_IMPORT = "DB_IMPORT";
     private static final Set<String> PAGE_TYPES = Set.of("form", "list", "list-form", "custom");
     private static final Set<String> EMBEDDED_RELATION_TYPES = Set.of("CHILD_LIST", "DETAIL");
 
@@ -81,7 +83,7 @@ public class BusinessApplicationPageDesignService {
         if (saved == null) {
             throw new BusinessException("页面设计保存失败，请重试");
         }
-        if (saved.objectId() != null) {
+        if (saved.objectId() != null && saved.shouldSyncDatabase()) {
             try {
                 tableMappingService.syncManagedDatabase(
                         saved.objectId(), applicationId, normalized.formAssetId());
@@ -148,7 +150,7 @@ public class BusinessApplicationPageDesignService {
         if ("custom".equals(request.pageType())) {
             Map<String, Object> builder = cloneBuilder(request.builder());
             saveApplicationBuilder(application, builder);
-            return new MetadataResult(null, customResult(request, builder));
+            return new MetadataResult(null, customResult(request, builder), false);
         }
 
         List<BusinessApplicationObjectVO> associations = applicationObjectService.list(applicationId);
@@ -214,7 +216,10 @@ public class BusinessApplicationPageDesignService {
         result.setConfigKey(savedObject.getConfigKey());
         result.setObjectCreated(created);
         result.setHasBusinessData(businessData.hasData());
-        return new MetadataResult(savedObject.getId(), result);
+        return new MetadataResult(
+                savedObject.getId(),
+                result,
+                !(created && CREATE_MODE_DB_IMPORT.equals(request.createMode())));
     }
 
     private PageDesignRequest normalizeRequest(BusinessApplicationPageDesignDTO request) {
@@ -230,7 +235,7 @@ public class BusinessApplicationPageDesignService {
         assertBuilderContainsPage(builder, pageId);
         if ("custom".equals(pageType)) {
             return new PageDesignRequest(pageId, pageType, "", null, "", "",
-                    List.of(), null, builder);
+                    List.of(), null, builder, null, CREATE_MODE_BLANK, null, null);
         }
         String formAssetId = requiredText(request.getFormAssetId(), "表单标识不能为空", 128);
         String objectName = requiredText(request.getObjectName(), "对象名称不能为空", 100);
@@ -243,8 +248,15 @@ public class BusinessApplicationPageDesignService {
             throw new BusinessException("表单设计不能为空");
         }
         assertBuilderContainsFormAsset(builder, pageId, formAssetId);
+        String createMode = normalizeCreateMode(request.getCreateMode());
+        String importTableName = StringUtils.trimToNull(request.getImportTableName());
+        if (CREATE_MODE_DB_IMPORT.equals(createMode) && importTableName == null) {
+            throw new BusinessException("请选择要引用的数据表");
+        }
         return new PageDesignRequest(pageId, pageType, formAssetId, request.getObjectId(),
-                objectCode, objectName, fields, request.getFormDesignerSchema(), builder);
+                objectCode, objectName, fields, request.getFormDesignerSchema(), builder,
+                request.getRuntimeDatasourceId(), createMode,
+                request.getImportDatasourceId(), importTableName);
     }
 
     private List<BusinessFieldDTO> normalizeFields(List<BusinessFieldDTO> fields) {
@@ -287,14 +299,21 @@ public class BusinessApplicationPageDesignService {
     }
 
     private Long createPageObject(AiBusinessApplication application, PageDesignRequest request) {
-        GenDatasource datasource = resolveRuntimeDatasource();
+        boolean dbImport = CREATE_MODE_DB_IMPORT.equals(request.createMode());
+        GenDatasource datasource = resolveRuntimeDatasource(request.runtimeDatasourceId(), !dbImport);
         BusinessObjectDTO object = new BusinessObjectDTO();
         object.setSuiteCode(application.getSuiteCode());
         object.setObjectCode(request.objectCode());
         object.setObjectName(request.objectName());
         object.setObjectType("MASTER");
-        object.setCreateMode("BLANK");
+        object.setCreateMode(dbImport ? CREATE_MODE_DB_IMPORT : CREATE_MODE_BLANK);
         object.setRuntimeDatasourceId(datasource.getDatasourceId());
+        if (dbImport) {
+            object.setImportDatasourceId(request.importDatasourceId() == null
+                    ? datasource.getDatasourceId()
+                    : request.importDatasourceId());
+            object.setImportTableName(request.importTableName());
+        }
         object.setModelCode(namingService.buildModelCode(application.getSuiteCode(), request.objectCode()));
         object.setDisplayField(resolveDisplayField(request.fields()));
         object.setDescription("由应用“" + application.getApplicationName() + "”中的页面自动管理");
@@ -541,7 +560,8 @@ public class BusinessApplicationPageDesignService {
     private String buildObjectOptions(
             Long applicationId, PageDesignRequest request, GenDatasource datasource) {
         JSONObject options = pageMarker(applicationId, request);
-        options.put("createMode", "BLANK");
+        boolean dbImport = CREATE_MODE_DB_IMPORT.equals(request.createMode());
+        options.put("createMode", dbImport ? CREATE_MODE_DB_IMPORT : CREATE_MODE_BLANK);
         options.put("runtimeDatasourceId", datasource.getDatasourceId());
         JSONObject runtimeDatasource = new JSONObject();
         runtimeDatasource.put("datasourceId", datasource.getDatasourceId());
@@ -553,8 +573,16 @@ public class BusinessApplicationPageDesignService {
         runtimeDatasource.put("allowDdl", Integer.valueOf(1).equals(datasource.getAllowRuntimeDdl()));
         runtimeDatasource.put("readonly", Integer.valueOf(1).equals(datasource.getReadonly()));
         runtimeDatasource.put("riskLevel", datasource.getRiskLevel());
-        runtimeDatasource.put("tableMode", "CREATE");
+        runtimeDatasource.put("tableMode", dbImport ? "EXISTING" : "CREATE");
         options.put("runtimeDatasource", runtimeDatasource);
+        if (dbImport) {
+            JSONObject sourceTable = new JSONObject();
+            sourceTable.put("datasourceId", request.importDatasourceId() == null
+                    ? datasource.getDatasourceId()
+                    : request.importDatasourceId());
+            sourceTable.put("tableName", request.importTableName());
+            options.put("sourceTable", sourceTable);
+        }
         return options.toJSONString();
     }
 
@@ -576,13 +604,29 @@ public class BusinessApplicationPageDesignService {
                 || !StringUtils.equals(String.valueOf(applicationId), marker.getString("sourceApplicationId"))) {
             return false;
         }
+        // 页面 ID 和表单资产 ID 必须同时命中。中文页面名会退化成相同的 page_page / form，
+        // 删除页面后对象仍留在应用里；只比其中一项会把新建页面绑回旧数据表。
         return StringUtils.equals(request.pageId(), marker.getString("sourcePageId"))
-                || StringUtils.equals(request.formAssetId(), marker.getString("sourceFormAssetId"));
+                && StringUtils.equals(request.formAssetId(), marker.getString("sourceFormAssetId"));
     }
 
-    private GenDatasource resolveRuntimeDatasource() {
-        return safeList(datasourceService.selectEnabledDatasources(LOWCODE_RUNTIME)).stream()
-                .filter(this::isWritableRuntimeDatasource)
+    private GenDatasource resolveRuntimeDatasource(Long requestedId, boolean requireDdl) {
+        List<GenDatasource> enabled = safeList(datasourceService.selectEnabledDatasources(LOWCODE_RUNTIME));
+        if (requestedId != null) {
+            GenDatasource selected = enabled.stream()
+                    .filter(item -> requestedId.equals(item.getDatasourceId()))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException("请选择有效的低代码运行数据源"));
+            if (!isRuntimeWritable(selected)) {
+                throw new BusinessException("当前数据源不允许写入业务数据");
+            }
+            if (requireDdl && !isWritableRuntimeDatasource(selected)) {
+                throw new BusinessException("当前数据存储未允许自动建表，请在高级数据设置中开启自动建表");
+            }
+            return selected;
+        }
+        return enabled.stream()
+                .filter(requireDdl ? this::isWritableRuntimeDatasource : this::isRuntimeWritable)
                 .min(Comparator
                         .comparingInt((GenDatasource datasource) ->
                                 Integer.valueOf(1).equals(datasource.getIsDefault()) ? 0 : 1)
@@ -590,16 +634,28 @@ public class BusinessApplicationPageDesignService {
                                 ? Integer.MAX_VALUE : datasource.getSort())
                         .thenComparing(datasource -> datasource.getDatasourceId() == null
                                 ? Long.MAX_VALUE : datasource.getDatasourceId()))
-                .orElseThrow(() -> new BusinessException(
-                        "当前数据存储未允许自动建表，请在高级数据设置中开启自动建表"));
+                .orElseThrow(() -> new BusinessException(requireDdl
+                        ? "当前数据存储未允许自动建表，请在高级数据设置中开启自动建表"
+                        : "请选择有效的低代码运行数据源"));
     }
 
     private boolean isWritableRuntimeDatasource(GenDatasource datasource) {
+        return isRuntimeWritable(datasource)
+                && Integer.valueOf(1).equals(datasource.getAllowRuntimeDdl());
+    }
+
+    private boolean isRuntimeWritable(GenDatasource datasource) {
         return datasource != null
                 && datasource.getDatasourceId() != null
                 && Integer.valueOf(1).equals(datasource.getAllowRuntimeWrite())
-                && Integer.valueOf(1).equals(datasource.getAllowRuntimeDdl())
                 && !Integer.valueOf(1).equals(datasource.getReadonly());
+    }
+
+    private String normalizeCreateMode(String createMode) {
+        if (CREATE_MODE_DB_IMPORT.equalsIgnoreCase(StringUtils.trimToEmpty(createMode))) {
+            return CREATE_MODE_DB_IMPORT;
+        }
+        return CREATE_MODE_BLANK;
     }
 
     private void assertBuilderContainsPage(Map<String, Object> builder, String pageId) {
@@ -726,9 +782,13 @@ public class BusinessApplicationPageDesignService {
             String objectName,
             List<BusinessFieldDTO> fields,
             FormDesignerSchemaDTO formDesignerSchema,
-            Map<String, Object> builder) {
+            Map<String, Object> builder,
+            Long runtimeDatasourceId,
+            String createMode,
+            Long importDatasourceId,
+            String importTableName) {
     }
 
-    private record MetadataResult(Long objectId, BusinessApplicationPageDesignVO result) {
+    private record MetadataResult(Long objectId, BusinessApplicationPageDesignVO result, boolean shouldSyncDatabase) {
     }
 }

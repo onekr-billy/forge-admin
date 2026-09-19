@@ -8,6 +8,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.GenDatasource;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationObjectDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPageDesignDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFieldDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDesignerDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
@@ -139,6 +140,58 @@ class BusinessApplicationPageDesignServiceTest {
     }
 
     @Test
+    @DisplayName("new page uses the selected runtime datasource instead of the default")
+    void newPageUsesSelectedRuntimeDatasource() {
+        BusinessApplicationPageDesignDTO request = designRequest();
+        request.setRuntimeDatasourceId(32L);
+        GenDatasource defaultDatasource = runtimeDatasource();
+        GenDatasource selected = runtimeDatasource();
+        selected.setDatasourceId(32L);
+        selected.setDatasourceCode("runtime_selected");
+        selected.setDatasourceName("业务库");
+        selected.setIsDefault(0);
+        when(applicationService.requireEntity(APPLICATION_ID)).thenReturn(application());
+        when(applicationObjectService.list(APPLICATION_ID)).thenReturn(List.of());
+        when(datasourceService.selectEnabledDatasources("LOWCODE_RUNTIME"))
+                .thenReturn(List.of(defaultDatasource, selected));
+        when(objectCreateService.create(any())).thenReturn(OBJECT_ID);
+        when(objectService.requireEntity(OBJECT_ID)).thenReturn(savedObject());
+        when(designerService.loadContext(OBJECT_ID)).thenReturn(designerContext(new LowcodeModelSchema()));
+
+        service.save(APPLICATION_ID, request);
+
+        ArgumentCaptor<BusinessObjectDTO> created = ArgumentCaptor.forClass(BusinessObjectDTO.class);
+        verify(objectCreateService).create(created.capture());
+        assertEquals(32L, created.getValue().getRuntimeDatasourceId());
+        assertEquals("BLANK", created.getValue().getCreateMode());
+    }
+
+    @Test
+    @DisplayName("importing an existing table binds DB_IMPORT and skips automatic create-table")
+    void importExistingTableSkipsCreateTableSync() {
+        BusinessApplicationPageDesignDTO request = designRequest();
+        request.setRuntimeDatasourceId(31L);
+        request.setCreateMode("DB_IMPORT");
+        request.setImportDatasourceId(31L);
+        request.setImportTableName("crm_customer");
+        when(applicationService.requireEntity(APPLICATION_ID)).thenReturn(application());
+        when(applicationObjectService.list(APPLICATION_ID)).thenReturn(List.of());
+        when(datasourceService.selectEnabledDatasources("LOWCODE_RUNTIME")).thenReturn(List.of(runtimeDatasource()));
+        when(objectCreateService.create(any())).thenReturn(OBJECT_ID);
+        when(objectService.requireEntity(OBJECT_ID)).thenReturn(savedObject());
+        when(designerService.loadContext(OBJECT_ID)).thenReturn(designerContext(new LowcodeModelSchema()));
+
+        service.save(APPLICATION_ID, request);
+
+        ArgumentCaptor<BusinessObjectDTO> created = ArgumentCaptor.forClass(BusinessObjectDTO.class);
+        verify(objectCreateService).create(created.capture());
+        assertEquals("DB_IMPORT", created.getValue().getCreateMode());
+        assertEquals(31L, created.getValue().getImportDatasourceId());
+        assertEquals("crm_customer", created.getValue().getImportTableName());
+        verify(tableMappingService, never()).syncManagedDatabase(eq(OBJECT_ID), eq(APPLICATION_ID), eq("form-1"));
+    }
+
+    @Test
     @DisplayName("a newly created object with only system fields can still save page fields")
     void newObjectWithSystemFieldsOnlySkipsCreateTableProbe() {
         BusinessApplicationPageDesignDTO request = designRequest();
@@ -155,7 +208,7 @@ class BusinessApplicationPageDesignServiceTest {
         when(objectCreateService.create(any())).thenReturn(OBJECT_ID);
         when(objectService.requireEntity(OBJECT_ID)).thenReturn(savedObject());
         when(designerService.loadContext(OBJECT_ID)).thenReturn(designerContext(blankModel));
-        when(ddlService.previewCreateTable(any())).thenThrow(
+        lenient().when(ddlService.previewCreateTable(any())).thenThrow(
                 new BusinessException("数据模型至少需要一个业务字段"));
 
         BusinessApplicationPageDesignVO result = service.save(APPLICATION_ID, request);
@@ -227,6 +280,54 @@ class BusinessApplicationPageDesignServiceTest {
         assertEquals("页面草稿中未找到当前表单资产", error.getMessage());
         verify(transactionManager, never()).getTransaction(any());
         verify(tableMappingService, never()).syncManagedDatabase(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("a new page does not reuse an object when only the recycled page id matches")
+    void newPageDoesNotReuseObjectWhenOnlyPageIdMatches() {
+        BusinessApplicationPageDesignDTO request = designRequest();
+        BusinessApplicationObjectVO stale = new BusinessApplicationObjectVO();
+        stale.setObjectId(99L);
+        stale.setObjectRole("PRIMARY");
+        stale.setSortOrder(0);
+        stale.setOptions("{\"managedBy\":\"PAGE_FORM\",\"sourceApplicationId\":\"11\","
+                + "\"sourcePageId\":\"page-1\",\"sourceFormAssetId\":\"form-approval\"}");
+
+        when(applicationService.requireEntity(APPLICATION_ID)).thenReturn(application());
+        when(applicationObjectService.list(APPLICATION_ID)).thenReturn(List.of(stale));
+        when(datasourceService.selectEnabledDatasources("LOWCODE_RUNTIME")).thenReturn(List.of(runtimeDatasource()));
+        when(objectCreateService.create(any())).thenReturn(OBJECT_ID);
+        when(objectService.requireEntity(OBJECT_ID)).thenReturn(savedObject());
+        when(designerService.loadContext(OBJECT_ID)).thenReturn(designerContext(new LowcodeModelSchema()));
+
+        BusinessApplicationPageDesignVO result = service.save(APPLICATION_ID, request);
+
+        assertTrue(result.getObjectCreated());
+        assertEquals(OBJECT_ID, result.getObjectId());
+        verify(objectService, never()).requireEntity(99L);
+    }
+
+    @Test
+    @DisplayName("saving the same page and form asset still reuses the managed object")
+    void repeatedSaveReusesObjectWhenPageAndFormAssetBothMatch() {
+        BusinessApplicationPageDesignDTO request = designRequest();
+        BusinessApplicationObjectVO association = new BusinessApplicationObjectVO();
+        association.setObjectId(OBJECT_ID);
+        association.setObjectRole("PRIMARY");
+        association.setSortOrder(0);
+        association.setOptions("{\"managedBy\":\"PAGE_FORM\",\"sourceApplicationId\":\"11\","
+                + "\"sourcePageId\":\"page-1\",\"sourceFormAssetId\":\"form-1\"}");
+
+        when(applicationService.requireEntity(APPLICATION_ID)).thenReturn(application());
+        when(applicationObjectService.list(APPLICATION_ID)).thenReturn(List.of(association));
+        when(objectService.requireEntity(OBJECT_ID)).thenReturn(savedObject());
+        when(designerService.loadContext(OBJECT_ID)).thenReturn(designerContext(new LowcodeModelSchema()));
+
+        BusinessApplicationPageDesignVO result = service.save(APPLICATION_ID, request);
+
+        assertFalse(result.getObjectCreated());
+        assertEquals(OBJECT_ID, result.getObjectId());
+        verify(objectCreateService, never()).create(any());
     }
 
     private BusinessApplicationPageDesignDTO designRequest() {

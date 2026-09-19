@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("LowcodeRuntimeConfigBuilder")
 class LowcodeRuntimeConfigBuilderTest {
@@ -362,6 +363,30 @@ class LowcodeRuntimeConfigBuilderTest {
         assertEquals(false, child.get("showInCreate"));
         assertEquals(false, child.get("allowCreate"));
         assertEquals(false, child.get("inlineCreateEnabled"));
+    }
+
+    @Test
+    @DisplayName("keeps selected child columns on the list and out of the main form")
+    void keepsSelectedChildColumnsOutOfMainForm() throws Exception {
+        LowcodePageSchema pageSchema = purchaseOrderMasterDetailPageSchema();
+        pageSchema.setLayoutType("simple-crud");
+        LowcodePageZone table = new LowcodePageZone();
+        table.setZoneKey("table");
+        table.setEnabled(true);
+        table.setFieldRefs(new ArrayList<>(List.of("projectName", "pw_purchase_order_item__materialName")));
+        LowcodePageZone edit = new LowcodePageZone();
+        edit.setZoneKey("edit");
+        edit.setEnabled(true);
+        edit.setFieldRefs(new ArrayList<>(List.of("projectName", "pw_purchase_order_item__materialName")));
+        pageSchema.setZones(new ArrayList<>(List.of(table, edit)));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
+                "pw_purchase_order", purchaseOrderModelSchema(), pageSchema);
+        List<Map<String, Object>> columns = objectMapper.readValue(runtimeConfig.getColumnsSchema(), new TypeReference<>() { });
+        assertTrue(columns.stream().anyMatch(column -> "pw_purchase_order_item__materialName".equals(column.get("key"))));
+        List<Map<String, Object>> editSchema = objectMapper.readValue(runtimeConfig.getEditSchema(), new TypeReference<>() { });
+        assertTrue(editSchema.stream().anyMatch(field -> "projectName".equals(field.get("field"))));
+        assertFalse(editSchema.stream().anyMatch(field -> String.valueOf(field.get("field")).contains("__")));
     }
 
     @Test

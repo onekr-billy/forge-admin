@@ -161,11 +161,28 @@ public class SysNoticeController {
     }
 
     /**
+     * 用户阅读入口不依赖管理权限，但必须校验公告发布范围与有效期。
+     */
+    @GetMapping("/user/{noticeId}")
+    @ApiPermissionIgnore
+    public RespInfo<SysNoticeVO> userDetail(@PathVariable Long noticeId) {
+        SysNoticeVO notice = noticeService.selectUserNoticeById(noticeId);
+        if (notice == null) {
+            return RespInfo.error("公告不存在或已不可见");
+        }
+        noticeService.increaseReadCount(noticeId);
+        return RespInfo.success(notice);
+    }
+
+    /**
      * 标记公告为已读
      */
     @PostMapping("/markAsRead")
     @ApiPermissionIgnore
     public RespInfo<Void> markAsRead(@RequestParam Long noticeId) {
+        if (noticeService.selectUserNoticeById(noticeId) == null) {
+            return RespInfo.error("公告不存在或已不可见");
+        }
         boolean result = noticeReadRecordService.markAsRead(noticeId);
         return result ? RespInfo.success() : RespInfo.error("标记失败");
     }

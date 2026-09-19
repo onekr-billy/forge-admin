@@ -309,21 +309,28 @@ public class BusinessProcessPublishService {
         for (String objectCode : objectCodes) {
             Long objectId = longValue(context.getObjectIdsByCode().get(objectCode));
             AiBusinessObjectDesignVersion version = versions.get(objectId);
-            Long validatedVersionId = longValue(
-                    context.getPublishedObjectVersionIdsByCode().get(objectCode));
-            if (objectId == null || version == null || version.getId() == null) {
+            String versionMarker = context.getPublishedObjectVersionIdsByCode().get(objectCode);
+            boolean currentDraft = versionMarker != null && versionMarker.startsWith("current:");
+            Long validatedVersionId = longValue(versionMarker);
+            if (objectId == null || (!currentDraft && (version == null || version.getId() == null))) {
                 throw new BusinessException("业务流程依赖对象尚无已发布版本: " + objectCode);
             }
-            if (!version.getId().equals(validatedVersionId)) {
+            if (!currentDraft && !version.getId().equals(validatedVersionId)) {
                 throw new BusinessException(409, "业务流程依赖对象的发布版本已变化，请重新执行应用发布检查: "
                         + objectCode);
             }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("objectId", String.valueOf(objectId));
             item.put("objectCode", objectCode);
-            item.put("designVersionId", String.valueOf(version.getId()));
-            item.put("versionNo", version.getVersionNo());
-            item.put("publishVersion", version.getPublishVersion());
+            if (currentDraft) {
+                item.put("designVersionId", versionMarker);
+                item.put("versionNo", null);
+                item.put("publishVersion", null);
+            } else {
+                item.put("designVersionId", String.valueOf(version.getId()));
+                item.put("versionNo", version.getVersionNo());
+                item.put("publishVersion", version.getPublishVersion());
+            }
             result.add(item);
         }
         return result;

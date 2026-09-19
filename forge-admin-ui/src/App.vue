@@ -35,6 +35,7 @@
         <!-- 全局水印 -->
         <div v-if="watermarkConfig.enable" class="watermark-layer" :style="watermarkStyle" />
         <GlobalLoadingOverlay />
+        <NoticeDetailModal />
       </n-message-provider>
     </n-dialog-provider>
   </n-config-provider>
@@ -48,6 +49,7 @@ import { useRoute } from 'vue-router'
 import { LayoutSetting } from '@/components'
 import GlobalLoadingOverlay from '@/components/common/GlobalLoadingOverlay.vue'
 import SystemPageLayout from '@/components/common/SystemPageLayout.vue'
+import NoticeDetailModal from '@/components/notice/NoticeDetailModal.vue'
 import { useWatermark } from '@/composables/useWatermark'
 import { useAppStore, usePermissionStore, useTabStore, useUserStore } from '@/store'
 import { initResponsiveFont } from '@/utils/responsive-font'

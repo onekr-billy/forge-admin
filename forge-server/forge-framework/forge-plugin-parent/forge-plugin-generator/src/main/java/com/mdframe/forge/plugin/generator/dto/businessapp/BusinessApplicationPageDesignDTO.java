@@ -25,6 +25,16 @@ public class BusinessApplicationPageDesignDTO {
 
     private String objectName;
 
+    /** 低代码运行数据源 ID。空值时使用默认可写运行数据源。 */
+    private Long runtimeDatasourceId;
+
+    /** BLANK / DB_IMPORT */
+    private String createMode;
+
+    private Long importDatasourceId;
+
+    private String importTableName;
+
     private List<BusinessFieldDTO> fields;
 
     private FormDesignerSchemaDTO formDesignerSchema;

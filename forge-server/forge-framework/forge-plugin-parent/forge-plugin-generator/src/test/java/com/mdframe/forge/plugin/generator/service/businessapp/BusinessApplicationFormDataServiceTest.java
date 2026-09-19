@@ -91,6 +91,32 @@ class BusinessApplicationFormDataServiceTest {
     }
 
     @Test
+    @DisplayName("first save uses the requested runtime datasource")
+    void firstSaveUsesRequestedRuntimeDatasource() {
+        StubObjectCreateService objectCreateService = new StubObjectCreateService(900000000000000001L);
+        BusinessApplicationFormDataService service = service(
+                new StubApplicationService(application()),
+                new StubApplicationObjectService(List.of()),
+                new StubObjectService(Map.of(
+                        900000000000000001L,
+                        object(900000000000000001L, "crm_customer_form", "runtime_customer")
+                ), List.of()),
+                objectCreateService,
+                new StubDesignerService(),
+                datasourceService(List.of(
+                        datasource(2L, 1, 1, 0),
+                        datasource(8L, 0, 1, 0)
+                ), new AtomicInteger()));
+        BusinessApplicationFormDataProvisionDTO request = request();
+        request.setRuntimeDatasourceId(8L);
+
+        service.provision(10L, request);
+
+        assertEquals(8L, objectCreateService.created.getRuntimeDatasourceId());
+        assertEquals("BLANK", objectCreateService.created.getCreateMode());
+    }
+
+    @Test
     @DisplayName("managed object model code stays within the database length for long application identities")
     void managedObjectModelCodeStaysWithinDatabaseLength() {
         AiBusinessApplication application = application();
@@ -578,7 +604,11 @@ class BusinessApplicationFormDataServiceTest {
             calls++;
             this.objectId = objectId;
             designer = dto;
-            return new BusinessObjectDesignerService.DesignerContext();
+            BusinessObjectDesignerService.DesignerContext context = new BusinessObjectDesignerService.DesignerContext();
+            AiBusinessObject object = new AiBusinessObject();
+            object.setId(objectId);
+            context.setObject(object);
+            return context;
         }
     }
 
@@ -608,6 +638,16 @@ class BusinessApplicationFormDataServiceTest {
             if (failure != null) {
                 throw failure;
             }
+        }
+
+        @Override
+        public void syncManagedDatabase(
+                BusinessObjectDesignerService.DesignerContext context,
+                Long applicationId, String formAssetId) {
+            Long objectId = context == null || context.getObject() == null
+                    ? null
+                    : context.getObject().getId();
+            syncManagedDatabase(objectId, applicationId, formAssetId);
         }
     }
 

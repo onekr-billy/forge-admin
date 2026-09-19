@@ -186,11 +186,32 @@ function handleFlowModelKey(key) {
 }
 
 function defaultApprovalTitle() {
+  return '${starterName}发起的${objectName}审批单'
+}
+
+const titlePresets = computed(() => {
+  const objectLabel = props.objectName || '业务'
   const nameField = fieldOptions.value.find(item => ['name', 'title', 'subject', 'orderNo'].includes(item.value))
     || fieldOptions.value[0]
-  const objectLabel = props.objectName || props.objectCode || '业务'
-  return nameField ? `${objectLabel}-\${${nameField.value}}` : `${objectLabel}审批`
-}
+  const presets = [
+    {
+      label: `张三发起的${objectLabel}审批单`,
+      value: '${starterName}发起的${objectName}审批单',
+    },
+  ]
+  if (nameField?.value) {
+    presets.push({
+      label: `${objectLabel}-${nameField.label || nameField.value}`,
+      value: `${objectLabel}-\${${nameField.value}}`,
+    })
+  }
+  return presets
+})
+
+const titleVariables = computed(() => [
+  { label: '发起人', value: 'starterName', sampleValue: '张三' },
+  { label: '业务名称', value: 'objectName', sampleValue: props.objectName || '测试页面' },
+])
 
 function openFlowDesigner() {
   if (!selectedFlowModelId.value)
@@ -654,13 +675,26 @@ function clone(value) {
 
           <label class="config-field">
             <span>审批标题</span>
+            <div class="title-presets">
+              <button
+                v-for="preset in titlePresets"
+                :key="preset.value"
+                type="button"
+                class="title-preset"
+                :class="{ active: localConfig.titleTemplate === preset.value }"
+                @click="patchConfig({ titleTemplate: preset.value })"
+              >
+                {{ preset.label }}
+              </button>
+            </div>
             <TemplateVariableEditor
               :model-value="localConfig.titleTemplate || ''"
               :fields="fieldOptions"
-              placeholder="点击下方字段插入，例如 ${name} 的审批"
+              :variables="titleVariables"
+              placeholder="点上面的默认标题，或自己写，例如 ${starterName}发起的${objectName}审批单"
               @update:model-value="patchConfig({ titleTemplate: $event })"
             />
-            <small>待办标题按当前记录字段自动替换，不需要手写表达式。</small>
+            <small>点默认标题直接套用，也可以在输入框里改。发起人、业务名称和单据字段会在发起时替换。</small>
           </label>
 
           <label class="config-field">
@@ -873,6 +907,29 @@ function clone(value) {
 .mapping-row select:focus,
 .mapping-row input:focus {
   border-color: var(--primary-color, #2563eb);
+}
+
+.title-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.title-preset {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 8px;
+}
+
+.title-preset.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .config-field small,

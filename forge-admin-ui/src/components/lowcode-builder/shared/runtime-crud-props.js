@@ -207,6 +207,25 @@ export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = []
   return refs
 }
 
+/**
+ * 列表设计选出的子表列是 modelCode__field。应用页区块的 fieldRefs 往往还是表单主表字段快照，
+ * 会把已经编译进 columns 的子表列滤掉。编译结果里的子表列要保留。
+ */
+export function includeCompiledChildColumnRefs(fieldRefs = [], columns = []) {
+  const refs = Array.isArray(fieldRefs) ? fieldRefs.filter(Boolean).map(String) : []
+  if (!refs.length)
+    return refs
+  const seen = new Set(refs)
+  ;(Array.isArray(columns) ? columns : []).forEach((column) => {
+    const key = String(column?.prop || column?.field || column?.key || column?.dataIndex || '').trim()
+    if (!key || !key.includes('__') || seen.has(key))
+      return
+    seen.add(key)
+    refs.push(key)
+  })
+  return refs
+}
+
 export function resolveCrudSearchFieldCatalog(fields = [], block = {}) {
   const fieldMap = new Map((Array.isArray(fields) ? fields : []).flatMap((field) => {
     const fieldCode = field?.field || field?.fieldCode || field?.prop || field?.key

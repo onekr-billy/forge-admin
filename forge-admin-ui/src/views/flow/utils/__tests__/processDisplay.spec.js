@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildTaskBusinessHeadline,
   buildTaskDisplayFields,
+  getProcessDisplayName,
   getRowDisplayTitle,
   getTaskHandlerName,
   hasTaskBusinessSummary,
@@ -87,7 +88,7 @@ describe('getRowDisplayTitle', () => {
     })).toBe('测试-5.0')
   })
 
-  it('列表标题不回退到业务主键或模型 Key', () => {
+    it('列表标题不回退到业务主键或模型 Key', () => {
     expect(getRowDisplayTitle({
       processName: '采购申请',
       businessKey: 'sample_purchase_order:88',
@@ -98,6 +99,23 @@ describe('getRowDisplayTitle', () => {
       businessKey: 'sample_purchase_order:88',
       processDefKey: 'sample_purchase_order',
       processInstanceId: 'proc-1',
+    })).toBe('-')
+  })
+})
+
+describe('getProcessDisplayName', () => {
+  it('用模型名称，不用流程编码兜底', () => {
+    expect(getProcessDisplayName({
+      processName: '测试页面审批',
+      businessType: 'business_object_xvcy_approval_mu7walur',
+      processDefKey: 'b7a0c23b-b3e3-11f1-95ed-b6a705e6d871',
+    })).toBe('测试页面审批')
+  })
+
+  it('名称缺失时不把流程编码显示成流程名称', () => {
+    expect(getProcessDisplayName({
+      businessType: 'business_object_xvcy_approval_mu7walur',
+      processDefKey: 'business_object_xvcy_approval_mu7walur',
     })).toBe('-')
   })
 })

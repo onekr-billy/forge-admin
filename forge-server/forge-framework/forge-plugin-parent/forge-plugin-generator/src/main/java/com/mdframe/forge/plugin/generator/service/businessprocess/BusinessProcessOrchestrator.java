@@ -778,6 +778,13 @@ public class BusinessProcessOrchestrator {
 
     private String resolveActorName(AiBusinessProcessRun run) {
         try {
+            var loginUser = SessionHelper.getLoginUser();
+            if (loginUser != null) {
+                String name = StringUtils.firstNonBlank(loginUser.getRealName(), loginUser.getUsername());
+                if (StringUtils.isNotBlank(name)) {
+                    return name;
+                }
+            }
             String username = SessionHelper.getUsername();
             if (StringUtils.isNotBlank(username)) {
                 return username;

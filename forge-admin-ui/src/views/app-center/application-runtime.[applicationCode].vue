@@ -203,6 +203,7 @@
         </div>
         <div v-if="activeFormAsset" class="application-form-asset-designer">
           <ForgeFormDesigner
+            :key="activeFormAsset.id"
             :model-value="activeFormDesignerSchema"
             :fields="activeFormFields"
             :object-code="activePageShapeDesign?.objectCode || activeFormDesignerContext?.objectCode || application.applicationCode"
@@ -926,7 +927,7 @@
       <section v-else-if="runtimeViewMode === 'process'" class="runtime-inline-panel runtime-process-panel">
         <ApplicationProcessPanel
           :application="application"
-          :initial-objects="objects"
+          :initial-objects="processSelectableObjects"
           @changed="refreshWorkspaceMetadata"
           @navigate="handleProcessPanelNavigate"
           @open-designer="openProcessDesigner"
@@ -1106,7 +1107,7 @@ import { useTenantStore, useUserStore } from '@/store'
 import ApplicationDesignerResourceTree from '@/views/app-center/components/ApplicationDesignerResourceTree.vue'
 import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
 import { buildAutoFieldAssets, createFieldFromComponent } from '@/views/app-center/components/designer/form-first/autoFieldRegistry'
-import { createDefaultFormDesignerSchema, isFieldComponent, normalizeFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
+import { createDefaultFormDesignerSchema, isFieldComponent, normalizeFormDesignerSchema, presentFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 import { filterNavigationNodesByClient } from '@/views/app-center/components/portal/portal-navigation-runtime'
 import PortalPageRenderer from '@/views/app-center/components/portal/PortalPageRenderer.vue'
 import {
@@ -1124,6 +1125,7 @@ import {
   mergeInAppBuilderOptions,
   moveNavigationNode,
   normalizeInAppBuilder,
+  isOrphanPageFormObject,
   removeNavigationNode,
   updateInAppFormAsset,
 } from './in-app-builder/in-app-builder-schema'
@@ -1269,6 +1271,8 @@ const PageManagementSystemView = defineAsyncComponent({
 const application = ref(null)
 const objects = ref([])
 const builder = ref(null)
+// 左侧页面删掉后，只由该页面创建的业务对象不能再出现在流程选择里。
+const processSelectableObjects = computed(() => (objects.value || []).filter(item => !isOrphanPageFormObject(item, builder.value)))
 const loadError = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -1536,7 +1540,7 @@ let _activeFormDesignerSchemaSignature = ''
 watch(
   () => activeFormAsset.value?.formDesignerSchema,
   (source) => {
-    const normalized = normalizeFormDesignerSchema(source || {})
+    const normalized = presentFormDesignerSchema(source || {})
     const signature = JSON.stringify(normalized)
     if (signature !== _activeFormDesignerSchemaSignature) {
       _activeFormDesignerSchemaSignature = signature
@@ -1760,6 +1764,8 @@ watch(() => route.query.pageId, (pageId) => {
     return
   selectedNodeId.value = nextPageId
   selectedPageBlockId.value = ''
+  if (editing.value && activePageDesignTab.value === 'form' && !formDesignerMode.value)
+    syncActiveFormAssetForPage(nextPageId)
 })
 watch(() => currentNode.value?.id, () => {
   preloadCurrentPageCrudRuntimeProps()
@@ -1966,6 +1972,10 @@ function handlePageTypeSelection(selection = {}) {
       objectId: null,
       objectCode: result.selection.objectCode,
       objectName: result.selection.objectName,
+      runtimeDatasourceId: result.selection.runtimeDatasourceId || null,
+      createMode: result.selection.createMode || '',
+      importDatasourceId: result.selection.importDatasourceId || null,
+      importTableName: result.selection.importTableName || '',
     }
     activeFormAssetId.value = result.formAssetId
     selectedPageBlockId.value = builder.value.pages?.[result.pageId]?.layout?.gridLayout?.items?.[0]?.id || ''
@@ -2669,6 +2679,7 @@ async function ensureFormDesignerObjectContext(objectRef) {
         relations: Array.isArray(designer.relations) ? designer.relations : [],
         actions: Array.isArray(designer.designerOptions?.actions) ? designer.designerOptions.actions : [],
         fields: normalizeObjectDesignerFieldCatalog(designer.modelSchema?.fields || designer.fields || []),
+        formDesignerSchema: designer.formDesignerSchema || designer.designerOptions?.formDesignerSchema || null,
       },
     }
   }
@@ -2693,6 +2704,22 @@ watch(activeFormDesignerObjectRef, (objectRef) => {
   runtimeCrudLoadingObjectIds.add(cacheKey)
   void loadRuntimeCrudProps(objectRef, cacheKey)
 }, { immediate: true })
+
+watch(
+  () => activeFormDesignerContext.value?.formDesignerSchema,
+  (objectSchema) => {
+    if (activeFormDesignerSchema.value?.components?.length)
+      return
+    const normalized = presentFormDesignerSchema(objectSchema || {})
+    if (!normalized.components?.length)
+      return
+    const signature = JSON.stringify(normalized)
+    if (signature === _activeFormDesignerSchemaSignature)
+      return
+    _activeFormDesignerSchemaSignature = signature
+    activeFormDesignerSchema.value = normalized
+  },
+)
 
 function createFormFieldVisibilitySettings(currentSettings = {}, fieldRefs = [], forceVisible = false) {
   const settings = {}
@@ -2838,9 +2865,7 @@ function resolvePageShapeDesignContext(formAssetId) {
       ? node.pageTemplate
       : supportedTypes.has(page?.layout?.gridLayout?.layoutType)
         ? page.layout.gridLayout.layoutType
-        : ''
-    if (!pageType)
-      return null
+        : 'list-form'
     const objectRef = block.props?.objectRef || node.objectRef || {}
     return {
       pageId: node.id,
@@ -2849,6 +2874,10 @@ function resolvePageShapeDesignContext(formAssetId) {
       objectId: objectRef.objectId || null,
       objectCode: objectRef.objectCode || '',
       objectName: objectRef.objectName || node.title || '',
+      runtimeDatasourceId: objectRef.runtimeDatasourceId || null,
+      createMode: objectRef.createMode || '',
+      importDatasourceId: objectRef.importDatasourceId || objectRef.runtimeDatasourceId || null,
+      importTableName: objectRef.importTableName || '',
     }
   }
   return null
@@ -2879,6 +2908,10 @@ function syncActivePageShapeObject() {
     objectId: context.objectId || objectRef?.objectId || null,
     objectCode: context.objectCode,
     objectName: context.objectName,
+    runtimeDatasourceId: context.runtimeDatasourceId ?? objectRef?.runtimeDatasourceId ?? null,
+    createMode: context.createMode || objectRef?.createMode || '',
+    importDatasourceId: context.importDatasourceId ?? objectRef?.importDatasourceId ?? context.runtimeDatasourceId ?? null,
+    importTableName: context.importTableName || objectRef?.importTableName || '',
     valid: true,
   })
   builder.value = {
@@ -2997,13 +3030,24 @@ function updateActiveFormDesignerSchema(schema) {
 }
 
 function returnToPageDesigner() {
+  // 以当前选中页为准。设计上下文里的 pageId 可能是另一张也绑了表单的页面，
+  // 用它去挂表单会把刚设计的内容换成那张页上的空表单。
+  const pageId = selectedNodeId.value || activePageShapeDesign.value?.pageId
   formDesignerMode.value = false
-  activeFormAssetId.value = ''
-  activePageShapeDesign.value = null
   // 如果用户从页面管理视图进入表单设计器，返回时退出编辑模式，避免出现设计工作台
   if (formDesignerFromPageManagement.value) {
     editing.value = false
     formDesignerFromPageManagement.value = false
+    activeFormAssetId.value = ''
+    activePageShapeDesign.value = null
+    return
+  }
+  // 返回后仍停在表单设计页，必须重新挂上当前页面的表单，否则画布是空的
+  if (pageId)
+    syncActiveFormAssetForPage(pageId)
+  else {
+    activeFormAssetId.value = ''
+    activePageShapeDesign.value = null
   }
 }
 
@@ -4049,6 +4093,10 @@ async function saveActiveFormDesigner(returnAfter = true) {
       objectId: context.objectId || null,
       objectCode,
       objectName,
+      runtimeDatasourceId: context.runtimeDatasourceId || null,
+      createMode: context.createMode || '',
+      importDatasourceId: context.importDatasourceId || context.runtimeDatasourceId || null,
+      importTableName: context.importTableName || '',
       fields: designer.fields,
       formDesignerSchema: designer.formDesignerSchema,
       builder: builder.value,
@@ -4065,16 +4113,17 @@ async function saveActiveFormDesigner(returnAfter = true) {
     preloadCurrentPageCrudRuntimeProps()
     if (returnAfter) {
       formDesignerMode.value = false
-      activeFormAssetId.value = ''
-      activePageShapeDesign.value = null
       if (formDesignerFromPageManagement.value) {
         // 从页面管理视图进入的，保存后返回页面管理视图
         editing.value = false
         formDesignerFromPageManagement.value = false
+        activeFormAssetId.value = ''
+        activePageShapeDesign.value = null
         selectPageManagementNode(pageId)
       }
       else {
         selectCreatedDesignerPage(pageId)
+        syncActiveFormAssetForPage(pageId)
       }
     }
     message.success('页面、数据对象和字段已保存')
@@ -4425,9 +4474,9 @@ function promoteCurrentPageToListShape(savedSchema = null) {
     return
   const node = (builder.value?.nodes || []).find(item => item.id === pageId)
   const isFormShapeNode = node?.pageTemplate === 'form' || node?.objectRef?.pageMode === 'form'
+  const savedZones = Array.isArray(savedSchema?.zones) ? savedSchema.zones : []
+  const savedSearchZone = savedZones.find(zone => zone?.zoneKey === 'search')
   // 优先取本次列表设计保存的查询区配置，缓存的运行时配置仅作兜底（缓存可能落后于草稿）。
-  const savedSearchZone = (Array.isArray(savedSchema?.zones) ? savedSchema.zones : [])
-    .find(zone => zone?.zoneKey === 'search')
   const latestSearchRefs = (savedSearchZone && Array.isArray(savedSearchZone.fieldRefs)
     ? savedSearchZone.fieldRefs
     : (runtimeCrudPropsByObjectId.value[resolveRuntimeObjectCacheKey(node?.objectRef || {})]?.searchSchema || [])

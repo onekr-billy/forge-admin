@@ -92,6 +92,11 @@ public class BusinessProcessValidationContextResolver {
                         object.getObjectCode(), String.valueOf(published.getId()));
                 availableBusinessActionCodes.addAll(extractPublishedActionCodes(
                         published.getDesignerOptionsSnapshot()));
+            } else if (StringUtils.isNotBlank(object.getModelSchema())) {
+                // 页面设计保存后对象还没有独立发布版本，但已经属于当前应用且结构已落库。
+                // 流程检查应接受这份当前结构，不能把它说成“不属于当前应用或已失效”。
+                publishedObjectVersionIdsByCode.put(
+                        object.getObjectCode(), "current:" + object.getObjectId());
             }
         }
 

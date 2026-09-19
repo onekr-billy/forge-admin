@@ -2,6 +2,13 @@ import { createGridBlock } from '@/components/lowcode-builder/page/page-schema'
 import { createDefaultFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 import { normalizeObjectCode } from '@/views/app-center/components/designer/form-first/namingUtils'
 import { createInAppFormAsset, createNavigationNode } from './in-app-builder-schema'
+import {
+  PAGE_DATA_SOURCE_CREATE,
+  PAGE_DATA_SOURCE_EXISTING_TABLE,
+  PAGE_OBJECT_CREATE_BLANK,
+  PAGE_OBJECT_CREATE_DB_IMPORT,
+  resolvePageCreateMode,
+} from './page-table-import'
 
 export const PAGE_SHAPE_TYPES = Object.freeze([
   {
@@ -32,14 +39,31 @@ export function normalizePageShapeSelection(selection = {}) {
   const pageName = String(selection.pageName || '').trim() || '未命名页面'
   const pageType = PAGE_SHAPE_VALUES.has(selection.pageType) ? selection.pageType : 'form'
   const objectName = String(selection.objectName || '').trim() || pageName
+  const customPage = pageType === 'custom'
+  const dataSourceMode = selection.dataSourceMode === PAGE_DATA_SOURCE_EXISTING_TABLE
+    ? PAGE_DATA_SOURCE_EXISTING_TABLE
+    : PAGE_DATA_SOURCE_CREATE
+  const createMode = customPage ? '' : resolvePageCreateMode({ ...selection, dataSourceMode })
+  const runtimeDatasourceId = customPage ? null : normalizeId(selection.runtimeDatasourceId)
+  const importTableName = !customPage && createMode === PAGE_OBJECT_CREATE_DB_IMPORT
+    ? String(selection.importTableName || '').trim()
+    : ''
   return {
     pageName,
     pageType,
     objectName,
-    objectCode: pageType === 'custom'
+    objectCode: customPage
       ? ''
       : normalizeObjectCode(selection.objectCode, objectName),
     parentId: selection.parentId || null,
+    dataSourceMode: customPage ? '' : dataSourceMode,
+    createMode,
+    runtimeDatasourceId,
+    importDatasourceId: importTableName
+      ? normalizeId(selection.importDatasourceId || selection.runtimeDatasourceId)
+      : null,
+    importTableName,
+    fields: Array.isArray(selection.fields) ? selection.fields : [],
   }
 }
 
@@ -55,20 +79,13 @@ export function createPageShapeBuilder(schema, selection = {}) {
     pageTemplate: customPage ? 'blank' : normalized.pageType,
     objectRef: customPage
       ? null
-      : {
-          objectId: selection.objectId || null,
-          objectCode: normalized.objectCode,
-          objectName: normalized.objectName,
-          pageKey: pageMode === 'form' ? 'form' : 'list',
-          pageMode,
-          configKey: selection.configKey || '',
-          valid: true,
-        },
+      : buildPageObjectRef(selection, normalized, pageMode),
   })
   const pageId = nodeResult.nodes.at(-1)?.id || ''
   if (customPage)
     return { schema: nodeResult, pageId, formAssetId: '', selection: normalized }
 
+  const importedFields = normalized.fields.filter(field => field && (field.fieldCode || field.field))
   const assetResult = createInAppFormAsset(nodeResult, {
     name: normalized.pageName,
     formKey: `${normalized.objectCode}_form`,
@@ -77,18 +94,12 @@ export function createPageShapeBuilder(schema, selection = {}) {
       objectName: normalized.objectName,
       formName: normalized.pageName,
       formOpenMode: normalized.pageType === 'list-form' ? 'flat' : 'modal',
+      fields: importedFields,
     }),
   })
   const crudBlock = createGridBlock('AiCrudPage', { fields: [] }, { gridX: 0, gridY: 0 })
-  const objectRef = {
-    objectId: selection.objectId || null,
-    objectCode: normalized.objectCode,
-    objectName: normalized.objectName,
-    pageKey: pageMode === 'form' ? 'form' : 'list',
-    pageMode,
-    configKey: selection.configKey || '',
-    valid: true,
-  }
+  const objectRef = buildPageObjectRef(selection, normalized, pageMode)
+  const importedFieldCodes = importedFields.map(field => field.fieldCode || field.field).filter(Boolean)
   const block = {
     ...crudBlock,
     label: normalized.pageName,
@@ -96,7 +107,8 @@ export function createPageShapeBuilder(schema, selection = {}) {
       ...(crudBlock.props || {}),
       title: normalized.pageName,
       formAssetId: assetResult.formAssetId,
-      formAssetFieldsInitialized: false,
+      formAssetFieldsInitialized: importedFieldCodes.length > 0,
+      ...(importedFieldCodes.length ? { fieldRefs: importedFieldCodes } : {}),
       objectRef,
       ...(normalized.pageType === 'form'
         ? { formOnly: true, hideToolbar: true, hideBatchDelete: true, showSearch: false }
@@ -141,4 +153,27 @@ function resolvePageMode(pageType) {
   if (pageType === 'list')
     return 'list'
   return 'crud'
+}
+
+function buildPageObjectRef(selection = {}, normalized = {}, pageMode = 'crud') {
+  return {
+    objectId: selection.objectId || null,
+    objectCode: normalized.objectCode,
+    objectName: normalized.objectName,
+    pageKey: pageMode === 'form' ? 'form' : 'list',
+    pageMode,
+    configKey: selection.configKey || '',
+    runtimeDatasourceId: normalized.runtimeDatasourceId,
+    createMode: normalized.createMode || PAGE_OBJECT_CREATE_BLANK,
+    importDatasourceId: normalized.importDatasourceId,
+    importTableName: normalized.importTableName || '',
+    valid: true,
+  }
+}
+
+function normalizeId(value) {
+  if (value === null || value === undefined || value === '')
+    return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : value
 }

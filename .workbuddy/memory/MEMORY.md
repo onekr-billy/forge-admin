@@ -46,11 +46,18 @@
 ① 开头玄学 Bug 钩子 ② 坑表四列（坑/现象/根因/解法）③ "可带走的 N 条诀窍"独立小节 ④ 结尾明确求赞 + 赌局式互动。**系列文必须兑现上一篇预告并预告下一篇**
 字数 4500-5500（含代码）。标签：`#低代码` `#Spring Boot` `#Java` `#架构设计` `#企业开发`
 
-### 已写 15 篇（避免重复）
-订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / log操作日志 1383行 5个反直觉设计(0916) / auth认证链路 4091行 账号锁定为何完全失效(0917) / **excel 4223行 @Async三重叠加失效(0918)**
+### 已写 16 篇（避免重复）
+订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / log操作日志 1383行 5个反直觉设计(0916) / auth认证链路 4091行 账号锁定为何完全失效(0917) / excel 4223行 @Async三重叠加失效(0918) / **websocket 599行 内存Broker多实例(0919)**
 
 ### "框架源码拆解"系列进度
-① datascope SQL 改写 → ② tenant 多租户 → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log 操作日志（0916）→ ⑥ auth 认证链路（0917）→ ⑦ excel 4223 行（0918）→ ⑧ **websocket（已预告：连接管理/心跳/断线重连）**
+① datascope SQL 改写 → ② tenant → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log（0916）→ ⑥ auth（0917）→ ⑦ excel（0918）→ ⑧ websocket（0919）→ ⑨ **config 动态配置（已预告：@RefreshScope 刷新边界）**
+
+### 🔥 掘金标题规则（0919 诊断，最高优先级）
+- **症状拆两层**：展现→阅读 卡在**标题**；阅读→点赞 卡在**正文没给可带走的东西**。改标题救不了点赞
+- **【0919 定论】标题模板疲劳是阅读少的主因**：「XXX行源码拆解 + N个坑」连用 6 次（tenant/datascope共存/幂等/log/auth/excel）→ 老读者跳过；**"行数"对读者零收益**且占了标题最贵位置；缺可检索的技术锚点
+- **新三段式 = 具体故障现象 + 技术关键词 + 反直觉结论**（去掉行数）。例：`多租户隔离上线后定时任务查不到数据：ThreadLocal 和 TTL 的用法差在哪`
+- **点赞少根因**：读者感受是"他踩坑了，我知道了"——**知道了≠能用了**。赞的本质是收藏，必须给可带走的东西
+- **0919 结构改版**：①开篇 4 句钩子 + **TL;DR 六条结论清单**（结论从结尾挪到开头，适配扫读）②每个坑统一「现象→源码→为什么→怎么改」四段 ③独立「可带走 N 条诀窍」+ 接入实战可复制代码 ④求赞先给联想场景再求赞
 
 ### 可复用硬核事实
 - **MyBatis-Plus 3.5.7**；`MybatisPlusConfig` 用 `List<InnerInterceptor>` 注入
@@ -63,7 +70,7 @@
 - plugin-ai：`PermissionEngine` 63 行三态判决（工具名含 delete/submit/commit 触发人工审批）；`AiModelInvocationLog` 记 token + 调用时单价快照（按"分"存）
 
 ### starter 剩余矿脉（按行数）
-tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已写 0916）| auth 认证链路（已写 0917）| excel（已写 0918）| **websocket（已预告：连接管理/心跳/断线重连）** | config 动态配置 | orm | cache
+tenant（已写）| idempotent（已写）| log（已写）| auth（已写）| excel（已写）| websocket（已写 0919）| **config 动态配置（已预告）** | orm | cache | file | message | job | id | trans | social
 
 ### 已核实待用的硬核事实（log / idempotent / excel / auth）
 - **log**：`OperationLogAspect` 676 行，切点 `@within(@Controller)||@within(@RestController)`（`@annotation` 版被注释掉）→ 所有 Controller 方法进切面；skip 判定前已完成 4 件事含 `apiConfigManager.getApiConfig()`；线程池默认 **core=2/max=5/queue=500 + CallerRunsPolicy**（高峰期业务线程自己写日志）；QUERY 全跳过；URL 后缀自动分类（/page /list /tree /detail /getbyid /options /profile /query→QUERY）；8 个敏感凭证路径直接 exclude（/auth/login 等）；`@ApiDecrypt` 接口的 `@RequestBody` 参数替换为 `[DECRYPTED_REQUEST_BODY_OMITTED]`；`OperationAuditContext` 是**普通 ThreadLocal**（切面在主线程 fillAuditSnapshot 拷贝进 POJO 再异步提交，规避了跨线程丢失）；**OperationLogInfo 无 traceId 字段**（只进 MDC），且 finally 里先 saveLogAsync 再 MDC.remove → 异步线程无 traceId；LogProperties 默认 requestParams/responseResult 截断 2000 字符
@@ -83,6 +90,16 @@ tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已�
   - `AuthProperties` 默认：**enableLoginLock=true / maxLoginAttempts=4 / lockDuration=30min / failRecordExpire=15min**
   - 登录查询必须 `TenantContextHolder.executeIgnore(...)` 绕开租户过滤（登录时还不知用户属哪个租户）→ 跨租户查同名候选 → 逐个 matchPassword → 单工作区直接进 / 多工作区抛 `TENANT_SELECTION_REQUIRED` 让用户选；**同名多租户可有不同密码且都能登录**
   - `UsernamePasswordAuthStrategy` 仅 42 行；`SocialAuthStrategyImpl` 460 行（最重）
+- **websocket**（599 行 / 8 类 / 6 测试，0919 全量核实）：
+  - **`enableSimpleBroker("/queue","/topic")` 是内存代理** → 多实例推送静默丢失，无 broker-relay 扩展点。`convertAndSendToUser` 调用成功 ≠ 有人收到
+  - **`@Async` 依赖别的 starter**：websocket 模块自己**无 `@EnableAsync`**；全项目仅 api-config:25 / excel:19 / flow:44 三处有 → 不引这三个之一，`pushToUserAsync` 就是同步（隐式依赖，无报错无警告）
+  - **Principal 名字是隐式契约**：`convertAndSendToUser(userId)` → `/queue/messages-user{userId}`；客户端订阅 `/user/queue/messages` 按 `principal.getName()` 重写。**两者必须字符串全等**，不一致则消息静默丢弃（不报错不打日志）。默认 Sa-Token 实现返回 `String.valueOf(loginId)`，业务侧 `pushToUser(String.valueOf(loginId))` 对上了；自定义 provider 返回用户名就断
+  - **`WebSocketConfig` 无 `@ConditionalOnProperty`** → 引入 jar 即强制开 `/ws` + SockJS，无总开关
+  - **握手阶段不鉴权**（认证在 STOMP CONNECT 帧，`/ws/info` 任何人可访问）；`command == null`（心跳帧）与 `DISCONNECT` 直接放行
+  - **`withSockJS()` + `allowedOriginPatterns("*")` 是危险组合**（Spring 官方警告，xhr 降级同源限制弱 → CSWSH）。默认 localhost 安全
+  - **做得对（可信度来源）**：认证缺失 **fail-closed**（`authenticationProvider == null` 直接拒绝连接，对比 auth 模块 `@Autowired(required=false)` 的 fail-open 登录锁）；**禁止客户端直发 Broker**（SEND 必须 `/app` 前缀，堵住"任意客户端向全体广播"）；订阅白名单 AntPathMatcher（默认 `/user/**` + `/topic/broadcast`）；**`MessageBuilder.createMessage` 重建消息**（wrap 后 setUser，原 message headers 不可变，直接 `return message` 会丢 Principal）；6 个契约测试锁安全规则
+  - `MessageType` 14 种；`WebSocketAuthenticationProvider` 是 `@FunctionalInterface`，auth 模块 `@ConditionalOnMissingBean` 提供 Sa-Token 默认实现
+  - 业务链路：`SysOnlineUserServiceImpl`（578 行）`notifyUserKickout` → `MessageType.AUTH_KICKOUT` → `pushToUser(String.valueOf(loginId))`
 
 ### ⚠️ 待修真实缺陷（累计 8 个，均未修复，按严重度排序）
 1. **【高危】账号锁定在密码错误场景下完全失效**：`UsernamePasswordAuthStrategy.doAuthenticate` 里 `if (loginUser == null)` 是**死代码**（`authenticateByUsernamePassword` 失败时抛 RuntimeException，永远不返回 null）；且即便进入分支，`recordLoginFailure(null, ...)` 也会因 `loginUser == null` 在第一行直接 `throw`，不计数不锁定。**结论：暴力破解密码不会被锁定**。修复：认证方法失败时返回可区分结果（sealed interface / Optional），计数方法标 `@NonNull`，不要用异常表达失败路径
@@ -96,6 +113,9 @@ tenant（已写）| idempotent 幂等（已写 0915）| log 操作日志（已�
 9. **`cleanupExpiredTasks()` 无调度**：写了清理逻辑但全项目无调用点 → 临时文件 + taskStore 永不释放
 10. **`downloadFile` 用 `Files.readAllBytes` 返回 byte[]** → 大文件 OOM，应改流式 `transferTo`
 11. **`dataCount` 死字段**（有 getter 无 setter，永远 null）+ **`MockHttpServletResponse` 死类**（从未引用）
+12. **`forge-starter-websocket` 的 `@Async` 依赖外部 starter**：模块自己无 `@EnableAsync`，靠 api-config/excel/flow 三个之一"碰巧"开启 → 摘掉这些模块后异步变同步（隐式依赖）。修法：自己加 `@EnableAsync` + 专用线程池
+13. **`forge-starter-websocket` 无总开关**：`WebSocketConfig` 无 `@ConditionalOnProperty`，引入 jar 即强制开启 `/ws` + SockJS
+14. **`forge-starter-websocket` 内存 Broker 无多实例支持**：生产多实例推送静默丢失，需换 broker-relay 或自建跨实例转发
 
 ### 其他候选切面
 能力开放网关 SPI（capability-parent，REST+MCP 双出口）/ 11 个 plugin 注册顺序 / CRUD Velocity 模板扩展点 / 部署上线踩坑 / 运维故障救回

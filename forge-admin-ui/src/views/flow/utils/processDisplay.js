@@ -12,6 +12,16 @@ export function getRowDisplayTitle(row = {}) {
   )
 }
 
+export function getProcessDisplayName(row = {}, fallback = '-') {
+  return firstText(
+    readableProcessName(row.processName, row),
+    readableProcessName(row.processTitle, row),
+    readableProcessName(row.modelName, row),
+    readableProcessName(row.processDefinitionName, row),
+    fallback,
+  )
+}
+
 export function getBusinessFormDisplayTitle(context = {}, fallback = '业务表单') {
   const objectName = firstText(context.businessObjectName, context.objectName, context.appName, context.businessName)
   const summary = firstText(context.businessSummary, context.summary)
@@ -204,6 +214,23 @@ function stripPairedTrailingCode(text) {
       return text.slice(0, openIndex).trim()
   }
   return ''
+}
+
+function readableProcessName(value, row = {}) {
+  const text = String(value ?? '').trim()
+  if (!text)
+    return ''
+  const codes = [
+    row.processDefKey,
+    row.processDefinitionKey,
+    row.processDefId,
+    row.processDefinitionId,
+    row.modelKey,
+    row.businessType,
+  ]
+  if (codes.some(code => String(code ?? '').trim() === text))
+    return ''
+  return text
 }
 
 function isTechnicalCode(value) {

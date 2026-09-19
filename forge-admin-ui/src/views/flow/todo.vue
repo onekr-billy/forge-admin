@@ -587,10 +587,11 @@ import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
 import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions, pickFirstNonEmptyPermissionSource } from '@/utils/field-permissions'
+import { applyChildTableFieldPermissions } from '@/utils/flow-field-permissions'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
 import { FLOW_PRIORITY_LABEL_FALLBACK, getFlowPriorityClass, isUrgentFlowPriority, resolveFlowPriorityLevel, shouldShowFlowPriority } from './utils/priority'
-import { getBusinessFormDisplayTitle, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
+import { getBusinessFormDisplayTitle, getProcessDisplayName, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
 import { loadTaskFormBundle } from './utils/task-form-bundle'
 
 const userStore = useUserStore()
@@ -657,7 +658,14 @@ const businessFormTitle = computed(() => getBusinessFormDisplayTitle(businessFor
 const businessFormWarnings = computed(() => Array.isArray(businessFormContext.value?.warnings) ? businessFormContext.value.warnings : [])
 const businessFormChildrenConfig = computed(() => {
   const children = Array.isArray(businessFormContext.value?.childrenConfig) ? businessFormContext.value.childrenConfig : []
-  return children.filter(child => child?.showInDetail !== false && Array.isArray(child.fields) && child.fields.length)
+  return applyChildTableFieldPermissions(
+    children.filter(child => child?.showInDetail !== false && Array.isArray(child.fields) && child.fields.length),
+    [
+      taskFormInfo.value?.formFieldPermissions,
+      businessFormContext.value?.taskFormInfo?.formFieldPermissions,
+      businessFormFieldPermissions.value,
+    ],
+  )
 })
 const businessFormHasWritableFields = computed(() => hasWritableBusinessFormFields(businessFormContext.value))
 const businessCodeFormUrl = computed(() => businessFormContext.value?.formUrl || businessFormContext.value?.formRef?.formUrl || '')
@@ -793,10 +801,6 @@ function getPriorityText(p) {
   const level = resolveFlowPriorityLevel(p)
   const label = getLabel('flow_priority', level)
   return String(label) === String(level) ? FLOW_PRIORITY_LABEL_FALLBACK[level] : label
-}
-
-function getProcessDisplayName(task) {
-  return task?.processName || task?.processTitle || task?.modelName || task?.businessType || '-'
 }
 
 function getCategoryDisplayName(row) {
@@ -1067,6 +1071,13 @@ async function hydrateBusinessFormFromAssets(formInfo) {
   }
 }
 
+function isChildBusinessFormField(field = {}, fieldCode = '') {
+  const scope = String(field?.scope || '').trim().toLowerCase()
+  if (scope === 'child' || String(field?.childKey || '').trim())
+    return true
+  return String(fieldCode || '').includes('__')
+}
+
 function normalizeFallbackBusinessFields(asset = null, permissions = []) {
   if (!asset || typeof asset !== 'object')
     return []
@@ -1078,7 +1089,7 @@ function normalizeFallbackBusinessFields(asset = null, permissions = []) {
   return catalog
     .map((field) => {
       const fieldCode = String(field?.field || field?.fieldCode || field?.name || field?.key || '').trim()
-      if (!fieldCode || seen.has(fieldCode))
+      if (!fieldCode || seen.has(fieldCode) || isChildBusinessFormField(field, fieldCode))
         return null
       seen.add(fieldCode)
       const permission = permissionMap.get(fieldCode)

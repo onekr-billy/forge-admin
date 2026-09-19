@@ -5,6 +5,7 @@ import {
   buildCrudSearchTypeRequestParams,
   buildRuntimeCrudProps,
   filterCrudItemsByFieldRefs,
+  includeCompiledChildColumnRefs,
   includeManagedRuntimeFieldRefs,
   isDesignPreviewCrudProps,
   resolveCrudPreviewReloadKey,
@@ -247,6 +248,21 @@ describe('runtime CRUD design preview props', () => {
       }],
       { flowStatus: { visible: false } },
     )).toEqual(['fieldRate'])
+  })
+
+  it('keeps compiled child-table columns when the page block snapshot only has main fields', () => {
+    const columns = [
+      { key: 'fieldInput', title: '文本' },
+      { key: 'order_item__qty', dataIndex: 'order_item__qty', title: '数量' },
+      { key: 'action', type: 'action', title: '操作' },
+    ]
+    const refs = includeCompiledChildColumnRefs(['fieldInput'], columns)
+    expect(filterCrudItemsByFieldRefs(columns, refs).map(item => item.key)).toEqual([
+      'fieldInput',
+      'order_item__qty',
+      'action',
+    ])
+    expect(includeCompiledChildColumnRefs([], columns)).toEqual([])
   })
 
   it('changes the preview reload key only when a real request condition changes', () => {

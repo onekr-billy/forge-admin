@@ -370,7 +370,11 @@ function canDeleteRows(child = {}) {
 }
 
 function isCellReadonly(child, row, field = {}) {
-  if (props.readonly || field.writable === false || field.readonly === true || field.disabled === true)
+  if (props.readonly)
+    return true
+  if (field.writable === true)
+    return false
+  if (field.writable === false || field.readonly === true || field.disabled === true)
     return true
   return hasPersistedRowId(row) ? !canUpdateRows(child) : !canCreateRows(child)
 }
@@ -618,6 +622,14 @@ function useRuntimeCell(field = {}, child = {}) {
 
 function toRuntimeCellField(field = {}, child = {}, row = {}) {
   const readonly = isCellReadonly(child, row, field)
+  const props = {
+    ...resolveControlProps(field.props),
+    size: field.props?.size || field.size || 'small',
+  }
+  if (!readonly) {
+    delete props.readonly
+    delete props.disabled
+  }
   return {
     ...field,
     disabled: readonly,
@@ -625,10 +637,7 @@ function toRuntimeCellField(field = {}, child = {}, row = {}) {
     showLabel: false,
     showFeedback: false,
     size: field.size || 'small',
-    props: {
-      ...resolveControlProps(field.props),
-      size: field.props?.size || field.size || 'small',
-    },
+    props,
   }
 }
 

@@ -294,6 +294,41 @@ export function moveNavigationNode(schema, nodeId, targetParentId = null, target
   return next
 }
 
+/**
+ * 页面表单对象只属于创建它的页面。页面已从导航删除，且没有其它页面仍引用该对象时，流程里不应再选到它。
+ */
+export function isOrphanPageFormObject(object, schema) {
+  const options = parseOptions(object?.options)
+  const sourcePageId = String(options.sourcePageId || '').trim()
+  if (options.managedBy !== 'PAGE_FORM' || !sourcePageId)
+    return false
+  const pageIds = new Set((schema?.nodes || [])
+    .filter(node => node?.type === 'page')
+    .map(node => node.id))
+  if (pageIds.has(sourcePageId))
+    return false
+  return !collectReferencedObjectIds(schema).has(String(object?.objectId || object?.id || ''))
+}
+
+function collectReferencedObjectIds(schema) {
+  const ids = new Set()
+  const visit = (value) => {
+    if (!value || typeof value !== 'object')
+      return
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+      return
+    }
+    const objectId = value.objectRef?.objectId
+    if (objectId != null && String(objectId).trim())
+      ids.add(String(objectId))
+    Object.values(value).forEach(visit)
+  }
+  visit(schema?.nodes)
+  visit(schema?.pages)
+  return ids
+}
+
 export function removeNavigationNode(schema, nodeId, strategy) {
   const next = clone(schema)
   const node = findNode(next, nodeId)
@@ -549,6 +584,10 @@ function normalizeObjectRef(value) {
     formKey: String(value.formKey || '').trim(),
     hasBusinessData: value.hasBusinessData === true,
     defaultParams: clone(value.defaultParams || {}),
+    runtimeDatasourceId: value.runtimeDatasourceId ?? null,
+    createMode: String(value.createMode || '').trim(),
+    importDatasourceId: value.importDatasourceId ?? value.runtimeDatasourceId ?? null,
+    importTableName: String(value.importTableName || '').trim(),
     valid: value.valid !== false,
   }
 }
@@ -638,12 +677,7 @@ function resolveInsertIndex(items, target) {
 function createNodeId(nodes, type, title) {
   const prefix = type === 'group' ? 'group' : 'page'
   const base = slugify(title) || prefix
-  const ids = new Set(nodes.map(node => node.id))
-  let sequence = 1
-  let candidate = `${prefix}_${base}`
-  while (ids.has(candidate))
-    candidate = `${prefix}_${base}_${sequence++}`
-  return candidate
+  return createUniqueId(nodes.map(node => node.id), `${prefix}_${base}`)
 }
 
 function createComponentId(items, componentKey) {
@@ -657,13 +691,24 @@ function createComponentId(items, componentKey) {
 }
 
 function createFormAssetId(formAssets, title) {
-  const ids = new Set((formAssets || []).map(asset => asset.id))
   const base = slugify(title) || 'form'
-  let sequence = 1
-  let candidate = `form_${base}`
+  return createUniqueId((formAssets || []).map(asset => asset.id), `form_${base}`)
+}
+
+function createUniqueId(existingIds, prefix) {
+  const ids = new Set(existingIds)
+  let candidate = `${prefix}_${createUniqueSuffix()}`
   while (ids.has(candidate))
-    candidate = `form_${base}_${sequence++}`
+    candidate = `${prefix}_${createUniqueSuffix()}`
   return candidate
+}
+
+function createUniqueSuffix() {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let suffix = ''
+  for (let index = 0; index < 6; index += 1)
+    suffix += alphabet[Math.floor(Math.random() * alphabet.length)]
+  return suffix
 }
 
 function slugify(value) {

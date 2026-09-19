@@ -1,12 +1,12 @@
 <template>
   <div class="message-notification-wrapper">
     <NBadge
-      :value="unreadCount"
+      :value="totalUnreadCount"
       :max="99"
-      :show="unreadCount > 0"
+      :show="totalUnreadCount > 0"
       :offset="[-5, 5]"
     >
-      <button class="notification-trigger" type="button" @click="openPanel">
+      <button class="notification-trigger" type="button" :aria-label="`通知中心，${totalUnreadCount} 条未读`" title="通知中心" @click="openPanel">
         <i class="i-material-symbols:notifications-outline" />
       </button>
     </NBadge>
@@ -20,8 +20,8 @@
     >
       <div class="message-center">
         <header class="message-center-header">
-          <h2>消息通知</h2>
-          <button class="icon-button" type="button" @click="showPanel = false">
+          <h2>通知中心</h2>
+          <button class="icon-button" type="button" aria-label="关闭通知中心" @click="showPanel = false">
             <i class="i-material-symbols:close" />
           </button>
         </header>
@@ -33,41 +33,57 @@
             class="message-tab"
             :class="{ active: activeTab === tab.key }"
             type="button"
+            :aria-pressed="activeTab === tab.key"
             @click="activeTab = tab.key"
           >
             <span>{{ tab.label }}</span>
             <span v-if="tab.showCount && tab.count > 0" class="tab-count">{{ tab.count }}</span>
           </button>
-          <button class="tab-action" type="button" @click="handleViewAll">
-            <i class="i-material-symbols:settings-outline" />
+          <button class="tab-action" type="button" title="刷新通知" @click="initData">
+            <i class="i-material-symbols:refresh" />
           </button>
         </div>
 
         <div class="message-filter-row">
+          <NSelect v-model:value="readState" :options="readOptions" size="small" aria-label="阅读状态" />
           <NSelect
             v-model:value="rangeDays"
             :options="rangeOptions"
             size="small"
             class="range-select"
+            aria-label="通知时间范围"
           />
         </div>
 
+        <p class="notification-hint">
+          未读数包含全部时间；公告打开详情后标记已读。
+        </p>
+        <NAlert v-if="messageError || noticeStore.error" type="warning" :show-icon="false" class="notification-error">
+          {{ [messageError, noticeStore.error].filter(Boolean).join('；') }}
+          <NButton text type="primary" @click="initData">
+            重试
+          </NButton>
+        </NAlert>
         <NScrollbar class="message-scrollbar">
-          <div v-if="loading" class="message-loading">
+          <div v-if="loading || noticeStore.loading" class="message-loading">
             <NSpin size="small" />
           </div>
 
           <div v-else-if="filteredMessages.length > 0" class="message-list">
             <article
               v-for="msg in filteredMessages"
-              :key="msg.id"
+              :key="msg.key"
               class="message-card"
               :class="{ unread: msg.readFlag === 0, approval: isApprovalMessage(msg) }"
+              role="button"
+              tabindex="0"
+              @keydown.enter="handleMessageClick(msg)"
+              @keydown.space.prevent="handleMessageClick(msg)"
               @click="handleMessageClick(msg)"
             >
               <div class="message-card-main">
                 <div class="message-icon" :class="{ approval: isApprovalMessage(msg) }">
-                  <i :class="isApprovalMessage(msg) ? 'i-material-symbols:approval-delegation-outline' : 'i-material-symbols:mail-outline'" />
+                  <i :class="msg.source === 'notice' ? 'i-material-symbols:campaign-outline' : isApprovalMessage(msg) ? 'i-material-symbols:approval-delegation-outline' : 'i-material-symbols:mail-outline'" />
                 </div>
 
                 <div class="message-content">
@@ -75,7 +91,7 @@
                     <span>{{ getMessageCategory(msg) }}</span>
                     <time>{{ formatMessageTime(msg.createTime) }}</time>
                   </div>
-                  <h3>{{ msg.title || '消息通知' }}</h3>
+                  <h3><span v-if="msg.readFlag === 0" class="unread-dot" />{{ msg.title || '消息通知' }}</h3>
                   <p>{{ msg.content || '-' }}</p>
 
                   <div v-if="isApprovalMessage(msg)" class="approval-meta">
@@ -85,7 +101,10 @@
                 </div>
               </div>
 
-              <div class="message-card-actions" @click.stop>
+              <div v-if="msg.source === 'notice' || msg.readFlag === 0" class="message-card-actions" @click.stop @keydown.stop>
+                <NButton v-if="msg.source === 'notice'" text type="primary" size="small" @click="handleMessageClick(msg)">
+                  阅读公告
+                </NButton>
                 <NButton
                   v-if="isPendingApprovalMessage(msg)"
                   type="primary"
@@ -96,7 +115,7 @@
                   去审批
                 </NButton>
                 <NButton
-                  v-if="msg.readFlag === 0"
+                  v-if="msg.source !== 'notice' && msg.readFlag === 0"
                   size="small"
                   ghost
                   @click="markRead(msg)"
@@ -107,21 +126,29 @@
             </article>
           </div>
 
-          <NEmpty v-else description="暂无消息" class="message-empty" />
+          <NEmpty v-else description="暂无符合条件的通知" class="message-empty" />
+          <div v-if="hasMore" class="load-more">
+            <span class="load-more-text" @click="loadMore">
+              <NSpin v-if="loading || noticeStore.loading" :size="12" />
+              <template v-else>加载更多</template>
+            </span>
+          </div>
         </NScrollbar>
 
         <footer class="message-center-footer">
           <NButton quaternary size="small" @click="handleViewAll">
-            查看全部消息
+            {{ activeTab === 'notice' ? '查看全部公告' : '查看全部消息' }}
           </NButton>
           <NButton
+            v-if="activeTab !== 'notice'"
             type="primary"
             ghost
             size="small"
+            title="仅标记个人消息，不包含公告"
             :disabled="unreadCount <= 0"
             @click="handleMarkAllRead"
           >
-            全部标记为已读
+            消息全部已读
           </NButton>
         </footer>
       </div>
@@ -130,15 +157,18 @@
 </template>
 
 <script setup>
-import { NBadge, NButton, NDrawer, NEmpty, NScrollbar, NSelect, NSpin } from 'naive-ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { NAlert, NBadge, NButton, NDrawer, NEmpty, NScrollbar, NSelect, NSpin } from 'naive-ui'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import messageApi from '@/api/message'
-import { useAuthStore } from '@/store'
+import { useNoticeStore } from '@/stores/system/noticeStore'
 import {
+  filterNotifications,
   isFlowApprovalMessage,
   isPendingFlowApprovalMessage,
   mergeMessageNavigationTarget,
+  mergeNotifications,
+  parseNotificationDate,
 } from './message-notification-utils'
 
 const props = defineProps({
@@ -157,15 +187,29 @@ const props = defineProps({
 })
 
 const router = useRouter()
-const authStore = useAuthStore()
+const noticeStore = useNoticeStore()
 const unreadCount = ref(0)
 const messages = ref([])
 const showPanel = ref(false)
 const loading = ref(false)
-const activeTab = ref('approval')
-const rangeDays = ref(180)
+const activeTab = ref('all')
+const readState = ref('all')
+const rangeDays = ref(0)
 const bizTypeOptions = ref([])
-const panelWidth = computed(() => (window.innerWidth < 520 ? window.innerWidth : 430))
+const panelWidth = 'min(460px, 100vw)'
+const messageError = ref('')
+const messagePage = ref(0)
+const messageTotal = ref(0)
+let requestSequence = 0
+const totalUnreadCount = computed(() => unreadCount.value + noticeStore.unreadCount)
+const hasMore = computed(() => activeTab.value === 'notice'
+  ? noticeStore.hasMore
+  : activeTab.value === 'all' ? noticeStore.hasMore || messages.value.length < messageTotal.value : messages.value.length < messageTotal.value)
+const readOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '未读', value: 0 },
+  { label: '已读', value: 1 },
+]
 
 const rangeOptions = [
   { label: '近30天', value: 30 },
@@ -174,28 +218,14 @@ const rangeOptions = [
   { label: '全部时间', value: 0 },
 ]
 
-const approvalMessages = computed(() => messages.value.filter(isApprovalMessage))
-const readMessages = computed(() => messages.value.filter(msg => msg.readFlag === 1))
-
 const tabs = computed(() => [
-  { key: 'approval', label: '审批', count: approvalMessages.value.filter(msg => msg.readFlag === 0).length, showCount: true },
-  { key: 'unread', label: '未读', count: unreadCount.value, showCount: true },
-  { key: 'read', label: '已读', count: readMessages.value.length, showCount: false },
-  { key: 'all', label: '全部', count: messages.value.length, showCount: false },
+  { key: 'all', label: '全部', count: totalUnreadCount.value, showCount: true },
+  { key: 'approval', label: '审批' },
+  { key: 'notice', label: '公告', count: noticeStore.unreadCount, showCount: true },
+  { key: 'other', label: '其他消息' },
 ])
-
-const filteredMessages = computed(() => {
-  return messages.value
-    .filter((msg) => {
-      if (activeTab.value === 'approval')
-        return isApprovalMessage(msg)
-      if (activeTab.value === 'unread')
-        return msg.readFlag === 0
-      if (activeTab.value === 'read')
-        return msg.readFlag === 1
-      return true
-    })
-})
+const entries = computed(() => mergeNotifications(messages.value, noticeStore.notices, noticeStore.isUnread))
+const filteredMessages = computed(() => filterNotifications(entries.value, activeTab.value, readState.value, rangeDays.value))
 
 function isApprovalMessage(msg) {
   return isFlowApprovalMessage(msg)
@@ -208,17 +238,11 @@ function isPendingApprovalMessage(msg) {
 function getMessageCategory(msg) {
   if (isApprovalMessage(msg))
     return '审批'
-  const map = {
-    SYSTEM: '系统',
-    SMS: '短信',
-    EMAIL: '邮件',
-    CUSTOM: '通知',
-  }
-  return map[msg.type] || '通知'
+  return msg.source === 'notice' ? '公告' : '其他消息'
 }
 
 function formatMessageTime(value) {
-  const date = parseMessageDate(value)
+  const date = parseNotificationDate(value)
   if (!date)
     return ''
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
@@ -228,78 +252,66 @@ function formatMessageTime(value) {
   return `${month}月${day}日 ${hour}:${minute}`
 }
 
-function parseMessageDate(value) {
-  if (!value)
-    return null
-  if (Array.isArray(value)) {
-    const [year, month, day, hour = 0, minute = 0, second = 0] = value
-    return new Date(year, month - 1, day, hour, minute, second)
-  }
-  const date = new Date(typeof value === 'string' ? value.replace(' ', 'T') : value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-function formatQueryDateTime(date) {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  const hour = `${date.getHours()}`.padStart(2, '0')
-  const minute = `${date.getMinutes()}`.padStart(2, '0')
-  const second = `${date.getSeconds()}`.padStart(2, '0')
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
-
-function buildMessageQuery() {
-  if (!rangeDays.value)
-    return {}
-
-  const end = new Date()
-  const start = new Date(end.getTime() - rangeDays.value * 24 * 60 * 60 * 1000)
-  return {
-    startTime: formatQueryDateTime(start),
-    endTime: formatQueryDateTime(end),
-  }
-}
-
 async function fetchUnreadCount() {
+  const context = noticeStore.contextVersion
   const res = await messageApi.getUnreadCount()
-  if (res.code === 200 && res.data)
-    unreadCount.value = res.data.totalCount || 0
+  if (res.code === 200 && context === noticeStore.contextVersion)
+    unreadCount.value = Number(res.data?.totalCount) || 0
 }
 
-async function fetchLatestMessages() {
-  const res = await messageApi.getMessagePage(buildMessageQuery(), 1, 100)
-  if (res.code === 200 && res.data)
-    messages.value = res.data.list || res.data.records || []
-}
-
-async function loadBizTypes() {
-  const res = await messageApi.getBizTypeListEnabled()
-  if (res.code === 200 && res.data)
-    bizTypeOptions.value = res.data
+async function fetchMessages(append = false) {
+  const sequence = ++requestSequence
+  const context = noticeStore.contextVersion
+  const page = append ? messagePage.value + 1 : 1
+  loading.value = true
+  messageError.value = ''
+  try {
+    const res = await messageApi.getMessagePage({}, page, 50)
+    if (context !== noticeStore.contextVersion || sequence !== requestSequence)
+      return
+    if (res.code !== 200)
+      throw new Error('加载个人消息失败')
+    const records = res.data?.list || res.data?.records || []
+    messages.value = append ? [...messages.value, ...records] : records
+    messageTotal.value = Number(res.data?.total) || 0
+    messagePage.value = page
+  }
+  catch (error) {
+    if (context === noticeStore.contextVersion && sequence === requestSequence)
+      messageError.value = '加载个人消息失败，请重试'
+    console.error('加载个人消息失败:', error)
+  }
+  finally {
+    if (context === noticeStore.contextVersion && sequence === requestSequence)
+      loading.value = false
+  }
 }
 
 async function initData() {
-  if (!authStore.accessToken) {
-    unreadCount.value = 0
-    messages.value = []
+  if (!noticeStore.ready)
     return
-  }
+  const context = noticeStore.contextVersion
+  await Promise.all([
+    fetchMessages(),
+    noticeStore.refresh(),
+    fetchUnreadCount().catch(() => {
+      if (context === noticeStore.contextVersion)
+        messageError.value = '加载消息未读数失败'
+    }),
+    messageApi.getBizTypeListEnabled().then((res) => {
+      if (context === noticeStore.contextVersion && res.code === 200)
+        bizTypeOptions.value = res.data || []
+    }).catch(error => console.error('加载消息业务类型失败:', error)),
+  ])
+}
 
-  loading.value = true
-  try {
-    await Promise.all([
-      fetchUnreadCount(),
-      fetchLatestMessages(),
-      loadBizTypes(),
-    ])
-  }
-  catch (error) {
-    console.error('初始化消息数据失败:', error)
-  }
-  finally {
-    loading.value = false
-  }
+async function loadMore() {
+  if (loading.value || noticeStore.loading)
+    return
+  await Promise.all([
+    activeTab.value !== 'notice' && messages.value.length < messageTotal.value ? fetchMessages(true) : null,
+    ['all', 'notice'].includes(activeTab.value) && noticeStore.hasMore ? noticeStore.loadMore() : null,
+  ])
 }
 
 function openPanel() {
@@ -308,6 +320,10 @@ function openPanel() {
 }
 
 async function handleMessageClick(msg) {
+  if (msg.source === 'notice') {
+    await noticeStore.openNotice({ noticeId: msg.id })
+    return
+  }
   if (isPendingApprovalMessage(msg)) {
     await openApproval(msg)
     return
@@ -373,8 +389,13 @@ function resolveBizRoute(msg) {
 async function markRead(msg, refresh = true) {
   if (!msg?.id || msg.readFlag !== 0)
     return
-  await messageApi.markMessageRead(msg.id)
-  msg.readFlag = 1
+  const context = noticeStore.contextVersion
+  const result = await messageApi.markMessageRead(msg.id)
+  if (result.code !== 200 || context !== noticeStore.contextVersion)
+    return
+  const original = messages.value.find(item => String(item.id) === String(msg.id))
+  if (original)
+    original.readFlag = 1
   unreadCount.value = Math.max(0, unreadCount.value - 1)
   if (refresh) {
     await fetchUnreadCount()
@@ -383,13 +404,13 @@ async function markRead(msg, refresh = true) {
 
 function handleViewAll() {
   showPanel.value = false
-  navigateTo(props.messageRoute || '/message/message-list')
+  navigateTo(activeTab.value === 'notice' ? '/system/notice-list' : props.messageRoute || '/message/message-list')
 }
 
 async function handleMarkAllRead() {
   try {
     await messageApi.markAllMessagesRead()
-    window.$message.success('已全部标记为已读')
+    window.$message.success('个人消息已标记已读，公告需逐条阅读')
     await initData()
   }
   catch {
@@ -397,24 +418,18 @@ async function handleMarkAllRead() {
   }
 }
 
-onMounted(() => {
+watch(() => noticeStore.contextVersion, () => {
+  ++requestSequence
+  messages.value = []
+  unreadCount.value = 0
+  messagePage.value = 0
+  messageTotal.value = 0
+  bizTypeOptions.value = []
+  loading.value = false
+  messageError.value = ''
+  showPanel.value = false
   initData()
-})
-
-watch(
-  () => authStore.accessToken,
-  () => {
-    initData()
-  },
-)
-
-watch(
-  () => rangeDays.value,
-  () => {
-    if (showPanel.value)
-      fetchLatestMessages()
-  },
-)
+}, { immediate: true })
 
 defineExpose({
   refresh: initData,
@@ -567,11 +582,22 @@ defineExpose({
 }
 
 .message-filter-row {
-  padding: 12px 18px 8px;
+  display: flex;
+  gap: 8px;
+  padding: 12px 22px 8px;
 }
 
-.range-select {
-  width: 100%;
+.message-filter-row :deep(.n-select) {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-hint {
+  margin: 0;
+  padding: 0 22px 8px;
+  font-size: 11px;
+  color: #8a8d91;
+  line-height: 1.4;
 }
 
 .message-scrollbar {
@@ -712,6 +738,23 @@ defineExpose({
 
 .message-empty {
   margin-top: 80px;
+}
+
+.load-more {
+  padding: 12px 22px;
+  text-align: center;
+}
+
+.load-more-text {
+  display: inline-block;
+  font-size: 12px;
+  color: #8a8d91;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+
+.load-more-text:hover {
+  color: var(--primary-color, #165dff);
 }
 
 @media (max-width: 520px) {

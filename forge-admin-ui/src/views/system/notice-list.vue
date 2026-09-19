@@ -13,7 +13,7 @@
     >
       <!-- 自定义顶部 -->
       <template #toolbar-end>
-        <NBadge :value="unreadCount" :max="99" show-zero>
+        <NBadge :value="noticeStore.unreadCount" :max="99" show-zero>
           <n-button @click="refreshList">
             <template #icon>
               <i class="i-material-symbols:refresh" />
@@ -71,11 +71,13 @@
 
 <script setup>
 import { NBadge, NTag } from 'naive-ui'
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { AiCrudPage } from '@/components/ai-form'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
+import { useNoticeStore } from '@/stores/system/noticeStore'
 import { request } from '@/utils'
+import { downloadFile } from '@/utils/file'
 import { sanitizeHtml } from '@/utils/sanitize-html'
 
 defineOptions({ name: 'NoticeList' })
@@ -85,8 +87,8 @@ const NOTICE_TYPE_DICT = 'sys_notice_type'
 const crudRef = ref(null)
 const showDetailModal = ref(false)
 const currentNotice = ref(null)
-const unreadCount = ref(0)
 
+const noticeStore = useNoticeStore()
 const { dict } = useDict(NOTICE_TYPE_DICT)
 
 const noticeTypeOptions = computed(() => dict.value[NOTICE_TYPE_DICT] || [])
@@ -162,14 +164,12 @@ const tableColumns = computed(() => [
 // 查看详情
 async function handleView(row) {
   try {
-    const res = await request.post('/system/notice/getById', null, {
-      params: { noticeId: row.noticeId },
-    })
-    if (res.code === 200) {
+    const res = await request.get(`/system/notice/user/${encodeURIComponent(row.noticeId)}`)
+    if (res.code === 200 && res.data) {
       currentNotice.value = res.data
       showDetailModal.value = true
 
-      // 标记为已读
+      // 标记为已读并同步共享状态
       if (row.isRead === 0) {
         await markAsRead(row.noticeId)
       }
@@ -180,39 +180,32 @@ async function handleView(row) {
   }
 }
 
-// 标记为已读
+// 标记为已读并同步共享状态
 async function markAsRead(noticeId) {
   try {
     await request.post('/system/notice/markAsRead', null, {
       params: { noticeId },
     })
-    // 刷新列表和未读数量
+    // 刷新共享 store 的未读计数
+    await noticeStore.refreshCount()
+    // 刷新列表
     crudRef.value?.refresh()
-    loadUnreadCount()
   }
   catch (error) {
     console.error('标记已读失败:', error)
   }
 }
 
-// 加载未读数量
-async function loadUnreadCount() {
-  try {
-    const res = await request.get('/system/notice/user/unread-count')
-    if (res.code === 200) {
-      unreadCount.value = res.data
-    }
-  }
-  catch (error) {
-    console.error('获取未读数量失败:', error)
-  }
-}
-
-// 刷新列表
+// 刷新列表并同步共享状态
 function refreshList() {
   crudRef.value?.refresh()
-  loadUnreadCount()
+  noticeStore.refreshCount()
 }
+
+// 监听共享 store 的 contextVersion，当登录状态变化时刷新
+watch(() => noticeStore.contextVersion, () => {
+  crudRef.value?.refresh()
+})
 
 // 格式化文件大小
 function formatFileSize(bytes) {
@@ -225,19 +218,9 @@ function formatFileSize(bytes) {
 }
 
 // 下载附件
-function handleDownloadAttachment(file) {
+async function handleDownloadAttachment(file) {
   try {
-    // 构造下载链接
-    const downloadUrl = `/api/system/file/download?fileId=${file.fileId}`
-
-    // 创建 a 标签下载
-    const link = document.createElement('a')
-    link.href = downloadUrl
-    link.download = file.fileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
+    await downloadFile(file.fileId, file.fileName)
     window.$message.success('开始下载')
   }
   catch (error) {
@@ -247,7 +230,7 @@ function handleDownloadAttachment(file) {
 }
 
 onMounted(() => {
-  loadUnreadCount()
+  noticeStore.refreshCount()
 })
 </script>
 

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.system.mapper.SysNoticeMapper">
+    <!-- 用户入口共用可见性条件；租户拦截器额外约束当前租户。 -->
+    <sql id="userVisibleNotice">
+        n.del_flag = 0
+        AND n.publish_status = 1
+        AND (n.effective_time IS NULL OR n.effective_time &lt;= CURRENT_TIMESTAMP)
+        AND (n.expiration_time IS NULL OR n.expiration_time &gt; CURRENT_TIMESTAMP)
+        AND (
+            n.publish_scope = 0
+            OR (n.publish_scope = 1 AND EXISTS (
+                SELECT 1 FROM sys_notice_org no
+                INNER JOIN sys_user_org uo ON uo.org_id = no.org_id AND uo.tenant_id = no.tenant_id
+                WHERE no.notice_id = n.notice_id
+                  AND no.tenant_id = n.tenant_id
+                  AND uo.user_id = #{userId}
+            ))
+        )
+    </sql>
+
+    <select id="selectUserNoticePage" resultType="com.mdframe.forge.plugin.system.entity.SysNotice">
+        SELECT n.* FROM sys_notice n
+        WHERE <include refid="userVisibleNotice"/>
+        <if test="noticeId != null">
+            AND n.notice_id = #{noticeId}
+        </if>
+        <if test="query != null and query.noticeTitle != null and query.noticeTitle != ''">
+            AND n.notice_title LIKE CONCAT('%', #{query.noticeTitle}, '%')
+        </if>
+        <if test="query != null and query.noticeType != null and query.noticeType != ''">
+            AND n.notice_type = #{query.noticeType}
+        </if>
+        ORDER BY n.is_top DESC, n.top_sort DESC, n.publish_time DESC, n.notice_id DESC
+    </select>
+
+    <select id="countUserUnreadNotices" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM sys_notice n
+        WHERE <include refid="userVisibleNotice"/>
+        AND NOT EXISTS (
+            SELECT 1 FROM sys_notice_read_record r
+            WHERE r.notice_id = n.notice_id
+              AND r.tenant_id = n.tenant_id
+              AND r.user_id = #{userId}
+        )
+    </select>
+</mapper>

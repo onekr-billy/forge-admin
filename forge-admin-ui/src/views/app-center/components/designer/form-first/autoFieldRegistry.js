@@ -90,7 +90,8 @@ function shouldCreateField(component = {}, existingCodes) {
   const binding = component.fieldBinding || {}
   if (binding.mode === 'virtual' || !binding.fieldCode)
     return false
-  return binding.createIfMissing !== false && !existingCodes.has(binding.fieldCode)
+  // createIfMissing 只表示要不要自动补列，已绑定字段仍要进入字段目录。
+  return !existingCodes.has(binding.fieldCode)
 }
 
 function walkComponents(components = [], visitor) {

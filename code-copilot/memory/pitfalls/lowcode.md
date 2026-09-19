@@ -1,6 +1,16 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 85 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 88 条。
+
+## 子表字段不能同时进主表单和主表字段目录
+
+**发现日期**: 2026-09-19
+
+**问题描述**:
+审批待办把子表字段渲染了两次：`appendRuntimeChildFieldCatalog` 把子表字段以 `scope=child`、裸字段名放进主字段目录，`buildTaskFormFields` 没有跳过，主表单和 `childrenConfig` 各画一遍。列表设计选出的 `modelCode__field` 在非 `master-detail-crud` 布局下也会进 `editSchema`。节点权限面板 `collectBusinessAssetFields` 按裸字段名去重并丢掉 `childKey`，子表字段权限出不来。应用页区块 `fieldRefs` 仍是主表快照时，会把已编译的子表列滤掉。流程结束回写只查已发布运行配置；对象还是草稿时 `syncConfiguredStatusField` 直接返回，关联却被标成已结束，单据 `flowStatus` 停在 `IN_PROCESS`。
+
+**解决方案**:
+主表单跳过 `scope=child` 和 `__` 子表字段引用，子表只走 `childrenConfig`。编辑 schema 一律去掉子表字段引用，列表 columns 保留。流程模型的表单权限目录来自应用页面表单资产，不是运行时 `editSchema`；明细表字段在 `subTable.props.columns`。同一张子表会同时出现关系键和带应用前缀的对象编码（`detail_ujpc` / `cgou_detail_ujpc`），权限面板必须收成一套，审批回放按别名匹配，不能因为业务流程 formKey 和节点 formKey 写法不同就把节点权限清空。字段「可编辑」必须能改已有子表行，不能再被行级 `allowUpdate=false` 盖掉。带子表时节点 `formFieldPermissions` 是 JSON 对象字符串，不能按数组解析，否则 `fields` 整段丢失，暂存会报「不允许编辑子表字段」。主从表单据的字段在 `main` 里，审批标题不能只扫记录最外层，否则 `${fieldInput}` 不会被替换。结束回调用快照 `configKey` 回退草稿配置写 `flowStatus`；关联已结束时仍补写一次。
 
 ## 子表运行时单元格不能把 class 落到 AiFormItem 碎片根上
 
@@ -20,7 +30,7 @@
 低代码应用「表单设计」里，字段资产货架的字段来自 `resolveFormAssetFields(formDesignerSchema)`，也就是当前画布上已经放了的字段。因此「未使用」在已有表单对象时恒为空；从画布删除字段组件后，该字段同时从货架消失，未使用列表仍没有数据。对象设计器上下文只缓存了 relations/actions，没有把对象字段目录交给货架。表单设计 Tab 默认不进 `formDesignerMode`，还会把对象字段合并整段跳过。
 
 **解决方案**:
-字段资产货架以对象字段目录为事实源，当前画布字段只补充尚未保存的新字段。`activeFormDesignerObjectRef` 在表单设计 Tab 也要解析绑定对象；`ensureFormDesignerObjectContext` 必须缓存 `designer.fields` / `modelSchema.fields`，再用 `mergePageFieldCatalogs` 合并进 `activeFormFields`。删除画布组件只移除表单展示，字段资产留在未使用列表，可重新拖入。
+字段资产货架以对象字段目录为事实源，当前画布字段只补充尚未保存的新字段。`activeFormDesignerObjectRef` 在表单设计 Tab 也要解析绑定对象；`ensureFormDesignerObjectContext` 必须缓存 `designer.fields` / `modelSchema.fields`，再用 `mergePageFieldCatalogs` 合并进 `activeFormFields`。删除画布组件只移除表单展示，字段资产留在未使用列表，可重新拖入。返回表单设计要按当前选中页挂表单，不能用另一张页的 formAssetId；设计区不能用 auto 行高，否则顶栏消失后画布高度是 0，要先点列表设计再回来才重新撑开。
 
 ## 表单发布检查必须展平 row/col 子组件
 
@@ -1653,3 +1663,24 @@ Flyway 脚本为新环境写了包含完整字段的 `CREATE TABLE IF NOT EXISTS
 应用页面区块会保存 `previewLiveData`，但它只表达设计画布是否允许请求真实数据。正式运行页若继续用该字段判断“静态预览”，发布应用会被错误显示静态提示并拦截提交。另一方面，应用候选快照在对象发布前创建；只更新应用状态而不更新 `objects[*].designStatus`，正式运行上下文仍会暴露发布前的对象状态。
 
 处理原则：静态预览必须同时满足“非运行交互态”和“未开启真实预览”，正式运行态不读取设计器预览开关决定可提交性。协调发布应在提交前重新校验所有选中对象均为 `PUBLISHED` 且有发布版本，并把最终状态和对象设计版本引用回填到不可变快照。表单子表关系发布前还要从持久化 Schema 重建；遍历必须覆盖根 `components`、布局 `children` 和多表单 `forms[*].schema.components`，不能把 form 容器误当普通组件后停止。
+
+## 低代码应用创建页面必须读取运行数据源并支持引用现有表
+
+**发现日期**: 2026-09-19
+
+**问题描述**:
+应用内「创建页面」只生成空白对象并落到默认 LOWCODE_RUNTIME 数据源，没有加载代码生成里配置的运行数据源，也不能先选数据源再选现有表、按字段生成表单。应用初始化向导和对象向导其实已有这套能力，页面创建链路没有接上。
+
+**解决方案**:
+创建数据页时读取 `genDatasourceEnabled('LOWCODE_RUNTIME')`，允许选择运行数据源。引用现有表时再拉表列表和列，推断字段类型并生成表单；保存走 `DB_IMPORT`，不要再自动 CREATE TABLE。
+
+## 新建页面不能只凭页面 ID 复用已有数据表
+
+**发现日期**: 2026-09-19
+
+**问题描述**:
+新建页面点保存，报「字段“数字”已有数据，不能删除（数据表 cgou_approval_7dm4）」。这张表属于应用里已有的审批对象，不是新页面自己的表。中文页面名经 slugify 后页面 ID 固定退化成 `page_page`、表单资产 ID 退化成 `form`。从导航删除页面后，托管对象和物理表仍在，并记着旧的 `sourcePageId`。再新建页面会重新拿到同一个 ID。保存时 `pageMarkerMatches` 用页面 ID 或表单资产 ID 任一命中就复用旧对象，新画布字段里没有“数字”，字段守卫就按删列拒绝。
+
+**解决方案**:
+- 托管对象复用必须页面 ID 和表单资产 ID 同时命中，不能只靠其中一项。
+- 新建页面和表单资产 ID 必须带不可复用的随机后缀，删除后再建不能回到 `page_page` / `form`。

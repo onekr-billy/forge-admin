@@ -1,6 +1,7 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -43,6 +44,46 @@ public class BusinessApplicationObjectService
             objects.forEach(this::enrichDatabaseSummary);
         }
         return objects;
+    }
+
+    /**
+     * 页面从表单创建的业务对象跟着页面走。页面已从应用导航删除，且没有其它页面仍引用时，
+     * 解除应用关联，避免流程设计还能选到已删除页面的对象。不删除对象本身和数据表。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void detachOrphanPageFormObjects(Long applicationId) {
+        AiBusinessApplication application = applicationService.requireEntity(applicationId);
+        JSONObject builder = readInAppBuilder(application.getOptions());
+        if (builder == null) {
+            return;
+        }
+        Set<String> pageIds = readPageIds(builder);
+        Set<String> referencedObjectIds = new LinkedHashSet<>();
+        collectReferencedObjectIds(builder, referencedObjectIds);
+        List<BusinessApplicationObjectVO> current = list(applicationId);
+        if (current == null || current.isEmpty()) {
+            return;
+        }
+        List<BusinessApplicationObjectDTO> kept = new ArrayList<>();
+        boolean changed = false;
+        for (BusinessApplicationObjectVO association : current) {
+            if (association == null || association.getObjectId() == null) {
+                continue;
+            }
+            if (isOrphanPageFormObject(association, pageIds, referencedObjectIds)) {
+                changed = true;
+                continue;
+            }
+            BusinessApplicationObjectDTO item = new BusinessApplicationObjectDTO();
+            item.setObjectId(association.getObjectId());
+            item.setObjectRole(association.getObjectRole());
+            item.setSortOrder(association.getSortOrder());
+            item.setOptions(association.getOptions());
+            kept.add(item);
+        }
+        if (changed) {
+            replace(applicationId, kept);
+        }
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -152,6 +193,75 @@ public class BusinessApplicationObjectService
         } catch (Exception ignored) {
             object.setSyncStatus("UNKNOWN");
         }
+    }
+
+    private JSONObject readInAppBuilder(String options) {
+        if (StringUtils.isBlank(options)) {
+            return null;
+        }
+        try {
+            JSONObject root = JSON.parseObject(options);
+            return root == null ? null : root.getJSONObject("inAppBuilder");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private Set<String> readPageIds(JSONObject builder) {
+        Set<String> pageIds = new LinkedHashSet<>();
+        JSONArray nodes = builder.getJSONArray("nodes");
+        if (nodes != null) {
+            for (int index = 0; index < nodes.size(); index++) {
+                JSONObject node = nodes.getJSONObject(index);
+                if (node != null && "page".equals(node.getString("type"))
+                        && StringUtils.isNotBlank(node.getString("id"))) {
+                    pageIds.add(node.getString("id"));
+                }
+            }
+        }
+        JSONObject pages = builder.getJSONObject("pages");
+        if (pages != null) {
+            pageIds.addAll(pages.keySet());
+        }
+        return pageIds;
+    }
+
+    private void collectReferencedObjectIds(Object value, Set<String> objectIds) {
+        if (value instanceof JSONObject object) {
+            JSONObject objectRef = object.getJSONObject("objectRef");
+            if (objectRef != null && objectRef.get("objectId") != null) {
+                objectIds.add(String.valueOf(objectRef.get("objectId")));
+            }
+            for (Object child : object.values()) {
+                collectReferencedObjectIds(child, objectIds);
+            }
+            return;
+        }
+        if (value instanceof JSONArray array) {
+            for (Object child : array) {
+                collectReferencedObjectIds(child, objectIds);
+            }
+        }
+    }
+
+    private boolean isOrphanPageFormObject(BusinessApplicationObjectVO association,
+                                           Set<String> pageIds,
+                                           Set<String> referencedObjectIds) {
+        JSONObject marker;
+        try {
+            marker = JSON.parseObject(association.getOptions());
+        } catch (Exception ignored) {
+            return false;
+        }
+        if (marker == null
+                || !"PAGE_FORM".equals(marker.getString("managedBy"))
+                || StringUtils.isBlank(marker.getString("sourcePageId"))) {
+            return false;
+        }
+        if (pageIds.contains(marker.getString("sourcePageId"))) {
+            return false;
+        }
+        return !referencedObjectIds.contains(String.valueOf(association.getObjectId()));
     }
 
     private Long resolveTenantId() {

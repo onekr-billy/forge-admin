@@ -79,4 +79,9 @@ public interface ISysNoticeService extends IService<SysNotice> {
      * 查询当前用户的未读公告数量
      */
     Integer getUserUnreadCount();
+
+    /**
+     * 读取当前用户可见且在有效期内的公告详情。
+     */
+    SysNoticeVO selectUserNoticeById(Long noticeId);
 }
