@@ -1,5 +1,6 @@
 <script setup>
-import { NButton, NFormItem, NInputNumber, NSwitch } from 'naive-ui'
+import { ClipboardOutline, CopyOutline, SwapHorizontalOutline, SwapVerticalOutline, TrashOutline } from '@vicons/ionicons5'
+import { NFormItem, NIcon, NInputNumber, NSwitch } from 'naive-ui'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 
 const store = usePrintDesignerStore()
@@ -13,23 +14,27 @@ const store = usePrintDesignerStore()
         <NInputNumber :value="store.activeElement[key]" :min="key.includes('Mm') && ['widthMm', 'heightMm'].includes(key) ? 0.1 : 0" :precision="2" :show-button="false" @update:value="$event !== null && store.patchSelected({ [key]: $event })" />
       </NFormItem>
     </div>
-    <div v-else-if="store.selectedIds.length > 1" class="panel-row">
-      <NButton size="small" @click="store.alignSelection('left')">
-        左对齐
-      </NButton><NButton size="small" @click="store.alignSelection('top')">
-        顶对齐
-      </NButton>
+    <div v-else-if="store.selectedIds.length > 1" class="geometry-commandbar alignment-bar">
+      <button v-for="item in [{ key: 'left', label: '左对齐' }, { key: 'center', label: '水平居中' }, { key: 'right', label: '右对齐' }, { key: 'top', label: '顶对齐' }, { key: 'middle', label: '垂直居中' }, { key: 'bottom', label: '底对齐' }]" :key="item.key" type="button" class="geometry-tool" :title="item.label" :aria-label="item.label" @click="store.alignSelection(item.key)">
+        <span class="align-glyph" :class="item.key"><i /><i /><i /></span>
+      </button>
+      <button type="button" class="geometry-tool" title="水平等距分布" aria-label="水平等距分布" :disabled="store.selectedIds.length < 3" @click="store.distributeSelection('horizontal')">
+        <NIcon :component="SwapHorizontalOutline" />
+      </button>
+      <button type="button" class="geometry-tool" title="垂直等距分布" aria-label="垂直等距分布" :disabled="store.selectedIds.length < 3" @click="store.distributeSelection('vertical')">
+        <NIcon :component="SwapVerticalOutline" />
+      </button>
     </div>
-    <div class="panel-row">
-      <NButton size="small" :disabled="!store.selectedIds.length" @click="store.copySelection()">
-        复制元素
-      </NButton>
-      <NButton size="small" :disabled="!store.clipboard.length || !store.activeSurface?.elements" @click="store.pasteSelection()">
-        粘贴元素
-      </NButton>
-      <NButton size="small" type="error" secondary :disabled="!store.selectedIds.length" @click="store.removeSelection()">
-        删除元素
-      </NButton>
+    <div class="geometry-commandbar edit-commandbar">
+      <button type="button" class="geometry-tool" title="复制元素" aria-label="复制元素" :disabled="!store.selectedIds.length" @click="store.copySelection()">
+        <NIcon :component="CopyOutline" />
+      </button>
+      <button type="button" class="geometry-tool" title="粘贴元素" aria-label="粘贴元素" :disabled="!store.clipboard.length || !store.activeSurface?.elements" @click="store.pasteSelection()">
+        <NIcon :component="ClipboardOutline" />
+      </button>
+      <button type="button" class="geometry-tool danger" title="删除元素" aria-label="删除元素" :disabled="!store.selectedIds.length" @click="store.removeSelection()">
+        <NIcon :component="TrashOutline" />
+      </button>
     </div>
     <template v-if="!store.selectedIds.length && store.activeSurface?.kind">
       <NFormItem v-if="store.activeSurface.kind === 'FIXED'" label="区块高度 mm" size="small">
@@ -44,3 +49,107 @@ const store = usePrintDesignerStore()
     </template>
   </section>
 </template>
+
+<style scoped>
+.geometry-commandbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border-light, #ddd);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-tertiary, #64748b) 4%, transparent);
+}
+.alignment-bar {
+  margin-bottom: 7px;
+}
+.edit-commandbar {
+  width: max-content;
+}
+.geometry-tool {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-primary, #334155);
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+}
+.geometry-tool:hover:not(:disabled) {
+  color: var(--primary-color, #356cde);
+  border-color: color-mix(in srgb, var(--primary-color, #356cde) 22%, transparent);
+  background: color-mix(in srgb, var(--primary-color, #356cde) 9%, transparent);
+}
+.geometry-tool.danger:hover:not(:disabled) {
+  color: #ef4444;
+  border-color: rgb(239 68 68 / 20%);
+  background: rgb(239 68 68 / 8%);
+}
+.geometry-tool:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+.align-glyph {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+}
+.align-glyph i {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.align-glyph i:nth-child(1) {
+  width: 12px;
+}
+.align-glyph i:nth-child(2) {
+  width: 8px;
+}
+.align-glyph i:nth-child(3) {
+  width: 14px;
+}
+.align-glyph.center i,
+.align-glyph.middle i {
+  align-self: center;
+}
+.align-glyph.right i {
+  align-self: flex-end;
+}
+.align-glyph.top,
+.align-glyph.middle,
+.align-glyph.bottom {
+  flex-direction: row;
+  align-items: flex-start;
+}
+.align-glyph.top i,
+.align-glyph.middle i,
+.align-glyph.bottom i {
+  width: 2px;
+  height: 12px;
+}
+.align-glyph.top i:nth-child(2),
+.align-glyph.middle i:nth-child(2),
+.align-glyph.bottom i:nth-child(2) {
+  height: 8px;
+}
+.align-glyph.top i:nth-child(3),
+.align-glyph.middle i:nth-child(3),
+.align-glyph.bottom i:nth-child(3) {
+  height: 14px;
+}
+.align-glyph.middle i {
+  align-self: center;
+}
+.align-glyph.bottom i {
+  align-self: flex-end;
+}
+</style>

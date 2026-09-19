@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { NSelect } from 'naive-ui'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
@@ -33,18 +34,28 @@ describe('print designer paper workspace', () => {
     expect(wrapper.find('.margin-guide').attributes('style')).toContain('10mm')
     expect(wrapper.find('.header-guide').exists()).toBe(true)
     expect(wrapper.find('.footer-guide').exists()).toBe(true)
+    expect(wrapper.find('.alignment-guide').exists()).toBe(false)
   })
 
   it('changes paper, orientation, grid and zoom from the toolbar', async () => {
     const wrapper = mount(PrintDesignerToolbar, { props: { local: false }, global: { plugins: [pinia] } })
-    const button = label => wrapper.findAll('button').find(item => item.text().trim() === label)
-    await button('A5').trigger('click')
+    await wrapper.findAllComponents(NSelect)[0].vm.$emit('update:value', 'A5')
     expect(store.document.paper).toMatchObject({ widthMm: 148, heightMm: 210 })
-    await button('转为横向').trigger('click')
+    await wrapper.get('[aria-label="转为横向"]').trigger('click')
     expect(store.document.paper.orientation).toBe('LANDSCAPE')
-    await button('网格').trigger('click')
+    await wrapper.get('[aria-label="显示或隐藏毫米网格"]').trigger('click')
     expect(store.showGrid).toBe(false)
     await wrapper.get('[aria-label="放大画布"]').trigger('click')
     expect(store.zoom).toBe(1)
+  })
+
+  it('uses compact labelled commands and toggles both workspace panels', async () => {
+    const wrapper = mount(PrintDesignerToolbar, { props: { local: false }, global: { plugins: [pinia] } })
+    expect(wrapper.get('[aria-label="撤销"]').text()).toBe('')
+    expect(wrapper.get('[aria-label="预览打印结果"]').text()).toBe('')
+    await wrapper.get('[aria-label="显示或隐藏组件面板"]').trigger('click')
+    await wrapper.get('[aria-label="显示或隐藏属性面板"]').trigger('click')
+    expect(store.leftPanelOpen).toBe(false)
+    expect(store.rightPanelOpen).toBe(false)
   })
 })

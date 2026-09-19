@@ -38,6 +38,34 @@ describe('print designer commands and history', () => {
     expect(store.selectedElements[0].yMm).toBeCloseTo(14)
   })
 
+  it('snaps movement to element edges and clears dynamic guides after the gesture', () => {
+    store.beginGesture()
+    store.moveGesture(mmToPx(9.4) * store.zoom, 0)
+    expect(store.selectedElements[0].xMm).toBeCloseTo(20)
+    expect(store.alignmentGuides.x).toEqual([50])
+    expect(store.alignmentGuides.position).toMatchObject({ xMm: 20, yMm: 10 })
+    store.endGesture()
+    expect(store.alignmentGuides).toEqual({ x: [], y: [], position: null })
+  })
+
+  it('does not show an alignment line outside the snap threshold and clears on cancel', () => {
+    store.beginGesture()
+    store.moveGesture(mmToPx(8.5) * store.zoom, mmToPx(2.5) * store.zoom)
+    expect(store.alignmentGuides.x).toEqual([])
+    expect(store.alignmentGuides.y).toEqual([])
+    store.cancelGesture()
+    expect(store.selectedElements[0]).toMatchObject({ xMm: 10, yMm: 10 })
+    expect(store.alignmentGuides.position).toBeNull()
+  })
+
+  it('snaps resize handles to neighbouring element edges', () => {
+    store.beginGesture()
+    store.moveGesture(mmToPx(9.5) * store.zoom, 0, true)
+    expect(store.selectedElements[0].widthMm).toBeCloseTo(40)
+    expect(store.alignmentGuides.x).toEqual([50])
+    store.endGesture()
+  })
+
   it('cancels gestures and ignores no-op commands', () => {
     store.beginGesture()
     store.moveGesture(50, 10)
@@ -51,6 +79,22 @@ describe('print designer commands and history', () => {
     store.selectElement('b', true)
     store.moveSelection(-100, 100)
     expect(store.selectedElements.map(e => [e.xMm, e.yMm])).toEqual([[0, 40], [40, 50]])
+  })
+
+  it('aligns selected elements on every edge and distributes three elements', () => {
+    store.selectElement('b', true)
+    expect(store.alignSelection('right')).toBe(true)
+    expect(store.selectedElements.map(element => element.xMm + element.widthMm)).toEqual([80, 80])
+    store.undo()
+    expect(store.alignSelection('middle')).toBe(true)
+    expect(store.selectedElements.map(element => element.yMm + element.heightMm / 2)).toEqual([20, 20])
+
+    store.execute(document => document.body[0].elements.push({ id: 'c', type: 'TEXT', xMm: 100, yMm: 30, widthMm: 20, heightMm: 10, binding: { source: 'CONSTANT', value: '第三项' } }))
+    store.selectElement('c', true)
+    expect(store.distributeSelection('horizontal')).toBe(true)
+    expect(store.selectedElements.map(element => element.xMm)).toEqual([10, 55, 100])
+    expect(store.distributeSelection('vertical')).toBe(true)
+    expect(store.selectedElements.map(element => element.yMm)).toEqual([15, 22.5, 30])
   })
 
   it('rejects out-of-bounds properties and invalid imports atomically', () => {

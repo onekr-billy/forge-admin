@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { findSurface, newPrintId, resizeElement, translateElements } from '../../components/print/designer/commands'
+import { findSurface, newPrintId, resizeElement, selectionBounds, snapResize, snapTranslation, translateElements } from '../../components/print/designer/commands'
 import { cloneDocument, createHistory, recordChange, travelHistory } from '../../components/print/designer/history'
 import { validateFieldCatalog } from '../../components/print/protocol/fieldCatalog'
 import { createPrintDocument } from '../../components/print/protocol/types'
@@ -23,6 +23,9 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     saving: false,
     generation: 0,
     previewOpen: false,
+    leftPanelOpen: true,
+    rightPanelOpen: true,
+    alignmentGuides: { x: [], y: [], position: null },
   }),
   getters: {
     activeSurface: state => findSurface(state.document, state.surfaceId),
@@ -52,6 +55,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       this.notice = ''
       this.saving = false
       this.previewOpen = false
+      this.alignmentGuides = { x: [], y: [], position: null }
       this.generation++
     },
     serialize() {
@@ -113,6 +117,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     beginGesture() {
       this.cancelGesture()
       this.gesture = { before: cloneDocument(this.document), surfaceId: this.surfaceId, ids: [...this.selectedIds], zoom: this.zoom }
+      this.alignmentGuides = { x: [], y: [], position: null }
     },
     moveGesture(dx, dy, resize = false) {
       if (!this.gesture) {
@@ -123,10 +128,14 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       const x = screenDeltaToMm(dx, zoom)
       const y = screenDeltaToMm(dy, zoom)
       if (resize) {
-        resizeElement(candidate, surfaceId, ids[0], x, y)
+        const snapped = snapResize(before, surfaceId, ids[0], x, y)
+        resizeElement(candidate, surfaceId, ids[0], snapped.dx, snapped.dy)
+        this.alignmentGuides = snapped.guides
       }
       else {
-        translateElements(candidate, surfaceId, ids, x, y)
+        const snapped = snapTranslation(before, surfaceId, ids, x, y)
+        translateElements(candidate, surfaceId, ids, snapped.dx, snapped.dy)
+        this.alignmentGuides = snapped.guides
       }
       this.document = candidate
     },
@@ -134,6 +143,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       if (this.gesture) {
         recordChange(this.history, this.gesture.before, this.document)
         this.gesture = null
+        this.alignmentGuides = { x: [], y: [], position: null }
       }
     },
     cancelGesture() {
@@ -141,6 +151,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         this.document = this.gesture.before
         this.gesture = null
       }
+      this.alignmentGuides = { x: [], y: [], position: null }
     },
     undo() {
       this.cancelGesture()
@@ -181,13 +192,48 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         }
       })
     },
-    alignSelection(axis) {
+    alignSelection(alignment) {
       if (this.selectedElements.length < 2) {
-        return
+        return false
       }
-      const key = axis === 'left' ? 'xMm' : 'yMm'
-      const value = Math.min(...this.selectedElements.map(e => e[key]))
-      this.patchSelected({ [key]: value })
+      return this.execute((document) => {
+        const elements = findSurface(document, this.surfaceId).elements.filter(element => this.selectedIds.includes(element.id))
+        const bounds = selectionBounds(elements)
+        for (const element of elements) {
+          if (alignment === 'left')
+            element.xMm = bounds.xMm
+          else if (alignment === 'center')
+            element.xMm = Number((bounds.xMm + (bounds.widthMm - element.widthMm) / 2).toFixed(3))
+          else if (alignment === 'right')
+            element.xMm = Number((bounds.xMm + bounds.widthMm - element.widthMm).toFixed(3))
+          else if (alignment === 'top')
+            element.yMm = bounds.yMm
+          else if (alignment === 'middle')
+            element.yMm = Number((bounds.yMm + (bounds.heightMm - element.heightMm) / 2).toFixed(3))
+          else if (alignment === 'bottom')
+            element.yMm = Number((bounds.yMm + bounds.heightMm - element.heightMm).toFixed(3))
+        }
+      })
+    },
+    distributeSelection(axis) {
+      if (this.selectedElements.length < 3) {
+        return false
+      }
+      return this.execute((document) => {
+        const horizontal = axis === 'horizontal'
+        const positionKey = horizontal ? 'xMm' : 'yMm'
+        const sizeKey = horizontal ? 'widthMm' : 'heightMm'
+        const elements = findSurface(document, this.surfaceId).elements.filter(element => this.selectedIds.includes(element.id)).sort((a, b) => a[positionKey] - b[positionKey])
+        const first = elements[0][positionKey]
+        const lastEdge = elements.at(-1)[positionKey] + elements.at(-1)[sizeKey]
+        const occupied = elements.reduce((total, element) => total + element[sizeKey], 0)
+        const gap = (lastEdge - first - occupied) / (elements.length - 1)
+        let cursor = first
+        for (const element of elements) {
+          element[positionKey] = Number(cursor.toFixed(3))
+          cursor += element[sizeKey] + gap
+        }
+      })
     },
     async save(writer) {
       if (this.saving || this.gesture) {

@@ -98,7 +98,7 @@ describe('designer editing workflow', () => {
     expect(await wrapper.vm.canLeave()).toBe(false)
     expect(confirmDiscard).toHaveBeenCalled()
     expect(store.serialize()).toBe(dirty)
-    await button('保存草稿').trigger('click')
+    await button('保存').trigger('click')
     await flushPromises()
     expect(save).toHaveBeenCalledOnce()
     expect(store.dirty).toBe(false)

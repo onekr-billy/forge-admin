@@ -22,6 +22,106 @@ export function selectionBounds(elements) {
   }
 }
 
+function axisAnchors(start, size) {
+  return [start, start + size / 2, start + size]
+}
+
+function nearestSnap(moving, targets, thresholdMm) {
+  let best = null
+  for (const source of moving) {
+    for (const target of targets) {
+      const adjustment = target - source
+      if (Math.abs(adjustment) <= thresholdMm && (!best || Math.abs(adjustment) < Math.abs(best.adjustment))) {
+        best = { adjustment, target }
+      }
+    }
+  }
+  return best
+}
+
+function snapAxis(moving, targets, gridSource, thresholdMm) {
+  const edge = nearestSnap(moving, targets, thresholdMm)
+  const gridTarget = Math.round(gridSource)
+  const gridAdjustment = gridTarget - gridSource
+  const grid = Math.abs(gridAdjustment) <= Math.min(0.35, thresholdMm)
+    ? { adjustment: gridAdjustment, target: gridTarget }
+    : null
+  if (!edge)
+    return grid
+  if (!grid || Math.abs(edge.adjustment) <= Math.abs(grid.adjustment))
+    return edge
+  return grid
+}
+
+function surfaceSnapTargets(document, surfaceId, excludedIds = []) {
+  const surface = findSurface(document, surfaceId)
+  const width = paperGeometry(document).contentWidthMm
+  const x = [0, width / 2, width]
+  const y = [0, surface?.heightMm / 2, surface?.heightMm].filter(Number.isFinite)
+  for (const element of surface?.elements || []) {
+    if (excludedIds.includes(element.id))
+      continue
+    x.push(...axisAnchors(element.xMm, element.widthMm))
+    y.push(...axisAnchors(element.yMm, element.heightMm))
+  }
+  return { x, y }
+}
+
+export function snapTranslation(document, surfaceId, ids, dx, dy, thresholdMm = 0.8) {
+  const surface = findSurface(document, surfaceId)
+  const elements = surface?.elements?.filter(element => ids.includes(element.id)) || []
+  const bounds = selectionBounds(elements)
+  if (!bounds)
+    return { dx, dy, guides: { x: [], y: [], position: null } }
+  const targets = surfaceSnapTargets(document, surfaceId, ids)
+  const nextX = bounds.xMm + dx
+  const nextY = bounds.yMm + dy
+  const xSnap = snapAxis(axisAnchors(nextX, bounds.widthMm), targets.x, nextX, thresholdMm)
+  const ySnap = snapAxis(axisAnchors(nextY, bounds.heightMm), targets.y, nextY, thresholdMm)
+  const snappedDx = dx + (xSnap?.adjustment || 0)
+  const snappedDy = dy + (ySnap?.adjustment || 0)
+  return {
+    dx: snappedDx,
+    dy: snappedDy,
+    guides: {
+      x: xSnap ? [Number(xSnap.target.toFixed(3))] : [],
+      y: ySnap ? [Number(ySnap.target.toFixed(3))] : [],
+      position: {
+        xMm: Number((bounds.xMm + snappedDx).toFixed(3)),
+        yMm: Number((bounds.yMm + snappedDy).toFixed(3)),
+      },
+    },
+  }
+}
+
+export function snapResize(document, surfaceId, id, dx, dy, thresholdMm = 0.8) {
+  const surface = findSurface(document, surfaceId)
+  const element = surface?.elements?.find(item => item.id === id)
+  if (!element)
+    return { dx, dy, guides: { x: [], y: [], position: null } }
+  const targets = surfaceSnapTargets(document, surfaceId, [id])
+  const right = element.xMm + element.widthMm + dx
+  const bottom = element.yMm + element.heightMm + dy
+  const xSnap = snapAxis([right], targets.x, right, thresholdMm)
+  const ySnap = snapAxis([bottom], targets.y, bottom, thresholdMm)
+  const snappedDx = dx + (xSnap?.adjustment || 0)
+  const snappedDy = dy + (ySnap?.adjustment || 0)
+  return {
+    dx: snappedDx,
+    dy: snappedDy,
+    guides: {
+      x: xSnap ? [Number(xSnap.target.toFixed(3))] : [],
+      y: ySnap ? [Number(ySnap.target.toFixed(3))] : [],
+      position: {
+        xMm: Number(element.xMm.toFixed(3)),
+        yMm: Number(element.yMm.toFixed(3)),
+        widthMm: Number((element.widthMm + snappedDx).toFixed(3)),
+        heightMm: Number((element.heightMm + snappedDy).toFixed(3)),
+      },
+    },
+  }
+}
+
 export function translateElements(document, surfaceId, ids, dx, dy) {
   const surface = findSurface(document, surfaceId)
   const elements = surface?.elements?.filter(e => ids.includes(e.id)) || []

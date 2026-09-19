@@ -18,8 +18,11 @@ describe('preview ownership', () => {
       global: { stubs: { NSelect: true, NSpin: { template: '<div><slot /></div>' }, NButton: { template: '<button><slot /></button>' } } },
     })
     await flushPromises()
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(wrapper.findAll('button').some(button => button.text().trim() === '打印')).toBe(false)
     expect(wrapper.text()).toContain('模板预览')
+    expect(wrapper.find('[aria-label="适合宽度"]').exists()).toBe(true)
+    expect(wrapper.find('.preview-page-shell').exists()).toBe(true)
+    expect(wrapper.text()).toContain('第 1 页')
     expect(createBrowserPrintSession).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -36,7 +39,7 @@ describe('preview ownership', () => {
     createBrowserPrintSession.mockImplementation(() => new Promise((resolve) => {
       complete = resolve
     }))
-    await wrapper.get('button').trigger('click')
+    await wrapper.findAll('button').find(button => button.text().trim() === '打印').trigger('click')
     wrapper.unmount()
     complete({ print, dispose })
     await flushPromises()

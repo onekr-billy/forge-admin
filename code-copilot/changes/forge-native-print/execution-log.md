@@ -437,3 +437,26 @@ git diff --check
 结果：打印域 17 文件 101 项全部通过；目标 ESLint 和 `git diff --check` 无输出；Vite 9366 modules 构建成功，只有项目既有 native config、CSS `//` 注释、dynamic import 与插件耗时警告。浏览器以 1440×900 桌面视口从应用工作台路由进入模板设计页，实际观察双向标尺、网格、纸张辅助线、三栏、物料区和选中元素坐标线；浏览器控制台 error/warn 为空，随后恢复默认视口并保留页面给用户查看。
 
 第一次按 memory 中 Node 20.19.0 命令执行时发现本机当前未安装该版本，测试尚未启动；改用此前本变更已验证的 Node 24.21.0 后通过。未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、PDF 或物理打印；用户要求查看的本地合成预览服务继续监听 `127.0.0.1:4318`，其余真实环境验收仍归 T42/T44。
+
+## 2026-09-19 · T47 工作台收敛、动态定位线与文档式预览
+
+用户第二轮查看后指出操作按钮过多、窄窗口布局混乱、定位线不是真实吸附以及最终预览效果不足。按 SDD 先新增 Spec 4.5、T47 和增量测试计划，再修改生产代码。继续对照本地 `vue-plugin-hiprint` 的紧凑命令组织、拖动辅助线和纸张视图，但使用 Forge 自有协议、Pinia 状态和 Vue 3 组件实现。
+
+实现：顶部编辑操作收敛为单行图标命令栏，纸张和缩放使用选择器，新建/复制/恢复/协议进入“更多”；页面级场景绑定、版本和发布操作同步压缩。区块行只保留排序图标和行级菜单，属性区复制/粘贴/删除改为图标工具组。左右面板由 Pinia 管理并可独立收起，900px 以下自动收起并以覆盖面板打开，不再使用 1080px 固定工作区横向滚动。
+
+拖动和缩放以毫米坐标计算吸附，候选包含内容边界、其它元素的左中右/上中下和 1mm 网格；只有手势中实际命中阈值才显示定位线和坐标，结束、取消、切换区块或加载模板立即清除。多选补齐左/中/右、顶/中/底六向对齐及水平/垂直等距分布。预览改为独立文档查看工作台，含页码导航、适合宽度、缩放加减、纸张页标与阴影层级；预览和正式打印继续复用同一布局结果。
+
+验证：
+
+```bash
+./node_modules/.bin/vitest run src/components/print src/stores/print src/api/__tests__/print.spec.js src/api/__tests__/printRuntimeContext.spec.js
+node node_modules/eslint/bin/eslint.js <本阶段 13 个前端源码/测试文件>
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+git diff --check
+```
+
+结果：18 个测试文件 108 项全部通过，定向 ESLint 和 `git diff --check` 无输出；Vite 9367 modules 构建成功。构建只有项目既有 native config、CSS `//` 注释、dynamic import 和插件耗时提示。所有触达 SFC 均低于 800 行。
+
+浏览器在 `/print/designer?templateId=1` 实际核对：桌面工具栏保持单行且三栏清晰；默认窄窗口自动收起左右面板，画布完整显示，组件面板可作为覆盖层打开后再次收起；预览显示纸张、页数、页码导航、适宽和缩放操作。拖动吸附的瞬态状态由 Store/组件测试覆盖，松手后浏览器页面无残留定位线。合成预览服务继续监听 `127.0.0.1:4318` 并保留新版页面给用户查看。
+
+本阶段未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、真实业务数据、PDF 或物理打印；这些继续由用户按 T44 清单验收。全程只在 `forge-native-print` 分支 commit，不 push；既有 `.DS_Store` 未暂存。

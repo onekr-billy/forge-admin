@@ -1,6 +1,6 @@
 <script setup>
 import { NAlert, NButton, NInput, NModal, NTabPane, NTabs, useThemeVars } from 'naive-ui'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { createPrintDocument } from '../protocol/types'
 import PrintPreview from '../runtime/PrintPreview.vue'
@@ -30,6 +30,20 @@ const props = defineProps({
 })
 const store = usePrintDesignerStore()
 store.load(props.template, props.catalog)
+let compactMedia
+function collapseForCompact(event) {
+  if (event.matches) {
+    store.leftPanelOpen = false
+    store.rightPanelOpen = false
+  }
+}
+onMounted(() => {
+  compactMedia = window.matchMedia?.('(max-width: 900px)')
+  if (compactMedia) {
+    collapseForCompact(compactMedia)
+    compactMedia.addEventListener('change', collapseForCompact)
+  }
+})
 const confirmOpen = ref(false)
 let resolveConfirm = null
 function confirmDiscard() {
@@ -47,7 +61,10 @@ function answerDiscard(answer) {
   resolveConfirm?.(answer)
   resolveConfirm = null
 }
-onBeforeUnmount(() => answerDiscard(false))
+onBeforeUnmount(() => {
+  answerDiscard(false)
+  compactMedia?.removeEventListener('change', collapseForCompact)
+})
 const { canLeave } = usePrintDesignerLifecycle(store, confirmDiscard, () => props.externalDirty)
 const theme = useThemeVars()
 const themeStyle = computed(() => ({ '--bg-primary': theme.value.cardColor, '--gray-100': theme.value.bodyColor, '--text-primary': theme.value.textColor1, '--text-tertiary': theme.value.textColor3, '--border-light': theme.value.borderColor, '--primary-color': theme.value.primaryColor }))
@@ -142,12 +159,12 @@ defineExpose({ canLeave, save })
       {{ store.notice }}
     </NAlert>
     <div class="designer-layout-scroll">
-      <div class="designer-layout">
-        <aside class="designer-aside">
+      <div class="designer-layout" :class="{ 'left-closed': !store.leftPanelOpen, 'right-closed': !store.rightPanelOpen }">
+        <aside v-show="store.leftPanelOpen" class="designer-aside">
           <PrintElementPalette /><PrintFieldTree /><PrintSectionList />
         </aside>
         <PrintCanvas />
-        <aside class="designer-properties">
+        <aside v-show="store.rightPanelOpen" class="designer-properties">
           <NTabs v-model:value="panel" type="line" size="small">
             <NTabPane name="selection" tab="选中内容">
               <ElementGeometryPanel /><BindingPanel /><TextPanel /><TablePanel />
@@ -165,7 +182,7 @@ defineExpose({ canLeave, save })
         </aside>
       </div>
     </div>
-    <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ maxHeight: '80vh', overflow: 'auto' }" :style="{ width: '94vw', maxWidth: '1400px' }" :mask-closable="false">
+    <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ padding: 0, height: 'calc(92vh - 58px)', overflow: 'hidden' }" :style="{ width: '96vw', maxWidth: '1500px', height: '92vh' }" :mask-closable="false">
       <PrintPreview v-if="store.previewOpen" data-label="模板预览" :allow-print="!saveDraft" :template="store.document" :context="context" :catalog="store.catalog" :resolve-file="resolveFile" />
     </NModal>
     <NModal :show="confirmOpen" preset="dialog" type="warning" title="放弃未保存的修改？" content="当前打印模板有未保存的修改，放弃后将载入其他内容。" positive-text="放弃修改" negative-text="继续编辑" :mask-closable="false" @positive-click="answerDiscard(true)" @negative-click="answerDiscard(false)" @close="answerDiscard(false)" @esc="answerDiscard(false)" />
@@ -201,15 +218,24 @@ defineExpose({ canLeave, save })
 .designer-layout-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 .designer-layout {
+  --left-panel-width: 216px;
+  --right-panel-width: 292px;
+  position: relative;
   width: 100%;
-  min-width: 1080px;
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 216px minmax(560px, 1fr) 292px;
+  grid-template-columns: var(--left-panel-width) minmax(0, 1fr) var(--right-panel-width);
+  transition: grid-template-columns 0.16s ease;
+}
+.designer-layout.left-closed {
+  --left-panel-width: 0px;
+}
+.designer-layout.right-closed {
+  --right-panel-width: 0px;
 }
 .designer-aside,
 .designer-properties {
@@ -270,5 +296,29 @@ defineExpose({ canLeave, save })
 }
 .protocol-actions {
   margin-top: 10px;
+}
+@media (max-width: 900px) {
+  .designer-layout {
+    display: block;
+  }
+  .designer-layout > :deep(.print-canvas) {
+    width: 100%;
+    height: 100%;
+  }
+  .designer-aside,
+  .designer-properties {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    bottom: 0;
+    width: min(286px, 82vw);
+    box-shadow: 0 10px 32px rgb(15 23 42 / 18%);
+  }
+  .designer-aside {
+    left: 0;
+  }
+  .designer-properties {
+    right: 0;
+  }
 }
 </style>

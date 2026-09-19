@@ -1,5 +1,6 @@
 <script setup>
-import { NAlert, NButton, NEmpty, NInput, NModal, NSpace, NSpin, useThemeVars } from 'naive-ui'
+import { ArrowBackOutline, CloudUploadOutline, GitBranchOutline, LinkOutline } from '@vicons/ionicons5'
+import { NAlert, NButton, NEmpty, NIcon, NInput, NModal, NSpin, useThemeVars } from 'naive-ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { loadPrintFile } from '@/api/print'
@@ -72,22 +73,31 @@ async function restore(id) {
 <template>
   <div class="print-designer-page" :style="themeStyle">
     <header class="page-toolbar">
-      <NButton @click="router.push({ path: '/print', query: store.row ? { applicationId: String(store.row.source.applicationId), ...store.row.source } : {} })">
-        返回模板列表
+      <NButton quaternary size="small" @click="router.push({ path: '/print', query: store.row ? { applicationId: String(store.row.source.applicationId), ...store.row.source } : {} })">
+        <template #icon>
+          <NIcon :component="ArrowBackOutline" />
+        </template>
+        模板列表
       </NButton>
       <template v-if="store.row">
-        <NInput v-model:value="store.name" :input-props="{ 'aria-label': '模板名称' }" :maxlength="100" :disabled="!canManage" style="width: 240px" />
-        <DictTag dict-type="sys_print_design_status" :value="store.row.designStatus" /><span>修订 {{ store.row.draftRevision }}</span>
-        <NSpace class="page-actions">
-          <NButton @click="panel('bindings')">
-            场景绑定
-          </NButton><NButton @click="panel('versions')">
-            发布版本
+        <NInput v-model:value="store.name" :input-props="{ 'aria-label': '模板名称' }" :maxlength="100" :disabled="!canManage" class="template-name" size="small" />
+        <div class="template-meta">
+          <DictTag dict-type="sys_print_design_status" :value="store.row.designStatus" /><span>修订 {{ store.row.draftRevision }}</span>
+        </div>
+        <div class="page-actions">
+          <button type="button" class="page-tool" title="场景绑定" aria-label="场景绑定" @click="panel('bindings')">
+            <NIcon :component="LinkOutline" />
+          </button>
+          <button type="button" class="page-tool" title="发布版本" aria-label="发布版本" @click="panel('versions')">
+            <NIcon :component="GitBranchOutline" />
+          </button>
+          <NButton v-if="canPublish" type="primary" size="small" :loading="store.saving" :disabled="store.nameDirty || (canManage && canvas.dirty) || !store.name.trim()" @click="store.publish()">
+            <template #icon>
+              <NIcon :component="CloudUploadOutline" />
+            </template>
+            发布
           </NButton>
-          <NButton v-if="canPublish" type="primary" :loading="store.saving" :disabled="store.nameDirty || (canManage && canvas.dirty) || !store.name.trim()" @click="store.publish()">
-            发布已保存草稿
-          </NButton>
-        </NSpace>
+        </div>
       </template>
     </header>
     <NAlert v-if="store.error && !canvas.error.includes(store.error)" type="error">
@@ -118,18 +128,60 @@ async function restore(id) {
   background: var(--bg-primary, #fff);
 }
 .page-toolbar {
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: 5px 10px;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   border-bottom: 1px solid var(--border-light, #ddd);
+}
+.template-name {
+  width: min(240px, 30vw);
+}
+.template-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .page-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.page-tool {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+}
+.page-tool:hover {
+  color: #356cde;
+  border-color: rgb(53 108 222 / 22%);
+  background: rgb(53 108 222 / 8%);
 }
 .page-editor {
   flex: 1;
   min-height: 0;
+}
+@media (max-width: 720px) {
+  .template-meta {
+    display: none;
+  }
+  .template-name {
+    min-width: 120px;
+    flex: 1;
+  }
 }
 </style>

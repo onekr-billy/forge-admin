@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { paperGeometry, screenDeltaToMm } from '../protocol/units'
-import { selectionBounds } from './commands'
 import { addElement, addField, PRINT_DRAG_TYPE } from './elementCatalog'
 import PrintCanvasElement from './PrintCanvasElement.vue'
 import PrintRuler from './PrintRuler.vue'
@@ -19,7 +18,6 @@ const surfaces = computed(() => [
   ...store.document.body.map((s, i) => ({ ...s, id: `section:${s.id}`, label: `${i + 1}. ${{ FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格' }[s.kind]}` })),
   { id: 'footer', label: '页脚', ...store.document.footer },
 ])
-const selectedBounds = computed(() => selectionBounds(store.selectedElements))
 const paperName = computed(() => {
   const { widthMm, heightMm } = store.document.paper
   if (widthMm === 210 && heightMm === 297)
@@ -168,11 +166,15 @@ onBeforeUnmount(() => clearMarquee())
                   <strong>{{ column.title }}</strong><span>{{ column.field }}</span>
                 </div>
               </div>
-              <template v-if="store.surfaceId === surface.id && selectedBounds">
-                <div class="alignment-guide vertical" :style="{ left: `${selectedBounds.xMm}mm` }" />
-                <div class="alignment-guide horizontal" :style="{ top: `${selectedBounds.yMm}mm` }" />
-                <span class="position-chip" :style="{ left: `${selectedBounds.xMm}mm`, top: `${selectedBounds.yMm}mm` }">
-                  {{ selectedBounds.xMm.toFixed(1) }}, {{ selectedBounds.yMm.toFixed(1) }} mm
+              <template v-if="store.surfaceId === surface.id && store.gesture">
+                <div v-for="x in store.alignmentGuides.x" :key="`x-${x}`" class="alignment-guide vertical" :style="{ left: `${x}mm` }" />
+                <div v-for="y in store.alignmentGuides.y" :key="`y-${y}`" class="alignment-guide horizontal" :style="{ top: `${y}mm` }" />
+                <span
+                  v-if="store.alignmentGuides.position"
+                  class="position-chip"
+                  :style="{ left: `${store.alignmentGuides.position.xMm}mm`, top: `${store.alignmentGuides.position.yMm}mm` }"
+                >
+                  X {{ store.alignmentGuides.position.xMm.toFixed(1) }} · Y {{ store.alignmentGuides.position.yMm.toFixed(1) }} mm
                 </span>
               </template>
               <PrintSelectionOverlay v-if="store.surfaceId === surface.id" />
