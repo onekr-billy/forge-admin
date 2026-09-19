@@ -53,3 +53,8 @@ node code-copilot/changes/forge-native-print/verification/serve.mjs --persistenc
 结果见 [m3b-results.json](m3b-results.json) 与 [browser-results-m3b.json](browser-results-m3b.json)。本轮已关闭页面并停止验证服务器，未打印 PDF 或操作物理打印机。
 
 M4 接入时实现 PrintApplicationAccess（应用授权/事务行锁/发布引用检查）和 LOWCODE PrintDataProvider。Provider.authorize 必须从应用发布快照解析允许的不可变模板版本及字段目录，验证当前记录权限；流程场景还须解析同一业务 processRunId。缺少适配器返回 503 是当前阶段预期行为。不要以最新模板版本或设计态绑定替代发布清单。
+
+
+## M4c 工作台增量
+
+仓库根使用 Node 24：`node code-copilot/changes/forge-native-print/verification/serve.mjs --workspace`；打开 `http://127.0.0.1:4318/workspace.html`。`--workspace --build` 可独立构建。选择页面中的表单、新建合成模板、返回工作台、切换明暗主题；390px 验证表格水平滚动和更多按钮。列表/详情合成入口共用正式预览页，真实 AiCrudPage 点击/主键转义另由 AiCrudPage-print.spec.js 覆盖。`m4c-actions.json` 来源为后端测试输出 target/print-runtime-actions.json。所有记录/权限/API 都是合成数据，不能替代真实门户 E2E。

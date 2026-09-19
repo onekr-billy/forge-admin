@@ -308,3 +308,35 @@ mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-admin-serve
 Spec 审查：T29/T30/T33 后端阶段出口完成；T31/T32/T34、M5/M6 保留未完成。固定快照不含业务正文；运行数据只包含当前用户可读且模板使用的字段。字段类型变化按显式格式兼容性验证，通用文本仍支持兼容标量。真实流程打印仍拒绝。
 
 代码审查：新增查询在 XML，显式 tenant/del_flag/status；绑定当前读及模板捕获遵循应用锁→模板锁。版本链固定到对象设计版本→CRUD 版本，不能选择最新草稿。文件复用下载权限并额外核验租户。服务依赖检查未发现反向环；聚合构建成功不替代真实 Spring 启动。没有启动 Admin/Flow/MySQL/Redis、运行迁移或改业务记录，没有本轮常驻进程需要清理，也没有 push。完整发布、MySQL 并发、加密 HTTP 与浏览器打印留真实环境验收。
+
+
+## 2026-09-19 · M4c 工作台、业务打印动作与下载协议
+
+继续在 `/Users/mini32g/Desktop/project/forge-admin`、`forge-native-print` 分支执行。先补 M4c-1…5 和增量验证计划，再编码；R01 核实无需修改 AiCrudPage，使用其已有 route/params/runtimeActions。沿用 Forge CRUD Skill、DESIGN.md 和自动化测试标准，LawHub 未改动，既有 .DS_Store 未提交。
+
+落位：PrintWorkspaceSources/PrintWorkspaceStore/PrintSourceSelector、ApplicationPrintPanel，共享 PrintTemplateList；工作台导航/入口、PortalPageRenderer 与 render API 传递字符串 pageId；PrintRuntimeActionProjectionService 只投影发布绑定。PrintCodegenContributor + ApplicationVersion Mapper/XML 在统一 LowcodeProtocolSnapshotBuilder/Velocity 生成链携带固定定义、绑定和依赖；应用级清单覆盖聚合子对象，入口级导出限定应用，旧配置键入口亦走相同贡献器。新增 2 个后端测试类、3 个前端测试文件及可复跑合成验证入口。
+
+最终后端命令（forge-server，先 source /private/tmp/forge-print-toolchain/env.sh）：
+
+```bash
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest='Print*Test,LowcodePrint*Test,LowcodeProtocolSnapshotBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest,BusinessApplicationCodegenContractTest,BusinessApplicationRuntimeConfigOverlayServiceTest,BusinessApplicationRuntimeServiceTest,BusinessApplicationPhaseFiveSecurityTest,BusinessApplicationVersionServiceTest' -Dsurefire.failIfNoSpecifiedTests=false
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest='PrintCodegenContributorTest,LowcodeProtocolSnapshotBuilderTest,BusinessApplicationCodegenContractTest' -Dsurefire.failIfNoSpecifiedTests=false
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-admin-server -am package -DskipTests
+```
+
+结果：第一条 print 106 + generator 94，第二条 25 项（包括新增子对象完整性 1 项），累计 37 类 201 项，失败/跳过 0。最终 Admin 46 模块 BUILD SUCCESS，22.243 秒。真实 Velocity 生成包中 runtime-config/protocol/printing 一致，主前端使用 LowcodeRuntimePage；导出缺版本/hash/权限时失败。Mapper SQL 绑定参数及 JSqlParser 解析通过，MySQL 方言实跑未执行。
+
+前端（forge-admin-ui，source ~/.nvm/nvm.sh 后 nvm use v24.21.0）：
+
+```bash
+node node_modules/vitest/vitest.mjs run src/components/print src/stores/print src/api/__tests__/print.spec.js src/api/__tests__/printRuntimeContext.spec.js src/components/ai-form/crud/__tests__/AiCrudPage-print.spec.js
+node --max-old-space-size=8192 node_modules/vite/bin/vite.js build
+```
+
+16 文件 89 项通过，Vite 主构建 36.45 秒。全部修改的 JS/Vue 运行定向 ESLint，无错误/警告。首轮 lint 发现多语句行，已拆分；AiCrudPage 新测试最初缺少若干无关 Naive stub 的警告已补齐；未放宽生产断言。主项目保留现有 CSS 注释、Vite native config 导入和构建性能提示；合成入口单 chunk 体积警告不影响生产拆分。没有修复与本轮无关的构建提示。
+
+浏览器：仓库根运行 `node code-copilot/changes/forge-native-print/verification/serve.mjs --workspace`，访问 `http://127.0.0.1:4318/workspace.html`。实际使用生产工作台/选择器/列表/设计器/预览组件，API 和用户权限为合成替身。验证两页面同对象选择、自动来源创建、全屏设计、亮暗主题、390px 和更多操作、列表/详情预览、无模板查看权空态。查看器日志无 error/warn。服务收到 page_archive 的创建请求，以及带同一特殊字符记录 ID 的 LIST/DETAIL available/prepare；不含记录正文。AiCrudPage 自身列表/详情点击由真实组件单测额外覆盖，未把合成页面当成真实门户 E2E。
+
+独立验证入口 `serve.mjs --workspace --build` 通过。窗口视口已恢复，临时标签页关闭，验证服务 PID 92114 已停止；未启动 Admin/Flow/MySQL/Redis或执行迁移。未进行真实加密 HTTP、MySQL 并发读一致性、PDF 或物理打印。
+
+Spec 审查：T31/T32/T34 完成阶段验收，M4 为 implemented-pending-e2e；M5 流程/代码业务、M6 完整验收未完成。下载依赖明确为 REQUIRES_TARGET_ADAPTER/REQUIRES_EXTENSION，不把保存打印 JSON 宣称为目标业务数据 Provider 已实现。代码审查：新增查询在 XML，tenant/del_flag/发布指针明确；源页面与对象逐层核验；row 只取记录主键、URLSearchParams 转义；只读导出权限不包含业务数据正文；没有新增全员授权、迁移或业务状态写入。修改的 SFC 最大 680 行，AiCrudPage 本体无变动。全程未 push。

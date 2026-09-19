@@ -247,3 +247,14 @@ M4a 落位：`PrintApplicationAccessAdapter`、`PrintApplicationLock`、`PrintAp
 - 字段范围使用模型的可见性与页面/子表显示列。字段改为不兼容的 MONEY/NUMBER/DATE/BOOLEAN/IMAGE 格式会拒绝；通用 TEXT 允许兼容标量类型。流程节点列权限与审批签名仍属于 M5。
 - 普通 CRUD 的宽容行为保持现状；打印新增严格翻译/脱敏、无猜测外键、501 行探测/500 行上限及无业务正文日志的虚拟公式执行入口。公式执行失败不返回部分计算结果；复用现有公式引擎，不复制表达式解释器。
 - 运行时的启停/删除检查使用 AiCrudConfigMapper/XML 的数量查询，兼容旧 CRUD 的 0=正常/1=停用与业务对象的 1=启用，不读取草稿字段作为运行配置。
+
+
+## M4c 实际接入与导出协议
+
+- 工作台 printing 分区从页面树实际 objectRef 与应用 objects 的交集生成来源；Pinia 记录应用身份、选中来源，失效或切应用清理。不让用户输入 objectCode/页面 ID。
+- PortalPageRenderer 将 pageId 加入 render 请求，Controller 在既有流程叠加之后调用独立打印动作投影器。只使用 runtimeById 返回的已授权页面树与该版本固定 printing 绑定，检查 print:execute/对象读权限/模板启用。输出 route=/print/preview，静态来源参数 + rowField 主键参数，详情与列表场景独立，不读取/转发整行正文。
+- LowcodeProtocolSnapshotBuilder 统一调用 PrintCodegenContributor，frontendRuntimeConfig.printing 与 protocol.runtimeConfig.printing 保持同一对象。Velocity 附加 config/<key>-printing.json 与 PRINTING.md；应用包额外生成 application-printing.json（包括主子表聚合的子对象），application-manifest.printingPath 指向它。
+- 单对象导出结构：protocol=forge-print-export，schemaVersion=1，applications[] 含字符串 applicationId/applicationVersionId、versionNo、bindings[]、templates[]；模板含 templateId/templateVersionId/templateCode/templateName/versionNo/schemaHash/schema。runtime 指定共享前端组件/预览路由、forge-plugin-print、PrintDataProvider 与受控 fileId 资源策略。
+- 应用级导出结构：protocol=forge-application-print-export、schemaVersion=1、applicationId、objects[{sourceConfigKey,printing}]。配置键下载包含相关当前发布应用；应用/访问入口下载通过 codegen.printApplicationId 缩小范围。所有来源均重新授权；缺失/停用模板或 hash 不一致整体失败。
+- 查询走 Mapper XML：当前 application.last_publish_version → version.snapshot_json.objects.configKey，不用正在编辑的对象关系作为发布依据。应用包下载/预览在 REPEATABLE_READ 事务内，独立贡献器调用为只读事务；普通 CRUD 后端继续静态 Service/Mapper XML。MySQL JSON 函数与真实隔离级别需另行实跑。
+- 导出不包含业务记录、文件内容或 token；独立环境导入需一致映射应用/模板/版本/fileId，并接入数据提供方。覆盖报告标记 REQUIRES_EXTENSION，避免把协议携带等同于独立部署已可打印。

@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，M4a 接入前置和 M4b 后端低代码/快照接入已完成阶段验证，M4c–M6 未完成。禁止 push。
+> 状态：implementing，M1、M2 已在 forge-admin 完成阶段验证并按阶段本地提交；M3a（T14–T21）、M3b（T22–T28）已完成阶段验证，M4a 接入前置和 M4b 后端低代码/快照接入已完成阶段验证，M4c 已完成阶段验证，M5–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -122,10 +122,10 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 |---|---|---|---|
 | [x] T29 低代码 Provider | T27b,T28 | GJ `service/printing/{LowcodePrintDataProvider,LowcodePrintCatalogBuilder,LowcodePrintValueAdapter}.java`、GT `service/printing/LowcodePrintDataProviderTest.java` | main/children 归一、子表列授权、公式/字典/关联/脱敏 |
 | [x] T30 发布态字段校验 | T29 | GJ `service/printing/{PrintBindingValidationService,PrintMetadataResolver}.java`、GT `service/printing/PrintBindingValidationServiceTest.java` | 字段删除/改型/表单身份变更可定位，不查最新草稿代替发布态 |
-| [ ] T31 应用资源入口 | T28,T30 | U `views/app-center/application-workspace/{ApplicationPrintPanel,ApplicationWorkspaceNav}.vue`、现有 `views/app-center/application.[applicationCode].vue`、`components/print/designer/PrintSourceSelector.vue` | 从表单进入自动绑定，独立全屏，不新增对象选择负担 |
-| [ ] T32 打印动作投影 | T29,T31 | GJ `service/printing/PrintRuntimeActionProjectionService.java`、现有动作投影接入文件、U `views/print/preview.vue`、对应投影测试 | 列表行/详情均进入统一 route；不复制打印脚本 |
+| [x] T31 应用资源入口 | T28,T30 | U `views/app-center/application-workspace/{ApplicationPrintPanel,ApplicationWorkspaceNav}.vue`、现有 `views/app-center/application.[applicationCode].vue`、`components/print/designer/PrintSourceSelector.vue` | 从表单进入自动绑定，独立全屏，不新增对象选择负担 |
+| [x] T32 打印动作投影 | T29,T31 | GJ `service/printing/PrintRuntimeActionProjectionService.java`、现有动作投影接入文件、U `views/print/preview.vue`、对应投影测试 | 列表行/详情均进入统一 route；不复制打印脚本 |
 | [x] T33 应用快照扩展 | T30 | GJ `service/printing/PrintApplicationSnapshotContributor.java`、现有 `BusinessApplicationSnapshotService.java`/`BusinessApplicationPublishService.java`、对应测试 | 固定模板版本/引用/hash，失败无半发布，回滚恢复 |
-| [ ] T34 下载协议扩展 | T33 | 现有 `LowcodeProtocolSnapshotBuilder.java`、拟新增打印导出贡献器、生成依赖模板、对应导出测试 | 下载代码包含协议/模板/绑定且复用运行时，无漏字段 |
+| [x] T34 下载协议扩展 | T33 | 现有 `LowcodeProtocolSnapshotBuilder.java`、拟新增打印导出贡献器、生成依赖模板、对应导出测试 | 下载代码包含协议/模板/绑定且复用运行时，无漏字段 |
 
 ### M4 实施拆分（2026-09-19，编码前）
 
@@ -135,13 +135,13 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 - [x] M4a-2（T33 前置）：应用 Mapper 行锁、版本 Mapper 历史快照当前读（4 文件）；新增 `service/printing/{PrintApplicationAccessAdapter,PrintApplicationSnapshotCodec,PrintApplicationLock}.java`。应用设计权限与应用可见范围同时核验，删除检查全部保留的历史应用版本。
 - [x] M4a-3（T33 前置）：新增 `PrintApplicationVersionGuard`，接入 `BusinessApplicationVersionService`；共享应用行锁下核验固定模板版本/归属/hash，失败不提交应用版本或发布指针。补服务与事务/Mapper 测试。
 - [x] M4b：T29/T30/T33 余项，已发布元数据、主子表读取与字段权限、候选快照生成/发布校验。特别验证 DynamicCrudService 的子表读取后处理，不能沿用未翻译/未脱敏子表结果。
-- [ ] M4c：T31/T32/T34，工作台入口、运行动作、下载协议及浏览器验收；进入前落实 R01。
+- [x] M4c：T31/T32/T34，工作台入口、运行动作、下载协议及浏览器验收；进入前落实 R01。
 
 M4a 的 `printing` 快照协议先定义并在最终应用版本提交时守卫；候选快照生成和业务字段验证属于 M4b，M4a 不提前安装不完整 DataProvider。现存不含 printing 的应用版本兼容为空绑定。
 
 ### 存量超大组件接入条件任务
 
-- [ ] R01（M4 前检查）：确认 T32 是否能完全使用既有 route/配置路径，不改 AiCrudPage。能则记录“不适用”，不能则先拆成 R01a/R01b…，完成被修改 SFC 的合规规模与回归后再接入，不豁免根 AGENTS.md 5.14。
+- [x] R01（M4 前检查）：确认 T32 是否能完全使用既有 route/配置路径，不改 AiCrudPage。能则记录“不适用”，不能则先拆成 R01a/R01b…，完成被修改 SFC 的合规规模与回归后再接入，不豁免根 AGENTS.md 5.14。
 - [ ] R02（M5 前检查）：核对 FlowTaskDetailShell/todo/started/done 实际行数与公共上下文。FlowTaskDetailShell 的时间轴/样式先拆出；触达超 2000 行入口时，先将表单、动作与业务读取按职责拆分，并用 Pinia 管理共享状态。分拆任务每个 3–5 文件，必须在 T37 之前补齐明确清单。
 
 R01/R02 为条件化实施检查，不得勾选后绕过拆分；如果需要的重构显著扩大范围，先更新 Spec 与任务并说明原因。
@@ -242,3 +242,24 @@ T29/T30/T33 后端实现完成并通过阶段验证（implemented-pending-e2e）
 验证：打印插件 106 项，generator 79 项目标回归通过；最后增加 1 项草稿版本伪装拒绝用例，并复验元数据/Provider 共 15 项通过，累计 186 个不同用例通过。Admin 46 模块 package 成功；SQL/XML、git diff --check 通过。实际边界和命令见 execution-log、verification/m4b-results.json。
 
 M4c（入口、动作投影、导出协议）和 M5 流程/代码 Provider 未完成，FLOW 场景明确拒绝。未启动真实服务、未跑 MySQL/Flyway/API/打印机验收；前端无改动，复用 M4a 基线。只做本地 commit，禁止 push。
+
+## M4c 实施拆分（2026-09-19，编码前）
+
+R01 结论：不适用。AiCrudPage 已有 route + params(rowField/static)、runtimeActions 按 row/detail 投影、详情按钮和更多菜单，T32 完全复用该路径，不修改此超大 SFC。PortalPageRenderer 678 行、工作台入口 534 行，可在规模约束内小幅接入。
+
+- M4c-1 / T31：新增来源解析工具、Pinia 工作台状态、PrintSourceSelector；从页面实际 objectRef 与应用对象交集生成可选表单，缺失/失效来源不能新建。
+- M4c-2 / T31：提取 PrintTemplateList（既有 index 页面复用）、新增 ApplicationPrintPanel；工作台入口和导航增加打印分区，共 5 个主要文件。模板设计继续打开全屏路由。
+- M4c-3 / T32：新增 PrintRuntimeActionProjectionService，Controller 调用；PortalPageRenderer 传 pageId、api/ai/lowcode.js 透传查询参数。只从已发布应用快照投影，服务端重新检查门户页面/对象和模板状态。
+- M4c-4 / T34：核实统一静态代码生成链，打印导出贡献器携带协议、固定绑定、版本定义及依赖契约；应用导出与共享协议编译入口复用，禁止把业务 CRUD 改接动态接口。独立部署的数据提供方依赖明确记录，不能把 JSON 保存误报为后端适配完成。
+- M4c-5：来源/动作/导出行为用例、定向前后端回归、两端构建、合成浏览器明暗/窄屏与路由交互；不启动真实后端或执行迁移。各子任务的测试与验证文件单列，不计入主文件额度。
+
+M4c-4b 复核补充：主子表代码生成会将子对象合并进主对象输出，应用包需另生成 application-printing.json，覆盖全部已选对象（含被聚合消费的子对象）；manifest 显式指向该文件。使用同一导出贡献器，不另造版本捕获链。
+应用代码预览/下载使用 REPEATABLE_READ 事务，使对象协议与应用级打印清单取同一数据库读视图；导出贡献器独立调用使用只读事务。应用草稿代码生成仍沿用原有元数据准备，不标记为只读。真实 MySQL 并发发布期间的下载一致性另列人工验收。
+
+### M4c 阶段结果
+
+T31/T32/T34 实现与阶段验证完成（implemented-pending-e2e）。来源选择使用 Pinia，工作台和独立列表复用 PrintTemplateList；页面上下文经 PortalPageRenderer → render API → PrintRuntimeActionProjectionService，列表/详情继续走 AiCrudPage 的原有 route 动作。新增 AiCrudPage-print.spec.js 直接调用真实组件的列表/详情按钮，R01 无需改动组件本体。
+
+T34 实际文件拆分：4a 为 ApplicationVersion Mapper/XML + PrintCodegenContributor + LowcodeProtocolSnapshotBuilder；4b 为 VelocityCodegenStrategy、PRINTING.md.vm、BusinessApplicationCodegenService、BusinessAppCodegenService。统一导出不可变模板、绑定/hash 和运行依赖；应用级清单覆盖聚合子对象；覆盖报告明确独立部署的数据提供方和资产导入需要扩展，不声称目标环境自动可打印。
+
+验证：37 个后端测试类共 201 项、16 个前端测试文件 89 项通过；ESLint、Vite 主构建/独立验证构建、Admin 46 模块构建通过。亮暗主题、390px 无整页横向溢出、表格更多动作可滚动到达、表单来源创建、预览和权限状态已用合成 HTTP 验证。没有启动真实 Admin/Flow/MySQL/Redis或执行迁移，SQL JSON_CONTAINS 的 MySQL 实跑、并发下载一致性、真实权限与实机打印仍待人工验收。详见 execution-log、verification/m4c-results.json。

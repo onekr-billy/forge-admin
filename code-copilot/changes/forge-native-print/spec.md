@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：forge-admin 的 M1–M3 已本地提交；M4a 页面身份/权限保护与 M4b 低代码 Provider、主子表安全读取、应用快照固定引用完成阶段验证（implemented-pending-e2e）；M4c–M6 待实施。当前分支 forge-native-print，只 commit、不 push
+> 当前阶段：forge-admin 的 M1–M3 已本地提交；M4a–M4c 的页面身份/权限、低代码 Provider、应用快照、工作台/列表/详情入口与下载协议完成阶段验证（implemented-pending-e2e）；M5–M6 待实施。当前分支 forge-native-print，只 commit、不 push
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 
@@ -185,3 +185,8 @@ flow 插件根目录：`forge-server/forge-framework/forge-plugin-parent/forge-p
 ## 12. 后续变更规则
 
 发现依赖不适配、分页边界扩大、需要额外基础设施时先更新 Spec/设计/任务并记录影响。阶段验证只追加本轮差异；不重建整套测试计划，不把占位组件或模拟数据路径计为真实业务闭环。
+
+
+### M4c 阶段口径（2026-09-19）
+
+F09 的正式低代码页面接入复用原有路由动作，只传页面/记录身份；真实 HTTP 权限与应用发布 E2E 仍待用户环境。F14 导出固定模板定义/版本/hash/绑定并复用共享打印运行协议；覆盖报告和 PRINTING.md 明确独立目标环境还需资产导入与 PrintDataProvider 记录/字段/文件权限适配，不能直接把下载的 JSON 当作授权数据。流程/代码业务 Provider 属于 M5，不提前开放 FLOW 场景。
