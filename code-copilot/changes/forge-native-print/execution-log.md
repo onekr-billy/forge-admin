@@ -567,3 +567,12 @@ git diff --check
 结果：迁移合同/持久化目标测试 8 项、generator 持久化测试 8 项、打印插件完整回归 121 项全部通过；Admin 46 模块 BUILD SUCCESS；本轮 7 份迁移的占位符扫描和空白检查无输出。仓库全量占位符扫描仍命中既有 V1.0.72 消息模板保存的 `${taskTitle}` 等运行时文本，本轮不改写该已执行历史脚本。完整回归第一次在文件沙箱内运行时，Mockito/Byte Buddy 因外部 JVM attach 被阻止产生 32 个 MockMaker 初始化错误；在允许 JVM attach 的相同工作区用同一 Maven 命令复跑后 121 项全部通过，未修改生产或测试配置来规避问题。
 
 本轮未启动 Admin/Flow/MySQL/Redis，未连接目标远端数据库，未执行 Flyway migrate/repair 或修改 `forge_schema_history`。用户拉取更新后的 `forge-native-print` 分支并重启 Admin 后，应先正常校验流程 V1.0.168–V1.0.170，再执行打印 V1.0.171–V1.0.174；该真实库结果仍由用户验收。
+
+
+## 2026-09-19 · T55 新版应用页面打印入口修复
+
+用户反馈当前前端没有此前说明的入口。代码核对确认 `/app-center/application/:applicationCode` 已重定向到 `BusinessApplicationRuntime`，旧 `application.[applicationCode].vue` 中的 `section=printing` 分区不可达；此前把旧工作台当正式入口的说明不准确。
+
+实现：在当前 `ApplicationSettingsPanel` 二级导航增加“打印模板”，支持 `view=settings&settingsSection=printing` 直达和刷新保持；新增 `ApplicationPrintSettings` 按 applicationCode 加载工作区并复用现有 `ApplicationPrintPanel`、PrintWorkspaceStore 和模板列表。应用卡片“更多”增加“打印模板”，用纯路由 location 打开同一正式入口。未修改 4902 行的统一运行页和 1507 行的应用中心入口页；本轮触达 SFC 分别为 302、516、92 行，均低于 800 行。
+
+验证：入口 location、设置分区、成功/失败工作区加载和切换应用旧响应丢弃共 4 个文件 7 项通过；与打印域合并回归 27 个文件 154 项通过。定向 ESLint、`git diff --check`、SFC 行数检查和 Vite 9388 modules 生产构建通过。浏览器访问 `http://127.0.0.1:3001/app-center/application/cgou_app_1ko3psh/runtime?view=settings&settingsSection=printing` 后进入登录页，登录重定向完整保留两个查询参数；本机 8580 后端未运行并返回 502，未执行登录后的真实模板列表、数据库、PDF 或物理打印验收。

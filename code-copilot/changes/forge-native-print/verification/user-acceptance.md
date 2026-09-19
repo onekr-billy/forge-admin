@@ -6,6 +6,7 @@
 
 - [ ] 备份目标库，确认流程 V1.0.168–V1.0.170 已成功且 checksum 未被 repair；启动 Admin 正常执行打印 V1.0.171–V1.0.174，并确认 `forge_schema_history` 无重复版本。
 - [ ] 确认 Admin、Flow 使用同一业务库与 Redis，登录用户具备 `print:execute`；模板管理员另具备打印模板权限。
+- [ ] 从应用中心卡片“更多 → 打印模板”进入，确认地址为 `/app-center/application/<applicationCode>/runtime?view=settings&settingsSection=printing`，并能看到当前应用的表单来源和模板列表。
 - [ ] 发布一次包含打印绑定的应用版本，确认旧应用版本仍使用其固定模板版本/hash。
 
 ## 2. 模板与普通业务

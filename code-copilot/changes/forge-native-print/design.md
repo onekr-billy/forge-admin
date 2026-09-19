@@ -160,7 +160,7 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 
 ## 7. 工作台、流程与发布接入
 
-- 应用内新增“打印模板”资源入口，表单上下文进入时自动带 source identity；管理层仍允许按应用查看模板。
+- 应用内新增“打印模板”资源入口，表单上下文进入时自动带 source identity；管理层仍允许按应用查看模板。当前正式管理入口挂在统一应用页的“应用设置”二级导航，应用中心卡片“更多”只负责跳转到 `view=settings&settingsSection=printing`。旧工作台 `section=printing` 不再作为入口。
 - 设计器独立全屏路由；普通操作以“保存草稿/预览/发布”呈现，低频操作收纳。
 - 列表行/详情优先通过既有 action 配置投影为受控打印路由，不向 AiCrudPage 巨型文件追加实现。
 - 流程入口使用共享详情壳/表单面板的正式上下文，不能从 DOM、组件内部代理或全局变量猜当前任务。
@@ -168,6 +168,8 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 - 节点打印策略通过现有节点面板保存进节点扩展配置，随 BPMN 版本保留。增加的是打印选择策略，不变更审批动作。
 - 应用发布将 printBindings 与 templateVersions 纳入候选快照/校验/hash，失败不产生半发布引用；回滚恢复对应清单。
 - 代码下载携带打印协议/模板定义/绑定版本和运行时依赖；原生成器继续保持共用运行协议，不增加另一套解释器。
+- `ApplicationSettingsPanel` 只管理二级导航和查询参数；独立 `ApplicationPrintSettings` 按 applicationCode 加载工作区并复用 `ApplicationPrintPanel`。不向 4900 行统一运行页传递打印对象，也不向 1500 行应用中心入口页追加处理函数。
+- 打印快捷入口位置由纯函数生成 Vue Router location，组件测试固定验证应用编码、`view=settings` 与 `settingsSection=printing`，防止路由再次落到废弃工作台。
 
 ## 8. 验证与上线边界
 

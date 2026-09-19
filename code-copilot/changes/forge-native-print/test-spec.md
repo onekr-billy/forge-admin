@@ -277,3 +277,15 @@ T54 执行结果：流程 V1.0.168–V1.0.170 的 Flyway checksum 分别固定�
 - 最终合并回归：前端打印/流程入口/BPMN 策略 22 文件 133 项；后端打印插件 107 项、generator 的打印/应用版本/流程上下文 113 项、采购 CODE Provider 2 项，共 222 项，全部 0 failure/error/skipped。
 - 代码审查确认预览或模板选择不发送 `DIALOG_OPENED`；只有调用隔离 iframe 的 `print()` 后才报告。403、非图片 Blob、解码失败和超时均在打印会话创建前阻断，切换/卸载继续取消请求并释放 Blob URL。
 - 未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、真实流程、PDF 或物理打印。用户验收步骤见 [verification/user-acceptance.md](verification/user-acceptance.md)，完成前状态保持 `implemented-pending-e2e`。
+
+
+## T55 正式前端入口修复验证计划
+
+- 路由合同：应用卡片快捷入口必须解析到 `BusinessApplicationRuntime`，携带原 applicationCode、`view=settings` 和 `settingsSection=printing`；未知设置分区回退基础属性。
+- 设置分区：查询参数为 printing 时显示“打印模板”导航和独立打印设置组件，且不显示通用“保存设置”按钮；普通设置分区行为保持不变。
+- 工作区加载：按 applicationCode 调用 `businessApplicationWorkspaceByCode`，成功时把 application/objects 交给既有 `ApplicationPrintPanel`；失败展示可重试错误态，切换编码忽略旧异步响应。
+- 结构与构建：新增/修改 SFC 均低于 800 行，不触达 4900 行统一运行页和 1500 行应用中心入口页；运行定向 Vitest、ESLint、`git diff --check` 和 Vite 生产构建。
+- 浏览器：后端可用时从应用中心卡片“更多 → 打印模板”进入并核对模板列表；后端不可用时只验证 Vite 路由可达和登录/请求边界，不把 502 或合成数据记为业务验收通过。
+
+
+T55 执行结果：新增入口/设置/工作区组件测试 4 个文件 7 项通过；与打印域合并回归共 27 个文件 154 项通过。触达文件定向 ESLint、`git diff --check` 和 SFC 行数检查通过；Vite 9388 modules 生产构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。浏览器访问正式 URL 后正确进入登录路由，并完整保留 `view=settings&settingsSection=printing`；当前 8580 后端未运行，请求返回 502，因此未把登录后的模板列表记为真实业务验收通过。

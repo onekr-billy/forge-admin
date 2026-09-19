@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：forge-admin 的 M1–M5 代码开发及 T46/T47 设计器视觉、工作台、动态吸附定位线和预览体验修正完成，已通过自动化、构建和合成浏览器验证。M6 的真实环境、PDF 和打印机验收由用户执行。整体仍为 implemented-pending-e2e；当前分支 forge-native-print，只 commit、不 push
+> 当前阶段：forge-admin 的 M1–M5 代码开发、T46–T55 增量能力、迁移冲突修复和新版应用页面打印入口均已完成自动化与前端构建验证。M6 的真实环境、PDF 和打印机验收由用户执行。整体仍为 implemented-pending-e2e；当前分支 forge-native-print。
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 
@@ -115,7 +115,7 @@ flow 插件根目录：`forge-server/forge-framework/forge-plugin-parent/forge-p
 - `vue-plugin-hiprint` 只作为交互和信息架构参考；本项目继续使用自有协议、Vue 3、Naive UI 和 Pinia，不复制其 bundle 或模板协议。
 - 设计页必须让用户直接感知纸张尺寸和元素坐标：顶部/左侧显示毫米标尺，纸张显示 1mm 辅助网格与 5mm 主网格，页边距和页眉/页脚分界线可见。
 - 顶部工具栏直接提供 A4/A5、横竖旋转、网格开关、缩放、撤销重做、预览和保存；左侧物料使用紧凑图标宫格，中央纸张与外部工作区形成清晰层级，右侧属性区保持固定工作台结构。
-- 合成浏览器入口只用于无后端视觉验证。交付说明必须同时写明正式入口为应用工作台 `section=printing`，不得把 `workspace.html` 表述为正式业务页面。
+- 合成浏览器入口只用于无后端视觉验证。正式入口必须落在当前统一应用页面的“应用设置 → 打印模板”，并由应用中心“更多 → 打印模板”提供快捷入口；废弃工作台的 `section=printing` 和 `workspace.html` 均不得表述为正式业务入口。
 
 ### 4.5 设计工作台与预览收敛（2026-09-19 第二轮反馈）
 
@@ -153,6 +153,14 @@ flow 插件根目录：`forge-server/forge-framework/forge-plugin-parent/forge-p
 - 禁止用 `flyway repair` 把流程脚本 checksum 改成打印脚本，也禁止改写数据库历史记录。打印分支必须完整收录已执行流程脚本的原始文件和校验和，再把四份打印迁移顺延到 V1.0.171–V1.0.174。
 - 打印建表、字典权限、隐藏路由、页面身份扩展的执行顺序保持不变；只调整尚未在目标数据库执行的打印迁移版本及测试/文档引用，不改变 SQL 业务语义。
 - 新增静态校验，固定验证 V1.0.168–V1.0.170 与已执行 checksum 一致、V1.0.171–V1.0.174 版本唯一且打印测试读取新文件名。真实数据库只允许正常 `migrate`，不得自动 repair。
+
+### 4.10 当前应用页面的可见入口（2026-09-19 入口缺失反馈）
+
+- `/app-center/application/:applicationCode` 当前会重定向到统一应用运行/设计页，旧 `application.[applicationCode].vue` 工作台不再是可达入口；打印管理不得继续依赖旧组件的 `section=printing`。
+- 统一应用页的“应用设置”二级导航必须展示“打印模板”，直接链接使用 `view=settings&settingsSection=printing`，刷新后仍停留在打印分区。
+- 应用中心卡片的“更多”菜单必须提供“打印模板”快捷入口，并打开同一正式路由。直接操作数量保持现有上限，避免卡片操作区继续膨胀。
+- 打印分区按 applicationCode 读取现有工作区，只把应用和业务对象目录同步到既有 PrintWorkspaceStore；加载失败可重试，切换应用或卸载时继续清理旧来源状态。
+- 不修改超过 2000 行的统一运行页和超过 800 行的应用中心入口页；入口逻辑放在现有小组件及独立设置子组件中。
 
 ## 5. 模板归属、版本与流程配置
 
