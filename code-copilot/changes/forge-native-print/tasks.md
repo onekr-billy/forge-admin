@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1–M4 已在 forge-admin 完成阶段验证并按阶段本地提交；M5a 服务端流程身份/历史与采购 CODE Provider 已完成，M5b–M6 未完成。禁止 push。
+> 状态：implementing，M1–M4 已在 forge-admin 完成阶段验证并按阶段本地提交；M5a 服务端适配和 M5b 前端入口/BPMN 策略已完成，M5c–M6 未完成。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -142,7 +142,7 @@ M4a 的 `printing` 快照协议先定义并在最终应用版本提交时守卫�
 ### 存量超大组件接入条件任务
 
 - [x] R01（M4 前检查）：确认 T32 是否能完全使用既有 route/配置路径，不改 AiCrudPage。能则记录“不适用”，不能则先拆成 R01a/R01b…，完成被修改 SFC 的合规规模与回归后再接入，不豁免根 AGENTS.md 5.14。
-- [ ] R02（M5 前检查）：核对 FlowTaskDetailShell/todo/started/done 实际行数与公共上下文。FlowTaskDetailShell 的时间轴/样式先拆出；触达超 2000 行入口时，先将表单、动作与业务读取按职责拆分，并用 Pinia 管理共享状态。分拆任务每个 3–5 文件，必须在 T37 之前补齐明确清单。
+- [x] R02（M5 前检查）：核对 FlowTaskDetailShell/todo/started/done 实际行数与公共上下文。样式迁出后 `todo.vue` 1944 行、`started.vue` 568 行、`FlowTaskDetailShell.vue` 225 行、`done.vue` 606 行；流程打印上下文进入独立 Pinia Store，未继续通过详情组件层层透传。
 
 R01/R02 为条件化实施检查，不得勾选后绕过拆分；如果需要的重构显著扩大范围，先更新 Spec 与任务并说明原因。
 
@@ -153,16 +153,26 @@ R01/R02 为条件化实施检查，不得勾选后绕过拆分；如果需要的
 ### M5 实施拆分（2026-09-19）
 
 - M5a（服务端）：先完成流程 task/instance/run/record 一致性解析、待办/已办/我发起分场景授权、实例审批轨迹适配，以及采购代码业务 Provider。流程上下文继续通过 Flow 服务现有可见性接口校验；运行打印只读应用已发布快照，不依赖模板设计权限。
-- M5b（前端与 BPMN）：新增独立 `FlowPrintAction` 和 `flowPrintContextStore`，从详情页当前选中记录同步稳定字符串身份；接入前拆出超限详情样式/上下文，避免继续扩大 `todo.vue`、`started.vue` 和 `FlowTaskDetailShell.vue`。节点模板策略作为审批节点现有配置的小分区保存到 BPMN 扩展属性。
+- M5b（前端与 BPMN，已完成）：新增独立 `FlowPrintAction` 和 `flowPrintContextStore`，从详情页当前选中记录同步稳定字符串身份；接入前拆出超限详情样式/上下文，避免继续扩大 `todo.vue`、`started.vue` 和 `FlowTaskDetailShell.vue`。节点模板策略作为审批节点现有配置的小分区保存到 BPMN 扩展属性。
 - M5c（资源与审计收口）：流程签名/图片统一走可取消、失败即阻断的鉴权资源加载器；执行事件仍只接受 DIALOG_OPENED/FAILED，打开预览或模板选择不记为出纸。
 - 本阶段不启动 Admin/Flow/MySQL/Redis，不执行真实流程或迁移；自动化覆盖模块单测、前端组件/协议测试与聚合构建，真实待办/已办/我发起 E2E 由用户环境回填。
+
+M5b 按 R02 再拆成以下可独立核验的小任务：
+
+- [x] M5b-1a（2 文件，纯结构调整）：将 `todo.vue` 的作用域样式迁到同目录 CSS，SFC 降至 2000 行以内，不改变流程行为。
+- [x] M5b-1b（4 文件，纯结构调整）：将 `started.vue`、`FlowTaskDetailShell.vue` 的作用域样式迁到同目录 CSS，SFC 降至 800 行以内，不改变流程行为。
+- [x] M5b-2a（4 文件）：新增 `flowPrintContextStore`、`FlowPrintAction` 与对应测试；服务端重取稳定身份，切换任务用 generation 丢弃旧响应，待办未保存字段先提示。
+- [x] M5b-2b（5 文件）：业务表单上下文补服务端规范 `applicationId/processRunId`；优先使用不可变 run，旧 CODE 流程只接受业务对象唯一归属的已发布应用，并补 Mapper XML 与单测。
+- [x] M5b-3（3 个入口文件）：待办、已办、我发起的详情工具栏接入同一打印动作，只传当前选中行及已经加载的授权上下文。
+- [x] M5b-4a（4 文件）：新增节点打印策略小分区及组件测试，接入审批节点并补默认配置。
+- [x] M5b-4b（3 文件）：BPMN 解析/写回和往返测试；仅保存 `INHERIT/RESTRICT + templateIds`，不修改审批动作。
 
 | 状态/任务 | 依赖 | 拟涉及文件 | 验收与证据 |
 |---|---|---|---|
 | [x] T35 流程身份/数据适配 | T29,T33 | GJ `service/printing/{FlowPrintContextResolver,FlowPrintAccessPolicy,FlowPrintHistoryAdapter}.java`、GT `service/printing/FlowPrintAccessPolicyTest.java` | task/instance/run/record 一致；三类入口分别授权；重提/会签不混轮次 |
 | [x] T36 代码业务 Provider | T35 | B 新增采购打印 Provider、采购打印字段目录、对应测试 | 复用现有业务读取，运行接口不依赖设计权，不以 formUrl 截图代替 |
-| [ ] T37 流程打印入口 | T35,R02 | U `components/flow/FlowPrintAction.vue`、U `stores/print/flowPrintContextStore.js`、拆分后的详情上下文组件、对应组件测试 | 真实选中实例上下文；切换任务不串数据；未保存修改有提示 |
-| [ ] T38 节点打印策略 | T35 | 既有流程节点面板新增小分区组件、节点配置序列化/解析文件、策略测试 | 继承默认/限制子集；随节点模型版本保存，不改审批动作 |
+| [x] T37 流程打印入口 | T35,R02 | U `components/flow/FlowPrintAction.vue`、U `stores/print/flowPrintContextStore.js`、拆分后的详情上下文组件、对应组件测试 | 真实选中实例上下文；切换任务不串数据；未保存修改有提示 |
+| [x] T38 节点打印策略 | T35 | 既有流程节点面板新增小分区组件、节点配置序列化/解析文件、策略测试 | 继承默认/限制子集；随节点模型版本保存，不改审批动作 |
 | [ ] T39 鉴权资源和审计 | T37,T38 | U `runtime/printResourceLoader.js`、PJ 执行事件 DTO/Service 小改、资源授权测试 | 签名/图片鉴权，资源失败阻止输出；对话框打开不等同出纸 |
 
 ## M6：验证、审查和交付

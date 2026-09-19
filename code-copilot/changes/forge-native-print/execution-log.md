@@ -362,3 +362,32 @@ mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/f
 过程中如实记录：首次把 `-Penable-tests` 与 `-DskipTests` 同时用于探测，profile 覆盖跳过设置并触发无关 system 旧测试路径失败；改用 compile 生命周期后通过。采购 Provider 首次编译出现 null 重载歧义，内部方法改名；新增测试首次有泛型断言编译错误和子表隐藏字段解析错误，分别收紧类型与按 childField 解析后复跑全绿，未放宽生产规则。
 
 未启动 Admin/Flow/MySQL/Redis，未执行迁移或真实流程；Flow 受保护接口、数据库 run 映射与实际历史数据的端到端结果留用户环境验收。M5b 前端入口与 BPMN 编辑器策略、M5c 资源加载/审计尚未完成。
+
+## 2026-09-19 · M5b 流程入口与 BPMN 节点模板策略
+
+继续在 `/Users/mini32g/Desktop/project/forge-admin` 的 `forge-native-print` 分支执行，只 commit、不 push；既有 `.DS_Store` 保留且不暂存。先按 R02 迁出详情页作用域样式：`todo.vue` 从 2526 降至 1944 行、`started.vue` 从 869 降至 568 行、`FlowTaskDetailShell.vue` 从 824 降至 225 行；`done.vue` 为 606 行。样式迁移不改变模板和脚本行为。
+
+实现：新增 `flowPrintContextStore` 与统一 `FlowPrintAction`，待办/已办/我发起详情工具栏复用同一模板选择器。Store 只组装稳定字符串身份，不保留 row/表单正文；低代码要求 processRunId，切换任务用 generation 丢弃旧回包。待办对业务表单和动态表单保存快照做 dirty 检查，用户明确选择后才打印已保存数据。业务键兜底只提取匹配 objectCode 的记录段，并保留超出 JS 安全整数范围的字符串。
+
+后端 BusinessTaskFormContext 增加 processRunId；查询上下文优先采用 `ai_business_process_run` 固定的 applicationId/runId。历史 CODE 流程没有 run 时，通过 Mapper XML 查业务对象唯一归属的启用且已发布应用；多应用不猜测，保持空身份并返回告警。该补充只暴露身份，不把业务正文放入打印请求，也不改变审批保存和办理动作。
+
+流程设计器审批节点新增打印策略分区。INHERIT 沿用应用场景发布绑定且不写冗余属性；RESTRICT 只保留当前来源模板子集，空子集代表节点无模板。解析/写回使用 `flowable:printTemplatePolicy` 与 `flowable:printTemplateIds`，未知策略按 INHERIT，模板 ID 去重；现有审批属性与动作不变。
+
+验证：
+
+```bash
+# forge-admin-ui，直接使用现有 node_modules，避免 pnpm 包装器再次安装依赖
+./node_modules/.bin/vitest run src/stores/print/__tests__/flowPrintContextStore.spec.js src/components/flow/__tests__/FlowPrintAction.spec.js src/components/flow-designer/converter/__tests__/user-task-parser-print.spec.js src/components/flow-designer/converter/__tests__/roundtrip.spec.js src/components/flow-designer/converter/__tests__/json-to-bpmn.spec.js src/components/flow-designer/panel/__tests__/PrintTemplatePolicyConfig.spec.js src/components/flow-designer/panel/__tests__/ApproverConfig.spec.js
+./node_modules/.bin/eslint <本阶段变更的 16 个 JS/Vue 文件>
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+
+# forge-server，JAVA_HOME/PATH 指向 /private/tmp/forge-print-toolchain
+mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest=BusinessFlowServiceBusinessKeyTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServicePrintIdentityTest,FlowPrintAccessPolicyTest -Dsurefire.failIfNoSpecifiedTests=false
+xmllint --noout forge-framework/forge-plugin-parent/forge-plugin-generator/src/main/resources/mapper/BusinessApplicationObjectMapper.xml
+```
+
+结果：前端 7 文件 40 项全部通过，定向 ESLint 无输出，Vite 9363 modules 生产构建成功；保留项目既有 Vite native config、CSS `//` 注释、dynamic import 与插件耗时提示。后端 33 模块 BUILD SUCCESS，4 类 22 项测试全部通过；其中新增规范身份 3 项覆盖 run 固定、唯一已发布应用回退和多应用拒绝。Mapper XML 解析及 `git diff --check` 通过。
+
+过程中修正：前端组件测试最初依赖 Naive Teleport/组件内部 DOM，改为断言组件公开状态与 emit；移除无 Dialog Provider 时的原生 confirm，保持项目消息交互。pnpm 包装器尝试安装依赖时因 ignored-builds 退出并写入 workspace 占位行，已完整恢复该非业务改动，随后全部命令直接复用现有 node_modules。后端首次探测因 shell 未暴露 Maven/JDK，改用已缓存且前阶段验证过的 Java 17/Maven 3.9.9 工具链。
+
+未启动 Admin/Flow/MySQL/Redis，未执行迁移或真实流程，没有新常驻服务。真实待办/已办/我发起、应用发布后的采购 CODE 模板范围、PDF/物理打印仍留 T44；M5c 的鉴权资源加载和执行事件收口尚未完成。

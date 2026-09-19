@@ -200,3 +200,12 @@ M4c 结果：首轮 34 项后端、86 项前端通过；新增真实 Velocity �
 - 数据范围：节点显式 `readable=false` 的主表/子表字段从目录移除；RESTRICT 只保留节点模板 ID 子集。审批轨迹保持每个 taskId 独立并限制 1000 条，不按节点名合并会签或重提轮次。
 - Provider：低代码 FLOW 场景要求真实应用 processRun；采购 CODE Provider 读取业务 Service 和应用不可变发布快照，目录排除内部 ID、流程身份和上传 fileId，并增加审批轨迹目录。
 - 自动化：`FlowPrintAccessPolicyTest` 4 项、`LowcodePrintDataProviderTest` 7 项、`SamplePurchaseOrderPrintDataProviderTest` 2 项，共 13 项通过；业务核心 35 模块 compile 与流程插件 28 模块 compile 通过。真实 Flow/Admin/MySQL/Redis 未启动，真实任务/实例 E2E 留 T44。
+
+## M5b 增量验证
+
+- 结构约束：先迁出 `todo.vue`、`started.vue`、`FlowTaskDetailShell.vue` 的作用域样式；以行数检查确认触达 SFC 均回到 2000/800 行阈值内。共享流程打印上下文只进入 Pinia Store，详情入口不转发业务正文。
+- 流程身份：前端请求只包含 application/source/record/scene/task/instance/run 的稳定身份；低代码场景必须有不可变 processRunId。后端表单上下文优先返回业务流程 run 固定的应用身份，旧 CODE 流程只有在业务对象唯一归属一个已发布应用时才补齐；多个候选保持未解析。
+- 交互：待办有未保存修改时先明确提示打印的是服务端已保存数据；切换任务关闭模板选择并丢弃旧异步回包。待办、已办、我发起复用同一 `FlowPrintAction` 与现有 `PrintTemplatePicker`。
+- 节点策略：`INHERIT` 不写冗余 BPMN 属性；`RESTRICT` 写允许模板 ID 子集，空子集代表当前节点无模板。模板列表按当前应用及 CODE formKey / LOWCODE pageId 收窄，策略只减权、不授予额外权限。
+- 自动化：前端 7 文件 40 项通过（Store/动作/策略组件/BPMN 解析写回及既有 roundtrip/json-to-bpmn）；定向 ESLint 与 Vite 生产构建通过。后端 33 模块聚合测试编译通过，`BusinessFlowService*Test + FlowPrintAccessPolicyTest` 共 22 项通过；新增 Mapper XML 通过 xmllint。
+- 仍未执行：真实 Admin/Flow/MySQL/Redis、Flyway、待办/已办/我发起浏览器 E2E、PDF 和物理打印。M5c 的签名/图片鉴权资源失败阻断与执行事件收口尚未实施。

@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：forge-admin 的 M1–M4 已本地提交；M5a 的流程身份/历史数据适配和采购 CODE Provider 完成阶段验证，M5b–M6 待实施。整体仍为 implemented-pending-e2e；当前分支 forge-native-print，只 commit、不 push
+> 当前阶段：forge-admin 的 M1–M4 已本地提交；M5a 流程服务端适配和 M5b 前端入口/BPMN 节点策略完成阶段验证，M5c–M6 待实施。整体仍为 implemented-pending-e2e；当前分支 forge-native-print，只 commit、不 push
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 
