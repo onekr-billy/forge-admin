@@ -142,14 +142,14 @@ M2 最终结果：10 文件 58 项通过（M1 39 + M2 19）；状态历史、手
 - 后端目标单测必须启用 -Penable-tests；编译打印模块并尝试 Admin 聚合 package -DskipTests。不启动 Admin/Flow/MySQL/Redis，不实跑迁移，真实事务竞争/租户拦截/DDL 留用户后续验收。
 - 本机没有 Java/Maven，临时下载官方发行版并校验摘要，仅 process-local JAVA_HOME/PATH 与临时 Maven 缓存，不修改系统或提交工具二进制。
 
-M3a 增强：H2 MySQL 模式加载同一 V1.0.168 DDL，仅去除 ENGINE/CHARSET/COLLATE 后运行 Mapper 行为测试；不会据此宣称 MySQL Flyway 已执行或已验证租户拦截器。
+M3a 增强：H2 MySQL 模式加载冲突修复后的 V1.0.171 打印 DDL，仅去除 ENGINE/CHARSET/COLLATE 后运行 Mapper 行为测试；不会据此宣称 MySQL Flyway 已执行或已验证租户拦截器。
 
 ### M3a 最终结果
 
 - Java：7 个测试类、72 项、0 失败/错误/跳过；包含 29 项跨语言共享协议样例、5 项 H2 Mapper 行为测试。使用根 enable-tests profile，确认 Surefire 实际运行。
 - 前端兼容：`source ~/.nvm/nvm.sh && nvm use v24.21.0 && node code-copilot/changes/forge-native-print/verification/protocol-compatibility.mjs`，29/29。服务端额外拒绝未使用属性中的非法格式，与设计中严格边界一致。
 - 构建：Java 17，打印模块及依赖测试成功；`mvn -pl forge-admin-server -am package -DskipTests` 串行聚合 46 模块通过（本机实际命令另有临时 Maven settings，见 execution-log）。
-- 静态：4 个 Mapper XML 与 5 个 POM 解析、Flyway 版本唯一性、V1.0.168/V1.0.169 无业务占位符、空白检查通过。
+- 静态：4 个 Mapper XML 与 5 个 POM 解析、Flyway 版本唯一性、V1.0.171/V1.0.172 无业务占位符、空白检查通过。
 - 不扩大前端页面回归：本轮未改任何 UI 源码，独立构建实际前端协议模块验证兼容；M1/M2 页面和 58 项既有测试没有重跑，沿用上一阶段证据。
 - 未执行真实 MySQL/Flyway、Admin/Flow 启动、API/低代码/流程 E2E、浏览器打印、PDF 或物理打印。详见 verification/m3a-results.json。
 
@@ -172,9 +172,9 @@ M3a 增强：H2 MySQL 模式加载同一 V1.0.168 DDL，仅去除 ENGINE/CHARSET
 
 复用 M3b 基线：新增字符串页面身份的 DTO/HTTP/真实 Mapper/路由行为测试；兼容旧数字身份 hash；应用可见范围/权限/actor 租户检查；历史版本引用保护、锁与事务边界；固定版本归属/hash/停用失败不提交发布指针、旧快照兼容。执行相关 Print 和 generator 目标单测、Admin 聚合 package、前端 lint/打印单测/build。仅路由解析逻辑调整，不改可视组件；真实 MySQL 迁移与锁并发验收仍待用户环境，不启动 Admin/Flow。
 
-M4a 实际结果：Print 106 + generator 30 项通过，PrintIdentityTest 扩充 current 方法断言后单独复验 1 项通过（不重复计入总数）；前端 77 项通过，ESLint 正则修复后路由 8 项复验通过；Admin 46 模块 package 与 Vite build 通过。无视觉组件修改，本次仅验证路由解析，不重复上一阶段浏览器截图。H2 覆盖 SQL/事务/并发阻塞，不能代替 MySQL REPEATABLE READ 与 V171 information_schema/PREPARE 实跑。
+M4a 实际结果：Print 106 + generator 30 项通过，PrintIdentityTest 扩充 current 方法断言后单独复验 1 项通过（不重复计入总数）；前端 77 项通过，ESLint 正则修复后路由 8 项复验通过；Admin 46 模块 package 与 Vite build 通过。无视觉组件修改，本次仅验证路由解析，不重复上一阶段浏览器截图。H2 覆盖 SQL/事务/并发阻塞，不能代替 MySQL REPEATABLE READ 与冲突修复后的 V1.0.174 information_schema/PREPARE 实跑。
 
-真实环境下一轮新增验收：先运行 V171，检查两表旧数字 page_id 仍等值且 source_key 未改变；应用发布、停用/删除模板并发时不能生成悬空引用；保留历史应用版本时解除当前绑定仍不能删除模板。候选打印快照生成和 DataProvider 在 M4b 安装后才执行完整真实业务链路。
+真实环境下一轮新增验收：先运行 V1.0.174，检查两表旧数字 page_id 仍等值且 source_key 未改变；应用发布、停用/删除模板并发时不能生成悬空引用；保留历史应用版本时解除当前绑定仍不能删除模板。候选打印快照生成和 DataProvider 在 M4b 安装后才执行完整真实业务链路。
 
 ## M4b 增量验证
 
@@ -242,6 +242,14 @@ T51 执行结果：前端打印域 21 个测试文件 131 项、共享协议 38/
 T52 执行结果：前端打印域 22 个测试文件 135 项、共享协议 38/38 全部通过；定向 ESLint、`git diff --check` 与 Vite 9382 modules 生产构建通过。注册器自动化覆盖非法/重复 key、声明式异步工厂、Promise 返回、函数字段、未知片段和非法协议类型的原子拒绝，并确认导出 JSON 不含注册 key、factory、registry 或函数。Chromium 合成工作台显示审批状态、签章位置、合同条款三个业务物料；实际插入审批状态后只生成 Forge 固定区块和文本元素，设计区与正式预览均显示安全示例值。真实业务插件、Admin/Flow/MySQL/Redis、其它浏览器与物理打印未执行。
 
 T53 执行结果：前端打印域 23 个测试文件 147 项、共享协议 38/38、Java 协议 75 项全部通过；定向 ESLint、`git diff --check` 与 Vite 9385 modules 生产构建通过。校准自动化覆盖 A3/A4/A5/B4/B5、横纵方向、自定义尺寸、10mm 边距框、横纵 100mm 标尺、隔离 iframe、精确 `@page`、afterprint 清理、能力报告和按纸张配置隔离的本机验收记录，并明确 `window.print` 或 `DIALOG_OPENED` 都不是物理成功。Chromium 在 `http://127.0.0.1:4322/print/designer?templateId=1&ui=t53` 从“更多”打开三栏校准工作台，核对 A4 纵向/横向、自定义纸张、浏览器能力、正式渲染页和待人工确认记录保存。没有自动打开系统打印对话框或伪造实体测量；Firefox/Edge/Safari、真实 Admin/Flow/MySQL/Redis、PDF 与物理打印仍由用户验收。
+
+## T54 Flyway 并行版本冲突修复验证计划
+
+- 以启动日志中的 applied checksum 为基线，按 Flyway 逐行 CRC32 算法确认流程 V1.0.168–V1.0.170 分别为 `-1783583920`、`-211989272`、`-698851386`；本地不得再把这些版本解析为打印 SQL。
+- 确认迁移目录版本唯一，打印迁移按 V1.0.171 建表、V1.0.172 字典权限、V1.0.173 隐藏路由、V1.0.174 页面身份扩展顺序存在；旧打印文件名不存在，测试与文档不残留错误版本引用。
+- 运行 `PrintResourceContractTest`、`PrintPersistenceTest`、`PrintApplicationPersistenceTest` 及打印插件完整回归；执行 Admin 聚合 package，验证 Flyway 资源能被打包。真实远端数据库不执行 repair、不由自动化连接或修改，用户重新启动后观察正常 migrate。
+
+T54 执行结果：流程 V1.0.168–V1.0.170 的 Flyway checksum 分别固定为 `-1783583920`、`-211989272`、`-698851386`；迁移目录无重复版本。四份打印 SQL 与顺延前的 Git blob 完全一致，只变更文件版本名为 V1.0.171–V1.0.174。`PrintResourceContractTest + PrintPersistenceTest` 8 项、`PrintApplicationPersistenceTest` 8 项和打印插件完整回归 121 项全部通过，Admin 46 模块聚合 package 成功，`git diff --check` 与本轮 7 份迁移的业务占位符扫描无输出。仓库全量扫描仍会命中既有 V1.0.72 消息模板中的运行时 `${...}` 文本，本轮不改写已执行历史。首次完整回归在沙箱内因 Mockito/Byte Buddy 无法自附加产生 32 个环境性错误；相同命令在允许 JVM attach 的本机执行环境复跑为 121/121 通过。没有连接或修改真实数据库，没有执行 repair；目标库正常 migrate 仍由用户重启验收。
 
 真实联调追加：应用发布后从实际门户的列表/详情各打印一条；同对象跨页面检查模板范围；同一次应用代码下载中并发发布新版本，检查对象协议与 application-printing.json 固定引用一致；MySQL 实跑 selectPublishedPrintSources 的 JSON_CONTAINS 与租户条件；独立部署须先完成 PRINTING.md 列出的资产导入和 Provider 适配。
 

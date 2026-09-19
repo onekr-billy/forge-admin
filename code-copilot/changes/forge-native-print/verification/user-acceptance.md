@@ -4,7 +4,7 @@
 
 ## 1. 环境与迁移
 
-- [ ] 备份目标库，启动 Admin 触发 Flyway，确认 V1.0.168–V1.0.170 在 `forge_schema_history` 中成功且无重复版本。
+- [ ] 备份目标库，确认流程 V1.0.168–V1.0.170 已成功且 checksum 未被 repair；启动 Admin 正常执行打印 V1.0.171–V1.0.174，并确认 `forge_schema_history` 无重复版本。
 - [ ] 确认 Admin、Flow 使用同一业务库与 Redis，登录用户具备 `print:execute`；模板管理员另具备打印模板权限。
 - [ ] 发布一次包含打印绑定的应用版本，确认旧应用版本仍使用其固定模板版本/hash。
 

@@ -186,7 +186,7 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 执行前复用根 AGENTS、code-copilot/AGENTS、preferences、pitfalls/backend、automated-testing-standard、当前 SDD；应用 `.agents/skills/forge-codegen-crud/SKILL.md` 的实体、SQL、字典权限约定。先补 T14 的 BOM 文件与 T21 拆分，再编码。
 - M3a 单独交付 T14–T21；M3b T22–T28 仍待实现。没有 Controller、Provider 运行接口或真实前端保存，不将本阶段写成全部 M3 完成。
 - POM 单向 generator → print → 技术 starter，Admin 显式聚合；打印插件只有技术依赖，H2 为 test scope。没有 hiprint 源码/依赖或新的生产端打印库。
-- 新迁移 V1.0.168 建四表，V1.0.169 建 5 个 sys_print_* 字典和四项权限；不向角色自动授权、不创建未完成的列表菜单。没有执行迁移，没有修改历史 SQL。
+- 原实现使用 V1.0.168 建四表、V1.0.169 建 5 个 sys_print_* 字典和四项权限；T54 发现并行流程分支占用相同版本后，打印迁移整体顺延为 V1.0.171/V1.0.172。不向角色自动授权、不创建未完成的列表菜单。
 - Mapper 使用明确租户/逻辑删除条件、CAS 修订号、模板行锁、版本归属验证与审计 actor 限定；版本仅 insert/select，历史最大版本号包含删除记录以保持永久唯一。默认绑定应用行锁和应用快照引用保护留 T24/T22 的服务/SPI 完成。
 - 文档模型与验证器拆成 8 个小类；统一技术限制，UTF-8 1MiB/深度/重复 JSON 键/尾随 JSON/字段与样式白名单/图片来源/几何/表格跨度；输出规范化 JSON 与 SHA-256，不执行表达式。失败诊断不记录原始模板值或 parser 原文。
 
@@ -229,7 +229,7 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 - 设计依赖打印设计权限与应用/来源授权；运行仅依赖 print:execute 与 Provider 的应用/记录/场景授权。Provider 返回可信发布版本清单，不回退最新草稿或实时设计绑定。默认没有真实 Provider，503 拒绝。
 - prepare 只返回模板使用且目录允许的字段。图片元素必须绑定 IMAGE 目录字段；资源别名归一 fileId 后再授权。数据单集合 500 行、单文本 100000 字符、JSON 流式限长 4MiB。流程授权结果必须带已解析 processRunId。打印审计仅记录 PREPARED/DIALOG_OPENED/FAILED 元数据；所有端点关闭请求/响应正文日志。
 - 前端两个 Pinia store 管理异步版本和请求代次，服务端保存不落 localStorage；保存时的新编辑保留，409 不丢数据，关闭预览清理单据。模板/场景/状态展示使用字典，新增页面与面板均低于 800 行。
-- V1.0.170 仅注册 3 个隐藏页面，NOT EXISTS 防重复、tenant_id=1，不自动给角色赋权。未执行迁移。正式业务入口和应用发布集成仍在 M4。
+- 原 V1.0.170（T54 顺延为 V1.0.173）仅注册 3 个隐藏页面，NOT EXISTS 防重复、tenant_id=1，不自动给角色赋权。正式业务入口和应用发布集成仍在 M4。
 
 ### 测试与修复记录
 
@@ -249,7 +249,7 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 4. 对全部本轮前端改动运行项目 ESLint，0 errors/warnings；日志 `/private/tmp/forge-print-m3b-eslint.log` 和最终 API 定向日志 `/private/tmp/forge-print-m3b-api-eslint.log`。
 5. `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build`：最终生产构建成功，保留既有 Rollup/Rolldown 性能/包体积提示，未关闭规则。日志 `/private/tmp/forge-print-m3b-ui-build.log`。
 6. 浏览器实际执行合成 HTTP 场景，见 browser-results-m3b.json；真实 Service/Mapper/事务验证由 H2/MockMvc 完成，不混称真实业务 E2E。
-7. Mapper XML、迁移版本唯一/V170 防重复与无自动角色授权、SFC 行数和 git diff --check 通过；结构化计数见 verification/m3b-results.json，不提交包含环境变量的原始 Surefire 报告。
+7. Mapper XML、迁移版本唯一/V1.0.173 防重复与无自动角色授权、SFC 行数和 git diff --check 通过；结构化计数见 verification/m3b-results.json，不提交包含环境变量的原始 Surefire 报告。
 
 ### 两阶段自审、清理和交接
 
@@ -263,7 +263,7 @@ PASS: local links, whitespace, IDs, dependencies, task status and requirement co
 
 用户要求新分支继续打印，随后指定去掉 codex 和 M4；当前分支 `forge-native-print`，从 882ff8e1 延续，未改动主分支、未 push。已有 .DS_Store 改动不纳入提交。
 
-实际修改 PrintSourceRequest / PrintTemplateCreateDTO / PrintBindingQueryDTO、PrintTemplate / PrintBinding；V1.0.171 扩展 page_id 为 VARCHAR(128)，数字 ID 的旧 source_key 保持一致。路由解析接受工作台 page_* 标识，拒绝路径和超限值。H2 夹具先建 V168 再运行 V171 对应 ALTER；MySQL information_schema/PREPARE 防重分支未在真实库执行。
+实际修改 PrintSourceRequest / PrintTemplateCreateDTO / PrintBindingQueryDTO、PrintTemplate / PrintBinding；原 V1.0.171（T54 顺延为 V1.0.174）扩展 page_id 为 VARCHAR(128)，数字 ID 的旧 source_key 保持一致。路由解析接受工作台 page_* 标识，拒绝路径和超限值。H2 夹具先建打印 V1.0.171 再运行 V1.0.174 对应 ALTER；MySQL information_schema/PREPARE 防重分支未在真实库执行。
 
 验证：Java 17/Maven 3.9.9，既有 /private/tmp/forge-print-toolchain/env.sh 和 Maven settings，`-pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='Print*Test' -Dsurefire.failIfNoSpecifiedTests=false`：106 项全部通过（包括 DTO→MockMvc→事务 Service→Mapper 的字符串页面身份）。前端 Node 24.21，`vitest run src/components/print src/stores/print`：12 文件 77 项通过；目标 ESLint 首轮提示正则风格，--fix 后通过；`node --max-old-space-size=8192 node_modules/vite/bin/vite.js build` 成功，46.44 秒，保留既有构建警告。未启动任何服务/未执行真实迁移。
 
@@ -277,7 +277,7 @@ M4a-2/3 正在实现，不将数据 Provider、应用发布快照生成或工作
 - `mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest='PrintApplication*Test,BusinessApplicationVersionServiceTest,BusinessApplicationRuntimeServiceTest,BusinessApplicationPhaseFiveSecurityTest' -Dsurefire.failIfNoSpecifiedTests=false`：30 项通过，28.726 秒。其中应用锁/版本事务 5 项、固定版本守卫 4 项、应用授权/历史引用 3 项、快照协议 4 项、既有应用版本/运行/快照安全 14 项。
 - 前一轮 `-Dtest='Print*Test,...'` 中打印插件 106 项通过。新 current() 断言再按 `-Dtest=PrintIdentityTest` 增量复验 1 项通过。
 - `mvn ... -pl forge-admin-server -am package -DskipTests`：46 模块 BUILD SUCCESS，29.232 秒。未启动 Admin。
-- V171 静态检查：版本号唯一、两处 information_schema 防重、无 Flyway 业务占位符；git diff --check 通过。
+- V1.0.174 静态检查：版本号唯一、两处 information_schema 防重、无 Flyway 业务占位符；git diff --check 通过。
 
 验证中修正：新增守卫依赖后，旧 RuntimeService 测试子类 super 构造器遗漏参数导致 testCompile 失败，已适配；H2 合成模板最初漏写非空 create_by，导致 5 项夹具初始化失败，补齐 create_by/update_by/create_dept 后全部通过，未放宽表约束。
 
@@ -546,3 +546,24 @@ git diff --check
 设计器“更多”菜单新增低频入口“打印校准与验收”。弹窗采用纸张设置、正式校准页预览、本机实测验收三栏，默认继承当前模板纸张；支持 A3/A4/A5/B4/B5、纵横向和自定义短边/长边。Chromium 在独立合成入口 `http://127.0.0.1:4322/print/designer?templateId=1&ui=t53` 实际打开入口，核对 A4 纵向/横向、自定义 210×297mm、浏览器能力报告、10mm 框、100mm 标尺和未勾选状态的本机记录保存。未自动打开系统打印对话框，以免把对话框或合成浏览器行为冒充物理打印结果。
 
 验证：前端打印域 23 文件 147 项、共享协议 38/38、Java `PrintProtocolCompatibilityTest` 38 项与 `PrintProtocolValidatorTest` 37 项全部通过；定向 ESLint 与 `git diff --check` 无输出；Vite 9385 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。Firefox/Edge/Safari、真实 Admin/Flow/MySQL/Redis、PDF 与物理打印机仍由用户回填验收。本阶段只在 `forge-native-print` 分支 commit，不 push，既有 `.DS_Store` 不暂存。
+
+## 2026-09-19 · T54 Flyway 并行版本冲突修复
+
+用户提供的 Admin 启动日志显示 Flyway 在初始化阶段失败，V1.0.168–V1.0.170 的 applied checksum 分别为 `-1783583920`、`-211989272`、`-698851386`，而打印分支把相同版本号用于打印建表、权限和隐藏路由脚本。根因是并行分支复用了已落库的版本号，不是 Job 注册或业务 Bean 初始化问题。
+
+修复遵循已执行迁移不可变原则：从流程分支恢复 V1.0.168 `repair_flow_task_process_def_key`、V1.0.169 `seed_business_flow_need_modify_status`、V1.0.170 `add_business_flow_instance_round_no` 的原始文件；打印建表、字典权限、隐藏路由、页面身份扩展顺延到 V1.0.171–V1.0.174。四份打印 SQL 的 Git blob hash 与改名前逐一相同，只调整版本文件名；测试夹具和历史验证引用同步到新名称。`PrintResourceContractTest` 新增 Flyway 逐行 CRC32 校验、全目录版本唯一性和新旧文件名断言，防止再次覆盖这组三个流程版本。
+
+验证命令与结果：
+
+```bash
+JAVA_HOME=/private/tmp/forge-print-toolchain/jdk-17.0.20.1+1/Contents/Home /private/tmp/forge-print-toolchain/apache-maven-3.9.9/bin/mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest=PrintResourceContractTest,PrintPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false
+JAVA_HOME=/private/tmp/forge-print-toolchain/jdk-17.0.20.1+1/Contents/Home /private/tmp/forge-print-toolchain/apache-maven-3.9.9/bin/mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am test -Penable-tests -Dtest=PrintApplicationPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false
+JAVA_HOME=/private/tmp/forge-print-toolchain/jdk-17.0.20.1+1/Contents/Home /private/tmp/forge-print-toolchain/apache-maven-3.9.9/bin/mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='Print*Test' -Dsurefire.failIfNoSpecifiedTests=false
+JAVA_HOME=/private/tmp/forge-print-toolchain/jdk-17.0.20.1+1/Contents/Home /private/tmp/forge-print-toolchain/apache-maven-3.9.9/bin/mvn -s /private/tmp/forge-print-maven-settings.xml -B -ntp -pl forge-admin-server -am package -DskipTests
+rg -n '\$\{[^}]+\}' forge-server/db/migration/V1.0.168__repair_flow_task_process_def_key.sql forge-server/db/migration/V1.0.169__seed_business_flow_need_modify_status.sql forge-server/db/migration/V1.0.170__add_business_flow_instance_round_no.sql forge-server/db/migration/V1.0.171__add_native_print_tables.sql forge-server/db/migration/V1.0.172__add_native_print_resources.sql forge-server/db/migration/V1.0.173__add_native_print_hidden_routes.sql forge-server/db/migration/V1.0.174__support_print_workspace_page_identity.sql
+git diff --check
+```
+
+结果：迁移合同/持久化目标测试 8 项、generator 持久化测试 8 项、打印插件完整回归 121 项全部通过；Admin 46 模块 BUILD SUCCESS；本轮 7 份迁移的占位符扫描和空白检查无输出。仓库全量占位符扫描仍命中既有 V1.0.72 消息模板保存的 `${taskTitle}` 等运行时文本，本轮不改写该已执行历史脚本。完整回归第一次在文件沙箱内运行时，Mockito/Byte Buddy 因外部 JVM attach 被阻止产生 32 个 MockMaker 初始化错误；在允许 JVM attach 的相同工作区用同一 Maven 命令复跑后 121 项全部通过，未修改生产或测试配置来规避问题。
+
+本轮未启动 Admin/Flow/MySQL/Redis，未连接目标远端数据库，未执行 Flyway migrate/repair 或修改 `forge_schema_history`。用户拉取更新后的 `forge-native-print` 分支并重启 Admin 后，应先正常校验流程 V1.0.168–V1.0.170，再执行打印 V1.0.171–V1.0.174；该真实库结果仍由用户验收。

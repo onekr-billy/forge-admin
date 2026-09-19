@@ -88,7 +88,7 @@ abstract class PrintServiceFixture {
         anchor = ds.getConnection();
         jdbc = new JdbcTemplate(ds);
         tx = new DataSourceTransactionManager(ds);
-        String sql = Files.readString(PrintResourceContractTest.migrationDirectory().resolve("V1.0.168__add_native_print_tables.sql")).replace("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci", "");
+        String sql = Files.readString(PrintResourceContractTest.migrationDirectory().resolve("V1.0.171__add_native_print_tables.sql")).replace("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci", "");
         for (String statement : sql.split(";")) {
             if (!statement.isBlank()) {
                 jdbc.execute(statement);

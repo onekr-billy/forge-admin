@@ -19,7 +19,7 @@
     "build": "PASS"
   },
   "migration": {
-    "file": "V1.0.171__support_print_workspace_page_identity.sql",
+    "file": "V1.0.174__support_print_workspace_page_identity.sql",
     "staticChecks": "PASS",
     "mysqlExecuted": false
   },

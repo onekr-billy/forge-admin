@@ -193,9 +193,15 @@ prepare 对每次请求重新授权；即使知道旧版本 ID 也不能绕过�
 - `draftStorage.js` 校验导入体积和协议、只存模板。`PrintDesigner` 支持注入 `saveDraft(document)`，M3 接口就绪后替换默认本地适配器。`views/print/designer.vue` 提供页面组件与路由离开保护；菜单种子留给 M3。
 - 当前一个页面只挂载一个 PrintDesigner；验证入口专用独立 Pinia。每次加载模板清空旧选择/历史/剪贴板，保存通过 generation 避免异步回调污染后来加载的文档。
 
+## Flyway 并行版本冲突修复（2026-09-19）
+
+- 以目标数据库已经执行的流程迁移为历史事实：V1.0.168 `repair_flow_task_process_def_key`、V1.0.169 `seed_business_flow_need_modify_status`、V1.0.170 `add_business_flow_instance_round_no` 必须按原文件名与原内容进入打印分支，checksum 分别保持 `-1783583920`、`-211989272`、`-698851386`。
+- 原打印迁移按依赖顺序整体平移：建表改为 V1.0.171，字典/权限改为 V1.0.172，隐藏路由改为 V1.0.173，页面身份列扩展改为 V1.0.174。SQL 内容保持不变，H2 夹具和资源合同测试同步读取新名称。
+- 新库顺序执行流程 168–170 与打印 171–174；已执行流程 168–170 的数据库从 171 开始正常迁移。任何环境都不执行 `repair`、不删除 `forge_schema_history`、不手工覆盖 checksum。
+
 ## M3a 落位细化（2026-09-19，编码前）
 
-- Flyway 使用当前下一个版本 V1.0.168（四张表）与 V1.0.169（字典/权限）。不执行真实迁移；不覆盖任何历史脚本。
+- Flyway 冲突修复后使用 V1.0.171（四张表）与 V1.0.172（字典/权限）；V1.0.168–V1.0.170 保留已执行的流程迁移，不覆盖任何历史脚本。
 - 模板来源保留 page_id、form_key、object_code 及 source_type/source_key；source_key 长度 191，由后续授权 Provider 规范化，创建 DTO 不接受客户端 source_key 或 tenant/actor/status。
 - 来源类型 LOWCODE/CODE；场景 LIST/DETAIL/FLOW_TODO/FLOW_DONE/FLOW_STARTED；数据模式 CURRENT。均有模块枚举和 sys_print_* 字典。
 - template_code 长度 80，模板名 100，revision 使用 Long；启停也递增 draft_revision，避免停用与发布并发覆盖。版本仅可插入/读取。
@@ -226,7 +232,7 @@ M3b 审查补充：图片元素的 FIELD 绑定只能使用目录类型 IMAGE；
 
 ## M4a 接入前置约束（2026-09-19）
 
-- 低代码 pageId 使用 1–128 位受控字符串 `[A-Za-z0-9][A-Za-z0-9_.:-]*`，支持工作台 `page_*` 标识；已有数字 ID 转为等值十进制字符串，source_key 摘要算法不变。两张打印表通过新增迁移扩展列，不修改 V168。回退保留 VARCHAR 列，不能强制降回 BIGINT 丢失新页面标识。
+- 低代码 pageId 使用 1–128 位受控字符串 `[A-Za-z0-9][A-Za-z0-9_.:-]*`，支持工作台 `page_*` 标识；已有数字 ID 转为等值十进制字符串，source_key 摘要算法不变。两张打印表通过 V1.0.174 扩展列，不修改 V1.0.171 建表迁移。回退保留 VARCHAR 列，不能强制降回 BIGINT 丢失新页面标识。
 - 应用侧实现 PrintApplicationAccess：分别叠加应用 list/edit/publish 与 print view/manage/publish 权限，按应用当前可见范围检查；租户/用户来自 PrintIdentity，与 SPI actor 必须一致。此处是设计权限，不用于业务运行授权。
 - 应用版本提交与打印修改/删除统一先锁应用行，随后读模板/版本。历史引用查询使用锁定读，避免 MySQL REPEATABLE READ 的先前快照漏掉刚发布的引用；查询显式 tenant_id/del_flag，锁查询不使用 LIMIT。
 - 应用快照扩展 `printing = {schemaVersion: 1, bindings: [...]}`。每项固定 source、scene、templateId、templateVersionId、schemaHash、isDefault、sortOrder；无正文，无最新版本回退。同来源/场景/模板不能重复，每范围默认至多一个。旧快照缺少 printing 视为空；显式 null、未知版本、坏结构拒绝。

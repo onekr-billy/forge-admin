@@ -131,7 +131,7 @@ M2 结果：新增 26 个源码/测试文件（设计器、Pinia 和页面），
 
 当前分支为 `forge-native-print`。仓库核对发现：工作台页面 ID 是字符串（如 `page_purchase`），M3 的 Long pageId 不能接入；应用版本提交与打印删除尚未共享应用行锁。先完成 M4a，再接 M4b/M4c；不将基础适配计作真实单据打印完成。
 
-- [x] M4a-1（T29 前置）：`PrintSourceRequest`、两个来源 DTO、两个实体改用受控字符串 pageId（拆为 DTO 组与持久化组）；新增 V1.0.171 扩展两表 page_id，保持旧数字身份摘要不变。路由解析同步，补 DTO/HTTP/Mapper/路由验证。
+- [x] M4a-1（T29 前置）：`PrintSourceRequest`、两个来源 DTO、两个实体改用受控字符串 pageId（拆为 DTO 组与持久化组）；冲突修复后由 V1.0.174 扩展两表 page_id，保持旧数字身份摘要不变。路由解析同步，补 DTO/HTTP/Mapper/路由验证。
 - [x] M4a-2（T33 前置）：应用 Mapper 行锁、版本 Mapper 历史快照当前读（4 文件）；新增 `service/printing/{PrintApplicationAccessAdapter,PrintApplicationSnapshotCodec,PrintApplicationLock}.java`。应用设计权限与应用可见范围同时核验，删除检查全部保留的历史应用版本。
 - [x] M4a-3（T33 前置）：新增 `PrintApplicationVersionGuard`，接入 `BusinessApplicationVersionService`；共享应用行锁下核验固定模板版本/归属/hash，失败不提交应用版本或发布指针。补服务与事务/Mapper 测试。
 - [x] M4b：T29/T30/T33 余项，已发布元数据、主子表读取与字段权限、候选快照生成/发布校验。特别验证 DynamicCrudService 的子表读取后处理，不能沿用未翻译/未脱敏子表结果。
@@ -209,10 +209,13 @@ M5c 实际拆分：
 - [x] T53a：实现校准页生成、浏览器打印能力检查和本地验收清单，复用隔离打印会话。
 - [x] T53b：接入设计器低频入口，覆盖 A3/A4/A5/B4/B5、横纵方向和自定义纸张信息。
 - [x] T53c：执行自动化、构建和 Chromium 浏览器校准页验证；真实 Firefox/Edge/Safari 与物理打印机结果留用户回填，独立 commit、不 push。
+- [x] T54a：恢复流程分支已执行的 V1.0.168–V1.0.170 原始迁移，并将打印迁移整体顺延到 V1.0.171–V1.0.174，禁止 repair。
+- [x] T54b：同步 Java/H2 测试、验证证据和全部版本引用，增加迁移版本唯一性与已执行 checksum 回归检查。
+- [x] T54c：执行打印插件测试、Admin 聚合构建和迁移静态验证；独立 commit 并推送 `forge-native-print`。
 
 ## 依赖主线
 
-`D02 → T01…T13 → T28 → T29…T34 → T35…T39 → T40…T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53`。
+`D02 → T01…T13 → T28 → T29…T34 → T35…T39 → T40…T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54`。
 
 后端 `T14…T27b` 可以在同一实施阶段顺序穿插；不存在默认多 Agent 并行授权。任务的前置协议、迁移和权限审查不得跳过。
 
@@ -243,11 +246,11 @@ T14–T21 源码与阶段验证完成：打印插件、4 表/5 个业务字典/4
 - T27a：dto/{PrintPrepareDTO,PrintAvailableTemplatesDTO,PrintCatalogQueryDTO,PrintExecutionEventDTO}；GET 版本详情补入 T22，删除使用 revision 查询参数。
 - T26a：service/{PrintPrepareService,PrintDataProjector,PrintExecutionService}、vo/{PrintContextVO,PrintAvailableTemplateVO}；T26b：controller/PrintRuntimeController 与服务/授权/事件测试。
 - T28a：U api/print.js、stores/print/{printTemplateStore,printRuntimeStore}.js 和状态/API 测试；T28b：views/print/{index,designer}.vue、components/print/management/{PrintTemplateCreate,PrintTemplateVersions,PrintBindingPanel}.vue；T28c：runtime/PrintTemplatePicker.vue、views/print/preview.vue、设计器 Toolbar/生命周期小改与组件测试。
-- T28d：新 V1.0.170 权限隐藏路由种子、verification 的合成服务端验证入口/浏览器证据。模板页面需要上游应用/表单上下文，不让普通用户手输应用/业务对象 ID；正式应用内资源导航留 T31。
+- T28d：冲突修复后由 V1.0.173 提供权限隐藏路由种子、verification 的合成服务端验证入口/浏览器证据。模板页面需要上游应用/表单上下文，不让普通用户手输应用/业务对象 ID；正式应用内资源导航留 T31。
 
 本轮不安装生产合成 Provider，不启动真实 Admin/Flow/数据库。M3 阶段出口通过测试专用 Provider、真实 Service/Mapper/事务和模拟 HTTP 完成；真实业务适配器仍留 M4/M5。
 
-T28 补充文件：management/printRouteContext.js 解析入口标识；router/index.js 注册 3 个页面的布局和离开保护语义。V170 仅注册隐藏菜单，perms 为 NULL，继续使用 V169 四项 API 权限，不自动给角色增权。PrintIdentityTest/PrintDocumentAccessTest 覆盖登录租户一致性及资源别名。
+T28 补充文件：management/printRouteContext.js 解析入口标识；router/index.js 注册 3 个页面的布局和离开保护语义。V1.0.173 仅注册隐藏菜单，perms 为 NULL，继续使用 V1.0.172 四项 API 权限，不自动给角色增权。PrintIdentityTest/PrintDocumentAccessTest 覆盖登录租户一致性及资源别名。
 
 ### M3b 阶段结果
 

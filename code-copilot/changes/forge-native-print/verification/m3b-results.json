@@ -142,7 +142,7 @@
   "staticChecks": [
     "Mapper XML parses",
     "Flyway versions unique",
-    "V170 guarded and does not grant roles",
+    "V173 guarded and does not grant roles",
     "git diff --check",
     "new Vue SFCs <= 800 lines"
   ],

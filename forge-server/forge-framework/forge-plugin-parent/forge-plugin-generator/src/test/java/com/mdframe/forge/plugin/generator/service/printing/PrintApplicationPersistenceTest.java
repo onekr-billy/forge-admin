@@ -92,7 +92,7 @@ class PrintApplicationPersistenceTest {
                 """);
         jdbc.update("INSERT INTO ai_business_application(id,tenant_id) VALUES(2,1)");
         jdbc.update("INSERT INTO ai_business_application(id,tenant_id,del_flag) VALUES(3,1,3)");
-        String ddl = Files.readString(Path.of("../../../db/migration/V1.0.168__add_native_print_tables.sql"))
+        String ddl = Files.readString(Path.of("../../../db/migration/V1.0.171__add_native_print_tables.sql"))
                 .replace("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci", "");
         for (String statement : ddl.split(";")) {
             if (!statement.isBlank()) { jdbc.execute(statement); }

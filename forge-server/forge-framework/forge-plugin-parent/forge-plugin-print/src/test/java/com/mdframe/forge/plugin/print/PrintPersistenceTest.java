@@ -34,7 +34,7 @@ class PrintPersistenceTest {
         var config = PrintMapperContractTest.configuration();
         config.setEnvironment(new Environment("test", new JdbcTransactionFactory(), ds));
         session = new SqlSessionFactoryBuilder().build(config).openSession(false);
-        String migration = Files.readString(PrintResourceContractTest.migrationDirectory().resolve("V1.0.168__add_native_print_tables.sql"));
+        String migration = Files.readString(PrintResourceContractTest.migrationDirectory().resolve("V1.0.171__add_native_print_tables.sql"));
         migration = migration.replace("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci", "");
         try (var statement = session.getConnection().createStatement()) {
             for (String sql : migration.split(";")) {
