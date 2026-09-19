@@ -202,6 +202,22 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 page, userId, groupId, title, SessionHelper.getTenantId()));
     }
 
+    @Override
+    public List<FlowTask> activeTasksByProcessInstances(Collection<String> processInstanceIds, String userId) {
+        if (processInstanceIds == null || processInstanceIds.isEmpty() || isBlank(userId)) {
+            return List.of();
+        }
+        List<String> ids = processInstanceIds.stream()
+                .filter(id -> !isBlank(id))
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return this.getBaseMapper().selectActiveTasksByProcessInstances(
+                ids, userId.trim(), requireTenantId());
+    }
+
     private IPage<FlowTask> enrichTaskPage(IPage<FlowTask> page) {
         if (flowBusinessListDisplayAdapter == null || page == null || page.getRecords() == null
                 || page.getRecords().isEmpty()) {

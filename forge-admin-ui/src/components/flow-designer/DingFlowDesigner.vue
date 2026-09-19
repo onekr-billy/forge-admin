@@ -91,9 +91,22 @@ function normalizeProcessConfig(config = {}) {
   const mode = ['firstOnly', 'consecutive', 'none'].includes(config.autoApprovalMode)
     ? config.autoApprovalMode
     : 'none'
+  const rejectStrategy = (() => {
+    const text = String(config.rejectStrategy || '').trim().toUpperCase()
+    if (!text)
+      return 'MANUAL'
+    if (text === 'TO_END' || text === 'END' || text === 'TERMINATE')
+      return 'TO_END'
+    if (text === 'MANUAL' || text === 'NONE' || text === 'OFF')
+      return 'MANUAL'
+    if (text === 'TO_INITIATOR_MODIFY' || text === 'TO_START' || text === 'MODIFY')
+      return 'TO_INITIATOR_MODIFY'
+    return 'MANUAL'
+  })()
   return {
     allowSubmitterWithdraw: config.allowSubmitterWithdraw !== false,
     autoApprovalMode: mode,
+    rejectStrategy,
   }
 }
 
@@ -103,6 +116,7 @@ function applyProcessConfig(config = {}) {
   if (
     current.allowSubmitterWithdraw === normalized.allowSubmitterWithdraw
     && current.autoApprovalMode === normalized.autoApprovalMode
+    && current.rejectStrategy === normalized.rejectStrategy
   ) {
     return
   }

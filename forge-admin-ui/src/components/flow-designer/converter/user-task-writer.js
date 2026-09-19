@@ -183,6 +183,8 @@ export function writeUserTaskConfig(config) {
       continue
     attrs.push(`flowable:${key}="${v}"`)
   }
+  if (cfg.initiatorModify)
+    attrs.push('flowable:initiatorModify="true"')
 
   writeApprovalDuty(cfg, attrs)
 

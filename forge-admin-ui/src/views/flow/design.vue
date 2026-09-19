@@ -375,6 +375,28 @@
               <n-switch v-model:value="modelInfo.allowSubmitterWithdraw" />
             </div>
 
+            <div class="approval-setting-block">
+              <div class="approval-setting-title">
+                驳回策略
+              </div>
+              <div class="approval-setting-desc">
+                线性审批未画驳回分支时，按此策略自动补回路。已手工设计驳回路径的节点不会被覆盖。
+              </div>
+              <n-radio-group v-model:value="modelInfo.rejectStrategy" name="rejectStrategy">
+                <n-space vertical :size="8">
+                  <n-radio value="TO_INITIATOR_MODIFY">
+                    驳回至发起人修改（推荐）
+                  </n-radio>
+                  <n-radio value="TO_END">
+                    驳回即结束流程
+                  </n-radio>
+                  <n-radio value="MANUAL">
+                    按流程图设计（不自动补）
+                  </n-radio>
+                </n-space>
+              </n-radio-group>
+            </div>
+
             <div class="approval-setting-row">
               <div class="approval-setting-main">
                 <div class="approval-setting-title">
@@ -933,7 +955,6 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, react
 import { useRoute, useRouter } from 'vue-router'
 import { modelListByProvider, providerPage } from '@/api/ai'
 import { businessFlowFormAssets, businessFlowModelBindings } from '@/api/business-app'
-import { appendChildTableCatalogFields } from '@/utils/flow-field-permissions'
 import { businessApplicationList, businessApplicationObjects } from '@/api/business-application'
 import flowApi from '@/api/flow'
 import { streamFlowGenerate } from '@/api/flow-generator'
@@ -946,6 +967,7 @@ import FlowFormCreateRenderer from '@/components/form-create/FlowFormCreateRende
 import { useDict } from '@/composables/useDict'
 import { useTabStore } from '@/store'
 import { toNumberDictOptions } from '@/utils/dict-options'
+import { appendChildTableCatalogFields } from '@/utils/flow-field-permissions'
 import { loadFlowBusinessFormFieldCatalog } from '@/utils/flow-form-loader'
 import { sanitizeHtml } from '@/utils/sanitize-html'
 import BusinessFlowFormAssetSelect from '@/views/app-center/components/designer/BusinessFlowFormAssetSelect.vue'
@@ -1092,6 +1114,7 @@ const modelInfo = reactive({
   designerType: 'approval',
   allowSubmitterWithdraw: true,
   allowMultiReturn: false,
+  rejectStrategy: 'TO_INITIATOR_MODIFY',
   autoApprovalMode: 'none',
   formType: 'dynamic',
   formId: null,
@@ -1228,6 +1251,7 @@ const businessPanelIcon = computed(() => getElementIcon(dockedElement.value))
 const processConfig = computed(() => ({
   allowSubmitterWithdraw: modelInfo.allowSubmitterWithdraw !== false,
   autoApprovalMode: normalizeAutoApprovalMode(modelInfo.autoApprovalMode),
+  rejectStrategy: normalizeRejectStrategy(modelInfo.rejectStrategy),
 }))
 
 const appManagedFormTypeActive = computed(() => isAppManagedFormType(modelInfo.formType))
@@ -2525,6 +2549,19 @@ function normalizeAutoApprovalMode(value) {
   return ['firstOnly', 'consecutive', 'none'].includes(value) ? value : 'none'
 }
 
+function normalizeRejectStrategy(value) {
+  const text = String(value || '').trim().toUpperCase()
+  if (!text)
+    return 'MANUAL'
+  if (text === 'TO_END' || text === 'END' || text === 'TERMINATE')
+    return 'TO_END'
+  if (text === 'MANUAL' || text === 'NONE' || text === 'OFF')
+    return 'MANUAL'
+  if (text === 'TO_INITIATOR_MODIFY' || text === 'TO_START' || text === 'MODIFY')
+    return 'TO_INITIATOR_MODIFY'
+  return 'MANUAL'
+}
+
 function parseBooleanWithDefault(value, fallback) {
   if (value == null || value === '')
     return fallback
@@ -2547,11 +2584,11 @@ function readFlowableAttr(el, name) {
 
 function extractProcessConfigFromXml(xml) {
   if (!xml)
-    return { allowSubmitterWithdraw: true, autoApprovalMode: 'none' }
+    return { allowSubmitterWithdraw: true, autoApprovalMode: 'none', rejectStrategy: 'MANUAL' }
   try {
     const doc = new DOMParser().parseFromString(xml, 'application/xml')
     if (doc.querySelector('parsererror'))
-      return { allowSubmitterWithdraw: true, autoApprovalMode: 'none' }
+      return { allowSubmitterWithdraw: true, autoApprovalMode: 'none', rejectStrategy: 'MANUAL' }
     const processEl = findElementByLocalName(doc, 'process')
     return {
       allowSubmitterWithdraw: parseBooleanWithDefault(
@@ -2559,10 +2596,11 @@ function extractProcessConfigFromXml(xml) {
         true,
       ),
       autoApprovalMode: normalizeAutoApprovalMode(readFlowableAttr(processEl, 'autoApprovalMode')),
+      rejectStrategy: normalizeRejectStrategy(readFlowableAttr(processEl, 'rejectStrategy')),
     }
   }
   catch {
-    return { allowSubmitterWithdraw: true, autoApprovalMode: 'none' }
+    return { allowSubmitterWithdraw: true, autoApprovalMode: 'none', rejectStrategy: 'MANUAL' }
   }
 }
 
@@ -2570,6 +2608,7 @@ function applyProcessConfigFromXml(xml) {
   const config = extractProcessConfigFromXml(xml)
   modelInfo.allowSubmitterWithdraw = config.allowSubmitterWithdraw
   modelInfo.autoApprovalMode = config.autoApprovalMode
+  modelInfo.rejectStrategy = config.rejectStrategy
 }
 
 function applyProcessConfigToXml(xml) {
@@ -2597,6 +2636,11 @@ function applyProcessConfigToXml(xml) {
       'http://flowable.org/bpmn',
       'flowable:autoApprovalMode',
       normalizeAutoApprovalMode(processConfig.value.autoApprovalMode),
+    )
+    processEl.setAttributeNS(
+      'http://flowable.org/bpmn',
+      'flowable:rejectStrategy',
+      normalizeRejectStrategy(processConfig.value.rejectStrategy),
     )
     return new XMLSerializer().serializeToString(doc)
   }

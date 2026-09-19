@@ -31,6 +31,7 @@ export function createEmptyFlow() {
     config: {
       allowSubmitterWithdraw: true,
       autoApprovalMode: 'none',
+      rejectStrategy: 'TO_INITIATOR_MODIFY',
     },
     nodes: [start, end],
     edges: [{

@@ -8,6 +8,8 @@ function baseJson() {
   return {
     processId: 'Process_1',
     processName: '请假流程',
+    // 单测校验线性结构时关闭自动补回路，避免注入网关/发起人修改节点干扰断言。
+    config: { rejectStrategy: 'MANUAL' },
     nodes: [
       { id: 'S', nodeType: 'start', name: '发起', config: { initiator: 'initiator', documentation: '请假发起' } },
       { id: 'T_appr', nodeType: 'approver', name: '部门经理审批', config: {
@@ -46,6 +48,7 @@ describe('convertJsonToBpmn - 主结构', () => {
     json.config = {
       allowSubmitterWithdraw: false,
       autoApprovalMode: 'firstOnly',
+      rejectStrategy: 'TO_END',
     }
 
     const doc = parseBpmnXml(convertJsonToBpmn(json))
@@ -53,6 +56,7 @@ describe('convertJsonToBpmn - 主结构', () => {
 
     expect(getFlowableAttr(proc, 'allowSubmitterWithdraw')).toBe('false')
     expect(getFlowableAttr(proc, 'autoApprovalMode')).toBe('firstOnly')
+    expect(getFlowableAttr(proc, 'rejectStrategy')).toBe('TO_END')
   })
 
   it('节点全部出现', () => {

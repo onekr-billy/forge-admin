@@ -631,4 +631,27 @@
           AND tenant_id = #{tenantId}
     </delete>
 
+    <!-- 指定流程实例上归该处理人的待办任务，状态口径与待办列表一致（0 待办、1 已签收）。 -->
+    <select id="selectActiveTasksByProcessInstances" resultType="com.mdframe.forge.starter.flow.entity.FlowTask">
+        SELECT
+            t.task_id,
+            t.task_name,
+            t.task_def_key,
+            t.process_instance_id,
+            t.process_def_key,
+            t.business_key,
+            t.assignee,
+            t.status,
+            t.create_time
+        FROM sys_flow_task t
+        WHERE t.tenant_id = #{tenantId}
+          AND t.assignee = #{assignee}
+          AND t.status IN (0, 1)
+          AND t.process_instance_id IN
+        <foreach collection="processInstanceIds" item="processInstanceId" open="(" separator="," close=")">
+            #{processInstanceId}
+        </foreach>
+        ORDER BY t.create_time DESC
+    </select>
+
 </mapper>

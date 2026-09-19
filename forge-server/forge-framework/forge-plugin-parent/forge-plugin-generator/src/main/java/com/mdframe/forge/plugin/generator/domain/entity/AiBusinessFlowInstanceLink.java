@@ -44,6 +44,9 @@ public class AiBusinessFlowInstanceLink extends TenantEntity {
 
     private String result;
 
+    /** 同一 businessKey 下的提交轮次，从 1 开始。 */
+    private Integer roundNo;
+
     /** 流程变量快照 JSON */
     private String variablesSnapshot;
 }

@@ -587,6 +587,10 @@ export function resubmitBusinessDocumentFlow(data) {
   return request.post('/ai/business/flow/resubmit', data)
 }
 
+export function withdrawBusinessDocumentFlow(data) {
+  return request.post('/ai/business/flow/withdraw', data)
+}
+
 export function businessFlowStatus(objectCode, recordId) {
   return request.get(`/ai/business/flow/status/${objectCode}/${recordId}`)
 }

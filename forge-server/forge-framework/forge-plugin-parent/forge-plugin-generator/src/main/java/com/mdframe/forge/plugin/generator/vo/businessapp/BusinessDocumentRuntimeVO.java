@@ -23,6 +23,12 @@ public class BusinessDocumentRuntimeVO {
 
     private String processInstanceId;
 
+    /** 当前流程实例的提交轮次，从 1 开始。 */
+    private Integer roundNo;
+
+    /** 同一单据的历史提交轮次，按 roundNo 升序。 */
+    private List<FlowRoundVO> flowRounds = new ArrayList<>();
+
     private Boolean detailFlowTimelineVisible;
 
     private Boolean detailFlowDiagramVisible;
@@ -37,6 +43,38 @@ public class BusinessDocumentRuntimeVO {
     private String nextAction;
 
     private String message;
+
+    /** 当前登录人在这条单据上的待办，没有待办时为 null。 */
+    private MyTaskVO myTask;
+
+    /** 当前登录人在这条单据上的待办。 */
+    @Data
+    public static class MyTaskVO {
+
+        private String taskId;
+
+        private String taskDefKey;
+
+        private String taskName;
+
+        private String processInstanceId;
+
+        /** 是否为驳回后的发起人修改节点，决定单据页给「修改后重提」还是「去处理」。 */
+        private Boolean initiatorModify;
+    }
+
+    /** 单据的一次流程提交轮次。 */
+    @Data
+    public static class FlowRoundVO {
+
+        private Integer roundNo;
+
+        private String processInstanceId;
+
+        private String flowStatus;
+
+        private String result;
+    }
 
     @Data
     public static class RuntimeActionVO {

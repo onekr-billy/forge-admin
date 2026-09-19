@@ -374,6 +374,11 @@ function applyPermissions(el, config) {
       config[key] = ['true', '1', 'y', 'yes'].includes(v)
     }
   }
+  const initiatorModify = getFlowableAttr(el, 'initiatorModify')
+  if (initiatorModify != null) {
+    const v = String(initiatorModify).trim().toLowerCase()
+    config.initiatorModify = ['true', '1', 'y', 'yes'].includes(v)
+  }
 }
 
 function applyApprovalDuty(el, config) {

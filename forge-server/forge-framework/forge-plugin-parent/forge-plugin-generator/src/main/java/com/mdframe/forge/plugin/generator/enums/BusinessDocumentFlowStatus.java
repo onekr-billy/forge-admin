@@ -11,6 +11,8 @@ public enum BusinessDocumentFlowStatus {
     NOT_STARTED("NOT_STARTED", "未发起"),
     RUNNING("RUNNING", "运行中"),
     IN_PROCESS("IN_PROCESS", "流程中"),
+    /** 已驳回到发起人修改节点，流程仍在运行，单据可编辑并重提。 */
+    NEED_MODIFY("NEED_MODIFY", "待修改"),
     APPROVED("APPROVED", "已通过"),
     REJECTED("REJECTED", "已驳回"),
     CANCELED("CANCELED", "已取消");

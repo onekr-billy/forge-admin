@@ -87,6 +87,9 @@ public class BusinessFlowService {
     private static final Set<String> SERVER_OWNED_FLOW_VARIABLES = Set.of(
             "objectCode", "configKey", "recordId", "businessKey",
             "documentBusinessKey", "recordBusinessKey", "flowBusinessKey");
+    /** 流程运行期间允许任务事件改写的单据状态，终态不在其中。 */
+    private static final Set<String> RUNNING_DOCUMENT_STATUS_KEYS = Set.of(
+            "DRAFT", "SUBMITTED", "IN_PROCESS", "NEED_MODIFY");
 
     @Autowired(required = false)
     private FlowClient flowClient;
@@ -762,6 +765,7 @@ public class BusinessFlowService {
         Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
         TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
+        repairInitiatorModifyState(query, runtime, taskFormInfo);
         JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
         TaskFormSaveResult saveResult = persistTaskFormData(dto, query, runtime, nodeForm);
         if (saveResult.context() != null) {
@@ -1119,24 +1123,80 @@ public class BusinessFlowService {
             return vo;
         }
 
-        AiBusinessDocumentConfig documentConfig = documentConfigService.selectEnabledByObjectCode(
-                link.getTenantId(), link.getObjectCode());
-        AiCrudConfig runtimeConfig = documentConfig == null
-                ? resolvePublishedRuntimeConfig(link.getTenantId(), link.getObjectCode())
-                : null;
-        AiBusinessBinding binding = selectMainFlowBindingForConfig(link.getTenantId(), link.getObjectCode());
-        JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
-        ensureBusinessBinding(bindingConfig, link.getTenantId(), link.getObjectCode());
-        updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
+        applyRunningDocumentStatus(link, BusinessDocumentFlowStatus.IN_PROCESS.getCode());
 
         link.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         link.setResult(null);
         link.setEndTime(null);
-        if (!variables.isEmpty()) {
-            link.setVariablesSnapshot(JSON.toJSONString(variables));
-        }
+        // 修改节点已经办完，待办随之失效；重提后的新审批待办由任务创建事件重建。
+        link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
+                mergeLinkVariablesSnapshot(link, variables), null));
         flowInstanceLinkMapper.updateById(link);
         return toRuntimeVO(link, "已重提");
+    }
+
+    /**
+     * 发起人撤回运行中的主流程。单据页入口，校验发起人身份后调用流程引擎撤回。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessFlowRuntimeVO withdrawDocumentFlow(BusinessFlowWithdrawDTO dto) {
+        if (dto == null) {
+            throw new BusinessException("撤回参数不能为空");
+        }
+        Long tenantId = resolveTenantId();
+        Long userId = resolveUserId();
+        if (userId == null) {
+            throw new BusinessException("当前用户未登录，无法撤回流程");
+        }
+        if (flowClient == null) {
+            throw new BusinessException("流程服务未配置，无法撤回流程");
+        }
+
+        String objectCode = StringUtils.trimToNull(dto.getObjectCode());
+        if (StringUtils.isNotBlank(objectCode)) {
+            objectCode = resolveCanonicalObjectCode(tenantId, objectCode);
+        }
+        String businessKey = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(dto.getBusinessKey()),
+                objectCode != null && dto.getRecordId() != null
+                        ? buildBusinessKey(objectCode, dto.getRecordId()) : null);
+        AiBusinessFlowInstanceLink link = findRuntimeLink(
+                tenantId, StringUtils.trimToNull(dto.getProcessInstanceId()), businessKey);
+        if (link == null) {
+            throw new BusinessException("未找到可撤回的流程实例");
+        }
+        if (isEndedLink(link) || !isRunningFlowStatus(link.getFlowStatus())) {
+            throw new BusinessException("当前流程已结束，不能撤回");
+        }
+        if (!userId.equals(link.getStartUserId())) {
+            throw new BusinessException("只有流程发起人可以撤回");
+        }
+
+        FlowResult<Void> result = flowClient.withdrawProcess(
+                link.getProcessInstanceId(),
+                String.valueOf(userId),
+                StringUtils.defaultIfBlank(dto.getComment(), "申请人撤回"));
+        if (result == null || !result.isSuccess()) {
+            throw new BusinessException(result == null
+                    ? "撤回失败"
+                    : StringUtils.defaultIfBlank(result.getMsg(), "撤回失败"));
+        }
+
+        BusinessFlowCallbackDTO callback = new BusinessFlowCallbackDTO();
+        callback.setProcessInstanceId(link.getProcessInstanceId());
+        callback.setBusinessKey(link.getBusinessKey());
+        callback.setResult("CANCELED");
+        callback.setFlowStatus("CANCELED");
+        callback.setTenantId(link.getTenantId());
+        callback.setOperatorId(userId);
+        handleFlowCallbackInternal(link, callback);
+        return toRuntimeVO(link, "流程已撤回");
+    }
+
+    private boolean isRunningFlowStatus(String flowStatus) {
+        return "STARTED".equalsIgnoreCase(flowStatus)
+                || "RUNNING".equalsIgnoreCase(flowStatus)
+                || "IN_PROCESS".equalsIgnoreCase(flowStatus);
     }
 
     private void validateTaskAccess(BusinessTaskFormContextQueryDTO query, boolean writeRequired) {
@@ -2838,7 +2898,16 @@ public class BusinessFlowService {
         link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
         link.setStartUserId(resolveUserId());
         link.setStartTime(LocalDateTime.now());
+        link.setRoundNo(resolveNextRoundNo(tenantId, businessKey));
         flowInstanceLinkMapper.insert(link);
+    }
+
+    private int resolveNextRoundNo(Long tenantId, String businessKey) {
+        AiBusinessFlowInstanceLink latest = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, businessKey);
+        if (latest == null || latest.getRoundNo() == null || latest.getRoundNo() < 1) {
+            return 1;
+        }
+        return latest.getRoundNo() + 1;
     }
 
     private boolean isBusinessCodeTaskForm(String objectCode, JSONObject bindingConfig, BusinessTaskFormContextQueryDTO query) {
@@ -4616,6 +4685,8 @@ public class BusinessFlowService {
     }
 
     @FlowCallback(on = {
+            FlowCallback.ON_TASK_CREATED,
+            FlowCallback.ON_TASK_COMPLETED,
             FlowCallback.ON_COMPLETED,
             FlowCallback.ON_REJECTED,
             FlowCallback.ON_CANCELED
@@ -4623,6 +4694,11 @@ public class BusinessFlowService {
     @Transactional(rollbackFor = Exception.class)
     public void handleFlowEngineEvent(FlowEventContext ctx) {
         if (ctx == null) {
+            return;
+        }
+        if (FlowCallback.ON_TASK_CREATED.equals(ctx.getEvent())
+                || FlowCallback.ON_TASK_COMPLETED.equals(ctx.getEvent())) {
+            handleFlowEngineTaskEvent(ctx);
             return;
         }
         BusinessFlowCallbackDTO dto = new BusinessFlowCallbackDTO();
@@ -4663,6 +4739,284 @@ public class BusinessFlowService {
             return "APPROVED";
         }
         return event;
+    }
+
+    /**
+     * 任务级事件只维护流程运行期间的单据中间态（待修改 / 流程中）。
+     * <p>
+     * 终态一律由流程结束事件裁决，这里不写结束状态；单据状态同步失败也不能让审批动作失败，
+     * 因此异常只记录日志，由发起人修改节点保存字段时的自愈逻辑兜底。
+     */
+    private void handleFlowEngineTaskEvent(FlowEventContext ctx) {
+        Long tenantId = ctx.getTenantId() != null ? ctx.getTenantId() : resolveTenantId();
+        BusinessFlowCallbackDTO probe = new BusinessFlowCallbackDTO();
+        probe.setProcessInstanceId(StringUtils.trimToNull(ctx.getProcessInstanceId()));
+        probe.setBusinessKey(StringUtils.trimToNull(ctx.getBusinessKey()));
+        AiBusinessFlowInstanceLink link = findCallbackLink(tenantId, probe);
+        if (link == null || isEndedLink(link)) {
+            return;
+        }
+        Long effectiveTenantId = link.getTenantId() != null ? link.getTenantId() : tenantId;
+        try {
+            TenantContextHolder.executeWithTenant(effectiveTenantId, () -> {
+                if (FlowCallback.ON_TASK_COMPLETED.equals(ctx.getEvent())) {
+                    handleTaskCompletedEvent(link, ctx);
+                } else {
+                    handleTaskCreatedEvent(link, ctx);
+                }
+            });
+        } catch (Exception e) {
+            log.warn("[低代码流程回调] 任务事件同步单据状态失败: event={}, processInstanceId={}, taskId={}, error={}",
+                    ctx.getEvent(), ctx.getProcessInstanceId(), ctx.getTaskId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 新待办产生。令牌回到发起人且流程上存在驳回痕迹时，视为发起人修改节点：
+     * 记录待办并把单据切到待修改；否则说明已进入审批节点，纠正回流程中。
+     */
+    private void handleTaskCreatedEvent(AiBusinessFlowInstanceLink link, FlowEventContext ctx) {
+        if (isInitiatorModifyNode(ctx) || (isInitiatorTask(link, ctx) && hasRejectEvidence(link, ctx))) {
+            writeModifyTask(link, new BusinessFlowLinkRuntimeState.ModifyTask(
+                    StringUtils.trimToNull(ctx.getTaskId()),
+                    StringUtils.trimToNull(ctx.getTaskDefKey()),
+                    StringUtils.trimToNull(ctx.getTaskName()),
+                    StringUtils.trimToNull(ctx.getAssigneeId())));
+            applyRunningDocumentStatus(link, BusinessDocumentFlowStatus.NEED_MODIFY.getCode());
+            log.info("[低代码流程回调] 进入发起人修改节点，单据切换为待修改: businessKey={}, taskId={}, taskDefKey={}",
+                    link.getBusinessKey(), ctx.getTaskId(), ctx.getTaskDefKey());
+            return;
+        }
+        writeModifyTask(link, null);
+        applyRunningDocumentStatus(link, BusinessDocumentFlowStatus.IN_PROCESS.getCode());
+    }
+
+    private boolean isInitiatorModifyNode(FlowEventContext ctx) {
+        String taskDefKey = StringUtils.trimToNull(ctx == null ? null : ctx.getTaskDefKey());
+        return "Forge_InitiatorModify".equals(taskDefKey)
+                || (taskDefKey != null && taskDefKey.startsWith("Forge_InitiatorModify"));
+    }
+
+    /**
+     * 待办办理完成。审批人驳回时先落待修改，紧随的任务创建事件会补齐修改待办；
+     * 若 BPMN 的驳回分支直接走到结束事件，终态事件会把状态覆盖成已驳回。
+     */
+    private void handleTaskCompletedEvent(AiBusinessFlowInstanceLink link, FlowEventContext ctx) {
+        boolean rejected = isRejectTaskAction(ctx.getVariables());
+        if (isRecordedModifyTask(link, ctx.getTaskId())) {
+            writeModifyTask(link, null);
+            if (!rejected) {
+                applyRunningDocumentStatus(link, BusinessDocumentFlowStatus.IN_PROCESS.getCode());
+            }
+            return;
+        }
+        if (rejected) {
+            applyRunningDocumentStatus(link, BusinessDocumentFlowStatus.NEED_MODIFY.getCode());
+        }
+    }
+
+    /**
+     * 兜底修复发起人修改节点状态。任务事件可能因回调丢失或时序问题没落地，
+     * 发起人在修改节点保存字段时补一次，避免单据一直停在流程中而拿不到重提入口。
+     */
+    private void repairInitiatorModifyState(BusinessTaskFormContextQueryDTO query,
+                                            TaskFormRuntimeContext runtime,
+                                            Map<String, Object> taskFormInfo) {
+        Long userId = resolveUserId();
+        if (userId == null) {
+            return;
+        }
+        String businessKey = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(query.getBusinessKey()),
+                runtime == null ? null : StringUtils.trimToNull(runtime.businessKey()));
+        AiBusinessFlowInstanceLink link = findRuntimeLink(
+                resolveTenantId(), StringUtils.trimToNull(query.getProcessInstanceId()), businessKey);
+        if (link == null || isEndedLink(link) || !userId.equals(link.getStartUserId())) {
+            return;
+        }
+        if (isRecordedModifyTask(link, query.getTaskId())) {
+            return;
+        }
+        // 发起人也可能本身就是某个审批节点的处理人，必须确认这次流转是驳回引起的。
+        if (!isRejectTaskAction(readFlowProcessVariables(resolveFlowEngineBusinessKey(link)))) {
+            return;
+        }
+        writeModifyTask(link, new BusinessFlowLinkRuntimeState.ModifyTask(
+                query.getTaskId(),
+                StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(query.getTaskDefKey()),
+                        textValue(taskFormInfo == null ? null : taskFormInfo.get("taskDefKey"))),
+                textValue(taskFormInfo == null ? null : taskFormInfo.get("taskName")),
+                String.valueOf(userId)));
+        applyRunningDocumentStatus(link, BusinessDocumentFlowStatus.NEED_MODIFY.getCode());
+        log.info("[低代码流程] 修复发起人修改节点状态: businessKey={}, taskId={}",
+                link.getBusinessKey(), query.getTaskId());
+    }
+
+    private boolean isInitiatorTask(AiBusinessFlowInstanceLink link, FlowEventContext ctx) {
+        String assigneeId = StringUtils.trimToNull(ctx.getAssigneeId());
+        if (assigneeId == null) {
+            return false;
+        }
+        String initiatorId = StringUtils.firstNonBlank(
+                link.getStartUserId() == null ? null : String.valueOf(link.getStartUserId()),
+                StringUtils.trimToNull(ctx.getStartUserId()));
+        return StringUtils.isNotBlank(initiatorId) && initiatorId.equals(assigneeId);
+    }
+
+    private boolean isRecordedModifyTask(AiBusinessFlowInstanceLink link, String taskId) {
+        BusinessFlowLinkRuntimeState.ModifyTask recorded =
+                BusinessFlowLinkRuntimeState.readModifyTask(link.getVariablesSnapshot());
+        return recorded != null && StringUtils.isNotBlank(taskId) && taskId.equals(recorded.taskId());
+    }
+
+    /**
+     * 任务创建事件不携带流程变量，需要回查流程实例变量确认这次流转是驳回引起的，
+     * 避免把“发起人本身就是首个审批人”误判成发起人修改节点。
+     */
+    private boolean hasRejectEvidence(AiBusinessFlowInstanceLink link, FlowEventContext ctx) {
+        if (isRejectTaskAction(ctx.getVariables())) {
+            return true;
+        }
+        return isRejectTaskAction(readFlowProcessVariables(resolveFlowEngineBusinessKey(link)));
+    }
+
+    private Map<String, Object> readFlowProcessVariables(String businessKey) {
+        if (flowClient == null || StringUtils.isBlank(businessKey)) {
+            return Map.of();
+        }
+        try {
+            FlowResult<Map<String, Object>> result = flowClient.getProcessVariables(businessKey);
+            if (result == null || !result.isSuccess() || result.getData() == null) {
+                return Map.of();
+            }
+            return result.getData();
+        } catch (Exception e) {
+            log.debug("[低代码流程回调] 读取流程变量失败: businessKey={}, error={}", businessKey, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private boolean isRejectTaskAction(Map<String, Object> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return false;
+        }
+        String approvalResult = textValue(variables.get("approvalResult"));
+        if (StringUtils.isNotBlank(approvalResult) && "reject".equalsIgnoreCase(approvalResult.trim())) {
+            return true;
+        }
+        if (readBooleanValue(variables.get("rejectToStart"), false)) {
+            return true;
+        }
+        Object approved = variables.get("approved");
+        return approved != null && !readBooleanValue(approved, true);
+    }
+
+    /**
+     * 合并流程变量到关联快照。发起时写入的 {@code flowBusinessKey}、{@code statusField}
+     * 是后续读取引擎状态和回写状态字段的依据，整体覆盖会导致这些键丢失。
+     */
+    private String mergeLinkVariablesSnapshot(AiBusinessFlowInstanceLink link, Map<String, Object> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return link.getVariablesSnapshot();
+        }
+        JSONObject snapshot = readJsonObject(link.getVariablesSnapshot());
+        snapshot.putAll(variables);
+        return JSON.toJSONString(snapshot);
+    }
+
+    private void writeModifyTask(AiBusinessFlowInstanceLink link,
+                                 BusinessFlowLinkRuntimeState.ModifyTask task) {
+        BusinessFlowLinkRuntimeState.ModifyTask recorded =
+                BusinessFlowLinkRuntimeState.readModifyTask(link.getVariablesSnapshot());
+        if (task == null ? recorded == null : task.equals(recorded)) {
+            // 每次任务创建都会走清除分支，没有变化时不要产生无意义的 UPDATE。
+            return;
+        }
+        String snapshot = BusinessFlowLinkRuntimeState.writeModifyTask(link.getVariablesSnapshot(), task);
+        link.setVariablesSnapshot(snapshot);
+        AiBusinessFlowInstanceLink update = new AiBusinessFlowInstanceLink();
+        update.setId(link.getId());
+        update.setVariablesSnapshot(snapshot);
+        flowInstanceLinkMapper.updateById(update);
+    }
+
+    /**
+     * 写入流程运行期间的单据状态。只在单据当前仍处于运行态时翻转，
+     * 已经落定为通过/驳回/取消/关闭的单据不再被任务事件改写。
+     */
+    private void applyRunningDocumentStatus(AiBusinessFlowInstanceLink link, String targetStatusKey) {
+        if (link.getRecordId() == null || StringUtils.isBlank(targetStatusKey)) {
+            return;
+        }
+        AiBusinessDocumentConfig documentConfig = documentConfigService.selectEnabledByObjectCode(
+                link.getTenantId(), link.getObjectCode());
+        AiCrudConfig runtimeConfig = documentConfig == null
+                ? resolvePublishedRuntimeConfig(link.getTenantId(), link.getObjectCode())
+                : null;
+        Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
+        AiCrudConfig statusRuntimeConfig = resolveStatusWriteConfig(link, startVariables, runtimeConfig);
+        String currentStatusKey = resolveCurrentDocumentStatusKey(
+                link, documentConfig, statusRuntimeConfig, startVariables);
+        if (targetStatusKey.equals(currentStatusKey)) {
+            return;
+        }
+        if (currentStatusKey != null && !RUNNING_DOCUMENT_STATUS_KEYS.contains(currentStatusKey)) {
+            return;
+        }
+        AiBusinessBinding binding = selectMainFlowBindingForConfig(link.getTenantId(), link.getObjectCode());
+        JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
+        ensureBusinessBinding(bindingConfig, link.getTenantId(), link.getObjectCode());
+        if (StringUtils.isBlank(configuredStatusField(startVariables))) {
+            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig,
+                    link.getRecordId(), targetStatusKey);
+        }
+        syncConfiguredStatusField(statusRuntimeConfig, link.getRecordId(), startVariables, targetStatusKey);
+    }
+
+    /**
+     * 反查单据当前状态对应的标准状态键。无法判定时返回 {@code null}，由调用方按“允许写入”处理。
+     */
+    private String resolveCurrentDocumentStatusKey(AiBusinessFlowInstanceLink link,
+                                                   AiBusinessDocumentConfig documentConfig,
+                                                   AiCrudConfig statusRuntimeConfig,
+                                                   Map<String, Object> startVariables) {
+        String statusField = configuredStatusField(startVariables);
+        if (StringUtils.isNotBlank(statusField)) {
+            // 独立 flowStatus 字段直接存标准状态键，不需要反查映射。
+            return textValue(readRecordField(
+                    statusRuntimeConfig == null ? null : statusRuntimeConfig.getConfigKey(),
+                    link.getRecordId(), statusField));
+        }
+        if (documentConfig == null || StringUtils.isBlank(documentConfig.getStatusField())) {
+            return null;
+        }
+        String storedValue = textValue(readRecordField(
+                documentConfig.getConfigKey(), link.getRecordId(), documentConfig.getStatusField()));
+        if (StringUtils.isBlank(storedValue)) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : documentConfigService.toVO(documentConfig)
+                .getStatusMapping().entrySet()) {
+            if (storedValue.equals(entry.getValue())) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    private Object readRecordField(String configKey, Long recordId, String field) {
+        if (StringUtils.isAnyBlank(configKey, field) || recordId == null) {
+            return null;
+        }
+        try {
+            Map<String, Object> record = dynamicCrudService.selectByIdAllowDraft(configKey, recordId);
+            return record == null ? null : record.get(field);
+        } catch (Exception e) {
+            log.debug("[低代码流程回调] 读取单据状态失败: configKey={}, recordId={}, field={}, error={}",
+                    configKey, recordId, field, e.getMessage());
+            return null;
+        }
     }
 
     private BusinessFlowRuntimeVO startDocumentFlowInternal(BusinessFlowStartDTO dto,
@@ -4813,6 +5167,7 @@ public class BusinessFlowService {
         link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
         link.setStartUserId(userId);
         link.setStartTime(LocalDateTime.now());
+        link.setRoundNo(resolveNextRoundNo(tenantId, businessKey));
         link.setVariablesSnapshot(JSON.toJSONString(flowVariables));
         flowInstanceLinkMapper.insert(link);
 
@@ -4947,9 +5302,8 @@ public class BusinessFlowService {
         link.setFlowStatus(result);
         link.setResult(result);
         link.setEndTime(LocalDateTime.now());
-        if (dto.getVariables() != null && !dto.getVariables().isEmpty()) {
-            link.setVariablesSnapshot(JSON.toJSONString(dto.getVariables()));
-        }
+        link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
+                mergeLinkVariablesSnapshot(link, dto.getVariables()), null));
         flowInstanceLinkMapper.updateById(link);
 
         Map<String, Object> currentData = StringUtils.isBlank(configKey)

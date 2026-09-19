@@ -929,7 +929,7 @@ import { NButton, NDropdown, NIcon, NProgress, NTag } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { crudConfigRender, customQueryExecute } from '@/api/ai'
-import { businessDocumentRuntimeBatch, businessFlowStartConfig, executeBusinessAction } from '@/api/business-app'
+import { businessDocumentRuntimeBatch, businessFlowStartConfig, executeBusinessAction, resubmitBusinessDocumentFlow, withdrawBusinessDocumentFlow } from '@/api/business-app'
 import { businessProcessStartConfig, startBusinessProcess } from '@/api/business-process'
 import AuthImage from '@/components/common/AuthImage.vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
@@ -1567,6 +1567,18 @@ async function handleConfiguredAction(action, row, options = {}) {
     await startFlowAction(action, row)
     return
   }
+  if (normalizedActionType === 'RESUBMIT_FLOW' || action.key === 'RESUBMIT_FLOW') {
+    await resubmitFlowAction(action, row)
+    return
+  }
+  if (normalizedActionType === 'HANDLE_TASK' || action.key === 'HANDLE_TASK') {
+    handleTaskAction(row)
+    return
+  }
+  if (normalizedActionType === 'WITHDRAW_FLOW' || action.key === 'WITHDRAW_FLOW') {
+    await withdrawFlowAction(action, row)
+    return
+  }
   if (normalizedActionType === 'START_PROCESS' || String(action.key || '').startsWith('startProcess:')) {
     await startProcessAction(action, row)
     return
@@ -1844,6 +1856,110 @@ async function startFlowAction(action, row) {
   }
   finally {
     flowStartPageLoading.value = false
+    setActionLoading(loadingKey, false)
+  }
+}
+
+function resolveDocumentRuntime(row) {
+  return row?._documentRuntime
+    || row?.documentRuntime
+    || (['detail', 'edit'].includes(modalStatus.value) ? detailRuntime.value : null)
+    || null
+}
+
+function resolveMyTask(row) {
+  return resolveDocumentRuntime(row)?.myTask || null
+}
+
+/**
+ * 驳回至发起人后的重新提交。单据字段在普通编辑弹窗里改完并保存，
+ * 这里只负责把发起人修改节点的待办办掉，让流程继续往下走。
+ */
+async function resubmitFlowAction(action, row) {
+  const myTask = resolveMyTask(row)
+  if (!myTask?.taskId) {
+    window.$message.warning('未找到待处理的修改节点，请刷新后重试')
+    return
+  }
+  const loadingKey = getActionLoadingKey(action, row)
+  if (loadingKey && actionLoadingKeys.value.has(loadingKey)) {
+    window.$message.info('正在提交，请稍候')
+    return
+  }
+  const confirmed = await confirmConfiguredAction(
+    resolveActionText(action.confirmText || '确认已修改完成并重新提交审批吗？', row),
+    { title: action.label || '修改后重提', positiveText: '重新提交' },
+  )
+  if (!confirmed)
+    return
+  setActionLoading(loadingKey, true)
+  try {
+    const res = await resubmitBusinessDocumentFlow({
+      taskId: myTask.taskId,
+      taskDefKey: myTask.taskDefKey,
+      processInstanceId: myTask.processInstanceId,
+      businessKey: resolveDocumentRuntime(row)?.businessKey,
+    })
+    if (res?.code !== 200)
+      throw new Error(res?.message || '重新提交失败')
+    window.$message.success('已重新提交审批')
+    await refreshCurrentDetailRuntime(row)
+    await loadList()
+  }
+  catch (error) {
+    window.$message.error(error?.message || '重新提交失败')
+  }
+  finally {
+    setActionLoading(loadingKey, false)
+  }
+}
+
+function handleTaskAction(row) {
+  const myTask = resolveMyTask(row)
+  if (!myTask?.taskId) {
+    window.$message.warning('未找到待处理的审批任务，请刷新后重试')
+    return
+  }
+  router.push({ path: '/flow/todo', query: { taskId: myTask.taskId } })
+}
+
+async function withdrawFlowAction(action, row) {
+  const runtime = resolveDocumentRuntime(row)
+  const processInstanceId = runtime?.processInstanceId
+  if (!processInstanceId) {
+    window.$message.warning('当前单据没有可撤回的流程')
+    return
+  }
+  const loadingKey = getActionLoadingKey(action, row)
+  if (loadingKey && actionLoadingKeys.value.has(loadingKey)) {
+    window.$message.info('正在撤回，请稍候')
+    return
+  }
+  const confirmed = await confirmConfiguredAction(
+    resolveActionText(action.confirmText || '确定撤回该审批流程吗？撤回后可修改单据并重新发起。', row),
+    { title: action.label || '撤回流程', positiveText: '确认撤回' },
+  )
+  if (!confirmed)
+    return
+  setActionLoading(loadingKey, true)
+  try {
+    const res = await withdrawBusinessDocumentFlow({
+      objectCode: resolveRuntimeObjectCode(action, row),
+      recordId: action.recordId || resolveRowKeyValue(row),
+      processInstanceId,
+      businessKey: runtime?.businessKey,
+      comment: '申请人撤回',
+    })
+    if (res?.code !== 200)
+      throw new Error(res?.message || '撤回失败')
+    window.$message.success('流程已撤回')
+    await refreshCurrentDetailRuntime(row)
+    await loadList()
+  }
+  catch (error) {
+    window.$message.error(error?.message || '撤回失败')
+  }
+  finally {
     setActionLoading(loadingKey, false)
   }
 }

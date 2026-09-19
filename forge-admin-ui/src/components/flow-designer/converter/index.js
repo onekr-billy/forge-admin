@@ -16,6 +16,7 @@
 export * from './bpmn-to-json.js'
 export * from './branch-parser.js'
 export * from './completion-condition.js'
+export * from './ensure-reject-routes.js'
 export * from './json-to-bpmn.js'
 export * from './layout-algorithm.js'
 export * from './user-task-parser.js'

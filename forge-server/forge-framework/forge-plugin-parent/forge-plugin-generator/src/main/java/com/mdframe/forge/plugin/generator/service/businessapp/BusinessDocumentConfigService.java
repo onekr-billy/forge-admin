@@ -773,6 +773,8 @@ public class BusinessDocumentConfigService {
         rows.add(statusRow("DRAFT", "草稿", "DRAFT", "草稿", "default", true, true, true));
         rows.add(statusRow("SUBMITTED", "已提交", "SUBMITTED", "已提交", "info", false, false, false));
         rows.add(statusRow("IN_PROCESS", "流程中", "IN_PROCESS", "流程中", "warning", false, false, false));
+        // 待修改允许编辑但不允许另起新流程：发起人应在原流程实例上重提，避免审批轨迹断裂。
+        rows.add(statusRow("NEED_MODIFY", "待修改", "NEED_MODIFY", "待修改", "warning", true, false, false));
         rows.add(statusRow("APPROVED", "已通过", "APPROVED", "已通过", "success", false, false, false));
         rows.add(statusRow("REJECTED", "已驳回", "REJECTED", "已驳回", "error", true, false, true));
         rows.add(statusRow("CANCELED", "已撤回", "CANCELED", "已撤回", "default", true, false, true));
@@ -1018,6 +1020,7 @@ public class BusinessDocumentConfigService {
         mapping.put("DRAFT", "DRAFT");
         mapping.put("SUBMITTED", "SUBMITTED");
         mapping.put("IN_PROCESS", "IN_PROCESS");
+        mapping.put("NEED_MODIFY", "NEED_MODIFY");
         mapping.put("APPROVED", "APPROVED");
         mapping.put("REJECTED", "REJECTED");
         mapping.put("CANCELED", "CANCELED");

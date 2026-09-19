@@ -8,6 +8,7 @@ import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -186,7 +187,7 @@ public class FlowClient {
      * @param comment           撤回原因
      */
     public FlowResult<Void> withdrawProcess(String processInstanceId, String userId, String comment) {
-        String url = flowServiceUrl + "/api/flow/instance/withdraw";
+        String url = flowServiceUrl + "/api/flow/task/withdraw";
         Map<String, Object> params = new HashMap<>();
         params.put("processInstanceId", processInstanceId);
         params.put("userId", userId);
@@ -266,6 +267,23 @@ public class FlowClient {
                 .queryParamIfPresent("status", Optional.ofNullable(status))
                 .toUriString();
         return get(url, new TypeReference<FlowResult<Map<String, Object>>>() {});
+    }
+
+    /**
+     * 查询指定流程实例上归该处理人的待办任务。
+     * <p>
+     * 业务单据页需要一次判断多条单据「当前登录人有没有待办」，逐条查待办列表会退化成 N+1。
+     */
+    public FlowResult<List<Map<String, Object>>> getActiveTasksByProcessInstances(Collection<String> processInstanceIds,
+                                                                                 String userId) {
+        if (processInstanceIds == null || processInstanceIds.isEmpty()) {
+            return FlowResult.success(List.of());
+        }
+        UriComponentsBuilder builder = UriComponentsBuilder
+                .fromHttpUrl(flowServiceUrl + "/api/flow/task/active-by-process")
+                .queryParam("processInstanceIds", String.join(",", processInstanceIds));
+        addQueryParamIfText(builder, "userId", userId);
+        return get(builder.toUriString(), new TypeReference<FlowResult<List<Map<String, Object>>>>() {});
     }
 
     /**

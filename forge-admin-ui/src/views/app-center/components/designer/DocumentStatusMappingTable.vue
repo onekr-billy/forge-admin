@@ -214,6 +214,7 @@ function defaultRows() {
     createStatusRow('DRAFT', '草稿', 'DRAFT', '草稿', 'default', true, true, true),
     createStatusRow('SUBMITTED', '已提交', 'SUBMITTED', '已提交', 'info', false, false, false),
     createStatusRow('IN_PROCESS', '流程中', 'IN_PROCESS', '流程中', 'warning', false, false, false),
+    createStatusRow('NEED_MODIFY', '待修改', 'NEED_MODIFY', '待修改', 'warning', true, false, false),
     createStatusRow('APPROVED', '已通过', 'APPROVED', '已通过', 'success', false, false, false),
     createStatusRow('REJECTED', '已驳回', 'REJECTED', '已驳回', 'error', true, false, true),
     createStatusRow('CANCELED', '已撤回', 'CANCELED', '已撤回', 'default', true, false, true),

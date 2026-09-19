@@ -15,6 +15,7 @@
         <result column="start_time" property="startTime"/>
         <result column="end_time" property="endTime"/>
         <result column="result" property="result"/>
+        <result column="round_no" property="roundNo"/>
         <result column="variables_snapshot" property="variablesSnapshot"/>
         <result column="create_by" property="createBy"/>
         <result column="create_time" property="createTime"/>
@@ -36,6 +37,7 @@
         start_time,
         end_time,
         result,
+        round_no,
         variables_snapshot,
         create_by,
         create_time,
@@ -68,6 +70,7 @@
             start_time,
             end_time,
             result,
+            round_no,
             variables_snapshot,
             create_by,
             create_time,
@@ -112,6 +115,15 @@
         WHERE tenant_id = #{tenantId}
           AND process_instance_id = #{processInstanceId}
         LIMIT 1
+    </select>
+
+    <select id="selectByBusinessKey" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_business_flow_instance_link
+        WHERE tenant_id = #{tenantId}
+          AND business_key = #{businessKey}
+        ORDER BY round_no ASC, start_time ASC, create_time ASC, id ASC
     </select>
 
 </mapper>

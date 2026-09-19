@@ -7,6 +7,7 @@
  */
 
 import { NODE_TYPE, NODE_TYPE_TO_BPMN_LOCAL_NAME } from '../constants/node-types.js'
+import { ensureRejectRoutes, normalizeRejectStrategy, REJECT_STRATEGY } from './ensure-reject-routes.js'
 import { calculateLayout } from './layout-algorithm.js'
 import { writeUserTaskConfig } from './user-task-writer.js'
 import { escapeXmlAttr, escapeXmlText } from './xml-escape.js'
@@ -23,6 +24,8 @@ const NS_DECLS = [
 const DEFAULT_PROCESS_CONFIG = {
   allowSubmitterWithdraw: true,
   autoApprovalMode: 'none',
+  // 未显式配置时不自动改写存量 BPMN；新流程由设计器写入 TO_INITIATOR_MODIFY。
+  rejectStrategy: REJECT_STRATEGY.MANUAL,
 }
 const DEFAULT_CC_DELEGATE_EXPRESSION = '$' + '{flowCcNodeDelegate}'
 
@@ -35,17 +38,20 @@ export function convertJsonToBpmn(flowJson) {
   const processId = flowJson.processId || 'Process_1'
   const processName = flowJson.processName || ''
   const processConfig = normalizeProcessConfig(flowJson.config)
-  const layout = calculateLayout(flowJson)
+  // 按流程级驳回策略补齐缺失回路；不修改设计器内存图，只影响写出的 BPMN。
+  const exportJson = ensureRejectRoutes(flowJson, processConfig.rejectStrategy)
+  const layout = calculateLayout(exportJson)
 
-  const nodeXml = flowJson.nodes.map(writeNode).filter(Boolean)
-  const edgeXml = flowJson.edges.map(writeEdge).filter(Boolean)
-  const diagram = writeDiagram(processId, flowJson, layout)
+  const nodeXml = exportJson.nodes.map(writeNode).filter(Boolean)
+  const edgeXml = (exportJson.edges || []).map(writeEdge).filter(Boolean)
+  const diagram = writeDiagram(processId, exportJson, layout)
 
   const procAttrs = [`id="${escapeXmlAttr(processId)}"`]
   if (processName)
     procAttrs.push(`name="${escapeXmlAttr(processName)}"`)
   procAttrs.push(`flowable:allowSubmitterWithdraw="${processConfig.allowSubmitterWithdraw}"`)
   procAttrs.push(`flowable:autoApprovalMode="${escapeXmlAttr(processConfig.autoApprovalMode)}"`)
+  procAttrs.push(`flowable:rejectStrategy="${escapeXmlAttr(processConfig.rejectStrategy)}"`)
   procAttrs.push('isExecutable="true"')
 
   return [
@@ -74,8 +80,11 @@ function normalizeProcessConfig(config = {}) {
   return {
     allowSubmitterWithdraw: config.allowSubmitterWithdraw !== false,
     autoApprovalMode,
+    rejectStrategy: normalizeRejectStrategy(config.rejectStrategy),
   }
 }
+
+export { normalizeRejectStrategy, REJECT_STRATEGY }
 
 function writeNode(node) {
   if (node.nodeType === NODE_TYPE.ADVANCED && node.rawXml)

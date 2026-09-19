@@ -75,7 +75,8 @@ public class BusinessFlowStatusFieldService {
         Map<String, Object> advancedProps = new LinkedHashMap<>();
         advancedProps.put("managedBy", "BUSINESS_FLOW");
         advancedProps.put("managedField", true);
-        advancedProps.put("allowedValues", Set.of("DRAFT", "IN_PROCESS", "APPROVED", "REJECTED", "CANCELED"));
+        advancedProps.put("allowedValues",
+                Set.of("DRAFT", "IN_PROCESS", "NEED_MODIFY", "APPROVED", "REJECTED", "CANCELED"));
         field.setAdvancedProps(advancedProps);
         return field;
     }

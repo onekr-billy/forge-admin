@@ -8,9 +8,26 @@
             <strong>{{ flowStatusText }}</strong>
           </div>
           <div>
-            <span>流程实例</span>
-            <strong>{{ processInstanceId }}</strong>
+            <span>提交轮次</span>
+            <strong>{{ roundText }}</strong>
           </div>
+          <div class="flow-summary-wide">
+            <span>流程实例</span>
+            <strong>{{ activeProcessInstanceId }}</strong>
+          </div>
+        </div>
+
+        <div v-if="flowRounds.length > 1" class="flow-round-list">
+          <button
+            v-for="round in flowRounds"
+            :key="round.processInstanceId"
+            type="button"
+            class="flow-round-chip"
+            :class="{ active: round.processInstanceId === activeProcessInstanceId }"
+            @click="selectRound(round)"
+          >
+            第 {{ round.roundNo || '-' }} 次
+          </button>
         </div>
 
         <n-tabs v-if="showTimeline && showDiagram" type="segment" size="small" animated>
@@ -19,7 +36,7 @@
             <n-empty v-else description="暂无审批记录" size="small" />
           </n-tab-pane>
           <n-tab-pane name="diagram" tab="流程图" display-directive="show:lazy">
-            <DingFlowViewer :process-instance-id="processInstanceId" :compact="true" />
+            <DingFlowViewer :process-instance-id="activeProcessInstanceId" :compact="true" />
           </n-tab-pane>
         </n-tabs>
 
@@ -31,7 +48,7 @@
           </section>
           <section v-if="showDiagram" class="flow-section">
             <h4>流程图</h4>
-            <DingFlowViewer :process-instance-id="processInstanceId" :compact="true" />
+            <DingFlowViewer :process-instance-id="activeProcessInstanceId" :compact="true" />
           </section>
         </template>
       </div>
@@ -67,12 +84,23 @@ const props = defineProps({
 
 const history = ref([])
 const historyLoading = ref(false)
+const selectedProcessInstanceId = ref('')
 
 const processInstanceId = computed(() => props.runtime?.processInstanceId || '')
+const flowRounds = computed(() => Array.isArray(props.runtime?.flowRounds) ? props.runtime.flowRounds : [])
+const activeProcessInstanceId = computed(() => selectedProcessInstanceId.value || processInstanceId.value)
+const roundText = computed(() => {
+  const selected = flowRounds.value.find(item => item.processInstanceId === activeProcessInstanceId.value)
+  const roundNo = selected?.roundNo || props.runtime?.roundNo
+  return roundNo ? `第 ${roundNo} 次提交` : '-'
+})
 const flowStatusText = computed(() => {
-  switch (String(props.runtime?.flowStatus || '').toUpperCase()) {
+  const selected = flowRounds.value.find(item => item.processInstanceId === activeProcessInstanceId.value)
+  const status = selected?.flowStatus || selected?.result || props.runtime?.flowStatus
+  switch (String(status || '').toUpperCase()) {
     case 'RUNNING':
     case 'STARTED':
+    case 'IN_PROCESS':
       return '流程中'
     case 'APPROVED':
       return '已通过'
@@ -83,13 +111,21 @@ const flowStatusText = computed(() => {
     case 'NOT_STARTED':
       return '未发起'
     default:
-      return props.runtime?.flowStatus || '-'
+      return status || '-'
   }
 })
 
 watch(processInstanceId, (value) => {
+  selectedProcessInstanceId.value = value || ''
   loadHistory(value)
 }, { immediate: true })
+
+function selectRound(round) {
+  if (!round?.processInstanceId || round.processInstanceId === activeProcessInstanceId.value)
+    return
+  selectedProcessInstanceId.value = round.processInstanceId
+  loadHistory(round.processInstanceId)
+}
 
 async function loadHistory(value) {
   history.value = []
@@ -122,12 +158,16 @@ async function loadHistory(value) {
 
 .flow-summary {
   display: grid;
-  grid-template-columns: minmax(0, 160px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 120px) minmax(0, 140px) minmax(0, 1fr);
   gap: 10px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f8fafc;
   padding: 10px 12px;
+}
+
+.flow-summary-wide {
+  min-width: 0;
 }
 
 .flow-summary div {
@@ -151,21 +191,38 @@ async function loadHistory(value) {
   white-space: nowrap;
 }
 
+.flow-round-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flow-round-chip {
+  border: 1px solid #dbe3f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.flow-round-chip.active {
+  border-color: var(--primary-color, #165dff);
+  background: color-mix(in srgb, var(--primary-color, #165dff) 10%, white);
+  color: var(--primary-color, #165dff);
+}
+
 .flow-section {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .flow-section h4 {
   margin: 0;
-  color: #111827;
-  font-size: 14px;
+  color: #334155;
+  font-size: 13px;
   font-weight: 600;
-}
-
-@media (max-width: 720px) {
-  .flow-summary {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

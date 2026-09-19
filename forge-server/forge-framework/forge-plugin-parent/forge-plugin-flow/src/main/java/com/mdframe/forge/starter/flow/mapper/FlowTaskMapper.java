@@ -169,4 +169,14 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
 
     int deleteByProcessInstanceIdPhysically(@Param("processInstanceId") String processInstanceId,
                                             @Param("tenantId") Long tenantId);
+
+    /**
+     * 查询指定流程实例上仍归该处理人的待办任务。
+     * <p>
+     * 业务单据页需要一次性判断多条单据「当前登录人有没有待办」，逐条查会退化成 N+1。
+     */
+    List<FlowTask> selectActiveTasksByProcessInstances(
+            @Param("processInstanceIds") Collection<String> processInstanceIds,
+            @Param("assignee") String assignee,
+            @Param("tenantId") Long tenantId);
 }

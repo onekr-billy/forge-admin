@@ -9,6 +9,7 @@ import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.vo.FlowHistoryPageVO;
 import com.mdframe.forge.starter.flow.vo.FlowTaskSignRelationVO;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -43,6 +44,17 @@ public interface FlowTaskService {
      * @return 候选任务列表
      */
     IPage<FlowTask> candidateTasks(Page<FlowTask> page, String userId, String groupId, String title);
+
+    /**
+     * 查询指定流程实例上归该处理人的待办任务。
+     * <p>
+     * 供业务单据页批量判断「当前登录人在这条单据上有没有待办」，避免逐条调用待办列表接口。
+     *
+     * @param processInstanceIds 流程实例 ID 集合
+     * @param userId             处理人ID
+     * @return 待办任务列表，无匹配时返回空列表
+     */
+    List<FlowTask> activeTasksByProcessInstances(Collection<String> processInstanceIds, String userId);
 
     /**
      * 签收任务

@@ -4,7 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowBindingDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowCallbackDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowResubmitDTO;
-import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowWithdrawDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskActionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormContextQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormSaveDTO;
@@ -141,6 +141,13 @@ public class BusinessFlowController {
     @OperationLog(module = "业务流程", type = OperationType.UPDATE, desc = "驳回修改后重提")
     public RespInfo<BusinessFlowRuntimeVO> resubmit(@RequestBody BusinessFlowResubmitDTO dto) {
         return RespInfo.success(flowService.resubmit(dto));
+    }
+
+    @PostMapping("/withdraw")
+    @SaCheckPermission("ai:businessDocument:withdraw")
+    @OperationLog(module = "业务流程", type = OperationType.UPDATE, desc = "撤回业务流程")
+    public RespInfo<BusinessFlowRuntimeVO> withdraw(@RequestBody BusinessFlowWithdrawDTO dto) {
+        return RespInfo.success(flowService.withdrawDocumentFlow(dto));
     }
 
     @GetMapping("/status/{objectCode}/{recordId}")

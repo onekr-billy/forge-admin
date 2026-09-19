@@ -22,4 +22,7 @@ public interface BusinessFlowInstanceLinkMapper extends BaseMapper<AiBusinessFlo
 
     AiBusinessFlowInstanceLink selectByProcessInstanceId(@Param("tenantId") Long tenantId,
                                                          @Param("processInstanceId") String processInstanceId);
+
+    List<AiBusinessFlowInstanceLink> selectByBusinessKey(@Param("tenantId") Long tenantId,
+                                                         @Param("businessKey") String businessKey);
 }

@@ -106,7 +106,23 @@ function parseProcessConfig(processElement) {
     autoApprovalMode: normalizeAutoApprovalMode(
       getFlowableAttr(processElement, 'autoApprovalMode'),
     ),
+    rejectStrategy: normalizeRejectStrategyAttr(
+      getFlowableAttr(processElement, 'rejectStrategy'),
+    ),
   }
+}
+
+function normalizeRejectStrategyAttr(value) {
+  const text = String(value || '').trim().toUpperCase()
+  if (!text)
+    return 'MANUAL'
+  if (text === 'TO_END' || text === 'END' || text === 'TERMINATE')
+    return 'TO_END'
+  if (text === 'MANUAL' || text === 'NONE' || text === 'OFF')
+    return 'MANUAL'
+  if (text === 'TO_INITIATOR_MODIFY' || text === 'TO_START' || text === 'MODIFY')
+    return 'TO_INITIATOR_MODIFY'
+  return 'MANUAL'
 }
 
 function parseBooleanWithDefault(value, fallback) {

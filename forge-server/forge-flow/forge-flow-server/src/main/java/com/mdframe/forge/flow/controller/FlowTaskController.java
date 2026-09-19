@@ -115,6 +115,20 @@ public class FlowTaskController {
     }
 
     /**
+     * 指定流程实例上归我的待办任务。
+     * <p>
+     * 业务单据页用它批量判断「当前登录人在这条单据上有没有待办」，只返回处理人为调用者的任务。
+     */
+    @GetMapping("/active-by-process")
+    @ApiPermissionIgnore
+    public RespInfo<List<FlowTask>> activeTasksByProcess(
+            @RequestParam List<String> processInstanceIds,
+            @RequestParam(required = false) String userId) {
+        String trustedUserId = FlowSessionIdentity.requireUserId(userId);
+        return RespInfo.success(flowTaskService.activeTasksByProcessInstances(processInstanceIds, trustedUserId));
+    }
+
+    /**
      * 签收任务
      */
     @PostMapping("/claim")
