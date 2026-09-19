@@ -16,6 +16,9 @@ export function createPageCursor(geometry) {
       pages.push({ fragments: [] })
       usedMm = 0
     },
+    forceBreak() {
+      this.next()
+    },
     ensure(heightMm, path) {
       if (!Number.isFinite(heightMm) || heightMm <= 0 || heightMm > geometry.contentHeightMm + FIT_EPSILON) {
         throw new PrintError('ELEMENT_TOO_TALL', '内容高度超过单页正文，请调整纸张、字号或内容', path)

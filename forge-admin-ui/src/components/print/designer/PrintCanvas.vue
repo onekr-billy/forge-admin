@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { paperGeometry, screenDeltaToMm } from '../protocol/units'
 import { cellStyle, printStyle } from '../renderers/style'
+import { estimateDesignerSectionHeight, paginateDesignerBody } from './designerPagination'
 import { designerBindingText, designerTablePreview } from './designerSample'
 import { addElement, addField, PRINT_DRAG_TYPE } from './elementCatalog'
 import PrintCanvasActionBar from './PrintCanvasActionBar.vue'
@@ -18,11 +19,49 @@ const store = usePrintDesignerStore()
 const drag = usePrintDrag(store)
 const keyboard = usePrintKeyboard(store)
 const geometry = computed(() => paperGeometry(store.document))
-const surfaces = computed(() => [
-  { id: 'header', label: '页眉', ...store.document.header },
-  ...store.document.body.map((s, i) => ({ ...s, id: `section:${s.id}`, label: `${i + 1}. ${{ FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格' }[s.kind]}` })),
-  { id: 'footer', label: '页脚', ...store.document.footer },
-])
+const sectionNames = { FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格' }
+const designerPages = computed(() => {
+  const doc = store.document
+  const plan = paginateDesignerBody(doc, section => estimateDesignerSectionHeight(section, {
+    text: section.kind === 'TEXT' ? flowText(section) : '',
+    tableRows: section.kind === 'TABLE' ? tableRows(section).length : 0,
+    contentWidthMm: geometry.value.contentWidthMm,
+  }))
+  return {
+    ...plan,
+    pages: plan.pages.map(page => ({
+      ...page,
+      surfaces: [
+        {
+          ...doc.header,
+          id: 'header',
+          label: doc.header.repeat || page.number === 1 ? '页眉' : '页眉（本页不重复）',
+          pageRole: 'header',
+          designHeightMm: doc.header.heightMm,
+          readOnly: page.number !== 1,
+          elements: doc.header.repeat || page.number === 1 ? doc.header.elements : [],
+        },
+        ...page.sections.map(({ section, heightMm }) => ({
+          ...section,
+          id: `section:${section.id}`,
+          label: `${doc.body.indexOf(section) + 1}. ${sectionNames[section.kind]}`,
+          pageRole: 'body',
+          designHeightMm: heightMm,
+          readOnly: false,
+        })),
+        {
+          ...doc.footer,
+          id: 'footer',
+          label: doc.footer.repeat || page.number === plan.pages.length ? '页脚' : '页脚（本页不重复）',
+          pageRole: 'footer',
+          designHeightMm: doc.footer.heightMm,
+          readOnly: doc.footer.repeat ? page.number !== 1 : page.number !== plan.pages.length,
+          elements: doc.footer.repeat || page.number === plan.pages.length ? doc.footer.elements : [],
+        },
+      ],
+    })),
+  }
+})
 const paperName = computed(() => {
   const { widthMm, heightMm } = store.document.paper
   if (widthMm === 297 && heightMm === 420)
@@ -195,13 +234,15 @@ onBeforeUnmount(() => clearMarquee())
       @clickoutside="contextMenu.show = false"
     />
     <div class="canvas-note">
-      <span>{{ paperName }} · {{ geometry.widthMm }} × {{ geometry.heightMm }} mm</span>
+      <span>{{ paperName }} · {{ geometry.widthMm }} × {{ geometry.heightMm }} mm · 设计估算 {{ designerPages.pages.length }} 页</span>
       <PrintCanvasActionBar />
-      <span>Shift 多选 · ⌘/Ctrl A/C/V · 方向键移动</span>
+      <span>示例数据估算，正式预览为准 · Shift 多选 · ⌘/Ctrl A/C/V</span>
     </div>
     <div class="canvas-viewport">
       <div class="paper-holder" :style="{ zoom: store.zoom }">
         <div
+          v-for="page in designerPages.pages"
+          :key="page.number"
           class="ruler-frame"
           :style="{
             gridTemplateColumns: `7mm ${geometry.widthMm}mm`,
@@ -216,7 +257,7 @@ onBeforeUnmount(() => clearMarquee())
             :class="{ 'paper-grid': store.showGrid }"
             :style="{
               width: `${geometry.widthMm}mm`,
-              minHeight: `${geometry.heightMm}mm`,
+              height: `${geometry.heightMm}mm`,
               padding: `${store.document.paper.marginMm.top}mm ${store.document.paper.marginMm.right}mm ${store.document.paper.marginMm.bottom}mm ${store.document.paper.marginMm.left}mm`,
             }"
           >
@@ -235,32 +276,46 @@ onBeforeUnmount(() => clearMarquee())
             <div class="paper-guide footer-guide" :style="{ top: `${geometry.footerTopMm}mm` }">
               <span>页脚线</span>
             </div>
+            <span class="paper-page-label">第 {{ page.number }} / {{ designerPages.pages.length }} 页</span>
+            <button
+              v-if="page.breakBefore"
+              type="button"
+              class="page-break-chip"
+              :class="{ active: store.surfaceId === `section:${page.breakBefore.id}` }"
+              :style="{ top: `${geometry.bodyTopMm}mm` }"
+              @click="store.selectSurface(page.breakBefore.id)"
+            >
+              手动分页 · 从本页开始
+            </button>
+            <span v-else-if="page.automaticBreakBefore" class="automatic-break-chip" :style="{ top: `${geometry.bodyTopMm}mm` }">按示例数据自动续页</span>
             <section
-              v-for="surface in surfaces"
-              :key="surface.id"
+              v-for="surface in page.surfaces"
+              :key="`${page.number}:${surface.id}`"
               :data-surface-id="surface.id"
               class="design-surface"
-              :class="{ active: store.surfaceId === surface.id }"
+              :class="[`surface-${surface.pageRole}`, { active: !surface.readOnly && store.surfaceId === surface.id, repeated: surface.readOnly }]"
               :style="{
-                minHeight: `${Math.max(surface.heightMm || 0, surface.kind === 'TABLE' ? 24 : surface.kind === 'TEXT' ? 16 : 6)}mm`,
-                marginBottom: `${surface.gapAfterMm || 0}mm`,
+                height: `${surface.designHeightMm}mm`,
+                marginBottom: surface.pageRole === 'body' ? `${surface.gapAfterMm || 0}mm` : undefined,
               }"
-              @pointerdown.self="surfaceDown($event, surface)"
-              @contextmenu.self.prevent="surfaceContext($event, surface)"
+              @pointerdown.self="!surface.readOnly && surfaceDown($event, surface)"
+              @contextmenu.self.prevent="!surface.readOnly && surfaceContext($event, surface)"
               @dragover.prevent
-              @drop.prevent.stop="drop($event, surface)"
+              @drop.prevent.stop="!surface.readOnly && drop($event, surface)"
             >
               <span class="surface-label">{{ surface.label }}</span>
               <PrintCanvasElement
                 v-for="element in surface.elements || []"
                 :key="element.id"
                 :element="element"
-                :selected="store.surfaceId === surface.id && store.selectedIds.includes(element.id)"
+                :selected="!surface.readOnly && store.surfaceId === surface.id && store.selectedIds.includes(element.id)"
                 :catalog="store.catalog"
                 :context="context"
                 :table-cell-ids="store.tableCellIds"
-                @pointerdown.stop="elementDown($event, surface.id, element.id)"
-                @contextmenu.stop.prevent="elementContext($event, surface.id, element.id)"
+                :page-number="page.number"
+                :total-pages="designerPages.pages.length"
+                @pointerdown.stop="!surface.readOnly && elementDown($event, surface.id, element.id)"
+                @contextmenu.stop.prevent="!surface.readOnly && elementContext($event, surface.id, element.id)"
                 @table-cell-select="store.selectTableCell"
                 @table-cell-change="tableCellChange"
               />
@@ -283,7 +338,7 @@ onBeforeUnmount(() => clearMarquee())
                   X {{ store.alignmentGuides.position.xMm.toFixed(1) }} · Y {{ store.alignmentGuides.position.yMm.toFixed(1) }} mm
                 </span>
               </template>
-              <PrintSelectionOverlay v-if="store.surfaceId === surface.id" />
+              <PrintSelectionOverlay v-if="!surface.readOnly && store.surfaceId === surface.id" />
               <div v-if="marquee?.id === surface.id" class="marquee" :style="{ left: `${marquee.x}mm`, top: `${marquee.y}mm`, width: `${marquee.w}mm`, height: `${marquee.h}mm` }" />
             </section>
           </div>
@@ -327,6 +382,9 @@ onBeforeUnmount(() => clearMarquee())
   width: max-content;
   margin: 0 auto;
   transform-origin: top center;
+  display: flex;
+  flex-direction: column;
+  gap: 18mm;
 }
 .ruler-frame {
   display: grid;
@@ -355,6 +413,8 @@ onBeforeUnmount(() => clearMarquee())
   grid-column: 2;
   grid-row: 2;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   color: #111827;
   background-color: #fff;
   border: 1px solid #b8c0cc;
@@ -401,8 +461,17 @@ onBeforeUnmount(() => clearMarquee())
   position: relative;
   z-index: 2;
   box-sizing: border-box;
+  flex: none;
   outline: 1px dashed rgb(100 116 139 / 45%);
   touch-action: none;
+  overflow: hidden;
+}
+.design-surface.surface-footer {
+  margin-top: auto;
+}
+.design-surface.repeated {
+  opacity: 0.72;
+  pointer-events: none;
 }
 .design-surface.active {
   outline-color: var(--primary-color, #356cde);
@@ -417,6 +486,44 @@ onBeforeUnmount(() => clearMarquee())
   color: #64748b;
   background: rgb(255 255 255 / 78%);
   font-size: 8px;
+  pointer-events: none;
+}
+.paper-page-label {
+  position: absolute;
+  z-index: 6;
+  top: 1.5mm;
+  right: 2mm;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #475569;
+  background: rgb(241 245 249 / 90%);
+  font-size: 8px;
+  pointer-events: none;
+}
+.page-break-chip,
+.automatic-break-chip {
+  position: absolute;
+  z-index: 8;
+  right: 3mm;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 8px;
+  line-height: 14px;
+  transform: translateY(2px);
+}
+.page-break-chip {
+  border: 1px solid #7c3aed;
+  color: #6d28d9;
+  background: rgb(245 243 255 / 94%);
+  cursor: pointer;
+}
+.page-break-chip.active {
+  color: #fff;
+  background: #7c3aed;
+}
+.automatic-break-chip {
+  color: #64748b;
+  background: rgb(241 245 249 / 92%);
   pointer-events: none;
 }
 .flow-text {

@@ -16,7 +16,7 @@ export const PRINT_LIMITS = Object.freeze({
   paperSizeMm: 2000,
 })
 export const ELEMENT_TYPES = Object.freeze(['TEXT', 'IMAGE', 'LINE', 'RECTANGLE', 'ELLIPSE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER', 'STATIC_TABLE'])
-export const SECTION_KINDS = Object.freeze(['FIXED', 'TEXT', 'TABLE'])
+export const SECTION_KINDS = Object.freeze(['FIXED', 'TEXT', 'TABLE', 'PAGE_BREAK'])
 export const FORMAT_TYPES = Object.freeze(['TEXT', 'MONEY', 'NUMBER', 'DATE', 'BOOLEAN'])
 
 /**
@@ -30,7 +30,7 @@ export const FORMAT_TYPES = Object.freeze(['TEXT', 'MONEY', 'NUMBER', 'DATE', 'B
  * @property {number} schemaVersion Compatible schema revision.
  * @property {object} paper Physical millimetres, independent of designer zoom.
  * @property {object} header Fixed band; repeat=false means first page only.
- * @property {Array<object>} body Ordered fixed, text or table sections.
+ * @property {Array<object>} body Ordered content sections and explicit page breaks.
  * @property {object} footer Fixed band; repeat=false means last page only.
  * @property {Array<object>} resources Logical file references, never access tokens.
  */

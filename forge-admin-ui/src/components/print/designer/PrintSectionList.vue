@@ -4,13 +4,16 @@ import { NDropdown, NIcon } from 'naive-ui'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { newPrintId } from './commands'
 import { cloneDocument } from './history'
+import { renewStaticTableIds } from './staticTable'
 
 const store = usePrintDesignerStore()
-const rowOptions = [
-  { label: '复制区块', key: 'duplicate' },
-  { type: 'divider', key: 'divider' },
-  { label: '删除区块', key: 'remove' },
-]
+function rowOptions(section) {
+  return [
+    { label: '复制区块', key: 'duplicate', disabled: section.kind === 'PAGE_BREAK' },
+    { type: 'divider', key: 'divider' },
+    { label: '删除区块', key: 'remove' },
+  ]
+}
 
 function move(id, target) {
   store.execute((doc) => {
@@ -25,7 +28,7 @@ function move(id, target) {
 function duplicate(section) {
   const copy = cloneDocument(section)
   copy.id = newPrintId()
-  for (const element of copy.elements || []) element.id = newPrintId()
+  copy.elements = (copy.elements || []).map(element => renewStaticTableIds({ ...element, id: newPrintId() }))
   for (const column of copy.columns || []) column.id = newPrintId()
   if (store.execute(doc => doc.body.splice(doc.body.findIndex(s => s.id === section.id) + 1, 0, copy)))
     store.selectSurface(copy.id)
@@ -64,7 +67,7 @@ function handleRowAction(key, section) {
       <button type="button" class="section-name" @click="store.selectSurface(`section:${section.id}`)">
         <span class="drag-handle">⠿</span>
         <span class="section-index">{{ index + 1 }}</span>
-        <span class="section-label">{{ { FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格' }[section.kind] }}</span>
+        <span class="section-label">{{ { FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格', PAGE_BREAK: '手动分页' }[section.kind] }}</span>
       </button>
       <div class="section-actions">
         <button type="button" class="row-action" title="上移区块" aria-label="上移区块" :disabled="index === 0" @click="move(section.id, index - 1)">
@@ -73,7 +76,7 @@ function handleRowAction(key, section) {
         <button type="button" class="row-action" title="下移区块" aria-label="下移区块" :disabled="index === store.document.body.length - 1" @click="move(section.id, index + 1)">
           <NIcon :component="ChevronDownOutline" />
         </button>
-        <NDropdown trigger="click" :options="rowOptions" @select="handleRowAction($event, section)">
+        <NDropdown trigger="click" :options="rowOptions(section)" @select="handleRowAction($event, section)">
           <button type="button" class="row-action" title="更多区块操作" aria-label="更多区块操作">
             <NIcon :component="EllipsisHorizontalOutline" />
           </button>

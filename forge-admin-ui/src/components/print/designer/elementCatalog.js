@@ -76,6 +76,19 @@ export function addElement(store, type, binding, position, preset) {
 export function addSection(store, kind, field) {
   const id = newPrintId()
   const ok = store.execute((doc) => {
+    if (kind === 'PAGE_BREAK') {
+      const activeId = store.surfaceId.startsWith('section:') ? store.surfaceId.slice('section:'.length) : ''
+      const activeIndex = doc.body.findIndex(section => section.id === activeId)
+      const candidates = doc.body
+        .slice(0, -1)
+        .map((section, index) => ({ section, index }))
+        .filter(({ section, index }) => section.kind !== 'PAGE_BREAK' && doc.body[index + 1]?.kind !== 'PAGE_BREAK')
+      const target = candidates.find(({ index }) => index === activeIndex) || candidates.at(-1)
+      if (!target)
+        throw new Error('至少需要两个相邻内容区块才能插入分页符')
+      doc.body.splice(target.index + 1, 0, { id, kind })
+      return
+    }
     const section = { id, kind, gapAfterMm: 2 }
     if (kind === 'FIXED')
       Object.assign(section, { heightMm: 40, elements: [] })

@@ -22,6 +22,13 @@ describe('ordered physical pagination', () => {
     doc.body = [{ ...fixed('a', 80), gapAfterMm: 10 }]
     expect(layout(doc).pages).toHaveLength(1)
   })
+  it('starts a new physical page at an explicit page break', () => {
+    const doc = paper()
+    doc.body = [fixed('before', 20), { id: 'break', kind: 'PAGE_BREAK' }, fixed('after', 20)]
+    const result = layout(doc)
+    expect(result.pages).toHaveLength(2)
+    expect(result.pages.map(page => page.fragments.map(fragment => fragment.id))).toEqual([['before'], ['after']])
+  })
   it('moves fixed sections as a whole and rejects oversized sections', () => {
     const doc = paper()
     doc.body = [fixed('a', 50), fixed('b', 40)]

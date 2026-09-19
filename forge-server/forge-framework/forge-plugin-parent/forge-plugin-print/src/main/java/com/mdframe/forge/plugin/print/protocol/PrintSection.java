@@ -6,7 +6,7 @@ import com.mdframe.forge.plugin.print.protocol.PrintElement.Format;
 import com.mdframe.forge.plugin.print.protocol.PrintElement.Style;
 
 /**
- * 固定区块、流式文本与明细表格的明确协议模型。
+ * 固定区块、流式文本、明细表格与手动分页符的明确协议模型。
  */
 public record PrintSection(String id, String kind, Double heightMm, List<PrintElement> elements, Binding binding, Format format, Style style, Double gapAfterMm, Boolean keepWithNext, String collectionPath, List<Column> columns, List<HeaderRow> headerRows, Boolean repeatHeader, Footer footer, String emptyText) {
 

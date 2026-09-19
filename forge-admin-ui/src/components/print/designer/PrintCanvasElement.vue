@@ -11,12 +11,14 @@ const props = defineProps({
   catalog: { type: Array, default: () => [] },
   context: { type: Object, default: () => ({}) },
   tableCellIds: { type: Array, default: () => [] },
+  pageNumber: { type: Number, default: 1 },
+  totalPages: { type: Number, default: 1 },
 })
 const emit = defineEmits(['tableCellSelect', 'tableCellChange'])
 const codeSrc = ref('')
 const text = computed(() => {
   if (props.element.type === 'PAGE_NUMBER')
-    return props.element.pageNumberFormat === 'CURRENT' ? '1' : '1 / 1'
+    return props.element.pageNumberFormat === 'CURRENT' ? `${props.pageNumber}` : `${props.pageNumber} / ${props.totalPages}`
   return designerBindingText(props.element.binding, props.element.format, props.catalog, props.context)
 })
 const bindingName = computed(() => props.element.binding?.source === 'FIELD' ? fieldLabel(props.catalog, props.element.binding.path) : '')

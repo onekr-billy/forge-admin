@@ -25,7 +25,10 @@ const store = usePrintDesignerStore()
         <NIcon :component="SwapVerticalOutline" />
       </button>
     </div>
-    <div class="geometry-commandbar edit-commandbar">
+    <p v-if="store.activeSurface?.kind === 'PAGE_BREAK'" class="page-break-help">
+      预览和打印会从这里开始新的一页。分页符不占用纸张高度。
+    </p>
+    <div v-else class="geometry-commandbar edit-commandbar">
       <button type="button" class="geometry-tool" title="复制元素" aria-label="复制元素" :disabled="!store.selectedIds.length" @click="store.copySelection()">
         <NIcon :component="CopyOutline" />
       </button>
@@ -36,7 +39,7 @@ const store = usePrintDesignerStore()
         <NIcon :component="TrashOutline" />
       </button>
     </div>
-    <template v-if="!store.selectedIds.length && store.activeSurface?.kind">
+    <template v-if="!store.selectedIds.length && store.activeSurface?.kind && store.activeSurface.kind !== 'PAGE_BREAK'">
       <NFormItem v-if="store.activeSurface.kind === 'FIXED'" label="区块高度 mm" size="small">
         <NInputNumber :value="store.activeSurface.heightMm" :min="1" @update:value="$event !== null && store.patchSurface({ heightMm: $event })" />
       </NFormItem>
@@ -59,6 +62,16 @@ const store = usePrintDesignerStore()
   border: 1px solid var(--border-light, #ddd);
   border-radius: 6px;
   background: color-mix(in srgb, var(--text-tertiary, #64748b) 4%, transparent);
+}
+.page-break-help {
+  margin: 0;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--primary-color, #356cde) 20%, transparent);
+  border-radius: 5px;
+  color: var(--text-secondary, #64748b);
+  background: color-mix(in srgb, var(--primary-color, #356cde) 5%, transparent);
+  font-size: 12px;
+  line-height: 1.6;
 }
 .alignment-bar {
   margin-bottom: 7px;

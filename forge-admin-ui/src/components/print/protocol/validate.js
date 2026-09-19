@@ -383,11 +383,18 @@ export function validatePrintDocument(document) {
   if (array(document.body, 'body', PRINT_LIMITS.sections)) {
     document.body.forEach((section, index) => {
       const location = `body[${index}]`
-      if (!object(section, ['id', 'kind', 'heightMm', 'elements', 'binding', 'format', 'style', 'gapAfterMm', 'keepWithNext', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText'], location)) {
+      const pageBreak = section?.kind === 'PAGE_BREAK'
+      const keys = pageBreak ? ['id', 'kind'] : ['id', 'kind', 'heightMm', 'elements', 'binding', 'format', 'style', 'gapAfterMm', 'keepWithNext', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText']
+      if (!object(section, keys, location)) {
         return
       }
       identifier(section.id, `${location}.id`)
       choice(section.kind, SECTION_KINDS, `${location}.kind`)
+      if (pageBreak) {
+        if (index === 0 || index === document.body.length - 1 || document.body[index - 1]?.kind === 'PAGE_BREAK')
+          issue(location, 'INVALID_PAGE_BREAK', '分页符只能放在两个内容区块之间且不能连续')
+        return
+      }
       if (section.gapAfterMm !== undefined) {
         number(section.gapAfterMm, `${location}.gapAfterMm`, 0, 100)
       }

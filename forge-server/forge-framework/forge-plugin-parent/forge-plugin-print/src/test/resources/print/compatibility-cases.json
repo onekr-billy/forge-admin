@@ -427,5 +427,28 @@
     ],
     "backendValid": false,
     "frontendValid": false
+  },
+  {
+    "name": "内容区块之间手动分页",
+    "patches": [
+      { "pointer": "/body", "value": [
+        { "id": "before_break", "kind": "FIXED", "heightMm": 20, "elements": [] },
+        { "id": "manual_break", "kind": "PAGE_BREAK" },
+        { "id": "after_break", "kind": "FIXED", "heightMm": 20, "elements": [] }
+      ] }
+    ],
+    "backendValid": true,
+    "frontendValid": true
+  },
+  {
+    "name": "首位分页符",
+    "patches": [
+      { "pointer": "/body", "value": [
+        { "id": "leading_break", "kind": "PAGE_BREAK" },
+        { "id": "after_break", "kind": "FIXED", "heightMm": 20, "elements": [] }
+      ] }
+    ],
+    "backendValid": false,
+    "frontendValid": false
   }
 ]

@@ -9,6 +9,7 @@ import {
   ListOutline,
   QrCodeOutline,
   RemoveOutline,
+  ReturnDownForwardOutline,
   SquareOutline,
   TextOutline,
 } from '@vicons/ionicons5'
@@ -32,6 +33,7 @@ const sections = [
   { type: 'FIXED', label: '固定区块', icon: LayersOutline },
   { type: 'TEXT', label: '流式文本', icon: ListOutline },
   { type: 'TABLE', label: '明细表格', icon: GridOutline },
+  { type: 'PAGE_BREAK', label: '手动分页', icon: ReturnDownForwardOutline },
 ]
 </script>
 

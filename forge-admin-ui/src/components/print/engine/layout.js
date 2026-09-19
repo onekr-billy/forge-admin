@@ -53,6 +53,10 @@ export function layoutPrintDocument(input, context, { measure, resources, catalo
     return minimumHeight(section)
   }
   sections.forEach((section, index) => {
+    if (section.kind === 'PAGE_BREAK') {
+      cursor.forceBreak()
+      return
+    }
     if (section.keepWithNext && index + 1 < sections.length) {
       cursor.ensure(requiredStart(index), section.id)
     }

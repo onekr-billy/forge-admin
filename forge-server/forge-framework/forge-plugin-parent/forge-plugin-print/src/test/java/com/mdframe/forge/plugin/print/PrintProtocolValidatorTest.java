@@ -243,4 +243,33 @@ class PrintProtocolValidatorTest {
         element.put("widthMm", 61);
         rejects(doc, "body[0].elements[0].table", "TABLE_SIZE_MISMATCH");
     }
+
+    @Test
+    void validatesManualPageBreakPlacementAndPayload() throws Exception {
+        var doc = document();
+        var body = (com.fasterxml.jackson.databind.node.ArrayNode) doc.get("body");
+        body.insert(1, mapper.createObjectNode().put("id", "manual_break").put("kind", "PAGE_BREAK"));
+        assertThat(validator.validate(doc.toString()).document().body().get(1).kind()).isEqualTo("PAGE_BREAK");
+
+        doc = document();
+        body = (com.fasterxml.jackson.databind.node.ArrayNode) doc.get("body");
+        body.insert(0, mapper.createObjectNode().put("id", "leading_break").put("kind", "PAGE_BREAK"));
+        rejects(doc, "body[0]", "INVALID_PAGE_BREAK");
+
+        doc = document();
+        body = (com.fasterxml.jackson.databind.node.ArrayNode) doc.get("body");
+        body.addObject().put("id", "trailing_break").put("kind", "PAGE_BREAK");
+        rejects(doc, "body[3]", "INVALID_PAGE_BREAK");
+
+        doc = document();
+        body = (com.fasterxml.jackson.databind.node.ArrayNode) doc.get("body");
+        body.insert(1, mapper.createObjectNode().put("id", "first_break").put("kind", "PAGE_BREAK"));
+        body.insert(2, mapper.createObjectNode().put("id", "second_break").put("kind", "PAGE_BREAK"));
+        rejects(doc, "body[2]", "INVALID_PAGE_BREAK");
+
+        doc = document();
+        body = (com.fasterxml.jackson.databind.node.ArrayNode) doc.get("body");
+        body.insert(1, mapper.createObjectNode().put("id", "payload_break").put("kind", "PAGE_BREAK").put("gapAfterMm", 2));
+        rejects(doc, "body[1].gapAfterMm", "UNKNOWN_PROPERTY");
+    }
 }

@@ -47,6 +47,23 @@ describe('designer editing workflow', () => {
     addElement(store, 'LINE', undefined, undefined, 'VERTICAL')
     expect(store.activeElement).toMatchObject({ type: 'LINE', widthMm: 1, heightMm: 30 })
   })
+  it('inserts a manual page break between content sections and renders two papers', async () => {
+    store.execute((doc) => {
+      doc.footer = { heightMm: 10, repeat: true, elements: [{ id: 'designer-page-number', type: 'PAGE_NUMBER', pageNumberFormat: 'CURRENT_TOTAL', xMm: 0, yMm: 0, widthMm: 40, heightMm: 8 }] }
+    })
+    addSection(store, 'FIXED')
+    const first = store.document.body[0].id
+    addSection(store, 'FIXED')
+    store.selectSurface(first)
+    expect(addSection(store, 'PAGE_BREAK')).toBe(true)
+    expect(store.document.body.map(section => section.kind)).toEqual(['FIXED', 'PAGE_BREAK', 'FIXED'])
+    const wrapper = mount(PrintCanvas, { global: { plugins: [pinia] } })
+    await flushPromises()
+    expect(wrapper.findAll('.ruler-frame')).toHaveLength(2)
+    expect(wrapper.text()).toContain('手动分页 · 从本页开始')
+    expect(wrapper.findAll('[data-element-id="designer-page-number"]').map(node => node.text())).toEqual(['1 / 2', '2 / 2'])
+    wrapper.unmount()
+  })
   it('moves and resizes with pointer gestures at half scale, undoing each once', async () => {
     addSection(store, 'FIXED')
     addElement(store, 'TEXT')

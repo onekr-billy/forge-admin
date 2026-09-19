@@ -54,6 +54,9 @@ function mergedCells(row, columns, context, sectionStyle) {
 }
 
 export function prepareSection(section, context, measure, geometry, resources, catalog = []) {
+  if (section.kind === 'PAGE_BREAK') {
+    return { ...section, heightMm: 0 }
+  }
   if (section.kind === 'FIXED') {
     return { ...section, elements: prepareElements(section.elements, context, measure, resources), widthMm: geometry.contentWidthMm }
   }

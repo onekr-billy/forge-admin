@@ -516,3 +516,13 @@ git diff --check
 验证：前端打印域 20 文件 125 项、共享协议 36 项、Java 打印插件 116 项全部通过；定向 ESLint 与 `git diff --check` 无输出；Vite 9379 modules 构建成功，仅有项目既有构建提示。Chromium 合成工作台在 `/print/designer?templateId=1&ui=t50` 实际添加表格、选择/多选单元格、双击输入“合同编号”，正式预览显示同一 3×3 表格。原 4318 验证进程启动时的沙箱文件快照无法解析本轮新增文件，因此另启 4319 独立 localhost 验证服务；不影响生产代码。
 
 未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway、Firefox/Edge/Safari、PDF 或物理打印。本阶段仅本地 commit，不 push；既有 `.DS_Store` 不暂存。
+
+## 2026-09-19 · T51 多纸张设计与手动分页
+
+按 T51 先扩展自有 `forge-print` v1 协议，再修改设计器。新增 `PAGE_BREAK` 正文区块，只允许位于两个内容区块之间；前后端同时拒绝首位、末位、连续分页符以及分页符上的内容属性。分页游标把分页符解释为强制新页，仍沿用 50 页保护上限，分页符本身不产生纸面内容。
+
+设计器新增 `designerPagination.js`，根据纸张方向、正文容量、固定区块高度和当前示例文本/表格行数生成可编辑的多纸张估算。每页保留毫米标尺、边距/页眉/页脚定位线、页码和自动/手动分页提示；页眉页脚按 repeat 语义重复展示，并仍映射同一协议对象。设计页码元素按估算页数显示，正式预览继续复用既有测量与分页树，不读取设计估算结果。物料面板增加手动分页，页面结构区可选择、排序和删除分页符，右侧说明分页符不占纸张高度。
+
+验证：前端打印域 21 文件 131 项、共享前后端协议 38 项、Java 打印插件 120 项全部通过；定向 ESLint 和 `git diff --check` 无输出；Vite 9380 modules 构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。Chromium 在独立合成入口 `http://127.0.0.1:4320/print/designer?templateId=1&ui=t51` 实际插入分页符，设计区从一张纸变为两张纸并重复页眉页脚；正式预览显示两页，页码为 `1 / 2`、`2 / 2`，第二页从分页符后的流式文本和明细表开始。
+
+未启动真实 Admin/Flow/MySQL/Redis，未执行 Flyway、Firefox/Edge/Safari、PDF 或物理打印。本阶段只在 `forge-native-print` 分支 commit，不 push；既有 `.DS_Store` 不暂存。

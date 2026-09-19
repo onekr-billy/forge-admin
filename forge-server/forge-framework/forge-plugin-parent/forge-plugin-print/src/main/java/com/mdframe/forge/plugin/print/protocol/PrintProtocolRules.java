@@ -135,7 +135,13 @@ final class PrintProtocolRules {
         }
         if (array(doc.get("body"), "body", SECTIONS)) {
             for (int i = 0; i < doc.get("body").size(); i++) {
-                section(doc.get("body").get(i), "body[" + i + "]", width);
+                JsonNode current = doc.get("body").get(i);
+                String path = "body[" + i + "]";
+                section(current, path, width);
+                if ("PAGE_BREAK".equals(current.path("kind").asText())
+                        && (i == 0 || i == doc.get("body").size() - 1 || "PAGE_BREAK".equals(doc.get("body").get(i - 1).path("kind").asText()))) {
+                    issue(path, "INVALID_PAGE_BREAK", "分页符只能放在两个内容区块之间且不能连续");
+                }
             }
         }
         if (elements > ELEMENTS) {
@@ -217,7 +223,16 @@ final class PrintProtocolRules {
             return;
         }
         identifier(s.get("id"), path + ".id");
-        choice(s.get("kind"), path + ".kind", "FIXED", "TEXT", "TABLE");
+        choice(s.get("kind"), path + ".kind", "FIXED", "TEXT", "TABLE", "PAGE_BREAK");
+        String kind = s.path("kind").asText();
+        if (kind.equals("PAGE_BREAK")) {
+            s.fieldNames().forEachRemaining(key -> {
+                if (!Set.of("id", "kind").contains(key)) {
+                    issue(child(path, key), "UNKNOWN_PROPERTY", "分页符不支持此属性");
+                }
+            });
+            return;
+        }
         if (s.has("gapAfterMm")) {
             number(s.get("gapAfterMm"), path + ".gapAfterMm", 0, 100);
         }
@@ -226,7 +241,6 @@ final class PrintProtocolRules {
         }
         values.style(s.get("style"), path + ".style");
         values.format(s.get("format"), path + ".format");
-        String kind = s.path("kind").asText();
         if (kind.equals("FIXED") || s.has("heightMm")) {
             number(s.get("heightMm"), path + ".heightMm", .1, PAPER_SIZE_MM);
         }

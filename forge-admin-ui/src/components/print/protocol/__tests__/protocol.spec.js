@@ -139,6 +139,27 @@ describe('print document protocol v1', () => {
     expect(() => assertPrintDocument(doc)).toThrow()
   })
 
+  it('accepts page breaks only between content sections without payload', () => {
+    const doc = createPrintDocument()
+    doc.body = [
+      { id: 'before', kind: 'FIXED', heightMm: 20, elements: [] },
+      { id: 'break', kind: 'PAGE_BREAK' },
+      { id: 'after', kind: 'FIXED', heightMm: 20, elements: [] },
+    ]
+    expect(validatePrintDocument(doc)).toEqual([])
+    doc.body[1].gapAfterMm = 2
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[1].gapAfterMm', code: 'UNKNOWN_PROPERTY' }))
+    for (const body of [
+      [{ id: 'leading', kind: 'PAGE_BREAK' }, { id: 'content', kind: 'FIXED', heightMm: 20, elements: [] }],
+      [{ id: 'content', kind: 'FIXED', heightMm: 20, elements: [] }, { id: 'trailing', kind: 'PAGE_BREAK' }],
+      [{ id: 'before', kind: 'FIXED', heightMm: 20, elements: [] }, { id: 'first-break', kind: 'PAGE_BREAK' }, { id: 'second-break', kind: 'PAGE_BREAK' }, { id: 'after', kind: 'FIXED', heightMm: 20, elements: [] }],
+    ]) {
+      const invalid = createPrintDocument()
+      invalid.body = body
+      expect(validatePrintDocument(invalid)).toContainEqual(expect.objectContaining({ code: 'INVALID_PAGE_BREAK' }))
+    }
+  })
+
   it('rejects prototype keys, cycles, excessive collections and foreign image URLs', () => {
     const poisoned = JSON.parse(JSON.stringify(createPrintDocument()).replace('"resources":[]', '"resources":[],"__proto__":{}'))
     expect(() => assertPrintDocument(poisoned)).toThrow()
