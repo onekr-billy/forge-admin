@@ -576,3 +576,12 @@ git diff --check
 实现：在当前 `ApplicationSettingsPanel` 二级导航增加“打印模板”，支持 `view=settings&settingsSection=printing` 直达和刷新保持；新增 `ApplicationPrintSettings` 按 applicationCode 加载工作区并复用现有 `ApplicationPrintPanel`、PrintWorkspaceStore 和模板列表。应用卡片“更多”增加“打印模板”，用纯路由 location 打开同一正式入口。未修改 4902 行的统一运行页和 1507 行的应用中心入口页；本轮触达 SFC 分别为 302、516、92 行，均低于 800 行。
 
 验证：入口 location、设置分区、成功/失败工作区加载和切换应用旧响应丢弃共 4 个文件 7 项通过；与打印域合并回归 27 个文件 154 项通过。定向 ESLint、`git diff --check`、SFC 行数检查和 Vite 9388 modules 生产构建通过。浏览器访问 `http://127.0.0.1:3001/app-center/application/cgou_app_1ko3psh/runtime?view=settings&settingsSection=printing` 后进入登录页，登录重定向完整保留两个查询参数；本机 8580 后端未运行并返回 502，未执行登录后的真实模板列表、数据库、PDF 或物理打印验收。
+
+
+## 2026-09-19 · T56 平台超级权限兼容修复
+
+用户登录信息显示 `admin=true`、`permissions=['*:*:*']`，但打印工作台仍提示无查看权限。根因是打印工作台、模板列表和设计器三处只读取旧 `dataPermission`，且内联判断只识别 `**` 与精确权限；当前登录结构的 `permissions`、`*:*:*` 和 `isAdmin` 均未进入判断。
+
+实现：新增 `hasPrintPermission` 作为打印域唯一权限判断，优先接受平台 `isAdmin`，随后同时检查 `permissions` 与兼容字段 `getDataPermission`，支持 `*:*:*`、`**` 和精确权限。工作台查看、模板管理、设计器管理/发布全部改用该函数；普通无权限用户仍显示受限状态，后端 Controller/Service 权限校验不变。
+
+验证：权限目标测试 4 项；打印域、正式入口和工作区合并回归 29 文件 165 项；触达文件 ESLint、`git diff --check` 与 Vite 9389 modules 构建全部通过。浏览器自动验证会话未持有用户登录状态，且本机 8580 返回 502，因此未执行真实登录后的页面点击；本次用户返回的权限形态已由目标测试逐项覆盖。

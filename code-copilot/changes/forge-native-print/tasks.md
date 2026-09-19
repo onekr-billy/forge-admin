@@ -215,10 +215,12 @@ M5c 实际拆分：
 - [x] T55a：移除正式入口对废弃工作台 `section=printing` 的依赖；在当前应用设置二级导航增加“打印模板”，支持查询参数直达和刷新保持。
 - [x] T55b：在应用卡片“更多”增加打印模板快捷入口；新增独立设置子组件加载工作区并复用现有 PrintWorkspaceStore/ApplicationPrintPanel。
 - [x] T55c：补入口 location、分区解析和工作区加载测试，执行定向 Vitest、ESLint、SFC 行数、Vite build 与浏览器路由验证；独立 commit 并推送 `forge-native-print`。
+- [x] T56a：建立打印域统一权限判断，兼容 `isAdmin`、`permissions`、`dataPermission`、`*:*:*`、`**` 和精确打印权限。
+- [x] T56b：替换工作台查看、模板管理和设计器发布的三处旧判断；补纯函数回归、打印域测试、ESLint 与构建，独立 commit 并推送 `forge-native-print`。
 
 ## 依赖主线
 
-`D02 → T01…T13 → T28 → T29…T34 → T35…T39 → T40…T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → T55`。
+`D02 → T01…T13 → T28 → T29…T34 → T35…T39 → T40…T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → T55 → T56`。
 
 后端 `T14…T27b` 可以在同一实施阶段顺序穿插；不存在默认多 Agent 并行授权。任务的前置协议、迁移和权限审查不得跳过。
 

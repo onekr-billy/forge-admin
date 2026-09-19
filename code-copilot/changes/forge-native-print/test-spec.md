@@ -289,3 +289,13 @@ T54 执行结果：流程 V1.0.168–V1.0.170 的 Flyway checksum 分别固定�
 
 
 T55 执行结果：新增入口/设置/工作区组件测试 4 个文件 7 项通过；与打印域合并回归共 27 个文件 154 项通过。触达文件定向 ESLint、`git diff --check` 和 SFC 行数检查通过；Vite 9388 modules 生产构建成功，仅保留项目既有 native config、CSS 注释、dynamic import 和插件耗时提示。浏览器访问正式 URL 后正确进入登录路由，并完整保留 `view=settings&settingsSection=printing`；当前 8580 后端未运行，请求返回 502，因此未把登录后的模板列表记为真实业务验收通过。
+
+
+## T56 打印权限通配修复验证计划
+
+- 纯函数覆盖：`isAdmin=true`、`permissions=['*:*:*']`、`dataPermission=['**']`、精确 `print:template:*` 均允许；空数组、null 和无关权限拒绝。
+- 接入检查：`ApplicationPrintPanel` 的查看、`PrintTemplateList` 的管理、打印设计器的管理/发布全部调用同一权限函数，不残留只识别 `**` 的内联判断。
+- 回归：运行权限目标测试、打印域 Vitest、触达文件 ESLint、`git diff --check` 和 Vite 生产构建。后端权限注解与接口重新授权保持不变。
+
+
+T56 执行结果：权限纯函数 4 项通过，覆盖本次用户返回的 `isAdmin=true` 和 `permissions=['*:*:*']`，同时覆盖 `**`、精确权限与拒绝路径。打印域、正式入口及工作区合并回归 29 个文件 165 项通过；触达文件 ESLint 与 `git diff --check` 通过，源码扫描确认查看、管理、发布三处均使用统一函数。Vite 9389 modules 生产构建成功，仅保留项目既有构建提示。浏览器仍因当前 Codex 会话未登录且本机 8580 返回 502，未冒充登录后页面验收。

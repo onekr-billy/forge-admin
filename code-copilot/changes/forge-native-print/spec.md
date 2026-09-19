@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：forge-admin 的 M1–M5 代码开发、T46–T55 增量能力、迁移冲突修复和新版应用页面打印入口均已完成自动化与前端构建验证。M6 的真实环境、PDF 和打印机验收由用户执行。整体仍为 implemented-pending-e2e；当前分支 forge-native-print。
+> 当前阶段：forge-admin 的 M1–M5 代码开发、T46–T56 增量能力、迁移冲突修复、新版应用页面入口和平台超级权限兼容均已完成自动化与前端构建验证。M6 的真实环境、PDF 和打印机验收由用户执行。整体仍为 implemented-pending-e2e；当前分支 forge-native-print。
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 
@@ -161,6 +161,12 @@ flow 插件根目录：`forge-server/forge-framework/forge-plugin-parent/forge-p
 - 应用中心卡片的“更多”菜单必须提供“打印模板”快捷入口，并打开同一正式路由。直接操作数量保持现有上限，避免卡片操作区继续膨胀。
 - 打印分区按 applicationCode 读取现有工作区，只把应用和业务对象目录同步到既有 PrintWorkspaceStore；加载失败可重试，切换应用或卸载时继续清理旧来源状态。
 - 不修改超过 2000 行的统一运行页和超过 800 行的应用中心入口页；入口逻辑放在现有小组件及独立设置子组件中。
+
+### 4.11 打印权限与平台超级权限一致性（2026-09-19 权限反馈）
+
+- 打印查看、管理和发布入口必须同时读取当前用户的 `permissions` 与兼容字段 `dataPermission`，不能只依赖旧字段。
+- 平台超级管理员标志 `isAdmin`、统一通配符 `*:*:*` 和兼容通配符 `**` 均应通过打印权限判断；普通用户仍需对应的 `print:template:view/manage/publish` 权限。
+- 查看、列表管理与设计器必须复用同一纯函数，禁止三个页面分别维护不同的通配规则。空权限和无关权限继续拒绝。
 
 ## 5. 模板归属、版本与流程配置
 

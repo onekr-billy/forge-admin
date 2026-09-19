@@ -7,6 +7,7 @@ import { loadPrintFile } from '@/api/print'
 import DictTag from '@/components/DictTag.vue'
 import PrintDesigner from '@/components/print/designer/PrintDesigner.vue'
 import PrintBindingPanel from '@/components/print/management/PrintBindingPanel.vue'
+import { hasPrintPermission } from '@/components/print/management/printPermissions'
 import PrintTemplateVersions from '@/components/print/management/PrintTemplateVersions.vue'
 import PrintPreview from '@/components/print/runtime/PrintPreview.vue'
 import { useUserStore } from '@/store'
@@ -21,7 +22,7 @@ const user = useUserStore()
 const theme = useThemeVars()
 const themeStyle = computed(() => ({ background: theme.value.bodyColor, color: theme.value.textColor1 }))
 const designer = ref(null)
-const allowed = permission => (user.getDataPermission || []).some(p => p === '**' || p === permission)
+const allowed = permission => hasPrintPermission(user, permission)
 const canManage = computed(() => allowed('print:template:manage'))
 const canPublish = computed(() => allowed('print:template:publish'))
 const canLeave = () => designer.value?.canLeave() ?? true

@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as api from '@/api/print'
 import DictTag from '@/components/DictTag.vue'
+import { hasPrintPermission } from '@/components/print/management/printPermissions'
 import PrintTemplateCreate from '@/components/print/management/PrintTemplateCreate.vue'
 import { useUserStore } from '@/store'
 import { usePrintTemplateStore } from '@/stores/print/printTemplateStore'
@@ -14,7 +15,7 @@ const store = usePrintTemplateStore()
 const user = useUserStore()
 const source = computed(() => props.source)
 const appId = computed(() => props.applicationId)
-const canManage = computed(() => (user.getDataPermission || []).some(p => p === '**' || p === 'print:template:manage'))
+const canManage = computed(() => hasPrintPermission(user, 'print:template:manage'))
 const creating = ref(false)
 const busy = ref(false)
 watch(appId, (value) => {
