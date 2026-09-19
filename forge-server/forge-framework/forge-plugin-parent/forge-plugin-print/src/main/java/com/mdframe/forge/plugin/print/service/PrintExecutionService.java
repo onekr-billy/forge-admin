@@ -45,7 +45,12 @@ public class PrintExecutionService {
         return row.getId();
     }
 
-    public record Event(Long executionId, String result, Integer pageCount, String errorCode) {
+    /**
+     * physicalOutputConfirmed is deliberately always false: browsers do not
+     * expose a trustworthy signal that paper was produced.
+     */
+    public record Event(Long executionId, String result, Integer pageCount, String errorCode,
+                        boolean physicalOutputConfirmed) {
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -63,6 +68,6 @@ public class PrintExecutionService {
         if (row == null || !dto.result().matches(row.getResult()) || !Objects.equals(dto.pageCount(), row.getPageCount()) || !Objects.equals(dto.errorCode(), row.getErrorCode())) {
             throw PrintFailure.of(409, "PRINT_EVENT_CONFLICT", "此打印会话已记录其他终态");
         }
-        return new Event(id, row.getResult(), row.getPageCount(), row.getErrorCode());
+        return new Event(id, row.getResult(), row.getPageCount(), row.getErrorCode(), false);
     }
 }

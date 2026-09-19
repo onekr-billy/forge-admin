@@ -1,6 +1,7 @@
 import { readOwnPath, resolveBinding, resolveCollection } from '../protocol/binding'
 import { formatValue } from '../protocol/formatters'
 import { PrintError } from '../protocol/types'
+import { tableImageResourceKey } from './resources'
 
 export function prepareElements(elements, context, measure, resources) {
   return elements.map((element) => {
@@ -43,7 +44,7 @@ function mergedCells(row, columns, context, sectionStyle) {
   })
 }
 
-export function prepareSection(section, context, measure, geometry, resources) {
+export function prepareSection(section, context, measure, geometry, resources, catalog = []) {
   if (section.kind === 'FIXED') {
     return { ...section, elements: prepareElements(section.elements, context, measure, resources), widthMm: geometry.contentWidthMm }
   }
@@ -52,14 +53,26 @@ export function prepareSection(section, context, measure, geometry, resources) {
     return { ...section, type: 'TEXT', text, widthMm: geometry.contentWidthMm, ...measure.text(text, geometry.contentWidthMm, section.style) }
   }
   const source = resolveCollection(section.collectionPath, context)
+  const fieldTypes = new Map(catalog.map(field => [field.path, field.type]))
   const widthMm = section.columns.reduce((sum, column) => sum + column.widthMm, 0)
   const defaultHeader = { cells: section.columns.map(column => ({ text: column.title, span: 1, style: { ...column.style, fontWeight: 700 } })) }
   const headers = (section.headerRows?.length ? section.headerRows : [defaultHeader]).map((row, i) => preparedRow(mergedCells(row, section.columns, context, section.style), 'header', `header-${i}`, measure))
-  const rows = source.map((record, i) => preparedRow(section.columns.map(column => ({
-    text: formatValue(readOwnPath(record, column.field), column.format),
-    widthMm: column.widthMm,
-    style: { ...section.style, ...column.style },
-  })), 'data', `${section.id}-${i}`, measure))
+  const rows = source.map((record, i) => preparedRow(section.columns.map((column) => {
+    const value = readOwnPath(record, column.field)
+    const image = fieldTypes.get(`${section.collectionPath}.${column.field}`) === 'IMAGE'
+    const src = image ? resources?.images.get(tableImageResourceKey(section.id, i, column.id)) || '' : ''
+    if (image && value !== null && value !== '' && !src) {
+      throw new PrintError('RESOURCE_NOT_READY', '明细图片或签名尚未完成准备', `${section.collectionPath}[${i}].${column.field}`)
+    }
+    return {
+      text: image ? '' : formatValue(value, column.format),
+      type: image ? 'IMAGE' : 'TEXT',
+      src,
+      imageHeightMm: src ? Math.min(18, Math.max(8, column.widthMm * 0.4)) : 0,
+      widthMm: column.widthMm,
+      style: { ...section.style, ...column.style },
+    }
+  }), 'data', `${section.id}-${i}`, measure))
   if (!rows.length) {
     rows.push(preparedRow([{ text: section.emptyText ?? '暂无明细', widthMm, style: section.style }], 'empty', 'empty', measure))
   }

@@ -37,7 +37,7 @@ export function layoutPrintDocument(input, context, { measure, resources, catalo
   const geometry = paperGeometry(document)
   const header = prepareElements(document.header.elements, context, measure, resources)
   const footer = prepareElements(document.footer.elements, context, measure, resources)
-  const sections = document.body.map(section => prepareSection(section, context, measure, geometry, resources))
+  const sections = document.body.map(section => prepareSection(section, context, measure, geometry, resources, catalog))
   if (sections.reduce((sum, section) => sum + (section.sourceRowCount || 0), 0) > PRINT_LIMITS.rows) {
     throw new PrintError('ROW_LIMIT', `所有明细合计最多 ${PRINT_LIMITS.rows} 行`)
   }

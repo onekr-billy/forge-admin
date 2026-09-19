@@ -1,6 +1,6 @@
 # 实施任务
 
-> 状态：implementing，M1–M4 已在 forge-admin 完成阶段验证并按阶段本地提交；M5a 服务端适配和 M5b 前端入口/BPMN 策略已完成，M5c–M6 未完成。禁止 push。
+> 状态：implemented-pending-e2e，M1–M5 代码开发和自动化构建验证已完成；M6 的真实环境、PDF 和打印机验收由用户执行。禁止 push。
 >
 > 依据：[spec.md](spec.md)、[design.md](design.md)
 >
@@ -167,22 +167,28 @@ M5b 按 R02 再拆成以下可独立核验的小任务：
 - [x] M5b-4a（4 文件）：新增节点打印策略小分区及组件测试，接入审批节点并补默认配置。
 - [x] M5b-4b（3 文件）：BPMN 解析/写回和往返测试；仅保存 `INHERIT/RESTRICT + templateIds`，不修改审批动作。
 
+M5c 实际拆分：
+
+- [x] M5c-1：新增运行时资源加载边界，将取消映射为 `PRINT_CANCELLED`，将非法/缺失/未就绪资源统一映射为 `RESOURCE_FAILED`；继续保留 10 秒超时、AbortSignal 和 Blob URL 释放。
+- [x] M5c-2：按字段目录识别明细表 IMAGE 列；流程 `flow.history.signature` 经鉴权下载、解码后作为图片单元格参与测量/分页，不向纸面暴露 fileId。
+- [x] M5c-3：FAILED 审计禁止携带页数；执行事件响应固定 `physicalOutputConfirmed=false`，明确 `DIALOG_OPENED` 不是出纸确认。
+
 | 状态/任务 | 依赖 | 拟涉及文件 | 验收与证据 |
 |---|---|---|---|
 | [x] T35 流程身份/数据适配 | T29,T33 | GJ `service/printing/{FlowPrintContextResolver,FlowPrintAccessPolicy,FlowPrintHistoryAdapter}.java`、GT `service/printing/FlowPrintAccessPolicyTest.java` | task/instance/run/record 一致；三类入口分别授权；重提/会签不混轮次 |
 | [x] T36 代码业务 Provider | T35 | B 新增采购打印 Provider、采购打印字段目录、对应测试 | 复用现有业务读取，运行接口不依赖设计权，不以 formUrl 截图代替 |
 | [x] T37 流程打印入口 | T35,R02 | U `components/flow/FlowPrintAction.vue`、U `stores/print/flowPrintContextStore.js`、拆分后的详情上下文组件、对应组件测试 | 真实选中实例上下文；切换任务不串数据；未保存修改有提示 |
 | [x] T38 节点打印策略 | T35 | 既有流程节点面板新增小分区组件、节点配置序列化/解析文件、策略测试 | 继承默认/限制子集；随节点模型版本保存，不改审批动作 |
-| [ ] T39 鉴权资源和审计 | T37,T38 | U `runtime/printResourceLoader.js`、PJ 执行事件 DTO/Service 小改、资源授权测试 | 签名/图片鉴权，资源失败阻止输出；对话框打开不等同出纸 |
+| [x] T39 鉴权资源和审计 | T37,T38 | U `runtime/printResourceLoader.js`、PJ 执行事件 DTO/Service 小改、资源授权测试 | 签名/图片鉴权，资源失败阻止输出；对话框打开不等同出纸 |
 
 ## M6：验证、审查和交付
 
-- [ ] T40：按 test-spec 的 P0 矩阵执行协议/分页/权限/版本/流程回归；修复差异后增量复跑。
-- [ ] T41：前端构建、相关 Maven 编译及目标单测；SQL/XML 静态检查；保留命令和结果。
+- [x] T40：按 test-spec 的 P0 自动化矩阵执行协议/分页/权限/版本/流程回归；修复差异后增量复跑。真实环境项仍归 T42/用户验收。
+- [x] T41：前端构建、相关 Maven 编译及目标单测；SQL/XML 静态检查；保留命令和结果。
 - [ ] T42：浏览器验证拖拽、编辑、长表分页、字体/图片失败、亮暗主题、切换资源清理；截图/产物落 verification。
-- [ ] T43：Spec 合规审查，再代码质量审查；整改后记录审查结论。审查阶段可按仓库规范使用独立审查上下文。
-- [ ] T44：提供真实 Flyway/API/流程/打印机验收步骤，由用户回填；未完成保持 `implemented-pending-e2e`。
-- [ ] T45：交付文档、使用说明、回滚指引与最终任务状态；仅在实际验收完成后归档。
+- [x] T43：Spec 合规审查，再代码质量审查；整改后记录审查结论。审查阶段可按仓库规范使用独立审查上下文。
+- [x] T44：提供真实 Flyway/API/流程/打印机验收步骤，由用户回填；未完成保持 `implemented-pending-e2e`。
+- [x] T45：交付文档、使用说明、回滚指引与最终任务状态；仅在实际验收完成后归档。
 
 ## 依赖主线
 

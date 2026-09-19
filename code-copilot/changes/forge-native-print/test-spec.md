@@ -209,3 +209,11 @@ M4c 结果：首轮 34 项后端、86 项前端通过；新增真实 Velocity �
 - 节点策略：`INHERIT` 不写冗余 BPMN 属性；`RESTRICT` 写允许模板 ID 子集，空子集代表当前节点无模板。模板列表按当前应用及 CODE formKey / LOWCODE pageId 收窄，策略只减权、不授予额外权限。
 - 自动化：前端 7 文件 40 项通过（Store/动作/策略组件/BPMN 解析写回及既有 roundtrip/json-to-bpmn）；定向 ESLint 与 Vite 生产构建通过。后端 33 模块聚合测试编译通过，`BusinessFlowService*Test + FlowPrintAccessPolicyTest` 共 22 项通过；新增 Mapper XML 通过 xmllint。
 - 仍未执行：真实 Admin/Flow/MySQL/Redis、Flyway、待办/已办/我发起浏览器 E2E、PDF 和物理打印。M5c 的签名/图片鉴权资源失败阻断与执行事件收口尚未实施。
+
+## M5c 增量验证
+
+- 前端打印域 16 个测试文件 98 项通过；新增覆盖流程历史签名的鉴权下载、表格图片渲染、fileId 不落纸面、资源错误/取消的受限审计码。定向 ESLint 无输出，Vite 生产构建 9364 modules 成功。
+- 后端打印插件 `Print*` 17 个测试类 107 项通过；新增覆盖审批签名文件进入运行资源授权集合、FAILED 不接受 pageCount、DIALOG_OPENED 返回 `physicalOutputConfirmed=false`。Admin 46 模块聚合 package 成功。
+- 最终合并回归：前端打印/流程入口/BPMN 策略 22 文件 133 项；后端打印插件 107 项、generator 的打印/应用版本/流程上下文 113 项、采购 CODE Provider 2 项，共 222 项，全部 0 failure/error/skipped。
+- 代码审查确认预览或模板选择不发送 `DIALOG_OPENED`；只有调用隔离 iframe 的 `print()` 后才报告。403、非图片 Blob、解码失败和超时均在打印会话创建前阻断，切换/卸载继续取消请求并释放 Blob URL。
+- 未启动 Admin/Flow/MySQL/Redis，未执行 Flyway、真实流程、PDF 或物理打印。用户验收步骤见 [verification/user-acceptance.md](verification/user-acceptance.md)，完成前状态保持 `implemented-pending-e2e`。

@@ -3,12 +3,12 @@ import { NAlert, NButton, NEmpty, NSelect, NSpin, useThemeVars } from 'naive-ui'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { layoutPrintDocument } from '../engine/layout'
 import { createBrowserMeasurer } from '../engine/measure'
-import { preparePrintResources } from '../engine/resources'
 import { validateFieldCatalog } from '../protocol/fieldCatalog'
 import { PrintError } from '../protocol/types'
 import { assertPrintDocument } from '../protocol/validate'
 import { createBrowserPrintSession } from './browserPrint'
 import PrintPage from './PrintPage.vue'
+import { loadPrintResources } from './printResourceLoader'
 
 const props = defineProps({
   template: { type: Object, required: true },
@@ -55,7 +55,7 @@ watch(() => [props.template, props.context, props.catalog, props.templateVersion
     if (issues.length) {
       throw new PrintError('FIELD_NOT_ALLOWED', issues[0].message, issues[0].path)
     }
-    resources = await preparePrintResources(props.template, props.context, { signal: controller.signal, resolveFile: props.resolveFile })
+    resources = await loadPrintResources(props.template, props.context, { signal: controller.signal, resolveFile: props.resolveFile, catalog: props.catalog })
     if (controller.signal.aborted) {
       resources.dispose()
       return

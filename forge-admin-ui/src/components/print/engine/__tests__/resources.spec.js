@@ -61,6 +61,35 @@ describe('bounded print resource session', () => {
     await expect(result).rejects.toMatchObject({ code: 'RESOURCE_TIMEOUT' })
     expect(requestSignal.aborted).toBe(true)
   })
+  it('loads flow history signatures as authenticated table image resources', async () => {
+    const doc = createPrintDocument()
+    doc.body = [{
+      id: 'history',
+      kind: 'TABLE',
+      collectionPath: 'flow.history',
+      repeatHeader: true,
+      columns: [
+        { id: 'assignee', field: 'assigneeName', title: '办理人', widthMm: 80 },
+        { id: 'signature', field: 'signature', title: '办理签名', widthMm: 80 },
+      ],
+    }]
+    const resolver = vi.fn(async () => new Blob(['signature'], { type: 'image/png' }))
+    const resources = await preparePrintResources(doc, { flow: { history: [{ assigneeName: '审核人', signature: 'signature_1' }] } }, {
+      catalog: [
+        { path: 'flow.history', type: 'COLLECTION' },
+        { path: 'flow.history.assigneeName', type: 'TEXT' },
+        { path: 'flow.history.signature', type: 'IMAGE' },
+      ],
+      resolveFile: resolver,
+      decodeImage: vi.fn(async () => {}),
+      fonts: null,
+      createObjectURL: () => 'blob:signature',
+      revokeObjectURL: vi.fn(),
+    })
+    expect(resolver).toHaveBeenCalledWith('signature_1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(resources.images.get('table:history:0:signature')).toBe('blob:signature')
+    resources.dispose()
+  })
   it('keys measurements by text, width and complete style and evicts old entries', () => {
     const cache = new MeasurementCache(2)
     cache.set(['A', 10, { fontSizePt: 10 }], 1)

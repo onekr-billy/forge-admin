@@ -391,3 +391,30 @@ xmllint --noout forge-framework/forge-plugin-parent/forge-plugin-generator/src/m
 过程中修正：前端组件测试最初依赖 Naive Teleport/组件内部 DOM，改为断言组件公开状态与 emit；移除无 Dialog Provider 时的原生 confirm，保持项目消息交互。pnpm 包装器尝试安装依赖时因 ignored-builds 退出并写入 workspace 占位行，已完整恢复该非业务改动，随后全部命令直接复用现有 node_modules。后端首次探测因 shell 未暴露 Maven/JDK，改用已缓存且前阶段验证过的 Java 17/Maven 3.9.9 工具链。
 
 未启动 Admin/Flow/MySQL/Redis，未执行迁移或真实流程，没有新常驻服务。真实待办/已办/我发起、应用发布后的采购 CODE 模板范围、PDF/物理打印仍留 T44；M5c 的鉴权资源加载和执行事件收口尚未完成。
+
+## 2026-09-19 · M5c 鉴权资源、流程签名与审计收口
+
+继续在 `/Users/mini32g/Desktop/project/forge-admin` 的 `forge-native-print` 分支执行，只 commit、不 push；既有 `.DS_Store` 保留且不暂存。代码开发完成后由用户执行真实环境验证，本阶段未启动 Admin/Flow/MySQL/Redis、未执行迁移、PDF 或物理打印。
+
+实现：新增 `runtime/printResourceLoader.js` 作为运行时资源错误边界，复用既有鉴权 HTTP Blob 下载、10 秒总超时、AbortSignal、图片类型/10MiB 限制和 Blob URL 清理。资源取消映射为 `PRINT_CANCELLED`，非法、缺少解析器或未就绪资源映射为 `RESOURCE_FAILED`，不把底层响应或签名内容写入审计。`PrintPreview` 在资源全部完成后才测量和分页。
+
+补齐流程签名的实际纸面路径：资源引擎按字段目录识别 TABLE 的 IMAGE 列，从 `flow.history` 逐行读取 fileId，经同一鉴权加载器下载并解码；准备层生成图片单元格并按图片高度参与分页，渲染器输出 Blob 图片，不再把签名 fileId 当文本打印。服务端既有投影会把 IMAGE 列加入文件授权集合，新增测试固定该约束。
+
+审计收口：客户端仍只提交 `DIALOG_OPENED` 或 `FAILED`；FAILED 必须只有白名单 errorCode 且 pageCount 为空。响应新增固定为 false 的 `physicalOutputConfirmed`，说明浏览器调用打印对话框无法证明物理出纸。模板选择和预览准备不会记录 DIALOG_OPENED。
+
+验证：
+
+```bash
+# forge-admin-ui
+./node_modules/.bin/vitest run src/components/print src/stores/print src/api/__tests__/print.spec.js
+./node_modules/.bin/eslint <本阶段 11 个前端源码/测试文件>
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+
+# forge-server，Java 17 / Maven 3.9.9 / 隔离 settings
+mvn -s /private/tmp/forge-print-maven-settings.xml -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-print -am -Dtest='Print*' -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -s /private/tmp/forge-print-maven-settings.xml -pl forge-admin-server -am package -DskipTests
+```
+
+结果：前端打印域 16 文件 98 项、后端打印插件 17 类 107 项全部通过；最终合并回归进一步覆盖流程入口/BPMN 策略，前端 22 文件 133 项；后端打印插件 107 + generator 113 + 采购 CODE Provider 2，共 222 项，全部 0 failure/error/skipped。定向 ESLint 无输出；Vite 9364 modules 构建成功；Admin 46 模块 BUILD SUCCESS。第一次 Maven 探测未带 `-Penable-tests`，只编译未运行测试，不计入通过证据；启用 profile 后新增测试夹具最初仍保留模板静态资源，修正夹具清空 resources 后 7 项定向及完整回归均通过。项目既有 Vite native config、CSS `//` 注释、dynamic import、组件重复注册 stderr 和 Lombok builder 警告未扩大处理。
+
+Spec 审查：T39 完成，M1–M5 代码闭环完成；M6 的 T40/T42 仍需真实环境浏览器/流程/PDF/打印机结果。代码审查：签名仍是受控 fileId，无 URL/token 写入模板或 iframe；资源失败先于打印会话；图片行高进入分页；审计无正文/异常堆栈且终态幂等。人工验收与回滚见 `verification/user-acceptance.md`。

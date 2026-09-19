@@ -16,4 +16,9 @@ describe('safe paper rendering', () => {
     expect(wrapper.find('b').exists()).toBe(false)
     expect(wrapper.find('[role=columnheader]').text()).toBe('<b>名称</b>')
   })
+  it('renders an authenticated signature image inside a table cell', () => {
+    const wrapper = mount(PrintTable, { props: { node: { id: 'history', widthMm: 80, rows: [{ kind: 'data', heightMm: 20, cells: [{ widthMm: 80, type: 'IMAGE', text: '', src: 'blob:signature', imageHeightMm: 18 }] }] } } })
+    expect(wrapper.get('img').attributes('src')).toBe('blob:signature')
+    expect(wrapper.text()).not.toContain('blob:signature')
+  })
 })

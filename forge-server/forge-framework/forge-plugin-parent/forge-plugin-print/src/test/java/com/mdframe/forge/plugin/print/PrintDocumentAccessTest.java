@@ -52,4 +52,25 @@ class PrintDocumentAccessTest extends PrintServiceFixture {
         fails(400, () -> projector.project(new PrintData(Map.of("number", Map.of("hidden", "secret")), Map.of(), Map.of()), needs, adapter.fields));
         fails(400, () -> documents.image("https://external.invalid/a.png", new HashSet<>()));
     }
+
+    @Test
+    void flowHistorySignatureColumnRequiresAndProjectsItsAuthorizedFile() throws Exception {
+        var tree = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(schema);
+        var body = tree.withArray("body");
+        body.removeAll();
+        tree.withArray("resources").removeAll();
+        body.add(json.readTree("""
+                {"id":"history","kind":"TABLE","collectionPath":"flow.history","repeatHeader":true,
+                 "columns":[{"id":"signature","field":"signature","title":"办理签名","widthMm":80}]}
+                """));
+        var fields = new PrintFieldCatalogVO(List.of(
+                new PrintFieldCatalogVO.Field("flow.history", "审批记录", "COLLECTION"),
+                new PrintFieldCatalogVO.Field("flow.history.signature", "办理签名", "IMAGE")));
+        var documents = new PrintDocumentAccess(json);
+        var needs = documents.requirements(protocol.validate(json.writeValueAsString(tree)), fields);
+        var data = new PrintData(Map.of(), Map.of(), Map.of("history", List.of(Map.of("signature", "signature_1"))));
+        var projected = new PrintDataProjector(json, documents).project(data, needs, fields);
+        assertThat(projected.fileIds()).containsExactly("signature_1");
+        assertThat(projected.data().flow()).containsEntry("history", List.of(Map.of("signature", "signature_1")));
+    }
 }

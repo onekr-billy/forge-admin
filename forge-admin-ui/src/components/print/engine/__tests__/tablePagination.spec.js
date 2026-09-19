@@ -48,4 +48,15 @@ describe('whole-row pagination', () => {
     context.children.items.push({ name: '501' })
     expect(() => layoutPrintDocument(doc, context, options)).toThrow(expect.objectContaining({ code: 'ROW_LIMIT' }))
   })
+  it('keeps prepared signatures as image cells instead of exposing file ids as text', () => {
+    const { doc, context, options } = setup(1)
+    doc.body[0].collectionPath = 'flow.history'
+    doc.body[0].columns = [{ id: 'signature', field: 'signature', title: '签名', widthMm: 80 }]
+    context.flow = { history: [{ signature: 'signature_1' }] }
+    options.catalog = [{ path: 'flow.history', type: 'COLLECTION' }, { path: 'flow.history.signature', type: 'IMAGE' }]
+    options.resources = { images: new Map([['table:items:0:signature', 'blob:signature']]) }
+    const row = layoutPrintDocument(doc, context, options).pages[0].fragments[0].rows.find(item => item.kind === 'data')
+    expect(row.cells[0]).toMatchObject({ type: 'IMAGE', text: '', src: 'blob:signature' })
+    expect(row.cells[0].text).not.toContain('signature_1')
+  })
 })

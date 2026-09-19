@@ -1,4 +1,4 @@
-import { resolveBinding } from '../protocol/binding'
+import { readOwnPath, resolveBinding, resolveCollection } from '../protocol/binding'
 import { formatValue } from '../protocol/formatters'
 import { PRINT_LIMITS, PrintError } from '../protocol/types'
 import { isSafeImageReference } from '../protocol/validate'
@@ -29,6 +29,10 @@ async function decodeImage(src, signal) {
   finally {
     image.removeAttribute('src')
   }
+}
+
+export function tableImageResourceKey(sectionId, rowIndex, columnId) {
+  return `table:${sectionId}:${rowIndex}:${columnId}`
 }
 
 export async function preparePrintResources(document, context, options = {}) {
@@ -74,39 +78,43 @@ export async function preparePrintResources(document, context, options = {}) {
         }
       }
     }
-    const elements = [...document.header.elements, ...document.body.flatMap(section => section.elements || []), ...document.footer.elements]
     const aliases = new Map(document.resources.map(resource => [resource.id, resource.fileId]))
+    const loadImage = async (key, reference, path) => {
+      if (reference === null || reference === '') {
+        return
+      }
+      location = path
+      if (!isSafeImageReference(reference)) {
+        throw new PrintError('INVALID_RESOURCE', '图片引用无效', location)
+      }
+      const fileId = aliases.get(reference) || reference
+      let src = files.get(fileId)
+      if (!src) {
+        if (reference.startsWith('data:')) {
+          src = reference
+        }
+        else {
+          if (!options.resolveFile) {
+            throw new PrintError('RESOURCE_RESOLVER_REQUIRED', '缺少鉴权文件读取能力', location)
+          }
+          const blob = await abortable(options.resolveFile(fileId, { signal }), signal)
+          if (!(blob instanceof Blob) || !['image/png', 'image/jpeg', 'image/webp'].includes(blob.type) || blob.size > 10 * 1024 * 1024) {
+            throw new PrintError('INVALID_RESOURCE', '文件不是受支持的图片或体积超过限制', location)
+          }
+          src = (options.createObjectURL || (value => URL.createObjectURL(value)))(blob)
+          urls.add(src)
+        }
+        await abortable((options.decodeImage || decodeImage)(src, signal), signal)
+        files.set(fileId, src)
+      }
+      images.set(key, src)
+    }
+    const elements = [...document.header.elements, ...document.body.flatMap(section => section.elements || []), ...document.footer.elements]
     for (const element of elements) {
       location = element.id
       let src
       if (element.type === 'IMAGE') {
-        const reference = resolveBinding(element.binding, context)
-        if (reference === null || reference === '') {
-          continue
-        }
-        if (!isSafeImageReference(reference)) {
-          throw new PrintError('INVALID_RESOURCE', '图片引用无效', location)
-        }
-        const fileId = aliases.get(reference) || reference
-        src = files.get(fileId)
-        if (!src) {
-          if (reference.startsWith('data:')) {
-            src = reference
-          }
-          else {
-            if (!options.resolveFile) {
-              throw new PrintError('RESOURCE_RESOLVER_REQUIRED', '缺少鉴权文件读取能力', location)
-            }
-            const blob = await abortable(options.resolveFile(fileId, { signal }), signal)
-            if (!(blob instanceof Blob) || !['image/png', 'image/jpeg', 'image/webp'].includes(blob.type) || blob.size > 10 * 1024 * 1024) {
-              throw new PrintError('INVALID_RESOURCE', '文件不是受支持的图片或体积超过限制', location)
-            }
-            src = (options.createObjectURL || (value => URL.createObjectURL(value)))(blob)
-            urls.add(src)
-          }
-          await abortable((options.decodeImage || decodeImage)(src, signal), signal)
-          files.set(fileId, src)
-        }
+        await loadImage(element.id, resolveBinding(element.binding, context), element.id)
       }
       else if (['BARCODE', 'QRCODE'].includes(element.type)) {
         const text = formatValue(resolveBinding(element.binding, context), element.format)
@@ -115,6 +123,19 @@ export async function preparePrintResources(document, context, options = {}) {
       }
       if (src) {
         images.set(element.id, src)
+      }
+    }
+    const fieldTypes = new Map((options.catalog || []).map(field => [field.path, field.type]))
+    for (const section of document.body.filter(item => item.kind === 'TABLE')) {
+      const rows = resolveCollection(section.collectionPath, context)
+      for (const column of section.columns) {
+        if (fieldTypes.get(`${section.collectionPath}.${column.field}`) !== 'IMAGE') {
+          continue
+        }
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+          const path = `${section.collectionPath}[${rowIndex}].${column.field}`
+          await loadImage(tableImageResourceKey(section.id, rowIndex, column.id), readOwnPath(rows[rowIndex], column.field), path)
+        }
       }
     }
     if (signal.aborted) {

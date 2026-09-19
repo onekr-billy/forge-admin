@@ -74,6 +74,11 @@ export function createBrowserMeasurer(document = globalThis.document) {
     }
     let heightMm = 0
     for (const cell of cells) {
+      if (cell.type === 'IMAGE' && cell.src) {
+        const inset = (cell.style?.paddingMm ?? 1) + (cell.style?.borderWidthMm ?? 0.15)
+        heightMm = Math.max(heightMm, cell.imageHeightMm + 2 * inset)
+        continue
+      }
       if (cell.text.length > PRINT_LIMITS.textLength) {
         throw new PrintError('TEXT_TOO_LONG', '明细单元格文本超过限制')
       }

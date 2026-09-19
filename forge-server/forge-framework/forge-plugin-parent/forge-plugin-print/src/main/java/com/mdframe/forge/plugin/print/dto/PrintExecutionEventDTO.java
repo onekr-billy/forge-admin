@@ -12,6 +12,9 @@ public record PrintExecutionEventDTO(@NotNull PrintExecutionResult result, @Min(
     @JsonIgnore
     @AssertTrue
     public boolean isEventValid() {
-        return result == PrintExecutionResult.DIALOG_OPENED ? pageCount != null && errorCode == null : result == PrintExecutionResult.FAILED && errorCode != null && ERRORS.contains(errorCode);
+        return result == PrintExecutionResult.DIALOG_OPENED
+                ? pageCount != null && errorCode == null
+                : result == PrintExecutionResult.FAILED && pageCount == null
+                && errorCode != null && ERRORS.contains(errorCode);
     }
 }
