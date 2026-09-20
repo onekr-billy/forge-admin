@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -163,6 +164,7 @@ public class LowcodeSchemaValidator {
         if (!DATA_TYPES.contains(dataType)) {
             throw new BusinessException("不支持的数据类型: " + fieldSchema.getDataType());
         }
+        validateStorageConstraint(fieldSchema, dataType);
         String componentType = StringUtils.defaultIfBlank(fieldSchema.getComponentType(), "input");
         if (!COMPONENT_TYPES.contains(componentType)) {
             throw new BusinessException("不支持的控件类型: " + componentType);
@@ -174,6 +176,43 @@ public class LowcodeSchemaValidator {
         String sensitiveType = StringUtils.defaultIfBlank(fieldSchema.getSensitiveType(), "NONE").toUpperCase(Locale.ROOT);
         if (!SENSITIVE_TYPES.contains(sensitiveType)) {
             throw new BusinessException("不支持的敏感类型: " + fieldSchema.getSensitiveType());
+        }
+    }
+
+    private void validateStorageConstraint(LowcodeFieldSchema field, String dataType) {
+        String label = StringUtils.defaultIfBlank(field.getLabel(), field.getField());
+        Integer length = field.getLength();
+        if ("varchar".equals(dataType) && length != null && (length < 1 || length > 2048)) {
+            throw new BusinessException("字段“" + label + "”最大字符数必须在 1 到 2048 之间");
+        }
+        if ("char".equals(dataType) && length != null && (length < 1 || length > 255)) {
+            throw new BusinessException("字段“" + label + "”最大字符数必须在 1 到 255 之间");
+        }
+        if ("decimal".equals(dataType)) {
+            int totalDigits = LowcodeFieldConstraintSupport.decimalTotalDigits(field);
+            int scale = LowcodeFieldConstraintSupport.decimalScale(field);
+            if (totalDigits < 1 || totalDigits > 65 || scale < 0 || scale >= totalDigits) {
+                throw new BusinessException("字段“" + label + "”的总位数必须为 1 到 65，且小数位必须小于总位数");
+            }
+        }
+        if (LowcodeFieldConstraintSupport.isNumeric(field)) {
+            validateNumericProp(field, label, "min", "最小值");
+            validateNumericProp(field, label, "max", "最大值");
+            BigDecimal minimum = LowcodeFieldConstraintSupport.configuredMinimum(field);
+            BigDecimal maximum = LowcodeFieldConstraintSupport.configuredMaximum(field);
+            if (minimum != null && maximum != null && minimum.compareTo(maximum) > 0) {
+                throw new BusinessException("字段“" + label + "”的最小值不能大于最大值");
+            }
+        }
+    }
+
+    private void validateNumericProp(LowcodeFieldSchema field, String label, String key, String propLabel) {
+        if (field.getBasicProps() == null || !field.getBasicProps().containsKey(key)) {
+            return;
+        }
+        Object value = field.getBasicProps().get(key);
+        if (value != null && LowcodeFieldConstraintSupport.decimalValue(value) == null) {
+            throw new BusinessException("字段“" + label + "”的" + propLabel + "必须为有效数字");
         }
     }
 

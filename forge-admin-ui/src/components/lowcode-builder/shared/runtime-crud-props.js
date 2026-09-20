@@ -26,6 +26,11 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     designPreview,
     options,
     rowKey: config.rowKey || 'id',
+    formOnly: options.formOnly ?? config.formOnly ?? false,
+    formOnlyTitle: options.formOnlyTitle ?? config.formOnlyTitle,
+    formOnlySubmitText: options.formOnlySubmitText ?? config.formOnlySubmitText,
+    formOnlySuccessTitle: options.formOnlySuccessTitle ?? config.formOnlySuccessTitle,
+    formOnlySuccessDescription: options.formOnlySuccessDescription ?? config.formOnlySuccessDescription,
     formOpenMode,
     tabWorkspace: options.tabWorkspace || config.tabWorkspace || {},
     modalType: resolveModalType(formOpenMode, options, config, designerLayout),
@@ -69,6 +74,8 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     formActions: Array.isArray(options.formActions) ? options.formActions : [],
     runtimeActions: Array.isArray(options.runtimeActions) ? options.runtimeActions : [],
     businessObjectCode: config.objectCode || options.businessObjectCode || '',
+    showDataChangeLog: designerLayout.showDataChangeLog === true || options.showDataChangeLog === true,
+    dataAuditObjectId: options.dataAuditObjectId || '',
   }
 }
 

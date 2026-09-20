@@ -380,12 +380,12 @@
                 驳回策略
               </div>
               <div class="approval-setting-desc">
-                线性审批未画驳回分支时，按此策略自动补回路。已手工设计驳回路径的节点不会被覆盖。
+                审批人点击普通“驳回”时按此策略处理。节点单独开启“退回发起人修改”后，该动作始终进入发起人修改节点，不受这里的结束策略影响。
               </div>
               <n-radio-group v-model:value="modelInfo.rejectStrategy" name="rejectStrategy">
                 <n-space vertical :size="8">
                   <n-radio value="TO_INITIATOR_MODIFY">
-                    驳回至发起人修改（推荐）
+                    普通驳回退回发起人修改（推荐）
                   </n-radio>
                   <n-radio value="TO_END">
                     驳回即结束流程

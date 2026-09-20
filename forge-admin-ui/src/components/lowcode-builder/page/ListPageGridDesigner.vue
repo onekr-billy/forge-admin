@@ -982,6 +982,26 @@
                     {{ selectedBlock.blockType === 'AiCrudPage' ? '配置列表字段' : '配置字段' }}（{{ selectedBlock.fieldRefs?.length || 0 }}/{{ fields.length }}）
                   </n-button>
                 </n-form-item>
+                <n-form-item v-if="showChildListDisplaySetting" label="子表行展示">
+                  <div class="child-list-display">
+                    <n-radio-group
+                      :value="selectedBlock.props?.childListDisplayMode || 'aggregate'"
+                      @update:value="patchBlockProps(selectedBlock.id, { childListDisplayMode: $event || 'aggregate' })"
+                    >
+                      <n-space vertical size="small">
+                        <n-radio value="aggregate">
+                          聚合到一行
+                        </n-radio>
+                        <n-radio value="expand">
+                          拆成多条
+                        </n-radio>
+                      </n-space>
+                    </n-radio-group>
+                    <p class="field-help">
+                      {{ resolveChildListDisplayHint(selectedBlock.props?.childListDisplayMode) }}
+                    </p>
+                  </div>
+                </n-form-item>
                 <n-form-item v-if="selectedBlock.blockType === 'search-form'" label="可折叠">
                   <n-switch
                     :value="!!selectedBlock.props?.collapsible"
@@ -1349,8 +1369,13 @@
                                   <component :is="resolveCrudFieldIconComponent(element)" />
                                 </n-icon>
                                 <div class="bitable-field-name">
-                                  <span>{{ resolveCrudFieldInlineTitle(element) }}</span>
-                                  <small>{{ element.field }}</small>
+                                  <span>
+                                    <em class="bitable-field-scope" :class="isChildListField(element) ? 'is-child' : 'is-main'">
+                                      {{ isChildListField(element) ? '子表' : '主表' }}
+                                    </em>
+                                    {{ resolveCrudFieldInlineTitle(element) }}
+                                  </span>
+                                  <small>{{ isChildListField(element) ? (element.modelName || element.sourceLabel || '子表') : '主表' }} · {{ element.sourceField || element.field }}</small>
                                 </div>
                                 <button
                                   type="button"
@@ -4206,11 +4231,15 @@ import {
   createDefaultBlockStyle,
   createDefaultListGridLayout,
   createGridBlock,
+  isChildListField,
+  isListFieldSelectable,
   isPageFieldVisible,
   LIST_PAGE_DESIGN_WIDTH,
   LIST_PAGE_GRID_COLS,
   listPageBlockCatalog,
+  resolveChildListDisplayHint,
   resolveDefaultTreeConfig,
+  resolveListFieldTitle,
   resolveListPageBlockMeta,
   resolveTreeFieldOptions,
   resolveTreeSourceRefs,
@@ -5337,10 +5366,15 @@ function handleUnifiedPaletteClick(spec) {
   appendBlock(blockType)
 }
 
+const showChildListDisplaySetting = computed(() => {
+  return selectedBlock.value?.blockType === 'AiCrudPage'
+    && props.fields.some(field => isChildListField(field))
+})
+
 const crudTablePanelFields = computed(() => {
   if (selectedBlock.value?.blockType !== 'AiCrudPage')
     return []
-  const tableFields = props.fields.filter(field => isPageFieldVisible(field, 'table') && field?.field)
+  const tableFields = props.fields.filter(field => isListFieldSelectable(field, 'table') && field?.field)
   const refIndex = new Map(resolveSelectedFieldRefs(selectedBlock.value, 'table', props.fields).map((ref, index) => [ref, index]))
   return [...tableFields].sort((left, right) => {
     const leftIndex = refIndex.has(left.field) ? refIndex.get(left.field) : Number.MAX_SAFE_INTEGER
@@ -8320,7 +8354,7 @@ function toggleCrudTableField(fieldName = '', visible = true) {
 
 function resolveCrudFieldInlineTitle(field = {}) {
   const setting = selectedBlock.value?.props?.fieldSettings?.[field.field] || {}
-  return setting.title || field.label || field.field
+  return resolveListFieldTitle(field, setting, field.field)
 }
 
 function resolveCrudTablePanelFieldRefs(rows = crudTablePanelFields.value) {
@@ -8391,7 +8425,7 @@ function applySelectedTableGlobalAlign(value) {
   const tableRefs = resolveSelectedFieldRefs(selectedBlock.value, 'table', props.fields)
   const fieldRefs = tableRefs.length
     ? tableRefs
-    : props.fields.filter(field => isPageFieldVisible(field, 'table')).map(field => field.field)
+    : props.fields.filter(field => isListFieldSelectable(field, 'table')).map(field => field.field)
   fieldRefs.forEach((fieldName) => {
     nextSettings[fieldName] = {
       ...(nextSettings[fieldName] || {}),
@@ -11436,6 +11470,43 @@ function resolveCrudFieldLabel(field = {}) {
   line-height: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bitable-field-scope {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+
+.bitable-field-scope.is-main {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.bitable-field-scope.is-child {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.child-list-display {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.child-list-display .field-help {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .bitable-field-name small {

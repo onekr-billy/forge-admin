@@ -9,6 +9,8 @@ import lombok.Getter;
 public enum BusinessDocumentFlowStatus {
 
     NOT_STARTED("NOT_STARTED", "未发起"),
+    /** 兼容历史关联数据中的启动中状态。 */
+    STARTED("STARTED", "已启动"),
     RUNNING("RUNNING", "运行中"),
     IN_PROCESS("IN_PROCESS", "流程中"),
     /** 已驳回到发起人修改节点，流程仍在运行，单据可编辑并重提。 */

@@ -1,10 +1,17 @@
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
 import GridBlockRenderer from '../GridBlockRenderer.vue'
 
 const requestMock = vi.hoisted(() => vi.fn())
 const postEncryptMock = vi.hoisted(() => vi.fn())
+
+// 只替换子组件的实现，沿用真实 props 契约，隔离 CRUD 的路由/网络等依赖。
+vi.mock('@/components/ai-form/AiCrudPage.vue', async () => {
+  const { aiCrudPageProps } = await import('@/components/ai-form/AiCrudPageProps')
+  return { default: { name: 'AiCrudPage', props: aiCrudPageProps, template: '<div class="crud-props-probe" />' } }
+})
 
 vi.mock('@/utils', () => ({
   postEncrypt: postEncryptMock,
@@ -14,6 +21,11 @@ vi.mock('@/utils', () => ({
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {}, params: {}, path: '/', fullPath: '/', name: 'test' }),
   useRouter: () => ({ push: vi.fn(), resolve: vi.fn(() => ({ href: '/' })) }),
+}))
+
+vi.mock('@/router', () => ({
+  default: { push: vi.fn(), resolve: vi.fn(() => ({ href: '/' })) },
+  router: { push: vi.fn(), resolve: vi.fn(() => ({ href: '/' })) },
 }))
 
 const STUBS = {
@@ -86,6 +98,7 @@ describe('grid block renderer data source experience', () => {
       error: vi.fn(),
       success: vi.fn(),
       warning: vi.fn(),
+      info: vi.fn(),
     }
   })
 
@@ -95,6 +108,53 @@ describe('grid block renderer data source experience', () => {
     expect(wrapper.find('.data-source-guide').text()).toContain('选择业务对象后，字段将自动生成')
     await wrapper.find('.data-source-guide button').trigger('click')
     expect(wrapper.emitted('requestDataSource')).toEqual([['form_1']])
+  })
+
+  it.each([
+    [{ formOnly: true }, true],
+    [{ objectRef: { pageMode: 'form' } }, true],
+    [{ objectRef: { pageKey: 'form' } }, true],
+    [{ formOnly: false, objectRef: { pageMode: 'form' } }, false],
+    [{ objectRef: { pageMode: 'list' } }, false],
+    [{ objectRef: { pageMode: 'crud', pageKey: 'form' } }, false],
+  ])('passes the page shape to the actual CRUD component: %o', (blockProps, formOnly) => {
+    const wrapper = mountAiForm({
+      block: { id: 'crud_shape', blockType: 'AiCrudPage', fieldRefs: ['customerName'], props: blockProps },
+      readonly: true,
+      runtimeInteractive: true,
+      dataSourceConfigured: true,
+      runtimeCrudProps: {
+        configKey: 'customer',
+        formOnly: true,
+        formOpenMode: 'flat',
+        editSchema: [{ field: 'customerName', label: '客户名称', type: 'input' }],
+        columns: [{ prop: 'customerName', label: '客户名称' }],
+      },
+    })
+    const crud = wrapper.findComponent(AiCrudPage)
+    expect(crud.props('formOnly')).toBe(formOnly)
+    expect(crud.props('editSchema')).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'customerName' })]))
+    expect(crud.props('columns')).toHaveLength(1)
+    expect(crud.props('formOpenMode')).toBe('flat')
+  })
+
+  it('renders a form-shaped static preview and retains submission protection', () => {
+    const wrapper = mountAiForm({
+      block: {
+        id: 'form_preview',
+        blockType: 'AiCrudPage',
+        fieldRefs: ['customerName'],
+        props: { formOnly: true, formOnlyTitle: '登记', formOnlySubmitText: '提交登记' },
+      },
+      dataSourceConfigured: true,
+      fields: [{ field: 'customerName', label: '客户名称', formVisible: true }],
+    })
+    const crud = wrapper.findComponent(AiCrudPage)
+    expect(crud.props('formOnly')).toBe(true)
+    expect(crud.props('formOnlyTitle')).toBe('登记')
+    expect(crud.props('formOnlySubmitText')).toBe('提交登记')
+    expect(crud.props('lazy')).toBe(true)
+    expect(crud.props('beforeSubmit')({})).toBe(false)
   })
 
   it('renders runtime object fields immediately when field refs have not been configured', () => {

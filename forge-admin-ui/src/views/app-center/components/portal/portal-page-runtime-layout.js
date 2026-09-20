@@ -1,13 +1,11 @@
+import { resolveCrudFormOnly } from '@/components/lowcode-builder/shared/runtime-crud-page-mode'
+
 export function isRuntimeAutoHeightBlock(block = {}) {
   if (block?.blockType === 'AiForm')
     return true
   if (block?.blockType !== 'AiCrudPage')
     return false
-  const props = block.props || {}
-  const objectRef = props.objectRef || {}
-  return props.formOnly === true
-    || objectRef.pageMode === 'form'
-    || objectRef.pageKey === 'form'
+  return resolveCrudFormOnly(block.props)
 }
 
 export function shouldUseContentSizedFlow(blocks = [], options = {}) {

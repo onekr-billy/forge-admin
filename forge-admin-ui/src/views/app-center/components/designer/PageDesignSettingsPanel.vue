@@ -49,6 +49,15 @@
         </n-form>
       </section>
 
+      <section v-else-if="activeSection === 'audit'" class="page-design-settings-card">
+        <header>
+          <h2>数据变更审计</h2>
+          <p>统一控制该业务对象是否记录数据变化、提交时是否要求说明原因，以及详情中是否显示历史。</p>
+        </header>
+        <DataAuditPolicyPanel v-if="boundObjectId" hide-title :object-id="boundObjectId" />
+        <n-empty v-else description="当前页面未绑定数据对象，无法启用审计" />
+      </section>
+
       <section v-else class="page-design-settings-card">
         <header>
           <h2>页面信息</h2>
@@ -78,8 +87,9 @@
 </template>
 
 <script setup>
-import { ColorPaletteOutline, EyeOutline, InformationCircleOutline } from '@vicons/ionicons5'
+import { ColorPaletteOutline, EyeOutline, InformationCircleOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
+import DataAuditPolicyPanel from '@/components/data-audit/DataAuditPolicyPanel.vue'
 import IconSelector from '@/components/IconSelector.vue'
 import { inAppPageTypes } from '../../in-app-builder/in-app-builder-schema'
 import { PAGE_SHAPE_TYPES } from '../../in-app-builder/page-shape-design'
@@ -97,6 +107,7 @@ const activeSection = ref('basic')
 const sections = [
   { key: 'basic', label: '基础信息', icon: ColorPaletteOutline },
   { key: 'display', label: '显示设置', icon: EyeOutline },
+  { key: 'audit', label: '数据审计', icon: ShieldCheckmarkOutline },
   { key: 'info', label: '页面信息', icon: InformationCircleOutline },
 ]
 
@@ -118,6 +129,11 @@ const objectLabel = computed(() => {
   if (!objectRef?.objectName && !objectRef?.objectCode)
     return '未绑定数据对象'
   return [objectRef.objectName, objectRef.objectCode].filter(Boolean).join(' · ')
+})
+
+const boundObjectId = computed(() => {
+  const objectRef = props.node.objectRef || {}
+  return objectRef.objectId || objectRef.id || ''
 })
 
 function mapPageModeToShape(value) {

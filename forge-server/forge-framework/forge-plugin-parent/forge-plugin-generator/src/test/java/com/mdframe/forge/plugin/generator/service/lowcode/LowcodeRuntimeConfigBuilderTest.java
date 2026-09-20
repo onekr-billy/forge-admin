@@ -374,6 +374,8 @@ class LowcodeRuntimeConfigBuilderTest {
         table.setZoneKey("table");
         table.setEnabled(true);
         table.setFieldRefs(new ArrayList<>(List.of("projectName", "pw_purchase_order_item__materialName")));
+        table.setProps(Map.of("fieldSettings", Map.of(
+                "pw_purchase_order_item__materialName", Map.of("title", "采购明细.物料名称"))));
         LowcodePageZone edit = new LowcodePageZone();
         edit.setZoneKey("edit");
         edit.setEnabled(true);
@@ -383,10 +385,42 @@ class LowcodeRuntimeConfigBuilderTest {
         LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
                 "pw_purchase_order", purchaseOrderModelSchema(), pageSchema);
         List<Map<String, Object>> columns = objectMapper.readValue(runtimeConfig.getColumnsSchema(), new TypeReference<>() { });
-        assertTrue(columns.stream().anyMatch(column -> "pw_purchase_order_item__materialName".equals(column.get("key"))));
+        Map<String, Object> childColumn = columns.stream()
+                .filter(column -> "pw_purchase_order_item__materialName".equals(column.get("key")))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("物料名称", childColumn.get("title"));
         List<Map<String, Object>> editSchema = objectMapper.readValue(runtimeConfig.getEditSchema(), new TypeReference<>() { });
         assertTrue(editSchema.stream().anyMatch(field -> "projectName".equals(field.get("field"))));
         assertFalse(editSchema.stream().anyMatch(field -> String.valueOf(field.get("field")).contains("__")));
+    }
+
+    @Test
+    @DisplayName("uses explicit list grid fields when the legacy table zone is stale")
+    void usesListGridFieldsWhenTableZoneIsStale() throws Exception {
+        LowcodePageSchema pageSchema = purchaseOrderMasterDetailPageSchema();
+        LowcodePageZone table = new LowcodePageZone();
+        table.setZoneKey("table");
+        table.setEnabled(true);
+        table.setFieldRefs(new ArrayList<>(List.of("projectName")));
+        pageSchema.setZones(new ArrayList<>(List.of(table)));
+        pageSchema.setListGridLayout(Map.of(
+                "items", List.of(Map.of(
+                        "blockType", "AiCrudPage",
+                        "fieldRefs", List.of("projectName", "pw_purchase_order_item__materialName"),
+                        "props", Map.of("fieldSettings", Map.of())
+                ))
+        ));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
+                "pw_purchase_order", purchaseOrderModelSchema(), pageSchema);
+        List<Map<String, Object>> columns = objectMapper.readValue(
+                runtimeConfig.getColumnsSchema(), new TypeReference<>() { });
+
+        assertEquals(
+                List.of("projectName", "pw_purchase_order_item__materialName", "actions"),
+                columns.stream().map(column -> String.valueOf(column.get("key"))).toList()
+        );
     }
 
     @Test
@@ -411,6 +445,69 @@ class LowcodeRuntimeConfigBuilderTest {
                 builder.buildRuntimeConfig("biz_inventory", modelSchema(), pageSchema));
         assertEquals("biz_inventory", runtimeConfig.getConfigKey());
         assertEquals(List.of("itemName"), editZone.getFieldRefs());
+    }
+
+    @Test
+    @DisplayName("publishes storage-safe text and numeric constraints")
+    void publishesStorageSafeFieldConstraints() throws Exception {
+        LowcodeFieldSchema title = new LowcodeFieldSchema();
+        title.setField("title");
+        title.setColumnName("title");
+        title.setLabel("标题");
+        title.setDataType("varchar");
+        title.setLength(32);
+        title.setComponentType("input");
+        title.setFormVisible(true);
+
+        LowcodeFieldSchema quantity = new LowcodeFieldSchema();
+        quantity.setField("quantity");
+        quantity.setColumnName("quantity");
+        quantity.setLabel("数量");
+        quantity.setDataType("int");
+        quantity.setComponentType("number");
+        quantity.setFormVisible(true);
+        quantity.setBasicProps(Map.of("max", 100, "min", -9_999_999_999L));
+
+        LowcodeFieldSchema amount = new LowcodeFieldSchema();
+        amount.setField("amount");
+        amount.setColumnName("amount");
+        amount.setLabel("金额");
+        amount.setDataType("decimal");
+        amount.setLength(10);
+        amount.setPrecision(2);
+        amount.setComponentType("number");
+        amount.setFormVisible(true);
+        amount.setBasicProps(Map.of("max", 100));
+
+        LowcodeModelSchema schema = new LowcodeModelSchema();
+        schema.setAppType("SINGLE");
+        schema.setTableMode("EXISTING");
+        schema.setTableName("field_constraint_contract");
+        schema.setBusinessName("字段约束合同");
+        schema.setFields(List.of(title, quantity, amount));
+
+        LowcodePageZone editZone = new LowcodePageZone();
+        editZone.setZoneKey("edit");
+        editZone.setComponentKey("edit-form");
+        editZone.setFieldRefs(List.of("title", "quantity", "amount"));
+        LowcodePageSchema page = new LowcodePageSchema();
+        page.setLayoutType("simple-crud");
+        page.setZones(new ArrayList<>(List.of(editZone)));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("field_constraint_contract", schema, page);
+        List<Map<String, Object>> editSchema = objectMapper.readValue(
+                runtimeConfig.getEditSchema(), new TypeReference<>() { });
+
+        Map<?, ?> titleProps = assertInstanceOf(Map.class, editSchema.get(0).get("props"));
+        Map<?, ?> quantityProps = assertInstanceOf(Map.class, editSchema.get(1).get("props"));
+        Map<?, ?> amountProps = assertInstanceOf(Map.class, editSchema.get(2).get("props"));
+        assertEquals(32, titleProps.get("maxlength"));
+        assertEquals(-2147483648, quantityProps.get("min"));
+        assertEquals(100, quantityProps.get("max"));
+        assertEquals(0, quantityProps.get("precision"));
+        assertEquals(-99999999.99d, ((Number) amountProps.get("min")).doubleValue(), 0.0001d);
+        assertEquals(100d, ((Number) amountProps.get("max")).doubleValue(), 0.0001d);
+        assertEquals(2, amountProps.get("precision"));
     }
 
     private LowcodeModelSchema modelSchema() {
@@ -506,7 +603,8 @@ class LowcodeRuntimeConfigBuilderTest {
         childRef.setFields(List.of(
                 Map.of("field", "id", "sourceField", "id", "columnName", "id", "label", "ID"),
                 Map.of("field", "purchaseId", "sourceField", "purchaseId", "columnName", "purchase_id", "label", "采购单ID"),
-                Map.of("field", "materialName", "sourceField", "materialName", "columnName", "material_name", "label", "物料名称")
+                Map.of("field", "materialName", "sourceField", "materialName", "columnName", "material_name",
+                        "label", "物料名称", "listVisible", false)
         ));
 
         LowcodePageSchema schema = new LowcodePageSchema();

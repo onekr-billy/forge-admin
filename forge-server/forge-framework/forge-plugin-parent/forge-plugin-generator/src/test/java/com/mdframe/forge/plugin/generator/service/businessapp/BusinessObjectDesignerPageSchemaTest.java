@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFieldDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.LinkageSchemaDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.ViewSchemaDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
@@ -426,6 +427,48 @@ class BusinessObjectDesignerPageSchemaTest {
         assertEquals("预售商品", target.getProps().get("tabTitle"));
         assertEquals("预售商品", target.getProps().get("relationName"));
         assertEquals("presale_items", target.getProps().get("relationKey"));
+    }
+
+    @Test
+    @DisplayName("keeps child list fields while compiling the view schema into page zones")
+    void keepsChildListFieldsWhenApplyingViewSchema() throws Exception {
+        BusinessObjectDesignerService service = designerService();
+        LowcodeModelSchema modelSchema = modelSchema();
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        LowcodePageModelRef childRef = new LowcodePageModelRef();
+        childRef.setModelCode("pw_purchase_order_item");
+        childRef.setModelName("采购明细");
+        childRef.setPrimary(false);
+        childRef.setFields(List.of(Map.of(
+                "field", "materialName",
+                "sourceField", "materialName",
+                "fieldRef", "pw_purchase_order_item__materialName",
+                "label", "物料名称"
+        )));
+        pageSchema.setModelRefs(List.of(childRef));
+        pageSchema.setZones(new ArrayList<>(List.of(zone("table", List.of("name")))));
+
+        ViewSchemaDTO viewSchema = new ViewSchemaDTO();
+        viewSchema.getList().put("columns", List.of(
+                Map.of("fieldCode", "name", "label", "名称", "visible", true, "order", 0),
+                Map.of("fieldCode", "pw_purchase_order_item__materialName", "label", "物料名称", "visible", true, "order", 1)
+        ));
+
+        Method sanitize = BusinessObjectDesignerService.class.getDeclaredMethod(
+                "sanitizeViewSchemaFieldRefs", ViewSchemaDTO.class, LowcodeModelSchema.class, LowcodePageSchema.class);
+        sanitize.setAccessible(true);
+        ViewSchemaDTO sanitized = (ViewSchemaDTO) sanitize.invoke(service, viewSchema, modelSchema, pageSchema);
+
+        Method apply = BusinessObjectDesignerService.class.getDeclaredMethod(
+                "applyViewSchemaToPageZones", LowcodePageSchema.class, LowcodeModelSchema.class, ViewSchemaDTO.class);
+        apply.setAccessible(true);
+        apply.invoke(service, pageSchema, modelSchema, sanitized);
+
+        LowcodePageZone table = pageSchema.getZones().stream()
+                .filter(item -> "table".equals(item.getZoneKey()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(List.of("name", "pw_purchase_order_item__materialName"), table.getFieldRefs());
     }
 
     private LowcodePageSchema ensurePageSchema(LowcodePageSchema pageSchema,

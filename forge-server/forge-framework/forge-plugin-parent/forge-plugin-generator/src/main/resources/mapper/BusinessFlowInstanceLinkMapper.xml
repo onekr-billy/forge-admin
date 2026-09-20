@@ -101,7 +101,7 @@
         WHERE tenant_id = #{tenantId}
           AND business_key = #{businessKey}
           AND (
-            flow_status IN ('STARTED', 'RUNNING', 'IN_PROCESS')
+            flow_status IN ('STARTED', 'RUNNING', 'IN_PROCESS', 'NEED_MODIFY')
             OR (end_time IS NULL AND (result IS NULL OR result = ''))
           )
         ORDER BY start_time DESC, create_time DESC, id DESC

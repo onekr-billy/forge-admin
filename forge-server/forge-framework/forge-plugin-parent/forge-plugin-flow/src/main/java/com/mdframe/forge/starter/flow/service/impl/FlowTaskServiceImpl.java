@@ -731,6 +731,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         Map<String, Object> completeVariables = variables != null ? new HashMap<>(variables) : new HashMap<>();
         completeVariables.put("approved", approved);
         completeVariables.put("approvalResult", approved ? "approve" : "reject");
+        // rejectToStart 是流程实例变量。每次普通动作都显式清零，避免上一个节点
+        // 的“退回发起人修改”标记残留并误命中后续专用路由。
+        completeVariables.put("rejectToStart", false);
         return completeVariables;
     }
 

@@ -96,6 +96,8 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     private FlowRecordParticipantService flowRecordParticipantService;
 
     private final Map<String, ReentrantLock> localFlowStartLocks = new ConcurrentHashMap<>();
+    private final FlowStarterContextRequirementResolver starterContextRequirementResolver =
+            new FlowStarterContextRequirementResolver();
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -178,9 +180,12 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             log.warn("[流程启动兼容] 已补齐历史固定审批人变量: processDefinitionId={}, count={}",
                     processDefinition.getId(), legacyFixedAssigneeCount);
         }
+        FlowStarterContextRequirementResolver.Requirements contextRequirements =
+                starterContextRequirementResolver.resolve(processDefinition.getId(), bpmnModel);
 
         // 自动注入上级领导变量（兼容 BPMN 中直接使用 ${initiatorLeader} 的老式写法）
-        if (userId != null && !userId.isEmpty() && flowOrgIntegrationService != null) {
+        if (contextRequirements.leader()
+                && userId != null && !userId.isEmpty() && flowOrgIntegrationService != null) {
             try {
                 String leaderId = flowOrgIntegrationService.getLeaderUserIdByLevel(userId, 1);
                 if (leaderId == null) {
@@ -199,7 +204,8 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         }
 
         // 自动注入行政区划编码（用于按区域查找审批人）
-        if (userId != null && !userId.isEmpty() && sysUserService != null) {
+        if (contextRequirements.region()
+                && userId != null && !userId.isEmpty() && sysUserService != null) {
             try {
                 SysUser user = sysUserService.selectUserById(Long.parseLong(userId));
                 if (user != null && user.getRegionCode() != null && !user.getRegionCode().isEmpty()) {
@@ -215,13 +221,15 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             }
         }
 
-        // 自动注入用户角色信息
-        if (userId != null && !userId.isEmpty() && sysUserService != null) {
+        // 按 BPMN 需求注入当前组织及用户角色信息
+        if ((contextRequirements.roles() || contextRequirements.activeOrg())
+                && userId != null && !userId.isEmpty()) {
             try {
                 LoginUser loginUser = SessionHelper.getLoginUser();
                 Long activeOrgId = loginUser == null ? null : loginUser.getActiveOrgId();
                 Long roleTenantId = loginUser == null ? tenantId : loginUser.getTenantId();
-                List<Long> roleIds = activeOrgId == null
+                List<Long> roleIds = !contextRequirements.roles()
+                        || sysUserService == null || activeOrgId == null
                         ? List.of()
                         : sysUserService.selectUserOrgRoleIds(Long.parseLong(userId), activeOrgId, roleTenantId);
                 if (roleIds != null && !roleIds.isEmpty()) {
@@ -232,7 +240,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
                     vars.put("startUserRoleIds", roleIdsStr);
                     log.info("自动注入用户角色ID变量：startUserRoleIds={}", roleIdsStr);
                 }
-                if (activeOrgId != null) {
+                if (contextRequirements.activeOrg() && activeOrgId != null) {
                     vars.put("startUserActiveOrgId", String.valueOf(activeOrgId));
                     log.info("自动注入当前组织变量：startUserActiveOrgId={}", activeOrgId);
                 }
@@ -242,7 +250,8 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         }
 
         // 自动注入组织ID信息
-        if (userId != null && !userId.isEmpty() && sysUserService != null) {
+        if (contextRequirements.organizations()
+                && userId != null && !userId.isEmpty() && sysUserService != null) {
             try {
                 List<Long> orgIds = sysUserService.selectUserOrgIds(Long.parseLong(userId));
                 if (orgIds != null && !orgIds.isEmpty()) {
@@ -285,8 +294,8 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         // 4. 启动流程（会触发 TASK_CREATED 事件，此时业务信息已存在）
         ProcessInstance processInstance;
         try {
-            processInstance = runtimeService.startProcessInstanceByKey(
-                    modelKey,
+            processInstance = runtimeService.startProcessInstanceById(
+                    processDefinition.getId(),
                     businessKey,
                     vars
             );
@@ -412,6 +421,16 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         String fallback = isBlank(candidateName) ? userId : candidateName.trim();
         if (isBlank(userId)) {
             return fallback;
+        }
+        try {
+            LoginUser loginUser = SessionHelper.getLoginUser();
+            if (loginUser != null && loginUser.getUserId() != null
+                    && userId.equals(String.valueOf(loginUser.getUserId()))
+                    && !isBlank(loginUser.getRealName())) {
+                return loginUser.getRealName().trim();
+            }
+        } catch (Exception e) {
+            log.debug("读取可信流程发起人姓名失败: userId={}", userId, e);
         }
         if (flowOrgIntegrationService != null) {
             try {

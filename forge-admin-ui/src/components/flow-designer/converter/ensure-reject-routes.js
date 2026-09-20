@@ -9,7 +9,10 @@
  * - TO_INITIATOR_MODIFY：驳回到共享「发起人修改」节点，重提回首个审批人
  *   （设计器新建流程默认；存量未声明属性时按 MANUAL，避免静默改写 BPMN）
  * - TO_END：驳回到结束事件
- * - MANUAL：不自动补，完全按设计器图走
+ * - MANUAL：不自动补普通驳回；节点显式开启“退回发起人修改”时仍补专用回路
+ *
+ * “退回发起人修改”不复用普通驳回条件：它由 rejectToStart=true 独立命中，
+ * 普通自动驳回分支则显式排除该标记，避免 TO_END 策略把专用动作直接结束。
  */
 
 import { NODE_TYPE } from '../constants/node-types.js'
@@ -20,7 +23,8 @@ export const REJECT_STRATEGY = Object.freeze({
   MANUAL: 'MANUAL',
 })
 
-const REJECT_CONDITION = '$' + '{approvalResult == \'reject\'}'
+const REJECT_CONDITION = '$' + '{approvalResult == \'reject\' && rejectToStart != true}'
+const REJECT_TO_START_CONDITION = '$' + '{approvalResult == \'reject\' && rejectToStart == true}'
 const INITIATOR_MODIFY_ID = 'Forge_InitiatorModify'
 const REJECT_END_ID = 'Forge_RejectEnd'
 
@@ -31,29 +35,41 @@ const REJECT_END_ID = 'Forge_RejectEnd'
  */
 export function ensureRejectRoutes(flowJson, rejectStrategy = REJECT_STRATEGY.MANUAL) {
   const strategy = normalizeRejectStrategy(rejectStrategy)
-  if (!flowJson || !Array.isArray(flowJson.nodes) || strategy === REJECT_STRATEGY.MANUAL)
+  if (!flowJson || !Array.isArray(flowJson.nodes))
+    return flowJson
+
+  const requiresRejectToStartRoute = flowJson.nodes.some(node =>
+    node.nodeType === NODE_TYPE.APPROVER
+    && !node.config?.initiatorModify
+    && !node.config?.systemRejectRoute
+    && node.config?.allowRejectToStart === true)
+  if (strategy === REJECT_STRATEGY.MANUAL && !requiresRejectToStartRoute)
     return flowJson
 
   const nodes = flowJson.nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }))
-  const edges = flowJson.edges.map(edge => ({ ...edge }))
+  const edges = (Array.isArray(flowJson.edges) ? flowJson.edges : []).map(edge => ({ ...edge }))
   const graph = { nodes, edges }
 
   const approvers = nodes.filter(node =>
     node.nodeType === NODE_TYPE.APPROVER
     && !node.config?.initiatorModify
     && !node.config?.systemRejectRoute
-    && node.config?.allowReject !== false)
+    && (node.config?.allowReject !== false || node.config?.allowRejectToStart === true))
 
   for (const approver of approvers) {
-    if (hasRejectOutbound(graph, approver.id))
-      continue
-    if (strategy === REJECT_STRATEGY.TO_END)
-      injectRejectToEnd(graph, approver)
-    else
-      injectRejectToInitiatorModify(graph, approver)
+    const allowRegularReject = approver.config?.allowReject !== false
+    if (allowRegularReject && strategy !== REJECT_STRATEGY.MANUAL
+      && !hasRegularRejectOutbound(graph, approver.id)) {
+      if (strategy === REJECT_STRATEGY.TO_END)
+        injectRejectToEnd(graph, approver)
+      else
+        injectRejectToInitiatorModify(graph, approver)
+    }
+    if (approver.config?.allowRejectToStart === true)
+      injectExplicitRejectToInitiatorModify(graph, approver)
   }
 
-  if (strategy === REJECT_STRATEGY.TO_INITIATOR_MODIFY)
+  if (strategy === REJECT_STRATEGY.TO_INITIATOR_MODIFY || requiresRejectToStartRoute)
     ensureInitiatorModifyResubmit(graph)
 
   return { ...flowJson, nodes: graph.nodes, edges: graph.edges }
@@ -72,26 +88,28 @@ export function normalizeRejectStrategy(value) {
   return REJECT_STRATEGY.MANUAL
 }
 
-function hasRejectOutbound(graph, nodeId) {
+function hasRegularRejectOutbound(graph, nodeId) {
   const outs = graph.edges.filter(edge => edge.source === nodeId)
   for (const edge of outs) {
-    if (isRejectEdge(edge))
+    if (isRegularRejectEdge(edge))
       return true
     const target = graph.nodes.find(node => node.id === edge.target)
     if (target?.nodeType !== NODE_TYPE.CONDITION)
       continue
-    if (graph.edges.some(next => next.source === target.id && isRejectEdge(next)))
+    if (graph.edges.some(next => next.source === target.id && isRegularRejectEdge(next)))
       return true
   }
   return false
 }
 
-function isRejectEdge(edge) {
+function isRegularRejectEdge(edge) {
   if (!edge)
+    return false
+  const condition = String(edge.condition || '')
+  if (/rejectToStart\s*==\s*true/.test(condition))
     return false
   if (edge.approvalResult === 'reject')
     return true
-  const condition = String(edge.condition || '')
   return /approvalResult\s*==\s*['"]reject['"]/.test(condition)
     || /approved\s*==\s*['"]?false['"]?/.test(condition)
 }
@@ -106,15 +124,79 @@ function injectRejectToInitiatorModify(graph, approver) {
   splitApproverWithRejectGateway(graph, approver, modifyId, `Forge_RejectGW_${approver.id}`)
 }
 
+function injectExplicitRejectToInitiatorModify(graph, approver) {
+  if (hasRejectToStartOutbound(graph, approver.id))
+    return
+  const modifyId = ensureInitiatorModify(graph)
+  const gateway = ensureRejectGateway(graph, approver, `Forge_RejectGW_${approver.id}`)
+  const alreadyExists = graph.edges.some(edge =>
+    edge.source === gateway.id
+    && /rejectToStart\s*==\s*true/.test(String(edge.condition || '')))
+  if (!alreadyExists) {
+    graph.edges.push({
+      id: `Forge_RejectToStartEdge_${approver.id}`,
+      source: gateway.id,
+      target: modifyId,
+      condition: REJECT_TO_START_CONDITION,
+      approvalResult: 'reject',
+      systemRejectRoute: true,
+    })
+  }
+
+  // 旧版自动生成的普通驳回边只有 approvalResult 条件。补上互斥判断，
+  // 避免点击“退回发起人修改”时普通分支和专用分支同时命中。
+  for (const edge of graph.edges.filter(item => item.source === gateway.id)) {
+    if (edge.systemRejectRoute === true && isRegularRejectEdge(edge))
+      edge.condition = REJECT_CONDITION
+  }
+}
+
+function hasRejectToStartOutbound(graph, nodeId) {
+  const visited = new Set()
+  const queue = [nodeId]
+  while (queue.length) {
+    const current = queue.shift()
+    if (visited.has(current))
+      continue
+    visited.add(current)
+    for (const edge of graph.edges.filter(item => item.source === current)) {
+      if (/rejectToStart\s*==\s*true/.test(String(edge.condition || '')))
+        return true
+      const target = graph.nodes.find(node => node.id === edge.target)
+      if (target?.nodeType === NODE_TYPE.CONDITION)
+        queue.push(target.id)
+    }
+  }
+  return false
+}
+
 /**
- * 把「审批人 → 下一节点」拆成「审批人 → 网关 → 下一节点 / 驳回目标」。
- * 若审批人没有出边，则只补驳回边到目标。
+ * 把「审批人 → 下一节点」拆成「审批人 → 网关 → 原出边 / 驳回目标」。
  */
 function splitApproverWithRejectGateway(graph, approver, rejectTargetId, gatewayId) {
-  if (graph.nodes.some(node => node.id === gatewayId))
+  const gateway = ensureRejectGateway(graph, approver, gatewayId)
+  if (graph.edges.some(edge => edge.source === gateway.id && isRegularRejectEdge(edge)))
     return
+  graph.edges.push({
+    id: `Forge_RejectEdge_${approver.id}`,
+    source: gateway.id,
+    target: rejectTargetId,
+    condition: REJECT_CONDITION,
+    approvalResult: 'reject',
+    systemRejectRoute: true,
+  })
+}
 
-  const forwardEdges = graph.edges.filter(edge => edge.source === approver.id && !isRejectEdge(edge))
+/**
+ * 在审批节点后插入一个系统排他网关，并把原出边整体迁到网关之后。
+ * 这样既能给手工流程图补专用退回分支，也不会覆盖原有条件和目标。
+ */
+function ensureRejectGateway(graph, approver, gatewayId) {
+  const existing = graph.nodes.find(node => node.id === gatewayId)
+  if (existing)
+    return existing
+
+  const outgoing = graph.edges.filter(edge => edge.source === approver.id)
   const gateway = {
     id: gatewayId,
     name: '驳回分支',
@@ -123,23 +205,23 @@ function splitApproverWithRejectGateway(graph, approver, rejectTargetId, gateway
   }
   graph.nodes.push(gateway)
 
-  if (forwardEdges.length === 0) {
-    const rejectEdgeId = `Forge_RejectEdge_${approver.id}`
-    graph.edges.push({
-      id: rejectEdgeId,
-      source: gatewayId,
-      target: rejectTargetId,
-      condition: REJECT_CONDITION,
-      approvalResult: 'reject',
-      systemRejectRoute: true,
-    })
-    graph.edges.push({
-      id: `Forge_ToGW_${approver.id}`,
-      source: approver.id,
-      target: gatewayId,
-      systemRejectRoute: true,
-    })
-    // 无前进边时，网关需要一条默认边，否则只有条件边；补一条到驳回结束/修改节点之外的兜底 end。
+  for (const edge of outgoing)
+    edge.source = gatewayId
+
+  graph.edges.push({
+    id: `Forge_ToGW_${approver.id}`,
+    source: approver.id,
+    target: gatewayId,
+    systemRejectRoute: true,
+  })
+
+  const defaultEdge = outgoing.find(edge => edge.isDefault === true)
+    || (outgoing.length === 1 && !outgoing[0].condition ? outgoing[0] : null)
+  if (defaultEdge) {
+    defaultEdge.isDefault = true
+    gateway.config.defaultFlowId = defaultEdge.id
+  }
+  if (outgoing.length === 0) {
     const endId = ensureRejectEnd(graph)
     const defaultEdgeId = `Forge_RejectDefault_${approver.id}`
     graph.edges.push({
@@ -150,37 +232,8 @@ function splitApproverWithRejectGateway(graph, approver, rejectTargetId, gateway
       systemRejectRoute: true,
     })
     gateway.config.defaultFlowId = defaultEdgeId
-    return
   }
-
-  // 保留原前进目标：把审批人出边改接到网关，再从网关默认接到原目标。
-  const primary = forwardEdges[0]
-  const originalTarget = primary.target
-  primary.target = gatewayId
-
-  const defaultEdgeId = `Forge_ApproveEdge_${approver.id}`
-  graph.edges.push({
-    id: defaultEdgeId,
-    source: gatewayId,
-    target: originalTarget,
-    isDefault: true,
-    systemRejectRoute: true,
-  })
-  gateway.config.defaultFlowId = defaultEdgeId
-
-  graph.edges.push({
-    id: `Forge_RejectEdge_${approver.id}`,
-    source: gatewayId,
-    target: rejectTargetId,
-    condition: REJECT_CONDITION,
-    approvalResult: 'reject',
-    systemRejectRoute: true,
-  })
-
-  // 其余前进边也改接到网关，避免审批人仍有直连旁路。
-  for (let i = 1; i < forwardEdges.length; i += 1) {
-    forwardEdges[i].target = gatewayId
-  }
+  return gateway
 }
 
 function ensureInitiatorModify(graph) {
@@ -213,10 +266,6 @@ function ensureRejectEnd(graph) {
     || (node.nodeType === NODE_TYPE.END && node.config?.endType === 'reject'))
   if (existing)
     return existing.id
-
-  const plainEnd = graph.nodes.find(node => node.nodeType === NODE_TYPE.END)
-  if (plainEnd)
-    return plainEnd.id
 
   graph.nodes.push({
     id: REJECT_END_ID,

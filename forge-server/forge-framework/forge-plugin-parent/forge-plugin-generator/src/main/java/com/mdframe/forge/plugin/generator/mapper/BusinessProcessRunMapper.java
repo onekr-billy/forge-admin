@@ -38,6 +38,10 @@ public interface BusinessProcessRunMapper extends BaseMapper<AiBusinessProcessRu
             @Param("tenantId") Long tenantId,
             @Param("businessKeys") Collection<String> businessKeys);
 
+    List<AiBusinessProcessRun> selectStartedByBusinessKeys(
+            @Param("tenantId") Long tenantId,
+            @Param("businessKeys") Collection<String> businessKeys);
+
     List<AiBusinessProcessRun> selectRecoverableRuns(@Param("tenantId") Long tenantId,
                                                       @Param("before") LocalDateTime before,
                                                       @Param("limit") Integer limit);

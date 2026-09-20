@@ -252,8 +252,15 @@ public class DynamicCrudExcelService {
             return finishFailure(result);
         }
 
-        for (Map<String, Object> row : importRows) {
-            dynamicCrudService.insert(configKey, row);
+        try (AutoCloseable ignored = com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder
+                .overrideSource(com.mdframe.forge.plugin.generator.enums.DataAuditSourceType.IMPORT)) {
+            for (Map<String, Object> row : importRows) {
+                dynamicCrudService.insert(configKey, row);
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ex.getMessage(), ex);
         }
 
         result.setSuccess(true);

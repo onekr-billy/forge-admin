@@ -321,6 +321,7 @@ import {
   LIST_PAGE_GRID_BASE_COL_WIDTH,
   LIST_PAGE_GRID_GAP,
   resolveDefaultTreeConfig,
+  resolveListFieldTitle,
   syncGridLayoutWithModel,
   syncPageSchemaWithModel,
 } from '@/components/lowcode-builder/page/page-schema'
@@ -1789,7 +1790,7 @@ function buildDesignerColumns(zone = {}, fieldMap = new Map()) {
     return {
       key: fieldCode,
       field: fieldCode,
-      title: setting.label || field.label || field.fieldName || fieldCode,
+      title: resolveListFieldTitle(field, setting, fieldCode),
       minWidth: Number(setting.width || field.width || 110),
       align: setting.align || undefined,
       ellipsis: { tooltip: true },

@@ -158,11 +158,11 @@
                 <header class="property-section-head">
                   <div>
                     <strong>数据约束</strong>
-                    <span>长度和格式属于字段级约束，会影响所有页面。</span>
+                    <span>这里限制数据库可保存的值，会自动应用到所有表单和保存接口。</span>
                   </div>
                 </header>
-                <n-grid :cols="supportsLength ? 2 : 1" :x-gap="12">
-                  <n-form-item-gi v-if="supportsLength" label="最大长度">
+                <n-grid v-if="supportsTextLength || isDecimalType" :cols="2" :x-gap="12">
+                  <n-form-item-gi v-if="supportsTextLength" label="最大字符数">
                     <n-input-number
                       v-model:value="form.length"
                       :min="1"
@@ -172,6 +172,55 @@
                       class="full-input"
                     />
                   </n-form-item-gi>
+                  <n-form-item-gi v-if="isDecimalType" label="总位数">
+                    <n-input-number
+                      :value="form.length"
+                      :min="1"
+                      :max="65"
+                      :show-button="false"
+                      :disabled="field.systemField"
+                      class="full-input"
+                      @update:value="onDecimalTotalDigitsChange"
+                    />
+                  </n-form-item-gi>
+                  <n-form-item-gi v-if="isDecimalType" label="小数位">
+                    <n-input-number
+                      v-model:value="form.precision"
+                      :min="0"
+                      :max="decimalPrecisionMax"
+                      :show-button="false"
+                      :disabled="field.systemField"
+                      class="full-input"
+                    />
+                  </n-form-item-gi>
+                </n-grid>
+                <n-grid v-if="isNumericDataType" :cols="2" :x-gap="12">
+                  <n-form-item-gi label="最小值">
+                    <n-input-number
+                      v-model:value="form.minValue"
+                      :show-button="false"
+                      :disabled="field.systemField"
+                      :placeholder="numericMinimumPlaceholder"
+                      clearable
+                      class="full-input"
+                    />
+                  </n-form-item-gi>
+                  <n-form-item-gi label="最大值">
+                    <n-input-number
+                      v-model:value="form.maxValue"
+                      :show-button="false"
+                      :disabled="field.systemField"
+                      :placeholder="numericMaximumPlaceholder"
+                      clearable
+                      class="full-input"
+                    />
+                  </n-form-item-gi>
+                </n-grid>
+                <div v-if="isNumericDataType" class="storage-constraint-hint">
+                  <strong>数据库可保存范围</strong>
+                  <span>{{ numericStorageHint }}</span>
+                </div>
+                <n-grid v-if="!isNumericDataType" :cols="1" :x-gap="12">
                   <n-form-item-gi label="常用校验">
                     <n-select
                       v-model:value="form.validationPreset"
@@ -183,7 +232,7 @@
                     />
                   </n-form-item-gi>
                 </n-grid>
-                <n-grid :cols="2" :x-gap="12">
+                <n-grid v-if="!isNumericDataType" :cols="2" :x-gap="12">
                   <n-form-item-gi label="校验提示">
                     <n-input
                       v-model:value="form.validationMessage"
@@ -834,7 +883,9 @@ const unifiedTargetFieldOptions = computed(() => {
   return referenceTargetFieldsMap.value[objectCode]?.options || []
 })
 const normalizedDataType = computed(() => String(form.dataType || '').toLowerCase())
-const supportsLength = computed(() => ['varchar', 'char', 'decimal'].includes(normalizedDataType.value))
+const supportsTextLength = computed(() => ['varchar', 'char'].includes(normalizedDataType.value))
+const isDecimalType = computed(() => normalizedDataType.value === 'decimal')
+const isNumericDataType = computed(() => ['tinyint', 'int', 'integer', 'bigint', 'decimal'].includes(normalizedDataType.value))
 const formulaEnabled = computed(() => !!form.formulaType)
 const formulaFeedbackLines = computed(() => {
   const result = formulaValidateResult.value
@@ -871,11 +922,21 @@ const canOpenFormulaPreview = computed(() => {
     && !form.formulaCrossObjectEnabled
 })
 const lengthMax = computed(() => {
-  if (normalizedDataType.value === 'decimal')
-    return 65
   if (normalizedDataType.value === 'char')
     return 255
   return 2048
+})
+const decimalPrecisionMax = computed(() => Math.max(0, Number(form.length || 1) - 1))
+const numericStorageRange = computed(() => resolveNumericStorageRange(form.dataType, form.length, form.precision))
+const numericMinimumPlaceholder = computed(() => numericStorageRange.value?.minimum || '不额外限制')
+const numericMaximumPlaceholder = computed(() => numericStorageRange.value?.maximum || '不额外限制')
+const numericStorageHint = computed(() => {
+  const range = numericStorageRange.value
+  if (!range)
+    return '当前字段类型没有数值范围。'
+  const custom = form.minValue !== null || form.maxValue !== null
+  const suffix = custom ? '；你设置的最小值、最大值会在该范围内进一步收紧。' : '；留空表示使用数据库范围。'
+  return `${range.description}：${range.minimum} ～ ${range.maximum}${suffix}`
 })
 const hasSafeRequiredDefault = computed(() => hasDefaultValue(form.defaultValue))
 const requiredDefaultHint = computed(() => {
@@ -1039,6 +1100,8 @@ function createFieldForm(field) {
     dataType: currentField.dataType || 'varchar',
     length: currentField.length ?? 255,
     precision: currentField.precision ?? 0,
+    minValue: normalizeNullableNumber(basicProps.min ?? basicProps.minimum),
+    maxValue: normalizeNullableNumber(basicProps.max ?? basicProps.maximum),
     required: !!currentField.required,
     defaultValue: normalizeDefaultValueForEditor(currentField.defaultValue, fieldType),
     searchable: !!currentField.searchable,
@@ -1176,6 +1239,16 @@ function normalizePayload(source) {
     basicProps.validation = validation
   else
     delete basicProps.validation
+  delete basicProps.minimum
+  delete basicProps.maximum
+  if (isNumericStorageType(source.dataType) && source.minValue !== null && source.minValue !== undefined)
+    basicProps.min = source.minValue
+  else
+    delete basicProps.min
+  if (isNumericStorageType(source.dataType) && source.maxValue !== null && source.maxValue !== undefined)
+    basicProps.max = source.maxValue
+  else
+    delete basicProps.max
   return {
     fieldName: source.fieldName,
     fieldCode: source.fieldCode,
@@ -1300,6 +1373,46 @@ function normalizeDefaultValueForEditor(value, fieldType) {
     return Number.isFinite(numeric) ? numeric : value
   }
   return value
+}
+
+function normalizeNullableNumber(value) {
+  if (value === null || value === undefined || value === '')
+    return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function isNumericStorageType(dataType) {
+  return ['tinyint', 'int', 'integer', 'bigint', 'decimal'].includes(String(dataType || '').toLowerCase())
+}
+
+function resolveNumericStorageRange(dataType, length, precision) {
+  const type = String(dataType || '').toLowerCase()
+  if (type === 'tinyint')
+    return { description: 'tinyint 固定整数范围', minimum: '-128', maximum: '127' }
+  if (type === 'int' || type === 'integer')
+    return { description: 'int 固定整数范围', minimum: '-2147483648', maximum: '2147483647' }
+  if (type === 'bigint')
+    return { description: 'bigint 固定整数范围', minimum: '-9223372036854775808', maximum: '9223372036854775807' }
+  if (type !== 'decimal')
+    return null
+  const totalDigits = Math.min(65, Math.max(1, Number(length || 18)))
+  const scale = Math.min(totalDigits - 1, Math.max(0, Number(precision ?? 2)))
+  const integerDigits = totalDigits - scale
+  const integerPart = '9'.repeat(integerDigits)
+  const fractionPart = scale ? `.${'9'.repeat(scale)}` : ''
+  const maximum = `${integerPart}${fractionPart}`
+  return {
+    description: `decimal(${totalDigits}, ${scale})，共 ${totalDigits} 位，其中 ${scale} 位小数`,
+    minimum: `-${maximum}`,
+    maximum,
+  }
+}
+
+function onDecimalTotalDigitsChange(value) {
+  form.length = value
+  if (form.precision >= value)
+    form.precision = Math.max(0, Number(value || 1) - 1)
 }
 
 function emptyDefaultValue(fieldType) {
@@ -2171,6 +2284,8 @@ function applyFieldTypeDefaults(fieldType) {
   if (!defaults)
     return
   Object.assign(form, defaults)
+  form.minValue = null
+  form.maxValue = null
   if (!['DICT', 'RADIO', 'CHECKBOX'].includes(fieldType))
     form.dictType = ''
 }
@@ -2672,6 +2787,22 @@ defineExpose({
 
 .field-constraint-config {
   gap: 8px;
+}
+
+.storage-constraint-hint {
+  display: grid;
+  gap: 2px;
+  margin: -2px 0 8px;
+  border-left: 2px solid var(--primary-color, #165dff);
+  color: var(--n-text-color-3, var(--text-secondary, #86909c));
+  font-size: 11px;
+  line-height: 1.55;
+  padding-left: 8px;
+}
+
+.storage-constraint-hint strong {
+  color: var(--n-text-color-2, var(--text-regular, #4e5969));
+  font-size: 11px;
 }
 
 .cascade-config {

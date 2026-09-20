@@ -38,6 +38,7 @@ class DynamicCrudServiceAutoGenerationTest {
             null,
             null,
             null,
+            null,
             null);
 
     @Test

@@ -38,6 +38,7 @@ import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDomainService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeComponentCatalog;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
+import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeFieldConstraintSupport;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeModelSchemaNormalizer;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeSchemaValidator;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
@@ -2645,9 +2646,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (StringUtils.isNotBlank(field.getReferenceDisplayField())) {
             props.put("referenceDisplayField", field.getReferenceDisplayField());
         }
-        if (field.getLength() != null) {
-            props.put("maxlength", field.getLength());
-        }
+        LowcodeFieldConstraintSupport.applyRuntimeConstraints(field, componentKey, props);
         component.put("props", props);
 
         Map<String, Object> layout = new LinkedHashMap<>();
@@ -2764,7 +2763,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (schema == null) {
             schema = buildDefaultViewSchema(modelSchema, pageSchema);
         }
-        return sanitizeViewSchemaFieldRefs(schema, modelSchema);
+        return sanitizeViewSchemaFieldRefs(schema, modelSchema, pageSchema);
     }
 
     private ViewSchemaDTO buildDefaultViewSchema(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
@@ -2794,11 +2793,12 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return schema;
     }
 
-    private ViewSchemaDTO sanitizeViewSchemaFieldRefs(ViewSchemaDTO schema, LowcodeModelSchema modelSchema) {
+    private ViewSchemaDTO sanitizeViewSchemaFieldRefs(ViewSchemaDTO schema, LowcodeModelSchema modelSchema,
+                                                      LowcodePageSchema pageSchema) {
         if (schema == null) {
             return null;
         }
-        Set<String> modelFields = lowcodeFieldMap(modelSchema).keySet();
+        Set<String> modelFields = resolvePageViewFieldRefs(modelSchema, pageSchema);
         if (modelFields.isEmpty()) {
             return schema;
         }
@@ -3415,7 +3415,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (pageSchema == null || modelSchema == null || viewSchema == null) {
             return;
         }
-        Set<String> modelFields = lowcodeFieldMap(modelSchema).keySet();
+        Set<String> modelFields = resolvePageViewFieldRefs(modelSchema, pageSchema);
         applySearchViewZone(pageSchema, modelFields, viewSchema.getSearch());
         applyListViewZone(pageSchema, modelFields, viewSchema.getList());
         applyDetailViewZone(pageSchema, modelFields, viewSchema.getDetail());
@@ -3432,6 +3432,35 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (!listGridLayout.isEmpty()) {
             pageSchema.setListGridLayout(new LinkedHashMap<>(listGridLayout));
         }
+    }
+
+    /**
+     * viewSchema 同时承载主表字段和列表中显式选择的子表字段。只按主模型清洗会在保存时
+     * 把 modelCode__field 子表引用从 table zone 删除，导致发布结果与列表画布不一致。
+     */
+    private Set<String> resolvePageViewFieldRefs(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
+        Set<String> fieldRefs = new LinkedHashSet<>(lowcodeFieldMap(modelSchema).keySet());
+        if (pageSchema == null || pageSchema.getModelRefs() == null) {
+            return fieldRefs;
+        }
+        for (LowcodePageModelRef modelRef : pageSchema.getModelRefs()) {
+            if (modelRef == null || modelRef.getFields() == null) {
+                continue;
+            }
+            boolean primary = Boolean.TRUE.equals(modelRef.getPrimary());
+            for (Map<String, Object> field : modelRef.getFields()) {
+                String sourceField = StringUtils.defaultIfBlank(text(field.get("sourceField")), text(field.get("field")));
+                if (StringUtils.isBlank(sourceField)) {
+                    continue;
+                }
+                String fieldRef = StringUtils.defaultIfBlank(text(field.get("fieldRef")),
+                        primary ? sourceField : safeModelKey(modelRef.getModelCode()) + "__" + sourceField);
+                if (StringUtils.isNotBlank(fieldRef)) {
+                    fieldRefs.add(fieldRef);
+                }
+            }
+        }
+        return fieldRefs;
     }
 
     private void applySearchViewZone(LowcodePageSchema pageSchema, Set<String> modelFields,

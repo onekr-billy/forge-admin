@@ -39,8 +39,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -53,6 +58,14 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
 
     private static final String MODEL_KEY_PATTERN = "^[A-Za-z][A-Za-z0-9_-]{1,63}$";
     private static final int MAX_MODEL_VERSIONS = 100;
+    private static final long START_CONFIG_CACHE_TTL_MILLIS = TimeUnit.SECONDS.toMillis(30);
+    private static final int START_CONFIG_CACHE_MAX_SIZE = 512;
+
+    /**
+     * 发起页只需要模型的节点摘要，不应在每次点击发起时重复解析完整 BPMN XML。
+     * 缓存键包含租户，缓存项再使用模型指纹校验，保证模型保存后下一次读取立即重建。
+     */
+    private final Map<String, StartConfigCacheEntry> startConfigCache = new ConcurrentHashMap<>();
 
     @Autowired(required = false)
     private RepositoryService repositoryService;
@@ -561,6 +574,32 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         if (model == null) {
             throw new IllegalArgumentException("流程模型不存在：" + modelKey);
         }
+        String cacheKey = buildStartConfigCacheKey(model);
+        String fingerprint = buildStartConfigFingerprint(model);
+        long now = System.currentTimeMillis();
+        StartConfigCacheEntry cached = startConfigCache.get(cacheKey);
+        if (cached != null && cached.expiresAt() > now && cached.fingerprint().equals(fingerprint)) {
+            return copyStartConfig(cached.config());
+        }
+
+        pruneStartConfigCache(now, cacheKey);
+        StartConfigCacheEntry resolved = startConfigCache.compute(cacheKey, (key, existing) -> {
+            if (existing != null
+                    && existing.expiresAt() > now
+                    && existing.fingerprint().equals(fingerprint)) {
+                return existing;
+            }
+            FlowStartConfig config = buildStartConfig(model);
+            return new StartConfigCacheEntry(
+                    fingerprint,
+                    copyStartConfig(config),
+                    now + START_CONFIG_CACHE_TTL_MILLIS);
+        });
+        return copyStartConfig(resolved.config());
+    }
+
+    /** 独立保留解析边界，便于回归验证缓存是否真正避免了 BPMN 重复解析。 */
+    protected FlowStartConfig buildStartConfig(FlowModel model) {
         FlowStartConfig config = new FlowStartConfig();
         config.setModelKey(model.getModelKey());
         if (model.getBpmnXml() == null || model.getBpmnXml().isBlank()) {
@@ -577,6 +616,78 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         config.setDiagnostics(diagnostics);
         config.setPreflightPassed(diagnostics.isEmpty());
         return config;
+    }
+
+    private String buildStartConfigCacheKey(FlowModel model) {
+        Long tenantId = model.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            tenantId = requireTenantId();
+        }
+        return tenantId + ":" + model.getModelKey();
+    }
+
+    private String buildStartConfigFingerprint(FlowModel model) {
+        String source = String.join("\n",
+                Objects.toString(model.getId(), ""),
+                Objects.toString(model.getVersion(), ""),
+                Objects.toString(model.getUpdateTime(), ""),
+                Objects.toString(model.getBpmnXml(), ""));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(source.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前 JDK 不支持 SHA-256，无法构建流程模型指纹", exception);
+        }
+    }
+
+    private void pruneStartConfigCache(long now, String incomingKey) {
+        if (startConfigCache.size() < START_CONFIG_CACHE_MAX_SIZE || startConfigCache.containsKey(incomingKey)) {
+            return;
+        }
+        startConfigCache.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= now);
+        if (startConfigCache.size() < START_CONFIG_CACHE_MAX_SIZE) {
+            return;
+        }
+        startConfigCache.keySet().stream().findFirst().ifPresent(startConfigCache::remove);
+    }
+
+    private FlowStartConfig copyStartConfig(FlowStartConfig source) {
+        FlowStartConfig copy = new FlowStartConfig();
+        if (source == null) {
+            return copy;
+        }
+        copy.setModelKey(source.getModelKey());
+        copy.setInitiatorSelectNodes(copyApproverNodes(source.getInitiatorSelectNodes()));
+        copy.setNextNodes(copyApproverNodes(source.getNextNodes()));
+        copy.setPreflightPassed(source.getPreflightPassed());
+        copy.setDiagnostics(source.getDiagnostics() == null
+                ? new ArrayList<>() : new ArrayList<>(source.getDiagnostics()));
+        return copy;
+    }
+
+    private List<FlowStartConfig.ApproverNode> copyApproverNodes(List<FlowStartConfig.ApproverNode> source) {
+        if (source == null || source.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<FlowStartConfig.ApproverNode> copy = new ArrayList<>(source.size());
+        for (FlowStartConfig.ApproverNode node : source) {
+            if (node == null) {
+                continue;
+            }
+            FlowStartConfig.ApproverNode nodeCopy = new FlowStartConfig.ApproverNode();
+            nodeCopy.setNodeKey(node.getNodeKey());
+            nodeCopy.setNodeName(node.getNodeName());
+            nodeCopy.setMultiple(node.getMultiple());
+            nodeCopy.setAssignee(node.getAssignee());
+            nodeCopy.setCandidateUsers(node.getCandidateUsers());
+            nodeCopy.setCandidateGroups(node.getCandidateGroups());
+            copy.add(nodeCopy);
+        }
+        return copy;
+    }
+
+    private record StartConfigCacheEntry(String fingerprint, FlowStartConfig config, long expiresAt) {
     }
 
     /**

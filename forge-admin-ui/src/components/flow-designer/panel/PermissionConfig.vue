@@ -16,8 +16,8 @@ const emit = defineEmits(['update:config'])
 
 const FIELDS = [
   { key: 'allowApprove', label: '允许通过', desc: '审批人可点击“通过”' },
-  { key: 'allowReject', label: '允许驳回', desc: '审批人可点击“驳回”。若流程开启了指定节点驳回，点驳回后再选择回到哪个已审节点' },
-  { key: 'allowRejectToStart', label: '驳回至发起人', desc: '按流程设计的发起人修改路径退回' },
+  { key: 'allowReject', label: '允许驳回', desc: '按流程级驳回策略处理：可能结束流程、退回发起人修改，或走手工设计路径' },
+  { key: 'allowRejectToStart', label: '退回发起人修改', desc: '始终保留原流程实例，进入发起人修改节点，修改后沿原流程重提' },
   { key: 'allowDelegate', label: '允许委派', desc: '审批人可委托他人代审' },
   { key: 'allowTerminate', label: '允许终止', desc: '可直接终止流程' },
   { key: 'requireSignature', label: '强制签名', desc: '审批时必须电子签名' },

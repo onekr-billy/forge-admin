@@ -166,7 +166,14 @@ public class StoredAggregateRefreshService {
 
         Map<String, Object> updateData = buildFormulaUpdateData(parentConfig, parentSchema, record, formulaFields);
         if (!updateData.isEmpty()) {
-            repository.updateById(parentConfig.getTableName(), recordId, updateData);
+            try (AutoCloseable ignored = com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder
+                    .overrideFieldSource(com.mdframe.forge.plugin.generator.enums.DataAuditSourceType.FORMULA)) {
+                repository.updateById(parentConfig.getTableName(), recordId, updateData);
+            } catch (RuntimeException ex) {
+                throw ex;
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
+            }
         }
     }
 

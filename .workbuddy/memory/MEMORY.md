@@ -10,6 +10,8 @@
 - **【0918 定论】长文停掉，只发微头条**。同时间同账号同用已验证钩子实测：微头条 13.4% vs 长文 0.67%，**差 20 倍**。26 篇长文没量的变量就是"长文本身"——微头条在信息流正文直铺（决策成本低），长文只有标题+缩略图（技术标题对泛用户无点击冲动）。要发长文必须配封面，且一周 ≤1 篇
 - **【0918 定论】一次只发一条，间隔 ≥6h**。第 1 条单独发 7981 展现 vs 第 6 条与长文同发 528 展现，**差 15 倍**。账号单时间窗推荐配额有限，同时发两条互相抢池子
 - 发布纪律：单条 / 间隔 6h+ / 发后 2h 内自己补评论 / 所有评论必回 / 记录发布时间测时段。**评论数权重高于点击率**（决定能否进下一级流量池）
+- **【0920 定论】钩子决定点击率，题材决定展现量——两个独立变量，都得对**。数字反差型点击率三次稳定（16.7% / 13.4% / 16%），但展现 7981 / 528 / 1050 差一个数量级。**差别在"题材的大众可感知度"**：后果能翻译成**钱/隐私/安全**的（如"扣了3次款"）天花板几千；纯技术细节型（如"计数窗口比锁定窗口短"）天花板只有一千上下。**头条是泛用户平台，写技术事实时必须把后果翻译成人的后果**
+- **【0920 待补数据】评论数+点赞数至今一次没记录**。展现停在一千很可能是卡在分层赛马（点击率够但互动率低→停推）。每条发完 24h 必记这两个数
 - **掘金**：唯一有正反馈的渠道，有阅读但赞少。系列连载（源码拆解）是点赞主要来源
 - 演示站可从外部抓取（curl 200 / agent-browser 截图成功），需要素材可直接截图
 
@@ -18,7 +20,7 @@
 1. **第一行必须是纯中文数字，绝不能出现代码符号**（`@Async` / 英文类名一律后置或删掉）— 这是第 1 条赢、第 2 条输的**决定性差异**
 2. 数字后紧跟"只干一件事 / 只有 X 行"的极端聚焦
 3. 中段必须有「你以为是 A，实际是 B」的反差
-4. 后果翻译成**钱 / 安全 / 时间**这类人人都懂的东西，不要停在技术层（"扣了3次款" > "接口慢"）
+4. 后果翻译成**钱 / 隐私 / 安全 / 时间**这类人人都懂的东西，**不要停在技术层**（"扣了3次款" > "接口慢"；"密码能被一直猜" > "计数窗口配错了"）。**【0920 实证】这一条不只是决定点击率，更是决定展现天花板——同样账号同样钩子，大众后果题材 7981 vs 技术细节题材 1050，差 7 倍**
 5. 结尾必须提问——评论数是头条推流关键指标
 
 ### 标题
@@ -46,11 +48,11 @@
 ① 开头玄学 Bug 钩子 ② 坑表四列（坑/现象/根因/解法）③ "可带走的 N 条诀窍"独立小节 ④ 结尾明确求赞 + 赌局式互动。**系列文必须兑现上一篇预告并预告下一篇**
 字数 4500-5500（含代码）。标签：`#低代码` `#Spring Boot` `#Java` `#架构设计` `#企业开发`
 
-### 已写 16 篇（避免重复）
-订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / log操作日志 1383行 5个反直觉设计(0916) / auth认证链路 4091行 账号锁定为何完全失效(0917) / excel 4223行 @Async三重叠加失效(0918) / **websocket 599行 内存Broker多实例(0919)**
+### 已写 17 篇（避免重复）
+订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant源码拆解(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等starter 1279行 5坑(0915) / log操作日志 1383行 5个反直觉设计(0916) / auth认证链路 4091行 账号锁定为何完全失效(0917) / excel 4223行 @Async三重叠加失效(0918) / websocket 599行 内存Broker多实例(0919) / **config 动态配置 @Scheduled被注释 30秒自动刷新从未跑(0920)**
 
 ### "框架源码拆解"系列进度
-① datascope SQL 改写 → ② tenant → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log（0916）→ ⑥ auth（0917）→ ⑦ excel（0918）→ ⑧ websocket（0919）→ ⑨ **config 动态配置（已预告：@RefreshScope 刷新边界）**
+① datascope → ② tenant → ③ 共存（0911）→ ④ 幂等（0915）→ ⑤ log（0916）→ ⑥ auth（0917）→ ⑦ excel（0918）→ ⑧ websocket（0919）→ ⑨ config（0920）→ ⑩ **cache 缓存+Redisson（已预告：锁续期）**
 
 ### 🔥 掘金标题规则（0919 诊断，最高优先级）
 - **症状拆两层**：展现→阅读 卡在**标题**；阅读→点赞 卡在**正文没给可带走的东西**。改标题救不了点赞
@@ -70,7 +72,7 @@
 - plugin-ai：`PermissionEngine` 63 行三态判决（工具名含 delete/submit/commit 触发人工审批）；`AiModelInvocationLog` 记 token + 调用时单价快照（按"分"存）
 
 ### starter 剩余矿脉（按行数）
-tenant（已写）| idempotent（已写）| log（已写）| auth（已写）| excel（已写）| websocket（已写 0919）| **config 动态配置（已预告）** | orm | cache | file | message | job | id | trans | social
+tenant（已写）| idempotent（已写）| log（已写）| auth（已写）| excel（已写）| websocket（已写 0919）| config（已写 0920）| **cache 缓存+Redisson（已预告）** | orm | file | message | job | id | trans | social
 
 ### 已核实待用的硬核事实（log / idempotent / excel / auth）
 - **log**：`OperationLogAspect` 676 行，切点 `@within(@Controller)||@within(@RestController)`（`@annotation` 版被注释掉）→ 所有 Controller 方法进切面；skip 判定前已完成 4 件事含 `apiConfigManager.getApiConfig()`；线程池默认 **core=2/max=5/queue=500 + CallerRunsPolicy**（高峰期业务线程自己写日志）；QUERY 全跳过；URL 后缀自动分类（/page /list /tree /detail /getbyid /options /profile /query→QUERY）；8 个敏感凭证路径直接 exclude（/auth/login 等）；`@ApiDecrypt` 接口的 `@RequestBody` 参数替换为 `[DECRYPTED_REQUEST_BODY_OMITTED]`；`OperationAuditContext` 是**普通 ThreadLocal**（切面在主线程 fillAuditSnapshot 拷贝进 POJO 再异步提交，规避了跨线程丢失）；**OperationLogInfo 无 traceId 字段**（只进 MDC），且 finally 里先 saveLogAsync 再 MDC.remove → 异步线程无 traceId；LogProperties 默认 requestParams/responseResult 截断 2000 字符
@@ -100,6 +102,13 @@ tenant（已写）| idempotent（已写）| log（已写）| auth（已写）| e
   - **做得对（可信度来源）**：认证缺失 **fail-closed**（`authenticationProvider == null` 直接拒绝连接，对比 auth 模块 `@Autowired(required=false)` 的 fail-open 登录锁）；**禁止客户端直发 Broker**（SEND 必须 `/app` 前缀，堵住"任意客户端向全体广播"）；订阅白名单 AntPathMatcher（默认 `/user/**` + `/topic/broadcast`）；**`MessageBuilder.createMessage` 重建消息**（wrap 后 setUser，原 message headers 不可变，直接 `return message` 会丢 Principal）；6 个契约测试锁安全规则
   - `MessageType` 14 种；`WebSocketAuthenticationProvider` 是 `@FunctionalInterface`，auth 模块 `@ConditionalOnMissingBean` 提供 Sa-Token 默认实现
   - 业务链路：`SysOnlineUserServiceImpl`（578 行）`notifyUserKickout` → `MessageType.AUTH_KICKOUT` → `pushToUser(String.valueOf(loginId))`
+- **config**（2379 行 main / 200 test，0920 全量核实，两套体系：`config/` 配置中心 + `property/` 动态刷新）：
+  - **【最狠】`ConfigChangeListener.checkAndRefresh()` 的 `@Scheduled` 被注释掉**（方法体 log.debug 也注释）→ **"30秒自动刷新"从未生效**，只能手动 POST `/api/config/refresh`。而 `AppConfigExample` 类注释写着"30秒内自动刷新"→ **文档与实现对不上**。类上 `@ConditionalOnProperty(auto-refresh, matchIfMissing=true)` 还在 → 假象。`PropertyRefreshAutoConfiguration` 上 `@EnableScheduling` 开着却无任务
+  - **刷新边界**：`refreshAll()` 只清 `scopedObjects` → 只有 refresh scope Bean 重建。**普通单例 `@ConfigurationProperties`（无 @RefreshScope）不刷新；单例里 `@Value` 字段永远不变**
+  - **`ConfigRefreshEvent` 死类**：定义了 + `getChangedProperties()`，但 `refresh()` 里 `//publishRefreshEvent(...)` 注释状态，从未发布；`publishEnvironmentChangeEvent` 方法体整个注释
+  - **`DbPropertySource` 用 `addFirst`** → 优先级高于 application.yml/环境变量/命令行，库里配错本地救不回
+  - **要单独配第二套 `config.datasource`**：`DbPropertySourcePostProcessor` 是 EnvironmentPostProcessor，容器启动前自建 DataSource；**没配静默 return 不报错**（极易漏）；加载失败抛 RuntimeException 阻断启动
+  - **做得对**：自定义 `@RefreshScope`（`core/annotation/config/RefreshScope.java`）`proxyMode = ScopedProxyMode.TARGET_CLASS` ← **这是方案能工作的关键**（Spring 原生 `@Scope` 默认 `DEFAULT` 等同不代理，那样注入裸对象则刷新失效且不报错）；两表合并+分组覆盖+驼峰变体（`max-login-attempts`→`maxLoginAttempts`）；三层降级不阻断（sys_config→config_properties→group表不存在跳过→单分组JSON失败跳过）；**crypto 部署密钥过滤**（`CryptoDeploymentSecretPolicy`，数据库不能覆盖部署级密钥）；`refresh()` synchronized + 先 diff；刷新端点 `SessionHelper.assertAdmin`（但 `matchIfMissing=true` 默认开启）
 
 ### ⚠️ 待修真实缺陷（累计 8 个，均未修复，按严重度排序）
 1. **【高危】账号锁定在密码错误场景下完全失效**：`UsernamePasswordAuthStrategy.doAuthenticate` 里 `if (loginUser == null)` 是**死代码**（`authenticateByUsernamePassword` 失败时抛 RuntimeException，永远不返回 null）；且即便进入分支，`recordLoginFailure(null, ...)` 也会因 `loginUser == null` 在第一行直接 `throw`，不计数不锁定。**结论：暴力破解密码不会被锁定**。修复：认证方法失败时返回可区分结果（sealed interface / Optional），计数方法标 `@NonNull`，不要用异常表达失败路径
@@ -116,13 +125,17 @@ tenant（已写）| idempotent（已写）| log（已写）| auth（已写）| e
 12. **`forge-starter-websocket` 的 `@Async` 依赖外部 starter**：模块自己无 `@EnableAsync`，靠 api-config/excel/flow 三个之一"碰巧"开启 → 摘掉这些模块后异步变同步（隐式依赖）。修法：自己加 `@EnableAsync` + 专用线程池
 13. **`forge-starter-websocket` 无总开关**：`WebSocketConfig` 无 `@ConditionalOnProperty`，引入 jar 即强制开启 `/ws` + SockJS
 14. **`forge-starter-websocket` 内存 Broker 无多实例支持**：生产多实例推送静默丢失，需换 broker-relay 或自建跨实例转发
+15. **【高危】`forge-starter-config` 自动刷新从未生效**：`ConfigChangeListener.checkAndRefresh()` 的 `@Scheduled` 是注释状态 → 配置改了只能手动调 `/api/config/refresh`。且示例类注释谎称"30秒内自动刷新"。修法：注解加回来 + 改事件驱动（配置中心改完发消息），别用轮询
+16. **`ConfigRefreshEvent` 从未被发布**（发布行注释）→ 无法监听配置变更做副作用
+17. **`forge-starter-config` 刷新是单机的**：多实例只刷新被调用的那台，需各自触发
 
 ### 其他候选切面
 能力开放网关 SPI（capability-parent，REST+MCP 双出口）/ 11 个 plugin 注册顺序 / CRUD Velocity 模板扩展点 / 部署上线踩坑 / 运维故障救回
 
 ## 4. 头条已写 26 篇长文 + 8 条微头条（角度清单）
 踩坑8个 / 4框架横评 / 协议驱动vs代码生成 / 业务闭环更新 / 反常识观点 / ForgeAdmin实测能力全景(0725 唯一热过) / 搭审批系统实战(0726) / 接私活8000块2天 / 半天搞定CRM / 企业集成与开放平台(0804) / AI-Agent安全操作后台(0826) / 开源项目介绍横评(0903) / 同事离职3天重构(0906) / 一张表生成多少代码2123行实测(0907) / 企业6大真实业务场景(0907) / AI写完100万行怎么管(0908) / DHH那篇反共识(0908) / GitSpawn 7款工具中毒(0909) / DeepSeek降价算账(0909) / 等保测评师查5样(0910) / 手机号明文3行SQL(0911) / 操作日志接口慢10倍676行(0915) / 异步导出卡3分钟@Async失效(0916) / **500并发同订单扣3次款1279行幂等(0917)**
-- **微头条**：0916 第1批 5 条（数字反差 **7981展现/1330阅读/16.7%**✓ / 反常识 319展现/15阅读/4.7%✗ / 求助提问 / 场景共鸣 / 清单盘点 未测）+ 0917 第2批 3 条（账号锁定 **528展现/71阅读/13.4%**✓ / 死常量 / 日志性能）+ 0918 第3批 3 条（锁定窗口vs计数窗口 / 一张表生成2123行 / 63行代码管住AI）
+- **微头条**：0916 第1批 5 条（数字反差 **7981展现/1330阅读/16.7%**✓ / 反常识 319展现/15阅读/4.7%✗ / 求助提问 / 场景共鸣 / 清单盘点 未测）+ 0917 第2批 3 条（账号锁定 **528展现/71阅读/13.4%**✓ / 死常量 / 日志性能）+ 0918 第3批 3 条（锁定窗口vs计数窗口 **1050展现/170阅读/16%**✓ 单发18:00 / 一张表生成2123行 / 63行代码管住AI）
++ 0920 第4批 3 条：**按"把后果翻译成人的后果"重写**——第12条「密码可以一直猜下去」(安全恐惧，**建议先发**) / 第13条「手机号明文」(隐私) / 第14条「AI删库」(热点+恐惧)
 
 ### 关键事实备查
 - 实际 starter **23 个**（非 README 的 20），plugin **11 个**

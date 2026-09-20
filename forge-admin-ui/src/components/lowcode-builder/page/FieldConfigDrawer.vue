@@ -28,7 +28,12 @@ import {
   searchComponentOptions,
   tableRenderOptions,
 } from './fieldDrawerConfig'
-import { isPageFieldVisible } from './page-schema'
+import {
+  isChildListField,
+  isListFieldSelectable,
+  resolveChildListDisplayHint,
+  resolveListFieldTitle,
+} from './page-schema'
 
 const props = defineProps({
   show: {
@@ -84,7 +89,7 @@ const queryFieldOptions = computed(() => {
   const options = props.fields
     .filter(field => !field.systemField || field.field === 'id')
     .map(field => ({
-      label: field.label ? `${field.label}（${field.sourceField || field.field}）` : (field.sourceField || field.field),
+      label: `${resolveListFieldTitle(field, {}, field.field)}（${field.sourceField || field.field}）`,
       value: field.field,
     }))
   if (!options.some(item => item.value === 'id'))
@@ -97,7 +102,11 @@ const selectedFieldsList = computed(() => selectedFieldRefs.value
   .filter(Boolean))
 const availableFields = computed(() => {
   const set = new Set(selectedFieldRefs.value)
-  return props.fields.filter(f => isPageFieldVisible(f, zoneKey.value) && !set.has(f.field))
+  return props.fields.filter(f => isListFieldSelectable(f, zoneKey.value) && !set.has(f.field))
+})
+const availableFieldGroups = computed(() => groupListFields(availableFields.value))
+const showChildListDisplaySetting = computed(() => {
+  return zoneKey.value === 'table' && props.fields.some(field => isChildListField(field))
 })
 const activeDrawerField = computed(() => {
   if (!selectedFieldsList.value.length)
@@ -122,6 +131,43 @@ watch(() => props.show, (show) => {
   activeDrawerFieldName.value = props.initialField || refs?.[0] || ''
   fieldAdvancedOpen.value = false
 })
+
+function resolveFieldScopeText(field = {}) {
+  if (!isChildListField(field))
+    return '主表'
+  const modelName = String(field.modelName || field.sourceLabel || '').replace(/^子表$/, '').trim()
+  return modelName && modelName !== '主表' ? `子表 · ${modelName}` : '子表'
+}
+
+function groupListFields(fields = []) {
+  const groups = []
+  const index = new Map()
+  fields.forEach((field) => {
+    const child = isChildListField(field)
+    const key = child ? `child:${field.modelCode || field.modelName || field.sourceLabel || 'child'}` : 'main'
+    if (!index.has(key)) {
+      const group = {
+        key,
+        title: child ? resolveFieldScopeText(field) : '主表',
+        child,
+        fields: [],
+      }
+      index.set(key, group)
+      groups.push(group)
+    }
+    index.get(key).fields.push(field)
+  })
+  return groups.sort((left, right) => Number(left.child) - Number(right.child))
+}
+
+function updateChildListDisplayMode(value) {
+  if (!selectedBlock.value)
+    return
+  emit('patchProps', {
+    blockId: selectedBlock.value.id,
+    patch: { childListDisplayMode: value === 'expand' ? 'expand' : 'aggregate' },
+  })
+}
 
 function selectDrawerField(fieldName = '') {
   activeDrawerFieldName.value = fieldName
@@ -269,6 +315,27 @@ function renderTargetFieldOptions(field = {}) {
   <n-drawer :show="show" :width="680" placement="right" @update:show="emit('update:show', $event)">
     <n-drawer-content :title="`配置${drawerTitle} · ${blockMetaTitle || ''}`" closable>
       <div v-if="selectedBlock" class="field-config">
+        <div v-if="showChildListDisplaySetting" class="child-list-display">
+          <div class="section-title">
+            子表行展示
+          </div>
+          <n-radio-group
+            :value="selectedBlock.props?.childListDisplayMode || 'aggregate'"
+            @update:value="updateChildListDisplayMode"
+          >
+            <n-space vertical size="small">
+              <n-radio value="aggregate">
+                聚合到一行
+              </n-radio>
+              <n-radio value="expand">
+                拆成多条
+              </n-radio>
+            </n-space>
+          </n-radio-group>
+          <p class="field-help">
+            {{ resolveChildListDisplayHint(selectedBlock.props?.childListDisplayMode) }}
+          </p>
+        </div>
         <div class="field-config-section">
           <div class="section-title">
             已选{{ drawerTitle }} ({{ selectedFieldRefs.length || 0 }})
@@ -292,9 +359,12 @@ function renderTargetFieldOptions(field = {}) {
                 @click="selectDrawerField(element.field)"
               >
                 <span class="f-handle">☰</span>
+                <em class="field-scope-tag" :class="isChildListField(element) ? 'is-child' : 'is-main'">
+                  {{ isChildListField(element) ? '子表' : '主表' }}
+                </em>
                 <span class="f-name">
-                  {{ element.label || element.field }}
-                  <small v-if="element.sourceLabel || element.modelName">{{ element.sourceLabel || element.modelName }}</small>
+                  {{ resolveListFieldTitle(element, resolveFieldSetting(element.field), element.field) }}
+                  <small>{{ resolveFieldScopeText(element) }}</small>
                 </span>
                 <span class="f-code">{{ element.field }}</span>
                 <button type="button" class="f-remove" title="移除字段" @click.stop="toggleField(element.field, false)">
@@ -434,7 +504,7 @@ function renderTargetFieldOptions(field = {}) {
           <div v-if="activeDrawerField" class="field-detail-card">
             <div class="field-detail-head">
               <div class="field-detail-title">
-                <strong>{{ activeDrawerField.label || activeDrawerField.field }}</strong>
+                <strong>{{ resolveListFieldTitle(activeDrawerField, activeDrawerFieldSetting, activeDrawerField.field) }}</strong>
                 <span>{{ activeDrawerField.sourceField || activeDrawerField.field }}</span>
               </div>
               <div class="field-role-switches">
@@ -485,7 +555,7 @@ function renderTargetFieldOptions(field = {}) {
               <label class="field-detail-control">
                 <span>列标题</span>
                 <n-input
-                  :value="activeDrawerFieldSetting.title || activeDrawerField.label || activeDrawerField.field"
+                  :value="resolveListFieldTitle(activeDrawerField, activeDrawerFieldSetting, activeDrawerField.field)"
                   size="small"
                   @update:value="updateFieldSetting(activeDrawerField.field, { title: $event || '' })"
                 />
@@ -620,16 +690,24 @@ function renderTargetFieldOptions(field = {}) {
             可选字段
           </div>
           <div class="available-list">
-            <button
-              v-for="field in availableFields"
-              :key="field.field"
-              type="button"
-              class="available-item"
-              @click="toggleField(field.field, true)"
-            >
-              <span>{{ field.label || field.field }}</span>
-              <small v-if="field.sourceLabel || field.modelName">{{ field.sourceLabel || field.modelName }}</small>
-            </button>
+            <div v-for="group in availableFieldGroups" :key="group.key" class="field-group">
+              <div class="field-group-title">
+                {{ group.title }}
+              </div>
+              <button
+                v-for="field in group.fields"
+                :key="field.field"
+                type="button"
+                class="available-item"
+                @click="toggleField(field.field, true)"
+              >
+                <em class="field-scope-tag" :class="group.child ? 'is-child' : 'is-main'">
+                  {{ group.child ? '子表' : '主表' }}
+                </em>
+                <span>{{ resolveListFieldTitle(field, {}, field.field) }}</span>
+                <small>{{ field.sourceField || field.field }}</small>
+              </button>
+            </div>
             <span v-if="!availableFields.length" class="empty">所有字段已选择</span>
           </div>
         </div>
@@ -639,6 +717,22 @@ function renderTargetFieldOptions(field = {}) {
 </template>
 
 <style scoped>
+.child-list-display {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.child-list-display .field-help {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .field-config {
   display: grid;
   gap: 14px;
@@ -666,11 +760,11 @@ function renderTargetFieldOptions(field = {}) {
 
 .selected-row {
   display: inline-grid;
-  grid-template-columns: 12px minmax(0, auto) auto;
+  grid-template-columns: 12px auto minmax(0, auto) auto;
   align-items: center;
   gap: 5px;
   min-width: 0;
-  max-width: 210px;
+  max-width: 280px;
   padding: 5px 5px 5px 8px;
   border: 1px solid #e4e4e7;
   border-radius: 6px;
@@ -687,7 +781,7 @@ function renderTargetFieldOptions(field = {}) {
 
 .selected-row.search,
 .selected-row.table {
-  grid-template-columns: 12px minmax(0, auto) auto;
+  grid-template-columns: 12px auto minmax(0, auto) auto;
 }
 
 .selected-row:hover {
@@ -899,7 +993,51 @@ function renderTargetFieldOptions(field = {}) {
 }
 
 .f-name small {
-  display: none;
+  margin-left: 4px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.field-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.field-group + .field-group {
+  margin-top: 10px;
+}
+
+.field-group-title {
+  flex: 1 0 100%;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.field-scope-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.field-scope-tag.is-main {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.field-scope-tag.is-child {
+  background: #ffedd5;
+  color: #c2410c;
 }
 
 .available-item small {
@@ -942,17 +1080,18 @@ function renderTargetFieldOptions(field = {}) {
 }
 
 .available-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 240px;
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
   overflow: auto;
   padding-right: 4px;
 }
 
 .available-item {
-  display: inline-grid;
-  gap: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
   padding: 4px 10px;
   border: 1px dashed #cbd5e1;
   border-radius: 6px;

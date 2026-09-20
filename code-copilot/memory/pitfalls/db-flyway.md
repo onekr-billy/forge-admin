@@ -1,6 +1,6 @@
 # 踩坑：数据库 / Flyway / 索引
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 11 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 12 条。
 
 ## 15. Flyway 已执行版本脚本不能二次修改
 
@@ -214,3 +214,16 @@ Detected resolved migration not applied to database: 1.0.56
 - 用新的 Flyway 脚本把这两列改为 `DEFAULT NULL`，已执行脚本不要回改。
 - 连接保存 DTO 继续不透传凭据；应用 ID/Secret 只写 `sys_social_app_config`。
 - 登录解析可以继续「应用优先、连接回退」，但新连接必须依赖应用凭据。
+
+## 共享库已执行的高版本 Flyway 脚本必须原样出现在当前分支
+
+**发现日期**: 2026-09-20
+
+**问题描述**:
+同事分支已把共享开发库迁到 `V1.0.174`，本分支没有 `V1.0.171`–`V1.0.174` 文件。启动报 `Validate failed: Detected applied migration not resolved locally: 1.0.171`（以及 172–174）。`jobAutoRegistrar` 只是后续连锁失败。
+
+**解决方案**:
+- Flyway 校验要求：库里已经成功执行的每个版本，当前工作区都必须有同版本、同内容的脚本。
+- 共享库被别的分支跑到更高版本时，把对方的 `V1.0.171`–`V1.0.174` 原样放到本分支；本需求新脚本用下一个空号（如 `V1.0.175`）。
+- 不要把本需求占用已存在的 `1.0.171`，也不要用 `flyway repair` 把别人已执行的版本标成删除。
+- 排查时先对照 `forge_schema_history` 和 `forge-server/db/migration/V*`，缺文件就补文件，不要改已落库脚本。

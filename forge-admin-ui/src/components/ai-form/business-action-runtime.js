@@ -23,6 +23,49 @@ export function shouldShowDetailFlowHistory({
     && (timelineVisible === true || diagramVisible === true)
 }
 
+/**
+ * 将流程操作的成功返回值立即投影到当前行。后端发起/撤回接口
+ * 返回的是精简流程运行态，所以保留旧快照中本次返回未覆盖的单据属性。
+ */
+export function mergeDocumentRuntimeSnapshot(row = {}, runtime = null, objectCode = '') {
+  if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime))
+    return row
+  const previousRuntime = row?._documentRuntime && typeof row._documentRuntime === 'object'
+    ? row._documentRuntime
+    : {}
+  const nextRuntime = { ...previousRuntime, ...runtime }
+  const runtimeActions = Array.isArray(runtime.runtimeActions)
+    ? runtime.runtimeActions
+    : []
+  return {
+    ...row,
+    _documentRuntime: nextRuntime,
+    _runtimeActions: runtimeActions,
+    ...(String(objectCode || '').trim() ? { _runtimeObjectCode: String(objectCode).trim() } : {}),
+  }
+}
+
+/**
+ * 把服务端校准放到下一个宏任务，让流程主操作的 finally 先结束 loading。
+ * 刷新失败必须独立处理，不得把已成功的流程动作误报为失败。
+ */
+export function scheduleFlowRuntimeRefresh(refresh, {
+  delay = 0,
+  schedule = (task, timeout) => globalThis.setTimeout(task, timeout),
+  onError = () => {},
+} = {}) {
+  if (typeof refresh !== 'function' || typeof schedule !== 'function')
+    return null
+  return schedule(async () => {
+    try {
+      await refresh()
+    }
+    catch (error) {
+      onError(error)
+    }
+  }, delay)
+}
+
 export function buildBusinessActionInputFormSchema(inputSchema) {
   if (!Array.isArray(inputSchema))
     return []
@@ -193,13 +236,21 @@ export function shouldHideProcessStartAction(action = {}, runtime = {}) {
     const activeCodes = Array.isArray(runtime?.activeProcessCodes)
       ? runtime.activeProcessCodes.map(item => String(item).trim())
       : []
+    const startedCodes = Array.isArray(runtime?.startedProcessCodes)
+      ? runtime.startedProcessCodes.map(item => String(item).trim())
+      : []
     // 应用级业务流程必须按 processCode 精确判断，不能因为同一单据的另一个
-    // 主流程正在运行，就把所有可并行流程的启动按钮一起隐藏。
-    return Boolean(processCode) && activeCodes.includes(processCode)
+    // 主流程正在运行，就把所有可并行流程的启动按钮一起隐藏。已经成功或撤回的
+    // 同一流程也不再展示启动入口，与服务端的手工发起幂等语义保持一致。
+    return Boolean(processCode)
+      && (activeCodes.includes(processCode) || startedCodes.includes(processCode))
   }
 
   const status = String(runtime?.flowStatus || '').toUpperCase()
-  return runtime?.nextAction === 'VIEW_FLOW' || ['STARTED', 'RUNNING', 'IN_PROCESS'].includes(status)
+  const hasDocumentFlowInstance = Boolean(String(runtime?.processInstanceId || '').trim())
+  return hasDocumentFlowInstance
+    || runtime?.nextAction === 'VIEW_FLOW'
+    || ['STARTED', 'RUNNING', 'IN_PROCESS', 'NEED_MODIFY', 'APPROVED', 'REJECTED', 'CANCELED'].includes(status)
 }
 
 /** 计算流程/业务按钮的结构化或已编译显示条件。 */

@@ -1154,7 +1154,7 @@ public class BusinessObjectPublishService {
 
     private void checkFormFirstSchemas(BusinessObjectDesignerService.DesignerContext context,
                                        List<BusinessPublishCheckItemVO> items) {
-        Set<String> modelFields = collectFields(context.getModelSchema());
+        Set<String> modelFields = collectPageFields(context.getModelSchema(), context.getPageSchema());
         Map<String, Object> designerOptions = readDesignerOptions(context);
         Map<String, Object> formSchema = mapValue(designerOptions.get(FORM_DESIGNER_SCHEMA_OPTION_KEY));
         Map<String, Object> viewSchema = sanitizeViewSchemaFieldRefs(

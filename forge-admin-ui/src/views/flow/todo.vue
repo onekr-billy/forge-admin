@@ -472,10 +472,10 @@
               <n-popconfirm v-if="canRejectToStart" @positive-click="() => submitApprove('rejectToStart')">
                 <template #trigger>
                   <NButton type="warning" ghost size="small" :loading="isActionLoading('rejectToStart')" :disabled="isApprovalBusy">
-                    驳回至发起人
+                    退回发起人修改
                   </NButton>
                 </template>
-                确认驳回至发起人修改路径？
+                确认保留当前流程并退回发起人修改？修改后可沿原流程重提。
               </n-popconfirm>
 
               <n-popconfirm v-if="canTerminate" @positive-click="() => submitApprove('terminate')">
@@ -587,8 +587,8 @@ import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
 import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions, pickFirstNonEmptyPermissionSource } from '@/utils/field-permissions'
-import { applyChildTableFieldPermissions } from '@/utils/flow-field-permissions'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
+import { applyChildTableFieldPermissions } from '@/utils/flow-field-permissions'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
 import { FLOW_PRIORITY_LABEL_FALLBACK, getFlowPriorityClass, isUrgentFlowPriority, resolveFlowPriorityLevel, shouldShowFlowPriority } from './utils/priority'
 import { getBusinessFormDisplayTitle, getProcessDisplayName, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
@@ -656,6 +656,11 @@ const useDynamicForm = computed(() => {
 const useExternalForm = computed(() => !useBusinessManagedForm.value && taskFormInfo.value?.formType === 'external' && taskFormInfo.value?.formUrl)
 const businessFormTitle = computed(() => getBusinessFormDisplayTitle(businessFormContext.value, '业务表单'))
 const businessFormWarnings = computed(() => Array.isArray(businessFormContext.value?.warnings) ? businessFormContext.value.warnings : [])
+const businessFormFieldPermissions = computed(() => pickFirstNonEmptyFieldPermissions([
+  businessFormContext.value?.fieldPermissions,
+  taskFormInfo.value?.fieldPermissions,
+  taskFormInfo.value?.formFieldPermissions,
+]))
 const businessFormChildrenConfig = computed(() => {
   const children = Array.isArray(businessFormContext.value?.childrenConfig) ? businessFormContext.value.childrenConfig : []
   return applyChildTableFieldPermissions(
@@ -692,11 +697,6 @@ const componentTaskFormInfo = computed(() => ({
   taskDefKey: businessFormContext.value?.taskDefKey || taskFormInfo.value?.taskDefKey,
   processDefKey: businessFormContext.value?.processDefKey || taskFormInfo.value?.processDefKey,
 }))
-const businessFormFieldPermissions = computed(() => pickFirstNonEmptyFieldPermissions([
-  businessFormContext.value?.fieldPermissions,
-  taskFormInfo.value?.fieldPermissions,
-  taskFormInfo.value?.formFieldPermissions,
-]))
 const dynamicFormFieldPermissions = computed(() => pickFirstNonEmptyPermissionSource([
   taskFormInfo.value?.fieldPermissions,
   taskFormInfo.value?.formFieldPermissions,
@@ -1465,7 +1465,7 @@ function getActionSuccessText(action) {
   const textMap = {
     approve: '审批通过',
     reject: '已驳回',
-    rejectToStart: '已驳回至发起人修改路径',
+    rejectToStart: '已退回发起人修改，可在原流程修改后重提',
     return: '已退回',
     terminate: '流程已终结',
   }
@@ -1580,7 +1580,7 @@ function assertQuickActionAllowed(action, formInfo, businessFormContext = null) 
   if (action === 'reject' && formInfo?.allowMultiReturn === true && Array.isArray(formInfo.returnTargets) && formInfo.returnTargets.length)
     throw new Error('该流程已开启指定节点驳回，请进入详情选择驳回节点')
   if (action === 'rejectToStart' && formInfo?.allowRejectToStart !== true)
-    throw new Error('当前节点不允许驳回至发起人')
+    throw new Error('当前节点不允许退回发起人修改')
   if (formInfo?.requireSignature === true)
     throw new Error('需要手写签名，请进入详情处理')
   if (action === 'approve' && !businessManaged && formInfo?.formType === 'dynamic' && formInfo?.formJson)

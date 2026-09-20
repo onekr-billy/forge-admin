@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudExportTask;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudExportResult;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudImportResult;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
+import com.mdframe.forge.plugin.generator.dto.audit.DataAuditRemoveDTO;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudExcelService;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
@@ -112,6 +113,20 @@ public class DynamicCrudController {
         // 发布记录删除事件
         businessEventPublisher.publishRecordDeleted(configKey, String.valueOf(id));
         return RespInfo.success();
+    }
+
+    @ApiEncrypt
+    @ApiDecrypt
+    @PostMapping("/remove")
+    public RespInfo<Integer> remove(@PathVariable String configKey,
+                                    @RequestBody DataAuditRemoveDTO dto) {
+        int affected = dynamicCrudService.removeWithAudit(configKey, dto);
+        if (dto != null && dto.getIds() != null) {
+            for (String id : dto.getIds()) {
+                businessEventPublisher.publishRecordDeleted(configKey, id);
+            }
+        }
+        return RespInfo.success(affected);
     }
 
     @ApiEncrypt

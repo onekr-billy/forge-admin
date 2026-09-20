@@ -7,13 +7,60 @@ import {
   createBusinessActionIdempotencyKey,
   isRuntimeActionForPosition,
   matchesRuntimeDisplayCondition,
+  mergeDocumentRuntimeSnapshot,
   resolveBusinessActionAttempt,
+  scheduleFlowRuntimeRefresh,
   shouldHideProcessStartAction,
   shouldShowDetailFlowHistory,
   unwrapBusinessActionResult,
 } from '../business-action-runtime'
 
 describe('business action runtime protocol', () => {
+  it('merges the successful flow runtime into the current row immediately', () => {
+    const row = {
+      id: '1900000000000000001',
+      _documentRuntime: { flowStatus: 'NOT_STARTED' },
+    }
+    const runtime = {
+      flowStatus: 'IN_PROCESS',
+      processInstanceId: 'process-instance-1',
+      runtimeActions: [{ key: 'VIEW_FLOW' }],
+    }
+
+    const merged = mergeDocumentRuntimeSnapshot(row, runtime, 'purchase_order')
+
+    expect(merged).not.toBe(row)
+    expect(merged).toMatchObject({
+      id: '1900000000000000001',
+      _documentRuntime: runtime,
+      _runtimeActions: [{ key: 'VIEW_FLOW' }],
+      _runtimeObjectCode: 'purchase_order',
+    })
+    expect(mergeDocumentRuntimeSnapshot(row, null, 'purchase_order')).toBe(row)
+  })
+
+  it('defers list reconciliation and isolates its failure from the completed action', async () => {
+    let scheduledTask
+    const refresh = vi.fn().mockRejectedValue(new Error('列表刷新失败'))
+    const onError = vi.fn()
+
+    const timerId = scheduleFlowRuntimeRefresh(refresh, {
+      schedule: (task) => {
+        scheduledTask = task
+        return 17
+      },
+      onError,
+    })
+
+    expect(timerId).toBe(17)
+    expect(refresh).not.toHaveBeenCalled()
+
+    await scheduledTask()
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: '列表刷新失败' }))
+  })
+
   it('shows application-level flow history without requiring document mode', () => {
     expect(shouldShowDetailFlowHistory({
       isDetailMode: true,
@@ -162,6 +209,44 @@ describe('business action runtime protocol', () => {
       processCode: 'parallel_review',
     }, runtime)).toBe(false)
     expect(shouldHideProcessStartAction({ actionType: 'START_FLOW' }, runtime)).toBe(true)
+  })
+
+  it('hides only the completed application process start action', () => {
+    const runtime = {
+      flowStatus: 'APPROVED',
+      activeProcessCodes: [],
+      startedProcessCodes: ['submit_approval'],
+    }
+    expect(shouldHideProcessStartAction({
+      actionType: 'START_PROCESS',
+      processCode: 'submit_approval',
+    }, runtime)).toBe(true)
+    expect(shouldHideProcessStartAction({
+      actionType: 'START_PROCESS',
+      processCode: 'parallel_review',
+    }, runtime)).toBe(false)
+  })
+
+  it.each(['NEED_MODIFY', 'APPROVED', 'REJECTED', 'CANCELED'])(
+    'hides the document start action after flow status %s',
+    (flowStatus) => {
+      expect(shouldHideProcessStartAction({ actionType: 'START_FLOW' }, {
+        flowStatus,
+      })).toBe(true)
+    },
+  )
+
+  it('hides the document start action whenever a main flow instance exists', () => {
+    expect(shouldHideProcessStartAction({ actionType: 'START_FLOW' }, {
+      flowStatus: 'UNKNOWN',
+      processInstanceId: 'flow-instance-1',
+    })).toBe(true)
+  })
+
+  it('keeps the document start action for a never-started record', () => {
+    expect(shouldHideProcessStartAction({ actionType: 'START_FLOW' }, {
+      flowStatus: 'NOT_STARTED',
+    })).toBe(false)
   })
 
   it('evaluates multiple compiled display rules with numeric comparisons', () => {

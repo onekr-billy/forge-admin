@@ -80,7 +80,7 @@ class DynamicCrudMoneyValueTest {
     private DynamicCrudService service() {
         return new DynamicCrudService(
                 null, null, objectMapper, null, null, null,
-                new LowcodeEncryptConfigParser(objectMapper), null, null, null, null, null, null, null);
+                new LowcodeEncryptConfigParser(objectMapper), null, null, null, null, null, null, null, null);
     }
 
     private AiCrudConfig config() {

@@ -67,7 +67,7 @@ class DynamicCrudStructuredValueTest {
     private void invoke(String name, Class<?>[] parameterTypes, Object... args) throws Exception {
         DynamicCrudService service = new DynamicCrudService(
                 null, null, objectMapper, null, null, null,
-                new LowcodeEncryptConfigParser(objectMapper), null, null, null, null, null, null, null);
+                new LowcodeEncryptConfigParser(objectMapper), null, null, null, null, null, null, null, null);
         Method method = DynamicCrudService.class.getDeclaredMethod(name, parameterTypes);
         method.setAccessible(true);
         try {

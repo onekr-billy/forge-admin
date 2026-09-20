@@ -1120,6 +1120,8 @@ const crudProps = computed(() => {
     toolbarActions: normalizeRuntimePageActions(options.toolbarActions || [], 'toolbar'),
     runtimeActions: normalizeRuntimePageActions(options.runtimeActions || [], 'row'),
     businessObjectCode: resolveBusinessObjectCode(cfg),
+    showDataChangeLog: designerLayout.showDataChangeLog === true || options.showDataChangeLog === true,
+    dataAuditObjectId: options.dataAuditObjectId || '',
     publicParams: treeTable
       ? { ...configuredPublicParams, ...defaultSortParams, loadMode: treeLoadMode }
       : { ...configuredPublicParams, ...defaultSortParams },

@@ -1,5 +1,9 @@
 package com.mdframe.forge.plugin.generator.service;
 
+import cn.dev33.satoken.exception.SaTokenContextException;
+import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditTenantSupport;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder;
 import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryConditionDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeAuditStrategy;
@@ -7,6 +11,8 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeLogicDeleteStrategy
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTenantStrategy;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.OracleRuntimeDatabaseDialect;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.PostgreSqlRuntimeDatabaseDialect;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialect;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialectFactory;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeJdbcTemplateProvider;
@@ -135,7 +141,7 @@ public class DynamicCrudRepository {
                                                       Map<String, String> fieldColumnMapping,
                                                       String orderBy) {
         return selectJoinedPage(mainTableName, selectFields, joins, pageNum, pageSize, searchParams,
-                allowedSearchFields, searchTypeMap, fieldColumnMapping, orderBy, null);
+                allowedSearchFields, searchTypeMap, fieldColumnMapping, orderBy, null, true);
     }
 
     public Page<Map<String, Object>> selectJoinedPage(String mainTableName,
@@ -148,7 +154,8 @@ public class DynamicCrudRepository {
                                                       Map<String, String> searchTypeMap,
                                                       Map<String, String> fieldColumnMapping,
                                                       String orderBy,
-                                                      SqlCondition dataScopeCondition) {
+                                                      SqlCondition dataScopeCondition,
+                                                      boolean aggregateChildren) {
         validateJoinQuery(mainTableName, selectFields, joins);
 
         StringBuilder whereClause = buildBaseWhereClause(mainTableName, "t0");
@@ -156,13 +163,12 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendSearchConditions(whereClause, params, searchParams, allowedSearchFields, searchTypeMap, fieldColumnMapping);
 
-        String fromClause = buildJoinedFromClause(mainTableName, joins);
-        boolean distinctMainRows = selectsOnlyMainTable(selectFields);
-        String countSql = (distinctMainRows ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
-                + fromClause + buildWhereSql(whereClause);
+        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        String countSql = (joinedSql.distinctMainRows() ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
+                + joinedSql.fromClause() + buildWhereSql(whereClause);
         Long total = jdbc().queryForObject(countSql, params, Long.class);
 
-        String dataSql = paginateSql(buildJoinSelectClause(selectFields, distinctMainRows) + " " + fromClause
+        String dataSql = paginateSql(buildJoinSelectClause(selectFields, joinedSql.distinctMainRows()) + " " + joinedSql.fromClause()
                 + buildWhereSql(whereClause) + buildOrderByClause(orderBy), pageNum, pageSize);
         List<Map<String, Object>> records = jdbc().queryForList(dataSql, params);
 
@@ -308,6 +314,19 @@ public class DynamicCrudRepository {
                             Map<String, String> searchTypeMap,
                             Map<String, String> fieldColumnMapping,
                             SqlCondition dataScopeCondition) {
+        return countJoined(mainTableName, selectFields, joins, searchParams, allowedSearchFields,
+                searchTypeMap, fieldColumnMapping, dataScopeCondition, true);
+    }
+
+    public long countJoined(String mainTableName,
+                            List<JoinField> selectFields,
+                            List<JoinSpec> joins,
+                            Map<String, Object> searchParams,
+                            Set<String> allowedSearchFields,
+                            Map<String, String> searchTypeMap,
+                            Map<String, String> fieldColumnMapping,
+                            SqlCondition dataScopeCondition,
+                            boolean aggregateChildren) {
         validateJoinQuery(mainTableName, selectFields, joins);
 
         StringBuilder whereClause = buildBaseWhereClause(mainTableName, "t0");
@@ -315,10 +334,9 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendSearchConditions(whereClause, params, searchParams, allowedSearchFields, searchTypeMap, fieldColumnMapping);
 
-        String fromClause = buildJoinedFromClause(mainTableName, joins);
-        boolean distinctMainRows = selectsOnlyMainTable(selectFields);
-        String countSql = (distinctMainRows ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
-                + fromClause + buildWhereSql(whereClause);
+        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        String countSql = (joinedSql.distinctMainRows() ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
+                + joinedSql.fromClause() + buildWhereSql(whereClause);
         Long total = jdbc().queryForObject(countSql, params, Long.class);
         return total != null ? total : 0L;
     }
@@ -337,6 +355,22 @@ public class DynamicCrudRepository {
                                                              Map<String, String> fieldColumnMapping,
                                                              String orderBy,
                                                              SqlCondition dataScopeCondition) {
+        return selectJoinedPageRecords(mainTableName, selectFields, joins, pageNum, pageSize, searchParams,
+                allowedSearchFields, searchTypeMap, fieldColumnMapping, orderBy, dataScopeCondition, true);
+    }
+
+    public List<Map<String, Object>> selectJoinedPageRecords(String mainTableName,
+                                                             List<JoinField> selectFields,
+                                                             List<JoinSpec> joins,
+                                                             int pageNum,
+                                                             int pageSize,
+                                                             Map<String, Object> searchParams,
+                                                             Set<String> allowedSearchFields,
+                                                             Map<String, String> searchTypeMap,
+                                                             Map<String, String> fieldColumnMapping,
+                                                             String orderBy,
+                                                             SqlCondition dataScopeCondition,
+                                                             boolean aggregateChildren) {
         validateJoinQuery(mainTableName, selectFields, joins);
 
         StringBuilder whereClause = buildBaseWhereClause(mainTableName, "t0");
@@ -344,9 +378,8 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendSearchConditions(whereClause, params, searchParams, allowedSearchFields, searchTypeMap, fieldColumnMapping);
 
-        String fromClause = buildJoinedFromClause(mainTableName, joins);
-        boolean distinctMainRows = selectsOnlyMainTable(selectFields);
-        String dataSql = paginateSql(buildJoinSelectClause(selectFields, distinctMainRows) + " " + fromClause
+        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        String dataSql = paginateSql(buildJoinSelectClause(selectFields, joinedSql.distinctMainRows()) + " " + joinedSql.fromClause()
                 + buildWhereSql(whereClause) + buildOrderByClause(orderBy), pageNum, pageSize);
         return jdbc().queryForList(dataSql, params);
     }
@@ -411,7 +444,7 @@ public class DynamicCrudRepository {
                                                             Map<String, String> fieldColumnMapping,
                                                             String orderBy) {
         return selectJoinedCustomPage(mainTableName, selectFields, joins, pageNum, pageSize, conditions,
-                allowedFields, fieldColumnMapping, orderBy, null);
+                allowedFields, fieldColumnMapping, orderBy, null, true);
     }
 
     public Page<Map<String, Object>> selectJoinedCustomPage(String mainTableName,
@@ -423,7 +456,8 @@ public class DynamicCrudRepository {
                                                             Set<String> allowedFields,
                                                             Map<String, String> fieldColumnMapping,
                                                             String orderBy,
-                                                            SqlCondition dataScopeCondition) {
+                                                            SqlCondition dataScopeCondition,
+                                                            boolean aggregateChildren) {
         validateJoinQuery(mainTableName, selectFields, joins);
 
         StringBuilder whereClause = buildBaseWhereClause(mainTableName, "t0");
@@ -431,14 +465,13 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendCustomConditions(whereClause, params, conditions, allowedFields, fieldColumnMapping);
 
-        String fromClause = buildJoinedFromClause(mainTableName, joins);
-        boolean distinctMainRows = selectsOnlyMainTable(selectFields);
-        String countSql = (distinctMainRows ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
-                + fromClause + buildWhereSql(whereClause);
+        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        String countSql = (joinedSql.distinctMainRows() ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
+                + joinedSql.fromClause() + buildWhereSql(whereClause);
         logDynamicSql("自定义查询统计(左连接)", countSql, params);
         Long total = jdbc().queryForObject(countSql, params, Long.class);
 
-        String dataSql = paginateSql(buildJoinSelectClause(selectFields, distinctMainRows) + " " + fromClause
+        String dataSql = paginateSql(buildJoinSelectClause(selectFields, joinedSql.distinctMainRows()) + " " + joinedSql.fromClause()
                 + buildWhereSql(whereClause) + buildOrderByClause(orderBy), pageNum, pageSize);
         logDynamicSql("自定义查询数据(左连接)", dataSql, params);
         List<Map<String, Object>> records = jdbc().queryForList(dataSql, params);
@@ -1113,7 +1146,13 @@ public class DynamicCrudRepository {
         validateTableName(tableName);
 
         Map<String, Object> insertData = prepareInsertData(tableName, data);
-        return jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData));
+        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn(), insertData.get(primaryKeyColumn()),
+                DataAuditTransactionHolder.WriteKind.INSERT);
+        int affected = jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData));
+        DataAuditTransactionHolder.afterWrite(tableName, insertData.get(primaryKeyColumn()), insertData,
+                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
+                DataAuditTransactionHolder.WriteKind.INSERT, affected);
+        return affected;
     }
 
     /**
@@ -1144,14 +1183,22 @@ public class DynamicCrudRepository {
         if (!autoIncrement && !insertData.containsKey(primaryKeyColumn)) {
             throw new BusinessException("新增操作缺少主键字段: " + primaryKeyColumn);
         }
+        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, insertData.get(primaryKeyColumn),
+                DataAuditTransactionHolder.WriteKind.INSERT);
+        Object generatedKey;
         if (!autoIncrement) {
             jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData));
-            return insertData.get(primaryKeyColumn);
+            generatedKey = insertData.get(primaryKeyColumn);
+        } else {
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData), keyHolder, new String[] { primaryKeyColumn });
+            Number key = keyHolder.getKey();
+            generatedKey = key == null ? insertData.get(primaryKeyColumn) : key;
         }
-        KeyHolder keyHolder = new GeneratedKeyHolder();
-        jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData), keyHolder, new String[] { primaryKeyColumn });
-        Number key = keyHolder.getKey();
-        return key == null ? insertData.get(primaryKeyColumn) : key;
+        DataAuditTransactionHolder.afterWrite(tableName, generatedKey, insertData,
+                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
+                DataAuditTransactionHolder.WriteKind.INSERT, 1);
+        return generatedKey;
     }
 
     // ==================== 更新操作 ====================
@@ -1176,11 +1223,16 @@ public class DynamicCrudRepository {
         validateIdentifier(primaryKeyColumn);
 
         Map<String, Object> updateData = prepareUpdateData(tableName, data, primaryKeyColumn);
+        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.UPDATE);
         MapSqlParameterSource params = toSqlParams(updateData, id);
         String sql = appendTenantCondition(buildUpdateSql(tableName, updateData, primaryKeyColumn), params, tableName);
         sql = appendLogicActiveCondition(sql, params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);
-        return jdbc().update(sql, params);
+        int affected = jdbc().update(sql, params);
+        DataAuditTransactionHolder.afterWrite(tableName, id, updateData,
+                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
+                DataAuditTransactionHolder.WriteKind.UPDATE, affected);
+        return affected;
     }
 
     /**
@@ -1253,7 +1305,12 @@ public class DynamicCrudRepository {
         for (String bound : boundConditions) {
             sql += " AND (" + bound + ")";
         }
-        return jdbc().update(sql, params);
+        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.UPDATE);
+        int affected = jdbc().update(sql, params);
+        DataAuditTransactionHolder.afterWrite(tableName, id, Map.of(),
+                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.BUSINESS_ACTION),
+                DataAuditTransactionHolder.WriteKind.UPDATE, affected);
+        return affected;
     }
 
     public Long selectFirstIdByColumn(String tableName, String columnName, Object value) {
@@ -1297,9 +1354,14 @@ public class DynamicCrudRepository {
         if (logicDelete) {
             params.addValue("deletedValue", logicDeletedValue());
         }
+        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE);
         String sql = appendTenantCondition(buildDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);
-        return jdbc().update(sql, params);
+        int affected = jdbc().update(sql, params);
+        DataAuditTransactionHolder.afterWrite(tableName, id, Map.of(),
+                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
+                DataAuditTransactionHolder.WriteKind.DELETE, affected);
+        return affected;
     }
 
     /**
@@ -1321,9 +1383,18 @@ public class DynamicCrudRepository {
         if (logicDelete) {
             params.addValue("deletedValue", logicDeletedValue());
         }
+        for (Object id : ids) {
+            DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE);
+        }
         String sql = appendTenantCondition(buildBatchDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);
-        return jdbc().update(sql, params);
+        int affected = jdbc().update(sql, params);
+        for (Object id : ids) {
+            DataAuditTransactionHolder.afterWrite(tableName, id, Map.of(),
+                    DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
+                    DataAuditTransactionHolder.WriteKind.DELETE, affected > 0 ? 1 : 0);
+        }
+        return affected;
     }
 
     public int deleteByColumn(String tableName, String columnName, Object value, boolean logicDelete) {
@@ -1332,6 +1403,7 @@ public class DynamicCrudRepository {
         if (value == null) {
             return 0;
         }
+        captureColumnDelete(tableName, columnName, value);
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("value", value);
         String sql;
@@ -1452,6 +1524,26 @@ public class DynamicCrudRepository {
         });
     }
 
+    private void captureColumnDelete(String tableName, String columnName, Object value) {
+        if (DataAuditTransactionHolder.index().findTable(DataAuditTenantSupport.currentTenantIdOrNull(), tableName) == null) {
+            return;
+        }
+        List<Map<String, Object>> rows = selectListByColumn(tableName, columnName, value);
+        for (Map<String, Object> row : rows) {
+            Object id = row.get(primaryKeyColumn());
+            if (id == null) {
+                id = row.get("id");
+            }
+            if (id == null) {
+                id = row.get("ID");
+            }
+            DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn(), id, DataAuditTransactionHolder.WriteKind.DELETE);
+            DataAuditTransactionHolder.afterWrite(tableName, id, row,
+                    DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
+                    DataAuditTransactionHolder.WriteKind.DELETE, 1);
+        }
+    }
+
     private boolean isCharacterJdbcType(int jdbcType) {
         return jdbcType == Types.CHAR
                 || jdbcType == Types.VARCHAR
@@ -1527,6 +1619,98 @@ public class DynamicCrudRepository {
 
     private boolean selectsOnlyMainTable(List<JoinField> fields) {
         return fields != null && fields.stream().allMatch(field -> "t0".equals(field.tableAlias()));
+    }
+
+    private record JoinedListSql(String fromClause, boolean distinctMainRows) {
+    }
+
+    /**
+     * 列表查出子表列时，按子表外键聚合成一行再左连接，避免一对多把主表行乘开。
+     */
+    private JoinedListSql resolveListJoinSql(String mainTableName,
+                                             List<JoinField> selectFields,
+                                             List<JoinSpec> joins,
+                                             boolean aggregateChildren) {
+        boolean shouldAggregate = aggregateChildren && !selectsOnlyMainTable(selectFields);
+        String fromClause = shouldAggregate
+                ? buildAggregatedJoinedFromClause(mainTableName, joins, selectFields)
+                : buildJoinedFromClause(mainTableName, joins);
+        return new JoinedListSql(fromClause, shouldAggregate || selectsOnlyMainTable(selectFields));
+    }
+
+    private String buildAggregatedJoinedFromClause(String mainTableName, List<JoinSpec> joins, List<JoinField> selectFields) {
+        StringBuilder sql = new StringBuilder("FROM ")
+                .append(mainTableName)
+                .append(" t0");
+        for (JoinSpec join : joins) {
+            sql.append(" LEFT JOIN (")
+                    .append(buildAggregatedChildSelect(join, selectFields))
+                    .append(") ")
+                    .append(join.tableAlias())
+                    .append(" ON ")
+                    .append(qualifyColumn(join.tableAlias(), join.joinColumn()))
+                    .append(" = ")
+                    .append(qualifyColumn("t0", join.mainColumn()));
+        }
+        return sql.toString();
+    }
+
+    private String buildAggregatedChildSelect(JoinSpec join, List<JoinField> selectFields) {
+        LinkedHashSet<String> columns = new LinkedHashSet<>();
+        columns.add(join.joinColumn());
+        if (selectFields != null) {
+            for (JoinField field : selectFields) {
+                if (field != null && join.tableAlias().equals(field.tableAlias()) && StringUtils.isNotBlank(field.columnName())) {
+                    columns.add(field.columnName());
+                }
+            }
+        }
+        Set<String> tableColumns = getTableColumns(join.tableName());
+        boolean hasId = tableColumns.contains("id");
+        StringBuilder sql = new StringBuilder("SELECT ");
+        boolean first = true;
+        for (String column : columns) {
+            if (!first) {
+                sql.append(", ");
+            }
+            first = false;
+            if (column.equals(join.joinColumn())) {
+                sql.append(quoteIdentifier(column));
+                continue;
+            }
+            sql.append(aggregateExpression(column, hasId)).append(" AS ").append(quoteIdentifier(column));
+        }
+        sql.append(" FROM ").append(join.tableName());
+        StringBuilder where = new StringBuilder();
+        Long tenantId = TenantContextHolder.getTenantId();
+        String tenantColumn = tenantColumn();
+        if (tenantId != null && tenantStrategyEnabled() && tableColumns.contains(tenantColumn)) {
+            where.append(quoteIdentifier(tenantColumn)).append(" = :tenantId");
+        }
+        if (hasDelFlag(join.tableName())) {
+            if (!where.isEmpty()) {
+                where.append(" AND ");
+            }
+            where.append(quoteIdentifier(logicDeleteColumn())).append(" = :logicActiveValue");
+        }
+        if (!where.isEmpty()) {
+            sql.append(" WHERE ").append(where);
+        }
+        sql.append(" GROUP BY ").append(quoteIdentifier(join.joinColumn()));
+        return sql.toString();
+    }
+
+    private String aggregateExpression(String column, boolean hasId) {
+        String quoted = quoteIdentifier(column);
+        String orderColumn = hasId ? quoteIdentifier("id") : quoted;
+        RuntimeDatabaseDialect dialect = dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get());
+        if (dialect instanceof PostgreSqlRuntimeDatabaseDialect) {
+            return "string_agg(" + quoted + "::text, '、' ORDER BY " + orderColumn + ")";
+        }
+        if (dialect instanceof OracleRuntimeDatabaseDialect) {
+            return "LISTAGG(" + quoted + ", '、') WITHIN GROUP (ORDER BY " + orderColumn + ")";
+        }
+        return "GROUP_CONCAT(" + quoted + " ORDER BY " + orderColumn + " SEPARATOR '、')";
     }
 
     private String buildJoinedFromClause(String mainTableName, List<JoinSpec> joins) {
@@ -1812,8 +1996,8 @@ public class DynamicCrudRepository {
     private void fillInsertAuditFields(Map<String, Object> data, Set<String> columns) {
         Date now = new Date();
         Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = SessionHelper.getUserId();
-        Long mainOrgId = SessionHelper.getMainOrgId();
+        Long userId = auditSessionValue(SessionHelper::getUserId);
+        Long mainOrgId = auditSessionValue(SessionHelper::getMainOrgId);
 
         if (tenantStrategyEnabled()) {
             putIfColumnExists(data, columns, tenantColumn(), tenantId);
@@ -1834,11 +2018,23 @@ public class DynamicCrudRepository {
             return;
         }
         Date now = new Date();
-        Long userId = SessionHelper.getUserId();
+        Long userId = auditSessionValue(SessionHelper::getUserId);
         LowcodeAuditStrategy auditStrategy = auditStrategy();
 
         putIfColumnExists(data, columns, auditUpdateByColumn(auditStrategy), userId);
         putIfColumnExists(data, columns, auditUpdateTimeColumn(auditStrategy), now);
+    }
+
+    private Long auditSessionValue(java.util.function.Supplier<Long> supplier) {
+        try {
+            // SessionHelper 优先读取显式执行身份，其次才是 Web 登录会话。
+            return supplier.get();
+        } catch (SaTokenContextException exception) {
+            // 流程消息/定时任务没有 Web 会话，不伪造操作者；系统审计单独记录来源。
+            // 只处理缺少请求上下文，其他异常仍向上传播；不影响租户或数据权限条件。
+            log.debug("[DynamicCrudRepository] 后台写入无 Web 审计会话");
+            return null;
+        }
     }
 
     private boolean tenantStrategyEnabled() {

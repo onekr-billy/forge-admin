@@ -1332,6 +1332,12 @@
                       </n-switch>
                     </div>
                   </n-form-item>
+                  <FieldNumberConstraintPanel
+                    v-if="supportsFieldNumberRange"
+                    :component="selectedComponent"
+                    :field-asset="selectedFieldAsset"
+                    @update="updateComponent({ props: $event })"
+                  />
                   <n-form-item v-if="selectedComponent.componentKey === 'barcodeScanner'" label="扫码输入设置">
                     <div class="field-constraint-config">
                       <div class="switch-line compact">
@@ -4561,6 +4567,7 @@ import { camelToSnake } from '../form-first/namingUtils'
 import FieldEventRulesEditor from './FieldEventRulesEditor.vue'
 import FieldLinkageRulesEditor from './FieldLinkageRulesEditor.vue'
 import { GRID_COLUMN_MARKS as gridColumnMarks, MAX_FORM_GRID_COLUMNS, normalizeGridCount } from './formLayoutConfig'
+import FieldNumberConstraintPanel from './panels/FieldNumberConstraintPanel.vue'
 import FormAssetsPanel from './panels/FormAssetsPanel.vue'
 import FormInitPanel from './panels/FormInitPanel.vue'
 import FormLayoutPanel from './panels/FormLayoutPanel.vue'
@@ -4836,6 +4843,7 @@ const switchableComponentOptions = computed(() => {
   }))
 })
 const supportsFieldMaxLength = computed(() => ['input', 'textarea', 'barcodeScanner'].includes(selectedComponent.value?.componentKey))
+const supportsFieldNumberRange = computed(() => ['number', 'inputNumber', 'money'].includes(selectedComponent.value?.componentKey))
 const selectedFieldMaxLength = computed(() => {
   const fromProps = normalizePositiveInteger(selectedComponent.value?.props?.maxlength)
   if (fromProps)

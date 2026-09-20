@@ -1,6 +1,24 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 88 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 89 条。
+
+## 表单页面形态必须传到实际 CRUD 组件
+
+**发现日期**：2026-09-20
+
+创建表单页已写入区块 `formOnly=true` 和 `objectRef.pageMode=form`，但 GridBlockRenderer 的运行配置合并与静态兜底均漏传 formOnly。外层按表单自动高度，内层仍渲染列表，配合隐藏工具栏/搜索就表现为空白；只检查模板创建测试无法发现。
+
+形态按区块实例解析：显式 formOnly 优先，其次 pageMode（list/crud 必须覆盖旧 pageKey=form），最后兼容旧配置/运行默认值。编译与静态分支、门户高度使用同一解析规则，不能向同一对象的共享配置写入某一页模式。组件测试断言实际 AiCrudPage props，浏览器确认表单 DOM 与无列表请求；纯列表和列表＋表单同时回归。
+
+## 草稿列表表头与数据查询必须共用运行配置编译结果
+
+**发现日期**: 2026-09-20
+
+**问题描述**:
+草稿 render 即时编译 model/page Schema，已经返回子表列；动态 CRUD 的 `getConfig` 却直接返回存储实体，旧 `columnsSchema` 仍只有主表字段。导致页面表头出现子表列，列表查询没有触发 JOIN，返回记录完全缺少子表字段键。详情中存在子表行，不能误判为业务数据未保存。
+
+**解决方案**:
+设计预览表头与取数都调用 `AiCrudConfigService.resolveDraftRuntimeConfig`，在内存副本上统一生成搜索、列表、表单、选项和翻译/加密协议。保留设计权限校验，普通请求仍读发布快照；不能为了修复预览而覆盖缓存、自动发布或改业务数据。回归必须检查实际 JOIN SQL 和返回别名/值，不能只测列编译。
 
 ## 子表字段不能同时进主表单和主表字段目录
 
@@ -10,7 +28,7 @@
 审批待办把子表字段渲染了两次：`appendRuntimeChildFieldCatalog` 把子表字段以 `scope=child`、裸字段名放进主字段目录，`buildTaskFormFields` 没有跳过，主表单和 `childrenConfig` 各画一遍。列表设计选出的 `modelCode__field` 在非 `master-detail-crud` 布局下也会进 `editSchema`。节点权限面板 `collectBusinessAssetFields` 按裸字段名去重并丢掉 `childKey`，子表字段权限出不来。应用页区块 `fieldRefs` 仍是主表快照时，会把已编译的子表列滤掉。流程结束回写只查已发布运行配置；对象还是草稿时 `syncConfiguredStatusField` 直接返回，关联却被标成已结束，单据 `flowStatus` 停在 `IN_PROCESS`。
 
 **解决方案**:
-主表单跳过 `scope=child` 和 `__` 子表字段引用，子表只走 `childrenConfig`。编辑 schema 一律去掉子表字段引用，列表 columns 保留。流程模型的表单权限目录来自应用页面表单资产，不是运行时 `editSchema`；明细表字段在 `subTable.props.columns`。同一张子表会同时出现关系键和带应用前缀的对象编码（`detail_ujpc` / `cgou_detail_ujpc`），权限面板必须收成一套，审批回放按别名匹配，不能因为业务流程 formKey 和节点 formKey 写法不同就把节点权限清空。字段「可编辑」必须能改已有子表行，不能再被行级 `allowUpdate=false` 盖掉。带子表时节点 `formFieldPermissions` 是 JSON 对象字符串，不能按数组解析，否则 `fields` 整段丢失，暂存会报「不允许编辑子表字段」。主从表单据的字段在 `main` 里，审批标题不能只扫记录最外层，否则 `${fieldInput}` 不会被替换。结束回调用快照 `configKey` 回退草稿配置写 `flowStatus`；关联已结束时仍补写一次。
+主表单跳过 `scope=child` 和 `__` 子表字段引用，子表只走 `childrenConfig`。编辑 schema 一律去掉子表字段引用，列表 columns 保留。流程模型的表单权限目录来自应用页面表单资产，不是运行时 `editSchema`；明细表字段在 `subTable.props.columns`。同一张子表会同时出现关系键和带应用前缀的对象编码（`detail_ujpc` / `cgou_detail_ujpc`），权限面板必须收成一套，审批回放按别名匹配，不能因为业务流程 formKey 和节点 formKey 写法不同就把节点权限清空。字段「可编辑」必须能改已有子表行，不能再被行级 `allowUpdate=false` 盖掉。带子表时节点 `formFieldPermissions` 是 JSON 对象字符串，不能按数组解析，否则 `fields` 整段丢失，暂存会报「不允许编辑子表字段」。主从表单据的字段在 `main` 里，审批标题不能只扫记录最外层，否则 `${fieldInput}` 不会被替换。结束回调用快照 `configKey` 回退草稿配置写 `flowStatus`；关联已结束时仍补写一次。列表设计字段面板要按主表/子表分组；选出的子表列不能被 `listVisible=false` 从表格区滤掉。列表默认按外键把子表聚合成一行再 LEFT JOIN，避免一对多把主表行乘开、分页主键重复。用户可在「子表行展示」里改成拆成多条；拆行时表格行键用 `__listRowKey`，编辑和删除仍按主表主键，批量删除要先去重。
 
 ## 子表运行时单元格不能把 class 落到 AiFormItem 碎片根上
 
@@ -1684,3 +1702,11 @@ Flyway 脚本为新环境写了包含完整字段的 `CREATE TABLE IF NOT EXISTS
 **解决方案**:
 - 托管对象复用必须页面 ID 和表单资产 ID 同时命中，不能只靠其中一项。
 - 新建页面和表单资产 ID 必须带不可复用的随机后缀，删除后再建不能回到 `page_page` / `form`。
+
+## 审计提交回调不能依赖已退出的业务数据源上下文
+
+**发现日期**：2026-09-20
+
+`@Transactional` 方法内部的 try-with-resources 会先关闭运行数据源 Scope，随后事务代理才执行 `beforeCommit`。审计若此时直接通过动态 Repository 回读最终行，会从业务数据源退回平台数据源；平台连接看到旧快照时会漏记主表变化，而显式标记的子表删除仍可生成摘要。
+
+应在写钩子阶段按行保存数据源读取上下文与实际主键列，自增 ID 未生成时先保存表级信息。最终回读仅在受控 Scope 中临时恢复上下文，正常及异常退出都还原调用方上下文。回归测试必须覆盖完整采集服务与事务回调，不能只给差异引擎传两份人为准备好的 Map；模拟链路通过仍不等于真实数据库事务和跨库原子性已经验收。

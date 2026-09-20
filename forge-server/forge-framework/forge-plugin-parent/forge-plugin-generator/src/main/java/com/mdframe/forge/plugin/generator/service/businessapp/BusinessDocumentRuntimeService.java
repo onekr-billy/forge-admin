@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLi
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
+import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
@@ -57,6 +58,8 @@ public class BusinessDocumentRuntimeService {
         vo.setBusinessKey(businessKey);
         vo.setActiveProcessCodes(loadActiveProcessCodes(tenantId, List.of(businessKey)).getOrDefault(
                 businessKey, Collections.emptyList()));
+        vo.setStartedProcessCodes(loadStartedProcessCodes(tenantId, List.of(businessKey)).getOrDefault(
+                businessKey, Collections.emptyList()));
         fillDetailFlowDisplayOptions(vo, null);
         AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, businessKey);
         if (link != null) {
@@ -70,8 +73,11 @@ public class BusinessDocumentRuntimeService {
 
         AiBusinessDocumentConfig config = context.documentConfig();
         if (config == null) {
-            vo.setMessage(StringUtils.isBlank(vo.getProcessInstanceId())
-                    ? "当前对象未启用单据模式" : "当前对象使用应用级业务流程");
+            fillApplicationFlowRuntime(
+                    vo,
+                    canonicalObjectCode,
+                    link,
+                    loadMyActiveTasks(link == null ? Collections.emptyList() : List.of(link)));
             return vo;
         }
         vo.setDocumentEnabled(true);
@@ -118,6 +124,11 @@ public class BusinessDocumentRuntimeService {
                 normalizedRecordIds.stream()
                         .map(recordId -> buildBusinessKey(context.objectCode(), recordId))
                         .toList());
+        Map<String, List<String>> startedProcessCodeMap = loadStartedProcessCodes(
+                tenantId,
+                normalizedRecordIds.stream()
+                        .map(recordId -> buildBusinessKey(context.objectCode(), recordId))
+                        .toList());
         List<String> documentActions = config == null
                 ? Collections.emptyList()
                 : permissionService.resolveDocumentActionPermissions(context.objectCode());
@@ -136,6 +147,8 @@ public class BusinessDocumentRuntimeService {
                     linkMap.get(recordId),
                     actions,
                     activeProcessCodeMap.getOrDefault(
+                            buildBusinessKey(context.objectCode(), recordId), Collections.emptyList()),
+                    startedProcessCodeMap.getOrDefault(
                             buildBusinessKey(context.objectCode(), recordId), Collections.emptyList()),
                     myTaskMap));
         }
@@ -195,11 +208,13 @@ public class BusinessDocumentRuntimeService {
                                                      AiBusinessFlowInstanceLink link,
                                                      List<String> actions,
                                                      List<String> activeProcessCodes,
+                                                     List<String> startedProcessCodes,
                                                      Map<String, BusinessDocumentRuntimeVO.MyTaskVO> myTaskMap) {
         BusinessDocumentRuntimeVO vo = new BusinessDocumentRuntimeVO();
         vo.setDocumentEnabled(false);
         vo.setBusinessKey(buildBusinessKey(context.objectCode(), recordId));
         vo.setActiveProcessCodes(activeProcessCodes == null ? new ArrayList<>() : new ArrayList<>(activeProcessCodes));
+        vo.setStartedProcessCodes(startedProcessCodes == null ? new ArrayList<>() : new ArrayList<>(startedProcessCodes));
         fillDetailFlowDisplayOptions(vo, configVO);
         if (link != null) {
             vo.setFlowStatus(link.getFlowStatus());
@@ -208,8 +223,7 @@ public class BusinessDocumentRuntimeService {
         }
 
         if (config == null) {
-            vo.setMessage(StringUtils.isBlank(vo.getProcessInstanceId())
-                    ? "当前对象未启用单据模式" : "当前对象使用应用级业务流程");
+            fillApplicationFlowRuntime(vo, context.objectCode(), link, myTaskMap);
             return vo;
         }
         vo.setDocumentEnabled(true);
@@ -231,8 +245,80 @@ public class BusinessDocumentRuntimeService {
         return vo;
     }
 
+    /**
+     * 新版应用按实际流程关联提供动作，不依赖旧版单据配置或当前用户是否有待办。
+     */
+    private void fillApplicationFlowRuntime(
+            BusinessDocumentRuntimeVO vo,
+            String objectCode,
+            AiBusinessFlowInstanceLink link,
+            Map<String, BusinessDocumentRuntimeVO.MyTaskVO> myTaskMap) {
+        fillMyTask(vo, null, link, myTaskMap);
+        List<BusinessDocumentRuntimeVO.RuntimeActionVO> runtimeActions = new ArrayList<>();
+        addWithdrawAction(runtimeActions, vo, objectCode, link, List.of("WITHDRAW"));
+        vo.setRuntimeActions(runtimeActions);
+        if (vo.getMyTask() == null) {
+            vo.setMessage(StringUtils.isBlank(vo.getProcessInstanceId())
+                    ? "当前记录尚未关联审批流程" : "当前记录使用应用级审批流程");
+            return;
+        }
+        boolean initiatorModify = Boolean.TRUE.equals(vo.getMyTask().getInitiatorModify());
+        vo.setNextAction(initiatorModify ? "RESUBMIT_FLOW" : "HANDLE_TASK");
+        vo.setMessage(initiatorModify ? "已驳回，修改后可重新提交" : "有待你处理的审批节点");
+        addMyTaskAction(runtimeActions, vo, objectCode);
+        vo.setRuntimeActions(runtimeActions);
+    }
+
     public void validateStartAllowed(String objectCode, Long recordId, boolean checkPermission) {
         BusinessDocumentRuntimeVO runtime = getRuntime(objectCode, recordId);
+        validateResolvedStartAllowed(runtime, recordId, checkPermission);
+    }
+
+    /**
+     * 使用流程发起服务已经加载的单据上下文执行轻量校验。
+     * <p>
+     * 该入口只计算发起所需的状态策略和权限，不再构建完整详情运行态，避免重复查询
+     * 业务记录、流程轮次、应用流程运行记录和当前用户待办。
+     */
+    public void validateStartAllowed(String objectCode,
+                                     Long recordId,
+                                     BusinessDocumentConfigVO configVO,
+                                     Map<String, Object> recordData,
+                                     AiBusinessFlowInstanceLink latestLink,
+                                     boolean checkPermission) {
+        BusinessDocumentRuntimeVO runtime = new BusinessDocumentRuntimeVO();
+        runtime.setDocumentEnabled(configVO != null && Boolean.TRUE.equals(configVO.getDocumentEnabled()));
+        runtime.setBusinessKey(buildBusinessKey(objectCode, recordId));
+        if (configVO == null || !Boolean.TRUE.equals(runtime.getDocumentEnabled())) {
+            runtime.setMessage("当前对象未启用单据模式");
+            validateResolvedStartAllowed(runtime, recordId, checkPermission);
+            return;
+        }
+        if (recordData == null) {
+            runtime.setMessage("记录不存在或无权限访问");
+            runtime.setNextAction("SAVE_RECORD");
+            validateResolvedStartAllowed(runtime, recordId, checkPermission);
+            return;
+        }
+        if (latestLink != null) {
+            runtime.setFlowStatus(latestLink.getFlowStatus());
+            runtime.setProcessInstanceId(latestLink.getProcessInstanceId());
+            runtime.setRoundNo(latestLink.getRoundNo());
+        }
+
+        String documentStatus = text(resolveRecordField(recordData, configVO.getStatusField()));
+        runtime.setDocumentStatus(documentStatus);
+        List<String> actions = checkPermission
+                ? permissionService.resolveAvailableActions(objectCode, recordId, recordData)
+                : Collections.emptyList();
+        runtime.setAvailableActions(actions);
+        fillNextAction(runtime, configVO, latestLink, actions);
+        validateResolvedStartAllowed(runtime, recordId, checkPermission);
+    }
+
+    private void validateResolvedStartAllowed(BusinessDocumentRuntimeVO runtime,
+                                              Long recordId,
+                                              boolean checkPermission) {
         if (!Boolean.TRUE.equals(runtime.getDocumentEnabled())) {
             throw new BusinessException(StringUtils.defaultIfBlank(runtime.getMessage(), "当前对象未启用单据模式"));
         }
@@ -247,7 +333,7 @@ public class BusinessDocumentRuntimeService {
             throw new BusinessException(StringUtils.defaultIfBlank(runtime.getMessage(), "请先配置主流程"));
         }
         if ("VIEW_FLOW".equals(runtime.getNextAction())) {
-            throw new BusinessException("当前单据已有流转中的流程");
+            throw new BusinessException("当前单据已有主流程实例，不能重复发起");
         }
         if ("RESUBMIT_FLOW".equals(runtime.getNextAction())) {
             throw new BusinessException("当前单据已驳回至你修改，请修改后重新提交，不要另起新流程");
@@ -354,6 +440,34 @@ public class BusinessDocumentRuntimeService {
         return result;
     }
 
+    private Map<String, List<String>> loadStartedProcessCodes(Long tenantId, List<String> businessKeys) {
+        if (tenantId == null || businessKeys == null || businessKeys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<String> keys = businessKeys.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .toList();
+        if (keys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<AiBusinessProcessRun> runs = businessProcessRunMapper.selectStartedByBusinessKeys(tenantId, keys);
+        if (runs == null || runs.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashMap<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
+        for (AiBusinessProcessRun run : runs) {
+            if (run == null || StringUtils.isAnyBlank(run.getBusinessKey(), run.getProcessCode())) {
+                continue;
+            }
+            grouped.computeIfAbsent(run.getBusinessKey(), ignored -> new LinkedHashSet<>())
+                    .add(run.getProcessCode());
+        }
+        LinkedHashMap<String, List<String>> result = new LinkedHashMap<>();
+        grouped.forEach((key, codes) -> result.put(key, List.copyOf(codes)));
+        return result;
+    }
+
     /**
      * 查询当前登录人在这批流程实例上的待办，按流程实例 ID 归集。
      * <p>
@@ -407,26 +521,32 @@ public class BusinessDocumentRuntimeService {
     }
 
     /**
-     * 判定待办是不是驳回后的发起人修改节点：流程回调记录的修改待办优先，
-     * 其次看「处理人是发起人且单据已是待修改」，保证回调丢失时仍能给出正确入口。
+     * 加载当前用户待办并判定是否为驳回后的发起人修改节点。优先使用流程服务的
+     * 实时结果，回调记录的修改待办用于处理接口短暂延迟。
      */
     private void fillMyTask(BusinessDocumentRuntimeVO vo, BusinessDocumentConfigVO configVO,
                             AiBusinessFlowInstanceLink link,
                             Map<String, BusinessDocumentRuntimeVO.MyTaskVO> myTaskMap) {
-        if (link == null || myTaskMap == null || myTaskMap.isEmpty()
-                || StringUtils.isBlank(link.getProcessInstanceId())) {
-            return;
-        }
-        BusinessDocumentRuntimeVO.MyTaskVO shared = myTaskMap.get(link.getProcessInstanceId());
-        if (shared == null) {
+        if (link == null || StringUtils.isBlank(link.getProcessInstanceId())) {
             return;
         }
         BusinessFlowLinkRuntimeState.ModifyTask recorded =
                 BusinessFlowLinkRuntimeState.readModifyTask(link.getVariablesSnapshot());
-        boolean initiatorModify = recorded != null && shared.getTaskId().equals(recorded.taskId());
+        BusinessDocumentRuntimeVO.MyTaskVO shared = myTaskMap == null
+                ? null : myTaskMap.get(link.getProcessInstanceId());
+        if (shared == null) {
+            shared = resolveRecordedModifyTask(vo, configVO, link, recorded);
+        }
+        if (shared == null) {
+            return;
+        }
+        boolean initiatorModify = isInitiatorModifyTask(shared)
+                || (recorded != null && StringUtils.equals(shared.getTaskId(), recorded.taskId()));
         if (!initiatorModify) {
             initiatorModify = isFlowInitiator(link)
-                    && "NEED_MODIFY".equals(resolveStandardStatusKey(configVO, vo.getDocumentStatus()));
+                    && (BusinessDocumentFlowStatus.NEED_MODIFY.matches(link.getFlowStatus())
+                        || BusinessDocumentFlowStatus.NEED_MODIFY.matches(
+                                resolveStandardStatusKey(configVO, vo.getDocumentStatus())));
         }
         // 批量查询的待办对象在多条记录间共享，必须复制后再写入单据级判定结果。
         BusinessDocumentRuntimeVO.MyTaskVO myTask = new BusinessDocumentRuntimeVO.MyTaskVO();
@@ -436,6 +556,44 @@ public class BusinessDocumentRuntimeService {
         myTask.setProcessInstanceId(shared.getProcessInstanceId());
         myTask.setInitiatorModify(initiatorModify);
         vo.setMyTask(myTask);
+    }
+
+    /**
+     * 流程服务的待办查询可能与回调写入存在短暂时序差，此时使用关联表中已记录的
+     * 发起人修改任务恢复操作入口。只允许任务处理人或流程发起人读取，避免把待办
+     * 暴露给同一单据的其他可见用户。
+     */
+    private BusinessDocumentRuntimeVO.MyTaskVO resolveRecordedModifyTask(
+            BusinessDocumentRuntimeVO vo,
+            BusinessDocumentConfigVO configVO,
+            AiBusinessFlowInstanceLink link,
+            BusinessFlowLinkRuntimeState.ModifyTask recorded) {
+        if (recorded == null) {
+            return null;
+        }
+        boolean needModify = BusinessDocumentFlowStatus.NEED_MODIFY.matches(link.getFlowStatus())
+                || BusinessDocumentFlowStatus.NEED_MODIFY.matches(
+                        resolveStandardStatusKey(configVO, vo.getDocumentStatus()));
+        if (!needModify) {
+            return null;
+        }
+        String currentUserId = resolveUserId();
+        boolean assignedToCurrentUser = StringUtils.equals(
+                currentUserId, StringUtils.trimToNull(recorded.assigneeId()));
+        if (!assignedToCurrentUser && !isFlowInitiator(link)) {
+            return null;
+        }
+        BusinessDocumentRuntimeVO.MyTaskVO myTask = new BusinessDocumentRuntimeVO.MyTaskVO();
+        myTask.setTaskId(recorded.taskId());
+        myTask.setTaskDefKey(recorded.taskDefKey());
+        myTask.setTaskName(recorded.taskName());
+        myTask.setProcessInstanceId(link.getProcessInstanceId());
+        return myTask;
+    }
+
+    private boolean isInitiatorModifyTask(BusinessDocumentRuntimeVO.MyTaskVO task) {
+        String taskDefKey = task == null ? null : StringUtils.trimToNull(task.getTaskDefKey());
+        return taskDefKey != null && taskDefKey.startsWith("Forge_InitiatorModify");
     }
 
     private boolean isFlowInitiator(AiBusinessFlowInstanceLink link) {
@@ -487,6 +645,11 @@ public class BusinessDocumentRuntimeService {
             vo.setMessage("流程流转中");
             return;
         }
+        if (hasDocumentFlowInstance(link)) {
+            vo.setNextAction("VIEW_FLOW");
+            vo.setMessage("流程已结束，可查看审批记录");
+            return;
+        }
         if (!isManualStartMode(text(mainFlowSummary.get("startMode")))) {
             vo.setNextAction("CONFIG_TRIGGER");
             vo.setMessage("当前主流程配置为触发器自动发起");
@@ -513,8 +676,8 @@ public class BusinessDocumentRuntimeService {
                                     AiBusinessFlowInstanceLink link, List<String> actions) {
         List<BusinessDocumentRuntimeVO.RuntimeActionVO> runtimeActions = new ArrayList<>();
         // 待办类动作与发起模式、发起按钮显隐无关：只要当前登录人手上有这条单据的待办就必须给出入口。
-        addMyTaskAction(runtimeActions, vo, config);
-        addWithdrawAction(runtimeActions, vo, config, link, actions);
+        addMyTaskAction(runtimeActions, vo, config.getObjectCode());
+        addWithdrawAction(runtimeActions, vo, config.getObjectCode(), link, actions);
         Map<String, Object> mainFlowSummary = configVO.getMainFlowSummary();
         String startMode = mainFlowSummary == null ? "MANUAL" : text(mainFlowSummary.get("startMode"));
         if (!isManualStartMode(startMode)) {
@@ -542,9 +705,9 @@ public class BusinessDocumentRuntimeService {
         if (!isMainFlowConfigured(mainFlowSummary)) {
             action.setDisabled(true);
             action.setDisabledReason("请先配置主流程");
-        } else if (link != null && isRunningFlow(link.getFlowStatus())) {
-            // 发起动作在流程运行中已经没有可执行意义。直接隐藏，避免列表、
-            // 详情页同时出现一个必然失败的审批按钮；流程进度由详情页展示。
+        } else if (hasDocumentFlowInstance(link)) {
+            // 一个单据只允许创建一次主流程实例。运行中、待修改和终态都隐藏
+            // 发起入口；后续若要重新审批，应使用独立的“重新开启”业务动作。
             action.setVisible(false);
         } else {
             StatusPolicy statusPolicy = resolveStatusPolicy(configVO, vo.getDocumentStatus());
@@ -565,7 +728,7 @@ public class BusinessDocumentRuntimeService {
      */
     private void addMyTaskAction(List<BusinessDocumentRuntimeVO.RuntimeActionVO> runtimeActions,
                                  BusinessDocumentRuntimeVO vo,
-                                 AiBusinessDocumentConfig config) {
+                                 String objectCode) {
         BusinessDocumentRuntimeVO.MyTaskVO myTask = vo.getMyTask();
         if (myTask == null) {
             return;
@@ -578,7 +741,7 @@ public class BusinessDocumentRuntimeService {
         action.setActionType(action.getKey());
         action.setVisible(true);
         action.setDisabled(false);
-        action.setObjectCode(config.getObjectCode());
+        action.setObjectCode(objectCode);
         action.setRecordId(readRecordId(vo));
         runtimeActions.add(action);
     }
@@ -588,13 +751,17 @@ public class BusinessDocumentRuntimeService {
      */
     private void addWithdrawAction(List<BusinessDocumentRuntimeVO.RuntimeActionVO> runtimeActions,
                                    BusinessDocumentRuntimeVO vo,
-                                   AiBusinessDocumentConfig config,
+                                   String objectCode,
                                    AiBusinessFlowInstanceLink link,
                                    List<String> actions) {
         if (link == null || !isRunningFlow(link.getFlowStatus()) || !isFlowInitiator(link)) {
             return;
         }
         if (actions == null || !actions.contains("WITHDRAW")) {
+            return;
+        }
+        // 与实际撤回接口的权限注解一致，不能仅凭对象编辑权限显示入口。
+        if (!SessionHelper.hasPermission("ai:businessDocument:withdraw")) {
             return;
         }
         BusinessDocumentRuntimeVO.RuntimeActionVO action = new BusinessDocumentRuntimeVO.RuntimeActionVO();
@@ -604,7 +771,7 @@ public class BusinessDocumentRuntimeService {
         action.setActionType("WITHDRAW_FLOW");
         action.setVisible(true);
         action.setDisabled(false);
-        action.setObjectCode(config.getObjectCode());
+        action.setObjectCode(objectCode);
         action.setRecordId(readRecordId(vo));
         runtimeActions.add(action);
     }
@@ -674,9 +841,14 @@ public class BusinessDocumentRuntimeService {
     }
 
     private boolean isRunningFlow(String flowStatus) {
-        return "STARTED".equalsIgnoreCase(flowStatus)
-                || "RUNNING".equalsIgnoreCase(flowStatus)
-                || "IN_PROCESS".equalsIgnoreCase(flowStatus);
+        return BusinessDocumentFlowStatus.STARTED.matches(flowStatus)
+                || BusinessDocumentFlowStatus.RUNNING.matches(flowStatus)
+                || BusinessDocumentFlowStatus.IN_PROCESS.matches(flowStatus)
+                || BusinessDocumentFlowStatus.NEED_MODIFY.matches(flowStatus);
+    }
+
+    private boolean hasDocumentFlowInstance(AiBusinessFlowInstanceLink link) {
+        return link != null && StringUtils.isNotBlank(link.getProcessInstanceId());
     }
 
     private String resolveStatusLabel(BusinessDocumentConfigVO configVO, String documentStatus) {

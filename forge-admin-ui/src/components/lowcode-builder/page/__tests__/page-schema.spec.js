@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyGridLayoutToZones,
   buildGridSyncModelSchema,
   createDefaultListGridLayout,
   DATA_FIELD_BLOCK_TYPES,
   listPageBlockCatalog,
+  resolveChildListDisplayHint,
+  resolveChildListDisplayMode,
+  resolveListFieldTitle,
   resolveListPageBlockMeta,
   syncGridLayoutWithModel,
+  syncPageSchemaWithModel,
 } from '../page-schema'
 
 describe('page builder data component catalog', () => {
@@ -96,5 +101,101 @@ describe('page grid field synchronization', () => {
     expect(layout.items[0].fieldRefs).toEqual(['customerName'])
     expect(layout.items[0].props.searchFieldRefs).toEqual(['customerName'])
     expect(layout.items[0].props.fieldSettings.customerName.visible).toBe(true)
+  })
+
+  it('keeps an explicitly selected child column even when it is hidden on the child object list', () => {
+    const childField = 'detail_ujpc__fieldInput'
+    const modelSchema = {
+      fields: [
+        { field: 'fieldInput', sourceField: 'fieldInput', label: '单行文本', listVisible: true, fieldScope: 'main' },
+        { field: childField, sourceField: 'fieldInput', label: '单行文本', listVisible: false, fieldScope: 'child', modelCode: 'detail_ujpc', modelName: '测试子表' },
+      ],
+    }
+    const layout = syncGridLayoutWithModel({
+      items: [{
+        id: 'crud_1',
+        blockType: 'AiCrudPage',
+        fieldRefs: ['fieldInput', childField],
+        props: { fieldSettings: { [childField]: { visible: true } } },
+      }],
+    }, modelSchema)
+
+    expect(layout.items[0].fieldRefs).toEqual(['fieldInput', childField])
+  })
+
+  it('uses the list grid selection to repair stale table zone field refs', () => {
+    const childField = 'detail_ujpc__fieldInput'
+    const modelSchema = {
+      fields: [
+        { field: 'fieldInput', sourceField: 'fieldInput', label: '单行文本', listVisible: true, fieldScope: 'main' },
+        { field: childField, sourceField: 'fieldInput', label: '明细文本', listVisible: true, fieldScope: 'child', modelCode: 'detail_ujpc' },
+      ],
+    }
+    const gridLayout = {
+      items: [{
+        id: 'crud_1',
+        blockType: 'AiCrudPage',
+        fieldRefs: ['fieldInput', childField],
+        props: { searchFieldRefs: ['fieldInput'] },
+      }],
+    }
+    const staleZones = [{
+      zoneKey: 'table',
+      componentKey: 'data-table',
+      enabled: true,
+      fieldRefs: ['fieldInput'],
+      props: {},
+    }]
+
+    const zones = applyGridLayoutToZones(staleZones, gridLayout, modelSchema)
+    expect(zones[0].fieldRefs).toEqual(['fieldInput', childField])
+
+    const normalized = syncPageSchemaWithModel({
+      layoutType: 'master-detail-crud',
+      listLayoutMode: 'grid',
+      listGridLayout: gridLayout,
+      pages: [{ pageKey: 'list', gridLayout }],
+      zones: staleZones,
+    }, modelSchema)
+    expect(normalized.zones.find(zone => zone.zoneKey === 'table')?.fieldRefs)
+      .toEqual(['fieldInput', childField])
+  })
+})
+
+describe('child list display mode', () => {
+  it('defaults to aggregate and explains both modes', () => {
+    expect(resolveChildListDisplayMode()).toBe('aggregate')
+    expect(resolveChildListDisplayMode('expand')).toBe('expand')
+    expect(resolveChildListDisplayHint('aggregate')).toContain('一条主表记录只占一行')
+    expect(resolveChildListDisplayHint('expand')).toContain('分页按展开后的行数计算')
+  })
+
+  it('shows only the field label for a child-table list column', () => {
+    expect(resolveListFieldTitle({
+      field: 'detail_ujpc__fieldInput',
+      sourceField: 'fieldInput',
+      fieldScope: 'child',
+      modelName: '测试子表',
+      label: '测试子表 · 字段A',
+      rawLabel: '字段A',
+    })).toBe('字段A')
+
+    expect(resolveListFieldTitle({
+      field: 'detail_ujpc__fieldInput',
+      sourceField: 'fieldInput',
+      fieldScope: 'child',
+      modelName: '测试子表',
+      label: '测试子表.字段A',
+    })).toBe('字段A')
+
+    expect(resolveListFieldTitle({
+      field: 'detail_ujpc__fieldInput',
+      sourceField: 'fieldInput',
+      fieldScope: 'child',
+      modelName: '测试子表',
+      label: '字段A',
+    }, {
+      title: '测试子表 · 字段A',
+    })).toBe('字段A')
   })
 })

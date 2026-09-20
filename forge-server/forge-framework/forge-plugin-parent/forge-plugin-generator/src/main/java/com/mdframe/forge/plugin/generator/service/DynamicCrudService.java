@@ -9,15 +9,22 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryConditionDTO;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
+import com.mdframe.forge.plugin.generator.dto.audit.DataAuditRemoveDTO;
+import com.mdframe.forge.plugin.generator.dto.audit.DataAuditWriteContextDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePrimaryKeyStrategy;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRelationSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeUniqueConstraintSchema;
 import com.mdframe.forge.plugin.generator.domain.formula.FormulaRuntimeContext;
+import com.mdframe.forge.plugin.generator.enums.DataAuditEventType;
+import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditCaptureService;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditPayloadSupport;
 import com.mdframe.forge.plugin.generator.service.formula.StoredAggregateRefreshService;
 import com.mdframe.forge.plugin.generator.service.formula.StoredFormulaRuntime;
 import com.mdframe.forge.plugin.generator.service.formula.VirtualFormulaRuntime;
@@ -25,6 +32,7 @@ import com.mdframe.forge.plugin.generator.service.businessapp.BusinessDocumentCo
 import com.mdframe.forge.plugin.generator.service.businessapp.CodeRuleService;
 import com.mdframe.forge.plugin.generator.service.crypto.LowcodeEncryptConfigParser;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeComponentCatalog;
+import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeFieldValueValidator;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
@@ -99,6 +107,9 @@ public class DynamicCrudService {
                                          String columnName,
                                          String label,
                                          boolean required,
+                                         String dataType,
+                                         Integer length,
+                                         Integer precision,
                                          BigDecimal minValue,
                                          BigDecimal maxValue) {
     }
@@ -157,6 +168,7 @@ public class DynamicCrudService {
     private final StoredFormulaRuntime storedFormulaRuntime;
     private final VirtualFormulaRuntime virtualFormulaRuntime;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
+    private final DataAuditCaptureService dataAuditCaptureService;
 
     // ==================== 查询操作 ====================
 
@@ -186,9 +198,12 @@ public class DynamicCrudService {
         RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
         if (joinContext != null && requiresJoinedPageQuery(config, pageQuery, searchParams, joinContext)) {
             DynamicCrudRepository.SqlCondition dataScopeCondition = buildDataScopeCondition(config, tableName, "t0");
+            boolean aggregateChildren = aggregateChildListRows(config);
             Page<Map<String, Object>> page = repository.selectJoinedPage(
                     tableName,
-                    buildRuntimeSelectFields(joinContext, DynamicQueryGenerator.extractFieldNames(config.getColumnsSchema(), objectMapper), true),
+                    withExpandedChildKeys(buildRuntimeSelectFields(joinContext,
+                            DynamicQueryGenerator.extractFieldNames(config.getColumnsSchema(), objectMapper), true),
+                            joinContext, aggregateChildren),
                     joinContext.joins(),
                     pageQuery.getPageNum(),
                     pageQuery.getPageSize(),
@@ -197,9 +212,11 @@ public class DynamicCrudService {
                     searchTypeMap,
                     joinContext.fieldColumnMapping(),
                     buildJoinOrderBy(pageQuery.getOrderByColumn(), pageQuery.getIsAsc(), joinContext),
-                    dataScopeCondition
+                    dataScopeCondition,
+                    aggregateChildren
             );
             applyReadPipeline(page.getRecords(), config);
+            stampExpandedListRowKeys(page.getRecords(), joinContext, aggregateChildren);
             return page;
         }
         
@@ -303,7 +320,8 @@ public class DynamicCrudService {
                     context.allowedSearchFields(),
                     context.searchTypeMap(),
                     joinContext.fieldColumnMapping(),
-                    dataScopeCondition
+                    dataScopeCondition,
+                    aggregateChildListRows(context.config())
             );
         }
 
@@ -344,7 +362,8 @@ public class DynamicCrudService {
                     context.searchTypeMap(),
                     joinContext.fieldColumnMapping(),
                     primaryKeyOrderBy("t0", "DESC"),
-                    buildDataScopeCondition(context.config(), context.tableName(), "t0", dataScopeContext)
+                    buildDataScopeCondition(context.config(), context.tableName(), "t0", dataScopeContext),
+                    aggregateChildListRows(context.config())
             );
             applyReadPipeline(rows, context.config());
             return rows;
@@ -471,9 +490,11 @@ public class DynamicCrudService {
         if (joinContext != null) {
             if (requiresJoinedCustomQuery(request, joinContext)) {
                 DynamicCrudRepository.SqlCondition dataScopeCondition = buildDataScopeCondition(config, tableName, "t0");
+                boolean aggregateChildren = aggregateChildListRows(config);
                 Page<Map<String, Object>> page = repository.selectJoinedCustomPage(
                         tableName,
-                        buildRuntimeSelectFields(joinContext, request.getFields(), true),
+                        withExpandedChildKeys(buildRuntimeSelectFields(joinContext, request.getFields(), true),
+                                joinContext, aggregateChildren),
                         joinContext.joins(),
                         normalizePageNum(request.getPageNum()),
                         normalizePageSize(request.getPageSize()),
@@ -481,9 +502,11 @@ public class DynamicCrudService {
                         allowedFields,
                         joinContext.fieldColumnMapping(),
                         buildJoinOrderBy(request.getOrderByColumn(), request.getIsAsc(), joinContext),
-                        dataScopeCondition
+                        dataScopeCondition,
+                        aggregateChildren
                 );
                 applyReadPipeline(page.getRecords(), config);
+                stampExpandedListRowKeys(page.getRecords(), joinContext, aggregateChildren);
                 return page;
             }
         }
@@ -551,6 +574,7 @@ public class DynamicCrudService {
                 return null;
             }
             applyReadPipeline(Collections.singletonList(record), config);
+            attachDataAuditMeta(config, record);
             return record;
         }
         
@@ -568,7 +592,7 @@ public class DynamicCrudService {
         
         // 单条读取同样遵循“解密 -> VIRTUAL 公式 -> 翻译 -> 脱敏”顺序。
         applyReadPipeline(Collections.singletonList(camelCaseRecord), config);
-        
+        attachDataAuditMeta(config, camelCaseRecord);
         return camelCaseRecord;
         }
     }
@@ -637,6 +661,7 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, null, DataAuditSourceType.FORM, DataAuditEventType.CREATE, data, false);
         String tableName = config.getTableName();
         
         // 获取字段映射
@@ -660,6 +685,7 @@ public class DynamicCrudService {
         
         // 过滤前先计算 STORED 公式，确保公式结果参与写库。
         applyStoredFormulas(config, data);
+        validateFieldValues(config, data);
         Map<String, Object> filteredData = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : data.entrySet()) {
             if (isImmutableWriteField(entry.getKey())) {
@@ -717,11 +743,13 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+        openDataAudit(config, null, DataAuditSourceType.AUTOMATION, DataAuditEventType.CREATE, data, false);
         String tableName = config.getTableName();
         Set<String> allowedFields = collectInternalWriteFields(config, tableName);
         applyAutoGeneratedFields(config, data, allowedFields);
         applyDocumentNoIfNeeded(config, data, allowedFields);
         applyStoredFormulas(config, data);
+        validateFieldValues(config, data);
         Map<String, Object> filteredData = filterInternalWriteData(config, tableName, data);
         if (filteredData.isEmpty()) {
             throw new BusinessException("没有可写入的字段");
@@ -758,11 +786,13 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, null, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.CREATE, data, false);
             String tableName = config.getTableName();
             Set<String> allowedFields = collectCommandFields(config);
             applyAutoGeneratedFields(config, data, allowedFields);
             applyDocumentNoIfNeeded(config, data, allowedFields);
             applyStoredFormulas(config, data);
+            validateFieldValues(config, data);
             Map<String, Object> filteredData = filterCommandWriteData(config, tableName, data);
             if (filteredData.isEmpty()) {
                 throw new BusinessException("没有可写入的字段");
@@ -804,6 +834,7 @@ public class DynamicCrudService {
             throw new BusinessException("更新操作缺少id");
         }
         Object id = idValue;
+        openDataAudit(config, id, DataAuditSourceType.FORM, DataAuditEventType.UPDATE, data, true);
         
         // 获取字段映射
         Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
@@ -825,6 +856,7 @@ public class DynamicCrudService {
         // 公式字段需要基于完整旧值上下文计算，确保部分更新不会把公式算空。
         DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
         Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, data, dataScopeCondition);
+        validateFieldValues(config, data);
         
         // 过滤并转换字段名
         Map<String, Object> filteredData = new LinkedHashMap<>();
@@ -887,6 +919,7 @@ public class DynamicCrudService {
         Set<String> allowedMain = writableMainFields == null ? Set.of() : Set.copyOf(writableMainFields);
         Map<String, TaskChildPermission> allowedChildren = childPermissions == null ? Map.of() : childPermissions;
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, id, DataAuditSourceType.FLOW_FORM, DataAuditEventType.UPDATE, data, false);
             Map<String, Object> mainPayload = extractMainPayload(data);
             validateTaskMainPayload(mainPayload, allowedMain);
             RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
@@ -1072,6 +1105,7 @@ public class DynamicCrudService {
             throw new BusinessException("无权限更新该数据或数据不存在");
         }
         applyStoredFormulasForUpdate(config, config.getTableName(), id, mainPayload, dataScopeCondition, authorizedMainRecord);
+        validateFieldValues(config, mainPayload);
         validateUniqueConstraints(config, config.getTableName(), mainPayload, authorizedMainRecord, id);
         Map<String, Object> primaryData = filterPrimaryWriteData(mainPayload, writableMainFields, joinContext);
         removePrimaryKeyColumns(primaryData, currentPrimaryKey());
@@ -1218,12 +1252,14 @@ public class DynamicCrudService {
         }
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+        openDataAudit(config, id, DataAuditSourceType.FLOW_CALLBACK, DataAuditEventType.UPDATE, data, false);
         String tableName = config.getTableName();
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
         Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
         Set<String> tableColumns = repository.getTableColumns(tableName);
         DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
         Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, data, dataScopeCondition);
+        validateFieldValues(config, data);
 
         Map<String, Object> filteredData = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : data.entrySet()) {
@@ -1271,10 +1307,12 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+        openDataAudit(config, id, DataAuditSourceType.AUTOMATION, DataAuditEventType.UPDATE, fields, false);
         String tableName = config.getTableName();
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
         DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
         Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, fields, dataScopeCondition);
+        validateFieldValues(config, fields);
         Map<String, Object> filteredData = filterInternalWriteData(config, tableName, fields);
         if (filteredData.isEmpty()) {
             throw new BusinessException("没有可更新的字段");
@@ -1308,11 +1346,13 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, id, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.UPDATE, fields, false);
             String tableName = config.getTableName();
             LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
             DynamicCrudRepository.SqlCondition dataScope = buildWriteDataScopeCondition(config, tableName, null);
             Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(
                     config, tableName, id, fields, dataScope);
+            validateFieldValues(config, fields);
             Map<String, Object> filteredData = filterCommandWriteData(config, tableName, fields);
             if (filteredData.isEmpty()) {
                 throw new BusinessException("没有可更新的字段");
@@ -1352,6 +1392,7 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, id, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.UPDATE, Map.of(), false);
             String tableName = config.getTableName();
             LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
             Map<String, BigDecimal> mappedDeltas = mapCommandDecimalFields(config, tableName, deltas);
@@ -1459,7 +1500,46 @@ public class DynamicCrudService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("main", main);
         result.put("children", children);
+        attachDataAuditMeta(config, result);
         return result;
+    }
+
+    private RuntimeChildRelation preferReadableChildRelation(AiCrudConfig config, RuntimeChildRelation relation) {
+        if (relation == null) {
+            return null;
+        }
+        RuntimeChildRelation resolved = resolveMasterDetailQueryRelation(config, relation);
+        if (resolved == null) {
+            resolved = relation;
+        }
+        if (!isSuspiciousMasterDetailChildFkColumn(resolved.childFkColumn())) {
+            return resolved;
+        }
+        try {
+            List<String> candidates = resolveMasterDetailChildFkCandidates(config, resolved);
+            for (String column : candidates) {
+                if (StringUtils.isNotBlank(column) && !isSuspiciousMasterDetailChildFkColumn(column)) {
+                    return copyChildRelation(resolved, column, resolved.mainColumn());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[DynamicCrudService] 解析子表外键失败，继续使用原关联, configKey={}, modelCode={}",
+                    config == null ? null : config.getConfigKey(), resolved.modelCode(), e);
+        }
+        return resolved;
+    }
+
+    private RuntimeChildRelation copyChildRelation(RuntimeChildRelation relation, String childFkColumn, String mainColumn) {
+        return new RuntimeChildRelation(
+                relation.modelCode(),
+                relation.tableName(),
+                relation.tableAlias(),
+                childFkColumn,
+                mainColumn,
+                relation.saveMode(),
+                relation.fields(),
+                relation.fieldRules()
+        );
     }
 
     private RuntimeChildRelation resolveMasterDetailQueryRelation(AiCrudConfig config, RuntimeChildRelation relation) {
@@ -1646,6 +1726,7 @@ public class DynamicCrudService {
                                         RuntimeJoinContext joinContext) {
         Map<String, Object> mainPayload = extractMainPayload(data);
         applyStoredFormulas(config, mainPayload);
+        validateFieldValues(config, mainPayload);
         validateUniqueConstraints(config, config.getTableName(), mainPayload, null, null);
         Map<String, Object> primaryData = filterPrimaryWriteData(mainPayload, allowedFields, joinContext);
         if (primaryData.isEmpty()) {
@@ -1682,6 +1763,7 @@ public class DynamicCrudService {
                 if (!hasWritableChildData(childData)) {
                     continue;
                 }
+                validateChildRow(relation, row, true);
                 childData.put(relation.childFkColumn(), relationValue);
                 repository.insert(relation.tableName(), childData);
                 childrenChanged = true;
@@ -1704,6 +1786,7 @@ public class DynamicCrudService {
         }
         Map<String, Object> mainPayload = extractMainPayload(data);
         applyStoredFormulasForUpdate(config, config.getTableName(), id, mainPayload, dataScopeCondition, authorizedMainRecord);
+        validateFieldValues(config, mainPayload);
         validateUniqueConstraints(config, config.getTableName(), mainPayload, authorizedMainRecord, id);
         Map<String, Object> primaryData = filterPrimaryWriteData(mainPayload, allowedFields, joinContext);
         removePrimaryKeyColumns(primaryData, currentPrimaryKey());
@@ -1886,9 +1969,32 @@ public class DynamicCrudService {
                 throw new BusinessException(StringUtils.defaultIfBlank(rule.label(), rule.sourceField()) + "不能为空");
             }
             if (!isBlankChildValue(value)) {
+                validateChildStorageConstraint(rule, value);
                 validateChildNumberRange(rule, value);
             }
         }
+    }
+
+    private void validateChildStorageConstraint(RuntimeChildFieldRule rule, Object value) {
+        if (rule == null || StringUtils.isBlank(rule.dataType())) {
+            return;
+        }
+        LowcodeFieldSchema field = new LowcodeFieldSchema();
+        field.setField(rule.sourceField());
+        field.setColumnName(rule.columnName());
+        field.setLabel(StringUtils.defaultIfBlank(rule.label(), rule.sourceField()));
+        field.setDataType(rule.dataType());
+        field.setLength(rule.length());
+        field.setPrecision(rule.precision());
+        Map<String, Object> basicProps = new LinkedHashMap<>();
+        if (rule.minValue() != null) {
+            basicProps.put("min", rule.minValue());
+        }
+        if (rule.maxValue() != null) {
+            basicProps.put("max", rule.maxValue());
+        }
+        field.setBasicProps(basicProps);
+        LowcodeFieldValueValidator.validateValue(field, value, objectMapper);
     }
 
     private boolean isSystemChildValidationRule(RuntimeChildRelation relation, RuntimeChildFieldRule rule) {
@@ -2111,6 +2217,7 @@ public class DynamicCrudService {
         Map<String, Object> primaryData = new LinkedHashMap<>();
         Map<String, Map<String, Object>> childDataMap = new LinkedHashMap<>();
         applyStoredFormulas(config, data);
+        validateFieldValues(config, data);
         validateUniqueConstraints(config, config.getTableName(), data, null, null);
         splitRuntimeWriteData(data, allowedFields, joinContext, primaryData, childDataMap);
         if (primaryData.isEmpty()) {
@@ -2136,6 +2243,7 @@ public class DynamicCrudService {
             if (relationValue == null) {
                 continue;
             }
+            validateChildRow(relation, childData, true);
             childData.put(relation.childFkColumn(), relationValue);
             repository.insert(relation.tableName(), childData);
             childrenChanged = true;
@@ -2158,6 +2266,7 @@ public class DynamicCrudService {
         Map<String, Object> primaryData = new LinkedHashMap<>();
         Map<String, Map<String, Object>> childDataMap = new LinkedHashMap<>();
         applyStoredFormulasForUpdate(config, config.getTableName(), id, data, dataScopeCondition, authorizedMainRecord);
+        validateFieldValues(config, data);
         validateUniqueConstraints(config, config.getTableName(), data, authorizedMainRecord, id);
         splitRuntimeWriteData(data, allowedFields, joinContext, primaryData, childDataMap);
         removePrimaryKeyColumns(primaryData, currentPrimaryKey());
@@ -2187,6 +2296,7 @@ public class DynamicCrudService {
             if (relationValue == null) {
                 continue;
             }
+            validateChildRow(relation, childData, false);
             childData.put(relation.childFkColumn(), relationValue);
             Long childId = repository.selectFirstIdByColumn(relation.tableName(), relation.childFkColumn(), relationValue);
             if (childId == null) {
@@ -3385,28 +3495,7 @@ public class DynamicCrudService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteById(String configKey, Object id) {
-        AiCrudConfig config = getConfig(configKey);
-        assertRuntimeWritable(config);
-        try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-        String tableName = config.getTableName();
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
-        Map<String, Object> beforeRecord = repository.selectById(
-                tableName, primaryKeyColumn(primaryKey), id, dataScopeCondition);
-        if (beforeRecord == null) {
-            throw new BusinessException("无权限删除该数据或数据不存在");
-        }
-        
-        // 判断是否逻辑删除
-        boolean logicDelete = repository.hasDelFlag(tableName);
-        
-        // 执行删除
-        int affected = repository.deleteById(tableName, primaryKeyColumn(primaryKey), id, logicDelete, dataScopeCondition);
-        if (affected <= 0) {
-            throw new BusinessException("无权限删除该数据或数据不存在");
-        }
-        storedAggregateRefreshService.refreshAfterChildDelete(config, beforeRecord);
-        }
+        deleteById(configKey, id, new LinkedHashMap<>());
     }
 
     /**
@@ -3420,6 +3509,7 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, ids.get(0), DataAuditSourceType.FORM, DataAuditEventType.DELETE, Map.of(), false);
             String tableName = config.getTableName();
             LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
             String pkColumn = primaryKeyColumn(primaryKey);
@@ -3456,6 +3546,79 @@ public class DynamicCrudService {
      */
     public AiCrudConfig getRuntimeConfig(String configKey) {
         return getConfig(configKey);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public int removeWithAudit(String configKey, DataAuditRemoveDTO dto) {
+        if (dto == null || dto.getIds() == null || dto.getIds().isEmpty()) {
+            throw new BusinessException("请选择要删除的数据");
+        }
+        int affected = 0;
+        for (int i = 0; i < dto.getIds().size(); i++) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            Map<String, Object> context = new LinkedHashMap<>();
+            if (StringUtils.isNotBlank(dto.getReason())) {
+                context.put("reason", dto.getReason());
+            }
+            if (dto.getExpectedRevisions() != null && dto.getExpectedRevisions().size() > i
+                    && dto.getExpectedRevisions().get(i) != null) {
+                context.put("expectedRevision", dto.getExpectedRevisions().get(i));
+            }
+            payload.put(DataAuditPayloadSupport.PAYLOAD_KEY, context);
+            deleteById(configKey, dto.getIds().get(i), payload);
+            affected++;
+        }
+        return affected;
+    }
+
+    private AutoCloseable openDataAudit(AiCrudConfig config,
+                                        Object recordId,
+                                        DataAuditSourceType sourceType,
+                                        DataAuditEventType eventType,
+                                        Map<String, Object> payload,
+                                        boolean requireRevision) {
+        Map<String, Object> safePayload = payload == null ? new LinkedHashMap<>() : payload;
+        DataAuditWriteContextDTO context = DataAuditPayloadSupport.extractAndStrip(safePayload);
+        if (dataAuditCaptureService == null) {
+            return () -> {
+            };
+        }
+        return dataAuditCaptureService.open(config, recordId, sourceType, eventType, context, requireRevision);
+    }
+
+    private void attachDataAuditMeta(AiCrudConfig config, Map<String, Object> record) {
+        if (dataAuditCaptureService == null || record == null) {
+            return;
+        }
+        dataAuditCaptureService.attachReadMeta(config, record);
+        Object main = record.get("main");
+        if (main instanceof Map<?, ?> mainMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) mainMap;
+            dataAuditCaptureService.attachReadMeta(config, typed);
+        }
+    }
+
+    private void deleteById(String configKey, Object id, Map<String, Object> auditPayload) {
+        AiCrudConfig config = getConfig(configKey);
+        assertRuntimeWritable(config);
+        try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
+            openDataAudit(config, id, DataAuditSourceType.FORM, DataAuditEventType.DELETE, auditPayload, true);
+            String tableName = config.getTableName();
+            LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
+            DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
+            Map<String, Object> beforeRecord = repository.selectById(
+                    tableName, primaryKeyColumn(primaryKey), id, dataScopeCondition);
+            if (beforeRecord == null) {
+                throw new BusinessException("无权限删除该数据或数据不存在");
+            }
+            boolean logicDelete = repository.hasDelFlag(tableName);
+            int affected = repository.deleteById(tableName, primaryKeyColumn(primaryKey), id, logicDelete, dataScopeCondition);
+            if (affected <= 0) {
+                throw new BusinessException("无权限删除该数据或数据不存在");
+            }
+            storedAggregateRefreshService.refreshAfterChildDelete(config, beforeRecord);
+        }
     }
 
     public Object resolveRecordId(String configKey, Map<String, Object> data) {
@@ -3533,6 +3696,7 @@ public class DynamicCrudService {
                         config.getConfigKey(), ref.getModelCode());
                 continue;
             }
+            relation = preferReadableChildRelation(config, relation);
             childRelations.add(relation);
             joins.add(new DynamicCrudRepository.JoinSpec(
                     relation.tableName(), relation.tableAlias(), relation.childFkColumn(), relation.mainColumn()));
@@ -3655,9 +3819,29 @@ public class DynamicCrudService {
                 fieldRef.columnName(),
                 StringUtils.defaultIfBlank(text(source.get("label")), text(source.get("rawLabel"))),
                 readBoolean(source.get("required"), false),
+                StringUtils.defaultIfBlank(text(source.get("dataType")), text(source.get("storageType"))),
+                firstInteger(source.get("length"), source.get("fieldLength"), props.get("maxlength"), props.get("maxLength")),
+                firstInteger(source.get("precision"), props.get("precision")),
                 firstDecimal(source.get("min"), source.get("minimum"), props.get("min")),
                 firstDecimal(source.get("max"), source.get("maximum"), props.get("max"))
         );
+    }
+
+    private Integer firstInteger(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value == null) {
+                continue;
+            }
+            try {
+                return new BigDecimal(String.valueOf(value).trim()).intValueExact();
+            } catch (Exception ignored) {
+                // 继续尝试下一个兼容字段。
+            }
+        }
+        return null;
     }
 
     private BigDecimal firstDecimal(Object... values) {
@@ -3971,6 +4155,91 @@ public class DynamicCrudService {
             return !collection.isEmpty();
         }
         return true;
+    }
+
+    private boolean aggregateChildListRows(AiCrudConfig config) {
+        return !"expand".equalsIgnoreCase(resolveChildListDisplayMode(config));
+    }
+
+    private String resolveChildListDisplayMode(AiCrudConfig config) {
+        if (config == null) {
+            return "aggregate";
+        }
+        LowcodePageSchema pageSchema = StringUtils.isBlank(config.getPageSchema()) ? null : readPageSchema(config);
+        if (pageSchema != null && pageSchema.getZones() != null) {
+            for (LowcodePageZone zone : pageSchema.getZones()) {
+                if (zone == null || !"table".equals(zone.getZoneKey()) || zone.getProps() == null) {
+                    continue;
+                }
+                String mode = StringUtils.trimToNull(text(zone.getProps().get("childListDisplayMode")));
+                if (mode != null) {
+                    return "expand".equalsIgnoreCase(mode) ? "expand" : "aggregate";
+                }
+            }
+        }
+        if (StringUtils.isNotBlank(config.getOptions())) {
+            try {
+                String mode = StringUtils.trimToNull(objectMapper.readTree(config.getOptions()).path("childListDisplayMode").asText(null));
+                if ("expand".equalsIgnoreCase(mode)) {
+                    return "expand";
+                }
+            } catch (Exception e) {
+                log.warn("[DynamicCrudService] 解析子表行展示方式失败, configKey={}", config.getConfigKey(), e);
+            }
+        }
+        return "aggregate";
+    }
+
+    private List<DynamicCrudRepository.JoinField> withExpandedChildKeys(List<DynamicCrudRepository.JoinField> selectFields,
+                                                                        RuntimeJoinContext joinContext,
+                                                                        boolean aggregateChildren) {
+        if (aggregateChildren || joinContext == null || joinContext.joins() == null || joinContext.joins().isEmpty()) {
+            return selectFields;
+        }
+        List<DynamicCrudRepository.JoinField> fields = new ArrayList<>(selectFields == null ? List.of() : selectFields);
+        for (DynamicCrudRepository.JoinSpec join : joinContext.joins()) {
+            if (join == null || StringUtils.isBlank(join.tableAlias()) || StringUtils.isBlank(join.tableName())) {
+                continue;
+            }
+            if (!repository.getTableColumns(join.tableName()).contains("id")) {
+                continue;
+            }
+            String alias = "__childId_" + join.tableAlias();
+            boolean exists = fields.stream().anyMatch(field -> field != null && alias.equals(field.fieldName()));
+            if (!exists) {
+                fields.add(new DynamicCrudRepository.JoinField(alias, join.tableAlias(), "id"));
+            }
+        }
+        return fields;
+    }
+
+    private void stampExpandedListRowKeys(List<Map<String, Object>> rows,
+                                          RuntimeJoinContext joinContext,
+                                          boolean aggregateChildren) {
+        if (aggregateChildren || rows == null || rows.isEmpty() || joinContext == null || joinContext.joins() == null) {
+            return;
+        }
+        String primaryField = primaryKeyField(currentPrimaryKey());
+        for (Map<String, Object> row : rows) {
+            if (row == null) {
+                continue;
+            }
+            Object mainId = row.get(primaryField);
+            if (mainId == null) {
+                mainId = row.get("id");
+            }
+            StringBuilder key = new StringBuilder(mainId == null ? "" : String.valueOf(mainId));
+            for (DynamicCrudRepository.JoinSpec join : joinContext.joins()) {
+                if (join == null || StringUtils.isBlank(join.tableAlias())) {
+                    continue;
+                }
+                Object childId = row.remove("__childId_" + join.tableAlias());
+                key.append(':').append(childId == null ? "" : childId);
+            }
+            if (StringUtils.isNotBlank(key)) {
+                row.put("__listRowKey", key.toString());
+            }
+        }
     }
 
     private LowcodePageSchema readPageSchema(AiCrudConfig config) {
@@ -5347,13 +5616,14 @@ public class DynamicCrudService {
         if (!"CONFIG".equals(config.getMode())) {
             throw new BusinessException("该配置不是配置驱动模式: " + configKey);
         }
+        boolean designPreview = isAuthorizedDesignPreviewRequest();
         if ("LOWCODE".equals(config.getBuildMode())
                 && !"PUBLISHED".equals(config.getPublishStatus())
-                && !isAuthorizedDesignPreviewRequest()) {
+                && !designPreview) {
             throw new BusinessException("低代码应用尚未发布: " + configKey);
         }
-        return isAuthorizedDesignPreviewRequest()
-                ? config
+        return designPreview
+                ? configService.resolveDraftRuntimeConfig(config)
                 : configService.resolvePublishedRuntimeConfig(config);
     }
 
@@ -5617,6 +5887,10 @@ public class DynamicCrudService {
             log.warn("Failed to parse modelSchema for {}: {}", config.getConfigKey(), e.getMessage());
             return null;
         }
+    }
+
+    private void validateFieldValues(AiCrudConfig config, Map<String, Object> data) {
+        LowcodeFieldValueValidator.validate(parseModelSchema(config), data, objectMapper);
     }
 
     private FormulaRuntimeContext buildFormulaRuntimeContext(AiCrudConfig config,

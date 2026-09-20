@@ -152,6 +152,20 @@ class BusinessProcessMapperContractTest {
     }
 
     @Test
+    @DisplayName("started process lookup includes terminal success but keeps failures retryable")
+    void startedProcessLookupIsBatchedAndExcludesFailures() throws IOException {
+        String query = statement(resource("mapper/BusinessProcessRunMapper.xml"),
+                "select", "selectStartedByBusinessKeys");
+
+        assertTrue(query.contains("tenant_id = #{tenantId}"));
+        assertTrue(query.contains("'SUCCESS'"));
+        assertTrue(query.contains("'CANCELED'"));
+        assertFalse(query.contains("'FAILED'"));
+        assertTrue(query.contains("collection=\"businessKeys\""));
+        assertFalse(query.contains("LIMIT"));
+    }
+
+    @Test
     @DisplayName("detail flow history can recover the latest correlated process run")
     void latestBusinessProcessHistoryIsTenantAndBusinessKeyScoped() throws IOException {
         String query = statement(resource("mapper/BusinessProcessRunMapper.xml"),

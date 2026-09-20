@@ -1,5 +1,5 @@
 <template>
-  <div v-if="blockRuntimeVisible" class="grid-block" :class="[`block-${block.blockType}`, { selected, 'is-form-only': !!block.props?.formOnly }]" :style="blockStyle" :data-block-id="block.id">
+  <div v-if="blockRuntimeVisible" class="grid-block" :class="[`block-${block.blockType}`, { selected, 'is-form-only': crudPagePresentation.formOnly }]" :style="blockStyle" :data-block-id="block.id">
     <template v-if="isDataFieldBlock && runtimeCrudLoading">
       <div class="runtime-crud-loading">
         <n-spin size="small" />
@@ -410,7 +410,7 @@
           :public-query="block.props?.publicQuery || {}"
           :form-default-values="block.props?.formDefaultValues || {}"
           :submit-default-params="block.props?.submitDefaultParams || {}"
-          v-bind="resolvedDesignerCrudHookHandlers"
+          v-bind="{ ...resolvedDesignerCrudHookHandlers, ...crudPagePresentation }"
           @load-list-success="handleCrudPreviewSuccess"
           @load-list-error="handleCrudPreviewError"
         />
@@ -1230,13 +1230,14 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import InlineRichText from '@/components/lowcode-builder/shared/InlineRichText.vue'
 import { isPageWidgetComponentKey, pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
-import { appendDesignPreviewToApiValue, applyTableColumnLayout, buildCrudSearchTypeRequestParams, filterCrudItemsByFieldRefs, includeCompiledChildColumnRefs, includeManagedRuntimeFieldRefs, isDesignPreviewCrudProps, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, resolveCurrentConfigPlaceholder, resolveRuntimeBlockApi, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
-import { hydrateRuntimeFormLayout } from '@/components/lowcode-builder/shared/runtime-form-layout'
+import { resolveCrudPagePresentation } from '@/components/lowcode-builder/shared/runtime-crud-page-mode'
+import { buildCrudSearchTypeRequestParams, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
 import { useUserStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from './crud-hook-rules'
 import { isDataFieldBlockType } from './page-schema'
+import { buildRuntimeCrudBlockProps, resolveEffectiveFormOpenMode, resolveEffectiveModalType } from './runtime-crud-block-props'
 
 const props = defineProps({
   block: {
@@ -1788,174 +1789,28 @@ const blockApiConfig = computed(() => ({
   import: props.block.props?.importApi || '',
   export: props.block.props?.exportApi || '',
 }))
+const crudPagePresentation = computed(() => resolveCrudPagePresentation(props.block.props, props.runtimeCrudProps || {}))
 const effectiveRuntimeCrudProps = computed(() => {
-  if (!props.runtimeCrudProps)
+  const runtimeProps = props.runtimeCrudProps
+  if (!runtimeProps) {
     return null
-  const blockProps = props.block.props || {}
-  const designPreview = isDesignPreviewCrudProps(props.runtimeCrudProps)
-  // 运行页 runtimeInteractive 为 true 时必须允许提交。designPreview 只表示读草稿配置，
-  // 不能再和“未开真实数据预览”一起当成静态画布，否则有编辑权限的运行页无法新增。
-  const staticDesignPreview = designPreview && shouldUseStaticCrudPreview({
-    blockType: 'AiCrudPage',
-    runtimeInteractive: props.runtimeInteractive,
-    previewLiveData: blockProps.previewLiveData === true,
-    hasConfiguredRequest: true,
-  })
-  const rules = normalizeCrudHookRules(blockProps.crudHookRules || {}, blockProps.beforeSubmitRules || [])
-  const hookHandlers = CRUD_HOOK_RULE_TARGETS.reduce((handlers, target) => {
-    const list = (rules[target.value] || []).filter(rule => rule.field)
-    if (list.length)
-      handlers[target.value] = data => applyCrudHookRules(data, list)
-    return handlers
-  }, {})
-  const extensionHooks = runtimeExtensionHandlers.value
-  const runtimeConfigKey = props.runtimeCrudProps.configKey || ''
-  const runtimeTableFieldRefs = includeCompiledChildColumnRefs(
-    includeManagedRuntimeFieldRefs(
-      configuredFieldRefs.value,
-      props.runtimeCrudProps.fieldCatalog,
-      blockProps.fieldSettings,
-    ),
-    props.runtimeCrudProps.columns,
-  )
-  const runtimeBlockApi = resolveRuntimeBlockApi(blockProps.api, runtimeConfigKey, designPreview)
-  const runtimeBlockApiConfig = Object.fromEntries(Object.entries(blockApiConfig.value)
-    .map(([key, value]) => {
-      const resolved = resolveCurrentConfigPlaceholder(value, runtimeConfigKey)
-      return [key, designPreview ? appendDesignPreviewToApiValue(resolved) : resolved]
-    })
-    .filter(([, value]) => value))
-  return {
-    ...props.runtimeCrudProps,
-    ...hookHandlers,
-    ...(typeof extensionHooks.beforeSubmit === 'function'
-      ? {
-          beforeSubmit: data => extensionHooks.beforeSubmit(
-            hookHandlers.beforeSubmit ? hookHandlers.beforeSubmit(data) : data,
-            extensionRuntimeApi(),
-          ),
-        }
-      : {}),
-    ...(typeof extensionHooks.afterSubmit === 'function'
-      ? { afterSubmit: payload => extensionHooks.afterSubmit(payload, extensionRuntimeApi()) }
-      : {}),
-    ...(typeof extensionHooks.formChange === 'function'
-      ? { formChange: payload => extensionHooks.formChange(payload, extensionRuntimeApi()) }
-      : {}),
-    ...(typeof extensionHooks.beforeRowAction === 'function'
-      ? { beforeRowAction: payload => extensionHooks.beforeRowAction(payload, extensionRuntimeApi()) }
-      : {}),
-    ...(staticDesignPreview ? { beforeSubmit: preventStaticCrudSubmit } : {}),
-    lazy: staticDesignPreview,
-    api: runtimeBlockApi || props.runtimeCrudProps.api || '',
-    rowKey: blockProps.rowKey || props.runtimeCrudProps.rowKey || 'id',
-    title: blockProps.title || props.runtimeCrudProps.title,
-    columns: applyTableColumnLayout(
-      filterCrudItemsByFieldRefs(
-        props.runtimeCrudProps.columns?.length ? props.runtimeCrudProps.columns : aiTableColumns.value,
-        runtimeTableFieldRefs,
-      ),
-      blockProps,
-    ),
-    runtimeActions: Array.isArray(props.runtimeCrudProps.runtimeActions)
-      ? props.runtimeCrudProps.runtimeActions
-      : [],
-    toolbarActions: Array.isArray(blockProps.toolbarActions)
-      ? blockProps.toolbarActions
-      : (props.runtimeCrudProps.toolbarActions || []),
-    detailActions: Array.isArray(blockProps.detailActions)
-      ? blockProps.detailActions
-      : (props.runtimeCrudProps.detailActions || []),
-    formActions: Array.isArray(blockProps.formActions)
-      ? blockProps.formActions
-      : (props.runtimeCrudProps.formActions || []),
-    businessObjectCode: props.runtimeCrudProps.businessObjectCode || props.runtimeCrudProps.objectCode || '',
-    searchSchema: hasExplicitSearchFieldRefs.value
-      ? aiSearchSchema.value
-      : filterCrudItemsByFieldRefs(
-          props.runtimeCrudProps.searchSchema?.length ? props.runtimeCrudProps.searchSchema : aiSearchSchema.value,
-          configuredFieldRefs.value,
-        ),
-    editSchema: hydrateRuntimeFormLayout(
-      filterCrudItemsByFieldRefs(
-        props.runtimeCrudProps.editSchema?.length ? props.runtimeCrudProps.editSchema : aiFormSchema.value,
-        configuredFieldRefs.value,
-      ),
-      props.runtimeCrudProps.options?.editFormLayout,
-    ),
-    apiConfig: {
-      ...(props.runtimeCrudProps.apiConfig || {}),
-      ...runtimeBlockApiConfig,
-    },
-    showSearch: blockProps.showSearch ?? props.runtimeCrudProps.showSearch,
-    showPagination: blockProps.showPagination ?? props.runtimeCrudProps.showPagination,
-    searchGridCols: blockProps.searchGridCols || props.runtimeCrudProps.searchGridCols,
-    searchLabelWidth: blockProps.searchLabelWidth || props.runtimeCrudProps.searchLabelWidth,
-    searchEnableCollapse: blockProps.searchEnableCollapse ?? props.runtimeCrudProps.searchEnableCollapse,
-    searchMaxVisibleFields: blockProps.searchMaxVisibleFields || props.runtimeCrudProps.searchMaxVisibleFields,
-    searchYGap: blockProps.searchYGap ?? props.runtimeCrudProps.searchYGap,
-    // 表单设计器 layout 是表单项配置的单一事实来源，优先于页面区块旧值；
-    // 仅在区块有显式覆盖且设计器未配置时才回落 blockProps
-    editGridCols: props.runtimeCrudProps.editGridCols || blockProps.editGridCols,
-    editLabelWidth: props.runtimeCrudProps.editLabelWidth || blockProps.editLabelWidth,
-    editLabelPlacement: props.runtimeCrudProps.editLabelPlacement || blockProps.editLabelPlacement,
-    editLabelAlign: props.runtimeCrudProps.editLabelAlign || blockProps.editLabelAlign,
-    editSize: props.runtimeCrudProps.editSize || blockProps.editSize,
-    editShowFeedback: props.runtimeCrudProps.editShowFeedback ?? blockProps.editShowFeedback,
-    editXGap: props.runtimeCrudProps.editXGap ?? blockProps.editXGap,
-    editYGap: props.runtimeCrudProps.editYGap ?? blockProps.editYGap,
-    tableRowGap: normalizeTableRowGap(props.runtimeCrudProps.tableRowGap ?? blockProps.rowGap, 8),
-    modalWidth: props.runtimeCrudProps.modalWidth || blockProps.modalWidth,
-    detailModalWidth: props.runtimeCrudProps.detailModalWidth || blockProps.detailModalWidth,
-    formOpenMode: resolveEffectiveFormOpenMode(blockProps, props.runtimeCrudProps),
-    tabWorkspace: props.runtimeCrudProps.tabWorkspace?.maxTabs ? props.runtimeCrudProps.tabWorkspace : (blockProps.tabWorkspace || props.runtimeCrudProps.tabWorkspace),
-    modalType: resolveEffectiveModalType(blockProps, props.runtimeCrudProps),
-    drawerPlacement: props.runtimeCrudProps.drawerPlacement || blockProps.drawerPlacement,
-    hideModalFooter: blockProps.hideModalFooter ?? props.runtimeCrudProps.hideModalFooter,
-    hideDefaultDetailContent: blockProps.hideDefaultDetailContent ?? props.runtimeCrudProps.hideDefaultDetailContent,
-    hideToolbar: blockProps.hideToolbar ?? props.runtimeCrudProps.hideToolbar,
-    hideAdd: blockProps.hideAdd ?? props.runtimeCrudProps.hideAdd,
-    hideBatchDelete: blockProps.hideBatchDelete ?? props.runtimeCrudProps.hideBatchDelete,
-    showImport: staticDesignPreview ? false : (blockProps.showImport ?? props.runtimeCrudProps.showImport ?? true),
-    showExport: staticDesignPreview ? false : (blockProps.showExport ?? props.runtimeCrudProps.showExport ?? true),
-    showExportTasks: staticDesignPreview ? false : (blockProps.showExportTasks ?? props.runtimeCrudProps.showExportTasks),
-    enableCustomQuery: staticDesignPreview ? false : (blockProps.enableCustomQuery ?? props.runtimeCrudProps.enableCustomQuery ?? true),
-    addButtonText: blockProps.addButtonText || props.runtimeCrudProps.addButtonText,
-    exportButtonText: blockProps.exportButtonText || props.runtimeCrudProps.exportButtonText,
-    exportFileName: blockProps.exportFileName || props.runtimeCrudProps.exportFileName,
-    renderMode: blockProps.renderMode || props.runtimeCrudProps.renderMode,
-    showRenderModeSwitch: blockProps.showRenderModeSwitch ?? props.runtimeCrudProps.showRenderModeSwitch,
-    enableTreeAddChild: blockProps.enableTreeAddChild ?? props.runtimeCrudProps.enableTreeAddChild,
-    tableSize: blockProps.tableSize || props.runtimeCrudProps.tableSize,
-    bordered: blockProps.bordered ?? props.runtimeCrudProps.bordered,
-    striped: blockProps.striped ?? props.runtimeCrudProps.striped,
-    hideSelection: blockProps.hideSelection ?? props.runtimeCrudProps.hideSelection,
-    maxHeight: blockProps.maxHeight || props.runtimeCrudProps.maxHeight,
-    scrollX: blockProps.scrollX || props.runtimeCrudProps.scrollX,
-    resizable: blockProps.resizable ?? props.runtimeCrudProps.resizable,
-    expandConfig: blockProps.expandConfig || props.runtimeCrudProps.expandConfig || {},
-    detailPanels: blockProps.detailPanels || props.runtimeCrudProps.detailPanels || [],
-    listMethod: blockProps.listMethod || props.runtimeCrudProps.listMethod,
-    listDataField: blockProps.listDataField || props.runtimeCrudProps.listDataField,
-    listTotalField: blockProps.listTotalField || props.runtimeCrudProps.listTotalField,
-    isEncrypt: blockProps.isEncrypt ?? props.runtimeCrudProps.isEncrypt,
-    publicParams: {
-      ...(props.runtimeCrudProps.publicParams || {}),
-      ...designerCrudPublicParams.value,
-    },
-    publicQuery: {
-      ...(props.runtimeCrudProps.publicQuery || {}),
-      ...(blockProps.publicQuery || {}),
-    },
-    formDefaultValues: {
-      ...(props.runtimeCrudProps.formDefaultValues || {}),
-      ...(blockProps.formDefaultValues || {}),
-    },
-    submitDefaultParams: {
-      ...(props.runtimeCrudProps.submitDefaultParams || {}),
-      ...(blockProps.submitDefaultParams || {}),
-    },
   }
+  return buildRuntimeCrudBlockProps({
+    runtimeProps,
+    blockProps: props.block.props || {},
+    runtimeInteractive: props.runtimeInteractive,
+    extensionHooks: runtimeExtensionHandlers.value,
+    configuredFieldRefs: configuredFieldRefs.value,
+    blockApiConfig: blockApiConfig.value,
+    // 保留原有按需计算，已有编译配置时不再重复生成字段 schema。
+    aiTableColumns: runtimeProps.columns?.length ? [] : aiTableColumns.value,
+    aiSearchSchema: hasExplicitSearchFieldRefs.value || !runtimeProps.searchSchema?.length ? aiSearchSchema.value : [],
+    aiFormSchema: runtimeProps.editSchema?.length ? [] : aiFormSchema.value,
+    hasExplicitSearchFieldRefs: hasExplicitSearchFieldRefs.value,
+    designerCrudPublicParams: designerCrudPublicParams.value,
+    preventStaticCrudSubmit,
+    extensionRuntimeApi,
+  })
 })
 
 function extensionRuntimeApi() {
@@ -1963,37 +1818,6 @@ function extensionRuntimeApi() {
     triggerAction: (actionCode, payload = {}) => runtimeCrudRef.value?.triggerAction?.(actionCode, payload),
     refresh: () => runtimeCrudRef.value?.refresh?.(),
   }
-}
-
-function resolveEffectiveFormOpenMode(blockProps = {}, runtimeProps = {}) {
-  const blockMode = normalizeFormOpenMode(blockProps.formOpenMode)
-  const runtimeMode = normalizeFormOpenMode(runtimeProps.formOpenMode)
-  // 表单设计器 layout 是单一事实来源：runtimeMode 有值时直接生效，仅在未配置时才看区块覆盖
-  if (runtimeMode)
-    return runtimeMode
-  if (blockMode)
-    return blockMode
-  return normalizeModalType(runtimeProps.modalType) || normalizeModalType(blockProps.modalType) || 'modal'
-}
-
-function resolveEffectiveModalType(blockProps = {}, runtimeProps = {}) {
-  const formOpenMode = resolveEffectiveFormOpenMode(blockProps, runtimeProps)
-  if (['modal', 'drawer'].includes(formOpenMode))
-    return formOpenMode
-  return normalizeModalType(runtimeProps.modalType) || normalizeModalType(blockProps.modalType) || 'modal'
-}
-
-function normalizeFormOpenMode(value) {
-  const mode = String(value || '').trim()
-  if (mode === 'tabWorkspace' || mode.toLowerCase() === 'tabworkspace')
-    return 'tabWorkspace'
-  const normalized = mode.toLowerCase()
-  return ['modal', 'drawer', 'flat'].includes(normalized) ? normalized : ''
-}
-
-function normalizeModalType(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  return ['modal', 'drawer'].includes(normalized) ? normalized : ''
 }
 
 const designerCrudHookHandlers = computed(() => {

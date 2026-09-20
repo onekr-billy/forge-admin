@@ -136,6 +136,18 @@
         ORDER BY update_time DESC, id DESC
     </select>
 
+    <select id="selectStartedByBusinessKeys" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_business_process_run
+        WHERE tenant_id = #{tenantId}
+          AND status IN ('PENDING', 'RUNNING', 'WAITING', 'SUCCESS', 'CANCELED')
+          AND business_key IN
+          <foreach collection="businessKeys" item="businessKey" open="(" separator="," close=")">
+              #{businessKey}
+          </foreach>
+        ORDER BY update_time DESC, id DESC
+    </select>
+
     <select id="selectRunById" resultMap="BaseResultMap">
         SELECT <include refid="Base_Columns"/>
         FROM ai_business_process_run

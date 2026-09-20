@@ -1052,3 +1052,19 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 业务编排器在同一事务中调用带 `@Transactional` 的动态 CRUD；下游抛出运行时异常时，Spring 会先把共享事务标记为 rollback-only。上层即使把异常转换为节点 `FAILED` 并继续返回，事务提交仍会抛出 `UnexpectedRollbackException`，之前写入的失败状态也会一起回滚，最终日志只剩提交异常而不是原始动作错误。
 
 处理原则：流程终态事件必须在业务回调事务 `AFTER_COMMIT` 后消费；恢复编排和动作节点分别使用新的事务。动作失败时只回滚动作写入，外层仍可提交节点和运行实例的 `FAILED/errorSummary`。动作级独立事务意味着成功副作用必须使用稳定幂等键，并先于检查点提交；尤其创建记录动作不能依赖跨事务回滚避免重复。监听器必须记录完整原始异常且不反向回滚已经完成的 Flowable 回调。
+
+## 184. 同一审批结果下的不同驳回动作必须使用互斥变量
+
+**发现日期**：2026-09-19
+
+普通驳回和“退回发起人修改”都写 `approvalResult=reject` 时，如果 BPMN 只判断该变量，流程级 `TO_END` 会把两个动作都送到结束节点。Flowable 流程变量又会跨任务保留，旧的 `rejectToStart=true` 若不清除，还可能让后续普通动作误入专用回路。
+
+处理原则：专用动作使用 `${approvalResult == 'reject' && rejectToStart == true}`，自动普通驳回使用 `${approvalResult == 'reject' && rejectToStart != true}`；通过和普通驳回每次都显式写 `rejectToStart=false`，专用动作再覆盖为 `true`。驳回到修改节点时，单据状态与流程关联状态必须同时写为运行态 `NEED_MODIFY`，不能只改其中一处或把它当作终态。
+
+## 新版应用撤回不可依赖单据配置和 Web Session
+
+**发现日期**：2026-09-20
+
+新版应用已有流程实例，但 `documentEnabled=false`。运行态只在旧单据配置分支生成撤回动作，会使发起人只能到“我发送的”撤回。撤回后的消息回调又在动态仓储填充 `update_by` 时调用 Web Session，抛出 `SaTokenContextException`；上层吞掉写入异常后仍会因 rollback-only 整体回滚，最终引擎 canceled 而记录/关联仍在审批中。
+
+处理原则：流程动作依据实例关联、发起人、运行状态和实际接口权限生成，不依赖旧模式或当前待办。审计取值必须兼容显式执行身份和无 Web 的系统后台写入；缺少 Web 上下文不伪造用户，也不放宽租户/数据权限。状态回写失败须传播并记录原始堆栈，不能继续更新关联表。旧失败事件不会因重启自动补发，历史漂移需按实际引擎状态受控补偿。

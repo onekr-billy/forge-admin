@@ -350,15 +350,45 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
         }
     }
 
-    public AiCrudConfigRenderVO buildRenderConfig(AiCrudConfig config) {
-        return buildRenderConfig(config, false);
+    /**
+     * 编译设计草稿的运行配置，供表头渲染与数据查询共用。
+     * 调用方须先校验设计预览权限；编译结果只写入副本，不覆盖缓存或已发布快照。
+     */
+    public AiCrudConfig resolveDraftRuntimeConfig(AiCrudConfig config) {
+        if (config == null || StringUtils.isBlank(config.getModelSchema())
+                || StringUtils.isBlank(config.getPageSchema())) {
+            return config;
+        }
+        try {
+            LowcodeRuntimeConfig runtimeConfig = compileLowcodeRuntimeConfig(config);
+            AiCrudConfig draft = copyConfig(config);
+            draft.setTableName(runtimeConfig.getTableName());
+            draft.setTableComment(runtimeConfig.getTableComment());
+            draft.setLayoutType(runtimeConfig.getLayoutType());
+            if (StringUtils.isBlank(draft.getObjectCode())) {
+                draft.setObjectCode(runtimeConfig.getObjectCode());
+            }
+            draft.setSearchSchema(runtimeConfig.getSearchSchema());
+            draft.setColumnsSchema(runtimeConfig.getColumnsSchema());
+            draft.setEditSchema(runtimeConfig.getEditSchema());
+            draft.setApiConfig(runtimeConfig.getApiConfig());
+            draft.setOptions(runtimeConfig.getOptions());
+            draft.setDictConfig(runtimeConfig.getDictConfig());
+            draft.setDesensitizeConfig(runtimeConfig.getDesensitizeConfig());
+            draft.setEncryptConfig(runtimeConfig.getEncryptConfig());
+            draft.setTransConfig(runtimeConfig.getTransConfig());
+            return draft;
+        } catch (Exception e) {
+            log.error("[AiCrudConfigService] 草稿运行配置编译失败, configKey={}", config.getConfigKey(), e);
+            throw new BusinessException("配置JSON格式错误");
+        }
     }
 
     AiCrudConfigRenderVO buildDraftRenderConfig(AiCrudConfig config) {
-        return buildRenderConfig(config, true);
+        return buildRenderConfig(resolveDraftRuntimeConfig(config));
     }
 
-    private AiCrudConfigRenderVO buildRenderConfig(AiCrudConfig config, boolean forceDraftCompile) {
+    public AiCrudConfigRenderVO buildRenderConfig(AiCrudConfig config) {
         AiCrudConfigRenderVO vo = new AiCrudConfigRenderVO();
         vo.setConfigKey(config.getConfigKey());
         vo.setTableName(config.getTableName());
@@ -393,7 +423,7 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
                 vo.setPageSchema(objectMapper.readValue(config.getPageSchema(), Object.class));
             }
             if (StringUtils.isNotBlank(config.getModelSchema()) && StringUtils.isNotBlank(config.getPageSchema())) {
-                if (!forceDraftCompile && hasStoredRuntimeConfig(config)) {
+                if (hasStoredRuntimeConfig(config)) {
                     applyStoredRuntimeConfig(config, vo);
                 } else {
                     applyLowcodeRuntimeConfig(config, vo);
@@ -416,12 +446,14 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
                 && StringUtils.isNotBlank(config.getApiConfig());
     }
 
-    private void applyLowcodeRuntimeConfig(AiCrudConfig config, AiCrudConfigRenderVO vo) throws Exception {
+    private LowcodeRuntimeConfig compileLowcodeRuntimeConfig(AiCrudConfig config) throws Exception {
         LowcodeModelSchema modelSchema = objectMapper.readValue(config.getModelSchema(), LowcodeModelSchema.class);
         LowcodePageSchema pageSchema = objectMapper.readValue(config.getPageSchema(), LowcodePageSchema.class);
-        LowcodeRuntimeConfig runtimeConfig = lowcodeRuntimeConfigBuilder.buildRuntimeConfig(
-                config.getConfigKey(), modelSchema, pageSchema);
+        return lowcodeRuntimeConfigBuilder.buildRuntimeConfig(config.getConfigKey(), modelSchema, pageSchema);
+    }
 
+    private void applyLowcodeRuntimeConfig(AiCrudConfig config, AiCrudConfigRenderVO vo) throws Exception {
+        LowcodeRuntimeConfig runtimeConfig = compileLowcodeRuntimeConfig(config);
         vo.setLayoutType(runtimeConfig.getLayoutType());
         vo.setTableName(runtimeConfig.getTableName());
         vo.setTableComment(runtimeConfig.getTableComment());

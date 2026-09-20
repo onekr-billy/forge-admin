@@ -92,6 +92,57 @@ export function isReadonlySystemField(field = {}) {
     || readonlySystemColumnNames.has(field.columnName)
 }
 
+export function isChildListField(field = {}) {
+  if (field?.fieldScope === 'child' || field?.scope === 'child')
+    return true
+  const key = String(field?.field || field?.fieldCode || '')
+  const source = String(field?.sourceField || '')
+  return Boolean(source) && key.includes('__') && key !== source
+}
+
+/**
+ * 列表列标题只表达字段本身。子表归属在字段选择面板中分组展示，
+ * 不重复写入正式表头；同时兼容已保存过“子表名 · 字段”的旧标题。
+ */
+export function resolveListFieldTitle(field = {}, setting = {}, fieldCode = '') {
+  const label = String(
+    setting?.title
+    || setting?.label
+    || field.rawLabel
+    || field.label
+    || field.fieldName
+    || fieldCode
+    || field.field
+    || '',
+  ).trim()
+  if (!label || !isChildListField(field))
+    return label
+  const modelName = String(field.modelName || field.sourceLabel || '').trim()
+  if (!modelName)
+    return label
+  const prefixes = [
+    `${modelName} · `,
+    `${modelName}·`,
+    `${modelName}.`,
+    `${modelName}。`,
+    `${modelName}:`,
+    `${modelName}：`,
+  ]
+  const prefix = prefixes.find(item => label.startsWith(item))
+  return prefix ? label.slice(prefix.length).trim() : label
+}
+
+export function resolveChildListDisplayMode(value) {
+  return value === 'expand' ? 'expand' : 'aggregate'
+}
+
+export function resolveChildListDisplayHint(value) {
+  if (resolveChildListDisplayMode(value) === 'expand') {
+    return '每个子表行单独占一行，主表字段会重复出现。分页按展开后的行数计算，同一条主记录可能被拆到前后两页。编辑和删除仍按整条主表记录处理，勾选同一条主记录拆出来的多行只会操作一次。字典、人员这类字段按单个值显示。'
+  }
+  return '一条主表记录只占一行。同一条主记录下的多个子表值用「、」拼在同一个单元格里。分页按主表记录数计算，适合看单据列表。拼在一起后，字典标签不能再逐个上色。'
+}
+
 export function isPageFieldVisible(field = {}, zoneKey = 'table') {
   if (!field || isHiddenPageField(field) || isInactivePageField(field))
     return false
@@ -104,6 +155,15 @@ export function isPageFieldVisible(field = {}, zoneKey = 'table') {
   if (zoneKey === 'table')
     return field.listVisible !== false
   return true
+}
+
+/** 列表可选字段。子表列即使没勾默认列表显示，也要能被选中并保留。 */
+export function isListFieldSelectable(field = {}, zoneKey = 'table') {
+  if (!field || isHiddenPageField(field) || isInactivePageField(field))
+    return false
+  if (zoneKey === 'table' && isChildListField(field))
+    return true
+  return isPageFieldVisible(field, zoneKey)
 }
 
 function filterPageFields(fields = [], zoneKey = 'table') {
@@ -357,8 +417,9 @@ export function buildPageDesignModelSchema(modelSchema, modelRefs = []) {
         modelId: modelRef.modelId || null,
         modelCode,
         modelName,
+        fieldScope: modelRef.primary ? 'main' : 'child',
         label: field.label || sourceField,
-        sourceLabel: modelName,
+        sourceLabel: modelRef.primary ? '主表' : (modelName || '子表'),
       }
     })
   })
@@ -909,7 +970,9 @@ export function createDefaultListGridLayout(modelSchema, options = {}) {
 }
 
 export function syncGridLayoutWithModel(layout, modelSchema, options = {}) {
-  const tableFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'table').map(f => f.field))
+  const tableFieldSet = new Set((modelSchema?.fields || [])
+    .filter(field => isListFieldSelectable(field, 'table'))
+    .map(f => f.field))
   const searchFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'search').map(f => f.field))
   const layoutType = options.layoutType || layout?.layoutType || (modelSchema?.appType === 'TREE'
     ? 'tree-crud'
@@ -1141,7 +1204,9 @@ export function bootstrapGridLayoutFromZones(zones, modelSchema, options = {}) {
   const mainX = isTree ? 3 : 0
   const mainW = isTree ? 9 : 12
   const searchFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'search').map(f => f.field))
-  const tableFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'table').map(f => f.field))
+  const tableFieldSet = new Set((modelSchema?.fields || [])
+    .filter(field => isListFieldSelectable(field, 'table'))
+    .map(f => f.field))
 
   if (isTree) {
     const treeConfig = table?.props?.treeConfig || {}
@@ -1245,7 +1310,9 @@ export function applyGridLayoutToZones(zones, gridLayout, modelSchema) {
   const tree = items.find(i => i.blockType === 'tree-panel')
   const toolbar = items.find(i => i.blockType === 'toolbar')
   const searchFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'search').map(f => f.field))
-  const tableFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'table').map(f => f.field))
+  const tableFieldSet = new Set((modelSchema?.fields || [])
+    .filter(field => isListFieldSelectable(field, 'table'))
+    .map(f => f.field))
 
   return (zones || []).map((zone) => {
     if (zone.zoneKey === 'search') {
@@ -1351,6 +1418,7 @@ function pickRuntimeTableProps(props = {}) {
     'searchMaxVisibleFields',
     'searchYGap',
     'tableSize',
+    'childListDisplayMode',
     'renderMode',
     'showRenderModeSwitch',
     'hideSelection',

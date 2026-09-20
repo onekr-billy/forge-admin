@@ -602,6 +602,22 @@ export const aiCrudPageProps = {
   },
 
   /**
+   * 详情是否展示字段变更记录页签。隐藏页签不关闭后端采集。
+   */
+  showDataChangeLog: {
+    type: Boolean,
+    default: false,
+  },
+
+  /**
+   * 数据审计对象 ID，详情页签查询使用。
+   */
+  dataAuditObjectId: {
+    type: [String, Number],
+    default: '',
+  },
+
+  /**
    * 是否只显示新增表单，不渲染列表和弹窗。
    * @type {boolean}
    */

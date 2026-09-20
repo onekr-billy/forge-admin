@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { convertJsonToBpmn } from '../json-to-bpmn.js'
 import { ensureRejectRoutes, REJECT_STRATEGY } from '../ensure-reject-routes.js'
+import { convertJsonToBpmn } from '../json-to-bpmn.js'
 
 const DOLLAR = '$'
 
@@ -31,7 +31,7 @@ describe('ensureRejectRoutes', () => {
     expect(next.edges.some(edge => edge.source === modify.id && edge.target === 'A1')).toBe(true)
   })
 
-  it('MANUAL 策略不改图', () => {
+  it('manual 策略不改图', () => {
     const source = linearJson()
     const next = ensureRejectRoutes(source, REJECT_STRATEGY.MANUAL)
     expect(next).toBe(source)
@@ -57,11 +57,45 @@ describe('ensureRejectRoutes', () => {
     expect(next.nodes.filter(node => node.id.startsWith('Forge_RejectGW_'))).toHaveLength(0)
   })
 
+  it('结束策略下为显式驳回至发起人生成互斥专用回路', () => {
+    const json = linearJson()
+    json.config.rejectStrategy = REJECT_STRATEGY.TO_END
+    json.nodes[1].config.allowRejectToStart = true
+
+    const next = ensureRejectRoutes(json, REJECT_STRATEGY.TO_END)
+    const modify = next.nodes.find(node => node.config?.initiatorModify)
+    const rejectEnd = next.nodes.find(node => node.config?.endType === 'reject')
+    const rejectEdges = next.edges.filter(edge => edge.approvalResult === 'reject')
+
+    expect(modify).toBeTruthy()
+    expect(rejectEnd).toBeTruthy()
+    expect(rejectEdges.some(edge => edge.target === modify.id
+      && /rejectToStart\s*==\s*true/.test(edge.condition || ''))).toBe(true)
+    expect(rejectEdges.some(edge => edge.target === rejectEnd.id
+      && /rejectToStart\s*!=\s*true/.test(edge.condition || ''))).toBe(true)
+  })
+
+  it('手工驳回策略仍为节点显式权限补发起人修改回路', () => {
+    const json = linearJson()
+    json.config.rejectStrategy = REJECT_STRATEGY.MANUAL
+    json.nodes[1].config.allowRejectToStart = true
+
+    const next = ensureRejectRoutes(json, REJECT_STRATEGY.MANUAL)
+    const modify = next.nodes.find(node => node.config?.initiatorModify)
+
+    expect(next).not.toBe(json)
+    expect(modify).toBeTruthy()
+    expect(next.edges.some(edge => edge.target === modify.id
+      && /rejectToStart\s*==\s*true/.test(edge.condition || ''))).toBe(true)
+    expect(next.edges.some(edge => /approvalResult\s*==\s*'reject'/.test(edge.condition || '')
+      && /rejectToStart\s*!=\s*true/.test(edge.condition || ''))).toBe(false)
+  })
+
   it('convertJsonToBpmn 写出 rejectStrategy 与发起人修改节点', () => {
     const xml = convertJsonToBpmn(linearJson())
     expect(xml).toContain('flowable:rejectStrategy="TO_INITIATOR_MODIFY"')
     expect(xml).toContain('Forge_InitiatorModify')
     expect(xml).toContain('flowable:initiatorModify="true"')
-    expect(xml).toContain("approvalResult == 'reject'")
+    expect(xml).toContain('approvalResult == \'reject\'')
   })
 })

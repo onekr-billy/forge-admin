@@ -213,13 +213,30 @@ public class BusinessDocumentConfigService {
     }
 
     public BusinessDocumentConfigVO toVO(AiBusinessDocumentConfig config) {
-        return toVO(config, null);
+        return toVO(config, (AiCrudConfig) null);
     }
 
     public BusinessDocumentConfigVO toVO(AiBusinessDocumentConfig config, AiCrudConfig runtimeConfig) {
-        Map<String, Object> options = readObjectMap(config.getOptions());
         Long tenantId = config.getTenantId() != null ? config.getTenantId() : resolveTenantId();
         Map<String, Object> mainFlowSummary = buildMainFlowSummary(tenantId, config.getObjectCode(), config.getDefaultFlowKey());
+        return toVO(config, runtimeConfig, mainFlowSummary);
+    }
+
+    /**
+     * 使用调用方已经解析的主流程绑定构建单据配置视图，避免发起链路重复查询绑定。
+     */
+    public BusinessDocumentConfigVO toVO(AiBusinessDocumentConfig config,
+                                         AiCrudConfig runtimeConfig,
+                                         AiBusinessBinding mainFlowBinding) {
+        Map<String, Object> mainFlowSummary = buildMainFlowSummary(mainFlowBinding, config.getDefaultFlowKey());
+        return toVO(config, runtimeConfig, mainFlowSummary);
+    }
+
+    private BusinessDocumentConfigVO toVO(AiBusinessDocumentConfig config,
+                                          AiCrudConfig runtimeConfig,
+                                          Map<String, Object> mainFlowSummary) {
+        Map<String, Object> options = readObjectMap(config.getOptions());
+        Long tenantId = config.getTenantId() != null ? config.getTenantId() : resolveTenantId();
         BusinessDocumentConfigVO vo = new BusinessDocumentConfigVO();
         vo.setId(config.getId());
         vo.setObjectId(config.getObjectId());
@@ -776,8 +793,8 @@ public class BusinessDocumentConfigService {
         // 待修改允许编辑但不允许另起新流程：发起人应在原流程实例上重提，避免审批轨迹断裂。
         rows.add(statusRow("NEED_MODIFY", "待修改", "NEED_MODIFY", "待修改", "warning", true, false, false));
         rows.add(statusRow("APPROVED", "已通过", "APPROVED", "已通过", "success", false, false, false));
-        rows.add(statusRow("REJECTED", "已驳回", "REJECTED", "已驳回", "error", true, false, true));
-        rows.add(statusRow("CANCELED", "已撤回", "CANCELED", "已撤回", "default", true, false, true));
+        rows.add(statusRow("REJECTED", "已驳回", "REJECTED", "已驳回", "error", true, false, false));
+        rows.add(statusRow("CANCELED", "已撤回", "CANCELED", "已撤回", "default", true, false, false));
         rows.add(statusRow("CLOSED", "已关闭", "CLOSED", "已关闭", "default", false, false, false));
         return rows;
     }
@@ -803,8 +820,11 @@ public class BusinessDocumentConfigService {
     }
 
     private Map<String, Object> buildMainFlowSummary(Long tenantId, String objectCode, String legacyDefaultFlowKey) {
+        return buildMainFlowSummary(selectMainFlowBinding(tenantId, objectCode), legacyDefaultFlowKey);
+    }
+
+    private Map<String, Object> buildMainFlowSummary(AiBusinessBinding binding, String legacyDefaultFlowKey) {
         Map<String, Object> summary = new LinkedHashMap<>();
-        AiBusinessBinding binding = selectMainFlowBinding(tenantId, objectCode);
         if (binding != null) {
             Map<String, Object> config = readBindingConfig(binding.getBindingConfig());
             String flowModelKey = StringUtils.defaultIfBlank(resolveFlowModelKey(config), binding.getBindingKey());

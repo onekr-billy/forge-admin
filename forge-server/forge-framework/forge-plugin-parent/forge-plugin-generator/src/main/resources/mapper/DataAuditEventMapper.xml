@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.generator.mapper.DataAuditEventMapper">
+
+    <sql id="Base_Columns">
+        id, tenant_id, object_id, object_code, object_name, record_id, record_label, revision,
+        event_type, occurred_at, operation_id, parent_operation_id, correlation_id, source_type,
+        source_event_id, source_version, source_application_id, source_page_id, config_key,
+        schema_version, policy_version, policy_snapshot, actor_type, actor_id, actor_name,
+        client_id, delegated_user_id, change_reason, reason_code, flow_instance_id, task_id,
+        action_execution_id, changed_field_count, changed_row_count, protection_metadata,
+        create_by, create_time, create_dept, update_by, update_time
+    </sql>
+
+    <sql id="Query_Where">
+        WHERE e.tenant_id = #{tenantId}
+        <if test="objectIds != null">
+            AND e.object_id IN
+            <foreach collection="objectIds" item="oid" open="(" separator="," close=")">
+                #{oid}
+            </foreach>
+        </if>
+        <if test="query != null and query.objectId != null">
+            AND e.object_id = #{query.objectId}
+        </if>
+        <if test="query != null and query.recordId != null and query.recordId != ''">
+            AND e.record_id = #{query.recordId}
+        </if>
+        <if test="query != null and query.recordLabel != null and query.recordLabel != ''">
+            AND e.record_label = #{query.recordLabel}
+        </if>
+        <if test="query != null and query.recordKeyword != null and query.recordKeyword != ''">
+            AND (
+                e.record_label LIKE CONCAT('%', #{query.recordKeyword}, '%')
+                OR e.record_id LIKE CONCAT('%', #{query.recordKeyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.actorId != null and query.actorId != ''">
+            AND e.actor_id = #{query.actorId}
+        </if>
+        <if test="query != null and query.eventType != null and query.eventType != ''">
+            AND e.event_type = #{query.eventType}
+        </if>
+        <if test="query != null and query.sourceType != null and query.sourceType != ''">
+            AND e.source_type = #{query.sourceType}
+        </if>
+        <if test="query != null and query.operationId != null and query.operationId != ''">
+            AND e.operation_id = #{query.operationId}
+        </if>
+        <if test="query != null and query.correlationId != null and query.correlationId != ''">
+            AND e.correlation_id = #{query.correlationId}
+        </if>
+        <if test="query != null and query.sourceApplicationId != null">
+            AND e.source_application_id = #{query.sourceApplicationId}
+        </if>
+        <if test="query != null and query.flowInstanceId != null and query.flowInstanceId != ''">
+            AND e.flow_instance_id = #{query.flowInstanceId}
+        </if>
+        <if test="query != null and query.taskId != null and query.taskId != ''">
+            AND e.task_id = #{query.taskId}
+        </if>
+        <if test="query != null and query.configKey != null and query.configKey != ''">
+            AND e.config_key = #{query.configKey}
+        </if>
+        <if test="query != null and query.hasReason != null and query.hasReason">
+            AND e.change_reason IS NOT NULL AND e.change_reason != ''
+        </if>
+        <if test="query != null and query.hasReason != null and !query.hasReason">
+            AND (e.change_reason IS NULL OR e.change_reason = '')
+        </if>
+        <if test="query != null and query.startTime != null and query.startTime != ''">
+            AND e.occurred_at &gt;= #{query.startTime}
+        </if>
+        <if test="query != null and query.endTime != null and query.endTime != ''">
+            AND e.occurred_at &lt;= #{query.endTime}
+        </if>
+        <if test="query != null and query.fieldCode != null and query.fieldCode != ''">
+            AND EXISTS (
+                SELECT 1
+                FROM ai_data_audit_field f
+                WHERE f.tenant_id = e.tenant_id
+                  AND f.event_id = e.id
+                  AND f.field_code = #{query.fieldCode}
+            )
+        </if>
+        <if test="query != null and query.fieldKeyword != null and query.fieldKeyword != ''">
+            AND EXISTS (
+                SELECT 1
+                FROM ai_data_audit_field f
+                WHERE f.tenant_id = e.tenant_id
+                  AND f.event_id = e.id
+                  AND (
+                      f.field_label LIKE CONCAT('%', #{query.fieldKeyword}, '%')
+                      OR f.field_code LIKE CONCAT('%', #{query.fieldKeyword}, '%')
+                  )
+            )
+        </if>
+    </sql>
+
+    <select id="selectEventPage" resultType="com.mdframe.forge.plugin.generator.domain.entity.AiDataAuditEvent">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_data_audit_event e
+        <include refid="Query_Where"/>
+        ORDER BY e.occurred_at DESC, e.id DESC
+    </select>
+
+    <select id="selectEventById" resultType="com.mdframe.forge.plugin.generator.domain.entity.AiDataAuditEvent">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_data_audit_event
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+        LIMIT 1
+    </select>
+</mapper>

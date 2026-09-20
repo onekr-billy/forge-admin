@@ -28,6 +28,7 @@ class FlowTaskServiceImplStateChangeTest {
     private FlowTaskServiceImpl service;
     private RuntimeService runtimeService;
     private Method directSendAfterReturn;
+    private Method mergeActionVariables;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -39,6 +40,9 @@ class FlowTaskServiceImplStateChangeTest {
         directSendAfterReturn = FlowTaskServiceImpl.class.getDeclaredMethod(
                 "directSendAfterReturn", Task.class, Map.class, String.class);
         directSendAfterReturn.setAccessible(true);
+        mergeActionVariables = FlowTaskServiceImpl.class.getDeclaredMethod(
+                "mergeActionVariables", Map.class, boolean.class);
+        mergeActionVariables.setAccessible(true);
     }
 
     @Test
@@ -95,6 +99,18 @@ class FlowTaskServiceImplStateChangeTest {
 
         verify(runtimeService, never()).getVariables("process-1");
         verify(runtimeService, never()).createChangeActivityStateBuilder();
+    }
+
+    @Test
+    @DisplayName("every normal task action clears a previous reject-to-start marker")
+    @SuppressWarnings("unchecked")
+    void normalTaskActionClearsRejectToStartMarker() throws Exception {
+        Map<String, Object> variables = (Map<String, Object>) mergeActionVariables.invoke(
+                service, Map.of("rejectToStart", true), false);
+
+        assertEquals("reject", variables.get("approvalResult"));
+        assertEquals(false, variables.get("approved"));
+        assertEquals(false, variables.get("rejectToStart"));
     }
 
     private Task returnedTask() {

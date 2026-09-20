@@ -24,6 +24,14 @@ describe('portal-page-runtime-layout', () => {
       blockType: 'AiCrudPage',
       props: { objectRef: { pageMode: 'list' } },
     })).toBe(false)
+    expect(isRuntimeAutoHeightBlock({
+      blockType: 'AiCrudPage',
+      props: { formOnly: false, objectRef: { pageKey: 'form', pageMode: 'form' } },
+    })).toBe(false)
+    expect(isRuntimeAutoHeightBlock({
+      blockType: 'AiCrudPage',
+      props: { objectRef: { pageKey: 'form', pageMode: 'list' } },
+    })).toBe(false)
   })
 
   it('uses content-sized flow for published form pages, not design preview fill', () => {

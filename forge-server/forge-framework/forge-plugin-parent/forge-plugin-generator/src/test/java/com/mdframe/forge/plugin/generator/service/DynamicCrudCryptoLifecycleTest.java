@@ -81,6 +81,7 @@ class DynamicCrudCryptoLifecycleTest {
                 null,
                 null,
                 null,
+                null,
                 null);
     }
 

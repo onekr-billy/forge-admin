@@ -18,10 +18,10 @@
     }"
     :style="pageHeightStyle"
   >
-    <div v-if="flowStartPageLoading" class="ai-crud-page-loading-mask">
+    <div v-if="flowActionPageLoading" class="ai-crud-page-loading-mask">
       <n-spin size="large">
         <template #description>
-          正在发起流程...
+          {{ flowActionPageLoadingText }}
         </template>
       </n-spin>
     </div>
@@ -204,7 +204,7 @@
           :data-source="dataSource"
           :loading="tableLoading"
           :pagination="paginationConfig"
-          :row-key="rowKeyFn"
+          :row-key="tableRowKeyFn"
           :hide-selection="hideSelection"
           :striped="striped"
           :bordered="bordered"
@@ -344,7 +344,7 @@
 
           <div class="inline-form-panel-body">
             <n-tabs
-              v-if="showDetailFlowTabs"
+              v-if="showDetailExtraTabs"
               v-model:value="detailActiveTab"
               type="line"
               animated
@@ -400,12 +400,20 @@
                   :context="formContext"
                 />
               </n-tab-pane>
-              <n-tab-pane name="flow" tab="流程进度" display-directive="show:lazy">
+              <n-tab-pane v-if="showDetailFlowTabs" name="flow" tab="流程进度" display-directive="show:lazy">
                 <AiCrudFlowDetail
                   :runtime="detailRuntime"
                   :loading="detailRuntimeLoading"
                   :show-timeline="detailFlowTimelineVisible"
                   :show-diagram="detailFlowDiagramVisible"
+                />
+              </n-tab-pane>
+              <n-tab-pane v-if="showDataChangeLogTab" name="audit" tab="变更记录" display-directive="show:lazy">
+                <DataAuditRecordPanel
+                  :object-id="dataAuditObjectId"
+                  :record-id="dataAuditRecordId"
+                  :enabled="dataAuditEnabled"
+                  :history-available="dataAuditHistoryAvailable"
                 />
               </n-tab-pane>
             </n-tabs>
@@ -514,7 +522,7 @@
       @after-leave="handleModalClose"
     >
       <n-tabs
-        v-if="showDetailFlowTabs"
+        v-if="showDetailExtraTabs"
         v-model:value="detailActiveTab"
         type="line"
         animated
@@ -570,12 +578,20 @@
             :context="formContext"
           />
         </n-tab-pane>
-        <n-tab-pane name="flow" tab="流程进度" display-directive="show:lazy">
+        <n-tab-pane v-if="showDetailFlowTabs" name="flow" tab="流程进度" display-directive="show:lazy">
           <AiCrudFlowDetail
             :runtime="detailRuntime"
             :loading="detailRuntimeLoading"
             :show-timeline="detailFlowTimelineVisible"
             :show-diagram="detailFlowDiagramVisible"
+          />
+        </n-tab-pane>
+        <n-tab-pane v-if="showDataChangeLogTab" name="audit" tab="变更记录" display-directive="show:lazy">
+          <DataAuditRecordPanel
+            :object-id="dataAuditObjectId"
+            :record-id="dataAuditRecordId"
+            :enabled="dataAuditEnabled"
+            :history-available="dataAuditHistoryAvailable"
           />
         </n-tab-pane>
       </n-tabs>
@@ -931,9 +947,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { crudConfigRender, customQueryExecute } from '@/api/ai'
 import { businessDocumentRuntimeBatch, businessFlowStartConfig, executeBusinessAction, resubmitBusinessDocumentFlow, withdrawBusinessDocumentFlow } from '@/api/business-app'
 import { businessProcessStartConfig, startBusinessProcess } from '@/api/business-process'
+import { dataAuditRemove } from '@/api/data-audit'
 import AuthImage from '@/components/common/AuthImage.vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
+import { applyDataAuditRemove, applyDataAuditSubmit, isDataAuditHistoryAvailable, readDataAuditMeta, shouldShowDataAuditHistory } from '@/components/data-audit/data-audit-submit'
+import DataAuditRecordPanel from '@/components/data-audit/DataAuditRecordPanel.vue'
 import DictTag from '@/components/DictTag.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { useUserStore } from '@/store'
@@ -964,6 +983,8 @@ import {
 import { flattenRuntimeFormFields, useCrudFormula } from './crud/composables/useCrudFormula'
 import { useCrudImportExport } from './crud/composables/useCrudImportExport'
 import { useCrudPageHeight } from './crud/composables/useCrudPageHeight'
+import { useFlowActionFeedback } from './crud/composables/useFlowActionFeedback'
+import { useRecordFormLoader } from './crud/composables/useRecordFormLoader'
 import { resolveFormInitRecordId } from './data-source-binding-runtime'
 import { normalizeExpandConfig, shouldExpandRow } from './expand-utils'
 import { isNumberFieldType } from './field-type-utils'
@@ -1051,9 +1072,23 @@ const inlineFormHydrating = ref(false)
 const formOnlySubmitted = ref(false)
 const detailRuntime = ref(null)
 const detailRuntimeLoading = ref(false)
+const { loadRecordForm, loadDetailRuntime } = useRecordFormLoader({
+  loadDetailOnEdit: () => props.loadDetailOnEdit,
+  loadDetail,
+  callHook,
+  applyDetailData,
+  fetchRuntime: (objectCode, recordId) => request.get(`/ai/business/document/${objectCode}/${recordId}/runtime`, { needTip: false }),
+  resolveRuntimeObjectCode,
+  resolveRowKeyValue,
+  detailRuntime,
+  detailRuntimeLoading,
+  showLoading: () => window.$loading.show('加载中...'),
+  closeLoading: () => window.$loading.close(),
+})
 const detailActiveTab = ref('business')
 const actionLoadingKeys = ref(new Set())
-const flowStartPageLoading = ref(false)
+const flowActionPageLoading = ref(false)
+const flowActionPageLoadingText = ref('')
 const flowStartApproverModalVisible = ref(false)
 const flowStartApproverSubmitting = ref(false)
 const flowStartApproverNodes = ref([])
@@ -1076,6 +1111,22 @@ const offlineDraftNotice = ref('')
 const offlineDraftHydrating = ref(false)
 const offlineReplayLoading = ref(false)
 let offlineDraftSaveTimer = null
+const {
+  applyApplicationProcessRuntimeSnapshot,
+  applyDocumentRuntimeSnapshot,
+  disposeFlowRuntimeRefresh,
+  queueFlowRuntimeRefresh,
+} = useFlowActionFeedback({
+  dataSource,
+  currentRow,
+  detailRuntime,
+  formData,
+  resolveRowKeyValue,
+  resolveDocumentRuntime,
+  resolveRuntimeObjectCode,
+  refreshCurrentDetailRuntime,
+  loadList,
+})
 const commandActionTitle = computed(() => commandActionContext.value?.action?.label || commandActionContext.value?.action?.actionName || '业务动作')
 const commandActionFormSchema = computed(() => {
   const config = normalizeCommandActionRuntimeConfig(commandActionContext.value?.action || {})
@@ -1473,6 +1524,17 @@ function resolveActionDisplayLabel(action, row) {
     const loadingLabel = resolveActionTextValue(action.loadingLabel, row)
     if (loadingLabel)
       return loadingLabel
+    const actionType = String(action?.actionType || action?.key || '').toUpperCase()
+    if (['START_FLOW', 'START_APPROVAL', 'START_PROCESS'].includes(actionType)
+      || actionType.startsWith('STARTPROCESS:')) {
+      return '发起中...'
+    }
+    if (actionType === 'RESUBMIT_FLOW') {
+      return '提交中...'
+    }
+    if (actionType === 'WITHDRAW_FLOW') {
+      return '撤回中...'
+    }
   }
   return resolveActionTextValue(action.label, row) || action.key || ''
 }
@@ -1775,7 +1837,7 @@ async function startProcessAction(action, row) {
   if (!confirmed)
     return
   setActionLoading(loadingKey, true)
-  flowStartPageLoading.value = true
+  setFlowActionPageLoading(true, '正在发起流程...')
   try {
     const processStartConfig = await businessProcessStartConfig(applicationCode, processCode)
     const processNodes = Array.isArray(processStartConfig?.data?.initiatorSelectNodes)
@@ -1790,6 +1852,7 @@ async function startProcessAction(action, row) {
         recordId,
         row,
         loadingKey,
+        processCode,
         submit: variables => startBusinessProcess(applicationCode, processCode, {
           recordId: String(recordId),
           objectCode: objectCode || undefined,
@@ -1799,19 +1862,19 @@ async function startProcessAction(action, row) {
       flowStartApproverModalVisible.value = true
       return
     }
-    await startBusinessProcess(applicationCode, processCode, {
+    const res = await startBusinessProcess(applicationCode, processCode, {
       recordId: String(recordId),
       objectCode: objectCode || undefined,
     })
     window.$message.success('业务流程已启动')
-    await refreshCurrentDetailRuntime(row)
-    await loadList()
+    applyApplicationProcessRuntimeSnapshot(row, processCode, res?.data)
+    queueFlowRuntimeRefresh(row)
   }
   catch (error) {
     window.$message.error(error.message || '启动业务流程失败')
   }
   finally {
-    flowStartPageLoading.value = false
+    setFlowActionPageLoading(false)
     setActionLoading(loadingKey, false)
   }
 }
@@ -1835,7 +1898,7 @@ async function startFlowAction(action, row) {
   if (!confirmed)
     return
   setActionLoading(loadingKey, true)
-  flowStartPageLoading.value = true
+  setFlowActionPageLoading(true, '正在发起流程...')
   try {
     const configRes = await businessFlowStartConfig(objectCode)
     const nodes = Array.isArray(configRes?.data?.initiatorSelectNodes)
@@ -1855,7 +1918,7 @@ async function startFlowAction(action, row) {
     window.$message.error(error.message || '发起主流程失败')
   }
   finally {
-    flowStartPageLoading.value = false
+    setFlowActionPageLoading(false)
     setActionLoading(loadingKey, false)
   }
 }
@@ -1893,6 +1956,7 @@ async function resubmitFlowAction(action, row) {
   if (!confirmed)
     return
   setActionLoading(loadingKey, true)
+  setFlowActionPageLoading(true, '正在重新提交审批...')
   try {
     const res = await resubmitBusinessDocumentFlow({
       taskId: myTask.taskId,
@@ -1902,14 +1966,15 @@ async function resubmitFlowAction(action, row) {
     })
     if (res?.code !== 200)
       throw new Error(res?.message || '重新提交失败')
+    applyDocumentRuntimeSnapshot(row, res?.data, resolveRuntimeObjectCode(action, row))
     window.$message.success('已重新提交审批')
-    await refreshCurrentDetailRuntime(row)
-    await loadList()
+    queueFlowRuntimeRefresh(row)
   }
   catch (error) {
     window.$message.error(error?.message || '重新提交失败')
   }
   finally {
+    setFlowActionPageLoading(false)
     setActionLoading(loadingKey, false)
   }
 }
@@ -1936,12 +2001,13 @@ async function withdrawFlowAction(action, row) {
     return
   }
   const confirmed = await confirmConfiguredAction(
-    resolveActionText(action.confirmText || '确定撤回该审批流程吗？撤回后可修改单据并重新发起。', row),
+    resolveActionText(action.confirmText || '确定撤回该审批流程吗？撤回后流程状态将变为“已撤回”，仅保留查看审批记录。', row),
     { title: action.label || '撤回流程', positiveText: '确认撤回' },
   )
   if (!confirmed)
     return
   setActionLoading(loadingKey, true)
+  setFlowActionPageLoading(true, '正在撤回流程...')
   try {
     const res = await withdrawBusinessDocumentFlow({
       objectCode: resolveRuntimeObjectCode(action, row),
@@ -1952,14 +2018,15 @@ async function withdrawFlowAction(action, row) {
     })
     if (res?.code !== 200)
       throw new Error(res?.message || '撤回失败')
+    applyDocumentRuntimeSnapshot(row, res?.data, resolveRuntimeObjectCode(action, row))
     window.$message.success('流程已撤回')
-    await refreshCurrentDetailRuntime(row)
-    await loadList()
+    queueFlowRuntimeRefresh(row)
   }
   catch (error) {
     window.$message.error(error?.message || '撤回失败')
   }
   finally {
+    setFlowActionPageLoading(false)
     setActionLoading(loadingKey, false)
   }
 }
@@ -1980,14 +2047,15 @@ async function submitFlowStartWithApprovers() {
     return
   }
   flowStartApproverSubmitting.value = true
+  setFlowActionPageLoading(true, '正在发起流程...')
   try {
     if (typeof context.submit === 'function') {
       const res = await context.submit({ PROCESS_START_USER: selections })
       if (res?.code !== 200)
         throw new Error(res?.message || '发起流程失败')
+      applyApplicationProcessRuntimeSnapshot(context.row, context.processCode, res?.data)
       window.$message.success('流程已发起')
-      await refreshCurrentDetailRuntime(context.row)
-      await loadList()
+      queueFlowRuntimeRefresh(context.row)
     }
     else {
       await submitFlowStartRequest({
@@ -2004,6 +2072,7 @@ async function submitFlowStartWithApprovers() {
     window.$message.error(error?.message || '发起流程失败')
   }
   finally {
+    setFlowActionPageLoading(false)
     flowStartApproverSubmitting.value = false
   }
 }
@@ -2016,11 +2085,9 @@ async function submitFlowStartRequest({ objectCode, recordId, row, variables = {
   })
   if (res?.code !== 200)
     throw new Error(res?.message || '发起流程失败')
-  if (row)
-    row._documentRuntime = res?.data || row?._documentRuntime || null
+  applyDocumentRuntimeSnapshot(row, res?.data, objectCode)
   window.$message.success('流程已发起')
-  await refreshCurrentDetailRuntime(row)
-  await loadList()
+  queueFlowRuntimeRefresh(row)
 }
 
 async function refreshCurrentDetailRuntime(row = {}) {
@@ -2474,6 +2541,11 @@ function setActionLoading(key, loading) {
   actionLoadingKeys.value = next
 }
 
+function setFlowActionPageLoading(loading, text = '') {
+  flowActionPageLoading.value = loading
+  flowActionPageLoadingText.value = loading ? (text || '正在处理，请稍候...') : ''
+}
+
 function buildActionTarget(action, row) {
   let target = resolveActionText(action.routePath, row)
   const params = Array.isArray(action.params) ? action.params : []
@@ -2567,6 +2639,32 @@ const rowKeyFn = computed(() => {
   }
   return row => row[props.rowKey]
 })
+
+const tableRowKeyFn = computed(() => {
+  return (row) => {
+    if (row && isUsableKeyValue(row.__listRowKey))
+      return row.__listRowKey
+    return rowKeyFn.value(row)
+  }
+})
+
+function uniqueMainRecords(rows = []) {
+  const seen = new Set()
+  const uniqueRows = []
+  const uniqueKeys = []
+  for (const row of rows) {
+    const key = resolveRowKeyValue(row)
+    if (!isUsableKeyValue(key))
+      continue
+    const text = String(key)
+    if (seen.has(text))
+      continue
+    seen.add(text)
+    uniqueRows.push(row)
+    uniqueKeys.push(key)
+  }
+  return { rows: uniqueRows, keys: uniqueKeys }
+}
 
 function isUsableKeyValue(value) {
   if (value === null || value === undefined)
@@ -3065,6 +3163,23 @@ const showDetailFlowTabs = computed(() => {
     diagramVisible: detailFlowDiagramVisible.value,
   })
 })
+
+const dataAuditMeta = computed(() => readDataAuditMeta(formData.value) || readDataAuditMeta(currentRow.value))
+const showDataChangeLogTab = computed(() => {
+  const legacyConfigured = props.showDataChangeLog === true || props.options?.showDataChangeLog === true
+  return isDetailMode.value && shouldShowDataAuditHistory(dataAuditMeta.value, legacyConfigured)
+})
+const showDetailExtraTabs = computed(() => showDetailFlowTabs.value || showDataChangeLogTab.value)
+const dataAuditObjectId = computed(() => {
+  return dataAuditMeta.value?.objectId || props.dataAuditObjectId || props.options?.dataAuditObjectId || ''
+})
+const dataAuditRecordId = computed(() => {
+  const key = props.rowKey || 'id'
+  const value = formData.value?.[key] ?? currentRow.value?.[key]
+  return value == null ? '' : String(value)
+})
+const dataAuditEnabled = computed(() => dataAuditMeta.value?.enabled === true)
+const dataAuditHistoryAvailable = computed(() => isDataAuditHistoryAvailable(dataAuditMeta.value))
 
 const visibleChildrenConfig = computed(() => {
   const status = modalStatus.value || 'add'
@@ -3634,6 +3749,12 @@ async function callHook(hookName, params, success) {
   }
 }
 
+function resolveRuntimeConfigKey() {
+  const sample = props.apiConfig?.update || props.apiConfig?.list || props.apiConfig?.delete || props.api || ''
+  const match = String(sample).match(/\/ai\/crud\/([^/?]+)/)
+  return match?.[1] || ''
+}
+
 /**
  * 解析 API 配置
  * @param {string} key - API 配置键名
@@ -3642,6 +3763,7 @@ async function callHook(hookName, params, success) {
  * @param {object} urlParams - URL 参数，用于替换 :id 等占位符
  * @returns {object} { method, url }
  */
+
 function parseApiConfig(key, defaultApi, defaultMethod = 'get', urlParams = {}) {
   const apiConfigValue = props.apiConfig[key]
   const normalizedUrlParams = normalizeUrlParams(urlParams)
@@ -4047,8 +4169,12 @@ function handlePageSizeChange(pageSize) {
  * 选中项变化
  */
 watch(selectedKeys, (newKeys) => {
-  const rows = tableRef.value?.getCheckedRows() || []
-  emit('selection-change', { keys: newKeys, rows })
+  const checked = uniqueMainRecords(tableRef.value?.getCheckedRows?.() || [])
+  if (checked.keys.length) {
+    emit('selection-change', { keys: checked.keys, rows: checked.rows })
+    return
+  }
+  emit('selection-change', { keys: newKeys, rows: [] })
 })
 
 watch(
@@ -4576,21 +4702,8 @@ async function handleEdit(row) {
   const processedRow = await callHook('beforeRenderForm', row, data => data)
   const renderRow = mergeHookRowWithOriginal(row, processedRow)
 
-  // 如果需要加载详情
-  if (props.loadDetailOnEdit) {
-    window.$loading.show('加载中...')
-    await loadDetail(renderRow)
-    window.$loading.close()
-  }
-  else {
-    // 调用 beforeRenderDetail 钩子
-    const data = await callHook('beforeRenderDetail', renderRow, data => data)
-    applyDetailData(data)
-  }
-
-  // 编辑表单同样需要单据流程运行态，保证发起按钮在流程启动后立即隐藏，
-  // 且表单页与列表页使用同一条流程状态判断链路。
-  await loadDetailRuntime(renderRow)
+  if (!await loadRecordForm(renderRow))
+    return
 
   offlineBaseRecordVersion.value = readOfflineRecordVersion(renderRow)
   await restoreOfflineDraft(resolveRowKeyValue(row))
@@ -4630,17 +4743,8 @@ async function handleDetail(row) {
   const processedRow = await callHook('beforeRenderForm', row, data => data)
   const renderRow = mergeHookRowWithOriginal(row, processedRow)
 
-  if (props.loadDetailOnEdit) {
-    window.$loading.show('加载中...')
-    await loadDetail(renderRow)
-    window.$loading.close()
-  }
-  else {
-    const data = await callHook('beforeRenderDetail', renderRow, data => data)
-    applyDetailData(data)
-  }
-
-  await loadDetailRuntime(renderRow)
+  if (!await loadRecordForm(renderRow))
+    return
 
   if (!openFormContainer('detail', modalTitle.value, row))
     return
@@ -4650,27 +4754,6 @@ async function handleDetail(row) {
 
   emit('detail', row)
   emit('modal-open', { status: 'detail', row })
-}
-
-async function loadDetailRuntime(row) {
-  const objectCode = resolveRuntimeObjectCode({}, row)
-  const recordId = resolveRowKeyValue(row)
-  if (!objectCode || !recordId) {
-    return
-  }
-  detailRuntimeLoading.value = true
-  try {
-    const res = await request.get(`/ai/business/document/${objectCode}/${recordId}/runtime`, { needTip: false })
-    detailRuntime.value = res?.data || null
-  }
-  catch (error) {
-    if (!detailRuntime.value)
-      detailRuntime.value = null
-    console.warn('[AiCrudPage] 加载单据流程运行态失败:', error?.message || error)
-  }
-  finally {
-    detailRuntimeLoading.value = false
-  }
 }
 
 /**
@@ -4685,7 +4768,7 @@ async function loadDetail(row) {
       console.warn('[AiCrudPage] loadDetail id缺失', { rowKey: props.rowKey, rowKeys: Object.keys(row || {}).slice(0, 20), row })
       window.$message.warning(`缺少${props.rowKey}参数，无法加载详情`)
       confirmLoading.value = false
-      return
+      return false
     }
     const { method, url } = parseApiConfig(
       'detail',
@@ -4732,10 +4815,12 @@ async function loadDetail(row) {
     // 调用 beforeRenderDetail 钩子
     const data = await callHook('beforeRenderDetail', response.data, data => data)
     applyDetailData(data)
+    return true
   }
   catch (error) {
     console.error('加载详情失败:', error)
     window.$message.error('加载详情失败')
+    return false
   }
   finally {
     confirmLoading.value = false
@@ -4766,15 +4851,14 @@ async function handleDelete(row) {
  * 批量删除
  */
 async function handleBatchDelete() {
-  const rows = tableRef.value?.getCheckedRows() || []
-  const keys = selectedKeys.value
+  const checked = uniqueMainRecords(tableRef.value?.getCheckedRows() || [])
 
-  if (rows.length === 0) {
+  if (checked.rows.length === 0) {
     window.$message.warning('请先选择要删除的数据')
     return
   }
 
-  await performDelete(rows, keys)
+  await performDelete(checked.rows, checked.keys)
 }
 
 /**
@@ -4815,6 +4899,20 @@ async function performDelete(rows, keys) {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
+        const auditHandled = await applyDataAuditRemove({
+          configKey: resolveRuntimeConfigKey(),
+          ids: keys,
+          rows,
+          requestRemove: dataAuditRemove,
+        })
+        if (auditHandled === false)
+          return
+        if (auditHandled) {
+          window.$message.success('删除成功')
+          selectedKeys.value = []
+          loadList()
+          return
+        }
         // 检查是否配置了带 :id 占位符的删除 URL
         const deleteApiConfig = props.apiConfig.delete
         const hasIdPlaceholder = deleteApiConfig && (deleteApiConfig.includes(':id') || deleteApiConfig.includes(`:${props.rowKey}`) || deleteApiConfig.includes('{id}') || deleteApiConfig.includes(`{${props.rowKey}}`))
@@ -4901,6 +4999,10 @@ async function handleModalConfirm() {
     }
     data = buildMasterDetailSubmitData(data)
     data = await callHook('afterBuildSubmitData', data, data => data)
+    if (data === false) {
+      return
+    }
+    data = await applyDataAuditSubmit(data, { formData: formData.value, isEdit: modalStatus.value === 'edit' })
     if (data === false) {
       return
     }
@@ -5077,7 +5179,10 @@ defineExpose({
   /**
    * 获取选中的键
    */
-  getSelectedKeys: () => selectedKeys.value,
+  getSelectedKeys: () => {
+    const checked = uniqueMainRecords(tableRef.value?.getCheckedRows?.() || [])
+    return checked.keys.length ? checked.keys : [...selectedKeys.value]
+  },
 
   /**
    * 清除选中
@@ -5231,6 +5336,7 @@ function resolveFormOnlyRecordInitId() {
 }
 
 onBeforeUnmount(() => {
+  disposeFlowRuntimeRefresh()
   flushOfflineDraftSave()
   window.removeEventListener('online', handleBrowserOnline)
   clearExportTaskPollTimer()
