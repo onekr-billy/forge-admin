@@ -76,6 +76,16 @@ public class FlowPrintHistoryAdapter {
         return result;
     }
 
+    /** 无流程实例时仍提供空审批记录，避免列表/详情模板因缺集合而失败。 */
+    public Map<String, Object> empty() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("processInstanceId", null);
+        result.put("businessKey", null);
+        result.put("taskDefKey", null);
+        result.put("history", List.of());
+        return result;
+    }
+
     private void copy(Map<String, Object> target, Map<?, ?> source, String key) {
         Object value = source.get(key);
         target.put(key, value == null ? null : String.valueOf(value));

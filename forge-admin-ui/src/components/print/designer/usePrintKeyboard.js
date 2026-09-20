@@ -19,10 +19,16 @@ export function usePrintKeyboard(store) {
       actions.z = () => event.shiftKey ? store.redo() : store.undo()
       actions.y = () => store.redo()
       actions.c = () => store.copySelection()
+      actions.x = () => store.cutSelection()
       actions.v = () => store.pasteSelection()
       actions.a = () => {
         store.selectAll()
       }
+      actions['='] = () => store.nudgeZoom(1)
+      actions['+'] = () => store.nudgeZoom(1)
+      actions['-'] = () => store.nudgeZoom(-1)
+      actions._ = () => store.nudgeZoom(-1)
+      actions['0'] = () => store.setZoom(1)
     }
     if (actions[key]) {
       event.preventDefault()

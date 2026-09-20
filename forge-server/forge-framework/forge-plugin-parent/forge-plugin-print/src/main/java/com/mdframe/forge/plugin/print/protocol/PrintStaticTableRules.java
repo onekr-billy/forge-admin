@@ -73,7 +73,7 @@ final class PrintStaticTableRules {
     }
 
     private void validateCell(JsonNode cell, String path, int rowCount, int columnCount, int[][] coverage) {
-        if (!r.object(cell, path, "id", "row", "column", "rowSpan", "colSpan", "binding", "format", "style")) {
+        if (!r.object(cell, path, "id", "row", "column", "rowSpan", "colSpan", "binding", "format", "style", "contentType", "imageWidthMm", "imageHeightMm")) {
             return;
         }
         r.identifier(cell.get("id"), path + ".id");
@@ -81,7 +81,17 @@ final class PrintStaticTableRules {
         r.integer(cell.get("column"), path + ".column", 0, columnCount);
         r.integer(cell.get("rowSpan"), path + ".rowSpan", 1, rowCount);
         r.integer(cell.get("colSpan"), path + ".colSpan", 1, columnCount);
-        values.binding(cell.get("binding"), path + ".binding", false, false);
+        if (cell.has("contentType")) {
+            r.choice(cell.get("contentType"), path + ".contentType", "TEXT", "IMAGE");
+        }
+        if (cell.has("imageWidthMm")) {
+            r.number(cell.get("imageWidthMm"), path + ".imageWidthMm", 1, 500);
+        }
+        if (cell.has("imageHeightMm")) {
+            r.number(cell.get("imageHeightMm"), path + ".imageHeightMm", 1, 500);
+        }
+        boolean image = "IMAGE".equals(cell.path("contentType").asText());
+        values.binding(cell.get("binding"), path + ".binding", image, false);
         values.format(cell.get("format"), path + ".format");
         values.style(cell.get("style"), path + ".style");
         int row = cell.path("row").asInt(-1);

@@ -116,6 +116,13 @@ export async function preparePrintResources(document, context, options = {}) {
       if (element.type === 'IMAGE') {
         await loadImage(element.id, resolveBinding(element.binding, context), element.id)
       }
+      else if (element.type === 'STATIC_TABLE') {
+        for (const cell of element.table?.cells || []) {
+          if (cell.contentType !== 'IMAGE')
+            continue
+          await loadImage(`static-cell:${element.id}:${cell.id}`, resolveBinding(cell.binding, context), cell.id)
+        }
+      }
       else if (['BARCODE', 'QRCODE'].includes(element.type)) {
         const text = formatValue(resolveBinding(element.binding, context), element.format)
         src = await abortable((options.encodeCode || encodePrintCode)({ ...element, text }, signal), signal)
@@ -126,15 +133,31 @@ export async function preparePrintResources(document, context, options = {}) {
       }
     }
     const fieldTypes = new Map((options.catalog || []).map(field => [field.path, field.type]))
-    for (const section of document.body.filter(item => item.kind === 'TABLE')) {
+    const tableLike = [
+      ...document.body.filter(item => item.kind === 'TABLE'),
+      ...elements.filter(item => item.type === 'DATA_TABLE'),
+    ]
+    for (const section of tableLike) {
       const rows = resolveCollection(section.collectionPath, context)
-      for (const column of section.columns) {
+      for (const column of section.columns || []) {
         if (fieldTypes.get(`${section.collectionPath}.${column.field}`) !== 'IMAGE') {
           continue
         }
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
           const path = `${section.collectionPath}[${rowIndex}].${column.field}`
           await loadImage(tableImageResourceKey(section.id, rowIndex, column.id), readOwnPath(rows[rowIndex], column.field), path)
+        }
+      }
+      const bands = [
+        ...(section.headerRows || []).map((row, index) => ({ key: `header-${index}`, row })),
+        ...(section.footer ? [{ key: 'footer', row: section.footer }] : []),
+      ]
+      for (const band of bands) {
+        for (let cellIndex = 0; cellIndex < (band.row.cells || []).length; cellIndex++) {
+          const cell = band.row.cells[cellIndex]
+          if (cell.contentType !== 'IMAGE')
+            continue
+          await loadImage(`band:${section.id}:${band.key}:${cellIndex}`, resolveBinding(cell.binding, context), `${section.id}:${band.key}:${cellIndex}`)
         }
       }
     }

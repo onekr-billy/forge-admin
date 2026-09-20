@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import * as api from '@/api/print'
+import { formatPrintApiError } from '@/components/print/protocol/formatPrintError'
 import { createPrintDocument } from '@/components/print/protocol/types'
 import { assertPrintDocument } from '@/components/print/protocol/validate'
 
@@ -113,11 +114,11 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
         this.row = data
         this.savedName = name
         // 只确认发出时的名称；画布 document 保持原引用，避免覆盖请求期间的编辑。
-        this.notice = '草稿已保存'
+        window.$message?.success?.('草稿已保存')
       }
       catch (error) {
         if (generation === this.generation)
-          this.error = error.message || '保存失败'
+          this.error = formatPrintApiError(error, '保存失败')
         throw error
       }
       finally {
@@ -137,7 +138,7 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
         if (generation !== this.generation)
           return false
         this.row = data.template
-        this.notice = `已发布模板版本 ${data.version.versionNo}`
+        window.$message?.success?.(`已发布模板版本 ${data.version.versionNo}`)
         return true
       }
       catch (error) {
@@ -167,16 +168,15 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
     },
     async loadBindings() {
       const generation = this.generation
-      const scene = this.scene
       this.bindings = []
-      const { data } = await api.printBindings({ ...this.row.source, scene })
-      if (generation === this.generation && scene === this.scene)
+      const { data } = await api.printBindings({ ...this.row.source })
+      if (generation === this.generation)
         this.bindings = data
     },
     async bind(isDefault, status = 1) {
       const row = this.row
       const generation = this.generation
-      const binding = this.bindings.find(item => String(item.templateId) === String(row.id))
+      const binding = this.bindings.find(item => String(item.templateId) === String(row.id) && item.scene === this.scene)
       await api.savePrintBinding({ source: row.source, templateId: row.id, scene: this.scene, id: binding?.id, expectedRevision: binding?.bindingRevision, isDefault, status, sortOrder: binding?.sortOrder ?? 0 })
       if (generation === this.generation)
         await this.loadBindings()

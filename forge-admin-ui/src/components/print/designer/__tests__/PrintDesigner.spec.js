@@ -31,13 +31,14 @@ describe('designer editing workflow', () => {
 
   it('creates every supported element and isolates collection fields to their table', () => {
     addSection(store, 'FIXED')
-    for (const type of ['TEXT', 'IMAGE', 'LINE', 'RECTANGLE', 'ELLIPSE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER']) {
+    for (const type of ['TEXT', 'IMAGE', 'HTML', 'LINE', 'RECTANGLE', 'ELLIPSE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER']) {
       expect(addElement(store, type)).toBe(true)
     }
     expect(addField(store, 'unknown')).toBe(false)
     expect(addField(store, 'children.lines.name')).toBe(false)
     expect(addField(store, 'children.lines')).toBe(true)
-    expect(store.activeSurface.columns[0].field).toBe('name')
+    expect(store.activeElement).toMatchObject({ type: 'DATA_TABLE', collectionPath: 'children.lines' })
+    expect(store.activeElement.columns[0].field).toBe('name')
     expect(store.fieldIssues).toEqual([])
   })
   it('creates title and vertical line presets with print-ready defaults', () => {
@@ -45,10 +46,11 @@ describe('designer editing workflow', () => {
     addElement(store, 'TEXT', undefined, undefined, 'TITLE')
     expect(store.activeElement).toMatchObject({ type: 'TEXT', widthMm: 90, heightMm: 14, style: { fontSizePt: 18, fontWeight: 700, textAlign: 'center' } })
     addElement(store, 'LINE', undefined, undefined, 'VERTICAL')
-    expect(store.activeElement).toMatchObject({ type: 'LINE', widthMm: 1, heightMm: 30 })
+    expect(store.activeElement).toMatchObject({ type: 'LINE', widthMm: 0.8, heightMm: 40 })
   })
   it('inserts a manual page break between content sections and renders two papers', async () => {
     store.execute((doc) => {
+      doc.body = []
       doc.footer = { heightMm: 10, repeat: true, elements: [{ id: 'designer-page-number', type: 'PAGE_NUMBER', pageNumberFormat: 'CURRENT_TOTAL', xMm: 0, yMm: 0, widthMm: 40, heightMm: 8 }] }
     })
     addSection(store, 'FIXED')
@@ -80,7 +82,7 @@ describe('designer editing workflow', () => {
     expect(store.activeElement.xMm).toBeCloseTo(before + 10)
     store.undo()
     expect(store.activeElement.xMm).toBe(before)
-    await wrapper.get('[aria-label="调整元素尺寸"]').trigger('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100 })
+    await wrapper.get('[aria-label="右下角"]').trigger('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100 })
     window.dispatchEvent(move)
     window.dispatchEvent(up)
     expect(store.activeElement.widthMm).toBeCloseTo(55)
@@ -171,7 +173,7 @@ describe('designer editing workflow', () => {
     addSection(store, 'FIXED')
     addField(store, 'main.name')
     store.catalog = []
-    expect(store.fieldIssues[0].path).toBe('body[0].elements[0].binding')
+    expect(store.fieldIssues[0].path).toMatch(/^body\[\d+\]\.elements\[0\]\.binding$/)
     expect(() => parseDraft(' '.repeat(1024 * 1024 + 1))).toThrow('模板超出允许大小')
   })
 
@@ -187,18 +189,30 @@ describe('designer editing workflow', () => {
   it('edits merged table headers atomically and can undo footer creation', async () => {
     store.catalog.push({ path: 'children.lines.amount', type: 'MONEY' })
     addSection(store, 'TABLE')
-    const wrapper = mount(TableBandsPanel, { global: { plugins: [pinia] } })
-    const button = label => wrapper.findAll('button').find(b => b.text() === label)
-    await button('添加表头行').trigger('click')
+    const wrapper = mount(TableBandsPanel, { props: { mode: 'header' }, global: { plugins: [pinia] } })
+    const button = label => wrapper.findAll('button').find(b => b.text().includes(label))
+    await button('添加上层表头').trigger('click')
+    await wrapper.vm.$nextTick()
     expect(store.activeSurface.headerRows.map(row => row.cells.map(cell => cell.span))).toEqual([[2], [1, 1]])
+    // Select top header cell then split / merge
+    const chip = wrapper.find('.band-cell-chip')
+    expect(chip.exists()).toBe(true)
+    await chip.trigger('click')
+    await wrapper.vm.$nextTick()
     await button('拆分一列').trigger('click')
     expect(store.activeSurface.headerRows[0].cells.map(cell => cell.span)).toEqual([1, 1])
+    await wrapper.find('.band-cell-chip').trigger('click')
+    await wrapper.vm.$nextTick()
     await button('合并右侧').trigger('click')
     expect(store.activeSurface.headerRows[0].cells.map(cell => cell.span)).toEqual([2])
-    await button('添加合计行').trigger('click')
+    wrapper.unmount()
+
+    const footerPanel = mount(TableBandsPanel, { props: { mode: 'footer' }, global: { plugins: [pinia] } })
+    const footerButton = label => footerPanel.findAll('button').find(b => b.text().includes(label))
+    await footerButton('添加合计行').trigger('click')
     expect(store.activeSurface.footer.cells).toHaveLength(2)
     store.undo()
     expect(store.activeSurface.footer).toBeUndefined()
-    wrapper.unmount()
+    footerPanel.unmount()
   })
 })

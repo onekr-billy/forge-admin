@@ -75,7 +75,7 @@ final class PrintValueRules {
     }
 
     void style(JsonNode s, String path) {
-        if (s == null || !r.object(s, path, "fontFamily", "fontSizePt", "fontWeight", "fontStyle", "textAlign", "lineHeight", "color", "backgroundColor", "borderColor", "borderWidthMm", "borderStyle", "borderRadiusMm", "paddingMm", "textDecoration", "objectFit")) {
+        if (s == null || !r.object(s, path, "fontFamily", "fontSizePt", "fontWeight", "fontStyle", "textAlign", "verticalAlign", "lineHeight", "color", "backgroundColor", "borderColor", "borderWidthMm", "borderStyle", "borderRadiusMm", "paddingMm", "textDecoration", "objectFit")) {
             return;
         }
         for (String key : List.of("color", "backgroundColor", "borderColor")) {
@@ -108,10 +108,13 @@ final class PrintValueRules {
             r.choice(s.get("fontStyle"), path + ".fontStyle", "normal", "italic");
         }
         if (s.has("textAlign")) {
-            r.choice(s.get("textAlign"), path + ".textAlign", "left", "center", "right");
+            r.choice(s.get("textAlign"), path + ".textAlign", "left", "center", "right", "justify");
+        }
+        if (s.has("verticalAlign")) {
+            r.choice(s.get("verticalAlign"), path + ".verticalAlign", "top", "middle", "bottom");
         }
         if (s.has("textDecoration")) {
-            r.choice(s.get("textDecoration"), path + ".textDecoration", "none", "underline");
+            r.choice(s.get("textDecoration"), path + ".textDecoration", "none", "underline", "line-through", "overline");
         }
         if (s.has("borderStyle")) {
             r.choice(s.get("borderStyle"), path + ".borderStyle", "solid", "dashed", "dotted");
@@ -119,6 +122,21 @@ final class PrintValueRules {
         if (s.has("objectFit")) {
             r.choice(s.get("objectFit"), path + ".objectFit", "contain", "cover", "fill", "scale-down");
         }
+    }
+
+    void cellStyles(JsonNode value, String path) {
+        if (value == null || !value.isObject()) {
+            r.issue(path, "INVALID_OBJECT", "单元格样式映射无效");
+            return;
+        }
+        value.fields().forEachRemaining(entry -> {
+            String key = entry.getKey();
+            if (!key.matches("^(header|data|footer):\\d+:[\\w-]+$")) {
+                r.issue(path + "." + key, "INVALID_CELL_STYLE_KEY", "单元格样式键无效");
+                return;
+            }
+            style(entry.getValue(), path + "." + key);
+        });
     }
 
     void format(JsonNode f, String path) {

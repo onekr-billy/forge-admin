@@ -1,5 +1,5 @@
 <script setup>
-import { NButton, NEmpty, useThemeVars } from 'naive-ui'
+import { NEmpty, useThemeVars } from 'naive-ui'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { printRecordFromQuery } from '@/components/print/management/printRouteContext'
@@ -14,13 +14,10 @@ const record = computed(() => printRecordFromQuery(route.query))
 
 <template>
   <main class="print-runtime-page" :style="themeStyle">
-    <header>
-      <NButton @click="router.back()">
-        返回
-      </NButton><span>单据打印 · 当前已保存数据</span>
-    </header>
-    <PrintTemplatePicker v-if="record" :record="record" />
-    <NEmpty v-else description="请从已保存单据的打印入口进入" />
+    <PrintTemplatePicker v-if="record" :record="record" @back="router.back()" />
+    <div v-else class="runtime-empty">
+      <NEmpty description="请从已保存单据的打印入口进入" />
+    </div>
   </main>
 </template>
 
@@ -31,13 +28,9 @@ const record = computed(() => printRecordFromQuery(route.query))
   flex-direction: column;
   min-height: 0;
 }
-header {
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.print-runtime-page :deep(.runtime-picker) {
+.runtime-empty {
   flex: 1;
+  display: grid;
+  place-items: center;
 }
 </style>

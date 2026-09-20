@@ -1,15 +1,32 @@
 <script setup>
 import { computed } from 'vue'
-import { cellStyle } from './style'
+import { tableCellStyle, tableFrameStyle } from './style'
 
 const props = defineProps({ node: { type: Object, required: true } })
+const frame = computed(() => tableFrameStyle({
+  borderWidthMm: props.node.table.cells?.[0]?.style?.borderWidthMm ?? 0.15,
+  borderColor: props.node.table.cells?.[0]?.style?.borderColor,
+  borderStyle: props.node.table.cells?.[0]?.style?.borderStyle,
+}))
 const tableStyle = computed(() => ({
+  // 打印 iframe 不会带上本组件 scoped CSS，布局必须全部走内联。
+  display: 'grid',
+  width: '100%',
+  height: '100%',
+  boxSizing: 'border-box',
+  background: '#fff',
   gridTemplateColumns: props.node.table.columns.map(column => `${column.widthMm}mm`).join(' '),
   gridTemplateRows: props.node.table.rows.map(row => `${row.heightMm}mm`).join(' '),
+  ...frame.value,
 }))
 function style(cell) {
+  const align = cell.style?.textAlign || 'left'
   return {
-    ...cellStyle({ borderWidthMm: 0.15, ...cell.style }),
+    ...tableCellStyle({ borderWidthMm: 0.15, ...cell.style }),
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
     gridColumn: `${cell.column + 1} / span ${cell.colSpan}`,
     gridRow: `${cell.row + 1} / span ${cell.rowSpan}`,
     minWidth: 0,
@@ -17,22 +34,33 @@ function style(cell) {
     overflow: 'hidden',
   }
 }
+function imageStyle(cell) {
+  const width = cell.imageWidthMm
+  const height = cell.imageHeightMm
+  return {
+    display: 'block',
+    width: width ? `${width}mm` : '100%',
+    height: height ? `${height}mm` : '100%',
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
+  }
+}
 </script>
 
 <template>
   <div class="static-table" role="table" :style="tableStyle">
     <div v-for="cell in node.table.cells" :key="cell.id" role="cell" :style="style(cell)">
-      {{ cell.text }}
+      <img
+        v-if="(cell.type === 'IMAGE' || cell.contentType === 'IMAGE') && cell.src"
+        class="cell-image"
+        :src="cell.src"
+        alt=""
+        :style="imageStyle(cell)"
+      >
+      <template v-else>
+        {{ cell.text }}
+      </template>
     </div>
   </div>
 </template>
-
-<style scoped>
-.static-table {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  box-sizing: border-box;
-  background: #fff;
-}
-</style>

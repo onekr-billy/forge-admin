@@ -29,5 +29,15 @@ export const recordPrintEvent = (value, dto) => request.post(`/print/executions/
 export function loadPrintFile(fileId, { signal } = {}) {
   if (!/^[\w-]{1,128}$/.test(String(fileId)))
     throw new Error('打印图片标识无效')
-  return request.get(getFileUrl(String(fileId)), { baseURL: '', responseType: 'blob', encrypt: false, needTip: false, signal, timeout: 10000 })
+  // Canvas preview must not use the global "download" loading gate — the URL path
+  // contains /download/ and would otherwise flash/re-enter loading on every select.
+  return request.get(getFileUrl(String(fileId)), {
+    baseURL: '',
+    responseType: 'blob',
+    encrypt: false,
+    needTip: false,
+    signal,
+    timeout: 10000,
+    skipGlobalLoading: true,
+  })
 }

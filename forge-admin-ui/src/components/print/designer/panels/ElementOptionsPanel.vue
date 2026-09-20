@@ -50,6 +50,9 @@ function style(key, value) {
     <NFormItem v-if="element.type === 'BARCODE'" label="条码制式" size="small">
       <NSelect :value="element.barcodeFormat || 'CODE128'" :options="barcodeFormats" @update:value="patch({ barcodeFormat: $event })" />
     </NFormItem>
+    <NFormItem v-if="['BARCODE', 'QRCODE'].includes(element.type)" :label="element.type === 'BARCODE' ? '显示下方编码' : '显示下方内容'" size="small">
+      <NSwitch :value="element.type === 'BARCODE' ? element.showCodeText !== false : !!element.showCodeText" @update:value="patch({ showCodeText: $event })" />
+    </NFormItem>
     <NFormItem v-if="element.type === 'PAGE_NUMBER'" label="页码格式" size="small">
       <NSelect :value="element.pageNumberFormat || 'CURRENT_TOTAL'" :options="pageFormats" @update:value="patch({ pageNumberFormat: $event })" />
     </NFormItem>

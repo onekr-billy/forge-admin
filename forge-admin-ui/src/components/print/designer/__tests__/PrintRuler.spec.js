@@ -59,9 +59,17 @@ describe('print designer paper workspace', () => {
     expect(store.rightPanelOpen).toBe(false)
   })
 
-  it('exposes print calibration as a low-frequency more action', async () => {
-    const wrapper = mount(PrintDesignerToolbar, { props: { local: false }, global: { plugins: [pinia] } })
-    await wrapper.getComponent(NDropdown).vm.$emit('select', 'calibration')
-    expect(wrapper.emitted('calibration')).toHaveLength(1)
+  it('places movable ruler guides from the horizontal and vertical rulers', async () => {
+    const wrapper = mount(PrintCanvas, { global: { plugins: [pinia] } })
+    const horizontal = wrapper.find('.print-ruler.horizontal')
+    await horizontal.trigger('pointermove', { clientX: 120, clientY: 10, button: 0 })
+    expect(store.guidePreview).toMatchObject({ axis: 'x' })
+    await horizontal.trigger('pointerdown', { clientX: 120, clientY: 10, button: 0 })
+    expect(store.userGuides).toHaveLength(1)
+    expect(store.userGuides[0].axis).toBe('x')
+    store.moveUserGuide(store.userGuides[0].id, 42)
+    expect(store.userGuides[0].positionMm).toBe(42)
+    store.removeUserGuide(store.userGuides[0].id)
+    expect(store.userGuides).toHaveLength(0)
   })
 })

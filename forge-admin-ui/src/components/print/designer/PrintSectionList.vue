@@ -52,7 +52,11 @@ function handleRowAction(key, section) {
   <section class="designer-group section-list">
     <h3>页面结构</h3>
     <button type="button" class="fixed-row" :class="{ active: store.surfaceId === 'header' }" @click="store.selectSurface('header')">
-      <span class="row-badge">H</span><span>页眉</span>
+      <span class="row-badge">H</span>
+      <span class="band-copy">
+        <strong>页眉</strong>
+        <small>{{ store.document.header.heightMm }}mm{{ store.document.header.repeat ? ' · 每页' : ' · 首页' }}</small>
+      </span>
     </button>
     <div
       v-for="(section, index) in store.document.body"
@@ -67,7 +71,7 @@ function handleRowAction(key, section) {
       <button type="button" class="section-name" @click="store.selectSurface(`section:${section.id}`)">
         <span class="drag-handle">⠿</span>
         <span class="section-index">{{ index + 1 }}</span>
-        <span class="section-label">{{ { FIXED: '固定区块', TEXT: '流式文本', TABLE: '明细表格', PAGE_BREAK: '手动分页' }[section.kind] }}</span>
+        <span class="section-label">{{ { FIXED: '自由画布', TEXT: '流式长文', TABLE: '明细表格', PAGE_BREAK: '手动分页' }[section.kind] }}</span>
       </button>
       <div class="section-actions">
         <button type="button" class="row-action" title="上移区块" aria-label="上移区块" :disabled="index === 0" @click="move(section.id, index - 1)">
@@ -84,63 +88,83 @@ function handleRowAction(key, section) {
       </div>
     </div>
     <button type="button" class="fixed-row" :class="{ active: store.surfaceId === 'footer' }" @click="store.selectSurface('footer')">
-      <span class="row-badge">F</span><span>页脚</span>
+      <span class="row-badge">F</span>
+      <span class="band-copy">
+        <strong>页脚</strong>
+        <small>{{ store.document.footer.heightMm }}mm{{ store.document.footer.repeat ? ' · 每页' : ' · 末页' }}</small>
+      </span>
     </button>
   </section>
 </template>
 
 <style scoped>
 .section-list {
-  padding-bottom: 12px !important;
+  padding-bottom: 6px !important;
 }
 .section-row,
 .fixed-row {
   width: 100%;
-  min-height: 34px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  margin: 3px 0;
+  margin: 2px 0;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 4px;
   color: inherit;
   background: transparent;
 }
 .fixed-row {
-  gap: 8px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 4px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
 }
 .section-row:hover,
 .fixed-row:hover {
-  background: color-mix(in srgb, var(--primary-color, #356cde) 5%, transparent);
+  background: var(--gray-100);
 }
 .section-row.active,
 .fixed-row.active {
-  border-color: color-mix(in srgb, var(--primary-color, #356cde) 28%, transparent);
-  background: color-mix(in srgb, var(--primary-color, #356cde) 9%, transparent);
+  border-color: color-mix(in srgb, var(--primary-color) 28%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 9%, transparent);
 }
 .row-badge,
 .section-index {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--text-tertiary, #64748b);
   background: color-mix(in srgb, var(--text-tertiary, #64748b) 9%, transparent);
-  font-size: 10px;
+  font-size: 9px;
+}
+.band-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1.15;
+}
+.band-copy strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+.band-copy small {
+  color: var(--text-tertiary, #64748b);
+  font-size: 9px;
 }
 .section-name {
   min-width: 0;
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 2px 5px 5px;
+  gap: 4px;
+  padding: 3px 1px 3px 3px;
   border: 0;
   color: inherit;
   background: transparent;
@@ -149,19 +173,19 @@ function handleRowAction(key, section) {
 }
 .drag-handle {
   color: var(--text-tertiary, #94a3b8);
-  font-size: 14px;
+  font-size: 12px;
 }
 .section-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
 }
 .section-actions {
   display: flex;
   align-items: center;
-  padding-right: 3px;
+  padding-right: 1px;
   opacity: 0;
   transition: opacity 0.12s ease;
 }
@@ -171,22 +195,22 @@ function handleRowAction(key, section) {
   opacity: 1;
 }
 .row-action {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--text-tertiary, #64748b);
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
 }
 .row-action:hover:not(:disabled) {
-  color: var(--primary-color, #356cde);
-  background: color-mix(in srgb, var(--primary-color, #356cde) 10%, transparent);
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
 }
 .row-action:disabled {
   opacity: 0.25;

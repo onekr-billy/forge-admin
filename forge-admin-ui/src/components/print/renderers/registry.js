@@ -1,4 +1,5 @@
 import PrintBarcode from './PrintBarcode.vue'
+import PrintHtml from './PrintHtml.vue'
 import PrintImage from './PrintImage.vue'
 import PrintQrcode from './PrintQrcode.vue'
 import PrintShape from './PrintShape.vue'
@@ -9,6 +10,7 @@ import PrintText from './PrintText.vue'
 export const printRenderers = Object.freeze({
   TEXT: PrintText,
   IMAGE: PrintImage,
+  HTML: PrintHtml,
   LINE: PrintShape,
   RECTANGLE: PrintShape,
   ELLIPSE: PrintShape,

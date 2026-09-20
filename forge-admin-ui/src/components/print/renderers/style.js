@@ -1,7 +1,18 @@
 export function printStyle(style = {}) {
+  const verticalAlign = style.verticalAlign || 'top'
+  const justifyContent = verticalAlign === 'middle'
+    ? 'center'
+    : verticalAlign === 'bottom'
+      ? 'flex-end'
+      : 'flex-start'
   return {
     boxSizing: 'border-box',
-    fontFamily: style.fontFamily || 'Arial, sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent,
+    width: '100%',
+    height: '100%',
+    fontFamily: style.fontFamily || 'Microsoft YaHei, sans-serif',
     fontSize: `${style.fontSizePt ?? 10}pt`,
     fontWeight: style.fontWeight ?? 400,
     fontStyle: style.fontStyle || 'normal',
@@ -34,5 +45,47 @@ export function elementStyle(element) {
 }
 
 export function cellStyle(style = {}) {
-  return printStyle({ paddingMm: 1, borderWidthMm: 0.15, ...style })
+  const textAlign = style.textAlign || 'left'
+  const base = printStyle({ paddingMm: 1, borderWidthMm: 0.15, verticalAlign: 'middle', ...style })
+  return {
+    ...base,
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: textAlign === 'center' ? 'center' : textAlign === 'right' ? 'flex-end' : 'flex-start',
+    textAlign,
+  }
+}
+
+/** 表格外框：只画上/左边，避免与单元格双边框叠粗。 */
+export function tableFrameStyle(style = {}) {
+  const width = style.borderWidthMm ?? 0.15
+  const color = style.borderColor || '#000000'
+  const borderStyle = style.borderStyle || 'solid'
+  const line = width > 0 ? `${width}mm ${borderStyle} ${color}` : 'none'
+  return {
+    boxSizing: 'border-box',
+    borderTop: line,
+    borderLeft: line,
+    borderRight: 'none',
+    borderBottom: 'none',
+  }
+}
+
+/**
+ * 表格单元格：只画右/下边，与 tableFrameStyle 组成单线网格。
+ * 相邻格不再叠成更粗的内线，外框与内线同粗。
+ */
+export function tableCellStyle(style = {}) {
+  const width = style.borderWidthMm ?? 0.15
+  const color = style.borderColor || '#000000'
+  const borderStyle = style.borderStyle || 'solid'
+  const line = width > 0 ? `${width}mm ${borderStyle} ${color}` : 'none'
+  const base = cellStyle({ ...style, borderWidthMm: 0 })
+  return {
+    ...base,
+    border: 'none',
+    borderRight: line,
+    borderBottom: line,
+  }
 }

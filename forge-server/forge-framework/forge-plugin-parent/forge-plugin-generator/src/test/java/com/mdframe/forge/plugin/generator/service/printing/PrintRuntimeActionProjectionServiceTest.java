@@ -5,8 +5,10 @@ import com.mdframe.forge.plugin.generator.dto.AiCrudConfigRenderVO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.*;
+import com.mdframe.forge.plugin.print.entity.PrintBinding;
 import com.mdframe.forge.plugin.print.entity.PrintTemplate;
 import com.mdframe.forge.plugin.print.enums.PrintScene;
+import com.mdframe.forge.plugin.print.mapper.PrintBindingMapper;
 import com.mdframe.forge.plugin.print.mapper.PrintTemplateMapper;
 import com.mdframe.forge.plugin.print.service.PrintIdentity;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -25,6 +27,7 @@ class PrintRuntimeActionProjectionServiceTest {
     final BusinessApplicationRuntimeService runtime = mock(BusinessApplicationRuntimeService.class);
     final BusinessApplicationVersionMapper versions = mock(BusinessApplicationVersionMapper.class);
     final PrintTemplateMapper templates = mock(PrintTemplateMapper.class);
+    final PrintBindingMapper bindings = mock(PrintBindingMapper.class);
     ValidatorFactory factory; MockedStatic<SessionHelper> session;
     PrintRuntimeActionProjectionService service; AiCrudConfigRenderVO config;
     BusinessApplicationRuntimeVO portal; PrintTemplate template; AiBusinessApplicationVersion version;
@@ -45,7 +48,7 @@ class PrintRuntimeActionProjectionServiceTest {
         config = new AiCrudConfigRenderVO(); config.setRowKey("documentKey"); config.setOptions(Map.of("runtimeActions", List.of(Map.of("key", "existing", "position", "row"))));
         config.setColumnsSchema(List.of(Map.of("key", "name", "title", "名称")));
         service = new PrintRuntimeActionProjectionService(identity, runtime, versions, new PrintApplicationSnapshotCodec(factory.getValidator()),
-                new LowcodePrintSourceResolver(), templates, JSON);
+                new LowcodePrintSourceResolver(), templates, bindings, JSON);
     }
     @AfterEach void close() { session.close(); factory.close(); }
     @Test void projectsBothScenesAndPreservesExistingActionsWithoutRowPayload() throws Exception {
@@ -60,12 +63,32 @@ class PrintRuntimeActionProjectionServiceTest {
         assertThat(root.path("columnsSchema").size()).isEqualTo(2);
         java.nio.file.Files.createDirectories(java.nio.file.Path.of("target"));
         java.nio.file.Files.writeString(java.nio.file.Path.of("target/print-runtime-actions.json"), JSON.writeValueAsString(actions));
+        verifyNoInteractions(bindings);
     }
-    @Test void noPrintPermissionOrDraftPreviewDoesNotReadApplication() {
+    @Test void designPreviewProjectsLiveBindingsWithoutReadingSnapshot() {
+        var row = new PrintBinding();
+        row.setApplicationId(2L);
+        row.setSourceType("LOWCODE");
+        row.setPageId("page_purchase");
+        row.setObjectCode("purchase");
+        row.setSourceKey(SOURCE.key());
+        row.setTemplateId(10L);
+        row.setScene("LIST");
+        row.setStatus(1);
+        when(bindings.selectApplicationEnabled(1L, 2L)).thenReturn(List.of(row));
         service.overlay("purchase", 2L, "page_purchase", config, true);
+        var actions = JSON.valueToTree(config.getOptions()).path("runtimeActions");
+        assertThat(actions.size()).isEqualTo(2);
+        assertThat(actions.get(1).path("key").asText()).isEqualTo("forgePrint:LIST");
+        assertThat(actions.get(1).path("position").asText()).isEqualTo("row");
+        verifyNoInteractions(versions);
+        verify(bindings).selectApplicationEnabled(1L, 2L);
+    }
+    @Test void noPrintPermissionDoesNotReadApplication() {
         session.when(() -> SessionHelper.hasPermission("print:execute")).thenReturn(false);
         service.overlay("purchase", 2L, "page_purchase", config, false);
-        verifyNoInteractions(runtime, versions, templates);
+        service.overlay("purchase", 2L, "page_purchase", config, true);
+        verifyNoInteractions(runtime, versions, templates, bindings);
     }
     @Test void unrelatedPageOrConfigCannotReuseAnotherPageBinding() {
         service.overlay("purchase", 2L, "page_other", config, false);
@@ -82,6 +105,7 @@ class PrintRuntimeActionProjectionServiceTest {
     @Test void stoppedTemplateAndMissingSnapshotNeverFallbackToDraftBindings() {
         template.setStatus(0); service.overlay("purchase", 2L, "page_purchase", config, false); assertOriginal();
         version.setSnapshotJson("{}"); service.overlay("purchase", 2L, "page_purchase", config, false); assertOriginal();
+        verifyNoInteractions(bindings);
     }
     @Test void invalidManifestIsNotSilentlyAccepted() {
         version.setSnapshotJson("{\"printing\":null}");

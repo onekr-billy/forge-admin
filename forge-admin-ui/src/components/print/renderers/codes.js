@@ -12,7 +12,17 @@ export async function encodePrintCode(node, signal, document = globalThis.docume
   if (node.type === 'BARCODE') {
     try {
       const canvas = document.createElement('canvas')
-      JsBarcode(canvas, node.text, { format: node.barcodeFormat || 'CODE128', displayValue: false, width: 3, height: Math.ceil(mmToPx(node.heightMm) * 3), margin: 15 })
+      const showText = node.showCodeText !== false
+      const barHeight = Math.max(20, Math.ceil(mmToPx(node.heightMm) * 3 * (showText ? 0.72 : 1)))
+      JsBarcode(canvas, node.text, {
+        format: node.barcodeFormat || 'CODE128',
+        displayValue: showText,
+        fontSize: Math.max(18, Math.round(mmToPx(2.2) * 3)),
+        textMargin: 4,
+        width: 3,
+        height: barHeight,
+        margin: 8,
+      })
       return canvas.toDataURL('image/png')
     }
     catch {

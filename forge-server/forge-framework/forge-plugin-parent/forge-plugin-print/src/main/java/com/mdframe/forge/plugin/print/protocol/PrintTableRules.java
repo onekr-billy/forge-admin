@@ -33,7 +33,7 @@ final class PrintTableRules {
         for (int i = 0; i < columns.size(); i++) {
             JsonNode c = columns.get(i);
             String at = path + ".columns[" + i + "]";
-            if (!r.object(c, at, "id", "field", "title", "widthMm", "format", "style")) {
+            if (!r.object(c, at, "id", "field", "title", "widthMm", "format", "style", "headerStyle")) {
                 continue;
             }
             r.identifier(c.get("id"), at + ".id");
@@ -46,6 +46,9 @@ final class PrintTableRules {
             }
             values.format(c.get("format"), at + ".format");
             values.style(c.get("style"), at + ".style");
+            if (c.has("headerStyle")) {
+                values.style(c.get("headerStyle"), at + ".headerStyle");
+            }
         }
         if (totalWidth > width + GEOMETRY_TOLERANCE_MM) {
             r.issue(path, "OUT_OF_BOUNDS", "表格总列宽超出纸张正文");
@@ -71,7 +74,13 @@ final class PrintTableRules {
         for (int i = 0; i < row.get("cells").size(); i++) {
             JsonNode c = row.get("cells").get(i);
             String at = path + ".cells[" + i + "]";
-            String[] keys = footer ? new String[] { "binding", "span", "format", "style" } : new String[] { "text", "span", "style" };
+            if (c.has("contentType")) {
+                r.choice(c.get("contentType"), at + ".contentType", "TEXT", "IMAGE");
+            }
+            boolean image = "IMAGE".equals(c.path("contentType").asText());
+            String[] keys = (footer || image)
+                    ? new String[] { "binding", "span", "format", "style", "contentType" }
+                    : new String[] { "text", "span", "style", "contentType" };
             if (!r.object(c, at, keys)) {
                 continue;
             }
@@ -80,8 +89,8 @@ final class PrintTableRules {
                 r.issue(at, "INVALID_SPAN", "单元格跨度无效");
             }
             total += c.path("span").asDouble(Double.NaN);
-            if (footer) {
-                values.binding(c.get("binding"), at + ".binding", false, false);
+            if (footer || image) {
+                values.binding(c.get("binding"), at + ".binding", image, false);
                 values.format(c.get("format"), at + ".format");
             } else {
                 r.text(c.get("text"), at + ".text", 500);

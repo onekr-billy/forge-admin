@@ -10,18 +10,18 @@ import com.mdframe.forge.plugin.print.protocol.PrintElement.Style;
  */
 public record PrintSection(String id, String kind, Double heightMm, List<PrintElement> elements, Binding binding, Format format, Style style, Double gapAfterMm, Boolean keepWithNext, String collectionPath, List<Column> columns, List<HeaderRow> headerRows, Boolean repeatHeader, Footer footer, String emptyText) {
 
-    public record Column(String id, String field, String title, Double widthMm, Format format, Style style) {
+    public record Column(String id, String field, String title, Double widthMm, Format format, Style style, Style headerStyle) {
     }
 
     public record HeaderRow(List<HeaderCell> cells) {
     }
 
-    public record HeaderCell(String text, Integer span, Style style) {
+    public record HeaderCell(String text, Integer span, Style style, String contentType, Binding binding, Format format) {
     }
 
     public record Footer(List<FooterCell> cells) {
     }
 
-    public record FooterCell(Binding binding, Integer span, Format format, Style style) {
+    public record FooterCell(Binding binding, Integer span, Format format, Style style, String contentType) {
     }
 }

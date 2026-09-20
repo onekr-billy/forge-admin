@@ -54,6 +54,39 @@ function renewSectionIds(section) {
   return section
 }
 
+function resolveFreeSurface(document, preferredId) {
+  const surface = findSurface(document, preferredId)
+  if (surface?.elements)
+    return { surface, surfaceId: preferredId.startsWith('section:') || preferredId === 'header' || preferredId === 'footer' ? preferredId : `section:${preferredId}` }
+  const fixed = document.body.find(section => section.kind === 'FIXED')
+  if (fixed)
+    return { surface: fixed, surfaceId: `section:${fixed.id}` }
+  const created = { id: newPrintId(), kind: 'FIXED', heightMm: Math.max(120, paperGeometry(document).contentHeightMm || 200), elements: [], gapAfterMm: 2 }
+  document.body.unshift(created)
+  return { surface: created, surfaceId: `section:${created.id}` }
+}
+
+function placeElements(surface, elements, position, contentWidthMm) {
+  if (!elements.length)
+    return []
+  const originX = Math.min(...elements.map(item => item.xMm))
+  const originY = Math.min(...elements.map(item => item.yMm))
+  const baseX = position?.xMm ?? originX
+  const baseY = position?.yMm ?? originY
+  const ids = []
+  for (const raw of elements) {
+    const element = renewElementIds(raw)
+    const widthMm = element.widthMm || 10
+    const heightMm = element.heightMm || 10
+    element.xMm = Math.max(0, Math.min(baseX + (raw.xMm - originX), contentWidthMm - widthMm))
+    element.yMm = Math.max(0, baseY + (raw.yMm - originY))
+    surface.elements.push(element)
+    surface.heightMm = Math.max(surface.heightMm || 0, element.yMm + heightMm)
+    ids.push(element.id)
+  }
+  return ids
+}
+
 export class PrintComponentRegistry {
   #items = new Map()
 
@@ -103,33 +136,52 @@ export function registerBusinessPrintComponent(definition) {
 
 export function insertRegisteredPrintComponent(store, key, position, registry = printComponentRegistry) {
   let surfaceId = store.surfaceId
-  let elementId = ''
+  let elementIds = []
   let sectionId = ''
   const ok = store.execute((document) => {
     const geometry = paperGeometry(document)
     const fragment = registry.expand(key, { catalog: store.catalog, contentWidthMm: geometry.contentWidthMm })
     if (fragment.kind === 'SECTION') {
-      const section = renewSectionIds(fragment.section)
+      const section = fragment.section
+      // FIXED / TEXT 业务块落到自由画布，便于拖动；其它 SECTION 仍按区块插入
+      if (section.kind === 'FIXED' && section.elements?.length) {
+        const resolved = resolveFreeSurface(document, store.surfaceId)
+        surfaceId = resolved.surfaceId
+        elementIds = placeElements(resolved.surface, section.elements, position, geometry.contentWidthMm)
+        return
+      }
+      if (section.kind === 'TEXT') {
+        const resolved = resolveFreeSurface(document, store.surfaceId)
+        surfaceId = resolved.surfaceId
+        elementIds = placeElements(resolved.surface, [{
+          id: 'business-text',
+          type: 'TEXT',
+          xMm: 0,
+          yMm: 0,
+          widthMm: Math.min(90, geometry.contentWidthMm),
+          heightMm: 28,
+          binding: section.binding || { source: 'CONSTANT', value: '' },
+          style: section.style,
+        }], position, geometry.contentWidthMm)
+        return
+      }
+      const inserted = renewSectionIds(cloneDocument(section))
       const activeId = store.surfaceId.startsWith('section:') ? store.surfaceId.slice('section:'.length) : ''
       const activeIndex = document.body.findIndex(item => item.id === activeId)
-      document.body.splice(activeIndex < 0 ? document.body.length : activeIndex + 1, 0, section)
-      sectionId = section.id
+      document.body.splice(activeIndex < 0 ? document.body.length : activeIndex + 1, 0, inserted)
+      sectionId = inserted.id
       return
     }
     const element = renewElementIds(fragment.element)
-    let surface = findSurface(document, surfaceId)
-    if (!surface?.elements) {
-      surface = { id: newPrintId(), kind: 'FIXED', heightMm: 40, elements: [] }
-      document.body.push(surface)
-      surfaceId = surface.id
-    }
+    const resolved = resolveFreeSurface(document, store.surfaceId)
+    surfaceId = resolved.surfaceId
     if (position) {
       element.xMm = Math.max(0, Math.min(position.xMm, geometry.contentWidthMm - element.widthMm))
       element.yMm = Math.max(0, position.yMm)
     }
-    surface.heightMm = Math.max(surface.heightMm, element.yMm + element.heightMm)
-    surface.elements.push(element)
-    elementId = element.id
+    resolved.surface.heightMm = Math.max(resolved.surface.heightMm || 0, element.yMm + element.heightMm)
+    resolved.surface.elements.push(element)
+    elementIds = [element.id]
   })
   if (!ok)
     return false
@@ -138,7 +190,7 @@ export function insertRegisteredPrintComponent(store, key, position, registry = 
   }
   else {
     store.selectSurface(surfaceId)
-    store.selectedIds = [elementId]
+    store.selectedIds = elementIds
   }
   return true
 }

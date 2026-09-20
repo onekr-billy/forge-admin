@@ -4,6 +4,7 @@ import com.mdframe.forge.plugin.print.dto.*;
 import com.mdframe.forge.plugin.print.entity.PrintBinding;
 import com.mdframe.forge.plugin.print.enums.*;
 import com.mdframe.forge.plugin.print.mapper.PrintBindingMapper;
+import com.mdframe.forge.plugin.print.mapper.PrintTemplateMapper;
 import com.mdframe.forge.plugin.print.spi.*;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
@@ -22,10 +23,12 @@ public class PrintBindingService {
 
     private final PrintBindingMapper bindings;
 
-    public record Binding(Long id, Long templateId, PrintScene scene, boolean isDefault, Integer sortOrder, Integer status, Long bindingRevision) {
+    private final PrintTemplateMapper templates;
 
-        static Binding from(PrintBinding row) {
-            return new Binding(row.getId(), row.getTemplateId(), PrintScene.valueOf(row.getScene()), Boolean.TRUE.equals(row.getIsDefault()), row.getSortOrder(), row.getStatus(), row.getBindingRevision());
+    public record Binding(Long id, Long templateId, String templateName, PrintScene scene, boolean isDefault, Integer sortOrder, Integer status, Long bindingRevision) {
+
+        static Binding from(PrintBinding row, String templateName) {
+            return new Binding(row.getId(), row.getTemplateId(), templateName, PrintScene.valueOf(row.getScene()), Boolean.TRUE.equals(row.getIsDefault()), row.getSortOrder(), row.getStatus(), row.getBindingRevision());
         }
     }
 
@@ -33,7 +36,12 @@ public class PrintBindingService {
         identity.validate(dto);
         var actor = identity.require(PrintDesignAction.VIEW.permission());
         access.source(actor, dto.source(), PrintDesignAction.VIEW, false);
-        return bindings.selectSource(actor.tenantId(), dto.applicationId(), dto.source().key(), dto.scene().getCode()).stream().map(Binding::from).toList();
+        var rows = dto.scene() == null
+                ? bindings.selectBySource(actor.tenantId(), dto.applicationId(), dto.source().key())
+                : bindings.selectSource(actor.tenantId(), dto.applicationId(), dto.source().key(), dto.scene().getCode());
+        return rows.stream()
+                .map(row -> Binding.from(row, templateName(actor.tenantId(), row.getTemplateId())))
+                .toList();
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -83,7 +91,16 @@ public class PrintBindingService {
             org.slf4j.LoggerFactory.getLogger(getClass()).debug("打印来源场景已绑定该模板");
             throw PrintFailure.of(409, "PRINT_BINDING_EXISTS", "此来源和场景已经绑定该模板");
         }
-        return Binding.from(bindings.selectScoped(actor.tenantId(), row.getId()));
+        var saved = bindings.selectScoped(actor.tenantId(), row.getId());
+        return Binding.from(saved, templateName(actor.tenantId(), saved.getTemplateId()));
+    }
+
+    private String templateName(Long tenantId, Long templateId) {
+        if (templateId == null) {
+            return null;
+        }
+        var template = templates.selectScoped(tenantId, templateId);
+        return template == null ? null : template.getTemplateName();
     }
 
     @Transactional(rollbackFor = Exception.class)

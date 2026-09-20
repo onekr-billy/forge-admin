@@ -42,10 +42,12 @@ export async function createBrowserPrintSession(result, options = {}) {
     if (!paperDocument || !printWindow) {
       throw new PrintError('PRINT_UNAVAILABLE', '浏览器无法创建打印文档')
     }
+    // 不拷贝宿主页全局 CSS：Vue scoped 样式进不了 iframe，布局一律靠组件内联 style。
     const style = paperDocument.createElement('style')
     style.textContent = `@page { size: ${result.geometry.widthMm}mm ${result.geometry.heightMm}mm; margin: 0; }
-html, body { margin: 0; padding: 0; background: white; }
+html, body { margin: 0; padding: 0; background: white; color: #000; }
 * { box-sizing: border-box; }
+img { max-width: 100%; }
 [data-print-page] { break-after: page; page-break-after: always; }
 [data-print-page]:last-child { break-after: auto; page-break-after: auto; }`
     paperDocument.head.append(style)
@@ -57,7 +59,7 @@ html, body { margin: 0; padding: 0; background: white; }
     if (paperDocument.fonts) {
       await abortable(paperDocument.fonts.ready, controller.signal)
     }
-    await abortable(Promise.all([...paperDocument.images].map(image => image.decode())), controller.signal)
+    await abortable(Promise.all([...paperDocument.images].map(image => image.decode().catch(() => undefined))), controller.signal)
     clearTimeout(timer)
     controller.signal.addEventListener('abort', dispose, { once: true })
     printWindow.addEventListener('afterprint', dispose, { once: true })

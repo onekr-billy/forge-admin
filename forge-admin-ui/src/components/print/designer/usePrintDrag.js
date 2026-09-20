@@ -1,12 +1,13 @@
 import { onScopeDispose } from 'vue'
 
 // Window listeners keep the gesture alive outside the canvas; every exit cleans up.
-export function usePrintDrag(store, resize = false) {
+export function usePrintDrag(store) {
   let cleanup = () => {}
-  function start(event) {
+  function start(event, options = {}) {
     if (event.button !== 0 || !store.selectedIds.length) {
       return
     }
+    const { resize = false, handle = 'se' } = options
     cleanup()
     event.preventDefault()
     if (!store.beginGesture())
@@ -14,7 +15,7 @@ export function usePrintDrag(store, resize = false) {
     const { clientX, clientY, pointerId } = event
     const move = (next) => {
       if (next.pointerId === pointerId) {
-        store.moveGesture(next.clientX - clientX, next.clientY - clientY, resize)
+        store.moveGesture(next.clientX - clientX, next.clientY - clientY, resize, handle, { snap: !next.altKey })
       }
     }
     const finish = (next) => {

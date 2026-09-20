@@ -1,5 +1,5 @@
 <script setup>
-import { AddOutline, ChevronBackOutline, ChevronForwardOutline, ContractOutline, PrintOutline, RemoveOutline } from '@vicons/ionicons5'
+import { AddOutline, ChevronBackOutline, ChevronForwardOutline, ContractOutline, DocumentOutline, ExpandOutline, PrintOutline, RemoveOutline } from '@vicons/ionicons5'
 import { NAlert, NButton, NEmpty, NIcon, NSelect, NSpin, useThemeVars } from 'naive-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { layoutPrintDocument } from '../engine/layout'
@@ -18,6 +18,8 @@ const props = defineProps({
   catalog: { type: Array, default: () => [] },
   templateVersion: { type: [String, Number], default: null },
   dataLabel: { type: String, default: '当前已保存数据' },
+  /** 嵌入运行页时隐藏重复标题，只保留页码/缩放/打印操作 */
+  embedded: { type: Boolean, default: false },
   allowPrint: { type: Boolean, default: true },
   resolveFile: { type: Function, default: undefined },
 })
@@ -32,12 +34,20 @@ const zoom = ref(0.8)
 const fitMode = ref('width')
 const currentPage = ref(1)
 const scrollRef = ref(null)
+const previewRoot = ref(null)
+const isFullscreen = ref(false)
 const pageRefs = []
 const standardZooms = [0.4, 0.5, 0.65, 0.8, 1, 1.25, 1.5]
 const zoomOptions = computed(() => [...new Set([...standardZooms, Number(zoom.value.toFixed(2))])]
   .sort((a, b) => a - b)
   .map(value => ({ value, label: `${Math.round(value * 100)}%` })))
 const paperLabel = computed(() => layout.value ? `${layout.value.geometry.widthMm} × ${layout.value.geometry.heightMm} mm` : '')
+const showThumbs = computed(() => (layout.value?.pages?.length || 0) > 1)
+const thumbZoom = computed(() => {
+  if (!layout.value)
+    return 0.12
+  return Number(Math.min(0.2, Math.max(0.08, 72 / mmToPx(layout.value.geometry.widthMm))).toFixed(3))
+})
 let printSession
 let generation = 0
 let activeController
@@ -166,7 +176,36 @@ async function print() {
   }
 }
 
+/** Browser print dialog — choose “另存为 PDF” for business PDF export. */
+function exportPdf() {
+  return print()
+}
+
+async function toggleFullscreen() {
+  const target = previewRoot.value
+  if (!target)
+    return
+  try {
+    if (!document.fullscreenElement) {
+      await target.requestFullscreen?.()
+      isFullscreen.value = true
+    }
+    else {
+      await document.exitFullscreen?.()
+      isFullscreen.value = false
+    }
+  }
+  catch (reason) {
+    error.value = reason
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = document.fullscreenElement === previewRoot.value
+}
+
 onMounted(() => {
+  document.addEventListener('fullscreenchange', onFullscreenChange)
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => {
       if (fitMode.value === 'width')
@@ -176,17 +215,25 @@ onMounted(() => {
       resizeObserver.observe(scrollRef.value)
   }
 })
-onBeforeUnmount(() => resizeObserver?.disconnect())
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  resizeObserver?.disconnect()
+})
 </script>
 
 <template>
-  <section class="print-preview" :style="themeStyle">
+  <section ref="previewRoot" class="print-preview" :class="{ fullscreen: isFullscreen, embedded }" :style="themeStyle">
     <div class="print-toolbar">
-      <div class="preview-identity">
+      <div v-if="!embedded" class="preview-identity">
         <strong>打印预览</strong>
-        <span v-if="layout">{{ dataLabel }} · {{ paperLabel }} · 共 {{ layout.pages.length }} 页</span>
+        <span v-if="layout">{{ [dataLabel, paperLabel, `共 ${layout.pages.length} 页`].filter(Boolean).join(' · ') }}</span>
         <span v-else>{{ dataLabel }}</span>
       </div>
+      <div v-else-if="layout" class="preview-meta">
+        {{ paperLabel }} · {{ layout.pages.length }} 页
+      </div>
+      <div v-else class="toolbar-spacer" />
+
       <div v-if="layout" class="page-navigation" aria-label="预览页码导航">
         <button type="button" class="preview-tool" title="上一页" aria-label="上一页" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">
           <NIcon :component="ChevronBackOutline" />
@@ -196,9 +243,13 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
           <NIcon :component="ChevronForwardOutline" />
         </button>
       </div>
+
       <div class="print-actions">
         <button type="button" class="preview-tool" title="适合宽度" aria-label="适合宽度" :class="{ active: fitMode === 'width' }" :disabled="!layout" @click="fitWidth">
           <NIcon :component="ContractOutline" />
+        </button>
+        <button type="button" class="preview-tool" :title="isFullscreen ? '退出全屏' : '全屏预览'" :aria-label="isFullscreen ? '退出全屏' : '全屏预览'" :disabled="!layout" @click="toggleFullscreen">
+          <NIcon :component="isFullscreen ? ContractOutline : ExpandOutline" />
         </button>
         <button type="button" class="preview-tool" title="缩小预览" aria-label="缩小预览" :disabled="zoom <= standardZooms[0]" @click="stepZoom(-1)">
           <NIcon :component="RemoveOutline" />
@@ -207,6 +258,12 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
         <button type="button" class="preview-tool" title="放大预览" aria-label="放大预览" :disabled="zoom >= standardZooms.at(-1)" @click="stepZoom(1)">
           <NIcon :component="AddOutline" />
         </button>
+        <NButton v-if="allowPrint" size="small" quaternary :disabled="!layout || loading || !!error" :loading="printing" @click="exportPdf">
+          <template #icon>
+            <NIcon :component="DocumentOutline" />
+          </template>
+          PDF
+        </NButton>
         <NButton v-if="allowPrint" type="primary" size="small" :disabled="!layout || loading || !!error" :loading="printing" @click="print">
           <template #icon>
             <NIcon :component="PrintOutline" />
@@ -215,30 +272,58 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
         </NButton>
       </div>
     </div>
-    <NAlert v-if="error" type="error" title="无法准备打印" :bordered="false">
+    <NAlert v-if="error" type="error" :bordered="false" class="preview-alert">
       {{ error.message }}<span v-if="error.path">（{{ error.path }}）</span>
     </NAlert>
-    <div ref="scrollRef" class="print-scroll" @scroll.passive="trackPage">
-      <NSpin :show="loading">
-        <div v-if="layout" class="print-pages">
-          <article
-            v-for="(page, index) in layout.pages"
-            :key="page.number"
-            :ref="element => setPageRef(element, index)"
-            class="preview-page-shell"
+    <div class="preview-body">
+      <aside v-if="showThumbs" class="page-thumbs" aria-label="页面缩略图">
+        <button
+          v-for="page in layout.pages"
+          :key="page.number"
+          type="button"
+          class="thumb-item"
+          :class="{ active: currentPage === page.number }"
+          :title="`第 ${page.number} 页`"
+          :aria-label="`第 ${page.number} 页`"
+          :aria-current="currentPage === page.number ? 'page' : undefined"
+          @click="goToPage(page.number)"
+        >
+          <div
+            class="thumb-paper"
+            :style="{
+              width: `${layout.geometry.widthMm * thumbZoom}mm`,
+              height: `${layout.geometry.heightMm * thumbZoom}mm`,
+            }"
           >
-            <div class="page-caption">
-              第 {{ page.number }} 页
+            <div :style="{ transform: `scale(${thumbZoom})`, transformOrigin: 'top left' }">
+              <PrintPage :page="page" :geometry="layout.geometry" />
             </div>
-            <div class="print-paper-space" :style="{ width: `${layout.geometry.widthMm * zoom}mm`, height: `${layout.geometry.heightMm * zoom}mm` }">
-              <div :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }">
-                <PrintPage :page="page" :geometry="layout.geometry" />
+          </div>
+          <span class="thumb-label">{{ page.number }}</span>
+        </button>
+      </aside>
+      <div ref="scrollRef" class="print-scroll" @scroll.passive="trackPage">
+        <NSpin :show="loading">
+          <div v-if="layout" class="print-pages">
+            <article
+              v-for="(page, index) in layout.pages"
+              :key="page.number"
+              :ref="element => setPageRef(element, index)"
+              class="preview-page-shell"
+            >
+              <div class="print-paper-space" :style="{ width: `${layout.geometry.widthMm * zoom}mm`, height: `${layout.geometry.heightMm * zoom}mm` }">
+                <div :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }">
+                  <PrintPage :page="page" :geometry="layout.geometry" />
+                </div>
               </div>
-            </div>
-          </article>
-        </div>
-        <NEmpty v-else-if="!loading && !error" description="暂无打印内容" />
-      </NSpin>
+              <div class="page-caption">
+                第 {{ page.number }} 页
+              </div>
+            </article>
+          </div>
+          <NEmpty v-else-if="!loading && !error" description="暂无打印内容" />
+        </NSpin>
+      </div>
     </div>
   </section>
 </template>
@@ -252,41 +337,58 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   color: var(--text-primary, #222);
   background: var(--bg-primary, #fff);
 }
+.print-preview.fullscreen {
+  background: var(--gray-100, #f1f5f9);
+}
 .print-toolbar {
   position: relative;
   z-index: 2;
-  min-height: 52px;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto minmax(220px, 1fr);
+  min-height: 40px;
+  display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--border-light, #ddd);
-  box-shadow: 0 1px 5px rgb(15 23 42 / 5%);
+}
+.print-preview:not(.embedded) .print-toolbar {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(200px, 1fr);
 }
 .preview-identity {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 .preview-identity strong {
   font-size: 13px;
+  line-height: 1.2;
 }
-.preview-identity span {
+.preview-identity span,
+.preview-meta {
   overflow: hidden;
   color: var(--text-tertiary, #64748b);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.preview-meta {
+  flex: none;
+  padding-left: 2px;
+}
+.toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
 .page-navigation,
 .print-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  flex: none;
 }
 .page-navigation span {
-  min-width: 48px;
+  min-width: 44px;
   color: var(--text-tertiary, #64748b);
   font-size: 12px;
   text-align: center;
@@ -295,17 +397,17 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   color: var(--text-primary, #222);
 }
 .print-actions {
-  justify-content: flex-end;
+  margin-left: auto;
 }
 .preview-tool {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--text-primary, #334155);
   background: transparent;
   cursor: pointer;
@@ -322,14 +424,72 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   cursor: not-allowed;
 }
 .preview-zoom {
-  width: 80px;
+  width: 96px;
+}
+.preview-alert {
+  flex: none;
+  padding: 6px 10px;
+}
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+.page-thumbs {
+  flex: none;
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 8px;
+  overflow: auto;
+  border-right: 1px solid var(--border-light, #ddd);
+  background: #f1f4f8;
+  scrollbar-gutter: stable;
+}
+.thumb-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.thumb-item:hover {
+  border-color: color-mix(in srgb, var(--primary-color, #356cde) 30%, transparent);
+  background: #fff;
+}
+.thumb-item.active {
+  border-color: var(--primary-color, #356cde);
+  background: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color, #356cde) 35%, transparent);
+}
+.thumb-paper {
+  overflow: hidden;
+  background: #fff;
+  outline: 1px solid rgb(15 23 42 / 12%);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 8%);
+  pointer-events: none;
+}
+.thumb-label {
+  color: var(--text-tertiary, #64748b);
+  font-size: 11px;
+  line-height: 1;
+}
+.thumb-item.active .thumb-label {
+  color: var(--primary-color, #356cde);
+  font-weight: 600;
 }
 .print-scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 22px 32px 44px;
-  background: #dfe3e8;
+  padding: 12px 16px 20px;
+  background: #e8ecf1;
   scrollbar-gutter: stable;
 }
 .print-pages {
@@ -337,16 +497,16 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 14px;
 }
 .preview-page-shell {
   position: relative;
   flex: none;
-  scroll-margin-top: 22px;
+  scroll-margin-top: 12px;
 }
 .page-caption {
-  margin-bottom: 6px;
-  color: #5f6b7a;
+  margin-top: 6px;
+  color: #6b7280;
   font-size: 11px;
   text-align: center;
 }
@@ -355,18 +515,22 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   overflow: hidden;
   outline: 1px solid rgb(15 23 42 / 10%);
   background: #fff;
-  box-shadow: 0 5px 22px rgb(15 23 42 / 16%);
+  box-shadow: 0 2px 10px rgb(15 23 42 / 10%);
 }
 @media (max-width: 760px) {
-  .print-toolbar {
+  .print-preview:not(.embedded) .print-toolbar {
     grid-template-columns: 1fr auto;
   }
   .preview-identity span,
+  .preview-meta,
   .page-navigation {
     display: none;
   }
+  .page-thumbs {
+    display: none;
+  }
   .print-scroll {
-    padding: 16px 12px 32px;
+    padding: 10px 10px 16px;
   }
 }
 </style>

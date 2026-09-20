@@ -585,3 +585,31 @@ git diff --check
 实现：新增 `hasPrintPermission` 作为打印域唯一权限判断，优先接受平台 `isAdmin`，随后同时检查 `permissions` 与兼容字段 `getDataPermission`，支持 `*:*:*`、`**` 和精确权限。工作台查看、模板管理、设计器管理/发布全部改用该函数；普通无权限用户仍显示受限状态，后端 Controller/Service 权限校验不变。
 
 验证：权限目标测试 4 项；打印域、正式入口和工作区合并回归 29 文件 165 项；触达文件 ESLint、`git diff --check` 与 Vite 9389 modules 构建全部通过。浏览器自动验证会话未持有用户登录状态，且本机 8580 返回 502，因此未执行真实登录后的页面点击；本次用户返回的权限形态已由目标测试逐项覆盖。
+
+
+## 2026-09-20 · T57f 画布优先布局收紧
+
+未完成项收口：左右侧栏变窄（约 168/232px）、左侧组件/字段/结构合并为分段页签、中间栏对齐/分布/层级/文字对齐收入下拉、多页缩略导航、锁定角标、结构/表头/物料密度压缩。
+
+验证：触达设计器文件 ESLint 通过；`vitest run src/components/print/designer/__tests__ src/stores/print` 9 文件 68 项通过。未启动 Admin/浏览器实机验收。
+
+## 2026-09-20 · 设计器 UX / Bug 批量修复
+
+实现：ActionBar 左右滚动箭头；右键菜单删除/常用前置并加图标；明细表格移入基础组件并压缩空 FIXED 高度减少误分页；属性 Tab 仅在选中身份变化时重置（修边框→基础）；去掉无效 geometry 复制粘贴删除条；图片 fileId 鉴权预览；空白表格选中后可拖；椭圆改 SVG；表头 headerStyle；翻页不再清掉上一页背景（去掉 active surface 背景色覆盖）；颜色值规范化避免样式写入失败。
+
+验证：vitest 相关 8 文件 71 项通过；触达文件 eslint --fix 通过。未做浏览器实机验收。
+
+## 2026-09-20 · 工具栏/页眉页脚/明细表属性二次打磨
+
+ActionBar 放大、色块不显示 hex、中间区可撑开滚动；页眉/页脚线加粗可拖；恢复画布区块白底与选中底色；明细表选中后可拖宽高手柄；表头背景可改并在预览生效；TablePanel 改为紧凑列清单 + 点选编辑 + 表头快捷色（对齐 hiprint 分层思路）。
+
+验证：相关 vitest 39 项通过；触达文件 eslint 通过。
+
+
+## 2026-09-20 · LIST/DETAIL 放开 flow.history
+
+根因：设计目录始终含 `flow.history`，但列表/详情运行态只有 FLOW_* 场景才注入目录，前端 `validateFieldCatalog` 报「字段不可用」。
+
+实现：LIST/DETAIL 运行目录始终合并审批字段；按 `applicationId+objectCode+recordId` 软解析最近流程实例并加载历史，无实例返回空 `history`。
+
+验证：`LowcodePrintDataProviderTest` 8 项通过（含 detail 空历史加载）。需重启 Admin 后重试详情打印。

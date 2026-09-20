@@ -2,6 +2,7 @@ import { validateFieldCatalog } from '../protocol/fieldCatalog'
 import { PRINT_LIMITS, PrintError } from '../protocol/types'
 import { paperGeometry } from '../protocol/units'
 import { assertPrintDocument } from '../protocol/validate'
+import { expandDataTablesForLayout } from './expandDataTables'
 import { createPageCursor } from './pageGeometry'
 import { fillPageNumbers } from './pageNumbers'
 import { prepareElements, prepareSection } from './prepare'
@@ -27,13 +28,14 @@ function minimumHeight(section) {
 }
 
 export function layoutPrintDocument(input, context, { measure, resources, catalog = [], templateVersion = null } = {}) {
-  assertPrintDocument(input)
-  const issues = validateFieldCatalog(input, catalog)
+  // Clone first so expand never mutates the editable template.
+  const document = JSON.parse(JSON.stringify(input))
+  expandDataTablesForLayout(document)
+  assertPrintDocument(document)
+  const issues = validateFieldCatalog(document, catalog)
   if (issues.length) {
     throw new PrintError('FIELD_NOT_ALLOWED', issues[0].message, issues[0].path, issues)
   }
-  // The output owns its references so freezing a result never freezes the editable template.
-  const document = JSON.parse(JSON.stringify(input))
   const geometry = paperGeometry(document)
   const header = prepareElements(document.header.elements, context, measure, resources)
   const footer = prepareElements(document.footer.elements, context, measure, resources)

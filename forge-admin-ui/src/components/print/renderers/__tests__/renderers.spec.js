@@ -48,8 +48,10 @@ describe('safe paper rendering', () => {
       },
     }
     const wrapper = mount(PrintStaticTable, { props: { node } })
+    expect(wrapper.get('[role=table]').attributes('style')).toContain('display: grid')
     expect(wrapper.get('[role=table]').attributes('style')).toContain('25mm 35mm')
     expect(wrapper.get('[role=cell]').attributes('style')).toContain('span 2')
+    expect(wrapper.get('[role=cell]').attributes('style')).toContain('display: flex')
     expect(wrapper.find('script').exists()).toBe(false)
     expect(wrapper.text()).toContain('<script>alert(1)</script>')
   })

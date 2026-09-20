@@ -6,7 +6,14 @@ export function collectFieldBindings(document) {
       fields.push({ path: value.path, location, collection: false })
     }
   }
-  const elements = (items, location) => items.forEach((item, i) => binding(item.binding, `${location}[${i}].binding`))
+  const elements = (items, location) => items.forEach((item, i) => {
+    binding(item.binding, `${location}[${i}].binding`)
+    if (item.type === 'DATA_TABLE') {
+      fields.push({ path: item.collectionPath, location: `${location}[${i}]`, collection: true })
+      item.columns?.forEach((column, j) => fields.push({ path: `${item.collectionPath}.${column.field}`, location: `${location}[${i}].columns[${j}]`, collection: false }))
+      item.footer?.cells?.forEach((cell, j) => binding(cell.binding, `${location}[${i}].footer.cells[${j}]`))
+    }
+  })
   elements(document.header.elements, 'header.elements')
   elements(document.footer.elements, 'footer.elements')
   document.body.forEach((section, i) => {

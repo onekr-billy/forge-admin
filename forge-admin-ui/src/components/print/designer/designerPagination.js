@@ -13,7 +13,7 @@ export function estimateDesignerSectionHeight(section, { text = '', tableRows = 
     return Math.max(MIN_FLOW_HEIGHT_MM, 6 + lines * 5)
   }
   if (section.kind === 'TABLE')
-    return Math.max(MIN_TABLE_HEIGHT_MM, 4 + tableRows * 8)
+    return Math.max(MIN_TABLE_HEIGHT_MM, Number(section.minHeightMm) || 0, 4 + tableRows * 8)
   return 0
 }
 

@@ -44,7 +44,7 @@ describe('trusted print component registry', () => {
     const cases = [
       { key: 'app.promise', factory: () => Promise.resolve(textFragment()) },
       { key: 'app.function', factory: () => textFragment({ formatter: () => 'unsafe' }) },
-      { key: 'app.html', factory: () => textFragment({ type: 'HTML' }) },
+      { key: 'app.script', factory: () => textFragment({ type: 'SCRIPT' }) },
     ]
     for (const item of cases) {
       const registry = new PrintComponentRegistry()
@@ -71,8 +71,10 @@ describe('trusted print component registry', () => {
     const registry = registerBuiltInPrintComponents(new PrintComponentRegistry())
     expect(registry.list().map(item => item.key)).toEqual(['forge.approval-status', 'forge.signature-position', 'forge.contract-terms'])
     expect(insertRegisteredPrintComponent(store, 'forge.approval-status', undefined, registry)).toBe(true)
-    expect(store.activeSurface.elements[1].binding).toEqual({ source: 'FIELD', path: 'main.status' })
+    expect(store.activeSurface.kind).toBe('FIXED')
+    expect(store.selectedIds).toHaveLength(2)
+    expect(store.activeSurface.elements.some(item => item.binding?.path === 'main.status')).toBe(true)
     expect(insertRegisteredPrintComponent(store, 'forge.contract-terms', undefined, registry)).toBe(true)
-    expect(store.activeSurface).toMatchObject({ kind: 'TEXT', binding: { source: 'CONSTANT' } })
+    expect(store.activeElement).toMatchObject({ type: 'TEXT', binding: { source: 'CONSTANT' } })
   })
 })

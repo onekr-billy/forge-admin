@@ -69,7 +69,8 @@ public class PrintMetadataResolver {
         metadata.children().forEach(child -> models.add(child.model()));
         for (Model model : models) {
             if (configs.countActiveRuntimeConfig(actor.tenantId(), model.config().getId(), model.config().getObjectCode()) != 1) {
-                throw PrintFailure.missing();
+                throw PrintFailure.of(409, "PRINT_OBJECT_DISABLED",
+                        "业务对象未启用或运行配置不可用：" + model.config().getObjectCode());
             }
         }
     }

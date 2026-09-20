@@ -1,5 +1,5 @@
 <script setup>
-import { ClipboardOutline, CopyOutline, SwapHorizontalOutline, SwapVerticalOutline, TrashOutline } from '@vicons/ionicons5'
+import { SwapHorizontalOutline, SwapVerticalOutline } from '@vicons/ionicons5'
 import { NFormItem, NIcon, NInputNumber, NSwitch } from 'naive-ui'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 
@@ -28,17 +28,6 @@ const store = usePrintDesignerStore()
     <p v-if="store.activeSurface?.kind === 'PAGE_BREAK'" class="page-break-help">
       预览和打印会从这里开始新的一页。分页符不占用纸张高度。
     </p>
-    <div v-else class="geometry-commandbar edit-commandbar">
-      <button type="button" class="geometry-tool" title="复制元素" aria-label="复制元素" :disabled="!store.selectedIds.length" @click="store.copySelection()">
-        <NIcon :component="CopyOutline" />
-      </button>
-      <button type="button" class="geometry-tool" title="粘贴元素" aria-label="粘贴元素" :disabled="!store.clipboard.length || !store.activeSurface?.elements" @click="store.pasteSelection()">
-        <NIcon :component="ClipboardOutline" />
-      </button>
-      <button type="button" class="geometry-tool danger" title="删除元素" aria-label="删除元素" :disabled="!store.selectedIds.length || store.hasLockedSelection" @click="store.removeSelection()">
-        <NIcon :component="TrashOutline" />
-      </button>
-    </div>
     <template v-if="!store.selectedIds.length && store.activeSurface?.kind && store.activeSurface.kind !== 'PAGE_BREAK'">
       <NFormItem v-if="store.activeSurface.kind === 'FIXED'" label="区块高度 mm" size="small">
         <NInputNumber :value="store.activeSurface.heightMm" :min="1" @update:value="$event !== null && store.patchSurface({ heightMm: $event })" />
@@ -66,42 +55,39 @@ const store = usePrintDesignerStore()
 .page-break-help {
   margin: 0;
   padding: 8px 9px;
-  border: 1px solid color-mix(in srgb, var(--primary-color, #356cde) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary-color) 20%, transparent);
   border-radius: 5px;
   color: var(--text-secondary, #64748b);
-  background: color-mix(in srgb, var(--primary-color, #356cde) 5%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 5%, transparent);
   font-size: 12px;
   line-height: 1.6;
 }
 .alignment-bar {
   margin-bottom: 7px;
 }
-.edit-commandbar {
-  width: max-content;
-}
 .geometry-tool {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--text-primary, #334155);
   background: transparent;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 13px;
 }
 .geometry-tool:hover:not(:disabled) {
-  color: var(--primary-color, #356cde);
-  border-color: color-mix(in srgb, var(--primary-color, #356cde) 22%, transparent);
-  background: color-mix(in srgb, var(--primary-color, #356cde) 9%, transparent);
+  color: var(--primary-color);
+  border-color: color-mix(in srgb, var(--primary-color) 22%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 9%, transparent);
 }
 .geometry-tool.danger:hover:not(:disabled) {
-  color: #ef4444;
-  border-color: rgb(239 68 68 / 20%);
-  background: rgb(239 68 68 / 8%);
+  color: var(--error-color, #d03050);
+  border-color: color-mix(in srgb, var(--error-color, #d03050) 20%, transparent);
+  background: color-mix(in srgb, var(--error-color, #d03050) 8%, transparent);
 }
 .geometry-tool:disabled {
   opacity: 0.28;

@@ -1,122 +1,599 @@
 <script setup>
-import { NButton, NFormItem, NInput, NSelect } from 'naive-ui'
-import { computed } from 'vue'
+import { NButton, NColorPicker, NFormItem, NInput, NSelect } from 'naive-ui'
+import { computed, ref, watch } from 'vue'
+import FileUpload from '@/components/file-upload/index.vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { findSurface } from '../commands'
+import { groupedFieldSelectOptions } from '../fieldGroups'
+import PrintFieldPicker from '../PrintFieldPicker.vue'
+
+const props = defineProps({
+  mode: { type: String, default: 'header' }, // header | footer
+})
 
 const store = usePrintDesignerStore()
-const table = computed(() => store.activeSurface)
-const fields = computed(() => store.catalog.filter(f => f.type !== 'COLLECTION' && !store.catalog.some(c => c.type === 'COLLECTION' && f.path.startsWith(`${c.path}.`))).map(f => ({ label: f.label || f.path, value: f.path })))
-const formats = [{ label: '文本', value: 'TEXT' }, { label: '金额（分转元）', value: 'MONEY' }, { label: '数字', value: 'NUMBER' }]
-function change(action) {
-  store.execute(doc => action(findSurface(doc, store.surfaceId)))
+const isElementTable = computed(() => store.activeElement?.type === 'DATA_TABLE')
+const table = computed(() => (isElementTable.value ? store.activeElement : store.activeSurface))
+const masterFieldOptions = computed(() => groupedFieldSelectOptions(store.catalog))
+const formats = [
+  { label: '文本', value: 'TEXT' },
+  { label: '金额（分转元）', value: 'MONEY' },
+  { label: '数字', value: 'NUMBER' },
+]
+
+/** Selected band cell: { kind: 'header'|'footer', row: number (-1 footer), cell: number } */
+const selection = ref(null)
+const textDraft = ref('')
+
+watch(
+  () => `${table.value?.id || ''}|${props.mode}|${table.value?.headerRows?.length || 0}|${table.value?.footer ? 1 : 0}`,
+  () => {
+    selection.value = null
+    textDraft.value = ''
+  },
+)
+
+const columns = computed(() => table.value?.columns || [])
+const headerRows = computed(() => table.value?.headerRows || [])
+const footer = computed(() => table.value?.footer || null)
+
+const selectedCell = computed(() => {
+  const sel = selection.value
+  if (!sel || !table.value)
+    return null
+  if (sel.kind === 'footer')
+    return footer.value?.cells?.[sel.cell] || null
+  return headerRows.value[sel.row]?.cells?.[sel.cell] || null
+})
+
+watch(selectedCell, (cell) => {
+  if (!cell || selection.value?.kind !== 'header') {
+    textDraft.value = ''
+    return
+  }
+  textDraft.value = cell.text || ''
+}, { immediate: true })
+
+function commitHeaderText() {
+  if (selection.value?.kind !== 'header' || !selectedCell.value)
+    return
+  const next = textDraft.value
+  if ((selectedCell.value.text || '') === next)
+    return
+  patchSelected({ text: next })
 }
+
+function change(action) {
+  if (isElementTable.value) {
+    const elementId = store.activeElement.id
+    return store.execute((doc) => {
+      action(findSurface(doc, store.surfaceId).elements.find(item => item.id === elementId))
+    })
+  }
+  return store.execute(doc => action(findSurface(doc, store.surfaceId)))
+}
+
+function rowOf(item, index) {
+  return index === -1 ? item.footer : item.headerRows[index]
+}
+
+function selectHeader(row, cell) {
+  selection.value = { kind: 'header', row, cell }
+}
+function selectFooter(cell) {
+  selection.value = { kind: 'footer', row: -1, cell }
+}
+
 function addHeader() {
   change((item) => {
     item.headerRows ||= [{ cells: item.columns.map(c => ({ text: c.title, span: 1 })) }]
-    item.headerRows.unshift({ cells: [{ text: '明细表', span: item.columns.length }] })
+    // Full-span top row first; user splits / merges to build a tree header.
+    item.headerRows.unshift({ cells: [{ text: '分组标题', span: item.columns.length }] })
   })
+  selection.value = { kind: 'header', row: 0, cell: 0 }
 }
+
 function removeHeader(index) {
   change((item) => {
     item.headerRows.splice(index, 1)
     if (!item.headerRows.length)
       delete item.headerRows
   })
+  selection.value = null
 }
+
 function addFooter() {
   change((item) => {
-    item.footer = { cells: item.columns.map((c, i) => ({ span: 1, binding: { source: 'CONSTANT', value: i === 0 ? '合计' : '' } })) }
+    item.footer = {
+      cells: item.columns.map((c, i) => ({
+        span: 1,
+        binding: { source: 'CONSTANT', value: i === 0 ? '合计' : '' },
+      })),
+    }
   })
+  selection.value = { kind: 'footer', row: -1, cell: 0 }
 }
-function rowOf(item, index) {
-  return index === -1 ? item.footer : item.headerRows[index]
+
+function removeFooter() {
+  change((item) => { delete item.footer })
+  selection.value = null
 }
-function patch(index, cell, patch) {
-  change(item => Object.assign(rowOf(item, index).cells[cell], patch))
+
+function patchSelected(patch) {
+  const sel = selection.value
+  if (!sel)
+    return
+  change(item => Object.assign(rowOf(item, sel.row).cells[sel.cell], patch))
 }
-function merge(index, cell) {
+
+function patchSelectedStyle(key, value) {
+  if (value === null || !selection.value)
+    return
+  let next = value
+  if (typeof next === 'string' && ['color', 'backgroundColor'].includes(key)) {
+    const hex = next.trim()
+    if (/^#[\da-f]{8}$/i.test(hex))
+      next = `#${hex.slice(1, 7)}`
+  }
+  const sel = selection.value
   change((item) => {
-    const cells = rowOf(item, index).cells
-    cells[cell].span += cells[cell + 1].span
-    cells.splice(cell + 1, 1)
+    const target = rowOf(item, sel.row).cells[sel.cell]
+    target.style = { ...target.style, [key]: next }
   })
 }
-function split(index, cell) {
+
+function mergeSelected() {
+  const sel = selection.value
+  if (!sel)
+    return
   change((item) => {
-    const cells = rowOf(item, index).cells
-    cells[cell].span--
-    cells.splice(cell + 1, 0, index === -1 ? { span: 1, binding: { source: 'CONSTANT', value: '' } } : { span: 1, text: '' })
+    const cells = rowOf(item, sel.row).cells
+    if (sel.cell >= cells.length - 1)
+      return
+    cells[sel.cell].span += cells[sel.cell + 1].span
+    cells.splice(sel.cell + 1, 1)
   })
 }
+
+function splitSelected() {
+  const sel = selection.value
+  if (!sel)
+    return
+  change((item) => {
+    const cells = rowOf(item, sel.row).cells
+    const cell = cells[sel.cell]
+    if (!cell || cell.span <= 1)
+      return
+    cell.span--
+    cells.splice(sel.cell + 1, 0, sel.row === -1
+      ? { span: 1, binding: { source: 'CONSTANT', value: '' } }
+      : { span: 1, text: '' })
+  })
+}
+
+function cellLabel(cell, kind) {
+  if (cell.contentType === 'IMAGE')
+    return '（图片）'
+  if (kind === 'footer') {
+    if (cell.binding?.source === 'FIELD')
+      return cell.binding.path?.split('.').at(-1) || '字段'
+    return String(cell.binding?.value ?? '') || '（空）'
+  }
+  return cell.text || '（空）'
+}
+
+function setBandContentType(type) {
+  const sel = selection.value
+  if (!sel)
+    return
+  change((item) => {
+    const cell = rowOf(item, sel.row).cells[sel.cell]
+    if (type === 'IMAGE') {
+      cell.contentType = 'IMAGE'
+      cell.binding = { source: 'CONSTANT', value: '' }
+      delete cell.text
+      delete cell.format
+      return
+    }
+    delete cell.contentType
+    if (sel.kind === 'header') {
+      cell.text = textDraft.value || ''
+      delete cell.binding
+      delete cell.format
+    }
+    else {
+      cell.binding = { source: 'CONSTANT', value: '' }
+    }
+  })
+}
+
+function onBandImageUpload(value) {
+  const fileId = String((Array.isArray(value) ? value[0] : value) || '')
+  if (!fileId)
+    return
+  const sel = selection.value
+  if (!sel)
+    return
+  change((item) => {
+    const cell = rowOf(item, sel.row).cells[sel.cell]
+    cell.contentType = 'IMAGE'
+    cell.binding = { source: 'CONSTANT', value: fileId }
+    delete cell.text
+    delete cell.format
+  })
+}
+
+const bandImageFileId = computed(() => (
+  selectedCell.value?.contentType === 'IMAGE' && selectedCell.value?.binding?.source === 'CONSTANT'
+    ? String(selectedCell.value.binding.value || '')
+    : ''
+))
+const bandContentType = computed(() => selectedCell.value?.contentType === 'IMAGE' ? 'IMAGE' : 'TEXT')
+
+const canMerge = computed(() => {
+  const sel = selection.value
+  if (!sel || !selectedCell.value)
+    return false
+  const cells = sel.kind === 'footer' ? footer.value?.cells : headerRows.value[sel.row]?.cells
+  return !!cells && sel.cell < cells.length - 1
+})
+const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
 </script>
 
 <template>
-  <section class="table-bands">
-    <h3>表头与合计</h3>
-    <NButton size="small" :disabled="(table.headerRows?.length || 0) >= 10" @click="addHeader">
-      添加表头行
-    </NButton>
-    <div v-for="(row, rowIndex) in table.headerRows || []" :key="rowIndex" class="band-row">
-      <div class="panel-row">
-        <strong>表头第 {{ rowIndex + 1 }} 行</strong><NButton text type="error" size="tiny" @click="removeHeader(rowIndex)">
-          删除行
-        </NButton>
-      </div>
-      <div v-for="(cell, cellIndex) in row.cells" :key="cellIndex" class="band-cell">
-        <NInput :value="cell.text" size="small" :placeholder="`跨 ${cell.span} 列的表头`" @update:value="patch(rowIndex, cellIndex, { text: $event })" />
-        <div class="panel-row">
-          <small>跨 {{ cell.span }} 列</small><NButton text size="tiny" :disabled="cellIndex === row.cells.length - 1" @click="merge(rowIndex, cellIndex)">
-            合并右侧
-          </NButton><NButton text size="tiny" :disabled="cell.span === 1" @click="split(rowIndex, cellIndex)">
-            拆分一列
-          </NButton>
-        </div>
-      </div>
-    </div>
-    <NButton v-if="!table.footer" size="small" @click="addFooter">
-      添加合计行
-    </NButton>
-    <div v-else class="band-row">
-      <div class="panel-row">
-        <strong>合计行</strong><NButton text type="error" size="tiny" @click="change(item => { delete item.footer })">
-          删除合计
-        </NButton>
-      </div>
-      <p class="muted">
-        选择平台提供的合计字段；模板不执行汇总脚本。
+  <section v-if="table?.columns" class="table-bands">
+    <!-- ===== 复杂表头 ===== -->
+    <template v-if="mode === 'header'">
+      <p class="muted tip">
+        多级表头：上层用「合并右侧」跨多列形成树形分组，下层对应各列标题。点选单元格后再改文字/样式。
       </p>
-      <div v-for="(cell, cellIndex) in table.footer.cells" :key="cellIndex" class="band-cell">
-        <NFormItem label="合计内容" size="small">
-          <NSelect :value="cell.binding.source" :options="[{ label: '固定文字', value: 'CONSTANT' }, { label: '数据字段', value: 'FIELD', disabled: !fields.length }]" @update:value="patch(-1, cellIndex, { binding: $event === 'CONSTANT' ? { source: 'CONSTANT', value: '' } : { source: 'FIELD', path: fields[0].value } })" />
-        </NFormItem>
-        <NInput v-if="cell.binding.source === 'CONSTANT'" :value="String(cell.binding.value ?? '')" size="small" @update:value="patch(-1, cellIndex, { binding: { source: 'CONSTANT', value: $event } })" />
-        <NSelect v-else :value="cell.binding.path" :options="fields" size="small" filterable @update:value="patch(-1, cellIndex, { binding: { source: 'FIELD', path: $event } })" />
-        <NFormItem label="合计格式" size="small">
-          <NSelect :value="cell.format?.type || 'TEXT'" :options="formats" size="small" @update:value="patch(-1, cellIndex, { format: { type: $event } })" />
-        </NFormItem>
-        <div class="panel-row">
-          <small>跨 {{ cell.span }} 列</small><NButton text size="tiny" :disabled="cellIndex === table.footer.cells.length - 1" @click="merge(-1, cellIndex)">
+      <div class="band-toolbar">
+        <NButton size="tiny" :disabled="headerRows.length >= 10" @click="addHeader">
+          添加上层表头
+        </NButton>
+        <NButton v-if="headerRows.length" size="tiny" quaternary type="error" @click="change((item) => { delete item.headerRows }); selection.value = null">
+          清除多级表头
+        </NButton>
+      </div>
+
+      <div v-if="!headerRows.length" class="empty-hint">
+        当前为单行列标题。需要「物料信息 | 金额信息」这类分组时，点上方「添加上层表头」。
+      </div>
+
+      <div v-else class="band-sketch" role="grid" aria-label="多级表头结构">
+        <div
+          v-for="(row, rowIndex) in headerRows"
+          :key="`h-${rowIndex}`"
+          class="band-sketch-row"
+        >
+          <div class="row-meta">
+            <span>第 {{ rowIndex + 1 }} 层</span>
+            <button type="button" class="link danger" @click="removeHeader(rowIndex)">
+              删层
+            </button>
+          </div>
+          <div class="band-sketch-cells">
+            <button
+              v-for="(cell, cellIndex) in row.cells"
+              :key="cellIndex"
+              type="button"
+              class="band-cell-chip"
+              :class="{ active: selection?.kind === 'header' && selection.row === rowIndex && selection.cell === cellIndex }"
+              :style="{ flex: cell.span, background: cell.style?.backgroundColor || '#f1f5f9', color: cell.style?.color || '#0f172a' }"
+              :title="`跨 ${cell.span} 列`"
+              @click="selectHeader(rowIndex, cellIndex)"
+            >
+              <span class="chip-text">{{ cellLabel(cell, 'header') }}</span>
+              <small>×{{ cell.span }}</small>
+            </button>
+          </div>
+        </div>
+        <div class="band-sketch-row leaf">
+          <div class="row-meta">
+            <span>列标题</span>
+          </div>
+          <div class="band-sketch-cells">
+            <span
+              v-for="col in columns"
+              :key="col.id"
+              class="band-cell-chip leaf-chip"
+              :style="{ flex: 1 }"
+            >
+              {{ col.title || col.field }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ===== 合计行 ===== -->
+    <template v-else>
+      <p class="muted tip">
+        合计行绑主表汇总字段或写固定文字；需要跨列时先点选单元格再「合并右侧」。模板不做自动求和。
+      </p>
+      <div class="band-toolbar">
+        <NButton v-if="!footer" size="tiny" @click="addFooter">
+          添加合计行
+        </NButton>
+        <NButton v-else size="tiny" quaternary type="error" @click="removeFooter">
+          删除合计行
+        </NButton>
+      </div>
+      <div v-if="footer" class="band-sketch" role="grid" aria-label="合计行结构">
+        <div class="band-sketch-row">
+          <div class="row-meta">
+            <span>合计</span>
+          </div>
+          <div class="band-sketch-cells">
+            <button
+              v-for="(cell, cellIndex) in footer.cells"
+              :key="cellIndex"
+              type="button"
+              class="band-cell-chip"
+              :class="{ active: selection?.kind === 'footer' && selection.cell === cellIndex }"
+              :style="{ flex: cell.span, background: cell.style?.backgroundColor || '#fff', color: cell.style?.color || '#0f172a' }"
+              @click="selectFooter(cellIndex)"
+            >
+              <span class="chip-text">{{ cellLabel(cell, 'footer') }}</span>
+              <small>×{{ cell.span }}</small>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-else class="empty-hint">
+        尚未添加合计行。
+      </div>
+    </template>
+
+    <!-- ===== 选中单元格编辑（一次只改一个） ===== -->
+    <div v-if="selectedCell" class="cell-editor">
+      <div class="cell-editor-head">
+        <strong>
+          {{ selection.kind === 'footer' ? '合计单元格' : `表头 · 第 ${selection.row + 1} 层` }}
+          · 跨 {{ selectedCell.span }} 列
+        </strong>
+        <div class="cell-actions">
+          <NButton size="tiny" :disabled="!canMerge" @click="mergeSelected">
             合并右侧
-          </NButton><NButton text size="tiny" :disabled="cell.span === 1" @click="split(-1, cellIndex)">
+          </NButton>
+          <NButton size="tiny" :disabled="!canSplit" @click="splitSelected">
             拆分一列
           </NButton>
         </div>
       </div>
+
+      <NFormItem label="内容类型" size="small">
+        <NSelect
+          :value="bandContentType"
+          :options="[{ label: '文字', value: 'TEXT' }, { label: '图片', value: 'IMAGE' }]"
+          size="small"
+          @update:value="setBandContentType"
+        />
+      </NFormItem>
+
+      <template v-if="bandContentType === 'IMAGE'">
+        <NFormItem label="上传图片" size="small">
+          <FileUpload
+            :model-value="bandImageFileId"
+            :limit="1"
+            :multiple="false"
+            :show-download="false"
+            :file-type="['png', 'jpg', 'jpeg', 'webp']"
+            business-type="print"
+            upload-button-text="选择图片"
+            @update:model-value="onBandImageUpload"
+          />
+        </NFormItem>
+      </template>
+      <template v-else-if="selection.kind === 'header'">
+        <NFormItem label="表头文字" size="small">
+          <NInput
+            v-model:value="textDraft"
+            size="small"
+            placeholder="分组名称"
+            @blur="commitHeaderText"
+            @keydown.enter.prevent="commitHeaderText"
+          />
+        </NFormItem>
+      </template>
+      <template v-else>
+        <NFormItem label="内容来源" size="small">
+          <NSelect
+            :value="selectedCell.binding.source"
+            :options="[
+              { label: '固定文字', value: 'CONSTANT' },
+              { label: '主表/流程字段', value: 'FIELD', disabled: !masterFieldOptions.length },
+            ]"
+            @update:value="patchSelected({
+              binding: $event === 'CONSTANT'
+                ? { source: 'CONSTANT', value: '' }
+                : { source: 'FIELD', path: masterFieldOptions[0]?.children?.[0]?.value || '' },
+            })"
+          />
+        </NFormItem>
+        <NFormItem v-if="selectedCell.binding.source === 'CONSTANT'" label="固定文字" size="small">
+          <NInput
+            :value="String(selectedCell.binding.value ?? '')"
+            size="small"
+            @update:value="patchSelected({ binding: { source: 'CONSTANT', value: $event } })"
+          />
+        </NFormItem>
+        <NFormItem v-else label="汇总字段" size="small">
+          <PrintFieldPicker
+            :value="selectedCell.binding.path"
+            :catalog="store.catalog"
+            placeholder="选择汇总字段"
+            @update:value="patchSelected({ binding: { source: 'FIELD', path: $event } })"
+          />
+        </NFormItem>
+        <NFormItem label="格式" size="small">
+          <NSelect
+            :value="selectedCell.format?.type || 'TEXT'"
+            :options="formats"
+            size="small"
+            @update:value="patchSelected({ format: { type: $event } })"
+          />
+        </NFormItem>
+      </template>
+
+      <div class="panel-grid">
+        <NFormItem label="背景" size="small">
+          <NColorPicker
+            class="swatch-only"
+            :value="selectedCell.style?.backgroundColor || (selection.kind === 'header' ? '#f1f5f9' : '#ffffff')"
+            :show-alpha="false"
+            :modes="['hex']"
+            @update:value="patchSelectedStyle('backgroundColor', $event)"
+          />
+        </NFormItem>
+        <NFormItem label="文字色" size="small">
+          <NColorPicker
+            class="swatch-only"
+            :value="selectedCell.style?.color || '#000000'"
+            :show-alpha="false"
+            :modes="['hex']"
+            @update:value="patchSelectedStyle('color', $event)"
+          />
+        </NFormItem>
+      </div>
     </div>
+    <p v-else-if="(mode === 'header' && headerRows.length) || (mode === 'footer' && footer)" class="muted tip pick-hint">
+      在上方示意图中点击一个单元格，再设置文字、合并或样式。
+    </p>
   </section>
 </template>
 
 <style scoped>
-.table-bands {
-  margin-top: 14px;
+.tip {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
 }
-.band-row {
-  border-top: 1px solid var(--border-light, #ddd);
+.band-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.empty-hint {
+  padding: 10px 8px;
+  border: 1px dashed var(--border-light, #cbd5e1);
+  border-radius: 6px;
+  color: var(--text-tertiary, #64748b);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.band-sketch {
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+.band-sketch-row {
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+}
+.band-sketch-row:last-child {
+  border-bottom: 0;
+}
+.row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  background: var(--gray-100, #f8fafc);
+  color: var(--text-tertiary, #64748b);
+  font-size: 10px;
+  font-weight: 700;
+}
+.link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 10px;
+}
+.link.danger {
+  color: var(--error-color, #d03050);
+}
+.band-sketch-cells {
+  display: flex;
+  min-height: 32px;
+}
+.band-cell-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 2px;
+  border: 0;
+  border-right: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  color: #0f172a;
+  cursor: pointer;
+  font: inherit;
+}
+.band-cell-chip:last-child {
+  border-right: 0;
+}
+.band-cell-chip.active {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+  z-index: 1;
+}
+.band-cell-chip.leaf-chip,
+.leaf .band-cell-chip {
+  cursor: default;
+  background: #fff;
+  color: var(--text-secondary, #475569);
+  font-size: 10px;
+}
+.chip-text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+}
+.band-cell-chip small {
+  color: var(--text-tertiary, #94a3b8);
+  font-size: 9px;
+}
+.cell-editor {
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 25%, #e2e8f0);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color) 4%, #fff);
+}
+.cell-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.cell-editor-head strong {
+  font-size: 12px;
+}
+.cell-actions {
+  display: flex;
+  gap: 4px;
+}
+.panel-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px 8px;
+}
+.pick-hint {
   margin-top: 8px;
-  padding: 8px 0;
 }
-.band-cell {
-  padding: 6px 0;
+:deep(.swatch-only .n-color-picker-trigger__value) {
+  display: none !important;
 }
 </style>

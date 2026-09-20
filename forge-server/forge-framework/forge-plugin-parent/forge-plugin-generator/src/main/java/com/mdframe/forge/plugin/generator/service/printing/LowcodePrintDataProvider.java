@@ -3,12 +3,16 @@ package com.mdframe.forge.plugin.generator.service.printing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
+import com.mdframe.forge.plugin.print.entity.PrintBinding;
 import com.mdframe.forge.plugin.print.enums.*;
+import com.mdframe.forge.plugin.print.mapper.PrintBindingMapper;
+import com.mdframe.forge.plugin.print.mapper.PrintTemplateMapper;
 import com.mdframe.forge.plugin.print.service.PrintDocumentAccess;
 import com.mdframe.forge.plugin.print.service.PrintFailure;
 import com.mdframe.forge.plugin.print.service.PrintIdentity;
 import com.mdframe.forge.plugin.print.spi.*;
 import com.mdframe.forge.plugin.print.vo.PrintFieldCatalogVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -32,6 +36,8 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
     private final PrintDocumentAccess documentAccess;
     private final ObjectMapper json;
     private final com.mdframe.forge.plugin.print.mapper.PrintTemplateVersionMapper templateVersions;
+    private final PrintTemplateMapper templates;
+    private final PrintBindingMapper bindings;
     private final FlowPrintContextResolver flowContexts;
     private final FlowPrintAccessPolicy flowAccess;
     private final FlowPrintHistoryAdapter flowHistory;
@@ -94,6 +100,9 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
             if (flow.processRunId() == null) {
                 throw PrintFailure.denied();
             }
+        } else {
+            // 列表/详情也可绑定审批记录：有流程实例则回填，没有也不拦字段目录。
+            flow = flowContexts.resolveForRecord(actor, request);
         }
         var source = request.source();
         var portal = runtime.runtimeById(source.applicationId());
@@ -110,38 +119,96 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
         if (version == null || (expectedVersion != null && !expectedVersion.equals(version.getId()))) {
             throw PrintFailure.of(409, "PRINT_APPLICATION_CHANGED", "应用发布版本已变化，请重新打开打印");
         }
-        var bindings = snapshots.read(version.getSnapshotJson(), source.applicationId());
-        var refs = bindings.stream().filter(binding -> binding.source().equals(source) && binding.scene() == request.scene())
+        var pinned = snapshots.read(version.getSnapshotJson(), source.applicationId());
+        var matched = pinned.stream()
+                .filter(binding -> binding.source().equals(source) && binding.scene() == request.scene())
                 .sorted(Comparator.comparing(PrintApplicationSnapshotCodec.Binding::isDefault).reversed()
                         .thenComparingInt(PrintApplicationSnapshotCodec.Binding::sortOrder)
                         .thenComparing(PrintApplicationSnapshotCodec.Binding::templateId))
-                .map(binding -> new AuthorizedPrintContext.VersionRef(binding.templateId(), binding.templateVersionId(),
-                        binding.isDefault(), binding.sortOrder())).toList();
-        if (flow != null) {
-            refs = flowAccess.templates(refs, flow);
-        }
-        for (var binding : bindings) {
-            if (!binding.source().equals(source) || binding.scene() != request.scene()) {
-                continue;
+                .toList();
+        // 设计人员试打：绑定可能尚未进入应用发布快照，业务对象也可能没有固定设计版本。
+        boolean designer = SessionHelper.hasPermission(PrintDesignAction.MANAGE.permission())
+                || SessionHelper.hasPermission(PrintDesignAction.VIEW.permission());
+        List<AuthorizedPrintContext.VersionRef> refs;
+        PrintMetadataResolver.Metadata resolved;
+        if (designer) {
+            refs = pinnedRefs(actor.tenantId(), matched);
+            if (refs.isEmpty()) {
+                refs = liveRefs(actor.tenantId(), source, request.scene());
             }
-            var pinned = templateVersions.selectScoped(actor.tenantId(), binding.templateId(), binding.templateVersionId());
-            if (pinned == null || !binding.schemaHash().equals(pinned.getSchemaHash())) {
+            if (refs.isEmpty()) {
+                throw PrintFailure.of(409, "PRINT_TEMPLATE_UNPUBLISHED",
+                        "没有可用的已发布打印模板：请先发布打印模板，并确认已绑定到当前场景");
+            }
+            resolved = metadata.draft(actor, source);
+        } else {
+            if (matched.isEmpty()) {
+                throw PrintFailure.of(404, "PRINT_BINDING_NOT_PUBLISHED",
+                        "当前应用版本尚未包含打印绑定，请重新发布应用后再打印");
+            }
+            refs = pinnedRefs(actor.tenantId(), matched);
+            if (refs.isEmpty()) {
                 throw PrintFailure.of(409, "PRINT_APPLICATION_VERSION_INVALID", "应用引用的打印版本校验失败");
             }
+            resolved = metadata.published(actor, source, metadata.parse(version.getSnapshotJson()));
+            metadata.assertRuntimeEnabled(actor, resolved);
         }
-        var resolved = metadata.published(actor, source, metadata.parse(version.getSnapshotJson()));
-        metadata.assertRuntimeEnabled(actor, resolved);
+        if (flowScene && flow != null) {
+            refs = flowAccess.templates(refs, flow);
+        }
         PrintFieldCatalogVO catalog = catalogs.build(resolved);
         PrintRecordRequest normalized = request;
+        List<PrintFieldCatalogVO.Field> fields = new ArrayList<>(catalog.fields());
+        fields.addAll(flowHistory.catalog());
+        catalog = new PrintFieldCatalogVO(fields);
         if (flow != null) {
-            List<PrintFieldCatalogVO.Field> fields = new ArrayList<>(catalog.fields());
-            fields.addAll(flowHistory.catalog());
-            catalog = flowAccess.fields(new PrintFieldCatalogVO(fields), flow);
-            normalized = new PrintRecordRequest(source, flow.recordId(), request.scene(), flow.taskId(),
-                    flow.processInstanceId(), flow.processRunId());
+            catalog = flowAccess.fields(catalog, flow);
+            if (flowScene) {
+                normalized = new PrintRecordRequest(source, flow.recordId(), request.scene(), flow.taskId(),
+                        flow.processInstanceId(), flow.processRunId());
+            }
         }
         documentAccess.catalog(catalog);
         return new Resolution(version.getId(), refs, resolved, normalized, flow, catalog);
+    }
+
+    private List<AuthorizedPrintContext.VersionRef> pinnedRefs(Long tenantId,
+                                                               List<PrintApplicationSnapshotCodec.Binding> matched) {
+        List<AuthorizedPrintContext.VersionRef> refs = new ArrayList<>();
+        for (var binding : matched) {
+            var pinnedVersion = templateVersions.selectScoped(tenantId, binding.templateId(), binding.templateVersionId());
+            if (pinnedVersion == null || !binding.schemaHash().equals(pinnedVersion.getSchemaHash())) {
+                continue;
+            }
+            refs.add(new AuthorizedPrintContext.VersionRef(binding.templateId(), binding.templateVersionId(),
+                    binding.isDefault(), binding.sortOrder()));
+        }
+        return List.copyOf(refs);
+    }
+
+    private List<AuthorizedPrintContext.VersionRef> liveRefs(Long tenantId, PrintSourceRequest source, PrintScene scene) {
+        List<AuthorizedPrintContext.VersionRef> refs = new ArrayList<>();
+        for (PrintBinding row : bindings.selectApplicationEnabled(tenantId, source.applicationId())) {
+            if (!Objects.equals(row.getSourceKey(), source.key()) || !scene.matches(row.getScene())) {
+                continue;
+            }
+            var template = templates.selectScoped(tenantId, row.getTemplateId());
+            if (template == null || !EnableStatus.ENABLED.matches(template.getStatus())
+                    || template.getPublishedVersionId() == null
+                    || !source.key().equals(template.getSourceKey())) {
+                continue;
+            }
+            var published = templateVersions.selectScoped(tenantId, template.getId(), template.getPublishedVersionId());
+            if (published == null) {
+                continue;
+            }
+            refs.add(new AuthorizedPrintContext.VersionRef(template.getId(), published.getId(),
+                    Boolean.TRUE.equals(row.getIsDefault()), row.getSortOrder() == null ? 0 : row.getSortOrder()));
+        }
+        refs.sort(Comparator.comparing(AuthorizedPrintContext.VersionRef::isDefault).reversed()
+                .thenComparingInt(AuthorizedPrintContext.VersionRef::sortOrder)
+                .thenComparing(AuthorizedPrintContext.VersionRef::templateId));
+        return List.copyOf(refs);
     }
 
     @Override
@@ -162,8 +229,13 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
             throw PrintFailure.denied();
         }
         PrintData data = records.read(resolved.metadata(), context.record().recordId(), selection);
-        if (resolved.flow() == null) {
+        boolean needsFlow = selection.fields().stream().anyMatch(field -> field.startsWith("flow."))
+                || selection.collections().stream().anyMatch(path -> path.startsWith("flow."));
+        if (!needsFlow) {
             return data;
+        }
+        if (resolved.flow() == null) {
+            return new PrintData(data.main(), data.children(), flowHistory.empty());
         }
         return new PrintData(data.main(), data.children(), flowHistory.load(resolved.flow()));
     }

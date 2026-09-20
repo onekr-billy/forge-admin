@@ -112,6 +112,41 @@ public class FlowPrintContextResolver {
                 text(form.get("printTemplateIds")));
     }
 
+    /**
+     * 列表/详情打印可选解析：按业务单据找最近流程实例。找不到返回 null，不拦截打印。
+     */
+    public Context resolveForRecord(PrintActor actor, PrintRecordRequest request) {
+        if (actor == null || request == null || request.source() == null) {
+            return null;
+        }
+        String objectCode = text(request.source().objectCode());
+        String recordId = text(request.recordId());
+        if (objectCode == null || recordId == null || request.source().applicationId() == null) {
+            return null;
+        }
+        AiBusinessProcessRun run = processRuns.selectLatestBySubject(
+                actor.tenantId(), request.source().applicationId(), objectCode, recordId);
+        if (run == null || text(run.getFlowProcessInstanceId()) == null) {
+            return null;
+        }
+        return new Context(
+                first(text(run.getBusinessKey()), objectCode + ":" + recordId),
+                objectCode,
+                recordId,
+                run.getFlowProcessInstanceId(),
+                run.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
     private AiBusinessProcessRun resolveRun(PrintActor actor,
                                             PrintRecordRequest request,
                                             String processInstanceId,

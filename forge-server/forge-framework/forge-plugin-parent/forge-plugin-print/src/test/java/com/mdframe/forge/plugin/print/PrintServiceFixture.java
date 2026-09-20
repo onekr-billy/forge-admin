@@ -122,7 +122,7 @@ abstract class PrintServiceFixture {
         var documents = new PrintDocumentAccess(json);
         service = transactional(new PrintTemplateService(identity, templates, bindingMapper, access, registry, protocol, documents));
         publication = transactional(new PrintTemplateVersionService(identity, access, templates, versions, protocol, documents, json));
-        bindings = transactional(new PrintBindingService(identity, access, bindingMapper));
+        bindings = transactional(new PrintBindingService(identity, access, bindingMapper, templates));
         events = transactional(new PrintExecutionService(identity, executionMapper));
         runtime = transactional(new PrintPrepareService(identity, registry, access, templates, versions, protocol, documents, new PrintDataProjector(json, documents), events));
         try (var input = getClass().getResourceAsStream("/print/valid-document.json")) {

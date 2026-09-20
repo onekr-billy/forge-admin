@@ -76,10 +76,51 @@ describe('print designer commands and history', () => {
     expect(store.history.past).toHaveLength(0)
   })
 
-  it('clamps a selected group without changing relative spacing', () => {
+  it('clamps horizontal overflow and grows the fixed band when dragging downward', () => {
     store.selectElement('b', true)
     store.moveSelection(-100, 100)
-    expect(store.selectedElements.map(e => [e.xMm, e.yMm])).toEqual([[0, 40], [40, 50]])
+    expect(store.selectedElements.map(e => [e.xMm, e.yMm])).toEqual([[0, 110], [40, 120]])
+    expect(store.activeSurface.heightMm).toBeGreaterThanOrEqual(130)
+  })
+
+  it('grows header and footer when dragging elements past the current band height', () => {
+    store.execute((doc) => {
+      doc.header.heightMm = 12
+      doc.header.elements = [{ id: 'h1', type: 'TEXT', xMm: 2, yMm: 2, widthMm: 30, heightMm: 8, binding: { source: 'CONSTANT', value: '页眉' } }]
+      doc.footer.heightMm = 12
+      doc.footer.elements = [{ id: 'f1', type: 'TEXT', xMm: 2, yMm: 2, widthMm: 30, heightMm: 8, binding: { source: 'CONSTANT', value: '页脚' } }]
+    })
+
+    store.selectSurface('header')
+    store.selectElement('h1')
+    store.beginGesture()
+    store.moveGesture(0, mmToPx(10) * store.zoom)
+    store.endGesture()
+    expect(store.document.header.elements[0].yMm).toBeCloseTo(12, 1)
+    expect(store.document.header.heightMm).toBeGreaterThanOrEqual(20)
+
+    store.selectSurface('footer')
+    store.selectElement('f1')
+    store.beginGesture()
+    store.moveGesture(0, mmToPx(8) * store.zoom)
+    store.endGesture()
+    expect(store.document.footer.elements[0].yMm).toBeCloseTo(10, 1)
+    expect(store.document.footer.heightMm).toBeGreaterThanOrEqual(18)
+  })
+
+  it('does not snap the selection bottom to the band edge while dragging downward', () => {
+    store.execute((doc) => {
+      doc.header.heightMm = 20
+      doc.header.elements = [{ id: 'h2', type: 'TEXT', xMm: 2, yMm: 10, widthMm: 30, heightMm: 8, binding: { source: 'CONSTANT', value: '近底' } }]
+    })
+    store.selectSurface('header')
+    store.selectElement('h2')
+    store.beginGesture()
+    // 3mm past the band bottom — previously snapped back to heightMm and refused to grow.
+    store.moveGesture(0, mmToPx(5) * store.zoom)
+    store.endGesture()
+    expect(store.document.header.elements[0].yMm).toBeCloseTo(15, 1)
+    expect(store.document.header.heightMm).toBeGreaterThanOrEqual(23)
   })
 
   it('aligns selected elements on every edge and distributes three elements', () => {
@@ -131,6 +172,83 @@ describe('print designer commands and history', () => {
     expect(store.activeSurface.elements.slice(-2).map(element => element.id)).toEqual(duplicates)
     store.undo()
     expect(store.activeSurface.elements.slice(0, 2).map(element => element.id)).toEqual(duplicates)
+  })
+
+  it('toggles italic/underline, spaces fixed gaps and clears the active surface', () => {
+    expect(store.toggleSelectionItalic()).toBe(true)
+    expect(store.activeElement.style.fontStyle).toBe('italic')
+    expect(store.toggleSelectionUnderline()).toBe(true)
+    expect(store.activeElement.style.textDecoration).toBe('underline')
+    expect(store.patchSelectionStyle({ color: '#112233' })).toBe(true)
+    expect(store.activeElement.style.color).toBe('#112233')
+    store.selectElement('b', true)
+    expect(store.spaceSelection('horizontal', 5)).toBe(true)
+    expect(store.selectedElements.map(element => element.xMm)).toEqual([10, 45])
+    expect(store.clearActiveSurfaceElements()).toBe(true)
+    expect(store.activeSurface.elements).toHaveLength(0)
+  })
+
+  it('disables snapping when the gesture opts out', () => {
+    store.beginGesture()
+    store.moveGesture(mmToPx(9.4) * store.zoom, 0, false, 'se', { snap: false })
+    expect(store.selectedElements[0].xMm).toBeCloseTo(19.4, 1)
+    expect(store.alignmentGuides.x).toEqual([])
+    store.cancelGesture()
+  })
+
+  it('nudges zoom, rotates paper and toggles grid from shared view commands', () => {
+    store.zoom = 0.8
+    store.nudgeZoom(1)
+    expect(store.zoom).toBe(1)
+    store.setZoom(1.5)
+    expect(store.canZoomIn).toBe(false)
+    store.nudgeZoom(1)
+    expect(store.zoom).toBe(1.5)
+    expect(store.rotatePaper()).toBe(true)
+    expect(store.document.paper.orientation).toBe('LANDSCAPE')
+    store.toggleGrid(false)
+    expect(store.showGrid).toBe(false)
+  })
+
+  it('selects intersecting elements by marquee box and expands collapsed bands', () => {
+    expect(store.selectByBox('section:section', { x: 0, y: 0, w: 45, h: 25 })).toEqual(['a'])
+    expect(store.marquee.count).toBe(1)
+    store.clearMarquee()
+    expect(store.marquee).toBeNull()
+    expect(store.selectByBox('section:section', { x: 5, y: 5, w: 80, h: 40 }, ['a'])).toEqual(['a', 'b'])
+    store.execute(doc => doc.header.heightMm = 0)
+    expect(store.expandBand('header')).toBe(true)
+    expect(store.document.header.heightMm).toBe(12)
+    store.toggleSnap(false)
+    expect(store.snapEnabled).toBe(false)
+    store.toggleGuideLines(true)
+    expect(store.showGuideLines).toBe(true)
+  })
+
+  it('adjusts selection typography and syncs multi-select sizes from canvas commands', () => {
+    expect(store.nudgeSelectionFontSize(2)).toBe(true)
+    expect(store.activeElement.style.fontSizePt).toBe(12)
+    expect(store.toggleSelectionBold()).toBe(true)
+    expect(store.activeElement.style.fontWeight).toBe(700)
+    expect(store.setSelectionTextAlign('center')).toBe(true)
+    expect(store.activeElement.style.textAlign).toBe('center')
+    store.selectElement('b')
+    expect(store.patchSelected({ widthMm: 20 })).toBe(true)
+    store.selectElement('a')
+    store.selectElement('b', true)
+    expect(store.syncSelectionSize('widthMm', 'max')).toBe(true)
+    expect(store.selectedElements.map(element => element.widthMm)).toEqual([30, 30])
+    expect(store.cutSelection()).toBe(true)
+    expect(store.activeSurface.elements).toHaveLength(0)
+    expect(store.clipboard).toHaveLength(2)
+  })
+
+  it('moves selection one layer at a time', () => {
+    store.selectElement('a')
+    expect(store.moveSelectionLayer('forward')).toBe(true)
+    expect(store.activeSurface.elements.map(element => element.id)).toEqual(['b', 'a'])
+    expect(store.moveSelectionLayer('backward')).toBe(true)
+    expect(store.activeSurface.elements.map(element => element.id)).toEqual(['a', 'b'])
   })
 
   it('rotates, mirrors and protects locked elements while keeping unlock reachable', () => {
@@ -190,7 +308,8 @@ describe('print designer commands and history', () => {
     complete()
     await saving
     expect(store.dirty).toBe(false)
-    expect(store.document.body).toHaveLength(0)
+    expect(store.document.body).toHaveLength(1)
+    expect(store.document.body[0].kind).toBe('FIXED')
   })
   it('keeps imported section IDs distinct from header/footer editor surfaces', () => {
     const document = fixture()
@@ -206,7 +325,7 @@ describe('print designer commands and history', () => {
   })
   it('edits, merges and duplicates native blank-table cells with unique nested ids', () => {
     const table = createStaticTable(2, 2, 40, 8)
-    store.execute((document) => document.body[0].elements.push({ id: 'table', type: 'STATIC_TABLE', xMm: 0, yMm: 35, widthMm: 40, heightMm: 16, table }))
+    store.execute(document => document.body[0].elements.push({ id: 'table', type: 'STATIC_TABLE', xMm: 0, yMm: 35, widthMm: 40, heightMm: 16, table }))
     store.selectElement('table')
     store.selectTableCell(store.activeElement.table.cells[0].id)
     store.patchSelectedTableCells({ binding: { source: 'CONSTANT', value: '合同编号' } })

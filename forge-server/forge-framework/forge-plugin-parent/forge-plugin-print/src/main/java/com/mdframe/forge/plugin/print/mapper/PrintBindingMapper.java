@@ -17,8 +17,14 @@ public interface PrintBindingMapper {
 
     List<PrintBinding> selectSource(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId, @Param("sourceKey") String sourceKey, @Param("scene") String scene);
 
+    /** 同一来源下全部场景绑定（管理面板汇总）。 */
+    List<PrintBinding> selectBySource(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId, @Param("sourceKey") String sourceKey);
+
     /** 候选发布清单：应用行锁内使用当前读，避免读取外层事务的旧一致性快照。 */
     List<PrintBinding> selectApplication(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId);
+
+    /** 设计预览/管理态读取启用中的绑定，不加行锁。 */
+    List<PrintBinding> selectApplicationEnabled(@Param("tenantId") Long tenantId, @Param("applicationId") Long applicationId);
 
     long countTemplateReferences(@Param("tenantId") Long tenantId, @Param("templateId") Long templateId);
 

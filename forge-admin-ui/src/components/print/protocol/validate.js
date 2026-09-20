@@ -4,7 +4,7 @@ import { paperGeometry } from './units'
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const IDENTIFIER = /^[\w-]{1,80}$/
 const COLOR = /^#[\da-f]{3}(?:[\da-f]{3})?$/i
-const STYLE_KEYS = ['fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'textAlign', 'lineHeight', 'color', 'backgroundColor', 'borderColor', 'borderWidthMm', 'borderStyle', 'borderRadiusMm', 'paddingMm', 'textDecoration', 'objectFit']
+const STYLE_KEYS = ['fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'textAlign', 'verticalAlign', 'lineHeight', 'color', 'backgroundColor', 'borderColor', 'borderWidthMm', 'borderStyle', 'borderRadiusMm', 'paddingMm', 'textDecoration', 'objectFit']
 const SAFE_SYSTEM_PATHS = new Set(['system.generatedAt', 'system.pageNumber', 'system.totalPages'])
 
 export function isSafeFieldPath(path) {
@@ -101,10 +101,13 @@ export function validatePrintDocument(document) {
         choice(item, ['normal', 'italic'], location)
       }
       if (key === 'textAlign') {
-        choice(item, ['left', 'center', 'right'], location)
+        choice(item, ['left', 'center', 'right', 'justify'], location)
+      }
+      if (key === 'verticalAlign') {
+        choice(item, ['top', 'middle', 'bottom'], location)
       }
       if (key === 'textDecoration') {
-        choice(item, ['none', 'underline'], location)
+        choice(item, ['none', 'underline', 'line-through', 'overline'], location)
       }
       if (key === 'borderStyle') {
         choice(item, ['solid', 'dashed', 'dotted'], location)
@@ -196,12 +199,12 @@ export function validatePrintDocument(document) {
       if (number(row.heightMm, `${location}.heightMm`, 0.1))
         totalHeight += row.heightMm
     })
-    if (Math.abs(totalWidth - widthMm) > 0.001 || Math.abs(totalHeight - heightMm) > 0.001)
+    if (Math.abs(totalWidth - widthMm) > 0.05 || Math.abs(totalHeight - heightMm) > 0.05)
       issue(path, 'TABLE_SIZE_MISMATCH', '表格行列尺寸必须与元素尺寸一致')
     const coverage = Array.from({ length: value.rows.length }, () => Array.from({ length: value.columns.length }).fill(0))
     value.cells.forEach((cell, index) => {
       const location = `${path}.cells[${index}]`
-      if (!object(cell, ['id', 'row', 'column', 'rowSpan', 'colSpan', 'binding', 'format', 'style'], location))
+      if (!object(cell, ['id', 'row', 'column', 'rowSpan', 'colSpan', 'binding', 'format', 'style', 'contentType', 'imageWidthMm', 'imageHeightMm'], location))
         return
       identifier(cell.id, `${location}.id`)
       for (const key of ['row', 'column', 'rowSpan', 'colSpan']) {
@@ -211,7 +214,13 @@ export function validatePrintDocument(document) {
         if (!Number.isInteger(cell[key]))
           issue(`${location}.${key}`, 'INVALID_NUMBER', '单元格坐标和跨度必须为整数')
       }
-      binding(cell.binding, `${location}.binding`)
+      if (cell.contentType !== undefined)
+        choice(cell.contentType, ['TEXT', 'IMAGE'], `${location}.contentType`)
+      if (cell.imageWidthMm !== undefined)
+        number(cell.imageWidthMm, `${location}.imageWidthMm`, 1, 500)
+      if (cell.imageHeightMm !== undefined)
+        number(cell.imageHeightMm, `${location}.imageHeightMm`, 1, 500)
+      binding(cell.binding, `${location}.binding`, cell.contentType === 'IMAGE')
       format(cell.format, `${location}.format`)
       style(cell.style, `${location}.style`)
       if (!Number.isInteger(cell.row) || !Number.isInteger(cell.column) || !Number.isInteger(cell.rowSpan) || !Number.isInteger(cell.colSpan) || cell.row < 0 || cell.column < 0 || cell.row + cell.rowSpan > value.rows.length || cell.column + cell.colSpan > value.columns.length) {
@@ -226,24 +235,28 @@ export function validatePrintDocument(document) {
       issue(path, 'INVALID_COVERAGE', '单元格必须完整覆盖表格且不能重叠')
   }
   function element(value, path, width, height) {
-    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'table', 'barcodeFormat', 'pageNumberFormat', 'rotationDeg', 'flipX', 'flipY', 'locked'], path)) {
+    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'table', 'barcodeFormat', 'pageNumberFormat', 'showCodeText', 'rotationDeg', 'flipX', 'flipY', 'locked', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText', 'headerStyle', 'oddRowStyle', 'evenRowStyle', 'minHeightMm', 'cellStyles'], path)) {
       return
     }
     identifier(value.id, `${path}.id`)
     elementCount++
     choice(value.type, ELEMENT_TYPES, `${path}.type`)
     const dimensions = ['xMm', 'yMm', 'widthMm', 'heightMm'].map(key => number(value[key], `${path}.${key}`, key.startsWith('width') || key.startsWith('height') ? 0.1 : 0))
-    if (dimensions.every(Boolean) && (value.xMm + value.widthMm > width + 0.001 || value.yMm + value.heightMm > height + 0.001)) {
+    if (dimensions.every(Boolean) && height > 0 && (value.xMm + value.widthMm > width + 0.001 || value.yMm + value.heightMm > height + 0.001)) {
       issue(path, 'OUT_OF_BOUNDS', '元素超出所属区块')
     }
-    if (['TEXT', 'IMAGE', 'BARCODE', 'QRCODE'].includes(value.type)) {
-      binding(value.binding, `${path}.binding`, value.type === 'IMAGE', value.type === 'TEXT')
+    if (['TEXT', 'IMAGE', 'BARCODE', 'QRCODE', 'HTML'].includes(value.type)) {
+      binding(value.binding, `${path}.binding`, value.type === 'IMAGE', value.type === 'TEXT' || value.type === 'HTML')
     }
     if (value.type === 'STATIC_TABLE' || value.table !== undefined)
       staticTable(value.table, `${path}.table`, value.widthMm, value.heightMm)
+    if (value.type === 'DATA_TABLE')
+      table(value, path, value.widthMm)
     if (value.barcodeFormat !== undefined) {
       choice(value.barcodeFormat, ['CODE128', 'CODE39', 'EAN13', 'EAN8', 'ITF14'], `${path}.barcodeFormat`)
     }
+    if (value.showCodeText !== undefined)
+      choice(value.showCodeText, [true, false], `${path}.showCodeText`)
     if (value.pageNumberFormat !== undefined) {
       choice(value.pageNumberFormat, ['CURRENT', 'CURRENT_TOTAL'], `${path}.pageNumberFormat`)
     }
@@ -255,6 +268,25 @@ export function validatePrintDocument(document) {
         choice(value[key], [true, false], `${path}.${key}`)
     }
     style(value.style, `${path}.style`)
+    if (value.headerStyle !== undefined)
+      style(value.headerStyle, `${path}.headerStyle`)
+    if (value.oddRowStyle !== undefined)
+      style(value.oddRowStyle, `${path}.oddRowStyle`)
+    if (value.evenRowStyle !== undefined)
+      style(value.evenRowStyle, `${path}.evenRowStyle`)
+    if (value.cellStyles !== undefined) {
+      if (!value.cellStyles || typeof value.cellStyles !== 'object' || Array.isArray(value.cellStyles)) {
+        issue(`${path}.cellStyles`, 'INVALID_OBJECT', '单元格样式映射无效')
+      }
+      else {
+        for (const [key, item] of Object.entries(value.cellStyles)) {
+          if (!/^(header|data|footer):\d+:[\w-]+$/.test(key))
+            issue(`${path}.cellStyles.${key}`, 'INVALID_CELL_STYLE_KEY', '单元格样式键无效')
+          else
+            style(item, `${path}.cellStyles.${key}`)
+        }
+      }
+    }
     format(value.format, `${path}.format`)
   }
   function band(value, path, width) {
@@ -281,7 +313,7 @@ export function validatePrintDocument(document) {
     let columnWidth = 0
     value.columns.forEach((column, index) => {
       const location = `${path}.columns[${index}]`
-      if (!object(column, ['id', 'field', 'title', 'widthMm', 'format', 'style'], location)) {
+      if (!object(column, ['id', 'field', 'title', 'widthMm', 'format', 'style', 'headerStyle'], location)) {
         return
       }
       identifier(column.id, `${location}.id`)
@@ -296,6 +328,8 @@ export function validatePrintDocument(document) {
       }
       format(column.format, `${location}.format`)
       style(column.style, `${location}.style`)
+      if (column.headerStyle !== undefined)
+        style(column.headerStyle, `${location}.headerStyle`)
     })
     if (columnWidth > width + 0.001) {
       issue(path, 'OUT_OF_BOUNDS', '表格列宽超过纸张正文宽度')
@@ -317,15 +351,21 @@ export function validatePrintDocument(document) {
     let spans = 0
     row.cells.forEach((cell, index) => {
       const location = `${path}.cells[${index}]`
-      if (!object(cell, hasBinding ? ['binding', 'span', 'format', 'style'] : ['text', 'span', 'style'], location)) {
+      if (cell.contentType !== undefined)
+        choice(cell.contentType, ['TEXT', 'IMAGE'], `${location}.contentType`)
+      const image = cell.contentType === 'IMAGE'
+      const allowKeys = image || hasBinding
+        ? ['binding', 'span', 'format', 'style', 'contentType']
+        : ['text', 'span', 'style', 'contentType']
+      if (!object(cell, allowKeys, location)) {
         return
       }
       if (!Number.isInteger(cell.span) || cell.span < 1 || cell.span > columns) {
         issue(location, 'INVALID_SPAN', '单元格跨度无效')
       }
       spans += cell.span
-      if (hasBinding) {
-        binding(cell.binding, `${location}.binding`)
+      if (image || hasBinding) {
+        binding(cell.binding, `${location}.binding`, image)
         format(cell.format, `${location}.format`)
       }
       else if (typeof cell.text !== 'string' || cell.text.length > 500) {
@@ -384,7 +424,7 @@ export function validatePrintDocument(document) {
     document.body.forEach((section, index) => {
       const location = `body[${index}]`
       const pageBreak = section?.kind === 'PAGE_BREAK'
-      const keys = pageBreak ? ['id', 'kind'] : ['id', 'kind', 'heightMm', 'elements', 'binding', 'format', 'style', 'gapAfterMm', 'keepWithNext', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText']
+      const keys = pageBreak ? ['id', 'kind'] : ['id', 'kind', 'heightMm', 'minHeightMm', 'elements', 'binding', 'format', 'style', 'headerStyle', 'oddRowStyle', 'evenRowStyle', 'gapAfterMm', 'keepWithNext', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText', 'cellStyles']
       if (!object(section, keys, location)) {
         return
       }
@@ -402,6 +442,24 @@ export function validatePrintDocument(document) {
         choice(section.keepWithNext, [true, false], `${location}.keepWithNext`)
       }
       style(section.style, `${location}.style`)
+      if (section.headerStyle !== undefined)
+        style(section.headerStyle, `${location}.headerStyle`)
+      if (section.oddRowStyle !== undefined)
+        style(section.oddRowStyle, `${location}.oddRowStyle`)
+      if (section.evenRowStyle !== undefined)
+        style(section.evenRowStyle, `${location}.evenRowStyle`)
+      if (section.cellStyles !== undefined) {
+        if (!section.cellStyles || typeof section.cellStyles !== 'object' || Array.isArray(section.cellStyles))
+          issue(`${location}.cellStyles`, 'INVALID_OBJECT', '单元格样式映射无效')
+        else {
+          for (const [key, item] of Object.entries(section.cellStyles)) {
+            if (!/^(header|data|footer):\d+:[\w-]+$/.test(key))
+              issue(`${location}.cellStyles.${key}`, 'INVALID_CELL_STYLE_KEY', '单元格样式键无效')
+            else
+              style(item, `${location}.cellStyles.${key}`)
+          }
+        }
+      }
       if (section.kind === 'FIXED') {
         number(section.heightMm, `${location}.heightMm`, 0.1)
         if (array(section.elements, `${location}.elements`, PRINT_LIMITS.elements)) {
@@ -414,6 +472,8 @@ export function validatePrintDocument(document) {
       }
       if (section.kind === 'TABLE') {
         table(section, location, width)
+        if (section.minHeightMm !== undefined)
+          number(section.minHeightMm, `${location}.minHeightMm`, 0, PRINT_LIMITS.paperSizeMm)
       }
     })
   }

@@ -2,10 +2,10 @@
 import {
   BarcodeOutline,
   CheckmarkCircleOutline,
+  CodeSlashOutline,
   DocumentLockOutline,
   DocumentTextOutline,
   EllipseOutline,
-  GridOutline,
   ImageOutline,
   LayersOutline,
   ListOutline,
@@ -19,27 +19,29 @@ import {
 import { NIcon } from 'naive-ui'
 import { computed } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
-import { addElement, addSection, elementCatalog, startItemDrag } from './elementCatalog'
+import { addElement, addSection, elementCatalog, addDetailTable as insertDetailTable, startItemDrag } from './elementCatalog'
 import { insertRegisteredPrintComponent, printComponentRegistry } from './printComponentRegistry'
+import PrintTableIcon from './PrintTableIcon.vue'
 import './businessPrintComponents'
 
 const store = usePrintDesignerStore()
 const elementIcons = {
   BARCODE: BarcodeOutline,
   IMAGE: ImageOutline,
+  HTML: CodeSlashOutline,
   LINE: RemoveOutline,
   PAGE_NUMBER: DocumentTextOutline,
   QRCODE: QrCodeOutline,
   RECTANGLE: SquareOutline,
   ELLIPSE: EllipseOutline,
   TEXT: TextOutline,
-  STATIC_TABLE: GridOutline,
+  STATIC_TABLE: PrintTableIcon,
+  DATA_TABLE: PrintTableIcon,
 }
-const sections = [
-  { type: 'FIXED', label: '固定区块', icon: LayersOutline },
-  { type: 'TEXT', label: '流式文本', icon: ListOutline },
-  { type: 'TABLE', label: '明细表格', icon: GridOutline },
-  { type: 'PAGE_BREAK', label: '手动分页', icon: ReturnDownForwardOutline },
+const flowSections = [
+  { type: 'FIXED', label: '自由画布层', icon: LayersOutline, tip: '可自由拖放组件的图层' },
+  { type: 'TEXT', label: '流式长文', icon: ListOutline, tip: '随内容自动换页' },
+  { type: 'PAGE_BREAK', label: '手动分页', icon: ReturnDownForwardOutline, tip: '强制从下一页开始' },
 ]
 const businessIcons = {
   approval: CheckmarkCircleOutline,
@@ -47,11 +49,37 @@ const businessIcons = {
   signature: ShieldCheckmarkOutline,
 }
 const businessComponents = computed(() => printComponentRegistry.list())
+
+function addBusiness(key) {
+  store.ensureFreeCanvas()
+  insertRegisteredPrintComponent(store, key)
+}
+
+function addFlowSection(kind) {
+  try {
+    addSection(store, kind)
+  }
+  catch (error) {
+    store.error = error?.message || '无法添加该区块'
+  }
+}
+
+function addDetail() {
+  try {
+    insertDetailTable(store)
+  }
+  catch (error) {
+    store.error = error?.message || '无法添加明细表格'
+  }
+}
 </script>
 
 <template>
   <section class="designer-group palette-group">
-    <h3>基础元素</h3>
+    <h3>基础组件</h3>
+    <p class="muted tip">
+      拖到中间画布即可自由摆放；明细表格与空白表格一样可拖动缩放
+    </p>
     <div class="palette-grid">
       <button
         v-for="item in elementCatalog"
@@ -60,24 +88,58 @@ const businessComponents = computed(() => printComponentRegistry.list())
         class="palette-item"
         draggable="true"
         :title="`拖入或点击添加${item.label}`"
+        :aria-label="item.label"
         @dragstart="startItemDrag($event, { type: item.type, preset: item.preset })"
         @click="addElement(store, item.type, undefined, undefined, item.preset)"
       >
-        <NIcon :component="elementIcons[item.type]" size="21" :class="{ 'vertical-line-icon': item.preset === 'VERTICAL' }" />
+        <NIcon :component="elementIcons[item.type]" :size="16" :class="{ 'vertical-line-icon': item.preset === 'VERTICAL' }" />
         <span>{{ item.label }}</span>
       </button>
+      <button
+        type="button"
+        class="palette-item"
+        draggable="true"
+        title="绑定集合字段循环行，可自由摆放"
+        aria-label="明细表格"
+        @dragstart="startItemDrag($event, { detailTable: true })"
+        @click="addDetail"
+      >
+        <NIcon :component="PrintTableIcon" :size="16" />
+        <span>明细表格</span>
+      </button>
     </div>
-    <h3>内容区块</h3>
-    <div class="palette-grid section-palette">
-      <button v-for="item in sections" :key="item.type" type="button" class="palette-item" @click="addSection(store, item.type)">
-        <NIcon :component="item.icon" size="20" />
+    <h3>流式排版</h3>
+    <p class="muted tip">
+      画布层、长文与强制分页
+    </p>
+    <div class="palette-list">
+      <button
+        v-for="item in flowSections"
+        :key="item.type"
+        type="button"
+        class="palette-row"
+        draggable="true"
+        :title="item.tip"
+        @dragstart="startItemDrag($event, { section: item.type })"
+        @click="addFlowSection(item.type)"
+      >
+        <NIcon :component="item.icon" :size="14" />
         <span>{{ item.label }}</span>
       </button>
     </div>
     <h3>业务组件</h3>
-    <div class="palette-grid business-palette">
-      <button v-for="item in businessComponents" :key="item.key" type="button" class="palette-item" :title="`插入${item.label}`" @click="insertRegisteredPrintComponent(store, item.key)">
-        <NIcon :component="businessIcons[item.icon] || DocumentTextOutline" size="20" />
+    <div class="palette-list">
+      <button
+        v-for="item in businessComponents"
+        :key="item.key"
+        type="button"
+        class="palette-row"
+        draggable="true"
+        :title="`拖入或点击插入${item.label}`"
+        @dragstart="startItemDrag($event, { component: item.key })"
+        @click="addBusiness(item.key)"
+      >
+        <NIcon :component="businessIcons[item.icon] || DocumentTextOutline" :size="14" />
         <span>{{ item.label }}</span>
       </button>
     </div>
@@ -85,51 +147,73 @@ const businessComponents = computed(() => printComponentRegistry.list())
 </template>
 
 <style scoped>
+.palette-group h3 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+}
+.palette-group h3:first-child {
+  margin-top: 0;
+}
+.tip {
+  margin: 0 0 8px;
+  font-size: 11px;
+}
 .palette-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 .palette-item {
   display: flex;
-  min-width: 0;
-  min-height: 58px;
-  padding: 7px 4px 6px;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 4px;
-  border: 1px solid var(--border-light, #e5e7eb);
-  border-radius: 4px;
-  color: var(--text-primary, #1f2329);
-  background: var(--bg-primary, #fff);
+  min-height: 54px;
+  padding: 8px 4px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   cursor: grab;
-  transition:
-    border-color 140ms,
-    background 140ms,
-    color 140ms;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
 }
 .palette-item:hover {
-  border-color: var(--primary-color, #165dff);
-  color: var(--primary-color, #165dff);
-  background: color-mix(in srgb, var(--primary-color, #165dff) 6%, var(--bg-primary, #fff));
+  border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--bg-primary));
+  color: var(--primary-color);
 }
 .palette-item:active {
   cursor: grabbing;
 }
-.palette-item span {
-  overflow: hidden;
-  max-width: 100%;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .vertical-line-icon {
   transform: rotate(90deg);
 }
-.section-palette .palette-item:last-child {
-  grid-column: 1 / -1;
-  min-height: 50px;
-  flex-direction: row;
+.palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: grab;
+  font-size: 12px;
+  text-align: left;
+}
+.palette-row:hover {
+  border-color: var(--border-light, #e2e8f0);
+  background: var(--gray-100);
+}
+.palette-row:active {
+  cursor: grabbing;
 }
 </style>

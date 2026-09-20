@@ -38,11 +38,23 @@
           AND source_key = #{sourceKey} AND scene = #{scene} AND del_flag = 0
         ORDER BY is_default DESC, sort_order, id
     </select>
+    <select id="selectBySource" resultMap="Row">
+        SELECT <include refid="Columns"/> FROM sys_print_binding
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+          AND source_key = #{sourceKey} AND del_flag = 0
+        ORDER BY scene, is_default DESC, sort_order, id
+    </select>
     <select id="selectApplication" resultMap="Row">
         SELECT <include refid="Columns"/> FROM sys_print_binding
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
           AND del_flag = 0 AND status = 1
         ORDER BY template_id, id FOR UPDATE
+    </select>
+    <select id="selectApplicationEnabled" resultMap="Row">
+        SELECT <include refid="Columns"/> FROM sys_print_binding
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+          AND del_flag = 0 AND status = 1
+        ORDER BY is_default DESC, sort_order, id
     </select>
     <select id="countTemplateReferences" resultType="long">
         SELECT COUNT(*) FROM sys_print_binding

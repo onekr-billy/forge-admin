@@ -181,12 +181,12 @@ final class PrintProtocolRules {
     }
 
     private void element(JsonNode e, String path, double width, double height) {
-        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "table", "barcodeFormat", "pageNumberFormat", "rotationDeg", "flipX", "flipY", "locked")) {
+        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "table", "barcodeFormat", "pageNumberFormat", "showCodeText", "rotationDeg", "flipX", "flipY", "locked", "collectionPath", "columns", "headerRows", "repeatHeader", "footer", "emptyText", "headerStyle", "oddRowStyle", "evenRowStyle", "minHeightMm", "cellStyles")) {
             return;
         }
         elements++;
         identifier(e.get("id"), path + ".id");
-        choice(e.get("type"), path + ".type", "TEXT", "IMAGE", "LINE", "RECTANGLE", "ELLIPSE", "BARCODE", "QRCODE", "PAGE_NUMBER", "STATIC_TABLE");
+        choice(e.get("type"), path + ".type", "TEXT", "IMAGE", "HTML", "LINE", "RECTANGLE", "ELLIPSE", "BARCODE", "QRCODE", "PAGE_NUMBER", "STATIC_TABLE", "DATA_TABLE");
         for (String key : List.of("xMm", "yMm", "widthMm", "heightMm")) {
             number(e.get(key), path + "." + key, (key.equals("widthMm") || key.equals("heightMm")) ? .1 : 0, PAPER_SIZE_MM);
         }
@@ -194,8 +194,8 @@ final class PrintProtocolRules {
             issue(path, "OUT_OF_BOUNDS", "元素超出所属区块");
         }
         String type = e.path("type").asText();
-        if (e.has("binding") || Set.of("TEXT", "IMAGE", "BARCODE", "QRCODE").contains(type)) {
-            values.binding(e.get("binding"), path + ".binding", type.equals("IMAGE"), type.equals("TEXT"));
+        if (e.has("binding") || Set.of("TEXT", "IMAGE", "HTML", "BARCODE", "QRCODE").contains(type)) {
+            values.binding(e.get("binding"), path + ".binding", type.equals("IMAGE"), type.equals("TEXT") || type.equals("HTML"));
         }
         if (e.has("barcodeFormat")) {
             choice(e.get("barcodeFormat"), path + ".barcodeFormat", "CODE128", "CODE39", "EAN13", "EAN8", "ITF14");
@@ -203,8 +203,14 @@ final class PrintProtocolRules {
         if (e.has("pageNumberFormat")) {
             choice(e.get("pageNumberFormat"), path + ".pageNumberFormat", "CURRENT", "CURRENT_TOTAL");
         }
+        if (e.has("showCodeText")) {
+            bool(e.get("showCodeText"), path + ".showCodeText");
+        }
         if (type.equals("STATIC_TABLE") || e.has("table")) {
             staticTables.table(e.get("table"), path + ".table", n(e, "widthMm"), n(e, "heightMm"));
+        }
+        if (type.equals("DATA_TABLE") || List.of("collectionPath", "columns", "headerRows", "repeatHeader", "footer", "emptyText").stream().anyMatch(e::has)) {
+            tables.table(e, path, n(e, "widthMm"));
         }
         if (e.has("rotationDeg")) {
             number(e.get("rotationDeg"), path + ".rotationDeg", -180, 180);
@@ -215,6 +221,21 @@ final class PrintProtocolRules {
             }
         }
         values.style(e.get("style"), path + ".style");
+        if (e.has("headerStyle")) {
+            values.style(e.get("headerStyle"), path + ".headerStyle");
+        }
+        if (e.has("oddRowStyle")) {
+            values.style(e.get("oddRowStyle"), path + ".oddRowStyle");
+        }
+        if (e.has("evenRowStyle")) {
+            values.style(e.get("evenRowStyle"), path + ".evenRowStyle");
+        }
+        if (e.has("minHeightMm")) {
+            number(e.get("minHeightMm"), path + ".minHeightMm", 0, PAPER_SIZE_MM);
+        }
+        if (e.has("cellStyles")) {
+            values.cellStyles(e.get("cellStyles"), path + ".cellStyles");
+        }
         values.format(e.get("format"), path + ".format");
     }
 

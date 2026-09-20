@@ -96,12 +96,29 @@ public final class PrintProtocolValidator {
         private final List<Issue> issues;
 
         public InvalidTemplateException(List<Issue> issues) {
-            super(400, "打印模板校验失败", List.copyOf(issues));
+            super(400, summarize(issues), List.copyOf(issues));
             this.issues = List.copyOf(issues);
         }
 
         public List<Issue> getIssues() {
             return issues;
+        }
+
+        private static String summarize(List<Issue> issues) {
+            if (issues == null || issues.isEmpty()) {
+                return "打印模板校验失败";
+            }
+            Issue first = issues.get(0);
+            String detail = first.message() == null || first.message().isBlank()
+                    ? first.code()
+                    : first.message();
+            if (first.path() != null && !first.path().isBlank()) {
+                detail = detail + "（" + first.path() + "）";
+            }
+            if (issues.size() == 1) {
+                return "打印模板校验失败：" + detail;
+            }
+            return "打印模板校验失败：" + detail + " 等 " + issues.size() + " 项";
         }
     }
 }

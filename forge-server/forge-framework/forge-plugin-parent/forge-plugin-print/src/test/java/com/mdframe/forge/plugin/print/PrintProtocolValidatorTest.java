@@ -237,11 +237,46 @@ class PrintProtocolValidatorTest {
         cells.addObject().put("id", "static_cell_1").put("row", 0).put("column", 0).put("rowSpan", 1).put("colSpan", 1).putObject("binding").put("source", "CONSTANT").put("value", "甲");
         cells.addObject().put("id", "static_cell_2").put("row", 0).put("column", 1).put("rowSpan", 1).put("colSpan", 1).putObject("binding").put("source", "FIELD").put("path", "main.name");
         assertThat(validator.validate(doc.toString()).document().body().get(0).elements().get(0).table().cells()).hasSize(2);
+        ((ObjectNode) cells.get(0)).put("contentType", "IMAGE");
+        ((ObjectNode) cells.get(0).get("binding")).put("value", "file_demo_1");
+        assertThat(validator.validate(doc.toString()).document().body().get(0).elements().get(0).table().cells().get(0).contentType()).isEqualTo("IMAGE");
         ((ObjectNode) cells.get(1)).put("column", 0);
         rejects(doc, "body[0].elements[0].table", "INVALID_COVERAGE");
         ((ObjectNode) cells.get(1)).put("column", 1);
         element.put("widthMm", 61);
         rejects(doc, "body[0].elements[0].table", "TABLE_SIZE_MISMATCH");
+    }
+
+    @Test
+    void acceptsDataTableAndHtmlElements() throws Exception {
+        var doc = document();
+        var element = (ObjectNode) doc.at("/body/0/elements/0");
+        element.put("type", "DATA_TABLE").put("widthMm", 60).put("heightMm", 12);
+        element.remove("binding");
+        element.put("collectionPath", "children.items").put("repeatHeader", true).put("emptyText", "无明细");
+        var columns = element.putArray("columns");
+        columns.addObject().put("id", "dt_col_1").put("field", "children.items.name").put("title", "名称").put("widthMm", 30);
+        columns.addObject().put("id", "dt_col_2").put("field", "children.items.qty").put("title", "数量").put("widthMm", 30);
+        assertThat(validator.validate(doc.toString()).document().body().get(0).elements().get(0).type()).isEqualTo("DATA_TABLE");
+
+        doc = document();
+        element = (ObjectNode) doc.at("/body/0/elements/0");
+        element.put("type", "HTML");
+        var binding = element.putObject("binding");
+        binding.put("source", "CONSTANT").put("value", "<b>说明</b>");
+        assertThat(validator.validate(doc.toString()).document().body().get(0).elements().get(0).type()).isEqualTo("HTML");
+    }
+
+    @Test
+    void invalidTemplateMessageIncludesFirstIssue() throws Exception {
+        var doc = document();
+        doc.put("schemaVersion", 2);
+        assertThatThrownBy(() -> validator.validate(doc.toString()))
+                .isInstanceOfSatisfying(PrintProtocolValidator.InvalidTemplateException.class, ex -> {
+                    assertThat(ex.getMessage()).contains("打印模板校验失败：");
+                    assertThat(ex.getMessage()).contains("schemaVersion");
+                    assertThat(ex.getIssues()).isNotEmpty();
+                });
     }
 
     @Test

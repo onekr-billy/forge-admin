@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendStaticTableColumn, appendStaticTableRow, createStaticTable, deleteStaticTableColumn, deleteStaticTableRow, mergeStaticTableCells, splitStaticTableCell, staticTableCellAt, staticTableSize } from '../staticTable'
+import { appendStaticTableColumn, appendStaticTableRow, createStaticTable, deleteStaticTableColumn, deleteStaticTableColumns, deleteStaticTableRow, deleteStaticTableRows, insertStaticTableColumn, insertStaticTableColumns, insertStaticTableRow, insertStaticTableRows, mergeStaticTableCells, splitStaticTableCell, staticTableCellAt, staticTableIdsInRect, staticTableSize } from '../staticTable'
 
 function ids() {
   let value = 0
@@ -36,7 +36,59 @@ describe('static table editing', () => {
     expect(deleteStaticTableColumn(table, 0)).toBe(true)
     expect(table.rows).toHaveLength(2)
     expect(table.columns).toHaveLength(2)
-    for (let row = 0; row < 2; row++)
-      for (let column = 0; column < 2; column++) expect(staticTableCellAt(table, row, column)).toBeTruthy()
+    for (let row = 0; row < 2; row++) {
+      for (let column = 0; column < 2; column++)
+        expect(staticTableCellAt(table, row, column)).toBeTruthy()
+    }
+  })
+
+  it('selects every cell intersecting a Word-like rectangle', () => {
+    const table = createStaticTable(3, 3, 75, 9, ids(), { headerRow: false })
+    const idsSelected = staticTableIdsInRect(table, 0, 0, 1, 1)
+    expect(idsSelected).toHaveLength(4)
+    expect(idsSelected).toEqual(expect.arrayContaining([
+      staticTableCellAt(table, 0, 0).id,
+      staticTableCellAt(table, 0, 1).id,
+      staticTableCellAt(table, 1, 0).id,
+      staticTableCellAt(table, 1, 1).id,
+    ]))
+  })
+
+  it('inserts rows and columns at a relative index', () => {
+    const table = createStaticTable(2, 2, 40, 8, ids(), { headerRow: false })
+    const above = insertStaticTableRow(table, 0, ids())
+    expect(above).toHaveLength(2)
+    expect(table.rows).toHaveLength(3)
+    expect(staticTableCellAt(table, 0, 0).id).toBe(above[0])
+    const left = insertStaticTableColumn(table, 0, ids())
+    expect(left).toHaveLength(3)
+    expect(table.columns).toHaveLength(3)
+    expect(staticTableCellAt(table, 1, 0).id).toBe(left[1])
+  })
+
+  it('inserts multiple rows and columns in order', () => {
+    const table = createStaticTable(2, 2, 40, 8, ids(), { headerRow: false })
+    const rows = insertStaticTableRows(table, 1, 3, ids())
+    expect(table.rows).toHaveLength(5)
+    expect(rows).toHaveLength(6)
+    expect(staticTableCellAt(table, 1, 0).id).toBe(rows[0])
+    expect(staticTableCellAt(table, 3, 0).id).toBe(rows[4])
+    const cols = insertStaticTableColumns(table, 0, 2, ids())
+    expect(table.columns).toHaveLength(4)
+    expect(cols).toHaveLength(10)
+    expect(staticTableCellAt(table, 0, 0).id).toBe(cols[0])
+    expect(staticTableCellAt(table, 0, 1).id).toBe(cols[5])
+  })
+
+  it('deletes multiple selected rows and columns (highest index first)', () => {
+    const table = createStaticTable(4, 4, 80, 8, ids(), { headerRow: false })
+    expect(deleteStaticTableRows(table, [1, 3])).toBe(true)
+    expect(table.rows).toHaveLength(2)
+    expect(deleteStaticTableColumns(table, [0, 2])).toBe(true)
+    expect(table.columns).toHaveLength(2)
+    for (let row = 0; row < table.rows.length; row++) {
+      for (let column = 0; column < table.columns.length; column++)
+        expect(staticTableCellAt(table, row, column)).toBeTruthy()
+    }
   })
 })

@@ -1,5 +1,6 @@
 <script setup>
-import { NAlert, NButton, NInput, NModal, NTabPane, NTabs, useThemeVars } from 'naive-ui'
+import { CloseOutline } from '@vicons/ionicons5'
+import { NAlert, NButton, NIcon, NInput, NModal, NTabPane, NTabs, useThemeVars } from 'naive-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { createPrintDocument } from '../protocol/types'
@@ -8,13 +9,8 @@ import { newPrintId } from './commands'
 import { createDesignerSampleContext, hasDesignerData } from './designerSample'
 import { parseDraft, readDraft, writeDraft } from './draftStorage'
 import { cloneDocument } from './history'
-import BindingPanel from './panels/BindingPanel.vue'
-import ElementGeometryPanel from './panels/ElementGeometryPanel.vue'
-import ElementOptionsPanel from './panels/ElementOptionsPanel.vue'
 import PaperPanel from './panels/PaperPanel.vue'
-import StaticTablePanel from './panels/StaticTablePanel.vue'
-import TablePanel from './panels/TablePanel.vue'
-import TextPanel from './panels/TextPanel.vue'
+import PropertyTabsPanel from './panels/PropertyTabsPanel.vue'
 import PrintCalibration from './PrintCalibration.vue'
 import PrintCanvas from './PrintCanvas.vue'
 import PrintDesignerToolbar from './PrintDesignerToolbar.vue'
@@ -31,10 +27,39 @@ const props = defineProps({
   resolveFile: Function,
   saveDraft: Function,
   externalDirty: Boolean,
+  externalError: { type: String, default: '' },
+  externalNotice: { type: String, default: '' },
   confirmDiscard: Function,
+  pageMode: Boolean,
+  templateName: { type: String, default: '' },
+  designStatus: { type: [String, Number], default: '' },
+  draftRevision: { type: [String, Number], default: '' },
+  canManage: { type: Boolean, default: true },
+  canPublish: Boolean,
+  publishing: Boolean,
+  nameDirty: Boolean,
 })
+const emit = defineEmits(['update:templateName', 'back', 'bindings', 'versions', 'publish', 'clearExternalError', 'clearExternalNotice'])
 const store = usePrintDesignerStore()
 store.load(props.template, props.catalog)
+const bannerError = computed(() => store.error || props.externalError || '')
+const bannerNotice = computed(() => (!store.error && !props.externalError ? (store.notice || props.externalNotice || '') : ''))
+function clearBanner() {
+  if (store.error) {
+    store.error = ''
+    return
+  }
+  if (props.externalError) {
+    emit('clearExternalError')
+    return
+  }
+  if (store.notice) {
+    store.notice = ''
+    return
+  }
+  if (props.externalNotice)
+    emit('clearExternalNotice')
+}
 const hasRealPreviewData = computed(() => hasDesignerData(props.context))
 const designerContext = computed(() => hasRealPreviewData.value ? props.context : createDesignerSampleContext(store.catalog))
 const previewDataLabel = computed(() => hasRealPreviewData.value ? '当前样本数据' : '字段示例数据')
@@ -75,12 +100,22 @@ onBeforeUnmount(() => {
 })
 const { canLeave } = usePrintDesignerLifecycle(store, confirmDiscard, () => props.externalDirty)
 const theme = useThemeVars()
-const themeStyle = computed(() => ({ '--bg-primary': theme.value.cardColor, '--gray-100': theme.value.bodyColor, '--text-primary': theme.value.textColor1, '--text-tertiary': theme.value.textColor3, '--border-light': theme.value.borderColor, '--primary-color': theme.value.primaryColor }))
+const themeStyle = computed(() => ({
+  '--bg-primary': theme.value.cardColor,
+  '--gray-100': theme.value.bodyColor,
+  '--text-primary': theme.value.textColor1,
+  '--text-secondary': theme.value.textColor2,
+  '--text-tertiary': theme.value.textColor3,
+  '--border-light': theme.value.borderColor,
+  '--primary-color': theme.value.primaryColor,
+  '--error-color': theme.value.errorColor || '#d03050',
+}))
 const protocolOpen = ref(false)
 const calibrationOpen = ref(false)
 const protocolText = ref('')
 const protocolError = ref('')
 const panel = ref('selection')
+const leftTab = ref('palette')
 watch(() => props.catalog, (value) => {
   store.catalog = cloneDocument(value)
 }, { deep: true })
@@ -163,29 +198,79 @@ defineExpose({ canLeave, save })
 
 <template>
   <div class="print-designer" :style="themeStyle">
-    <PrintDesignerToolbar :local="!saveDraft" :external-dirty="externalDirty" @new="createNew" @copy="copyTemplate" @save="save" @restore="restore" @protocol="openProtocol" @calibration="calibrationOpen = true" />
-    <NAlert v-if="store.error" type="error" closable @close="store.error = ''">
-      {{ store.error }}
+    <PrintDesignerToolbar
+      :local="!saveDraft"
+      :external-dirty="externalDirty"
+      :page-mode="pageMode"
+      :template-name="templateName"
+      :design-status="designStatus"
+      :draft-revision="draftRevision"
+      :can-manage="canManage"
+      :can-publish="canPublish"
+      :publishing="publishing"
+      :name-dirty="nameDirty"
+      @new="createNew"
+      @copy="copyTemplate"
+      @save="save"
+      @restore="restore"
+      @protocol="openProtocol"
+      @calibration="calibrationOpen = true"
+      @back="$emit('back')"
+      @update:template-name="$emit('update:templateName', $event)"
+      @bindings="$emit('bindings')"
+      @versions="$emit('versions')"
+      @publish="$emit('publish')"
+    />
+    <NAlert v-if="bannerError" type="error" closable class="designer-banner" @close="clearBanner">
+      {{ bannerError }}
     </NAlert>
-    <NAlert v-else-if="store.notice" type="info" closable @close="store.notice = ''">
-      {{ store.notice }}
+    <NAlert v-else-if="bannerNotice" type="info" closable class="designer-banner" @close="clearBanner">
+      {{ bannerNotice }}
     </NAlert>
     <div class="designer-layout-scroll">
-      <div class="designer-layout" :class="{ 'left-closed': !store.leftPanelOpen, 'right-closed': !store.rightPanelOpen }">
-        <aside v-show="store.leftPanelOpen" class="designer-aside">
-          <PrintElementPalette /><PrintFieldTree /><PrintSectionList />
+      <div
+        class="designer-layout"
+        :class="{
+          'left-closed': !store.leftPanelOpen,
+          'right-closed': !store.rightPanelOpen,
+        }"
+      >
+        <aside v-if="store.leftPanelOpen" class="designer-aside">
+          <header class="panel-chrome">
+            <span>组件</span>
+            <button type="button" class="panel-close" title="关闭组件面板" aria-label="关闭组件面板" @click="store.leftPanelOpen = false">
+              <NIcon :component="CloseOutline" :size="14" />
+            </button>
+          </header>
+          <NTabs v-model:value="leftTab" type="segment" size="small" class="aside-tabs">
+            <NTabPane name="palette" tab="组件">
+              <PrintElementPalette />
+            </NTabPane>
+            <NTabPane name="fields" tab="数据源">
+              <PrintFieldTree />
+            </NTabPane>
+            <NTabPane name="structure" tab="结构">
+              <PrintSectionList />
+            </NTabPane>
+          </NTabs>
         </aside>
-        <PrintCanvas :context="designerContext" />
-        <aside v-show="store.rightPanelOpen" class="designer-properties">
-          <NTabs v-model:value="panel" type="line" size="small">
-            <NTabPane name="selection" tab="选中内容">
-              <ElementGeometryPanel /><ElementOptionsPanel /><BindingPanel /><TextPanel /><StaticTablePanel /><TablePanel />
+        <PrintCanvas :context="designerContext" :resolve-file="resolveFile" />
+        <aside v-if="store.rightPanelOpen" class="designer-properties">
+          <header class="panel-chrome">
+            <span>属性</span>
+            <button type="button" class="panel-close" title="关闭属性面板" aria-label="关闭属性面板" @click="store.rightPanelOpen = false">
+              <NIcon :component="CloseOutline" :size="14" />
+            </button>
+          </header>
+          <NTabs v-model:value="panel" type="segment" size="small" class="property-tabs">
+            <NTabPane name="selection" tab="属性">
+              <PropertyTabsPanel />
             </NTabPane>
             <NTabPane name="paper" tab="纸张">
               <PaperPanel />
             </NTabPane>
           </NTabs>
-          <section v-if="store.fieldIssues.length" class="designer-group">
+          <section v-if="store.fieldIssues.length" class="designer-group issue-group">
             <h3>失效字段（{{ store.fieldIssues.length }}）</h3>
             <button v-for="issue in store.fieldIssues" :key="issue.path" type="button" class="issue-button" @click="locateIssue(issue)">
               {{ issue.message }} · 定位
@@ -230,14 +315,20 @@ defineExpose({ canLeave, save })
   border-radius: 6px;
   overflow: hidden;
 }
+.designer-banner :deep(.n-alert) {
+  border-radius: 0;
+}
+.designer-banner {
+  flex: none;
+}
 .designer-layout-scroll {
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 .designer-layout {
-  --left-panel-width: 216px;
-  --right-panel-width: 292px;
+  --left-panel-width: 220px;
+  --right-panel-width: 280px;
   position: relative;
   width: 100%;
   height: 100%;
@@ -247,10 +338,13 @@ defineExpose({ canLeave, save })
   transition: grid-template-columns 0.16s ease;
 }
 .designer-layout.left-closed {
-  --left-panel-width: 0px;
+  grid-template-columns: minmax(0, 1fr) var(--right-panel-width);
 }
 .designer-layout.right-closed {
-  --right-panel-width: 0px;
+  grid-template-columns: var(--left-panel-width) minmax(0, 1fr);
+}
+.designer-layout.left-closed.right-closed {
+  grid-template-columns: minmax(0, 1fr);
 }
 .designer-aside,
 .designer-properties {
@@ -262,44 +356,115 @@ defineExpose({ canLeave, save })
 .designer-aside {
   border-right: 1px solid var(--border-light);
   background: var(--bg-primary);
+  padding: 0 3px 2px;
+  display: flex;
+  flex-direction: column;
 }
 .designer-properties {
   border-left: 1px solid var(--border-light);
-  padding: 0 10px 12px;
+  padding: 0 4px 6px;
   background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+.panel-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 26px;
+  padding: 2px 2px 0;
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.panel-close {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+}
+.panel-close:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  background: var(--gray-100);
+}
+.aside-tabs,
+.property-tabs {
+  --n-tab-gap: 2px;
+  flex: 1;
+  min-height: 0;
+}
+.aside-tabs :deep(.n-tabs-nav),
+.property-tabs :deep(.n-tabs-nav) {
+  --n-tab-padding: 4px 0;
+}
+.aside-tabs :deep(.n-tabs-tab),
+.property-tabs :deep(.n-tabs-tab) {
+  font-size: 11px;
+  padding: 2px 0 !important;
+}
+.aside-tabs :deep(.n-tabs-pane-wrapper),
+.property-tabs :deep(.n-tabs-pane-wrapper) {
+  padding-top: 2px;
 }
 :deep(.designer-group) {
-  padding: 10px;
+  padding: 4px 2px 6px;
   border-bottom: 1px solid var(--border-light);
 }
 :deep(.designer-group h3) {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 600;
-  margin: 0 0 8px;
+  margin: 0 0 3px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
 }
 :deep(.designer-group h3:not(:first-child)) {
-  margin-top: 12px;
+  margin-top: 6px;
 }
 :deep(.panel-grid) {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 8px;
+  grid-template-columns: 1fr;
+  gap: 4px 0;
 }
 :deep(.panel-row) {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 :deep(.muted) {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-tertiary);
   overflow-wrap: anywhere;
+  margin: 2px 0;
 }
 :deep(.n-form-item) {
-  margin-top: 6px;
+  margin-top: 0;
+  margin-bottom: 4px;
+  width: 100%;
+}
+:deep(.n-form-item-blank) {
+  width: 100%;
+  min-width: 0;
+}
+:deep(.n-form-item-label) {
+  font-size: 11px !important;
+  padding-bottom: 2px !important;
 }
 :deep(.n-form-item-feedback-wrapper) {
-  min-height: 5px;
+  min-height: 0 !important;
+  height: 0;
+  padding: 0 !important;
+}
+.issue-group {
+  margin-top: 4px;
 }
 .issue-button {
   background: transparent;
@@ -308,6 +473,8 @@ defineExpose({ canLeave, save })
   text-align: left;
   cursor: pointer;
   overflow-wrap: anywhere;
+  font-size: 11px;
+  padding: 2px 0;
 }
 .protocol-actions {
   margin-top: 10px;
@@ -326,8 +493,9 @@ defineExpose({ canLeave, save })
     z-index: 30;
     top: 0;
     bottom: 0;
-    width: min(286px, 82vw);
-    box-shadow: 0 10px 32px rgb(15 23 42 / 18%);
+    width: min(240px, 78vw);
+    box-shadow: 0 8px 24px rgb(15 23 42 / 16%);
+    padding: 6px;
   }
   .designer-aside {
     left: 0;

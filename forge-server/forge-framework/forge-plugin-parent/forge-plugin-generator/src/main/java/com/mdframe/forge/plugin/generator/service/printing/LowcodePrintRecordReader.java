@@ -17,14 +17,14 @@ public class LowcodePrintRecordReader {
 
     public void assertReadable(PrintMetadataResolver.Metadata metadata, String recordId) {
         if (crud.selectPrintById(metadata.main().config(), recordId) == null) {
-            throw PrintFailure.missing();
+            throw PrintFailure.of(404, "PRINT_RECORD_UNAVAILABLE", "单据不存在或无权打印此记录");
         }
     }
 
     public PrintData read(PrintMetadataResolver.Metadata metadata, String recordId, PrintBindingSelection selection) {
         var record = crud.selectPrintById(metadata.main().config(), recordId);
         if (record == null) {
-            throw PrintFailure.missing();
+            throw PrintFailure.of(404, "PRINT_RECORD_UNAVAILABLE", "单据不存在或无权打印此记录");
         }
         Map<String, Object> children = new LinkedHashMap<>();
         for (var child : metadata.children()) {
