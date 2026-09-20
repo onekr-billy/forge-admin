@@ -21,7 +21,6 @@ const frame = computed(() => {
       display: 'block',
       width: `${node.widthMm}mm`,
       boxSizing: 'border-box',
-      background: '#fff',
       ...frame,
     }"
   >

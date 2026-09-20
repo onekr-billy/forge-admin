@@ -14,7 +14,6 @@ const tableStyle = computed(() => ({
   width: '100%',
   height: '100%',
   boxSizing: 'border-box',
-  background: '#fff',
   gridTemplateColumns: props.node.table.columns.map(column => `${column.widthMm}mm`).join(' '),
   gridTemplateRows: props.node.table.rows.map(row => `${row.heightMm}mm`).join(' '),
   ...frame.value,

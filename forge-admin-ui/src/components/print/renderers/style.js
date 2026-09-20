@@ -57,18 +57,25 @@ export function cellStyle(style = {}) {
   }
 }
 
-/** 表格外框：只画上/左边，避免与单元格双边框叠粗。 */
+/** 表格外框：用背景线画上/左边，不占布局宽度，避免贴满纸张时右/下边被 overflow 裁切。 */
 export function tableFrameStyle(style = {}) {
   const width = style.borderWidthMm ?? 0.15
   const color = style.borderColor || '#000000'
-  const borderStyle = style.borderStyle || 'solid'
-  const line = width > 0 ? `${width}mm ${borderStyle} ${color}` : 'none'
+  if (width <= 0) {
+    return {
+      boxSizing: 'border-box',
+      border: 'none',
+    }
+  }
+  const line = `${width}mm`
   return {
     boxSizing: 'border-box',
-    borderTop: line,
-    borderLeft: line,
-    borderRight: 'none',
-    borderBottom: 'none',
+    border: 'none',
+    backgroundColor: '#fff',
+    backgroundImage: `linear-gradient(${color}, ${color}), linear-gradient(${color}, ${color})`,
+    backgroundSize: `${line} 100%, 100% ${line}`,
+    backgroundPosition: 'left top, left top',
+    backgroundRepeat: 'no-repeat',
   }
 }
 
