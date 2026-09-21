@@ -20,6 +20,18 @@ import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceCapa
 import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceDefinitionRegistry;
 import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceOpenGatewayAdapter;
 import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceCapabilityPublisher;
+import com.mdframe.forge.plugin.capability.secureaction.system.RestEndpointSystemService;
+import com.mdframe.forge.plugin.capability.secureaction.system.LowcodeFormSystemService;
+import com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper;
+import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
+import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
+import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
+import jakarta.validation.Validator;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +44,21 @@ import java.util.List;
  */
 @AutoConfiguration
 public class SecureActionAutoConfiguration {
+
+    @Bean
+    public RestEndpointSystemService restEndpointSystemService(
+            ObjectProvider<RequestMappingHandlerMapping> mappings, ObjectMapper mapper, Validator validator) {
+        return new RestEndpointSystemService(mappings, mapper, validator);
+    }
+
+    @Bean
+    public LowcodeFormSystemService lowcodeFormSystemService(
+            BusinessObjectService objects, BusinessObjectActionService actions, AiCrudConfigService configs,
+            DynamicCrudService records, BusinessEventPublisher events, LowcodeFormReceiptMapper receipts,
+            ObjectMapper mapper, CapabilitySchemaValidator validator, PlatformTransactionManager transactionManager,
+            BusinessDocumentConfigMapper documents) {
+        return new LowcodeFormSystemService(objects, actions, configs, records, events, receipts, mapper, validator, transactionManager, documents);
+    }
 
     @Bean
     public SystemServiceDefinitionRegistry systemServiceDefinitionRegistry(

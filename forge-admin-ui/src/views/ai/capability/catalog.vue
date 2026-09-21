@@ -1,5 +1,6 @@
 <template>
   <div class="capability-catalog-page">
+    <CapabilityPageHeader title="能力目录" description="把流程、表单和系统接口开放给外部系统。注册能力后，在接入系统中配置调用授权。" active="catalog" />
     <AiCrudPage
       ref="crudRef"
       :api-config="{
@@ -11,6 +12,8 @@
       :hide-add="true"
       :hide-selection="true"
       :hide-batch-delete="true"
+      :show-render-mode-switch="false"
+      class="platform-list"
     >
       <template #toolbar-start>
         <n-button v-if="registerTypes.length" type="primary" @click="openRegister">
@@ -165,10 +168,12 @@ import {
   updateCapability,
 } from '@/api/ai/capability'
 import { AiCrudPage } from '@/components/ai-form'
+import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables'
 import { useUserStore } from '@/store'
 import CapabilityCallGuideModal from './components/CapabilityCallGuideModal.vue'
+import CapabilityPageHeader from './components/CapabilityPageHeader.vue'
 import CapabilityRegisterModal from './components/CapabilityRegisterModal.vue'
 
 defineOptions({ name: 'CapabilityCatalog' })
@@ -245,6 +250,12 @@ const searchSchema = computed(() => [
     },
   },
   {
+    field: 'sourceType',
+    label: '能力来源',
+    type: 'select',
+    props: { placeholder: '全部来源', clearable: true, options: sourceTypeOptions.value },
+  },
+  {
     field: 'publishStatus',
     label: '发布状态',
     type: 'select',
@@ -259,16 +270,10 @@ const searchSchema = computed(() => [
 // 表格列配置
 const tableColumns = computed(() => [
   {
-    prop: 'capabilityCode',
-    label: '能力编码',
-    width: 200,
-    ellipsis: { tooltip: true },
-  },
-  {
     prop: 'capabilityName',
-    label: '能力名称',
-    minWidth: 160,
-    ellipsis: { tooltip: true },
+    label: '开放能力',
+    minWidth: 250,
+    render: row => h(SystemTableCell, { title: row.capabilityName, subtitle: row.capabilityCode, interactive: true, onActivate: () => handleViewDetail(row) }),
   },
   {
     prop: 'sourceType',
@@ -313,16 +318,10 @@ const tableColumns = computed(() => [
     },
   },
   {
-    prop: 'visibility',
-    label: '可见性',
-    width: 100,
-    render: (row) => {
-      return h(DictTag, {
-        options: visibilityOptions.value,
-        value: row.visibility,
-        size: 'small',
-      })
-    },
+    prop: 'description',
+    label: '用途说明',
+    minWidth: 180,
+    ellipsis: { tooltip: true },
   },
   {
     prop: 'publishStatus',
@@ -339,7 +338,8 @@ const tableColumns = computed(() => [
   {
     prop: 'action',
     label: '操作',
-    width: 430,
+    width: 230,
+    maxActionButtons: 2,
     fixed: 'right',
     actions: [
       { label: '调用与测试', key: 'call-guide', type: 'primary', onClick: handleCallGuide },
@@ -500,6 +500,13 @@ function handleEnable(row) {
 <style scoped>
 .capability-catalog-page {
   height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.platform-list {
+  flex: 1;
+  min-height: 0;
 }
 
 .capability-detail {
@@ -521,10 +528,10 @@ function handleEnable(row) {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin: 0 0 16px 0;
   padding-bottom: 8px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .detail-row {
@@ -540,13 +547,13 @@ function handleEnable(row) {
 
 .detail-row .label {
   font-weight: 500;
-  color: #666;
+  color: var(--text-tertiary);
   min-width: 110px;
   flex-shrink: 0;
 }
 
 .detail-row .value {
-  color: #262626;
+  color: var(--text-primary);
   word-break: break-all;
 }
 

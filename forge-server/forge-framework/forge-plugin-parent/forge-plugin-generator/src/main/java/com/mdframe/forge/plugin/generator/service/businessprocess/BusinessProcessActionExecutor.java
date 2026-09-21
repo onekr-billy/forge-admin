@@ -33,6 +33,9 @@ public class BusinessProcessActionExecutor {
     private final BusinessObjectMapper businessObjectMapper;
     private final DynamicCrudService dynamicCrudService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private BusinessProcessMessageExecutor messageExecutor;
+
     /** 动作使用独立事务，避免下游事务异常把编排状态事务标记为 rollback-only。 */
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public String execute(AiBusinessProcessRun run,
@@ -40,6 +43,9 @@ public class BusinessProcessActionExecutor {
                           BusinessProcessNode node) {
         Map<String, Object> config = node.getConfig() == null ? Map.of() : node.getConfig();
         String actionType = upper(text(config.get("actionType")));
+        if ("SEND_MESSAGE".equals(actionType)) {
+            return messageExecutor.execute(run, node);
+        }
         String configuredObjectCode = text(config.get("objectCode"));
         // Older action-node drafts used the generic placeholder
         // `business_object`. It is not a runtime object and must never be

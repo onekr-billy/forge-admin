@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.system.dto.SysDictDataQuery;
 import com.mdframe.forge.plugin.system.entity.SysDictData;
 import com.mdframe.forge.plugin.system.service.ISysDictDataService;
 import com.mdframe.forge.starter.core.annotation.api.ApiPermissionIgnore;
+import com.mdframe.forge.starter.core.annotation.api.OpenRestCapability;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -50,7 +51,9 @@ public class SysDictDataController {
      */
     @GetMapping("/type/{dictType}")
     @ApiPermissionIgnore
-    public RespInfo<List<SysDictData>> getByType(@PathVariable String dictType) {
+    @OpenRestCapability(name = "查询字典选项", permission = "ai:capability:dictionary:read",
+            description = "读取当前租户指定字典的选项，供外部表单保持一致的枚举值")
+    public RespInfo<List<SysDictData>> getByType(@PathVariable("dictType") String dictType) {
         List<SysDictData> list = dictDataService.selectDictDataByType(dictType);
         return RespInfo.success(list);
     }

@@ -14,6 +14,18 @@ import com.mdframe.forge.plugin.capability.secureaction.publish.SecureActionPubl
 import com.mdframe.forge.plugin.capability.secureaction.publish.SecureActionStepValidator;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessActionExecutionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectActionService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
+import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
+import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
+import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
+import com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper;
+import com.mdframe.forge.plugin.capability.secureaction.system.LowcodeFormSystemService;
+import com.mdframe.forge.plugin.capability.secureaction.system.RestEndpointSystemService;
+import jakarta.validation.Validator;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,6 +39,16 @@ class SecureActionAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(SecureActionAutoConfiguration.class))
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(Validator.class, () -> mock(Validator.class))
+            .withBean(BusinessObjectService.class, () -> mock(BusinessObjectService.class))
+            .withBean(BusinessEventPublisher.class, () -> mock(BusinessEventPublisher.class))
+            .withBean(AiCrudConfigService.class, () -> mock(AiCrudConfigService.class))
+            .withBean(DynamicCrudService.class, () -> mock(DynamicCrudService.class))
+            .withBean(BusinessDocumentConfigMapper.class, () -> mock(BusinessDocumentConfigMapper.class))
+            .withBean(BusinessObjectMapper.class, () -> mock(BusinessObjectMapper.class))
+            .withBean(AiCrudConfigMapper.class, () -> mock(AiCrudConfigMapper.class))
+            .withBean(LowcodeFormReceiptMapper.class, () -> mock(LowcodeFormReceiptMapper.class))
+            .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
             .withBean(BusinessObjectActionService.class, () -> mock(BusinessObjectActionService.class))
             .withBean(BusinessActionExecutionService.class, () -> mock(BusinessActionExecutionService.class))
             .withBean(CapabilityCatalogService.class, () -> mock(CapabilityCatalogService.class))
@@ -38,6 +60,9 @@ class SecureActionAutoConfigurationTest {
     @Test
     void shouldKeepControlPlaneAvailableWhenRuntimeExposureIsDisabled() {
         contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(LowcodeFormSystemService.class);
+            assertThat(context).hasSingleBean(RestEndpointSystemService.class);
             assertThat(context).hasSingleBean(SecureActionStepValidator.class);
             assertThat(context).hasSingleBean(SecureActionPublishedModelPolicy.class);
             assertThat(context).hasSingleBean(BusinessActionCapabilityPublisher.class);

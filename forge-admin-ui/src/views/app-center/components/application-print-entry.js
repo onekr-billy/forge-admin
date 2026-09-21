@@ -5,6 +5,7 @@ const SETTINGS_SECTIONS = new Set([
   'permission',
   'globalization',
   'printing',
+  'integrations',
   'advanced',
 ])
 
