@@ -63,6 +63,45 @@ describe('ordered physical pagination', () => {
     doc.body = [{ id: 'secret', kind: 'TEXT', binding: { source: 'FIELD', path: 'main.salary' } }]
     expect(() => layout(doc)).toThrow(expect.objectContaining({ code: 'FIELD_NOT_ALLOWED' }))
   })
+  it('grows continuous paper to content height and tiles labels onto a sheet', () => {
+    const doc = paper()
+    doc.paper.kind = 'CONTINUOUS'
+    doc.body = [fixed('block', 40)]
+    const continuous = layout(doc)
+    expect(continuous.pages).toHaveLength(1)
+    expect(continuous.geometry.heightMm).toBeLessThan(100)
+    expect(continuous.geometry.heightMm).toBeGreaterThan(40)
+    const label = paper()
+    label.paper = { widthMm: 50, heightMm: 30, orientation: 'LANDSCAPE', marginMm: { top: 0, right: 0, bottom: 0, left: 0 }, tiling: { enabled: true, columns: 2, rows: 2, gapXMm: 0, gapYMm: 0, sheetWidthMm: 100, sheetHeightMm: 60, repeatToFill: true } }
+    label.header.heightMm = 0
+    label.footer.heightMm = 0
+    label.body = [fixed('label', 20)]
+    const tiled = layoutPrintDocument(label, { system: { generatedAt: '2026-09-18 12:00:00' } }, { measure, catalog: [] })
+    expect(tiled.geometry.widthMm).toBe(100)
+    expect(tiled.pages[0].fragments).toHaveLength(4)
+    expect(tiled.pages[0].fragments[0].kind).toBe('TILE')
+  })
+  it('clips overflowing fixed text when textFit is CLIP', () => {
+    const doc = paper()
+    doc.body = [{
+      id: 'head',
+      kind: 'FIXED',
+      heightMm: 20,
+      elements: [{
+        id: 'title',
+        type: 'TEXT',
+        xMm: 0,
+        yMm: 0,
+        widthMm: 80,
+        heightMm: 5,
+        binding: { source: 'CONSTANT', value: '一行\n两行\n三行' },
+        style: { textFit: 'CLIP' },
+      }],
+    }]
+    const result = layout(doc)
+    expect(result.pages[0].fragments[0].elements[0].overflow).toBe('hidden')
+    expect(result.pages[0].fragments[0].elements[0].heightMm).toBe(5)
+  })
   it('keeps a consecutive heading chain with its first data block', () => {
     const doc = paper()
     doc.body = [fixed('before', 50), { ...fixed('heading1', 10), keepWithNext: true }, { ...fixed('heading2', 10), keepWithNext: true }, fixed('content', 20)]

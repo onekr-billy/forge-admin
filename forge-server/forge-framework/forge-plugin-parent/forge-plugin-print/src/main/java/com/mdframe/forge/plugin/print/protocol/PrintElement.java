@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.print.protocol;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,7 @@ public record PrintElement(
         List<PrintSection.HeaderRow> headerRows,
         Boolean repeatHeader,
         PrintSection.Footer footer,
+        PrintSection.Footer subtotal,
         String emptyText,
         Style headerStyle,
         Style oddRowStyle,
@@ -38,13 +40,14 @@ public record PrintElement(
         Map<String, Style> cellStyles
 ) {
 
-    public record Binding(String source, String path, JsonNode value) {
+    public record Binding(String source, String path, JsonNode value, String expression) {
     }
 
     public record Format(String type, Integer scale, String emptyText, String trueText, String falseText, String datePattern) {
     }
 
-    public record Style(String fontFamily, Double fontSizePt, Integer fontWeight, String fontStyle, String textAlign, String verticalAlign, Double lineHeight, String color, String backgroundColor, String borderColor, Double borderWidthMm, String borderStyle, Double borderRadiusMm, Double paddingMm, String textDecoration, String objectFit) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Style(String fontFamily, Double fontSizePt, Integer fontWeight, String fontStyle, String textAlign, String verticalAlign, Double lineHeight, String color, String backgroundColor, String borderColor, Double borderWidthMm, String borderStyle, Double borderRadiusMm, Double paddingMm, String textDecoration, String objectFit, String textFit, Double shrinkMinFontSizePt, Double opacity) {
     }
 
     public record StaticTable(List<StaticColumn> columns, List<StaticRow> rows, List<StaticCell> cells) {

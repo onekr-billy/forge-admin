@@ -19,3 +19,42 @@ export function printRecordFromQuery(query) {
     return null
   return { source, recordId, scene: query.scene, taskId: text(query.taskId), processInstanceId: text(query.processInstanceId), processRunId: positive(query.processRunId) }
 }
+
+const FLOW_FALLBACK = {
+  FLOW_TODO: '/flow/todo',
+  FLOW_DONE: '/flow/done',
+  FLOW_STARTED: '/flow/started',
+}
+
+/** Preview is usually opened in a new tab, so history.back() has nowhere to go. */
+export function printPreviewFallbackLocation(record) {
+  if (FLOW_FALLBACK[record?.scene])
+    return { path: FLOW_FALLBACK[record.scene] }
+  const applicationId = record?.source?.applicationId
+  if (applicationId)
+    return { path: `/app-center/app/${applicationId}` }
+  return { path: '/app-center' }
+}
+
+export function leavePrintPreview({
+  router,
+  record,
+  historyState = typeof window === 'undefined' ? null : window.history.state,
+  closeWindow = () => {
+    if (typeof window === 'undefined')
+      return false
+    window.close()
+    return window.closed
+  },
+} = {}) {
+  if (!router)
+    return 'noop'
+  if (historyState?.back != null) {
+    router.back()
+    return 'back'
+  }
+  if (closeWindow())
+    return 'close'
+  router.replace(printPreviewFallbackLocation(record))
+  return 'fallback'
+}

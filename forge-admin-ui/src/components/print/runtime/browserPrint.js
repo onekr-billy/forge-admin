@@ -1,15 +1,23 @@
 import { createApp, h, nextTick } from 'vue'
 import { abortable } from '../engine/resources'
 import { PRINT_LIMITS, PrintError } from '../protocol/types'
+import { mmToPx } from '../protocol/units'
 import PrintPage from './PrintPage.vue'
+
+function frameStyle(result) {
+  const widthPx = Math.max(320, Math.ceil(mmToPx(result.geometry.widthMm)) + 24)
+  const heightPx = Math.max(320, Math.ceil(mmToPx(result.geometry.heightMm) * Math.max(result.pages.length, 1)) + 24)
+  return `position:fixed;left:-100000px;top:0;width:${widthPx}px;height:${heightPx}px;border:0;`
+}
 
 /** A disposable document owns all print CSS; the application page is never restyled. */
 export async function createBrowserPrintSession(result, options = {}) {
   const owner = options.document || document
+  const pdf = options.mode === 'pdf'
   const frame = owner.createElement('iframe')
   frame.dataset.forgePrint = ''
-  frame.title = '打印文档'
-  frame.style.cssText = 'position:fixed;left:-100000px;top:0;width:1000px;height:1000px;border:0;'
+  frame.title = pdf ? 'PDF 文档' : '打印文档'
+  frame.style.cssText = frameStyle(result)
   const controller = new AbortController()
   const cancel = () => controller.abort(new PrintError('PRINT_CANCELLED', '打印会话已取消'))
   options.signal?.addEventListener('abort', cancel, { once: true })
@@ -53,7 +61,13 @@ img { max-width: 100%; }
     paperDocument.head.append(style)
     const host = paperDocument.createElement('div')
     paperDocument.body.append(host)
-    app = createApp({ render: () => result.pages.map(page => h(PrintPage, { key: page.number, page, geometry: result.geometry })) })
+    app = createApp({ render: () => result.pages.map(page => h(PrintPage, {
+      key: page.number,
+      page,
+      geometry: result.geometry,
+      watermark: result.watermark,
+      overlay: result.overlay?.print ? result.overlay : null,
+    })) })
     app.mount(host)
     await nextTick()
     if (paperDocument.fonts) {
@@ -62,9 +76,11 @@ img { max-width: 100%; }
     await abortable(Promise.all([...paperDocument.images].map(image => image.decode().catch(() => undefined))), controller.signal)
     clearTimeout(timer)
     controller.signal.addEventListener('abort', dispose, { once: true })
-    printWindow.addEventListener('afterprint', dispose, { once: true })
+    if (!pdf)
+      printWindow.addEventListener('afterprint', dispose, { once: true })
     return {
       dispose,
+      document: paperDocument,
       print() {
         if (disposed) {
           throw new PrintError('PRINT_SESSION_CLOSED', '打印会话已关闭')

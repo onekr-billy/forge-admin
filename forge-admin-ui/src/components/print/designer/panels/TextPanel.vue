@@ -1,9 +1,10 @@
 <script setup>
-import { NColorPicker, NFormItem, NInputNumber, NSelect } from 'naive-ui'
+import { NColorPicker, NFormItem, NInputNumber, NSelect, NSlider } from 'naive-ui'
 import { computed } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
-import { designerTablePreview } from '../designerSample'
-import { DEFAULT_PRINT_FONT, PRINT_FONT_OPTIONS } from '../printFonts'
+import { toPrintColor } from '../../protocol/printColor'
+import { PRINT_FONT_OPTIONS, printFontSelectValue, printFontSizeOptions } from '../printFonts'
+import { PRINT_MM_PRESETS, printMmOptions } from '../printMeasures'
 
 const props = defineProps({
   /** all | style | border */
@@ -12,8 +13,18 @@ const props = defineProps({
 
 const store = usePrintDesignerStore()
 const STYLE_TYPES = new Set(['TEXT', 'PAGE_NUMBER', 'BARCODE', 'QRCODE', 'IMAGE', 'HTML', 'STATIC_TABLE', 'DATA_TABLE', 'RECTANGLE', 'ELLIPSE', 'LINE'])
-const isTableSurface = computed(() => store.activeElement?.type === 'DATA_TABLE'
+const isDataTable = computed(() => store.activeElement?.type === 'DATA_TABLE'
   || (store.activeSurface?.kind === 'TABLE' && !store.activeElement))
+const isStaticTable = computed(() => store.activeElement?.type === 'STATIC_TABLE')
+const isAnyTable = computed(() => isDataTable.value || isStaticTable.value)
+const isLine = computed(() => store.activeElement?.type === 'LINE')
+const tableTarget = computed(() => {
+  if (store.activeElement?.type === 'DATA_TABLE' || store.activeElement?.type === 'STATIC_TABLE')
+    return store.activeElement
+  if (store.activeSurface?.kind === 'TABLE')
+    return store.activeSurface
+  return null
+})
 const target = computed(() => {
   if (store.activeElement)
     return STYLE_TYPES.has(store.activeElement.type) ? store.activeElement : null
@@ -21,52 +32,28 @@ const target = computed(() => {
     return store.activeSurface
   return null
 })
-const dataTableSelectionBands = computed(() => {
-  if (store.activeElement?.type !== 'DATA_TABLE' || !store.selectedTableColumns.length)
-    return { header: false, body: true }
-  const range = store.tableSelectionRange
-  if (!range)
-    return { header: false, body: true }
-  const preview = designerTablePreview(store.activeElement, store.catalog, {})
-  if (!preview.length)
-    return { header: false, body: true }
-  const top = Math.max(0, range.top)
-  const bottom = Math.min(preview.length - 1, range.bottom)
-  const kinds = new Set()
-  for (let row = top; row <= bottom; row += 1)
-    kinds.add(preview[row]?.kind)
-  const header = kinds.has('header')
-  const body = kinds.has('data') || kinds.has('footer')
-  if (!header && !body)
-    return { header: false, body: true }
-  return { header, body }
+const headerBag = computed(() => tableTarget.value?.headerStyle || {})
+const bodyBag = computed(() => tableTarget.value?.style || {})
+const oddBag = computed(() => tableTarget.value?.oddRowStyle || {})
+const evenBag = computed(() => tableTarget.value?.evenRowStyle || {})
+const styleBag = computed(() => target.value?.style || {})
+const borderBag = computed(() => {
+  if (isStaticTable.value && store.tableCellIds.length)
+    return store.activeTableCell?.style || {}
+  if (isAnyTable.value)
+    return bodyBag.value
+  return styleBag.value
 })
-/** Values shown in the form — selected detail cells / columns, else table「样式」tab edits headerStyle. */
-const styleBag = computed(() => {
-  if (store.activeElement?.type === 'DATA_TABLE' && store.selectedTableColumns.length) {
-    const col = store.selectedTableColumns[0]
-    const hit = store.tableSelectionCells?.[0]
-    if (hit) {
-      const key = `${hit.kind}:${hit.kindIndex}:${hit.columnId}`
-      const override = store.activeElement.cellStyles?.[key]
-      if (hit.kind === 'header')
-        return override || col.headerStyle || store.activeElement.headerStyle || {}
-      return override || col.style || {}
-    }
-    const bands = dataTableSelectionBands.value
-    if (bands.header && !bands.body)
-      return col.headerStyle || store.activeElement.headerStyle || {}
-    return col.style || {}
-  }
-  if (isTableSurface.value && props.mode === 'style') {
-    if (store.activeElement?.type === 'DATA_TABLE')
-      return store.activeElement.headerStyle || {}
-    return store.activeSurface?.headerStyle || {}
-  }
-  return target.value?.style || {}
+const lineColor = computed(() => styleBag.value.borderColor || styleBag.value.backgroundColor || '#000000')
+const borderWidthValue = computed(() => {
+  if (Number.isFinite(borderBag.value.borderWidthMm))
+    return borderBag.value.borderWidthMm
+  if (isLine.value && store.activeElement)
+    return store.activeElement.heightMm <= store.activeElement.widthMm ? store.activeElement.heightMm : store.activeElement.widthMm
+  return 0.15
 })
 const showTypography = computed(() => {
-  if (isTableSurface.value)
+  if (isAnyTable.value)
     return true
   return !store.activeElement || ['TEXT', 'PAGE_NUMBER', 'BARCODE', 'QRCODE', 'HTML', 'STATIC_TABLE', 'DATA_TABLE'].includes(store.activeElement.type) || store.activeSurface?.kind === 'TEXT'
 })
@@ -76,71 +63,135 @@ const alignments = [{ label: '左对齐', value: 'left' }, { label: '居中', va
 const verticalAlignments = [{ label: '顶部', value: 'top' }, { label: '垂直居中', value: 'middle' }, { label: '底部', value: 'bottom' }]
 const decorations = [{ label: '无', value: 'none' }, { label: '下划线', value: 'underline' }, { label: '删除线', value: 'line-through' }, { label: '上划线', value: 'overline' }]
 const fontOptions = PRINT_FONT_OPTIONS.map(item => ({ label: item.label, value: item.value }))
-const formats = [{ label: '文本', value: 'TEXT' }, { label: '金额（分转元）', value: 'MONEY' }, { label: '数字', value: 'NUMBER' }, { label: '日期', value: 'DATE' }, { label: '布尔值', value: 'BOOLEAN' }]
-function normalizeColor(value) {
-  if (typeof value !== 'string')
-    return value
-  const hex = value.trim()
-  if (/^#[\da-f]{8}$/i.test(hex))
-    return `#${hex.slice(1, 7)}`
-  if (/^#[\da-f]{4}$/i.test(hex))
-    return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
-  return hex
+const formats = [{ label: '文本', value: 'TEXT' }, { label: '金额（分转元）', value: 'MONEY' }, { label: '金额大写', value: 'MONEY_UPPER' }, { label: '数字', value: 'NUMBER' }, { label: '日期', value: 'DATE' }, { label: '布尔值', value: 'BOOLEAN' }]
+const textFits = [{ label: '超出时报错', value: '' }, { label: '截断', value: 'CLIP' }, { label: '自动缩小字号', value: 'SHRINK' }, { label: '自适应行高', value: 'AUTO_HEIGHT' }]
+function opacityPercent(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.round(Math.min(1, Math.max(0, n)) * 100) : 100
+}
+function patchOpacity(pct) {
+  if (pct === null)
+    return
+  patch('opacity', Number((Math.min(100, Math.max(0, pct)) / 100).toFixed(2)))
 }
 function patch(key, value, group = 'style') {
   if (value === null || !target.value)
     return
   let next = value
   if (['color', 'backgroundColor', 'borderColor'].includes(key))
-    next = normalizeColor(value)
-  // Box-selected detail columns: style only those columns, not whole table / headerStyle
-  if (store.activeElement?.type === 'DATA_TABLE' && store.selectedTableColumns.length) {
-    if (group === 'style') {
-      store.patchSelectedDataTableColumnStyles({ [key]: next })
-      return
-    }
-  }
-  if (group === 'style' && isTableSurface.value && props.mode === 'style') {
-    if (store.activeElement?.type === 'DATA_TABLE') {
-      store.patchSelected({ headerStyle: { ...store.activeElement.headerStyle, [key]: next } })
-      return
-    }
-    store.patchSurface({ headerStyle: { ...store.activeSurface.headerStyle, [key]: next } })
-    return
-  }
+    next = toPrintColor(value)
   const change = { [group]: { ...target.value[group], [key]: next } }
   if (store.activeElement)
     store.patchSelected(change)
   else store.patchSurface(change)
 }
+function patchTableBand(band, key, value) {
+  if (value === null || !tableTarget.value)
+    return
+  let next = value
+  if (['color', 'backgroundColor', 'borderColor'].includes(key))
+    next = toPrintColor(value)
+  const field = band === 'header'
+    ? 'headerStyle'
+    : band === 'odd'
+      ? 'oddRowStyle'
+      : band === 'even'
+        ? 'evenRowStyle'
+        : 'style'
+  const change = { [field]: { ...tableTarget.value[field], [key]: next } }
+  if (isStaticTable.value && store.activeElement && (band === 'header' || band === 'body'))
+    store.patchStaticTableBand(band, { [key]: next })
+  else if (store.activeElement)
+    store.patchSelected(change)
+  else
+    store.patchSurface(change)
+}
+function patchBorder(key, value) {
+  if (isStaticTable.value && store.tableCellIds.length) {
+    if (value === null)
+      return
+    let next = value
+    if (['color', 'backgroundColor', 'borderColor'].includes(key))
+      next = toPrintColor(value)
+    store.patchSelectedTableCellStyle({ [key]: next })
+    return
+  }
+  patch(key, value)
+}
 </script>
 
 <template>
-  <section v-if="target" class="designer-group">
+  <section v-if="target || tableTarget" class="designer-group">
     <h3 v-if="mode === 'all'">
       {{ showTypography ? '外观与格式' : '边框与背景' }}
     </h3>
     <h3 v-else-if="mode === 'style'">
-      {{ store.selectedTableColumns.length && store.activeElement?.type === 'DATA_TABLE'
-        ? `已选 ${store.selectedTableColumns.length} 列样式`
-        : (isTableSurface ? '表头样式' : '样式') }}
+      {{ isAnyTable ? '表头 / 表体' : '样式' }}
     </h3>
     <h3 v-else>
       边框
     </h3>
-    <p v-if="store.activeElement?.type === 'DATA_TABLE' && store.selectedTableColumns.length && mode === 'style'" class="muted tip">
-      {{ store.tableSelectionCells?.length
-        ? `当前修改只作用于框选的 ${store.tableSelectionCells.length} 个单元格`
-        : `当前修改作用于选中的 ${store.selectedTableColumns.length} 列数据样式` }}
-    </p>
-    <p v-else-if="isTableSurface && mode === 'style'" class="muted tip">
-      表头背景、文字色、字号在此统一设置；框选列后再改对齐/颜色只作用于选中列。
-    </p>
 
-    <template v-if="showStyle && showTypography">
+    <template v-if="showStyle && isAnyTable">
+      <p class="muted tip">
+        {{ isStaticTable ? '表头改第一行默认色，表体改其余行。点选格子后，中间栏或「基础」里的对齐只覆盖当前格。' : '表头和表体分开设置。某一列的覆盖色仍在「基础 → 列」里改。' }}
+      </p>
+      <h4>表头</h4>
+      <div class="panel-grid">
+        <NFormItem label="表头文字色" size="small">
+          <NColorPicker :value="headerBag.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patchTableBand('header', 'color', $event)" />
+        </NFormItem>
+        <NFormItem label="表头背景" size="small">
+          <NColorPicker :value="headerBag.backgroundColor || (isDataTable ? '#f1f5f9' : '#ffffff')" :show-alpha="false" :modes="['hex']" @update:value="patchTableBand('header', 'backgroundColor', $event)" />
+        </NFormItem>
+        <NFormItem label="表头字号" size="small">
+          <NSelect :value="headerBag.fontSizePt || 10" :options="printFontSizeOptions(headerBag.fontSizePt || 10)" :consistent-menu-width="false" @update:value="patchTableBand('header', 'fontSizePt', $event)" />
+        </NFormItem>
+        <NFormItem label="表头对齐" size="small">
+          <NSelect :value="headerBag.textAlign || (isStaticTable ? 'left' : 'left')" :options="alignments" @update:value="patchTableBand('header', 'textAlign', $event)" />
+        </NFormItem>
+        <NFormItem label="表头字重" size="small">
+          <NSelect :value="headerBag.fontWeight || (isDataTable ? 700 : 400)" :options="[{ label: '常规', value: 400 }, { label: '加粗', value: 700 }]" @update:value="patchTableBand('header', 'fontWeight', $event)" />
+        </NFormItem>
+      </div>
+      <h4>表体</h4>
+      <div class="panel-grid">
+        <NFormItem label="表体文字色" size="small">
+          <NColorPicker :value="bodyBag.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patchTableBand('body', 'color', $event)" />
+        </NFormItem>
+        <NFormItem label="表体背景" size="small">
+          <NColorPicker :value="bodyBag.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="patchTableBand('body', 'backgroundColor', $event)" />
+        </NFormItem>
+        <NFormItem label="表体字号" size="small">
+          <NSelect :value="bodyBag.fontSizePt || 10" :options="printFontSizeOptions(bodyBag.fontSizePt || 10)" :consistent-menu-width="false" @update:value="patchTableBand('body', 'fontSizePt', $event)" />
+        </NFormItem>
+        <NFormItem label="表体对齐" size="small">
+          <NSelect :value="bodyBag.textAlign || 'left'" :options="alignments" @update:value="patchTableBand('body', 'textAlign', $event)" />
+        </NFormItem>
+      </div>
+      <template v-if="isDataTable">
+        <h4>斑马纹</h4>
+        <div class="panel-grid">
+          <NFormItem label="奇数行背景" size="small">
+            <NColorPicker :value="oddBag.backgroundColor || bodyBag.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="patchTableBand('odd', 'backgroundColor', $event)" />
+          </NFormItem>
+          <NFormItem label="偶数行背景" size="small">
+            <NColorPicker :value="evenBag.backgroundColor || '#f8fafc'" :show-alpha="false" :modes="['hex']" @update:value="patchTableBand('even', 'backgroundColor', $event)" />
+          </NFormItem>
+        </div>
+      </template>
+      <NFormItem label="透明度" size="small">
+        <div class="opacity-row">
+          <NSlider :value="opacityPercent(styleBag.opacity)" :min="0" :max="100" :step="1" @update:value="patchOpacity" />
+          <span class="opacity-pct">{{ opacityPercent(styleBag.opacity) }}%</span>
+        </div>
+      </NFormItem>
+    </template>
+
+    <template v-else-if="showStyle && showTypography">
       <NFormItem label="字体" size="small">
         <NSelect
-          :value="styleBag.fontFamily || DEFAULT_PRINT_FONT"
+          :value="printFontSelectValue(styleBag.fontFamily)"
           :options="fontOptions"
           filterable
           :consistent-menu-width="false"
@@ -148,10 +199,10 @@ function patch(key, value, group = 'style') {
         />
       </NFormItem>
       <div class="panel-grid">
-        <NFormItem label="字号 pt" size="small">
-          <NInputNumber :value="styleBag.fontSizePt || 10" :min="6" :max="144" :show-button="false" @update:value="patch('fontSizePt', $event)" />
+        <NFormItem label="字号" size="small">
+          <NSelect :value="styleBag.fontSizePt || 10" :options="printFontSizeOptions(styleBag.fontSizePt || 10)" :consistent-menu-width="false" @update:value="patch('fontSizePt', $event)" />
         </NFormItem>
-        <NFormItem v-if="!isTableSurface" label="行高倍数" size="small">
+        <NFormItem label="行高倍数" size="small">
           <NInputNumber :value="styleBag.lineHeight || 1.4" :min="1" :max="4" :step="0.1" :show-button="false" @update:value="patch('lineHeight', $event)" />
         </NFormItem>
       </div>
@@ -159,18 +210,18 @@ function patch(key, value, group = 'style') {
         <NFormItem label="水平对齐" size="small">
           <NSelect :value="styleBag.textAlign || 'left'" :options="alignments" @update:value="patch('textAlign', $event)" />
         </NFormItem>
-        <NFormItem v-if="!isTableSurface" label="垂直对齐" size="small">
+        <NFormItem label="垂直对齐" size="small">
           <NSelect :value="styleBag.verticalAlign || 'top'" :options="verticalAlignments" @update:value="patch('verticalAlign', $event)" />
         </NFormItem>
       </div>
       <NFormItem label="字重" size="small">
-        <NSelect :value="styleBag.fontWeight || (isTableSurface ? 700 : 400)" :options="[{ label: '常规', value: 400 }, { label: '加粗', value: 700 }]" @update:value="patch('fontWeight', $event)" />
+        <NSelect :value="styleBag.fontWeight || 400" :options="[{ label: '常规', value: 400 }, { label: '加粗', value: 700 }]" @update:value="patch('fontWeight', $event)" />
       </NFormItem>
       <div class="panel-grid">
         <NFormItem label="字形" size="small">
           <NSelect :value="styleBag.fontStyle || 'normal'" :options="[{ label: '常规', value: 'normal' }, { label: '斜体', value: 'italic' }]" @update:value="patch('fontStyle', $event)" />
         </NFormItem>
-        <NFormItem v-if="!isTableSurface" label="装饰" size="small">
+        <NFormItem label="装饰" size="small">
           <NSelect :value="styleBag.textDecoration || 'none'" :options="decorations" @update:value="patch('textDecoration', $event)" />
         </NFormItem>
         <NFormItem label="文字颜色" size="small">
@@ -183,35 +234,50 @@ function patch(key, value, group = 'style') {
       <NFormItem v-if="target.binding && target.type !== 'HTML'" label="数据格式" size="small">
         <NSelect :value="target.format?.type || 'TEXT'" :options="formats" @update:value="patch('type', $event, 'format')" />
       </NFormItem>
+      <NFormItem v-if="target.type === 'TEXT' || store.activeSurface?.kind === 'TEXT'" label="文字溢出" size="small">
+        <NSelect :value="styleBag.textFit || ''" :options="textFits" @update:value="patch('textFit', $event || undefined)" />
+      </NFormItem>
+      <NFormItem v-if="styleBag.textFit === 'SHRINK'" label="最小字号" size="small">
+        <NSelect :value="styleBag.shrinkMinFontSizePt || 6" :options="printFontSizeOptions(styleBag.shrinkMinFontSizePt || 6)" :consistent-menu-width="false" @update:value="patch('shrinkMinFontSizePt', $event)" />
+      </NFormItem>
+      <NFormItem label="透明度" size="small">
+        <div class="opacity-row">
+          <NSlider :value="opacityPercent(styleBag.opacity)" :min="0" :max="100" :step="1" @update:value="patchOpacity" />
+          <span class="opacity-pct">{{ opacityPercent(styleBag.opacity) }}%</span>
+        </div>
+      </NFormItem>
       <NFormItem v-if="target.format?.type === 'NUMBER'" label="小数位" size="small">
         <NInputNumber :value="target.format?.scale ?? 2" :min="0" :max="6" @update:value="patch('scale', $event, 'format')" />
       </NFormItem>
     </template>
 
-    <div v-if="showStyle && !showTypography" class="panel-grid">
-      <NFormItem label="背景颜色" size="small">
-        <NColorPicker :value="styleBag.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="patch('backgroundColor', $event)" />
+    <div v-else-if="showStyle && !showTypography" class="panel-grid">
+      <NFormItem :label="isLine ? '线条颜色' : '背景颜色'" size="small">
+        <NColorPicker :value="isLine ? lineColor : (styleBag.backgroundColor || '#ffffff')" :show-alpha="false" :modes="['hex']" @update:value="patch(isLine ? 'borderColor' : 'backgroundColor', $event)" />
+      </NFormItem>
+      <NFormItem label="透明度" size="small">
+        <div class="opacity-row">
+          <NSlider :value="opacityPercent(styleBag.opacity)" :min="0" :max="100" :step="1" @update:value="patchOpacity" />
+          <span class="opacity-pct">{{ opacityPercent(styleBag.opacity) }}%</span>
+        </div>
       </NFormItem>
     </div>
 
     <div v-if="showBorder" class="panel-grid">
-      <NFormItem v-if="!showStyle" label="背景颜色" size="small">
-        <NColorPicker :value="target.style?.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="patch('backgroundColor', $event)" />
+      <NFormItem :label="isLine ? '线条颜色' : '边框颜色'" size="small">
+        <NColorPicker :value="(isLine ? lineColor : borderBag.borderColor) || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patchBorder('borderColor', $event)" />
       </NFormItem>
-      <NFormItem label="边框颜色" size="small">
-        <NColorPicker :value="target.style?.borderColor || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patch('borderColor', $event)" />
+      <NFormItem :label="isLine ? '粗细 mm' : '边框 mm'" size="small">
+        <NSelect :value="borderWidthValue" :options="printMmOptions(borderWidthValue, PRINT_MM_PRESETS.border)" :filterable="false" :consistent-menu-width="false" @update:value="patchBorder('borderWidthMm', $event)" />
       </NFormItem>
-      <NFormItem label="边框 mm" size="small">
-        <NInputNumber :value="target.style?.borderWidthMm ?? 0" :min="0" :max="3" :step="0.1" :show-button="false" @update:value="patch('borderWidthMm', $event)" />
+      <NFormItem :label="isLine ? '线条样式' : '边框样式'" size="small">
+        <NSelect :value="borderBag.borderStyle || 'solid'" :options="[{ label: '实线', value: 'solid' }, { label: '虚线', value: 'dashed' }, { label: '点线', value: 'dotted' }]" @update:value="patchBorder('borderStyle', $event)" />
       </NFormItem>
-      <NFormItem label="边框样式" size="small">
-        <NSelect :value="target.style?.borderStyle || 'solid'" :options="[{ label: '实线', value: 'solid' }, { label: '虚线', value: 'dashed' }, { label: '点线', value: 'dotted' }]" @update:value="patch('borderStyle', $event)" />
+      <NFormItem v-if="!isAnyTable && !isLine" label="圆角 mm" size="small">
+        <NSelect :value="styleBag.borderRadiusMm ?? 0" :options="printMmOptions(styleBag.borderRadiusMm ?? 0, PRINT_MM_PRESETS.radius)" :filterable="false" :consistent-menu-width="false" @update:value="patch('borderRadiusMm', $event)" />
       </NFormItem>
-      <NFormItem label="圆角 mm" size="small">
-        <NInputNumber :value="target.style?.borderRadiusMm ?? 0" :min="0" :max="100" :step="0.5" :show-button="false" @update:value="patch('borderRadiusMm', $event)" />
-      </NFormItem>
-      <NFormItem label="内边距 mm" size="small">
-        <NInputNumber :value="target.style?.paddingMm ?? 0" :min="0" :max="20" :step="0.5" :show-button="false" @update:value="patch('paddingMm', $event)" />
+      <NFormItem v-if="!isAnyTable && !isLine" label="内边距 mm" size="small">
+        <NSelect :value="styleBag.paddingMm ?? 0" :options="printMmOptions(styleBag.paddingMm ?? 0, PRINT_MM_PRESETS.padding)" :filterable="false" :consistent-menu-width="false" @update:value="patch('paddingMm', $event)" />
       </NFormItem>
     </div>
   </section>
@@ -226,7 +292,28 @@ function patch(key, value, group = 'style') {
   margin: 8px 4px;
   font-size: 11px;
 }
+h4 {
+  margin: 10px 0 6px;
+  color: var(--text-secondary, #475569);
+  font-size: 11px;
+  font-weight: 600;
+}
 :deep(.n-color-picker__value) {
   display: none !important;
+}
+.opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.opacity-row :deep(.n-slider) {
+  flex: 1 1 auto;
+}
+.opacity-pct {
+  flex: 0 0 40px;
+  color: var(--text-secondary, #64748b);
+  font-size: 12px;
+  text-align: right;
 }
 </style>

@@ -17,13 +17,17 @@ export const PRINT_LIMITS = Object.freeze({
 })
 export const ELEMENT_TYPES = Object.freeze(['TEXT', 'IMAGE', 'HTML', 'LINE', 'RECTANGLE', 'ELLIPSE', 'BARCODE', 'QRCODE', 'PAGE_NUMBER', 'STATIC_TABLE', 'DATA_TABLE'])
 export const SECTION_KINDS = Object.freeze(['FIXED', 'TEXT', 'TABLE', 'PAGE_BREAK'])
-export const FORMAT_TYPES = Object.freeze(['TEXT', 'MONEY', 'NUMBER', 'DATE', 'BOOLEAN'])
+export const FORMAT_TYPES = Object.freeze(['TEXT', 'MONEY', 'MONEY_UPPER', 'NUMBER', 'DATE', 'BOOLEAN'])
+export const BINDING_SOURCES = Object.freeze(['CONSTANT', 'FIELD', 'SYSTEM', 'EXPRESSION'])
+export const TEXT_FIT_MODES = Object.freeze(['CLIP', 'SHRINK', 'AUTO_HEIGHT'])
+export const PAPER_KINDS = Object.freeze(['SHEET', 'CONTINUOUS'])
 
 /**
  * @typedef {object} PrintBinding
- * @property {'FIELD'|'CONSTANT'|'SYSTEM'} source Binding category.
+ * @property {'FIELD'|'CONSTANT'|'SYSTEM'|'EXPRESSION'} source Binding category.
  * @property {string} [path] Own-property path in an authorized print context.
  * @property {string|number|boolean|null} [value] Literal value, never executable code.
+ * @property {string} [expression] Whitelisted arithmetic/template expression.
  *
  * @typedef {object} PrintDocument
  * @property {'forge-print'} protocol Protocol identity.

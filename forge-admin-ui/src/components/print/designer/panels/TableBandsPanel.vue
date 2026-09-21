@@ -3,12 +3,13 @@ import { NButton, NColorPicker, NFormItem, NInput, NSelect } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import FileUpload from '@/components/file-upload/index.vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
+import { toPrintColor } from '../../protocol/printColor'
 import { findSurface } from '../commands'
 import { groupedFieldSelectOptions } from '../fieldGroups'
 import PrintFieldPicker from '../PrintFieldPicker.vue'
 
 const props = defineProps({
-  mode: { type: String, default: 'header' }, // header | footer
+  mode: { type: String, default: 'header' }, // header | footer | subtotal
 })
 
 const store = usePrintDesignerStore()
@@ -18,15 +19,16 @@ const masterFieldOptions = computed(() => groupedFieldSelectOptions(store.catalo
 const formats = [
   { label: '文本', value: 'TEXT' },
   { label: '金额（分转元）', value: 'MONEY' },
+  { label: '金额大写', value: 'MONEY_UPPER' },
   { label: '数字', value: 'NUMBER' },
 ]
 
-/** Selected band cell: { kind: 'header'|'footer', row: number (-1 footer), cell: number } */
+/** Selected band cell: { kind: 'header'|'footer'|'subtotal', row: number (-1 footer), cell: number } */
 const selection = ref(null)
 const textDraft = ref('')
 
 watch(
-  () => `${table.value?.id || ''}|${props.mode}|${table.value?.headerRows?.length || 0}|${table.value?.footer ? 1 : 0}`,
+  () => `${table.value?.id || ''}|${props.mode}|${table.value?.headerRows?.length || 0}|${table.value?.footer ? 1 : 0}|${table.value?.subtotal ? 1 : 0}`,
   () => {
     selection.value = null
     textDraft.value = ''
@@ -35,14 +37,16 @@ watch(
 
 const columns = computed(() => table.value?.columns || [])
 const headerRows = computed(() => table.value?.headerRows || [])
-const footer = computed(() => table.value?.footer || null)
+const bandKey = computed(() => props.mode === 'subtotal' ? 'subtotal' : 'footer')
+const bandRow = computed(() => table.value?.[bandKey.value] || null)
+const bandTitle = computed(() => props.mode === 'subtotal' ? '本页小计' : '合计')
 
 const selectedCell = computed(() => {
   const sel = selection.value
   if (!sel || !table.value)
     return null
-  if (sel.kind === 'footer')
-    return footer.value?.cells?.[sel.cell] || null
+  if (sel.kind === 'footer' || sel.kind === 'subtotal')
+    return table.value[sel.kind]?.cells?.[sel.cell] || null
   return headerRows.value[sel.row]?.cells?.[sel.cell] || null
 })
 
@@ -73,15 +77,19 @@ function change(action) {
   return store.execute(doc => action(findSurface(doc, store.surfaceId)))
 }
 
-function rowOf(item, index) {
-  return index === -1 ? item.footer : item.headerRows[index]
+function rowOf(item, sel = selection.value) {
+  if (!sel)
+    return null
+  if (sel.kind === 'header')
+    return item.headerRows[sel.row]
+  return item[sel.kind]
 }
 
 function selectHeader(row, cell) {
   selection.value = { kind: 'header', row, cell }
 }
 function selectFooter(cell) {
-  selection.value = { kind: 'footer', row: -1, cell }
+  selection.value = { kind: bandKey.value, row: -1, cell }
 }
 
 function addHeader() {
@@ -104,18 +112,24 @@ function removeHeader(index) {
 
 function addFooter() {
   change((item) => {
-    item.footer = {
+    const kind = bandKey.value
+    const label = kind === 'subtotal' ? '本页小计' : '合计'
+    item[kind] = {
       cells: item.columns.map((c, i) => ({
         span: 1,
-        binding: { source: 'CONSTANT', value: i === 0 ? '合计' : '' },
+        binding: i === 0
+          ? { source: 'CONSTANT', value: label }
+          : { source: 'EXPRESSION', expression: `SUM(${c.field})` },
       })),
     }
   })
-  selection.value = { kind: 'footer', row: -1, cell: 0 }
+  selection.value = { kind: bandKey.value, row: -1, cell: 0 }
 }
 
 function removeFooter() {
-  change((item) => { delete item.footer })
+  change((item) => {
+    delete item[bandKey.value]
+  })
   selection.value = null
 }
 
@@ -123,21 +137,18 @@ function patchSelected(patch) {
   const sel = selection.value
   if (!sel)
     return
-  change(item => Object.assign(rowOf(item, sel.row).cells[sel.cell], patch))
+  change(item => Object.assign(rowOf(item).cells[sel.cell], patch))
 }
 
 function patchSelectedStyle(key, value) {
   if (value === null || !selection.value)
     return
   let next = value
-  if (typeof next === 'string' && ['color', 'backgroundColor'].includes(key)) {
-    const hex = next.trim()
-    if (/^#[\da-f]{8}$/i.test(hex))
-      next = `#${hex.slice(1, 7)}`
-  }
+  if (typeof next === 'string' && ['color', 'backgroundColor'].includes(key))
+    next = toPrintColor(next)
   const sel = selection.value
   change((item) => {
-    const target = rowOf(item, sel.row).cells[sel.cell]
+    const target = rowOf(item).cells[sel.cell]
     target.style = { ...target.style, [key]: next }
   })
 }
@@ -147,7 +158,7 @@ function mergeSelected() {
   if (!sel)
     return
   change((item) => {
-    const cells = rowOf(item, sel.row).cells
+    const cells = rowOf(item).cells
     if (sel.cell >= cells.length - 1)
       return
     cells[sel.cell].span += cells[sel.cell + 1].span
@@ -160,23 +171,25 @@ function splitSelected() {
   if (!sel)
     return
   change((item) => {
-    const cells = rowOf(item, sel.row).cells
+    const cells = rowOf(item).cells
     const cell = cells[sel.cell]
     if (!cell || cell.span <= 1)
       return
     cell.span--
-    cells.splice(sel.cell + 1, 0, sel.row === -1
-      ? { span: 1, binding: { source: 'CONSTANT', value: '' } }
-      : { span: 1, text: '' })
+    cells.splice(sel.cell + 1, 0, sel.kind === 'header'
+      ? { span: 1, text: '' }
+      : { span: 1, binding: { source: 'CONSTANT', value: '' } })
   })
 }
 
 function cellLabel(cell, kind) {
   if (cell.contentType === 'IMAGE')
     return '（图片）'
-  if (kind === 'footer') {
+  if (kind === 'footer' || kind === 'subtotal') {
     if (cell.binding?.source === 'FIELD')
       return cell.binding.path?.split('.').at(-1) || '字段'
+    if (cell.binding?.source === 'EXPRESSION')
+      return cell.binding.expression || '表达式'
     return String(cell.binding?.value ?? '') || '（空）'
   }
   return cell.text || '（空）'
@@ -187,7 +200,7 @@ function setBandContentType(type) {
   if (!sel)
     return
   change((item) => {
-    const cell = rowOf(item, sel.row).cells[sel.cell]
+    const cell = rowOf(item).cells[sel.cell]
     if (type === 'IMAGE') {
       cell.contentType = 'IMAGE'
       cell.binding = { source: 'CONSTANT', value: '' }
@@ -215,7 +228,7 @@ function onBandImageUpload(value) {
   if (!sel)
     return
   change((item) => {
-    const cell = rowOf(item, sel.row).cells[sel.cell]
+    const cell = rowOf(item).cells[sel.cell]
     cell.contentType = 'IMAGE'
     cell.binding = { source: 'CONSTANT', value: fileId }
     delete cell.text
@@ -234,7 +247,7 @@ const canMerge = computed(() => {
   const sel = selection.value
   if (!sel || !selectedCell.value)
     return false
-  const cells = sel.kind === 'footer' ? footer.value?.cells : headerRows.value[sel.row]?.cells
+  const cells = sel.kind === 'header' ? headerRows.value[sel.row]?.cells : bandRow.value?.cells
   return !!cells && sel.cell < cells.length - 1
 })
 const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
@@ -245,7 +258,7 @@ const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
     <!-- ===== 复杂表头 ===== -->
     <template v-if="mode === 'header'">
       <p class="muted tip">
-        多级表头：上层用「合并右侧」跨多列形成树形分组，下层对应各列标题。点选单元格后再改文字/样式。
+        多级表头：上层用「合并右侧」跨多列形成树形分组。整表表头颜色在「样式」页设置；这里的色板只覆盖当前格。
       </p>
       <div class="band-toolbar">
         <NButton size="tiny" :disabled="headerRows.length >= 10" @click="addHeader">
@@ -306,42 +319,42 @@ const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
       </div>
     </template>
 
-    <!-- ===== 合计行 ===== -->
+    <!-- ===== 合计 / 小计 ===== -->
     <template v-else>
       <p class="muted tip">
-        合计行绑主表汇总字段或写固定文字；需要跨列时先点选单元格再「合并右侧」。模板不做自动求和。
+        {{ mode === 'subtotal' ? '本页小计按当前页明细聚合，常用 SUM(字段)。' : '合计按全部明细聚合；也可绑主表汇总字段或写固定文字。' }}
       </p>
       <div class="band-toolbar">
-        <NButton v-if="!footer" size="tiny" @click="addFooter">
-          添加合计行
+        <NButton v-if="!bandRow" size="tiny" @click="addFooter">
+          添加{{ bandTitle }}行
         </NButton>
         <NButton v-else size="tiny" quaternary type="error" @click="removeFooter">
-          删除合计行
+          删除{{ bandTitle }}行
         </NButton>
       </div>
-      <div v-if="footer" class="band-sketch" role="grid" aria-label="合计行结构">
+      <div v-if="bandRow" class="band-sketch" :aria-label="`${bandTitle}行结构`">
         <div class="band-sketch-row">
           <div class="row-meta">
-            <span>合计</span>
+            <span>{{ bandTitle }}</span>
           </div>
           <div class="band-sketch-cells">
             <button
-              v-for="(cell, cellIndex) in footer.cells"
+              v-for="(cell, cellIndex) in bandRow.cells"
               :key="cellIndex"
               type="button"
               class="band-cell-chip"
-              :class="{ active: selection?.kind === 'footer' && selection.cell === cellIndex }"
+              :class="{ active: selection?.kind === bandKey && selection.cell === cellIndex }"
               :style="{ flex: cell.span, background: cell.style?.backgroundColor || '#fff', color: cell.style?.color || '#0f172a' }"
               @click="selectFooter(cellIndex)"
             >
-              <span class="chip-text">{{ cellLabel(cell, 'footer') }}</span>
+              <span class="chip-text">{{ cellLabel(cell, bandKey) }}</span>
               <small>×{{ cell.span }}</small>
             </button>
           </div>
         </div>
       </div>
       <div v-else class="empty-hint">
-        尚未添加合计行。
+        尚未添加{{ bandTitle }}行。
       </div>
     </template>
 
@@ -349,7 +362,7 @@ const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
     <div v-if="selectedCell" class="cell-editor">
       <div class="cell-editor-head">
         <strong>
-          {{ selection.kind === 'footer' ? '合计单元格' : `表头 · 第 ${selection.row + 1} 层` }}
+          {{ selection.kind === 'header' ? `表头 · 第 ${selection.row + 1} 层` : `${bandTitle}单元格` }}
           · 跨 {{ selectedCell.span }} 列
         </strong>
         <div class="cell-actions">
@@ -402,12 +415,15 @@ const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
             :value="selectedCell.binding.source"
             :options="[
               { label: '固定文字', value: 'CONSTANT' },
+              { label: '表达式（求和/运算）', value: 'EXPRESSION' },
               { label: '主表/流程字段', value: 'FIELD', disabled: !masterFieldOptions.length },
             ]"
             @update:value="patchSelected({
               binding: $event === 'CONSTANT'
                 ? { source: 'CONSTANT', value: '' }
-                : { source: 'FIELD', path: masterFieldOptions[0]?.children?.[0]?.value || '' },
+                : $event === 'EXPRESSION'
+                  ? { source: 'EXPRESSION', expression: selectedCell.binding?.expression || 'SUM(qty)' }
+                  : { source: 'FIELD', path: masterFieldOptions[0]?.children?.[0]?.value || '' },
             })"
           />
         </NFormItem>
@@ -416,6 +432,16 @@ const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
             :value="String(selectedCell.binding.value ?? '')"
             size="small"
             @update:value="patchSelected({ binding: { source: 'CONSTANT', value: $event } })"
+          />
+        </NFormItem>
+        <NFormItem v-else-if="selectedCell.binding.source === 'EXPRESSION'" label="表达式" size="small">
+          <NInput
+            :value="String(selectedCell.binding.expression ?? '')"
+            type="textarea"
+            size="small"
+            :autosize="{ minRows: 2, maxRows: 4 }"
+            placeholder="SUM(amount) 或 qty * price"
+            @update:value="patchSelected({ binding: { source: 'EXPRESSION', expression: $event } })"
           />
         </NFormItem>
         <NFormItem v-else label="汇总字段" size="small">
@@ -457,7 +483,7 @@ const canSplit = computed(() => (selectedCell.value?.span || 1) > 1)
         </NFormItem>
       </div>
     </div>
-    <p v-else-if="(mode === 'header' && headerRows.length) || (mode === 'footer' && footer)" class="muted tip pick-hint">
+    <p v-else-if="(mode === 'header' && headerRows.length) || (mode !== 'header' && bandRow)" class="muted tip pick-hint">
       在上方示意图中点击一个单元格，再设置文字、合并或样式。
     </p>
   </section>

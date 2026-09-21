@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import { clampElementToContent, findSurface, newPrintId, normalizeTableColumnWidths, resizeElement, selectionBounds, snapResize, snapTranslation, translateElements } from '../../components/print/designer/commands'
+import { applyLineGeometrySideEffects, applyLineStyleSideEffects, clampElementToContent, findSurface, newPrintId, normalizeTableColumnWidths, resizeElement, selectionBounds, snapResize, snapTranslation, translateElements } from '../../components/print/designer/commands'
 import { nextPrintZoom, PRINT_ZOOM_LEVELS } from '../../components/print/designer/designerView'
 import { cloneDocument, createHistory, recordChange, travelHistory } from '../../components/print/designer/history'
-import { deleteStaticTableColumn, deleteStaticTableColumns, deleteStaticTableRow, deleteStaticTableRows, insertStaticTableColumns, insertStaticTableRows, mergeStaticTableCells, renewPrintElementIds, renewStaticTableIds, splitStaticTableCell, staticTableSize, styleStaticTableRowsAsHeader } from '../../components/print/designer/staticTable'
+import { clearStaticTableBandCellStyles, deleteStaticTableColumns, deleteStaticTableRows, insertStaticTableColumns, insertStaticTableRows, mergeStaticTableCells, renewPrintElementIds, splitStaticTableCell, staticTableSize, styleStaticTableRowsAsHeader } from '../../components/print/designer/staticTable'
 import { validateFieldCatalog } from '../../components/print/protocol/fieldCatalog'
 import { formatPrintApiError } from '../../components/print/protocol/formatPrintError'
+import { normalizeStyleColors, sanitizePrintColors } from '../../components/print/protocol/printColor'
 import { createPrintDocument, PRINT_LIMITS } from '../../components/print/protocol/types'
 import { paperGeometry, screenDeltaToMm } from '../../components/print/protocol/units'
 import { assertPrintDocument } from '../../components/print/protocol/validate'
@@ -115,6 +116,8 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       return this.execute((doc) => {
         doc.paper.widthMm = Number(widthMm.toFixed(3))
         doc.paper.heightMm = Number(heightMm.toFixed(3))
+        if (widthMm !== heightMm)
+          doc.paper.orientation = widthMm > heightMm ? 'LANDSCAPE' : 'PORTRAIT'
         this.clampDocumentToPaper(doc)
       })
     },
@@ -279,7 +282,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       })
     },
     serialize() {
-      return JSON.stringify(this.document)
+      return JSON.stringify(sanitizePrintColors(cloneDocument(this.document)))
     },
     selectSurface(id) {
       if (id !== 'header' && id !== 'footer' && !id.startsWith('section:')) {
@@ -420,6 +423,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         syncStatic(candidate.header?.elements)
         syncStatic(candidate.footer?.elements)
         candidate.body?.forEach(section => syncStatic(section.elements))
+        sanitizePrintColors(candidate)
         assertPrintDocument(candidate)
         recordChange(this.history, this.document, candidate)
         this.document = candidate
@@ -442,8 +446,28 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
             delete next.widthMm
             delete next.heightMm
           }
+          if (next.style) {
+            if (e.type === 'LINE')
+              applyLineStyleSideEffects(e, next.style)
+            else
+              e.style = { ...e.style, ...next.style }
+            delete next.style
+          }
           Object.assign(e, next)
+          applyLineGeometrySideEffects(e, next)
         })
+      })
+    },
+    /** 样式 → 表头/表体：写 band 并从对应行格子上拿掉同名覆盖色，避免默认白/灰底挡住表头背景. */
+    patchStaticTableBand(band, stylePatch) {
+      if (this.activeElement?.type !== 'STATIC_TABLE' || this.activeElement.locked || !stylePatch)
+        return false
+      const field = band === 'header' ? 'headerStyle' : 'style'
+      const elementId = this.activeElement.id
+      return this.execute((document) => {
+        const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        element[field] = { ...element[field], ...cloneDocument(stylePatch) }
+        clearStaticTableBandCellStyles(element.table, band, Object.keys(stylePatch))
       })
     },
     patchSelectedTableCells(patch) {
@@ -525,6 +549,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     patchSelectedTableCellStyle(patch) {
       if (!this.tableCellIds.length || this.activeElement?.locked)
         return false
+      patch = normalizeStyleColors(patch)
       const elementId = this.activeElement.id
       return this.execute((document) => {
         const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
@@ -543,6 +568,22 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         : null
       return this.execute((document) => {
         const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
+        const headerOnly = cells?.length && cells.every(item => item.kind === 'header')
+        if (headerOnly) {
+          const columnIds = new Set(cells.map(item => item.columnId))
+          const wholeHeader = columnIds.size === element.columns.length && cells.every(item => item.kindIndex === 0)
+          if (wholeHeader) {
+            element.headerStyle = { ...element.headerStyle, ...cloneDocument(patch) }
+            return
+          }
+          if (!element.cellStyles || typeof element.cellStyles !== 'object')
+            element.cellStyles = {}
+          cells.forEach(({ kind, kindIndex, columnId }) => {
+            const key = `${kind}:${kindIndex}:${columnId}`
+            element.cellStyles[key] = { ...element.cellStyles[key], ...cloneDocument(patch) }
+          })
+          return
+        }
         // Box selection → only the concrete cells captured at select time.
         if (cells?.length) {
           if (!element.cellStyles || typeof element.cellStyles !== 'object')
@@ -577,7 +618,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       this.document = candidate
       return true
     },
-    resizeStaticTableTrack(axis, index, sizeMm, { live = false } = {}) {
+    resizeStaticTableTrack(axis, index, sizeMm, { live = false, originMm } = {}) {
       if (this.activeElement?.type !== 'STATIC_TABLE' || this.activeElement.locked || !Number.isFinite(sizeMm))
         return false
       const elementId = this.activeElement.id
@@ -589,6 +630,12 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         const key = axis === 'row' ? 'heightMm' : 'widthMm'
         tracks[index][key] = next
         Object.assign(element, staticTableSize(element.table))
+        if (Number.isFinite(originMm)) {
+          if (axis === 'column')
+            element.xMm = Math.max(0, Number(originMm.toFixed(3)))
+          else
+            element.yMm = Math.max(0, Number(originMm.toFixed(3)))
+        }
         surface.heightMm = Math.max(surface.heightMm, Number((element.yMm + element.heightMm).toFixed(3)))
       }
       return live ? this.applyLiveDocument(apply) : this.execute(apply)
@@ -602,10 +649,16 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
         if (!element?.columns?.[index])
           throw new Error('列不存在')
-        const total = element.widthMm || element.columns.reduce((sum, column) => sum + column.widthMm, 0)
+        const last = index === element.columns.length - 1
         element.columns[index].widthMm = next
-        normalizeTableColumnWidths(element.columns, total)
-        element.widthMm = total
+        if (last) {
+          element.widthMm = Number(element.columns.reduce((sum, column) => sum + column.widthMm, 0).toFixed(3))
+        }
+        else {
+          const total = element.widthMm || element.columns.reduce((sum, column) => sum + column.widthMm, 0)
+          normalizeTableColumnWidths(element.columns, total)
+          element.widthMm = total
+        }
       }
       return live ? this.applyLiveDocument(apply) : this.execute(apply)
     },
@@ -748,7 +801,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         const origin = indices[0]
         this.cellClipboard = {
           kind: 'DATA_COLUMNS',
-          cells: indices.map(index => {
+          cells: indices.map((index) => {
             const column = this.activeElement.columns[index]
             return {
               column: index - origin,
@@ -773,7 +826,7 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       const left = Math.min(...cells.map(cell => cell.column))
       this.cellClipboard = {
         kind: 'STATIC_CELLS',
-        cells: cloneDocument(cells).map(cell => {
+        cells: cloneDocument(cells).map((cell) => {
           const binding = cell.binding?.source
             ? cloneDocument(cell.binding)
             : { source: 'CONSTANT', value: cell.text ?? '' }
@@ -796,8 +849,9 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
       if (this.cellClipboard?.kind === 'DATA_COLUMNS' && this.activeElement?.type === 'DATA_TABLE')
         return this.pasteTableCells()
       if (this.cellClipboard?.cells?.length && this.activeElement?.type === 'STATIC_TABLE'
-        && (this.cellClipboard.kind === 'STATIC_CELLS' || !this.cellClipboard.kind))
+        && (this.cellClipboard.kind === 'STATIC_CELLS' || !this.cellClipboard.kind)) {
         return this.pasteTableCells()
+      }
       if (!this.activeSurface?.elements || !this.clipboard.length) {
         this.notice = this.clipboard.length ? '当前区块不支持粘贴' : '剪贴板为空，请先复制'
         return false
@@ -959,7 +1013,11 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     styleSelectionTargets() {
       if (this.tableCellIds.length && this.activeElement?.type === 'STATIC_TABLE')
         return this.selectedTableCells
+      if (this.activeElement?.type === 'STATIC_TABLE')
+        return [{ style: this.activeElement.headerStyle || {} }]
       if (this.activeElement?.type === 'DATA_TABLE' && this.tableSelectionCells?.length) {
+        if (this.tableSelectionCells.every(hit => hit.kind === 'header'))
+          return [{ style: this.activeElement.headerStyle || {} }]
         return this.tableSelectionCells.map((hit) => {
           const key = `${hit.kind}:${hit.kindIndex}:${hit.columnId}`
           return { style: this.activeElement.cellStyles?.[key] || {} }
@@ -976,17 +1034,27 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
     patchSelectionStyle(stylePatch) {
       if (!stylePatch || typeof stylePatch !== 'object')
         return false
+      stylePatch = normalizeStyleColors(stylePatch)
       if (this.tableCellIds.length && this.activeElement?.type === 'STATIC_TABLE')
         return this.patchSelectedTableCellStyle(stylePatch)
+      if (this.activeElement?.type === 'STATIC_TABLE')
+        return this.patchSelected({ headerStyle: { ...this.activeElement.headerStyle, ...cloneDocument(stylePatch) } })
       if (this.activeElement?.type === 'DATA_TABLE' && this.selectedTableColumns.length)
         return this.patchSelectedDataTableColumnStyles(stylePatch)
+      if (this.activeElement?.type === 'DATA_TABLE')
+        return this.patchSelected({ headerStyle: { ...this.activeElement.headerStyle, ...cloneDocument(stylePatch) } })
+      if (!this.selectedIds.length && this.activeSurface?.kind === 'TABLE')
+        return this.patchSurface({ headerStyle: { ...this.activeSurface.headerStyle, ...cloneDocument(stylePatch) } })
       if (!this.selectedIds.length && this.activeSurface?.kind === 'TEXT')
         return this.patchSurface({ style: { ...this.activeSurface.style, ...cloneDocument(stylePatch) } })
       if (!this.selectedElements.length || this.hasLockedSelection)
         return false
       return this.execute((document) => {
         findSurface(document, this.surfaceId).elements.filter(element => this.selectedIds.includes(element.id)).forEach((element) => {
-          element.style = { ...element.style, ...cloneDocument(stylePatch) }
+          if (element.type === 'LINE')
+            applyLineStyleSideEffects(element, stylePatch)
+          else
+            element.style = { ...element.style, ...cloneDocument(stylePatch) }
         })
       })
     },
@@ -1375,7 +1443,17 @@ export const usePrintDesignerStore = defineStore('printDesigner', {
         : [0]
       return this.execute((document) => {
         const element = findSurface(document, this.surfaceId).elements.find(item => item.id === elementId)
-        styleStaticTableRowsAsHeader(element.table, rows)
+        if (rows.includes(0)) {
+          element.headerStyle = {
+            ...element.headerStyle,
+            fontWeight: 700,
+            textAlign: 'center',
+            backgroundColor: element.headerStyle?.backgroundColor || '#f1f5f9',
+          }
+        }
+        const extra = rows.filter(row => row !== 0)
+        if (extra.length)
+          styleStaticTableRowsAsHeader(element.table, extra)
       })
     },
     async save(writer) {

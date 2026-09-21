@@ -31,6 +31,10 @@
       {
         "pointer": "/body/0/elements/0/style/objectFit",
         "value": "cover"
+      },
+      {
+        "pointer": "/body/0/elements/0/style/opacity",
+        "value": 0.5
       }
     ],
     "backendValid": true,
@@ -75,6 +79,17 @@
       {
         "pointer": "/body/0/elements/0/style/objectFit",
         "value": "none"
+      }
+    ],
+    "backendValid": false,
+    "frontendValid": false
+  },
+  {
+    "name": "元素透明度越界",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/style/opacity",
+        "value": 1.5
       }
     ],
     "backendValid": false,
@@ -450,5 +465,55 @@
     ],
     "backendValid": false,
     "frontendValid": false
+  },
+  {
+    "name": "表达式与金额大写",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/binding",
+        "value": { "source": "EXPRESSION", "expression": "MONEY(main.qty * main.price)" }
+      },
+      {
+        "pointer": "/body/0/elements/0/format",
+        "value": { "type": "MONEY_UPPER" }
+      },
+      {
+        "pointer": "/body/0/elements/0/style/textFit",
+        "value": "CLIP"
+      }
+    ],
+    "backendValid": true,
+    "frontendValid": true
+  },
+  {
+    "name": "拒绝可执行表达式",
+    "patches": [
+      {
+        "pointer": "/body/0/elements/0/binding",
+        "value": { "source": "EXPRESSION", "expression": "eval(main.qty)" }
+      }
+    ],
+    "backendValid": false,
+    "frontendValid": false
+  },
+  {
+    "name": "连续纸拼版水印与套打",
+    "patches": [
+      { "pointer": "/paper/kind", "value": "CONTINUOUS" },
+      {
+        "pointer": "/paper/tiling",
+        "value": { "enabled": true, "columns": 2, "rows": 4, "gapXMm": 2, "gapYMm": 2, "sheetWidthMm": 210, "sheetHeightMm": 297, "repeatToFill": true }
+      },
+      {
+        "pointer": "/paper/designBackground",
+        "value": { "fileId": "overlay_1", "opacity": 0.4, "rotationDeg": 0, "print": false }
+      },
+      {
+        "pointer": "/watermark",
+        "value": { "text": "内部资料", "opacity": 0.08, "rotateDeg": -24, "gapXMm": 64, "gapYMm": 42, "fontSizePt": 14, "color": "#94a3b8" }
+      }
+    ],
+    "backendValid": true,
+    "frontendValid": true
   }
 ]

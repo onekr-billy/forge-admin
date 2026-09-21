@@ -102,7 +102,7 @@ function goBack() {
         @clear-external-error="store.error = ''"
         @clear-external-notice="store.notice = ''"
       />
-      <PrintPreview v-else :template="store.document" :context="{}" :catalog="store.catalog" :resolve-file="loadPrintFile" data-label="模板预览" :allow-print="false" />
+      <PrintPreview v-else :template="store.document" :template-name="store.name" :context="{}" :catalog="store.catalog" :resolve-file="loadPrintFile" data-label="模板预览" :allow-print="false" />
     </div>
     <NEmpty v-else :description="store.error || '未载入打印模板'" />
     <NModal

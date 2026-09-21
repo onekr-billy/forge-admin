@@ -321,3 +321,13 @@ T31/T32/T34 实现与阶段验证完成（implemented-pending-e2e）。来源选
 T34 实际文件拆分：4a 为 ApplicationVersion Mapper/XML + PrintCodegenContributor + LowcodeProtocolSnapshotBuilder；4b 为 VelocityCodegenStrategy、PRINTING.md.vm、BusinessApplicationCodegenService、BusinessAppCodegenService。统一导出不可变模板、绑定/hash 和运行依赖；应用级清单覆盖聚合子对象；覆盖报告明确独立部署的数据提供方和资产导入需要扩展，不声称目标环境自动可打印。
 
 验证：37 个后端测试类共 201 项、16 个前端测试文件 89 项通过；ESLint、Vite 主构建/独立验证构建、Admin 46 模块构建通过。亮暗主题、390px 无整页横向溢出、表格更多动作可滚动到达、表单来源创建、预览和权限状态已用合成 HTTP 验证。没有启动真实 Admin/Flow/MySQL/Redis或执行迁移，SQL JSON_CONTAINS 的 MySQL 实跑、并发下载一致性、真实权限与实机打印仍待人工验收。详见 execution-log、verification/m4c-results.json。
+
+## T57 表达式 / 表格汇总 / 连续纸拼版 / 套打水印 / 溢出 / PDF 下载（2026-09-21）
+
+- [x] 协议：`EXPRESSION`、`MONEY_UPPER`、`subtotal`、`paper.kind/tiling/designBackground`、`watermark`、`style.textFit`
+- [x] 运行：白名单表达式、分页小计与合计、连续纸撑高、标签拼版、套打底图、水印、CLIP/SHRINK/AUTO_HEIGHT
+- [x] 预览 PDF 改为客户端文件下载，打印对话框保持独立
+- [x] 客户端输出事件补 `PDF_DOWNLOADED`（字典 + 枚举 + Mapper）；导出截取预览已排版纸张，不再用 html2canvas 重排
+- [x] 表头上/左边框画在首行首列单元格上；PDF 文件名可在纸张面板配置，默认关联业务字段并带时间戳；预览加载用骨架屏
+- [x] 明细表/空白表格表头与表体颜色分开设置；空白表格插入不再带默认「表头」行；重复且无效的表头色板收到「样式」页
+- [x] 设计器示例图改为协议允许的 PNG，避免预览 `flow.history.signature` 因 SVG data URL 加载失败；下载签名按文件头识别 MIME

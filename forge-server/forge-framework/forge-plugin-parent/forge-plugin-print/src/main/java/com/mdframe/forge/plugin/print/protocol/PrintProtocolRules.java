@@ -101,7 +101,7 @@ final class PrintProtocolRules {
     }
 
     void document(JsonNode doc) {
-        if (!object(doc, "", "protocol", "schemaVersion", "paper", "header", "body", "footer", "resources")) {
+        if (!object(doc, "", "protocol", "schemaVersion", "paper", "header", "body", "footer", "resources", "watermark", "exportFileName")) {
             return;
         }
         choice(doc.get("protocol"), "protocol", "forge-print");
@@ -110,12 +110,96 @@ final class PrintProtocolRules {
             issue("schemaVersion", "UNSUPPORTED_VALUE", "仅支持协议版本 1");
         }
         JsonNode paper = doc.get("paper");
-        if (!object(paper, "paper", "widthMm", "heightMm", "orientation", "marginMm")) {
+        if (!object(paper, "paper", "widthMm", "heightMm", "orientation", "marginMm", "kind", "tiling", "designBackground")) {
             return;
         }
         number(paper.get("widthMm"), "paper.widthMm", 10, PAPER_SIZE_MM);
         number(paper.get("heightMm"), "paper.heightMm", 10, PAPER_SIZE_MM);
         choice(paper.get("orientation"), "paper.orientation", "PORTRAIT", "LANDSCAPE");
+        if (paper.has("kind")) {
+            choice(paper.get("kind"), "paper.kind", "SHEET", "CONTINUOUS");
+        }
+        if (paper.has("tiling") && object(paper.get("tiling"), "paper.tiling", "enabled", "columns", "rows", "gapXMm", "gapYMm", "sheetWidthMm", "sheetHeightMm", "repeatToFill")) {
+            JsonNode tiling = paper.get("tiling");
+            if (tiling.has("enabled")) {
+                bool(tiling.get("enabled"), "paper.tiling.enabled");
+            }
+            if (tiling.has("columns")) {
+                integer(tiling.get("columns"), "paper.tiling.columns", 1, 12);
+            }
+            if (tiling.has("rows")) {
+                integer(tiling.get("rows"), "paper.tiling.rows", 1, 20);
+            }
+            if (tiling.has("gapXMm")) {
+                number(tiling.get("gapXMm"), "paper.tiling.gapXMm", 0, 50);
+            }
+            if (tiling.has("gapYMm")) {
+                number(tiling.get("gapYMm"), "paper.tiling.gapYMm", 0, 50);
+            }
+            if (tiling.has("sheetWidthMm")) {
+                number(tiling.get("sheetWidthMm"), "paper.tiling.sheetWidthMm", 10, PAPER_SIZE_MM);
+            }
+            if (tiling.has("sheetHeightMm")) {
+                number(tiling.get("sheetHeightMm"), "paper.tiling.sheetHeightMm", 10, PAPER_SIZE_MM);
+            }
+            if (tiling.has("repeatToFill")) {
+                bool(tiling.get("repeatToFill"), "paper.tiling.repeatToFill");
+            }
+        }
+        if (paper.has("designBackground") && object(paper.get("designBackground"), "paper.designBackground", "fileId", "opacity", "rotationDeg", "print")) {
+            JsonNode overlay = paper.get("designBackground");
+            if (!PrintValueRules.fileId(overlay.get("fileId"))) {
+                issue("paper.designBackground.fileId", "INVALID_RESOURCE", "套打底图必须使用文件标识");
+            }
+            if (overlay.has("opacity")) {
+                number(overlay.get("opacity"), "paper.designBackground.opacity", 0, 1);
+            }
+            if (overlay.has("rotationDeg")) {
+                number(overlay.get("rotationDeg"), "paper.designBackground.rotationDeg", -180, 180);
+            }
+            if (overlay.has("print")) {
+                bool(overlay.get("print"), "paper.designBackground.print");
+            }
+        }
+        if (doc.has("exportFileName")) {
+            text(doc.get("exportFileName"), "exportFileName", 120);
+            if (doc.get("exportFileName").isTextual()) {
+                String name = doc.get("exportFileName").textValue();
+                if (name.matches(".*[\\\\/\\p{Cntrl}].*")
+                        || !name.replaceAll("\\{\\{[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*\\}\\}", "")
+                                .replaceAll("\\{(timestamp|template)\\}", "")
+                                .matches("[^{}]*")) {
+                    issue("exportFileName", "INVALID_TEXT", "导出文件名占位符无效或包含路径分隔符");
+                }
+            }
+        }
+        if (doc.has("watermark") && object(doc.get("watermark"), "watermark", "text", "expression", "opacity", "rotateDeg", "gapXMm", "gapYMm", "fontSizePt", "color")) {
+            JsonNode watermark = doc.get("watermark");
+            if (watermark.has("text")) {
+                text(watermark.get("text"), "watermark.text", 100);
+            }
+            if (watermark.has("expression")) {
+                PrintExpressionRules.check(watermark.get("expression"), "watermark.expression", this);
+            }
+            if (watermark.has("opacity")) {
+                number(watermark.get("opacity"), "watermark.opacity", 0, 1);
+            }
+            if (watermark.has("rotateDeg")) {
+                number(watermark.get("rotateDeg"), "watermark.rotateDeg", -180, 180);
+            }
+            if (watermark.has("gapXMm")) {
+                number(watermark.get("gapXMm"), "watermark.gapXMm", 10, 200);
+            }
+            if (watermark.has("gapYMm")) {
+                number(watermark.get("gapYMm"), "watermark.gapYMm", 10, 200);
+            }
+            if (watermark.has("fontSizePt")) {
+                number(watermark.get("fontSizePt"), "watermark.fontSizePt", 6, 72);
+            }
+            if (watermark.has("color") && !PrintValueRules.isPrintColor(watermark.get("color"))) {
+                issue("watermark.color", "INVALID_COLOR", "颜色须使用十六进制格式");
+            }
+        }
         JsonNode margins = paper.get("marginMm");
         if (!object(margins, "paper.marginMm", "top", "right", "bottom", "left")) {
             return;
@@ -181,7 +265,7 @@ final class PrintProtocolRules {
     }
 
     private void element(JsonNode e, String path, double width, double height) {
-        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "table", "barcodeFormat", "pageNumberFormat", "showCodeText", "rotationDeg", "flipX", "flipY", "locked", "collectionPath", "columns", "headerRows", "repeatHeader", "footer", "emptyText", "headerStyle", "oddRowStyle", "evenRowStyle", "minHeightMm", "cellStyles")) {
+        if (!object(e, path, "id", "type", "xMm", "yMm", "widthMm", "heightMm", "binding", "format", "style", "table", "barcodeFormat", "pageNumberFormat", "showCodeText", "rotationDeg", "flipX", "flipY", "locked", "collectionPath", "columns", "headerRows", "repeatHeader", "footer", "subtotal", "emptyText", "headerStyle", "oddRowStyle", "evenRowStyle", "minHeightMm", "cellStyles")) {
             return;
         }
         elements++;
@@ -209,7 +293,7 @@ final class PrintProtocolRules {
         if (type.equals("STATIC_TABLE") || e.has("table")) {
             staticTables.table(e.get("table"), path + ".table", n(e, "widthMm"), n(e, "heightMm"));
         }
-        if (type.equals("DATA_TABLE") || List.of("collectionPath", "columns", "headerRows", "repeatHeader", "footer", "emptyText").stream().anyMatch(e::has)) {
+        if (type.equals("DATA_TABLE") || List.of("collectionPath", "columns", "headerRows", "repeatHeader", "footer", "subtotal", "emptyText").stream().anyMatch(e::has)) {
             tables.table(e, path, n(e, "widthMm"));
         }
         if (e.has("rotationDeg")) {
@@ -240,7 +324,7 @@ final class PrintProtocolRules {
     }
 
     private void section(JsonNode s, String path, double width) {
-        if (!object(s, path, "id", "kind", "heightMm", "elements", "binding", "format", "style", "gapAfterMm", "keepWithNext", "collectionPath", "columns", "headerRows", "repeatHeader", "footer", "emptyText")) {
+        if (!object(s, path, "id", "kind", "heightMm", "elements", "binding", "format", "style", "gapAfterMm", "keepWithNext", "collectionPath", "columns", "headerRows", "repeatHeader", "footer", "subtotal", "emptyText", "minHeightMm", "headerStyle", "oddRowStyle", "evenRowStyle", "cellStyles")) {
             return;
         }
         identifier(s.get("id"), path + ".id");
@@ -261,6 +345,21 @@ final class PrintProtocolRules {
             bool(s.get("keepWithNext"), path + ".keepWithNext");
         }
         values.style(s.get("style"), path + ".style");
+        if (s.has("headerStyle")) {
+            values.style(s.get("headerStyle"), path + ".headerStyle");
+        }
+        if (s.has("oddRowStyle")) {
+            values.style(s.get("oddRowStyle"), path + ".oddRowStyle");
+        }
+        if (s.has("evenRowStyle")) {
+            values.style(s.get("evenRowStyle"), path + ".evenRowStyle");
+        }
+        if (s.has("cellStyles")) {
+            values.cellStyles(s.get("cellStyles"), path + ".cellStyles");
+        }
+        if (s.has("minHeightMm")) {
+            number(s.get("minHeightMm"), path + ".minHeightMm", 0, PAPER_SIZE_MM);
+        }
         values.format(s.get("format"), path + ".format");
         if (kind.equals("FIXED") || s.has("heightMm")) {
             number(s.get("heightMm"), path + ".heightMm", .1, PAPER_SIZE_MM);
@@ -271,7 +370,7 @@ final class PrintProtocolRules {
         if (kind.equals("TEXT") || s.has("binding")) {
             values.binding(s.get("binding"), path + ".binding", false, false);
         }
-        if (kind.equals("TABLE") || List.of("columns", "collectionPath", "headerRows", "repeatHeader", "footer", "emptyText").stream().anyMatch(s::has)) {
+        if (kind.equals("TABLE") || List.of("columns", "collectionPath", "headerRows", "repeatHeader", "footer", "subtotal", "emptyText").stream().anyMatch(s::has)) {
             tables.table(s, path, width);
         }
     }

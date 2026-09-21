@@ -6,7 +6,7 @@
 >
 > 状态：`implementing`
 >
-> 当前阶段：forge-admin 的 M1–M5 代码开发、T46–T56 增量能力、迁移冲突修复、新版应用页面入口和平台超级权限兼容均已完成自动化与前端构建验证。M6 的真实环境、PDF 和打印机验收由用户执行。整体仍为 implemented-pending-e2e；当前分支 forge-native-print。
+> 当前阶段：forge-admin 的 M1–M5 代码开发、T46–T57 增量能力（含表达式/小计/连续纸拼版/套打水印/溢出/客户端 PDF 下载）均已完成自动化与前端构建验证。M6 的真实环境、打印机和 PDF 观感验收由用户执行。整体仍为 implemented-pending-e2e；当前分支 forge-native-print。
 >
 > 文档优先级：AGENTS.md → 本 Spec → design/tasks/test-spec → 通用规则
 
@@ -180,6 +180,21 @@ flow 插件根目录：`forge-server/forge-framework/forge-plugin-parent/forge-p
 - 画布左下角提供可开关的「概览图」：缩略纸张与元素块、视口框拖动同步滚动、点击定位、复位左上角、缩小/隐藏；顶栏地图按钮与中间栏「更多」均可开关。
 - 锁定元素常显锁角标，选中态不必再额外依赖文字“锁”。
 
+### 4.13 表达式、表格汇总、连续纸/拼版、套打/水印、溢出与客户端 PDF（2026-09-21）
+
+- 绑定来源新增白名单 `EXPRESSION`。表达式只允许四则运算、比较、括号、点路径、以及 `SUM/AVG/COUNT/MIN/MAX/ABS/ROUND/IF/CONCAT/TEXT/MONEY/UPPER/RMB`；禁止 `eval`、任意 JavaScript/SQL、赋值和未登记函数。金额大写走格式 `MONEY_UPPER`（整数分）或函数 `UPPER`（元）/`RMB`（分）。
+- 明细表除末页合计（`footer`）外，支持每页小计（`subtotal`）。小计按当前页数据行聚合，合计按全部明细聚合；`SUM(字段)` 在对应带区求值。
+- `paper.kind=CONTINUOUS` 时按内容撑高单张连续纸，高度上限仍为协议纸张上限。`paper.tiling` 把标签页按行列间隙拼到目标纸张；单页时可 `repeatToFill` 铺满。
+- `paper.designBackground` 是套打底图：设计画布和预览可见，默认不进入浏览器打印和 PDF。`document.watermark` 在预览、打印和 PDF 中绘制。
+- 固定文本 `style.textFit`：缺省仍超出报错；`CLIP` 截断、`SHRINK` 缩小字号、`AUTO_HEIGHT` 撑高。
+- 预览「PDF」必须下载 PDF 文件，不得再打开系统打印对话框。导出截取预览已排版纸张（浏览器排版，不是 html2canvas 重排），事件为 `PDF_DOWNLOADED`，不等于服务端归档、静默打印、不可篡改或物理出纸。
+- `exportFileName` 可在设计器「纸张」面板配置。支持 `{{main.字段}}`、`{template}`、`{timestamp}`；留空时默认「模板名-业务名称-时间戳」。未写 `{timestamp}` 时导出仍追加本地时间戳。文件名不能包含路径分隔符。
+- 元素 `style` 对象：安全的基础类型展示属性（含 `opacity` 以及前端多传的同类数值/颜色）原样入库，不再因未知键拒绝保存。仍拒绝 `backgroundImage`/`url()` 等可执行 CSS。设计器「样式」透明度用 0–100% 滑块。
+- 选中空白表格单元格时，画布快捷面板跟随单元格包围盒，而不是整张表。表格四边拖动手柄改行高/列宽；选中框不再用八向锚点挡住外沿。
+- 属性面板字号（含表头/表体/列/最小字号）用预设 pt 下拉，不用数字输入框。
+- 空白表格「样式 → 表头背景」写 `headerStyle`，并清掉第一行格子上的默认白/灰底，避免文字色生效、背景色被盖住。
+- 字体栈按整串校验：本机没有 `STHeiti` / `Microsoft YaHei` 时，只要后面还有 `PingFang SC`、`Heiti SC` 或 `sans-serif` 等回退，预览和保存不得失败。只有没有任何具名字体且没有 generic 回退时才报「打印字体未安装」。
+
 ## 5. 模板归属、版本与流程配置
 
 - 模板归属于应用，绑定一个业务数据源身份；页面/表单绑定与底层 objectCode 同时维护，表单重命名不靠展示名称关联。
@@ -227,7 +242,7 @@ flow 插件根目录：`forge-server/forge-framework/forge-plugin-parent/forge-p
 
 审批业务数据快照、后台 PDF 归档、历史原样重打；多记录批量、静默客户端和打印队列；复杂合同编辑/富文本流式排版；跨页 rowspan；电子签章或签名法律效力；hiprint JSON 兼容；未经验证的跨浏览器/所有打印机一致性承诺。
 
-浏览器“另存为 PDF”属于用户输出操作，不等于服务端 PDF 下载接口或不可篡改归档。
+浏览器打印对话框中的“另存为 PDF”仍可用，但不等于预览「PDF」下载、服务端归档接口或不可篡改文件。
 
 ## 10. 验收与完成定义
 

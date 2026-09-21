@@ -7,14 +7,15 @@ import java.util.Set;
 
 public record PrintExecutionEventDTO(@NotNull PrintExecutionResult result, @Min(1) @Max(50) Integer pageCount, @Size(max = 64) String errorCode) {
 
-    private static final Set<String> ERRORS = Set.of("PRINT_FAILED", "PRINT_CANCELLED", "RESOURCE_FAILED", "RESOURCE_TIMEOUT", "FIELD_NOT_ALLOWED", "INVALID_TEMPLATE", "FONT_UNAVAILABLE", "LIMIT_EXCEEDED", "ELEMENT_TOO_TALL", "PRINT_UNAVAILABLE");
+    private static final Set<String> ERRORS = Set.of("PRINT_FAILED", "PRINT_CANCELLED", "RESOURCE_FAILED", "RESOURCE_TIMEOUT", "FIELD_NOT_ALLOWED", "INVALID_TEMPLATE", "FONT_UNAVAILABLE", "LIMIT_EXCEEDED", "ELEMENT_TOO_TALL", "PRINT_UNAVAILABLE", "PDF_UNAVAILABLE");
 
     @JsonIgnore
     @AssertTrue
     public boolean isEventValid() {
-        return result == PrintExecutionResult.DIALOG_OPENED
-                ? pageCount != null && errorCode == null
-                : result == PrintExecutionResult.FAILED && pageCount == null
+        if (result == PrintExecutionResult.DIALOG_OPENED || result == PrintExecutionResult.PDF_DOWNLOADED) {
+            return pageCount != null && errorCode == null;
+        }
+        return result == PrintExecutionResult.FAILED && pageCount == null
                 && errorCode != null && ERRORS.contains(errorCode);
     }
 }

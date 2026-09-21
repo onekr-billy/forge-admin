@@ -12,7 +12,7 @@ export function printStyle(style = {}) {
     justifyContent,
     width: '100%',
     height: '100%',
-    fontFamily: style.fontFamily || 'Microsoft YaHei, sans-serif',
+    fontFamily: style.fontFamily || 'Microsoft YaHei, PingFang SC, sans-serif',
     fontSize: `${style.fontSizePt ?? 10}pt`,
     fontWeight: style.fontWeight ?? 400,
     fontStyle: style.fontStyle || 'normal',
@@ -46,53 +46,45 @@ export function elementStyle(element) {
 
 export function cellStyle(style = {}) {
   const textAlign = style.textAlign || 'left'
-  const base = printStyle({ paddingMm: 1, borderWidthMm: 0.15, verticalAlign: 'middle', ...style })
+  const verticalAlign = style.verticalAlign || 'middle'
+  const base = printStyle({ paddingMm: 1, borderWidthMm: 0.15, verticalAlign, ...style })
   return {
     ...base,
     display: 'flex',
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: verticalAlign === 'top' ? 'flex-start' : verticalAlign === 'bottom' ? 'flex-end' : 'center',
     justifyContent: textAlign === 'center' ? 'center' : textAlign === 'right' ? 'flex-end' : 'flex-start',
     textAlign,
   }
 }
 
-/** 表格外框：用背景线画上/左边，不占布局宽度，避免贴满纸张时右/下边被 overflow 裁切。 */
+/** 表格外框不画占宽的 border，避免贴满纸张时右/下边被 overflow 裁切。外框由单元格 border 承担。 */
 export function tableFrameStyle(style = {}) {
-  const width = style.borderWidthMm ?? 0.15
-  const color = style.borderColor || '#000000'
-  if (width <= 0) {
-    return {
-      boxSizing: 'border-box',
-      border: 'none',
-    }
-  }
-  const line = `${width}mm`
   return {
     boxSizing: 'border-box',
     border: 'none',
-    backgroundColor: '#fff',
-    backgroundImage: `linear-gradient(${color}, ${color}), linear-gradient(${color}, ${color})`,
-    backgroundSize: `${line} 100%, 100% ${line}`,
-    backgroundPosition: 'left top, left top',
-    backgroundRepeat: 'no-repeat',
+    backgroundColor: style.backgroundColor || '#fff',
+    overflow: 'visible',
   }
 }
 
 /**
- * 表格单元格：只画右/下边，与 tableFrameStyle 组成单线网格。
- * 相邻格不再叠成更粗的内线，外框与内线同粗。
+ * 表格单元格：四面都用同一条 CSS border，避免上/左用渐变、右/下用 border 打印时粗细不一。
+ * 只给首行补上边、首列补左边，内线不叠加。底色 clip 到 padding，不会画进边框里把线“吃细”。
  */
-export function tableCellStyle(style = {}) {
+export function tableCellStyle(style = {}, edges = {}) {
   const width = style.borderWidthMm ?? 0.15
   const color = style.borderColor || '#000000'
   const borderStyle = style.borderStyle || 'solid'
   const line = width > 0 ? `${width}mm ${borderStyle} ${color}` : 'none'
-  const base = cellStyle({ ...style, borderWidthMm: 0 })
+  const base = { ...cellStyle({ ...style, borderWidthMm: 0 }) }
+  delete base.border
   return {
     ...base,
-    border: 'none',
+    borderTop: edges.top ? line : 'none',
+    borderLeft: edges.left ? line : 'none',
     borderRight: line,
     borderBottom: line,
+    backgroundClip: 'padding-box',
   }
 }

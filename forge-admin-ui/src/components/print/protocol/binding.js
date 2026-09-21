@@ -1,3 +1,4 @@
+import { evaluateExpression } from './expression'
 import { PRINT_LIMITS, PrintError } from './types'
 import { isSafeFieldPath } from './validate'
 
@@ -18,6 +19,13 @@ export function readOwnPath(value, path) {
 }
 
 export function resolveBinding(binding, context) {
+  if (binding.source === 'EXPRESSION') {
+    const value = evaluateExpression(binding.expression, context)
+    if (value !== null && value !== undefined && !['string', 'number', 'boolean'].includes(typeof value)) {
+      throw new PrintError('EXPECTED_SCALAR', '表达式只能产生单值', binding.expression)
+    }
+    return value ?? null
+  }
   const value = binding.source === 'CONSTANT' ? binding.value : readOwnPath(context, binding.path)
   if (value !== null && value !== undefined && !['string', 'number', 'boolean'].includes(typeof value)) {
     throw new PrintError('EXPECTED_SCALAR', '此位置只能绑定单值字段', binding.path)

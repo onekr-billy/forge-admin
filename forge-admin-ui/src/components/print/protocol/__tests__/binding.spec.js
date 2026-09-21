@@ -52,5 +52,6 @@ describe('non executable deterministic formatting', () => {
     expect(formatValue('2026-09-18T12:30:40', { type: 'DATE', datePattern: 'YYYY-MM-DD HH:mm' })).toBe('2026-09-18 12:30')
     expect(() => formatValue('2026-02-30', { type: 'DATE' })).toThrow()
     expect(formatValue('<script>alert(1)</script>')).toBe('<script>alert(1)</script>')
+    expect(formatValue(100, { type: 'MONEY_UPPER' })).toBe('壹元整')
   })
 })

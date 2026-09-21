@@ -193,7 +193,7 @@ class PrintProtocolValidatorTest {
         var doc = document();
         var element = (ObjectNode) doc.at("/body/0/elements/0");
         element.put("rotationDeg", -90).put("flipX", true).put("flipY", false).put("locked", true);
-        ((ObjectNode) element.get("style")).put("borderStyle", "dashed").put("borderRadiusMm", 2).put("objectFit", "cover");
+        ((ObjectNode) element.get("style")).put("borderStyle", "dashed").put("borderRadiusMm", 2).put("objectFit", "cover").put("opacity", 0.5);
         assertThatCode(() -> validator.validate(doc.toString())).doesNotThrowAnyException();
         element.put("rotationDeg", 181);
         rejects(doc, "body[0].elements[0].rotationDeg", "INVALID_NUMBER");
@@ -202,6 +202,31 @@ class PrintProtocolValidatorTest {
         element.put("locked", true);
         ((ObjectNode) element.get("style")).put("objectFit", "none");
         rejects(doc, "body[0].elements[0].style.objectFit", "UNSUPPORTED_VALUE");
+        ((ObjectNode) element.get("style")).put("objectFit", "cover").put("opacity", 1.5);
+        rejects(doc, "body[0].elements[0].style.opacity", "INVALID_NUMBER");
+    }
+
+    @Test
+    void persistsSafeStyleExtrasAndRejectsExecutableCss() throws Exception {
+        var doc = document();
+        ((ObjectNode) doc.at("/body/0/elements/0/style")).put("opacity", 0.4).put("letterSpacing", 0.2);
+        var validated = validator.validate(doc.toString());
+        assertThat(validated.canonicalJson()).contains("letterSpacing").contains("opacity");
+        ((ObjectNode) doc.at("/body/0/elements/0/style")).put("backgroundImage", "url(https://example.invalid/a)");
+        rejects(doc, "body[0].elements[0].style.backgroundImage", "UNKNOWN_PROPERTY");
+    }
+
+    @Test
+    void acceptsTransparentAndPickerCellColors() throws Exception {
+        var doc = document();
+        ((ObjectNode) doc.at("/body/0/elements/0/style")).put("backgroundColor", "transparent");
+        assertThatCode(() -> validator.validate(doc.toString())).doesNotThrowAnyException();
+        ((ObjectNode) doc.at("/body/0/elements/0/style")).put("backgroundColor", "#11223344");
+        assertThatCode(() -> validator.validate(doc.toString())).doesNotThrowAnyException();
+        ((ObjectNode) doc.at("/body/0/elements/0/style")).put("backgroundColor", "rgba(17, 34, 51, 1)");
+        assertThatCode(() -> validator.validate(doc.toString())).doesNotThrowAnyException();
+        ((ObjectNode) doc.at("/body/0/elements/0/style")).put("backgroundColor", "red");
+        rejects(doc, "body[0].elements[0].style.backgroundColor", "INVALID_COLOR");
     }
 
     @Test
@@ -306,5 +331,32 @@ class PrintProtocolValidatorTest {
         body = (com.fasterxml.jackson.databind.node.ArrayNode) doc.get("body");
         body.insert(1, mapper.createObjectNode().put("id", "payload_break").put("kind", "PAGE_BREAK").put("gapAfterMm", 2));
         rejects(doc, "body[1].gapAfterMm", "UNKNOWN_PROPERTY");
+    }
+
+    @Test
+    void acceptsWhitelistedExpressionAndRejectsEval() throws Exception {
+        var doc = document();
+        var binding = (ObjectNode) doc.at("/body/0/elements/0/binding");
+        binding.remove("value");
+        binding.remove("path");
+        binding.put("source", "EXPRESSION");
+        binding.put("expression", "MONEY(main.qty * main.price)");
+        ((ObjectNode) doc.at("/body/0/elements/0")).putObject("format").put("type", "MONEY_UPPER");
+        ((ObjectNode) doc.get("paper")).put("kind", "CONTINUOUS");
+        doc.putObject("watermark").put("text", "内部资料").put("opacity", 0.08);
+        doc.put("exportFileName", "{template}-{{main.code}}-{timestamp}");
+        assertThat(validator.validate(doc.toString()).document().watermark().text()).isEqualTo("内部资料");
+        assertThat(validator.validate(doc.toString()).document().exportFileName()).isEqualTo("{template}-{{main.code}}-{timestamp}");
+
+        doc = document();
+        binding = (ObjectNode) doc.at("/body/0/elements/0/binding");
+        binding.remove("value");
+        binding.remove("path");
+        binding.put("source", "EXPRESSION");
+        binding.put("expression", "eval(main.qty)");
+        rejects(doc, "body[0].elements[0].binding.expression", "INVALID_EXPRESSION");
+        doc = document();
+        doc.put("exportFileName", "../secret");
+        rejects(doc, "exportFileName", "INVALID_TEXT");
     }
 }

@@ -1,7 +1,8 @@
+import { mergeDataTableCellStyle } from '../designer/dataTableCellStyles'
+import { staticTableCellLook } from '../designer/staticTable'
 import { readOwnPath, resolveBinding, resolveCollection } from '../protocol/binding'
 import { formatValue } from '../protocol/formatters'
 import { PrintError } from '../protocol/types'
-import { mergeDataTableCellStyle } from '../designer/dataTableCellStyles'
 import { tableImageResourceKey } from './resources'
 
 export function prepareElements(elements, context, measure, resources) {
@@ -12,11 +13,7 @@ export function prepareElements(elements, context, measure, resources) {
       if (element.binding.source === 'SYSTEM' && ['system.pageNumber', 'system.totalPages'].includes(element.binding.path)) {
         return node
       }
-      Object.assign(node, measure.text(node.text, node.widthMm, node.style))
-      if (node.heightMm > element.heightMm + 0.0001) {
-        throw new PrintError('TEXT_OVERFLOW', '固定文本超过元素高度，请加高或使用流式文本区块', element.id)
-      }
-      node.heightMm = element.heightMm
+      applyTextFit(element, node, measure)
     }
     if (element.type === 'HTML') {
       node.html = String(resolveBinding(element.binding, context) ?? '')
@@ -39,27 +36,24 @@ export function prepareElements(elements, context, measure, resources) {
         cells: element.table.cells.map((cell) => {
           const image = cell.contentType === 'IMAGE'
           const value = resolveBinding(cell.binding, context)
+          const style = staticTableCellLook(element, cell)
           if (image) {
             const src = resources?.images.get(`static-cell:${element.id}:${cell.id}`) || ''
             if (value !== null && value !== '' && !src)
               throw new PrintError('RESOURCE_NOT_READY', '表格图片尚未完成准备', cell.id)
             return {
               ...cell,
+              style,
               type: 'IMAGE',
               text: '',
               src,
-              imageWidthMm: cell.imageWidthMm || Number(Math.max(3, (
-                element.table.columns.slice(cell.column, cell.column + cell.colSpan)
-                  .reduce((sum, col) => sum + (col.widthMm || 0), 0) - 2
-              )).toFixed(2)),
-              imageHeightMm: cell.imageHeightMm || Number(Math.max(3, (
-                element.table.rows.slice(cell.row, cell.row + cell.rowSpan)
-                  .reduce((sum, row) => sum + (row.heightMm || 0), 0) - 2
-              )).toFixed(2)),
+              imageWidthMm: cell.imageWidthMm || Number(Math.max(3, element.table.columns.slice(cell.column, cell.column + cell.colSpan).reduce((sum, col) => sum + (col.widthMm || 0), 0) - 2).toFixed(2)),
+              imageHeightMm: cell.imageHeightMm || Number(Math.max(3, element.table.rows.slice(cell.row, cell.row + cell.rowSpan).reduce((sum, row) => sum + (row.heightMm || 0), 0) - 2).toFixed(2)),
             }
           }
           return {
             ...cell,
+            style,
             type: 'TEXT',
             text: formatValue(value, cell.format),
           }
@@ -68,6 +62,52 @@ export function prepareElements(elements, context, measure, resources) {
     }
     return node
   })
+}
+
+function applyTextFit(element, node, measure) {
+  const fit = element.style?.textFit
+  const measured = measure.text(node.text, node.widthMm, node.style)
+  if (fit === 'SHRINK') {
+    const min = element.style?.shrinkMinFontSizePt ?? 6
+    const original = element.style?.fontSizePt ?? 10
+    if (measured.heightMm <= element.heightMm + 0.0001) {
+      Object.assign(node, measured)
+      node.heightMm = element.heightMm
+      return
+    }
+    let low = min
+    let high = original
+    let best = { ...measured, fontSizePt: min }
+    while (high - low > 0.15) {
+      const mid = Number(((low + high) / 2).toFixed(2))
+      const trial = measure.text(node.text, node.widthMm, { ...node.style, fontSizePt: mid })
+      if (trial.heightMm <= element.heightMm + 0.0001) {
+        best = { ...trial, fontSizePt: mid }
+        low = mid
+      }
+      else {
+        high = mid
+      }
+    }
+    Object.assign(node, best)
+    node.style = { ...node.style, fontSizePt: best.fontSizePt }
+    node.heightMm = element.heightMm
+    if (best.heightMm > element.heightMm + 0.0001)
+      node.overflow = 'hidden'
+    return
+  }
+  Object.assign(node, measured)
+  if (node.heightMm > element.heightMm + 0.0001) {
+    if (fit === 'AUTO_HEIGHT')
+      return
+    if (fit === 'CLIP') {
+      node.heightMm = element.heightMm
+      node.overflow = 'hidden'
+      return
+    }
+    throw new PrintError('TEXT_OVERFLOW', '固定文本超过元素高度，请加高、截断、缩小字号或使用流式文本区块', element.id)
+  }
+  node.heightMm = element.heightMm
 }
 
 function preparedRow(cells, kind, key, measure) {
@@ -109,6 +149,7 @@ export function prepareSection(section, context, measure, geometry, resources, c
     return { ...section, type: 'TEXT', text, widthMm: geometry.contentWidthMm, ...measure.text(text, geometry.contentWidthMm, section.style) }
   }
   const source = resolveCollection(section.collectionPath, context)
+  const bandContext = Object.assign(Object.create(null), context, { rows: source })
   const fieldTypes = new Map(catalog.map(field => [field.path, field.type]))
   const widthMm = section.columns.reduce((sum, column) => sum + column.widthMm, 0)
   const cellStyles = section.cellStyles || {}
@@ -124,7 +165,7 @@ export function prepareSection(section, context, measure, geometry, resources, c
   })) }
   const headers = (section.headerRows?.length ? section.headerRows : [defaultHeader]).map((row, i) => {
     let colCursor = 0
-    const cells = mergedCells(row, section.columns, context, {
+    const cells = mergedCells(row, section.columns, bandContext, {
       ...section.style,
       backgroundColor: section.headerStyle?.backgroundColor || '#f1f5f9',
       ...section.headerStyle,
@@ -139,36 +180,40 @@ export function prepareSection(section, context, measure, geometry, resources, c
     })
     return preparedRow(cells, 'header', `header-${i}`, measure)
   })
-  const rows = source.map((record, i) => preparedRow(section.columns.map((column) => {
-    const value = readOwnPath(record, column.field)
-    const image = fieldTypes.get(`${section.collectionPath}.${column.field}`) === 'IMAGE'
-    const src = image ? resources?.images.get(tableImageResourceKey(section.id, i, column.id)) || '' : ''
-    if (image && value !== null && value !== '' && !src) {
-      throw new PrintError('RESOURCE_NOT_READY', '明细图片或签名尚未完成准备', `${section.collectionPath}[${i}].${column.field}`)
-    }
-    const bandStyle = i % 2 === 0 ? section.oddRowStyle : section.evenRowStyle
-    return {
-      text: image ? '' : formatValue(value, column.format),
-      type: image ? 'IMAGE' : 'TEXT',
-      src,
-      imageHeightMm: src ? Math.min(18, Math.max(8, column.widthMm * 0.4)) : 0,
-      widthMm: column.widthMm,
-      style: mergeDataTableCellStyle(
-        { ...section.style, ...bandStyle, ...column.style },
-        cellStyles,
-        'data',
-        i,
-        column.id,
-      ),
-    }
-  }), 'data', `${section.id}-${i}`, measure))
+  const rows = source.map((record, i) => {
+    const prepared = preparedRow(section.columns.map((column) => {
+      const value = readOwnPath(record, column.field)
+      const image = fieldTypes.get(`${section.collectionPath}.${column.field}`) === 'IMAGE'
+      const src = image ? resources?.images.get(tableImageResourceKey(section.id, i, column.id)) || '' : ''
+      if (image && value !== null && value !== '' && !src) {
+        throw new PrintError('RESOURCE_NOT_READY', '明细图片或签名尚未完成准备', `${section.collectionPath}[${i}].${column.field}`)
+      }
+      const bandStyle = i % 2 === 0 ? section.oddRowStyle : section.evenRowStyle
+      return {
+        text: image ? '' : formatValue(value, column.format),
+        type: image ? 'IMAGE' : 'TEXT',
+        src,
+        imageHeightMm: src ? Math.min(18, Math.max(8, column.widthMm * 0.4)) : 0,
+        widthMm: column.widthMm,
+        style: mergeDataTableCellStyle(
+          { ...section.style, ...bandStyle, ...column.style },
+          cellStyles,
+          'data',
+          i,
+          column.id,
+        ),
+      }
+    }), 'data', `${section.id}-${i}`, measure)
+    prepared.record = record
+    return prepared
+  })
   if (!rows.length) {
     rows.push(preparedRow([{ text: section.emptyText ?? '暂无明细', widthMm, style: section.style }], 'empty', 'empty', measure))
   }
   const footer = section.footer
     ? (() => {
         let colCursor = 0
-        const cells = mergedCells(section.footer, section.columns, context, section.style, resources, section.id, 'footer').map((cell) => {
+        const cells = mergedCells(section.footer, section.columns, bandContext, section.style, resources, section.id, 'footer').map((cell) => {
           const column = section.columns[colCursor]
           const start = colCursor
           colCursor += cell.span || 1
@@ -180,5 +225,24 @@ export function prepareSection(section, context, measure, geometry, resources, c
         return preparedRow(cells, 'footer', 'footer', measure)
       })()
     : null
-  return { ...section, widthMm, headers, rows, footer, sourceRowCount: source.length, heightMm: [...headers, ...rows, ...(footer ? [footer] : [])].reduce((sum, row) => sum + row.heightMm, 0) }
+  const subtotalTemplate = section.subtotal || null
+  return { ...section, widthMm, headers, rows, footer, subtotalTemplate, source, sourceRowCount: source.length, heightMm: [...headers, ...rows, ...(footer ? [footer] : [])].reduce((sum, row) => sum + row.heightMm, 0) }
+}
+
+export function materializeTableBand(section, template, records, kind, measure, context, resources) {
+  if (!template)
+    return null
+  const bandContext = Object.assign(Object.create(null), context, { rows: records })
+  const cellStyles = section.cellStyles || {}
+  let colCursor = 0
+  const cells = mergedCells(template, section.columns, bandContext, section.style, resources, section.id, kind).map((cell) => {
+    const column = section.columns[colCursor]
+    const start = colCursor
+    colCursor += cell.span || 1
+    return {
+      ...cell,
+      style: mergeDataTableCellStyle(cell.style, cellStyles, kind, 0, column?.id || `c${start}`),
+    }
+  })
+  return preparedRow(cells, kind, kind, measure)
 }

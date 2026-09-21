@@ -1,9 +1,19 @@
+import { collectExpressionFieldPaths } from './expression'
+
 /** Return field requirements with locations; table columns use collection-relative paths. */
 export function collectFieldBindings(document) {
   const fields = []
   const binding = (value, location) => {
     if (value?.source === 'FIELD') {
       fields.push({ path: value.path, location, collection: false })
+    }
+    if (value?.source === 'EXPRESSION' && value.expression) {
+      try {
+        collectExpressionFieldPaths(value.expression).forEach(path => fields.push({ path, location, collection: false }))
+      }
+      catch {
+        // Invalid expressions are reported by document validation.
+      }
     }
   }
   const elements = (items, location) => items.forEach((item, i) => {
@@ -12,6 +22,7 @@ export function collectFieldBindings(document) {
       fields.push({ path: item.collectionPath, location: `${location}[${i}]`, collection: true })
       item.columns?.forEach((column, j) => fields.push({ path: `${item.collectionPath}.${column.field}`, location: `${location}[${i}].columns[${j}]`, collection: false }))
       item.footer?.cells?.forEach((cell, j) => binding(cell.binding, `${location}[${i}].footer.cells[${j}]`))
+      item.subtotal?.cells?.forEach((cell, j) => binding(cell.binding, `${location}[${i}].subtotal.cells[${j}]`))
     }
   })
   elements(document.header.elements, 'header.elements')
@@ -24,8 +35,17 @@ export function collectFieldBindings(document) {
       fields.push({ path: section.collectionPath, location, collection: true })
       section.columns.forEach((column, j) => fields.push({ path: `${section.collectionPath}.${column.field}`, location: `${location}.columns[${j}]`, collection: false }))
       section.footer?.cells.forEach((cell, j) => binding(cell.binding, `${location}.footer.cells[${j}]`))
+      section.subtotal?.cells.forEach((cell, j) => binding(cell.binding, `${location}.subtotal.cells[${j}]`))
     }
   })
+  if (document.watermark?.expression) {
+    try {
+      collectExpressionFieldPaths(document.watermark.expression).forEach(path => fields.push({ path, location: 'watermark.expression', collection: false }))
+    }
+    catch {
+      // Invalid expressions are reported by document validation.
+    }
+  }
   return fields
 }
 

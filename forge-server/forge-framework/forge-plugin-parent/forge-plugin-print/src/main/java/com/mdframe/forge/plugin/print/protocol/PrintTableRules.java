@@ -61,6 +61,9 @@ final class PrintTableRules {
         if (t.has("footer")) {
             cells(t.get("footer"), path + ".footer", columns.size(), true);
         }
+        if (t.has("subtotal")) {
+            cells(t.get("subtotal"), path + ".subtotal", columns.size(), true);
+        }
         if (t.has("emptyText")) {
             r.text(t.get("emptyText"), path + ".emptyText", 500);
         }

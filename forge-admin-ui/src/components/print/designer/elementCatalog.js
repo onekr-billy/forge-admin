@@ -52,7 +52,7 @@ export function addElement(store, type, binding, position, preset, preferredSurf
       : preset === 'LONG'
         ? { widthMm: 90, heightMm: 28 }
         : preset === 'VERTICAL'
-          ? { widthMm: 0.8, heightMm: 40 }
+          ? { widthMm: 0.5, heightMm: 40 }
           : preset === 'CIRCLE'
             ? { widthMm: 24, heightMm: 24 }
             : type === 'QRCODE'
@@ -64,7 +64,7 @@ export function addElement(store, type, binding, position, preset, preferredSurf
                   : type === 'HTML'
                     ? { widthMm: 60, heightMm: 24 }
                     : type === 'LINE'
-                      ? { widthMm: 50, heightMm: 0.8 }
+                      ? { widthMm: 50, heightMm: 0.5 }
                       : type === 'TEXT' || type === 'PAGE_NUMBER'
                         ? { widthMm: 45, heightMm: 10 }
                         : { widthMm: 45, heightMm: 18 }
@@ -111,7 +111,9 @@ export function addElement(store, type, binding, position, preset, preferredSurf
     if (preset === 'LONG')
       e.style = { fontSizePt: 10, lineHeight: 1.5 }
     if (['LINE', 'RECTANGLE', 'ELLIPSE'].includes(type)) {
-      e.style = { borderWidthMm: type === 'LINE' ? 0.35 : 0.5, borderColor: '#000000', borderStyle: 'solid' }
+      e.style = type === 'LINE'
+        ? { borderWidthMm: 0.5, borderColor: '#000000', backgroundColor: '#000000', borderStyle: 'solid' }
+        : { borderWidthMm: 0.5, borderColor: '#000000', borderStyle: 'solid' }
     }
     clampElementToContent(doc, e)
     surface.elements.push(e)

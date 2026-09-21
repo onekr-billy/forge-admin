@@ -45,7 +45,7 @@ const frame = computed(() => {
         :key="column"
         :role="row.kind === 'header' ? 'columnheader' : 'cell'"
         :style="{
-          ...tableCellStyle(cell.style),
+          ...tableCellStyle(cell.style, { top: index === 0, left: column === 0 }),
           display: 'flex',
           flexDirection: 'row',
           flex: 'none',
@@ -63,9 +63,7 @@ const frame = computed(() => {
           alt=""
           :style="{ display: 'block', width: '100%', height: `${cell.imageHeightMm}mm`, objectFit: 'contain' }"
         >
-        <template v-else>
-          {{ cell.text }}
-        </template>
+        <span v-else>{{ cell.text }}</span>
       </div>
     </div>
   </div>

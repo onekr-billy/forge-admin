@@ -102,6 +102,7 @@ function applyColumnSelection(col0, col1, row0, row1) {
     bottom: Math.max(row0, row1),
     left,
     right,
+    rowCount: rows.value.length,
   }
   const cells = iterDataTableSelectionCells(rows.value, props.element.columns, range)
     .map(({ kind, kindIndex, columnId }) => ({ kind, kindIndex, columnId }))
@@ -267,7 +268,7 @@ onBeforeUnmount(() => {
               'selected': isSelected(rowIndex, cell),
               'image': isImageCell(cell),
             }"
-            :style="{ ...tableCellStyle(cell.style), width: `${cell.widthMm}mm` }"
+            :style="{ ...tableCellStyle(cell.style, { top: rowIndex === 0, left: (cell.colStart ?? colIndex) === 0 }), width: `${cell.widthMm}mm` }"
             :data-row-index="rowIndex"
             :data-col-start="cell.colStart ?? colIndex"
             :data-col-span="cell.colSpan || 1"
@@ -290,9 +291,10 @@ onBeforeUnmount(() => {
         </template>
       </div>
       <div
-        v-for="(col, index) in element.columns.slice(0, -1)"
+        v-for="(col, index) in element.columns"
         :key="`col-h-${col.id}`"
         class="col-resize-handle"
+        :class="{ outer: index === element.columns.length - 1 }"
         :style="colHandleStyle(index)"
         title="拖动调整列宽"
         @pointerdown.stop="startColumnResize($event, index)"
@@ -355,7 +357,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
 }
 .data-table-row {
@@ -374,7 +376,7 @@ onBeforeUnmount(() => {
   padding: 1mm;
   border-radius: 0;
   color: inherit;
-  background: transparent;
+  background-color: unset;
   font: inherit;
   font-size: 9pt;
   overflow: hidden;
@@ -411,7 +413,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .data-table-cell.selected {
-  background: color-mix(in srgb, var(--primary-color, #356cde) 10%, transparent);
   outline: none;
   box-shadow: none;
 }
@@ -432,6 +433,10 @@ onBeforeUnmount(() => {
   margin-left: -2.5px;
   cursor: col-resize;
 }
+.col-resize-handle.outer {
+  width: 8px;
+  margin-left: -4px;
+}
 .col-resize-handle:hover {
   background: color-mix(in srgb, var(--primary-color, #356cde) 35%, transparent);
 }
@@ -443,6 +448,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 .data-table-cell:hover {
-  background: color-mix(in srgb, var(--primary-color, #356cde) 8%, transparent);
+  filter: brightness(0.97);
 }
 </style>

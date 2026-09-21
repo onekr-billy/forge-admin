@@ -77,6 +77,16 @@ describe('print document protocol v1', () => {
     expect(() => assertPrintDocument(doc)).toThrow()
   })
 
+  it('accepts transparent and picker colors, but still rejects named CSS colors', () => {
+    expect(validatePrintDocument(fixedDocument(textElement({ style: { backgroundColor: 'transparent' } })))).toEqual([])
+    expect(validatePrintDocument(fixedDocument(textElement({ style: { color: '#11223344' } })))).toEqual([])
+    expect(validatePrintDocument(fixedDocument(textElement({ style: { backgroundColor: 'rgba(17, 34, 51, 1)' } })))).toEqual([])
+    expect(validatePrintDocument(fixedDocument(textElement({ style: { backgroundColor: 'red' } })))).toContainEqual(expect.objectContaining({
+      path: 'body[0].elements[0].style.backgroundColor',
+      code: 'INVALID_COLOR',
+    }))
+  })
+
   it('accepts ellipse as a native non-executable shape', () => {
     const doc = fixedDocument(textElement({ type: 'ELLIPSE' }))
     delete doc.body[0].elements[0].binding
@@ -100,6 +110,32 @@ describe('print document protocol v1', () => {
     doc.body[0].elements[0].locked = true
     doc.body[0].elements[0].style.objectFit = 'none'
     expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[0].elements[0].style.objectFit' }))
+  })
+
+  it('accepts expression bindings, overflow modes and paper tiling', () => {
+    const doc = fixedDocument(textElement({
+      binding: { source: 'EXPRESSION', expression: 'MONEY(12 * 10)' },
+      format: { type: 'MONEY_UPPER' },
+      style: { textFit: 'SHRINK', shrinkMinFontSizePt: 6 },
+    }))
+    doc.paper.kind = 'CONTINUOUS'
+    doc.paper.tiling = { enabled: true, columns: 2, rows: 2, gapXMm: 2, gapYMm: 2, sheetWidthMm: 210, sheetHeightMm: 297, repeatToFill: true }
+    doc.paper.designBackground = { fileId: 'overlay_1', opacity: 1, rotationDeg: 0, print: false }
+    doc.watermark = { text: '内部资料', opacity: 0.1, rotateDeg: -20 }
+    doc.exportFileName = '{template}-{{main.name}}-{timestamp}'
+    expect(validatePrintDocument(doc)).toEqual([])
+    doc.body[0].elements[0].style.opacity = 0.4
+    expect(validatePrintDocument(doc)).toEqual([])
+    doc.body[0].elements[0].style.letterSpacing = 0.2
+    expect(validatePrintDocument(doc)).toEqual([])
+    doc.body[0].elements[0].style.opacity = 1.5
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'body[0].elements[0].style.opacity', code: 'INVALID_NUMBER' }))
+    doc.body[0].elements[0].style.opacity = 0.4
+    doc.body[0].elements[0].binding = { source: 'EXPRESSION', expression: 'eval(1)' }
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ code: 'INVALID_EXPRESSION' }))
+    doc.body[0].elements[0].binding = { source: 'EXPRESSION', expression: 'MONEY(12 * 10)' }
+    doc.exportFileName = '../x'
+    expect(validatePrintDocument(doc)).toContainEqual(expect.objectContaining({ path: 'exportFileName', code: 'INVALID_TEXT' }))
   })
 
   it('accepts a native blank table and rejects overlaps or dimension drift', () => {

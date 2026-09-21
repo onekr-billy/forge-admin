@@ -1,19 +1,11 @@
-import { readOwnPath, resolveCollection } from '../protocol/binding'
+import { readOwnPath, resolveBinding, resolveCollection } from '../protocol/binding'
 import { formatValue } from '../protocol/formatters'
 import { isSafeFieldPath } from '../protocol/validate'
 import { mergeDataTableCellStyle } from './dataTableCellStyles'
 
 const SAMPLE_DATE = '2026-09-19 10:30:00'
-/** Tiny inline placeholder so IMAGE bindings preview without a real fileId. */
-export const SAMPLE_IMAGE_DATA_URL = 'data:image/svg+xml,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="96" viewBox="0 0 160 96">'
-  + '<rect width="160" height="96" rx="6" fill="#e2e8f0"/>'
-  + '<rect x="18" y="18" width="124" height="60" rx="4" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>'
-  + '<circle cx="52" cy="42" r="10" fill="#94a3b8"/>'
-  + '<path d="M28 70l28-22 18 14 22-20 26 28H28z" fill="#64748b"/>'
-  + '<text x="80" y="88" text-anchor="middle" fill="#475569" font-size="11" font-family="sans-serif">示例图片</text>'
-  + '</svg>',
-)
+/** Protocol-safe PNG placeholder. Print resources reject SVG / remote URLs. */
+export const SAMPLE_IMAGE_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAABgCAIAAAAVRe7OAAAArUlEQVR42u3RMQ0AAAgEsfcvk4kRCThAAGlyCq6pHj0uFgAWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABViAAQuwAAuwAAuwAAMWYAEWYAEWYAEGLMACLMACLMACLMCABViABViABViAAQuwAAuwAAuwAAN2AbAAC7AAC7AACzBgARZgARZgARZgwAIswAIswAIswAIMWIAFWIAFWIAFGLAAC7AAC7AA62oBnoahjoqICDUAAAAASUVORK5CYII='
 
 function ownObject(target, key) {
   if (!Object.hasOwn(target, key) || !target[key] || typeof target[key] !== 'object' || Array.isArray(target[key]))
@@ -103,6 +95,8 @@ export function designerBindingValue(binding, context) {
       return null
     if (binding.source === 'CONSTANT')
       return binding.value ?? null
+    if (binding.source === 'EXPRESSION')
+      return resolveBinding(binding, context)
     // Designer preview may show arrays/images; runtime still uses strict resolveBinding.
     return readOwnPath(context, binding.path)
   }
@@ -201,6 +195,14 @@ function mergedPreviewCells(row, columns, catalog, context, sectionStyle) {
 
 export function designerTablePreview(section, catalog, context, limit = 3) {
   const cellStyles = section.cellStyles || {}
+  let collectionRows = []
+  try {
+    collectionRows = resolveCollection(section.collectionPath, context)
+  }
+  catch {
+    collectionRows = []
+  }
+  const bandContext = { ...context, rows: collectionRows }
   const defaultHeader = [{
     cells: section.columns.map((column, index) => ({
       key: column.id,
@@ -224,7 +226,7 @@ export function designerTablePreview(section, catalog, context, limit = 3) {
           ...section.style,
           backgroundColor: section.headerStyle?.backgroundColor || '#f1f5f9',
           ...section.headerStyle,
-        }).map((cell, cellIndex) => {
+        }).map((cell) => {
           // Approximate column id from colStart for overrides.
           const column = section.columns[cell.colStart]
           return {
@@ -266,7 +268,7 @@ export function designerTablePreview(section, catalog, context, limit = 3) {
   })
   const footer = section.footer
     ? [{
-        cells: mergedPreviewCells(section.footer, section.columns, catalog, context, section.style).map((cell) => {
+        cells: mergedPreviewCells(section.footer, section.columns, catalog, bandContext, section.style).map((cell) => {
           const column = section.columns[cell.colStart]
           return {
             ...cell,
@@ -277,7 +279,20 @@ export function designerTablePreview(section, catalog, context, limit = 3) {
         key: 'footer',
       }]
     : []
-  return [...headers, ...data, ...footer]
+  const subtotal = section.subtotal
+    ? [{
+        cells: mergedPreviewCells(section.subtotal, section.columns, catalog, bandContext, section.style).map((cell) => {
+          const column = section.columns[cell.colStart]
+          return {
+            ...cell,
+            style: mergeDataTableCellStyle(cell.style, cellStyles, 'subtotal', 0, column?.id || cell.key),
+          }
+        }),
+        kind: 'subtotal',
+        key: 'subtotal',
+      }]
+    : []
+  return [...headers, ...data, ...subtotal, ...footer]
 }
 
 export function defaultFieldFormat(field) {

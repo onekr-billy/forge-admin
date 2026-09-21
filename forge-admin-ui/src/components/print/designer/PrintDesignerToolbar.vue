@@ -60,6 +60,8 @@ const paperOptions = [
   { label: 'A5 · 148 × 210 mm', value: 'A5' },
   { label: 'B4 · 250 × 353 mm', value: 'B4' },
   { label: 'B5 · 176 × 250 mm', value: 'B5' },
+  { label: '80mm 连续纸 · 80 × 297 mm', value: 'RECEIPT' },
+  { label: '标签 · 50 × 30 mm', value: 'LABEL' },
 ]
 const paperName = computed(() => {
   const { widthMm, heightMm } = store.document.paper
@@ -73,6 +75,10 @@ const paperName = computed(() => {
     return 'B4'
   if (widthMm === 176 && heightMm === 250)
     return 'B5'
+  if (widthMm === 80 && heightMm === 297)
+    return 'RECEIPT'
+  if (widthMm === 50 && heightMm === 30)
+    return 'LABEL'
   return 'CUSTOM'
 })
 const paperSelectOptions = computed(() => {
@@ -101,7 +107,7 @@ function setPaper(widthMm, heightMm) {
 }
 
 function preset(value) {
-  const sizes = { A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250] }
+  const sizes = { A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250], RECEIPT: [80, 297], LABEL: [50, 30] }
   if (sizes[value])
     setPaper(...sizes[value])
 }

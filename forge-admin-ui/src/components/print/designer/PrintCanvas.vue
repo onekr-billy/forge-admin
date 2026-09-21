@@ -14,8 +14,9 @@ import { NDropdown, NIcon, NModal } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, ref } from 'vue'
 import FileUpload from '@/components/file-upload/index.vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
+import { getFileUrl } from '@/utils/file'
 import { paperGeometry, screenDeltaToMm } from '../protocol/units'
-import { cellStyle, printStyle } from '../renderers/style'
+import { printStyle, tableCellStyle as printTableCellStyle, tableFrameStyle } from '../renderers/style'
 import { findSurface } from './commands'
 import { estimateDesignerSectionHeight, paginateDesignerBody } from './designerPagination'
 import { designerBindingText, designerTablePreview } from './designerSample'
@@ -41,6 +42,12 @@ const showCellImageModal = ref(false)
 const pendingImageCellIds = ref([])
 const cellImageDraft = ref('')
 const geometry = computed(() => paperGeometry(store.document))
+const overlayUrl = computed(() => {
+  const fileId = store.document.paper.designBackground?.fileId
+  return fileId ? getFileUrl(fileId) : ''
+})
+const overlayStyle = computed(() => store.document.paper.designBackground || {})
+const watermarkText = computed(() => store.document.watermark?.text || '')
 const sectionNames = { FIXED: '自由画布', TEXT: '流式长文', TABLE: '明细表格' }
 const icon = component => () => h(NIcon, null, { default: () => h(component) })
 const bandPreview = ref(null)
@@ -162,13 +169,15 @@ function tableRows(surface) {
   return designerTablePreview(surface, store.catalog, props.context)
 }
 
-function tableCellStyle(cell) {
-  const style = cellStyle(cell.style)
+function tableCellStyle(cell, rowIndex, colIndex) {
+  const style = printTableCellStyle(cell.style, {
+    top: rowIndex === 0,
+    left: (cell.colStart ?? colIndex) === 0,
+  })
   return {
     ...style,
     width: `${cell.widthMm}mm`,
     flex: 'none',
-    // Prefer explicit cell colors over sketch CSS defaults.
     backgroundColor: cell.style?.backgroundColor || style.backgroundColor,
     color: cell.style?.color || '#334155',
     fontSize: cell.style?.fontSizePt ? `${cell.style.fontSizePt}pt` : '9pt',
@@ -347,7 +356,7 @@ async function pasteImageFileIntoCell({ cellId, file }) {
 }
 
 function onTableResizeTrack(payload = {}) {
-  const { phase, axis, index, sizeMm } = payload
+  const { phase, axis, index, sizeMm, originMm } = payload
   if (phase === 'start') {
     store.beginGesture()
     return
@@ -357,7 +366,7 @@ function onTableResizeTrack(payload = {}) {
     return
   }
   if (phase === 'move' && Number.isFinite(sizeMm))
-    store.resizeStaticTableTrack(axis, index, sizeMm, { live: true })
+    store.resizeStaticTableTrack(axis, index, sizeMm, { live: true, originMm })
 }
 
 function onTableResizeImage(payload = {}) {
@@ -394,22 +403,30 @@ function tableContextAction(payload) {
     return
   if (Number.isFinite(count) && count >= 1)
     store.setStaticTableInsertCount(count)
-  if (key === 'merge')
+  if (key === 'merge') {
     store.mergeStaticTableSelection()
-  else if (key === 'split')
+  }
+  else if (key === 'split') {
     store.splitStaticTableSelection()
-  else if (key === 'row-above')
+  }
+  else if (key === 'row-above') {
     store.insertStaticTableRowRelative('above', count)
-  else if (key === 'row-below')
+  }
+  else if (key === 'row-below') {
     store.insertStaticTableRowRelative('below', count)
-  else if (key === 'row-delete')
+  }
+  else if (key === 'row-delete') {
     store.deleteStaticTableRow()
-  else if (key === 'col-left')
+  }
+  else if (key === 'col-left') {
     store.insertStaticTableColumnRelative('left', count)
-  else if (key === 'col-right')
+  }
+  else if (key === 'col-right') {
     store.insertStaticTableColumnRelative('right', count)
-  else if (key === 'col-delete')
+  }
+  else if (key === 'col-delete') {
     store.deleteStaticTableColumn()
+  }
   else if (key === 'image-insert') {
     const ids = store.tableCellIds.length ? [...store.tableCellIds] : (cellId ? [cellId] : [])
     if (cellId && !ids.includes(cellId))
@@ -418,10 +435,12 @@ function tableContextAction(payload) {
       store.selectTableCells(ids)
     pickImageForCells(ids.length ? ids : (cellId ? [cellId] : []))
   }
-  else if (key === 'image-clear')
+  else if (key === 'image-clear') {
     store.clearStaticTableCellsImage(store.tableCellIds.length ? store.tableCellIds : (cellId ? [cellId] : []))
-  else if (key === 'image-paste-file')
+  }
+  else if (key === 'image-paste-file') {
     pasteImageFileIntoCell({ cellId, file })
+  }
 }
 
 function surfaceDown(event, surface) {
@@ -744,6 +763,19 @@ onBeforeUnmount(() => clearMarquee())
             @dragover.prevent
             @drop.prevent="dropOnPaper"
           >
+            <img
+              v-if="overlayUrl"
+              class="design-overlay"
+              :src="overlayUrl"
+              alt=""
+              :style="{
+                opacity: overlayStyle.opacity ?? 1,
+                transform: overlayStyle.rotationDeg ? `rotate(${overlayStyle.rotationDeg}deg)` : undefined,
+              }"
+            >
+            <div v-if="watermarkText" class="design-watermark">
+              {{ watermarkText }}
+            </div>
             <div
               class="margin-guide"
               :style="{
@@ -814,7 +846,6 @@ onBeforeUnmount(() => clearMarquee())
               v-if="page.number === 1 && store.document.header.heightMm <= 0"
               type="button"
               class="band-collapsed header-collapsed"
-              :style="{ top: `${store.document.paper.marginMm.top}mm` }"
               @click="store.expandBand('header')"
             >
               页眉已折叠 · 点击展开为 12mm
@@ -823,7 +854,6 @@ onBeforeUnmount(() => clearMarquee())
               v-if="page.number === designerPages.pages.length && store.document.footer.heightMm <= 0"
               type="button"
               class="band-collapsed footer-collapsed"
-              :style="{ top: `${footerGuideTopMm(page)}mm` }"
               @click="store.expandBand('footer')"
             >
               页脚已折叠 · 点击展开为 12mm
@@ -831,8 +861,7 @@ onBeforeUnmount(() => clearMarquee())
             <button
               v-if="page.number === 1 && store.document.header.heightMm > 0 && !(store.document.header.elements || []).length"
               type="button"
-              class="band-collapse-action"
-              :style="{ top: `${store.document.paper.marginMm.top + 1}mm` }"
+              class="band-collapse-action header-collapse-action"
               @click="store.collapseBand('header')"
             >
               收起页眉
@@ -840,8 +869,7 @@ onBeforeUnmount(() => clearMarquee())
             <button
               v-if="page.number === designerPages.pages.length && store.document.footer.heightMm > 0 && !(store.document.footer.elements || []).length"
               type="button"
-              class="band-collapse-action"
-              :style="{ top: `${footerGuideTopMm(page) + 1}mm` }"
+              class="band-collapse-action footer-collapse-action"
               @click="store.collapseBand('footer')"
             >
               收起页脚
@@ -967,9 +995,9 @@ onBeforeUnmount(() => clearMarquee())
                     :class="{ selected: store.surfaceId === surface.id }"
                     @pointerdown="surfaceDown($event, surface)"
                   >
-                    <div class="table-sketch-frame">
+                    <div class="table-sketch-frame" :style="tableFrameStyle(surface.style)">
                       <div v-for="(row, rowIndex) in tableRows(surface)" :key="row.key || rowIndex" class="table-sketch-row" :data-row-kind="row.kind">
-                        <span v-for="cell in row.cells" :key="cell.key" :style="tableCellStyle(cell)">{{ cell.text }}</span>
+                        <span v-for="(cell, colIndex) in row.cells" :key="cell.key" :style="tableCellStyle(cell, rowIndex, colIndex)">{{ cell.text }}</span>
                       </div>
                     </div>
                     <template v-if="store.surfaceId === surface.id">
@@ -1227,6 +1255,28 @@ onBeforeUnmount(() => clearMarquee())
   /* Clip spill so handles/bands don't create a second scrollbar; page scroll stays on .canvas-viewport. */
   overflow: hidden;
 }
+.design-overlay,
+.design-watermark {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+.design-overlay {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+.design-watermark {
+  top: 40%;
+  left: 20%;
+  color: #94a3b8;
+  opacity: 0.12;
+  font-size: 28pt;
+  font-weight: 700;
+  transform: rotate(-24deg);
+  white-space: nowrap;
+}
 .paper-content {
   position: relative;
   z-index: 2;
@@ -1286,7 +1336,9 @@ onBeforeUnmount(() => clearMarquee())
   background-image:
     linear-gradient(to right, rgb(148 163 184 / 14%) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(148 163 184 / 14%) 1px, transparent 1px);
-  background-size: 5mm 5mm, 5mm 5mm;
+  background-size:
+    5mm 5mm,
+    5mm 5mm;
 }
 .margin-guide {
   position: absolute;
@@ -1352,8 +1404,7 @@ onBeforeUnmount(() => clearMarquee())
 .band-collapsed {
   position: absolute;
   z-index: 9;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 2mm;
   padding: 2px 8px;
   border: 1px dashed var(--text-tertiary, #64748b);
   border-radius: 999px;
@@ -1369,8 +1420,7 @@ onBeforeUnmount(() => clearMarquee())
 .band-collapse-action {
   position: absolute;
   z-index: 9;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 2mm;
   padding: 2px 8px;
   border: 1px solid var(--border-light, #cbd5e1);
   border-radius: 999px;
@@ -1382,6 +1432,15 @@ onBeforeUnmount(() => clearMarquee())
 .band-collapse-action:hover {
   color: var(--error-color, #d03050);
   border-color: var(--error-color, #d03050);
+}
+.header-collapsed,
+.header-collapse-action {
+  top: 1.5mm;
+}
+.footer-collapsed,
+.footer-collapse-action {
+  top: auto;
+  bottom: 1.5mm;
 }
 .reference-guide {
   position: absolute;
@@ -1582,7 +1641,6 @@ onBeforeUnmount(() => clearMarquee())
 }
 .table-sketch-row > * {
   box-sizing: border-box;
-  border: 1px solid var(--border-light, #94a3b8);
   flex-shrink: 0;
 }
 .table-sketch-row strong,

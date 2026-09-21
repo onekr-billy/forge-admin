@@ -11,6 +11,7 @@ const target = computed(() => store.activeElement || (store.activeSurface?.kind 
 const sources = [
   { label: '固定内容', value: 'CONSTANT' },
   { label: '数据字段（主表/流程）', value: 'FIELD' },
+  { label: '表达式', value: 'EXPRESSION' },
   { label: '系统时间', value: 'SYSTEM' },
 ]
 const fieldSummary = computed(() => {
@@ -28,10 +29,15 @@ function patch(binding) {
   else store.patchSurface({ binding })
 }
 function source(value) {
-  if (value === 'CONSTANT')
+  if (value === 'CONSTANT') {
     patch({ source: value, value: isHtml.value ? '<div>HTML 内容</div>' : '' })
-  else if (value === 'SYSTEM')
+  }
+  else if (value === 'SYSTEM') {
     patch({ source: value, path: 'system.generatedAt' })
+  }
+  else if (value === 'EXPRESSION') {
+    patch({ source: value, expression: 'MONEY(main.amount)' })
+  }
   else {
     const first = store.catalog.find(field => field.type !== 'COLLECTION' && (field.path.startsWith('main.') || field.path.startsWith('flow.')))
     if (first)
@@ -72,6 +78,20 @@ function onImageUpload(value) {
         </NFormItem>
         <p v-if="fieldSummary" class="binding-summary">
           当前：{{ fieldSummary }}
+        </p>
+      </template>
+      <template v-else-if="target.binding.source === 'EXPRESSION'">
+        <NFormItem label="表达式" size="small">
+          <NInput
+            :value="String(target.binding.expression ?? '')"
+            type="textarea"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            placeholder="例如 MONEY(main.qty * main.price) 或 合计：{UPPER(main.amount/100)}"
+            @update:value="patch({ source: 'EXPRESSION', expression: $event })"
+          />
+        </NFormItem>
+        <p class="muted tip">
+          可用 SUM/AVG/COUNT/MIN/MAX、四则运算、IF、UPPER(元) / RMB(分) 金额大写。禁止脚本。
         </p>
       </template>
       <template v-else-if="target.binding.source === 'CONSTANT'">

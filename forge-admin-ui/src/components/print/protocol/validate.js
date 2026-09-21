@@ -1,10 +1,12 @@
-import { ELEMENT_TYPES, FORMAT_TYPES, PRINT_LIMITS, PRINT_PROTOCOL, PRINT_SCHEMA_VERSION, PrintError, SECTION_KINDS } from './types'
+import { isExportFileNamePattern } from './exportFileName'
+import { parseExpressionTemplate } from './expression'
+import { isPrintColor } from './printColor'
+import { BINDING_SOURCES, ELEMENT_TYPES, FORMAT_TYPES, PAPER_KINDS, PRINT_LIMITS, PRINT_PROTOCOL, PRINT_SCHEMA_VERSION, PrintError, SECTION_KINDS, TEXT_FIT_MODES } from './types'
 import { paperGeometry } from './units'
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const IDENTIFIER = /^[\w-]{1,80}$/
-const COLOR = /^#[\da-f]{3}(?:[\da-f]{3})?$/i
-const STYLE_KEYS = ['fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'textAlign', 'verticalAlign', 'lineHeight', 'color', 'backgroundColor', 'borderColor', 'borderWidthMm', 'borderStyle', 'borderRadiusMm', 'paddingMm', 'textDecoration', 'objectFit']
+const TABLE_CELL_STYLE_KEY = /^(?:header|data|footer|subtotal):\d+:[\w-]+$/
 const SAFE_SYSTEM_PATHS = new Set(['system.generatedAt', 'system.pageNumber', 'system.totalPages'])
 
 export function isSafeFieldPath(path) {
@@ -68,12 +70,28 @@ export function validatePrintDocument(document) {
     }
   }
   function style(value, path) {
-    if (value === undefined || !object(value, STYLE_KEYS, path)) {
+    if (value === undefined)
+      return
+    if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
+      issue(path, 'INVALID_OBJECT', '必须是普通 JSON 对象')
       return
     }
+    const forbiddenStyle = new Set(['backgroundImage', 'background', 'src', 'href', 'content', 'filter', 'html', 'innerHTML', 'cssText', 'expression', 'clipPath', 'mask', 'cursor'])
     for (const [key, item] of Object.entries(value)) {
       const location = `${path}.${key}`
-      if (['color', 'backgroundColor', 'borderColor'].includes(key) && !COLOR.test(item)) {
+      if (DANGEROUS_KEYS.has(key) || forbiddenStyle.has(key) || !/^[a-z][a-z0-9]{0,40}$/i.test(key)) {
+        issue(location, 'UNKNOWN_PROPERTY', '不支持此属性')
+        continue
+      }
+      if (item !== null && typeof item === 'object') {
+        issue(location, 'INVALID_VALUE', '样式值必须是基础类型')
+        continue
+      }
+      if (typeof item === 'string' && /url\s*\(|expression\s*\(|javascript:|<script/i.test(item)) {
+        issue(location, 'INVALID_VALUE', '样式值不安全')
+        continue
+      }
+      if (['color', 'backgroundColor', 'borderColor'].includes(key) && item && !isPrintColor(item)) {
         issue(location, 'INVALID_COLOR', '颜色须使用十六进制格式')
       }
       if (key === 'fontFamily' && (typeof item !== 'string' || !/^[\p{L}\p{N} ,_-]{1,100}$/u.test(item))) {
@@ -115,6 +133,15 @@ export function validatePrintDocument(document) {
       if (key === 'objectFit') {
         choice(item, ['contain', 'cover', 'fill', 'scale-down'], location)
       }
+      if (key === 'textFit') {
+        choice(item, TEXT_FIT_MODES, location)
+      }
+      if (key === 'shrinkMinFontSizePt') {
+        number(item, location, 6, 144)
+      }
+      if (key === 'opacity') {
+        number(item, location, 0, 1)
+      }
     }
   }
   function format(value, path) {
@@ -138,10 +165,33 @@ export function validatePrintDocument(document) {
     }
   }
   function binding(value, path, image = false, fixedText = false) {
-    if (!object(value, ['source', 'path', 'value'], path)) {
+    if (!object(value, ['source', 'path', 'value', 'expression'], path)) {
       return
     }
-    choice(value.source, ['CONSTANT', 'FIELD', 'SYSTEM'], `${path}.source`)
+    choice(value.source, BINDING_SOURCES, `${path}.source`)
+    if (value.source === 'EXPRESSION') {
+      if (value.path !== undefined || value.value !== undefined) {
+        issue(path, 'CONFLICTING_BINDING', '表达式不能同时声明字段路径或固定值')
+      }
+      if (image) {
+        issue(path, 'INVALID_EXPRESSION', '图片不能使用表达式绑定')
+      }
+      if (typeof value.expression !== 'string') {
+        issue(`${path}.expression`, 'INVALID_EXPRESSION', '表达式必须是文本')
+      }
+      else {
+        try {
+          parseExpressionTemplate(value.expression)
+        }
+        catch (error) {
+          issue(`${path}.expression`, error.code || 'INVALID_EXPRESSION', error.message || '表达式无效')
+        }
+      }
+      return
+    }
+    if (value.expression !== undefined) {
+      issue(path, 'CONFLICTING_BINDING', '非表达式绑定不能声明 expression')
+    }
     if (value.source === 'CONSTANT') {
       if (value.path !== undefined) {
         issue(path, 'CONFLICTING_BINDING', '固定值不能同时声明字段路径')
@@ -235,7 +285,7 @@ export function validatePrintDocument(document) {
       issue(path, 'INVALID_COVERAGE', '单元格必须完整覆盖表格且不能重叠')
   }
   function element(value, path, width, height) {
-    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'table', 'barcodeFormat', 'pageNumberFormat', 'showCodeText', 'rotationDeg', 'flipX', 'flipY', 'locked', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText', 'headerStyle', 'oddRowStyle', 'evenRowStyle', 'minHeightMm', 'cellStyles'], path)) {
+    if (!object(value, ['id', 'type', 'xMm', 'yMm', 'widthMm', 'heightMm', 'binding', 'format', 'style', 'table', 'barcodeFormat', 'pageNumberFormat', 'showCodeText', 'rotationDeg', 'flipX', 'flipY', 'locked', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'subtotal', 'emptyText', 'headerStyle', 'oddRowStyle', 'evenRowStyle', 'minHeightMm', 'cellStyles'], path)) {
       return
     }
     identifier(value.id, `${path}.id`)
@@ -280,7 +330,7 @@ export function validatePrintDocument(document) {
       }
       else {
         for (const [key, item] of Object.entries(value.cellStyles)) {
-          if (!/^(header|data|footer):\d+:[\w-]+$/.test(key))
+          if (!TABLE_CELL_STYLE_KEY.test(key))
             issue(`${path}.cellStyles.${key}`, 'INVALID_CELL_STYLE_KEY', '单元格样式键无效')
           else
             style(item, `${path}.cellStyles.${key}`)
@@ -340,6 +390,9 @@ export function validatePrintDocument(document) {
     if (value.footer !== undefined) {
       cells(value.footer, `${path}.footer`, value.columns.length, true)
     }
+    if (value.subtotal !== undefined) {
+      cells(value.subtotal, `${path}.subtotal`, value.columns.length, true)
+    }
     if (value.emptyText !== undefined && (typeof value.emptyText !== 'string' || value.emptyText.length > 500)) {
       issue(`${path}.emptyText`, 'INVALID_TEXT', '空明细文案须为不超过 500 字的文本')
     }
@@ -392,18 +445,85 @@ export function validatePrintDocument(document) {
   catch {
     return [{ code: 'INVALID_JSON', path: '', message: '模板必须是大小受限、无循环引用的 JSON' }]
   }
-  if (!object(document, ['protocol', 'schemaVersion', 'paper', 'header', 'body', 'footer', 'resources'], '')) {
+  if (!object(document, ['protocol', 'schemaVersion', 'paper', 'header', 'body', 'footer', 'resources', 'watermark', 'exportFileName'], '')) {
     return issues
   }
   choice(document.protocol, [PRINT_PROTOCOL], 'protocol')
   choice(document.schemaVersion, [PRINT_SCHEMA_VERSION], 'schemaVersion')
+  if (document.exportFileName !== undefined && document.exportFileName !== '' && !isExportFileNamePattern(document.exportFileName))
+    issue('exportFileName', 'INVALID_TEXT', '导出文件名最多 120 字，可用 {{main.字段}}、{template}、{timestamp}，不能包含路径')
   const { paper } = document
-  if (!object(paper, ['widthMm', 'heightMm', 'orientation', 'marginMm'], 'paper')) {
+  if (!object(paper, ['widthMm', 'heightMm', 'orientation', 'marginMm', 'kind', 'tiling', 'designBackground'], 'paper')) {
     return issues
   }
   number(paper.widthMm, 'paper.widthMm', 10)
   number(paper.heightMm, 'paper.heightMm', 10)
   choice(paper.orientation, ['PORTRAIT', 'LANDSCAPE'], 'paper.orientation')
+  if (paper.kind !== undefined)
+    choice(paper.kind, PAPER_KINDS, 'paper.kind')
+  if (paper.tiling !== undefined) {
+    if (object(paper.tiling, ['enabled', 'columns', 'rows', 'gapXMm', 'gapYMm', 'sheetWidthMm', 'sheetHeightMm', 'repeatToFill'], 'paper.tiling')) {
+      choice(paper.tiling.enabled, [true, false], 'paper.tiling.enabled')
+      if (paper.tiling.columns !== undefined) {
+        number(paper.tiling.columns, 'paper.tiling.columns', 1, 12)
+        if (!Number.isInteger(paper.tiling.columns))
+          issue('paper.tiling.columns', 'INVALID_NUMBER', '拼版列数必须为整数')
+      }
+      if (paper.tiling.rows !== undefined) {
+        number(paper.tiling.rows, 'paper.tiling.rows', 1, 20)
+        if (!Number.isInteger(paper.tiling.rows))
+          issue('paper.tiling.rows', 'INVALID_NUMBER', '拼版行数必须为整数')
+      }
+      if (paper.tiling.gapXMm !== undefined)
+        number(paper.tiling.gapXMm, 'paper.tiling.gapXMm', 0, 50)
+      if (paper.tiling.gapYMm !== undefined)
+        number(paper.tiling.gapYMm, 'paper.tiling.gapYMm', 0, 50)
+      if (paper.tiling.sheetWidthMm !== undefined)
+        number(paper.tiling.sheetWidthMm, 'paper.tiling.sheetWidthMm', 10)
+      if (paper.tiling.sheetHeightMm !== undefined)
+        number(paper.tiling.sheetHeightMm, 'paper.tiling.sheetHeightMm', 10)
+      if (paper.tiling.repeatToFill !== undefined)
+        choice(paper.tiling.repeatToFill, [true, false], 'paper.tiling.repeatToFill')
+    }
+  }
+  if (paper.designBackground !== undefined) {
+    if (object(paper.designBackground, ['fileId', 'opacity', 'rotationDeg', 'print'], 'paper.designBackground')) {
+      if (typeof paper.designBackground.fileId !== 'string' || !/^[\w-]{1,128}$/.test(paper.designBackground.fileId))
+        issue('paper.designBackground.fileId', 'INVALID_RESOURCE', '套打底图必须使用文件标识')
+      if (paper.designBackground.opacity !== undefined)
+        number(paper.designBackground.opacity, 'paper.designBackground.opacity', 0, 1)
+      if (paper.designBackground.rotationDeg !== undefined)
+        number(paper.designBackground.rotationDeg, 'paper.designBackground.rotationDeg', -180, 180)
+      if (paper.designBackground.print !== undefined)
+        choice(paper.designBackground.print, [true, false], 'paper.designBackground.print')
+    }
+  }
+  if (document.watermark !== undefined) {
+    if (object(document.watermark, ['text', 'expression', 'opacity', 'rotateDeg', 'gapXMm', 'gapYMm', 'fontSizePt', 'color'], 'watermark')) {
+      if (document.watermark.text !== undefined && (typeof document.watermark.text !== 'string' || document.watermark.text.length > 100))
+        issue('watermark.text', 'INVALID_TEXT', '水印文字须不超过 100 字')
+      if (document.watermark.expression !== undefined) {
+        try {
+          parseExpressionTemplate(document.watermark.expression)
+        }
+        catch (error) {
+          issue('watermark.expression', error.code || 'INVALID_EXPRESSION', error.message || '水印表达式无效')
+        }
+      }
+      if (document.watermark.opacity !== undefined)
+        number(document.watermark.opacity, 'watermark.opacity', 0, 1)
+      if (document.watermark.rotateDeg !== undefined)
+        number(document.watermark.rotateDeg, 'watermark.rotateDeg', -180, 180)
+      if (document.watermark.gapXMm !== undefined)
+        number(document.watermark.gapXMm, 'watermark.gapXMm', 10, 200)
+      if (document.watermark.gapYMm !== undefined)
+        number(document.watermark.gapYMm, 'watermark.gapYMm', 10, 200)
+      if (document.watermark.fontSizePt !== undefined)
+        number(document.watermark.fontSizePt, 'watermark.fontSizePt', 6, 72)
+      if (document.watermark.color !== undefined && !isPrintColor(document.watermark.color))
+        issue('watermark.color', 'INVALID_COLOR', '颜色须使用十六进制格式')
+    }
+  }
   if (!object(paper.marginMm, ['top', 'right', 'bottom', 'left'], 'paper.marginMm')) {
     return issues
   }
@@ -424,7 +544,7 @@ export function validatePrintDocument(document) {
     document.body.forEach((section, index) => {
       const location = `body[${index}]`
       const pageBreak = section?.kind === 'PAGE_BREAK'
-      const keys = pageBreak ? ['id', 'kind'] : ['id', 'kind', 'heightMm', 'minHeightMm', 'elements', 'binding', 'format', 'style', 'headerStyle', 'oddRowStyle', 'evenRowStyle', 'gapAfterMm', 'keepWithNext', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'emptyText', 'cellStyles']
+      const keys = pageBreak ? ['id', 'kind'] : ['id', 'kind', 'heightMm', 'minHeightMm', 'elements', 'binding', 'format', 'style', 'headerStyle', 'oddRowStyle', 'evenRowStyle', 'gapAfterMm', 'keepWithNext', 'collectionPath', 'columns', 'headerRows', 'repeatHeader', 'footer', 'subtotal', 'emptyText', 'cellStyles']
       if (!object(section, keys, location)) {
         return
       }
@@ -449,11 +569,12 @@ export function validatePrintDocument(document) {
       if (section.evenRowStyle !== undefined)
         style(section.evenRowStyle, `${location}.evenRowStyle`)
       if (section.cellStyles !== undefined) {
-        if (!section.cellStyles || typeof section.cellStyles !== 'object' || Array.isArray(section.cellStyles))
+        if (!section.cellStyles || typeof section.cellStyles !== 'object' || Array.isArray(section.cellStyles)) {
           issue(`${location}.cellStyles`, 'INVALID_OBJECT', '单元格样式映射无效')
+        }
         else {
           for (const [key, item] of Object.entries(section.cellStyles)) {
-            if (!/^(header|data|footer):\d+:[\w-]+$/.test(key))
+            if (!TABLE_CELL_STYLE_KEY.test(key))
               issue(`${location}.cellStyles.${key}`, 'INVALID_CELL_STYLE_KEY', '单元格样式键无效')
             else
               style(item, `${location}.cellStyles.${key}`)

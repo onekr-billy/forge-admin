@@ -42,8 +42,8 @@
         UPDATE sys_print_execution SET result = #{result}, page_count = #{pageCount}, error_code = #{errorCode},
             update_by = #{actor}, update_time = NOW()
         WHERE tenant_id = #{tenantId} AND id = #{id} AND actor = #{actor} AND del_flag = 0
-          AND result = 'PREPARED' AND #{result} IN ('DIALOG_OPENED', 'FAILED')
+          AND result = 'PREPARED' AND #{result} IN ('DIALOG_OPENED', 'PDF_DOWNLOADED', 'FAILED')
           AND (#{pageCount} IS NULL OR #{pageCount} BETWEEN 1 AND 50)
-          AND (#{result} != 'DIALOG_OPENED' OR (#{pageCount} IS NOT NULL AND #{errorCode} IS NULL))
+          AND (#{result} NOT IN ('DIALOG_OPENED', 'PDF_DOWNLOADED') OR (#{pageCount} IS NOT NULL AND #{errorCode} IS NULL))
     </update>
 </mapper>

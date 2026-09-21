@@ -11,6 +11,40 @@ export function selectionBoundsFromCells(cells = []) {
   }
 }
 
+function trackSpanMm(tracks, start, end, key) {
+  return tracks.slice(start, end + 1).reduce((sum, item) => sum + Number(item?.[key] || 0), 0)
+}
+
+/** Paper-mm box of selected STATIC_TABLE cells, relative to the canvas origin. */
+export function staticTableCellPaperBounds(element, cells = []) {
+  const box = selectionBoundsFromCells(cells)
+  const columns = element?.table?.columns
+  const rows = element?.table?.rows
+  if (!box || !columns?.length || !rows?.length)
+    return null
+  return {
+    xMm: Number(element.xMm || 0) + trackSpanMm(columns, 0, box.left - 1, 'widthMm'),
+    yMm: Number(element.yMm || 0) + trackSpanMm(rows, 0, box.top - 1, 'heightMm'),
+    widthMm: trackSpanMm(columns, box.left, box.right, 'widthMm'),
+    heightMm: trackSpanMm(rows, box.top, box.bottom, 'heightMm'),
+  }
+}
+
+/** Paper-mm box of a DATA_TABLE selection range. */
+export function dataTableRangePaperBounds(element, range) {
+  const columns = element?.columns
+  if (!range || !columns?.length)
+    return null
+  const rowCount = Math.max(1, Number(range.rowCount) || range.bottom + 1)
+  const rowH = Number(element.heightMm || 0) / rowCount
+  return {
+    xMm: Number(element.xMm || 0) + trackSpanMm(columns, 0, range.left - 1, 'widthMm'),
+    yMm: Number(element.yMm || 0) + range.top * rowH,
+    widthMm: trackSpanMm(columns, range.left, range.right, 'widthMm'),
+    heightMm: (range.bottom - range.top + 1) * rowH,
+  }
+}
+
 /** Which outer edges of a cell sit on the selection rectangle (Excel-style). */
 export function selectionEdgeFlags(cell, bounds) {
   if (!bounds || !cell)
@@ -30,7 +64,7 @@ export function selectionEdgeFlags(cell, bounds) {
 export function selectionEdgeClass(cell, bounds) {
   const edges = selectionEdgeFlags(cell, bounds)
   return {
-    selected: true,
+    'selected': true,
     'edge-t': edges.top,
     'edge-r': edges.right,
     'edge-b': edges.bottom,

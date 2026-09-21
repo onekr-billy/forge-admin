@@ -26,14 +26,6 @@ watch(
     tab.value = 'basic'
   },
 )
-
-watch(
-  () => store.tableColumnId,
-  (id) => {
-    if (id)
-      tab.value = 'basic'
-  },
-)
 </script>
 
 <template>

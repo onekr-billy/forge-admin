@@ -44,7 +44,8 @@ class PrintResourceContractTest {
 
     @Test
     void seedsMatchEnumsAndNeverGrantRolesOrReportPhysicalSuccess() throws Exception {
-        String sql = Files.readString(migrationDirectory().resolve("V1.0.172__add_native_print_resources.sql"));
+        String sql = Files.readString(migrationDirectory().resolve("V1.0.172__add_native_print_resources.sql"))
+                + Files.readString(migrationDirectory().resolve("V1.0.180__add_print_pdf_downloaded_result.sql"));
         for (Class<? extends Enum<?>> type : List.of(PrintDesignStatus.class, PrintExecutionResult.class, PrintScene.class, PrintSourceType.class, PrintDataMode.class)) {
             for (Enum<?> value : type.getEnumConstants()) {
                 assertThat(sql).contains("'" + value.name() + "'");
@@ -80,7 +81,8 @@ class PrintResourceContractTest {
                 "V1.0.171__add_native_print_tables.sql",
                 "V1.0.172__add_native_print_resources.sql",
                 "V1.0.173__add_native_print_hidden_routes.sql",
-                "V1.0.174__support_print_workspace_page_identity.sql"
+                "V1.0.174__support_print_workspace_page_identity.sql",
+                "V1.0.180__add_print_pdf_downloaded_result.sql"
         ).doesNotContain(
                 "V1.0.168__add_native_print_tables.sql",
                 "V1.0.169__add_native_print_resources.sql",

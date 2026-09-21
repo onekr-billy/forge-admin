@@ -19,7 +19,7 @@ export function iterDataTableSelectionCells(previewRows, columns, range) {
   const bottom = Math.min(previewRows.length - 1, Math.max(range.top, range.bottom))
   const left = Math.max(0, Math.min(range.left, range.right))
   const right = Math.min(columns.length - 1, Math.max(range.left, range.right))
-  const kindCounters = { header: 0, data: 0, footer: 0 }
+  const kindCounters = { header: 0, data: 0, footer: 0, subtotal: 0 }
   const hits = []
   for (let row = 0; row < previewRows.length; row += 1) {
     const kind = previewRows[row]?.kind || 'data'

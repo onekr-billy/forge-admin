@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { appendStaticTableColumn, appendStaticTableRow, createStaticTable, deleteStaticTableColumn, deleteStaticTableColumns, deleteStaticTableRow, deleteStaticTableRows, insertStaticTableColumn, insertStaticTableColumns, insertStaticTableRow, insertStaticTableRows, mergeStaticTableCells, splitStaticTableCell, staticTableCellAt, staticTableIdsInRect, staticTableSize } from '../staticTable'
+import { resizeHandlesForElement } from '../commands'
+import { appendStaticTableColumn, appendStaticTableRow, createStaticTable, deleteStaticTableColumn, deleteStaticTableColumns, deleteStaticTableRow, deleteStaticTableRows, insertStaticTableColumn, insertStaticTableColumns, insertStaticTableRow, insertStaticTableRows, mergeStaticTableCells, splitStaticTableCell, staticTableCellAt, staticTableCellLook, staticTableIdsInRect, staticTableSize } from '../staticTable'
+import { staticTableCellPaperBounds } from '../tableSelection'
 
 function ids() {
   let value = 0
@@ -14,6 +16,24 @@ describe('static table editing', () => {
     expect(appendStaticTableRow(table, ids())).toHaveLength(3)
     expect(appendStaticTableColumn(table, ids())).toHaveLength(3)
     expect(staticTableSize(table)).toEqual({ widthMm: 100, heightMm: 24 })
+    expect(table.cells.filter(cell => cell.row === 0).every(cell => !cell.style && cell.binding?.value === '')).toBe(true)
+  })
+
+  it('applies table headerStyle only to the first row', () => {
+    const table = createStaticTable(2, 2, 40, 8, ids())
+    const element = { style: { color: '#111111' }, headerStyle: { backgroundColor: '#ddeeff', color: '#aa0000' }, table }
+    expect(staticTableCellLook(element, table.cells[0])).toMatchObject({ backgroundColor: '#ddeeff', color: '#aa0000' })
+    expect(staticTableCellLook(element, table.cells[2])).toMatchObject({ color: '#111111' })
+    expect(staticTableCellLook(element, table.cells[2]).backgroundColor).toBeUndefined()
+  })
+
+  it('lets headerStyle background replace leftover default cell fills', () => {
+    const table = createStaticTable(2, 2, 40, 8, ids())
+    table.cells[0].style = { backgroundColor: '#ffffff', fontWeight: 700 }
+    const element = { headerStyle: { backgroundColor: '#ffcc00', color: '#aa0000' }, table }
+    expect(staticTableCellLook(element, table.cells[0])).toMatchObject({ backgroundColor: '#ffcc00', color: '#aa0000', fontWeight: 700 })
+    table.cells[0].style.backgroundColor = '#112233'
+    expect(staticTableCellLook(element, table.cells[0]).backgroundColor).toBe('#112233')
   })
 
   it('merges and splits a rectangular selection without leaving coverage holes', () => {
@@ -78,6 +98,20 @@ describe('static table editing', () => {
     expect(cols).toHaveLength(10)
     expect(staticTableCellAt(table, 0, 0).id).toBe(cols[0])
     expect(staticTableCellAt(table, 0, 1).id).toBe(cols[5])
+  })
+
+  it('places selected cell bounds on the cell, not the whole table', () => {
+    const table = createStaticTable(2, 2, 40, 8, ids(), { headerRow: false })
+    const element = { type: 'STATIC_TABLE', xMm: 10, yMm: 20, widthMm: 40, heightMm: 16, table }
+    const cell = staticTableCellAt(table, 1, 1)
+    expect(staticTableCellPaperBounds(element, [cell])).toEqual({
+      xMm: 30,
+      yMm: 28,
+      widthMm: 20,
+      heightMm: 8,
+    })
+    expect(resizeHandlesForElement(element)).toEqual(['n', 'ne', 'e', 'se', 's', 'sw', 'w'])
+    expect(resizeHandlesForElement({ type: 'DATA_TABLE' })).toEqual(['n', 'ne', 'e', 'se', 's', 'sw', 'w'])
   })
 
   it('deletes multiple selected rows and columns (highest index first)', () => {

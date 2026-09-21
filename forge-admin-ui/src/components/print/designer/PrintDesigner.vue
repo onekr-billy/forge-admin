@@ -280,7 +280,7 @@ defineExpose({ canLeave, save })
       </div>
     </div>
     <NModal v-model:show="store.previewOpen" preset="card" title="打印预览" :content-style="{ padding: 0, height: 'calc(92vh - 58px)', overflow: 'hidden' }" :style="{ width: '96vw', maxWidth: '1500px', height: '92vh' }" :mask-closable="false">
-      <PrintPreview v-if="store.previewOpen" :data-label="previewDataLabel" :allow-print="!saveDraft" :template="store.document" :context="designerContext" :catalog="store.catalog" :resolve-file="resolveFile" />
+      <PrintPreview v-if="store.previewOpen" :data-label="previewDataLabel" :allow-print="!saveDraft" :template="store.document" :template-name="templateName" :context="designerContext" :catalog="store.catalog" :resolve-file="resolveFile" />
     </NModal>
     <NModal v-model:show="calibrationOpen" preset="card" title="打印校准与本机验收" :content-style="{ padding: 0, height: 'calc(90vh - 58px)', overflow: 'hidden' }" :style="{ width: '96vw', maxWidth: '1420px', height: '90vh' }" :mask-closable="false">
       <PrintCalibration v-if="calibrationOpen" :initial-paper="store.document.paper" />

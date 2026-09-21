@@ -21,6 +21,7 @@ import {
 import { NColorPicker, NDropdown, NIcon, NModal, NPopover } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
+import { toPrintColor } from '../protocol/printColor'
 import { formatPrintZoom, PRINT_ZOOM_LEVELS } from './designerView'
 import { insertStaticTable } from './elementCatalog'
 import PrintTableIcon from './PrintTableIcon.vue'
@@ -50,16 +51,20 @@ const canClear = computed(() => !!store.activeSurface?.elements?.length && !stor
 const styleTarget = computed(() => {
   if (store.tableCellIds.length && store.activeElement?.type === 'STATIC_TABLE')
     return store.selectedTableCells[0]
+  if (store.activeElement?.type === 'STATIC_TABLE')
+    return { style: store.activeElement.headerStyle || {} }
   if (store.activeElement?.type === 'DATA_TABLE' && store.selectedTableColumns.length) {
     const col = store.selectedTableColumns[0]
+    const cells = store.tableSelectionCells
+    if (cells?.length && cells.every(hit => hit.kind === 'header'))
+      return { style: store.activeElement.headerStyle || col.headerStyle || {} }
     const range = store.tableSelectionRange
-    if (range) {
-      // Rough: if selection starts at row 0, prefer headerStyle for toolbar readout.
-      if (range.top === 0 && range.bottom === 0)
-        return { style: col.headerStyle || store.activeElement.headerStyle || {} }
-    }
+    if (range && range.top === 0 && range.bottom === 0)
+      return { style: col.headerStyle || store.activeElement.headerStyle || {} }
     return col
   }
+  if (store.activeElement?.type === 'DATA_TABLE')
+    return { style: store.activeElement.headerStyle || {} }
   if (store.activeElement)
     return store.activeElement
   if (store.activeSurface?.kind === 'TEXT')
@@ -72,8 +77,13 @@ const isItalic = computed(() => styleTarget.value?.style?.fontStyle === 'italic'
 const isUnderline = computed(() => styleTarget.value?.style?.textDecoration === 'underline')
 const textAlign = computed(() => styleTarget.value?.style?.textAlign || 'left')
 const textColor = computed(() => styleTarget.value?.style?.color || '#000000')
-const backgroundColor = computed(() => styleTarget.value?.style?.backgroundColor || '#ffffff')
-const borderColor = computed(() => styleTarget.value?.style?.borderColor || '#000000')
+const lineColor = computed(() => styleTarget.value?.style?.borderColor || styleTarget.value?.style?.backgroundColor || '#000000')
+const backgroundColor = computed(() => styleTarget.value?.type === 'LINE'
+  ? lineColor.value
+  : (styleTarget.value?.style?.backgroundColor || '#ffffff'))
+const borderColor = computed(() => styleTarget.value?.type === 'LINE'
+  ? lineColor.value
+  : (styleTarget.value?.style?.borderColor || '#000000'))
 const zoomLabel = computed(() => formatPrintZoom(store.zoom))
 const paperRotateLabel = computed(() => store.document.paper.orientation === 'PORTRAIT' ? '转为横向' : '转为纵向')
 const zoomOptions = PRINT_ZOOM_LEVELS.map(value => ({ label: formatPrintZoom(value), key: String(value) }))
@@ -130,15 +140,7 @@ const moreOptions = computed(() => [
 function setColor(key, value) {
   if (!value || !canStyle.value)
     return
-  let next = value
-  if (typeof next === 'string') {
-    const hex = next.trim()
-    if (/^#[\da-f]{8}$/i.test(hex))
-      next = `#${hex.slice(1, 7)}`
-    else if (/^#[\da-f]{4}$/i.test(hex))
-      next = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
-  }
-  store.patchSelectionStyle({ [key]: next })
+  store.patchSelectionStyle({ [key]: toPrintColor(value) })
 }
 function updateScrollState() {
   const el = scrollRef.value

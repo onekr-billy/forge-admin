@@ -11,15 +11,32 @@ import {
 import { NColorPicker, NDropdown, NIcon } from 'naive-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
+import { toPrintColor } from '../protocol/printColor'
 import { resizeHandlesForElement, selectionBounds } from './commands'
 import { DEFAULT_PRINT_FONT, PRINT_FONT_OPTIONS, printFontLabel } from './printFonts'
+import { dataTableRangePaperBounds, staticTableCellPaperBounds } from './tableSelection'
 import { usePrintResize } from './usePrintResize'
 
 const store = usePrintDesignerStore()
 const resize = usePrintResize(store)
 const frameRef = ref(null)
+const handleHostRef = ref(null)
 const chromePos = ref(null)
-const bounds = computed(() => selectionBounds(store.selectedElements))
+const handlePos = ref(null)
+const followCells = computed(() => {
+  const el = store.activeElement
+  return (el?.type === 'STATIC_TABLE' && store.tableCellIds.length > 0)
+    || (el?.type === 'DATA_TABLE' && !!store.tableSelectionRange)
+})
+const handleBounds = computed(() => selectionBounds(store.selectedElements))
+const bounds = computed(() => {
+  const el = store.activeElement
+  if (el?.type === 'STATIC_TABLE' && store.selectedTableCells.length)
+    return staticTableCellPaperBounds(el, store.selectedTableCells) || handleBounds.value
+  if (el?.type === 'DATA_TABLE' && store.tableSelectionRange)
+    return dataTableRangePaperBounds(el, store.tableSelectionRange) || handleBounds.value
+  return handleBounds.value
+})
 const single = computed(() => store.selectedIds.length === 1 && !!store.activeElement && !store.activeElement.locked)
 const canEdit = computed(() => !!store.selectedIds.length && !store.hasLockedSelection)
 const canStyle = computed(() => {
@@ -126,10 +143,7 @@ function onRotate(key) {
 function setColor(key, value) {
   if (!value || !canStyle.value)
     return
-  let next = value
-  if (typeof next === 'string' && /^#[\da-f]{8}$/i.test(next.trim()))
-    next = `#${next.trim().slice(1, 7)}`
-  store.patchSelectionStyle({ [key]: next })
+  store.patchSelectionStyle({ [key]: toPrintColor(value) })
 }
 
 function updateChromePos() {
@@ -146,10 +160,28 @@ function updateChromePos() {
   }
 }
 
+function updateHandlePos() {
+  const el = handleHostRef.value
+  if (!el || !handleBounds.value || store.previewOpen) {
+    handlePos.value = null
+    return
+  }
+  const rect = el.getBoundingClientRect()
+  handlePos.value = {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  }
+}
+
 let raf = 0
 function schedulePos() {
   cancelAnimationFrame(raf)
-  raf = requestAnimationFrame(() => nextTick(updateChromePos))
+  raf = requestAnimationFrame(() => nextTick(() => {
+    updateChromePos()
+    updateHandlePos()
+  }))
 }
 
 onMounted(() => {
@@ -162,9 +194,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', schedulePos, true)
   window.removeEventListener('resize', schedulePos)
 })
-watch(() => [bounds.value, store.zoom, store.selectedIds.join(','), store.gesture, store.previewOpen], () => {
+watch(handleHostRef, () => schedulePos())
+watch(() => [bounds.value, handleBounds.value, store.zoom, store.selectedIds.join(','), store.tableCellIds.join(','), store.tableSelectionRange, store.gesture, store.previewOpen], () => {
   if (store.previewOpen) {
     chromePos.value = null
+    handlePos.value = null
     return
   }
   schedulePos()
@@ -179,22 +213,32 @@ watch(() => [bounds.value, store.zoom, store.selectedIds.join(','), store.gestur
     :style="{ left: `${bounds.xMm}mm`, top: `${bounds.yMm}mm`, width: `${bounds.widthMm}mm`, height: `${bounds.heightMm}mm` }"
   >
     <div class="selection-frame" />
-    <template v-if="single">
+  </div>
+  <div
+    v-if="handleBounds && single"
+    ref="handleHostRef"
+    class="selection-chrome handle-host"
+    :style="{ left: `${handleBounds.xMm}mm`, top: `${handleBounds.yMm}mm`, width: `${handleBounds.widthMm}mm`, height: `${handleBounds.heightMm}mm` }"
+  />
+
+  <Teleport to="body">
+    <div
+      v-if="single && !store.previewOpen"
+      class="ele-resize-layer"
+      :style="{ left: `${handlePos?.left || 0}px`, top: `${handlePos?.top || 0}px`, width: `${handlePos?.width || 0}px`, height: `${handlePos?.height || 0}px` }"
+    >
       <button
         v-for="handle in handles"
         :key="handle.key"
         type="button"
-        class="resize-handle"
+        class="ele-resize-handle"
         :class="[handle.key, { bar: handle.bar }]"
         :style="{ cursor: handle.cursor }"
         :aria-label="handle.label"
         :title="handle.label"
         @pointerdown.stop="resize.start($event, handle.key)"
       />
-    </template>
-  </div>
-
-  <Teleport to="body">
+    </div>
     <template v-if="chromePos && canEdit">
       <div
         class="ele-toolbar"
@@ -216,10 +260,14 @@ watch(() => [bounds.value, store.zoom, store.selectedIds.join(','), store.gestur
           </NDropdown>
           <span class="et-gap" />
           <NDropdown trigger="click" :options="hAlignOptions" @select="store.setSelectionTextAlign">
-            <button type="button" class="et-tool" title="水平对齐">⇔</button>
+            <button type="button" class="et-tool" title="水平对齐">
+              ⇔
+            </button>
           </NDropdown>
           <NDropdown trigger="click" :options="vAlignOptions" @select="store.setSelectionVerticalAlign">
-            <button type="button" class="et-tool" title="垂直对齐">⇕</button>
+            <button type="button" class="et-tool" title="垂直对齐">
+              ⇕
+            </button>
           </NDropdown>
           <span class="et-gap" />
           <NDropdown trigger="click" :options="colorQuick" @select="setColor('color', $event)">
@@ -259,7 +307,9 @@ watch(() => [bounds.value, store.zoom, store.selectedIds.join(','), store.gestur
           </button>
         </NDropdown>
         <NDropdown trigger="click" :options="layerOptions" @select="store.moveSelectionLayer">
-          <button type="button" class="et-tool" title="层级">层</button>
+          <button type="button" class="et-tool" title="层级">
+            层
+          </button>
         </NDropdown>
         <button type="button" class="et-tool" title="克隆" @click="store.duplicateSelection()">
           <NIcon :component="DuplicateOutline" :size="14" />
@@ -272,7 +322,7 @@ watch(() => [bounds.value, store.zoom, store.selectedIds.join(','), store.gestur
         </button>
       </div>
       <div
-        v-if="single"
+        v-if="single && !followCells"
         class="ele-size-box"
         :style="{ left: `${chromePos.left}px`, top: `${chromePos.bottom}px` }"
         @pointerdown.stop
@@ -301,52 +351,98 @@ watch(() => [bounds.value, store.zoom, store.selectedIds.join(','), store.gestur
   pointer-events: none;
   box-sizing: border-box;
 }
+.handle-host {
+  z-index: 3;
+}
 .selection-frame {
   position: absolute;
   inset: 0;
   box-shadow: inset 0 0 0 1px var(--primary-color, #356cde);
   pointer-events: none;
 }
-.resize-handle {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  padding: 0;
-  border: 1px solid var(--primary-color, #356cde);
-  border-radius: 1px;
-  background: #fff;
-  pointer-events: auto;
-  touch-action: none;
-  z-index: 5;
-}
-.resize-handle.bar.n,
-.resize-handle.bar.s {
-  width: 14px;
-  height: 6px;
-}
-.resize-handle.bar.e,
-.resize-handle.bar.w {
-  width: 6px;
-  height: 14px;
-}
-.resize-handle.nw { top: -1px; left: -1px; }
-.resize-handle.n { top: -1px; left: 50%; margin-left: -4px; }
-.resize-handle.bar.n { margin-left: -7px; }
-.resize-handle.ne { top: -1px; right: -1px; }
-.resize-handle.e { top: 50%; right: -1px; margin-top: -4px; }
-.resize-handle.bar.e { margin-top: -7px; }
-.resize-handle.se { right: -1px; bottom: -1px; }
-.resize-handle.s { bottom: -1px; left: 50%; margin-left: -4px; }
-.resize-handle.bar.s { margin-left: -7px; }
-.resize-handle.sw { left: -1px; bottom: -1px; }
-.resize-handle.w { top: 50%; left: -1px; margin-top: -4px; }
-.resize-handle.bar.w { margin-top: -7px; }
-.resize-handle:hover {
-  background: var(--primary-color, #356cde);
-}
 </style>
 
 <style>
+.ele-resize-layer {
+  position: fixed;
+  z-index: 42;
+  pointer-events: none;
+}
+.ele-resize-handle {
+  position: absolute;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+}
+.ele-resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1.5px solid #356cde;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+}
+.ele-resize-handle:hover::after {
+  background: #356cde;
+}
+.ele-resize-handle.nw {
+  top: -8px;
+  left: -8px;
+}
+.ele-resize-handle.n {
+  top: -8px;
+  left: 50%;
+  margin-left: -7px;
+}
+.ele-resize-handle.ne {
+  top: -8px;
+  right: -8px;
+}
+.ele-resize-handle.e {
+  top: 50%;
+  right: -8px;
+  margin-top: -7px;
+}
+.ele-resize-handle.se {
+  right: -8px;
+  bottom: -8px;
+}
+.ele-resize-handle.s {
+  bottom: -8px;
+  left: 50%;
+  margin-left: -7px;
+}
+.ele-resize-handle.sw {
+  left: -8px;
+  bottom: -8px;
+}
+.ele-resize-handle.w {
+  top: 50%;
+  left: -8px;
+  margin-top: -7px;
+}
+.ele-resize-handle.bar.n,
+.ele-resize-handle.bar.s {
+  width: 20px;
+  height: 12px;
+  margin-left: -10px;
+}
+.ele-resize-handle.bar.e,
+.ele-resize-handle.bar.w {
+  width: 12px;
+  height: 20px;
+  margin-top: -10px;
+}
+.ele-resize-handle.bar::after {
+  inset: 3px;
+  border-radius: 1px;
+}
 .ele-toolbar {
   position: fixed;
   /* Below Naive UI overlays (~2000) so dropdowns / color panels aren't covered */

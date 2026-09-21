@@ -27,6 +27,16 @@ class PrintExecutionServiceTest extends PrintServiceFixture {
     }
 
     @Test
+    void acceptsPdfDownloadAsClientOutputWithoutClaimingPaper() {
+        var row = published();
+        var prepared = runtime.prepare(new PrintPrepareDTO(record(), row.id()));
+        var event = new PrintExecutionEventDTO(PrintExecutionResult.PDF_DOWNLOADED, 1, null);
+        assertThat(events.record(prepared.executionId(), event).result()).isEqualTo("PDF_DOWNLOADED");
+        assertThat(events.record(prepared.executionId(), event).physicalOutputConfirmed()).isFalse();
+        fails(409, () -> events.record(prepared.executionId(), new PrintExecutionEventDTO(PrintExecutionResult.DIALOG_OPENED, 1, null)));
+    }
+
+    @Test
     void refusesPreparedAsClientEventOversizedPageCountAndArbitraryErrorText() {
         fails(400, () -> events.record(1L, new PrintExecutionEventDTO(PrintExecutionResult.PREPARED, null, null)));
         fails(400, () -> events.record(1L, new PrintExecutionEventDTO(PrintExecutionResult.DIALOG_OPENED, 51, null)));

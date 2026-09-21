@@ -91,7 +91,7 @@ public class PrintExecution extends TenantEntity {
     private LocalDateTime generatedAt;
 
     /**
-     * PREPARED/DIALOG_OPENED/FAILED，不代表物理出纸。
+     * PREPARED/DIALOG_OPENED/PDF_DOWNLOADED/FAILED，不代表物理出纸。
      */
     private String result;
 

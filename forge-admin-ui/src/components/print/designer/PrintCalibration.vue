@@ -1,6 +1,6 @@
 <script setup>
 import { PrintOutline, SaveOutline } from '@vicons/ionicons5'
-import { NAlert, NButton, NCheckbox, NFormItem, NIcon, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTag } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NFormItem, NIcon, NRadioButton, NRadioGroup, NSelect, NTag } from 'naive-ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { mmToPx } from '../protocol/units'
 import { createBrowserPrintSession } from '../runtime/browserPrint'
@@ -15,6 +15,7 @@ import {
   writeCalibrationAcceptance,
 } from '../runtime/printCalibration'
 import PrintPage from '../runtime/PrintPage.vue'
+import { PRINT_MM_PRESETS, printMmOptions } from './printMeasures'
 
 const props = defineProps({ initialPaper: { type: Object, default: () => ({ widthMm: 210, heightMm: 297, orientation: 'PORTRAIT' }) } })
 const presetOptions = [
@@ -131,10 +132,22 @@ onBeforeUnmount(() => printSession?.dispose())
       </NFormItem>
       <div v-if="preset === 'CUSTOM'" class="custom-paper-grid">
         <NFormItem label="短边 mm" size="small">
-          <NInputNumber v-model:value="customWidthMm" aria-label="自定义纸张短边" :min="148" :max="2000" :show-button="false" />
+          <NSelect
+            v-model:value="customWidthMm"
+            aria-label="自定义纸张短边"
+            :options="printMmOptions(customWidthMm, PRINT_MM_PRESETS.paper.filter(n => n >= 148))"
+            :filterable="false"
+            :consistent-menu-width="false"
+          />
         </NFormItem>
         <NFormItem label="长边 mm" size="small">
-          <NInputNumber v-model:value="customHeightMm" aria-label="自定义纸张长边" :min="148" :max="2000" :show-button="false" />
+          <NSelect
+            v-model:value="customHeightMm"
+            aria-label="自定义纸张长边"
+            :options="printMmOptions(customHeightMm, PRINT_MM_PRESETS.paper.filter(n => n >= 148))"
+            :filterable="false"
+            :consistent-menu-width="false"
+          />
         </NFormItem>
       </div>
       <NAlert v-if="paperError" type="error" :bordered="false">

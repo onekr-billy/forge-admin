@@ -4,8 +4,8 @@ import { NIcon } from 'naive-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { encodePrintCode } from '../renderers/codes'
-import { printStyle } from '../renderers/style'
 import { printRenderers } from '../renderers/registry'
+import { printStyle } from '../renderers/style'
 import { designerBindingText, designerBindingValue, fieldLabel } from './designerSample'
 import PrintDataTableDesigner from './PrintDataTableDesigner.vue'
 import PrintStaticTableDesigner from './PrintStaticTableDesigner.vue'
@@ -87,6 +87,7 @@ const style = computed(() => ({
   top: `${props.element.yMm}mm`,
   width: `${props.element.widthMm}mm`,
   height: `${props.element.heightMm}mm`,
+  opacity: props.element.style?.opacity ?? 1,
   transform: props.element.rotationDeg || props.element.flipX || props.element.flipY ? `rotate(${props.element.rotationDeg || 0}deg) scaleX(${props.element.flipX ? -1 : 1}) scaleY(${props.element.flipY ? -1 : 1})` : undefined,
   transformOrigin: 'center center',
 }))
@@ -181,7 +182,7 @@ watch(() => props.selected, (value) => {
   <div
     :style="style"
     class="canvas-element"
-    :class="[{ selected, locked: element.locked, editing, 'is-data-table': element.type === 'DATA_TABLE', 'is-static-table': element.type === 'STATIC_TABLE' }, element.type.toLowerCase()]"
+    :class="[{ selected, 'locked': element.locked, editing, 'is-data-table': element.type === 'DATA_TABLE', 'is-static-table': element.type === 'STATIC_TABLE' }, element.type.toLowerCase()]"
     :data-element-id="element.id"
     role="button"
     :aria-label="`${element.type} ${text || bindingName}`"

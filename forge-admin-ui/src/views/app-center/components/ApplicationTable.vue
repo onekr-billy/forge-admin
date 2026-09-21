@@ -199,6 +199,7 @@ function formatDate(value) {
 }
 
 .application-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -212,8 +213,7 @@ function formatDate(value) {
   cursor: pointer;
   transition:
     border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
+    box-shadow 0.16s ease;
 }
 
 .application-card:hover,
@@ -221,7 +221,6 @@ function formatDate(value) {
 .application-card:focus-within {
   border-color: var(--n-primary-color, var(--primary-color, #165dff));
   box-shadow: 0 2px 6px rgb(22 93 255 / 10%);
-  transform: translateY(-1px);
 }
 
 .application-card-head {
@@ -388,21 +387,31 @@ function formatDate(value) {
 }
 
 .application-card-foot {
-  display: none;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: auto;
+  min-height: 36px;
   min-width: 0;
   border-top: 1px solid var(--n-primary-color, var(--primary-color, #165dff));
   background: var(--n-primary-color, var(--primary-color, #165dff));
   padding: 8px 14px;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 .application-card:hover .application-card-foot,
 .application-card:focus-visible .application-card-foot,
 .application-card:focus-within .application-card-foot {
-  display: flex;
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
 }
 
 .application-card:hover .application-date,

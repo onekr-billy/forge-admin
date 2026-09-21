@@ -1,10 +1,11 @@
 <script setup>
-import { NButton, NColorPicker, NFormItem, NInput, NInputNumber, NSelect } from 'naive-ui'
+import { NButton, NFormItem, NInput, NSelect } from 'naive-ui'
 import { computed } from 'vue'
 import FileUpload from '@/components/file-upload/index.vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
 import { describeFieldPath, groupedFieldSelectOptions } from '../fieldGroups'
 import PrintFieldPicker from '../PrintFieldPicker.vue'
+import { PRINT_MM_PRESETS, printMmOptions } from '../printMeasures'
 
 const store = usePrintDesignerStore()
 const visible = computed(() => store.activeElement?.type === 'STATIC_TABLE')
@@ -112,7 +113,7 @@ function onImageUpload(value) {
   <section v-if="visible" class="designer-group static-table-panel">
     <h3>空白表格</h3>
     <p class="muted tip">
-      点选格子绑定字段；图片字段会直接出图。插行/列请用右键菜单。子表请从左侧拖「明细表」。
+      点选格子绑定字段；图片字段会直接出图。插行/列请用右键菜单。子表请从左侧拖「明细表」。表头/表体颜色在「样式」页分开设置，插入时不再自带表头。
     </p>
 
     <div class="table-toolbar" role="group" aria-label="表格操作">
@@ -134,7 +135,7 @@ function onImageUpload(value) {
       <NButton size="tiny" :disabled="!merged" @click="store.splitStaticTableSelection()">
         拆分
       </NButton>
-      <NButton size="tiny" secondary :disabled="!store.activeElement?.table?.cells?.length" @click="store.applyStaticTableHeaderStyle()">
+      <NButton size="tiny" secondary :disabled="!store.activeElement?.table?.cells?.length" title="把第一行标记为表头外观，不写入「表头」文字" @click="store.applyStaticTableHeaderStyle()">
         设为表头
       </NButton>
     </div>
@@ -202,7 +203,7 @@ function onImageUpload(value) {
         </template>
       </div>
 
-      <h4>单元格样式</h4>
+      <h4>单元格尺寸</h4>
       <NFormItem label="水平对齐" size="small">
         <NSelect :value="cell?.style?.textAlign || 'left'" :options="alignments" @update:value="store.patchSelectedTableCellStyle({ textAlign: $event })" />
       </NFormItem>
@@ -211,28 +212,10 @@ function onImageUpload(value) {
       </NFormItem>
       <template v-if="cell">
         <NFormItem label="列宽 mm" size="small">
-          <NInputNumber :value="store.activeElement.table.columns[cell.column].widthMm" :min="1" :precision="2" :show-button="false" @update:value="$event !== null && store.patchStaticTableTrack('column', cell.column, $event)" />
+          <NSelect :value="store.activeElement.table.columns[cell.column].widthMm" :options="printMmOptions(store.activeElement.table.columns[cell.column].widthMm, PRINT_MM_PRESETS.track)" :filterable="false" :consistent-menu-width="false" @update:value="store.patchStaticTableTrack('column', cell.column, $event)" />
         </NFormItem>
         <NFormItem label="行高 mm" size="small">
-          <NInputNumber :value="store.activeElement.table.rows[cell.row].heightMm" :min="1" :precision="2" :show-button="false" @update:value="$event !== null && store.patchStaticTableTrack('row', cell.row, $event)" />
-        </NFormItem>
-        <NFormItem label="字号 pt" size="small">
-          <NInputNumber :value="cell?.style?.fontSizePt ?? 10" :min="6" :max="144" :show-button="false" @update:value="$event !== null && store.patchSelectedTableCellStyle({ fontSizePt: $event })" />
-        </NFormItem>
-        <NFormItem label="字重" size="small">
-          <NSelect :value="cell?.style?.fontWeight || 400" :options="[{ label: '常规', value: 400 }, { label: '加粗', value: 700 }]" @update:value="store.patchSelectedTableCellStyle({ fontWeight: $event })" />
-        </NFormItem>
-        <NFormItem label="文字色" size="small">
-          <NColorPicker :value="cell?.style?.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="store.patchSelectedTableCellStyle({ color: $event })" />
-        </NFormItem>
-        <NFormItem label="背景色" size="small">
-          <NColorPicker :value="cell?.style?.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="store.patchSelectedTableCellStyle({ backgroundColor: $event })" />
-        </NFormItem>
-        <NFormItem label="边框 mm" size="small">
-          <NInputNumber :value="cell?.style?.borderWidthMm ?? 0.15" :min="0" :max="3" :step="0.05" :show-button="false" @update:value="$event !== null && store.patchSelectedTableCellStyle({ borderWidthMm: $event })" />
-        </NFormItem>
-        <NFormItem label="边框色" size="small">
-          <NColorPicker :value="cell?.style?.borderColor || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="store.patchSelectedTableCellStyle({ borderColor: $event })" />
+          <NSelect :value="store.activeElement.table.rows[cell.row].heightMm" :options="printMmOptions(store.activeElement.table.rows[cell.row].heightMm, PRINT_MM_PRESETS.track)" :filterable="false" :consistent-menu-width="false" @update:value="store.patchStaticTableTrack('row', cell.row, $event)" />
         </NFormItem>
       </template>
     </template>

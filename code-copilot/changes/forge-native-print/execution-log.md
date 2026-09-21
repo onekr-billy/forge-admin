@@ -613,3 +613,168 @@ ActionBar 放大、色块不显示 hex、中间区可撑开滚动；页眉/页�
 实现：LIST/DETAIL 运行目录始终合并审批字段；按 `applicationId+objectCode+recordId` 软解析最近流程实例并加载历史，无实例返回空 `history`。
 
 验证：`LowcodePrintDataProviderTest` 8 项通过（含 detail 空历史加载）。需重启 Admin 后重试详情打印。
+
+## 2026-09-21 · T57 表达式 / 汇总 / 连续纸拼版 / 套打水印 / 溢出 / PDF 下载
+
+用户要求补齐金额大写与运算表达式、表格小计/汇总、连续纸与标签拼版、套打底图/水印、文字溢出三种策略，并把预览「PDF」从调起打印改为下载文件。
+
+实现要点：绑定 `EXPRESSION` 只走白名单解析器，禁止 `eval`；明细表 `subtotal` 按页聚合、`footer` 按全部行；连续纸禁止手动分页并按内容收缩高度；标签拼版按物理宽高校验，嵌套标签不再带 `data-print-page`；套打底图默认仅设计/预览可见；固定文本 `CLIP`/`SHRINK`/`AUTO_HEIGHT`；PDF 使用隔离 iframe 栅格化后 `jspdf.save`，不调用 `window.print`。选择「标签 · 50 × 30 mm」时自动横向，避免被纸张短边优先规则转成 30×50。
+
+验证：
+
+1. Node v20.19.5 `node ./node_modules/vitest/vitest.mjs run src/components/print`：25 文件 168 项通过，含表达式、连续纸/拼版、CLIP、PDF 下载 mock、拼版只产生 1 个打印页。
+2. 触达打印文件 ESLint 无输出；`git diff --check` 无空白错误。
+3. `node code-copilot/changes/forge-native-print/verification/protocol-compatibility.mjs`：前端 41/41。
+4. Java 17 `mvn -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='PrintProtocolValidatorTest,PrintProtocolCompatibilityTest' -Dsurefire.failIfNoSpecifiedTests=false`：81 项通过（兼容 41 + 校验 40）。
+5. `node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build`：42.46s 成功，产物含 `html2canvas` 与 `jspdf` 懒加载 chunk。仅保留项目既有 native/dynamic import/plugin timings 提示。
+
+未启动 Admin/Flow/MySQL/Redis，未执行真实登录后的 PDF 下载或物理打印。客户端 PDF 为栅格化下载，不等于服务端归档或不可篡改。本阶段未 commit。
+
+## 2026-09-21 · PDF_DOWNLOADED 500 与预览同源导出
+
+用户导出 PDF 后事件接口 500：`PDF_DOWNLOADED` 不在 `PrintExecutionResult`。同时 html2canvas 重排导致表格行高/垂直居中与预览不一致。
+
+实现：枚举/DTO/Mapper 接受 `PDF_DOWNLOADED`（同 `DIALOG_OPENED`：要 pageCount、不写出纸）；新增 `V1.0.180__add_print_pdf_downloaded_result.sql`，不改已执行的 V1.0.172。导出改为截取预览 `[data-print-page]`（`html-to-image` toPng + jspdf），单元格文字包 `span` 以保留 flex 居中。打印仍走 `window.print()`。
+
+验证：
+
+1. Node v20.19.5 `node ./node_modules/vitest/vitest.mjs run src/components/print src/stores/print`：27 文件 183 项通过。
+2. `CI=true` 触达文件 ESLint 无输出；`git diff --check` 无空白错误。
+3. Java 17 `mvn -B -ntp -pl forge-framework/forge-plugin-parent/forge-plugin-print -am test -Penable-tests -Dtest='PrintExecutionServiceTest,PrintResourceContractTest,PrintProtocolValidatorTest' -Dsurefire.failIfNoSpecifiedTests=false`：46 项通过。
+
+未重启真实 Admin，因此本机仍会在加载旧 class 时拒绝该枚举。用户需重启 Admin 让 Flyway 跑 V1.0.180 并加载新枚举。未做登录后实点下载或物理打印。本轮未 commit。
+
+## 2026-09-21 · 表头缺边框 / PDF 文件名 / 预览骨架屏
+
+用户反馈：设计器和打印里表格表头上、左边没有框；想改 PDF 文件名且默认跟业务数据、时间戳有关；`/print/preview` 内容没出来前不要转圈 loading。
+
+实现：
+
+1. 表头底色会盖住容器 inset 阴影。首行/首列上、左边改为单元格内侧 `linear-gradient`，叠在底色上；右/下边仍用单元格 border。设计器表体 `overflow` 改为 visible。
+2. 模板字段 `exportFileName`，纸张面板可编辑。占位符 `{{main.字段}}`、`{template}`、`{timestamp}`。留空时默认「模板名-单据名-yyyyMMddHHmmss.pdf」，未写时间戳也会自动追加。
+3. `PrintTemplatePicker` / `PrintPreview` 加载中用 `PrintPreviewSkeleton`（纸张形 `NSkeleton`），去掉 `NSpin`。
+
+验证：Node v20.19.5 Vitest 7 文件 52 项通过（exportFileName、protocol、renderers、PrintPreview 含骨架屏、exportPrintPdf、PrintDesigner、staticTable）。触达文件 ESLint 通过。本机 3000 端口当前无服务，未做登录后实点。本轮未 commit。
+
+## 2026-09-21 · 表格上/左边框与其它边粗细不一致
+
+上/左曾用 `background-image` 渐变，右/下用 CSS `border`，打印时两套线会对不齐。改为四面都用同一条 `0.15mm` CSS border，底色 `background-clip: padding-box`。
+
+验证：`renderers.spec.js` 7 + `staticTable.spec.js` 7 通过；触达 ESLint 通过。未做实机打印。本轮未 commit。
+
+## 2026-09-21 · 表格表头独立配色 / 空白表不带默认表头
+
+根因：表头色曾写进 `style` 或 `column.style`，格子只认 `headerStyle`；选中态 `!important` 又盖住底色。空白表格插入还自带「表头」灰行。属性里基础/外观/单元格/中间栏各有一套色板，有的改了没效果。
+
+实现：
+
+1. 「样式」页拆成表头 / 表体（明细表另有斑马纹），分别写 `headerStyle` 和 `style`。
+2. 空白表格插入 `headerRow: false`，第一行空格子；「设为表头」改 `headerStyle`，不再给格子写死灰底和「表头」字。
+3. 基础面板去掉整表重复色板；列色只覆盖表体；多级表头色板只覆盖当前格。
+4. 选中反馈改用选择框，不再用 `!important` 覆盖单元格底色。
+
+验证：Node v20.19.5 Vitest 6 文件 68 项通过；触达 ESLint 与 `git diff --check` 通过。`localhost:3000` 可达，但 `/print/designer` 跳登录验证码，未做登录后实点。本轮未 commit。
+
+## 2026-09-21 · 打印签名 flow.history[0].signature 加载失败
+
+根因：设计器示例 IMAGE 用 `data:image/svg+xml`，预览资源准备只认 PNG/JPEG/WEBP，第一条审批签名就失败。真实下载若 Content-Type 是 `octet-stream` 也会被拒。
+
+实现：示例图改为协议内 PNG data URL；加载时按文件头识别图片类型；空签名跳过。
+
+验证：Node v20.19.5 `designerSample` 7 + `resources` 8 + `printResourceLoader` 6 + `tablePagination` 7 通过；触达 ESLint 与 `git diff --check` 通过。未做登录后实点预览。本轮未 commit。
+
+## 2026-09-21 · 空白表格表头背景 / 字号下拉 / 元素透明度
+
+根因：第一行格子常带默认 `#ffffff`/`#f1f5f9`，`cell.style` 后合并盖住 `headerStyle.backgroundColor`，表头文字色仍可见。属性面板字号是数字输入框。元素没有 `style.opacity`，图片无法调透明度。
+
+实现：
+
+1. `staticTableCellLook` 让第一行默认白/灰底给 `headerStyle` 让位；「样式」改表头/表体走 `patchStaticTableBand`，同时删掉对应行格子上的同名覆盖。
+2. 表头/表体/正文/列/最小字号改为预设 pt 下拉。
+3. 协议前后端白名单增加 `style.opacity`（0–1）；画布元素框和预览 `PrintPage` 外框应用，图片同样生效。
+
+验证：Node v20.20.0 Vitest 6 文件 60 项通过；触达 ESLint 与 `git diff --check` 通过。Java 17 `PrintProtocolValidatorTest` 40 + `PrintProtocolCompatibilityTest` 42 通过。未做登录后实点。本轮未 commit。
+
+## 2026-09-21 · 打印字体未安装 STHeiti 导致改字体后无法预览
+
+根因：`requireLocalFont` 只校验栈里第一个名字。设计器「华文黑体」是 `STHeiti, sans-serif`，本机没有 STHeiti（新 macOS 常见），预览报「打印字体未安装：STHeiti」。微软雅黑在 Mac 上同样会失败。这会挡住预览，看起来像保存失败。
+
+实现：整串字体栈任一具名字体能加载即通过；有 generic 回退时不拦截。选项改成跨系统回退（华文黑体以 `Heiti SC` 开头）。
+
+验证：Node v20.20.0 `resources.spec` 11 + `protocol.spec` 15 通过；触达 ESLint 与 `git diff --check` 通过。未做登录后实点。本轮未 commit。
+
+## 2026-09-21 · style 额外键入库 / 透明度滑块 / 单元格快捷面板 / 表格四边
+
+根因：`style` 用封闭键列表，`opacity` 等前端已写入的展示属性被报「不支持此属性」。快捷面板按整张表算位置。表格 overlay 八向锚点叠在外沿上，且末行/末列没有轨道手柄。
+
+实现：
+
+1. 前后端 `style` 允许安全基础类型额外键并写入 canonical JSON；仍拒绝 `backgroundImage`/`url()`。Java `Style` `ignoreUnknown`。
+2. 「样式」透明度改为 0–100% 滑块。
+3. 选中空白表格单元格时快捷面板跟随格子包围盒。
+4. 表格不再画 overlay 缩放锚点；四边补首末行列拖动手柄。
+
+验证：Node v20.20.0 Vitest 4 文件 65 项；触达 ESLint 与 `git diff --check` 通过。Java 17 `PrintProtocolValidatorTest` 41 项通过。未做登录后实点。Java 需安装插件并重启 Admin。本轮未 commit。
+
+## 2026-09-21 · 表格角锚点恢复 / 插件安装到本地仓库
+
+根因：上一轮为避开四边拖拽冲突把表格 overlay 锚点全部去掉。保存 `opacity` 仍失败是因为 Admin 继续加载旧的 `forge-plugin-print` jar。
+
+实现：空白表恢复四角锚点，明细表恢复右上/右下/左下；中点 n/s/e/w 仍不画，把外沿留给行列手柄。已 `mvn -pl forge-plugin-print -am install -DskipTests` 写入本地仓库。
+
+验证：Node v20.20.0 `staticTable` 10 + `history` 25 通过。未重启用户的 Admin。本轮未 commit。
+
+## 2026-09-21 · 表格锚点稳定可点
+
+根因：选中单元格后 overlay 手柄跟着格子走并被藏掉；8px 手柄叠在纸张 `overflow:hidden` 和行列拖条上，经常点不中。
+
+实现：缩放手柄始终锚定整张表/元素外框，Teleport 到页面层并加大热区，向外偏出避免挡住四边改行列。选中格子时快捷面板仍跟格子走。
+
+验证：Node v20.20.0 `staticTable` 10 + `history` 25 + `PrintDesigner` 16，共 51 项通过。本轮未 commit。
+
+## 2026-09-21 · 单元格背景色保存 / 缩小锚点
+
+根因：快捷面板「无填充」写 `transparent`，Naive 取色器还会写出 `#rrggbbaa` / `rgba()`。格子 `style.backgroundColor` 只认 `#rgb`/`#rrggbb`，保存报「颜色须使用十六进制格式」。锚点热区 22px、外偏 16px 过大。
+
+实现：
+
+1. `toPrintColor` / `sanitizePrintColors` 在写入和 serialize 时收成 `#rrggbb` 或 `transparent`。前后端校验同时接受这两种以及取色器 8 位 hex / rgb。
+2. Teleport 锚点改为 14px 热区、约 8px 色块、外偏 8px。
+
+验证：Node v20.20.0 Vitest 5 文件 70 项（含 `printColor` 2、`protocol` 16、`PrintDesigner` 17）。触达 ESLint 与 `git diff --check` 通过。Java 17 `PrintProtocolValidatorTest` 42 项通过。已 `mvn -pl forge-plugin-print -am install -DskipTests`。需重启 Admin 后保存才会走新校验。未做登录后实点。本轮未 commit。
+
+## 2026-09-21 · 表格去掉左上角缩放锚点
+
+根因：空白表/明细表左上角已有「拖动移动表格」手柄，再叠一个 nw 缩放锚点会抢命中。
+
+实现：`resizeHandlesForElement` 对 `STATIC_TABLE` / `DATA_TABLE` 不再返回 `nw`，其余七向保留。文字等组件仍是八向。
+
+验证：`staticTable` 10 + `PrintDesigner` 17 通过。本轮未 commit。
+
+## 2026-09-21 · 页眉折叠条挪位 / 格子图片可缩放
+
+根因：折叠提示画在内容区顶边正中，挡住标题。格子 `z-index:1` 低于行列拖条 `z-index:6`，图片右下角缩放点永远点不中。
+
+实现：折叠/收起芯片改到纸张左上/左下页边空白。选中图片格抬到拖条之上，手柄挂在图片框右下角并加大热区。
+
+验证：`staticTable` 10 + `PrintDesigner` 19 通过。本轮未 commit。
+
+## 2026-09-21 · 横竖线颜色/线型 / 毫米下拉
+
+根因：横竖线画在 SVG `viewBox="0 0 100 100"` 里，0.5mm 盒子里描边几乎看不见，改背景色、边框色、实线/虚线/点线都像没生效。`NInputNumber` 仍能输入汉字。
+
+实现：
+
+1. 横线用 `border-top`、竖线用 `border-left` 画，默认黑色、0.5mm（约 2px），样式走 CSS `solid`/`dashed`/`dotted`。改颜色时同步 `borderColor`/`backgroundColor`，改粗细时同步细轴宽高。
+2. 带 mm 的字段（边框、圆角、内边距、坐标、纸张、行列、校准自定义纸张）改为不可筛选的 `NSelect` 预设，不再用数字输入框。
+
+验证：Node v20.20.0 Vitest `printMeasures` 1 + `renderers` 9 + `PrintDesigner` 19，共 29 项通过；同会话 `history` 25 项此前已通过。触达 ESLint 与 `git diff --check` 无输出。设计器需登录验证码，未做登录后实点；未启动 Admin。本轮未 commit。
+
+## 2026-09-21 · 打印预览返回 / 应用卡片 hover 不再撑高
+
+根因：打印预览由列表 `window.open` 新开标签，`router.back()` 没有历史。应用中心卡片 footer 默认 `display:none`，hover 再显示操作并 `translateY(-1px)`，网格跟着晃。
+
+实现：预览返回有历史才后退，否则关标签或回到来源应用/流程页。卡片操作栏绝对定位叠在底部，hover 才显示，不再用 `display:none` 撑高。
+
+验证：Node v20.20.0 Vitest `printRouteContext` 10 + `ApplicationTable-print-entry` 1 通过。触达 ESLint 无输出。Agent 浏览器停在登录页，未做登录后实点。本轮未 commit。
+

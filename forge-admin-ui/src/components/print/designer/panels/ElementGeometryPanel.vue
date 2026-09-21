@@ -1,7 +1,8 @@
 <script setup>
 import { SwapHorizontalOutline, SwapVerticalOutline } from '@vicons/ionicons5'
-import { NFormItem, NIcon, NInputNumber, NSwitch } from 'naive-ui'
+import { NFormItem, NIcon, NSelect, NSwitch } from 'naive-ui'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
+import { PRINT_MM_PRESETS, printMmOptions } from '../printMeasures'
 
 const store = usePrintDesignerStore()
 </script>
@@ -11,7 +12,7 @@ const store = usePrintDesignerStore()
     <h3>{{ store.selectedIds.length ? `选中 ${store.selectedIds.length} 个元素` : '当前区块' }}</h3>
     <div v-if="store.activeElement" class="panel-grid">
       <NFormItem v-for="(label, key) in { xMm: '横坐标 mm', yMm: '纵坐标 mm', widthMm: '宽度 mm', heightMm: '高度 mm' }" :key="key" :label="label" size="small">
-        <NInputNumber :value="store.activeElement[key]" :min="key.includes('Mm') && ['widthMm', 'heightMm'].includes(key) ? 0.1 : 0" :precision="2" :show-button="false" :disabled="store.activeElement.locked" @update:value="$event !== null && store.patchSelected({ [key]: $event })" />
+        <NSelect :value="store.activeElement[key]" :options="printMmOptions(store.activeElement[key], ['widthMm', 'heightMm'].includes(key) ? PRINT_MM_PRESETS.size : PRINT_MM_PRESETS.position)" :filterable="false" :consistent-menu-width="false" :disabled="store.activeElement.locked" @update:value="store.patchSelected({ [key]: $event })" />
       </NFormItem>
     </div>
     <div v-else-if="store.selectedIds.length > 1" class="geometry-commandbar alignment-bar">
@@ -30,10 +31,10 @@ const store = usePrintDesignerStore()
     </p>
     <template v-if="!store.selectedIds.length && store.activeSurface?.kind && store.activeSurface.kind !== 'PAGE_BREAK'">
       <NFormItem v-if="store.activeSurface.kind === 'FIXED'" label="区块高度 mm" size="small">
-        <NInputNumber :value="store.activeSurface.heightMm" :min="1" @update:value="$event !== null && store.patchSurface({ heightMm: $event })" />
+        <NSelect :value="store.activeSurface.heightMm" :options="printMmOptions(store.activeSurface.heightMm, PRINT_MM_PRESETS.size)" :filterable="false" :consistent-menu-width="false" @update:value="store.patchSurface({ heightMm: $event })" />
       </NFormItem>
       <NFormItem label="后间距 mm" size="small">
-        <NInputNumber :value="store.activeSurface.gapAfterMm || 0" :min="0" @update:value="$event !== null && store.patchSurface({ gapAfterMm: $event })" />
+        <NSelect :value="store.activeSurface.gapAfterMm || 0" :options="printMmOptions(store.activeSurface.gapAfterMm || 0, PRINT_MM_PRESETS.gap)" :filterable="false" :consistent-menu-width="false" @update:value="store.patchSurface({ gapAfterMm: $event })" />
       </NFormItem>
       <NFormItem label="与下一区块同页" size="small">
         <NSwitch :value="store.activeSurface.keepWithNext || false" @update:value="store.patchSurface({ keepWithNext: $event })" />

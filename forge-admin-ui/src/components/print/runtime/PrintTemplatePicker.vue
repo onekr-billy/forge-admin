@@ -1,10 +1,11 @@
 <script setup>
 import { ArrowBackOutline, RefreshOutline } from '@vicons/ionicons5'
-import { NAlert, NButton, NEmpty, NIcon, NSelect, NSpin } from 'naive-ui'
+import { NAlert, NButton, NEmpty, NIcon, NSelect } from 'naive-ui'
 import { computed, onBeforeUnmount, watch } from 'vue'
 import { loadPrintFile } from '@/api/print'
 import { usePrintRuntimeStore } from '@/stores/print/printRuntimeStore'
 import PrintPreview from './PrintPreview.vue'
+import PrintPreviewSkeleton from './PrintPreviewSkeleton.vue'
 
 const props = defineProps({ record: { type: Object, required: true } })
 const emit = defineEmits(['back'])
@@ -13,6 +14,7 @@ const options = computed(() => store.options.map(item => ({
   label: `${item.templateName} · v${item.versionNo}`,
   value: item.id,
 })))
+const selectedTemplateName = computed(() => store.options.find(item => item.id === store.selectedId)?.templateName || '')
 
 watch(() => props.record, value => store.open(value), { immediate: true, deep: true })
 onBeforeUnmount(() => store.close())
@@ -28,7 +30,6 @@ onBeforeUnmount(() => store.close())
       <NSelect
         :value="store.selectedId"
         :options="options"
-        :loading="store.loading"
         placeholder="选择打印模板"
         aria-label="打印模板"
         size="small"
@@ -61,7 +62,7 @@ onBeforeUnmount(() => store.close())
       </div>
     </NAlert>
 
-    <NSpin v-if="store.loading" show class="runtime-spin" />
+    <PrintPreviewSkeleton v-if="store.loading" />
     <PrintPreview
       v-else-if="store.prepared"
       :key="store.prepared.executionId"
@@ -71,6 +72,7 @@ onBeforeUnmount(() => store.close())
       :context="store.prepared.context"
       :catalog="store.prepared.catalog.fields"
       :template-version="store.prepared.templateVersionId"
+      :template-name="selectedTemplateName"
       :resolve-file="loadPrintFile"
       @execution="store.event"
       @error="store.failed"
@@ -150,18 +152,13 @@ onBeforeUnmount(() => store.close())
   align-items: center;
   gap: 8px;
 }
-.runtime-spin {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
 .runtime-empty {
   flex: 1;
   display: grid;
   place-items: center;
 }
-.runtime-picker :deep(.print-preview) {
+.runtime-picker :deep(.print-preview),
+.runtime-picker :deep(.print-preview-skeleton) {
   flex: 1;
   min-height: 0;
 }

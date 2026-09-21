@@ -12,6 +12,11 @@ final class PrintValueRules {
 
     private static final Set<String> FORBIDDEN = Set.of("__proto__", "prototype", "constructor");
 
+    private static final Set<String> FORBIDDEN_STYLE = Set.of(
+            "backgroundImage", "background", "src", "href", "content", "filter",
+            "html", "innerHTML", "cssText", "expression", "clipPath", "mask", "cursor"
+    );
+
     private final PrintProtocolRules r;
 
     PrintValueRules(PrintProtocolRules rules) {
@@ -30,11 +35,24 @@ final class PrintValueRules {
     }
 
     void binding(JsonNode b, String path, boolean image, boolean fixedText) {
-        if (!r.object(b, path, "source", "path", "value")) {
+        if (!r.object(b, path, "source", "path", "value", "expression")) {
             return;
         }
-        r.choice(b.get("source"), path + ".source", "CONSTANT", "FIELD", "SYSTEM");
+        r.choice(b.get("source"), path + ".source", "CONSTANT", "FIELD", "SYSTEM", "EXPRESSION");
         String source = b.path("source").asText();
+        if (source.equals("EXPRESSION")) {
+            if (b.has("path") || b.has("value")) {
+                r.issue(path, "CONFLICTING_BINDING", "表达式不能同时声明字段路径或固定值");
+            }
+            if (image) {
+                r.issue(path, "INVALID_EXPRESSION", "图片不能使用表达式绑定");
+            }
+            PrintExpressionRules.check(b.get("expression"), path + ".expression", r);
+            return;
+        }
+        if (b.has("expression")) {
+            r.issue(path, "CONFLICTING_BINDING", "非表达式绑定不能声明 expression");
+        }
         if (source.equals("CONSTANT")) {
             if (b.has("path")) {
                 r.issue(path, "CONFLICTING_BINDING", "固定值不能同时声明字段路径");
@@ -67,6 +85,20 @@ final class PrintValueRules {
         return value != null && !value.isNull() && !(value.isBoolean() && !value.booleanValue()) && !(value.isNumber() && value.doubleValue() == 0) && !(value.isTextual() && value.textValue().isEmpty());
     }
 
+    static boolean isPrintColor(JsonNode value) {
+        if (value == null || !value.isTextual()) {
+            return false;
+        }
+        String raw = value.textValue().trim();
+        if (raw.equalsIgnoreCase("transparent") || raw.equalsIgnoreCase("none")) {
+            return true;
+        }
+        if (raw.matches("(?i)#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})")) {
+            return true;
+        }
+        return raw.matches("(?i)rgba?\\(\\s*\\d+(?:\\.\\d+)?(?:[\\s,/]+\\d+(?:\\.\\d+)?){2}.*\\)");
+    }
+
     private static boolean safeImage(JsonNode value) {
         if (fileId(value)) {
             return true;
@@ -75,11 +107,30 @@ final class PrintValueRules {
     }
 
     void style(JsonNode s, String path) {
-        if (s == null || !r.object(s, path, "fontFamily", "fontSizePt", "fontWeight", "fontStyle", "textAlign", "verticalAlign", "lineHeight", "color", "backgroundColor", "borderColor", "borderWidthMm", "borderStyle", "borderRadiusMm", "paddingMm", "textDecoration", "objectFit")) {
+        if (s == null || s.isMissingNode()) {
             return;
         }
+        if (!s.isObject()) {
+            r.issue(path, "INVALID_OBJECT", "必须是 JSON 对象");
+            return;
+        }
+        s.fieldNames().forEachRemaining(key -> {
+            String location = path + "." + key;
+            if (FORBIDDEN.contains(key) || FORBIDDEN_STYLE.contains(key) || !key.matches("[A-Za-z][A-Za-z0-9]{0,40}")) {
+                r.issue(location, "UNKNOWN_PROPERTY", "不支持此属性");
+                return;
+            }
+            JsonNode item = s.get(key);
+            if (item != null && (item.isObject() || item.isArray())) {
+                r.issue(location, "INVALID_VALUE", "样式值必须是基础类型");
+                return;
+            }
+            if (item != null && item.isTextual() && item.textValue().matches("(?i).*(url\\s*\\(|expression\\s*\\(|javascript:|<script).*")) {
+                r.issue(location, "INVALID_VALUE", "样式值不安全");
+            }
+        });
         for (String key : List.of("color", "backgroundColor", "borderColor")) {
-            if (s.has(key) && (!s.get(key).isTextual() || !s.get(key).textValue().matches("(?i)#[0-9a-f]{3}(?:[0-9a-f]{3})?"))) {
+            if (s.has(key) && !isPrintColor(s.get(key))) {
                 r.issue(path + "." + key, "INVALID_COLOR", "颜色须使用十六进制格式");
             }
         }
@@ -122,6 +173,15 @@ final class PrintValueRules {
         if (s.has("objectFit")) {
             r.choice(s.get("objectFit"), path + ".objectFit", "contain", "cover", "fill", "scale-down");
         }
+        if (s.has("textFit")) {
+            r.choice(s.get("textFit"), path + ".textFit", "CLIP", "SHRINK", "AUTO_HEIGHT");
+        }
+        if (s.has("shrinkMinFontSizePt")) {
+            r.number(s.get("shrinkMinFontSizePt"), path + ".shrinkMinFontSizePt", 6, 144);
+        }
+        if (s.has("opacity")) {
+            r.number(s.get("opacity"), path + ".opacity", 0, 1);
+        }
     }
 
     void cellStyles(JsonNode value, String path) {
@@ -131,7 +191,7 @@ final class PrintValueRules {
         }
         value.fields().forEachRemaining(entry -> {
             String key = entry.getKey();
-            if (!key.matches("^(header|data|footer):\\d+:[\\w-]+$")) {
+            if (!key.matches("^(header|data|footer|subtotal):\\d+:[\\w-]+$")) {
                 r.issue(path + "." + key, "INVALID_CELL_STYLE_KEY", "单元格样式键无效");
                 return;
             }
@@ -143,7 +203,7 @@ final class PrintValueRules {
         if (f == null || !r.object(f, path, "type", "scale", "emptyText", "trueText", "falseText", "datePattern")) {
             return;
         }
-        r.choice(f.get("type"), path + ".type", "TEXT", "MONEY", "NUMBER", "DATE", "BOOLEAN");
+        r.choice(f.get("type"), path + ".type", "TEXT", "MONEY", "MONEY_UPPER", "NUMBER", "DATE", "BOOLEAN");
         if (f.has("scale")) {
             r.integer(f.get("scale"), path + ".scale", 0, 6);
         }

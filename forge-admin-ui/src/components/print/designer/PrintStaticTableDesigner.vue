@@ -3,7 +3,7 @@ import { NInputNumber } from 'naive-ui'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { tableCellStyle, tableFrameStyle } from '../renderers/style'
 import { designerBindingText, designerCellImageRef, isDesignerImageCell } from './designerSample'
-import { staticTableIdsInRect } from './staticTable'
+import { staticTableCellLook, staticTableIdsInRect } from './staticTable'
 import { selectionBoundsFromCells } from './tableSelection'
 
 const props = defineProps({
@@ -66,10 +66,12 @@ const contextCanMerge = computed(() => props.selectedIds.length >= 2 && !props.l
 const contextHasSelection = computed(() => props.selectedIds.length > 0)
 
 function style(cell) {
+  const look = staticTableCellLook(props.node, cell)
   return {
-    ...tableCellStyle({ borderWidthMm: 0.15, ...cell.style }),
+    ...tableCellStyle(look, { top: cell.row === 0, left: cell.column === 0 }),
     gridColumn: `${cell.column + 1} / span ${cell.colSpan}`,
     gridRow: `${cell.row + 1} / span ${cell.rowSpan}`,
+    backgroundColor: look.backgroundColor || 'transparent',
   }
 }
 
@@ -304,7 +306,7 @@ function onPaste(event) {
   emit('pasteImageFile', { cellId: targetId, file: files[0] })
 }
 
-function startTrackResize(event, axis, index) {
+function startTrackResize(event, axis, index, edge = 'end') {
   if (props.locked || event.button !== 0)
     return
   event.preventDefault()
@@ -314,6 +316,7 @@ function startTrackResize(event, axis, index) {
   if (!Number.isFinite(startSize))
     return
   const start = axis === 'column' ? event.clientX : event.clientY
+  const startOrigin = axis === 'column' ? Number(props.node.xMm) : Number(props.node.yMm)
   const rootRect = root.value?.getBoundingClientRect()
   const totalMm = axis === 'column'
     ? props.node.table.columns.reduce((sum, col) => sum + col.widthMm, 0)
@@ -324,9 +327,16 @@ function startTrackResize(event, axis, index) {
   const pxPerMm = spanPx / totalMm
   emit('resizeTrack', { axis, index, sizeMm: startSize, phase: 'start' })
   const move = (next) => {
-    const deltaPx = (axis === 'column' ? next.clientX : next.clientY) - start
-    const nextSize = Math.max(4, startSize + deltaPx / pxPerMm)
-    emit('resizeTrack', { axis, index, sizeMm: nextSize, phase: 'move' })
+    const deltaMm = ((axis === 'column' ? next.clientX : next.clientY) - start) / pxPerMm
+    const nextSize = Math.max(4, startSize + (edge === 'start' ? -deltaMm : deltaMm))
+    const applied = startSize - nextSize
+    emit('resizeTrack', {
+      axis,
+      index,
+      sizeMm: nextSize,
+      originMm: edge === 'start' ? Number((startOrigin + applied).toFixed(3)) : undefined,
+      phase: 'move',
+    })
   }
   const up = () => {
     window.removeEventListener('pointermove', move)
@@ -337,11 +347,21 @@ function startTrackResize(event, axis, index) {
   window.addEventListener('pointerup', up)
 }
 
+function imageBoxStyle(cell) {
+  const style = {}
+  if (Number(cell.imageWidthMm) > 0)
+    style.width = `${cell.imageWidthMm}mm`
+  if (Number(cell.imageHeightMm) > 0)
+    style.height = `${cell.imageHeightMm}mm`
+  return style
+}
+
 function startImageResize(event, cell) {
   if (props.locked || event.button !== 0 || !isImageCell(cell))
     return
   event.preventDefault()
   event.stopPropagation()
+  event.currentTarget?.setPointerCapture?.(event.pointerId)
   const startX = event.clientX
   const startY = event.clientY
   const startW = cell.imageWidthMm || Math.max(8, props.node.table.columns[cell.column]?.widthMm * 0.8)
@@ -428,25 +448,28 @@ watch(contextShow, (show) => {
         @contextmenu="onContextMenu($event, cell)"
         @keydown="onKeyType($event, cell)"
       >
-        <img
-          v-if="isImageCell(cell) && cellImageSrc(cell)"
-          class="cell-image"
-          :src="cellImageSrc(cell)"
-          alt=""
-          :style="{
-            width: cell.imageWidthMm ? `${cell.imageWidthMm}mm` : '100%',
-            height: cell.imageHeightMm ? `${cell.imageHeightMm}mm` : 'auto',
-            maxWidth: '100%',
-            maxHeight: '100%',
-          }"
+        <span
+          v-if="isImageCell(cell)"
+          class="cell-image-box"
+          :class="{ sized: Number(cell.imageWidthMm) > 0 }"
+          :style="imageBoxStyle(cell)"
         >
-        <span v-else-if="isImageCell(cell)" class="image-placeholder">图片</span>
-        <i
-          v-if="isImageCell(cell) && selectedIds.includes(cell.id) && !locked"
-          class="image-resize-handle"
-          title="拖动调整图片大小"
-          @pointerdown.stop="startImageResize($event, cell)"
-        />
+          <img
+            v-if="cellImageSrc(cell)"
+            class="cell-image"
+            :src="cellImageSrc(cell)"
+            alt=""
+          >
+          <span v-else class="image-placeholder">图片</span>
+          <button
+            v-if="selectedIds.includes(cell.id) && !locked"
+            type="button"
+            class="image-resize-handle"
+            title="拖动调整图片大小"
+            aria-label="拖动调整图片大小"
+            @pointerdown.stop="startImageResize($event, cell)"
+          />
+        </span>
         <input
           v-else-if="editing === cell.id"
           v-model="draft"
@@ -462,17 +485,31 @@ watch(contextShow, (show) => {
         </template>
       </div>
       <div
-        v-for="(col, index) in node.table.columns.slice(0, -1)"
+        class="col-resize-handle outer"
+        style="left: 0"
+        title="拖动调整列宽"
+        @pointerdown.stop="startTrackResize($event, 'column', 0, 'start')"
+      />
+      <div
+        v-for="(col, index) in node.table.columns"
         :key="`col-h-${col.id}`"
         class="col-resize-handle"
+        :class="{ outer: index === node.table.columns.length - 1 }"
         :style="colHandleStyle(index)"
         title="拖动调整列宽"
         @pointerdown.stop="startTrackResize($event, 'column', index)"
       />
       <div
-        v-for="(row, index) in node.table.rows.slice(0, -1)"
+        class="row-resize-handle outer"
+        style="top: 0"
+        title="拖动调整行高"
+        @pointerdown.stop="startTrackResize($event, 'row', 0, 'start')"
+      />
+      <div
+        v-for="(row, index) in node.table.rows"
         :key="`row-h-${row.id}`"
         class="row-resize-handle"
+        :class="{ outer: index === node.table.rows.length - 1 }"
         :style="rowHandleStyle(index)"
         title="拖动调整行高"
         @pointerdown.stop="startTrackResize($event, 'row', index)"
@@ -613,7 +650,7 @@ watch(contextShow, (show) => {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 5;
+  z-index: 8;
   width: 10px;
   height: 10px;
   padding: 0;
@@ -655,9 +692,55 @@ watch(contextShow, (show) => {
   padding: 1px;
 }
 .static-cell.selected {
-  background-color: color-mix(in srgb, var(--primary-color, #356cde) 10%, #fff) !important;
   outline: none;
   box-shadow: none;
+}
+.static-cell.selected.image {
+  z-index: 8;
+  overflow: visible;
+}
+.cell-image-box {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  max-height: 100%;
+}
+.cell-image-box:not(.sized) {
+  width: 100%;
+}
+.cell-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-placeholder {
+  color: var(--text-tertiary, #94a3b8);
+  font-size: 10px;
+}
+.image-resize-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.image-resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid #fff;
+  border-radius: 1px;
+  background: var(--primary-color, #356cde);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color, #356cde) 55%, #0f172a);
 }
 .selection-rect {
   position: absolute;
@@ -679,32 +762,10 @@ watch(contextShow, (show) => {
   font: inherit;
   text-align: inherit;
 }
-.cell-image {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-.image-placeholder {
-  color: var(--text-tertiary, #94a3b8);
-  font-size: 10px;
-}
-.image-resize-handle {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
-  z-index: 6;
-  width: 8px;
-  height: 8px;
-  border: 1px solid #fff;
-  border-radius: 1px;
-  background: var(--primary-color, #356cde);
-  cursor: nwse-resize;
-}
 .col-resize-handle {
   position: absolute;
   top: 0;
-  z-index: 5;
+  z-index: 6;
   width: 4px;
   height: 100%;
   margin-left: -2px;
@@ -713,11 +774,19 @@ watch(contextShow, (show) => {
 .row-resize-handle {
   position: absolute;
   left: 0;
-  z-index: 5;
+  z-index: 6;
   width: 100%;
   height: 4px;
   margin-top: -2px;
   cursor: row-resize;
+}
+.col-resize-handle.outer {
+  width: 8px;
+  margin-left: -4px;
+}
+.row-resize-handle.outer {
+  height: 8px;
+  margin-top: -4px;
 }
 .col-resize-handle:hover,
 .row-resize-handle:hover {

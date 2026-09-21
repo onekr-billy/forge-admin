@@ -1,11 +1,14 @@
 <script setup>
 import { ChevronDownOutline, ChevronUpOutline, TrashOutline } from '@vicons/ionicons5'
-import { NColorPicker, NFormItem, NIcon, NInput, NInputNumber, NSelect, NSwitch, NTabPane, NTabs } from 'naive-ui'
+import { NColorPicker, NFormItem, NIcon, NInput, NSelect, NSwitch, NTabPane, NTabs } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import { usePrintDesignerStore } from '@/stores/print/printDesignerStore'
+import { toPrintColor } from '../../protocol/printColor'
 import { findSurface, normalizeTableColumnWidths } from '../commands'
 import { collectionPaths, fieldGroupKey, fieldGroupTitle } from '../fieldGroups'
 import PrintFieldPicker from '../PrintFieldPicker.vue'
+import { printFontSizeOptions } from '../printFonts'
+import { PRINT_MM_PRESETS, printMmOptions } from '../printMeasures'
 import TableBandsPanel from './TableBandsPanel.vue'
 
 const store = usePrintDesignerStore()
@@ -72,11 +75,8 @@ function columnStyle(id, key, value) {
   if (value === null)
     return
   let next = value
-  if (typeof next === 'string' && ['color', 'backgroundColor'].includes(key)) {
-    const hex = next.trim()
-    if (/^#[\da-f]{8}$/i.test(hex))
-      next = `#${hex.slice(1, 7)}`
-  }
+  if (typeof next === 'string' && ['color', 'backgroundColor'].includes(key))
+    next = toPrintColor(next)
   mutateTable((item) => {
     const col = item.columns.find(c => c.id === id)
     col.style = { ...col.style, [key]: next }
@@ -89,18 +89,6 @@ function reorder(index, offset) {
     const [value] = item.columns.splice(index, 1)
     item.columns.splice(index + offset, 0, value)
   })
-}
-function remove(id) {
-  mutateTable((item) => {
-    if (item.headerRows || item.footer)
-      throw new Error('请先在「复杂表头 / 合计」页清除合并配置，再删除列')
-    item.columns = item.columns.filter(c => c.id !== id)
-    normalizeTableColumnWidths(item.columns, item.widthMm || item.columns.reduce((sum, c) => sum + c.widthMm, 0))
-  })
-  if (store.tableColumnIds.includes(id) || activeColumnId.value === id) {
-    store.tableColumnIds = store.tableColumnIds.filter(value => value !== id)
-    store.tableColumnId = store.tableColumnIds[0] || ''
-  }
 }
 function removeSelectedOrOne(id) {
   const selected = store.tableColumnIds.includes(id) && store.tableColumnIds.length > 1
@@ -119,38 +107,10 @@ function removeSelectedOrOne(id) {
   store.tableColumnIds = store.tableColumnIds.filter(value => !selected.includes(value))
   store.tableColumnId = store.tableColumnIds[0] || ''
 }
-function normalizeColor(value) {
-  if (typeof value !== 'string')
-    return value
-  const hex = value.trim()
-  if (/^#[\da-f]{8}$/i.test(hex))
-    return `#${hex.slice(1, 7)}`
-  return hex
-}
 function patchTable(patch) {
   if (isElementTable.value)
     return store.patchSelected(patch)
   return store.patchSurface(patch)
-}
-function patchHeaderStyle(key, value) {
-  if (value === null)
-    return
-  patchTable({ headerStyle: { ...table.value.headerStyle, [key]: normalizeColor(value) } })
-}
-function patchBodyStyle(key, value) {
-  if (value === null)
-    return
-  patchTable({ style: { ...table.value.style, [key]: normalizeColor(value) } })
-}
-function patchOddRowStyle(key, value) {
-  if (value === null)
-    return
-  patchTable({ oddRowStyle: { ...table.value.oddRowStyle, [key]: normalizeColor(value) } })
-}
-function patchEvenRowStyle(key, value) {
-  if (value === null)
-    return
-  patchTable({ evenRowStyle: { ...table.value.evenRowStyle, [key]: normalizeColor(value) } })
 }
 </script>
 
@@ -219,11 +179,11 @@ function patchEvenRowStyle(key, value) {
         <div v-if="activeColumn" class="column-detail">
           <h4>列「{{ activeColumn.title || activeColumn.field }}」</h4>
           <p class="muted tip">
-            表体样式按列设置；表头对齐走统一表头样式（点下拉不会再关掉本卡片）。
+            这里只改本列表体。整表表头/表体颜色在右侧「样式」页设置。
           </p>
           <div class="panel-grid">
             <NFormItem label="宽度 mm" size="small">
-              <NInputNumber :value="activeColumn.widthMm" :min="1" :show-button="false" @update:value="$event !== null && column(activeColumn.id, { widthMm: $event })" />
+              <NSelect :value="activeColumn.widthMm" :options="printMmOptions(activeColumn.widthMm, PRINT_MM_PRESETS.track)" :filterable="false" :consistent-menu-width="false" @update:value="column(activeColumn.id, { widthMm: $event })" />
             </NFormItem>
             <NFormItem label="格式" size="small">
               <NSelect :value="activeColumn.format?.type || 'TEXT'" :options="formats" @update:value="column(activeColumn.id, { format: { type: $event } })" />
@@ -231,11 +191,8 @@ function patchEvenRowStyle(key, value) {
             <NFormItem label="表体对齐" size="small">
               <NSelect :value="activeColumn.style?.textAlign || 'left'" :options="alignments" @update:value="columnStyle(activeColumn.id, 'textAlign', $event)" />
             </NFormItem>
-            <NFormItem label="表头对齐" size="small">
-              <NSelect :value="table.headerStyle?.textAlign || 'left'" :options="alignments" @update:value="patchHeaderStyle('textAlign', $event)" />
-            </NFormItem>
-            <NFormItem label="字号 pt" size="small">
-              <NInputNumber :value="activeColumn.style?.fontSizePt || 10" :min="6" :max="144" :show-button="false" @update:value="columnStyle(activeColumn.id, 'fontSizePt', $event)" />
+            <NFormItem label="字号" size="small">
+              <NSelect :value="activeColumn.style?.fontSizePt || 10" :options="printFontSizeOptions(activeColumn.style?.fontSizePt || 10)" :filterable="false" :consistent-menu-width="false" @update:value="columnStyle(activeColumn.id, 'fontSizePt', $event)" />
             </NFormItem>
             <NFormItem label="文字色" size="small">
               <NColorPicker class="swatch-only" :value="activeColumn.style?.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="columnStyle(activeColumn.id, 'color', $event)" />
@@ -257,41 +214,8 @@ function patchEvenRowStyle(key, value) {
       <NTabPane name="footer" :tab="table.footer ? '合计✓' : '合计'">
         <TableBandsPanel mode="footer" />
       </NTabPane>
-
-      <NTabPane name="look" tab="外观">
-        <h4>统一表头 / 表体</h4>
-        <p class="muted tip">
-          多级表头里单独设过的单元格颜色会覆盖这里的统一表头色。
-        </p>
-        <div class="panel-grid">
-          <NFormItem label="表头背景" size="small">
-            <NColorPicker class="swatch-only" :value="table.headerStyle?.backgroundColor || '#f1f5f9'" :show-alpha="false" :modes="['hex']" @update:value="patchHeaderStyle('backgroundColor', $event)" />
-          </NFormItem>
-          <NFormItem label="表头文字色" size="small">
-            <NColorPicker class="swatch-only" :value="table.headerStyle?.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patchHeaderStyle('color', $event)" />
-          </NFormItem>
-          <NFormItem label="表头字号" size="small">
-            <NInputNumber :value="table.headerStyle?.fontSizePt || 10" :min="6" :max="144" :show-button="false" @update:value="patchHeaderStyle('fontSizePt', $event)" />
-          </NFormItem>
-          <NFormItem label="表头对齐" size="small">
-            <NSelect :value="table.headerStyle?.textAlign || 'left'" :options="alignments" @update:value="patchHeaderStyle('textAlign', $event)" />
-          </NFormItem>
-          <NFormItem label="表体文字色" size="small">
-            <NColorPicker class="swatch-only" :value="table.style?.color || '#000000'" :show-alpha="false" :modes="['hex']" @update:value="patchBodyStyle('color', $event)" />
-          </NFormItem>
-          <NFormItem label="表体字号" size="small">
-            <NInputNumber :value="table.style?.fontSizePt || 10" :min="6" :max="144" :show-button="false" @update:value="patchBodyStyle('fontSizePt', $event)" />
-          </NFormItem>
-          <NFormItem label="表体对齐" size="small">
-            <NSelect :value="table.style?.textAlign || 'left'" :options="alignments" @update:value="patchBodyStyle('textAlign', $event)" />
-          </NFormItem>
-          <NFormItem label="奇数行背景" size="small">
-            <NColorPicker class="swatch-only" :value="table.oddRowStyle?.backgroundColor || table.style?.backgroundColor || '#ffffff'" :show-alpha="false" :modes="['hex']" @update:value="patchOddRowStyle('backgroundColor', $event)" />
-          </NFormItem>
-          <NFormItem label="偶数行背景" size="small">
-            <NColorPicker class="swatch-only" :value="table.evenRowStyle?.backgroundColor || '#f8fafc'" :show-alpha="false" :modes="['hex']" @update:value="patchEvenRowStyle('backgroundColor', $event)" />
-          </NFormItem>
-        </div>
+      <NTabPane name="subtotal" :tab="table.subtotal ? '小计✓' : '小计'">
+        <TableBandsPanel mode="subtotal" />
       </NTabPane>
     </NTabs>
   </section>

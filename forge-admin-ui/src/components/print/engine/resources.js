@@ -3,7 +3,62 @@ import { formatValue } from '../protocol/formatters'
 import { PRINT_LIMITS, PrintError } from '../protocol/types'
 import { isSafeImageReference } from '../protocol/validate'
 import { encodePrintCode } from '../renderers/codes'
-import { requireLocalFont } from './fonts'
+import { hasGenericFontFallback, requireLocalFont } from './fonts'
+
+const PRINT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+function normalizeImageReference(value) {
+  if (value == null)
+    return ''
+  if (typeof value === 'number' && Number.isFinite(value))
+    return String(Math.trunc(value))
+  if (typeof value !== 'string')
+    return ''
+  const text = value.trim()
+  if (!text || text === 'null' || text === 'undefined')
+    return ''
+  return text
+}
+
+function sniffImageType(bytes) {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47)
+    return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF)
+    return 'image/jpeg'
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+    return 'image/webp'
+  }
+  return ''
+}
+
+async function readBlobBytes(blob, limit = 16) {
+  const slice = typeof blob.slice === 'function' ? blob.slice(0, limit) : blob
+  if (typeof slice.arrayBuffer === 'function')
+    return new Uint8Array(await slice.arrayBuffer())
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(new Uint8Array(reader.result || []))
+    reader.onerror = () => reject(reader.error || new Error('read blob'))
+    reader.readAsArrayBuffer(slice)
+  })
+}
+
+async function asPrintImageBlob(blob) {
+  if (!(blob instanceof Blob) || blob.size > MAX_IMAGE_BYTES)
+    return null
+  const declared = String(blob.type || '').split(';')[0].trim().toLowerCase()
+  if (PRINT_IMAGE_TYPES.has(declared))
+    return blob
+  try {
+    const type = sniffImageType(await readBlobBytes(blob))
+    return type ? new Blob([blob], { type }) : null
+  }
+  catch {
+    return null
+  }
+}
 
 export function abortable(promise, signal) {
   return new Promise((resolve, reject) => {
@@ -58,31 +113,40 @@ export async function preparePrintResources(document, context, options = {}) {
     const fonts = options.fonts === undefined ? globalThis.document?.fonts : options.fonts
     if (fonts) {
       await abortable(fonts.ready, signal)
-      const styles = new Set()
-      const families = new Set(['Arial, sans-serif'])
+      const faces = []
       JSON.stringify(document, (key, value) => {
         if (key === 'style' && value) {
-          families.add(value.fontFamily || 'Arial, sans-serif')
-          styles.add(`${value.fontStyle || 'normal'} ${value.fontWeight || 400} ${value.fontSizePt || 10}pt ${value.fontFamily || 'Arial, sans-serif'}`)
+          const family = value.fontFamily || 'Arial, sans-serif'
+          faces.push({
+            family,
+            css: `${value.fontStyle || 'normal'} ${value.fontWeight || 400} ${value.fontSizePt || 10}pt ${family}`,
+          })
         }
         return value
       })
-      styles.add('normal 400 10pt Arial, sans-serif')
-      for (const family of families) {
-        await abortable((options.requireLocalFont || requireLocalFont)(family), signal)
+      faces.push({ family: 'Arial, sans-serif', css: 'normal 400 10pt Arial, sans-serif' })
+      const seenFamily = new Set()
+      const seenCss = new Set()
+      for (const face of faces) {
+        if (seenFamily.has(face.family))
+          continue
+        seenFamily.add(face.family)
+        await abortable((options.requireLocalFont || requireLocalFont)(face.family), signal)
       }
-      for (const style of styles) {
-        await abortable(fonts.load(style, '打印中文Aa012345'), signal)
-        if (!fonts.check(style, '打印中文Aa012345')) {
+      for (const face of faces) {
+        if (seenCss.has(face.css))
+          continue
+        seenCss.add(face.css)
+        await abortable(fonts.load(face.css, '打印中文Aa012345'), signal)
+        if (!fonts.check(face.css, '打印中文Aa012345') && !hasGenericFontFallback(face.family))
           throw new PrintError('FONT_UNAVAILABLE', '打印字体未就绪', 'fonts')
-        }
       }
     }
     const aliases = new Map(document.resources.map(resource => [resource.id, resource.fileId]))
-    const loadImage = async (key, reference, path) => {
-      if (reference === null || reference === '') {
+    const loadImage = async (key, rawReference, path) => {
+      const reference = normalizeImageReference(rawReference)
+      if (!reference)
         return
-      }
       location = path
       if (!isSafeImageReference(reference)) {
         throw new PrintError('INVALID_RESOURCE', '图片引用无效', location)
@@ -97,8 +161,8 @@ export async function preparePrintResources(document, context, options = {}) {
           if (!options.resolveFile) {
             throw new PrintError('RESOURCE_RESOLVER_REQUIRED', '缺少鉴权文件读取能力', location)
           }
-          const blob = await abortable(options.resolveFile(fileId, { signal }), signal)
-          if (!(blob instanceof Blob) || !['image/png', 'image/jpeg', 'image/webp'].includes(blob.type) || blob.size > 10 * 1024 * 1024) {
+          const blob = await asPrintImageBlob(await abortable(options.resolveFile(fileId, { signal }), signal))
+          if (!blob) {
             throw new PrintError('INVALID_RESOURCE', '文件不是受支持的图片或体积超过限制', location)
           }
           src = (options.createObjectURL || (value => URL.createObjectURL(value)))(blob)
@@ -150,6 +214,7 @@ export async function preparePrintResources(document, context, options = {}) {
       }
       const bands = [
         ...(section.headerRows || []).map((row, index) => ({ key: `header-${index}`, row })),
+        ...(section.subtotal ? [{ key: 'subtotal', row: section.subtotal }] : []),
         ...(section.footer ? [{ key: 'footer', row: section.footer }] : []),
       ]
       for (const band of bands) {
@@ -160,6 +225,9 @@ export async function preparePrintResources(document, context, options = {}) {
           await loadImage(`band:${section.id}:${band.key}:${cellIndex}`, resolveBinding(cell.binding, context), `${section.id}:${band.key}:${cellIndex}`)
         }
       }
+    }
+    if (document.paper?.designBackground?.fileId) {
+      await loadImage('design-background', document.paper.designBackground.fileId, 'paper.designBackground')
     }
     if (signal.aborted) {
       throw signal.reason

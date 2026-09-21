@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import * as api from '@/api/print'
 import { assertPrintDocument } from '@/components/print/protocol/validate'
 
-const errors = new Set(['PRINT_CANCELLED', 'RESOURCE_FAILED', 'RESOURCE_TIMEOUT', 'FIELD_NOT_ALLOWED', 'INVALID_TEMPLATE', 'FONT_UNAVAILABLE', 'LIMIT_EXCEEDED', 'ELEMENT_TOO_TALL', 'PRINT_UNAVAILABLE'])
+const errors = new Set(['PRINT_CANCELLED', 'RESOURCE_FAILED', 'RESOURCE_TIMEOUT', 'FIELD_NOT_ALLOWED', 'INVALID_TEMPLATE', 'FONT_UNAVAILABLE', 'LIMIT_EXCEEDED', 'ELEMENT_TOO_TALL', 'PRINT_UNAVAILABLE', 'PDF_UNAVAILABLE'])
 export const usePrintRuntimeStore = defineStore('printRuntime', {
   state: () => ({ record: null, options: [], selectedId: null, prepared: null, loading: false, error: '', generation: 0, eventPending: false, eventSent: false, eventError: '', pendingEvent: null }),
   actions: {

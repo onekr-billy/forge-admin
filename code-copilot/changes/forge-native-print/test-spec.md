@@ -299,3 +299,82 @@ T55 执行结果：新增入口/设置/工作区组件测试 4 个文件 7 项�
 
 
 T56 执行结果：权限纯函数 4 项通过，覆盖本次用户返回的 `isAdmin=true` 和 `permissions=['*:*:*']`，同时覆盖 `**`、精确权限与拒绝路径。打印域、正式入口及工作区合并回归 29 个文件 165 项通过；触达文件 ESLint 与 `git diff --check` 通过，源码扫描确认查看、管理、发布三处均使用统一函数。Vite 9389 modules 生产构建成功，仅保留项目既有构建提示。浏览器仍因当前 Codex 会话未登录且本机 8580 返回 502，未冒充登录后页面验收。
+
+## T57 表达式 / 汇总 / 连续纸拼版 / 套打水印 / 溢出 / PDF 下载
+
+- 表达式：白名单四则运算与 `SUM/AVG/COUNT/MIN/MAX/ABS/ROUND/IF/CONCAT/TEXT/MONEY/UPPER/RMB`；拒绝 `eval` 与控制字符。金额大写走 `MONEY_UPPER`（分）或 `UPPER`/`RMB`。
+- 表格：每页 `subtotal`、末页 `footer`；小计只聚合当前页数据行。
+- 纸张：`CONTINUOUS` 按内容撑高；`tiling` 2×2 标签拼到目标纸，拼版内标签不再计为独立打印页。`textFit` 覆盖 CLIP/SHRINK/AUTO_HEIGHT。
+- PDF：预览「PDF」截取已排版 `PrintPage`（`html-to-image` + `jspdf`）下载文件，事件为 `PDF_DOWNLOADED`；「打印」仍只打开对话框。套打底图默认不进打印/PDF。
+- 自动化：前端打印域 Vitest、共享协议 `protocol-compatibility.mjs`、Java `PrintProtocolValidatorTest`/`PrintProtocolCompatibilityTest`、触达文件 ESLint、`git diff --check`、Vite 生产构建。
+- 跳过：真实 Admin/Flow/MySQL/Redis、登录后预览实点下载、物理打印机；客户端 PDF 不是服务端归档件。
+
+T57 执行结果：前端打印域 25 文件 168 项通过；共享协议 41/41；Java 协议测试 81 项通过。触达文件 ESLint 与 `git diff --check` 无输出；Vite 生产构建 42.46s 成功，产物含 html2canvas/jspdf 懒加载 chunk。未启动真实 Admin/Flow/MySQL/Redis，未做登录后实点下载或物理打印。
+
+## T57 增量：PDF_DOWNLOADED 事件 + 预览同源导出
+
+- 后端接受 `PDF_DOWNLOADED`（与 `DIALOG_OPENED` 同形，不代表出纸）；已执行 V1.0.172 不改，新增 V1.0.180 字典。
+- 导出截取预览已排版 `[data-print-page]`（`html-to-image` + `jspdf` PNG），不再 html2canvas 重排。
+- 自动化：打印域 Vitest、触达 ESLint、Java `PrintExecutionServiceTest`/`PrintResourceContractTest`/`PrintProtocolValidatorTest`、`git diff --check`。
+- 跳过：真实 Admin 重启后的登录下载、物理打印、全量 Vite 生产构建。
+
+T57 增量执行结果：前端 `src/components/print` + `src/stores/print` 27 文件 183 项通过；触达 ESLint（CI=true）无输出；`git diff --check` 无空白错误。Java 17 `PrintExecutionServiceTest` 3 + `PrintProtocolValidatorTest` 40 + `PrintResourceContractTest` 3，共 46 项通过。未启动真实 Admin/Flow/MySQL，V1.0.180 需用户重启 Admin 后才会写入字典并加载新枚举。
+
+## T57 增量：表头边框 / PDF 文件名 / 预览骨架屏
+
+- 表头上/左边改画在单元格 `background-image` 内侧线上，避免不透明表头盖住外框、祖先 `overflow:hidden` 裁掉贴边细线。
+- `exportFileName` 在纸张面板可配；默认「模板名-业务名称-时间戳」，未写 `{timestamp}` 仍追加。
+- `/print/preview` 准备模板/资源时用纸张骨架屏，不再用 `NSpin`。
+- 自动化：`exportFileName`/`protocol`/`renderers`/`PrintPreview`/`exportPrintPdf`/`PrintDesigner`/`staticTable` 共 7 文件 52 项；触达 ESLint（不含 PrintCanvas 既有 curly）；`git diff --check`。
+- 跳过：本机 `localhost:3000` 当前不可达，未做登录后实点；未跑 Java 本轮（协议校验此前已覆盖 exportFileName）。
+
+T57 增量执行结果：Node v20.19.5 上述 7 个 Vitest 文件 52 项通过。Cursor 内置浏览器无法打开 localhost。未启动 Admin/Flow/MySQL。本轮未 commit。
+
+## T57 增量：表格表头/表体独立配色
+
+- 空白表格插入不再生成「表头」灰行；`headerStyle` 只作用第一行，`style` 作用表体。
+- 右侧「样式」页拆成表头/表体（明细表另有斑马纹）；基础面板去掉重复整表色板，列色只覆盖表体。
+- 点选格子不再用 `!important` 盖住真实底色；「设为表头」写 `headerStyle` 而不是给格子写死灰底。
+- 自动化：`staticTable`/`PrintDesigner`/`designerSample`/`history`/`stores/print` 共 6 文件 68 项；触达 ESLint；`git diff --check`。
+- 跳过：本机 `/print/designer` 跳登录验证码，未做登录后实点。
+
+T57 增量执行结果：Node v20.19.5 上述 6 个 Vitest 文件 68 项通过。触达文件 ESLint 无输出。`localhost:3000` 可达但设计器需验证码登录，未实点。本轮未 commit。
+
+## T57 增量：flow.history.signature 资源加载
+
+- 设计器示例 IMAGE 改为协议允许的 PNG data URL，预览不再因 SVG 在 `flow.history[0].signature` 失败。
+- 下载签名按文件头识别 PNG/JPEG/WEBP；空签名跳过。
+- 自动化：`designerSample`/`resources`/`printResourceLoader`/`tablePagination`；触达 ESLint；`git diff --check`。
+- 跳过：登录验证码，未做实点预览。
+
+T57 增量执行结果：Node v20.19.5 上述相关 Vitest 通过（resources 8 项含示例签名与 octet-stream）。本轮未 commit。
+
+## T57 增量：空白表格表头背景 / 字号下拉 / 元素透明度
+
+- 空白表格「样式 → 表头背景」写 `headerStyle` 并清掉第一行默认白/灰底；`staticTableCellLook` 对 `#fff`/`#f1f5f9` 让位给表头底色。
+- 属性面板字号（表头/表体/正文/列/最小字号）改为预设 pt 下拉，不再用 `NInputNumber`。
+- 横竖线默认黑色 0.5mm，用 CSS border 画实线/虚线/点线；带 mm 的字段改为 `NSelect`。
+- 协议 `style.opacity` 0–1，设计器「样式」百分比下拉；画布与预览/打印外框生效（含图片）。
+- 自动化：`staticTable`/`PrintDesigner`/`protocol`/`renderers`/`stores/print` 共 6 文件 60 项；触达 ESLint；`git diff --check`；Java `PrintProtocolValidatorTest` 40 + `PrintProtocolCompatibilityTest` 42。
+- 跳过：设计器需登录验证码，未做登录后实点；未启动 Admin/Flow/MySQL。
+
+T57 增量执行结果：Node v20.20.0 上述 6 个 Vitest 文件 60 项通过。触达 ESLint 与 `git diff --check` 无输出。Java 17 协议测试 82 项通过。本轮未 commit。
+
+## T57 增量：字体栈回退 / STHeiti 未安装不拦截预览
+
+- `requireLocalFont` 按整串字体栈检查；任一具名字体可用，或存在 `sans-serif`/`serif` 回退，即通过。
+- 设计器中文字体写成 Windows/macOS 回退栈（华文黑体不再把 `STHeiti` 放第一位）。
+- 自动化：`resources.spec` 11 项 + `protocol.spec` 15 项；触达 ESLint；`git diff --check`。
+- 跳过：登录验证码，未做实点预览。
+
+T57 增量执行结果：Node v20.20.0 上述 2 个 Vitest 文件 26 项通过。本轮未 commit。
+
+## T57 增量：style 原样入库 / 透明度滑块 / 单元格快捷面板 / 表格四边改行列
+
+- 元素 `style` 允许安全的基础类型额外键（含 `opacity`）入库；仍拒绝 `backgroundImage`/`url()`。Java `Style` 忽略未知字段以免模型转换失败。
+- 设计器透明度改为 0–100% 滑块。
+- 选中空白表格单元格时快捷面板跟随单元格包围盒；表格去掉 overlay 八向锚点，四边补首末行列手柄。
+- 自动化：`protocol` / `staticTable` / `history` / `PrintDesigner`；触达 ESLint；`git diff --check`；Java `PrintProtocolValidatorTest`。
+- 跳过：登录验证码未实点；Java 改动需用户安装插件并重启 Admin 后才生效。
+
+T57 增量执行结果：Node v20.20.0 `protocol` 15 + `staticTable` 10 + `history` 25 + `PrintDesigner` 15，共 4 文件 65 项通过。触达文件 ESLint 与 `git diff --check` 无输出。Java 17 `PrintProtocolValidatorTest` 41 项通过。未启动 Admin；插件改动需安装后重启 Admin 才生效。本轮未 commit。

@@ -1,3 +1,4 @@
+import { amountToChinese } from './amountChinese'
 import { PrintError } from './types'
 
 function decimal(value, scale, cents = false) {
@@ -52,6 +53,8 @@ export function formatValue(value, format = {}) {
       return String(value)
     case 'MONEY':
       return decimal(value, 2, true)
+    case 'MONEY_UPPER':
+      return amountToChinese(decimal(value, 2, true))
     case 'NUMBER':
       return decimal(value, format.scale ?? 2)
     case 'DATE':

@@ -5,7 +5,7 @@ package com.mdframe.forge.plugin.print.enums;
  */
 public enum PrintExecutionResult {
 
-    PREPARED, DIALOG_OPENED, FAILED;
+    PREPARED, DIALOG_OPENED, PDF_DOWNLOADED, FAILED;
 
     public String getCode() {
         return name();

@@ -9,6 +9,7 @@ export function createPageCursor(geometry) {
     pages,
     get remainingMm() { return Math.max(0, geometry.contentHeightMm - usedMm) },
     get capacityMm() { return geometry.contentHeightMm },
+    get usedMm() { return usedMm },
     next() {
       if (pages.length >= PRINT_LIMITS.pages) {
         throw new PrintError('PAGE_LIMIT', `打印页数超过 ${PRINT_LIMITS.pages} 页`)

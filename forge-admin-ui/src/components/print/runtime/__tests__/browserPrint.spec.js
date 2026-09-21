@@ -33,6 +33,39 @@ describe('isolated browser print session', () => {
     expect(document.querySelector('iframe[data-forge-print]')).toBeNull()
     expect(event).not.toHaveBeenCalled()
   })
+  it('keeps tiled labels as fragments of one sheet page', async () => {
+    const tiled = {
+      geometry: { widthMm: 100, heightMm: 60 },
+      pages: [{
+        number: 1,
+        header: { xMm: 0, yMm: 0, elements: [] },
+        footer: { xMm: 0, yMm: 0, elements: [] },
+        fragments: [{
+          id: 'tile-1-0',
+          kind: 'TILE',
+          xMm: 0,
+          yMm: 0,
+          widthMm: 50,
+          heightMm: 30,
+          geometry: { widthMm: 50, heightMm: 30 },
+          page: { number: 1, header: { elements: [] }, footer: { elements: [] }, fragments: [] },
+        }, {
+          id: 'tile-1-1',
+          kind: 'TILE',
+          xMm: 50,
+          yMm: 0,
+          widthMm: 50,
+          heightMm: 30,
+          geometry: { widthMm: 50, heightMm: 30 },
+          page: { number: 1, header: { elements: [] }, footer: { elements: [] }, fragments: [] },
+        }],
+      }],
+    }
+    const session = await createBrowserPrintSession(tiled)
+    const frame = document.querySelector('iframe[data-forge-print]')
+    expect(frame.contentDocument.querySelectorAll('[data-print-page]')).toHaveLength(1)
+    session.dispose()
+  })
   it('cancels before mounting without leaving a frame', async () => {
     const controller = new AbortController()
     controller.abort()

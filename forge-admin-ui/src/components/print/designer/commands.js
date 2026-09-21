@@ -308,13 +308,49 @@ export function isVerticalLine(element) {
   return element?.type === 'LINE' && Number(element.widthMm) <= Number(element.heightMm)
 }
 
+/** Keep line color/thickness in sync: fill, stroke and the thin box axis are the same thing. */
+export function applyLineStyleSideEffects(element, stylePatch = {}) {
+  if (element?.type !== 'LINE' || !stylePatch)
+    return
+  const previous = element.style || {}
+  const color = ['backgroundColor', 'borderColor', 'color'].reduce((found, key) => {
+    if (found)
+      return found
+    const value = stylePatch[key]
+    return typeof value === 'string' && value !== previous[key] ? value : ''
+  }, '')
+  element.style = { ...previous, ...stylePatch }
+  if (color) {
+    element.style.borderColor = color
+    element.style.backgroundColor = color
+  }
+  if (Number.isFinite(stylePatch.borderWidthMm) && stylePatch.borderWidthMm !== previous.borderWidthMm) {
+    const mm = Math.max(0.15, Number(stylePatch.borderWidthMm))
+    element.style.borderWidthMm = mm
+    if (isVerticalLine(element))
+      element.widthMm = mm
+    else
+      element.heightMm = mm
+  }
+}
+
+export function applyLineGeometrySideEffects(element, patch = {}) {
+  if (element?.type !== 'LINE')
+    return
+  const vertical = isVerticalLine(element)
+  if (vertical && Number.isFinite(patch.widthMm))
+    element.style = { ...element.style, borderWidthMm: patch.widthMm }
+  if (!vertical && Number.isFinite(patch.heightMm))
+    element.style = { ...element.style, borderWidthMm: patch.heightMm }
+}
+
 export function resizeHandlesForElement(element) {
   if (!element)
     return ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
   if (element.type === 'LINE')
     return isVerticalLine(element) ? ['n', 's'] : ['e', 'w']
-  // Detail table uses top-left move handle; hide NW resize to avoid overlap.
-  if (element.type === 'DATA_TABLE')
+  // Tables already have a top-left move handle; keep the other seven resize anchors.
+  if (element.type === 'STATIC_TABLE' || element.type === 'DATA_TABLE')
     return ['n', 'ne', 'e', 'se', 's', 'sw', 'w']
   return ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 }

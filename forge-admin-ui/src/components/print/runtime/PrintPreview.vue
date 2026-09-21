@@ -1,15 +1,18 @@
 <script setup>
 import { AddOutline, ChevronBackOutline, ChevronForwardOutline, ContractOutline, DocumentOutline, ExpandOutline, PrintOutline, RemoveOutline } from '@vicons/ionicons5'
-import { NAlert, NButton, NEmpty, NIcon, NSelect, NSpin, useThemeVars } from 'naive-ui'
+import { NAlert, NButton, NEmpty, NIcon, NSelect, useThemeVars } from 'naive-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { layoutPrintDocument } from '../engine/layout'
 import { createBrowserMeasurer } from '../engine/measure'
+import { buildPrintExportFileName } from '../protocol/exportFileName'
 import { validateFieldCatalog } from '../protocol/fieldCatalog'
 import { PrintError } from '../protocol/types'
 import { mmToPx } from '../protocol/units'
 import { assertPrintDocument } from '../protocol/validate'
 import { createBrowserPrintSession } from './browserPrint'
+import { exportPrintPdf } from './exportPrintPdf'
 import PrintPage from './PrintPage.vue'
+import PrintPreviewSkeleton from './PrintPreviewSkeleton.vue'
 import { loadPrintResources } from './printResourceLoader'
 
 const props = defineProps({
@@ -17,6 +20,7 @@ const props = defineProps({
   context: { type: Object, required: true },
   catalog: { type: Array, default: () => [] },
   templateVersion: { type: [String, Number], default: null },
+  templateName: { type: String, default: '' },
   dataLabel: { type: String, default: '当前已保存数据' },
   /** 嵌入运行页时隐藏重复标题，只保留页码/缩放/打印操作 */
   embedded: { type: Boolean, default: false },
@@ -29,6 +33,7 @@ const themeStyle = computed(() => ({ '--bg-primary': theme.value.cardColor, '--g
 const layout = shallowRef(null)
 const loading = ref(false)
 const printing = ref(false)
+const exporting = ref(false)
 const error = shallowRef(null)
 const zoom = ref(0.8)
 const fitMode = ref('width')
@@ -176,9 +181,34 @@ async function print() {
   }
 }
 
-/** Browser print dialog — choose “另存为 PDF” for business PDF export. */
-function exportPdf() {
-  return print()
+/** Download a client-side PDF of the already paginated paper. */
+async function exportPdf() {
+  if (!props.allowPrint || !layout.value || printing.value || exporting.value)
+    return
+  exporting.value = true
+  const current = generation
+  try {
+    await nextTick()
+    await exportPrintPdf(layout.value, {
+      sources: pageRefs.map(shell => shell?.querySelector?.('[data-print-page]')).filter(Boolean),
+      signal: activeController.signal,
+      filename: buildPrintExportFileName({
+        pattern: props.template.exportFileName,
+        templateName: props.templateName,
+        context: props.context,
+      }),
+      onEvent: event => emit('execution', event),
+    })
+  }
+  catch (reason) {
+    if (current === generation) {
+      error.value = reason
+      emit('error', reason)
+    }
+  }
+  finally {
+    exporting.value = false
+  }
 }
 
 async function toggleFullscreen() {
@@ -258,7 +288,7 @@ onBeforeUnmount(() => {
         <button type="button" class="preview-tool" title="放大预览" aria-label="放大预览" :disabled="zoom >= standardZooms.at(-1)" @click="stepZoom(1)">
           <NIcon :component="AddOutline" />
         </button>
-        <NButton v-if="allowPrint" size="small" quaternary :disabled="!layout || loading || !!error" :loading="printing" @click="exportPdf">
+        <NButton v-if="allowPrint" size="small" quaternary :disabled="!layout || loading || !!error" :loading="exporting" @click="exportPdf">
           <template #icon>
             <NIcon :component="DocumentOutline" />
           </template>
@@ -296,33 +326,32 @@ onBeforeUnmount(() => {
             }"
           >
             <div :style="{ transform: `scale(${thumbZoom})`, transformOrigin: 'top left' }">
-              <PrintPage :page="page" :geometry="layout.geometry" />
+              <PrintPage :page="page" :geometry="layout.geometry" :watermark="layout.watermark" :overlay="layout.overlay" />
             </div>
           </div>
           <span class="thumb-label">{{ page.number }}</span>
         </button>
       </aside>
       <div ref="scrollRef" class="print-scroll" @scroll.passive="trackPage">
-        <NSpin :show="loading">
-          <div v-if="layout" class="print-pages">
-            <article
-              v-for="(page, index) in layout.pages"
-              :key="page.number"
-              :ref="element => setPageRef(element, index)"
-              class="preview-page-shell"
-            >
-              <div class="print-paper-space" :style="{ width: `${layout.geometry.widthMm * zoom}mm`, height: `${layout.geometry.heightMm * zoom}mm` }">
-                <div :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }">
-                  <PrintPage :page="page" :geometry="layout.geometry" />
-                </div>
+        <PrintPreviewSkeleton v-if="loading && !layout" />
+        <div v-else-if="layout" class="print-pages">
+          <article
+            v-for="(page, index) in layout.pages"
+            :key="page.number"
+            :ref="element => setPageRef(element, index)"
+            class="preview-page-shell"
+          >
+            <div class="print-paper-space" :style="{ width: `${layout.geometry.widthMm * zoom}mm`, height: `${layout.geometry.heightMm * zoom}mm` }">
+              <div :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }">
+                <PrintPage :page="page" :geometry="layout.geometry" :watermark="layout.watermark" :overlay="layout.overlay" />
               </div>
-              <div class="page-caption">
-                第 {{ page.number }} 页
-              </div>
-            </article>
-          </div>
-          <NEmpty v-else-if="!loading && !error" description="暂无打印内容" />
-        </NSpin>
+            </div>
+            <div class="page-caption">
+              第 {{ page.number }} 页
+            </div>
+          </article>
+        </div>
+        <NEmpty v-else-if="!error" description="暂无打印内容" />
       </div>
     </div>
   </section>

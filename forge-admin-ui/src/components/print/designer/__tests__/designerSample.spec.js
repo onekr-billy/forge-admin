@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { isSafeImageReference } from '../../protocol/validate'
 import { createDesignerSampleContext, designerBindingText, designerCellImageRef, designerTablePreview, designerTableRows, hasDesignerData, isDesignerImageCell, SAMPLE_IMAGE_DATA_URL } from '../designerSample'
 
 const catalog = [
@@ -18,6 +19,7 @@ describe('designer sample context', () => {
     expect(context.main.number).toBe('采购单号示例')
     expect(context.main.total).toBe(128800)
     expect(context.main.photo).toBe(SAMPLE_IMAGE_DATA_URL)
+    expect(isSafeImageReference(SAMPLE_IMAGE_DATA_URL)).toBe(true)
     expect(context.children.items).toHaveLength(3)
     expect(context.children.items[0]).toMatchObject({ name: '物料名称1', amount: 128800 })
     expect(designerBindingText({ source: 'FIELD', path: 'main.number' }, undefined, catalog, context)).toBe('采购单号示例')
@@ -74,6 +76,24 @@ describe('designer sample context', () => {
     const dataRows = preview.filter(row => row.kind === 'data')
     expect(dataRows[0].cells.every(cell => cell.style.backgroundColor === '#fff7ed')).toBe(true)
     expect(dataRows[1].cells.every(cell => cell.style.backgroundColor === '#eff6ff')).toBe(true)
+  })
+
+  it('keeps header colors independent from body style', () => {
+    const context = createDesignerSampleContext(catalog)
+    const section = {
+      collectionPath: 'children.items',
+      headerStyle: { backgroundColor: '#112233', color: '#ffffff' },
+      style: { backgroundColor: '#eeeeee', color: '#111111' },
+      columns: [
+        { id: 'c1', field: 'name', title: '名称', widthMm: 40 },
+        { id: 'c2', field: 'amount', title: '金额', widthMm: 40, format: { type: 'MONEY' } },
+      ],
+    }
+    const preview = designerTablePreview(section, catalog, context, 1)
+    expect(preview[0].kind).toBe('header')
+    expect(preview[0].cells.every(cell => cell.style.backgroundColor === '#112233' && cell.style.color === '#ffffff')).toBe(true)
+    expect(preview[1].kind).toBe('data')
+    expect(preview[1].cells.every(cell => cell.style.backgroundColor === '#eeeeee' && cell.style.color === '#111111')).toBe(true)
   })
 
   it('only replaces an actually empty design context', () => {

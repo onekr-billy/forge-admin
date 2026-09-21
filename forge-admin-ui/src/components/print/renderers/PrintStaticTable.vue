@@ -19,13 +19,8 @@ const tableStyle = computed(() => ({
   ...frame.value,
 }))
 function style(cell) {
-  const align = cell.style?.textAlign || 'left'
   return {
-    ...tableCellStyle({ borderWidthMm: 0.15, ...cell.style }),
-    display: 'flex',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
+    ...tableCellStyle({ borderWidthMm: 0.15, ...cell.style }, { top: cell.row === 0, left: cell.column === 0 }),
     gridColumn: `${cell.column + 1} / span ${cell.colSpan}`,
     gridRow: `${cell.row + 1} / span ${cell.rowSpan}`,
     minWidth: 0,
@@ -57,9 +52,7 @@ function imageStyle(cell) {
         alt=""
         :style="imageStyle(cell)"
       >
-      <template v-else>
-        {{ cell.text }}
-      </template>
+      <span v-else>{{ cell.text }}</span>
     </div>
   </div>
 </template>

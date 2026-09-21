@@ -30,6 +30,15 @@ describe('whole-row pagination', () => {
     expect(result.pages).toHaveLength(2)
     expect(result.pages[1].fragments[0].rows.map(row => row.kind)).toEqual(['header', 'footer'])
   })
+  it('places a per-page subtotal and a last-page summary', () => {
+    const { doc, context, options } = setup(12)
+    doc.body[0].subtotal = { cells: [{ span: 1, binding: { source: 'EXPRESSION', expression: 'COUNT()' } }] }
+    doc.body[0].footer = { cells: [{ span: 1, binding: { source: 'EXPRESSION', expression: 'SUM(1)' } }] }
+    const result = layoutPrintDocument(doc, context, options)
+    const dataPages = result.pages.filter(page => page.fragments[0].rows.some(row => row.kind === 'data'))
+    expect(dataPages.every(page => page.fragments[0].rows.some(row => row.kind === 'subtotal'))).toBe(true)
+    expect(result.pages.flatMap(page => page.fragments[0].rows.filter(row => row.kind === 'footer'))).toHaveLength(1)
+  })
   it('renders explicit empty content and its footer once', () => {
     const { doc, context, options } = setup(0, true)
     const result = layoutPrintDocument(doc, context, options)

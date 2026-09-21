@@ -13,7 +13,7 @@ function blankCell(row, column, createId = nestedId) {
   }
 }
 
-export function createStaticTable(columnCount = 3, rowCount = 3, widthMm = 75, rowHeightMm = 9, createId = nestedId, { headerRow = true } = {}) {
+export function createStaticTable(columnCount = 3, rowCount = 3, widthMm = 75, rowHeightMm = 9, createId = nestedId, { headerRow = false } = {}) {
   const columnWidth = Number((widthMm / columnCount).toFixed(3))
   const columns = Array.from({ length: columnCount }, () => ({ id: createId(), widthMm: columnWidth }))
   columns.at(-1).widthMm = Number((widthMm - columns.slice(0, -1).reduce((sum, column) => sum + column.widthMm, 0)).toFixed(3))
@@ -26,6 +26,43 @@ export function createStaticTable(columnCount = 3, rowCount = 3, widthMm = 75, r
     })
   }
   return { columns, rows, cells }
+}
+
+const DEFAULT_TABLE_FILLS = new Set(['#fff', '#ffffff', '#f1f5f9'])
+
+export function isDefaultTableFill(color) {
+  return typeof color === 'string' && DEFAULT_TABLE_FILLS.has(color.trim().toLowerCase())
+}
+
+/**
+ * First row uses headerStyle; cell.style still wins except leftover default fills
+ * (#fff / #f1f5f9) which otherwise hide 样式 → 表头背景.
+ */
+export function staticTableCellLook(element, cell) {
+  const cellStyle = cell?.style ? { ...cell.style } : {}
+  const band = cell.row === 0 ? element?.headerStyle : null
+  if (band?.backgroundColor && isDefaultTableFill(cellStyle.backgroundColor))
+    delete cellStyle.backgroundColor
+  return {
+    borderWidthMm: 0.15,
+    ...element?.style,
+    ...band,
+    ...cellStyle,
+  }
+}
+
+/** Drop matching keys from a band so table-level 表头/表体 styles paint. */
+export function clearStaticTableBandCellStyles(table, band, keys = []) {
+  if (!table?.cells?.length || !keys.length)
+    return
+  table.cells.forEach((cell) => {
+    const header = cell.row === 0
+    if ((band === 'header') !== header || !cell.style)
+      return
+    keys.forEach(key => delete cell.style[key])
+    if (!Object.keys(cell.style).length)
+      delete cell.style
+  })
 }
 
 export function staticTableSize(table) {
@@ -263,4 +300,3 @@ export function styleStaticTableRowsAsHeader(table, rowIndexes = [0]) {
     }
   })
 }
-

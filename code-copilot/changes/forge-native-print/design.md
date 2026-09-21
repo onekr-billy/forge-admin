@@ -47,7 +47,7 @@
 | text section | id、kind=TEXT、绑定/固定文本、字体/行距、段间距、keepWithNext |
 | table section | id、kind=TABLE、collectionPath、columns、headerRows、repeatHeader、footer |
 | element | id、type、xMm、yMm、widthMm、heightMm、binding、format、style |
-| binding | source=FIELD/CONSTANT/SYSTEM、path/value；不接受可执行表达式 |
+| binding | source=FIELD/CONSTANT/SYSTEM/EXPRESSION、path/value/expression；表达式为白名单运算，不接受任意脚本 |
 
 后端使用显式文档/节点 DTO，必要的受控样式属性白名单化；前端以同一协议约束校验。数据库可保存 JSON，但 Controller 固定字段不使用任意 Map 接收。
 
@@ -132,7 +132,7 @@ M1 落地规则：显式字体使用本地 FontFace 加载校验，系统通用�
 - 设计状态 `DRAFT -> PUBLISHED -> CHANGED -> PUBLISHED`；编辑已发布模板只改变草稿。
 - 启停字段独立使用 EnableStatus；停用阻止 prepare，不删除已发布版本。
 - 发布成功新增版本并更新 published_version_id，CAS 校验 draft_revision；校验失败不改变已发布引用。
-- 执行结果使用专用枚举：`PREPARED`、`DIALOG_OPENED`、`FAILED`。客户端 DIALOG_OPENED 仅为报告事件，不证明物理打印成功。
+- 执行结果使用专用枚举：`PREPARED`、`DIALOG_OPENED`、`PDF_DOWNLOADED`、`FAILED`。客户端 DIALOG_OPENED/PDF_DOWNLOADED 仅为报告事件，不证明物理打印成功。
 - 对外“删除”仅在引用校验通过后执行逻辑删除。
 
 ## 6. 拟定接口

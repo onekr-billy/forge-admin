@@ -45,6 +45,8 @@ function dataTableToSection(element) {
     section.headerRows = JSON.parse(JSON.stringify(element.headerRows))
   if (element.footer)
     section.footer = JSON.parse(JSON.stringify(element.footer))
+  if (element.subtotal)
+    section.subtotal = JSON.parse(JSON.stringify(element.subtotal))
   if (element.cellStyles)
     section.cellStyles = JSON.parse(JSON.stringify(element.cellStyles))
   if (Number.isFinite(element.minHeightMm))
