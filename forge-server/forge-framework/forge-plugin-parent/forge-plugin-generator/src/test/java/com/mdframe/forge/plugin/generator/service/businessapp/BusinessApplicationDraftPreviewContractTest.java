@@ -21,13 +21,21 @@ class BusinessApplicationDraftPreviewContractTest {
         String designerSource = readSource("service/businessapp/BusinessObjectDesignerService.java");
 
         assertTrue(serviceSource.contains("return buildDraftRenderConfig(config);"));
-        assertTrue(serviceSource.contains("!forceDraftCompile && hasStoredRuntimeConfig(config)"));
+        assertTrue(serviceSource.contains("if (designPreview)"));
         assertTrue(controllerSource.contains("businessObjectDesignerService.prepareRuntimeDraft(businessObject.getId())"));
         assertTrue(controllerSource.contains("crudConfigService.getRenderConfig(configKey, designPreview)"));
-        assertTrue(designerSource.contains("saveDraft(context, currentStatus, false)"));
+        assertTrue(designerSource.contains("saveDraft(preparedContext, currentStatus, false)"));
         assertTrue(designerSource.contains("if (markApplicationChanged)"));
+        assertTrue(designerSource.contains("PROPAGATION_REQUIRES_NEW"));
+        assertTrue(designerSource.contains("requiresNewTransactionTemplate().executeWithoutResult"));
+        assertTrue(designerSource.contains("requiresNewTransactionTemplate().execute(status ->"));
+        assertTrue(designerSource.contains("prepareRuntimeDraftLocks"));
         assertFalse(designerSource.contains(
                 "return saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode()).getConfig();"));
+        // prepareRuntimeDraft 不得用外层长事务包住 schema 编译，否则会长时间持有关系表行锁
+        assertFalse(designerSource.matches(
+                "(?s).*@Transactional\\(rollbackFor = Exception\\.class\\)\\s*"
+                        + "public AiCrudConfig prepareRuntimeDraft\\(Long objectId\\).*"));
     }
 
     @Test
@@ -83,8 +91,7 @@ class BusinessApplicationDraftPreviewContractTest {
         assertTrue(objectPublishSource.contains("return rollbackInternal(objectId, versionId, false);"));
         assertTrue(objectPublishSource.contains(
                 "lowcodePublishService.rollback(version.getConfigId(), version.getCrudConfigVersionId(), syncMenu)"));
-        assertTrue(lowcodePublishSource.contains("if (shouldSyncMenu(dto))"));
-        assertTrue(lowcodePublishSource.contains("disablePublishedMenu(config);"));
+        assertTrue(lowcodePublishSource.contains("boolean syncMenu = shouldSyncMenu(dto);"));
     }
 
     private String readSource(String relativePath) throws Exception {
