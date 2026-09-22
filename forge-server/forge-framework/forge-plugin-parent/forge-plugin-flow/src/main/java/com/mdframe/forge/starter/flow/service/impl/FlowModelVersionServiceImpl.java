@@ -36,6 +36,7 @@ import org.xml.sax.InputSource;
 import java.io.StringReader;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -361,6 +362,18 @@ public class FlowModelVersionServiceImpl extends ServiceImpl<FlowModelVersionMap
             throw new IllegalArgumentException("模型不存在");
         }
         List<FlowModelVersion> candidates = baseMapper.selectCleanupCandidates(dto.getModelId(), tenantId);
+        if (candidates != null) {
+            // The lock query intentionally has no ORDER BY/LIMIT because SQL interceptors
+            // can render FOR UPDATE before those clauses.  Keep the cleanup retention
+            // semantics identical to the former database ordering here.
+            candidates = new ArrayList<>(candidates);
+            candidates.sort(Comparator.comparing(FlowModelVersion::getVersion,
+                            Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(FlowModelVersion::getCreateTime,
+                            Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(FlowModelVersion::getId,
+                            Comparator.nullsLast(Comparator.reverseOrder())));
+        }
         VersionCleanupVO result = new VersionCleanupVO();
         result.setModelId(dto.getModelId());
         result.setRetainLatest(retainLatest);

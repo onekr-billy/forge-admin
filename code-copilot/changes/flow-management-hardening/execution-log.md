@@ -681,3 +681,12 @@
 - `mvn -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -Penable-tests -Dtest=FlowUserGroupGovernanceContractTest -Dforge.test.groups= -Dsurefire.failIfNoSpecifiedTests=false test`：BUILD SUCCESS，4/4 通过。
 - `git diff --check`、`xmllint --noout forge-server/pom.xml`：通过。
 - 未启动 MySQL、Redis、Flowable 或浏览器；无本轮服务 PID 需要清理。
+
+## 2026-09-22 — 修复流程模型版本清理 FOR UPDATE 重排
+
+- 根因：`FlowModelVersionMapper.selectCleanupCandidates` 同时包含排序、`LIMIT` 和 `FOR UPDATE`；租户/数据权限拦截器用 JSqlParser 重新输出 SQL 时会把行锁子句放到排序/行数限制之前，生成 MySQL 1064 语法错误。
+- 修复：锁查询保留显式 `model_id + tenant_id + del_flag` 条件和 `FOR UPDATE`，移除易被重排的排序/行数限制；`FlowModelVersionServiceImpl.cleanupVersions` 在锁定结果后按 `version DESC, create_time DESC, id DESC`（空值置后）排序，保留“最近 N 个版本”业务语义，并复制集合以兼容不可变返回值。
+- 静态检查：`xmllint --noout forge-server/forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/resources/mapper/FlowModelVersionMapper.xml`、`git diff --check` 均通过。
+- 编译：`export JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home; export PATH="$JAVA_HOME/bin:$PATH"; mvn -pl forge-framework/forge-plugin-parent/forge-plugin-flow,forge-flow/forge-flow-server -am -DskipTests compile`，BUILD SUCCESS。
+- 契约测试：`mvn -Penable-tests -Dmaven.main.skip=true -Dtest=FlowModelVersionCleanupContractTest,FlowModelVersionGovernanceContractTest -DfailIfNoTests=false test`，3/3 通过。首次测试因 XML 注释包含被禁止扫描的关键字而误报，移除注释中的 SQL 关键字后重跑通过，非实现失败。
+- 跳过项：未启动 MySQL、Redis、Flowable 或浏览器；未执行真实 `POST /api/flow/model/version/cleanup`、目标库 `PREPARE`、并发清理竞争和执行计划验证；本轮未启动服务，无需清理 PID。
