@@ -362,12 +362,21 @@
                   v-for="action in visibleDetailActions"
                   :key="action.key || action.label"
                   size="small"
-                  :type="resolveButtonType(action)"
+                  :quaternary="isPrintRuntimeAction(action)"
+                  :circle="isPrintRuntimeAction(action)"
+                  :type="isPrintRuntimeAction(action) ? 'default' : resolveButtonType(action)"
                   :loading="isActionLoading(action, formData)"
                   :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+                  :aria-label="resolveActionDisplayLabel(action, formData)"
+                  :title="resolveActionDisplayLabel(action, formData)"
                   @click="handleActionClick(action, formData)"
                 >
-                  {{ resolveActionDisplayLabel(action, formData) }}
+                  <template v-if="resolveDetailActionIcon(action)" #icon>
+                    <n-icon><component :is="resolveDetailActionIcon(action)" /></n-icon>
+                  </template>
+                  <template v-if="!isPrintRuntimeAction(action)">
+                    {{ resolveActionDisplayLabel(action, formData) }}
+                  </template>
                 </n-button>
               </template>
             </div>
@@ -499,41 +508,27 @@
             </template>
           </div>
 
-          <footer v-if="!hideModalFooter && (!isDetailMode || visibleDetailActions.length || visibleFormActions.length)" class="inline-form-panel-footer">
-            <template v-if="!isDetailMode">
-              <n-button @click="handleInlineFormCancel">
-                取消
-              </n-button>
-              <n-button
-                type="primary"
-                :loading="confirmLoading"
-                @click="handleModalConfirm"
-              >
-                确定
-              </n-button>
-              <n-button
-                v-for="action in visibleFormActions"
-                :key="action.key || action.label"
-                :type="resolveButtonType(action)"
-                :loading="isActionLoading(action, formData)"
-                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-                @click="handleActionClick(action, formData)"
-              >
-                {{ resolveActionDisplayLabel(action, formData) }}
-              </n-button>
-            </template>
-            <template v-else>
-              <n-button
-                v-for="action in visibleDetailActions"
-                :key="action.key || action.label"
-                :type="resolveButtonType(action)"
-                :loading="isActionLoading(action, formData)"
-                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-                @click="handleActionClick(action, formData)"
-              >
-                {{ resolveActionDisplayLabel(action, formData) }}
-              </n-button>
-            </template>
+          <footer v-if="!hideModalFooter && !isDetailMode" class="inline-form-panel-footer">
+            <n-button @click="handleInlineFormCancel">
+              取消
+            </n-button>
+            <n-button
+              type="primary"
+              :loading="confirmLoading"
+              @click="handleModalConfirm"
+            >
+              确定
+            </n-button>
+            <n-button
+              v-for="action in visibleFormActions"
+              :key="action.key || action.label"
+              :type="resolveButtonType(action)"
+              :loading="isActionLoading(action, formData)"
+              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              @click="handleActionClick(action, formData)"
+            >
+              {{ resolveActionDisplayLabel(action, formData) }}
+            </n-button>
           </footer>
         </section>
       </div>
@@ -552,6 +547,30 @@
       :mask-closable="false"
       @after-leave="handleModalClose"
     >
+      <template v-if="isDetailMode && visibleDetailActions.length" #header-extra>
+        <n-space>
+          <n-button
+            v-for="action in visibleDetailActions"
+            :key="`modal-head-${action.key || action.label}`"
+            size="small"
+            :quaternary="isPrintRuntimeAction(action)"
+            :circle="isPrintRuntimeAction(action)"
+            :type="isPrintRuntimeAction(action) ? 'default' : resolveButtonType(action)"
+            :loading="isActionLoading(action, formData)"
+            :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+            :aria-label="resolveActionDisplayLabel(action, formData)"
+            :title="resolveActionDisplayLabel(action, formData)"
+            @click="handleActionClick(action, formData)"
+          >
+            <template v-if="resolveDetailActionIcon(action)" #icon>
+              <n-icon><component :is="resolveDetailActionIcon(action)" /></n-icon>
+            </template>
+            <template v-if="!isPrintRuntimeAction(action)">
+              {{ resolveActionDisplayLabel(action, formData) }}
+            </template>
+          </n-button>
+        </n-space>
+      </template>
       <n-tabs
         v-if="showDetailExtraTabs"
         v-model:value="detailActiveTab"
@@ -677,43 +696,29 @@
         />
       </template>
 
-      <!-- 弹窗底部按钮 -->
-      <template v-if="!hideModalFooter && (!isDetailMode || visibleDetailActions.length || visibleFormActions.length)" #footer>
+      <!-- 弹窗底部按钮：详情动作只放标题栏，避免上下重复 -->
+      <template v-if="!hideModalFooter && !isDetailMode" #footer>
         <n-space justify="end">
-          <template v-if="!isDetailMode">
-            <n-button @click="handleModalCancel">
-              取消
-            </n-button>
-            <n-button
-              type="primary"
-              :loading="confirmLoading"
-              @click="handleModalConfirm"
-            >
-              确定
-            </n-button>
-            <n-button
-              v-for="action in visibleFormActions"
-              :key="action.key || action.label"
-              :type="resolveButtonType(action)"
-              :loading="isActionLoading(action, formData)"
-              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-              @click="handleActionClick(action, formData)"
-            >
-              {{ resolveActionDisplayLabel(action, formData) }}
-            </n-button>
-          </template>
-          <template v-else>
-            <n-button
-              v-for="action in visibleDetailActions"
-              :key="action.key || action.label"
-              :type="resolveButtonType(action)"
-              :loading="isActionLoading(action, formData)"
-              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-              @click="handleActionClick(action, formData)"
-            >
-              {{ resolveActionDisplayLabel(action, formData) }}
-            </n-button>
-          </template>
+          <n-button @click="handleModalCancel">
+            取消
+          </n-button>
+          <n-button
+            type="primary"
+            :loading="confirmLoading"
+            @click="handleModalConfirm"
+          >
+            确定
+          </n-button>
+          <n-button
+            v-for="action in visibleFormActions"
+            :key="action.key || action.label"
+            :type="resolveButtonType(action)"
+            :loading="isActionLoading(action, formData)"
+            :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+            @click="handleActionClick(action, formData)"
+          >
+            {{ resolveActionDisplayLabel(action, formData) }}
+          </n-button>
         </n-space>
       </template>
     </n-modal>
@@ -734,12 +739,21 @@
               v-for="action in visibleDetailActions"
               :key="`drawer-head-${action.key || action.label}`"
               size="small"
-              :type="resolveButtonType(action)"
+              :quaternary="isPrintRuntimeAction(action)"
+              :circle="isPrintRuntimeAction(action)"
+              :type="isPrintRuntimeAction(action) ? 'default' : resolveButtonType(action)"
               :loading="isActionLoading(action, formData)"
               :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              :aria-label="resolveActionDisplayLabel(action, formData)"
+              :title="resolveActionDisplayLabel(action, formData)"
               @click="handleActionClick(action, formData)"
             >
-              {{ resolveActionDisplayLabel(action, formData) }}
+              <template v-if="resolveDetailActionIcon(action)" #icon>
+                <n-icon><component :is="resolveDetailActionIcon(action)" /></n-icon>
+              </template>
+              <template v-if="!isPrintRuntimeAction(action)">
+                {{ resolveActionDisplayLabel(action, formData) }}
+              </template>
             </n-button>
           </n-space>
         </template>
@@ -784,43 +798,29 @@
           @toolbar-action="handleChildToolbarAction"
         />
 
-        <!-- 抽屉底部按钮 -->
-        <template v-if="!hideModalFooter && (!isDetailMode || visibleDetailActions.length || visibleFormActions.length)" #footer>
+        <!-- 抽屉底部按钮：详情动作只放标题栏，避免上下重复 -->
+        <template v-if="!hideModalFooter && !isDetailMode" #footer>
           <n-space justify="end">
-            <template v-if="!isDetailMode">
-              <n-button @click="handleModalCancel">
-                取消
-              </n-button>
-              <n-button
-                type="primary"
-                :loading="confirmLoading"
-                @click="handleModalConfirm"
-              >
-                确定
-              </n-button>
-              <n-button
-                v-for="action in visibleFormActions"
-                :key="action.key || action.label"
-                :type="resolveButtonType(action)"
-                :loading="isActionLoading(action, formData)"
-                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-                @click="handleActionClick(action, formData)"
-              >
-                {{ resolveActionDisplayLabel(action, formData) }}
-              </n-button>
-            </template>
-            <template v-else>
-              <n-button
-                v-for="action in visibleDetailActions"
-                :key="action.key || action.label"
-                :type="resolveButtonType(action)"
-                :loading="isActionLoading(action, formData)"
-                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-                @click="handleActionClick(action, formData)"
-              >
-                {{ resolveActionDisplayLabel(action, formData) }}
-              </n-button>
-            </template>
+            <n-button @click="handleModalCancel">
+              取消
+            </n-button>
+            <n-button
+              type="primary"
+              :loading="confirmLoading"
+              @click="handleModalConfirm"
+            >
+              确定
+            </n-button>
+            <n-button
+              v-for="action in visibleFormActions"
+              :key="action.key || action.label"
+              :type="resolveButtonType(action)"
+              :loading="isActionLoading(action, formData)"
+              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              @click="handleActionClick(action, formData)"
+            >
+              {{ resolveActionDisplayLabel(action, formData) }}
+            </n-button>
           </n-space>
         </template>
       </n-drawer-content>
@@ -998,11 +998,12 @@ import {
   CloudUploadOutline,
   DownloadOutline,
   EllipsisVertical,
+  PrintOutline,
   RefreshOutline,
   TimeOutline,
   TrashOutline,
 } from '@vicons/ionicons5'
-import { NButton, NDropdown, NIcon, NProgress, NTag } from 'naive-ui'
+import { NButton, NDropdown, NIcon, NProgress, NSwitch, NTag } from 'naive-ui'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { crudConfigRender, customQueryExecute } from '@/api/ai'
@@ -1029,6 +1030,12 @@ import AiForm from './AiForm.vue'
 import AiSearch from './AiSearch.vue'
 import AiTable from './AiTable.vue'
 import {
+  isSwitchColumnConfig,
+  normalizeSwitchCellValue,
+  resolveSwitchColumnTexts,
+  resolveSwitchColumnValuePair,
+} from './crud/column-switch'
+import {
   buildBusinessActionExecutePayload,
   buildBusinessActionInitialData,
   buildBusinessActionInputFormSchema,
@@ -1049,6 +1056,7 @@ import { useRecordFormLoader } from './crud/composables/useRecordFormLoader'
 import { resolveFormInitRecordId } from './data-source-binding-runtime'
 import { normalizeExpandConfig, shouldExpandRow } from './expand-utils'
 import { isNumberFieldType } from './field-type-utils'
+import { resolveRuntimeDefaultValue } from '@/views/app-center/components/designer/forge-form-designer/field-default-value'
 import { isImageFileName, resolveFileRenderItems } from './file-render-utils'
 import { buildFormRuntimeContext } from './form-runtime-context'
 import {
@@ -1287,6 +1295,20 @@ const visibleDetailActions = computed(() => {
     return !isStartFlowRuntimeHidden(action, row)
   })
 })
+
+function isPrintRuntimeAction(action = {}) {
+  const key = String(action?.key || '')
+  if (key.startsWith('forgePrint:'))
+    return true
+  const routePath = String(action?.routePath || '')
+  return routePath === '/print/preview' || routePath.startsWith('/print/preview?')
+}
+
+function resolveDetailActionIcon(action = {}) {
+  if (isPrintRuntimeAction(action))
+    return PrintOutline
+  return null
+}
 
 /** 编辑表单页动作。显式 formActions 优先，兼容历史 runtimeActions.position=form。 */
 const visibleFormActions = computed(() => {
@@ -2915,11 +2937,14 @@ const formContext = computed(() => {
 const normalizedExpandConfig = computed(() => normalizeExpandConfig(props.expandConfig, props.childrenConfig))
 const hasExpandConfig = computed(() => normalizedExpandConfig.value.enabled && normalizedExpandConfig.value.panels.length > 0)
 const resolvedResizable = computed(() => props.tableProps?.resizable ?? props.resizable)
+const inlineSwitchUpdatingMap = ref({})
 
 /**
  * 表格列配置（添加操作列）
  */
 const tableColumns = computed(() => {
+  // 行内开关 loading 态依赖此 map，变更时需重算列 render
+  void inlineSwitchUpdatingMap.value
   const cols = []
 
   if (hasExpandConfig.value) {
@@ -3026,15 +3051,31 @@ function normalizeRowActions(actions = []) {
   return next
 }
 
+function findEditSchemaField(fieldKey) {
+  if (!fieldKey)
+    return null
+  return flattenRuntimeFormFields(props.editSchema || []).find(field => field?.field === fieldKey) || null
+}
+
 function resolveColumnRender(col) {
   const nextCol = { ...col }
-  if (!col.render || typeof col.render === 'function') {
+  if (typeof col.render === 'function')
     return nextCol
-  }
-  if (typeof col.render !== 'object') {
-    return nextCol
-  }
+
   const key = col.prop || col.key || col.dataIndex
+  const editField = findEditSchemaField(key)
+  if (isSwitchColumnConfig(col, editField)) {
+    if (!nextCol.width && !nextCol.minWidth)
+      nextCol.width = 100
+    if (!nextCol.align)
+      nextCol.align = 'center'
+    nextCol.render = row => renderInlineSwitchColumn(row, key, col, editField)
+    return nextCol
+  }
+
+  if (!col.render || typeof col.render !== 'object')
+    return nextCol
+
   const renderType = col.render.type
   if (renderType === 'dictTag') {
     nextCol.render = row => h(DictTag, {
@@ -3093,6 +3134,104 @@ function resolveColumnRender(col) {
     }
   }
   return nextCol
+}
+
+function inlineSwitchUpdateKey(row, fieldKey) {
+  return `${resolveRowKeyValue(row)}::${fieldKey}`
+}
+
+function isInlineSwitchUpdating(row, fieldKey) {
+  return !!inlineSwitchUpdatingMap.value[inlineSwitchUpdateKey(row, fieldKey)]
+}
+
+function setInlineSwitchUpdating(row, fieldKey, updating) {
+  const key = inlineSwitchUpdateKey(row, fieldKey)
+  const next = { ...inlineSwitchUpdatingMap.value }
+  if (updating)
+    next[key] = true
+  else
+    delete next[key]
+  inlineSwitchUpdatingMap.value = next
+}
+
+function canInlineSwitchUpdate(row) {
+  if (props.formOnly)
+    return false
+  if (row?._dataScopeAccess === 'RELATED')
+    return false
+  return !!(props.apiConfig?.update || props.api)
+}
+
+function renderInlineSwitchColumn(row, fieldKey, col, editField) {
+  const pair = resolveSwitchColumnValuePair(col, editField)
+  const texts = resolveSwitchColumnTexts(col, editField)
+  const currentValue = normalizeSwitchCellValue(row?.[fieldKey], pair.checkedValue, pair.uncheckedValue)
+  const updating = isInlineSwitchUpdating(row, fieldKey)
+  const readonlyField = editField?.readonly === true || editField?.disabled === true
+  const interactive = canInlineSwitchUpdate(row) && !readonlyField
+  const children = {}
+  if (texts.checkedText)
+    children.checked = () => texts.checkedText
+  if (texts.uncheckedText)
+    children.unchecked = () => texts.uncheckedText
+  return h(NSwitch, {
+    value: currentValue,
+    size: 'small',
+    checkedValue: pair.checkedValue,
+    uncheckedValue: pair.uncheckedValue,
+    loading: updating,
+    disabled: !interactive || updating,
+    ariaLabel: String(col.label || col.title || fieldKey || '开关'),
+    onUpdateValue: value => handleInlineSwitchUpdate(row, fieldKey, value, currentValue),
+  }, children)
+}
+
+async function handleInlineSwitchUpdate(row, fieldKey, nextValue, previousValue) {
+  if (!canInlineSwitchUpdate(row) || isInlineSwitchUpdating(row, fieldKey))
+    return
+  const idValue = resolveRowKeyValue(row)
+  if (!isUsableKeyValue(idValue)) {
+    window.$message.warning(`缺少${props.rowKey}参数，无法更新`)
+    return
+  }
+  const rowKey = typeof props.rowKey === 'string' && props.rowKey ? props.rowKey : 'id'
+  const payload = {
+    id: idValue,
+    [rowKey]: idValue,
+    [fieldKey]: nextValue,
+  }
+  setInlineSwitchUpdating(row, fieldKey, true)
+  const previous = row[fieldKey]
+  row[fieldKey] = nextValue
+  try {
+    const { method, url } = parseApiConfig(
+      'update',
+      `${props.api}/${idValue}`,
+      'put',
+      { id: idValue },
+    )
+    let requestMethod = method
+    const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
+    if (useEncrypt)
+      requestMethod = method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase()
+    else
+      requestMethod = method.toLowerCase()
+
+    if (useEncrypt && requestMethod === 'postEncrypt')
+      await postEncrypt(url, payload)
+    else
+      await request({ method: requestMethod, url, data: payload })
+
+    window.$message.success('更新成功')
+  }
+  catch (error) {
+    row[fieldKey] = previous === undefined ? previousValue : previous
+    console.error('[AiCrudPage] inline switch update failed', error)
+    window.$message.error(error?.message || '更新失败')
+  }
+  finally {
+    setInlineSwitchUpdating(row, fieldKey, false)
+  }
 }
 
 function splitTableCellValues(value) {
@@ -4667,11 +4806,14 @@ async function handleAdd(defaultValues = null, options = {}) {
   detailRuntime.value = null
   detailActiveTab.value = 'business'
 
-  // 初始化表单数据，设置默认值
+  // 初始化表单数据，设置默认值（支持 $forge:today 等动态预设）
   const initialData = {}
   props.editSchema.forEach((field) => {
     if (field.field) {
-      initialData[field.field] = field.defaultValue ?? null
+      const raw = field.defaultValue
+      initialData[field.field] = raw === undefined || raw === null
+        ? null
+        : resolveRuntimeDefaultValue(raw, field.type || field.componentType)
     }
   })
 

@@ -170,6 +170,7 @@ public class PrintRuntimeActionProjectionService {
         Map<String, Object> action = new LinkedHashMap<>();
         action.put("key", "forgePrint:" + scene.name());
         action.put("label", "打印");
+        action.put("icon", "print");
         action.put("actionType", "route");
         action.put("routePath", "/print/preview");
         action.put("position", scene == PrintScene.LIST ? "row" : "detail");

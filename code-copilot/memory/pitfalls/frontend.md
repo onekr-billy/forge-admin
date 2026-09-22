@@ -597,6 +597,16 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 **解决方案**:
 `/app/`（不含 `/app-center`）不要阻塞等后台菜单；`app-portal` 跳过全局进度条和全屏 overlay；layout 同步加载；门户和 CRUD 用同一套骨架，不要连续两个 `n-spin`。
 
+## 有编辑权限时页面管理左侧菜单要读草稿不能只读发布快照
+
+**发现日期**: 2026-09-22
+
+**问题描述**:
+新建表单并保存草稿后，打开 `/app-center/application/.../runtime?pageId=...`（无 `edit=1`）左侧菜单看不到新页面。之前不用发布也能看见。根因是页面管理走了 `businessApplicationRuntimeByCode` 已发布快照，未发布页面不在快照里。
+
+**解决方案**:
+`shouldUseApplicationWorkspaceLoad` 在 `edit=1` / `draft=1` 之外，对有应用编辑权限的用户也返回 true，页面管理读 workspace 草稿。正式运行用户仍只读发布快照。页面管理对可编辑用户还需 `design-preview`（或 PortalPageRenderer 在 `configurable` 时优先读草稿），否则刚保存的字段默认值仍来自已发布 CRUD 快照，表现为必须发布应用才生效。
+
 ## 打印模板必须跟页面走，设计器不能回到 /print
 
 **发现日期**: 2026-09-21
