@@ -19,11 +19,13 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialConfig;
+import com.mdframe.forge.starter.social.enums.SocialPlatform;
 import com.mdframe.forge.starter.social.service.ISocialAppConfigService;
 import com.mdframe.forge.starter.social.service.ISocialConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Objects;
@@ -77,8 +79,13 @@ public class ApplicationIntegrationService {
     private boolean available(SysSocialConfig c, CollaborationCapability capability) {
         if (!providers.supports(c.getPlatform(), capability)) return false;
         try {
-            socialApps.requireEnabledApp(tenant(), c.getId(), capability);
-            return true;
+            var app = socialApps.requireEnabledApp(tenant(), c.getId(), capability);
+            if (app == null) return false;
+            var secret = socialApps.secretSummary(app);
+            if (secret == null || !secret.configured()) return false;
+            // WeCom login and messaging both consume CorpID + AgentId at execution.
+            return !SocialPlatform.WECHAT_ENTERPRISE.getCode().equals(c.getPlatform())
+                    || (StringUtils.hasText(c.getEnterpriseId()) && StringUtils.hasText(app.getAgentId()));
         } catch (BusinessException unavailable) { return false; }
     }
 
@@ -115,7 +122,9 @@ public class ApplicationIntegrationService {
         channel.setChannelName(app.getApplicationName() + " · 企业协同");
         channel.setChannelType(com.mdframe.forge.plugin.generator.enums.BusinessMessageChannelType.COLLABORATION.getCode());
         channel.setChannelConfigRef(connection == null ? null : connection.id().toString());
-        channel.setStatus(connection != null && connection.messageAvailable()
+        // This flag represents the application binding, not a cached platform readiness snapshot.
+        // CollaborationMessageChannel revalidates the current connection and MESSAGE app per delivery.
+        channel.setStatus(connection != null
                 ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         channel.setDescription("由应用集成管理；在业务流程发送消息步骤中选择此通道。取消绑定后禁止发送。");
         if (create) channels.insert(channel); else channels.updateById(channel);

@@ -2,7 +2,7 @@
   <n-result v-if="!store.has('system:collaboration:connection:list')" status="403" title="需要企业协同查看权限" description="请联系管理员授权；应用编辑权限不会自动开放连接和凭据。" />
   <n-spin v-else :show="store.loading.collaboration">
     <div class="integration-toolbar">
-      <span class="integration-help">复用平台连接，不重复填写企业 ID、应用 Secret。</span>
+      <span class="integration-help">连接配置 <n-tag size="small" :bordered="false" :type="dirty ? 'warning' : 'default'">{{ dirty ? '有未保存的更改' : store.config.connectionId ? '已保存' : '未绑定' }}</n-tag></span>
       <n-button size="small" :disabled="store.writing" @click="store.loadCollaboration">
         刷新状态
       </n-button>
@@ -10,80 +10,105 @@
     <n-alert v-if="store.errors.collaboration" type="error" class="integration-error">
       {{ store.errors.collaboration }}
     </n-alert>
-    <div class="collaboration-layout">
-      <section class="integration-card">
-        <h3>连接企业工作台</h3>
-        <p class="integration-help">
-          选择已配置的企业连接，保存后生成本应用的访问入口和消息通道。
-        </p>
-        <n-form-item label="企业连接" label-placement="top">
-          <n-select v-model:value="store.connectionId" :options="options" :disabled="!editable || store.writing" filterable clearable placeholder="选择平台中已有的连接" />
-        </n-form-item>
-        <n-alert v-if="store.config.connectionId && !savedConnection" type="warning">
-          原连接已停用、删除或不可见。原消息通道不会回退到其他连接，请重新选择或取消绑定。
-        </n-alert>
-        <n-empty v-if="!options.length && !store.loading.collaboration" description="还没有可用的企业连接" class="integration-empty">
-          <template #extra>
-            <n-button @click="manageConnections">
-              去配置企业协同
+    <div class="configuration-sheet">
+      <section class="configuration-section">
+        <div class="section-label">
+          <h3>企业连接</h3><p class="integration-help">
+            复用平台凭据<br>仅保存连接引用
+          </p>
+        </div>
+        <div class="section-content">
+          <n-form-item label="企业连接" label-placement="top">
+            <n-select v-model:value="store.connectionId" :options="options" :disabled="!editable || store.writing" filterable clearable placeholder="选择平台中已有的连接" />
+          </n-form-item>
+          <n-alert v-if="store.config.connectionId && !savedConnection" type="warning">
+            原连接已停用、删除或不可见。原消息通道不会回退到其他连接，请重新选择或取消绑定。
+          </n-alert>
+          <n-empty v-if="!options.length && !store.loading.collaboration" description="还没有可用的企业连接" class="integration-empty">
+            <template #extra>
+              <n-button @click="manageConnections">
+                去配置企业协同
+              </n-button>
+            </template>
+          </n-empty>
+          <div class="integration-row">
+            <n-space>
+              <n-button type="primary" size="small" :loading="store.writing" :disabled="!editable || (!dirty && !store.config.connectionId)" @click="save">
+                {{ dirty || !store.config.connectionId ? '保存绑定' : '重新应用配置' }}
+              </n-button>
+              <n-button v-if="dirty" size="small" :disabled="store.writing" @click="store.connectionId = store.config.connectionId == null ? null : String(store.config.connectionId)">
+                取消更改
+              </n-button>
+            </n-space>
+            <n-button text size="small" @click="manageConnections">
+              平台连接管理 ↗
+            </n-button>
+          </div>
+          <p class="integration-help">
+            保存后立即使用，无需发布应用。取消绑定会停用本应用消息通道；刷新不会丢弃未保存的选择。
+          </p>
+        </div>
+      </section>
+      <section class="configuration-section">
+        <div class="section-label">
+          <h3>工作台免登</h3><p class="integration-help">
+            企业微信内访问<br>遵循应用访问权限
+          </p>
+        </div>
+        <div class="section-content">
+          <div class="readiness-line">
+            <n-tag size="small" :bordered="false" :type="savedConnection?.loginAvailable ? 'success' : 'default'">
+              {{ savedConnection?.loginAvailable ? '配置齐全' : '待配置' }}
+            </n-tag><span class="integration-help">{{ savedConnection?.loginAvailable ? '仍需在企业微信验证可信域名与可见范围' : '需绑定连接，配置 LOGIN 应用并开启工作台免登' }}</span>
+          </div>
+          <template v-if="savedConnection?.loginAvailable">
+            <label>企业微信工作台应用主页</label>
+            <div class="copy-row">
+              <n-input :value="entryUrl" readonly aria-label="企业微信应用访问地址" /><n-button :disabled="!entryUrl || !store.published" @click="copy(entryUrl)">
+                复制地址
+              </n-button>
+            </div>
+            <p class="integration-help">
+              {{ store.published ? '普通浏览器打开仍需登录。请将此地址填入企业微信应用主页。' : '请先发布并启用应用，再分发访问地址。' }}
+            </p>
+          </template>
+        </div>
+      </section>
+      <section class="configuration-section">
+        <div class="section-label">
+          <h3>业务消息</h3><p class="integration-help">
+            通过消息模板<br>通知流程发起人
+          </p>
+        </div>
+        <div class="section-content">
+          <div class="readiness-line">
+            <n-tag size="small" :bordered="false" :type="savedConnection?.messageAvailable ? 'success' : 'default'">
+              {{ savedConnection?.messageAvailable ? '配置齐全' : '待配置' }}
+            </n-tag><span class="integration-help">{{ savedConnection?.messageAvailable ? '实际发送结果请查看企业协同投递记录' : '需绑定连接并配置 MESSAGE 应用' }}</span>
+          </div>
+          <template v-if="savedConnection?.messageAvailable">
+            <label>应用消息通道</label>
+            <div class="copy-row">
+              <n-input :value="channelCode" readonly aria-label="业务消息通道编码" /><n-button @click="copy(channelCode)">
+                复制通道
+              </n-button>
+            </div>
+            <p class="integration-help">
+              在“发送消息”节点勾选本应用企业协同通道，选择模板并发布流程。发起人须先绑定企业账号；绑定连接不会自动发送消息。
+            </p>
+            <n-button size="small" secondary @click="openFlows">
+              配置业务流程通知 →
             </n-button>
           </template>
-        </n-empty>
-        <div class="integration-row">
-          <n-button type="primary" :loading="store.writing" :disabled="!editable || !dirty" @click="save">
-            保存绑定
-          </n-button>
-          <n-button text @click="manageConnections">
-            平台连接管理 ↗
-          </n-button>
         </div>
-        <p class="integration-help">
-          保存立即生效，不需要重新发布应用。刷新状态保留未保存的选择；取消绑定会停用本应用的消息通道。
-        </p>
-      </section>
-      <section class="integration-card readiness">
-        <h3>绑定后可以做什么</h3>
-        <div>
-          <strong>工作台免登</strong><span class="integration-help">企业微信内打开应用，无需重复输入账号密码。仍遵循应用访问权限。</span><n-tag size="small" :type="savedConnection?.loginAvailable ? 'success' : 'default'">
-            {{ savedConnection?.loginAvailable ? '连接已就绪' : '需配置 LOGIN 应用与免登开关' }}
-          </n-tag>
-        </div>
-        <div>
-          <strong>业务消息通知</strong><span class="integration-help">在业务流程的发送消息节点勾选企业协同，使用已有模板通知流程发起人。</span><n-tag size="small" :type="savedConnection?.messageAvailable ? 'success' : 'default'">
-            {{ savedConnection?.messageAvailable ? '消息通道可用' : '需配置 MESSAGE 应用' }}
-          </n-tag>
-        </div>
-        <div><strong>待办同步 / 钉钉 / 飞书</strong><span class="integration-help">当前未接入，不会将普通消息通知标记为待办同步。</span></div>
       </section>
     </div>
-    <section v-if="savedConnection" class="integration-card entry-card">
-      <div class="integration-row">
-        <h3>分发与使用</h3><span v-if="dirty" class="integration-help">以下使用已保存的连接，未保存选择不生效</span>
-      </div>
-      <label>企业微信工作台应用主页</label>
-      <div class="copy-row">
-        <n-input :value="entryUrl" readonly aria-label="企业微信应用访问地址" /><n-button :disabled="!entryUrl || !store.published || !savedConnection.loginAvailable" @click="copy(entryUrl)">
-          复制地址
-        </n-button>
-      </div>
-      <p class="integration-help">
-        使用本站 PC 门户地址；请在企业微信后台配置可信域名和应用可见范围。普通浏览器打开仍需正常登录。
-      </p>
-      <template v-if="savedConnection.messageAvailable">
-        <label>业务流程消息通道</label>
-        <div class="copy-row">
-          <n-input :value="channelCode" readonly aria-label="业务消息通道编码" /><n-button @click="copy(channelCode)">
-            复制通道
-          </n-button>
-        </div>
-        <p class="integration-help">
-          在发送消息节点勾选“通过本应用企业协同通道发送”，选择消息模板并发布流程。当前通知流程发起人，须先绑定企业账号；绑定连接本身不会触发消息。
-        </p>
-        <n-button @click="openFlows">
-          配置业务流程通知
-        </n-button>
-      </template>
-    </section>
+    <p v-if="dirty" class="integration-help">
+      免登与消息状态基于已保存连接；上方未保存的选择尚未生效。
+    </p>
+    <p class="integration-help">
+      本应用集成暂不包含钉钉、飞书及原生待办同步。配置齐全不代表外部平台连通性已验证。
+    </p>
   </n-spin>
 </template>
 
@@ -136,38 +161,67 @@ function save() {
 </script>
 
 <style scoped>
-.collaboration-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: 16px;
+.configuration-sheet {
+  border: 1px solid var(--integration-border);
+  border-radius: 4px;
+  background: var(--integration-surface);
+  overflow: hidden;
 }
-h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
-}
-.readiness > div {
+.configuration-section {
   display: grid;
-  gap: 6px;
-  justify-items: start;
-  padding: 12px 0;
+  grid-template-columns: 158px minmax(0, 1fr);
+}
+.configuration-section + .configuration-section {
   border-top: 1px solid var(--integration-border);
 }
-.entry-card {
-  margin-top: 16px;
+.section-label {
+  padding: 18px 16px;
+  background: var(--integration-hover);
+}
+.section-content {
+  padding: 16px 20px;
+  min-width: 0;
+}
+.section-content :deep(.n-form-item) {
+  max-width: 560px;
+}
+.readiness-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.section-label p {
+  margin-bottom: 0;
+}
+h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
 }
 label {
   display: block;
-  margin: 14px 0 8px;
-  font-size: 13px;
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: var(--integration-muted);
 }
 .copy-row {
   display: flex;
   gap: 8px;
   min-width: 0;
 }
-@media (max-width: 1000px) {
-  .collaboration-layout {
+@media (max-width: 700px) {
+  .configuration-section {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .section-label {
+    padding: 10px 12px;
+  }
+  .section-label p {
+    display: none;
+  }
+  .section-content {
+    padding: 12px;
   }
 }
 @media (max-width: 480px) {

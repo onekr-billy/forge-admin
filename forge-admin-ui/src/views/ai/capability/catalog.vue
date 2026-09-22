@@ -38,7 +38,7 @@
       :can-update-grant="hasPermission('ai:capability:grant:add')"
     />
 
-    <n-modal v-model:show="editVisible" preset="card" title="编辑能力信息" style="width: 560px">
+    <n-modal v-model:show="editVisible" preset="card" title="编辑能力信息" style="width: min(560px, calc(100vw - 32px))" :content-style="{ maxHeight: '70vh', overflow: 'auto' }" :mask-closable="false" :closable="!editLoading" :close-on-esc="!editLoading">
       <n-alert type="info" class="edit-alert">
         这里仅修改目录展示信息。能力编码、来源绑定、调用主体和已发布版本契约不可修改；契约变化请使用“发布新版本”。
       </n-alert>
@@ -55,7 +55,7 @@
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="editVisible = false">
+          <n-button :disabled="editLoading" @click="editVisible = false">
             取消
           </n-button>
           <n-button type="primary" :loading="editLoading" @click="submitEdit">
@@ -70,7 +70,8 @@
       v-model:show="detailVisible"
       title="能力详情"
       preset="card"
-      style="width: 720px"
+      style="width: min(720px, calc(100vw - 32px))"
+      :content-style="{ maxHeight: '70vh', overflow: 'auto' }"
     >
       <div v-if="currentCapability" class="capability-detail">
         <div class="detail-section">

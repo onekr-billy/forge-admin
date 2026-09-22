@@ -72,3 +72,37 @@ git diff --check
 - 只启动 `127.0.0.1:5198` 模拟 API 组件夹具；浏览器实际点击未保存选择、刷新、保存绑定，确认刷新后选择仍保留、保存后免登入口和消息通道回填。
 - 控制台 error=[]；本轮没有设置 viewport override。创建的浏览器标签已关闭，临时 Vite 执行会话 30104 已发送 Ctrl-C 并确认退出 130，没有停止用户进程。
 - 没有部署、真实数据库/企业微信调用、commit 或 push。真实环境验收清单仍保持未完成状态，不能用这些 mock/单元测试替代。
+
+## 2026-09-22 控制台细节与配置闭环
+
+### 实现与根因
+- 在 `forge-admin-main / codex/open-platform-experience` 独立工作树继续，保留已有 `.DS_Store`；原 H5 工作树仍为 `codex/mobile-lowcode-runtime-refactor`、`32915fedd4057fc035fb11925bee4f32b4788912`，工作区干净。
+- 先扩展现有 spec/tasks/test-spec，读取 DESIGN、自动化测试标准、Forge 流程开发 Skill 及相关参考，按既有链路做增量修复。
+- 顶部导航使用数据库菜单 `/open-platform/capability-*`，文件自动路由却为 `/ai/capability/*`，而 guard 不会注册菜单路由，导致 404。新增统一页面路由描述、兼容别名并复用到 header。导航 SQL 排除了 visible=0 的调用记录/授权工具页，补充这两页原有查询权限的精确校验，避免修复后仍 403；没有全局路由放行或后端接口权限调整。
+- 企业连接和接入系统改为同页工作区，保留原列表状态；编辑使用单层局部弹窗。统一紧凑间距、主题色、表格操作列和窄屏表单，应用集成改为连接/免登/消息的配置行布局。
+- 连接详情兼容扁平对象及嵌套 VO；读取/提交按连接或客户端生命周期隔离，保存防重复，失败保留编辑。客户端切换或关闭清理子弹窗和旧请求状态。
+- 后端配置检查增加 Secret 与企业微信 CorpID/AgentId 条件。专属消息通道启用标记只表示当前应用是否绑定，实际投递复用现有动态校验，避免绑定时无 MESSAGE 永久锁死通道。解绑仍停用，不降级。历史旧通道提供“重新应用配置”入口，升级注意项写入 usage.md。
+
+### 验证证据
+- 新增后端用例首次 27 tests / 3 failures，复现缺凭据误报可用与消息通道状态固化；修复后 27/27 通过，最后执行 12:32:12、3.332s。
+- 前端最终 11 files / 98 tests passed，12:37:50、2.53s，含最后补充的隐藏工具页权限矩阵。测试存在既有 designer component 重复注册提示，断言均通过。
+- 本轮修改和新增的 20 个 JS/Vue 文件全部定向 ESLint 通过，0 errors / warnings。
+- JDK17 Admin reactor 46 模块 BUILD SUCCESS，21.341s；最终 Vite 生产构建通过，29.95s。未运行存在既有测试编译问题的全仓测试；复用独立验证 POM，无无关测试源码修改。
+- `git diff --check` 通过；修改 SFC 最大 778 行。没有迁移或包锁变化。
+
+本轮前端增量矩阵在 UI 目录执行：
+
+```bash
+./node_modules/.bin/vitest run src/views/ai/capability/__tests__ src/stores/application/__tests__ src/views/app-center/__tests__/application-integration-entry.spec.js src/components/business-process-designer/__tests__/business-process-designer.spec.js src/router/guards/__tests__ src/views/system/collaboration/__tests__
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+```
+
+Java 使用上一节同一 JDK17 / Maven / 临时依赖仓库。执行 Admin `-pl forge-admin-server -am install -Dmaven.test.skip=true` 后，执行本变更 `verification/pom.xml -Penable-tests test`。本轮未重复运行未修改的原开放平台 37 项后端矩阵，沿用上一节通过记录。
+
+本地日志：`/private/tmp/forge-console-frontend-tests-final.log`、`/private/tmp/forge-console-vite-build-final.log`、`/private/tmp/forge-console-admin-build.log`、`/private/tmp/forge-console-backend-tests-final.log`。
+
+### 浏览器与交付边界
+- localhost:5199 夹具加载真实路由页面和配置组件，但使用有状态模拟 API、列表外壳及用户选择占位组件。已点击顶部三页导航、连接应用编辑/能力绑定、应用集成保存回填，并检查桌面/390px/深色样式；不冒充完整系统 E2E。
+- 移动端页面无整体横向溢出；局部表格横向滚动，弹窗内容独立滚动，保存按钮可见。修复最初两个夹具 mock export 缺失后，无新增浏览器 error。
+- 未连接真实数据库、企业微信或外部系统，未启动业务服务/执行迁移/部署，未 commit/push。用户原有 file:// 页面是旧静态预览，真实工程改动不会自动更新它。
+- 验收结束已恢复浏览器 viewport、关闭本轮标签 6，保留用户原静态预览标签；仅停止本轮 localhost:5199 服务（执行会话 80679，退出 130）。最终 git diff --check 通过。

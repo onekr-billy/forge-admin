@@ -5,7 +5,7 @@
       <p>{{ description }}</p>
     </div>
     <nav aria-label="开放平台导航">
-      <RouterLink v-for="item in visibleLinks" :key="item.path" :to="item.path" :class="{ current: active === item.key }">
+      <RouterLink v-for="item in visibleLinks" :key="item.path" :to="item.path" :class="{ current: active === item.key }" :aria-current="active === item.key ? 'page' : undefined">
         {{ item.label }}
       </RouterLink>
     </nav>
@@ -14,15 +14,13 @@
 
 <script setup>
 import { computed } from 'vue'
+import { openPlatformPages } from '@/router/open-platform-routes'
 import { useUserStore } from '@/store'
 
 defineProps({ title: String, description: String, active: String })
 const user = useUserStore()
-const visibleLinks = computed(() => [
-  { key: 'catalog', label: '能力目录', path: '/open-platform/capability-catalog', permission: 'ai:capability:query' },
-  { key: 'client', label: '接入系统', path: '/open-platform/capability-client', permission: 'ai:capability:client:query' },
-  { key: 'invocation', label: '调用记录', path: '/open-platform/capability-invocation', permission: 'ai:capability:invocation:query' },
-].filter(item => user.isAdmin || user.permissions?.includes('*:*:*') || user.permissions?.includes(item.permission)))
+const visibleLinks = computed(() => openPlatformPages.filter(item => item.key !== 'grant'
+  && (user.isAdmin || user.permissions?.includes('*:*:*') || user.permissions?.includes(item.permission))))
 </script>
 
 <style scoped>
@@ -51,7 +49,11 @@ p {
 }
 nav {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-secondary);
   flex-shrink: 0;
 }
 nav a {
@@ -60,10 +62,14 @@ nav a {
   color: var(--text-secondary);
   font-size: 13px;
 }
-nav a:hover,
+nav a:hover {
+  color: var(--primary-color);
+}
 nav a.current {
   color: var(--primary-color);
-  background: var(--primary-color-10, var(--bg-secondary));
+  background: var(--bg-primary);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
+  font-weight: 600;
 }
 @media (max-width: 760px) {
   .platform-heading {

@@ -1,5 +1,6 @@
 <template>
   <div class="capability-invocation-page">
+    <CapabilityPageHeader title="调用记录" description="按能力、接入系统和请求 ID 追踪调用结果；日志仅包含脱敏摘要。" active="invocation" />
     <AiCrudPage
       ref="crudRef"
       :api-config="{
@@ -12,6 +13,8 @@
       :hide-selection="true"
       :hide-batch-delete="true"
       :scroll-x="1770"
+      :show-render-mode-switch="false"
+      class="platform-list"
     />
 
     <n-modal
@@ -63,6 +66,7 @@ import { computed, h, ref } from 'vue'
 import { getCapabilityInvocationDetail } from '@/api/ai/capability'
 import { AiCrudPage } from '@/components/ai-form'
 import { useDict } from '@/composables'
+import CapabilityPageHeader from './components/CapabilityPageHeader.vue'
 
 defineOptions({ name: 'CapabilityInvocation' })
 
@@ -303,6 +307,13 @@ function resultStatusLabel(value) {
 <style scoped>
 .capability-invocation-page {
   height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.platform-list {
+  flex: 1;
+  min-height: 0;
 }
 
 .detail-alert {

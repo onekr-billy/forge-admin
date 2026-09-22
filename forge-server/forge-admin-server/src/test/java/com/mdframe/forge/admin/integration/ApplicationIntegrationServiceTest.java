@@ -15,6 +15,8 @@ import com.mdframe.forge.starter.collaboration.provider.CollaborationProviderReg
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.social.domain.entity.SysSocialConfig;
+import com.mdframe.forge.starter.social.domain.entity.SysSocialAppConfig;
+import com.mdframe.forge.starter.social.security.SecretSummary;
 import com.mdframe.forge.starter.social.service.ISocialAppConfigService;
 import com.mdframe.forge.starter.social.service.ISocialConfigService;
 import org.junit.jupiter.api.*;
@@ -76,7 +78,8 @@ class ApplicationIntegrationServiceTest {
     }
     @Test void bindsOnlyReferenceAndCreatesActualMessageChannel() {
         SysSocialConfig connection = new SysSocialConfig(); connection.setId(22L); connection.setTenantId(7L);
-        connection.setPlatform("WECHAT_ENTERPRISE"); connection.setStatus(1);
+        connection.setPlatform("WECHAT_ENTERPRISE"); connection.setStatus(1); connection.setEnterpriseId("corp");
+        configuredApp();
         when(connections.selectConfigById(22L)).thenReturn(connection);
         when(providers.supports("WECHAT_ENTERPRISE", CollaborationCapability.MESSAGE)).thenReturn(true);
         when(mapper.save(anyLong(), anyLong(), any(), anyLong())).thenReturn(1);
@@ -84,6 +87,51 @@ class ApplicationIntegrationServiceTest {
         service.save(11L, dto);
         verify(channels).insert(argThat((AiBusinessMessageChannel c) -> c.getTenantId().equals(7L)
                 && c.getChannelType().equals("COLLABORATION") && c.getChannelConfigRef().equals("22") && c.getStatus() == 1));
+    }
+    SysSocialAppConfig configuredApp() {
+        SysSocialAppConfig app = new SysSocialAppConfig(); app.setAgentId("100001"); app.setClientId("corp");
+        when(socialApps.requireEnabledApp(eq(7L), eq(22L), any())).thenReturn(app);
+        when(socialApps.secretSummary(app)).thenReturn(new SecretSummary(true, "******", "ACTIVE", null, null));
+        return app;
+    }
+    SysSocialConfig loginConnection() {
+        SysSocialConfig connection = new SysSocialConfig(); connection.setId(22L); connection.setTenantId(7L);
+        connection.setPlatform("WECHAT_ENTERPRISE"); connection.setStatus(1); connection.setSsoWorkbenchEnabled(1);
+        connection.setEnterpriseId("corp");
+        when(connections.selectConfigById(22L)).thenReturn(connection);
+        when(connections.selectConfigList(any())).thenReturn(List.of(connection));
+        when(providers.supports("WECHAT_ENTERPRISE", CollaborationCapability.LOGIN)).thenReturn(true);
+        configuredApp();
+        return connection;
+    }
+    @Test void loginOnlyBindingDoesNotFreezeMessageReadinessAtSaveTime() {
+        loginConnection();
+        when(mapper.save(anyLong(), anyLong(), any(), anyLong())).thenReturn(1);
+        ApplicationIntegrationConfig dto = new ApplicationIntegrationConfig(); dto.setConnectionId(22L);
+        service.save(11L, dto);
+        // The channel represents the binding. Delivery still checks the current MESSAGE app each time.
+        verify(channels).insert(argThat((AiBusinessMessageChannel c) -> c.getStatus() == 1));
+        assertFalse(service.connections(11L).get(0).messageAvailable());
+        when(providers.supports("WECHAT_ENTERPRISE", CollaborationCapability.MESSAGE)).thenReturn(true);
+        assertTrue(service.connections(11L).get(0).messageAvailable());
+        when(socialApps.requireEnabledApp(7L, 22L, CollaborationCapability.MESSAGE))
+                .thenThrow(new BusinessException("MESSAGE 应用已停用"));
+        assertFalse(service.connections(11L).get(0).messageAvailable());
+    }
+    @Test void missingSecretIsNotReportedAsConfiguredOrAccepted() {
+        loginConnection();
+        when(socialApps.secretSummary(any())).thenReturn(SecretSummary.empty());
+        assertFalse(service.connections(11L).get(0).loginAvailable());
+        ApplicationIntegrationConfig dto = new ApplicationIntegrationConfig(); dto.setConnectionId(22L);
+        assertThrows(BusinessException.class, () -> service.save(11L, dto));
+        verifyNoInteractions(mapper, channels);
+    }
+    @Test void wecomMissingAgentAndDisabledLoginSwitchAreNotReady() {
+        SysSocialConfig connection = loginConnection();
+        SysSocialAppConfig app = configuredApp(); app.setAgentId(null);
+        assertFalse(service.connections(11L).get(0).loginAvailable());
+        app.setAgentId("100001"); connection.setSsoWorkbenchEnabled(0);
+        assertFalse(service.connections(11L).get(0).loginAvailable());
     }
     @Test void sourceMustMatchPublishedApplicationSuiteAndObject() {
         BusinessApplicationRuntimeVO published = new BusinessApplicationRuntimeVO();

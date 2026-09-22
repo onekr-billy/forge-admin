@@ -1,6 +1,6 @@
 <template>
   <div class="collaboration-console-page">
-    <div class="console-shell">
+    <div v-show="!detailVisible" class="console-shell">
       <!-- 控制台页头：标题 + 配置指南入口 -->
       <div class="console-header">
         <div class="console-header__main">
@@ -8,7 +8,7 @@
             企业协同
           </h2>
           <p class="console-header__subtitle">
-            对接企业微信、钉钉、飞书等平台，统一管理连接配置、通讯录同步与消息投递
+            管理企业连接与应用凭据，在同步批次、投递记录中追踪实际执行结果
           </p>
         </div>
         <n-button size="small" tertiary @click="guideVisible = true">
@@ -40,6 +40,7 @@
             modal-width="900px"
             :hide-batch-delete="true"
             :hide-selection="true"
+            :show-render-mode-switch="false"
             :before-render-detail="handleBeforeRenderDetail"
             :before-submit="handleBeforeSubmit"
           />
@@ -98,6 +99,7 @@ import ConnectionGuidePanel from './components/ConnectionGuidePanel.vue'
 import ConnectionSetupPanel from './components/ConnectionSetupPanel.vue'
 import ConnectionStatusBadge from './components/ConnectionStatusBadge.vue'
 import ConnectionTestPanel from './components/ConnectionTestPanel.vue'
+import { normalizeConnectionDetail } from './connection-form'
 import DeliveriesPanel from './deliveries.vue'
 import IssuesPanel from './issues.vue'
 import MappingsPanel from './mappings.vue'
@@ -224,8 +226,8 @@ const searchSchema = computed(() => [
   },
 ])
 
-const LOGO_STYLE = 'width:28px;height:28px;border-radius:6px;object-fit:contain;flex:0 0 auto;background:#f8fafc;border:1px solid #e2e8f0'
-const LOGO_PLACEHOLDER_STYLE = 'width:28px;height:28px;border-radius:6px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:#eff6ff;color:#2563eb;font-size:13px;font-weight:600'
+const LOGO_STYLE = 'width:28px;height:28px;border-radius:4px;object-fit:contain;flex:0 0 auto;background:var(--bg-secondary);border:1px solid var(--border-light)'
+const LOGO_PLACEHOLDER_STYLE = 'width:28px;height:28px;border-radius:4px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px;font-weight:600'
 
 const tableColumns = computed(() => [
   {
@@ -243,9 +245,9 @@ const tableColumns = computed(() => [
           title: `配置连接：${row.connectionName || row.connectionCode || '-'}`,
           onClick: () => handleManage(row),
         }, row.connectionName || '-'),
-        h('div', { style: 'font-size:12px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, [
+        h('div', { style: 'font-size:12px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, [
           h('span', null, getLabel('sys_collab_platform', row.platform) || row.platform || '-'),
-          h('span', { style: 'margin:0 5px;color:#cbd5e1' }, '·'),
+          h('span', { style: 'margin:0 5px' }, '·'),
           h('span', { style: 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace' }, row.connectionCode || '自动生成'),
         ]),
       ]),
@@ -255,7 +257,7 @@ const tableColumns = computed(() => [
     prop: 'purpose',
     label: '主要用途',
     width: 180,
-    render: row => h('span', { style: 'color:#475569;font-size:13px' }, connectionPurpose(row)),
+    render: row => h('span', { style: 'color:var(--text-secondary);font-size:13px' }, connectionPurpose(row)),
   },
   {
     prop: 'configurationStatus',
@@ -562,26 +564,7 @@ Gitee/GitHub 等仅支持扫码登录。`,
 ])
 
 function handleBeforeRenderDetail(data) {
-  if (!data)
-    return data
-  if (data.status !== null && data.status !== undefined)
-    data.status = String(data.status)
-  if (data.defaultOrgId !== null && data.defaultOrgId !== undefined)
-    data.defaultOrgId = String(data.defaultOrgId)
-  // 待办推送开关：后端 Integer → 数值（switch 组件 checked/unchecked 值）
-  data.todoPushEnabled = Number(data.todoPushEnabled) === 1 ? 1 : 0
-  // 工作台免登开关：后端 Integer → 数值
-  data.ssoWorkbenchEnabled = Number(data.ssoWorkbenchEnabled) === 1 ? 1 : 0
-  // 定时同步开关：后端 Integer → 数值
-  data.syncScheduleEnabled = Number(data.syncScheduleEnabled) === 1 ? 1 : 0
-  // 默认角色：逗号分隔字符串 → 字符串数组，避免雪花 ID 转 Number 丢失精度。
-  if (data.defaultRoleIds && typeof data.defaultRoleIds === 'string') {
-    data.defaultRoleIds = data.defaultRoleIds.split(',').map(id => id.trim()).filter(Boolean)
-  }
-  else {
-    data.defaultRoleIds = []
-  }
-  return data
+  return normalizeConnectionDetail(data)
 }
 
 /**

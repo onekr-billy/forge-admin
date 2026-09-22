@@ -14,6 +14,8 @@ import { useDict } from '@/composables'
 import { formatDateTime } from '@/utils'
 
 export function useCapabilityClientWorkbench(props, _emit) {
+  let workspaceEpoch = 0
+  let validatingGrant = false
   const { dict, reload: reloadWorkbenchDicts } = useDict(
     'ai_capability_client_actor_mode',
     'ai_capability_client_status',
@@ -116,29 +118,39 @@ export function useCapabilityClientWorkbench(props, _emit) {
   ])
 
   async function ensureGrantOptions() {
+    const epoch = workspaceEpoch
     const res = await getCapabilityGrantOptions()
-    grantOptions.value = res.data || { clients: [], capabilities: [] }
+    if (epoch === workspaceEpoch)
+      grantOptions.value = res.data || { clients: [], capabilities: [] }
   }
 
   async function loadGrants() {
     if (!props.client?.id)
       return
     grantLoading.value = true
+    const epoch = workspaceEpoch
+    const clientId = props.client.id
     try {
       await ensureGrantOptions()
+      if (epoch !== workspaceEpoch)
+        return
       const res = await getCapabilityGrantPage({
         pageNum: grantPagination.page,
         pageSize: grantPagination.pageSize,
-        clientId: props.client.id,
+        clientId,
       })
+      if (epoch !== workspaceEpoch)
+        return
       grantRows.value = res.data?.records || []
       grantPagination.itemCount = Number(res.data?.total || 0)
     }
     catch (error) {
-      window.$message.error(error?.message || '客户端授权加载失败')
+      if (epoch === workspaceEpoch)
+        window.$message.error(error?.message || '客户端授权加载失败')
     }
     finally {
-      grantLoading.value = false
+      if (epoch === workspaceEpoch)
+        grantLoading.value = false
     }
   }
 
@@ -252,11 +264,14 @@ export function useCapabilityClientWorkbench(props, _emit) {
   }
 
   async function openGrantModal(row = null) {
+    const epoch = workspaceEpoch
     grantVisible.value = true
     editingGrantId.value = row?.id || null
     grantOptionLoading.value = true
     try {
       await Promise.all([ensureGrantOptions(), reloadWorkbenchDicts()])
+      if (epoch !== workspaceEpoch || !grantVisible.value)
+        return
       if (row) {
         const fieldPolicy = parseFieldPolicy(row.fieldPolicy)
         const capability = (grantOptions.value.capabilities || [])
@@ -287,11 +302,14 @@ export function useCapabilityClientWorkbench(props, _emit) {
       }
     }
     catch (error) {
-      grantVisible.value = false
-      window.$message.error(error?.message || '授权候选能力加载失败')
+      if (epoch === workspaceEpoch) {
+        grantVisible.value = false
+        window.$message.error(error?.message || '授权候选能力加载失败')
+      }
     }
     finally {
-      grantOptionLoading.value = false
+      if (epoch === workspaceEpoch)
+        grantOptionLoading.value = false
     }
   }
 
@@ -340,12 +358,23 @@ export function useCapabilityClientWorkbench(props, _emit) {
   }
 
   async function submitGrant() {
+    if (validatingGrant || grantSubmitting.value || !props.show || !grantVisible.value || !props.canGrant)
+      return
+    const epoch = workspaceEpoch
+    const clientId = props.client?.id
+    const capabilityId = grantForm.capabilityId
+    validatingGrant = true
     try {
       await grantFormRef.value?.validate()
     }
     catch {
       return
     }
+    finally {
+      validatingGrant = false
+    }
+    if (epoch !== workspaceEpoch || !grantVisible.value || capabilityId !== grantForm.capabilityId)
+      return
     const capability = selectedCapability.value
     if (!capability)
       return
@@ -376,11 +405,11 @@ export function useCapabilityClientWorkbench(props, _emit) {
       const res = editingGrantId.value
         ? await updateCapabilityGrant(editingGrantId.value, payload)
         : await addCapabilityGrant({
-            clientId: props.client.id,
-            capabilityId: grantForm.capabilityId,
+            clientId,
+            capabilityId,
             ...payload,
           })
-      if (res.code === 200) {
+      if (epoch === workspaceEpoch && res.code === 200) {
         window.$message.success(editingGrantId.value ? '授权已调整' : '授权成功')
         grantVisible.value = false
         editingGrantId.value = null
@@ -438,6 +467,7 @@ export function useCapabilityClientWorkbench(props, _emit) {
     if (!props.client?.id)
       return
     logLoading.value = true
+    const epoch = workspaceEpoch
     try {
       const res = await getCapabilityInvocationPage({
         pageNum: logPagination.page,
@@ -447,14 +477,18 @@ export function useCapabilityClientWorkbench(props, _emit) {
         capabilityKeyword: normalizeFilter(logFilters.capabilityKeyword),
         actorKeyword: normalizeFilter(logFilters.actorKeyword),
       })
+      if (epoch !== workspaceEpoch)
+        return
       logRows.value = res.data?.records || []
       logPagination.itemCount = Number(res.data?.total || 0)
     }
     catch (error) {
-      window.$message.error(error?.message || '客户端调用日志加载失败')
+      if (epoch === workspaceEpoch)
+        window.$message.error(error?.message || '客户端调用日志加载失败')
     }
     finally {
-      logLoading.value = false
+      if (epoch === workspaceEpoch)
+        logLoading.value = false
     }
   }
 
@@ -486,19 +520,24 @@ export function useCapabilityClientWorkbench(props, _emit) {
   const logDetail = ref(null)
 
   async function openLogDetail(row) {
+    const epoch = workspaceEpoch
     logDetailVisible.value = true
     logDetailLoading.value = true
     logDetail.value = null
     try {
       const res = await getCapabilityInvocationDetail(row.id)
-      logDetail.value = res.data || null
+      if (epoch === workspaceEpoch)
+        logDetail.value = res.data || null
     }
     catch (error) {
-      window.$message.error(error?.message || '调用日志详情加载失败')
-      logDetailVisible.value = false
+      if (epoch === workspaceEpoch) {
+        window.$message.error(error?.message || '调用日志详情加载失败')
+        logDetailVisible.value = false
+      }
     }
     finally {
-      logDetailLoading.value = false
+      if (epoch === workspaceEpoch)
+        logDetailLoading.value = false
     }
   }
 
@@ -560,7 +599,11 @@ export function useCapabilityClientWorkbench(props, _emit) {
     }[value] || value || '-'
   }
 
-  watch(() => props.show, (visible) => {
+  watch(() => [props.show, props.client?.id], ([visible]) => {
+    workspaceEpoch++
+    grantVisible.value = logDetailVisible.value = false
+    grantLoading.value = logLoading.value = false
+    grantPagination.page = logPagination.page = 1
     if (!visible)
       return
     activeTab.value = props.initialTab === 'grants' && props.canGrantQuery ? 'grants' : 'overview'

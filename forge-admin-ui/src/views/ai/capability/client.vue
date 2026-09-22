@@ -2,6 +2,7 @@
   <div class="capability-client-page">
     <CapabilityPageHeader title="接入系统" description="每个外部系统创建一个客户端，独立管理凭据、可调用能力和实际操作人。" active="client" />
     <AiCrudPage
+      v-show="!workbenchVisible"
       ref="crudRef"
       :api-config="{
         list: 'get@/ai/capability/client/page',

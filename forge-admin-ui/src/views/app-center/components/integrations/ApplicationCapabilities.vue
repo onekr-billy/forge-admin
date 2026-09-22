@@ -37,10 +37,9 @@
           <p class="integration-help">
             {{ item.description || '已注册，授权后外部系统可按接口契约调用。' }}
           </p>
-          <div class="integration-row metadata">
-            <DictTag dict-type="ai_capability_source_type" :value="item.sourceType" /><span>v{{ item.currentVersion }}</span>
-          </div>
+          <div><DictTag dict-type="ai_capability_source_type" :value="item.sourceType" size="small" /></div>
           <footer>
+            <span class="metadata">v{{ item.currentVersion }}</span>
             <n-button text type="primary" :disabled="!store.has('ai:capability:grant:query')" @click="store.selectCapability(item, 'grants')">
               接入授权
             </n-button>
@@ -49,7 +48,7 @@
             </n-button>
             <n-dropdown :options="moreOptions(item)" @select="key => more(key, item)">
               <n-button quaternary size="small" aria-label="更多能力操作">
-                •••
+                更多
               </n-button>
             </n-dropdown>
           </footer>
@@ -106,10 +105,11 @@ async function registered() {
 .capability-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 .integration-code {
-  margin-top: 8px;
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 article {
   display: flex;
@@ -124,13 +124,14 @@ article > p {
 }
 footer {
   display: flex;
-  gap: 18px;
+  gap: 12px;
   align-items: center;
   border-top: 1px solid var(--integration-border);
-  margin-top: 16px;
-  padding-top: 12px;
+  margin: 12px -14px -14px;
+  padding: 9px 12px;
+  background: var(--integration-hover);
 }
-footer > :last-child {
-  margin-left: auto;
+footer > :first-child {
+  margin-right: auto;
 }
 </style>

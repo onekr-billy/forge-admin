@@ -1,19 +1,16 @@
 <template>
-  <n-modal
-    :show="show"
-    preset="card"
-    class="client-workbench-modal"
-    :mask-closable="false"
-    @update:show="emit('update:show', $event)"
-  >
-    <template #header>
+  <section v-if="show" class="client-workbench">
+    <header class="workbench-header">
+      <NButton size="small" :disabled="grantSubmitting" @click="emit('update:show', false)">
+        ← 返回系统列表
+      </NButton>
       <div class="workbench-title">
-        <strong>接入工作台</strong>
-        <span v-if="client">{{ client.clientName }} · {{ client.clientCode }} · AppId {{ client.id }}</span>
+        <strong>{{ client?.clientName || '接入配置' }}</strong>
+        <span v-if="client">{{ client.clientCode }} · AppId {{ client.id }}</span>
       </div>
-    </template>
+    </header>
 
-    <n-tabs v-if="client" v-model:value="activeTab" type="line" animated @update:value="handleTabChange">
+    <n-tabs v-if="client" v-model:value="activeTab" type="line" class="workbench-tabs" animated @update:value="handleTabChange">
       <n-tab-pane name="overview" tab="接入配置">
         <div class="onboarding-actions">
           <span>接入顺序</span>
@@ -170,15 +167,7 @@
       </n-tab-pane>
     </n-tabs>
 
-    <template #footer>
-      <n-space justify="end">
-        <NButton @click="emit('update:show', false)">
-          关闭
-        </NButton>
-      </n-space>
-    </template>
-
-    <n-modal v-model:show="grantVisible" preset="card" :title="editingGrantId ? '调整客户端授权' : '为当前客户端新增授权'" style="width: min(640px, calc(100vw - 32px))">
+    <n-modal v-model:show="grantVisible" preset="card" :title="editingGrantId ? '调整客户端授权' : '为当前客户端新增授权'" style="width: min(640px, calc(100vw - 32px))" :content-style="{ maxHeight: '70vh', overflow: 'auto' }" :mask-closable="false" :closable="!grantSubmitting" :close-on-esc="!grantSubmitting">
       <n-form ref="grantFormRef" :model="grantForm" :rules="grantRules" label-placement="left" label-width="100px">
         <n-form-item label="客户端">
           <n-input :value="`${client?.clientName || '-'}（${client?.clientCode || '-'}）`" disabled />
@@ -212,7 +201,7 @@
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <NButton @click="grantVisible = false">
+          <NButton :disabled="grantSubmitting" @click="grantVisible = false">
             取消
           </NButton>
           <NButton type="primary" :loading="grantSubmitting" @click="submitGrant">
@@ -246,7 +235,7 @@
         </template>
       </n-spin>
     </n-modal>
-  </n-modal>
+  </section>
 </template>
 
 <script setup>
@@ -324,12 +313,40 @@ const {
 </script>
 
 <style scoped>
+.client-workbench {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+.workbench-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.workbench-tabs {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+}
+.workbench-tabs :deep(.n-tabs-pane-wrapper) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 16px;
+}
 .onboarding-actions {
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border-light);
 }
@@ -344,7 +361,7 @@ const {
 
 .workbench-title strong {
   color: var(--text-primary);
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .workbench-title span {
@@ -366,10 +383,10 @@ const {
 
 .overview-grid > div {
   min-width: 0;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-right: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
 }
 
 .overview-grid span,
@@ -433,9 +450,9 @@ const {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 20px;
+  padding: 14px;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--bg-secondary);
 }
 
@@ -497,20 +514,5 @@ const {
   .log-filter-bar {
     grid-template-columns: 1fr;
   }
-}
-
-:global(.client-workbench-modal) {
-  width: min(1080px, calc(100vw - 32px));
-  height: min(820px, calc(100dvh - 40px));
-}
-
-:global(.client-workbench-modal > .n-card-content) {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-}
-:global(.client-workbench-modal > .n-card-header),
-:global(.client-workbench-modal > .n-card__footer) {
-  flex-shrink: 0;
 }
 </style>

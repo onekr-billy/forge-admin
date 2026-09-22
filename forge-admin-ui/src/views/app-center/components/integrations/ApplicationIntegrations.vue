@@ -1,7 +1,7 @@
 <template>
   <section class="application-integrations" :style="themeVars">
     <header class="integration-heading">
-      <div><h2>集成与开放</h2><p>连接企业工作台，将本应用的表单和流程安全地开放给其他系统。</p></div>
+      <div><h2>集成与开放</h2><p>企业连接、对外能力与接入授权，在当前应用内集中管理。</p></div>
       <span class="application-context">{{ application?.applicationName }} · {{ store.published ? `已发布 v${application.lastPublishVersion}` : '尚无可用发布版本' }}</span>
     </header>
     <n-alert v-if="!store.published" type="info" :bordered="false" class="integration-notice">
@@ -38,6 +38,10 @@ const store = useApplicationIntegrationStore()
 const theme = useThemeVars()
 const themeVars = computed(() => ({ '--integration-border': theme.value.borderColor, '--integration-muted': theme.value.textColor3, '--integration-surface': theme.value.cardColor, '--integration-hover': theme.value.hoverColor, '--integration-text': theme.value.textColor1 }))
 watch(() => props.application?.id, () => store.reset(props.application), { immediate: true })
+// A publish/enable operation may replace the application object without changing its ID.
+watch(() => props.application, (application) => {
+  store.application = application
+})
 watch([() => props.application?.id, () => store.tab], () => {
   if (store.tab === 'collaboration')
     store.loadCollaboration()
@@ -61,22 +65,22 @@ onBeforeUnmount(() => store.reset(null))
   gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 650;
 }
 .integration-heading p {
   margin: 6px 0 0;
   color: var(--integration-muted);
+  font-size: 12px;
   line-height: 1.6;
 }
 .application-context {
-  padding: 5px 10px;
-  border: 1px solid var(--integration-border);
-  border-radius: 6px;
+  padding: 3px 0;
+  color: var(--integration-muted);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -87,20 +91,20 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   justify-content: space-between;
-  margin: 8px 0 18px;
+  margin: 4px 0 12px;
 }
 .application-integrations :deep(.integration-help) {
   color: var(--integration-muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.65;
 }
 .application-integrations :deep(.integration-card) {
   border: 1px solid var(--integration-border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--integration-surface);
-  padding: 18px;
+  padding: 14px;
   min-width: 0;
 }
 .application-integrations :deep(.integration-error) {
@@ -112,7 +116,7 @@ h2 {
   justify-content: flex-end;
 }
 .application-integrations :deep(.integration-empty) {
-  padding: 44px 12px;
+  padding: 36px 12px;
 }
 .application-integrations :deep(.integration-row) {
   display: flex;

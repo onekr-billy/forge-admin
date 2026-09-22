@@ -28,10 +28,10 @@ const store = useApplicationIntegrationStore()
 
 <style scoped>
 .selection {
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--integration-border);
-  border-radius: 8px;
-  background: var(--integration-surface);
+  border-radius: 4px;
+  background: var(--integration-hover);
 }
 small {
   font-weight: 400;
