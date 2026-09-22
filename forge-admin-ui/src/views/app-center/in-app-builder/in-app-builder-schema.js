@@ -1,3 +1,5 @@
+import { normalizePrintPageWatermark } from '@/components/print/management/pagePrintWatermark'
+
 export const IN_APP_BUILDER_SCHEMA_VERSION = 2
 export const HOME_PAGE_ID = 'page_home'
 
@@ -263,6 +265,7 @@ export function createNavigationNode(schema, input = {}) {
     node.pageTemplate = String(input.pageTemplate || input.templateKey || '').trim()
     node.objectRef = normalizeObjectRef(input.objectRef)
     node.entryRef = normalizeEntryRef(input.entryRef)
+    node.printWatermark = normalizePrintPageWatermark(input.printWatermark)
     next.pages[id] = normalizePageLayout(input.layout, node)
     if (!next.homePageId)
       next.homePageId = id
@@ -457,6 +460,7 @@ function normalizeNodes(nodes) {
             pageTemplate: String(node.pageTemplate || node.templateKey || '').trim(),
             objectRef: normalizeObjectRef(node.objectRef),
             entryRef: normalizeEntryRef(node.entryRef),
+            printWatermark: normalizePrintPageWatermark(node.printWatermark ?? node.settings?.printWatermark),
           }),
     }))
 }

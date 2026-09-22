@@ -212,6 +212,29 @@ describe('in-app builder schema', () => {
     })
   })
 
+  it('round-trips page print watermark with the page settings snapshot', () => {
+    const schema = normalizeInAppBuilder({
+      inAppBuilder: {
+        nodes: [{
+          id: 'page_print',
+          type: 'page',
+          title: '采购单',
+          printWatermark: { enabled: true, text: '内部资料', showUsername: false, showTime: true, density: 'dense', fontSizePt: 18, color: '#112233' },
+        }],
+      },
+    }, APPLICATION, [])
+    const reloaded = normalizeInAppBuilder(mergeInAppBuilderOptions({}, schema), APPLICATION, [])
+    expect(reloaded.nodes[0].printWatermark).toEqual({
+      enabled: true,
+      text: '内部资料',
+      showUsername: false,
+      showTime: true,
+      density: 'dense',
+      fontSizePt: 18,
+      color: '#112233',
+    })
+  })
+
   it('requires an explicit strategy when deleting a group with child pages', () => {
     const base = createNavigationNode(normalizeInAppBuilder({}, APPLICATION, []), { type: 'page', title: '总览' })
     const withGroup = createNavigationNode(base, { type: 'group', title: '销售管理' })

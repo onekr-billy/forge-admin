@@ -36,7 +36,7 @@
 
 ## 分类目录
 
-### [前端 / 构建 / 路由](pitfalls/frontend.md)（38）
+### [前端 / 构建 / 路由](pitfalls/frontend.md)（39）
 
 - Vitest 结构测试读取源码时 new URL 不能内联字面量路径
 - pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
@@ -75,6 +75,7 @@
 - 打印预览新标签不能 router.back
 - 应用中心卡片不要 hover 才展开操作栏
 - 发布运行页不要卡住等后台菜单再叠多层 loading
+- 打印模板必须跟页面走，设计器不能回到 /print
 
 ### [低代码 / 设计器 / 业务对象](pitfalls/lowcode.md)（90）
 

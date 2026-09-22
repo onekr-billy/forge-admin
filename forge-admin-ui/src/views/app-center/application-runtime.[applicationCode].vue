@@ -899,6 +899,8 @@
         <PageDesignSettingsPanel
           v-if="currentNode"
           :node="currentNode"
+          :application="application"
+          :objects="objects"
           @update="patchCurrentPageNode"
         />
         <n-empty v-else description="请先选择要设置的页面" />
@@ -1349,6 +1351,7 @@ const {
 } = useRuntimeCrudConfig({
   application,
   workspaceEntries,
+  pageId: computed(() => String(selectedNodeId.value || route.query.pageId || '').trim()),
   // 草稿/编辑态才允许降级读取对象设计器字段目录做静态预览
   canLoadDesignerSchema: computed(() => editing.value || isDraftMode.value),
 })
@@ -1740,6 +1743,11 @@ watch([
 }, { immediate: true })
 watch(() => route.query.designResource, (resourceKey) => {
   selectedDesignerResourceKey.value = String(resourceKey || '')
+})
+watch(() => route.query.designTab, (tab) => {
+  const next = resolvePageDesignTab(tab)
+  if (activePageDesignTab.value !== next)
+    activePageDesignTab.value = next
 })
 watch(() => route.query.view, (view) => {
   // 发布功能已迁移到独立发布页
@@ -4606,14 +4614,31 @@ function resolveRuntimeView(value) {
 }
 
 // 页面级 Tab（编辑模式）
-const activePageDesignTab = ref('form')
+const PAGE_DESIGN_TABS = new Set(['form', 'list', 'settings', 'publish'])
+
+function resolvePageDesignTab(value) {
+  const normalized = String(Array.isArray(value) ? value[0] : value || '').trim()
+  return PAGE_DESIGN_TABS.has(normalized) ? normalized : 'form'
+}
+
+const activePageDesignTab = ref(resolvePageDesignTab(route.query.designTab))
 
 function switchPageDesignTab(tab) {
-  activePageDesignTab.value = tab
+  const next = resolvePageDesignTab(tab)
+  activePageDesignTab.value = next
   if (formDesignerMode.value)
     formDesignerMode.value = false
-  if (tab === 'form' && selectedNodeId.value)
+  if (next === 'form' && selectedNodeId.value)
     syncActiveFormAssetForPage(selectedNodeId.value)
+  const designTab = next === 'form' ? undefined : next
+  if (route.query.designTab === designTab)
+    return
+  router.replace({
+    query: {
+      ...route.query,
+      designTab,
+    },
+  })
 }
 
 function resolveFormAssetIdForPage(pageId) {
@@ -4709,7 +4734,7 @@ function patchCurrentPageNode(partial = {}) {
   if (!currentNode.value || !builder.value)
     return
   const pageId = currentNode.value.id
-  const settingsFields = ['systemMenuVisible', 'navigationVisible', 'mountTarget', 'menuName', 'menuParentId', 'mobileMenuParentId', 'menuSort']
+  const settingsFields = ['systemMenuVisible', 'navigationVisible', 'mountTarget', 'menuName', 'menuParentId', 'mobileMenuParentId', 'menuSort', 'printWatermark']
   builder.value = {
     ...builder.value,
     nodes: builder.value.nodes.map((item) => {

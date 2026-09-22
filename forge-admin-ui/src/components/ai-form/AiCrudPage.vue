@@ -321,25 +321,56 @@
         class="ai-crud-inline-workspace"
         :class="{ 'is-tab-workspace': isTabWorkspaceMode }"
       >
-        <section class="ai-crud-inline-form-panel">
-          <header class="inline-form-panel-head">
-            <div>
-              <strong>{{ activeInlineFormTitle }}</strong>
-              <span>{{ inlineFormModeLabel }}</span>
-            </div>
-            <n-button
-              quaternary
-              :circle="isTabWorkspaceMode"
-              size="small"
-              @click="handleCloseActiveInlineFormTab"
-            >
-              <template #icon>
-                <n-icon><CloseOutline /></n-icon>
-              </template>
-              <template v-if="!isTabWorkspaceMode">
+        <section class="ai-crud-inline-form-panel" :class="{ 'is-flat-form': !isTabWorkspaceMode }">
+          <header class="inline-form-panel-head" :class="{ 'is-flat-head': !isTabWorkspaceMode }">
+            <div class="inline-form-panel-head-main">
+              <n-button
+                v-if="!isTabWorkspaceMode"
+                quaternary
+                size="small"
+                class="inline-form-back-btn"
+                @click="handleCloseActiveInlineFormTab"
+              >
+                <template #icon>
+                  <n-icon><ArrowBackOutline /></n-icon>
+                </template>
                 返回列表
+              </n-button>
+              <div class="inline-form-panel-title">
+                <strong>{{ activeInlineFormTitle }}</strong>
+                <span
+                  v-if="showInlineFormModeTag"
+                  class="inline-form-mode-tag"
+                >{{ inlineFormModeLabel }}</span>
+              </div>
+            </div>
+            <div class="inline-form-panel-head-actions">
+              <n-button
+                v-if="isTabWorkspaceMode"
+                quaternary
+                circle
+                size="small"
+                aria-label="关闭"
+                @click="handleCloseActiveInlineFormTab"
+              >
+                <template #icon>
+                  <n-icon><CloseOutline /></n-icon>
+                </template>
+              </n-button>
+              <template v-if="isDetailMode">
+                <n-button
+                  v-for="action in visibleDetailActions"
+                  :key="action.key || action.label"
+                  size="small"
+                  :type="resolveButtonType(action)"
+                  :loading="isActionLoading(action, formData)"
+                  :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+                  @click="handleActionClick(action, formData)"
+                >
+                  {{ resolveActionDisplayLabel(action, formData) }}
+                </n-button>
               </template>
-            </n-button>
+            </div>
           </header>
 
           <div class="inline-form-panel-body">
@@ -510,7 +541,7 @@
 
     <!-- 新增/编辑/详情弹窗 - Modal 模式。详情默认使用弹窗，避免动态页详情占用右侧抽屉。 -->
     <n-modal
-      v-if="!formOnly && !usesInlineFormWorkspace && (resolvedFormOpenMode === 'modal' || isDetailMode)"
+      v-if="!formOnly && !usesInlineFormWorkspace && resolvedFormOpenMode === 'modal'"
       v-model:show="modalVisible"
       class="ai-crud-form-modal"
       :title="modalTitle"
@@ -689,7 +720,7 @@
 
     <!-- 新增/编辑抽屉 - Drawer 模式 -->
     <n-drawer
-      v-else-if="!formOnly && !usesInlineFormWorkspace && !isDetailMode && resolvedFormOpenMode === 'drawer'"
+      v-else-if="!formOnly && !usesInlineFormWorkspace && resolvedFormOpenMode === 'drawer'"
       v-model:show="modalVisible"
       :width="modalWidth"
       :placement="drawerPlacement"
@@ -697,6 +728,21 @@
       @after-leave="handleModalClose"
     >
       <n-drawer-content :title="modalTitle" :closable="true">
+        <template v-if="isDetailMode && visibleDetailActions.length" #header-extra>
+          <n-space>
+            <n-button
+              v-for="action in visibleDetailActions"
+              :key="`drawer-head-${action.key || action.label}`"
+              size="small"
+              :type="resolveButtonType(action)"
+              :loading="isActionLoading(action, formData)"
+              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+              @click="handleActionClick(action, formData)"
+            >
+              {{ resolveActionDisplayLabel(action, formData) }}
+            </n-button>
+          </n-space>
+        </template>
         <AiForm
           ref="formRef"
           v-model:value="formData"
@@ -739,28 +785,42 @@
         />
 
         <!-- 抽屉底部按钮 -->
-        <template v-if="!hideModalFooter && !isDetailMode" #footer>
+        <template v-if="!hideModalFooter && (!isDetailMode || visibleDetailActions.length || visibleFormActions.length)" #footer>
           <n-space justify="end">
-            <n-button @click="handleModalCancel">
-              取消
-            </n-button>
-            <n-button
-              type="primary"
-              :loading="confirmLoading"
-              @click="handleModalConfirm"
-            >
-              确定
-            </n-button>
-            <n-button
-              v-for="action in visibleFormActions"
-              :key="action.key || action.label"
-              :type="resolveButtonType(action)"
-              :loading="isActionLoading(action, formData)"
-              :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
-              @click="handleActionClick(action, formData)"
-            >
-              {{ resolveActionDisplayLabel(action, formData) }}
-            </n-button>
+            <template v-if="!isDetailMode">
+              <n-button @click="handleModalCancel">
+                取消
+              </n-button>
+              <n-button
+                type="primary"
+                :loading="confirmLoading"
+                @click="handleModalConfirm"
+              >
+                确定
+              </n-button>
+              <n-button
+                v-for="action in visibleFormActions"
+                :key="action.key || action.label"
+                :type="resolveButtonType(action)"
+                :loading="isActionLoading(action, formData)"
+                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+                @click="handleActionClick(action, formData)"
+              >
+                {{ resolveActionDisplayLabel(action, formData) }}
+              </n-button>
+            </template>
+            <template v-else>
+              <n-button
+                v-for="action in visibleDetailActions"
+                :key="action.key || action.label"
+                :type="resolveButtonType(action)"
+                :loading="isActionLoading(action, formData)"
+                :disabled="isActionDisabled(action, formData) || isActionLoading(action, formData)"
+                @click="handleActionClick(action, formData)"
+              >
+                {{ resolveActionDisplayLabel(action, formData) }}
+              </n-button>
+            </template>
           </n-space>
         </template>
       </n-drawer-content>
@@ -933,6 +993,7 @@
 /* eslint-disable vue/custom-event-name-casing */
 import {
   Add,
+  ArrowBackOutline,
   CloseOutline,
   CloudUploadOutline,
   DownloadOutline,
@@ -3129,6 +3190,13 @@ const inlineFormModeLabel = computed(() => {
   if (modalStatus.value === 'detail')
     return '详情'
   return '表单'
+})
+const showInlineFormModeTag = computed(() => {
+  const title = String(activeInlineFormTitle.value || '').trim()
+  const mode = String(inlineFormModeLabel.value || '').trim()
+  if (!mode)
+    return false
+  return title !== mode && !title.includes(mode)
 })
 
 const resolvedTabWorkspace = computed(() => {

@@ -39,10 +39,10 @@ vi.mock('../../AiTable.vue', () => ({
 }))
 
 const wrappers = []
-const pass = { template: '<div><slot /><slot name="footer" /></div>' }
+const pass = { template: '<div><slot name="header-extra" /><slot /><slot name="footer" /></div>' }
 const overlay = { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }
-function mountPage() {
-  const wrapper = mount(AiCrudPage, { props: { lazy: true, rowKey: 'documentKey', columns: [{ key: 'actions', actions: [] }], runtimeActions: actions.filter(action => action.key.startsWith('forgePrint:')), hideAdd: true, hideBatchDelete: true, loadDetailOnEdit: false }, global: { stubs: { NModal: overlay, NDrawer: overlay, NDrawerContent: pass, NIcon: pass, NSpin: pass, NSpace: pass, NButton: { template: '<button><slot /></button>' }, NResult: pass, NSelect: true, NFormItem: pass, NInputNumber: true, NForm: pass, NDataTable: true, NAlert: pass, NTabs: pass, NTabPane: pass } } })
+function mountPage(extra = {}) {
+  const wrapper = mount(AiCrudPage, { props: { lazy: true, rowKey: 'documentKey', columns: [{ key: 'actions', actions: [] }], runtimeActions: actions.filter(action => action.key.startsWith('forgePrint:')), hideAdd: true, hideBatchDelete: true, loadDetailOnEdit: false, ...extra }, global: { stubs: { NModal: overlay, NDrawer: overlay, NDrawerContent: pass, NIcon: pass, NSpin: pass, NSpace: pass, NButton: { template: '<button><slot /></button>' }, NResult: pass, NSelect: true, NFormItem: pass, NInputNumber: true, NForm: pass, NDataTable: true, NAlert: pass, NTabs: pass, NTabPane: pass } } })
   wrappers.push(wrapper)
   return wrapper
 }
@@ -79,6 +79,26 @@ it('真实列表动作处理器将字符串主键编码后送入统一打印路�
 })
 it('真实详情动作使用 DETAIL 场景且不提交表单', async () => {
   const wrapper = mountPage()
+  await wrapper.vm.showDetail(record)
+  await flushPromises()
+  const button = wrapper.findAll('button').find(item => item.text() === '打印')
+  expect(button).toBeTruthy()
+  await button.trigger('click')
+  await flushPromises()
+  assertRoute('DETAIL')
+})
+it('抽屉详情也显示打印', async () => {
+  const wrapper = mountPage({ formOpenMode: 'drawer' })
+  await wrapper.vm.showDetail(record)
+  await flushPromises()
+  const button = wrapper.findAll('button').find(item => item.text() === '打印')
+  expect(button).toBeTruthy()
+  await button.trigger('click')
+  await flushPromises()
+  assertRoute('DETAIL')
+})
+it('平铺详情也显示打印', async () => {
+  const wrapper = mountPage({ formOpenMode: 'flat' })
   await wrapper.vm.showDetail(record)
   await flushPromises()
   const button = wrapper.findAll('button').find(item => item.text() === '打印')
