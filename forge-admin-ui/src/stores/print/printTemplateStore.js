@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import * as api from '@/api/print'
+import { newPrintTemplateCode } from '@/components/print/id'
 import { printSourcePayload } from '@/components/print/management/printRouteContext'
 import { DEFAULT_PRINT_SCENES, syncPrintTemplateScenes } from '@/components/print/management/printSceneBinding'
 import { formatPrintApiError } from '@/components/print/protocol/formatPrintError'
@@ -103,7 +104,7 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
       const payload = printSourcePayload(source)
       if (!payload)
         throw new Error('打印来源无效')
-      const { data } = await api.createPrintTemplate({ ...payload, templateName: name, templateCode: `print_${crypto.randomUUID().replaceAll('-', '')}`, schemaJson: JSON.stringify(schema) })
+      const { data } = await api.createPrintTemplate({ ...payload, templateName: name, templateCode: newPrintTemplateCode(), schemaJson: JSON.stringify(schema) })
       try {
         await syncPrintTemplateScenes({
           source: printSourcePayload(data.source) || payload,

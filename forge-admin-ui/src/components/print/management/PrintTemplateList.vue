@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '@/api/print'
 import DictTag from '@/components/DictTag.vue'
+import { newPrintTemplateCode } from '@/components/print/id'
 import { hasPrintPermission } from '@/components/print/management/printPermissions'
 import { printSourcePayload } from '@/components/print/management/printRouteContext'
 import { FALLBACK_PRINT_SCENE_OPTIONS, scenesOfTemplate, syncPrintTemplateScenes } from '@/components/print/management/printSceneBinding'
@@ -103,7 +104,7 @@ async function act(action) {
 async function copy(row) {
   await act(async () => {
     const copiedScenes = rowScenes(row)
-    const { data } = await api.copyPrintTemplate(row.id, { expectedRevision: row.draftRevision, templateCode: `print_${crypto.randomUUID().replaceAll('-', '')}`, templateName: `${row.templateName.slice(0, 95)} 副本` })
+    const { data } = await api.copyPrintTemplate(row.id, { expectedRevision: row.draftRevision, templateCode: newPrintTemplateCode(), templateName: `${row.templateName.slice(0, 95)} 副本` })
     await syncPrintTemplateScenes({
       source: printSourcePayload(data.source) || printSourcePayload(source.value),
       templateId: data.id,
