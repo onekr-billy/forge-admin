@@ -1,6 +1,16 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 89 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 91 条。
+
+## designPreview 物化草稿不能长事务持有关系表行锁
+
+**发现日期**: 2026-09-22
+
+**问题描述**:
+`GET /ai/crud-config/render/{configKey}?designPreview=true` 会调用 `prepareRuntimeDraft`，其中 `synchronizeFormChildRelations` 可能 `UPDATE ai_business_object_relation`。旧实现用外层 `@Transactional` 包住关系写入 + schema 编译 + 可能的 `saveDraft`，行锁持有可超过 MySQL `innodb_lock_wait_timeout`。应用设计态多区块并发 `designPreview` 或与设计器保存重叠时，出现 `CannotAcquireLockException: Lock wait timeout exceeded`。
+
+**解决方案**:
+关系同步与草稿保存拆成短事务（`TransactionTemplate`），schema 编译放在事务外；同对象 JVM 内串行化 `prepareRuntimeDraft`；关系配置用 JSON 语义比较，避免空白/键序差异导致每次预览都 `updateById`。正式发布路径仍可调用同一方法，但不再因预览并发拖死锁。
 
 ## 表单页面形态必须传到实际 CRUD 组件
 

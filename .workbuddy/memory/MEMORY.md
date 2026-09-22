@@ -56,10 +56,10 @@
 - **0919 结构改版**：①开篇 4 句钩子 + **TL;DR 六条结论清单**（结论从结尾挪到开头，适配扫读）②每坑统一「现象→源码→为什么→怎么改」四段 ③独立「可带走 N 条诀窍」+ 接入实战可复制代码 ④求赞先给联想场景
 
 ### 已写 19 篇（避免重复）
-订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等1279行5坑(0915) / log操作日志1383行(0916) / auth认证链路4091行账号锁定失效(0917) / excel 4223行@Async三重叠加(0918) / websocket 599行内存Broker(0919) / config 动态配置@Scheduled被注释(0920)
+订单系统业务设计 / 零代码搭进销存 / AI能力治理规划 / 从零搭CRM / 低代码与Flowable工作流整合 / Flowable注解化接入 / MCP-Server插件源码拆解 / 协作SPI解耦设计(0906) / 数据权限拦截器SQL改写(0907) / 协议驱动vs代码生成 / crypto接口加解密全链路(0909) / 多租户tenant(0910) / 多租户×数据权限共存-拦截器注册顺序(0911) / 幂等1279行5坑(0915) / log操作日志1383行(0916) / auth认证链路4091行账号锁定失效(0917) / excel 4223行@Async三重叠加(0918) / websocket 599行内存Broker(0919) / config 动态配置@Scheduled被注释(0920) / cache 多级缓存5个静默失效坑-泛型擦除恢复(0921)
 
 ### "框架源码拆解"系列进度
-① datascope → ② tenant → ③ 共存(0911) → ④ 幂等(0915) → ⑤ log(0916) → ⑥ auth(0917) → ⑦ excel(0918) → ⑧ websocket(0919) → ⑨ config(0920) → ⑩ **cache 缓存+Redisson（已预告：锁续期）**
+① datascope → ② tenant → ③ 共存(0911) → ④ 幂等(0915) → ⑤ log(0916) → ⑥ auth(0917) → ⑦ excel(0918) → ⑧ websocket(0919) → ⑨ config(0920) → ⑩ cache 多级缓存 5 个静默失效坑(0921) → ⑪ **Redisson 锁续期（leaseTime/watchdog，落点 idempotent STRICT）**
 
 ### 通用可复用硬核事实
 - **MyBatis-Plus 3.5.7**；`MybatisPlusConfig` 用 `List<InnerInterceptor>` 注入
@@ -72,7 +72,7 @@
 - plugin-ai：`PermissionEngine` 63 行三态判决（工具名含 delete/submit/commit 触发人工审批）；`AiModelInvocationLog` 记 token + 调用时单价快照（按"分"存）
 
 ### starter 剩余矿脉（按行数）
-tenant/idempotent/log/auth/excel/websocket/config（均已写） | **cache 缓存+Redisson（已预告）** | orm | file | message | job | id | trans | social
+tenant/idempotent/log/auth/excel/websocket/config/cache（均已写） | orm | file | message | job | id | trans | social
 
 ### ⚠️ 待修真实缺陷（17 个，均未修复）
 > 完整源码细节见 output/ 下对应掘金文，此处只留索引
