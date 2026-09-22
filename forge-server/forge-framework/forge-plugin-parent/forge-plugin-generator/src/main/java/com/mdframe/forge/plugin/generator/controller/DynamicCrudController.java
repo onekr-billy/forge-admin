@@ -10,6 +10,7 @@ import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.dto.audit.DataAuditRemoveDTO;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudExcelService;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
@@ -39,6 +40,7 @@ public class DynamicCrudController {
     private final DynamicCrudService dynamicCrudService;
     private final DynamicCrudExcelService dynamicCrudExcelService;
     private final BusinessEventPublisher businessEventPublisher;
+    private final DynamicCrudCreateManager createManager;
 
     @ApiEncrypt
     @GetMapping("/page")
@@ -78,10 +80,7 @@ public class DynamicCrudController {
     @PostMapping
     public RespInfo<Map<String, Object>> create(@PathVariable String configKey,
                                                 @RequestBody Map<String, Object> data) {
-        Map<String, Object> createdData = dynamicCrudService.insert(configKey, data);
-        // 发布记录创建事件，触发器引擎异步处理
-        businessEventPublisher.publishRecordCreated(configKey, createdData != null ? createdData : data);
-        return RespInfo.success(createdData != null ? createdData : data);
+        return RespInfo.success(createManager.create(configKey, data));
     }
 
     @ApiEncrypt

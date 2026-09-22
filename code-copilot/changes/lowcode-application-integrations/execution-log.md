@@ -106,3 +106,57 @@ Java 使用上一节同一 JDK17 / Maven / 临时依赖仓库。执行 Admin `-p
 - 移动端页面无整体横向溢出；局部表格横向滚动，弹窗内容独立滚动，保存按钮可见。修复最初两个夹具 mock export 缺失后，无新增浏览器 error。
 - 未连接真实数据库、企业微信或外部系统，未启动业务服务/执行迁移/部署，未 commit/push。用户原有 file:// 页面是旧静态预览，真实工程改动不会自动更新它。
 - 验收结束已恢复浏览器 viewport、关闭本轮标签 6，保留用户原静态预览标签；仅停止本轮 localhost:5199 服务（执行会话 80679，退出 130）。最终 git diff --check 通过。
+
+## 2026-09-22 注册响应与说明优化
+
+### 范围及发现
+- 在独立工作树 `forge-admin-main / codex/open-platform-experience` 的已推送基线 `6d6278c6` 上继续，仅保留无关 `.DS_Store`。本轮不提交/推送或部署。
+- 复用现有 SDD、DESIGN、测试标准和 Forge 流程 Skill 参考，不另造消息执行链路。用户确认报错表单为自动创建；代码确认 `BusinessApplicationFormDataService.resolveRuntimeDatasource` 为自动建表选择 GenDatasource，随后按独立 JDBC 连接访问。
+- 来源加载原先在 await 后才进入第二步，且每次 SYSTEM_SERVICE 都枚举全部服务。现改为同步进入步骤并显示区域 loading，来源接口新增可选 serviceCode，在执行枚举前筛选，旧无参数查询保留。未扩大查询/发布权限。
+- 应用内默认填报、名称只读带入，只读发布快照直接载入页面，不再先查应用详情/全量列表；全局入口保留选择。sourceContext 初始化清除旧锁定和名称，Snowflake ID 保持字符串。
+- 消息页面改为“发给谁/何时发送/发送什么”，内部通道码默认折叠，说明其为自动路由标识且不需要手工填写。
+- 表单能力目前把任何受管运行数据源都拒绝，自动建表同样受影响。它并非用户配置错误；本轮只修正误导文案和空字符串编码误判，保留事务安全保护。受管数据源的完整开放填报仍是待开发项，已写入 tasks/usage，不能声称解决了用户第 2 项的实际使用阻塞。
+
+### 验证及修正
+- 复用前轮前端 11 路径矩阵，增加 application-source 组件测试；最终 12 files / 107 tests passed（15:45:11）。
+- 新增测试初次失败源于 Vitest 2 不支持 `toHaveBeenCalledExactlyOnceWith`、匿名 stub 无法按名称查找，以及卸载后的 emitted 容器清空；改为该版本可用断言、命名 stub 和持久 Pinia 状态检查后通过，不改业务断言目标。
+- 浏览器发现 REST 加载期间默认 kind=FLOW 导致流程模型字段闪现，改为按当前场景推断加载占位类型；复查无闪现。额外分离列表与详情请求序号，避免页面选择器发出初始 null 使 objectLoading 永久挂起，补充回归通过。
+- 定向 9 文件 ESLint 最终无输出、exit 0；局部格式化最初从仓库根目录运行未找到配置，改从 UI 目录运行，未改动其他文件。
+- JDK17 Admin reactor 46 模块 BUILD SUCCESS（15:32:31，24.386s）；独立开放平台 verification POM 39 tests / 0 failures / 0 errors（15:34:03，4.519s）。无全仓测试或真实 HTTP/数据库服务；原应用集成 27 项沿用前轮结果。
+- 优先尝试 Node 20.19.0，当前未安装，使用已安装 Node 24.21.0；直接执行既有 build 脚本正文，未改依赖审批配置。最终 Vite 通过，28.13s；既有 CSS/chunk/plugin timing 警告保留。
+
+### 复现与证据
+前端测试路径矩阵沿用上一节，自动包含新增测试；构建为 `node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build`。Java 沿用上一节 JDK17/Maven 临时仓库，先 Admin install，再执行 `code-copilot/changes/open-platform-experience/verification/pom.xml -Penable-tests test`。
+
+日志：`/private/tmp/forge-registration-front-tests.log`、`/private/tmp/forge-registration-backend-tests.log`、`/private/tmp/forge-registration-admin-build.log`、`/private/tmp/forge-registration-ui-build.log`。
+
+### 浏览器与清理
+- 复用 localhost:5199 真实组件夹具，为来源查询注入 6 秒模拟延迟并按 serviceCode 返回；不连接真实业务服务。实际点击 REST/低代码并观察即时 loading、当前应用/单页自动填入和发布确认；消息连接模拟保存后引导文字显示，技术编码默认折叠、可展开。
+- 桌面和 390px 深色检查完成，页面宽度/滚动宽度均 390，console error=[]。保留用户原 file:// 静态预览，关闭本轮标签 7，恢复 viewport，停止本轮服务会话 18402（退出 130）。
+- 未修改 H5 工作树，检查时其工作区干净，分支 `codex/mobile-lowcode-runtime-refactor`；不干预其他任务的提交更新。无数据库变更、真实发信、部署、commit 或 push。
+
+## 2026-09-22 第二项修复：复用页面新增
+
+### 路线与实现
+- 用户确认“表单填报就是复用表单新增”后，撤回本任务未完成的 LowcodeFormStorage、V1.0.184 运行库初始化脚本和 RuntimeJdbcTemplateProvider 连接固定改造；这些均未提交或执行，没有删除用户数据。迁移目录、运行 JDBC provider 最终与基线无差异。
+- 按 Forge 低代码流程 Skill 的既有入口/事件约定，将 `POST /ai/crud/{configKey}` 和开放适配器接入 `DynamicCrudCreateManager`，继续调用原 `DynamicCrudService.insert`。不通过 HTTP 自调用、不复制字段转换或建单逻辑、不要求另建业务动作。
+- 来源使用原运行数据源解析器检查可写与发布一致性，不再拒绝自动建表的 datasourceId；保留租户、用户委托、具体对象权限、发布版本和字段白名单。新增 storageKey 固定注册时存储路由，兼容旧主库能力快照。
+- 平台既有回执由 LowcodeFormInvocationGuard 管理：主库仍同事务；独立运行库先持久化候选主键占位，再调用普通新增。已有空占位视为处理中/未知，不能重放；成功回执返回原 recordId，摘要冲突拒绝。失败只记录能力 ID、键哈希及异常类型，不记录表单正文。
+- 共同新增入口保留原创建事件；外层事务时延后到提交成功后，再挂起已提交事务上下文派发，防止事件写入加入已完成连接。消息/流程不是持久 Outbox，不承诺 exactly-once。
+- 新增使用说明明确 FORM_SUBMISSION_UNCERTAIN 的人工核对边界，不宣称跨库自动恢复。未放开建单送审组合 SUBMIT 的既有限制。
+
+### 验证与修正
+- 最终 Admin reactor 46 模块 BUILD SUCCESS，20.898s，16:34:53；未运行全仓已知有测试编译问题的测试集。
+- 最终后端定向 12 类、58 tests / 0 failures / 0 errors，4.202s，16:40:05。verification POM 仅扩展明确测试文件白名单，覆盖本轮公共 Controller 及新增入口；H2 依赖仅 test scope。
+- 初次隔离事务测试因 H2 DATABASE_TO_LOWER 把 SQL 列别名 requestDigest 强制小写而失败；改为保留别名大小写后 53 项通过。收尾新增来源列表测试的重载参数/VO 夹具类型，以及权限测试误修改 ExecutionIdentity 返回的副本，均按实际契约修正，最终 58 项全部执行通过，未放宽生产权限判断或删除断言。
+- H2 测试使用真实 Mapper XML、Spring 事务和两个独立内存库；覆盖并发与跨库未知结果，但业务写入 Supplier 为测试夹具，不等价于真实 MySQL/动态 CRUD E2E。每个测试完成关闭自己创建的内存库。
+- 前端原 12 文件矩阵 107/107 通过（16:30:11，2.91s）；CapabilitySystemSource.vue 定向 ESLint exit 0；生产构建 27.46s、exit 0，既有 CSS/chunk/plugin timing 提示保留。Node 20.19.0 仍不可用，使用已安装 Node 24.21.0，不改依赖审批配置。
+- xmllint、git diff --check 通过；jar 清单核验无撤回的初始化脚本/类。前端仅支持文案增量，未重复浏览器模拟验收。
+
+复跑 Java 仍使用 `/private/tmp/forge-open-platform-java.CanL0f` 下 JDK17、Maven 与隔离 repository；先 `-pl forge-admin-server -am install -Dmaven.test.skip=true`，再运行 `code-copilot/changes/open-platform-experience/verification/pom.xml -Penable-tests test`。前端 Vitest 路径矩阵同上一节，构建执行原脚本正文。
+
+日志：`/private/tmp/forge-form-create-admin-build-final.log`、`/private/tmp/forge-form-create-backend-tests-final.log`、`/private/tmp/forge-form-create-front-tests.log`、`/private/tmp/forge-form-create-ui-build.log`。
+
+### 交付边界
+- 只修改 `forge-admin-main / codex/open-platform-experience`。H5 工作树仍在自己的分支且有其他任务进行中的改动，仅只读确认，不触碰。保留独立工作树已有无关 `.DS_Store`。
+- 未启动业务服务、操作线上数据库、执行迁移、真实发信、部署、提交或推送。真实网关/数据库验收仍由用户执行；当前旧 file:// 静态预览不会自动展示工程改动。

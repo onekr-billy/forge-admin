@@ -9,11 +9,13 @@
     </parent>
     <artifactId>open-platform-experience-verification</artifactId><version>1.0.0</version>
     <dependencies>
+        <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>test</scope></dependency>
         <dependency><groupId>com.mdframe.forge</groupId><artifactId>forge-plugin-capability-actions</artifactId><version>1.0.0</version></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>
     <build>
-        <testSourceDirectory>${project.basedir}/../../../../forge-server/forge-framework/forge-plugin-parent/forge-plugin-capability-parent/forge-plugin-capability-actions/src/test/java</testSourceDirectory>
+        <!-- 仅编译以下白名单测试，补入本轮公共新增 Controller 的既有回归。 -->
+        <testSourceDirectory>${project.basedir}/../../../../forge-server/forge-framework/forge-plugin-parent</testSourceDirectory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
@@ -21,6 +23,9 @@
                     <testIncludes>
                         <testInclude>**/RestEndpointSystemServiceTest.java</testInclude>
                         <testInclude>**/LowcodeFormSystemServiceTest.java</testInclude>
+                        <testInclude>**/LowcodeFormInvocationGuardTest.java</testInclude>
+                        <testInclude>**/LowcodeFormCreateChainTest.java</testInclude>
+                        <testInclude>**/DynamicCrudControllerTest.java</testInclude>
                         <testInclude>**/SystemServiceCapabilityPublisherTest.java</testInclude>
                         <testInclude>**/SystemServiceDefinitionRegistryTest.java</testInclude>
                         <testInclude>**/SystemServiceOpenGatewayAdapterTest.java</testInclude>

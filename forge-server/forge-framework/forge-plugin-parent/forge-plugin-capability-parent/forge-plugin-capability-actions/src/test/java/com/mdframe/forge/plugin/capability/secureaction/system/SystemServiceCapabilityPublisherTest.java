@@ -81,6 +81,25 @@ class SystemServiceCapabilityPublisherTest {
                 new SystemServiceDefinitionRegistry(List.of(definition)), catalogService, objectMapper);
     }
 
+    @Test
+    void filtersBeforeInspectingExpensiveUnrelatedSourcesAndKeepsLegacyListing() {
+        var flow = definition(validPublication());
+        var rest = mock(SystemServiceCapabilityDefinition.class);
+        when(rest.serviceCode()).thenReturn("system.rest.invoke");
+        when(rest.definitionVersion()).thenReturn("1");
+        when(rest.platformPermission()).thenReturn("ai:capability:system-service:invoke");
+        when(rest.registrationSource(1L)).thenReturn(new SystemServiceRegistrationSource(
+                "system.rest.invoke", "REST", "", "1", "USER", "MEDIUM",
+                objectMapper.createObjectNode(), objectMapper.createObjectNode()));
+        var publisher = new SystemServiceCapabilityPublisher(new SystemServiceDefinitionRegistry(List.of(flow, rest)), catalogService, objectMapper);
+        assertThat(publisher.registrationSources(1L, "system.rest.invoke")).hasSize(1)
+                .first().extracting(SystemServiceRegistrationSource::serviceCode).isEqualTo("system.rest.invoke");
+        verify(flow, never()).registrationSource(1L);
+        assertThatThrownBy(() -> publisher.registrationSources(1L, "unknown")).isInstanceOf(BusinessException.class);
+        assertThat(publisher.registrationSources(1L)).hasSize(2);
+        verify(flow).registrationSource(1L);
+    }
+
     private SystemServiceCapabilityDefinition definition(SystemServicePublication publication) {
         SystemServiceCapabilityDefinition definition = mock(SystemServiceCapabilityDefinition.class);
         when(definition.serviceCode()).thenReturn("flow.process.start");

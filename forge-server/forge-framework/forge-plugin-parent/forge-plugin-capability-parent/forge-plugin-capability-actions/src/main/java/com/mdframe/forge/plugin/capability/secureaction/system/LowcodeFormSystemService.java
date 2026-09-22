@@ -1,6 +1,5 @@
 package com.mdframe.forge.plugin.capability.secureaction.system;
 
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -8,15 +7,14 @@ import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
 import com.mdframe.forge.plugin.capability.controlplane.audit.CapabilityActorType;
 import com.mdframe.forge.plugin.capability.model.CapabilityRiskLevel;
 import com.mdframe.forge.plugin.capability.schema.CapabilitySchemaValidator;
-import com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper;
 import com.mdframe.forge.plugin.capability.secureaction.schema.LowcodeCapabilitySchemaTypeResolver;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectQueryDTO;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStatus;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
-import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectActionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
 import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
@@ -25,8 +23,6 @@ import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -41,21 +37,19 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
     private final BusinessObjectService objects;
     private final BusinessObjectActionService actions;
     private final AiCrudConfigService configs;
-    private final DynamicCrudService records;
-    private final BusinessEventPublisher events;
-    private final LowcodeFormReceiptMapper receipts;
+    private final DynamicCrudCreateManager formCreate;
+    private final LowcodeFormInvocationGuard invocations;
+    private final LowcodeRuntimeDataSourceResolver datasourceResolver;
     private final ObjectMapper mapper;
     private final CapabilitySchemaValidator validator;
     private final BusinessDocumentConfigMapper documents;
-    private final TransactionTemplate transaction;
 
     public LowcodeFormSystemService(BusinessObjectService objects, BusinessObjectActionService actions,
-            AiCrudConfigService configs, DynamicCrudService records, BusinessEventPublisher events,
-            LowcodeFormReceiptMapper receipts, ObjectMapper mapper, CapabilitySchemaValidator validator,
-            PlatformTransactionManager transactionManager, BusinessDocumentConfigMapper documents) {
-        this.objects = objects; this.actions = actions; this.configs = configs; this.records = records;
-        this.events = events; this.receipts = receipts; this.mapper = mapper; this.validator = validator;
-        this.transaction = new TransactionTemplate(transactionManager);
+            AiCrudConfigService configs, DynamicCrudCreateManager formCreate, LowcodeFormInvocationGuard invocations,
+            LowcodeRuntimeDataSourceResolver datasourceResolver, ObjectMapper mapper, CapabilitySchemaValidator validator,
+            BusinessDocumentConfigMapper documents) {
+        this.objects = objects; this.actions = actions; this.configs = configs; this.formCreate = formCreate;
+        this.invocations = invocations; this.datasourceResolver = datasourceResolver; this.mapper = mapper; this.validator = validator;
         this.documents = documents;
     }
 
@@ -85,7 +79,7 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
                 item.put("available", false).put("unavailableReason", exception.getMessage());
             }
         }
-        return new SystemServiceRegistrationSource(CODE, "低代码表单填报", "向已发布的应用表单新增记录；不自动送审。需要建单并送审时请选择流程操作。",
+        return new SystemServiceRegistrationSource(CODE, "低代码表单填报", "复用已发布表单的新增逻辑及原有创建事件；需要显式送审时请选择流程操作。",
                 definitionVersion(), CapabilityActorType.USER.name(), CapabilityRiskLevel.MEDIUM.name(), object(), options);
     }
 
@@ -122,11 +116,13 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
         input.putArray("required").add("data");
         ObjectNode policy = mapper.createObjectNode().put("suiteCode", source.suite()).put("objectCode", source.code())
                 .put("configKey", source.configKey()).put("publishedObjectVersion", source.version())
-                .put("runtimeVersion", source.runtimeVersion()).put("permission", permission(source.code()));
+                .put("runtimeVersion", source.runtimeVersion()).put("permission", permission(source.code()))
+                .put("storageKey", source.storageKey());
         policy.set("registrationParameters", parameters.deepCopy());
         policy.putObject("documentation").putArray("businessRules")
-                .add("仅创建记录，不启动流程；调用必须使用用户委托身份。")
-                .add("重复请求使用相同 Idempotency-Key，建单与回执在同一主库事务提交。")
+                .add("调用必须使用用户委托身份；只执行新增及原有创建事件，不额外发起审批。")
+                .add("复用应用内表单新增接口的业务链路及数据源路由，无需另建业务动作。")
+                .add("重复请求使用相同 Idempotency-Key；成功调用返回原记录。独立运行库结果不确定时先核对记录，不要换键自动重试。")
                 .add("重新发布业务对象或运行配置后，应审核并发布能力新版本。");
         ObjectNode output = object().put("$schema", CapabilitySchemaValidator.DRAFT_2020_12);
         output.putObject("properties").putObject("recordId").put("type", "string");
@@ -143,13 +139,20 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
 
     @Override
     public void validate(SecureActionDescriptor descriptor, Map<String, Object> input) {
+        validatedSource(descriptor, input);
+    }
+
+    private Source validatedSource(SecureActionDescriptor descriptor, Map<String, Object> input) {
         ExecutionIdentity identity = identity();
         JsonNode policy = descriptor.policySnapshot();
         Source source = source(identity.loginUser().getTenantId(), policy.path("suiteCode").asText(), policy.path("objectCode").asText());
         if (!source.configKey().equals(policy.path("configKey").asText())
                 || source.version() != policy.path("publishedObjectVersion").asInt()
                 || source.runtimeVersion() != policy.path("runtimeVersion").asInt()
-                || !permission(source.code()).equals(descriptor.permission())) { throw new BusinessException(409, "FORM_SOURCE_CHANGED"); }
+                || !permission(source.code()).equals(descriptor.permission())
+                || policy.has("storageKey") && !source.storageKey().equals(policy.path("storageKey").asText())) {
+            throw new BusinessException(409, "FORM_SOURCE_CHANGED");
+        }
         if (!SessionHelper.hasPermission(descriptor.permission())) { throw new BusinessException(403, "无权填报该业务对象"); }
         descriptor.inputSchema().path("properties").path("data").path("properties").fieldNames().forEachRemaining(field -> {
             if (!source.fields().containsKey(field)) { throw new BusinessException(409, "FORM_FIELD_POLICY_CHANGED"); }
@@ -157,11 +160,12 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
         Map<String, Object> request = new LinkedHashMap<>(input);
         request.remove("idempotencyKey");
         validator.validateInstance(descriptor.inputSchema(), mapper.valueToTree(request));
+        return source;
     }
 
     @Override
     public Map<String, Object> execute(SecureActionDescriptor descriptor, Map<String, Object> input, String requestId) {
-        validate(descriptor, input);
+        Source source = validatedSource(descriptor, input);
         ExecutionIdentity identity = identity();
         String key = Objects.toString(input.get("idempotencyKey"), "");
         if (key.isBlank()) { throw new BusinessException("missing_idempotency_key"); }
@@ -170,23 +174,10 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
         Long actor = identity.actorUserId();
         Long org = identity.loginUser().getActiveOrgId();
         String digest = hash(descriptor.version() + ":" + actor + ":" + org + ":" + canonical(mapper.valueToTree(input.get("data"))));
-        return Objects.requireNonNull(transaction.execute(status -> {
-            receipts.reserve(IdWorker.getId(), tenant, identity.clientId(), descriptor.capabilityId(), keyHash, digest, actor, org);
-            Map<String, Object> receipt = receipts.lock(tenant, identity.clientId(), descriptor.capabilityId(), keyHash);
-            if (receipt == null || !digest.equals(receipt.get("requestDigest"))) { throw new BusinessException(409, "IDEMPOTENCY_CONFLICT"); }
-            String previous = Objects.toString(receipt.get("recordId"), "");
-            if (!previous.isBlank()) { return Map.<String, Object>of("recordId", previous, "idempotentHit", true); }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = new LinkedHashMap<>((Map<String, Object>) input.get("data"));
-            String configKey = descriptor.policySnapshot().path("configKey").asText();
-            Map<String, Object> created = records.insert(configKey, data);
-            String recordId = Objects.toString(created.get("id"), "");
-            if (recordId.isBlank() || receipts.complete(tenant, identity.clientId(), descriptor.capabilityId(), keyHash, recordId, actor) != 1) {
-                throw new BusinessException("表单建单未返回有效记录或幂等回执保存失败");
-            }
-            events.publishRecordCreated(configKey, created);
-            return Map.<String, Object>of("recordId", recordId, "idempotentHit", false);
-        }));
+        var request = new LowcodeFormInvocationGuard.Request(tenant, identity.clientId(), descriptor.capabilityId(), keyHash, digest, actor, org);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = new LinkedHashMap<>((Map<String, Object>) input.get("data"));
+        return invocations.execute(request, source.local(), () -> formCreate.create(source.configKey(), data));
     }
 
     private Source source(Long tenantId, String suite, String code) {
@@ -200,23 +191,17 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
             throw new BusinessException("表单运行配置未发布");
         }
         var runtime = configs.resolvePublishedRuntimeConfig(current);
-        if (runtime.getRuntimeDatasourceId() != null || runtime.getRuntimeDatasourceCode() != null
-                && !runtime.getRuntimeDatasourceCode().isBlank()) { throw new BusinessException("外部数据源暂不支持原子建单，请使用业务动作扩展"); }
-        if (runtime.getRuntimeDatasourceSnapshot() != null && !runtime.getRuntimeDatasourceSnapshot().isBlank()) {
-            JsonNode snapshot;
-            try { snapshot = mapper.readTree(runtime.getRuntimeDatasourceSnapshot()); }
-            catch (Exception exception) { throw new BusinessException("表单数据源快照不可解析"); }
-            if (snapshot != null && (!snapshot.path("datasourceId").isMissingNode() && !snapshot.path("datasourceId").isNull()
-                    || !snapshot.path("datasourceCode").asText("").isBlank())) {
-                throw new BusinessException("外部数据源暂不支持原子建单，请使用业务动作扩展");
-            }
-        }
         LowcodeModelSchema model;
         try { model = mapper.readValue(version.getModelSnapshot(), LowcodeModelSchema.class); }
         catch (Exception exception) { throw new BusinessException("表单发布模型不可解析"); }
-        if (model.getRuntimeDatasource() != null && (model.getRuntimeDatasource().getDatasourceId() != null
-                || model.getRuntimeDatasource().getDatasourceCode() != null)) {
-            throw new BusinessException("外部数据源暂不支持原子建单");
+        // 与普通新增使用同一解析器；独立运行数据源不是不支持表单新增的理由。
+        var target = datasourceResolver.resolve(runtime);
+        var modelTarget = datasourceResolver.resolve(model);
+        if (target.isMaster() != modelTarget.isMaster() || !Objects.equals(target.getDatasourceId(), modelTarget.getDatasourceId())) {
+            throw new BusinessException("表单发布模型与运行配置的数据源不一致，请重新发布表单");
+        }
+        if (target.isReadonly() || !target.isAllowWrite()) {
+            throw new BusinessException("表单运行数据源不可写，请检查数据源配置");
         }
         if (model.getChildren() != null && !model.getChildren().isEmpty() || "MASTER_DETAIL".equals(model.getAppType())) {
             throw new BusinessException("主子表请注册包含明细校验的业务动作；通用填报当前支持单表表单");
@@ -253,7 +238,8 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
         if (fields.isEmpty() || version.getPublishVersion() == null || runtime.getPublishedVersion() == null) {
             throw new BusinessException("表单无可写字段或缺少发布版本");
         }
-        return new Source(suite, code, published.object().getObjectName(), version.getConfigKey(), version.getPublishVersion(), runtime.getPublishedVersion(), fields);
+        String storageKey = (target.isMaster() ? "master" : "runtime:" + target.getDatasourceId()) + ":" + target.getTableName();
+        return new Source(suite, code, published.object().getObjectName(), version.getConfigKey(), version.getPublishVersion(), runtime.getPublishedVersion(), fields, target.isMaster(), storageKey);
     }
 
     private ExecutionIdentity identity() {
@@ -286,5 +272,6 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
         var names = new TreeSet<String>(); node.fieldNames().forEachRemaining(names::add);
         names.forEach(name -> result.set(name, canonical(node.path(name)))); return result;
     }
-    private record Source(String suite, String code, String name, String configKey, int version, int runtimeVersion, Map<String, LowcodeFieldSchema> fields) { }
+    private record Source(String suite, String code, String name, String configKey, int version, int runtimeVersion,
+                          Map<String, LowcodeFieldSchema> fields, boolean local, String storageKey) { }
 }

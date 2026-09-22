@@ -95,10 +95,14 @@ describe('scenario registration', () => {
   })
   it('accepts the existing published snapshot even when the designer has changes', async () => {
     await start()
+    expect(api.businessObjectList).not.toHaveBeenCalled()
+    expect(api.getSystemServiceRegistrationSources).not.toHaveBeenCalled()
+    await state.chooseScenario('flow')
     expect(state.objects.value).toHaveLength(2)
   })
   it('does not overwrite a newer object selection with an old source response', async () => {
     await start()
+    await state.chooseScenario('flow')
     let resolveFirst
     api.getFlowActionRegistrationSource.mockImplementationOnce(() => new Promise((resolve) => {
       resolveFirst = resolve
@@ -181,6 +185,86 @@ describe('scenario registration', () => {
     expect(state.form.systemEndpointId).toBe('abc123456789')
     expect(state.scenario.value).toBe('rest')
     expect(state.sourceError.value).toBe('')
+    expect(state.submitDisabled.value).toBe(false)
+  })
+  it('enters the loading step immediately and requests only the chosen service', async () => {
+    await start()
+    let complete
+    api.getSystemServiceRegistrationSources.mockImplementationOnce(() => new Promise((resolve) => {
+      complete = resolve
+    }))
+    const loading = state.chooseScenario('rest')
+    expect(state.step.value).toBe(2)
+    expect(state.sourceLoading.value).toBe(true)
+    expect(state.systemKind.value).toBe('REST')
+    expect(state.submitDisabled.value).toBe(true)
+    expect(api.getSystemServiceRegistrationSources).toHaveBeenLastCalledWith({ serviceCode: 'system.rest.invoke' })
+    complete({ data: services })
+    await loading
+    expect(state.sourceLoading.value).toBe(false)
+  })
+  it('does not overwrite a newer scenario or reopen a closed wizard on late completion', async () => {
+    await start()
+    let complete
+    api.getSystemServiceRegistrationSources.mockImplementationOnce(() => new Promise((resolve) => {
+      complete = resolve
+    }))
+    const old = state.chooseScenario('application')
+    await state.chooseScenario('rest')
+    complete({ data: services.filter(item => item.serviceCode === 'lowcode.form.create') })
+    await old
+    expect(state.form.systemServiceCode).toBe('system.rest.invoke')
+    expect(state.sourceLoading.value).toBe(false)
+    api.getSystemServiceRegistrationSources.mockImplementationOnce(() => new Promise((resolve) => {
+      complete = resolve
+    }))
+    const closing = state.chooseScenario('application')
+    props.show = false
+    await flushPromises()
+    props.show = true
+    await flushPromises()
+    complete({ data: services })
+    await closing
+    expect(state.step.value).toBe(1)
+    expect(state.systemServices.value).toEqual([])
+    expect(state.sourceLoading.value).toBe(false)
+  })
+  it('shows failed loading and can retry without leaving the configuration step', async () => {
+    await start()
+    api.getSystemServiceRegistrationSources.mockRejectedValueOnce(new Error('来源查询失败'))
+    await state.chooseScenario('application')
+    expect(state.step.value).toBe(2)
+    expect(state.sourceLoading.value).toBe(false)
+    expect(state.sourceError.value).toBe('来源查询失败')
+    expect(state.submitDisabled.value).toBe(true)
+    await state.loadSystemServices()
+    expect(state.sourceError.value).toBe('')
+    expect(state.form.systemServiceCode).toBe('lowcode.form.create')
+  })
+  it('defaults locked application registration to form filling without a scenario round-trip', async () => {
+    await start({ initialContext: { lockApplication: true, applicationId: '9007199254740999', applicationCode: 'law', applicationName: '案件管理' } })
+    expect(state.step.value).toBe(2)
+    expect(state.scenario.value).toBe('application')
+    expect(state.form.systemServiceCode).toBe('lowcode.form.create')
+    expect(api.businessObjectList).not.toHaveBeenCalled()
+    expect(api.getSystemServiceRegistrationSources).toHaveBeenCalledTimes(1)
+    expect(api.getSystemServiceRegistrationSources).toHaveBeenCalledWith({ serviceCode: 'lowcode.form.create' })
+  })
+  it('does not leave the object loader stuck when the page picker initially clears its selection', async () => {
+    await start()
+    let complete
+    api.businessObjectList.mockImplementationOnce(() => new Promise((resolve) => {
+      complete = resolve
+    }))
+    const loading = state.chooseScenario('flow')
+    await state.selectApplicationPage(null)
+    expect(state.objectLoading.value).toBe(true)
+    complete({ data: objects })
+    await loading
+    expect(state.objectLoading.value).toBe(false)
+    expect(state.objects.value).toHaveLength(2)
+    state.form.objectId = '1'
+    await state.handleObjectChange('1')
     expect(state.submitDisabled.value).toBe(false)
   })
 })

@@ -76,29 +76,40 @@
       </section>
       <section class="configuration-section">
         <div class="section-label">
-          <h3>业务消息</h3><p class="integration-help">
-            通过消息模板<br>通知流程发起人
+          <h3>业务消息通知</h3><p class="integration-help">
+            在流程运行时<br>发送企业微信消息
           </p>
         </div>
         <div class="section-content">
           <div class="readiness-line">
             <n-tag size="small" :bordered="false" :type="savedConnection?.messageAvailable ? 'success' : 'default'">
-              {{ savedConnection?.messageAvailable ? '配置齐全' : '待配置' }}
-            </n-tag><span class="integration-help">{{ savedConnection?.messageAvailable ? '实际发送结果请查看企业协同投递记录' : '需绑定连接并配置 MESSAGE 应用' }}</span>
+              {{ savedConnection?.messageAvailable ? '发送连接已配置' : '待配置发送连接' }}
+            </n-tag><span class="integration-help">{{ savedConnection?.messageAvailable ? '不会自动发送，还需在业务流程中设置发送时机和内容' : '先绑定企业连接，并在平台连接管理中配置消息应用（MESSAGE）' }}</span>
           </div>
           <template v-if="savedConnection?.messageAvailable">
-            <label>应用消息通道</label>
-            <div class="copy-row">
-              <n-input :value="channelCode" readonly aria-label="业务消息通道编码" /><n-button @click="copy(channelCode)">
-                复制通道
-              </n-button>
-            </div>
-            <p class="integration-help">
-              在“发送消息”节点勾选本应用企业协同通道，选择模板并发布流程。发起人须先绑定企业账号；绑定连接不会自动发送消息。
-            </p>
+            <dl class="message-guide">
+              <dt>发给谁</dt><dd>当前流程的发起人，须先绑定企业账号。</dd>
+              <dt>何时发送</dt><dd>业务流程运行到“发送消息”节点时，例如提交成功或审批完成后。</dd>
+              <dt>发送什么</dt><dd>在该节点选择消息模板，并勾选“通过本应用企业协同通道发送”，保存并发布流程。</dd>
+            </dl>
             <n-button size="small" secondary @click="openFlows">
-              配置业务流程通知 →
+              去业务流程配置通知 →
             </n-button>
+            <p class="integration-help">
+              发送结果及失败原因请查看企业协同投递记录；这里仅检查连接条件，不代表通知规则已启用或投递成功。
+            </p>
+            <n-collapse class="message-technical">
+              <n-collapse-item title="技术详情（无需手工配置）" name="channel">
+                <p class="integration-help">
+                  下面的编码由系统自动生成，用于把本应用的消息转交给已绑定的企业连接。配置流程时只需勾选，不需要复制或填写此编码。
+                </p>
+                <div class="copy-row">
+                  <n-input :value="channelCode" readonly aria-label="业务消息通道编码" /><n-button size="small" @click="copy(channelCode)">
+                    复制编码
+                  </n-button>
+                </div>
+              </n-collapse-item>
+            </n-collapse>
           </template>
         </div>
       </section>
@@ -209,6 +220,23 @@ label {
   display: flex;
   gap: 8px;
   min-width: 0;
+}
+.message-guide {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 14px 0;
+}
+.message-guide dt {
+  color: var(--integration-muted);
+}
+.message-guide dd {
+  margin: 0;
+}
+.message-technical {
+  margin-top: 14px;
 }
 @media (max-width: 700px) {
   .configuration-section {

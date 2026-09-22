@@ -4,7 +4,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import java.util.Map;
 
-/** 表单建单与幂等回执在同一个主库事务内提交。回执仅保存摘要和记录 ID。 */
+/** 平台表单调用回执，仅保存摘要和记录 ID；跨库请求的空回执表示已占位但结果未确认。 */
 @Mapper
 public interface LowcodeFormReceiptMapper {
     int reserve(@Param("id") Long id, @Param("tenantId") Long tenantId,

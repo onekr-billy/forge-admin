@@ -26,6 +26,14 @@ public class SystemServiceCapabilityPublisher {
     }
 
     public List<SystemServiceRegistrationSource> registrationSources(Long tenantId) {
+        return registrationSources(tenantId, null);
+    }
+
+    public List<SystemServiceRegistrationSource> registrationSources(Long tenantId, String serviceCode) {
+        // Filter before enumeration: FORM sources inspect published objects and must not delay REST selection.
+        if (StringUtils.isNotBlank(serviceCode)) {
+            return List.of(registry.require(serviceCode).registrationSource(tenantId));
+        }
         return registry.definitions().stream()
                 .map(definition -> definition.registrationSource(tenantId))
                 .toList();

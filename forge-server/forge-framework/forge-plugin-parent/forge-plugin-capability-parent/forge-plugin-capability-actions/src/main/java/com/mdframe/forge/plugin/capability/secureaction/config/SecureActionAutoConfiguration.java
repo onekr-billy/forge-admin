@@ -22,10 +22,11 @@ import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceOpen
 import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceCapabilityPublisher;
 import com.mdframe.forge.plugin.capability.secureaction.system.RestEndpointSystemService;
 import com.mdframe.forge.plugin.capability.secureaction.system.LowcodeFormSystemService;
+import com.mdframe.forge.plugin.capability.secureaction.system.LowcodeFormInvocationGuard;
 import com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
-import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
 import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
 import jakarta.validation.Validator;
@@ -52,12 +53,19 @@ public class SecureActionAutoConfiguration {
     }
 
     @Bean
+    public LowcodeFormInvocationGuard lowcodeFormInvocationGuard(
+            LowcodeFormReceiptMapper receipts, PlatformTransactionManager transactionManager) {
+        return new LowcodeFormInvocationGuard(receipts, transactionManager);
+    }
+
+    @Bean
     public LowcodeFormSystemService lowcodeFormSystemService(
             BusinessObjectService objects, BusinessObjectActionService actions, AiCrudConfigService configs,
-            DynamicCrudService records, BusinessEventPublisher events, LowcodeFormReceiptMapper receipts,
-            ObjectMapper mapper, CapabilitySchemaValidator validator, PlatformTransactionManager transactionManager,
+            DynamicCrudCreateManager formCreate, LowcodeFormInvocationGuard invocations,
+            LowcodeRuntimeDataSourceResolver datasourceResolver,
+            ObjectMapper mapper, CapabilitySchemaValidator validator,
             BusinessDocumentConfigMapper documents) {
-        return new LowcodeFormSystemService(objects, actions, configs, records, events, receipts, mapper, validator, transactionManager, documents);
+        return new LowcodeFormSystemService(objects, actions, configs, formCreate, invocations, datasourceResolver, mapper, validator, documents);
     }
 
     @Bean

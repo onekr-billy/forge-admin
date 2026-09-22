@@ -1,10 +1,9 @@
 <template>
   <div class="system-source">
-    <n-form-item v-if="options.length !== 1" label="能力类型" path="systemServiceCode">
+    <n-form-item v-if="!loading && options.length > 1" label="能力类型" path="systemServiceCode">
       <n-select v-model:value="form.systemServiceCode" :options="options" :loading="loading" :disabled="upgrade" placeholder="选择能力类型" @update:value="emit('serviceChange')" />
     </n-form-item>
-    <n-spin v-if="loading" size="small" />
-    <n-empty v-else-if="!options.length" description="尚无可用来源，请确认后端版本和发布权限。" />
+    <n-empty v-if="!loading && !options.length" description="尚无可用来源，请确认后端版本和发布权限。" />
     <p v-if="service" class="source-description">
       {{ service.description }}
     </p>
@@ -39,7 +38,7 @@
       <n-form-item v-if="upgrade || directObject" label="表单对象" path="systemFormId">
         <n-select v-model:value="form.systemFormId" :options="forms" filterable :disabled="upgrade" placeholder="选择已发布表单对象" @update:value="emit('formChange')" />
       </n-form-item>
-      <n-alert v-if="pageError || selectedForm && !selectedForm.available" type="warning">
+      <n-alert v-if="pageError || selectedForm && !selectedForm.available" type="warning" title="当前表单暂不能通过开放接口填报">
         {{ pageError || selectedForm.unavailableReason }}
       </n-alert>
       <template v-if="selectedForm?.available">
@@ -56,6 +55,9 @@
           系统字段不可填写，模型必填项已锁定。这里只创建记录；需要填报并送审，请改选“流程操作 → 提交业务申请”。
         </n-alert>
       </template>
+      <p class="source-description form-support">
+        表单填报直接复用应用内的新增逻辑，支持自动建表，无需另外创建业务动作或配置接口地址。当前开放字段配置支持单表；主子表和复杂明细暂不支持此入口。
+      </p>
     </template>
   </div>
 </template>
@@ -95,15 +97,15 @@ function normalizeFields() {
 <style scoped>
 .source-description {
   margin: 0 0 16px;
-  color: var(--n-text-color-3);
+  color: var(--text-tertiary);
   line-height: 1.6;
 }
 .source-toggle {
   margin-bottom: 16px;
 }
 .endpoint-summary {
-  border: 1px solid var(--n-border-color);
-  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
   padding: 16px;
   margin-bottom: 16px;
   overflow-wrap: anywhere;
@@ -112,11 +114,11 @@ function normalizeFields() {
   font-weight: 600;
 }
 .endpoint-summary p {
-  color: var(--n-text-color-2);
+  color: var(--text-secondary);
 }
 .endpoint-summary > span {
   font-size: 12px;
-  color: var(--n-text-color-3);
+  color: var(--text-tertiary);
 }
 .parameter-list {
   margin-top: 16px;
@@ -126,9 +128,13 @@ function normalizeFields() {
   justify-content: space-between;
   gap: 16px;
   padding: 8px 0;
-  border-top: 1px solid var(--n-border-color);
+  border-top: 1px solid var(--border-light);
 }
 .parameter-list span {
-  color: var(--n-text-color-3);
+  color: var(--text-tertiary);
+}
+.form-support {
+  margin-top: 14px;
+  font-size: 12px;
 }
 </style>

@@ -18,6 +18,8 @@ import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectServ
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
@@ -44,6 +46,8 @@ class SecureActionAutoConfigurationTest {
             .withBean(BusinessEventPublisher.class, () -> mock(BusinessEventPublisher.class))
             .withBean(AiCrudConfigService.class, () -> mock(AiCrudConfigService.class))
             .withBean(DynamicCrudService.class, () -> mock(DynamicCrudService.class))
+            .withBean(DynamicCrudCreateManager.class, () -> mock(DynamicCrudCreateManager.class))
+            .withBean(LowcodeRuntimeDataSourceResolver.class, () -> mock(LowcodeRuntimeDataSourceResolver.class))
             .withBean(BusinessDocumentConfigMapper.class, () -> mock(BusinessDocumentConfigMapper.class))
             .withBean(BusinessObjectMapper.class, () -> mock(BusinessObjectMapper.class))
             .withBean(AiCrudConfigMapper.class, () -> mock(AiCrudConfigMapper.class))

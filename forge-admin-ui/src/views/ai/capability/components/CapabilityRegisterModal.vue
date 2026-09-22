@@ -43,6 +43,10 @@
         当前版本为 {{ capability.currentVersion }}。新版本会重新读取当前绑定生成快照，旧版本保持不变。
       </n-alert>
 
+      <div v-if="sourceLoading" class="source-loading" role="status" aria-live="polite">
+        <n-spin size="small" /><span>{{ isUpgrade ? '正在读取当前能力和发布来源…' : scenario === 'rest' ? '正在加载可开放的系统接口…' : '正在加载已发布的页面和能力来源…' }}</span>
+      </div>
+
       <n-form-item v-if="scenario !== 'rest'" label="操作方式">
         <n-radio-group v-model:value="form.sourceType" :disabled="isUpgrade" @update:value="handleSourceTypeChange">
           <n-radio-button v-if="scenario === 'application' && allowedTypes.includes('BUSINESS_ACTION')" value="BUSINESS_ACTION">
@@ -263,7 +267,7 @@
       </template>
 
       <template v-else>
-        <CapabilitySystemSource :services="systemServices" :options="systemServiceOptions" :loading="systemSourceLoading" :upgrade="isUpgrade" @service-change="handleSystemServiceChange" @form-change="handleSystemFormChange" @parameters-change="updateGeneratedCode" />
+        <CapabilitySystemSource :services="systemServices" :options="systemServiceOptions" :loading="systemSourceLoading || draftLoading" :upgrade="isUpgrade" @service-change="handleSystemServiceChange" @form-change="handleSystemFormChange" @parameters-change="updateGeneratedCode" />
         <template v-if="systemKind === 'FLOW'">
           <n-form-item label="流程模型" path="systemModelId">
             <n-select
@@ -389,7 +393,7 @@
         <n-button v-if="step > (isUpgrade ? 2 : 1)" :disabled="submitting" @click="step--">
           上一步
         </n-button>
-        <n-button v-if="step === 2" type="primary" :disabled="submitDisabled" @click="nextStep">
+        <n-button v-if="step === 2" type="primary" :loading="sourceLoading" :disabled="submitDisabled" @click="nextStep">
           检查并继续
         </n-button>
         <n-button
@@ -444,6 +448,8 @@ const {
   objectLoading,
   detailLoading,
   systemSourceLoading,
+  sourceLoading,
+  draftLoading,
   submitting,
   sourceError,
   loadSystemServices,
@@ -489,6 +495,17 @@ const {
 </script>
 
 <style scoped>
+.source-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
 .review-fields {
   margin: 0 0 20px;
 }
