@@ -1,6 +1,11 @@
 <template>
   <Transition name="mega-panel">
-    <div v-if="expandedMenu" id="business-mega-panel" class="business-mega-panel" :aria-label="`${expandedMenu.label}子菜单`" :data-menu-key="expandedMenu.key">
+    <div
+      v-if="expandedMenu" id="business-mega-panel"
+      class="business-mega-panel"
+      :aria-label="`${expandedMenu.label}子菜单`" :data-menu-key="expandedMenu.key"
+      :style="panelAnchorStyle"
+    >
       <div class="business-mega-inner">
         <aside class="mega-panel-aside">
           <div class="mega-panel-heading">
@@ -57,23 +62,21 @@
           </header>
 
           <div v-if="activeSection" class="mega-links">
-            <Transition name="mega-section-view" mode="out-in">
-              <section v-if="activeSection.hasChildren" :key="activeSection.key" class="mega-section-content">
-                <WorkbenchMenuBranch :items="activeSection.items" />
-              </section>
-              <section v-else :key="`direct-${activeSection.key}`" class="mega-direct-entry">
-                <span class="mega-direct-entry__icon" aria-hidden="true">
-                  <IconRenderer v-if="typeof activeSection.icon === 'string' && activeSection.icon" :icon="activeSection.icon" :size="24" />
-                  <component :is="activeSection.icon" v-else-if="activeSection.icon" />
-                  <i v-else class="i-lucide:arrow-up-right" />
-                </span>
-                <strong>{{ activeSection.title }}</strong>
-                <span>该功能可直接进入，无下级菜单。</span>
-                <button type="button" @click="navigate(activeSection.entry)">
-                  进入功能
-                </button>
-              </section>
-            </Transition>
+            <section v-if="activeSection.hasChildren" :key="activeSection.key" class="mega-section-content">
+              <WorkbenchMenuBranch :items="activeSection.items" />
+            </section>
+            <section v-else :key="`direct-${activeSection.key}`" class="mega-direct-entry">
+              <span class="mega-direct-entry__icon" aria-hidden="true">
+                <IconRenderer v-if="typeof activeSection.icon === 'string' && activeSection.icon" :icon="activeSection.icon" :size="24" />
+                <component :is="activeSection.icon" v-else-if="activeSection.icon" />
+                <i v-else class="i-lucide:arrow-up-right" />
+              </span>
+              <strong>{{ activeSection.title }}</strong>
+              <span>该功能可直接进入，无下级菜单。</span>
+              <button type="button" @click="navigate(activeSection.entry)">
+                进入功能
+              </button>
+            </section>
           </div>
 
           <div v-else class="mega-search-empty" role="status">
@@ -91,7 +94,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 import { useBusinessWorkbenchStore } from '@/stores/layout/businessWorkbenchStore'
 import { countMenuLeaves, filterMegaSections } from '../menu-model'
@@ -102,6 +105,7 @@ const store = useBusinessWorkbenchStore()
 const { activeKey, expandedMenu, navigate, sections, trail } = useWorkbenchNavigation()
 const searchQuery = ref('')
 const selectedSectionKey = ref(null)
+const panelAnchorStyle = ref({})
 const filteredSections = computed(() => filterMegaSections(sections.value, searchQuery.value))
 const menuDescription = computed(() => `集中查看和使用${expandedMenu.value?.label || '当前模块'}下的授权能力。`)
 const currentSectionKey = computed(() => trail.value[1]?.key)
@@ -128,11 +132,40 @@ function handleSection(section) {
     navigate(section.entry)
 }
 
+function syncPanelAnchor() {
+  if (!store.activeMenu || window.innerWidth <= 640) {
+    panelAnchorStyle.value = {}
+    return
+  }
+  const header = document.querySelector('.business-workbench-header')
+  const buttons = [...(header?.querySelectorAll('.business-mega-triggers > button[aria-controls="business-mega-panel"]') || [])]
+  const activeButton = buttons.find(button => button.dataset.menuKey === String(store.activeMenu))
+  if (!header || !activeButton || !buttons.length)
+    return
+
+  const headerRect = header.getBoundingClientRect()
+  const anchorOffsets = buttons.map(button => button.getBoundingClientRect().left - headerRect.left)
+  const activeOffset = activeButton.getBoundingClientRect().left - headerRect.left
+  const safeRight = Math.min(headerRect.right, window.innerWidth) - 12
+  const safeWidth = safeRight - headerRect.left - Math.max(...anchorOffsets)
+  panelAnchorStyle.value = {
+    '--mega-panel-anchor-left': `${Math.max(0, activeOffset)}px`,
+    '--mega-panel-anchor-width': `${Math.min(1040, Math.max(320, safeWidth))}px`,
+    '--mega-panel-anchor-translate': '0',
+  }
+}
+
 watch(() => store.activeMenu, () => {
   searchQuery.value = ''
   selectedSectionKey.value = null
+  syncPanelAnchor()
 })
 watch(searchQuery, () => {
   selectedSectionKey.value = null
 })
+onMounted(() => {
+  syncPanelAnchor()
+  window.addEventListener('resize', syncPanelAnchor)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', syncPanelAnchor))
 </script>
