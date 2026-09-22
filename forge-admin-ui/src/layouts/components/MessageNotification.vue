@@ -451,7 +451,7 @@ defineExpose({
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: currentColor;
+  color: var(--workbench-muted);
   cursor: pointer;
 }
 
