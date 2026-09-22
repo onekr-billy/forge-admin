@@ -3,7 +3,7 @@
     <n-tooltip trigger="hover" placement="left">
       <template #trigger>
         <button id="layout-setting" class="layout-setting-entry" type="button" @click="drawerVisible = true">
-          <i class="layout-setting-icon ai-icon:settings" />
+          <i class="layout-setting-icon i-lucide:panels-top-left" />
         </button>
       </template>
       布局与外观
@@ -247,6 +247,7 @@ const appStore = useAppStore()
 const drawerVisible = ref(false)
 
 const layoutOptions = [
+  { label: '业务工作台', value: 'business-workbench', preview: 'top', description: '顶部导航与分组菜单，适合多模块业务后台。' },
   { label: '简约', value: 'simple', preview: 'side', description: '侧栏更轻，适合常规后台。' },
   { label: '通用', value: 'normal', preview: 'side-top', description: '顶部工具栏 + 左侧菜单。' },
   { label: '顶部菜单', value: 'top-menu', preview: 'top', description: '一级导航集中在顶部。' },
@@ -335,9 +336,7 @@ function resetTheme() {
   display: inline-block;
   width: 20px;
   height: 20px;
-  transform-origin: center center;
-  animation: layout-setting-spin 8s linear infinite;
-  will-change: transform;
+  transition: color var(--transition-fast);
 }
 
 .appearance-shell {
@@ -654,16 +653,6 @@ function resetTheme() {
 
 .setting-note {
   margin: 14px 0 0;
-}
-
-@keyframes layout-setting-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @media (max-width: 860px) {

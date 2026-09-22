@@ -19,7 +19,7 @@ export const basePermissions = [
 ]
 
 // 默认设置
-export const defaultLayout = 'top-menu'
+export const defaultLayout = 'business-workbench'
 export const defaultPrimaryColor = '#4242F7'
 export const naiveThemeOverrides = {
   common: {
@@ -44,10 +44,15 @@ export const layoutSettingVisible = true
 // 布局配置
 export const layoutSettings = {
   // 默认布局
-  defaultLayout: 'normal',
+  defaultLayout,
 
   // 可用布局列表
   layouts: [
+    {
+      name: 'business-workbench',
+      title: '业务工作台',
+      description: '顶部导航与分组菜单，适合多模块业务后台',
+    },
     {
       name: 'normal',
       title: '默认布局',

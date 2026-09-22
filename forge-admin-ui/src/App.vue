@@ -97,7 +97,7 @@ const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 const userStore = useUserStore()
 const isSystemRoute = computed(() => route.path.startsWith('/system/'))
-const showLayoutSetting = computed(() => layoutSettingVisible && route.meta?.layout !== 'app-portal')
+const showLayoutSetting = computed(() => layoutSettingVisible && !['app-portal', 'business-workbench'].includes(route.meta?.layout || appStore.layout))
 
 // 监听布局变化，及时更新布局组件
 watch(() => route.meta?.layout || appStore.layout, (layoutName) => {
