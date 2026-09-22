@@ -39,6 +39,8 @@ class SystemServiceCapabilityPublisherTest {
         assertThat(command.getValue().sourceKey()).isEqualTo("flow.process.start");
         assertThat(command.getValue().sourceVersion()).isEqualTo("1");
         assertThat(command.getValue().requiredActorType()).isEqualTo("USER");
+        assertThat(command.getValue().behavior()).isEqualTo("ACTION");
+        assertThat(command.getValue().riskLevel()).isEqualTo("MEDIUM");
         assertThat(command.getValue().policySnapshot().path("permission").asText())
                 .isEqualTo("ai:businessFlow:start");
         assertThat(command.getValue().policySnapshot().path("platformPermission").asText())

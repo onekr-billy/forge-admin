@@ -13,12 +13,12 @@
       <div><label for="test-credential">{{ credentialLabel }} <em>必填</em></label><n-input v-model:value="state.credential" type="password" show-password-on="click" :placeholder="credentialPlaceholder" :input-props="{ id: 'test-credential', autocomplete: 'new-password' }" /></div>
       <template v-if="requiresSubjectToken">
         <div class="wide">
-          <label>用户身份来源</label><n-radio-group v-model:value="state.subjectTokenMode" size="small" aria-label="用户身份来源">
-            <n-radio-button v-if="state.guide?.userAssertionEnabled" value="USER_ASSERTION">
+          <label>用户身份来源</label><n-radio-group v-model:value="state.subjectTokenMode" class="identity-source-options" aria-label="用户身份来源">
+            <n-radio v-if="state.guide?.userAssertionEnabled" value="USER_ASSERTION">
               接入系统签名
-            </n-radio-button><n-radio-button value="OIDC">
+            </n-radio><n-radio value="OIDC">
               已有身份令牌
-            </n-radio-button>
+            </n-radio>
           </n-radio-group><p class="hint">
             不是当前后台的登录 Token；该用户还需具备能力所需业务权限。
           </p>
@@ -118,6 +118,13 @@ summary {
   font-size: 12px;
   color: var(--text-tertiary);
   margin-bottom: 12px;
+}
+.identity-source-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  min-height: 34px;
+  align-items: center;
 }
 @media (max-width: 640px) {
   .identity-grid {

@@ -50,7 +50,7 @@ public class ApplicationProcessStartSystemService implements SystemServiceCapabi
 
     private SystemServiceRegistrationSource registration(ObjectNode options) {
         return new SystemServiceRegistrationSource(CODE, "应用业务流程", "执行应用已发布的完整业务流程，包括审批、条件与业务动作。",
-                definitionVersion(), CapabilityActorType.USER.name(), CapabilityRiskLevel.HIGH.name(), object(), options);
+                definitionVersion(), CapabilityActorType.USER.name(), CapabilityRiskLevel.MEDIUM.name(), object(), options);
     }
 
     @Override

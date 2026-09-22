@@ -31,6 +31,7 @@
                         <testInclude>**/SystemServiceCapabilityPublisherTest.java</testInclude>
                         <testInclude>**/SystemServiceDefinitionRegistryTest.java</testInclude>
                         <testInclude>**/SystemServiceOpenGatewayAdapterTest.java</testInclude>
+                        <testInclude>**/CapabilityGrantServiceTest.java</testInclude>
                         <testInclude>**/SecureActionAutoConfigurationTest.java</testInclude>
                         <testInclude>**/FlowActionAutoConfigurationTest.java</testInclude>
                         <testInclude>**/FlowActionCapabilityPublisherTest.java</testInclude>

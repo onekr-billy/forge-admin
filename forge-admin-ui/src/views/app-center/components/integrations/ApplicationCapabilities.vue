@@ -4,7 +4,7 @@
     <div class="integration-toolbar">
       <n-input v-model:value="store.keyword" clearable placeholder="搜索本应用能力" aria-label="搜索本应用能力" class="capability-search" @keyup.enter="search" @clear="search" />
       <n-space>
-        <n-button :loading="store.loading.capabilities" @click="store.loadCapabilities">
+        <n-button :loading="store.loading.capabilities || store.loading.capabilitySync" @click="store.loadCapabilities(true)">
           刷新
         </n-button><n-button type="primary" :disabled="!store.published || !store.registerTypes.length" @click="openRegister()">
           注册能力
@@ -16,7 +16,12 @@
         重试
       </n-button>
     </n-alert>
-    <n-spin :show="store.loading.capabilities">
+    <n-alert v-if="store.errors.capabilitySync" type="warning" class="integration-error">
+      {{ store.errors.capabilitySync }} <n-button text @click="store.loadCapabilities(true)">
+        重新同步
+      </n-button>
+    </n-alert>
+    <n-spin :show="store.loading.capabilities || store.loading.capabilitySync">
       <n-empty v-if="!store.capabilities.length" class="integration-empty" :description="store.keyword ? '没有匹配的应用能力' : '本应用还没有对外能力'">
         <template #extra>
           <p class="integration-help">
@@ -54,10 +59,10 @@
           </footer>
         </article>
       </div>
-      <n-pagination v-if="store.total > 12" v-model:page="store.page" :page-size="12" :item-count="store.total" class="integration-pagination" @update:page="store.loadCapabilities" />
+      <n-pagination v-if="store.total > 12" v-model:page="store.page" :page-size="12" :item-count="store.total" class="integration-pagination" @update:page="store.loadCapabilities(false)" />
     </n-spin>
     <p class="integration-help">
-      这里只展示从本应用注册的能力。应用重新发布不会自动升级接口契约；固定版本授权保持不变。
+      展示来源属于本应用已发布版本的能力；无论从能力目录还是应用入口注册，都会同步到这里。应用重新发布不会自动升级接口契约。
     </p>
     <CapabilityRegisterModal v-if="registerVisible" v-model:show="registerVisible" :capability="upgrade" :allowed-types="store.registerTypes" :initial-context="context" @success="registered" />
     <CapabilityCallGuideModal v-if="guide" :show="true" :capability="guide" :can-update-grant="store.canEdit && store.has('ai:capability:grant:add')" @update:show="value => !value && (guide = null)" />
@@ -82,7 +87,7 @@ function openRegister(item = null) {
 }
 function search() {
   store.page = 1
-  store.loadCapabilities()
+  store.loadCapabilities(false)
 }
 function moreOptions(item) {
   return [{ key: 'logs', label: '查看调用记录', disabled: !store.has('ai:capability:invocation:query') }, { key: 'upgrade', label: '发布新版本', disabled: !store.published || !store.registerTypes.includes(item.sourceType) }]
@@ -94,7 +99,7 @@ function more(key, item) {
 }
 async function registered() {
   store.page = 1
-  await store.loadCapabilities()
+  await store.loadCapabilities(false)
 }
 </script>
 

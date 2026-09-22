@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.capability.secureaction.system;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
 import com.mdframe.forge.plugin.capability.controlplane.audit.CapabilityActorType;
@@ -18,6 +19,7 @@ import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntime
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectActionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
 import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
@@ -66,21 +68,47 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
         query.setStatus(EnableStatus.ENABLED.getCode());
         for (var object : objects.list(query)) {
             if (object.getLastPublishVersion() == null || object.getLastPublishVersion() <= 0) { continue; }
-            ObjectNode item = forms.addObject().put("id", object.getSuiteCode() + "/" + object.getObjectCode())
-                    .put("objectId", String.valueOf(object.getId())).put("name", object.getObjectName())
-                    .put("suiteCode", object.getSuiteCode()).put("objectCode", object.getObjectCode());
-            try {
-                Source source = source(tenantId, object.getSuiteCode(), object.getObjectCode());
-                item.put("available", true).put("publishedVersion", source.version());
-                var fields = item.putArray("fields");
-                source.fields().values().forEach(field -> fields.addObject().put("field", field.getField())
-                        .put("label", field.getLabel()).put("required", Boolean.TRUE.equals(field.getRequired())));
-            } catch (BusinessException exception) {
-                item.put("available", false).put("unavailableReason", exception.getMessage());
-            }
+            addFormSource(forms, tenantId, object);
         }
+        return registrationSource(options);
+    }
+
+    @Override
+    public SystemServiceRegistrationSource registrationSource(
+            Long tenantId,
+            SystemServiceRegistrationContext context) {
+        requireTenant(tenantId);
+        if (context == null || context.objectId() == null || context.objectId() <= 0) {
+            return registrationSource(tenantId);
+        }
+        ObjectNode options = mapper.createObjectNode().put("registrationKind", "FORM");
+        ArrayNode forms = options.putArray("forms");
+        BusinessObjectVO object = objects.detail(context.objectId());
+        if (EnableStatus.ENABLED.matches(object.getStatus())
+                && object.getLastPublishVersion() != null && object.getLastPublishVersion() > 0) {
+            addFormSource(forms, tenantId, object);
+        }
+        return registrationSource(options);
+    }
+
+    private SystemServiceRegistrationSource registrationSource(ObjectNode options) {
         return new SystemServiceRegistrationSource(CODE, "低代码表单填报", "复用已发布表单的新增逻辑及原有创建事件；需要显式送审时请选择流程操作。",
                 definitionVersion(), CapabilityActorType.USER.name(), CapabilityRiskLevel.MEDIUM.name(), object(), options);
+    }
+
+    private void addFormSource(ArrayNode forms, Long tenantId, BusinessObjectVO object) {
+        ObjectNode item = forms.addObject().put("id", object.getSuiteCode() + "/" + object.getObjectCode())
+                .put("objectId", String.valueOf(object.getId())).put("name", object.getObjectName())
+                .put("suiteCode", object.getSuiteCode()).put("objectCode", object.getObjectCode());
+        try {
+            Source source = source(tenantId, object.getSuiteCode(), object.getObjectCode());
+            item.put("available", true).put("publishedVersion", source.version());
+            var fields = item.putArray("fields");
+            source.fields().values().forEach(field -> fields.addObject().put("field", field.getField())
+                    .put("label", field.getLabel()).put("required", Boolean.TRUE.equals(field.getRequired())));
+        } catch (BusinessException exception) {
+            item.put("available", false).put("unavailableReason", exception.getMessage());
+        }
     }
 
     @Override

@@ -3,7 +3,7 @@
     <n-form-item v-if="!loading && options.length > 1" label="能力类型" path="systemServiceCode">
       <n-select v-model:value="form.systemServiceCode" :options="options" :loading="loading" :disabled="upgrade" placeholder="选择能力类型" @update:value="emit('serviceChange')" />
     </n-form-item>
-    <n-empty v-if="!loading && !options.length" description="尚无可用来源，请确认后端版本和发布权限。" />
+    <n-empty v-if="!loading && !options.length && kind !== 'FORM'" description="尚无可用来源，请确认后端版本和发布权限。" />
     <p v-if="service" class="source-description">
       {{ service.description }}
     </p>
@@ -32,7 +32,7 @@
     </template>
     <template v-if="kind === 'FORM'">
       <CapabilityApplicationSource v-if="!upgrade && !directObject" @select="selectPage" />
-      <n-button v-if="!upgrade && !sourceContext.lockApplication" text size="small" class="source-toggle" @click="directObject = !directObject">
+      <n-button v-if="!upgrade && !sourceContext.lockApplication" text size="small" class="source-toggle" @click="toggleDirectObject">
         {{ directObject ? '从应用页面选择' : '高级：直接选择已发布表单对象' }}
       </n-button>
       <n-form-item v-if="upgrade || directObject" label="表单对象" path="systemFormId">
@@ -67,24 +67,38 @@ import { computed, ref } from 'vue'
 import { useCapabilityRegistrationStore } from '@/stores/capability/registrationStore'
 import CapabilityApplicationSource from './CapabilityApplicationSource.vue'
 
-const props = defineProps({ services: { type: Array, default: () => [] }, options: { type: Array, default: () => [] }, loading: Boolean, upgrade: Boolean })
-const emit = defineEmits(['serviceChange', 'formChange', 'parametersChange'])
+const props = defineProps({ services: { type: Array, default: () => [] }, options: { type: Array, default: () => [] }, loading: Boolean, upgrade: Boolean, expectedKind: String })
+const emit = defineEmits(['serviceChange', 'formChange', 'pageSelect', 'directSource', 'parametersChange'])
 const { form, sourceContext } = useCapabilityRegistrationStore()
 const directObject = ref(false)
-const pageError = ref('')
+const selectedPage = ref(null)
 const service = computed(() => props.services.find(item => item.serviceCode === form.systemServiceCode))
-const kind = computed(() => service.value?.options?.registrationKind)
+const kind = computed(() => service.value?.options?.registrationKind || props.expectedKind)
 const endpoint = computed(() => service.value?.options?.endpoints?.find(item => item.id === form.systemEndpointId))
 const endpoints = computed(() => (service.value?.options?.endpoints || []).map(item => ({ value: item.id, label: `${item.name} · ${item.method} ${item.path}${item.available ? '' : ` · ${item.unavailableReason}`}`, disabled: !item.available })))
 const forms = computed(() => (service.value?.options?.forms || []).map(item => ({ value: item.id, label: `${item.name} · ${item.objectCode}${item.available ? '' : ` · ${item.unavailableReason}`}`, disabled: !item.available })))
 const selectedForm = computed(() => service.value?.options?.forms?.find(item => item.id === form.systemFormId))
+const pageError = computed(() => !props.loading && selectedPage.value && service.value && !selectedForm.value
+  ? '此页面绑定的业务对象尚无可开放的表单来源，请先发布业务对象。'
+  : '')
 const fields = computed(() => (selectedForm.value?.fields || []).map(item => ({ value: item.field, label: `${item.label || item.field}${item.required ? ' · 必填' : ''}`, disabled: item.required })))
 
 function selectPage(page) {
-  const source = service.value?.options?.forms?.find(item => String(item.objectId) === String(page?.objectId))
-  form.systemFormId = source?.id || null
-  pageError.value = page && !source ? '此页面绑定的业务对象尚无可开放的表单来源，请先发布业务对象。' : ''
-  emit('formChange')
+  selectedPage.value = page
+  emit('pageSelect', page)
+}
+
+function toggleDirectObject() {
+  directObject.value = !directObject.value
+  selectedPage.value = null
+  form.objectId = null
+  form.systemFormId = null
+  form.allowedFields = []
+  form.requiredFields = []
+  if (directObject.value)
+    emit('directSource')
+  else
+    emit('formChange')
 }
 
 function normalizeFields() {

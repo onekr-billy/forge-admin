@@ -20,6 +20,8 @@ import { useCapabilityRegistrationStore } from '@/stores/capability/registration
 import { registrationScenario } from '../registrationSources'
 import { APPLICATION_PROCESS_SERVICE, useApplicationProcessRegistration } from './useApplicationProcessRegistration'
 
+const LOWCODE_FORM_SERVICE = 'lowcode.form.create'
+
 export function useCapabilityRegistration(props, emit) {
   const registration = useCapabilityRegistrationStore()
   const { step, scenario } = storeToRefs(registration)
@@ -675,15 +677,15 @@ export function useCapabilityRegistration(props, emit) {
     }
   }
 
-  async function loadSystemServices() {
+  async function loadSystemServices(context = {}) {
     const request = ++sourceGeneration
     const opening = openGeneration
     systemSourceLoading.value = true
     sourceError.value = ''
     systemServices.value = []
     try {
-      const serviceCode = isUpgrade.value ? props.capability.sourceKey : { application: 'lowcode.form.create', rest: 'system.rest.invoke', flow: 'flow.process.start' }[scenario.value]
-      const res = await getSystemServiceRegistrationSources({ serviceCode })
+      const serviceCode = isUpgrade.value ? props.capability.sourceKey : { application: LOWCODE_FORM_SERVICE, rest: 'system.rest.invoke', flow: 'flow.process.start' }[scenario.value]
+      const res = await getSystemServiceRegistrationSources({ serviceCode, ...context })
       if (request !== sourceGeneration || opening !== openGeneration)
         return
       systemServices.value = res.data || []
@@ -731,10 +733,19 @@ export function useCapabilityRegistration(props, emit) {
     updateGeneratedCode(true)
     if (form.sourceType === 'APPLICATION_PROCESS')
       return
-    if (form.sourceType === 'SYSTEM_SERVICE')
+    if (form.sourceType === 'SYSTEM_SERVICE') {
+      if (!isUpgrade.value && scenario.value === 'application') {
+        // Applications and pages are cheap to list. Resolve the expensive form schema only
+        // after a concrete published page has been selected.
+        form.systemServiceCode = LOWCODE_FORM_SERVICE
+        updateGeneratedCode()
+        return
+      }
       await loadSystemServices()
-    else if (objects.value.length === 0)
+    }
+    else if (objects.value.length === 0) {
       await loadObjects()
+    }
   }
 
   async function handleObjectChange(objectId) {
@@ -961,15 +972,23 @@ export function useCapabilityRegistration(props, emit) {
   }
 
   function contextualCode(code) {
-    return code && props.initialContext?.lockApplication
-      ? `app_${props.initialContext.applicationId}.${code}`
+    const applicationId = publishingApplicationId()
+    return code && applicationId
+      ? `app_${applicationId}.${code}`
       : code
   }
 
   function publishFromContext(type, data, fallback) {
-    return props.initialContext?.lockApplication
-      ? publishApplicationCapability(props.initialContext.applicationId, type, data)
+    const applicationId = publishingApplicationId()
+    return applicationId
+      ? publishApplicationCapability(applicationId, type, data)
       : fallback(data)
+  }
+
+  function publishingApplicationId() {
+    if (props.initialContext?.lockApplication)
+      return props.initialContext.applicationId
+    return scenario.value === 'rest' ? null : registration.applicationId
   }
 
   async function handleSubmit() {
@@ -1094,6 +1113,9 @@ export function useCapabilityRegistration(props, emit) {
     chooseScenario,
     nextStep,
     selectApplicationPage,
+    handleSystemPageSelect,
+    loadDirectFormSources,
+    retrySource,
     handleSystemFormChange,
     systemKind,
     selectedEndpoint,
@@ -1182,9 +1204,13 @@ export function useCapabilityRegistration(props, emit) {
   async function chooseScenario(value) {
     if (!props.show || submitting.value)
       return
+    if (value === 'flow' && !props.allowedTypes.includes('SYSTEM_SERVICE'))
+      return
     scenario.value = value
     step.value = 2
-    form.sourceType = value === 'application' ? (props.allowedTypes.includes('SYSTEM_SERVICE') ? 'SYSTEM_SERVICE' : 'BUSINESS_ACTION') : value === 'rest' ? 'SYSTEM_SERVICE' : props.allowedTypes.includes('SYSTEM_SERVICE') ? 'APPLICATION_PROCESS' : 'FLOW_ACTION'
+    form.sourceType = value === 'application'
+      ? (props.allowedTypes.includes('SYSTEM_SERVICE') ? 'SYSTEM_SERVICE' : 'BUSINESS_ACTION')
+      : value === 'rest' ? 'SYSTEM_SERVICE' : 'APPLICATION_PROCESS'
     if (form.sourceType !== 'APPLICATION_PROCESS' && !props.allowedTypes.includes(form.sourceType))
       form.sourceType = props.allowedTypes[0]
     await handleSourceTypeChange()
@@ -1223,9 +1249,58 @@ export function useCapabilityRegistration(props, emit) {
     updateGeneratedCode()
   }
 
-  async function selectApplicationPage(page) {
-    if (page && objects.value.length === 0)
+  async function handleSystemPageSelect(page) {
+    sourceGeneration++
+    form.objectId = page?.objectId || null
+    form.systemFormId = null
+    form.allowedFields = []
+    form.requiredFields = []
+    systemServices.value = []
+    sourceError.value = ''
+    updateGeneratedCode(true)
+    if (!page?.objectId)
+      return
+    const selectedObjectId = String(page.objectId)
+    await loadSystemServices({
+      applicationId: registration.applicationId,
+      objectId: page.objectId,
+    })
+    if (String(form.objectId) !== selectedObjectId)
+      return
+    const service = systemServices.value.find(item => item.serviceCode === LOWCODE_FORM_SERVICE)
+    const source = service?.options?.forms?.find(item => String(item.objectId) === selectedObjectId)
+    form.systemServiceCode = LOWCODE_FORM_SERVICE
+    form.systemFormId = source?.id || null
+    handleSystemFormChange()
+  }
+
+  async function loadDirectFormSources() {
+    form.objectId = null
+    await loadSystemServices()
+  }
+
+  async function retrySource() {
+    if (form.sourceType === 'SYSTEM_SERVICE' && scenario.value === 'application' && form.objectId) {
+      await handleSystemPageSelect({ objectId: form.objectId })
+      return
+    }
+    if (form.sourceType === 'SYSTEM_SERVICE')
+      await loadSystemServices()
+    else
       await loadObjects()
+  }
+
+  async function selectApplicationPage(page) {
+    if (page && !objects.value.some(item => String(item.id) === String(page.objectId))) {
+      objects.value = [{
+        id: page.objectId,
+        objectName: page.label,
+        objectCode: page.objectCode,
+        suiteCode: page.suiteCode,
+        status: 1,
+        lastPublishVersion: 1,
+      }]
+    }
     form.objectId = page?.objectId || null
     await handleObjectChange(form.objectId)
   }

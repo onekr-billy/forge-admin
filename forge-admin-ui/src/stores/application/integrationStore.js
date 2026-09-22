@@ -28,6 +28,7 @@ export const useApplicationIntegrationStore = defineStore('application-integrati
   const errors = reactive({})
   const writing = ref(false)
   let epoch = 0
+  let capabilitySyncDone = false
   const sequences = {}
   const has = permission => user.isAdmin || user.permissions?.includes('*:*:*') || user.permissions?.includes(permission)
   const canEdit = computed(() => has('ai:businessApplication:edit'))
@@ -55,6 +56,7 @@ export const useApplicationIntegrationStore = defineStore('application-integrati
     page.value = grantPage.value = logPage.value = 1
     keyword.value = requestId.value = ''
     writing.value = false
+    capabilitySyncDone = false
     Object.keys(errors).forEach(key => delete errors[key])
     Object.keys(loading).forEach(key => delete loading[key])
   }
@@ -95,9 +97,30 @@ export const useApplicationIntegrationStore = defineStore('application-integrati
       connections.value = options.data || []
     })
   }
-  async function loadCapabilities() {
+  async function syncCapabilityOwnership(force = false) {
+    if (!canEdit.value || (capabilitySyncDone && !force) || !application.value?.id)
+      return
+    const generation = epoch
+    loading.capabilitySync = true
+    errors.capabilitySync = ''
+    try {
+      await api.syncApplicationCapabilities(application.value.id)
+      if (generation === epoch)
+        capabilitySyncDone = true
+    }
+    catch (error) {
+      if (generation === epoch)
+        errors.capabilitySync = error?.message || '能力归属同步失败，请重试'
+    }
+    finally {
+      if (generation === epoch)
+        loading.capabilitySync = false
+    }
+  }
+  async function loadCapabilities(forceSync = false) {
     if (!has('ai:capability:query'))
       return
+    await syncCapabilityOwnership(forceSync)
     return read('capabilities', id => api.getApplicationCapabilities(id, { pageNum: page.value, pageSize: 12, keyword: keyword.value.trim() }), (res) => {
       capabilities.value = res.data?.records || []
       total.value = Number(res.data?.total || 0)

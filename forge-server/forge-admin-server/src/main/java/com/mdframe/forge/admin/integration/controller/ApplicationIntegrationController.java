@@ -73,6 +73,13 @@ public class ApplicationIntegrationController {
         return RespInfo.success(integrations.capabilities(appId, page, keyword));
     }
 
+    @PostMapping("/capabilities/sync")
+    @SaCheckPermission({"ai:businessApplication:edit", "ai:capability:query"})
+    @OperationLog(module = "应用集成", type = OperationType.UPDATE, desc = "同步应用开放能力归属")
+    public RespInfo<Integer> syncCapabilities(@PathVariable Long appId) {
+        return RespInfo.success(integrations.syncCapabilities(appId));
+    }
+
     @PostMapping("/publish/flow")
     @ApiDecrypt
     @Transactional(rollbackFor = Exception.class)
@@ -81,6 +88,8 @@ public class ApplicationIntegrationController {
     public RespInfo<Long> flow(@PathVariable Long appId, @Valid @RequestBody FlowActionCapabilityPublishDTO dto) {
         integrations.requirePublish(appId, dto.getCapabilityCode());
         integrations.requireSource(appId, dto.getSuiteCode(), dto.getObjectCode());
+        integrations.requireUniqueSource(appId, dto.getCapabilityCode(), "FLOW_ACTION",
+                dto.getSuiteCode() + "/" + dto.getObjectCode() + "/" + dto.getOperation(), null);
         Long id = flowPublisher.publish(integrations.tenant(), dto);
         integrations.attach(appId, id);
         return RespInfo.success(id);
@@ -94,6 +103,8 @@ public class ApplicationIntegrationController {
     public RespInfo<Long> action(@PathVariable Long appId, @Valid @RequestBody BusinessActionCapabilityPublishDTO dto) {
         integrations.requirePublish(appId, dto.getCapabilityCode());
         integrations.requireSource(appId, dto.getSuiteCode(), dto.getObjectCode());
+        integrations.requireUniqueSource(appId, dto.getCapabilityCode(), "BUSINESS_ACTION",
+                dto.getSuiteCode() + "/" + dto.getObjectCode() + "/" + dto.getActionCode(), null);
         Long id = actionPublisher.publish(integrations.tenant(), dto);
         integrations.attach(appId, id);
         return RespInfo.success(id);
@@ -115,6 +126,8 @@ public class ApplicationIntegrationController {
         } else if (!"system.rest.invoke".equals(dto.serviceCode())) {
             throw new BusinessException("应用内仅支持应用表单或显式纳管 REST；审批请选择应用业务流程");
         }
+        integrations.requireUniqueSource(appId, dto.capabilityCode(), "SYSTEM_SERVICE",
+                dto.serviceCode(), dto.parameters());
         Long id = systemPublisher.publish(integrations.tenant(), dto);
         integrations.attach(appId, id);
         return RespInfo.success(id);

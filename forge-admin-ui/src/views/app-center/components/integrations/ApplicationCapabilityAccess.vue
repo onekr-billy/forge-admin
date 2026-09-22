@@ -131,7 +131,7 @@ async function submit() {
       formError.value = '有效期必须晚于当前时间'
       return
     }
-    if (await store.grant({ ...form, fixedVersion: store.selected.currentVersion, fieldPolicy: {} })) {
+    if (await store.grant({ ...form, fixedVersion: store.selected.currentVersion, fieldPolicy: null })) {
       showGrant.value = false
       message.success('能力授权已生效')
     }

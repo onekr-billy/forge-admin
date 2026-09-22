@@ -51,8 +51,9 @@ class LowcodeFormSystemServiceTest {
         object.setSuiteCode("law"); object.setObjectCode("case"); object.setLastPublishVersion(2);
         BusinessObjectVO listed = new BusinessObjectVO();
         listed.setId(5L); listed.setSuiteCode("law"); listed.setObjectCode("case");
-        listed.setObjectName("登记"); listed.setLastPublishVersion(2);
+        listed.setObjectName("登记"); listed.setStatus(1); listed.setLastPublishVersion(2);
         when(objects.list(any(BusinessObjectQueryDTO.class))).thenReturn(List.of(listed));
+        when(objects.detail(5L)).thenReturn(listed);
         version.setConfigKey("case_form"); version.setPublishVersion(2);
         version.setModelSnapshot("""
                 {"appType":"SINGLE","tableName":"case_data","fields":[
@@ -176,6 +177,21 @@ class LowcodeFormSystemServiceTest {
             assertThat(source.options().path("forms").get(0).path("available").asBoolean()).isTrue();
             assertThat(source.options().path("forms").get(0).path("fields").toString()).contains("title").doesNotContain("tenantId");
         }
+        verifyNoInteractions(records, receipts, events);
+    }
+
+    @Test
+    void contextualRegistrationLoadsOnlyTheSelectedPublishedObject() throws Exception {
+        runtimeDatasource();
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            var source = service.registrationSource(1L, new SystemServiceRegistrationContext(11L, 5L));
+
+            assertThat(source.options().path("forms").size()).isEqualTo(1);
+            assertThat(source.options().at("/forms/0/objectId").asText()).isEqualTo("5");
+            assertThat(source.options().at("/forms/0/available").asBoolean()).isTrue();
+        }
+        verify(objects).detail(5L);
+        verify(objects, never()).list(any(BusinessObjectQueryDTO.class));
         verifyNoInteractions(records, receipts, events);
     }
 
