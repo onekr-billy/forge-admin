@@ -1,5 +1,30 @@
 # 增量验证计划
 
+## 应用业务流程开放增量
+- P0：无旧 FLOW 绑定但应用快照包含手动业务流程，可枚举/发布并调用原编排器；固定流程版本校验，无任意模型/用户/变量覆盖。
+- P0：跨应用/租户/对象、草稿新增、未发布/停用/版本漂移、无手动节点、无权限/记录不可见拒绝；失败运行不会由外部重放自动 retry。
+- P1：应用/页面 → 业务流程自动或显式选择，不调用旧 getFlowActionRegistrationSource；局部加载、异常重试、换页面/关闭丢弃旧请求，升级固定来源。
+- 复用现有定向 POM/Vitest，补充编排器版本边界测试，JDK17 Admin 聚合构建、定向 ESLint、Vite 构建及真实组件模拟 API 浏览器验证。用户负责真实 Admin/Flow/MySQL/审批 E2E。
+
+### 2026-09-22 最终结果
+- 前端 13 文件、115/115 通过（18:07:09，2.82s）；7 个修改/新增 JS/Vue 文件 ESLint 通过，无 errors/warnings。
+- 开放平台 verification：86/86 通过（18:03:33，5.333s），含新应用流程服务 17 项及真实编排器 11 项；应用集成 verification：43/43 通过（18:03:28，4.038s），含应用内跨应用发布参数拦截。均无 failures/errors/skipped。
+- Admin 46 模块 JDK17 reactor BUILD SUCCESS（18:02:36，24.570s）；Vite 生产构建通过（33.17s），保留已有 CSS/chunk/plugin timing 警告。
+- 浏览器使用真实 Vue 组件、模拟 API 及列表外壳，完整点击应用内注册 → 流程操作 → 应用业务流程 → 页面 → 流程 → 发布确认 → 模拟发布返回列表；2 秒来源延迟时立即 loading，多流程需选择。390px 深色 width/scrollWidth 均 390，console error=[]。
+- 服务/数据库使用 mock，不等价于真实 Flowable 审批、网关鉴权、数据库事务或消息投递验收。已关闭本轮临时页面、恢复视口并停止本轮 localhost:5199 服务。
+
+## 应用内能力来源误判增量
+- P0：真实 SnapshotService.prepare 生成快照，经真实 RuntimeService 读取，再执行 ApplicationIntegrationService.requireSource；不得只 mock 一个手工补齐 suiteCode 的运行 VO。
+- P0：旧快照缺 suiteCode 时，精确对象 ID 仍可注册；新快照保留对象原套件，套件冲突不得回退。
+- P0：同编码跨套件、仅存在于草稿、对象删除或重建、缺 ID、空来源、租户缺失及门户无权限拒绝；来源查询限定可信租户。
+- P1：复用本变更 verification/pom.xml 和开放平台回归 POM；先红后绿，Admin 聚合构建后复跑。无前端/迁移变更，不重复 UI 构建；不启动真实服务或操作业务数据库。
+
+### 本轮结果（2026-09-22 17:32）
+- 修复前 42 项中 4 项失败：真实快照缺 suiteCode、存量快照来源误拒、未按租户解析对象身份，以及 null suiteCode 与缺字段错误相等被放行。
+- 修复后应用集成 42/42（新增真实快照链路 15 项）、原开放平台 58/58，均 0 failures / errors / skipped；Admin 46 模块 BUILD SUCCESS，22.379s。
+- 数据查询复用现有 XML 的 tenant_id + suite_code + object_code + del_flag 条件；测试数据库查询使用 Mockito，不声称验证真实租户拦截/HTTP/生产环境。
+- 未修改前端、数据库脚本或存量快照；未启动 Admin/Flow、部署或调用真实网关。
+
 ## 自动建表开放填报增量
 - P0：自动建表可发布及执行，复用页面新增协调器；只读/来源漂移拒绝，字段/租户/版本防护不回退。
 - P0：主库建单与已有回执一起回滚；跨库占位先提交，失败或结果未知后相同键不得再次执行，成功同键返回原记录，不同正文冲突。

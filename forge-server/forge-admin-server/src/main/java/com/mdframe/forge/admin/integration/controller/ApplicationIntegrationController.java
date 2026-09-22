@@ -108,6 +108,10 @@ public class ApplicationIntegrationController {
         integrations.requirePublish(appId, dto.capabilityCode());
         if ("lowcode.form.create".equals(dto.serviceCode())) {
             integrations.requireSource(appId, dto.parameters().path("suiteCode").asText(), dto.parameters().path("objectCode").asText());
+        } else if (com.mdframe.forge.plugin.capability.secureaction.system.ApplicationProcessStartSystemService.CODE.equals(dto.serviceCode())) {
+            if (!appId.toString().equals(dto.parameters().path("applicationId").asText())) {
+                throw new BusinessException("业务流程不属于当前应用");
+            }
         } else if (!"system.rest.invoke".equals(dto.serviceCode())) {
             throw new BusinessException("应用内仅支持应用表单或显式纳管 REST；审批请选择应用业务流程");
         }

@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, reactive, ref } from 'vue'
+import { useCapabilityRegistrationStore } from '@/stores/capability/registrationStore'
 import { useCapabilityRegistration } from '../components/useCapabilityRegistration'
 
 const api = vi.hoisted(() => Object.fromEntries([
@@ -94,14 +95,14 @@ describe('scenario registration', () => {
     }))
   })
   it('accepts the existing published snapshot even when the designer has changes', async () => {
-    await start()
+    await start({ allowedTypes: ['FLOW_ACTION'] })
     expect(api.businessObjectList).not.toHaveBeenCalled()
     expect(api.getSystemServiceRegistrationSources).not.toHaveBeenCalled()
     await state.chooseScenario('flow')
     expect(state.objects.value).toHaveLength(2)
   })
   it('does not overwrite a newer object selection with an old source response', async () => {
-    await start()
+    await start({ allowedTypes: ['FLOW_ACTION'] })
     await state.chooseScenario('flow')
     let resolveFirst
     api.getFlowActionRegistrationSource.mockImplementationOnce(() => new Promise((resolve) => {
@@ -251,7 +252,7 @@ describe('scenario registration', () => {
     expect(api.getSystemServiceRegistrationSources).toHaveBeenCalledWith({ serviceCode: 'lowcode.form.create' })
   })
   it('does not leave the object loader stuck when the page picker initially clears its selection', async () => {
-    await start()
+    await start({ allowedTypes: ['FLOW_ACTION'] })
     let complete
     api.businessObjectList.mockImplementationOnce(() => new Promise((resolve) => {
       complete = resolve
@@ -266,5 +267,44 @@ describe('scenario registration', () => {
     state.form.objectId = '1'
     await state.handleObjectChange('1')
     expect(state.submitDisabled.value).toBe(false)
+  })
+
+  it('defaults flow registration to the application process and publishes its exact source', async () => {
+    await start()
+    await state.chooseScenario('flow')
+    expect(state.form.sourceType).toBe('APPLICATION_PROCESS')
+    useCapabilityRegistrationStore().applicationId = '9007199254740999'
+    api.getSystemServiceRegistrationSources.mockResolvedValue({ data: [{ serviceCode: 'lowcode.business-process.start', options: { processes: [
+      { processCode: 'case_approval', name: '合同审批', version: 3, available: true },
+    ] } }] })
+    await state.applicationProcess.selectPage({ objectId: '9007199254741999' })
+    await flushPromises()
+    expect(api.businessObjectList).not.toHaveBeenCalled()
+    expect(api.getFlowActionRegistrationSource).not.toHaveBeenCalled()
+    expect(state.submitDisabled.value).toBe(false)
+    await state.handleSubmit()
+    expect(api.publishSystemServiceCapability).toHaveBeenCalledWith(expect.objectContaining({
+      serviceCode: 'lowcode.business-process.start',
+      parameters: { applicationId: '9007199254740999', objectId: '9007199254741999', processCode: 'case_approval' },
+    }))
+  })
+
+  it('restores an application process upgrade without using the legacy workflow source', async () => {
+    api.getCapabilityVersionDraft.mockResolvedValue({ data: {
+      sourceType: 'SYSTEM_SERVICE',
+      sourceKey: 'lowcode.business-process.start',
+      capabilityCode: 'app.legal.start',
+      suggestedVersion: '1.0.1',
+      policySnapshot: { registrationParameters: { applicationId: '11', objectId: '5', processCode: 'case_approval' } },
+    } })
+    api.getSystemServiceRegistrationSources.mockResolvedValue({ data: [{ serviceCode: 'lowcode.business-process.start', options: { processes: [
+      { processCode: 'case_approval', name: '合同审批', version: 3, available: true },
+    ] } }] })
+    await start({ capability: { id: '88', sourceKey: 'lowcode.business-process.start', currentVersion: '1.0.0' } })
+    expect(state.form.sourceType).toBe('APPLICATION_PROCESS')
+    expect(state.form.capabilityCode).toBe('app.legal.start')
+    expect(state.applicationProcess.selected.value.processCode).toBe('case_approval')
+    expect(state.submitDisabled.value).toBe(false)
+    expect(api.getFlowActionRegistrationSource).not.toHaveBeenCalled()
   })
 })

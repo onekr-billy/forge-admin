@@ -23,6 +23,15 @@ import com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceCapa
 import com.mdframe.forge.plugin.capability.secureaction.system.RestEndpointSystemService;
 import com.mdframe.forge.plugin.capability.secureaction.system.LowcodeFormSystemService;
 import com.mdframe.forge.plugin.capability.secureaction.system.LowcodeFormInvocationGuard;
+import com.mdframe.forge.plugin.capability.secureaction.system.ApplicationProcessCapabilitySource;
+import com.mdframe.forge.plugin.capability.secureaction.system.ApplicationProcessStartSystemService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationVersionService;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessOrchestrator;
+import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
@@ -45,6 +54,23 @@ import java.util.List;
  */
 @AutoConfiguration
 public class SecureActionAutoConfiguration {
+
+    @Bean
+    public ApplicationProcessCapabilitySource applicationProcessCapabilitySource(
+            BusinessApplicationRuntimeService runtime, BusinessApplicationVersionService applicationVersions,
+            BusinessObjectMapper objects, BusinessProcessMapper processes,
+            BusinessProcessVersionMapper versions, ObjectMapper mapper) {
+        return new ApplicationProcessCapabilitySource(
+                runtime, applicationVersions, objects, processes, versions, mapper);
+    }
+
+    @Bean
+    public ApplicationProcessStartSystemService applicationProcessStartSystemService(
+            ApplicationProcessCapabilitySource sources, BusinessProcessOrchestrator orchestrator,
+            DynamicCrudService records, ObjectMapper mapper, CapabilitySchemaValidator validator) {
+        return new ApplicationProcessStartSystemService(
+                sources, orchestrator, records, mapper, validator);
+    }
 
     @Bean
     public RestEndpointSystemService restEndpointSystemService(

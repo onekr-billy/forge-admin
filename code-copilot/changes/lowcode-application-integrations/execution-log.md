@@ -160,3 +160,77 @@ Java 使用上一节同一 JDK17 / Maven / 临时依赖仓库。执行 Admin `-p
 ### 交付边界
 - 只修改 `forge-admin-main / codex/open-platform-experience`。H5 工作树仍在自己的分支且有其他任务进行中的改动，仅只读确认，不触碰。保留独立工作树已有无关 `.DS_Store`。
 - 未启动业务服务、操作线上数据库、执行迁移、真实发信、部署、提交或推送。真实网关/数据库验收仍由用户执行；当前旧 file:// 静态预览不会自动展示工程改动。
+
+## 2026-09-22 应用内表单能力来源误判修复
+
+### 根因与处理
+- 从已推送的 7d80e9d5 基线继续，在 forge-admin-main / codex/open-platform-experience 工作；不修改 H5 工作树，保留无关 .DS_Store。
+- 用户提供 ApplicationIntegrationController.system → requireSource 异常。真实 objectSnapshot 漏存 suiteCode，来源校验却以 suiteCode + objectCode 强等匹配；之前测试手工补齐了运行 VO，掩盖实际发布路径。
+- 按低代码流程 Skill 的来源身份与既有链路规范，新快照保存对象自己的 suiteCode；归属检查复用 BusinessObjectMapper.selectByObjectCode 的可信租户、套件、编码、逻辑删除条件，按稳定 objectId 和 objectCode 对照已发布成员，有 suiteCode 时也校验。不以应用套件或当前草稿成员列表兜底，不取消权限校验。
+- 存量缺字段快照无需修改/重发；缺 ID、空来源、跨套件同编码、删除重建或草稿新增对象失败关闭。不改表结构、迁移、前端或表单新增/幂等逻辑。
+
+### 红绿验证
+- 修复前本变更 verification/pom.xml：42 tests / 4 failures / 0 errors（17:30:19）；复现缺字段、旧版本注册被拒、缺少租户身份查询以及 null suiteCode 与缺字段匹配而误放行。
+- 修复后 JDK17 Admin reactor：46 模块 BUILD SUCCESS，22.379s（17:31:39）。
+- 本变更定向测试：42 tests / 0 failures / 0 errors / 0 skipped，4.451s（17:32:12）；新增 ApplicationIntegrationSourceTest 15 项真实快照生成和读取回归。
+- 原开放平台回归：58 tests / 0 failures / 0 errors / 0 skipped，5.479s（17:32:14），覆盖此前共用新增入口及回执安全行为。
+- git diff --check 通过。未跑已知存在无关测试编译问题的全仓测试；模拟 Mapper 结果不等同真实数据库、HTTP 或生产环境验收。
+
+### 复现命令与交付边界
+沿用 /private/tmp/forge-open-platform-java.CanL0f 下 Corretto17、Maven3.9.11、repository；从独立工作树运行：
+
+```bash
+mvn -f forge-server/pom.xml -pl forge-admin-server -am install -Dmaven.test.skip=true
+mvn -f code-copilot/changes/lowcode-application-integrations/verification/pom.xml -Penable-tests test
+mvn -f code-copilot/changes/open-platform-experience/verification/pom.xml -Penable-tests test
+git diff --check
+```
+
+实际命令使用上述 Java/Maven 绝对路径并加 -Dmaven.repo.local=/private/tmp/forge-open-platform-java.CanL0f/repository。日志均在 /private/tmp：forge-published-source-red.log、forge-published-source-admin-build.log、forge-published-source-green.log、forge-published-source-platform-tests.log。本轮未启动业务服务、操作数据库、部署、commit/push；升级 Admin 后重试注册仍待用户环境验收。
+
+## 2026-09-22 应用业务流程开放：替换旧主流程口径
+
+### 根因与实现
+- 用户指出应用已发布、业务流程内已有审批节点，注册仍报旧主流程错误。确认注册器原 FLOW_ACTION 分支由 FlowActionSourceService 读取 ai_business_binding，与应用业务流程编排不是同一来源。
+- 按 forge-business-flow-development Skill 读取应用快照/业务流程版本并复用既有编排器，未新增另一套审批引擎。新增受控 SYSTEM_SERVICE `lowcode.business-process.start`；来源按应用发布版本、页面主对象身份和业务流程版本匹配，不查询旧主流程绑定。
+- 仅提供手动发起，输入只有已保存 recordId；使用用户委托、原动态 CRUD 数据范围及节点权限。固定应用版本、流程版本和 hash，编排器启动前再次匹配版本；旧失败运行不会被外部重复调用自动重试。原页面启动/重试保持原语义。
+- 注册弹窗默认“应用业务流程”，原对象审批标注旧版；共享来源状态放 Pinia，新增独立流程选择组件/组合函数。当前应用自动填入；单可用流程自动选，多流程显式选；立即 loading、失败重试、切换/关闭迟到结果隔离；升级重试不自动替换原来源。
+- 应用内 system 发布接口核验来源 applicationId 与路径一致；上一轮发布快照 suiteCode 修复继续保留。无数据库脚本、线上数据或既有能力版本修改。
+
+### 最终验证
+- JDK17 Admin reactor 46 模块 BUILD SUCCESS（18:02:36，24.570s），先 install 更新本轮依赖，再执行独立 verification POM。
+- 开放平台 14 测试类、86 tests / 0 failures / 0 errors / 0 skipped（18:03:33，5.333s）。新增应用业务流程服务 17 项，复用真实编排器测试共 11 项，覆盖版本漂移、正常启动/重复复用、失败不自动重试；保留表单共用新增入口等原回归。
+- 应用集成 4 类、43 tests / 0 failures / 0 errors / 0 skipped（18:03:28，4.038s），包括真实快照生成/读取及应用内跨应用发布拦截。
+- 前端原矩阵加新来源测试，共 13 文件、115/115 通过（18:07:09，2.82s）；7 个任务 JS/Vue 文件最终 ESLint 通过，无 errors/warnings。Vitest 保留现有 designer-core transfer 重复注册提示。
+- Vite 生产构建通过（33.17s）；Node 20.19.0 未安装，使用现有 Node 24.21.0，直接执行原 build 脚本正文，未改依赖审批设置。已有 CSS/chunk/plugin timing 警告保留。
+- 首轮 Java 编译发现身份上下文没有 require API，改用已有 current().orElseThrow；首轮测试修正缺失 verifyNoInteractions import、Mockito Spring context 所需 BusinessApplicationVersionMapper，以及 SERVICE 身份测试构造不符合契约的问题。修复后重新编译/运行上述全部断言，没有删除失败断言或放宽权限判断。定向 ESLint 首轮仅格式问题，针对任务文件修复后重新测试。
+
+### 可复跑命令与证据
+
+从 forge-admin-main 根目录，沿用已存在的 JDK/Maven 临时工具链：
+
+```bash
+export JAVA_HOME=/private/tmp/forge-open-platform-java.CanL0f/amazon-corretto-17.jdk/Contents/Home
+export PATH="$JAVA_HOME/bin:/private/tmp/forge-open-platform-java.CanL0f/apache-maven-3.9.11/bin:$PATH"
+mvn -B -ntp -Dmaven.repo.local=/private/tmp/forge-open-platform-java.CanL0f/repository -f forge-server/pom.xml -pl forge-admin-server -am install -Dmaven.test.skip=true
+mvn -B -ntp -Dmaven.repo.local=/private/tmp/forge-open-platform-java.CanL0f/repository -f code-copilot/changes/open-platform-experience/verification/pom.xml -Penable-tests test
+mvn -B -ntp -Dmaven.repo.local=/private/tmp/forge-open-platform-java.CanL0f/repository -f code-copilot/changes/lowcode-application-integrations/verification/pom.xml -Penable-tests test
+git diff --check
+```
+
+从 forge-admin-main/forge-admin-ui：
+
+```bash
+export PATH=/Users/mini32g/.nvm/versions/node/v24.21.0/bin:$PATH
+./node_modules/.bin/vitest run src/views/ai/capability/__tests__ src/stores/application/__tests__ src/views/app-center/__tests__/application-integration-entry.spec.js src/components/business-process-designer/__tests__/business-process-designer.spec.js src/router/guards/__tests__ src/views/system/collaboration/__tests__
+./node_modules/.bin/eslint src/stores/capability/registrationStore.js src/views/ai/capability/components/CapabilityRegisterModal.vue src/views/ai/capability/components/CapabilityProcessSource.vue src/views/ai/capability/components/useApplicationProcessRegistration.js src/views/ai/capability/components/useCapabilityRegistration.js src/views/ai/capability/__tests__/registration-workflow.spec.js src/views/ai/capability/__tests__/application-process-source.spec.js
+node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
+```
+
+日志位于 /private/tmp：forge-process-capability-build-final.log、forge-process-back-tests-final.log、forge-process-integration-tests-final.log、forge-process-front-tests.log、forge-process-ui-build.log。最终前端 18:07 复跑和 ESLint 结果见当前任务命令输出，早先 front-tests.log 为首轮 115 项通过记录。
+
+### 浏览器和交付边界
+- 复用仅监听 127.0.0.1:5199 的真实 Vue 组件夹具，以模拟 API 延迟 2 秒返回两个业务流程。实际点击当前应用 → 注册能力 → 流程操作 → 应用业务流程 → 选择审批流程 v3 → 发布确认，确认只输入 recordId，模拟发布正常返回列表；页面来源加载时立即反馈并禁止继续。
+- 桌面与 390px 深色检查通过，width/scrollWidth 均为 390，控制台 error=[]。这不是实际审批或开放 HTTP 联调；夹具替换了 API 与 AiCrudPage 列表外壳。
+- 已恢复 viewport、关闭本轮标签 8，保留用户原 file:// 页面；仅停止本轮 Vite 会话 75789（退出 130）。没有启动或停止用户 Admin/Flow/MySQL 服务。
+- 仅修改 forge-admin-main / codex/open-platform-experience，保留已有 .DS_Store，不操作 H5 工作树。未执行全仓已知失败的测试编译、真实数据库/网关/审批/消息 E2E、迁移、部署、commit 或 push。部署前人工权限/状态流转审查与真实环境验收仍待用户执行。

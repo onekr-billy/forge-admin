@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
 import com.mdframe.forge.plugin.capability.controlplane.mapper.AiCapabilityMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessMessageChannel;
 import com.mdframe.forge.plugin.generator.mapper.BusinessMessageChannelMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
@@ -37,6 +38,7 @@ public class ApplicationIntegrationService {
     private final ApplicationIntegrationMapper mapper;
     private final BusinessApplicationService applications;
     private final BusinessApplicationRuntimeService runtime;
+    private final BusinessObjectMapper objects;
     private final AiCapabilityMapper capabilities;
     private final BusinessMessageChannelMapper channels;
     private final ISocialConfigService connections;
@@ -133,9 +135,17 @@ public class ApplicationIntegrationService {
     public void requireSource(Long appId, String suiteCode, String objectCode) {
         application(appId);
         var published = runtime.runtimeById(appId);
-        boolean member = published.getObjects().stream().anyMatch(o -> Objects.equals(o.getSuiteCode(), suiteCode)
-                && Objects.equals(o.getObjectCode(), objectCode));
-        if (!member) throw new BusinessException("来源不属于当前应用的已发布版本，请先发布应用");
+        if (!StringUtils.hasText(suiteCode) || !StringUtils.hasText(objectCode)) {
+            throw new BusinessException("请选择有效的已发布业务对象");
+        }
+        var source = objects.selectByObjectCode(tenant(), suiteCode, objectCode);
+        // Legacy snapshots omitted suiteCode. Resolve the tenant-scoped identity, never draft membership
+        // or the application's suite: referenced objects may belong to a different suite.
+        boolean member = source != null && source.getId() != null && source.getId() > 0
+                && published.getObjects().stream().anyMatch(o -> Objects.equals(o.getObjectId(), source.getId())
+                && Objects.equals(o.getObjectCode(), objectCode)
+                && (!StringUtils.hasText(o.getSuiteCode()) || Objects.equals(o.getSuiteCode(), suiteCode)));
+        if (!member) throw new BusinessException("所选业务对象不在当前应用的已发布版本中，请确认来源或重新发布应用");
     }
 
     public void requirePublish(Long appId, String code) {

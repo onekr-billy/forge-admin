@@ -18,11 +18,13 @@ import { businessApplicationRuntimeByCode } from '@/api/business-application'
 import { useDict } from '@/composables'
 import { useCapabilityRegistrationStore } from '@/stores/capability/registrationStore'
 import { registrationScenario } from '../registrationSources'
+import { APPLICATION_PROCESS_SERVICE, useApplicationProcessRegistration } from './useApplicationProcessRegistration'
 
 export function useCapabilityRegistration(props, emit) {
   const registration = useCapabilityRegistrationStore()
   const { step, scenario } = storeToRefs(registration)
   const form = registration.form
+  const applicationProcess = useApplicationProcessRegistration()
   const advancedSource = ref(false)
   const router = useRouter()
 
@@ -72,12 +74,13 @@ export function useCapabilityRegistration(props, emit) {
   let objectGeneration = 0
   let openGeneration = 0
   onBeforeUnmount(() => {
+    applicationProcess.reset()
     sourceGeneration++
     objectGeneration++
     openGeneration++
   })
   const isUpgrade = computed(() => !!props.capability?.id)
-  const sourceLoading = computed(() => draftLoading.value || objectLoading.value || systemSourceLoading.value || detailLoading.value)
+  const sourceLoading = computed(() => draftLoading.value || objectLoading.value || systemSourceLoading.value || detailLoading.value || registration.processSource.loading)
   const selectedBusinessAction = computed(() => actions.value.find(item => item.actionCode === form.actionCode))
 
   Object.assign(form, {
@@ -180,9 +183,11 @@ export function useCapabilityRegistration(props, emit) {
       value: type,
     })))
 
-  const reviewSource = computed(() => form.sourceType === 'SYSTEM_SERVICE'
-    ? selectedForm.value?.name || selectedEndpoint.value?.name || systemModelOptions.value.find(item => item.value === form.systemModelId)?.label || selectedSystemService.value?.serviceName
-    : objects.value.find(item => String(item.id) === String(form.objectId))?.objectName || form.objectCode)
+  const reviewSource = computed(() => form.sourceType === 'APPLICATION_PROCESS'
+    ? applicationProcess.selected.value?.name
+    : form.sourceType === 'SYSTEM_SERVICE'
+      ? selectedForm.value?.name || selectedEndpoint.value?.name || systemModelOptions.value.find(item => item.value === form.systemModelId)?.label || selectedSystemService.value?.serviceName
+      : objects.value.find(item => String(item.id) === String(form.objectId))?.objectName || form.objectCode)
 
   const modalTitle = computed(() => isUpgrade.value ? '发布能力新版本' : '注册开放能力')
 
@@ -191,6 +196,8 @@ export function useCapabilityRegistration(props, emit) {
   const submitDisabled = computed(() => {
     if (sourceLoading.value || !!sourceError.value)
       return true
+    if (form.sourceType === 'APPLICATION_PROCESS')
+      return applicationProcess.disabled.value
     if (form.sourceType === 'FLOW_ACTION') {
       return !flowSource.value || detailLoading.value
         || (form.operation === 'SUBMIT' && !flowSource.value.submissionSupported)
@@ -210,7 +217,7 @@ export function useCapabilityRegistration(props, emit) {
   const rules = {
     objectId: {
       trigger: 'change',
-      validator: (_rule, value) => form.sourceType === 'SYSTEM_SERVICE' || isPositiveId(value)
+      validator: (_rule, value) => ['SYSTEM_SERVICE', 'APPLICATION_PROCESS'].includes(form.sourceType) || isPositiveId(value)
         ? true
         : new Error('请选择已发布业务对象'),
     },
@@ -379,6 +386,7 @@ export function useCapabilityRegistration(props, emit) {
   }
 
   watch(() => props.show, async (visible) => {
+    applicationProcess.reset()
     const opening = ++openGeneration
     sourceGeneration++
     objectGeneration++
@@ -401,6 +409,8 @@ export function useCapabilityRegistration(props, emit) {
       await chooseScenario(props.allowedTypes.some(type => ['SYSTEM_SERVICE', 'BUSINESS_ACTION'].includes(type)) ? 'application' : 'flow')
     }
   }, { immediate: true })
+
+  watch(() => registration.processSource.code, () => updateGeneratedCode())
 
   watch(flowOperationOptions, (options) => {
     if (form.sourceType !== 'FLOW_ACTION' || form.operation || options.length === 0)
@@ -488,6 +498,11 @@ export function useCapabilityRegistration(props, emit) {
         version: draft.suggestedVersion,
         description: draft.description || '',
       })
+      if (draft.sourceType === 'SYSTEM_SERVICE' && draft.sourceKey === APPLICATION_PROCESS_SERVICE) {
+        form.sourceType = 'APPLICATION_PROCESS'
+        await applicationProcess.restore(draft.policySnapshot?.registrationParameters)
+        return
+      }
       if (draft.sourceType === 'SYSTEM_SERVICE') {
         await initializeSystemServiceUpgrade(draft)
       }
@@ -689,6 +704,7 @@ export function useCapabilityRegistration(props, emit) {
   }
 
   async function handleSourceTypeChange() {
+    applicationProcess.reset()
     sourceGeneration++
     objectGeneration++
     detailLoading.value = false
@@ -713,6 +729,8 @@ export function useCapabilityRegistration(props, emit) {
     flowSourceError.value = ''
     flowSource.value = null
     updateGeneratedCode(true)
+    if (form.sourceType === 'APPLICATION_PROCESS')
+      return
     if (form.sourceType === 'SYSTEM_SERVICE')
       await loadSystemServices()
     else if (objects.value.length === 0)
@@ -891,6 +909,14 @@ export function useCapabilityRegistration(props, emit) {
   function updateGeneratedCode(force = false) {
     if (isUpgrade.value)
       return
+    if (form.sourceType === 'APPLICATION_PROCESS') {
+      const source = registration.processSource
+      const nextCode = source.code ? ['app', source.applicationId, source.code, 'start'].map(normalizeCodeSegment).join('.') : ''
+      if (force || !form.capabilityCode || form.capabilityCode === lastGeneratedCode.value)
+        form.capabilityCode = nextCode
+      lastGeneratedCode.value = nextCode
+      return
+    }
     if (form.sourceType === 'SYSTEM_SERVICE') {
       const model = selectedSystemService.value?.options?.models
         ?.find(item => item.modelId === form.systemModelId)
@@ -972,7 +998,16 @@ export function useCapabilityRegistration(props, emit) {
         description: form.description || null,
       }
       let res
-      if (form.sourceType === 'BUSINESS_ACTION') {
+      if (form.sourceType === 'APPLICATION_PROCESS') {
+        res = await publishFromContext('system', {
+          serviceCode: APPLICATION_PROCESS_SERVICE,
+          capabilityCode: form.capabilityCode,
+          version: form.version,
+          description: form.description || null,
+          parameters: applicationProcess.parameters(),
+        }, publishSystemServiceCapability)
+      }
+      else if (form.sourceType === 'BUSINESS_ACTION') {
         res = await publishFromContext('action', {
           ...common,
           actionCode: form.actionCode,
@@ -1052,6 +1087,7 @@ export function useCapabilityRegistration(props, emit) {
   }
 
   return {
+    applicationProcess,
     step,
     scenario,
     advancedSource,
@@ -1148,8 +1184,8 @@ export function useCapabilityRegistration(props, emit) {
       return
     scenario.value = value
     step.value = 2
-    form.sourceType = value === 'application' ? (props.allowedTypes.includes('SYSTEM_SERVICE') ? 'SYSTEM_SERVICE' : 'BUSINESS_ACTION') : value === 'rest' ? 'SYSTEM_SERVICE' : 'FLOW_ACTION'
-    if (!props.allowedTypes.includes(form.sourceType))
+    form.sourceType = value === 'application' ? (props.allowedTypes.includes('SYSTEM_SERVICE') ? 'SYSTEM_SERVICE' : 'BUSINESS_ACTION') : value === 'rest' ? 'SYSTEM_SERVICE' : props.allowedTypes.includes('SYSTEM_SERVICE') ? 'APPLICATION_PROCESS' : 'FLOW_ACTION'
+    if (form.sourceType !== 'APPLICATION_PROCESS' && !props.allowedTypes.includes(form.sourceType))
       form.sourceType = props.allowedTypes[0]
     await handleSourceTypeChange()
   }

@@ -17,6 +17,24 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ApplicationIntegrationControllerTest {
+    @Test void applicationProcessPublishCannotOverridePathApplication() {
+        var integrations = mock(ApplicationIntegrationService.class);
+        var publisher = mock(SystemServiceCapabilityPublisher.class);
+        var controller = new ApplicationIntegrationController(integrations, mock(FlowActionCapabilityPublisher.class),
+                mock(BusinessActionCapabilityPublisher.class), publisher, mock(CapabilityGrantService.class),
+                mock(AiCapabilityGrantMapper.class), mock(CapabilityClientService.class), mock(CapabilityInvocationAuditService.class));
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var parameters = json.createObjectNode().put("applicationId", "12").put("objectId", "5").put("processCode", "approval");
+        var dto = new com.mdframe.forge.plugin.capability.secureaction.system.SystemServiceCapabilityPublishDTO(
+                com.mdframe.forge.plugin.capability.secureaction.system.ApplicationProcessStartSystemService.CODE, "app.start", "1.0.0", null, parameters);
+        assertThrows(BusinessException.class, () -> controller.system(11L, dto));
+        verifyNoInteractions(publisher);
+        parameters.put("applicationId", "11");
+        when(integrations.tenant()).thenReturn(7L);
+        when(publisher.publish(7L, dto)).thenReturn(91L);
+        assertEquals(91L, controller.system(11L, dto).getData());
+        verify(integrations).attach(11L, 91L);
+    }
     @Test void explicitEntryCannotBypassDisabledWorkbenchSso() {
         var configs = mock(com.mdframe.forge.starter.social.service.ISocialConfigService.class);
         var apps = mock(com.mdframe.forge.starter.social.service.ISocialAppConfigService.class);

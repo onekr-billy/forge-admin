@@ -8,6 +8,7 @@ export const useCapabilityRegistrationStore = defineStore('capability-registrati
   const applicationId = ref(null)
   const pageId = ref(null)
   const form = reactive({})
+  const processSource = reactive({ applicationId: null, objectId: null, code: null, options: [], loading: false, error: '' })
   const emptyContext = () => ({ applicationId: null, applicationCode: '', applicationName: '', pageId: '', objectId: null, lockApplication: false })
   const sourceContext = reactive(emptyContext())
 
@@ -19,5 +20,5 @@ export const useCapabilityRegistrationStore = defineStore('capability-registrati
     Object.assign(sourceContext, emptyContext(), context)
   }
 
-  return { step, scenario, applicationId, pageId, form, sourceContext, initialize }
+  return { step, scenario, applicationId, pageId, form, processSource, sourceContext, initialize }
 })

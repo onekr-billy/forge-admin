@@ -1,33 +1,41 @@
-import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useCapabilityCallGuideStore } from '@/stores/capability/callGuideStore'
+import { useCapabilityOnlineTestStore } from '@/stores/capability/onlineTestStore'
 import { getCapabilityCredential } from '../capabilityCredentialSession'
+import { requestValidationError } from './capabilityTestRequest'
 
 export function useCapabilityOnlineTest(props) {
   const router = useRouter()
 
-  const authMode = ref(null)
-
-  const credential = ref('')
-
-  const subjectTokenMode = ref('OIDC')
-
-  const subjectToken = ref('')
-
-  const userAssertionSubject = ref('')
-
-  const userAssertionPhone = ref('')
-
-  const userAssertionOrgId = ref('')
-
-  const userAssertionPrivateKey = ref('')
-
-  const requestBody = ref('{}')
-
-  const testing = ref(false)
-
-  const testReport = ref(null)
-
-  const credentialAutoFilled = ref(false)
+  const store = useCapabilityOnlineTestStore()
+  const callStore = useCapabilityCallGuideStore()
+  const { authMode, credential, subjectTokenMode, subjectToken, userAssertionSubject, userAssertionPhone, userAssertionOrgId, userAssertionPrivateKey, requestBody, testing, confirming, testReport, credentialAutoFilled, stage, inputError } = storeToRefs(store)
+  let generation = 0
+  let activeRun = null
+  let confirmation = null
+  function invalidate() {
+    generation++
+    activeRun?.controller.abort()
+    activeRun = null
+    confirmation?.destroy()
+    confirmation = null
+    testing.value = false
+    confirming.value = false
+    callStore.busy = false
+    inputError.value = ''
+  }
+  onBeforeUnmount(() => {
+    invalidate()
+    store.clearSecrets()
+    store.guide = null
+    requestBody.value = '{}'
+    testReport.value = null
+  })
+  watch([testing, confirming], ([running, pending]) => {
+    callStore.busy = running || pending
+  }, { flush: 'sync' })
 
   const authOptions = computed(() => (props.guide?.availableAuthModes || []).map(mode => ({
     label: mode === 'OAUTH' ? 'OAuth 2.1' : 'AppId + HMAC-SHA256',
@@ -49,6 +57,10 @@ export function useCapabilityOnlineTest(props) {
   ))
 
   watch(() => props.guide, (guide) => {
+    invalidate()
+    store.guide = guide
+    stage.value = 'identity'
+    store.requestMode = 'fields'
     authMode.value = guide?.availableAuthModes?.[0] || null
     subjectTokenMode.value = guide?.userAssertionEnabled ? 'USER_ASSERTION' : 'OIDC'
     subjectToken.value = ''
@@ -62,6 +74,7 @@ export function useCapabilityOnlineTest(props) {
   }, { immediate: true })
 
   watch(authMode, () => {
+    invalidate()
     subjectTokenMode.value = props.guide?.userAssertionEnabled ? 'USER_ASSERTION' : 'OIDC'
     subjectToken.value = ''
     userAssertionSubject.value = ''
@@ -73,13 +86,14 @@ export function useCapabilityOnlineTest(props) {
   })
 
   watch(subjectTokenMode, () => {
+    invalidate()
     subjectToken.value = ''
     userAssertionSubject.value = ''
     userAssertionPhone.value = ''
     userAssertionOrgId.value = ''
     userAssertionPrivateKey.value = ''
     testReport.value = null
-    applySessionCredential(props.guide)
+    applySessionCredential(props.guide, true)
   })
 
   function resetBody() {
@@ -87,60 +101,97 @@ export function useCapabilityOnlineTest(props) {
   }
 
   function handleTest() {
+    if (testing.value || confirming.value)
+      return
     if (!validateTestInput())
       return
     if (props.guide.behavior === 'READ_ONLY') {
-      executeTest()
-      return
+      return executeTest()
     }
-    window.$dialog.warning({
+    confirming.value = true
+    const current = generation
+    const fingerprint = inputFingerprint()
+    let consumed = false
+    function cancel() {
+      consumed = true
+      confirming.value = false
+    }
+    confirmation = window.$dialog.warning({
       title: '确认执行有副作用的能力',
       content: '该能力可能启动流程、修改业务数据或触发外部动作。本次测试会真实执行，并自动携带一次性 Idempotency-Key。是否继续？',
       positiveText: '确认执行',
       negativeText: '取消',
-      onPositiveClick: executeTest,
+      onPositiveClick: () => {
+        if (consumed)
+          return
+        consumed = true
+        confirming.value = false
+        if (current !== generation || fingerprint !== inputFingerprint())
+          return
+        executeTest()
+      },
+      onNegativeClick: cancel,
+      onClose: cancel,
+      onMaskClick: cancel,
     })
   }
 
-  function validateTestInput() {
+  function invalid(message) {
+    inputError.value = message
+    window.$message.error(message)
+    return false
+  }
+
+  function validateIdentity() {
+    inputError.value = ''
     if (!props.guide?.ready) {
-      window.$message.error('当前调用条件未就绪，请先处理阻断项')
-      return false
+      return invalid('当前调用条件未就绪，请先返回接入检查处理阻断项')
     }
+    if (!props.guide.availableAuthModes?.includes(authMode.value))
+      return invalid('请选择此接入系统支持的认证方式')
     if (!credential.value.trim()) {
-      window.$message.error(`请输入${credentialLabel.value}`)
-      return false
+      return invalid(`请输入${credentialLabel.value}`)
     }
     if (requiresSubjectToken.value) {
       if (subjectTokenMode.value === 'OIDC' && !subjectToken.value.trim()) {
-        window.$message.error('请提供受信 OIDC subject_token')
-        return false
+        return invalid('请提供受信 OIDC subject_token')
       }
       if (subjectTokenMode.value === 'USER_ASSERTION') {
         if (!props.guide?.userAssertionEnabled || !props.guide?.userAssertionKeyId) {
-          window.$message.error('当前客户端尚未启用用户断言密钥')
-          return false
+          return invalid('当前客户端尚未启用用户断言密钥')
         }
         if (!userAssertionSubject.value.trim()) {
-          window.$message.error('请输入已预绑定的外围用户标识')
-          return false
+          return invalid('请输入已预绑定的外围用户标识')
         }
         if (props.guide?.userAssertionMappingMode === 'VERIFIED_PHONE'
           && userAssertionPhone.value.trim()
           && !/^\+?\d{6,20}$/.test(userAssertionPhone.value.trim())) {
-          window.$message.error('手机号必须为 6 至 20 位数字，可带国际区号 +')
-          return false
+          return invalid('手机号必须为 6 至 20 位数字，可带国际区号 +')
         }
         if (!userAssertionPrivateKey.value.includes('-----BEGIN PRIVATE KEY-----')) {
-          window.$message.error('请粘贴有效的 PKCS#8 PEM 私钥')
-          return false
+          return invalid('请粘贴有效的 PKCS#8 PEM 私钥')
         }
         if (userAssertionOrgId.value.trim() && !/^[1-9]\d*$/.test(userAssertionOrgId.value.trim())) {
-          window.$message.error('Forge 组织 ID 必须是正整数')
-          return false
+          return invalid('Forge 组织 ID 必须是正整数')
         }
       }
     }
+    return true
+  }
+
+  function continueToRequest() {
+    if (validateIdentity())
+      stage.value = 'request'
+  }
+
+  function validateTestInput() {
+    if (!validateIdentity()) {
+      stage.value = 'identity'
+      return false
+    }
+    const error = requestValidationError(props.guide, requestBody.value)
+    if (error)
+      return invalid(error)
     try {
       const payload = JSON.parse(requestBody.value)
       if (!payload || Array.isArray(payload) || typeof payload !== 'object')
@@ -149,8 +200,7 @@ export function useCapabilityOnlineTest(props) {
         validateFlowActionPayload(payload)
     }
     catch (error) {
-      window.$message.error(error?.message || '请求 Body 不是合法 JSON')
-      return false
+      return invalid(error?.message || '请求 Body 不是合法 JSON')
     }
     return true
   }
@@ -177,13 +227,19 @@ export function useCapabilityOnlineTest(props) {
   }
 
   async function executeTest() {
+    if (testing.value || !validateTestInput())
+      return
+    const run = { generation, controller: new AbortController(), fingerprint: inputFingerprint() }
+    activeRun = run
     testing.value = true
     testReport.value = null
     const startedAt = new Date()
     try {
       const report = authMode.value === 'HMAC'
-        ? await executeHmac()
-        : await executeOAuth()
+        ? await executeHmac(run)
+        : await executeOAuth(run)
+      if (activeRun !== run || run.generation !== generation)
+        return
       testReport.value = {
         ...report,
         authMode: authMode.value,
@@ -193,12 +249,15 @@ export function useCapabilityOnlineTest(props) {
         startedAt: formatDate(startedAt),
         durationMs: Date.now() - startedAt.getTime(),
       }
+      stage.value = 'result'
       if (testReport.value.success)
         window.$message.success('能力调用成功，可以下载完整测试报文')
       else
         window.$message.error(testReport.value.error || '能力调用失败，请查看返回报文和 requestId')
     }
     catch (error) {
+      if (activeRun !== run || run.generation !== generation)
+        return
       testReport.value = {
         success: false,
         error: error?.message || '网络请求失败',
@@ -211,14 +270,31 @@ export function useCapabilityOnlineTest(props) {
         tokenExchange: null,
         invocation: null,
       }
+      stage.value = 'result'
       window.$message.error(testReport.value.error)
     }
     finally {
-      testing.value = false
+      if (activeRun === run) {
+        testing.value = false
+        activeRun = null
+      }
     }
   }
 
-  async function executeOAuth() {
+  function inputFingerprint() {
+    return JSON.stringify([props.guide, authMode.value, credential.value, subjectTokenMode.value, subjectToken.value, userAssertionSubject.value, userAssertionPhone.value, userAssertionOrgId.value, userAssertionPrivateKey.value, requestBody.value])
+  }
+
+  async function fetchForTest(run, url, options) {
+    if (!run || activeRun !== run || run.generation !== generation || run.fingerprint !== inputFingerprint())
+      throw new Error('调用上下文已变化，请重新核对配置')
+    const response = await fetch(url, { ...options, signal: run.controller.signal })
+    if (activeRun !== run || run.generation !== generation || run.fingerprint !== inputFingerprint())
+      throw new Error('调用上下文已变化，已停止后续请求')
+    return response
+  }
+
+  async function executeOAuth(run) {
     const params = new URLSearchParams()
     params.set('grant_type', props.guide.tokenExchangeRequired
       ? 'urn:ietf:params:oauth:grant-type:token-exchange'
@@ -237,7 +313,7 @@ export function useCapabilityOnlineTest(props) {
     params.set('scope', `capability:invoke:${props.guide.capabilityCode}`)
 
     const tokenStartedAt = Date.now()
-    const tokenResponse = await fetch(backendProxyUrl(props.guide.tokenUrl), {
+    const tokenResponse = await fetchForTest(run, backendProxyUrl(props.guide.tokenUrl), {
       method: 'POST',
       credentials: 'omit',
       headers: {
@@ -279,7 +355,7 @@ export function useCapabilityOnlineTest(props) {
     }, {
       'Authorization': 'Bearer <REDACTED>',
       'Content-Type': 'application/json',
-    })
+    }, run)
     const success = invocation.response.status >= 200 && invocation.response.status < 300
     return {
       success,
@@ -331,7 +407,7 @@ export function useCapabilityOnlineTest(props) {
     return `${signingInput}.${base64UrlBytes(signature)}`
   }
 
-  async function executeHmac() {
+  async function executeHmac(run) {
     if (!globalThis.crypto?.subtle)
       throw new Error('当前浏览器环境不支持 Web Crypto，请使用 HTTPS 或 localhost')
     const timestamp = String(Date.now())
@@ -359,7 +435,7 @@ export function useCapabilityOnlineTest(props) {
       'X-Forge-Nonce': nonce,
       'X-Forge-Signature': '<REDACTED>',
       'Content-Type': 'application/json',
-    })
+    }, run)
     const success = invocation.response.status >= 200 && invocation.response.status < 300
     return {
       success,
@@ -369,7 +445,7 @@ export function useCapabilityOnlineTest(props) {
     }
   }
 
-  async function invokeGateway(actualHeaders, reportHeaders) {
+  async function invokeGateway(actualHeaders, reportHeaders, run) {
     const idempotencyKey = props.guide.behavior === 'READ_ONLY'
       ? null
       : (globalThis.crypto?.randomUUID?.() || fallbackNonce())
@@ -380,7 +456,7 @@ export function useCapabilityOnlineTest(props) {
       safeHeaders['Idempotency-Key'] = idempotencyKey
     }
     const startedAt = Date.now()
-    const response = await fetch(backendProxyUrl(props.guide.invokeUrl), {
+    const response = await fetchForTest(run, backendProxyUrl(props.guide.invokeUrl), {
       method: 'POST',
       credentials: 'omit',
       headers: requestHeaders,
@@ -391,8 +467,8 @@ export function useCapabilityOnlineTest(props) {
       method: 'POST',
       url: props.guide.invokeUrl,
       headers: safeHeaders,
-      body: JSON.parse(requestBody.value),
-      rawBody: requestBody.value,
+      body: redactSensitive(JSON.parse(requestBody.value)),
+      rawBody: JSON.stringify(redactSensitive(JSON.parse(requestBody.value))),
     }, response, redactSensitive(parseBody(responseText)), Date.now() - startedAt)
     report.success = response.ok
     return report
@@ -443,7 +519,7 @@ export function useCapabilityOnlineTest(props) {
       return value
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [
       key,
-      /authorization|token|secret|password|signing.?key|signature/i.test(key)
+      /authorization|token|secret|password|signing.?key|private.?key|signature/i.test(key)
         ? '<REDACTED>'
         : redactSensitive(item),
     ]))
@@ -552,12 +628,13 @@ export function useCapabilityOnlineTest(props) {
     return exchange ? JSON.stringify(exchange, null, 2) : '未发起请求'
   }
 
-  function applySessionCredential(guide) {
+  function applySessionCredential(guide, preserveCredential = false) {
     const session = getCapabilityCredential(guide?.clientId)
     const nextCredential = authMode.value === 'HMAC'
       ? session?.signingKey
       : session?.clientSecret
-    credential.value = nextCredential || ''
+    if (!preserveCredential)
+      credential.value = nextCredential || ''
     userAssertionPrivateKey.value = session?.privateKeyPem || ''
     const needsPrivateKey = authMode.value === 'OAUTH'
       && guide?.tokenExchangeRequired
@@ -719,6 +796,10 @@ export function useCapabilityOnlineTest(props) {
     requiresSubjectToken,
     credentialLabel,
     credentialPlaceholder,
+    stage,
+    inputError,
+    confirming,
+    continueToRequest,
     resetBody,
     handleTest,
     validateTestInput,

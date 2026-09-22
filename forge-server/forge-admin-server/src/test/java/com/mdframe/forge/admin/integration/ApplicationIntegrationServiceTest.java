@@ -6,7 +6,9 @@ import com.mdframe.forge.admin.integration.service.ApplicationIntegrationService
 import com.mdframe.forge.plugin.capability.controlplane.domain.AiCapability;
 import com.mdframe.forge.plugin.capability.controlplane.mapper.AiCapabilityMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessMessageChannel;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.BusinessMessageChannelMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.*;
@@ -31,13 +33,14 @@ class ApplicationIntegrationServiceTest {
     ApplicationIntegrationMapper mapper = mock(ApplicationIntegrationMapper.class);
     BusinessApplicationService applications = mock(BusinessApplicationService.class);
     BusinessApplicationRuntimeService runtime = mock(BusinessApplicationRuntimeService.class);
+    BusinessObjectMapper objects = mock(BusinessObjectMapper.class);
     AiCapabilityMapper capabilities = mock(AiCapabilityMapper.class);
     BusinessMessageChannelMapper channels = mock(BusinessMessageChannelMapper.class);
     ISocialConfigService connections = mock(ISocialConfigService.class);
     ISocialAppConfigService socialApps = mock(ISocialAppConfigService.class);
     CollaborationProviderRegistry providers = mock(CollaborationProviderRegistry.class);
     ApplicationIntegrationService service = new ApplicationIntegrationService(mapper, applications, runtime,
-            capabilities, channels, connections, socialApps, providers);
+            objects, capabilities, channels, connections, socialApps, providers);
     MockedStatic<SessionHelper> session;
 
     @BeforeEach void setup() {
@@ -136,6 +139,9 @@ class ApplicationIntegrationServiceTest {
     @Test void sourceMustMatchPublishedApplicationSuiteAndObject() {
         BusinessApplicationRuntimeVO published = new BusinessApplicationRuntimeVO();
         BusinessApplicationObjectVO object = new BusinessApplicationObjectVO(); object.setSuiteCode("legal"); object.setObjectCode("contract");
+        object.setObjectId(101L);
+        AiBusinessObject source = new AiBusinessObject(); source.setId(101L);
+        when(objects.selectByObjectCode(7L, "legal", "contract")).thenReturn(source);
         published.setObjects(List.of(object)); when(runtime.runtimeById(11L)).thenReturn(published);
         assertDoesNotThrow(() -> service.requireSource(11L, "legal", "contract"));
         assertThrows(BusinessException.class, () -> service.requireSource(11L, "other", "contract"));

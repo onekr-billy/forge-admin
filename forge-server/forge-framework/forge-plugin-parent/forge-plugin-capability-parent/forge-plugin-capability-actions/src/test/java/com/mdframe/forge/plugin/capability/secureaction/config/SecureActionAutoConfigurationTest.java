@@ -41,6 +41,12 @@ class SecureActionAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(SecureActionAutoConfiguration.class))
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService.class, () -> mock(com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService.class))
+            .withBean(com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationVersionService.class, () -> mock(com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationVersionService.class))
+            .withBean(com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper.class, () -> mock(com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper.class))
+            .withBean(com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper.class, () -> mock(com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper.class))
+            .withBean(com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper.class, () -> mock(com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper.class))
+            .withBean(com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessOrchestrator.class, () -> mock(com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessOrchestrator.class))
             .withBean(Validator.class, () -> mock(Validator.class))
             .withBean(BusinessObjectService.class, () -> mock(BusinessObjectService.class))
             .withBean(BusinessEventPublisher.class, () -> mock(BusinessEventPublisher.class))
@@ -66,6 +72,7 @@ class SecureActionAutoConfigurationTest {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(LowcodeFormSystemService.class);
+            assertThat(context).hasSingleBean(com.mdframe.forge.plugin.capability.secureaction.system.ApplicationProcessStartSystemService.class);
             assertThat(context).hasSingleBean(RestEndpointSystemService.class);
             assertThat(context).hasSingleBean(SecureActionStepValidator.class);
             assertThat(context).hasSingleBean(SecureActionPublishedModelPolicy.class);

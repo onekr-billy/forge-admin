@@ -20,7 +20,7 @@
       <div class="scenario-intro">
         <h3>你想开放什么功能？</h3><p>选择来源后，平台会生成接口契约、授权入口和调用文档。</p>
       </div>
-      <button v-if="allowedTypes.includes('FLOW_ACTION') || (!initialContext.lockApplication && allowedTypes.includes('SYSTEM_SERVICE'))" type="button" class="scenario-option" @click="chooseScenario('flow')">
+      <button v-if="allowedTypes.includes('FLOW_ACTION') || allowedTypes.includes('SYSTEM_SERVICE')" type="button" class="scenario-option" @click="chooseScenario('flow')">
         <i class="i-lucide:workflow" /><span><strong>流程操作</strong><small>发起流程、提交申请、审批与撤回</small></span><i class="i-lucide:chevron-right" />
       </button>
       <button v-if="allowedTypes.includes('BUSINESS_ACTION') || allowedTypes.includes('SYSTEM_SERVICE')" type="button" class="scenario-option" @click="chooseScenario('application')">
@@ -52,8 +52,11 @@
           <n-radio-button v-if="scenario === 'application' && allowedTypes.includes('BUSINESS_ACTION')" value="BUSINESS_ACTION">
             执行业务动作
           </n-radio-button>
-          <n-radio-button v-if="scenario === 'flow' && allowedTypes.includes('FLOW_ACTION')" value="FLOW_ACTION">
-            业务审批
+          <n-radio-button v-if="scenario === 'flow' && allowedTypes.includes('SYSTEM_SERVICE')" value="APPLICATION_PROCESS">
+            应用业务流程
+          </n-radio-button>
+          <n-radio-button v-if="scenario === 'flow' && allowedTypes.includes('FLOW_ACTION') && (!initialContext.lockApplication || form.sourceType === 'FLOW_ACTION' && isUpgrade)" value="FLOW_ACTION">
+            旧版对象审批
           </n-radio-button>
           <n-radio-button v-if="allowedTypes.includes('SYSTEM_SERVICE') && !(initialContext.lockApplication && scenario === 'flow')" value="SYSTEM_SERVICE">
             {{ scenario === 'application' ? '表单填报' : '独立流程' }}
@@ -68,11 +71,11 @@
         </n-button>
       </n-alert>
 
-      <CapabilityApplicationSource v-if="!isUpgrade && form.sourceType !== 'SYSTEM_SERVICE' && !advancedSource" @select="selectApplicationPage" />
-      <n-button v-if="!isUpgrade && !initialContext.lockApplication && form.sourceType !== 'SYSTEM_SERVICE'" text size="small" class="source-toggle" @click="advancedSource = !advancedSource">
+      <CapabilityApplicationSource v-if="!isUpgrade && !['SYSTEM_SERVICE', 'APPLICATION_PROCESS'].includes(form.sourceType) && !advancedSource" @select="selectApplicationPage" />
+      <n-button v-if="!isUpgrade && !initialContext.lockApplication && !['SYSTEM_SERVICE', 'APPLICATION_PROCESS'].includes(form.sourceType)" text size="small" class="source-toggle" @click="advancedSource = !advancedSource">
         {{ advancedSource ? '从应用页面选择' : '高级：直接选择业务对象' }}
       </n-button>
-      <n-form-item v-if="form.sourceType !== 'SYSTEM_SERVICE' && (advancedSource || isUpgrade)" label="业务对象" path="objectId">
+      <n-form-item v-if="!['SYSTEM_SERVICE', 'APPLICATION_PROCESS'].includes(form.sourceType) && (advancedSource || isUpgrade)" label="业务对象" path="objectId">
         <n-select
           v-model:value="form.objectId"
           :options="objectOptions"
@@ -126,7 +129,8 @@
         </div>
       </n-alert>
 
-      <template v-if="form.sourceType === 'BUSINESS_ACTION'">
+      <CapabilityProcessSource v-if="form.sourceType === 'APPLICATION_PROCESS'" :upgrade="isUpgrade" @page="applicationProcess.selectPage" @retry="applicationProcess.load()" />
+      <template v-else-if="form.sourceType === 'BUSINESS_ACTION'">
         <n-form-item label="业务动作" path="actionCode">
           <n-select
             v-model:value="form.actionCode"
@@ -372,8 +376,8 @@
         <dt>能力编码</dt><dd><code>{{ form.capabilityCode }}</code></dd>
         <dt>发布版本</dt><dd>{{ form.version }}</dd>
         <dt>业务来源</dt><dd>{{ reviewSource }}</dd>
-        <dt>操作</dt><dd>{{ form.sourceType === 'SYSTEM_SERVICE' ? selectedSystemService?.serviceName : form.actionCode || flowOperationOptions.find(item => item.value === form.operation)?.label }}</dd>
-        <dt>输入范围</dt><dd>{{ form.allowedFields.length ? `${form.allowedFields.length} 个业务字段` : '按来源契约校验' }}</dd>
+        <dt>操作</dt><dd>{{ form.sourceType === 'APPLICATION_PROCESS' ? '发起应用业务流程' : form.sourceType === 'SYSTEM_SERVICE' ? selectedSystemService?.serviceName : form.actionCode || flowOperationOptions.find(item => item.value === form.operation)?.label }}</dd>
+        <dt>输入范围</dt><dd>{{ form.sourceType === 'APPLICATION_PROCESS' ? '已保存的表单记录 ID（recordId）' : form.allowedFields.length ? `${form.allowedFields.length} 个业务字段` : '按来源契约校验' }}</dd>
       </dl>
       <n-space v-if="reviewFields.length" class="review-fields">
         <n-tag v-for="field in reviewFields" :key="field.field" size="small" :bordered="false">
@@ -412,6 +416,7 @@
 
 <script setup>
 import CapabilityApplicationSource from './CapabilityApplicationSource.vue'
+import CapabilityProcessSource from './CapabilityProcessSource.vue'
 import CapabilitySystemSource from './CapabilitySystemSource.vue'
 import { useCapabilityRegistration } from './useCapabilityRegistration'
 
@@ -433,6 +438,7 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'success'])
 
 const {
+  applicationProcess,
   step,
   scenario,
   advancedSource,

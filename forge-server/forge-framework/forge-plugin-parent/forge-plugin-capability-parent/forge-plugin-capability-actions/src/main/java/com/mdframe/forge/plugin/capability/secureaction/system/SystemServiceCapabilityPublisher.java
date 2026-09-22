@@ -64,4 +64,12 @@ public class SystemServiceCapabilityPublisher {
                 objectMapper.valueToTree(policy));
         return catalogService.publishSystemService(tenantId, command);
     }
+
+    public List<SystemServiceRegistrationSource> registrationSources(
+            Long tenantId, String serviceCode, SystemServiceRegistrationContext context) {
+        if (StringUtils.isBlank(serviceCode)) {
+            throw new BusinessException("按应用查询来源时必须指定能力类型");
+        }
+        return List.of(registry.require(serviceCode).registrationSource(tenantId, context));
+    }
 }
