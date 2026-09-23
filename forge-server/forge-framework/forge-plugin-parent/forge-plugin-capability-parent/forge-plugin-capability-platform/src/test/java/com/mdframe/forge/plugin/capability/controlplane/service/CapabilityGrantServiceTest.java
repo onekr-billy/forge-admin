@@ -95,6 +95,35 @@ class CapabilityGrantServiceTest {
     }
 
     @Test
+    void shouldNormalizeMissingSystemServicePolicyToDatabaseNull() {
+        for (JsonNode policy : new JsonNode[]{null, objectMapper.nullNode(), objectMapper.createObjectNode()}) {
+            Fixture fixture = systemServiceFixture();
+
+            assertThatCode(() -> fixture.service.grant(1L, dto(policy)))
+                    .doesNotThrowAnyException();
+
+            ArgumentCaptor<AiCapabilityGrant> captor = ArgumentCaptor.forClass(AiCapabilityGrant.class);
+            verify(fixture.grantMapper).insert(captor.capture());
+            assertThat(captor.getValue().getFieldPolicy()).isNull();
+        }
+    }
+
+    @Test
+    void shouldRejectNonEmptySystemServicePolicy() throws Exception {
+        for (JsonNode policy : new JsonNode[]{
+                objectMapper.readTree("{\"allowedFields\":[\"status\"]}"),
+                objectMapper.createArrayNode(),
+                objectMapper.getNodeFactory().textNode("custom")}) {
+            Fixture fixture = systemServiceFixture();
+
+            assertThatThrownBy(() -> fixture.service.grant(1L, dto(policy)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("不接受客户端自定义字段或操作策略");
+            verify(fixture.grantMapper, never()).insert(any(AiCapabilityGrant.class));
+        }
+    }
+
+    @Test
     void shouldAllowFlowGrantOnlyForVersionOperation() throws Exception {
         Fixture fixture = flowFixture();
 
@@ -132,6 +161,7 @@ class CapabilityGrantServiceTest {
         capability.setBehavior("ACTION");
         capability.setRiskLevel(riskLevel);
         AiCapabilityVersion version = new AiCapabilityVersion();
+        version.setStatus("PUBLISHED");
         version.setPolicySnapshot("{\"allowedFields\":[\"status\",\"remark\"],"
                 + "\"confirmationMode\":\"MCP_ELICITATION\"}");
         when(clientService.requireClient(1L, 10L)).thenReturn(client);
@@ -163,8 +193,35 @@ class CapabilityGrantServiceTest {
         capability.setBehavior("FLOW");
         capability.setRiskLevel("MEDIUM");
         AiCapabilityVersion version = new AiCapabilityVersion();
+        version.setStatus("PUBLISHED");
         version.setPolicySnapshot("{\"allowedOperations\":[\"APPROVE\"],"
                 + "\"confirmationMode\":\"MCP_ELICITATION\"}");
+        when(clientService.requireClient(1L, 10L)).thenReturn(client);
+        when(catalogService.getById(1L, 20L)).thenReturn(capability);
+        when(versionMapper.selectVersion(1L, 20L, "1.0.0")).thenReturn(version);
+        return new Fixture(service, grantMapper);
+    }
+
+    private Fixture systemServiceFixture() {
+        AiCapabilityGrantMapper grantMapper = mock(AiCapabilityGrantMapper.class);
+        AiCapabilityVersionMapper versionMapper = mock(AiCapabilityVersionMapper.class);
+        CapabilityCatalogService catalogService = mock(CapabilityCatalogService.class);
+        CapabilityClientService clientService = mock(CapabilityClientService.class);
+        CapabilityGrantService service = new CapabilityGrantService(
+                grantMapper, versionMapper, catalogService, clientService,
+                new CapabilityGrantPolicy(), objectMapper, Clock.systemUTC());
+        AiCapabilityClient client = new AiCapabilityClient();
+        client.setId(10L);
+        client.setTenantId(1L);
+        AiCapability capability = new AiCapability();
+        capability.setId(20L);
+        capability.setTenantId(1L);
+        capability.setSourceType("SYSTEM_SERVICE");
+        capability.setBehavior("ACTION");
+        capability.setRiskLevel("MEDIUM");
+        AiCapabilityVersion version = new AiCapabilityVersion();
+        version.setStatus("PUBLISHED");
+        version.setPolicySnapshot("{}");
         when(clientService.requireClient(1L, 10L)).thenReturn(client);
         when(catalogService.getById(1L, 20L)).thenReturn(capability);
         when(versionMapper.selectVersion(1L, 20L, "1.0.0")).thenReturn(version);

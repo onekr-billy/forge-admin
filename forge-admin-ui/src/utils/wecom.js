@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/store'
 import loginApi from '@/views/login/api'
+import { consumeWeComEntry, readWeComConnection, rememberWeComEntry } from './wecom-entry'
 
 // 企业微信PC客户端工作台免登：仅在企业微信客户端内置浏览器（UA 含 wxwork）生效。
 // 流程：无 code → 取授权地址跳转企微 OAuth2；带 code&state 回跳 → 换票据静默登录。
@@ -8,6 +9,9 @@ import loginApi from '@/views/login/api'
 
 async function getConnectionCode() {
   try {
+    const explicit = readWeComConnection(window.location, window.sessionStorage)
+    if (explicit)
+      return explicit
     const res = await loginApi.getWecomSsoConnection('WECHAT_ENTERPRISE')
     if (res?.code === 200 && res.data?.enabled) {
       return res.data.connectionCode || ''
@@ -54,7 +58,8 @@ function clearCallbackParams() {
     return
   }
   const { origin, pathname, hash } = window.location
-  window.history.replaceState(null, '', `${origin}${pathname}${hash || ''}`)
+  const entry = consumeWeComEntry(window.sessionStorage)
+  window.history.replaceState(null, '', entry || `${origin}${pathname}${hash || ''}`)
 }
 
 /**
@@ -119,6 +124,7 @@ export async function runWeComAutoLogin() {
     }
 
     // 授权阶段：取授权地址并跳转企微 OAuth2
+    rememberWeComEntry(window.location, window.sessionStorage, connectionCode)
     const authRes = await loginApi.getWecomAuthorize({
       connectionCode,
       redirectUri: buildRedirectUri(),

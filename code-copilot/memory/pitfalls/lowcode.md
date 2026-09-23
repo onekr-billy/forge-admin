@@ -1,16 +1,17 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 93 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 94 条。
 
-## GET render 设计预览写关系表导致 Lock wait timeout
+## GET render / designPreview 不能在长事务里写关系表
 
 **发现日期**: 2026-09-22
 
 **问题描述**:
-`GET /ai/crud-config/render/{configKey}?designPreview=true` 调用 `prepareRuntimeDraft`，在事务里执行 `ensureChildTableRelations` → `relationMapper.updateById`。并发预览、多区块渲染或与设计器保存重叠时，对 `ai_business_object_relation` 抢锁，抛出 `CannotAcquireLockException: Lock wait timeout exceeded`。
+`GET /ai/crud-config/render/{configKey}?designPreview=true` 若调用会同步写 `ai_business_object_relation` 的草稿物化，并在外层长事务里包住关系写入 + schema 编译，行锁可超过 MySQL `innodb_lock_wait_timeout`。并发预览、多区块渲染或与设计器保存重叠时抛出 `CannotAcquireLockException: Lock wait timeout exceeded`。
 
 **解决方案**:
-渲染链路改走 `prepareRuntimeDraftForPreview`：只编译草稿 schema，不同步写关系。子表关系仍由设计器保存和发布的 `synchronizeFormChildRelations` 落库。关系配置比较改为 JSON 语义相等，避免 key 顺序差异触发无意义 UPDATE。
+- 预览专用入口 `prepareRuntimeDraftForPreview`：只编译草稿 schema，不同步写关系；子表关系由设计器保存和发布链路落库。
+- 正式物化走短事务（`TransactionTemplate` REQUIRES_NEW）+ 同对象 JVM 锁；schema 编译放事务外；关系配置用 JSON 语义比较，避免键序差异触发无意义 UPDATE。
 
 ## 导入已有表新增不自动填充审计字段
 

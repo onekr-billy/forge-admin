@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper">
+    <insert id="reserve">
+        INSERT INTO ai_capability_form_receipt
+        (id, tenant_id, client_id, capability_id, key_hash, request_digest, record_id,
+         create_by, create_dept, create_time, update_by, update_time)
+        VALUES (#{id}, #{tenantId}, #{clientId}, #{capabilityId}, #{keyHash}, #{digest}, '',
+                #{userId}, #{orgId}, NOW(), #{userId}, NOW())
+        ON DUPLICATE KEY UPDATE id = id
+    </insert>
+    <select id="lock" resultType="java.util.LinkedHashMap">
+        SELECT id, request_digest AS requestDigest, record_id AS recordId
+        FROM ai_capability_form_receipt
+        WHERE tenant_id = #{tenantId} AND client_id = #{clientId}
+          AND capability_id = #{capabilityId} AND key_hash = #{keyHash}
+        FOR UPDATE
+    </select>
+    <update id="complete">
+        UPDATE ai_capability_form_receipt SET record_id = #{recordId}, update_by = #{userId}, update_time = NOW()
+        WHERE tenant_id = #{tenantId} AND client_id = #{clientId}
+          AND capability_id = #{capabilityId} AND key_hash = #{keyHash} AND record_id = ''
+    </update>
+</mapper>

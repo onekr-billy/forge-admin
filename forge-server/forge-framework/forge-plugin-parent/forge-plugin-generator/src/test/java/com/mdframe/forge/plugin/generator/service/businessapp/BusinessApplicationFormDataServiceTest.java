@@ -596,7 +596,7 @@ class BusinessApplicationFormDataServiceTest {
 
         StubDesignerService() {
             super(null, null, null, null, null, null, null, null, null, null,
-                    null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null);
         }
 
         @Override

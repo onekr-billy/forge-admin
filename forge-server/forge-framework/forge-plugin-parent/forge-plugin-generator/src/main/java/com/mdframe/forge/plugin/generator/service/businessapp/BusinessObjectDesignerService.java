@@ -54,7 +54,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -64,6 +67,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
@@ -194,6 +199,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private final BusinessDocumentConfigService documentConfigService;
     private final BusinessAppService businessAppService;
     private final BusinessApplicationChangeTracker applicationChangeTracker;
+    private final PlatformTransactionManager transactionManager;
+    /** 同对象 designPreview/发布准备串行化，避免并发写 ai_business_object_relation 锁等待。 */
+    private final ConcurrentHashMap<Long, DraftPreparationLock> prepareRuntimeDraftLocks = new ConcurrentHashMap<>();
 
     public BusinessObjectDesignerVO getDesigner(Long objectId) {
         DesignerContext context = loadContext(objectId);
@@ -403,7 +411,13 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return saveDraft(loadContext(objectId), BusinessObjectDesignStatus.CHANGED.getCode()).getConfig();
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 物化设计预览/发布前的运行草稿。
+     *
+     * <p>关系同步与草稿保存各自短事务提交；schema 编译在事务外执行，避免
+     * {@code designPreview} 并发渲染时长时间持有 {@code ai_business_object_relation} 行锁
+     * 触发 Lock wait timeout。</p>
+     */
     public AiCrudConfig prepareRuntimeDraft(Long objectId) {
         return prepareRuntimeDraft(objectId, true);
     }
@@ -413,18 +427,65 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
      * 避免并发预览/保存时对 ai_business_object_relation 抢锁超时。
      * 子表关系仍由设计器保存和发布链路的 synchronizeFormChildRelations 负责落库。
      */
-    @Transactional(rollbackFor = Exception.class)
     public AiCrudConfig prepareRuntimeDraftForPreview(Long objectId) {
         return prepareRuntimeDraft(objectId, false);
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 物化设计预览/发布前的运行草稿。
+     *
+     * <p>关系同步与草稿保存各自短事务提交；schema 编译在事务外执行，避免
+     * {@code designPreview} 并发渲染时长时间持有 {@code ai_business_object_relation} 行锁
+     * 触发 Lock wait timeout。预览路径可跳过关系写入。</p>
+     */
     public AiCrudConfig prepareRuntimeDraft(Long objectId, boolean persistChildRelations) {
+        if (objectId == null) {
+            throw new BusinessException("业务对象ID不能为空");
+        }
+        DraftPreparationLock lock = acquirePrepareRuntimeDraftLock(objectId);
+        lock.lock.lock();
+        try {
+            return doPrepareRuntimeDraft(objectId, persistChildRelations);
+        } finally {
+            lock.lock.unlock();
+            releasePrepareRuntimeDraftLock(objectId, lock);
+        }
+    }
+
+    private DraftPreparationLock acquirePrepareRuntimeDraftLock(Long objectId) {
+        return prepareRuntimeDraftLocks.compute(objectId, (key, existing) -> {
+            DraftPreparationLock lock = existing == null ? new DraftPreparationLock() : existing;
+            lock.references++;
+            return lock;
+        });
+    }
+
+    private void releasePrepareRuntimeDraftLock(Long objectId, DraftPreparationLock lock) {
+        prepareRuntimeDraftLocks.computeIfPresent(objectId, (key, current) -> {
+            if (current != lock) {
+                return current;
+            }
+            current.references--;
+            return current.references == 0 ? null : current;
+        });
+    }
+
+    private TransactionTemplate requiresNewTransactionTemplate() {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return template;
+    }
+
+    private AiCrudConfig doPrepareRuntimeDraft(Long objectId, boolean persistChildRelations) {
         DesignerContext context = loadContext(objectId);
         String beforeModelSchema = writeJson(context.getModelSchema(), "modelSchema");
         String beforePageSchema = writeJson(context.getPageSchema(), "pageSchema");
         if (persistChildRelations) {
-            synchronizeFormChildRelations(context);
+            DesignerContext relationContext = context;
+            requiresNewTransactionTemplate().executeWithoutResult(status ->
+                    synchronizeFormChildRelations(relationContext));
+            // 关系短事务提交后重新读取，避免并发设计保存期间用旧草稿覆盖最新模型/页面配置。
+            context = loadContext(objectId);
         }
         applyRelationsToModel(context);
         compileFormFirstRuntimeSchema(context);
@@ -437,7 +498,16 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         String currentStatus = StringUtils.defaultIfBlank(
                 context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT.getCode());
-        return saveDraft(context, currentStatus, false).getConfig();
+        DesignerContext preparedContext = context;
+        return requiresNewTransactionTemplate().execute(status ->
+                saveDraft(preparedContext, currentStatus, false).getConfig());
+    }
+
+    /** 预览准备的锁引用计数，避免最后一个执行者释放期间创建第二把同对象锁。 */
+    private static final class DraftPreparationLock {
+
+        private final ReentrantLock lock = new ReentrantLock(true);
+        private int references;
     }
 
     /**
@@ -1892,7 +1962,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 relation.getTargetObjectCode(), relationName, props);
         String configJson = writeJson(config, "relationConfig");
         boolean changed = !StringUtils.equals(relation.getRelationName(), relationName)
-                || !jsonTextEquals(relation.getRelationConfig(), configJson)
+                || !jsonEquals(relation.getRelationConfig(), configJson)
                 || !AUTO_SUBTABLE_RELATION_DESC.equals(StringUtils.trimToEmpty(relation.getDescription()));
         if (!changed) {
             return false;
@@ -1901,6 +1971,27 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         relation.setRelationConfig(configJson);
         relation.setDescription(AUTO_SUBTABLE_RELATION_DESC);
         return true;
+    }
+
+    /**
+     * 关系配置按 JSON 语义比较，避免空白/键序差异导致每次 designPreview 都 updateById。
+     */
+    private boolean jsonEquals(String left, String right) {
+        if (StringUtils.equals(left, right)) {
+            return true;
+        }
+        if (StringUtils.isBlank(left) && StringUtils.isBlank(right)) {
+            return true;
+        }
+        if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(left).equals(objectMapper.readTree(right));
+        } catch (Exception e) {
+            log.debug("[子表自动关联] relationConfig JSON解析失败，按文本处理", e);
+            return false;
+        }
     }
 
     private Map<String, Object> buildSubTableRelationConfig(String targetObjectCode, String relationName,
@@ -4067,23 +4158,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
             throw new BusinessException(fieldName + "序列化失败");
-        }
-    }
-
-    /**
-     * 关系配置按语义比较，避免 key 顺序或空白差异导致每次预览都 updateById 抢锁。
-     */
-    private boolean jsonTextEquals(String left, String right) {
-        if (StringUtils.equals(left, right)) {
-            return true;
-        }
-        if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
-            return false;
-        }
-        try {
-            return objectMapper.readTree(left).equals(objectMapper.readTree(right));
-        } catch (Exception ignored) {
-            return false;
         }
     }
 

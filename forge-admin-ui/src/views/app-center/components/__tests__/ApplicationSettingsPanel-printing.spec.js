@@ -11,9 +11,12 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/business-application', () => api)
+vi.mock('../integrations/ApplicationIntegrations.vue', () => ({
+  default: { name: 'ApplicationIntegrations', template: '<div data-testid="integrations" />' },
+}))
 vi.mock('naive-ui', async (importOriginal) => {
   const original = await importOriginal()
-  return { ...original, useMessage: () => ({ error: vi.fn(), success: vi.fn() }) }
+  return { ...original, useMessage: () => ({ error: vi.fn(), success: vi.fn() }), useThemeVars: () => ({ value: {} }) }
 })
 
 function createTestRouter() {

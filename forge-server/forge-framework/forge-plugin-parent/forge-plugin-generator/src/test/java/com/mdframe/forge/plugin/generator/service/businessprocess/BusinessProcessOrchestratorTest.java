@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
@@ -137,6 +138,42 @@ class BusinessProcessOrchestratorTest {
 
         assertThrows(com.mdframe.forge.starter.core.exception.BusinessException.class,
                 () -> orchestrator.start("CRM_APP", "submit_approval", dto));
+    }
+
+    @Test
+    void governedStartRejectsVersionDriftBeforeAnyRunOrFlowWrite() {
+        stubPublishedProcess(manualSchema());
+        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO(); dto.setRecordId("9001");
+        assertThrows(com.mdframe.forge.starter.core.exception.BusinessException.class,
+                () -> orchestrator.startPublished("CRM_APP", "submit_approval", dto, 9999L));
+        verify(runMapper, never()).insert(any(AiBusinessProcessRun.class));
+        verifyNoInteractions(flowService, actionExecutor);
+    }
+
+    @Test
+    void governedStartUsesOriginalStateMachineAndReusesCompletedRun() {
+        stubPublishedProcess(manualSchema());
+        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO(); dto.setRecordId("9001");
+        BusinessProcessRunVO first = orchestrator.startPublished("CRM_APP", "submit_approval", dto, 2001L);
+        when(runMapper.selectByIdempotencyKey(1L, 2001L, "MANUAL:order:9001")).thenReturn(copy(storedRun.get()));
+        BusinessProcessRunVO second = orchestrator.startPublished("CRM_APP", "submit_approval", dto, 2001L);
+        assertEquals("SUCCESS", first.getStatus());
+        assertEquals(first.getId(), second.getId());
+        verify(runMapper, times(1)).insert(any(AiBusinessProcessRun.class));
+    }
+
+    @Test
+    void governedStartDoesNotAutomaticallyRetryFailedBusinessEffects() {
+        stubPublishedProcess(manualSchema());
+        AiBusinessProcessRun failed = new AiBusinessProcessRun(); failed.setId(77L); failed.setStatus("FAILED");
+        failed.setErrorSummary("等待人工处理");
+        when(runMapper.selectByIdempotencyKey(1L, 2001L, "MANUAL:order:9001")).thenReturn(failed);
+        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO(); dto.setRecordId("9001");
+        var error = assertThrows(com.mdframe.forge.starter.core.exception.BusinessException.class,
+                () -> orchestrator.startPublished("CRM_APP", "submit_approval", dto, 2001L));
+        assertEquals("等待人工处理", error.getMessage());
+        verify(runMapper, never()).selectRunById(anyLong(), anyLong());
+        verifyNoInteractions(flowService, actionExecutor);
     }
 
     @Test

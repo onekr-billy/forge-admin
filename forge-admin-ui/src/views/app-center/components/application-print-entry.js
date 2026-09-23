@@ -4,6 +4,7 @@ const SETTINGS_SECTIONS = new Set([
   'navigation',
   'permission',
   'globalization',
+  'integrations',
   'advanced',
 ])
 

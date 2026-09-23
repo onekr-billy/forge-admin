@@ -1,5 +1,5 @@
 <template>
-  <div class="app-settings-panel">
+  <div class="app-settings-panel" :style="settingsTheme">
     <n-spin :show="loading">
       <div v-if="settingsLoaded" class="settings-panel-layout">
         <aside class="settings-panel-nav">
@@ -24,8 +24,9 @@
             :application="application"
           />
           <AppSettingsGlobalization v-else-if="activeSection === 'globalization'" v-model="settingsModel" />
+          <ApplicationIntegrations v-else-if="activeSection === 'integrations'" :key="application.id" :application="application" />
           <AppSettingsAdvanced v-else v-model="settingsModel" />
-          <div class="settings-panel-actions">
+          <div v-if="activeSection !== 'integrations'" class="settings-panel-actions">
             <n-button type="primary" :loading="saving" @click="saveSettings">
               保存设置
             </n-button>
@@ -47,12 +48,13 @@
 import {
   ColorPaletteOutline,
   EarthOutline,
+  ExtensionPuzzleOutline,
   LinkOutline,
   LockClosedOutline,
   MenuOutline,
   OptionsOutline,
 } from '@vicons/ionicons5'
-import { useMessage } from 'naive-ui'
+import { useMessage, useThemeVars } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -62,6 +64,7 @@ import {
   updateBusinessApplication,
 } from '@/api/business-application'
 import { resolveApplicationSettingsSection } from './application-print-entry'
+import ApplicationIntegrations from './integrations/ApplicationIntegrations.vue'
 import { normalizePortalConfig, parseJsonObject } from './portal/portal-config'
 import AppSettingsAccess from './settings/AppSettingsAccess.vue'
 import AppSettingsAdvanced from './settings/AppSettingsAdvanced.vue'
@@ -77,6 +80,8 @@ const props = defineProps({
 const emit = defineEmits(['saved'])
 
 const message = useMessage()
+const theme = useThemeVars()
+const settingsTheme = computed(() => ({ '--settings-border': theme.value.borderColor, '--settings-surface': theme.value.cardColor, '--settings-text': theme.value.textColor1, '--settings-muted': theme.value.textColor3, '--settings-hover': theme.value.hoverColor }))
 const route = useRoute()
 const router = useRouter()
 
@@ -94,6 +99,7 @@ const sections = [
   { key: 'navigation', label: '导航设置', icon: MenuOutline },
   { key: 'permission', label: '应用权限', icon: LockClosedOutline },
   { key: 'globalization', label: '全球化', icon: EarthOutline },
+  { key: 'integrations', label: '集成与开放', icon: ExtensionPuzzleOutline },
   { key: 'advanced', label: '高级设置', icon: OptionsOutline },
 ]
 
@@ -232,9 +238,9 @@ watch(() => route.query.settingsSection, (section) => {
   gap: 4px;
   align-self: start;
   padding: 8px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--settings-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--settings-surface);
 }
 
 .settings-panel-nav button {
@@ -245,20 +251,20 @@ watch(() => route.query.settingsSection, (section) => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #4e5969;
+  color: var(--settings-text);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
 }
 
 .settings-panel-nav button:hover {
-  background: #f2f3f5;
-  color: #1f2329;
+  background: var(--settings-hover);
+  color: var(--settings-text);
 }
 
 .settings-panel-nav button.active {
-  background: #f2f3f5;
-  color: #1f2329;
+  background: var(--settings-hover);
+  color: var(--settings-text);
   font-weight: 600;
 }
 
@@ -268,9 +274,9 @@ watch(() => route.query.settingsSection, (section) => {
 
 .settings-panel-content :deep(.settings-section-card) {
   padding: 24px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--settings-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--settings-surface);
   box-shadow: 0 1px 3px rgb(31 35 41 / 6%);
 }
 
@@ -286,13 +292,27 @@ watch(() => route.query.settingsSection, (section) => {
 
 .settings-panel-content :deep(.settings-section-card > header p) {
   margin: 6px 0 0;
-  color: #86909c;
+  color: var(--settings-muted);
   font-size: 13px;
 }
 
 .settings-panel-actions {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #e5e6eb;
+  border-top: 1px solid var(--settings-border);
+}
+
+@media (max-width: 900px) {
+  .settings-panel-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .settings-panel-nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .settings-panel-nav button {
+    flex: 0 0 auto;
+  }
 }
 </style>

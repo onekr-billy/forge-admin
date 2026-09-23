@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Focused tests, avoiding known unrelated generator test compilation failures. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.mdframe.forge</groupId><artifactId>forge-server</artifactId><version>1.0.0</version><relativePath>../../../../forge-server/pom.xml</relativePath></parent>
+  <artifactId>application-integrations-verification</artifactId><version>1.0.0</version>
+  <dependencies>
+    <dependency><groupId>com.mdframe.forge</groupId><artifactId>forge-plugin-message</artifactId><version>1.0.0</version></dependency>
+    <dependency><groupId>com.mdframe.forge</groupId><artifactId>forge-plugin-capability-actions</artifactId><version>1.0.0</version></dependency>
+    <dependency><groupId>com.mdframe.forge</groupId><artifactId>forge-plugin-collaboration</artifactId><version>1.0.0</version></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+  </dependencies>
+  <build>
+    <sourceDirectory>${project.basedir}/../../../../forge-server/forge-admin-server/src/main/java</sourceDirectory>
+    <testSourceDirectory>${project.basedir}/../../../../forge-server/forge-admin-server/src/test/java</testSourceDirectory>
+    <plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><configuration>
+      <includes><include>**/integration/**/*.java</include></includes>
+      <testIncludes><testInclude>**/integration/*Test.java</testInclude></testIncludes>
+    </configuration></plugin></plugins>
+  </build>
+</project>

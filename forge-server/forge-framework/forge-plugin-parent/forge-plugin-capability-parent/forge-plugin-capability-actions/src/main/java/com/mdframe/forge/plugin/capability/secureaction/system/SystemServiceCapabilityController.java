@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -28,8 +29,15 @@ public class SystemServiceCapabilityController {
     @GetMapping("/registration-source")
     @SaCheckPermission("ai:capability:system-service:publish")
     @OperationLog(module = "AI中枢能力", type = OperationType.QUERY, desc = "查询系统服务注册来源")
-    public RespInfo<List<SystemServiceRegistrationSource>> registrationSources() {
-        return RespInfo.success(publisher.registrationSources(SessionHelper.getTenantId()));
+    public RespInfo<List<SystemServiceRegistrationSource>> registrationSources(
+            @RequestParam(required = false) String serviceCode,
+            @RequestParam(required = false) Long applicationId,
+            @RequestParam(required = false) Long objectId) {
+        if (applicationId != null || objectId != null) {
+            return RespInfo.success(publisher.registrationSources(SessionHelper.getTenantId(), serviceCode,
+                    new SystemServiceRegistrationContext(applicationId, objectId)));
+        }
+        return RespInfo.success(publisher.registrationSources(SessionHelper.getTenantId(), serviceCode));
     }
 
     @PostMapping("/publish")

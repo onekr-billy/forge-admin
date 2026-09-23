@@ -18,11 +18,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.plugin.generator.enums.BusinessMessageChannelType;
 
 /**
  * 业务消息通道服务。
  * <p>
- * 站内信走现有消息中心；企业微信、飞书、钉钉、Webhook 只返回 TODO 状态，不触发外部网络调用。
+ * 站内信、已绑定企业协同走消息中心；其它旧第三方占位通道继续返回 TODO。
  */
 @Service
 @RequiredArgsConstructor
@@ -42,8 +43,13 @@ public class BusinessMessageChannelService {
             return internalStatus(DEFAULT_INTERNAL_CHANNEL_CODE, "站内信");
         }
 
-        AiBusinessMessageChannel channel = channelMapper.selectByChannelCode(resolveTenantId(), normalizedCode);
+        boolean applicationChannel = normalizedCode.startsWith("app_") && normalizedCode.endsWith("_collaboration");
+        Long tenantId = applicationChannel ? BusinessMessageTenantContext.requireTenantId() : resolveTenantId();
+        AiBusinessMessageChannel channel = channelMapper.selectByChannelCode(tenantId, normalizedCode);
         if (channel == null) {
+            if (normalizedCode.startsWith("app_") && normalizedCode.endsWith("_collaboration")) {
+                throw new BusinessException("应用协同消息通道不存在，请重新绑定企业协同连接");
+            }
             if (isThirdPartyAlias(normalizedCode)) {
                 return thirdPartyTodoStatus(normalizedCode.toUpperCase(Locale.ROOT), normalizedCode);
             }
@@ -51,6 +57,31 @@ public class BusinessMessageChannelService {
         }
         String channelType = StringUtils.defaultIfBlank(channel.getChannelType(), "INTERNAL")
                 .toUpperCase(Locale.ROOT);
+        if (applicationChannel && !BusinessMessageChannelType.COLLABORATION.matches(channelType)) {
+            throw new BusinessException("应用协同消息通道类型异常，请重新绑定企业协同连接");
+        }
+        if (BusinessMessageChannelType.COLLABORATION.matches(channelType)) {
+            if (!BusinessMessageTenantContext.requireTenantId().equals(channel.getTenantId())
+                    || !EnableStatus.ENABLED.matches(channel.getStatus())) {
+                throw new BusinessException("应用协同消息通道已停用或租户不匹配");
+            }
+            Long connectionId;
+            try { connectionId = Long.valueOf(channel.getChannelConfigRef()); }
+            catch (RuntimeException invalid) { throw new BusinessException("应用协同消息通道缺少有效连接"); }
+            if (connectionId <= 0) throw new BusinessException("应用协同消息连接无效");
+            BusinessMessageChannelStatus status = new BusinessMessageChannelStatus();
+            status.setChannelCode(channel.getChannelCode());
+            status.setChannelName(channel.getChannelName());
+            status.setChannelType(channelType);
+            status.setSendChannel(channelType);
+            status.setConnectionId(connectionId);
+            status.setEnabled(true);
+            status.setInternalChannel(false);
+            status.setThirdPartyChannel(true);
+            status.setTodo(false);
+            status.setMessage("企业协同通道已绑定，投递结果在消息中心查看");
+            return status;
+        }
         if ("INTERNAL".equals(channelType)) {
             BusinessMessageChannelStatus status = internalStatus(channel.getChannelCode(), channel.getChannelName());
             status.setEnabled(EnableStatus.ENABLED.matches(channel.getStatus()));

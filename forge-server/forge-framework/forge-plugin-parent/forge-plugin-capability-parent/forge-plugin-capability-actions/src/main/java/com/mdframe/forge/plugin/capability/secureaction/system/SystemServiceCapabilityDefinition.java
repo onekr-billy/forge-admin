@@ -15,6 +15,10 @@ public interface SystemServiceCapabilityDefinition {
 
     SystemServiceRegistrationSource registrationSource(Long tenantId);
 
+    default SystemServiceRegistrationSource registrationSource(Long tenantId, SystemServiceRegistrationContext context) {
+        return registrationSource(tenantId);
+    }
+
     SystemServicePublication preparePublication(Long tenantId, JsonNode parameters);
 
     Map<String, Object> prepareInput(Map<String, Object> payload);

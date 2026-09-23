@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.plugin.capability.controlplane.dto.CapabilityPublishDTO;
 import com.mdframe.forge.plugin.capability.controlplane.service.CapabilityCatalogService;
 import com.mdframe.forge.plugin.capability.flowaction.source.FlowActionSourceService;
+import com.mdframe.forge.plugin.capability.flowaction.enums.CapabilityFlowOperation;
 import com.mdframe.forge.plugin.capability.schema.CapabilitySchemaValidator;
 import com.mdframe.forge.plugin.capability.secureaction.schema.LowcodeCapabilitySchemaTypeResolver;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
@@ -23,7 +24,6 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class FlowActionCapabilityPublisher {
 
-    private static final Set<String> OPERATIONS = Set.of("SUBMIT", "START", "APPROVE", "REJECT");
     private static final Pattern SOURCE_SEGMENT = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 
     private final FlowActionSourceService sourceService;
@@ -33,8 +33,8 @@ public class FlowActionCapabilityPublisher {
     public Long publish(Long tenantId, FlowActionCapabilityPublishDTO dto) {
         String operation = StringUtils.defaultString(dto.getOperation())
                 .trim().toUpperCase(Locale.ROOT);
-        if (!OPERATIONS.contains(operation)) {
-            throw new BusinessException("当前阶段只允许发布 SUBMIT、START、APPROVE、REJECT 流程动作");
+        if (!CapabilityFlowOperation.supports(operation)) {
+            throw new BusinessException("不支持的流程操作，请重新选择");
         }
         validateSegment(dto.getSuiteCode(), "业务套件编码");
         validateSegment(dto.getObjectCode(), "业务对象编码");
@@ -57,6 +57,9 @@ public class FlowActionCapabilityPublisher {
         policy.put("publishedObjectVersion", source.row().getPublishedObjectVersion());
         policy.put("permission", "START".equals(operation)
                 ? "ai:businessFlow:start" : "ai:businessFlow:view");
+        if (CapabilityFlowOperation.WITHDRAW.matches(operation)) {
+            policy.put("permission", "ai:businessDocument:withdraw");
+        }
         if ("SUBMIT".equals(operation)) {
             policy.put("permission", "ai:businessFlow:start");
             policy.set("allowedFields", array(allowedFields));
@@ -70,6 +73,7 @@ public class FlowActionCapabilityPublisher {
             case "SUBMIT" -> "提交";
             case "START" -> "发起";
             case "APPROVE" -> "同意";
+            case "WITHDRAW" -> "撤回";
             default -> "驳回";
         };
         CapabilityPublishDTO command = new CapabilityPublishDTO(
@@ -105,10 +109,16 @@ public class FlowActionCapabilityPublisher {
         ObjectNode argumentProperties = arguments.putObject("properties");
         ArrayNode argumentRequired = objectMapper.createArrayNode();
         if (!"START".equals(operation)) {
-            argumentProperties.putObject("taskId")
-                    .put("type", "string").put("minLength", 1).put("maxLength", 128)
-                    .put("description", "当前委托用户可办理且属于该业务记录的流程任务 ID");
-            argumentRequired.add("taskId");
+            if (!CapabilityFlowOperation.WITHDRAW.matches(operation)) {
+                argumentProperties.putObject("taskId")
+                        .put("type", "string").put("minLength", 1).put("maxLength", 128)
+                        .put("description", "当前委托用户可办理且属于该业务记录的流程任务 ID");
+                argumentRequired.add("taskId");
+            } else {
+                argumentProperties.putObject("processInstanceId").put("type", "string")
+                        .put("minLength", 1).put("maxLength", 128).put("description", "本次要撤回的流程实例 ID，重试时不可替换为新实例");
+                argumentRequired.add("processInstanceId");
+            }
             ObjectNode comment = argumentProperties.putObject("comment");
             comment.put("type", "string").put("maxLength", 500)
                     .put("description", "审批意见；驳回时必填，最多 500 个字符");
@@ -351,6 +361,10 @@ public class FlowActionCapabilityPublisher {
         }
         requestNotes.add("recordId 必须是当前委托用户可见的已保存业务记录主键。");
         businessRules.add("执行前重新校验业务对象发布版本、主流程绑定和实际委托用户权限。");
+        if (CapabilityFlowOperation.WITHDRAW.matches(operation)) {
+            requestNotes.add("arguments 必须包含 processInstanceId，可附带 comment，不需要 taskId。仅发起人可撤回当前运行中实例。");
+            businessRules.add("撤回固定到预检得到的流程实例，业务服务再次校验记录归属和发起人，不会误撤回后续新实例。");
+        }
     }
 
     private ArrayNode array(String... values) {

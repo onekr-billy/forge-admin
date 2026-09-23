@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.controller;
 
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,8 @@ class DynamicCrudControllerTest {
     void createShouldReturnCreatedRecordForFollowUpBusinessActions() {
         DynamicCrudService crudService = mock(DynamicCrudService.class);
         BusinessEventPublisher eventPublisher = mock(BusinessEventPublisher.class);
-        DynamicCrudController controller = new DynamicCrudController(crudService, null, eventPublisher);
+        DynamicCrudController controller = new DynamicCrudController(crudService, null, eventPublisher,
+                new DynamicCrudCreateManager(crudService, eventPublisher, mock(org.springframework.transaction.PlatformTransactionManager.class)));
         Map<String, Object> request = new LinkedHashMap<>(Map.of("memberPhone", "13800000000"));
         Map<String, Object> createdMain = Map.of("id", 1001L, "status", "DRAFT");
         Map<String, Object> created = Map.of("main", createdMain, "children", Map.of());
@@ -38,7 +40,7 @@ class DynamicCrudControllerTest {
 
     @Test
     void pageShouldSeparateFlatSearchValuesFromPageSearchTypeMetadata() throws Exception {
-        DynamicCrudController controller = new DynamicCrudController(null, null, null);
+        DynamicCrudController controller = new DynamicCrudController(null, null, null, null);
         DynamicCrudQuery query = new DynamicCrudQuery();
         Method buildQuery = DynamicCrudController.class.getDeclaredMethod(
                 "buildQuery", DynamicCrudQuery.class, Map.class);

@@ -25,6 +25,20 @@ import static org.mockito.Mockito.when;
 
 class FlowActionCapabilityPublisherTest {
 
+    @Test
+    void shouldPublishWithdrawWithSpecificPermissionAndPinnedInstance() {
+        when(sourceService.requirePublished(1L, "purchase", "order")).thenReturn(source("order_config"));
+        publisher.publish(1L, dto("WITHDRAW"));
+        ArgumentCaptor<CapabilityPublishDTO> captor = ArgumentCaptor.forClass(CapabilityPublishDTO.class);
+        verify(catalogService).publishFlowAction(eq(1L), captor.capture());
+        var command = captor.getValue();
+        assertThat(command.policySnapshot().path("permission").asText()).isEqualTo("ai:businessDocument:withdraw");
+        var arguments = command.inputSchema().path("properties").path("arguments");
+        assertThat(arguments.path("properties").has("taskId")).isFalse();
+        assertThat(arguments.path("required").toString()).contains("processInstanceId");
+        new CapabilitySchemaValidator().validateDefinition(command.inputSchema());
+    }
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final FlowActionSourceService sourceService = mock(FlowActionSourceService.class);
     private final CapabilityCatalogService catalogService = mock(CapabilityCatalogService.class);
