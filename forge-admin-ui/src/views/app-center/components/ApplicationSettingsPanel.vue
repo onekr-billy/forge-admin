@@ -1,6 +1,6 @@
 <template>
   <div class="app-settings-panel" :style="settingsTheme">
-    <n-spin :show="loading">
+    <n-spin :show="loading && !settingsLoaded">
       <div v-if="settingsLoaded" class="settings-panel-layout">
         <aside class="settings-panel-nav">
           <button
@@ -121,37 +121,52 @@ function selectSection(section) {
   })
 }
 
+function hydrateSettingsFromApplication(app) {
+  if (!app)
+    return
+  applicationOptions.value = parseJsonObject(app.options)
+  const portal = normalizePortalConfig(app.portalConfig)
+  const pageOrder = applicationPages.value
+    .filter(node => node.type === 'page')
+    .sort((left, right) => Number(left.sort || 0) - Number(right.sort || 0))
+    .map(node => String(node.id))
+  settingsModel.value = {
+    ...portal,
+    id: app.id,
+    applicationName: app.applicationName || '',
+    applicationCode: app.applicationCode || '',
+    portalSlug: app.portalSlug || app.applicationCode || '',
+    icon: app.icon || '',
+    description: app.description || '',
+    status: app.status === 0 ? 0 : 1,
+    navigation: {
+      ...portal.navigation,
+      pageOrder: portal.navigation.pageOrder?.length ? portal.navigation.pageOrder : pageOrder,
+    },
+  }
+}
+
 async function loadSettings() {
   const code = props.application?.applicationCode
   if (!code)
     return
-  loading.value = true
+  // 工作台已有应用快照时先铺开表单，避免整页转圈等 detail 接口
+  if (props.application && !settingsLoaded.value)
+    hydrateSettingsFromApplication(props.application)
+  const showBlockingSpinner = !settingsLoaded.value
+  if (showBlockingSpinner)
+    loading.value = true
   loadError.value = ''
   try {
     const response = await businessApplicationDetailByCode(code)
     const app = response.data || null
     if (!app)
       throw new Error('应用不存在')
-    applicationOptions.value = parseJsonObject(app.options)
-    const portal = normalizePortalConfig(app.portalConfig)
-    const pageOrder = applicationPages.value
-      .filter(node => node.type === 'page')
-      .sort((left, right) => Number(left.sort || 0) - Number(right.sort || 0))
-      .map(node => String(node.id))
-    settingsModel.value = {
-      ...portal,
-      id: app.id,
-      applicationName: app.applicationName || '',
-      applicationCode: app.applicationCode || '',
-      portalSlug: app.portalSlug || app.applicationCode || '',
-      icon: app.icon || '',
-      description: app.description || '',
-      status: app.status === 0 ? 0 : 1,
-      navigation: { ...portal.navigation, pageOrder: portal.navigation.pageOrder?.length ? portal.navigation.pageOrder : pageOrder },
-    }
+    hydrateSettingsFromApplication(app)
   }
   catch (error) {
-    loadError.value = error?.message || '暂时无法读取应用设置。'
+    if (!settingsLoaded.value)
+      loadError.value = error?.message || '暂时无法读取应用设置。'
   }
   finally {
     loading.value = false

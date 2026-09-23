@@ -106,6 +106,7 @@ class DataAuditRecordMetaBuilderTest {
         DataAuditRecordMetaVO meta = (DataAuditRecordMetaVO) record.get(DataAuditPayloadSupport.PAYLOAD_KEY);
         assertTrue(meta.getConfigured());
         assertTrue(meta.getEnabled());
+        assertTrue(meta.getReasonRequired());
         assertTrue(meta.getShowInDetail());
         assertTrue(meta.getHistoryAvailable());
         assertEquals(3L, meta.getRevision());

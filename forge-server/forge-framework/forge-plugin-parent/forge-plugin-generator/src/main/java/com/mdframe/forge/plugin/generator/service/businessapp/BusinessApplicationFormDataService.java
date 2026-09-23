@@ -17,7 +17,9 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRelationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,9 +33,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 把页面表单自动转换为应用内部托管的数据存储。
@@ -47,6 +51,7 @@ public class BusinessApplicationFormDataService {
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
     private static final String CREATE_MODE_BLANK = "BLANK";
     private static final String CREATE_MODE_DB_IMPORT = "DB_IMPORT";
+    private static final Set<String> EMBEDDED_RELATION_TYPES = Set.of("CHILD_LIST", "DETAIL");
     /** 上次准备内容签名存放于对象 options 内，签名一致时短路高频保存草稿链路。 */
     private static final String PROVISION_SIGNATURE_KEY = "provisionSignature";
 
@@ -85,16 +90,59 @@ public class BusinessApplicationFormDataService {
                         provisioned.objectId(), applicationId, normalized.formAssetId());
             }
         } catch (RuntimeException e) {
-            if (CREATE_MODE_DB_IMPORT.equals(normalized.createMode())) {
-                log.warn("[表单数据保存] 引用现有表时 DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
-                        provisioned.objectId(), normalized.formAssetId(), e.getMessage());
-                provisioned.result().setDdlWarning("数据表结构同步失败：" + StringUtils.defaultIfBlank(
-                        e.getMessage(), "请在高级数据设置中确认数据库调整") + "。表单设计和选项配置已保存，不影响发布。");
-                return provisioned.result();
-            }
-            throw databaseSyncFailure(e);
+            // 元数据已提交：硬失败（数据源不可用等）只记日志，不弹提示打断正常保存。
+            log.warn("[表单数据保存] DDL 同步失败已忽略提示: objectId={}, formAssetId={}, createMode={}, error={}",
+                    provisioned.objectId(), normalized.formAssetId(), normalized.createMode(), e.getMessage());
         }
+        // 子表外键在子对象上：主表同步后再补子表 ADD COLUMN，否则运行时写入会缺外键列。
+        syncChildManagedTables(provisioned.objectId());
         return provisioned.result();
+    }
+
+    /**
+     * 表单子表组件会在子对象草稿里补外键字段；这里把子对象受管表的安全 ADD COLUMN 一并执行。
+     */
+    private void syncChildManagedTables(Long objectId) {
+        if (objectId == null) {
+            return;
+        }
+        BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
+        AiBusinessObject object = context.getObject();
+        List<BusinessObjectRelationVO> relations = context.getRelations();
+        if (object == null || relations == null || relations.isEmpty()) {
+            return;
+        }
+        Set<String> synced = new LinkedHashSet<>();
+        for (BusinessObjectRelationVO relation : relations) {
+            if (relation == null
+                    || !object.getObjectCode().equals(relation.getSourceObjectCode())
+                    || !EMBEDDED_RELATION_TYPES.contains(
+                            StringUtils.defaultString(relation.getRelationType()).toUpperCase(Locale.ROOT))
+                    || !EnableStatus.ENABLED.matches(relation.getStatus())
+                    || StringUtils.isBlank(relation.getTargetObjectCode())
+                    || !synced.add(relation.getTargetObjectCode())) {
+                continue;
+            }
+            AiBusinessObject child;
+            try {
+                child = objectService.requireByCode(object.getSuiteCode(), relation.getTargetObjectCode());
+            } catch (BusinessException missing) {
+                continue;
+            }
+            JSONObject marker = parseOptions(child.getOptions());
+            Long childApplicationId = marker.getLong("sourceApplicationId");
+            String childFormAssetId = marker.getString("sourceFormAssetId");
+            if (!MANAGED_BY_PAGE_FORM.equals(marker.getString("managedBy"))
+                    || childApplicationId == null || StringUtils.isBlank(childFormAssetId)) {
+                continue;
+            }
+            try {
+                tableMappingService.syncManagedDatabase(child.getId(), childApplicationId, childFormAssetId);
+            } catch (RuntimeException error) {
+                log.warn("[表单数据保存] 子表 DDL 同步失败已忽略提示: childObject={}, error={}",
+                        child.getObjectCode(), error.getMessage());
+            }
+        }
     }
 
     /**
@@ -295,15 +343,6 @@ public class BusinessApplicationFormDataService {
                 && datasource.getDatasourceId() != null
                 && Integer.valueOf(1).equals(datasource.getAllowRuntimeWrite())
                 && !Integer.valueOf(1).equals(datasource.getReadonly());
-    }
-
-    private BusinessException databaseSyncFailure(RuntimeException error) {
-        String detail = StringUtils.trimToNull(error.getMessage());
-        if (detail == null) {
-            detail = "目标数据存储暂时不可用";
-        }
-        return new BusinessException(
-                "数据表创建失败：" + detail + "；已保留表单设计，可直接重试", error);
     }
 
     private String buildManagedObjectCode(

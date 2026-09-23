@@ -91,10 +91,16 @@ public class DataScopeServiceImpl implements IDataScopeService {
                 .map(identity -> identity.loginUser())
                 .orElse(null);
         if (loginUser == null) {
-            if (!StpUtil.isLogin()) {
+            try {
+                if (!StpUtil.isLogin()) {
+                    return null;
+                }
+                loginUser = SessionHelper.getLoginUser();
+            } catch (Exception e) {
+                // 流程 Redis 回调等非 Web 线程无法取 HttpServletRequest，按无登录用户处理。
+                log.debug("非 Web 上下文无法解析登录用户数据权限: {}", e.getMessage());
                 return null;
             }
-            loginUser = SessionHelper.getLoginUser();
         }
         if (loginUser == null) {
             return null;

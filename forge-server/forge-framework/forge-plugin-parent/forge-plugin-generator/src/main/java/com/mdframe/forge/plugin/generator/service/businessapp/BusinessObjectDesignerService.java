@@ -90,9 +90,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE_ID = "runtimeDatasourceId";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE = "runtimeDatasource";
     private static final Set<String> FORM_FIELD_COMPONENT_KEYS = LowcodeComponentCatalog.FIELD_COMPONENT_KEYS;
-    private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "SELECT", "RADIO", "CHECKBOX", "MULTI_SELECT");
+    private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "RADIO", "CHECKBOX", "MULTI_SELECT");
     private static final Set<String> DICT_COMPONENT_TYPES = Set.of(
-            "dictSelect", "select", "radio", "radioButton", "checkbox", "transfer", "cascader", "treeSelect", "customSelect");
+            "dictSelect", "select", "radio", "radioButton", "checkbox", "transfer", "cascader", "customSelect");
     private static final Map<String, String> PAGE_ZONE_ALIASES = Map.ofEntries(
             Map.entry("search", "search"),
             Map.entry("search-form", "search"),
@@ -148,7 +148,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             Map.entry("checkbox", new ComponentFieldDefaults("CHECKBOX", "varchar", 255, 2, "in")),
             Map.entry("transfer", new ComponentFieldDefaults("MULTI_SELECT", "text", null, null, "in")),
             Map.entry("cascader", new ComponentFieldDefaults("DICT", "varchar", 128, 2, "eq")),
-            Map.entry("treeSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
+            Map.entry("treeSelect", new ComponentFieldDefaults("SELECT", "bigint", null, null, "eq")),
             Map.entry("customSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
             Map.entry("regionTreeSelect", new ComponentFieldDefaults("REGION", "varchar", 32, 2, "eq")),
             Map.entry("orgTreeSelect", new ComponentFieldDefaults("DEPT", "bigint", null, null, "eq")),
@@ -202,6 +202,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private final PlatformTransactionManager transactionManager;
     /** 同对象 designPreview/发布准备串行化，避免并发写 ai_business_object_relation 锁等待。 */
     private final ConcurrentHashMap<Long, DraftPreparationLock> prepareRuntimeDraftLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CachedPreviewDraft> previewDraftCache = new ConcurrentHashMap<>();
+    private static final long PREVIEW_DRAFT_CACHE_TTL_MS = 8_000L;
 
     public BusinessObjectDesignerVO getDesigner(Long objectId) {
         DesignerContext context = loadContext(objectId);
@@ -403,6 +405,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         context.setConfig(config);
         context.setModelSchema(modelSchema);
         context.setPageSchema(pageSchema);
+        invalidatePreviewDraftCache(object.getId());
         return context;
     }
 
@@ -428,7 +431,17 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
      * 子表关系仍由设计器保存和发布链路的 synchronizeFormChildRelations 负责落库。
      */
     public AiCrudConfig prepareRuntimeDraftForPreview(Long objectId) {
-        return prepareRuntimeDraft(objectId, false);
+        if (objectId == null) {
+            throw new BusinessException("业务对象ID不能为空");
+        }
+        long now = System.currentTimeMillis();
+        CachedPreviewDraft hit = previewDraftCache.get(objectId);
+        if (hit != null && hit.expiresAtMs > now) {
+            return hit.config;
+        }
+        AiCrudConfig prepared = prepareRuntimeDraft(objectId, false);
+        previewDraftCache.put(objectId, new CachedPreviewDraft(prepared, now + PREVIEW_DRAFT_CACHE_TTL_MS));
+        return prepared;
     }
 
     /**
@@ -508,6 +521,15 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
         private final ReentrantLock lock = new ReentrantLock(true);
         private int references;
+    }
+
+    private void invalidatePreviewDraftCache(Long objectId) {
+        if (objectId != null) {
+            previewDraftCache.remove(objectId);
+        }
+    }
+
+    private record CachedPreviewDraft(AiCrudConfig config, long expiresAtMs) {
     }
 
     /**
@@ -1218,6 +1240,25 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 basicProps.putIfAbsent("options", props.get("options"));
                 field.setBasicProps(basicProps);
             }
+            if (props.containsKey("optionSource")) {
+                Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
+                basicProps.put("optionSource", props.get("optionSource"));
+                String labelValueField = StringUtils.firstNonBlank(
+                        text(props.get("labelValueField")),
+                        text(basicProps.get("labelValueField")));
+                if (StringUtils.isBlank(labelValueField) && isDynamicOptionSource(props.get("optionSource"))) {
+                    labelValueField = fieldCode + "Name";
+                }
+                if (StringUtils.isNotBlank(labelValueField)) {
+                    basicProps.put("labelValueField", labelValueField);
+                }
+                field.setBasicProps(basicProps);
+            }
+            if (props.containsKey("labelValueField")) {
+                Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
+                basicProps.put("labelValueField", props.get("labelValueField"));
+                field.setBasicProps(basicProps);
+            }
             if (props.containsKey("recordSelector")) {
                 Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
                 basicProps.put("recordSelector", props.get("recordSelector"));
@@ -1378,6 +1419,21 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         String fieldType = StringUtils.defaultString(field.getFieldType()).toUpperCase(Locale.ROOT);
         String componentType = normalizeRuntimeComponentType(field.getComponentType());
         return "REFERENCE".equals(fieldType) || "objectReference".equals(componentType);
+    }
+
+    private boolean isDynamicOptionSource(Object optionSource) {
+        if (!(optionSource instanceof Map<?, ?> map)) {
+            return false;
+        }
+        Object rawType = map.get("type");
+        if (rawType == null) {
+            return false;
+        }
+        String type = String.valueOf(rawType).trim();
+        if (type.isEmpty()) {
+            return false;
+        }
+        return !"STATIC".equalsIgnoreCase(type.replace('-', '_'));
     }
 
     private boolean isUnconfiguredReferenceFieldPayload(BusinessFieldDTO field) {
@@ -1882,7 +1938,20 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 continue;
             }
             AiBusinessObjectRelation existingRelation = findEmbeddedRelationTo(existing, targetObjectCode);
+            AiBusinessObject child = businessObjectMapper.selectByObjectCode(
+                    resolveTenantId(), object.getSuiteCode(), targetObjectCode);
+            if (child == null) {
+                continue;
+            }
+            // 关系已存在时仍要确保外键字段在子对象模型里，否则库表永远补不上外键列。
+            String foreignKeyField = ensureChildForeignKeyField(object, child);
             if (existingRelation != null) {
+                if (StringUtils.isNotBlank(foreignKeyField)
+                        && !StringUtils.equals(foreignKeyField, existingRelation.getTargetFieldCode())) {
+                    existingRelation.setTargetFieldCode(foreignKeyField);
+                    relationMapper.updateById(existingRelation);
+                    changed = true;
+                }
                 if (overwriteChildRelationConfig(existingRelation, props)) {
                     relationMapper.updateById(existingRelation);
                     log.info("[子表自动关联] overwritten existing relation id={} target={}",
@@ -1891,12 +1960,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 }
                 continue;
             }
-            AiBusinessObject child = businessObjectMapper.selectByObjectCode(
-                    resolveTenantId(), object.getSuiteCode(), targetObjectCode);
-            if (child == null) {
-                continue;
-            }
-            String foreignKeyField = ensureChildForeignKeyField(object, child);
             if (StringUtils.isBlank(foreignKeyField)) {
                 continue;
             }
@@ -3431,6 +3494,16 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (props.get("optionSource") instanceof Map<?, ?> os
                 && !String.valueOf(os.get("type") != null ? os.get("type") : "").isEmpty()) {
             props.remove("options");
+            // 动态选项来源：冗余保存显示名称到 <field>Name，回显无需再查源表
+            if (isDynamicOptionSource(os) && StringUtils.isBlank(text(props.get("labelValueField")))) {
+                String fieldCode = StringUtils.firstNonBlank(
+                        text(mapValue(component.get("fieldBinding")).get("fieldCode")),
+                        text(component.get("field")),
+                        text(props.get("fieldCode")));
+                if (StringUtils.isNotBlank(fieldCode)) {
+                    props.put("labelValueField", fieldCode + "Name");
+                }
+            }
         }
         if (!props.isEmpty()) {
             setting.put("props", props);

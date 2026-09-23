@@ -38,7 +38,11 @@ import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntime
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import com.mdframe.forge.starter.core.domain.PageQuery;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeStrategy;
 import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeStrategyFactory;
 import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeType;
@@ -57,7 +61,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 动态CRUD服务
@@ -922,7 +925,7 @@ public class DynamicCrudService {
         removeMaskedDesensitizedWriteColumns(filteredData, config, tableName);
         
         if (filteredData.isEmpty()) {
-            throw new BusinessException("没有可更新的字段");
+            throw emptyWriteFieldsException(config, "更新", data.keySet(), allowedFields);
         }
 
         validateUniqueConstraints(config, tableName, data, beforeRecord, id);
@@ -1304,7 +1307,8 @@ public class DynamicCrudService {
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
         Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
         Set<String> tableColumns = repository.getTableColumns(tableName);
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
+        // 流程回调等内部回写：无登录会话时跳过用户数据权限，仍由仓储施加租户条件。
+        DynamicCrudRepository.SqlCondition dataScopeCondition = buildInternalWriteDataScopeCondition(config, tableName, null);
         Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, data, dataScopeCondition);
         validateFieldValues(config, data);
 
@@ -1357,7 +1361,7 @@ public class DynamicCrudService {
         openDataAudit(config, id, DataAuditSourceType.AUTOMATION, DataAuditEventType.UPDATE, fields, false);
         String tableName = config.getTableName();
         LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
+        DynamicCrudRepository.SqlCondition dataScopeCondition = buildInternalWriteDataScopeCondition(config, tableName, null);
         Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, fields, dataScopeCondition);
         validateFieldValues(config, fields);
         Map<String, Object> filteredData = filterInternalWriteData(config, tableName, fields);
@@ -1889,7 +1893,7 @@ public class DynamicCrudService {
         }
 
         if (primaryData.isEmpty() && !childrenChanged) {
-            throw new BusinessException("没有可更新的字段");
+            throw emptyMasterDetailUpdateException(config, data, allowedFields, joinContext);
         }
         if (childrenChanged) {
             refreshRecordById(config, id);
@@ -2419,6 +2423,49 @@ public class DynamicCrudService {
 
     private boolean isImmutableWriteField(String key) {
         return IMMUTABLE_WRITE_FIELDS.contains(key);
+    }
+
+    private BusinessException emptyWriteFieldsException(AiCrudConfig config,
+                                                        String action,
+                                                        Set<String> submittedKeys,
+                                                        Set<String> allowedFields) {
+        String configKey = config == null ? "" : StringUtils.defaultString(config.getConfigKey());
+        String tableName = config == null ? "" : StringUtils.defaultString(config.getTableName());
+        long submittedBusiness = submittedKeys == null ? 0
+                : submittedKeys.stream().filter(key -> !isImmutableWriteField(key)
+                        && !DataAuditPayloadSupport.PAYLOAD_KEY.equals(key)
+                        && !"main".equals(key)
+                        && !"children".equals(key)).count();
+        return new BusinessException("没有可" + action + "的字段（对象 " + configKey + " / 表 " + tableName + "）。"
+                + "请求里业务字段约 " + submittedBusiness + " 个，白名单可写字段 "
+                + (allowedFields == null ? 0 : allowedFields.size()) + " 个，过滤后为空。"
+                + "请检查：1) 字段已在表单设计中可见且已同步到物理表；"
+                + "2) 字段未设为隐藏/禁用/只读；"
+                + "3) 字段编码与模型一致；"
+                + "4) 不要只提交 id 等系统字段。");
+    }
+
+    private BusinessException emptyMasterDetailUpdateException(AiCrudConfig config,
+                                                               Map<String, Object> data,
+                                                               Set<String> allowedFields,
+                                                               RuntimeJoinContext joinContext) {
+        Map<String, Object> childrenPayload = extractChildrenPayload(data);
+        String expectedChildren = joinContext == null || joinContext.childRelations() == null
+                ? ""
+                : joinContext.childRelations().stream()
+                        .map(RuntimeChildRelation::modelCode)
+                        .filter(StringUtils::isNotBlank)
+                        .distinct()
+                        .collect(java.util.stream.Collectors.joining("、"));
+        String submittedChildren = childrenPayload.isEmpty()
+                ? "无"
+                : String.join("、", childrenPayload.keySet());
+        BusinessException base = emptyWriteFieldsException(config, "更新",
+                data == null ? Set.of() : data.keySet(), allowedFields);
+        return new BusinessException(base.getMessage()
+                + " 主子表额外检查：已提交子表键=[" + submittedChildren + "]，"
+                + "配置期望子表=[" + StringUtils.defaultIfBlank(expectedChildren, "无") + "]。"
+                + "若只改了子表，请确认 children 下的对象编码与主子表配置一致。");
     }
 
     private Set<String> buildAllowedWriteFields(AiCrudConfig config, String tableName) {
@@ -5801,6 +5848,36 @@ public class DynamicCrudService {
 
     private DynamicCrudRepository.SqlCondition buildWriteDataScopeCondition(AiCrudConfig config, String tableName, String tableAlias) {
         return dynamicDataScopeService.buildWriteCondition(config, tableName, tableAlias);
+    }
+
+    /**
+     * 内部字段回写（流程回调 / 系统驱动）在无 Web 登录会话时无法构造用户数据权限。
+     * 此时跳过用户范围条件，仅依赖租户隔离；有登录会话时仍走完整写权限。
+     */
+    private DynamicCrudRepository.SqlCondition buildInternalWriteDataScopeCondition(AiCrudConfig config,
+                                                                                    String tableName,
+                                                                                    String tableAlias) {
+        if (!hasResolvableDataScopeUser()) {
+            log.debug("[DynamicCrud] 内部字段回写无用户数据权限上下文，跳过写范围条件: configKey={}, table={}",
+                    config == null ? null : config.getConfigKey(), tableName);
+            return null;
+        }
+        return buildWriteDataScopeCondition(config, tableName, tableAlias);
+    }
+
+    private boolean hasResolvableDataScopeUser() {
+        if (ExecutionIdentityContextHolder.current()
+                .map(identity -> identity.loginUser())
+                .filter(user -> user.getUserId() != null)
+                .isPresent()) {
+            return true;
+        }
+        try {
+            LoginUser loginUser = SessionHelper.getLoginUser();
+            return loginUser != null && loginUser.getUserId() != null;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private DynamicCrudRepository.SqlCondition buildDataScopeCondition(AiCrudConfig config,

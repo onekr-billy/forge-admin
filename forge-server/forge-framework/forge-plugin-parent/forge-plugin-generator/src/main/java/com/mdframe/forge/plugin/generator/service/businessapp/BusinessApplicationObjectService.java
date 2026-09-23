@@ -46,6 +46,16 @@ public class BusinessApplicationObjectService
         return objects;
     }
 
+    /** 渲染叠加只需确认 configKey 是否属于该应用，避免 list 全量联表。 */
+    public boolean containsConfigKey(Long applicationId, String configKey) {
+        if (applicationId == null || applicationId <= 0 || StringUtils.isBlank(configKey)) {
+            return false;
+        }
+        applicationService.requireEntity(applicationId);
+        Long count = baseMapper.countByApplicationAndConfigKey(resolveTenantId(), applicationId, configKey.trim());
+        return count != null && count > 0;
+    }
+
     /**
      * 页面从表单创建的业务对象跟着页面走。页面已从应用导航删除，且没有其它页面仍引用时，
      * 解除应用关联，并软删无人引用的页面托管对象，释放 object_code / model_code 以便同编码重建。

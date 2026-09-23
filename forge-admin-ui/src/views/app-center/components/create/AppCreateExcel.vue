@@ -118,7 +118,7 @@ function updateFieldType(field, value) {
     DATE: ['date', 'date', null, null],
     DATETIME: ['datetime', 'datetime', null, null],
     SWITCH: ['tinyint', 'switch', 1, 0],
-    SELECT: ['varchar', 'select', 64, null],
+    SELECT: ['bigint', 'treeSelect', null, null],
   }[value]
   if (!defaults) {
     return

@@ -195,6 +195,18 @@ export function filterCrudItemsByFieldRefs(items = [], fieldRefs = []) {
  * 平台后补的流程状态字段不能被应用页面块较早保存的 fieldRefs 快照吞掉。
  * 用户在页面块中显式隐藏该字段时仍尊重隐藏配置。
  */
+export function isManagedBusinessFlowField(field = {}) {
+  const fieldCode = String(field?.field || field?.fieldCode || field?.prop || field?.key || '').trim()
+  const columnName = String(field?.columnName || '').trim()
+  const managedBy = String(field?.advancedProps?.managedBy || '').toUpperCase()
+  const dictType = String(field?.dictType || field?.props?.dictType || '').trim()
+  if (managedBy === 'BUSINESS_FLOW')
+    return true
+  if (['flowStatus', 'flow_status'].includes(fieldCode) || columnName === 'flow_status')
+    return true
+  return dictType === 'business_flow_status'
+}
+
 export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = [], fieldSettings = {}) {
   const refs = Array.isArray(fieldRefs) ? [...fieldRefs] : []
   if (!refs.length)
@@ -202,9 +214,8 @@ export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = []
   const seen = new Set(refs.filter(Boolean).map(String))
   ;(Array.isArray(fieldCatalog) ? fieldCatalog : []).forEach((field) => {
     const fieldCode = String(field?.field || field?.fieldCode || '').trim()
-    const managedBy = String(field?.advancedProps?.managedBy || '').toUpperCase()
     const active = !['DISABLED', 'HIDDEN'].includes(String(field?.fieldStatus || '').toUpperCase())
-    if (!fieldCode || managedBy !== 'BUSINESS_FLOW' || !active || field?.listVisible === false)
+    if (!fieldCode || !isManagedBusinessFlowField(field) || !active || field?.listVisible === false)
       return
     if (fieldSettings?.[fieldCode]?.visible === false || seen.has(fieldCode))
       return
@@ -212,6 +223,45 @@ export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = []
     refs.push(fieldCode)
   })
   return refs
+}
+
+/**
+ * 当后端旧发布配置的 columnsSchema 漏了 flowStatus，但字段目录里已有时，运行态补一列。
+ * 显式隐藏仍尊重 fieldSettings.visible = false。
+ */
+export function ensureManagedFlowStatusColumns(columns = [], fieldCatalog = [], fieldSettings = {}) {
+  const list = Array.isArray(columns) ? [...columns] : []
+  const keys = new Set(list
+    .map(column => String(column?.prop || column?.field || column?.key || column?.dataIndex || '').trim())
+    .filter(Boolean))
+  const managedFields = (Array.isArray(fieldCatalog) ? fieldCatalog : []).filter(field => isManagedBusinessFlowField(field))
+  managedFields.forEach((field) => {
+    const fieldCode = String(field?.field || field?.fieldCode || '').trim()
+    const active = !['DISABLED', 'HIDDEN'].includes(String(field?.fieldStatus || '').toUpperCase())
+    if (!fieldCode || !active || field?.listVisible === false)
+      return
+    if (fieldSettings?.[fieldCode]?.visible === false || keys.has(fieldCode))
+      return
+    keys.add(fieldCode)
+    const dictType = String(field?.dictType || field?.props?.dictType || 'business_flow_status').trim()
+    const column = {
+      key: fieldCode,
+      prop: fieldCode,
+      field: fieldCode,
+      title: field.label || field.fieldName || field.title || '流程状态',
+      dataIndex: fieldCode,
+      render: dictType ? { type: 'dictTag', dictType } : undefined,
+    }
+    const actionIndex = list.findIndex(item => ['action', 'actions', 'operation', 'operations']
+      .includes(String(item?.key || item?.type || item?.prop || item?.field || '').toLowerCase())
+      || item?.type === 'action'
+      || item?.fixed === 'right')
+    if (actionIndex >= 0)
+      list.splice(actionIndex, 0, column)
+    else
+      list.push(column)
+  })
+  return list
 }
 
 /**

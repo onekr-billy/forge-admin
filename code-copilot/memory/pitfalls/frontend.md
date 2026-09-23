@@ -609,6 +609,12 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 **解决方案**:
 `shouldUseApplicationWorkspaceLoad` 在 `edit=1` / `draft=1` 之外，对有应用编辑权限的用户也返回 true，页面管理读 workspace 草稿。正式运行用户仍只读发布快照。页面管理对可编辑用户还需 `design-preview`（或 PortalPageRenderer 在 `configurable` 时优先读草稿），否则刚保存的字段默认值仍来自已发布 CRUD 快照，表现为必须发布应用才生效。
 
+**后续坑（2026-09-23）**：`resolveApplicationRuntimeLoadKey` 曾把 `edit`/`draft` 单独塞进 key。有编辑权限时 workspace 已是 true，进出表单设计（切 `edit=1`）仍会整页 `load()` + 骨架屏。key 只保留 `applicationCode + workspace`。表单保存后还要递增 `portalCrudConfigRevision` 传给 `PortalPageRenderer`，否则本地 `runtimeCrudPropsByKey` / 同 URL render 结果会让「新增」仍用旧表单。
+
+再补：去掉整页 reload 后，`refreshWorkspaceMetadata` 必须在 `!dirty` 时用 workspace 的 `application.options` 重新 `normalizeInAppBuilder` 写回 `builder`。以前靠切 edit 触发的 `load()` 顺带纠正布局；不同步时页面管理会继续渲染内存里未规范化的块（默认「提示信息」面板文案）。
+
+首页/首个对象页若残留介绍页模板的默认 `info-panel`（标题「提示信息」），会盖住或挤掉 CRUD。门户 `resolvePortalPageBlocks` 对 `pageType=object` 过滤未改过的占位提示，并在无数据块时补 `AiCrudPage`；CRUD 预加载只处理数据块，避免装饰块把对象标成 unavailable。
+
 ## 打印模板必须跟页面走，设计器不能回到 /print
 
 **发现日期**: 2026-09-21

@@ -45,6 +45,8 @@ public class BusinessFlowStatusFieldService {
         }
         validateCompatible(existing);
         ddlService.executeAdditiveColumn(context.getModelSchema(), COLUMN_NAME);
+        // 字段已存在时仍要把列表选列补齐：旧 listGridLayout 快照常缺 flowStatus。
+        fieldDesignService.ensureFieldListVisibility(objectId, FIELD_CODE);
         return fieldDesignService.listFields(objectId).stream()
                 .filter(field -> FIELD_CODE.equals(field.getFieldCode()))
                 .findFirst()

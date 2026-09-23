@@ -50,9 +50,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 
@@ -115,6 +118,12 @@ public class BusinessFlowService {
 
     @Autowired(required = false)
     private BusinessApplicationObjectMapper businessApplicationObjectMapper;
+
+    /**
+     * 任务事件状态同步使用独立事务，避免内部回写失败把外层 FlowCallback 事务标成 rollback-only。
+     */
+    @Autowired(required = false)
+    private PlatformTransactionManager transactionManager;
 
     private final BusinessBindingMapper bindingMapper;
     private final BusinessFlowInstanceLinkMapper flowInstanceLinkMapper;
@@ -4827,14 +4836,21 @@ public class BusinessFlowService {
             return;
         }
         Long effectiveTenantId = link.getTenantId() != null ? link.getTenantId() : tenantId;
+        Runnable work = () -> TenantContextHolder.executeWithTenant(effectiveTenantId, () -> {
+            if (FlowCallback.ON_TASK_COMPLETED.equals(ctx.getEvent())) {
+                handleTaskCompletedEvent(link, ctx);
+            } else {
+                handleTaskCreatedEvent(link, ctx);
+            }
+        });
         try {
-            TenantContextHolder.executeWithTenant(effectiveTenantId, () -> {
-                if (FlowCallback.ON_TASK_COMPLETED.equals(ctx.getEvent())) {
-                    handleTaskCompletedEvent(link, ctx);
-                } else {
-                    handleTaskCreatedEvent(link, ctx);
-                }
-            });
+            if (transactionManager != null) {
+                TransactionTemplate tx = new TransactionTemplate(transactionManager);
+                tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                tx.executeWithoutResult(status -> work.run());
+            } else {
+                work.run();
+            }
         } catch (Exception e) {
             log.warn("[低代码流程回调] 任务事件同步单据状态失败: event={}, processInstanceId={}, taskId={}, error={}",
                     ctx.getEvent(), ctx.getProcessInstanceId(), ctx.getTaskId(), e.getMessage());

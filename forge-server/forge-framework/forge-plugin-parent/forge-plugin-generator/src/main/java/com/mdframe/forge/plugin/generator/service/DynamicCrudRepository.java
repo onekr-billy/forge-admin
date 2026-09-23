@@ -1,6 +1,6 @@
 package com.mdframe.forge.plugin.generator.service;
 
-import cn.dev33.satoken.exception.SaTokenContextException;
+import cn.dev33.satoken.exception.SaTokenException;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTenantSupport;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder;
@@ -2086,10 +2086,10 @@ public class DynamicCrudRepository {
         try {
             // SessionHelper 优先读取显式执行身份，其次才是 Web 登录会话。
             return supplier.get();
-        } catch (SaTokenContextException exception) {
-            // 流程消息/定时任务没有 Web 会话，不伪造操作者；系统审计单独记录来源。
-            // 只处理缺少请求上下文，其他异常仍向上传播；不影响租户或数据权限条件。
-            log.debug("[DynamicCrudRepository] 后台写入无 Web 审计会话");
+        } catch (SaTokenException exception) {
+            // 流程 Redis 回调等非 Web 线程会抛 NotWebContextException（文案含 HttpServletRequest），
+            // 与 SaTokenContextException 同属 SaTokenException；只吞上下文缺失，不伪造操作者。
+            log.debug("[DynamicCrudRepository] 后台写入无 Web 审计会话: {}", exception.getMessage());
             return null;
         }
     }

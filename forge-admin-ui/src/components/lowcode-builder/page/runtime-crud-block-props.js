@@ -2,6 +2,7 @@ import { resolveCrudPagePresentation } from '../shared/runtime-crud-page-mode'
 import {
   appendDesignPreviewToApiValue,
   applyTableColumnLayout,
+  ensureManagedFlowStatusColumns,
   filterCrudItemsByFieldRefs,
   includeCompiledChildColumnRefs,
   includeManagedRuntimeFieldRefs,
@@ -92,12 +93,16 @@ export function buildRuntimeCrudBlockProps({
     api: runtimeBlockApi || runtimeProps.api || '',
     rowKey: blockProps.rowKey || runtimeProps.rowKey || 'id',
     title: blockProps.title || runtimeProps.title,
-    columns: applyTableColumnLayout(
-      filterCrudItemsByFieldRefs(
-        runtimeProps.columns?.length ? runtimeProps.columns : aiTableColumns,
-        runtimeTableFieldRefs,
+    columns: ensureManagedFlowStatusColumns(
+      applyTableColumnLayout(
+        filterCrudItemsByFieldRefs(
+          runtimeProps.columns?.length ? runtimeProps.columns : aiTableColumns,
+          runtimeTableFieldRefs,
+        ),
+        blockProps,
       ),
-      blockProps,
+      runtimeProps.fieldCatalog,
+      blockProps.fieldSettings,
     ),
     runtimeActions: Array.isArray(runtimeProps.runtimeActions)
       ? runtimeProps.runtimeActions

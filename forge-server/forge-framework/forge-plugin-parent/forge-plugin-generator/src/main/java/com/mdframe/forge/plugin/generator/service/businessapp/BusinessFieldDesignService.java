@@ -78,6 +78,61 @@ public class BusinessFieldDesignService {
         return findFieldVO(objectId, newField.getField());
     }
 
+    /**
+     * 已有平台托管字段（如 flowStatus）补进列表选列。
+     * 自由列表布局的旧 fieldRefs 不会因 zone 同步自动更新，这里显式回写。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void ensureFieldListVisibility(Long objectId, String fieldCode) {
+        if (objectId == null || StringUtils.isBlank(fieldCode)) {
+            return;
+        }
+        BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
+        LowcodeFieldSchema field = requireBusinessField(context.getModelSchema(), fieldCode);
+        LowcodePageSchema pageSchema = context.getPageSchema();
+        boolean needsSync = !containsZoneFieldRef(pageSchema, "table", fieldCode)
+                || !containsListGridFieldRef(pageSchema, fieldCode);
+        context.setPageSchema(syncFieldVisibility(pageSchema, field));
+        if (needsSync) {
+            designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
+        }
+    }
+
+    private boolean containsZoneFieldRef(LowcodePageSchema pageSchema, String zoneKey, String fieldCode) {
+        if (pageSchema == null || pageSchema.getZones() == null || StringUtils.isBlank(fieldCode)) {
+            return false;
+        }
+        return pageSchema.getZones().stream()
+                .filter(zone -> zone != null && StringUtils.equals(zoneKey, zone.getZoneKey()))
+                .map(LowcodePageZone::getFieldRefs)
+                .filter(refs -> refs != null)
+                .anyMatch(refs -> refs.stream().anyMatch(fieldCode::equals));
+    }
+
+    private boolean containsListGridFieldRef(LowcodePageSchema pageSchema, String fieldCode) {
+        if (pageSchema == null || pageSchema.getListGridLayout() == null || StringUtils.isBlank(fieldCode)) {
+            return true; // 无自由布局时只依赖 zone，视为不需要补 grid
+        }
+        Object itemsValue = pageSchema.getListGridLayout().get("items");
+        if (!(itemsValue instanceof List<?> items) || items.isEmpty()) {
+            return true;
+        }
+        boolean sawCrudBlock = false;
+        for (Object itemValue : items) {
+            if (!(itemValue instanceof Map<?, ?> item)
+                    || !"AiCrudPage".equals(String.valueOf(item.get("blockType")))) {
+                continue;
+            }
+            sawCrudBlock = true;
+            Object refsValue = item.get("fieldRefs");
+            if (refsValue instanceof List<?> refs
+                    && refs.stream().anyMatch(ref -> fieldCode.equals(String.valueOf(ref)))) {
+                return true;
+            }
+        }
+        return !sawCrudBlock;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public BusinessFieldVO updateField(Long objectId, String fieldCode, BusinessFieldDTO dto) {
         BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
@@ -305,11 +360,51 @@ public class BusinessFieldDesignService {
         ensureZone(target, "toolbar");
         boolean enabled = !"DISABLED".equalsIgnoreCase(StringUtils.defaultString(field.getFieldStatus()))
                 && !"HIDDEN".equalsIgnoreCase(StringUtils.defaultString(field.getFieldStatus()));
+        boolean listVisible = enabled && (field.getListVisible() == null || Boolean.TRUE.equals(field.getListVisible()));
         syncZoneRef(target, "search", field.getField(), enabled && Boolean.TRUE.equals(field.getSearchable()));
-        syncZoneRef(target, "table", field.getField(), enabled && (field.getListVisible() == null || Boolean.TRUE.equals(field.getListVisible())));
+        syncZoneRef(target, "table", field.getField(), listVisible);
         syncZoneRef(target, "edit", field.getField(), enabled && (field.getFormVisible() == null || Boolean.TRUE.equals(field.getFormVisible())));
         syncZoneRef(target, "detail", field.getField(), enabled && (field.getListVisible() == null || Boolean.TRUE.equals(field.getListVisible())));
+        // 列表自由布局优先于 table zone；后补字段必须写进 AiCrudPage.fieldRefs，否则发布后列仍会被旧快照滤掉。
+        syncListGridFieldRef(target, field.getField(), listVisible);
         return target;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncListGridFieldRef(LowcodePageSchema pageSchema, String fieldCode, boolean present) {
+        if (pageSchema == null || StringUtils.isBlank(fieldCode) || pageSchema.getListGridLayout() == null) {
+            return;
+        }
+        Object itemsValue = pageSchema.getListGridLayout().get("items");
+        if (!(itemsValue instanceof List<?> items) || items.isEmpty()) {
+            return;
+        }
+        for (Object itemValue : items) {
+            if (!(itemValue instanceof Map<?, ?> rawItem)) {
+                continue;
+            }
+            Map<Object, Object> item = (Map<Object, Object>) rawItem;
+            if (!"AiCrudPage".equals(String.valueOf(item.get("blockType")))) {
+                continue;
+            }
+            Object refsValue = item.get("fieldRefs");
+            List<String> refs = withoutFieldRef(
+                    refsValue instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of(),
+                    fieldCode);
+            if (present) {
+                refs.add(fieldCode);
+            }
+            item.put("fieldRefs", refs);
+            if (!present) {
+                Object propsValue = item.get("props");
+                if (propsValue instanceof Map<?, ?> rawProps) {
+                    Object settingsValue = ((Map<?, ?>) rawProps).get("fieldSettings");
+                    if (settingsValue instanceof Map<?, ?> rawSettings) {
+                        ((Map<Object, Object>) rawSettings).remove(fieldCode);
+                    }
+                }
+            }
+        }
     }
 
     private void syncZoneRef(LowcodePageSchema pageSchema, String zoneKey, String fieldCode, boolean present) {

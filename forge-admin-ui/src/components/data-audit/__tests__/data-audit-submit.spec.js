@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import {
+  isAuditReasonRequired,
+  isAuditReasonRequiredError,
   isDataAuditHistoryAvailable,
   readDataAuditMeta,
+  resolveDataAuditRemovePlan,
   shouldShowDataAuditHistory,
   stripDataAuditMeta,
+  applyDataAuditRemove,
 } from '../data-audit-submit'
 
 describe('data-audit-submit', () => {
@@ -40,5 +44,118 @@ describe('data-audit-submit', () => {
     expect(shouldShowDataAuditHistory(null, true)).toBe(true)
     expect(shouldShowDataAuditHistory(null, false)).toBe(false)
     expect(isDataAuditHistoryAvailable({ revision: 3 })).toBe(true)
+  })
+
+  it('treats missing reasonRequired as required when audit enabled', () => {
+    expect(isAuditReasonRequired({ enabled: true })).toBe(true)
+    expect(isAuditReasonRequired({ enabled: true, reasonRequired: true })).toBe(true)
+    expect(isAuditReasonRequired({ enabled: true, reasonRequired: false })).toBe(false)
+    expect(isAuditReasonRequired({ enabled: false, reasonRequired: true })).toBe(false)
+  })
+
+  it('detects audit reason required errors', () => {
+    expect(isAuditReasonRequiredError({ message: '请填写删除原因' })).toBe(true)
+    expect(isAuditReasonRequiredError({ data: { errorCode: 'AUDIT_REASON_REQUIRED' } })).toBe(true)
+    expect(isAuditReasonRequiredError({ message: '无权限' })).toBe(false)
+  })
+
+  describe('applyDataAuditRemove', () => {
+    beforeEach(() => {
+      window.$dialog = { warning: vi.fn(), create: vi.fn() }
+      window.$message = { warning: vi.fn() }
+    })
+
+    afterEach(() => {
+      delete window.$dialog
+      delete window.$message
+    })
+
+    it('returns null when list rows have no enabled audit meta', async () => {
+      const requestRemove = vi.fn()
+      const result = await applyDataAuditRemove({
+        configKey: 'demo',
+        ids: ['1'],
+        rows: [{ id: '1' }],
+        requestRemove,
+      })
+      expect(result).toBeNull()
+      expect(requestRemove).not.toHaveBeenCalled()
+    })
+
+    it('hydrates meta from detail when list rows lack audit fields', async () => {
+      const fetchRecordMeta = vi.fn().mockResolvedValue({
+        enabled: true,
+        reasonRequired: true,
+        revision: 6,
+      })
+      const plan = await resolveDataAuditRemovePlan({
+        configKey: 'demo',
+        ids: ['1'],
+        rows: [{ id: '1' }],
+        fetchRecordMeta,
+      })
+      expect(fetchRecordMeta).toHaveBeenCalled()
+      expect(plan.mode).toBe('audit')
+      expect(plan.reasonRequired).toBe(true)
+      expect(plan.expectedRevisions).toEqual([6])
+    })
+
+    it('prompts delete reason via warning dialog and posts /remove', async () => {
+      window.$dialog.warning = vi.fn(({ onPositiveClick, content }) => {
+        const vnode = content()
+        vnode.props['onUpdate:value']('清理测试数据')
+        onPositiveClick()
+      })
+      const requestRemove = vi.fn().mockResolvedValue({ data: 1 })
+      const result = await applyDataAuditRemove({
+        configKey: 'demo',
+        ids: [101],
+        rows: [{ id: 101, _dataAudit: { enabled: true, reasonRequired: true, revision: 4 } }],
+        requestRemove,
+      })
+      expect(window.$dialog.warning).toHaveBeenCalledWith(expect.objectContaining({
+        title: '请填写删除原因',
+      }))
+      expect(requestRemove).toHaveBeenCalledWith('demo', {
+        ids: ['101'],
+        expectedRevisions: [4],
+        reason: '清理测试数据',
+      })
+      expect(result).toEqual({ data: 1 })
+    })
+
+    it('skips prompt when audit enabled but reason not required', async () => {
+      const requestRemove = vi.fn().mockResolvedValue({ data: 1 })
+      await applyDataAuditRemove({
+        configKey: 'demo',
+        ids: ['9'],
+        rows: [{ id: '9', _dataAudit: { enabled: true, reasonRequired: false, revision: 1 } }],
+        requestRemove,
+      })
+      expect(window.$dialog.warning).not.toHaveBeenCalled()
+      expect(requestRemove).toHaveBeenCalledWith('demo', {
+        ids: ['9'],
+        expectedRevisions: [1],
+        reason: '',
+      })
+    })
+
+    it('uses preset reason without opening dialog when skipPrompt', async () => {
+      const requestRemove = vi.fn().mockResolvedValue({ data: 1 })
+      await applyDataAuditRemove({
+        configKey: 'demo',
+        ids: ['9'],
+        rows: [{ id: '9', _dataAudit: { enabled: true, reasonRequired: true, revision: 2 } }],
+        requestRemove,
+        reason: '预先填写的原因',
+        skipPrompt: true,
+      })
+      expect(window.$dialog.warning).not.toHaveBeenCalled()
+      expect(requestRemove).toHaveBeenCalledWith('demo', {
+        ids: ['9'],
+        expectedRevisions: [2],
+        reason: '预先填写的原因',
+      })
+    })
   })
 })

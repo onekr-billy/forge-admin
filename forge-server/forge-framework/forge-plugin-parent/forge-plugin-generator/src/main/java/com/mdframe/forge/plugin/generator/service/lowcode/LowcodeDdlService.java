@@ -128,8 +128,9 @@ public class LowcodeDdlService {
     }
 
     /**
-     * 仅执行预览结果中的安全追加式 DDL（ADD COLUMN / CREATE TABLE / CREATE INDEX），
-     * 跳过 MODIFY / DROP / CHANGE 等非追加式语句，避免一条 unsafe DDL 阻断全部安全变更。
+     * 仅执行预览结果中的安全在线 DDL：
+     * ADD COLUMN / CREATE TABLE / CREATE INDEX，以及兼容的列扩容（同类型加长、放宽可空）。
+     * 缩长度、改类型族、收紧必填等仍跳过，避免一条 unsafe DDL 阻断全部安全变更。
      * 返回实际执行的安全语句条数。
      */
     public int executeSafeDdlOnly(LowcodeModelSchema modelSchema) {
@@ -141,9 +142,13 @@ public class LowcodeDdlService {
         if (!context.isAllowDdl()) {
             throw new BusinessException("运行数据源不允许在线DDL");
         }
+        RuntimeDatabaseDialect dialect = dialectFactory.resolve(context);
+        Set<String> compatibleModifies = preview.getDdlStatements() == null || preview.getDdlStatements().isEmpty()
+                ? Set.of()
+                : new LinkedHashSet<>(buildCompatibleModifyStatements(context, modelSchema, dialect));
         List<String> safeStatements = preview.getDdlStatements() == null ? List.of()
                 : preview.getDdlStatements().stream()
-                        .filter(this::isSafeOnlineDdl)
+                        .filter(ddl -> isSafeOnlineDdl(ddl) || compatibleModifies.contains(ddl))
                         .toList();
         for (String ddl : safeStatements) {
             ddlRepository.executeDdl(context, ddl);
@@ -156,15 +161,19 @@ public class LowcodeDdlService {
     }
 
     /**
-     * 统计预览结果中的非追加式 DDL 条数。
+     * 统计预览结果中的非追加式、且非兼容扩容的 DDL 条数。
      */
     public int countUnsafeDdl(LowcodeModelSchema modelSchema) {
         LowcodeDdlPreviewVO preview = previewCreateTable(modelSchema);
         if (preview.getDdlStatements() == null) {
             return 0;
         }
+        LowcodeRuntimeDataSourceContext context = runtimeDataSourceResolver.resolve(modelSchema);
+        RuntimeDatabaseDialect dialect = dialectFactory.resolve(context);
+        Set<String> compatibleModifies = new LinkedHashSet<>(
+                buildCompatibleModifyStatements(context, modelSchema, dialect));
         return (int) preview.getDdlStatements().stream()
-                .filter(statement -> !isSafeOnlineDdl(statement))
+                .filter(statement -> !isSafeOnlineDdl(statement) && !compatibleModifies.contains(statement))
                 .count();
     }
 
@@ -458,6 +467,81 @@ public class LowcodeDdlService {
                     : buildExistingColumn(metadata, field, expectedRequired);
             ddlList.addAll(dialect.modifyColumnSql(tableName, column));
         }
+    }
+
+    /**
+     * 生成与预览一致、且可在线自动执行的兼容扩容 MODIFY（同类型加长、仅放宽可空）。
+     */
+    private List<String> buildCompatibleModifyStatements(LowcodeRuntimeDataSourceContext context,
+                                                         LowcodeModelSchema modelSchema,
+                                                         RuntimeDatabaseDialect dialect) {
+        if (!Boolean.TRUE.equals(ddlRepository.tableExists(context, context.getTableName()))) {
+            return List.of();
+        }
+        Map<String, LowcodeDdlRepository.ColumnMetadata> columnMetadata =
+                ddlRepository.listColumnMetadata(context, context.getTableName());
+        List<String> statements = new ArrayList<>();
+        for (LowcodeFieldSchema field : businessFields(modelSchema)) {
+            if (field == null || StringUtils.isBlank(field.getColumnName())) {
+                continue;
+            }
+            LowcodeDdlRepository.ColumnMetadata metadata = columnMetadata.get(field.getColumnName());
+            if (metadata == null || StringUtils.isNotBlank(metadata.generationExpression())) {
+                continue;
+            }
+            String dataType = normalizeDataType(field);
+            String expectedSqlType = resolveSqlType(field, dataType, dialect);
+            boolean typeChanged = !dialect.sameSqlType(expectedSqlType, metadata.columnType());
+            boolean currentRequired = "NO".equalsIgnoreCase(metadata.isNullable());
+            boolean expectedRequired = shouldUseNotNull(field, dataType)
+                    || (currentRequired && Boolean.TRUE.equals(field.getRequired()));
+            boolean requiredChanged = currentRequired != expectedRequired;
+            if (!typeChanged && !requiredChanged) {
+                continue;
+            }
+            if (!isCompatibleOnlineModify(metadata, expectedSqlType, typeChanged, currentRequired, expectedRequired)) {
+                continue;
+            }
+            DdlColumn column = typeChanged
+                    ? buildColumn(field, false, dialect)
+                    : buildExistingColumn(metadata, field, expectedRequired);
+            statements.addAll(dialect.modifyColumnSql(context.getTableName(), column));
+        }
+        return statements;
+    }
+
+    /**
+     * 可在线自动执行的已有列变更：同类型加长（不缩短），或仅放宽可空；不改类型族、不收紧必填。
+     */
+    private boolean isCompatibleOnlineModify(LowcodeDdlRepository.ColumnMetadata metadata,
+                                             String expectedSqlType,
+                                             boolean typeChanged,
+                                             boolean currentRequired,
+                                             boolean expectedRequired) {
+        if (expectedRequired && !currentRequired) {
+            // 收紧为必填可能因历史空值失败，留给高级数据设置确认。
+            return false;
+        }
+        if (!typeChanged) {
+            return true;
+        }
+        if (isPotentialLengthShrink(metadata.columnType(), expectedSqlType)) {
+            return false;
+        }
+        return sqlTypeFamily(expectedSqlType).equals(sqlTypeFamily(metadata.columnType()));
+    }
+
+    private String sqlTypeFamily(String sqlType) {
+        String normalized = StringUtils.defaultString(sqlType).trim().toLowerCase(Locale.ROOT);
+        int paren = normalized.indexOf('(');
+        if (paren > 0) {
+            normalized = normalized.substring(0, paren);
+        }
+        int space = normalized.indexOf(' ');
+        if (space > 0) {
+            normalized = normalized.substring(0, space);
+        }
+        return normalized;
     }
 
     private void appendMissingSystemColumns(LowcodeModelSchema modelSchema, String tableName,

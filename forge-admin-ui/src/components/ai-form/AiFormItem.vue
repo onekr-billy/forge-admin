@@ -170,7 +170,7 @@
           :options="currentOptions"
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
-          :loading="field.loading"
+          :loading="selectOptionLoading"
           :remote="field.remote"
           :on-search="field.onSearch"
           v-bind="controlProps"
@@ -624,6 +624,7 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
+          :on-load="treeSelectLazyLoadHandler"
           v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleTreeSelectUpdate(field, $event)"
@@ -844,6 +845,7 @@ import { resolveRuntimeControl } from '@/components/lowcode-builder/shared/runti
 import RegionTreeSelect from '@/components/RegionTreeSelect.vue'
 import { getDictData } from '@/composables/useDict'
 import { request } from '@/utils'
+import { resolveSwitchValuePair } from '@/views/app-center/components/designer/forge-form-designer/field-default-value'
 import AiCustomSelect from './AiCustomSelect.vue'
 import AiFormArrayField from './AiFormArrayField.vue'
 import AiFormGroupTitle from './AiFormGroupTitle.vue'
@@ -851,7 +853,17 @@ import AiFormSectionTitle from './AiFormSectionTitle.vue'
 import AiRecordSelectorModal from './AiRecordSelectorModal.vue'
 import { resolveControlProps } from './control-props'
 import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
-import { resolveSwitchValuePair } from '@/views/app-center/components/designer/forge-form-designer/field-default-value'
+import {
+  buildQuerySourceDisplayFields,
+  buildTreeFromFlatRows,
+  decorateLazyTreeNodes,
+  resolveFirstFilledOptionField,
+  resolveOptionLoadMode,
+  resolveOptionPageSize,
+  resolvePendingOptionLabel,
+  rowsHaveNestedChildren,
+  shouldBuildTreeOptions,
+} from './option-source-runtime'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, resolveSelectorSearchParams } from './record-selector-utils'
 import { resolveSelectionLabelFields as buildSelectionLabelFields, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
@@ -1141,12 +1153,25 @@ const remoteOptionSourceKey = computed(() => {
     source.dictType,
     source.sourceType,
     source.sourceKey,
+    source.valueField,
+    source.labelField,
+    source.parentField,
+    source.childrenField,
+    source.loadMode,
+    source.rootParentValue,
     source.pageNum,
     source.pageSize,
     source.waitForParent === true,
     Array.isArray(source.waitForFields) ? source.waitForFields.join(',') : '',
     source.params || {},
   ])
+})
+
+const treeSelectLazyLoadHandler = computed(() => {
+  const source = remoteOptionSource.value
+  if (!source || resolveOptionLoadMode(source) !== 'lazy')
+    return undefined
+  return handleTreeSelectLazyLoad
 })
 
 const runtimePageWidgetKey = computed(() => {
@@ -1233,6 +1258,20 @@ watch(
   { immediate: true },
 )
 
+// 远程选项就绪后回写伴随标签，下次进入可直接用 label 回显，避免先闪 id
+watch(
+  [remoteOptions, () => props.value, remoteLoading],
+  () => {
+    if (remoteLoading.value || !remoteOptionSource.value)
+      return
+    if (!shouldSyncOptionLabels(props.field) || !isFilledValue(props.value))
+      return
+    if (!Array.isArray(remoteOptions.value) || !remoteOptions.value.length)
+      return
+    syncSelectionLabelFromOptions(props.field, props.value)
+  },
+)
+
 watch(fieldDictType, loadDictOptions, { immediate: true })
 watch(sourceDictType, loadSourceDictOptions, { immediate: true })
 watch(cascadeSourceValue, (value, oldValue) => {
@@ -1283,7 +1322,11 @@ const currentOptions = computed(() => {
   const currentChildrenSource = resolveCurrentChildrenSource(field)
   if (currentChildrenSource) {
     return withCurrentValueOption(resolveCascadedOptions(
-      buildCurrentChildrenOptions(currentChildrenSource, props.context),
+      finalizeOptionTree(
+        buildCurrentChildrenOptions(currentChildrenSource, props.context),
+        currentChildrenSource,
+        field.type || field.componentKey,
+      ),
     ))
   }
 
@@ -1316,28 +1359,38 @@ function withCurrentValueOption(options = []) {
   const field = props.field || {}
   if (props.value === null || props.value === undefined || props.value === '')
     return result
-  const labelValue = resolveSelectionLabelValue(field)
-  if (labelValue === null || labelValue === undefined || labelValue === '')
-    return result
   const values = Array.isArray(props.value)
     ? props.value
     : fieldMultiple.value && typeof props.value === 'string'
       ? parseSelectionValues(props.value, true)
       : [props.value]
-  const labels = Array.isArray(labelValue)
-    ? labelValue
-    : String(labelValue).split(',').map(item => item.trim()).filter(Boolean)
+  const companionLabel = resolveSelectionLabelValue(field)
+  const companionLabels = Array.isArray(companionLabel)
+    ? companionLabel
+    : String(companionLabel || '').split(',').map(item => item.trim()).filter(Boolean)
+  // 远程选项未就绪时必须注入占位项，否则 n-select 会把 value（id）直接当标签显示造成闪烁
+  const remotePending = Boolean(remoteOptionSource.value) && remoteLoading.value
   values.forEach((value, index) => {
     if (flattenOptionNodes(result).some(option => isSameOptionValue(option?.value ?? option?.key, value)))
+      return
+    const label = resolvePendingOptionLabel({
+      companionLabel: companionLabels[index] || companionLabels[0] || '',
+      remotePending,
+    })
+    if (!label)
       return
     result.unshift({
       value,
       key: value,
-      label: labels[index] || labels[0] || String(value),
+      label,
+      // 回显临时节点：禁止懒加载再去拉下级，避免无意义请求
+      isLeaf: true,
     })
   })
   return result
 }
+
+const selectOptionLoading = computed(() => Boolean(props.field?.loading || (remoteOptionSource.value && remoteLoading.value)))
 
 function cacheAsyncOptions(field, promise) {
   promise.then((options) => {
@@ -1479,6 +1532,19 @@ function normalizeOptionSource(source) {
     next.api = next.url
   if (!next.params && typeof next.paramsText === 'string')
     next.params = safeParseObject(next.paramsText)
+  // 树形组件动态源：未显式配置时补默认父级/加载策略，保证扁平表能拼树
+  const componentType = props.field?.type || props.field?.componentKey || ''
+  if (shouldBuildTreeOptions(next, componentType) && !String(next.parentField || '').trim()
+    && String(next.type || '').toLowerCase() !== 'tree') {
+    if (!next.parentField)
+      next.parentField = 'parentId'
+    if (!next.childrenField)
+      next.childrenField = 'children'
+    if (!next.loadMode)
+      next.loadMode = 'full'
+    if (!next.structure)
+      next.structure = 'tree'
+  }
   return next
 }
 
@@ -1582,22 +1648,29 @@ function resolveDynamicParams(params = {}) {
   return result
 }
 
-async function loadRemoteOptions(source, keyword = '') {
+async function loadRemoteOptions(source, keyword = '', { parentValue, forChildren = false } = {}) {
   if (!source)
-    return
+    return forChildren ? [] : undefined
   if (source.waitForParent) {
-    remoteOptions.value = []
-    return
+    if (!forChildren)
+      remoteOptions.value = []
+    return forChildren ? [] : undefined
   }
   if (source.type === 'businessRecordSelector') {
     const objectCode = normalizeRecordSelectorConfig(source).objectCode
     if (!objectCode) {
-      remoteOptions.value = []
-      return
+      if (!forChildren)
+        remoteOptions.value = []
+      return forChildren ? [] : undefined
     }
   }
-  const requestSeq = ++remoteRequestSeq
-  remoteLoading.value = true
+  const requestSeq = forChildren ? remoteRequestSeq : ++remoteRequestSeq
+  if (!forChildren)
+    remoteLoading.value = true
+  const componentType = props.field?.type || props.field?.componentKey || ''
+  const isTree = shouldBuildTreeOptions(source, componentType)
+  const loadMode = resolveOptionLoadMode(source)
+  const pageSize = resolveOptionPageSize(source, { isTree })
   try {
     if (source.type === 'businessRecordSelector') {
       const objectCode = normalizeRecordSelectorConfig(source).objectCode
@@ -1611,29 +1684,35 @@ async function loadRemoteOptions(source, keyword = '') {
         displayFields: source.displayFields || source.params?.displayFields || [],
         searchParams: source.searchParams || source.params?.searchParams || {},
       }
+      applyTreeLoadParams(selectorPayload, source, { isTree, loadMode, parentValue })
       const res = await queryBusinessRecordSelector(selectorPayload, {
         pageNum: source.pageNum || 1,
-        pageSize: source.pageSize || 100,
+        pageSize,
       })
-      if (requestSeq !== remoteRequestSeq)
+      if (!forChildren && requestSeq !== remoteRequestSeq)
         return
-      remoteOptions.value = normalizeRemoteOptions(res?.data || {}, source)
+      const normalized = normalizeRemoteOptions(res?.data || {}, source, componentType)
+      if (forChildren)
+        return normalized
+      remoteOptions.value = normalized
       return
     }
 
     if (source.type === 'QUERY_SOURCE') {
       // 设计器预览模式下不调用 execute 接口，只展示元数据（请求参数 / 返回字段）供用户配置映射
       if (isDesignerPreviewContext()) {
-        remoteOptions.value = []
-        return
+        if (!forChildren)
+          remoteOptions.value = []
+        return forChildren ? [] : undefined
       }
       // 配置了参数但解析后全部为空时阻断请求，避免后端报必填参数错误；
       // 字段填值后 watch 自动重新触发。无参数或任一参数有值时正常发出。
       const resolvedEntries = Object.entries(source.params || {})
       const hasAnyParamValue = resolvedEntries.some(([, v]) => v !== undefined && v !== null && v !== '')
-      if (resolvedEntries.length > 0 && !hasAnyParamValue) {
-        remoteOptions.value = []
-        return
+      if (resolvedEntries.length > 0 && !hasAnyParamValue && loadMode !== 'lazy') {
+        if (!forChildren)
+          remoteOptions.value = []
+        return forChildren ? [] : undefined
       }
       // 过滤空值参数：${字段名} 引用解析后为空时自动剥离
       const rawParams = source.params || {}
@@ -1644,22 +1723,27 @@ async function loadRemoteOptions(source, keyword = '') {
       }
       if (keyword && source.keywordParam)
         params[source.keywordParam] = keyword
+      applyTreeLoadParams(params, source, { isTree, loadMode, parentValue })
       try {
+        const displayFields = buildQuerySourceDisplayFields(source)
         const res = await executeLowcodeQuerySource({
           sourceType: source.sourceType,
           sourceKey: source.sourceKey,
           params,
+          fields: displayFields.length ? displayFields : undefined,
           pageNum: source.pageNum || 1,
-          pageSize: source.pageSize || 50,
+          pageSize,
         })
-        if (requestSeq !== remoteRequestSeq)
+        if (!forChildren && requestSeq !== remoteRequestSeq)
           return
         const result = res?.data || {}
-        const normalized = normalizeRemoteOptions(result, source)
+        const normalized = normalizeRemoteOptions(result, source, componentType)
+        if (forChildren)
+          return normalized
         remoteOptions.value = normalized
       }
       catch (err) {
-        if (requestSeq !== remoteRequestSeq)
+        if (!forChildren && requestSeq !== remoteRequestSeq)
           return
         console.warn(
           `[AiFormItem] 查询源加载失败 [${source.sourceType}/${source.sourceKey}]，已发送参数:`,
@@ -1667,13 +1751,15 @@ async function loadRemoteOptions(source, keyword = '') {
           '错误:',
           err?.message || err,
         )
+        if (forChildren)
+          return []
         remoteOptions.value = []
       }
-      return
+      return forChildren ? [] : undefined
     }
 
     if (!source.api)
-      return
+      return forChildren ? [] : undefined
     if (isSelectorQueryApi(source.api)) {
       const selectorConfig = normalizeRecordSelectorConfig({
         ...props.field,
@@ -1683,8 +1769,9 @@ async function loadRemoteOptions(source, keyword = '') {
       })
       const objectCode = selectorConfig.objectCode
       if (!objectCode) {
-        remoteOptions.value = []
-        return
+        if (!forChildren)
+          remoteOptions.value = []
+        return forChildren ? [] : undefined
       }
       const selectorPayload = {
         ...(source.params || {}),
@@ -1696,13 +1783,17 @@ async function loadRemoteOptions(source, keyword = '') {
         displayFields: source.displayFields || source.params?.displayFields || [],
         searchParams: source.searchParams || source.params?.searchParams || {},
       }
+      applyTreeLoadParams(selectorPayload, source, { isTree, loadMode, parentValue })
       const res = await queryBusinessRecordSelector(selectorPayload, {
         pageNum: source.pageNum || 1,
-        pageSize: source.pageSize || 100,
+        pageSize,
       })
-      if (requestSeq !== remoteRequestSeq)
+      if (!forChildren && requestSeq !== remoteRequestSeq)
         return
-      remoteOptions.value = normalizeRemoteOptions(res?.data || {}, source)
+      const normalized = normalizeRemoteOptions(res?.data || {}, source, componentType)
+      if (forChildren)
+        return normalized
+      remoteOptions.value = normalized
       return
     }
     const { method, url } = parseOptionApi(source.api)
@@ -1711,15 +1802,22 @@ async function loadRemoteOptions(source, keyword = '') {
     }
     if (keyword && source.keywordParam)
       params[source.keywordParam] = keyword
+    applyTreeLoadParams(params, source, { isTree, loadMode, parentValue })
+    // 远程分页接口常见 pageSize；树全量也带上作为服务端限流提示
+    if (params.pageSize === undefined && params.pageNum === undefined)
+      params.pageSize = pageSize
     const res = await request({
       method,
       url,
       params: method === 'get' ? params : undefined,
       data: method === 'get' ? undefined : params,
     })
-    if (requestSeq !== remoteRequestSeq)
+    if (!forChildren && requestSeq !== remoteRequestSeq)
       return
-    remoteOptions.value = normalizeRemoteOptions(res, source)
+    const normalized = normalizeRemoteOptions(res, source, componentType)
+    if (forChildren)
+      return normalized
+    remoteOptions.value = normalized
   }
   catch (error) {
     console.warn(`[AiFormItem] 加载 ${props.field?.field || ''} 选项失败:`, {
@@ -1734,12 +1832,43 @@ async function loadRemoteOptions(source, keyword = '') {
       }),
       context: props.context,
     })
+    if (forChildren)
+      return []
     remoteOptions.value = []
   }
   finally {
-    if (requestSeq === remoteRequestSeq)
+    if (!forChildren && requestSeq === remoteRequestSeq)
       remoteLoading.value = false
   }
+  return forChildren ? [] : undefined
+}
+
+function applyTreeLoadParams(params, source = {}, { isTree = false, loadMode = 'full', parentValue } = {}) {
+  if (!params || !isTree)
+    return
+  params.loadMode = loadMode
+  if (loadMode !== 'lazy')
+    return
+  const parentField = String(source.parentField || 'parentId').trim() || 'parentId'
+  const effectiveParent = parentValue !== undefined && parentValue !== null
+    ? parentValue
+    : (source.rootParentValue ?? '')
+  params.parentValue = effectiveParent
+  params.parentId = effectiveParent
+  // 查询源 / 业务对象分页：按父级字段过滤一层；/tree 接口同时吃 parentValue
+  if (!(parentField in params) || params[parentField] === undefined || params[parentField] === null)
+    params[parentField] = effectiveParent
+}
+
+async function handleTreeSelectLazyLoad(option) {
+  const source = remoteOptionSource.value
+  if (!source || !option || resolveOptionLoadMode(source) !== 'lazy')
+    return
+  const parentValue = option.value ?? option.key
+  const children = await loadRemoteOptions(source, '', { parentValue, forChildren: true })
+  option.children = Array.isArray(children) ? children : []
+  if (!option.children.length)
+    option.isLeaf = true
 }
 
 function isSelectorQueryApi(api = '') {
@@ -1755,12 +1884,34 @@ function parseOptionApi(api) {
   }
 }
 
-function normalizeRemoteOptions(data, source = {}) {
+function normalizeRemoteOptions(data, source = {}, componentType = '') {
   const rows = extractOptionRows(data, source)
   if (!Array.isArray(rows))
     return []
-  const isTree = source.type === 'tree'
-  return rows.map(row => normalizeOptionNode(row, source, isTree)).filter(Boolean)
+  const isTree = shouldBuildTreeOptions(source, componentType || props.field?.type || props.field?.componentKey)
+  const childrenField = source.childrenField || 'children'
+  const nested = rowsHaveNestedChildren(rows, childrenField)
+  // 已有嵌套 children，或声明为 tree 且未配 parentField：按嵌套递归；否则先扁平映射再拼树
+  const includeChildren = nested || (isTree && !String(source.parentField || '').trim())
+  const mapped = rows.map(row => normalizeOptionNode(row, source, includeChildren)).filter(Boolean)
+  return finalizeOptionTree(mapped, source, componentType || props.field?.type || props.field?.componentKey)
+}
+
+function finalizeOptionTree(options = [], source = {}, componentType = '') {
+  if (!shouldBuildTreeOptions(source, componentType))
+    return Array.isArray(options) ? options : []
+  const childrenField = source.childrenField || 'children'
+  let next = Array.isArray(options) ? options : []
+  if (!rowsHaveNestedChildren(next, childrenField) && String(source.parentField || '').trim()) {
+    next = buildTreeFromFlatRows(next, {
+      valueField: source.valueField || source.keyField || 'id',
+      parentField: source.parentField,
+      rootParentValue: source.rootParentValue,
+    })
+  }
+  if (resolveOptionLoadMode(source) === 'lazy')
+    next = decorateLazyTreeNodes(next)
+  return next
 }
 
 function extractOptionRows(data, source = {}, depth = 0) {
@@ -1796,8 +1947,9 @@ function normalizeOptionNode(row, source = {}, includeChildren = false) {
   const childrenField = source.childrenField || 'children'
   const fallbackValueFields = source.fallbackValueFields || ['value', 'key', keyField, 'id', 'orgId', 'deptId', 'code']
   const fallbackLabelFields = source.fallbackLabelFields || ['label', 'name', 'title', 'orgName', 'deptName', 'orgShortName']
-  const value = resolveFirstFilled(row, [valueField, ...fallbackValueFields])
-  const label = resolveFirstFilled(row, [labelField, ...fallbackLabelFields])
+  // 显式配置的 valueField/labelField 优先；选择器记录可能只在 _raw 里带展示字段
+  const value = resolveFirstFilledOptionField(row, [valueField, ...fallbackValueFields])
+  const label = resolveFirstFilledOptionField(row, [labelField, ...fallbackLabelFields])
   if (value === undefined || value === null || value === '')
     return null
   const option = {
@@ -1815,16 +1967,6 @@ function normalizeOptionNode(row, source = {}, includeChildren = false) {
     option.children = children.map(child => normalizeOptionNode(child, source, true)).filter(Boolean)
   }
   return option
-}
-
-function resolveFirstFilled(source, fields = []) {
-  const keys = fields.filter((field, index, all) => field && all.indexOf(field) === index)
-  for (const key of keys) {
-    const value = source?.[key]
-    if (value !== undefined && value !== null && value !== '')
-      return value
-  }
-  return undefined
 }
 
 function resolveCascadeConfig(field = {}) {
@@ -2168,7 +2310,15 @@ async function reloadObjectReferenceOptions(keyword = '') {
 }
 
 function resolveSelectionLabelValue(field = {}) {
+  const remoteLabelField = String(
+    field.optionSource?.labelField
+    || field.props?.optionSource?.labelField
+    || '',
+  ).trim()
   for (const candidate of resolveSelectionLabelFields(field)) {
+    // optionSource.labelField 是远端行字段名，不是表单伴随字段，不能拿来读 formData
+    if (remoteLabelField && candidate === remoteLabelField)
+      continue
     const value = props.formData?.[candidate]
     if (isFilledValue(value))
       return value

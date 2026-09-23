@@ -1069,6 +1069,34 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 
 处理原则：流程动作依据实例关联、发起人、运行状态和实际接口权限生成，不依赖旧模式或当前待办。审计取值必须兼容显式执行身份和无 Web 的系统后台写入；缺少 Web 上下文不伪造用户，也不放宽租户/数据权限。状态回写失败须传播并记录原始堆栈，不能继续更新关联表。旧失败事件不会因重启自动补发，历史漂移需按实际引擎状态受控补偿。
 
+## 流程 Redis 回调非 Web 异常是 NotWebContextException
+
+**发现日期**：2026-09-23
+
+**问题描述**：启动流程后 `flowRedisListenerContainer` 同步 `flowStatus` 失败，日志为「非 web 上下文无法获取 HttpServletRequest」，随后 `UnexpectedRollbackException: rollback-only`。列表流程状态时有时无：状态字段与实例关联同事务回滚，列表列读库字段为空，批量 `_documentRuntime` 也可能补不齐。
+
+**根因**：
+1. Sa-Token Spring 在非 Web 线程抛的是 `NotWebContextException`（直接继承 `SaTokenException`），不是此前只 catch 的 `SaTokenContextException`。
+2. 任务事件 catch 吞掉异常后，内层 `@Transactional` 已把外层标成 rollback-only，提交时再炸。
+
+**解决方案**：
+- `DynamicCrudRepository.auditSessionValue` 捕获整个 `SaTokenException`。
+- `DataScopeServiceImpl` 非 Web 时安全返回 null；内部字段回写无用户会话时跳过写数据权限，仍保留租户条件。
+- 任务事件状态同步用 `REQUIRES_NEW`，失败不再毒化外层 FlowCallback 事务。
+
+## 列表流程状态列偶发消失是旧 fieldRefs 快照滤掉了托管字段
+
+**发现日期**：2026-09-23
+
+**问题描述**：审批节点自动补齐 `flowStatus` 并发布后，列表有时有「流程状态」列、有时没有。列表设计器里也不像独立组件，用户以为字段丢了。
+
+**根因**：列表自由布局 `listGridLayout` 的 `AiCrudPage.fieldRefs` 优先于 table zone。后补字段只写了 zone，旧网格快照不含 `flowStatus`，发布 `columnsSchema` 就被滤掉。前端 `includeManagedRuntimeFieldRefs` 又依赖 `advancedProps.managedBy`，而列目录常没有该标记，运行态兜底失效。
+
+**解决方案**：
+- 字段可见性同步同时写 zone 与 listGridLayout；ensure 已有字段时补列表选列。
+- 运行配置构建强制补托管 `flowStatus` 列（显式隐藏除外）。
+- 前端按字段名/字典识别托管字段，并可从字段目录合成缺失列。
+
 ## 带排序和行数限制的流程锁查询会被 JSqlParser 重排
 
 **发现日期**：2026-09-22

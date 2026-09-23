@@ -4,10 +4,12 @@ import {
   applyTableColumnLayout,
   buildCrudSearchTypeRequestParams,
   buildRuntimeCrudProps,
+  ensureManagedFlowStatusColumns,
   filterCrudItemsByFieldRefs,
   includeCompiledChildColumnRefs,
   includeManagedRuntimeFieldRefs,
   isDesignPreviewCrudProps,
+  isManagedBusinessFlowField,
   resolveCrudPreviewReloadKey,
   resolveCrudSearchFieldCatalog,
   resolveDesignerFormGovernance,
@@ -244,10 +246,43 @@ describe('runtime CRUD design preview props', () => {
       [{
         field: 'flowStatus',
         listVisible: true,
+        dictType: 'business_flow_status',
+      }],
+    )).toEqual(['fieldRate', 'flowStatus'])
+
+    expect(includeManagedRuntimeFieldRefs(
+      ['fieldRate'],
+      [{
+        field: 'flowStatus',
+        listVisible: true,
         advancedProps: { managedBy: 'BUSINESS_FLOW' },
       }],
       { flowStatus: { visible: false } },
     )).toEqual(['fieldRate'])
+  })
+
+  it('synthesizes a missing flowStatus column from the field catalog', () => {
+    expect(isManagedBusinessFlowField({ field: 'flowStatus', dictType: 'business_flow_status' })).toBe(true)
+    const columns = ensureManagedFlowStatusColumns(
+      [
+        { key: 'name', prop: 'name', title: '名称' },
+        { key: 'actions', type: 'action', title: '操作', fixed: 'right' },
+      ],
+      [{
+        field: 'flowStatus',
+        fieldName: '流程状态',
+        listVisible: true,
+        dictType: 'business_flow_status',
+      }],
+    )
+    expect(columns.map(item => item.key || item.prop)).toEqual(['name', 'flowStatus', 'actions'])
+    expect(columns[1].render).toEqual({ type: 'dictTag', dictType: 'business_flow_status' })
+
+    expect(ensureManagedFlowStatusColumns(
+      [{ key: 'name', prop: 'name', title: '名称' }],
+      [{ field: 'flowStatus', listVisible: true, dictType: 'business_flow_status' }],
+      { flowStatus: { visible: false } },
+    ).map(item => item.key)).toEqual(['name'])
   })
 
   it('keeps compiled child-table columns when the page block snapshot only has main fields', () => {

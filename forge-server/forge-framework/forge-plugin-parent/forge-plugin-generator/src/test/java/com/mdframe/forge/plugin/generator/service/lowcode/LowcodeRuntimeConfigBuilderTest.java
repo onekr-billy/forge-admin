@@ -424,6 +424,58 @@ class LowcodeRuntimeConfigBuilderTest {
     }
 
     @Test
+    @DisplayName("appends managed flowStatus even when list grid snapshot omitted it")
+    void appendsManagedFlowStatusWhenListGridOmitsIt() throws Exception {
+        LowcodeModelSchema modelSchema = new LowcodeModelSchema();
+        modelSchema.setAppType("SINGLE");
+        modelSchema.setTableMode("EXISTING");
+        modelSchema.setTableName("demo_order");
+        modelSchema.setBusinessName("演示单据");
+        LowcodeFieldSchema name = new LowcodeFieldSchema();
+        name.setField("projectName");
+        name.setColumnName("project_name");
+        name.setLabel("项目");
+        name.setDataType("varchar");
+        name.setListVisible(true);
+        name.setComponentType("input");
+        LowcodeFieldSchema flowStatus = new LowcodeFieldSchema();
+        flowStatus.setField("flowStatus");
+        flowStatus.setColumnName("flow_status");
+        flowStatus.setLabel("流程状态");
+        flowStatus.setDataType("varchar");
+        flowStatus.setListVisible(true);
+        flowStatus.setComponentType("select");
+        flowStatus.setDictType("business_flow_status");
+        flowStatus.setAdvancedProps(Map.of("managedBy", "BUSINESS_FLOW"));
+        flowStatus.setFieldStatus("ENABLED");
+        modelSchema.setFields(new ArrayList<>(List.of(name, flowStatus)));
+
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("simple-crud");
+        LowcodePageZone table = new LowcodePageZone();
+        table.setZoneKey("table");
+        table.setEnabled(true);
+        table.setFieldRefs(new ArrayList<>(List.of("projectName")));
+        pageSchema.setZones(new ArrayList<>(List.of(table)));
+        pageSchema.setListGridLayout(Map.of(
+                "items", List.of(Map.of(
+                        "blockType", "AiCrudPage",
+                        "fieldRefs", List.of("projectName"),
+                        "props", Map.of("fieldSettings", Map.of())
+                ))
+        ));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("demo_order", modelSchema, pageSchema);
+        List<Map<String, Object>> columns = objectMapper.readValue(
+                runtimeConfig.getColumnsSchema(), new TypeReference<>() { });
+
+        assertEquals(
+                List.of("projectName", "flowStatus", "actions"),
+                columns.stream().map(column -> String.valueOf(column.get("key"))).toList()
+        );
+    }
+
+    @Test
     @DisplayName("publishes primary object code into runtime config")
     void publishesPrimaryObjectCodeIntoRuntimeConfig() throws Exception {
         LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("pw_purchase_order", purchaseOrderModelSchema(), pageSchema());

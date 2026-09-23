@@ -11,7 +11,15 @@ public class LowcodeQuerySourceFieldVO {
 
     private String label;
 
+    /** 兼容旧前端：与 dataType 同义，优先使用 dataType */
     private String type;
+
+    /** 目标字段真实存储类型，如 bigint / int / varchar */
+    private String dataType;
+
+    private Integer length;
+
+    private Integer precision;
 
     private String path;
 

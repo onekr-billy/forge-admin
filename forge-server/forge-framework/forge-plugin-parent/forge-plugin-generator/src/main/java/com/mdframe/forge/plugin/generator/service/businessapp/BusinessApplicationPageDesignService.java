@@ -88,12 +88,9 @@ public class BusinessApplicationPageDesignService {
                 tableMappingService.syncManagedDatabase(
                         saved.objectId(), applicationId, normalized.formAssetId());
             } catch (RuntimeException error) {
-                // DDL 同步失败不阻断保存：元数据已在事务中提交成功，
-                // 用户可稍后在高级数据设置中手动同步数据库结构。
-                log.warn("[页面设计保存] DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
+                // DDL 硬失败不阻断保存：元数据已提交；安全变更由 syncManagedDatabase 静默处理，不向用户弹提示。
+                log.warn("[页面设计保存] DDL 同步失败已忽略提示: objectId={}, formAssetId={}, error={}",
                         saved.objectId(), normalized.formAssetId(), error.getMessage());
-                String detail = StringUtils.defaultIfBlank(error.getMessage(), "目标数据存储暂时不可用");
-                saved.result().setDdlWarning("数据表结构同步失败：" + detail + "。页面设计已保存，可在高级数据设置中确认数据库调整。");
             }
             syncChildManagedTables(saved.objectId());
         }

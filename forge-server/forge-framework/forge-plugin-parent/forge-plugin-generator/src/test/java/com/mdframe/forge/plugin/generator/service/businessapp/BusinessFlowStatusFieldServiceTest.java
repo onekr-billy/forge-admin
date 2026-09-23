@@ -82,6 +82,7 @@ class BusinessFlowStatusFieldServiceTest {
 
         verify(fieldDesignService, never()).addField(
                 org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+        verify(fieldDesignService).ensureFieldListVisibility(77L, "flowStatus");
         verify(ddlService).executeAdditiveColumn(schema, "flow_status");
     }
 

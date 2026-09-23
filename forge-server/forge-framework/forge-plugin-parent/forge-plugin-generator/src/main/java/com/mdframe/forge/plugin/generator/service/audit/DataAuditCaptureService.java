@@ -66,11 +66,23 @@ public class DataAuditCaptureService {
         }
         Long tenantId = DataAuditTenantSupport.currentTenantIdOrNull();
         AiBusinessObject object = resolveObject(tenantId, config);
+        policyService.ensureIndex(tenantId);
+        DataAuditPolicyIndex.TableBinding tableBinding = tenantId == null || config == null
+                ? null
+                : DataAuditTransactionHolder.index().findTable(tenantId, config.getTableName());
         if (object == null) {
+            // 表已进入审计索引，但运行配置找不到业务对象时不能静默跳过，否则写库阶段会报“缺少采集上下文”。
+            if (tableBinding != null) {
+                throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception(
+                        "表「" + config.getTableName() + "」已启用数据变更审计，"
+                                + "但运行配置「" + StringUtils.defaultString(config.getConfigKey())
+                                + "」未关联到业务对象。"
+                                + "请检查业务对象的 configKey 是否与运行配置一致；"
+                                + "或到「数据审计」关闭该对象审计后再写入。");
+            }
             return () -> {
             };
         }
-        policyService.ensureIndex(tenantId);
         DataAuditPolicyIndex.ObjectPolicy policy = DataAuditTransactionHolder.index().findObject(tenantId, object.getId());
         if (policy == null || !policy.enabled()) {
             return () -> {
@@ -94,12 +106,21 @@ public class DataAuditCaptureService {
                 && (eventType == DataAuditEventType.UPDATE || eventType == DataAuditEventType.DELETE)
                 && sourceType == DataAuditSourceType.FORM;
         if (userWrite && policy.reasonRequired() && (reason == null || reason.isBlank())) {
+            if (eventType == DataAuditEventType.DELETE) {
+                throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception("请填写删除原因");
+            }
             throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception();
         }
         if (reason != null && (reason.length() < 1 || reason.length() > 500)) {
-            throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception("修改原因长度须为 1-500 个字符");
+            String lengthMessage = eventType == DataAuditEventType.DELETE
+                    ? "删除原因长度须为 1-500 个字符"
+                    : "修改原因长度须为 1-500 个字符";
+            throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception(lengthMessage);
         }
-        boolean needRevision = requireRevision && userWrite && eventType != DataAuditEventType.CREATE;
+        // 删除不走乐观锁：列表/补齐常带过期或 0 revision，会误拦合法删除；修订号仍在落库时递增
+        boolean needRevision = requireRevision && userWrite
+                && eventType != DataAuditEventType.CREATE
+                && eventType != DataAuditEventType.DELETE;
         if (needRevision && safeContext.getExpectedRevision() == null) {
             throw DataAuditErrorCode.AUDIT_REVISION_REQUIRED.exception();
         }

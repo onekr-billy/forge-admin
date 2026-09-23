@@ -15,7 +15,9 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationFormDataVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRelationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,7 @@ import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -311,7 +314,7 @@ class BusinessApplicationFormDataServiceTest {
     }
 
     @Test
-    @DisplayName("database creation failure keeps committed form metadata and returns a retryable message")
+    @DisplayName("database sync failure keeps committed form metadata without user-facing warning")
     void databaseFailureKeepsCommittedMetadata() {
         StubApplicationObjectService applicationObjectService = new StubApplicationObjectService(List.of());
         StubObjectCreateService objectCreateService = new StubObjectCreateService(900000000000000001L);
@@ -319,7 +322,7 @@ class BusinessApplicationFormDataServiceTest {
         RecordingTransactionManager transactionManager = new RecordingTransactionManager();
         StubTableMappingService tableMappingService = new StubTableMappingService(
                 () -> transactionManager.commitCount > 0,
-                new BusinessException("目标数据库暂时不可用"));
+                new BusinessException("运行数据源暂时不可用"));
         BusinessApplicationFormDataService service = service(
                 new StubApplicationService(application()),
                 applicationObjectService,
@@ -333,10 +336,9 @@ class BusinessApplicationFormDataServiceTest {
                 transactionManager,
                 tableMappingService);
 
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.provision(10L, request()));
+        BusinessApplicationFormDataVO result = service.provision(10L, request());
 
-        assertEquals("数据表创建失败：目标数据库暂时不可用；已保留表单设计，可直接重试", error.getMessage());
+        assertEquals(null, result.getDdlWarning());
         assertEquals(1, transactionManager.commitCount);
         assertEquals(0, transactionManager.rollbackCount);
         assertEquals(1, objectCreateService.calls);
@@ -344,6 +346,56 @@ class BusinessApplicationFormDataServiceTest {
         assertEquals(1, applicationObjectService.replaceCalls);
         assertEquals(1, tableMappingService.calls);
         assertTrue(tableMappingService.metadataCommittedBeforeSync);
+    }
+
+    @Test
+    @DisplayName("provision also syncs child managed tables after main object DDL")
+    void provisionSyncsChildManagedTables() {
+        StubDesignerService designerService = new StubDesignerService();
+        BusinessObjectDesignerService.DesignerContext context = new BusinessObjectDesignerService.DesignerContext();
+        AiBusinessObject master = object(900000000000000001L, "crm_customer_form", "runtime_customer");
+        master.setSuiteCode("crm");
+        context.setObject(master);
+        BusinessObjectRelationVO relation = new BusinessObjectRelationVO();
+        relation.setSourceObjectCode("crm_customer_form");
+        relation.setTargetObjectCode("crm_order_line");
+        relation.setRelationType("CHILD_LIST");
+        relation.setStatus(EnableStatus.ENABLED.getCode());
+        context.setRelations(List.of(relation));
+        designerService.loadContextResult = context;
+
+        AiBusinessObject child = object(900000000000000002L, "crm_order_line", "runtime_order_line");
+        child.setSuiteCode("crm");
+        child.setObjectName("订单明细");
+        JSONObject childOptions = new JSONObject();
+        childOptions.put("managedBy", "PAGE_FORM");
+        childOptions.put("sourceApplicationId", 10L);
+        childOptions.put("sourceFormAssetId", "form_order_line");
+        child.setOptions(childOptions.toJSONString());
+
+        StubObjectService objectService = new StubObjectService(Map.of(
+                900000000000000001L, master,
+                900000000000000002L, child
+        ), List.of());
+        objectService.byCode.put("crm_order_line", child);
+
+        StubTableMappingService tableMappingService = new StubTableMappingService(
+                () -> true, null);
+        BusinessApplicationFormDataService service = service(
+                new StubApplicationService(application()),
+                new StubApplicationObjectService(List.of()),
+                objectService,
+                new StubObjectCreateService(900000000000000001L),
+                designerService,
+                datasourceService(List.of(datasource(2L, 1, 1, 0)), new AtomicInteger()),
+                new RecordingTransactionManager(),
+                tableMappingService);
+
+        service.provision(10L, request());
+
+        assertEquals(2, tableMappingService.calls);
+        assertEquals(List.of(900000000000000001L, 900000000000000002L), tableMappingService.syncedObjectIds);
+        assertEquals("form_order_line", tableMappingService.childFormAssetId);
     }
 
     @Test
@@ -547,6 +599,7 @@ class BusinessApplicationFormDataServiceTest {
 
         private final Map<Long, AiBusinessObject> objects;
         private final List<BusinessObjectVO> candidates;
+        private final Map<String, AiBusinessObject> byCode = new HashMap<>();
 
         StubObjectService(Map<Long, AiBusinessObject> objects, List<BusinessObjectVO> candidates) {
             super(null, null, null, null, null);
@@ -562,6 +615,15 @@ class BusinessApplicationFormDataServiceTest {
         @Override
         public AiBusinessObject requireEntity(Long id) {
             AiBusinessObject object = objects.get(id);
+            if (object == null) {
+                throw new BusinessException("业务对象不存在");
+            }
+            return object;
+        }
+
+        @Override
+        public AiBusinessObject requireByCode(String suiteCode, String objectCode) {
+            AiBusinessObject object = byCode.get(objectCode);
             if (object == null) {
                 throw new BusinessException("业务对象不存在");
             }
@@ -593,6 +655,7 @@ class BusinessApplicationFormDataServiceTest {
         private int calls;
         private Long objectId;
         private BusinessObjectDesignerDTO designer;
+        private BusinessObjectDesignerService.DesignerContext loadContextResult;
 
         StubDesignerService() {
             super(null, null, null, null, null, null, null, null, null, null,
@@ -607,6 +670,22 @@ class BusinessApplicationFormDataServiceTest {
             BusinessObjectDesignerService.DesignerContext context = new BusinessObjectDesignerService.DesignerContext();
             AiBusinessObject object = new AiBusinessObject();
             object.setId(objectId);
+            object.setObjectCode("crm_customer_form");
+            object.setSuiteCode("crm");
+            context.setObject(object);
+            return context;
+        }
+
+        @Override
+        public BusinessObjectDesignerService.DesignerContext loadContext(Long objectId) {
+            if (loadContextResult != null) {
+                return loadContextResult;
+            }
+            BusinessObjectDesignerService.DesignerContext context = new BusinessObjectDesignerService.DesignerContext();
+            AiBusinessObject object = new AiBusinessObject();
+            object.setId(objectId);
+            object.setObjectCode("crm_customer_form");
+            object.setSuiteCode("crm");
             context.setObject(object);
             return context;
         }
@@ -620,7 +699,9 @@ class BusinessApplicationFormDataServiceTest {
         private Long objectId;
         private Long applicationId;
         private String formAssetId;
+        private String childFormAssetId;
         private boolean metadataCommittedBeforeSync;
+        private final List<Long> syncedObjectIds = new java.util.ArrayList<>();
 
         StubTableMappingService(BooleanSupplier committed, RuntimeException failure) {
             super(null, null, null, null);
@@ -631,9 +712,13 @@ class BusinessApplicationFormDataServiceTest {
         @Override
         public void syncManagedDatabase(Long objectId, Long applicationId, String formAssetId) {
             calls++;
+            syncedObjectIds.add(objectId);
             this.objectId = objectId;
             this.applicationId = applicationId;
             this.formAssetId = formAssetId;
+            if (calls > 1) {
+                childFormAssetId = formAssetId;
+            }
             metadataCommittedBeforeSync = committed.getAsBoolean();
             if (failure != null) {
                 throw failure;

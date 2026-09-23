@@ -178,36 +178,58 @@ public class LowcodeQuerySourceService {
         if (StringUtils.isBlank(object.getConfigKey())) {
             throw new BusinessException("业务对象未发布运行配置: " + object.getObjectCode());
         }
-        Map<String, String> labels = businessRecordSelectorService.fieldLabels(object);
         return LowcodeQuerySourceMetadataVO.builder()
                 .sourceType(BUSINESS_OBJECT)
                 .sourceKey(object.getObjectCode())
                 .sourceId(object.getId())
                 .sourceName(object.getObjectName())
-                .fields(businessObjectFields(labels))
+                .fields(businessObjectFields(businessRecordSelectorService.fieldTypeSchemas(object)))
                 .build();
     }
 
-    private List<LowcodeQuerySourceFieldVO> businessObjectFields(Map<String, String> labels) {
-        if (labels == null || labels.isEmpty()) {
+    private List<LowcodeQuerySourceFieldVO> businessObjectFields(List<Map<String, Object>> schemas) {
+        if (schemas == null || schemas.isEmpty()) {
             return List.of();
         }
-        return labels.entrySet().stream()
-                .map(entry -> LowcodeQuerySourceFieldVO.builder()
-                        .field(entry.getKey())
-                        .label(StringUtils.defaultIfBlank(entry.getValue(), entry.getKey()))
-                        .type("string")
-                        .path(entry.getKey())
-                        .sensitive(false)
-                        .build())
+        return schemas.stream()
+                .map(item -> {
+                    String field = text(item.get("field"));
+                    String dataType = text(item.get("dataType"));
+                    return LowcodeQuerySourceFieldVO.builder()
+                            .field(field)
+                            .label(defaultText(text(item.get("label")), field))
+                            .type(defaultText(dataType, "string"))
+                            .dataType(dataType)
+                            .length(toInteger(item.get("length")))
+                            .precision(toInteger(item.get("precision")))
+                            .path(field)
+                            .sensitive(false)
+                            .build();
+                })
+                .filter(item -> StringUtils.isNotBlank(item.getField()))
                 .toList();
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private LowcodeQuerySourceResultVO executeBusinessObject(String sourceKey,
                                                               LowcodeQuerySourceExecuteDTO dto,
                                                               long startedAt) {
+        // fields 由前端按 optionSource.valueField/labelField 传入，避免选择器默认只回传 id 导致显示字段失效
         BusinessRecordSelectorResultVO result = businessRecordSelectorService.queryByObjectCode(
-                sourceKey, dto.getParams(), dto.getPageNum(), dto.getPageSize());
+                sourceKey, dto.getParams(), dto.getFields(), dto.getPageNum(), dto.getPageSize());
         logResult(BUSINESS_OBJECT, null, result.getRecords(), startedAt);
         return LowcodeQuerySourceResultVO.builder()
                 .sourceType(BUSINESS_OBJECT)
@@ -289,15 +311,19 @@ public class LowcodeQuerySourceService {
             return List.of();
         }
         return fields.stream()
-                .map(field -> LowcodeQuerySourceFieldVO.builder()
-                        .field(field.getFieldName())
-                        .label(defaultText(field.getFieldLabel(), field.getFieldName()))
-                        .type(defaultText(field.getDataType(), field.getDbType()))
-                        .path(field.getFieldName())
-                        // 数据集敏感级别字典值：NONE=不脱敏、MASK=脱敏展示、HIDDEN=隐藏字段
-                        // 只有 MASK / HIDDEN 才视为敏感，NONE（默认）和空值均不敏感
-                        .sensitive(isSensitiveLevel(field.getSensitiveLevel()))
-                        .build())
+                .map(field -> {
+                    String dataType = defaultText(field.getDataType(), field.getDbType());
+                    return LowcodeQuerySourceFieldVO.builder()
+                            .field(field.getFieldName())
+                            .label(defaultText(field.getFieldLabel(), field.getFieldName()))
+                            .type(dataType)
+                            .dataType(dataType)
+                            .path(field.getFieldName())
+                            // 数据集敏感级别字典值：NONE=不脱敏、MASK=脱敏展示、HIDDEN=隐藏字段
+                            // 只有 MASK / HIDDEN 才视为敏感，NONE（默认）和空值均不敏感
+                            .sensitive(isSensitiveLevel(field.getSensitiveLevel()))
+                            .build();
+                })
                 .toList();
     }
 

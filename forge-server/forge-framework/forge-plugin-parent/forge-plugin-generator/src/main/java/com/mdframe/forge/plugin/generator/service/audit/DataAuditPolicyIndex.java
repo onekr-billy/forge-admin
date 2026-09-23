@@ -39,6 +39,10 @@ public class DataAuditPolicyIndex {
         byObject.put(tenantId, objects == null ? Map.of() : Map.copyOf(objects));
     }
 
+    public boolean hasTenant(Long tenantId) {
+        return tenantId != null && byObject.containsKey(tenantId);
+    }
+
     public TableBinding findTable(Long tenantId, String tableName) {
         if (tenantId == null || StringUtils.isBlank(tableName)) {
             return null;

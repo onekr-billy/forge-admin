@@ -177,9 +177,11 @@
 - 177. 业务对象发布不能重置应用入口配置
 - 180. 运行字段基线会掩盖表单组件的结构变更
 
-### [流程 / Flowable / BPMN](pitfalls/flow.md)（52）
+### [流程 / Flowable / BPMN](pitfalls/flow.md)（54）
 
 - 新版应用撤回不可依赖单据配置和 Web Session
+- 流程 Redis 回调非 Web 异常是 NotWebContextException
+- 列表流程状态列偶发消失是旧 fieldRefs 快照滤掉了托管字段
 - 嵌入式流程设计器不能由父子组件同时持有
 - 门户外层 deep 样式不能覆盖嵌套加载容器
 - 动态 CRUD 事件不能把运行配置对象码当作流程标准对象码

@@ -122,6 +122,13 @@ public class DataAuditPolicyService {
     }
 
     public void ensureIndex(Long tenantId) {
+        if (tenantId == null) {
+            return;
+        }
+        // 索引已加载则复用；策略变更走 refreshIndex（updatePolicy 已调用）
+        if (DataAuditTransactionHolder.index().hasTenant(tenantId)) {
+            return;
+        }
         refreshIndex(tenantId);
     }
 

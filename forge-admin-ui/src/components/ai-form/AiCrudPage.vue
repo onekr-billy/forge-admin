@@ -1013,7 +1013,16 @@ import { dataAuditRemove } from '@/api/data-audit'
 import AuthImage from '@/components/common/AuthImage.vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
-import { applyDataAuditRemove, applyDataAuditSubmit, isDataAuditHistoryAvailable, readDataAuditMeta, shouldShowDataAuditHistory } from '@/components/data-audit/data-audit-submit'
+import {
+  applyDataAuditRemove,
+  applyDataAuditSubmit,
+  isAuditReasonRequiredError,
+  isDataAuditHistoryAvailable,
+  promptAuditReason,
+  readDataAuditMeta,
+  resolveDataAuditRemovePlan,
+  shouldShowDataAuditHistory,
+} from '@/components/data-audit/data-audit-submit'
 import DataAuditRecordPanel from '@/components/data-audit/DataAuditRecordPanel.vue'
 import DictTag from '@/components/DictTag.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
@@ -5092,14 +5101,102 @@ function resolveBatchDeleteUrl(apiConfigStr) {
 }
 
 /**
- * 执行删除
+ * 用详情接口补齐删除所需的审计元信息（列表可能尚未挂载 _dataAudit）
+ */
+async function fetchDataAuditMetaForDelete(recordId, row) {
+  const idValue = isUsableKeyValue(recordId) ? recordId : resolveRowKeyValue(row)
+  if (!isUsableKeyValue(idValue))
+    return null
+  const { method, url } = parseApiConfig(
+    'detail',
+    `${props.api}/${idValue}`,
+    'get',
+    { id: idValue },
+  )
+  const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
+  const requestMethod = useEncrypt
+    ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
+    : method.toLowerCase()
+  let response
+  if (useEncrypt && requestMethod === 'postEncrypt') {
+    response = await postEncrypt(url, {})
+  }
+  else {
+    response = await request({ method: requestMethod, url, globalLoading: false })
+  }
+  const data = response?.data ?? response
+  return readDataAuditMeta(data) || readDataAuditMeta(data?.main) || null
+}
+
+async function executePlainDelete(keys) {
+  const deleteApiConfig = props.apiConfig.delete
+  const hasIdPlaceholder = deleteApiConfig && (deleteApiConfig.includes(':id') || deleteApiConfig.includes(`:${props.rowKey}`) || deleteApiConfig.includes('{id}') || deleteApiConfig.includes(`{${props.rowKey}}`))
+
+  if (hasIdPlaceholder && keys.length > 1) {
+    const batchUrl = resolveBatchDeleteUrl(deleteApiConfig)
+    const useEncrypt = props.isEncrypt
+    if (useEncrypt) {
+      await postEncrypt(batchUrl, keys)
+    }
+    else {
+      await request({ method: 'delete', url: batchUrl, data: keys })
+    }
+    return
+  }
+
+  if (hasIdPlaceholder) {
+    for (const key of keys) {
+      const urlParams = { id: key }
+      const { method, url } = parseApiConfig('delete', props.api, 'delete', urlParams)
+      const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
+      const requestMethod = useEncrypt
+        ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
+        : method.toLowerCase()
+      if (useEncrypt && requestMethod === 'postEncrypt') {
+        await postEncrypt(url, key)
+      }
+      else {
+        await request({ method: requestMethod, url })
+      }
+    }
+    return
+  }
+
+  const { method, url } = parseApiConfig('delete', props.api, 'delete')
+  const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
+  const requestMethod = useEncrypt
+    ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
+    : method.toLowerCase()
+  if (useEncrypt && requestMethod === 'postEncrypt') {
+    await postEncrypt(url, keys)
+  }
+  else {
+    await request({ method: requestMethod, url, data: keys })
+  }
+}
+
+/**
+ * 执行删除。审计原因弹窗必须在确认框之前打开，避免嵌套 dialog 导致原因框不出现。
  */
 async function performDelete(rows, keys) {
-  // 调用 beforeDelete 钩子
   const shouldContinue = await callHook('beforeDelete', rows, result => result)
-
   if (shouldContinue === false) {
     return
+  }
+
+  const configKey = resolveRuntimeConfigKey()
+  const plan = await resolveDataAuditRemovePlan({
+    configKey,
+    ids: keys,
+    rows,
+    fetchRecordMeta: configKey ? fetchDataAuditMetaForDelete : null,
+  })
+
+  let deleteReason = ''
+  if (plan.mode === 'audit' && plan.reasonRequired) {
+    deleteReason = await promptAuditReason('请填写删除原因', '请填写删除原因')
+    if (deleteReason === false)
+      return
   }
 
   window.$dialog.warning({
@@ -5109,74 +5206,48 @@ async function performDelete(rows, keys) {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        const auditHandled = await applyDataAuditRemove({
-          configKey: resolveRuntimeConfigKey(),
-          ids: keys,
-          rows,
-          requestRemove: dataAuditRemove,
-        })
-        if (auditHandled === false)
-          return
-        if (auditHandled) {
+        if (plan.mode === 'audit') {
+          const auditHandled = await applyDataAuditRemove({
+            configKey: plan.configKey,
+            ids: plan.ids,
+            rows: plan.rows,
+            requestRemove: dataAuditRemove,
+            reason: deleteReason,
+            skipPrompt: true,
+          })
+          if (auditHandled === false)
+            return false
           window.$message.success('删除成功')
           selectedKeys.value = []
           loadList()
-          return
+          return true
         }
-        // 检查是否配置了带 :id 占位符的删除 URL
-        const deleteApiConfig = props.apiConfig.delete
-        const hasIdPlaceholder = deleteApiConfig && (deleteApiConfig.includes(':id') || deleteApiConfig.includes(`:${props.rowKey}`) || deleteApiConfig.includes('{id}') || deleteApiConfig.includes(`{${props.rowKey}}`))
 
-        // 配置了占位符且多条记录时，走批量删除接口（一条 SQL）
-        if (hasIdPlaceholder && keys.length > 1) {
-          const batchUrl = resolveBatchDeleteUrl(deleteApiConfig)
-          const useEncrypt = props.isEncrypt
-          if (useEncrypt) {
-            await postEncrypt(batchUrl, keys)
-          }
-          else {
-            await request({ method: 'delete', url: batchUrl, data: keys })
-          }
+        try {
+          await executePlainDelete(keys)
         }
-        else if (hasIdPlaceholder) {
-          // 单条删除：保持原有逐条替换 ID 逻辑
-          for (const key of keys) {
-            const urlParams = { id: key }
-            const { method, url } = parseApiConfig('delete', props.api, 'delete', urlParams)
-            const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
-            const requestMethod = useEncrypt
-              ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
-              : method.toLowerCase()
-            if (useEncrypt && requestMethod === 'postEncrypt') {
-              await postEncrypt(url, key)
-            }
-            else {
-              await request({ method: requestMethod, url })
-            }
-          }
-        }
-        else {
-          // 未配置占位符时，使用原有逻辑
-          const { method, url } = parseApiConfig('delete', props.api, 'delete')
-          const useEncrypt = method === 'postEncrypt' || (props.isEncrypt && method !== 'get')
-          const requestMethod = useEncrypt
-            ? (method === 'postEncrypt' ? 'postEncrypt' : method.toLowerCase())
-            : method.toLowerCase()
-          if (useEncrypt && requestMethod === 'postEncrypt') {
-            await postEncrypt(url, keys)
-          }
-          else {
-            await request({ method: requestMethod, url, data: keys })
-          }
+        catch (error) {
+          if (!configKey || !isAuditReasonRequiredError(error))
+            throw error
+          const reason = deleteReason || await promptAuditReason('请填写删除原因', '请填写删除原因')
+          if (reason === false)
+            return false
+          await dataAuditRemove(configKey, {
+            ids: keys.map(id => String(id)),
+            reason,
+          })
         }
 
         window.$message.success('删除成功')
         selectedKeys.value = []
         loadList()
+        return true
       }
       catch (error) {
         console.error('删除失败:', error)
-        window.$message.error('删除失败')
+        const message = error?.message || error?.response?.data?.message
+        window.$message.error(message || '删除失败')
+        return false
       }
     },
   })

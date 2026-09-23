@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service.audit;
 
 import com.mdframe.forge.plugin.generator.enums.DataAuditErrorCode;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Map;
 
@@ -76,9 +77,13 @@ public final class DataAuditTransactionHolder {
         if (binding == null) {
             return;
         }
+        Long tenantId = DataAuditTenantSupport.currentTenantIdOrNull();
+        if (!INDEX.isObjectEnabled(tenantId, binding.objectId())) {
+            return;
+        }
         DataAuditCaptureSession session = SESSION.get();
         if (session == null) {
-            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception("启用审计的对象缺少采集上下文");
+            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception(missingCaptureContextMessage(tableName, kind));
         }
         session.prepareWrite(binding, tableName, primaryKeyColumn, recordId, kind);
     }
@@ -96,11 +101,26 @@ public final class DataAuditTransactionHolder {
         if (binding == null) {
             return;
         }
+        Long tenantId = DataAuditTenantSupport.currentTenantIdOrNull();
+        if (!INDEX.isObjectEnabled(tenantId, binding.objectId())) {
+            return;
+        }
         DataAuditCaptureSession session = SESSION.get();
         if (session == null) {
-            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception("启用审计的对象缺少采集上下文");
+            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception(missingCaptureContextMessage(tableName, kind));
         }
         session.afterWrite(binding, tableName, recordId, rowHint, fieldSource, kind);
+    }
+
+    private static String missingCaptureContextMessage(String tableName, WriteKind kind) {
+        String action = kind == WriteKind.INSERT ? "新增" : kind == WriteKind.DELETE ? "删除" : "更新";
+        return "表「" + StringUtils.defaultString(tableName) + "」已启用数据变更审计，但本次" + action
+                + "未进入审计采集会话。"
+                + "常见原因：1) 业务对象与运行配置 configKey 不一致；"
+                + "2) 审计策略刚开启/切换后页面未刷新；"
+                + "3) 写入口绕过了 DynamicCrud 审计开场。"
+                + "处理：到「数据审计」确认该对象策略已正确开启并刷新页面重试；"
+                + "联调也可先关闭该对象审计后再写入。";
     }
 
     private static DataAuditPolicyIndex.TableBinding resolveBinding(String tableName) {

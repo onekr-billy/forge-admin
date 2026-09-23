@@ -1586,6 +1586,13 @@ public class LowcodeRuntimeConfigBuilder {
         if (Boolean.TRUE.equals(sortable) || Boolean.TRUE.equals(field.getSortable())) {
             item.put("sorter", true);
         }
+        if (field.getAdvancedProps() != null && !field.getAdvancedProps().isEmpty()) {
+            item.put("advancedProps", new LinkedHashMap<>(field.getAdvancedProps()));
+        }
+        if (StringUtils.isNotBlank(field.getFieldStatus())) {
+            item.put("fieldStatus", field.getFieldStatus());
+        }
+        item.put("listVisible", true);
         String componentType = StringUtils.defaultIfBlank(text(pageSetting.get("componentType")), field.getComponentType());
         componentType = StringUtils.defaultIfBlank(componentType, "input");
         String renderType = StringUtils.defaultIfBlank(text(pageSetting.get("renderType")),
@@ -2246,9 +2253,13 @@ public class LowcodeRuntimeConfigBuilder {
         if (lookupMeta != null) {
             item.put("relationLookup", buildRelationLookupConfig(lookupMeta));
             applyRelationLookupProps(item, lookupMeta, label);
-        } else if (field.isReferenceField()) {
-            // 引用字段选中时同步提交显示名称到伴随列（<field>Name），编辑回显与列表渲染使用同一套键。
+        } else if (field.isSelectionLabelField()) {
+            // 引用/人员/部门/动态选项下拉：选中时同步提交显示名称到伴随列（<field>Name），
+            // 编辑回显与列表渲染使用冗余字段，无需再查源表。
             props.putIfAbsent("labelValueField", field.referenceDisplayFieldName());
+        } else {
+            // 页面 props 已带动态 optionSource、但模型字段尚未回写 basicProps 时，仍补齐伴随字段绑定
+            ensureDynamicOptionSourceLabelValueField(props, field.getField(), componentType);
         }
 
         if (required) {
@@ -2592,14 +2603,67 @@ public class LowcodeRuntimeConfigBuilder {
                         || ("table".equals(zoneKey)
                             && isActiveField(field)
                             && childFieldRefs.contains(field.getField())))
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
         if (selectedFields.isEmpty()) {
             return fieldMap.values().stream()
                     .filter(this::isActiveField)
                     .filter(fallbackPredicate)
                     .toList();
         }
+        if ("table".equals(zoneKey)) {
+            appendManagedBusinessFlowStatusFields(selectedFields, fieldMap, pageSchema);
+        }
         return selectedFields;
+    }
+
+    /**
+     * 平台托管的 flowStatus 在列表自由布局旧快照里常被漏掉。
+     * 发布运行配置时强制补列，除非用户在列表设计里显式隐藏。
+     */
+    private void appendManagedBusinessFlowStatusFields(List<LowcodeFieldSchema> selectedFields,
+                                                       Map<String, LowcodeFieldSchema> fieldMap,
+                                                       LowcodePageSchema pageSchema) {
+        if (selectedFields == null || fieldMap == null || fieldMap.isEmpty()) {
+            return;
+        }
+        Set<String> present = selectedFields.stream()
+                .map(LowcodeFieldSchema::getField)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        for (LowcodeFieldSchema field : fieldMap.values()) {
+            if (!isManagedBusinessFlowStatusField(field) || !isActiveField(field)) {
+                continue;
+            }
+            if (field.getListVisible() != null && !Boolean.TRUE.equals(field.getListVisible())) {
+                continue;
+            }
+            if (isTableFieldExplicitlyHidden(pageSchema, field.getField())) {
+                continue;
+            }
+            if (present.add(field.getField())) {
+                selectedFields.add(field);
+            }
+        }
+    }
+
+    private boolean isManagedBusinessFlowStatusField(LowcodeFieldSchema field) {
+        if (field == null) {
+            return false;
+        }
+        if ("flowStatus".equals(field.getField()) || "flow_status".equals(field.getColumnName())) {
+            return true;
+        }
+        Map<String, Object> advancedProps = field.getAdvancedProps();
+        return advancedProps != null
+                && "BUSINESS_FLOW".equals(String.valueOf(advancedProps.get("managedBy")));
+    }
+
+    private boolean isTableFieldExplicitlyHidden(LowcodePageSchema pageSchema, String fieldCode) {
+        if (pageSchema == null || StringUtils.isBlank(fieldCode)) {
+            return false;
+        }
+        Map<String, Object> setting = resolveRuntimeFieldSetting(pageSchema, "table", fieldCode);
+        return setting != null && Boolean.FALSE.equals(setting.get("visible"));
     }
 
     /**
@@ -3074,6 +3138,27 @@ public class LowcodeRuntimeConfigBuilder {
                 || fieldName.equals(text(props.get("targetField")))) {
             props.put("targetField", labelField);
         }
+    }
+
+    private void ensureDynamicOptionSourceLabelValueField(Map<String, Object> props,
+                                                          String fieldName,
+                                                          String componentType) {
+        if (props == null || StringUtils.isBlank(fieldName) || StringUtils.isNotBlank(text(props.get("labelValueField")))) {
+            return;
+        }
+        if (!Set.of("select", "radio", "radioButton", "checkbox", "cascader", "treeSelect", "transfer")
+                .contains(StringUtils.defaultString(componentType))) {
+            return;
+        }
+        Object source = props.get("optionSource");
+        if (!(source instanceof Map<?, ?> map)) {
+            return;
+        }
+        String type = text(map.get("type"));
+        if (StringUtils.isBlank(type) || "STATIC".equalsIgnoreCase(type.replace('-', '_'))) {
+            return;
+        }
+        props.put("labelValueField", fieldName + "Name");
     }
 
     private boolean isBusinessSelectComponent(String componentType) {

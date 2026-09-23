@@ -462,6 +462,7 @@
           </section>
           <section v-else-if="!editing" class="page-surface is-fill">
             <PortalPageRenderer
+              :key="`portal:${portalCrudConfigRevision}`"
               :node="currentNode"
               :page="currentPage"
               :objects="objects"
@@ -472,6 +473,7 @@
               :page-id="currentNode?.id || ''"
               :configurable="canEditApplication"
               :design-preview="editing || isDraftMode || canEditApplication"
+              :crud-config-revision="portalCrudConfigRevision"
               :form-fields-resolver="resolvePortalFormFields"
               fill-host
             />
@@ -925,38 +927,45 @@
         <n-empty v-else description="请先选择要发布的页面" />
       </section>
 
-      <!-- 业务流程面板 -->
-      <section v-else-if="runtimeViewMode === 'process'" class="runtime-inline-panel runtime-process-panel">
-        <ApplicationProcessPanel
-          :application="application"
-          :initial-objects="processSelectableObjects"
-          @changed="refreshWorkspaceMetadata"
-          @navigate="handleProcessPanelNavigate"
-          @open-designer="openProcessDesigner"
-        />
-      </section>
-
-      <!-- 增强面板 -->
-      <section v-else-if="runtimeViewMode === 'enhance'" class="runtime-inline-panel runtime-enhance-panel">
-        <ApplicationExtensionsPanel
-          embedded
-          :application="application"
-          :initial-extensions="workspaceExtensions"
-          :initial-objects="objects"
-          :initial-entries="workspaceEntries"
-          :initial-pages="builder?.nodes || []"
-          :context-page-id="enhanceContextPageId"
-          @changed="handleExtensionsChanged"
-          @open-designer="openEmbeddedObjectActions"
-        />
-      </section>
-
-      <!-- 应用设置面板 -->
-      <section v-else-if="runtimeViewMode === 'settings'" class="runtime-inline-panel">
-        <ApplicationSettingsPanel
-          :application="application"
-          @saved="refreshWorkspaceMetadata"
-        />
+      <section
+        v-show="!editing && (runtimeViewMode === 'process' || runtimeViewMode === 'enhance' || runtimeViewMode === 'settings')"
+        class="runtime-inline-panel"
+        :class="{
+          'runtime-process-panel': runtimeViewMode === 'process',
+          'runtime-enhance-panel': runtimeViewMode === 'enhance',
+        }"
+      >
+        <!-- keep-alive：二次进入 Tab 不重挂；首次慢主要是 async chunk + 列表接口，空闲时预取 chunk -->
+        <keep-alive>
+          <ApplicationProcessPanel
+            v-if="runtimeViewMode === 'process'"
+            :key="'runtime-process'"
+            :application="application"
+            :initial-objects="processSelectableObjects"
+            @changed="refreshWorkspaceMetadata"
+            @navigate="handleProcessPanelNavigate"
+            @open-designer="openProcessDesigner"
+          />
+          <ApplicationExtensionsPanel
+            v-else-if="runtimeViewMode === 'enhance'"
+            :key="'runtime-enhance'"
+            embedded
+            :application="application"
+            :initial-extensions="workspaceExtensions"
+            :initial-objects="objects"
+            :initial-entries="workspaceEntries"
+            :initial-pages="builder?.nodes || []"
+            :context-page-id="enhanceContextPageId"
+            @changed="handleExtensionsChanged"
+            @open-designer="openEmbeddedObjectActions"
+          />
+          <ApplicationSettingsPanel
+            v-else-if="runtimeViewMode === 'settings'"
+            :key="'runtime-settings'"
+            :application="application"
+            @saved="refreshWorkspaceMetadata"
+          />
+        </keep-alive>
       </section>
     </template>
     <n-result
@@ -1251,6 +1260,29 @@ const ApplicationSettingsPanel = defineAsyncComponent({
   ...asyncPanelLoader,
   loader: () => import('./components/ApplicationSettingsPanel.vue'),
 })
+
+/** 页面管理空闲时预拉三个 Tab 的 JS chunk，避免首次点击才开始下载大包。 */
+const runtimeWorkspacePanelImporters = [
+  () => import('./application-workspace/ApplicationProcessPanel.vue'),
+  () => import('./application-workspace/ApplicationExtensionsPanel.vue'),
+  () => import('./components/ApplicationSettingsPanel.vue'),
+]
+let runtimeWorkspacePanelsPrefetchScheduled = false
+
+function prefetchRuntimeWorkspacePanels() {
+  if (runtimeWorkspacePanelsPrefetchScheduled || typeof window === 'undefined')
+    return
+  runtimeWorkspacePanelsPrefetchScheduled = true
+  const run = () => {
+    runtimeWorkspacePanelImporters.forEach((load) => {
+      void load().catch(() => {})
+    })
+  }
+  if (typeof window.requestIdleCallback === 'function')
+    window.requestIdleCallback(run, { timeout: 2500 })
+  else
+    window.setTimeout(run, 800)
+}
 const BusinessObjectDesignerPage = defineAsyncComponent({
   ...asyncPanelLoader,
   loader: () => import('./object-designer.[objectCode].vue'),
@@ -1363,6 +1395,8 @@ const objectSetupVisible = ref(false)
 const selectedDesignerResourceKey = ref(String(route.query.designResource || ''))
 const workspaceExtensions = ref([])
 const workspaceEntries = ref([])
+/** 表单/对象保存后递增，驱动 PortalPageRenderer 丢弃旧 CRUD 缓存并重新 render */
+const portalCrudConfigRevision = ref(0)
 const isDraftMode = computed(() => route.query.edit === '1' || route.query.draft === '1')
 const {
   runtimeCrudPropsByObjectId,
@@ -1913,6 +1947,8 @@ async function load() {
       syncActiveFormAssetForPage(selectedNodeId.value)
     await nextTick()
     preloadCurrentPageCrudRuntimeProps()
+    if (canEditApplication.value)
+      prefetchRuntimeWorkspacePanels()
   }
   catch (error) {
     application.value = null
@@ -4185,12 +4221,12 @@ async function saveActiveFormDesigner(returnAfter = true) {
     const saved = response.data || {}
     if (saved.builder)
       builder.value = saved.builder
-    savedSignature.value = JSON.stringify(builder.value)
     resetBuilderHistory(builder.value)
     const pageId = saved.pageId || context.pageId
-    await refreshWorkspaceMetadata()
-    // 页面表单保存后运行配置已更新，清空画布缓存避免预览继续用旧配置
-    resetRuntimeCrudConfig()
+    await refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })
+    embeddedDesignerDirty.value = false
+    // refreshWorkspaceMetadata 已 reset + bump portalCrudConfigRevision；
+    // 编辑画布若仍打开再补一次预加载（返回页面管理时 preload 会因 !editing 直接跳过）
     preloadCurrentPageCrudRuntimeProps()
     if (returnAfter) {
       formDesignerMode.value = false
@@ -4260,7 +4296,7 @@ async function saveNavigationDraft() {
   }
 }
 
-async function saveDraft() {
+async function saveDraft(options = {}) {
   if (!application.value || saving.value)
     return false
   saving.value = true
@@ -4271,24 +4307,21 @@ async function saveDraft() {
     const provisionSummary = await provisionPendingFormData()
     if (provisionSummary.builderChanged)
       await persistApplicationDraft()
-    savedSignature.value = JSON.stringify(builder.value)
-    if (provisionSummary.succeeded > 0) {
-      await refreshWorkspaceMetadata()
-      // 表单设计器配置随 provision 同步到了运行配置，清空画布缓存让预览重新拉取最新草稿
-      resetRuntimeCrudConfig()
-      preloadCurrentPageCrudRuntimeProps()
-    }
-    if (provisionSummary.failed > 0) {
-      message.warning(`表单草稿已保存；${provisionSummary.firstError || '数据存储暂未准备完成，可在数据配置中重试'}`)
-    }
-    else if (provisionSummary.ddlWarnings > 0) {
-      message.warning('表单草稿已保存，数据表结构需手动同步（可在高级数据设置中确认）')
-    }
-    else if (provisionSummary.succeeded > 0) {
-      message.success('表单和数据存储已准备完成')
-    }
-    else {
-      message.success('应用草稿已保存')
+    if (provisionSummary.succeeded > 0)
+      await refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })
+    else
+      savedSignature.value = JSON.stringify(builder.value || {})
+    embeddedDesignerDirty.value = false
+    if (!options.quiet) {
+      if (provisionSummary.failed > 0) {
+        message.warning(`表单草稿已保存；${provisionSummary.firstError || '数据存储暂未准备完成，可在数据配置中重试'}`)
+      }
+      else if (provisionSummary.succeeded > 0) {
+        message.success('表单和数据存储已准备完成')
+      }
+      else {
+        message.success('应用草稿已保存')
+      }
     }
     return true
   }
@@ -4397,9 +4430,12 @@ async function saveCurrentDesignerSection() {
     return await saveDraft()
   if (editing.value && activePageDesignTab.value === 'form') {
     const formSaved = await saveActiveFormDesigner(false)
+    if (!formSaved)
+      return false
+    // 表单保存后若本地归一化仍留下差异，静默落盘，避免连弹两次“保存成功”
     if (dirty.value)
-      return await saveDraft()
-    return formSaved
+      return await saveDraft({ quiet: true })
+    return true
   }
   if (editing.value && activePageDesignTab.value === 'list') {
     if (!pageDesignObject.value)
@@ -4410,7 +4446,7 @@ async function saveCurrentDesignerSection() {
       if (saved !== false)
         embeddedDesignerDirty.value = false
       if (dirty.value)
-        return await saveDraft()
+        return await saveDraft({ quiet: saved !== false })
       return saved !== false
     }
     finally {
@@ -4430,7 +4466,7 @@ async function saveCurrentDesignerSection() {
     if (saved !== false)
       embeddedDesignerDirty.value = false
     if (dirty.value)
-      return await saveDraft()
+      return await saveDraft({ quiet: saved !== false })
     return saved !== false
   }
   finally {
@@ -4539,7 +4575,10 @@ async function handleEmbeddedDesignerSaved(savedSchema) {
   embeddedDesignerDirty.value = false
   if (activePageDesignTab.value === 'list')
     promoteCurrentPageToListShape(savedSchema)
-  await refreshWorkspaceMetadata()
+  // 列表设计回写页面区块后可能弄脏 builder，这里一并落盘并清脏，避免退出仍提示未保存。
+  if (dirty.value)
+    await persistApplicationDraft()
+  await refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })
 }
 
 /**
@@ -5029,18 +5068,36 @@ async function handleApplicationObjectsChanged(change = null) {
   }
 }
 
-async function refreshWorkspaceMetadata() {
+async function refreshWorkspaceMetadata(options = {}) {
   const code = route.params.applicationCode
   if (!code)
     return
+  const syncBuilder = options.syncBuilder === true
+    || (options.syncBuilder !== false && !dirty.value)
+  const markClean = options.markClean === true
+    || (options.markClean !== false && !dirty.value)
   const response = await businessApplicationWorkspaceByCode(code)
   const workspace = response.data || {}
   application.value = workspace.application || application.value
   objects.value = workspace.objects || []
   workspaceExtensions.value = workspace.extensions || []
   workspaceEntries.value = workspace.entries || []
+  // 切 edit 不再整页 load 后，这里必须把 workspace 草稿同步回 builder。
+  // 否则页面管理仍渲染内存里未规范化的布局（例如落成默认「提示信息」面板）。
+  if (application.value && syncBuilder) {
+    builder.value = ensurePageTitleComponents(
+      normalizeInAppBuilder(application.value.options, application.value, objects.value),
+    )
+    resetBuilderHistory(builder.value)
+    bindSingleFormToCompatibleBlocks()
+  }
   resetRuntimeCrudConfig()
+  // 草稿配置已变：通知页面管理 Portal 丢掉本地 CRUD 缓存并重新拉 render
+  portalCrudConfigRevision.value += 1
   hydratePageCrudApiPlaceholders()
+  // bind/hydrate 可能继续改 builder；签名必须在全部本地归一化之后再落，否则保存后仍显示未保存。
+  if (markClean)
+    savedSignature.value = JSON.stringify(builder.value || {})
   await nextTick()
   preloadCurrentPageCrudRuntimeProps()
 }

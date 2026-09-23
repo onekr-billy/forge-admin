@@ -10,6 +10,8 @@ import com.mdframe.forge.plugin.external.entity.ExternalApi;
 import com.mdframe.forge.plugin.external.service.ExternalQuerySourceService;
 import com.mdframe.forge.plugin.generator.dto.lowcode.query.LowcodeQuerySourceExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.query.LowcodeQuerySourceRefDTO;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessRecordSelectorService;
+import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessRecordSelectorResultVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.query.LowcodeQuerySourceResultVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +23,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,13 +32,15 @@ class LowcodeQuerySourceServiceTest {
 
     private ExternalQuerySourceService externalService;
     private DataDatasetRuntimeService datasetService;
+    private BusinessRecordSelectorService recordSelectorService;
     private LowcodeQuerySourceService service;
 
     @BeforeEach
     void setUp() {
         externalService = mock(ExternalQuerySourceService.class);
         datasetService = mock(DataDatasetRuntimeService.class);
-        service = new LowcodeQuerySourceService(externalService, datasetService, null, null, new ObjectMapper());
+        recordSelectorService = mock(BusinessRecordSelectorService.class);
+        service = new LowcodeQuerySourceService(externalService, datasetService, null, recordSelectorService, new ObjectMapper());
     }
 
     @Test
@@ -156,6 +161,39 @@ class LowcodeQuerySourceServiceTest {
         LowcodeQuerySourceResultVO result = service.execute(dto);
 
         assertEquals(0, ((List<?>) result.getData()).size());
+    }
+
+    @Test
+    void shouldPassDisplayFieldsWhenExecutingBusinessObjectSource() {
+        BusinessRecordSelectorResultVO selectorResult = new BusinessRecordSelectorResultVO();
+        selectorResult.setRecords(List.of(Map.of("id", "1", "customerName", "张三")));
+        selectorResult.setTotal(1L);
+        selectorResult.setCurrent(1L);
+        selectorResult.setSize(50L);
+        when(recordSelectorService.queryByObjectCode(
+                eq("crm_customer"),
+                eq(Map.of()),
+                eq(List.of("id", "customerName")),
+                eq(1),
+                eq(50)))
+                .thenReturn(selectorResult);
+
+        LowcodeQuerySourceExecuteDTO dto = executeDto("BUSINESS_OBJECT", "crm_customer");
+        dto.setFields(List.of("id", "customerName"));
+        dto.setPageNum(1);
+        dto.setPageSize(50);
+        dto.setParams(Map.of());
+
+        LowcodeQuerySourceResultVO result = service.execute(dto);
+
+        assertEquals("BUSINESS_OBJECT", result.getSourceType());
+        assertEquals(1, ((List<?>) result.getData()).size());
+        verify(recordSelectorService).queryByObjectCode(
+                eq("crm_customer"),
+                eq(Map.of()),
+                eq(List.of("id", "customerName")),
+                eq(1),
+                eq(50));
     }
 
     private ExternalApi externalApi() {

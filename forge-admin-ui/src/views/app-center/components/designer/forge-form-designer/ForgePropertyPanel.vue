@@ -654,9 +654,13 @@
                         :consistent-menu-width="false"
                         @update:value="updateOptionSourceType"
                       />
-                      <!-- ────── 子表明细：从画布已配置的子表中选择 ────── -->
+                      <!-- ────── 本页子表明细：当前表单运行时的子表行集合 ────── -->
                       <template v-if="selectedOptionSourceType === 'CURRENT_CHILDREN'">
                         <div class="option-source-card">
+                          <div class="option-source-hint">
+                            使用当前主记录下已加载的子表明细作为选项。若要引用其它页面/业务对象的已保存数据，请改用「其它表 / 业务对象」。
+                            选中后会把显示名称冗余保存到「{{ resolveSelectionLabelValueField() || '字段Name' }}」，编辑回显无需再查源表。
+                          </div>
                           <div class="option-source-field">
                             <label>关联子表</label>
                             <n-select
@@ -664,8 +668,8 @@
                               :options="childTableRelationOptions"
                               filterable
                               :disabled="!childTableRelationOptions.length"
-                              :placeholder="childTableRelationOptions.length ? '选择子表' : '请先在「主子表配置」中添加子表'"
-                              @update:value="updatePageWidgetOptionSource({ relationKey: $event || '' })"
+                              :placeholder="childTableRelationOptions.length ? '选择子表或对象关系' : '暂无子表：可在主子表配置添加，或改用「其它表 / 业务对象」'"
+                              @update:value="updateCurrentChildrenRelationKey"
                             />
                           </div>
                           <div class="option-source-field two-col">
@@ -674,6 +678,7 @@
                               <n-select
                                 :value="selectedComponent.props?.optionSource?.valueField || 'id'"
                                 :options="childTableFieldOptions"
+                                :loading="childTableTargetFieldsLoading"
                                 filterable
                                 tag
                                 size="small"
@@ -686,6 +691,7 @@
                               <n-select
                                 :value="selectedComponent.props?.optionSource?.labelField || 'label'"
                                 :options="childTableFieldOptions"
+                                :loading="childTableTargetFieldsLoading"
                                 filterable
                                 tag
                                 size="small"
@@ -701,6 +707,57 @@
                               @update:value="updatePageWidgetOptionSource({ persistedOnly: $event })"
                             />
                             <span>仅已保存明细</span>
+                          </div>
+                        </div>
+                      </template>
+                      <!-- ────── 其它表 / 业务对象：查询已发布业务对象的存量数据 ────── -->
+                      <template v-else-if="selectedOptionSourceType === 'BUSINESS_OBJECT'">
+                        <div class="option-source-card">
+                          <div class="option-source-hint">
+                            引用应用内其它页面/业务对象的已保存数据作为下拉选项，不限于当前页子表。
+                            选中后会把显示名称冗余保存到「{{ resolveSelectionLabelValueField() || '字段Name' }}」，编辑回显无需再查源表。
+                          </div>
+                          <div class="option-source-field">
+                            <label>业务对象</label>
+                            <n-select
+                              :value="selectedComponent.props?.optionSource?.sourceKey || ''"
+                              :options="businessObjectOptions"
+                              :loading="businessObjectLoading"
+                              :render-label="renderReferenceObjectLabel"
+                              filterable
+                              clearable
+                              placeholder="选择要引用的业务对象 / 页面表"
+                              @update:value="updateBusinessObjectOptionSource"
+                            />
+                          </div>
+                          <div v-if="selectedComponent.props?.optionSource?.sourceKey" class="option-source-field two-col">
+                            <div class="option-source-field">
+                              <label>值字段</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.valueField || 'id'"
+                                :options="querySourceMetaFields"
+                                :loading="querySourceMetaLoading"
+                                filterable
+                                size="small"
+                                placeholder="选择字段"
+                                @update:value="updatePageWidgetOptionSource({ valueField: $event || 'id' })"
+                              />
+                            </div>
+                            <div class="option-source-field">
+                              <label>显示字段</label>
+                              <n-select
+                                :value="selectedComponent.props?.optionSource?.labelField || 'name'"
+                                :options="querySourceMetaFields"
+                                :loading="querySourceMetaLoading"
+                                filterable
+                                size="small"
+                                placeholder="选择字段"
+                                @update:value="updatePageWidgetOptionSource({ labelField: $event || 'name' })"
+                              />
+                            </div>
+                          </div>
+                          <div v-if="querySourceMetaError && !querySourceMetaLoading" class="query-source-meta-error">
+                            {{ querySourceMetaError }}
                           </div>
                         </div>
                       </template>
@@ -893,6 +950,115 @@
                           </div>
                         </div>
                       </template>
+                      <!-- 树形选择：用业务语言说明「扁平表怎么拼成树」与「一次拉全量还是展开再加载」 -->
+                      <div
+                        v-if="isTreeOptionField && selectedOptionSourceType !== 'STATIC'"
+                        class="option-source-card option-source-tree-card"
+                      >
+                        <div class="option-source-section-title">
+                          树结构怎么拼
+                        </div>
+                        <div class="option-source-hint">
+                          多数业务表是「一行一条 + 父级字段」的扁平数据。告诉系统「挂在谁下面」后，运行时会自动拼成树。
+                          若接口已经返回嵌套的 children，可只改「子节点字段名」（高级）。
+                        </div>
+                        <div class="option-source-field">
+                          <label>
+                            这条数据挂在谁下面
+                            <n-tooltip trigger="hover">
+                              <template #trigger>
+                                <span class="option-source-help">?</span>
+                              </template>
+                              对应数据源里的父级列，常见如 parentId、pid、parentCode。根节点该列一般为空或 0。
+                            </n-tooltip>
+                          </label>
+                          <n-select
+                            v-if="treeOptionFieldSelectOptions.length"
+                            :value="selectedComponent.props?.optionSource?.parentField || 'parentId'"
+                            :options="treeOptionFieldSelectOptions"
+                            :loading="querySourceMetaLoading || childTableTargetFieldsLoading"
+                            filterable
+                            tag
+                            size="small"
+                            placeholder="选择父级字段，如 parentId"
+                            @update:value="updateTreeOptionSourceMapping({ parentField: $event || 'parentId' })"
+                          />
+                          <n-input
+                            v-else
+                            :value="selectedComponent.props?.optionSource?.parentField || 'parentId'"
+                            size="small"
+                            placeholder="如 parentId"
+                            @update:value="updateTreeOptionSourceMapping({ parentField: $event || 'parentId' })"
+                          />
+                        </div>
+                        <div class="option-source-field two-col">
+                          <div class="option-source-field">
+                            <label>子节点字段名</label>
+                            <n-input
+                              :value="selectedComponent.props?.optionSource?.childrenField || 'children'"
+                              size="small"
+                              placeholder="默认 children"
+                              @update:value="updateTreeOptionSourceMapping({ childrenField: $event || 'children' })"
+                            />
+                          </div>
+                          <div class="option-source-field">
+                            <label>顶级父级取值</label>
+                            <n-input
+                              :value="String(selectedComponent.props?.optionSource?.rootParentValue ?? '')"
+                              size="small"
+                              placeholder="空 / 0，表示根节点"
+                              @update:value="updateTreeOptionSourceMapping({ rootParentValue: $event })"
+                            />
+                          </div>
+                        </div>
+                        <div class="option-source-section-title">
+                          数据怎么加载
+                        </div>
+                        <n-radio-group
+                          class="option-source-load-mode"
+                          :value="selectedComponent.props?.optionSource?.loadMode === 'lazy' ? 'lazy' : 'full'"
+                          size="small"
+                          @update:value="updateTreeOptionSourceMapping({ loadMode: $event || 'full' })"
+                        >
+                          <n-radio-button value="full">
+                            一次全部加载
+                          </n-radio-button>
+                          <n-radio-button value="lazy">
+                            展开时再加载下级
+                          </n-radio-button>
+                        </n-radio-group>
+                        <div class="option-source-hint">
+                          <template v-if="selectedComponent.props?.optionSource?.loadMode === 'lazy'">
+                            适合组织树、大型分类。首次只拉根节点，展开时再请求下级；数据源需支持按「父级字段」过滤（或提供 /tree 懒加载接口）。
+                          </template>
+                          <template v-else>
+                            适合节点不多的分类树。一次拉齐后本地拼树，打开下拉即可搜索全树。
+                          </template>
+                        </div>
+                      </div>
+                      <!-- 动态源数据量：下拉/树共用，防止一次拉太多 -->
+                      <div
+                        v-if="showOptionLoadLimits"
+                        class="option-source-card"
+                      >
+                        <div class="option-source-section-title">
+                          每次最多取多少条
+                        </div>
+                        <div class="option-source-hint">
+                          限制单次请求条数，避免数据源过大拖慢页面。树形全量建议不超过 500；需要更多时改用「展开时再加载下级」。
+                        </div>
+                        <div class="option-source-field">
+                          <n-input-number
+                            :value="Number(selectedComponent.props?.optionSource?.pageSize || defaultOptionPageSize)"
+                            size="small"
+                            :min="1"
+                            :max="1000"
+                            :show-button="false"
+                            placeholder="条数"
+                            @update:value="updatePageWidgetOptionSource({ pageSize: $event || defaultOptionPageSize })"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </n-form-item>
                   <!-- 级联选项：下拉级联一站式步骤式配置（运行时消费 props.cascade + optionSource）。
@@ -4542,6 +4708,12 @@ import { computed, h, nextTick, onActivated, onBeforeUnmount, onMounted, ref, wa
 import draggable from 'vuedraggable'
 import { businessObjectDesigner, businessObjectList, codeRuleList, previewCodeRule } from '@/api/business-app'
 import { getLowcodeQuerySourceCatalog, getLowcodeQuerySourceMetadata } from '@/api/lowcode-query-source'
+import {
+  createDefaultTreeOptionSourcePatch,
+  DEFAULT_OPTION_PAGE_SIZE,
+  DEFAULT_TREE_OPTION_PAGE_SIZE,
+  resolveStorageTypeFromOptionValueMeta,
+} from '@/components/ai-form/option-source-runtime'
 import { parseQuerySourceInputSchema } from '@/components/ai-form/query-source-schema'
 import { supportsMultipleSelect as isMultiSelectComponent, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
 import IconRenderer from '@/components/IconRenderer.vue'
@@ -4560,8 +4732,13 @@ import { camelToSnake } from '../form-first/namingUtils'
 import FieldEventRulesEditor from './FieldEventRulesEditor.vue'
 import FieldLinkageRulesEditor from './FieldLinkageRulesEditor.vue'
 import { GRID_COLUMN_MARKS as gridColumnMarks, MAX_FORM_GRID_COLUMNS, normalizeGridCount } from './formLayoutConfig'
-import FieldNumberConstraintPanel from './panels/FieldNumberConstraintPanel.vue'
+import {
+  collectChildTableFieldOptions,
+  collectChildTableRelationOptions,
+  resolveChildRelationTargetObjectCode,
+} from './option-source-picker'
 import FieldDefaultValueEditor from './panels/FieldDefaultValueEditor.vue'
+import FieldNumberConstraintPanel from './panels/FieldNumberConstraintPanel.vue'
 import FormAssetsPanel from './panels/FormAssetsPanel.vue'
 import FormInitPanel from './panels/FormInitPanel.vue'
 import FormLayoutPanel from './panels/FormLayoutPanel.vue'
@@ -4998,39 +5175,22 @@ const widgetDataSourceOptions = [
 ]
 const optionSourceTypeOptions = [
   { label: '静态选项', value: 'STATIC' },
-  { label: '子表明细', value: 'CURRENT_CHILDREN' },
+  { label: '本页子表明细', value: 'CURRENT_CHILDREN' },
+  { label: '其它表 / 业务对象', value: 'BUSINESS_OBJECT' },
   { label: '数据集 / 系统接口', value: 'QUERY_SOURCE' },
   { label: '手写系统接口', value: 'REMOTE' },
 ]
-// ─── 子表关系下拉：从画布上已配置的子表组件读取，避免用户手写编码 ─────
-const childTableRelationOptions = computed(() => {
-  return designerStore.subTableComponents
-    .map((comp) => {
-      const p = comp.props || {}
-      const relationKey = p.relationKey || ''
-      if (!relationKey)
-        return null
-      const header = p.header || comp.label || relationKey
-      return { label: `${header}（${relationKey}）`, value: relationKey }
-    })
-    .filter(Boolean)
-})
-// ─── 子表字段下拉：选中子表后从其 columns 提取可选字段，供值字段/显示字段选择 ─────
-const childTableFieldOptions = computed(() => {
-  const relationKey = selectedComponent.value?.props?.optionSource?.relationKey
-  if (!relationKey)
-    return []
-  const comp = designerStore.subTableComponents.find(c => c.props?.relationKey === relationKey)
-  if (!comp)
-    return []
-  const columns = Array.isArray(comp.props?.columns) ? comp.props.columns : []
-  return columns
-    .map(c => ({
-      label: `${c.fieldLabel || c.fieldCode || c}（${c.fieldCode || c}）`,
-      value: c.fieldCode || c,
-    }))
-    .filter(item => item.value)
-})
+// ─── 子表关系下拉：当前画布 + 其它表单资产 + 对象明细关系，避免只能选本页已配子表 ─────
+const childTableRelationOptions = computed(() => collectChildTableRelationOptions({
+  subTableComponents: designerStore.subTableComponents,
+  formAssets: designerStore.formAssets,
+  relations: designerStore.relations,
+}))
+const childTableTargetObjectCode = computed(() => resolveChildRelationTargetObjectCode(
+  selectedComponent.value?.props?.optionSource?.relationKey,
+  childTableRelationOptions.value,
+))
+// childTableFieldOptions / loading 依赖 referenceTargetFieldsMap，定义见业务对象字段加载区
 const dataBindablePageWidgetKeys = [
   'rich-text',
   'watermark',
@@ -5109,7 +5269,7 @@ const buttonTypeOptions = [
 const propertySearchIndex = [
   { keys: ['标识', '名称', '绑定字段', 'field', '字段编码'], label: '基础配置 / 标识', selectedTab: 'basic', selectedExpand: ['identity'], formTab: 'basic', formExpand: ['assets'] },
   { keys: ['字段', '字段组件', '占位', 'placeholder', '默认', '默认值', '字典', 'dict', '组件属性', '标签', '标题', '公式', 'formula', '计算'], label: '基础配置 / 字段组件', selectedTab: 'basic', selectedExpand: ['field'] },
-  { keys: ['选项', 'option', '新增选项', '静态选项', '选项来源', '选项列表', '远程接口', '标签', '值'], label: '基础配置 / 字段组件（选项来源）', selectedTab: 'basic', selectedExpand: ['field'] },
+  { keys: ['选项', 'option', '新增选项', '静态选项', '选项来源', '选项列表', '远程接口', '业务对象', '其它表', '子表明细', '标签', '值'], label: '基础配置 / 字段组件（选项来源）', selectedTab: 'basic', selectedExpand: ['field'] },
   { keys: ['按钮', 'button', '块级', '禁用', '类型', '文案', '动作'], label: '基础配置 / 按钮组件', selectedTab: 'basic', selectedExpand: ['button'] },
   { keys: ['说明', '说明文本', '角标', '辅助', 'badge'], label: '基础配置 / 辅助展示', selectedTab: 'basic', selectedExpand: ['assist'] },
   { keys: ['日期', '时间', '格式', 'datetime', 'date', '范围', '年月日'], label: '基础配置 / 日期时间组件', selectedTab: 'basic', selectedExpand: ['temporal'] },
@@ -5295,6 +5455,10 @@ const selectedOptions = computed(() => selectedComponent.value?.props?.options |
 const isFieldInsideCrud = computed(() => isField.value && hasAncestorComponent(props.schema, props.selectedId, ['AiCrudPage', 'crudBlock']))
 const selectedCrudFieldConfig = computed(() => isFieldInsideCrud.value ? selectedComponent.value?.props?.__crudConfig || {} : null)
 const isOptionField = computed(() => ['select', 'radio', 'radioButton', 'checkbox', 'transfer', 'cascader', 'treeSelect'].includes(selectedComponent.value?.componentKey || ''))
+const isTreeOptionField = computed(() => ['treeSelect', 'cascader'].includes(selectedComponent.value?.componentKey || ''))
+const defaultOptionPageSize = computed(() => (
+  isTreeOptionField.value ? DEFAULT_TREE_OPTION_PAGE_SIZE : DEFAULT_OPTION_PAGE_SIZE
+))
 // 人员组件（userSelect）也支持级联：按组织范围过滤人员
 const isUserSelectCascadeField = computed(() => selectedComponent.value?.componentKey === 'userSelect')
 const selectedOptionSourceType = computed(() => {
@@ -5302,8 +5466,12 @@ const selectedOptionSourceType = computed(() => {
   const type = String(source.type || '')
   if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(type))
     return 'CURRENT_CHILDREN'
-  if (type === 'QUERY_SOURCE' || type === 'query_source')
+  if (type === 'QUERY_SOURCE' || type === 'query_source') {
+    // 业务对象单独成项，避免和数据集/系统接口混在同一选择器里不好找
+    if (String(source.sourceType || '').toUpperCase() === 'BUSINESS_OBJECT')
+      return 'BUSINESS_OBJECT'
     return 'QUERY_SOURCE'
+  }
   // 优先按 type 字段判断：切换到 REMOTE 时 api 初始为空字符串，
   // 若依赖 api 非空判断，computed 会立刻回落 STATIC，表现为"点了没反应"
   if (type === 'REMOTE' || type === 'remote')
@@ -5314,10 +5482,11 @@ const selectedOptionSourceType = computed(() => {
 })
 
 // ─── 受管查询源选项：下拉选项从平台登记的查询源目录加载 ─────
-const QUERY_SOURCE_TYPE_LABELS = { DATASET: '数据集', EXTERNAL_API: '系统接口' }
+const QUERY_SOURCE_TYPE_LABELS = { DATASET: '数据集', EXTERNAL_API: '系统接口', BUSINESS_OBJECT: '业务对象' }
 const querySourceCatalog = ref([])
 const querySourceCatalogLoading = ref(false)
 const querySourceCatalogOptions = computed(() => querySourceCatalog.value
+  // 业务对象已有独立入口「其它表 / 业务对象」，目录里不再重复列出
   .filter(item => item.sourceType !== 'BUSINESS_OBJECT')
   .map(item => ({
     label: `${QUERY_SOURCE_TYPE_LABELS[item.sourceType] || item.sourceType} · ${item.sourceName || item.sourceKey}`,
@@ -5378,6 +5547,10 @@ async function loadQuerySourceMeta(sourceType, sourceKey) {
     querySourceMetaFields.value = visibleFields.map(f => ({
       label: `${f.label || f.field}（${f.field}）`,
       value: f.field,
+      dataType: f.dataType || f.type || '',
+      length: f.length,
+      precision: f.precision,
+      type: f.type || f.dataType || '',
     }))
     // 空字段提示：帮用户定位问题
     if (allFields.length === 0) {
@@ -5400,6 +5573,10 @@ async function loadQuerySourceMeta(sourceType, sourceKey) {
     }
     if (changed)
       updatePageWidgetOptionSource({ paramsText: JSON.stringify(cleaned) })
+    // 元数据就绪后按当前值字段对齐本表存储类型（id/bigint → bigint，避免 varchar(64)）
+    syncFieldStorageFromOptionValueField(
+      selectedComponent.value?.props?.optionSource?.valueField || 'id',
+    )
   }
   catch (err) {
     console.warn('[ForgePropertyPanel] 查询源元数据加载失败:', sourceType, sourceKey, err)
@@ -5770,6 +5947,32 @@ const recordSelectorMultiple = computed(() => recordSelectorConfigObj.value.mult
 const businessObjectOptions = ref([])
 const businessObjectLoading = ref(false)
 const referenceTargetFieldsMap = ref({})
+// ─── 子表字段下拉：优先 columns，无列时回落目标对象字段（须在 referenceTargetFieldsMap 之后）─────
+const childTableTargetFieldsLoading = computed(() => {
+  const objectCode = childTableTargetObjectCode.value
+  return !!objectCode && !!referenceTargetFieldsMap.value[objectCode]?.loading
+})
+const childTableFieldOptions = computed(() => {
+  const relationKey = selectedComponent.value?.props?.optionSource?.relationKey
+  const objectCode = childTableTargetObjectCode.value
+  return collectChildTableFieldOptions({
+    relationKey,
+    relationOptions: childTableRelationOptions.value,
+    targetFieldOptions: objectCode ? (referenceTargetFieldsMap.value[objectCode]?.options || []) : [],
+  })
+})
+const showOptionLoadLimits = computed(() => {
+  if (!isOptionField.value || selectedComponent.value?.componentKey === 'transfer')
+    return false
+  return ['BUSINESS_OBJECT', 'QUERY_SOURCE', 'REMOTE'].includes(selectedOptionSourceType.value)
+})
+const treeOptionFieldSelectOptions = computed(() => {
+  if (selectedOptionSourceType.value === 'CURRENT_CHILDREN')
+    return childTableFieldOptions.value || []
+  if (['BUSINESS_OBJECT', 'QUERY_SOURCE'].includes(selectedOptionSourceType.value))
+    return querySourceMetaFields.value || []
+  return []
+})
 const referenceTargetFieldLoading = computed(() => {
   return !!referenceTargetFieldsMap.value[referenceObjectCode.value]?.loading
 })
@@ -6062,54 +6265,252 @@ function createFieldAssetFromSelectedComponent() {
   }
 }
 
+function resolveSelectedFieldCode() {
+  const component = selectedComponent.value || {}
+  return String(
+    component.fieldBinding?.fieldCode
+    || component.field
+    || component.props?.fieldCode
+    || component.props?.field
+    || '',
+  ).trim()
+}
+
+function resolveSelectionLabelValueField(fieldCode = resolveSelectedFieldCode()) {
+  const explicit = String(selectedComponent.value?.props?.labelValueField || '').trim()
+  if (explicit)
+    return explicit
+  return fieldCode ? `${fieldCode}Name` : ''
+}
+
+function withTreeOptionSourceDefaults(patch = {}) {
+  if (!isTreeOptionField.value)
+    return patch
+  const previous = selectedComponent.value?.props?.optionSource || {}
+  return {
+    ...createDefaultTreeOptionSourcePatch(previous),
+    ...patch,
+    pageSize: patch.pageSize ?? previous.pageSize ?? DEFAULT_TREE_OPTION_PAGE_SIZE,
+  }
+}
+
+function updateTreeOptionSourceMapping(patch = {}) {
+  updatePageWidgetOptionSource(withTreeOptionSourceDefaults({
+    ...patch,
+    structure: 'tree',
+  }))
+}
+
 function updatePageWidgetOptionSource(patch = {}) {
-  updateComponent({
-    props: {
-      optionSource: {
-        ...(selectedComponent.value?.props?.optionSource || {}),
-        ...patch,
-      },
-    },
+  const optionSource = {
+    ...(selectedComponent.value?.props?.optionSource || {}),
+    ...patch,
+  }
+  const propsPatch = { optionSource }
+  const type = String(optionSource.type || '').toUpperCase()
+  const dynamic = type && type !== 'STATIC'
+  if (dynamic) {
+    const labelValueField = resolveSelectionLabelValueField()
+    if (labelValueField)
+      propsPatch.labelValueField = labelValueField
+  }
+  else if (Object.prototype.hasOwnProperty.call(patch, 'type') && type === 'STATIC') {
+    // 切回静态选项时清掉伴随字段绑定，避免残留误导
+    propsPatch.labelValueField = ''
+  }
+  updateComponent({ props: propsPatch })
+  if (Object.prototype.hasOwnProperty.call(patch, 'valueField')
+    || Object.prototype.hasOwnProperty.call(patch, 'sourceKey')) {
+    syncFieldStorageFromOptionValueField(optionSource.valueField || 'id')
+  }
+}
+
+/**
+ * 动态选项的值字段决定本表存什么类型：必须与目标对象/查询源的值字段类型一致。
+ * 已有业务数据锁结构时不改。
+ */
+function resolveOptionValueFieldMeta(valueField = '') {
+  const field = String(valueField || '').trim()
+  if (!field)
+    return null
+  const fromQueryMeta = (querySourceMetaFields.value || []).find(item => String(item?.value || '').trim() === field)
+  if (fromQueryMeta?.dataType || fromQueryMeta?.type)
+    return fromQueryMeta
+
+  // 业务对象：优先用设计器字段资产上的真实 dataType（比查询源元数据更完整）
+  const objectCode = selectedComponent.value?.props?.optionSource?.sourceKey
+    || (selectedOptionSourceType.value === 'CURRENT_CHILDREN' ? childTableTargetObjectCode.value : '')
+  if (objectCode) {
+    const options = referenceTargetFieldsMap.value[objectCode]?.options || []
+    const matched = options.find(item => String(item?.value || '').trim() === field)
+    const sourceField = matched?.field
+    if (sourceField && (sourceField.dataType || sourceField.type)) {
+      return {
+        field,
+        value: field,
+        dataType: sourceField.dataType || sourceField.type,
+        length: sourceField.length,
+        precision: sourceField.precision,
+      }
+    }
+  }
+  return fromQueryMeta || { field, value: field }
+}
+
+function syncFieldStorageFromOptionValueField(valueField = '') {
+  if (fieldStructureLocked.value || !isField.value || !selectedFieldCode.value)
+    return
+  const field = String(valueField || '').trim()
+  if (!field)
+    return
+  const meta = resolveOptionValueFieldMeta(field)
+  const storage = resolveStorageTypeFromOptionValueMeta(meta || {}, field)
+  if (!storage?.dataType)
+    return
+  const current = selectedFieldAsset.value || {}
+  const sameType = String(current.dataType || '').toLowerCase() === storage.dataType
+  const sameLength = (current.length ?? null) === (storage.length ?? null)
+  const samePrecision = (current.precision ?? null) === (storage.precision ?? null)
+  if (sameType && sameLength && samePrecision)
+    return
+  emit('fieldAssetUpdated', {
+    ...current,
+    fieldCode: selectedFieldCode.value,
+    field: selectedFieldCode.value,
+    fieldType: current.fieldType || (isTreeOptionField.value ? 'SELECT' : current.fieldType),
+    dataType: storage.dataType,
+    length: storage.length,
+    precision: storage.precision,
+    componentType: selectedComponent.value?.componentKey || current.componentType,
   })
 }
 
 function updateOptionSourceType(type = 'STATIC') {
   if (type === 'CURRENT_CHILDREN') {
-    updatePageWidgetOptionSource({
+    updatePageWidgetOptionSource(withTreeOptionSourceDefaults({
       type: 'CURRENT_CHILDREN',
       api: undefined,
       url: undefined,
+      sourceType: undefined,
+      sourceKey: undefined,
       relationKey: selectedComponent.value?.props?.optionSource?.relationKey || '',
       valueField: selectedComponent.value?.props?.optionSource?.valueField || 'id',
       labelField: selectedComponent.value?.props?.optionSource?.labelField || 'label',
       persistedOnly: selectedComponent.value?.props?.optionSource?.persistedOnly !== false,
-    })
+    }))
+    return
+  }
+  if (type === 'BUSINESS_OBJECT') {
+    const previous = selectedComponent.value?.props?.optionSource || {}
+    const keep = String(previous.type || '') === 'QUERY_SOURCE'
+      && String(previous.sourceType || '').toUpperCase() === 'BUSINESS_OBJECT'
+    updatePageWidgetOptionSource(withTreeOptionSourceDefaults({
+      type: 'QUERY_SOURCE',
+      api: undefined,
+      url: undefined,
+      relationKey: undefined,
+      sourceType: 'BUSINESS_OBJECT',
+      sourceKey: keep ? previous.sourceKey : '',
+      valueField: keep ? (previous.valueField || 'id') : 'id',
+      labelField: keep ? (previous.labelField || 'name') : 'name',
+      paramsText: keep ? (previous.paramsText || '{}') : '{}',
+      pageSize: keep
+        ? (previous.pageSize || defaultOptionPageSize.value)
+        : defaultOptionPageSize.value,
+    }))
+    ensureOptionSourceFieldCatalog()
     return
   }
   if (type === 'REMOTE') {
-    updatePageWidgetOptionSource({
+    updatePageWidgetOptionSource(withTreeOptionSourceDefaults({
       type: 'REMOTE',
       api: selectedComponent.value?.props?.optionSource?.api || '',
-    })
+      pageSize: selectedComponent.value?.props?.optionSource?.pageSize || defaultOptionPageSize.value,
+    }))
     return
   }
   if (type === 'QUERY_SOURCE') {
     const previous = selectedComponent.value?.props?.optionSource || {}
     const wasQuerySource = String(previous.type || '') === 'QUERY_SOURCE'
-    updatePageWidgetOptionSource({
+      && String(previous.sourceType || '').toUpperCase() !== 'BUSINESS_OBJECT'
+    updatePageWidgetOptionSource(withTreeOptionSourceDefaults({
       type: 'QUERY_SOURCE',
       api: undefined,
       url: undefined,
+      relationKey: undefined,
       sourceType: wasQuerySource ? previous.sourceType : '',
       sourceKey: wasQuerySource ? previous.sourceKey : '',
       valueField: wasQuerySource ? previous.valueField : 'id',
       labelField: wasQuerySource ? previous.labelField : 'name',
       paramsText: wasQuerySource ? previous.paramsText : '{}',
-      pageSize: wasQuerySource ? previous.pageSize : 50,
-    })
+      pageSize: wasQuerySource
+        ? (previous.pageSize || defaultOptionPageSize.value)
+        : defaultOptionPageSize.value,
+    }))
     return
   }
-  updateComponent({ props: { optionSource: undefined } })
+  updateComponent({ props: { optionSource: undefined, labelValueField: '' } })
+}
+
+function updateCurrentChildrenRelationKey(value) {
+  updatePageWidgetOptionSource({ relationKey: value || '' })
+  const objectCode = resolveChildRelationTargetObjectCode(value, childTableRelationOptions.value)
+  if (!objectCode)
+    return
+  loadBusinessObjectOptions().then(() => loadReferenceTargetFields(objectCode))
+}
+
+async function updateBusinessObjectOptionSource(value) {
+  const objectCode = value || ''
+  if (objectCode && !businessObjectOptions.value.length)
+    await loadBusinessObjectOptions()
+  const target = businessObjectOptions.value.find(item => item.value === objectCode)
+  if (objectCode && target && !target.runtimePublished)
+    message.warning(`「${target.label}」尚未发布运行配置：设计预览可正常选数据，正式运行前请先发布其所在应用`)
+  updatePageWidgetOptionSource({
+    type: 'QUERY_SOURCE',
+    sourceType: 'BUSINESS_OBJECT',
+    sourceKey: objectCode,
+    valueField: selectedComponent.value?.props?.optionSource?.valueField || 'id',
+    labelField: selectedComponent.value?.props?.optionSource?.labelField || 'name',
+  })
+  if (objectCode) {
+    await Promise.all([
+      loadQuerySourceMeta('BUSINESS_OBJECT', objectCode),
+      loadReferenceTargetFields(objectCode, true),
+    ])
+    syncFieldStorageFromOptionValueField(
+      selectedComponent.value?.props?.optionSource?.valueField || 'id',
+    )
+  }
+}
+
+async function ensureOptionSourceFieldCatalog() {
+  const type = selectedOptionSourceType.value
+  if (type === 'BUSINESS_OBJECT') {
+    await loadBusinessObjectOptions()
+    const objectCode = selectedComponent.value?.props?.optionSource?.sourceKey
+    if (objectCode) {
+      await Promise.all([
+        loadQuerySourceMeta('BUSINESS_OBJECT', objectCode),
+        loadReferenceTargetFields(objectCode),
+      ])
+      syncFieldStorageFromOptionValueField(
+        selectedComponent.value?.props?.optionSource?.valueField || 'id',
+      )
+    }
+    return
+  }
+  if (type === 'CURRENT_CHILDREN') {
+    const objectCode = childTableTargetObjectCode.value
+    if (!objectCode)
+      return
+    await loadBusinessObjectOptions()
+    await loadReferenceTargetFields(objectCode)
+    syncFieldStorageFromOptionValueField(
+      selectedComponent.value?.props?.optionSource?.valueField || 'id',
+    )
+  }
 }
 
 function updatePageWidgetDataBinding(patch = {}) {
@@ -6294,6 +6695,16 @@ async function loadReferenceTargetFields(objectCode, force = false) {
     }
   }
 }
+
+watch(selectedOptionSourceType, (type) => {
+  if (type === 'BUSINESS_OBJECT' || type === 'CURRENT_CHILDREN')
+    ensureOptionSourceFieldCatalog()
+})
+
+watch(childTableTargetObjectCode, (objectCode) => {
+  if (objectCode && selectedOptionSourceType.value === 'CURRENT_CHILDREN')
+    ensureOptionSourceFieldCatalog()
+})
 
 async function updateReferenceObjectCode(value) {
   const target = businessObjectOptions.value.find(item => item.value === value)
@@ -10372,6 +10783,23 @@ onBeforeUnmount(() => {
   color: #1e40af;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.option-source-section-title {
+  margin: 2px 0 8px;
+  color: var(--n-text-color-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.option-source-tree-card .option-source-section-title + .option-source-hint,
+.option-source-load-mode {
+  margin-bottom: 10px;
+}
+
+.option-source-load-mode {
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .option-source-no-params {

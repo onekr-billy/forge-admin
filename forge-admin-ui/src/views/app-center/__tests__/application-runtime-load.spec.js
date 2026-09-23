@@ -56,6 +56,24 @@ describe('application runtime route loading', () => {
     expect(second).toBe(first)
   })
 
+  it('does not reload workspace when editors toggle edit or draft query', () => {
+    const pageManagement = resolveApplicationRuntimeLoadKey({
+      params: { applicationCode: 'hr_apply' },
+      query: { pageId: 'page_1' },
+    }, true)
+    const pageDesign = resolveApplicationRuntimeLoadKey({
+      params: { applicationCode: 'hr_apply' },
+      query: { pageId: 'page_1', edit: '1' },
+    }, true)
+    const draftPreview = resolveApplicationRuntimeLoadKey({
+      params: { applicationCode: 'hr_apply' },
+      query: { pageId: 'page_1', draft: '1' },
+    }, true)
+
+    expect(pageDesign).toBe(pageManagement)
+    expect(draftPreview).toBe(pageManagement)
+  })
+
   it('uses workspace for edit, draft preview, or editors in page management', () => {
     expect(shouldUseApplicationWorkspaceLoad({ query: {} })).toBe(false)
     expect(shouldUseApplicationWorkspaceLoad({ query: { pageId: 'page_1' } })).toBe(false)
@@ -70,6 +88,7 @@ describe('application runtime route loading', () => {
     expect(runtimeSource).toContain('shouldUseApplicationWorkspaceLoad(route, canEditApplication.value)')
     // 有编辑权限的页面管理也要 designPreview，否则保存的默认值只在发布后才进正式快照
     expect(runtimeSource).toContain(':design-preview="editing || isDraftMode || canEditApplication"')
+    expect(runtimeSource).toContain(':crud-config-revision="portalCrudConfigRevision"')
     expect(runtimeSource).toContain("import.meta.glob('/src/assets/images/form/*.png', { import: 'default' })")
     expect(runtimeSource).not.toContain('eager: true')
   })
@@ -84,6 +103,35 @@ describe('application runtime route loading', () => {
       query: { pageId: 'page_1' },
     }, true)
     expect(withEdit).not.toBe(withoutEdit)
+  })
+
+  it('invalidates portal crud cache after form save refresh', () => {
+    const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
+    const portalSource = readFileSync(resolve('src/views/app-center/components/portal/PortalPageRenderer.vue'), 'utf8')
+    expect(runtimeSource).toContain('portalCrudConfigRevision.value += 1')
+    expect(runtimeSource).toContain('normalizeInAppBuilder(application.value.options, application.value, objects.value)')
+    expect(runtimeSource).toContain('if (application.value && syncBuilder)')
+    expect(runtimeSource).toContain('if (markClean)')
+    expect(runtimeSource).toContain('savedSignature.value = JSON.stringify(builder.value || {})')
+    // 换页不强制 remount Portal，靠 revision 与内部缓存失效；同对象跨页复用 render
+    expect(runtimeSource).toContain(':key="`portal:${portalCrudConfigRevision}`"')
+    expect(portalSource).toContain('crudConfigRevision')
+    expect(portalSource).toContain('configRev')
+    expect(portalSource).toContain('invalidateAll')
+  })
+
+  it('marks draft clean after save refresh mutations to avoid double success toasts', () => {
+    const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
+    expect(runtimeSource).toContain('refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })')
+    expect(runtimeSource).toContain('return await saveDraft({ quiet: true })')
+    expect(runtimeSource).toContain('bind/hydrate 可能继续改 builder')
+  })
+
+  it('prefetches workspace tab panels after application load for editors', () => {
+    const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
+    expect(runtimeSource).toContain('prefetchRuntimeWorkspacePanels')
+    expect(runtimeSource).toContain('requestIdleCallback')
+    expect(runtimeSource).toContain('<keep-alive>')
   })
 
   it('waits for object runtime config before mounting the CRUD page', () => {

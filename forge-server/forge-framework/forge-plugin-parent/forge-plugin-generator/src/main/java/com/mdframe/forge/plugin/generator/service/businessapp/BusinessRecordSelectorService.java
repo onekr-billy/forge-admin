@@ -112,9 +112,28 @@ public class BusinessRecordSelectorService {
                                                              Map<String, Object> searchParams,
                                                              Integer pageNum,
                                                              Integer pageSize) {
+        return queryByObjectCode(objectCode, searchParams, null, pageNum, pageSize);
+    }
+
+    /**
+     * 同 {@link #queryByObjectCode(String, Map, Integer, Integer)}，可指定 displayFields，
+     * 保证选项回显字段（labelField）出现在返回记录中，而不是只剩 id。
+     */
+    public BusinessRecordSelectorResultVO queryByObjectCode(String objectCode,
+                                                             Map<String, Object> searchParams,
+                                                             List<String> displayFields,
+                                                             Integer pageNum,
+                                                             Integer pageSize) {
         BusinessRecordSelectorQueryDTO query = new BusinessRecordSelectorQueryDTO();
         query.setObjectCode(StringUtils.trimToNull(objectCode));
         query.setSearchParams(searchParams == null ? Map.of() : searchParams);
+        if (displayFields != null && !displayFields.isEmpty()) {
+            query.setDisplayFields(displayFields.stream()
+                    .filter(StringUtils::isNotBlank)
+                    .map(String::trim)
+                    .distinct()
+                    .toList());
+        }
         PageQuery pageQuery = new PageQuery();
         pageQuery.setPageNum(pageNum == null || pageNum < 1 ? 1 : Math.min(pageNum, 100000));
         pageQuery.setPageSize(pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 100));
@@ -144,6 +163,101 @@ public class BusinessRecordSelectorService {
      */
     public Map<String, String> fieldLabels(AiBusinessObject object) {
         return resolveFieldLabels(object);
+    }
+
+    /**
+     * 供选项来源映射：返回模型字段的真实 dataType / length / precision。
+     * 本表选择字段的存储类型必须与目标「值字段」保持一致。
+     */
+    public List<Map<String, Object>> fieldTypeSchemas(AiBusinessObject object) {
+        Map<String, Map<String, Object>> schemas = new LinkedHashMap<>();
+        if (object == null) {
+            return List.of();
+        }
+        if (StringUtils.isNotBlank(object.getConfigKey()) && dynamicCrudService != null) {
+            try {
+                AiCrudConfig config = dynamicCrudService.getRuntimeConfig(object.getConfigKey());
+                if (config != null && StringUtils.isNotBlank(config.getModelSchema())) {
+                    collectFieldTypeSchemas(schemas, objectMapper.readValue(config.getModelSchema(), Object.class));
+                }
+            } catch (Exception ignored) {
+                // 回落 labels，不阻断元数据接口
+            }
+        }
+        collectFieldTypeSchemas(schemas, object.getDesignerOptions());
+        collectFieldTypeSchemas(schemas, object.getOptions());
+        Map<String, String> labels = resolveFieldLabels(object);
+        labels.forEach((field, label) -> {
+            Map<String, Object> meta = schemas.computeIfAbsent(field, key -> new LinkedHashMap<>());
+            meta.putIfAbsent("field", field);
+            meta.putIfAbsent("label", label);
+            // 不在这里猜类型：没有模型 dataType 就留给前端继续从设计器字段资产取
+        });
+        return new ArrayList<>(schemas.values());
+    }
+
+    private void collectFieldTypeSchemas(Map<String, Map<String, Object>> schemas, String json) {
+        if (StringUtils.isBlank(json)) {
+            return;
+        }
+        try {
+            collectFieldTypeSchemas(schemas, objectMapper.readValue(json, Object.class));
+        } catch (Exception ignored) {
+            // ignore
+        }
+    }
+
+    private void collectFieldTypeSchemas(Map<String, Map<String, Object>> schemas, Object node) {
+        if (node instanceof List<?> list) {
+            for (Object item : list) {
+                collectFieldTypeSchemas(schemas, item);
+            }
+            return;
+        }
+        if (!(node instanceof Map<?, ?> map)) {
+            return;
+        }
+        String field = firstText(map.get("field"), map.get("fieldCode"), map.get("key"));
+        String dataType = firstText(map.get("dataType"), map.get("type"), map.get("dbType"), map.get("columnType"));
+        if (StringUtils.isNotBlank(field) && StringUtils.isNotBlank(dataType)) {
+            Map<String, Object> meta = schemas.computeIfAbsent(field, key -> new LinkedHashMap<>());
+            meta.putIfAbsent("field", field);
+            meta.putIfAbsent("label", firstText(map.get("label"), map.get("title"), map.get("fieldName"), field));
+            meta.putIfAbsent("dataType", normalizeColumnDataType(dataType));
+            Object length = map.get("length");
+            if (length != null && meta.get("length") == null) {
+                meta.put("length", length);
+            }
+            Object precision = map.get("precision");
+            if (precision != null && meta.get("precision") == null) {
+                meta.put("precision", precision);
+            }
+        }
+        collectFieldTypeSchemas(schemas, map.get("fields"));
+        collectFieldTypeSchemas(schemas, map.get("editSchema"));
+        collectFieldTypeSchemas(schemas, map.get("columnsSchema"));
+        collectFieldTypeSchemas(schemas, map.get("components"));
+        collectFieldTypeSchemas(schemas, map.get("formDesignerSchema"));
+        collectFieldTypeSchemas(schemas, map.get("modelSchema"));
+    }
+
+    private String normalizeColumnDataType(String raw) {
+        String text = StringUtils.defaultString(raw).trim().toLowerCase(Locale.ROOT);
+        int paren = text.indexOf('(');
+        if (paren > 0) {
+            text = text.substring(0, paren);
+        }
+        return switch (text) {
+            case "integer", "int32" -> "int";
+            case "long", "int64" -> "bigint";
+            case "string", "character varying" -> "varchar";
+            case "bool", "boolean" -> "tinyint";
+            default -> text;
+        };
+    }
+
+    private String text(Object value) {
+        return value == null ? null : StringUtils.trimToNull(String.valueOf(value));
     }
 
     private String describeObjectCodeFields(BusinessRecordSelectorQueryDTO query) {

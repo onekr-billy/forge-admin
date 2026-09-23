@@ -69,8 +69,9 @@ import {
   selectScopedCssExtensions,
 } from '@/components/lowcode-extension/runtime/application-extension-runtime'
 import RuntimeScopedStyles from '@/components/lowcode-extension/runtime/RuntimeScopedStyles'
-import { isRuntimeAutoHeightBlock, shouldUseContentSizedFlow } from './portal-page-runtime-layout'
+import { isRuntimeAutoHeightBlock, resolvePortalPageBlocks, shouldUseContentSizedFlow } from './portal-page-runtime-layout'
 import PortalEmptyState from './PortalEmptyState.vue'
+import { isDataFieldBlockType } from '@/components/lowcode-builder/page/page-schema'
 
 const GridBlockRenderer = defineAsyncComponent(() => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'))
 
@@ -86,6 +87,11 @@ const props = defineProps({
   configurable: { type: Boolean, default: false },
   designPreview: { type: Boolean, default: false },
   fillHost: { type: Boolean, default: false },
+  /**
+   * 表单/对象保存后由父级递增。用于清空本组件 CRUD 缓存并带上请求参数，
+   * 避免返回页面管理后仍用旧的 render 结果（新增表单配置不生效）。
+   */
+  crudConfigRevision: { type: [Number, String], default: 0 },
   /**
    * 外部注入的表单字段解析函数。
    * 当 PortalPageRenderer 渲染包含表单设计器 Schema 的区块时，
@@ -119,26 +125,12 @@ const runtimeScopedStyles = computed(() => scopedCssExtensions.value
   }))
   .filter(item => item.css.trim()))
 
-const blocks = computed(() => {
-  const layout = props.page?.layout || {}
-  const rawItems = Array.isArray(layout.gridLayout?.items)
-    ? layout.gridLayout.items
-    : Array.isArray(layout.items) ? layout.items.map(normalizeLegacyBlock) : []
-  const items = rawItems.filter(item => item?.blockType !== 'page-title')
-  if (items.length)
-    return items
-  if (props.node?.pageType === 'object' && resolveObjectRef(props.node)) {
-    return [{
-      id: `portal-object-${props.node.id}`,
-      blockType: 'AiCrudPage',
-      props: {
-        objectRef: resolveObjectRef(props.node),
-        style: { widthMode: 'full', heightMode: 'full', pageFlowHeight: 640 },
-      },
-    }]
-  }
-  return []
-})
+const blocks = computed(() => resolvePortalPageBlocks({
+  page: props.page,
+  node: props.node,
+  resolveObjectRef,
+  normalizeLegacyBlock,
+}))
 
 const externalUrl = computed(() => {
   const raw = props.page?.externalUrl
@@ -168,14 +160,32 @@ const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => 
   return Math.max(bottom, top + height + 28)
 }, 620))
 
-watch(() => [props.node?.id, blocks.value, props.designPreview, props.configurable], () => {
-  runtimeCrudPropsByKey.value = {}
-  loadingKeys.value = new Set()
-  unavailableKeys.value = new Set()
-  pageInitKeys.value = new Set()
-  pageInitDefaultsByObject.value = {}
-  visitBlocks(blocks.value, preloadRuntimeCrudProps)
-}, { immediate: true, deep: true })
+watch(
+  () => [props.node?.id, blocks.value, props.designPreview, props.configurable, props.crudConfigRevision],
+  (next, prev) => {
+    const nextPreview = next?.[2]
+    const nextConfigurable = next?.[3]
+    const nextRevision = next?.[4]
+    const prevPreview = prev?.[2]
+    const prevConfigurable = prev?.[3]
+    const prevRevision = prev?.[4]
+    // 换页时保留已加载的对象 render 缓存，避免同对象反复打 /render + designPreview 草稿准备
+    const invalidateAll = !prev
+      || nextPreview !== prevPreview
+      || nextConfigurable !== prevConfigurable
+      || nextRevision !== prevRevision
+    if (invalidateAll) {
+      runtimeCrudPropsByKey.value = {}
+      loadingKeys.value = new Set()
+      unavailableKeys.value = new Set()
+    }
+    // PAGE_INIT 默认值按页隔离
+    pageInitKeys.value = new Set()
+    pageInitDefaultsByObject.value = {}
+    visitBlocks(blocks.value, preloadRuntimeCrudProps)
+  },
+  { immediate: true, deep: true },
+)
 
 function resolveObjectRef(source = {}) {
   const raw = source.objectRef || source.props?.objectRef || source.props?.runtimeObjectRef
@@ -207,7 +217,10 @@ function resolveObjectKey(objectRef) {
 }
 
 function preloadRuntimeCrudProps(block) {
-  const objectRef = resolveObjectRef(block) || (block === blocks.value[0] ? resolveObjectRef(props.node || {}) : null)
+  // 提示面板等装饰块不能参与 CRUD 预加载，否则会把对象 key 标成 unavailable，拖垮同页 AiCrudPage
+  if (!isDataFieldBlockType(block?.blockType))
+    return
+  const objectRef = resolveObjectRef(block) || resolveObjectRef(props.node || {})
   const key = resolveObjectKey(objectRef)
   if (!key || runtimeCrudPropsByKey.value[key] || loadingKeys.value.has(key) || unavailableKeys.value.has(key))
     return
@@ -226,25 +239,24 @@ async function loadRuntimeCrudProps(configKey, objectRef, key) {
     // 正式门户 configurable=false，仍只走已发布配置。
     let designPreview = props.designPreview || props.configurable
     const runtimeEntryId = resolveRuntimeEntryId(configKey)
+    const revision = String(props.crudConfigRevision || '').trim()
+    const renderOptions = {
+      needTip: false,
+      appId: runtimeEntryId,
+      applicationId: props.applicationId,
+      pageId: props.pageId || String(props.node?.id || ''),
+      // 表单保存后 revision 变化，避免沿用同 URL 的旧 render 结果
+      ...(revision ? { params: { configRev: revision } } : {}),
+    }
     let config = null
     try {
-      config = (await crudConfigRender(configKey, designPreview, {
-        needTip: false,
-        appId: runtimeEntryId,
-        applicationId: props.applicationId,
-        pageId: props.pageId || String(props.node?.id || ''),
-      })).data
+      config = (await crudConfigRender(configKey, designPreview, renderOptions)).data
     }
     catch (error) {
       if (!designPreview)
         throw error
       designPreview = false
-      config = (await crudConfigRender(configKey, false, {
-        needTip: false,
-        appId: runtimeEntryId,
-        applicationId: props.applicationId,
-        pageId: props.pageId || String(props.node?.id || ''),
-      })).data
+      config = (await crudConfigRender(configKey, false, renderOptions)).data
     }
     if (!config || typeof config !== 'object')
       throw new Error('业务对象运行配置为空')
@@ -277,6 +289,8 @@ function resolveRuntimeEntryId(configKey) {
 }
 
 function resolveRuntimeCrudProps(block) {
+  if (!isDataFieldBlockType(block?.blockType))
+    return null
   const objectRef = resolveObjectRef(block) || resolveObjectRef(props.node || {})
   const key = resolveObjectKey(objectRef)
   if (key && !runtimeCrudPropsByKey.value[key] && !loadingKeys.value.has(key) && !unavailableKeys.value.has(key))
