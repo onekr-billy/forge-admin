@@ -183,7 +183,9 @@ class ApplicationProcessStartSystemServiceTest {
 
     @Test void contextFreeCatalogDoesNotScanAllApplications() {
         clearInvocations(runtime, objects, processes, versions);
-        assertThat(service.registrationSource(1L).options().path("registrationKind").asText()).isEqualTo("APPLICATION_PROCESS");
+        var source = service.registrationSource(1L);
+        assertThat(source.options().path("registrationKind").asText()).isEqualTo("APPLICATION_PROCESS");
+        assertThat(source.riskLevel()).isEqualTo("MEDIUM");
         verifyNoInteractions(runtime, objects, processes, versions);
     }
 
@@ -194,7 +196,7 @@ class ApplicationProcessStartSystemServiceTest {
     private SecureActionDescriptor descriptor() {
         var publication = publication();
         return new SecureActionDescriptor(8L, "app.start", "发起", "", "1.0.0", "SYSTEM_SERVICE", service.serviceCode(),
-                "1", "ACTION", "HIGH", "system", service.serviceCode(), service.serviceCode(), null, "case:submit",
+                "1", "ACTION", "MEDIUM", "system", service.serviceCode(), service.serviceCode(), null, "case:submit",
                 Set.of(), Set.of(), publication.policySnapshot(), publication.inputSchema(), publication.outputSchema());
     }
 

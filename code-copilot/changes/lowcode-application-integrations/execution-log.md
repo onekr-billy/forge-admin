@@ -234,3 +234,28 @@ node --max_old_space_size=4096 ./node_modules/vite/bin/vite.js build
 - 桌面与 390px 深色检查通过，width/scrollWidth 均为 390，控制台 error=[]。这不是实际审批或开放 HTTP 联调；夹具替换了 API 与 AiCrudPage 列表外壳。
 - 已恢复 viewport、关闭本轮标签 8，保留用户原 file:// 页面；仅停止本轮 Vite 会话 75789（退出 130）。没有启动或停止用户 Admin/Flow/MySQL 服务。
 - 仅修改 forge-admin-main / codex/open-platform-experience，保留已有 .DS_Store，不操作 H5 工作树。未执行全仓已知失败的测试编译、真实数据库/网关/审批/消息 E2E、迁移、部署、commit 或 push。部署前人工权限/状态流转审查与真实环境验收仍待用户执行。
+
+## 2026-09-22 应用业务流程发布风险等级修复
+
+- 现场异常发生在 `CapabilityCatalogService.publishSystemService`：应用业务流程注册来源返回 `HIGH`，而受控系统服务目录契约和当前客户端授权只接受 `SYSTEM_SERVICE / ACTION / MEDIUM`，因此在应用、页面和流程来源均已校验通过后仍被拒绝。
+- 将 `lowcode.business-process.start` 定义为受控中风险系统服务。它仍固定应用/对象/流程版本，只接受已保存 `recordId`，并保留用户委托、启动权限、节点权限、数据范围、幂等与编排器校验；没有放宽高风险能力发布或授权。
+- 新增来源风险等级回归断言，并在系统服务发布器测试中断言最终目录命令为 `ACTION / MEDIUM`。修复前定向测试 17 项中 1 项按预期失败（`expected MEDIUM but was HIGH`）；修复后开放平台 86/86 通过。
+- JDK 17 Admin 46 模块聚合安装 `BUILD SUCCESS`，总耗时 24.786s；补齐最终发布器断言后开放平台 verification 总耗时 5.873s。未改前端/数据库/Flyway，未启动服务或执行真实网关、审批、消息 E2E。
+
+## 2026-09-22 注册、归属与授权闭环
+
+### 实现
+- 表单来源由“进入场景即全量扫描业务对象”改为“先读应用发布页面，选中后按 `applicationId + objectId` 读取单一来源”；高级直接选对象入口保留按需全量加载。后端上下文请求只调用 `BusinessObjectService.detail`，不再调用列表扫描。
+- 新建流程能力仅保留应用业务流程；旧 `FLOW_ACTION` 数据和升级兼容继续存在，但不再向新建用户展示“旧版对象审批”。`lowcode.business-process.start` 的发布元数据保持 `SYSTEM_SERVICE / ACTION / MEDIUM`。
+- 目录选择应用来源时统一经应用发布接口写入关联；应用能力页首次进入和手动刷新调用显式同步接口，从当前不可变发布快照幂等认领业务动作、存量流程、表单和应用流程能力。任意 REST、跨应用来源和坏 JSON 不自动归属；同一来源换编码重复注册由服务端拒绝。
+- 系统服务授权把 Java null、Jackson `NullNode` 和空对象统一视为无字段策略并落库 NULL；数组、标量及非空对象仍失败关闭。前端应用授权请求同步发送 null。
+- 在线测试身份来源从分段 RadioButton 改为普通 Radio，去除蓝色内部竖分隔，不改变身份语义。
+
+### 验证
+- 前端定向 Vitest 3 文件、41/41 通过；定向 ESLint 0 errors / 0 warnings；Vite build 26.79s 通过，仅保留既有 CSS/chunk/plugin timing 提示。
+- JDK17 Admin reactor 46 模块最终 `BUILD SUCCESS`（20.795s）。开放平台 verification 96/96、应用集成 verification 47/47，均 0 failures / errors / skipped。应用集成首轮有 1 个 Mockito 调用次数夹具与新同步顺序不一致；补存量同源候选只认领一次后，首次编译又发现局部变量与 lambda 参数同名，改名后重新完成全量构建和 47 项回归，未放宽生产校验。
+- `xmllint` 与 `git diff --check` 通过；构建产生的 pnpm workspace 审批占位变更已恢复。保留工作树原有无关 `.DS_Store`。
+
+### 边界
+- 未启动 Admin/Flow、连接 MySQL、调用开放网关、执行真实审批或部署；没有数据库迁移。同步、唯一来源及授权策略由单元/Mapper 契约测试覆盖，不等价于线上 E2E。
+- 本轮在 `forge-admin-main / codex/open-platform-experience` 独立 worktree 完成，未 commit、未 push，未触碰 H5 工作树。

@@ -83,7 +83,7 @@ class ApplicationIntegrationSourceTest {
         service = new ApplicationIntegrationService(mock(ApplicationIntegrationMapper.class), applications,
                 runtime, objects, mock(AiCapabilityMapper.class), mock(BusinessMessageChannelMapper.class),
                 mock(ISocialConfigService.class), mock(ISocialAppConfigService.class),
-                mock(CollaborationProviderRegistry.class));
+                mock(CollaborationProviderRegistry.class), json);
         source("legal", "contract", OBJECT_ID);
     }
 

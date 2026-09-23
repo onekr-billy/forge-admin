@@ -20,7 +20,7 @@
       <div class="scenario-intro">
         <h3>你想开放什么功能？</h3><p>选择来源后，平台会生成接口契约、授权入口和调用文档。</p>
       </div>
-      <button v-if="allowedTypes.includes('FLOW_ACTION') || allowedTypes.includes('SYSTEM_SERVICE')" type="button" class="scenario-option" @click="chooseScenario('flow')">
+      <button v-if="allowedTypes.includes('SYSTEM_SERVICE')" type="button" class="scenario-option" @click="chooseScenario('flow')">
         <i class="i-lucide:workflow" /><span><strong>流程操作</strong><small>发起流程、提交申请、审批与撤回</small></span><i class="i-lucide:chevron-right" />
       </button>
       <button v-if="allowedTypes.includes('BUSINESS_ACTION') || allowedTypes.includes('SYSTEM_SERVICE')" type="button" class="scenario-option" @click="chooseScenario('application')">
@@ -44,7 +44,7 @@
       </n-alert>
 
       <div v-if="sourceLoading" class="source-loading" role="status" aria-live="polite">
-        <n-spin size="small" /><span>{{ isUpgrade ? '正在读取当前能力和发布来源…' : scenario === 'rest' ? '正在加载可开放的系统接口…' : '正在加载已发布的页面和能力来源…' }}</span>
+        <n-spin size="small" /><span>{{ isUpgrade ? '正在读取当前能力和发布来源…' : scenario === 'rest' ? '正在加载可开放的系统接口…' : scenario === 'application' ? '正在读取所选页面的表单契约…' : '正在加载已发布的业务流程…' }}</span>
       </div>
 
       <n-form-item v-if="scenario !== 'rest'" label="操作方式">
@@ -55,8 +55,8 @@
           <n-radio-button v-if="scenario === 'flow' && allowedTypes.includes('SYSTEM_SERVICE')" value="APPLICATION_PROCESS">
             应用业务流程
           </n-radio-button>
-          <n-radio-button v-if="scenario === 'flow' && allowedTypes.includes('FLOW_ACTION') && (!initialContext.lockApplication || form.sourceType === 'FLOW_ACTION' && isUpgrade)" value="FLOW_ACTION">
-            旧版对象审批
+          <n-radio-button v-if="scenario === 'flow' && isUpgrade && form.sourceType === 'FLOW_ACTION'" value="FLOW_ACTION">
+            流程动作（存量能力升级）
           </n-radio-button>
           <n-radio-button v-if="allowedTypes.includes('SYSTEM_SERVICE') && !(initialContext.lockApplication && scenario === 'flow')" value="SYSTEM_SERVICE">
             {{ scenario === 'application' ? '表单填报' : '独立流程' }}
@@ -66,7 +66,7 @@
 
       <n-alert v-if="sourceError" type="error" class="form-alert">
         {{ sourceError }}
-        <n-button text type="error" @click="form.sourceType === 'SYSTEM_SERVICE' ? loadSystemServices() : loadObjects()">
+        <n-button text type="error" @click="retrySource">
           重新加载来源
         </n-button>
       </n-alert>
@@ -271,7 +271,7 @@
       </template>
 
       <template v-else>
-        <CapabilitySystemSource :services="systemServices" :options="systemServiceOptions" :loading="systemSourceLoading || draftLoading" :upgrade="isUpgrade" @service-change="handleSystemServiceChange" @form-change="handleSystemFormChange" @parameters-change="updateGeneratedCode" />
+        <CapabilitySystemSource :services="systemServices" :options="systemServiceOptions" :loading="systemSourceLoading || draftLoading" :upgrade="isUpgrade" :expected-kind="systemKind" @service-change="handleSystemServiceChange" @form-change="handleSystemFormChange" @page-select="handleSystemPageSelect" @direct-source="loadDirectFormSources" @parameters-change="updateGeneratedCode" />
         <template v-if="systemKind === 'FLOW'">
           <n-form-item label="流程模型" path="systemModelId">
             <n-select
@@ -445,6 +445,9 @@ const {
   chooseScenario,
   nextStep,
   selectApplicationPage,
+  handleSystemPageSelect,
+  loadDirectFormSources,
+  retrySource,
   handleSystemFormChange,
   systemKind,
   reviewSource,
@@ -458,8 +461,6 @@ const {
   draftLoading,
   submitting,
   sourceError,
-  loadSystemServices,
-  loadObjects,
   flowSourceError,
   flowSource,
   businessActionSource,

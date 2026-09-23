@@ -15,8 +15,10 @@ const api = vi.hoisted(() => Object.fromEntries([
   'publishSystemServiceCapability',
   'businessObjectList',
 ].map(name => [name, vi.fn()])))
+const applicationApi = vi.hoisted(() => ({ publishApplicationCapability: vi.fn() }))
 vi.mock('@/api/ai/capability', () => api)
 vi.mock('@/api/business-app', () => api)
+vi.mock('@/api/application-integration', () => applicationApi)
 vi.mock('vue-router', () => ({ useRouter: () => ({ resolve: () => ({ href: '/' }) }) }))
 vi.mock('@/composables', () => ({ useDict: () => ({
   dict: ref({ ai_capability_flow_operation: ['SUBMIT', 'START', 'APPROVE', 'REJECT', 'WITHDRAW'].map(value => ({ value, label: value })) }),
@@ -58,6 +60,7 @@ beforeEach(() => {
   api.businessObjectList.mockResolvedValue({ data: objects })
   api.getSystemServiceRegistrationSources.mockResolvedValue({ data: services })
   api.publishSystemServiceCapability.mockResolvedValue({ code: 200, data: '88' })
+  applicationApi.publishApplicationCapability.mockResolvedValue({ code: 200, data: '88' })
   api.getFlowActionRegistrationSource.mockResolvedValue({ data: { flowModelKey: 'approval', startSupported: true, submissionSupported: true, submissionFields: [{ field: 'title', required: true }] } })
 })
 afterEach(() => wrapper?.unmount())
@@ -67,16 +70,22 @@ describe('scenario registration', () => {
     await start()
     await state.chooseScenario('application')
     expect(state.form.systemServiceCode).toBe('lowcode.form.create')
+    expect(api.getSystemServiceRegistrationSources).not.toHaveBeenCalled()
+    useCapabilityRegistrationStore().applicationId = '11'
+    await state.handleSystemPageSelect({ objectId: '1' })
+    expect(api.getSystemServiceRegistrationSources).toHaveBeenCalledWith({
+      serviceCode: 'lowcode.form.create',
+      applicationId: '11',
+      objectId: '1',
+    })
     expect(state.systemServiceOptions.value.map(item => item.value)).toEqual(['lowcode.form.create'])
-    state.form.systemFormId = 'law/a'
-    state.handleSystemFormChange()
     await flushPromises()
     expect(state.form.requiredFields).toEqual(['title'])
     expect(state.form.allowedFields).toEqual(['title', 'note'])
     await state.nextStep()
     expect(state.step.value).toBe(3)
     await state.handleSubmit()
-    expect(api.publishSystemServiceCapability).toHaveBeenCalledWith(expect.objectContaining({
+    expect(applicationApi.publishApplicationCapability).toHaveBeenCalledWith('11', 'system', expect.objectContaining({
       parameters: { suiteCode: 'law', objectCode: 'a', allowedFields: ['title', 'note'], requiredFields: ['title'] },
     }))
   })
@@ -94,26 +103,33 @@ describe('scenario registration', () => {
       parameters: { endpointId: 'abc123456789' },
     }))
   })
-  it('accepts the existing published snapshot even when the designer has changes', async () => {
+  it('does not expose legacy object approval as a new registration route', async () => {
     await start({ allowedTypes: ['FLOW_ACTION'] })
     expect(api.businessObjectList).not.toHaveBeenCalled()
     expect(api.getSystemServiceRegistrationSources).not.toHaveBeenCalled()
     await state.chooseScenario('flow')
-    expect(state.objects.value).toHaveLength(2)
+    expect(state.step.value).toBe(1)
+    expect(state.form.sourceType).toBe('FLOW_ACTION')
   })
-  it('does not overwrite a newer object selection with an old source response', async () => {
-    await start({ allowedTypes: ['FLOW_ACTION'] })
-    await state.chooseScenario('flow')
+  it('does not overwrite a newer page selection with an old form source response', async () => {
+    await start()
+    await state.chooseScenario('application')
+    useCapabilityRegistrationStore().applicationId = '11'
     let resolveFirst
-    api.getFlowActionRegistrationSource.mockImplementationOnce(() => new Promise((resolve) => {
+    api.getSystemServiceRegistrationSources.mockImplementationOnce(() => new Promise((resolve) => {
       resolveFirst = resolve
     }))
-    const first = state.handleObjectChange('1')
-    await state.handleObjectChange('2')
-    resolveFirst({ data: { flowModelKey: 'old', startSupported: true, submissionSupported: true } })
+    api.getSystemServiceRegistrationSources.mockResolvedValueOnce({ data: [{
+      serviceCode: 'lowcode.form.create',
+      serviceName: '表单填报',
+      options: { registrationKind: 'FORM', forms: [{ id: 'law/b', objectId: '2', suiteCode: 'law', objectCode: 'b', available: true, fields: [{ field: 'name' }] }] },
+    }] })
+    const first = state.handleSystemPageSelect({ objectId: '1' })
+    await state.handleSystemPageSelect({ objectId: '2' })
+    resolveFirst({ data: services.filter(item => item.serviceCode === 'lowcode.form.create') })
     await first
-    expect(state.form.objectCode).toBe('b')
-    expect(state.flowSource.value.flowModelKey).toBe('approval')
+    expect(state.form.objectId).toBe('2')
+    expect(state.form.systemFormId).toBe('law/b')
   })
   it('blocks duplicate publication while the first request is pending', async () => {
     await start()
@@ -210,16 +226,16 @@ describe('scenario registration', () => {
     api.getSystemServiceRegistrationSources.mockImplementationOnce(() => new Promise((resolve) => {
       complete = resolve
     }))
-    const old = state.chooseScenario('application')
-    await state.chooseScenario('rest')
-    complete({ data: services.filter(item => item.serviceCode === 'lowcode.form.create') })
+    const old = state.chooseScenario('rest')
+    await state.chooseScenario('application')
+    complete({ data: services.filter(item => item.serviceCode === 'system.rest.invoke') })
     await old
-    expect(state.form.systemServiceCode).toBe('system.rest.invoke')
+    expect(state.form.systemServiceCode).toBe('lowcode.form.create')
     expect(state.sourceLoading.value).toBe(false)
     api.getSystemServiceRegistrationSources.mockImplementationOnce(() => new Promise((resolve) => {
       complete = resolve
     }))
-    const closing = state.chooseScenario('application')
+    const closing = state.chooseScenario('rest')
     props.show = false
     await flushPromises()
     props.show = true
@@ -233,14 +249,14 @@ describe('scenario registration', () => {
   it('shows failed loading and can retry without leaving the configuration step', async () => {
     await start()
     api.getSystemServiceRegistrationSources.mockRejectedValueOnce(new Error('来源查询失败'))
-    await state.chooseScenario('application')
+    await state.chooseScenario('rest')
     expect(state.step.value).toBe(2)
     expect(state.sourceLoading.value).toBe(false)
     expect(state.sourceError.value).toBe('来源查询失败')
     expect(state.submitDisabled.value).toBe(true)
     await state.loadSystemServices()
     expect(state.sourceError.value).toBe('')
-    expect(state.form.systemServiceCode).toBe('lowcode.form.create')
+    expect(state.form.systemServiceCode).toBe('system.rest.invoke')
   })
   it('defaults locked application registration to form filling without a scenario round-trip', async () => {
     await start({ initialContext: { lockApplication: true, applicationId: '9007199254740999', applicationCode: 'law', applicationName: '案件管理' } })
@@ -248,25 +264,7 @@ describe('scenario registration', () => {
     expect(state.scenario.value).toBe('application')
     expect(state.form.systemServiceCode).toBe('lowcode.form.create')
     expect(api.businessObjectList).not.toHaveBeenCalled()
-    expect(api.getSystemServiceRegistrationSources).toHaveBeenCalledTimes(1)
-    expect(api.getSystemServiceRegistrationSources).toHaveBeenCalledWith({ serviceCode: 'lowcode.form.create' })
-  })
-  it('does not leave the object loader stuck when the page picker initially clears its selection', async () => {
-    await start({ allowedTypes: ['FLOW_ACTION'] })
-    let complete
-    api.businessObjectList.mockImplementationOnce(() => new Promise((resolve) => {
-      complete = resolve
-    }))
-    const loading = state.chooseScenario('flow')
-    await state.selectApplicationPage(null)
-    expect(state.objectLoading.value).toBe(true)
-    complete({ data: objects })
-    await loading
-    expect(state.objectLoading.value).toBe(false)
-    expect(state.objects.value).toHaveLength(2)
-    state.form.objectId = '1'
-    await state.handleObjectChange('1')
-    expect(state.submitDisabled.value).toBe(false)
+    expect(api.getSystemServiceRegistrationSources).not.toHaveBeenCalled()
   })
 
   it('defaults flow registration to the application process and publishes its exact source', async () => {
@@ -283,7 +281,7 @@ describe('scenario registration', () => {
     expect(api.getFlowActionRegistrationSource).not.toHaveBeenCalled()
     expect(state.submitDisabled.value).toBe(false)
     await state.handleSubmit()
-    expect(api.publishSystemServiceCapability).toHaveBeenCalledWith(expect.objectContaining({
+    expect(applicationApi.publishApplicationCapability).toHaveBeenCalledWith('9007199254740999', 'system', expect.objectContaining({
       serviceCode: 'lowcode.business-process.start',
       parameters: { applicationId: '9007199254740999', objectId: '9007199254741999', processCode: 'case_approval' },
     }))

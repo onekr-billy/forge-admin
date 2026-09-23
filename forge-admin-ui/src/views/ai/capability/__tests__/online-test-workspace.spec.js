@@ -1,9 +1,10 @@
 import { webcrypto } from 'node:crypto'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, reactive } from 'vue'
 import { useCapabilityOnlineTestStore } from '@/stores/capability/onlineTestStore'
+import CapabilityTestIdentity from '../components/CapabilityTestIdentity.vue'
 import { useCapabilityOnlineTest } from '../components/useCapabilityOnlineTest'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -37,6 +38,32 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('online test guided execution', () => {
+  it('uses plain radios for identity sources without segmented-button dividers', () => {
+    const pinia = createPinia()
+    const identity = useCapabilityOnlineTestStore(pinia)
+    identity.guide = { userAssertionEnabled: true }
+    const view = shallowMount(CapabilityTestIdentity, {
+      props: {
+        authOptions: [],
+        credentialLabel: 'Secret',
+        credentialPlaceholder: 'Secret',
+        requiresSubjectToken: true,
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          NRadioGroup: { template: '<div class="radio-group"><slot /></div>' },
+          NRadio: { props: ['value'], template: '<label class="plain-radio"><slot /></label>' },
+          NButton: true,
+          NSelect: true,
+          NInput: true,
+        },
+      },
+    })
+    expect(view.findAll('.plain-radio')).toHaveLength(2)
+    expect(view.find('n-radio-button-stub').exists()).toBe(false)
+    view.unmount()
+  })
   it('validates identity before progressing and never calls automatically', async () => {
     await start()
     helper.credential.value = ''

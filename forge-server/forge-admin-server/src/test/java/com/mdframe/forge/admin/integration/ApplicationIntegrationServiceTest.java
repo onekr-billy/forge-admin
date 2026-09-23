@@ -1,5 +1,7 @@
 package com.mdframe.forge.admin.integration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mdframe.forge.admin.integration.dto.ApplicationCapabilityCandidate;
 import com.mdframe.forge.admin.integration.dto.ApplicationIntegrationConfig;
 import com.mdframe.forge.admin.integration.mapper.ApplicationIntegrationMapper;
 import com.mdframe.forge.admin.integration.service.ApplicationIntegrationService;
@@ -40,7 +42,7 @@ class ApplicationIntegrationServiceTest {
     ISocialAppConfigService socialApps = mock(ISocialAppConfigService.class);
     CollaborationProviderRegistry providers = mock(CollaborationProviderRegistry.class);
     ApplicationIntegrationService service = new ApplicationIntegrationService(mapper, applications, runtime,
-            objects, capabilities, channels, connections, socialApps, providers);
+            objects, capabilities, channels, connections, socialApps, providers, new ObjectMapper());
     MockedStatic<SessionHelper> session;
 
     @BeforeEach void setup() {
@@ -51,6 +53,9 @@ class ApplicationIntegrationServiceTest {
         BusinessApplicationVO app = new BusinessApplicationVO();
         app.setId(11L); app.setApplicationCode("legal"); app.setApplicationName("法律协同");
         when(applications.detail(11L)).thenReturn(app);
+        BusinessApplicationRuntimeVO published = new BusinessApplicationRuntimeVO();
+        published.setObjects(List.of());
+        when(runtime.runtimeById(11L)).thenReturn(published);
     }
     @AfterEach void close() { session.close(); }
 
@@ -159,9 +164,90 @@ class ApplicationIntegrationServiceTest {
         when(mapper.member(7L, 11L, 22L)).thenReturn(22L);
         assertDoesNotThrow(() -> service.requirePublish(11L, "used.code"));
     }
+    @Test void syncsOnlyCapabilitiesOwnedByPublishedApplicationSources() {
+        BusinessApplicationRuntimeVO published = new BusinessApplicationRuntimeVO();
+        BusinessApplicationObjectVO object = new BusinessApplicationObjectVO();
+        object.setObjectId(101L); object.setSuiteCode("legal"); object.setObjectCode("contract");
+        published.setObjects(List.of(object));
+        when(runtime.runtimeById(11L)).thenReturn(published);
+        when(mapper.unattachedPublishedCandidates(7L, 11L)).thenReturn(List.of(
+                candidate(21L, "BUSINESS_ACTION", "legal/contract/confirm", "{}"),
+                candidate(22L, "FLOW_ACTION", "legal/contract/APPROVE", "{}"),
+                candidate(23L, "SYSTEM_SERVICE", "lowcode.form.create",
+                        "{\"registrationParameters\":{\"suiteCode\":\"legal\",\"objectCode\":\"contract\"}}"),
+                candidate(24L, "SYSTEM_SERVICE", "lowcode.business-process.start",
+                        "{\"applicationId\":11,\"objectId\":101}"),
+                candidate(25L, "SYSTEM_SERVICE", "system.rest.invoke", "{}"),
+                candidate(26L, "BUSINESS_ACTION", "other/secret/run", "{}"),
+                candidate(27L, "SYSTEM_SERVICE", "lowcode.form.create", "not-json")));
+        when(mapper.attach(anyLong(), eq(7L), eq(11L), anyLong(), eq(8L), eq(9L))).thenReturn(1);
+
+        assertEquals(4, service.syncCapabilities(11L));
+        for (long id : List.of(21L, 22L, 23L, 24L)) {
+            verify(mapper).attach(anyLong(), eq(7L), eq(11L), eq(id), eq(8L), eq(9L));
+        }
+        verify(mapper, never()).attach(anyLong(), eq(7L), eq(11L), eq(25L), anyLong(), anyLong());
+        verify(mapper, never()).attach(anyLong(), eq(7L), eq(11L), eq(26L), anyLong(), anyLong());
+        verify(mapper, never()).attach(anyLong(), eq(7L), eq(11L), eq(27L), anyLong(), anyLong());
+    }
+    @Test void catalogCapabilityCanBeClaimedOnlyWhenItsSourceBelongsToApplication() {
+        BusinessApplicationRuntimeVO published = new BusinessApplicationRuntimeVO();
+        BusinessApplicationObjectVO object = new BusinessApplicationObjectVO();
+        object.setObjectId(101L); object.setSuiteCode("legal"); object.setObjectCode("contract");
+        published.setObjects(List.of(object));
+        when(runtime.runtimeById(11L)).thenReturn(published);
+        AiCapability capability = new AiCapability(); capability.setId(22L);
+        when(capabilities.selectByCode(7L, "app_11.business.legal.contract.confirm")).thenReturn(capability);
+        when(mapper.unattachedPublishedCandidates(7L, 11L)).thenReturn(List.of(
+                candidate(22L, "BUSINESS_ACTION", "legal/contract/confirm", "{}")));
+        when(mapper.attach(anyLong(), eq(7L), eq(11L), eq(22L), eq(8L), eq(9L))).thenReturn(1);
+        when(mapper.member(7L, 11L, 22L)).thenReturn(22L);
+
+        assertDoesNotThrow(() -> service.requirePublish(11L, "app_11.business.legal.contract.confirm"));
+        verify(mapper).attach(anyLong(), eq(7L), eq(11L), eq(22L), eq(8L), eq(9L));
+    }
+    @Test void syncClaimsOnlyOneCapabilityWhenCatalogAlreadyContainsDuplicateSources() {
+        BusinessApplicationRuntimeVO published = new BusinessApplicationRuntimeVO();
+        BusinessApplicationObjectVO object = new BusinessApplicationObjectVO();
+        object.setObjectId(101L); object.setSuiteCode("legal"); object.setObjectCode("contract");
+        published.setObjects(List.of(object));
+        when(runtime.runtimeById(11L)).thenReturn(published);
+        when(mapper.unattachedPublishedCandidates(7L, 11L)).thenReturn(List.of(
+                candidate(21L, "BUSINESS_ACTION", "legal/contract/confirm", "{}"),
+                candidate(22L, "BUSINESS_ACTION", "legal/contract/confirm", "{}")));
+        when(mapper.attach(anyLong(), eq(7L), eq(11L), eq(21L), eq(8L), eq(9L))).thenReturn(1);
+
+        assertEquals(1, service.syncCapabilities(11L));
+        verify(mapper).attach(anyLong(), eq(7L), eq(11L), eq(21L), eq(8L), eq(9L));
+        verify(mapper, never()).attach(anyLong(), eq(7L), eq(11L), eq(22L), anyLong(), anyLong());
+    }
+    @Test void rejectsRegisteringTheSameApplicationSourceWithAnotherCode() throws Exception {
+        ApplicationCapabilityCandidate existing = candidate(22L, "SYSTEM_SERVICE", "lowcode.form.create",
+                "{\"registrationParameters\":{\"suiteCode\":\"legal\",\"objectCode\":\"contract\"}}");
+        existing.setCapabilityCode("existing.form.create");
+        when(mapper.applicationSourceCapabilities(7L, 11L, "SYSTEM_SERVICE", "lowcode.form.create"))
+                .thenReturn(List.of(existing));
+        ObjectMapper json = new ObjectMapper();
+
+        assertThrows(BusinessException.class, () -> service.requireUniqueSource(
+                11L, "new.form.create", "SYSTEM_SERVICE", "lowcode.form.create",
+                json.readTree("{\"suiteCode\":\"legal\",\"objectCode\":\"contract\"}")));
+        assertDoesNotThrow(() -> service.requireUniqueSource(
+                11L, "existing.form.create", "SYSTEM_SERVICE", "lowcode.form.create",
+                json.readTree("{\"suiteCode\":\"legal\",\"objectCode\":\"contract\"}")));
+    }
     @Test void emptyOrForeignCapabilityNeverBecomesUnfilteredQuery() {
         assertThrows(BusinessException.class, () -> service.requireCapability(11L, null));
         assertThrows(BusinessException.class, () -> service.requireCapability(11L, 99L));
         verifyNoInteractions(capabilities);
+    }
+
+    private ApplicationCapabilityCandidate candidate(Long id, String sourceType, String sourceKey, String policy) {
+        ApplicationCapabilityCandidate candidate = new ApplicationCapabilityCandidate();
+        candidate.setCapabilityId(id);
+        candidate.setSourceType(sourceType);
+        candidate.setSourceKey(sourceKey);
+        candidate.setPolicySnapshot(policy);
+        return candidate;
     }
 }

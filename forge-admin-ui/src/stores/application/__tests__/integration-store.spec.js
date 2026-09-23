@@ -10,6 +10,7 @@ vi.mock('@/api/application-integration', () => ({
   getApplicationConnections: vi.fn(),
   saveApplicationCollaboration: vi.fn(),
   getApplicationCapabilities: vi.fn(),
+  syncApplicationCapabilities: vi.fn(),
   getApplicationClients: vi.fn(),
   getApplicationGrants: vi.fn(),
   grantApplicationCapability: vi.fn(),
@@ -27,6 +28,7 @@ function deferred() {
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.resetAllMocks()
+  api.syncApplicationCapabilities.mockResolvedValue({ data: 0 })
   user.isAdmin = true
   user.permissions = []
 })
@@ -46,7 +48,20 @@ describe('application integration scope', () => {
     store.reset(app)
     store.page = 3
     await store.loadCapabilities()
+    expect(api.syncApplicationCapabilities).toHaveBeenCalledTimes(1)
     expect(api.getApplicationCapabilities).toHaveBeenCalledWith(app.id, { pageNum: 3, pageSize: 12, keyword: '' })
+  })
+  it('reconciles catalog capabilities once and supports an explicit refresh', async () => {
+    api.getApplicationCapabilities.mockResolvedValue({ data: { records: [], total: 0 } })
+    const store = useApplicationIntegrationStore()
+    store.reset(app)
+
+    await store.loadCapabilities()
+    await store.loadCapabilities()
+    expect(api.syncApplicationCapabilities).toHaveBeenCalledTimes(1)
+
+    await store.loadCapabilities(true)
+    expect(api.syncApplicationCapabilities).toHaveBeenCalledTimes(2)
   })
   it('does not load privileged surfaces without matching platform permissions', async () => {
     user.isAdmin = false

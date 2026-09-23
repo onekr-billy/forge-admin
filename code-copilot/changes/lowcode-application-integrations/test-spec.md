@@ -6,6 +6,29 @@
 - P1：应用/页面 → 业务流程自动或显式选择，不调用旧 getFlowActionRegistrationSource；局部加载、异常重试、换页面/关闭丢弃旧请求，升级固定来源。
 - 复用现有定向 POM/Vitest，补充编排器版本边界测试，JDK17 Admin 聚合构建、定向 ESLint、Vite 构建及真实组件模拟 API 浏览器验证。用户负责真实 Admin/Flow/MySQL/审批 E2E。
 
+### 风险等级发布契约回归（2026-09-22）
+- P0：应用业务流程注册来源必须输出 `SYSTEM_SERVICE / ACTION / MEDIUM` 对应的 `MEDIUM` 风险等级，经 `SystemServiceCapabilityPublisher` 组装后可通过目录层受控系统服务元数据校验。
+- P0：不放宽 `CapabilityCatalogService.publishSystemService` 和客户端授权对高风险能力的限制；应用、流程、记录、用户与权限固定校验保持不变。
+- 先运行应用流程服务定向测试复现 `HIGH` 断言失败，再修复并复跑开放平台 verification；共享后端代码改动后执行 Admin 聚合构建和 `git diff --check`。本轮无前端、数据库或 Flyway 变更，不重复前端构建及真实流程 E2E。
+
+### 本轮结果（2026-09-22 19:26）
+- 修复前应用流程定向测试 17 项中新增契约断言 1 项失败，明确得到 `expected MEDIUM but was HIGH`；不是应用或流程未发布问题。
+- 修复后 Admin 46 模块聚合安装 `BUILD SUCCESS`（24.786s）；补齐最终发布器断言后开放平台 verification 86/86 通过（5.873s），其中应用流程服务 17/17、系统服务发布器 4/4 通过。
+- 未修改目录层高风险发布/授权边界，未修改数据库、Flyway、前端或既有能力版本；未启动 Admin/Flow，也未执行真实网关和审批 E2E。
+
+## 注册、归属与授权闭环增量
+- P0：应用内进入表单填报时不调用全量业务对象/全量表单来源；页面选择完成后只携带字符串 `applicationId/objectId` 请求 `lowcode.form.create`，后端只解析该对象，不能调用 `BusinessObjectService.list`。
+- P0：新建注册不出现 `FLOW_ACTION/旧版对象审批`；应用业务流程仍输出 `MEDIUM` 并可通过受控目录校验，存量 FLOW_ACTION 升级恢复不受影响。
+- P0：目录入口选择应用页面发布时走应用 publish 路由；应用同步只关联当前发布快照中的对象来源和固定 applicationId 流程，跨应用、任意 REST、坏 JSON、未发布版本不关联。重复同步/重复 attach 幂等。
+- P0：SYSTEM_SERVICE 授权接受缺失、JSON null、空对象并落 NULL；非空字段/操作策略、数组及标量仍拒绝。覆盖全局授权与应用内授权请求。
+- P1：身份来源改用普通单选，仍能切换 USER_ASSERTION/OIDC；加载、切换、关闭的竞态测试继续通过。执行定向 Vitest/ESLint/Vite build、开放平台与应用集成 verification、Admin 聚合构建、`git diff --check`；不执行真实数据库、网关或审批 E2E。
+
+### 2026-09-22 注册、归属与授权闭环结果
+- 前端受影响的 3 个测试文件 41/41 通过；定向 ESLint 0 errors / 0 warnings；Vite 生产构建通过（26.79s），保留既有工具链提示。
+- 开放平台 verification 96/96 通过，覆盖应用流程 `ACTION / MEDIUM` 发布契约、单对象表单来源和系统服务授权的 null/空对象策略；应用集成 verification 47/47 通过，覆盖已有目录能力认领、存量同源候选只认领一次、跨应用/坏策略/REST 排除及同来源重复注册拒绝。
+- JDK 17 Admin reactor 46 模块 `BUILD SUCCESS`（20.795s）；Mapper XML 解析和 `git diff --check` 通过。
+- 未启动 Admin/Flow、未连接 MySQL 或开放网关；同步和幂等行为以 Mapper/服务测试验证，不替代真实事务、网关鉴权与审批 E2E。
+
 ### 2026-09-22 最终结果
 - 前端 13 文件、115/115 通过（18:07:09，2.82s）；7 个修改/新增 JS/Vue 文件 ESLint 通过，无 errors/warnings。
 - 开放平台 verification：86/86 通过（18:03:33，5.333s），含新应用流程服务 17 项及真实编排器 11 项；应用集成 verification：43/43 通过（18:03:28，4.038s），含应用内跨应用发布参数拦截。均无 failures/errors/skipped。
