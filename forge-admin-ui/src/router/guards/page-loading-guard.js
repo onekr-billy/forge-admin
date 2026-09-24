@@ -5,6 +5,18 @@ function isAppPortalRoute(route) {
   return route?.meta?.layout === 'app-portal'
 }
 
+function isApplicationRuntimeRoute(route) {
+  if (route?.name === 'BusinessApplicationRuntime')
+    return true
+  const path = String(route?.path || '')
+  return /^\/app-center\/application\/[^/]+\/runtime(?:\/|$)/.test(path)
+}
+
+function shouldSkipRouteChrome(route) {
+  // 这些页自己画骨架，全局进度条/蒙层只会叠出「白屏感」
+  return isAppPortalRoute(route) || isApplicationRuntimeRoute(route)
+}
+
 export function createPageLoadingGuard(router) {
   let routeLoadingToken = null
 
@@ -37,7 +49,7 @@ export function createPageLoadingGuard(router) {
   }
 
   router.beforeEach((to) => {
-    if (isAppPortalRoute(to)) {
+    if (shouldSkipRouteChrome(to)) {
       finishRouteChrome()
       return
     }
@@ -46,7 +58,7 @@ export function createPageLoadingGuard(router) {
   })
 
   router.afterEach((to) => {
-    if (isAppPortalRoute(to)) {
+    if (shouldSkipRouteChrome(to)) {
       finishRouteChrome()
       return
     }

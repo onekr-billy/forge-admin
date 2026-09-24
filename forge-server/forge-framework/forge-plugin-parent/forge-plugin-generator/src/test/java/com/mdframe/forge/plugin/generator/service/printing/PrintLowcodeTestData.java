@@ -58,6 +58,26 @@ final class PrintLowcodeTestData {
                 + "\"encryptConfig\":null,\"desensitizeConfig\":{\"phone\":{\"type\":\"PHONE\"}}}");
         return v;
     }
+
+    static AiCrudConfig draftConfig(long id, String key, boolean children) {
+        var version = version(id * 10L, id, key, children);
+        var config = new AiCrudConfig();
+        config.setId(id);
+        config.setTenantId(1L);
+        config.setConfigKey(key);
+        config.setObjectCode(key);
+        config.setBuildMode("LOWCODE");
+        config.setMode("CONFIG");
+        config.setTableName("test_" + key);
+        config.setLayoutType("crud");
+        config.setModelSchema(version.getModelSchema());
+        config.setPageSchema(version.getPageSchema());
+        config.setPrimaryKeyField("id");
+        config.setPrimaryKeyColumn("id");
+        config.setPrimaryKeyType("LONG");
+        config.setDesensitizeConfig("{\"phone\":{\"type\":\"PHONE\"}}");
+        return config;
+    }
     static AiBusinessObjectDesignVersion design(long id, long objectId, long configId, long crudId, String key) {
         var d = new AiBusinessObjectDesignVersion();
         d.setId(id); d.setTenantId(1L); d.setObjectId(objectId); d.setConfigId(configId);

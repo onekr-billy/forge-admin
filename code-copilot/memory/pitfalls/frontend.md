@@ -599,6 +599,16 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 **解决方案**:
 `/app/`（不含 `/app-center`）不要阻塞等后台菜单；`app-portal` 跳过全局进度条和全屏 overlay；layout 同步加载；门户和 CRUD 用同一套骨架，不要连续两个 `n-spin`。
 
+## 应用运行页首屏白屏再出骨架：缺 Suspense + empty layout 异步
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+打开 `/app-center/application/:code/runtime` 先白屏约数秒，再出现运行页骨架，再拉业务数据。`application-runtime` 是 7000+ 行懒加载路由，开发态 Vite 首次编译很慢；`layout: empty` 也曾异步加载，且 App.vue 只给 `app-portal` 包了 Suspense fallback；组件内 `loading` 初始还是 `false`，chunk 到了也要等 `load()` 才画骨架。
+
+**解决方案**:
+运行页用 `Suspense` + `ApplicationRuntimeSkeleton`；`empty` layout 同步引入；`loading` 默认 `true`；跳过该路由的全局 loadingBar/蒙层；应用中心空闲预拉 runtime chunk；`load()` 期间并行预拉 `GridBlockRenderer`。
+
 ## 有编辑权限时页面管理左侧菜单要读草稿不能只读发布快照
 
 **发现日期**: 2026-09-22

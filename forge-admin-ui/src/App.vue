@@ -17,12 +17,13 @@
         </div>
         <router-view v-else v-slot="{ Component, route: curRoute }">
           <component :is="LayoutComponent" :key="curRoute.meta?.layout || appStore.layout">
-            <Suspense v-if="curRoute.meta?.layout === 'app-portal'">
+            <Suspense v-if="useRouteSuspense(curRoute)">
               <template #default>
                 <component :is="Component" v-if="!tabStore.reloading" :key="resolveRouteViewKey(curRoute)" />
               </template>
               <template #fallback>
-                <ApplicationPortalSkeleton />
+                <ApplicationRuntimeSkeleton v-if="isApplicationRuntimeRoute(curRoute)" />
+                <ApplicationPortalSkeleton v-else />
               </template>
             </Suspense>
             <SystemPageLayout v-else-if="isSystemRoute">
@@ -49,7 +50,7 @@
 
 <script setup>
 import { darkTheme, dateZhCN, zhCN } from 'naive-ui'
-import { computed, defineAsyncComponent, markRaw, onMounted, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, markRaw, onMounted, shallowRef, watch, watchEffect } from 'vue'
 // 初始化响应式字体功能
 import { useRoute } from 'vue-router'
 import { LayoutSetting } from '@/components'
@@ -61,7 +62,9 @@ import { isApplicationPortalPath } from '@/router/guards/permission-guard'
 import { useAppStore, usePermissionStore, useTabStore, useUserStore } from '@/store'
 import { initResponsiveFont } from '@/utils/responsive-font'
 import ApplicationPortalSkeleton from '@/views/app-center/components/portal/ApplicationPortalSkeleton.vue'
+import ApplicationRuntimeSkeleton from '@/views/app-center/components/portal/ApplicationRuntimeSkeleton.vue'
 import AppPortalLayout from './layouts/app-portal/index.vue'
+import EmptyLayout from './layouts/empty/index.vue'
 import { defaultLayout, layoutSettingVisible, normalizeLayout } from './settings'
 
 // 使用 shallowRef 确保 Layout 引用稳定
@@ -72,6 +75,17 @@ const layoutModules = import.meta.glob('./layouts/*/index.vue')
 
 function resolveRouteViewKey(curRoute) {
   return curRoute.meta?.preserveOnQuery ? curRoute.path : curRoute.fullPath
+}
+
+function isApplicationRuntimeRoute(curRoute) {
+  if (curRoute?.name === 'BusinessApplicationRuntime')
+    return true
+  const path = String(curRoute?.path || '')
+  return /^\/app-center\/application\/[^/]+\/runtime(?:\/|$)/.test(path)
+}
+
+function useRouteSuspense(curRoute) {
+  return curRoute?.meta?.layout === 'app-portal' || isApplicationRuntimeRoute(curRoute)
 }
 
 function normalizeLayoutName(name) {
@@ -85,9 +99,12 @@ function getLayout(name) {
   if (layouts.has(layoutName)) {
     return layouts.get(layoutName)
   }
+  // app-portal / empty 同步加载：避免再套一层异步 layout 白屏
   const layout = layoutName === 'app-portal'
     ? markRaw(AppPortalLayout)
-    : markRaw(defineAsyncComponent(layoutModules[`./layouts/${layoutName}/index.vue`]))
+    : layoutName === 'empty'
+      ? markRaw(EmptyLayout)
+      : markRaw(defineAsyncComponent(layoutModules[`./layouts/${layoutName}/index.vue`]))
   layouts.set(layoutName, layout)
   return layout
 }
@@ -114,8 +131,8 @@ watch(() => route.meta?.layout || appStore.layout, (layoutName) => {
 // 1. 用户已登录但路由守卫未完成
 // 2. 菜单数据未加载完成
 const showLoading = computed(() => {
-  // 发布运行页自己画骨架，不要先盖一层“正在加载...”再白屏。
-  if (isApplicationPortalPath(route.path)) {
+  // 发布运行页 / 页面管理自己画骨架，不要先盖一层“正在加载...”再白屏。
+  if (isApplicationPortalPath(route.path) || isApplicationRuntimeRoute(route)) {
     return false
   }
 

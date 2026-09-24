@@ -96,27 +96,48 @@
   font-weight: 500;
   white-space: nowrap;
 }
+/* 底边进度条：悬停时从左到右 0→100%，走完再展开下拉（与 WorkbenchHeader INTENT_MS 对齐） */
 .business-mega-triggers > button::after {
   content: '';
   position: absolute;
   bottom: 0;
-  left: 50%;
-  width: 24px;
+  left: 14px;
+  right: 14px;
   height: 2px;
   background: var(--workbench-primary);
-  opacity: 0;
-  transform: translateX(-50%) scaleX(0.35);
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.14s ease;
+  pointer-events: none;
 }
 .business-mega-triggers > button.active,
+.business-mega-triggers > button.is-intent,
+.business-mega-triggers > button.is-open,
 .business-mega-triggers > button:hover {
   color: var(--workbench-primary);
 }
-.business-mega-triggers > button.active::after {
-  opacity: 1;
-  transform: translateX(-50%) scaleX(1);
+.business-mega-triggers > button.is-intent::after {
+  transition: none;
+  animation: workbench-mega-intent var(--workbench-mega-intent-ms, 320ms) linear forwards;
+}
+.business-mega-triggers > button.active:not(.is-intent)::after,
+.business-mega-triggers > button.is-open::after {
+  animation: none;
+  transform: scaleX(1);
+}
+@keyframes workbench-mega-intent {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .business-mega-triggers > button.is-intent::after {
+    animation: none;
+    transform: scaleX(1);
+  }
 }
 .menu-scroll {
   display: grid;

@@ -298,6 +298,7 @@ import {
   updateBusinessApplicationStatus,
 } from '@/api/business-application'
 import IconRenderer from '@/components/IconRenderer.vue'
+import { prefetchApplicationRuntimeChunk } from './application-runtime-load'
 import AppCreateWizard from './components/AppCreateWizard.vue'
 import ApplicationFilterBar from './components/ApplicationFilterBar.vue'
 import ApplicationTable from './components/ApplicationTable.vue'
@@ -475,6 +476,13 @@ watch(() => route.query, async (query) => {
 
 onMounted(async () => {
   await Promise.all([loadSuites(), loadApplications()])
+  // 空闲时预拉运行页 chunk，首次点进应用不再干等 Vite 编译大包
+  const schedule = typeof window.requestIdleCallback === 'function'
+    ? cb => window.requestIdleCallback(cb, { timeout: 2000 })
+    : cb => window.setTimeout(cb, 400)
+  schedule(() => {
+    void prefetchApplicationRuntimeChunk()
+  })
   document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('storage', handleApplicationPublished)
   window.addEventListener('forge:application-published', handleApplicationPublished)
@@ -632,6 +640,7 @@ function openApplication(application, newTab = true, initializeMode = null) {
   if (!application?.applicationCode)
     return
   rememberApplication(application.id)
+  void prefetchApplicationRuntimeChunk()
   const location = {
     name: 'BusinessApplicationRuntime',
     params: { applicationCode: application.applicationCode },

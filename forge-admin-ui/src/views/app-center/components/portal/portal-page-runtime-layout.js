@@ -93,6 +93,7 @@ export function isUntouchedDecorativePlaceholder(block = {}) {
  * - 优先 gridLayout.items；否则回退旧 layout.items
  * - 对象页若只有装饰块或没有数据块，补一个 AiCrudPage
  * - 对象页过滤未改过的提示面板 / 空状态占位，避免盖住列表
+ * - 页面标题（page-title）是用户可设计的组件，预览/运行必须保留；工作台标题在外层 chrome，仅工作台页去掉画布内标题防重复
  */
 export function resolvePortalPageBlocks({
   page,
@@ -106,7 +107,12 @@ export function resolvePortalPageBlocks({
     ? layout.items.map((item, index) => normalizeLegacyBlock(item, index))
     : (Array.isArray(layout.items) ? layout.items : [])
   const rawItems = (gridItems && gridItems.length > 0) ? gridItems : legacyItems
-  let items = (Array.isArray(rawItems) ? rawItems : []).filter(item => item?.blockType !== 'page-title')
+  let items = Array.isArray(rawItems) ? [...rawItems] : []
+
+  // 个人工作台：标题已在外层 summary-head，不重复渲染历史画布 page-title
+  const pageId = String(node?.id || page?.id || '').trim()
+  if (pageId === 'system:workbench')
+    items = items.filter(item => item?.blockType !== 'page-title')
 
   const objectRef = typeof resolveObjectRef === 'function' ? resolveObjectRef(node || {}) : null
   const isObjectPage = node?.pageType === 'object' && Boolean(objectRef)

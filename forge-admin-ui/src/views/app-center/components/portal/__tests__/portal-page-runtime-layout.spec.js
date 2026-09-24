@@ -167,4 +167,48 @@ describe('portal-page-runtime-layout', () => {
     expect(blocks).toHaveLength(1)
     expect(blocks[0].blockType).toBe('info-panel')
   })
+
+  it('keeps designed page-title blocks on business pages during preview/runtime', () => {
+    const blocks = resolvePortalPageBlocks({
+      node: { id: 'page_custom', pageType: 'content' },
+      page: {
+        layout: {
+          gridLayout: {
+            items: [
+              {
+                id: 'title_1',
+                blockType: 'page-title',
+                props: { title: '报名须知', content: '<h1>报名须知</h1>' },
+              },
+              {
+                id: 'tip_1',
+                blockType: 'info-panel',
+                props: { title: '说明', content: '请认真填写' },
+              },
+            ],
+          },
+        },
+      },
+      resolveObjectRef: () => null,
+    })
+    expect(blocks.map(item => item.blockType)).toEqual(['page-title', 'info-panel'])
+  })
+
+  it('strips canvas page-title only on the workbench page', () => {
+    const blocks = resolvePortalPageBlocks({
+      node: { id: 'system:workbench', pageType: 'content' },
+      page: {
+        layout: {
+          gridLayout: {
+            items: [
+              { id: 'title_1', blockType: 'page-title', props: { title: '工作台' } },
+              { id: 'm1', blockType: 'workspace-summary-metrics' },
+            ],
+          },
+        },
+      },
+      resolveObjectRef: () => null,
+    })
+    expect(blocks.map(item => item.blockType)).toEqual(['workspace-summary-metrics'])
+  })
 })

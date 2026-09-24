@@ -1,29 +1,7 @@
 <template>
   <div class="application-runtime-page" :class="{ 'is-loading': loading, 'is-ready': !loading && application }">
-    <!-- 骨架屏加载态 -->
-    <div v-if="loading" class="runtime-skeleton">
-      <div class="runtime-skeleton__header">
-        <n-skeleton width="32px" height="32px" :sharp="false" />
-        <n-skeleton width="120px" height="16px" :sharp="false" />
-        <n-skeleton width="200px" height="14px" :sharp="false" />
-      </div>
-      <div class="runtime-skeleton__tabs">
-        <n-skeleton v-for="i in 4" :key="i" width="72px" height="28px" :sharp="false" />
-      </div>
-      <div class="runtime-skeleton__body">
-        <div class="runtime-skeleton__sidebar">
-          <n-skeleton v-for="i in 6" :key="i" width="100%" height="20px" :sharp="false" style="margin-bottom: 12px" />
-        </div>
-        <div class="runtime-skeleton__content">
-          <n-skeleton width="60%" height="24px" :sharp="false" />
-          <n-skeleton width="100%" height="14px" :sharp="false" style="margin-top: 16px" />
-          <n-skeleton width="100%" height="14px" :sharp="false" style="margin-top: 8px" />
-          <n-skeleton width="80%" height="14px" :sharp="false" style="margin-top: 8px" />
-          <n-skeleton width="100%" height="120px" :sharp="false" style="margin-top: 24px" />
-          <n-skeleton width="100%" height="120px" :sharp="false" style="margin-top: 12px" />
-        </div>
-      </div>
-    </div>
+    <!-- 骨架屏加载态（与路由 Suspense fallback 同款，避免 chunk 加载完又闪一下） -->
+    <ApplicationRuntimeSkeleton v-if="loading" />
     <template v-else-if="application">
       <header v-if="!formDesignerMode" class="runtime-header">
         <div class="runtime-brand">
@@ -1332,6 +1310,7 @@ import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/pa
 import { useTenantStore, useUserStore } from '@/store'
 import ApplicationDesignerResourceTree from '@/views/app-center/components/ApplicationDesignerResourceTree.vue'
 import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
+import ApplicationRuntimeSkeleton from '@/views/app-center/components/portal/ApplicationRuntimeSkeleton.vue'
 import { buildAutoFieldAssets, createFieldFromComponent } from '@/views/app-center/components/designer/form-first/autoFieldRegistry'
 import { createDefaultFormDesignerSchema, isFieldComponent, normalizeFormDesignerSchema, presentFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 import { filterNavigationNodesByClient } from '@/views/app-center/components/portal/portal-navigation-runtime'
@@ -1532,7 +1511,8 @@ const PageManagementSystemView = defineAsyncComponent({
   loader: () => import('@/views/app-center/components/portal/PageManagementSystemView.vue'),
 })
 const GridBlockRenderer = defineAsyncComponent({
-  ...asyncPanelLoader,
+  delay: 0,
+  loadingComponent: DesignerAsyncLoader,
   loader: () => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'),
 })
 
@@ -1542,7 +1522,8 @@ const builder = ref(null)
 // 左侧页面删掉后，只由该页面创建的业务对象不能再出现在流程选择里。
 const processSelectableObjects = computed(() => (objects.value || []).filter(item => !isOrphanPageFormObject(item, builder.value)))
 const loadError = ref('')
-const loading = ref(false)
+// 组件一挂载就显示骨架，避免「白屏 → 再出骨架」；load() finally 会关掉
+const loading = ref(true)
 const saving = ref(false)
 const restoringObjectPageLayout = ref(false)
 const editing = ref(route.query.edit === '1')
@@ -2321,6 +2302,8 @@ async function load() {
   loadError.value = ''
   historyReady.value = false
   resetRuntimeCrudConfig()
+  // 与 workspace API 并行预拉页面渲染器，缩短骨架结束后的二次白屏
+  void import('@/components/lowcode-builder/page/GridBlockRenderer.vue').catch(() => {})
   try {
     const response = shouldUseApplicationWorkspaceLoad(route, canEditApplication.value)
       ? await businessApplicationWorkspaceByCode(code)

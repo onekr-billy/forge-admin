@@ -3,11 +3,19 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createApplicationRuntimeLoadCoordinator,
+  prefetchApplicationRuntimeChunk,
   resolveApplicationRuntimeLoadKey,
   shouldUseApplicationWorkspaceLoad,
 } from '../application-runtime-load'
 
 describe('application runtime route loading', () => {
+  it('exposes a stable runtime chunk prefetch helper', async () => {
+    expect(typeof prefetchApplicationRuntimeChunk).toBe('function')
+    const first = prefetchApplicationRuntimeChunk()
+    const second = prefetchApplicationRuntimeChunk()
+    expect(first).toBe(second)
+    await first
+  })
   it('coalesces repeated notifications for the same route state', async () => {
     let release
     const load = vi.fn(() => new Promise((resolve) => {

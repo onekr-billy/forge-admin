@@ -235,8 +235,9 @@
 - 167. DAG 分支路由必须同时处理跨层穿卡和三种顺序一致性
 - 183. 捕获参与当前事务的下游异常不能清除 rollback-only
 
-### [后端框架 / Spring / Maven](pitfalls/backend.md)（36）
+### [后端框架 / Spring / Maven](pitfalls/backend.md)（37）
 
+- 打印关系外键 businessObject0eq3Id 对不上是设计器列名+model_schema 漏字段
 - 冷缓存 Maven 并行构建出现依赖锁获取失败
 
 - 插件模块改动后从 admin-server 直接 spring-boot:run 会跑旧代码

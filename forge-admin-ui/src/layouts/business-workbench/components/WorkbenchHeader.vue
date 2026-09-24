@@ -1,5 +1,12 @@
 <template>
-  <header ref="header" class="business-workbench-header" @keydown.esc="closeAndFocus">
+  <header
+    ref="header"
+    class="business-workbench-header"
+    :style="{ '--workbench-mega-intent-ms': `${INTENT_MS}ms` }"
+    @keydown.esc="closeAndFocus"
+    @mouseenter="cancelClose"
+    @mouseleave="onHeaderLeave"
+  >
     <div class="workbench-brand">
       <TheLogo />
       <TheTitle />
@@ -11,11 +18,19 @@
       <div ref="track" class="business-mega-triggers" @keydown.right.prevent="moveFocus($event, 1)" @keydown.left.prevent="moveFocus($event, -1)">
         <button
           v-for="item in menus" :key="item.key" type="button" :data-menu-key="item.key"
-          :class="{ active: store.activeMenu ? store.activeMenu === item.key : activeRootKey === item.key }"
+          :class="{
+            active: store.activeMenu ? store.activeMenu === item.key : activeRootKey === item.key,
+            'is-open': store.activeMenu === item.key,
+            'is-intent': intentMenuKey === item.key,
+          }"
           :aria-expanded="item.children.length ? store.activeMenu === item.key : undefined"
           :aria-controls="item.children.length ? 'business-mega-panel' : undefined"
           :aria-current="activeRootKey === item.key ? 'true' : undefined"
-          @click="activateMenuFromHeader(item)" @mouseenter="hoverMenu(item)" @keydown.down.prevent="openAndFocus(item)"
+          @click="activateMenuFromHeader(item)"
+          @mouseenter="hoverMenu(item)"
+          @mouseleave="leaveMenu(item)"
+          @animationend="onIntentAnimationEnd($event, item)"
+          @keydown.down.prevent="openAndFocus(item)"
         >
           {{ item.label }}
         </button>
@@ -51,15 +66,28 @@ import { useBusinessWorkbenchStore } from '@/stores/layout/businessWorkbenchStor
 import { useWorkbenchNavigation } from '../useWorkbenchNavigation'
 import WorkbenchMegaPanel from './WorkbenchMegaPanel.vue'
 
+/** 下划线从 0→100% 的时长，走完再展开面板（与 CSS animation 对齐） */
+const INTENT_MS = 320
+/** 面板已开时，一级菜单间切换保持跟手 */
+const SWITCH_DELAY_MS = 50
+/** 离开顶栏（含下拉面板）后稍后再关 */
+const CLOSE_DELAY_MS = 220
+
 const store = useBusinessWorkbenchStore()
 const permissionStore = usePermissionStore()
 const { menus, activeRootKey, activateMenu } = useWorkbenchNavigation()
 const header = ref(null)
 const track = ref(null)
 const overflowing = ref(false)
-let hoverTimer
+const intentMenuKey = ref(null)
+let switchTimer
+let closeTimer
 const { arrivedState, measure } = useScroll(track)
-onClickOutside(header, () => store.closeMenus())
+onClickOutside(header, () => {
+  clearAllTimers()
+  intentMenuKey.value = null
+  store.closeMenus()
+})
 
 function measureTrack() {
   overflowing.value = Boolean(track.value && track.value.scrollWidth > track.value.clientWidth + 2)
@@ -72,39 +100,133 @@ watch(activeRootKey, () => nextTick(() => {
   button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }))
 
-function scrollMenus(direction) {
-  track.value?.scrollBy({ left: direction * track.value.clientWidth * 0.7, behavior: 'smooth' })
+function clearAllTimers() {
+  window.clearTimeout(switchTimer)
+  window.clearTimeout(closeTimer)
 }
+
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function clearIntent() {
+  intentMenuKey.value = null
+}
+
+function openMenu(item) {
+  clearIntent()
+  window.clearTimeout(switchTimer)
+  store.activeMenu = item.children.length ? item.key : null
+}
+
 function hoverMenu(item) {
   if (!window.matchMedia('(hover: hover)').matches)
     return
-  window.clearTimeout(hoverTimer)
-  hoverTimer = window.setTimeout(() => {
-    store.activeMenu = item.children.length ? item.key : null
-  }, 70)
+  window.clearTimeout(closeTimer)
+  window.clearTimeout(switchTimer)
+
+  if (!item.children.length) {
+    clearIntent()
+    if (store.activeMenu) {
+      switchTimer = window.setTimeout(() => {
+        store.activeMenu = null
+      }, SWITCH_DELAY_MS)
+    }
+    return
+  }
+
+  if (store.activeMenu === item.key) {
+    clearIntent()
+    return
+  }
+
+  // 面板已展开：快速切换，不再走完整进度条
+  if (store.activeMenu) {
+    clearIntent()
+    switchTimer = window.setTimeout(() => {
+      store.activeMenu = item.key
+    }, SWITCH_DELAY_MS)
+    return
+  }
+
+  // 面板未开：下划线进度走完再开；弱动画偏好则立刻开
+  if (prefersReducedMotion()) {
+    openMenu(item)
+    return
+  }
+  intentMenuKey.value = item.key
 }
+
+function leaveMenu(item) {
+  window.clearTimeout(switchTimer)
+  if (intentMenuKey.value === item.key)
+    clearIntent()
+}
+
+function onIntentAnimationEnd(event, item) {
+  if (event.pseudoElement !== '::after')
+    return
+  if (intentMenuKey.value !== item.key)
+    return
+  if (!item.children.length)
+    return
+  openMenu(item)
+}
+
+function scheduleClose() {
+  window.clearTimeout(switchTimer)
+  clearIntent()
+  if (!store.activeMenu)
+    return
+  window.clearTimeout(closeTimer)
+  closeTimer = window.setTimeout(() => store.closeMenus(), CLOSE_DELAY_MS)
+}
+
+function cancelClose() {
+  window.clearTimeout(closeTimer)
+}
+
+function onHeaderLeave() {
+  scheduleClose()
+}
+
 function activateMenuFromHeader(item) {
-  window.clearTimeout(hoverTimer)
+  clearAllTimers()
+  clearIntent()
   activateMenu(item)
 }
+
 async function openAndFocus(item) {
   if (!item.children.length)
     return
-  store.activeMenu = item.key
+  clearAllTimers()
+  openMenu(item)
   await nextTick()
   header.value?.querySelector('.mega-menu-search input')?.focus()
 }
+
 function closeAndFocus() {
   const key = store.activeMenu
+  clearAllTimers()
+  clearIntent()
   store.closeMenus()
   const button = [...(track.value?.querySelectorAll('button') || [])].find(node => node.dataset.menuKey === key)
   button?.focus()
 }
+
 function moveFocus(event, direction) {
   const buttons = [...(track.value?.querySelectorAll('button') || [])]
   const index = buttons.indexOf(event.target)
   if (index >= 0)
     buttons[(index + direction + buttons.length) % buttons.length]?.focus()
 }
-onBeforeUnmount(() => window.clearTimeout(hoverTimer))
+
+function scrollMenus(direction) {
+  track.value?.scrollBy({ left: direction * track.value.clientWidth * 0.7, behavior: 'smooth' })
+}
+
+onBeforeUnmount(() => {
+  clearAllTimers()
+  clearIntent()
+})
 </script>

@@ -75,7 +75,10 @@ import { normalizePagePadding, resolvePagePaddingCss, resolvePageBlockShellStyle
 import PortalEmptyState from './PortalEmptyState.vue'
 import { isDataFieldBlockType } from '@/components/lowcode-builder/page/page-schema'
 
-const GridBlockRenderer = defineAsyncComponent(() => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'))
+const GridBlockRenderer = defineAsyncComponent({
+  delay: 0,
+  loader: () => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'),
+})
 
 const props = defineProps({
   node: { type: Object, default: null },

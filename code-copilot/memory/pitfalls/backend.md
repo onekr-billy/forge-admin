@@ -2,6 +2,21 @@
 
 > 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 34 条。
 
+## 打印关系外键 businessObject0eq3Id 对不上是设计器列名+model_schema 漏字段
+
+**发现日期**：2026-09-24
+
+**问题描述**:
+设计态打开打印绑定（`/print/bindings`，objectCode 如 `business_object_0eq3`）报 `打印来源缺少完整的固定版本或关系配置：relation.businessObject0eq3Id`。`0eq3` 是对象编码片段，不是 HTML 转义。根因两层：1）`BusinessObjectDesignerService.camelToSnakeCase` 不做字母→数字拆分，子表自动外键列名为 `business_object0eq3_id`；2）关系/pageSchema 已声明 `sourceField=businessObject0eq3Id`，物理列也已存在，但子表 `ai_crud_config.model_schema` 可能漏掉该字段，旧版 `PrintMetadataResolver.column()` 只认 schema 字段故直接失败。另：admin-server 的 `spring-boot:run` 吃的是 `~/.m2` 里的 `forge-plugin-generator` jar，只改源码不 `mvn install` 再重启等于没修。
+
+**解决方案**:
+`PrintMetadataResolver` 对齐设计器落库规则推导列名（`designerCamelToSnake`），schema 缺字段时仍可解析 `*Id` 外键；设计草稿子表 FK 对不上时跳过该子表不堵主表。改插件后必须：
+
+```bash
+mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am install -DskipTests
+# 再重启 forge-admin-server
+```
+
 ## 插件模块改动后从 admin-server 直接 spring-boot:run 会跑旧代码
 
 **发现日期**：2026-09-17

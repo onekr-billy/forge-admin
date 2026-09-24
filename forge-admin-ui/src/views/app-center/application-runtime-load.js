@@ -1,4 +1,22 @@
 /**
+ * 预拉应用运行页主 chunk，缩短从应用中心点进后的白屏。
+ * 失败时允许下次再试。
+ */
+let applicationRuntimeChunkPrefetch = null
+
+export function prefetchApplicationRuntimeChunk() {
+  if (typeof window === 'undefined')
+    return Promise.resolve()
+  if (applicationRuntimeChunkPrefetch)
+    return applicationRuntimeChunkPrefetch
+  applicationRuntimeChunkPrefetch = import('@/views/app-center/application-runtime.[applicationCode].vue')
+    .catch(() => {
+      applicationRuntimeChunkPrefetch = null
+    })
+  return applicationRuntimeChunkPrefetch
+}
+
+/**
  * 同一个应用运行页的路由状态只加载一次。
  *
  * Vue Router 在首次进入、query 归一化或 KeepAlive 激活时可能连续通知相同状态。
