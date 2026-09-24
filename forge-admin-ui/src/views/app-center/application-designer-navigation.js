@@ -122,6 +122,20 @@ export function findApplicationDesignerResource(groups = [], resourceKey = '', l
     const matched = nodes.find(node => node.key === requested)
     if (matched)
       return matched
+    // 个人工作台等系统自由布局页不在导航 nodes 里，不能回落到第一个业务页
+    if (requested.startsWith('page-custom:')) {
+      const pageId = requested.slice('page-custom:'.length)
+      if (pageId)
+        return {
+          key: requested,
+          groupKey: 'pages',
+          kind: 'page-custom',
+          label: pageId.startsWith('system:') ? '个人工作台' : '页面',
+          pageId,
+          configured: true,
+          editable: true,
+        }
+    }
     // 兼容拆分前的 data:<objectId> 旧链接，落到该对象的数据结构节点。
     if (requested.startsWith('data:')) {
       const legacyObjectId = requested.slice('data:'.length)

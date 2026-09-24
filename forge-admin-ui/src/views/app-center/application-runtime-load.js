@@ -48,12 +48,17 @@ export function createApplicationRuntimeLoadCoordinator(loadFn) {
 
 export function resolveApplicationRuntimeLoadKey(route = {}, canEditApplication = false) {
   const params = route.params || {}
+  const query = route.query || {}
   // 只按「应用 + 是否读工作台草稿」区分加载源。
   // edit/draft 已折叠进 workspace：有编辑权限时进出表单/页面设计（切 edit）不该整页重载。
+  // 不要把 edit 单独放进 key：新建页进入编辑态时 edit 从无到有，会重拉服务端草稿，
+  // 冲掉本地刚创建、尚未写入服务端的页面。
   return JSON.stringify({
     applicationCode: String(params.applicationCode || ''),
     // 有编辑权限时页面管理也读草稿；key 需区分，避免权限晚到时仍停留在已发布快照
     workspace: shouldUseApplicationWorkspaceLoad(route, canEditApplication),
+    // 无编辑权限的访客用 draft 预览时仍要区分已发布快照
+    draftPreview: !canEditApplication && query.draft === '1',
   })
 }
 

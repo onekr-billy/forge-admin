@@ -456,7 +456,7 @@ export function isDataFieldBlockType(blockType) {
   return DATA_FIELD_BLOCK_TYPES.includes(blockType)
 }
 
-export const listPageBlockCatalog = [
+export const listPageBlockCatalog = dedupeListPageBlockCatalog([
   {
     blockType: 'search-form',
     group: 'data',
@@ -571,6 +571,14 @@ export const listPageBlockCatalog = [
     defaultH: 2,
   },
   {
+    blockType: 'workspace-summary-metrics',
+    group: 'extra',
+    title: '工作台统计',
+    desc: '我的待办 / 本周已办 / 发起中 / 未读抄送',
+    defaultW: 12,
+    defaultH: 3,
+  },
+  {
     blockType: 'info-panel',
     group: 'extra',
     title: '提示面板',
@@ -683,6 +691,8 @@ export const listPageBlockCatalog = [
     desc: '签名采集画布',
     defaultW: 6,
     defaultH: 5,
+    // 暂时下线：组件面板 / 右键插入均不展示，存量页面仍可渲染
+    hidden: true,
   },
   {
     blockType: 'step-form',
@@ -692,30 +702,7 @@ export const listPageBlockCatalog = [
     defaultW: 10,
     defaultH: 7,
   },
-  {
-    blockType: 'text-title',
-    group: 'content',
-    title: '标题',
-    desc: '页面标题文本',
-    defaultW: 6,
-    defaultH: 2,
-  },
-  {
-    blockType: 'paragraph',
-    group: 'content',
-    title: '段落',
-    desc: '多行说明文字',
-    defaultW: 6,
-    defaultH: 3,
-  },
-  {
-    blockType: 'statistic',
-    group: 'data',
-    title: '统计数值',
-    desc: '单个指标数值',
-    defaultW: 3,
-    defaultH: 3,
-  },
+  // text-title / paragraph / statistic / text-tip 已由 pageWidgetCatalog 提供
   {
     blockType: 'link',
     group: 'action',
@@ -724,46 +711,7 @@ export const listPageBlockCatalog = [
     defaultW: 3,
     defaultH: 1,
   },
-  {
-    blockType: 'text-tip',
-    group: 'content',
-    title: '文字提示',
-    desc: '轻量提示文本',
-    defaultW: 5,
-    defaultH: 2,
-  },
-  {
-    blockType: 'audio-player',
-    group: 'media',
-    title: '音频播放器',
-    desc: '音频播放控件',
-    defaultW: 6,
-    defaultH: 2,
-  },
-  {
-    blockType: 'video-player',
-    group: 'media',
-    title: '视频播放器',
-    desc: '视频播放控件',
-    defaultW: 8,
-    defaultH: 7,
-  },
-  {
-    blockType: 'avatar',
-    group: 'media',
-    title: '头像框',
-    desc: '头像和用户信息',
-    defaultW: 4,
-    defaultH: 3,
-  },
-  {
-    blockType: 'iframe',
-    group: 'advanced',
-    title: '内嵌页面',
-    desc: 'iframe 外部页面',
-    defaultW: 10,
-    defaultH: 8,
-  },
+  // audio/video/avatar/iframe 已由 pageWidgetCatalog 提供，勿重复登记
   {
     blockType: 'box-layout',
     group: 'layout',
@@ -798,7 +746,18 @@ export const listPageBlockCatalog = [
     defaultW: 12,
     defaultH: 1,
   },
-]
+])
+
+function dedupeListPageBlockCatalog(items = []) {
+  const seen = new Set()
+  return items.filter((item) => {
+    const key = String(item?.blockType || '').trim()
+    if (!key || seen.has(key))
+      return false
+    seen.add(key)
+    return true
+  })
+}
 
 export function resolveListPageBlockMeta(blockType) {
   return listPageBlockCatalog.find(item => item.blockType === blockType) || null
@@ -1675,6 +1634,10 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
   if (blockType === 'grid-layout') {
     base.props = {
       ...base.props,
+      style: {
+        ...(base.props?.style || {}),
+        heightMode: 'auto',
+      },
       columns: 24,
       gutter: 16,
       cellMinHeight: 120,
@@ -1781,13 +1744,32 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
   if (blockType === 'stats-strip') {
     base.props = {
       ...base.props,
-      dataBinding: createWidgetDataBinding('items', { labelField: 'label', valueField: 'value', metaField: 'trend' }),
+      dataBinding: createWidgetDataBinding('items', {
+        renderMode: 'manual',
+        labelField: 'label',
+        valueField: 'value',
+        metaField: 'trend',
+      }),
       metrics: [
         { label: '总数', value: '128', trend: '+8%' },
         { label: '活跃', value: '92', trend: '+3%' },
         { label: '本月新增', value: '21', trend: '+12%' },
         { label: '异常', value: '3', trend: '-1' },
       ],
+    }
+  }
+  if (blockType === 'workspace-summary-metrics') {
+    base.props = {
+      ...base.props,
+      visibleKeys: ['todo', 'done', 'started', 'cc'],
+      columns: 4,
+      showHeader: false,
+      style: {
+        ...(base.props?.style || {}),
+        widthMode: 'full',
+        heightMode: 'auto',
+        height: 200,
+      },
     }
   }
   if (blockType === 'info-panel') {
@@ -1906,7 +1888,7 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
     base.props = {
       ...base.props,
       dataBinding: createWidgetDataBinding('content', { titleField: 'text', descriptionField: 'subtitle' }),
-      text: '页面标题',
+      text: '标题示例',
       level: 2,
       weight: 800,
       align: 'left',
@@ -2019,6 +2001,10 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
   if (blockType === 'box-layout') {
     base.props = {
       ...base.props,
+      style: {
+        ...(base.props?.style || {}),
+        heightMode: 'auto',
+      },
       title: '盒子布局',
       direction: 'row',
       gap: 12,
@@ -2051,6 +2037,10 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
   if (blockType === 'card') {
     base.props = {
       ...base.props,
+      style: {
+        ...(base.props?.style || {}),
+        heightMode: 'auto',
+      },
       title: '卡片标题',
       content: '',
     }
@@ -2059,6 +2049,10 @@ export function createGridBlock(blockType, modelSchema, position = {}) {
   if (blockType === 'tabs') {
     base.props = {
       ...base.props,
+      style: {
+        ...(base.props?.style || {}),
+        heightMode: 'auto',
+      },
       tabs: [
         { key: 'tab1', title: '标签一', children: [] },
         { key: 'tab2', title: '标签二', children: [] },

@@ -13,18 +13,54 @@ export const DEFAULT_EMPTY_STATE_PLACEHOLDER = Object.freeze({
 })
 
 export function isRuntimeAutoHeightBlock(block = {}) {
-  if (block?.blockType === 'AiForm')
+  if (['AiForm', 'workspace-summary-metrics', 'info-panel', 'empty-state', 'page-title'].includes(block?.blockType))
     return true
   if (block?.blockType !== 'AiCrudPage')
     return false
   return resolveCrudFormOnly(block.props)
 }
 
+/** 根级通栏块：运行/设计都走文档流纵向堆叠，避免绝对定位在换行增高时互相覆盖 */
+export function shouldUsePageFlowStack(blocks = [], options = {}) {
+  const items = Array.isArray(blocks) ? blocks.filter(Boolean) : []
+  if (!items.length)
+    return false
+  // 个人工作台固定文档流，不因某个块被改成固定宽又退回绝对定位
+  if (options.forceStack || String(options.pageId || '').trim() === 'system:workbench')
+    return true
+  // 全是内容自适应块（统计/提示/空状态等）也一律堆叠
+  if (items.every(isRuntimeAutoHeightBlock))
+    return true
+  return items.every((block) => {
+    const widthMode = block?.props?.style?.widthMode || 'full'
+    return widthMode === 'full'
+  })
+}
+
 export function shouldUseContentSizedFlow(blocks = [], options = {}) {
   if (options.fillHost)
     return false
   const items = Array.isArray(blocks) ? blocks.filter(Boolean) : []
-  return items.length > 0 && items.every(isRuntimeAutoHeightBlock)
+  if (!items.length)
+    return false
+  // 运行态预览：只要不是填满宿主，就用文档流（绝对定位只留给设计态自由摆放）
+  if (options.runtimePreview)
+    return true
+  if (shouldUsePageFlowStack(items, options))
+    return true
+  return items.every(isRuntimeAutoHeightBlock)
+}
+
+export function sortBlocksByPageFlowY(blocks = []) {
+  return [...(Array.isArray(blocks) ? blocks : [])].sort((left, right) => {
+    const leftY = Number(left?.props?.style?.pageFlowY)
+    const rightY = Number(right?.props?.style?.pageFlowY)
+    const safeLeft = Number.isFinite(leftY) ? leftY : 0
+    const safeRight = Number.isFinite(rightY) ? rightY : 0
+    if (safeLeft !== safeRight)
+      return safeLeft - safeRight
+    return String(left?.id || '').localeCompare(String(right?.id || ''))
+  })
 }
 
 export function isDefaultInfoPanelPlaceholder(block = {}) {

@@ -4,7 +4,7 @@
     :class="{ 'left-collapsed': paletteCollapsed && !canvasFocusMode, 'right-collapsed': propertyCollapsed && !canvasFocusMode, 'canvas-focused': canvasFocusMode, 'panel-only': panelOnly, readonly }"
   >
     <button
-      v-if="paletteCollapsed && !readonly && !canvasFocusMode"
+      v-if="!panelOnly && paletteCollapsed && !readonly && !canvasFocusMode"
       type="button"
       class="side-rail-toggle-button left"
       title="展开页面组件"
@@ -13,7 +13,7 @@
       <n-icon><ChevronForwardOutline /></n-icon>
     </button>
 
-    <aside v-else-if="!readonly && !canvasFocusMode" class="palette-panel">
+    <aside v-else-if="!panelOnly && !readonly && !canvasFocusMode" class="palette-panel">
       <div class="palette-panel-head">
         <div>
           <div class="panel-title">
@@ -69,6 +69,7 @@
     </aside>
 
     <main
+      v-if="!panelOnly"
       class="canvas-panel"
       :class="{ 'drag-over': canvasDragActive }"
       @dragenter.prevent="handleCanvasDragEnter"
@@ -183,6 +184,11 @@
                 @block-props-update="handleBlockPropsUpdate"
                 @tabs-active-change="handleTabsActiveChange"
                 @tab-drop="handleTabDrop"
+                @grid-cell-drop="handleGridCellDrop"
+                @grid-cell-insert="handleGridCellDrop"
+                @grid-cell-drag-over="handleGridCellDragOverHint"
+                @container-insert="handleContainerInsert"
+                @container-clear="handleContainerClear"
                 @child-block-drag-start="handleNestedBlockDragStart"
                 @child-block-move-start="payload => startNestedMove(payload.block, payload.event)"
                 @child-block-drag-end="resetCanvasDragState"
@@ -348,7 +354,7 @@
     </main>
 
     <button
-      v-if="propertyCollapsed && !readonly && !canvasFocusMode"
+      v-if="!panelOnly && propertyCollapsed && !readonly && !canvasFocusMode"
       type="button"
       class="side-rail-toggle-button right"
       title="展开配置区块"
@@ -357,7 +363,7 @@
       <n-icon><ChevronBackOutline /></n-icon>
     </button>
 
-    <aside v-else-if="!readonly && !canvasFocusMode" class="block-property-panel">
+    <aside v-else-if="panelOnly || (!readonly && !canvasFocusMode)" class="block-property-panel">
       <div class="property-panel-head">
         <div>
           <div class="property-panel-title">
@@ -434,14 +440,42 @@
 
               <template v-if="selectedBlock.blockType === 'grid-layout'">
                 <n-divider>栅格配置</n-divider>
+                <div class="grid-preset-block">
+                  <div class="grid-preset-title">
+                    快速布局
+                  </div>
+                  <div class="grid-preset-list">
+                    <button
+                      v-for="preset in gridLayoutPresets"
+                      :key="preset.key"
+                      type="button"
+                      class="grid-preset-item"
+                      :title="preset.desc"
+                      @click="applyGridLayoutPreset(preset.key)"
+                    >
+                      <span class="grid-preset-thumb" :style="preset.thumbStyle" aria-hidden="true">
+                        <i
+                          v-for="(cell, idx) in preset.previewCells"
+                          :key="idx"
+                          :style="{ gridColumn: `span ${cell.span}` }"
+                        />
+                      </span>
+                      <strong>{{ preset.label }}</strong>
+                    </button>
+                  </div>
+                  <div class="field-help">
+                    一键生成格子结构；生成后可拖入或右键插入组件。已有格子里的组件会按位置尽量保留。
+                  </div>
+                </div>
                 <!-- 统一栅格属性面板（spec 驱动）：与表单设计器共用同一份 grid spec 渲染。
                      列表画布消费全部属性（columns/gutter/rowGap/对齐/格子样式/背景），格子内容编辑走下方手写区 -->
                 <SpecPropertyPanel
+                  class="grid-spec-panel-stack"
                   :block-type="selectedBlock.blockType"
                   :model-props="selectedBlock.props || {}"
                   @update:prop="handleSpecPropUpdate"
                 />
-                <n-form-item label="格子内容">
+                <n-form-item label="格子内容" class="grid-cell-content-item">
                   <div class="container-child-editor">
                     <div
                       v-for="(cell, idx) in selectedGridCells"
@@ -2256,136 +2290,93 @@
 
               <template v-if="localDataBindableBlockTypes.includes(selectedBlock.blockType)">
                 <n-form-item label="数据来源">
-                  <div class="data-source-editor">
-                    <div class="field-help">
-                      选择组件内容从哪里来。静态配置使用当前属性；当前详情数据从页面已有记录取值；远程接口会请求接口后再按字段映射渲染。
-                    </div>
-                    <div class="data-source-row">
-                      <span>来源类型</span>
-                      <n-select
-                        :value="selectedBlock.props?.dataBinding?.sourceType || 'static'"
-                        :options="widgetDataSourceOptions"
-                        @update:value="updateWidgetDataBinding({ enabled: $event !== 'static', sourceType: $event || 'static' })"
-                      />
-                    </div>
-                    <div v-if="selectedBlock.props?.dataBinding?.sourceType === 'context'" class="data-source-row">
-                      <span>取值路径</span>
-                      <n-input
-                        :value="selectedBlock.props?.dataBinding?.contextPath || ''"
-                        clearable
-                        placeholder="不填表示整条当前记录；例如 customer.name"
-                        @update:value="updateWidgetDataBinding({ contextPath: $event || '' })"
-                      />
-                    </div>
-                    <template v-if="selectedBlock.props?.dataBinding?.sourceType === 'remote'">
-                      <div class="data-source-row">
-                        <span>接口地址</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.api || ''"
-                          clearable
-                          placeholder="例如 /api/order/detail/{{ id }}"
-                          @update:value="updateWidgetDataBinding({ api: $event || '' })"
-                        />
-                      </div>
-                      <div class="data-source-row">
-                        <span>请求方式</span>
-                        <n-select
-                          :value="selectedBlock.props?.dataBinding?.method || 'get'"
-                          :options="requestMethodOptions"
-                          @update:value="updateWidgetDataBinding({ method: $event || 'get' })"
-                        />
-                      </div>
-                      <div class="data-source-row">
-                        <span>响应路径</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.dataPath || 'data'"
-                          clearable
-                          placeholder="如 data、data.records"
-                          @update:value="updateWidgetDataBinding({ dataPath: $event || 'data' })"
-                        />
-                      </div>
-                      <div class="data-source-row">
-                        <span>请求参数</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.paramsText || '{}'"
-                          type="textarea"
-                          :rows="3"
-                          placeholder="{ &quot;id&quot;: &quot;{{ id }}&quot; }，可引用当前详情数据"
-                          @update:value="updateWidgetDataBinding({ paramsText: $event || '{}' })"
-                        />
-                      </div>
-                    </template>
-                    <div v-if="selectedBlock.props?.dataBinding?.sourceType !== 'static'" class="field-help">
-                      字段映射用于告诉组件接口返回的字段含义。列表/标签/步骤类组件常用“显示文本、值、标题、描述”；单值组件通常只需要“值字段”或“内容字段”。
-                    </div>
-                    <div v-if="selectedBlock.props?.dataBinding?.sourceType !== 'static'" class="data-source-mapping-grid">
-                      <div class="data-source-row">
-                        <span>显示文本</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.labelField || 'label'"
-                          placeholder="label / name"
-                          @update:value="updateWidgetDataBinding({ labelField: $event || 'label' })"
-                        />
-                      </div>
-                      <div class="data-source-row">
-                        <span>值字段</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.valueField || 'value'"
-                          placeholder="value / id / src"
-                          @update:value="updateWidgetDataBinding({ valueField: $event || 'value' })"
-                        />
-                      </div>
-                      <div class="data-source-row">
-                        <span>标题字段</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.titleField || 'title'"
-                          placeholder="title / text"
-                          @update:value="updateWidgetDataBinding({ titleField: $event || 'title' })"
-                        />
-                      </div>
-                      <div class="data-source-row">
-                        <span>描述字段</span>
-                        <n-input
-                          :value="selectedBlock.props?.dataBinding?.descriptionField || 'description'"
-                          placeholder="description / content"
-                          @update:value="updateWidgetDataBinding({ descriptionField: $event || 'description' })"
-                        />
-                      </div>
-                    </div>
-                  </div>
+                  <WidgetDataBindingEditor
+                    :model-value="selectedBlock.props?.dataBinding || {}"
+                    :block-type="selectedBlock.blockType"
+                    :fields="fields"
+                    :form-designer-schema="formDesignerSchema"
+                    @update:model-value="updateWidgetDataBinding"
+                  />
                 </n-form-item>
               </template>
 
               <!-- Stats strip -->
               <template v-if="selectedBlock.blockType === 'stats-strip'">
-                <n-form-item label="指标项">
+                <n-form-item :label="isStatsStripListMode(selectedBlock) ? '指标项（列表空数据时占位）' : '指标项'">
                   <div class="metrics-editor">
+                    <div
+                      v-if="isStatsStripListMode(selectedBlock)"
+                      class="field-help"
+                    >
+                      当前为「列表循环」：画布按数组条数渲染。这里的指标仅在列表无数据时作占位；要自己增删多张卡，请把渲染方式改回「手动多项」。
+                    </div>
+                    <div
+                      v-else
+                      class="field-help"
+                    >
+                      手动多项：点「添加指标」增加卡片。可写静态值，也可在每项点选字段（来源为详情/表单时生效）。
+                    </div>
                     <div
                       v-for="(metric, idx) in (selectedBlock.props?.metrics || [])"
                       :key="idx"
-                      class="metric-row"
+                      class="metric-row metric-row-card"
                     >
-                      <n-input
-                        :value="metric.label"
-                        placeholder="标签"
-                        size="small"
-                        @update:value="updateMetric(idx, { label: $event })"
-                      />
-                      <n-input
-                        :value="metric.value"
-                        placeholder="数值"
-                        size="small"
-                        @update:value="updateMetric(idx, { value: $event })"
-                      />
-                      <n-input
-                        :value="metric.trend"
-                        placeholder="+5%"
-                        size="small"
-                        @update:value="updateMetric(idx, { trend: $event })"
-                      />
-                      <n-button size="tiny" quaternary @click="removeMetric(idx)">
-                        删
-                      </n-button>
+                      <div class="metric-row-fields">
+                        <n-input
+                          :value="metric.label"
+                          placeholder="标签"
+                          size="small"
+                          @update:value="updateMetric(idx, { label: $event })"
+                        />
+                        <n-input
+                          :value="metric.value"
+                          placeholder="数值"
+                          size="small"
+                          @update:value="updateMetric(idx, { value: $event })"
+                        />
+                        <n-input
+                          class="metric-trend-input"
+                          :value="metric.trend"
+                          placeholder="趋势，如 +5%"
+                          size="small"
+                          @update:value="updateMetric(idx, { trend: $event })"
+                        />
+                        <n-button class="metric-row-remove" size="tiny" quaternary type="error" @click="removeMetric(idx)">
+                          删除
+                        </n-button>
+                      </div>
+                      <div
+                        v-if="isWidgetBindingActive(selectedBlock) && !isStatsStripListMode(selectedBlock)"
+                        class="metric-row-bind"
+                      >
+                        <div class="metric-row-bind-label">
+                          字段绑定（可选）
+                        </div>
+                        <WidgetFieldPathPicker
+                          v-if="fields.length"
+                          :value="metric.labelField || ''"
+                          :fields="fields"
+                          :form-designer-schema="formDesignerSchema"
+                          placeholder="标签字段"
+                          @update:value="updateMetric(idx, { labelField: $event || '' })"
+                        />
+                        <WidgetFieldPathPicker
+                          v-if="fields.length"
+                          :value="metric.valueField || ''"
+                          :fields="fields"
+                          :form-designer-schema="formDesignerSchema"
+                          placeholder="数值字段"
+                          @update:value="updateMetric(idx, { valueField: $event || '' })"
+                        />
+                        <WidgetFieldPathPicker
+                          v-if="fields.length"
+                          :value="metric.metaField || ''"
+                          :fields="fields"
+                          :form-designer-schema="formDesignerSchema"
+                          placeholder="趋势字段"
+                          @update:value="updateMetric(idx, { metaField: $event || '' })"
+                        />
+                      </div>
                     </div>
                     <n-button size="small" dashed block @click="addMetric">
                       + 添加指标
@@ -2408,7 +2399,17 @@
                         :options="detailInfoDataSourceOptions"
                         @update:value="patchBlockProps(selectedBlock.id, { dataSourceType: $event || 'current' })"
                       />
+                      <WidgetFieldPathPicker
+                        v-if="fields.length"
+                        :value="selectedBlock.props?.contextPath || ''"
+                        :fields="fields"
+                        :form-designer-schema="formDesignerSchema"
+                        include-collections
+                        placeholder="详情字段路径，如 detail / customerName"
+                        @update:value="patchBlockProps(selectedBlock.id, { contextPath: $event || '' })"
+                      />
                       <n-input
+                        v-else
                         :value="selectedBlock.props?.contextPath || ''"
                         clearable
                         placeholder="当前详情数据路径，如 detail"
@@ -2760,39 +2761,47 @@
               </template>
 
               <template v-if="selectedBlock.blockType === 'timeline'">
-                <n-form-item label="时间线">
+                <n-form-item :label="isTimelineBound(selectedBlock) ? '静态节点（无数据时占位）' : '时间线节点'">
                   <div class="metrics-editor">
+                    <div v-if="isTimelineBound(selectedBlock)" class="field-help">
+                      当前已绑定数据源：画布按数组渲染。这里仅在无数据时作占位。
+                    </div>
                     <n-input
                       :value="selectedBlock.props?.title"
-                      placeholder="标题"
+                      placeholder="区块标题，如操作记录"
                       @update:value="patchBlockProps(selectedBlock.id, { title: $event })"
                     />
                     <div
                       v-for="(item, idx) in (selectedBlock.props?.items || [])"
                       :key="idx"
-                      class="metric-row"
+                      class="metric-row metric-row-card"
                     >
-                      <n-input
-                        :value="item.title"
-                        placeholder="节点"
-                        size="small"
-                        @update:value="updateTimelineItem(idx, { title: $event })"
-                      />
-                      <n-input
-                        :value="item.time"
-                        placeholder="时间"
-                        size="small"
-                        @update:value="updateTimelineItem(idx, { time: $event })"
-                      />
-                      <n-button size="tiny" quaternary @click="removeTimelineItem(idx)">
-                        删
-                      </n-button>
-                      <n-input
-                        :value="item.content"
-                        placeholder="内容"
-                        size="small"
-                        @update:value="updateTimelineItem(idx, { content: $event })"
-                      />
+                      <div class="metric-row-fields">
+                        <n-input
+                          :value="item.title"
+                          placeholder="节点标题"
+                          size="small"
+                          @update:value="updateTimelineItem(idx, { title: $event })"
+                        />
+                        <n-input
+                          :value="item.time"
+                          placeholder="时间"
+                          size="small"
+                          @update:value="updateTimelineItem(idx, { time: $event })"
+                        />
+                        <n-input
+                          class="metric-trend-input"
+                          :value="item.content"
+                          placeholder="节点内容"
+                          size="small"
+                          type="textarea"
+                          :rows="2"
+                          @update:value="updateTimelineItem(idx, { content: $event })"
+                        />
+                        <n-button class="metric-row-remove" size="tiny" quaternary type="error" @click="removeTimelineItem(idx)">
+                          删除
+                        </n-button>
+                      </div>
                     </div>
                     <n-button size="small" dashed block @click="addTimelineItem">
                       + 添加节点
@@ -3009,103 +3018,13 @@
                   </n-form-item>
                   <template v-if="dataBindablePageWidgetKeys.includes(selectedBlock.blockType)">
                     <n-form-item label="数据来源">
-                      <div class="data-source-editor">
-                        <div class="field-help">
-                          选择组件内容从哪里来。静态配置使用当前属性；当前详情数据从页面已有记录取值；远程接口会请求接口后再按字段映射渲染。
-                        </div>
-                        <div class="data-source-row">
-                          <span>来源类型</span>
-                          <n-select
-                            :value="selectedBlock.props?.dataBinding?.sourceType || 'static'"
-                            :options="widgetDataSourceOptions"
-                            @update:value="updateWidgetDataBinding({ enabled: $event !== 'static', sourceType: $event || 'static' })"
-                          />
-                        </div>
-                        <div v-if="selectedBlock.props?.dataBinding?.sourceType === 'context'" class="data-source-row">
-                          <span>取值路径</span>
-                          <n-input
-                            :value="selectedBlock.props?.dataBinding?.contextPath || ''"
-                            clearable
-                            placeholder="不填表示整条当前记录；例如 customer.name"
-                            @update:value="updateWidgetDataBinding({ contextPath: $event || '' })"
-                          />
-                        </div>
-                        <template v-if="selectedBlock.props?.dataBinding?.sourceType === 'remote'">
-                          <div class="data-source-row">
-                            <span>接口地址</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.api || ''"
-                              clearable
-                              placeholder="例如 /api/order/detail/{{ id }}"
-                              @update:value="updateWidgetDataBinding({ api: $event || '' })"
-                            />
-                          </div>
-                          <div class="data-source-row">
-                            <span>请求方式</span>
-                            <n-select
-                              :value="selectedBlock.props?.dataBinding?.method || 'get'"
-                              :options="requestMethodOptions"
-                              @update:value="updateWidgetDataBinding({ method: $event || 'get' })"
-                            />
-                          </div>
-                          <div class="data-source-row">
-                            <span>响应路径</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.dataPath || 'data'"
-                              clearable
-                              placeholder="如 data、data.records"
-                              @update:value="updateWidgetDataBinding({ dataPath: $event || 'data' })"
-                            />
-                          </div>
-                          <div class="data-source-row">
-                            <span>请求参数</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.paramsText || '{}'"
-                              type="textarea"
-                              :rows="3"
-                              placeholder="{ &quot;id&quot;: &quot;{{ id }}&quot; }，可引用当前详情数据"
-                              @update:value="updateWidgetDataBinding({ paramsText: $event || '{}' })"
-                            />
-                          </div>
-                        </template>
-                        <div v-if="selectedBlock.props?.dataBinding?.sourceType !== 'static'" class="field-help">
-                          字段映射用于告诉组件接口返回的字段含义。列表/标签/步骤类组件常用“显示文本、值、标题、描述”；单值组件通常只需要“值字段”或“内容字段”。
-                        </div>
-                        <div v-if="selectedBlock.props?.dataBinding?.sourceType !== 'static'" class="data-source-mapping-grid">
-                          <div class="data-source-row">
-                            <span>显示文本</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.labelField || 'label'"
-                              placeholder="label / name"
-                              @update:value="updateWidgetDataBinding({ labelField: $event || 'label' })"
-                            />
-                          </div>
-                          <div class="data-source-row">
-                            <span>值字段</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.valueField || 'value'"
-                              placeholder="value / id / src"
-                              @update:value="updateWidgetDataBinding({ valueField: $event || 'value' })"
-                            />
-                          </div>
-                          <div class="data-source-row">
-                            <span>标题字段</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.titleField || 'title'"
-                              placeholder="title / text"
-                              @update:value="updateWidgetDataBinding({ titleField: $event || 'title' })"
-                            />
-                          </div>
-                          <div class="data-source-row">
-                            <span>描述字段</span>
-                            <n-input
-                              :value="selectedBlock.props?.dataBinding?.descriptionField || 'description'"
-                              placeholder="description / content"
-                              @update:value="updateWidgetDataBinding({ descriptionField: $event || 'description' })"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <WidgetDataBindingEditor
+                        :model-value="selectedBlock.props?.dataBinding || {}"
+                        :block-type="selectedBlock.blockType"
+                        :fields="fields"
+                        :form-designer-schema="formDesignerSchema"
+                        @update:model-value="updateWidgetDataBinding"
+                      />
                     </n-form-item>
                   </template>
                   <template v-if="selectedBlock.blockType === 'rich-text'">
@@ -3554,13 +3473,33 @@
                   </n-form-item>
                 </template>
                 <template v-if="selectedBlock.blockType === 'statistic'">
-                  <n-form-item label="统计内容">
+                  <n-form-item :label="isWidgetBindingActive(selectedBlock) ? '统计内容（占位默认）' : '统计内容'">
                     <div class="style-grid two">
-                      <n-input :value="selectedBlock.props?.title" placeholder="标题" @update:value="patchBlockProps(selectedBlock.id, { title: $event })" />
-                      <n-input :value="selectedBlock.props?.value" placeholder="数值" @update:value="patchBlockProps(selectedBlock.id, { value: $event })" />
+                      <div v-if="isWidgetBindingActive(selectedBlock)" class="field-help" style="grid-column: 1 / -1">
+                        标题 / 数值 / 说明 / 趋势由上方「本组件可赋值项」绑定字段；下方仅作未绑定时占位。前缀、后缀、颜色仍为静态样式。
+                      </div>
+                      <n-input
+                        :value="selectedBlock.props?.title"
+                        :placeholder="isWidgetBindingActive(selectedBlock) ? '占位标题' : '标题'"
+                        @update:value="patchBlockProps(selectedBlock.id, { title: $event })"
+                      />
+                      <n-input
+                        :value="selectedBlock.props?.value"
+                        :placeholder="isWidgetBindingActive(selectedBlock) ? '占位数值' : '数值'"
+                        @update:value="patchBlockProps(selectedBlock.id, { value: $event })"
+                      />
                       <n-input :value="selectedBlock.props?.prefix" placeholder="前缀" @update:value="patchBlockProps(selectedBlock.id, { prefix: $event })" />
                       <n-input :value="selectedBlock.props?.suffix" placeholder="后缀" @update:value="patchBlockProps(selectedBlock.id, { suffix: $event })" />
-                      <n-input :value="selectedBlock.props?.trend" placeholder="趋势" @update:value="patchBlockProps(selectedBlock.id, { trend: $event })" />
+                      <n-input
+                        :value="selectedBlock.props?.trend"
+                        :placeholder="isWidgetBindingActive(selectedBlock) ? '占位趋势' : '趋势'"
+                        @update:value="patchBlockProps(selectedBlock.id, { trend: $event })"
+                      />
+                      <n-input
+                        :value="selectedBlock.props?.description"
+                        :placeholder="isWidgetBindingActive(selectedBlock) ? '占位说明' : '说明'"
+                        @update:value="patchBlockProps(selectedBlock.id, { description: $event })"
+                      />
                       <n-color-picker :value="selectedBlock.props?.color || '#2563eb'" :show-alpha="true" @update:value="patchBlockProps(selectedBlock.id, { color: $event || '#2563eb' })" />
                     </div>
                   </n-form-item>
@@ -4193,6 +4132,9 @@ import { DesignerNodeOverlay, getComponentSpec, isPaletteUnionSpec, LIST_BLOCK_T
 import SpecPropertyPanel from '@/components/lowcode-builder/designer-core/panel/SpecPropertyPanel.vue'
 import UnifiedComponentPalette from '@/components/lowcode-builder/designer-core/panel/UnifiedComponentPalette.vue'
 import { pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
+import WidgetDataBindingEditor from '@/components/lowcode-builder/shared/WidgetDataBindingEditor.vue'
+import WidgetFieldPathPicker from '@/components/lowcode-builder/shared/WidgetFieldPathPicker.vue'
+import { resolveWidgetRenderMode } from '@/components/lowcode-builder/shared/widget-binding-slots'
 import RuntimeRulesEditor from '@/components/lowcode-builder/shared/RuntimeRulesEditor.vue'
 import { useListDesignerStore } from '@/store'
 import { request } from '@/utils/http'
@@ -4254,6 +4196,10 @@ const props = defineProps({
   fields: {
     type: Array,
     default: () => [],
+  },
+  formDesignerSchema: {
+    type: Object,
+    default: null,
   },
   modelSchema: {
     type: Object,
@@ -5232,7 +5178,7 @@ function isTopLevelBlockId(id = '') {
 const childBlockTypeOptions = computed(() => {
   const allowContainer = isTopLevelBlockId(selectedBlock.value?.id)
   return listPageBlockCatalog
-    .filter(item => !item.unique)
+    .filter(item => !item.unique && !item.hidden)
     .filter(item => allowContainer || !NESTED_CONTAINER_BLOCK_TYPES.includes(item.blockType))
     .filter(item => !item.onlyFor || item.onlyFor.includes(props.layoutType))
     .map(item => ({
@@ -6819,7 +6765,7 @@ function resolveGridCellAutoMinHeight(children = []) {
 function patchGridLayoutCells(containerId, updater) {
   localLayout.value = {
     ...localLayout.value,
-    items: blocks.value.map((block) => {
+    items: normalizeGridItems(mapBlocksInTree(blocks.value, (block) => {
       if (block.id !== containerId || block.blockType !== 'grid-layout')
         return block
       const cells = updater(normalizeGridLayoutCells(block))
@@ -6830,7 +6776,7 @@ function patchGridLayoutCells(containerId, updater) {
           cells,
         },
       }
-    }),
+    })),
   }
 }
 
@@ -7011,6 +6957,123 @@ function updateGridCell(index, patch) {
   if (!selectedBlock.value || selectedBlock.value.blockType !== 'grid-layout')
     return
   patchGridLayoutCells(selectedBlock.value.id, cells => cells.map((cell, idx) => idx === index ? { ...cell, ...patch } : cell))
+}
+
+const gridLayoutPresets = [
+  {
+    key: 'three-top',
+    label: '上三栏',
+    desc: '一行三等分',
+    previewCells: [{ span: 1 }, { span: 1 }, { span: 1 }],
+    thumbStyle: { gridTemplateColumns: 'repeat(3, 1fr)' },
+    build: columns => ([
+      { span: Math.floor(columns / 3) },
+      { span: Math.floor(columns / 3) },
+      { span: columns - Math.floor(columns / 3) * 2 },
+    ]),
+  },
+  {
+    key: 'two-two',
+    label: '两行两列',
+    desc: '2×2 宫格',
+    previewCells: [{ span: 1 }, { span: 1 }, { span: 1 }, { span: 1 }],
+    thumbStyle: { gridTemplateColumns: 'repeat(2, 1fr)' },
+    build: columns => Array.from({ length: 4 }).map(() => ({ span: Math.floor(columns / 2) })),
+  },
+  {
+    key: 'left-right-2',
+    label: '左右两栏',
+    desc: '左 1/3 + 右 2/3',
+    previewCells: [{ span: 1 }, { span: 2 }],
+    thumbStyle: { gridTemplateColumns: '1fr 2fr' },
+    build: columns => ([
+      { span: Math.floor(columns / 3) },
+      { span: columns - Math.floor(columns / 3) },
+    ]),
+  },
+  {
+    key: 'sidebar-main',
+    label: '左二右一',
+    desc: '左侧两格叠放 + 右侧通栏',
+    previewCells: [{ span: 1 }, { span: 2 }, { span: 1 }],
+    thumbStyle: { gridTemplateColumns: '1fr 2fr', gridTemplateRows: '1fr 1fr' },
+    // 用 CSS grid 预览近似；真实 cells：左半两行 + 右半跨两行用 span 表达不了 row-span，
+    // 采用「上：左+右」「下：左+右」四格等价布局
+    build: columns => {
+      const left = Math.floor(columns / 3)
+      const right = columns - left
+      return [
+        { span: left, title: '左上' },
+        { span: right, title: '右上' },
+        { span: left, title: '左下' },
+        { span: right, title: '右下' },
+      ]
+    },
+  },
+  {
+    key: 'center-stack',
+    label: '中通栏',
+    desc: '上中下三行通栏',
+    previewCells: [{ span: 3 }, { span: 3 }, { span: 3 }],
+    thumbStyle: { gridTemplateColumns: '1fr' },
+    build: columns => ([
+      { span: columns, title: '顶部' },
+      { span: columns, title: '中部' },
+      { span: columns, title: '底部' },
+    ]),
+  },
+  {
+    key: 'header-body-footer',
+    label: '顶栏+双栏+底',
+    desc: '上通栏、中左右、下通栏',
+    previewCells: [{ span: 2 }, { span: 1 }, { span: 1 }, { span: 2 }],
+    thumbStyle: { gridTemplateColumns: '1fr 1fr' },
+    build: columns => ([
+      { span: columns, title: '顶栏' },
+      { span: Math.floor(columns / 2), title: '左侧' },
+      { span: columns - Math.floor(columns / 2), title: '右侧' },
+      { span: columns, title: '底栏' },
+    ]),
+  },
+  {
+    key: 'dashboard',
+    label: '看板六宫',
+    desc: '上三指标 + 下三卡片',
+    previewCells: Array.from({ length: 6 }).map(() => ({ span: 1 })),
+    thumbStyle: { gridTemplateColumns: 'repeat(3, 1fr)' },
+    build: columns => Array.from({ length: 6 }).map((_, index) => ({
+      span: Math.floor(columns / 3) + (index % 3 === 2 ? columns - Math.floor(columns / 3) * 3 : 0),
+      title: `区域 ${index + 1}`,
+    })),
+  },
+]
+
+function applyGridLayoutPreset(presetKey) {
+  if (!selectedBlock.value || selectedBlock.value.blockType !== 'grid-layout')
+    return
+  const preset = gridLayoutPresets.find(item => item.key === presetKey)
+  if (!preset)
+    return
+  const columns = Math.max(1, Number(selectedBlock.value.props?.columns || 24))
+  const previous = normalizeGridLayoutCells(selectedBlock.value)
+  const nextDefs = preset.build(columns)
+  const nextCells = nextDefs.map((def, index) => {
+    const prev = previous[index]
+    return {
+      key: prev?.key || `cell_${Date.now()}_${index + 1}`,
+      title: def.title || prev?.title || `栅格 ${index + 1}`,
+      span: clamp(Number(def.span) || 1, 1, columns),
+      children: Array.isArray(prev?.children) ? prev.children : [],
+      minHeight: prev?.minHeight || Number(selectedBlock.value.props?.cellMinHeight || 120),
+    }
+  })
+  // 多余旧格子的子组件并入最后一个格子，避免丢组件
+  if (previous.length > nextCells.length) {
+    const overflow = previous.slice(nextCells.length).flatMap(cell => cell.children || [])
+    if (overflow.length)
+      nextCells[nextCells.length - 1].children = [...(nextCells[nextCells.length - 1].children || []), ...overflow]
+  }
+  patchBlockProps(selectedBlock.value.id, { cells: nextCells })
 }
 
 function updateGridLayoutStructure(patch = {}) {
@@ -7234,6 +7297,9 @@ function handleTabsActiveChange(payload = {}) {
   if (!payload.blockId || !payload.tabKey)
     return
   activeTabKey.value = payload.tabKey
+  // 目录拖拽中不要抢焦点，否则拖进 tabs 会抖选中态
+  if (draggedBlockType.value)
+    return
   selectBlock(payload.blockId)
 }
 
@@ -7242,6 +7308,75 @@ function handleTabDrop({ blockId, tabKey, blockType } = {}) {
     return
   appendTabChild(blockType, blockId, tabKey)
   selectBlock(blockId)
+}
+
+function handleGridCellDrop({ blockId, cellKey, blockType } = {}) {
+  if (!blockId || !blockType)
+    return
+  appendGridCellChild(blockId, cellKey, blockType)
+  activeDropCell.value = null
+  selectBlock(blockId)
+}
+
+function handleContainerInsert(payload = {}) {
+  const blockId = String(payload.blockId || '').trim()
+  const blockType = String(payload.blockType || '').trim()
+  if (!blockId || !blockType)
+    return
+  appendContainerChild(blockId, blockType, payload.cellKey || '', payload.tabKey || '')
+}
+
+function handleContainerClear(payload = {}) {
+  const blockId = String(payload.blockId || '').trim()
+  if (!blockId)
+    return
+  const container = findBlockInTree(blocks.value, blockId)
+  if (!container)
+    return
+  if (container.blockType === 'grid-layout') {
+    const cellKey = String(payload.cellKey || '')
+    patchGridLayoutCells(blockId, cells => cells.map(cell => (
+      !cellKey || cell.key === cellKey
+        ? { ...cell, children: [] }
+        : cell
+    )))
+    selectBlock(blockId)
+    return
+  }
+  if (container.blockType === 'tabs') {
+    const tabKey = String(payload.tabKey || '')
+    localLayout.value = {
+      ...localLayout.value,
+      items: normalizeGridItems(mapBlocksInTree(blocks.value, block => block.id !== blockId
+        ? block
+        : {
+            ...block,
+            props: {
+              ...(block.props || {}),
+              tabs: (block.props?.tabs || []).map(tab => (
+                !tabKey || tab.key === tabKey
+                  ? { ...tab, children: [] }
+                  : tab
+              )),
+            },
+          })),
+    }
+    selectBlock(blockId)
+    return
+  }
+  localLayout.value = {
+    ...localLayout.value,
+    items: normalizeGridItems(mapBlocksInTree(blocks.value, block => block.id === blockId
+      ? { ...block, children: [] }
+      : block)),
+  }
+  selectBlock(blockId)
+}
+
+function handleGridCellDragOverHint({ blockId, cellKey } = {}) {
+  if (!blockId || !cellKey)
+    return
+  activeDropCell.value = { containerId: blockId, cellKey }
 }
 
 function handleCrudPreviewStateChange(payload = {}) {
@@ -8547,6 +8682,22 @@ function updateWidgetDataBinding(patch = {}) {
   else
     next.enabled = true
   patchBlockProps(selectedBlock.value.id, { dataBinding: next })
+}
+
+function isWidgetBindingActive(block = null) {
+  const binding = block?.props?.dataBinding || {}
+  return binding.enabled === true && binding.sourceType && binding.sourceType !== 'static'
+}
+
+function isStatsStripListMode(block = null) {
+  const binding = block?.props?.dataBinding || {}
+  if (!isWidgetBindingActive(block))
+    return false
+  return resolveWidgetRenderMode(binding, 'stats-strip') === 'list'
+}
+
+function isTimelineBound(block = null) {
+  return isWidgetBindingActive(block)
 }
 
 function addOptionItem(propName = 'items') {
@@ -10172,9 +10323,13 @@ function resolveCrudFieldLabel(field = {}) {
 .list-grid-designer.panel-only {
   display: block;
   height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
 }
 
-.list-grid-designer.panel-only > :not(.block-property-panel) {
+.list-grid-designer.panel-only > .palette-panel,
+.list-grid-designer.panel-only > .canvas-panel,
+.list-grid-designer.panel-only > .side-rail-toggle-button {
   display: none !important;
 }
 
@@ -12007,9 +12162,111 @@ function resolveCrudFieldLabel(field = {}) {
 
 .metric-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 80px auto;
-  gap: 4px;
-  align-items: center;
+  gap: 8px;
+}
+.metric-row-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
+}
+.metric-row-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.metric-row-fields .metric-trend-input {
+  grid-column: 1 / -1;
+}
+.metric-row-fields .metric-row-remove {
+  grid-column: 2 / 3;
+  justify-self: end;
+  align-self: center;
+}
+.metric-row-bind {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.metric-row-bind-label {
+  color: #86909c;
+  font-size: 12px;
+}
+
+.grid-preset-block {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.grid-preset-title {
+  display: block;
+  margin-bottom: 8px;
+  color: #4e5969;
+  font-size: 12px;
+  font-weight: 600;
+}
+.grid-preset-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.grid-preset-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.grid-spec-panel-stack {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.grid-spec-panel-stack :deep(.spec-property-grid) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.grid-cell-content-item {
+  display: block;
+  width: 100%;
+}
+.grid-cell-content-item :deep(.n-form-item-blank) {
+  display: block;
+  width: 100%;
+}
+.grid-preset-item:hover {
+  border-color: #94bfff;
+  background: #f7faff;
+}
+.grid-preset-item strong {
+  color: #1d2129;
+  font-size: 12px;
+  font-weight: 600;
+}
+.grid-preset-thumb {
+  display: grid;
+  gap: 3px;
+  min-height: 36px;
+  padding: 4px;
+  border-radius: 4px;
+  background: #f2f3f5;
+}
+.grid-preset-thumb i {
+  display: block;
+  min-height: 10px;
+  border-radius: 2px;
+  background: #c9cdd4;
 }
 
 .tab-manager {

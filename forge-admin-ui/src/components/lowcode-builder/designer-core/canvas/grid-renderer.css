@@ -28,17 +28,17 @@
   border: 1px dashed rgba(148, 163, 184, 0.42);
 }
 
-/* 格子内部 hover / drop-active 高亮 */
-.designer-grid-cell:hover {
+/* 格子内部 hover / drop-active 高亮：仅设计态 */
+.designer-grid-renderer:not(.is-preview) .designer-grid-cell:hover {
   background-color: rgba(37, 99, 235, 0.04);
 }
 
 /* drop-active 状态（由各设计器通过 :class 或父级 class 驱动） */
-.designer-grid-cell.is-drop-active {
+.designer-grid-renderer:not(.is-preview) .designer-grid-cell.is-drop-active {
   background-color: rgba(37, 99, 235, 0.06);
 }
 
-.designer-grid-cell.is-drop-active::after {
+.designer-grid-renderer:not(.is-preview) .designer-grid-cell.is-drop-active::after {
   position: absolute;
   inset: 4px;
   pointer-events: none;
@@ -84,6 +84,10 @@
 .designer-grid-renderer.is-preview .designer-grid-cell {
   border-color: transparent;
   padding: 0;
+}
+
+.designer-grid-renderer.is-preview .designer-grid-cell:hover {
+  background-color: transparent;
 }
 
 .designer-grid-renderer.is-preview .designer-grid-cell-empty {

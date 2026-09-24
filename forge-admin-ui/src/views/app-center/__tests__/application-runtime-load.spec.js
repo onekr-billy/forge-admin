@@ -86,8 +86,10 @@ describe('application runtime route loading', () => {
     const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
     expect(runtimeSource).toContain('businessApplicationRuntimeByCode')
     expect(runtimeSource).toContain('shouldUseApplicationWorkspaceLoad(route, canEditApplication.value)')
-    // 有编辑权限的页面管理也要 designPreview，否则保存的默认值只在发布后才进正式快照
+    // 有编辑权限的页面管理也要 designPreview（拉草稿配置），但 configurable 必须为 false，
+    // 否则 GridBlockRenderer 会按设计态画虚线边框，预览/运行页都会露馅。
     expect(runtimeSource).toContain(':design-preview="editing || isDraftMode || canEditApplication"')
+    expect(runtimeSource).toContain(':configurable="false"')
     expect(runtimeSource).toContain(':crud-config-revision="portalCrudConfigRevision"')
     expect(runtimeSource).toContain("import.meta.glob('/src/assets/images/form/*.png', { import: 'default' })")
     expect(runtimeSource).not.toContain('eager: true')
@@ -103,6 +105,18 @@ describe('application runtime route loading', () => {
       query: { pageId: 'page_1' },
     }, true)
     expect(withEdit).not.toBe(withoutEdit)
+  })
+
+  it('does not reload when an editor enters page design', () => {
+    const pageManagement = resolveApplicationRuntimeLoadKey({
+      params: { applicationCode: 'hr_apply' },
+      query: {},
+    }, true)
+    const editing = resolveApplicationRuntimeLoadKey({
+      params: { applicationCode: 'hr_apply' },
+      query: { edit: '1', pageId: 'page_new', designTab: 'page' },
+    }, true)
+    expect(editing).toBe(pageManagement)
   })
 
   it('invalidates portal crud cache after form save refresh', () => {

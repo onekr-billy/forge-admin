@@ -28,8 +28,8 @@ export const PAGE_SHAPE_TYPES = Object.freeze([
   },
   {
     value: 'custom',
-    label: '自定义页面',
-    description: '自由搭建内容，不强制绑定数据对象',
+    label: '自由布局',
+    description: '空白画布，自由拖入组件搭建页面，不强制绑定数据对象',
   },
 ])
 
@@ -76,7 +76,8 @@ export function createPageShapeBuilder(schema, selection = {}) {
     title: normalized.pageName,
     parentId: normalized.parentId,
     pageType: customPage ? 'content' : 'object',
-    pageTemplate: customPage ? 'blank' : normalized.pageType,
+    pageTemplate: customPage ? 'custom' : normalized.pageType,
+    pageShape: customPage ? 'custom' : normalized.pageType,
     objectRef: customPage
       ? null
       : buildPageObjectRef(selection, normalized, pageMode),
@@ -145,6 +146,230 @@ export function createPageShapeBuilder(schema, selection = {}) {
     formAssetId: assetResult.formAssetId,
     selection: normalized,
   }
+}
+
+/**
+ * 解析页面形态（纯函数，便于单测）。
+ * custom → 自由布局；form / list / list-form → 对象页。
+ *
+ * @param {object|null} node 页面节点
+ * @param {{ designTab?: string }} [options]
+ */
+export function resolvePageShapeFromNode(node = null, options = {}) {
+  const designTab = String(Array.isArray(options.designTab) ? options.designTab[0] : (options.designTab ?? '')).trim()
+  // URL/入口明确要求自由布局时，不再回落到表单/列表（否则中间空白）
+  if (designTab === 'page')
+    return 'custom'
+
+  if (!node || node.type !== 'page')
+    return 'custom'
+
+  const explicit = String(node.pageShape || '').trim().toLowerCase()
+  if (explicit === 'list_form')
+    return 'list-form'
+  if (['custom', 'form', 'list', 'list-form'].includes(explicit))
+    return explicit
+
+  const template = String(node.pageTemplate || '').trim().toLowerCase()
+  const pageType = String(node.pageType || '').trim().toLowerCase()
+  const pageMode = String(node.objectRef?.pageMode || '').trim().toLowerCase()
+
+  if (pageType === 'content' || pageType === 'home' || pageType === 'intro'
+    || template === 'blank' || template === 'intro' || template === 'custom'
+    || template === 'home'
+    || !node.objectRef)
+    return 'custom'
+
+  if (template === 'form')
+    return 'form'
+  if (template === 'list')
+    return 'list'
+  if (template === 'list-form' || template === 'list_form')
+    return 'list-form'
+
+  if (pageType === 'object') {
+    if (pageMode === 'form')
+      return 'form'
+    if (pageMode === 'list')
+      return 'list'
+    return 'list-form'
+  }
+  return 'custom'
+}
+
+/** 将误判的自由布局节点写回明确的 pageShape，避免下次再丢 Tab。 */
+export function ensureFreeLayoutPageNode(node = null) {
+  if (!node || node.type !== 'page')
+    return node
+  // 已绑定数据对象 / 明确是表单列表形态的页面，绝不能改成自由布局
+  if (node.objectRef)
+    return node
+  const shape = String(node.pageShape || node.pageTemplate || '').trim().toLowerCase()
+  if (['form', 'list', 'list-form', 'list_form'].includes(shape))
+    return node
+  if (String(node.pageType || '').trim().toLowerCase() === 'object')
+    return node
+  if (String(node.pageShape || '').trim().toLowerCase() === 'custom'
+    && ['content', 'home', 'intro'].includes(String(node.pageType || '').trim().toLowerCase()))
+    return node
+  return {
+    ...node,
+    pageShape: 'custom',
+    pageTemplate: String(node.pageTemplate || '').trim() || 'custom',
+    pageType: ['content', 'home', 'intro'].includes(String(node.pageType || '').trim().toLowerCase())
+      ? node.pageType
+      : 'content',
+  }
+}
+
+/**
+ * 对象页（表单/列表/列表+表单）布局是否被自由布局组件污染，或丢失了 AiCrudPage。
+ */
+export function isObjectBoundPageLayoutPolluted(node = null, page = null) {
+  if (!node || node.type !== 'page')
+    return false
+  const shape = resolvePageShapeFromNode(node)
+  const objectBound = Boolean(node.objectRef)
+    || shape === 'form'
+    || shape === 'list'
+    || shape === 'list-form'
+    || String(node.pageType || '').trim().toLowerCase() === 'object'
+  if (!objectBound)
+    return false
+
+  const items = Array.isArray(page?.layout?.gridLayout?.items)
+    ? page.layout.gridLayout.items
+    : []
+  const contentItems = items.filter(item => item && item.blockType !== 'page-title')
+  const hasCrud = contentItems.some(item => item.blockType === 'AiCrudPage')
+  const hasForeign = contentItems.some(item => item.blockType && item.blockType !== 'AiCrudPage')
+  // 误写成自由布局元数据，但还挂着 objectRef
+  const shapeCorrupted = Boolean(node.objectRef)
+    && (String(node.pageType || '').trim().toLowerCase() === 'content'
+      || String(node.pageShape || '').trim().toLowerCase() === 'custom')
+  if (shapeCorrupted)
+    return true
+  if (!hasCrud)
+    return true
+  return hasForeign
+}
+
+/**
+ * 把被自由布局污染的对象页恢复成单一 AiCrudPage（保留原表单资产与 objectRef）。
+ */
+export function restoreObjectBoundPageLayout(schema, pageId, options = {}) {
+  const next = {
+    ...schema,
+    nodes: Array.isArray(schema?.nodes) ? [...schema.nodes] : [],
+    pages: { ...(schema?.pages || {}) },
+    formAssets: Array.isArray(schema?.formAssets) ? schema.formAssets : [],
+  }
+  const index = next.nodes.findIndex(item => String(item?.id) === String(pageId || ''))
+  if (index < 0)
+    throw new Error('页面不存在')
+  const node = next.nodes[index]
+  const page = next.pages[pageId] || { title: node.title, layout: {} }
+  const existingItems = Array.isArray(page?.layout?.gridLayout?.items)
+    ? page.layout.gridLayout.items
+    : []
+  const existingCrud = existingItems.find(item => item?.blockType === 'AiCrudPage')
+  const shape = resolveRestorePageShape(node)
+  const formAssetId = String(
+    options.formAssetId
+    || existingCrud?.props?.formAssetId
+    || findFormAssetIdInBlocks(existingItems)
+    || next.formAssets[0]?.id
+    || '',
+  ).trim()
+
+  const objectRef = node.objectRef && typeof node.objectRef === 'object'
+    ? {
+        ...node.objectRef,
+        pageMode: shape === 'form' ? 'form' : shape === 'list' ? 'list' : 'crud',
+        pageKey: shape === 'form' ? 'form' : 'list',
+        valid: node.objectRef.valid !== false,
+      }
+    : null
+
+  const crudBlock = {
+    ...createGridBlock('AiCrudPage', { fields: [] }, { gridX: 0, gridY: 0 }),
+    ...(existingCrud?.id ? { id: existingCrud.id } : {}),
+    label: node.title || existingCrud?.label || '数据列表',
+    props: {
+      ...(existingCrud?.props || {}),
+      title: node.title || existingCrud?.props?.title || '数据列表',
+      formAssetId,
+      formAssetFieldsInitialized: existingCrud?.props?.formAssetFieldsInitialized === true,
+      ...(objectRef ? { objectRef } : {}),
+      ...(shape === 'form'
+        ? { formOnly: true, hideToolbar: true, hideBatchDelete: true, showSearch: false }
+        : {}),
+      ...(shape === 'list-form'
+        ? { formOpenMode: 'flat', modalType: 'flat' }
+        : {}),
+      style: {
+        widthMode: 'full',
+        heightMode: 'full',
+        pageFlowHeight: 640,
+        ...(existingCrud?.props?.style || {}),
+      },
+    },
+  }
+
+  next.nodes[index] = {
+    ...node,
+    pageType: 'object',
+    pageTemplate: shape,
+    pageShape: shape,
+    objectRef,
+  }
+  next.pages[pageId] = {
+    ...page,
+    title: page.title || node.title,
+    layout: {
+      ...(page.layout || {}),
+      items: [],
+      gridLayout: {
+        cols: 12,
+        rowHeight: 32,
+        gap: 8,
+        designWidth: 1366,
+        layoutType: shape,
+        items: [crudBlock],
+      },
+      pageTitleComponentInitialized: true,
+    },
+  }
+  return next
+}
+
+function resolveRestorePageShape(node = {}) {
+  const explicit = String(node.pageShape || node.pageTemplate || '').trim().toLowerCase()
+  if (explicit === 'list_form')
+    return 'list-form'
+  if (['form', 'list', 'list-form'].includes(explicit))
+    return explicit
+  const mode = String(node.objectRef?.pageMode || '').trim().toLowerCase()
+  if (mode === 'form')
+    return 'form'
+  if (mode === 'list')
+    return 'list'
+  return 'list-form'
+}
+
+function findFormAssetIdInBlocks(blocks = []) {
+  for (const block of blocks) {
+    const id = String(block?.props?.formAssetId || '').trim()
+    if (id)
+      return id
+    const nested = block?.props?.tabs || block?.props?.items || block?.children
+    if (Array.isArray(nested)) {
+      const found = findFormAssetIdInBlocks(nested)
+      if (found)
+        return found
+    }
+  }
+  return ''
 }
 
 function resolvePageMode(pageType) {

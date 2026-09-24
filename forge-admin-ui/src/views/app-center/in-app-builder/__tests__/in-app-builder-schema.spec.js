@@ -321,6 +321,30 @@ describe('in-app builder schema', () => {
     })
   })
 
+  it('keeps the system workbench layout even when it is not in navigation nodes', () => {
+    const schema = normalizeInAppBuilder({
+      inAppBuilder: {
+        homePageId: 'page_home',
+        nodes: [{ id: 'page_home', type: 'page', pageType: 'home', title: '首页', parentId: null, sort: 0 }],
+        pages: {
+          page_home: { layout: { gridLayout: { items: [] } } },
+          'system:workbench': {
+            title: '个人工作台',
+            layout: {
+              workbenchLayoutVersion: 3,
+              gridLayout: { items: [{ id: 'm1', blockType: 'workspace-summary-metrics', componentKey: 'workspace-summary-metrics' }] },
+            },
+          },
+        },
+      },
+    }, APPLICATION, [])
+
+    expect(schema.pages['system:workbench'].layout.gridLayout.items).toEqual([
+      expect.objectContaining({ id: 'm1', blockType: 'workspace-summary-metrics' }),
+    ])
+    expect(schema.pages['system:workbench'].layout.workbenchLayoutVersion).toBe(3)
+  })
+
   it('keeps form assets outside navigation and persists their reusable designer schema', () => {
     const base = normalizeInAppBuilder({}, APPLICATION, [])
     const created = createInAppFormAsset(base, {

@@ -91,6 +91,12 @@
               :view="currentSystemPage.view"
               :title="currentSystemPage.title"
               :navigation-routes="systemPageRoutes"
+              :workbench-page="workbenchPage"
+              :application-id="String(application?.id || '')"
+              :application-code="application?.applicationCode || ''"
+              :objects="runtime.objects"
+              :entries="runtime.entries"
+              :extensions="runtime.extensions"
             />
             <PortalPageRenderer
               v-else
@@ -169,6 +175,7 @@ import PortalNavigation from './components/portal/PortalNavigation.vue'
 import PortalPageRenderer from './components/portal/PortalPageRenderer.vue'
 import { normalizeInAppBuilder } from './in-app-builder/in-app-builder-schema'
 import { resolvePageManagementSystemPage } from './in-app-builder/page-management'
+import { ensureWorkbenchPageInBuilder } from './in-app-builder/workbench-page'
 
 const route = useRoute()
 const router = useRouter()
@@ -233,6 +240,7 @@ const currentPageId = computed(() => {
 const currentNode = computed(() => pageNodes.value.find(node => String(node.id) === currentPageId.value) || null)
 const currentSystemPage = computed(() => resolvePageManagementSystemPage(currentPageId.value))
 const currentPage = computed(() => currentNode.value ? builder.value?.pages?.[currentNode.value.id] || null : null)
+const workbenchPage = computed(() => builder.value?.pages?.['system:workbench'] || null)
 const assistantConfig = computed(() => parseJsonObject(application.value?.aiAssistantConfig))
 const assistantAvailable = computed(() => assistantConfig.value.enabled === true
   && Boolean(assistantConfig.value.agentCode)
@@ -277,6 +285,8 @@ async function loadPortal(identifier) {
     runtime.extensions = data.extensions || []
     runtime.versionNo = data.versionNo || application.value?.lastPublishVersion || null
     builder.value = normalizeInAppBuilder(application.value?.options, application.value, runtime.objects)
+    const ensured = ensureWorkbenchPageInBuilder(builder.value || {})
+    builder.value = ensured.schema
     if (!application.value)
       throw new Error('应用运行配置不存在')
     if (!pageNodes.value.length)

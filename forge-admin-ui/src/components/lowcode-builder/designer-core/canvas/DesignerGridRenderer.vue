@@ -29,11 +29,18 @@ const props = defineProps({
   cells: { type: Array, default: () => [] },
   /** 渲染模式 */
   mode: { type: String, default: 'designer', validator: v => ['designer', 'preview'].includes(v) },
+  /** 列表画布容器 id：写到外层格子，保证拖放命中 padding 也能解析到 cell */
+  containerId: { type: String, default: '' },
+  /** 当前高亮投放格子 key */
+  activeCellKey: { type: String, default: '' },
 })
+
+const emit = defineEmits(['cellDragEnter', 'cellDragOver', 'cellDrop', 'cellContextMenu'])
 
 const safeColumns = computed(() => Math.max(1, Number(props.columns) || 24))
 const safeGutter = computed(() => Math.max(0, Number(props.gutter) || 0))
 const safeRowGap = computed(() => Math.max(0, Number(props.rowGap) || 0))
+const isPreview = computed(() => props.mode === 'preview')
 
 const gridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${safeColumns.value}, minmax(0, 1fr))`,
@@ -56,32 +63,44 @@ function cellStyle(cell = {}) {
 function cellKey(cell, index) {
   return cell.key || cell.id || `cell-${index}`
 }
+
+function resolveCellKey(cell, index) {
+  return String(cellKey(cell, index))
+}
 </script>
 
 <template>
   <div
     class="designer-grid-renderer"
-    :class="{ 'is-preview': mode === 'preview' }"
+    :class="{ 'is-preview': isPreview }"
     :style="gridStyle"
   >
     <div
       v-for="(cell, index) in cells"
       :key="cellKey(cell, index)"
       class="designer-grid-cell"
-      :class="{ 'has-border': showCellBorder }"
+      :class="{
+        'has-border': showCellBorder && !isPreview,
+        'is-drop-active': !isPreview && activeCellKey && activeCellKey === resolveCellKey(cell, index),
+      }"
       :style="cellStyle(cell)"
-      :data-cell-key="cell.key || cell.id"
+      :data-cell-key="resolveCellKey(cell, index)"
       :data-cell-index="index"
+      :data-grid-cell-key="resolveCellKey(cell, index)"
+      :data-grid-container-id="containerId || undefined"
+      data-forge-grid-cell="1"
+      @dragenter.prevent="!isPreview && emit('cellDragEnter', { cell, cellKey: resolveCellKey(cell, index), event: $event })"
+      @dragover.prevent="!isPreview && emit('cellDragOver', { cell, cellKey: resolveCellKey(cell, index), event: $event })"
+      @drop.prevent="!isPreview && emit('cellDrop', { cell, cellKey: resolveCellKey(cell, index), event: $event })"
+      @contextmenu.prevent="!isPreview && emit('cellContextMenu', { cell, cellKey: resolveCellKey(cell, index), event: $event })"
     >
       <slot name="cell" :cell="cell" :index="index" :style="cellStyle(cell)">
-        <!-- 默认插槽内容：空格子占位 -->
-        <div v-if="!cell.children?.length" class="designer-grid-cell-empty">
+        <div v-if="!isPreview && !cell.children?.length" class="designer-grid-cell-empty">
           拖入组件
         </div>
       </slot>
     </div>
 
-    <!-- 无格子时的空态 -->
     <div v-if="!cells.length" class="designer-grid-empty">
       无栅格数据
     </div>
@@ -89,5 +108,4 @@ function cellKey(cell, index) {
 </template>
 
 <style scoped>
-/* scoped 样式仅处理容器级状态，基础样式在 grid-renderer.css */
 </style>
