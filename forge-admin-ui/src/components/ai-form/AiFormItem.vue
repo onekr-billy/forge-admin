@@ -59,17 +59,9 @@
         @focusout="handleFieldFocusout"
         @keyup="handleFieldKeyup"
       >
-        <div
-          v-if="shouldRenderReadonlySelectionText(field)"
-          class="ai-form-readonly-text"
-          :title="resolveReadonlySelectionText(field)"
-        >
-          {{ resolveReadonlySelectionText(field) }}
-        </div>
-
         <!-- 低代码页面展示组件 -->
         <PageWidgetRenderer
-          v-else-if="isRuntimePageWidgetField"
+          v-if="isRuntimePageWidgetField"
           :component-key="runtimePageWidgetKey"
           :props-data="runtimePageWidgetProps"
           :data-context="formData || {}"
@@ -165,6 +157,7 @@
         <!-- 下拉选择 -->
         <n-select
           v-else-if="field.type === 'select'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -173,10 +166,9 @@
           :loading="selectOptionLoading"
           :remote="field.remote"
           :on-search="field.onSearch"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           :multiple="fieldMultiple"
-          @update:value="handleUpdate"
+          @update:value="handleSelectUpdate"
           v-on="getComponentEvents(field)"
         />
 
@@ -290,10 +282,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="date"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -308,10 +300,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="datetime"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -328,10 +320,10 @@
           :placeholder="field.placeholder"
           :start-placeholder="field.startPlaceholder || '开始日期'"
           :end-placeholder="field.endPlaceholder || '结束日期'"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -348,10 +340,10 @@
           :placeholder="field.placeholder"
           :start-placeholder="field.startPlaceholder || '开始时间'"
           :end-placeholder="field.endPlaceholder || '结束时间'"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -366,10 +358,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="month"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM'"
@@ -384,10 +376,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="year"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy'"
@@ -401,10 +393,10 @@
           :value="normalizeTimestampPickerValue(value)"
           :formatted-value="normalizeFormattedPickerValue(value)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -417,10 +409,10 @@
           <n-time-picker
             :formatted-value="resolveFormattedRangeValue(value, 0)"
             :placeholder="field.startPlaceholder || '开始时间'"
-            :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
             v-bind="controlProps"
+            :disabled="disabledHandler(field)"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -431,10 +423,10 @@
           <n-time-picker
             :formatted-value="resolveFormattedRangeValue(value, 1)"
             :placeholder="field.endPlaceholder || '结束时间'"
-            :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
             v-bind="controlProps"
+            :disabled="disabledHandler(field)"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -550,6 +542,7 @@
         <!-- 级联选择 -->
         <n-cascader
           v-else-if="field.type === 'cascader'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -558,7 +551,6 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
@@ -615,6 +607,7 @@
         <!-- 树形选择 -->
         <n-tree-select
           v-else-if="field.type === 'treeSelect'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -625,7 +618,6 @@
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
           :on-load="treeSelectLazyLoadHandler"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
@@ -668,6 +660,7 @@
         <!-- 关联选择（下拉模式）：对象引用/记录选择器统一渲染 -->
         <n-select
           v-else-if="isRelationSelectorField && relationSelectorMode === 'dropdown'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -675,7 +668,6 @@
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
           :remote="objectReferenceRemoteEnabled"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           :multiple="fieldMultiple"
           @search="handleObjectReferenceSearch"
@@ -856,6 +848,7 @@ import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
 import {
   buildQuerySourceDisplayFields,
   buildTreeFromFlatRows,
+  collectFieldMappingSourceFields,
   decorateLazyTreeNodes,
   resolveFirstFilledOptionField,
   resolveOptionLoadMode,
@@ -864,7 +857,7 @@ import {
   rowsHaveNestedChildren,
   shouldBuildTreeOptions,
 } from './option-source-runtime'
-import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, resolveSelectorSearchParams } from './record-selector-utils'
+import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, normalizeSelectorMappings, resolveSelectorSearchParams } from './record-selector-utils'
 import { resolveSelectionLabelFields as buildSelectionLabelFields, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
 
@@ -914,19 +907,6 @@ let remoteRequestSeq = 0
 // 人员/组织选择器类型集合与选择器 label 适配共享（见 selection-label-fields.js，勿在此另建副本）
 const ORG_TREE_SELECT_TYPES = ORG_SELECT_FIELD_TYPES
 const USER_SELECT_TYPES = USER_SELECT_FIELD_TYPES
-
-const READONLY_SELECTION_TYPES = new Set([
-  'select',
-  'dictSelect',
-  'radio',
-  'radioButton',
-  'checkbox',
-  'cascader',
-  'treeSelect',
-  'orgTreeSelect',
-  'transfer',
-  'objectReference',
-])
 
 const controlProps = computed(() => resolveControlProps(props.field?.props))
 const switchControlProps = computed(() => {
@@ -1309,16 +1289,8 @@ const currentOptions = computed(() => {
     return withCurrentValueOption(resolveCascadedOptions(result))
   }
 
-  // 其次使用 options 数组
-  if (field.options && Array.isArray(field.options) && field.options.length > 0) {
-    return withCurrentValueOption(resolveCascadedOptions(field.options))
-  }
-
-  // 检查 props.options（兼容旧的配置方式）
-  if (field.props?.options && Array.isArray(field.props.options) && field.props.options.length > 0) {
-    return withCurrentValueOption(resolveCascadedOptions(field.props.options))
-  }
-
+  // 动态选项源（业务对象/数据集/远程接口/当前子表）优先于设计器残留的静态 options
+  // 否则切到「其它表/业务对象」后仍显示「选项1/选项2」
   const currentChildrenSource = resolveCurrentChildrenSource(field)
   if (currentChildrenSource) {
     return withCurrentValueOption(resolveCascadedOptions(
@@ -1339,6 +1311,16 @@ const currentOptions = computed(() => {
 
   if (remoteOptionSource.value) {
     return withCurrentValueOption(resolveCascadedOptions(remoteOptions.value))
+  }
+
+  // 无动态源时才使用静态 options 数组
+  if (field.options && Array.isArray(field.options) && field.options.length > 0) {
+    return withCurrentValueOption(resolveCascadedOptions(field.options))
+  }
+
+  // 检查 props.options（兼容旧的配置方式）
+  if (field.props?.options && Array.isArray(field.props.options) && field.props.options.length > 0) {
+    return withCurrentValueOption(resolveCascadedOptions(field.props.options))
   }
 
   // 最后处理 enumType (仅当 options 为空时)
@@ -1371,10 +1353,16 @@ function withCurrentValueOption(options = []) {
   // 远程选项未就绪时必须注入占位项，否则 n-select 会把 value（id）直接当标签显示造成闪烁
   const remotePending = Boolean(remoteOptionSource.value) && remoteLoading.value
   values.forEach((value, index) => {
-    if (flattenOptionNodes(result).some(option => isSameOptionValue(option?.value ?? option?.key, value)))
+    const companion = companionLabels[index] || companionLabels[0] || ''
+    const existing = flattenOptionNodes(result).find(option => isSameOptionValue(option?.value ?? option?.key, value))
+    if (existing) {
+      // 选项已存在但 label 仍是 id/value（或空）时，优先用伴随名称回显
+      if (companion && (!existing.label || String(existing.label) === String(value)))
+        existing.label = companion
       return
+    }
     const label = resolvePendingOptionLabel({
-      companionLabel: companionLabels[index] || companionLabels[0] || '',
+      companionLabel: companion,
       remotePending,
     })
     if (!label)
@@ -1699,8 +1687,8 @@ async function loadRemoteOptions(source, keyword = '', { parentValue, forChildre
     }
 
     if (source.type === 'QUERY_SOURCE') {
-      // 设计器预览模式下不调用 execute 接口，只展示元数据（请求参数 / 返回字段）供用户配置映射
-      if (isDesignerPreviewContext()) {
+      // 画布静态预览可跳过远程拉数；预览弹窗 / 运行页必须拉数，否则选中后回填没有源字段
+      if (isDesignerPreviewContext() && props.context?.allowOptionSourceFetch !== true) {
         if (!forChildren)
           remoteOptions.value = []
         return forChildren ? [] : undefined
@@ -1725,7 +1713,10 @@ async function loadRemoteOptions(source, keyword = '', { parentValue, forChildre
         params[source.keywordParam] = keyword
       applyTreeLoadParams(params, source, { isTree, loadMode, parentValue })
       try {
-        const displayFields = buildQuerySourceDisplayFields(source)
+        const displayFields = buildQuerySourceDisplayFields(
+          source,
+          collectFieldMappingSourceFields(resolveComponentFieldMappings(props.field)),
+        )
         const res = await executeLowcodeQuerySource({
           sourceType: source.sourceType,
           sourceKey: source.sourceKey,
@@ -2232,6 +2223,8 @@ function buildObjectReferenceOptionSource(field = {}) {
   const config = resolveObjectReferenceConfig(field)
   if (!config.objectCode || !config.labelField)
     return null
+  const selectorConfig = normalizeRecordSelectorConfig(field)
+  const mappingSources = collectFieldMappingSourceFields(selectorConfig.fieldMappings)
   return {
     type: 'businessRecordSelector',
     objectCode: config.objectCode,
@@ -2240,7 +2233,7 @@ function buildObjectReferenceOptionSource(field = {}) {
     recordsField: 'records',
     pageNum: 1,
     pageSize: 100,
-    displayFields: [`${config.labelField}:${config.labelField}`],
+    displayFields: [...new Set([`${config.labelField}:${config.labelField}`, ...mappingSources])],
     keywordFields: [config.labelField],
   }
 }
@@ -2266,8 +2259,108 @@ function handleObjectReferenceSearch(keyword) {
 
 function handleObjectReferenceUpdate(value) {
   handleUpdate(value)
-  // Sync label value from selected option
   syncSelectionLabelFromOptions(props.field, value)
+  applyOptionFieldMappings(value)
+}
+
+/** 普通下拉（业务对象/数据集选项）选中后同样执行 fieldMappings 回填 */
+function handleSelectUpdate(value) {
+  const field = props.field || {}
+  const fieldKey = field.field
+  const multiple = fieldMultiple.value
+  const normalizedValue = multiple ? serializeSelectionValues(value, true) : value
+  const mappingPatch = buildOptionFieldMappingPatch(value)
+  const labelPatch = buildSelectionLabelPatch(field, value)
+
+  // 下拉值 + 伴随名称 + 选中回填同一批写入，避免受控表单二次 emit 冲掉映射结果
+  if (fieldKey && typeof props.context?.patchFormData === 'function') {
+    props.context.patchFormData({
+      [fieldKey]: normalizedValue,
+      ...labelPatch,
+      ...mappingPatch,
+    })
+    // 仍 emit，保证 CHANGE 字段事件触发；handleFieldChange 会保留 patch 里已写入的其它键
+    emit('update:value', normalizedValue)
+    return
+  }
+  handleUpdate(value)
+  applyOptionFieldMappings(value)
+}
+
+/**
+ * 下拉选中后，按组件 fieldMappings 把所选记录字段写回表单。
+ * 与「字段自动查询」是两套能力：映射来自当前选项行（零请求）；自动查询会再发一次查询源请求。
+ * 同一批目标字段不要两套都配，否则后到的自动查询会覆盖映射结果。
+ */
+function applyOptionFieldMappings(value) {
+  const filled = buildOptionFieldMappingPatch(value)
+  if (!Object.keys(filled).length)
+    return
+  const patchFormData = props.context?.patchFormData
+  if (typeof patchFormData !== 'function')
+    return
+  patchFormData(filled)
+}
+
+/**
+ * 按组件 fieldMappings 从当前选项行生成回填补丁（不含下拉自身字段）。
+ */
+function buildOptionFieldMappingPatch(value) {
+  if (fieldMultiple.value)
+    return {}
+  if (value === null || value === undefined || value === '')
+    return {}
+  const mappings = resolveComponentFieldMappings(props.field)
+  if (!mappings || (Array.isArray(mappings) ? !mappings.length : !Object.keys(mappings).length))
+    return {}
+  const option = flattenOptionNodes(currentOptions.value).find(item =>
+    isSameOptionValue(item?.value ?? item?.key, value),
+  ) || flattenOptionNodes(remoteOptions.value).find(item =>
+    isSameOptionValue(item?.value ?? item?.key, value),
+  )
+  if (!option)
+    return {}
+  const patch = applyRecordFieldMappings(option, mappings)
+  // 映射源恰好是显示字段时：选项行可能只剩 label，用 label 兜底（用户配 fieldInput → fieldInput3）
+  const labelField = String(
+    props.field?.props?.optionSource?.labelField
+    || props.field?.optionSource?.labelField
+    || '',
+  ).trim()
+  if (labelField && option.label !== undefined && option.label !== null && String(option.label) !== '') {
+    Object.entries(normalizeSelectorMappings(mappings)).forEach(([sourceField, targetField]) => {
+      if (patch[targetField] !== undefined)
+        return
+      if (sourceField === labelField)
+        patch[targetField] = option.label
+    })
+  }
+  return Object.fromEntries(
+    Object.entries(patch).filter(([, item]) => item !== undefined),
+  )
+}
+
+/** 兼容 props.fieldMappings / recordSelector.fieldMappings / optionSource.fieldMappings */
+function resolveComponentFieldMappings(field = {}) {
+  const fromProps = field.props?.fieldMappings || field.props?.mappings
+  if (Array.isArray(fromProps) && fromProps.length)
+    return fromProps
+  if (fromProps && typeof fromProps === 'object' && !Array.isArray(fromProps) && Object.keys(fromProps).length)
+    return fromProps
+  const fromOptionSource = field.props?.optionSource?.fieldMappings
+    || field.props?.optionSource?.mappings
+    || field.optionSource?.fieldMappings
+    || field.optionSource?.mappings
+  if (Array.isArray(fromOptionSource) && fromOptionSource.length)
+    return fromOptionSource
+  if (fromOptionSource && typeof fromOptionSource === 'object' && !Array.isArray(fromOptionSource) && Object.keys(fromOptionSource).length)
+    return fromOptionSource
+  const fromSelector = normalizeRecordSelectorConfig(field).fieldMappings
+  if (Array.isArray(fromSelector) && fromSelector.length)
+    return fromSelector
+  if (fromSelector && typeof fromSelector === 'object' && Object.keys(fromSelector).length)
+    return fromSelector
+  return field.fieldMappings || field.mappings || []
 }
 
 async function reloadObjectReferenceOptions(keyword = '') {
@@ -2288,17 +2381,25 @@ async function reloadObjectReferenceOptions(keyword = '') {
     const keywordFields = (selectorConfig.keywordFields || []).length
       ? selectorConfig.keywordFields
       : [config.labelField]
+    // 字段映射依赖选项上的源字段；把映射源和显示字段一并要回，避免选中后映射读空
+    const mappingSources = collectFieldMappingSourceFields(selectorConfig.fieldMappings)
+    const displayFields = [...new Set([
+      `${config.labelField}:${config.labelField}`,
+      ...mappingSources,
+    ])]
     const res = await queryBusinessRecordSelector({
       objectCode: config.objectCode,
       keyword: keyword || undefined,
       keywordFields,
-      displayFields: [`${config.labelField}:${config.labelField}`],
+      displayFields,
       searchParams,
     }, { pageNum: 1, pageSize: 50 })
     const records = res.data?.records || []
     remoteOptions.value = records.map(record => ({
+      ...record,
       label: record[config.labelField] || record.name || String(record[config.valueField] || record.id || ''),
       value: record[config.valueField] || record.id,
+      _raw: extractSelectorRawRecord(record),
     }))
   }
   catch {
@@ -2331,12 +2432,37 @@ function resolveSelectionLabelFields(field = {}) {
   return buildSelectionLabelFields(field, selectionType)
 }
 
-function patchSelectionLabelValue(field = {}, labelValue) {
-  const candidates = resolveSelectionLabelFields(field)
-  if (!candidates.length || typeof props.context?.patchFormData !== 'function')
+function syncSelectionLabelFromOptions(field = {}, value) {
+  const patch = buildSelectionLabelPatch(field, value)
+  if (!Object.keys(patch).length)
     return
+  if (typeof props.context?.patchFormData !== 'function')
+    return
+  props.context.patchFormData(patch)
+}
+
+/** 从当前选项解析伴随名称补丁（供原子写入与 sync 共用） */
+function buildSelectionLabelPatch(field = {}, value) {
+  if (!shouldSyncOptionLabels(field))
+    return {}
+  const multiple = isFieldMultiple(field) || fieldMultiple.value
+  const values = parseSelectionValues(value, true)
+  const labels = values
+    .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
+    .filter(Boolean)
+  const isCleared = values.length === 0
+    || values.every(item => item === null || item === undefined || item === '')
+  if (!labels.length && !isCleared)
+    return {}
+  const labelValue = multiple ? labels : (labels[0] ?? '')
+  return buildSelectionLabelValuePatch(field, labelValue)
+}
+
+function buildSelectionLabelValuePatch(field = {}, labelValue) {
+  const candidates = resolveSelectionLabelFields(field)
+  if (!candidates.length)
+    return {}
   const normalizedLabel = normalizeLabelValue(labelValue)
-  // 显式配置的 labelValueField（引用字段伴随列）优先，确保显示名称落到随主列一起提交的键上。
   const explicitLabelField = firstNonBlank(field.props?.labelValueField, field.labelValueField)
   const patchTargets = explicitLabelField && candidates.includes(explicitLabelField)
     ? [explicitLabelField, ...candidates.filter(candidate => candidate !== explicitLabelField)]
@@ -2346,47 +2472,18 @@ function patchSelectionLabelValue(field = {}, labelValue) {
     if (index === 0 || Object.prototype.hasOwnProperty.call(props.formData || {}, candidate))
       patch[candidate] = isFilledValue(normalizedLabel) ? normalizedLabel : undefined
   })
-  props.context.patchFormData(patch)
+  return patch
 }
 
-function syncSelectionLabelFromOptions(field = {}, value) {
-  const multiple = isFieldMultiple(field) || fieldMultiple.value
-  const values = parseSelectionValues(value, true)
-  const labels = values
-    .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
-    .filter(Boolean)
-  const isCleared = values.length === 0
-    || values.every(item => item === null || item === undefined || item === '')
-  if (labels.length || isCleared)
-    patchSelectionLabelValue(field, multiple ? labels : (labels[0] ?? ''))
+function patchSelectionLabelValue(field = {}, labelValue) {
+  const patch = buildSelectionLabelValuePatch(field, labelValue)
+  if (!Object.keys(patch).length || typeof props.context?.patchFormData !== 'function')
+    return
+  props.context.patchFormData(patch)
 }
 
 function normalizeLabelValue(value) {
   return serializeSelectionLabels(value)
-}
-
-function shouldRenderReadonlySelectionText(field = {}) {
-  const fieldType = normalizeRuntimeFieldType(field.type || field.componentType)
-  return Boolean(field.readonly || field.props?.readonly) && READONLY_SELECTION_TYPES.has(fieldType)
-}
-
-function resolveReadonlySelectionText(field = {}) {
-  const labels = resolveSelectionDisplayLabels(field)
-  if (labels.length)
-    return labels.join(', ')
-  const labelValue = normalizeLabelValue(resolveSelectionLabelValue(field))
-  if (isFilledValue(labelValue))
-    return labelValue
-  return normalizeDisplayText(props.value)
-}
-
-function resolveSelectionDisplayLabels(field = {}) {
-  const multiple = isFieldMultiple(field) || fieldMultiple.value
-  const normalizedValue = normalizeOptionValue(props.value, currentOptions.value, multiple)
-  const values = parseSelectionValues(normalizedValue, true)
-  return values
-    .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
-    .filter(Boolean)
 }
 
 function normalizeDisplayText(value) {

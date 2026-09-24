@@ -24,4 +24,41 @@ describe('resolveControlProps', () => {
       'clearable': true,
     })).toEqual({ clearable: true })
   })
+
+  it('strips readonly and disabled so AiFormItem can own those states', () => {
+    expect(resolveControlProps({
+      placeholder: 'name',
+      readonly: true,
+      disabled: true,
+      maxlength: 32,
+    })).toEqual({
+      placeholder: 'name',
+      maxlength: 32,
+    })
+  })
+
+  it('strips optionSource / fieldMappings so they are not bound onto Naive controls', () => {
+    expect(resolveControlProps({
+      placeholder: '请选择',
+      optionSource: { type: 'QUERY_SOURCE', sourceKey: 'metric' },
+      fieldMappings: [{ sourceField: 'name', targetField: 'title' }],
+      mappings: [{ source: 'a', target: 'b' }],
+      clearable: true,
+    })).toEqual({
+      placeholder: '请选择',
+      clearable: true,
+    })
+  })
+
+  it('strips options so AiFormItem currentOptions is not overridden by empty designer leftovers', () => {
+    expect(resolveControlProps({
+      placeholder: '请选择',
+      options: [],
+      labelValueField: 'name',
+      clearable: true,
+    })).toEqual({
+      placeholder: '请选择',
+      clearable: true,
+    })
+  })
 })

@@ -756,6 +756,45 @@
                               />
                             </div>
                           </div>
+                          <div
+                            v-if="selectedComponent.props?.optionSource?.sourceKey"
+                            class="option-source-field object-reference-mappings"
+                          >
+                            <label>选中后回填</label>
+                            <div
+                              v-for="(row, index) in referenceFieldMappings"
+                              :key="`bo-map-${index}`"
+                              class="object-reference-mappings__row"
+                            >
+                              <n-select
+                                :value="row.sourceField || null"
+                                :options="querySourceMetaFields"
+                                :loading="querySourceMetaLoading"
+                                size="small"
+                                filterable
+                                placeholder="源字段（业务对象）"
+                                @update:value="updateReferenceFieldMapping(index, { sourceField: $event })"
+                              />
+                              <span class="object-reference-mappings__arrow">→</span>
+                              <n-select
+                                :value="row.targetField || null"
+                                :options="formFieldOptions"
+                                size="small"
+                                filterable
+                                placeholder="目标字段（当前表单）"
+                                @update:value="updateReferenceFieldMapping(index, { targetField: $event })"
+                              />
+                              <n-button size="tiny" quaternary type="error" @click="removeReferenceFieldMapping(index)">
+                                删
+                              </n-button>
+                            </div>
+                            <n-button size="tiny" secondary @click="addReferenceFieldMapping">
+                              + 添加回填
+                            </n-button>
+                            <small class="object-reference-mappings__hint">
+                              选中下拉项后，把业务对象记录上的字段直接写入当前表单（不必再配「联动动作」或「字段自动查询」）。
+                            </small>
+                          </div>
                           <div v-if="querySourceMetaError && !querySourceMetaLoading" class="query-source-meta-error">
                             {{ querySourceMetaError }}
                           </div>
@@ -1393,7 +1432,7 @@
                         @update:value="isObjectReferenceField ? updateReferenceObjectCode($event) : updateRecordSelectorObjectCode($event)"
                       />
                     </n-form-item>
-                    <!-- 下拉模式（objectReference）：显示字段 + 值字段 -->
+                    <!-- 下拉模式（objectReference）：显示字段 + 值字段 + 选中后回填 -->
                     <template v-if="isObjectReferenceField">
                       <n-form-item v-if="referenceObjectCode" label="显示字段">
                         <n-select
@@ -1416,6 +1455,43 @@
                           placeholder="选择保存到当前字段的值字段，默认 id"
                           @update:value="updateReferenceValueField"
                         />
+                      </n-form-item>
+                      <n-form-item v-if="referenceObjectCode" label="选中后回填">
+                        <div class="object-reference-mappings">
+                          <div
+                            v-for="(row, index) in referenceFieldMappings"
+                            :key="`ref-map-${index}`"
+                            class="object-reference-mappings__row"
+                          >
+                            <n-select
+                              :value="row.sourceField || null"
+                              :options="referenceTargetFieldOptions"
+                              :loading="referenceTargetFieldLoading"
+                              size="small"
+                              filterable
+                              placeholder="源字段（被引用对象）"
+                              @update:value="updateReferenceFieldMapping(index, { sourceField: $event })"
+                            />
+                            <span class="object-reference-mappings__arrow">→</span>
+                            <n-select
+                              :value="row.targetField || null"
+                              :options="formFieldOptions"
+                              size="small"
+                              filterable
+                              placeholder="目标字段（当前表单）"
+                              @update:value="updateReferenceFieldMapping(index, { targetField: $event })"
+                            />
+                            <n-button size="tiny" quaternary type="error" @click="removeReferenceFieldMapping(index)">
+                              删
+                            </n-button>
+                          </div>
+                          <n-button size="tiny" secondary @click="addReferenceFieldMapping">
+                            + 添加回填
+                          </n-button>
+                          <small class="object-reference-mappings__hint">
+                            选中下拉项后，把被引用对象上的字段直接写入当前表单（不必再配「字段自动查询」）。
+                          </small>
+                        </div>
                       </n-form-item>
                     </template>
                     <!-- 弹窗模式（recordSelector）：值字段 + 选择器设置（搜索字段/展示列/过滤/映射） -->
@@ -5937,6 +6013,10 @@ const isRelationField = computed(() => isObjectReferenceField.value || isRecordS
 const referenceObjectCode = computed(() => selectedComponent.value?.props?.referenceObjectCode || '')
 const referenceDisplayField = computed(() => selectedComponent.value?.props?.referenceDisplayField || '')
 const referenceValueField = computed(() => selectedComponent.value?.props?.referenceValueField || '')
+const referenceFieldMappings = computed(() => {
+  const mappings = selectedComponent.value?.props?.fieldMappings
+  return Array.isArray(mappings) ? mappings : []
+})
 // recordSelector 配置（弹窗模式）
 const recordSelectorConfigObj = computed(() => selectedComponent.value?.props?.recordSelector || {})
 const recordSelectorObjectCode = computed(() => recordSelectorConfigObj.value.objectCode || '')
@@ -6313,6 +6393,8 @@ function updatePageWidgetOptionSource(patch = {}) {
     const labelValueField = resolveSelectionLabelValueField()
     if (labelValueField)
       propsPatch.labelValueField = labelValueField
+    // 切到动态源时清掉静态「选项1/选项2」，避免运行态/预览仍优先渲染残留 options
+    propsPatch.options = []
   }
   else if (Object.prototype.hasOwnProperty.call(patch, 'type') && type === 'STATIC') {
     // 切回静态选项时清掉伴随字段绑定，避免残留误导
@@ -6731,6 +6813,51 @@ function updateReferenceDisplayField(value) {
 function updateReferenceValueField(value) {
   updateComponent({ props: { referenceValueField: value || '' } })
 }
+
+function addReferenceFieldMapping() {
+  const next = [...referenceFieldMappings.value, { sourceField: '', targetField: '' }]
+  persistSelectFieldMappings(next)
+}
+
+function updateReferenceFieldMapping(index, patch = {}) {
+  const next = referenceFieldMappings.value.map((item, i) => (
+    i === index ? { ...item, ...patch } : item
+  ))
+  persistSelectFieldMappings(next)
+}
+
+function removeReferenceFieldMapping(index) {
+  const next = referenceFieldMappings.value.filter((_, i) => i !== index)
+  persistSelectFieldMappings(next)
+}
+
+/** 下拉选中回填：同时写入 props.fieldMappings，并镜像到 optionSource 供运行态投影源字段 */
+function persistSelectFieldMappings(mappings = []) {
+  const optionSource = { ...(selectedComponent.value?.props?.optionSource || {}) }
+  const cleaned = (Array.isArray(mappings) ? mappings : [])
+    .map(item => ({
+      sourceField: String(item?.sourceField || item?.source || '').trim(),
+      targetField: String(item?.targetField || item?.target || '').trim(),
+    }))
+  const filled = cleaned.filter(item => item.sourceField && item.targetField)
+  const sourceFields = filled.map(item => item.sourceField)
+  const labelField = String(optionSource.labelField || '').trim()
+  const displayFields = [...new Set([
+    ...(labelField ? [labelField] : []),
+    ...sourceFields,
+  ])]
+  updateComponent({
+    props: {
+      fieldMappings: cleaned,
+      optionSource: {
+        ...optionSource,
+        fieldMappings: filled,
+        ...(displayFields.length ? { displayFields } : {}),
+      },
+    },
+  })
+}
+
 // recordSelector 更新函数
 function updateRecordSelectorObjectCode(value) {
   const target = businessObjectOptions.value.find(item => item.value === value)
@@ -6918,9 +7045,10 @@ async function handleGenerationEnabled(value) {
         required: false,
         requiredMessage: '',
       },
+      // 编码规则字段应只读可见，禁止顺带 hidden（否则运行态整字段被滤掉，看起来像「组件没了」）
       visibility: {
         readonly: true,
-        hidden: true,
+        hidden: false,
       },
     })
     if (next.ruleCode)
@@ -11301,5 +11429,30 @@ onBeforeUnmount(() => {
 .record-selector-advanced-summary {
   font-size: 12px;
   color: #999;
+}
+
+.object-reference-mappings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.object-reference-mappings__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.object-reference-mappings__arrow {
+  color: #a1a1aa;
+  font-size: 12px;
+}
+
+.object-reference-mappings__hint {
+  color: #71717a;
+  font-size: 11px;
+  line-height: 1.5;
 }
 </style>

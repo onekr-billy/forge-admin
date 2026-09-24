@@ -39,13 +39,27 @@ public class DynamicDataSourceUtil {
     }
 
     /**
-     * 获取或创建数据源
+     * 获取或创建数据源。首次创建 Hikari 池会阻塞当前请求，调用方应接受冷启动成本。
      */
     private static DataSource getOrCreateDataSource(GenDatasource datasource) {
         return DATA_SOURCE_POOL.computeIfAbsent(datasource.getDatasourceId(), key -> {
             log.info("创建数据源连接池: {}", datasource.getDatasourceName());
             return createDataSource(datasource);
         });
+    }
+
+    /**
+     * 预热连接池（创建池并拿到一条连接马上归还），避免业务首请求踩 Hikari 冷启动。
+     */
+    public static void warmUp(GenDatasource datasource) {
+        if (datasource == null || datasource.getDatasourceId() == null) {
+            return;
+        }
+        try (Connection ignored = getConnection(datasource)) {
+            log.debug("数据源连接池已预热: {}", datasource.getDatasourceName());
+        } catch (Exception e) {
+            log.warn("数据源连接池预热失败: {}, error={}", datasource.getDatasourceName(), e.getMessage());
+        }
     }
 
     /**

@@ -1,6 +1,96 @@
 # 踩坑：低代码 / 设计器 / 业务对象
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 94 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 103 条。
+
+## 应用协调发布应优先做状态推进，不要每次重跑对象发布
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+用户点应用发布时期望切到 `PUBLISHED`。链路却仍 prepare 草稿、同步托管表、对象级门禁、对 CHANGED 对象重跑 lowcode 发布，常见小应用也要约十几秒。
+
+**解决方案**:
+真正发布走 `resolveStatusPublishCheck`（只拦应用停用/业务域/门户）；不再 prepare/syncDB。对象若已有发布版本只钉版本 ID（`selectLatestPublishedVersionIds` 不拉快照大字段）；设计状态未发布时批量 `markDesignPublished`，禁止逐条 `selectById`。仅从未发布过的对象才走完整 `objectPublishService.publish`。草稿物化与表同步留给显式「发布检查」。
+
+## 应用发布进度不要每步把整包 snapshot_json 刷盘
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+协调发布每步 `markStepRunning` + `markStepSuccess` + `updateSnapshot` 多次 `updateProgress`，参数里带着数 MB 的 `snapshot_json`（页面布局 + formAssets）。OBJECTS 又 `selectByApplicationId`（含 model_schema）和逐条 `selectById`，PROCESSES 在投影已对齐时仍 `updatePublishedProjection`。日志里单次进度写就要 200–600ms。
+
+**解决方案**:
+`markStepRunning` 只改内存；成功时与快照合并为一次 UPDATE；`updateProgress` 对 null 字段 COALESCE 保留旧值，成功清空错误用空串。OBJECTS 从候选快照读对象清单，只查版本 ID。流程投影已指向同一版本且 PUBLISHED 时跳过 UPDATE。
+
+## 应用发布门禁不能跑对象级 publishCheck 和套件级公式上下文
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+应用协调发布预检对每个对象调用 `publishCheckResolved`：单据配置会查 `document_config` + FLOW/APPROVAL 绑定；公式检查再 `selectBySuiteCode` 并对套件内每个对象 `loadContext`。小应用（数个对象、套件十几对象）会放大成数十次编译级读库，单次 LIMIT 1 也要上百毫秒时发布极慢。
+
+**解决方案**:
+应用门禁只做应用级检查（启用、表、库同步、入口/流程/扩展）；未发布对象只 `loadContext` 供后续发布复用，已 PUBLISHED 跳过。公式检查禁止套件全量 loadContext。未建单据配置时不要查流程绑定。
+
+## 应用发布不能因打印模板字段目录阻断
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+应用协调发布在捕获打印清单和提交版本时调用 `PrintBindingValidationService`，按页面字段目录校验模板引用（如 `flow.processInstanceId`）。模板字段与当前页面 catalog 短暂不一致时，发布耗时数十秒后抛「模板引用了未授权或已变更的字段」，阻断应用状态切换。
+
+**解决方案**:
+应用发布只固定打印引用完整性（模板启用、来源一致、版本哈希、可发布场景）；页面级字段目录校验留给打印预览/取数，不阻断发布。
+
+## 引用业务对象下拉的字段映射和字段自动查询不要叠同一批目标字段
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+触发字段是「引用其它业务对象」的下拉时，用户以为和「字段自动查询」冲突，也找不到「字段映射」入口。字段映射原先只挂在「记录选择器」弹窗的「选择器设置」里；「引用对象」下拉属性只有显示字段/值字段。字段联动是另一套（过滤/清空），部分参数还是手工输入。
+
+**解决方案**:
+「引用对象」属性增加「选中后回填」（`props.fieldMappings`），运行态下拉选中后执行映射。简单带出同行字段用这个；还要再查别的源才用字段自动查询；字段联动只做级联过滤，不负责选中回填。
+
+## 字段自动查询规则不能因一条脏映射整条静默丢弃
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+业务对象字段自动查询配置保存后，运行态完全不触发。归一化时只要任意回填目标或参数字段不在当前 `knownFields`（例如页面 fieldRefs 裁剪、schema 与设计器短暂不同步），整条 `paramMappings` / `resultMappings` 返回 `null`，规则被静默丢弃。列表型查询源若 `resultMode` 仍是 `ROOT`，即使发出请求也无法按字段路径回填。
+
+**解决方案**:
+未知表单字段只跳过该项映射，保留其余合法映射；`DATASET` / `BUSINESS_OBJECT` 在归一化时把 `ROOT` 收敛为 `FIRST_ROW`；预览链路补传 `fieldEvents`。
+
+## 设计器「只读」必须叠到运行 editSchema，且不能经 controlProps 渗入 Naive 组件
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+字段属性「显示与编辑状态 → 只读」有的组件生效、有的像消失。低代码运行 `buildRuntimeCrudProps` 只编译 uiDocument 布局，平铺 `editSchema` 不带设计器 `visibility.readonly`；只读后又把 `props.readonly` 经 `v-bind` 渗进 Select/DatePicker 等组件，表现不稳定。曾用「只读改纯文本」兜底，空值时只剩 `-`，用户以为组件没了；画布预览还强制 `readonly:false`，勾选看起来不生效。更严重：设计器新拖的输入框若不在发布态 `editSchema` 里，uiDocument 解析会因 fieldMap 缺键静默丢掉整字段；开启编码规则时还曾误写 `visibility.hidden=true`。
+
+**解决方案**:
+运行前用 `mergeDesignerEditSchema` 把设计器组件并进字段表再叠 visibility；uiDocument `editable=false` 解析为字段只读；`resolveControlProps` 剥离 readonly/disabled；只读统一走 disabled 控件；画布预览同步反映 visibility.readonly；编码规则只标只读、不隐藏。
+
+## 流程打印绑定不能再按未接入场景阻断应用发布
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+应用发布捕获打印清单时，`FLOW_TODO` / `FLOW_DONE` / `FLOW_STARTED` 绑定直接抛出「流程打印尚未接入，不能发布此场景绑定」。运行时取数、权限和审批记录目录已经接入，发布门槛还停在只允许列表和详情。
+
+**解决方案**:
+发布校验接受这三种流程场景，并把审批记录字段并进字段目录后再做模板字段检查。列表和详情按钮投影仍不展示流程场景。
+
+## 字段自动查询的业务对象主键不能当系统字段藏起来
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+表单「字段自动查询」选业务对象时，返回字段和查询参数里没有主键 `id`，无法按 ID 关联回填。选完后发布被阻断：`查询源类型仅支持 EXTERNAL_API、DATASET`。模型归一化会剥掉系统字段 `id`，查询源元数据直接复用这份字段目录；发布检查的查询源白名单也没跟上 `BUSINESS_OBJECT`。
+
+**解决方案**:
+业务对象查询源元数据固定补上「主键 ID」。发布检查允许 `BUSINESS_OBJECT`。运行时按回填字段（含 `id`）向选择器要列，并带上分页。
 
 ## GET render / designPreview 不能在长事务里写关系表
 

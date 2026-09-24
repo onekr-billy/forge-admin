@@ -358,7 +358,7 @@
               <AiForm
                 ref="businessFormRef"
                 v-model:value="businessFormData"
-                :schema="businessFormContext.fields || []"
+                :schema="businessFormAiSchema"
                 :field-permissions="businessFormFieldPermissions"
                 :show-actions="false"
                 :show-feedback="true"
@@ -599,10 +599,11 @@ import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/store'
 import { normalizeFieldPermissions, pickFirstNonEmptyFieldPermissions, pickFirstNonEmptyPermissionSource } from '@/utils/field-permissions'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
-import { applyChildTableFieldPermissions } from '@/utils/flow-field-permissions'
+import { applyChildTableFieldPermissions, childTableKeysAlias } from '@/utils/flow-field-permissions'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel } from './utils/categoryOptions'
 import { FLOW_PRIORITY_LABEL_FALLBACK, getFlowPriorityClass, isUrgentFlowPriority, resolveFlowPriorityLevel, shouldShowFlowPriority } from './utils/priority'
 import { getBusinessFormDisplayTitle, getProcessDisplayName, getRowDisplayTitle, getTaskDisplayName, getTaskHandlerName } from './utils/processDisplay'
+import { resolveBusinessTaskAiFormSchema } from './utils/resolveBusinessTaskAiFormSchema'
 import { loadTaskFormBundle } from './utils/task-form-bundle'
 
 const userStore = useUserStore()
@@ -698,6 +699,8 @@ const businessFormLabelPlacement = computed(() => ['left', 'top'].includes(busin
   ? businessFormContext.value.labelPlacement
   : 'left')
 const businessFormLabelWidth = computed(() => businessFormContext.value?.labelWidth || '100')
+/** PC Phase A：有 uiDocument 时按分区序排 fields，无文档则原样 */
+const businessFormAiSchema = computed(() => resolveBusinessTaskAiFormSchema(businessFormContext.value))
 const useBusinessCodeComponentForm = computed(() => useBusinessCodeForm.value && Boolean(businessCodeFormUrl.value))
 const useComponentTaskForm = computed(() => useExternalForm.value || useBusinessCodeComponentForm.value)
 const businessFormMissingText = computed(() => {
@@ -725,6 +728,8 @@ const businessFormRenderContext = computed(() => ({
   taskFormInfo: taskFormInfo.value,
   businessFormContext: businessFormContext.value,
   formAssets: businessFormContext.value?.formAssets || [],
+  protocolVersion: businessFormContext.value?.protocolVersion || null,
+  uiDocument: businessFormContext.value?.uiDocument || null,
 }))
 const taskPolicySource = computed(() => taskFormInfo.value || businessFormContext.value || {})
 const canApprove = computed(() => taskPolicySource.value?.allowApprove !== false)
@@ -869,11 +874,49 @@ function normalizeBusinessChildrenData(recordData) {
     ? recordData.children
     : {}
   const result = {}
+  const usedSourceKeys = new Set()
   businessFormChildrenConfig.value.forEach((child) => {
     const key = resolveBusinessChildKey(child)
-    result[key] = Array.isArray(source[key]) ? source[key] : []
+    const matched = findBusinessChildRows(source, child, usedSourceKeys)
+    result[key] = matched.rows
+    if (matched.sourceKey)
+      usedSourceKeys.add(matched.sourceKey)
   })
   return result
+}
+
+function findBusinessChildRows(source = {}, child = {}, usedSourceKeys = new Set()) {
+  const candidates = [
+    child.modelCode,
+    child.relationKey,
+    child.key,
+    child.tableName,
+  ].map(value => String(value || '').trim()).filter(Boolean)
+
+  for (const candidate of candidates) {
+    if (usedSourceKeys.has(candidate))
+      continue
+    if (Array.isArray(source[candidate]))
+      return { rows: source[candidate], sourceKey: candidate }
+  }
+
+  let bestKey = ''
+  let bestDelta = Number.POSITIVE_INFINITY
+  Object.keys(source || {}).forEach((dataKey) => {
+    if (usedSourceKeys.has(dataKey) || !Array.isArray(source[dataKey]))
+      return
+    const matched = candidates.some(candidate => childTableKeysAlias(candidate, dataKey))
+    if (!matched)
+      return
+    const delta = Math.min(...candidates.map(candidate => Math.abs(candidate.length - dataKey.length)))
+    if (delta < bestDelta) {
+      bestDelta = delta
+      bestKey = dataKey
+    }
+  })
+  if (bestKey)
+    return { rows: source[bestKey], sourceKey: bestKey }
+  return { rows: [], sourceKey: '' }
 }
 
 function resolveBusinessChildKey(child = {}) {
@@ -1154,8 +1197,17 @@ function buildBusinessTaskFormSavePayload() {
   ;(Array.isArray(context.fields) ? context.fields : []).forEach((field) => {
     if (field?.writable === true && field?.readonly !== true && field?.disabled !== true) {
       const code = field.field || field.fieldCode
-      if (code && Object.prototype.hasOwnProperty.call(businessFormData.value, code))
+      if (!code)
+        return
+      // 开关未勾选也要带上 false/0，否则后端必填校验会当成「未提交」
+      if (Object.prototype.hasOwnProperty.call(businessFormData.value, code)) {
         writableMainData[code] = businessFormData.value[code]
+        return
+      }
+      if (String(field.type || field.componentType || '').toLowerCase() === 'switch') {
+        const unchecked = field.props?.uncheckedValue
+        writableMainData[code] = unchecked === undefined || unchecked === null ? false : unchecked
+      }
     }
   })
   const childValue = businessChildFormRef.value?.getValue?.() || businessChildFormData.value

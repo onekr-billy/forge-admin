@@ -3,6 +3,7 @@
  * FormPermissionConfig — 表单字段权限
  *
  * 由当前流程字段目录生成，不再手工输入字段名。
+ * 主表 / 子表 / 数组明细分区展示；子表行操作只保留当前目录中仍存在的子表。
  * config.formFieldPermissions: [{ field, label, readable, writable, required }]
  */
 import { computed } from 'vue'
@@ -57,6 +58,24 @@ const formFields = computed(() => {
   }))
 })
 
+const catalogChildKeys = computed(() => {
+  const keys = []
+  formFields.value.filter(field => field.scope === 'child' && field.childKey).forEach((field) => {
+    if (!keys.some(key => childTableKeysAlias(key, field.childKey)))
+      keys.push(field.childKey)
+  })
+  return keys
+})
+
+const catalogArrayKeys = computed(() => {
+  const keys = []
+  formFields.value.filter(field => field.scope === 'array' && field.arrayKey).forEach((field) => {
+    if (!keys.includes(field.arrayKey))
+      keys.push(field.arrayKey)
+  })
+  return keys
+})
+
 const rows = computed(() => {
   const output = formFields.value.map((field) => {
     const saved = findSavedFieldPermission(field)
@@ -77,6 +96,11 @@ const rows = computed(() => {
   for (const saved of savedPermissions.value.values()) {
     if (output.some(row => samePermissionRow(row, saved)))
       continue
+    // 已从表单目录移除的子表/数组字段不再占位，避免和当前主表字段混在一起
+    if (saved.scope === 'child' && !catalogChildKeys.value.some(key => childTableKeysAlias(key, saved.childKey)))
+      continue
+    if (saved.scope === 'array' && !catalogArrayKeys.value.includes(saved.arrayKey))
+      continue
     output.push({
       ...saved,
       configured: true,
@@ -88,6 +112,44 @@ const rows = computed(() => {
   }
   return output
 })
+
+const mainFieldRows = computed(() => rows.value.filter(row => !row.scope || row.scope === 'main'))
+
+const childFieldGroups = computed(() => {
+  const groups = []
+  catalogChildKeys.value.forEach((childKey) => {
+    const childRows = rows.value.filter(row => row.scope === 'child' && childTableKeysAlias(row.childKey, childKey))
+    if (!childRows.length)
+      return
+    const label = childRows.find(row => row.childLabel && row.childLabel !== childKey)?.childLabel
+      || childRows[0]?.relationName
+      || childKey
+    groups.push({
+      childKey,
+      label,
+      rows: childRows,
+    })
+  })
+  return groups
+})
+
+const arrayFieldGroups = computed(() => {
+  const groups = []
+  catalogArrayKeys.value.forEach((arrayKey) => {
+    const arrayRows = rows.value.filter(row => row.scope === 'array' && row.arrayKey === arrayKey)
+    if (!arrayRows.length)
+      return
+    groups.push({
+      arrayKey,
+      label: arrayRows.find(row => row.arrayLabel)?.arrayLabel || arrayKey,
+      rows: arrayRows,
+    })
+  })
+  return groups
+})
+
+const staleMainRows = computed(() => mainFieldRows.value.filter(row => row.stale))
+const activeMainRows = computed(() => mainFieldRows.value.filter(row => !row.stale))
 
 function findSavedFieldPermission(field) {
   const direct = savedPermissions.value.get(field.permissionKey)
@@ -114,83 +176,50 @@ function samePermissionRow(row, saved) {
 }
 
 const childPermissionRows = computed(() => {
-  const source = new Map()
-  formFields.value.filter(field => field.scope === 'child').forEach((field) => {
-    const existing = findAliasMapEntry(source, field.childKey)
-    if (!existing) {
-      source.set(field.childKey, {
-        childKey: field.childKey,
-        label: field.childLabel || field.relationName || field.childKey,
-      })
+  // 只展示当前字段目录里仍存在的子表，已删除子表的历史行操作配置直接丢弃
+  return catalogChildKeys.value.map((childKey) => {
+    const sample = formFields.value.find(field => field.scope === 'child' && childTableKeysAlias(field.childKey, childKey))
+    const saved = savedPermissionBundle.value.children.find(child => childTableKeysAlias(child.childKey, childKey))
+    return {
+      ...normalizeFlowChildPermission({
+        childKey,
+        label: sample?.childLabel || sample?.relationName || saved?.label || childKey,
+        ...(saved || {}),
+        childKey,
+      }),
+      fieldCount: formFields.value.filter(field => field.scope === 'child' && childTableKeysAlias(field.childKey, childKey)).length,
     }
   })
-  savedPermissionBundle.value.children.forEach((child) => {
-    if (!child.childKey)
-      return
-    const existing = findAliasMapEntry(source, child.childKey)
-    if (existing) {
-      source.set(existing[0], {
-        ...existing[1],
-        ...child,
-        childKey: existing[0],
-        label: existing[1].label || child.label,
-      })
-      return
-    }
-    source.set(child.childKey, child)
-  })
-  return Array.from(source.values()).map(child => ({
-    ...normalizeFlowChildPermission(child),
-    fieldCount: formFields.value.filter(field => field.scope === 'child' && childTableKeysAlias(field.childKey, child.childKey)).length,
-  }))
 })
 
-function findAliasMapEntry(source, childKey) {
-  for (const entry of source.entries()) {
-    if (childTableKeysAlias(entry[0], childKey))
-      return entry
-  }
-  return null
-}
-
 const arrayPermissionRows = computed(() => {
-  const source = new Map()
-  formFields.value.filter(field => field.scope === 'array').forEach((field) => {
-    if (!source.has(field.arrayKey)) {
-      source.set(field.arrayKey, {
-        arrayKey: field.arrayKey,
-        label: field.arrayLabel || field.arrayKey,
-      })
+  return catalogArrayKeys.value.map((arrayKey) => {
+    const sample = formFields.value.find(field => field.scope === 'array' && field.arrayKey === arrayKey)
+    const saved = savedPermissionBundle.value.arrays.find(array => array.arrayKey === arrayKey)
+    return {
+      ...normalizeFlowArrayPermission({
+        arrayKey,
+        label: sample?.arrayLabel || saved?.label || arrayKey,
+        ...(saved || {}),
+        arrayKey,
+      }),
+      fieldCount: formFields.value.filter(field => field.scope === 'array' && field.arrayKey === arrayKey).length,
     }
   })
-  savedPermissionBundle.value.arrays.forEach((array) => {
-    if (!array.arrayKey)
-      return
-    source.set(array.arrayKey, {
-      ...(source.get(array.arrayKey) || {}),
-      ...array,
-    })
-  })
-  return Array.from(source.values()).map(array => ({
-    ...normalizeFlowArrayPermission(array),
-    fieldCount: formFields.value.filter(field => field.scope === 'array' && field.arrayKey === array.arrayKey).length,
-  }))
 })
 
 const configuredCount = computed(() => {
   const fieldCount = rows.value.filter(row => row.configured && (row.readable === false || row.writable === false || row.required === true)).length
-  const childCount = childPermissionRows.value.filter(row => row.configured && (row.allowCreate || row.allowUpdate || row.allowDelete || row.readable === false)).length
-  const arrayCount = arrayPermissionRows.value.filter(row => row.configured && (row.allowCreate || row.allowDelete || row.readable === false || row.allowUpdate === false)).length
+  const childCount = childPermissionRows.value.filter(row => row.allowCreate || row.allowUpdate || row.allowDelete || row.readable === false).length
+  const arrayCount = arrayPermissionRows.value.filter(row => row.allowCreate || row.allowDelete || row.readable === false || row.allowUpdate === false).length
   return fieldCount + childCount + arrayCount
 })
 
+const hasAnyFieldRows = computed(() => rows.value.length > 0)
+
 function childFieldCaption(row) {
-  if (row?.scope === 'child') {
-    const tableName = row.childLabel && row.childLabel !== row.childKey ? row.childLabel : ''
-    if (tableName)
-      return `${tableName} · ${row.field}`
-    return `${row.childKey}.${row.field}`
-  }
+  if (row?.scope === 'child')
+    return row.field || row.childField || ''
   if (row?.scope === 'array')
     return `${row.arrayKey}[].${row.field}`
   return row?.field || ''
@@ -313,7 +342,7 @@ function emitPermissions(fields, children, arrays) {
           表单字段权限
         </div>
         <div class="form-permission-desc">
-          按当前流程字段目录控制该审批节点的可见、可编辑和必填。
+          主表与子表分开配置该审批节点的可见、可编辑和必填；子表行操作仅针对当前表单仍存在的子表。
         </div>
       </div>
       <n-tag size="small" :type="configuredCount > 0 ? 'info' : 'default'" :bordered="false">
@@ -321,7 +350,7 @@ function emitPermissions(fields, children, arrays) {
       </n-tag>
     </div>
 
-    <div v-if="rows.length === 0" class="form-permission-empty">
+    <div v-if="!hasAnyFieldRows" class="form-permission-empty">
       <i class="i-material-symbols:dynamic-form" />
       <div>
         <div class="form-permission-empty-title">
@@ -333,89 +362,238 @@ function emitPermissions(fields, children, arrays) {
       </div>
     </div>
 
-    <div v-else class="form-permission-table">
-      <div class="form-permission-row is-head">
-        <span>字段</span>
-        <span>可见</span>
-        <span>可编辑</span>
-        <span>必填</span>
+    <template v-else>
+      <div v-if="activeMainRows.length || staleMainRows.length" class="permission-section">
+        <div class="permission-section-title">
+          主表字段
+        </div>
+        <div class="form-permission-table">
+          <div class="form-permission-row is-head">
+            <span>字段</span>
+            <span>可见</span>
+            <span>可编辑</span>
+            <span>必填</span>
+          </div>
+          <div
+            v-for="row in activeMainRows"
+            :key="row.permissionKey"
+            class="form-permission-row"
+          >
+            <div class="form-field-cell">
+              <div class="form-field-label">
+                {{ row.label || row.field }}
+                <n-tag v-if="row.sourceRequired" size="tiny" type="warning" :bordered="false">
+                  表单必填
+                </n-tag>
+              </div>
+              <div class="form-field-code">
+                {{ childFieldCaption(row) }}
+              </div>
+            </div>
+            <n-checkbox
+              data-test="permission-readable"
+              :checked="row.readable"
+              :disabled="readonly"
+              @update:checked="update(row.permissionKey, { readable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-writable"
+              :checked="row.writable"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { writable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-required"
+              :checked="row.required"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { required: $event })"
+            />
+          </div>
+          <div
+            v-for="row in staleMainRows"
+            :key="row.permissionKey"
+            class="form-permission-row stale"
+          >
+            <div class="form-field-cell">
+              <div class="form-field-label">
+                {{ row.label || row.field }}
+                <n-tag size="tiny" type="default" :bordered="false">
+                  历史字段
+                </n-tag>
+              </div>
+              <div class="form-field-code">
+                {{ childFieldCaption(row) }}
+              </div>
+            </div>
+            <n-checkbox
+              data-test="permission-readable"
+              :checked="row.readable"
+              :disabled="readonly"
+              @update:checked="update(row.permissionKey, { readable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-writable"
+              :checked="row.writable"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { writable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-required"
+              :checked="row.required"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { required: $event })"
+            />
+          </div>
+        </div>
       </div>
+
       <div
-        v-for="row in rows"
-        :key="row.permissionKey"
-        class="form-permission-row"
-        :class="{ stale: row.stale }"
+        v-for="group in childFieldGroups"
+        :key="`child-fields-${group.childKey}`"
+        class="permission-section"
       >
-        <div class="form-field-cell">
-          <div class="form-field-label">
-            {{ row.label || row.field }}
-            <n-tag v-if="row.sourceRequired" size="tiny" type="warning" :bordered="false">
-              表单必填
-            </n-tag>
-            <n-tag v-if="row.stale" size="tiny" type="default" :bordered="false">
-              历史字段
-            </n-tag>
+        <div class="permission-section-title">
+          子表字段 · {{ group.label }}
+        </div>
+        <div class="form-permission-table">
+          <div class="form-permission-row is-head">
+            <span>字段</span>
+            <span>可见</span>
+            <span>可编辑</span>
+            <span>必填</span>
           </div>
-          <div class="form-field-code">
-            {{ childFieldCaption(row) }}
+          <div
+            v-for="row in group.rows"
+            :key="row.permissionKey"
+            class="form-permission-row"
+            :class="{ stale: row.stale }"
+          >
+            <div class="form-field-cell">
+              <div class="form-field-label">
+                {{ row.label || row.field }}
+                <n-tag v-if="row.sourceRequired" size="tiny" type="warning" :bordered="false">
+                  表单必填
+                </n-tag>
+                <n-tag v-if="row.stale" size="tiny" type="default" :bordered="false">
+                  历史字段
+                </n-tag>
+              </div>
+              <div class="form-field-code">
+                {{ childFieldCaption(row) }}
+              </div>
+            </div>
+            <n-checkbox
+              data-test="permission-readable"
+              :checked="row.readable"
+              :disabled="readonly"
+              @update:checked="update(row.permissionKey, { readable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-writable"
+              :checked="row.writable"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { writable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-required"
+              :checked="row.required"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { required: $event })"
+            />
           </div>
         </div>
-        <n-checkbox
-          data-test="permission-readable"
-          :checked="row.readable"
-          :disabled="readonly"
-          @update:checked="update(row.permissionKey, { readable: $event })"
-        />
-        <n-checkbox
-          data-test="permission-writable"
-          :checked="row.writable"
-          :disabled="readonly || !row.readable"
-          @update:checked="update(row.permissionKey, { writable: $event })"
-        />
-        <n-checkbox
-          data-test="permission-required"
-          :checked="row.required"
-          :disabled="readonly || !row.readable"
-          @update:checked="update(row.permissionKey, { required: $event })"
-        />
       </div>
-    </div>
 
-    <div v-if="rows.length && childPermissionRows.length" class="row-permission">
-      <div class="row-permission-title">
-        子表行操作
-      </div>
-      <div v-for="child in childPermissionRows" :key="child.childKey" class="row-permission-card">
-        <div class="row-permission-meta">
-          <span class="row-permission-name">{{ child.label || child.childKey }}</span>
-          <span class="row-permission-count">{{ child.fieldCount }} 个字段</span>
+      <div
+        v-for="group in arrayFieldGroups"
+        :key="`array-fields-${group.arrayKey}`"
+        class="permission-section"
+      >
+        <div class="permission-section-title">
+          数组明细 · {{ group.label }}
         </div>
-        <div class="row-permission-actions">
-          <label><n-checkbox :checked="child.readable" :disabled="readonly" @update:checked="updateChild(child.childKey, { readable: $event })" /><span>可见</span></label>
-          <label><n-checkbox data-test="child-allow-create" :checked="child.allowCreate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowCreate: $event })" /><span>新增</span></label>
-          <label><n-checkbox data-test="child-allow-update" :checked="child.allowUpdate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowUpdate: $event })" /><span>修改</span></label>
-          <label><n-checkbox data-test="child-allow-delete" :checked="child.allowDelete" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowDelete: $event })" /><span>删除</span></label>
+        <div class="form-permission-table">
+          <div class="form-permission-row is-head">
+            <span>字段</span>
+            <span>可见</span>
+            <span>可编辑</span>
+            <span>必填</span>
+          </div>
+          <div
+            v-for="row in group.rows"
+            :key="row.permissionKey"
+            class="form-permission-row"
+            :class="{ stale: row.stale }"
+          >
+            <div class="form-field-cell">
+              <div class="form-field-label">
+                {{ row.label || row.field }}
+                <n-tag v-if="row.sourceRequired" size="tiny" type="warning" :bordered="false">
+                  表单必填
+                </n-tag>
+              </div>
+              <div class="form-field-code">
+                {{ childFieldCaption(row) }}
+              </div>
+            </div>
+            <n-checkbox
+              data-test="permission-readable"
+              :checked="row.readable"
+              :disabled="readonly"
+              @update:checked="update(row.permissionKey, { readable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-writable"
+              :checked="row.writable"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { writable: $event })"
+            />
+            <n-checkbox
+              data-test="permission-required"
+              :checked="row.required"
+              :disabled="readonly || !row.readable"
+              @update:checked="update(row.permissionKey, { required: $event })"
+            />
+          </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="rows.length && arrayPermissionRows.length" class="row-permission">
-      <div class="row-permission-title">
-        数组明细行操作
-      </div>
-      <div v-for="array in arrayPermissionRows" :key="array.arrayKey" class="row-permission-card">
-        <div class="row-permission-meta">
-          <span class="row-permission-name">{{ array.label || array.arrayKey }}</span>
-          <span class="row-permission-count">{{ array.fieldCount }} 个行字段</span>
+      <div v-if="childPermissionRows.length" class="row-permission">
+        <div class="row-permission-title">
+          子表行操作
         </div>
-        <div class="row-permission-actions">
-          <label><n-checkbox :checked="array.readable" :disabled="readonly" @update:checked="updateArray(array.arrayKey, { readable: $event })" /><span>可见</span></label>
-          <label><n-checkbox data-test="array-allow-create" :checked="array.allowCreate" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowCreate: $event })" /><span>新增</span></label>
-          <label><n-checkbox data-test="array-allow-update" :checked="array.allowUpdate" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowUpdate: $event })" /><span>修改</span></label>
-          <label><n-checkbox data-test="array-allow-delete" :checked="array.allowDelete" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowDelete: $event })" /><span>删除</span></label>
+        <div v-for="child in childPermissionRows" :key="child.childKey" class="row-permission-card">
+          <div class="row-permission-meta">
+            <span class="row-permission-name">{{ child.label || child.childKey }}</span>
+            <span class="row-permission-count">{{ child.fieldCount }} 个字段</span>
+          </div>
+          <div class="row-permission-actions">
+            <label><n-checkbox :checked="child.readable" :disabled="readonly" @update:checked="updateChild(child.childKey, { readable: $event })" /><span>可见</span></label>
+            <label><n-checkbox data-test="child-allow-create" :checked="child.allowCreate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowCreate: $event })" /><span>新增</span></label>
+            <label><n-checkbox data-test="child-allow-update" :checked="child.allowUpdate" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowUpdate: $event })" /><span>修改</span></label>
+            <label><n-checkbox data-test="child-allow-delete" :checked="child.allowDelete" :disabled="readonly || !child.readable" @update:checked="updateChild(child.childKey, { allowDelete: $event })" /><span>删除</span></label>
+          </div>
         </div>
       </div>
-    </div>
+
+      <div v-if="arrayPermissionRows.length" class="row-permission">
+        <div class="row-permission-title">
+          数组明细行操作
+        </div>
+        <div v-for="array in arrayPermissionRows" :key="array.arrayKey" class="row-permission-card">
+          <div class="row-permission-meta">
+            <span class="row-permission-name">{{ array.label || array.arrayKey }}</span>
+            <span class="row-permission-count">{{ array.fieldCount }} 个行字段</span>
+          </div>
+          <div class="row-permission-actions">
+            <label><n-checkbox :checked="array.readable" :disabled="readonly" @update:checked="updateArray(array.arrayKey, { readable: $event })" /><span>可见</span></label>
+            <label><n-checkbox data-test="array-allow-create" :checked="array.allowCreate" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowCreate: $event })" /><span>新增</span></label>
+            <label><n-checkbox data-test="array-allow-update" :checked="array.allowUpdate" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowUpdate: $event })" /><span>修改</span></label>
+            <label><n-checkbox data-test="array-allow-delete" :checked="array.allowDelete" :disabled="readonly || !array.readable" @update:checked="updateArray(array.arrayKey, { allowDelete: $event })" /><span>删除</span></label>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -473,6 +651,18 @@ function emitPermissions(fields, children, arrays) {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.6;
+}
+
+.permission-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.permission-section-title {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .form-permission-table {

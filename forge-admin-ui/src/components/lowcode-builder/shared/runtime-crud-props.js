@@ -3,7 +3,15 @@
  *
  * 列表设计器预览和应用页面都使用这份轻量桥接：接口、表单和列表字段始终
  * 来自同一个 configKey，应用设计器只允许覆盖外观与局部行为，不另存一套接口。
+ *
+ * 表单布局：设计态 formDesignerSchema → 统一 uiDocument → AiForm schema，
+ * 与审批端 TaskFormUiDocumentCompiler 同构，保证设计/渲染/后续 H5 协议一致。
  */
+import {
+  compileUiDocumentFromDesigner,
+  UI_DOCUMENT_PROTOCOL_VERSION,
+} from '@/protocols/ui-document'
+
 export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {}) {
   const options = config.options || {}
   // 表单设计器保存的 layout 是表单项配置的单一事实来源，优先于运行配置的平铺键
@@ -13,10 +21,18 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
   const governance = resolveDesignerFormGovernance(fdsSource)
   const configKey = String(config.configKey || '').trim()
   const apiConfig = normalizeApiConfig(config.apiConfig, configKey, designPreview)
+  const flatEditSchema = mergeDesignerEditSchema(
+    normalizeFields(config.editSchema),
+    fdsSource,
+  )
+  const uiDocument = fdsSource
+    ? compileUiDocumentFromDesigner(fdsSource, { resolvedFields: flatEditSchema })
+    : null
   return {
     searchSchema: normalizeFields(config.searchSchema),
     columns: normalizeColumns(config.columnsSchema, config.transConfig),
-    editSchema: normalizeFields(config.editSchema),
+    // 平铺 fields 保留给 fieldRefs 过滤；布局由 uiDocument / hydrateRuntimeFormLayout 合成
+    editSchema: flatEditSchema,
     fieldCatalog: buildRuntimeFieldCatalog(config),
     childrenConfig: options.masterDetailConfig?.children || [],
     expandConfig: options.expandConfig || config.expandConfig || {},
@@ -76,6 +92,9 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     businessObjectCode: config.objectCode || options.businessObjectCode || '',
     showDataChangeLog: designerLayout.showDataChangeLog === true || options.showDataChangeLog === true,
     dataAuditObjectId: options.dataAuditObjectId || '',
+    // 统一渲染协议（H5 / 多端可直接消费）
+    uiDocument: uiDocument || null,
+    protocolVersion: uiDocument ? UI_DOCUMENT_PROTOCOL_VERSION : null,
   }
 }
 
@@ -457,6 +476,247 @@ export function resolveDesignerFormGovernance(formDesignerSchema) {
     return schema.settings?.governance || schema.governance || {}
   }
   return formDesignerSchema.settings?.governance || formDesignerSchema.governance || {}
+}
+
+/**
+ * 将设计器组件合并进平铺 editSchema，并叠 visibility。
+ * 低代码运行若只用发布态 editSchema，设计器新拖入的字段不在 fields 里，
+ * 随后 uiDocument 布局解析会因 fieldMap 缺键把整字段静默丢掉，表现为「组件看不见」。
+ * 与 views/ai/crud-page.vue#buildRuntimeFormProfile 对齐：以设计器组件为字段事实来源。
+ */
+export function mergeDesignerEditSchema(fields = [], formDesignerSchema = null) {
+  const baseList = Array.isArray(fields)
+    ? fields.filter(field => field && typeof field === 'object')
+    : []
+  const components = flattenDesignerFieldComponents(formDesignerSchema)
+  if (!components.length)
+    return applyDesignerVisibilityToFields(baseList, formDesignerSchema)
+
+  const baseMap = new Map()
+  baseList.forEach((field) => {
+    const code = String(field.field || field.fieldCode || '').trim()
+    if (code)
+      baseMap.set(code, field)
+  })
+
+  const merged = []
+  const used = new Set()
+  const visibilityMap = collectDesignerFieldVisibility(formDesignerSchema)
+  components.forEach((component) => {
+    const next = buildRuntimeFieldFromDesignerComponent(component, baseMap)
+    if (!next?.field)
+      return
+    used.add(next.field)
+    merged.push(next)
+  })
+
+  baseList.forEach((field) => {
+    const code = String(field.field || field.fieldCode || '').trim()
+    if (!code || used.has(code))
+      return
+    const visibility = visibilityMap.get(code)
+    if (visibility?.hidden === true)
+      return
+    if (!visibility) {
+      merged.push({ ...field, props: { ...(field.props || {}) } })
+      return
+    }
+    const next = {
+      ...field,
+      props: { ...(field.props || {}) },
+      visibility: {
+        ...(field.visibility || {}),
+        ...visibility,
+      },
+    }
+    if (visibility.readonly === true) {
+      next.readonly = true
+      next.disabled = true
+      next.props.readonly = true
+      next.props.disabled = true
+    }
+    merged.push(next)
+  })
+  return merged
+}
+
+function flattenDesignerFieldComponents(formDesignerSchema) {
+  const list = []
+  if (!formDesignerSchema || typeof formDesignerSchema !== 'object')
+    return list
+
+  let schema = formDesignerSchema
+  if (Array.isArray(formDesignerSchema.forms) && formDesignerSchema.forms.length) {
+    const defaultFormKey = formDesignerSchema.defaultFormKey
+      || formDesignerSchema.settings?.defaultFormKey
+    const form = formDesignerSchema.forms.find(item => item?.formKey === defaultFormKey)
+      || formDesignerSchema.forms[0]
+    schema = form?.schema || form || {}
+  }
+
+  const walk = (nodes = []) => {
+    ;(Array.isArray(nodes) ? nodes : []).forEach((component) => {
+      if (!component || typeof component !== 'object')
+        return
+      const code = String(component.fieldBinding?.fieldCode || component.field || component.fieldCode || '').trim()
+      if (code)
+        list.push(component)
+      if (Array.isArray(component.children) && component.children.length)
+        walk(component.children)
+    })
+  }
+  walk(schema.components || schema.settings?.components || [])
+  return list
+}
+
+function buildRuntimeFieldFromDesignerComponent(component = {}, baseFieldMap = new Map()) {
+  const fieldCode = String(component.fieldBinding?.fieldCode || component.field || component.fieldCode || '').trim()
+  if (!fieldCode)
+    return null
+  const visibility = component.visibility && typeof component.visibility === 'object'
+    ? component.visibility
+    : {}
+  const base = baseFieldMap.get(fieldCode) || { field: fieldCode, type: 'input', label: fieldCode }
+  const props = { ...(base.props || {}), ...(component.props || {}) }
+  const hasVisibilityRules = hasDesignerRuntimeVisibilityRules({ ...component, props })
+  // 静态隐藏且无条件规则时不进表单；有条件规则时保留，交给运行态 resolveRuntimeControl
+  if (visibility.hidden === true && !hasVisibilityRules)
+    return null
+  const validation = component.validation || {}
+  const readonly = visibility.readonly === true || base.readonly === true
+  if (readonly) {
+    props.readonly = true
+    props.disabled = true
+  }
+  return {
+    ...base,
+    field: fieldCode,
+    label: component.label || base.label || fieldCode,
+    type: normalizeDesignerRuntimeFieldType(component.componentKey || base.type),
+    required: validation.required ?? base.required,
+    readonly,
+    disabled: readonly || base.disabled === true,
+    hidden: visibility.hidden === true,
+    visibility: {
+      ...(base.visibility || {}),
+      ...visibility,
+    },
+    defaultValue: props.defaultValue ?? base.defaultValue,
+    dictType: props.dictType || base.dictType,
+    validation,
+    props,
+  }
+}
+
+function hasDesignerRuntimeVisibilityRules(target = {}) {
+  const rules = target.props?.runtimeRules || target.runtimeRules || []
+  if (!Array.isArray(rules) || !rules.length)
+    return false
+  return rules.some((rule) => {
+    if (!rule || rule.enabled === false)
+      return false
+    const effect = rule.effect || rule
+    return Object.prototype.hasOwnProperty.call(effect, 'visible')
+      || Object.prototype.hasOwnProperty.call(effect, 'hidden')
+      || effect.whenUnmatched === 'hidden'
+      || effect.whenUnmatched === 'visible'
+  })
+}
+
+function normalizeDesignerRuntimeFieldType(componentKey = '') {
+  const key = String(componentKey || '').trim()
+  const map = {
+    inputNumber: 'number',
+    integer: 'number',
+    money: 'number',
+    dictSelect: 'select',
+    orgTreeSelect: 'treeSelect',
+    deptTreeSelect: 'treeSelect',
+    departmentTreeSelect: 'treeSelect',
+    regionTreeSelect: 'treeSelect',
+    userSelect: 'select',
+    imageUpload: 'imageUpload',
+    fileUpload: 'fileUpload',
+  }
+  return map[key] || key || 'input'
+}
+
+/**
+ * 将设计器组件的 visibility.readonly / hidden 叠到平铺 editSchema。
+ * 低代码运行页原先只编译 uiDocument 布局，字段定义仍用发布态 editSchema，
+ * 导致「只读」等状态有的链路生效、有的完全丢失。
+ *
+ * 优先使用 mergeDesignerEditSchema（会补齐设计器新增字段）；本函数保留给仅需叠 visibility 的调用方。
+ */
+export function applyDesignerVisibilityToFields(fields = [], formDesignerSchema = null) {
+  const list = Array.isArray(fields) ? fields.map(field => (field && typeof field === 'object' ? { ...field } : field)) : []
+  const visibilityMap = collectDesignerFieldVisibility(formDesignerSchema)
+  if (!visibilityMap.size)
+    return list
+
+  return list
+    .map((field) => {
+      if (!field || typeof field !== 'object')
+        return field
+      const code = String(field.field || field.fieldCode || '').trim()
+      if (!code || !visibilityMap.has(code))
+        return field
+      const visibility = visibilityMap.get(code)
+      if (visibility.hidden === true)
+        return null
+      const next = {
+        ...field,
+        props: { ...(field.props || {}) },
+        visibility: {
+          ...(field.visibility || {}),
+          ...visibility,
+        },
+      }
+      if (visibility.readonly === true) {
+        next.readonly = true
+        next.disabled = true
+        next.props.readonly = true
+        next.props.disabled = true
+      }
+      return next
+    })
+    .filter(Boolean)
+}
+
+function collectDesignerFieldVisibility(formDesignerSchema) {
+  const map = new Map()
+  if (!formDesignerSchema || typeof formDesignerSchema !== 'object')
+    return map
+
+  let schema = formDesignerSchema
+  if (Array.isArray(formDesignerSchema.forms) && formDesignerSchema.forms.length) {
+    const defaultFormKey = formDesignerSchema.defaultFormKey
+      || formDesignerSchema.settings?.defaultFormKey
+    const form = formDesignerSchema.forms.find(item => item?.formKey === defaultFormKey)
+      || formDesignerSchema.forms[0]
+    schema = form?.schema || form || {}
+  }
+
+  const walk = (nodes = []) => {
+    ;(Array.isArray(nodes) ? nodes : []).forEach((component) => {
+      if (!component || typeof component !== 'object')
+        return
+      const code = String(component.fieldBinding?.fieldCode || component.field || component.fieldCode || '').trim()
+      const visibility = component.visibility && typeof component.visibility === 'object'
+        ? component.visibility
+        : null
+      if (code && visibility) {
+        map.set(code, {
+          hidden: visibility.hidden === true,
+          readonly: visibility.readonly === true,
+        })
+      }
+      if (Array.isArray(component.children) && component.children.length)
+        walk(component.children)
+    })
+  }
+  walk(schema.components || schema.settings?.components || [])
+  return map
 }
 
 function numberOption(value, fallback) {

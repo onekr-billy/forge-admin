@@ -49,6 +49,18 @@ export function resolveSelectionLabelFields(field = {}, selectionType = '') {
   ]
   if (fieldName) {
     candidates.push(`${fieldName}Name`)
+    // snake_case 字段（field_select）冗余列常为 field_select_name；camel 读模型为 fieldSelectName
+    if (fieldName.includes('_')) {
+      candidates.push(`${fieldName}_name`)
+      const camel = fieldName.replace(/_([a-zA-Z0-9])/g, (_, ch) => String(ch).toUpperCase())
+      if (camel && camel !== fieldName)
+        candidates.push(`${camel}Name`)
+    }
+    else {
+      const snake = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+      if (snake && snake !== fieldName)
+        candidates.push(`${snake}_name`)
+    }
     if (fieldName.endsWith('UserId')) {
       candidates.push(fieldName.replace(/UserId$/, 'UserName'))
       candidates.push(fieldName.replace(/UserId$/, 'Name'))

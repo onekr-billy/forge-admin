@@ -47,6 +47,32 @@ public class LowcodeSchemaValidator {
     private static final Set<String> DATA_TYPES = Set.of(
             "varchar", "char", "text", "longtext", "int", "bigint", "decimal", "date", "datetime", "time", "tinyint"
     );
+
+    /**
+     * 将前端 / JDBC / 业务字段类型别名收敛为存储层 dataType。
+     * 关联子表时 modelSchema.fields[].dataType 常被写成 string / TEXT / number 等，
+     * 若不归一化会在校验阶段直接报「不支持的数据类型」。
+     */
+    public static String normalizeStorageDataType(String raw) {
+        String text = StringUtils.defaultIfBlank(raw, "varchar").trim().toLowerCase(Locale.ROOT);
+        int paren = text.indexOf('(');
+        if (paren > 0) {
+            text = text.substring(0, paren).trim();
+        }
+        return switch (text) {
+            case "string", "str", "character varying", "nvarchar", "varchar2" -> "varchar";
+            case "clob", "ntext" -> "text";
+            case "integer", "int32", "mediumint", "smallint" -> "int";
+            case "long", "int64" -> "bigint";
+            case "number", "numeric", "double", "float", "money", "bigdecimal" -> "decimal";
+            case "bool", "boolean" -> "tinyint";
+            case "timestamp" -> "datetime";
+            // 业务字段类型泄漏到 dataType：TEXT 业务语义对应 varchar（SQL text 本身已在白名单）
+            case "textarea", "multi_line", "richtext" -> "text";
+            default -> text;
+        };
+    }
+
     private static final Set<String> COMPONENT_TYPES = LowcodeComponentCatalog.FIELD_COMPONENT_KEYS;
     private static final Set<String> QUERY_TYPES = Set.of(
             "eq", "ne", "like", "left_like", "right_like", "gt", "ge", "gte", "lt", "le", "lte", "in", "between"
@@ -160,7 +186,8 @@ public class LowcodeSchemaValidator {
         if (BASE_COLUMNS.contains(fieldSchema.getColumnName())) {
             throw new BusinessException("基础审计列不能作为业务字段: " + fieldSchema.getColumnName());
         }
-        String dataType = StringUtils.defaultIfBlank(fieldSchema.getDataType(), "varchar").toLowerCase(Locale.ROOT);
+        String dataType = normalizeStorageDataType(fieldSchema.getDataType());
+        fieldSchema.setDataType(dataType);
         if (!DATA_TYPES.contains(dataType)) {
             throw new BusinessException("不支持的数据类型: " + fieldSchema.getDataType());
         }

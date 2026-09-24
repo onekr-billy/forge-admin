@@ -434,7 +434,6 @@ function renderTargetFieldOptions(field = {}) {
                       :value="resolveFieldSetting(element.field).textColor || ''"
                       size="small"
                       :show-alpha="true"
-                      placeholder="文字颜色"
                       @update:value="updateFieldSetting(element.field, { textColor: $event || '' })"
                     />
                   </label>
@@ -508,7 +507,8 @@ function renderTargetFieldOptions(field = {}) {
                 <span>{{ activeDrawerField.sourceField || activeDrawerField.field }}</span>
               </div>
               <div class="field-role-switches">
-                <label>
+                <!-- 勿用 label 包裹 n-switch：点击会冒泡二次触发，表现为「勾选不动」 -->
+                <div class="field-role-item">
                   <span>查询</span>
                   <n-switch
                     size="small"
@@ -516,39 +516,39 @@ function renderTargetFieldOptions(field = {}) {
                     :disabled="selectedBlock.blockType !== 'AiCrudPage'"
                     @update:value="updateFieldRole(activeDrawerField.field, 'search', $event)"
                   />
-                </label>
-                <label>
+                </div>
+                <div class="field-role-item">
                   <span>表格列</span>
                   <n-switch
                     size="small"
                     :value="resolveFieldRoleEnabled(activeDrawerField.field, 'table')"
                     @update:value="updateFieldRole(activeDrawerField.field, 'table', $event)"
                   />
-                </label>
-                <label>
+                </div>
+                <div class="field-role-item">
                   <span>编辑</span>
                   <n-switch
                     size="small"
                     :value="resolveFieldRoleEnabled(activeDrawerField.field, 'edit')"
                     @update:value="updateFieldRole(activeDrawerField.field, 'edit', $event)"
                   />
-                </label>
-                <label v-if="selectedBlock.blockType === 'AiCrudPage'">
+                </div>
+                <div v-if="selectedBlock.blockType === 'AiCrudPage'" class="field-role-item">
                   <span>导入</span>
                   <n-switch
                     size="small"
                     :value="resolveFieldRoleEnabled(activeDrawerField.field, 'import')"
                     @update:value="updateFieldRole(activeDrawerField.field, 'import', $event)"
                   />
-                </label>
-                <label v-if="selectedBlock.blockType === 'AiCrudPage'">
+                </div>
+                <div v-if="selectedBlock.blockType === 'AiCrudPage'" class="field-role-item">
                   <span>导出</span>
                   <n-switch
                     size="small"
                     :value="resolveFieldRoleEnabled(activeDrawerField.field, 'export')"
                     @update:value="updateFieldRole(activeDrawerField.field, 'export', $event)"
                   />
-                </label>
+                </div>
               </div>
             </div>
             <div class="field-detail-grid">
@@ -590,22 +590,22 @@ function renderTargetFieldOptions(field = {}) {
             </div>
             <div class="field-detail-footer">
               <div class="field-detail-toggles">
-                <label>
+                <div class="field-role-item">
                   <span>省略</span>
                   <n-switch
                     size="small"
                     :value="activeDrawerFieldSetting.ellipsis !== false"
                     @update:value="updateFieldSetting(activeDrawerField.field, { ellipsis: $event })"
                   />
-                </label>
-                <label>
+                </div>
+                <div class="field-role-item">
                   <span>排序</span>
                   <n-switch
                     size="small"
                     :value="!!activeDrawerFieldSetting.sortable"
                     @update:value="updateFieldSetting(activeDrawerField.field, { sortable: $event })"
                   />
-                </label>
+                </div>
               </div>
               <n-button size="tiny" secondary @click="fieldAdvancedOpen = !fieldAdvancedOpen">
                 {{ fieldAdvancedOpen ? '收起配置' : '更多字段配置' }}
@@ -885,14 +885,13 @@ function renderTargetFieldOptions(field = {}) {
   gap: 14px;
 }
 
-.field-role-switches label,
-.field-detail-toggles label {
+.field-role-switches .field-role-item,
+.field-detail-toggles .field-role-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: #52525b;
   font-size: 11px;
-  cursor: pointer;
 }
 
 .field-detail-grid {

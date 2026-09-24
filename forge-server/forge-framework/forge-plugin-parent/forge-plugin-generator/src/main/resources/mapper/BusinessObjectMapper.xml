@@ -365,4 +365,17 @@
           AND del_flag = 0
     </update>
 
+    <update id="markDesignPublished">
+        UPDATE ai_business_object
+        SET design_status = #{designStatus},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND del_flag = 0
+          AND design_status &lt;&gt; #{designStatus}
+          AND id IN
+          <foreach collection="objectIds" item="objectId" open="(" separator="," close=")">
+            #{objectId}
+          </foreach>
+    </update>
+
 </mapper>

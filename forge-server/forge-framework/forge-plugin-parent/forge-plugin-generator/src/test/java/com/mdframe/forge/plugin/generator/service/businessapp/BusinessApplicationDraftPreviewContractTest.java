@@ -50,12 +50,36 @@ class BusinessApplicationDraftPreviewContractTest {
     @DisplayName("发布检查和最终发布都先同步托管数据表")
     void applicationPublishSynchronizesManagedDatabasesBeforeReadiness() throws Exception {
         String source = readSource("service/businessapp/BusinessApplicationPublishService.java");
+        String objectPublishSource = readSource("service/businessapp/BusinessObjectPublishService.java");
+        String readinessSource = readSource("service/businessapp/BusinessApplicationReadinessService.java");
 
-        assertEquals(2, countOccurrences(source, "prepareApplicationObjectDrafts(applicationId);"));
-        assertEquals(2, countOccurrences(
+        assertEquals(1, countOccurrences(source, "prepareApplicationObjectDrafts(applicationId);"));
+        assertEquals(1, countOccurrences(
                 source, "formDataService.synchronizeManagedDatabases(applicationId);"));
-        assertTrue(source.contains(".forEach(objectDesignerService::prepareRuntimeDraft)"));
-        assertTrue(source.contains("verifyPublishedObjects(run.getApplicationId(), selection.getObjectIds(), result)"));
+        assertTrue(source.contains("needsRuntimeDraftPrepare"));
+        assertTrue(source.contains("BusinessApplicationObjectRole.PRIMARY"));
+        assertTrue(source.contains("objectDesignerService.prepareRuntimeDraft("));
+        String versionSource = readSource("service/businessapp/BusinessObjectDesignVersionService.java");
+        assertTrue(source.contains("verifyPublishedObjects(objects, selection.getObjectIds(), result)"));
+        // 真正发布：状态门禁 + 已有对象版本只钉住，不 prepare/syncDB/重跑对象发布
+        assertTrue(source.contains("resolveStatusPublishCheck"));
+        assertTrue(objectPublishSource.contains("markDesignPublished"));
+        assertTrue(source.contains("objectPublishService.markDesignPublished(pinAndMarkIds)"));
+        assertTrue(versionSource.contains("selectLatestPublishedVersionIds"));
+        // DETAIL 最终发布必须同步子表关系；预检复用且关系未变时跳过二次 publishCheck
+        assertTrue(objectPublishSource.contains(
+                "boolean relationsChanged = designerService.synchronizeFormChildRelations(context);"));
+        assertFalse(objectPublishSource.contains("if (preloadedContext == null) {\n"
+                + "            designerService.synchronizeFormChildRelations(context);"));
+        assertTrue(objectPublishSource.contains("trustPreloadedPublishCheck()"));
+        assertTrue(objectPublishSource.contains("preloadedContext != null && !relationsChanged"));
+        assertTrue(objectPublishSource.contains("loadContextForApplicationPublish"));
+        assertTrue(readinessSource.contains("resolveStatusPublishCheck"));
+        assertTrue(readinessSource.contains("evaluateStatusOnly"));
+        assertFalse(objectPublishSource.contains("businessObjectMapper.selectBySuiteCode("));
+        // 关联摘要已 IN_SYNC 时跳过实时表结构探查
+        assertTrue(readinessSource.contains(
+                "\"IN_SYNC\".equalsIgnoreCase(StringUtils.trimToEmpty(object.getSyncStatus()))"));
     }
 
     @Test

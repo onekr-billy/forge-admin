@@ -1268,6 +1268,12 @@ public class LowcodeRuntimeConfigBuilder {
                 rule.put("type", componentType);
                 rule.put("targetField", field.getField() + "Name");
                 result.put(field.getField(), rule);
+            } else if (hasDynamicOptionSourceOnField(field, componentType)) {
+                // 动态选项下拉：选中名称冗余到 xxxName，列表按伴随列回显
+                Map<String, Object> rule = new LinkedHashMap<>();
+                rule.put("type", "relationName");
+                rule.put("targetField", field.getField() + "Name");
+                result.put(field.getField(), rule);
             }
         }
         appendRelationDisplayTransConfig(result, modelSchema, pageSchema);
@@ -1642,6 +1648,11 @@ public class LowcodeRuntimeConfigBuilder {
             render.put("type", "imageUpload");
             render.put("targetField", targetField);
             item.put("render", render);
+        } else if (hasDynamicOptionSourceOnField(field, componentType)) {
+            Map<String, Object> render = new LinkedHashMap<>();
+            render.put("type", "relationName");
+            render.put("targetField", field.getField() + "Name");
+            item.put("render", render);
         } else if ("switch".equals(renderType) || "switch".equals(componentType)) {
             Map<String, Object> render = new LinkedHashMap<>();
             render.put("type", "switch");
@@ -1735,6 +1746,8 @@ public class LowcodeRuntimeConfigBuilder {
         copyBasicProp(field.getBasicProps(), props, "filterable");
         copyBasicProp(field.getBasicProps(), props, "multiple");
         copyBasicProp(field.getBasicProps(), props, "optionSource");
+        copyBasicProp(field.getBasicProps(), props, "fieldMappings");
+        copyBasicProp(field.getBasicProps(), props, "mappings");
         copyBasicProp(field.getBasicProps(), props, "labelValueField");
         copyBasicProp(field.getBasicProps(), props, "targetField");
         copyBasicProp(field.getBasicProps(), props, "rootCode");
@@ -3159,6 +3172,26 @@ public class LowcodeRuntimeConfigBuilder {
             return;
         }
         props.put("labelValueField", fieldName + "Name");
+    }
+
+    private boolean hasDynamicOptionSourceOnField(LowcodeFieldSchema field, String componentType) {
+        if (field == null || !Set.of("select", "radio", "radioButton", "checkbox", "cascader", "treeSelect", "transfer")
+                .contains(StringUtils.defaultString(componentType))) {
+            return false;
+        }
+        Map<String, Object> props = field.getBasicProps();
+        if (props == null || props.isEmpty()) {
+            return false;
+        }
+        Object source = props.get("optionSource");
+        if (!(source instanceof Map<?, ?> map)) {
+            return false;
+        }
+        String type = text(map.get("type"));
+        if (StringUtils.isBlank(type) || "STATIC".equalsIgnoreCase(type.replace('-', '_'))) {
+            return false;
+        }
+        return true;
     }
 
     private boolean isBusinessSelectComponent(String componentType) {

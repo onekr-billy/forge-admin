@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LowcodeSchemaValidatorTest {
@@ -41,13 +42,28 @@ class LowcodeSchemaValidatorTest {
         assertThrows(BusinessException.class, () -> validator.validateModel(model(field)));
     }
 
+    @Test
+    void acceptsStringAliasAsVarchar() {
+        LowcodeFieldSchema field = field("title", "string");
+        assertDoesNotThrow(() -> validator.validateModel(model(field)));
+        assertEquals("varchar", field.getDataType());
+    }
+
+    @Test
+    void acceptsBusinessNumberAliasAsDecimal() {
+        LowcodeFieldSchema field = field("amount", "number");
+        field.setComponentType("number");
+        assertDoesNotThrow(() -> validator.validateModel(model(field)));
+        assertEquals("decimal", field.getDataType());
+    }
+
     private LowcodeFieldSchema field(String fieldName, String dataType) {
         LowcodeFieldSchema field = new LowcodeFieldSchema();
         field.setField(fieldName);
         field.setColumnName(fieldName);
         field.setLabel("测试字段");
         field.setDataType(dataType);
-        field.setComponentType("decimal".equals(dataType) ? "number" : "input");
+        field.setComponentType("decimal".equals(dataType) || "number".equals(dataType) ? "number" : "input");
         return field;
     }
 

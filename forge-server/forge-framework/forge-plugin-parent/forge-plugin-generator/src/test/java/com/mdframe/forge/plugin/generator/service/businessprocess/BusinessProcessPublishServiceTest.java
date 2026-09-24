@@ -69,6 +69,29 @@ class BusinessProcessPublishServiceTest {
     @DisplayName("retrying one application version reuses the immutable process version")
     void retryReusesApplicationVersion() {
         AiBusinessProcess process = process();
+        process.setPublishedVersion(6);
+        process.setDesignStatus("PUBLISHED");
+        AiBusinessProcessVersion existing = version(801L, draftHash, 6, 3);
+        when(processMapper.selectForPublish(1L, 10L, 20L)).thenReturn(process);
+        when(versionMapper.selectPublishedForApplicationVersion(1L, 20L, 3)).thenReturn(existing);
+
+        BusinessProcessPublishResult result = service.publishForApplication(
+                10L, 3, List.of(20L), Map.of(20L, draftHash), 300L);
+
+        assertEquals(1, result.snapshots().size());
+        assertEquals("801", result.snapshots().get(0).processVersionId());
+        verify(versionMapper, never()).insertImmutable(any());
+        verify(processMapper, never()).updatePublishedProjection(
+                any(), any(), any(), any(), any(), any());
+        verify(processMapper).clearPublishedProjectionExcept(1L, 10L, List.of(20L), null);
+    }
+
+    @Test
+    @DisplayName("reuse still refreshes projection when published version pointer drifted")
+    void retryRefreshesStaleProjection() {
+        AiBusinessProcess process = process();
+        process.setPublishedVersion(5);
+        process.setDesignStatus("CHANGED");
         AiBusinessProcessVersion existing = version(801L, draftHash, 6, 3);
         when(processMapper.selectForPublish(1L, 10L, 20L)).thenReturn(process);
         when(versionMapper.selectPublishedForApplicationVersion(1L, 20L, 3)).thenReturn(existing);
@@ -77,9 +100,8 @@ class BusinessProcessPublishServiceTest {
         BusinessProcessPublishResult result = service.publishForApplication(
                 10L, 3, List.of(20L), Map.of(20L, draftHash), 300L);
 
-        assertEquals(1, result.snapshots().size());
         assertEquals("801", result.snapshots().get(0).processVersionId());
-        verify(versionMapper, never()).insertImmutable(any());
+        verify(processMapper).updatePublishedProjection(1L, 10L, 20L, 6, draftHash, null);
     }
 
     @Test

@@ -31,6 +31,13 @@ public interface BusinessApplicationMapper extends BaseMapper<AiBusinessApplicat
     BusinessApplicationVO selectApplicationDetail(@Param("tenantId") Long tenantId,
                                                    @Param("id") Long id);
 
+    /**
+     * 仅读取应用设计态 inAppBuilder JSON，供审批表单解析 formKey。
+     * 避免走 selectApplicationDetail 的统计 JOIN 和大字段。
+     */
+    String selectApplicationInAppBuilderJson(@Param("tenantId") Long tenantId,
+                                             @Param("id") Long id);
+
     BusinessApplicationVO selectApplicationPublishContext(@Param("tenantId") Long tenantId,
                                                            @Param("id") Long id);
 

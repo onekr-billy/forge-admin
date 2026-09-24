@@ -79,7 +79,8 @@ public class BusinessDocumentConfigService {
             vo.setDocumentName(object.getObjectName() + "单据");
             vo.setStatusMapping(defaultStatusMapping());
             vo.setStatusMappingRows(defaultStatusRows());
-            vo.setMainFlowSummary(buildMainFlowSummary(resolveTenantId(), object.getObjectCode(), null));
+            // 未建单据配置时不要查 FLOW/APPROVAL 绑定；发布/设计器摘要用空主流程即可。
+            vo.setMainFlowSummary(unconfiguredMainFlowSummary());
             return vo;
         }
         return toVO(config);
@@ -218,7 +219,9 @@ public class BusinessDocumentConfigService {
 
     public BusinessDocumentConfigVO toVO(AiBusinessDocumentConfig config, AiCrudConfig runtimeConfig) {
         Long tenantId = config.getTenantId() != null ? config.getTenantId() : resolveTenantId();
-        Map<String, Object> mainFlowSummary = buildMainFlowSummary(tenantId, config.getObjectCode(), config.getDefaultFlowKey());
+        Map<String, Object> mainFlowSummary = EnableStatus.ENABLED.matches(config.getDocumentEnabled())
+                ? buildMainFlowSummary(tenantId, config.getObjectCode(), config.getDefaultFlowKey())
+                : unconfiguredMainFlowSummary();
         return toVO(config, runtimeConfig, mainFlowSummary);
     }
 
@@ -817,6 +820,15 @@ public class BusinessDocumentConfigService {
         row.setAllowDelete(allowDelete);
         row.setAllowStartFlow(allowStartFlow);
         return row;
+    }
+
+    private Map<String, Object> unconfiguredMainFlowSummary() {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("configured", false);
+        summary.put("complete", false);
+        summary.put("gaps", List.of("未配置主流程"));
+        summary.put("compatibilitySource", "NONE");
+        return summary;
     }
 
     private Map<String, Object> buildMainFlowSummary(Long tenantId, String objectCode, String legacyDefaultFlowKey) {

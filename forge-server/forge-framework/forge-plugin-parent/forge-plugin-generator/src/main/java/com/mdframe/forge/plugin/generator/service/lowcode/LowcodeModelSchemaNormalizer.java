@@ -94,7 +94,7 @@ public class LowcodeModelSchemaNormalizer {
         field.setColumnName(columnName);
         field.setLabel(StringUtils.defaultIfBlank(field.getLabel(), StringUtils.defaultIfBlank(fieldName, columnName)));
 
-        String dataType = StringUtils.defaultIfBlank(field.getDataType(), "varchar").toLowerCase(Locale.ROOT);
+        String dataType = LowcodeSchemaValidator.normalizeStorageDataType(field.getDataType());
         field.setDataType(dataType);
         if ("varchar".equals(dataType) && field.getLength() == null) {
             field.setLength(128);

@@ -80,6 +80,18 @@ public class BusinessTaskFormContextVO {
     private Map<String, Object> recordData = new LinkedHashMap<>();
 
     /**
+     * 统一渲染协议版本。Phase 1 起 business-object 场景为 {@code "1"}；
+     * 未产出 uiDocument 时可为 null，客户端继续走旧 fields 协议。
+     */
+    private String protocolVersion;
+
+    /**
+     * SAP uiData 风格的可渲染文档：sections + components + actions。
+     * 与 {@link #fields}/{@link #recordData} 并存，便于 PC/H5 渐进切换。
+     */
+    private Map<String, Object> uiDocument = new LinkedHashMap<>();
+
+    /**
      * Flow task form snapshot already loaded and authorized for this request.
      * The todo client reuses it instead of issuing a duplicate Flow request.
      */

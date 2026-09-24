@@ -101,6 +101,39 @@ describe('field event protocol', () => {
     })
   })
 
+  it('coerces BUSINESS_OBJECT ROOT resultMode to FIRST_ROW', () => {
+    const [rule] = normalizeFieldEventRules([
+      buildRule({
+        sourceType: 'BUSINESS_OBJECT',
+        sourceKey: 'crm_customer',
+        resultMode: 'ROOT',
+        resultMappings: [
+          { from: 'name', to: 'contactName', whenMissing: 'CLEAR' },
+        ],
+      }),
+    ], ['mobile', 'contactName'])
+
+    expect(rule).toMatchObject({
+      sourceType: 'BUSINESS_OBJECT',
+      resultMode: 'FIRST_ROW',
+    })
+  })
+
+  it('keeps a rule when some result targets are outside the current schema', () => {
+    const [rule] = normalizeFieldEventRules([
+      buildRule({
+        resultMappings: [
+          { from: 'contact.name', to: 'contactName', whenMissing: 'CLEAR' },
+          { from: 'contact.hidden', to: 'notOnForm', whenMissing: 'CLEAR' },
+        ],
+      }),
+    ], ['mobile', 'contactName'])
+
+    expect(rule.resultMappings).toEqual([
+      { from: 'contact.name', to: 'contactName', whenMissing: 'CLEAR' },
+    ])
+  })
+
   it('blocks prototype traversal paths', () => {
     const rule = buildRule({
       paramMappings: [{ param: 'polluted', source: 'CONTEXT_PATH', path: '__proto__.polluted' }],
@@ -163,6 +196,35 @@ describe('field event protocol', () => {
       pageNum: 2,
       pageSize: 15,
       maxRows: 15,
+    }), expect.anything())
+  })
+
+  it('requests the business object primary key and mapped result fields', async () => {
+    const execute = vi.fn(async () => ({ data: { records: [{ id: '9001', detailName: '明细A' }] } }))
+    const runtime = createFieldEventRuntime({
+      rules: [buildRule({
+        sourceType: 'BUSINESS_OBJECT',
+        sourceKey: 'template_detail',
+        pageNum: 1,
+        pageSize: 20,
+        resultMode: 'FIRST_ROW',
+        resultMappings: [
+          { from: 'id', to: 'contactName', whenMissing: 'CLEAR' },
+          { from: 'detailName', to: 'mobile', whenMissing: 'KEEP' },
+        ],
+      })],
+      fields: ['mobile', 'contactName'],
+      execute,
+      getFormData: () => ({ mobile: '13800000000' }),
+    })
+
+    await runtime.dispatch('CHANGE', 'mobile')
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      sourceType: 'BUSINESS_OBJECT',
+      pageNum: 1,
+      pageSize: 20,
+      fields: ['id', 'detailName'],
     }), expect.anything())
   })
 

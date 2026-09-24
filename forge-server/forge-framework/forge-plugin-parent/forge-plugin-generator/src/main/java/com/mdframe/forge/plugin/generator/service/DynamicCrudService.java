@@ -547,6 +547,16 @@ public class DynamicCrudService {
     }
 
     /**
+     * 复用已加载的运行配置读单据，避免 task-form-context 再查一次 ai_crud_config。
+     */
+    public Map<String, Object> selectById(AiCrudConfig config, Object id) {
+        if (config == null) {
+            throw new BusinessException("CRUD配置不能为空");
+        }
+        return readRecordByConfig(config, id);
+    }
+
+    /**
      * 业务流程审批节点读取业务记录：优先已发布配置，工作台草稿对象也允许按当前配置读取。
      */
     public Map<String, Object> selectByIdAllowDraft(String configKey, Object id) {
@@ -2474,9 +2484,119 @@ public class DynamicCrudService {
     private Set<String> buildAllowedWriteFields(AiCrudConfig config, String tableName) {
         Set<String> fields = new LinkedHashSet<>(DynamicQueryGenerator.extractFieldNames(config.getEditSchema(), objectMapper));
         addWritableModelFields(fields, config, tableName);
+        addSelectionLabelFieldsFromEditSchema(fields, config, tableName);
         addStoredFormulaWriteFields(fields, config);
         fields.removeAll(IMMUTABLE_WRITE_FIELDS);
         return fields;
+    }
+
+    /**
+     * 从 editSchema 的 labelValueField / fieldMappings 目标字段放行写入。
+     * 动态下拉冗余名称、选中回填目标可能不在 model 的 isSelectionLabelField 判定里，
+     * 但运行态会随主列一起提交，必须进白名单否则 UI 有值却入库被滤掉。
+     */
+    private void addSelectionLabelFieldsFromEditSchema(Set<String> fields, AiCrudConfig config, String tableName) {
+        if (fields == null || config == null || StringUtils.isBlank(config.getEditSchema())) {
+            return;
+        }
+        Set<String> tableColumns = repository.getTableColumns(tableName);
+        try {
+            JsonNode node = objectMapper.readTree(config.getEditSchema());
+            if (!node.isArray()) {
+                return;
+            }
+            for (JsonNode item : node) {
+                if (item == null || !item.isObject()) {
+                    continue;
+                }
+                JsonNode propsNode = item.get("props");
+                if (propsNode == null || !propsNode.isObject()) {
+                    continue;
+                }
+                addWritableAliasIfColumnExists(fields, tableColumns, text(propsNode.get("labelValueField")));
+                addWritableAliasIfColumnExists(fields, tableColumns, text(propsNode.get("targetField")));
+                JsonNode mappings = propsNode.get("fieldMappings");
+                if (mappings == null) {
+                    mappings = propsNode.get("mappings");
+                }
+                if (mappings != null && mappings.isArray()) {
+                    for (JsonNode mapping : mappings) {
+                        if (mapping == null || !mapping.isObject()) {
+                            continue;
+                        }
+                        String target = firstNonBlank(text(mapping.get("targetField")), text(mapping.get("target")));
+                        addWritableAliasIfColumnExists(fields, tableColumns, target);
+                    }
+                }
+                JsonNode optionSource = propsNode.get("optionSource");
+                if (optionSource != null && optionSource.isObject()) {
+                    JsonNode optionMappings = optionSource.get("fieldMappings");
+                    if (optionMappings == null) {
+                        optionMappings = optionSource.get("mappings");
+                    }
+                    if (optionMappings != null && optionMappings.isArray()) {
+                        for (JsonNode mapping : optionMappings) {
+                            if (mapping == null || !mapping.isObject()) {
+                                continue;
+                            }
+                            String target = firstNonBlank(text(mapping.get("targetField")), text(mapping.get("target")));
+                            addWritableAliasIfColumnExists(fields, tableColumns, target);
+                        }
+                    }
+                }
+                String fieldName = firstNonBlank(text(item.get("field")), text(item.get("prop")), text(item.get("key")));
+                if (StringUtils.isNotBlank(fieldName) && hasDynamicOptionSourceNode(optionSource)) {
+                    addWritableAliasIfColumnExists(fields, tableColumns, fieldName + "Name");
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[DynamicCrud] 解析 editSchema 伴随/映射写字段失败: {}", ex.getMessage());
+        }
+    }
+
+    private void addWritableAliasIfColumnExists(Set<String> fields, Set<String> tableColumns, String fieldName) {
+        if (StringUtils.isBlank(fieldName) || fields == null) {
+            return;
+        }
+        String column = DynamicQueryGenerator.camelToSnake(fieldName);
+        if (tableColumns != null && !tableColumns.isEmpty()
+                && !tableColumns.contains(column)
+                && !tableColumns.contains(fieldName)) {
+            return;
+        }
+        addFieldAlias(fields, fieldName);
+        addFieldAlias(fields, column);
+    }
+
+    private boolean hasDynamicOptionSourceNode(JsonNode optionSource) {
+        if (optionSource == null || !optionSource.isObject()) {
+            return false;
+        }
+        String type = text(optionSource.get("type"));
+        if (StringUtils.isBlank(type)) {
+            return false;
+        }
+        return !"STATIC".equalsIgnoreCase(type.replace('-', '_'));
+    }
+
+    private String text(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String value = node.asText();
+        return StringUtils.isBlank(value) ? null : value.trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.isNotBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private void addWritableModelFields(Set<String> fields, AiCrudConfig config, String tableName) {

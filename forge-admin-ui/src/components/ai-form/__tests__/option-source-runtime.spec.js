@@ -27,6 +27,17 @@ describe('option-source-runtime', () => {
     })).toEqual(['customerName', 'code', 'id'])
   })
 
+  it('fieldMappings 源字段一并投影，保证选中后回填能读到源列', () => {
+    expect(buildQuerySourceDisplayFields({
+      valueField: 'id',
+      labelField: 'name',
+      fieldMappings: [
+        { sourceField: 'metricName', targetField: 'fieldInput3' },
+        { source: 'code', target: 'codeField' },
+      ],
+    }, ['extraCol'])).toEqual(['metricName', 'code', 'extraCol', 'id', 'name'])
+  })
+
   it('树场景把 parentField 一并投影，避免扁平转树缺父级列', () => {
     expect(buildQuerySourceDisplayFields({
       valueField: 'id',

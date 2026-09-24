@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.mdframe.forge.plugin.generator.constant.BusinessApplicationObjectRole;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStatus;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStep;
 import com.mdframe.forge.plugin.generator.constant.BusinessExtensionStatus;
@@ -60,6 +61,7 @@ public class BusinessApplicationPublishService {
     private final LowcodeDdlService ddlService;
 
     public BusinessApplicationPublishCheckVO check(Long applicationId, BusinessApplicationPublishDTO dto) {
+        // 显式「发布检查」仍可物化草稿并同步托管表；真正发布不再走这些重路径。
         prepareApplicationObjectDrafts(applicationId);
         formDataService.synchronizeManagedDatabases(applicationId);
         return ddlService.withStructureCheckCache(() -> readinessService.publishCheck(applicationId, dto));
@@ -78,10 +80,9 @@ public class BusinessApplicationPublishService {
         if (existing != null) {
             return toResult(existing, existingRunMessage(existing));
         }
-        prepareApplicationObjectDrafts(applicationId);
-        formDataService.synchronizeManagedDatabases(applicationId);
+        // 发布只推进应用状态与不可变版本：不做草稿物化、不做托管表同步、不做对象级全量校验。
         BusinessApplicationReadinessService.ResolvedPublishCheck resolvedCheck
-                = readinessService.resolvePublishCheck(applicationId, dto);
+                = readinessService.resolveStatusPublishCheck(applicationId, dto);
         BusinessApplicationPublishCheckVO check = resolvedCheck.check();
         if (!Boolean.TRUE.equals(check.getPublishable())) {
             throw new BusinessException(blockedMessage(check));
@@ -89,10 +90,6 @@ public class BusinessApplicationPublishService {
         SnapshotBundle candidate = snapshotService.prepare(
                 applicationId, resolvedCheck.application(), resolvedCheck.selection(),
                 resolvedCheck.permissionSummaries(), resolvedCheck.bindings());
-        List<String> pageMenuErrors = pageMenuPublishService.validate(candidate.snapshot());
-        if (!pageMenuErrors.isEmpty()) {
-            throw new BusinessException("应用页面发布检查未通过：" + String.join("；", pageMenuErrors));
-        }
         AiBusinessApplicationPublishRun run = runService.reserve(applicationId, idempotencyKey,
                 "PUBLISH", null, candidate, check.getSelection());
         if (BusinessApplicationPublishStatus.SUCCESS.matches(run.getRunStatus())
@@ -128,7 +125,7 @@ public class BusinessApplicationPublishService {
                 step = BusinessApplicationPublishStep.PRECHECK;
                 run = runService.markStepRunning(run, step);
                 BusinessApplicationReadinessService.ResolvedPublishCheck resolvedCheck = initialCheck == null
-                        ? readinessService.resolvePublishCheck(run.getApplicationId(), effectiveDto)
+                        ? readinessService.resolveStatusPublishCheck(run.getApplicationId(), effectiveDto)
                         : initialCheck;
                 BusinessApplicationPublishCheckVO check = resolvedCheck.check();
                 if (!Boolean.TRUE.equals(check.getPublishable())) {
@@ -157,9 +154,9 @@ public class BusinessApplicationPublishService {
                         run.getId());
                 SnapshotBundle processSnapshot = snapshotService.finalizeProcesses(
                         run.getSnapshotJson(), processResult.snapshots());
-                run = runService.updateSnapshot(run, processSnapshot);
                 run = runService.markStepSuccess(run, step,
-                        "已固定 " + processResult.snapshots().size() + " 个业务流程版本");
+                        "已固定 " + processResult.snapshots().size() + " 个业务流程版本",
+                        processSnapshot);
             }
 
             Map<Long, Long> objectVersions = readPublishedObjectVersions(run.getSnapshotJson());
@@ -172,10 +169,11 @@ public class BusinessApplicationPublishService {
                 objectVersions = publishResult.objectVersions();
                 SnapshotBundle objectSnapshot = snapshotService.finalizePublished(
                         run.getSnapshotJson(), objectVersions, selection, run.getTargetVersionNo(), "PUBLISH");
-                if (!StringUtils.equals(run.getSnapshotHash(), objectSnapshot.hash())) {
-                    run = runService.updateSnapshot(run, objectSnapshot);
-                }
-                run = runService.markStepSuccess(run, step, "已处理 " + objectVersions.size() + " 个业务对象");
+                run = runService.markStepSuccess(run, step,
+                        "已处理 " + objectVersions.size() + " 个业务对象", objectSnapshot);
+            } else if (objectVersions.isEmpty() && !selection.getObjectIds().isEmpty()) {
+                // 崩溃恢复：OBJECTS 已成功但快照未写入版本钉时，COMMIT 前按轻量查询补齐。
+                objectVersions = objectVersionService.latestPublishedVersionIds(selection.getObjectIds());
             }
             if (!runService.isStepComplete(run, BusinessApplicationPublishStep.ENTRIES)) {
                 step = BusinessApplicationPublishStep.ENTRIES;
@@ -188,8 +186,8 @@ public class BusinessApplicationPublishService {
                 run = runService.markStepRunning(run, step);
                 Map<String, Object> snapshot = snapshotService.parse(run.getSnapshotJson());
                 int count = pageMenuPublishService.sync(snapshot).size();
-                run = runService.updateSnapshot(run, snapshotService.bundle(snapshot));
-                run = runService.markStepSuccess(run, step, "已同步 " + count + " 个应用页面菜单");
+                run = runService.markStepSuccess(run, step, "已同步 " + count + " 个应用页面菜单",
+                        snapshotService.bundle(snapshot));
             }
             if (!runService.isStepComplete(run, BusinessApplicationPublishStep.EXTENSIONS)) {
                 step = BusinessApplicationPublishStep.EXTENSIONS;
@@ -226,11 +224,12 @@ public class BusinessApplicationPublishService {
                                                 Map<Long, Long> completedVersions,
                                                 Map<Long, BusinessPermissionSummaryVO> permissionSummaries,
                                                 Map<Long, BusinessObjectDesignerService.DesignerContext> objectContexts) {
-        Map<Long, BusinessApplicationObjectVO> objects = applicationObjectService.list(run.getApplicationId()).stream()
-                .collect(Collectors.toMap(BusinessApplicationObjectVO::getObjectId, Function.identity()));
+        // 候选快照已含对象清单与 designStatus，避免再拉带 model_schema 的 selectByApplicationId。
+        Map<Long, BusinessApplicationObjectVO> objects = readObjectsFromSnapshot(run.getSnapshotJson());
         Map<Long, Long> latestPublishedVersions
                 = objectVersionService.latestPublishedVersionIds(selection.getObjectIds());
         Map<Long, Long> result = new LinkedHashMap<>(completedVersions);
+        List<Long> pinAndMarkIds = new java.util.ArrayList<>();
         for (Long objectId : selection.getObjectIds()) {
             if (result.containsKey(objectId)) {
                 continue;
@@ -240,8 +239,13 @@ public class BusinessApplicationPublishService {
                 throw new BusinessException("发布对象不属于当前应用: " + objectId);
             }
             Long existingVersion = latestPublishedVersions.get(objectId);
-            if ("PUBLISHED".equalsIgnoreCase(object.getDesignStatus()) && existingVersion != null) {
+            if (existingVersion != null) {
+                // 已有对象发布版本：只钉住版本；设计状态未发布时批量收敛，禁止逐条 selectById。
                 result.put(objectId, existingVersion);
+                if (!BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())) {
+                    pinAndMarkIds.add(objectId);
+                    object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
+                }
                 continue;
             }
             BusinessObjectPublishDTO objectDto = new BusinessObjectPublishDTO();
@@ -249,29 +253,69 @@ public class BusinessApplicationPublishService {
             objectDto.setSyncMenu(false);
             objectDto.setForce(false);
             objectDto.setRemark("由应用协调发布: " + StringUtils.defaultString(dto.getRemark()));
-            // 复用预检阶段加载的设计上下文；恢复链路等缺失时回退到重新加载。
-            // 已发布对象由上方 designStatus + 最新版本判定跳过，失败恢复无需依赖逐对象快照 checkpoint，
-            // 完整快照在 OBJECTS 步骤成功后统一写入一次。
             result.put(objectId, objectPublishService.publish(
                     objectId, objectDto, permissionSummaries.get(objectId), objectContexts.get(objectId)));
+            BusinessApplicationObjectVO published = objects.get(objectId);
+            if (published != null) {
+                published.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
+            }
         }
-        verifyPublishedObjects(run.getApplicationId(), selection.getObjectIds(), result);
+        objectPublishService.markDesignPublished(pinAndMarkIds);
+        verifyPublishedObjects(objects, selection.getObjectIds(), result);
         return new PublishObjectsResult(run, result);
     }
 
-    private void prepareApplicationObjectDrafts(Long applicationId) {
-        applicationObjectService.list(applicationId).stream()
-                .map(BusinessApplicationObjectVO::getObjectId)
-                .filter(java.util.Objects::nonNull)
-                .distinct()
-                .forEach(objectDesignerService::prepareRuntimeDraft);
+    private Map<Long, BusinessApplicationObjectVO> readObjectsFromSnapshot(String snapshotJson) {
+        Map<Long, BusinessApplicationObjectVO> result = new LinkedHashMap<>();
+        Object value = snapshotService.parse(snapshotJson).get("objects");
+        if (!(value instanceof List<?> list)) {
+            return result;
+        }
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Long objectId = longValue(map.get("objectId"));
+            if (objectId == null) {
+                continue;
+            }
+            BusinessApplicationObjectVO object = new BusinessApplicationObjectVO();
+            object.setObjectId(objectId);
+            object.setObjectCode(map.get("objectCode") == null ? null : String.valueOf(map.get("objectCode")));
+            object.setObjectName(map.get("objectName") == null ? null : String.valueOf(map.get("objectName")));
+            object.setObjectRole(map.get("objectRole") == null ? null : String.valueOf(map.get("objectRole")));
+            object.setDesignStatus(map.get("designStatus") == null ? null : String.valueOf(map.get("designStatus")));
+            object.setConfigKey(map.get("configKey") == null ? null : String.valueOf(map.get("configKey")));
+            result.put(objectId, object);
+        }
+        return result;
     }
 
-    private void verifyPublishedObjects(Long applicationId,
+    private void prepareApplicationObjectDrafts(Long applicationId) {
+        // 只刷新仍在草稿/已改动的对象；PRIMARY 额外落库关系聚合图。
+        // 已 PUBLISHED 的对象正式发布步骤会跳过，门禁阶段不再 compile/写库。
+        applicationObjectService.list(applicationId).stream()
+                .filter(object -> object.getObjectId() != null)
+                .filter(this::needsRuntimeDraftPrepare)
+                .forEach(object -> objectDesignerService.prepareRuntimeDraft(
+                        object.getObjectId(),
+                        BusinessApplicationObjectRole.PRIMARY.equalsIgnoreCase(object.getObjectRole())));
+    }
+
+    private boolean needsRuntimeDraftPrepare(BusinessApplicationObjectVO object) {
+        if (BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())) {
+            return false;
+        }
+        if (BusinessApplicationObjectRole.PRIMARY.equalsIgnoreCase(object.getObjectRole())) {
+            return true;
+        }
+        return BusinessObjectDesignStatus.DRAFT.matches(object.getDesignStatus())
+                || BusinessObjectDesignStatus.CHANGED.matches(object.getDesignStatus());
+    }
+
+    private void verifyPublishedObjects(Map<Long, BusinessApplicationObjectVO> currentObjects,
                                         List<Long> selectedObjectIds,
                                         Map<Long, Long> objectVersions) {
-        Map<Long, BusinessApplicationObjectVO> currentObjects = applicationObjectService.list(applicationId).stream()
-                .collect(Collectors.toMap(BusinessApplicationObjectVO::getObjectId, Function.identity()));
         List<String> incomplete = selectedObjectIds.stream()
                 .filter(objectId -> {
                     BusinessApplicationObjectVO object = currentObjects.get(objectId);

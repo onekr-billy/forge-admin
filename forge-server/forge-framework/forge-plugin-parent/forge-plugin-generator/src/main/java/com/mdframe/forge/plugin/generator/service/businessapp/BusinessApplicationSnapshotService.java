@@ -137,7 +137,7 @@ public class BusinessApplicationSnapshotService {
         snapshot.put("publishedObjectVersions", new ArrayList<>());
         snapshot.put("publishedProcessVersions", new ArrayList<>());
         snapshot.put("runtimeActions", new ArrayList<>());
-        snapshot.put("printing", printSnapshots.capture(applicationId, snapshot));
+        snapshot.put("printing", printSnapshots.capture(applicationId));
         return bundle(snapshot);
     }
 

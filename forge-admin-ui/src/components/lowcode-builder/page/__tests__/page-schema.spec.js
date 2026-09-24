@@ -4,6 +4,7 @@ import {
   buildGridSyncModelSchema,
   createDefaultListGridLayout,
   DATA_FIELD_BLOCK_TYPES,
+  isPageFieldVisible,
   listPageBlockCatalog,
   resolveChildListDisplayHint,
   resolveChildListDisplayMode,
@@ -12,6 +13,7 @@ import {
   syncGridLayoutWithModel,
   syncPageSchemaWithModel,
 } from '../page-schema'
+import { resolveSelectedFieldRefs } from '../fieldDrawerConfig'
 
 describe('page builder data component catalog', () => {
   it('uses business-facing names while retaining technical names as secondary metadata', () => {
@@ -159,6 +161,28 @@ describe('page grid field synchronization', () => {
     }, modelSchema)
     expect(normalized.zones.find(zone => zone.zoneKey === 'table')?.fieldRefs)
       .toEqual(['fieldInput', childField])
+  })
+
+  it('keeps searchFieldRefs for form-readonly business fields when toggling query role', () => {
+    const modelSchema = {
+      fields: [
+        { field: 'fieldInput', sourceField: 'fieldInput', label: '单行文本', listVisible: true, readonly: true },
+        { field: 'status', sourceField: 'status', label: '状态', listVisible: true },
+      ],
+    }
+    expect(isPageFieldVisible(modelSchema.fields[0], 'search')).toBe(true)
+
+    const layout = syncGridLayoutWithModel({
+      items: [{
+        id: 'crud_1',
+        blockType: 'AiCrudPage',
+        fieldRefs: ['fieldInput', 'status'],
+        props: { searchFieldRefs: ['fieldInput'] },
+      }],
+    }, modelSchema)
+
+    expect(layout.items[0].props.searchFieldRefs).toEqual(['fieldInput'])
+    expect(resolveSelectedFieldRefs(layout.items[0], 'search', modelSchema.fields)).toEqual(['fieldInput'])
   })
 })
 

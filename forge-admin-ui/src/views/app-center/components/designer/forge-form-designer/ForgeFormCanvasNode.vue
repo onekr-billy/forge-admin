@@ -583,7 +583,12 @@ const beforeActive = computed(() => designerDropKey.value === beforeDropKey.valu
 const afterActive = computed(() => designerDropKey.value === afterDropKey.value)
 const activeInside = computed(() => designerDropKey.value === insideDropKey.value)
 const displayLabel = computed(() => props.component.label || props.component.props?.header || props.component.props?.title || props.component.componentKey)
-const previewContext = computed(() => ({ mode: 'designer-preview', disableRuntimeRules: true }))
+const previewContext = computed(() => ({
+  mode: 'designer-preview',
+  disableRuntimeRules: true,
+  // 画布单字段预览不拉远程选项，避免每个控件都打查询源；完整回填请用顶部「预览」
+  allowOptionSourceFetch: false,
+}))
 const previewFormData = computed(() => ({
   [props.component.fieldBinding?.fieldCode || props.component.id]: previewValue.value,
 }))
@@ -695,6 +700,9 @@ const previewField = computed(() => {
   const rawProps = resolvePreviewFieldProps(props.component, componentKey, fieldCode)
   delete rawProps.disabled
   delete rawProps.readonly
+  // 画布上也要反映「只读」，否则属性面板勾选后看起来完全不生效
+  const readonly = Boolean(props.component.visibility?.readonly)
+  const disabled = readonly || Boolean(props.component.props?.disabled)
   return {
     field: fieldCode,
     label: displayLabel.value,
@@ -704,8 +712,12 @@ const previewField = computed(() => {
     placeholder: rawProps.placeholder || buildPreviewPlaceholder(componentKey, displayLabel.value),
     required: Boolean(props.component.validation?.required),
     clearable: rawProps.clearable !== false,
-    disabled: false,
-    readonly: false,
+    disabled,
+    readonly,
+    visibility: {
+      ...(props.component.visibility || {}),
+      readonly,
+    },
     multiple: rawProps.multiple === true || rawProps.recordSelector?.multiple === true,
     dictType: rawProps.dictType,
     defaultValue: rawProps.defaultValue,
@@ -718,8 +730,8 @@ const previewField = computed(() => {
     props: {
       ...rawProps,
       runtimeRules: [],
-      disabled: false,
-      readonly: false,
+      disabled,
+      readonly,
     },
     showFeedback: false,
   }
@@ -1915,6 +1927,9 @@ function resolveRuntimeOptionProps(rawProps = {}, componentKey = '') {
   const nextProps = { ...(rawProps || {}) }
   if (shouldUseDictOptions(nextProps, componentKey))
     delete nextProps.options
+  // 动态源下清掉残留静态 options，避免 AiFormItem / Naive 再读到「选项一/选项二」
+  if (hasDynamicPreviewOptionSource(nextProps.optionSource))
+    delete nextProps.options
   return nextProps
 }
 
@@ -2029,7 +2044,21 @@ function firstText(...values) {
 function resolvePreviewOptions(rawProps = {}, componentKey = '') {
   if (shouldUseDictOptions(rawProps, componentKey))
     return undefined
-  return rawProps.options || buildPreviewOptions(componentKey)
+  // 已配置动态选项源时，不要再注入「选项一/选项二」占位，否则会盖住业务对象数据
+  if (hasDynamicPreviewOptionSource(rawProps.optionSource))
+    return undefined
+  if (Array.isArray(rawProps.options) && rawProps.options.length)
+    return rawProps.options
+  return buildPreviewOptions(componentKey)
+}
+
+function hasDynamicPreviewOptionSource(source = null) {
+  if (!source || typeof source !== 'object')
+    return false
+  const type = String(source.type || '').toUpperCase()
+  if (['CURRENT_CHILDREN', 'QUERY_SOURCE', 'REMOTE', 'BUSINESS_OBJECT'].includes(type))
+    return true
+  return Boolean(String(source.api || source.url || source.sourceKey || '').trim())
 }
 
 function shouldUseDictOptions(rawProps = {}, componentKey = '') {

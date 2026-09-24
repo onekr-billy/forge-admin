@@ -4,7 +4,6 @@
  * 包含字段抽屉的下拉选项常量、字段默认渲染推导等纯函数，
  * 以及跨面板复用的字段引用读取（resolveSelectedFieldRefs）。
  */
-import { isPageFieldVisible } from './page-schema'
 
 export const queryTypeOptions = [
   { label: '等于', value: 'eq' },
@@ -61,6 +60,9 @@ export const columnClickActionOptions = [
 /**
  * 读取区块在指定区域（search/table）的字段引用列表。
  * AiCrudPage 的查询字段独立存储在 props.searchFieldRefs。
+ *
+ * 读取时只校验字段仍在目录中，不再用 isPageFieldVisible('search') 二次过滤；
+ * 否则「查询」开关写入后会被读回过滤掉，表现为勾选不动。
  */
 export function resolveSelectedFieldRefs(block = null, zoneKey = 'table', fields = []) {
   if (!block)
@@ -69,7 +71,7 @@ export function resolveSelectedFieldRefs(block = null, zoneKey = 'table', fields
     const refs = Array.isArray(block.props?.searchFieldRefs)
       ? block.props.searchFieldRefs
       : block.fieldRefs || []
-    const fieldSet = new Set(fields.filter(field => isPageFieldVisible(field, 'search')).map(field => field.field))
+    const fieldSet = new Set((fields || []).map(field => field?.field).filter(Boolean))
     return refs.filter(ref => fieldSet.has(ref))
   }
   return Array.isArray(block.fieldRefs) ? block.fieldRefs : []

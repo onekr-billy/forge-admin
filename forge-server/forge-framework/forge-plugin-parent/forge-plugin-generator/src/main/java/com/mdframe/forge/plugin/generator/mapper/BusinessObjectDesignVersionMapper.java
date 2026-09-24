@@ -27,4 +27,9 @@ public interface BusinessObjectDesignVersionMapper extends BaseMapper<AiBusiness
     List<AiBusinessObjectDesignVersion> selectLatestPublishedVersions(
             @Param("tenantId") Long tenantId,
             @Param("objectIds") List<Long> objectIds);
+
+    /** 仅返回最新已发布版本 id / object_id，不读快照大字段。 */
+    List<AiBusinessObjectDesignVersion> selectLatestPublishedVersionIds(
+            @Param("tenantId") Long tenantId,
+            @Param("objectIds") List<Long> objectIds);
 }

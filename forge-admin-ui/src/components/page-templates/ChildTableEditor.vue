@@ -13,7 +13,7 @@
               {{ child.tabTitle || child.relationName || child.modelName || child.modelCode || '子表明细' }}
             </div>
             <n-space v-if="!props.readonly || visibleToolbarActions(child).length" size="small">
-              <n-button v-if="hasRecordSelector(child) && canCreateRows(child)" size="small" secondary @click="openRecordSelector(child)">
+              <n-button v-if="hasRecordSelector(child) && canCreateRows(child) && child.allowSelectExisting !== false" size="small" secondary @click="openRecordSelector(child)">
                 {{ resolveSelectorButtonText(child) }}
               </n-button>
               <n-button

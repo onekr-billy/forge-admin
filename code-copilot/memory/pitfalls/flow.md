@@ -1,6 +1,16 @@
 # 踩坑：流程 / Flowable / BPMN
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 52 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 53 条。
+
+## 审批表单字段目录不能只信发布态 editSchema
+
+**发现日期**：2026-09-24
+
+表单设计器新加字段后，待办渲染仍像旧表单；办理时报「请填写必填字段: fieldSwitch」。根因是 `resolveBusinessTaskCrudPageFields` 优先用已发布 `editSchema`，设计器组件进了 `uiDocument` 却不在 `fields[]`，前端 `fieldMap` 缺键静默丢组件；开关未勾选时前端又不提交 `false`，后端把「缺 key」或 `String.valueOf` 空串当成未填。
+
+处理原则：审批主表 schema 优先读对象 `designerOptions.formDesignerSchema`（当前设计），应用页 `formAssets` 只保留 formKey/名称；子表以设计器 `subTable` 组件清单为准（顺序也按画布），发布态 `masterDetailConfig` 只补字段元数据与 `modelCode` 数据键；`filterVisibleRecordChildren` / 前端 normalize 必须按子表键别名取数，不能只做精确匹配。`resolve-ai-form` 有布局树时不得回灌未入画布字段。字段资产「未入当前表单」只表示没放进画布。
+
+补充（同日）：子表「新增 / 选择已有」依赖 `childrenConfig.allowCreate !== false` 与 `recordSelector`。节点未配 `childPermissions` 时不能再把 `allowCreate` 强制写成 `false`，应回落到设计器/发布态（默认允许新增）；`allowSelectExisting` 与选择器配置要从 subTable props 带出，缺 `recordSelector` 时用子表 `modelCode` 合成。`childKeyCandidates` 禁止 `List.of(可能为 null)`，否则 NPE 被吞掉后审批页子表整块消失。审批字段控件类型必须以设计器 `componentKey` 为准，禁止 `mergeNonNull(editSchema)` 把下拉/人员/部门盖成 `input`。
 
 ## 嵌入式流程设计器不能由父子组件同时持有
 

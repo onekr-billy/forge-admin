@@ -57,6 +57,12 @@ import { getDictData } from '@/composables/useDict'
 import { useTabStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
 import { getDefaultPageTitle } from '@/utils/page-title'
+import {
+  compileUiDocument,
+  resolveAiFormSchemaFromUiDocument,
+  UI_DOCUMENT_PROTOCOL_VERSION,
+  UI_DOCUMENT_UI_TYPES,
+} from '@/protocols/ui-document'
 import { normalizeMultiFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 
 const props = defineProps({
@@ -297,6 +303,21 @@ function transformColumns(columns, transConfig, options = {}) {
     }
     if (Object.keys(renderConfig).length)
       newCol.renderConfig = renderConfig
+    // AiCrudPage.resolveColumnRender 认 col.render.type；同时写入 relationName，避免只写 renderConfig 时列表仍显示 value
+    if (renderConfig.textField && (!newCol.render || typeof newCol.render !== 'function')) {
+      if (!newCol.render || typeof newCol.render !== 'object') {
+        newCol.render = {
+          type: 'relationName',
+          targetField: renderConfig.textField,
+        }
+      }
+      else if (!newCol.render.targetField && ['relationName', 'orgName', 'userName', 'regionName'].includes(newCol.render.type)) {
+        newCol.render = {
+          ...newCol.render,
+          targetField: renderConfig.textField,
+        }
+      }
+    }
     applyRuntimeColumnPresentation(newCol, newCol, key)
     return newCol
   })
@@ -686,12 +707,28 @@ function buildRuntimeFormProfile(cfg = {}, requestedFormKey = '') {
   const baseEditSchema = Array.isArray(cfg?.editSchema) ? cfg.editSchema : []
   const formDesignerSchema = cfg?.options?.formDesignerSchema || cfg?.formDesignerSchema
   if (!formDesignerSchema) {
-    return { editSchema: baseEditSchema, editFormLayout: cfg?.options?.editFormLayout, formAssets: cfg?.options?.formAssets || cfg?.formAssets || [], governance: {}, designerLayout: {} }
+    return {
+      editSchema: baseEditSchema,
+      editFormLayout: cfg?.options?.editFormLayout,
+      formAssets: cfg?.options?.formAssets || cfg?.formAssets || [],
+      governance: {},
+      designerLayout: {},
+      uiDocument: null,
+      protocolVersion: null,
+    }
   }
   const multiSchema = normalizeMultiFormDesignerSchema(formDesignerSchema)
   const selectedForm = resolveRuntimeForm(multiSchema, requestedFormKey)
   if (!selectedForm?.schema) {
-    return { editSchema: baseEditSchema, editFormLayout: cfg?.options?.editFormLayout, formAssets: [], governance: {}, designerLayout: {} }
+    return {
+      editSchema: baseEditSchema,
+      editFormLayout: cfg?.options?.editFormLayout,
+      formAssets: [],
+      governance: {},
+      designerLayout: {},
+      uiDocument: null,
+      protocolVersion: null,
+    }
   }
   const governance = normalizeFormGovernance(selectedForm.schema.settings?.governance || selectedForm.schema.governance)
   const baseFieldMap = new Map(baseEditSchema.map(field => [field.field, field]))
@@ -699,12 +736,24 @@ function buildRuntimeFormProfile(cfg = {}, requestedFormKey = '') {
   const editSchema = components
     .map(component => buildRuntimeFieldFromDesignerComponent(component, baseFieldMap))
     .filter(Boolean)
+  const governedFields = applyRuntimeFormGovernance(editSchema.length ? editSchema : baseEditSchema, governance)
+  // 设计态 → 统一运行态协议（与审批后端 TaskFormUiDocumentCompiler 同构）
+  const uiDocument = compileUiDocument(
+    selectedForm.schema,
+    selectedForm.formKey || '',
+    governedFields,
+    [],
+    { uiType: UI_DOCUMENT_UI_TYPES.LOWCODE_FORM },
+  )
   return {
-    editSchema: applyRuntimeFormGovernance(editSchema.length ? editSchema : baseEditSchema, governance),
+    editSchema: governedFields,
+    // 保留旧 layout 作无 uiDocument 时的回退；有协议时 transformEditFields 优先走 uiDocument
     editFormLayout: buildRuntimeFormLayoutFromDesignerComponents(selectedForm.schema.components || []),
     formAssets: buildRuntimeFormAssets(multiSchema, selectedForm.formKey),
     governance,
     designerLayout: selectedForm.schema.layout || {},
+    uiDocument,
+    protocolVersion: UI_DOCUMENT_PROTOCOL_VERSION,
   }
 }
 
@@ -792,15 +841,24 @@ function buildRuntimeFieldFromDesignerComponent(component = {}, baseFieldMap = n
   if (visibility.hidden === true && !hasVisibilityRules)
     return null
   const validation = component.validation || {}
+  const readonly = visibility.readonly === true || base.readonly === true
+  if (readonly) {
+    props.readonly = true
+    props.disabled = true
+  }
   return {
     ...base,
     field: fieldCode,
     label: component.label || base.label || fieldCode,
     type: normalizeDesignerRuntimeFieldType(component.componentKey || base.type),
     required: validation.required ?? base.required,
-    readonly: visibility.readonly ?? base.readonly,
-    disabled: visibility.readonly ?? base.disabled,
+    readonly,
+    disabled: readonly || base.disabled === true,
     hidden: visibility.hidden === true,
+    visibility: {
+      ...(base.visibility || {}),
+      ...visibility,
+    },
     defaultValue: props.defaultValue ?? base.defaultValue,
     dictType: props.dictType || base.dictType,
     validation,
@@ -874,8 +932,18 @@ function buildRuntimeFormAssets(multiSchema = {}, activeFormKey = '') {
     }))
 }
 
-function transformEditFields(fields = [], layout = [], fieldMetaMap = new Map()) {
+function transformEditFields(fields = [], layout = [], fieldMetaMap = new Map(), uiDocument = null) {
   const transformedFields = transformFields(fields, fieldMetaMap)
+  // 统一协议优先：设计页编译出的 uiDocument 与审批端同构，保证所见即所得
+  if (uiDocument && typeof uiDocument === 'object') {
+    const resolved = resolveAiFormSchemaFromUiDocument({
+      protocolVersion: uiDocument.version || UI_DOCUMENT_PROTOCOL_VERSION,
+      uiDocument,
+      fields: transformedFields,
+    })
+    if (Array.isArray(resolved) && resolved.length)
+      return resolved
+  }
   if (!Array.isArray(layout) || !layout.length)
     return transformedFields
 
@@ -1075,7 +1143,12 @@ const crudProps = computed(() => {
       columnSettings: runtimeColumnSettings.value,
       fitTableToContainer: shouldRenderRuntimeGrid.value,
     }),
-    editSchema: transformEditFields(activeRuntimeFormProfile.value.editSchema, activeRuntimeFormProfile.value.editFormLayout || options.editFormLayout, runtimeFieldMetaMap),
+    editSchema: transformEditFields(
+      activeRuntimeFormProfile.value.editSchema,
+      activeRuntimeFormProfile.value.editFormLayout || options.editFormLayout,
+      runtimeFieldMetaMap,
+      activeRuntimeFormProfile.value.uiDocument,
+    ),
     childrenConfig: transformChildrenConfig(masterDetailConfig.children || []),
     detailPanels: options.detailPanels || cfg.detailPanels || [],
     apiConfig,

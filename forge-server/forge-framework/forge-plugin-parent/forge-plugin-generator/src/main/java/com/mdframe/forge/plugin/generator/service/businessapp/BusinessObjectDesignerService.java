@@ -384,6 +384,30 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         // 直接读取结果无需重复调用（原二次 enrichModelSchema 已删除）
         modelSchema = context.getModelSchema();
         pageSchema = ensurePageSchema(context.getPageSchema(), modelSchema);
+        String preparedModelJson = writeJson(modelSchema, "modelSchema");
+        String preparedPageJson = writeJson(pageSchema, "pageSchema");
+        String normalizedStatus = BusinessObjectDesignStatus.normalize(designStatus);
+        // 应用发布会先 prepareRuntimeDraft 再 object.publish→saveDraft(READY)。
+        // schema 未变时跳过整份 model/page 大字段回写，只收敛设计状态。
+        if (isStoredRuntimeDraftCurrent(context, preparedModelJson, preparedPageJson)) {
+            boolean statusChanged = !StringUtils.equals(normalizedStatus, object.getDesignStatus());
+            if (statusChanged) {
+                object.setDesignStatus(normalizedStatus);
+                if (StringUtils.isBlank(object.getDesignerOptions())) {
+                    object.setDesignerOptions("{}");
+                }
+                businessObjectMapper.updateById(object);
+            }
+            if (markApplicationChanged) {
+                applicationChangeTracker.markObjectChanged(object.getId());
+            }
+            context.setModelSchema(modelSchema);
+            context.setPageSchema(pageSchema);
+            if (statusChanged || markApplicationChanged) {
+                invalidatePreviewDraftCache(object.getId());
+            }
+            return context;
+        }
         validateDraft(modelSchema, pageSchema);
         AiLowcodeModel model = saveModelDraft(object, context.getModel(), modelSchema);
         AiCrudConfig config = saveRuntimeDraft(object, context.getConfig(), modelSchema, pageSchema);
@@ -391,7 +415,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         object.setModelId(model.getId());
         object.setModelCode(model.getModelCode());
         object.setConfigKey(config.getConfigKey());
-        object.setDesignStatus(BusinessObjectDesignStatus.normalize(designStatus));
+        object.setDesignStatus(normalizedStatus);
         if (StringUtils.isBlank(object.getDesignerOptions())) {
             object.setDesignerOptions("{}");
         }
@@ -407,6 +431,20 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         context.setPageSchema(pageSchema);
         invalidatePreviewDraftCache(object.getId());
         return context;
+    }
+
+    private boolean isStoredRuntimeDraftCurrent(DesignerContext context,
+                                                String preparedModelJson,
+                                                String preparedPageJson) {
+        AiCrudConfig config = context.getConfig();
+        AiLowcodeModel model = context.getModel();
+        return config != null
+                && model != null
+                && config.getId() != null
+                && model.getId() != null
+                && StringUtils.equals(config.getModelSchema(), preparedModelJson)
+                && StringUtils.equals(config.getPageSchema(), preparedPageJson)
+                && StringUtils.equals(model.getModelSchema(), preparedModelJson);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -491,8 +529,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     private AiCrudConfig doPrepareRuntimeDraft(Long objectId, boolean persistChildRelations) {
         DesignerContext context = loadContext(objectId);
-        String beforeModelSchema = writeJson(context.getModelSchema(), "modelSchema");
-        String beforePageSchema = writeJson(context.getPageSchema(), "pageSchema");
         if (persistChildRelations) {
             DesignerContext relationContext = context;
             requiresNewTransactionTemplate().executeWithoutResult(status ->
@@ -500,13 +536,18 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             // 关系短事务提交后重新读取，避免并发设计保存期间用旧草稿覆盖最新模型/页面配置。
             context = loadContext(objectId);
         }
+        // 必须在关系同步/重载之后再取基线：否则 before 永远是 sync 前快照，短回路无法命中，
+        // 应用发布会对每个对象反复写出相同的 model/page schema。
+        String beforeModelSchema = writeJson(context.getModelSchema(), "modelSchema");
+        String beforePageSchema = writeJson(context.getPageSchema(), "pageSchema");
         applyRelationsToModel(context);
         compileFormFirstRuntimeSchema(context);
         String preparedModelSchema = writeJson(context.getModelSchema(), "modelSchema");
         String preparedPageSchema = writeJson(context.getPageSchema(), "pageSchema");
         if (context.getConfig() != null
-                && StringUtils.equals(beforeModelSchema, preparedModelSchema)
-                && StringUtils.equals(beforePageSchema, preparedPageSchema)) {
+                && (StringUtils.equals(beforeModelSchema, preparedModelSchema)
+                && StringUtils.equals(beforePageSchema, preparedPageSchema)
+                || isStoredRuntimeDraftCurrent(context, preparedModelSchema, preparedPageSchema))) {
             return context.getConfig();
         }
         String currentStatus = StringUtils.defaultIfBlank(

@@ -20,10 +20,45 @@ class BusinessFlowPerformanceContractTest {
         assertTrue(method.contains("Map<String, Object> taskFormInfo = loadTaskFormInfo"));
         assertTrue(method.contains("validateTaskAccess(effectiveQuery, false, taskFormInfo)"));
         assertTrue(method.contains("resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo)"));
-        assertTrue(method.contains("buildTaskFormContext(effectiveQuery, runtime, taskFormInfo)"));
+        assertTrue(method.contains("buildTaskFormContext(effectiveQuery, runtime, taskFormInfo"));
+        assertTrue(method.contains("runtimeContextMs"));
         assertFalse(source.contains("flowClient.getTaskDetail("));
     }
 
+    @Test
+    void businessTaskContextMustReuseRuntimeConfigAndSlimFormAssets() throws IOException {
+        String source = serviceSource();
+
+        assertTrue(source.contains("safeGetRuntimeConfig(runtime.configKey())"));
+        assertTrue(source.contains("slimTaskFormAssets("));
+        assertTrue(source.contains("applicationPageFormAssetCache"));
+        assertTrue(source.contains("[task-form-context]"));
+        assertTrue(source.contains("loadInAppBuilder("));
+        assertTrue(source.contains("selectById(runtimeConfig, runtime.recordId())"));
+        assertTrue(source.contains("runtime.publishedConfig()"));
+        assertTrue(source.contains("runtime.businessObject()"));
+        assertTrue(source.contains("resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig)"));
+        assertTrue(source.contains("ensureBusinessBinding(bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
+        assertTrue(source.contains("processFormRpc=skip(queryOrVarFormKey)"));
+        assertTrue(source.contains("loadCachedInAppBuilder("));
+        assertTrue(source.contains("pageAssetMs"));
+        assertTrue(source.contains("businessContextMs"));
+        assertTrue(source.contains("collectTaskFormAssets=skip(appFormKey)"));
+        assertTrue(source.contains("parseApplicationPageFormKey("));
+        assertTrue(source.contains("findApplicationFormAsset("));
+        assertFalse(source.contains("appendRuntimeChildFieldCatalog(StringUtils.trimToNull(objectRef.getString(\"configKey\")), fields)"));
+    }
+
+    @Test
+    void flowNodeFormInfoShouldSkipSecondRpcWhenFormKeyPresent() throws IOException {
+        String source = serviceSource();
+        String method = method(source, "private boolean isCompleteFlowNodeFormInfo", "    private Map<String, Object> loadTaskFormInfo", 0);
+        assertTrue(method.contains("formInfo.get(\"formKey\")"));
+        assertTrue(method.contains("formInfo.get(\"formRef\") instanceof Map"));
+        assertTrue(method.contains("resolveRuntimeBusinessFormRef(formInfo)"));
+        assertTrue(source.contains("slimPageFormAssetMeta("));
+        assertTrue(source.contains("StringUtils.startsWith(StringUtils.trimToEmpty(formKey), \"app_\")"));
+    }
     @Test
     void businessTaskActionMustPersistSubmittedFormDataBeforeCallingFlow() throws IOException {
         String source = serviceSource();

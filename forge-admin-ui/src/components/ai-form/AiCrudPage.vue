@@ -3066,6 +3066,64 @@ function findEditSchemaField(fieldKey) {
   return flattenRuntimeFormFields(props.editSchema || []).find(field => field?.field === fieldKey) || null
 }
 
+/** 列表列伴随名称字段：renderConfig / labelValueField / 动态 optionSource 的 xxxName */
+function resolveColumnCompanionTextField(col = {}, editField = null, key = '') {
+  const fromRenderConfig = col?.renderConfig?.textField || col?.renderConfig?.targetField
+  if (fromRenderConfig && fromRenderConfig !== key)
+    return String(fromRenderConfig)
+  const fromRender = col?.render && typeof col.render === 'object'
+    ? (col.render.targetField || col.render.textField)
+    : ''
+  if (fromRender && fromRender !== key)
+    return String(fromRender)
+  const explicit = editField?.props?.labelValueField || editField?.labelValueField
+  if (explicit && explicit !== key)
+    return String(explicit)
+  const source = editField?.optionSource || editField?.props?.optionSource
+  if (key && hasDynamicOptionSourceForColumn(source))
+    return `${key}Name`
+  // 普通 select 也可能冗余了 xxxName（历史发布缺 optionSource 元数据时仍尽量回显名称）
+  const fieldType = String(editField?.type || editField?.componentType || editField?.componentKey || '').trim()
+  if (key && ['select', 'dictSelect', 'radio', 'radioButton', 'checkbox', 'cascader', 'treeSelect'].includes(fieldType))
+    return `${key}Name`
+  return ''
+}
+
+function hasDynamicOptionSourceForColumn(source) {
+  if (!source || typeof source !== 'object')
+    return false
+  const type = String(source.type || '').trim().toUpperCase().replace(/-/g, '_')
+  if (!type || type === 'STATIC')
+    return false
+  return ['QUERY_SOURCE', 'BUSINESS_OBJECT', 'REMOTE', 'API', 'DICT'].includes(type)
+    || Boolean(source.api || source.url || source.sourceKey)
+}
+
+function resolveRowCompanionText(row = {}, textField = '', valueField = '') {
+  if (!row || typeof row !== 'object')
+    return row?.[valueField]
+  if (textField && row[textField] !== undefined && row[textField] !== null && String(row[textField]).trim() !== '')
+    return row[textField]
+  // snake_case 列名与 camelCase 读模型并存时兜底
+  if (textField) {
+    const camel = snakeToCamelKey(textField)
+    if (camel && camel !== textField && row[camel] !== undefined && row[camel] !== null && String(row[camel]).trim() !== '')
+      return row[camel]
+    const snake = camelToSnakeKey(textField)
+    if (snake && snake !== textField && row[snake] !== undefined && row[snake] !== null && String(row[snake]).trim() !== '')
+      return row[snake]
+  }
+  return row[valueField]
+}
+
+function snakeToCamelKey(value = '') {
+  return String(value || '').replace(/_([a-zA-Z0-9])/g, (_, ch) => String(ch).toUpperCase())
+}
+
+function camelToSnakeKey(value = '') {
+  return String(value || '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+}
+
 function resolveColumnRender(col) {
   const nextCol = { ...col }
   if (typeof col.render === 'function')
@@ -3082,8 +3140,17 @@ function resolveColumnRender(col) {
     return nextCol
   }
 
-  if (!col.render || typeof col.render !== 'object')
+  // 动态下拉等把名称冗余到 xxxName / renderConfig.textField；列表优先显示名称
+  const companionTextField = resolveColumnCompanionTextField(col, editField, key)
+
+  if (!col.render || typeof col.render !== 'object') {
+    if (companionTextField) {
+      nextCol.render = row => h(SystemTableCell, {
+        values: splitTableCellValues(resolveRowCompanionText(row, companionTextField, key)),
+      })
+    }
     return nextCol
+  }
 
   const renderType = col.render.type
   if (renderType === 'dictTag') {
@@ -3094,15 +3161,15 @@ function resolveColumnRender(col) {
     })
   }
   else if (renderType === 'relationName') {
-    const targetField = col.render.targetField || `${key}Name`
+    const targetField = col.render.targetField || companionTextField || `${key}Name`
     nextCol.render = row => h(SystemTableCell, {
-      values: splitTableCellValues(row[targetField] ?? row[key]),
+      values: splitTableCellValues(resolveRowCompanionText(row, targetField, key)),
     })
   }
   else if (renderType === 'orgName' || renderType === 'userName' || renderType === 'regionName') {
-    const targetField = col.render.targetField || `${key}Name`
+    const targetField = col.render.targetField || companionTextField || `${key}Name`
     nextCol.render = row => h(SystemTableCell, {
-      values: splitTableCellValues(row[targetField] ?? row[key]),
+      values: splitTableCellValues(resolveRowCompanionText(row, targetField, key)),
     })
   }
   else if (renderType === 'imageUpload') {
@@ -5277,7 +5344,11 @@ async function handleModalConfirm() {
     await childFormRef.value?.validate?.()
 
     // 调用 beforeSubmit 钩子
-    const latestFormData = formRef.value?.getFormData?.() || formData.value
+    // getFormData 与父级 formData 合并：避免 props 回声竞态导致映射回填键已在 UI 显示却未进提交体
+    const latestFormData = {
+      ...(formData.value || {}),
+      ...(formRef.value?.getFormData?.() || {}),
+    }
     formData.value = latestFormData
     let data = await callHook('beforeSubmit', { ...latestFormData, ...resolveSubmitDefaultParams() }, data => data)
 

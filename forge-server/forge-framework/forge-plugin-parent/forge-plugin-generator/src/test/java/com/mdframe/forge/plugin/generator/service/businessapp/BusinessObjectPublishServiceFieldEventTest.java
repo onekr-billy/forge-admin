@@ -60,6 +60,22 @@ class BusinessObjectPublishServiceFieldEventTest {
     }
 
     @Test
+    @DisplayName("业务对象查询源可以通过发布检查")
+    void acceptsBusinessObjectQuerySource() throws Exception {
+        Map<String, Object> event = validEvent();
+        event.put("id", "query_template_detail");
+        event.put("sourceType", "BUSINESS_OBJECT");
+        event.put("sourceKey", "template_detail");
+        event.put("resultMode", "FIRST_ROW");
+        event.put("resultMappings", List.of(
+                Map.of("from", "id", "to", "contactName", "whenMissing", "CLEAR")));
+
+        List<BusinessPublishCheckItemVO> items = validate(List.of(event));
+
+        assertTrue(items.isEmpty(), () -> items.toString());
+    }
+
+    @Test
     @DisplayName("重复编码、参数、目标字段及不存在字段均阻止发布")
     void rejectsDuplicateAndMissingFieldMappings() throws Exception {
         Map<String, Object> first = validEvent();

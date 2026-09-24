@@ -129,6 +129,7 @@ export function buildRuntimeCrudBlockProps({
         configuredFieldRefs,
       ),
       runtimeProps.options?.editFormLayout,
+      runtimeProps.uiDocument,
     ),
     apiConfig: {
       ...(runtimeProps.apiConfig || {}),

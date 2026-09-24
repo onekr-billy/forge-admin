@@ -16,12 +16,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 
-/** 只在候选创建时读取设计态绑定；最终提交与回滚使用已固定的清单。 */
+/**
+ * 只在候选创建时读取设计态绑定；最终提交与回滚使用已固定的清单。
+ * 应用发布只固定引用完整性（模板启用、来源一致、版本哈希），不做页面字段目录校验。
+ */
 @Component
 @RequiredArgsConstructor
 public class PrintApplicationSnapshotContributor {
+    private static final Set<PrintScene> PUBLISHABLE_SCENES = EnumSet.of(
+            PrintScene.LIST, PrintScene.DETAIL, PrintScene.FLOW_TODO, PrintScene.FLOW_DONE, PrintScene.FLOW_STARTED);
+
     private final PrintIdentity identity;
     private final PrintApplicationLock applicationLock;
     private final PrintBindingMapper bindings;
@@ -30,10 +38,9 @@ public class PrintApplicationSnapshotContributor {
     private final PrintProtocolValidator protocol;
     private final PrintApplicationSnapshotCodec codec;
     private final ObjectMapper json;
-    private final PrintBindingValidationService validation;
 
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> capture(Long applicationId, Map<String, Object> candidate) {
+    public Map<String, Object> capture(Long applicationId) {
         var actor = identity.current();
         applicationLock.lock(actor.tenantId(), applicationId);
         var rows = bindings.selectApplication(actor.tenantId(), applicationId);
@@ -56,11 +63,13 @@ public class PrintApplicationSnapshotContributor {
             if (version == null || !protocol.validate(version.getSchemaJson()).schemaHash().equals(version.getSchemaHash())) {
                 throw PrintFailure.of(409, "PRINT_APPLICATION_VERSION_INVALID", "打印模板版本内容校验失败");
             }
-            var binding = new PrintApplicationSnapshotCodec.Binding(source, PrintScene.valueOf(row.getScene()),
+            PrintScene scene = PrintScene.valueOf(row.getScene());
+            if (!PUBLISHABLE_SCENES.contains(scene)) {
+                throw PrintFailure.of(409, "PRINT_SCENE_UNSUPPORTED", "不支持的打印场景，不能发布此绑定");
+            }
+            pinned.add(new PrintApplicationSnapshotCodec.Binding(source, scene,
                     template.getId(), version.getId(), version.getSchemaHash(),
-                    Boolean.TRUE.equals(row.getIsDefault()), row.getSortOrder());
-            validation.validate(actor, binding, version.getSchemaJson(), json.valueToTree(candidate), false);
-            pinned.add(binding);
+                    Boolean.TRUE.equals(row.getIsDefault()), row.getSortOrder()));
         }
         Map<String, Object> manifest = Map.of("schemaVersion", 1, "bindings", pinned);
         try {

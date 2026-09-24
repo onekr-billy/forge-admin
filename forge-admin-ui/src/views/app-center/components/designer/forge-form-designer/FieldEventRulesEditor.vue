@@ -333,7 +333,11 @@ const selectedSourceValue = computed(() => draft.value.sourceType && draft.value
   ? `${draft.value.sourceType}::${draft.value.sourceKey}`
   : '')
 const inputSchema = computed(() => parseQuerySourceInputSchema(metadata.value?.inputSchemaJson))
-const resultFieldOptions = computed(() => (Array.isArray(metadata.value?.fields) ? metadata.value.fields : []).map(field => ({
+const sourceFields = computed(() => ensureBusinessObjectIdField(
+  Array.isArray(metadata.value?.fields) ? metadata.value.fields : [],
+  draft.value.sourceType,
+))
+const resultFieldOptions = computed(() => sourceFields.value.map(field => ({
   label: `${field.label || field.field} · ${field.path || field.field}`,
   value: field.path || field.field,
 })))
@@ -362,7 +366,7 @@ const paramValueOptions = computed(() => [
 const paramOptions = computed(() => {
   const options = inputSchema.value.map(item => ({ label: item.label || item.name, value: item.name }))
   const known = new Set(options.map(item => item.value))
-  for (const field of (Array.isArray(metadata.value?.fields) ? metadata.value.fields : [])) {
+  for (const field of sourceFields.value) {
     const name = field.path || field.field
     if (name && !known.has(name))
       options.push({ label: `${field.label || name} · ${name}`, value: name })
@@ -594,6 +598,8 @@ function saveDraft() {
   validationMessage.value = validateDraft()
   if (validationMessage.value)
     return
+  if (isListQuerySourceType.value && draft.value.resultMode === 'ROOT')
+    draft.value.resultMode = 'FIRST_ROW'
   const list = clone(normalizedRules.value)
   if (editingIndex.value < 0)
     list.push(clone(draft.value))
@@ -679,6 +685,16 @@ function sourceLabel(rule) {
 
 function sourceCount(sourceType) {
   return catalog.value.filter(item => item.sourceType === sourceType).length
+}
+
+function ensureBusinessObjectIdField(fields, sourceType) {
+  const list = Array.isArray(fields) ? [...fields] : []
+  if (sourceType !== 'BUSINESS_OBJECT')
+    return list
+  const hasId = list.some(field => (field?.path || field?.field) === 'id')
+  if (!hasId)
+    list.unshift({ field: 'id', label: '主键 ID', path: 'id', type: 'bigint' })
+  return list
 }
 
 function preferredSourceType() {

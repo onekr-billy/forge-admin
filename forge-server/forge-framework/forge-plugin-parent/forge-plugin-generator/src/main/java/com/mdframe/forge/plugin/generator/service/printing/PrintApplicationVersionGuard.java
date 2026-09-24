@@ -10,7 +10,10 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** 最终提交的引用守卫；候选阶段的业务字段检查不能替代此处锁内校验。 */
+/**
+ * 最终提交的引用守卫：只锁校验模板启用、来源一致与版本哈希。
+ * 页面字段目录是否匹配留给打印预览/取数时处理，不阻断应用发布。
+ */
 @Component
 @RequiredArgsConstructor
 public class PrintApplicationVersionGuard {
@@ -20,8 +23,6 @@ public class PrintApplicationVersionGuard {
     private final PrintTemplateMapper templates;
     private final PrintTemplateVersionMapper versions;
     private final PrintProtocolValidator protocol;
-    private final PrintBindingValidationService validation;
-    private final PrintMetadataResolver metadata;
 
     public void lockAndValidate(Long applicationId, String snapshotJson) {
         var actor = identity.current();
@@ -39,7 +40,6 @@ public class PrintApplicationVersionGuard {
                     || !binding.schemaHash().equals(protocol.validate(version.getSchemaJson()).schemaHash())) {
                 throw PrintFailure.of(409, "PRINT_APPLICATION_VERSION_INVALID", "应用引用的打印版本不存在或内容校验失败");
             }
-            validation.validate(actor, binding, version.getSchemaJson(), metadata.parse(snapshotJson), true);
         }
     }
 }

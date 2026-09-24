@@ -78,6 +78,7 @@ public class BusinessProcessPublishService {
         Map<Long, String> expectedHashes = expectedSchemaHashes == null
                 ? Map.of() : expectedSchemaHashes;
         List<BusinessProcessSnapshot> snapshots = new ArrayList<>();
+        Long userId = resolveUserId();
         for (Long processId : selectedIds) {
             AiBusinessProcess process = processMapper.selectForPublish(tenantId, applicationId, processId);
             if (process == null) {
@@ -93,7 +94,10 @@ public class BusinessProcessPublishService {
                     tenantId, processId, applicationVersion);
             if (existing != null) {
                 assertSameImmutableVersion(existing, expectedHash);
-                updateProjection(applicationId, processId, existing, resolveUserId());
+                // 已指向同一不可变版本时跳过投影 UPDATE，避免无内容重写。
+                if (needsProjectionUpdate(process, existing)) {
+                    updateProjection(applicationId, processId, existing, userId);
+                }
                 snapshots.add(toSnapshot(existing));
                 continue;
             }
@@ -103,8 +107,9 @@ public class BusinessProcessPublishService {
             snapshots.add(publishNewVersion(
                     tenantId, applicationId, applicationVersion, publishRunId, process));
         }
+        // 仍需清空未选中流程的发布投影（取消勾选场景）；无其它行时 Updates=0。
         processMapper.clearPublishedProjectionExcept(
-                tenantId, applicationId, selectedIds, resolveUserId());
+                tenantId, applicationId, selectedIds, userId);
         return new BusinessProcessPublishResult(snapshots);
     }
 
@@ -418,6 +423,17 @@ public class BusinessProcessPublishService {
                 version.getVersionNo(), version.getSchemaHash(), userId) != 1) {
             throw new BusinessException("业务流程发布投影更新失败: " + version.getProcessCode());
         }
+    }
+
+    private boolean needsProjectionUpdate(AiBusinessProcess process, AiBusinessProcessVersion version) {
+        if (process == null || version == null) {
+            return true;
+        }
+        if (!java.util.Objects.equals(process.getPublishedVersion(), version.getVersionNo())) {
+            return true;
+        }
+        return !StringUtils.equals(process.getDraftSchemaHash(), version.getSchemaHash())
+                || !"PUBLISHED".equalsIgnoreCase(StringUtils.trimToEmpty(process.getDesignStatus()));
     }
 
     private void assertSameImmutableVersion(AiBusinessProcessVersion existing, String expectedHash) {

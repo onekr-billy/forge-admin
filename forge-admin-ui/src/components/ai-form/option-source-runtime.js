@@ -24,10 +24,27 @@ const TREE_COMPONENT_TYPES = new Set([
 ])
 
 /**
+ * 从 fieldMappings 抽出源字段名（选中回填依赖选项行上带这些列）。
+ */
+export function collectFieldMappingSourceFields(mappings = []) {
+  const list = Array.isArray(mappings)
+    ? mappings
+    : (mappings && typeof mappings === 'object' ? Object.keys(mappings) : [])
+  return list
+    .map((item) => {
+      if (typeof item === 'string')
+        return item.trim()
+      return String(item?.sourceField || item?.source || '').trim()
+    })
+    .filter(Boolean)
+}
+
+/**
  * 组装 BUSINESS_OBJECT / QUERY_SOURCE 执行时需要回传的字段列表。
  * 必须包含 valueField + labelField；树场景额外带上 parentField，否则扁平转树缺父级列。
+ * fieldMappings / extraFields 一并投影，保证「选中后回填」能读到源字段。
  */
-export function buildQuerySourceDisplayFields(source = {}) {
+export function buildQuerySourceDisplayFields(source = {}, extraFields = []) {
   const fields = []
   const seen = new Set()
   const push = (raw) => {
@@ -43,6 +60,8 @@ export function buildQuerySourceDisplayFields(source = {}) {
 
   ;(Array.isArray(source.fields) ? source.fields : []).forEach(push)
   ;(Array.isArray(source.displayFields) ? source.displayFields : []).forEach(push)
+  collectFieldMappingSourceFields(source.fieldMappings || source.mappings).forEach(push)
+  ;(Array.isArray(extraFields) ? extraFields : []).forEach(push)
   push(source.valueField)
   push(source.labelField)
   push(source.parentField)

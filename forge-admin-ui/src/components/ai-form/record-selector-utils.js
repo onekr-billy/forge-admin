@@ -19,7 +19,10 @@ export function applyRecordFieldMappings(record = {}, mappings = {}) {
   const normalizedMappings = normalizeSelectorMappings(mappings)
   const result = {}
   Object.entries(normalizedMappings).forEach(([sourceField, targetField]) => {
-    result[targetField] = readPath(source, sourceField)
+    const value = readPath(source, sourceField)
+    // 源字段缺失时不写目标，避免把已有值清成 undefined
+    if (value !== undefined)
+      result[targetField] = value
   })
   return result
 }
@@ -208,9 +211,29 @@ export function readPath(source = {}, path = '') {
   for (const key of keys) {
     if (!cursor || typeof cursor !== 'object')
       return undefined
-    cursor = cursor[key]
+    if (Object.prototype.hasOwnProperty.call(cursor, key) || key in cursor) {
+      cursor = cursor[key]
+      continue
+    }
+    const altKey = findCaseVariantKey(cursor, key)
+    if (!altKey)
+      return undefined
+    cursor = cursor[altKey]
   }
   return cursor
+}
+
+/** 兼容 camelCase / snake_case 键名差异（业务对象投影字段与表单映射源字段） */
+function findCaseVariantKey(source = {}, key = '') {
+  if (!source || typeof source !== 'object' || !key)
+    return ''
+  const camel = String(key).replace(/_([a-zA-Z0-9])/g, (_, ch) => String(ch).toUpperCase())
+  if (camel !== key && (Object.prototype.hasOwnProperty.call(source, camel) || camel in source))
+    return camel
+  const snake = String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+  if (snake !== key && (Object.prototype.hasOwnProperty.call(source, snake) || snake in source))
+    return snake
+  return ''
 }
 
 function resolveSelectorParamValue(value, context = {}) {

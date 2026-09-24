@@ -15,6 +15,8 @@ import {
   resolveDesignerFormGovernance,
   resolveRuntimeBlockApi,
   shouldUseStaticCrudPreview,
+  applyDesignerVisibilityToFields,
+  mergeDesignerEditSchema,
 } from '../runtime-crud-props'
 
 describe('runtime CRUD design preview props', () => {
@@ -407,6 +409,12 @@ describe('runtime CRUD design preview props', () => {
     expect(props.editEnableCollapse).toBe(true)
     expect(props.editShowFeedback).toBe(false)
     expect(props.editXGap).toBe(16)
+    expect(props.protocolVersion).toBe('1')
+    expect(props.uiDocument).toMatchObject({
+      version: '1',
+      uiType: 'lowcode-form',
+      formKey: 'order_default_form',
+    })
     expect(props.editYGap).toBe(16)
   })
 
@@ -504,5 +512,86 @@ describe('runtime CRUD design preview props', () => {
     const props = buildRuntimeCrudProps({ options: {} })
     expect(props.fieldEvents).toEqual([])
     expect(props.formInit).toEqual({})
+  })
+
+  it('applies designer visibility.readonly onto runtime editSchema fields', () => {
+    const props = buildRuntimeCrudProps({
+      editSchema: [
+        { field: 'name', type: 'input', label: '名称' },
+        { field: 'status', type: 'select', label: '状态' },
+        { field: 'hiddenField', type: 'input', label: '隐藏' },
+      ],
+      options: {
+        formDesignerSchema: {
+          components: [
+            {
+              componentKey: 'input',
+              fieldBinding: { fieldCode: 'name' },
+              visibility: { readonly: true },
+            },
+            {
+              componentKey: 'select',
+              fieldBinding: { fieldCode: 'status' },
+            },
+            {
+              componentKey: 'input',
+              fieldBinding: { fieldCode: 'hiddenField' },
+              visibility: { hidden: true },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(props.editSchema.find(item => item.field === 'name')).toMatchObject({
+      readonly: true,
+      disabled: true,
+    })
+    expect(props.editSchema.find(item => item.field === 'status')).toMatchObject({
+      field: 'status',
+    })
+    expect(props.editSchema.find(item => item.field === 'status')?.readonly).toBeFalsy()
+    expect(props.editSchema.find(item => item.field === 'hiddenField')).toBeUndefined()
+    expect(props.uiDocument.components[0].editable).toBe(false)
+    expect(props.uiDocument.components[1].editable).toBe(true)
+  })
+
+  it('merges designer-only fields into editSchema so new inputs are not dropped by uiDocument', () => {
+    const props = buildRuntimeCrudProps({
+      editSchema: [
+        { field: 'name', type: 'input', label: '名称' },
+      ],
+      options: {
+        formDesignerSchema: {
+          components: [
+            {
+              componentKey: 'input',
+              label: '名称',
+              fieldBinding: { fieldCode: 'name' },
+            },
+            {
+              componentKey: 'input',
+              label: '新字段',
+              fieldBinding: { fieldCode: 'fieldInputNew' },
+              visibility: { readonly: true },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(props.editSchema.map(item => item.field)).toEqual(['name', 'fieldInputNew'])
+    expect(props.editSchema.find(item => item.field === 'fieldInputNew')).toMatchObject({
+      label: '新字段',
+      type: 'input',
+      readonly: true,
+      disabled: true,
+    })
+  })
+
+  it('applyDesignerVisibilityToFields is a no-op without designer schema', () => {
+    const fields = [{ field: 'a', type: 'input' }]
+    expect(applyDesignerVisibilityToFields(fields, null)).toEqual(fields)
+    expect(mergeDesignerEditSchema(fields, null)).toEqual(fields)
   })
 })

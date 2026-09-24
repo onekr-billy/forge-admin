@@ -285,7 +285,7 @@
       <AiForm
         class="designer-preview-runtime-form"
         :schema="previewSchema"
-        :value="previewValue"
+        :value="previewFormValue"
         :label-placement="previewLayout.labelPlacement || 'left'"
         :label-width="previewLayout.labelWidth ?? 'auto'"
         :label-align="previewLayout.labelAlign || 'right'"
@@ -298,6 +298,7 @@
         :context="previewRuntimeContext"
         :form-assets="formAssets"
         :keep-empty-layout-nodes="true"
+        @update:value="previewFormValue = $event || {}"
       />
     </div>
   </n-modal>
@@ -373,7 +374,7 @@
 <script setup>
 import { ArrowRedoOutline, ArrowUndoOutline, ChevronBackOutline, ChevronForwardOutline, EllipsisHorizontalOutline, TrashOutline, WarningOutline } from '@vicons/ionicons5'
 import { NSpace } from 'naive-ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
 import AiForm from '@/components/ai-form/AiForm.vue'
 import AiFormGroupTitle from '@/components/ai-form/AiFormGroupTitle.vue'
@@ -489,6 +490,8 @@ const previewRuntimeContext = {
   mode: 'designer-preview',
   designerPreview: true,
   source: 'form-designer',
+  // 预览弹窗允许拉业务对象选项，否则「选中后回填」无选项行可映射
+  allowOptionSourceFetch: true,
 }
 const baseDesignerMoreOptions = [
   { label: '按字段生成', key: 'resetFromFields' },
@@ -511,6 +514,8 @@ const previewGridCols = computed(() => {
 })
 const previewSchema = computed(() => buildRuntimeFormSchema(normalizedSchema.value, previewMode.value))
 const previewValue = computed(() => buildRuntimeFormValue(normalizedSchema.value, previewMode.value))
+// 预览表单用本地可写状态，否则受控 :value 始终是默认快照会把「选中后回填」冲掉
+const previewFormValue = ref({})
 const usedFieldSet = computed(() => new Set(extractForgeSchemaFieldRefs(normalizedSchema.value || {})))
 const formAssets = computed(() => Array.isArray(normalizedSchema.value.settings?.formAssets) ? normalizedSchema.value.settings.formAssets : [])
 const designerMoreOptions = computed(() => [
@@ -929,6 +934,13 @@ const renameDialogVisible = ref(false)
 const renameFormName = ref('')
 const previewDialogVisible = ref(false)
 
+watch(
+  [previewDialogVisible, previewMode],
+  ([visible]) => {
+    if (visible)
+      previewFormValue.value = { ...(previewValue.value || {}) }
+  },
+)
 // Runtime component aliases removed — preview now delegates to AiForm + AiFormLayoutNodes
 
 const componentTypeAlias = {
@@ -1058,6 +1070,8 @@ function normalizeRuntimeComponent(component, mode = 'create') {
 function resolveRuntimeProps(props = {}, componentKey = '') {
   const nextProps = { ...(props || {}) }
   if (nextProps.dictType && ['select', 'dictSelect', 'radio', 'radioButton', 'checkbox', 'cascader'].includes(componentKey))
+    delete nextProps.options
+  if (hasDynamicPreviewOptionSource(nextProps.optionSource))
     delete nextProps.options
   return nextProps
 }
@@ -1216,9 +1230,23 @@ function preparePreviewNode(component) {
     ? component.children.map(child => preparePreviewNode(child)).filter(Boolean)
     : []
   const isWidget = isPageWidgetComponentKey(componentKey)
+  const fieldCode = component.fieldBinding?.fieldCode || component.field || component.prop || ''
+  const props = { ...(component.props || {}) }
+  // 动态选项源预览时丢掉静态「选项一/选项二」，交给 AiFormItem 拉业务对象
+  if (hasDynamicPreviewOptionSource(props.optionSource))
+    delete props.options
   const result = {
     ...component,
+    props,
     componentKey,
+    // 预览必须带上 AiFormItem 识别的 type/field，否则下拉会落成默认 input，选中回填不会触发
+    type: component.type || componentKey,
+    ...(fieldCode
+      ? {
+          field: fieldCode,
+          prop: fieldCode,
+        }
+      : {}),
     children,
     ...(isWidget ? { fieldBinding: { ...(component.fieldBinding || {}), mode: component.fieldBinding?.mode || 'virtual' } } : {}),
   }
@@ -1232,6 +1260,15 @@ function preparePreviewNode(component) {
     }
   }
   return result
+}
+
+function hasDynamicPreviewOptionSource(source = null) {
+  if (!source || typeof source !== 'object')
+    return false
+  const type = String(source.type || '').toUpperCase()
+  if (['CURRENT_CHILDREN', 'QUERY_SOURCE', 'REMOTE', 'BUSINESS_OBJECT'].includes(type))
+    return true
+  return Boolean(String(source.api || source.url || source.sourceKey || '').trim())
 }
 
 function getDefaultRuntimeValue(component, mode = 'create') {
@@ -1279,12 +1316,20 @@ function getMockRuntimeValue(component) {
 
 function buildRuntimeFormValue(schema, mode = 'create') {
   const components = Array.isArray(schema) ? schema : schema?.components || []
-  return components.reduce((model, component) => {
-    const fieldCode = getRuntimeFieldCode(component)
-    if (fieldCode)
-      model[fieldCode] = getDefaultRuntimeValue(component, mode)
-    return model
-  }, {})
+  const model = {}
+  const walk = (nodes = []) => {
+    ;(Array.isArray(nodes) ? nodes : []).forEach((component) => {
+      if (!component || typeof component !== 'object')
+        return
+      const fieldCode = getRuntimeFieldCode(component)
+      if (fieldCode)
+        model[fieldCode] = getDefaultRuntimeValue(component, mode)
+      if (Array.isArray(component.children) && component.children.length)
+        walk(component.children)
+    })
+  }
+  walk(components)
+  return model
 }
 
 function isCrudRuntimeComponent(componentKey) {

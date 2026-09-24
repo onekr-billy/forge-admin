@@ -33,6 +33,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.plugin.generator.service.businessapp.taskform.TaskFormUiDocumentCompiler;
 import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessApprovalResultEvent;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessBindingSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigVO;
@@ -62,7 +63,9 @@ import org.redisson.api.RedissonClient;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -92,12 +95,20 @@ public class BusinessFlowService {
 
     private static final String FLOW_START_LOCK_PREFIX = "forge:business-flow:start:";
     private static final long FLOW_START_LOCK_WAIT_SECONDS = 5L;
+    /** 应用页 formKey → schema 解析短缓存，避免每次 detail 整包 options。 */
+    private static final long APPLICATION_PAGE_FORM_CACHE_TTL_MS = 300_000L;
+    private static final ThreadLocal<Map<String, Long>> TASK_FORM_DETAIL_STAGES = new ThreadLocal<>();
+    private static final ThreadLocal<List<String>> TASK_FORM_DETAIL_NOTES = new ThreadLocal<>();
     private static final Set<String> SERVER_OWNED_FLOW_VARIABLES = Set.of(
             "objectCode", "configKey", "recordId", "businessKey",
             "documentBusinessKey", "recordBusinessKey", "flowBusinessKey");
     /** 流程运行期间允许任务事件改写的单据状态，终态不在其中。 */
     private static final Set<String> RUNNING_DOCUMENT_STATUS_KEYS = Set.of(
             "DRAFT", "SUBMITTED", "IN_PROCESS", "NEED_MODIFY");
+
+    private final ConcurrentHashMap<String, CachedJsonValue> applicationPageFormAssetCache = new ConcurrentHashMap<>();
+    /** applicationId → inAppBuilder，避免同一应用多个 formKey 重复抽 JSON。 */
+    private final ConcurrentHashMap<Long, CachedJsonValue> applicationInAppBuilderCache = new ConcurrentHashMap<>();
 
     @Autowired(required = false)
     private FlowClient flowClient;
@@ -638,7 +649,7 @@ public class BusinessFlowService {
         }
         fields = new ArrayList<>(fields);
         appendSchemaChildTableFields(schema, fields);
-        appendRuntimeChildFieldCatalog(StringUtils.trimToNull(objectRef.getString("configKey")), fields);
+        // 子表字段由持有 runtimeConfig/options 的调用方补齐；这里再查 published config 会把大 JSON 再拉一遍
         item.put("type", "BUSINESS_OBJECT_FORM");
         item.put("formMode", "BUSINESS_OBJECT_FORM");
         item.put("applicationId", String.valueOf(applicationId));
@@ -734,11 +745,24 @@ public class BusinessFlowService {
      */
     public BusinessTaskFormContextVO getTaskFormContext(BusinessTaskFormContextQueryDTO query) {
         BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
-        validateTaskAccess(effectiveQuery, false, taskFormInfo);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo);
-        return attachPrintRuntimeIdentity(
-                buildTaskFormContext(effectiveQuery, runtime, taskFormInfo), effectiveQuery);
+        long startedAt = System.nanoTime();
+        Map<String, Long> stages = new LinkedHashMap<>();
+        beginTaskFormProfiling(stages);
+        try {
+            long mark = System.nanoTime();
+            Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
+            stages.put("flowFormInfoMs", elapsedMillis(mark));
+            mark = System.nanoTime();
+            validateTaskAccess(effectiveQuery, false, taskFormInfo);
+            stages.put("accessMs", elapsedMillis(mark));
+            mark = System.nanoTime();
+            TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo);
+            stages.put("runtimeContextMs", elapsedMillis(mark));
+            return attachPrintRuntimeIdentity(
+                    buildTaskFormContext(effectiveQuery, runtime, taskFormInfo, stages, startedAt), effectiveQuery);
+        } finally {
+            endTaskFormProfiling();
+        }
     }
 
     /**
@@ -749,11 +773,24 @@ public class BusinessFlowService {
      */
     public BusinessTaskFormContextVO getActionableTaskFormContext(BusinessTaskFormContextQueryDTO query) {
         BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
-        validateTaskAccess(effectiveQuery, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, true, taskFormInfo);
-        return attachPrintRuntimeIdentity(
-                buildTaskFormContext(effectiveQuery, runtime, taskFormInfo), effectiveQuery);
+        long startedAt = System.nanoTime();
+        Map<String, Long> stages = new LinkedHashMap<>();
+        beginTaskFormProfiling(stages);
+        try {
+            long mark = System.nanoTime();
+            Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
+            stages.put("flowFormInfoMs", elapsedMillis(mark));
+            mark = System.nanoTime();
+            validateTaskAccess(effectiveQuery, true, taskFormInfo);
+            stages.put("accessMs", elapsedMillis(mark));
+            mark = System.nanoTime();
+            TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, true, taskFormInfo);
+            stages.put("runtimeContextMs", elapsedMillis(mark));
+            return attachPrintRuntimeIdentity(
+                    buildTaskFormContext(effectiveQuery, runtime, taskFormInfo, stages, startedAt), effectiveQuery);
+        } finally {
+            endTaskFormProfiling();
+        }
     }
 
     /**
@@ -761,11 +798,20 @@ public class BusinessFlowService {
      */
     public BusinessTaskFormContextVO getTaskFormReadonlyContext(BusinessTaskFormContextQueryDTO query) {
         BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false);
-        BusinessTaskFormContextVO context = attachPrintRuntimeIdentity(
-                buildTaskFormContext(effectiveQuery, runtime), effectiveQuery);
-        makeBusinessTaskFormReadonly(context);
-        return context;
+        long startedAt = System.nanoTime();
+        Map<String, Long> stages = new LinkedHashMap<>();
+        beginTaskFormProfiling(stages);
+        try {
+            long mark = System.nanoTime();
+            TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false);
+            stages.put("runtimeContextMs", elapsedMillis(mark));
+            BusinessTaskFormContextVO context = attachPrintRuntimeIdentity(
+                    buildTaskFormContext(effectiveQuery, runtime, Map.of(), stages, startedAt), effectiveQuery);
+            makeBusinessTaskFormReadonly(context);
+            return context;
+        } finally {
+            endTaskFormProfiling();
+        }
     }
 
     /**
@@ -799,7 +845,7 @@ public class BusinessFlowService {
             return attachPrintRuntimeIdentity(saveResult.context(), query);
         }
         return attachPrintRuntimeIdentity(
-                buildTaskFormContext(query, saveResult.runtime(), taskFormInfo), query);
+                buildTaskFormContext(query, saveResult.runtime(), taskFormInfo, new LinkedHashMap<>(), System.nanoTime()), query);
     }
 
     private BusinessTaskFormContextVO attachPrintRuntimeIdentity(
@@ -871,16 +917,23 @@ public class BusinessFlowService {
             throw new BusinessException("当前节点不是平台可保存的业务表单，不能通过平台保存业务字段");
         }
         List<Map<String, Object>> permissions = normalizeFieldPermissions(nodeForm.get("fieldPermissions"));
+        String formKey = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(query.getFormKey()),
+                StringUtils.trimToNull(nodeForm.getString("formKey")));
+        BusinessObjectVO object = runtime.businessObject() != null
+                ? toBusinessObjectVO(runtime.businessObject())
+                : queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
+        JSONObject formSchema = resolveBusinessFormSchema(
+                object, formKey, runtime.configKey(), runtime.publishedConfig());
         if (permissions.isEmpty()) {
-            String formKey = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(query.getFormKey()),
-                    StringUtils.trimToNull(nodeForm.getString("formKey")));
-            BusinessObjectVO object = queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
-            JSONObject formSchema = resolveBusinessFormSchema(object, formKey, runtime.configKey());
             List<Map<String, Object>> fieldCatalog = resolveBusinessTaskCrudPageFields(runtime.configKey(), formKey, formSchema);
             permissions = normalizeBusinessObjectTaskPermissions(fieldCatalog, permissions);
         }
-        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey(), nodeForm);
+        JSONObject runtimeOptions = runtime.publishedConfig() == null
+                ? null
+                : readJsonObject(runtime.publishedConfig().getOptions());
+        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(
+                runtime.configKey(), nodeForm, runtimeOptions, formSchema);
         Map<String, DynamicCrudService.TaskChildPermission> childPermissions = buildTaskChildPermissions(childrenConfig, nodeForm);
         Set<String> writableFields = collectPermissionFields(permissions, "writable", true);
         boolean hasWritableChildren = childPermissions.values().stream()
@@ -921,7 +974,8 @@ public class BusinessFlowService {
             query.setObjectCode(runtime.objectCode());
             query.setBusinessKey(buildBusinessKey(runtime.objectCode(), createdId));
             TaskFormRuntimeContext createdRuntime = new TaskFormRuntimeContext(
-                    runtime.objectCode(), createdId, query.getBusinessKey(), runtime.configKey(), runtime.bindingConfig());
+                    runtime.objectCode(), createdId, query.getBusinessKey(), runtime.configKey(),
+                    runtime.bindingConfig(), runtime.publishedConfig(), runtime.businessObject());
             return new TaskFormSaveResult(createdRuntime, null);
         }
 
@@ -1480,13 +1534,17 @@ public class BusinessFlowService {
     }
 
     private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
-                                                           TaskFormRuntimeContext runtime) {
-        return buildTaskFormContext(query, runtime, Map.of());
+                                                           TaskFormRuntimeContext runtime,
+                                                           Map<String, Object> taskFormInfo) {
+        return buildTaskFormContext(query, runtime, taskFormInfo, new LinkedHashMap<>(), System.nanoTime());
     }
 
     private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
                                                            TaskFormRuntimeContext runtime,
-                                                           Map<String, Object> taskFormInfo) {
+                                                           Map<String, Object> taskFormInfo,
+                                                           Map<String, Long> preStages,
+                                                           long startedAt) {
+        Map<String, Long> stages = preStages == null ? new LinkedHashMap<>() : preStages;
         BusinessTaskFormContextVO vo = new BusinessTaskFormContextVO();
         vo.setTaskId(StringUtils.trimToNull(query.getTaskId()));
         vo.setBusinessKey(runtime.businessKey());
@@ -1503,18 +1561,24 @@ public class BusinessFlowService {
 
         if (StringUtils.isBlank(runtime.objectCode())) {
             vo.getWarnings().add("未解析到业务对象");
+            logTaskFormContextTiming(query, runtime, null, stages, startedAt);
             return vo;
         }
 
+        long mark = System.nanoTime();
         JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
+        stages.put("nodeFormMs", elapsedMillis(mark));
         if (nodeForm == null || nodeForm.isEmpty()) {
             vo.getWarnings().add("当前节点未配置业务表单策略");
+            logTaskFormContextTiming(query, runtime, null, stages, startedAt);
             return vo;
         }
         String formMode = normalizeNodeFormMode(nodeForm.getString("formMode"));
         if (!"BUSINESS_OBJECT_FORM".equals(formMode)) {
             if ("BUSINESS_CODE_FORM".equals(formMode)) {
-                return buildBusinessCodeFormContext(query, nodeForm, runtime);
+                BusinessTaskFormContextVO codeContext = buildBusinessCodeFormContext(query, nodeForm, runtime);
+                logTaskFormContextTiming(query, runtime, codeContext.getFormKey(), stages, startedAt);
+                return codeContext;
             }
             vo.setFormType(formMode);
             vo.setFormKey(StringUtils.trimToNull(nodeForm.getString("formKey")));
@@ -1526,36 +1590,68 @@ public class BusinessFlowService {
             applyPageFormIdentity(vo, vo.getFormRef());
             applyApprovalPolicy(vo, nodeForm);
             vo.getWarnings().add("当前节点表单类型暂不由低代码业务表单渲染: " + formMode);
+            logTaskFormContextTiming(query, runtime, vo.getFormKey(), stages, startedAt);
             return vo;
         }
         if (StringUtils.isBlank(runtime.configKey())) {
             vo.getWarnings().add("业务对象缺少已发布运行配置，无法加载低代码业务表单");
+            logTaskFormContextTiming(query, runtime, null, stages, startedAt);
             return vo;
         }
 
         String formKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(query.getFormKey()),
                 StringUtils.trimToNull(nodeForm.getString("formKey")));
-        BusinessObjectVO object = queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
+
+        // 优先复用 resolveTaskFormRuntimeContext 已加载的对象 / 发布配置，避免再查库
+        mark = System.nanoTime();
+        AiCrudConfig runtimeConfig = runtime.publishedConfig() != null
+                ? runtime.publishedConfig()
+                : safeGetRuntimeConfig(runtime.configKey());
+        JSONObject runtimeOptions = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
+        stages.put("runtimeConfigMs", elapsedMillis(mark));
+
+        mark = System.nanoTime();
+        BusinessObjectVO object = runtime.businessObject() != null
+                ? toBusinessObjectVO(runtime.businessObject())
+                : queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
+        stages.put("businessObjectMs", elapsedMillis(mark));
         vo.setBusinessObjectName(object == null ? runtime.objectCode() : object.getObjectName());
-        JSONObject formSchema = resolveBusinessFormSchema(object, formKey, runtime.configKey());
+
+        mark = System.nanoTime();
+        JSONObject formSchema = resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig);
+        stages.put("formSchemaMs", elapsedMillis(mark));
         if (formSchema.isEmpty()) {
             vo.getWarnings().add("未找到节点引用的低代码表单资产: " + formKey);
+            logTaskFormContextTiming(query, runtime, formKey, stages, startedAt);
             return vo;
         }
 
-        List<Map<String, Object>> fieldCatalog = resolveBusinessTaskCrudPageFields(runtime.configKey(), formKey, formSchema);
+        mark = System.nanoTime();
+        List<Map<String, Object>> fieldCatalog = resolveBusinessTaskCrudPageFields(
+                runtime.configKey(), formKey, formSchema, runtimeConfig, runtimeOptions);
         List<Map<String, Object>> permissions = normalizeBusinessObjectTaskPermissions(
                 fieldCatalog, normalizeFieldPermissions(nodeForm.get("fieldPermissions")));
         List<Map<String, Object>> fields = buildTaskFormFields(fieldCatalog, permissions);
+        stages.put("fieldsMs", elapsedMillis(mark));
+
+        mark = System.nanoTime();
         Map<String, Object> recordData = runtime.recordId() == null
                 ? loadTaskVariablesAsRecord(query, taskFormInfo)
-                : dynamicCrudService.selectById(runtime.configKey(), runtime.recordId());
+                : (runtimeConfig == null
+                ? dynamicCrudService.selectById(runtime.configKey(), runtime.recordId())
+                : dynamicCrudService.selectById(runtimeConfig, runtime.recordId()));
         Map<String, Object> visibleRecordData = filterVisibleRecordData(recordData, fields);
-        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(runtime.configKey(), nodeForm);
+        stages.put("recordMs", elapsedMillis(mark));
+
+        mark = System.nanoTime();
+        List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(
+                runtime.configKey(), nodeForm, runtimeOptions, formSchema);
         logBusinessTaskChildren("raw", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
         filterVisibleRecordChildren(visibleRecordData, childrenConfig);
         logBusinessTaskChildren("filtered", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
+        stages.put("childrenMs", elapsedMillis(mark));
+
         vo.setBusinessSummary(resolveBusinessSummary(object, runtime, recordData));
 
         vo.setConfigured(true);
@@ -1564,19 +1660,93 @@ public class BusinessFlowService {
         vo.setFormName(StringUtils.defaultIfBlank(nodeForm.getString("formName"), formSchema.getString("formName")));
         vo.setViewKey(StringUtils.defaultIfBlank(nodeForm.getString("viewKey"), "default"));
         vo.setEditMode(resolveBusinessObjectTaskEditMode(nodeForm, permissions));
-        applyBusinessObjectFormLayout(vo, formSchema, runtime.configKey());
+        applyBusinessObjectFormLayout(vo, formSchema, runtimeOptions);
         vo.setFormRef(readNestedObject(nodeForm.get("formRef")));
         applyPageFormIdentity(vo, vo.getFormRef());
         vo.setFieldPermissions(permissions);
         vo.setFields(fields);
-        vo.setFormAssets(resolveBusinessTaskFormAssets(formSchema, runtime.configKey(), formKey));
+
+        mark = System.nanoTime();
+        vo.setFormAssets(resolveBusinessTaskFormAssets(formSchema, runtime.configKey(), formKey, runtimeOptions));
+        stages.put("formAssetsMs", elapsedMillis(mark));
+
         vo.setChildrenConfig(childrenConfig);
         vo.setRecordData(visibleRecordData);
+
+        mark = System.nanoTime();
+        Map<String, Object> uiDocument = TaskFormUiDocumentCompiler.compile(
+                formSchema, vo.getFormKey(), fields, permissions);
+        vo.setProtocolVersion(TaskFormUiDocumentCompiler.PROTOCOL_VERSION);
+        vo.setUiDocument(uiDocument);
+        stages.put("uiDocumentMs", elapsedMillis(mark));
+
         applyApprovalPolicy(vo, nodeForm);
         if (fields.isEmpty()) {
             vo.getWarnings().add("当前业务表单没有可展示字段");
         }
+        logTaskFormContextTiming(query, runtime, vo.getFormKey(), stages, startedAt);
         return vo;
+    }
+
+    private void logTaskFormContextTiming(BusinessTaskFormContextQueryDTO query,
+                                          TaskFormRuntimeContext runtime,
+                                          String formKey,
+                                          Map<String, Long> stages,
+                                          long startedAt) {
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        List<String> notes = TASK_FORM_DETAIL_NOTES.get();
+        log.info("[task-form-context] taskId={} objectCode={} recordId={} formKey={} totalMs={} stages={} notes={}",
+                query == null ? null : query.getTaskId(),
+                runtime == null ? null : runtime.objectCode(),
+                runtime == null ? null : runtime.recordId(),
+                formKey,
+                elapsedMillis(startedAt),
+                stages,
+                notes == null || notes.isEmpty() ? List.of() : List.copyOf(notes));
+    }
+
+    private void beginTaskFormProfiling(Map<String, Long> stages) {
+        TASK_FORM_DETAIL_STAGES.set(stages);
+        TASK_FORM_DETAIL_NOTES.set(new ArrayList<>());
+    }
+
+    private void endTaskFormProfiling() {
+        TASK_FORM_DETAIL_STAGES.remove();
+        TASK_FORM_DETAIL_NOTES.remove();
+    }
+
+    private void markTaskFormDetail(String key, long startedAtNanos) {
+        Map<String, Long> stages = TASK_FORM_DETAIL_STAGES.get();
+        if (stages == null || StringUtils.isBlank(key)) {
+            return;
+        }
+        stages.merge(key, elapsedMillis(startedAtNanos), Long::sum);
+    }
+
+    private void noteTaskFormDetail(String note) {
+        List<String> notes = TASK_FORM_DETAIL_NOTES.get();
+        if (notes == null || StringUtils.isBlank(note)) {
+            return;
+        }
+        notes.add(note);
+    }
+
+    private static long elapsedMillis(long startedAtNanos) {
+        return Math.max(0L, (System.nanoTime() - startedAtNanos) / 1_000_000L);
+    }
+
+    private AiCrudConfig safeGetRuntimeConfig(String configKey) {
+        if (StringUtils.isBlank(configKey)) {
+            return null;
+        }
+        try {
+            return dynamicCrudService.getRuntimeConfig(configKey);
+        } catch (Exception e) {
+            log.debug("读取运行配置失败: configKey={}, error={}", configKey, e.getMessage());
+            return null;
+        }
     }
 
     private void applyPageFormIdentity(BusinessTaskFormContextVO vo, Map<String, Object> formRef) {
@@ -1590,50 +1760,76 @@ public class BusinessFlowService {
     }
 
     private void applyBusinessObjectFormLayout(BusinessTaskFormContextVO vo, JSONObject formSchema, String configKey) {
+        applyBusinessObjectFormLayout(vo, formSchema, readRuntimeConfigOptions(configKey));
+    }
+
+    private void applyBusinessObjectFormLayout(BusinessTaskFormContextVO vo,
+                                               JSONObject formSchema,
+                                               JSONObject runtimeOptions) {
         JSONObject settings = readNestedObject(formSchema == null ? null : formSchema.get("settings"));
         JSONObject layout = readNestedObject(settings.get("layout"));
-        JSONObject runtimeOptions = readRuntimeConfigOptions(configKey);
+        JSONObject options = runtimeOptions == null ? new JSONObject() : runtimeOptions;
         vo.setGridCols(Math.max(1, integerValue(
                 firstNonNull(layout.get("gridCols"),
                         layout.get("gridColumns"),
                         settings.get("gridCols"),
                         settings.get("gridColumns"),
-                        runtimeOptions.get("editGridCols")),
+                        options.get("editGridCols")),
                 1)));
         vo.setLabelPlacement(StringUtils.defaultIfBlank(
                 StringUtils.firstNonBlank(
                         textValue(layout.get("labelPlacement")),
                         textValue(settings.get("labelPlacement")),
-                        textValue(runtimeOptions.get("editLabelPlacement"))),
+                        textValue(options.get("editLabelPlacement"))),
                 "left"));
         vo.setLabelWidth(StringUtils.defaultIfBlank(
                 StringUtils.firstNonBlank(
                         textValue(layout.get("labelWidth")),
                         textValue(settings.get("labelWidth")),
-                        textValue(runtimeOptions.get("editLabelWidth"))),
+                        textValue(options.get("editLabelWidth"))),
                 "100"));
     }
 
     private List<Map<String, Object>> resolveBusinessTaskCrudPageFields(String configKey,
                                                                         String formKey,
                                                                         JSONObject formSchema) {
-        List<Map<String, Object>> fallback = new ArrayList<>(collectBusinessFormFieldCatalog(formSchema));
-        appendRuntimeChildFieldCatalog(configKey, fallback);
-        if (StringUtils.isBlank(configKey)) {
+        AiCrudConfig runtimeConfig = safeGetRuntimeConfig(configKey);
+        JSONObject options = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
+        return resolveBusinessTaskCrudPageFields(configKey, formKey, formSchema, runtimeConfig, options);
+    }
+
+    private List<Map<String, Object>> resolveBusinessTaskCrudPageFields(String configKey,
+                                                                        String formKey,
+                                                                        JSONObject formSchema,
+                                                                        AiCrudConfig runtimeConfig,
+                                                                        JSONObject runtimeOptions) {
+        // 审批渲染以当前表单设计器组件为准；对象字段资产里「未入当前表单」的字段不应出现在待办里
+        List<Map<String, Object>> designerFields = new ArrayList<>(collectBusinessFormFieldCatalog(formSchema));
+        JSONObject options = runtimeOptions == null ? new JSONObject() : runtimeOptions;
+        if (!designerFields.isEmpty()) {
+            List<Map<String, Object>> result = enrichTaskFormFieldsFromRuntime(
+                    designerFields, runtimeConfig, formKey, formSchema, options);
+            appendRuntimeChildFieldCatalog(options, result);
+            if (runtimeConfig == null && StringUtils.isNotBlank(configKey)) {
+                appendRuntimeChildFieldCatalog(configKey, result);
+            }
+            return result;
+        }
+        if (runtimeConfig == null || StringUtils.isBlank(configKey)) {
+            List<Map<String, Object>> fallback = new ArrayList<>();
+            appendRuntimeChildFieldCatalog(runtimeOptions, fallback);
+            if (runtimeConfig == null && StringUtils.isNotBlank(configKey)) {
+                appendRuntimeChildFieldCatalog(configKey, fallback);
+            }
             return fallback;
         }
         try {
-            AiCrudConfig runtimeConfig = dynamicCrudService.getRuntimeConfig(configKey);
-            if (runtimeConfig == null) {
-                return fallback;
-            }
-            JSONObject options = readJsonObject(runtimeConfig.getOptions());
             if (!shouldUseCrudPageDefaultFormSchema(formKey, formSchema, options)) {
-                return fallback;
+                return designerFields;
             }
             List<Map<String, Object>> runtimeFields = readMapList(readNestedArray(runtimeConfig.getEditSchema()));
             if (runtimeFields.isEmpty()) {
-                return fallback;
+                return designerFields;
             }
             List<Map<String, Object>> layoutFields = applyRuntimeCrudFormLayout(
                     runtimeFields, readNestedArray(options.get("editFormLayout")));
@@ -1642,8 +1838,158 @@ public class BusinessFlowService {
             return result;
         } catch (Exception e) {
             log.debug("读取动态 CRUD 详情表单 schema 失败: configKey={}, error={}", configKey, e.getMessage());
-            return fallback;
+            return designerFields;
         }
+    }
+
+    /**
+     * 用发布态 editSchema 补齐设计器字段的类型/字典等元数据，但不引入「未入表单」的额外字段。
+     * 组件类型与 props（optionSource / 人员组织选择器等）以设计器为准，禁止被 editSchema 的 input 覆盖。
+     */
+    private List<Map<String, Object>> enrichTaskFormFieldsFromRuntime(List<Map<String, Object>> designerFields,
+                                                                      AiCrudConfig runtimeConfig,
+                                                                      String formKey,
+                                                                      JSONObject formSchema,
+                                                                      JSONObject options) {
+        if (designerFields == null || designerFields.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> field : designerFields) {
+            if (field != null) {
+                result.add(new LinkedHashMap<>(field));
+            }
+        }
+        if (runtimeConfig == null || !shouldUseCrudPageDefaultFormSchema(formKey, formSchema, options)) {
+            result.forEach(this::normalizeTaskFormControlIdentity);
+            return result;
+        }
+        Map<String, Map<String, Object>> runtimeByField = new LinkedHashMap<>();
+        for (Map<String, Object> field : readMapList(readNestedArray(runtimeConfig.getEditSchema()))) {
+            String code = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(field.get("field"))),
+                    StringUtils.trimToNull(textValue(field.get("fieldCode"))));
+            if (code != null) {
+                runtimeByField.putIfAbsent(code, field);
+            }
+        }
+        if (runtimeByField.isEmpty()) {
+            result.forEach(this::normalizeTaskFormControlIdentity);
+            return result;
+        }
+        for (Map<String, Object> field : result) {
+            String code = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(textValue(field.get("field"))),
+                    StringUtils.trimToNull(textValue(field.get("fieldCode"))));
+            Map<String, Object> runtimeField = code == null ? null : runtimeByField.get(code);
+            if (runtimeField != null) {
+                enrichDesignerFieldFromRuntime(field, runtimeField);
+                field.put("field", code);
+                field.put("fieldCode", code);
+            }
+            normalizeTaskFormControlIdentity(field);
+        }
+        return result;
+    }
+
+    /**
+     * 发布态只补缺：字典/数据类型等；控件身份（componentKey/type/props）保留设计器。
+     */
+    private void enrichDesignerFieldFromRuntime(Map<String, Object> designerField, Map<String, Object> runtimeField) {
+        if (designerField == null || runtimeField == null) {
+            return;
+        }
+        Set<String> protectedKeys = Set.of(
+                "type", "componentType", "componentKey", "props", "basicProps",
+                "optionSource", "fieldMappings", "mappings", "recordSelector",
+                "label", "field", "fieldCode", "required");
+        runtimeField.forEach((key, value) -> {
+            if (value == null || protectedKeys.contains(key)) {
+                return;
+            }
+            Object current = designerField.get(key);
+            if (current == null || (current instanceof String text && StringUtils.isBlank(text))) {
+                designerField.put(key, value);
+            }
+        });
+        Map<String, Object> designerProps = new LinkedHashMap<>(readNestedObject(designerField.get("props")));
+        Map<String, Object> runtimeProps = new LinkedHashMap<>(readNestedObject(runtimeField.get("props")));
+        // 运行态补缺 props，设计器同名键覆盖
+        Map<String, Object> mergedProps = new LinkedHashMap<>(runtimeProps);
+        mergedProps.putAll(designerProps);
+        if (!mergedProps.isEmpty()) {
+            designerField.put("props", mergedProps);
+        }
+        if (designerField.get("dictType") == null && runtimeField.get("dictType") != null) {
+            designerField.put("dictType", runtimeField.get("dictType"));
+        }
+        if (designerField.get("dataType") == null && runtimeField.get("dataType") != null) {
+            designerField.put("dataType", runtimeField.get("dataType"));
+        }
+    }
+
+    private Map<String, Object> normalizeTaskFormControlIdentity(Map<String, Object> field) {
+        if (field == null) {
+            return null;
+        }
+        String controlType = resolveTaskFormControlType(field);
+        String normalized = normalizeTaskFormFieldType(controlType);
+        field.put("type", normalized);
+        field.put("componentType", StringUtils.defaultIfBlank(controlType, normalized));
+        return field;
+    }
+
+    private String resolveTaskFormControlType(Map<String, Object> field) {
+        if (field == null) {
+            return "input";
+        }
+        // 设计器以 componentKey 为控件事实来源；type 常被 editSchema/资产写成 input
+        String explicit = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(textValue(field.get("componentKey"))),
+                StringUtils.trimToNull(textValue(field.get("componentType"))),
+                StringUtils.trimToNull(textValue(field.get("type"))));
+        explicit = stripForgeComponentPrefix(StringUtils.defaultIfBlank(explicit, ""));
+        if (!isWeakTaskFormControlType(explicit)) {
+            return explicit;
+        }
+        // 弱类型时从 props 推断：避免审批端全变成输入框
+        Map<String, Object> props = new LinkedHashMap<>(readNestedObject(field.get("props")));
+        if (props.get("optionSource") instanceof Map<?, ?> || props.get("options") instanceof List<?>) {
+            Object optionSource = props.get("optionSource");
+            if (optionSource instanceof Map<?, ?> source) {
+                String sourceType = StringUtils.trimToEmpty(textValue(source.get("sourceType")));
+                String type = StringUtils.trimToEmpty(textValue(source.get("type")));
+                if ("BUSINESS_OBJECT".equalsIgnoreCase(sourceType)
+                        || "businessRecordSelector".equalsIgnoreCase(type)
+                        || StringUtils.isNotBlank(textValue(source.get("objectCode")))) {
+                    return "objectReference";
+                }
+            }
+            return StringUtils.isNotBlank(textValue(field.get("dictType")))
+                    || StringUtils.isNotBlank(textValue(props.get("dictType")))
+                    ? "dictSelect"
+                    : "select";
+        }
+        if (props.get("recordSelector") instanceof Map<?, ?>
+                || StringUtils.isNotBlank(textValue(props.get("objectCode")))
+                || StringUtils.isNotBlank(textValue(props.get("referenceObjectCode")))
+                || StringUtils.isNotBlank(textValue(field.get("referenceObjectCode")))) {
+            return "objectReference";
+        }
+        if (StringUtils.isNotBlank(textValue(field.get("dictType")))
+                || StringUtils.isNotBlank(textValue(props.get("dictType")))) {
+            return "dictSelect";
+        }
+        return StringUtils.defaultIfBlank(explicit, "input");
+    }
+
+    private boolean isWeakTaskFormControlType(String type) {
+        String normalized = StringUtils.trimToEmpty(type).toLowerCase(Locale.ROOT);
+        return normalized.isEmpty()
+                || "input".equals(normalized)
+                || "text".equals(normalized)
+                || "string".equals(normalized)
+                || "varchar".equals(normalized);
     }
 
     private void appendRuntimeChildFieldCatalog(String configKey, List<Map<String, Object>> fields) {
@@ -1820,15 +2166,24 @@ public class BusinessFlowService {
     private List<Map<String, Object>> resolveBusinessTaskFormAssets(JSONObject formSchema,
                                                                     String configKey,
                                                                     String activeFormKey) {
+        AiCrudConfig runtimeConfig = safeGetRuntimeConfig(configKey);
+        JSONObject options = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
+        return resolveBusinessTaskFormAssets(formSchema, configKey, activeFormKey, options);
+    }
+
+    private List<Map<String, Object>> resolveBusinessTaskFormAssets(JSONObject formSchema,
+                                                                    String configKey,
+                                                                    String activeFormKey,
+                                                                    JSONObject runtimeOptions) {
         if (StringUtils.isBlank(configKey)) {
             return List.of();
         }
         try {
-            AiCrudConfig runtimeConfig = dynamicCrudService.getRuntimeConfig(configKey);
-            JSONObject options = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
+            JSONObject options = runtimeOptions == null ? new JSONObject() : runtimeOptions;
             List<Map<String, Object>> configuredAssets = readMapList(readNestedArray(options.get("formAssets")));
             if (!configuredAssets.isEmpty()) {
-                return configuredAssets;
+                // 审批端主表单已走 uiDocument；弹窗资产只保留元数据，避免整份设计器 schema 撑爆响应
+                return slimTaskFormAssets(configuredAssets);
             }
             JSONObject designerSchema = readNestedObject(options.get("formDesignerSchema"));
             JSONArray forms = readNestedArray(designerSchema.get("forms"));
@@ -1853,7 +2208,6 @@ public class BusinessFlowService {
                 asset.put("formKey", itemKey);
                 asset.put("formName", StringUtils.defaultIfBlank(form.getString("formName"), itemKey));
                 asset.put("usage", readNestedArray(form.get("usage")));
-                asset.put("schema", readNestedObject(form.get("schema")));
                 assets.add(asset);
             }
             return assets;
@@ -1863,20 +2217,75 @@ public class BusinessFlowService {
         }
     }
 
+    /**
+     * 审批上下文里 formAssets 只保留轻量索引；完整 schema 由 uiDocument / 设计器按需加载。
+     */
+    private List<Map<String, Object>> slimTaskFormAssets(List<Map<String, Object>> assets) {
+        if (assets == null || assets.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> slim = new ArrayList<>(assets.size());
+        for (Map<String, Object> asset : assets) {
+            if (asset == null || asset.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            String formKey = StringUtils.firstNonBlank(
+                    textValue(asset.get("formKey")),
+                    textValue(asset.get("key")));
+            if (formKey != null) {
+                item.put("formKey", formKey);
+            }
+            item.put("formName", StringUtils.defaultIfBlank(textValue(asset.get("formName")), formKey));
+            if (asset.get("usage") != null) {
+                item.put("usage", asset.get("usage"));
+            }
+            if (asset.get("formMode") != null) {
+                item.put("formMode", asset.get("formMode"));
+            }
+            slim.add(item);
+        }
+        return slim;
+    }
+
     private List<Map<String, Object>> resolveBusinessTaskChildrenConfig(String configKey, JSONObject nodeForm) {
+        AiCrudConfig runtimeConfig = safeGetRuntimeConfig(configKey);
+        JSONObject options = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
+        return resolveBusinessTaskChildrenConfig(configKey, nodeForm, options, null);
+    }
+
+    private List<Map<String, Object>> resolveBusinessTaskChildrenConfig(String configKey,
+                                                                        JSONObject nodeForm,
+                                                                        JSONObject runtimeOptions) {
+        return resolveBusinessTaskChildrenConfig(configKey, nodeForm, runtimeOptions, null);
+    }
+
+    private List<Map<String, Object>> resolveBusinessTaskChildrenConfig(String configKey,
+                                                                        JSONObject nodeForm,
+                                                                        JSONObject runtimeOptions,
+                                                                        JSONObject formSchema) {
         if (StringUtils.isBlank(configKey)) {
             return List.of();
         }
         try {
-            AiCrudConfig runtimeConfig = dynamicCrudService.getRuntimeConfig(configKey);
-            JSONObject options = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
+            JSONObject options = runtimeOptions == null ? new JSONObject() : runtimeOptions;
             JSONObject masterDetailConfig = readNestedObject(options.get("masterDetailConfig"));
             List<Map<String, Object>> rawChildren = readMapList(readNestedArray(masterDetailConfig.get("children"))).stream()
                     .filter(this::isBusinessTaskDetailChild)
                     .toList();
+            Map<String, Map<String, Object>> publishedByKey = indexTaskChildrenByKey(rawChildren);
+            // 表单设计器里的子表组件决定「审批展示哪些子表」；发布态 masterDetail 只负责补齐字段元数据
+            List<Map<String, Object>> formChildren = collectFormDesignerSubTables(formSchema);
+            List<Map<String, Object>> sourceChildren = !formChildren.isEmpty()
+                    ? mergeFormDesignerChildrenWithPublished(formChildren, publishedByKey)
+                    : rawChildren;
+            // 设计器子表解析失败时回落发布态，避免审批页整块子表消失
+            if (sourceChildren.isEmpty() && !rawChildren.isEmpty()) {
+                sourceChildren = rawChildren;
+            }
             Map<String, Map<String, Object>> childPermissions = normalizeTaskChildPermissionMap(nodeForm);
             List<Map<String, Object>> result = new ArrayList<>();
-            for (Map<String, Object> rawChild : rawChildren) {
+            for (Map<String, Object> rawChild : sourceChildren) {
                 String childKey = resolveBusinessTaskChildKey(rawChild);
                 Map<String, Object> childPermission = findChildPermission(childPermissions, childKey);
                 if (childPermission != null && !readBooleanValue(childPermission.get("readable"), true)) {
@@ -1884,14 +2293,23 @@ public class BusinessFlowService {
                 }
                 Map<String, Object> child = new LinkedHashMap<>(rawChild);
                 boolean fieldWritable = hasWritableTaskChildField(rawChild, nodeForm, childKey);
-                child.put("allowCreate", childPermission != null
-                        && readBooleanValue(childPermission.get("allowCreate"), false));
-                // 字段勾了可编辑，已有行也要能改。行级「修改」只是额外开关，不能把字段权限盖掉。
-                child.put("allowUpdate", fieldWritable || (childPermission != null
-                        && readBooleanValue(childPermission.get("allowUpdate"), false)));
-                child.put("allowDelete", childPermission != null
-                        && readBooleanValue(childPermission.get("allowDelete"), false));
+                // 设计器/发布态默认允许新增；节点 childPermissions 显式配置时以节点为准
+                boolean designerAllowCreate = readBooleanValue(rawChild.get("allowCreate"),
+                        readBooleanValue(rawChild.get("inlineCreateEnabled"), true));
+                if (childPermission != null) {
+                    child.put("allowCreate", readBooleanValue(childPermission.get("allowCreate"), false));
+                    // 字段勾了可编辑，已有行也要能改。行级「修改」只是额外开关，不能把字段权限盖掉。
+                    child.put("allowUpdate", fieldWritable
+                            || readBooleanValue(childPermission.get("allowUpdate"), false));
+                    child.put("allowDelete", readBooleanValue(childPermission.get("allowDelete"), false));
+                } else {
+                    child.put("allowCreate", designerAllowCreate);
+                    child.put("allowUpdate", fieldWritable
+                            || readBooleanValue(rawChild.get("allowUpdate"), true));
+                    child.put("allowDelete", readBooleanValue(rawChild.get("allowDelete"), false));
+                }
                 child.put("readable", true);
+                ensureChildSelectExistingConfig(child);
                 List<Map<String, Object>> visibleFields = applyTaskChildFieldPermissions(
                         readMapList(readNestedArray(rawChild.get("fields"))), nodeForm, childKey);
                 child.put("fields", visibleFields);
@@ -1901,9 +2319,355 @@ public class BusinessFlowService {
             }
             return result;
         } catch (Exception e) {
-            log.debug("读取业务表单子表配置失败: configKey={}, error={}", configKey, e.getMessage());
+            log.warn("读取业务表单子表配置失败: configKey={}, error={}", configKey, e.getMessage(), e);
             return List.of();
         }
+    }
+
+    private Map<String, Map<String, Object>> indexTaskChildrenByKey(List<Map<String, Object>> children) {
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        for (Map<String, Object> child : children) {
+            String key = resolveBusinessTaskChildKey(child);
+            if (key != null) {
+                result.putIfAbsent(key, child);
+                // 同子表可能同时有 relationKey / 带前缀 modelCode，互为别名
+                String relationKey = StringUtils.trimToNull(textValue(child.get("relationKey")));
+                String modelCode = StringUtils.trimToNull(textValue(child.get("modelCode")));
+                if (relationKey != null) {
+                    result.putIfAbsent(relationKey, child);
+                }
+                if (modelCode != null) {
+                    result.putIfAbsent(modelCode, child);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 从表单设计器 subTable 组件收集子表清单（顺序与画布一致）。
+     */
+    private List<Map<String, Object>> collectFormDesignerSubTables(JSONObject formSchema) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        collectFormDesignerSubTableComponents(readNestedArray(formSchema == null ? null : formSchema.get("components")), result, seen);
+        if (result.isEmpty() && formSchema != null) {
+            JSONObject settings = readNestedObject(formSchema.get("settings"));
+            collectFormDesignerSubTableComponents(readNestedArray(settings.get("components")), result, seen);
+        }
+        return result;
+    }
+
+    private void collectFormDesignerSubTableComponents(JSONArray components,
+                                                       List<Map<String, Object>> result,
+                                                       Set<String> seen) {
+        if (components == null) {
+            return;
+        }
+        for (int i = 0; i < components.size(); i++) {
+            JSONObject component = components.getJSONObject(i);
+            if (component == null) {
+                continue;
+            }
+            String componentKey = StringUtils.firstNonBlank(
+                    StringUtils.trimToNull(component.getString("componentKey")),
+                    StringUtils.trimToNull(component.getString("type")));
+            JSONObject props = readNestedObject(component.get("props"));
+            if ("subTable".equalsIgnoreCase(componentKey) || "childTable".equalsIgnoreCase(componentKey)) {
+                String childKey = StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(props.getString("modelCode")),
+                        StringUtils.trimToNull(props.getString("relationKey")),
+                        StringUtils.trimToNull(component.getString("modelCode")),
+                        StringUtils.trimToNull(component.getString("relationKey")));
+                if (childKey == null || !seen.add(childKey)) {
+                    collectFormDesignerSubTableComponents(readNestedArray(component.get("children")), result, seen);
+                    continue;
+                }
+                Map<String, Object> child = new LinkedHashMap<>();
+                child.put("modelCode", StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(props.getString("modelCode")), childKey));
+                child.put("relationKey", StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(props.getString("relationKey")), childKey));
+                child.put("key", childKey);
+                child.put("label", StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(props.getString("header")),
+                        StringUtils.trimToNull(props.getString("relationName")),
+                        StringUtils.trimToNull(component.getString("label")),
+                        childKey));
+                child.put("relationName", child.get("label"));
+                child.put("tabTitle", child.get("label"));
+                child.put("relationType", StringUtils.defaultIfBlank(props.getString("relationType"), "ONE_TO_MANY"));
+                child.put("showInDetail", props.get("showInDetail") == null || Boolean.TRUE.equals(props.getBoolean("showInDetail")));
+                boolean allowCreate = readBooleanValue(props.get("allowCreate"), true);
+                child.put("allowCreate", allowCreate);
+                child.put("inlineCreateEnabled", readBooleanValue(props.get("inlineCreateEnabled"), allowCreate));
+                child.put("showInCreate", readBooleanValue(props.get("showInCreate"), allowCreate));
+                boolean allowSelectExisting = readBooleanValue(props.get("allowSelectExisting"), false);
+                child.put("allowSelectExisting", allowSelectExisting);
+                if (props.containsKey("selectorMultiple")) {
+                    child.put("selectorMultiple", readBooleanValue(props.get("selectorMultiple"), true));
+                }
+                JSONArray selectorDisplayFields = readNestedArray(props.get("selectorDisplayFields"));
+                if (!selectorDisplayFields.isEmpty()) {
+                    child.put("selectorDisplayFields", selectorDisplayFields);
+                }
+                JSONArray selectorFilterFields = readNestedArray(props.get("selectorFilterFields"));
+                if (!selectorFilterFields.isEmpty()) {
+                    child.put("selectorFilterFields", selectorFilterFields);
+                }
+                Object recordSelector = props.get("recordSelector");
+                if (recordSelector instanceof Map<?, ?> selector && !selector.isEmpty()) {
+                    Map<String, Object> selectorMap = new LinkedHashMap<>();
+                    selector.forEach((key, value) -> {
+                        if (key != null) {
+                            selectorMap.put(String.valueOf(key), value);
+                        }
+                    });
+                    child.put("recordSelector", selectorMap);
+                }
+                ensureChildSelectExistingConfig(child);
+                JSONArray columns = readNestedArray(props.get("columns"));
+                if (columns.isEmpty()) {
+                    columns = readNestedArray(props.get("fields"));
+                }
+                List<Map<String, Object>> fields = new ArrayList<>();
+                for (int columnIndex = 0; columnIndex < columns.size(); columnIndex++) {
+                    Object rawColumn = columns.get(columnIndex);
+                    JSONObject column = rawColumn instanceof JSONObject jsonColumn
+                            ? jsonColumn
+                            : rawColumn instanceof Map<?, ?> ? readNestedObject(rawColumn) : null;
+                    String fieldCode = column == null
+                            ? StringUtils.trimToNull(textValue(rawColumn))
+                            : StringUtils.firstNonBlank(
+                                    StringUtils.trimToNull(column.getString("fieldCode")),
+                                    StringUtils.trimToNull(column.getString("field")),
+                                    StringUtils.trimToNull(column.getString("sourceField")));
+                    if (fieldCode == null) {
+                        continue;
+                    }
+                    Map<String, Object> field = column == null ? new LinkedHashMap<>() : new LinkedHashMap<>(column);
+                    field.put("field", fieldCode);
+                    field.put("fieldCode", fieldCode);
+                    field.putIfAbsent("label", StringUtils.firstNonBlank(
+                            column == null ? null : StringUtils.trimToNull(column.getString("fieldLabel")),
+                            column == null ? null : StringUtils.trimToNull(column.getString("label")),
+                            fieldCode));
+                    fields.add(field);
+                }
+                child.put("fields", fields);
+                result.add(child);
+            }
+            collectFormDesignerSubTableComponents(readNestedArray(component.get("children")), result, seen);
+        }
+    }
+
+    private List<Map<String, Object>> mergeFormDesignerChildrenWithPublished(
+            List<Map<String, Object>> formChildren,
+            Map<String, Map<String, Object>> publishedByKey) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<Map<String, Object>> usedPublished = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Map<String, Object> formChild : formChildren) {
+            Map<String, Object> published = findPublishedChild(publishedByKey, formChild, usedPublished);
+            if (published == null) {
+                if (!readMapList(readNestedArray(formChild.get("fields"))).isEmpty()) {
+                    Map<String, Object> standalone = new LinkedHashMap<>(formChild);
+                    ensureChildSelectExistingConfig(standalone);
+                    result.add(standalone);
+                }
+                continue;
+            }
+            usedPublished.add(published);
+            Map<String, Object> merged = new LinkedHashMap<>(published);
+            // 展示名/页签顺序以设计器为准；数据键保留发布态 modelCode，才能对上详情 children
+            String designerLabel = StringUtils.firstNonBlank(
+                    textValue(formChild.get("label")),
+                    textValue(formChild.get("relationName")),
+                    textValue(published.get("relationName")),
+                    textValue(published.get("tabTitle")),
+                    textValue(published.get("modelName")));
+            if (designerLabel != null) {
+                merged.put("label", designerLabel);
+                merged.put("relationName", designerLabel);
+                merged.put("tabTitle", designerLabel);
+            }
+            // 发布态 modelCode 是 DynamicCrud 装载 children 的键，禁止被设计器短键覆盖
+            if (published.get("modelCode") != null) {
+                merged.put("modelCode", published.get("modelCode"));
+            }
+            if (published.get("key") != null) {
+                merged.put("key", published.get("key"));
+            }
+            overlayFormChildBehavior(merged, formChild);
+            List<Map<String, Object>> formFields = readMapList(readNestedArray(formChild.get("fields")));
+            if (!formFields.isEmpty()) {
+                // 列集合以设计器子表列为准，发布态字段定义做补齐
+                Map<String, Map<String, Object>> publishedFields = new LinkedHashMap<>();
+                for (Map<String, Object> field : readMapList(readNestedArray(published.get("fields")))) {
+                    String code = StringUtils.firstNonBlank(
+                            textValue(field.get("field")), textValue(field.get("fieldCode")), textValue(field.get("sourceField")));
+                    if (code != null) {
+                        publishedFields.putIfAbsent(code, field);
+                    }
+                }
+                List<Map<String, Object>> fields = new ArrayList<>();
+                for (Map<String, Object> formField : formFields) {
+                    String code = StringUtils.firstNonBlank(
+                            textValue(formField.get("field")), textValue(formField.get("fieldCode")));
+                    Map<String, Object> next = new LinkedHashMap<>(formField);
+                    Map<String, Object> publishedField = code == null ? null : findPublishedChildField(publishedFields, code);
+                    if (publishedField != null) {
+                        mergeNonNull(next, publishedField);
+                        next.put("field", code);
+                        next.put("fieldCode", code);
+                    }
+                    fields.add(next);
+                }
+                merged.put("fields", fields);
+            }
+            ensureChildSelectExistingConfig(merged);
+            result.add(merged);
+        }
+        return result;
+    }
+
+    private Map<String, Object> findPublishedChildField(Map<String, Map<String, Object>> publishedFields, String code) {
+        if (publishedFields == null || StringUtils.isBlank(code)) {
+            return null;
+        }
+        Map<String, Object> direct = publishedFields.get(code);
+        if (direct != null) {
+            return direct;
+        }
+        for (Map.Entry<String, Map<String, Object>> entry : publishedFields.entrySet()) {
+            if (sameFieldName(entry.getKey(), code)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> findPublishedChild(Map<String, Map<String, Object>> publishedByKey,
+                                                    Map<String, Object> formChild,
+                                                    Set<Map<String, Object>> usedPublished) {
+        if (publishedByKey == null || publishedByKey.isEmpty() || formChild == null) {
+            return null;
+        }
+        for (String candidate : childKeyCandidates(formChild)) {
+            Map<String, Object> direct = publishedByKey.get(candidate);
+            if (direct != null && (usedPublished == null || !usedPublished.contains(direct))) {
+                return direct;
+            }
+        }
+        Map<String, Object> best = null;
+        int bestDelta = Integer.MAX_VALUE;
+        for (String candidate : childKeyCandidates(formChild)) {
+            for (Map.Entry<String, Map<String, Object>> entry : publishedByKey.entrySet()) {
+                Map<String, Object> published = entry.getValue();
+                if (published == null || (usedPublished != null && usedPublished.contains(published))) {
+                    continue;
+                }
+                if (!sameChildTableKey(entry.getKey(), candidate)) {
+                    continue;
+                }
+                int delta = Math.abs(StringUtils.length(entry.getKey()) - StringUtils.length(candidate));
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    best = published;
+                }
+            }
+        }
+        return best;
+    }
+
+    private Map<String, Object> findPublishedChild(Map<String, Map<String, Object>> publishedByKey, String childKey) {
+        if (publishedByKey == null || StringUtils.isBlank(childKey)) {
+            return null;
+        }
+        Map<String, Object> probe = new LinkedHashMap<>();
+        probe.put("modelCode", childKey);
+        return findPublishedChild(publishedByKey, probe, null);
+    }
+
+    private List<String> childKeyCandidates(Map<String, Object> child) {
+        if (child == null) {
+            return List.of();
+        }
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        for (String field : new String[]{"modelCode", "relationKey", "key", "tableName"}) {
+            String trimmed = StringUtils.trimToNull(textValue(child.get(field)));
+            if (trimmed != null) {
+                keys.add(trimmed);
+            }
+        }
+        return List.copyOf(keys);
+    }
+
+    /**
+     * 表单设计器子表行为（新增/选择已有）覆盖发布态同名字段。
+     */
+    private void overlayFormChildBehavior(Map<String, Object> target, Map<String, Object> formChild) {
+        if (target == null || formChild == null) {
+            return;
+        }
+        copyIfPresent(target, formChild, "allowCreate");
+        copyIfPresent(target, formChild, "inlineCreateEnabled");
+        copyIfPresent(target, formChild, "showInCreate");
+        copyIfPresent(target, formChild, "allowSelectExisting");
+        copyIfPresent(target, formChild, "selectorMultiple");
+        copyIfPresent(target, formChild, "selectorDisplayFields");
+        copyIfPresent(target, formChild, "selectorFilterFields");
+        copyIfPresent(target, formChild, "recordSelector");
+        // 设计器关掉「选择已有」时清掉选择器，避免前端仍按 recordSelector 出按钮
+        if (formChild.containsKey("allowSelectExisting")
+                && !readBooleanValue(formChild.get("allowSelectExisting"), false)) {
+            target.remove("recordSelector");
+        }
+    }
+
+    private void copyIfPresent(Map<String, Object> target, Map<String, Object> source, String key) {
+        if (source != null && source.containsKey(key) && source.get(key) != null) {
+            target.put(key, source.get(key));
+        }
+    }
+
+    /**
+     * 设计器开启「选择已有」但未写 recordSelector 时，用子表 modelCode 合成选择器配置。
+     */
+    private void ensureChildSelectExistingConfig(Map<String, Object> child) {
+        if (child == null) {
+            return;
+        }
+        Object existingSelector = child.get("recordSelector");
+        boolean hasSelector = existingSelector instanceof Map<?, ?> map && !map.isEmpty();
+        boolean allowSelectExisting = readBooleanValue(child.get("allowSelectExisting"), hasSelector);
+        if (!allowSelectExisting) {
+            return;
+        }
+        child.put("allowSelectExisting", true);
+        if (hasSelector) {
+            return;
+        }
+        String modelCode = StringUtils.firstNonBlank(
+                StringUtils.trimToNull(textValue(child.get("modelCode"))),
+                StringUtils.trimToNull(textValue(child.get("relationKey"))),
+                StringUtils.trimToNull(textValue(child.get("key"))));
+        if (modelCode == null) {
+            return;
+        }
+        Map<String, Object> selector = new LinkedHashMap<>();
+        selector.put("objectCode", modelCode);
+        selector.put("businessObjectCode", modelCode);
+        selector.put("multiple", readBooleanValue(child.get("selectorMultiple"), true));
+        JSONArray displayFields = readNestedArray(child.get("selectorDisplayFields"));
+        if (!displayFields.isEmpty()) {
+            selector.put("displayFields", displayFields);
+            selector.put("keywordFields", displayFields);
+        }
+        JSONArray filterFields = readNestedArray(child.get("selectorFilterFields"));
+        if (!filterFields.isEmpty()) {
+            selector.put("filterFields", filterFields);
+        }
+        child.put("recordSelector", selector);
     }
 
     private List<Map<String, Object>> applyTaskChildFieldPermissions(List<Map<String, Object>> fields,
@@ -2188,8 +2952,10 @@ public class BusinessFlowService {
             if (StringUtils.isBlank(key)) {
                 continue;
             }
-            Object value = children.get(key);
+            Object value = findChildRowsByAlias(children, childConfig);
             if (!(value instanceof List<?> rows)) {
+                // 即使没匹配到数据也占位，避免前端按配置键读到 undefined 后整表空白
+                filtered.put(key, List.of());
                 continue;
             }
             Set<String> visibleFields = readMapList(readNestedArray(childConfig.get("fields"))).stream()
@@ -2206,17 +2972,83 @@ public class BusinessFlowService {
                 Map<String, Object> visibleRow = new LinkedHashMap<>();
                 row.forEach((rowKey, rowItem) -> {
                     String field = String.valueOf(rowKey);
-                    if (visibleFields.contains(field)
-                            || "id".equalsIgnoreCase(field)
-                            || "_deleted".equalsIgnoreCase(field)) {
+                    if (isVisibleChildRowField(field, visibleFields)) {
                         visibleRow.put(field, rowItem);
                     }
                 });
                 visibleRows.add(visibleRow);
             }
             filtered.put(key, visibleRows);
+            // 同步写回数据源原键，方便前后端用不同别名取值
+            String sourceKey = resolveMatchedChildDataKey(children, childConfig);
+            if (StringUtils.isNotBlank(sourceKey) && !StringUtils.equals(sourceKey, key)) {
+                filtered.put(sourceKey, visibleRows);
+            }
         }
         recordData.put("children", filtered);
+    }
+
+    private boolean isVisibleChildRowField(String field, Set<String> visibleFields) {
+        if (StringUtils.isBlank(field)) {
+            return false;
+        }
+        if ("id".equalsIgnoreCase(field) || "_deleted".equalsIgnoreCase(field)) {
+            return true;
+        }
+        if (visibleFields == null || visibleFields.isEmpty()) {
+            return true;
+        }
+        if (visibleFields.contains(field)) {
+            return true;
+        }
+        for (String visibleField : visibleFields) {
+            if (sameFieldName(visibleField, field)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Object findChildRowsByAlias(Map<?, ?> children, Map<String, Object> childConfig) {
+        if (children == null || children.isEmpty() || childConfig == null) {
+            return null;
+        }
+        for (String candidate : childKeyCandidates(childConfig)) {
+            Object value = children.get(candidate);
+            if (value instanceof List<?>) {
+                return value;
+            }
+        }
+        String bestKey = resolveMatchedChildDataKey(children, childConfig);
+        return bestKey == null ? null : children.get(bestKey);
+    }
+
+    private String resolveMatchedChildDataKey(Map<?, ?> children, Map<String, Object> childConfig) {
+        if (children == null || children.isEmpty() || childConfig == null) {
+            return null;
+        }
+        String bestKey = null;
+        int bestDelta = Integer.MAX_VALUE;
+        for (String candidate : childKeyCandidates(childConfig)) {
+            for (Object rawKey : children.keySet()) {
+                String dataKey = rawKey == null ? null : StringUtils.trimToNull(String.valueOf(rawKey));
+                if (dataKey == null || !(children.get(rawKey) instanceof List<?>)) {
+                    continue;
+                }
+                if (StringUtils.equals(dataKey, candidate)) {
+                    return dataKey;
+                }
+                if (!sameChildTableKey(dataKey, candidate)) {
+                    continue;
+                }
+                int delta = Math.abs(dataKey.length() - candidate.length());
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    bestKey = dataKey;
+                }
+            }
+        }
+        return bestKey;
     }
 
     private void logBusinessTaskChildren(String stage,
@@ -2676,18 +3508,30 @@ public class BusinessFlowService {
                                                                  boolean strict,
                                                                  Map<String, Object> taskFormInfo) {
         Long tenantId = resolveTenantId();
+        long mark = System.nanoTime();
         hydrateTaskFormQuery(query, taskFormInfo);
+        markTaskFormDetail("hydrateQueryMs", mark);
+
+        mark = System.nanoTime();
         hydrateApplicationPageFormIdentity(query);
+        markTaskFormDetail("pageAssetMs", mark);
+
         boolean syntheticTestKey = isSyntheticTestBusinessKey(query.getBusinessKey());
+        mark = System.nanoTime();
         AiBusinessFlowInstanceLink link = null;
         if (StringUtils.isNotBlank(query.getProcessInstanceId())) {
             link = flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, query.getProcessInstanceId());
+            noteTaskFormDetail("db:flow_link_by_pi");
         }
         if (link == null && StringUtils.isNotBlank(query.getBusinessKey()) && !syntheticTestKey) {
             link = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, query.getBusinessKey());
+            noteTaskFormDetail("db:flow_link_by_bk");
         }
+        markTaskFormDetail("flowLinkMs", mark);
 
+        mark = System.nanoTime();
         AiBusinessObject taskObject = resolveTaskBusinessObject(tenantId, query, link);
+        markTaskFormDetail("taskObjectMs", mark);
 
         String objectCode = StringUtils.firstNonBlank(
                 taskObject == null ? null : taskObject.getObjectCode(),
@@ -2713,7 +3557,7 @@ public class BusinessFlowService {
             if (strict) {
                 throw new BusinessException("未解析到业务对象或记录ID");
             }
-            return new TaskFormRuntimeContext(null, null, businessKey, null, null);
+            return new TaskFormRuntimeContext(null, null, businessKey, null, null, null, null);
         }
         if (recordId == null && strict) {
             // 发起测试等场景可能尚未落单据，保存时再创建记录。
@@ -2723,21 +3567,34 @@ public class BusinessFlowService {
                 taskObject == null ? null : taskObject.getConfigKey(),
                 StringUtils.trimToNull(query.getConfigKey()),
                 objectCode);
+        mark = System.nanoTime();
         BusinessRuntimeContext businessContext = resolveBusinessRuntimeContext(tenantId, runtimeLookupKey);
+        markTaskFormDetail("businessContextMs", mark);
+        noteTaskFormDetail("db:runtime_context(config/object/document)");
+
         String canonicalObjectCode = StringUtils.firstNonBlank(businessContext.objectCode(), objectCode);
         String configKey = StringUtils.firstNonBlank(
                 taskObject == null ? null : taskObject.getConfigKey(),
                 StringUtils.trimToNull(query.getConfigKey()),
                 businessContext.configKey());
+        mark = System.nanoTime();
         AiBusinessBinding binding = selectMainFlowBindingForConfig(tenantId, canonicalObjectCode, objectCode);
+        markTaskFormDetail("bindingMs", mark);
+        noteTaskFormDetail("db:flow_binding");
         JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
-        ensureBusinessBinding(bindingConfig, tenantId, canonicalObjectCode);
+        // 复用 businessContext 已加载的 config/document，避免 ensureBusinessBinding 再查一遍
+        ensureBusinessBinding(bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig());
 
         if (StringUtils.isBlank(configKey) && strict
                 && !isBusinessCodeTaskForm(canonicalObjectCode, bindingConfig, query, taskFormInfo)) {
             throw new BusinessException("业务对象缺少已发布运行配置，无法保存待办业务字段");
         }
-        return new TaskFormRuntimeContext(canonicalObjectCode, recordId, businessKey, configKey, bindingConfig);
+        AiBusinessObject reusedObject = businessContext.businessObject() != null
+                ? businessContext.businessObject()
+                : taskObject;
+        return new TaskFormRuntimeContext(
+                canonicalObjectCode, recordId, businessKey, configKey, bindingConfig,
+                businessContext.runtimeConfig(), reusedObject);
     }
 
     /**
@@ -2998,7 +3855,8 @@ public class BusinessFlowService {
                                            BusinessTaskFormContextQueryDTO query,
                                            Map<String, Object> taskFormInfo) {
         JSONObject nodeForm = resolveTaskNodeForm(
-                new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig), query, taskFormInfo);
+                new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig, null, null),
+                query, taskFormInfo);
         return nodeForm != null && "BUSINESS_CODE_FORM".equals(normalizeNodeFormMode(nodeForm.getString("formMode")));
     }
 
@@ -3132,7 +3990,7 @@ public class BusinessFlowService {
             FlowBusinessListDisplayItem item = runtime.item();
             Map<String, Object> recordData = findBatchRecord(records, runtime.recordId());
             TaskFormRuntimeContext taskRuntime = new TaskFormRuntimeContext(
-                    objectCode, runtime.recordId(), runtime.businessKey(), configKey, bindingConfig);
+                    objectCode, runtime.recordId(), runtime.businessKey(), configKey, bindingConfig, null, null);
             Map<String, Object> startParams = item.getBusinessParams();
             item.setObjectCode(objectCode);
             item.setRecordId(runtime.recordId());
@@ -3354,7 +4212,8 @@ public class BusinessFlowService {
                 StringUtils.trimToNull(query.getFormKey()));
         JSONObject runtimeFormRef = resolveRuntimeBusinessFormRef(formInfo);
         String runtimeFormKey = StringUtils.trimToNull(runtimeFormRef.getString("formKey"));
-        JSONObject runtimeAsset = resolveBusinessTaskFormAsset(objectCode, runtimeFormKey);
+        // 节点表单只需要身份元数据；整份 schema 留给后续 formSchema / uiDocument
+        JSONObject runtimeAsset = slimPageFormAssetMeta(resolveBusinessTaskFormAsset(objectCode, runtimeFormKey));
         boolean useRuntimePageForm = StringUtils.isNotBlank(runtimeFormKey) && !runtimeAsset.isEmpty();
         String formKey = useRuntimePageForm ? runtimeFormKey : configuredFormKey;
         Object rawFormPermissions = formInfo.get("formFieldPermissions");
@@ -3373,7 +4232,7 @@ public class BusinessFlowService {
                 childPermissions = List.of();
             }
         }
-        JSONObject asset = resolveBusinessTaskFormAsset(objectCode, formKey);
+        JSONObject asset = slimPageFormAssetMeta(resolveBusinessTaskFormAsset(objectCode, formKey));
         if (asset.isEmpty() && StringUtils.isBlank(formKey) && permissions.isEmpty()) {
             if (StringUtils.isNotBlank(runtime.configKey())) {
                 JSONObject defaultNodeForm = new JSONObject();
@@ -3512,9 +4371,21 @@ public class BusinessFlowService {
                 ? loadTaskFormInfo(query.getTaskId())
                 : preloadedTaskFormInfo;
         if (isCompleteFlowNodeFormInfo(taskFormInfo)) {
+            noteTaskFormDetail("processFormRpc=skip(complete)");
             return taskFormInfo;
         }
+        // Flow getTaskFormInfo 常缺顶层 formKey，但前端/query 或 variables 已有页面 formKey；
+        // 此时再打 processFormInfo 几乎是重复 RPC（常见 600ms+）。
+        if (taskFormInfo != null && !taskFormInfo.isEmpty()
+                && (StringUtils.isNotBlank(query == null ? null : query.getFormKey())
+                || hasTextValue(resolveRuntimeBusinessFormRef(taskFormInfo).getString("formKey")))) {
+            noteTaskFormDetail("processFormRpc=skip(queryOrVarFormKey)");
+            return taskFormInfo;
+        }
+        long mark = System.nanoTime();
         Map<String, Object> processFormInfo = loadProcessFormInfo(runtime, query);
+        markTaskFormDetail("processFormRpcMs", mark);
+        noteTaskFormDetail("processFormRpc=hit");
         if (taskFormInfo.isEmpty()) {
             return processFormInfo;
         }
@@ -3534,6 +4405,22 @@ public class BusinessFlowService {
         if (formInfo == null || formInfo.isEmpty()) {
             return false;
         }
+        // 已有 formKey / 权限 / formRef 即可组装节点表单，避免再打一次 processFormInfo RPC
+        if (hasTextValue(formInfo.get("formKey"))
+                || hasTextValue(formInfo.get("formUrl"))
+                || hasTextValue(formInfo.get("formJson"))
+                || hasTextValue(formInfo.get("formFieldPermissions"))
+                || formInfo.get("formRef") instanceof Map<?, ?>
+                || formInfo.get("formFieldPermissions") instanceof List<?>
+                || formInfo.get("formFieldPermissions") instanceof Map<?, ?>) {
+            return true;
+        }
+        // 业务流程变量里常把页面表单挂在 businessFormRef，顶层可能没有 formKey
+        JSONObject runtimeFormRef = resolveRuntimeBusinessFormRef(formInfo);
+        if (hasTextValue(runtimeFormRef.getString("formKey"))
+                || hasTextValue(runtimeFormRef.getString("formUrl"))) {
+            return true;
+        }
         Object formType = formInfo.get("formType");
         if (!hasTextValue(formType)) {
             return false;
@@ -3541,10 +4428,7 @@ public class BusinessFlowService {
         if ("none".equalsIgnoreCase(String.valueOf(formType))) {
             return true;
         }
-        return hasTextValue(formInfo.get("formKey"))
-                || hasTextValue(formInfo.get("formUrl"))
-                || hasTextValue(formInfo.get("formJson"))
-                || hasTextValue(formInfo.get("formFieldPermissions"));
+        return false;
     }
 
     private Map<String, Object> loadTaskFormInfo(String taskId) {
@@ -3614,11 +4498,25 @@ public class BusinessFlowService {
 
     private JSONObject resolveBusinessTaskFormAsset(String objectCode, String formKey) {
         JSONObject applicationAsset = resolveApplicationPageFormAsset(formKey);
-        if (!applicationAsset.isEmpty()
-                && StringUtils.equals(objectCode, StringUtils.trimToNull(applicationAsset.getString("objectCode")))) {
-            return applicationAsset;
+        if (!applicationAsset.isEmpty()) {
+            String assetObjectCode = StringUtils.trimToNull(applicationAsset.getString("objectCode"));
+            // app_ 页面 formKey 是权威身份；objectCode 与运行时别名不一致时也不要回退到 collectTaskFormAssets
+            if (assetObjectCode == null
+                    || StringUtils.isBlank(objectCode)
+                    || StringUtils.equals(objectCode, assetObjectCode)
+                    || StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_")) {
+                return applicationAsset;
+            }
         }
+        // app_ 页面 key 不在对象 formAssets 里；空结果时再扫对象资产只会白白多查几百毫秒
+        if (StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_")) {
+            noteTaskFormDetail("collectTaskFormAssets=skip(appFormKey)");
+            return new JSONObject();
+        }
+        long mark = System.nanoTime();
         List<Map<String, Object>> assets = collectTaskFormAssets(objectCode);
+        markTaskFormDetail("collectTaskFormAssetsMs", mark);
+        noteTaskFormDetail("db:collectTaskFormAssets(object/designer/config)");
         if (assets.isEmpty()) {
             return new JSONObject();
         }
@@ -3632,76 +4530,168 @@ public class BusinessFlowService {
         return assets.size() == 1 ? readNestedObject(assets.get(0)) : new JSONObject();
     }
 
+    /**
+     * 节点表单 / formRef 只要身份字段；避免把整份设计器 schema 拷进响应组装路径。
+     */
+    private JSONObject slimPageFormAssetMeta(JSONObject asset) {
+        if (asset == null || asset.isEmpty()) {
+            return new JSONObject();
+        }
+        JSONObject meta = new JSONObject();
+        for (String key : List.of(
+                "id", "formKey", "formName", "formMode", "providerKey", "formUrl", "viewKey",
+                "objectCode", "objectId", "configKey", "applicationId", "pageId", "pageCode", "pageName")) {
+            Object value = asset.get(key);
+            if (value != null) {
+                meta.put(key, value);
+            }
+        }
+        return meta;
+    }
+
     private JSONObject resolveApplicationPageFormAsset(String formKey) {
         String key = StringUtils.trimToNull(formKey);
         if (key == null || businessApplicationService == null || !key.startsWith("app_")) {
             return new JSONObject();
         }
+        String cacheKey = resolveTenantId() + ":" + key;
+        CachedJsonValue cached = applicationPageFormAssetCache.get(cacheKey);
+        if (cached != null && !cached.expired()) {
+            noteTaskFormDetail(cached.isEmpty() ? "pageAssetCache=hitEmpty" : "pageAssetCache=hit");
+            return cached.copy();
+        }
+        ParsedApplicationPageFormKey parsed = parseApplicationPageFormKey(key);
+        if (parsed == null) {
+            noteTaskFormDetail("pageAsset=badFormKey");
+            return new JSONObject();
+        }
+        try {
+            long mark = System.nanoTime();
+            JSONObject builder = loadCachedInAppBuilder(parsed.applicationId());
+            markTaskFormDetail("inAppBuilderMs", mark);
+            JSONArray nodes = readNestedArray(builder.get("nodes"));
+            JSONObject pages = readNestedObject(builder.get("pages"));
+            JSONArray assets = readNestedArray(builder.get("formAssets"));
+            if (nodes.isEmpty() && pages.isEmpty() && assets.isEmpty()) {
+                noteTaskFormDetail("pageAsset=emptyBuilder nodes=" + nodes.size()
+                        + " pages=" + pages.size() + " assets=" + assets.size());
+                // 空结果不长缓存，避免 CAST/解析异常把 missEmpty 锁死 300s
+                return new JSONObject();
+            }
+
+            // 直接按 formKey 拆出的 pageId/assetId 定位，不再依赖页面区块引用链（引用链缺失是 missEmpty 主因）
+            JSONObject pageNode = findApplicationPageNode(nodes, parsed.pageId());
+            JSONObject page = pages.getJSONObject(parsed.pageId());
+            JSONObject source = findApplicationFormAsset(assets, parsed.assetId());
+            if (source == null) {
+                noteTaskFormDetail("pageAsset=assetNotFound assetId=" + parsed.assetId()
+                        + " assets=" + assets.size());
+                return new JSONObject();
+            }
+            if (pageNode == null && page == null) {
+                noteTaskFormDetail("pageAsset=pageNotFound pageId=" + parsed.pageId()
+                        + " nodes=" + nodes.size());
+                return new JSONObject();
+            }
+            if (pageNode == null) {
+                pageNode = new JSONObject();
+                pageNode.put("id", parsed.pageId());
+                pageNode.put("type", "page");
+            }
+            JSONObject objectRef = readNestedObject(pageNode.get("objectRef"));
+            JSONObject resolved = readNestedObject(buildApplicationPageFormAsset(
+                    parsed.applicationId(),
+                    StringUtils.firstNonBlank(
+                            objectRef.getString("objectCode"), objectRef.getString("configKey")),
+                    pageNode, objectRef, source, parsed.pageId()));
+            applicationPageFormAssetCache.put(cacheKey, CachedJsonValue.of(resolved, APPLICATION_PAGE_FORM_CACHE_TTL_MS));
+            noteTaskFormDetail("pageAssetCache=miss");
+            return resolved;
+        } catch (Exception error) {
+            log.debug("解析应用页面表单资产失败: formKey={}", formKey, error);
+            noteTaskFormDetail("pageAsset=error:" + error.getClass().getSimpleName());
+            return new JSONObject();
+        }
+    }
+
+    private ParsedApplicationPageFormKey parseApplicationPageFormKey(String formKey) {
+        String key = StringUtils.trimToNull(formKey);
+        if (key == null || !key.startsWith("app_")) {
+            return null;
+        }
         int pageMarker = key.indexOf("_page_");
         if (pageMarker <= 4) {
-            return new JSONObject();
+            return null;
         }
         Long applicationId;
         try {
             applicationId = Long.valueOf(key.substring(4, pageMarker));
         } catch (NumberFormatException error) {
-            return new JSONObject();
+            return null;
         }
-        try {
-            var application = businessApplicationService.detail(applicationId);
-            JSONObject options = readJsonObject(application.getOptions());
-            JSONObject builder = readNestedObject(options.get("inAppBuilder"));
-            JSONArray nodes = readNestedArray(builder.get("nodes"));
-            JSONObject pages = readNestedObject(builder.get("pages"));
-            JSONArray assets = readNestedArray(builder.get("formAssets"));
-            for (int i = 0; i < nodes.size(); i++) {
-                JSONObject pageNode = nodes.getJSONObject(i);
-                if (pageNode == null || !"page".equalsIgnoreCase(pageNode.getString("type"))) {
-                    continue;
-                }
-                String pageId = StringUtils.trimToNull(pageNode.getString("id"));
-                JSONObject page = pageId == null ? null : pages.getJSONObject(pageId);
-                if (page == null) {
-                    continue;
-                }
-                Set<String> referencedIds = new LinkedHashSet<>();
-                collectFormAssetIds(page, referencedIds);
-                JSONObject objectRef = readNestedObject(pageNode.get("objectRef"));
-                String directAssetId = StringUtils.firstNonBlank(
-                        pageNode.getString("formAssetId"), objectRef.getString("formAssetId"));
-                if (directAssetId != null) {
-                    referencedIds.add(directAssetId);
-                }
-                // 历史对象页面可能只有 CRUD 区块，没有在区块上保存 formAssetId。
-                // 当应用仍只维护一个表单资产时，可以安全恢复该页面的默认表单，
-                // 避免任务运行时因为引用链缺一段而回退到错误的对象表单。
-                if (referencedIds.isEmpty()) {
-                    String defaultAssetId = resolveDefaultPageFormAssetId(
-                            pageNode, objectRef, assets);
-                    if (defaultAssetId != null) {
-                        referencedIds.add(defaultAssetId);
-                    }
-                }
-                for (int assetIndex = 0; assetIndex < assets.size(); assetIndex++) {
-                    JSONObject source = assets.getJSONObject(assetIndex);
-                    if (source == null || !referencedIds.contains(source.getString("id"))) {
-                        continue;
-                    }
-                    JSONObject resolved = readNestedObject(buildApplicationPageFormAsset(
-                            applicationId,
-                            resolveCanonicalObjectCode(resolveTenantId(), StringUtils.firstNonBlank(
-                                    objectRef.getString("objectCode"), objectRef.getString("configKey"))),
-                            pageNode, objectRef, source, pageId));
-                    if (StringUtils.equals(key, resolved.getString("formKey"))) {
-                        return resolved;
-                    }
-                }
+        String remainder = key.substring(pageMarker + "_page_".length());
+        int formMarker = remainder.indexOf("_form_");
+        if (formMarker <= 0) {
+            return null;
+        }
+        String pageId = StringUtils.trimToNull(remainder.substring(0, formMarker));
+        String assetId = StringUtils.trimToNull(remainder.substring(formMarker + "_form_".length()));
+        if (pageId == null || assetId == null) {
+            return null;
+        }
+        return new ParsedApplicationPageFormKey(applicationId, pageId, assetId);
+    }
+
+    private JSONObject findApplicationPageNode(JSONArray nodes, String pageId) {
+        if (nodes == null || nodes.isEmpty() || StringUtils.isBlank(pageId)) {
+            return null;
+        }
+        for (int i = 0; i < nodes.size(); i++) {
+            JSONObject pageNode = nodes.getJSONObject(i);
+            if (pageNode == null) {
+                continue;
             }
-            return new JSONObject();
-        } catch (Exception error) {
-            log.debug("解析应用页面表单资产失败: formKey={}", formKey, error);
+            if (StringUtils.equals(pageId, StringUtils.trimToNull(pageNode.getString("id")))) {
+                return pageNode;
+            }
+        }
+        return null;
+    }
+
+    private JSONObject findApplicationFormAsset(JSONArray assets, String assetId) {
+        if (assets == null || assets.isEmpty() || StringUtils.isBlank(assetId)) {
+            return null;
+        }
+        for (int i = 0; i < assets.size(); i++) {
+            JSONObject source = assets.getJSONObject(i);
+            if (source == null) {
+                continue;
+            }
+            if (StringUtils.equals(assetId, StringUtils.trimToNull(source.getString("id")))
+                    || StringUtils.equals(assetId, StringUtils.trimToNull(source.getString("formKey")))) {
+                return source;
+            }
+        }
+        return null;
+    }
+
+    private record ParsedApplicationPageFormKey(Long applicationId, String pageId, String assetId) {
+    }
+
+    private JSONObject loadCachedInAppBuilder(Long applicationId) {
+        if (applicationId == null || businessApplicationService == null) {
             return new JSONObject();
         }
+        CachedJsonValue cached = applicationInAppBuilderCache.get(applicationId);
+        if (cached != null && !cached.expired()) {
+            noteTaskFormDetail("inAppBuilderCache=hit");
+            return cached.copy();
+        }
+        JSONObject builder = businessApplicationService.loadInAppBuilder(applicationId);
+        applicationInAppBuilderCache.put(applicationId,
+                CachedJsonValue.of(builder == null ? new JSONObject() : builder, APPLICATION_PAGE_FORM_CACHE_TTL_MS));
+        noteTaskFormDetail("inAppBuilderCache=miss db:ai_business_application.inAppBuilder");
+        return builder == null ? new JSONObject() : builder;
     }
 
     private JSONObject resolveApplicationPageFormSchema(String formKey) {
@@ -3750,51 +4740,98 @@ public class BusinessFlowService {
     }
 
     private JSONObject resolveBusinessFormSchema(BusinessObjectVO object, String formKey, String configKey) {
+        return resolveBusinessFormSchema(object, formKey, configKey, null);
+    }
+
+    private JSONObject resolveBusinessFormSchema(BusinessObjectVO object,
+                                                 String formKey,
+                                                 String configKey,
+                                                 AiCrudConfig preloadedRuntimeConfig) {
+        AiCrudConfig runtimeConfig = preloadedRuntimeConfig != null
+                ? preloadedRuntimeConfig
+                : resolveRuntimeConfigForBusinessForm(object, configKey);
         JSONObject applicationSchema = resolveApplicationPageFormSchema(formKey);
+        // 对象设计器当前表单优先：应用页 formAssets / 发布快照常落后于用户刚改的对象表单
+        JSONObject objectLiveSchema = resolveObjectDesignerFormSchema(object, formKey);
+        if (hasRenderableFormComponents(objectLiveSchema)) {
+            JSONObject result = JSON.parseObject(JSON.toJSONString(objectLiveSchema));
+            if (!applicationSchema.isEmpty()) {
+                result.put("formKey", StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(applicationSchema.getString("formKey")),
+                        StringUtils.trimToNull(result.getString("formKey")),
+                        StringUtils.trimToNull(formKey)));
+                result.put("formName", StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(applicationSchema.getString("formName")),
+                        StringUtils.trimToNull(result.getString("formName"))));
+            }
+            noteTaskFormDetail("formSchema=objectDesignerLive");
+            return result;
+        }
         if (!applicationSchema.isEmpty()) {
+            noteTaskFormDetail("formSchema=applicationPage");
             return applicationSchema;
         }
-        AiCrudConfig runtimeConfig = resolveRuntimeConfigForBusinessForm(object, configKey);
         if (object == null) {
             return buildRuntimeCrudFormSchema(null, runtimeConfig, formKey);
+        }
+        if (!objectLiveSchema.isEmpty()) {
+            return objectLiveSchema;
+        }
+        JSONObject runtimeSchema = buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
+        return runtimeSchema.isEmpty() ? buildObjectFieldRegistryFormSchema(object, formKey) : runtimeSchema;
+    }
+
+    /**
+     * 读取业务对象设计器里当前保存的表单 schema（designerOptions.formDesignerSchema）。
+     */
+    private JSONObject resolveObjectDesignerFormSchema(BusinessObjectVO object, String formKey) {
+        if (object == null) {
+            return new JSONObject();
         }
         JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
         JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
         if (formSchema.isEmpty()) {
-            JSONObject runtimeSchema = buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
-            return runtimeSchema.isEmpty() ? buildObjectFieldRegistryFormSchema(object, formKey) : runtimeSchema;
+            return new JSONObject();
         }
         String targetFormKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(formKey),
                 StringUtils.trimToNull(formSchema.getString("defaultFormKey")),
                 StringUtils.trimToNull(formSchema.getString("formKey")));
+        // app_ 页面 formKey 对不上对象内部 formKey，按默认/根表单取
+        boolean appPageFormKey = StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_");
 
         JSONObject byForms = findFormSchemaInArray(readNestedArray(formSchema.get("forms")), targetFormKey);
-        if (!byForms.isEmpty()) {
-            return collectBusinessFormFieldCatalog(byForms).isEmpty()
-                    ? buildObjectFieldRegistryFormSchema(object, targetFormKey)
-                    : byForms;
+        if (!byForms.isEmpty() && !collectBusinessFormFieldCatalog(byForms).isEmpty()) {
+            return byForms;
         }
         JSONObject settings = readNestedObject(formSchema.get("settings"));
         JSONObject byAssets = findFormSchemaInArray(readNestedArray(settings.get("formAssets")), targetFormKey);
-        if (!byAssets.isEmpty()) {
-            return collectBusinessFormFieldCatalog(byAssets).isEmpty()
-                    ? buildObjectFieldRegistryFormSchema(object, targetFormKey)
-                    : byAssets;
+        if (!byAssets.isEmpty() && !collectBusinessFormFieldCatalog(byAssets).isEmpty()) {
+            return byAssets;
         }
         String rootFormKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(formSchema.getString("formKey")),
                 StringUtils.trimToNull(formSchema.getString("defaultFormKey")));
-        if (StringUtils.isBlank(targetFormKey) || StringUtils.equals(targetFormKey, rootFormKey)) {
-            return collectBusinessFormFieldCatalog(formSchema).isEmpty()
-                    ? buildObjectFieldRegistryFormSchema(object, targetFormKey)
-                    : formSchema;
+        if (appPageFormKey
+                || StringUtils.isBlank(targetFormKey)
+                || StringUtils.equals(targetFormKey, rootFormKey)
+                || hasRenderableFormComponents(formSchema)) {
+            return formSchema;
         }
-        JSONObject runtimeFormSchema = buildRuntimeCrudFormSchema(object, runtimeConfig, targetFormKey);
-        if (!runtimeFormSchema.isEmpty()) {
-            return runtimeFormSchema;
+        return new JSONObject();
+    }
+
+    private boolean hasRenderableFormComponents(JSONObject formSchema) {
+        if (formSchema == null || formSchema.isEmpty()) {
+            return false;
         }
-        return buildObjectFieldRegistryFormSchema(object, targetFormKey);
+        JSONArray components = readNestedArray(formSchema.get("components"));
+        if (!components.isEmpty()) {
+            return true;
+        }
+        JSONObject settings = readNestedObject(formSchema.get("settings"));
+        return !readNestedArray(settings.get("components")).isEmpty()
+                || !collectBusinessFormFieldCatalog(formSchema).isEmpty();
     }
 
     private JSONObject buildObjectFieldRegistryFormSchema(BusinessObjectVO object, String requestedFormKey) {
@@ -4275,18 +5312,21 @@ public class BusinessFlowService {
                 continue;
             }
             boolean writable = permission != null && readBooleanValue(permission.get("writable"), false);
-            boolean required = writable && permission != null && readBooleanValue(permission.get("required"), false);
+            // 节点权限未勾必填时，仍保留设计器 validation.required，避免审批端必填星号/校验丢失
+            boolean required = writable && (
+                    (permission != null && readBooleanValue(permission.get("required"), false))
+                            || readBooleanValue(field.get("required"), false));
             Map<String, Object> item = new LinkedHashMap<>(field);
             item.put("field", fieldCode);
             item.put("fieldCode", fieldCode);
             item.put("label", StringUtils.defaultIfBlank(textValue(field.get("label")), fieldCode));
-            String rawType = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(item.get("type"))),
-                    StringUtils.trimToNull(textValue(item.get("componentType"))),
-                    StringUtils.trimToNull(textValue(item.get("componentKey"))));
+            String rawType = resolveTaskFormControlType(item);
             String normalizedType = normalizeTaskFormFieldType(rawType);
             item.put("type", normalizedType);
-            item.putIfAbsent("componentType", normalizedType);
+            item.put("componentType", StringUtils.defaultIfBlank(rawType, normalizedType));
+            if (StringUtils.isNotBlank(rawType) && !"input".equals(rawType)) {
+                item.put("componentKey", rawType);
+            }
             item.putIfAbsent("dataType", StringUtils.trimToEmpty(textValue(field.get("dataType"))));
             Map<String, Object> props = new LinkedHashMap<>(readNestedObject(item.get("props")));
             String dictType = StringUtils.firstNonBlank(
@@ -4379,18 +5419,29 @@ public class BusinessFlowService {
     }
 
     private String normalizeTaskFormFieldType(String componentType) {
-        String type = StringUtils.defaultIfBlank(componentType, "input").trim();
+        String type = stripForgeComponentPrefix(StringUtils.defaultIfBlank(componentType, "input").trim());
         return switch (type) {
             case "textarea" -> "textarea";
             case "inputNumber", "input-number", "integer", "decimal", "money", "number" -> "number";
-            case "dictSelect" -> "dictSelect";
+            case "dictSelect", "forgeDictSelect" -> "dictSelect";
             case "select", "radio", "radioButton", "checkbox", "date", "datetime", "daterange", "datetimerange",
                     "month", "year", "time", "timerange", "switch", "imageUpload", "fileUpload", "slider", "rate",
                     "color", "regionTreeSelect", "treeSelect", "transfer", "customSelect", "objectReference",
                     "recordSelector", "userSelect", "orgTreeSelect", "cascader", "text", "slot" -> type;
+            case "deptTreeSelect", "departmentTreeSelect", "deptSelect", "departmentSelect",
+                    "orgSelect", "organizationSelect", "orgName", "deptName", "elTreeSelect" -> "orgTreeSelect";
+            case "userPicker", "user", "userName", "sysUserSelect" -> "userSelect";
             case "upload" -> "fileUpload";
-            default -> "input";
+            default -> "input".equals(type) || StringUtils.isBlank(type) ? "input" : type;
         };
+    }
+
+    private String stripForgeComponentPrefix(String componentType) {
+        String type = StringUtils.trimToEmpty(componentType);
+        if (type.startsWith("forge") && type.length() > 5 && Character.isUpperCase(type.charAt(5))) {
+            return Character.toLowerCase(type.charAt(5)) + type.substring(6);
+        }
+        return type;
     }
 
     private Map<String, Object> filterVisibleRecordData(Map<String, Object> recordData, List<Map<String, Object>> fields) {
@@ -4522,14 +5573,40 @@ public class BusinessFlowService {
             if (field == null) {
                 continue;
             }
+            // 开关/布尔：未勾选也会提交 false/0，不能按「空字符串」判空；未出现在表单载荷里时也不要误拦
+            // （常见于字段在设计器里有、发布态 schema 未收录导致前端未渲染）
             if (!input.containsKey(field)) {
-                throw new BusinessException("请填写必填字段: " + field);
+                continue;
             }
-            Object value = updateData.get(field);
-            if (value == null || StringUtils.isBlank(String.valueOf(value))) {
+            Object value = updateData.containsKey(field) ? updateData.get(field) : input.get(field);
+            if (isEmptyRequiredTaskFieldValue(value)) {
                 throw new BusinessException("请填写必填字段: " + field);
             }
         }
+    }
+
+    /**
+     * 必填判空：布尔 false、数字 0、开关未勾选值均视为已填写。
+     */
+    private boolean isEmptyRequiredTaskFieldValue(Object value) {
+        if (value == null) {
+            return true;
+        }
+        if (value instanceof Boolean || value instanceof Number) {
+            return false;
+        }
+        if (value instanceof Collection<?> collection) {
+            return collection.isEmpty();
+        }
+        if (value instanceof Map<?, ?> map) {
+            return map.isEmpty();
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return true;
+        }
+        // 开关常见存储：false / 0 / "false" / "0"
+        return false;
     }
 
     private String parseBusinessKeyObjectCode(String businessKey) {
@@ -7182,7 +8259,8 @@ public class BusinessFlowService {
                     StringUtils.trimToNull(props.getString("field")));
             if (field != null && seen.add(field)) {
                 JSONObject validation = readNestedObject(component.get("validation"));
-                Map<String, Object> item = new LinkedHashMap<>(component);
+                // 只抽取字段渲染需要的键，禁止整份拷贝组件（会把错误 type / 布局噪音带进审批 fields）
+                Map<String, Object> item = new LinkedHashMap<>();
                 item.put("field", field);
                 item.put("fieldCode", field);
                 item.put("label", StringUtils.firstNonBlank(
@@ -7190,20 +8268,34 @@ public class BusinessFlowService {
                         StringUtils.trimToNull(props.getString("label")),
                         StringUtils.trimToNull(props.getString("title")),
                         field));
-                String componentType = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(component.getString("type")),
+                String componentKey = StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(component.getString("componentKey")),
                         StringUtils.trimToNull(component.getString("componentType")),
-                        StringUtils.trimToNull(component.getString("componentKey")));
-                item.put("type", normalizeTaskFormFieldType(componentType));
-                item.put("componentType", StringUtils.defaultIfBlank(componentType, "input"));
-                item.putIfAbsent("dataType", StringUtils.trimToEmpty(binding.getString("dataType")));
+                        StringUtils.trimToNull(component.getString("type")),
+                        StringUtils.trimToNull(component.getString("name")));
+                Map<String, Object> propsMap = props.isEmpty() ? new LinkedHashMap<>() : new LinkedHashMap<>(props);
+                item.put("props", propsMap);
+                item.put("componentKey", StringUtils.defaultIfBlank(componentKey, "input"));
+                item.put("componentType", StringUtils.defaultIfBlank(componentKey, "input"));
+                String resolvedType = resolveTaskFormControlType(item);
+                item.put("type", normalizeTaskFormFieldType(resolvedType));
+                item.put("componentType", StringUtils.defaultIfBlank(resolvedType, "input"));
+                String dataType = StringUtils.firstNonBlank(
+                        StringUtils.trimToNull(binding.getString("dataType")),
+                        StringUtils.trimToNull(textValue(component.get("dataType"))));
+                if (dataType != null) {
+                    item.put("dataType", dataType);
+                }
                 String dictType = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(textValue(item.get("dictType"))),
+                        StringUtils.trimToNull(textValue(component.get("dictType"))),
                         StringUtils.trimToNull(props.getString("dictType")));
                 if (dictType != null) {
                     item.put("dictType", dictType);
                 }
-                item.putIfAbsent("required", readBooleanValue(validation.get("required"), false));
+                boolean required = readBooleanValue(validation.get("required"), false)
+                        || readBooleanValue(props.get("required"), false)
+                        || readBooleanValue(component.get("required"), false);
+                item.put("required", required);
                 result.add(item);
             }
             collectBusinessFormFieldComponents(readNestedArray(component.get("children")), result, seen);
@@ -7736,6 +8828,48 @@ public class BusinessFlowService {
         }
     }
 
+    private static final class CachedJsonValue {
+        private final String payload;
+        private final long expireAtMs;
+        private final boolean empty;
+        private volatile JSONObject parsed;
+
+        private CachedJsonValue(String payload, long expireAtMs, boolean empty) {
+            this.payload = payload;
+            this.expireAtMs = expireAtMs;
+            this.empty = empty;
+        }
+
+        static CachedJsonValue of(JSONObject value, long ttlMs) {
+            JSONObject source = value == null ? new JSONObject() : value;
+            CachedJsonValue cached = new CachedJsonValue(
+                    source.toJSONString(),
+                    System.currentTimeMillis() + Math.max(1L, ttlMs),
+                    source.isEmpty());
+            // 首次写入时保留已解析对象，避免紧接着又 parse 一遍
+            cached.parsed = source;
+            return cached;
+        }
+
+        boolean expired() {
+            return System.currentTimeMillis() >= expireAtMs;
+        }
+
+        boolean isEmpty() {
+            return empty;
+        }
+
+        JSONObject copy() {
+            JSONObject local = parsed;
+            if (local == null) {
+                local = JSON.parseObject(payload);
+                parsed = local;
+            }
+            // 顶层浅拷贝：调用方改顶层键不影响缓存；嵌套 schema 只读使用
+            return new JSONObject(local);
+        }
+    }
+
     private record FlowStartContext(String requestedObjectCode,
                                     String objectCode,
                                     String configKey,
@@ -7782,6 +8916,8 @@ public class BusinessFlowService {
                                           Long recordId,
                                           String businessKey,
                                           String configKey,
-                                          JSONObject bindingConfig) {
+                                          JSONObject bindingConfig,
+                                          AiCrudConfig publishedConfig,
+                                          AiBusinessObject businessObject) {
     }
 }

@@ -196,6 +196,29 @@ class LowcodeQuerySourceServiceTest {
                 eq(50));
     }
 
+    @Test
+    void shouldExposePrimaryKeyWhenBusinessObjectModelOmitsSystemId() {
+        com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject object =
+                new com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject();
+        object.setId(8L);
+        object.setObjectCode("template_detail");
+        object.setObjectName("模板明细");
+        object.setConfigKey("template_detail");
+        when(recordSelectorService.requireObjectByCode("template_detail")).thenReturn(object);
+        when(recordSelectorService.fieldTypeSchemas(object)).thenReturn(List.of(
+                Map.of("field", "detailName", "label", "明细名称", "dataType", "varchar")));
+
+        LowcodeQuerySourceRefDTO ref = new LowcodeQuerySourceRefDTO();
+        ref.setSourceType("BUSINESS_OBJECT");
+        ref.setSourceKey("template_detail");
+
+        var metadata = service.metadata(ref);
+
+        assertEquals("id", metadata.getFields().get(0).getField());
+        assertEquals("主键 ID", metadata.getFields().get(0).getLabel());
+        assertEquals("detailName", metadata.getFields().get(1).getField());
+    }
+
     private ExternalApi externalApi() {
         ExternalApi api = new ExternalApi();
         api.setId(20L);

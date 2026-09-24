@@ -92,6 +92,35 @@ export function isReadonlySystemField(field = {}) {
     || readonlySystemColumnNames.has(field.columnName)
 }
 
+/** 查询区默认排除的审计字段（不含 id，允许按主键筛选） */
+const auditSystemFieldNames = new Set([
+  'tenantId',
+  'createBy',
+  'createTime',
+  'createDept',
+  'updateBy',
+  'updateTime',
+  'delFlag',
+])
+const auditSystemColumnNames = new Set([
+  'tenant_id',
+  'create_by',
+  'create_time',
+  'create_dept',
+  'update_by',
+  'update_time',
+  'del_flag',
+])
+
+export function isAuditSystemField(field = {}) {
+  if (!field || isHiddenPageField(field) || isInactivePageField(field))
+    return true
+  const fieldName = field.sourceField || field.field
+  return auditSystemFieldNames.has(fieldName)
+    || auditSystemFieldNames.has(field.field)
+    || auditSystemColumnNames.has(field.columnName)
+}
+
 export function isChildListField(field = {}) {
   if (field?.fieldScope === 'child' || field?.scope === 'child')
     return true
@@ -151,7 +180,8 @@ export function isPageFieldVisible(field = {}, zoneKey = 'table') {
   if (zoneKey === 'detail')
     return field.formVisible !== false
   if (zoneKey === 'search')
-    return !isReadonlySystemField(field)
+    // 查询条件只排除隐藏/停用与内置审计字段；业务字段的 form「只读」不应阻断勾选为查询条件
+    return !isAuditSystemField(field)
   if (zoneKey === 'table')
     return field.listVisible !== false
   return true
@@ -949,10 +979,10 @@ export function syncGridLayoutWithModel(layout, modelSchema, options = {}) {
     const refs = (item.fieldRefs || []).filter(field => fieldSet.has(field))
     let props = item.blockType === 'tree-panel'
       ? {
-          ...sanitizeGridBlockProps(item.blockType, item.props || {}, new Set(refs), fieldSet),
+          ...sanitizeGridBlockProps(item.blockType, item.props || {}, new Set(refs), searchFieldSet),
           ...resolveDefaultTreeConfig(modelSchema, item.props || {}),
         }
-      : sanitizeGridBlockProps(item.blockType, item.props || {}, new Set(refs), fieldSet)
+      : sanitizeGridBlockProps(item.blockType, item.props || {}, new Set(refs), searchFieldSet)
     if (item.blockType === 'AiCrudPage') {
       const hasSearchRefs = Object.prototype.hasOwnProperty.call(item.props || {}, 'searchFieldRefs')
       if (hasSearchRefs) {

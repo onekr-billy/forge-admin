@@ -12,7 +12,6 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRead
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableFieldMappingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableMappingVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessValidationVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +25,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,8 +69,6 @@ class BusinessApplicationReadinessServiceTest {
         BusinessApplicationAssetSelectionService.ResolvedSelection resolved
                 = new BusinessApplicationAssetSelectionService.ResolvedSelection(
                         selection, List.of(object), List.of(), List.of(), List.of());
-        BusinessPublishCheckVO objectCheck = new BusinessPublishCheckVO();
-        objectCheck.setPublishable(true);
 
         when(applicationService.publishContext(101L)).thenReturn(application);
         when(applicationService.slugAvailable("leave_center", 101L)).thenReturn(true);
@@ -77,9 +76,18 @@ class BusinessApplicationReadinessServiceTest {
         when(pageDependencyInspector.inspect(application, List.of(object)))
                 .thenReturn(new BusinessApplicationPageDependencyInspector.InspectionResult(false, List.of()));
         when(permissionService.documentActionSummaries(anyList())).thenReturn(List.of());
-        when(objectPublishService.publishCheckResolved(object.getObjectId(), null))
-                .thenReturn(new BusinessObjectPublishService.ResolvedObjectCheck(
-                        objectCheck, new BusinessObjectDesignerService.DesignerContext()));
+        // object.designStatus=PUBLISHED：应用门禁不加载对象设计上下文
+    }
+
+    @Test
+    @DisplayName("PUBLISHED object skips design context load during readiness")
+    void publishedObjectSkipsDesignContextLoad() {
+        object.setSyncStatus("IN_SYNC");
+
+        service.check(101L);
+
+        verify(objectPublishService, never()).loadContextForApplicationPublish(object.getObjectId());
+        verify(objectPublishService, never()).publishCheckResolved(object.getObjectId(), null);
     }
 
     @Test
@@ -93,6 +101,19 @@ class BusinessApplicationReadinessServiceTest {
 
         assertFalse(readiness.getIssues().stream()
                 .anyMatch(issue -> "OBJECT_DATABASE_OUT_OF_SYNC".equals(issue.getIssueCode())));
+    }
+
+    @Test
+    @DisplayName("association IN_SYNC summary skips live table mapping")
+    void associationInSyncSummarySkipsLiveTableMapping() {
+        object.setSyncStatus("IN_SYNC");
+
+        BusinessApplicationReadinessVO readiness = service.check(101L);
+
+        assertFalse(readiness.getIssues().stream()
+                .anyMatch(issue -> issue.getIssueCode() != null
+                        && issue.getIssueCode().startsWith("OBJECT_DATABASE_")));
+        verify(tableMappingService, never()).getTableMapping(object.getObjectId());
     }
 
     @Test

@@ -70,7 +70,8 @@ public class BusinessObjectPublishService {
     private static final Set<String> RUNTIME_OPEN_MODES = Set.of("LIST", "CREATE_FORM", "DETAIL");
     private static final Set<String> FIELD_EVENT_TRIGGERS = Set.of(
             "FORM_LOAD", "CHANGE", "BLUR", "MANUAL", "SCAN_COMPLETE");
-    private static final Set<String> FIELD_EVENT_SOURCE_TYPES = Set.of("EXTERNAL_API", "DATASET");
+    private static final Set<String> FIELD_EVENT_SOURCE_TYPES = Set.of(
+            "EXTERNAL_API", "DATASET", "BUSINESS_OBJECT");
     private static final Set<String> FIELD_EVENT_PARAM_SOURCES = Set.of(
             "FORM_FIELD", "CONTEXT_PATH", "ROUTE_QUERY");
     private static final Set<String> FIELD_EVENT_RESULT_MODES = Set.of("ROOT", "FIRST_ROW");
@@ -143,9 +144,33 @@ public class BusinessObjectPublishService {
     }
 
     /**
-     * 执行发布检查并返回加载的设计上下文，供应用协调发布在预检后透传给
-     * {@link #publish(Long, BusinessObjectPublishDTO, BusinessPermissionSummaryVO, BusinessObjectDesignerService.DesignerContext)}
-     * 复用，避免同一请求内重复加载上下文。
+     * 应用协调发布预检只加载设计上下文，不做对象级页面/公式/单据全量校验。
+     * 上下文供后续 OBJECTS 步骤复用，避免同一请求内二次 loadContext。
+     */
+    public BusinessObjectDesignerService.DesignerContext loadContextForApplicationPublish(Long objectId) {
+        return designerService.loadContext(objectId);
+    }
+
+    /**
+     * 应用协调发布在已有对象发布版本时只收敛设计状态，不重跑 lowcode 发布。
+     * 已是 PUBLISHED 的对象直接跳过，避免逐条 selectById。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void markDesignPublished(List<Long> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return;
+        }
+        List<Long> ids = objectIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        businessObjectMapper.markDesignPublished(resolveTenantId(null), ids,
+                BusinessObjectDesignStatus.PUBLISHED.getCode());
+    }
+
+    /**
+     * 执行发布检查并返回加载的设计上下文，供对象级发布预检使用。
+     * 应用协调发布请用 {@link #loadContextForApplicationPublish(Long)}，不要走本方法的全量校验。
      */
     public ResolvedObjectCheck publishCheckResolved(Long objectId, BusinessPermissionSummaryVO permissionSummary) {
         BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
@@ -178,6 +203,14 @@ public class BusinessObjectPublishService {
         return buildResult(items);
     }
 
+    /** 应用协调发布预检已通过且子表关系未变时，复用预检结论，避免二次全量编译校验。 */
+    private BusinessPublishCheckVO trustPreloadedPublishCheck() {
+        BusinessPublishCheckVO check = new BusinessPublishCheckVO();
+        check.setPublishable(true);
+        check.setItems(List.of());
+        return check;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public Long publish(Long objectId, BusinessObjectPublishDTO dto) {
         return publish(objectId, dto, null);
@@ -208,10 +241,15 @@ public class BusinessObjectPublishService {
         if (dto != null && dto.getPageSchema() != null) {
             context.setPageSchema(dto.getPageSchema());
         }
-        designerService.synchronizeFormChildRelations(context);
+        // DETAIL 在 prepare 阶段 persistChildRelations=false，必须在最终发布前再同步子表关系；
+        // PRIMARY 已在 prepare 同步过时通常无写入（短回路），代价可接受。
+        boolean relationsChanged = designerService.synchronizeFormChildRelations(context);
         designerService.applyRelationsToModel(context);
         context = designerService.saveDraft(context, BusinessObjectDesignStatus.READY.getCode());
-        BusinessPublishCheckVO check = publishCheck(context, permissionSummary);
+        // 应用协调发布已在 readiness 做过 publishCheckResolved；关系未变则跳过二次编译校验。
+        BusinessPublishCheckVO check = (preloadedContext != null && !relationsChanged)
+                ? trustPreloadedPublishCheck()
+                : publishCheck(context, permissionSummary);
         boolean force = dto != null && Boolean.TRUE.equals(dto.getForce());
         if (Boolean.FALSE.equals(check.getPublishable())
                 && (!force || containsNonForceableCommandBlock(check))) {
@@ -1343,7 +1381,7 @@ public class BusinessObjectPublishService {
             String sourceType = text(event.get("sourceType"));
             if (!FIELD_EVENT_SOURCE_TYPES.contains(sourceType)) {
                 addFieldEventBlock(items, rowNumber, basePath + ".sourceType",
-                        "查询源类型仅支持 EXTERNAL_API、DATASET", null);
+                        "查询源类型仅支持 EXTERNAL_API、DATASET、BUSINESS_OBJECT", null);
             }
             String sourceKey = text(event.get("sourceKey"));
             if (StringUtils.isBlank(sourceKey) || sourceKey.length() > 129
@@ -2608,29 +2646,9 @@ public class BusinessObjectPublishService {
 
     private List<FormulaObjectDependencyAnalyzer.ObjectContext> buildFormulaObjectContexts(
             BusinessObjectDesignerService.DesignerContext context) {
+        // 只校验当前对象公式；禁止按套件全量 loadContext（小应用也会放大成数十次编译读库）。
         List<FormulaObjectDependencyAnalyzer.ObjectContext> contexts = new ArrayList<>();
         addFormulaObjectContext(contexts, context);
-        if (context == null || context.getObject() == null || StringUtils.isBlank(context.getObject().getSuiteCode())) {
-            return contexts;
-        }
-
-        List<AiBusinessObject> suiteObjects = businessObjectMapper.selectBySuiteCode(
-                resolveTenantId(context), context.getObject().getSuiteCode());
-        if (suiteObjects == null || suiteObjects.isEmpty()) {
-            return contexts;
-        }
-
-        Long currentObjectId = context.getObject().getId();
-        for (AiBusinessObject object : suiteObjects) {
-            if (object == null || object.getId() == null || object.getId().equals(currentObjectId)) {
-                continue;
-            }
-            try {
-                addFormulaObjectContext(contexts, designerService.loadContext(object.getId()));
-            } catch (Exception ignored) {
-                // Missing unrelated design context should not hide current object's own formula errors.
-            }
-        }
         return contexts;
     }
 

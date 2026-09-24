@@ -400,6 +400,30 @@ export function appendChildTableCatalogFields(fields = [], schema = {}) {
   return result
 }
 
+/**
+ * 审批节点权限面板字段目录：主表/数组保留资产目录；子表优先用当前表单设计器 subTable，
+ * 避免发布态 masterDetail / 旧 fieldCatalog 里已删除的子表继续出现。
+ */
+export function resolvePermissionFieldCatalog(fields = [], schema = {}) {
+  const base = Array.isArray(fields) ? fields : []
+  const nonChildFields = base.filter((field) => {
+    const scope = String(field?.scope || '').trim().toLowerCase()
+    const childKey = String(field?.childKey || field?.relationKey || '').trim()
+    return scope !== 'child' && !childKey
+  })
+  const designerChildren = appendChildTableCatalogFields([], schema)
+    .filter(field => String(field?.scope || '').toLowerCase() === 'child')
+  // 只要资产带了表单设计器结构，子表就以设计器为准（含「已全部删除」）
+  if (hasFormDesignerComponents(schema))
+    return [...nonChildFields, ...designerChildren]
+  return appendChildTableCatalogFields(base, schema)
+}
+
+function hasFormDesignerComponents(schema = {}) {
+  const roots = [schema, schema?.schema, schema?.formDesignerSchema]
+  return roots.some(root => Array.isArray(root?.components))
+}
+
 export function normalizeFlowChildPermission(item = {}) {
   const childKey = String(item.childKey || item.relationKey || item.key || '').trim()
   return {

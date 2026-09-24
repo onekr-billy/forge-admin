@@ -1,0 +1,355 @@
+/**
+ * 将统一 uiDocument 解析为 PC AiForm schema。
+ *
+ * - fields[]：字段定义与权限事实来源
+ * - uiDocument.components：布局树
+ * - uiDocument.sections：无组件树时的字段序回退
+ */
+
+const LAYOUT_NODE_TYPES = new Set([
+  'row',
+  'fcRow',
+  'col',
+  'card',
+  'elCard',
+  'tabs',
+  'elTabs',
+  'tabPane',
+  'elTabPane',
+  'collapse',
+  'elCollapse',
+  'collapseItem',
+  'elCollapseItem',
+  'divider',
+  'elDivider',
+  'AiFormSectionTitle',
+  'aiFormSectionTitle',
+  'formSectionTitle',
+  'FormSectionTitle',
+  'title',
+  'fcTitle',
+  'groupTitle',
+  'button',
+  'table',
+  'tableGrid',
+  'AiCrudPage',
+  'aiCrudPage',
+  'crud',
+  'crudBlock',
+])
+
+function fieldKey(field) {
+  const key = String(field?.field || field?.fieldCode || '').trim()
+  return key || ''
+}
+
+function protocolVersionOf(context) {
+  return String(context?.protocolVersion ?? context?.uiDocument?.version ?? '').trim()
+}
+
+function collectSectionFieldOrder(uiDocument) {
+  const sections = Array.isArray(uiDocument?.sections) ? uiDocument.sections : []
+  const order = []
+  const seen = new Set()
+  sections.forEach((section) => {
+    const codes = Array.isArray(section?.fields) ? section.fields : []
+    codes.forEach((code) => {
+      const key = String(code || '').trim()
+      if (!key || seen.has(key))
+        return
+      seen.add(key)
+      order.push(key)
+    })
+  })
+  return order
+}
+
+function resolveLayoutNodeType(type = '') {
+  const componentKey = String(type || '').trim()
+  if (['row', 'fcRow'].includes(componentKey))
+    return 'row'
+  if (componentKey === 'col')
+    return 'col'
+  if (['card', 'elCard'].includes(componentKey))
+    return 'card'
+  if (['tabs', 'elTabs'].includes(componentKey))
+    return 'tabs'
+  if (['tabPane', 'elTabPane'].includes(componentKey))
+    return 'tabPane'
+  if (['collapse', 'elCollapse'].includes(componentKey))
+    return 'collapse'
+  if (['collapseItem', 'elCollapseItem'].includes(componentKey))
+    return 'collapseItem'
+  if (['divider', 'elDivider', 'AiFormSectionTitle', 'aiFormSectionTitle', 'formSectionTitle', 'FormSectionTitle'].includes(componentKey))
+    return 'divider'
+  if (['title', 'fcTitle', 'groupTitle'].includes(componentKey))
+    return 'groupTitle'
+  if (['button', 'table', 'tableGrid'].includes(componentKey))
+    return componentKey
+  if (['AiCrudPage', 'aiCrudPage', 'crud', 'crudBlock'].includes(componentKey))
+    return 'AiCrudPage'
+  return ''
+}
+
+function isLayoutComponentType(type = '') {
+  return LAYOUT_NODE_TYPES.has(String(type || '').trim()) || Boolean(resolveLayoutNodeType(type))
+}
+
+const DOCUMENT_CONTROL_TYPES = new Set([
+  'select',
+  'dictSelect',
+  'radio',
+  'radioButton',
+  'checkbox',
+  'userSelect',
+  'orgTreeSelect',
+  'deptTreeSelect',
+  'departmentTreeSelect',
+  'objectReference',
+  'recordSelector',
+  'treeSelect',
+  'cascader',
+  'switch',
+  'date',
+  'datetime',
+  'daterange',
+  'datetimerange',
+  'month',
+  'year',
+  'time',
+  'timerange',
+  'number',
+  'textarea',
+  'imageUpload',
+  'fileUpload',
+  'upload',
+  'slider',
+  'rate',
+  'color',
+  'regionTreeSelect',
+  'transfer',
+  'customSelect',
+])
+
+function shouldPreferDocumentControlType(documentType = '', fieldType = '') {
+  const doc = String(documentType || '').trim()
+  const field = String(fieldType || '').trim()
+  if (!doc || doc === 'input')
+    return false
+  if (!field || field === 'input' || field === 'text')
+    return true
+  return DOCUMENT_CONTROL_TYPES.has(doc) && doc !== field
+}
+
+function indexFieldsByKey(fields = []) {
+  const map = new Map()
+  fields.forEach((field) => {
+    const key = fieldKey(field)
+    if (!key || map.has(key))
+      return
+    map.set(key, field)
+  })
+  return map
+}
+
+function countSchemaFields(nodes = []) {
+  let count = 0
+  const walk = (items) => {
+    ;(Array.isArray(items) ? items : []).forEach((node) => {
+      if (!node || typeof node !== 'object')
+        return
+      if (node.nodeType && node.nodeType !== 'field') {
+        walk(node.children || [])
+        return
+      }
+      if (fieldKey(node))
+        count += 1
+      if (Array.isArray(node.children) && node.children.length)
+        walk(node.children)
+    })
+  }
+  walk(nodes)
+  return count
+}
+
+/**
+ * 将 uiDocument.components 映射为 AiForm schema。
+ * 字段节点用 fields[] 覆盖（权限/类型不变）；布局节点补 nodeType。
+ */
+export function mapUiDocumentComponentsToAiFormSchema(components = [], fields = []) {
+  const fieldMap = indexFieldsByKey(fields)
+  const usedKeys = new Set()
+
+  const mapNodes = (nodes) => {
+    const result = []
+    ;(Array.isArray(nodes) ? nodes : []).forEach((node) => {
+      if (!node || typeof node !== 'object')
+        return
+
+      const type = String(node.type || node.componentKey || node.componentType || '').trim()
+      const key = fieldKey(node)
+      const children = Array.isArray(node.children) ? node.children : []
+      const layoutType = resolveLayoutNodeType(type)
+
+      if (node.visible === false)
+        return
+
+      if (layoutType || (!key && children.length && isLayoutComponentType(type))) {
+        const mappedChildren = mapNodes(children)
+        if (!mappedChildren.length && !['divider', 'groupTitle', 'button'].includes(layoutType))
+          return
+        const layoutNode = {
+          ...node,
+          type: type || layoutType || 'row',
+          nodeType: layoutType || 'row',
+          children: mappedChildren,
+        }
+        delete layoutNode.field
+        delete layoutNode.fieldCode
+        delete layoutNode.prop
+        result.push(layoutNode)
+        return
+      }
+
+      if (!key) {
+        if (children.length) {
+          const mappedChildren = mapNodes(children)
+          if (mappedChildren.length) {
+            result.push({
+              ...node,
+              type: type || 'row',
+              nodeType: layoutType || 'row',
+              children: mappedChildren,
+            })
+          }
+        }
+        return
+      }
+
+      const fieldDef = fieldMap.get(key)
+      // 设计器有组件、发布态 fields 尚未收录时，仍按 uiDocument 渲染，避免静默丢字段
+      const baseField = fieldDef || {
+        field: key,
+        fieldCode: key,
+        type: type || 'input',
+        label: node.label || key,
+        props: node.props && typeof node.props === 'object' ? { ...node.props } : {},
+        required: node.required === true,
+        writable: node.editable !== false,
+        readable: true,
+        readonly: node.editable === false,
+        disabled: node.editable === false,
+      }
+
+      usedKeys.add(key)
+      // fields[] 是字段事实来源；uiDocument 节点上的 type/label/props 来自设计器编译，
+      // 必须叠回去，否则 optionSource / fieldMappings / 组件类型会在协议解析时丢失，
+      // 表现为下拉/人员/组织等运行态行为回退或失效。
+      const next = {
+        ...baseField,
+        type: baseField.type || type || 'input',
+        label: baseField.label || node.label || key,
+        required: baseField.required === true || node.required === true,
+        props: {
+          ...(baseField.props || {}),
+          ...(node.props && typeof node.props === 'object' ? node.props : {}),
+        },
+      }
+      // 设计器 componentKey / uiDocument.type 优先于发布态 fields 里被盖成 input 的粗粒度类型
+      if (DOCUMENT_CONTROL_TYPES.has(type))
+        next.type = type
+      else if (type && type !== 'input' && shouldPreferDocumentControlType(type, next.type))
+        next.type = type
+      if (node.componentKey && (!next.componentKey || next.componentKey === 'input'))
+        next.componentKey = node.componentKey
+      // uiDocument 权限标记叠到字段定义（设计器只读 / 审批 writable）
+      if (node.editable === false) {
+        next.readonly = true
+        next.disabled = true
+        next.props = {
+          ...(next.props || {}),
+          readonly: true,
+          disabled: true,
+        }
+      }
+      if (node.span != null && next.span == null)
+        next.span = node.span
+      if (node.gridStyle && !next.gridStyle)
+        next.gridStyle = node.gridStyle
+      result.push(next)
+    })
+    return result
+  }
+
+  const mapped = mapNodes(components)
+  if (!usedKeys.size)
+    return []
+
+  // 有 uiDocument 组件树时，布局即「当前表单」事实来源。
+  // 不再把 fields[] 里未入画布的字段追加回来（否则审批会渲染用户已从表单删除的字段）。
+  return mapped
+}
+
+function reorderFieldsBySections(fields, uiDocument) {
+  const order = collectSectionFieldOrder(uiDocument)
+  if (!order.length)
+    return fields
+
+  const byField = new Map()
+  fields.forEach((field) => {
+    const key = fieldKey(field)
+    if (!key || byField.has(key))
+      return
+    byField.set(key, field)
+  })
+
+  const ordered = []
+  order.forEach((key) => {
+    const field = byField.get(key)
+    if (!field)
+      return
+    ordered.push(field)
+    byField.delete(key)
+  })
+  byField.forEach((field) => {
+    ordered.push(field)
+  })
+  return ordered
+}
+
+/**
+ * 通用入口：审批 context / 低代码 profile 均可传入。
+ * @param {{ protocolVersion?: string, uiDocument?: object, fields?: object[] }|null|undefined} context
+ * @returns {object[]}
+ */
+export function resolveAiFormSchemaFromUiDocument(context) {
+  const fields = Array.isArray(context?.fields) ? context.fields.filter(Boolean) : []
+  const uiDocument = context?.uiDocument
+  const components = Array.isArray(uiDocument?.components) ? uiDocument.components : []
+
+  if (!fields.length) {
+    // 发布态 fields 为空时，仍允许纯 uiDocument 组件树渲染（设计器已加字段、尚未进 editSchema）
+    if (protocolVersionOf(context) === '1' && components.length)
+      return mapUiDocumentComponentsToAiFormSchema(components, [])
+    return []
+  }
+
+  if (protocolVersionOf(context) !== '1')
+    return fields
+
+  if (!uiDocument || typeof uiDocument !== 'object')
+    return fields
+
+  if (components.length) {
+    const mapped = mapUiDocumentComponentsToAiFormSchema(components, fields)
+    if (countSchemaFields(mapped) > 0)
+      return mapped
+  }
+
+  return reorderFieldsBySections(fields, uiDocument)
+}
+
+/** @deprecated 使用 resolveAiFormSchemaFromUiDocument；保留别名兼容审批页 import */
+export function resolveBusinessTaskAiFormSchema(context) {
+  return resolveAiFormSchemaFromUiDocument(context)
+}

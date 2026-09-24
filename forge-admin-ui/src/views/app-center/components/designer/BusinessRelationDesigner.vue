@@ -2399,7 +2399,9 @@ function normalizeErFields(fields = []) {
       field: field.field,
       columnName: field.columnName || field.field,
       label: field.label || field.fieldName || field.field,
-      dataType: field.dataType || field.fieldType || field.businessFieldType || '',
+      // 只认存储层 dataType；禁止回退到 fieldType/businessFieldType（TEXT/string 等），
+      // 否则保存页面设计时 LowcodeSchemaValidator 会报「不支持的数据类型」。
+      dataType: normalizeErStorageDataType(field.dataType || field.dbType || field.columnType),
       primaryKey: Boolean(field.primaryKey) || field.field === 'id' || field.columnName === 'id',
       systemField: Boolean(field.systemField),
     }))
@@ -2414,6 +2416,44 @@ function normalizeErFields(fields = []) {
     })
   }
   return rows
+}
+
+/** 与后端 LowcodeSchemaValidator.normalizeStorageDataType 对齐 */
+function normalizeErStorageDataType(raw) {
+  let text = String(raw || 'varchar').trim().toLowerCase()
+  const paren = text.indexOf('(')
+  if (paren > 0)
+    text = text.slice(0, paren).trim()
+  const aliases = {
+    string: 'varchar',
+    str: 'varchar',
+    'character varying': 'varchar',
+    nvarchar: 'varchar',
+    varchar2: 'varchar',
+    clob: 'text',
+    ntext: 'text',
+    integer: 'int',
+    int32: 'int',
+    mediumint: 'int',
+    smallint: 'int',
+    long: 'bigint',
+    int64: 'bigint',
+    number: 'decimal',
+    numeric: 'decimal',
+    double: 'decimal',
+    float: 'decimal',
+    money: 'decimal',
+    bigdecimal: 'decimal',
+    bool: 'tinyint',
+    boolean: 'tinyint',
+    timestamp: 'datetime',
+    textarea: 'text',
+    multi_line: 'text',
+    richtext: 'text',
+  }
+  const allowed = new Set(['varchar', 'char', 'text', 'longtext', 'int', 'bigint', 'decimal', 'date', 'datetime', 'time', 'tinyint'])
+  const mapped = aliases[text] || text
+  return allowed.has(mapped) ? mapped : 'varchar'
 }
 
 function toErRelation(relation = {}) {

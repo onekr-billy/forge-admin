@@ -112,4 +112,9 @@ public interface BusinessObjectMapper extends BaseMapper<AiBusinessObject> {
      */
     int logicDeleteModelById(@Param("tenantId") Long tenantId,
                              @Param("modelId") Long modelId);
+
+    /** 批量将对象设计状态收敛为已发布（已是目标状态的行不受影响）。 */
+    int markDesignPublished(@Param("tenantId") Long tenantId,
+                            @Param("objectIds") List<Long> objectIds,
+                            @Param("designStatus") String designStatus);
 }

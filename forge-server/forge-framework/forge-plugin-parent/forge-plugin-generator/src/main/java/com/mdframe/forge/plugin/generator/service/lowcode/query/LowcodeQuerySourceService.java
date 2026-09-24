@@ -188,26 +188,39 @@ public class LowcodeQuerySourceService {
     }
 
     private List<LowcodeQuerySourceFieldVO> businessObjectFields(List<Map<String, Object>> schemas) {
-        if (schemas == null || schemas.isEmpty()) {
-            return List.of();
+        List<LowcodeQuerySourceFieldVO> fields = new ArrayList<>();
+        if (schemas != null) {
+            schemas.stream()
+                    .map(item -> {
+                        String field = text(item.get("field"));
+                        String dataType = text(item.get("dataType"));
+                        return LowcodeQuerySourceFieldVO.builder()
+                                .field(field)
+                                .label(defaultText(text(item.get("label")), field))
+                                .type(defaultText(dataType, "string"))
+                                .dataType(dataType)
+                                .length(toInteger(item.get("length")))
+                                .precision(toInteger(item.get("precision")))
+                                .path(field)
+                                .sensitive(false)
+                                .build();
+                    })
+                    .filter(item -> StringUtils.isNotBlank(item.getField()))
+                    .forEach(fields::add);
         }
-        return schemas.stream()
-                .map(item -> {
-                    String field = text(item.get("field"));
-                    String dataType = text(item.get("dataType"));
-                    return LowcodeQuerySourceFieldVO.builder()
-                            .field(field)
-                            .label(defaultText(text(item.get("label")), field))
-                            .type(defaultText(dataType, "string"))
-                            .dataType(dataType)
-                            .length(toInteger(item.get("length")))
-                            .precision(toInteger(item.get("precision")))
-                            .path(field)
-                            .sensitive(false)
-                            .build();
-                })
-                .filter(item -> StringUtils.isNotBlank(item.getField()))
-                .toList();
+        boolean hasId = fields.stream().anyMatch(item -> "id".equals(item.getField()) || "id".equals(item.getPath()));
+        if (!hasId) {
+            // 模型归一化会剥掉系统主键，但字段自动查询需要用 id 做关联和回填。
+            fields.add(0, LowcodeQuerySourceFieldVO.builder()
+                    .field("id")
+                    .label("主键 ID")
+                    .type("bigint")
+                    .dataType("bigint")
+                    .path("id")
+                    .sensitive(false)
+                    .build());
+        }
+        return fields;
     }
 
     private Integer toInteger(Object value) {
