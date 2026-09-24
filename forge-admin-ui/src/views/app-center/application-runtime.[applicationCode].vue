@@ -550,7 +550,7 @@
               :application-code="application?.applicationCode || ''"
               :page-id="currentNode?.id || ''"
               :configurable="false"
-              :design-preview="editing || isDraftMode || canEditApplication"
+              :design-preview="editing || isDraftMode"
               :crud-config-revision="portalCrudConfigRevision"
               :seed-runtime-crud-props="portalCrudSeed"
               :form-fields-resolver="resolvePortalFormFields"
@@ -2383,7 +2383,8 @@ async function warmCurrentPortalPageCrud() {
   if (!targets.length)
     return {}
   return warmPortalPageCrudProps(targets, {
-    designPreview: editing.value || isDraftMode.value || canEditApplication.value,
+    // 正式门户与普通用户同看已发布配置；有编辑权限不代表在预览草稿
+    designPreview: editing.value || isDraftMode.value,
     applicationId: application.value?.id,
     pageId,
     timeoutMs: 6500,

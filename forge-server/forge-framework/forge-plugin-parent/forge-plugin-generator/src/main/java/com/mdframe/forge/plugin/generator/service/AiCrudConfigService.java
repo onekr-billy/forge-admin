@@ -12,6 +12,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfigVersion;
 import com.mdframe.forge.plugin.generator.domain.entity.AiPageTemplate;
 import com.mdframe.forge.plugin.generator.dto.AiCrudConfigDTO;
 import com.mdframe.forge.plugin.generator.dto.AiCrudConfigRenderVO;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRuntimeConfig;
@@ -45,6 +46,8 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudConfig> {
 
     private static final long CONFIG_CACHE_TTL_MILLIS = TimeUnit.SECONDS.toMillis(10);
+    private static final String FLOW_STATUS_FIELD = "flowStatus";
+    private static final String FLOW_STATUS_COLUMN = "flow_status";
 
     private final ObjectMapper objectMapper;
     private final MenuRegisterAdapter menuRegisterAdapter;
@@ -317,7 +320,114 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
         published.setApiConfig(StringUtils.defaultIfBlank(version.getApiConfig(), config.getApiConfig()));
         published.setOptions(StringUtils.defaultIfBlank(version.getOptions(), config.getOptions()));
         applyPublishedSnapshotFields(published, config, version);
+        healManagedFlowStatusField(published, config);
         return published;
+    }
+
+    /**
+     * 保存业务流程时 flowStatus 只写进对象草稿（并已建列），已发布快照不会自动重建，
+     * 应用发布又会沿用已有对象版本，导致列表流程状态列时有时无。
+     * 草稿已有平台托管的 flowStatus 而发布快照缺失时，补进发布副本的 modelSchema 与 columnsSchema，
+     * 让表头、列表取值与流程状态回写都能用上，不依赖再次发布对象。
+     */
+    private void healManagedFlowStatusField(AiCrudConfig published, AiCrudConfig draft) {
+        try {
+            Map<String, Object> draftField = findManagedFlowStatusField(readMap(draft.getModelSchema()));
+            if (draftField == null) {
+                return;
+            }
+            Map<String, Object> publishedModel = readMap(published.getModelSchema());
+            List<Map<String, Object>> publishedFields = mapList(publishedModel.get("fields"));
+            boolean modelHasField = publishedFields.stream().anyMatch(this::isFlowStatusFieldMap);
+            if (!modelHasField) {
+                List<Object> nextFields = new ArrayList<>(publishedFields);
+                nextFields.add(draftField);
+                publishedModel.put("fields", nextFields);
+                published.setModelSchema(objectMapper.writeValueAsString(publishedModel));
+            }
+            if (StringUtils.isBlank(published.getColumnsSchema()) || StringUtils.isBlank(published.getPageSchema())) {
+                return;
+            }
+            List<Map<String, Object>> columns = objectMapper.readValue(
+                    published.getColumnsSchema(), new TypeReference<List<Map<String, Object>>>() {});
+            boolean columnPresent = columns.stream().anyMatch(column ->
+                    FLOW_STATUS_FIELD.equals(text(column.get("dataIndex")))
+                            || FLOW_STATUS_FIELD.equals(text(column.get("key")))
+                            || FLOW_STATUS_FIELD.equals(text(column.get("field"))));
+            if (columnPresent) {
+                return;
+            }
+            LowcodeModelSchema modelSchema = objectMapper.readValue(published.getModelSchema(), LowcodeModelSchema.class);
+            LowcodePageSchema pageSchema = objectMapper.readValue(published.getPageSchema(), LowcodePageSchema.class);
+            LowcodeFieldSchema field = objectMapper.convertValue(draftField, LowcodeFieldSchema.class);
+            Map<String, Object> column = lowcodeRuntimeConfigBuilder.buildManagedFlowStatusColumn(modelSchema, pageSchema, field);
+            if (column == null) {
+                return;
+            }
+            int actionsIndex = -1;
+            for (int i = 0; i < columns.size(); i++) {
+                if ("actions".equals(text(columns.get(i).get("key")))) {
+                    actionsIndex = i;
+                    break;
+                }
+            }
+            if (actionsIndex >= 0) {
+                columns.add(actionsIndex, column);
+            } else {
+                columns.add(column);
+            }
+            published.setColumnsSchema(objectMapper.writeValueAsString(columns));
+        } catch (Exception e) {
+            log.warn("[AiCrudConfigService] 补齐托管流程状态字段失败, configKey={}", published.getConfigKey(), e);
+        }
+    }
+
+    private Map<String, Object> findManagedFlowStatusField(Map<String, Object> model) {
+        for (Map<String, Object> field : mapList(model.get("fields"))) {
+            if (!isFlowStatusFieldMap(field) || "DISABLED".equalsIgnoreCase(text(field.get("fieldStatus")))) {
+                continue;
+            }
+            Map<String, Object> advancedProps = field.get("advancedProps") instanceof Map<?, ?> props
+                    ? castMap(props) : Map.of();
+            if ("BUSINESS_FLOW".equals(text(advancedProps.get("managedBy")))) {
+                return field;
+            }
+        }
+        return null;
+    }
+
+    private boolean isFlowStatusFieldMap(Map<String, Object> field) {
+        return FLOW_STATUS_FIELD.equals(text(field.get("field")))
+                || FLOW_STATUS_COLUMN.equals(text(field.get("columnName")));
+    }
+
+    private Map<String, Object> readMap(String json) throws Exception {
+        if (StringUtils.isBlank(json)) {
+            return new LinkedHashMap<>();
+        }
+        return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {});
+    }
+
+    private List<Map<String, Object>> mapList(Object value) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    result.add(castMap(map));
+                }
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Object> castMap(Map<?, ?> source) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key != null) {
+                result.put(String.valueOf(key), value);
+            }
+        });
+        return result;
     }
 
     private void applyPublishedSnapshotFields(AiCrudConfig published, AiCrudConfig draft, AiCrudConfigVersion version) {

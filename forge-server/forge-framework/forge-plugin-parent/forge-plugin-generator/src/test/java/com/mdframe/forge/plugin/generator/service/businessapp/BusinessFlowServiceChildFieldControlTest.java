@@ -100,6 +100,40 @@ class BusinessFlowServiceChildFieldControlTest {
         assertEquals("input", fields.get(2).get("type"));
     }
 
+    @Test
+    @DisplayName("主表引用字段从对象注册表补引用配置，但不改设计器控件类型")
+    void mainFieldsFillReferenceMetadataWithoutOverridingDesignerType() throws Exception {
+        BusinessFieldVO customer = registryField("customerId", "objectReference", null);
+        customer.setReferenceObjectCode("customer");
+        customer.setReferenceDisplayField("customerName");
+        when(fieldDesignService.listFields(10L)).thenReturn(List.of(
+                customer, registryField("level", "dictSelect", "customer_level")));
+        Map<String, Object> reference = new LinkedHashMap<>();
+        reference.put("field", "customerId");
+        reference.put("type", "objectReference");
+        reference.put("componentKey", "objectReference");
+        reference.put("props", new LinkedHashMap<>(Map.of("placeholder", "请选择客户")));
+        Map<String, Object> plainInput = new LinkedHashMap<>();
+        plainInput.put("field", "level");
+        plainInput.put("type", "input");
+        plainInput.put("componentKey", "input");
+        com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO object =
+                new com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO();
+        object.setId(10L);
+
+        Method enrich = BusinessFlowService.class.getDeclaredMethod("enrichTaskMainFieldsFromObjectRegistry",
+                List.class, com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO.class);
+        enrich.setAccessible(true);
+        enrich.invoke(service, List.of(reference, plainInput), object);
+
+        assertEquals("customer", reference.get("referenceObjectCode"));
+        assertEquals("customerName", reference.get("referenceDisplayField"));
+        assertEquals("请选择客户", ((Map<?, ?>) reference.get("props")).get("placeholder"));
+        assertEquals("input", plainInput.get("type"));
+        assertEquals("input", plainInput.get("componentKey"));
+        assertEquals(null, plainInput.get("dictType"));
+    }
+
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> merge(List<Map<String, Object>> formChildren,
                                             Map<String, Map<String, Object>> publishedByKey) throws Exception {

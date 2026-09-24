@@ -1570,7 +1570,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             }
         }
 
-        pageSchema.setModelRefs(refs);
+        pageSchema.setModelRefs(sortModelRefsByFormSubTables(refs, context.getObject()));
         pageSchema.setPrimaryModelId(primaryRef.getModelId());
         pageSchema.setPrimaryModelCode(primaryRef.getModelCode());
         if (hasEmbeddedRelations) {
@@ -1580,6 +1580,58 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         syncInlineEditRefsToEditZone(pageSchema, primaryRef, childFieldRefs);
         context.setPageSchema(pageSchema);
+    }
+
+    /**
+     * 关系表按 sort_order/id（约等于创建顺序）返回，发布态子表顺序又取自 modelRefs；
+     * 这里按表单设计器 subTable 组件的画布顺序重排，否则画布拖动后运行页/审批顺序会反。
+     */
+    private List<LowcodePageModelRef> sortModelRefsByFormSubTables(List<LowcodePageModelRef> refs,
+                                                                   AiBusinessObject object) {
+        List<String> order = collectFormSubTableOrder(object);
+        if (order.isEmpty() || refs.size() < 3) {
+            return refs;
+        }
+        List<LowcodePageModelRef> children = new ArrayList<>(refs.subList(1, refs.size()));
+        children.sort(Comparator.comparingInt(ref -> formSubTableRank(ref, order)));
+        List<LowcodePageModelRef> result = new ArrayList<>(refs.size());
+        result.add(refs.get(0));
+        result.addAll(children);
+        return result;
+    }
+
+    private int formSubTableRank(LowcodePageModelRef ref, List<String> order) {
+        String relationKey = ref.getProps() == null ? null : text(ref.getProps().get("relationKey"));
+        int byRelation = StringUtils.isBlank(relationKey) ? -1 : order.indexOf(relationKey);
+        if (byRelation >= 0) {
+            return byRelation;
+        }
+        int byModel = order.indexOf(ref.getModelCode());
+        return byModel >= 0 ? byModel : Integer.MAX_VALUE;
+    }
+
+    private List<String> collectFormSubTableOrder(AiBusinessObject object) {
+        Map<String, Object> designerOptions = readMap(object == null ? null : object.getDesignerOptions());
+        Object rawSchema = designerOptions.get(FORM_DESIGNER_SCHEMA_OPTION_KEY);
+        Map<String, Object> formSchema = rawSchema instanceof String json ? readMap(json) : mapValue(rawSchema);
+        List<String> order = new ArrayList<>();
+        collectFormSubTableKeys(listOfMap(formSchema.get("components")), order);
+        return order;
+    }
+
+    private void collectFormSubTableKeys(List<Map<String, Object>> components, List<String> order) {
+        for (Map<String, Object> component : components) {
+            String componentKey = StringUtils.firstNonBlank(text(component.get("componentKey")), text(component.get("type")));
+            if ("subTable".equalsIgnoreCase(componentKey) || "childTable".equalsIgnoreCase(componentKey)) {
+                Map<String, Object> props = mapValue(component.get("props"));
+                for (String key : new String[]{text(props.get("relationKey")), text(props.get("modelCode"))}) {
+                    if (StringUtils.isNotBlank(key)) {
+                        order.add(key.trim());
+                    }
+                }
+            }
+            collectFormSubTableKeys(listOfMap(component.get("children")), order);
+        }
     }
 
     private Map<String, LowcodePageModelRef> indexPageModelRefs(LowcodePageSchema pageSchema) {
@@ -1818,6 +1870,12 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         item.put("autoIncrement", field.getAutoIncrement());
         item.put("width", field.getWidth());
         item.put("remark", field.getRemark());
+        // 子表运行态控件依赖这些配置（选项源/引用对象/公式），快照缺失会让下拉、引用退化为输入框
+        item.put("referenceObjectCode", field.getReferenceObjectCode());
+        item.put("referenceDisplayField", field.getReferenceDisplayField());
+        item.put("basicProps", field.getBasicProps() == null ? null : new LinkedHashMap<>(field.getBasicProps()));
+        item.put("advancedProps", field.getAdvancedProps() == null ? null : new LinkedHashMap<>(field.getAdvancedProps()));
+        item.put("formulaConfig", field.getFormulaConfig() == null ? null : new LinkedHashMap<>(field.getFormulaConfig()));
         return item;
     }
 

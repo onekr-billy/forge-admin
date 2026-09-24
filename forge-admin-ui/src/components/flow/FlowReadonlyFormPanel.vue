@@ -45,6 +45,7 @@
           :grid-cols="businessFormGridCols"
           :label-placement="businessFormLabelPlacement"
           :label-width="businessFormLabelWidth"
+          :size="businessFormSize"
           :context="businessFormRenderContext"
           :form-assets="businessFormContext.formAssets || []"
         />
@@ -151,6 +152,9 @@ const businessFormLabelPlacement = computed(() => ['left', 'top'].includes(busin
   ? businessFormContext.value.labelPlacement
   : 'left')
 const businessFormLabelWidth = computed(() => businessFormContext.value?.labelWidth || '100')
+const businessFormSize = computed(() => ['small', 'medium', 'large'].includes(businessFormContext.value?.size)
+  ? businessFormContext.value.size
+  : 'medium')
 const businessFormRenderContext = computed(() => ({
   task: props.row,
   taskFormInfo: taskFormInfo.value,

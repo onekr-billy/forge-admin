@@ -396,11 +396,23 @@ function buildConfig(source = {}) {
   const matched = relationsForObject.find(r => resolveRelKey(r) === relationKey)
     || relationsForObject[0]
     || null
-  const fields = (Array.isArray(source.columns) ? source.columns : []).map(c => ({
-    fieldCode: c.fieldCode || c,
-    fieldName: c.fieldLabel || c.fieldCode || c,
-    label: c.fieldLabel || c.fieldCode || c,
-  }))
+  const fields = (Array.isArray(source.columns) ? source.columns : []).map((c) => {
+    const fieldCode = c.fieldCode || c
+    const asset = availableFields.value.find(f => fc(f) === fieldCode) || {}
+    return {
+      fieldCode,
+      fieldName: c.fieldLabel || fieldCode,
+      label: c.fieldLabel || fieldCode,
+      // 子表运行态控件依赖字段定义，只传编码会让下拉/人员/引用退化为输入框
+      componentType: asset.componentType,
+      dictType: asset.dictType,
+      dataType: asset.dataType,
+      required: asset.required,
+      referenceObjectCode: asset.referenceObjectCode,
+      referenceDisplayField: asset.referenceDisplayField,
+      basicProps: asset.basicProps,
+    }
+  })
   return {
     relation: matched,
     relationKey: relationKey || modelCode || '',

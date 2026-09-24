@@ -2659,6 +2659,22 @@ public class LowcodeRuntimeConfigBuilder {
         }
     }
 
+    /**
+     * 已发布快照早于流程托管字段时，按发布同一规则生成该字段的列表列；
+     * 非托管字段、已停用、列表不可见或在列表设计里显式隐藏时返回 null。
+     */
+    public Map<String, Object> buildManagedFlowStatusColumn(LowcodeModelSchema modelSchema,
+                                                            LowcodePageSchema pageSchema,
+                                                            LowcodeFieldSchema field) {
+        if (!isManagedBusinessFlowStatusField(field) || !isActiveField(field)
+                || (field.getListVisible() != null && !Boolean.TRUE.equals(field.getListVisible()))
+                || isTableFieldExplicitlyHidden(pageSchema, field.getField())) {
+            return null;
+        }
+        return buildTableColumn(field, resolveRuntimeFieldSetting(pageSchema, "table", field.getField()),
+                modelSchema, pageSchema);
+    }
+
     private boolean isManagedBusinessFlowStatusField(LowcodeFieldSchema field) {
         if (field == null) {
             return false;
@@ -2802,17 +2818,43 @@ public class LowcodeRuntimeConfigBuilder {
         field.setAutoIncrement(Boolean.TRUE.equals(booleanValue(source.get("autoIncrement"))));
         field.setWidth(integerValue(source.get("width")));
         field.setRemark(text(source.get("remark")));
-        Object basicProps = source.get("basicProps");
-        if (basicProps instanceof Map<?, ?> basicPropsMap) {
-            Map<String, Object> props = new LinkedHashMap<>();
+        field.setReferenceObjectCode(text(source.get("referenceObjectCode")));
+        field.setReferenceDisplayField(text(source.get("referenceDisplayField")));
+        Map<String, Object> props = new LinkedHashMap<>();
+        if (source.get("basicProps") instanceof Map<?, ?> basicPropsMap) {
             basicPropsMap.forEach((key, value) -> {
                 if (key != null) {
                     props.put(String.valueOf(key), value);
                 }
             });
+        }
+        // 运行态 props 只从 basicProps 取引用配置，字段级引用需同步进去
+        if (StringUtils.isNotBlank(field.getReferenceObjectCode())) {
+            props.putIfAbsent("referenceObjectCode", field.getReferenceObjectCode());
+        }
+        if (StringUtils.isNotBlank(field.getReferenceDisplayField())) {
+            props.putIfAbsent("referenceDisplayField", field.getReferenceDisplayField());
+        }
+        if (!props.isEmpty()) {
             field.setBasicProps(props);
         }
+        if (source.get("advancedProps") instanceof Map<?, ?> advanced) {
+            field.setAdvancedProps(castStringKeyMap(advanced));
+        }
+        if (source.get("formulaConfig") instanceof Map<?, ?> formula) {
+            field.setFormulaConfig(castStringKeyMap(formula));
+        }
         return field;
+    }
+
+    private Map<String, Object> castStringKeyMap(Map<?, ?> source) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key != null) {
+                result.put(String.valueOf(key), value);
+            }
+        });
+        return result;
     }
 
     private String stripChildModelNamePrefix(String label, String modelName) {

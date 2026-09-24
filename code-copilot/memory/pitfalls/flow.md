@@ -10,7 +10,11 @@
 
 处理原则：子表列类型为空或弱类型（input/text）时，用子表对象 `businessFieldDesignService.listFields` 补 `type/componentType/dictType/basicProps`，与设计器同源；发布态已有强类型保持不变。
 
-子表顺序同理：发布态 `masterDetailConfig.children` 顺序取自页面 `pageSchema.modelRefs`，而它按「添加子表」先后追加；画布拖动只改 `components`，先加 B 后加 A 再把 A 拖到前面，运行页与旧审批逻辑都会显示 B 在前。设计器需用 `reorderChildTableSectionConfig` 让 `modelRefs` / `children` 跟随画布子表容器顺序；审批端以设计器 `subTable` 组件顺序为准（`collectFormDesignerSubTables`）。
+子表顺序：发布态 `masterDetailConfig.children` 顺序取自 `pageSchema.modelRefs`，而后端每次保存/发布都在 `syncInlineEditRelationsToPageSchema` 按关系表 `sort_order, id`（约等于创建顺序）重建 `modelRefs`，前端按画布重排会被冲掉。必须在后端重建时按 `formDesignerSchema` 的 `subTable` 组件顺序排序（`sortModelRefsByFormSubTables`）。
+
+子表列缺失：`ChildTableEditor.isInternalIdField` 把所有 `xxxId` 字段当内部主外键隐藏，人员/部门/引用列通常就叫 `userId/deptId/customerId`，选了「全部字段」也看不到。选择/引用类控件不能按命名当内部 ID。发布快照 `toPageModelField` 还漏了 `basicProps`（选项源）和 `referenceObjectCode`，子表下拉/引用即使类型正确也拉不到数据。
+
+审批主表引用下拉：设计器画布用 `mergeRelationPreviewProps` 把字段注册表的引用配置合进组件，审批只拷贝组件 props，引用对象缺失；审批布局读 `settings.layout` 而设计器存在根 `layout`，列数/尺寸不一致导致控件宽度偏小。
 
 ## 审批表单字段目录不能只信发布态 editSchema
 
@@ -1116,6 +1120,8 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 - 字段可见性同步同时写 zone 与 listGridLayout；ensure 已有字段时补列表选列。
 - 运行配置构建强制补托管 `flowStatus` 列（显式隐藏除外）。
 - 前端按字段名/字典识别托管字段，并可从字段目录合成缺失列。
+
+**补充（2026-09-25）**：上述修复只在「重新发布对象」时生效。保存流程时 `ensure` 只写对象草稿并建列，正式运行读已发布版本快照；应用发布对已发布对象只固定旧版本、不重建。另外有编辑权限的用户在门户走 `designPreview` 看草稿，所以同一应用有人有列有人没有。现在 `AiCrudConfigService.resolvePublishedRuntimeConfig` 在草稿已有托管 `flowStatus`、发布快照缺失时自愈补进 `modelSchema` 与 `columnsSchema`（表头、取值、回写共用）；流程保存时已绑定节点也会（有 DDL 权限时）重跑幂等 `ensure`。流程按钮仍以已发布流程版本为准。
 
 ## 带排序和行数限制的流程锁查询会被 JSqlParser 重排
 

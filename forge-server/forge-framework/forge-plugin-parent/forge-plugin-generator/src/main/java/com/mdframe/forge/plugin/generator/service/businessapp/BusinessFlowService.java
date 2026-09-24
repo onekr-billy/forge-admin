@@ -1630,6 +1630,7 @@ public class BusinessFlowService {
         mark = System.nanoTime();
         List<Map<String, Object>> fieldCatalog = resolveBusinessTaskCrudPageFields(
                 runtime.configKey(), formKey, formSchema, runtimeConfig, runtimeOptions);
+        enrichTaskMainFieldsFromObjectRegistry(fieldCatalog, object);
         List<Map<String, Object>> permissions = normalizeBusinessObjectTaskPermissions(
                 fieldCatalog, normalizeFieldPermissions(nodeForm.get("fieldPermissions")));
         List<Map<String, Object>> fields = buildTaskFormFields(fieldCatalog, permissions);
@@ -1767,10 +1768,14 @@ public class BusinessFlowService {
                                                JSONObject formSchema,
                                                JSONObject runtimeOptions) {
         JSONObject settings = readNestedObject(formSchema == null ? null : formSchema.get("settings"));
+        // 表单设计器布局在根 layout（画布与运行页都读这里），settings.layout 只是旧结构兜底
+        JSONObject rootLayout = readNestedObject(formSchema == null ? null : formSchema.get("layout"));
         JSONObject layout = readNestedObject(settings.get("layout"));
         JSONObject options = runtimeOptions == null ? new JSONObject() : runtimeOptions;
         vo.setGridCols(Math.max(1, integerValue(
-                firstNonNull(layout.get("gridCols"),
+                firstNonNull(rootLayout.get("gridColumns"),
+                        rootLayout.get("gridCols"),
+                        layout.get("gridCols"),
                         layout.get("gridColumns"),
                         settings.get("gridCols"),
                         settings.get("gridColumns"),
@@ -1778,16 +1783,24 @@ public class BusinessFlowService {
                 1)));
         vo.setLabelPlacement(StringUtils.defaultIfBlank(
                 StringUtils.firstNonBlank(
+                        textValue(rootLayout.get("labelPlacement")),
                         textValue(layout.get("labelPlacement")),
                         textValue(settings.get("labelPlacement")),
                         textValue(options.get("editLabelPlacement"))),
                 "left"));
         vo.setLabelWidth(StringUtils.defaultIfBlank(
                 StringUtils.firstNonBlank(
+                        textValue(rootLayout.get("labelWidth")),
                         textValue(layout.get("labelWidth")),
                         textValue(settings.get("labelWidth")),
                         textValue(options.get("editLabelWidth"))),
                 "100"));
+        vo.setSize(StringUtils.defaultIfBlank(
+                StringUtils.firstNonBlank(
+                        textValue(rootLayout.get("size")),
+                        textValue(layout.get("size")),
+                        textValue(options.get("editSize"))),
+                "medium"));
     }
 
     private List<Map<String, Object>> resolveBusinessTaskCrudPageFields(String configKey,
@@ -2550,23 +2563,14 @@ public class BusinessFlowService {
         if (fields.isEmpty()) {
             return;
         }
-        Map<String, Map<String, Object>> registry = null;
+        Map<String, Map<String, Object>> registry = loadChildFieldRegistry(objectCodes, registryCache);
         List<Map<String, Object>> enriched = new ArrayList<>();
         for (Map<String, Object> source : fields) {
             Map<String, Object> field = new LinkedHashMap<>(source);
+            String code = StringUtils.firstNonBlank(
+                    textValue(field.get("field")), textValue(field.get("fieldCode")), textValue(field.get("sourceField")));
+            applyFieldRegistryMetadata(field, findPublishedChildField(registry, code), true);
             String controlType = firstStrongTaskFormControlType(field);
-            if (controlType == null) {
-                if (registry == null) {
-                    registry = loadChildFieldRegistry(objectCodes, registryCache);
-                }
-                String code = StringUtils.firstNonBlank(
-                        textValue(field.get("field")), textValue(field.get("fieldCode")), textValue(field.get("sourceField")));
-                Map<String, Object> registryField = findPublishedChildField(registry, code);
-                if (registryField != null) {
-                    applyChildRegistryField(field, registryField);
-                    controlType = firstStrongTaskFormControlType(field);
-                }
-            }
             if (controlType == null) {
                 controlType = resolveTaskFormControlType(field);
             }
@@ -2574,6 +2578,27 @@ public class BusinessFlowService {
             enriched.add(field);
         }
         child.put("fields", enriched);
+    }
+
+    /**
+     * 设计器画布预览会把字段注册表（referenceObjectCode / dictType / basicProps 等）合进组件；
+     * 审批主表只拷贝组件 props，引用/字典下拉因此缺配置拉不到选项，这里按同一来源补齐。
+     */
+    private void enrichTaskMainFieldsFromObjectRegistry(List<Map<String, Object>> fields, BusinessObjectVO object) {
+        if (fields == null || fields.isEmpty() || object == null || object.getId() == null) {
+            return;
+        }
+        Map<String, Map<String, Object>> registry = buildObjectFieldRegistry(object.getId());
+        if (registry.isEmpty()) {
+            return;
+        }
+        for (Map<String, Object> field : fields) {
+            if (field == null || isChildTaskFormField(field)) {
+                continue;
+            }
+            String code = StringUtils.firstNonBlank(textValue(field.get("field")), textValue(field.get("fieldCode")));
+            applyFieldRegistryMetadata(field, findPublishedChildField(registry, code), false);
+        }
     }
 
     private String firstStrongTaskFormControlType(Map<String, Object> field) {
@@ -2586,22 +2611,58 @@ public class BusinessFlowService {
         return null;
     }
 
-    private void applyChildRegistryField(Map<String, Object> field, Map<String, Object> registryField) {
-        field.put("type", registryField.get("type"));
-        field.put("componentType", registryField.get("componentType"));
-        for (String key : new String[]{"dictType", "dataType", "referenceObjectCode", "referenceDisplayField",
-                "precision", "length", "formulaConfig", "advancedProps"}) {
-            Object current = field.get(key);
-            Object value = registryField.get(key);
-            if (value != null && (current == null || (current instanceof String text && StringUtils.isBlank(text)))) {
-                field.put(key, value);
+    /**
+     * 注册表只补缺：引用与字典元数据只填空值，props 以现有配置为准。
+     * fillWeakType=true 时（子表列无控件配置）才用注册表类型替换空/input；主表控件以设计器 componentKey 为准。
+     */
+    private void applyFieldRegistryMetadata(Map<String, Object> field,
+                                            Map<String, Object> registryField,
+                                            boolean fillWeakType) {
+        if (field == null || registryField == null) {
+            return;
+        }
+        String registryType = firstStrongTaskFormControlType(registryField);
+        if (fillWeakType && firstStrongTaskFormControlType(field) == null && registryType != null) {
+            field.put("type", normalizeTaskFormFieldType(registryType));
+            field.put("componentType", registryType);
+            if (field.containsKey("componentKey")) {
+                field.put("componentKey", registryType);
             }
         }
-        Map<String, Object> props = new LinkedHashMap<>(readNestedObject(registryField.get("basicProps")));
-        props.remove("fieldBinding");
-        props.putAll(readNestedObject(field.get("props")));
-        if (!props.isEmpty()) {
-            field.put("props", props);
+        Map<String, Object> ownProps = readNestedObject(field.get("props"));
+        Map<String, Object> registryProps = new LinkedHashMap<>(readNestedObject(registryField.get("basicProps")));
+        registryProps.remove("fieldBinding");
+        if (!fillWeakType) {
+            // 主表设计器已决定控件与选项源，只补引用配置；字典仅补给缺 dictType 的字典下拉
+            fillBlank(field, registryField, "referenceObjectCode", "referenceDisplayField");
+            if ("dictSelect".equals(normalizeTaskFormFieldType(firstStrongTaskFormControlType(field)))
+                    && StringUtils.isBlank(textValue(ownProps.get("dictType")))) {
+                fillBlank(field, registryField, "dictType");
+            }
+            registryProps.keySet().retainAll(Set.of("referenceObjectCode", "referenceDisplayField",
+                    "referenceValueField", "recordSelector", "referenceConfig"));
+        } else {
+            fillBlank(field, registryField, "dictType", "dataType", "referenceObjectCode", "referenceDisplayField",
+                    "precision", "length", "formulaConfig", "advancedProps");
+        }
+        if (ownProps.get("optionSource") instanceof Map<?, ?>) {
+            // 动态选项源下不能混入注册表静态 options，否则运行态优先读静态选项
+            registryProps.remove("options");
+        }
+        if (registryProps.isEmpty()) {
+            return;
+        }
+        registryProps.putAll(ownProps);
+        field.put("props", registryProps);
+    }
+
+    private void fillBlank(Map<String, Object> target, Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object current = target.get(key);
+            Object value = source.get(key);
+            if (value != null && (current == null || (current instanceof String text && StringUtils.isBlank(text)))) {
+                target.put(key, value);
+            }
         }
     }
 
@@ -2614,32 +2675,33 @@ public class BusinessFlowService {
                 continue;
             }
             Map<String, Map<String, Object>> cached = registryCache.computeIfAbsent(objectCode, code -> {
-                try {
-                    AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(tenantId, code);
-                    if (object == null || object.getId() == null) {
-                        return Map.of();
-                    }
-                    Map<String, Map<String, Object>> byCode = new LinkedHashMap<>();
-                    businessFieldDesignService.listFields(object.getId()).forEach(vo -> {
-                        Map<String, Object> raw = new LinkedHashMap<>(
-                                JSON.parseObject(JSON.toJSONString(vo), JSONObject.class));
-                        Map<String, Object> normalized = normalizeRuntimeCrudFormField(raw);
-                        String fieldCode = normalized == null ? null : textValue(normalized.get("field"));
-                        if (fieldCode != null) {
-                            byCode.putIfAbsent(fieldCode, normalized);
-                        }
-                    });
-                    return byCode;
-                } catch (Exception e) {
-                    log.debug("读取子表对象字段注册表失败: objectCode={}, error={}", code, e.getMessage());
-                    return Map.of();
-                }
+                AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(tenantId, code);
+                return object == null || object.getId() == null ? Map.of() : buildObjectFieldRegistry(object.getId());
             });
             if (!cached.isEmpty()) {
                 return cached;
             }
         }
         return Map.of();
+    }
+
+    private Map<String, Map<String, Object>> buildObjectFieldRegistry(Long objectId) {
+        try {
+            Map<String, Map<String, Object>> byCode = new LinkedHashMap<>();
+            businessFieldDesignService.listFields(objectId).forEach(vo -> {
+                Map<String, Object> raw = new LinkedHashMap<>(
+                        JSON.parseObject(JSON.toJSONString(vo), JSONObject.class));
+                Map<String, Object> normalized = normalizeRuntimeCrudFormField(raw);
+                String fieldCode = normalized == null ? null : textValue(normalized.get("field"));
+                if (fieldCode != null) {
+                    byCode.putIfAbsent(fieldCode, normalized);
+                }
+            });
+            return byCode;
+        } catch (Exception e) {
+            log.debug("读取业务对象字段注册表失败: objectId={}, error={}", objectId, e.getMessage());
+            return Map.of();
+        }
     }
 
     private Map<String, Object> findPublishedChildField(Map<String, Map<String, Object>> publishedFields, String code) {

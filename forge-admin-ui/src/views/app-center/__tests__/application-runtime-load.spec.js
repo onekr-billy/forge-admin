@@ -94,9 +94,10 @@ describe('application runtime route loading', () => {
     const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
     expect(runtimeSource).toContain('businessApplicationRuntimeByCode')
     expect(runtimeSource).toContain('shouldUseApplicationWorkspaceLoad(route, canEditApplication.value)')
-    // 有编辑权限的页面管理也要 designPreview（拉草稿配置），但 configurable 必须为 false，
-    // 否则 GridBlockRenderer 会按设计态画虚线边框，预览/运行页都会露馅。
-    expect(runtimeSource).toContain(':design-preview="editing || isDraftMode || canEditApplication"')
+    // 正式门户只有编辑/草稿模式才 designPreview；有编辑权限也看已发布配置，避免与普通用户不一致。
+    // configurable 必须为 false，否则 GridBlockRenderer 会按设计态画虚线边框。
+    expect(runtimeSource).toContain(':design-preview="editing || isDraftMode"')
+    expect(runtimeSource).not.toContain(':design-preview="editing || isDraftMode || canEditApplication"')
     expect(runtimeSource).toContain(':configurable="false"')
     expect(runtimeSource).toContain(':crud-config-revision="portalCrudConfigRevision"')
     expect(runtimeSource).toContain("import.meta.glob('/src/assets/images/form/*.png', { import: 'default' })")

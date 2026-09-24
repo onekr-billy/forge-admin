@@ -399,7 +399,10 @@ public class BusinessProcessService {
                 continue;
             }
             String statusField = text(config.get("statusField"));
-            if (StringUtils.isNotBlank(statusField) && isFlowStatusFieldName(statusField)) {
+            boolean bound = StringUtils.isNotBlank(statusField) && isFlowStatusFieldName(statusField);
+            // 已绑定也要 ensure：字段被删或列表选列漂移后，只有这里能自动补回（ensure 幂等）。
+            // 无 DDL 权限时 ensure 会在自身事务里抛错并把保存事务标记为回滚，已绑定场景直接跳过。
+            if (bound && !hasFlowStatusDdlPermission()) {
                 continue;
             }
             if (!ensured) {
@@ -413,9 +416,20 @@ public class BusinessProcessService {
                     return;
                 }
             }
+            if (bound) {
+                continue;
+            }
             Map<String, Object> mutableConfig = new LinkedHashMap<>(config);
             mutableConfig.put("statusField", BusinessFlowStatusFieldService.FIELD_CODE);
             node.setConfig(mutableConfig);
+        }
+    }
+
+    private boolean hasFlowStatusDdlPermission() {
+        try {
+            return SessionHelper.hasPermission("ai:lowcode:deploy-ddl");
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

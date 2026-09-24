@@ -67,6 +67,8 @@ public class BusinessTaskFormContextVO {
 
     private String labelWidth;
 
+    private String size;
+
     private Map<String, Object> formRef = new LinkedHashMap<>();
 
     private List<Map<String, Object>> fields = new ArrayList<>();

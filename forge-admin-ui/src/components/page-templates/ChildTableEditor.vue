@@ -217,6 +217,7 @@ import { buildChildRowActionContext } from '@/components/ai-form/business-action
 import { resolveControlProps } from '@/components/ai-form/control-props'
 import { createFieldEventRuntime } from '@/components/ai-form/field-event-runtime'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
+import { ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from '@/components/ai-form/selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import { hasRuntimeVisibilityRules, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
@@ -442,6 +443,19 @@ function readOptionalBoolean(...values) {
   return null
 }
 
+const SELECTION_CONTROL_TYPES = new Set([
+  'select',
+  'dictSelect',
+  'objectReference',
+  'recordSelector',
+  'treeSelect',
+  'cascader',
+  'customSelect',
+  'regionTreeSelect',
+  ...USER_SELECT_FIELD_TYPES,
+  ...ORG_SELECT_FIELD_TYPES,
+])
+
 function isInternalIdField(field = {}) {
   const fieldKey = String(field.field || field.fieldCode || field.prop || '').trim()
   const columnKey = String(field.columnName || field.column || field.dbColumn || '').trim()
@@ -450,6 +464,9 @@ function isInternalIdField(field = {}) {
     return false
   if (fieldKey.toLowerCase() === 'id')
     return true
+  // 人员/部门/引用等字段常命名为 xxxId，它们是业务选择列，不是内部主外键
+  if (SELECTION_CONTROL_TYPES.has(String(field.type || field.componentType || '').trim()))
+    return false
   if (fieldKey.endsWith('Id') || fieldKey.endsWith('ID'))
     return true
   if (/_id$/i.test(fieldKey) || /_id$/i.test(columnKey))

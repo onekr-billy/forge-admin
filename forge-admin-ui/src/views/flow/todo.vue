@@ -365,6 +365,7 @@
                 :grid-cols="businessFormGridCols"
                 :label-placement="businessFormLabelPlacement"
                 :label-width="businessFormLabelWidth"
+                :size="businessFormSize"
                 :context="businessFormRenderContext"
                 :form-assets="businessFormContext.formAssets || []"
               />
@@ -699,6 +700,9 @@ const businessFormLabelPlacement = computed(() => ['left', 'top'].includes(busin
   ? businessFormContext.value.labelPlacement
   : 'left')
 const businessFormLabelWidth = computed(() => businessFormContext.value?.labelWidth || '100')
+const businessFormSize = computed(() => ['small', 'medium', 'large'].includes(businessFormContext.value?.size)
+  ? businessFormContext.value.size
+  : 'medium')
 /** PC Phase A：有 uiDocument 时按分区序排 fields，无文档则原样 */
 const businessFormAiSchema = computed(() => resolveBusinessTaskAiFormSchema(businessFormContext.value))
 const useBusinessCodeComponentForm = computed(() => useBusinessCodeForm.value && Boolean(businessCodeFormUrl.value))
