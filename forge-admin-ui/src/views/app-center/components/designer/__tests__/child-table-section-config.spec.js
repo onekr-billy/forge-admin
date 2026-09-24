@@ -1,11 +1,43 @@
 import { describe, expect, it } from 'vitest'
 import {
   removeChildTableSectionConfig,
+  reorderChildTableSectionConfig,
   resolveChildTableSectionEditConfig,
   upsertChildTableSectionConfig,
 } from '../child-table-section-config'
 
 describe('child table section config', () => {
+  it('reorders model refs and runtime children to follow canvas sub-table order', () => {
+    const pageSchema = {
+      modelRefs: [
+        { modelCode: 'order', primary: true },
+        { modelCode: 'item_b', props: { relationKey: 'rel_b' } },
+        { modelCode: 'item_a', props: { relationKey: 'rel_a' } },
+      ],
+      options: {
+        masterDetailConfig: {
+          children: [
+            { key: 'rel_b', relationKey: 'rel_b', modelCode: 'item_b' },
+            { key: 'orphan', relationKey: 'orphan', modelCode: 'orphan' },
+            { key: 'rel_a', relationKey: 'rel_a', modelCode: 'item_a' },
+          ],
+        },
+      },
+    }
+
+    const next = reorderChildTableSectionConfig(pageSchema, new Set(['rel_a', 'rel_b']))
+
+    expect(next.modelRefs.map(ref => ref.modelCode)).toEqual(['order', 'item_a', 'item_b'])
+    expect(next.options.masterDetailConfig.children.map(child => child.key)).toEqual(['rel_a', 'orphan', 'rel_b'])
+    expect(pageSchema.modelRefs[1].modelCode).toBe('item_b')
+  })
+
+  it('keeps page schema order when canvas has fewer than two sub-tables', () => {
+    const pageSchema = { modelRefs: [{ modelCode: 'order', primary: true }, { modelCode: 'item', props: { relationKey: 'rel' } }] }
+
+    expect(reorderChildTableSectionConfig(pageSchema, ['rel'])).toEqual(pageSchema)
+  })
+
   it('upserts the model ref, runtime child config and form section as one operation', () => {
     const source = {
       pageSchema: {

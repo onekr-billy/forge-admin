@@ -332,6 +332,7 @@ import BusinessFormCreateDesigner from './BusinessFormCreateDesigner.vue'
 import ButtonActionConfig from './ButtonActionConfig.vue'
 import {
   removeChildTableSectionConfig,
+  reorderChildTableSectionConfig,
   resolveChildTableSectionEditConfig,
   safeKey,
   upsertChildTableSectionConfig,
@@ -1200,6 +1201,25 @@ watch(subTableContainerRelationKeys, (nextKeys, prevKeys) => {
     emit('dirtyChange', true)
   })
 })
+
+// 发布态子表顺序取自 pageSchema，画布拖动子表后必须跟随，否则运行页/审批与画布顺序相反。
+const subTableContainerOrder = computed(() => Array.from(subTableContainerRelationKeys.value).join('\u0001'))
+let syncedSubTableContainerOrder = null
+watch(
+  [subTableContainerOrder, () => localSchema.value?.modelRefs, () => localSchema.value?.options?.masterDetailConfig?.children],
+  ([order]) => {
+    if (useLegacyFormCreateDesigner.value)
+      return
+    // 只有画布拖动子表才算用户修改；打开设计器或加载 schema 时静默纠正存量顺序
+    const canvasReordered = syncedSubTableContainerOrder !== null && syncedSubTableContainerOrder !== order
+    syncedSubTableContainerOrder = order
+    assignLocalSchema(
+      reorderChildTableSectionConfig(localSchema.value, subTableContainerRelationKeys.value),
+      { markDirty: canvasReordered },
+    )
+  },
+  { immediate: true },
+)
 
 function upsertSubTableContainer(formDesignerSchema = {}, config = {}) {
   const components = Array.isArray(formDesignerSchema.components) ? [...formDesignerSchema.components] : []

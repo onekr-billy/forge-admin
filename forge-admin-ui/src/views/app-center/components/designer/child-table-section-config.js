@@ -210,6 +210,43 @@ export function removeChildTableSectionConfig(source = {}, target = {}) {
   return { pageSchema, formDesignerSchema }
 }
 
+/**
+ * 按画布子表容器顺序重排 modelRefs 与 masterDetailConfig.children。
+ * 发布态子表顺序取自这两处，画布拖动只改 components，不同步就会与设计器顺序相反。
+ * 主模型和不在画布上的项保持原位，只在子表占用的位置内按画布顺序重排。
+ */
+export function reorderChildTableSectionConfig(pageSchema = {}, relationKeys = []) {
+  const order = Array.from(relationKeys || []).map(key => firstNonBlank(key)).filter(Boolean)
+  const next = cloneValue(pageSchema || {})
+  if (order.length < 2)
+    return next
+  if (Array.isArray(next.modelRefs))
+    next.modelRefs = reorderByRelationKeys(next.modelRefs, order, item => item?.primary ? '' : relationKeyOf(item))
+  const children = next.options?.masterDetailConfig?.children
+  if (Array.isArray(children))
+    next.options.masterDetailConfig.children = reorderByRelationKeys(children, order, relationKeyOf)
+  return next
+}
+
+function reorderByRelationKeys(items = [], order = [], keyOf = relationKeyOf) {
+  const rank = new Map(order.map((key, index) => [key, index]))
+  const slots = []
+  const ordered = []
+  items.forEach((item, index) => {
+    const key = keyOf(item)
+    if (rank.has(key)) {
+      slots.push(index)
+      ordered.push(item)
+    }
+  })
+  ordered.sort((a, b) => rank.get(keyOf(a)) - rank.get(keyOf(b)))
+  const result = [...items]
+  slots.forEach((slot, index) => {
+    result[slot] = ordered[index]
+  })
+  return result
+}
+
 export function resolveChildTableRelationKey(relation = {}) {
   const config = parseRelationConfig(relation.relationConfig || relation.config || relation.props)
   return firstNonBlank(

@@ -2466,11 +2466,13 @@ public class BusinessFlowService {
             Map<String, Map<String, Object>> publishedByKey) {
         List<Map<String, Object>> result = new ArrayList<>();
         Set<Map<String, Object>> usedPublished = Collections.newSetFromMap(new IdentityHashMap<>());
+        Map<String, Map<String, Map<String, Object>>> registryCache = new HashMap<>();
         for (Map<String, Object> formChild : formChildren) {
             Map<String, Object> published = findPublishedChild(publishedByKey, formChild, usedPublished);
             if (published == null) {
                 if (!readMapList(readNestedArray(formChild.get("fields"))).isEmpty()) {
                     Map<String, Object> standalone = new LinkedHashMap<>(formChild);
+                    enrichTaskChildFieldControls(standalone, childKeyCandidates(formChild), registryCache);
                     ensureChildSelectExistingConfig(standalone);
                     result.add(standalone);
                 }
@@ -2524,10 +2526,120 @@ public class BusinessFlowService {
                 }
                 merged.put("fields", fields);
             }
+            List<String> objectCodes = new ArrayList<>(childKeyCandidates(formChild));
+            childKeyCandidates(published).forEach(code -> {
+                if (!objectCodes.contains(code)) {
+                    objectCodes.add(code);
+                }
+            });
+            enrichTaskChildFieldControls(merged, objectCodes, registryCache);
             ensureChildSelectExistingConfig(merged);
             result.add(merged);
         }
         return result;
+    }
+
+    /**
+     * 设计器子表列只存 fieldCode/fieldLabel；发布态缺列或类型过期时，用子表对象实时字段注册表补齐控件，
+     * 与设计器读取的字段来源保持一致，避免审批端下拉/人员等退化为输入框。
+     */
+    private void enrichTaskChildFieldControls(Map<String, Object> child,
+                                              List<String> objectCodes,
+                                              Map<String, Map<String, Map<String, Object>>> registryCache) {
+        List<Map<String, Object>> fields = readMapList(readNestedArray(child.get("fields")));
+        if (fields.isEmpty()) {
+            return;
+        }
+        Map<String, Map<String, Object>> registry = null;
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        for (Map<String, Object> source : fields) {
+            Map<String, Object> field = new LinkedHashMap<>(source);
+            String controlType = firstStrongTaskFormControlType(field);
+            if (controlType == null) {
+                if (registry == null) {
+                    registry = loadChildFieldRegistry(objectCodes, registryCache);
+                }
+                String code = StringUtils.firstNonBlank(
+                        textValue(field.get("field")), textValue(field.get("fieldCode")), textValue(field.get("sourceField")));
+                Map<String, Object> registryField = findPublishedChildField(registry, code);
+                if (registryField != null) {
+                    applyChildRegistryField(field, registryField);
+                    controlType = firstStrongTaskFormControlType(field);
+                }
+            }
+            if (controlType == null) {
+                controlType = resolveTaskFormControlType(field);
+            }
+            field.put("type", normalizeTaskFormFieldType(controlType));
+            enriched.add(field);
+        }
+        child.put("fields", enriched);
+    }
+
+    private String firstStrongTaskFormControlType(Map<String, Object> field) {
+        for (String key : new String[]{"type", "componentType", "componentKey"}) {
+            String value = stripForgeComponentPrefix(StringUtils.trimToEmpty(textValue(field.get(key))));
+            if (!isWeakTaskFormControlType(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private void applyChildRegistryField(Map<String, Object> field, Map<String, Object> registryField) {
+        field.put("type", registryField.get("type"));
+        field.put("componentType", registryField.get("componentType"));
+        for (String key : new String[]{"dictType", "dataType", "referenceObjectCode", "referenceDisplayField",
+                "precision", "length", "formulaConfig", "advancedProps"}) {
+            Object current = field.get(key);
+            Object value = registryField.get(key);
+            if (value != null && (current == null || (current instanceof String text && StringUtils.isBlank(text)))) {
+                field.put(key, value);
+            }
+        }
+        Map<String, Object> props = new LinkedHashMap<>(readNestedObject(registryField.get("basicProps")));
+        props.remove("fieldBinding");
+        props.putAll(readNestedObject(field.get("props")));
+        if (!props.isEmpty()) {
+            field.put("props", props);
+        }
+    }
+
+    private Map<String, Map<String, Object>> loadChildFieldRegistry(
+            List<String> objectCodes,
+            Map<String, Map<String, Map<String, Object>>> registryCache) {
+        Long tenantId = resolveTenantId();
+        for (String objectCode : objectCodes) {
+            if (StringUtils.isBlank(objectCode)) {
+                continue;
+            }
+            Map<String, Map<String, Object>> cached = registryCache.computeIfAbsent(objectCode, code -> {
+                try {
+                    AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(tenantId, code);
+                    if (object == null || object.getId() == null) {
+                        return Map.of();
+                    }
+                    Map<String, Map<String, Object>> byCode = new LinkedHashMap<>();
+                    businessFieldDesignService.listFields(object.getId()).forEach(vo -> {
+                        Map<String, Object> raw = new LinkedHashMap<>(
+                                JSON.parseObject(JSON.toJSONString(vo), JSONObject.class));
+                        Map<String, Object> normalized = normalizeRuntimeCrudFormField(raw);
+                        String fieldCode = normalized == null ? null : textValue(normalized.get("field"));
+                        if (fieldCode != null) {
+                            byCode.putIfAbsent(fieldCode, normalized);
+                        }
+                    });
+                    return byCode;
+                } catch (Exception e) {
+                    log.debug("读取子表对象字段注册表失败: objectCode={}, error={}", code, e.getMessage());
+                    return Map.of();
+                }
+            });
+            if (!cached.isEmpty()) {
+                return cached;
+            }
+        }
+        return Map.of();
     }
 
     private Map<String, Object> findPublishedChildField(Map<String, Map<String, Object>> publishedFields, String code) {

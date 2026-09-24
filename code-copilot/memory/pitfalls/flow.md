@@ -1,6 +1,16 @@
 # 踩坑：流程 / Flowable / BPMN
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 53 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 54 条。
+
+## 审批子表列控件类型不能只依赖发布态 masterDetailConfig
+
+**发现日期**：2026-09-25
+
+设计器里子表列是下拉、人员选择，审批待办里全变成输入框。根因是设计器 `subTable.props.columns` 只存 `fieldCode/fieldLabel/required`，画布实时读子表对象字段注册表显示控件；审批按设计器草稿取列，控件类型却只靠 `mergeFormDesignerChildrenWithPublished` 从发布态 `masterDetailConfig.children[].fields` 匹配补齐。子表未发布、列被发布态过滤（`childFieldCodes` / 编辑区 fieldRefs / 只读）或发布态类型过期为 `input` 时，列没有 `type`，`ChildTableEditor` 落到 `n-input`。
+
+处理原则：子表列类型为空或弱类型（input/text）时，用子表对象 `businessFieldDesignService.listFields` 补 `type/componentType/dictType/basicProps`，与设计器同源；发布态已有强类型保持不变。
+
+子表顺序同理：发布态 `masterDetailConfig.children` 顺序取自页面 `pageSchema.modelRefs`，而它按「添加子表」先后追加；画布拖动只改 `components`，先加 B 后加 A 再把 A 拖到前面，运行页与旧审批逻辑都会显示 B 在前。设计器需用 `reorderChildTableSectionConfig` 让 `modelRefs` / `children` 跟随画布子表容器顺序；审批端以设计器 `subTable` 组件顺序为准（`collectFormDesignerSubTables`）。
 
 ## 审批表单字段目录不能只信发布态 editSchema
 

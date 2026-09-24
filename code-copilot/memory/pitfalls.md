@@ -185,8 +185,9 @@
 - 177. 业务对象发布不能重置应用入口配置
 - 180. 运行字段基线会掩盖表单组件的结构变更
 
-### [流程 / Flowable / BPMN](pitfalls/flow.md)（54）
+### [流程 / Flowable / BPMN](pitfalls/flow.md)（55）
 
+- 审批子表列控件类型不能只依赖发布态 masterDetailConfig
 - 新版应用撤回不可依赖单据配置和 Web Session
 - 流程 Redis 回调非 Web 异常是 NotWebContextException
 - 列表流程状态列偶发消失是旧 fieldRefs 快照滤掉了托管字段
