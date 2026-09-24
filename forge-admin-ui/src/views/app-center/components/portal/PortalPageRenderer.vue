@@ -15,6 +15,17 @@
       sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
     />
     <div
+      v-else-if="showContentSkeleton"
+      class="portal-content-skeleton"
+      aria-busy="true"
+      aria-label="页面内容加载中"
+    >
+      <n-skeleton height="36px" :sharp="false" />
+      <n-skeleton text :repeat="3" />
+      <n-skeleton height="220px" :sharp="false" style="margin-top: 12px" />
+      <n-skeleton height="220px" :sharp="false" style="margin-top: 12px" />
+    </div>
+    <div
       v-else-if="blocks.length"
       class="portal-page-flow"
       :class="{ 'is-fill': fillHost, 'is-content-sized': contentSizedFlow }"
@@ -59,7 +70,8 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { NSkeleton } from 'naive-ui'
+import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
 import { crudConfigRender } from '@/api/ai'
 import { executePublishedExtensionHook } from '@/api/business-extension'
 import { buildRuntimeCrudProps } from '@/components/lowcode-builder/shared/runtime-crud-props'
@@ -75,8 +87,19 @@ import { normalizePagePadding, resolvePagePaddingCss, resolvePageBlockShellStyle
 import PortalEmptyState from './PortalEmptyState.vue'
 import { isDataFieldBlockType } from '@/components/lowcode-builder/page/page-schema'
 
+const PortalBlockAsyncLoader = {
+  name: 'PortalBlockAsyncLoader',
+  render() {
+    return h('div', { class: 'portal-content-skeleton portal-content-skeleton--block', 'aria-busy': 'true' }, [
+      h(NSkeleton, { height: '32px', sharp: false }),
+      h(NSkeleton, { text: true, repeat: 4 }),
+    ])
+  },
+}
+
 const GridBlockRenderer = defineAsyncComponent({
   delay: 0,
+  loadingComponent: PortalBlockAsyncLoader,
   loader: () => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'),
 })
 
@@ -104,6 +127,11 @@ const props = defineProps({
    * 并与后端 CRUD fieldCatalog 合并后作为 GridBlockRenderer 的 fields。
    */
   formFieldsResolver: { type: Function, default: null },
+  /**
+   * 父级在骨架阶段预热好的 CRUD props（objectKey → props）。
+   * 有 seed 时首屏可直接渲染，避免壳出来后再等 render。
+   */
+  seedRuntimeCrudProps: { type: Object, default: () => ({}) },
 })
 
 const runtimeCrudPropsByKey = ref({})
@@ -112,6 +140,7 @@ const unavailableKeys = ref(new Set())
 const extensionSandboxRef = ref(null)
 const pageInitKeys = ref(new Set())
 const pageInitDefaultsByObject = ref({})
+const contentBootstrapStarted = ref(false)
 
 const extensionPageContext = computed(() => ({
   applicationId: props.applicationId,
@@ -149,6 +178,31 @@ const blocks = computed(() => {
 })
 
 const contentSizedFlow = computed(() => shouldUseContentSizedFlow(blocks.value, contentSizedOptions.value))
+
+/** 有数据块但 CRUD 尚未就绪时，整页内容骨架代替空白 */
+const showContentSkeleton = computed(() => {
+  if (!blocks.value.length || externalUrl.value)
+    return false
+  const dataBlocks = []
+  visitBlocks(blocks.value, (block) => {
+    if (isDataFieldBlockType(block?.blockType))
+      dataBlocks.push(block)
+  })
+  if (!dataBlocks.length)
+    return false
+  const anyReady = dataBlocks.some((block) => {
+    const key = resolveObjectKey(resolveObjectRef(block) || resolveObjectRef(props.node || {}))
+    return Boolean(key && runtimeCrudPropsByKey.value[key])
+  })
+  if (anyReady)
+    return false
+  const stillLoading = dataBlocks.some((block) => {
+    const key = resolveObjectKey(resolveObjectRef(block) || resolveObjectRef(props.node || {}))
+    return Boolean(key && loadingKeys.value.has(key))
+  })
+  // 刚挂载、预加载尚未写入 loadingKeys 时也先盖骨架，避免闪空白
+  return stillLoading || !contentBootstrapStarted.value
+})
 
 const pagePaddingCss = computed(() => resolvePagePaddingCss(
   props.page?.layout?.gridLayout?.pagePadding || props.page?.layout?.pagePadding,
@@ -188,7 +242,7 @@ const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => 
 }, 620))
 
 watch(
-  () => [props.node?.id, blocks.value, props.designPreview, props.configurable, props.crudConfigRevision],
+  () => [props.node?.id, blocks.value, props.designPreview, props.configurable, props.crudConfigRevision, props.seedRuntimeCrudProps],
   (next, prev) => {
     const nextPreview = next?.[2]
     const nextConfigurable = next?.[3]
@@ -206,13 +260,35 @@ watch(
       loadingKeys.value = new Set()
       unavailableKeys.value = new Set()
     }
+    applySeedRuntimeCrudProps()
     // PAGE_INIT 默认值按页隔离
     pageInitKeys.value = new Set()
     pageInitDefaultsByObject.value = {}
+    contentBootstrapStarted.value = false
     visitBlocks(blocks.value, preloadRuntimeCrudProps)
+    contentBootstrapStarted.value = true
   },
   { immediate: true, deep: true },
 )
+
+function applySeedRuntimeCrudProps() {
+  const seed = props.seedRuntimeCrudProps
+  if (!seed || typeof seed !== 'object')
+    return
+  const entries = Object.entries(seed).filter(([, value]) => value && typeof value === 'object')
+  if (!entries.length)
+    return
+  const next = { ...runtimeCrudPropsByKey.value }
+  let changed = false
+  entries.forEach(([key, value]) => {
+    if (!key || next[key])
+      return
+    next[key] = value
+    changed = true
+  })
+  if (changed)
+    runtimeCrudPropsByKey.value = next
+}
 
 function resolveObjectRef(source = {}) {
   const raw = source.objectRef || source.props?.objectRef || source.props?.runtimeObjectRef
@@ -617,6 +693,24 @@ function readLength(value) {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.portal-content-skeleton {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 10px;
+  min-height: 320px;
+  padding: 16px 20px;
+  box-sizing: border-box;
+}
+
+.portal-content-skeleton--block {
+  min-height: 160px;
+  padding: 12px;
+  border: 1px dashed #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
 }
 
 .portal-page-flow {

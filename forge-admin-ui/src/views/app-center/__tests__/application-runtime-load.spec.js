@@ -161,8 +161,14 @@ describe('application runtime route loading', () => {
   it('waits for object runtime config before mounting the CRUD page', () => {
     const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
     const rendererSource = readFileSync(resolve('src/components/lowcode-builder/page/GridBlockRenderer.vue'), 'utf8')
+    const portalSource = readFileSync(resolve('src/views/app-center/components/portal/PortalPageRenderer.vue'), 'utf8')
 
     expect(runtimeSource).toContain(':runtime-crud-loading="isPageBlockRuntimeCrudLoading(block)"')
+    expect(runtimeSource).toContain('warmCurrentPortalPageCrud')
+    expect(runtimeSource).toContain('seed-runtime-crud-props')
+    expect(runtimeSource).toContain('import(\'@/components/ai-form/AiCrudPage.vue\')')
+    expect(portalSource).toContain('seedRuntimeCrudProps')
+    expect(portalSource).toContain('portal-content-skeleton')
     expect(rendererSource).toContain('<div v-if="runtimeCrudLoading" class="runtime-crud-loading">')
     expect(rendererSource).toContain('<n-skeleton height="32px" :sharp="false" />')
     expect(rendererSource).not.toContain('<n-spin size="small" />')

@@ -552,6 +552,7 @@
               :configurable="false"
               :design-preview="editing || isDraftMode || canEditApplication"
               :crud-config-revision="portalCrudConfigRevision"
+              :seed-runtime-crud-props="portalCrudSeed"
               :form-fields-resolver="resolvePortalFormFields"
               fill-host
             />
@@ -1314,6 +1315,7 @@ import ApplicationRuntimeSkeleton from '@/views/app-center/components/portal/App
 import { buildAutoFieldAssets, createFieldFromComponent } from '@/views/app-center/components/designer/form-first/autoFieldRegistry'
 import { createDefaultFormDesignerSchema, isFieldComponent, normalizeFormDesignerSchema, presentFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 import { filterNavigationNodesByClient } from '@/views/app-center/components/portal/portal-navigation-runtime'
+import { collectPortalPageCrudTargets, warmPortalPageCrudProps } from '@/views/app-center/components/portal/portal-page-crud-warm'
 import PortalPageRenderer from '@/views/app-center/components/portal/PortalPageRenderer.vue'
 import {
   buildApplicationDesignerResourceGroups,
@@ -1596,6 +1598,8 @@ const workspaceExtensions = ref([])
 const workspaceEntries = ref([])
 /** 表单/对象保存后递增，驱动 PortalPageRenderer 丢弃旧 CRUD 缓存并重新 render */
 const portalCrudConfigRevision = ref(0)
+/** 骨架阶段预热的首屏 CRUD props，交给 PortalPageRenderer 避免壳出后内容空白 */
+const portalCrudSeed = ref({})
 const isDraftMode = computed(() => route.query.edit === '1' || route.query.draft === '1')
 const {
   runtimeCrudPropsByObjectId,
@@ -2301,9 +2305,11 @@ async function load() {
   loading.value = true
   loadError.value = ''
   historyReady.value = false
+  portalCrudSeed.value = {}
   resetRuntimeCrudConfig()
-  // 与 workspace API 并行预拉页面渲染器，缩短骨架结束后的二次白屏
+  // 与 workspace API 并行预拉页面渲染器 / CRUD 页，缩短骨架结束后的二次白屏
   void import('@/components/lowcode-builder/page/GridBlockRenderer.vue').catch(() => {})
+  void import('@/components/ai-form/AiCrudPage.vue').catch(() => {})
   try {
     const response = shouldUseApplicationWorkspaceLoad(route, canEditApplication.value)
       ? await businessApplicationWorkspaceByCode(code)
@@ -2337,6 +2343,9 @@ async function load() {
     if (editing.value)
       syncActiveFormAssetForPage(selectedNodeId.value)
     await nextTick()
+    // 非编辑态首屏：骨架阶段把第一个业务页的 CRUD render 预热完（或超时），减少壳出后空白
+    if (!editing.value && !isPageManagementSystemPageId(selectedNodeId.value))
+      portalCrudSeed.value = await warmCurrentPortalPageCrud()
     preloadCurrentPageCrudRuntimeProps()
     if (canEditApplication.value)
       prefetchRuntimeWorkspacePanels()
@@ -2346,6 +2355,7 @@ async function load() {
     objects.value = []
     builder.value = null
     selectedNodeId.value = ''
+    portalCrudSeed.value = {}
     loadError.value = String(
       error?.message
       || error?.detail?.rawMessage
@@ -2354,6 +2364,30 @@ async function load() {
     )
   }
   finally { loading.value = false }
+}
+
+async function warmCurrentPortalPageCrud() {
+  const pageId = String(selectedNodeId.value || '').trim()
+  if (!pageId || !builder.value)
+    return {}
+  const node = (builder.value.nodes || []).find(item => String(item?.id || '') === pageId) || null
+  const page = builder.value.pages?.[pageId] || null
+  if (!node && !page)
+    return {}
+  const targets = collectPortalPageCrudTargets({
+    page,
+    node,
+    objects: objects.value,
+    entries: workspaceEntries.value,
+  })
+  if (!targets.length)
+    return {}
+  return warmPortalPageCrudProps(targets, {
+    designPreview: editing.value || isDraftMode.value || canEditApplication.value,
+    applicationId: application.value?.id,
+    pageId,
+    timeoutMs: 6500,
+  })
 }
 
 function selectNode(nodeId) {
@@ -7063,6 +7097,7 @@ async function refreshWorkspaceMetadata(options = {}) {
   }
   resetRuntimeCrudConfig()
   // 草稿配置已变：通知页面管理 Portal 丢掉本地 CRUD 缓存并重新拉 render
+  portalCrudSeed.value = {}
   portalCrudConfigRevision.value += 1
   hydratePageCrudApiPlaceholders()
   // bind/hydrate 可能继续改 builder；签名必须在全部本地归一化之后再落，否则保存后仍显示未保存。
