@@ -94,10 +94,29 @@ describe('data-audit-submit', () => {
         rows: [{ id: '1' }],
         fetchRecordMeta,
       })
-      expect(fetchRecordMeta).toHaveBeenCalled()
+      expect(fetchRecordMeta).toHaveBeenCalledTimes(1)
       expect(plan.mode).toBe('audit')
       expect(plan.reasonRequired).toBe(true)
-      expect(plan.expectedRevisions).toEqual([6])
+      // 抽样补齐后删除不校验 revision，统一为 0
+      expect(plan.expectedRevisions).toEqual([0])
+    })
+
+    it('samples only one detail when hydrating a batch without list audit meta', async () => {
+      const fetchRecordMeta = vi.fn().mockResolvedValue({
+        enabled: true,
+        reasonRequired: true,
+        revision: 3,
+      })
+      const plan = await resolveDataAuditRemovePlan({
+        configKey: 'demo',
+        ids: ['1', '2', '3'],
+        rows: [{ id: '1' }, { id: '2' }, { id: '3' }],
+        fetchRecordMeta,
+      })
+      expect(fetchRecordMeta).toHaveBeenCalledTimes(1)
+      expect(plan.mode).toBe('audit')
+      expect(plan.ids).toEqual(['1', '2', '3'])
+      expect(plan.expectedRevisions).toEqual([0, 0, 0])
     })
 
     it('prompts delete reason via warning dialog and posts /remove', async () => {

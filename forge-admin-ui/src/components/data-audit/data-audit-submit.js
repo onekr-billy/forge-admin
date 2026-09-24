@@ -118,7 +118,8 @@ export async function applyDataAuditSubmit(payload, { formData, isEdit } = {}) {
 }
 
 /**
- * 解析删除侧审计计划。列表若缺少 _dataAudit，可通过 fetchRecordMeta 用详情补齐策略与 revision。
+ * 解析删除侧审计计划。
+ * 策略是对象级的：列表缺 _dataAudit 时只抽样拉一条详情，再把策略复制到整批，禁止 N 次 GET。
  */
 export async function resolveDataAuditRemovePlan({ configKey, ids, rows, fetchRecordMeta } = {}) {
   const safeIds = (ids || []).map(id => String(id))
@@ -126,32 +127,26 @@ export async function resolveDataAuditRemovePlan({ configKey, ids, rows, fetchRe
   let metas = workingRows.map(row => readDataAuditMeta(row)).filter(item => item?.enabled === true)
 
   if (!metas.length && configKey && typeof fetchRecordMeta === 'function' && safeIds.length) {
-    const hydrated = []
-    for (let i = 0; i < safeIds.length; i += 1) {
-      const existing = readDataAuditMeta(workingRows[i])
-      if (existing?.enabled) {
-        hydrated.push(existing)
-        continue
-      }
-      try {
-        const meta = await fetchRecordMeta(safeIds[i], workingRows[i])
-        if (meta?.enabled) {
-          workingRows[i] = {
-            ...(workingRows[i] && typeof workingRows[i] === 'object' ? workingRows[i] : { id: safeIds[i] }),
-            [DATA_AUDIT_KEY]: {
-              ...meta,
-              recordId: safeIds[i],
-              revision: meta.revision ?? 0,
-            },
-          }
-          hydrated.push(meta)
-        }
-      }
-      catch {
-        // 详情补齐失败时继续尝试普通删除
+    const sampleIndex = workingRows.findIndex(row => !readDataAuditMeta(row)?.enabled)
+    const index = sampleIndex >= 0 ? sampleIndex : 0
+    try {
+      const meta = await fetchRecordMeta(safeIds[index], workingRows[index])
+      if (meta?.enabled) {
+        // 对象级策略一致；revision 删除侧不校验，统一置 0 即可
+        workingRows = safeIds.map((id, i) => ({
+          ...(workingRows[i] && typeof workingRows[i] === 'object' ? workingRows[i] : { id }),
+          [DATA_AUDIT_KEY]: {
+            ...meta,
+            recordId: id,
+            revision: 0,
+          },
+        }))
+        metas = workingRows.map(row => readDataAuditMeta(row)).filter(item => item?.enabled === true)
       }
     }
-    metas = workingRows.map(row => readDataAuditMeta(row)).filter(item => item?.enabled === true)
+    catch {
+      // 详情补齐失败时继续尝试普通删除
+    }
   }
 
   if (!metas.length) {

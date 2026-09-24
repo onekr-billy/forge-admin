@@ -89,6 +89,9 @@ public final class BusinessApplicationPageFieldGuard {
      * 不能只依赖字段列表校验：调用方可能把运行字段目录合并进请求，从而掩盖
      * 组件删除、字段编码变更或组件类型变更。这里按稳定组件 ID 对比持久化草稿
      * 与提交草稿，直接拒绝这三类结构漂移。
+     *
+     * <p>若画布组件消失但字段编码仍保留在本次提交的字段目录中，视为“移入未使用货架”，
+     * 不算删除字段，避免换子表等操作误伤主表已有字段。</p>
      */
     public static void assertLockedFormComponentsUnchanged(
             Object persistedSchema,
@@ -97,12 +100,9 @@ public final class BusinessApplicationPageFieldGuard {
             long businessDataCount,
             String tableName) {
         assertLockedFormComponentsUnchanged(persistedSchema, requestedSchema, existingFields,
-                businessDataCount, tableName, null);
+                businessDataCount, tableName, null, null);
     }
 
-    /**
-     * 组件级删除守卫同样按字段非空数据存在性精准判断（LIMIT 1 探测）。
-     */
     public static void assertLockedFormComponentsUnchanged(
             Object persistedSchema,
             Object requestedSchema,
@@ -110,6 +110,21 @@ public final class BusinessApplicationPageFieldGuard {
             long businessDataCount,
             String tableName,
             java.util.function.Function<String, Boolean> columnDataChecker) {
+        assertLockedFormComponentsUnchanged(persistedSchema, requestedSchema, existingFields,
+                businessDataCount, tableName, columnDataChecker, null);
+    }
+
+    /**
+     * @param retainedFieldCodes 本次请求仍保留的字段编码；画布组件缺失但字段仍在目录中时不阻断
+     */
+    public static void assertLockedFormComponentsUnchanged(
+            Object persistedSchema,
+            Object requestedSchema,
+            List<LowcodeFieldSchema> existingFields,
+            long businessDataCount,
+            String tableName,
+            java.util.function.Function<String, Boolean> columnDataChecker,
+            Set<String> retainedFieldCodes) {
         if (businessDataCount <= 0) {
             return;
         }
@@ -128,6 +143,7 @@ public final class BusinessApplicationPageFieldGuard {
         }
         Map<String, ComponentBinding> requested = new LinkedHashMap<>();
         collectFieldComponents(requestedSchema, null, requested);
+        Map<String, ComponentBinding> requestedByFieldCode = indexByFieldCode(requested);
     
         // 从字段定义构建 fieldCode → 存储族，判断组件类型变更是否影响数据存储
         Map<String, String> fieldStorageFamily = buildFieldStorageFamily(existingFields);
@@ -141,8 +157,22 @@ public final class BusinessApplicationPageFieldGuard {
         });
         
         for (ComponentBinding before : persisted.values()) {
+            // 非主对象字段（子表列编码、历史脏绑定）不参与主表删除守卫
+            if (!persistedFieldCodes.contains(before.fieldCode())) {
+                continue;
+            }
             ComponentBinding after = requested.get(before.id());
             if (after == null) {
+                // 组件 ID 漂移时，同 fieldCode 仍在画布上则视为未删除
+                after = requestedByFieldCode.get(before.fieldCode());
+            }
+            if (after == null) {
+                // 字段目录仍保留该编码：只是离开画布，不是删字段（换子表时常见误伤点）
+                if (retainedFieldCodes != null && retainedFieldCodes.contains(before.fieldCode())) {
+                    log.info("[字段守卫] 画布组件已移除但字段目录仍保留，允许: fieldCode={}, label={}, table={}",
+                            before.fieldCode(), before.label(), tableName);
+                    continue;
+                }
                 String columnName = fieldColumnMap.getOrDefault(before.fieldCode(), "");
                 boolean hasData = columnDataChecker != null
                         ? columnDataChecker.apply(columnName)
@@ -173,6 +203,17 @@ public final class BusinessApplicationPageFieldGuard {
                 }
             }
         }
+    }
+
+    private static Map<String, ComponentBinding> indexByFieldCode(Map<String, ComponentBinding> bindings) {
+        Map<String, ComponentBinding> byField = new LinkedHashMap<>();
+        for (ComponentBinding binding : bindings.values()) {
+            if (binding == null || StringUtils.isBlank(binding.fieldCode())) {
+                continue;
+            }
+            byField.putIfAbsent(binding.fieldCode(), binding);
+        }
+        return byField;
     }
     
     /**
@@ -303,31 +344,48 @@ public final class BusinessApplicationPageFieldGuard {
             Set<String> persistedFieldCodes,
             Map<String, ComponentBinding> target) {
         if (value instanceof Map<?, ?> source) {
+            String componentKey = StringUtils.trimToEmpty(String.valueOf(source.get("componentKey")));
+            // 子表内部列定义不属于主表单字段结构；换子表对象时 props.columns 会整段替换，
+            // 若继续递归 props，会把旧子表列误判成“删除了主表字段”。
+            if (isSubTableComponentKey(componentKey)) {
+                return;
+            }
             Object idValue = source.get("id");
-            Object keyValue = source.get("componentKey");
             Object bindingValue = source.get("fieldBinding");
-            if (idValue != null && keyValue != null && bindingValue instanceof Map<?, ?> binding) {
+            if (idValue != null && StringUtils.isNotBlank(componentKey) && bindingValue instanceof Map<?, ?> binding) {
                 String id = StringUtils.trimToEmpty(String.valueOf(idValue));
                 String fieldCode = StringUtils.trimToEmpty(String.valueOf(binding.get("fieldCode")));
-                boolean locked = Boolean.TRUE.equals(binding.get("locked"))
-                        || "true".equalsIgnoreCase(String.valueOf(binding.get("locked")))
-                        || persistedFieldCodes == null
+                // 只保护主对象字段目录中的绑定。子表列/残留伪组件常带 locked=true，
+                // 但不能仅凭 locked 把非目录字段当成“主表字段删除”拦截。
+                boolean protect = persistedFieldCodes == null
                         || persistedFieldCodes.contains(fieldCode);
-                if (StringUtils.isNotBlank(id) && StringUtils.isNotBlank(fieldCode) && locked) {
+                if (StringUtils.isNotBlank(id) && StringUtils.isNotBlank(fieldCode) && protect) {
                     String label = source.get("label") == null
                             ? fieldCode
                             : StringUtils.defaultIfBlank(String.valueOf(source.get("label")), fieldCode);
                     target.put(id, new ComponentBinding(
                             id,
-                            StringUtils.trimToEmpty(String.valueOf(keyValue)),
+                            componentKey,
                             fieldCode,
                             label));
                 }
             }
-            source.values().forEach(child -> collectFieldComponents(child, persistedFieldCodes, target));
+            // 只沿组件树结构下行，不要扫 props / optionSource 等业务配置，避免误收集嵌套伪组件。
+            collectFieldComponents(source.get("components"), persistedFieldCodes, target);
+            collectFieldComponents(source.get("children"), persistedFieldCodes, target);
+            collectFieldComponents(source.get("forms"), persistedFieldCodes, target);
+            collectFieldComponents(source.get("schema"), persistedFieldCodes, target);
         } else if (value instanceof List<?> list) {
             list.forEach(child -> collectFieldComponents(child, persistedFieldCodes, target));
         }
+    }
+
+    private static boolean isSubTableComponentKey(String componentKey) {
+        if (StringUtils.isBlank(componentKey)) {
+            return false;
+        }
+        String key = componentKey.trim();
+        return "subTable".equalsIgnoreCase(key) || "forgeSubTable".equalsIgnoreCase(key);
     }
 
     private static boolean sameStorageType(LowcodeFieldSchema existing, BusinessFieldDTO requested) {

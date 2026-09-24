@@ -7,6 +7,9 @@
     :mask-closable="false"
     @update:show="emit('update:show', $event)"
   >
+    <div v-if="requiredCodes.length" class="picker-hint">
+      带「必填」标记的字段必须显示，取消勾选会被自动保留，否则子表保存会报错。
+    </div>
     <div class="picker-toolbar">
       <n-checkbox
         :checked="allSelected"
@@ -16,22 +19,32 @@
       >
         全选
       </n-checkbox>
-      <span class="picker-count">已选 {{ draft.length }} / {{ options.length }} 项</span>
+      <span class="picker-count">
+        已选 {{ draft.length }} / {{ options.length }} 项
+        <template v-if="requiredCodes.length">
+          · 必填 {{ requiredCodes.length }}
+        </template>
+      </span>
     </div>
     <n-spin :show="loading" size="small">
       <n-checkbox-group
         v-if="options.length"
-        v-model:value="draft"
+        :value="draft"
         class="field-checkbox-grid"
+        @update:value="onDraftUpdate"
       >
         <n-checkbox
           v-for="field in options"
           :key="field.value"
           :value="field.value"
+          :disabled="field.required === true"
           size="small"
         >
           <span class="field-checkbox-copy">
-            <strong>{{ field.label }}</strong>
+            <strong>
+              {{ field.label }}
+              <span v-if="field.required" class="field-required-tag">必填</span>
+            </strong>
             <small>{{ field.value }}</small>
           </span>
         </n-checkbox>
@@ -58,6 +71,10 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import {
+  collectRequiredFieldCodes,
+  ensureRequiredDisplayFieldCodes,
+} from './sub-table-display-fields'
 
 const props = defineProps({
   show: {
@@ -68,7 +85,7 @@ const props = defineProps({
     type: String,
     default: '选择字段',
   },
-  /** 可选字段列表 [{ label, value }] */
+  /** 可选字段列表 [{ label, value, required? }] */
   options: {
     type: Array,
     default: () => [],
@@ -88,9 +105,17 @@ const emit = defineEmits(['update:show', 'confirm'])
 
 const draft = ref([])
 
+const requiredCodes = computed(() => collectRequiredFieldCodes(props.options))
+
 watch(() => props.show, (visible) => {
   if (visible)
-    draft.value = [...props.modelValue]
+    draft.value = ensureRequiredDisplayFieldCodes(props.modelValue, props.options)
+})
+
+watch(() => props.options, (options) => {
+  if (!props.show)
+    return
+  draft.value = ensureRequiredDisplayFieldCodes(draft.value, options)
 })
 
 const allSelected = computed(() =>
@@ -100,17 +125,36 @@ const someSelected = computed(() =>
   draft.value.length > 0 && draft.value.length < props.options.length,
 )
 
+function onDraftUpdate(next) {
+  draft.value = ensureRequiredDisplayFieldCodes(next, props.options)
+}
+
 function toggleAll(checked) {
-  draft.value = checked ? props.options.map(o => o.value).filter(Boolean) : []
+  if (checked) {
+    draft.value = props.options.map(o => o.value).filter(Boolean)
+    return
+  }
+  // 取消全选时仍保留必填
+  draft.value = [...requiredCodes.value]
 }
 
 function confirm() {
-  emit('confirm', [...draft.value])
+  emit('confirm', ensureRequiredDisplayFieldCodes(draft.value, props.options))
   emit('update:show', false)
 }
 </script>
 
 <style scoped>
+.picker-hint {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fff7e8;
+  color: #ad6800;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .picker-toolbar {
   display: flex;
   align-items: center;
@@ -144,10 +188,24 @@ function confirm() {
 }
 
 .field-checkbox-copy strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-primary, #1f2937);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
+}
+
+.field-required-tag {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #fff1f0;
+  color: #cf1322;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
 .field-checkbox-copy small {

@@ -138,6 +138,14 @@ import { useFormDesignerStore } from '@/store'
 import { resolveChildTableRelationKey } from '../../child-table-section-config'
 import SubTableFieldsPickerDialog from './SubTableFieldsPickerDialog.vue'
 import SubTableSelectorConfigDialog from './SubTableSelectorConfigDialog.vue'
+import {
+  buildSubTableDisplayFieldOptions,
+  collectRequiredFieldCodes,
+  ensureRequiredDisplayFieldCodes,
+  resolveFieldCode,
+  resolveFieldLabel,
+  toSubTableColumnDefs,
+} from './sub-table-display-fields'
 
 const props = defineProps({
   component: { type: Object, required: true },
@@ -230,7 +238,7 @@ const filterRows = computed(() => {
 
 /** 子表对象字段选项（弹窗内字段下拉/网格共用） */
 const childFieldOptions = computed(() =>
-  availableFields.value.map(f => ({ label: fl(f), value: fc(f) })).filter(o => o.value),
+  buildSubTableDisplayFieldOptions(availableFields.value),
 )
 
 /** 主表字段选项（默认值联动来源） */
@@ -252,9 +260,13 @@ const selectorSummary = computed(() => {
 /** 显示字段入口摘要 */
 const fieldSummary = computed(() => {
   const total = availableFields.value.length
-  return total
-    ? `已选 ${selectedFieldCodes.value.length} / ${total} 项`
-    : `已选 ${selectedFieldCodes.value.length} 项`
+  const requiredCount = collectRequiredFieldCodes(childFieldOptions.value).length
+  const selected = selectedFieldCodes.value.length
+  if (!total)
+    return `已选 ${selected} 项`
+  if (requiredCount)
+    return `已选 ${selected} / ${total} 项 · 必填 ${requiredCount} 项须显示`
+  return `已选 ${selected} / ${total} 项`
 })
 
 onMounted(() => loadObjects())
@@ -276,7 +288,7 @@ async function loadObjects() {
   finally { loadingObjects.value = false }
 }
 
-async function loadFields(objectCode) {
+async function loadFields(objectCode, { autoSelectRequired = false } = {}) {
   const reqId = ++fieldRequestId
   loadingFields.value = true
   try {
@@ -293,6 +305,15 @@ async function loadFields(objectCode) {
       if (reqId !== fieldRequestId)
         return
       availableFields.value = fields
+      // 必填字段必须出现在显示列；缺省或新选对象时自动补齐
+      const options = buildSubTableDisplayFieldOptions(fields)
+      const selected = selectedFieldCodes.value
+      const requiredCodes = collectRequiredFieldCodes(options)
+      const missingRequired = requiredCodes.filter(code => !selected.includes(code))
+      if (missingRequired.length || (autoSelectRequired && !selected.length && requiredCodes.length)) {
+        const nextCodes = ensureRequiredDisplayFieldCodes(selected, options)
+        patchProps({ columns: toSubTableColumnDefs(nextCodes, fields) })
+      }
     }
   }
   catch {
@@ -323,7 +344,7 @@ function handleObjectChange(objectCode) {
     selectorFilterFields: [],
   })
 
-  loadFields(objectCode)
+  loadFields(objectCode, { autoSelectRequired: true })
 }
 
 function handleRelationChange(relationKey) {
@@ -332,11 +353,9 @@ function handleRelationChange(relationKey) {
 
 /** 显示字段弹窗确定回调 */
 function handleFieldsConfirm(codes) {
-  const cols = (codes || []).map((code) => {
-    const f = availableFields.value.find(item => fc(item) === code)
-    return { fieldCode: code, fieldLabel: f ? fl(f) : code }
-  })
-  patchProps({ columns: cols })
+  const options = childFieldOptions.value
+  const nextCodes = ensureRequiredDisplayFieldCodes(codes, options)
+  patchProps({ columns: toSubTableColumnDefs(nextCodes, availableFields.value) })
 }
 
 /** 选择器设置弹窗确定回调 */
@@ -413,11 +432,11 @@ function resolveRelKey(rel) {
 }
 
 function fc(f) {
-  return f?.fieldCode || f?.sourceField || f?.field || ''
+  return resolveFieldCode(f)
 }
 
 function fl(f) {
-  return f?.fieldName || f?.rawLabel || f?.label || fc(f)
+  return resolveFieldLabel(f)
 }
 
 function unwrap(v) {

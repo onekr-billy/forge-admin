@@ -39,6 +39,15 @@ public class DataAuditPolicyIndex {
         byObject.put(tenantId, objects == null ? Map.of() : Map.copyOf(objects));
     }
 
+    /** 测试/租户卸载：移除后 ensureIndex 才会重新从库加载。 */
+    public void clearTenant(Long tenantId) {
+        if (tenantId == null) {
+            return;
+        }
+        byTenant.remove(tenantId);
+        byObject.remove(tenantId);
+    }
+
     public boolean hasTenant(Long tenantId) {
         return tenantId != null && byObject.containsKey(tenantId);
     }

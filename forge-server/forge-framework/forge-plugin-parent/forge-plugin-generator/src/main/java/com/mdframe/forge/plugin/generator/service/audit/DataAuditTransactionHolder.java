@@ -73,6 +73,14 @@ public final class DataAuditTransactionHolder {
     }
 
     public static void prepareWrite(String tableName, String primaryKeyColumn, Object recordId, WriteKind kind) {
+        prepareWrite(tableName, primaryKeyColumn, recordId, kind, null);
+    }
+
+    public static void prepareWrite(String tableName,
+                                    String primaryKeyColumn,
+                                    Object recordId,
+                                    WriteKind kind,
+                                    Map<String, Object> beforeSnapshot) {
         DataAuditPolicyIndex.TableBinding binding = resolveBinding(tableName);
         if (binding == null) {
             return;
@@ -85,7 +93,7 @@ public final class DataAuditTransactionHolder {
         if (session == null) {
             throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception(missingCaptureContextMessage(tableName, kind));
         }
-        session.prepareWrite(binding, tableName, primaryKeyColumn, recordId, kind);
+        session.prepareWrite(binding, tableName, primaryKeyColumn, recordId, kind, beforeSnapshot);
     }
 
     public static void afterWrite(String tableName,

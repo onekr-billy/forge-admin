@@ -175,13 +175,40 @@ public class DataAuditCaptureService {
         DataAuditRecordMetaBuilder.attach(record, tenantId, object, cursorMapper);
     }
 
+    /**
+     * 列表批量挂载策略元数据（不含 cursor 查询），供删除入口判断是否走审计批量接口。
+     */
+    public void attachPolicyMeta(AiCrudConfig config, List<Map<String, Object>> records) {
+        if (config == null || records == null || records.isEmpty()) {
+            return;
+        }
+        Long tenantId = DataAuditTenantSupport.currentTenantIdOrNull();
+        AiBusinessObject object = resolveObject(tenantId, config);
+        if (tenantId != null && object != null) {
+            policyService.ensureIndex(tenantId);
+        }
+        for (Map<String, Object> record : records) {
+            if (record != null) {
+                DataAuditRecordMetaBuilder.attachPolicyOnly(record, tenantId, object);
+            }
+        }
+    }
+
     private void persist(DataAuditCaptureSession session, AiBusinessObject object, AiCrudConfig config) {
         if (session == null || session.isSealed()) {
             return;
         }
         try {
+            List<AiDataAuditEvent> pendingEvents = new ArrayList<>();
+            List<AiDataAuditField> pendingFields = new ArrayList<>();
+            List<CursorRevisionUpdate> cursorUpdates = new ArrayList<>();
             for (DataAuditCaptureSession.AggregateState aggregate : session.getAggregates().values()) {
-                persistAggregate(session, object, config, aggregate);
+                collectPersistAggregate(session, object, config, aggregate, pendingEvents, pendingFields, cursorUpdates);
+            }
+            flushInsertBatch(eventMapper::insertBatch, pendingEvents);
+            flushInsertBatch(fieldMapper::insertBatch, pendingFields);
+            for (CursorRevisionUpdate update : cursorUpdates) {
+                cursorMapper.updateRevision(update.id(), update.revision(), update.lastEventId());
             }
         } catch (RuntimeException ex) {
             log.error("数据审计持久化失败 operationId={}", session.getOperationId(), ex);
@@ -194,10 +221,13 @@ public class DataAuditCaptureService {
         }
     }
 
-    private void persistAggregate(DataAuditCaptureSession session,
-                                  AiBusinessObject openedObject,
-                                  AiCrudConfig config,
-                                  DataAuditCaptureSession.AggregateState aggregate) {
+    private void collectPersistAggregate(DataAuditCaptureSession session,
+                                         AiBusinessObject openedObject,
+                                         AiCrudConfig config,
+                                         DataAuditCaptureSession.AggregateState aggregate,
+                                         List<AiDataAuditEvent> pendingEvents,
+                                         List<AiDataAuditField> pendingFields,
+                                         List<CursorRevisionUpdate> cursorUpdates) {
         if (!aggregate.touched) {
             return;
         }
@@ -317,16 +347,30 @@ public class DataAuditCaptureService {
         event.setCreateTime(LocalDateTime.now());
         event.setUpdateBy(session.currentUserId());
         event.setUpdateTime(event.getCreateTime());
-        if (eventMapper.insert(event) != 1) {
-            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception();
-        }
+        pendingEvents.add(event);
         for (DataAuditFieldChange change : changes) {
-            insertField(session, event, change);
+            pendingFields.add(buildFieldEntity(session, event, change));
         }
-        cursorMapper.updateRevision(cursor.getId(), nextRevision, event.getId());
+        cursorUpdates.add(new CursorRevisionUpdate(cursor.getId(), nextRevision, event.getId()));
     }
 
-    private void insertField(DataAuditCaptureSession session, AiDataAuditEvent event, DataAuditFieldChange change) {
+    private <T> void flushInsertBatch(java.util.function.ToIntFunction<List<T>> inserter, List<T> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        final int chunkSize = 200;
+        for (int from = 0; from < items.size(); from += chunkSize) {
+            int to = Math.min(from + chunkSize, items.size());
+            List<T> chunk = items.subList(from, to);
+            // MySQL 多值 INSERT 常返回 1 或 SUCCESS_NO_INFO(-2)，不能按 chunk.size() 严格比对
+            int affected = inserter.applyAsInt(chunk);
+            if (affected == 0) {
+                throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception();
+            }
+        }
+    }
+
+    private AiDataAuditField buildFieldEntity(DataAuditCaptureSession session, AiDataAuditEvent event, DataAuditFieldChange change) {
         LowcodeFieldSchema field = change.getField();
         DataAuditValueProtection protection = valueProtector.resolve(field);
         DataAuditValueProtector.StoredValue before = valueProtector.store(change.getBefore(), protection);
@@ -370,9 +414,10 @@ public class DataAuditCaptureService {
                 // 解释快照失败不阻断主证据
             }
         }
-        if (fieldMapper.insert(entity) != 1) {
-            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception();
-        }
+        return entity;
+    }
+
+    private record CursorRevisionUpdate(Long id, Long revision, Long lastEventId) {
     }
 
     private DataAuditFieldChange toChildSummaryChange(Long objectId,

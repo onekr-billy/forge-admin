@@ -100,11 +100,23 @@ class DataAuditCaptureServiceTest {
         });
         DataAuditEventMapper eventMapper = stub(DataAuditEventMapper.class, (method, args) -> {
             persistenceContexts.add(LowcodeRuntimeDataSourceContextHolder.get());
+            if ("insertBatch".equals(method)) {
+                @SuppressWarnings("unchecked")
+                List<AiDataAuditEvent> batch = (List<AiDataAuditEvent>) args[0];
+                events.addAll(batch);
+                return batch.size();
+            }
             events.add((AiDataAuditEvent) args[0]);
             return 1;
         });
         DataAuditFieldMapper fieldMapper = stub(DataAuditFieldMapper.class, (method, args) -> {
             persistenceContexts.add(LowcodeRuntimeDataSourceContextHolder.get());
+            if ("insertBatch".equals(method)) {
+                @SuppressWarnings("unchecked")
+                List<AiDataAuditField> batch = (List<AiDataAuditField>) args[0];
+                fields.addAll(batch);
+                return batch.size();
+            }
             fields.add((AiDataAuditField) args[0]);
             return 1;
         });
@@ -118,7 +130,7 @@ class DataAuditCaptureServiceTest {
     @AfterEach
     void tearDown() {
         DataAuditTransactionHolder.clear();
-        DataAuditTransactionHolder.index().replaceTenant(TENANT_ID, Map.of(), Map.of());
+        DataAuditTransactionHolder.index().clearTenant(TENANT_ID);
         TransactionSynchronizationManager.clear();
         TenantContextHolder.clear();
     }

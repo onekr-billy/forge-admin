@@ -25,6 +25,7 @@ import com.mdframe.forge.plugin.generator.enums.DataAuditEventType;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditCaptureService;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditPayloadSupport;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditRecordIds;
 import com.mdframe.forge.plugin.generator.service.formula.StoredAggregateRefreshService;
 import com.mdframe.forge.plugin.generator.service.formula.StoredFormulaRuntime;
 import com.mdframe.forge.plugin.generator.service.formula.VirtualFormulaRuntime;
@@ -220,6 +221,7 @@ public class DynamicCrudService {
             );
             applyReadPipeline(page.getRecords(), config);
             stampExpandedListRowKeys(page.getRecords(), joinContext, aggregateChildren);
+            attachDataAuditPolicyMeta(config, page.getRecords());
             return page;
         }
         
@@ -245,6 +247,7 @@ public class DynamicCrudService {
         
         // 8. 读取链路统一先解密，再计算 VIRTUAL 公式，最后翻译和脱敏。
         applyReadPipeline(camelCaseRecords, config);
+        attachDataAuditPolicyMeta(config, camelCaseRecords);
         
         page.setRecords(camelCaseRecords);
         return page;
@@ -3597,13 +3600,20 @@ public class DynamicCrudService {
      */
     @Transactional(rollbackFor = Exception.class)
     public int batchDeleteByIds(String configKey, List<?> ids) {
+        return batchDeleteByIds(configKey, ids, Map.of());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public int batchDeleteByIds(String configKey, List<?> ids, Map<String, Object> auditPayload) {
         if (ids == null || ids.isEmpty()) {
             return 0;
         }
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-            openDataAudit(config, ids.get(0), DataAuditSourceType.FORM, DataAuditEventType.DELETE, Map.of(), false);
+            // 同一事务内开一次采集会话；repository.deleteByIds 会对每个 id prepare/afterWrite
+            openDataAudit(config, ids.get(0), DataAuditSourceType.FORM, DataAuditEventType.DELETE,
+                    auditPayload == null ? Map.of() : auditPayload, false);
             String tableName = config.getTableName();
             LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
             String pkColumn = primaryKeyColumn(primaryKey);
@@ -3625,7 +3635,18 @@ public class DynamicCrudService {
             }
 
             boolean logicDelete = repository.hasDelFlag(tableName);
-            int affected = repository.deleteByIds(tableName, pkColumn, ids, logicDelete, dataScopeCondition);
+            Map<String, Map<String, Object>> beforeById = new LinkedHashMap<>();
+            for (Map<String, Object> record : beforeRecords) {
+                Object rawId = record.get(pkColumn);
+                if (rawId == null) {
+                    rawId = record.get("id");
+                }
+                String key = DataAuditRecordIds.normalize(rawId);
+                if (key != null) {
+                    beforeById.put(key, record);
+                }
+            }
+            int affected = repository.deleteByIds(tableName, pkColumn, ids, logicDelete, dataScopeCondition, beforeById);
 
             // 逐条刷新聚合根缓存
             for (Map<String, Object> record : beforeRecords) {
@@ -3647,22 +3668,14 @@ public class DynamicCrudService {
         if (dto == null || dto.getIds() == null || dto.getIds().isEmpty()) {
             throw new BusinessException("请选择要删除的数据");
         }
-        int affected = 0;
-        for (int i = 0; i < dto.getIds().size(); i++) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            Map<String, Object> context = new LinkedHashMap<>();
-            if (StringUtils.isNotBlank(dto.getReason())) {
-                context.put("reason", dto.getReason());
-            }
-            if (dto.getExpectedRevisions() != null && dto.getExpectedRevisions().size() > i
-                    && dto.getExpectedRevisions().get(i) != null) {
-                context.put("expectedRevision", dto.getExpectedRevisions().get(i));
-            }
-            payload.put(DataAuditPayloadSupport.PAYLOAD_KEY, context);
-            deleteById(configKey, dto.getIds().get(i), payload);
-            affected++;
+        Map<String, Object> payload = new LinkedHashMap<>();
+        Map<String, Object> context = new LinkedHashMap<>();
+        if (StringUtils.isNotBlank(dto.getReason())) {
+            context.put("reason", dto.getReason());
         }
-        return affected;
+        // 删除不校验 expectedRevision；列表策略元数据 revision 常为 0
+        payload.put(DataAuditPayloadSupport.PAYLOAD_KEY, context);
+        return batchDeleteByIds(configKey, dto.getIds(), payload);
     }
 
     private AutoCloseable openDataAudit(AiCrudConfig config,
@@ -3691,6 +3704,14 @@ public class DynamicCrudService {
             Map<String, Object> typed = (Map<String, Object>) mainMap;
             dataAuditCaptureService.attachReadMeta(config, typed);
         }
+    }
+
+    /** 列表挂策略级审计元数据，避免删除前再逐条拉详情。 */
+    private void attachDataAuditPolicyMeta(AiCrudConfig config, List<Map<String, Object>> records) {
+        if (dataAuditCaptureService == null || records == null || records.isEmpty()) {
+            return;
+        }
+        dataAuditCaptureService.attachPolicyMeta(config, records);
     }
 
     private void deleteById(String configKey, Object id, Map<String, Object> auditPayload) {

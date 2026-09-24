@@ -166,11 +166,16 @@ public class BusinessApplicationPageDesignService {
         BusinessDataSnapshot businessData = inspectBusinessData(currentModel);
         java.util.function.Function<String, Boolean> columnDataChecker =
                 createColumnDataChecker(currentModel, businessData);
+        // 换子表等操作常漏传画布外字段；已有列数据的字段必须保留，避免误判为删除。
+        List<BusinessFieldDTO> effectiveFields = retainExistingFieldsWithData(
+                currentModel == null ? List.of() : currentModel.getFields(),
+                request.fields(),
+                columnDataChecker);
         BusinessApplicationPageFieldGuard.assertCompatible(
                 businessData.count(),
                 businessData.tableName(),
                 currentModel == null ? List.of() : currentModel.getFields(),
-                request.fields(),
+                effectiveFields,
                 columnDataChecker);
 
         FormDesignerSchemaDTO formSchema = request.formDesignerSchema();
@@ -178,6 +183,10 @@ public class BusinessApplicationPageDesignService {
             Object persistedFormSchema = current.getObject() == null
                     ? null
                     : readOptions(current.getObject().getDesignerOptions()).get("formDesignerSchema");
+            Set<String> retainedFieldCodes = effectiveFields.stream()
+                    .map(BusinessFieldDTO::getFieldCode)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
                     persistedFormSchema,
                     objectMapper.convertValue(formSchema, new TypeReference<Map<String, Object>>() {
@@ -185,14 +194,15 @@ public class BusinessApplicationPageDesignService {
                     currentModel == null ? List.of() : currentModel.getFields(),
                     businessData.count(),
                     businessData.tableName(),
-                    columnDataChecker);
+                    columnDataChecker,
+                    retainedFieldCodes);
             lockPersistedFieldBindings(formSchema);
         }
         BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();
         designer.setObjectId(object.getId());
         designer.setObjectName(request.objectName());
-        designer.setDisplayField(resolveDisplayField(request.fields()));
-        designer.setFields(request.fields());
+        designer.setDisplayField(resolveDisplayField(effectiveFields));
+        designer.setFields(effectiveFields);
         designer.setFormDesignerSchema(formSchema);
         designerService.saveDesigner(object.getId(), designer);
 
@@ -400,6 +410,63 @@ public class BusinessApplicationPageDesignService {
                 return true;
             }
         };
+    }
+
+    /**
+     * 请求字段列表漏传时，把“列上已有数据”的存量字段补回，避免换子表等保存被误判成删字段。
+     * 列上无数据的字段仍可不传，以便真正清理空字段。
+     */
+    private List<BusinessFieldDTO> retainExistingFieldsWithData(
+            List<LowcodeFieldSchema> existingFields,
+            List<BusinessFieldDTO> requestedFields,
+            java.util.function.Function<String, Boolean> columnDataChecker) {
+        List<BusinessFieldDTO> requested = requestedFields == null
+                ? new ArrayList<>()
+                : new ArrayList<>(requestedFields);
+        Set<String> requestedCodes = requested.stream()
+                .map(BusinessFieldDTO::getFieldCode)
+                .filter(StringUtils::isNotBlank)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        for (LowcodeFieldSchema existing : existingFields == null ? List.<LowcodeFieldSchema>of() : existingFields) {
+            if (existing == null || Boolean.TRUE.equals(existing.getSystemField())
+                    || StringUtils.isBlank(existing.getField())
+                    || requestedCodes.contains(existing.getField())) {
+                continue;
+            }
+            String columnName = StringUtils.defaultString(existing.getColumnName());
+            boolean hasData = columnDataChecker == null || Boolean.TRUE.equals(columnDataChecker.apply(columnName));
+            if (!hasData) {
+                continue;
+            }
+            requested.add(toRetainedBusinessField(existing));
+            requestedCodes.add(existing.getField());
+            log.info("[页面设计保存] 补回已有数据字段，避免误删: field={}, label={}, column={}",
+                    existing.getField(), existing.getLabel(), columnName);
+        }
+        return requested;
+    }
+
+    private BusinessFieldDTO toRetainedBusinessField(LowcodeFieldSchema existing) {
+        BusinessFieldDTO field = new BusinessFieldDTO();
+        field.setFieldCode(existing.getField());
+        field.setFieldName(StringUtils.defaultIfBlank(existing.getLabel(), existing.getField()));
+        field.setColumnName(existing.getColumnName());
+        field.setFieldType(existing.getBusinessFieldType());
+        field.setDataType(existing.getDataType());
+        field.setLength(existing.getLength());
+        field.setPrecision(existing.getPrecision());
+        field.setRequired(Boolean.TRUE.equals(existing.getRequired()));
+        field.setDefaultValue(existing.getDefaultValue() == null ? null : String.valueOf(existing.getDefaultValue()));
+        field.setListVisible(existing.getListVisible() == null || Boolean.TRUE.equals(existing.getListVisible()));
+        field.setFormVisible(existing.getFormVisible() == null || Boolean.TRUE.equals(existing.getFormVisible()));
+        field.setComponentType(existing.getComponentType());
+        field.setQueryType(existing.getQueryType());
+        field.setDictType(existing.getDictType());
+        field.setSystemField(false);
+        field.setReadonly(Boolean.TRUE.equals(existing.getReadonly()));
+        field.setFieldStatus(StringUtils.defaultIfBlank(existing.getFieldStatus(), "ENABLED"));
+        field.setSortOrder(existing.getSortOrder());
+        return field;
     }
 
     private boolean hasBusinessFields(LowcodeModelSchema modelSchema) {

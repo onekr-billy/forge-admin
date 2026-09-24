@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service;
 
 import cn.dev33.satoken.exception.SaTokenException;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditRecordIds;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTenantSupport;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder;
 import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
@@ -1372,6 +1373,18 @@ public class DynamicCrudRepository {
                            List<?> ids,
                            boolean logicDelete,
                            SqlCondition dataScopeCondition) {
+        return deleteByIds(tableName, primaryKeyColumn, ids, logicDelete, dataScopeCondition, null);
+    }
+
+    /**
+     * @param beforeById 可选：已查询的删除前快照（key 为规范化 recordId），有则跳过逐条 FOR UPDATE 再读
+     */
+    public int deleteByIds(String tableName,
+                           String primaryKeyColumn,
+                           List<?> ids,
+                           boolean logicDelete,
+                           SqlCondition dataScopeCondition,
+                           Map<String, Map<String, Object>> beforeById) {
         validateTableName(tableName);
         validateIdentifier(primaryKeyColumn);
         if (ids == null || ids.isEmpty()) {
@@ -1384,7 +1397,15 @@ public class DynamicCrudRepository {
             params.addValue("deletedValue", logicDeletedValue());
         }
         for (Object id : ids) {
-            DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE);
+            Map<String, Object> snapshot = null;
+            if (beforeById != null) {
+                String key = DataAuditRecordIds.normalize(id);
+                if (key != null) {
+                    snapshot = beforeById.get(key);
+                }
+            }
+            DataAuditTransactionHolder.prepareWrite(
+                    tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE, snapshot);
         }
         String sql = appendTenantCondition(buildBatchDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);

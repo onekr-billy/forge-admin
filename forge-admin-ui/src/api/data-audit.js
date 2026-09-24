@@ -48,5 +48,7 @@ export function updateDataAuditScope(roleId, data) {
 }
 
 export function dataAuditRemove(configKey, data) {
-  return postEncrypt(`/ai/crud/${configKey}/remove`, data)
+  return postEncrypt(`/ai/crud/${configKey}/remove`, data, {
+    globalLoading: false,
+  })
 }

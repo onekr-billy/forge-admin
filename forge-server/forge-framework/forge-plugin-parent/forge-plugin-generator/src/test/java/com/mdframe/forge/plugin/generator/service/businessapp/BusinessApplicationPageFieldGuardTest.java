@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -135,6 +136,133 @@ class BusinessApplicationPageFieldGuardTest {
 
         assertEquals("字段“客户名称”已有数据，不能删除（数据表 cgou_approval_vger）；可先清理该字段数据后再删除",
                 error.getMessage());
+    }
+
+    @Test
+    @DisplayName("switching child table must not treat nested column defs as deleted main fields")
+    void switchingSubTableDoesNotBlockOnNestedSelectColumns() {
+        Map<String, Object> persisted = Map.of("components", List.of(
+                Map.of(
+                        "id", "cmp_sub_old",
+                        "componentKey", "subTable",
+                        "label", "明细",
+                        "props", Map.of(
+                                "modelCode", "old_child",
+                                "columns", List.of(Map.of(
+                                        "id", "col_select_1",
+                                        "componentKey", "select",
+                                        "label", "下拉选择",
+                                        "fieldBinding", Map.of(
+                                                "mode", "field",
+                                                "fieldCode", "customerName",
+                                                "locked", true))))),
+                Map.of(
+                        "id", "cmp_customerName",
+                        "componentKey", "input",
+                        "label", "客户名称",
+                        "fieldBinding", Map.of(
+                                "mode", "field",
+                                "fieldCode", "customerName",
+                                "locked", true))));
+        Map<String, Object> requested = Map.of("components", List.of(
+                Map.of(
+                        "id", "cmp_sub_old",
+                        "componentKey", "subTable",
+                        "label", "明细",
+                        "props", Map.of(
+                                "modelCode", "new_child",
+                                "columns", List.of(Map.of(
+                                        "fieldCode", "amount",
+                                        "fieldLabel", "金额")))),
+                Map.of(
+                        "id", "cmp_customerName",
+                        "componentKey", "input",
+                        "label", "客户名称",
+                        "fieldBinding", Map.of(
+                                "mode", "field",
+                                "fieldCode", "customerName",
+                                "locked", true))));
+
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                persisted,
+                requested,
+                List.of(existingTextField()),
+                7, "cgou_business_object_xvcy",
+                columnName -> true));
+    }
+
+    @Test
+    @DisplayName("locked orphan select binding outside field catalog must not block child-table switch")
+    void lockedOrphanSelectOutsideCatalogDoesNotBlock() {
+        Map<String, Object> persisted = Map.of("components", List.of(
+                Map.of(
+                        "id", "col_select_orphan",
+                        "componentKey", "select",
+                        "label", "下拉选择",
+                        "fieldBinding", Map.of(
+                                "mode", "field",
+                                "fieldCode", "childOnlyStatus",
+                                "locked", true)),
+                Map.of(
+                        "id", "cmp_customerName",
+                        "componentKey", "input",
+                        "label", "客户名称",
+                        "fieldBinding", Map.of(
+                                "mode", "field",
+                                "fieldCode", "customerName",
+                                "locked", true))));
+        Map<String, Object> requested = Map.of("components", List.of(
+                Map.of(
+                        "id", "cmp_customerName",
+                        "componentKey", "input",
+                        "label", "客户名称",
+                        "fieldBinding", Map.of(
+                                "mode", "field",
+                                "fieldCode", "customerName",
+                                "locked", true))));
+
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                persisted,
+                requested,
+                List.of(existingTextField()),
+                7, "cgou_business_object_xvcy",
+                columnName -> true));
+    }
+
+    @Test
+    @DisplayName("canvas component can leave while field catalog still retains the field with data")
+    void retainedFieldCatalogAllowsMissingCanvasComponent() {
+        assertDoesNotThrow(() -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                formSchema("select", "customerName"),
+                Map.of("components", List.of()),
+                List.of(existingSelectField()),
+                7, "cgou_business_object_xvcy",
+                columnName -> true,
+                Set.of("customerName")));
+    }
+
+    @Test
+    @DisplayName("missing canvas component still blocks when field is also removed from catalog")
+    void missingComponentAndFieldStillBlocked() {
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
+                        formSchema("select", "customerName"),
+                        Map.of("components", List.of()),
+                        List.of(existingSelectField()),
+                        7, "cgou_business_object_xvcy",
+                        columnName -> true,
+                        Set.of()));
+
+        assertEquals("字段“客户名称”已有数据，不能删除（数据表 cgou_business_object_xvcy）；可先清理该字段数据后再删除",
+                error.getMessage());
+    }
+
+    private LowcodeFieldSchema existingSelectField() {
+        LowcodeFieldSchema field = existingTextField();
+        field.setLabel("客户名称");
+        field.setBusinessFieldType("DICT");
+        field.setComponentType("select");
+        return field;
     }
 
     private LowcodeFieldSchema existingTextField() {

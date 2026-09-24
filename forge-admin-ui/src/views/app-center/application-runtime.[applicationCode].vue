@@ -1747,6 +1747,18 @@ const copyBlockPageOptions = computed(() => flattenNodes(builder.value?.nodes ||
   .filter(node => node.type === 'page' && node.id !== currentNode.value?.id)
   .map(node => ({ label: `${'　'.repeat(node.depth || 0)}${node.title}`, value: node.id })))
 const dirty = computed(() => JSON.stringify(builder.value || {}) !== savedSignature.value)
+
+/**
+ * 保存后对齐草稿签名。部分 watch/子组件会在 nextTick 后继续归一化 builder，
+ * 只写一次签名会立刻再次变脏，表现为「保存成功但退出仍提示未保存」。
+ */
+async function markBuilderClean() {
+  savedSignature.value = JSON.stringify(builder.value || {})
+  await nextTick()
+  savedSignature.value = JSON.stringify(builder.value || {})
+  embeddedDesignerDirty.value = false
+}
+
 const {
   historyReady,
   canUndo,
@@ -2492,7 +2504,7 @@ function supportsFormAsset(block = {}) {
 function bindSingleFormToCompatibleBlocks() {
   if (formAssets.value.length !== 1 || !builder.value)
     return
-  builder.value = {
+  const nextBuilder = {
     ...builder.value,
     pages: Object.fromEntries(Object.entries(builder.value.pages || {}).map(([pageId, page]) => {
       const items = page?.layout?.gridLayout?.items
@@ -2510,6 +2522,9 @@ function bindSingleFormToCompatibleBlocks() {
       }]
     })),
   }
+  if (JSON.stringify(nextBuilder) === JSON.stringify(builder.value))
+    return
+  builder.value = nextBuilder
 }
 
 function attachSingleFormAsset(block = {}) {
@@ -2692,8 +2707,11 @@ function hydratePageCrudApiPlaceholders() {
       },
     }]
   }))
-  if (changed)
-    builder.value = { ...builder.value, pages }
+  if (changed) {
+    const nextBuilder = { ...builder.value, pages }
+    if (JSON.stringify(nextBuilder) !== JSON.stringify(builder.value))
+      builder.value = nextBuilder
+  }
 }
 
 function resolveRuntimeObjectCacheKey(objectRef) {
@@ -3143,6 +3161,9 @@ function updateActiveFormDesignerSchema(schema) {
       }]
     })),
   }
+  // 设计器 props 回写/分区派生若未产生实质差异，不要弄脏草稿签名
+  if (JSON.stringify(nextBuilder) === JSON.stringify(builder.value || {}))
+    return
   builder.value = nextBuilder
 }
 
@@ -4228,6 +4249,9 @@ async function saveActiveFormDesigner(returnAfter = true) {
     // refreshWorkspaceMetadata 已 reset + bump portalCrudConfigRevision；
     // 编辑画布若仍打开再补一次预加载（返回页面管理时 preload 会因 !editing 直接跳过）
     preloadCurrentPageCrudRuntimeProps()
+    // 设计器可能在保存回写后继续派生 pageSections，再对齐一次避免假脏
+    if (dirty.value)
+      await markBuilderClean()
     if (returnAfter) {
       formDesignerMode.value = false
       if (formDesignerFromPageManagement.value) {
@@ -4310,8 +4334,10 @@ async function saveDraft(options = {}) {
     if (provisionSummary.succeeded > 0)
       await refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })
     else
-      savedSignature.value = JSON.stringify(builder.value || {})
-    embeddedDesignerDirty.value = false
+      await markBuilderClean()
+    // refresh / 设计器回写后可能仍有一拍归一化差异，再对齐一次
+    if (dirty.value)
+      await markBuilderClean()
     if (!options.quiet) {
       if (provisionSummary.failed > 0) {
         message.warning(`表单草稿已保存；${provisionSummary.firstError || '数据存储暂未准备完成，可在数据配置中重试'}`)
@@ -4579,6 +4605,8 @@ async function handleEmbeddedDesignerSaved(savedSchema) {
   if (dirty.value)
     await persistApplicationDraft()
   await refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })
+  if (dirty.value)
+    await markBuilderClean()
 }
 
 /**
@@ -5097,9 +5125,13 @@ async function refreshWorkspaceMetadata(options = {}) {
   hydratePageCrudApiPlaceholders()
   // bind/hydrate 可能继续改 builder；签名必须在全部本地归一化之后再落，否则保存后仍显示未保存。
   if (markClean)
-    savedSignature.value = JSON.stringify(builder.value || {})
-  await nextTick()
+    await markBuilderClean()
+  else
+    await nextTick()
   preloadCurrentPageCrudRuntimeProps()
+  // preload 触发的对象上下文加载不改 builder；若仍有同步归一化尾差再对齐一次
+  if (markClean && dirty.value)
+    await markBuilderClean()
 }
 </script>
 

@@ -118,4 +118,30 @@
           AND id = #{id}
         LIMIT 1
     </select>
+
+    <insert id="insertBatch">
+        INSERT INTO ai_data_audit_event (
+            id, tenant_id, object_id, object_code, object_name, record_id, record_label, revision,
+            event_type, occurred_at, operation_id, parent_operation_id, correlation_id, source_type,
+            source_event_id, source_version, source_application_id, source_page_id, config_key,
+            schema_version, policy_version, policy_snapshot, actor_type, actor_id, actor_name,
+            client_id, delegated_user_id, change_reason, reason_code, flow_instance_id, task_id,
+            action_execution_id, changed_field_count, changed_row_count, protection_metadata,
+            create_by, create_time, create_dept, update_by, update_time
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.id}, #{item.tenantId}, #{item.objectId}, #{item.objectCode}, #{item.objectName},
+                #{item.recordId}, #{item.recordLabel}, #{item.revision}, #{item.eventType}, #{item.occurredAt},
+                #{item.operationId}, #{item.parentOperationId}, #{item.correlationId}, #{item.sourceType},
+                #{item.sourceEventId}, #{item.sourceVersion}, #{item.sourceApplicationId}, #{item.sourcePageId},
+                #{item.configKey}, #{item.schemaVersion}, #{item.policyVersion}, #{item.policySnapshot},
+                #{item.actorType}, #{item.actorId}, #{item.actorName}, #{item.clientId}, #{item.delegatedUserId},
+                #{item.changeReason}, #{item.reasonCode}, #{item.flowInstanceId}, #{item.taskId},
+                #{item.actionExecutionId}, #{item.changedFieldCount}, #{item.changedRowCount},
+                #{item.protectionMetadata}, #{item.createBy}, #{item.createTime}, #{item.createDept},
+                #{item.updateBy}, #{item.updateTime}
+            )
+        </foreach>
+    </insert>
 </mapper>

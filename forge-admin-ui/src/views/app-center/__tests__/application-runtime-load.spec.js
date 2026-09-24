@@ -125,6 +125,8 @@ describe('application runtime route loading', () => {
     expect(runtimeSource).toContain('refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })')
     expect(runtimeSource).toContain('return await saveDraft({ quiet: true })')
     expect(runtimeSource).toContain('bind/hydrate 可能继续改 builder')
+    expect(runtimeSource).toContain('async function markBuilderClean')
+    expect(runtimeSource).toContain('await markBuilderClean()')
   })
 
   it('prefetches workspace tab panels after application load for editors', () => {

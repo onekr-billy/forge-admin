@@ -5205,6 +5205,7 @@ async function performDelete(rows, keys) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      window.$loading?.show?.('正在删除，请稍候...')
       try {
         if (plan.mode === 'audit') {
           const auditHandled = await applyDataAuditRemove({
@@ -5229,9 +5230,11 @@ async function performDelete(rows, keys) {
         catch (error) {
           if (!configKey || !isAuditReasonRequiredError(error))
             throw error
+          window.$loading?.close?.()
           const reason = deleteReason || await promptAuditReason('请填写删除原因', '请填写删除原因')
           if (reason === false)
             return false
+          window.$loading?.show?.('正在删除，请稍候...')
           await dataAuditRemove(configKey, {
             ids: keys.map(id => String(id)),
             reason,
@@ -5248,6 +5251,9 @@ async function performDelete(rows, keys) {
         const message = error?.message || error?.response?.data?.message
         window.$message.error(message || '删除失败')
         return false
+      }
+      finally {
+        window.$loading?.close?.()
       }
     },
   })

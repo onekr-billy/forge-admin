@@ -32,7 +32,7 @@ class DataAuditRecordMetaBuilderTest {
 
     @AfterEach
     void clearIndex() {
-        DataAuditTransactionHolder.index().replaceTenant(TENANT_ID, Map.of(), Map.of());
+        DataAuditTransactionHolder.index().clearTenant(TENANT_ID);
         TenantContextHolder.clear();
     }
 
@@ -110,6 +110,79 @@ class DataAuditRecordMetaBuilderTest {
         assertTrue(meta.getShowInDetail());
         assertTrue(meta.getHistoryAvailable());
         assertEquals(3L, meta.getRevision());
+    }
+
+    @Test
+    void policyOnlyAttachSkipsCursorLookup() {
+        DataAuditPolicyIndex.ObjectPolicy policy = new DataAuditPolicyIndex.ObjectPolicy(
+                OBJECT_ID, true, true, true, 1, false);
+        DataAuditTransactionHolder.index().replaceTenant(
+                TENANT_ID, Map.of(), Map.of(OBJECT_ID, policy));
+
+        AiBusinessObject object = new AiBusinessObject();
+        object.setId(OBJECT_ID);
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("id", "1001");
+
+        DataAuditRecordMetaBuilder.attachPolicyOnly(record, TENANT_ID, object);
+
+        DataAuditRecordMetaVO meta = (DataAuditRecordMetaVO) record.get(DataAuditPayloadSupport.PAYLOAD_KEY);
+        assertTrue(meta.getConfigured());
+        assertTrue(meta.getEnabled());
+        assertTrue(meta.getReasonRequired());
+        assertEquals(0L, meta.getRevision());
+        assertFalse(meta.getHistoryAvailable());
+    }
+
+    @Test
+    void attachPolicyMetaLoadsIndexAndStampsListRows() {
+        AiBusinessObject object = new AiBusinessObject();
+        object.setId(OBJECT_ID);
+        object.setConfigKey("purchase_request");
+        AiCrudConfig config = new AiCrudConfig();
+        config.setConfigKey("purchase_request");
+        config.setTableName("biz_purchase_request");
+        AiDataAuditPolicy policy = new AiDataAuditPolicy();
+        policy.setObjectId(OBJECT_ID);
+        policy.setEnabled(EnableStatus.ENABLED.getCode());
+        policy.setReasonRequired(EnableStatus.ENABLED.getCode());
+        policy.setShowInDetail(EnableStatus.ENABLED.getCode());
+        policy.setPolicyVersion(1);
+        policy.setWriteBarrier(EnableStatus.DISABLED.getCode());
+
+        DataAuditPolicyMapper policyMapper = stub(DataAuditPolicyMapper.class, (method, args) ->
+                "selectConfigured".equals(method) ? List.of(policy) : null);
+        BusinessObjectMapper objectMapper = stub(BusinessObjectMapper.class, (method, args) ->
+                switch (method) {
+                    case "selectByConfigKey", "selectByIdForTenant" -> object;
+                    default -> null;
+                });
+        AiCrudConfigMapper configMapper = stub(AiCrudConfigMapper.class, (method, args) ->
+                "selectByConfigKey".equals(method) ? config : null);
+        DataAuditCursorMapper cursorMapper = stub(DataAuditCursorMapper.class, (method, args) -> {
+            throw new AssertionError("list policy attach must not query cursor");
+        });
+        DataAuditPolicyService policyService = new DataAuditPolicyService(
+                policyMapper, objectMapper, configMapper, new ObjectMapper());
+        DataAuditCaptureService captureService = new DataAuditCaptureService(
+                cursorMapper, null, null, policyService, null, null, null,
+                objectMapper, null, new ObjectMapper());
+
+        Map<String, Object> row1 = new LinkedHashMap<>();
+        row1.put("id", "1");
+        Map<String, Object> row2 = new LinkedHashMap<>();
+        row2.put("id", "2");
+
+        TenantContextHolder.setTenantId(TENANT_ID);
+        captureService.attachPolicyMeta(config, List.of(row1, row2));
+
+        DataAuditRecordMetaVO meta1 = (DataAuditRecordMetaVO) row1.get(DataAuditPayloadSupport.PAYLOAD_KEY);
+        DataAuditRecordMetaVO meta2 = (DataAuditRecordMetaVO) row2.get(DataAuditPayloadSupport.PAYLOAD_KEY);
+        assertTrue(meta1.getEnabled());
+        assertTrue(meta2.getEnabled());
+        assertEquals("1", meta1.getRecordId());
+        assertEquals("2", meta2.getRecordId());
+        assertEquals(0L, meta1.getRevision());
     }
 
     @SuppressWarnings("unchecked")
