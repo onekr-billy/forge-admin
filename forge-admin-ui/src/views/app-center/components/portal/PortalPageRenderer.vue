@@ -18,7 +18,7 @@
       v-else-if="blocks.length"
       class="portal-page-flow"
       :class="{ 'is-fill': fillHost, 'is-content-sized': contentSizedFlow }"
-      :style="fillHost || contentSizedFlow ? undefined : { minHeight: `${pageHeight}px` }"
+      :style="portalFlowStyle"
     >
       <section
         v-for="(block, index) in blocks"
@@ -28,6 +28,7 @@
           'is-fill': fillHost && blocks.length === 1,
           'is-runtime-form': isRuntimeAutoHeightBlock(block),
         }"
+        :data-page-block-type="block.blockType"
         :style="resolveBlockShellStyle(block, index)"
       >
         <GridBlockRenderer
@@ -69,7 +70,8 @@ import {
   selectScopedCssExtensions,
 } from '@/components/lowcode-extension/runtime/application-extension-runtime'
 import RuntimeScopedStyles from '@/components/lowcode-extension/runtime/RuntimeScopedStyles'
-import { isRuntimeAutoHeightBlock, resolvePortalPageBlocks, shouldUseContentSizedFlow } from './portal-page-runtime-layout'
+import { isRuntimeAutoHeightBlock, resolvePortalPageBlocks, shouldUseContentSizedFlow, sortBlocksByPageFlowY } from './portal-page-runtime-layout'
+import { normalizePagePadding, resolvePagePaddingCss, resolvePageBlockShellStyle as computePageBlockShellStyle } from '@/views/app-center/runtime-modules/page-flow-geometry'
 import PortalEmptyState from './PortalEmptyState.vue'
 import { isDataFieldBlockType } from '@/components/lowcode-builder/page/page-schema'
 
@@ -125,12 +127,36 @@ const runtimeScopedStyles = computed(() => scopedCssExtensions.value
   }))
   .filter(item => item.css.trim()))
 
-const blocks = computed(() => resolvePortalPageBlocks({
-  page: props.page,
-  node: props.node,
-  resolveObjectRef,
-  normalizeLegacyBlock,
+const contentSizedOptions = computed(() => ({
+  fillHost: props.fillHost,
+  runtimePreview: true,
+  pageId: props.pageId || props.node?.id || '',
 }))
+
+const blocks = computed(() => {
+  const items = resolvePortalPageBlocks({
+    page: props.page,
+    node: props.node,
+    resolveObjectRef,
+    normalizeLegacyBlock,
+  })
+  return shouldUseContentSizedFlow(items, contentSizedOptions.value)
+    ? sortBlocksByPageFlowY(items)
+    : items
+})
+
+const contentSizedFlow = computed(() => shouldUseContentSizedFlow(blocks.value, contentSizedOptions.value))
+
+const pagePaddingCss = computed(() => resolvePagePaddingCss(
+  props.page?.layout?.gridLayout?.pagePadding || props.page?.layout?.pagePadding,
+))
+
+const portalFlowStyle = computed(() => {
+  const style = { padding: pagePaddingCss.value }
+  if (!props.fillHost && !contentSizedFlow.value)
+    style.minHeight = `${pageHeight.value}px`
+  return style
+})
 
 const externalUrl = computed(() => {
   const raw = props.page?.externalUrl
@@ -147,8 +173,6 @@ const externalUrl = computed(() => {
     return ''
   }
 })
-
-const contentSizedFlow = computed(() => shouldUseContentSizedFlow(blocks.value, { fillHost: props.fillHost }))
 
 const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => {
   const style = block.props?.style || {}
@@ -463,38 +487,60 @@ function resolveBlockShellStyle(block, index) {
     }
   }
   const style = block.props?.style || {}
-  const widthMode = style.widthMode || 'full'
   const heightMode = style.heightMode || 'fixed'
-  const customX = finiteNumber(style.pageFlowX, 24)
-  const customY = finiteNumber(style.pageFlowY, resolveDefaultBlockY(block, index))
   const customHeight = finiteNumber(style.pageFlowHeight, readLength(style.height) || resolveDefaultBlockHeight(block))
-  const runtimeAutoHeight = isRuntimeAutoHeightBlock(block)
+  const runtimeAutoHeight = isRuntimeAutoHeightBlock(block) && heightMode !== 'fixed'
   const contentSized = contentSizedFlow.value
-  const position = {
-    position: contentSized ? 'relative' : 'absolute',
-    left: contentSized ? 'auto' : `${customX}px`,
-    top: contentSized ? 'auto' : `${customY}px`,
-    height: runtimeAutoHeight || heightMode === 'auto' || contentSized ? 'auto' : `${customHeight}px`,
-    textAlign: style.textAlign || block.props?.textAlign || block.props?.align || 'left',
+  const isContainer = ['grid-layout', 'card', 'box-layout', 'tabs'].includes(block.blockType)
+
+  // 文档流：彻底丢掉 pageFlowX/Y，避免 top 残留把块钉死在旧坐标
+  if (contentSized) {
+    const shell = {
+      position: 'relative',
+      left: 'auto',
+      top: 'auto',
+      right: 'auto',
+      bottom: 'auto',
+      width: '100%',
+      height: 'auto',
+      textAlign: style.textAlign || block.props?.textAlign || block.props?.align || 'left',
+      boxSizing: 'border-box',
+      overflow: 'visible',
+    }
+    if (isContainer && heightMode !== 'full') {
+      shell.minHeight = `${Math.max(40, customHeight)}px`
+      return shell
+    }
+    if (heightMode === 'fixed') {
+      shell.height = `${Math.max(40, customHeight)}px`
+      shell.minHeight = `${Math.max(40, customHeight)}px`
+    }
+    else if (['AiCrudPage', 'AiTable', 'data-table'].includes(block.blockType) && !runtimeAutoHeight) {
+      const minHeight = Math.max(customHeight, 420)
+      shell.height = `${minHeight}px`
+      shell.minHeight = `${minHeight}px`
+    }
+    else {
+      shell.minHeight = `${Math.max(40, customHeight)}px`
+    }
+    return shell
   }
-  if (!runtimeAutoHeight && !contentSized && heightMode === 'full') {
-    position.height = 'auto'
-    position.bottom = '24px'
-  }
-  if (widthMode === 'full')
-    return { ...position, left: contentSized ? 'auto' : '24px', width: contentSized ? '100%' : 'calc(100% - 48px)' }
-  const rawWidth = String(style.pageFlowWidth || '').trim()
-  const frameWidth = readLength(style.width)
-  if (widthMode === 'auto')
-    return { ...position, width: rawWidth || `min(${Math.max(280, Math.min(560, frameWidth || 520))}px, calc(100% - 48px))` }
-  if (widthMode === 'fixed' && frameWidth > 0)
-    return { ...position, width: rawWidth || `min(${frameWidth}px, calc(100% - 48px))` }
-  return { ...position, width: rawWidth || (contentSized ? '100%' : 'calc(100% - 48px)') }
+
+  const gridLayout = props.page?.layout?.gridLayout || {}
+  const pagePadding = normalizePagePadding(gridLayout.pagePadding || props.page?.layout?.pagePadding)
+  return computePageBlockShellStyle(block, blocks.value, {
+    pageId: props.pageId || props.node?.id || '',
+    pagePadding,
+    pageFlowCoordSpace: gridLayout.pageFlowCoordSpace,
+    // 强制走绝对布局分支（调用方已排除文档流）
+    fillHost: false,
+    runtimePreview: true,
+  })
 }
 
 function resolveDefaultBlockHeight(block = {}) {
   if (block.blockType === 'page-title')
-    return 176
+    return 96
   if (['divider', 'custom-html'].includes(block.blockType))
     return 88
   if (['stats-strip', 'info-panel', 'AiForm'].includes(block.blockType))
@@ -581,8 +627,7 @@ function readLength(value) {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 24px 24px;
+  gap: 16px;
   box-sizing: border-box;
 }
 
@@ -603,6 +648,7 @@ function readLength(value) {
 
 .portal-page-block {
   min-width: 0;
+  overflow: visible;
   border-radius: 6px;
 }
 
@@ -611,18 +657,24 @@ function readLength(value) {
   min-height: 0;
 }
 
-.portal-page-block.is-runtime-form :deep(.grid-block.block-AiForm),
-.portal-page-block.is-runtime-form :deep(.grid-block.block-AiCrudPage),
-.portal-page-block.is-runtime-form :deep(.system-component-preview),
-.portal-page-block.is-runtime-form :deep(.ai-crud-page) {
+.portal-page-block.is-runtime-form :deep(.grid-block),
+.portal-page-block[data-page-block-type='page-title'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='workspace-summary-metrics'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='info-panel'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='empty-state'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='stats-strip'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='custom-html'] :deep(.grid-block) {
   height: auto !important;
-  min-height: 0 !important;
+  min-height: 0;
   overflow: visible;
 }
 
 .portal-page-flow.is-content-sized .portal-page-block {
   position: relative !important;
-  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
   width: 100% !important;
   height: auto !important;
   min-height: 0 !important;

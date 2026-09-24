@@ -1,133 +1,91 @@
 <template>
   <div class="workspace-summary-page">
-    <section class="summary-head">
-      <div>
-        <h2>工作台首页</h2>
-        <p>先看聚合，再进入具体列表处理。</p>
+    <header class="summary-head">
+      <h2 class="summary-head-title">个人工作台</h2>
+      <div class="summary-head-actions">
+        <NButton size="small" quaternary :loading="metricsLoading" @click="refreshMetrics">
+          <template #icon>
+            <i class="i-material-symbols:refresh" />
+          </template>
+          刷新
+        </NButton>
       </div>
-      <NButton secondary :loading="loading" @click="loadSummary">
-        <template #icon>
-          <i class="i-material-symbols:refresh" />
-        </template>
-        刷新
-      </NButton>
-    </section>
+    </header>
 
-    <NAlert v-if="loadError" class="summary-alert" type="warning" :show-icon="false">
-      {{ loadError }}
-    </NAlert>
-
-    <NSpin :show="loading">
-      <section class="summary-grid">
-        <button
-          v-for="item in metricItems"
-          :key="item.key"
-          class="summary-metric"
-          type="button"
-          @click="router.push(item.target)"
-        >
-          <span class="metric-icon" :class="item.tone">
-            <i :class="item.icon" />
-          </span>
-          <span class="metric-copy">
-            <strong>{{ item.value }}</strong>
-            <span>{{ item.label }}</span>
-            <small>{{ item.desc }}</small>
-          </span>
-          <i class="i-material-symbols:chevron-right metric-arrow" />
-        </button>
-      </section>
-    </NSpin>
+    <PortalPageRenderer
+      v-if="useFreeLayout"
+      class="workspace-summary-layout"
+      :page="resolvedPage"
+      :page-id="pageId || 'system:workbench'"
+      :node="layoutNode"
+      :objects="objects"
+      :entries="entries"
+      :extensions="extensions"
+      :application-id="applicationId"
+      :application-code="applicationCode"
+      :fill-host="false"
+      :configurable="false"
+    />
+    <WorkspaceSummaryMetrics
+      v-else
+      ref="metricsRef"
+      :route-targets="routeTargets"
+      @loaded="metricsLoading = false"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { getWorkspaceSummary } from '@/api/workspace'
+import { computed, defineAsyncComponent, ref } from 'vue'
+import { createDefaultWorkbenchPage, createWorkbenchVirtualNode, WORKBENCH_PAGE_ID } from '@/views/app-center/in-app-builder/workbench-page'
+import WorkspaceSummaryMetrics from './WorkspaceSummaryMetrics.vue'
+
+const PortalPageRenderer = defineAsyncComponent(() => import('@/views/app-center/components/portal/PortalPageRenderer.vue'))
 
 const props = defineProps({
   routeTargets: {
     type: Object,
     default: () => ({}),
   },
+  /** 自由布局页 schema（builder.pages[system:workbench]） */
+  page: {
+    type: Object,
+    default: null,
+  },
+  pageId: {
+    type: String,
+    default: WORKBENCH_PAGE_ID,
+  },
+  objects: { type: Array, default: () => [] },
+  entries: { type: Array, default: () => [] },
+  extensions: { type: Array, default: () => [] },
+  applicationId: { type: String, default: '' },
+  applicationCode: { type: String, default: '' },
 })
-const router = useRouter()
-const loading = ref(false)
-const loadError = ref('')
-const summary = ref({
-  todoCount: 0,
-  doneWeekCount: 0,
-  startedRunningCount: 0,
-  ccUnreadCount: 0,
+
+const metricsRef = ref(null)
+const metricsLoading = ref(false)
+const layoutNode = createWorkbenchVirtualNode()
+
+const resolvedPage = computed(() => {
+  const items = props.page?.layout?.gridLayout?.items
+  if (Array.isArray(items) && items.length)
+    return props.page
+  return createDefaultWorkbenchPage(layoutNode.title)
 })
 
-const metricItems = computed(() => [
-  {
-    key: 'todo',
-    label: '我的待办',
-    desc: '需要我处理或签收',
-    value: summary.value.todoCount,
-    target: props.routeTargets.todo || '/workspace/todo',
-    icon: 'i-material-symbols:pending-actions',
-    tone: 'blue',
-  },
-  {
-    key: 'done',
-    label: '本周已办',
-    desc: '本周完成的审批处理',
-    value: summary.value.doneWeekCount,
-    target: props.routeTargets.done || '/workspace/done',
-    icon: 'i-material-symbols:task-alt-outline',
-    tone: 'green',
-  },
-  {
-    key: 'started',
-    label: '发起中',
-    desc: '我发起且仍在流转',
-    value: summary.value.startedRunningCount,
-    target: props.routeTargets.sent || '/workspace/started',
-    icon: 'i-material-symbols:send-outline',
-    tone: 'amber',
-  },
-  {
-    key: 'cc',
-    label: '未读抄送',
-    desc: '抄送给我的未读消息',
-    value: summary.value.ccUnreadCount,
-    target: props.routeTargets.cc || '/workspace/cc',
-    icon: 'i-material-symbols:alternate-email',
-    tone: 'red',
-  },
-])
+const useFreeLayout = computed(() => {
+  // 有 page 入参时走自由布局（含默认布局）；纯独立 /workspace 无 page 时用组件直渲
+  return props.page != null || Boolean(props.applicationCode)
+})
 
-onMounted(loadSummary)
-
-async function loadSummary() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const res = await getWorkspaceSummary()
-    const data = res.data || {}
-    summary.value = {
-      todoCount: Number(data.todoCount || 0),
-      doneWeekCount: Number(data.doneWeekCount || 0),
-      startedRunningCount: Number(data.startedRunningCount || 0),
-      ccUnreadCount: Number(data.ccUnreadCount || 0),
-    }
-  }
-  catch (error) {
-    loadError.value = error?.message || '工作台统计加载失败'
-    summary.value = {
-      todoCount: 0,
-      doneWeekCount: 0,
-      startedRunningCount: 0,
-      ccUnreadCount: 0,
-    }
-  }
-  finally {
-    loading.value = false
-  }
+function refreshMetrics() {
+  metricsLoading.value = true
+  metricsRef.value?.loadSummary?.()
+  // free layout 内部组件自行加载，这里只反馈按钮态
+  window.setTimeout(() => {
+    metricsLoading.value = false
+  }, 400)
 }
 </script>
 
@@ -135,7 +93,8 @@ async function loadSummary() {
 .workspace-summary-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
+  min-height: 0;
 }
 
 .summary-head {
@@ -143,143 +102,37 @@ async function loadSummary() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px;
-  border: 1px solid #e5eaf3;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.summary-head h2 {
+  flex-shrink: 0;
+  padding: 12px;
   margin: 0;
-  color: #172033;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 26px;
+  border: 0;
+  border-bottom: 1px solid var(--border-light, #e5eaf3);
+  background: transparent;
 }
 
-.summary-head p {
-  margin: 4px 0 0;
-  color: #667085;
-  font-size: 13px;
+.summary-head-title {
+  margin: 0;
+  color: var(--text-primary, #172033);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
 }
 
-.summary-alert {
-  border-radius: 8px;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.summary-metric {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 20px;
-  gap: 12px;
-  align-items: center;
-  min-height: 118px;
-  padding: 16px;
-  border: 1px solid #e5eaf3;
-  border-radius: 8px;
-  background: #fff;
-  color: #344256;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
-}
-
-.summary-metric:hover {
-  border-color: #c9cdd4;
-  box-shadow: 0 8px 22px rgba(31, 35, 41, 0.06);
-  transform: translateY(-1px);
-}
-
-.metric-icon {
+.summary-head-actions {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 8px;
-  font-size: 22px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.metric-icon.blue {
-  background: #f0f2f5;
-  color: #4e5969;
-}
-
-.metric-icon.green {
-  background: #e9f8ef;
-  color: #15803d;
-}
-
-.metric-icon.amber {
-  background: #fff6df;
-  color: #b45309;
-}
-
-.metric-icon.red {
-  background: #fff0f0;
-  color: #dc2626;
-}
-
-.metric-copy {
-  min-width: 0;
-}
-
-.metric-copy strong {
-  display: block;
-  color: #172033;
-  font-size: 30px;
-  font-weight: 750;
-  line-height: 36px;
-}
-
-.metric-copy span,
-.metric-copy small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.metric-copy span {
-  margin-top: 4px;
-  color: #344256;
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.metric-copy small {
-  margin-top: 2px;
-  color: #667085;
-  font-size: 12px;
-}
-
-.metric-arrow {
-  color: #98a2b3;
-  font-size: 20px;
-}
-
-@media (max-width: 1180px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.workspace-summary-layout {
+  min-height: 0;
 }
 
 @media (max-width: 640px) {
   .summary-head {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .summary-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

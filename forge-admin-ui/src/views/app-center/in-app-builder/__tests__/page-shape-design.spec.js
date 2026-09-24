@@ -3,8 +3,12 @@ import { FIELD_COMPONENT_PALETTE_GROUPS } from '../../components/designer/form-f
 import { buildBusinessObjectDesignerPayloadFromFormAsset } from '../page-form-object-promotion'
 import {
   createPageShapeBuilder,
+  ensureFreeLayoutPageNode,
+  isObjectBoundPageLayoutPolluted,
   normalizePageShapeSelection,
   PAGE_SHAPE_TYPES,
+  resolvePageShapeFromNode,
+  restoreObjectBoundPageLayout,
 } from '../page-shape-design'
 
 function emptyBuilder() {
@@ -136,7 +140,68 @@ describe('page shape design draft', () => {
     })
     expect(custom.formAssetId).toBe('')
     expect(custom.schema.formAssets).toEqual([])
-    expect(custom.schema.nodes[0]).toMatchObject({ pageType: 'content', objectRef: null })
+    expect(custom.schema.nodes[0]).toMatchObject({ pageType: 'content', pageTemplate: 'custom', pageShape: 'custom', objectRef: null })
+  })
+
+  it('forces free-layout shape when designTab is page even if node looks like list-form', () => {
+    const node = {
+      id: 'page_free',
+      type: 'page',
+      pageType: 'object',
+      pageTemplate: 'list-form',
+      pageShape: '',
+      objectRef: { pageMode: 'crud', objectCode: 'order' },
+    }
+    expect(resolvePageShapeFromNode(node)).toBe('list-form')
+    expect(resolvePageShapeFromNode(node, { designTab: 'page' })).toBe('custom')
+    expect(ensureFreeLayoutPageNode(node)).toBe(node)
+  })
+
+  it('restores a polluted list-form page back to a single AiCrudPage', () => {
+    const pollutedNode = {
+      id: 'page_orders',
+      type: 'page',
+      title: '订单',
+      pageType: 'content',
+      pageTemplate: 'custom',
+      pageShape: 'custom',
+      objectRef: { objectCode: 'order', objectName: '订单', pageMode: 'crud' },
+    }
+    const schema = {
+      nodes: [pollutedNode],
+      pages: {
+        page_orders: {
+          title: '订单',
+          layout: {
+            gridLayout: {
+              items: [
+                { id: 'b1', blockType: 'stats-strip', props: {} },
+                { id: 'b2', blockType: 'custom-html', props: { formAssetId: 'form_order' } },
+              ],
+            },
+          },
+        },
+      },
+      formAssets: [{ id: 'form_order', name: '订单表单' }],
+    }
+    expect(isObjectBoundPageLayoutPolluted(pollutedNode, schema.pages.page_orders)).toBe(true)
+    const restored = restoreObjectBoundPageLayout(schema, 'page_orders')
+    expect(restored.nodes[0]).toMatchObject({
+      pageType: 'object',
+      pageShape: 'list-form',
+      pageTemplate: 'list-form',
+      objectRef: expect.objectContaining({ objectCode: 'order', pageMode: 'crud' }),
+    })
+    expect(restored.pages.page_orders.layout.gridLayout.items).toEqual([
+      expect.objectContaining({
+        blockType: 'AiCrudPage',
+        props: expect.objectContaining({
+          formAssetId: 'form_order',
+          formOpenMode: 'flat',
+        }),
+      }),
+    ])
+    expect(isObjectBoundPageLayoutPolluted(restored.nodes[0], restored.pages.page_orders)).toBe(false)
   })
 
   it('keeps an existing object field when the form reuses it instead of creating it', () => {

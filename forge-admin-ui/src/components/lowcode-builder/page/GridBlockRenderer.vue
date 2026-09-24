@@ -1,5 +1,11 @@
 <template>
-  <div v-if="blockRuntimeVisible" class="grid-block" :class="[`block-${block.blockType}`, { selected, 'is-form-only': crudPagePresentation.formOnly }]" :style="blockStyle" :data-block-id="block.id">
+  <div
+    v-if="blockRuntimeVisible"
+    class="grid-block"
+    :class="[`block-${block.blockType}`, { selected: selected && !readonly, 'is-form-only': crudPagePresentation.formOnly, 'is-readonly': readonly }]"
+    :style="blockStyle"
+    :data-block-id="block.id"
+  >
     <template v-if="isDataFieldBlock && runtimeCrudLoading">
       <div class="runtime-crud-loading">
         <n-skeleton height="32px" :sharp="false" />
@@ -210,31 +216,34 @@
         :cell-min-height="Number(block.props?.cellMinHeight || 120)"
         :align-items="block.props?.alignItems || 'stretch'"
         :justify-items="block.props?.justifyItems || 'stretch'"
-        :show-cell-border="block.props?.showCellBorder !== false"
+        :show-cell-border="!readonly && block.props?.showCellBorder !== false"
         :cell-background="block.props?.cellBackground"
         :cells="gridLayoutCells"
+        :container-id="block.id"
+        :active-cell-key="activeDropCell?.containerId === block.id ? activeDropCell?.cellKey : ''"
+        :mode="readonly ? 'preview' : 'designer'"
         class="layout-grid-preview"
         :class="{ 'is-nested-moving': !!nestedMovingBlockId }"
+        @cell-drag-enter="payload => handleGridCellDragEnter(payload.event)"
+        @cell-drag-over="payload => handleGridCellDragOver(payload.event, payload.cellKey)"
+        @cell-drop="payload => handleGridCellDrop(payload.event, payload.cellKey)"
+        @cell-context-menu="handleGridCellContextMenu"
       >
         <template #cell="{ cell }">
-          <div
-            class="designer-grid-cell-inner"
-            :class="{ 'is-drop-active': isActiveDropCell(cell) }"
-            :data-grid-cell-key="cell.key"
-            :data-grid-container-id="block.id"
-          >
+          <div class="designer-grid-cell-inner">
             <div v-if="hasGridCellChildren(cell)" class="layout-grid-cell-body">
               <div
                 v-for="child in cell.children"
                 :key="child.id"
                 class="layout-grid-cell-child"
                 :class="{
-                  'selected': child.id === selectedBlockId,
+                  'selected': !readonly && child.id === selectedBlockId,
                   'is-moving-source': child.id === nestedMovingBlockId,
                 }"
                 :style="nestedChildShellStyle(child)"
                 :data-grid-child-id="child.id"
                 @click.stop="emit('childBlockSelect', child.id)"
+                @contextmenu.prevent.stop="!readonly && handleChildContextMenu($event, child, { cellKey: cell.key, title: '栅格内组件' })"
               >
                 <div v-if="!readonly" class="nested-block-node-overlay">
                   <span
@@ -243,18 +252,8 @@
                     @click.stop
                     @pointerdown.stop.prevent="emit('childBlockMoveStart', { block: child, event: $event })"
                   >
-                    <svg
-                      width="1em"
-                      height="1em"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M8.25 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm0 7.25a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm1.75 5.5a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0ZM14.753 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5ZM16.5 12a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0Zm-1.747 9a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z"
-                        fill="currentColor"
-                      />
+                    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M8.25 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm0 7.25a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm1.75 5.5a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0ZM14.753 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5ZM16.5 12a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0Zm-1.747 9a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z" fill="currentColor" />
                     </svg>
                   </span>
                   <n-dropdown
@@ -263,13 +262,7 @@
                     :options="nestedBlockMenuOptions"
                     @select="key => emit('childBlockMenuSelect', { key, block: child })"
                   >
-                    <button
-                      type="button"
-                      class="nested-block-menu-trigger"
-                      title="更多操作"
-                      @click.stop
-                      @mousedown.stop
-                    >
+                    <button type="button" class="nested-block-menu-trigger" title="更多操作" @click.stop @mousedown.stop>
                       <svg width="1em" height="1em" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <circle cx="256" cy="256" r="32" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" />
                         <circle cx="416" cy="256" r="32" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" />
@@ -292,6 +285,7 @@
                   :runtime-extension-hooks="runtimeExtensionHooks"
                   :runtime-record="runtimeRecord"
                   :active-drop-cell="activeDropCell"
+                  :active-drop-container="activeDropContainer"
                   :nested-moving-block-id="nestedMovingBlockId"
                   :catalog-drag-block-type="catalogDragBlockType"
                   :block-fields-resolver="blockFieldsResolver"
@@ -303,6 +297,10 @@
                   @block-props-update="emit('blockPropsUpdate', $event)"
                   @tabs-active-change="emit('tabsActiveChange', $event)"
                   @tab-drop="emit('tabDrop', $event)"
+                  @grid-cell-drop="emit('gridCellDrop', $event)"
+                  @grid-cell-insert="emit('gridCellInsert', $event)"
+                  @container-insert="emit('containerInsert', $event)"
+                  @container-clear="emit('containerClear', $event)"
                   @child-block-drag-start="emit('childBlockDragStart', $event)"
                   @child-block-move-start="emit('childBlockMoveStart', $event)"
                   @child-block-drag-end="emit('childBlockDragEnd')"
@@ -322,11 +320,11 @@
                 </template>
               </div>
             </div>
-            <div v-if="shouldShowGridCellDropPreview(cell)" class="layout-grid-cell-drop-preview">
+            <div v-if="!readonly && shouldShowGridCellDropPreview(cell)" class="layout-grid-cell-drop-preview">
               释放到此格
             </div>
-            <div v-else-if="shouldShowGridCellEmpty(cell)" class="layout-grid-cell-empty">
-              拖入组件
+            <div v-else-if="!readonly && shouldShowGridCellEmpty(cell)" class="layout-grid-cell-empty">
+              拖入组件 · 右键可插入
             </div>
           </div>
         </template>
@@ -579,13 +577,13 @@
           :key="idx"
           class="stats-card"
         >
-          <div class="stats-label">
+          <div v-if="isBlockSlotVisible('labelField')" class="stats-label">
             {{ metric.label }}
           </div>
-          <div class="stats-value">
+          <div v-if="isBlockSlotVisible('valueField')" class="stats-value">
             {{ metric.value }}
           </div>
-          <div v-if="metric.trend" class="stats-trend" :class="trendClass(metric.trend)">
+          <div v-if="isBlockSlotVisible('metaField') && metric.trend" class="stats-trend" :class="trendClass(metric.trend)">
             {{ metric.trend }}
           </div>
         </div>
@@ -595,11 +593,23 @@
       </div>
     </template>
 
+    <!-- 工作台统计（待办/已办/发起中/抄送） -->
+    <template v-else-if="block.blockType === 'workspace-summary-metrics'">
+      <WorkspaceSummaryMetrics
+        :route-targets="block.props?.routeTargets || {}"
+        :visible-keys="block.props?.visibleKeys || ['todo', 'done', 'started', 'cc']"
+        :columns="Number(block.props?.columns || 4)"
+        :compact="block.props?.compact === true"
+        :readonly="!runtimeInteractive"
+        :auto-load="true"
+      />
+    </template>
+
     <!-- 提示面板 -->
     <template v-else-if="block.blockType === 'info-panel'">
       <div class="info-panel-preview" :class="`type-${boundInfoType || 'info'}`">
-        <strong>{{ boundInfoTitle || '提示信息' }}</strong>
-        <span>{{ boundInfoContent || '在右侧填写提示内容' }}</span>
+        <strong v-if="isBlockSlotVisible('titleField')">{{ boundInfoTitle || '提示信息' }}</strong>
+        <span v-if="isBlockSlotVisible('contentField')">{{ boundInfoContent || '在右侧填写提示内容' }}</span>
       </div>
     </template>
 
@@ -793,8 +803,8 @@
     <!-- 标题 -->
     <template v-else-if="block.blockType === 'text-title'">
       <div class="text-title-preview" :style="textTitleStyle">
-        {{ boundTextTitle || '页面标题' }}
-        <small v-if="boundTextSubtitle">{{ boundTextSubtitle }}</small>
+        <template v-if="isBlockSlotVisible('titleField')">{{ boundTextTitle || '页面标题' }}</template>
+        <small v-if="isBlockSlotVisible('descriptionField') && boundTextSubtitle">{{ boundTextSubtitle }}</small>
       </div>
     </template>
 
@@ -816,9 +826,12 @@
     <!-- 统计数值 -->
     <template v-else-if="block.blockType === 'statistic'">
       <div class="single-stat-preview" :style="{ '--stat-color': block.props?.color || '#2563eb' }">
-        <span>{{ boundStatisticTitle || '统计指标' }}</span>
-        <strong>{{ block.props?.prefix }}{{ boundStatisticValue || '0' }}{{ block.props?.suffix }}</strong>
-        <small>{{ boundStatisticTrend || '' }} {{ boundStatisticDescription || '' }}</small>
+        <span v-if="isBlockSlotVisible('titleField')">{{ boundStatisticTitle || '统计指标' }}</span>
+        <strong v-if="isBlockSlotVisible('valueField')">{{ block.props?.prefix }}{{ boundStatisticValue || '0' }}{{ block.props?.suffix }}</strong>
+        <small v-if="isBlockSlotVisible('metaField') || isBlockSlotVisible('descriptionField')">
+          <template v-if="isBlockSlotVisible('metaField')">{{ boundStatisticTrend || '' }}</template>
+          <template v-if="isBlockSlotVisible('descriptionField')">{{ boundStatisticDescription || '' }}</template>
+        </small>
       </div>
     </template>
 
@@ -927,40 +940,118 @@
 
     <!-- 盒子布局 -->
     <template v-else-if="block.blockType === 'box-layout'">
-      <div class="box-layout-preview" :style="boxLayoutStyle">
-        <GridBlockRenderer
+      <div
+        class="box-layout-preview"
+        :class="{ 'is-drop-active': isActiveDropContainer }"
+        :style="boxLayoutStyle"
+        :data-page-container-id="block.id"
+        data-page-container-type="box-layout"
+        :data-grid-container-id="block.id"
+        data-grid-cell-key="__body__"
+        @dragover.prevent.stop="handleContainerDragOver"
+        @dragenter.prevent.stop="handleContainerDragEnter"
+        @drop.prevent.stop="handleContainerDrop"
+        @contextmenu.prevent.stop="!readonly && handleContainerSlotContextMenu($event, { title: '插入到盒子' })"
+      >
+        <div
+          v-if="!readonly && catalogDragBlockType"
+          class="container-catalog-drop-layer"
+          :class="{ 'is-active': isActiveDropContainer }"
+          :data-grid-container-id="block.id"
+          data-grid-cell-key="__body__"
+          :data-page-container-id="block.id"
+          data-page-container-type="box-layout"
+        />
+        <div
           v-for="child in (block.children || [])"
           :key="child.id"
-          :block="child"
-          :fields="resolveNestedBlockFields(child)"
-          :selected="child.id === selectedBlockId"
-          :selected-block-id="selectedBlockId"
-          :readonly="readonly"
-          :runtime-crud-props="resolveNestedBlockRuntimeCrudProps(child)"
-          :runtime-crud-loading="resolveNestedBlockRuntimeCrudLoading(child)"
-          :show-data-source-guide="showDataSourceGuide"
-          :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
-          :runtime-interactive="runtimeInteractive"
-          :runtime-extension-hooks="runtimeExtensionHooks"
-          :runtime-record="runtimeRecord"
-          :catalog-drag-block-type="catalogDragBlockType"
-          :block-fields-resolver="blockFieldsResolver"
-          :runtime-crud-props-resolver="runtimeCrudPropsResolver"
-          :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
-          :data-source-configured-resolver="dataSourceConfiguredResolver"
+          class="container-child-item"
+          :class="{
+            selected: !readonly && child.id === selectedBlockId,
+            'is-moving-source': child.id === nestedMovingBlockId,
+          }"
+          :style="nestedChildShellStyle(child)"
+          :data-grid-child-id="child.id"
           @click.stop="emit('childBlockSelect', child.id)"
-          @child-block-select="emit('childBlockSelect', $event)"
-          @child-block-menu-select="emit('childBlockMenuSelect', $event)"
-          @block-props-update="emit('blockPropsUpdate', $event)"
-          @tabs-active-change="emit('tabsActiveChange', $event)"
-          @tab-drop="emit('tabDrop', $event)"
-          @child-block-move-start="emit('childBlockMoveStart', $event)"
-          @child-block-drag-end="emit('childBlockDragEnd')"
-          @child-block-resize-start="emit('childBlockResizeStart', $event)"
-          @request-data-source="emit('requestDataSource', $event)"
-        />
-        <div v-if="!(block.children || []).length" class="container-empty">
-          拖入组件到盒子中
+          @contextmenu.prevent.stop="!readonly && handleChildContextMenu($event, child, { title: '盒子内组件' })"
+        >
+          <div v-if="!readonly" class="nested-block-node-overlay">
+            <span
+              class="nested-block-drag-handle"
+              title="拖动组件"
+              @click.stop
+              @pointerdown.stop.prevent="emit('childBlockMoveStart', { block: child, event: $event })"
+            >
+              <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8.25 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm0 7.25a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm1.75 5.5a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 0 3.5ZM14.753 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5ZM16.5 12a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0Zm-1.747 9a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z" fill="currentColor" />
+              </svg>
+            </span>
+            <n-dropdown
+              trigger="click"
+              placement="bottom-end"
+              :options="nestedBlockMenuOptions"
+              @select="key => emit('childBlockMenuSelect', { key, block: child })"
+            >
+              <button type="button" class="nested-block-menu-trigger" title="更多操作" @click.stop @mousedown.stop>
+                <svg width="1em" height="1em" viewBox="0 0 512 512" aria-hidden="true">
+                  <circle cx="256" cy="256" r="32" fill="currentColor" />
+                  <circle cx="416" cy="256" r="32" fill="currentColor" />
+                  <circle cx="96" cy="256" r="32" fill="currentColor" />
+                </svg>
+              </button>
+            </n-dropdown>
+          </div>
+          <GridBlockRenderer
+            :block="child"
+            :fields="resolveNestedBlockFields(child)"
+            :selected="false"
+            :selected-block-id="selectedBlockId"
+            :readonly="readonly"
+            :runtime-crud-props="resolveNestedBlockRuntimeCrudProps(child)"
+            :runtime-crud-loading="resolveNestedBlockRuntimeCrudLoading(child)"
+            :show-data-source-guide="showDataSourceGuide"
+            :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
+            :runtime-interactive="runtimeInteractive"
+            :runtime-extension-hooks="runtimeExtensionHooks"
+            :runtime-record="runtimeRecord"
+            :active-drop-cell="activeDropCell"
+            :active-drop-container="activeDropContainer"
+            :nested-moving-block-id="nestedMovingBlockId"
+            :catalog-drag-block-type="catalogDragBlockType"
+            :block-fields-resolver="blockFieldsResolver"
+            :runtime-crud-props-resolver="runtimeCrudPropsResolver"
+            :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
+            :data-source-configured-resolver="dataSourceConfiguredResolver"
+            @child-block-select="emit('childBlockSelect', $event)"
+            @child-block-menu-select="emit('childBlockMenuSelect', $event)"
+            @block-props-update="emit('blockPropsUpdate', $event)"
+            @tabs-active-change="emit('tabsActiveChange', $event)"
+            @tab-drop="emit('tabDrop', $event)"
+            @grid-cell-drop="emit('gridCellDrop', $event)"
+            @container-insert="emit('containerInsert', $event)"
+            @container-clear="emit('containerClear', $event)"
+            @child-block-move-start="emit('childBlockMoveStart', $event)"
+            @child-block-drag-end="emit('childBlockDragEnd')"
+            @child-block-resize-start="emit('childBlockResizeStart', $event)"
+            @request-data-source="emit('requestDataSource', $event)"
+          />
+          <template v-if="!readonly && child.id === selectedBlockId">
+            <button
+              v-for="anchor in resizeAnchors"
+              :key="anchor"
+              type="button"
+              class="nested-resize-anchor"
+              :class="`anchor-${anchor}`"
+              title="调整组件大小"
+              @pointerdown.stop="emit('childBlockResizeStart', { block: child, event: $event, anchor })"
+            />
+          </template>
+        </div>
+        <div v-if="!readonly && isActiveDropContainer" class="layout-grid-cell-drop-preview">
+          释放到盒子
+        </div>
+        <div v-else-if="!readonly && !(block.children || []).length" class="container-empty">
+          拖入组件 · 右键可插入
         </div>
       </div>
     </template>
@@ -1032,8 +1123,26 @@
           'layout-card--borderless': block.props?.bordered === false,
           'layout-card--embedded': block.props?.embedded,
           'layout-card--hoverable': block.props?.hoverable,
+          'is-drop-active': isActiveDropContainer,
         }"
+        :data-page-container-id="block.id"
+        data-page-container-type="card"
+        :data-grid-container-id="block.id"
+        data-grid-cell-key="__body__"
+        @dragover.prevent.stop="handleContainerDragOver"
+        @dragenter.prevent.stop="handleContainerDragEnter"
+        @drop.prevent.stop="handleContainerDrop"
+        @contextmenu.prevent.stop="!readonly && handleContainerSlotContextMenu($event, { title: '插入到卡片' })"
       >
+        <div
+          v-if="!readonly && catalogDragBlockType"
+          class="container-catalog-drop-layer"
+          :class="{ 'is-active': isActiveDropContainer }"
+          :data-grid-container-id="block.id"
+          data-grid-cell-key="__body__"
+          :data-page-container-id="block.id"
+          data-page-container-type="card"
+        />
         <div v-if="block.props?.title" class="layout-card-title">
           {{ block.props.title }}
         </div>
@@ -1042,41 +1151,97 @@
             {{ block.props.content }}
           </div>
           <div v-if="block.children?.length" class="container-child-list">
-            <GridBlockRenderer
+            <div
               v-for="child in block.children"
               :key="child.id"
-              :block="child"
-              :fields="resolveNestedBlockFields(child)"
-              :selected="child.id === selectedBlockId"
-              :selected-block-id="selectedBlockId"
-              :readonly="readonly"
-              :runtime-crud-props="resolveNestedBlockRuntimeCrudProps(child)"
-              :runtime-crud-loading="resolveNestedBlockRuntimeCrudLoading(child)"
-              :show-data-source-guide="showDataSourceGuide"
-              :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
-              :runtime-interactive="runtimeInteractive"
-              :runtime-extension-hooks="runtimeExtensionHooks"
-              :runtime-record="runtimeRecord"
-              :active-drop-cell="activeDropCell"
-              :nested-moving-block-id="nestedMovingBlockId"
-              :block-fields-resolver="blockFieldsResolver"
-              :runtime-crud-props-resolver="runtimeCrudPropsResolver"
-              :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
-              :data-source-configured-resolver="dataSourceConfiguredResolver"
+              class="container-child-item"
+              :class="{
+                selected: !readonly && child.id === selectedBlockId,
+                'is-moving-source': child.id === nestedMovingBlockId,
+              }"
+              :style="nestedChildShellStyle(child)"
+              :data-grid-child-id="child.id"
               @click.stop="emit('childBlockSelect', child.id)"
-              @child-block-select="emit('childBlockSelect', $event)"
-              @child-block-menu-select="emit('childBlockMenuSelect', $event)"
-              @block-props-update="emit('blockPropsUpdate', $event)"
-              @tabs-active-change="emit('tabsActiveChange', $event)"
-              @tab-drop="emit('tabDrop', $event)"
-              @child-block-move-start="emit('childBlockMoveStart', $event)"
-              @child-block-drag-end="emit('childBlockDragEnd')"
-              @child-block-resize-start="emit('childBlockResizeStart', $event)"
-              @request-data-source="emit('requestDataSource', $event)"
-            />
+              @contextmenu.prevent.stop="!readonly && handleChildContextMenu($event, child, { title: '卡片内组件' })"
+            >
+              <div v-if="!readonly" class="nested-block-node-overlay">
+                <span
+                  class="nested-block-drag-handle"
+                  title="拖动组件"
+                  @click.stop
+                  @pointerdown.stop.prevent="emit('childBlockMoveStart', { block: child, event: $event })"
+                >
+                  <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M8.25 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm0 7.25a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm1.75 5.5a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 0 3.5ZM14.753 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5ZM16.5 12a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0Zm-1.747 9a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z" fill="currentColor" />
+                  </svg>
+                </span>
+                <n-dropdown
+                  trigger="click"
+                  placement="bottom-end"
+                  :options="nestedBlockMenuOptions"
+                  @select="key => emit('childBlockMenuSelect', { key, block: child })"
+                >
+                  <button type="button" class="nested-block-menu-trigger" title="更多操作" @click.stop @mousedown.stop>
+                    <svg width="1em" height="1em" viewBox="0 0 512 512" aria-hidden="true">
+                      <circle cx="256" cy="256" r="32" fill="currentColor" />
+                      <circle cx="416" cy="256" r="32" fill="currentColor" />
+                      <circle cx="96" cy="256" r="32" fill="currentColor" />
+                    </svg>
+                  </button>
+                </n-dropdown>
+              </div>
+              <GridBlockRenderer
+                :block="child"
+                :fields="resolveNestedBlockFields(child)"
+                :selected="false"
+                :selected-block-id="selectedBlockId"
+                :readonly="readonly"
+                :runtime-crud-props="resolveNestedBlockRuntimeCrudProps(child)"
+                :runtime-crud-loading="resolveNestedBlockRuntimeCrudLoading(child)"
+                :show-data-source-guide="showDataSourceGuide"
+                :data-source-configured="resolveNestedBlockDataSourceConfigured(child)"
+                :runtime-interactive="runtimeInteractive"
+                :runtime-extension-hooks="runtimeExtensionHooks"
+                :runtime-record="runtimeRecord"
+                :active-drop-cell="activeDropCell"
+                :active-drop-container="activeDropContainer"
+                :nested-moving-block-id="nestedMovingBlockId"
+                :catalog-drag-block-type="catalogDragBlockType"
+                :block-fields-resolver="blockFieldsResolver"
+                :runtime-crud-props-resolver="runtimeCrudPropsResolver"
+                :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
+                :data-source-configured-resolver="dataSourceConfiguredResolver"
+                @child-block-select="emit('childBlockSelect', $event)"
+                @child-block-menu-select="emit('childBlockMenuSelect', $event)"
+                @block-props-update="emit('blockPropsUpdate', $event)"
+                @tabs-active-change="emit('tabsActiveChange', $event)"
+                @tab-drop="emit('tabDrop', $event)"
+                @grid-cell-drop="emit('gridCellDrop', $event)"
+                @container-insert="emit('containerInsert', $event)"
+                @container-clear="emit('containerClear', $event)"
+                @child-block-move-start="emit('childBlockMoveStart', $event)"
+                @child-block-drag-end="emit('childBlockDragEnd')"
+                @child-block-resize-start="emit('childBlockResizeStart', $event)"
+                @request-data-source="emit('requestDataSource', $event)"
+              />
+              <template v-if="!readonly && child.id === selectedBlockId">
+                <button
+                  v-for="anchor in resizeAnchors"
+                  :key="anchor"
+                  type="button"
+                  class="nested-resize-anchor"
+                  :class="`anchor-${anchor}`"
+                  title="调整组件大小"
+                  @pointerdown.stop="emit('childBlockResizeStart', { block: child, event: $event, anchor })"
+                />
+              </template>
+            </div>
           </div>
-          <div v-else-if="!block.props?.content" class="container-empty">
-            拖入组件到卡片中
+          <div v-if="!readonly && isActiveDropContainer" class="layout-grid-cell-drop-preview">
+            释放到卡片
+          </div>
+          <div v-else-if="!readonly && !block.children?.length && !block.props?.content" class="container-empty">
+            拖入组件 · 右键可插入
           </div>
         </div>
       </div>
@@ -1102,6 +1267,7 @@
           :key="tab.key"
           :name="tab.key"
           :tab="tab.title"
+          display-directive="show"
         >
           <div
             class="tab-pane-drop-target"
@@ -1111,16 +1277,18 @@
             @dragenter.prevent.stop="handleTabPaneDragEnter"
             @dragover.prevent.stop="handleTabPaneDragOver"
             @drop.prevent.stop="event => handleTabPaneDrop(event, tab.key)"
+            @contextmenu.prevent.stop="!readonly && handleContainerSlotContextMenu($event, { title: '插入到标签页', tabKey: tab.key })"
           >
             <div v-if="tab.children?.length" class="container-child-list">
               <div
                 v-for="child in tab.children"
                 :key="child.id"
                 class="tab-pane-child"
-                :class="{ selected: child.id === selectedBlockId }"
+                :class="{ selected: !readonly && child.id === selectedBlockId }"
                 :style="nestedChildShellStyle(child)"
                 :data-grid-child-id="child.id"
                 @click.stop="emit('childBlockSelect', child.id)"
+                @contextmenu.prevent.stop="!readonly && handleChildContextMenu($event, child, { tabKey: tab.key, title: '标签页内组件' })"
               >
                 <div v-if="!readonly" class="nested-block-node-overlay">
                   <span
@@ -1162,6 +1330,7 @@
                   :runtime-extension-hooks="runtimeExtensionHooks"
                   :runtime-record="runtimeRecord"
                   :active-drop-cell="activeDropCell"
+                  :active-drop-container="activeDropContainer"
                   :nested-moving-block-id="nestedMovingBlockId"
                   :catalog-drag-block-type="catalogDragBlockType"
                   :block-fields-resolver="blockFieldsResolver"
@@ -1173,6 +1342,9 @@
                   @block-props-update="emit('blockPropsUpdate', $event)"
                   @tabs-active-change="emit('tabsActiveChange', $event)"
                   @tab-drop="emit('tabDrop', $event)"
+                  @grid-cell-drop="emit('gridCellDrop', $event)"
+                  @container-insert="emit('containerInsert', $event)"
+                  @container-clear="emit('containerClear', $event)"
                   @child-block-move-start="emit('childBlockMoveStart', $event)"
                   @child-block-drag-end="emit('childBlockDragEnd')"
                   @child-block-resize-start="emit('childBlockResizeStart', $event)"
@@ -1191,8 +1363,8 @@
                 </template>
               </div>
             </div>
-            <div v-else class="sub-tab-empty">
-              拖入组件到当前标签页
+            <div v-else-if="!readonly" class="sub-tab-empty">
+              拖入组件 · 右键可插入
             </div>
           </div>
         </n-tab-pane>
@@ -1213,6 +1385,17 @@
       {{ blockBindingError || '正在加载数据...' }}
     </div>
   </div>
+  <ContainerContextMenu
+    v-if="!readonly"
+    :show="containerMenu.visible && containerMenu.containerId === block.id"
+    :x="containerMenu.x"
+    :y="containerMenu.y"
+    :mode="containerMenu.mode"
+    :title="containerMenu.title"
+    @update:show="value => !value && closeContainerMenu()"
+    @insert="handleContainerMenuInsert"
+    @action="handleContainerMenuAction"
+  />
 </template>
 
 <script setup>
@@ -1229,6 +1412,16 @@ import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRe
 import InlineRichText from '@/components/lowcode-builder/shared/InlineRichText.vue'
 import { isPageWidgetComponentKey, pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
+import ContainerContextMenu from '@/components/lowcode-builder/shared/ContainerContextMenu.vue'
+import { isComposeDisplayEnabled, resolveComposeDisplayValue } from '@/components/lowcode-builder/shared/widget-field-catalog'
+import {
+  buildBindingPreviewRecord,
+  hasResolvedBindingValues,
+  isBindingSlotVisible,
+  isExplicitBindingPath,
+  resolveWidgetBindingProfile,
+  resolveWidgetRenderMode,
+} from '@/components/lowcode-builder/shared/widget-binding-slots'
 import { resolveCrudPagePresentation } from '@/components/lowcode-builder/shared/runtime-crud-page-mode'
 import { buildCrudSearchTypeRequestParams, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
@@ -1237,6 +1430,7 @@ import { postEncrypt, request } from '@/utils'
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from './crud-hook-rules'
 import { isDataFieldBlockType } from './page-schema'
 import { buildRuntimeCrudBlockProps, resolveEffectiveFormOpenMode, resolveEffectiveModalType } from './runtime-crud-block-props'
+import WorkspaceSummaryMetrics from '@/views/workspace/WorkspaceSummaryMetrics.vue'
 
 const AiCrudPage = defineAsyncComponent(() => import('@/components/ai-form/AiCrudPage.vue'))
 
@@ -1313,6 +1507,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  activeDropContainer: {
+    type: Object,
+    default: null,
+  },
   nestedMovingBlockId: {
     type: String,
     default: '',
@@ -1342,6 +1540,12 @@ const emit = defineEmits([
   'blockActivate',
   'tabsActiveChange',
   'tabDrop',
+  'gridCellDrop',
+  'gridCellDragOver',
+  'gridCellInsert',
+  'containerInsert',
+  'containerClear',
+  'containerDragOver',
   'requestDataSource',
 ])
 
@@ -1430,22 +1634,102 @@ const blockBoundData = computed(() => {
   const binding = props.block.props?.dataBinding || {}
   if (binding.enabled !== true || binding.sourceType === 'static')
     return null
-  const source = binding.sourceType === 'remote' ? remoteBlockBindingData.value : props.runtimeRecord
-  if (!source)
-    return null
-  const dataPath = binding.sourceType === 'context' ? binding.contextPath : binding.dataPath
+  // 手动多项模式：取整条详情对象（不按数组截断），供每张指标卡单独绑字段
+  if (
+    props.block.blockType === 'stats-strip'
+    && resolveWidgetRenderMode(binding, props.block.blockType) === 'manual'
+  ) {
+    return resolveContextObjectSource(binding)
+  }
+  if (binding.sourceType === 'remote') {
+    const source = remoteBlockBindingData.value
+    if (!source)
+      return null
+    const dataPath = binding.dataPath
+    if (!dataPath)
+      return source
+    const nested = getNestedRecordValue(source, dataPath)
+    return nested === undefined || nested === null ? source : nested
+  }
+  // context：有真实详情用真实值；否则按已绑字段生成预览样例，避免仍显示静态占位
+  const realRecord = props.runtimeRecord || {}
+  let source = realRecord
+  if (!hasResolvedBindingValues(realRecord, binding, props.block.blockType, props.fields)) {
+    const preview = buildBindingPreviewRecord(binding, props.fields, props.block.blockType)
+    if (Array.isArray(preview))
+      return preview
+    source = { ...preview, ...realRecord }
+  }
+  const dataPath = binding.contextPath
   if (!dataPath)
     return source
   const nested = getNestedRecordValue(source, dataPath)
   return nested === undefined || nested === null ? source : nested
 })
+function resolveContextObjectSource(binding = {}) {
+  if (binding.sourceType === 'remote') {
+    const source = remoteBlockBindingData.value
+    if (!source)
+      return null
+    const dataPath = binding.dataPath
+    if (!dataPath)
+      return source
+    const nested = getNestedRecordValue(source, dataPath)
+    return nested === undefined || nested === null ? source : nested
+  }
+  const realRecord = props.runtimeRecord || {}
+  let source = realRecord
+  if (!hasResolvedBindingValues(realRecord, binding, props.block.blockType, props.fields)) {
+    const preview = buildBindingPreviewRecord(
+      { ...binding, renderMode: 'manual' },
+      props.fields,
+      'statistic',
+    )
+    source = { ...(preview && !Array.isArray(preview) ? preview : {}), ...realRecord }
+  }
+  const dataPath = binding.contextPath
+  if (!dataPath)
+    return source
+  const nested = getNestedRecordValue(source, dataPath)
+  return nested === undefined || nested === null ? source : nested
+}
+function isBlockSlotVisible(slotKey) {
+  return isBindingSlotVisible(props.block.props?.dataBinding || {}, slotKey)
+}
 const isLocalDataBindableBlock = computed(() => localDataBindableBlockTypes.has(props.block.blockType))
 const showBlockBindingState = computed(() => isLocalDataBindableBlock.value && (blockBindingLoading.value || blockBindingError.value))
-const statsMetrics = computed(() => normalizeBlockBoundRows(props.block.props?.metrics || []).map((row, index) => ({
-  label: boundRowField(row, 'labelField', 'label', `指标${index + 1}`),
-  value: boundRowField(row, 'valueField', 'value', '-'),
-  trend: boundRowField(row, 'metaField', 'trend', ''),
-})))
+const statsMetrics = computed(() => {
+  const binding = props.block.props?.dataBinding || {}
+  const mode = resolveWidgetRenderMode(binding, 'stats-strip')
+  const metrics = Array.isArray(props.block.props?.metrics) ? props.block.props.metrics : []
+  if (mode === 'list' && binding.enabled === true && binding.sourceType !== 'static') {
+    return normalizeBlockBoundRows(metrics).map((row, index) => ({
+      label: boundRowField(row, 'labelField', 'label', `指标${index + 1}`),
+      value: boundRowField(row, 'valueField', 'value', '-'),
+      trend: boundRowField(row, 'metaField', 'trend', ''),
+    }))
+  }
+  // 手动多项：始终用 metrics 数组长度；单项可绑字段覆盖静态值
+  const data = blockBoundData.value
+  return metrics.map((metric, index) => ({
+    label: resolveManualMetricValue(metric, data, 'labelField', 'label', metric.label || `指标${index + 1}`),
+    value: resolveManualMetricValue(metric, data, 'valueField', 'value', metric.value ?? '-'),
+    trend: resolveManualMetricValue(metric, data, 'metaField', 'trend', metric.trend || ''),
+  }))
+})
+
+function resolveManualMetricValue(metric = {}, data, fieldKey, defaultField, fallback) {
+  const binding = props.block.props?.dataBinding || {}
+  const path = String(metric?.[fieldKey] || binding[fieldKey] || '').trim()
+  if (path && isExplicitBindingPath(path, props.fields) && data && typeof data === 'object' && !Array.isArray(data)) {
+    const value = getNestedRecordValue(data, path)
+    if (value !== undefined && value !== null && value !== '')
+      return value
+  }
+  if (metric?.[defaultField] !== undefined && metric?.[defaultField] !== null && metric?.[defaultField] !== '')
+    return metric[defaultField]
+  return fallback
+}
 const boundInfoTitle = computed(() => boundContentValue(props.block.props?.title || '提示信息', 'titleField', 'title'))
 const boundInfoContent = computed(() => boundContentValue(props.block.props?.content || '在右侧填写提示内容', 'contentField', 'content'))
 const boundInfoType = computed(() => boundContentValue(props.block.props?.type || 'info', 'valueField', 'type'))
@@ -1492,6 +1776,130 @@ const nestedBlockMenuOptions = [
   { label: '复制', key: 'duplicate' },
   { label: '删除', key: 'delete' },
 ]
+const containerMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  mode: 'insert',
+  title: '',
+  containerId: '',
+  containerType: '',
+  cellKey: '',
+  tabKey: '',
+  childId: '',
+})
+
+function openContainerMenu(payload = {}) {
+  if (props.readonly)
+    return
+  const event = payload.event
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  containerMenu.value = {
+    visible: true,
+    x: Number(event?.clientX || 0),
+    y: Number(event?.clientY || 0),
+    mode: payload.mode || 'insert',
+    title: payload.title || '',
+    containerId: String(payload.containerId || props.block.id || ''),
+    containerType: String(payload.containerType || props.block.blockType || ''),
+    cellKey: String(payload.cellKey || ''),
+    tabKey: String(payload.tabKey || ''),
+    childId: String(payload.childId || ''),
+  }
+}
+
+function closeContainerMenu() {
+  containerMenu.value = {
+    ...containerMenu.value,
+    visible: false,
+  }
+}
+
+function handleGridCellContextMenu(payload = {}) {
+  openContainerMenu({
+    event: payload.event,
+    mode: 'insert',
+    title: '插入到栅格',
+    containerId: props.block.id,
+    containerType: 'grid-layout',
+    cellKey: payload.cellKey,
+  })
+}
+
+function handleContainerSlotContextMenu(event, extra = {}) {
+  openContainerMenu({
+    event,
+    mode: 'insert',
+    title: extra.title || '插入组件',
+    containerId: props.block.id,
+    containerType: props.block.blockType,
+    ...extra,
+  })
+}
+
+function handleChildContextMenu(event, child, extra = {}) {
+  openContainerMenu({
+    event,
+    mode: 'child',
+    title: extra.title || child?.label || child?.blockType || '组件操作',
+    containerId: props.block.id,
+    containerType: props.block.blockType,
+    childId: child?.id,
+    cellKey: extra.cellKey,
+    tabKey: extra.tabKey,
+  })
+}
+
+function handleContainerMenuInsert(blockType) {
+  const menu = containerMenu.value
+  closeContainerMenu()
+  if (!blockType)
+    return
+  if (menu.containerType === 'grid-layout') {
+    emit('gridCellDrop', {
+      blockId: menu.containerId,
+      cellKey: menu.cellKey,
+      blockType,
+    })
+    return
+  }
+  if (menu.containerType === 'tabs') {
+    emit('tabDrop', {
+      blockId: menu.containerId,
+      tabKey: menu.tabKey,
+      blockType,
+    })
+    return
+  }
+  emit('containerInsert', {
+    blockId: menu.containerId,
+    containerType: menu.containerType,
+    blockType,
+    cellKey: menu.cellKey,
+    tabKey: menu.tabKey,
+  })
+}
+
+function handleContainerMenuAction(actionKey) {
+  const menu = containerMenu.value
+  closeContainerMenu()
+  if (menu.mode === 'child' && menu.childId) {
+    emit('childBlockMenuSelect', {
+      key: actionKey,
+      block: { id: menu.childId },
+    })
+    return
+  }
+  if (actionKey === 'clear') {
+    emit('containerClear', {
+      blockId: menu.containerId,
+      containerType: menu.containerType,
+      cellKey: menu.cellKey,
+      tabKey: menu.tabKey,
+    })
+  }
+}
 const crudPreviewMode = computed(() => props.block.props?.previewMode || (props.block.props?.previewLiveData === true ? 'realList' : 'mock'))
 const crudPreviewReloadKey = computed(() => resolveCrudPreviewReloadKey(props.block, props.runtimeCrudProps))
 const gridLayoutCells = computed(() => {
@@ -1533,16 +1941,100 @@ function normalizeCssNumber(value) {
 function isActiveDropCell(cell = {}) {
   return props.activeDropCell?.containerId === props.block.id && props.activeDropCell?.cellKey === cell.key
 }
+const isActiveDropContainer = computed(() => {
+  if (!['card', 'box-layout'].includes(props.block.blockType))
+    return false
+  const dropContainerId = props.activeDropContainer?.containerId || props.activeDropContainer?.blockId
+  if (dropContainerId === props.block.id)
+    return true
+  // 与栅格同一套命中：卡片/盒子挂了 data-grid-cell-key=__body__
+  return props.activeDropCell?.containerId === props.block.id
+    && String(props.activeDropCell?.cellKey || '') === '__body__'
+})
 function hasGridCellChildren(cell = {}) {
   return Array.isArray(cell.children) && cell.children.length > 0
 }
 function shouldShowGridCellDropPreview(cell = {}) {
   if (!isActiveDropCell(cell))
     return false
-  return !hasGridCellChildren(cell) || Boolean(props.nestedMovingBlockId)
+  // 目录拖入时即便格子已有内容也提示可放入（追加到该格）
+  return true
 }
 function shouldShowGridCellEmpty(cell = {}) {
   return !props.readonly && !hasGridCellChildren(cell) && !isActiveDropCell(cell)
+}
+function isCatalogDragEvent(event) {
+  const types = Array.from(event.dataTransfer?.types || [])
+  return Boolean(props.catalogDragBlockType)
+    || types.includes('application/x-forge-app-page-block')
+    || types.includes('application/x-list-block')
+    || types.includes('application/x-forge-form-layout')
+}
+function handleGridCellDragOver(event, cellKey) {
+  if (!isCatalogDragEvent(event))
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  event.dataTransfer.dropEffect = 'copy'
+  emit('gridCellDragOver', { blockId: props.block.id, cellKey })
+}
+function handleGridCellDragEnter(event) {
+  if (!isCatalogDragEvent(event))
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  event.dataTransfer.dropEffect = 'copy'
+}
+function handleGridCellDrop(event, cellKey) {
+  const blockType = props.catalogDragBlockType
+    || event.dataTransfer?.getData('application/x-forge-app-page-block')
+    || event.dataTransfer?.getData('application/x-list-block')
+    || resolveFormLayoutBlockType(event)
+  if (!blockType)
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('gridCellDrop', {
+    blockId: props.block.id,
+    cellKey,
+    blockType,
+  })
+}
+
+function handleContainerDragOver(event) {
+  if (!isCatalogDragEvent(event))
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  event.dataTransfer.dropEffect = 'copy'
+  emit('containerDragOver', {
+    blockId: props.block.id,
+    containerType: props.block.blockType,
+  })
+}
+
+function handleContainerDragEnter(event) {
+  if (!isCatalogDragEvent(event))
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+function handleContainerDrop(event) {
+  const blockType = props.catalogDragBlockType
+    || event.dataTransfer?.getData('application/x-forge-app-page-block')
+    || event.dataTransfer?.getData('application/x-list-block')
+    || resolveFormLayoutBlockType(event)
+  if (!blockType)
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('containerInsert', {
+    blockId: props.block.id,
+    containerType: props.block.blockType,
+    blockType,
+  })
 }
 function handleTabPaneDragOver(event) {
   const types = Array.from(event.dataTransfer?.types || [])
@@ -1617,18 +2109,26 @@ function clampGridSpan(value, fallback = 1) {
   return Math.max(1, Math.min(columns, Number.isFinite(number) ? number : fallback))
 }
 function nestedChildShellStyle(child = {}) {
-  const style = child.props?.style || {}
-  const widthMode = style.widthMode || (style.width === '100%' || !style.width ? 'full' : 'fixed')
-  const x = Math.max(0, Number(style.x ?? style.left ?? 0) || 0)
-  const y = Math.max(0, Number(style.y ?? style.top ?? 0) || 0)
-  const width = widthMode === 'fixed'
-    ? normalizeCssSize(style.width, '100%')
-    : widthMode === 'auto' ? 'auto' : `calc(100% - ${x}px)`
+  const style = child?.props?.style || {}
+  const widthMode = style.widthMode || 'full'
+  const rawWidth = style.width
+  const rawHeight = style.height
+  const isFullWidth = widthMode === 'full'
+    || rawWidth === ''
+    || rawWidth === null
+    || rawWidth === undefined
+    || rawWidth === '100%'
+    || rawWidth === 'auto'
+  // 外壳承载选中边框与缩放锚点，必须与子组件实际宽高同步
   return {
-    left: `${x}px`,
-    top: `${y}px`,
-    width,
-    height: normalizeCssSize(style.height, ''),
+    position: 'relative',
+    left: '0',
+    top: '0',
+    width: isFullWidth ? '100%' : normalizeCssSize(rawWidth, '100%'),
+    maxWidth: '100%',
+    boxSizing: 'border-box',
+    height: normalizeCssSize(rawHeight, ''),
+    overflow: 'visible',
   }
 }
 function normalizeCssSize(value, fallback = '') {
@@ -1651,6 +2151,16 @@ const actionButtonVisible = computed(() => {
     && matchDisplayCondition(eventItem?.displayCondition, props.runtimeRecord || {})
 })
 const blockStyle = computed(() => {
+  const raw = props.block.props?.style || {}
+  const {
+    pageFlowX: _pageFlowX,
+    pageFlowY: _pageFlowY,
+    pageFlowWidth: _pageFlowWidth,
+    pageFlowHeight: _pageFlowHeight,
+    widthMode,
+    heightMode: _heightMode,
+    ...visualStyle
+  } = raw
   const style = {
     width: '100%',
     height: '100%',
@@ -1666,10 +2176,15 @@ const blockStyle = computed(() => {
     maxWidth: '',
     minHeight: '',
     maxHeight: '',
-    ...(props.block.props?.style || {}),
+    ...visualStyle,
   }
+  const resolvedWidthMode = widthMode || 'full'
+  // 通栏/自适应：强制跟壳宽走，禁止把历史测量出的 px 宽锁死（小屏缩放后切回大屏会变窄）
+  const forceFluidWidth = resolvedWidthMode === 'full' || resolvedWidthMode === 'auto'
   const resolvedStyle = {
-    width: toCssSize(style.width, '100%'),
+    width: forceFluidWidth
+      ? (resolvedWidthMode === 'auto' ? 'auto' : '100%')
+      : toCssSize(style.width, '100%'),
     height: toCssSize(style.height, '100%'),
     backgroundColor: style.backgroundColor || 'transparent',
     borderColor: style.borderColor || 'transparent',
@@ -1677,13 +2192,17 @@ const blockStyle = computed(() => {
     borderStyle: style.borderStyle || 'solid',
     borderRadius: toCssSize(style.borderRadius, '0px'),
     boxShadow: style.boxShadow || 'none',
-    minWidth: toCssSize(style.minWidth, undefined),
-    maxWidth: toCssSize(style.maxWidth, undefined),
+    minWidth: forceFluidWidth ? '0' : toCssSize(style.minWidth, undefined),
+    maxWidth: forceFluidWidth ? '100%' : toCssSize(style.maxWidth, undefined),
     minHeight: toCssSize(style.minHeight, undefined),
     maxHeight: toCssSize(style.maxHeight, undefined),
     margin: toCssSize(style.margin, '0px'),
     padding: toCssSize(style.padding, '0px'),
     ...parseInlineStyle(style.customStyle),
+  }
+  if (forceFluidWidth) {
+    resolvedStyle.width = resolvedWidthMode === 'auto' ? 'auto' : '100%'
+    resolvedStyle.maxWidth = '100%'
   }
   if (props.block.blockType === 'tree-panel' && treePanelCollapsed.value) {
     resolvedStyle.width = '100%'
@@ -1691,15 +2210,7 @@ const blockStyle = computed(() => {
     resolvedStyle.maxWidth = '100%'
     resolvedStyle.overflow = 'hidden'
   }
-  // 设计态：背景透明的区块给一个可辨识的占位底色+虚线轮廓，避免拖入后"看不见"（运行/预览态不影响）
-  if (!props.readonly) {
-    const bg = String(resolvedStyle.backgroundColor || 'transparent').trim().toLowerCase()
-    if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)' || bg === 'rgba(0,0,0,0)') {
-      resolvedStyle.backgroundColor = 'rgba(255, 255, 255, 0.66)'
-      resolvedStyle.outline = '1px dashed rgba(148, 163, 184, 0.45)'
-      resolvedStyle.outlineOffset = '-1px'
-    }
-  }
+  // 设计态不再给每个透明区块强加灰底虚线（统一由外层选中/hover 描边表达边界）
   return resolvedStyle
 })
 
@@ -2317,13 +2828,26 @@ function normalizeBlockRow(row, index = 0) {
 }
 
 function boundContentValue(fallback = '', fieldKey = 'contentField', defaultField = 'content') {
+  const binding = props.block.props?.dataBinding || {}
   const data = blockBoundData.value
+  const primarySlot = resolveWidgetBindingProfile(props.block.blockType).primarySlot || 'valueField'
+  if (
+    fieldKey === primarySlot
+    && isComposeDisplayEnabled(binding)
+    && data
+    && typeof data === 'object'
+    && !Array.isArray(data)
+  ) {
+    const composed = resolveComposeDisplayValue(data, binding, getNestedRecordValue)
+    if (composed !== '')
+      return composed
+  }
   if (data === undefined || data === null)
     return fallback
   if (Array.isArray(data))
     return fallback
   if (typeof data !== 'object')
-    return fieldKey === 'valueField' || fieldKey === 'contentField' ? data : fallback
+    return fieldKey === primarySlot || fieldKey === 'valueField' || fieldKey === 'contentField' ? data : fallback
   return readBoundField(data, fieldKey, defaultField, fallback)
 }
 
@@ -2337,8 +2861,15 @@ function boundRowField(row = {}, fieldKey = 'valueField', defaultField = 'value'
 
 function readBoundField(source = {}, fieldKey = 'valueField', defaultField = 'value', fallback = '') {
   const binding = props.block.props?.dataBinding || {}
-  const fieldName = binding[fieldKey] || defaultField
-  const candidates = Array.from(new Set([fieldName, defaultField].filter(Boolean)))
+  const explicit = String(binding[fieldKey] || '').trim()
+  // 用户点选了真实字段时，只读该路径，避免误落到默认 value/title
+  if (explicit && isExplicitBindingPath(explicit, props.fields)) {
+    const value = getNestedRecordValue(source, explicit)
+    if (value !== undefined && value !== null && value !== '')
+      return value
+    return fallback
+  }
+  const candidates = Array.from(new Set([explicit || defaultField, defaultField].filter(Boolean)))
   for (const key of candidates) {
     const value = getNestedRecordValue(source, key)
     if (value !== undefined && value !== null && value !== '')
@@ -3069,6 +3600,12 @@ watch(
   border: 0;
   border-radius: 0;
   background: transparent;
+  overflow: visible;
+}
+
+.grid-block.block-AiCrudPage,
+.grid-block.block-AiTable,
+.grid-block.block-data-table {
   overflow: hidden;
 }
 
@@ -3095,10 +3632,52 @@ watch(
   overflow: visible;
 }
 
+.grid-block.block-timeline {
+  /* 时间轴圆点光晕超出内容盒，不能被 overflow 裁切 */
+  overflow: visible;
+}
+
 .grid-block.selected {
   border-color: #bfd2ea;
   background: #fafdff;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.06);
+}
+
+.grid-block.is-readonly,
+.grid-block.is-readonly.selected {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.grid-block.is-readonly :deep(.designer-grid-cell),
+.grid-block.is-readonly :deep(.designer-grid-cell:hover),
+.grid-block.is-readonly :deep(.designer-grid-cell.is-drop-active) {
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+.grid-block.is-readonly :deep(.designer-grid-cell.is-drop-active::after),
+.grid-block.is-readonly :deep(.layout-grid-cell-empty),
+.grid-block.is-readonly :deep(.layout-grid-cell-drop-preview),
+.grid-block.is-readonly :deep(.container-empty),
+.grid-block.is-readonly :deep(.sub-tab-empty),
+.grid-block.is-readonly :deep(.nested-block-node-overlay) {
+  display: none !important;
+}
+
+.grid-block.is-readonly :deep(.layout-grid-cell-child),
+.grid-block.is-readonly :deep(.layout-grid-cell-child:hover),
+.grid-block.is-readonly :deep(.layout-grid-cell-child.selected),
+.grid-block.is-readonly :deep(.container-child-item),
+.grid-block.is-readonly :deep(.container-child-item:hover),
+.grid-block.is-readonly :deep(.container-child-item.selected) {
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  cursor: default !important;
 }
 
 .block-header {
@@ -3254,14 +3833,14 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  height: 100%;
+  height: auto;
   min-height: 56px;
 }
 
 .page-title-rich-editor {
   width: min(100%, 920px);
   min-height: 0;
-  height: 100%;
+  height: auto;
   overflow: visible;
   color: #1f2329;
   cursor: text;
@@ -3453,10 +4032,13 @@ watch(
 /* 统一栅格渲染器内容包装：铺满格子、透传 drop-active 状态 */
 .designer-grid-cell-inner {
   position: relative;
+  z-index: 1;
   display: grid;
   align-content: start;
+  width: 100%;
   min-width: 0;
   min-height: 100%;
+  height: 100%;
 }
 
 .designer-grid-cell-inner.is-drop-active {
@@ -3529,7 +4111,12 @@ watch(
 
 .layout-grid-cell-child {
   position: relative;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
+  /* 锚点伸出边框外，不能裁切 */
+  overflow: visible;
   min-height: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -3558,7 +4145,8 @@ watch(
 
 .nested-block-node-overlay {
   position: absolute;
-  top: 6px;
+  /* 下移避开父级 page-block 的拖拽/更多操作条（约 top:6 + 24） */
+  top: 36px;
   right: 6px;
   left: 6px;
   z-index: 36;
@@ -4166,7 +4754,8 @@ watch(
 .info-panel-preview {
   display: grid;
   gap: 5px;
-  height: 100%;
+  height: auto;
+  min-height: 72px;
   align-content: center;
   padding: 12px 14px;
   border-left: 3px solid #2563eb;
@@ -4249,28 +4838,48 @@ watch(
 }
 
 .timeline-preview {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   min-height: 0;
-  overflow: hidden;
+  padding: 2px 2px 2px 4px;
+  overflow: visible;
 }
 
 .timeline-item {
   position: relative;
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 0 14px;
   color: #475569;
   font-size: 12px;
 }
 
+.timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-item:not(:last-child)::before {
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  left: 9px;
+  width: 2px;
+  background: #e2e8f0;
+  content: '';
+}
+
 .timeline-dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
+  position: relative;
+  z-index: 1;
+  box-sizing: content-box;
+  width: 10px;
+  height: 10px;
+  margin: 3px auto 0;
+  border: 3px solid #dbeafe;
   border-radius: 999px;
   background: #2563eb;
-  box-shadow: 0 0 0 4px #dbeafe;
 }
 
 .timeline-item strong {
@@ -4292,7 +4901,9 @@ watch(
   display: grid;
   place-items: center;
   gap: 6px;
-  height: 100%;
+  height: auto;
+  min-height: 88px;
+  padding: 16px 12px;
   color: #64748b;
   text-align: center;
 }
@@ -4376,14 +4987,18 @@ watch(
 }
 
 .layout-card {
+  position: relative;
   display: grid;
   align-content: start;
   gap: 8px;
   height: 100%;
+  min-height: 96px;
   padding: 12px;
   border: 1px solid var(--n-border-color, #e5e7eb);
   border-radius: 8px;
   background: var(--n-color, #fff);
+  /* 子组件缩放锚点会伸出边框，避免被裁切 */
+  overflow: visible;
   transition:
     box-shadow 160ms ease,
     border-color 160ms ease;
@@ -4424,14 +5039,37 @@ watch(
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
+.layout-card.is-drop-active,
+.box-layout-preview.is-drop-active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+
+.container-catalog-drop-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  border-radius: inherit;
+  pointer-events: auto;
+  background: transparent;
+}
+.container-catalog-drop-layer.is-active {
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.45);
+}
+
 .layout-card-title {
+  position: relative;
+  z-index: 1;
   color: #0f172a;
   font-size: 14px;
   font-weight: 700;
 }
 
 .layout-card-body {
-  min-height: 0;
+  position: relative;
+  z-index: 1;
+  min-height: 72px;
   color: #475569;
   font-size: 12px;
   line-height: 1.7;
@@ -4446,16 +5084,65 @@ watch(
   display: grid;
   gap: 8px;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
-.container-child-list > :deep(.grid-block) {
+.container-child-item {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 72px;
+  box-sizing: border-box;
+  /* 锚点伸出边框外，不能裁切 */
+  overflow: visible;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.container-child-item:hover {
+  border-color: #93c5fd;
+}
+
+.container-child-item.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.14);
+}
+
+.container-child-item:hover .nested-block-node-overlay,
+.container-child-item.selected .nested-block-node-overlay {
+  opacity: 1;
+}
+
+.container-child-item.is-moving-source {
+  opacity: 0.35;
+}
+
+.layout-grid-cell-child > :deep(.grid-block),
+.container-child-list > :deep(.grid-block),
+.container-child-item > :deep(.grid-block),
+.tab-pane-child > :deep(.grid-block) {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 72px;
+  box-sizing: border-box;
 }
 
 .tab-pane-child {
   position: relative;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   min-height: 72px;
+  box-sizing: border-box;
+  /* 锚点伸出边框外，不能裁切 */
+  overflow: visible;
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
@@ -4478,10 +5165,6 @@ watch(
   opacity: 1;
 }
 
-.tab-pane-child > :deep(.grid-block) {
-  min-height: 72px;
-}
-
 .signature-block-preview,
 .transfer-preview,
 .step-form-preview,
@@ -4491,8 +5174,13 @@ watch(
 .qrcode-preview,
 .barcode-preview,
 .box-layout-preview {
+  position: relative;
   min-height: 0;
   height: 100%;
+}
+
+.box-layout-preview {
+  overflow: visible;
 }
 
 .signature-block-preview,
@@ -4722,7 +5410,10 @@ watch(
 }
 
 .box-layout-preview {
+  position: relative;
   min-height: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
 .box-layout-preview > :deep(.grid-block) {

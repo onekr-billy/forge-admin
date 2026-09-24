@@ -258,11 +258,13 @@ export function createNavigationNode(schema, input = {}) {
     sort: resolveNextSort(siblingNodes),
     systemMenuVisible: input.systemMenuVisible === true,
     navigationVisible: input.navigationVisible !== false,
+    mountTarget: String(input.mountTarget || 'BOTH').trim().toUpperCase() || 'BOTH',
     access: normalizeNodeAccess(input.access),
   }
   if (type === 'page') {
     node.pageType = normalizePageType(input.pageType)
     node.pageTemplate = String(input.pageTemplate || input.templateKey || '').trim()
+    node.pageShape = normalizePageShape(input.pageShape || input.pageTemplate || input.pageType)
     node.objectRef = normalizeObjectRef(input.objectRef)
     node.entryRef = normalizeEntryRef(input.entryRef)
     node.printWatermark = normalizePrintPageWatermark(input.printWatermark)
@@ -533,11 +535,23 @@ function normalizeNodes(nodes) {
         : {
             pageType: normalizePageType(node.pageType),
             pageTemplate: String(node.pageTemplate || node.templateKey || '').trim(),
+            pageShape: normalizePageShape(node.pageShape || node.pageTemplate || node.pageType),
             objectRef: normalizeObjectRef(node.objectRef),
             entryRef: normalizeEntryRef(node.entryRef),
             printWatermark: normalizePrintPageWatermark(node.printWatermark ?? node.settings?.printWatermark),
           }),
     }))
+}
+
+function normalizePageShape(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'list_form')
+    return 'list-form'
+  if (['form', 'list', 'list-form', 'custom'].includes(raw))
+    return raw
+  if (raw === 'blank' || raw === 'intro' || raw === 'home' || raw === 'content')
+    return 'custom'
+  return ''
 }
 
 function isGroupNode(node = {}) {
@@ -559,11 +573,22 @@ function resolveHomePageId(homePageId, nodes) {
 
 function normalizePages(pages, nodes) {
   const source = pages && typeof pages === 'object' ? pages : {}
-  return nodes.reduce((result, node) => {
+  const result = nodes.reduce((acc, node) => {
     if (node.type === 'page')
-      result[node.id] = normalizePageLayout(source[node.id], node)
-    return result
+      acc[node.id] = normalizePageLayout(source[node.id], node)
+    return acc
   }, {})
+  // 个人工作台不在导航 nodes 里，但 layout 仍要随草稿保存/加载
+  const workbenchPageId = 'system:workbench'
+  if (source[workbenchPageId] && !result[workbenchPageId]) {
+    result[workbenchPageId] = normalizePageLayout(source[workbenchPageId], {
+      id: workbenchPageId,
+      type: 'page',
+      title: '个人工作台',
+      pageType: 'content',
+    })
+  }
+  return result
 }
 
 function normalizeFormAssets(formAssets) {
@@ -616,6 +641,9 @@ function normalizePageLayout(layout, node, application = {}) {
         : {}),
       ...(source.layout?.pageTitleComponentInitialized === true
         ? { pageTitleComponentInitialized: true }
+        : {}),
+      ...(Number(source.layout?.workbenchLayoutVersion) > 0
+        ? { workbenchLayoutVersion: Number(source.layout.workbenchLayoutVersion) }
         : {}),
     },
   }

@@ -143,6 +143,14 @@
             <dd>{{ node.id }}</dd>
           </div>
         </dl>
+        <div v-if="layoutPolluted" class="page-design-settings-restore">
+          <n-alert type="warning" :bordered="false" title="布局已被自由布局组件污染">
+            可一键清除多余组件，恢复为列表/表单标准布局（保留数据对象与表单资产）。
+          </n-alert>
+          <n-button type="warning" :loading="restoring" @click="emit('restore-layout')">
+            恢复列表/表单布局
+          </n-button>
+        </div>
       </section>
     </main>
   </div>
@@ -175,9 +183,17 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  layoutPolluted: {
+    type: Boolean,
+    default: false,
+  },
+  restoring: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const emit = defineEmits(['update'])
+const emit = defineEmits(['update', 'restore-layout'])
 const route = useRoute()
 const router = useRouter()
 
@@ -435,6 +451,13 @@ function patchWatermarkColor(value) {
   color: #1d2129;
   font-size: 14px;
   word-break: break-all;
+}
+
+.page-design-settings-restore {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 @media (max-width: 768px) {

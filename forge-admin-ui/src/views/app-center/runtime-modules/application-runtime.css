@@ -297,6 +297,13 @@
 .runtime-body.headerless {
   height: 100vh;
 }
+/* 自由布局编辑态：无左侧页面树，画布占满；打开属性时右侧再加配置栏 */
+.runtime-body.editing-canvas {
+  grid-template-columns: minmax(0, 1fr);
+}
+.runtime-body.editing-canvas.configuring {
+  grid-template-columns: minmax(0, 1fr) 408px;
+}
 .application-design-section {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
@@ -1284,6 +1291,13 @@
   height: auto;
   min-height: 0;
   flex: 1;
+  display: block;
+  overflow: hidden;
+}
+.runtime-inspector :deep(.list-grid-designer.panel-only > .palette-panel),
+.runtime-inspector :deep(.list-grid-designer.panel-only > .canvas-panel),
+.runtime-inspector :deep(.list-grid-designer.panel-only > .side-rail-toggle-button) {
+  display: none !important;
 }
 .runtime-inspector :deep(.list-grid-designer.panel-only .panel-collapse-button),
 .runtime-inspector :deep(.list-grid-designer.panel-only .side-rail-toggle-button.right) {
@@ -1291,6 +1305,7 @@
 }
 .runtime-inspector :deep(.list-grid-designer.panel-only .block-property-panel),
 .runtime-inspector :deep(.list-grid-designer.panel-only .property-panel) {
+  width: 100%;
   min-height: 0;
   overflow: auto;
 }
@@ -1633,6 +1648,17 @@
   border-radius: 6px;
   background: #fff;
 }
+.page-layout-pollution-alert {
+  margin: 12px 16px 0;
+  flex: none;
+}
+.page-layout-pollution-alert__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .page-surface.is-fill {
   height: 100%;
   overflow: hidden;
@@ -1653,33 +1679,185 @@
 }
 .application-grid-host {
   position: relative;
-  min-height: min(680px, calc(100vh - 104px));
-  margin-top: 8px;
+  /* 高度由内部 page-flow / 组件内容撑开，不再用视口假高度占位 */
+  min-height: 0;
 }
 .application-page-flow {
   position: relative;
   display: block;
-  min-height: 100%;
-  padding: 0 16px 20px;
+  min-height: 240px;
+  /* padding 由 pageCanvasPadding 内联控制，并同步到运行态页面 */
+  box-sizing: border-box;
+}
+.application-page-flow.is-flow-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: stretch;
+}
+.application-page-flow.is-flow-stack .application-page-block {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+.application-page-flow.is-editing {
+  /* 编辑态最低高度交给 JS pageFlowHeight，这里只保底 */
+  min-height: 320px;
+  background-color: #fff;
+}
+.page-canvas-padding-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-bottom: 1px solid #e5eaf3;
+}
+.page-canvas-padding-head {
+  display: grid;
+  gap: 2px;
+}
+.page-canvas-padding-head strong {
+  color: #172033;
+  font-size: 13px;
+}
+.page-canvas-padding-head span {
+  color: #667085;
+  font-size: 12px;
+}
+.page-canvas-padding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.page-canvas-padding-grid label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  color: #475569;
+  font-size: 12px;
+}
+.page-block-drag-ghost {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1.5px dashed #2563eb;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+}
+.page-block-drag-ghost span {
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.is-nested-page-block-moving .layout-grid-cell-child.is-moving-source {
+  opacity: 0.35;
+}
+.page-align-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  overflow: hidden;
+}
+.page-align-cross-v,
+.page-align-cross-h,
+.page-align-snap-v,
+.page-align-snap-h {
+  position: absolute;
+  pointer-events: none;
+}
+.page-align-cross-v,
+.page-align-snap-v {
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px solid #2563eb;
+}
+.page-align-cross-h,
+.page-align-snap-h {
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid #2563eb;
+}
+.page-align-cross-v,
+.page-align-cross-h {
+  border-left-style: dashed;
+  border-top-style: dashed;
+  opacity: 0.85;
+}
+.page-align-snap-v,
+.page-align-snap-h {
+  border-color: #f97316;
+  opacity: 0.95;
+}
+body.is-catalog-pointer-dragging .application-page-block:not([data-page-block-type='grid-layout']):not([data-page-block-type='tabs']):not([data-page-block-type='card']):not([data-page-block-type='box-layout']) {
+  pointer-events: none !important;
+}
+/* 卡片/盒子：只屏蔽操作浮层，主体与投放层保持可命中（中间区域可拖入） */
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='card'] > .page-block-node-overlay,
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='card'] > .page-block-resize-anchor,
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='box-layout'] > .page-block-node-overlay,
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='box-layout'] > .page-block-resize-anchor {
+  pointer-events: none !important;
+}
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='card'],
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='box-layout'] {
+  pointer-events: auto !important;
+}
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='card'] .container-catalog-drop-layer,
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='box-layout'] .container-catalog-drop-layer,
+body.is-catalog-pointer-dragging .container-catalog-drop-layer {
+  pointer-events: auto !important;
+}
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='card'].is-drop-active,
+body.is-catalog-pointer-dragging .application-page-block[data-page-block-type='box-layout'].is-drop-active,
+.application-page-block.is-catalog-drop-active {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  background: rgba(37, 99, 235, 0.06) !important;
+}
+body.is-catalog-pointer-dragging,
+body.is-catalog-pointer-dragging * {
+  cursor: copy !important;
+}
+body.is-catalog-pointer-dragging .canvas-component-anchor,
+body.is-catalog-pointer-dragging .component-popover,
+body.is-catalog-pointer-dragging .n-popover {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 .application-page-block {
   position: relative;
   min-width: 0;
+  max-width: 100%;
+  overflow: visible;
   border: 1px solid transparent;
   border-radius: 6px;
+  /* 不要过渡 left/top：拖拽松手时会从旧坐标弹到新坐标，手感很差 */
   transition:
-    left 260ms cubic-bezier(0.22, 0.8, 0.24, 1),
-    top 260ms cubic-bezier(0.22, 0.8, 0.24, 1),
-    width 220ms cubic-bezier(0.22, 0.8, 0.24, 1),
-    height 220ms cubic-bezier(0.22, 0.8, 0.24, 1),
     border-color 160ms ease,
-    box-shadow 160ms ease;
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 .application-page-block.editing {
   cursor: pointer;
+  background: transparent;
 }
 .application-page-block.editing:hover {
-  border-color: #b7d0ff;
+  border-color: #93c5fd;
 }
 .application-page-block::after {
   position: absolute;
@@ -1700,6 +1878,7 @@
 }
 .application-page-block.selected {
   border-color: transparent;
+  background: transparent;
 }
 .application-page-block.selected::after {
   border-color: #2563eb;
@@ -1709,6 +1888,41 @@
 .application-page-block.selected.editing:hover::after {
   border-color: #2563eb;
 }
+.application-page-block.is-resize-collision::after {
+  border-color: #f97316 !important;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.28) !important;
+}
+.application-page-block.is-resize-collision {
+  border-color: transparent;
+}
+/* 预览 / 运行态彻底去掉设计描边 */
+.runtime-body:not(.editing-canvas) .application-page-block,
+.runtime-body:not(.editing-canvas) .application-page-block:hover,
+.runtime-body:not(.editing-canvas) .application-page-block::after,
+.runtime-body:not(.editing-canvas) .application-page-block:hover::after {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.runtime-body:not(.editing-canvas) .layout-grid-cell-child,
+.runtime-body:not(.editing-canvas) .layout-grid-cell-child:hover,
+.runtime-body:not(.editing-canvas) .layout-grid-cell-child.selected,
+.runtime-body:not(.editing-canvas) .container-child-item,
+.runtime-body:not(.editing-canvas) .container-child-item:hover,
+.runtime-body:not(.editing-canvas) .container-child-item.selected {
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  cursor: default !important;
+}
+.runtime-body:not(.editing-canvas) .nested-block-node-overlay,
+.runtime-body:not(.editing-canvas) .nested-resize-anchor,
+.runtime-body:not(.editing-canvas) .layout-grid-cell-empty,
+.runtime-body:not(.editing-canvas) .layout-grid-cell-drop-preview,
+.runtime-body:not(.editing-canvas) .container-empty {
+  display: none !important;
+}
 .application-page-block:has(.inline-rich-text.is-focused) {
   z-index: 80;
   overflow: visible;
@@ -1716,9 +1930,10 @@
 .application-page-block.dragging {
   pointer-events: none;
   z-index: 1;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+  opacity: 0;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 .application-page-block.dragging::after {
   border-color: transparent;
@@ -1940,6 +2155,31 @@
   z-index: 1;
   height: 100% !important;
   min-height: 0;
+}
+
+/* 栅格/卡片等容器：壳 height:auto，内部跟内容撑开，选中框才能贴底 */
+.application-page-block[data-page-block-type='grid-layout'] :deep(.grid-block),
+.application-page-block[data-page-block-type='card'] :deep(.grid-block),
+.application-page-block[data-page-block-type='box-layout'] :deep(.grid-block),
+.application-page-block[data-page-block-type='tabs'] :deep(.grid-block) {
+  height: auto !important;
+  min-height: 100%;
+  overflow: visible;
+}
+
+/* 内容型区块按内容撑开，避免标题/提示被固定壳高度裁切；CRUD 等仍走上面的 100% 填充 */
+.application-page-block[data-page-block-type='page-title'] :deep(.grid-block),
+.application-page-block[data-page-block-type='workspace-summary-metrics'] :deep(.grid-block),
+.application-page-block[data-page-block-type='info-panel'] :deep(.grid-block),
+.application-page-block[data-page-block-type='empty-state'] :deep(.grid-block),
+.application-page-block[data-page-block-type='stats-strip'] :deep(.grid-block),
+.application-page-block[data-page-block-type='custom-html'] :deep(.grid-block),
+.application-page-block[data-page-block-type='paragraph'] :deep(.grid-block),
+.application-page-block[data-page-block-type='text-title'] :deep(.grid-block),
+.application-page-block[data-page-block-type='text-tip'] :deep(.grid-block) {
+  height: auto !important;
+  min-height: 0;
+  overflow: visible;
 }
 .page-block-resize-anchor {
   position: absolute;
@@ -2465,6 +2705,10 @@
   }
   .runtime-body.configuring {
     grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .runtime-body.editing-canvas,
+  .runtime-body.editing-canvas.configuring {
+    grid-template-columns: minmax(0, 1fr);
   }
   .runtime-inspector {
     position: fixed;

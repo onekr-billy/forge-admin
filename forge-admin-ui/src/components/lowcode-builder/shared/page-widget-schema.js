@@ -358,6 +358,11 @@ export function createWidgetDataBinding(target = 'items', overrides = {}) {
     childrenField: 'children',
     contentField: 'content',
     totalField: 'total',
+    displayMode: 'single',
+    displayFields: [],
+    displaySeparator: ' ',
+    displayTemplate: '',
+    renderMode: 'manual',
     ...overrides,
   }
 }

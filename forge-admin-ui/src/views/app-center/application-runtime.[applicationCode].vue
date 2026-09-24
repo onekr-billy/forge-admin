@@ -27,27 +27,27 @@
     <template v-else-if="application">
       <header v-if="!formDesignerMode" class="runtime-header">
         <div class="runtime-brand">
-          <n-button quaternary circle :aria-label="editing ? '返回页面管理' : '返回应用中心'" @click="editing ? requestExitEditing() : openWorkspace()">
+          <n-button quaternary circle :aria-label="resolveRuntimeBackLabel()" @click="handleRuntimeBack">
             <template #icon>
               <NIcon><ArrowBackOutline /></NIcon>
             </template>
           </n-button>
-          <button type="button" class="runtime-breadcrumb" :title="editing ? '返回页面管理' : '返回应用中心'" @click="editing ? requestExitEditing() : openWorkspace()">
-            <span>{{ editing ? '页面管理' : '应用中心' }}</span>
+          <button type="button" class="runtime-breadcrumb" :title="resolveRuntimeBackLabel()" @click="handleRuntimeBack">
+            <span>{{ resolveRuntimeBackLabel() }}</span>
             <span aria-hidden="true">›</span>
           </button>
           <div class="runtime-brand-copy">
             <span class="runtime-brand-app-icon" aria-hidden="true"><NIcon><FolderOpenOutline /></NIcon></span>
             <div class="runtime-design-title">
-              <span>{{ editing ? '页面设计' : '页面管理' }}</span>
+              <span>{{ resolveRuntimeBrandEyebrow() }}</span>
               <strong>{{ application.applicationName || '未命名应用' }}</strong>
             </div>
-            <span class="runtime-brand-status">{{ editing ? (dirty ? '未保存修改' : '已保存到草稿') : currentPageManagementTitle }}</span>
+            <span class="runtime-brand-status">{{ resolveRuntimeBrandStatus() }}</span>
           </div>
         </div>
         <nav class="runtime-app-tabs" aria-label="应用导航">
           <!-- 非编辑模式：应用级 Tab -->
-          <template v-if="!editing">
+          <template v-if="!editing && !isDraftPreviewMode()">
             <button type="button" class="runtime-app-tab" :class="{ active: runtimeViewMode === 'pages' }" @click="switchRuntimeView('pages')">
               页面管理
             </button>
@@ -66,10 +66,31 @@
           </template>
           <!-- 编辑模式：页面级 Tab -->
           <template v-else>
-            <button type="button" class="runtime-app-tab" :class="{ active: activePageDesignTab === 'form' }" @click="switchPageDesignTab('form')">
+            <button
+              v-if="showPageDesignTab"
+              type="button"
+              class="runtime-app-tab"
+              :class="{ active: isPageDesignTabActive }"
+              @click="switchPageDesignTab('page')"
+            >
+              页面设计
+            </button>
+            <button
+              v-if="showFormDesignTab"
+              type="button"
+              class="runtime-app-tab"
+              :class="{ active: activePageDesignTab === 'form' }"
+              @click="switchPageDesignTab('form')"
+            >
               表单设计
             </button>
-            <button type="button" class="runtime-app-tab" :class="{ active: activePageDesignTab === 'list' }" @click="switchPageDesignTab('list')">
+            <button
+              v-if="showListDesignTab"
+              type="button"
+              class="runtime-app-tab"
+              :class="{ active: activePageDesignTab === 'list' }"
+              @click="switchPageDesignTab('list')"
+            >
               列表设计
             </button>
             <button type="button" class="runtime-app-tab" :class="{ active: activePageDesignTab === 'settings' }" @click="switchPageDesignTab('settings')">
@@ -163,7 +184,7 @@
         @node-action="handleResourceNodeAction"
       />
 
-      <section v-if="formDesignerMode || (editing && activePageDesignTab === 'form')" class="application-form-asset-workbench">
+      <section v-if="showFormDesignWorkbench" class="application-form-asset-workbench">
         <!-- 表单设计器模式：极简顶栏（返回 + 数据对象名 + 保存） -->
         <div v-if="formDesignerMode" class="form-designer-topbar">
           <div class="form-designer-topbar-left">
@@ -247,8 +268,54 @@
         </n-empty>
       </section>
 
-      <div v-else-if="!editing && runtimeViewMode === 'pages'" class="runtime-body" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
-        <aside v-if="!editing" class="runtime-navigation base-app-sidebar__vertical no-page-group" :class="{ collapsed: sidebarCollapsed }">
+      <!-- 编辑模式：页面设置（须排在自由布局画布之前，避免 editing 兜底抢占） -->
+      <section v-else-if="editing && activePageDesignTab === 'settings'" class="runtime-inline-panel">
+        <PageDesignSettingsPanel
+          v-if="currentNode"
+          :node="currentNode"
+          :application="application"
+          :objects="objects"
+          :layout-polluted="currentPageLayoutPolluted"
+          :restoring="restoringObjectPageLayout"
+          @update="patchCurrentPageNode"
+          @restore-layout="restoreCurrentObjectPageLayout"
+        />
+        <n-empty v-else description="请先选择要设置的页面" />
+      </section>
+
+      <!-- 编辑模式：发布 -->
+      <section v-else-if="editing && activePageDesignTab === 'publish'" class="runtime-inline-panel">
+        <PageDesignPublishPanel
+          v-if="currentNode"
+          :application="application"
+          :node="currentNode"
+          :page-id="currentNode.id"
+          :page-title="currentNode.title"
+          :dirty="dirty"
+          :saving="saving"
+          :config-key="pageDesignObject?.configKey || currentNode.objectRef?.configKey || ''"
+          :objects="objects"
+          @save="saveCurrentDesignerSection"
+          @preview="openDraftPreview"
+          @update="patchCurrentPageNode"
+        />
+        <n-empty v-else description="请先选择要发布的页面" />
+      </section>
+
+      <div
+        v-else-if="(!editing && runtimeViewMode === 'pages') || showFreeLayoutCanvas"
+        class="runtime-body"
+        :class="{
+          'configuring': editing && configPanelVisible,
+          'sidebar-collapsed': sidebarCollapsed,
+          'editing-canvas': showFreeLayoutCanvas,
+        }"
+      >
+        <aside
+          v-if="!editing"
+          class="runtime-navigation base-app-sidebar__vertical no-page-group"
+          :class="{ collapsed: sidebarCollapsed }"
+        >
           <div class="title_wrapper">
             <div class="application-sidebar-title base-app-sidebar__title_bar">
               <div class="base-app-title-wrapper">
@@ -300,6 +367,17 @@
                     <NIcon v-if="item.icon"><component :is="resolveSystemPageIcon(item.icon)" /></NIcon>
                   </span>
                   <span>{{ item.title }}</span>
+                </button>
+                <button
+                  v-if="item.id === WORKBENCH_PAGE_ID && canEditApplication"
+                  type="button"
+                  class="navigation-action navigation-edit-icon"
+                  title="设计个人工作台"
+                  @click.stop="enterWorkbenchDesign()"
+                >
+                  <NIcon size="14">
+                    <CreateOutline />
+                  </NIcon>
                 </button>
               </div>
               <div class="navigation-section-divider" />
@@ -389,8 +467,16 @@
         </aside>
 
         <main class="runtime-main">
-          <section v-if="currentSystemPage" class="page-surface">
-            <PageManagementSystemView :view="currentSystemPage.view" :title="currentSystemPage.title" />
+          <section v-if="currentSystemPage && !editing" class="page-surface">
+            <PageManagementSystemView
+              :view="currentSystemPage.view"
+              :title="currentSystemPage.title"
+              :navigation-routes="systemPageNavigationRoutes"
+              :workbench-page="workbenchPage"
+              :objects="objects"
+              :application-id="String(application?.id || '')"
+              :application-code="application?.applicationCode || ''"
+            />
           </section>
           <section v-else-if="!currentNode" class="application-empty-state">
             <div class="application-empty-intro">
@@ -403,7 +489,7 @@
                     创建数据页
                   </n-button>
                   <n-button secondary @click="openCustomPageSelector()">
-                    创建自定义页面
+                    创建自由布局页面
                   </n-button>
                   <n-button secondary @click="openExcelPageImport()">
                     从 Excel 创建页面
@@ -461,6 +547,20 @@
             <span v-else class="application-empty-readonly">页面尚未配置</span>
           </section>
           <section v-else-if="!editing" class="page-surface is-fill">
+            <n-alert
+              v-if="currentPageLayoutPolluted"
+              type="warning"
+              :bordered="false"
+              class="page-layout-pollution-alert"
+              title="该列表/表单页被自由布局组件污染"
+            >
+              <div class="page-layout-pollution-alert__body">
+                <span>中间预览里的自由布局内容可以一键清掉，恢复为原来的列表+表单（AiCrud）布局。</span>
+                <n-button type="warning" size="small" :loading="restoringObjectPageLayout" @click="restoreCurrentObjectPageLayout">
+                  恢复列表/表单布局
+                </n-button>
+              </div>
+            </n-alert>
             <PortalPageRenderer
               :key="`portal:${portalCrudConfigRevision}`"
               :node="currentNode"
@@ -471,7 +571,7 @@
               :application-id="String(application?.id || '')"
               :application-code="application?.applicationCode || ''"
               :page-id="currentNode?.id || ''"
-              :configurable="canEditApplication"
+              :configurable="false"
               :design-preview="editing || isDraftMode || canEditApplication"
               :crud-config-revision="portalCrudConfigRevision"
               :form-fields-resolver="resolvePortalFormFields"
@@ -479,17 +579,34 @@
             />
           </section>
           <section v-else class="page-surface">
-            <section v-if="currentNode.pageType === 'object'" class="object-page-card">
+            <n-alert
+              v-if="currentPageLayoutPolluted"
+              type="warning"
+              :bordered="false"
+              class="page-layout-pollution-alert"
+              title="检测到自由布局组件污染了对象页"
+            >
+              <div class="page-layout-pollution-alert__body">
+                <span>点下方按钮可清空这些组件，并恢复为列表+表单页标准布局。</span>
+                <n-button type="warning" size="small" :loading="restoringObjectPageLayout" @click="restoreCurrentObjectPageLayout">
+                  恢复列表/表单布局
+                </n-button>
+              </div>
+            </n-alert>
+            <section v-if="currentNode?.pageType === 'object'" class="object-page-card">
               <strong>{{ currentNode.objectRef?.objectName || currentNode.title || '未绑定数据对象' }}</strong>
               <p>{{ currentNode.objectRef?.valid === false ? '绑定的数据对象已不可用，请重新选择。' : '该页面复用已有对象的列表、表单、详情和数据管理配置。' }}</p>
               <n-space v-if="editing && currentNode.objectRef?.objectCode" size="small">
                 <n-button type="primary" secondary @click="openFormAssetDesignerForPage(currentNode.id)">
                   编辑表单设计
                 </n-button>
+                <n-button v-if="currentPageLayoutPolluted" secondary type="warning" :loading="restoringObjectPageLayout" @click="restoreCurrentObjectPageLayout">
+                  恢复列表/表单布局
+                </n-button>
               </n-space>
             </section>
 
-            <div v-if="editing" class="canvas-component-anchor" :class="{ 'moving': componentButtonMoveCtx, 'is-default-position': !hasCustomComponentButtonPosition }" :style="componentButtonStyle" @pointerdown.capture="startComponentButtonMove">
+            <div v-if="editing && currentNode" class="canvas-component-anchor" :class="{ 'moving': componentButtonMoveCtx, 'is-default-position': !hasCustomComponentButtonPosition }" :style="componentButtonStyle" @pointerdown.capture="startComponentButtonMove">
               <n-popover v-model:show="componentPopoverVisible" trigger="click" placement="top-start" :show-arrow="false">
                 <template #trigger>
                   <button type="button" class="component-add-trigger" aria-label="添加组件" title="添加组件">
@@ -542,7 +659,8 @@
                 item-key="id"
                 handle=".page-block-drag-handle"
                 class="application-page-flow"
-                :style="{ minHeight: pageBlocks.length ? `${pageFlowHeight}px` : '100%' }"
+                :class="{ 'is-editing': editing, 'is-flow-stack': pageFlowStackMode }"
+                :style="{ minHeight: `${pageFlowHeight}px`, padding: pageFlowStackMode ? pageCanvasPaddingCss : '0px' }"
                 :disabled="true"
                 :animation="180"
                 :force-fallback="true"
@@ -554,14 +672,20 @@
                 @dragenter="handlePageFlowDragOver"
                 @dragover="handlePageFlowDragOver"
                 @drop="handlePageFlowDrop"
+                @click="handlePageFlowBlankClick"
                 @update:model-value="updatePageBlocks"
               >
                 <template #item="{ element: block }">
                   <section
                     class="application-page-block"
-                    :class="{ selected: selectedPageBlockId === block.id, editing, dragging: draggingPageBlockId === block.id }"
+                    :class="{ selected: editing && selectedPageBlockId === block.id, editing, dragging: draggingPageBlockId === block.id, 'is-resize-collision': resizeCollisionBlockIds.includes(block.id) }"
                     :style="resolvePageBlockShellStyle(block)"
                     :data-page-block-id="block.id"
+                    :data-page-block-type="block.blockType"
+                    :data-grid-container-id="isSimpleBodyContainer(block) ? block.id : undefined"
+                    :data-grid-cell-key="isSimpleBodyContainer(block) ? '__body__' : undefined"
+                    :data-page-container-id="isSimpleBodyContainer(block) ? block.id : undefined"
+                    :data-page-container-type="isSimpleBodyContainer(block) ? block.blockType : undefined"
                     @click.stop="selectPageBlock(block.id); openPageBlockConfiguration(block)"
                   >
                     <div v-if="editing" class="page-block-node-overlay">
@@ -648,44 +772,61 @@
                       :inline-text-editing="editing"
                       :readonly="!editing"
                       :catalog-drag-block-type="catalogDragBlockType"
+                      :active-drop-cell="activePageFlowGridTarget"
+                      :active-drop-container="activePageFlowContainerTarget"
+                      :nested-moving-block-id="nestedMovingPageBlockId"
                       @block-activate="selectPageBlock"
                       @inline-text-update="handleInlineTextUpdate"
                       @child-block-select="handleNestedPageBlockSelect"
                       @child-block-menu-select="handleNestedPageBlockMenuSelect"
+                      @child-block-move-start="handleNestedPageBlockMoveStart"
                       @child-block-resize-start="handleNestedPageBlockResizeStart"
                       @tab-drop="handlePageFlowTabDrop"
+                      @grid-cell-drop="handlePageFlowGridCellDrop"
+                      @grid-cell-insert="handlePageFlowGridCellDrop"
+                      @container-insert="handlePageFlowContainerInsert"
+                      @container-clear="handlePageFlowContainerClear"
                       @request-data-source="handlePageBlockDataSourceRequest"
                     />
                   </section>
                 </template>
               </draggable>
-              <span
+              <div
                 v-if="dragPreview"
-                class="page-block-move-shadow page-block-drag-preview-shadow"
-                :style="{ left: `${dragPreview.x}px`, top: `${dragPreview.y}px`, width: `${dragPreview.width}px`, height: `${dragPreview.height}px` }"
-                aria-hidden="true"
-              />
-              <section
-                v-if="dragPreview && dragPreviewBlock"
-                class="application-page-block page-block-drag-preview"
+                class="page-block-drag-ghost"
                 :style="{ left: `${dragPreview.x}px`, top: `${dragPreview.y}px`, width: `${dragPreview.width}px`, height: `${dragPreview.height}px` }"
                 aria-hidden="true"
               >
-                <GridBlockRenderer
-                  :block="resolvePagePreviewBlock(dragPreviewBlock)"
-                  :fields="resolvePageBlockFields(dragPreviewBlock)"
-                  :runtime-crud-props="resolvePageBlockRuntimeCrudProps(dragPreviewBlock)"
-                  :runtime-crud-loading="isPageBlockRuntimeCrudLoading(dragPreviewBlock)"
-                  :data-source-configured="isPageBlockDataSourceConfigured(dragPreviewBlock)"
-                  :block-fields-resolver="resolvePageBlockFields"
-                  :runtime-crud-props-resolver="resolvePageBlockRuntimeCrudProps"
-                  :runtime-crud-loading-resolver="isPageBlockRuntimeCrudLoading"
-                  :data-source-configured-resolver="isPageBlockDataSourceConfigured"
-                  show-data-source-guide
-                  :selected="false"
-                  readonly
+                <span>{{ dragPreviewBlock?.label || dragPreviewBlock?.blockType || '组件' }}</span>
+              </div>
+              <div
+                v-if="pageAlignGuides.visible"
+                class="page-align-guides"
+                aria-hidden="true"
+              >
+                <div
+                  v-if="pageAlignGuides.cross"
+                  class="page-align-cross-v"
+                  :style="{ left: `${pageAlignGuides.cross.x}px` }"
                 />
-              </section>
+                <div
+                  v-if="pageAlignGuides.cross"
+                  class="page-align-cross-h"
+                  :style="{ top: `${pageAlignGuides.cross.y}px` }"
+                />
+                <div
+                  v-for="(x, idx) in pageAlignGuides.x"
+                  :key="`snap-x-${idx}-${x}`"
+                  class="page-align-snap-v"
+                  :style="{ left: `${x}px` }"
+                />
+                <div
+                  v-for="(y, idx) in pageAlignGuides.y"
+                  :key="`snap-y-${idx}-${y}`"
+                  class="page-align-snap-h"
+                  :style="{ top: `${y}px` }"
+                />
+              </div>
               <section v-if="editing && !pageBlocks.length" class="grid-empty-guide">
                 <div class="empty-guide-copy">
                   <span class="empty-guide-eyebrow">页面搭建</span>
@@ -744,6 +885,61 @@
             <button type="button" class="runtime-inspector-close" aria-label="收起配置面板" title="收起配置面板" @click="configPanelVisible = false">
               ×
             </button>
+          </div>
+          <div v-if="!selectedPageBlock && inspectorTab === 'properties'" class="page-canvas-padding-panel">
+            <div class="page-canvas-padding-head">
+              <strong>页面内边距</strong>
+              <span>作用于画布与最终运行页，默认 24</span>
+            </div>
+            <div class="page-canvas-padding-grid">
+              <label>
+                <span>上</span>
+                <n-input-number
+                  size="small"
+                  :value="pageCanvasPadding.top"
+                  :min="0"
+                  :max="120"
+                  :show-button="false"
+                  @update:value="updatePageCanvasPadding({ top: $event })"
+                />
+              </label>
+              <label>
+                <span>右</span>
+                <n-input-number
+                  size="small"
+                  :value="pageCanvasPadding.right"
+                  :min="0"
+                  :max="120"
+                  :show-button="false"
+                  @update:value="updatePageCanvasPadding({ right: $event })"
+                />
+              </label>
+              <label>
+                <span>下</span>
+                <n-input-number
+                  size="small"
+                  :value="pageCanvasPadding.bottom"
+                  :min="0"
+                  :max="120"
+                  :show-button="false"
+                  @update:value="updatePageCanvasPadding({ bottom: $event })"
+                />
+              </label>
+              <label>
+                <span>左</span>
+                <n-input-number
+                  size="small"
+                  :value="pageCanvasPadding.left"
+                  :min="0"
+                  :max="120"
+                  :show-button="false"
+                  @update:value="updatePageCanvasPadding({ left: $event })"
+                />
+              </label>
+            </div>
+            <n-button size="tiny" secondary @click="updatePageCanvasPadding(DEFAULT_PAGE_PADDING)">
+              恢复默认 24
+            </n-button>
           </div>
           <div v-if="selectedPageBlock && inspectorTab === 'data'" class="application-form-source-config">
             <div class="application-form-source-head">
@@ -885,11 +1081,12 @@
             </n-button>
           </div>
           <ListPageGridDesigner
-            v-if="inspectorTab === 'properties'"
+            v-if="inspectorTab === 'properties' && selectedPageBlock"
             panel-only
             :model-value="designerGridLayout"
             :model-schema="applicationGridModelSchema"
             :fields="selectedPageBlockFields"
+            :form-designer-schema="selectedPageBlockFormDesignerSchema"
             :active-block-id="selectedPageBlockId"
             @update:model-value="updateCurrentGridLayout"
           />
@@ -1082,6 +1279,7 @@
     <PageTypeSelector
       v-model:show="pageTypeSelectorVisible"
       :default-parent-id="pageTypeSelectorParentId"
+      :default-page-type="pageTypeSelectorDefaultType"
       @confirm="handlePageTypeSelection"
     />
 
@@ -1166,10 +1364,22 @@ import {
   resolvePageManagementSelection,
   resolvePageManagementSystemPage,
 } from './in-app-builder/page-management'
-import { createPageShapeBuilder } from './in-app-builder/page-shape-design'
+import {
+  createPageShapeBuilder,
+  ensureFreeLayoutPageNode,
+  isObjectBoundPageLayoutPolluted,
+  resolvePageShapeFromNode,
+  restoreObjectBoundPageLayout,
+} from './in-app-builder/page-shape-design'
+import {
+  createWorkbenchVirtualNode,
+  ensureWorkbenchPageInBuilder,
+  isWorkbenchPageId,
+  WORKBENCH_PAGE_ID,
+} from './in-app-builder/workbench-page'
 import { inAppPageTemplateCatalog, resolveInAppPageTemplate } from './in-app-builder/page-template-catalog'
 import { findPageBlockInTree, mapPageBlocksInTree, removePageBlockFromTree, visitPageBlocksInTree } from './runtime-modules/page-block-tree'
-import { resolvePageBlockShellStyle as computePageBlockShellStyle, readPageBlockLength, resolveDefaultPageBlockHeight, resolveDefaultPageBlockYFromItems, resolveRootPageBlockCollisions } from './runtime-modules/page-flow-geometry'
+import { resolvePageBlockShellStyle as computePageBlockShellStyle, readPageBlockLength, resolveDefaultPageBlockHeight, resolveDefaultPageBlockYFromItems, resolvePageBlockFlowGeometry, resolveRootPageBlockCollisions, shouldUsePageFlowStack, normalizePagePadding, resolvePagePaddingCss, migratePageFlowToContentCoords, canvasToContentFlowPoint, contentToCanvasFlowPoint, DEFAULT_PAGE_PADDING } from './runtime-modules/page-flow-geometry'
 import { flattenNodes, hasPermission, isNavigationVisible } from './runtime-modules/runtime-navigation-utils'
 import { useBuilderHistory } from './runtime-modules/use-builder-history'
 import { useRuntimeCrudConfig } from './runtime-modules/use-runtime-crud-config'
@@ -1193,6 +1403,7 @@ const formComponentIconFileByBlockType = {
   'data-table': 'shujuliebiao',
   'tree-panel': 'shaixuanshu',
   'stats-strip': 'zhibiaokapian',
+  'workspace-summary-metrics': 'zhibiaokapian',
   'info-panel': 'tishimianban',
   'custom-html': 'shuomingwenben',
   'action-button': 'button',
@@ -1333,6 +1544,7 @@ const processSelectableObjects = computed(() => (objects.value || []).filter(ite
 const loadError = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const restoringObjectPageLayout = ref(false)
 const editing = ref(route.query.edit === '1')
 const runtimeViewMode = ref(resolveRuntimeView(route.query.view)) // 'pages' | 'process' | 'enhance' | 'settings'
 const exitEditingVisible = ref(false)
@@ -1360,6 +1572,8 @@ const savedSignature = ref('')
 const selectedPageBlockId = ref('')
 const draggingPageBlockId = ref('')
 const dragPreview = ref(null)
+const pageAlignGuides = ref({ visible: false, cross: null, x: [], y: [] })
+const PAGE_ALIGN_SNAP_PX = 6
 const configPanelVisible = ref(false)
 const inspectorTab = ref('properties')
 const componentButtonPosition = ref({ x: null, y: null })
@@ -1367,6 +1581,9 @@ const componentButtonMoveCtx = ref(null)
 const catalogDragBlockType = ref('')
 const suppressCatalogClick = ref(false)
 const activePageFlowTabTarget = ref(null)
+const activePageFlowGridTarget = ref(null)
+const activePageFlowContainerTarget = ref(null)
+const resizeCollisionBlockIds = ref([])
 let catalogPointerDragCtx = null
 // 表单设计器的对象设计器上下文（fields/relations/actions），按对象缓存；字段目录供字段资产货架使用。
 const formDesignerObjectContextByObjectId = ref({})
@@ -1377,6 +1594,7 @@ const activeFormAssetId = ref('')
 const activePageShapeDesign = ref(null)
 const pageTypeSelectorVisible = ref(false)
 const pageTypeSelectorParentId = ref(null)
+const pageTypeSelectorDefaultType = ref('form')
 const sidebarCollapsed = ref(false)
 const renamingApplication = ref(false)
 const renameApplicationValue = ref('')
@@ -1454,6 +1672,14 @@ function resolveSystemPageIcon(icon) {
   return systemPageIconMap[icon] || DocumentTextOutline
 }
 const currentSystemPage = computed(() => resolvePageManagementSystemPage(selectedNodeId.value))
+const workbenchPage = computed(() => builder.value?.pages?.[WORKBENCH_PAGE_ID] || null)
+const systemPageNavigationRoutes = computed(() => ({
+  todo: '/workspace/todo',
+  done: '/workspace/done',
+  sent: '/workspace/started',
+  started: '/workspace/started',
+  cc: '/workspace/cc',
+}))
 const designerResourceGroups = computed(() => buildApplicationDesignerResourceGroups({
   objects: objects.value,
   designersByObjectId: {},
@@ -1471,7 +1697,12 @@ const activeDesignerResource = computed(() => {
   )
 })
 const designerSection = computed(() => activeDesignerResource.value?.groupKey || normalizeApplicationDesignerSection(route.query.designSection))
-const pageBuilderResourceActive = computed(() => activeDesignerResource.value?.kind === 'page-custom')
+const pageBuilderResourceActive = computed(() => {
+  if (activeDesignerResource.value?.kind === 'page-custom')
+    return true
+  // 个人工作台不在 nodes 资源树里，但仍按自由布局页预览
+  return isWorkbenchPageId(route.query.pageId || selectedNodeId.value)
+})
 
 // 工作台编辑者需要维护管理端和移动端两套页面树；正式门户仍由
 // application-portal.vue 按当前客户端过滤。该权限计算放在导航树之前，
@@ -1549,19 +1780,50 @@ const navigationNodes = computed(() => {
   const shouldShowAll = editing.value || canEditApplication.value
   return flattenNodes(shouldShowAll ? clientNodes : clientNodes.filter(isNavigationVisible), null, 0, collapsedGroupIds.value)
 })
+function readRouteDesignTab() {
+  const raw = route.query.designTab
+  return String(Array.isArray(raw) ? raw[0] : (raw ?? '')).trim()
+}
+
 const currentNode = computed(() => {
-  if (isPageManagementSystemPageId(selectedNodeId.value))
+  const preferredId = editing.value
+    ? String(route.query.pageId || selectedNodeId.value || '').trim()
+    : String(selectedNodeId.value || route.query.pageId || '').trim()
+  // 个人工作台：编辑态用虚拟节点驱动自由布局画布
+  if (editing.value && isWorkbenchPageId(preferredId))
+    return createWorkbenchVirtualNode()
+  if (isPageManagementSystemPageId(selectedNodeId.value) && !isWorkbenchPageId(preferredId))
     return null
   // 当前内容不能依赖侧栏的折叠状态；分组收起后仍应保留已选页面。
   // 客户端过滤只用于确定可访问范围，不能把 collapsedGroupIds 带进内容解析。
   const nodes = editing.value || canEditApplication.value
     ? builder.value?.nodes || []
     : filterNavigationNodesByClient(builder.value?.nodes || [], 'pc')
-  return nodes.find(item => item.id === selectedNodeId.value)
-    || (!editing.value ? null : nodes.find(item => item.id === builder.value?.homePageId))
-    || null
+  // 页面管理态以左侧选中为准，避免 URL 残留 pageId 导致「高亮 A、预览 B」
+  // 编辑态优先 URL pageId（与 designResource 对齐）
+  const matched = nodes.find(item => item.id === preferredId)
+    || (preferredId !== String(selectedNodeId.value || '')
+      ? nodes.find(item => item.id === selectedNodeId.value)
+      : null)
+  if (matched)
+    return matched
+  // 自由布局入口不要静默落到首页对象页，否则会只剩表单/列表 Tab、中间空白
+  if (editing.value && readRouteDesignTab() === 'page')
+    return null
+  return (!editing.value ? null : nodes.find(item => item.id === builder.value?.homePageId)) || null
 })
-const currentPage = computed(() => currentNode.value ? builder.value?.pages[currentNode.value.id] : null)
+const currentPage = computed(() => {
+  if (!currentNode.value)
+    return null
+  if (isWorkbenchPageId(currentNode.value.id))
+    return builder.value?.pages?.[WORKBENCH_PAGE_ID] || null
+  return builder.value?.pages?.[currentNode.value.id] || null
+})
+const currentPageLayoutPolluted = computed(() => {
+  if (!canEditApplication.value || !currentNode.value)
+    return false
+  return isObjectBoundPageLayoutPolluted(currentNode.value, currentPage.value)
+})
 const currentPageManagementTitle = computed(() => currentSystemPage.value?.title || currentNode.value?.title || '页面管理')
 const pageDesignObject = computed(() => {
   const objectRef = currentNode.value?.objectRef
@@ -1587,25 +1849,44 @@ const currentGridLayout = computed(() => {
     items: (layout.items || []).map((item, index) => createLegacyBlock(item, index)).filter(Boolean),
   }
 })
-const pageBlocks = computed(() => {
-  const items = currentGridLayout.value.items || []
-  return items.filter(item => item.blockType !== 'page-title')
-})
-const designerGridLayout = computed(() => {
-  const grid = currentGridLayout.value
-  if (!grid || !Array.isArray(grid.items))
-    return grid
-  return {
-    ...grid,
-    items: grid.items.filter(item => item.blockType !== 'page-title'),
+const pageBlocks = computed(() => currentGridLayout.value.items || [])
+const pageFlowStackMode = computed(() => shouldUsePageFlowStack(pageBlocks.value, {
+  pageId: String(route.query.pageId || selectedNodeId.value || currentNode.value?.id || ''),
+}))
+const pageCanvasPadding = computed(() => normalizePagePadding(
+  currentGridLayout.value?.pagePadding ?? currentPage.value?.layout?.pagePadding,
+  DEFAULT_PAGE_PADDING,
+))
+const pageCanvasPaddingCss = computed(() => resolvePagePaddingCss(pageCanvasPadding.value))
+const designerGridLayout = computed(() => currentGridLayout.value)
+const pageFlowHeight = computed(() => {
+  // 通栏文档流：高度随内容走，只保底可拖放区域
+  if (pageFlowStackMode.value) {
+    const editingFloor = typeof window !== 'undefined'
+      ? Math.max(960, Math.round(window.innerHeight - 120))
+      : 960
+    return editing.value ? editingFloor : 680
   }
+  const pad = pageCanvasPadding.value
+  const useContentCoords = currentGridLayout.value?.pageFlowCoordSpace === 'content'
+  const contentBottom = pageBlocks.value.reduce((bottom, block, index) => {
+    const y = Number(block.props?.style?.pageFlowY)
+    const height = Number(block.props?.style?.pageFlowHeight)
+    const contentY = Number.isFinite(y) && y >= 0 ? y : resolveDefaultPageBlockYFromItems(pageBlocks.value, index)
+    const canvasTop = useContentCoords
+      ? pad.top + contentY
+      : (Number.isFinite(y) && y >= 0 ? y : Math.max(pad.top, contentY))
+    return Math.max(bottom, canvasTop + (height > 0 ? height : resolveDefaultPageBlockHeight(block)))
+  }, pad.top)
+  // 下边距计入画布高度，编辑态再预留可拖放空白
+  const editingFloor = typeof window !== 'undefined'
+    ? Math.max(960, Math.round(window.innerHeight - 120))
+    : 960
+  return Math.max(
+    contentBottom + pad.bottom + (editing.value ? 280 : 48),
+    editing.value ? editingFloor : 680,
+  )
 })
-const pageFlowHeight = computed(() => pageBlocks.value.reduce((bottom, block, index) => {
-  const y = Number(block.props?.style?.pageFlowY)
-  const height = Number(block.props?.style?.pageFlowHeight)
-  const top = Number.isFinite(y) && y >= 0 ? y : resolveDefaultPageBlockYFromItems(pageBlocks.value, index)
-  return Math.max(bottom, top + (height > 0 ? height : resolveDefaultPageBlockHeight(block)) + 36)
-}, 680))
 const hasCustomComponentButtonPosition = computed(() => Number.isFinite(componentButtonPosition.value.x) && Number.isFinite(componentButtonPosition.value.y))
 const componentButtonStyle = computed(() => ({
   left: `${componentButtonPosition.value.x ?? 20}px`,
@@ -1720,7 +2001,36 @@ const runtimeObjectFormOptions = computed(() => objects.value
     label: item.objectName || item.objectCode || '未命名表单',
   })))
 const pageTemplateOptions = computed(() => inAppPageTemplateCatalog.filter(template => ['blank', 'intro', 'crud', 'tree-table', 'master-detail'].includes(template.key)))
-const selectedPageBlockFields = computed(() => selectedPageBlock.value ? resolvePageBlockFields(selectedPageBlock.value) : [])
+const selectedPageBlockFields = computed(() => {
+  if (!selectedPageBlock.value)
+    return []
+  const blockFields = resolvePageBlockFields(selectedPageBlock.value)
+  if (blockFields.length)
+    return blockFields
+  return resolvePageContextFieldCatalog()
+})
+const selectedPageBlockFormDesignerSchema = computed(() => {
+  const formAssetId = selectedPageBlock.value?.props?.formAssetId
+    || (formAssets.value.length === 1 ? formAssets.value[0]?.id : '')
+  const asset = formAssets.value.find(item => item.id === formAssetId)
+    || formAssets.value[0]
+  return asset?.formDesignerSchema || null
+})
+
+function resolvePageContextFieldCatalog() {
+  const merged = []
+  const seen = new Set()
+  formAssets.value.forEach((asset) => {
+    resolveFormAssetFields(asset).forEach((field) => {
+      const code = field.fieldCode || field.field
+      if (!code || seen.has(code))
+        return
+      seen.add(code)
+      merged.push(field)
+    })
+  })
+  return merged
+}
 const applicationGridModelSchema = computed(() => {
   // ListPageGridDesigner 会在 modelSchema 改变时同步并回写整个布局。
   // 这里必须保持页面级模型稳定；当前区块切换数据源仅更新 fields prop，避免循环回写卡死。
@@ -1742,7 +2052,13 @@ const applicationGridModelSchema = computed(() => {
     fields: pageRuntimeFields,
   }
 })
-const dragPreviewBlock = computed(() => dragPreview.value ? pageBlocks.value.find(item => item.id === dragPreview.value.blockId) || null : null)
+const dragPreviewBlock = computed(() => dragPreview.value
+  ? findPageBlockInTree(pageBlocks.value, dragPreview.value.blockId) || null
+  : null)
+const nestedMovingPageBlockId = ref('')
+let nestedPageBlockMoveCtx = null
+let nestedPageBlockMoveFrame = 0
+let pendingNestedPageBlockMoveEvent = null
 const copyBlockPageOptions = computed(() => flattenNodes(builder.value?.nodes || [])
   .filter(node => node.type === 'page' && node.id !== currentNode.value?.id)
   .map(node => ({ label: `${'　'.repeat(node.depth || 0)}${node.title}`, value: node.id })))
@@ -1776,7 +2092,14 @@ const {
 const loadErrorTitle = computed(() => isDraftMode.value ? '应用草稿加载失败' : '应用暂不可访问')
 const filteredComponents = computed(() => {
   const keyword = componentKeyword.value.trim().toLowerCase()
+  const seen = new Set()
   return listPageBlockCatalog.filter((item) => {
+    const key = String(item.blockType || '').trim()
+    if (!key || seen.has(key))
+      return false
+    if (item.hidden)
+      return false
+    seen.add(key)
     if (item.onlyFor && !item.onlyFor.includes('simple-crud'))
       return false
     if (!keyword)
@@ -1823,6 +2146,7 @@ function resolveEmptyGuideIcon(item = {}) {
   const icons = {
     'page-title': TextOutline,
     'stats-strip': StatsChartOutline,
+    'workspace-summary-metrics': StatsChartOutline,
     'AiCrudPage': ListOutline,
     'AiForm': ReaderOutline,
     'custom-html': DocumentTextOutline,
@@ -1832,7 +2156,7 @@ function resolveEmptyGuideIcon(item = {}) {
 }
 
 const recommendedComponents = computed(() => {
-  const recommendedTypes = ['page-title', 'stats-strip', 'AiCrudPage', 'AiForm', 'custom-html', 'info-panel']
+  const recommendedTypes = ['page-title', 'workspace-summary-metrics', 'stats-strip', 'AiCrudPage', 'AiForm', 'custom-html']
   return recommendedTypes
     .map(blockType => resolveListPageBlockMeta(blockType))
     .filter(Boolean)
@@ -1852,10 +2176,45 @@ watch(() => route.query.designResource, (resourceKey) => {
   selectedDesignerResourceKey.value = String(resourceKey || '')
 })
 watch(() => route.query.designTab, (tab) => {
-  const next = resolvePageDesignTab(tab)
+  const next = resolvePageDesignTab(tab, String(route.query.pageId || selectedNodeId.value || '').trim())
   if (activePageDesignTab.value !== next)
     activePageDesignTab.value = next
 })
+// 编辑态且 URL 未显式带 designTab 时，按页面内容对齐默认 Tab（避免自由布局预览却进表单设计）
+watch([editing, () => builder.value?.nodes, selectedNodeId, () => route.query.designTab], () => {
+  if (!editing.value || !builder.value)
+    return
+  if (readRouteDesignTab() !== '')
+    return
+  const next = resolveEntryDesignTab(String(route.query.pageId || selectedNodeId.value || '').trim())
+  if (activePageDesignTab.value !== next)
+    activePageDesignTab.value = next
+})
+// designTab=page：强制页面设计 Tab，并回写 pageShape，避免节点形态丢失后只剩表单/列表
+watch([editing, () => route.query.designTab, () => route.query.pageId, () => builder.value?.nodes], () => {
+  if (!editing.value || !builder.value)
+    return
+  if (readRouteDesignTab() !== 'page')
+    return
+  if (!['settings', 'publish'].includes(activePageDesignTab.value) && activePageDesignTab.value !== 'page')
+    activePageDesignTab.value = 'page'
+  const pageId = String(route.query.pageId || selectedNodeId.value || '').trim()
+  if (!pageId)
+    return
+  // 自由布局 URL 不要 resolve 到首页；保持 URL 指向的 pageId
+  if (selectedNodeId.value !== pageId)
+    selectedNodeId.value = pageId
+  const node = (builder.value.nodes || []).find(item => String(item.id) === pageId)
+  if (!node || node.type !== 'page')
+    return
+  const repaired = ensureFreeLayoutPageNode(node)
+  if (repaired === node)
+    return
+  builder.value = {
+    ...builder.value,
+    nodes: builder.value.nodes.map(item => String(item.id) === pageId ? repaired : item),
+  }
+}, { flush: 'post' })
 watch(() => route.query.view, (view) => {
   // 发布功能已迁移到独立发布页
   if (String(view || '').toLowerCase() === 'publish') {
@@ -1868,10 +2227,22 @@ watch(() => route.query.view, (view) => {
 })
 watch(() => activeDesignerResource.value?.key, (activeKey) => {
   activeFlowContext.value = {}
-  if (activeDesignerResource.value?.kind === 'page-custom' && activeDesignerResource.value.pageId)
-    selectNode(activeDesignerResource.value.pageId)
+  if (activeDesignerResource.value?.kind === 'page-custom' && activeDesignerResource.value.pageId) {
+    const resourcePageId = String(activeDesignerResource.value.pageId)
+    const routePageId = String(route.query.pageId || selectedNodeId.value || '').trim()
+    // 预览/运行态不要用设计资源回写 pageId，否则会从工作台跳到第一个业务菜单
+    if (!editing.value)
+      return
+    if (isPageManagementSystemPageId(routePageId) && resourcePageId !== routePageId)
+      return
+    if (resourcePageId !== String(selectedNodeId.value || ''))
+      selectNode(resourcePageId)
+  }
   const requestedKey = String(route.query.designResource || '')
   if (!editing.value || !activeKey || !requestedKey || requestedKey === activeKey)
+    return
+  // 本地已指向 requestedKey（新建页刚写入）时，不要用 fallback 资源盖回去
+  if (String(selectedDesignerResourceKey.value || '') === requestedKey && requestedKey !== activeKey)
     return
   selectedDesignerResourceKey.value = activeKey
   router.replace({
@@ -1884,7 +2255,12 @@ watch(() => activeDesignerResource.value?.key, (activeKey) => {
 watch(() => route.query.pageId, (pageId) => {
   if (!builder.value)
     return
-  const nextPageId = resolveSelectablePageId(pageId)
+  const requested = String(pageId || '').trim()
+  const nextPageId = (editing.value && readRouteDesignTab() === 'page' && requested)
+    ? requested
+    : (isWorkbenchPageId(requested) || resolvePageManagementSystemPage(requested)
+      ? requested
+      : resolveSelectablePageId(pageId))
   if (nextPageId === selectedNodeId.value)
     return
   selectedNodeId.value = nextPageId
@@ -1896,10 +2272,25 @@ watch(() => currentNode.value?.id, () => {
   preloadCurrentPageCrudRuntimeProps()
 }, { flush: 'post' })
 watch(editing, (value) => {
-  const edit = value ? '1' : undefined
-  if (route.query.edit === edit)
+  if (value) {
+    if (route.query.edit === '1')
+      return
+    router.replace({ query: { ...route.query, edit: '1' } })
     return
-  router.replace({ query: { ...route.query, edit } })
+  }
+  // 退出编辑：清掉设计态参数，但保留 pageId，避免左侧选中与预览脱节
+  const hasDesignerQuery = route.query.edit != null
+    || route.query.designResource != null
+    || route.query.designTab != null
+    || route.query.designSection != null
+  if (!hasDesignerQuery)
+    return
+  const nextQuery = { ...route.query }
+  delete nextQuery.edit
+  delete nextQuery.designResource
+  delete nextQuery.designTab
+  delete nextQuery.designSection
+  router.replace({ query: nextQuery })
 })
 watch(editing, (value) => {
   // 从运行态切入编辑态时补加载编辑器画布需要的渲染配置
@@ -1940,6 +2331,8 @@ async function load() {
     workspaceExtensions.value = payload.extensions || []
     workspaceEntries.value = payload.entries || []
     builder.value = ensurePageTitleComponents(normalizeInAppBuilder(application.value?.options, application.value, objects.value))
+    const ensuredWorkbench = ensureWorkbenchPageInBuilder(builder.value)
+    builder.value = ensuredWorkbench.schema
     hydratePageCrudApiPlaceholders()
     bindSingleFormToCompatibleBlocks()
     savedSignature.value = JSON.stringify(builder.value)
@@ -1954,7 +2347,10 @@ async function load() {
         message.warning(error?.message || '旧版业务对象页面已恢复到当前页面，但草稿自动保存失败，请手动保存')
       }
     }
-    selectedNodeId.value = resolveSelectablePageId(route.query.pageId)
+    const requestedPageId = String(route.query.pageId || '').trim()
+    selectedNodeId.value = (resolvePageManagementSystemPage(requestedPageId) || (readRouteDesignTab() === 'page' && requestedPageId))
+      ? requestedPageId
+      : resolveSelectablePageId(route.query.pageId)
     if (editing.value)
       syncActiveFormAssetForPage(selectedNodeId.value)
     await nextTick()
@@ -1978,11 +2374,22 @@ async function load() {
 }
 
 function selectNode(nodeId) {
-  selectedNodeId.value = nodeId || ''
+  const nextId = nodeId || ''
+  selectedNodeId.value = nextId
   selectedPageBlockId.value = ''
   // 保留路由现有 edit 参数，选择页面不应切换编辑/运行模式，
   // 也不要用可能过期的 editing.value 重建，避免覆盖并发导航中的 edit 参数。
-  router.replace({ query: { ...route.query, pageId: nodeId || undefined } })
+  const nextQuery = {
+    ...route.query,
+    pageId: nextId || undefined,
+  }
+  // 编辑态下 pageId 与 designResource 必须同指一页，否则会改到旧页
+  if (nextId && (editing.value || route.query.edit === '1')) {
+    const resourceKey = `page-custom:${nextId}`
+    selectedDesignerResourceKey.value = resourceKey
+    nextQuery.designResource = resourceKey
+  }
+  router.replace({ query: nextQuery })
 }
 
 function resolveSelectablePageId(pageId) {
@@ -2060,11 +2467,24 @@ function isGroupCollapsed(groupId) {
   return collapsedGroupIds.value.has(groupId)
 }
 
-function openPageTypeSelector(parentId = null) {
+function openPageTypeSelector(parentId = null, defaultPageType = 'form') {
   pageTypeSelectorParentId.value = parentId || null
+  pageTypeSelectorDefaultType.value = defaultPageType || 'form'
   pageTypeSelectorVisible.value = true
   newNodePopoverVisible.value = false
-  editing.value = true
+  // 页面管理态若 URL 仍残留旧 designResource，先清掉，避免确认创建后串回旧页
+  if (!editing.value) {
+    selectedDesignerResourceKey.value = ''
+    if (route.query.designResource || route.query.designTab || route.query.edit) {
+      const nextQuery = { ...route.query }
+      delete nextQuery.designResource
+      delete nextQuery.designTab
+      delete nextQuery.designSection
+      delete nextQuery.edit
+      router.replace({ query: nextQuery })
+    }
+  }
+  // 不要提前进入编辑态：弹窗应叠在当前运行页上，创建成功后再跳转到设计页。
   // 确保父分组展开
   if (parentId && collapsedGroupIds.value.has(parentId)) {
     const next = new Set(collapsedGroupIds.value)
@@ -2073,7 +2493,7 @@ function openPageTypeSelector(parentId = null) {
   }
 }
 
-function handlePageTypeSelection(selection = {}) {
+async function handlePageTypeSelection(selection = {}) {
   // 父页面组由打开弹窗的当前操作上下文决定。不能使用选择器内部上次打开时缓存的 parentId，
   // 否则“新建页面组后立即新增页面”会把旧组传给 schema 校验。
   const parentId = pageTypeSelectorParentId.value == null || pageTypeSelectorParentId.value === ''
@@ -2091,7 +2511,18 @@ function handlePageTypeSelection(selection = {}) {
     builder.value = result.schema
     pageTypeSelectorVisible.value = false
     pageTypeSelectorParentId.value = null
-    selectCreatedDesignerPage(result.pageId)
+    const customPage = result.selection?.pageType === 'custom' || !result.formAssetId
+    if (customPage)
+      activePageDesignTab.value = 'page'
+    // 先落盘草稿再进编辑：避免进入 edit 时若触发重载，服务端还没有新页
+    try {
+      await persistApplicationDraft()
+      savedSignature.value = JSON.stringify(builder.value)
+    }
+    catch (persistError) {
+      message.warning(persistError?.message || '页面已创建，但草稿暂未保存成功，请稍后手动保存')
+    }
+    selectCreatedDesignerPage(result.pageId, { designTab: customPage ? 'page' : undefined })
     if (!result.formAssetId)
       return
     activePageShapeDesign.value = {
@@ -2140,30 +2571,45 @@ function createPageFromTemplate(templateKey = selectedPageTemplateKey.value, ini
     parentId,
     pageType: template.dataTemplate ? 'content' : template.pageType || 'content',
     pageTemplate: template.key,
+    pageShape: (template.dataTemplate || template.pageType === 'content' || template.key === 'blank' || template.key === 'intro')
+      ? 'custom'
+      : (template.key === 'form' || template.key === 'list' || template.key === 'list-form' ? template.key : 'custom'),
   })
   const created = builder.value.nodes.find(item => !previousIds.has(item.id))
   if (created) {
-    selectCreatedDesignerPage(created.id)
+    const freeLayout = created.pageType !== 'object'
+    selectCreatedDesignerPage(created.id, { designTab: freeLayout ? 'page' : undefined })
     applyPageTemplate(created.id, template.key, initialBlockType)
     if (template.dataTemplate || initialBlockType === 'AiCrudPage')
       createFormAssetForPageCrud(created.id)
   }
 }
 
-function selectCreatedDesignerPage(pageId) {
+function selectCreatedDesignerPage(pageId, options = {}) {
   const resourceKey = `page-custom:${pageId}`
   selectedNodeId.value = pageId
   selectedPageBlockId.value = ''
   selectedDesignerResourceKey.value = resourceKey
   formDesignerMode.value = false
   newNodePopoverVisible.value = false
+  const designTab = options.designTab === 'page'
+    ? 'page'
+    : options.designTab || undefined
+  if (designTab)
+    activePageDesignTab.value = designTab
+  else if (!options.designTab)
+    activePageDesignTab.value = 'form'
+  // 只走一次路由更新。不要先写 editing.value=true：
+  // watch(editing) 会用当时仍带旧 pageId 的 route.query 再 replace，把新建页盖回旧页。
   router.replace({
     query: {
       ...route.query,
       edit: '1',
       designResource: resourceKey,
       designSection: undefined,
+      designTab,
       pageId,
+      view: undefined,
     },
   })
 }
@@ -2455,25 +2901,66 @@ function insertComponent(component) {
 }
 
 function updateCurrentGridLayout(gridLayout) {
-  if (!currentNode.value || !currentPage.value)
+  const pageId = resolveActiveDesignerPageId()
+  if (!pageId || !builder.value)
     return
-  const originalGrid = currentGridLayout.value
-  const pageTitleBlocks = Array.isArray(originalGrid?.items)
-    ? originalGrid.items.filter(item => item.blockType === 'page-title')
-    : []
-  const mergedLayout = pageTitleBlocks.length
-    ? { ...gridLayout, items: [...pageTitleBlocks, ...(gridLayout.items || [])] }
-    : gridLayout
+  let page = builder.value.pages?.[pageId]
+  if (!page && isWorkbenchPageId(pageId)) {
+    const ensured = ensureWorkbenchPageInBuilder(builder.value)
+    builder.value = ensured.schema
+    page = ensured.page
+  }
+  if (!page)
+    return
+  const previous = page.layout?.gridLayout && typeof page.layout.gridLayout === 'object'
+    ? page.layout.gridLayout
+    : {}
+  const nextLayout = {
+    ...previous,
+    ...(gridLayout && typeof gridLayout === 'object' ? gridLayout : {}),
+  }
+  // 属性面板回写整份 layout 时可能丢掉 pagePadding，这里强制保留。
+  if (nextLayout.pagePadding == null && previous.pagePadding != null)
+    nextLayout.pagePadding = previous.pagePadding
   builder.value = {
     ...builder.value,
     pages: {
       ...builder.value.pages,
-      [currentNode.value.id]: {
-        ...currentPage.value,
-        layout: { ...currentPage.value.layout, items: [], gridLayout: mergedLayout },
+      [pageId]: {
+        ...page,
+        layout: { ...page.layout, items: [], gridLayout: nextLayout },
       },
     },
   }
+}
+
+function ensurePageFlowContentCoords(layout = {}, pad = pageCanvasPadding.value) {
+  if (pageFlowStackMode.value || layout?.pageFlowCoordSpace === 'content')
+    return layout
+  return migratePageFlowToContentCoords(layout, pad)
+}
+
+function updatePageCanvasPadding(partial = {}) {
+  const previous = pageCanvasPadding.value
+  const next = normalizePagePadding({
+    ...previous,
+    ...(partial && typeof partial === 'object' ? partial : {}),
+  })
+  // 绝对自由布局：先迁到内容区坐标，再改 padding；上下左右都即时生效，无需再平移 X/Y。
+  let layout = { ...(currentGridLayout.value || {}) }
+  if (!pageFlowStackMode.value)
+    layout = ensurePageFlowContentCoords(layout, previous)
+  layout = { ...layout, pagePadding: next }
+  updateCurrentGridLayout(layout)
+}
+
+/** 编辑态写画布时锁定目标页，避免 currentNode 漂移把组件写到首页 */
+function resolveActiveDesignerPageId() {
+  const routeId = String(route.query.pageId || '').trim()
+  const selectedId = String(selectedNodeId.value || '').trim()
+  if (editing.value && routeId)
+    return routeId
+  return selectedId || routeId
 }
 
 function appendPageBlock(blockType) {
@@ -2484,6 +2971,7 @@ function appendPageBlock(blockType) {
     message.info(`${meta.title} 每个页面只能添加一个`)
     return
   }
+  const nextY = resolveNextPageBlockStackY(pageBlocks.value)
   let block = createGridBlock(blockType, applicationGridModelSchema.value, {
     gridX: 0,
     gridY: pageBlocks.value.length * 2,
@@ -2492,9 +2980,48 @@ function appendPageBlock(blockType) {
     return
   block = attachDefaultRuntimeObject(block)
   block = attachSingleFormAsset(block)
+  const height = resolveDefaultPageBlockHeight(block)
+  // 内容区相对坐标：通栏 X=0，Y 从内容区顶向下堆叠
+  if (!pageFlowStackMode.value)
+    updateCurrentGridLayout(ensurePageFlowContentCoords({ ...(currentGridLayout.value || {}) }))
+  block = {
+    ...block,
+    props: {
+      ...(block.props || {}),
+      style: {
+        ...(block.props?.style || {}),
+        pageFlowX: 0,
+        pageFlowY: Math.max(0, nextY),
+        pageFlowHeight: height,
+        widthMode: block.props?.style?.widthMode || 'full',
+        heightMode: block.props?.style?.heightMode
+          || (['grid-layout', 'card', 'box-layout', 'tabs'].includes(blockType) ? 'auto' : 'fixed'),
+        width: '100%',
+        height,
+      },
+    },
+  }
   updatePageBlocks([...pageBlocks.value, block], { resolveCollisions: true, changedBlockId: block.id })
   selectedPageBlockId.value = block.id
   preloadPageBlockCrudRuntimeProps(block)
+}
+
+/** 加号新增：始终落在现有根级组件下方，自上而下排列 */
+function resolveNextPageBlockStackY(items = []) {
+  const gap = 16
+  const topPadding = 20
+  if (!items.length)
+    return topPadding
+  return items.reduce((bottom, item, index) => {
+    const style = item?.props?.style || {}
+    const y = Number.isFinite(Number(style.pageFlowY)) && Number(style.pageFlowY) >= 0
+      ? Number(style.pageFlowY)
+      : resolveDefaultPageBlockYFromItems(items, index)
+    const height = Number(style.pageFlowHeight) > 0
+      ? Number(style.pageFlowHeight)
+      : resolveDefaultPageBlockHeight(item)
+    return Math.max(bottom, y + height + gap)
+  }, topPadding)
 }
 
 function supportsFormAsset(block = {}) {
@@ -2559,11 +3086,39 @@ function resolveFormAssetFields(asset = {}) {
   const schema = normalizeFormDesignerSchema(asset.formDesignerSchema || {})
   const fieldsByCode = new Map(buildAutoFieldAssets(schema).fields.map(field => [field.fieldCode || field.field, field]))
   const widgetNodes = []
+  const childFields = []
   const appendComponentFields = (components = []) => {
     ;(Array.isArray(components) ? components : []).forEach((component, index) => {
       const fieldCode = component?.fieldBinding?.fieldCode || component?.field || ''
       const componentKey = component?.componentKey || component?.type || ''
-      if (component?.fieldBinding?.mode === 'virtual' && componentKey && isPageWidgetComponentKey(componentKey)) {
+      if (componentKey === 'subTable') {
+        const relationKey = String(component?.props?.relationKey || fieldCode || component?.id || '').trim()
+        const header = String(component?.props?.header || component?.label || relationKey || '子表').trim()
+        const columns = Array.isArray(component?.props?.columns) ? component.props.columns : []
+        columns.forEach((column, columnIndex) => {
+          const childCode = String(column?.fieldCode || column?.field || column?.key || column?.value || '').trim()
+          if (!childCode || !relationKey)
+            return
+          childFields.push({
+            field: `${relationKey}__${childCode}`,
+            fieldCode: `${relationKey}__${childCode}`,
+            sourceField: childCode,
+            label: column.label || column.title || childCode,
+            fieldName: column.label || column.title || childCode,
+            modelCode: relationKey,
+            modelName: header,
+            sourceLabel: header,
+            fieldScope: 'child',
+            listVisible: true,
+            formVisible: true,
+            fieldStatus: 'ENABLED',
+            systemField: false,
+            dataType: column.dataType || column.fieldType || 'STRING',
+            _order: columnIndex,
+          })
+        })
+      }
+      else if (component?.fieldBinding?.mode === 'virtual' && componentKey && isPageWidgetComponentKey(componentKey)) {
         widgetNodes.push({
           field: fieldCode || component?.id || `widget_${componentKey}_${index}`,
           label: component.label || componentKey,
@@ -2598,7 +3153,7 @@ function resolveFormAssetFields(asset = {}) {
     fieldStatus: field.fieldStatus || 'ENABLED',
     systemField: Boolean(field.systemField),
   })).filter(field => field.fieldCode && field.field)
-  return [...dataFields, ...widgetNodes]
+  return [...dataFields, ...childFields, ...widgetNodes]
 }
 
 function resolvePageBlockFields(block = {}) {
@@ -3174,10 +3729,7 @@ function returnToPageDesigner() {
   formDesignerMode.value = false
   // 如果用户从页面管理视图进入表单设计器，返回时退出编辑模式，避免出现设计工作台
   if (formDesignerFromPageManagement.value) {
-    editing.value = false
-    formDesignerFromPageManagement.value = false
-    activeFormAssetId.value = ''
-    activePageShapeDesign.value = null
+    exitToPageManagement()
     return
   }
   // 返回后仍停在表单设计页，必须重新挂上当前页面的表单，否则画布是空的
@@ -3196,8 +3748,27 @@ function updatePageBlocks(items, options = {}) {
   updateCurrentGridLayout({ ...currentGridLayout.value, items: nextItems })
 }
 
+/** 卡片 / 盒子：整块主体就是投放区（对齐栅格 cell 命中） */
+function isSimpleBodyContainer(block = {}) {
+  return ['card', 'box-layout'].includes(block?.blockType)
+}
+
 function resolvePageBlockShellStyle(block) {
-  return computePageBlockShellStyle(block, pageBlocks.value)
+  return computePageBlockShellStyle(block, pageBlocks.value, {
+    pageId: String(route.query.pageId || selectedNodeId.value || currentNode.value?.id || ''),
+    pagePadding: pageCanvasPadding.value,
+    pageFlowCoordSpace: currentGridLayout.value?.pageFlowCoordSpace,
+  })
+}
+
+function handlePageFlowBlankClick(event) {
+  if (!editing.value)
+    return
+  if (event.target?.closest?.('[data-page-block-id]'))
+    return
+  selectedPageBlockId.value = ''
+  inspectorTab.value = 'properties'
+  configPanelVisible.value = true
 }
 
 function selectPageBlock(blockId) {
@@ -3265,10 +3836,27 @@ function startCatalogPointerDrag(event, component) {
     startX: event.clientX,
     startY: event.clientY,
     moved: false,
+    pointerId: event.pointerId,
+  }
+  try {
+    event.currentTarget?.setPointerCapture?.(event.pointerId)
+  }
+  catch {
+    // ignore capture failure
   }
   window.addEventListener('pointermove', handleCatalogPointerMove, { passive: false })
   window.addEventListener('pointerup', finishCatalogPointerDrag, { once: true })
   window.addEventListener('pointercancel', finishCatalogPointerDrag, { once: true })
+}
+
+function normalizeContainerDropTarget(target = null) {
+  if (!target)
+    return null
+  const containerId = String(target.containerId || target.blockId || '')
+  const containerType = String(target.containerType || target.blockType || '')
+  if (!containerId)
+    return null
+  return { containerId, blockId: containerId, containerType }
 }
 
 function handleCatalogPointerMove(event) {
@@ -3280,7 +3868,46 @@ function handleCatalogPointerMove(event) {
   ctx.moved = true
   suppressCatalogClick.value = true
   event.preventDefault()
+  // 拖动中不关闭组件浮层（关闭会触发 pointercancel，导致栅格命中失败）
+  // 仅用样式屏蔽浮层命中，松手后再收起
+  document.body.classList.add('is-catalog-pointer-dragging')
   activePageFlowTabTarget.value = resolvePageFlowTabTargetFromPoint(event)
+  const gridTarget = resolvePageFlowGridCellTargetFromPoint(event)
+  activePageFlowGridTarget.value = gridTarget
+    ? { containerId: gridTarget.blockId, cellKey: gridTarget.cellKey, cellIndex: gridTarget.cellIndex }
+    : null
+  activePageFlowContainerTarget.value = gridTarget
+    ? null
+    : normalizeContainerDropTarget(resolvePageFlowContainerTargetFromPoint(event))
+  syncCatalogDropActiveClass(
+    activePageFlowGridTarget.value?.containerId
+    || activePageFlowContainerTarget.value?.containerId
+    || activePageFlowTabTarget.value?.blockId
+    || '',
+  )
+  // 组件库拖入时也显示十字标线，便于对准栅格
+  const flow = document.querySelector('.application-page-flow')
+  const flowRect = flow?.getBoundingClientRect?.()
+  if (flowRect) {
+    pageAlignGuides.value = {
+      visible: true,
+      cross: {
+        x: Math.round(event.clientX - flowRect.left + (flow.scrollLeft || 0)),
+        y: Math.round(event.clientY - flowRect.top + (flow.scrollTop || 0)),
+      },
+      x: [],
+      y: [],
+    }
+  }
+}
+
+function syncCatalogDropActiveClass(containerId = '') {
+  document.querySelectorAll('.application-page-block.is-catalog-drop-active').forEach((el) => {
+    el.classList.remove('is-catalog-drop-active')
+  })
+  if (!containerId)
+    return
+  document.querySelector(`[data-page-block-id="${containerId}"]`)?.classList.add('is-catalog-drop-active')
 }
 
 function finishCatalogPointerDrag(event) {
@@ -3288,15 +3915,56 @@ function finishCatalogPointerDrag(event) {
   catalogPointerDragCtx = null
   window.removeEventListener('pointermove', handleCatalogPointerMove)
   window.removeEventListener('pointercancel', finishCatalogPointerDrag)
+  // 先在关闭浮层/去掉拖拽 class 之前锁定投放目标，避免布局抖动导致松手重新命中失败
+  const blockType = ctx?.blockType || ''
+  const tabTarget = ctx?.moved
+    ? (activePageFlowTabTarget.value || resolvePageFlowTabTargetFromPoint(event))
+    : null
+  const gridTarget = ctx?.moved
+    ? (activePageFlowGridTarget.value
+      ? {
+          blockId: activePageFlowGridTarget.value.containerId,
+          cellKey: activePageFlowGridTarget.value.cellKey,
+          cellIndex: activePageFlowGridTarget.value.cellIndex,
+        }
+      : resolvePageFlowGridCellTargetFromPoint(event))
+    : null
+  const containerTarget = ctx?.moved
+    ? normalizeContainerDropTarget(
+      activePageFlowContainerTarget.value || resolvePageFlowContainerTargetFromPoint(event),
+    )
+    : null
+  document.body.classList.remove('is-catalog-pointer-dragging')
+  syncCatalogDropActiveClass('')
+  componentPopoverVisible.value = false
+  clearPageAlignGuides()
+  activePageFlowTabTarget.value = null
+  activePageFlowGridTarget.value = null
+  activePageFlowContainerTarget.value = null
   if (!ctx?.moved) {
     catalogDragBlockType.value = ''
     return
   }
-  const blockType = ctx.blockType
-  const tabTarget = activePageFlowTabTarget.value || resolvePageFlowTabTargetFromPoint(event)
-  activePageFlowTabTarget.value = null
   if (tabTarget)
     appendPageBlockToTab(blockType, tabTarget.blockId, tabTarget.tabKey)
+  else if (gridTarget) {
+    const host = findPageBlockInTree(pageBlocks.value, gridTarget.blockId)
+    const beforeCount = JSON.stringify(pageBlocks.value)
+    appendPageBlockToGridCell(blockType, gridTarget.blockId, gridTarget.cellKey, gridTarget.cellIndex)
+    const inserted = beforeCount !== JSON.stringify(pageBlocks.value)
+    if (inserted) {
+      if (host?.blockType === 'card')
+        message.success('组件已放入卡片')
+      else if (host?.blockType === 'box-layout')
+        message.success('组件已放入盒子')
+      else
+        message.success('组件已放入栅格')
+    }
+  }
+  else if (containerTarget) {
+    if (appendPageBlockToContainer(blockType, containerTarget.containerId))
+      message.success(containerTarget.containerType === 'card' ? '组件已放入卡片' : '组件已放入容器')
+  }
   else
     appendPageBlock(blockType)
   catalogDragBlockType.value = ''
@@ -3363,11 +4031,242 @@ function resolvePageFlowTabTargetFromPoint(event) {
   return blockId && tabKey ? { blockId, tabKey } : null
 }
 
+function resolvePageFlowGridCellTarget(event) {
+  return resolvePageFlowGridCellTargetFromPoint(event)
+    || resolvePageFlowGridCellTargetFromElement(event.target)
+}
+
+function resolvePageFlowGridCellTargetFromPoint(event) {
+  if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY))
+    return null
+  const x = event.clientX
+  const y = event.clientY
+  // 卡片/盒子优先按整块几何命中，避免中间区域被子节点/遮罩挡住时落到画布根级
+  const hostHit = resolvePageFlowGridCellTargetByPageBlock(x, y)
+  if (hostHit && (hostHit.cellKey === '__body__' || findPageBlockInTree(pageBlocks.value, hostHit.blockId)?.blockType === 'grid-layout'))
+    return hostHit
+  const stack = typeof document.elementsFromPoint === 'function'
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)].filter(Boolean)
+  for (const el of stack) {
+    const hit = resolvePageFlowGridCellTargetFromElement(el)
+    if (hit)
+      return hit
+  }
+  return resolvePageFlowGridCellTargetByRect(x, y) || hostHit
+}
+
+function resolvePageFlowGridCellTargetByRect(x, y) {
+  const root = document.querySelector('.application-page-flow')
+  if (!root)
+    return null
+  const cells = root.querySelectorAll('[data-grid-container-id][data-grid-cell-key]')
+  let best = null
+  let bestArea = Number.POSITIVE_INFINITY
+  cells.forEach((el) => {
+    const rect = el.getBoundingClientRect?.()
+    if (!rect || rect.width <= 0 || rect.height <= 0)
+      return
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
+      return
+    const area = rect.width * rect.height
+    if (area >= bestArea)
+      return
+    bestArea = area
+    best = el
+  })
+  return best ? resolvePageFlowGridCellTargetFromElement(best) : null
+}
+
+/** 指针落在栅格区块任意位置时，按最近格子命中（对齐表单设计器「拖进容器」手感） */
+function resolvePageFlowGridCellTargetByPageBlock(x, y) {
+  const root = document.querySelector('.application-page-flow')
+  if (!root)
+    return null
+  const candidates = []
+  root.querySelectorAll(
+    '[data-page-block-id][data-page-block-type="grid-layout"], [data-page-block-id][data-page-block-type="card"], [data-page-block-id][data-page-block-type="box-layout"]',
+  ).forEach((el) => {
+    const rect = el.getBoundingClientRect?.()
+    if (!rect || rect.width <= 0 || rect.height <= 0)
+      return
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
+      return
+    candidates.push({ el, area: rect.width * rect.height })
+  })
+  candidates.sort((a, b) => a.area - b.area)
+  for (const { el } of candidates) {
+    const blockId = String(el.dataset.pageBlockId || '')
+    const blockType = String(el.dataset.pageBlockType || '')
+    if (!blockId)
+      continue
+    if (blockType === 'card' || blockType === 'box-layout')
+      return { blockId, cellKey: '__body__', cellIndex: 0 }
+    const cellNodes = [...el.querySelectorAll('[data-grid-cell-key]')]
+    if (!cellNodes.length) {
+      const block = findPageBlockInTree(pageBlocks.value, blockId)
+      const first = Array.isArray(block?.props?.cells) ? block.props.cells[0] : null
+      if (first?.key)
+        return { blockId, cellKey: String(first.key), cellIndex: 0 }
+      continue
+    }
+    let best = null
+    let bestDist = Number.POSITIVE_INFINITY
+    cellNodes.forEach((cellEl, index) => {
+      const rect = cellEl.getBoundingClientRect?.()
+      if (!rect || rect.width <= 0 || rect.height <= 0)
+        return
+      const cx = rect.left + rect.width / 2
+      const cy = rect.top + rect.height / 2
+      const dist = Math.hypot(x - cx, y - cy)
+      const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+      const score = inside ? dist / 4 : dist
+      if (score >= bestDist)
+        return
+      bestDist = score
+      best = { el: cellEl, index }
+    })
+    if (best) {
+      const hit = resolvePageFlowGridCellTargetFromElement(best.el)
+      if (hit)
+        return hit
+      return {
+        blockId,
+        cellKey: String(best.el.dataset.gridCellKey || ''),
+        cellIndex: best.index,
+      }
+    }
+  }
+  return null
+}
+
+function resolvePageFlowGridCellTargetFromElement(element) {
+  const simpleHost = element?.closest?.('[data-page-block-type="card"][data-page-block-id], [data-page-block-type="box-layout"][data-page-block-id]')
+  if (simpleHost?.dataset?.pageBlockId) {
+    return {
+      blockId: String(simpleHost.dataset.pageBlockId),
+      cellKey: '__body__',
+      cellIndex: 0,
+    }
+  }
+  const target = element?.closest?.('[data-grid-container-id][data-grid-cell-key]')
+    || element?.closest?.('[data-grid-cell-key]')
+  if (!target)
+    return null
+  const rect = target.getBoundingClientRect?.()
+  if (!rect || rect.width <= 0 || rect.height <= 0)
+    return null
+  const style = window.getComputedStyle?.(target)
+  if (style?.display === 'none' || style?.visibility === 'hidden')
+    return null
+  const blockId = String(target.dataset.gridContainerId || target.closest?.('[data-page-block-id]')?.dataset?.pageBlockId || '')
+  const cellKey = String(target.dataset.gridCellKey || target.dataset.cellKey || '')
+  const cellIndex = Number(target.dataset.cellIndex)
+  return blockId && cellKey
+    ? { blockId, cellKey, cellIndex: Number.isFinite(cellIndex) ? cellIndex : -1 }
+    : null
+}
+
+/** 卡片 / 盒子：命中容器中部即可放入（对齐栅格拖入） */
+function resolvePageFlowContainerTargetFromPoint(event) {
+  if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY))
+    return null
+  const x = event.clientX
+  const y = event.clientY
+  const stack = typeof document.elementsFromPoint === 'function'
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)].filter(Boolean)
+  for (const el of stack) {
+    const hit = resolvePageFlowContainerTargetFromElement(el)
+    if (hit)
+      return hit
+  }
+  return resolvePageFlowContainerTargetByRect(x, y)
+    || resolvePageFlowContainerTargetByPageBlock(x, y)
+}
+
+function resolvePageFlowContainerTargetFromElement(element) {
+  const target = element?.closest?.('[data-page-container-id][data-page-container-type]')
+    || element?.closest?.('[data-page-block-type="card"], [data-page-block-type="box-layout"]')
+  if (!target)
+    return null
+  const containerType = String(target.dataset.pageContainerType || target.dataset.pageBlockType || '')
+  if (!['card', 'box-layout'].includes(containerType))
+    return null
+  const rect = target.getBoundingClientRect?.()
+  if (!rect || rect.width <= 0 || rect.height <= 0)
+    return null
+  const blockId = String(
+    target.dataset.pageContainerId
+    || target.dataset.pageBlockId
+    || target.closest?.('[data-page-block-id]')?.dataset?.pageBlockId
+    || '',
+  )
+  return blockId ? { blockId, containerType } : null
+}
+
+function resolvePageFlowContainerTargetByRect(x, y) {
+  const root = document.querySelector('.application-page-flow')
+  if (!root)
+    return null
+  const nodes = root.querySelectorAll(
+    '[data-page-container-id][data-page-container-type], [data-page-block-type="card"], [data-page-block-type="box-layout"]',
+  )
+  let best = null
+  let bestArea = Number.POSITIVE_INFINITY
+  nodes.forEach((el) => {
+    const containerType = String(el.dataset.pageContainerType || el.dataset.pageBlockType || '')
+    if (!['card', 'box-layout'].includes(containerType))
+      return
+    const rect = el.getBoundingClientRect?.()
+    if (!rect || rect.width <= 0 || rect.height <= 0)
+      return
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
+      return
+    const area = rect.width * rect.height
+    if (area >= bestArea)
+      return
+    bestArea = area
+    best = el
+  })
+  return best ? resolvePageFlowContainerTargetFromElement(best) : null
+}
+
+/** 指针落在卡片/盒子整块上时也命中（对齐栅格 byPageBlock） */
+function resolvePageFlowContainerTargetByPageBlock(x, y) {
+  const root = document.querySelector('.application-page-flow')
+  if (!root)
+    return null
+  const candidates = []
+  root.querySelectorAll('[data-page-block-id][data-page-block-type="card"], [data-page-block-id][data-page-block-type="box-layout"]').forEach((el) => {
+    const rect = el.getBoundingClientRect?.()
+    if (!rect || rect.width <= 0 || rect.height <= 0)
+      return
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
+      return
+    candidates.push({ el, area: rect.width * rect.height })
+  })
+  candidates.sort((a, b) => a.area - b.area)
+  for (const { el } of candidates) {
+    const hit = resolvePageFlowContainerTargetFromElement(el)
+    if (hit)
+      return hit
+  }
+  return null
+}
+
 function handlePageFlowDragOver(event) {
   if (!isPageCatalogDrag(event))
     return
   event.preventDefault()
   activePageFlowTabTarget.value = resolvePageFlowTabTargetFromPoint(event) || resolvePageFlowTabTarget(event)
+  const gridTarget = resolvePageFlowGridCellTargetFromPoint(event) || resolvePageFlowGridCellTarget(event)
+  activePageFlowGridTarget.value = gridTarget
+    ? { containerId: gridTarget.blockId, cellKey: gridTarget.cellKey, cellIndex: gridTarget.cellIndex }
+    : null
+  activePageFlowContainerTarget.value = gridTarget
+    ? null
+    : normalizeContainerDropTarget(resolvePageFlowContainerTargetFromPoint(event))
   event.dataTransfer.dropEffect = 'copy'
 }
 
@@ -3385,6 +4284,39 @@ function handlePageFlowDrop(event) {
     appendPageBlockToTab(blockType, tabTarget.blockId, tabTarget.tabKey)
     catalogDragBlockType.value = ''
     activePageFlowTabTarget.value = null
+    activePageFlowGridTarget.value = null
+    activePageFlowContainerTarget.value = null
+    return
+  }
+  const gridTarget = activePageFlowGridTarget.value
+    ? {
+        blockId: activePageFlowGridTarget.value.containerId,
+        cellKey: activePageFlowGridTarget.value.cellKey,
+        cellIndex: activePageFlowGridTarget.value.cellIndex,
+      }
+    : (resolvePageFlowGridCellTargetFromPoint(event) || resolvePageFlowGridCellTarget(event))
+  if (gridTarget) {
+    event.preventDefault()
+    event.stopPropagation()
+    appendPageBlockToGridCell(blockType, gridTarget.blockId, gridTarget.cellKey, gridTarget.cellIndex)
+    catalogDragBlockType.value = ''
+    activePageFlowTabTarget.value = null
+    activePageFlowGridTarget.value = null
+    activePageFlowContainerTarget.value = null
+    return
+  }
+  const containerTarget = normalizeContainerDropTarget(
+    activePageFlowContainerTarget.value || resolvePageFlowContainerTargetFromPoint(event),
+  )
+  if (containerTarget) {
+    event.preventDefault()
+    event.stopPropagation()
+    appendPageBlockToContainer(blockType, containerTarget.containerId)
+    catalogDragBlockType.value = ''
+    activePageFlowTabTarget.value = null
+    activePageFlowGridTarget.value = null
+    activePageFlowContainerTarget.value = null
+    message.success(containerTarget.containerType === 'card' ? '组件已放入卡片' : '组件已放入容器')
     return
   }
   event.preventDefault()
@@ -3392,6 +4324,8 @@ function handlePageFlowDrop(event) {
   appendPageBlock(blockType)
   catalogDragBlockType.value = ''
   activePageFlowTabTarget.value = null
+  activePageFlowGridTarget.value = null
+  activePageFlowContainerTarget.value = null
 }
 
 function resolveFormLayoutBlockType(event) {
@@ -3418,6 +4352,103 @@ function handlePageFlowTabDrop(payload = {}) {
   catalogDragBlockType.value = ''
 }
 
+function handlePageFlowGridCellDrop(payload = {}) {
+  if (!editing.value)
+    return
+  const blockType = String(payload.blockType || '').trim()
+  const blockId = String(payload.blockId || '').trim()
+  const cellKey = String(payload.cellKey || '').trim()
+  if (!blockType || !blockId)
+    return
+  appendPageBlockToGridCell(blockType, blockId, cellKey, payload.cellIndex)
+  catalogDragBlockType.value = ''
+}
+
+function handlePageFlowContainerInsert(payload = {}) {
+  if (!editing.value)
+    return
+  const blockType = String(payload.blockType || '').trim()
+  const blockId = String(payload.blockId || '').trim()
+  const containerType = String(payload.containerType || '').trim()
+  if (!blockType || !blockId)
+    return
+  if (containerType === 'grid-layout') {
+    appendPageBlockToGridCell(blockType, blockId, payload.cellKey, payload.cellIndex)
+    return
+  }
+  if (containerType === 'tabs') {
+    appendPageBlockToTab(blockType, blockId, payload.tabKey)
+    return
+  }
+  appendPageBlockToContainer(blockType, blockId)
+}
+
+function handlePageFlowContainerClear(payload = {}) {
+  if (!editing.value)
+    return
+  const blockId = String(payload.blockId || '').trim()
+  const container = findPageBlockInTree(pageBlocks.value, blockId)
+  if (!container)
+    return
+  if (container.blockType === 'grid-layout') {
+    const cellKey = String(payload.cellKey || '')
+    const cells = (Array.isArray(container.props?.cells) ? container.props.cells : []).map(cell => (
+      !cellKey || cell.key === cellKey
+        ? { ...cell, children: [] }
+        : cell
+    ))
+    updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, item => item.id === blockId
+      ? { ...item, props: { ...(item.props || {}), cells } }
+      : item))
+    selectedPageBlockId.value = blockId
+    return
+  }
+  if (container.blockType === 'tabs') {
+    const tabKey = String(payload.tabKey || '')
+    const tabs = (Array.isArray(container.props?.tabs) ? container.props.tabs : []).map(tab => (
+      !tabKey || tab.key === tabKey
+        ? { ...tab, children: [] }
+        : tab
+    ))
+    updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, item => item.id === blockId
+      ? { ...item, props: { ...(item.props || {}), tabs } }
+      : item))
+    selectedPageBlockId.value = blockId
+    return
+  }
+  updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, item => item.id === blockId
+    ? { ...item, children: [] }
+    : item))
+  selectedPageBlockId.value = blockId
+}
+
+function appendPageBlockToContainer(blockType, containerId) {
+  const meta = resolveListPageBlockMeta(blockType)
+  const container = findPageBlockInTree(pageBlocks.value, containerId)
+  if (!meta || !container || !['card', 'box-layout'].includes(container.blockType))
+    return false
+  // 容器内禁止再嵌套同级大容器，避免拖进后看不见
+  if (['grid-layout', 'tabs', 'box-layout', 'card'].includes(blockType)) {
+    message.warning('卡片/盒子内请放入普通组件，布局容器请放在画布根级')
+    return false
+  }
+  let block = createGridBlock(blockType, applicationGridModelSchema.value, {
+    gridX: 0,
+    gridY: (container.children || []).length * 2,
+  })
+  if (!block)
+    return false
+  block = attachDefaultRuntimeObject(block)
+  block = attachSingleFormAsset(block)
+  block = normalizePageBlockForContainer(block)
+  updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, item => item.id === containerId
+    ? { ...item, children: [...(item.children || []), block] }
+    : item))
+  selectedPageBlockId.value = block.id
+  preloadPageBlockCrudRuntimeProps(block)
+  return true
+}
+
 function handleNestedPageBlockMenuSelect(payload = {}) {
   const blockId = String(payload.block?.id || '').trim()
   if (!blockId)
@@ -3428,32 +4459,142 @@ function handleNestedPageBlockMenuSelect(payload = {}) {
       selectedPageBlockId.value = ''
     return
   }
-  if (payload.key === 'duplicate') {
-    const source = findPageBlockInTree(pageBlocks.value, blockId)
-    if (!source)
-      return
-    const copy = JSON.parse(JSON.stringify(source))
-    copy.id = `${source.blockType}_${Date.now()}`
-    updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, (block) => {
-      if (!Array.isArray(block.props?.tabs))
-        return block
-      return {
-        ...block,
-        props: {
-          ...(block.props || {}),
-          tabs: block.props.tabs.map((tab) => {
-            const index = (tab.children || []).findIndex(child => child.id === blockId)
-            if (index < 0)
-              return tab
-            const children = [...tab.children]
-            children.splice(index + 1, 0, copy)
-            return { ...tab, children }
-          }),
-        },
+  if (payload.key === 'duplicate')
+    duplicateNestedPageBlock(blockId)
+}
+
+function duplicateNestedPageBlock(blockId) {
+  const source = findPageBlockInTree(pageBlocks.value, blockId)
+  if (!source)
+    return
+  const copy = clonePageBlockTree(source)
+  let inserted = false
+  updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, (block) => {
+    if (inserted)
+      return block
+    if (Array.isArray(block.children)) {
+      const index = block.children.findIndex(child => child.id === blockId)
+      if (index >= 0) {
+        inserted = true
+        const children = [...block.children]
+        children.splice(index + 1, 0, copy)
+        return { ...block, children }
       }
-    }))
+    }
+    if (Array.isArray(block.props?.tabs)) {
+      let changed = false
+      const tabs = block.props.tabs.map((tab) => {
+        const index = (tab.children || []).findIndex(child => child.id === blockId)
+        if (index < 0)
+          return tab
+        changed = true
+        inserted = true
+        const children = [...tab.children]
+        children.splice(index + 1, 0, copy)
+        return { ...tab, children }
+      })
+      if (changed)
+        return { ...block, props: { ...(block.props || {}), tabs } }
+    }
+    if (Array.isArray(block.props?.cells)) {
+      let changed = false
+      const cells = block.props.cells.map((cell) => {
+        const index = (cell.children || []).findIndex(child => child.id === blockId)
+        if (index < 0)
+          return cell
+        changed = true
+        inserted = true
+        const children = [...cell.children]
+        children.splice(index + 1, 0, copy)
+        return { ...cell, children }
+      })
+      if (changed)
+        return { ...block, props: { ...(block.props || {}), cells } }
+    }
+    return block
+  }))
+  if (inserted)
     selectedPageBlockId.value = copy.id
+}
+
+function clonePageBlockTree(source = {}) {
+  const stamp = Date.now()
+  let seq = 0
+  const walk = (node) => {
+    if (!node || typeof node !== 'object')
+      return node
+    const next = {
+      ...node,
+      id: `${node.blockType || 'block'}_${stamp}_${seq++}`,
+    }
+    if (Array.isArray(node.children))
+      next.children = node.children.map(walk)
+    if (Array.isArray(node.props?.tabs) || Array.isArray(node.props?.cells)) {
+      next.props = { ...(node.props || {}) }
+      if (Array.isArray(node.props?.tabs)) {
+        next.props.tabs = node.props.tabs.map(tab => ({
+          ...tab,
+          children: (tab.children || []).map(walk),
+        }))
+      }
+      if (Array.isArray(node.props?.cells)) {
+        next.props.cells = node.props.cells.map(cell => ({
+          ...cell,
+          children: (cell.children || []).map(walk),
+        }))
+      }
+    }
+    return next
   }
+  return walk(JSON.parse(JSON.stringify(source)))
+}
+
+function appendPageBlockToGridCell(blockType, containerId, cellKey, cellIndex = -1) {
+  const meta = resolveListPageBlockMeta(blockType)
+  const container = findPageBlockInTree(pageBlocks.value, containerId)
+  if (!meta || !container)
+    return
+  // 卡片/盒子复用栅格命中协议（data-grid-cell-key=__body__），落到 children
+  if (['card', 'box-layout'].includes(container.blockType)) {
+    appendPageBlockToContainer(blockType, containerId)
+    return
+  }
+  if (container.blockType !== 'grid-layout')
+    return
+  const rawCells = Array.isArray(container.props?.cells) && container.props.cells.length
+    ? container.props.cells
+    : [{ key: 'cell_1', title: '栅格 1', span: 24, children: [] }]
+  const cells = rawCells.map((cell, index) => ({
+    ...cell,
+    key: String(cell.key || `cell_${index + 1}`),
+  }))
+  let targetKey = String(cellKey || '')
+  if (!cells.some(cell => cell.key === targetKey)) {
+    const idx = Number(cellIndex)
+    if (Number.isFinite(idx) && idx >= 0 && idx < cells.length)
+      targetKey = cells[idx].key
+  }
+  if (!cells.some(cell => cell.key === targetKey))
+    targetKey = cells[0]?.key || ''
+  if (!targetKey)
+    return
+  let block = createGridBlock(blockType, applicationGridModelSchema.value, {
+    gridX: 0,
+    gridY: (cells.find(cell => cell.key === targetKey)?.children || []).length * 2,
+  })
+  if (!block)
+    return
+  block = attachDefaultRuntimeObject(block)
+  block = attachSingleFormAsset(block)
+  block = normalizePageBlockForContainer(block)
+  const nextCells = cells.map(cell => cell.key === targetKey
+    ? { ...cell, children: [...(cell.children || []), block] }
+    : cell)
+  updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, item => item.id === containerId
+    ? { ...item, props: { ...(item.props || {}), cells: nextCells } }
+    : item))
+  selectedPageBlockId.value = block.id
+  preloadPageBlockCrudRuntimeProps(block)
 }
 
 function appendPageBlockToTab(blockType, containerId, tabKey) {
@@ -3481,7 +4622,7 @@ function appendPageBlockToTab(blockType, containerId, tabKey) {
   updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, item => item.id === containerId
     ? { ...item, props: { ...(item.props || {}), tabs: nextTabs } }
     : item))
-  selectedPageBlockId.value = containerId
+  selectedPageBlockId.value = block.id
   preloadPageBlockCrudRuntimeProps(block)
 }
 
@@ -3665,15 +4806,32 @@ function movePageBlockIntoContainer(blockId, containerId) {
 }
 
 function normalizePageBlockForContainer(block) {
-  const { pageFlowX, pageFlowY, pageFlowWidth, pageFlowHeight, ...containerStyle } = block.props?.style || {}
+  const {
+    pageFlowX,
+    pageFlowY,
+    pageFlowWidth,
+    pageFlowHeight,
+    x,
+    y,
+    left,
+    top,
+    ...containerStyle
+  } = block.props?.style || {}
   return {
     ...JSON.parse(JSON.stringify(block)),
     props: {
       ...(block.props || {}),
       style: {
         ...containerStyle,
+        // 嵌套容器内默认铺满，禁止带出画布绝对坐标/固定宽
         widthMode: 'full',
         width: '100%',
+        maxWidth: '100%',
+        heightMode: containerStyle.heightMode || 'auto',
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
       },
     },
   }
@@ -3780,6 +4938,15 @@ function handleNestedPageBlockResizeStart(payload = {}) {
     return
   event.preventDefault()
   handleNestedPageBlockSelect(block.id)
+  const parent = node?.parentElement
+  const parentRect = parent?.getBoundingClientRect?.()
+  const parentStyle = parent ? window.getComputedStyle(parent) : null
+  const parentPadX = parentStyle
+    ? (Number.parseFloat(parentStyle.paddingLeft) || 0) + (Number.parseFloat(parentStyle.paddingRight) || 0)
+    : 0
+  const maxWidth = parentRect?.width
+    ? Math.max(120, Math.floor(parentRect.width - parentPadX))
+    : 0
   nestedPageBlockResizeCtx = {
     blockId: block.id,
     anchor: payload.anchor || 'bottom-right',
@@ -3787,9 +4954,277 @@ function handleNestedPageBlockResizeStart(payload = {}) {
     startY: event.clientY,
     originWidth: rect.width,
     originHeight: rect.height,
+    maxWidth,
   }
   window.addEventListener('pointermove', resizeNestedPageBlock)
   window.addEventListener('pointerup', endNestedPageBlockResize)
+}
+
+function handleNestedPageBlockMoveStart(payload = {}) {
+  const block = payload.block
+  const event = payload.event
+  if (!editing.value || !block?.id || !event || event.button !== 0)
+    return
+  const node = event.currentTarget?.closest?.('[data-grid-child-id]')
+    || event.target?.closest?.('[data-grid-child-id]')
+  const flow = document.querySelector('.application-page-flow')
+  const rect = node?.getBoundingClientRect?.()
+  const flowRect = flow?.getBoundingClientRect?.()
+  if (!rect || !flowRect)
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  handleNestedPageBlockSelect(block.id)
+  const originX = Math.round(rect.left - flowRect.left + (flow.scrollLeft || 0))
+  const originY = Math.round(rect.top - flowRect.top + (flow.scrollTop || 0))
+  nestedPageBlockMoveCtx = {
+    blockId: block.id,
+    startX: event.clientX,
+    startY: event.clientY,
+    originX,
+    originY,
+    width: rect.width,
+    height: rect.height,
+    maxX: Math.max(0, flowRect.width - rect.width),
+    moved: false,
+  }
+  nestedMovingPageBlockId.value = block.id
+  dragPreview.value = {
+    blockId: block.id,
+    x: originX,
+    y: originY,
+    width: rect.width,
+    height: rect.height,
+    nested: true,
+  }
+  document.body.classList.add('is-nested-page-block-moving')
+  window.addEventListener('pointermove', onNestedPageBlockMove, { passive: false })
+  window.addEventListener('pointerup', endNestedPageBlockMove)
+  window.addEventListener('pointercancel', endNestedPageBlockMove)
+}
+
+function onNestedPageBlockMove(event) {
+  pendingNestedPageBlockMoveEvent = event
+  if (nestedPageBlockMoveFrame)
+    return
+  nestedPageBlockMoveFrame = window.requestAnimationFrame(() => {
+    nestedPageBlockMoveFrame = 0
+    const nextEvent = pendingNestedPageBlockMoveEvent
+    pendingNestedPageBlockMoveEvent = null
+    if (nextEvent)
+      applyNestedPageBlockMove(nextEvent)
+  })
+}
+
+function applyNestedPageBlockMove(event) {
+  if (!nestedPageBlockMoveCtx)
+    return
+  event.preventDefault?.()
+  const ctx = nestedPageBlockMoveCtx
+  if (!ctx.moved && Math.hypot(event.clientX - ctx.startX, event.clientY - ctx.startY) > 3)
+    ctx.moved = true
+  const pageFlowX = Math.round(Math.max(0, Math.min(ctx.maxX, ctx.originX + event.clientX - ctx.startX)))
+  const pageFlowY = Math.round(Math.max(0, ctx.originY + event.clientY - ctx.startY))
+  dragPreview.value = { ...dragPreview.value, x: pageFlowX, y: pageFlowY }
+  pageAlignGuides.value = {
+    visible: true,
+    cross: {
+      x: Math.round(pageFlowX + ctx.width / 2),
+      y: Math.round(pageFlowY + ctx.height / 2),
+    },
+    x: [],
+    y: [],
+  }
+  ctx.activeTabTarget = resolvePageFlowTabTargetFromPoint(event)
+  ctx.activeGridTarget = resolvePageFlowGridCellTargetFromPoint(event)
+  activePageFlowGridTarget.value = ctx.activeGridTarget
+    ? {
+        containerId: ctx.activeGridTarget.blockId,
+        cellKey: ctx.activeGridTarget.cellKey,
+        cellIndex: ctx.activeGridTarget.cellIndex,
+      }
+    : null
+  ctx.activeContainerTarget = ctx.activeGridTarget
+    ? null
+    : normalizeContainerDropTarget(resolvePageFlowContainerTargetFromPoint(event))
+  activePageFlowContainerTarget.value = ctx.activeContainerTarget
+}
+
+function endNestedPageBlockMove(event) {
+  if (nestedPageBlockMoveFrame) {
+    window.cancelAnimationFrame(nestedPageBlockMoveFrame)
+    nestedPageBlockMoveFrame = 0
+    pendingNestedPageBlockMoveEvent = null
+  }
+  const ctx = nestedPageBlockMoveCtx
+  nestedPageBlockMoveCtx = null
+  window.removeEventListener('pointermove', onNestedPageBlockMove)
+  window.removeEventListener('pointerup', endNestedPageBlockMove)
+  window.removeEventListener('pointercancel', endNestedPageBlockMove)
+  document.body.classList.remove('is-nested-page-block-moving')
+  nestedMovingPageBlockId.value = ''
+  activePageFlowGridTarget.value = null
+  activePageFlowContainerTarget.value = null
+  clearPageAlignGuides()
+  const preview = dragPreview.value
+  dragPreview.value = null
+  if (!ctx?.moved)
+    return
+  const blockId = ctx.blockId
+  const tabTarget = ctx.activeTabTarget
+    || (event ? resolvePageFlowTabTargetFromPoint(event) : null)
+  if (tabTarget && relocateNestedPageBlockToTab(blockId, tabTarget.blockId, tabTarget.tabKey))
+    return
+  const gridTarget = ctx.activeGridTarget
+    || (event ? resolvePageFlowGridCellTargetFromPoint(event) : null)
+  if (gridTarget && relocateNestedPageBlockToGridCell(blockId, gridTarget.blockId, gridTarget.cellKey))
+    return
+  const containerTarget = normalizeContainerDropTarget(
+    ctx.activeContainerTarget || (event ? resolvePageFlowContainerTargetFromPoint(event) : null),
+  )
+  if (containerTarget && relocateNestedPageBlockToContainer(blockId, containerTarget.containerId))
+    return
+  extractNestedPageBlockToCanvas(
+    blockId,
+    Math.round(preview?.x ?? ctx.originX),
+    Math.round(preview?.y ?? ctx.originY),
+    Math.round(preview?.width ?? ctx.width),
+    Math.round(preview?.height ?? ctx.height),
+  )
+}
+
+function relocateNestedPageBlockToGridCell(blockId, containerId, cellKey) {
+  const source = findPageBlockInTree(pageBlocks.value, blockId)
+  const container = findPageBlockInTree(pageBlocks.value, containerId)
+  if (!source || !container)
+    return false
+  if (['card', 'box-layout'].includes(container.blockType))
+    return relocateNestedPageBlockToContainer(blockId, containerId)
+  if (container.blockType !== 'grid-layout')
+    return false
+  // 禁止拖进自身或自己的子孙
+  if (source.id === containerId || findPageBlockInTree([source], containerId))
+    return false
+  const cells = Array.isArray(container.props?.cells) ? container.props.cells : []
+  let targetKey = String(cellKey || '')
+  if (!cells.some(cell => String(cell.key) === targetKey))
+    targetKey = String(cells[0]?.key || '')
+  if (!targetKey)
+    return false
+  // 已在目标格则不动
+  const alreadyInTarget = cells.some(cell => String(cell.key) === targetKey
+    && (cell.children || []).some(child => child.id === blockId))
+  if (alreadyInTarget)
+    return true
+  const nested = normalizePageBlockForContainer(source)
+  const withoutSource = removePageBlockFromTree(pageBlocks.value, blockId)
+  updatePageBlocks(mapPageBlocksInTree(withoutSource, item => item.id === containerId
+    ? {
+        ...item,
+        props: {
+          ...(item.props || {}),
+          cells: (item.props?.cells || []).map(cell => String(cell.key) === targetKey
+            ? { ...cell, children: [...(cell.children || []), nested] }
+            : cell),
+        },
+      }
+    : item))
+  selectedPageBlockId.value = blockId
+  return true
+}
+
+function relocateNestedPageBlockToTab(blockId, containerId, tabKey) {
+  const source = findPageBlockInTree(pageBlocks.value, blockId)
+  const container = findPageBlockInTree(pageBlocks.value, containerId)
+  if (!source || container?.blockType !== 'tabs' || source.id === containerId)
+    return false
+  const tabs = Array.isArray(container.props?.tabs) ? container.props.tabs : []
+  if (!tabs.some(tab => tab.key === tabKey))
+    return false
+  const nested = normalizePageBlockForContainer(source)
+  const withoutSource = removePageBlockFromTree(pageBlocks.value, blockId)
+  updatePageBlocks(mapPageBlocksInTree(withoutSource, item => item.id === containerId
+    ? {
+        ...item,
+        props: {
+          ...(item.props || {}),
+          tabs: (item.props?.tabs || []).map(tab => tab.key === tabKey
+            ? { ...tab, children: [...(tab.children || []), nested] }
+            : tab),
+        },
+      }
+    : item))
+  selectedPageBlockId.value = blockId
+  return true
+}
+
+function relocateNestedPageBlockToContainer(blockId, containerId) {
+  const source = findPageBlockInTree(pageBlocks.value, blockId)
+  const container = findPageBlockInTree(pageBlocks.value, containerId)
+  if (!source || !container || !['card', 'box-layout'].includes(container.blockType))
+    return false
+  if (source.id === containerId || findPageBlockInTree([source], containerId))
+    return false
+  if ((container.children || []).some(child => child.id === blockId))
+    return true
+  const nested = normalizePageBlockForContainer(source)
+  const withoutSource = removePageBlockFromTree(pageBlocks.value, blockId)
+  updatePageBlocks(mapPageBlocksInTree(withoutSource, item => item.id === containerId
+    ? { ...item, children: [...(item.children || []), nested] }
+    : item))
+  selectedPageBlockId.value = blockId
+  return true
+}
+
+function extractNestedPageBlockToCanvas(blockId, x, y, width, height) {
+  const source = findPageBlockInTree(pageBlocks.value, blockId)
+  if (!source)
+    return false
+  // 已是根级则只更新坐标
+  if (pageBlocks.value.some(item => item.id === blockId)) {
+    updatePageBlocks(pageBlocks.value.map(item => item.id === blockId
+      ? {
+          ...item,
+          props: {
+            ...(item.props || {}),
+            style: {
+              ...(item.props?.style || {}),
+              pageFlowX: x,
+              pageFlowY: y,
+              pageFlowWidth: `${width}px`,
+              pageFlowHeight: `${height}px`,
+              widthMode: 'fixed',
+              width,
+              heightMode: 'fixed',
+              height,
+            },
+          },
+        }
+      : item))
+    selectedPageBlockId.value = blockId
+    return true
+  }
+  const withoutSource = removePageBlockFromTree(pageBlocks.value, blockId)
+  const restored = {
+    ...JSON.parse(JSON.stringify(source)),
+    props: {
+      ...(source.props || {}),
+      style: {
+        ...(source.props?.style || {}),
+        pageFlowX: x,
+        pageFlowY: y,
+        pageFlowWidth: `${width}px`,
+        pageFlowHeight: `${height}px`,
+        widthMode: 'fixed',
+        width,
+        heightMode: 'fixed',
+        height,
+      },
+    },
+  }
+  updatePageBlocks([...withoutSource, restored])
+  selectedPageBlockId.value = blockId
+  return true
 }
 
 function resizeNestedPageBlock(event) {
@@ -3808,8 +5243,11 @@ function resizeNestedPageBlock(event) {
     height += dy
   if (ctx.anchor.includes('top'))
     height -= dy
-  const nextWidth = Math.max(120, Math.round(width))
-  const nextHeight = Math.max(56, Math.round(height))
+  const maxWidth = Number(ctx.maxWidth) > 0 ? Number(ctx.maxWidth) : Number.POSITIVE_INFINITY
+  const nextWidth = Math.min(maxWidth, Math.max(120, Math.round(width)))
+  const nextHeight = Math.max(40, Math.round(height))
+  // 嵌套容器内拉伸到接近父宽时切回铺满，避免越界
+  const useFullWidth = Number.isFinite(maxWidth) && nextWidth >= maxWidth - 2
   updatePageBlocks(mapPageBlocksInTree(pageBlocks.value, block => block.id === ctx.blockId
     ? {
         ...block,
@@ -3817,10 +5255,12 @@ function resizeNestedPageBlock(event) {
           ...(block.props || {}),
           style: {
             ...(block.props?.style || {}),
-            widthMode: 'fixed',
-            width: `${nextWidth}px`,
+            widthMode: useFullWidth ? 'full' : 'fixed',
+            width: useFullWidth ? '100%' : `${nextWidth}px`,
+            maxWidth: '100%',
             heightMode: 'fixed',
             height: `${nextHeight}px`,
+            pageFlowHeight: nextHeight,
           },
         },
       }
@@ -3844,6 +5284,9 @@ function startPageBlockResize(block, event, anchor = 'bottom-right') {
     return
   event.preventDefault()
   selectPageBlock(block.id)
+  if (!pageFlowStackMode.value)
+    updateCurrentGridLayout(ensurePageFlowContentCoords({ ...(currentGridLayout.value || {}) }))
+  const pad = pageCanvasPadding.value
   pageBlockResizeCtx = {
     blockId: block.id,
     anchor,
@@ -3853,7 +5296,11 @@ function startPageBlockResize(block, event, anchor = 'bottom-right') {
     originHeight: rect.height,
     originX: rect.left - flowRect.left + (flow.scrollLeft || 0),
     originY: rect.top - flowRect.top + (flow.scrollTop || 0),
-    maxWidth: Math.max(240, flowRect.width - 24),
+    canvasPadLeft: pad.left,
+    canvasPadRight: pad.right,
+    canvasPadTop: pad.top,
+    widthMode: block.props?.style?.widthMode || 'full',
+    canvasWidth: Math.max(240, flowRect.width),
   }
   window.addEventListener('pointermove', onPageBlockResize)
   window.addEventListener('pointerup', endPageBlockResize)
@@ -3868,44 +5315,104 @@ function onPageBlockResize(event) {
   const anchor = ctx.anchor || 'bottom-right'
   let width = ctx.originWidth
   let height = ctx.originHeight
-  let pageFlowX = ctx.originX
-  let pageFlowY = ctx.originY
+  let canvasX = ctx.originX
+  let canvasY = ctx.originY
+  const resizingWidth = anchor.includes('left') || anchor.includes('right')
   if (anchor.includes('right'))
     width = ctx.originWidth + widthDelta
   if (anchor.includes('left')) {
     width = ctx.originWidth - widthDelta
-    pageFlowX = ctx.originX + widthDelta
+    canvasX = ctx.originX + widthDelta
   }
   if (anchor.includes('bottom'))
     height = ctx.originHeight + heightDelta
   if (anchor.includes('top')) {
     height = ctx.originHeight - heightDelta
-    pageFlowY = ctx.originY + heightDelta
+    canvasY = ctx.originY + heightDelta
   }
-  const pageFlowWidth = `${Math.round(Math.min(ctx.maxWidth, Math.max(180, width)))}px`
-  const pageFlowHeight = Math.round(Math.max(56, height))
+  const padLeft = Number(ctx.canvasPadLeft) || 24
+  const padRight = Number(ctx.canvasPadRight) || 24
+  const padTop = Number(ctx.canvasPadTop) || 24
+  const canvasWidth = Number(ctx.canvasWidth) || 1200
+  const maxRight = Math.max(padLeft + 180, canvasWidth - padRight)
+  canvasX = Math.max(padLeft, canvasX)
+  canvasY = Math.max(padTop, canvasY)
+  let nextW = Math.min(Math.max(180, width), Math.max(180, maxRight - canvasX))
+  if (anchor.includes('left') && nextW < width)
+    canvasX = Math.max(padLeft, canvasX + (width - nextW))
+  nextW = Math.round(Math.min(Math.max(180, nextW), Math.max(180, maxRight - canvasX)))
+  const content = canvasToContentFlowPoint(canvasX, canvasY, {
+    left: padLeft,
+    right: padRight,
+    top: padTop,
+    bottom: 0,
+  })
+  const pageFlowHeight = Math.round(Math.max(40, height))
+  const keepFullWidth = !resizingWidth && (ctx.widthMode === 'full' || ctx.widthMode === 'auto')
+  updateResizeCollisionHighlights(ctx.blockId, {
+    x: canvasX,
+    y: canvasY,
+    width: keepFullWidth ? Math.max(180, canvasWidth - padLeft - padRight) : nextW,
+    height: pageFlowHeight,
+  })
   updatePageBlocks(pageBlocks.value.map((item) => {
     if (item.id !== ctx.blockId)
       return item
+    const prev = item.props?.style || {}
+    const nextStyle = {
+      ...prev,
+      heightMode: 'fixed',
+      height: pageFlowHeight,
+      pageFlowHeight,
+      pageFlowY: content.y,
+    }
+    if (keepFullWidth) {
+      nextStyle.widthMode = prev.widthMode === 'auto' ? 'auto' : 'full'
+      nextStyle.width = nextStyle.widthMode === 'auto' ? 'auto' : '100%'
+      delete nextStyle.pageFlowWidth
+      nextStyle.pageFlowX = 0
+    }
+    else {
+      nextStyle.widthMode = 'fixed'
+      nextStyle.width = nextW
+      nextStyle.pageFlowWidth = `${nextW}px`
+      nextStyle.pageFlowX = content.x
+    }
     return {
       ...item,
       props: {
         ...(item.props || {}),
-        style: {
-          ...(item.props?.style || {}),
-          pageFlowWidth,
-          pageFlowHeight,
-          pageFlowX: Math.round(Math.max(0, pageFlowX)),
-          pageFlowY: Math.round(Math.max(0, pageFlowY)),
-        },
+        style: nextStyle,
       },
     }
   }))
 }
 
+function updateResizeCollisionHighlights(blockId, rect = {}) {
+  const pad = 2
+  const left = Number(rect.x) || 0
+  const top = Number(rect.y) || 0
+  const right = left + (Number(rect.width) || 0)
+  const bottom = top + (Number(rect.height) || 0)
+  const hits = []
+  pageBlocks.value.forEach((item, index) => {
+    if (item.id === blockId)
+      return
+    const geo = resolvePageBlockFlowGeometry(item, index, pageBlocks.value)
+    const overlaps = left - pad < geo.right
+      && right + pad > geo.x
+      && top - pad < geo.bottom
+      && bottom + pad > geo.y
+    if (overlaps)
+      hits.push(item.id)
+  })
+  resizeCollisionBlockIds.value = hits
+}
+
 function endPageBlockResize() {
   const resizedBlockId = pageBlockResizeCtx?.blockId || ''
   pageBlockResizeCtx = null
+  resizeCollisionBlockIds.value = []
   window.removeEventListener('pointermove', onPageBlockResize)
   window.removeEventListener('pointerup', endPageBlockResize)
   if (resizedBlockId)
@@ -3926,6 +5433,9 @@ function startPageBlockMove(block, event) {
     return
   event.preventDefault()
   selectPageBlock(block.id)
+  if (!pageFlowStackMode.value)
+    updateCurrentGridLayout(ensurePageFlowContentCoords({ ...(currentGridLayout.value || {}) }))
+  const pad = pageCanvasPadding.value
   const originX = Math.round(rect.left - flowRect.left + (flow.scrollLeft || 0))
   const originY = Math.round(rect.top - flowRect.top + (flow.scrollTop || 0))
   pageBlockMoveCtx = {
@@ -3941,13 +5451,20 @@ function startPageBlockMove(block, event) {
     activeSwapTargetId: '',
     blockSlots: new Map(pageBlocks.value.map((item) => {
       const style = resolvePageBlockShellStyle(item)
+      const contentX = readPageBlockLength(item.props?.style?.pageFlowX, 0)
+      const contentY = readPageBlockLength(item.props?.style?.pageFlowY, 0)
+      const canvas = contentToCanvasFlowPoint(contentX, contentY, pad)
       return [item.id, {
-        x: readPageBlockLength(item.props?.style?.pageFlowX, style.left),
-        y: readPageBlockLength(item.props?.style?.pageFlowY, style.top),
+        x: canvas.x || readPageBlockLength(style.left, pad.left),
+        y: canvas.y || readPageBlockLength(style.top, pad.top),
+        contentX,
+        contentY,
       }]
     })),
-    maxX: Math.max(0, flowRect.width - rect.width),
-    maxY: Math.max(0, flowRect.height - rect.height),
+    canvasPad: pad.left,
+    canvasPadTop: pad.top,
+    maxX: Math.max(pad.left, flowRect.width - rect.width - pad.right),
+    maxY: Math.max(pad.top, flowRect.height - rect.height),
   }
   dragPreview.value = { blockId: block.id, x: originX, y: originY, width: rect.width, height: rect.height }
   draggingPageBlockId.value = block.id
@@ -3972,27 +5489,182 @@ function applyPageBlockMove(event) {
   if (!pageBlockMoveCtx)
     return
   const ctx = pageBlockMoveCtx
-  const pageFlowX = Math.round(Math.max(0, Math.min(ctx.maxX, ctx.originX + event.clientX - ctx.startX)))
-  const pageFlowY = Math.round(Math.max(0, ctx.originY + event.clientY - ctx.startY))
+  const padLeft = Number(ctx.canvasPad) || 24
+  const padTop = Number(ctx.canvasPadTop) || 24
+  let pageFlowX = Math.round(Math.max(padLeft, Math.min(ctx.maxX, ctx.originX + event.clientX - ctx.startX)))
+  let pageFlowY = Math.round(Math.max(padTop, ctx.originY + event.clientY - ctx.startY))
+  const snapped = snapPageBlockPosition(ctx, pageFlowX, pageFlowY)
+  pageFlowX = Math.round(Math.max(padLeft, Math.min(ctx.maxX, snapped.x)))
+  pageFlowY = Math.max(padTop, snapped.y)
+  // 防止吸附后右边缘越界
+  const maxRight = (ctx.maxX || 0) + Number(ctx.width || 0)
+  if (pageFlowX + Number(ctx.width || 0) > maxRight)
+    pageFlowX = Math.max(padLeft, maxRight - Number(ctx.width || 0))
   dragPreview.value = { ...dragPreview.value, x: pageFlowX, y: pageFlowY }
+  updatePageAlignGuides(ctx, pageFlowX, pageFlowY)
   ctx.activeTabTarget = resolvePageFlowTabTargetFromPoint(event)
-  if (ctx.activeTabTarget) {
+  ctx.activeGridTarget = resolvePageFlowGridCellTargetFromPoint(event)
+  // 自由拖放：拖动中不做实时对调，避免其它元素跟着弹跳
+  if (ctx.activeSwapTargetId)
+    clearPageBlockSwapPreview(ctx)
+}
+
+function snapPageBlockPosition(ctx, x, y) {
+  const width = Number(ctx.width || 0)
+  const height = Number(ctx.height || 0)
+  const moving = {
+    left: x,
+    top: y,
+    right: x + width,
+    bottom: y + height,
+    cx: x + width / 2,
+    cy: y + height / 2,
+  }
+  let nextX = x
+  let nextY = y
+  let bestX = null
+  let bestY = null
+  pageBlocks.value.forEach((item) => {
+    if (!item?.id || item.id === ctx.blockId)
+      return
+    const style = resolvePageBlockShellStyle(item)
+    const left = readPageBlockLength(style.left, 0)
+    const top = readPageBlockLength(style.top, 0)
+    const w = readPageBlockLength(item.props?.style?.pageFlowWidth, style.width) || width
+    const h = readPageBlockLength(item.props?.style?.pageFlowHeight, style.height) || height
+    const target = {
+      left,
+      top,
+      right: left + w,
+      bottom: top + h,
+      cx: left + w / 2,
+      cy: top + h / 2,
+    }
+    ;[
+      [moving.left, target.left],
+      [moving.left, target.right],
+      [moving.left, target.cx],
+      [moving.cx, target.left],
+      [moving.cx, target.right],
+      [moving.cx, target.cx],
+      [moving.right, target.left],
+      [moving.right, target.right],
+      [moving.right, target.cx],
+    ].forEach(([from, to]) => {
+      const delta = Math.abs(from - to)
+      if (delta > PAGE_ALIGN_SNAP_PX)
+        return
+      if (bestX && delta >= bestX.delta)
+        return
+      bestX = { delta, to: Math.round(to), nextX: Math.round(x + (to - from)) }
+    })
+    ;[
+      [moving.top, target.top],
+      [moving.top, target.bottom],
+      [moving.top, target.cy],
+      [moving.cy, target.top],
+      [moving.cy, target.bottom],
+      [moving.cy, target.cy],
+      [moving.bottom, target.top],
+      [moving.bottom, target.bottom],
+      [moving.bottom, target.cy],
+    ].forEach(([from, to]) => {
+      const delta = Math.abs(from - to)
+      if (delta > PAGE_ALIGN_SNAP_PX)
+        return
+      if (bestY && delta >= bestY.delta)
+        return
+      bestY = { delta, to: Math.round(to), nextY: Math.round(y + (to - from)) }
+    })
+  })
+  if (bestX)
+    nextX = bestX.nextX
+  if (bestY)
+    nextY = bestY.nextY
+  // 每个轴最多一条吸附线，避免标线刷屏
+  ctx._snapLines = {
+    x: bestX ? [bestX.to] : [],
+    y: bestY ? [bestY.to] : [],
+  }
+  return { x: nextX, y: nextY }
+}
+
+function updatePageAlignGuides(ctx, x, y) {
+  const width = Number(ctx.width || 0)
+  const height = Number(ctx.height || 0)
+  pageAlignGuides.value = {
+    visible: true,
+    cross: {
+      x: Math.round(x + width / 2),
+      y: Math.round(y + height / 2),
+    },
+    x: ctx._snapLines?.x || [],
+    y: ctx._snapLines?.y || [],
+  }
+}
+
+function clearPageAlignGuides() {
+  pageAlignGuides.value = { visible: false, cross: null, x: [], y: [] }
+}
+
+function endPageBlockMove(event) {
+  if (pageBlockMoveFrame) {
+    window.cancelAnimationFrame(pageBlockMoveFrame)
+    pageBlockMoveFrame = 0
+    pendingPageBlockMoveEvent = null
+  }
+  const ctx = pageBlockMoveCtx
+  if (ctx) {
+    const tabTarget = ctx.activeTabTarget
+      || (event ? resolvePageFlowTabTargetFromPoint(event) : null)
+    if (tabTarget && moveRootPageBlockToTab(ctx.blockId, tabTarget.blockId, tabTarget.tabKey)) {
+      pageBlockMoveCtx = null
+      draggingPageBlockId.value = ''
+      dragPreview.value = null
+      clearPageAlignGuides()
+      window.removeEventListener('pointermove', onPageBlockMove)
+      window.removeEventListener('pointerup', endPageBlockMove)
+      return
+    }
+    const gridTarget = ctx.activeGridTarget
+      || (event ? resolvePageFlowGridCellTargetFromPoint(event) : null)
+    if (gridTarget && moveRootPageBlockToGridCell(ctx.blockId, gridTarget.blockId, gridTarget.cellKey)) {
+      pageBlockMoveCtx = null
+      draggingPageBlockId.value = ''
+      dragPreview.value = null
+      clearPageAlignGuides()
+      window.removeEventListener('pointermove', onPageBlockMove)
+      window.removeEventListener('pointerup', endPageBlockMove)
+      return
+    }
     if (ctx.activeSwapTargetId)
       clearPageBlockSwapPreview(ctx)
-    return
+    const finalX = Math.round(dragPreview.value?.x ?? ctx.originX)
+    const finalY = Math.round(dragPreview.value?.y ?? ctx.originY)
+    const content = canvasToContentFlowPoint(finalX, finalY, pageCanvasPadding.value)
+    // 直接落到预览位置，不再自动碰撞推挤，避免松手弹一下
+    updatePageBlocks(
+      pageBlocks.value.map(item => item.id === ctx.blockId
+        ? {
+            ...item,
+            props: {
+              ...(item.props || {}),
+              style: {
+                ...(item.props?.style || {}),
+                pageFlowX: content.x,
+                pageFlowY: content.y,
+              },
+            },
+          }
+        : item),
+    )
   }
-  const targetId = resolvePageBlockSwapTarget(ctx.blockId, {
-    left: ctx.originClientLeft + event.clientX - ctx.startX,
-    top: ctx.originClientTop + event.clientY - ctx.startY,
-    right: ctx.originClientLeft + event.clientX - ctx.startX + ctx.width,
-    bottom: ctx.originClientTop + event.clientY - ctx.startY + ctx.height,
-  })
-  if (targetId && targetId !== ctx.activeSwapTargetId) {
-    applyPageBlockSwapPreview(ctx, targetId)
-  }
-  else if (!targetId) {
-    clearPageBlockSwapPreview(ctx)
-  }
+  pageBlockMoveCtx = null
+  draggingPageBlockId.value = ''
+  dragPreview.value = null
+  clearPageAlignGuides()
+  window.removeEventListener('pointermove', onPageBlockMove)
+  window.removeEventListener('pointerup', endPageBlockMove)
 }
 
 function applyPageBlockSwapPreview(ctx, targetId) {
@@ -4009,13 +5681,27 @@ function applyPageBlockSwapPreview(ctx, targetId) {
     if (item.id === previousTargetId && previousTargetSlot) {
       return {
         ...item,
-        props: { ...(item.props || {}), style: { ...(item.props?.style || {}), pageFlowX: previousTargetSlot.x, pageFlowY: previousTargetSlot.y } },
+        props: {
+          ...(item.props || {}),
+          style: {
+            ...(item.props?.style || {}),
+            pageFlowX: previousTargetSlot.contentX ?? previousTargetSlot.x,
+            pageFlowY: previousTargetSlot.contentY ?? previousTargetSlot.y,
+          },
+        },
       }
     }
     if (item.id === targetId) {
       return {
         ...item,
-        props: { ...(item.props || {}), style: { ...(item.props?.style || {}), pageFlowX: originSlot.x, pageFlowY: originSlot.y } },
+        props: {
+          ...(item.props || {}),
+          style: {
+            ...(item.props?.style || {}),
+            pageFlowX: originSlot.contentX ?? originSlot.x,
+            pageFlowY: originSlot.contentY ?? originSlot.y,
+          },
+        },
       }
     }
     return item
@@ -4036,7 +5722,17 @@ function clearPageBlockSwapPreview(ctx) {
   const targetSlot = ctx.blockSlots.get(targetId)
   if (targetSlot) {
     updatePageBlocks(pageBlocks.value.map(item => item.id === targetId
-      ? { ...item, props: { ...(item.props || {}), style: { ...(item.props?.style || {}), pageFlowX: targetSlot.x, pageFlowY: targetSlot.y } } }
+      ? {
+          ...item,
+          props: {
+            ...(item.props || {}),
+            style: {
+              ...(item.props?.style || {}),
+              pageFlowX: targetSlot.contentX ?? targetSlot.x,
+              pageFlowY: targetSlot.contentY ?? targetSlot.y,
+            },
+          },
+        }
       : item))
   }
   if (targetRect)
@@ -4065,41 +5761,6 @@ function animatePageBlockSwap(blockId, previousRect) {
   })
 }
 
-function endPageBlockMove(event) {
-  if (pageBlockMoveFrame) {
-    window.cancelAnimationFrame(pageBlockMoveFrame)
-    pageBlockMoveFrame = 0
-    pendingPageBlockMoveEvent = null
-  }
-  const ctx = pageBlockMoveCtx
-  if (ctx) {
-    const tabTarget = ctx.activeTabTarget
-      || (event ? resolvePageFlowTabTargetFromPoint(event) : null)
-    if (tabTarget && moveRootPageBlockToTab(ctx.blockId, tabTarget.blockId, tabTarget.tabKey)) {
-      pageBlockMoveCtx = null
-      draggingPageBlockId.value = ''
-      dragPreview.value = null
-      window.removeEventListener('pointermove', onPageBlockMove)
-      window.removeEventListener('pointerup', endPageBlockMove)
-      return
-    }
-    const targetSlot = ctx.activeSwapTargetId ? ctx.blockSlots.get(ctx.activeSwapTargetId) : null
-    const finalX = targetSlot?.x ?? Math.round(dragPreview.value?.x ?? ctx.originX)
-    const finalY = targetSlot?.y ?? Math.round(dragPreview.value?.y ?? ctx.originY)
-    updatePageBlocks(
-      pageBlocks.value.map(item => item.id === ctx.blockId
-        ? { ...item, props: { ...(item.props || {}), style: { ...(item.props?.style || {}), pageFlowX: finalX, pageFlowY: finalY } } }
-        : item),
-      { resolveCollisions: true, changedBlockId: ctx.blockId },
-    )
-  }
-  pageBlockMoveCtx = null
-  draggingPageBlockId.value = ''
-  dragPreview.value = null
-  window.removeEventListener('pointermove', onPageBlockMove)
-  window.removeEventListener('pointerup', endPageBlockMove)
-}
-
 function moveRootPageBlockToTab(blockId, containerId, tabKey) {
   const source = pageBlocks.value.find(item => item.id === blockId)
   const container = findPageBlockInTree(pageBlocks.value, containerId)
@@ -4122,6 +5783,51 @@ function moveRootPageBlockToTab(blockId, containerId, tabKey) {
       }
     : item))
   selectedPageBlockId.value = containerId
+  return true
+}
+
+function moveRootPageBlockToGridCell(blockId, containerId, cellKey) {
+  const source = pageBlocks.value.find(item => item.id === blockId)
+  const container = findPageBlockInTree(pageBlocks.value, containerId)
+  if (!source || !container || source.id === container.id)
+    return false
+  if (['card', 'box-layout'].includes(container.blockType)) {
+    if (['grid-layout', 'tabs', 'box-layout', 'card'].includes(source.blockType)) {
+      message.warning('卡片/盒子内请放入普通组件，布局容器请放在画布根级')
+      return false
+    }
+    const nested = normalizePageBlockForContainer(source)
+    const withoutSource = pageBlocks.value.filter(item => item.id !== blockId)
+    updatePageBlocks(mapPageBlocksInTree(withoutSource, item => item.id === containerId
+      ? { ...item, children: [...(item.children || []), nested] }
+      : item))
+    selectedPageBlockId.value = nested.id
+    message.success(container.blockType === 'card' ? '组件已放入卡片' : '组件已放入盒子')
+    return true
+  }
+  if (container.blockType !== 'grid-layout')
+    return false
+  const cells = Array.isArray(container.props?.cells) ? container.props.cells : []
+  let targetKey = String(cellKey || '')
+  if (!cells.some(cell => String(cell.key) === targetKey))
+    targetKey = String(cells[0]?.key || '')
+  if (!targetKey)
+    return false
+  const nested = normalizePageBlockForContainer(source)
+  const withoutSource = pageBlocks.value.filter(item => item.id !== blockId)
+  updatePageBlocks(mapPageBlocksInTree(withoutSource, item => item.id === containerId
+    ? {
+        ...item,
+        props: {
+          ...(item.props || {}),
+          cells: (item.props?.cells || []).map(cell => String(cell.key) === targetKey
+            ? { ...cell, children: [...(cell.children || []), nested] }
+            : cell),
+        },
+      }
+    : item))
+  selectedPageBlockId.value = nested.id
+  message.success('组件已放入栅格')
   return true
 }
 
@@ -4256,11 +5962,8 @@ async function saveActiveFormDesigner(returnAfter = true) {
       formDesignerMode.value = false
       if (formDesignerFromPageManagement.value) {
         // 从页面管理视图进入的，保存后返回页面管理视图
-        editing.value = false
-        formDesignerFromPageManagement.value = false
-        activeFormAssetId.value = ''
-        activePageShapeDesign.value = null
         selectPageManagementNode(pageId)
+        exitToPageManagement()
       }
       else {
         selectCreatedDesignerPage(pageId)
@@ -4439,9 +6142,103 @@ function requestExitEditing() {
     exitEditingVisible.value = true
     return
   }
+  exitToPageManagement()
+}
+
+function isDraftPreviewMode() {
+  return isDraftMode.value && !editing.value
+}
+
+function resolveRuntimeBackLabel() {
+  if (editing.value)
+    return '页面管理'
+  if (isDraftPreviewMode())
+    return '返回编辑'
+  return '应用中心'
+}
+
+function resolveRuntimeBrandEyebrow() {
+  if (editing.value)
+    return '页面设计'
+  if (isDraftPreviewMode())
+    return '草稿预览'
+  return '页面管理'
+}
+
+function resolveRuntimeBrandStatus() {
+  if (editing.value)
+    return dirty.value ? '未保存修改' : '已保存到草稿'
+  if (isDraftPreviewMode())
+    return '只读预览'
+  return currentPageManagementTitle.value
+}
+
+function handleRuntimeBack() {
+  if (editing.value) {
+    requestExitEditing()
+    return
+  }
+  if (isDraftPreviewMode()) {
+    returnToEditorFromDraftPreview()
+    return
+  }
+  openWorkspace()
+}
+
+function returnToEditorFromDraftPreview() {
+  const pageId = String(route.query.pageId || selectedNodeId.value || '').trim()
+  // 预览若在新标签打开，优先关窗回到编辑页；同标签则恢复 edit=1
+  if (window.opener && !window.opener.closed) {
+    try {
+      window.opener.focus?.()
+    }
+    catch {
+      // ignore cross-origin focus errors
+    }
+    window.close()
+    // 部分浏览器不允许脚本关窗，继续走路由回编辑
+  }
+  const nextQuery = { ...route.query, edit: '1' }
+  delete nextQuery.draft
+  delete nextQuery.returnEdit
+  if (pageId)
+    nextQuery.pageId = pageId
+  router.replace({
+    name: 'BusinessApplicationRuntime',
+    params: { applicationCode: application.value?.applicationCode || route.params.applicationCode },
+    query: nextQuery,
+  })
+}
+
+function exitToPageManagement(options = {}) {
   formDesignerMode.value = false
+  formDesignerFromPageManagement.value = false
+  activePageShapeDesign.value = null
+  activeFormAssetId.value = ''
+  selectedPageBlockId.value = ''
+  selectedDesignerResourceKey.value = ''
+  configPanelVisible.value = false
+  componentPopoverVisible.value = false
+  activePageDesignTab.value = 'form'
+  // 返回页面管理后仍高亮刚编辑的页，方便在左侧菜单里找到它
+  const keepSelection = options.keepSelection !== false
+  const highlightPageId = keepSelection
+    ? (selectedNodeId.value || resolveSelectablePageId(route.query.pageId))
+    : ''
+  if (highlightPageId)
+    selectedNodeId.value = highlightPageId
   editing.value = false
-  selectedNodeId.value = resolveSelectablePageId(selectedNodeId.value)
+  const nextQuery = { ...route.query }
+  delete nextQuery.edit
+  delete nextQuery.designResource
+  delete nextQuery.designTab
+  delete nextQuery.designSection
+  // 保留 pageId，左侧选中与中间预览一致；不要留 design* 设计态参数
+  if (highlightPageId && !isPageManagementSystemPageId(highlightPageId))
+    nextQuery.pageId = highlightPageId
+  else
+    delete nextQuery.pageId
+  router.replace({ query: nextQuery })
 }
 
 function currentDesignerDirty() {
@@ -4711,11 +6508,11 @@ function handleRuntimeHeaderMoreSelect(key) {
 function discardAndExitEditing() {
   historyReady.value = false
   builder.value = ensurePageTitleComponents(normalizeInAppBuilder(application.value?.options, application.value, objects.value))
+  builder.value = ensureWorkbenchPageInBuilder(builder.value).schema
   savedSignature.value = JSON.stringify(builder.value)
   resetBuilderHistory(builder.value)
-  selectedPageBlockId.value = ''
   exitEditingVisible.value = false
-  editing.value = false
+  exitToPageManagement()
 }
 
 function openWorkspace() {
@@ -4743,25 +6540,106 @@ function resolveRuntimeView(value) {
   return ['pages', 'process', 'enhance', 'settings'].includes(normalized) ? normalized : 'pages'
 }
 
-// 页面级 Tab（编辑模式）
-const PAGE_DESIGN_TABS = new Set(['form', 'list', 'settings', 'publish'])
+// 页面级 Tab（编辑模式）——严格按创建时的页面形态展示
+const PAGE_DESIGN_TABS = new Set(['page', 'form', 'list', 'settings', 'publish'])
 
-function resolvePageDesignTab(value) {
-  const normalized = String(Array.isArray(value) ? value[0] : value || '').trim()
-  return PAGE_DESIGN_TABS.has(normalized) ? normalized : 'form'
+/**
+ * 创建时页面形态：
+ * custom → 自由布局（仅页面设计）
+ * form → 表单页（仅表单设计）
+ * list → 列表页（仅列表设计）
+ * list-form → 列表+表单（表单+列表设计）
+ */
+function resolvePageShapeKey(pageId = '') {
+  const routePageId = String(route.query.pageId || '').trim()
+  const id = String(pageId || routePageId || selectedNodeId.value || '').trim()
+  const designTab = readRouteDesignTab()
+  if (isWorkbenchPageId(id) || isWorkbenchPageId(routePageId))
+    return 'custom'
+  // 编辑态 URL 明确是自由布局时，始终按 custom 展示（不因 selectedNodeId 漂移或首页回退误判）
+  if (designTab === 'page' && (!routePageId || !id || routePageId === id))
+    return 'custom'
+
+  const node = (builder.value?.nodes || []).find(item => String(item.id) === id)
+  return resolvePageShapeFromNode(node, { designTab: designTab === 'page' && routePageId === id ? 'page' : '' })
 }
 
-const activePageDesignTab = ref(resolvePageDesignTab(route.query.designTab))
+function pageUsesFreeLayoutCanvas(pageId) {
+  return resolvePageShapeKey(pageId) === 'custom'
+}
+
+function resolveEntryDesignTab(pageId) {
+  const shape = resolvePageShapeKey(pageId)
+  if (shape === 'custom')
+    return 'page'
+  if (shape === 'list')
+    return 'list'
+  return 'form'
+}
+
+function resolvePageDesignTab(value, pageId = '') {
+  const normalized = String(Array.isArray(value) ? value[0] : value || '').trim()
+  const shape = resolvePageShapeKey(pageId || String(route.query.pageId || selectedNodeId.value || '').trim())
+  // 明确的 page Tab 不再被改写成 form（否则自由布局中间会空白）
+  if (normalized === 'page')
+    return shape === 'custom' || readRouteDesignTab() === 'page' ? 'page' : resolveEntryDesignTab(pageId)
+  if (normalized === 'form' && shape !== 'form' && shape !== 'list-form')
+    return resolveEntryDesignTab(pageId)
+  if (normalized === 'list' && shape !== 'list' && shape !== 'list-form')
+    return resolveEntryDesignTab(pageId)
+  if (PAGE_DESIGN_TABS.has(normalized))
+    return normalized
+  return resolveEntryDesignTab(pageId || String(route.query.pageId || selectedNodeId.value || '').trim())
+}
+
+const activePageDesignTab = ref(resolvePageDesignTab(route.query.designTab, route.query.pageId))
+
+const currentPageShape = computed(() => {
+  // 编辑态优先用 URL pageId，避免 selectedNodeId 短暂落在旧对象页时把 Tab 打成表单/列表
+  const routeId = String(route.query.pageId || '').trim()
+  if (editing.value && readRouteDesignTab() === 'page')
+    return 'custom'
+  return resolvePageShapeKey(routeId || selectedNodeId.value)
+})
+const isObjectBoundPage = computed(() => currentPageShape.value !== 'custom')
+const isFreeLayoutPage = computed(() => currentPageShape.value === 'custom')
+const showFreeLayoutCanvas = computed(() => {
+  if (!editing.value || formDesignerMode.value)
+    return false
+  if (['list', 'settings', 'publish'].includes(activePageDesignTab.value))
+    return false
+  // URL 明确自由布局时，即使 activeTab 曾被写成 form 也要出画布
+  if (readRouteDesignTab() === 'page')
+    return activePageDesignTab.value !== 'form' || !showFormDesignTab.value
+  if (activePageDesignTab.value === 'form' && showFormDesignTab.value)
+    return false
+  return isFreeLayoutPage.value || activePageDesignTab.value === 'page'
+})
+const showFormDesignWorkbench = computed(() => {
+  if (formDesignerMode.value)
+    return true
+  if (!showFormDesignTab.value)
+    return false
+  return editing.value && activePageDesignTab.value === 'form'
+})
+const showPageDesignTab = computed(() => readRouteDesignTab() === 'page' || currentPageShape.value === 'custom')
+const showFormDesignTab = computed(() => readRouteDesignTab() !== 'page' && ['form', 'list-form'].includes(currentPageShape.value))
+const showListDesignTab = computed(() => readRouteDesignTab() !== 'page' && ['list', 'list-form'].includes(currentPageShape.value))
+const isPageDesignTabActive = computed(() => showPageDesignTab.value && (activePageDesignTab.value === 'page' || showFreeLayoutCanvas.value))
 
 function switchPageDesignTab(tab) {
-  const next = resolvePageDesignTab(tab)
+  const next = resolvePageDesignTab(tab, selectedNodeId.value)
   activePageDesignTab.value = next
   if (formDesignerMode.value)
     formDesignerMode.value = false
   if (next === 'form' && selectedNodeId.value)
     syncActiveFormAssetForPage(selectedNodeId.value)
-  const designTab = next === 'form' ? undefined : next
-  if (route.query.designTab === designTab)
+  const defaultTab = resolveEntryDesignTab(selectedNodeId.value)
+  const designTab = next === defaultTab ? undefined : next
+  const current = route.query.designTab == null || route.query.designTab === ''
+    ? undefined
+    : String(route.query.designTab)
+  if (current === designTab)
     return
   router.replace({
     query: {
@@ -4893,8 +6771,52 @@ function patchCurrentPageNode(partial = {}) {
   scheduleNavigationSave()
 }
 
+async function restoreCurrentObjectPageLayout() {
+  const pageId = String(currentNode.value?.id || selectedNodeId.value || route.query.pageId || '').trim()
+  if (!pageId || !builder.value || restoringObjectPageLayout.value)
+    return
+  restoringObjectPageLayout.value = true
+  try {
+    builder.value = restoreObjectBoundPageLayout(builder.value, pageId)
+    selectedPageBlockId.value = builder.value.pages?.[pageId]?.layout?.gridLayout?.items?.[0]?.id || ''
+    syncActiveFormAssetForPage(pageId)
+    await persistApplicationDraft()
+    savedSignature.value = JSON.stringify(builder.value)
+    message.success('已恢复为列表/表单布局，自由布局组件已清除')
+  }
+  catch (error) {
+    message.error(error?.message || '恢复列表/表单布局失败')
+  }
+  finally {
+    restoringObjectPageLayout.value = false
+  }
+}
+
 function selectPageManagementNode(pageId) {
+  if (isWorkbenchPageId(pageId) && builder.value) {
+    const ensured = ensureWorkbenchPageInBuilder(builder.value)
+    if (ensured.created || ensured.upgraded)
+      builder.value = ensured.schema
+  }
   selectedNodeId.value = pageId
+  selectedDesignerResourceKey.value = ''
+  if (editing.value)
+    return
+  // 页面管理态：选中与 URL pageId、中间预览必须同页，避免残留 design* 或旧 pageId 串预览
+  const nextQuery = {
+    pageId: pageId || undefined,
+  }
+  const currentPageId = route.query.pageId == null || route.query.pageId === ''
+    ? undefined
+    : String(route.query.pageId)
+  const hasDesignerResidue = route.query.designResource != null
+    || route.query.edit != null
+    || route.query.designTab != null
+    || route.query.designSection != null
+    || route.query.draft != null
+  if (!hasDesignerResidue && currentPageId === nextQuery.pageId)
+    return
+  router.replace({ query: nextQuery })
 }
 
 async function startRenameApplication() {
@@ -4946,8 +6868,11 @@ function enterPageDesign(pageId) {
   // 记录用户是否从页面管理视图（非编辑模式）进入
   formDesignerFromPageManagement.value = !editing.value
   selectedNodeId.value = pageId
-  activePageDesignTab.value = 'form'
-  syncActiveFormAssetForPage(pageId)
+  // 与左侧 Portal 预览对齐：有自由布局画布内容时进「页面设计」，纯对象 CRUD 才进表单设计
+  const entryTab = resolveEntryDesignTab(pageId)
+  activePageDesignTab.value = entryTab
+  if (entryTab === 'form')
+    syncActiveFormAssetForPage(pageId)
   // 所有状态（编辑模式、选中页面、设计资源）统一通过一次路由更新驱动：
   // watch(route.query.edit) 设置 editing，watch(route.query.pageId) 设置 selectedNodeId，
   // watch(route.query.designResource) 设置 selectedDesignerResourceKey。
@@ -4958,13 +6883,38 @@ function enterPageDesign(pageId) {
       pageId,
       edit: '1',
       designResource: `page-custom:${pageId}`,
+      designTab: entryTab === 'form' ? undefined : entryTab,
     },
   })
+  // 进入自由布局时立刻回写 pageShape，避免刷新后再次误判
+  if (entryTab === 'page' && builder.value && !isWorkbenchPageId(pageId)) {
+    const node = (builder.value.nodes || []).find(item => String(item.id) === String(pageId))
+    const repaired = ensureFreeLayoutPageNode(node)
+    if (node && repaired !== node) {
+      builder.value = {
+        ...builder.value,
+        nodes: builder.value.nodes.map(item => String(item.id) === String(pageId) ? repaired : item),
+      }
+    }
+  }
+}
+
+function enterWorkbenchDesign() {
+  if (!builder.value)
+    return
+  const ensured = ensureWorkbenchPageInBuilder(builder.value)
+  if (ensured.created || ensured.upgraded) {
+    builder.value = ensured.schema
+    if (ensured.created)
+      message.success('已初始化个人工作台默认布局')
+    else if (ensured.upgraded)
+      message.success('已更新个人工作台默认布局')
+  }
+  enterPageDesign(WORKBENCH_PAGE_ID)
 }
 
 function openCustomPageSelector() {
-  pageTypeSelectorParentId.value = null
-  pageTypeSelectorVisible.value = true
+  openPageTypeSelector(null, 'custom')
 }
 
 async function openExcelPageImport() {
@@ -5010,12 +6960,21 @@ async function openDraftPreview() {
     openObjectResourcePreview()
     return
   }
+  const selected = String(selectedNodeId.value || '').trim()
+  const routeId = String(route.query.pageId || '').trim()
+  const resourcePageId = String(activeDesignerResource.value?.pageId || '').trim()
+  const previewPageId = (isPageManagementSystemPageId(resourcePageId) && resourcePageId)
+    || (isPageManagementSystemPageId(selected) && selected)
+    || routeId
+    || resolveActiveDesignerPageId()
+    || selected
+    || WORKBENCH_PAGE_ID
   const target = router.resolve({
     name: 'BusinessApplicationRuntime',
     params: { applicationCode: application.value.applicationCode },
-    query: { pageId: selectedNodeId.value, draft: '1' },
+    query: { pageId: previewPageId, draft: '1', returnEdit: '1' },
   })
-  const win = window.open(target.href, '_blank', 'noopener,noreferrer')
+  const win = window.open(target.href, '_blank')
   if (!win) {
     // 浏览器弹窗拦截器阻止了新窗口，回退到同标签页导航
     console.warn('[openDraftPreview] window.open 被浏览器拦截，回退到 router.push')

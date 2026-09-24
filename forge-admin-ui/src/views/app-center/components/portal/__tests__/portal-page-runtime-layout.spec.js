@@ -7,6 +7,8 @@ import {
   isRuntimeAutoHeightBlock,
   resolvePortalPageBlocks,
   shouldUseContentSizedFlow,
+  shouldUsePageFlowStack,
+  sortBlocksByPageFlowY,
 } from '../portal-page-runtime-layout'
 
 describe('portal-page-runtime-layout', () => {
@@ -49,10 +51,35 @@ describe('portal-page-runtime-layout', () => {
     }]
     expect(shouldUseContentSizedFlow(formBlocks)).toBe(true)
     expect(shouldUseContentSizedFlow(formBlocks, { fillHost: true })).toBe(false)
-    expect(shouldUseContentSizedFlow([
-      { blockType: 'AiCrudPage', props: { formOnly: true } },
-      { blockType: 'AiCrudPage' },
-    ])).toBe(false)
+  })
+
+  it('stacks full-width workbench blocks in document flow so resize cannot overlap', () => {
+    const workbench = [
+      { id: 'm', blockType: 'workspace-summary-metrics', props: { style: { widthMode: 'full', pageFlowY: 20 } } },
+      { id: 'i', blockType: 'info-panel', props: { style: { widthMode: 'full', pageFlowY: 236 } } },
+      { id: 'e', blockType: 'empty-state', props: { style: { widthMode: 'full', pageFlowY: 360 } } },
+    ]
+    expect(shouldUsePageFlowStack(workbench)).toBe(true)
+    expect(shouldUseContentSizedFlow(workbench)).toBe(true)
+    expect(sortBlocksByPageFlowY(workbench).map(item => item.id)).toEqual(['m', 'i', 'e'])
+  })
+
+  it('forces workbench page stack even when a block lost full width', () => {
+    const mixed = [
+      { blockType: 'card', props: { style: { widthMode: 'fixed' } } },
+      { blockType: 'info-panel', props: { style: { widthMode: 'full' } } },
+    ]
+    expect(shouldUsePageFlowStack(mixed)).toBe(false)
+    expect(shouldUsePageFlowStack(mixed, { pageId: 'system:workbench' })).toBe(true)
+    expect(shouldUseContentSizedFlow(mixed, { runtimePreview: true })).toBe(true)
+  })
+
+  it('keeps absolute free layout when any block is not full width', () => {
+    const free = [
+      { blockType: 'info-panel', props: { style: { widthMode: 'full' } } },
+      { blockType: 'card', props: { style: { widthMode: 'fixed' } } },
+    ]
+    expect(shouldUsePageFlowStack(free)).toBe(false)
   })
 
   it('hides untouched info-panel and empty-state placeholders on object pages', () => {

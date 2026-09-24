@@ -191,4 +191,17 @@ describe('seed configuration takeover', () => {
     expect(accepted.seedTakeover).toEqual({ accepted: true, acceptedAt: '2026-08-14T00:00:00.000Z' })
     expect(requiresSeedTakeoverConfirmation({ designerOptions: accepted })).toBe(false)
   })
+
+  it('synthesizes a page-custom resource for the system workbench', () => {
+    const groups = buildApplicationDesignerResourceGroups({
+      objects: [{ objectId: '1', objectCode: 'ORDER', objectName: '订单', objectRole: 'PRIMARY' }],
+      pages: [{ id: 'home', title: '客户管理', type: 'page' }],
+    })
+    expect(findApplicationDesignerResource(groups, 'page-custom:system:workbench')).toMatchObject({
+      key: 'page-custom:system:workbench',
+      kind: 'page-custom',
+      pageId: 'system:workbench',
+      label: '个人工作台',
+    })
+  })
 })

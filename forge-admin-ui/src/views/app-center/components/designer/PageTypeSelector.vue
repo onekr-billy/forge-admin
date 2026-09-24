@@ -104,7 +104,7 @@
           取消
         </n-button>
         <n-button type="primary" @click="confirmSelection">
-          进入设计器
+          {{ form.pageType === 'custom' ? '创建并进入自由布局' : '创建并进入设计器' }}
         </n-button>
       </div>
     </template>
@@ -132,6 +132,10 @@ const props = defineProps({
   defaultParentId: {
     type: [String, Number],
     default: null,
+  },
+  defaultPageType: {
+    type: String,
+    default: 'form',
   },
 })
 
@@ -197,7 +201,7 @@ const selectedTableLabel = computed(() => {
   return table.tableComment ? `${table.tableName}（${table.tableComment}）` : table.tableName
 })
 
-watch(() => [props.show, props.defaultParentId], async ([visible]) => {
+watch(() => [props.show, props.defaultParentId, props.defaultPageType], async ([visible]) => {
   if (!visible)
     return
   Object.assign(form, createDefaultForm())
@@ -210,8 +214,11 @@ watch(() => [props.show, props.defaultParentId], async ([visible]) => {
 })
 
 function createDefaultForm() {
+  const pageType = PAGE_SHAPE_TYPES.some(item => item.value === props.defaultPageType)
+    ? props.defaultPageType
+    : 'form'
   return {
-    pageType: 'form',
+    pageType,
     pageName: '',
     objectName: '',
     objectCode: '',
