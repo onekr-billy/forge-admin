@@ -61,10 +61,11 @@ class BusinessApplicationDraftPreviewContractTest {
         assertTrue(source.contains("objectDesignerService.prepareRuntimeDraft("));
         String versionSource = readSource("service/businessapp/BusinessObjectDesignVersionService.java");
         assertTrue(source.contains("verifyPublishedObjects(objects, selection.getObjectIds(), result)"));
-        // 真正发布：状态门禁 + 已有对象版本只钉住，不 prepare/syncDB/重跑对象发布
+        // 真正发布：状态门禁；无改动对象只钉住已有版本，有未发布改动的对象必须重发，不能只改状态
         assertTrue(source.contains("resolveStatusPublishCheck"));
-        assertTrue(objectPublishSource.contains("markDesignPublished"));
-        assertTrue(source.contains("objectPublishService.markDesignPublished(pinAndMarkIds)"));
+        assertTrue(source.contains(
+                "existingVersion != null && BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())"));
+        assertFalse(source.contains("objectPublishService.markDesignPublished(pinAndMarkIds)"));
         assertTrue(versionSource.contains("selectLatestPublishedVersionIds"));
         // DETAIL 最终发布必须同步子表关系；预检复用且关系未变时跳过二次 publishCheck
         assertTrue(objectPublishSource.contains(

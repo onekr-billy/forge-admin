@@ -229,7 +229,6 @@ public class BusinessApplicationPublishService {
         Map<Long, Long> latestPublishedVersions
                 = objectVersionService.latestPublishedVersionIds(selection.getObjectIds());
         Map<Long, Long> result = new LinkedHashMap<>(completedVersions);
-        List<Long> pinAndMarkIds = new java.util.ArrayList<>();
         for (Long objectId : selection.getObjectIds()) {
             if (result.containsKey(objectId)) {
                 continue;
@@ -239,13 +238,10 @@ public class BusinessApplicationPublishService {
                 throw new BusinessException("发布对象不属于当前应用: " + objectId);
             }
             Long existingVersion = latestPublishedVersions.get(objectId);
-            if (existingVersion != null) {
-                // 已有对象发布版本：只钉住版本；设计状态未发布时批量收敛，禁止逐条 selectById。
+            // 只有无未发布改动的对象才钉住旧版本；有改动（CHANGED 等）必须真正重发，
+            // 否则子表、字段等设计改动被标成已发布却从未上线，门户一直读旧快照。
+            if (existingVersion != null && BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())) {
                 result.put(objectId, existingVersion);
-                if (!BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())) {
-                    pinAndMarkIds.add(objectId);
-                    object.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
-                }
                 continue;
             }
             BusinessObjectPublishDTO objectDto = new BusinessObjectPublishDTO();
@@ -260,7 +256,6 @@ public class BusinessApplicationPublishService {
                 published.setDesignStatus(BusinessObjectDesignStatus.PUBLISHED.getCode());
             }
         }
-        objectPublishService.markDesignPublished(pinAndMarkIds);
         verifyPublishedObjects(objects, selection.getObjectIds(), result);
         return new PublishObjectsResult(run, result);
     }

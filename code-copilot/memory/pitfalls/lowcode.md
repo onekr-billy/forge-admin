@@ -10,7 +10,9 @@
 用户点应用发布时期望切到 `PUBLISHED`。链路却仍 prepare 草稿、同步托管表、对象级门禁、对 CHANGED 对象重跑 lowcode 发布，常见小应用也要约十几秒。
 
 **解决方案**:
-真正发布走 `resolveStatusPublishCheck`（只拦应用停用/业务域/门户）；不再 prepare/syncDB。对象若已有发布版本只钉版本 ID（`selectLatestPublishedVersionIds` 不拉快照大字段）；设计状态未发布时批量 `markDesignPublished`，禁止逐条 `selectById`。仅从未发布过的对象才走完整 `objectPublishService.publish`。草稿物化与表同步留给显式「发布检查」。
+真正发布走 `resolveStatusPublishCheck`（只拦应用停用/业务域/门户）；不再 prepare/syncDB。对象已有发布版本且设计状态为 `PUBLISHED`（无改动）时只钉版本 ID（`selectLatestPublishedVersionIds` 不拉快照大字段）。草稿物化与表同步留给显式「发布检查」。
+
+**修正（2026-09-25）**：曾经对「已有版本但状态为 CHANGED」的对象也只钉旧版本并批量 `markDesignPublished`，结果新增子表/字段被标成已发布却从未上线，运行页一直读旧快照；编辑者因走 `designPreview` 看草稿而察觉不到。有未发布改动的对象必须走完整 `objectPublishService.publish`，禁止只改设计状态。
 
 ## 应用发布进度不要每步把整包 snapshot_json 刷盘
 
