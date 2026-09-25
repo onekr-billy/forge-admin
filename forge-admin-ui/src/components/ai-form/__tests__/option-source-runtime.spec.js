@@ -10,6 +10,7 @@ import {
   readOptionRowField,
   REMOTE_OPTION_PENDING_LABEL,
   resolveFirstFilledOptionField,
+  resolveFieldCascadeConfig,
   resolveOptionLoadMode,
   resolveOptionPageSize,
   resolvePendingOptionLabel,
@@ -127,6 +128,54 @@ describe('option-source-runtime', () => {
     expect(resolveStorageTypeFromOptionValueMeta({}, 'id')).toBeNull()
     expect(resolveStorageTypeFromOptionValueMeta({ type: 'string' }, 'id')).toMatchObject({
       dataType: 'varchar',
+    })
+  })
+
+  it('子表列 sourceField=自身字段名时不误判为级联（避免选项被 emptyStrategy 滤空）', () => {
+    expect(resolveFieldCascadeConfig({
+      field: 'fieldSelect',
+      sourceField: 'fieldSelect',
+      type: 'select',
+      props: {
+        optionSource: { type: 'QUERY_SOURCE', querySourceCode: 'detail_lmd1' },
+      },
+    })).toBeNull()
+
+    expect(resolveFieldCascadeConfig({
+      field: 'fieldSelect',
+      type: 'select',
+      props: {
+        sourceField: 'fieldSelect',
+        cascade: { enabled: false, sourceField: 'fieldSelect', emptyStrategy: 'empty' },
+      },
+    })).toBeNull()
+  })
+
+  it('显式 cascade.sourceField 指向其它字段时仍启用级联', () => {
+    expect(resolveFieldCascadeConfig({
+      field: 'city',
+      props: {
+        cascade: { sourceField: 'province', emptyStrategy: 'empty', mode: 'param' },
+      },
+    })).toMatchObject({
+      enabled: true,
+      sourceField: 'province',
+      emptyStrategy: 'empty',
+      mode: 'param',
+    })
+  })
+
+  it('旧版顶层 matchMode + sourceField 仍可解析为级联', () => {
+    expect(resolveFieldCascadeConfig({
+      field: 'city',
+      sourceField: 'province',
+      matchMode: 'linkedDict',
+      linkedDictType: 'sys_city',
+    })).toMatchObject({
+      enabled: true,
+      sourceField: 'province',
+      mode: 'linkedDict',
+      linkedDictType: 'sys_city',
     })
   })
 })

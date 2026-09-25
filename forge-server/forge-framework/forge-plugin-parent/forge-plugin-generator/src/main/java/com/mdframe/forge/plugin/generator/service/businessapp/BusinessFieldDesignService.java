@@ -83,9 +83,9 @@ public class BusinessFieldDesignService {
      * 自由列表布局的旧 fieldRefs 不会因 zone 同步自动更新，这里显式回写。
      */
     @Transactional(rollbackFor = Exception.class)
-    public void ensureFieldListVisibility(Long objectId, String fieldCode) {
+    public boolean ensureFieldListVisibility(Long objectId, String fieldCode) {
         if (objectId == null || StringUtils.isBlank(fieldCode)) {
-            return;
+            return false;
         }
         BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
         LowcodeFieldSchema field = requireBusinessField(context.getModelSchema(), fieldCode);
@@ -96,6 +96,7 @@ public class BusinessFieldDesignService {
         if (needsSync) {
             designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
         }
+        return needsSync;
     }
 
     private boolean containsZoneFieldRef(LowcodePageSchema pageSchema, String zoneKey, String fieldCode) {

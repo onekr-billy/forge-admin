@@ -178,6 +178,57 @@ describe('resolveAiFormSchemaFromUiDocument', () => {
     })
     expect(result).toMatchObject([{ field: 'newField', type: 'input', label: '新字段' }])
   })
+
+  it('money / inputNumber 归一为 number，避免审批详情金额空白', () => {
+    const result = resolveAiFormSchemaFromUiDocument({
+      protocolVersion: '1',
+      uiDocument: {
+        version: '1',
+        components: [
+          { type: 'money', field: 'amount', label: '金额', editable: false, props: { precision: 2 } },
+          { type: 'input', field: 'cash', label: '现金', componentKey: 'money', editable: true },
+        ],
+      },
+      fields: [
+        { field: 'amount', type: 'input', writable: false },
+        { field: 'cash', type: 'input', writable: true },
+      ],
+    })
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'amount', type: 'number' }),
+      expect.objectContaining({ field: 'cash', type: 'number', componentKey: 'money' }),
+    ]))
+  })
+
+  it('弱 type + 强 componentKey 覆盖开关/人员/组织/上传/日期', () => {
+    const result = resolveAiFormSchemaFromUiDocument({
+      protocolVersion: '1',
+      uiDocument: {
+        version: '1',
+        components: [
+          { type: 'input', field: 'enabled', componentKey: 'switch', label: '启用' },
+          { type: 'input', field: 'ownerId', componentKey: 'forgeUserSelect', label: '负责人' },
+          { type: 'input', field: 'deptId', componentKey: 'deptSelect', label: '部门' },
+          { type: 'input', field: 'attach', componentKey: 'upload', label: '附件' },
+          { type: 'input', field: 'planDate', componentKey: 'date', label: '计划日期' },
+        ],
+      },
+      fields: [
+        { field: 'enabled', type: 'input' },
+        { field: 'ownerId', type: 'input' },
+        { field: 'deptId', type: 'input' },
+        { field: 'attach', type: 'input' },
+        { field: 'planDate', type: 'input' },
+      ],
+    })
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'enabled', type: 'switch' }),
+      expect.objectContaining({ field: 'ownerId', type: 'userSelect' }),
+      expect.objectContaining({ field: 'deptId', type: 'orgTreeSelect' }),
+      expect.objectContaining({ field: 'attach', type: 'fileUpload' }),
+      expect.objectContaining({ field: 'planDate', type: 'date' }),
+    ]))
+  })
 })
 
 describe('mapUiDocumentComponentsToAiFormSchema', () => {

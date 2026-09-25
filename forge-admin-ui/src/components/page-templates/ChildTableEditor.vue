@@ -65,14 +65,14 @@
                     <div v-if="useRuntimeCell(field, child)" class="child-runtime-cell">
                       <AiFormItem
                         :field="toRuntimeCellField(field, child, row)"
-                        :value="row[field.field]"
+                        :value="resolveRowFieldValue(row, field)"
                         :form-data="row"
                         :context="buildRuntimeCellContext(child, rowIndex)"
                         @update:value="updateCell(child, rowIndex, field, $event)"
                       />
                     </div>
                     <n-input
-                      v-else-if="field.type === 'textarea'"
+                      v-else-if="resolveFieldControlType(field) === 'textarea'"
                       type="textarea"
                       v-bind="resolveInputProps(field)"
                       :value="resolveInputValue(row[field.field])"
@@ -82,58 +82,58 @@
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-input-number
-                      v-else-if="field.type === 'number' || field.type === 'inputNumber'"
+                      v-else-if="isNumberLikeField(field)"
                       v-bind="resolveInputProps(field)"
-                      :value="row[field.field]"
+                      :value="coerceNumberFieldValue(row[field.field])"
                       :placeholder="field.props?.placeholder || `请输入${field.label || field.field}`"
                       :disabled="isCellReadonly(child, row, field)"
-                      :precision="field.props?.precision ?? field.precision"
+                      :precision="field.props?.precision ?? field.precision ?? (resolveFieldControlType(field) === 'number' && String(field.componentKey || '').toLowerCase() === 'money' ? 2 : undefined)"
                       style="width: 100%"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-select
-                      v-else-if="field.type === 'select'"
+                      v-else-if="resolveFieldControlType(field) === 'select'"
                       v-bind="resolveInputProps(field)"
                       :value="resolveSelectCellValue(row[field.field], field)"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
                       :disabled="isCellReadonly(child, row, field)"
-                      :options="field.props?.options || field.options || []"
+                      :options="field.props?.options || field.options || resolveCachedChildQueryOptions(field)"
                       clearable
                       filterable
                       :multiple="field.multiple === true || field.props?.multiple === true"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <UserSelectPicker
-                      v-else-if="field.type === 'userSelect'"
+                      v-else-if="isUserSelectLikeField(field)"
                       v-bind="resolveInputProps(field)"
-                      :model-value="row[field.field]"
+                      :model-value="resolveRowFieldValue(row, field)"
                       :label-value="resolveUserLabel(row, field)"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
                       :disabled="isCellReadonly(child, row, field)"
                       :multiple="field.multiple === true || field.props?.multiple === true"
-                      :clearable="field.clearable !== false"
+                      :clearable="field.clearable !== false && field.props?.clearable !== false"
                       @update:model-value="updateCell(child, rowIndex, field, $event)"
                       @update:label-value="updateCellLabel(child, rowIndex, field, $event)"
                     />
                     <n-date-picker
-                      v-else-if="field.type === 'date' || field.type === 'datetime'"
+                      v-else-if="['date', 'datetime'].includes(resolveFieldControlType(field))"
                       v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
-                      :type="field.type === 'datetime' ? 'datetime' : 'date'"
+                      :type="resolveFieldControlType(field) === 'datetime' ? 'datetime' : 'date'"
                       :placeholder="field.props?.placeholder || `请选择${field.label || field.field}`"
                       :disabled="isCellReadonly(child, row, field)"
                       style="width: 100%"
-                      :format="field.props?.format || (field.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
-                      :value-format="field.props?.valueFormat || (field.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
+                      :format="field.props?.format || (resolveFieldControlType(field) === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
+                      :value-format="field.props?.valueFormat || (resolveFieldControlType(field) === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd')"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-switch
-                      v-else-if="field.type === 'switch'"
+                      v-else-if="resolveFieldControlType(field) === 'switch'"
                       v-bind="resolveInputProps(field)"
                       :value="row[field.field]"
                       :disabled="isCellReadonly(child, row, field)"
-                      :checked-value="field.props?.checkedValue ?? field.checkedValue ?? true"
-                      :unchecked-value="field.props?.uncheckedValue ?? field.uncheckedValue ?? false"
+                      :checked-value="resolveSwitchCheckedValue(field)"
+                      :unchecked-value="resolveSwitchUncheckedValue(field)"
                       @update:value="updateCell(child, rowIndex, field, $event)"
                     />
                     <n-input
@@ -216,11 +216,37 @@ import AiRecordSelectorModal from '@/components/ai-form/AiRecordSelectorModal.vu
 import { buildChildRowActionContext } from '@/components/ai-form/business-action-runtime'
 import { resolveControlProps } from '@/components/ai-form/control-props'
 import { createFieldEventRuntime } from '@/components/ai-form/field-event-runtime'
+import {
+  coerceNumberFieldValue,
+  isNumberLikeField,
+} from '@/components/ai-form/field-type-utils'
+import {
+  isWeakControlType,
+  resolveFieldControlType,
+} from '@/components/ai-form/control-type-utils'
+import {
+  buildQuerySourceDisplayFields,
+  collectFieldMappingSourceFields,
+  readOptionRowField,
+} from '@/components/ai-form/option-source-runtime'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
+import {
+  isOrgSelectLikeField,
+  isUserSelectLikeField,
+  readDataFieldValue,
+  resolveSelectionLabelFields,
+} from '@/components/ai-form/selection-label-fields'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import { hasRuntimeVisibilityRules, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
+import { childTableKeysAlias } from '@/utils/flow-field-permissions'
 import { scan as scanCollaborationCode } from '@/utils/collaboration-runtime'
+
+// 模块一加载就打点：不依赖是否打开弹窗。控制台没有这行 = 浏览器还在跑旧包。
+console.info(
+  '%c[forge-child-select] module imported v4 ' + new Date().toISOString(),
+  'color:#fff;background:#16a34a;padding:2px 6px;border-radius:4px',
+)
 
 const props = defineProps({
   value: {
@@ -261,18 +287,60 @@ const selectorVisible = ref(false)
 const activeSelectorChild = ref(null)
 const rowEventRuntimes = new Map()
 const rowEventStates = reactive({})
+/** 子表 QUERY_SOURCE / BUSINESS_OBJECT 选项预加载缓存，避免单元格内 AiFormItem 单独拉数失败时下拉无数据 */
+const childQueryOptionCache = reactive({})
+const childQueryOptionLoading = reactive({})
+/** 预加载版本号：cache 写入后递增，强制表格单元格重渲染 */
+const childQueryOptionVersion = ref(0)
 
-const normalizedChildren = computed(() => (props.childrenConfig || [])
-  .map(child => ({
-    ...child,
-    fields: (child.fields || []).filter(field => field && field.field && isChildEditorFieldVisible(field, child)),
-  }))
-  .filter(child => child.fields.length))
+console.info(
+  '%c[forge-child-select] ChildTableEditor setup v4',
+  'color:#fff;background:#2563eb;padding:2px 6px;border-radius:4px',
+)
+
+const normalizedChildren = computed(() => {
+  // 依赖 version，预加载完成后重算 fields（把 options 写进字段）
+  void childQueryOptionVersion.value
+  return (props.childrenConfig || [])
+    .map(child => ({
+      ...child,
+      fields: (child.fields || [])
+        .map(field => mergeChildFieldRuntimeProps(field))
+        .map(field => attachCachedChildQueryOptions(field))
+        .filter(field => field && field.field && isChildEditorFieldVisible(field, child)),
+    }))
+    .filter(child => child.fields.length)
+})
 
 watch(
-  () => props.value,
-  (value) => {
-    const next = normalizeInputValue(value)
+  () => {
+    const children = props.childrenConfig || []
+    return children.map(child => ({
+      key: child?.modelCode || child?.relationKey || child?.key || child?.tableName,
+      fields: (child?.fields || []).map(field => ({
+        field: field?.field || field?.fieldCode || field?.sourceField,
+        type: field?.type || field?.componentType,
+        optionSource: field?.optionSource || field?.props?.optionSource || field?.basicProps?.optionSource,
+        fieldMappings: field?.fieldMappings || field?.props?.fieldMappings || field?.basicProps?.fieldMappings,
+        propsKeys: field?.props && typeof field.props === 'object' ? Object.keys(field.props) : [],
+      })),
+    }))
+  },
+  (snapshot) => {
+    console.info('[forge-child-select] childrenConfig snapshot', JSON.parse(JSON.stringify(snapshot)))
+    snapshot.forEach((child) => {
+      ;(child.fields || []).forEach((field) => {
+        preloadChildQuerySourceOptions(field)
+      })
+    })
+  },
+  { immediate: true, deep: true },
+)
+
+watch(
+  () => [props.value, normalizedChildren.value.map(child => resolveChildKey(child)).join('|')],
+  () => {
+    const next = normalizeInputValue(props.value)
     if (isSameEditorValue(localValue.value, next))
       return
     localValue.value = next
@@ -594,7 +662,9 @@ function useRuntimeCell(field = {}, child = {}) {
     : Array.isArray(field.props?.runtimeRules)
       ? field.props.runtimeRules
       : Array.isArray(field.basicProps?.runtimeRules) ? field.basicProps.runtimeRules : []
-  const optionSource = field.optionSource || field.props?.optionSource
+  const optionSource = field.optionSource || field.props?.optionSource || field.basicProps?.optionSource
+  const fieldType = String(field.type || field.componentType || field.componentKey || '').trim()
+  const controlType = resolveFieldControlType(field)
   const hasCurrentChildrenSource = optionSource && ['CURRENT_CHILDREN', 'current_children', 'currentChildren']
     .includes(String(optionSource.type || ''))
   const relationKey = resolveChildKey(child)
@@ -604,16 +674,24 @@ function useRuntimeCell(field = {}, child = {}) {
   const hasFieldEvents = Array.isArray(fieldEvents) && fieldEvents.some(rule => rule?.enabled !== false
     && ['FORM_LOAD', 'CHANGE', 'BLUR', 'MANUAL', 'SCAN_COMPLETE'].includes(String(rule.trigger || '').toUpperCase())
     && (!rule.sourceField || rule.sourceField === field.field))
-  if (field.type === 'barcodeScanner' || runtimeRules.length || hasCurrentChildrenSource || hasFieldEvents)
+  if (fieldType === 'barcodeScanner' || controlType === 'barcodeScanner' || runtimeRules.length || hasCurrentChildrenSource || hasFieldEvents)
     return true
-  if (field.type === 'select') {
-    return Boolean(field.dictType || field.props?.dictType || field.optionSource || field.props?.optionSource
+  // 人员/组织别名（forgeUserSelect / deptSelect 等）必须走 AiFormItem，否则会落到普通输入框
+  if (isUserSelectLikeField(field) || isOrgSelectLikeField(field))
+    return true
+  // type 弱但 componentKey 强：开关/日期/上传/字典等不能落到默认 n-input
+  if (isWeakControlType(field.type) && !isWeakControlType(controlType)
+    && !['number', 'textarea', 'input'].includes(controlType))
+    return true
+  // 只要配了动态选项源，一律走 AiFormItem，避免退回空 options 的原生 n-select
+  if (optionSource)
+    return true
+  if (fieldType === 'select' || controlType === 'select') {
+    return Boolean(field.dictType || field.props?.dictType
       || field.multiple === true || field.props?.multiple === true)
   }
   return [
     'dictSelect',
-    'userSelect',
-    'orgTreeSelect',
     'regionTreeSelect',
     'objectReference',
     'recordSelector',
@@ -624,27 +702,212 @@ function useRuntimeCell(field = {}, child = {}) {
     'customSelect',
     'radio',
     'checkbox',
-  ].includes(field.type)
+    'switch',
+    'daterange',
+    'datetimerange',
+    'month',
+    'year',
+    'time',
+    'timerange',
+  ].includes(controlType || fieldType)
 }
 
+/**
+ * 交给 AiFormItem 的 field 必须保留完整 props（optionSource / cascade / 引用 / 开关值）。
+ * 禁止在这里套 resolveControlProps：那会剥掉运行态元数据，子表下拉/人员/部门/联动全部失效。
+ */
 function toRuntimeCellField(field = {}, child = {}, row = {}) {
   const readonly = isCellReadonly(child, row, field)
-  const props = {
-    ...resolveControlProps(field.props),
-    size: field.props?.size || field.size || 'small',
-  }
+  const merged = mergeChildFieldRuntimeProps(field)
+  const nextProps = { ...(merged.props || {}) }
   if (!readonly) {
-    delete props.readonly
-    delete props.disabled
+    delete nextProps.readonly
+    delete nextProps.disabled
   }
+  else {
+    nextProps.readonly = true
+    nextProps.disabled = true
+  }
+  if (!nextProps.size)
+    nextProps.size = field.size || 'small'
+  const cachedOptions = resolveCachedChildQueryOptions(merged)
+  if (cachedOptions.length) {
+    nextProps.options = cachedOptions
+    merged.options = cachedOptions
+  }
+  // 统一别名类型，避免 AiFormItem / 权限逻辑漏匹配 forgeUserSelect 等
+  let type = resolveFieldControlType(merged) || merged.type || merged.componentType || merged.componentKey
+  if (isUserSelectLikeField(merged))
+    type = 'userSelect'
+  else if (isOrgSelectLikeField(merged))
+    type = 'orgTreeSelect'
+  else if (isNumberLikeField(merged))
+    type = 'number'
   return {
-    ...field,
+    ...merged,
+    type,
+    componentType: type,
     disabled: readonly,
     readonly,
     showLabel: false,
     showFeedback: false,
     size: field.size || 'small',
+    props: nextProps,
+  }
+}
+
+/** 把 basicProps 里的选项源/联动/开关值补进 props，兼容发布快照只落在 basicProps 的情况 */
+function mergeChildFieldRuntimeProps(field = {}) {
+  const basicProps = field.basicProps && typeof field.basicProps === 'object' ? field.basicProps : {}
+  const props = { ...basicProps, ...(field.props && typeof field.props === 'object' ? field.props : {}) }
+  const next = { ...field, props }
+  if (!next.optionSource && props.optionSource)
+    next.optionSource = props.optionSource
+  if (!next.dictType && (props.dictType || basicProps.dictType))
+    next.dictType = props.dictType || basicProps.dictType
+  if (!next.referenceObjectCode && (props.referenceObjectCode || basicProps.referenceObjectCode))
+    next.referenceObjectCode = props.referenceObjectCode || basicProps.referenceObjectCode
+  if (next.type === 'switch' || next.componentType === 'switch') {
+    if (props.checkedValue === undefined)
+      props.checkedValue = basicProps.checkedValue !== undefined ? basicProps.checkedValue : 1
+    if (props.uncheckedValue === undefined)
+      props.uncheckedValue = basicProps.uncheckedValue !== undefined ? basicProps.uncheckedValue : 0
+  }
+  next.props = props
+  return next
+}
+
+function attachCachedChildQueryOptions(field = {}) {
+  const cached = resolveCachedChildQueryOptions(field)
+  if (!cached.length)
+    return field
+  const props = { ...(field.props || {}), options: cached }
+  return {
+    ...field,
+    options: cached,
     props,
+  }
+}
+
+function resolveChildOptionSource(field = {}) {
+  const source = field.optionSource || field.props?.optionSource || field.basicProps?.optionSource
+  if (!source || typeof source !== 'object')
+    return null
+  const type = String(source.type || '').toUpperCase()
+  const sourceType = String(source.sourceType || '').toUpperCase()
+  const sourceKey = String(source.sourceKey || '').trim()
+  if (!sourceKey)
+    return null
+  if (type === 'QUERY_SOURCE' || sourceType === 'BUSINESS_OBJECT' || sourceType === 'DATASET' || sourceType === 'EXTERNAL_API') {
+    return {
+      ...source,
+      type: type || 'QUERY_SOURCE',
+      sourceType: sourceType || source.sourceType,
+      sourceKey,
+    }
+  }
+  return null
+}
+
+function resolveChildOptionCacheKey(source = {}) {
+  return [
+    String(source.sourceType || 'BUSINESS_OBJECT'),
+    String(source.sourceKey || ''),
+    String(source.valueField || 'id'),
+    String(source.labelField || 'name'),
+    String(source.pageSize || 50),
+  ].join('::')
+}
+
+function resolveCachedChildQueryOptions(field = {}) {
+  const source = resolveChildOptionSource(field)
+  if (!source)
+    return []
+  const cached = childQueryOptionCache[resolveChildOptionCacheKey(source)]
+  return Array.isArray(cached) ? cached : []
+}
+
+async function preloadChildQuerySourceOptions(field = {}) {
+  const source = resolveChildOptionSource(field)
+  if (!source) {
+    console.info('[forge-child-select] skip preload (no QUERY_SOURCE)', {
+      field: field.field || field.fieldCode,
+      type: field.type,
+      optionSource: field.optionSource || field.props?.optionSource || field.basicProps?.optionSource || null,
+    })
+    return
+  }
+  const cacheKey = resolveChildOptionCacheKey(source)
+  if (Array.isArray(childQueryOptionCache[cacheKey]) || childQueryOptionLoading[cacheKey]) {
+    console.info('[forge-child-select] preload skip (cached/loading)', cacheKey, {
+      cached: Array.isArray(childQueryOptionCache[cacheKey]) ? childQueryOptionCache[cacheKey].length : null,
+      loading: !!childQueryOptionLoading[cacheKey],
+    })
+    return
+  }
+  childQueryOptionLoading[cacheKey] = true
+  console.info('[forge-child-select] preload start', cacheKey, source)
+  try {
+    const mappings = field.fieldMappings || field.props?.fieldMappings || source.fieldMappings || source.mappings
+    const fields = buildQuerySourceDisplayFields(source, collectFieldMappingSourceFields(mappings))
+    const payload = {
+      sourceType: source.sourceType || 'BUSINESS_OBJECT',
+      sourceKey: source.sourceKey,
+      params: {},
+      fields: fields.length ? fields : undefined,
+      pageNum: source.pageNum || 1,
+      pageSize: source.pageSize || 50,
+    }
+    console.info('[forge-child-select] preload request', payload)
+    const res = await executeLowcodeQuerySource(payload)
+    console.info('[forge-child-select] preload response', {
+      code: res?.code,
+      message: res?.message,
+      total: res?.data?.total,
+      dataType: Array.isArray(res?.data?.data) ? `array(${res.data.data.length})` : typeof res?.data?.data,
+      rawKeys: res?.data && typeof res.data === 'object' ? Object.keys(res.data) : [],
+      sample: Array.isArray(res?.data?.data) ? res.data.data[0] : res?.data,
+    })
+    const result = res?.data || {}
+    const rows = Array.isArray(result.data)
+      ? result.data
+      : Array.isArray(result.records)
+        ? result.records
+        : Array.isArray(result.list)
+          ? result.list
+          : []
+    const valueField = source.valueField || 'id'
+    const labelField = source.labelField || 'name'
+    const options = rows.map((row) => {
+      if (!row || typeof row !== 'object')
+        return null
+      const value = readOptionRowField(row, valueField) ?? row.value ?? row.id
+      if (value === null || value === undefined || value === '')
+        return null
+      const label = readOptionRowField(row, labelField) ?? row.label ?? row.name ?? value
+      return {
+        ...row,
+        value,
+        key: row.key ?? value,
+        label: String(label),
+      }
+    }).filter(Boolean)
+    childQueryOptionCache[cacheKey] = options
+    childQueryOptionVersion.value += 1
+    console.info('[forge-child-select] preload ok', cacheKey, options.length, options.slice(0, 3))
+  }
+  catch (error) {
+    console.warn('[forge-child-select] preload FAIL', cacheKey, {
+      message: error?.message || error,
+      code: error?.code,
+      detail: error?.detail || error?.error,
+      stack: error?.stack,
+    })
+    childQueryOptionCache[cacheKey] = childQueryOptionCache[cacheKey] || []
+    childQueryOptionVersion.value += 1
+  }
+  finally {
+    childQueryOptionLoading[cacheKey] = false
   }
 }
 
@@ -655,6 +918,8 @@ function buildRuntimeCellContext(child, rowIndex) {
   const runtime = getRowEventRuntime(child, rowIndex, row)
   return {
     ...(props.context || {}),
+    // 子表单元格必须允许拉远程选项；避免父级误带 designer-preview 时被 AiFormItem 静默跳过
+    allowOptionSourceFetch: true,
     schema: child.fields || [],
     allSchema: child.fields || [],
     parentFormData: props.parentFormData || {},
@@ -753,11 +1018,30 @@ function applyRowPatch(row, patch) {
 }
 
 function resolveUserLabel(row, field) {
-  return row?.[resolveUserLabelField(field)] || ''
+  const candidates = resolveSelectionLabelFields(field, 'user')
+  for (const candidate of candidates) {
+    const value = readDataFieldValue(row || {}, candidate)
+    if (value !== null && value !== undefined && String(value).trim() !== '')
+      return value
+  }
+  return ''
 }
 
 function resolveUserLabelField(field) {
-  return field?.props?.targetField || field?.targetField || `${field?.field || ''}Name`
+  const candidates = resolveSelectionLabelFields(field, 'user')
+  return field?.props?.labelValueField || field?.props?.targetField || field?.targetField || candidates[0] || `${field?.field || ''}Name`
+}
+
+function resolveRowFieldValue(row, field = {}) {
+  const keys = [field.field, field.fieldCode, field.sourceField, field.columnName]
+    .map(value => String(value || '').trim())
+    .filter((value, index, all) => value && all.indexOf(value) === index)
+  for (const key of keys) {
+    const value = readDataFieldValue(row || {}, key)
+    if (value !== undefined)
+      return value
+  }
+  return undefined
 }
 
 function createEmptyRow(child) {
@@ -781,12 +1065,11 @@ function normalizeDefaultCellValue(field = {}) {
 function normalizeCellValueForType(field = {}, value) {
   if (value === undefined || value === null)
     return null
-  const type = String(field.type || field.componentType || '').toLowerCase()
+  const type = String(field.type || field.componentType || field.componentKey || '').toLowerCase()
   if (['input', 'textarea', 'text'].includes(type))
     return typeof value === 'string' ? value : String(value)
-  if (['number', 'input-number', 'inputnumber'].includes(type)) {
-    const numberValue = Number(value)
-    return Number.isNaN(numberValue) ? null : numberValue
+  if (isNumberLikeField(field) || ['number', 'input-number', 'inputnumber', 'integer', 'money', 'decimal'].includes(type)) {
+    return coerceNumberFieldValue(value)
   }
   if (isFieldMultiple(field))
     return serializeSelectionValues(value, true) || null
@@ -821,15 +1104,51 @@ function resolveInputProps(field = {}) {
 function normalizeInputValue(value) {
   const source = value && typeof value === 'object' ? value : {}
   const result = {}
+  const usedSourceKeys = new Set()
   normalizedChildren.value.forEach((child) => {
     const key = resolveChildKey(child)
     const previousRows = Array.isArray(localValue.value?.[key]) ? localValue.value[key] : []
-    result[key] = (Array.isArray(source[key]) ? source[key] : []).map((row, index) => ({
+    const rows = resolveSourceChildRows(source, child, usedSourceKeys)
+    result[key] = rows.map((row, index) => ({
       ...row,
       __rowKey: row.__rowKey || previousRows[index]?.__rowKey || `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     }))
   })
   return result
+}
+
+/** 兼容 modelCode / relationKey / tableName 别名，避免子表数据键与配置键不一致时整表空白 */
+function resolveSourceChildRows(source = {}, child = {}, usedSourceKeys = new Set()) {
+  const candidates = [child.modelCode, child.relationKey, child.key, child.tableName, resolveChildKey(child)]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+  for (const candidate of candidates) {
+    if (usedSourceKeys.has(candidate))
+      continue
+    if (Array.isArray(source[candidate])) {
+      usedSourceKeys.add(candidate)
+      return source[candidate]
+    }
+  }
+  let bestKey = ''
+  let bestDelta = Number.POSITIVE_INFINITY
+  Object.keys(source || {}).forEach((dataKey) => {
+    if (usedSourceKeys.has(dataKey) || !Array.isArray(source[dataKey]))
+      return
+    const matched = candidates.some(candidate => childTableKeysAlias(candidate, dataKey))
+    if (!matched)
+      return
+    const delta = Math.min(...candidates.map(candidate => Math.abs(candidate.length - dataKey.length)))
+    if (delta < bestDelta) {
+      bestDelta = delta
+      bestKey = dataKey
+    }
+  })
+  if (bestKey) {
+    usedSourceKeys.add(bestKey)
+    return source[bestKey]
+  }
+  return []
 }
 
 function isSameEditorValue(left, right) {
@@ -954,13 +1273,37 @@ function resolveDefaultColumnMinWidth(field = {}) {
   const fieldName = String(field.field || '')
   if (type === 'textarea')
     return 260
+  if (['select', 'dictselect', 'objectreference', 'recordselector', 'userselect', 'orgtreeselect', 'departmenttreeselect', 'treeselect', 'cascader', 'customselect'].includes(type)
+    || isUserSelectLikeField(field)
+    || isOrgSelectLikeField(field))
+    return isUserSelectLikeField(field) || isOrgSelectLikeField(field) ? 280 : 200
   if (['date', 'datetime', 'daterange', 'datetimerange'].includes(type))
     return type.includes('time') ? 190 : 150
-  if (['number', 'input-number', 'inputnumber'].includes(type))
+  if (['number', 'input-number', 'inputnumber', 'money'].includes(type))
     return /金额|单价|价格|报价|库存|数量|分/.test(label) || /amount|price|quantity|stock/i.test(fieldName) ? 150 : 130
   if (/单位/.test(label) || fieldName === 'unit')
     return 90
-  return 120
+  return 140
+}
+
+function resolveSwitchCheckedValue(field = {}) {
+  if (field.props?.checkedValue !== undefined)
+    return field.props.checkedValue
+  if (field.checkedValue !== undefined)
+    return field.checkedValue
+  if (field.basicProps?.checkedValue !== undefined)
+    return field.basicProps.checkedValue
+  return 1
+}
+
+function resolveSwitchUncheckedValue(field = {}) {
+  if (field.props?.uncheckedValue !== undefined)
+    return field.props.uncheckedValue
+  if (field.uncheckedValue !== undefined)
+    return field.uncheckedValue
+  if (field.basicProps?.uncheckedValue !== undefined)
+    return field.basicProps.uncheckedValue
+  return 0
 }
 
 defineExpose({
@@ -1093,6 +1436,29 @@ defineExpose({
 
 .child-runtime-cell :deep(.n-form-item) {
   margin: 0;
+}
+
+.child-runtime-cell :deep(.n-base-selection),
+.child-runtime-cell :deep(.n-input),
+.child-runtime-cell :deep(.n-input-number),
+.child-runtime-cell :deep(.n-date-picker),
+.child-runtime-cell :deep(.n-tree-select) {
+  width: 100%;
+  min-width: 160px;
+}
+
+/* 人员选择：输入框不要强行 min-width，否则会把右侧清空/选择按钮挤出单元格被盖住 */
+.child-runtime-cell :deep(.user-select-picker .n-input) {
+  min-width: 0;
+}
+
+.child-runtime-cell :deep(.user-select-picker__group) {
+  width: 100%;
+  min-width: 0;
+}
+
+.child-runtime-cell :deep(.user-select-picker__button) {
+  flex-shrink: 0;
 }
 
 .child-runtime-cell :deep(.n-form-item-feedback-wrapper) {

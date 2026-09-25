@@ -201,9 +201,9 @@ export function filterCrudItemsByFieldRefs(items = [], fieldRefs = []) {
     return Array.isArray(items) ? items : []
   if (!Array.isArray(fieldRefs) || !fieldRefs.length)
     return items
-  const allow = new Set(fieldRefs.filter(Boolean).map(String))
+  const allow = new Set(fieldRefs.filter(Boolean).map(value => canonicalFlowStatusCode(String(value))))
   return items.filter((item) => {
-    const key = String(item?.prop || item?.field || item?.key || item?.dataIndex || '').trim()
+    const key = canonicalFlowStatusCode(String(item?.prop || item?.field || item?.key || item?.dataIndex || '').trim())
     if (!key || item?.type === 'action' || item?.fixed === 'right' || key === 'action')
       return true
     return allow.has(key)
@@ -217,11 +217,11 @@ export function filterCrudItemsByFieldRefs(items = [], fieldRefs = []) {
 export function isManagedBusinessFlowField(field = {}) {
   const fieldCode = String(field?.field || field?.fieldCode || field?.prop || field?.key || '').trim()
   const columnName = String(field?.columnName || '').trim()
-  const managedBy = String(field?.advancedProps?.managedBy || '').toUpperCase()
-  const dictType = String(field?.dictType || field?.props?.dictType || '').trim()
+  const managedBy = String(field?.advancedProps?.managedBy || field?.props?.advancedProps?.managedBy || '').toUpperCase()
+  const dictType = String(field?.dictType || field?.props?.dictType || '').trim().toLowerCase()
   if (managedBy === 'BUSINESS_FLOW')
     return true
-  if (['flowStatus', 'flow_status'].includes(fieldCode) || columnName === 'flow_status')
+  if (isFlowStatusCode(fieldCode) || isFlowStatusCode(columnName))
     return true
   return dictType === 'business_flow_status'
 }
@@ -230,13 +230,13 @@ export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = []
   const refs = Array.isArray(fieldRefs) ? [...fieldRefs] : []
   if (!refs.length)
     return refs
-  const seen = new Set(refs.filter(Boolean).map(String))
+  const seen = new Set(refs.filter(Boolean).map(value => canonicalFlowStatusCode(String(value))))
   ;(Array.isArray(fieldCatalog) ? fieldCatalog : []).forEach((field) => {
-    const fieldCode = String(field?.field || field?.fieldCode || '').trim()
+    const fieldCode = canonicalFlowStatusCode(String(field?.field || field?.fieldCode || '').trim(), field)
     const active = !['DISABLED', 'HIDDEN'].includes(String(field?.fieldStatus || '').toUpperCase())
     if (!fieldCode || !isManagedBusinessFlowField(field) || !active || field?.listVisible === false)
       return
-    if (fieldSettings?.[fieldCode]?.visible === false || seen.has(fieldCode))
+    if (isFieldExplicitlyHidden(fieldSettings, fieldCode) || seen.has(fieldCode))
       return
     seen.add(fieldCode)
     refs.push(fieldCode)
@@ -249,17 +249,25 @@ export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = []
  * 显式隐藏仍尊重 fieldSettings.visible = false。
  */
 export function ensureManagedFlowStatusColumns(columns = [], fieldCatalog = [], fieldSettings = {}) {
-  const list = Array.isArray(columns) ? [...columns] : []
+  const list = (Array.isArray(columns) ? columns : []).map((column) => {
+    const rawKey = String(column?.prop || column?.key || column?.dataIndex || '').trim()
+    const key = canonicalFlowStatusCode(rawKey, column)
+    // 历史发布快照可能把数据库列名写进 prop/dataIndex；AiTable 取值按 prop 读取，
+    // 因此这里必须把流程状态列统一成业务字段编码，避免“列存在但整列为空”。
+    return isFlowStatusCode(key)
+      ? { ...column, key: 'flowStatus', prop: 'flowStatus', dataIndex: 'flowStatus' }
+      : { ...column }
+  })
   const keys = new Set(list
-    .map(column => String(column?.prop || column?.field || column?.key || column?.dataIndex || '').trim())
+    .map(column => canonicalFlowStatusCode(String(column?.prop || column?.field || column?.key || column?.dataIndex || '').trim(), column))
     .filter(Boolean))
   const managedFields = (Array.isArray(fieldCatalog) ? fieldCatalog : []).filter(field => isManagedBusinessFlowField(field))
   managedFields.forEach((field) => {
-    const fieldCode = String(field?.field || field?.fieldCode || '').trim()
+    const fieldCode = canonicalFlowStatusCode(String(field?.field || field?.fieldCode || '').trim(), field)
     const active = !['DISABLED', 'HIDDEN'].includes(String(field?.fieldStatus || '').toUpperCase())
     if (!fieldCode || !active || field?.listVisible === false)
       return
-    if (fieldSettings?.[fieldCode]?.visible === false || keys.has(fieldCode))
+    if (isFieldExplicitlyHidden(fieldSettings, fieldCode) || keys.has(fieldCode))
       return
     keys.add(fieldCode)
     const dictType = String(field?.dictType || field?.props?.dictType || 'business_flow_status').trim()
@@ -281,6 +289,17 @@ export function ensureManagedFlowStatusColumns(columns = [], fieldCatalog = [], 
       list.push(column)
   })
   return list
+}
+
+function isFieldExplicitlyHidden(fieldSettings = {}, fieldCode = '') {
+  if (!fieldSettings || typeof fieldSettings !== 'object')
+    return false
+  if (fieldSettings[fieldCode]?.visible === false)
+    return true
+  if (!isFlowStatusCode(fieldCode))
+    return false
+  return Object.entries(fieldSettings).some(([key, setting]) =>
+    isFlowStatusCode(key) && setting?.visible === false)
 }
 
 /**
@@ -398,7 +417,8 @@ function buildRuntimeFieldCatalog(config = {}) {
   const fields = new Map()
   const append = (source = [], patch = {}) => {
     ;(Array.isArray(source) ? source : []).forEach((item) => {
-      const field = item?.field || item?.fieldCode || item?.prop || item?.key || item?.dataIndex
+      const rawField = item?.field || item?.fieldCode || item?.prop || item?.key || item?.dataIndex
+      const field = canonicalFlowStatusCode(rawField, item)
       if (!field || ['action', 'actions', 'operation', 'operations'].includes(field))
         return
       const current = fields.get(field) || {}
@@ -426,13 +446,28 @@ function buildRuntimeFieldCatalog(config = {}) {
 
 function normalizeColumns(columns, transConfig = {}) {
   return (Array.isArray(columns) ? columns : []).map((column) => {
-    const key = column.prop || column.key || column.dataIndex || ''
-    const next = { ...column, key, prop: key }
+    const key = canonicalFlowStatusCode(column.prop || column.key || column.dataIndex || '', column)
+    const next = isFlowStatusCode(key)
+      ? { ...column, key: 'flowStatus', prop: 'flowStatus', dataIndex: 'flowStatus' }
+      : { ...column, key, prop: key }
     const transform = transConfig?.[key]
     if (transform?.targetField && !next.render)
       next.renderConfig = { ...(next.renderConfig || {}), targetField: transform.targetField, type: transform.type }
     return next
   })
+}
+
+function isFlowStatusCode(value) {
+  return String(value || '').replace(/[-_]/g, '').toLowerCase() === 'flowstatus'
+}
+
+function canonicalFlowStatusCode(value, field = {}) {
+  const candidate = String(value || '').trim()
+  const columnName = String(field?.columnName || '').trim()
+  const dictType = String(field?.dictType || field?.props?.dictType || '').trim().toLowerCase()
+  if (isFlowStatusCode(candidate) || isFlowStatusCode(columnName) || dictType === 'business_flow_status')
+    return 'flowStatus'
+  return candidate
 }
 
 function resolveFormOpenMode(options = {}, config = {}, designerLayout = {}) {

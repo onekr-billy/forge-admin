@@ -1847,3 +1847,22 @@ Flyway 脚本为新环境写了包含完整字段的 `CREATE TABLE IF NOT EXISTS
 `@Transactional` 方法内部的 try-with-resources 会先关闭运行数据源 Scope，随后事务代理才执行 `beforeCommit`。审计若此时直接通过动态 Repository 回读最终行，会从业务数据源退回平台数据源；平台连接看到旧快照时会漏记主表变化，而显式标记的子表删除仍可生成摘要。
 
 应在写钩子阶段按行保存数据源读取上下文与实际主键列，自增 ID 未生成时先保存表级信息。最终回读仅在受控 Scope 中临时恢复上下文，正常及异常退出都还原调用方上下文。回归测试必须覆盖完整采集服务与事务回调，不能只给差异引擎传两份人为准备好的 Map；模拟链路通过仍不等于真实数据库事务和跨库原子性已经验收。
+
+## 审批详情金额空白常是 money 组件类型分叉
+
+**发现日期**：2026-09-25
+
+提交时填了金额，审批详情控件空白或像没渲染。根因通常不是没落库，而是：
+1. uiDocument / fields 保留 `componentKey=money` 但 `type` 仍是弱类型 `input`，`AiFormItem` 先匹配文本输入；
+2. 子表只认 `number|inputNumber`，`money` 落到普通 `n-input`；
+3. Naive `n-input-number` 不接受字符串金额，接口 BigDecimal 串化后直接绑定会空白。
+
+处理：协议层把 money/inputNumber/integer 归一为 `number`；`AiFormItem` 在 input 分支前用 `isNumberLikeField`（看 type/componentType/componentKey）并 `coerceNumberFieldValue`；子表同样走数字控件分支。
+
+## 审批/子表弱 type + 强 componentKey 不只 money
+
+**发现日期**：2026-09-25
+
+金额问题同源：uiDocument / fields 常出现 `type=input` 但 `componentKey=switch|forgeUserSelect|deptSelect|upload|date|money`。若只读 `type`，会落到文本框；人员/组织若不看 `componentKey` 也会漏判。
+
+处理：共享 `control-type-utils` 与后端 `normalizeTaskFormFieldType` 对齐；`resolve-ai-form` 节点解析优选取强 componentKey；`isUserSelectLikeField` / `isOrgSelectLikeField` 检查 componentKey；子表 `useRuntimeCell` 对弱 type+强控件走 AiFormItem。

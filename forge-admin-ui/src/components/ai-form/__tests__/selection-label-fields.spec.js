@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSelectionLabelFields } from '../selection-label-fields'
+import { readDataFieldValue, readSelectionLabelFromData, resolveSelectionLabelFields } from '../selection-label-fields'
 
 describe('selection label field isolation', () => {
   it.each([
@@ -16,5 +16,14 @@ describe('selection label field isolation', () => {
 
     expect(fields).not.toContain(fieldName)
     expect(fields).toContain(expectedLabelField)
+  })
+
+  it('reads companion labels via snake_case aliases on child rows', () => {
+    expect(readDataFieldValue({ field_user_name: '张三' }, 'fieldUserName')).toBe('张三')
+    expect(readSelectionLabelFromData(
+      { field_user: '1', field_user_name: '李四' },
+      { field: 'fieldUser', type: 'userSelect' },
+      'user',
+    )).toBe('李四')
   })
 })

@@ -93,6 +93,39 @@ describe('appendChildTableCatalogFields', () => {
     expect(child.fields[0]).toMatchObject({ writable: true, readonly: false, disabled: false })
   })
 
+  it('子表 allowUpdate 不能把未授权字段一刀切开写', () => {
+    const [child] = applyChildTableFieldPermissions(
+      [{
+        modelCode: 'cgou_business_object_hl92',
+        allowUpdate: true,
+        fields: [
+          { field: 'fieldInput', writable: false, readonly: true, disabled: true },
+          { field: 'fieldInput2', writable: true, readonly: false, disabled: false },
+        ],
+      }],
+      [
+        { scope: 'child', childKey: 'business_object_hl92', childField: 'fieldInput', writable: false },
+        { scope: 'child', childKey: 'business_object_hl92', childField: 'fieldInput2', writable: true },
+      ],
+    )
+
+    expect(child.fields[0]).toMatchObject({ field: 'fieldInput', writable: false, readonly: true, disabled: true })
+    expect(child.fields[1]).toMatchObject({ field: 'fieldInput2', writable: true, readonly: false, disabled: false })
+  })
+
+  it('未命中字段权限时保留后端只读标记，不因 allowUpdate 放开', () => {
+    const [child] = applyChildTableFieldPermissions(
+      [{
+        modelCode: 'cgou_business_object_hl92',
+        allowUpdate: true,
+        fields: [{ field: 'fieldInput', writable: false, readonly: true, disabled: true }],
+      }],
+      [],
+    )
+
+    expect(child.fields[0]).toMatchObject({ writable: false, readonly: true, disabled: true })
+  })
+
   it('节点原始权限能打开已被标成只读的子表字段', () => {
     const raw = JSON.stringify({
       version: 2,

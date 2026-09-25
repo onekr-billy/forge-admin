@@ -121,6 +121,12 @@ public class BusinessFlowService {
     private BusinessApplicationService businessApplicationService;
 
     /**
+     * 流程绑定保存时同步低代码托管字段，避免只保存 binding 而沿用旧列表发布快照。
+     */
+    @Autowired(required = false)
+    private BusinessFlowStatusFieldService flowStatusFieldService;
+
+    /**
      * 业务流程运行和应用归属用于向前端返回服务端确认的打印身份。
      * 使用字段注入保持已有扩展和单元测试的构造器兼容性。
      */
@@ -2330,11 +2336,46 @@ public class BusinessFlowService {
                     result.add(child);
                 }
             }
+            attachTaskChildFieldEvents(result, formSchema);
             return result;
         } catch (Exception e) {
             log.warn("读取业务表单子表配置失败: configKey={}, error={}", configKey, e.getMessage(), e);
             return List.of();
         }
+    }
+
+    /**
+     * 把表单治理里的字段自动查询挂到子表，审批 ChildTableEditor 按行触发联动。
+     */
+    private void attachTaskChildFieldEvents(List<Map<String, Object>> children, JSONObject formSchema) {
+        if (children == null || children.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> events = collectFormFieldEvents(formSchema);
+        if (events.isEmpty()) {
+            return;
+        }
+        for (Map<String, Object> child : children) {
+            if (child == null) {
+                continue;
+            }
+            if (!(child.get("fieldEvents") instanceof List<?> existing) || existing.isEmpty()) {
+                child.put("fieldEvents", events);
+            }
+        }
+    }
+
+    private List<Map<String, Object>> collectFormFieldEvents(JSONObject formSchema) {
+        if (formSchema == null || formSchema.isEmpty()) {
+            return List.of();
+        }
+        JSONObject settings = readNestedObject(formSchema.get("settings"));
+        JSONObject governance = readNestedObject(settings.get("governance"));
+        List<Map<String, Object>> events = readMapList(readNestedArray(governance.get("fieldEvents")));
+        if (!events.isEmpty()) {
+            return events;
+        }
+        return readMapList(readNestedArray(settings.get("fieldEvents")));
     }
 
     private Map<String, Map<String, Object>> indexTaskChildrenByKey(List<Map<String, Object>> children) {
@@ -2643,7 +2684,20 @@ public class BusinessFlowService {
                     "referenceValueField", "recordSelector", "referenceConfig"));
         } else {
             fillBlank(field, registryField, "dictType", "dataType", "referenceObjectCode", "referenceDisplayField",
-                    "precision", "length", "formulaConfig", "advancedProps");
+                    "precision", "length", "formulaConfig", "advancedProps", "basicProps");
+            // 注册表 basicProps 常含 optionSource；发布快照若只有弱 props，这里补进 props
+            if (!(ownProps.get("optionSource") instanceof Map<?, ?>)) {
+                Object registryOptionSource = registryProps.get("optionSource");
+                if (registryOptionSource instanceof Map<?, ?>) {
+                    ownProps.put("optionSource", registryOptionSource);
+                }
+            }
+            for (String key : List.of("fieldMappings", "mappings", "labelValueField", "targetField",
+                    "cascade", "cascadeConfig", "checkedValue", "uncheckedValue", "runtimeRules")) {
+                if (ownProps.get(key) == null && registryProps.get(key) != null) {
+                    ownProps.put(key, registryProps.get(key));
+                }
+            }
         }
         if (ownProps.get("optionSource") instanceof Map<?, ?>) {
             // 动态选项源下不能混入注册表静态 options，否则运行态优先读静态选项
@@ -3166,7 +3220,7 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(field)) {
             return false;
         }
-        if ("id".equalsIgnoreCase(field) || "_deleted".equalsIgnoreCase(field)) {
+        if ("id".equalsIgnoreCase(field) || "_deleted".equalsIgnoreCase(field) || "__deleted".equalsIgnoreCase(field)) {
             return true;
         }
         if (visibleFields == null || visibleFields.isEmpty()) {
@@ -3178,6 +3232,20 @@ public class BusinessFlowService {
         for (String visibleField : visibleFields) {
             if (sameFieldName(visibleField, field)) {
                 return true;
+            }
+            // 人员/部门/引用选中后写入的伴随显示列（fieldXxxName），过滤时必须保留否则回显空白
+            if (StringUtils.isNotBlank(visibleField)
+                    && (StringUtils.equals(field, visibleField + "Name")
+                    || StringUtils.equalsIgnoreCase(field, visibleField + "Name"))) {
+                return true;
+            }
+        }
+        if (field.endsWith("Name") && field.length() > 4) {
+            String base = field.substring(0, field.length() - 4);
+            for (String visibleField : visibleFields) {
+                if (sameFieldName(visibleField, base)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -5837,6 +5905,7 @@ public class BusinessFlowService {
     /**
      * 保存流程绑定配置
      */
+    @Transactional(rollbackFor = Exception.class)
     public void saveFlowBinding(String objectCode, BusinessFlowBindingDTO dto) {
         if (dto == null) {
             throw new BusinessException("流程绑定配置不能为空");
@@ -5849,6 +5918,7 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(flowModelKey)) {
             throw new BusinessException("流程模型Key不能为空");
         }
+        ensureLowcodeFlowStatusField(tenantId, canonicalObjectCode);
         AiBusinessBinding existing = bindingMapper.selectBindingByTypeAndCode(
                 tenantId, "OBJECT", canonicalObjectCode, "FLOW");
 
@@ -5884,8 +5954,29 @@ public class BusinessFlowService {
     /**
      * 旧触发器路径保存兼容，读取 field/variable 后只落 formField/flowVariable。
      */
+    @Transactional(rollbackFor = Exception.class)
     public void saveFlowBinding(String objectCode, JSONObject config) {
         saveFlowBinding(objectCode, toDTO(config));
+    }
+
+    /**
+     * 绑定入口也必须经过字段一致性检查。流程设计器之外的旧触发器入口此前只写
+     * ai_business_binding，导致对象草稿/发布版本仍停留在不含 flowStatus 的快照。
+     */
+    private void ensureLowcodeFlowStatusField(Long tenantId, String objectCode) {
+        if (flowStatusFieldService == null || businessObjectMapper == null || crudConfigMapper == null) {
+            return;
+        }
+        AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(tenantId, objectCode);
+        if (object == null || object.getId() == null) {
+            return;
+        }
+        String lookup = StringUtils.firstNonBlank(object.getConfigKey(), objectCode);
+        AiCrudConfig runtimeConfig = crudConfigMapper.selectRuntimeByObjectCodeOrConfigKey(tenantId, lookup);
+        if (runtimeConfig == null || !"LOWCODE".equalsIgnoreCase(runtimeConfig.getBuildMode())) {
+            return;
+        }
+        flowStatusFieldService.ensure(object.getId());
     }
 
     /**

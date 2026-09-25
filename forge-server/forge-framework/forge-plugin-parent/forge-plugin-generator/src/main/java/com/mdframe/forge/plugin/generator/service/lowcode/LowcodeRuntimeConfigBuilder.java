@@ -1783,6 +1783,12 @@ public class LowcodeRuntimeConfigBuilder {
         copyBasicProp(field.getBasicProps(), props, "precision");
         copyBasicProp(field.getBasicProps(), props, "maxlength");
         copyBasicProp(field.getBasicProps(), props, "maxLength");
+        copyBasicProp(field.getBasicProps(), props, "checkedValue");
+        copyBasicProp(field.getBasicProps(), props, "uncheckedValue");
+        copyBasicProp(field.getBasicProps(), props, "checkedText");
+        copyBasicProp(field.getBasicProps(), props, "uncheckedText");
+        copyBasicProp(field.getBasicProps(), props, "runtimeRules");
+        copyBasicProp(field.getBasicProps(), props, "__events");
         return props;
     }
 
@@ -2679,12 +2685,16 @@ public class LowcodeRuntimeConfigBuilder {
         if (field == null) {
             return false;
         }
-        if ("flowStatus".equals(field.getField()) || "flow_status".equals(field.getColumnName())) {
+        if ("flowStatus".equalsIgnoreCase(field.getField())
+                || "flow_status".equalsIgnoreCase(field.getColumnName())) {
             return true;
         }
         Map<String, Object> advancedProps = field.getAdvancedProps();
-        return advancedProps != null
-                && "BUSINESS_FLOW".equals(String.valueOf(advancedProps.get("managedBy")));
+        if (advancedProps != null
+                && "BUSINESS_FLOW".equalsIgnoreCase(String.valueOf(advancedProps.get("managedBy")))) {
+            return true;
+        }
+        return "business_flow_status".equalsIgnoreCase(field.getDictType());
     }
 
     private boolean isTableFieldExplicitlyHidden(LowcodePageSchema pageSchema, String fieldCode) {

@@ -2,6 +2,36 @@
 
 > 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 54 条。
 
+## 审批/主从子表下拉人员部门开关失效与窄列
+
+**发现日期**：2026-09-25
+
+主表引用子表后，新增行或审批待办里：下拉无数据、人员不回显、组织树空、开关无效、列宽过窄、字段联动不生效；低代码主表单正常。
+
+根因：
+1. `ChildTableEditor.toRuntimeCellField` 错误地对整份 field.props 套 `resolveControlProps`，把 `optionSource` / `cascade` / `fieldMappings` / `labelValueField` / 引用配置剥掉，再交给 `AiFormItem`，远程选项与联动全部失效。
+2. 子表行过滤 `filterVisibleRecordChildren` 只留业务列编码，丢掉伴随列 `xxxName`，人员/部门/引用无法回显。
+3. `sanitizeFieldBasicProps` 未透传 `checkedValue/uncheckedValue/runtimeRules`，子表开关默认 true/false 对不上库里的 0/1。
+4. 选择类列默认最小宽 120，看起来比表单控件窄一截。
+5. 子表单元格给 `.n-input` 强制 `min-width:160px`，人员选择器输入框把右侧清空按钮挤出单元格被邻列盖住；且 Naive `n-input` 在 `readonly` 时根本不渲染 clearable，不能把清空指望在输入框内置 ✕ 上。
+6. 子表 MD 列上的 `sourceField`（等于自身 field）被 `resolveCascadeConfig` 误当成级联父字段，`emptyStrategy=empty` 把下拉选项滤成「无数据」。
+7. `useRuntimeCell` 只认精确 `userSelect`，`forgeUserSelect` / `userPicker` 等别名会落到普通输入框。
+
+处理：运行态 cell 保留完整 props；过滤保留 `*Name`；开关默认 1/0；人员/组织列加宽且输入框 `min-width:0`；人员清空用独立 ✕ 按钮；缺名时按 id 调 `getById` 补回显；`isUserSelectLikeField` 路由进 AiFormItem 并规范化 type；`sourceField===自身` 不启用级联；表单 governance.fieldEvents 挂到 childrenConfig。
+
+## 审批子表只读列能改却保存报「不允许编辑子表字段」
+
+**发现日期**：2026-09-25
+
+节点把子表 `fieldInput` 配成只读，但审批页仍可编辑，暂存时报「当前节点不允许编辑子表字段: fieldInput」。另有偶发：子表列时有时无、后端有值不回显。
+
+根因：
+1. `applyChildTableFieldPermissions` 在字段权限未命中时，用子表 `allowUpdate===true` 把**所有列** `enableChildField`；只要同表另有可写列，只读列也会被放开，保存 payload 带上后被后端按字段白名单拒绝。
+2. `ChildTableEditor.normalizeInputValue` 只按精确 key 取数，且只 watch `props.value`；`childrenConfig` 晚到或 key 用 `cgou_*` / `business_object_*` 别名时，会把已有行数据归一成空表。
+3. 后端 `validateTaskChildRowPayload` 对行内每个 key 强制可写，只读快照字段一并提交就会抛错；真正落库本就有 `filterTaskChildWriteData`。
+
+处理：未命中字段权限时保留后端 `writable/readonly`，禁止 `allowUpdate` 一刀切；子表编辑器在配置键变化时重绑数据并按别名取行；服务端字段级校验改为过滤而非整行拒绝。
+
 ## 审批子表列控件类型不能只依赖发布态 masterDetailConfig
 
 **发现日期**：2026-09-25

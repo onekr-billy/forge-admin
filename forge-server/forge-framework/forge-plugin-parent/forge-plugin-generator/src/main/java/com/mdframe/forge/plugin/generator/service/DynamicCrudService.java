@@ -1145,14 +1145,7 @@ public class DynamicCrudService {
         if (!deleted && rowId != null && !permission.allowUpdate()) {
             throw new BusinessException("当前节点不允许修改子表行");
         }
-        for (String key : row.keySet()) {
-            if (isImmutableWriteField(key) || "_deleted".equals(key) || "__deleted".equals(key)) {
-                continue;
-            }
-            if (resolveChildWritableField(relation, key, permission.writableFields()) == null) {
-                throw new BusinessException("当前节点不允许编辑子表字段: " + key);
-            }
-        }
+        // 行内只读快照字段不在此拦截；落库前由 filterTaskChildWriteData 按 writableFields 过滤
     }
 
     private void updateTaskMasterDetailData(AiCrudConfig config,

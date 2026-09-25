@@ -80,6 +80,24 @@
           @update:model-value="handleUpdate"
         />
 
+        <!-- 数字/金额：必须先于 input，避免 type=input + componentKey=money 落到文本框后金额空白 -->
+        <n-input-number
+          v-else-if="isNumberLikeField(field)"
+          :value="numberFieldValue"
+          :placeholder="getPlaceholder(field)"
+          :disabled="disabledHandler(field)"
+          :min="field.min ?? field.props?.min"
+          :max="field.max ?? field.props?.max"
+          :step="field.step || field.props?.step || (resolveNumberFieldType(field) === 'money' ? 0.01 : 1)"
+          :precision="field.precision ?? field.props?.precision ?? (resolveNumberFieldType(field) === 'money' ? 2 : undefined)"
+          :show-button="field.showButton !== false && field.props?.showButton !== false && field.props?.controls !== false"
+          :clearable="field.clearable !== false"
+          style="width: 100%"
+          v-bind="controlProps"
+          @update:value="handleUpdate"
+          v-on="getComponentEvents(field)"
+        />
+
         <!-- 输入框 -->
         <n-input
           v-else-if="field.type === 'input'"
@@ -131,24 +149,6 @@
           :maxlength="field.maxlength"
           :show-count="field.showCount"
           :autosize="field.autosize"
-          v-bind="controlProps"
-          @update:value="handleUpdate"
-          v-on="getComponentEvents(field)"
-        />
-
-        <!-- 数字输入框 -->
-        <n-input-number
-          v-else-if="isNumberFieldType(field.type)"
-          :value="value"
-          :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
-          :min="field.min"
-          :max="field.max"
-          :step="field.step || 1"
-          :precision="field.precision"
-          :show-button="field.showButton !== false"
-          :clearable="field.clearable !== false"
-          style="width: 100%"
           v-bind="controlProps"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
@@ -565,9 +565,9 @@
           :disabled="disabledHandler(field)"
           :options="currentOptions"
           :loading="remoteLoading"
-          :clearable="field.clearable !== false"
-          :filterable="field.filterable !== false"
-          :cascade="field.cascade !== false"
+          :clearable="isFieldClearable(field)"
+          :filterable="field.filterable !== false && field.props?.filterable !== false"
+          :cascade="resolveNaiveTreeCascade(field)"
           :multiple="fieldMultiple"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
@@ -581,8 +581,8 @@
           :label-value="resolveUserSelectLabel(field)"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field) || isCascadeDisabledByEmptyParent()"
-          :clearable="field.clearable !== false"
-          :size="field.size"
+          :clearable="isFieldClearable(field)"
+          :size="field.size || field.props?.size"
           :org-id="userSelectCascadeOrgId"
           :include-children="userSelectCascadeIncludeChildren"
           :multiple="fieldMultiple"
@@ -844,12 +844,18 @@ import AiFormGroupTitle from './AiFormGroupTitle.vue'
 import AiFormSectionTitle from './AiFormSectionTitle.vue'
 import AiRecordSelectorModal from './AiRecordSelectorModal.vue'
 import { resolveControlProps } from './control-props'
-import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
+import {
+  coerceNumberFieldValue,
+  isInputLikeFieldType,
+  isNumberLikeField,
+  resolveNumberFieldType,
+} from './field-type-utils'
 import {
   buildQuerySourceDisplayFields,
   buildTreeFromFlatRows,
   collectFieldMappingSourceFields,
   decorateLazyTreeNodes,
+  resolveFieldCascadeConfig,
   resolveFirstFilledOptionField,
   resolveOptionLoadMode,
   resolveOptionPageSize,
@@ -858,7 +864,7 @@ import {
   shouldBuildTreeOptions,
 } from './option-source-runtime'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, normalizeSelectorMappings, resolveSelectorSearchParams } from './record-selector-utils'
-import { resolveSelectionLabelFields as buildSelectionLabelFields, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
+import { resolveSelectionLabelFields as buildSelectionLabelFields, readDataFieldValue, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
 
 defineOptions({ inheritAttrs: false })
@@ -909,6 +915,9 @@ const ORG_TREE_SELECT_TYPES = ORG_SELECT_FIELD_TYPES
 const USER_SELECT_TYPES = USER_SELECT_FIELD_TYPES
 
 const controlProps = computed(() => resolveControlProps(props.field?.props))
+const numberFieldValue = computed(() => (
+  isNumberLikeField(props.field) ? coerceNumberFieldValue(props.value) : props.value
+))
 const switchControlProps = computed(() => {
   const next = { ...controlProps.value }
   delete next.checkedValue
@@ -990,7 +999,7 @@ function getPlaceholder(field) {
     return field.placeholder
   }
 
-  const prefix = isInputLikeFieldType(field.type) ? '请输入' : '请选择'
+  const prefix = (isInputLikeFieldType(field.type) || isNumberLikeField(field)) ? '请输入' : '请选择'
   return `${prefix}${field.label}`
 }
 
@@ -1233,9 +1242,46 @@ watch(
       remoteOptions.value = []
       return
     }
+    // 子表预加载选项已到位时先灌进 remoteOptions，避免首屏空下拉
+    const preloaded = Array.isArray(props.field?.options) && props.field.options.length
+      ? props.field.options
+      : (Array.isArray(props.field?.props?.options) && props.field.props.options.length
+        ? props.field.props.options
+        : null)
+    if (preloaded && !remoteOptions.value.length) {
+      remoteOptions.value = preloaded
+      console.info('[forge-child-select] AiFormItem seed remoteOptions from preloaded', {
+        field: props.field?.field,
+        count: preloaded.length,
+      })
+    }
     loadRemoteOptions(source)
   },
   { immediate: true },
+)
+
+// 预加载异步完成后 field.props.options 才到，补种一次
+watch(
+  () => [
+    Array.isArray(props.field?.props?.options) ? props.field.props.options.length : 0,
+    Array.isArray(props.field?.options) ? props.field.options.length : 0,
+  ],
+  () => {
+    if (remoteOptions.value.length)
+      return
+    const preloaded = Array.isArray(props.field?.options) && props.field.options.length
+      ? props.field.options
+      : (Array.isArray(props.field?.props?.options) && props.field.props.options.length
+        ? props.field.props.options
+        : null)
+    if (!preloaded)
+      return
+    remoteOptions.value = preloaded
+    console.info('[forge-child-select] AiFormItem late-seed remoteOptions', {
+      field: props.field?.field,
+      count: preloaded.length,
+    })
+  },
 )
 
 // 远程选项就绪后回写伴随标签，下次进入可直接用 label 回显，避免先闪 id
@@ -1310,7 +1356,23 @@ const currentOptions = computed(() => {
   }
 
   if (remoteOptionSource.value) {
-    return withCurrentValueOption(resolveCascadedOptions(remoteOptions.value))
+    const remote = withCurrentValueOption(resolveCascadedOptions(remoteOptions.value))
+    if (remote.length)
+      return remote
+    // 子表预加载会先把 options 写进 field.props；远程还在飞或失败时优先用已有选项，避免一直「无数据」
+    const staticFromField = Array.isArray(field.options) && field.options.length
+      ? field.options
+      : (Array.isArray(field.props?.options) && field.props.options.length ? field.props.options : null)
+    if (staticFromField) {
+      console.info('[forge-child-select] AiFormItem use preloaded/static options', {
+        field: field.field,
+        count: staticFromField.length,
+        remoteLoading: remoteLoading.value,
+      })
+      return withCurrentValueOption(resolveCascadedOptions(staticFromField))
+    }
+    if (remoteLoading.value)
+      return remote
   }
 
   // 无动态源时才使用静态 options 数组
@@ -1460,10 +1522,14 @@ function hasEffectiveOptionSource(source) {
     return false
   if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || '')))
     return true
-  if (String(source.type || '') === 'QUERY_SOURCE')
+  const type = String(source.type || '').toUpperCase()
+  const sourceType = String(source.sourceType || '').toUpperCase()
+  // QUERY_SOURCE / BUSINESS_OBJECT 都以 sourceKey 为准；兼容缺 type、只留 sourceType 的旧快照
+  if (type === 'QUERY_SOURCE' || sourceType === 'BUSINESS_OBJECT' || sourceType === 'DATASET' || sourceType === 'EXTERNAL_API')
     return Boolean(String(source.sourceKey || '').trim())
   return Boolean(
     String(source.api || source.url || '').trim()
+    || String(source.sourceKey || '').trim()
     || Array.isArray(source.options)
     || Array.isArray(source.data),
   )
@@ -1518,8 +1584,19 @@ function normalizeOptionSource(source) {
   const next = { ...(source || {}) }
   if (!next.api && next.url)
     next.api = next.url
-  if (!next.params && typeof next.paramsText === 'string')
+  // params 可能是 JSON 字符串（历史快照 / 误序列化）；必须先收成对象，
+  // 否则 Object.entries("{}") 会变成 {0:'{',1:'}'}，下拉请求异常或被空参逻辑误伤。
+  if (typeof next.params === 'string')
+    next.params = safeParseObject(next.params)
+  if ((!next.params || typeof next.params !== 'object' || Array.isArray(next.params))
+    && typeof next.paramsText === 'string') {
     next.params = safeParseObject(next.paramsText)
+  }
+  if (!next.params || typeof next.params !== 'object' || Array.isArray(next.params))
+    next.params = {}
+  // 业务对象选项源统一走 QUERY_SOURCE 执行入口
+  if (!next.type && String(next.sourceType || '').toUpperCase() === 'BUSINESS_OBJECT' && next.sourceKey)
+    next.type = 'QUERY_SOURCE'
   // 树形组件动态源：未显式配置时补默认父级/加载策略，保证扁平表能拼树
   const componentType = props.field?.type || props.field?.componentKey || ''
   if (shouldBuildTreeOptions(next, componentType) && !String(next.parentField || '').trim()
@@ -1689,21 +1766,32 @@ async function loadRemoteOptions(source, keyword = '', { parentValue, forChildre
     if (source.type === 'QUERY_SOURCE') {
       // 画布静态预览可跳过远程拉数；预览弹窗 / 运行页必须拉数，否则选中后回填没有源字段
       if (isDesignerPreviewContext() && props.context?.allowOptionSourceFetch !== true) {
+        console.info('[forge-child-select] AiFormItem skip QUERY_SOURCE (designer preview)', {
+          field: props.field?.field,
+          mode: props.context?.mode,
+          allowOptionSourceFetch: props.context?.allowOptionSourceFetch,
+        })
         if (!forChildren)
           remoteOptions.value = []
         return forChildren ? [] : undefined
       }
       // 配置了参数但解析后全部为空时阻断请求，避免后端报必填参数错误；
       // 字段填值后 watch 自动重新触发。无参数或任一参数有值时正常发出。
-      const resolvedEntries = Object.entries(source.params || {})
+      const rawParams = (source.params && typeof source.params === 'object' && !Array.isArray(source.params))
+        ? source.params
+        : {}
+      const resolvedEntries = Object.entries(rawParams)
       const hasAnyParamValue = resolvedEntries.some(([, v]) => v !== undefined && v !== null && v !== '')
       if (resolvedEntries.length > 0 && !hasAnyParamValue && loadMode !== 'lazy') {
+        console.info('[forge-child-select] AiFormItem block QUERY_SOURCE (empty params)', {
+          field: props.field?.field,
+          rawParams,
+        })
         if (!forChildren)
           remoteOptions.value = []
         return forChildren ? [] : undefined
       }
       // 过滤空值参数：${字段名} 引用解析后为空时自动剥离
-      const rawParams = source.params || {}
       const params = {}
       for (const [key, value] of Object.entries(rawParams)) {
         if (value !== undefined && value !== null && value !== '')
@@ -1717,18 +1805,31 @@ async function loadRemoteOptions(source, keyword = '', { parentValue, forChildre
           source,
           collectFieldMappingSourceFields(resolveComponentFieldMappings(props.field)),
         )
-        const res = await executeLowcodeQuerySource({
+        const payload = {
           sourceType: source.sourceType,
           sourceKey: source.sourceKey,
           params,
           fields: displayFields.length ? displayFields : undefined,
           pageNum: source.pageNum || 1,
           pageSize,
+        }
+        console.info('[forge-child-select] AiFormItem QUERY_SOURCE request', {
+          field: props.field?.field,
+          payload,
+          staticOptions: Array.isArray(props.field?.props?.options) ? props.field.props.options.length : 0,
+          contextAllowFetch: props.context?.allowOptionSourceFetch,
+          contextMode: props.context?.mode,
         })
+        const res = await executeLowcodeQuerySource(payload)
         if (!forChildren && requestSeq !== remoteRequestSeq)
           return
         const result = res?.data || {}
         const normalized = normalizeRemoteOptions(result, source, componentType)
+        console.info('[forge-child-select] AiFormItem QUERY_SOURCE ok', {
+          field: props.field?.field,
+          count: normalized.length,
+          sample: normalized.slice(0, 2),
+        })
         if (forChildren)
           return normalized
         remoteOptions.value = normalized
@@ -1737,10 +1838,14 @@ async function loadRemoteOptions(source, keyword = '', { parentValue, forChildre
         if (!forChildren && requestSeq !== remoteRequestSeq)
           return
         console.warn(
-          `[AiFormItem] 查询源加载失败 [${source.sourceType}/${source.sourceKey}]，已发送参数:`,
-          params,
-          '错误:',
-          err?.message || err,
+          `[forge-child-select] AiFormItem QUERY_SOURCE FAIL [${source.sourceType}/${source.sourceKey}]`,
+          {
+            field: props.field?.field,
+            params,
+            message: err?.message || err,
+            code: err?.code,
+            detail: err?.detail || err?.error,
+          },
         )
         if (forChildren)
           return []
@@ -1961,31 +2066,7 @@ function normalizeOptionNode(row, source = {}, includeChildren = false) {
 }
 
 function resolveCascadeConfig(field = {}) {
-  const configured = [field.cascade, field.cascadeConfig, field.props?.cascade, field.props?.cascadeConfig]
-    .find(item => item && typeof item === 'object' && item.sourceField)
-  const raw = configured || {
-    sourceField: field.sourceField || field.props?.sourceField,
-    sourceDictType: field.sourceDictType || field.props?.sourceDictType,
-    linkedDictType: field.linkedDictType || field.props?.linkedDictType,
-    mode: field.matchMode || field.props?.matchMode || field.mode || field.props?.mode,
-    paramName: field.paramName || field.props?.paramName,
-    emptyStrategy: field.emptyStrategy || field.props?.emptyStrategy,
-    clearOnParentChange: field.clearOnParentChange ?? field.clearOnSourceChange ?? field.props?.clearOnParentChange ?? field.props?.clearOnSourceChange,
-  }
-  if (!raw || raw.enabled === false || !raw.sourceField)
-    return null
-  return {
-    enabled: true,
-    sourceField: raw.sourceField,
-    sourceDictType: raw.sourceDictType || '',
-    linkedDictType: raw.linkedDictType || '',
-    mode: raw.mode || raw.matchMode || 'linkedDict',
-    paramName: raw.paramName || '',
-    // 组织→人员级联：是否包含子组织人员，默认包含
-    includeChildren: raw.includeChildren !== false,
-    emptyStrategy: raw.emptyStrategy || 'empty',
-    clearOnParentChange: raw.clearOnParentChange !== false && raw.clearOnSourceChange !== false,
-  }
+  return resolveFieldCascadeConfig(field)
 }
 
 function resolveCascadedOptions(options = []) {
@@ -2154,11 +2235,11 @@ function normalizeRuntimeFieldType(type) {
 }
 
 function isOrgTreeSelectField(field = {}) {
-  return normalizeRuntimeFieldType(field.type || field.componentType) === 'orgTreeSelect'
+  return normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey) === 'orgTreeSelect'
 }
 
 function isUserSelectField(field = {}) {
-  return normalizeRuntimeFieldType(field.type || field.componentType) === 'userSelect'
+  return normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey) === 'userSelect'
 }
 
 function isObjectReferenceField(field = {}) {
@@ -2420,11 +2501,31 @@ function resolveSelectionLabelValue(field = {}) {
     // optionSource.labelField 是远端行字段名，不是表单伴随字段，不能拿来读 formData
     if (remoteLabelField && candidate === remoteLabelField)
       continue
-    const value = props.formData?.[candidate]
+    const value = readDataFieldValue(props.formData || {}, candidate)
     if (isFilledValue(value))
       return value
   }
   return field.labelValue ?? field.props?.labelValue ?? ''
+}
+
+function isFieldClearable(field = {}) {
+  if (field.clearable === false || field.props?.clearable === false)
+    return false
+  return true
+}
+
+/** Naive TreeSelect 的 cascade 是多选勾选联动，不是业务级联配置对象 */
+function resolveNaiveTreeCascade(field = {}) {
+  if (typeof field.cascade === 'boolean')
+    return field.cascade
+  if (typeof field.props?.cascade === 'boolean')
+    return field.props.cascade
+  // 业务级联配置对象不能传给 Naive
+  if (field.cascade && typeof field.cascade === 'object')
+    return true
+  if (field.props?.cascade && typeof field.props.cascade === 'object')
+    return true
+  return field.cascade !== false
 }
 
 function resolveSelectionLabelFields(field = {}) {

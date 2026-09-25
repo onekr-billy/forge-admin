@@ -96,6 +96,33 @@ describe('aiFormItem number field compatibility', () => {
     })
     expect(wrapper.find('.n-input-number-stub').exists()).toBe(true)
   })
+
+  it('renders money via componentKey and coerces string amount', () => {
+    const wrapper = mount(AiFormItem, {
+      props: {
+        field: {
+          field: 'amount',
+          label: '金额',
+          type: 'input',
+          componentKey: 'money',
+          props: { precision: 2 },
+        },
+        value: '128.50',
+      },
+      global: {
+        stubs: {
+          ...naiveStubs,
+          NFormItem: NFormItemStub,
+          NInputNumber: NInputNumberStub,
+          AiRecordSelectorModal: true,
+        },
+      },
+    })
+
+    const numberInput = wrapper.findComponent(NInputNumberStub)
+    expect(numberInput.exists()).toBe(true)
+    expect(numberInput.props('value')).toBe(128.5)
+  })
 })
 
 describe('aiFormItem formatted date storage', () => {

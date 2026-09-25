@@ -87,6 +87,32 @@ class BusinessFlowStatusFieldServiceTest {
     }
 
     @Test
+    @DisplayName("legacy flow status field receives managed metadata before runtime publication")
+    void normalizesLegacyManagedMetadata() {
+        BusinessObjectDesignerService designerService = mock(BusinessObjectDesignerService.class);
+        BusinessFieldDesignService fieldDesignService = mock(BusinessFieldDesignService.class);
+        LowcodeDdlService ddlService = mock(LowcodeDdlService.class);
+        LowcodeFieldSchema legacy = field("flowStatus", "flow_status", "varchar", 32);
+        legacy.setDictType(BusinessFlowStatusFieldService.DICT_TYPE);
+        legacy.setListVisible(true);
+        legacy.setFieldStatus("ENABLED");
+        BusinessObjectDesignerService.DesignerContext context = context(schema(legacy));
+        when(designerService.loadContext(77L)).thenReturn(context);
+        when(fieldDesignService.listFields(77L)).thenReturn(List.of(flowStatusVO()));
+        BusinessFlowStatusFieldService service = new BusinessFlowStatusFieldService(
+                designerService, fieldDesignService, ddlService);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(() -> SessionHelper.hasPermission("ai:lowcode:deploy-ddl")).thenReturn(true);
+            service.ensure(77L);
+        }
+
+        assertEquals("BUSINESS_FLOW", legacy.getAdvancedProps().get("managedBy"));
+        assertEquals(Boolean.TRUE, legacy.getAdvancedProps().get("managedField"));
+        verify(designerService).saveDraft(context, "CHANGED");
+    }
+
+    @Test
     @DisplayName("incompatible flow status field fails before DDL")
     void rejectsIncompatibleFieldBeforeDdl() {
         BusinessObjectDesignerService designerService = mock(BusinessObjectDesignerService.class);

@@ -1432,7 +1432,8 @@ const formComponentIconFileByBlockType = {
 }
 const userStore = useUserStore()
 const asyncPanelLoader = {
-  delay: 200,
+  // 设计页 chunk 较大；delay>0 会先空白再出 loader，表现为「白屏一会儿」
+  delay: 0,
   loadingComponent: DesignerAsyncLoader,
 }
 const ApplicationObjectsPanel = defineAsyncComponent({
@@ -2307,9 +2308,18 @@ async function load() {
   historyReady.value = false
   portalCrudSeed.value = {}
   resetRuntimeCrudConfig()
-  // 与 workspace API 并行预拉页面渲染器 / CRUD 页，缩短骨架结束后的二次白屏
-  void import('@/components/lowcode-builder/page/GridBlockRenderer.vue').catch(() => {})
-  void import('@/components/ai-form/AiCrudPage.vue').catch(() => {})
+  // 与 workspace API 并行预拉页面渲染器 / CRUD / 设计器，缩短骨架结束后的二次白屏
+  const warmChunks = [
+    import('@/components/lowcode-builder/page/GridBlockRenderer.vue').catch(() => {}),
+    import('@/components/ai-form/AiCrudPage.vue').catch(() => {}),
+  ]
+  if (editing.value) {
+    warmChunks.push(
+      import('@/components/lowcode-builder/page/ListPageGridDesigner.vue').catch(() => {}),
+      import('@/views/app-center/components/designer/PageDesignSettingsPanel.vue').catch(() => {}),
+    )
+  }
+  const warmChunksPromise = Promise.all(warmChunks)
   try {
     const response = shouldUseApplicationWorkspaceLoad(route, canEditApplication.value)
       ? await businessApplicationWorkspaceByCode(code)
@@ -2349,6 +2359,9 @@ async function load() {
     preloadCurrentPageCrudRuntimeProps()
     if (canEditApplication.value)
       prefetchRuntimeWorkspacePanels()
+    // 编辑态：等设计器 chunk 就绪再撤骨架，避免「壳出来了但画布白屏」
+    if (editing.value)
+      await warmChunksPromise
   }
   catch (error) {
     application.value = null
@@ -2363,7 +2376,10 @@ async function load() {
       || '应用配置加载失败，请稍后重试。',
     )
   }
-  finally { loading.value = false }
+  finally {
+    await warmChunksPromise
+    loading.value = false
+  }
 }
 
 async function warmCurrentPortalPageCrud() {

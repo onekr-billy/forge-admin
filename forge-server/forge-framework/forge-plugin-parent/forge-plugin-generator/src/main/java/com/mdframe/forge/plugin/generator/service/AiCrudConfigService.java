@@ -48,6 +48,7 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
     private static final long CONFIG_CACHE_TTL_MILLIS = TimeUnit.SECONDS.toMillis(10);
     private static final String FLOW_STATUS_FIELD = "flowStatus";
     private static final String FLOW_STATUS_COLUMN = "flow_status";
+    private static final String FLOW_STATUS_DICT_TYPE = "business_flow_status";
 
     private final ObjectMapper objectMapper;
     private final MenuRegisterAdapter menuRegisterAdapter;
@@ -350,10 +351,7 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
             }
             List<Map<String, Object>> columns = objectMapper.readValue(
                     published.getColumnsSchema(), new TypeReference<List<Map<String, Object>>>() {});
-            boolean columnPresent = columns.stream().anyMatch(column ->
-                    FLOW_STATUS_FIELD.equals(text(column.get("dataIndex")))
-                            || FLOW_STATUS_FIELD.equals(text(column.get("key")))
-                            || FLOW_STATUS_FIELD.equals(text(column.get("field"))));
+            boolean columnPresent = columns.stream().anyMatch(this::isFlowStatusColumnMap);
             if (columnPresent) {
                 return;
             }
@@ -389,16 +387,45 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
             }
             Map<String, Object> advancedProps = field.get("advancedProps") instanceof Map<?, ?> props
                     ? castMap(props) : Map.of();
-            if ("BUSINESS_FLOW".equals(text(advancedProps.get("managedBy")))) {
-                return field;
+            String managedBy = text(advancedProps.get("managedBy"));
+            String dictType = text(field.get("dictType"));
+            if ("BUSINESS_FLOW".equalsIgnoreCase(managedBy)
+                    || FLOW_STATUS_DICT_TYPE.equalsIgnoreCase(dictType)) {
+                return normalizeManagedFlowStatusField(field);
             }
         }
         return null;
     }
 
     private boolean isFlowStatusFieldMap(Map<String, Object> field) {
-        return FLOW_STATUS_FIELD.equals(text(field.get("field")))
-                || FLOW_STATUS_COLUMN.equals(text(field.get("columnName")));
+        return FLOW_STATUS_FIELD.equalsIgnoreCase(text(field.get("field")))
+                || FLOW_STATUS_COLUMN.equalsIgnoreCase(text(field.get("columnName")))
+                || FLOW_STATUS_DICT_TYPE.equalsIgnoreCase(text(field.get("dictType")));
+    }
+
+    private boolean isFlowStatusColumnMap(Map<String, Object> column) {
+        return FLOW_STATUS_FIELD.equalsIgnoreCase(text(column.get("dataIndex")))
+                || FLOW_STATUS_FIELD.equalsIgnoreCase(text(column.get("key")))
+                || FLOW_STATUS_FIELD.equalsIgnoreCase(text(column.get("field")))
+                || FLOW_STATUS_COLUMN.equalsIgnoreCase(text(column.get("dataIndex")))
+                || FLOW_STATUS_COLUMN.equalsIgnoreCase(text(column.get("key")))
+                || FLOW_STATUS_COLUMN.equalsIgnoreCase(text(column.get("field")));
+    }
+
+    private Map<String, Object> normalizeManagedFlowStatusField(Map<String, Object> field) {
+        Map<String, Object> normalized = new LinkedHashMap<>(field);
+        Map<String, Object> advancedProps = field.get("advancedProps") instanceof Map<?, ?> props
+                ? castMap(props) : new LinkedHashMap<>();
+        advancedProps.put("managedBy", "BUSINESS_FLOW");
+        advancedProps.putIfAbsent("managedField", true);
+        normalized.put("advancedProps", advancedProps);
+        if (StringUtils.isBlank(text(normalized.get("dictType")))) {
+            normalized.put("dictType", FLOW_STATUS_DICT_TYPE);
+        }
+        if (StringUtils.isBlank(text(normalized.get("fieldStatus")))) {
+            normalized.put("fieldStatus", "ENABLED");
+        }
+        return normalized;
     }
 
     private Map<String, Object> readMap(String json) throws Exception {

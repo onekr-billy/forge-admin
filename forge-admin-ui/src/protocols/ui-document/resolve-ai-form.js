@@ -6,6 +6,13 @@
  * - uiDocument.sections：无组件树时的字段序回退
  */
 
+import {
+  isWeakControlType,
+  normalizeRuntimeControlType,
+  resolveDocumentNodeControlType,
+  resolveFieldControlType,
+} from '@/components/ai-form/control-type-utils'
+
 const LAYOUT_NODE_TYPES = new Set([
   'row',
   'fcRow',
@@ -95,6 +102,7 @@ function isLayoutComponentType(type = '') {
   return LAYOUT_NODE_TYPES.has(String(type || '').trim()) || Boolean(resolveLayoutNodeType(type))
 }
 
+/** 已知强控件（归一后的标准名）；用于覆盖 fields[] 里被盖成 input 的粗粒度类型 */
 const DOCUMENT_CONTROL_TYPES = new Set([
   'select',
   'dictSelect',
@@ -103,8 +111,6 @@ const DOCUMENT_CONTROL_TYPES = new Set([
   'checkbox',
   'userSelect',
   'orgTreeSelect',
-  'deptTreeSelect',
-  'departmentTreeSelect',
   'objectReference',
   'recordSelector',
   'treeSelect',
@@ -122,21 +128,21 @@ const DOCUMENT_CONTROL_TYPES = new Set([
   'textarea',
   'imageUpload',
   'fileUpload',
-  'upload',
   'slider',
   'rate',
   'color',
   'regionTreeSelect',
   'transfer',
   'customSelect',
+  'barcodeScanner',
 ])
 
 function shouldPreferDocumentControlType(documentType = '', fieldType = '') {
-  const doc = String(documentType || '').trim()
-  const field = String(fieldType || '').trim()
-  if (!doc || doc === 'input')
+  const doc = normalizeRuntimeControlType(documentType)
+  const field = normalizeRuntimeControlType(fieldType)
+  if (!doc || isWeakControlType(doc))
     return false
-  if (!field || field === 'input' || field === 'text')
+  if (!field || isWeakControlType(field) || field === 'text')
     return true
   return DOCUMENT_CONTROL_TYPES.has(doc) && doc !== field
 }
@@ -186,21 +192,22 @@ export function mapUiDocumentComponentsToAiFormSchema(components = [], fields = 
       if (!node || typeof node !== 'object')
         return
 
-      const type = String(node.type || node.componentKey || node.componentType || '').trim()
+      const rawType = String(node.type || node.componentKey || node.componentType || '').trim()
+      const type = resolveDocumentNodeControlType(node) || rawType
       const key = fieldKey(node)
       const children = Array.isArray(node.children) ? node.children : []
-      const layoutType = resolveLayoutNodeType(type)
+      const layoutType = resolveLayoutNodeType(rawType) || resolveLayoutNodeType(type)
 
       if (node.visible === false)
         return
 
-      if (layoutType || (!key && children.length && isLayoutComponentType(type))) {
+      if (layoutType || (!key && children.length && isLayoutComponentType(rawType || type))) {
         const mappedChildren = mapNodes(children)
         if (!mappedChildren.length && !['divider', 'groupTitle', 'button'].includes(layoutType))
           return
         const layoutNode = {
           ...node,
-          type: type || layoutType || 'row',
+          type: layoutType || type || 'row',
           nodeType: layoutType || 'row',
           children: mappedChildren,
         }
@@ -245,9 +252,11 @@ export function mapUiDocumentComponentsToAiFormSchema(components = [], fields = 
       // fields[] 是字段事实来源；uiDocument 节点上的 type/label/props 来自设计器编译，
       // 必须叠回去，否则 optionSource / fieldMappings / 组件类型会在协议解析时丢失，
       // 表现为下拉/人员/组织等运行态行为回退或失效。
+      const documentType = normalizeRuntimeControlType(type)
+      const baseType = resolveFieldControlType(baseField)
       const next = {
         ...baseField,
-        type: baseField.type || type || 'input',
+        type: baseType || documentType || 'input',
         label: baseField.label || node.label || key,
         required: baseField.required === true || node.required === true,
         props: {
@@ -256,12 +265,16 @@ export function mapUiDocumentComponentsToAiFormSchema(components = [], fields = 
         },
       }
       // 设计器 componentKey / uiDocument.type 优先于发布态 fields 里被盖成 input 的粗粒度类型
-      if (DOCUMENT_CONTROL_TYPES.has(type))
-        next.type = type
-      else if (type && type !== 'input' && shouldPreferDocumentControlType(type, next.type))
-        next.type = type
-      if (node.componentKey && (!next.componentKey || next.componentKey === 'input'))
-        next.componentKey = node.componentKey
+      if (DOCUMENT_CONTROL_TYPES.has(documentType))
+        next.type = documentType
+      else if (documentType && !isWeakControlType(documentType) && shouldPreferDocumentControlType(documentType, next.type))
+        next.type = documentType
+      const documentComponentKey = String(node.componentKey || '').trim()
+      if (documentComponentKey && (!next.componentKey || isWeakControlType(next.componentKey)))
+        next.componentKey = documentComponentKey
+      // type 仍弱但 componentKey 强时强制抬升（money/switch/userSelect/org 等）
+      if (isWeakControlType(next.type) && documentComponentKey && !isWeakControlType(documentComponentKey))
+        next.type = normalizeRuntimeControlType(documentComponentKey)
       // uiDocument 权限标记叠到字段定义（设计器只读 / 审批 writable）
       if (node.editable === false) {
         next.readonly = true

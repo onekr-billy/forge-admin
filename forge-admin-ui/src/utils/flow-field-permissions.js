@@ -215,8 +215,8 @@ export function applyChildTableFieldPermissions(children = [], permissions = [])
       })
       if (permission)
         return permission.writable === true ? enableChildField(field) : lockChildField(field)
-      if (child?.allowUpdate === true)
-        return enableChildField(field)
+      // 未命中字段权限时保留后端/设计器标记。禁止用子表 allowUpdate 一刀切放开：
+      // 否则「部分字段可写」时只读列（如 fieldInput）也会被打开，保存却被后端拒绝。
       return field
     })
     return {

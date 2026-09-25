@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendDesignPreviewToApiValue,
+  applyDesignerVisibilityToFields,
   applyTableColumnLayout,
   buildCrudSearchTypeRequestParams,
   buildRuntimeCrudProps,
@@ -10,13 +11,12 @@ import {
   includeManagedRuntimeFieldRefs,
   isDesignPreviewCrudProps,
   isManagedBusinessFlowField,
+  mergeDesignerEditSchema,
   resolveCrudPreviewReloadKey,
   resolveCrudSearchFieldCatalog,
   resolveDesignerFormGovernance,
   resolveRuntimeBlockApi,
   shouldUseStaticCrudPreview,
-  applyDesignerVisibilityToFields,
-  mergeDesignerEditSchema,
 } from '../runtime-crud-props'
 
 describe('runtime CRUD design preview props', () => {
@@ -285,6 +285,32 @@ describe('runtime CRUD design preview props', () => {
       [{ field: 'flowStatus', listVisible: true, dictType: 'business_flow_status' }],
       { flowStatus: { visible: false } },
     ).map(item => item.key)).toEqual(['name'])
+  })
+
+  it('canonicalizes legacy flow_status metadata so stale refs cannot hide the column', () => {
+    expect(isManagedBusinessFlowField({
+      field: 'flow_status',
+      columnName: 'flow_status',
+      dictType: 'business_flow_status',
+    })).toBe(true)
+
+    const refs = includeManagedRuntimeFieldRefs(
+      ['name'],
+      [{ field: 'flow_status', columnName: 'flow_status', listVisible: true }],
+    )
+    expect(refs).toEqual(['name', 'flowStatus'])
+
+    const columns = ensureManagedFlowStatusColumns(
+      [{ key: 'flow_status', dataIndex: 'flow_status', title: '流程状态' }],
+      [{ field: 'flow_status', columnName: 'flow_status', listVisible: true }],
+    )
+    expect(columns.filter(item => item.key === 'flowStatus' || item.key === 'flow_status')).toHaveLength(1)
+    expect(columns[0]).toMatchObject({ key: 'flowStatus', prop: 'flowStatus', dataIndex: 'flowStatus' })
+    expect(includeManagedRuntimeFieldRefs(
+      ['name'],
+      [{ field: 'flow_status', listVisible: true, dictType: 'business_flow_status' }],
+      { flow_status: { visible: false } },
+    )).toEqual(['name'])
   })
 
   it('keeps compiled child-table columns when the page block snapshot only has main fields', () => {

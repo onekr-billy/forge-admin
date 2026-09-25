@@ -308,3 +308,75 @@ export function resolveStorageTypeFromOptionValueMeta(meta = {}, valueField = ''
     sourceField: field,
   }
 }
+
+/**
+ * 解析字段级联配置。
+ *
+ * 注意：主子表运行态 child.fields 常带 sourceField=自身列名（表示子表列编码），
+ * 不能当成级联父字段；否则空值时 emptyStrategy=empty 会把下拉选项滤成「无数据」。
+ */
+export function resolveFieldCascadeConfig(field = {}) {
+  const explicit = [field.props?.cascade, field.cascade, field.props?.cascadeConfig, field.cascadeConfig]
+    .find(item => item && typeof item === 'object')
+
+  let raw = null
+  if (explicit) {
+    // 设计器显式写了 cascade 对象：enabled:false 或没有 sourceField 都视为不级联
+    if (explicit.enabled === false)
+      return null
+    if (!String(explicit.sourceField || '').trim())
+      return null
+    raw = explicit
+  }
+  else {
+    const hasLegacyCascadeSignal = Boolean(
+      field.matchMode
+      || field.props?.matchMode
+      || field.linkedDictType
+      || field.props?.linkedDictType
+      || field.emptyStrategy
+      || field.props?.emptyStrategy
+      || field.paramName
+      || field.props?.paramName
+      || field.clearOnParentChange != null
+      || field.clearOnSourceChange != null
+      || field.props?.clearOnParentChange != null
+      || field.props?.clearOnSourceChange != null,
+    )
+    if (!hasLegacyCascadeSignal)
+      return null
+    raw = {
+      sourceField: field.sourceField || field.props?.sourceField,
+      sourceDictType: field.sourceDictType || field.props?.sourceDictType,
+      linkedDictType: field.linkedDictType || field.props?.linkedDictType,
+      mode: field.matchMode || field.props?.matchMode || field.mode || field.props?.mode,
+      paramName: field.paramName || field.props?.paramName,
+      emptyStrategy: field.emptyStrategy || field.props?.emptyStrategy,
+      clearOnParentChange: field.clearOnParentChange ?? field.clearOnSourceChange
+        ?? field.props?.clearOnParentChange ?? field.props?.clearOnSourceChange,
+      includeChildren: field.includeChildren ?? field.props?.includeChildren,
+    }
+  }
+
+  const sourceField = String(raw?.sourceField || '').trim()
+  if (!sourceField)
+    return null
+  const selfField = String(field.field || field.fieldCode || field.sourceField || '').trim()
+  // 子表列 sourceField 等于自身 field 时不是级联
+  if (selfField && sourceField === selfField)
+    return null
+  if (raw.enabled === false)
+    return null
+
+  return {
+    enabled: true,
+    sourceField,
+    sourceDictType: raw.sourceDictType || '',
+    linkedDictType: raw.linkedDictType || '',
+    mode: raw.mode || raw.matchMode || 'linkedDict',
+    paramName: raw.paramName || '',
+    includeChildren: raw.includeChildren !== false,
+    emptyStrategy: raw.emptyStrategy || 'empty',
+    clearOnParentChange: raw.clearOnParentChange !== false && raw.clearOnSourceChange !== false,
+  }
+}

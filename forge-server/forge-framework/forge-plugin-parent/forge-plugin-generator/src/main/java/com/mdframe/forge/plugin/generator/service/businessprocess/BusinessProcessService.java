@@ -401,9 +401,9 @@ public class BusinessProcessService {
             String statusField = text(config.get("statusField"));
             boolean bound = StringUtils.isNotBlank(statusField) && isFlowStatusFieldName(statusField);
             // 已绑定也要 ensure：字段被删或列表选列漂移后，只有这里能自动补回（ensure 幂等）。
-            // 无 DDL 权限时 ensure 会在自身事务里抛错并把保存事务标记为回滚，已绑定场景直接跳过。
+            // 无 DDL 权限时不能静默保存流程，否则绑定成功但列表状态列仍可能缺失。
             if (bound && !hasFlowStatusDdlPermission()) {
-                continue;
+                throw new BusinessException("缺少同步数据库权限: " + BusinessFlowStatusFieldService.DDL_PERMISSION);
             }
             if (!ensured) {
                 try {
@@ -411,9 +411,9 @@ public class BusinessProcessService {
                     ensured = true;
                     log.debug("业务流程保存时自动创建 flowStatus 字段: objectId={}", subjectObjectId);
                 } catch (Exception exception) {
-                    log.warn("自动创建 flowStatus 字段失败，跳过自动补齐: objectId={}, error={}",
-                            subjectObjectId, exception.getMessage());
-                    return;
+                    log.error("自动同步 flowStatus 字段失败，终止流程保存: objectId={}, error={}",
+                            subjectObjectId, exception.getMessage(), exception);
+                    throw new BusinessException("流程状态字段自动同步失败: " + exception.getMessage());
                 }
             }
             if (bound) {

@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFieldDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
+import com.mdframe.forge.plugin.generator.constant.BusinessObjectDesignStatus;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFieldVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -24,7 +25,7 @@ public class BusinessFlowStatusFieldService {
     public static final String FIELD_CODE = "flowStatus";
     public static final String COLUMN_NAME = "flow_status";
     public static final String DICT_TYPE = "business_flow_status";
-    private static final String DDL_PERMISSION = "ai:lowcode:deploy-ddl";
+    public static final String DDL_PERMISSION = "ai:lowcode:deploy-ddl";
     private static final Set<String> TEXT_TYPES = Set.of("varchar", "char", "text");
 
     private final BusinessObjectDesignerService designerService;
@@ -38,15 +39,24 @@ public class BusinessFlowStatusFieldService {
         }
         BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
         LowcodeFieldSchema existing = findFlowStatusField(context);
+        boolean fieldCreated = existing == null;
         if (existing == null) {
             fieldDesignService.addField(objectId, createField());
             context = designerService.loadContext(objectId);
             existing = findFlowStatusField(context);
         }
         validateCompatible(existing);
+        boolean metadataChanged = normalizeManagedMetadata(existing);
+        if (metadataChanged) {
+            designerService.saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode());
+            context = designerService.loadContext(objectId);
+            existing = findFlowStatusField(context);
+            validateCompatible(existing);
+        }
         ddlService.executeAdditiveColumn(context.getModelSchema(), COLUMN_NAME);
         // 字段已存在时仍要把列表选列补齐：旧 listGridLayout 快照常缺 flowStatus。
-        fieldDesignService.ensureFieldListVisibility(objectId, FIELD_CODE);
+        boolean listVisibilityChanged = fieldDesignService.ensureFieldListVisibility(objectId, FIELD_CODE);
+        markPublishedObjectChanged(objectId, fieldCreated || metadataChanged || listVisibilityChanged);
         return fieldDesignService.listFields(objectId).stream()
                 .filter(field -> FIELD_CODE.equals(field.getFieldCode()))
                 .findFirst()
@@ -103,6 +113,64 @@ public class BusinessFlowStatusFieldService {
         }
         if (StringUtils.isNotBlank(field.getDictType()) && !DICT_TYPE.equals(field.getDictType())) {
             throw new BusinessException("已有 flowStatus 字段使用了其他字典，请改为 " + DICT_TYPE);
+        }
+    }
+
+    /**
+     * 旧版本创建的 flowStatus 可能只有字段名/列名，没有平台托管标识；
+     * 统一补齐元数据后，发布快照和前端运行时才能稳定识别该字段。
+     */
+    private boolean normalizeManagedMetadata(LowcodeFieldSchema field) {
+        if (field == null) {
+            return false;
+        }
+        boolean changed = false;
+        Map<String, Object> advancedProps = field.getAdvancedProps() == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(field.getAdvancedProps());
+        if (!"BUSINESS_FLOW".equals(String.valueOf(advancedProps.get("managedBy")))) {
+            advancedProps.put("managedBy", "BUSINESS_FLOW");
+            changed = true;
+        }
+        if (!Boolean.TRUE.equals(advancedProps.get("managedField"))) {
+            advancedProps.put("managedField", true);
+            changed = true;
+        }
+        if (StringUtils.isBlank(field.getDictType())) {
+            field.setDictType(DICT_TYPE);
+            changed = true;
+        }
+        if (StringUtils.isBlank(field.getFieldStatus())) {
+            field.setFieldStatus("ENABLED");
+            changed = true;
+        }
+        if (field.getListVisible() == null) {
+            field.setListVisible(true);
+            changed = true;
+        }
+        if (changed) {
+            field.setAdvancedProps(advancedProps);
+        }
+        return changed;
+    }
+
+    /**
+     * 确保已发布对象在流程字段被重新确认后进入可重新发布状态；
+     * 否则应用发布器会把对象误判为无变更并复用旧版本快照。
+     */
+    private void markPublishedObjectChanged(Long objectId, boolean repaired) {
+        BusinessObjectDesignerService.DesignerContext latest = designerService.loadContext(objectId);
+        if (latest == null || latest.getObject() == null || latest.getConfig() == null) {
+            return;
+        }
+        Integer draftVersion = latest.getConfig().getDraftVersion();
+        Integer publishedVersion = latest.getConfig().getPublishedVersion();
+        boolean draftAheadOfPublished = draftVersion != null && publishedVersion != null
+                && draftVersion > publishedVersion;
+        if (BusinessObjectDesignStatus.PUBLISHED.matches(latest.getObject().getDesignStatus())
+                && "PUBLISHED".equals(latest.getConfig().getPublishStatus())
+                && (repaired || draftAheadOfPublished)) {
+            designerService.saveDraft(latest, BusinessObjectDesignStatus.CHANGED.getCode());
         }
     }
 
