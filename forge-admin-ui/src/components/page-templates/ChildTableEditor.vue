@@ -256,6 +256,19 @@ const props = defineProps({
 
 const emit = defineEmits(['update:value', 'rowAction', 'toolbarAction'])
 
+const SELECTION_CONTROL_TYPES = new Set([
+  'select',
+  'dictSelect',
+  'objectReference',
+  'recordSelector',
+  'treeSelect',
+  'cascader',
+  'customSelect',
+  'regionTreeSelect',
+  ...USER_SELECT_FIELD_TYPES,
+  ...ORG_SELECT_FIELD_TYPES,
+])
+
 const route = useRoute()
 const localValue = ref({})
 const selectorVisible = ref(false)
@@ -442,19 +455,6 @@ function readOptionalBoolean(...values) {
   }
   return null
 }
-
-const SELECTION_CONTROL_TYPES = new Set([
-  'select',
-  'dictSelect',
-  'objectReference',
-  'recordSelector',
-  'treeSelect',
-  'cascader',
-  'customSelect',
-  'regionTreeSelect',
-  ...USER_SELECT_FIELD_TYPES,
-  ...ORG_SELECT_FIELD_TYPES,
-])
 
 function isInternalIdField(field = {}) {
   const fieldKey = String(field.field || field.fieldCode || field.prop || '').trim()
