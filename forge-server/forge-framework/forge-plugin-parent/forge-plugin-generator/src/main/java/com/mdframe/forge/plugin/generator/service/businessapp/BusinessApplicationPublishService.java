@@ -245,7 +245,9 @@ public class BusinessApplicationPublishService {
                 continue;
             }
             BusinessObjectPublishDTO objectDto = new BusinessObjectPublishDTO();
-            objectDto.setSyncTable(false);
+            // 已发布对象重发时，草稿新增字段的列从未建过（真正发布不再走发布检查的建表），
+            // 有权限就走对象发布的受控同步；改类型/长度等不安全 DDL 仍由发布检查阻断、人工处理。
+            objectDto.setSyncTable(existingVersion != null && hasDdlPermission());
             objectDto.setSyncMenu(false);
             objectDto.setForce(false);
             objectDto.setRemark("由应用协调发布: " + StringUtils.defaultString(dto.getRemark()));
@@ -258,6 +260,14 @@ public class BusinessApplicationPublishService {
         }
         verifyPublishedObjects(objects, selection.getObjectIds(), result);
         return new PublishObjectsResult(run, result);
+    }
+
+    private boolean hasDdlPermission() {
+        try {
+            return SessionHelper.hasPermission("ai:lowcode:deploy-ddl");
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private Map<Long, BusinessApplicationObjectVO> readObjectsFromSnapshot(String snapshotJson) {

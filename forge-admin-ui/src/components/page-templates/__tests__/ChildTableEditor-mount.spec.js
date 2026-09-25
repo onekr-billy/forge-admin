@@ -13,7 +13,7 @@ function mountEditor(fields) {
   return mount(ChildTableEditor, {
     props: {
       value: { order_item: [] },
-      childrenConfig: [{ key: 'order_item', modelCode: 'order_item', label: '明细', fields }],
+      childrenConfig: [{ key: 'order_item', modelCode: 'order_item', label: '明细', sourceField: 'orderId', fields }],
     },
     global: {
       stubs: {
@@ -33,17 +33,20 @@ function mountEditor(fields) {
 }
 
 describe('child table editor column visibility', () => {
-  it('shows selection columns named xxxId but hides plain internal id columns', () => {
+  it('shows business columns named xxxId and hides only primary and foreign keys', () => {
     const wrapper = mountEditor([
+      { field: 'id', label: '主键', type: 'input' },
+      { field: 'order_id', label: '所属订单', type: 'input' },
       { field: 'handlerId', label: '处理人', type: 'userSelect' },
       { field: 'deptId', label: '部门', type: 'orgTreeSelect' },
       { field: 'customerId', label: '客户', type: 'objectReference' },
-      { field: 'sourceId', label: '来源ID', type: 'input' },
+      { field: 'indicatorId', label: '指标ID', type: 'input' },
       { field: 'remark', label: '备注', type: 'input' },
     ])
 
     const headers = wrapper.findAll('th').map(th => th.text())
-    expect(headers).toEqual(expect.arrayContaining(['处理人', '部门', '客户', '备注']))
-    expect(headers).not.toContain('来源ID')
+    expect(headers).toEqual(expect.arrayContaining(['处理人', '部门', '客户', '指标ID', '备注']))
+    expect(headers).not.toContain('主键')
+    expect(headers).not.toContain('所属订单')
   })
 })

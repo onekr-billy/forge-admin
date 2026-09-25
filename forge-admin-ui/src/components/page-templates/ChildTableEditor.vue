@@ -217,7 +217,6 @@ import { buildChildRowActionContext } from '@/components/ai-form/business-action
 import { resolveControlProps } from '@/components/ai-form/control-props'
 import { createFieldEventRuntime } from '@/components/ai-form/field-event-runtime'
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig } from '@/components/ai-form/record-selector-utils'
-import { ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from '@/components/ai-form/selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionValues } from '@/components/ai-form/selection-multi-value'
 import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
 import { hasRuntimeVisibilityRules, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
@@ -256,19 +255,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:value', 'rowAction', 'toolbarAction'])
 
-const SELECTION_CONTROL_TYPES = new Set([
-  'select',
-  'dictSelect',
-  'objectReference',
-  'recordSelector',
-  'treeSelect',
-  'cascader',
-  'customSelect',
-  'regionTreeSelect',
-  ...USER_SELECT_FIELD_TYPES,
-  ...ORG_SELECT_FIELD_TYPES,
-])
-
 const route = useRoute()
 const localValue = ref({})
 const selectorVisible = ref(false)
@@ -279,7 +265,7 @@ const rowEventStates = reactive({})
 const normalizedChildren = computed(() => (props.childrenConfig || [])
   .map(child => ({
     ...child,
-    fields: (child.fields || []).filter(field => field && field.field && isChildEditorFieldVisible(field)),
+    fields: (child.fields || []).filter(field => field && field.field && isChildEditorFieldVisible(field, child)),
   }))
   .filter(child => child.fields.length))
 
@@ -425,7 +411,7 @@ function resolveActionButtonType(action = {}) {
   return ['primary', 'info', 'success', 'warning', 'error'].includes(type) ? type : 'primary'
 }
 
-function isChildEditorFieldVisible(field = {}) {
+function isChildEditorFieldVisible(field = {}, child = {}) {
   const hasVisibilityRules = hasRuntimeVisibilityRules(field)
   if (!hasVisibilityRules && (
     field.hidden === true || field.visible === false || field.formVisible === false
@@ -441,7 +427,7 @@ function isChildEditorFieldVisible(field = {}) {
   )
   if (explicitChildVisible !== null)
     return explicitChildVisible
-  if (isInternalIdField(field))
+  if (isInternalIdField(field, child))
     return false
   return true
 }
@@ -456,22 +442,26 @@ function readOptionalBoolean(...values) {
   return null
 }
 
-function isInternalIdField(field = {}) {
-  const fieldKey = String(field.field || field.fieldCode || field.prop || '').trim()
-  const columnKey = String(field.columnName || field.column || field.dbColumn || '').trim()
-  const label = String(field.label || field.title || field.fieldName || '').trim()
-  if (!fieldKey)
+/**
+ * 只隐藏主键、系统字段和指向主表的外键。不能按「xxxId / 标题以 ID 结尾」判断：
+ * 人员、部门、引用、「指标ID」这类业务列都会这样命名，用户在设计器选了却看不到。
+ */
+function isInternalIdField(field = {}, child = {}) {
+  const keys = [field.field, field.fieldCode, field.sourceField, field.columnName]
+    .map(value => normalizeFieldKey(value))
+    .filter(Boolean)
+  if (!keys.length)
     return false
-  if (fieldKey.toLowerCase() === 'id')
+  if (keys.includes('id') || field.systemField === true || field.primaryKey === true)
     return true
-  // 人员/部门/引用等字段常命名为 xxxId，它们是业务选择列，不是内部主外键
-  if (SELECTION_CONTROL_TYPES.has(String(field.type || field.componentType || '').trim()))
-    return false
-  if (fieldKey.endsWith('Id') || fieldKey.endsWith('ID'))
-    return true
-  if (/_id$/i.test(fieldKey) || /_id$/i.test(columnKey))
-    return true
-  return Boolean(label) && label.toUpperCase().replace(/\s+/g, '').endsWith('ID')
+  const foreignKeys = [child.sourceField, child.foreignKey, child.foreignKeyField, child.relationField]
+    .map(value => normalizeFieldKey(value))
+    .filter(Boolean)
+  return foreignKeys.some(key => keys.includes(key))
+}
+
+function normalizeFieldKey(value) {
+  return String(value ?? '').trim().replace(/_/g, '').toLowerCase()
 }
 
 function rowsFor(child) {
