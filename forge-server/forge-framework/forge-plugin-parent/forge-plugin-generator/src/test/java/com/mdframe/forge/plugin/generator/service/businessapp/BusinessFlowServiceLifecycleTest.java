@@ -31,6 +31,7 @@ class BusinessFlowServiceLifecycleTest {
 
     private BusinessFlowService service;
     private BusinessFlowInstanceLinkMapper linkMapper;
+    private AiCrudConfigMapper crudConfigMapper;
     private DynamicCrudService dynamicCrudService;
     private AiBusinessFlowInstanceLink link;
 
@@ -38,7 +39,7 @@ class BusinessFlowServiceLifecycleTest {
     void setUp() {
         linkMapper = mock(BusinessFlowInstanceLinkMapper.class);
         dynamicCrudService = mock(DynamicCrudService.class);
-        AiCrudConfigMapper crudConfigMapper = mock(AiCrudConfigMapper.class);
+        crudConfigMapper = mock(AiCrudConfigMapper.class);
         AiCrudConfig runtimeConfig = new AiCrudConfig();
         runtimeConfig.setConfigKey("order_runtime");
         runtimeConfig.setObjectCode("order");
@@ -136,6 +137,25 @@ class BusinessFlowServiceLifecycleTest {
         service.handleFlowEngineEvent(event);
         assertEquals("CANCELED", link.getFlowStatus());
         org.junit.jupiter.api.Assertions.assertNotNull(link.getEndTime());
+        verify(dynamicCrudService).updateInternalFieldsByIdAllowDraft(
+                "order_runtime", 9001L, Map.of("flowStatus", "CANCELED"));
+        verify(linkMapper).updateById(link);
+    }
+
+    @Test
+    @DisplayName("terminal callback repairs a draft-started flow when no published runtime exists")
+    void canceledEventWritesDraftRecordWithoutPublishedRuntime() {
+        org.mockito.Mockito.reset(crudConfigMapper);
+        AiCrudConfig draftConfig = new AiCrudConfig();
+        draftConfig.setConfigKey("order_runtime");
+        when(crudConfigMapper.selectRuntimeByObjectCodeOrConfigKey(1L, "order_runtime"))
+                .thenReturn(draftConfig);
+
+        FlowEventContext event = FlowEventContext.builder().event(FlowCallback.ON_CANCELED)
+                .tenantId(1L).processInstanceId("flow-instance-1").businessKey("order:9001").build();
+        service.handleFlowEngineEvent(event);
+
+        assertEquals("CANCELED", link.getFlowStatus());
         verify(dynamicCrudService).updateInternalFieldsByIdAllowDraft(
                 "order_runtime", 9001L, Map.of("flowStatus", "CANCELED"));
         verify(linkMapper).updateById(link);

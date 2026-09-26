@@ -44,7 +44,6 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessTaskFormContext
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,10 +53,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 
 import java.time.LocalDateTime;
@@ -73,8 +69,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
@@ -89,12 +83,9 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @FlowBind(modelKey = "*", businessType = "lowcode-business")
 public class BusinessFlowService {
 
-    private static final String FLOW_START_LOCK_PREFIX = "forge:business-flow:start:";
-    private static final long FLOW_START_LOCK_WAIT_SECONDS = 5L;
     /** 应用页 formKey → schema 解析短缓存，避免每次 detail 整包 options。 */
     private static final long APPLICATION_PAGE_FORM_CACHE_TTL_MS = 300_000L;
     private static final ThreadLocal<Map<String, Long>> TASK_FORM_DETAIL_STAGES = new ThreadLocal<>();
@@ -155,7 +146,40 @@ public class BusinessFlowService {
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ObjectProvider<RedissonClient> redissonClientProvider;
     private final ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider;
-    private final Map<String, ReentrantLock> localFlowStartLocks = new ConcurrentHashMap<>();
+    private final BusinessFlowStartLockManager startLockManager = new BusinessFlowStartLockManager();
+    private final BusinessRuntimeConfigResolver runtimeConfigResolver;
+    private final BusinessFlowStatusRepairService statusRepairService;
+
+    public BusinessFlowService(BusinessBindingMapper bindingMapper,
+                               BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
+                               AiCrudConfigMapper crudConfigMapper,
+                               BusinessObjectMapper businessObjectMapper,
+                               BusinessDocumentConfigService documentConfigService,
+                               BusinessDocumentRuntimeService documentRuntimeService,
+                               DynamicCrudService dynamicCrudService,
+                               BusinessFieldDesignService businessFieldDesignService,
+                               BusinessFlowVariableResolver variableResolver,
+                               BusinessCodeFormProviderRegistry codeFormProviderRegistry,
+                               ApplicationEventPublisher applicationEventPublisher,
+                               ObjectProvider<RedissonClient> redissonClientProvider,
+                               ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider) {
+        this.bindingMapper = bindingMapper;
+        this.flowInstanceLinkMapper = flowInstanceLinkMapper;
+        this.crudConfigMapper = crudConfigMapper;
+        this.businessObjectMapper = businessObjectMapper;
+        this.documentConfigService = documentConfigService;
+        this.documentRuntimeService = documentRuntimeService;
+        this.dynamicCrudService = dynamicCrudService;
+        this.businessFieldDesignService = businessFieldDesignService;
+        this.variableResolver = variableResolver;
+        this.codeFormProviderRegistry = codeFormProviderRegistry;
+        this.applicationEventPublisher = applicationEventPublisher;
+        this.redissonClientProvider = redissonClientProvider;
+        this.actionExecutionServiceProvider = actionExecutionServiceProvider;
+        this.runtimeConfigResolver = new BusinessRuntimeConfigResolver(crudConfigMapper, this::resolveTenantId);
+        this.statusRepairService = new BusinessFlowStatusRepairService(
+                runtimeConfigResolver, dynamicCrudService, documentConfigService);
+    }
 
     /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
     public Map<String, Object> getFlowStartConfig(String modelKey) {
@@ -6383,8 +6407,9 @@ public class BusinessFlowService {
                 ? resolvePublishedRuntimeConfig(link.getTenantId(), link.getObjectCode())
                 : null;
         Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
-        AiCrudConfig statusRuntimeConfig = resolveStatusWriteConfig(link, startVariables, runtimeConfig);
-        String currentStatusKey = resolveCurrentDocumentStatusKey(
+        AiCrudConfig statusRuntimeConfig = statusRepairService.resolveStatusWriteConfig(
+                link, startVariables, runtimeConfig);
+        String currentStatusKey = statusRepairService.resolveCurrentDocumentStatusKey(
                 link, documentConfig, statusRuntimeConfig, startVariables);
         if (targetStatusKey.equals(currentStatusKey)) {
             return;
@@ -6395,11 +6420,12 @@ public class BusinessFlowService {
         AiBusinessBinding binding = selectMainFlowBindingForConfig(link.getTenantId(), link.getObjectCode());
         JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
         ensureBusinessBinding(bindingConfig, link.getTenantId(), link.getObjectCode());
-        if (StringUtils.isBlank(configuredStatusField(startVariables))) {
+        if (StringUtils.isBlank(statusRepairService.configuredStatusField(startVariables))) {
             updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig,
                     link.getRecordId(), targetStatusKey);
         }
-        syncConfiguredStatusField(statusRuntimeConfig, link.getRecordId(), startVariables, targetStatusKey);
+        statusRepairService.syncConfiguredStatusField(
+                statusRuntimeConfig, link.getRecordId(), startVariables, targetStatusKey);
     }
 
     /**
@@ -6422,51 +6448,6 @@ public class BusinessFlowService {
         link.setResult(null);
         link.setEndTime(null);
         flowInstanceLinkMapper.updateById(link);
-    }
-
-    /**
-     * 反查单据当前状态对应的标准状态键。无法判定时返回 {@code null}，由调用方按“允许写入”处理。
-     */
-    private String resolveCurrentDocumentStatusKey(AiBusinessFlowInstanceLink link,
-                                                   AiBusinessDocumentConfig documentConfig,
-                                                   AiCrudConfig statusRuntimeConfig,
-                                                   Map<String, Object> startVariables) {
-        String statusField = configuredStatusField(startVariables);
-        if (StringUtils.isNotBlank(statusField)) {
-            // 独立 flowStatus 字段直接存标准状态键，不需要反查映射。
-            return textValue(readRecordField(
-                    statusRuntimeConfig == null ? null : statusRuntimeConfig.getConfigKey(),
-                    link.getRecordId(), statusField));
-        }
-        if (documentConfig == null || StringUtils.isBlank(documentConfig.getStatusField())) {
-            return null;
-        }
-        String storedValue = textValue(readRecordField(
-                documentConfig.getConfigKey(), link.getRecordId(), documentConfig.getStatusField()));
-        if (StringUtils.isBlank(storedValue)) {
-            return null;
-        }
-        for (Map.Entry<String, String> entry : documentConfigService.toVO(documentConfig)
-                .getStatusMapping().entrySet()) {
-            if (storedValue.equals(entry.getValue())) {
-                return entry.getKey();
-            }
-        }
-        return null;
-    }
-
-    private Object readRecordField(String configKey, Long recordId, String field) {
-        if (StringUtils.isAnyBlank(configKey, field) || recordId == null) {
-            return null;
-        }
-        try {
-            Map<String, Object> record = dynamicCrudService.selectByIdAllowDraft(configKey, recordId);
-            return record == null ? null : record.get(field);
-        } catch (Exception e) {
-            log.debug("[低代码流程回调] 读取单据状态失败: configKey={}, recordId={}, field={}, error={}",
-                    configKey, recordId, field, e.getMessage());
-            return null;
-        }
     }
 
     private BusinessFlowRuntimeVO startDocumentFlowInternal(BusinessFlowStartDTO dto,
@@ -6625,10 +6606,11 @@ public class BusinessFlowService {
 
         AiCrudConfig statusRuntimeConfig = runtimeConfig != null
                 ? runtimeConfig : resolvePublishedRuntimeConfig(tenantId, objectCode);
-        if (StringUtils.isBlank(configuredStatusField(dto.getVariables()))) {
+        if (StringUtils.isBlank(statusRepairService.configuredStatusField(dto.getVariables()))) {
             updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         }
-        syncConfiguredStatusField(statusRuntimeConfig, dto.getRecordId(), dto.getVariables(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
+        statusRepairService.syncConfiguredStatusField(statusRuntimeConfig,
+                dto.getRecordId(), dto.getVariables(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         return toRuntimeVO(link, "流程已发起");
     }
 
@@ -6646,91 +6628,7 @@ public class BusinessFlowService {
     private BusinessFlowRuntimeVO executeWithFlowStartLock(Long tenantId,
                                                            String businessKey,
                                                            Supplier<BusinessFlowRuntimeVO> supplier) {
-        String lockKey = buildFlowStartLockKey(tenantId, businessKey);
-        FlowStartLockHandle lockHandle = acquireFlowStartLock(lockKey);
-        boolean unlockInFinally = true;
-        try {
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                unlockInFinally = false;
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCompletion(int status) {
-                        unlockFlowStartLock(lockHandle);
-                    }
-                });
-            }
-            return supplier.get();
-        } finally {
-            if (unlockInFinally) {
-                unlockFlowStartLock(lockHandle);
-            }
-        }
-    }
-
-    private FlowStartLockHandle acquireFlowStartLock(String lockKey) {
-        RedissonClient redissonClient = redissonClientProvider.getIfAvailable();
-        if (redissonClient != null) {
-            RLock lock = redissonClient.getLock(lockKey);
-            try {
-                if (!lock.tryLock(FLOW_START_LOCK_WAIT_SECONDS, TimeUnit.SECONDS)) {
-                    throw new BusinessException("流程正在发起，请勿重复提交");
-                }
-                return new FlowStartLockHandle(lockKey, lock, null);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new BusinessException("流程发起锁等待被中断，请稍后重试");
-            }
-        }
-
-        ReentrantLock localLock = localFlowStartLocks.computeIfAbsent(lockKey, key -> new ReentrantLock());
-        try {
-            if (!localLock.tryLock(FLOW_START_LOCK_WAIT_SECONDS, TimeUnit.SECONDS)) {
-                throw new BusinessException("流程正在发起，请勿重复提交");
-            }
-            return new FlowStartLockHandle(lockKey, null, localLock);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException("流程发起锁等待被中断，请稍后重试");
-        }
-    }
-
-    private void unlockFlowStartLock(FlowStartLockHandle lockHandle) {
-        if (lockHandle == null) {
-            return;
-        }
-        RLock redissonLock = lockHandle.redissonLock();
-        if (redissonLock != null) {
-            try {
-                if (redissonLock.isHeldByCurrentThread()) {
-                    redissonLock.unlock();
-                }
-            } catch (Exception e) {
-                log.warn("[低代码流程启动] 释放流程发起分布式锁失败: lockKey={}, error={}",
-                        lockHandle.lockKey(), e.getMessage());
-            }
-            return;
-        }
-
-        ReentrantLock localLock = lockHandle.localLock();
-        if (localLock != null && localLock.isHeldByCurrentThread()) {
-            localLock.unlock();
-            if (!localLock.isLocked() && !localLock.hasQueuedThreads()) {
-                localFlowStartLocks.remove(lockHandle.lockKey(), localLock);
-            }
-        }
-    }
-
-    private String buildFlowStartLockKey(Long tenantId, String businessKey) {
-        return FLOW_START_LOCK_PREFIX
-                + safeLockToken(tenantId) + ":"
-                + safeLockToken(businessKey);
-    }
-
-    private String safeLockToken(Object value) {
-        if (value == null) {
-            return "null";
-        }
-        return String.valueOf(value).replaceAll("[^A-Za-z0-9:_-]", "_");
+        return startLockManager.execute(tenantId, businessKey, redissonClientProvider, supplier);
     }
 
     private void handleFlowCallbackInternal(AiBusinessFlowInstanceLink link, BusinessFlowCallbackDTO dto) {
@@ -6760,11 +6658,13 @@ public class BusinessFlowService {
                 : dynamicCrudService.selectById(configKey, link.getRecordId());
         String result = normalizeCallbackResult(dto);
         Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
-        AiCrudConfig statusRuntimeConfig = resolveStatusWriteConfig(link, startVariables, runtimeConfig);
-        if (StringUtils.isBlank(configuredStatusField(startVariables))) {
+        AiCrudConfig statusRuntimeConfig = statusRepairService.resolveStatusWriteConfig(
+                link, startVariables, runtimeConfig);
+        if (StringUtils.isBlank(statusRepairService.configuredStatusField(startVariables))) {
             updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), result);
         }
-        syncConfiguredStatusField(statusRuntimeConfig, link.getRecordId(), startVariables, result);
+        statusRepairService.syncConfiguredStatusField(
+                statusRuntimeConfig, link.getRecordId(), startVariables, result);
 
         link.setFlowStatus(result);
         link.setResult(result);
@@ -7052,19 +6952,11 @@ public class BusinessFlowService {
     }
 
     private AiCrudConfig resolvePublishedRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
-        if (StringUtils.isBlank(objectCodeOrConfigKey)) {
-            return null;
-        }
-        return crudConfigMapper.selectPublishedByObjectCodeOrConfigKey(
-                tenantId != null ? tenantId : resolveTenantId(), objectCodeOrConfigKey);
+        return runtimeConfigResolver.published(tenantId, objectCodeOrConfigKey);
     }
 
     private AiCrudConfig resolveRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
-        if (StringUtils.isBlank(objectCodeOrConfigKey)) {
-            return null;
-        }
-        return crudConfigMapper.selectRuntimeByObjectCodeOrConfigKey(
-                tenantId != null ? tenantId : resolveTenantId(), objectCodeOrConfigKey);
+        return runtimeConfigResolver.runtime(tenantId, objectCodeOrConfigKey);
     }
 
     private String normalizeCallbackResult(BusinessFlowCallbackDTO dto) {
@@ -7444,81 +7336,10 @@ public class BusinessFlowService {
             return;
         }
         Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
-        syncConfiguredStatusField(resolveStatusWriteConfig(link, startVariables, null),
+        AiCrudConfig statusRuntimeConfig = statusRepairService.resolveStatusWriteConfig(
+                link, startVariables, null);
+        statusRepairService.syncConfiguredStatusField(statusRuntimeConfig,
                 link.getRecordId(), startVariables, result);
-    }
-
-    /**
-     * 发起时允许草稿运行配置写 flowStatus。结束回调必须走同一条路，
-     * 不能只查已发布配置，否则未发布对象会一直停在审批中。
-     */
-    private AiCrudConfig resolveStatusWriteConfig(AiBusinessFlowInstanceLink link,
-                                                  Map<String, Object> startVariables,
-                                                  AiCrudConfig preferred) {
-        if (preferred != null && StringUtils.isNotBlank(preferred.getConfigKey())) {
-            return preferred;
-        }
-        String snapshotConfigKey = startVariables == null ? null : textValue(startVariables.get("configKey"));
-        String lookup = StringUtils.firstNonBlank(snapshotConfigKey, link == null ? null : link.getObjectCode());
-        Long tenantId = link == null ? null : link.getTenantId();
-        AiCrudConfig published = resolvePublishedRuntimeConfig(tenantId, lookup);
-        if (published != null) {
-            return published;
-        }
-        String objectCode = link == null ? null : link.getObjectCode();
-        if (StringUtils.isNotBlank(objectCode) && !StringUtils.equals(lookup, objectCode)) {
-            published = resolvePublishedRuntimeConfig(tenantId, objectCode);
-            if (published != null) {
-                return published;
-            }
-        }
-        AiCrudConfig draft = resolveRuntimeConfig(tenantId, lookup);
-        if (draft != null) {
-            return draft;
-        }
-        return resolveRuntimeConfig(tenantId, objectCode);
-    }
-
-    private void syncConfiguredStatusField(AiCrudConfig runtimeConfig,
-                                           Long recordId,
-                                           Map<String, Object> variables,
-                                           String statusKey) {
-        if (runtimeConfig == null || StringUtils.isBlank(runtimeConfig.getConfigKey()) || recordId == null) {
-            return;
-        }
-        String statusField = configuredStatusField(variables);
-        if (StringUtils.isBlank(statusField)) {
-            return;
-        }
-        Map<String, Object> updateData = new LinkedHashMap<>();
-        updateData.put(statusField, statusKey);
-        // 与流程关联状态在同一事务内提交；失败必须交由回调层处理，不能吞掉异常继续更新 link。
-        dynamicCrudService.updateInternalFieldsByIdAllowDraft(runtimeConfig.getConfigKey(), recordId, updateData);
-    }
-
-    private String configuredStatusField(Map<String, Object> variables) {
-        String statusField = firstNonBlankText(
-                variables == null ? null : variables.get("flowStatusField"),
-                variables == null ? null : variables.get("statusField"));
-        if (StringUtils.isBlank(statusField)) {
-            return "";
-        }
-        if (!Set.of("flowStatus", "flow_status").contains(statusField)) {
-            throw new BusinessException("流程状态字段必须使用独立字段 flowStatus");
-        }
-        return statusField;
-    }
-
-    private String firstNonBlankText(Object... values) {
-        if (values == null) {
-            return "";
-        }
-        for (Object value : values) {
-            if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
-                return String.valueOf(value).trim();
-            }
-        }
-        return "";
     }
 
     private String resolveBusinessSummary(BusinessObjectVO object,
@@ -9153,11 +8974,6 @@ public class BusinessFlowService {
     private record BindingLookupResult(AiBusinessBinding binding,
                                        String matchedObjectCode,
                                        List<String> candidates) {
-    }
-
-    private record FlowStartLockHandle(String lockKey,
-                                       RLock redissonLock,
-                                       ReentrantLock localLock) {
     }
 
     private record BusinessKeyParts(String objectCode, Long recordId) {
