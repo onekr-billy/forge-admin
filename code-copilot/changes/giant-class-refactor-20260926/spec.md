@@ -60,7 +60,9 @@
 
 第二十八个切口使用 Assembler，把对象设计器、运行配置和字段注册表三类业务表单资产的收集、去重补全、运行态 schema 回退及字段目录标准化迁入 `BusinessFlowFormAssetAssembler`。入口仍查询租户内对象/运行配置并合并应用页与代码 Provider 资产，Assembler 通过窄回调复用既有布局和子表字段编译规则。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 6456 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十九个切口使用 Resolver + Cache-Aside，把应用草稿页面/表单资产定位、稳定 formKey 编解码、旧 CRUD 页面单一默认资产兼容和应用/表单两级短缓存迁入 `BusinessFlowApplicationPageFormResolver`。入口通过 Supplier 提供当前可选应用服务，并保留租户、性能阶段记录和任务权限边界。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 6002 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

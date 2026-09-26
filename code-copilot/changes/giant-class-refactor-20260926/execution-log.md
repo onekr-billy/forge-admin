@@ -143,3 +143,9 @@
 - 使用 Assembler 从 `BusinessFlowService` 迁出对象设计器、运行配置和字段注册表表单资产的收集、去重补全、运行态 schema 回退及字段目录标准化到 `BusinessFlowFormAssetAssembler`；通过窄回调复用原运行态布局与子表字段目录规则。入口由 7014 行降至 6456 行，新 Assembler 654 行，均未引入 Flowable、数据库查询或保存副作用。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。首轮回归发现旧测试仍反射已迁移的字段注册表资产方法，改为直接验证 Assembler 后重跑；最终执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowFormAssetAssemblerTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowFormFieldCatalogTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 33 项，0 失败、0 错误，退出码 0。
 - `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实应用页、对象设计器与运行配置混合资产的端到端联调仍需服务环境，无服务 PID 需停止。
+
+## 2026-09-26 第二十九个切口：应用页面表单资产解析
+
+- 使用 Resolver + Cache-Aside 从 `BusinessFlowService` 迁出应用草稿页面/表单资产定位、稳定 formKey 编解码、旧 CRUD 页面单一默认资产兼容和应用 builder/表单资产两级短缓存到 `BusinessFlowApplicationPageFormResolver`。入口由 6456 行降至 6002 行，新 Resolver 530 行；可选的应用服务通过 Supplier 延迟获取，保留既有字段注入兼容性。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowApplicationPageFormResolverTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowFormAssetAssemblerTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 32 项，0 失败、0 错误，退出码 0。性能契约同步验证 Resolver 内的缓存与直接定位路径，而非要求实现继续位于 Facade 源文件。
+- `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实应用草稿切换、缓存过期和多租户页面解析仍需服务级联调，无服务 PID 需停止。

@@ -28,12 +28,15 @@ class BusinessFlowPerformanceContractTest {
     @Test
     void businessTaskContextMustReuseRuntimeConfigAndSlimFormAssets() throws IOException {
         String source = serviceSource();
+        String applicationPageResolver = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowApplicationPageFormResolver.java"));
 
         assertTrue(source.contains("safeGetRuntimeConfig(runtime.configKey())"));
         assertTrue(source.contains("slimTaskFormAssets("));
-        assertTrue(source.contains("applicationPageFormAssetCache"));
+        assertTrue(source.contains("applicationPageFormResolver"));
+        assertTrue(applicationPageResolver.contains("pageAssetCache"));
         assertTrue(source.contains("[task-form-context]"));
-        assertTrue(source.contains("loadInAppBuilder("));
+        assertTrue(applicationPageResolver.contains("loadInAppBuilder("));
         assertTrue(source.contains("selectById(runtimeConfig, runtime.recordId())"));
         assertTrue(source.contains("runtime.publishedConfig()"));
         assertTrue(source.contains("runtime.businessObject()"));
@@ -41,13 +44,14 @@ class BusinessFlowPerformanceContractTest {
         assertTrue(source.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
         assertTrue(source.contains("bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
         assertTrue(source.contains("processFormRpc=skip(queryOrVarFormKey)"));
-        assertTrue(source.contains("loadCachedInAppBuilder("));
+        assertTrue(applicationPageResolver.contains("loadCachedInAppBuilder("));
         assertTrue(source.contains("pageAssetMs"));
         assertTrue(source.contains("businessContextMs"));
         assertTrue(source.contains("collectTaskFormAssets=skip(appFormKey)"));
-        assertTrue(source.contains("parseApplicationPageFormKey("));
-        assertTrue(source.contains("findApplicationFormAsset("));
-        assertFalse(source.contains("appendRuntimeChildFieldCatalog(StringUtils.trimToNull(objectRef.getString(\"configKey\")), fields)"));
+        assertTrue(applicationPageResolver.contains("parseApplicationPageFormKey("));
+        assertTrue(applicationPageResolver.contains("findApplicationFormAsset("));
+        assertFalse(applicationPageResolver.contains(
+                "appendRuntimeChildFieldCatalog(StringUtils.trimToNull(objectRef.getString(\"configKey\")), fields)"));
     }
 
     @Test
