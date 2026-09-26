@@ -30,9 +30,12 @@ class BusinessFlowPerformanceContractTest {
         String source = serviceSource();
         String applicationPageResolver = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowApplicationPageFormResolver.java"));
+        String taskFormSchemaAssembler = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormSchemaAssembler.java"));
 
-        assertTrue(source.contains("safeGetRuntimeConfig(runtime.configKey())"));
-        assertTrue(source.contains("slimTaskFormAssets("));
+        assertTrue(source.contains("taskFormSchemaAssembler.safeGetRuntimeConfig(runtime.configKey())"));
+        assertTrue(taskFormSchemaAssembler.contains("slimTaskFormAssets("));
+        assertTrue(source.contains("taskFormSchemaAssembler::applyRuntimeCrudFormLayout"));
         assertTrue(source.contains("applicationPageFormResolver"));
         assertTrue(applicationPageResolver.contains("pageAssetCache"));
         assertTrue(source.contains("[task-form-context]"));

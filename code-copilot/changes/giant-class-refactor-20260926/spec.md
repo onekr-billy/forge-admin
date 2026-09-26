@@ -62,7 +62,9 @@
 
 第二十九个切口使用 Resolver + Cache-Aside，把应用草稿页面/表单资产定位、稳定 formKey 编解码、旧 CRUD 页面单一默认资产兼容和应用/表单两级短缓存迁入 `BusinessFlowApplicationPageFormResolver`。入口通过 Supplier 提供当前可选应用服务，并保留租户、性能阶段记录和任务权限边界。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 6002 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第三十个切口进行任务表单成块拆分：使用 Policy Object 将主表字段可见/可写/必填、只读投影和保存白名单迁入 `BusinessFlowTaskFormPolicy`；使用 Assembler 将设计器/发布态 schema、运行布局和轻量资产迁入 `BusinessFlowTaskFormSchemaAssembler`，将设计器子表、发布态关系和字段注册表合并迁入 `BusinessFlowTaskChildAssembler`；使用 Coordinator 将代码表单 Provider 查询/保存、元数据过滤和节点权限投影迁入 `BusinessFlowCodeFormCoordinator`。`BusinessFlowService` 继续持有公开 API、事务、任务访问校验、业务记录保存、Flowable 调用和状态机，不形成 Service 循环依赖。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 由 6002 行降至 4236 行，单轮减少 1766 行，但仍需继续拆分到 1000 行以内。第三十轮新增生产类分别为 477、658、626、267 行，均未超限。其他目标类未完成，不视为已优化。
 
 ## 验收
 

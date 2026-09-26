@@ -180,3 +180,12 @@
 - P0：将应用草稿页面/表单资产定位、稳定 formKey 编解码、旧 CRUD 页面默认资产兼容与两级短缓存迁入独立 Resolver；新增单测覆盖直接引用、单一默认资产、稳定 key 解析、schema 构建和缓存命中。
 - P1：重跑表单资产、任务上下文和性能契约测试；执行 generator Reactor 编译、`git diff --check` 与类行数检查。
 - Resolver 只读取应用设计快照并返回副本，入口仍负责租户业务对象解析、代码 Provider 合并及任务权限；不保存应用、不修改流程状态，不启动服务。
+## 2026-09-26 第三十轮增量验证：任务表单大块拆分
+
+- P0：`BusinessFlowService` 的待办/已办表单查询、暂存、代码表单 Provider、低代码主子表权限和必填校验行为保持不变。
+- P0：BPMN 节点 `fieldPermissions` / `childPermissions` 继续作为服务端可读、可写、必填权限真源；只读上下文不得重新开放写权限。
+- P0：事务注解、流程状态机、Flowable 调用和回调顺序不迁移到普通辅助对象。
+- P1：表单 schema/layout、子表装配、代码表单协调、字段权限分别进入职责明确的组件；所有新增生产类少于 1000 行。
+- P1：本轮目标一次性将 `BusinessFlowService` 减少至少 1500 行，并更新源码契约测试，不保留仅为测试服务的旧私有转发方法。
+- 验证顺序：`git diff --check`、generator Reactor 编译、任务表单/子表/代码 Provider/生命周期/性能契约定向测试。
+- 本轮仍不启动 Admin/Flow 服务、不连接 MySQL/Redis/Flowable；真实审批页面与流程端到端由既有分工在服务环境验证。
