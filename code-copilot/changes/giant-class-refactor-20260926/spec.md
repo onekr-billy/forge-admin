@@ -50,7 +50,9 @@
 
 第二十三个切口把代码应用 Provider 表单资产与绑定元数据的合并、非公开字段过滤、资产移除标记及预览编译迁入 `BusinessCodeAppFormAssetMerger`。入口仍负责租户绑定读取、Provider 调用和运行时审批权限执行；只迁移无状态资产装配规则。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 8082 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十四个切口把业务流程绑定的 DTO/JSON 兼容编解码、默认业务表绑定、发起模式与变量映射归一化迁入 `BusinessFlowBindingCodec`。入口仍负责租户内配置查询、保存事务及状态字段同步；节点表单配置的持久化所有权不变。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7860 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

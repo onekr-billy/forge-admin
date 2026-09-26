@@ -38,7 +38,8 @@ class BusinessFlowPerformanceContractTest {
         assertTrue(source.contains("runtime.publishedConfig()"));
         assertTrue(source.contains("runtime.businessObject()"));
         assertTrue(source.contains("resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig)"));
-        assertTrue(source.contains("ensureBusinessBinding(bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
+        assertTrue(source.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
+        assertTrue(source.contains("bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
         assertTrue(source.contains("processFormRpc=skip(queryOrVarFormKey)"));
         assertTrue(source.contains("loadCachedInAppBuilder("));
         assertTrue(source.contains("pageAssetMs"));
@@ -90,7 +91,7 @@ class BusinessFlowPerformanceContractTest {
         assertTrue(method.contains("documentRuntimeService.validateStartAllowed("));
         assertTrue(method.contains("resolveFlowBusinessKeyForStart(businessKey, latestLink)"));
         assertTrue(method.contains("resolveNextRoundNo(latestLink)"));
-        assertTrue(method.contains("ensureBusinessBinding(bindingConfig, runtimeConfig, documentConfig)"));
+        assertTrue(method.contains("BusinessFlowBindingCodec.ensureBusinessBinding(bindingConfig, runtimeConfig, documentConfig)"));
     }
 
     private String serviceSource() throws IOException {
