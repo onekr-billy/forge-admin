@@ -70,3 +70,9 @@
 - 从 `LowcodeRuntimeConfigBuilder` 提取列表布局块的字段设置与属性、嵌套表单规则、画布元素和通用区域定位到无状态 `RuntimeDesignerLayoutReader`；入口由 2077 行降至 1924 行，新组件 179 行。原字段设置覆盖顺序、搜索区 `searchFieldSettings` 优先级、表格全局对齐回退和运行时 JSON 字段不变。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeDesignerLayoutReaderTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：3 类共 27 项，0 失败、0 错误，退出码 0。
 - 未启动 Admin 服务或连接真实数据库；本轮不改设计态持久化、发布或动态 SQL。完整线上配置发布验收仍需服务级环境。
+
+## 2026-09-26 第十七个切口：表单规则运行时映射
+
+- 从 `LowcodeRuntimeConfigBuilder` 提取 form-create 组件类型、必填/验证规则、样式与网格跨度映射到无状态 `RuntimeFormRuleSettingResolver`；入口由 1924 行降至 1724 行，新组件 227 行。保留原字段设置覆盖顺序，网格列数仅在规则声明 `col` 时按需解析。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeFormRuleSettingResolverTest,RuntimeDesignerLayoutReaderTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：4 类共 30 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
+- 未启动 Admin 服务或连接真实数据库；真实设计器保存/发布/编辑联调仍未覆盖，本轮无服务 PID 需停止。

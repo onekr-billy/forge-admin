@@ -17,5 +17,6 @@
 - [x] 将 Flowable 事件/通知监听器及监控服务的纯解析/渲染/视图职责迁出，使三个入口分别低于 1000 行。
 - [x] 提取 Flowable 模型 BPMN 文本规范化与部署预检，使 `FlowModelServiceImpl` 低于 1000 行，并补模型及版本定向回归。
 - [x] 提取运行时设计器布局块、表单规则和画布元数据读取，补配置协议回归。
+- [x] 提取 form-create 字段规则和必填验证映射，保持网格跨度计算时机并补定向回归。
 - [ ] 继续压缩 `LowcodeRuntimeConfigBuilder` 与 `BusinessFlowService` 至 1000 行以内，并完成服务级联调。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

@@ -102,3 +102,9 @@
 - P0：迁出列表布局块属性/字段设置读取、表单规则和画布元素遍历；新增单测覆盖 AiCrudPage 搜索字段配置优先于表格字段配置、表格全局对齐回退、嵌套表单规则及画布字段读取。
 - P1：重跑 `LowcodeRuntimeConfigBuilderTest` 和 `GeneratedLowcodeRuntimeConfigBuilderTest`，确认搜索/表格/编辑 JSON 协议；generator Reactor 编译、`git diff --check` 和入口行数复核。
 - 只移动设计态元数据读取，不修改页面布局持久化、发布、动态 SQL 或字段权限；不启动服务。
+
+## 第十七轮增量验证：表单规则字段设置
+
+- P0：迁出 form-create 规则的组件标识、必填开关与验证规则合成、样式及网格跨度映射；新增单测覆盖必填文案/默认触发、显式关闭必填、嵌套组件标识与网格跨度。
+- P1：重跑 `LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest` 和布局读取测试；generator Reactor 编译、`git diff --check` 与入口行数复核。
+- 不修改原 form-create 规则和发布协议，不改变动态查询、保存或真实页面布局；不启动服务。

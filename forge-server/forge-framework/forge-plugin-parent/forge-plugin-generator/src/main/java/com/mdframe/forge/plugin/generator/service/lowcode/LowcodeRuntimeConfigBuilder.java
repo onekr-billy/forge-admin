@@ -48,6 +48,11 @@ import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeDesigner
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeDesignerLayoutReader.resolveGridFieldSetting;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeDesignerLayoutReader.runtimeSettingBlockTypes;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeDesignerLayoutReader.text;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.booleanWithDefault;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.firstPresent;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.integerValue;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.intValue;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.resolveFormRuleSetting;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeTreeConfigBuilder.buildTreeConfig;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeTreeConfigBuilder.buildTreeOptionSource;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeTreeConfigBuilder.extractTreeConfigOverrides;
@@ -1001,7 +1006,8 @@ public class LowcodeRuntimeConfigBuilder {
 
     private Map<String, Object> resolveEditFieldSetting(LowcodePageSchema pageSchema, String fieldName) {
         Map<String, Object> setting = new LinkedHashMap<>(resolveFieldSetting(pageSchema, "edit", fieldName));
-        Map<String, Object> designerSetting = resolveFormRuleSetting(pageSchema, fieldName);
+        Map<String, Object> designerSetting = resolveFormRuleSetting(
+                pageSchema, fieldName, () -> resolveEditGridCols(pageSchema));
         setting.putAll(designerSetting);
         Map<String, Object> canvasSetting = resolveCanvasFieldSetting(pageSchema, fieldName);
         setting.putAll(canvasSetting);
@@ -1037,138 +1043,6 @@ public class LowcodeRuntimeConfigBuilder {
             return setting;
         }
         return Map.of();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> resolveFormRuleSetting(LowcodePageSchema pageSchema, String fieldName) {
-        if (StringUtils.isBlank(fieldName)) {
-            return Map.of();
-        }
-        for (Map<String, Object> rule : extractFormRules(pageSchema)) {
-            if (!fieldName.equals(text(rule.get("field")))) {
-                continue;
-            }
-            Map<String, Object> setting = new LinkedHashMap<>();
-            Object props = rule.get("props");
-            if (props instanceof Map<?, ?> propsMap) {
-                setting.put("props", new LinkedHashMap<>((Map<String, Object>) propsMap));
-            }
-            String componentType = extractForgeComponentType(rule);
-            if (StringUtils.isNotBlank(componentType)) {
-                setting.put("componentType", componentType);
-            }
-            String dictType = text(getNestedValue(rule, "props.dictType"));
-            if (StringUtils.isNotBlank(dictType)) {
-                setting.put("dictType", dictType);
-            }
-            Object requiredSwitch = rule.get("$required");
-            List<Map<String, Object>> validationRules = copyRuleList(rule.get("validate"));
-            boolean requiredFromSwitch = isRequiredSwitchEnabled(requiredSwitch);
-            boolean required = requiredFromSwitch
-                    || validationRules.stream().anyMatch(item -> booleanWithDefault(item.get("required"), false));
-            if (required) {
-                setting.put("required", true);
-                String requiredMessage = requiredFromSwitch && requiredSwitch instanceof String message && StringUtils.isNotBlank(message)
-                        ? message
-                        : validationRules.stream()
-                        .filter(item -> booleanWithDefault(item.get("required"), false))
-                        .map(item -> text(item.get("message")))
-                        .filter(StringUtils::isNotBlank)
-                        .findFirst()
-                        .orElse("");
-                if (StringUtils.isNotBlank(requiredMessage)) {
-                    setting.put("requiredMessage", requiredMessage);
-                }
-                if (requiredFromSwitch && validationRules.stream().noneMatch(item -> booleanWithDefault(item.get("required"), false))) {
-                    Map<String, Object> requiredRule = new LinkedHashMap<>();
-                    requiredRule.put("required", true);
-                    requiredRule.put("message", StringUtils.defaultIfBlank(requiredMessage, "该字段为必填项"));
-                    requiredRule.put("trigger", List.of("blur", "change"));
-                    validationRules.add(0, requiredRule);
-                }
-            } else if (requiredSwitch != null) {
-                setting.put("required", false);
-                validationRules.removeIf(item -> booleanWithDefault(item.get("required"), false));
-            }
-            if (!validationRules.isEmpty()) {
-                setting.put("rules", validationRules);
-            }
-            Object style = rule.get("style");
-            if (style != null) {
-                setting.put("componentStyle", style);
-            }
-            Object className = firstPresent(rule.get("className"), rule.get("class"));
-            if (className != null) {
-                setting.put("formItemClass", className);
-            }
-            Object forgeLayout = getNestedValue(rule, "_forge.layout");
-            if (forgeLayout instanceof Map<?, ?> layoutMap) {
-                Object align = layoutMap.get("align");
-                if (align != null) {
-                    setting.put("align", align);
-                }
-                Object forgeLabelWidth = layoutMap.get("labelWidth");
-                if (forgeLabelWidth != null) {
-                    setting.put("labelWidth", forgeLabelWidth);
-                }
-            }
-            Object col = rule.get("col");
-            if (col instanceof Map<?, ?> colMap) {
-                int gridCols = resolveEditGridCols(pageSchema);
-                Integer span = integerValue(colMap.get("span"));
-                if (span != null && span > 0) {
-                    int gridSpan = (int) Math.ceil(gridCols * Math.min(24, span) / 24.0);
-                    setting.put("span", Math.max(1, Math.min(gridCols, gridSpan)));
-                }
-                Object gridStyle = colMap.get("style");
-                if (gridStyle != null) {
-                    setting.put("gridStyle", gridStyle);
-                }
-            }
-            Object labelWidth = rule.get("labelWidth");
-            if (labelWidth != null) {
-                setting.put("labelWidth", labelWidth);
-            }
-            return setting;
-        }
-        return Map.of();
-    }
-
-    private String extractForgeComponentType(Map<String, Object> rule) {
-        String componentKey = text(getNestedValue(rule, "_forge.componentKey"));
-        if (StringUtils.isNotBlank(componentKey)) {
-            return componentKey;
-        }
-        String dragTag = text(rule.get("_fc_drag_tag"));
-        if (StringUtils.isBlank(dragTag)) {
-            return null;
-        }
-        return switch (dragTag) {
-            case "forgeDictSelect" -> "dictSelect";
-            case "forgeRegionTreeSelect" -> "regionTreeSelect";
-            case "forgeOrgTreeSelect" -> "orgTreeSelect";
-            case "forgeUserSelect" -> "userSelect";
-            case "forgeFileUpload" -> "fileUpload";
-            case "forgeImageUpload" -> "imageUpload";
-            case "forgeObjectReference" -> "objectReference";
-            case "forgeRecordSelector" -> "recordSelector";
-            case "forgeSubTable" -> "subTable";
-            default -> null;
-        };
-    }
-
-    private Object getNestedValue(Map<String, Object> source, String path) {
-        if (source == null || StringUtils.isBlank(path)) {
-            return null;
-        }
-        Object current = source;
-        for (String segment : path.split("\\.")) {
-            if (!(current instanceof Map<?, ?> map)) {
-                return null;
-            }
-            current = map.get(segment);
-        }
-        return current;
     }
 
     private Map<String, Object> buildEditField(LowcodeFieldSchema field) {
@@ -1426,18 +1300,6 @@ public class LowcodeRuntimeConfigBuilder {
         }
     }
 
-    private Object firstPresent(Object... values) {
-        if (values == null) {
-            return null;
-        }
-        for (Object value : values) {
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
-    }
-
     private Object firstNonBlank(Object... values) {
         if (values == null) {
             return null;
@@ -1448,31 +1310,6 @@ public class LowcodeRuntimeConfigBuilder {
             }
         }
         return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> copyRuleList(Object source) {
-        if (!(source instanceof List<?> list)) {
-            return new ArrayList<>();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> map) {
-                result.add(new LinkedHashMap<>((Map<String, Object>) map));
-            }
-        }
-        return result;
-    }
-
-    private boolean isRequiredSwitchEnabled(Object value) {
-        if (value == null) {
-            return false;
-        }
-        if (value instanceof String text && StringUtils.isNotBlank(text)
-                && !"false".equalsIgnoreCase(text) && !"0".equals(text)) {
-            return true;
-        }
-        return booleanWithDefault(value, false);
     }
 
     @SuppressWarnings("unchecked")
@@ -1785,24 +1622,6 @@ public class LowcodeRuntimeConfigBuilder {
         return null;
     }
 
-    private Boolean booleanValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        return Boolean.parseBoolean(String.valueOf(value));
-    }
-
-    private boolean booleanWithDefault(Object value, boolean defaultValue) {
-        Boolean bool = booleanValue(value);
-        return bool == null ? defaultValue : bool;
-    }
-
     private boolean readDesignerLayoutFlag(Object formDesignerSchema, String key) {
         Object schema = formDesignerSchema;
         if (schema instanceof String text && StringUtils.isNotBlank(text)) {
@@ -1872,25 +1691,6 @@ public class LowcodeRuntimeConfigBuilder {
     private boolean isActiveField(LowcodeFieldSchema field) {
         String status = StringUtils.defaultString(field == null ? null : field.getFieldStatus());
         return !"DISABLED".equalsIgnoreCase(status) && !"HIDDEN".equalsIgnoreCase(status);
-    }
-
-    private Integer integerValue(Object value) {
-        if (value == null || StringUtils.isBlank(String.valueOf(value))) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        Integer parsed = integerValue(value);
-        return parsed == null ? defaultValue : parsed;
     }
 
     private String safeKey(String value) {

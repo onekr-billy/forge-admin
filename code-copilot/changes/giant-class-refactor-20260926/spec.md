@@ -36,7 +36,9 @@
 
 第十六个切口从 `LowcodeRuntimeConfigBuilder` 迁出设计器列表布局块、搜索/表格字段设置、表单规则和画布元素读取到无状态 `RuntimeDesignerLayoutReader`。运行配置入口仍负责字段解析、选项覆盖与最终序列化，不更改设计态持久化协议或运行时 JSON 字段。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1924 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第十七个切口继续迁出 form-create 规则到运行时字段设置的转换，由 `RuntimeFormRuleSettingResolver` 处理组件标识、必填开关和验证规则、样式及网格跨度。原入口保留表单字段组装和网格列数解析；网格列数使用延迟回调保持原计算时机。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1724 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
