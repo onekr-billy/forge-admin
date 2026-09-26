@@ -19,7 +19,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,7 +34,7 @@ class BusinessFlowServicePrintIdentityTest {
     private BusinessFlowService service;
     private BusinessProcessRunMapper processRuns;
     private BusinessApplicationObjectMapper applicationObjects;
-    private Method attachPrintRuntimeIdentity;
+    private BusinessFlowTaskFormContextCoordinator contextCoordinator;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -58,10 +57,7 @@ class BusinessFlowServicePrintIdentityTest {
         applicationObjects = mock(BusinessApplicationObjectMapper.class);
         setField("businessProcessRunMapper", processRuns);
         setField("businessApplicationObjectMapper", applicationObjects);
-        attachPrintRuntimeIdentity = BusinessFlowService.class.getDeclaredMethod(
-                "attachPrintRuntimeIdentity", BusinessTaskFormContextVO.class,
-                BusinessTaskFormContextQueryDTO.class);
-        attachPrintRuntimeIdentity.setAccessible(true);
+        contextCoordinator = (BusinessFlowTaskFormContextCoordinator) getField("taskFormContextCoordinator");
     }
 
     @AfterEach
@@ -117,8 +113,8 @@ class BusinessFlowServicePrintIdentityTest {
     }
 
     private BusinessTaskFormContextVO attach(BusinessTaskFormContextVO context,
-                                              BusinessTaskFormContextQueryDTO query) throws Exception {
-        return (BusinessTaskFormContextVO) attachPrintRuntimeIdentity.invoke(service, context, query);
+                                              BusinessTaskFormContextQueryDTO query) {
+        return contextCoordinator.attachPrintRuntimeIdentity(context, query);
     }
 
     private BusinessTaskFormContextVO context(String processInstanceId,
@@ -135,5 +131,11 @@ class BusinessFlowServicePrintIdentityTest {
         Field field = BusinessFlowService.class.getDeclaredField(name);
         field.setAccessible(true);
         field.set(service, value);
+    }
+
+    private Object getField(String name) throws Exception {
+        Field field = BusinessFlowService.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(service);
     }
 }

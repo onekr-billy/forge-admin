@@ -13,7 +13,6 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessBinding;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessDocumentConfig;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
-import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowWithdrawDTO;
 import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
@@ -32,7 +31,6 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
-import com.mdframe.forge.plugin.generator.service.businessapp.taskform.TaskFormUiDocumentCompiler;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessBindingSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
@@ -53,12 +51,10 @@ import org.redisson.api.RedissonClient;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.defaultBusinessBinding;
@@ -96,9 +92,6 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.snakeToCamel;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.buildBusinessKey;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.parseBusinessKey;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.firstStrongTaskFormControlType;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.normalizeTaskFormFieldType;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.resolveTaskFormControlType;
 
 /**
  * 业务流程服务。
@@ -113,8 +106,6 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 @FlowBind(modelKey = "*", businessType = "lowcode-business")
 public class BusinessFlowService {
 
-    private static final ThreadLocal<Map<String, Long>> TASK_FORM_DETAIL_STAGES = new ThreadLocal<>();
-    private static final ThreadLocal<List<String>> TASK_FORM_DETAIL_NOTES = new ThreadLocal<>();
     private static final BusinessFlowStartContextAssembler START_CONTEXT_ASSEMBLER =
             BusinessFlowStartContextAssembler.standard();
     private static final BusinessFlowTaskAccessPolicy TASK_ACCESS_POLICY =
@@ -171,9 +162,11 @@ public class BusinessFlowService {
     private final BusinessFlowFormAssetAssembler formAssetAssembler;
     private final BusinessFlowTaskChildAssembler taskChildAssembler;
     private final BusinessFlowCodeFormCoordinator codeFormCoordinator;
+    private final BusinessFlowTaskFormProfiler taskFormProfiler = new BusinessFlowTaskFormProfiler();
     private final BusinessFlowApplicationPageFormResolver applicationPageFormResolver;
     private final BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
     private final BusinessFlowRuntimeContextResolver businessRuntimeContextResolver;
+    private final BusinessFlowTaskFormContextCoordinator taskFormContextCoordinator;
     private final BusinessFlowListDisplayEnricher businessListDisplayEnricher;
     private final BusinessFlowStartCoordinator startCoordinator;
     private final BusinessFlowTaskEventCoordinator taskEventCoordinator;
@@ -229,15 +222,15 @@ public class BusinessFlowService {
                 () -> businessApplicationService,
                 businessObjectMapper,
                 this::resolveTenantId,
-                this::markTaskFormDetail,
-                this::noteTaskFormDetail);
+                taskFormProfiler::mark,
+                taskFormProfiler::note);
         this.taskNodeFormResolver = new BusinessFlowTaskNodeFormResolver(
                 () -> flowClient,
                 applicationPageFormResolver,
                 TASK_CHILD_POLICY,
                 this::collectTaskFormAssets,
-                this::markTaskFormDetail,
-                this::noteTaskFormDetail);
+                taskFormProfiler::mark,
+                taskFormProfiler::note);
         this.businessRuntimeContextResolver = new BusinessFlowRuntimeContextResolver(
                 runtimeConfigResolver,
                 documentConfigService,
@@ -247,8 +240,28 @@ public class BusinessFlowService {
                 taskNodeFormResolver,
                 this::resolveTenantId,
                 flowBindingResolver::selectForConfig,
-                this::markTaskFormDetail,
-                this::noteTaskFormDetail);
+                taskFormProfiler::mark,
+                taskFormProfiler::note);
+        this.taskFormContextCoordinator = new BusinessFlowTaskFormContextCoordinator(
+                () -> flowClient,
+                taskNodeFormResolver,
+                businessRuntimeContextResolver,
+                TASK_ACCESS_POLICY,
+                TASK_FORM_POLICY,
+                taskFormSchemaAssembler,
+                taskChildAssembler,
+                TASK_CHILD_POLICY,
+                codeFormCoordinator,
+                dynamicCrudService,
+                taskFormProfiler,
+                this::resolveTenantId,
+                this::resolveUserId,
+                () -> businessProcessRunMapper,
+                () -> businessApplicationObjectMapper,
+                this::queryBusinessObject,
+                this::toBusinessObjectVO,
+                this::resolveBusinessFormSchema,
+                this::resolveBusinessSummary);
         this.businessListDisplayEnricher = new BusinessFlowListDisplayEnricher(
                 this::resolveTenantId,
                 flowInstanceLinkMapper,
@@ -600,26 +613,7 @@ public class BusinessFlowService {
      * 查询待办任务对应的业务表单上下文。
      */
     public BusinessTaskFormContextVO getTaskFormContext(BusinessTaskFormContextQueryDTO query) {
-        BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        long startedAt = System.nanoTime();
-        Map<String, Long> stages = new LinkedHashMap<>();
-        beginTaskFormProfiling(stages);
-        try {
-            long mark = System.nanoTime();
-            Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(effectiveQuery.getTaskId());
-            stages.put("flowFormInfoMs", elapsedMillis(mark));
-            mark = System.nanoTime();
-            validateTaskAccess(effectiveQuery, false, taskFormInfo);
-            stages.put("accessMs", elapsedMillis(mark));
-            mark = System.nanoTime();
-            TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(
-                    effectiveQuery, false, taskFormInfo);
-            stages.put("runtimeContextMs", elapsedMillis(mark));
-            return attachPrintRuntimeIdentity(
-                    buildTaskFormContext(effectiveQuery, runtime, taskFormInfo, stages, startedAt), effectiveQuery);
-        } finally {
-            endTaskFormProfiling();
-        }
+        return taskFormContextCoordinator.getTaskFormContext(query);
     }
 
     /**
@@ -629,47 +623,14 @@ public class BusinessFlowService {
      * 候选但未签收的任务不会被视为可办理任务。</p>
      */
     public BusinessTaskFormContextVO getActionableTaskFormContext(BusinessTaskFormContextQueryDTO query) {
-        BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        long startedAt = System.nanoTime();
-        Map<String, Long> stages = new LinkedHashMap<>();
-        beginTaskFormProfiling(stages);
-        try {
-            long mark = System.nanoTime();
-            Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(effectiveQuery.getTaskId());
-            stages.put("flowFormInfoMs", elapsedMillis(mark));
-            mark = System.nanoTime();
-            validateTaskAccess(effectiveQuery, true, taskFormInfo);
-            stages.put("accessMs", elapsedMillis(mark));
-            mark = System.nanoTime();
-            TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(
-                    effectiveQuery, true, taskFormInfo);
-            stages.put("runtimeContextMs", elapsedMillis(mark));
-            return attachPrintRuntimeIdentity(
-                    buildTaskFormContext(effectiveQuery, runtime, taskFormInfo, stages, startedAt), effectiveQuery);
-        } finally {
-            endTaskFormProfiling();
-        }
+        return taskFormContextCoordinator.getActionableTaskFormContext(query);
     }
 
     /**
      * 查询历史/已办场景下的业务表单上下文，只用于只读展示，不校验运行中待办任务身份。
      */
     public BusinessTaskFormContextVO getTaskFormReadonlyContext(BusinessTaskFormContextQueryDTO query) {
-        BusinessTaskFormContextQueryDTO effectiveQuery = query == null ? new BusinessTaskFormContextQueryDTO() : query;
-        long startedAt = System.nanoTime();
-        Map<String, Long> stages = new LinkedHashMap<>();
-        beginTaskFormProfiling(stages);
-        try {
-            long mark = System.nanoTime();
-            TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(effectiveQuery, false);
-            stages.put("runtimeContextMs", elapsedMillis(mark));
-            BusinessTaskFormContextVO context = attachPrintRuntimeIdentity(
-                    buildTaskFormContext(effectiveQuery, runtime, Map.of(), stages, startedAt), effectiveQuery);
-            TASK_FORM_POLICY.makeReadonly(context);
-            return context;
-        } finally {
-            endTaskFormProfiling();
-        }
+        return taskFormContextCoordinator.getTaskFormReadonlyContext(query);
     }
 
     /**
@@ -700,61 +661,11 @@ public class BusinessFlowService {
         JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
         TaskFormSaveResult saveResult = persistTaskFormData(dto, query, runtime, nodeForm);
         if (saveResult.context() != null) {
-            return attachPrintRuntimeIdentity(saveResult.context(), query);
+            return taskFormContextCoordinator.attachPrintRuntimeIdentity(saveResult.context(), query);
         }
-        return attachPrintRuntimeIdentity(
-                buildTaskFormContext(query, saveResult.runtime(), taskFormInfo, new LinkedHashMap<>(), System.nanoTime()), query);
-    }
-
-    private BusinessTaskFormContextVO attachPrintRuntimeIdentity(
-            BusinessTaskFormContextVO context,
-            BusinessTaskFormContextQueryDTO query) {
-        if (context == null) {
-            return null;
-        }
-        if (query != null) {
-            if (StringUtils.isBlank(context.getProcessInstanceId())) {
-                context.setProcessInstanceId(StringUtils.trimToNull(query.getProcessInstanceId()));
-            }
-            if (StringUtils.isBlank(context.getObjectCode())) {
-                context.setObjectCode(StringUtils.trimToNull(query.getObjectCode()));
-            }
-            if (StringUtils.isBlank(context.getConfigKey())) {
-                context.setConfigKey(StringUtils.trimToNull(query.getConfigKey()));
-            }
-        }
-
-        Long tenantId = resolveTenantId();
-        String processInstanceId = StringUtils.trimToNull(context.getProcessInstanceId());
-        AiBusinessProcessRun run = businessProcessRunMapper == null || processInstanceId == null
-                ? null
-                : businessProcessRunMapper.selectByProcessInstanceId(tenantId, processInstanceId);
-        if (run != null) {
-            context.setProcessRunId(run.getId());
-            if (run.getApplicationId() != null) {
-                String runApplicationId = String.valueOf(run.getApplicationId());
-                if (StringUtils.isNotBlank(context.getApplicationId())
-                        && !StringUtils.equals(context.getApplicationId(), runApplicationId)) {
-                    context.getWarnings().add("流程运行应用身份与表单页面不一致，打印将使用流程运行版本");
-                }
-                context.setApplicationId(runApplicationId);
-            }
-        }
-
-        String objectCode = StringUtils.trimToNull(context.getObjectCode());
-        if (StringUtils.isBlank(context.getApplicationId())
-                && objectCode != null
-                && businessApplicationObjectMapper != null) {
-            List<Long> applicationIds = businessApplicationObjectMapper
-                    .selectPublishedApplicationIdsByObjectIdentity(
-                            tenantId, objectCode, StringUtils.trimToNull(context.getConfigKey()));
-            if (applicationIds != null && applicationIds.size() == 1) {
-                context.setApplicationId(String.valueOf(applicationIds.get(0)));
-            } else if (applicationIds != null && applicationIds.size() > 1) {
-                context.getWarnings().add("业务对象归属多个已发布应用，无法确定流程打印模板范围");
-            }
-        }
-        return context;
+        return taskFormContextCoordinator.attachPrintRuntimeIdentity(
+                taskFormContextCoordinator.buildTaskFormContext(
+                        query, saveResult.runtime(), taskFormInfo), query);
     }
 
     private TaskFormSaveResult persistTaskFormData(BusinessTaskFormSaveDTO dto,
@@ -1195,219 +1106,6 @@ public class BusinessFlowService {
         TASK_ACCESS_POLICY.validate(query, writeRequired, task, flowClient != null, resolveUserId());
     }
 
-    private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
-                                                           TaskFormRuntimeContext runtime,
-                                                           Map<String, Object> taskFormInfo) {
-        return buildTaskFormContext(query, runtime, taskFormInfo, new LinkedHashMap<>(), System.nanoTime());
-    }
-
-    private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
-                                                           TaskFormRuntimeContext runtime,
-                                                           Map<String, Object> taskFormInfo,
-                                                           Map<String, Long> preStages,
-                                                           long startedAt) {
-        Map<String, Long> stages = preStages == null ? new LinkedHashMap<>() : preStages;
-        BusinessTaskFormContextVO vo = new BusinessTaskFormContextVO();
-        vo.setTaskId(StringUtils.trimToNull(query.getTaskId()));
-        vo.setBusinessKey(runtime.businessKey());
-        vo.setProcessInstanceId(StringUtils.trimToNull(query.getProcessInstanceId()));
-        vo.setProcessDefKey(StringUtils.trimToNull(query.getProcessDefKey()));
-        vo.setTaskDefKey(StringUtils.trimToNull(query.getTaskDefKey()));
-        vo.setObjectCode(runtime.objectCode());
-        vo.setRecordId(runtime.recordId());
-        vo.setConfigKey(runtime.configKey());
-        vo.setFormType("none");
-        if (taskFormInfo != null && !taskFormInfo.isEmpty()) {
-            vo.setTaskFormInfo(new LinkedHashMap<>(taskFormInfo));
-        }
-
-        if (StringUtils.isBlank(runtime.objectCode())) {
-            vo.getWarnings().add("未解析到业务对象");
-            logTaskFormContextTiming(query, runtime, null, stages, startedAt);
-            return vo;
-        }
-
-        long mark = System.nanoTime();
-        JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
-        stages.put("nodeFormMs", elapsedMillis(mark));
-        if (nodeForm == null || nodeForm.isEmpty()) {
-            vo.getWarnings().add("当前节点未配置业务表单策略");
-            logTaskFormContextTiming(query, runtime, null, stages, startedAt);
-            return vo;
-        }
-        String formMode = normalizeNodeFormMode(nodeForm.getString("formMode"));
-        if (!"BUSINESS_OBJECT_FORM".equals(formMode)) {
-            if ("BUSINESS_CODE_FORM".equals(formMode)) {
-                BusinessTaskFormContextVO codeContext = codeFormCoordinator.build(
-                        query,
-                        nodeForm,
-                        runtime.objectCode(),
-                        runtime.recordId(),
-                        runtime.businessKey(),
-                        runtime.configKey());
-                logTaskFormContextTiming(query, runtime, codeContext.getFormKey(), stages, startedAt);
-                return codeContext;
-            }
-            vo.setFormType(formMode);
-            vo.setFormKey(StringUtils.trimToNull(nodeForm.getString("formKey")));
-            vo.setFormName(StringUtils.trimToNull(nodeForm.getString("formName")));
-            vo.setProviderKey(StringUtils.trimToNull(nodeForm.getString("providerKey")));
-            vo.setFormUrl(StringUtils.trimToNull(nodeForm.getString("formUrl")));
-            vo.setEditMode(normalizeNodeEditMode(nodeForm.getString("editMode")));
-            vo.setFormRef(readNestedObject(nodeForm.get("formRef")));
-            taskFormSchemaAssembler.applyPageFormIdentity(vo, vo.getFormRef());
-            TASK_FORM_POLICY.applyApprovalPolicy(vo, nodeForm);
-            vo.getWarnings().add("当前节点表单类型暂不由低代码业务表单渲染: " + formMode);
-            logTaskFormContextTiming(query, runtime, vo.getFormKey(), stages, startedAt);
-            return vo;
-        }
-        if (StringUtils.isBlank(runtime.configKey())) {
-            vo.getWarnings().add("业务对象缺少已发布运行配置，无法加载低代码业务表单");
-            logTaskFormContextTiming(query, runtime, null, stages, startedAt);
-            return vo;
-        }
-
-        String formKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(query.getFormKey()),
-                StringUtils.trimToNull(nodeForm.getString("formKey")));
-
-        // 优先复用运行上下文解析器已加载的对象 / 发布配置，避免再查库
-        mark = System.nanoTime();
-        AiCrudConfig runtimeConfig = runtime.publishedConfig() != null
-                ? runtime.publishedConfig()
-                : taskFormSchemaAssembler.safeGetRuntimeConfig(runtime.configKey());
-        JSONObject runtimeOptions = runtimeConfig == null ? new JSONObject() : readJsonObject(runtimeConfig.getOptions());
-        stages.put("runtimeConfigMs", elapsedMillis(mark));
-
-        mark = System.nanoTime();
-        BusinessObjectVO object = runtime.businessObject() != null
-                ? toBusinessObjectVO(runtime.businessObject())
-                : queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
-        stages.put("businessObjectMs", elapsedMillis(mark));
-        vo.setBusinessObjectName(object == null ? runtime.objectCode() : object.getObjectName());
-
-        mark = System.nanoTime();
-        JSONObject formSchema = resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig);
-        stages.put("formSchemaMs", elapsedMillis(mark));
-        if (formSchema.isEmpty()) {
-            vo.getWarnings().add("未找到节点引用的低代码表单资产: " + formKey);
-            logTaskFormContextTiming(query, runtime, formKey, stages, startedAt);
-            return vo;
-        }
-
-        mark = System.nanoTime();
-        List<Map<String, Object>> fieldCatalog = taskFormSchemaAssembler.resolveBusinessTaskCrudPageFields(
-                runtime.configKey(), formKey, formSchema, runtimeConfig, runtimeOptions);
-        taskChildAssembler.enrichTaskMainFieldsFromObjectRegistry(fieldCatalog, object);
-        List<Map<String, Object>> permissions = TASK_FORM_POLICY.normalizePermissions(
-                fieldCatalog, normalizeFieldPermissions(nodeForm.get("fieldPermissions")));
-        List<Map<String, Object>> fields = TASK_FORM_POLICY.buildFields(fieldCatalog, permissions);
-        stages.put("fieldsMs", elapsedMillis(mark));
-
-        mark = System.nanoTime();
-        Map<String, Object> recordData = runtime.recordId() == null
-                ? businessRuntimeContextResolver.loadTaskVariablesAsRecord(query, taskFormInfo)
-                : (runtimeConfig == null
-                ? dynamicCrudService.selectById(runtime.configKey(), runtime.recordId())
-                : dynamicCrudService.selectById(runtimeConfig, runtime.recordId()));
-        Map<String, Object> visibleRecordData = TASK_FORM_POLICY.filterVisibleRecordData(recordData, fields);
-        stages.put("recordMs", elapsedMillis(mark));
-
-        mark = System.nanoTime();
-        List<Map<String, Object>> childrenConfig = taskChildAssembler.resolveBusinessTaskChildrenConfig(
-                runtime.configKey(), nodeForm, runtimeOptions, formSchema);
-        TASK_CHILD_POLICY.logChildren("raw", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
-        TASK_CHILD_POLICY.filterVisibleRecordChildren(visibleRecordData, childrenConfig);
-        TASK_CHILD_POLICY.logChildren("filtered", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
-        stages.put("childrenMs", elapsedMillis(mark));
-
-        vo.setBusinessSummary(resolveBusinessSummary(object, runtime, recordData));
-
-        vo.setConfigured(true);
-        vo.setFormType("business-object");
-        vo.setFormKey(StringUtils.firstNonBlank(formKey, formSchema.getString("formKey")));
-        vo.setFormName(StringUtils.defaultIfBlank(nodeForm.getString("formName"), formSchema.getString("formName")));
-        vo.setViewKey(StringUtils.defaultIfBlank(nodeForm.getString("viewKey"), "default"));
-        vo.setEditMode(TASK_FORM_POLICY.resolveEditMode(nodeForm, permissions));
-        taskFormSchemaAssembler.applyBusinessObjectFormLayout(vo, formSchema, runtimeOptions);
-        vo.setFormRef(readNestedObject(nodeForm.get("formRef")));
-        taskFormSchemaAssembler.applyPageFormIdentity(vo, vo.getFormRef());
-        vo.setFieldPermissions(permissions);
-        vo.setFields(fields);
-
-        mark = System.nanoTime();
-        vo.setFormAssets(taskFormSchemaAssembler.resolveBusinessTaskFormAssets(
-                formSchema, runtime.configKey(), formKey, runtimeOptions));
-        stages.put("formAssetsMs", elapsedMillis(mark));
-
-        vo.setChildrenConfig(childrenConfig);
-        vo.setRecordData(visibleRecordData);
-
-        mark = System.nanoTime();
-        Map<String, Object> uiDocument = TaskFormUiDocumentCompiler.compile(
-                formSchema, vo.getFormKey(), fields, permissions);
-        vo.setProtocolVersion(TaskFormUiDocumentCompiler.PROTOCOL_VERSION);
-        vo.setUiDocument(uiDocument);
-        stages.put("uiDocumentMs", elapsedMillis(mark));
-
-        TASK_FORM_POLICY.applyApprovalPolicy(vo, nodeForm);
-        if (fields.isEmpty()) {
-            vo.getWarnings().add("当前业务表单没有可展示字段");
-        }
-        logTaskFormContextTiming(query, runtime, vo.getFormKey(), stages, startedAt);
-        return vo;
-    }
-
-    private void logTaskFormContextTiming(BusinessTaskFormContextQueryDTO query,
-                                          TaskFormRuntimeContext runtime,
-                                          String formKey,
-                                          Map<String, Long> stages,
-                                          long startedAt) {
-        if (!log.isInfoEnabled()) {
-            return;
-        }
-        List<String> notes = TASK_FORM_DETAIL_NOTES.get();
-        log.info("[task-form-context] taskId={} objectCode={} recordId={} formKey={} totalMs={} stages={} notes={}",
-                query == null ? null : query.getTaskId(),
-                runtime == null ? null : runtime.objectCode(),
-                runtime == null ? null : runtime.recordId(),
-                formKey,
-                elapsedMillis(startedAt),
-                stages,
-                notes == null || notes.isEmpty() ? List.of() : List.copyOf(notes));
-    }
-
-    private void beginTaskFormProfiling(Map<String, Long> stages) {
-        TASK_FORM_DETAIL_STAGES.set(stages);
-        TASK_FORM_DETAIL_NOTES.set(new ArrayList<>());
-    }
-
-    private void endTaskFormProfiling() {
-        TASK_FORM_DETAIL_STAGES.remove();
-        TASK_FORM_DETAIL_NOTES.remove();
-    }
-
-    private void markTaskFormDetail(String key, long startedAtNanos) {
-        Map<String, Long> stages = TASK_FORM_DETAIL_STAGES.get();
-        if (stages == null || StringUtils.isBlank(key)) {
-            return;
-        }
-        stages.merge(key, elapsedMillis(startedAtNanos), Long::sum);
-    }
-
-    private void noteTaskFormDetail(String note) {
-        List<String> notes = TASK_FORM_DETAIL_NOTES.get();
-        if (notes == null || StringUtils.isBlank(note)) {
-            return;
-        }
-        notes.add(note);
-    }
-
-    private static long elapsedMillis(long startedAtNanos) {
-        return Math.max(0L, (System.nanoTime() - startedAtNanos) / 1_000_000L);
-    }
-
-
     private void ensureRuntimeLink(TaskFormRuntimeContext runtime,
                                    BusinessTaskFormContextQueryDTO query,
                                    Long recordId) {
@@ -1566,11 +1264,11 @@ public class BusinessFlowService {
                         StringUtils.trimToNull(applicationSchema.getString("formName")),
                         StringUtils.trimToNull(result.getString("formName"))));
             }
-            noteTaskFormDetail("formSchema=objectDesignerLive");
+            taskFormProfiler.note("formSchema=objectDesignerLive");
             return result;
         }
         if (!applicationSchema.isEmpty()) {
-            noteTaskFormDetail("formSchema=applicationPage");
+            taskFormProfiler.note("formSchema=applicationPage");
             return applicationSchema;
         }
         if (object == null) {

@@ -192,3 +192,9 @@
 - 使用 Resolver + Coordinator 从 `BusinessFlowService` 迁出启用 FLOW/历史 APPROVAL 绑定候选选择，以及记录读取、模型 Key 选择、单据权限校验、启动锁、Flowable 调用、关联落库和运行态写入。公开事务与租户上下文入口留在 Facade；普通、能力、兼容、触发器和业务流程节点的策略显式传给 Coordinator。
 - 入口由 2488 行降至 2165 行；新增 `BusinessFlowBindingResolver` 114 行、`BusinessFlowStartCoordinator` 367 行，均低于 1000 行。generator Reactor 编译退出码 0。
 - 执行 `BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 25 类 112 项，0 失败、0 错误；新增 7 项绑定选择与启动编排行为测试，性能契约改为直接检查 Coordinator。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实委托身份、分布式锁和远端成功后本地回滚恢复仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第三十七个切口：任务表单上下文编排
+
+- 使用 Coordinator + Request Profiler 从 `BusinessFlowService` 迁出待办/可办理/历史只读任务表单查询、Flowable 表单快照复用、运行身份解析、表单类型分派、字段/子表权限投影、UI 文档、打印应用身份和阶段日志。保存事务与动态 CRUD 写入继续留在 Facade。
+- 入口由 2165 行降至 1863 行；新增 `BusinessFlowTaskFormContextCoordinator` 443 行、`BusinessFlowTaskFormProfiler` 48 行，均低于 1000 行。generator Reactor 编译首次发现表单 schema 回退仍写入旧 Facade 备注方法，改为共享 Profiler 后编译退出码 0。
+- 打印身份测试取消反射旧 Facade 私有方法，直接验证 Coordinator；性能契约改为检查 Coordinator 内的一次快照与缓存复用。执行相关 25 类 112 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实历史任务、应用归属冲突与复杂主子表渲染仍需服务级联调，无服务 PID 需停止。

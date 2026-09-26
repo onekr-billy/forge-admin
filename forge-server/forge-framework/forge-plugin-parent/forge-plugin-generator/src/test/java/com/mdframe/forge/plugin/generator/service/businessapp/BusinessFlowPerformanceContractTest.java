@@ -14,13 +14,14 @@ class BusinessFlowPerformanceContractTest {
 
     @Test
     void businessTaskContextMustReuseOneFlowFormSnapshot() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "public BusinessTaskFormContextVO getTaskFormContext", "    /**", 1);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormContextCoordinator.java"));
+        String method = method(source, "private BusinessTaskFormContextVO getActiveTaskFormContext", "    private BusinessTaskFormContextQueryDTO effectiveQuery", 1);
 
         assertTrue(method.contains("Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo"));
-        assertTrue(method.contains("validateTaskAccess(effectiveQuery, false, taskFormInfo)"));
-        assertTrue(method.contains("businessRuntimeContextResolver.resolveTask"));
-        assertTrue(method.contains("effectiveQuery, false, taskFormInfo"));
+        assertTrue(method.contains("taskAccessPolicy.validate("));
+        assertTrue(method.contains("runtimeContextResolver.resolveTask"));
+        assertTrue(method.contains("effectiveQuery, writeRequired, taskFormInfo"));
         assertTrue(method.contains("buildTaskFormContext(effectiveQuery, runtime, taskFormInfo"));
         assertTrue(method.contains("runtimeContextMs"));
         assertFalse(source.contains("flowClient.getTaskDetail("));
@@ -29,6 +30,8 @@ class BusinessFlowPerformanceContractTest {
     @Test
     void businessTaskContextMustReuseRuntimeConfigAndSlimFormAssets() throws IOException {
         String source = serviceSource();
+        String contextCoordinator = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormContextCoordinator.java"));
         String applicationPageResolver = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowApplicationPageFormResolver.java"));
         String nodeFormResolver = Files.readString(resolveSource(
@@ -38,17 +41,18 @@ class BusinessFlowPerformanceContractTest {
         String taskFormSchemaAssembler = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormSchemaAssembler.java"));
 
-        assertTrue(source.contains("taskFormSchemaAssembler.safeGetRuntimeConfig(runtime.configKey())"));
+        assertTrue(contextCoordinator.contains("taskFormSchemaAssembler.safeGetRuntimeConfig(runtime.configKey())"));
         assertTrue(taskFormSchemaAssembler.contains("slimTaskFormAssets("));
         assertTrue(source.contains("taskFormSchemaAssembler::applyRuntimeCrudFormLayout"));
         assertTrue(source.contains("applicationPageFormResolver"));
         assertTrue(applicationPageResolver.contains("pageAssetCache"));
-        assertTrue(source.contains("[task-form-context]"));
+        assertTrue(contextCoordinator.contains("[task-form-context]"));
         assertTrue(applicationPageResolver.contains("loadInAppBuilder("));
-        assertTrue(source.contains("selectById(runtimeConfig, runtime.recordId())"));
-        assertTrue(source.contains("runtime.publishedConfig()"));
-        assertTrue(source.contains("runtime.businessObject()"));
-        assertTrue(source.contains("resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig)"));
+        assertTrue(contextCoordinator.contains("selectById(runtimeConfig, runtime.recordId())"));
+        assertTrue(contextCoordinator.contains("runtime.publishedConfig()"));
+        assertTrue(contextCoordinator.contains("runtime.businessObject()"));
+        assertTrue(contextCoordinator.contains(
+                "formSchemaResolver.resolve(\n                object, formKey, runtime.configKey(), runtimeConfig)"));
         assertTrue(runtimeContextResolver.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
         assertTrue(runtimeContextResolver.contains(
                 "bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));

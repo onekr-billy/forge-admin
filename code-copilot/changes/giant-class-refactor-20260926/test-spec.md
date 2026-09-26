@@ -244,3 +244,12 @@
 - 验证：generator Reactor 编译、业务 Key/启动锁/生命周期/绑定编解码/性能契约回归、`git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：新增 `BusinessFlowBindingResolverTest` 覆盖 FLOW 优先、历史 APPROVAL 回退、规范对象候选回退和停用绑定只读展示；新增 `BusinessFlowStartCoordinatorTest` 覆盖普通启动、能力入口稳定业务 Key、关联先落库再写运行态及运行中流程防重复远程启动。相关 25 类共 112 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。
+
+## 2026-09-26 第三十七轮增量验证：任务表单上下文编排
+
+- P0：待办、可办理、历史只读三类上下文的任务访问校验、Flowable 表单快照复用、运行身份解析与只读投影保持不变。
+- P0：低代码/代码/外链表单分派，字段与子表权限、记录裁剪、UI 文档、打印应用身份及性能阶段日志保持原协议。
+- P1：使用 Facade + Coordinator 迁出任务表单查询和上下文组装，并以独立 Profiler 承担跨 Resolver 的阶段采集；公开 API 保持不变。
+- 验证：generator Reactor 编译、表单资产/子表权限/业务 Key/打印身份/性能契约回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：打印身份测试改为直接验证 Context Coordinator；性能契约改为检查一次 Flowable 表单快照、运行配置/对象复用与跨组件 Profiler。相关 25 类共 112 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。

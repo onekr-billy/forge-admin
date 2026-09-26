@@ -78,6 +78,8 @@
 
 第三十六个切口使用 Resolver + Coordinator，将启用 FLOW/历史 APPROVAL 绑定候选选择迁入 `BusinessFlowBindingResolver`，将记录读取、模型选择、单据发起校验、启动锁、Flowable 调用、流程关联落库和运行态写入迁入 `BusinessFlowStartCoordinator`。五类公开事务入口继续留在 Facade，并显式传递权限、稳定业务 Key 与草稿运行配置策略。入口由 2488 行降至 2165 行；新 Resolver/Coordinator 分别 114/367 行，均低于 1000 行。
 
+第三十七个切口使用 Coordinator + Request Profiler，将待办/可办理/历史只读任务表单查询、Flowable 表单快照复用、运行身份解析、低代码/代码/外链表单分派、字段与子表权限投影、UI 文档及打印应用身份迁入 `BusinessFlowTaskFormContextCoordinator`；跨 Resolver 的阶段与备注采集迁入 `BusinessFlowTaskFormProfiler`。保存事务和业务记录写入仍在 Facade。入口由 2165 行降至 1863 行；新 Coordinator/Profiler 分别 443/48 行，均低于 1000 行。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。
