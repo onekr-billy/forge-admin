@@ -269,3 +269,12 @@
 - P0：正式 FLOW 绑定与历史单据默认流程继续输出相同的主流程完整性摘要和兼容来源。
 - P1：使用 Catalog + Assembler 迁出资产查询、Schema 回退和绑定视图映射，清理仅为旧测试存在的私有转发方法。
 - 验证结果：generator Reactor 编译通过；业务流程相关 25 个测试类共 112 项通过，0 失败、0 错误；`BusinessFlowService` 953 行，新类分别 630/428/123 行，均低于 1000 行。
+
+## 2026-09-26 第四十轮增量验证：动态 CRUD 写入规则引擎
+
+- P0：模型约束、编辑 Schema `unique`、更新时未提交字段回退原值、空值忽略与租户内唯一性查询语义保持不变。
+- P0：显式生成规则优先于约定编码规则，单据编号不重复生成；字段别名、允许写入集和主表 payload 回写保持原顺序。
+- P1：使用 Validator + Policy 分别迁出唯一约束和自动编码/单据号生成；`DynamicCrudService` 保留事务、写入流程和调用顺序。
+- 验证：generator Reactor 编译，动态 CRUD 自动生成/金额/结构化字段/加密/主子表回归，业务流程依赖回归，`git diff --check` 和类行数检查。
+
+验证结果：新增 `DynamicCrudUniquenessValidatorTest` 覆盖模型唯一约束归一化、部分更新未改字段跳过及编辑 Schema 唯一声明；动态 CRUD 与业务流程相关 35 个测试类共 148 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 5642 行，新类 444/553 行。

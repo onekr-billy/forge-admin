@@ -39,5 +39,6 @@
 - [x] 提取主流程启动 Coordinator 与绑定 Resolver，集中模型选择、锁、Flowable 调用、关联落库和状态写入，使 `BusinessFlowService` 降至 2165 行。
 - [x] 提取任务表单上下文 Coordinator 与请求 Profiler，集中表单分派、权限投影、打印身份和性能采集，使 `BusinessFlowService` 降至 1863 行。
 - [x] 提取任务命令 Coordinator、表单资产 Catalog 与绑定视图 Assembler，使 `BusinessFlowService` 降至 953 行。
+- [x] 提取动态 CRUD 唯一约束 Validator 与自动编码/单据号 Policy，使 `DynamicCrudService` 降至 5642 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

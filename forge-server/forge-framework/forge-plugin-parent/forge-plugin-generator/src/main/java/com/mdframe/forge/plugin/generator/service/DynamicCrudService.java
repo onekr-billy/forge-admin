@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessDocumentConfig;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryConditionDTO;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryExecuteDTO;
@@ -19,7 +18,6 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePrimaryKeyStrategy;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRelationSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeUniqueConstraintSchema;
 import com.mdframe.forge.plugin.generator.domain.formula.FormulaRuntimeContext;
 import com.mdframe.forge.plugin.generator.enums.DataAuditEventType;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
@@ -50,7 +48,6 @@ import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeType;
 import com.mdframe.forge.starter.crypto.persistence.PersistentCryptoService;
 import com.mdframe.forge.starter.datascope.context.DataScopeContext;
 import com.mdframe.forge.starter.trans.spi.DictValueProvider;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -71,7 +68,6 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DynamicCrudService {
 
     private static final int MAX_EXPORT_ROWS = 10000;
@@ -149,15 +145,6 @@ public class DynamicCrudService {
                                       RuntimeJoinContext joinContext) {
     }
 
-    private record AutoGenerationField(String fieldName,
-                                       String columnName,
-                                       String label,
-                                       String ruleCode,
-                                       String trigger,
-                                       String fillPolicy,
-                                       boolean enabled) {
-    }
-
     private final DynamicCrudRepository repository;
     private final AiCrudConfigService configService;
     private final ObjectMapper objectMapper;
@@ -166,13 +153,47 @@ public class DynamicCrudService {
     private final PersistentCryptoService persistentCryptoService;
     private final LowcodeEncryptConfigParser encryptConfigParser;
     private final DynamicDataScopeService dynamicDataScopeService;
-    private final BusinessDocumentConfigService documentConfigService;
-    private final CodeRuleService codeRuleService;
     private final StoredAggregateRefreshService storedAggregateRefreshService;
     private final StoredFormulaRuntime storedFormulaRuntime;
     private final VirtualFormulaRuntime virtualFormulaRuntime;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
     private final DataAuditCaptureService dataAuditCaptureService;
+    private final DynamicCrudUniquenessValidator uniquenessValidator;
+    private final DynamicCrudGeneratedFieldPolicy generatedFieldPolicy;
+
+    public DynamicCrudService(
+            DynamicCrudRepository repository,
+            AiCrudConfigService configService,
+            ObjectMapper objectMapper,
+            DictValueProvider dictValueProvider,
+            DesensitizeStrategyFactory desensitizeStrategyFactory,
+            PersistentCryptoService persistentCryptoService,
+            LowcodeEncryptConfigParser encryptConfigParser,
+            DynamicDataScopeService dynamicDataScopeService,
+            BusinessDocumentConfigService documentConfigService,
+            CodeRuleService codeRuleService,
+            StoredAggregateRefreshService storedAggregateRefreshService,
+            StoredFormulaRuntime storedFormulaRuntime,
+            VirtualFormulaRuntime virtualFormulaRuntime,
+            LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver,
+            DataAuditCaptureService dataAuditCaptureService) {
+        this.repository = repository;
+        this.configService = configService;
+        this.objectMapper = objectMapper;
+        this.dictValueProvider = dictValueProvider;
+        this.desensitizeStrategyFactory = desensitizeStrategyFactory;
+        this.persistentCryptoService = persistentCryptoService;
+        this.encryptConfigParser = encryptConfigParser;
+        this.dynamicDataScopeService = dynamicDataScopeService;
+        this.storedAggregateRefreshService = storedAggregateRefreshService;
+        this.storedFormulaRuntime = storedFormulaRuntime;
+        this.virtualFormulaRuntime = virtualFormulaRuntime;
+        this.runtimeDataSourceResolver = runtimeDataSourceResolver;
+        this.dataAuditCaptureService = dataAuditCaptureService;
+        this.uniquenessValidator = new DynamicCrudUniquenessValidator(repository, objectMapper);
+        this.generatedFieldPolicy = new DynamicCrudGeneratedFieldPolicy(
+                repository, objectMapper, documentConfigService, codeRuleService);
+    }
 
     // ==================== 查询操作 ====================
 
@@ -733,8 +754,8 @@ public class DynamicCrudService {
         
         // 获取允许写入的字段。editSchema 是运行态表单白名单，modelSchema 兜底承接保存设计器后新增但尚未重建 editSchema 的字段。
         Set<String> allowedFields = buildAllowedWriteFields(config, tableName);
-        applyAutoGeneratedFields(config, data, allowedFields);
-        applyDocumentNoIfNeeded(config, data, allowedFields);
+        generatedFieldPolicy.applyAutoGeneratedFields(config, data, allowedFields);
+        generatedFieldPolicy.applyDocumentNoIfNeeded(config, data, allowedFields);
         SelectionIdentifierValidator.validate(config, data, objectMapper);
 
         RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
@@ -810,8 +831,8 @@ public class DynamicCrudService {
         openDataAudit(config, null, DataAuditSourceType.AUTOMATION, DataAuditEventType.CREATE, data, false);
         String tableName = config.getTableName();
         Set<String> allowedFields = collectInternalWriteFields(config, tableName);
-        applyAutoGeneratedFields(config, data, allowedFields);
-        applyDocumentNoIfNeeded(config, data, allowedFields);
+        generatedFieldPolicy.applyAutoGeneratedFields(config, data, allowedFields);
+        generatedFieldPolicy.applyDocumentNoIfNeeded(config, data, allowedFields);
         applyStoredFormulas(config, data);
         validateFieldValues(config, data);
         Map<String, Object> filteredData = filterInternalWriteData(config, tableName, data);
@@ -853,8 +874,8 @@ public class DynamicCrudService {
             openDataAudit(config, null, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.CREATE, data, false);
             String tableName = config.getTableName();
             Set<String> allowedFields = collectCommandFields(config);
-            applyAutoGeneratedFields(config, data, allowedFields);
-            applyDocumentNoIfNeeded(config, data, allowedFields);
+            generatedFieldPolicy.applyAutoGeneratedFields(config, data, allowedFields);
+            generatedFieldPolicy.applyDocumentNoIfNeeded(config, data, allowedFields);
             applyStoredFormulas(config, data);
             validateFieldValues(config, data);
             Map<String, Object> filteredData = filterCommandWriteData(config, tableName, data);
@@ -2914,613 +2935,9 @@ public class DynamicCrudService {
                                            Map<String, Object> data,
                                            Map<String, Object> beforeRecord,
                                            Object excludeId) {
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        List<LowcodeUniqueConstraintSchema> constraints = resolveUniqueConstraints(modelSchema);
-        appendEditSchemaUniqueConstraints(config, constraints);
-        if (constraints.isEmpty()) {
-            return;
-        }
-        Map<String, Object> uniqueData = extractMainPayload(data);
-        Map<String, LowcodeFieldSchema> fieldMap = buildModelFieldAliasMap(modelSchema);
-        appendEditSchemaFieldAliases(config, tableName, fieldMap);
-        Set<String> tableColumns = repository.getTableColumns(tableName);
-        for (LowcodeUniqueConstraintSchema constraint : constraints) {
-            if (constraint == null || constraint.getFields() == null || constraint.getFields().isEmpty()) {
-                continue;
-            }
-            if (excludeId != null && constraint.getFields().stream()
-                    .map(fieldMap::get)
-                    .filter(Objects::nonNull)
-                    .noneMatch(field -> containsUniqueInputValue(uniqueData, field))) {
-                continue;
-            }
-            Map<String, Object> columnValues = new LinkedHashMap<>();
-            boolean skip = false;
-            for (String fieldName : constraint.getFields()) {
-                LowcodeFieldSchema field = fieldMap.get(fieldName);
-                if (field == null) {
-                    throw new BusinessException("唯一校验字段不存在: " + fieldName);
-                }
-                String columnName = StringUtils.defaultIfBlank(field.getColumnName(),
-                        DynamicQueryGenerator.camelToSnake(field.getField()));
-                repository.validateIdentifier(columnName);
-                if (!tableColumns.contains(columnName)) {
-                    throw new BusinessException("唯一校验字段未同步到数据表: " + field.getField());
-                }
-                Object value = normalizeUniqueValue(resolveUniqueFieldValue(field, uniqueData, beforeRecord), constraint);
-                if (Boolean.TRUE.equals(constraint.getIgnoreBlank()) && isBlankUniqueValue(value)) {
-                    skip = true;
-                    break;
-                }
-                columnValues.put(columnName, value);
-            }
-            if (!skip && repository.existsByColumns(
-                    tableName, columnValues, primaryKeyColumn(currentPrimaryKey()), excludeId, null)) {
-                throw new BusinessException(resolveUniqueMessage(constraint, fieldMap));
-            }
-        }
-    }
-
-    private List<LowcodeUniqueConstraintSchema> resolveUniqueConstraints(LowcodeModelSchema modelSchema) {
-        List<LowcodeUniqueConstraintSchema> result = new ArrayList<>();
-        if (modelSchema == null) {
-            return result;
-        }
-        if (modelSchema.getUniqueConstraints() != null) {
-            result.addAll(modelSchema.getUniqueConstraints());
-        }
-        if (modelSchema.getFields() != null) {
-            for (LowcodeFieldSchema field : modelSchema.getFields()) {
-                if (!isFieldUniqueEnabled(field)) {
-                    continue;
-                }
-                LowcodeUniqueConstraintSchema constraint = new LowcodeUniqueConstraintSchema();
-                constraint.setName("uk_" + StringUtils.defaultIfBlank(field.getColumnName(),
-                        DynamicQueryGenerator.camelToSnake(field.getField())));
-                constraint.setFields(List.of(field.getField()));
-                constraint.setScope("TENANT");
-                constraint.setNormalize(List.of("trim"));
-                constraint.setIgnoreBlank(true);
-                constraint.setMessage(StringUtils.defaultIfBlank(field.getLabel(), field.getField()) + "已存在");
-                result.add(constraint);
-            }
-        }
-        if (modelSchema.getValidationRules() != null) {
-            for (Map<String, Object> rule : modelSchema.getValidationRules()) {
-                if (!"UNIQUE".equalsIgnoreCase(text(rule.get("type")))) {
-                    continue;
-                }
-                LowcodeUniqueConstraintSchema constraint = new LowcodeUniqueConstraintSchema();
-                constraint.setName(text(rule.get("name")));
-                constraint.setFields(toStringList(firstNonNull(rule.get("fields"), rule.get("field"))));
-                constraint.setScope(text(rule.get("scope")));
-                constraint.setNormalize(toStringList(firstNonNull(rule.get("normalize"), rule.get("normalizers"))));
-                constraint.setIgnoreBlank(rule.get("ignoreBlank") == null || Boolean.parseBoolean(text(rule.get("ignoreBlank"))));
-                constraint.setMessage(text(rule.get("message")));
-                result.add(constraint);
-            }
-        }
-        return result;
-    }
-
-    private void appendEditSchemaUniqueConstraints(AiCrudConfig config, List<LowcodeUniqueConstraintSchema> constraints) {
-        List<Map<String, Object>> editFields = readEditSchemaFields(config);
-        if (editFields.isEmpty()) {
-            return;
-        }
-        Set<String> existingKeys = constraints.stream()
-                .filter(Objects::nonNull)
-                .map(constraint -> uniqueConstraintKey(constraint.getFields()))
-                .filter(StringUtils::isNotBlank)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        for (Map<String, Object> editField : editFields) {
-            if (!isEditSchemaUniqueEnabled(editField)) {
-                continue;
-            }
-            String fieldName = text(editField.get("field"));
-            if (StringUtils.isBlank(fieldName)) {
-                continue;
-            }
-            String key = uniqueConstraintKey(List.of(fieldName));
-            if (!existingKeys.add(key)) {
-                continue;
-            }
-            LowcodeUniqueConstraintSchema constraint = new LowcodeUniqueConstraintSchema();
-            constraint.setName("uk_" + DynamicQueryGenerator.camelToSnake(fieldName));
-            constraint.setFields(List.of(fieldName));
-            constraint.setScope("TENANT");
-            constraint.setNormalize(List.of("trim"));
-            constraint.setIgnoreBlank(true);
-            constraint.setMessage(StringUtils.defaultIfBlank(text(editField.get("label")), fieldName) + "已存在");
-            constraints.add(constraint);
-        }
-    }
-
-    private String uniqueConstraintKey(List<String> fields) {
-        if (fields == null || fields.isEmpty()) {
-            return "";
-        }
-        return fields.stream()
-                .filter(StringUtils::isNotBlank)
-                .map(DynamicQueryGenerator::camelToSnake)
-                .collect(Collectors.joining("|"));
-    }
-
-    private boolean isEditSchemaUniqueEnabled(Map<String, Object> editField) {
-        if (editField == null || editField.isEmpty()) {
-            return false;
-        }
-        return isTrue(editField.get("unique"))
-                || isTrue(mapFrom(editField.get("advancedProps")).get("unique"))
-                || isTrue(mapFrom(editField.get("advancedProps")).get("uniqueCheck"))
-                || isTrue(mapFrom(editField.get("props")).get("unique"))
-                || isTrue(mapFrom(editField.get("basicProps")).get("unique"));
-    }
-
-    private boolean isFieldUniqueEnabled(LowcodeFieldSchema field) {
-        if (field == null) {
-            return false;
-        }
-        return isTrue(field.getAdvancedProps() == null ? null : field.getAdvancedProps().get("unique"))
-                || isTrue(field.getAdvancedProps() == null ? null : field.getAdvancedProps().get("uniqueCheck"))
-                || isTrue(field.getBasicProps() == null ? null : field.getBasicProps().get("unique"));
-    }
-
-    private boolean isTrue(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return value != null && Boolean.parseBoolean(String.valueOf(value));
-    }
-
-    private Map<String, LowcodeFieldSchema> buildModelFieldAliasMap(LowcodeModelSchema modelSchema) {
-        Map<String, LowcodeFieldSchema> result = new LinkedHashMap<>();
-        if (modelSchema == null || modelSchema.getFields() == null) {
-            return result;
-        }
-        for (LowcodeFieldSchema field : modelSchema.getFields()) {
-            if (field == null) {
-                continue;
-            }
-            putFieldAlias(result, field.getField(), field);
-            putFieldAlias(result, field.getColumnName(), field);
-        }
-        return result;
-    }
-
-    private void putFieldAlias(Map<String, LowcodeFieldSchema> fields, String alias, LowcodeFieldSchema field) {
-        if (StringUtils.isBlank(alias)) {
-            return;
-        }
-        fields.putIfAbsent(alias, field);
-        fields.putIfAbsent(DynamicQueryGenerator.snakeToCamel(alias), field);
-        fields.putIfAbsent(DynamicQueryGenerator.camelToSnake(alias), field);
-    }
-
-    private void appendEditSchemaFieldAliases(AiCrudConfig config,
-                                              String tableName,
-                                              Map<String, LowcodeFieldSchema> fieldMap) {
-        List<Map<String, Object>> editFields = readEditSchemaFields(config);
-        if (editFields.isEmpty()) {
-            return;
-        }
-        Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
-        for (Map<String, Object> editField : editFields) {
-            String fieldName = text(editField.get("field"));
-            if (StringUtils.isBlank(fieldName) || fieldMap.containsKey(fieldName)) {
-                continue;
-            }
-            LowcodeFieldSchema field = new LowcodeFieldSchema();
-            field.setField(fieldName);
-            field.setColumnName(columnMapping.getOrDefault(fieldName, DynamicQueryGenerator.camelToSnake(fieldName)));
-            field.setLabel(text(editField.get("label")));
-            field.setAdvancedProps(new LinkedHashMap<>(mapFrom(editField.get("advancedProps"))));
-            putFieldAlias(fieldMap, field.getField(), field);
-            putFieldAlias(fieldMap, field.getColumnName(), field);
-        }
-    }
-
-    private List<Map<String, Object>> readEditSchemaFields(AiCrudConfig config) {
-        if (config == null || StringUtils.isBlank(config.getEditSchema())) {
-            return List.of();
-        }
-        try {
-            Object schema = objectMapper.readValue(config.getEditSchema(), new TypeReference<Object>() {
-            });
-            List<Map<String, Object>> result = new ArrayList<>();
-            collectEditSchemaFields(schema, result);
-            return result;
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 解析editSchema唯一校验失败, configKey={}", config.getConfigKey(), e);
-            return List.of();
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void collectEditSchemaFields(Object node, List<Map<String, Object>> result) {
-        if (node instanceof List<?> list) {
-            for (Object item : list) {
-                collectEditSchemaFields(item, result);
-            }
-            return;
-        }
-        if (!(node instanceof Map<?, ?> rawMap)) {
-            return;
-        }
-        Map<String, Object> map = (Map<String, Object>) rawMap;
-        if (StringUtils.isNotBlank(text(map.get("field")))) {
-            result.add(map);
-        }
-        collectEditSchemaFields(map.get("children"), result);
-        collectEditSchemaFields(map.get("items"), result);
-        collectEditSchemaFields(map.get("components"), result);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> mapFrom(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-        return Map.of();
-    }
-
-    private boolean containsUniqueInputValue(Map<String, Object> data, LowcodeFieldSchema field) {
-        if (data == null || field == null) {
-            return false;
-        }
-        return data.containsKey(field.getField())
-                || data.containsKey(field.getColumnName())
-                || data.containsKey(DynamicQueryGenerator.camelToSnake(field.getField()))
-                || data.containsKey(DynamicQueryGenerator.snakeToCamel(field.getColumnName()));
-    }
-
-    private Object resolveUniqueFieldValue(LowcodeFieldSchema field,
-                                           Map<String, Object> data,
-                                           Map<String, Object> beforeRecord) {
-        Object value = firstPresentValue(data,
-                field.getField(),
-                field.getColumnName(),
-                DynamicQueryGenerator.camelToSnake(field.getField()),
-                DynamicQueryGenerator.snakeToCamel(field.getColumnName()));
-        if (value != null) {
-            return value;
-        }
-        value = firstPresentValue(beforeRecord,
-                field.getColumnName(),
-                field.getField(),
-                DynamicQueryGenerator.camelToSnake(field.getField()),
-                DynamicQueryGenerator.snakeToCamel(field.getColumnName()));
-        return value != null ? value : field.getDefaultValue();
-    }
-
-    private Object normalizeUniqueValue(Object value, LowcodeUniqueConstraintSchema constraint) {
-        Object result = value;
-        List<String> normalizers = constraint.getNormalize() == null ? List.of() : constraint.getNormalize();
-        for (String normalizer : normalizers) {
-            if (result instanceof String textValue && "trim".equalsIgnoreCase(normalizer)) {
-                result = textValue.trim();
-            } else if (result instanceof String textValue
-                    && ("lower".equalsIgnoreCase(normalizer) || "lowercase".equalsIgnoreCase(normalizer))) {
-                result = textValue.toLowerCase(Locale.ROOT);
-            }
-        }
-        return result;
-    }
-
-    private boolean isBlankUniqueValue(Object value) {
-        if (value == null) {
-            return true;
-        }
-        if (value instanceof String textValue) {
-            return StringUtils.isBlank(textValue);
-        }
-        if (value instanceof Collection<?> collection) {
-            return collection.isEmpty();
-        }
-        return false;
-    }
-
-    private String resolveUniqueMessage(LowcodeUniqueConstraintSchema constraint,
-                                        Map<String, LowcodeFieldSchema> fieldMap) {
-        if (StringUtils.isNotBlank(constraint.getMessage())) {
-            return constraint.getMessage();
-        }
-        if (constraint.getFields() != null && constraint.getFields().size() == 1) {
-            LowcodeFieldSchema field = fieldMap.get(constraint.getFields().get(0));
-            if (field != null && StringUtils.isNotBlank(field.getLabel())) {
-                return field.getLabel() + "已存在";
-            }
-        }
-        return "字段值已存在";
-    }
-
-    private Object firstPresentValue(Map<String, Object> data, String... keys) {
-        if (data == null || data.isEmpty()) {
-            return null;
-        }
-        for (String key : keys) {
-            if (StringUtils.isNotBlank(key) && data.containsKey(key)) {
-                return data.get(key);
-            }
-        }
-        return null;
-    }
-
-    private List<String> toStringList(Object value) {
-        if (value == null) {
-            return List.of();
-        }
-        if (value instanceof Collection<?> collection) {
-            return collection.stream()
-                    .map(this::text)
-                    .filter(StringUtils::isNotBlank)
-                    .toList();
-        }
-        String textValue = text(value);
-        return StringUtils.isBlank(textValue) ? List.of() : List.of(textValue);
-    }
-
-    private Object firstNonNull(Object first, Object second) {
-        return first != null ? first : second;
-    }
-
-    private void applyAutoGeneratedFields(AiCrudConfig config, Map<String, Object> data, Set<String> allowedFields) {
-        if (config == null || data == null) {
-            return;
-        }
-        List<AutoGenerationField> autoFields = collectAutoGenerationFields(config);
-        if (autoFields.isEmpty()) {
-            applyConventionalCodeRuleFields(config, data, allowedFields);
-            return;
-        }
-        Map<String, Object> mainPayload = extractMainPayload(data);
-        for (AutoGenerationField field : autoFields) {
-            if (!field.enabled() || !"ON_CREATE".equalsIgnoreCase(field.trigger())) {
-                continue;
-            }
-            Set<String> writableAliases = resolveDocumentNoWritableAliases(config,
-                    StringUtils.firstNonBlank(field.fieldName(), field.columnName()));
-            if (writableAliases.isEmpty()) {
-                log.warn("[DynamicCrudService] 自动编号字段未匹配到业务表列, configKey={}, field={}",
-                        config.getConfigKey(), field.fieldName());
-                continue;
-            }
-            if (allowedFields != null) {
-                allowedFields.addAll(writableAliases);
-            }
-            if ("EMPTY_ONLY".equalsIgnoreCase(field.fillPolicy()) && hasFieldValue(mainPayload, writableAliases)) {
-                continue;
-            }
-            String generatedCode = codeRuleService.generate(field.ruleCode(), buildCodeRuleContext(config, mainPayload, field));
-            if (StringUtils.isBlank(generatedCode)) {
-                continue;
-            }
-            for (String alias : writableAliases) {
-                mainPayload.put(alias, generatedCode);
-            }
-        }
-        applyConventionalCodeRuleFields(config, data, allowedFields);
-    }
-
-    private List<AutoGenerationField> collectAutoGenerationFields(AiCrudConfig config) {
-        if (config == null) {
-            return List.of();
-        }
-        Map<String, AutoGenerationField> fields = new LinkedHashMap<>();
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema != null && modelSchema.getFields() != null) {
-            for (LowcodeFieldSchema field : modelSchema.getFields()) {
-                AutoGenerationField autoField = buildAutoGenerationField(
-                        field == null ? null : field.getField(),
-                        field == null ? null : field.getColumnName(),
-                        field == null ? null : field.getLabel(),
-                        firstMap(
-                                field == null ? null : field.getBasicProps() == null ? null : field.getBasicProps().get("generation"),
-                                field == null ? null : field.getAdvancedProps() == null ? null : field.getAdvancedProps().get("generation")
-                        )
-                );
-                putAutoGenerationField(fields, autoField);
-            }
-        }
-        for (Map<String, Object> editField : readEditSchemaFields(config)) {
-            Map<String, Object> props = mapFrom(editField.get("props"));
-            Map<String, Object> advancedProps = mapFrom(editField.get("advancedProps"));
-            AutoGenerationField autoField = buildAutoGenerationField(
-                    text(editField.get("field")),
-                    StringUtils.firstNonBlank(text(editField.get("columnName")), text(editField.get("fieldCode"))),
-                    StringUtils.firstNonBlank(text(editField.get("label")), text(editField.get("title"))),
-                    firstMap(props.get("generation"), editField.get("generation"), advancedProps.get("generation"))
-            );
-            putAutoGenerationField(fields, autoField);
-        }
-        return new ArrayList<>(fields.values());
-    }
-
-    private void putAutoGenerationField(Map<String, AutoGenerationField> fields, AutoGenerationField field) {
-        if (field == null || !field.enabled() || StringUtils.isBlank(field.ruleCode())) {
-            return;
-        }
-        String key = StringUtils.firstNonBlank(field.fieldName(), field.columnName());
-        if (StringUtils.isBlank(key)) {
-            return;
-        }
-        fields.putIfAbsent(key, field);
-    }
-
-    private AutoGenerationField buildAutoGenerationField(String fieldName,
-                                                         String columnName,
-                                                         String label,
-                                                         Map<String, Object> generation) {
-        if (generation == null || generation.isEmpty() || !readBoolean(generation.get("enabled"), false)) {
-            return null;
-        }
-        String ruleCode = StringUtils.firstNonBlank(
-                text(generation.get("ruleCode")),
-                text(generation.get("codeRuleCode")),
-                text(generation.get("generatorCode"))
-        );
-        if (StringUtils.isBlank(ruleCode)) {
-            return null;
-        }
-        String mode = StringUtils.defaultIfBlank(
-                StringUtils.firstNonBlank(text(generation.get("mode")), text(generation.get("type"))),
-                "CODE_RULE");
-        if (!"CODE_RULE".equalsIgnoreCase(mode) && !"AUTO_CODE".equalsIgnoreCase(mode)) {
-            return null;
-        }
-        return new AutoGenerationField(
-                StringUtils.trimToNull(fieldName),
-                StringUtils.trimToNull(columnName),
-                StringUtils.trimToNull(label),
-                ruleCode.trim(),
-                StringUtils.defaultIfBlank(text(generation.get("trigger")), "ON_CREATE").trim(),
-                StringUtils.defaultIfBlank(text(generation.get("fillPolicy")), "EMPTY_ONLY").trim(),
-                true
-        );
-    }
-
-    private void applyConventionalCodeRuleFields(AiCrudConfig config, Map<String, Object> data, Set<String> allowedFields) {
-        List<AutoGenerationField> fields = collectConventionalCodeRuleFields(config);
-        if (fields.isEmpty()) {
-            return;
-        }
-        Map<String, Object> mainPayload = extractMainPayload(data);
-        for (AutoGenerationField field : fields) {
-            Set<String> writableAliases = resolveDocumentNoWritableAliases(config,
-                    StringUtils.firstNonBlank(field.fieldName(), field.columnName()));
-            if (writableAliases.isEmpty() || hasFieldValue(mainPayload, writableAliases)) {
-                continue;
-            }
-            String generatedCode = tryGenerateConventionalCode(config, mainPayload, field);
-            if (StringUtils.isBlank(generatedCode)) {
-                continue;
-            }
-            if (allowedFields != null) {
-                allowedFields.addAll(writableAliases);
-            }
-            for (String alias : writableAliases) {
-                mainPayload.put(alias, generatedCode);
-            }
-        }
-    }
-
-    private List<AutoGenerationField> collectConventionalCodeRuleFields(AiCrudConfig config) {
-        if (config == null) {
-            return List.of();
-        }
-        Map<String, AutoGenerationField> fields = new LinkedHashMap<>();
-        Set<String> generationConfiguredAliases = new LinkedHashSet<>();
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema != null && modelSchema.getFields() != null) {
-            for (LowcodeFieldSchema field : modelSchema.getFields()) {
-                if (field != null && hasGenerationConfig(field.getBasicProps(), field.getAdvancedProps())) {
-                    addFieldAliases(generationConfiguredAliases, field.getField(), field.getColumnName());
-                    continue;
-                }
-                AutoGenerationField candidate = buildConventionalCodeRuleField(field);
-                putAutoGenerationField(fields, candidate);
-            }
-        }
-        for (Map<String, Object> editField : readEditSchemaFields(config)) {
-            String fieldName = text(editField.get("field"));
-            String columnName = StringUtils.firstNonBlank(text(editField.get("columnName")), text(editField.get("fieldCode")));
-            Map<String, Object> props = mapFrom(editField.get("props"));
-            Map<String, Object> advancedProps = mapFrom(editField.get("advancedProps"));
-            if (!firstMap(props.get("generation"), editField.get("generation"), advancedProps.get("generation")).isEmpty()) {
-                addFieldAliases(generationConfiguredAliases, fieldName, columnName);
-                continue;
-            }
-            if (matchesAnyAlias(fieldName, generationConfiguredAliases)
-                    || matchesAnyAlias(columnName, generationConfiguredAliases)) {
-                continue;
-            }
-            AutoGenerationField candidate = buildConventionalCodeRuleField(
-                    fieldName,
-                    columnName,
-                    StringUtils.firstNonBlank(text(editField.get("label")), text(editField.get("title"))),
-                    props,
-                    advancedProps
-            );
-            putAutoGenerationField(fields, candidate);
-        }
-        return new ArrayList<>(fields.values());
-    }
-
-    private AutoGenerationField buildConventionalCodeRuleField(LowcodeFieldSchema field) {
-        if (field == null || Boolean.TRUE.equals(field.getSystemField())
-                || "DISABLED".equalsIgnoreCase(StringUtils.defaultString(field.getFieldStatus()))
-                || "HIDDEN".equalsIgnoreCase(StringUtils.defaultString(field.getFieldStatus()))) {
-            return null;
-        }
-        return buildConventionalCodeRuleField(
-                field.getField(),
-                field.getColumnName(),
-                field.getLabel(),
-                field.getBasicProps(),
-                field.getAdvancedProps()
-        );
-    }
-
-    private AutoGenerationField buildConventionalCodeRuleField(String fieldName,
-                                                               String columnName,
-                                                               String label,
-                                                               Map<String, Object> basicProps,
-                                                               Map<String, Object> advancedProps) {
-        if (hasGenerationConfig(basicProps, advancedProps)) {
-            return null;
-        }
-        if (!isConventionalCodeField(fieldName, columnName, label)) {
-            return null;
-        }
-        String ruleCode = StringUtils.firstNonBlank(columnName, DynamicQueryGenerator.camelToSnake(fieldName));
-        if (StringUtils.isBlank(ruleCode)) {
-            return null;
-        }
-        return new AutoGenerationField(
-                StringUtils.trimToNull(fieldName),
-                StringUtils.trimToNull(columnName),
-                StringUtils.trimToNull(label),
-                ruleCode.trim(),
-                "ON_CREATE",
-                "EMPTY_ONLY",
-                true
-        );
-    }
-
-    private boolean hasGenerationConfig(Map<String, Object> basicProps, Map<String, Object> advancedProps) {
-        return !firstMap(
-                basicProps == null ? null : basicProps.get("generation"),
-                advancedProps == null ? null : advancedProps.get("generation")
-        ).isEmpty();
-    }
-
-    private void addFieldAliases(Set<String> aliases, String fieldName, String columnName) {
-        aliases.addAll(documentNoAliasSet(fieldName));
-        aliases.addAll(documentNoAliasSet(columnName));
-    }
-
-    private boolean isConventionalCodeField(String fieldName, String columnName, String label) {
-        String field = StringUtils.defaultString(fieldName);
-        String column = StringUtils.defaultString(columnName);
-        String fieldLower = field.toLowerCase(Locale.ROOT);
-        String columnLower = column.toLowerCase(Locale.ROOT);
-        return fieldLower.endsWith("code")
-                || fieldLower.endsWith("no")
-                || columnLower.endsWith("_code")
-                || columnLower.endsWith("_no")
-                || StringUtils.containsAny(StringUtils.defaultString(label), "编号", "单号");
-    }
-
-    private String tryGenerateConventionalCode(AiCrudConfig config,
-                                               Map<String, Object> mainPayload,
-                                               AutoGenerationField field) {
-        try {
-            return codeRuleService.generate(field.ruleCode(), buildCodeRuleContext(config, mainPayload, field));
-        } catch (BusinessException e) {
-            log.debug("[DynamicCrudService] 未使用约定编码规则生成字段, configKey={}, field={}, ruleCode={}, reason={}",
-                    config.getConfigKey(), field.fieldName(), field.ruleCode(), e.getMessage());
-            return null;
-        }
+        uniquenessValidator.validate(
+                config, tableName, data, beforeRecord, excludeId,
+                primaryKeyColumn(currentPrimaryKey()));
     }
 
     @SuppressWarnings("unchecked")
@@ -3554,149 +2971,6 @@ public class DynamicCrudService {
                 || "1".equals(textValue)
                 || "yes".equalsIgnoreCase(textValue)
                 || "Y".equalsIgnoreCase(textValue);
-    }
-
-    private boolean hasFieldValue(Map<String, Object> data, Set<String> aliases) {
-        if (data == null || aliases == null || aliases.isEmpty()) {
-            return false;
-        }
-        for (String alias : aliases) {
-            Object value = data.get(alias);
-            if (value != null && (!(value instanceof String textValue) || StringUtils.isNotBlank(textValue))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Map<String, Object> buildCodeRuleContext(AiCrudConfig config,
-                                                     Map<String, Object> recordData,
-                                                     AutoGenerationField field) {
-        Map<String, Object> context = new LinkedHashMap<>();
-        Map<String, Object> fields = new LinkedHashMap<>();
-        if (recordData != null) {
-            fields.putAll(recordData);
-        }
-        fields.put("suiteCode", StringUtils.defaultIfBlank(config.getDomainCode(), ""));
-        fields.put("objectCode", StringUtils.defaultIfBlank(config.getObjectCode(), ""));
-        fields.put("configKey", StringUtils.defaultIfBlank(config.getConfigKey(), ""));
-        fields.put("fieldCode", StringUtils.defaultIfBlank(field.fieldName(), field.columnName()));
-        fields.put("fieldName", StringUtils.defaultIfBlank(field.label(), field.fieldName()));
-        context.put("fields", fields);
-        return context;
-    }
-
-    private boolean hasAutoGenerationConfig(AiCrudConfig config, String fieldName) {
-        if (StringUtils.isBlank(fieldName)) {
-            return false;
-        }
-        Set<String> requestedAliases = documentNoAliasSet(fieldName);
-        return collectAutoGenerationFields(config).stream()
-                .anyMatch(field -> matchesAnyAlias(field.fieldName(), requestedAliases)
-                        || matchesAnyAlias(field.columnName(), requestedAliases));
-    }
-
-    private void applyDocumentNoIfNeeded(AiCrudConfig config, Map<String, Object> data, Set<String> allowedFields) {
-        if (config == null || data == null) {
-            return;
-        }
-        AiBusinessDocumentConfig documentConfig = resolveEnabledDocumentConfig(config);
-        if (documentConfig == null) {
-            return;
-        }
-        String documentNoField = documentConfigService.resolveDocumentNoField(documentConfig, config);
-        if (StringUtils.isBlank(documentNoField)) {
-            return;
-        }
-        Set<String> writableAliases = resolveDocumentNoWritableAliases(config, documentNoField);
-        if (writableAliases.isEmpty()) {
-            log.warn("[DynamicCrudService] 单据编号字段未匹配到业务表列, configKey={}, documentNoField={}",
-                    config.getConfigKey(), documentNoField);
-            return;
-        }
-        if (allowedFields != null) {
-            allowedFields.addAll(writableAliases);
-        }
-        Map<String, Object> mainPayload = extractMainPayload(data);
-        if (hasAutoGenerationConfig(config, documentNoField)) {
-            return;
-        }
-        String documentNo = documentConfigService.generateDocumentNo(documentConfig, mainPayload);
-        if (StringUtils.isBlank(documentNo)) {
-            return;
-        }
-        // 单据编号由平台规则统一生成，覆盖客户端传入值，避免用户手填造成冲突。
-        for (String alias : writableAliases) {
-            mainPayload.put(alias, documentNo);
-        }
-    }
-
-    private AiBusinessDocumentConfig resolveEnabledDocumentConfig(AiCrudConfig config) {
-        AiBusinessDocumentConfig documentConfig = documentConfigService.selectEnabledByConfigKey(
-                config.getTenantId(), config.getConfigKey());
-        if (documentConfig == null && StringUtils.isNotBlank(config.getObjectCode())) {
-            documentConfig = documentConfigService.selectEnabledByObjectCode(config.getTenantId(), config.getObjectCode());
-        }
-        return documentConfig;
-    }
-
-    private Set<String> resolveDocumentNoWritableAliases(AiCrudConfig config, String documentNoField) {
-        Set<String> aliases = new LinkedHashSet<>();
-        if (config == null || StringUtils.isBlank(config.getTableName()) || StringUtils.isBlank(documentNoField)) {
-            return aliases;
-        }
-        Map<String, String> columnMapping = buildRuntimeColumnMapping(config, config.getTableName());
-        addDocumentNoAliasIfWritable(aliases, documentNoField, columnMapping);
-        if (StringUtils.isNotBlank(config.getModelSchema())) {
-            LowcodeModelSchema modelSchema = readModelSchema(config);
-            if (modelSchema != null && modelSchema.getFields() != null) {
-                Set<String> requestedAliases = documentNoAliasSet(documentNoField);
-                for (LowcodeFieldSchema field : modelSchema.getFields()) {
-                    if (field == null) {
-                        continue;
-                    }
-                    if (matchesAnyAlias(field.getField(), requestedAliases)
-                            || matchesAnyAlias(field.getColumnName(), requestedAliases)) {
-                        addDocumentNoAliasIfWritable(aliases, field.getField(), columnMapping);
-                        addDocumentNoAliasIfWritable(aliases, field.getColumnName(), columnMapping);
-                    }
-                }
-            }
-        }
-        return aliases;
-    }
-
-    private Set<String> documentNoAliasSet(String field) {
-        Set<String> aliases = new LinkedHashSet<>();
-        if (StringUtils.isBlank(field)) {
-            return aliases;
-        }
-        aliases.add(field);
-        aliases.add(DynamicQueryGenerator.snakeToCamel(field));
-        aliases.add(DynamicQueryGenerator.camelToSnake(field));
-        return aliases;
-    }
-
-    private boolean matchesAnyAlias(String field, Set<String> aliases) {
-        if (StringUtils.isBlank(field) || aliases == null || aliases.isEmpty()) {
-            return false;
-        }
-        return aliases.contains(field)
-                || aliases.contains(DynamicQueryGenerator.snakeToCamel(field))
-                || aliases.contains(DynamicQueryGenerator.camelToSnake(field));
-    }
-
-    private void addDocumentNoAliasIfWritable(Set<String> aliases,
-                                              String field,
-                                              Map<String, String> columnMapping) {
-        if (StringUtils.isBlank(field) || columnMapping == null || columnMapping.isEmpty()) {
-            return;
-        }
-        for (String alias : documentNoAliasSet(field)) {
-            if (columnMapping.containsKey(alias)) {
-                aliases.add(alias);
-            }
-        }
     }
 
     // ==================== 删除操作 ====================
