@@ -82,3 +82,9 @@
 - 从 `LowcodeRuntimeConfigBuilder` 提取编辑字段渲染、运行时验证规则、公式只读、引用伴随列和 form-create 元数据到 `RuntimeEditFieldCompiler`；基础属性白名单、对齐及系统字段判断迁入 `RuntimeFieldPresentationSupport`。入口由 1724 行降至 1373 行；新类分别 294/115 行，均低于 1000 行。主子表回调仍调用同一编译器。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeEditFieldCompilerTest,RuntimeFormRuleSettingResolverTest,RuntimeDesignerLayoutReaderTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest,RuntimeChildTableCompilerTest,RuntimeRelationLookupCompilerTest -Dsurefire.failIfNoSpecifiedTests=false test`：7 类共 37 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
 - 未启动 Admin 服务或连接真实数据库；本轮不改 API、SQL、表单保存或字段权限。真实运行页编辑联调仍未覆盖，无服务 PID 需停止。
+
+## 2026-09-26 第十九个切口：列表列编译
+
+- 从 `LowcodeRuntimeConfigBuilder` 提取列表列渲染、列宽/固定列、开关值、点击动作和子表标题前缀到 `RuntimeTableColumnCompiler`；入口由 1373 行降至 1184 行，新编译器 209 行。字段元数据判定仍复用原 `RuntimeFieldMetadataCompiler` 实例，公开的托管流程状态列方法保持入口签名。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeTableColumnCompilerTest,RuntimeEditFieldCompilerTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest,RuntimeChildTableCompilerTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 33 项，0 失败、0 错误，退出码 0。
+- 未启动 Admin 服务或连接真实数据库；列表查询和真实页面渲染未做端到端验收，无服务 PID 需停止。

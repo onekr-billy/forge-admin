@@ -40,7 +40,9 @@
 
 第十八个切口把编辑字段 JSON 编译迁入 `RuntimeEditFieldCompiler`，基础组件属性白名单、对齐及系统字段判定迁入共享 `RuntimeFieldPresentationSupport`。原入口仅选择字段和设计器设置，主子表仍复用同一编辑字段编译器；必填、公式只读、引用名称伴随列和字段约束的运行协议不变。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1373 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第十九个切口把列表列 JSON 编译迁入 `RuntimeTableColumnCompiler`，负责字典、引用、开关等渲染配置与列宽、固定列、点击动作、子表标题前缀。它继续复用原字段元数据判定；入口仍选择列字段并构造操作列。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1184 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
