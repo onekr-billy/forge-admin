@@ -38,7 +38,9 @@
 
 第十七个切口继续迁出 form-create 规则到运行时字段设置的转换，由 `RuntimeFormRuleSettingResolver` 处理组件标识、必填开关和验证规则、样式及网格跨度。原入口保留表单字段组装和网格列数解析；网格列数使用延迟回调保持原计算时机。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1724 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第十八个切口把编辑字段 JSON 编译迁入 `RuntimeEditFieldCompiler`，基础组件属性白名单、对齐及系统字段判定迁入共享 `RuntimeFieldPresentationSupport`。原入口仅选择字段和设计器设置，主子表仍复用同一编辑字段编译器；必填、公式只读、引用名称伴随列和字段约束的运行协议不变。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1373 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

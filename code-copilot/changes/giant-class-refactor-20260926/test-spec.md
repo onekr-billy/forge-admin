@@ -108,3 +108,9 @@
 - P0：迁出 form-create 规则的组件标识、必填开关与验证规则合成、样式及网格跨度映射；新增单测覆盖必填文案/默认触发、显式关闭必填、嵌套组件标识与网格跨度。
 - P1：重跑 `LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest` 和布局读取测试；generator Reactor 编译、`git diff --check` 与入口行数复核。
 - 不修改原 form-create 规则和发布协议，不改变动态查询、保存或真实页面布局；不启动服务。
+
+## 第十八轮增量验证：运行时编辑字段编译
+
+- P0：将编辑字段的基础属性白名单、对齐及系统字段判断归入共享呈现支持类；将编辑字段 JSON、必填校验、公式只读、引用回显和 form-create 元数据映射归入独立编译器。新增定向测试覆盖字段规则、引用/动态选项源与基础属性过滤。
+- P1：重跑运行配置入口、生成配置和主子表契约测试，尤其检查子表复用同一编辑字段编译器；generator Reactor 编译、`git diff --check` 与入口行数复核。
+- 不改变运行配置字段顺序、SQL/表结构、业务状态或表单保存；不启动服务。

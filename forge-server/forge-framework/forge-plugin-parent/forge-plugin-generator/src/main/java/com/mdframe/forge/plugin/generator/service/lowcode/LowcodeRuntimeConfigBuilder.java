@@ -31,14 +31,9 @@ import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimePageRela
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimePageRelationResolver.resolveMainRelationField;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimePageRelationResolver.resolvePrimaryRef;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimePageRelationResolver.resolveRuntimeRelation;
-import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.applySelectionLabelProps;
-import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.buildPlaceholder;
-import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.ensureDynamicOptionSourceLabelValueField;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.isBusinessSelectComponent;
-import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.isTextComponent;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.normalizeEditComponentType;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.normalizeRuntimeFormSize;
-import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.resolveEditComponentType;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldComponentResolver.resolveSearchComponentType;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeDesignerLayoutReader.extractCanvasItems;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeDesignerLayoutReader.extractFormRules;
@@ -53,6 +48,13 @@ import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRule
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.integerValue;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.intValue;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFormRuleSettingResolver.resolveFormRuleSetting;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldPresentationSupport.applyAlignment;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldPresentationSupport.isSystemField;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldPresentationSupport.normalizeFixed;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldPresentationSupport.putIfNotBlank;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeFieldPresentationSupport.sanitizeFieldBasicProps;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeEditFieldCompiler.buildEditField;
+import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeEditFieldCompiler.mapValue;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeTreeConfigBuilder.buildTreeConfig;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeTreeConfigBuilder.buildTreeOptionSource;
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimeTreeConfigBuilder.extractTreeConfigOverrides;
@@ -301,7 +303,7 @@ public class LowcodeRuntimeConfigBuilder {
             options.put("masterDetailConfig", RuntimeChildTableCompiler.buildMasterDetailConfig(
                     modelSchema, pageSchema,
                     (ref, selectedRefs, childFk) -> RuntimeChildFieldCompiler.compile(
-                            ref, selectedRefs, childFk, this::buildEditField)));
+                            ref, selectedRefs, childFk, RuntimeEditFieldCompiler::buildEditField)));
         }
         LowcodePageZone detailZone = findZone(pageSchema, "detail");
         Map<String, Object> detailProps = detailZone == null || detailZone.getProps() == null ? Map.of() : detailZone.getProps();
@@ -529,12 +531,6 @@ public class LowcodeRuntimeConfigBuilder {
             }
         }
         return refs;
-    }
-
-    private void putIfNotBlank(Map<String, Object> target, String key, String value) {
-        if (StringUtils.isNotBlank(value)) {
-            target.put(key, value);
-        }
     }
 
     private void appendTreeRuntimeField(List<Map<String, Object>> fields,
@@ -895,91 +891,6 @@ public class LowcodeRuntimeConfigBuilder {
         };
     }
 
-    private void applyAlignment(Map<String, Object> item, Map<String, Object> pageSetting) {
-        String align = normalizeAlign(StringUtils.defaultIfBlank(text(pageSetting.get("align")),
-                text(pageSetting.get("textAlign"))));
-        if (StringUtils.isNotBlank(align)) {
-            item.put("align", align);
-        }
-    }
-
-    private String normalizeFixed(String value) {
-        String fixed = StringUtils.defaultString(value).trim().toLowerCase(Locale.ROOT);
-        return Set.of("left", "right").contains(fixed) ? fixed : null;
-    }
-
-    private Map<String, Object> sanitizeFieldBasicProps(LowcodeFieldSchema field) {
-        if (field == null || field.getBasicProps() == null || field.getBasicProps().isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-        Map<String, Object> props = new LinkedHashMap<>();
-        copyBasicProp(field.getBasicProps(), props, "placeholder");
-        copyBasicProp(field.getBasicProps(), props, "cascade");
-        copyBasicProp(field.getBasicProps(), props, "cascadeConfig");
-        copyBasicProp(field.getBasicProps(), props, "sourceField");
-        copyBasicProp(field.getBasicProps(), props, "sourceDictType");
-        copyBasicProp(field.getBasicProps(), props, "linkedDictType");
-        copyBasicProp(field.getBasicProps(), props, "linkedDictValue");
-        copyBasicProp(field.getBasicProps(), props, "parentDictCode");
-        copyBasicProp(field.getBasicProps(), props, "matchMode");
-        copyBasicProp(field.getBasicProps(), props, "emptyStrategy");
-        copyBasicProp(field.getBasicProps(), props, "clearOnSourceChange");
-        copyBasicProp(field.getBasicProps(), props, "clearable");
-        copyBasicProp(field.getBasicProps(), props, "filterable");
-        copyBasicProp(field.getBasicProps(), props, "multiple");
-        copyBasicProp(field.getBasicProps(), props, "optionSource");
-        copyBasicProp(field.getBasicProps(), props, "fieldMappings");
-        copyBasicProp(field.getBasicProps(), props, "mappings");
-        copyBasicProp(field.getBasicProps(), props, "labelValueField");
-        copyBasicProp(field.getBasicProps(), props, "targetField");
-        copyBasicProp(field.getBasicProps(), props, "rootCode");
-        copyBasicProp(field.getBasicProps(), props, "dataRight");
-        copyBasicProp(field.getBasicProps(), props, "virtualDisabled");
-        copyBasicProp(field.getBasicProps(), props, "limit");
-        copyBasicProp(field.getBasicProps(), props, "fileSize");
-        copyBasicProp(field.getBasicProps(), props, "fileType");
-        copyBasicProp(field.getBasicProps(), props, "storageType");
-        copyBasicProp(field.getBasicProps(), props, "valueType");
-        copyBasicProp(field.getBasicProps(), props, "showTip");
-        copyBasicProp(field.getBasicProps(), props, "showFileList");
-        copyBasicProp(field.getBasicProps(), props, "uploadButtonText");
-        copyBasicProp(field.getBasicProps(), props, "businessType");
-        copyBasicProp(field.getBasicProps(), props, "businessId");
-        copyBasicProp(field.getBasicProps(), props, "referenceObjectCode");
-        copyBasicProp(field.getBasicProps(), props, "referenceDisplayField");
-        copyBasicProp(field.getBasicProps(), props, "referenceValueField");
-        copyBasicProp(field.getBasicProps(), props, "targetObjectCode");
-        copyBasicProp(field.getBasicProps(), props, "recordSelector");
-        copyBasicProp(field.getBasicProps(), props, "recordSelectorConfig");
-        copyBasicProp(field.getBasicProps(), props, "selector");
-        copyBasicProp(field.getBasicProps(), props, "selectorConfig");
-        copyBasicProp(field.getBasicProps(), props, "relationKey");
-        copyBasicProp(field.getBasicProps(), props, "inlineCreateEnabled");
-        copyBasicProp(field.getBasicProps(), props, "showInDetail");
-        copyBasicProp(field.getBasicProps(), props, "validation");
-        copyBasicProp(field.getBasicProps(), props, "min");
-        copyBasicProp(field.getBasicProps(), props, "max");
-        copyBasicProp(field.getBasicProps(), props, "minimum");
-        copyBasicProp(field.getBasicProps(), props, "maximum");
-        copyBasicProp(field.getBasicProps(), props, "step");
-        copyBasicProp(field.getBasicProps(), props, "precision");
-        copyBasicProp(field.getBasicProps(), props, "maxlength");
-        copyBasicProp(field.getBasicProps(), props, "maxLength");
-        copyBasicProp(field.getBasicProps(), props, "checkedValue");
-        copyBasicProp(field.getBasicProps(), props, "uncheckedValue");
-        copyBasicProp(field.getBasicProps(), props, "checkedText");
-        copyBasicProp(field.getBasicProps(), props, "uncheckedText");
-        copyBasicProp(field.getBasicProps(), props, "runtimeRules");
-        copyBasicProp(field.getBasicProps(), props, "__events");
-        return props;
-    }
-
-    private void copyBasicProp(Map<String, Object> source, Map<String, Object> target, String key) {
-        if (source.containsKey(key)) {
-            target.put(key, source.get(key));
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> resolveFieldSetting(LowcodePageSchema pageSchema, String zoneKey, String fieldName) {
         LowcodePageZone zone = findZone(pageSchema, zoneKey);
@@ -1045,261 +956,6 @@ public class LowcodeRuntimeConfigBuilder {
         return Map.of();
     }
 
-    private Map<String, Object> buildEditField(LowcodeFieldSchema field) {
-        return buildEditField(field, Map.of());
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> buildEditField(LowcodeFieldSchema field, Map<String, Object> pageSetting) {
-        return buildEditField(field, pageSetting, null, null);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> buildEditField(LowcodeFieldSchema field,
-                                               Map<String, Object> pageSetting,
-                                               LowcodeModelSchema modelSchema,
-                                               LowcodePageSchema pageSchema) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        String label = StringUtils.defaultIfBlank(text(pageSetting.get("label")),
-                StringUtils.defaultIfBlank(field.getLabel(), field.getField()));
-        RuntimeRelationLookupCompiler.RelationLookupMeta lookupMeta = RuntimeRelationLookupCompiler.resolve(
-                modelSchema, pageSchema, field.getField());
-        String componentType = resolveEditComponentType(field, pageSetting);
-        if (lookupMeta != null) {
-            componentType = "select";
-        }
-        Map<String, Object> formulaConfig = field.getFormulaConfig();
-        boolean formulaField = formulaConfig != null && !formulaConfig.isEmpty();
-        item.put("field", field.getField());
-        item.put("label", label);
-        item.put("type", componentType);
-        applyAlignment(item, pageSetting);
-        boolean required = pageSetting.containsKey("required")
-                ? booleanWithDefault(pageSetting.get("required"), false)
-                : Boolean.TRUE.equals(field.getRequired());
-        List<Map<String, Object>> validationRules = resolveRuntimeValidationRules(pageSetting);
-        if (!pageSetting.containsKey("required")
-                && validationRules.stream().anyMatch(rule -> booleanWithDefault(rule.get("required"), false))) {
-            required = true;
-        }
-        boolean readonly = pageSetting.containsKey("readonly")
-                ? booleanWithDefault(pageSetting.get("readonly"), false)
-                : Boolean.TRUE.equals(field.getReadonly());
-        if (formulaField) {
-            readonly = true;
-            required = false;
-            validationRules.removeIf(rule -> booleanWithDefault(rule.get("required"), false));
-        }
-        if (!required) {
-            validationRules.removeIf(rule -> booleanWithDefault(rule.get("required"), false));
-        }
-        item.put("required", !isSystemField(field) && required);
-        String requiredMessage = StringUtils.defaultIfBlank(text(pageSetting.get("requiredMessage")),
-                resolveRequiredRuleMessage(validationRules));
-        if (StringUtils.isNotBlank(requiredMessage)) {
-            item.put("requiredMessage", requiredMessage);
-        }
-        Object trigger = StringUtils.isNotBlank(text(pageSetting.get("trigger")))
-                ? pageSetting.get("trigger")
-                : resolveRequiredRuleTrigger(validationRules);
-        if (trigger != null) {
-            item.put("trigger", trigger);
-        }
-        if (isSystemField(field) || readonly) {
-            item.put("disabled", true);
-            item.put("readonly", true);
-        }
-        copyRuntimeSetting(item, pageSetting, "hidden");
-        copyRuntimeSetting(item, pageSetting, "formVisible");
-        copyRuntimeSetting(item, pageSetting, "runtimeRules");
-        if (formulaField) {
-            item.put("formulaConfig", new LinkedHashMap<>(formulaConfig));
-        }
-        if (field.getAdvancedProps() != null && !field.getAdvancedProps().isEmpty()) {
-            item.put("advancedProps", new LinkedHashMap<>(field.getAdvancedProps()));
-        }
-        String dictType = StringUtils.defaultIfBlank(text(pageSetting.get("dictType")), field.getDictType());
-        if (StringUtils.isNotBlank(dictType)) {
-            item.put("dictType", dictType);
-        }
-        if (pageSetting.containsKey("defaultValue")) {
-            item.put("defaultValue", pageSetting.get("defaultValue"));
-        } else if (field.getDefaultValue() != null) {
-            item.put("defaultValue", field.getDefaultValue());
-        }
-        Object span = pageSetting.get("span");
-        if (span != null) {
-            item.put("span", span);
-        }
-        Object formItemStyle = pageSetting.get("formItemStyle");
-        if (formItemStyle != null) {
-            item.put("formItemStyle", formItemStyle);
-        }
-        Object gridStyle = pageSetting.get("gridStyle");
-        if (gridStyle != null) {
-            item.put("gridStyle", gridStyle);
-        }
-        Object labelWidth = pageSetting.get("labelWidth");
-        if (labelWidth != null) {
-            item.put("labelWidth", labelWidth);
-        }
-        copyRuntimeSetting(item, pageSetting, "componentStyle");
-        copyRuntimeSetting(item, pageSetting, "componentClass");
-        copyRuntimeSetting(item, pageSetting, "formItemClass");
-        copyRuntimeSetting(item, pageSetting, "showFeedback");
-        copyRuntimeSetting(item, pageSetting, "showLabel");
-
-        Map<String, Object> props = new LinkedHashMap<>();
-        props.put("placeholder", buildPlaceholder(componentType, label));
-        if (isSystemField(field) || readonly) {
-            props.put("disabled", true);
-            props.put("readonly", true);
-        }
-        if (field.getLength() != null && field.getLength() > 0 && isTextComponent(componentType)) {
-            props.put("maxlength", field.getLength());
-        }
-        if (field.getPrecision() != null && field.getPrecision() >= 0 && "number".equals(componentType)) {
-            props.put("precision", field.getPrecision());
-        }
-        props.putAll(sanitizeFieldBasicProps(field));
-        Object designerProps = pageSetting.get("props");
-        if (designerProps instanceof Map<?, ?> designerPropsMap) {
-            Map<String, Object> sanitizedDesignerProps = new LinkedHashMap<>((Map<String, Object>) designerPropsMap);
-            Map<String, Object> formCreateMeta = mapValue(sanitizedDesignerProps.get("__fc"));
-            sanitizedDesignerProps.remove("__fc");
-            sanitizedDesignerProps.remove("__fcType");
-            sanitizedDesignerProps.remove("fieldBinding");
-            props.putAll(sanitizedDesignerProps);
-            applyFormCreateMeta(item, formCreateMeta, props);
-        }
-        LowcodeFieldConstraintSupport.applyRuntimeConstraints(field, componentType, props);
-        // optionSource 配置存在时清除残留的静态 options，避免 currentOptions 优先级链中
-        // 静态 options 抢在 remoteOptionSource 之前返回，导致 QUERY_SOURCE/REMOTE 不生效
-        if (props.containsKey("optionSource") && props.get("optionSource") instanceof Map<?, ?> os
-                && !String.valueOf(os.get("type") != null ? os.get("type") : "").isEmpty()) {
-            props.remove("options");
-        }
-        copyRuntimePropsToField(item, props);
-        applySelectionLabelProps(props, field.getField(), componentType);
-        if (isSystemField(field) || readonly) {
-            props.put("disabled", true);
-            props.put("readonly", true);
-        }
-        item.put("props", props);
-        if (lookupMeta != null) {
-            item.put("relationLookup", RuntimeRelationLookupCompiler.buildConfig(lookupMeta));
-            RuntimeRelationLookupCompiler.applyProps(item, lookupMeta, label);
-        } else if (field.isSelectionLabelField()) {
-            // 引用/人员/部门/动态选项下拉：选中时同步提交显示名称到伴随列（<field>Name），
-            // 编辑回显与列表渲染使用冗余字段，无需再查源表。
-            props.putIfAbsent("labelValueField", field.referenceDisplayFieldName());
-        } else {
-            // 页面 props 已带动态 optionSource、但模型字段尚未回写 basicProps 时，仍补齐伴随字段绑定
-            ensureDynamicOptionSourceLabelValueField(props, field.getField(), componentType);
-        }
-
-        if (required) {
-            String message = StringUtils.defaultIfBlank(requiredMessage, buildPlaceholder(componentType, label));
-            if (validationRules.stream().noneMatch(rule -> booleanWithDefault(rule.get("required"), false))) {
-                Map<String, Object> rule = new LinkedHashMap<>();
-                rule.put("required", true);
-                rule.put("message", message);
-                rule.put("trigger", trigger == null ? List.of("blur", "change") : trigger);
-                validationRules.add(0, rule);
-            } else {
-                validationRules.forEach(rule -> {
-                    if (booleanWithDefault(rule.get("required"), false) && StringUtils.isBlank(text(rule.get("message")))) {
-                        rule.put("message", message);
-                    }
-                });
-            }
-            item.put("requiredMessage", message);
-        }
-        if (!validationRules.isEmpty()) {
-            item.put("rules", validationRules);
-        }
-        return item;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> resolveRuntimeValidationRules(Map<String, Object> pageSetting) {
-        Object source = pageSetting.get("rules");
-        if (!(source instanceof List<?> list)) {
-            return new ArrayList<>();
-        }
-        List<Map<String, Object>> rules = new ArrayList<>();
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> map) {
-                rules.add(new LinkedHashMap<>((Map<String, Object>) map));
-            }
-        }
-        return rules;
-    }
-
-    private String resolveRequiredRuleMessage(List<Map<String, Object>> validationRules) {
-        return validationRules.stream()
-                .filter(rule -> booleanWithDefault(rule.get("required"), false))
-                .map(rule -> text(rule.get("message")))
-                .filter(StringUtils::isNotBlank)
-                .findFirst()
-                .orElse("");
-    }
-
-    private Object resolveRequiredRuleTrigger(List<Map<String, Object>> validationRules) {
-        return validationRules.stream()
-                .filter(rule -> booleanWithDefault(rule.get("required"), false))
-                .map(rule -> rule.get("trigger"))
-                .filter(value -> value != null && StringUtils.isNotBlank(String.valueOf(value)))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private void copyRuntimeSetting(Map<String, Object> item, Map<String, Object> pageSetting, String key) {
-        if (pageSetting.containsKey(key)) {
-            item.put(key, pageSetting.get(key));
-        }
-    }
-
-    private void copyRuntimePropsToField(Map<String, Object> item, Map<String, Object> props) {
-        List.of("placeholder", "clearable", "filterable", "multiple", "size", "maxlength", "showCount",
-                        "rows", "autosize", "min", "max", "step", "precision", "showButton",
-                        "checkedValue", "uncheckedValue", "checkedText", "uncheckedText", "format",
-                        "valueFormat", "startPlaceholder", "endPlaceholder", "showFeedback", "showLabel")
-                .forEach(key -> {
-                    if (props.containsKey(key)) {
-                        item.put(key, props.get(key));
-                    }
-                });
-    }
-
-    private void applyFormCreateMeta(Map<String, Object> item, Map<String, Object> formCreateMeta, Map<String, Object> props) {
-        if (formCreateMeta == null || formCreateMeta.isEmpty()) {
-            return;
-        }
-        Object style = firstPresent(formCreateMeta.get("style"), props.get("style"));
-        if (style != null) {
-            item.put("componentStyle", style);
-        }
-        Object componentClass = firstPresent(props.get("className"), props.get("class"));
-        if (componentClass != null) {
-            item.put("componentClass", componentClass);
-        }
-        Object formItemClass = firstPresent(formCreateMeta.get("className"), formCreateMeta.get("class"));
-        if (formItemClass != null) {
-            item.put("formItemClass", formItemClass);
-        }
-        Map<String, Object> wrap = mapValue(formCreateMeta.get("wrap"));
-        if (wrap.get("style") != null) {
-            item.put("formItemStyle", wrap.get("style"));
-        }
-        if (wrap.containsKey("labelWidth")) {
-            item.put("labelWidth", wrap.get("labelWidth"));
-        }
-        if (wrap.containsKey("show") && !booleanWithDefault(wrap.get("show"), true)) {
-            item.put("showLabel", false);
-        }
-    }
-
     private Object firstNonBlank(Object... values) {
         if (values == null) {
             return null;
@@ -1310,14 +966,6 @@ public class LowcodeRuntimeConfigBuilder {
             }
         }
         return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> mapValue(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return new LinkedHashMap<>((Map<String, Object>) map);
-        }
-        return new LinkedHashMap<>();
     }
 
     private String normalizeChildListDisplayMode(Object value) {
@@ -1362,10 +1010,6 @@ public class LowcodeRuntimeConfigBuilder {
         }
         props.putAll(resolveGridBlockProps(pageSchema, List.of("data-table", "AiCrudPage", "AiTable")));
         return props;
-    }
-
-    private boolean isSystemField(LowcodeFieldSchema field) {
-        return field != null && Boolean.TRUE.equals(field.getSystemField());
     }
 
     private List<LowcodeFieldSchema> resolveFields(LowcodeModelSchema modelSchema,

@@ -76,3 +76,9 @@
 - 从 `LowcodeRuntimeConfigBuilder` 提取 form-create 组件类型、必填/验证规则、样式与网格跨度映射到无状态 `RuntimeFormRuleSettingResolver`；入口由 1924 行降至 1724 行，新组件 227 行。保留原字段设置覆盖顺序，网格列数仅在规则声明 `col` 时按需解析。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeFormRuleSettingResolverTest,RuntimeDesignerLayoutReaderTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：4 类共 30 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
 - 未启动 Admin 服务或连接真实数据库；真实设计器保存/发布/编辑联调仍未覆盖，本轮无服务 PID 需停止。
+
+## 2026-09-26 第十八个切口：编辑字段编译
+
+- 从 `LowcodeRuntimeConfigBuilder` 提取编辑字段渲染、运行时验证规则、公式只读、引用伴随列和 form-create 元数据到 `RuntimeEditFieldCompiler`；基础属性白名单、对齐及系统字段判断迁入 `RuntimeFieldPresentationSupport`。入口由 1724 行降至 1373 行；新类分别 294/115 行，均低于 1000 行。主子表回调仍调用同一编译器。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeEditFieldCompilerTest,RuntimeFormRuleSettingResolverTest,RuntimeDesignerLayoutReaderTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest,RuntimeChildTableCompilerTest,RuntimeRelationLookupCompilerTest -Dsurefire.failIfNoSpecifiedTests=false test`：7 类共 37 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
+- 未启动 Admin 服务或连接真实数据库；本轮不改 API、SQL、表单保存或字段权限。真实运行页编辑联调仍未覆盖，无服务 PID 需停止。
