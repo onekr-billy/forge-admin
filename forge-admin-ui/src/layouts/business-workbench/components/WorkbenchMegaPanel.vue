@@ -132,6 +132,7 @@ function handleSection(section) {
     navigate(section.entry)
 }
 
+/** 面板仍挂在触发菜单下方（非顶栏全宽）；内部布局用 container query 自适应 */
 function syncPanelAnchor() {
   if (!store.activeMenu || window.innerWidth <= 640) {
     panelAnchorStyle.value = {}
@@ -140,17 +141,20 @@ function syncPanelAnchor() {
   const header = document.querySelector('.business-workbench-header')
   const buttons = [...(header?.querySelectorAll('.business-mega-triggers > button[aria-controls="business-mega-panel"]') || [])]
   const activeButton = buttons.find(button => button.dataset.menuKey === String(store.activeMenu))
-  if (!header || !activeButton || !buttons.length)
+  if (!header || !activeButton)
     return
 
   const headerRect = header.getBoundingClientRect()
-  const anchorOffsets = buttons.map(button => button.getBoundingClientRect().left - headerRect.left)
-  const activeOffset = activeButton.getBoundingClientRect().left - headerRect.left
-  const safeRight = Math.min(headerRect.right, window.innerWidth) - 12
-  const safeWidth = safeRight - headerRect.left - Math.max(...anchorOffsets)
+  const activeRect = activeButton.getBoundingClientRect()
+  const edgeGap = 12
+  const left = Math.max(0, activeRect.left - headerRect.left)
+  const safeRight = Math.min(headerRect.right, window.innerWidth) - edgeGap
+  const available = Math.max(0, safeRight - (headerRect.left + left))
+  const width = Math.min(1040, Math.max(280, available))
+
   panelAnchorStyle.value = {
-    '--mega-panel-anchor-left': `${Math.max(0, activeOffset)}px`,
-    '--mega-panel-anchor-width': `${Math.min(1040, Math.max(320, safeWidth))}px`,
+    '--mega-panel-anchor-left': `${left}px`,
+    '--mega-panel-anchor-width': `${width}px`,
     '--mega-panel-anchor-translate': '0',
   }
 }

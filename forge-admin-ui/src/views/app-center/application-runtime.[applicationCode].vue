@@ -640,7 +640,21 @@
             </div>
 
             <div class="application-grid-host">
+              <div
+                v-if="editCanvasBootstrapping"
+                class="edit-canvas-bootstrapping"
+                aria-busy="true"
+                aria-label="画布加载中"
+              >
+                <n-skeleton height="28px" width="36%" :sharp="false" />
+                <n-skeleton height="14px" width="72%" :sharp="false" style="margin-top: 14px" />
+                <n-skeleton height="14px" width="58%" :sharp="false" style="margin-top: 8px" />
+                <n-skeleton height="160px" :sharp="false" style="margin-top: 20px" />
+                <n-skeleton height="160px" :sharp="false" style="margin-top: 12px" />
+                <n-skeleton height="120px" width="80%" :sharp="false" style="margin-top: 12px" />
+              </div>
               <draggable
+                v-show="!editCanvasBootstrapping"
                 :model-value="pageBlocks"
                 item-key="id"
                 handle=".page-block-drag-handle"
@@ -1555,6 +1569,8 @@ const processSelectableObjects = computed(() => (objects.value || []).filter(ite
 const loadError = ref('')
 // 组件一挂载就显示骨架，避免「白屏 → 再出骨架」；load() finally 会关掉
 const loading = ref(true)
+/** 编辑态自由布局：顶栏已出但画布 chunk/首帧未就绪时，中间盖骨架避免纯白屏 */
+const editCanvasBootstrapping = ref(false)
 const saving = ref(false)
 const restoringObjectPageLayout = ref(false)
 const editing = ref(route.query.edit === '1')
@@ -2453,6 +2469,7 @@ async function load() {
     builder.value = null
     selectedNodeId.value = ''
     portalCrudSeed.value = {}
+    editCanvasBootstrapping.value = false
     loadError.value = String(
       error?.message
       || error?.detail?.rawMessage
@@ -2462,7 +2479,23 @@ async function load() {
   }
   finally {
     await warmChunksPromise
+    // page-custom 只是设计资源 key，不代表自由布局；按真实页面形态判断是否盖画布骨架
+    const pageId = String(selectedNodeId.value || route.query.pageId || '').trim()
+    const freeLayoutEdit = editing.value && resolveEntryDesignTab(pageId) === 'page'
+    // 先盖画布骨架再撤整页骨架，避免顶栏出来后中间纯白好几秒
+    if (freeLayoutEdit)
+      editCanvasBootstrapping.value = true
     loading.value = false
+    if (freeLayoutEdit) {
+      await nextTick()
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      // 给区块异步子组件一次挂载窗口；超时也撤，避免一直挡操作
+      await Promise.race([
+        new Promise(resolve => setTimeout(resolve, 280)),
+        nextTick(),
+      ])
+      editCanvasBootstrapping.value = false
+    }
   }
 }
 
