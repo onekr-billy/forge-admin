@@ -323,3 +323,12 @@
 - 验证：重跑主子表、任务字段权限、金额、结构化字段、加密和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：详情查询、外键候选回退、子表校验和 merge/replace 写入已统一委托 `DynamicCrudMasterDetailEngine`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 2448 行，新 Engine 902 行。
+
+## 2026-09-27 第四十六轮增量验证：审批节点可编辑数据协调器
+
+- P0：主表可写字段、子表关系别名、子表读/增/改/删权限和只读快照过滤保持不变，所有拒绝必须发生在仓储写入前。
+- P0：审批表单保存继续强制 merge 语义，旧值公式、唯一约束、加密/金额/结构化值转换、行归属校验和聚合刷新顺序保持不变。
+- P1：使用 Coordinator 隔离审批节点权限投影与持久化；Facade 仅保留事务、审计、运行上下文及普通更新回退，新生产类少于 1000 行。
+- 验证：重跑主子表、任务字段权限和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：审批节点主子表权限归一化、行级动作校验及受限保存已委托 `DynamicCrudTaskEditableCoordinator`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 2151 行，新 Coordinator 497 行。

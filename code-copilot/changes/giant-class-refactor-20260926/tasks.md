@@ -45,5 +45,6 @@
 - [x] 提取运行时关系 Planner，集中模型引用、关系推断、Join 查询计划和子表行投影，使 `DynamicCrudService` 降至 3455 行。
 - [x] 提取动态写入字段 Policy，集中字段白名单、真实列映射、事务条件和存储公式准备，使 `DynamicCrudService` 降至 2974 行。
 - [x] 提取主子表持久化 Engine，集中详情外键修复、子表校验和 merge/replace 保存，使 `DynamicCrudService` 降至 2448 行。
+- [x] 提取审批节点可编辑数据 Coordinator，集中权限别名、行级动作门禁和受限主子表保存，使 `DynamicCrudService` 降至 2151 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。
