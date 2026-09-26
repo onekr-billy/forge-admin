@@ -4,11 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.service.businessapp.CodeRuleService;
-import com.mdframe.forge.plugin.generator.service.crypto.LowcodeEncryptConfigParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -28,22 +26,9 @@ class DynamicCrudServiceAutoGenerationTest {
             new DynamicCrudGeneratedFieldPolicy(repository, objectMapper, null, codeRuleService);
     private final DynamicCrudTreeQueryEngine treeQueryEngine =
             new DynamicCrudTreeQueryEngine(repository, null, objectMapper);
-    private final DynamicCrudService service = new DynamicCrudService(
-            repository,
-            null,
-            objectMapper,
-            null,
-            null,
-            null,
-            new LowcodeEncryptConfigParser(objectMapper),
-            null,
-            null,
-            codeRuleService,
-            null,
-            null,
-            null,
-            null,
-            null);
+    private final DynamicCrudReadCoordinator readCoordinator = new DynamicCrudReadCoordinator(
+            repository, null, objectMapper, null, null, null, treeQueryEngine,
+            null, null, null, null);
 
     @Test
     @DisplayName("generates conventional code field when explicit generation config is absent")
@@ -104,10 +89,7 @@ class DynamicCrudServiceAutoGenerationTest {
                 [{"field":"amount","label":"金额","type":"number"}]
                 """);
 
-        Method method = DynamicCrudService.class.getDeclaredMethod("buildAllowedSearchFields", AiCrudConfig.class);
-        method.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Set<String> allowedFields = (Set<String>) method.invoke(service, config);
+        Set<String> allowedFields = readCoordinator.buildAllowedSearchFields(config);
 
         assertTrue(allowedFields.contains("id"));
         assertTrue(allowedFields.contains("customerName"));
@@ -127,12 +109,8 @@ class DynamicCrudServiceAutoGenerationTest {
                 "amount", "drop table"
         ));
 
-        Method method = DynamicCrudService.class.getDeclaredMethod(
-                "buildEffectiveSearchTypeMap", AiCrudConfig.class, DynamicCrudQuery.class, Set.class);
-        method.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, String> searchTypes = (Map<String, String>) method.invoke(
-                service, config, query, Set.of("id", "customerName", "amount"));
+        Map<String, String> searchTypes = readCoordinator.buildEffectiveSearchTypeMap(
+                config, query, Set.of("id", "customerName", "amount"));
 
         assertEquals("eq", searchTypes.get("id"));
         assertEquals("like", searchTypes.get("customerName"));

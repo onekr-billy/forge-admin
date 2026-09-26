@@ -341,3 +341,12 @@
 - 验证：重跑动态 CRUD 和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：普通 Join 模型的跨表新增、更新和子表 upsert 已委托 `DynamicCrudJoinedPersistenceEngine`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 1955 行，新 Engine 284 行。
+
+## 2026-09-27 第四十八轮增量验证：动态读模型协调器
+
+- P0：分页、同步/异步导出、定时候选、树、自定义查询、详情、打印和批量读取的数据源上下文、数据权限及读取流水线保持不变。
+- P0：Join 查询触发、子表聚合/展开行键、搜索字段与操作符白名单、设计预览配置选择和审计元数据保持不变。
+- P1：使用 Read Coordinator 聚合所有读取用例，Facade 仅保留稳定公开 API；新生产类少于 1000 行。
+- 验证：重跑树、打印、搜索协议、主子表及业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：所有动态读取入口已委托 `DynamicCrudReadCoordinator`；旧搜索协议测试改为直接验证 Coordinator，不再反射 Facade 私有实现。动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 1308 行，新 Coordinator 885 行。
