@@ -41,5 +41,6 @@
 - [x] 提取任务命令 Coordinator、表单资产 Catalog 与绑定视图 Assembler，使 `BusinessFlowService` 降至 953 行。
 - [x] 提取动态 CRUD 唯一约束 Validator 与自动编码/单据号 Policy，使 `DynamicCrudService` 降至 5642 行。
 - [x] 提取动态 CRUD 树查询引擎，集中树配置、祖先补链、懒加载组装和 includeChildren 展开，使 `DynamicCrudService` 降至 4878 行。
+- [x] 提取动态字段值 Pipeline，集中金额、结构化值、加解密、虚拟公式、翻译和脱敏，使 `DynamicCrudService` 降至 4165 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

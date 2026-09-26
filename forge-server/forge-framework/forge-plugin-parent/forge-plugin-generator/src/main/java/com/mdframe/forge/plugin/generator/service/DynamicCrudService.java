@@ -1,7 +1,6 @@
 package com.mdframe.forge.plugin.generator.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
@@ -30,7 +29,6 @@ import com.mdframe.forge.plugin.generator.service.formula.VirtualFormulaRuntime;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessDocumentConfigService;
 import com.mdframe.forge.plugin.generator.service.businessapp.CodeRuleService;
 import com.mdframe.forge.plugin.generator.service.crypto.LowcodeEncryptConfigParser;
-import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeComponentCatalog;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeFieldValueValidator;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
@@ -42,9 +40,7 @@ import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
-import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeStrategy;
 import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeStrategyFactory;
-import com.mdframe.forge.starter.crypto.desensitize.strategy.DesensitizeType;
 import com.mdframe.forge.starter.crypto.persistence.PersistentCryptoService;
 import com.mdframe.forge.starter.datascope.context.DataScopeContext;
 import com.mdframe.forge.starter.trans.spi.DictValueProvider;
@@ -146,19 +142,15 @@ public class DynamicCrudService {
     private final DynamicCrudRepository repository;
     private final AiCrudConfigService configService;
     private final ObjectMapper objectMapper;
-    private final DictValueProvider dictValueProvider;
-    private final DesensitizeStrategyFactory desensitizeStrategyFactory;
-    private final PersistentCryptoService persistentCryptoService;
-    private final LowcodeEncryptConfigParser encryptConfigParser;
     private final DynamicDataScopeService dynamicDataScopeService;
     private final StoredAggregateRefreshService storedAggregateRefreshService;
     private final StoredFormulaRuntime storedFormulaRuntime;
-    private final VirtualFormulaRuntime virtualFormulaRuntime;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
     private final DataAuditCaptureService dataAuditCaptureService;
     private final DynamicCrudUniquenessValidator uniquenessValidator;
     private final DynamicCrudGeneratedFieldPolicy generatedFieldPolicy;
     private final DynamicCrudTreeQueryEngine treeQueryEngine;
+    private final DynamicCrudFieldValuePipeline fieldValuePipeline;
 
     public DynamicCrudService(
             DynamicCrudRepository repository,
@@ -179,20 +171,23 @@ public class DynamicCrudService {
         this.repository = repository;
         this.configService = configService;
         this.objectMapper = objectMapper;
-        this.dictValueProvider = dictValueProvider;
-        this.desensitizeStrategyFactory = desensitizeStrategyFactory;
-        this.persistentCryptoService = persistentCryptoService;
-        this.encryptConfigParser = encryptConfigParser;
         this.dynamicDataScopeService = dynamicDataScopeService;
         this.storedAggregateRefreshService = storedAggregateRefreshService;
         this.storedFormulaRuntime = storedFormulaRuntime;
-        this.virtualFormulaRuntime = virtualFormulaRuntime;
         this.runtimeDataSourceResolver = runtimeDataSourceResolver;
         this.dataAuditCaptureService = dataAuditCaptureService;
         this.uniquenessValidator = new DynamicCrudUniquenessValidator(repository, objectMapper);
         this.generatedFieldPolicy = new DynamicCrudGeneratedFieldPolicy(
                 repository, objectMapper, documentConfigService, codeRuleService);
         this.treeQueryEngine = new DynamicCrudTreeQueryEngine(repository, configService, objectMapper);
+        this.fieldValuePipeline = new DynamicCrudFieldValuePipeline(
+                objectMapper,
+                dictValueProvider,
+                desensitizeStrategyFactory,
+                persistentCryptoService,
+                encryptConfigParser,
+                virtualFormulaRuntime
+        );
     }
 
     // ==================== 查询操作 ====================
@@ -587,16 +582,7 @@ public class DynamicCrudService {
     }
 
     private void applyPrintReadPipeline(List<Map<String, Object>> rows, AiCrudConfig config) {
-        applyRuntimeFieldAliases(rows, config);
-        applyDecrypt(rows, config.getEncryptConfig());
-        applyMoneyDisplayProjection(rows, config);
-        applyStructuredFieldDisplayProjection(rows, config);
-        var model = parseModelSchema(config);
-        for (var row : rows) {
-            virtualFormulaRuntime.calculateForPrint(List.of(row), model, buildFormulaRuntimeContext(config, row));
-        }
-        applyDictTranslation(rows, buildEffectiveTransConfig(config), true);
-        applyDesensitize(rows, config.getDesensitizeConfig(), true);
+        fieldValuePipeline.applyPrintRead(rows, config);
         dynamicDataScopeService.enrichRows(config, rows);
     }
 
@@ -3715,598 +3701,28 @@ public class DynamicCrudService {
     }
 
     private void applyReadPipeline(List<Map<String, Object>> rows, AiCrudConfig config) {
-        applyRuntimeFieldAliases(rows, config);
-        applyDecrypt(rows, config.getEncryptConfig());
-        applyMoneyDisplayProjection(rows, config);
-        applyStructuredFieldDisplayProjection(rows, config);
-        applyVirtualFormulas(config, rows);
-        applyDictTranslation(rows, buildEffectiveTransConfig(config));
-        applyDesensitize(rows, config.getDesensitizeConfig());
+        fieldValuePipeline.applyRead(rows, config);
         dynamicDataScopeService.enrichRows(config, rows);
     }
 
-    /**
-     * MONEY 字段的统一运行时协议：页面和动作使用“元”，数据库 bigint 使用“分”。
-     * 只有显式 MONEY 且底层为整数列时才启用，历史 decimal MONEY 字段保持原值兼容。
-     */
+
     private void applyMoneyStorageWrite(Map<String, Object> data, AiCrudConfig config) {
-        if (data == null || data.isEmpty() || config == null) {
-            return;
-        }
-        for (MoneyFieldContract field : resolveMinorMoneyFields(config)) {
-            String key = resolveMoneyDataKey(data, field);
-            if (key == null || data.get(key) == null) {
-                continue;
-            }
-            data.put(key, toMinorMoney(field, data.get(key)));
-        }
+        fieldValuePipeline.applyMoneyStorageWrite(data, config);
     }
 
-    /**
-     * 数组型控件统一以 JSON 数组写入文本列，避免 JDBC 将 List 直接绑定到 varchar/text。
-     */
     private void applyStructuredFieldStorageWrite(Map<String, Object> data, AiCrudConfig config) {
-        if (data == null || data.isEmpty() || config == null) {
-            return;
-        }
-        for (StructuredFieldContract field : resolveStructuredFields(config)) {
-            String key = resolveStructuredDataKey(data, field);
-            Object value = key == null ? null : data.get(key);
-            if (value == null || value instanceof String) {
-                continue;
-            }
-            try {
-                data.put(key, objectMapper.writeValueAsString(value));
-            } catch (Exception e) {
-                throw new BusinessException("字段值序列化失败: " + field.fieldName());
-            }
-        }
+        fieldValuePipeline.applyStructuredFieldStorageWrite(data, config);
     }
 
-    private void applyStructuredFieldDisplayProjection(List<Map<String, Object>> rows, AiCrudConfig config) {
-        if (rows == null || rows.isEmpty() || config == null) {
-            return;
-        }
-        List<StructuredFieldContract> fields = resolveStructuredFields(config);
-        for (Map<String, Object> row : rows) {
-            if (row == null || row.isEmpty()) {
-                continue;
-            }
-            for (StructuredFieldContract field : fields) {
-                String key = resolveStructuredDataKey(row, field);
-                Object value = key == null ? null : row.get(key);
-                if (value == null || value instanceof Collection<?>) {
-                    continue;
-                }
-                row.put(key, parseStructuredValue(value));
-            }
-        }
-    }
-
-    private Object parseStructuredValue(Object rawValue) {
-        if (rawValue instanceof String value) {
-            String text = value.trim();
-            if (text.isEmpty()) {
-                return new ArrayList<>();
-            }
-            try {
-                JsonNode node = objectMapper.readTree(text);
-                if (node != null && node.isArray()) {
-                    return objectMapper.convertValue(node, new TypeReference<List<Object>>() { });
-                }
-            } catch (Exception ignored) {
-                // 兼容早期以逗号分隔保存的历史值。
-            }
-            if (text.contains(",")) {
-                return Arrays.stream(text.split(","))
-                        .map(String::trim)
-                        .filter(StringUtils::isNotBlank)
-                        .toList();
-            }
-            return List.of(value);
-        }
-        if (rawValue instanceof JsonNode node && node.isArray()) {
-            return objectMapper.convertValue(node, new TypeReference<List<Object>>() { });
-        }
-        return rawValue;
-    }
-
-    private String resolveStructuredDataKey(Map<String, Object> data, StructuredFieldContract field) {
-        String camelColumn = DynamicQueryGenerator.snakeToCamel(field.columnName());
-        for (String candidate : List.of(field.fieldName(), field.columnName(), camelColumn)) {
-            if (StringUtils.isNotBlank(candidate) && data.containsKey(candidate)) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private List<StructuredFieldContract> resolveStructuredFields(AiCrudConfig config) {
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema == null || modelSchema.getFields() == null) {
-            return List.of();
-        }
-        List<StructuredFieldContract> result = new ArrayList<>();
-        for (LowcodeFieldSchema field : modelSchema.getFields()) {
-            if (field == null) {
-                continue;
-            }
-            String componentType = StringUtils.trimToNull(field.getComponentType());
-            String businessType = StringUtils.upperCase(StringUtils.trimToEmpty(field.getBusinessFieldType()));
-            if (componentType == null && "CHECKBOX".equals(businessType)) {
-                componentType = "checkbox";
-            } else if (componentType == null && "MULTI_SELECT".equals(businessType)) {
-                componentType = "transfer";
-            }
-            if (!LowcodeComponentCatalog.isStructuredValueComponent(componentType)
-                    || StringUtils.isBlank(field.getField())) {
-                continue;
-            }
-            String columnName = StringUtils.defaultIfBlank(field.getColumnName(),
-                    DynamicQueryGenerator.camelToSnake(field.getField()));
-            result.add(new StructuredFieldContract(field.getField(), columnName, componentType));
-        }
-        return result;
-    }
-
-    private record StructuredFieldContract(String fieldName, String columnName, String componentType) {
-    }
-
-    private void applyMoneyDisplayProjection(List<Map<String, Object>> rows, AiCrudConfig config) {
-        if (rows == null || rows.isEmpty() || config == null) {
-            return;
-        }
-        List<MoneyFieldContract> fields = resolveMinorMoneyFields(config);
-        if (fields.isEmpty()) {
-            return;
-        }
-        for (Map<String, Object> row : rows) {
-            if (row == null || row.isEmpty()) {
-                continue;
-            }
-            for (MoneyFieldContract field : fields) {
-                String key = resolveMoneyDataKey(row, field);
-                if (key == null || row.get(key) == null) {
-                    continue;
-                }
-                row.put(key, fromMinorMoney(field, row.get(key)));
-            }
-        }
-    }
-
-    private String resolveMoneyDataKey(Map<String, Object> data, MoneyFieldContract field) {
-        String camelColumn = DynamicQueryGenerator.snakeToCamel(field.columnName());
-        for (String candidate : List.of(field.fieldName(), field.columnName(), camelColumn)) {
-            if (StringUtils.isNotBlank(candidate) && data.containsKey(candidate)) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private Long toMinorMoney(MoneyFieldContract field, Object rawValue) {
-        try {
-            String text = String.valueOf(rawValue).trim();
-            if (StringUtils.isBlank(text)) {
-                return null;
-            }
-            BigDecimal amount = new BigDecimal(text).stripTrailingZeros();
-            if (amount.scale() > field.scale()) {
-                throw new BusinessException("金额输入超过允许的小数位，禁止静默舍入: " + field.fieldName());
-            }
-            if (field.minValue() != null && amount.compareTo(field.minValue()) < 0) {
-                throw new BusinessException("金额输入小于最小值: " + field.fieldName());
-            }
-            if (field.maxValue() != null && amount.compareTo(field.maxValue()) > 0) {
-                throw new BusinessException("金额输入大于最大值: " + field.fieldName());
-            }
-            return amount.movePointRight(field.scale()).longValueExact();
-        } catch (BusinessException e) {
-            throw e;
-        } catch (ArithmeticException | NumberFormatException e) {
-            throw new BusinessException("金额输入格式不正确: " + field.fieldName());
-        }
-    }
-
-    private BigDecimal fromMinorMoney(MoneyFieldContract field, Object rawValue) {
-        try {
-            return new BigDecimal(String.valueOf(rawValue)).movePointLeft(field.scale());
-        } catch (NumberFormatException e) {
-            throw new BusinessException("金额存储值格式不正确: " + field.fieldName());
-        }
-    }
-
-    private List<MoneyFieldContract> resolveMinorMoneyFields(AiCrudConfig config) {
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema == null || modelSchema.getFields() == null) {
-            return List.of();
-        }
-        List<MoneyFieldContract> result = new ArrayList<>();
-        for (LowcodeFieldSchema field : modelSchema.getFields()) {
-            if (field == null || !isMinorMoneyField(field)) {
-                continue;
-            }
-            String fieldName = StringUtils.trimToNull(field.getField());
-            if (fieldName == null) {
-                continue;
-            }
-            String columnName = StringUtils.defaultIfBlank(
-                    StringUtils.trimToNull(field.getColumnName()),
-                    DynamicQueryGenerator.camelToSnake(fieldName));
-            if (columnName == null) {
-                continue;
-            }
-            int scale = field.getPrecision() == null ? 2 : field.getPrecision();
-            if (scale < 0 || scale > 6) {
-                throw new BusinessException("MONEY 字段小数位配置不正确: " + fieldName);
-            }
-            Map<String, Object> basicProps = field.getBasicProps() == null ? Map.of() : field.getBasicProps();
-            result.add(new MoneyFieldContract(
-                    fieldName,
-                    columnName,
-                    scale,
-                    toBigDecimal(basicProps.get("min")),
-                    toBigDecimal(basicProps.get("max"))));
-        }
-        return result;
-    }
-
-    private boolean isMinorMoneyField(LowcodeFieldSchema field) {
-        String businessType = StringUtils.upperCase(StringUtils.trimToEmpty(field.getBusinessFieldType()));
-        String componentType = StringUtils.lowerCase(StringUtils.trimToEmpty(field.getComponentType()));
-        String dataType = StringUtils.lowerCase(StringUtils.trimToEmpty(field.getDataType()));
-        boolean money = "MONEY".equals(businessType) || "money".equals(componentType);
-        return money && Set.of("tinyint", "smallint", "mediumint", "int", "integer", "bigint", "long").contains(dataType);
-    }
-
-    private record MoneyFieldContract(String fieldName,
-                                      String columnName,
-                                      int scale,
-                                      BigDecimal minValue,
-                                      BigDecimal maxValue) {
-    }
-
-    /**
-     * 将数据库列值补充为稳定的低代码业务字段编码，确保写入和读取使用同一套字段契约。
-     * 保留原数据库列键用于兼容已有页面，不覆盖查询结果中已经显式返回的业务字段。
-     */
-    private void applyRuntimeFieldAliases(List<Map<String, Object>> rows, AiCrudConfig config) {
-        if (rows == null || rows.isEmpty() || config == null) {
-            return;
-        }
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema == null || modelSchema.getFields() == null) {
-            return;
-        }
-        for (Map<String, Object> row : rows) {
-            if (row == null) {
-                continue;
-            }
-            for (LowcodeFieldSchema field : modelSchema.getFields()) {
-                String fieldName = field == null ? null : StringUtils.trimToNull(field.getField());
-                String columnName = field == null ? null : StringUtils.trimToNull(field.getColumnName());
-                if (fieldName == null || columnName == null || row.containsKey(fieldName)) {
-                    continue;
-                }
-                if (row.containsKey(columnName)) {
-                    row.put(fieldName, row.get(columnName));
-                    continue;
-                }
-                String camelColumnName = DynamicQueryGenerator.snakeToCamel(columnName);
-                if (row.containsKey(camelColumnName)) {
-                    row.put(fieldName, row.get(camelColumnName));
-                }
-            }
-            applyReferenceDisplayAliases(row, modelSchema);
-        }
-    }
-
-    /**
-     * 引用字段的显示名称伴随列（<col>_name）补充为业务字段编码（<field>Name），
-     * 与写入白名单、前端 relationName 渲染使用同一套键契约；存量空值保持缺失，前端退化显示 ID。
-     */
-    private void applyReferenceDisplayAliases(Map<String, Object> row, LowcodeModelSchema modelSchema) {
-        for (LowcodeFieldSchema field : modelSchema.getFields()) {
-            if (field == null || !field.isSelectionLabelField()) {
-                continue;
-            }
-            String displayFieldName = field.referenceDisplayFieldName();
-            String displayColumnName = field.referenceDisplayColumnName();
-            if (displayFieldName == null || displayColumnName == null || row.containsKey(displayFieldName)) {
-                continue;
-            }
-            if (row.containsKey(displayColumnName)) {
-                row.put(displayFieldName, row.get(displayColumnName));
-                continue;
-            }
-            String camelDisplayColumn = DynamicQueryGenerator.snakeToCamel(displayColumnName);
-            if (row.containsKey(camelDisplayColumn)) {
-                row.put(displayFieldName, row.get(camelDisplayColumn));
-            }
-        }
-    }
-
-    // ==================== 加解密处理 ====================
-
-    /**
-     * 应用加密（写入时）
-     * encryptConfig格式示例：
-     * {
-     *   "phone": {"algorithm": "SM4"},
-     *   "idCard": {"algorithm": "AES"},
-     *   "email": {"algorithm": "SM4"}
-     * }
-     */
     private void applyEncrypt(Map<String, Object> data, String encryptConfigJson) {
-        if (StringUtils.isBlank(encryptConfigJson) || data == null || data.isEmpty()) {
-            return;
-        }
-        try {
-            for (LowcodeEncryptConfigParser.FieldRule rule : encryptConfigParser.parse(encryptConfigJson)) {
-                String dataKey = resolveWriteEncryptKey(data, rule);
-                if (dataKey == null || data.get(dataKey) == null) {
-                    continue;
-                }
-                Object value = data.get(dataKey);
-                if (value instanceof String) {
-                    String plainText = (String) value;
-                    if (StringUtils.isNotBlank(plainText)) {
-                        String encryptedValue = persistentCryptoService.encrypt(plainText, rule.algorithm());
-                        data.put(dataKey, encryptedValue);
-                        log.debug("[DynamicCrudService] 加密字段: {}, algorithm: {}", rule.fieldName(), rule.algorithm());
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 加密处理失败, exceptionType={}", e.getClass().getSimpleName());
-            throw new BusinessException("低代码加密字段处理失败，请检查持久化密钥配置", e);
-        }
+        fieldValuePipeline.applyEncrypt(data, encryptConfigJson);
     }
 
-    /**
-     * 应用解密（读取时）
-     * encryptConfig格式示例：
-     * {
-     *   "phone": {"algorithm": "SM4"},
-     *   "idCard": {"algorithm": "AES"},
-     *   "email": {"algorithm": "SM4"}
-     * }
-     */
-    private void applyDecrypt(List<Map<String, Object>> rows, String encryptConfigJson) {
-        if (StringUtils.isBlank(encryptConfigJson) || rows == null || rows.isEmpty()) {
-            return;
-        }
-        try {
-            List<LowcodeEncryptConfigParser.FieldRule> rules = encryptConfigParser.parse(encryptConfigJson);
-            for (Map<String, Object> row : rows) {
-                for (LowcodeEncryptConfigParser.FieldRule rule : rules) {
-                    String dataKey = resolveReadEncryptKey(row, rule);
-                    if (dataKey == null || row.get(dataKey) == null) {
-                        continue;
-                    }
-                    Object value = row.get(dataKey);
-                    if (value instanceof String) {
-                        String cipherText = (String) value;
-                        if (StringUtils.isNotBlank(cipherText)) {
-                            String decryptedValue = persistentCryptoService.decrypt(cipherText, rule.algorithm());
-                            row.put(dataKey, decryptedValue);
-                            log.debug("[DynamicCrudService] 解密字段: {}, algorithm: {}", rule.fieldName(), rule.algorithm());
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 解密处理失败, exceptionType={}", e.getClass().getSimpleName());
-            throw new BusinessException("低代码加密字段读取失败，请检查持久化密钥配置", e);
-        }
-    }
-
-    private String resolveWriteEncryptKey(Map<String, Object> data, LowcodeEncryptConfigParser.FieldRule rule) {
-        if (data.containsKey(rule.columnName())) {
-            return rule.columnName();
-        }
-        if (data.containsKey(rule.fieldName())) {
-            return rule.fieldName();
-        }
-        String snakeFieldName = DynamicQueryGenerator.camelToSnake(rule.fieldName());
-        return data.containsKey(snakeFieldName) ? snakeFieldName : null;
-    }
-
-    private String resolveReadEncryptKey(Map<String, Object> row, LowcodeEncryptConfigParser.FieldRule rule) {
-        if (row.containsKey(rule.fieldName())) {
-            return rule.fieldName();
-        }
-        if (row.containsKey(rule.columnName())) {
-            return rule.columnName();
-        }
-        String camelColumnName = DynamicQueryGenerator.snakeToCamel(rule.columnName());
-        return row.containsKey(camelColumnName) ? camelColumnName : null;
-    }
-
-    // ==================== 脱敏处理 ====================
-
-    /**
-     * 应用字段脱敏
-     */
-    private void applyDesensitize(List<Map<String, Object>> rows, String desensitizeConfigJson) {
-        applyDesensitize(rows, desensitizeConfigJson, false);
-    }
-
-    private void applyDesensitize(List<Map<String, Object>> rows, String desensitizeConfigJson, boolean strict) {
-        if (StringUtils.isBlank(desensitizeConfigJson) || rows == null || rows.isEmpty()) {
-            return;
-        }
-        try {
-            JsonNode configNode = objectMapper.readTree(desensitizeConfigJson);
-            if (!configNode.isObject()) {
-                if (strict) {
-                    throw new BusinessException("打印脱敏配置无效");
-                }
-                return;
-            }
-
-            for (Map<String, Object> row : rows) {
-                for (Map.Entry<String, JsonNode> entry : configNode.properties()) {
-                    String fieldName = entry.getKey(); // camelCase字段名
-                    JsonNode ruleNode = entry.getValue();
-                    if (!row.containsKey(fieldName) || row.get(fieldName) == null) continue;
-
-                    String typeStr = ruleNode.has("type") ? ruleNode.get("type").asText("CUSTOM") : "CUSTOM";
-                    DesensitizeType type = DesensitizeType.valueOf(typeStr);
-                    DesensitizeStrategy strategy = desensitizeStrategyFactory.getStrategy(type);
-                    if (strategy == null && strict) {
-                        throw new BusinessException("打印脱敏策略不可用");
-                    }
-                    if (strategy != null) {
-                        String originalValue = String.valueOf(row.get(fieldName));
-                        row.put(fieldName, strategy.desensitize(originalValue));
-                    }
-                }
-            }
-        } catch (Exception e) {
-            if (strict) {
-                throw new BusinessException("打印脱敏处理失败，已终止输出");
-            }
-            log.warn("[DynamicCrudService] 脱敏处理失败", e);
-        }
-    }
-
-    private void removeMaskedDesensitizedWriteColumns(Map<String, Object> data, AiCrudConfig config, String tableName) {
-        if (data == null || data.isEmpty() || config == null || StringUtils.isBlank(config.getDesensitizeConfig())) {
-            return;
-        }
-        Set<String> sensitiveColumns = resolveDesensitizedColumns(config, tableName);
-        if (sensitiveColumns.isEmpty()) {
-            return;
-        }
-        data.entrySet().removeIf(entry -> sensitiveColumns.contains(entry.getKey()) && isMaskedValue(entry.getValue()));
-    }
-
-    private Set<String> resolveDesensitizedColumns(AiCrudConfig config, String tableName) {
-        Set<String> columns = new HashSet<>();
-        try {
-            JsonNode configNode = objectMapper.readTree(config.getDesensitizeConfig());
-            if (!configNode.isObject()) {
-                return columns;
-            }
-            Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
-            for (String fieldName : iterableFieldNames(configNode)) {
-                String columnName = columnMapping.getOrDefault(fieldName, DynamicQueryGenerator.camelToSnake(fieldName));
-                columns.add(columnName);
-            }
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 解析脱敏写入字段失败", e);
-        }
-        return columns;
-    }
-
-    private List<String> iterableFieldNames(JsonNode node) {
-        List<String> fields = new ArrayList<>();
-        node.fieldNames().forEachRemaining(fields::add);
-        return fields;
-    }
-
-    private boolean isMaskedValue(Object value) {
-        return value instanceof String text && text.contains("*");
-    }
-
-    // ==================== 字典翻译 ====================
-
-    private String buildEffectiveTransConfig(AiCrudConfig config) {
-        if (config == null) {
-            return null;
-        }
-        Map<String, Object> rules = new LinkedHashMap<>();
-        mergeTransConfig(rules, config.getTransConfig());
-        mergeTransRulesFromSchema(rules, config.getColumnsSchema(), true);
-        mergeTransRulesFromSchema(rules, config.getSearchSchema(), false);
-        mergeTransRulesFromSchema(rules, config.getEditSchema(), false);
-        if (rules.isEmpty()) {
-            return config.getTransConfig();
-        }
-        try {
-            return objectMapper.writeValueAsString(rules);
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 合并翻译配置失败", e);
-            return config.getTransConfig();
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void mergeTransConfig(Map<String, Object> rules, String transConfigJson) {
-        if (StringUtils.isBlank(transConfigJson)) {
-            return;
-        }
-        try {
-            JsonNode node = objectMapper.readTree(transConfigJson);
-            if (!node.isObject()) {
-                return;
-            }
-            Map<String, Object> source = objectMapper.convertValue(node, Map.class);
-            rules.putAll(source);
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 解析翻译配置失败", e);
-        }
-    }
-
-    private void mergeTransRulesFromSchema(Map<String, Object> rules, String schemaJson, boolean overrideExisting) {
-        if (StringUtils.isBlank(schemaJson)) {
-            return;
-        }
-        try {
-            JsonNode schemaNode = objectMapper.readTree(schemaJson);
-            if (!schemaNode.isArray()) {
-                return;
-            }
-            for (JsonNode item : schemaNode) {
-                mergeTransRuleFromField(rules, item, overrideExisting);
-            }
-        } catch (Exception e) {
-            log.warn("[DynamicCrudService] 从Schema推导翻译配置失败", e);
-        }
-    }
-
-    private void mergeTransRuleFromField(Map<String, Object> rules, JsonNode item, boolean overrideExisting) {
-        String fieldName = firstText(item, "field", "prop", "key", "dataIndex");
-        if (StringUtils.isBlank(fieldName) || (!overrideExisting && rules.containsKey(fieldName))) {
-            return;
-        }
-        String dictType = firstText(item, "dictType");
-        JsonNode renderNode = item.get("render");
-        if (StringUtils.isBlank(dictType) && renderNode != null && renderNode.isObject()) {
-            dictType = firstText(renderNode, "dictType");
-        }
-        if (StringUtils.isNotBlank(dictType)) {
-            Map<String, Object> rule = new LinkedHashMap<>();
-            rule.put("dictType", dictType);
-            rule.put("targetField", fieldName + "Name");
-            rules.put(fieldName, rule);
-            return;
-        }
-
-        String renderType = renderNode != null && renderNode.isObject() ? firstText(renderNode, "type") : "";
-        String componentType = StringUtils.defaultIfBlank(firstText(item, "type", "componentType"), renderType);
-        String transType = resolveTransType(componentType);
-        if (StringUtils.isBlank(transType)) {
-            return;
-        }
-        Map<String, Object> rule = new LinkedHashMap<>();
-        rule.put("type", transType);
-        String targetField = renderNode != null && renderNode.isObject()
-                ? StringUtils.defaultIfBlank(firstText(renderNode, "targetField"), fieldName + "Name")
-                : fieldName + "Name";
-        rule.put("targetField", targetField);
-        rules.put(fieldName, rule);
-    }
-
-    private String resolveTransType(String componentType) {
-        return switch (StringUtils.defaultString(componentType)) {
-            case "orgTreeSelect", "orgName" -> "orgName";
-            case "userSelect", "userName" -> "userName";
-            case "regionTreeSelect", "regionName" -> "regionName";
-            case "fileUpload", "imageUpload" -> componentType;
-            default -> "";
-        };
+    private void removeMaskedDesensitizedWriteColumns(Map<String, Object> data,
+                                                       AiCrudConfig config,
+                                                       String tableName) {
+        fieldValuePipeline.removeMaskedDesensitizedWriteColumns(
+                data, config, buildRuntimeColumnMapping(config, tableName));
     }
 
     private String firstText(JsonNode node, String... fieldNames) {
@@ -4419,117 +3835,6 @@ public class DynamicCrudService {
                 || "del_flag".equals(fieldName);
     }
 
-    /**
-     * 应用字典翻译
-     */
-    private void applyDictTranslation(List<Map<String, Object>> rows, String transConfigJson) {
-        applyDictTranslation(rows, transConfigJson, false);
-    }
-
-    private void applyDictTranslation(List<Map<String, Object>> rows, String transConfigJson, boolean strict) {
-        if (strict && StringUtils.isNotBlank(transConfigJson) && dictValueProvider == null) {
-            throw new BusinessException("打印翻译服务不可用");
-        }
-        if (StringUtils.isBlank(transConfigJson) || rows == null || rows.isEmpty() || dictValueProvider == null) {
-            return;
-        }
-        try {
-            JsonNode configNode = objectMapper.readTree(transConfigJson);
-            if (!configNode.isObject()) {
-                if (strict) {
-                    throw new BusinessException("打印翻译配置无效");
-                }
-                return;
-            }
-
-            Map<String, List<String>> orgIdBuckets = new LinkedHashMap<>();
-            Map<String, List<String>> userIdBuckets = new LinkedHashMap<>();
-            Map<String, List<String>> fileIdBuckets = new LinkedHashMap<>();
-            Map<String, List<String>> regionCodeBuckets = new LinkedHashMap<>();
-            Map<String, String> targetFieldMap = new LinkedHashMap<>();
-
-            for (Map<String, Object> row : rows) {
-                for (Map.Entry<String, JsonNode> entry : configNode.properties()) {
-                    String sourceField = entry.getKey();
-                    JsonNode ruleNode = entry.getValue();
-                    if (!row.containsKey(sourceField) || row.get(sourceField) == null) continue;
-
-                    String transType = ruleNode.has("type") ? ruleNode.get("type").asText("") : "";
-                    String dictType = ruleNode.has("dictType") ? ruleNode.get("dictType").asText("") : "";
-                    String targetField = ruleNode.has("targetField") ? ruleNode.get("targetField").asText()
-                            : sourceField + "Name";
-
-                    if (StringUtils.isNotBlank(dictType)) {
-                        String key = String.valueOf(row.get(sourceField));
-                        String label = dictValueProvider.getLabel(dictType, key);
-                        if (label != null) {
-                            row.put(targetField, label);
-                        }
-                    } else if ("orgName".equals(transType)) {
-                        String orgId = String.valueOf(row.get(sourceField));
-                        orgIdBuckets.computeIfAbsent(sourceField, k -> new ArrayList<>()).add(orgId);
-                        targetFieldMap.put(sourceField, targetField);
-                    } else if ("userName".equals(transType)) {
-                        String userId = String.valueOf(row.get(sourceField));
-                        userIdBuckets.computeIfAbsent(sourceField, k -> new ArrayList<>()).add(userId);
-                        targetFieldMap.put(sourceField, targetField);
-                    } else if ("regionName".equals(transType)) {
-                        String regionCode = String.valueOf(row.get(sourceField));
-                        regionCodeBuckets.computeIfAbsent(sourceField, k -> new ArrayList<>()).add(regionCode);
-                        targetFieldMap.put(sourceField, targetField);
-                    } else if ("fileUpload".equals(transType) || "imageUpload".equals(transType)) {
-                        String fileId = String.valueOf(row.get(sourceField));
-                        fileIdBuckets.computeIfAbsent(sourceField, k -> new ArrayList<>()).add(fileId);
-                        targetFieldMap.put(sourceField, targetField);
-                    }
-                }
-            }
-
-            applyBatchTranslation(rows, orgIdBuckets, "orgName",
-                    (ids) -> dictValueProvider.batchGetOrgNames(ids), targetFieldMap);
-            applyBatchTranslation(rows, userIdBuckets, "userName",
-                    (ids) -> dictValueProvider.batchGetUserNames(ids), targetFieldMap);
-            applyBatchTranslation(rows, regionCodeBuckets, "regionName",
-                    (ids) -> dictValueProvider.batchGetRegionNames(ids), targetFieldMap);
-            applyBatchTranslation(rows, fileIdBuckets, "fileUpload",
-                    (ids) -> dictValueProvider.batchGetFileNames(ids), targetFieldMap);
-        } catch (Exception e) {
-            if (strict) {
-                throw new BusinessException("打印字段翻译失败，已终止输出");
-            }
-            log.warn("[DynamicCrudService] 翻译处理失败", e);
-        }
-    }
-
-    private void applyBatchTranslation(List<Map<String, Object>> rows,
-                                       Map<String, List<String>> fieldBuckets,
-                                       String transType,
-                                       java.util.function.Function<List<String>, Map<String, String>> batchLoader,
-                                       Map<String, String> targetFieldMap) {
-        for (Map.Entry<String, List<String>> bucket : fieldBuckets.entrySet()) {
-            String sourceField = bucket.getKey();
-            List<String> ids = bucket.getValue().stream().distinct().toList();
-            if (ids.isEmpty()) continue;
-            Map<String, String> nameMap;
-            try {
-                nameMap = batchLoader.apply(ids);
-            } catch (Exception e) {
-                log.warn("[DynamicCrudService] 批量翻译失败, type={}, field={}", transType, sourceField, e);
-                continue;
-            }
-            if (nameMap == null || nameMap.isEmpty()) continue;
-            String targetField = targetFieldMap.getOrDefault(sourceField, sourceField + "Name");
-            for (Map<String, Object> row : rows) {
-                Object value = row.get(sourceField);
-                if (value == null) continue;
-                String key = String.valueOf(value);
-                String name = nameMap.get(key);
-                if (name != null) {
-                    row.put(targetField, name);
-                }
-            }
-        }
-    }
 
     // ==================== 配置加载 ====================
 
@@ -4816,24 +4121,6 @@ public class DynamicCrudService {
         if (modelSchema == null) return;
         FormulaRuntimeContext ctx = buildFormulaRuntimeContext(config, data);
         storedFormulaRuntime.calculate(List.of(data), modelSchema, ctx);
-    }
-
-    private void applyVirtualFormulas(AiCrudConfig config, Map<String, Object> record) {
-        if (record == null) return;
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema == null) return;
-        FormulaRuntimeContext ctx = buildFormulaRuntimeContext(config, record);
-        virtualFormulaRuntime.calculate(List.of(record), modelSchema, ctx);
-    }
-
-    private void applyVirtualFormulas(AiCrudConfig config, List<Map<String, Object>> records) {
-        if (records == null || records.isEmpty()) return;
-        LowcodeModelSchema modelSchema = parseModelSchema(config);
-        if (modelSchema == null) return;
-        for (Map<String, Object> record : records) {
-            FormulaRuntimeContext ctx = buildFormulaRuntimeContext(config, record);
-            virtualFormulaRuntime.calculate(List.of(record), modelSchema, ctx);
-        }
     }
 
     private LowcodeModelSchema parseModelSchema(AiCrudConfig config) {

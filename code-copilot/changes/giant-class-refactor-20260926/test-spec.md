@@ -287,3 +287,12 @@
 - 验证：新增树引擎单测，重跑动态 CRUD 与业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：新增 `DynamicCrudTreeQueryEngineTest` 覆盖配置别名与覆盖优先级、完整树祖先补链和只读标记、懒加载叶子探测、递归层级展开及前端预展开条件；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 4878 行，新引擎 772 行。
+
+## 2026-09-26 第四十二轮增量验证：动态字段值处理流水线
+
+- P0：读链路的字段别名、解密、金额分转元、结构化字段解析、虚拟公式、字典/名称翻译、脱敏及打印严格模式顺序保持不变。
+- P0：写链路的金额元转分、结构化字段 JSON 化、持久化加密和脱敏占位值忽略规则保持不变；加密、金额精度和打印安全失败继续 fail-closed。
+- P1：使用 Pipeline/Chain of Responsibility 集中字段值转换，入口只保留数据权限富化和事务编排；新生产类少于 1000 行。
+- 验证：重跑金额、结构化字段、加密生命周期、打印读取、动态 CRUD 和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：金额、结构化值和加密生命周期测试改为直接验证新 Pipeline，打印读取继续覆盖严格翻译/脱敏与数据权限富化；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 4165 行，新 Pipeline 782 行。

@@ -204,3 +204,9 @@
 - 使用 Query Engine 从 `DynamicCrudService` 整体迁出树配置解析、完整树/懒加载查询、数据权限祖先补链、节点协议组装，以及普通/自定义查询的 `includeChildren` 递归展开。入口仍持有运行时数据源上下文、数据权限条件和解密/公式/翻译/脱敏读取流水线。
 - 入口由 5642 行降至 4878 行，新 `DynamicCrudTreeQueryEngine` 772 行；旧树配置反射测试改为直接验证引擎，新增 5 项树行为测试。generator Reactor 编译退出码 0。
 - 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实大数据树与跨数据源树查询仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-26 第四十二个切口：动态字段值处理流水线
+
+- 使用 Pipeline/Chain of Responsibility 从 `DynamicCrudService` 迁出金额元/分转换、结构化字段 JSON 协议、业务字段别名、持久化加解密、虚拟公式、字典/名称翻译、脱敏和打印严格模式。入口保留数据权限富化，并以窄委托复用写入转换。
+- 入口由 4878 行降至 4165 行，新 `DynamicCrudFieldValuePipeline` 782 行。金额、结构化值和加密测试取消反射 Facade 私有方法，直接验证 Pipeline；generator Reactor 编译退出码 0。
+- 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；打印测试继续覆盖解密、金额、公式、翻译、脱敏与数据权限完整顺序。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实密钥轮换、批量字典与大数据导出仍需服务环境验收，无服务 PID 需停止。
