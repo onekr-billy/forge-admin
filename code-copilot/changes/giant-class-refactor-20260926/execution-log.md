@@ -64,3 +64,9 @@
 - 从 `FlowModelServiceImpl` 提取流程 Key、process id 替换、重复连线与旧会签表达式兼容规范化、连线引用及结构/可执行节点校验到无状态 `FlowModelBpmnPreflight`；原服务由 1243 行降至 979 行，新组件 249 行。部署入口的预检顺序、异常文案、租户和版本事务保持不变。源码契约测试改为同时验证入口调用和组件内错误路径。
 - flow Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -Dtest=FlowModelBpmnPreflightTest,FlowModelServiceImplTest,FlowModelDeploymentValidationContractTest,FlowModelVersionCleanupContractTest,FlowModelVersionGovernanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 18 项，0 失败、0 错误，退出码 0。
 - 未启动 Flow 服务、未连接真实数据库/Flowable，故未做部署端到端验收；本轮无服务 PID 需停止。真实 BPMN 部署与旧模型兼容仍需服务级验证。
+
+## 2026-09-26 第十六个切口：运行时设计器布局读取
+
+- 从 `LowcodeRuntimeConfigBuilder` 提取列表布局块的字段设置与属性、嵌套表单规则、画布元素和通用区域定位到无状态 `RuntimeDesignerLayoutReader`；入口由 2077 行降至 1924 行，新组件 179 行。原字段设置覆盖顺序、搜索区 `searchFieldSettings` 优先级、表格全局对齐回退和运行时 JSON 字段不变。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeDesignerLayoutReaderTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：3 类共 27 项，0 失败、0 错误，退出码 0。
+- 未启动 Admin 服务或连接真实数据库；本轮不改设计态持久化、发布或动态 SQL。完整线上配置发布验收仍需服务级环境。

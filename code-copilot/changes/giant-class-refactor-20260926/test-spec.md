@@ -96,3 +96,9 @@
 - P0：迁出流程 Key 提取/替换、重复连线兼容规范化、连线引用、可执行节点与网关条件校验；新组件单测覆盖有效最小流程、缺失起止节点、悬空连线、无审批人、未配置条件与不支持的执行属性。
 - P1：重跑 `FlowModelServiceImplTest`、`FlowModelDeploymentValidationContractTest` 及模型版本相关契约测试；flow Reactor 编译、`git diff --check` 和入口行数低于 1000 行。
 - 不改变发布事务、部署/版本保存、候选人解析或现有 BPMN XML；不启动 Flow 服务。
+
+## 第十六轮增量验证：设计器布局元数据读取
+
+- P0：迁出列表布局块属性/字段设置读取、表单规则和画布元素遍历；新增单测覆盖 AiCrudPage 搜索字段配置优先于表格字段配置、表格全局对齐回退、嵌套表单规则及画布字段读取。
+- P1：重跑 `LowcodeRuntimeConfigBuilderTest` 和 `GeneratedLowcodeRuntimeConfigBuilderTest`，确认搜索/表格/编辑 JSON 协议；generator Reactor 编译、`git diff --check` 和入口行数复核。
+- 只移动设计态元数据读取，不修改页面布局持久化、发布、动态 SQL 或字段权限；不启动服务。

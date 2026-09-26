@@ -34,7 +34,9 @@
 
 第十五个切口从 `FlowModelServiceImpl` 迁出 BPMN 文本兼容处理、流程 Key 替换和部署前结构/执行节点校验到无状态 `FlowModelBpmnPreflight`。模型服务仍保持创建、更新、导入、复制与部署的原调用顺序、发布事务、租户边界和版本治理。预检不改变 BPMN 节点配置归属、候选人解析或原 XML 保存语义；通过定向测试守护缺失节点、悬空连线、未配置审批人、不支持的执行节点/属性及网关分支拒绝路径。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2077 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第十六个切口从 `LowcodeRuntimeConfigBuilder` 迁出设计器列表布局块、搜索/表格字段设置、表单规则和画布元素读取到无状态 `RuntimeDesignerLayoutReader`。运行配置入口仍负责字段解析、选项覆盖与最终序列化，不更改设计态持久化协议或运行时 JSON 字段。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1924 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
