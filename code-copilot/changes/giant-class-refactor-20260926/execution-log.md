@@ -222,3 +222,9 @@
 - 使用 Policy 从 `DynamicCrudService` 迁出编辑/模型/伴随名称/存储公式字段白名单、真实列映射、内部与事务命令写入过滤、期望值及数值条件构造、存储公式旧值合并与校验。Facade 继续持有事务、数据权限、唯一约束和仓储写入顺序。
 - 入口由 3455 行降至 2974 行，新 `DynamicCrudWriteFieldPolicy` 665 行，均保持公开 API 和构造注入签名不变；generator Reactor 编译退出码 0。
 - 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实并发条件更新与跨数据源字段映射仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-26 第四十五个切口：主子表持久化引擎
+
+- 使用 Engine 从 `DynamicCrudService` 迁出主子表详情读取、配置外键修复、子表读取回退、主/子字段过滤、存储约束校验、merge/replace 保存和聚合刷新。Facade 继续持有公开事务入口、运行数据源上下文、数据权限条件及审计元数据挂载。
+- 入口由 2974 行降至 2448 行，新 `DynamicCrudMasterDetailEngine` 902 行；审批任务子表保存通过窄委托复用同一份行归属与字段校验规则。generator Reactor 编译退出码 0。
+- 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；复杂外键修复与大批量子表 merge 仍需服务环境验收，无服务 PID 需停止。

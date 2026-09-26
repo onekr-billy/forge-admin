@@ -314,3 +314,12 @@
 - 验证：重跑自动生成、金额、结构化字段、加密、主子表和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：编辑/模型字段白名单、事务命令条件、真实列映射和存储公式准备已统一委托 `DynamicCrudWriteFieldPolicy`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 2974 行，新 Policy 665 行。
+
+## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
+
+- P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。
+- P0：主表字段过滤、子表必填/长度/数值约束、merge/replace 保存、越权行拒绝和聚合刷新顺序保持不变。
+- P1：使用 Engine 集中主子表详情读取与持久化，Facade 仅保留事务入口、数据权限条件和审计挂载；新生产类少于 1000 行。
+- 验证：重跑主子表、任务字段权限、金额、结构化字段、加密和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：详情查询、外键候选回退、子表校验和 merge/replace 写入已统一委托 `DynamicCrudMasterDetailEngine`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 2448 行，新 Engine 902 行。
