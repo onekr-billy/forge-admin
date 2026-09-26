@@ -46,7 +46,9 @@
 
 第二十一个切口从 `BusinessFlowService` 迁出节点表单绑定及主/子表字段权限兼容归一化到 `BusinessFlowNodeFormNormalizer`，将共用 JSON/标量读取迁入 `BusinessFlowJsonReader`。入口继续拥有流程配置保存、任务表单、权限执行、事务与状态机；仅把无状态解析规则集中，不改变 BPMN 节点配置所有权或回调语义。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 8708 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十二个切口继续迁出审批表单控件类型兼容推断与字段目录编译到 `BusinessFlowTaskFormControlTypes`、`BusinessFlowFormFieldCatalog`。应用页和业务对象表单仍由原入口选择资产；新组件只读取设计器 schema，按原顺序提取主表字段、递归子表列和预览标签。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 8420 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

@@ -79,11 +79,17 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNestedObject;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNullableBooleanValue;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.textValue;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowFormFieldCatalog.appendSchemaChildTableFields;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowFormFieldCatalog.buildFieldPreview;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowFormFieldCatalog.collectBusinessFormFieldCatalog;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeFieldPermissions;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeEditMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeFormMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeForms;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeTaskChildPermissions;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.firstStrongTaskFormControlType;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.normalizeTaskFormFieldType;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.resolveTaskFormControlType;
 
 /**
  * 业务流程服务。
@@ -1994,59 +2000,6 @@ public class BusinessFlowService {
         return field;
     }
 
-    private String resolveTaskFormControlType(Map<String, Object> field) {
-        if (field == null) {
-            return "input";
-        }
-        // 设计器以 componentKey 为控件事实来源；type 常被 editSchema/资产写成 input
-        String explicit = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(field.get("componentKey"))),
-                StringUtils.trimToNull(textValue(field.get("componentType"))),
-                StringUtils.trimToNull(textValue(field.get("type"))));
-        explicit = stripForgeComponentPrefix(StringUtils.defaultIfBlank(explicit, ""));
-        if (!isWeakTaskFormControlType(explicit)) {
-            return explicit;
-        }
-        // 弱类型时从 props 推断：避免审批端全变成输入框
-        Map<String, Object> props = new LinkedHashMap<>(readNestedObject(field.get("props")));
-        if (props.get("optionSource") instanceof Map<?, ?> || props.get("options") instanceof List<?>) {
-            Object optionSource = props.get("optionSource");
-            if (optionSource instanceof Map<?, ?> source) {
-                String sourceType = StringUtils.trimToEmpty(textValue(source.get("sourceType")));
-                String type = StringUtils.trimToEmpty(textValue(source.get("type")));
-                if ("BUSINESS_OBJECT".equalsIgnoreCase(sourceType)
-                        || "businessRecordSelector".equalsIgnoreCase(type)
-                        || StringUtils.isNotBlank(textValue(source.get("objectCode")))) {
-                    return "objectReference";
-                }
-            }
-            return StringUtils.isNotBlank(textValue(field.get("dictType")))
-                    || StringUtils.isNotBlank(textValue(props.get("dictType")))
-                    ? "dictSelect"
-                    : "select";
-        }
-        if (props.get("recordSelector") instanceof Map<?, ?>
-                || StringUtils.isNotBlank(textValue(props.get("objectCode")))
-                || StringUtils.isNotBlank(textValue(props.get("referenceObjectCode")))
-                || StringUtils.isNotBlank(textValue(field.get("referenceObjectCode")))) {
-            return "objectReference";
-        }
-        if (StringUtils.isNotBlank(textValue(field.get("dictType")))
-                || StringUtils.isNotBlank(textValue(props.get("dictType")))) {
-            return "dictSelect";
-        }
-        return StringUtils.defaultIfBlank(explicit, "input");
-    }
-
-    private boolean isWeakTaskFormControlType(String type) {
-        String normalized = StringUtils.trimToEmpty(type).toLowerCase(Locale.ROOT);
-        return normalized.isEmpty()
-                || "input".equals(normalized)
-                || "text".equals(normalized)
-                || "string".equals(normalized)
-                || "varchar".equals(normalized);
-    }
-
     private void appendRuntimeChildFieldCatalog(String configKey, List<Map<String, Object>> fields) {
         if (StringUtils.isBlank(configKey) || fields == null) {
             return;
@@ -2676,16 +2629,6 @@ public class BusinessFlowService {
             String code = StringUtils.firstNonBlank(textValue(field.get("field")), textValue(field.get("fieldCode")));
             applyFieldRegistryMetadata(field, findPublishedChildField(registry, code), false);
         }
-    }
-
-    private String firstStrongTaskFormControlType(Map<String, Object> field) {
-        for (String key : new String[]{"type", "componentType", "componentKey"}) {
-            String value = stripForgeComponentPrefix(StringUtils.trimToEmpty(textValue(field.get(key))));
-            if (!isWeakTaskFormControlType(value)) {
-                return value;
-            }
-        }
-        return null;
     }
 
     /**
@@ -5696,32 +5639,6 @@ public class BusinessFlowService {
         return result;
     }
 
-    private String normalizeTaskFormFieldType(String componentType) {
-        String type = stripForgeComponentPrefix(StringUtils.defaultIfBlank(componentType, "input").trim());
-        return switch (type) {
-            case "textarea" -> "textarea";
-            case "inputNumber", "input-number", "integer", "decimal", "money", "number" -> "number";
-            case "dictSelect", "forgeDictSelect" -> "dictSelect";
-            case "select", "radio", "radioButton", "checkbox", "date", "datetime", "daterange", "datetimerange",
-                    "month", "year", "time", "timerange", "switch", "imageUpload", "fileUpload", "slider", "rate",
-                    "color", "regionTreeSelect", "treeSelect", "transfer", "customSelect", "objectReference",
-                    "recordSelector", "userSelect", "orgTreeSelect", "cascader", "text", "slot" -> type;
-            case "deptTreeSelect", "departmentTreeSelect", "deptSelect", "departmentSelect",
-                    "orgSelect", "organizationSelect", "orgName", "deptName", "elTreeSelect" -> "orgTreeSelect";
-            case "userPicker", "user", "userName", "sysUserSelect" -> "userSelect";
-            case "upload" -> "fileUpload";
-            default -> "input".equals(type) || StringUtils.isBlank(type) ? "input" : type;
-        };
-    }
-
-    private String stripForgeComponentPrefix(String componentType) {
-        String type = StringUtils.trimToEmpty(componentType);
-        if (type.startsWith("forge") && type.length() > 5 && Character.isUpperCase(type.charAt(5))) {
-            return Character.toLowerCase(type.charAt(5)) + type.substring(6);
-        }
-        return type;
-    }
-
     private Map<String, Object> filterVisibleRecordData(Map<String, Object> recordData, List<Map<String, Object>> fields) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (recordData == null || fields == null) {
@@ -8193,211 +8110,6 @@ public class BusinessFlowService {
         item.put("fieldPreview", buildFieldPreview(fieldCatalog));
         item.put("supportsSave", true);
         result.add(item);
-    }
-
-    private List<Map<String, Object>> collectBusinessFormFieldCatalog(JSONObject schema) {
-        List<Map<String, Object>> result = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        collectBusinessFormFieldComponents(readNestedArray(schema.get("components")), result, seen);
-        appendSchemaChildTableFields(schema, result);
-        if (result.isEmpty()) {
-            JSONArray catalog = readNestedArray(schema.get("fieldCatalog"));
-            if (catalog.isEmpty()) {
-                catalog = readNestedArray(schema.get("fields"));
-            }
-            for (int i = 0; i < catalog.size(); i++) {
-                JSONObject field = catalog.getJSONObject(i);
-                if (field == null) {
-                    continue;
-                }
-                String code = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(field.getString("field")),
-                        StringUtils.trimToNull(field.getString("fieldCode")),
-                        StringUtils.trimToNull(readNestedObject(field.get("fieldBinding")).getString("fieldCode")));
-                if (code == null || !seen.add(code)) {
-                    continue;
-                }
-                Map<String, Object> item = new LinkedHashMap<>(field);
-                item.put("field", code);
-                item.put("fieldCode", code);
-                item.put("label", StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(field.getString("label")),
-                        StringUtils.trimToNull(field.getString("fieldName")), code));
-                item.put("type", normalizeTaskFormFieldType(StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(field.getString("type")),
-                        StringUtils.trimToNull(field.getString("componentType")), "input")));
-                item.putIfAbsent("componentType", item.get("type"));
-                result.add(item);
-            }
-        }
-        return result;
-    }
-
-    private List<String> buildFieldPreview(List<Map<String, Object>> fields) {
-        List<String> preview = new ArrayList<>();
-        if (fields == null) {
-            return preview;
-        }
-        for (Map<String, Object> field : fields) {
-            String label = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(field.get("label"))),
-                    StringUtils.trimToNull(textValue(field.get("fieldName"))),
-                    StringUtils.trimToNull(textValue(field.get("field"))),
-                    StringUtils.trimToNull(textValue(field.get("fieldCode"))));
-            if (label != null) {
-                preview.add(label);
-            }
-            if (preview.size() >= 5) {
-                break;
-            }
-        }
-        return preview;
-    }
-
-    private void appendSchemaChildTableFields(JSONObject schema, List<Map<String, Object>> fields) {
-        if (schema == null || fields == null) {
-            return;
-        }
-        Set<String> seen = new LinkedHashSet<>();
-        for (Map<String, Object> field : fields) {
-            String childKey = StringUtils.trimToNull(textValue(field.get("childKey")));
-            String childField = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(field.get("childField"))),
-                    "child".equalsIgnoreCase(textValue(field.get("scope")))
-                            ? StringUtils.trimToNull(textValue(field.get("field"))) : null);
-            if (childKey != null && childField != null) {
-                seen.add(childKey + ":" + childField);
-            }
-        }
-        appendSchemaChildTableComponents(readNestedArray(schema.get("components")), fields, seen);
-    }
-
-    private void appendSchemaChildTableComponents(JSONArray components,
-                                                  List<Map<String, Object>> fields,
-                                                  Set<String> seen) {
-        if (components == null || fields == null) {
-            return;
-        }
-        for (int i = 0; i < components.size(); i++) {
-            JSONObject component = components.getJSONObject(i);
-            if (component == null) {
-                continue;
-            }
-            String componentKey = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(component.getString("componentKey")),
-                    StringUtils.trimToNull(component.getString("type")));
-            JSONObject props = readNestedObject(component.get("props"));
-            if ("subTable".equalsIgnoreCase(componentKey) || "childTable".equalsIgnoreCase(componentKey)) {
-                String childKey = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(props.getString("modelCode")),
-                        StringUtils.trimToNull(props.getString("relationKey")),
-                        StringUtils.trimToNull(component.getString("modelCode")),
-                        StringUtils.trimToNull(component.getString("relationKey")));
-                String childLabel = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(props.getString("header")),
-                        StringUtils.trimToNull(props.getString("relationName")),
-                        StringUtils.trimToNull(component.getString("label")),
-                        childKey);
-                JSONArray columns = readNestedArray(props.get("columns"));
-                if (columns.isEmpty()) {
-                    columns = readNestedArray(props.get("fields"));
-                }
-                for (int columnIndex = 0; columnIndex < columns.size(); columnIndex++) {
-                    Object rawColumn = columns.get(columnIndex);
-                    JSONObject column = rawColumn instanceof JSONObject jsonColumn
-                            ? jsonColumn
-                            : rawColumn instanceof Map<?, ?> ? readNestedObject(rawColumn) : null;
-                    String childField = column == null
-                            ? StringUtils.trimToNull(textValue(rawColumn))
-                            : StringUtils.firstNonBlank(
-                                    StringUtils.trimToNull(column.getString("fieldCode")),
-                                    StringUtils.trimToNull(column.getString("field")),
-                                    StringUtils.trimToNull(column.getString("sourceField")));
-                    if (childKey == null || childField == null || !seen.add(childKey + ":" + childField)) {
-                        continue;
-                    }
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("field", childField);
-                    item.put("fieldCode", childField);
-                    item.put("label", column == null
-                            ? childField
-                            : StringUtils.firstNonBlank(
-                                    StringUtils.trimToNull(column.getString("fieldLabel")),
-                                    StringUtils.trimToNull(column.getString("label")),
-                                    childField));
-                    item.put("scope", "child");
-                    item.put("childKey", childKey);
-                    item.put("childField", childField);
-                    item.put("childLabel", childLabel);
-                    item.put("relationName", StringUtils.defaultIfBlank(
-                            StringUtils.trimToNull(props.getString("relationName")), childLabel));
-                    fields.add(item);
-                }
-            }
-            appendSchemaChildTableComponents(readNestedArray(component.get("children")), fields, seen);
-        }
-    }
-
-    private void collectBusinessFormFieldComponents(JSONArray components,
-                                                    List<Map<String, Object>> result,
-                                                    Set<String> seen) {
-        if (components == null) {
-            return;
-        }
-        for (int i = 0; i < components.size(); i++) {
-            JSONObject component = components.getJSONObject(i);
-            if (component == null) {
-                continue;
-            }
-            JSONObject binding = readNestedObject(component.get("fieldBinding"));
-            JSONObject props = readNestedObject(component.get("props"));
-            String field = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(binding.getString("fieldCode")),
-                    StringUtils.trimToNull(component.getString("field")),
-                    StringUtils.trimToNull(props.getString("field")));
-            if (field != null && seen.add(field)) {
-                JSONObject validation = readNestedObject(component.get("validation"));
-                // 只抽取字段渲染需要的键，禁止整份拷贝组件（会把错误 type / 布局噪音带进审批 fields）
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("field", field);
-                item.put("fieldCode", field);
-                item.put("label", StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(component.getString("label")),
-                        StringUtils.trimToNull(props.getString("label")),
-                        StringUtils.trimToNull(props.getString("title")),
-                        field));
-                String componentKey = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(component.getString("componentKey")),
-                        StringUtils.trimToNull(component.getString("componentType")),
-                        StringUtils.trimToNull(component.getString("type")),
-                        StringUtils.trimToNull(component.getString("name")));
-                Map<String, Object> propsMap = props.isEmpty() ? new LinkedHashMap<>() : new LinkedHashMap<>(props);
-                item.put("props", propsMap);
-                item.put("componentKey", StringUtils.defaultIfBlank(componentKey, "input"));
-                item.put("componentType", StringUtils.defaultIfBlank(componentKey, "input"));
-                String resolvedType = resolveTaskFormControlType(item);
-                item.put("type", normalizeTaskFormFieldType(resolvedType));
-                item.put("componentType", StringUtils.defaultIfBlank(resolvedType, "input"));
-                String dataType = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(binding.getString("dataType")),
-                        StringUtils.trimToNull(textValue(component.get("dataType"))));
-                if (dataType != null) {
-                    item.put("dataType", dataType);
-                }
-                String dictType = StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(textValue(component.get("dictType"))),
-                        StringUtils.trimToNull(props.getString("dictType")));
-                if (dictType != null) {
-                    item.put("dictType", dictType);
-                }
-                boolean required = readBooleanValue(validation.get("required"), false)
-                        || readBooleanValue(props.get("required"), false)
-                        || readBooleanValue(component.get("required"), false);
-                item.put("required", required);
-                result.add(item);
-            }
-            collectBusinessFormFieldComponents(readNestedArray(component.get("children")), result, seen);
-        }
     }
 
     private JSONObject readJsonObject(String json) {

@@ -101,3 +101,9 @@
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：补齐原入口仍使用的表单/编辑模式归一方法导入后，退出码 0。
 - 定向回归首次发现旧 `BusinessFlowServiceFormAssetMergeTest.taskRuntimeReadsSelectedApplicationPageForm` 模拟了 `detail`，而现有应用页资产读取路径调用 `loadInAppBuilder`；单独复现后仅修正该测试桩，不改生产资产读取路径。最终执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowNodeFormNormalizerTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceLifecycleTest,BusinessFlowServiceBusinessKeyTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 31 项，0 失败、0 错误，退出码 0。生命周期测试中预期的写入失败 WARN 被断言覆盖。
 - `git diff --check`：通过。未启动 Admin/Flow 服务，也未连接 MySQL/Redis/Flowable；节点权限真实保存及审批端到端验证尚未覆盖，无服务 PID 需停止。
+
+## 2026-09-26 第二十二个切口：审批表单字段目录
+
+- 从 `BusinessFlowService` 迁出控件类型优先级、弱类型推断、设计器字段与子表列目录、字段预览到 `BusinessFlowTaskFormControlTypes` 和 `BusinessFlowFormFieldCatalog`。入口由 8708 行降至 8420 行；新类分别 107/231 行。应用页资产选择、表单权限执行、流程事务及状态机未迁移。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowFormFieldCatalogTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceLifecycleTest,BusinessFlowNodeFormNormalizerTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：7 类共 41 项，0 失败、0 错误，退出码 0。生命周期用例预期的失败回滚 WARN 不构成测试失败。
+- `git diff --check`：通过。未启动 Admin/Flow 服务，未连接真实 MySQL/Redis/Flowable；审批页面与复杂子表资产的端到端联调仍未覆盖，无服务 PID 需停止。
