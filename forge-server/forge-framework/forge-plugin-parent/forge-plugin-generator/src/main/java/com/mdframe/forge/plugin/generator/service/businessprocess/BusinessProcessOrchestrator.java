@@ -36,8 +36,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -72,20 +70,22 @@ public class BusinessProcessOrchestrator {
         Page<BusinessProcessRunVO> page = new Page<>(normalizePageNum(pageNum), normalizePageSize(pageSize));
         Page<BusinessProcessRunVO> result = runMapper.selectRunPage(page, tenantId,
                 query == null ? new BusinessProcessRunQueryDTO() : query);
-        enrichNodeNames(tenantId, result.getRecords());
+        BusinessProcessRunViewAssembler.enrichNodeNames(
+                tenantId, result.getRecords(), versionMapper, schemaValidator);
         return result;
     }
 
     public BusinessProcessRunDetailVO detail(Long runId) {
         AiBusinessProcessRun run = requireRun(runId);
-        BusinessProcessRunDetailVO vo = toDetail(run);
-        Map<String, String> nodeNameMap = loadNodeNameMap(run.getTenantId(), run.getProcessVersionId());
+        BusinessProcessRunDetailVO vo = BusinessProcessRunViewAssembler.toDetail(run);
+        Map<String, String> nodeNameMap = BusinessProcessRunViewAssembler.loadNodeNameMap(
+                run.getTenantId(), run.getProcessVersionId(), versionMapper, schemaValidator);
         if (!nodeNameMap.isEmpty()) {
             vo.setCurrentNodeName(nodeNameMap.getOrDefault(run.getCurrentNodeId(), run.getCurrentNodeId()));
         }
         List<BusinessProcessRunDetailVO.NodeRunVO> timeline = new ArrayList<>();
         for (AiBusinessProcessNodeRun nodeRun : safeList(nodeRunMapper.selectTimeline(run.getTenantId(), run.getId()))) {
-            BusinessProcessRunDetailVO.NodeRunVO nodeVo = toNodeVo(nodeRun);
+            BusinessProcessRunDetailVO.NodeRunVO nodeVo = BusinessProcessRunViewAssembler.toNodeVo(nodeRun);
             if (!nodeNameMap.isEmpty()) {
                 nodeVo.setNodeName(nodeNameMap.getOrDefault(nodeRun.getNodeId(), nodeRun.getNodeId()));
             }
@@ -497,7 +497,7 @@ public class BusinessProcessOrchestrator {
         if (updated != 1) {
             throw new BusinessException("取消失败，运行状态已变化");
         }
-        return toVo(requireRun(runId), null);
+        return BusinessProcessRunViewAssembler.toVo(requireRun(runId), null);
     }
 
     private BusinessProcessNodeResult executeNode(
@@ -812,127 +812,11 @@ public class BusinessProcessOrchestrator {
     }
 
     private BusinessProcessRunVO completedStart(AiBusinessProcessRun run, String processName) {
-        BusinessProcessRunVO vo = toVo(run, processName);
+        BusinessProcessRunVO vo = BusinessProcessRunViewAssembler.toVo(run, processName);
         if (BusinessProcessRunStatus.FAILED.matches(vo.getStatus())) {
             throw new BusinessException(StringUtils.defaultIfBlank(vo.getErrorSummary(), "业务流程执行失败"));
         }
         return vo;
-    }
-
-    private BusinessProcessRunVO toVo(AiBusinessProcessRun run, String processName) {
-        BusinessProcessRunVO vo = new BusinessProcessRunVO();
-        fillVo(vo, run, processName);
-        return vo;
-    }
-
-    private BusinessProcessRunDetailVO toDetail(AiBusinessProcessRun run) {
-        BusinessProcessRunDetailVO vo = new BusinessProcessRunDetailVO();
-        fillVo(vo, run, null);
-        vo.setFlowProcessInstanceId(run.getFlowProcessInstanceId());
-        return vo;
-    }
-
-    private void fillVo(BusinessProcessRunVO vo, AiBusinessProcessRun run, String processName) {
-        vo.setId(stringId(run.getId()));
-        vo.setApplicationId(stringId(run.getApplicationId()));
-        vo.setProcessId(stringId(run.getProcessId()));
-        vo.setProcessVersionId(stringId(run.getProcessVersionId()));
-        vo.setProcessCode(run.getProcessCode());
-        vo.setProcessName(processName);
-        vo.setSubjectObjectCode(run.getSubjectObjectCode());
-        vo.setSubjectRecordId(run.getSubjectRecordId());
-        vo.setBusinessKey(run.getBusinessKey());
-        vo.setTriggerType(run.getTriggerType());
-        vo.setActorType(run.getActorType());
-        vo.setActorUserId(stringId(run.getActorUserId()));
-        vo.setActiveOrgId(stringId(run.getActiveOrgId()));
-        vo.setStatus(run.getStatus());
-        vo.setCurrentNodeId(run.getCurrentNodeId());
-        vo.setRetryCount(run.getRetryCount());
-        vo.setErrorCode(run.getErrorCode());
-        vo.setErrorSummary(run.getErrorSummary());
-        vo.setStartTime(run.getStartTime());
-        vo.setEndTime(run.getEndTime());
-        vo.setCreateTime(run.getCreateTime());
-        vo.setUpdateTime(run.getUpdateTime());
-    }
-
-    private BusinessProcessRunDetailVO.NodeRunVO toNodeVo(AiBusinessProcessNodeRun nodeRun) {
-        BusinessProcessRunDetailVO.NodeRunVO vo = new BusinessProcessRunDetailVO.NodeRunVO();
-        vo.setId(stringId(nodeRun.getId()));
-        vo.setRunId(stringId(nodeRun.getRunId()));
-        vo.setNodeId(nodeRun.getNodeId());
-        vo.setNodeType(nodeRun.getNodeType());
-        vo.setAttemptNo(nodeRun.getAttemptNo());
-        vo.setStatus(nodeRun.getStatus());
-        vo.setCorrelationId(nodeRun.getCorrelationId());
-        vo.setInputSummary(nodeRun.getInputSummary());
-        vo.setOutputSummary(nodeRun.getOutputSummary());
-        vo.setErrorCode(nodeRun.getErrorCode());
-        vo.setErrorSummary(nodeRun.getErrorSummary());
-        vo.setNextRetryTime(nodeRun.getNextRetryTime());
-        vo.setStartTime(nodeRun.getStartTime());
-        vo.setEndTime(nodeRun.getEndTime());
-        vo.setCreateTime(nodeRun.getCreateTime());
-        vo.setUpdateTime(nodeRun.getUpdateTime());
-        return vo;
-    }
-
-    /**
-     * 按页批量解析 currentNodeName：同一版本只加载一次 schema。
-     */
-    private void enrichNodeNames(Long tenantId, List<BusinessProcessRunVO> records) {
-        if (records == null || records.isEmpty()) {
-            return;
-        }
-        Map<String, Map<String, String>> cache = new HashMap<>();
-        for (BusinessProcessRunVO run : records) {
-            String versionId = run.getProcessVersionId();
-            if (versionId == null || versionId.isBlank()) {
-                continue;
-            }
-            Map<String, String> nodeNameMap = cache.computeIfAbsent(versionId,
-                    key -> loadNodeNameMap(tenantId, parseLong(key)));
-            if (!nodeNameMap.isEmpty()) {
-                run.setCurrentNodeName(nodeNameMap.getOrDefault(run.getCurrentNodeId(), run.getCurrentNodeId()));
-            }
-        }
-    }
-
-    /**
-     * 加载已发布版本的 schema，构建 nodeId → nodeName 映射。
-     * 版本不存在或 schema 解析失败时返回空 Map，前端回退到显示 nodeId。
-     */
-    private Map<String, String> loadNodeNameMap(Long tenantId, Long processVersionId) {
-        if (tenantId == null || processVersionId == null) {
-            return Collections.emptyMap();
-        }
-        AiBusinessProcessVersion version = versionMapper.selectPublishedVersionById(tenantId, processVersionId);
-        if (version == null || version.getSchemaJson() == null || version.getSchemaJson().isBlank()) {
-            return Collections.emptyMap();
-        }
-        try {
-            BusinessProcessSchema schema = schemaValidator.normalize(version.getSchemaJson());
-            Map<String, String> map = new LinkedHashMap<>();
-            List<BusinessProcessNode> nodes = schema.getNodes() != null
-                    ? schema.getNodes() : Collections.emptyList();
-            for (BusinessProcessNode node : nodes) {
-                if (node.getId() != null) {
-                    map.put(node.getId(), node.getName() != null ? node.getName() : node.getId());
-                }
-            }
-            return map;
-        } catch (Exception ignored) {
-            return Collections.emptyMap();
-        }
-    }
-
-    private Long parseLong(String value) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private String safeContextSnapshot(String objectCode, String recordId) {
@@ -1020,10 +904,6 @@ public class BusinessProcessOrchestrator {
             return null;
         }
         return value.length() <= 1000 ? value : value.substring(0, 1000);
-    }
-
-    private String stringId(Long value) {
-        return value == null ? null : String.valueOf(value);
     }
 
     private int value(Integer number) {

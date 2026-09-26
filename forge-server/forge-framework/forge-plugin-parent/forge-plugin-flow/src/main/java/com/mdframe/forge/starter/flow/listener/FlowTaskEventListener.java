@@ -29,7 +29,6 @@ import org.flowable.common.engine.api.delegate.event.FlowableEventType;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
-import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.delegate.DelegateExecution;
 import org.flowable.engine.delegate.event.FlowableCancelledEvent;
 import org.flowable.engine.delegate.event.FlowableProcessEngineEvent;
@@ -235,8 +234,8 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
             if (business != null) {
-                String normalizedApplyUserName = resolveUserDisplayName(
-                        business.getApplyUserId(), business.getApplyUserName());
+                String normalizedApplyUserName = FlowTaskIdentityResolver.resolveUserDisplayName(
+                        flowOrgIntegrationService, business.getApplyUserId(), business.getApplyUserName());
                 if (!Objects.equals(normalizedApplyUserName, business.getApplyUserName())
                         && normalizedApplyUserName != null) {
                     business.setApplyUserName(normalizedApplyUserName);
@@ -326,7 +325,8 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     flowTask.setBusinessKey(completedBusiness.getBusinessKey());
                     flowTask.setBusinessType(completedBusiness.getBusinessType());
                     flowTask.setStartUserId(completedBusiness.getApplyUserId());
-                    flowTask.setStartUserName(resolveUserDisplayName(
+                    flowTask.setStartUserName(FlowTaskIdentityResolver.resolveUserDisplayName(
+                            flowOrgIntegrationService,
                             completedBusiness.getApplyUserId(), completedBusiness.getApplyUserName()));
                 }
                 
@@ -383,10 +383,13 @@ public class FlowTaskEventListener implements FlowableEventListener {
             
             FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
             if (flowTask != null) {
-                String assignee = normalizeTaskUserId(task.getAssignee(), task.getId(), "assignee");
-                String owner = normalizeTaskUserId(task.getOwner(), task.getId(), "owner");
+                String assignee = FlowTaskIdentityResolver.normalizeUserId(
+                        flowOrgIntegrationService, task.getAssignee(), task.getId(), "assignee");
+                String owner = FlowTaskIdentityResolver.normalizeUserId(
+                        flowOrgIntegrationService, task.getOwner(), task.getId(), "owner");
                 flowTask.setAssignee(assignee);
-                flowTask.setAssigneeName(resolveUserDisplayName(assignee, flowTask.getAssigneeName()));
+                flowTask.setAssigneeName(FlowTaskIdentityResolver.resolveUserDisplayName(
+                        flowOrgIntegrationService, assignee, flowTask.getAssigneeName()));
                 flowTask.setOwner(owner);
                 
                 if (assignee != null) {
@@ -723,10 +726,14 @@ public class FlowTaskEventListener implements FlowableEventListener {
         flowTask.setTaskDefId(task.getTaskDefinitionId());
         flowTask.setProcessInstanceId(task.getProcessInstanceId());
         flowTask.setProcessDefId(task.getProcessDefinitionId());
-        flowTask.setProcessDefKey(extractProcessKey(task.getProcessDefinitionId()));
-        flowTask.setAssignee(normalizeTaskUserId(task.getAssignee(), task.getId(), "assignee"));
-        flowTask.setAssigneeName(resolveUserDisplayName(flowTask.getAssignee(), null));
-        flowTask.setOwner(normalizeTaskUserId(task.getOwner(), task.getId(), "owner"));
+        flowTask.setProcessDefKey(FlowTaskIdentityResolver.extractProcessKey(
+                repositoryService, task.getProcessDefinitionId()));
+        flowTask.setAssignee(FlowTaskIdentityResolver.normalizeUserId(
+                flowOrgIntegrationService, task.getAssignee(), task.getId(), "assignee"));
+        flowTask.setAssigneeName(FlowTaskIdentityResolver.resolveUserDisplayName(
+                flowOrgIntegrationService, flowTask.getAssignee(), null));
+        flowTask.setOwner(FlowTaskIdentityResolver.normalizeUserId(
+                flowOrgIntegrationService, task.getOwner(), task.getId(), "owner"));
         flowTask.setCreateTime(LocalDateTime.now());
         
         if (task.getDueDate() != null) {
@@ -850,125 +857,6 @@ public class FlowTaskEventListener implements FlowableEventListener {
         } catch (Exception e) {
             log.warn("更新流程表单实例状态失败: processInstanceId={}, status={}", processInstanceId, status, e);
         }
-    }
-
-    private String normalizeTaskUserId(String value, String taskId, String fieldName) {
-        if (value == null || value.trim().isEmpty()) {
-            return value;
-        }
-        String text = value.trim();
-        if (isNumeric(text)) {
-            return text;
-        }
-        if (flowOrgIntegrationService == null) {
-            log.warn("任务{}不是用户ID且组织集成不可用：taskId={}, {}={}", fieldName, taskId, fieldName, text);
-            return text;
-        }
-        try {
-            List<Map<String, Object>> users = flowOrgIntegrationService.getUserList(text, null);
-            List<String> exactUserIds = users.stream()
-                    .filter(user -> matchesUser(text, user))
-                    .map(user -> Objects.toString(user.get("id"), null))
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
-            if (exactUserIds.size() == 1) {
-                String userId = exactUserIds.get(0);
-                log.info("任务{}已从显示值归一为用户ID：taskId={}, raw={}, userId={}", fieldName, taskId, text, userId);
-                return userId;
-            }
-            log.warn("任务{}无法唯一归一为用户ID：taskId={}, raw={}, matches={}", fieldName, taskId, text, exactUserIds.size());
-        } catch (Exception e) {
-            log.warn("任务{}归一用户ID失败：taskId={}, raw={}", fieldName, taskId, text, e);
-        }
-        return text;
-    }
-
-    private boolean matchesUser(String value, Map<String, Object> user) {
-        if (user == null) {
-            return false;
-        }
-        return value.equals(Objects.toString(user.get("id"), null))
-                || value.equals(Objects.toString(user.get("username"), null))
-                || value.equals(Objects.toString(user.get("name"), null))
-                || value.equals(Objects.toString(user.get("realName"), null));
-    }
-
-    private boolean isNumeric(String value) {
-        if (value == null || value.isEmpty()) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            if (!Character.isDigit(value.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private String resolveUserDisplayName(String userId, String fallback) {
-        // fallback 已有显示名时直接使用，避免每个任务事件都反查一次用户表；
-        // 只有名字缺失（首次写入/历史脏数据）时才走 getUserInfo 反查
-        if (fallback != null && !fallback.isBlank()) {
-            return fallback.trim();
-        }
-        if (userId != null && !userId.isBlank() && flowOrgIntegrationService != null) {
-            try {
-                Map<String, Object> userInfo = flowOrgIntegrationService.getUserInfo(userId.trim());
-                if (userInfo != null) {
-                    String name = firstNonBlank(
-                            userInfo.get("realName"), userInfo.get("name"), userInfo.get("nickname"));
-                    if (name != null && !name.isBlank()) {
-                        return name;
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("反查流程用户姓名失败: userId={}", userId, e);
-            }
-        }
-        return fallback != null && !fallback.isBlank()
-                ? fallback.trim()
-                : userId;
-    }
-
-    private String firstNonBlank(Object... values) {
-        if (values == null) {
-            return null;
-        }
-        for (Object value : values) {
-            if (value != null && !String.valueOf(value).trim().isEmpty()) {
-                return String.valueOf(value).trim();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 从流程定义ID提取流程Key
-     */
-    private String extractProcessKey(String processDefinitionId) {
-        if (processDefinitionId == null || processDefinitionId.isBlank()) {
-            return null;
-        }
-        // 标准格式是 processKey:version:id。当前引擎的定义 ID 是 UUID，没有冒号，必须反查 KEY_。
-        int versionSeparator = processDefinitionId.indexOf(':');
-        if (versionSeparator > 0) {
-            return processDefinitionId.substring(0, versionSeparator);
-        }
-        if (repositoryService == null) {
-            return processDefinitionId;
-        }
-        try {
-            ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
-                    .processDefinitionId(processDefinitionId)
-                    .singleResult();
-            if (definition != null && definition.getKey() != null && !definition.getKey().isBlank()) {
-                return definition.getKey();
-            }
-        } catch (Exception e) {
-            log.debug("从流程定义ID解析流程Key失败: processDefinitionId={}", processDefinitionId, e);
-        }
-        return processDefinitionId;
     }
 
     /**

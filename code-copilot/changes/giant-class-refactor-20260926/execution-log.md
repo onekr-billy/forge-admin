@@ -24,3 +24,24 @@
 - `git diff --check`：通过。generator Reactor 的 `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。
 - 首次定向测试在默认沙箱下因 Mockito inline mock maker 无法附加 JVM agent 而于测试初始化阶段报错（20 项均未进入业务断言）；以允许本机 JVM attach 的权限重跑同一命令后退出码 0。`BusinessFlowStatusRepairServiceTest` 5 项、`BusinessFlowServiceLifecycleTest` 7 项、`BusinessFlowStatusFieldServiceTest` 4 项、`BusinessFlowServiceBusinessKeyTest` 4 项，共 20 项，0 失败、0 错误。
 - 未覆盖：真实 MySQL/Redis/Flowable 联调和其他巨型类的 1000 行收敛；用户按既有偏好执行服务级验证，本轮未启动服务、未修改 SQL/API，且无服务 PID 需停止。
+
+## 2026-09-26 第四至第六个切口：运行配置编译
+
+- 从 `LowcodeRuntimeConfigBuilder` 提取 `RuntimePageRefFieldFactory`、`RuntimeChildFieldCompiler`、`RuntimeActionCompiler`、`RuntimeRelationLookupCompiler` 及共享系统字段集合。页面引用解码、主子表字段筛选/排序、动作协议和关系查找分别有单一职责；入口仍组装运行配置并复用原编辑字段渲染。入口由 3115 行降至 2556 行。
+- 补 4 个协作者测试类与完整主子表 JSON 片段断言。首次测试的快照预期漏列原有 `placeholder` 字段、动作测试有多余右括号；修正测试后生产逻辑不因测试预期改变。
+- generator Reactor 定向命令：`mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessProcessRunViewAssemblerTest,BusinessProcessOrchestratorTest,RuntimeRelationLookupCompilerTest,RuntimeActionCompilerTest,RuntimeChildFieldCompilerTest,RuntimePageRefFieldFactoryTest,RuntimeChildTableCompilerTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`。本轮最终 9 个类、48 项，0 失败、0 错误，退出码 0。
+
+## 2026-09-26 第七至第十个切口：Flowable 监听、编排与监控
+
+- `FlowTaskNotifyListener` 只迁出 H5 链接、卡片描述和转义/截断渲染到 `FlowNotificationContentRenderer`，入口 960 行；异步 `AFTER_COMMIT`、租户上下文、投递渠道未改。`FlowTaskEventListener` 只迁出用户 ID/显示名/流程 Key 解析到 `FlowTaskIdentityResolver`，入口 957 行；事件订阅和任务镜像未改。
+- `BusinessProcessOrchestrator` 迁出运行记录、节点时间线 VO 和版本节点名称映射到 `BusinessProcessRunViewAssembler`，入口 953 行；运行状态机和事务未改。
+- `FlowMonitorServiceImpl` 迁出管理员实例/统计/任务树纯视图映射到 `FlowMonitorViewAssembler`，入口 972 行；租户校验、批量任务查询、清理事务未改。同步更新任务树源码契约检查位置。
+- flow Reactor 定向命令：`mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -Dtest=FlowMonitorViewAssemblerTest,FlowMonitorBatchQueryContractTest,FlowMonitorTaskTreeContractTest,FlowNotificationContentRendererTest,FlowTaskIdentityResolverTest,FlowNotifyConfigTest,FlowTaskEventListenerTest,FlowTaskEventListenerCreatedAutoClaimTest,FlowTaskEventListenerTimeoutContractTest -Dsurefire.failIfNoSpecifiedTests=false test`。最终 9 个类、26 项，0 失败、0 错误，退出码 0。预期异常回退测试产生 WARN 堆栈，但断言通过。
+- 首次 flow 编译在默认沙箱下因本机 `.m2` 访问受限，改用获准权限后同一代码编译通过；未发现编译缺陷。最终分别执行 generator 与 flow Reactor 的 `mvn -q -pl ... -am -DskipTests compile`，均退出码 0。`git diff --check` 通过。
+- 未覆盖：Admin/Flow 服务、真实数据库/Redis/Flowable、协同通知渠道联调；遵循用户既有偏好，本轮未启动服务、未写数据库、无服务 PID。`LowcodeRuntimeConfigBuilder`、`BusinessFlowService` 及其他目标类仍超 1000 行，后续继续按边界拆分，不标为完成。
+
+## 2026-09-26 第十一个切口：表单容器选项
+
+- 从 `LowcodeRuntimeConfigBuilder` 提取弹窗宽度优先级、打开方式与多标签工作区默认值到 `RuntimeFormContainerOptionsCompiler`；入口由 2556 行降至 2467 行。保留现有 JSON 键名和计算顺序。
+- 增加 `RuntimeFormContainerOptionsCompilerTest` 3 项，覆盖编辑区/CRUD 配置优先级、默认宽度、非法模式和工作区参数覆盖。与前述 9 个相关 generator 测试类合并执行，共 10 类、51 项，0 失败、0 错误，退出码 0。
+- 本轮只移动纯配置计算，不更改表单保存、接口或数据库；真实服务验证仍未执行。

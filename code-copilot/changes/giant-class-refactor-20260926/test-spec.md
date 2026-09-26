@@ -24,3 +24,51 @@
 - P0：`git diff --check`、generator Reactor 编译；新增状态修复组件单测覆盖发布版/草稿版配置选择、状态字段白名单和写入失败传播。
 - P1：重跑 `BusinessFlowServiceLifecycleTest`、`BusinessFlowStatusFieldServiceTest`、`BusinessFlowServiceBusinessKeyTest`，确认任务创建/完成、终态回调、重复回调和字段回写仍按原路径执行。
 - 仅在当前变更的编译及单测范围验证；真实 MySQL/Redis/Flowable 端到端验收按已有用户偏好由用户执行，不将未执行的服务级测试写成通过。
+
+## 第四轮增量验证：子表字段选择与页面引用字段解码
+
+- P0：`git diff --check`、generator Reactor 编译；新增子表字段编译器单测覆盖“显示字段”优先级、子表编辑区排序、外键/系统/只读字段过滤与字段引用保留。
+- P1：重跑 `LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest`、`RuntimeChildTableCompilerTest`，并增加完整主子表运行配置片段的 JSON 契约断言，确认保存模式和主表单去重不变。
+- 不修改 SQL、API 或真实流程状态；按用户现有偏好不自动启动 Admin/Flow 服务，也不连接数据库。若仅 JVM attach 限制导致 Mockito 初始化失败，应使用已验证的测试运行权限重试并分别记录。
+
+## 第五轮增量验证：运行时动作协议编译
+
+- P0：编译 generator Reactor；新增动作编译器测试覆盖默认操作与自定义键去重、位置过滤、权限码回退、参数和值的默认协议。
+- P1：重跑 `LowcodeRuntimeConfigBuilderTest` 与 `GeneratedLowcodeRuntimeConfigBuilderTest`，确认列表操作列和 `options` 的四类动作仍与原布局配置一致；再次执行 `git diff --check`。
+- 本轮为纯配置编译器搬迁，不改 HTTP/SQL/业务状态；不启动实际服务。
+
+## 第六轮增量验证：引用关系展示与查询配置
+
+- P0：新增引用关系编译器单测，覆盖来源字段归一化、展示字段候选优先级、`relationName` 翻译键、查询源参数与非 REFERENCE 关系过滤。
+- P1：重跑运行配置入口测试及生成配置回归，检查搜索、列表、编辑三处关系协议和 `joinConfig` 别名；模块编译与 `git diff --check` 必须通过。
+- 仅重排纯编译逻辑；未授权真实服务/数据状态改动，故不执行端到端服务联调。
+
+## 第七轮增量验证：FlowTaskNotifyListener 通知内容渲染
+
+- P0：`forge-plugin-flow` Reactor 编译；新增纯渲染器单测覆盖 H5 hash 基址、模板变量 URL 编码、绝对 URL、卡片 HTML 转义/截断和默认文案。
+- P1：审视监听器异步 `AFTER_COMMIT` 注解、原有依赖注入与租户恢复路径未移动；运行插件现有通知/事件相关单测，检查拆分后类行数降至 1000 以下，最后执行 `git diff --check`。
+- 本轮仅迁出纯字符串渲染；通知投递、Redis/Webhook、真实 Flowable 不变且不启动服务。未执行的真实协同渠道联调不得标记为通过。
+
+## 第八轮增量验证：FlowTaskEventListener 用户身份解析
+
+- P0：`forge-plugin-flow` Reactor 编译；新协作者单测覆盖数字用户 ID、显示名唯一匹配、已有姓名优先及流程定义 Key 的标准格式回退。
+- P1：重跑 `FlowTaskEventListenerTest`、创建时自动签收与超时契约测试，核对任务镜像及租户处理未变；检查事件监听器行数降到 1000 内。
+- 不动 Flowable 引擎事件订阅、表写入或外部通知，保留原事件回调边界。真实服务联调由用户按既有分工执行。
+
+## 第九轮增量验证：业务流程运行视图组装
+
+- P0：抽运行记录/节点时间线 VO 与节点名称映射协作者后，编译 generator Reactor；直接测试雪花 ID 字符串化、时间线字段映射、同版本节点名称解析和损坏快照回退。
+- P1：重跑 `BusinessProcessOrchestratorTest` 与相关运行流程测试，检查启动、重试、取消公开协议未变；执行 `git diff --check` 并确认 `BusinessProcessOrchestrator` 小于 1000 行。
+- 不修改状态机、SQL、Flowable 调用、事务注解或真实数据库；本轮不启动服务。
+
+## 第十轮增量验证：流程监控视图组装
+
+- P0：抽取管理员流程实例视图、时长格式化和统计映射后，编译 flow Reactor；新增测试覆盖待办任务显示名、未认领/降级回退、时长及统计空值/数字转换。
+- P1：重跑 `FlowMonitorBatchQueryContractTest`、`FlowMonitorTaskTreeContractTest`，确认批量任务摘要查询、任务树结构与公开接口未变；执行 `git diff --check` 并确认 `FlowMonitorServiceImpl` 小于 1000 行。
+- 不改变租户校验、Mapper 查询、清理事务或实际流程状态；不启动 Admin/Flow 服务。
+
+## 第十一轮增量验证：运行时表单容器选项
+
+- P0：将弹窗宽度优先级、modal/drawer/flat/tabWorkspace 模式和工作区默认值迁出；单测覆盖编辑配置覆盖表格配置、默认 900px 回退、auto/百分比宽度和非法模式归一化。
+- P1：重跑运行配置入口与生成配置测试，检查 JSON 中 `modalWidth`、`modalType`、`formOpenMode`、`tabWorkspace` 保持一致；generator Reactor 编译与 `git diff --check` 通过。
+- 纯配置编译迁移，不修改表单保存或 API 协议，不启动服务。

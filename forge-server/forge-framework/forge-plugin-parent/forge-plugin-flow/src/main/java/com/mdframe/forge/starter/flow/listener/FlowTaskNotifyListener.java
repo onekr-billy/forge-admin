@@ -27,15 +27,23 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.appendH5BasePath;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.buildDefaultCardDescription;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.buildDefaultCcCardDescription;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.buildDefaultResultCardDescription;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.buildH5TodoDetailUrl;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.cardText;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.isHttpUrl;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.normalizeTemplatePlatform;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.renderUrlTemplate;
+import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.safeText;
 
 /**
  * 流程通知异步监听器
@@ -59,9 +67,6 @@ public class FlowTaskNotifyListener {
 
     /** 流程抄送渠道通知消息业务类型 */
     private static final String FLOW_CC_MESSAGE_BIZ_TYPE = "FLOW_CC";
-
-    /** 默认待办详情深链相对路径（流程模型未配置 todoDetailUrlTemplate 时使用） */
-    private static final String DEFAULT_TODO_DETAIL_PATH = "/#/pages/todo-detail?taskId={taskId}";
 
     /** 默认审批结果卡片落地页（流程模型未配置 todoDetailUrlTemplate 时使用，跳转 H5 待办列表） */
     private static final String DEFAULT_RESULT_DETAIL_PATH = "/#/pages/todo";
@@ -412,30 +417,6 @@ public class FlowTaskNotifyListener {
     }
 
     /**
-     * 拼接 H5 待办详情深链（hash 路由）。默认跳转全局待办详情页，流程模型可通过
-     * {@link FlowModel#getTodoDetailUrlTemplate()} 覆盖为业务自定义路径（需求4）。
-     * <p>模板支持占位符 {@code {taskId}}/{@code {businessKey}}/{@code {processInstanceId}}（自动 URL 编码）；
-     * 模板可填相对路径（自动拼接连接的 H5 域名）或完整 http/https 地址。</p>
-     * <p>配置地址常见直接从浏览器地址栏复制（形如 {@code http://host/forge-h5/#/}），
-     * 因此先剥掉已有的 hash 片段再拼接，避免拼出两个 {@code #} 构成非法 URI 被模板校验整批拒绝。</p>
-     */
-    private String buildH5TodoDetailUrl(String h5BaseUrl, FlowTask flowTask, FlowBusiness business, FlowModel model) {
-        String template = resolveTodoDetailTemplate(model);
-        return appendH5BasePath(h5BaseUrl, renderUrlTemplate(template, flowTask, business));
-    }
-
-    /**
-     * 解析流程模型配置的待办深链模板；未配置时回退全局默认待办详情页。
-     */
-    private String resolveTodoDetailTemplate(FlowModel model) {
-        if (model != null && model.getTodoDetailUrlTemplate() != null
-                && !model.getTodoDetailUrlTemplate().isBlank()) {
-            return model.getTodoDetailUrlTemplate().trim();
-        }
-        return DEFAULT_TODO_DETAIL_PATH;
-    }
-
-    /**
      * 按流程定义 Key 加载流程模型（通知配置 + 深链模板复用），查询失败返回 null
      */
     private FlowModel loadFlowModel(FlowBusiness business) {
@@ -458,48 +439,6 @@ public class FlowTaskNotifyListener {
     }
 
     /**
-     * 相对路径拼接连接的 H5 域名（剥掉已有 hash 片段），完整 http/https 地址原样返回
-     */
-    private String appendH5BasePath(String h5BaseUrl, String rendered) {
-        if (isHttpUrl(rendered)) {
-            return rendered;
-        }
-        String base = h5BaseUrl == null ? "" : h5BaseUrl.trim();
-        int hashIndex = base.indexOf('#');
-        if (hashIndex >= 0) {
-            base = base.substring(0, hashIndex);
-        }
-        while (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        if (base.isEmpty()) {
-            return "";
-        }
-        String path = rendered.startsWith("/") ? rendered : "/" + rendered;
-        return base + path;
-    }
-
-    /**
-     * 渲染深链模板占位符，占位符值统一做 URL 编码避免破坏查询串。
-     */
-    private String renderUrlTemplate(String template, FlowTask flowTask, FlowBusiness business) {
-        String taskId = flowTask == null ? "" : safeText(flowTask.getTaskId(), "");
-        String processInstanceId = flowTask == null ? "" : safeText(flowTask.getProcessInstanceId(), "");
-        String businessKey = business == null ? "" : safeText(business.getBusinessKey(), "");
-        return template
-                .replace("{taskId}", urlEncode(taskId))
-                .replace("{businessKey}", urlEncode(businessKey))
-                .replace("{processInstanceId}", urlEncode(processInstanceId));
-    }
-
-    private String urlEncode(String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
-    }
-
-    /**
      * 按连接平台解析启用的卡片模板编码：模型覆盖编码 → 平台差异化默认编码 → 通用默认编码；
      * 均未启用时返回 null（调用方回退内置排版）。
      */
@@ -513,43 +452,6 @@ public class FlowTaskNotifyListener {
             return messageService.resolveEnabledTemplateCode(templateCodeOverride.trim(), platformCode, defaultTemplateCode);
         }
         return messageService.resolveEnabledTemplateCode(platformCode, defaultTemplateCode);
-    }
-
-    private String normalizeTemplatePlatform(String platform) {
-        if (platform == null || platform.isBlank()) {
-            return "";
-        }
-        String normalized = platform.trim().toUpperCase();
-        return "WECHAT_ENTERPRISE".equals(normalized) ? "WECOM" : normalized;
-    }
-
-    /**
-     * 内置待办卡片排版（未配置启用模板时回退），字段值已在调用处转义。
-     */
-    private String buildDefaultCardDescription(String taskTitle, String processName, String startUserName) {
-        StringBuilder description = new StringBuilder();
-        description.append("<div class=\"gray\">流程待办提醒</div>");
-        description.append("<div class=\"normal\">任务：").append(taskTitle).append("</div>");
-        if (processName != null && !processName.isBlank()) {
-            description.append("<div class=\"normal\">流程：").append(processName).append("</div>");
-        }
-        if (startUserName != null && !startUserName.isBlank()) {
-            description.append("<div class=\"normal\">发起人：").append(startUserName).append("</div>");
-        }
-        description.append("<div class=\"highlight\">点击卡片查看详情并办理 ›</div>");
-        return description.toString();
-    }
-
-    /**
-     * 校验是否为 http/https 地址；含多个 {@code #} 等非法字符时 URI 解析会抛错
-     */
-    private boolean isHttpUrl(String url) {
-        try {
-            String scheme = URI.create(url).getScheme();
-            return "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
     }
 
     private void markTaskTodoMessageRead(String taskId, FlowBusiness business) {
@@ -904,32 +806,6 @@ public class FlowTaskNotifyListener {
         }
     }
 
-    /**
-     * 内置审批结果卡片排版（未配置启用模板时回退）
-     */
-    private String buildDefaultResultCardDescription(String processName, String resultText, String applyUserName) {
-        StringBuilder description = new StringBuilder();
-        description.append("<div class=\"gray\">流程审批结果通知</div>");
-        description.append("<div class=\"normal\">流程：").append(processName).append("</div>");
-        description.append("<div class=\"normal\">结果：").append(resultText).append("</div>");
-        if (applyUserName != null && !applyUserName.isBlank()) {
-            description.append("<div class=\"normal\">发起人：").append(applyUserName).append("</div>");
-        }
-        description.append("<div class=\"highlight\">点击卡片查看详情 ›</div>");
-        return description.toString();
-    }
-
-    /**
-     * 内置抄送卡片排版（未配置启用模板时回退）
-     */
-    private String buildDefaultCcCardDescription(String processName) {
-        StringBuilder description = new StringBuilder();
-        description.append("<div class=\"gray\">流程抄送通知</div>");
-        description.append("<div class=\"normal\">流程：").append(processName).append("</div>");
-        description.append("<div class=\"highlight\">点击卡片查看详情 ›</div>");
-        return description.toString();
-    }
-
     private List<String> resolveCcRoleKeys(Object rawValue) {
         List<String> result = new ArrayList<>();
         if (rawValue instanceof Iterable<?>) {
@@ -1081,21 +957,4 @@ public class FlowTaskNotifyListener {
         return supplier.get();
     }
 
-    private String safeText(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
-    }
-
-    /** 卡片字段值：截断到指定字符数并转义企微 textcard description 中的 HTML 特殊字符 */
-    private String cardText(String value, int maxChars) {
-        if (value == null) {
-            return "";
-        }
-        String text = value.trim();
-        if (text.length() > maxChars) {
-            text = text.substring(0, maxChars) + "…";
-        }
-        return text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
-    }
 }
