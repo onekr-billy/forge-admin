@@ -44,7 +44,9 @@
 
 第二十个切口把运行字段目录和设计器显式选列解析迁入 `RuntimeFieldCatalogResolver`，集中处理模型/子表字段映射、列表网格与旧页面回退、停用字段过滤及托管流程状态列补齐。`LowcodeRuntimeConfigBuilder.buildManagedFlowStatusColumn` 的公开签名保持不变，显式隐藏判定仍沿原运行时字段设置路径执行。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十一个切口从 `BusinessFlowService` 迁出节点表单绑定及主/子表字段权限兼容归一化到 `BusinessFlowNodeFormNormalizer`，将共用 JSON/标量读取迁入 `BusinessFlowJsonReader`。入口继续拥有流程配置保存、任务表单、权限执行、事务与状态机；仅把无状态解析规则集中，不改变 BPMN 节点配置所有权或回调语义。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 8708 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

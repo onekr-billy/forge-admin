@@ -94,3 +94,10 @@
 - 从 `LowcodeRuntimeConfigBuilder` 提取主子表字段引用、显式网格选列、旧页面布局回退、字段目录及托管流程状态列补齐到 `RuntimeFieldCatalogResolver`；入口由 1184 行降至 955 行，新组件 275 行。保留公开 `buildManagedFlowStatusColumn` 方法、字段顺序和显式隐藏规则。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=RuntimeFieldCatalogResolverTest,RuntimeTableColumnCompilerTest,RuntimeEditFieldCompilerTest,RuntimeChildTableCompilerTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 37 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
 - 未启动 Admin 服务或连接真实数据库；真实页面布局、发布快照与流程状态列回显的端到端验收仍待服务环境。无服务 PID 需停止。
+
+## 2026-09-26 第二十一个切口：业务流程节点表单权限
+
+- 从 `BusinessFlowService` 提取节点表单绑定、主/子表字段权限归一化到无状态 `BusinessFlowNodeFormNormalizer`，共用 JSON/布尔值读取迁入 `BusinessFlowJsonReader`。入口由 9004 行降至 8708 行；新类分别 235/118 行。流程配置保存、实际任务写入权限、事务和回调状态机仍在原调用路径。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：补齐原入口仍使用的表单/编辑模式归一方法导入后，退出码 0。
+- 定向回归首次发现旧 `BusinessFlowServiceFormAssetMergeTest.taskRuntimeReadsSelectedApplicationPageForm` 模拟了 `detail`，而现有应用页资产读取路径调用 `loadInAppBuilder`；单独复现后仅修正该测试桩，不改生产资产读取路径。最终执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowNodeFormNormalizerTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceLifecycleTest,BusinessFlowServiceBusinessKeyTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 31 项，0 失败、0 错误，退出码 0。生命周期测试中预期的写入失败 WARN 被断言覆盖。
+- `git diff --check`：通过。未启动 Admin/Flow 服务，也未连接 MySQL/Redis/Flowable；节点权限真实保存及审批端到端验证尚未覆盖，无服务 PID 需停止。

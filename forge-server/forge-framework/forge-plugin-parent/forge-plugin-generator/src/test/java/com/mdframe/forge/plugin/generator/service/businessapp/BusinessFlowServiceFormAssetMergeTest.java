@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
@@ -213,7 +214,8 @@ class BusinessFlowServiceFormAssetMergeTest {
                     "formDesignerSchema":{"components":[{"type":"input","fieldBinding":{"fieldCode":"employeeName"},"props":{"label":"员工姓名"}}]}}]
                 }}
                 """);
-        when(applicationService.detail(10L)).thenReturn(application);
+        when(applicationService.loadInAppBuilder(10L)).thenReturn(
+                JSON.parseObject(application.getOptions()).getJSONObject("inAppBuilder"));
         String formKey = "app_10_page_page_page_form_asset_1";
         Map<String, Object> formInfo = Map.of("variables", Map.of(
                 "formKey", formKey,
