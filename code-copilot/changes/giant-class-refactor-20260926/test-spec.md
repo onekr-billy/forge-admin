@@ -296,3 +296,12 @@
 - 验证：重跑金额、结构化字段、加密生命周期、打印读取、动态 CRUD 和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：金额、结构化值和加密生命周期测试改为直接验证新 Pipeline，打印读取继续覆盖严格翻译/脱敏与数据权限富化；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 4165 行，新 Pipeline 782 行。
+
+## 2026-09-26 第四十三轮增量验证：运行时关系查询规划器
+
+- P0：主表/子表字段映射、关系方向推断、展示伴随字段、Join 条件、排序白名单、聚合子表行和展开行稳定 Key 协议保持不变。
+- P0：分页、自定义查询、导出和主子表读写继续复用同一份运行时关系快照，不改变查询触发条件和保存模式判断。
+- P1：使用 Planner/Compiler 迁出运行时关系编译和 Join 查询计划；入口仅消费不可变关系快照，新生产类少于 1000 行。
+- 验证：重跑主子表、自动生成、动态查询与业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：分页、自定义查询、导出和主子表读写已统一委托 `DynamicCrudRuntimeRelationPlanner`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 3455 行，新 Planner 875 行。
