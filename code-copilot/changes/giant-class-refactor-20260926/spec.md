@@ -48,7 +48,9 @@
 
 第二十二个切口继续迁出审批表单控件类型兼容推断与字段目录编译到 `BusinessFlowTaskFormControlTypes`、`BusinessFlowFormFieldCatalog`。应用页和业务对象表单仍由原入口选择资产；新组件只读取设计器 schema，按原顺序提取主表字段、递归子表列和预览标签。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 8420 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十三个切口把代码应用 Provider 表单资产与绑定元数据的合并、非公开字段过滤、资产移除标记及预览编译迁入 `BusinessCodeAppFormAssetMerger`。入口仍负责租户绑定读取、Provider 调用和运行时审批权限执行；只迁移无状态资产装配规则。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 8082 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
