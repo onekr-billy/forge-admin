@@ -216,3 +216,9 @@
 - 使用 Planner/Compiler 从 `DynamicCrudService` 迁出模型引用解析、主子关系方向推断、字段/列映射、伴随展示字段、Join 字段选择、排序白名单、聚合子表行和展开行稳定 Key。Facade 通过窄回调提供已发布主表列映射和存量外键可读性修正。
 - 入口由 4165 行降至 3455 行，新 `DynamicCrudRuntimeRelationPlanner` 875 行；运行时关系快照改为包内不可变 record，供后续主子表持久化继续拆分。generator Reactor 编译退出码 0。
 - 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；复杂多子表 Join 与大结果集聚合仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-26 第四十四个切口：动态写入字段策略
+
+- 使用 Policy 从 `DynamicCrudService` 迁出编辑/模型/伴随名称/存储公式字段白名单、真实列映射、内部与事务命令写入过滤、期望值及数值条件构造、存储公式旧值合并与校验。Facade 继续持有事务、数据权限、唯一约束和仓储写入顺序。
+- 入口由 3455 行降至 2974 行，新 `DynamicCrudWriteFieldPolicy` 665 行，均保持公开 API 和构造注入签名不变；generator Reactor 编译退出码 0。
+- 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实并发条件更新与跨数据源字段映射仍需服务环境验收，无服务 PID 需停止。

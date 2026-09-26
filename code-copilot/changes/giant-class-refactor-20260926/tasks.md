@@ -43,5 +43,6 @@
 - [x] 提取动态 CRUD 树查询引擎，集中树配置、祖先补链、懒加载组装和 includeChildren 展开，使 `DynamicCrudService` 降至 4878 行。
 - [x] 提取动态字段值 Pipeline，集中金额、结构化值、加解密、虚拟公式、翻译和脱敏，使 `DynamicCrudService` 降至 4165 行。
 - [x] 提取运行时关系 Planner，集中模型引用、关系推断、Join 查询计划和子表行投影，使 `DynamicCrudService` 降至 3455 行。
+- [x] 提取动态写入字段 Policy，集中字段白名单、真实列映射、事务条件和存储公式准备，使 `DynamicCrudService` 降至 2974 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

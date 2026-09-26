@@ -305,3 +305,12 @@
 - 验证：重跑主子表、自动生成、动态查询与业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：分页、自定义查询、导出和主子表读写已统一委托 `DynamicCrudRuntimeRelationPlanner`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 3455 行，新 Planner 875 行。
+
+## 2026-09-26 第四十四轮增量验证：动态写入字段策略
+
+- P0：编辑 Schema、模型字段、伴随名称列、存储公式字段和事务命令字段的白名单及真实列映射保持不变，系统字段继续不可写。
+- P0：条件更新的期望值加密、数值比较、组合条件和存储公式的旧值合并/回写顺序保持不变；越权字段、缺失物理列和无权限记录继续拒绝。
+- P1：使用 Policy 集中写入字段许可、命令条件和存储公式准备；入口只保留事务顺序与仓储调用，新生产类少于 1000 行。
+- 验证：重跑自动生成、金额、结构化字段、加密、主子表和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：编辑/模型字段白名单、事务命令条件、真实列映射和存储公式准备已统一委托 `DynamicCrudWriteFieldPolicy`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 2974 行，新 Policy 665 行。
