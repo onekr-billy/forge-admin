@@ -168,6 +168,8 @@ describe('application runtime route loading', () => {
     expect(runtimeSource).toContain('warmCurrentPortalPageCrud')
     expect(runtimeSource).toContain('seed-runtime-crud-props')
     expect(runtimeSource).toContain('import(\'@/components/ai-form/AiCrudPage.vue\')')
+    expect(runtimeSource).toContain('editCanvasBootstrapping')
+    expect(runtimeSource).toContain('resolveEntryDesignTab(pageId) === \'page\'')
     expect(portalSource).toContain('seedRuntimeCrudProps')
     expect(portalSource).toContain('portal-content-skeleton')
     expect(rendererSource).toContain('<div v-if="runtimeCrudLoading" class="runtime-crud-loading">')

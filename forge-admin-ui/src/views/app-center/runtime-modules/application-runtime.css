@@ -1682,6 +1682,14 @@
   /* 高度由内部 page-flow / 组件内容撑开，不再用视口假高度占位 */
   min-height: 0;
 }
+.edit-canvas-bootstrapping {
+  box-sizing: border-box;
+  min-height: min(70vh, 640px);
+  padding: 28px 32px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
+}
 .application-page-flow {
   position: relative;
   display: block;
