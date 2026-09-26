@@ -87,11 +87,12 @@ class BusinessFlowPerformanceContractTest {
 
     @Test
     void listDisplayMustReuseRuntimeObjectMetadata() throws IOException {
-        String source = serviceSource();
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowListDisplayEnricher.java"));
 
         assertTrue(source.contains("Map<String, AiBusinessObject> objectLookupCache"));
         assertTrue(source.contains("context.businessObject() == null"));
-        assertTrue(source.contains("toBusinessObjectVO(context.businessObject())"));
+        assertTrue(source.contains("businessObjectConverter.apply(context.businessObject())"));
     }
 
     @Test

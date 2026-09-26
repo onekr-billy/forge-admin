@@ -168,3 +168,9 @@
 - 使用 Resolver + Codec 从 `BusinessFlowService` 迁出发布/草稿运行配置、单据配置和业务对象规范化查找，task form/流程关联/应用页身份恢复，以及业务 Key 编解码。入口由 3869 行降至 3431 行；新增 `BusinessFlowRuntimeContextResolver` 466 行、`BusinessFlowIdentityCodec` 58 行，两个不可变快照分别 13/4 行，均低于 1000 行。任务保存、流程关联写入、事务和状态机仍由 Facade 持有。
 - generator Reactor 编译首次发现列表/绑定路径仍调用已迁出的单据配置和任务对象方法；改为直接复用 Resolver 后重新编译退出码 0。旧业务 Key 测试取消对 Facade 私有方法的反射，性能契约改为验证 Resolver 内的配置复用与阶段记录。
 - 执行 20 类业务流程增量回归共 97 项，0 失败、0 错误；生命周期测试中预期的写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；历史流程实例与真实应用页联合身份恢复仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第三十三个切口：业务待办列表展示装配
+
+- 使用 Enricher + Batch Loader 从 `BusinessFlowService` 迁出流程关联批量查询、对象身份缓存、运行配置分组、低代码记录批量读取、代码 Provider 摘要和展示投影到 `BusinessFlowListDisplayEnricher`。入口由 3431 行降至 3086 行，新 Enricher 419 行；公开列表增强入口仅委托，批量与缓存策略不再散落于 Facade。
+- 首次编译暴露自动提取边界夹带下一方法的未闭合注释，修正边界后 Reactor 编译退出码 0。新增列表测试验证两条待办只执行一次关联批量查询和一次动态记录批量查询，性能源码契约改为直接检查 Enricher。
+- 执行 21 类业务流程增量回归共 98 项，0 失败、0 错误；生命周期测试中预期的写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实 Flowable 待办列表与代码 Provider 联调仍需服务环境，无服务 PID 需停止。

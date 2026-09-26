@@ -208,3 +208,12 @@
 - 验证：generator Reactor 编译、身份/业务 Key/任务表单/生命周期定向回归、`git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：新增 `BusinessFlowRuntimeContextResolverTest` 覆盖 task form 身份优先级、单据/对象元数据规范化和测试业务 Key 的记录隔离；旧业务 Key 测试改为直接验证 Codec/Resolver。相关 20 类共 97 项通过，0 失败、0 错误；模块 Reactor 编译与 `git diff --check` 通过。
+
+## 2026-09-26 第三十三轮增量验证：业务待办列表展示装配
+
+- P0：批量流程关联查询、对象身份缓存、低代码批量记录查询和代码 Provider 摘要批量构建保持原调用次数与回退顺序。
+- P0：启动参数中的 `displayFields` 继续优先形成展示扩展，业务记录仅合并进 `businessParams`；对象名称与流程名称回退不变。
+- P1：使用 Enricher + Batch Loader 将列表分组、批量读取和展示投影整体迁出 Facade，不保留私有转发方法。
+- 验证：generator Reactor 编译、列表展示/身份/生命周期/性能契约回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：新增 `BusinessFlowListDisplayEnricherTest` 验证多条待办共享一次关联批量查询和一次动态记录批量查询，并锁定 `displayFields`、业务参数、摘要及流程名称投影；相关 21 类共 98 项通过，0 失败、0 错误。模块 Reactor 编译与 `git diff --check` 通过。

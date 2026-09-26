@@ -70,6 +70,8 @@
 
 第三十二个切口使用 Resolver + Codec，将发布/草稿运行配置、单据配置和业务对象的规范化查找，任务表单/流程关联/应用页身份恢复，以及业务 Key 编解码迁入 `BusinessFlowRuntimeContextResolver` 与 `BusinessFlowIdentityCodec`。入口由 3869 行降至 3431 行，新 Resolver/Codec 分别 466/58 行；`BusinessRuntimeContext`、`BusinessKeyParts` 使用包级不可变快照，分别 13/4 行。Facade 保留任务保存、流程关联写入、事务和状态机。
 
+第三十三个切口使用 Enricher + Batch Loader，将待办/抄送列表的流程关联批量查询、对象身份缓存、按运行配置分组、低代码记录批量读取、代码 Provider 摘要和展示投影迁入 `BusinessFlowListDisplayEnricher`。入口由 3431 行降至 3086 行，新 Enricher 419 行；启动展示字段优先级、业务参数合并和对象/流程名称回退保持不变。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。
