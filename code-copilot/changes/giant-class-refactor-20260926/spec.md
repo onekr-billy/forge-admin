@@ -42,7 +42,9 @@
 
 第十九个切口把列表列 JSON 编译迁入 `RuntimeTableColumnCompiler`，负责字典、引用、开关等渲染配置与列宽、固定列、点击动作、子表标题前缀。它继续复用原字段元数据判定；入口仍选择列字段并构造操作列。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 1184 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十个切口把运行字段目录和设计器显式选列解析迁入 `RuntimeFieldCatalogResolver`，集中处理模型/子表字段映射、列表网格与旧页面回退、停用字段过滤及托管流程状态列补齐。`LowcodeRuntimeConfigBuilder.buildManagedFlowStatusColumn` 的公开签名保持不变，显式隐藏判定仍沿原运行时字段设置路径执行。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
