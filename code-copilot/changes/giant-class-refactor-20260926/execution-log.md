@@ -131,3 +131,9 @@
 - 使用 Policy Object 从 `BusinessFlowService` 迁出待办任务存在性/状态、签收人和候选人、写权限，以及流程实例、业务 Key、节点和流程定义一致性校验到 `BusinessFlowTaskAccessPolicy`。入口由 7683 行降至 7492 行，新策略 215 行；任务详情仍由入口从 Flow 服务读取，当前登录人仍由入口解析。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowTaskAccessPolicyTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 39 项，0 失败、0 错误，退出码 0。生命周期测试中的预期写入失败 WARN 被断言覆盖。
 - `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实任务认领、候选组和跨租户场景仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第二十七个切口：审批子表权限策略
+
+- 使用 Policy Object 从 `BusinessFlowService` 迁出子表/字段权限匹配、动态 CRUD 保存白名单、主子表请求拆包、子表键别名匹配、返回行字段裁剪和诊断摘要到 `BusinessFlowTaskChildPolicy`。入口由 7492 行降至 7014 行，新策略 494 行；节点表单加载、业务记录查询和保存调用仍在原入口。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。首轮新增测试使用了缺少 `field` 的非现行权限项，导致两项断言失败；按节点权限协议补齐 `field` 后未改生产逻辑，最终执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowTaskChildPolicyTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowNodeFormNormalizerTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 38 项，0 失败、0 错误，退出码 0。生命周期测试中的预期写入失败 WARN 被断言覆盖。
+- `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实主子表暂存、审批保存及候选节点权限仍需服务级联调，无服务 PID 需停止。

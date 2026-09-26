@@ -47,6 +47,7 @@ class BusinessFlowServiceFormAssetMergeTest {
     private Method resolveRuntimeBusinessFormRef;
     private Method resolveBusinessTaskFormAsset;
     private BusinessFlowStartContextAssembler startContextAssembler;
+    private BusinessFlowTaskChildPolicy taskChildPolicy;
     private BusinessApplicationService applicationService;
 
     @BeforeEach
@@ -87,6 +88,7 @@ class BusinessFlowServiceFormAssetMergeTest {
                 "resolveBusinessTaskFormAsset", String.class, String.class);
         resolveBusinessTaskFormAsset.setAccessible(true);
         startContextAssembler = BusinessFlowStartContextAssembler.standard();
+        taskChildPolicy = new BusinessFlowTaskChildPolicy();
     }
 
     @Test
@@ -386,9 +388,6 @@ class BusinessFlowServiceFormAssetMergeTest {
     @Test
     @DisplayName("object-shaped form permission string keeps child writable field")
     void objectFormPermissionStringKeepsChildWritableField() throws Exception {
-        Method buildTaskChildPermissions = BusinessFlowService.class.getDeclaredMethod(
-                "buildTaskChildPermissions", List.class, JSONObject.class);
-        buildTaskChildPermissions.setAccessible(true);
         String permissions = """
                 {"version":2,"fields":[{"field":"fieldInput","scope":"child","childKey":"cgou_detail_ujpc","childField":"fieldInput","readable":true,"writable":true}],"children":[{"childKey":"cgou_detail_ujpc","readable":true,"allowUpdate":true}]}
                 """;
@@ -399,10 +398,8 @@ class BusinessFlowServiceFormAssetMergeTest {
         child.put("allowUpdate", true);
         child.put("fields", List.of(Map.of("field", "fieldInput", "writable", false)));
 
-        @SuppressWarnings("unchecked")
         Map<String, DynamicCrudService.TaskChildPermission> result =
-                (Map<String, DynamicCrudService.TaskChildPermission>) buildTaskChildPermissions.invoke(
-                        service, List.of(child), nodeForm);
+                taskChildPolicy.buildSavePermissions(List.of(child), nodeForm);
 
         assertTrue(result.get("cgou_detail_ujpc").writableFields().contains("fieldInput"));
     }

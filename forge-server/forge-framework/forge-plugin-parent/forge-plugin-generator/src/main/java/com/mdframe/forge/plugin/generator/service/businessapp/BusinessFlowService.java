@@ -109,7 +109,6 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.camelToSnake;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.contains;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.read;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.sameField;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.snakeToCamel;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskAccessPolicy.isSyntheticTestBusinessKey;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.firstStrongTaskFormControlType;
@@ -137,6 +136,8 @@ public class BusinessFlowService {
             BusinessFlowStartContextAssembler.standard();
     private static final BusinessFlowTaskAccessPolicy TASK_ACCESS_POLICY =
             new BusinessFlowTaskAccessPolicy();
+    private static final BusinessFlowTaskChildPolicy TASK_CHILD_POLICY =
+            new BusinessFlowTaskChildPolicy();
     /** 流程运行期间允许任务事件改写的单据状态，终态不在其中。 */
     private static final Set<String> RUNNING_DOCUMENT_STATUS_KEYS = Set.of(
             "DRAFT", "SUBMITTED", "IN_PROCESS", "NEED_MODIFY");
@@ -1009,7 +1010,8 @@ public class BusinessFlowService {
                 : readJsonObject(runtime.publishedConfig().getOptions());
         List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(
                 runtime.configKey(), nodeForm, runtimeOptions, formSchema);
-        Map<String, DynamicCrudService.TaskChildPermission> childPermissions = buildTaskChildPermissions(childrenConfig, nodeForm);
+        Map<String, DynamicCrudService.TaskChildPermission> childPermissions =
+                TASK_CHILD_POLICY.buildSavePermissions(childrenConfig, nodeForm);
         Set<String> writableFields = collectPermissionFields(permissions, "writable", true);
         boolean hasWritableChildren = childPermissions.values().stream()
                 .anyMatch(permission -> !permission.writableFields().isEmpty()
@@ -1020,8 +1022,8 @@ public class BusinessFlowService {
 
         Map<String, Object> input = dto.getData() == null ? Map.of() : dto.getData();
         Map<String, Object> updateData = new LinkedHashMap<>();
-        Map<String, Object> mainInput = extractTaskMainPayload(input);
-        Map<String, Object> childrenInput = extractTaskChildrenPayload(input);
+        Map<String, Object> mainInput = TASK_CHILD_POLICY.extractMainPayload(input);
+        Map<String, Object> childrenInput = TASK_CHILD_POLICY.extractChildrenPayload(input);
         for (String field : writableFields) {
             if (mainInput.containsKey(field)) {
                 updateData.put(field, mainInput.get(field));
@@ -1529,9 +1531,9 @@ public class BusinessFlowService {
         mark = System.nanoTime();
         List<Map<String, Object>> childrenConfig = resolveBusinessTaskChildrenConfig(
                 runtime.configKey(), nodeForm, runtimeOptions, formSchema);
-        logBusinessTaskChildren("raw", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
-        filterVisibleRecordChildren(visibleRecordData, childrenConfig);
-        logBusinessTaskChildren("filtered", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
+        TASK_CHILD_POLICY.logChildren("raw", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
+        TASK_CHILD_POLICY.filterVisibleRecordChildren(visibleRecordData, childrenConfig);
+        TASK_CHILD_POLICY.logChildren("filtered", runtime.configKey(), runtime.recordId(), childrenConfig, visibleRecordData);
         stages.put("childrenMs", elapsedMillis(mark));
 
         vo.setBusinessSummary(resolveBusinessSummary(object, runtime, recordData));
@@ -1858,7 +1860,7 @@ public class BusinessFlowService {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         JSONObject masterDetailConfig = readNestedObject(options.get("masterDetailConfig"));
         for (Map<String, Object> child : readMapList(readNestedArray(masterDetailConfig.get("children")))) {
-            String childKey = resolveBusinessTaskChildKey(child);
+            String childKey = TASK_CHILD_POLICY.resolveChildKey(child);
             for (Map<String, Object> rawField : readMapList(readNestedArray(child.get("fields")))) {
                 Map<String, Object> field = normalizeRuntimeCrudFormField(rawField);
                 if (field == null) {
@@ -2112,7 +2114,7 @@ public class BusinessFlowService {
             JSONObject options = runtimeOptions == null ? new JSONObject() : runtimeOptions;
             JSONObject masterDetailConfig = readNestedObject(options.get("masterDetailConfig"));
             List<Map<String, Object>> rawChildren = readMapList(readNestedArray(masterDetailConfig.get("children"))).stream()
-                    .filter(this::isBusinessTaskDetailChild)
+                    .filter(TASK_CHILD_POLICY::isDetailChild)
                     .toList();
             Map<String, Map<String, Object>> publishedByKey = indexTaskChildrenByKey(rawChildren);
             // 表单设计器里的子表组件决定「审批展示哪些子表」；发布态 masterDetail 只负责补齐字段元数据
@@ -2124,16 +2126,16 @@ public class BusinessFlowService {
             if (sourceChildren.isEmpty() && !rawChildren.isEmpty()) {
                 sourceChildren = rawChildren;
             }
-            Map<String, Map<String, Object>> childPermissions = normalizeTaskChildPermissionMap(nodeForm);
+            Map<String, Map<String, Object>> childPermissions = TASK_CHILD_POLICY.normalizeChildPermissionMap(nodeForm);
             List<Map<String, Object>> result = new ArrayList<>();
             for (Map<String, Object> rawChild : sourceChildren) {
-                String childKey = resolveBusinessTaskChildKey(rawChild);
-                Map<String, Object> childPermission = findChildPermission(childPermissions, childKey);
+                String childKey = TASK_CHILD_POLICY.resolveChildKey(rawChild);
+                Map<String, Object> childPermission = TASK_CHILD_POLICY.findChildPermission(childPermissions, childKey);
                 if (childPermission != null && !readBooleanValue(childPermission.get("readable"), true)) {
                     continue;
                 }
                 Map<String, Object> child = new LinkedHashMap<>(rawChild);
-                boolean fieldWritable = hasWritableTaskChildField(rawChild, nodeForm, childKey);
+                boolean fieldWritable = TASK_CHILD_POLICY.hasWritableField(rawChild, nodeForm, childKey);
                 // 设计器/发布态默认允许新增；节点 childPermissions 显式配置时以节点为准
                 boolean designerAllowCreate = readBooleanValue(rawChild.get("allowCreate"),
                         readBooleanValue(rawChild.get("inlineCreateEnabled"), true));
@@ -2151,7 +2153,7 @@ public class BusinessFlowService {
                 }
                 child.put("readable", true);
                 ensureChildSelectExistingConfig(child);
-                List<Map<String, Object>> visibleFields = applyTaskChildFieldPermissions(
+                List<Map<String, Object>> visibleFields = TASK_CHILD_POLICY.applyFieldPermissions(
                         readMapList(readNestedArray(rawChild.get("fields"))), nodeForm, childKey);
                 child.put("fields", visibleFields);
                 if (!visibleFields.isEmpty()) {
@@ -2203,7 +2205,7 @@ public class BusinessFlowService {
     private Map<String, Map<String, Object>> indexTaskChildrenByKey(List<Map<String, Object>> children) {
         Map<String, Map<String, Object>> result = new LinkedHashMap<>();
         for (Map<String, Object> child : children) {
-            String key = resolveBusinessTaskChildKey(child);
+            String key = TASK_CHILD_POLICY.resolveChildKey(child);
             if (key != null) {
                 result.putIfAbsent(key, child);
                 // 同子表可能同时有 relationKey / 带前缀 modelCode，互为别名
@@ -2348,7 +2350,7 @@ public class BusinessFlowService {
             if (published == null) {
                 if (!readMapList(readNestedArray(formChild.get("fields"))).isEmpty()) {
                     Map<String, Object> standalone = new LinkedHashMap<>(formChild);
-                    enrichTaskChildFieldControls(standalone, childKeyCandidates(formChild), registryCache);
+                    enrichTaskChildFieldControls(standalone, TASK_CHILD_POLICY.childKeyCandidates(formChild), registryCache);
                     ensureChildSelectExistingConfig(standalone);
                     result.add(standalone);
                 }
@@ -2402,8 +2404,8 @@ public class BusinessFlowService {
                 }
                 merged.put("fields", fields);
             }
-            List<String> objectCodes = new ArrayList<>(childKeyCandidates(formChild));
-            childKeyCandidates(published).forEach(code -> {
+            List<String> objectCodes = new ArrayList<>(TASK_CHILD_POLICY.childKeyCandidates(formChild));
+            TASK_CHILD_POLICY.childKeyCandidates(published).forEach(code -> {
                 if (!objectCodes.contains(code)) {
                     objectCodes.add(code);
                 }
@@ -2579,7 +2581,7 @@ public class BusinessFlowService {
             return direct;
         }
         for (Map.Entry<String, Map<String, Object>> entry : publishedFields.entrySet()) {
-            if (sameFieldName(entry.getKey(), code)) {
+            if (TASK_CHILD_POLICY.sameFieldName(entry.getKey(), code)) {
                 return entry.getValue();
             }
         }
@@ -2592,7 +2594,7 @@ public class BusinessFlowService {
         if (publishedByKey == null || publishedByKey.isEmpty() || formChild == null) {
             return null;
         }
-        for (String candidate : childKeyCandidates(formChild)) {
+        for (String candidate : TASK_CHILD_POLICY.childKeyCandidates(formChild)) {
             Map<String, Object> direct = publishedByKey.get(candidate);
             if (direct != null && (usedPublished == null || !usedPublished.contains(direct))) {
                 return direct;
@@ -2600,13 +2602,13 @@ public class BusinessFlowService {
         }
         Map<String, Object> best = null;
         int bestDelta = Integer.MAX_VALUE;
-        for (String candidate : childKeyCandidates(formChild)) {
+        for (String candidate : TASK_CHILD_POLICY.childKeyCandidates(formChild)) {
             for (Map.Entry<String, Map<String, Object>> entry : publishedByKey.entrySet()) {
                 Map<String, Object> published = entry.getValue();
                 if (published == null || (usedPublished != null && usedPublished.contains(published))) {
                     continue;
                 }
-                if (!sameChildTableKey(entry.getKey(), candidate)) {
+                if (!TASK_CHILD_POLICY.sameChildTableKey(entry.getKey(), candidate)) {
                     continue;
                 }
                 int delta = Math.abs(StringUtils.length(entry.getKey()) - StringUtils.length(candidate));
@@ -2626,20 +2628,6 @@ public class BusinessFlowService {
         Map<String, Object> probe = new LinkedHashMap<>();
         probe.put("modelCode", childKey);
         return findPublishedChild(publishedByKey, probe, null);
-    }
-
-    private List<String> childKeyCandidates(Map<String, Object> child) {
-        if (child == null) {
-            return List.of();
-        }
-        LinkedHashSet<String> keys = new LinkedHashSet<>();
-        for (String field : new String[]{"modelCode", "relationKey", "key", "tableName"}) {
-            String trimmed = StringUtils.trimToNull(textValue(child.get(field)));
-            if (trimmed != null) {
-                keys.add(trimmed);
-            }
-        }
-        return List.copyOf(keys);
     }
 
     /**
@@ -2708,472 +2696,6 @@ public class BusinessFlowService {
             selector.put("filterFields", filterFields);
         }
         child.put("recordSelector", selector);
-    }
-
-    private List<Map<String, Object>> applyTaskChildFieldPermissions(List<Map<String, Object>> fields,
-                                                                       JSONObject nodeForm,
-                                                                       String childKey) {
-        Map<String, Map<String, Object>> permissions = normalizeTaskFieldPermissionMap(nodeForm);
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> source : fields) {
-            String field = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(source.get("field"))),
-                    StringUtils.trimToNull(textValue(source.get("fieldCode"))),
-                    StringUtils.trimToNull(textValue(source.get("sourceField"))));
-            if (field == null) {
-                continue;
-            }
-            Map<String, Object> permission = findChildFieldPermission(permissions, childKey, field);
-            boolean readable = permission == null || readBooleanValue(permission.get("readable"), true);
-            if (!readable) {
-                continue;
-            }
-            boolean writable = permission != null && readBooleanValue(permission.get("writable"), false);
-            Map<String, Object> fieldConfig = new LinkedHashMap<>(source);
-            fieldConfig.put("field", field);
-            fieldConfig.put("fieldCode", field);
-            fieldConfig.put("readable", true);
-            fieldConfig.put("writable", writable);
-            fieldConfig.put("readonly", !writable);
-            fieldConfig.put("disabled", !writable);
-            fieldConfig.put("required", writable && permission != null
-                    && readBooleanValue(permission.get("required"), false));
-            fieldConfig.put("scope", "child");
-            fieldConfig.put("childKey", childKey);
-            fieldConfig.put("childField", field);
-            result.add(fieldConfig);
-        }
-        return result;
-    }
-
-    private boolean hasWritableTaskChildField(Map<String, Object> child,
-                                               JSONObject nodeForm,
-                                               String childKey) {
-        Map<String, Map<String, Object>> permissions = normalizeTaskFieldPermissionMap(nodeForm);
-        for (Map<String, Object> field : readMapList(readNestedArray(child.get("fields")))) {
-            String fieldName = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(field.get("field"))),
-                    StringUtils.trimToNull(textValue(field.get("fieldCode"))),
-                    StringUtils.trimToNull(textValue(field.get("sourceField"))));
-            Map<String, Object> permission = findChildFieldPermission(permissions, childKey, fieldName);
-            if (permission != null && readBooleanValue(permission.get("writable"), false)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Map<String, DynamicCrudService.TaskChildPermission> buildTaskChildPermissions(
-            List<Map<String, Object>> childrenConfig, JSONObject nodeForm) {
-        Map<String, Map<String, Object>> nodeFieldPermissions = normalizeTaskFieldPermissionMap(nodeForm);
-        Map<String, DynamicCrudService.TaskChildPermission> result = new LinkedHashMap<>();
-        for (Map<String, Object> child : childrenConfig) {
-            String childKey = resolveBusinessTaskChildKey(child);
-            if (StringUtils.isBlank(childKey)) {
-                continue;
-            }
-            Set<String> writableFields = new LinkedHashSet<>();
-            boolean explicitFieldPermission = false;
-            for (Map.Entry<String, Map<String, Object>> entry : nodeFieldPermissions.entrySet()) {
-                String permissionKey = entry.getKey();
-                int split = permissionKey == null ? -1 : permissionKey.lastIndexOf(':');
-                if (split <= 0) {
-                    continue;
-                }
-                String configuredChildKey = permissionKey.substring(0, split);
-                String configuredField = permissionKey.substring(split + 1);
-                if (!sameChildTableKey(configuredChildKey, childKey) || StringUtils.isBlank(configuredField)) {
-                    continue;
-                }
-                explicitFieldPermission = true;
-                if (readBooleanValue(entry.getValue().get("writable"), false)) {
-                    writableFields.add(configuredField);
-                }
-            }
-            if (!explicitFieldPermission) {
-                readMapList(readNestedArray(child.get("fields"))).stream()
-                        .filter(field -> readBooleanValue(field.get("writable"), false))
-                        .flatMap(field -> java.util.stream.Stream.of(
-                                textValue(field.get("field")),
-                                textValue(field.get("fieldCode")),
-                                textValue(field.get("sourceField"))))
-                        .filter(StringUtils::isNotBlank)
-                        .forEach(writableFields::add);
-            }
-            result.put(childKey, new DynamicCrudService.TaskChildPermission(
-                    readBooleanValue(child.get("readable"), true),
-                    readBooleanValue(child.get("allowCreate"), false),
-                    readBooleanValue(child.get("allowUpdate"), false),
-                    readBooleanValue(child.get("allowDelete"), false),
-                    writableFields));
-        }
-        return result;
-    }
-
-    private Map<String, Map<String, Object>> normalizeTaskChildPermissionMap(JSONObject nodeForm) {
-        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
-        Object source = nodeForm == null ? null : nodeForm.get("childPermissions");
-        if (source == null && nodeForm != null) {
-            source = nodeForm.get("fieldPermissions");
-        }
-        JSONObject object = readNestedObject(source);
-        JSONArray childArray = source instanceof List<?> || source instanceof JSONArray
-                ? readNestedArray(source)
-                : readNestedArray(object.get("children"));
-        for (Map<String, Object> item : readMapList(childArray)) {
-            String childKey = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(item.get("childKey"))),
-                    StringUtils.trimToNull(textValue(item.get("relationKey"))),
-                    StringUtils.trimToNull(textValue(item.get("key"))));
-            if (childKey != null) {
-                Map<String, Object> normalized = new LinkedHashMap<>(item);
-                normalized.put("childKey", childKey);
-                result.put(childKey, normalized);
-            }
-        }
-        return result;
-    }
-
-    private Map<String, Map<String, Object>> normalizeTaskFieldPermissionMap(JSONObject nodeForm) {
-        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
-        Object source = nodeForm == null ? null : nodeForm.get("fieldPermissions");
-        if (source == null && nodeForm != null) {
-            source = nodeForm.get("childPermissions");
-        }
-        for (Map<String, Object> item : normalizeFieldPermissions(source)) {
-            if (!"child".equalsIgnoreCase(textValue(item.get("scope")))) {
-                continue;
-            }
-            String childKey = StringUtils.trimToNull(textValue(item.get("childKey")));
-            String childField = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(item.get("childField"))),
-                    StringUtils.trimToNull(textValue(item.get("field"))));
-            if (childKey != null && childField != null) {
-                result.put(taskChildPermissionKey(childKey, childField), item);
-            }
-        }
-        return result;
-    }
-
-    private String taskChildPermissionKey(String childKey, String field) {
-        return StringUtils.defaultString(childKey) + ":" + StringUtils.defaultString(field);
-    }
-
-    private boolean sameTaskFormKey(String configuredFormKey, String runtimeFormKey) {
-        if (StringUtils.isAnyBlank(configuredFormKey, runtimeFormKey)) {
-            return true;
-        }
-        if (StringUtils.equals(configuredFormKey, runtimeFormKey)) {
-            return true;
-        }
-        return configuredFormKey.endsWith("_" + runtimeFormKey)
-                || runtimeFormKey.endsWith("_" + configuredFormKey)
-                || configuredFormKey.contains("_form_" + runtimeFormKey)
-                || runtimeFormKey.contains("_form_" + configuredFormKey);
-    }
-
-    private boolean sameFieldName(String left, String right) {
-        if (StringUtils.equals(left, right)) {
-            return true;
-        }
-        if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
-            return false;
-        }
-        return sameField(left, right);
-    }
-
-    private boolean sameChildTableKey(String left, String right) {
-        if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
-            return false;
-        }
-        if (StringUtils.equals(left, right)) {
-            return true;
-        }
-        String shorter = left.length() <= right.length() ? left : right;
-        String longer = left.length() <= right.length() ? right : left;
-        return longer.endsWith("_" + shorter);
-    }
-
-    private Map<String, Object> findChildPermission(Map<String, Map<String, Object>> permissions, String childKey) {
-        if (permissions == null || permissions.isEmpty() || StringUtils.isBlank(childKey)) {
-            return null;
-        }
-        Map<String, Object> direct = permissions.get(childKey);
-        if (direct != null) {
-            return direct;
-        }
-        for (Map.Entry<String, Map<String, Object>> entry : permissions.entrySet()) {
-            if (sameChildTableKey(entry.getKey(), childKey)) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    private Map<String, Object> findChildFieldPermission(Map<String, Map<String, Object>> permissions,
-                                                         String childKey,
-                                                         String field) {
-        if (permissions == null || permissions.isEmpty() || StringUtils.isBlank(field)) {
-            return null;
-        }
-        Map<String, Object> direct = permissions.get(taskChildPermissionKey(childKey, field));
-        if (direct != null) {
-            return direct;
-        }
-        for (Map.Entry<String, Map<String, Object>> entry : permissions.entrySet()) {
-            String key = entry.getKey();
-            int split = key == null ? -1 : key.lastIndexOf(':');
-            if (split <= 0) {
-                continue;
-            }
-            String configuredChildKey = key.substring(0, split);
-            String configuredField = key.substring(split + 1);
-            if (sameFieldName(configuredField, field) && sameChildTableKey(configuredChildKey, childKey)) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractTaskMainPayload(Map<String, Object> data) {
-        if (data != null && data.get("main") instanceof Map<?, ?> main) {
-            return (Map<String, Object>) main;
-        }
-        if (data == null) {
-            return Map.of();
-        }
-        Map<String, Object> result = new LinkedHashMap<>(data);
-        result.remove("children");
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractTaskChildrenPayload(Map<String, Object> data) {
-        if (data != null && data.get("children") instanceof Map<?, ?> children) {
-            return (Map<String, Object>) children;
-        }
-        return Map.of();
-    }
-
-    private boolean isBusinessTaskDetailChild(Map<String, Object> child) {
-        if (child == null || child.isEmpty()) {
-            return false;
-        }
-        if (Boolean.FALSE.equals(child.get("showInDetail"))) {
-            return false;
-        }
-        if (readMapList(readNestedArray(child.get("fields"))).isEmpty()) {
-            return false;
-        }
-        String relationType = StringUtils.defaultIfBlank(textValue(child.get("relationType")), "ONE_TO_MANY")
-                .trim()
-                .toUpperCase(Locale.ROOT);
-        return !Set.of("REFERENCE", "LOOKUP", "OBJECT_REFERENCE", "OBJECTREFERENCE", "MANY_TO_ONE", "ONE_TO_ONE")
-                .contains(relationType);
-    }
-
-    @SuppressWarnings("unchecked")
-    private void filterVisibleRecordChildren(Map<String, Object> recordData, List<Map<String, Object>> childrenConfig) {
-        if (recordData == null || !recordData.containsKey("children")) {
-            return;
-        }
-        if (childrenConfig == null || childrenConfig.isEmpty()) {
-            recordData.remove("children");
-            return;
-        }
-        Object childrenValue = recordData.get("children");
-        if (!(childrenValue instanceof Map<?, ?> children)) {
-            return;
-        }
-        Map<String, Object> filtered = new LinkedHashMap<>();
-        for (Map<String, Object> childConfig : childrenConfig) {
-            String key = resolveBusinessTaskChildKey(childConfig);
-            if (StringUtils.isBlank(key)) {
-                continue;
-            }
-            Object value = findChildRowsByAlias(children, childConfig);
-            if (!(value instanceof List<?> rows)) {
-                // 即使没匹配到数据也占位，避免前端按配置键读到 undefined 后整表空白
-                filtered.put(key, List.of());
-                continue;
-            }
-            Set<String> visibleFields = readMapList(readNestedArray(childConfig.get("fields"))).stream()
-                    .map(field -> StringUtils.firstNonBlank(
-                            StringUtils.trimToNull(textValue(field.get("field"))),
-                            StringUtils.trimToNull(textValue(field.get("fieldCode")))))
-                    .filter(StringUtils::isNotBlank)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-            List<Map<String, Object>> visibleRows = new ArrayList<>();
-            for (Object rowValue : rows) {
-                if (!(rowValue instanceof Map<?, ?> row)) {
-                    continue;
-                }
-                Map<String, Object> visibleRow = new LinkedHashMap<>();
-                row.forEach((rowKey, rowItem) -> {
-                    String field = String.valueOf(rowKey);
-                    if (isVisibleChildRowField(field, visibleFields)) {
-                        visibleRow.put(field, rowItem);
-                    }
-                });
-                visibleRows.add(visibleRow);
-            }
-            filtered.put(key, visibleRows);
-            // 同步写回数据源原键，方便前后端用不同别名取值
-            String sourceKey = resolveMatchedChildDataKey(children, childConfig);
-            if (StringUtils.isNotBlank(sourceKey) && !StringUtils.equals(sourceKey, key)) {
-                filtered.put(sourceKey, visibleRows);
-            }
-        }
-        recordData.put("children", filtered);
-    }
-
-    private boolean isVisibleChildRowField(String field, Set<String> visibleFields) {
-        if (StringUtils.isBlank(field)) {
-            return false;
-        }
-        if ("id".equalsIgnoreCase(field) || "_deleted".equalsIgnoreCase(field) || "__deleted".equalsIgnoreCase(field)) {
-            return true;
-        }
-        if (visibleFields == null || visibleFields.isEmpty()) {
-            return true;
-        }
-        if (visibleFields.contains(field)) {
-            return true;
-        }
-        for (String visibleField : visibleFields) {
-            if (sameFieldName(visibleField, field)) {
-                return true;
-            }
-            // 人员/部门/引用选中后写入的伴随显示列（fieldXxxName），过滤时必须保留否则回显空白
-            if (StringUtils.isNotBlank(visibleField)
-                    && (StringUtils.equals(field, visibleField + "Name")
-                    || StringUtils.equalsIgnoreCase(field, visibleField + "Name"))) {
-                return true;
-            }
-        }
-        if (field.endsWith("Name") && field.length() > 4) {
-            String base = field.substring(0, field.length() - 4);
-            for (String visibleField : visibleFields) {
-                if (sameFieldName(visibleField, base)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private Object findChildRowsByAlias(Map<?, ?> children, Map<String, Object> childConfig) {
-        if (children == null || children.isEmpty() || childConfig == null) {
-            return null;
-        }
-        for (String candidate : childKeyCandidates(childConfig)) {
-            Object value = children.get(candidate);
-            if (value instanceof List<?>) {
-                return value;
-            }
-        }
-        String bestKey = resolveMatchedChildDataKey(children, childConfig);
-        return bestKey == null ? null : children.get(bestKey);
-    }
-
-    private String resolveMatchedChildDataKey(Map<?, ?> children, Map<String, Object> childConfig) {
-        if (children == null || children.isEmpty() || childConfig == null) {
-            return null;
-        }
-        String bestKey = null;
-        int bestDelta = Integer.MAX_VALUE;
-        for (String candidate : childKeyCandidates(childConfig)) {
-            for (Object rawKey : children.keySet()) {
-                String dataKey = rawKey == null ? null : StringUtils.trimToNull(String.valueOf(rawKey));
-                if (dataKey == null || !(children.get(rawKey) instanceof List<?>)) {
-                    continue;
-                }
-                if (StringUtils.equals(dataKey, candidate)) {
-                    return dataKey;
-                }
-                if (!sameChildTableKey(dataKey, candidate)) {
-                    continue;
-                }
-                int delta = Math.abs(dataKey.length() - candidate.length());
-                if (delta < bestDelta) {
-                    bestDelta = delta;
-                    bestKey = dataKey;
-                }
-            }
-        }
-        return bestKey;
-    }
-
-    private void logBusinessTaskChildren(String stage,
-                                         String configKey,
-                                         Object recordId,
-                                         List<Map<String, Object>> childrenConfig,
-                                         Map<String, Object> recordData) {
-        log.info("[审批表单子表] stage={}, configKey={}, recordId={}, childrenConfig={}, children={}",
-                stage, configKey, recordId, summarizeBusinessTaskChildrenConfig(childrenConfig),
-                summarizeBusinessTaskChildrenData(recordData == null ? null : recordData.get("children")));
-    }
-
-    private List<Map<String, Object>> summarizeBusinessTaskChildrenConfig(List<Map<String, Object>> childrenConfig) {
-        if (childrenConfig == null || childrenConfig.isEmpty()) {
-            return List.of();
-        }
-        return childrenConfig.stream()
-                .map(child -> {
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("key", resolveBusinessTaskChildKey(child));
-                    item.put("modelCode", textValue(child.get("modelCode")));
-                    item.put("tableName", textValue(child.get("tableName")));
-                    item.put("relationType", textValue(child.get("relationType")));
-                    item.put("sourceField", textValue(child.get("sourceField")));
-                    item.put("targetField", textValue(child.get("targetField")));
-                    item.put("fieldCount", readMapList(readNestedArray(child.get("fields"))).size());
-                    return item;
-                })
-                .toList();
-    }
-
-    private Map<String, Object> summarizeBusinessTaskChildrenData(Object childrenValue) {
-        if (!(childrenValue instanceof Map<?, ?> children) || children.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : children.entrySet()) {
-            Object value = entry.getValue();
-            Map<String, Object> item = new LinkedHashMap<>();
-            if (value instanceof List<?> list) {
-                item.put("rows", list.size());
-                item.put("rowIds", list.stream()
-                        .filter(Map.class::isInstance)
-                        .map(Map.class::cast)
-                        .limit(5)
-                        .map(row -> ((Map<?, ?>) row).get("id"))
-                        .toList());
-                item.put("firstFields", list.stream()
-                        .filter(Map.class::isInstance)
-                        .map(Map.class::cast)
-                        .findFirst()
-                        .map(row -> ((Map<?, ?>) row).keySet().stream().limit(12).toList())
-                        .orElse(List.of()));
-            } else {
-                item.put("type", value == null ? "null" : value.getClass().getSimpleName());
-            }
-            result.put(String.valueOf(entry.getKey()), item);
-        }
-        return result;
-    }
-
-    private String resolveBusinessTaskChildKey(Map<String, Object> child) {
-        if (child == null) {
-            return null;
-        }
-        return StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(child.get("modelCode"))),
-                StringUtils.trimToNull(textValue(child.get("relationKey"))),
-                StringUtils.trimToNull(textValue(child.get("key"))),
-                StringUtils.trimToNull(textValue(child.get("tableName"))),
-                "children");
     }
 
     private JSONObject readRuntimeConfigOptions(String configKey) {
@@ -4282,7 +3804,7 @@ public class BusinessFlowService {
             flowFormRef = effectiveRuntimeRef;
             // 只有业务流程换了另一张页面时才丢掉节点权限。
             // 同一张表单经常一边是页面 formKey，一边是带应用前缀的 formKey，不能因此把节点上配好的权限清空。
-            if (!sameTaskFormKey(runtimeFormKey, configuredFormKey)) {
+            if (!TASK_CHILD_POLICY.sameTaskFormKey(runtimeFormKey, configuredFormKey)) {
                 permissions = List.of();
                 childPermissions = List.of();
             }

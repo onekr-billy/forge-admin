@@ -56,7 +56,9 @@
 
 第二十六个切口使用 Policy Object，把待办任务存在性、状态、签收人/候选人、写权限及流程实例/业务 Key/节点/流程定义一致性校验迁入 `BusinessFlowTaskAccessPolicy`。入口仍从 Flow 服务读取任务详情并提供当前登录人，策略不修改任务或流程数据。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7492 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十七个切口继续使用 Policy Object，把审批子表/字段权限匹配、动态 CRUD 保存白名单、主子表请求拆包、子表键别名匹配及返回行字段裁剪迁入 `BusinessFlowTaskChildPolicy`。入口仍加载节点表单和业务记录并执行保存，BPMN 节点权限仍是唯一权限来源。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7014 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
