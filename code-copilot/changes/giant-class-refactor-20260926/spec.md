@@ -76,6 +76,8 @@
 
 第三十五个切口使用 Coordinator + Strategy，将流程终态回调的幂等判断、状态归一、业务记录回写、回调动作、领域事件和审批结果事件发布迁入 `BusinessFlowCallbackCoordinator`，并将单据/低代码绑定/Adapter 三种状态写入策略统一到 `BusinessFlowStatusTransitionService`。公开 `@Transactional` 与 `@FlowCallback` 入口仍由 Facade 持有，状态写入继续先于流程关联终态落库。入口由 2834 行降至 2488 行；新 Coordinator/Transition Service 分别 403/96 行，均低于 1000 行。
 
+第三十六个切口使用 Resolver + Coordinator，将启用 FLOW/历史 APPROVAL 绑定候选选择迁入 `BusinessFlowBindingResolver`，将记录读取、模型选择、单据发起校验、启动锁、Flowable 调用、流程关联落库和运行态写入迁入 `BusinessFlowStartCoordinator`。五类公开事务入口继续留在 Facade，并显式传递权限、稳定业务 Key 与草稿运行配置策略。入口由 2488 行降至 2165 行；新 Resolver/Coordinator 分别 114/367 行，均低于 1000 行。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。

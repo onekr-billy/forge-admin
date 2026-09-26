@@ -186,3 +186,9 @@
 - 使用 Coordinator + Strategy 从 `BusinessFlowService` 迁出终态回调查找与幂等、结果归一、业务状态回写、回调动作、业务领域事件和审批结果事件；单据/低代码绑定/Adapter 状态策略统一进入 `BusinessFlowStatusTransitionService`。公开事务与 FlowCallback 注解仍保留在 Facade，状态写入失败继续阻止流程关联提前落终态。
 - 入口由 2834 行降至 2488 行；新增 `BusinessFlowCallbackCoordinator` 403 行、`BusinessFlowStatusTransitionService` 96 行，均低于 1000 行。generator Reactor 编译退出码 0。
 - 执行 `BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 23 类 105 项，0 失败、0 错误；新增 4 项状态迁移策略测试，生命周期测试中预期的写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实回调投递与事务提交后事件消费仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第三十六个切口：流程启动编排与绑定选择
+
+- 使用 Resolver + Coordinator 从 `BusinessFlowService` 迁出启用 FLOW/历史 APPROVAL 绑定候选选择，以及记录读取、模型 Key 选择、单据权限校验、启动锁、Flowable 调用、关联落库和运行态写入。公开事务与租户上下文入口留在 Facade；普通、能力、兼容、触发器和业务流程节点的策略显式传给 Coordinator。
+- 入口由 2488 行降至 2165 行；新增 `BusinessFlowBindingResolver` 114 行、`BusinessFlowStartCoordinator` 367 行，均低于 1000 行。generator Reactor 编译退出码 0。
+- 执行 `BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 25 类 112 项，0 失败、0 错误；新增 7 项绑定选择与启动编排行为测试，性能契约改为直接检查 Coordinator。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实委托身份、分布式锁和远端成功后本地回滚恢复仍需服务级联调，无服务 PID 需停止。

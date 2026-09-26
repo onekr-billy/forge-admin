@@ -97,16 +97,19 @@ class BusinessFlowPerformanceContractTest {
 
     @Test
     void documentFlowStartMustReusePreloadedValidationAndLatestLink() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "private BusinessFlowRuntimeVO startDocumentFlowLocked", "    private BusinessFlowRuntimeVO executeWithFlowStartLock", 1);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowStartCoordinator.java"));
+        String method = method(source, "private BusinessFlowRuntimeVO startLocked", "    private void validateRequest", 1);
 
         assertEquals(1, countOccurrences(method, "flowInstanceLinkMapper.selectLatestByBusinessKey"));
         assertFalse(method.contains("flowInstanceLinkMapper.selectRunningByBusinessKey"));
-        assertTrue(method.contains("documentConfigService.toVO(documentConfig, runtimeConfig, binding)"));
-        assertTrue(method.contains("documentRuntimeService.validateStartAllowed("));
+        assertTrue(source.contains("documentConfigService.toVO("));
+        assertTrue(source.contains("context.documentConfig(), context.runtimeConfig(), binding"));
+        assertTrue(source.contains("documentRuntimeService.validateStartAllowed("));
         assertTrue(method.contains("resolveFlowBusinessKeyForStart(businessKey, latestLink)"));
-        assertTrue(method.contains("resolveNextRoundNo(latestLink)"));
-        assertTrue(method.contains("BusinessFlowBindingCodec.ensureBusinessBinding(bindingConfig, runtimeConfig, documentConfig)"));
+        assertTrue(source.contains("resolveNextRoundNo(latestLink)"));
+        assertTrue(method.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
+        assertTrue(method.contains("bindingConfig, context.runtimeConfig(), context.documentConfig())"));
     }
 
     private String serviceSource() throws IOException {

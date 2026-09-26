@@ -235,3 +235,12 @@
 - 验证：generator Reactor 编译、生命周期/状态字段/回调动作相关回归、`git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：新增 `BusinessFlowStatusTransitionServiceTest` 覆盖单据状态映射、低代码绑定状态映射、Adapter 跳过平台直写及运行表不一致拒绝；既有生命周期用例继续覆盖重复终态回调与状态写入失败时关联表不提前更新。相关 23 类共 105 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。
+
+## 2026-09-26 第三十六轮增量验证：流程启动编排与绑定选择
+
+- P0：手动、能力、兼容、触发器和业务流程节点五类启动入口的租户上下文、稳定/轮次业务 Key、权限开关和草稿运行配置策略保持不变。
+- P0：流程模型 Key 选择顺序、启用 FLOW/历史 APPROVAL 绑定回退、启动锁、记录权限读取、Flowable 调用、关联落库及业务状态写入顺序保持不变。
+- P1：使用 Resolver + Coordinator 整体迁出绑定候选选择和流程启动编排；公开事务入口继续留 Facade，新增生产类均少于 1000 行。
+- 验证：generator Reactor 编译、业务 Key/启动锁/生命周期/绑定编解码/性能契约回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：新增 `BusinessFlowBindingResolverTest` 覆盖 FLOW 优先、历史 APPROVAL 回退、规范对象候选回退和停用绑定只读展示；新增 `BusinessFlowStartCoordinatorTest` 覆盖普通启动、能力入口稳定业务 Key、关联先落库再写运行态及运行中流程防重复远程启动。相关 25 类共 112 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。
