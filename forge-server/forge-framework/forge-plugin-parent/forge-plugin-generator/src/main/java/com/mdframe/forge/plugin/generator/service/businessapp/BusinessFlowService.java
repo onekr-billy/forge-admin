@@ -92,6 +92,7 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCod
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.normalizeCodeAppMetadataFields;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.sanitizeCodeAppMetadata;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readBooleanValue;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readJsonObject;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readMapList;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNestedArray;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNestedObject;
@@ -106,7 +107,11 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.contains;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.read;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.snakeToCamel;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskAccessPolicy.isSyntheticTestBusinessKey;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.buildBusinessKey;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.parseBusinessKey;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.parseBusinessKeyObjectCode;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.parseBusinessKeyRecordId;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.parseLongValue;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.firstStrongTaskFormControlType;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.normalizeTaskFormFieldType;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.resolveTaskFormControlType;
@@ -192,6 +197,7 @@ public class BusinessFlowService {
     private final BusinessFlowCodeFormCoordinator codeFormCoordinator;
     private final BusinessFlowApplicationPageFormResolver applicationPageFormResolver;
     private final BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
+    private final BusinessFlowRuntimeContextResolver businessRuntimeContextResolver;
 
     public BusinessFlowService(BusinessBindingMapper bindingMapper,
                                BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
@@ -253,6 +259,17 @@ public class BusinessFlowService {
                 applicationPageFormResolver,
                 TASK_CHILD_POLICY,
                 this::collectTaskFormAssets,
+                this::markTaskFormDetail,
+                this::noteTaskFormDetail);
+        this.businessRuntimeContextResolver = new BusinessFlowRuntimeContextResolver(
+                runtimeConfigResolver,
+                documentConfigService,
+                businessObjectMapper,
+                flowInstanceLinkMapper,
+                applicationPageFormResolver,
+                taskNodeFormResolver,
+                this::resolveTenantId,
+                this::selectMainFlowBindingForConfig,
                 this::markTaskFormDetail,
                 this::noteTaskFormDetail);
     }
@@ -337,12 +354,12 @@ public class BusinessFlowService {
      */
     public BusinessFlowBindingVO getFlowBinding(String objectCode) {
         Long tenantId = resolveTenantId();
-        String canonicalObjectCode = resolveCanonicalObjectCode(tenantId, objectCode);
+        String canonicalObjectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(tenantId, objectCode);
         AiBusinessBinding binding = selectMainFlowBindingForConfig(tenantId, canonicalObjectCode, objectCode);
 
         if (binding == null) {
-            AiBusinessDocumentConfig documentConfig = resolveEnabledDocumentConfig(tenantId, canonicalObjectCode,
-                    resolvePublishedRuntimeConfig(tenantId, objectCode));
+            AiBusinessDocumentConfig documentConfig = businessRuntimeContextResolver.resolveEnabledDocumentConfig(
+                    tenantId, canonicalObjectCode, resolvePublishedRuntimeConfig(tenantId, objectCode));
             if (documentConfig == null || StringUtils.isBlank(documentConfig.getDefaultFlowKey())) {
                 return null;
             }
@@ -416,7 +433,8 @@ public class BusinessFlowService {
             if (StringUtils.isBlank(snapshotConfigKey) || StringUtils.isBlank(hintedObjectCode)) {
                 String objectLookupKey = buildBusinessListObjectLookupKey(itemQuery, link, hintedObjectCode);
                 taskObject = objectLookupCache.computeIfAbsent(objectLookupKey,
-                        ignored -> resolveTaskBusinessObject(tenantId, itemQuery, link));
+                        ignored -> businessRuntimeContextResolver.resolveTaskBusinessObject(
+                                tenantId, itemQuery, link));
             }
             String objectCode = StringUtils.firstNonBlank(
                     taskObject == null ? null : taskObject.getObjectCode(),
@@ -441,7 +459,7 @@ public class BusinessFlowService {
                     snapshotConfigKey,
                     objectCode);
             BusinessRuntimeContext context = contextCache.computeIfAbsent(runtimeLookupKey,
-                    code -> resolveBusinessRuntimeContext(tenantId, code));
+                    code -> businessRuntimeContextResolver.resolve(tenantId, code));
             String canonicalObjectCode = StringUtils.firstNonBlank(context.objectCode(), objectCode);
             String groupKey = StringUtils.firstNonBlank(context.configKey(), runtimeLookupKey, canonicalObjectCode);
             grouped.computeIfAbsent(groupKey,
@@ -495,7 +513,8 @@ public class BusinessFlowService {
         }
 
         if (applicationId != null && applicationId > 0 && businessApplicationService != null) {
-            String canonicalObjectCode = resolveCanonicalObjectCode(resolveTenantId(), objectCode);
+            String canonicalObjectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(
+                    resolveTenantId(), objectCode);
             Map<String, Object> applicationAssets = applicationPageFormResolver.collectApplicationPageFormAssets(
                     applicationId, canonicalObjectCode);
             if (!applicationAssets.isEmpty()) {
@@ -630,7 +649,8 @@ public class BusinessFlowService {
             validateTaskAccess(effectiveQuery, false, taskFormInfo);
             stages.put("accessMs", elapsedMillis(mark));
             mark = System.nanoTime();
-            TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo);
+            TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(
+                    effectiveQuery, false, taskFormInfo);
             stages.put("runtimeContextMs", elapsedMillis(mark));
             return attachPrintRuntimeIdentity(
                     buildTaskFormContext(effectiveQuery, runtime, taskFormInfo, stages, startedAt), effectiveQuery);
@@ -658,7 +678,8 @@ public class BusinessFlowService {
             validateTaskAccess(effectiveQuery, true, taskFormInfo);
             stages.put("accessMs", elapsedMillis(mark));
             mark = System.nanoTime();
-            TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, true, taskFormInfo);
+            TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(
+                    effectiveQuery, true, taskFormInfo);
             stages.put("runtimeContextMs", elapsedMillis(mark));
             return attachPrintRuntimeIdentity(
                     buildTaskFormContext(effectiveQuery, runtime, taskFormInfo, stages, startedAt), effectiveQuery);
@@ -677,7 +698,7 @@ public class BusinessFlowService {
         beginTaskFormProfiling(stages);
         try {
             long mark = System.nanoTime();
-            TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(effectiveQuery, false);
+            TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(effectiveQuery, false);
             stages.put("runtimeContextMs", elapsedMillis(mark));
             BusinessTaskFormContextVO context = attachPrintRuntimeIdentity(
                     buildTaskFormContext(effectiveQuery, runtime, Map.of(), stages, startedAt), effectiveQuery);
@@ -711,7 +732,7 @@ public class BusinessFlowService {
 
         Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(query, true, taskFormInfo);
         repairInitiatorModifyState(query, runtime, taskFormInfo);
         JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
         TaskFormSaveResult saveResult = persistTaskFormData(dto, query, runtime, nodeForm);
@@ -842,7 +863,7 @@ public class BusinessFlowService {
                 throw new BusinessException("业务对象缺少已发布运行配置，无法保存业务字段");
             }
             Map<String, Object> created = dynamicCrudService.insertInternal(runtime.configKey(), updateData);
-            Long createdId = extractCreatedRecordId(created);
+            Long createdId = businessRuntimeContextResolver.extractCreatedRecordId(created);
             if (createdId == null) {
                 throw new BusinessException("保存业务单据失败");
             }
@@ -899,7 +920,7 @@ public class BusinessFlowService {
 
         Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(query, true, taskFormInfo);
         if (dto.getData() != null && !dto.getData().isEmpty()) {
             JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
             TaskFormSaveResult saveResult = persistTaskFormData(
@@ -988,7 +1009,8 @@ public class BusinessFlowService {
         query.setObjectCode(dto.getObjectCode());
         query.setRecordId(dto.getRecordId());
         if (StringUtils.isNotBlank(dto.getObjectCode()) && dto.getRecordId() != null) {
-            String objectCode = resolveCanonicalObjectCode(tenantId, dto.getObjectCode());
+            String objectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(
+                    tenantId, dto.getObjectCode());
             query.setBusinessKey(buildBusinessKey(objectCode, dto.getRecordId()));
         }
         return syncBusinessFlowStatusAfterTaskAction(null, query, action, variables);
@@ -1110,7 +1132,7 @@ public class BusinessFlowService {
 
         Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
+        TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(query, true, taskFormInfo);
         Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
         FlowResult<Void> result = flowClient.approve(
                 query.getTaskId(),
@@ -1160,7 +1182,7 @@ public class BusinessFlowService {
 
         String objectCode = StringUtils.trimToNull(dto.getObjectCode());
         if (StringUtils.isNotBlank(objectCode)) {
-            objectCode = resolveCanonicalObjectCode(tenantId, objectCode);
+            objectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(tenantId, objectCode);
         }
         String businessKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(dto.getBusinessKey()),
@@ -1293,7 +1315,7 @@ public class BusinessFlowService {
                 StringUtils.trimToNull(query.getFormKey()),
                 StringUtils.trimToNull(nodeForm.getString("formKey")));
 
-        // 优先复用 resolveTaskFormRuntimeContext 已加载的对象 / 发布配置，避免再查库
+        // 优先复用运行上下文解析器已加载的对象 / 发布配置，避免再查库
         mark = System.nanoTime();
         AiCrudConfig runtimeConfig = runtime.publishedConfig() != null
                 ? runtime.publishedConfig()
@@ -1328,7 +1350,7 @@ public class BusinessFlowService {
 
         mark = System.nanoTime();
         Map<String, Object> recordData = runtime.recordId() == null
-                ? loadTaskVariablesAsRecord(query, taskFormInfo)
+                ? businessRuntimeContextResolver.loadTaskVariablesAsRecord(query, taskFormInfo)
                 : (runtimeConfig == null
                 ? dynamicCrudService.selectById(runtime.configKey(), runtime.recordId())
                 : dynamicCrudService.selectById(runtimeConfig, runtime.recordId()));
@@ -1429,306 +1451,6 @@ public class BusinessFlowService {
         return Math.max(0L, (System.nanoTime() - startedAtNanos) / 1_000_000L);
     }
 
-    private TaskFormRuntimeContext resolveTaskFormRuntimeContext(BusinessTaskFormContextQueryDTO query, boolean strict) {
-        return resolveTaskFormRuntimeContext(query, strict, Map.of());
-    }
-
-    private TaskFormRuntimeContext resolveTaskFormRuntimeContext(BusinessTaskFormContextQueryDTO query,
-                                                                 boolean strict,
-                                                                 Map<String, Object> taskFormInfo) {
-        Long tenantId = resolveTenantId();
-        long mark = System.nanoTime();
-        hydrateTaskFormQuery(query, taskFormInfo);
-        markTaskFormDetail("hydrateQueryMs", mark);
-
-        mark = System.nanoTime();
-        hydrateApplicationPageFormIdentity(query);
-        markTaskFormDetail("pageAssetMs", mark);
-
-        boolean syntheticTestKey = isSyntheticTestBusinessKey(query.getBusinessKey());
-        mark = System.nanoTime();
-        AiBusinessFlowInstanceLink link = null;
-        if (StringUtils.isNotBlank(query.getProcessInstanceId())) {
-            link = flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, query.getProcessInstanceId());
-            noteTaskFormDetail("db:flow_link_by_pi");
-        }
-        if (link == null && StringUtils.isNotBlank(query.getBusinessKey()) && !syntheticTestKey) {
-            link = flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, query.getBusinessKey());
-            noteTaskFormDetail("db:flow_link_by_bk");
-        }
-        markTaskFormDetail("flowLinkMs", mark);
-
-        mark = System.nanoTime();
-        AiBusinessObject taskObject = resolveTaskBusinessObject(tenantId, query, link);
-        markTaskFormDetail("taskObjectMs", mark);
-
-        String objectCode = StringUtils.firstNonBlank(
-                taskObject == null ? null : taskObject.getObjectCode(),
-                link == null ? null : link.getObjectCode(),
-                StringUtils.trimToNull(query.getObjectCode()),
-                parseBusinessKeyObjectCode(query.getBusinessKey()));
-        Long recordId = link == null || link.getRecordId() == null
-                ? query.getRecordId()
-                : link.getRecordId();
-        if (recordId == null) {
-            recordId = parseBusinessKeyRecordId(query.getBusinessKey());
-        }
-        if (syntheticTestKey && link == null) {
-            // 测试流程尚未绑单据时，忽略请求里的 recordId，避免误更新其它单据。
-            recordId = null;
-        }
-        String businessKey = StringUtils.firstNonBlank(
-                link == null ? null : link.getBusinessKey(),
-                StringUtils.trimToNull(query.getBusinessKey()),
-                objectCode != null && recordId != null ? buildBusinessKey(objectCode, recordId) : null);
-
-        if (StringUtils.isBlank(objectCode)) {
-            if (strict) {
-                throw new BusinessException("未解析到业务对象或记录ID");
-            }
-            return new TaskFormRuntimeContext(null, null, businessKey, null, null, null, null);
-        }
-        if (recordId == null && strict) {
-            // 发起测试等场景可能尚未落单据，保存时再创建记录。
-        }
-
-        String runtimeLookupKey = StringUtils.firstNonBlank(
-                taskObject == null ? null : taskObject.getConfigKey(),
-                StringUtils.trimToNull(query.getConfigKey()),
-                objectCode);
-        mark = System.nanoTime();
-        BusinessRuntimeContext businessContext = resolveBusinessRuntimeContext(tenantId, runtimeLookupKey);
-        markTaskFormDetail("businessContextMs", mark);
-        noteTaskFormDetail("db:runtime_context(config/object/document)");
-
-        String canonicalObjectCode = StringUtils.firstNonBlank(businessContext.objectCode(), objectCode);
-        String configKey = StringUtils.firstNonBlank(
-                taskObject == null ? null : taskObject.getConfigKey(),
-                StringUtils.trimToNull(query.getConfigKey()),
-                businessContext.configKey());
-        mark = System.nanoTime();
-        AiBusinessBinding binding = selectMainFlowBindingForConfig(tenantId, canonicalObjectCode, objectCode);
-        markTaskFormDetail("bindingMs", mark);
-        noteTaskFormDetail("db:flow_binding");
-        JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
-        // 复用 businessContext 已加载的 config/document，避免 ensureBusinessBinding 再查一遍
-        BusinessFlowBindingCodec.ensureBusinessBinding(
-                bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig());
-
-        if (StringUtils.isBlank(configKey) && strict
-                && !isBusinessCodeTaskForm(canonicalObjectCode, bindingConfig, query, taskFormInfo)) {
-            throw new BusinessException("业务对象缺少已发布运行配置，无法保存待办业务字段");
-        }
-        AiBusinessObject reusedObject = businessContext.businessObject() != null
-                ? businessContext.businessObject()
-                : taskObject;
-        return new TaskFormRuntimeContext(
-                canonicalObjectCode, recordId, businessKey, configKey, bindingConfig,
-                businessContext.runtimeConfig(), reusedObject);
-    }
-
-    /**
-     * 已部署的历史 Flowable 定义可能只携带旧 objectCode，但应用页面表单 key 中包含稳定的
-     * applicationId/pageId。优先从该页面资产恢复 objectId/configKey，避免待办再次落到同编码的其它对象。
-     */
-    private void hydrateApplicationPageFormIdentity(BusinessTaskFormContextQueryDTO query) {
-        if (query == null || StringUtils.isBlank(query.getFormKey())) {
-            return;
-        }
-        JSONObject asset = applicationPageFormResolver.resolveApplicationPageFormAsset(query.getFormKey());
-        if (asset == null || asset.isEmpty()) {
-            return;
-        }
-        Long objectId = parseLongValue(asset.getString("objectId"));
-        if (query.getObjectId() == null && objectId != null) {
-            query.setObjectId(objectId);
-        }
-        String configKey = StringUtils.trimToNull(asset.getString("configKey"));
-        if (StringUtils.isBlank(query.getConfigKey()) && configKey != null) {
-            query.setConfigKey(configKey);
-        }
-        String objectCode = StringUtils.trimToNull(asset.getString("objectCode"));
-        if (objectCode != null && objectId != null) {
-            query.setObjectCode(objectCode);
-        }
-    }
-
-    private void hydrateTaskFormQuery(BusinessTaskFormContextQueryDTO query) {
-        hydrateTaskFormQuery(query, Map.of());
-    }
-
-    private void hydrateTaskFormQuery(BusinessTaskFormContextQueryDTO query,
-                                      Map<String, Object> preloadedTaskFormInfo) {
-        if (query == null || StringUtils.isBlank(query.getTaskId())) {
-            return;
-        }
-        boolean missingIdentity = StringUtils.isBlank(query.getProcessInstanceId())
-                || StringUtils.isBlank(query.getBusinessKey())
-                || StringUtils.isBlank(query.getObjectCode())
-                || query.getObjectId() == null
-                || StringUtils.isBlank(query.getConfigKey())
-                || query.getRecordId() == null;
-        if (!missingIdentity) {
-            return;
-        }
-        Map<String, Object> formInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
-                ? taskNodeFormResolver.loadTaskFormInfo(query.getTaskId())
-                : preloadedTaskFormInfo;
-        if (formInfo == null || formInfo.isEmpty()) {
-            return;
-        }
-        Map<String, Object> formRef = readNestedObject(formInfo.get("formRef"));
-        JSONObject variables = readNestedObject(formInfo.get("variables"));
-        JSONObject variableFormRef = readNestedObject(variables.get("businessFormRef"));
-        if (StringUtils.isBlank(query.getProcessInstanceId())) {
-            query.setProcessInstanceId(StringUtils.trimToNull(textValue(formInfo.get("processInstanceId"))));
-        }
-        if (StringUtils.isBlank(query.getBusinessKey())) {
-            query.setBusinessKey(StringUtils.trimToNull(textValue(formInfo.get("businessKey"))));
-        }
-        if (StringUtils.isBlank(query.getProcessDefKey())) {
-            query.setProcessDefKey(StringUtils.trimToNull(textValue(formInfo.get("processDefKey"))));
-        }
-        if (StringUtils.isBlank(query.getTaskDefKey())) {
-            query.setTaskDefKey(StringUtils.trimToNull(textValue(formInfo.get("taskDefKey"))));
-        }
-        if (StringUtils.isBlank(query.getFormKey())) {
-            query.setFormKey(StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(formInfo.get("formKey"))),
-                    StringUtils.trimToNull(textValue(formRef.get("formKey")))));
-        }
-        if (StringUtils.isBlank(query.getObjectCode())) {
-            query.setObjectCode(StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(formInfo.get("objectCode"))),
-                    StringUtils.trimToNull(textValue(formRef.get("objectCode"))),
-                    StringUtils.trimToNull(textValue(variables.get("objectCode"))),
-                    StringUtils.trimToNull(textValue(variableFormRef.get("objectCode")))));
-        }
-        if (query.getObjectId() == null) {
-            query.setObjectId(firstLongValue(
-                    formInfo.get("objectId"), formInfo.get("businessObjectId"), formRef.get("objectId"),
-                    variables.get("objectId"), variables.get("businessObjectId"), variableFormRef.get("objectId")));
-        }
-        if (StringUtils.isBlank(query.getConfigKey())) {
-            query.setConfigKey(StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(formInfo.get("configKey"))),
-                    StringUtils.trimToNull(textValue(formRef.get("configKey"))),
-                    StringUtils.trimToNull(textValue(variables.get("configKey"))),
-                    StringUtils.trimToNull(textValue(variableFormRef.get("configKey")))));
-        }
-        if (StringUtils.isBlank(query.getSuiteCode())) {
-            query.setSuiteCode(StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(textValue(formInfo.get("suiteCode"))),
-                    StringUtils.trimToNull(textValue(formRef.get("suiteCode"))),
-                    StringUtils.trimToNull(textValue(variables.get("suiteCode"))),
-                    StringUtils.trimToNull(textValue(variableFormRef.get("suiteCode")))));
-        }
-        if (query.getRecordId() == null) {
-            query.setRecordId(parseLongValue(textValue(formInfo.get("recordId"))));
-            if (query.getRecordId() == null) {
-                query.setRecordId(parseLongValue(textValue(formRef.get("recordId"))));
-            }
-        }
-    }
-
-    /**
-     * 从流程关联和启动变量中恢复业务对象稳定身份。历史任务可能只有重复的 objectCode，
-     * 因此 objectId/configKey/suiteCode 的解析必须先于编码兜底。
-     */
-    private AiBusinessObject resolveTaskBusinessObject(Long tenantId,
-                                                       BusinessTaskFormContextQueryDTO query,
-                                                       AiBusinessFlowInstanceLink link) {
-        Map<String, Object> snapshot = link == null
-                ? Map.of()
-                : readJsonObject(link.getVariablesSnapshot());
-        JSONObject snapshotFormRef = readNestedObject(snapshot.get("businessFormRef"));
-        Long objectId = firstLongValue(
-                query == null ? null : query.getObjectId(),
-                snapshot.get("objectId"), snapshot.get("businessObjectId"), snapshot.get("targetObjectId"),
-                snapshotFormRef.get("objectId"));
-        if (objectId != null) {
-            AiBusinessObject object = businessObjectMapper.selectByIdForTenant(tenantId, objectId);
-            if (object != null) {
-                return object;
-            }
-        }
-        String configKey = StringUtils.firstNonBlank(
-                query == null ? null : query.getConfigKey(),
-                textValue(snapshot.get("configKey")),
-                textValue(snapshot.get("runtimeConfigKey")),
-                textValue(snapshotFormRef.get("configKey")));
-        if (StringUtils.isNotBlank(configKey)) {
-            AiBusinessObject object = businessObjectMapper.selectByConfigKey(tenantId, configKey);
-            if (object != null) {
-                return object;
-            }
-        }
-        String objectCode = StringUtils.firstNonBlank(
-                query == null ? null : query.getObjectCode(),
-                textValue(snapshot.get("objectCode")),
-                textValue(snapshotFormRef.get("objectCode")));
-        String suiteCode = StringUtils.firstNonBlank(
-                query == null ? null : query.getSuiteCode(),
-                textValue(snapshot.get("suiteCode")),
-                textValue(snapshotFormRef.get("suiteCode")));
-        if (StringUtils.isNotBlank(objectCode) && StringUtils.isNotBlank(suiteCode)) {
-            AiBusinessObject object = businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode);
-            if (object != null) {
-                return object;
-            }
-        }
-        return StringUtils.isBlank(objectCode)
-                ? null
-                : businessObjectMapper.selectFirstByObjectCode(tenantId, objectCode);
-    }
-
-    private Long firstLongValue(Object... values) {
-        if (values == null) {
-            return null;
-        }
-        for (Object value : values) {
-            Long parsed = value instanceof Number number
-                    ? number.longValue()
-                    : parseLongValue(textValue(value));
-            if (parsed != null) {
-                return parsed;
-            }
-        }
-        return null;
-    }
-
-    private Map<String, Object> loadTaskVariablesAsRecord(BusinessTaskFormContextQueryDTO query) {
-        return loadTaskVariablesAsRecord(query, Map.of());
-    }
-
-    private Map<String, Object> loadTaskVariablesAsRecord(BusinessTaskFormContextQueryDTO query,
-                                                           Map<String, Object> preloadedTaskFormInfo) {
-        Map<String, Object> formInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
-                ? taskNodeFormResolver.loadTaskFormInfo(query == null ? null : query.getTaskId())
-                : preloadedTaskFormInfo;
-        Object variables = formInfo.get("variables");
-        if (!(variables instanceof Map<?, ?> map)) {
-            return new LinkedHashMap<>();
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        map.forEach((key, value) -> {
-            if (key != null) {
-                result.put(String.valueOf(key), value);
-            }
-        });
-        return result;
-    }
-
-    private Long extractCreatedRecordId(Map<String, Object> record) {
-        if (record == null || record.isEmpty()) {
-            return null;
-        }
-        Object id = record.get("id");
-        if (id == null) {
-            id = record.get("ID");
-        }
-        return parseLongValue(textValue(id));
-    }
 
     private void ensureRuntimeLink(TaskFormRuntimeContext runtime,
                                    BusinessTaskFormContextQueryDTO query,
@@ -1776,19 +1498,6 @@ public class BusinessFlowService {
         return latest.getRoundNo() + 1;
     }
 
-    private boolean isBusinessCodeTaskForm(String objectCode, JSONObject bindingConfig, BusinessTaskFormContextQueryDTO query) {
-        return isBusinessCodeTaskForm(objectCode, bindingConfig, query, Map.of());
-    }
-
-    private boolean isBusinessCodeTaskForm(String objectCode,
-                                           JSONObject bindingConfig,
-                                           BusinessTaskFormContextQueryDTO query,
-                                           Map<String, Object> taskFormInfo) {
-        JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(
-                new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig, null, null),
-                query, taskFormInfo);
-        return nodeForm != null && "BUSINESS_CODE_FORM".equals(normalizeNodeFormMode(nodeForm.getString("formMode")));
-    }
 
     private BusinessObjectVO queryBusinessObject(Long tenantId, String objectCode) {
         return queryBusinessObject(tenantId, objectCode, null);
@@ -2270,39 +1979,6 @@ public class BusinessFlowService {
     }
 
 
-    private String parseBusinessKeyObjectCode(String businessKey) {
-        if (StringUtils.isBlank(businessKey) || !businessKey.contains(":") || isSyntheticTestBusinessKey(businessKey)) {
-            return null;
-        }
-        return StringUtils.trimToNull(businessKey.split(":", 2)[0]);
-    }
-
-    private Long parseBusinessKeyRecordId(String businessKey) {
-        if (StringUtils.isBlank(businessKey) || !businessKey.contains(":") || isSyntheticTestBusinessKey(businessKey)) {
-            return null;
-        }
-        String value = StringUtils.trimToNull(businessKey.split(":", 2)[1]);
-        if (value == null) {
-            return null;
-        }
-        try {
-            return Long.valueOf(value);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private Long parseLongValue(String value) {
-        String text = StringUtils.trimToNull(value);
-        if (text == null) {
-            return null;
-        }
-        try {
-            return Long.valueOf(text);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
 
     /**
      * 旧触发器路径兼容返回，保留 config 包装结构。
@@ -2330,7 +2006,7 @@ public class BusinessFlowService {
             throw new BusinessException("流程绑定配置不能为空");
         }
         Long tenantId = resolveTenantId();
-        String canonicalObjectCode = resolveCanonicalObjectCode(tenantId, objectCode);
+        String canonicalObjectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(tenantId, objectCode);
         JSONObject config = normalizeBindingConfig(dto);
         ensureBusinessBinding(config, tenantId, canonicalObjectCode);
         String flowModelKey = config.getString("flowModelKey");
@@ -2492,7 +2168,8 @@ public class BusinessFlowService {
         if (recordId == null) {
             throw new BusinessException("记录ID不能为空");
         }
-        String canonicalObjectCode = resolveCanonicalObjectCode(resolveTenantId(), objectCode);
+        String canonicalObjectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(
+                resolveTenantId(), objectCode);
         String businessKey = buildBusinessKey(canonicalObjectCode, recordId);
         AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectLatestByBusinessKey(resolveTenantId(), businessKey);
         if (link == null) {
@@ -3454,7 +3131,8 @@ public class BusinessFlowService {
     }
 
     private FlowStartContext resolveFlowStartContext(Long tenantId, String objectCodeOrConfigKey, boolean allowDraftRuntime) {
-        BusinessRuntimeContext context = resolveBusinessRuntimeContext(tenantId, objectCodeOrConfigKey, allowDraftRuntime);
+        BusinessRuntimeContext context = businessRuntimeContextResolver.resolve(
+                tenantId, objectCodeOrConfigKey, allowDraftRuntime);
         String configKey = resolveStartConfigKey(
                 context.documentConfig(), context.runtimeConfig(), context.configKey(), allowDraftRuntime);
         return new FlowStartContext(
@@ -3465,102 +3143,6 @@ public class BusinessFlowService {
                 context.runtimeConfig());
     }
 
-    private String resolveCanonicalObjectCode(Long tenantId, String objectCodeOrConfigKey) {
-        if (StringUtils.isBlank(objectCodeOrConfigKey)) {
-            return objectCodeOrConfigKey;
-        }
-        BusinessRuntimeContext context = resolveBusinessRuntimeContext(tenantId, objectCodeOrConfigKey);
-        return StringUtils.firstNonBlank(context.objectCode(), StringUtils.trimToNull(objectCodeOrConfigKey));
-    }
-
-    private BusinessRuntimeContext resolveBusinessRuntimeContext(Long tenantId, String objectCodeOrConfigKey) {
-        return resolveBusinessRuntimeContext(tenantId, objectCodeOrConfigKey, false);
-    }
-
-    private BusinessRuntimeContext resolveBusinessRuntimeContext(Long tenantId, String objectCodeOrConfigKey,
-                                                                 boolean allowDraftRuntime) {
-        String requestedObjectCode = StringUtils.trimToNull(objectCodeOrConfigKey);
-        if (requestedObjectCode == null) {
-            return new BusinessRuntimeContext(null, null, null, null, null, null);
-        }
-        AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, requestedObjectCode);
-        AiBusinessDocumentConfig documentConfig = resolveEnabledDocumentConfig(tenantId, requestedObjectCode, runtimeConfig);
-        AiBusinessObject businessObject = resolveBusinessObject(tenantId, requestedObjectCode, runtimeConfig, documentConfig);
-        String canonicalObjectCode = StringUtils.firstNonBlank(
-                documentConfig == null ? null : documentConfig.getObjectCode(),
-                businessObject == null ? null : businessObject.getObjectCode(),
-                runtimeConfig == null ? null : runtimeConfig.getObjectCode(),
-                requestedObjectCode);
-
-        if (documentConfig == null && !StringUtils.equals(canonicalObjectCode, requestedObjectCode)) {
-            documentConfig = resolveEnabledDocumentConfig(tenantId, canonicalObjectCode, runtimeConfig);
-        }
-        if (runtimeConfig == null) {
-            runtimeConfig = resolvePublishedRuntimeConfig(tenantId, StringUtils.firstNonBlank(
-                    documentConfig == null ? null : documentConfig.getConfigKey(),
-                    businessObject == null ? null : businessObject.getConfigKey(),
-                    canonicalObjectCode));
-        }
-        if (runtimeConfig == null && allowDraftRuntime) {
-            runtimeConfig = resolveRuntimeConfig(tenantId, StringUtils.firstNonBlank(
-                    documentConfig == null ? null : documentConfig.getConfigKey(),
-                    businessObject == null ? null : businessObject.getConfigKey(),
-                    canonicalObjectCode,
-                    requestedObjectCode));
-        }
-        if (businessObject == null && !StringUtils.equals(canonicalObjectCode, requestedObjectCode)) {
-            businessObject = resolveBusinessObject(tenantId, canonicalObjectCode, runtimeConfig, documentConfig);
-        }
-        String configKey = StringUtils.firstNonBlank(
-                documentConfig == null ? null : documentConfig.getConfigKey(),
-                runtimeConfig == null ? null : runtimeConfig.getConfigKey(),
-                businessObject == null ? null : businessObject.getConfigKey());
-        return new BusinessRuntimeContext(
-                requestedObjectCode,
-                canonicalObjectCode,
-                configKey,
-                documentConfig,
-                runtimeConfig,
-                businessObject);
-    }
-
-    private AiBusinessDocumentConfig resolveEnabledDocumentConfig(Long tenantId, String objectCodeOrConfigKey,
-                                                                  AiCrudConfig runtimeConfig) {
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
-        AiBusinessDocumentConfig config = documentConfigService.selectEnabledByObjectCode(effectiveTenantId, objectCodeOrConfigKey);
-        if (config != null) {
-            return config;
-        }
-        config = documentConfigService.selectEnabledByConfigKey(effectiveTenantId, objectCodeOrConfigKey);
-        if (config != null || runtimeConfig == null) {
-            return config;
-        }
-        config = documentConfigService.selectEnabledByConfigKey(effectiveTenantId, runtimeConfig.getConfigKey());
-        if (config != null) {
-            return config;
-        }
-        return documentConfigService.selectEnabledByObjectCode(effectiveTenantId, runtimeConfig.getObjectCode());
-    }
-
-    private AiBusinessObject resolveBusinessObject(Long tenantId, String objectCodeOrConfigKey,
-                                                   AiCrudConfig runtimeConfig,
-                                                   AiBusinessDocumentConfig documentConfig) {
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
-        AiBusinessObject object = null;
-        if (documentConfig != null && StringUtils.isNotBlank(documentConfig.getConfigKey())) {
-            object = businessObjectMapper.selectByConfigKey(effectiveTenantId, documentConfig.getConfigKey());
-        }
-        if (object == null && runtimeConfig != null && StringUtils.isNotBlank(runtimeConfig.getConfigKey())) {
-            object = businessObjectMapper.selectByConfigKey(effectiveTenantId, runtimeConfig.getConfigKey());
-        }
-        if (object == null && StringUtils.isNotBlank(objectCodeOrConfigKey)) {
-            object = businessObjectMapper.selectByConfigKey(effectiveTenantId, objectCodeOrConfigKey);
-        }
-        if (object == null && StringUtils.isNotBlank(objectCodeOrConfigKey)) {
-            object = businessObjectMapper.selectFirstByObjectCode(effectiveTenantId, objectCodeOrConfigKey);
-        }
-        return object;
-    }
 
     private boolean isBindingEnabled(AiBusinessBinding binding) {
         return binding != null && !EnableStatus.DISABLED.matches(binding.getStatus());
@@ -3763,7 +3345,8 @@ public class BusinessFlowService {
             return;
         }
         AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, objectCode);
-        AiBusinessDocumentConfig documentConfig = resolveEnabledDocumentConfig(tenantId, objectCode, runtimeConfig);
+        AiBusinessDocumentConfig documentConfig = businessRuntimeContextResolver.resolveEnabledDocumentConfig(
+                tenantId, objectCode, runtimeConfig);
         BusinessFlowBindingCodec.ensureBusinessBinding(config, runtimeConfig, documentConfig);
     }
 
@@ -3776,16 +3359,6 @@ public class BusinessFlowService {
     }
 
 
-    private JSONObject readJsonObject(String json) {
-        if (StringUtils.isBlank(json)) {
-            return new JSONObject();
-        }
-        try {
-            return JSON.parseObject(json);
-        } catch (Exception e) {
-            return new JSONObject();
-        }
-    }
 
 
     private Long resolveTenantId() {
@@ -3836,20 +3409,9 @@ public class BusinessFlowService {
                                     AiCrudConfig runtimeConfig) {
     }
 
-    private record BusinessRuntimeContext(String requestedObjectCode,
-                                          String objectCode,
-                                          String configKey,
-                                          AiBusinessDocumentConfig documentConfig,
-                                          AiCrudConfig runtimeConfig,
-                                          AiBusinessObject businessObject) {
-    }
-
     private record BindingLookupResult(AiBusinessBinding binding,
                                        String matchedObjectCode,
                                        List<String> candidates) {
-    }
-
-    private record BusinessKeyParts(String objectCode, Long recordId) {
     }
 
     private record BusinessListGroup(BusinessRuntimeContext context,

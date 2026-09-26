@@ -16,6 +16,17 @@ final class BusinessFlowJsonReader {
     private BusinessFlowJsonReader() {
     }
 
+    static JSONObject readJsonObject(String json) {
+        if (StringUtils.isBlank(json)) {
+            return new JSONObject();
+        }
+        try {
+            return JSON.parseObject(json);
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
     static JSONObject readNestedObject(Object value) {
         if (value == null) {
             return new JSONObject();

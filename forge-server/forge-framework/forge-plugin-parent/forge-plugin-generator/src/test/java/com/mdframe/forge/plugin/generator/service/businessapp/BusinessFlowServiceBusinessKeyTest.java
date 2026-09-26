@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,9 +29,7 @@ import static org.mockito.Mockito.when;
 class BusinessFlowServiceBusinessKeyTest {
 
     private BusinessFlowService service;
-    private Method parseBusinessKeyObjectCode;
-    private Method parseBusinessKeyRecordId;
-    private Method resolveTaskBusinessObject;
+    private BusinessFlowRuntimeContextResolver runtimeContextResolver;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -49,16 +47,7 @@ class BusinessFlowServiceBusinessKeyTest {
                 mock(ApplicationEventPublisher.class),
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class));
-        parseBusinessKeyObjectCode = BusinessFlowService.class.getDeclaredMethod(
-                "parseBusinessKeyObjectCode", String.class);
-        parseBusinessKeyObjectCode.setAccessible(true);
-        parseBusinessKeyRecordId = BusinessFlowService.class.getDeclaredMethod(
-                "parseBusinessKeyRecordId", String.class);
-        parseBusinessKeyRecordId.setAccessible(true);
-        resolveTaskBusinessObject = BusinessFlowService.class.getDeclaredMethod(
-                "resolveTaskBusinessObject", Long.class, BusinessTaskFormContextQueryDTO.class,
-                AiBusinessFlowInstanceLink.class);
-        resolveTaskBusinessObject.setAccessible(true);
+        runtimeContextResolver = runtimeContextResolver(service);
     }
 
     @Test
@@ -80,13 +69,13 @@ class BusinessFlowServiceBusinessKeyTest {
 
     @Test
     @DisplayName("FLOW_TEST is not parsed as objectCode:recordId")
-    void syntheticKeyIsNotADocumentKey() throws Exception {
+    void syntheticKeyIsNotADocumentKey() {
         String testKey = "FLOW_TEST:leave_flow:1710000000000";
         assertTrue(BusinessFlowTaskAccessPolicy.isSyntheticTestBusinessKey(testKey));
-        assertNull(parseBusinessKeyObjectCode.invoke(service, testKey));
-        assertNull(parseBusinessKeyRecordId.invoke(service, testKey));
-        assertEquals("leave", parseBusinessKeyObjectCode.invoke(service, "leave:1001"));
-        assertEquals(1001L, parseBusinessKeyRecordId.invoke(service, "leave:1001"));
+        assertNull(BusinessFlowIdentityCodec.parseBusinessKeyObjectCode(testKey));
+        assertNull(BusinessFlowIdentityCodec.parseBusinessKeyRecordId(testKey));
+        assertEquals("leave", BusinessFlowIdentityCodec.parseBusinessKeyObjectCode("leave:1001"));
+        assertEquals(1001L, BusinessFlowIdentityCodec.parseBusinessKeyRecordId("leave:1001"));
     }
 
     @Test
@@ -120,8 +109,15 @@ class BusinessFlowServiceBusinessKeyTest {
         link.setObjectCode("business_object");
         link.setVariablesSnapshot("{\"configKey\":\"presale_registration_business_object\"}");
 
-        AiBusinessObject resolved = (AiBusinessObject) resolveTaskBusinessObject.invoke(service, 1L, query, link);
+        runtimeContextResolver = runtimeContextResolver(service);
+        AiBusinessObject resolved = runtimeContextResolver.resolveTaskBusinessObject(1L, query, link);
         assertEquals("测试", resolved.getObjectName());
         assertEquals("presale_registration_business_object", resolved.getConfigKey());
+    }
+
+    private BusinessFlowRuntimeContextResolver runtimeContextResolver(BusinessFlowService target) throws Exception {
+        Field field = BusinessFlowService.class.getDeclaredField("businessRuntimeContextResolver");
+        field.setAccessible(true);
+        return (BusinessFlowRuntimeContextResolver) field.get(target);
     }
 }

@@ -68,6 +68,8 @@
 
 第三十一个切口使用 Resolver + Layered Fallback，将 Flowable 任务/实例表单读取、运行时 `businessFormRef` 合并、节点权限装配和应用页/对象表单资产选择迁入 `BusinessFlowTaskNodeFormResolver`。可选 `FlowClient` 通过 Supplier 延迟获取，资产目录和性能记录通过窄函数注入；`BusinessFlowService` 不保留兼容转发私有方法。入口由 4236 行降至 3869 行，新 Resolver 431 行；运行身份快照独立为 17 行 `TaskFormRuntimeContext`，均低于 1000 行。公开 API、事务、动态 CRUD 保存、Flowable 任务动作和状态机不变。
 
+第三十二个切口使用 Resolver + Codec，将发布/草稿运行配置、单据配置和业务对象的规范化查找，任务表单/流程关联/应用页身份恢复，以及业务 Key 编解码迁入 `BusinessFlowRuntimeContextResolver` 与 `BusinessFlowIdentityCodec`。入口由 3869 行降至 3431 行，新 Resolver/Codec 分别 466/58 行；`BusinessRuntimeContext`、`BusinessKeyParts` 使用包级不可变快照，分别 13/4 行。Facade 保留任务保存、流程关联写入、事务和状态机。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。

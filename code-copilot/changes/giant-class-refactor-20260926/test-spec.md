@@ -199,3 +199,12 @@
 - 验证：generator Reactor 编译、业务流程 18 类定向回归、`git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：新增 `BusinessFlowTaskNodeFormResolverTest` 覆盖完整任务表单跳过实例 RPC、不完整任务表单回退实例 RPC、`app_` 表单键跳过对象资产扫描和结构化运行时表单引用优先级；相关 19 类共 94 项通过，0 失败、0 错误。模块 Reactor 编译与 `git diff --check` 通过。
+
+## 2026-09-26 第三十二轮增量验证：任务运行身份与业务上下文解析
+
+- P0：任务查询从 task form、应用页资产、流程关联快照恢复 objectId/configKey/objectCode/recordId 的优先级保持不变；测试业务 Key 不得误绑定真实记录。
+- P0：发布运行配置、单据配置和业务对象的规范化查找顺序不变，严格模式仍只对非代码表单拒绝缺少运行配置。
+- P1：提取通用业务 Key Codec、业务运行上下文 Resolver 与任务运行身份解析；Facade 保留任务保存、流程关联写入、事务和状态机。
+- 验证：generator Reactor 编译、身份/业务 Key/任务表单/生命周期定向回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：新增 `BusinessFlowRuntimeContextResolverTest` 覆盖 task form 身份优先级、单据/对象元数据规范化和测试业务 Key 的记录隔离；旧业务 Key 测试改为直接验证 Codec/Resolver。相关 20 类共 97 项通过，0 失败、0 错误；模块 Reactor 编译与 `git diff --check` 通过。

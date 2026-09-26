@@ -19,7 +19,8 @@ class BusinessFlowPerformanceContractTest {
 
         assertTrue(method.contains("Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo"));
         assertTrue(method.contains("validateTaskAccess(effectiveQuery, false, taskFormInfo)"));
-        assertTrue(method.contains("resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo)"));
+        assertTrue(method.contains("businessRuntimeContextResolver.resolveTask"));
+        assertTrue(method.contains("effectiveQuery, false, taskFormInfo"));
         assertTrue(method.contains("buildTaskFormContext(effectiveQuery, runtime, taskFormInfo"));
         assertTrue(method.contains("runtimeContextMs"));
         assertFalse(source.contains("flowClient.getTaskDetail("));
@@ -32,6 +33,8 @@ class BusinessFlowPerformanceContractTest {
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowApplicationPageFormResolver.java"));
         String nodeFormResolver = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskNodeFormResolver.java"));
+        String runtimeContextResolver = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowRuntimeContextResolver.java"));
         String taskFormSchemaAssembler = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormSchemaAssembler.java"));
 
@@ -46,12 +49,13 @@ class BusinessFlowPerformanceContractTest {
         assertTrue(source.contains("runtime.publishedConfig()"));
         assertTrue(source.contains("runtime.businessObject()"));
         assertTrue(source.contains("resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig)"));
-        assertTrue(source.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
-        assertTrue(source.contains("bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
+        assertTrue(runtimeContextResolver.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
+        assertTrue(runtimeContextResolver.contains(
+                "bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
         assertTrue(nodeFormResolver.contains("processFormRpc=skip(queryOrVarFormKey)"));
         assertTrue(applicationPageResolver.contains("loadCachedInAppBuilder("));
-        assertTrue(source.contains("pageAssetMs"));
-        assertTrue(source.contains("businessContextMs"));
+        assertTrue(runtimeContextResolver.contains("pageAssetMs"));
+        assertTrue(runtimeContextResolver.contains("businessContextMs"));
         assertTrue(nodeFormResolver.contains("collectTaskFormAssets=skip(appFormKey)"));
         assertTrue(applicationPageResolver.contains("parseApplicationPageFormKey("));
         assertTrue(applicationPageResolver.contains("findApplicationFormAsset("));

@@ -162,3 +162,9 @@
 - 使用 Resolver + Layered Fallback 从 `BusinessFlowService` 迁出 Flowable 任务/实例表单读取、运行时 `businessFormRef` 合并、节点权限装配及应用页/对象表单资产选择到 `BusinessFlowTaskNodeFormResolver`；入口由 4236 行降至 3869 行，新 Resolver 431 行，运行身份快照 `TaskFormRuntimeContext` 17 行。资产目录、性能阶段和可选 FlowClient 均通过窄依赖注入，Facade 不保留测试专用转发方法。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。旧表单资产测试改为直接验证 Resolver；性能契约改为检查 Resolver 内的重复 RPC 跳过和轻量资产路径。新增 4 项 Resolver 行为测试，连同既有 18 类回归共 19 类 94 项，0 失败、0 错误。
 - `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实审批任务与应用页面联合解析仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第三十二个切口：任务运行身份与业务上下文解析
+
+- 使用 Resolver + Codec 从 `BusinessFlowService` 迁出发布/草稿运行配置、单据配置和业务对象规范化查找，task form/流程关联/应用页身份恢复，以及业务 Key 编解码。入口由 3869 行降至 3431 行；新增 `BusinessFlowRuntimeContextResolver` 466 行、`BusinessFlowIdentityCodec` 58 行，两个不可变快照分别 13/4 行，均低于 1000 行。任务保存、流程关联写入、事务和状态机仍由 Facade 持有。
+- generator Reactor 编译首次发现列表/绑定路径仍调用已迁出的单据配置和任务对象方法；改为直接复用 Resolver 后重新编译退出码 0。旧业务 Key 测试取消对 Facade 私有方法的反射，性能契约改为验证 Resolver 内的配置复用与阶段记录。
+- 执行 20 类业务流程增量回归共 97 项，0 失败、0 错误；生命周期测试中预期的写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；历史流程实例与真实应用页联合身份恢复仍需服务级联调，无服务 PID 需停止。
