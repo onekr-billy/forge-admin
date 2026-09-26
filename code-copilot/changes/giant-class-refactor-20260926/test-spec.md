@@ -332,3 +332,12 @@
 - 验证：重跑主子表、任务字段权限和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：审批节点主子表权限归一化、行级动作校验及受限保存已委托 `DynamicCrudTaskEditableCoordinator`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 2151 行，新 Coordinator 497 行。
+
+## 2026-09-27 第四十七轮增量验证：普通 Join 跨表持久化引擎
+
+- P0：普通 Join 模型新增/更新的主子字段分流、公式和唯一约束、真实关联值解析、子表 insert/upsert 及聚合刷新顺序保持不变。
+- P0：主表数据权限、主键剔除、脱敏占位值忽略、金额/结构化值/加密转换和空写入拒绝语义保持不变。
+- P1：使用 Persistence Engine 隔离跨表写入，Facade 只保留事务入口与数据权限条件；新生产类少于 1000 行。
+- 验证：重跑动态 CRUD 和业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：普通 Join 模型的跨表新增、更新和子表 upsert 已委托 `DynamicCrudJoinedPersistenceEngine`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 1955 行，新 Engine 284 行。

@@ -234,3 +234,9 @@
 - 使用 Coordinator 从 `DynamicCrudService` 迁出审批节点主/子表权限归一、关系别名兼容、行级增改删门禁、字段白名单过滤和受限主子表保存。Facade 保留公开事务、审计、运行数据源上下文及非主子表时对普通更新入口的回退。
 - 入口由 2448 行降至 2151 行，新 `DynamicCrudTaskEditableCoordinator` 497 行；子表存储约束和行归属校验继续复用主子表引擎，避免形成两套安全规则。generator Reactor 编译退出码 0。
 - 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实 Flowable 节点权限与复杂子表表单仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第四十七个切口：普通 Join 跨表持久化引擎
+
+- 使用 Persistence Engine 从 `DynamicCrudService` 迁出非主子表布局下的主/子字段分流、公式与唯一约束、关联值解析、子表 insert/upsert 和聚合刷新。Facade 保留公开事务、运行上下文和主表数据权限条件。
+- 入口由 2151 行降至 1955 行，新 `DynamicCrudJoinedPersistenceEngine` 284 行；子表存储校验继续复用主子表引擎，写入值流水线继续复用统一 Pipeline。generator Reactor 编译退出码 0。
+- 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实多 Join 写入与跨数据源事务仍需服务环境验收，无服务 PID 需停止。

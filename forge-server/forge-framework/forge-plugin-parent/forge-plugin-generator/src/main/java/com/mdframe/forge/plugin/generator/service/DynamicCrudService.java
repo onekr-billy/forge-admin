@@ -109,6 +109,7 @@ public class DynamicCrudService {
     private final DynamicCrudWriteFieldPolicy writeFieldPolicy;
     private final DynamicCrudMasterDetailEngine masterDetailEngine;
     private final DynamicCrudTaskEditableCoordinator taskEditableCoordinator;
+    private final DynamicCrudJoinedPersistenceEngine joinedPersistenceEngine;
 
     public DynamicCrudService(
             DynamicCrudRepository repository,
@@ -158,6 +159,13 @@ public class DynamicCrudService {
                 fieldValuePipeline,
                 runtimeRelationPlanner);
         this.taskEditableCoordinator = new DynamicCrudTaskEditableCoordinator(
+                repository,
+                storedAggregateRefreshService,
+                writeFieldPolicy,
+                uniquenessValidator,
+                fieldValuePipeline,
+                masterDetailEngine);
+        this.joinedPersistenceEngine = new DynamicCrudJoinedPersistenceEngine(
                 repository,
                 storedAggregateRefreshService,
                 writeFieldPolicy,
@@ -1232,44 +1240,6 @@ public class DynamicCrudService {
                 buildWriteDataScopeCondition(config, config.getTableName(), null));
     }
 
-    private void validateChildRow(
-            RuntimeChildRelation relation, Map<String, Object> row, boolean create) {
-        masterDetailEngine.validateChildRow(relation, row, create);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractMainPayload(Map<String, Object> data) {
-        if (data != null && data.get("main") instanceof Map<?, ?> main) {
-            return (Map<String, Object>) main;
-        }
-        return data == null ? Map.of() : data;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractChildrenPayload(Map<String, Object> data) {
-        if (data != null && data.get("children") instanceof Map<?, ?> children) {
-            return (Map<String, Object>) children;
-        }
-        return Map.of();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> normalizeChildRows(Object value) {
-        if (value instanceof List<?> rows) {
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (Object row : rows) {
-                if (row instanceof Map<?, ?> map) {
-                    result.add((Map<String, Object>) map);
-                }
-            }
-            return result;
-        }
-        if (value instanceof Map<?, ?> map) {
-            return List.of((Map<String, Object>) map);
-        }
-        return List.of();
-    }
-
     @SuppressWarnings("unchecked")
     private Object resolvePayloadId(Map<String, Object> data, LowcodePrimaryKeyStrategy primaryKey) {
         if (data == null) {
@@ -1356,12 +1326,6 @@ public class DynamicCrudService {
         data.put("id", id);
     }
 
-    private void refreshRecordById(AiCrudConfig config, Object id) {
-        if (id != null && StringUtils.isNotBlank(String.valueOf(id))) {
-            storedAggregateRefreshService.refreshRecord(config, id);
-        }
-    }
-
     private Object firstPresent(Map<String, Object> data, String... keys) {
         for (String key : keys) {
             if (StringUtils.isNotBlank(key) && data.containsKey(key)) {
@@ -1371,164 +1335,27 @@ public class DynamicCrudService {
         return null;
     }
 
-    private void insertJoinedData(AiCrudConfig config,
-                                  Map<String, Object> data,
-                                  Set<String> allowedFields,
-                                  RuntimeJoinContext joinContext) {
-        Map<String, Object> primaryData = new LinkedHashMap<>();
-        Map<String, Map<String, Object>> childDataMap = new LinkedHashMap<>();
-        applyStoredFormulas(config, data);
-        validateFieldValues(config, data);
-        validateUniqueConstraints(config, config.getTableName(), data, null, null);
-        splitRuntimeWriteData(data, allowedFields, joinContext, primaryData, childDataMap);
-        if (primaryData.isEmpty()) {
-            throw new BusinessException("没有可写入的主表字段");
-        }
-        applyMoneyStorageWrite(primaryData, config);
-        applyStructuredFieldStorageWrite(primaryData, config);
-        applyEncrypt(primaryData, config.getEncryptConfig());
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        Object mainId = repository.insertReturningKey(
-                config.getTableName(),
-                primaryData,
-                primaryKeyColumn(primaryKey),
-                primaryKeyAutoIncrement(primaryKey));
-        putPrimaryKeyAlias(data, primaryKey, mainId);
-        boolean childrenChanged = false;
-        for (RuntimeChildRelation relation : joinContext.childRelations()) {
-            Map<String, Object> childData = childDataMap.get(relation.modelCode());
-            if (!hasWritableChildData(childData)) {
-                continue;
-            }
-            Object relationValue = resolveMainRelationValue(relation, primaryData, mainId, null);
-            if (relationValue == null) {
-                continue;
-            }
-            validateChildRow(relation, childData, true);
-            childData.put(relation.childFkColumn(), relationValue);
-            repository.insert(relation.tableName(), childData);
-            childrenChanged = true;
-        }
-        if (childrenChanged) {
-            refreshRecordById(config, mainId);
-        }
+    private void insertJoinedData(
+            AiCrudConfig config,
+            Map<String, Object> data,
+            Set<String> allowedFields,
+            RuntimeJoinContext joinContext) {
+        joinedPersistenceEngine.insert(config, data, allowedFields, joinContext);
     }
 
-    private void updateJoinedData(AiCrudConfig config,
-                                  Object id,
-                                  Map<String, Object> data,
-                                  Set<String> allowedFields,
-                                  RuntimeJoinContext joinContext) {
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, config.getTableName(), null);
-        Map<String, Object> authorizedMainRecord = repository.selectById(config.getTableName(), id, dataScopeCondition);
-        if (authorizedMainRecord == null) {
-            throw new BusinessException("无权限更新该数据或数据不存在");
-        }
-        Map<String, Object> primaryData = new LinkedHashMap<>();
-        Map<String, Map<String, Object>> childDataMap = new LinkedHashMap<>();
-        applyStoredFormulasForUpdate(config, config.getTableName(), id, data, dataScopeCondition, authorizedMainRecord);
-        validateFieldValues(config, data);
-        validateUniqueConstraints(config, config.getTableName(), data, authorizedMainRecord, id);
-        splitRuntimeWriteData(data, allowedFields, joinContext, primaryData, childDataMap);
-        removePrimaryKeyColumns(primaryData, currentPrimaryKey());
-        removeMaskedDesensitizedWriteColumns(primaryData, config, config.getTableName());
-
-        if (!primaryData.isEmpty()) {
-            applyMoneyStorageWrite(primaryData, config);
-            applyStructuredFieldStorageWrite(primaryData, config);
-            applyEncrypt(primaryData, config.getEncryptConfig());
-            int affected = repository.updateById(config.getTableName(), id, primaryData, dataScopeCondition);
-            if (affected <= 0) {
-                throw new BusinessException("无权限更新该数据或数据不存在");
-            }
-        }
-
-        Map<String, Object> currentMainRecord = authorizedMainRecord;
-        boolean childrenChanged = false;
-        for (RuntimeChildRelation relation : joinContext.childRelations()) {
-            Map<String, Object> childData = childDataMap.get(relation.modelCode());
-            if (!hasWritableChildData(childData)) {
-                continue;
-            }
-            if (currentMainRecord == null && !"id".equals(relation.mainColumn()) && !primaryData.containsKey(relation.mainColumn())) {
-                currentMainRecord = repository.selectById(config.getTableName(), id);
-            }
-            Object relationValue = resolveMainRelationValue(relation, primaryData, id, currentMainRecord);
-            if (relationValue == null) {
-                continue;
-            }
-            validateChildRow(relation, childData, false);
-            childData.put(relation.childFkColumn(), relationValue);
-            Long childId = repository.selectFirstIdByColumn(relation.tableName(), relation.childFkColumn(), relationValue);
-            if (childId == null) {
-                repository.insert(relation.tableName(), childData);
-            } else {
-                repository.updateById(relation.tableName(), "id", childId, childData, null);
-            }
-            childrenChanged = true;
-        }
-
-        if (primaryData.isEmpty() && childDataMap.values().stream().noneMatch(this::hasWritableChildData)) {
-            throw new BusinessException("没有可更新的字段");
-        }
-        if (childrenChanged) {
-            refreshRecordById(config, id);
-        }
-    }
-
-    private void splitRuntimeWriteData(Map<String, Object> data,
-                                       Set<String> allowedFields,
-                                       RuntimeJoinContext joinContext,
-                                       Map<String, Object> primaryData,
-                                       Map<String, Map<String, Object>> childDataMap) {
-        if (data == null || data.isEmpty()) {
-            return;
-        }
-        Map<String, RuntimeChildRelation> relationMap = joinContext.childRelations().stream()
-                .collect(Collectors.toMap(RuntimeChildRelation::modelCode, relation -> relation, (left, right) -> left, LinkedHashMap::new));
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            String key = entry.getKey();
-            if (isImmutableWriteField(key) || !allowedFields.contains(key)) {
-                continue;
-            }
-            RuntimeFieldRef fieldRef = joinContext.fields().get(key);
-            if (fieldRef == null) {
-                continue;
-            }
-            if (fieldRef.primary()) {
-                primaryData.put(fieldRef.columnName(), entry.getValue());
-                continue;
-            }
-            RuntimeChildRelation relation = relationMap.get(fieldRef.modelCode());
-            if (relation == null) {
-                continue;
-            }
-            childDataMap.computeIfAbsent(fieldRef.modelCode(), ignored -> new LinkedHashMap<>())
-                    .put(fieldRef.columnName(), entry.getValue());
-        }
-    }
-
-    private boolean hasWritableChildData(Map<String, Object> childData) {
-        if (childData == null || childData.isEmpty()) {
-            return false;
-        }
-        return childData.values().stream().anyMatch(value -> value != null && !(value instanceof String text && StringUtils.isBlank(text)));
-    }
-
-    private Object resolveMainRelationValue(RuntimeChildRelation relation,
-                                            Map<String, Object> primaryData,
-                                            Object mainId,
-                                            Map<String, Object> currentMainRecord) {
-        if ("id".equals(relation.mainColumn())) {
-            return mainId;
-        }
-        if (primaryData.containsKey(relation.mainColumn())) {
-            return primaryData.get(relation.mainColumn());
-        }
-        if (currentMainRecord != null) {
-            return currentMainRecord.get(relation.mainColumn());
-        }
-        return null;
+    private void updateJoinedData(
+            AiCrudConfig config,
+            Object id,
+            Map<String, Object> data,
+            Set<String> allowedFields,
+            RuntimeJoinContext joinContext) {
+        joinedPersistenceEngine.update(
+                config,
+                id,
+                data,
+                allowedFields,
+                joinContext,
+                buildWriteDataScopeCondition(config, config.getTableName(), null));
     }
 
     private boolean isImmutableWriteField(String key) {
@@ -1553,29 +1380,6 @@ public class DynamicCrudService {
                 + "2) 字段未设为隐藏/禁用/只读；"
                 + "3) 字段编码与模型一致；"
                 + "4) 不要只提交 id 等系统字段。");
-    }
-
-    private BusinessException emptyMasterDetailUpdateException(AiCrudConfig config,
-                                                               Map<String, Object> data,
-                                                               Set<String> allowedFields,
-                                                               RuntimeJoinContext joinContext) {
-        Map<String, Object> childrenPayload = extractChildrenPayload(data);
-        String expectedChildren = joinContext == null || joinContext.childRelations() == null
-                ? ""
-                : joinContext.childRelations().stream()
-                        .map(RuntimeChildRelation::modelCode)
-                        .filter(StringUtils::isNotBlank)
-                        .distinct()
-                        .collect(java.util.stream.Collectors.joining("、"));
-        String submittedChildren = childrenPayload.isEmpty()
-                ? "无"
-                : String.join("、", childrenPayload.keySet());
-        BusinessException base = emptyWriteFieldsException(config, "更新",
-                data == null ? Set.of() : data.keySet(), allowedFields);
-        return new BusinessException(base.getMessage()
-                + " 主子表额外检查：已提交子表键=[" + submittedChildren + "]，"
-                + "配置期望子表=[" + StringUtils.defaultIfBlank(expectedChildren, "无") + "]。"
-                + "若只改了子表，请确认 children 下的对象编码与主子表配置一致。");
     }
 
     private Set<String> buildAllowedWriteFields(AiCrudConfig config, String tableName) {
