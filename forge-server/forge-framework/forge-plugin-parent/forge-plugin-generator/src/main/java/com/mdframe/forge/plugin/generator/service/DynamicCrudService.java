@@ -1,7 +1,6 @@
 package com.mdframe.forge.plugin.generator.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryConditionDTO;
@@ -9,10 +8,7 @@ import com.mdframe.forge.plugin.generator.dto.CustomQueryExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.dto.audit.DataAuditRemoveDTO;
 import com.mdframe.forge.plugin.generator.dto.audit.DataAuditWriteContextDTO;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePrimaryKeyStrategy;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import com.mdframe.forge.plugin.generator.enums.DataAuditEventType;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditCaptureService;
@@ -24,11 +20,9 @@ import com.mdframe.forge.plugin.generator.service.formula.VirtualFormulaRuntime;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessDocumentConfigService;
 import com.mdframe.forge.plugin.generator.service.businessapp.CodeRuleService;
 import com.mdframe.forge.plugin.generator.service.crypto.LowcodeEncryptConfigParser;
-import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeFieldValueValidator;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
-import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
@@ -49,7 +43,6 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 动态CRUD服务
@@ -60,11 +53,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class DynamicCrudService {
-
-    private static final Set<String> IMMUTABLE_WRITE_FIELDS = Set.of(
-            "id", "tenantId", "tenant_id", "createBy", "create_by", "createTime", "create_time",
-            "createDept", "create_dept", "updateBy", "update_by", "updateTime", "update_time", "delFlag", "del_flag"
-    );
 
     /**
      * 当前流程节点对子表的最小写权限投影。权限来源由 BusinessFlowService
@@ -82,7 +70,6 @@ public class DynamicCrudService {
 
     private final DynamicCrudRepository repository;
     private final AiCrudConfigService configService;
-    private final ObjectMapper objectMapper;
     private final DynamicDataScopeService dynamicDataScopeService;
     private final StoredAggregateRefreshService storedAggregateRefreshService;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
@@ -97,6 +84,7 @@ public class DynamicCrudService {
     private final DynamicCrudTaskEditableCoordinator taskEditableCoordinator;
     private final DynamicCrudJoinedPersistenceEngine joinedPersistenceEngine;
     private final DynamicCrudReadCoordinator readCoordinator;
+    private final DynamicCrudMutationCoordinator mutationCoordinator;
 
     public DynamicCrudService(
             DynamicCrudRepository repository,
@@ -116,7 +104,6 @@ public class DynamicCrudService {
             DataAuditCaptureService dataAuditCaptureService) {
         this.repository = repository;
         this.configService = configService;
-        this.objectMapper = objectMapper;
         this.dynamicDataScopeService = dynamicDataScopeService;
         this.storedAggregateRefreshService = storedAggregateRefreshService;
         this.runtimeDataSourceResolver = runtimeDataSourceResolver;
@@ -171,6 +158,17 @@ public class DynamicCrudService {
                 runtimeRelationPlanner,
                 writeFieldPolicy,
                 masterDetailEngine);
+        this.mutationCoordinator = new DynamicCrudMutationCoordinator(
+                repository,
+                objectMapper,
+                storedAggregateRefreshService,
+                uniquenessValidator,
+                generatedFieldPolicy,
+                fieldValuePipeline,
+                writeFieldPolicy,
+                runtimeRelationPlanner,
+                masterDetailEngine,
+                joinedPersistenceEngine);
     }
 
     // ==================== 查询操作 ====================
@@ -275,72 +273,8 @@ public class DynamicCrudService {
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
             openDataAudit(config, null, DataAuditSourceType.FORM, DataAuditEventType.CREATE, data, false);
-        String tableName = config.getTableName();
-        
-        // 获取字段映射
-        Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
-        
-        // 获取允许写入的字段。editSchema 是运行态表单白名单，modelSchema 兜底承接保存设计器后新增但尚未重建 editSchema 的字段。
-        Set<String> allowedFields = buildAllowedWriteFields(config, tableName);
-        generatedFieldPolicy.applyAutoGeneratedFields(config, data, allowedFields);
-        generatedFieldPolicy.applyDocumentNoIfNeeded(config, data, allowedFields);
-        SelectionIdentifierValidator.validate(config, data, objectMapper);
-
-        RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
-        if (isMasterDetailRuntime(config) && joinContext != null) {
-            insertMasterDetailData(config, data, allowedFields, joinContext);
-            return data;
-        }
-        if (joinContext != null) {
-            insertJoinedData(config, data, allowedFields, joinContext);
-            return data;
-        }
-        
-        // 过滤前先计算 STORED 公式，确保公式结果参与写库。
-        applyStoredFormulas(config, data);
-        validateFieldValues(config, data);
-        Map<String, Object> filteredData = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            if (isImmutableWriteField(entry.getKey())) {
-                continue;
-            }
-            if (allowedFields.contains(entry.getKey())) {
-                String columnName = columnMapping.getOrDefault(entry.getKey(), DynamicQueryGenerator.camelToSnake(entry.getKey()));
-                filteredData.put(columnName, entry.getValue());
-            }
-        }
-        
-        if (filteredData.isEmpty()) {
-            throw new BusinessException("没有可写入的字段");
-        }
-
-        validateUniqueConstraints(config, tableName, data, null, null);
-        
-        // 应用加密
-        applyMoneyStorageWrite(filteredData, config);
-        applyStructuredFieldStorageWrite(filteredData, config);
-        applyEncrypt(filteredData, config.getEncryptConfig());
-        
-        // 执行插入
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        Object id = repository.insertReturningKey(
-                tableName,
-                filteredData,
-                primaryKeyColumn(primaryKey),
-                primaryKeyAutoIncrement(primaryKey));
-        if (id == null) {
-            storedAggregateRefreshService.refreshAfterChildInsert(config, data);
-            return data;
-        }
-        Map<String, Object> result = selectById(configKey, id);
-        if (result != null) {
-            storedAggregateRefreshService.refreshAfterChildInsert(config, result);
-            return result;
-        }
-        Map<String, Object> fallback = new LinkedHashMap<>(data);
-        putPrimaryKeyAlias(fallback, primaryKey, id);
-        storedAggregateRefreshService.refreshAfterChildInsert(config, fallback);
-        return fallback;
+            return mutationCoordinator.insertForm(
+                    config, data, id -> readCoordinator.selectById(config, id));
         }
     }
 
@@ -356,35 +290,9 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-        openDataAudit(config, null, DataAuditSourceType.AUTOMATION, DataAuditEventType.CREATE, data, false);
-        String tableName = config.getTableName();
-        Set<String> allowedFields = collectInternalWriteFields(config, tableName);
-        generatedFieldPolicy.applyAutoGeneratedFields(config, data, allowedFields);
-        generatedFieldPolicy.applyDocumentNoIfNeeded(config, data, allowedFields);
-        applyStoredFormulas(config, data);
-        validateFieldValues(config, data);
-        Map<String, Object> filteredData = filterInternalWriteData(config, tableName, data);
-        if (filteredData.isEmpty()) {
-            throw new BusinessException("没有可写入的字段");
-        }
-        validateUniqueConstraints(config, tableName, data, null, null);
-        applyStructuredFieldStorageWrite(filteredData, config);
-        applyEncrypt(filteredData, config.getEncryptConfig());
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        Object id = repository.insertReturningKey(
-                tableName,
-                filteredData,
-                primaryKeyColumn(primaryKey),
-                primaryKeyAutoIncrement(primaryKey));
-        Map<String, Object> result = id == null ? null : selectById(configKey, id);
-        if (result != null) {
-            storedAggregateRefreshService.refreshAfterChildInsert(config, result);
-            return result;
-        }
-        Map<String, Object> fallback = new LinkedHashMap<>(data);
-        putPrimaryKeyAlias(fallback, primaryKey, id);
-        storedAggregateRefreshService.refreshAfterChildInsert(config, fallback);
-        return fallback;
+            openDataAudit(config, null, DataAuditSourceType.AUTOMATION, DataAuditEventType.CREATE, data, false);
+            return mutationCoordinator.insertInternal(
+                    config, data, id -> readCoordinator.selectById(config, id));
         }
     }
 
@@ -400,31 +308,8 @@ public class DynamicCrudService {
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
             openDataAudit(config, null, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.CREATE, data, false);
-            String tableName = config.getTableName();
-            Set<String> allowedFields = collectCommandFields(config);
-            generatedFieldPolicy.applyAutoGeneratedFields(config, data, allowedFields);
-            generatedFieldPolicy.applyDocumentNoIfNeeded(config, data, allowedFields);
-            applyStoredFormulas(config, data);
-            validateFieldValues(config, data);
-            Map<String, Object> filteredData = filterCommandWriteData(config, tableName, data);
-            if (filteredData.isEmpty()) {
-                throw new BusinessException("没有可写入的字段");
-            }
-            validateUniqueConstraints(config, tableName, data, null, null);
-            applyStructuredFieldStorageWrite(filteredData, config);
-            applyEncrypt(filteredData, config.getEncryptConfig());
-            LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-            Object id = repository.insertReturningKey(
-                    tableName, filteredData, primaryKeyColumn(primaryKey), primaryKeyAutoIncrement(primaryKey));
-            Map<String, Object> result = id == null ? null : selectById(configKey, id);
-            if (result != null) {
-                storedAggregateRefreshService.refreshAfterChildInsert(config, result);
-                return result;
-            }
-            Map<String, Object> fallback = new LinkedHashMap<>(data);
-            putPrimaryKeyAlias(fallback, primaryKey, id);
-            storedAggregateRefreshService.refreshAfterChildInsert(config, fallback);
-            return fallback;
+            return mutationCoordinator.insertCommand(
+                    config, data, id -> readCoordinator.selectById(config, id));
         }
     }
 
@@ -438,73 +323,14 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-        String tableName = config.getTableName();
-        
-        // 获取ID
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        Object idValue = resolvePayloadId(data, primaryKey);
-        if (idValue == null) {
-            throw new BusinessException("更新操作缺少id");
-        }
-        Object id = idValue;
-        openDataAudit(config, id, DataAuditSourceType.FORM, DataAuditEventType.UPDATE, data, true);
-        
-        // 获取字段映射
-        Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
-        
-        // 获取允许写入的字段。editSchema 是运行态表单白名单，modelSchema 兜底承接保存设计器后新增但尚未重建 editSchema 的字段。
-        Set<String> allowedFields = buildAllowedWriteFields(config, tableName);
-        SelectionIdentifierValidator.validate(config, data, objectMapper);
-
-        RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
-        if (isMasterDetailRuntime(config) && joinContext != null) {
-            updateMasterDetailData(config, id, data, allowedFields, joinContext);
-            return;
-        }
-        if (joinContext != null) {
-            updateJoinedData(config, id, data, allowedFields, joinContext);
-            return;
-        }
-
-        // 公式字段需要基于完整旧值上下文计算，确保部分更新不会把公式算空。
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildWriteDataScopeCondition(config, tableName, null);
-        Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, data, dataScopeCondition);
-        validateFieldValues(config, data);
-        
-        // 过滤并转换字段名
-        Map<String, Object> filteredData = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            String key = entry.getKey();
-            if (isImmutableWriteField(key)) {
-                continue;
+            Object id = mutationCoordinator.resolvePayloadId(data);
+            if (id == null) {
+                throw new BusinessException("更新操作缺少id");
             }
-            if (allowedFields.contains(key)) {
-                String columnName = columnMapping.getOrDefault(key, DynamicQueryGenerator.camelToSnake(key));
-                if (!isPrimaryKeyAlias(key, columnName, primaryKey)) {
-                    filteredData.put(columnName, entry.getValue());
-                }
-            }
-        }
-        removeMaskedDesensitizedWriteColumns(filteredData, config, tableName);
-        
-        if (filteredData.isEmpty()) {
-            throw emptyWriteFieldsException(config, "更新", data.keySet(), allowedFields);
-        }
-
-        validateUniqueConstraints(config, tableName, data, beforeRecord, id);
-        
-        // 应用加密
-        applyMoneyStorageWrite(filteredData, config);
-        applyStructuredFieldStorageWrite(filteredData, config);
-        applyEncrypt(filteredData, config.getEncryptConfig());
-        
-        // 执行更新
-        int affected = repository.updateById(tableName, primaryKeyColumn(primaryKey), id, filteredData, dataScopeCondition);
-        if (affected <= 0) {
-            throw new BusinessException("无权限更新该数据或数据不存在");
-        }
-        storedAggregateRefreshService.refreshAfterChildUpdate(config, beforeRecord,
-                repository.selectById(tableName, primaryKeyColumn(primaryKey), id, null));
+            openDataAudit(config, id, DataAuditSourceType.FORM, DataAuditEventType.UPDATE, data, true);
+            mutationCoordinator.updateForm(
+                    config, id, data,
+                    buildWriteDataScopeCondition(config, config.getTableName(), null));
         }
     }
 
@@ -581,45 +407,10 @@ public class DynamicCrudService {
         }
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-        openDataAudit(config, id, DataAuditSourceType.FLOW_CALLBACK, DataAuditEventType.UPDATE, data, false);
-        String tableName = config.getTableName();
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        Map<String, String> columnMapping = buildRuntimeColumnMapping(config, tableName);
-        Set<String> tableColumns = repository.getTableColumns(tableName);
-        // 流程回调等内部回写：无登录会话时跳过用户数据权限，仍由仓储施加租户条件。
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildInternalWriteDataScopeCondition(config, tableName, null);
-        Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, data, dataScopeCondition);
-        validateFieldValues(config, data);
-
-        Map<String, Object> filteredData = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            String key = entry.getKey();
-            if (isImmutableWriteField(key)) {
-                continue;
-            }
-            String columnName = columnMapping.getOrDefault(key, DynamicQueryGenerator.camelToSnake(key));
-            repository.validateIdentifier(columnName);
-            if (!tableColumns.contains(columnName)) {
-                throw missingRuntimeColumn(config, tableName, key, columnName);
-            }
-            if (isImmutableWriteField(columnName) || isPrimaryKeyAlias(key, columnName, primaryKey)) {
-                continue;
-            }
-            filteredData.put(columnName, entry.getValue());
-        }
-
-        if (filteredData.isEmpty()) {
-            throw new BusinessException("没有可更新的字段");
-        }
-
-        applyStructuredFieldStorageWrite(filteredData, config);
-        applyEncrypt(filteredData, config.getEncryptConfig());
-        int affected = repository.updateById(tableName, primaryKeyColumn(primaryKey), id, filteredData, dataScopeCondition);
-        if (affected <= 0) {
-            throw new BusinessException("无权限更新该数据或数据不存在");
-        }
-        storedAggregateRefreshService.refreshAfterChildUpdate(config, beforeRecord,
-                repository.selectById(tableName, primaryKeyColumn(primaryKey), id, null));
+            openDataAudit(config, id, DataAuditSourceType.FLOW_CALLBACK, DataAuditEventType.UPDATE, data, false);
+            mutationCoordinator.updateRuntimeFields(
+                    config, id, data,
+                    buildInternalWriteDataScopeCondition(config, config.getTableName(), null));
         }
     }
 
@@ -637,25 +428,10 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-        openDataAudit(config, id, DataAuditSourceType.AUTOMATION, DataAuditEventType.UPDATE, fields, false);
-        String tableName = config.getTableName();
-        LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-        DynamicCrudRepository.SqlCondition dataScopeCondition = buildInternalWriteDataScopeCondition(config, tableName, null);
-        Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(config, tableName, id, fields, dataScopeCondition);
-        validateFieldValues(config, fields);
-        Map<String, Object> filteredData = filterInternalWriteData(config, tableName, fields);
-        if (filteredData.isEmpty()) {
-            throw new BusinessException("没有可更新的字段");
-        }
-        applyStructuredFieldStorageWrite(filteredData, config);
-        applyEncrypt(filteredData, config.getEncryptConfig());
-        removePrimaryKeyColumns(filteredData, primaryKey);
-        int affected = repository.updateById(tableName, primaryKeyColumn(primaryKey), id, filteredData, dataScopeCondition);
-        if (affected <= 0) {
-            throw new BusinessException("无权限更新该数据或数据不存在");
-        }
-        storedAggregateRefreshService.refreshAfterChildUpdate(config, beforeRecord,
-                repository.selectById(tableName, primaryKeyColumn(primaryKey), id, null));
+            openDataAudit(config, id, DataAuditSourceType.AUTOMATION, DataAuditEventType.UPDATE, fields, false);
+            mutationCoordinator.updateAutomationFields(
+                    config, id, fields,
+                    buildInternalWriteDataScopeCondition(config, config.getTableName(), null));
         }
     }
 
@@ -677,29 +453,9 @@ public class DynamicCrudService {
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
             openDataAudit(config, id, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.UPDATE, fields, false);
-            String tableName = config.getTableName();
-            LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-            DynamicCrudRepository.SqlCondition dataScope = buildWriteDataScopeCondition(config, tableName, null);
-            Map<String, Object> beforeRecord = applyStoredFormulasForUpdate(
-                    config, tableName, id, fields, dataScope);
-            validateFieldValues(config, fields);
-            Map<String, Object> filteredData = filterCommandWriteData(config, tableName, fields);
-            if (filteredData.isEmpty()) {
-                throw new BusinessException("没有可更新的字段");
-            }
-            applyStructuredFieldStorageWrite(filteredData, config);
-            applyEncrypt(filteredData, config.getEncryptConfig());
-            removePrimaryKeyColumns(filteredData, primaryKey);
-            DynamicCrudRepository.SqlCondition expected = buildCommandExpectedCondition(
-                    config, tableName, expectedFields);
-            int affected = repository.updateById(
-                    tableName, primaryKeyColumn(primaryKey), id, filteredData,
-                    combineConditions(dataScope, expected));
-            if (affected <= 0) {
-                throw new BusinessException("记录已变化、数值越界或无权限更新");
-            }
-            storedAggregateRefreshService.refreshAfterChildUpdate(config, beforeRecord,
-                    repository.selectById(tableName, primaryKeyColumn(primaryKey), id, null));
+            mutationCoordinator.updateCommandFields(
+                    config, id, fields, expectedFields,
+                    buildWriteDataScopeCondition(config, config.getTableName(), null));
         }
     }
 
@@ -723,28 +479,9 @@ public class DynamicCrudService {
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
             openDataAudit(config, id, DataAuditSourceType.BUSINESS_ACTION, DataAuditEventType.UPDATE, Map.of(), false);
-            String tableName = config.getTableName();
-            LowcodePrimaryKeyStrategy primaryKey = currentPrimaryKey();
-            Map<String, BigDecimal> mappedDeltas = mapCommandDecimalFields(config, tableName, deltas);
-            Map<String, BigDecimal> mappedMinimums = mapCommandDecimalFields(config, tableName, minimums);
-            Map<String, BigDecimal> mappedMaximums = mapCommandDecimalFields(config, tableName, maximums);
-            DynamicCrudRepository.SqlCondition dataScope = buildWriteDataScopeCondition(config, tableName, null);
-            DynamicCrudRepository.SqlCondition expected = buildCommandExpectedCondition(
-                    config, tableName, expectedFields);
-            Map<String, Object> before = repository.selectById(
-                    tableName, primaryKeyColumn(primaryKey), id, dataScope);
-            if (before == null) {
-                throw new BusinessException("记录不存在或无权限调整");
-            }
-            int affected = repository.adjustNumbersById(
-                    tableName, primaryKeyColumn(primaryKey), id,
-                    mappedDeltas, mappedMinimums, mappedMaximums,
-                    combineConditions(dataScope, expected));
-            if (affected <= 0) {
-                throw new BusinessException("记录已变化、数值越界或无权限调整");
-            }
-            storedAggregateRefreshService.refreshAfterChildUpdate(config, before,
-                    repository.selectById(tableName, primaryKeyColumn(primaryKey), id, null));
+            mutationCoordinator.adjustCommandNumbers(
+                    config, id, deltas, minimums, maximums, expectedFields,
+                    buildWriteDataScopeCondition(config, config.getTableName(), null));
         }
     }
 
@@ -772,17 +509,9 @@ public class DynamicCrudService {
         AiCrudConfig config = getConfig(configKey);
         assertRuntimeWritable(config);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-            DynamicCrudRepository.SqlCondition dataScope = buildWriteDataScopeCondition(config, config.getTableName(), null);
-            DynamicCrudRepository.SqlCondition expected = buildCommandExpectedCondition(
-                    config, config.getTableName(), expectedFields);
-            DynamicCrudRepository.SqlCondition numeric = buildCommandNumericCondition(
-                    config, config.getTableName(), numericConstraints);
-            Map<String, Object> record = repository.selectByIdForUpdate(
-                    config.getTableName(), primaryKeyColumn(currentPrimaryKey()), id,
-                    combineConditions(combineConditions(dataScope, expected), numeric));
-            if (record == null) {
-                throw new BusinessException("记录状态不满足门禁、无权限访问或记录不存在");
-            }
+            mutationCoordinator.assertCommandRecord(
+                    config, id, expectedFields, numericConstraints,
+                    buildWriteDataScopeCondition(config, config.getTableName(), null));
         }
     }
 
@@ -793,52 +522,6 @@ public class DynamicCrudService {
                 || StringUtils.isNotBlank(config.getRuntimeDatasourceCode())) {
             throw new BusinessException("本地事务动作不支持外接运行数据源: " + configKey);
         }
-    }
-
-    private RuntimeChildRelation preferReadableChildRelation(
-            AiCrudConfig config,
-            RuntimeChildRelation relation) {
-        return masterDetailEngine.preferReadableChildRelation(config, relation);
-    }
-
-    private void insertMasterDetailData(
-            AiCrudConfig config,
-            Map<String, Object> data,
-            Set<String> allowedFields,
-            RuntimeJoinContext joinContext) {
-        masterDetailEngine.insert(config, data, allowedFields, joinContext);
-    }
-
-    private void updateMasterDetailData(
-            AiCrudConfig config,
-            Object id,
-            Map<String, Object> data,
-            Set<String> allowedFields,
-            RuntimeJoinContext joinContext) {
-        masterDetailEngine.update(
-                config,
-                id,
-                data,
-                allowedFields,
-                joinContext,
-                buildWriteDataScopeCondition(config, config.getTableName(), null));
-    }
-
-    @SuppressWarnings("unchecked")
-    private Object resolvePayloadId(Map<String, Object> data, LowcodePrimaryKeyStrategy primaryKey) {
-        if (data == null) {
-            return null;
-        }
-        Object idValue = firstPresent(data, primaryKeyField(primaryKey), primaryKeyColumn(primaryKey), "id");
-        if (idValue != null) {
-            return idValue;
-        }
-        Object main = data.get("main");
-        if (main instanceof Map<?, ?> map) {
-            Map<String, Object> mainData = (Map<String, Object>) map;
-            return firstPresent(mainData, primaryKeyField(primaryKey), primaryKeyColumn(primaryKey), "id");
-        }
-        return null;
     }
 
     private LowcodePrimaryKeyStrategy currentPrimaryKey() {
@@ -854,182 +537,9 @@ public class DynamicCrudService {
         return primaryKey;
     }
 
-    private String primaryKeyField(LowcodePrimaryKeyStrategy primaryKey) {
-        return StringUtils.defaultIfBlank(primaryKey == null ? null : primaryKey.getField(), "id");
-    }
-
     private String primaryKeyColumn(LowcodePrimaryKeyStrategy primaryKey) {
         return StringUtils.defaultIfBlank(primaryKey == null ? null : primaryKey.getColumnName(), "id");
     }
-
-    private boolean primaryKeyAutoIncrement(LowcodePrimaryKeyStrategy primaryKey) {
-        return primaryKey == null || primaryKey.getAutoIncrement() == null || primaryKey.getAutoIncrement();
-    }
-
-    private String primaryKeyOrderBy(String tableAlias, String direction) {
-        String column = primaryKeyColumn(currentPrimaryKey());
-        return StringUtils.isBlank(tableAlias)
-                ? column + " " + direction
-                : tableAlias + "." + column + " " + direction;
-    }
-
-    private boolean isPrimaryKeyAlias(String fieldName, String columnName, LowcodePrimaryKeyStrategy primaryKey) {
-        String primaryField = primaryKeyField(primaryKey);
-        String primaryColumn = primaryKeyColumn(primaryKey);
-        return equalsFieldAlias(fieldName, primaryField)
-                || equalsFieldAlias(fieldName, primaryColumn)
-                || equalsFieldAlias(columnName, primaryColumn);
-    }
-
-    private boolean equalsFieldAlias(String actual, String expected) {
-        if (StringUtils.isBlank(actual) || StringUtils.isBlank(expected)) {
-            return false;
-        }
-        return actual.equals(expected)
-                || actual.equals(DynamicQueryGenerator.snakeToCamel(expected))
-                || actual.equals(DynamicQueryGenerator.camelToSnake(expected));
-    }
-
-    private void removePrimaryKeyColumns(Map<String, Object> data, LowcodePrimaryKeyStrategy primaryKey) {
-        if (data == null || data.isEmpty()) {
-            return;
-        }
-        data.remove(primaryKeyField(primaryKey));
-        data.remove(primaryKeyColumn(primaryKey));
-        data.remove(DynamicQueryGenerator.snakeToCamel(primaryKeyColumn(primaryKey)));
-        data.remove(DynamicQueryGenerator.camelToSnake(primaryKeyField(primaryKey)));
-        data.remove("id");
-    }
-
-    private void putPrimaryKeyAlias(Map<String, Object> data, LowcodePrimaryKeyStrategy primaryKey, Object id) {
-        if (data == null || id == null) {
-            return;
-        }
-        data.put(primaryKeyField(primaryKey), id);
-        data.put(primaryKeyColumn(primaryKey), id);
-        data.put("id", id);
-    }
-
-    private Object firstPresent(Map<String, Object> data, String... keys) {
-        for (String key : keys) {
-            if (StringUtils.isNotBlank(key) && data.containsKey(key)) {
-                return data.get(key);
-            }
-        }
-        return null;
-    }
-
-    private void insertJoinedData(
-            AiCrudConfig config,
-            Map<String, Object> data,
-            Set<String> allowedFields,
-            RuntimeJoinContext joinContext) {
-        joinedPersistenceEngine.insert(config, data, allowedFields, joinContext);
-    }
-
-    private void updateJoinedData(
-            AiCrudConfig config,
-            Object id,
-            Map<String, Object> data,
-            Set<String> allowedFields,
-            RuntimeJoinContext joinContext) {
-        joinedPersistenceEngine.update(
-                config,
-                id,
-                data,
-                allowedFields,
-                joinContext,
-                buildWriteDataScopeCondition(config, config.getTableName(), null));
-    }
-
-    private boolean isImmutableWriteField(String key) {
-        return IMMUTABLE_WRITE_FIELDS.contains(key);
-    }
-
-    private BusinessException emptyWriteFieldsException(AiCrudConfig config,
-                                                        String action,
-                                                        Set<String> submittedKeys,
-                                                        Set<String> allowedFields) {
-        String configKey = config == null ? "" : StringUtils.defaultString(config.getConfigKey());
-        String tableName = config == null ? "" : StringUtils.defaultString(config.getTableName());
-        long submittedBusiness = submittedKeys == null ? 0
-                : submittedKeys.stream().filter(key -> !isImmutableWriteField(key)
-                        && !DataAuditPayloadSupport.PAYLOAD_KEY.equals(key)
-                        && !"main".equals(key)
-                        && !"children".equals(key)).count();
-        return new BusinessException("没有可" + action + "的字段（对象 " + configKey + " / 表 " + tableName + "）。"
-                + "请求里业务字段约 " + submittedBusiness + " 个，白名单可写字段 "
-                + (allowedFields == null ? 0 : allowedFields.size()) + " 个，过滤后为空。"
-                + "请检查：1) 字段已在表单设计中可见且已同步到物理表；"
-                + "2) 字段未设为隐藏/禁用/只读；"
-                + "3) 字段编码与模型一致；"
-                + "4) 不要只提交 id 等系统字段。");
-    }
-
-    private Set<String> buildAllowedWriteFields(AiCrudConfig config, String tableName) {
-        return writeFieldPolicy.buildAllowedWriteFields(config, tableName);
-    }
-
-    private Map<String, Object> filterInternalWriteData(
-            AiCrudConfig config, String tableName, Map<String, Object> data) {
-        return writeFieldPolicy.filterInternalWriteData(config, tableName, data);
-    }
-
-    private Map<String, Object> filterCommandWriteData(
-            AiCrudConfig config, String tableName, Map<String, ?> data) {
-        return writeFieldPolicy.filterCommandWriteData(config, tableName, data);
-    }
-
-    private Set<String> collectCommandFields(AiCrudConfig config) {
-        return writeFieldPolicy.collectCommandFields(config);
-    }
-
-    private Map<String, BigDecimal> mapCommandDecimalFields(
-            AiCrudConfig config, String tableName, Map<String, BigDecimal> values) {
-        return writeFieldPolicy.mapCommandDecimalFields(config, tableName, values);
-    }
-
-    private DynamicCrudRepository.SqlCondition buildCommandExpectedCondition(
-            AiCrudConfig config, String tableName, Map<String, Object> expectedFields) {
-        return writeFieldPolicy.buildCommandExpectedCondition(config, tableName, expectedFields);
-    }
-
-    private DynamicCrudRepository.SqlCondition buildCommandNumericCondition(
-            AiCrudConfig config,
-            String tableName,
-            List<Map<String, Object>> numericConstraints) {
-        return writeFieldPolicy.buildCommandNumericCondition(config, tableName, numericConstraints);
-    }
-
-    private DynamicCrudRepository.SqlCondition combineConditions(
-            DynamicCrudRepository.SqlCondition first,
-            DynamicCrudRepository.SqlCondition second) {
-        return writeFieldPolicy.combineConditions(first, second);
-    }
-
-    private Map<String, String> buildRuntimeColumnMapping(AiCrudConfig config, String tableName) {
-        return writeFieldPolicy.buildRuntimeColumnMapping(config, tableName);
-    }
-
-    private BusinessException missingRuntimeColumn(
-            AiCrudConfig config, String tableName, String fieldName, String columnName) {
-        return writeFieldPolicy.missingRuntimeColumn(config, tableName, fieldName, columnName);
-    }
-
-    private Set<String> collectInternalWriteFields(AiCrudConfig config, String tableName) {
-        return writeFieldPolicy.collectInternalWriteFields(config, tableName);
-    }
-
-    private void validateUniqueConstraints(AiCrudConfig config,
-                                           String tableName,
-                                           Map<String, Object> data,
-                                           Map<String, Object> beforeRecord,
-                                           Object excludeId) {
-        uniquenessValidator.validate(
-                config, tableName, data, beforeRecord, excludeId,
-                primaryKeyColumn(currentPrimaryKey()));
-    }
-
     // ==================== 删除操作 ====================
 
     /**
@@ -1163,7 +673,7 @@ public class DynamicCrudService {
     public Object resolveRecordId(String configKey, Map<String, Object> data) {
         AiCrudConfig config = getConfig(configKey);
         try (LowcodeRuntimeDataSourceContextHolder.Scope ignored = useRuntimeContext(config)) {
-            return resolvePayloadId(data, currentPrimaryKey());
+            return mutationCoordinator.resolvePayloadId(data);
         }
     }
 
@@ -1182,30 +692,13 @@ public class DynamicCrudService {
 
     private RuntimeJoinContext buildRuntimeJoinContext(AiCrudConfig config) {
         return runtimeRelationPlanner.buildRuntimeJoinContext(
-                config, this::buildRuntimeColumnMapping, this::preferReadableChildRelation);
+                config,
+                writeFieldPolicy::buildRuntimeColumnMapping,
+                masterDetailEngine::preferReadableChildRelation);
     }
 
     private boolean isMasterDetailRuntime(AiCrudConfig config) {
         return runtimeRelationPlanner.isMasterDetailRuntime(config);
-    }
-
-    private void applyMoneyStorageWrite(Map<String, Object> data, AiCrudConfig config) {
-        fieldValuePipeline.applyMoneyStorageWrite(data, config);
-    }
-
-    private void applyStructuredFieldStorageWrite(Map<String, Object> data, AiCrudConfig config) {
-        fieldValuePipeline.applyStructuredFieldStorageWrite(data, config);
-    }
-
-    private void applyEncrypt(Map<String, Object> data, String encryptConfigJson) {
-        fieldValuePipeline.applyEncrypt(data, encryptConfigJson);
-    }
-
-    private void removeMaskedDesensitizedWriteColumns(Map<String, Object> data,
-                                                       AiCrudConfig config,
-                                                       String tableName) {
-        fieldValuePipeline.removeMaskedDesensitizedWriteColumns(
-                data, config, buildRuntimeColumnMapping(config, tableName));
     }
 
     // ==================== 配置加载 ====================
@@ -1272,37 +765,6 @@ public class DynamicCrudService {
         } catch (Exception ignored) {
             return false;
         }
-    }
-
-    // ==================== Formula Runtime Helpers ====================
-
-    private Map<String, Object> applyStoredFormulasForUpdate(
-            AiCrudConfig config,
-            String tableName,
-            Object id,
-            Map<String, Object> data,
-            DynamicCrudRepository.SqlCondition dataScopeCondition) {
-        return writeFieldPolicy.applyStoredFormulasForUpdate(
-                config, tableName, id, data, dataScopeCondition);
-    }
-
-    private Map<String, Object> applyStoredFormulasForUpdate(
-            AiCrudConfig config,
-            String tableName,
-            Object id,
-            Map<String, Object> data,
-            DynamicCrudRepository.SqlCondition dataScopeCondition,
-            Map<String, Object> existingRecord) {
-        return writeFieldPolicy.applyStoredFormulasForUpdate(
-                config, tableName, id, data, dataScopeCondition, existingRecord);
-    }
-
-    private void applyStoredFormulas(AiCrudConfig config, Map<String, Object> data) {
-        writeFieldPolicy.applyStoredFormulas(config, data);
-    }
-
-    private void validateFieldValues(AiCrudConfig config, Map<String, Object> data) {
-        writeFieldPolicy.validateFieldValues(config, data);
     }
 
 }

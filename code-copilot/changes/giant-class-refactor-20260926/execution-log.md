@@ -246,3 +246,9 @@
 - 使用 Read Coordinator 从 `DynamicCrudService` 迁出分页、导出、定时候选、树、自定义查询、详情、打印和批量读取，以及搜索白名单、Join 计划消费、数据权限和读取后处理。Facade 保留原公开方法签名并进行窄委托。
 - 入口由 1955 行降至 1308 行，新 `DynamicCrudReadCoordinator` 885 行。首次回归仅有两个旧测试仍反射 Facade 私有搜索方法；改为直接验证 Coordinator 后全绿，未保留测试专用转发方法。generator Reactor 编译退出码 0。
 - 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实大数据导出、树懒加载与 Join 聚合仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第四十九个切口：动态写模型协调器
+
+- 使用 Mutation Coordinator + Command Pipeline 从 `DynamicCrudService` 迁出普通表单、内部自动化和事务命令的新增/更新，以及条件更新、原子数值调整和行锁门禁。Facade 保留原公开 API、`@Transactional`、运行数据源切换、审计会话和数据权限条件构建。
+- 入口由 1308 行降至 770 行，新 `DynamicCrudMutationCoordinator` 496 行；字段许可、公式、唯一约束和值转换继续复用既有 Policy/Pipeline，主子表与普通 Join 继续复用各自持久化 Engine，未复制领域规则。generator Reactor 编译退出码 0。
+- 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实跨数据源写入、并发 expected 条件与复杂主子表事务仍需服务环境验收，无服务 PID 需停止。

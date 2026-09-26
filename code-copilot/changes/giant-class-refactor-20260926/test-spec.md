@@ -350,3 +350,12 @@
 - 验证：重跑树、打印、搜索协议、主子表及业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：所有动态读取入口已委托 `DynamicCrudReadCoordinator`；旧搜索协议测试改为直接验证 Coordinator，不再反射 Facade 私有实现。动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 1308 行，新 Coordinator 885 行。
+
+## 2026-09-27 第四十九轮增量验证：动态写模型协调器
+
+- P0：普通表单、内部自动化与事务命令的字段白名单、真实列映射、主键剔除、公式、唯一约束、金额/结构化值/加密处理顺序保持不变。
+- P0：主子表/普通 Join 分派、数据权限条件、expected 条件、数值上下界、行锁门禁、审计来源和聚合刷新语义保持不变。
+- P1：使用 Mutation Coordinator 聚合写命令执行，Facade 仅保留公开事务、运行数据源、审计和数据权限边界；所有生产类少于 1000 行。
+- 验证：重跑动态 CRUD、业务流程生命周期和表单资产依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：普通/内部/事务命令的新增、更新、原子数值调整与行锁门禁已委托 `DynamicCrudMutationCoordinator`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 770 行，新 Coordinator 496 行。
