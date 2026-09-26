@@ -102,7 +102,6 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeEditMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeFormMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeForms;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeTaskChildPermissions;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.camelToSnake;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.contains;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.read;
@@ -192,6 +191,7 @@ public class BusinessFlowService {
     private final BusinessFlowTaskChildAssembler taskChildAssembler;
     private final BusinessFlowCodeFormCoordinator codeFormCoordinator;
     private final BusinessFlowApplicationPageFormResolver applicationPageFormResolver;
+    private final BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
 
     public BusinessFlowService(BusinessBindingMapper bindingMapper,
                                BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
@@ -246,6 +246,13 @@ public class BusinessFlowService {
                 () -> businessApplicationService,
                 businessObjectMapper,
                 this::resolveTenantId,
+                this::markTaskFormDetail,
+                this::noteTaskFormDetail);
+        this.taskNodeFormResolver = new BusinessFlowTaskNodeFormResolver(
+                () -> flowClient,
+                applicationPageFormResolver,
+                TASK_CHILD_POLICY,
+                this::collectTaskFormAssets,
                 this::markTaskFormDetail,
                 this::noteTaskFormDetail);
     }
@@ -617,7 +624,7 @@ public class BusinessFlowService {
         beginTaskFormProfiling(stages);
         try {
             long mark = System.nanoTime();
-            Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
+            Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(effectiveQuery.getTaskId());
             stages.put("flowFormInfoMs", elapsedMillis(mark));
             mark = System.nanoTime();
             validateTaskAccess(effectiveQuery, false, taskFormInfo);
@@ -645,7 +652,7 @@ public class BusinessFlowService {
         beginTaskFormProfiling(stages);
         try {
             long mark = System.nanoTime();
-            Map<String, Object> taskFormInfo = loadTaskFormInfo(effectiveQuery.getTaskId());
+            Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(effectiveQuery.getTaskId());
             stages.put("flowFormInfoMs", elapsedMillis(mark));
             mark = System.nanoTime();
             validateTaskAccess(effectiveQuery, true, taskFormInfo);
@@ -702,11 +709,11 @@ public class BusinessFlowService {
         query.setRecordId(dto.getRecordId());
         query.setFormKey(dto.getFormKey());
 
-        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
         TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
         repairInitiatorModifyState(query, runtime, taskFormInfo);
-        JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
+        JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
         TaskFormSaveResult saveResult = persistTaskFormData(dto, query, runtime, nodeForm);
         if (saveResult.context() != null) {
             return attachPrintRuntimeIdentity(saveResult.context(), query);
@@ -890,11 +897,11 @@ public class BusinessFlowService {
         query.setRecordId(dto.getRecordId());
         query.setFormKey(dto.getFormKey());
 
-        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
         TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
         if (dto.getData() != null && !dto.getData().isEmpty()) {
-            JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
+            JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
             TaskFormSaveResult saveResult = persistTaskFormData(
                     toTaskFormSaveDTO(dto, query), query, runtime, nodeForm);
             runtime = saveResult.runtime();
@@ -1101,7 +1108,7 @@ public class BusinessFlowService {
         query.setProcessDefKey(dto.getProcessDefKey());
         query.setTaskDefKey(dto.getTaskDefKey());
 
-        Map<String, Object> taskFormInfo = loadTaskFormInfo(query.getTaskId());
+        Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, true, taskFormInfo);
         TaskFormRuntimeContext runtime = resolveTaskFormRuntimeContext(query, true, taskFormInfo);
         Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
@@ -1200,7 +1207,8 @@ public class BusinessFlowService {
     }
 
     private void validateTaskAccess(BusinessTaskFormContextQueryDTO query, boolean writeRequired) {
-        validateTaskAccess(query, writeRequired, loadTaskFormInfo(query == null ? null : query.getTaskId()));
+        validateTaskAccess(query, writeRequired,
+                taskNodeFormResolver.loadTaskFormInfo(query == null ? null : query.getTaskId()));
     }
 
     private void validateTaskAccess(BusinessTaskFormContextQueryDTO query,
@@ -1242,7 +1250,7 @@ public class BusinessFlowService {
         }
 
         long mark = System.nanoTime();
-        JSONObject nodeForm = resolveTaskNodeForm(runtime, query, taskFormInfo);
+        JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
         stages.put("nodeFormMs", elapsedMillis(mark));
         if (nodeForm == null || nodeForm.isEmpty()) {
             vo.getWarnings().add("当前节点未配置业务表单策略");
@@ -1564,7 +1572,7 @@ public class BusinessFlowService {
             return;
         }
         Map<String, Object> formInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
-                ? loadTaskFormInfo(query.getTaskId())
+                ? taskNodeFormResolver.loadTaskFormInfo(query.getTaskId())
                 : preloadedTaskFormInfo;
         if (formInfo == null || formInfo.isEmpty()) {
             return;
@@ -1696,7 +1704,7 @@ public class BusinessFlowService {
     private Map<String, Object> loadTaskVariablesAsRecord(BusinessTaskFormContextQueryDTO query,
                                                            Map<String, Object> preloadedTaskFormInfo) {
         Map<String, Object> formInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
-                ? loadTaskFormInfo(query == null ? null : query.getTaskId())
+                ? taskNodeFormResolver.loadTaskFormInfo(query == null ? null : query.getTaskId())
                 : preloadedTaskFormInfo;
         Object variables = formInfo.get("variables");
         if (!(variables instanceof Map<?, ?> map)) {
@@ -1776,7 +1784,7 @@ public class BusinessFlowService {
                                            JSONObject bindingConfig,
                                            BusinessTaskFormContextQueryDTO query,
                                            Map<String, Object> taskFormInfo) {
-        JSONObject nodeForm = resolveTaskNodeForm(
+        JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(
                 new TaskFormRuntimeContext(objectCode, null, null, null, bindingConfig, null, null),
                 query, taskFormInfo);
         return nodeForm != null && "BUSINESS_CODE_FORM".equals(normalizeNodeFormMode(nodeForm.getString("formMode")));
@@ -2086,373 +2094,6 @@ public class BusinessFlowService {
         }
     }
 
-    private JSONObject findNodeForm(JSONObject bindingConfig, String taskDefKey) {
-        JSONArray nodeForms = bindingConfig == null ? null : bindingConfig.getJSONArray("nodeForms");
-        if (nodeForms == null || nodeForms.isEmpty() || StringUtils.isBlank(taskDefKey)) {
-            return new JSONObject();
-        }
-        for (int i = 0; i < nodeForms.size(); i++) {
-            JSONObject nodeForm = nodeForms.getJSONObject(i);
-            if (nodeForm != null && taskDefKey.equals(nodeForm.getString("taskDefKey"))) {
-                return nodeForm;
-            }
-        }
-        return new JSONObject();
-    }
-
-    private JSONObject resolveTaskNodeForm(TaskFormRuntimeContext runtime, BusinessTaskFormContextQueryDTO query) {
-        return resolveTaskNodeForm(runtime, query, Map.of());
-    }
-
-    private JSONObject resolveTaskNodeForm(TaskFormRuntimeContext runtime,
-                                           BusinessTaskFormContextQueryDTO query,
-                                           Map<String, Object> taskFormInfo) {
-        JSONObject flowNodeForm = resolveFlowNodeForm(runtime, query, taskFormInfo);
-        if (!flowNodeForm.isEmpty()) {
-            return flowNodeForm;
-        }
-        return findNodeForm(runtime.bindingConfig(), query.getTaskDefKey());
-    }
-
-    private JSONObject resolveFlowNodeForm(TaskFormRuntimeContext runtime, BusinessTaskFormContextQueryDTO query) {
-        return resolveFlowNodeForm(runtime, query, Map.of());
-    }
-
-    private JSONObject resolveFlowNodeForm(TaskFormRuntimeContext runtime,
-                                           BusinessTaskFormContextQueryDTO query,
-                                           Map<String, Object> taskFormInfo) {
-        String objectCode = StringUtils.trimToNull(runtime.objectCode());
-        if (StringUtils.isBlank(objectCode)) {
-            return new JSONObject();
-        }
-        Map<String, Object> formInfo = loadFlowNodeFormInfo(runtime, query, taskFormInfo);
-        String taskDefKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("taskDefKey"))),
-                StringUtils.trimToNull(query.getTaskDefKey()));
-        String configuredFormKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("formKey"))),
-                StringUtils.trimToNull(query.getFormKey()));
-        JSONObject runtimeFormRef = resolveRuntimeBusinessFormRef(formInfo);
-        String runtimeFormKey = StringUtils.trimToNull(runtimeFormRef.getString("formKey"));
-        // 节点表单只需要身份元数据；整份 schema 留给后续 formSchema / uiDocument
-        JSONObject runtimeAsset = applicationPageFormResolver.slimPageFormAssetMeta(
-                resolveBusinessTaskFormAsset(objectCode, runtimeFormKey));
-        boolean useRuntimePageForm = StringUtils.isNotBlank(runtimeFormKey) && !runtimeAsset.isEmpty();
-        String formKey = useRuntimePageForm ? runtimeFormKey : configuredFormKey;
-        Object rawFormPermissions = formInfo.get("formFieldPermissions");
-        List<Map<String, Object>> permissions = normalizeFieldPermissions(rawFormPermissions);
-        List<Map<String, Object>> childPermissions = normalizeTaskChildPermissions(rawFormPermissions);
-        JSONObject flowFormRef = readNestedObject(formInfo.get("formRef"));
-        if (useRuntimePageForm) {
-            JSONObject effectiveRuntimeRef = new JSONObject();
-            effectiveRuntimeRef.putAll(runtimeAsset);
-            effectiveRuntimeRef.putAll(runtimeFormRef);
-            flowFormRef = effectiveRuntimeRef;
-            // 只有业务流程换了另一张页面时才丢掉节点权限。
-            // 同一张表单经常一边是页面 formKey，一边是带应用前缀的 formKey，不能因此把节点上配好的权限清空。
-            if (!TASK_CHILD_POLICY.sameTaskFormKey(runtimeFormKey, configuredFormKey)) {
-                permissions = List.of();
-                childPermissions = List.of();
-            }
-        }
-        JSONObject asset = applicationPageFormResolver.slimPageFormAssetMeta(
-                resolveBusinessTaskFormAsset(objectCode, formKey));
-        if (asset.isEmpty() && StringUtils.isBlank(formKey) && permissions.isEmpty()) {
-            if (StringUtils.isNotBlank(runtime.configKey())) {
-                JSONObject defaultNodeForm = new JSONObject();
-                putText(defaultNodeForm, "taskDefKey", taskDefKey);
-                putText(defaultNodeForm, "taskName", textValue(formInfo.get("taskName")));
-                defaultNodeForm.put("formMode", "BUSINESS_OBJECT_FORM");
-                defaultNodeForm.put("editMode", "EDITABLE");
-                defaultNodeForm.put("viewKey", "default");
-                putBoolean(defaultNodeForm, formInfo, "allowApprove");
-                putBoolean(defaultNodeForm, formInfo, "allowDelegate");
-                putBoolean(defaultNodeForm, formInfo, "allowReject");
-                putBoolean(defaultNodeForm, formInfo, "allowRejectToStart");
-                putBoolean(defaultNodeForm, formInfo, "allowReturn");
-                putBoolean(defaultNodeForm, formInfo, "allowMultiReturn");
-                putBoolean(defaultNodeForm, formInfo, "allowDirectSend");
-                putText(defaultNodeForm, "returnSourceActivityId", textValue(formInfo.get("returnSourceActivityId")));
-                putText(defaultNodeForm, "returnSourceActivityName", textValue(formInfo.get("returnSourceActivityName")));
-                if (formInfo.get("returnTargets") instanceof List<?> targets) {
-                    defaultNodeForm.put("returnTargets", targets);
-                }
-                putBoolean(defaultNodeForm, formInfo, "allowTerminate");
-                putBoolean(defaultNodeForm, formInfo, "requireSignature");
-                putBoolean(defaultNodeForm, formInfo, "requireComment");
-                return defaultNodeForm;
-            }
-            return new JSONObject();
-        }
-
-        JSONObject nodeForm = new JSONObject();
-        putText(nodeForm, "taskDefKey", taskDefKey);
-        putText(nodeForm, "taskName", textValue(formInfo.get("taskName")));
-        putText(nodeForm, "formKey", StringUtils.firstNonBlank(
-                formKey,
-                StringUtils.trimToNull(flowFormRef.getString("formKey")),
-                asset.getString("formKey")));
-        putText(nodeForm, "formName", StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("formName"))),
-                StringUtils.trimToNull(flowFormRef.getString("formName")),
-                asset.getString("formName")));
-        putText(nodeForm, "providerKey", StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("providerKey"))),
-                StringUtils.trimToNull(flowFormRef.getString("providerKey")),
-                asset.getString("providerKey")));
-        putText(nodeForm, "formUrl", StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("formUrl"))),
-                StringUtils.trimToNull(flowFormRef.getString("formUrl")),
-                asset.getString("formUrl")));
-        putText(nodeForm, "viewKey", StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("viewKey"))),
-                StringUtils.trimToNull(flowFormRef.getString("viewKey")),
-                asset.getString("viewKey"),
-                "default"));
-        String formMode = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(formInfo.get("formMode"))),
-                StringUtils.trimToNull(flowFormRef.getString("formMode")),
-                StringUtils.trimToNull(flowFormRef.getString("type")),
-                asset.getString("formMode"),
-                runtime.configKey() == null ? "BUSINESS_CODE_FORM" : "BUSINESS_OBJECT_FORM");
-        putText(nodeForm, "formMode", normalizeNodeFormMode(formMode));
-        putBoolean(nodeForm, formInfo, "allowApprove");
-        putBoolean(nodeForm, formInfo, "allowDelegate");
-        putBoolean(nodeForm, formInfo, "allowReject");
-        putBoolean(nodeForm, formInfo, "allowRejectToStart");
-        putBoolean(nodeForm, formInfo, "allowReturn");
-        putBoolean(nodeForm, formInfo, "allowMultiReturn");
-        putBoolean(nodeForm, formInfo, "allowDirectSend");
-        putText(nodeForm, "returnSourceActivityId", textValue(formInfo.get("returnSourceActivityId")));
-        putText(nodeForm, "returnSourceActivityName", textValue(formInfo.get("returnSourceActivityName")));
-        if (formInfo.get("returnTargets") instanceof List<?> targets) {
-            nodeForm.put("returnTargets", targets);
-        }
-        putBoolean(nodeForm, formInfo, "allowTerminate");
-        putBoolean(nodeForm, formInfo, "requireSignature");
-        putBoolean(nodeForm, formInfo, "requireComment");
-        boolean businessObjectDefaultWritable = permissions.isEmpty()
-                && "BUSINESS_OBJECT_FORM".equals(normalizeNodeFormMode(formMode));
-        nodeForm.put("editMode", permissions.stream().anyMatch(item -> readBooleanValue(item.get("writable"), false))
-                || businessObjectDefaultWritable ? "EDITABLE" : "READONLY");
-        JSONObject effectiveFormRef = new JSONObject();
-        if (!asset.isEmpty()) {
-            effectiveFormRef.putAll(asset);
-        }
-        if (!flowFormRef.isEmpty()) {
-            effectiveFormRef.putAll(flowFormRef);
-        }
-        putText(effectiveFormRef, "formKey", nodeForm.getString("formKey"));
-        putText(effectiveFormRef, "formMode", nodeForm.getString("formMode"));
-        putText(effectiveFormRef, "type", nodeForm.getString("formMode"));
-        putText(effectiveFormRef, "formName", nodeForm.getString("formName"));
-        putText(effectiveFormRef, "providerKey", nodeForm.getString("providerKey"));
-        putText(effectiveFormRef, "formUrl", nodeForm.getString("formUrl"));
-        putText(effectiveFormRef, "viewKey", nodeForm.getString("viewKey"));
-        if (!effectiveFormRef.isEmpty()) {
-            nodeForm.put("formRef", effectiveFormRef);
-        }
-        if (!permissions.isEmpty()) {
-            nodeForm.put("fieldPermissions", permissions);
-        }
-        if (!childPermissions.isEmpty()) {
-            nodeForm.put("childPermissions", childPermissions);
-        }
-        return nodeForm;
-    }
-
-    /**
-     * Reads the concrete page form selected by an outer application business-process
-     * approval node. Earlier runs only have the compatibility variable {@code formKey};
-     * newer runs also carry a structured {@code businessFormRef}.
-     */
-    private JSONObject resolveRuntimeBusinessFormRef(Map<String, Object> formInfo) {
-        JSONObject variables = readNestedObject(formInfo == null ? null : formInfo.get("variables"));
-        if (variables.isEmpty()) {
-            return new JSONObject();
-        }
-        JSONObject formRef = readNestedObject(variables.get("businessFormRef"));
-        String formKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(variables.getString("businessFormKey")),
-                StringUtils.trimToNull(formRef.getString("formKey")),
-                StringUtils.trimToNull(variables.getString("formKey")));
-        if (formKey == null) {
-            return new JSONObject();
-        }
-        formRef.put("formKey", formKey);
-        return formRef;
-    }
-
-    private Map<String, Object> loadFlowNodeFormInfo(TaskFormRuntimeContext runtime,
-                                                     BusinessTaskFormContextQueryDTO query) {
-        return loadFlowNodeFormInfo(runtime, query, Map.of());
-    }
-
-    private Map<String, Object> loadFlowNodeFormInfo(TaskFormRuntimeContext runtime,
-                                                     BusinessTaskFormContextQueryDTO query,
-                                                     Map<String, Object> preloadedTaskFormInfo) {
-        Map<String, Object> taskFormInfo = preloadedTaskFormInfo == null || preloadedTaskFormInfo.isEmpty()
-                ? loadTaskFormInfo(query.getTaskId())
-                : preloadedTaskFormInfo;
-        if (isCompleteFlowNodeFormInfo(taskFormInfo)) {
-            noteTaskFormDetail("processFormRpc=skip(complete)");
-            return taskFormInfo;
-        }
-        // Flow getTaskFormInfo 常缺顶层 formKey，但前端/query 或 variables 已有页面 formKey；
-        // 此时再打 processFormInfo 几乎是重复 RPC（常见 600ms+）。
-        if (taskFormInfo != null && !taskFormInfo.isEmpty()
-                && (StringUtils.isNotBlank(query == null ? null : query.getFormKey())
-                || hasTextValue(resolveRuntimeBusinessFormRef(taskFormInfo).getString("formKey")))) {
-            noteTaskFormDetail("processFormRpc=skip(queryOrVarFormKey)");
-            return taskFormInfo;
-        }
-        long mark = System.nanoTime();
-        Map<String, Object> processFormInfo = loadProcessFormInfo(runtime, query);
-        markTaskFormDetail("processFormRpcMs", mark);
-        noteTaskFormDetail("processFormRpc=hit");
-        if (taskFormInfo.isEmpty()) {
-            return processFormInfo;
-        }
-        if (processFormInfo.isEmpty()) {
-            return taskFormInfo;
-        }
-        Map<String, Object> merged = new LinkedHashMap<>(processFormInfo);
-        taskFormInfo.forEach((key, value) -> {
-            if (hasTextValue(value) || value instanceof Map<?, ?> || value instanceof List<?>) {
-                merged.put(key, value);
-            }
-        });
-        return merged;
-    }
-
-    private boolean isCompleteFlowNodeFormInfo(Map<String, Object> formInfo) {
-        if (formInfo == null || formInfo.isEmpty()) {
-            return false;
-        }
-        // 已有 formKey / 权限 / formRef 即可组装节点表单，避免再打一次 processFormInfo RPC
-        if (hasTextValue(formInfo.get("formKey"))
-                || hasTextValue(formInfo.get("formUrl"))
-                || hasTextValue(formInfo.get("formJson"))
-                || hasTextValue(formInfo.get("formFieldPermissions"))
-                || formInfo.get("formRef") instanceof Map<?, ?>
-                || formInfo.get("formFieldPermissions") instanceof List<?>
-                || formInfo.get("formFieldPermissions") instanceof Map<?, ?>) {
-            return true;
-        }
-        // 业务流程变量里常把页面表单挂在 businessFormRef，顶层可能没有 formKey
-        JSONObject runtimeFormRef = resolveRuntimeBusinessFormRef(formInfo);
-        if (hasTextValue(runtimeFormRef.getString("formKey"))
-                || hasTextValue(runtimeFormRef.getString("formUrl"))) {
-            return true;
-        }
-        Object formType = formInfo.get("formType");
-        if (!hasTextValue(formType)) {
-            return false;
-        }
-        if ("none".equalsIgnoreCase(String.valueOf(formType))) {
-            return true;
-        }
-        return false;
-    }
-
-    private Map<String, Object> loadTaskFormInfo(String taskId) {
-        if (flowClient == null || StringUtils.isBlank(taskId)) {
-            return Map.of();
-        }
-        try {
-            FlowResult<Map<String, Object>> result = flowClient.getTaskFormInfo(taskId);
-            if (result == null || !result.isSuccess() || result.getData() == null) {
-                return Map.of();
-            }
-            return result.getData();
-        } catch (Exception e) {
-            log.warn("读取流程节点表单配置失败: taskId={}, error={}", taskId, e.getMessage());
-            return Map.of();
-        }
-    }
-
-    private Map<String, Object> loadProcessFormInfo(TaskFormRuntimeContext runtime,
-                                                    BusinessTaskFormContextQueryDTO query) {
-        if (flowClient == null || query == null) {
-            return Map.of();
-        }
-        String processInstanceId = StringUtils.trimToNull(query.getProcessInstanceId());
-        String businessKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(query.getBusinessKey()),
-                runtime == null ? null : StringUtils.trimToNull(runtime.businessKey()));
-        String processDefKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(query.getProcessDefKey()),
-                runtime == null || runtime.bindingConfig() == null ? null : resolveFlowModelKey(runtime.bindingConfig()));
-        String taskId = StringUtils.trimToNull(query.getTaskId());
-        String taskDefKey = StringUtils.trimToNull(query.getTaskDefKey());
-        if (StringUtils.isBlank(processInstanceId)
-                && StringUtils.isBlank(businessKey)
-                && StringUtils.isBlank(processDefKey)
-                && StringUtils.isBlank(taskId)
-                && StringUtils.isBlank(taskDefKey)) {
-            return Map.of();
-        }
-        try {
-            FlowResult<Map<String, Object>> result = flowClient.getProcessFormInfo(
-                    processInstanceId,
-                    businessKey,
-                    processDefKey,
-                    taskId,
-                    taskDefKey);
-            if (result == null || !result.isSuccess() || result.getData() == null) {
-                return Map.of();
-            }
-            return result.getData();
-        } catch (Exception e) {
-            log.warn("读取流程实例表单配置失败: processInstanceId={}, businessKey={}, processDefKey={}, taskDefKey={}, error={}",
-                    processInstanceId, businessKey, processDefKey, taskDefKey, e.getMessage());
-            return Map.of();
-        }
-    }
-
-    private boolean hasTextValue(Object value) {
-        if (value == null) {
-            return false;
-        }
-        if (value instanceof CharSequence sequence) {
-            return StringUtils.isNotBlank(sequence.toString());
-        }
-        return true;
-    }
-
-    private JSONObject resolveBusinessTaskFormAsset(String objectCode, String formKey) {
-        JSONObject applicationAsset = applicationPageFormResolver.resolveApplicationPageFormAsset(formKey);
-        if (!applicationAsset.isEmpty()) {
-            String assetObjectCode = StringUtils.trimToNull(applicationAsset.getString("objectCode"));
-            // app_ 页面 formKey 是权威身份；objectCode 与运行时别名不一致时也不要回退到 collectTaskFormAssets
-            if (assetObjectCode == null
-                    || StringUtils.isBlank(objectCode)
-                    || StringUtils.equals(objectCode, assetObjectCode)
-                    || StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_")) {
-                return applicationAsset;
-            }
-        }
-        // app_ 页面 key 不在对象 formAssets 里；空结果时再扫对象资产只会白白多查几百毫秒
-        if (StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_")) {
-            noteTaskFormDetail("collectTaskFormAssets=skip(appFormKey)");
-            return new JSONObject();
-        }
-        long mark = System.nanoTime();
-        List<Map<String, Object>> assets = collectTaskFormAssets(objectCode);
-        markTaskFormDetail("collectTaskFormAssetsMs", mark);
-        noteTaskFormDetail("db:collectTaskFormAssets(object/designer/config)");
-        if (assets.isEmpty()) {
-            return new JSONObject();
-        }
-        if (StringUtils.isNotBlank(formKey)) {
-            for (Map<String, Object> asset : assets) {
-                if (StringUtils.equals(formKey, StringUtils.trimToNull(textValue(asset.get("formKey"))))) {
-                    return readNestedObject(asset);
-                }
-            }
-        }
-        return assets.size() == 1 ? readNestedObject(assets.get(0)) : new JSONObject();
-    }
 
     /**
      * 节点表单 / formRef 只要身份字段；避免把整份设计器 schema 拷进响应组装路径。
@@ -4225,12 +3866,4 @@ public class BusinessFlowService {
                                       BusinessTaskFormContextVO context) {
     }
 
-    private record TaskFormRuntimeContext(String objectCode,
-                                          Long recordId,
-                                          String businessKey,
-                                          String configKey,
-                                          JSONObject bindingConfig,
-                                          AiCrudConfig publishedConfig,
-                                          AiBusinessObject businessObject) {
-    }
 }

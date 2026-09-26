@@ -66,6 +66,8 @@
 
 本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 由 6002 行降至 4236 行，单轮减少 1766 行，但仍需继续拆分到 1000 行以内。第三十轮新增生产类分别为 477、658、626、267 行，均未超限。其他目标类未完成，不视为已优化。
 
+第三十一个切口使用 Resolver + Layered Fallback，将 Flowable 任务/实例表单读取、运行时 `businessFormRef` 合并、节点权限装配和应用页/对象表单资产选择迁入 `BusinessFlowTaskNodeFormResolver`。可选 `FlowClient` 通过 Supplier 延迟获取，资产目录和性能记录通过窄函数注入；`BusinessFlowService` 不保留兼容转发私有方法。入口由 4236 行降至 3869 行，新 Resolver 431 行；运行身份快照独立为 17 行 `TaskFormRuntimeContext`，均低于 1000 行。公开 API、事务、动态 CRUD 保存、Flowable 任务动作和状态机不变。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。

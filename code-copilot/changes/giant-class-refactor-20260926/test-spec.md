@@ -189,3 +189,13 @@
 - P1：本轮目标一次性将 `BusinessFlowService` 减少至少 1500 行，并更新源码契约测试，不保留仅为测试服务的旧私有转发方法。
 - 验证顺序：`git diff --check`、generator Reactor 编译、任务表单/子表/代码 Provider/生命周期/性能契约定向测试。
 - 本轮仍不启动 Admin/Flow 服务、不连接 MySQL/Redis/Flowable；真实审批页面与流程端到端由既有分工在服务环境验证。
+
+## 2026-09-26 第三十一轮增量验证：节点表单解析器
+
+- P0：实际 Flowable 任务/流程表单信息优先于绑定回退；同一表单的页面 formKey 别名不得清空节点字段权限。
+- P0：完整 task form 信息、query/variables 已带 formKey 时继续跳过重复 process-form RPC；应用页面资产只传轻量身份元数据。
+- P1：将任务/流程表单 RPC、节点策略合成和应用页面表单资产选择迁入独立 Resolver，Facade 继续持有事务、业务记录读写和状态机。
+- P1：更新表单资产与性能源码契约测试，直接验证 Resolver，不在 Facade 保留测试转发方法。
+- 验证：generator Reactor 编译、业务流程 18 类定向回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：新增 `BusinessFlowTaskNodeFormResolverTest` 覆盖完整任务表单跳过实例 RPC、不完整任务表单回退实例 RPC、`app_` 表单键跳过对象资产扫描和结构化运行时表单引用优先级；相关 19 类共 94 项通过，0 失败、0 错误。模块 Reactor 编译与 `git diff --check` 通过。

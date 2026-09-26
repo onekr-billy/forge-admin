@@ -31,5 +31,6 @@
 - [x] 提取业务表单资产 Assembler，统一对象设计器、运行配置和字段注册表资产合成与回退。
 - [x] 提取应用页面表单 Resolver，以稳定 formKey 和两级短缓存解析应用设计快照。
 - [x] 成块提取任务表单字段 Policy、schema/layout Assembler、主子表 Assembler 和代码 Provider Coordinator，使 `BusinessFlowService` 单轮减少 1766 行。
+- [x] 提取节点表单 Resolver，集中 Flowable 表单 RPC 降级、运行时表单引用与应用页资产选择，使 `BusinessFlowService` 降至 3869 行。
 - [ ] 继续拆分 `BusinessFlowService` 至 1000 行以内，并完成服务级联调；运行配置真实页面验收亦待补。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

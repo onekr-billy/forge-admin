@@ -156,3 +156,9 @@
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：多次按拆分边界增量执行，最终退出码 0。旧子表控件测试从反射 Facade 私有方法改为直接验证新 Assembler；性能契约改为同时检查 Facade 委托与 schema Assembler 的缓存/轻量资产路径。
 - 执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowTaskFormPolicyTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowServicePrintIdentityTest,BusinessFlowTaskAccessPolicyTest,BusinessFlowTaskChildPolicyTest,BusinessFlowNodeFormNormalizerTest,BusinessFlowFormFieldCatalogTest,BusinessFlowFormAssetAssemblerTest,BusinessFlowApplicationPageFormResolverTest,BusinessCodeAppFormAssetMergerTest,BusinessFlowBindingCodecTest,BusinessFlowStartContextAssemblerTest,BusinessFlowStatusRepairServiceTest,BusinessFlowStatusFieldServiceTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：18 类共 90 项，0 失败、0 错误，退出码 0；生命周期测试中预期的写入失败 WARN 被断言覆盖。
 - `git diff --check`：通过。未启动 Admin/Flow 服务、未连接 MySQL/Redis/Flowable；真实审批页面、Provider 与主子表暂存端到端仍需服务环境验证，本轮无服务 PID 需停止。
+
+## 2026-09-26 第三十一个切口：节点表单解析器
+
+- 使用 Resolver + Layered Fallback 从 `BusinessFlowService` 迁出 Flowable 任务/实例表单读取、运行时 `businessFormRef` 合并、节点权限装配及应用页/对象表单资产选择到 `BusinessFlowTaskNodeFormResolver`；入口由 4236 行降至 3869 行，新 Resolver 431 行，运行身份快照 `TaskFormRuntimeContext` 17 行。资产目录、性能阶段和可选 FlowClient 均通过窄依赖注入，Facade 不保留测试专用转发方法。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。旧表单资产测试改为直接验证 Resolver；性能契约改为检查 Resolver 内的重复 RPC 跳过和轻量资产路径。新增 4 项 Resolver 行为测试，连同既有 18 类回归共 19 类 94 项，0 失败、0 错误。
+- `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实审批任务与应用页面联合解析仍需服务级联调，无服务 PID 需停止。

@@ -17,7 +17,7 @@ class BusinessFlowPerformanceContractTest {
         String source = serviceSource();
         String method = method(source, "public BusinessTaskFormContextVO getTaskFormContext", "    /**", 1);
 
-        assertTrue(method.contains("Map<String, Object> taskFormInfo = loadTaskFormInfo"));
+        assertTrue(method.contains("Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo"));
         assertTrue(method.contains("validateTaskAccess(effectiveQuery, false, taskFormInfo)"));
         assertTrue(method.contains("resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo)"));
         assertTrue(method.contains("buildTaskFormContext(effectiveQuery, runtime, taskFormInfo"));
@@ -30,6 +30,8 @@ class BusinessFlowPerformanceContractTest {
         String source = serviceSource();
         String applicationPageResolver = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowApplicationPageFormResolver.java"));
+        String nodeFormResolver = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskNodeFormResolver.java"));
         String taskFormSchemaAssembler = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormSchemaAssembler.java"));
 
@@ -46,11 +48,11 @@ class BusinessFlowPerformanceContractTest {
         assertTrue(source.contains("resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig)"));
         assertTrue(source.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
         assertTrue(source.contains("bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
-        assertTrue(source.contains("processFormRpc=skip(queryOrVarFormKey)"));
+        assertTrue(nodeFormResolver.contains("processFormRpc=skip(queryOrVarFormKey)"));
         assertTrue(applicationPageResolver.contains("loadCachedInAppBuilder("));
         assertTrue(source.contains("pageAssetMs"));
         assertTrue(source.contains("businessContextMs"));
-        assertTrue(source.contains("collectTaskFormAssets=skip(appFormKey)"));
+        assertTrue(nodeFormResolver.contains("collectTaskFormAssets=skip(appFormKey)"));
         assertTrue(applicationPageResolver.contains("parseApplicationPageFormKey("));
         assertTrue(applicationPageResolver.contains("findApplicationFormAsset("));
         assertFalse(applicationPageResolver.contains(
@@ -59,8 +61,9 @@ class BusinessFlowPerformanceContractTest {
 
     @Test
     void flowNodeFormInfoShouldSkipSecondRpcWhenFormKeyPresent() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "private boolean isCompleteFlowNodeFormInfo", "    private Map<String, Object> loadTaskFormInfo", 0);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskNodeFormResolver.java"));
+        String method = method(source, "private boolean isCompleteFlowNodeFormInfo", "    Map<String, Object> loadTaskFormInfo", 0);
         assertTrue(method.contains("formInfo.get(\"formKey\")"));
         assertTrue(method.contains("formInfo.get(\"formRef\") instanceof Map"));
         assertTrue(method.contains("resolveRuntimeBusinessFormRef(formInfo)"));

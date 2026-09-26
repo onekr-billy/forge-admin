@@ -42,8 +42,7 @@ class BusinessFlowServiceFormAssetMergeTest {
     private BusinessFieldDesignService fieldDesignService;
     private BusinessObjectMapper businessObjectMapper;
     private Method buildObjectFieldRegistryFormSchema;
-    private Method resolveRuntimeBusinessFormRef;
-    private Method resolveBusinessTaskFormAsset;
+    private BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
     private BusinessFlowStartContextAssembler startContextAssembler;
     private BusinessFlowTaskChildPolicy taskChildPolicy;
     private BusinessFlowFormAssetAssembler formAssetAssembler;
@@ -76,12 +75,9 @@ class BusinessFlowServiceFormAssetMergeTest {
         buildObjectFieldRegistryFormSchema = BusinessFlowService.class.getDeclaredMethod(
                 "buildObjectFieldRegistryFormSchema", BusinessObjectVO.class, String.class);
         buildObjectFieldRegistryFormSchema.setAccessible(true);
-        resolveRuntimeBusinessFormRef = BusinessFlowService.class.getDeclaredMethod(
-                "resolveRuntimeBusinessFormRef", Map.class);
-        resolveRuntimeBusinessFormRef.setAccessible(true);
-        resolveBusinessTaskFormAsset = BusinessFlowService.class.getDeclaredMethod(
-                "resolveBusinessTaskFormAsset", String.class, String.class);
-        resolveBusinessTaskFormAsset.setAccessible(true);
+        Field nodeFormResolverField = BusinessFlowService.class.getDeclaredField("taskNodeFormResolver");
+        nodeFormResolverField.setAccessible(true);
+        taskNodeFormResolver = (BusinessFlowTaskNodeFormResolver) nodeFormResolverField.get(service);
         startContextAssembler = BusinessFlowStartContextAssembler.standard();
         taskChildPolicy = new BusinessFlowTaskChildPolicy();
     }
@@ -220,9 +216,9 @@ class BusinessFlowServiceFormAssetMergeTest {
                         "pageId", "page_page",
                         "pageName", "打卡申请")));
 
-        Map<String, Object> runtimeRef = (Map<String, Object>) resolveRuntimeBusinessFormRef.invoke(service, formInfo);
-        Map<String, Object> resolved = (Map<String, Object>) resolveBusinessTaskFormAsset.invoke(
-                service, "business_object", runtimeRef.get("formKey"));
+        Map<String, Object> runtimeRef = taskNodeFormResolver.resolveRuntimeBusinessFormRef(formInfo);
+        Map<String, Object> resolved = taskNodeFormResolver.resolveBusinessTaskFormAsset(
+                "business_object", String.valueOf(runtimeRef.get("formKey")));
 
         assertEquals(formKey, runtimeRef.get("formKey"));
         assertEquals("page_page", runtimeRef.get("pageId"));
