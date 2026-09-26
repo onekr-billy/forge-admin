@@ -58,3 +58,9 @@
 - `LowcodeOnlineDdlPolicy` 接管预览检查和实际执行共用的在线 DDL 白名单及拒绝异常；`LowcodeDdlService` 由 1022 行降至 985 行。新增 3 项策略测试，覆盖追加 DDL 允许、修改/删除拒绝与预检一致性。SQL 生成、执行方法及异常文案不变。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile` 退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=LowcodeOnlineDdlPolicyTest,LowcodeDdlAdditiveColumnTest,LowcodeDdlExplicitIndexTest,RuntimeFieldComponentResolverTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 36 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
 - 未连接数据库、未执行真实 DDL，也未启动 Admin/Flow 服务；本轮无服务 PID 需停止。真实发布和在线 DDL 的服务级验证仍待用户按既有分工执行。
+
+## 2026-09-26 第十五个切口：模型 BPMN 部署预检
+
+- 从 `FlowModelServiceImpl` 提取流程 Key、process id 替换、重复连线与旧会签表达式兼容规范化、连线引用及结构/可执行节点校验到无状态 `FlowModelBpmnPreflight`；原服务由 1243 行降至 979 行，新组件 249 行。部署入口的预检顺序、异常文案、租户和版本事务保持不变。源码契约测试改为同时验证入口调用和组件内错误路径。
+- flow Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -Dtest=FlowModelBpmnPreflightTest,FlowModelServiceImplTest,FlowModelDeploymentValidationContractTest,FlowModelVersionCleanupContractTest,FlowModelVersionGovernanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 18 项，0 失败、0 错误，退出码 0。
+- 未启动 Flow 服务、未连接真实数据库/Flowable，故未做部署端到端验收；本轮无服务 PID 需停止。真实 BPMN 部署与旧模型兼容仍需服务级验证。

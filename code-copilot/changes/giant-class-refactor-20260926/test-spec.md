@@ -90,3 +90,9 @@
 - P0：仅迁出在线 DDL 白名单与统一拒绝异常；新增纯策略测试覆盖创建表、追加列/索引、表注释允许，以及修改/删除、空语句拒绝。
 - P1：重跑 `LowcodeDdlAdditiveColumnTest`、`LowcodeDdlExplicitIndexTest`，检查预览、兼容修改与执行路径仍调用同一策略；generator Reactor 编译与 `git diff --check` 通过，确认 `LowcodeDdlService` 低于 1000 行。
 - 仅静态与单测验证；不连接数据库、不执行真实 DDL。
+
+## 第十五轮增量验证：BPMN 部署预检
+
+- P0：迁出流程 Key 提取/替换、重复连线兼容规范化、连线引用、可执行节点与网关条件校验；新组件单测覆盖有效最小流程、缺失起止节点、悬空连线、无审批人、未配置条件与不支持的执行属性。
+- P1：重跑 `FlowModelServiceImplTest`、`FlowModelDeploymentValidationContractTest` 及模型版本相关契约测试；flow Reactor 编译、`git diff --check` 和入口行数低于 1000 行。
+- 不改变发布事务、部署/版本保存、候选人解析或现有 BPMN XML；不启动 Flow 服务。

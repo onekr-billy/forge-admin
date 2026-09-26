@@ -32,7 +32,9 @@
 
 后续切口再从运行配置入口迁出搜索/编辑字段组件协议，并从低代码 DDL 入口迁出在线执行白名单。字段值映射、SQL 生成与 DDL 执行入口不变；涉及真实 DDL 的验收仍需独立服务/数据库环境。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2077 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第十五个切口从 `FlowModelServiceImpl` 迁出 BPMN 文本兼容处理、流程 Key 替换和部署前结构/执行节点校验到无状态 `FlowModelBpmnPreflight`。模型服务仍保持创建、更新、导入、复制与部署的原调用顺序、发布事务、租户边界和版本治理。预检不改变 BPMN 节点配置归属、候选人解析或原 XML 保存语义；通过定向测试守护缺失节点、悬空连线、未配置审批人、不支持的执行节点/属性及网关分支拒绝路径。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2077 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
