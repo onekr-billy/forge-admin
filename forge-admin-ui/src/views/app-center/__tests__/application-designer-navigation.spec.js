@@ -25,6 +25,10 @@ describe('application designer navigation', () => {
       initialPanel: 'fields',
       navPanels: ['fields', 'relations'],
     })
+    expect(resolveObjectDesignerSectionConfig('data-tree-model')).toEqual({
+      initialPanel: 'tree-model',
+      navPanels: ['tree-model'],
+    })
     expect(resolveObjectDesignerSectionConfig('business-flow')).toBe(null)
   })
 
@@ -72,6 +76,7 @@ describe('application designer navigation', () => {
       key: 'data-fields:1910000000000000001',
     })
     expect(groups[1].nodes.map(node => node.kind)).toEqual(['data-fields', 'data-relations'])
+    expect(groups[1].nodes.some(node => node.kind === 'data-tree-model')).toBe(false)
     // settings 分组已移除，旧入口回退到第一个页面节点
     expect(findApplicationDesignerResource(groups, '', 'settings')).toMatchObject({
       key: 'page-custom:home',

@@ -7,26 +7,52 @@
   -->
   <div v-if="hasTree && !crudProps.formOnly" class="tree-crud-layout">
     <!-- 左侧树形导航 -->
-    <div class="tree-crud-left">
-      <div class="tree-header">
-        <span>{{ treeTitle }}</span>
-        <n-button text size="tiny" @click="clearTreeSelect">
-          全部
-        </n-button>
+    <div class="tree-crud-left" :class="{ 'is-collapsed': treePanelCollapsed }">
+      <button
+        type="button"
+        class="tree-panel-edge-toggle"
+        :aria-label="treePanelCollapsed ? '展开筛选树' : '收起筛选树'"
+        :title="treePanelCollapsed ? '展开筛选树' : '收起筛选树'"
+        @click="treePanelCollapsed = !treePanelCollapsed"
+      >
+        <span>{{ treePanelCollapsed ? '›' : '‹' }}</span>
+      </button>
+      <div v-if="treePanelCollapsed" class="tree-panel-rail" :title="treeTitle">
+        <span>树</span>
       </div>
-      <n-spin :show="treeLoading">
-        <n-tree
-          :data="normalizedTreeData"
-          key-field="key"
-          label-field="label"
-          children-field="children"
-          block-line
-          :default-expand-all="!isLazyTree"
-          :on-load="isLazyTree ? handleLoadTreeNode : undefined"
-          :selected-keys="selectedKeys"
-          @update:selected-keys="handleTreeSelect"
-        />
-      </n-spin>
+      <template v-else>
+        <div class="tree-header">
+          <span>{{ treeTitle }}</span>
+          <n-button text size="tiny" @click="clearTreeSelect">
+            全部
+          </n-button>
+        </div>
+        <div class="tree-node-toolbar">
+          <span>节点层级</span>
+          <div class="tree-expand-actions">
+            <button type="button" @click="expandAllTreeNodes">
+              展开
+            </button>
+            <button type="button" @click="collapseAllTreeNodes">
+              收起
+            </button>
+          </div>
+        </div>
+        <n-spin :show="treeLoading">
+          <n-tree
+            :data="normalizedTreeData"
+            key-field="key"
+            label-field="label"
+            children-field="children"
+            block-line
+            :expanded-keys="expandedKeys"
+            :on-load="isLazyTree ? handleLoadTreeNode : undefined"
+            :selected-keys="selectedKeys"
+            @update:expanded-keys="expandedKeys = $event"
+            @update:selected-keys="handleTreeSelect"
+          />
+        </n-spin>
+      </template>
     </div>
     <!-- 右侧 CRUD 表格 -->
     <div class="tree-crud-right">
@@ -45,6 +71,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
+import { buildLeftTreeFilterParams, collectTreeFilterValues } from '@/components/lowcode-builder/shared/runtime-tree-table'
 import { request } from '@/utils'
 
 const props = defineProps({
@@ -56,10 +83,15 @@ const props = defineProps({
 
 // 从 options 中读取 treeConfig
 const treeConfig = computed(() => {
-  return props.crudProps?.options?.treeConfig || null
+  return normalizeTreeConfig(props.crudProps?.options?.treeConfig)
 })
 
-const hasTree = computed(() => !!treeConfig.value)
+const hasTree = computed(() => {
+  if (treeConfig.value && treeConfig.value.enabled !== false)
+    return true
+  // layoutType=tree-crud 但 treeConfig 不完整时，只要有 tree API 仍展示左树
+  return Boolean(props.crudProps?.apiConfig?.tree)
+})
 const treeTitle = computed(() => treeConfig.value?.treeTitle || '树形分类')
 const treeLoadMode = computed(() => treeConfig.value?.loadMode === 'lazy' ? 'lazy' : 'full')
 const isLazyTree = computed(() => treeLoadMode.value === 'lazy')
@@ -68,19 +100,28 @@ const treeLoading = ref(false)
 const treeData = ref([])
 const selectedKeys = ref([])
 const selectedId = ref(null)
+const expandedKeys = ref([])
+const treePanelCollapsed = ref(false)
 const crudRef = ref(null)
 const normalizedTreeData = computed(() => normalizeTreeNodes(treeData.value))
 
-// 合并 crudProps，注入 parentId 过滤
+// 合并 crudProps，注入 parentId 过滤（默认含下级）
 const mergedCrudProps = computed(() => {
-  const filterField = treeConfig.value?.filterField || treeConfig.value?.parentField || 'parentId'
+  const filterField = treeConfig.value?.filterField || 'parentId'
   const includeChildren = treeConfig.value?.includeChildren !== false
   const publicParams = { ...(props.crudProps.publicParams || {}) }
   if (selectedId.value !== null && selectedId.value !== undefined && selectedId.value !== '') {
-    publicParams[filterField] = selectedId.value
-    if (includeChildren) {
-      publicParams[`${filterField}_includeChildren`] = true
-    }
+    const selectedNode = findTreeNodeByTargetValue(normalizedTreeData.value, selectedId.value)
+    Object.assign(publicParams, buildLeftTreeFilterParams({
+      filterField,
+      value: selectedId.value,
+      includeChildren,
+      expandedValues: collectTreeFilterValues(selectedNode, {
+        targetField: treeConfig.value?.targetField || treeConfig.value?.keyField || 'id',
+        childrenField: treeConfig.value?.childrenField || 'children',
+        includeChildren,
+      }),
+    }))
   }
 
   return {
@@ -106,10 +147,8 @@ function buildBeforeRenderForm(filterField) {
 }
 
 async function loadTreeData() {
-  if (!treeConfig.value)
-    return
   const apiConfig = props.crudProps?.apiConfig || {}
-  // 优先使用 tree 接口，fallback 到 list 接口
+  // 优先使用 tree 接口，fallback 到 list 接口；treeConfig 可为空（仅有 apiConfig.tree）
   const treeApi = apiConfig.tree || apiConfig.list
   if (!treeApi)
     return
@@ -127,7 +166,10 @@ async function loadTreeData() {
       },
     })
     if (res.code === 200) {
-      treeData.value = res.data || []
+      treeData.value = resolveTreeResponseData(res)
+      expandedKeys.value = isLazyTree.value
+        ? []
+        : collectTreeKeys(normalizeTreeNodes(treeData.value))
     }
   }
   catch (e) {
@@ -155,10 +197,10 @@ async function handleLoadTreeNode(node) {
       params: {
         ...resolveTreeSortParams(),
         loadMode: 'lazy',
-        parentValue,
+        parentValue: parentValue === null || parentValue === undefined ? '' : String(parentValue),
       },
     })
-    node.children = normalizeTreeNodes(res?.data || [])
+    node.children = normalizeTreeNodes(resolveTreeResponseData(res))
     if (!node.children.length)
       node.isLeaf = true
   }
@@ -178,12 +220,30 @@ function clearTreeSelect() {
   selectedId.value = null
 }
 
+function expandAllTreeNodes() {
+  expandedKeys.value = collectTreeKeys(normalizedTreeData.value)
+}
+
+function collapseAllTreeNodes() {
+  expandedKeys.value = []
+}
+
+function collectTreeKeys(nodes = []) {
+  return (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
+    const key = node?.key === undefined || node?.key === null ? '' : String(node.key)
+    const childKeys = collectTreeKeys(node?.children || [])
+    return key ? [key, ...childKeys] : childKeys
+  })
+}
+
 function resolveTreeSortParams() {
-  const params = props.crudProps?.publicParams || {}
-  return {
-    ...(params.orderByColumn ? { orderByColumn: params.orderByColumn } : {}),
-    ...(params.isAsc ? { isAsc: params.isAsc } : {}),
-  }
+  // 右表列表的 publicParams.orderBy 不能拿来排左树节点，否则会跟着列表 defaultSort（如 id desc）跑偏
+  const config = treeConfig.value || {}
+  const orderByColumn = config.orderByColumn || config.defaultSortField
+  if (!orderByColumn)
+    return {}
+  const isAsc = String(config.isAsc || config.defaultSortOrder || 'asc').toLowerCase() === 'asc' ? 'asc' : 'desc'
+  return { orderByColumn, isAsc }
 }
 
 onMounted(() => {
@@ -210,9 +270,10 @@ function normalizeTreeNodes(nodes = []) {
       : Array.isArray(node?.children)
         ? node.children
         : []
+    const rawKey = node?.key ?? node?.[keyField]
     const normalized = {
       ...(node || {}),
-      key: node?.key ?? node?.[keyField],
+      key: rawKey === null || rawKey === undefined ? '' : String(rawKey),
       label: resolveTreeLabel(node, config),
     }
     const normalizedChildren = normalizeTreeNodes(children)
@@ -221,7 +282,7 @@ function normalizeTreeNodes(nodes = []) {
       normalized.isLeaf = false
     }
     else if (node?.isLeaf !== undefined) {
-      normalized.isLeaf = !!node.isLeaf
+      normalized.isLeaf = node.isLeaf === true || node.isLeaf === 1 || node.isLeaf === '1'
     }
     return normalized
   })
@@ -251,7 +312,56 @@ function resolveTreeTargetValue(node, fallbackKey) {
   if (!node)
     return fallbackKey ?? null
   const targetField = treeConfig.value?.targetField || treeConfig.value?.keyField || 'id'
-  return node[targetField] ?? node.targetValue ?? node.key ?? fallbackKey ?? null
+  const value = node[targetField] ?? node.targetValue ?? node.key ?? fallbackKey ?? null
+  return value === null || value === undefined ? null : String(value)
+}
+
+function findTreeNodeByTargetValue(nodes = [], targetValue) {
+  const expected = targetValue === null || targetValue === undefined ? '' : String(targetValue)
+  if (!expected)
+    return null
+  for (const node of Array.isArray(nodes) ? nodes : []) {
+    if (resolveTreeTargetValue(node) === expected)
+      return node
+    const child = findTreeNodeByTargetValue(node?.children || [], expected)
+    if (child)
+      return child
+  }
+  return null
+}
+
+function normalizeTreeConfig(source) {
+  if (!source || typeof source !== 'object')
+    return null
+  const targetField = source.targetField || source.nodeValueField || source.valueField || source.keyField || 'id'
+  const filterField = source.filterField || source.rightFilterField || source.listFilterField || source.parentField || 'parentId'
+  return {
+    ...source,
+    enabled: source.enabled !== false,
+    treeTitle: source.treeTitle || source.title || '树形分类',
+    keyField: source.keyField || source.nodeKeyField || 'id',
+    parentField: source.parentField || source.parentIdField || 'parentId',
+    labelField: source.labelField || source.displayField || source.nameField || 'name',
+    targetField,
+    nodeValueField: targetField,
+    filterField,
+    rightFilterField: filterField,
+    childrenField: source.childrenField || 'children',
+    loadMode: source.loadMode === 'lazy' || source.lazy === true ? 'lazy' : 'full',
+  }
+}
+
+function resolveTreeResponseData(response) {
+  const data = response?.data
+  if (Array.isArray(data))
+    return data
+  if (Array.isArray(data?.records))
+    return data.records
+  if (Array.isArray(data?.rows))
+    return data.rows
+  if (Array.isArray(data?.list))
+    return data.list
+  return []
 }
 
 defineExpose({
@@ -264,17 +374,57 @@ defineExpose({
 <style scoped>
 .tree-crud-layout {
   display: flex;
+  width: 100%;
   height: 100%;
+  min-height: 520px;
   gap: 0;
+  min-width: 0;
 }
 
 .tree-crud-left {
-  width: 220px;
+  position: relative;
+  width: 240px;
   flex-shrink: 0;
   border-right: 1px solid #e5e7eb;
   padding: 12px 8px;
-  overflow-y: auto;
+  overflow: hidden;
   background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transition: width 0.18s ease;
+}
+
+.tree-crud-left.is-collapsed {
+  width: 36px;
+  padding: 8px 0;
+}
+
+.tree-panel-edge-toggle {
+  position: absolute;
+  top: 10px;
+  right: 4px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.tree-panel-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  writing-mode: vertical-rl;
+  letter-spacing: 0.2em;
+  color: #64748b;
+  font-size: 12px;
 }
 
 .tree-header {
@@ -284,13 +434,65 @@ defineExpose({
   font-size: 13px;
   font-weight: 600;
   color: #374151;
-  padding: 0 6px 10px;
+  padding: 0 24px 10px 6px;
   border-bottom: 1px solid #f3f4f6;
   margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.tree-node-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 8px;
+  color: #64748b;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.tree-expand-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.tree-expand-actions button {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.tree-expand-actions button:hover {
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+
+.tree-crud-left :deep(.n-spin-container) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .tree-crud-right {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tree-crud-right :deep(.ai-crud-page) {
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 </style>

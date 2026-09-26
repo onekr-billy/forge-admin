@@ -163,64 +163,71 @@
       />
 
       <section v-if="showFormDesignWorkbench" class="application-form-asset-workbench">
-        <!-- 表单设计器模式：极简顶栏（返回 + 数据对象名 + 保存） -->
-        <div v-if="formDesignerMode" class="form-designer-topbar">
-          <div class="form-designer-topbar-left">
-            <n-button quaternary circle size="small" title="返回页面设计" @click="returnToPageDesigner">
-              <template #icon>
-                <NIcon><ArrowBackOutline /></NIcon>
+        <DesignerAsyncLoader
+          v-if="designerTransitionLoading"
+          title="正在准备页面设计"
+          description="正在保存页面草稿并挂载表单资产，请稍候"
+        />
+        <template v-else>
+          <!-- 表单设计器模式：极简顶栏（返回 + 数据对象名 + 保存） -->
+          <div v-if="formDesignerMode" class="form-designer-topbar">
+            <div class="form-designer-topbar-left">
+              <n-button quaternary circle size="small" title="返回页面设计" @click="returnToPageDesigner">
+                <template #icon>
+                  <NIcon><ArrowBackOutline /></NIcon>
+                </template>
+              </n-button>
+              <template v-if="activePageShapeDesign">
+                <span class="form-designer-topbar-label">数据对象</span>
+                <n-input
+                  v-model:value="activePageShapeDesign.objectName"
+                  size="tiny"
+                  class="form-designer-topbar-name"
+                  maxlength="100"
+                  placeholder="对象名称"
+                  @update:value="syncActivePageShapeObject"
+                />
               </template>
-            </n-button>
-            <template v-if="activePageShapeDesign">
-              <span class="form-designer-topbar-label">数据对象</span>
-              <n-input
-                v-model:value="activePageShapeDesign.objectName"
-                size="tiny"
-                class="form-designer-topbar-name"
-                maxlength="100"
-                placeholder="对象名称"
-                @update:value="syncActivePageShapeObject"
-              />
+              <span v-else class="form-designer-topbar-title">{{ activeFormAsset?.name || '表单设计' }}</span>
+            </div>
+            <div class="form-designer-topbar-actions">
+              <span v-if="activeFormDataState.status === 'error'" class="form-data-save-error">{{ activeFormDataState.message }}</span>
+              <n-button size="small" secondary @click="returnToPageDesigner">
+                返回
+              </n-button>
+              <n-button
+                size="small"
+                type="primary"
+                :disabled="!canSaveActiveFormDesigner || saving"
+                :loading="saving"
+                @click="saveActiveFormDesigner(true)"
+              >
+                {{ activeFormDataState.status === 'error' ? '重试' : '保存' }}
+              </n-button>
+            </div>
+          </div>
+          <div v-if="activeFormAsset" class="application-form-asset-designer">
+            <ForgeFormDesigner
+              :key="activeFormAsset.id"
+              :model-value="activeFormDesignerSchema"
+              :fields="activeFormFields"
+              :object-code="activePageShapeDesign?.objectCode || activeFormDesignerContext?.objectCode || application.applicationCode"
+              :object-name="activePageShapeDesign?.objectName || activeFormDesignerContext?.objectName || activeFormAsset.name"
+              :relations="activeFormDesignerRelations"
+              :actions="activeFormDesignerActions"
+              :enable-sections-view="false"
+              :derive-sections-from-layout="true"
+              @update:model-value="updateActiveFormDesignerSchema"
+            />
+          </div>
+          <n-empty v-else description="当前页面还没有表单，先创建一个再设计字段">
+            <template #extra>
+              <n-button type="primary" @click="createFormAssetForCurrentPage">
+                创建表单
+              </n-button>
             </template>
-            <span v-else class="form-designer-topbar-title">{{ activeFormAsset?.name || '表单设计' }}</span>
-          </div>
-          <div class="form-designer-topbar-actions">
-            <span v-if="activeFormDataState.status === 'error'" class="form-data-save-error">{{ activeFormDataState.message }}</span>
-            <n-button size="small" secondary @click="returnToPageDesigner">
-              返回
-            </n-button>
-            <n-button
-              size="small"
-              type="primary"
-              :disabled="(!dirty && activeFormDataState.status !== 'error') || saving"
-              :loading="saving"
-              @click="saveActiveFormDesigner(true)"
-            >
-              {{ activeFormDataState.status === 'error' ? '重试' : '保存' }}
-            </n-button>
-          </div>
-        </div>
-        <div v-if="activeFormAsset" class="application-form-asset-designer">
-          <ForgeFormDesigner
-            :key="activeFormAsset.id"
-            :model-value="activeFormDesignerSchema"
-            :fields="activeFormFields"
-            :object-code="activePageShapeDesign?.objectCode || activeFormDesignerContext?.objectCode || application.applicationCode"
-            :object-name="activePageShapeDesign?.objectName || activeFormDesignerContext?.objectName || activeFormAsset.name"
-            :relations="activeFormDesignerRelations"
-            :actions="activeFormDesignerActions"
-            :enable-sections-view="false"
-            :derive-sections-from-layout="true"
-            @update:model-value="updateActiveFormDesignerSchema"
-          />
-        </div>
-        <n-empty v-else description="当前页面还没有表单，先创建一个再设计字段">
-          <template #extra>
-            <n-button type="primary" @click="createFormAssetForCurrentPage">
-              创建表单
-            </n-button>
-          </template>
-        </n-empty>
+          </n-empty>
+        </template>
       </section>
 
       <section v-else-if="editing && activePageDesignTab === 'list'" class="application-design-section">
@@ -550,7 +557,7 @@
               :application-code="application?.applicationCode || ''"
               :page-id="currentNode?.id || ''"
               :configurable="false"
-              :design-preview="editing || isDraftMode"
+              :design-preview="usePortalDesignPreview"
               :crud-config-revision="portalCrudConfigRevision"
               :seed-runtime-crud-props="portalCrudSeed"
               :form-fields-resolver="resolvePortalFormFields"
@@ -739,6 +746,7 @@
                       :fields="resolvePageBlockFields(block)"
                       :runtime-crud-props="resolvePageBlockRuntimeCrudProps(block)"
                       :runtime-crud-loading="isPageBlockRuntimeCrudLoading(block)"
+                      :runtime-tree-active-key="runtimeTreeActiveKeyByBlockId[block.id] || '__all__'"
                       :data-source-configured="isPageBlockDataSourceConfigured(block)"
                       :runtime-interactive="!editing && !isDraftMode"
                       :block-fields-resolver="resolvePageBlockFields"
@@ -766,6 +774,7 @@
                       @container-insert="handlePageFlowContainerInsert"
                       @container-clear="handlePageFlowContainerClear"
                       @request-data-source="handlePageBlockDataSourceRequest"
+                      @runtime-tree-select="handleRuntimeTreeSelect"
                     />
                   </section>
                 </template>
@@ -1262,6 +1271,15 @@
       @confirm="handlePageTypeSelection"
     />
 
+    <PageSystemMenuMountDialog
+      v-model:show="systemMenuMountVisible"
+      :node="systemMenuMountNode"
+      :page-title="systemMenuMountNode?.title || ''"
+      :saving="saving"
+      @confirm="confirmSystemMenuMount"
+      @unmount="unmountSystemMenu"
+    />
+
     <n-modal v-model:show="exitEditingVisible" preset="dialog" title="退出编辑">
       尚有未保存的页面、导航或组件调整。退出后将丢失这些修改。
       <template #action>
@@ -1296,7 +1314,7 @@
 </template>
 
 <script setup>
-import { AddOutline, AppsOutline, ArrowBackOutline, ArrowDownOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, BarChartOutline, CheckboxOutline, CheckmarkDoneOutline, ColorFillOutline, CopyOutline, CreateOutline, CubeOutline, DocumentTextOutline, DuplicateOutline, EllipsisHorizontalOutline, ExpandOutline, EyeOffOutline, EyeOutline, FolderOpenOutline, FunnelOutline, GitBranchOutline, GridOutline, InformationCircleOutline, ListOutline, MoveOutline, NotificationsOutline, PaperPlaneOutline, PeopleOutline, ReaderOutline, RemoveOutline, ResizeOutline, SaveOutline, SettingsOutline, SquareOutline, StatsChartOutline, SwapHorizontalOutline, TextOutline, TrashOutline } from '@vicons/ionicons5'
+import { AddOutline, AppsOutline, ArrowBackOutline, ArrowDownOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, BarChartOutline, CheckboxOutline, CheckmarkDoneOutline, ColorFillOutline, CopyOutline, CreateOutline, CubeOutline, DocumentTextOutline, DuplicateOutline, EllipsisHorizontalOutline, ExpandOutline, EyeOffOutline, EyeOutline, FolderOpenOutline, FunnelOutline, GitBranchOutline, GitNetworkOutline, GridOutline, InformationCircleOutline, ListOutline, MoveOutline, NotificationsOutline, PaperPlaneOutline, PeopleOutline, ReaderOutline, RemoveOutline, ResizeOutline, SaveOutline, SettingsOutline, SquareOutline, StatsChartOutline, SwapHorizontalOutline, TextOutline, TrashOutline } from '@vicons/ionicons5'
 import { NIcon, useMessage } from 'naive-ui'
 import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1307,10 +1325,20 @@ import defaultLogo from '@/assets/images/logo.png'
 import AuthImage from '@/components/common/AuthImage.vue'
 import IconRenderer from '@/components/IconRenderer.vue'
 import { createGridBlock, DATA_FIELD_BLOCK_TYPES, isDataFieldBlockType, listPageBlockCatalog, resolveListPageBlockMeta } from '@/components/lowcode-builder/page/page-schema'
+import {
+  alignSearchSchemaWithLeftTree,
+  buildLeftTreeFilterParams,
+  findTreePanelProps,
+} from '@/components/lowcode-builder/shared/runtime-tree-table'
 import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
 import { useTenantStore, useUserStore } from '@/store'
 import ApplicationDesignerResourceTree from '@/views/app-center/components/ApplicationDesignerResourceTree.vue'
 import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
+import PageSystemMenuMountDialog from '@/views/app-center/components/designer/PageSystemMenuMountDialog.vue'
+import {
+  applyPageMountFieldsToNode,
+  isPageSystemMenuMounted,
+} from '@/views/app-center/components/designer/page-system-menu-mount'
 import ApplicationRuntimeSkeleton from '@/views/app-center/components/portal/ApplicationRuntimeSkeleton.vue'
 import { buildAutoFieldAssets, createFieldFromComponent } from '@/views/app-center/components/designer/form-first/autoFieldRegistry'
 import { createDefaultFormDesignerSchema, isFieldComponent, normalizeFormDesignerSchema, presentFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
@@ -1550,6 +1578,9 @@ const navigationActionVisible = ref(false)
 const navigationActionMode = ref('')
 const navigationActionNodeId = ref('')
 const navigationActionForm = ref({ title: '', icon: '', parentId: null, deleteStrategy: 'delete-children', targetParentId: null })
+const systemMenuMountVisible = ref(false)
+const systemMenuMountNodeId = ref('')
+const systemMenuMountNode = computed(() => (builder.value?.nodes || []).find(item => item.id === systemMenuMountNodeId.value) || null)
 const componentPopoverVisible = ref(false)
 const componentKeyword = ref('')
 const savedSignature = ref('')
@@ -1573,6 +1604,13 @@ let catalogPointerDragCtx = null
 const formDesignerObjectContextByObjectId = ref({})
 const formDesignerObjectContextLoadingIds = reactive(new Set())
 const formDesignerMode = ref(false)
+// 新建页面后草稿保存、路由切换和表单资产挂载不是同一个 tick；资产就绪前保留设计器占位，避免出现空白区域。
+const designerTransitionLoading = ref(false)
+// 树节点高亮按区块维护；右表筛选按当前页面维护。
+// 左树与右表通常是两个不同区块，不能用同一个 blockId 关联，否则点击树后过滤会落在树区块自身而不是右表。
+const runtimeTreeFilter = ref({})
+const runtimeTreeFilterByBlockId = ref({})
+const runtimeTreeActiveKeyByBlockId = ref({})
 const formDesignerFromPageManagement = ref(false)
 const activeFormAssetId = ref('')
 const activePageShapeDesign = ref(null)
@@ -1694,6 +1732,12 @@ const pageBuilderResourceActive = computed(() => {
 // application-portal.vue 按当前客户端过滤。该权限计算放在导航树之前，
 // 避免导航树首次求值时拿到旧的客户端过滤结果。
 const canEditApplication = computed(() => userStore.isAdmin || hasPermission(userStore.permissions, 'ai:businessApplication:edit') || hasPermission(userStore.apiPermissions, 'ai:businessApplication:edit') || hasPermission(userStore.getDataPermission, 'ai:businessApplication:edit'))
+/** 编辑/草稿，或应用工作台内有编辑权限时：走草稿 CRUD（含新增），不要求先发布应用 */
+const usePortalDesignPreview = computed(() => (
+  editing.value
+  || isDraftMode.value
+  || canEditApplication.value
+))
 const activeDesignerObject = computed(() => resolveApplicationDesignerObject(objects.value, activeDesignerResource.value?.objectId))
 // 对象页面（表单页/列表页/数据结构）也应能预览，落到对象自身的 CRUD 运行页。
 const activeResourceConfigKey = computed(() => String(activeDesignerObject.value?.configKey || '').trim())
@@ -1793,8 +1837,11 @@ const currentNode = computed(() => {
       : null)
   if (matched)
     return matched
-  // 自由布局入口不要静默落到首页对象页，否则会只剩表单/列表 Tab、中间空白
-  if (editing.value && readRouteDesignTab() === 'page')
+  const designTab = readRouteDesignTab()
+  // 编辑态 URL 已明确指向某页时，不要静默落到首页对象页（刷新后会出现空白对象卡）
+  if (editing.value && preferredId && ['page', 'list', 'form', 'settings', 'publish'].includes(designTab))
+    return null
+  if (editing.value && designTab === 'page')
     return null
   return (!editing.value ? null : nodes.find(item => item.id === builder.value?.homePageId)) || null
 })
@@ -1986,7 +2033,7 @@ const runtimeObjectFormOptions = computed(() => objects.value
     value: String(item.objectId ?? item.id),
     label: item.objectName || item.objectCode || '未命名表单',
   })))
-const pageTemplateOptions = computed(() => inAppPageTemplateCatalog.filter(template => ['blank', 'intro', 'crud', 'tree-table', 'master-detail'].includes(template.key)))
+const pageTemplateOptions = computed(() => inAppPageTemplateCatalog.filter(template => ['blank', 'intro', 'crud', 'tree-list', 'tree-table', 'master-detail'].includes(template.key)))
 const selectedPageBlockFields = computed(() => {
   if (!selectedPageBlock.value)
     return []
@@ -2049,6 +2096,18 @@ const copyBlockPageOptions = computed(() => flattenNodes(builder.value?.nodes ||
   .filter(node => node.type === 'page' && node.id !== currentNode.value?.id)
   .map(node => ({ label: `${'　'.repeat(node.depth || 0)}${node.title}`, value: node.id })))
 const dirty = computed(() => JSON.stringify(builder.value || {}) !== savedSignature.value)
+
+/** 表单设计器保存：草稿有改动、DDL/对象落库失败重试、或首次尚未创建对象时都可点。 */
+const canSaveActiveFormDesigner = computed(() => {
+  if (activeFormDataState.value.status === 'error')
+    return true
+  if (dirty.value || embeddedDesignerDirty.value)
+    return true
+  // 新建页面后草稿已落盘但业务对象尚未创建，必须允许首次「保存应用页面设计」
+  if (activePageShapeDesign.value && !activePageShapeDesign.value.objectId)
+    return true
+  return false
+})
 
 /**
  * 保存后对齐草稿签名。部分 watch/子组件会在 nextTick 后继续归一化 builder，
@@ -2166,6 +2225,17 @@ watch(() => route.query.designTab, (tab) => {
   if (activePageDesignTab.value !== next)
     activePageDesignTab.value = next
 })
+// 应用节点加载完成后，按 URL designTab 重新对齐（修复刷新时 nodes 为空把 list 误写成 page）
+watch([editing, () => builder.value?.nodes, () => route.query.pageId, () => route.query.designTab], () => {
+  if (!editing.value || !builder.value)
+    return
+  const tab = readRouteDesignTab()
+  if (!tab)
+    return
+  const next = resolvePageDesignTab(tab, String(route.query.pageId || selectedNodeId.value || '').trim())
+  if (activePageDesignTab.value !== next)
+    activePageDesignTab.value = next
+}, { flush: 'post' })
 // 编辑态且 URL 未显式带 designTab 时，按页面内容对齐默认 Tab（避免自由布局预览却进表单设计）
 watch([editing, () => builder.value?.nodes, selectedNodeId, () => route.query.designTab], () => {
   if (!editing.value || !builder.value)
@@ -2308,6 +2378,9 @@ async function load() {
   historyReady.value = false
   portalCrudSeed.value = {}
   resetRuntimeCrudConfig()
+  runtimeTreeFilter.value = {}
+  runtimeTreeFilterByBlockId.value = {}
+  runtimeTreeActiveKeyByBlockId.value = {}
   // 与 workspace API 并行预拉页面渲染器 / CRUD / 设计器，缩短骨架结束后的二次白屏
   const warmChunks = [
     import('@/components/lowcode-builder/page/GridBlockRenderer.vue').catch(() => {}),
@@ -2347,7 +2420,18 @@ async function load() {
       }
     }
     const requestedPageId = String(route.query.pageId || '').trim()
-    selectedNodeId.value = (resolvePageManagementSystemPage(requestedPageId) || (readRouteDesignTab() === 'page' && requestedPageId))
+    const designTab = readRouteDesignTab()
+    const requestedNodeExists = Boolean(
+      requestedPageId
+      && (builder.value?.nodes || []).some(item => String(item.id) === requestedPageId),
+    )
+    // 编辑态带 designTab / 节点已存在时，保留 URL pageId，避免刷新落到首页空白对象卡
+    selectedNodeId.value = (
+      resolvePageManagementSystemPage(requestedPageId)
+      || (requestedPageId && designTab === 'page')
+      || (requestedPageId && ['list', 'form', 'settings', 'publish'].includes(designTab))
+      || requestedNodeExists
+    )
       ? requestedPageId
       : resolveSelectablePageId(route.query.pageId)
     if (editing.value)
@@ -2399,8 +2483,8 @@ async function warmCurrentPortalPageCrud() {
   if (!targets.length)
     return {}
   return warmPortalPageCrudProps(targets, {
-    // 正式门户与普通用户同看已发布配置；有编辑权限不代表在预览草稿
-    designPreview: editing.value || isDraftMode.value,
+    // 工作台编辑者预览草稿配置；正式门户路由不会走这条预热
+    designPreview: usePortalDesignPreview.value,
     applicationId: application.value?.id,
     pageId,
     timeoutMs: 6500,
@@ -2409,6 +2493,11 @@ async function warmCurrentPortalPageCrud() {
 
 function selectNode(nodeId) {
   const nextId = nodeId || ''
+  if (String(nextId) !== String(selectedNodeId.value || '')) {
+    runtimeTreeFilter.value = {}
+    runtimeTreeFilterByBlockId.value = {}
+    runtimeTreeActiveKeyByBlockId.value = {}
+  }
   selectedNodeId.value = nextId
   selectedPageBlockId.value = ''
   // 保留路由现有 edit 参数，选择页面不应切换编辑/运行模式，
@@ -2537,6 +2626,7 @@ async function handlePageTypeSelection(selection = {}) {
     message.warning('目标页面组已不存在，请在页面树中重新选择页面组')
     return
   }
+  designerTransitionLoading.value = true
   try {
     const result = createPageShapeBuilder(builder.value, {
       ...selection,
@@ -2574,9 +2664,13 @@ async function handlePageTypeSelection(selection = {}) {
     activeFormAssetId.value = result.formAssetId
     selectedPageBlockId.value = builder.value.pages?.[result.pageId]?.layout?.gridLayout?.items?.[0]?.id || ''
     formDesignerMode.value = true
+    await nextTick()
   }
   catch (error) {
     message.error(error?.message || '页面创建失败，请刷新后重试')
+  }
+  finally {
+    designerTransitionLoading.value = false
   }
 }
 
@@ -2590,6 +2684,7 @@ function resolvePageTemplateIcon(template = {}) {
     'blank': DocumentTextOutline,
     'intro': InformationCircleOutline,
     'crud': ListOutline,
+    'tree-list': GitNetworkOutline,
     'tree-table': GitBranchOutline,
     'master-detail': ReaderOutline,
   }
@@ -2607,7 +2702,7 @@ function createPageFromTemplate(templateKey = selectedPageTemplateKey.value, ini
     pageTemplate: template.key,
     pageShape: (template.dataTemplate || template.pageType === 'content' || template.key === 'blank' || template.key === 'intro')
       ? 'custom'
-      : (template.key === 'form' || template.key === 'list' || template.key === 'list-form' ? template.key : 'custom'),
+      : (['form', 'list', 'list-form', 'tree-list', 'tree-table'].includes(template.key) ? template.key : 'custom'),
   })
   const created = builder.value.nodes.find(item => !previousIds.has(item.id))
   if (created) {
@@ -2747,7 +2842,15 @@ function resolveNavigationMoreOptions(node) {
     { label: '重命名', key: 'rename', icon: () => renderNavigationMenuIcon(CreateOutline) },
     { label: '更改图标', key: 'icon', icon: () => renderNavigationMenuIcon(ColorFillOutline) },
     { label: isNavigationVisible(node) ? '隐藏菜单' : '显示菜单', key: 'toggle-visible', icon: () => renderNavigationMenuIcon(isNavigationVisible(node) ? EyeOutline : EyeOffOutline) },
-    { label: node.systemMenuVisible ? '取消系统菜单挂载' : '挂载到系统菜单', key: 'toggle-system-menu', icon: () => renderNavigationMenuIcon(GridOutline) },
+    ...(
+      node.type === 'page'
+        ? [{
+            label: isPageSystemMenuMounted(node) ? '修改系统菜单挂载' : '挂载到系统菜单',
+            key: 'system-menu-mount',
+            icon: () => renderNavigationMenuIcon(GridOutline),
+          }]
+        : []
+    ),
     { label: '复制', key: 'duplicate', icon: () => renderNavigationMenuIcon(CopyOutline) },
     { label: '移动至', key: 'move', icon: () => renderNavigationMenuIcon(MoveOutline) },
     { type: 'divider', key: 'move-divider' },
@@ -2775,8 +2878,8 @@ function handleNavigationMoreSelect(key, node) {
     toggleNavigationVisible(node)
     return
   }
-  if (key === 'toggle-system-menu') {
-    toggleSystemMenuVisible(node)
+  if (key === 'system-menu-mount') {
+    openSystemMenuMountDialog(node)
     return
   }
   if (key === 'duplicate') {
@@ -2812,14 +2915,46 @@ function toggleNavigationVisible(node) {
   scheduleNavigationSave()
 }
 
-function toggleSystemMenuVisible(node) {
+function openSystemMenuMountDialog(node) {
+  if (!node || node.type !== 'page')
+    return
+  systemMenuMountNodeId.value = node.id
+  systemMenuMountVisible.value = true
+}
+
+function patchNavigationNodeMount(nodeId, partial = {}) {
+  if (!nodeId || !builder.value)
+    return
   builder.value = {
     ...builder.value,
-    nodes: builder.value.nodes.map(item => item.id === node.id
-      ? { ...item, systemMenuVisible: !item.systemMenuVisible }
-      : item),
+    nodes: builder.value.nodes.map((item) => {
+      if (item.id !== nodeId)
+        return item
+      return applyPageMountFieldsToNode(item, partial)
+    }),
   }
   scheduleNavigationSave()
+}
+
+function confirmSystemMenuMount(partial = {}) {
+  const nodeId = systemMenuMountNodeId.value
+  if (!nodeId)
+    return
+  patchNavigationNodeMount(nodeId, {
+    ...partial,
+    systemMenuVisible: true,
+  })
+  systemMenuMountVisible.value = false
+  message.success('系统菜单挂载已写入草稿，应用发布后生效')
+}
+
+function unmountSystemMenu() {
+  const nodeId = systemMenuMountNodeId.value
+  if (!nodeId)
+    return
+  patchNavigationNodeMount(nodeId, { systemMenuVisible: false })
+  systemMenuMountVisible.value = false
+  message.success('已取消系统菜单挂载（应用发布后生效）')
 }
 
 function duplicateNavigationNode(node) {
@@ -3329,7 +3464,7 @@ function attachDefaultRuntimeObject(block = {}) {
 }
 
 function resolvePageBlockRuntimeCrudProps(block = {}) {
-  if (!isDataFieldBlockType(block.blockType))
+  if (!isDataFieldBlockType(block.blockType) && block.blockType !== 'tree-panel')
     return null
   const objectRef = resolvePageBlockObjectRef(block)
   if (!isValidPageBlockObjectRef(objectRef))
@@ -3339,11 +3474,34 @@ function resolvePageBlockRuntimeCrudProps(block = {}) {
     return null
   if (!runtimeCrudPropsByObjectId.value[cacheKey])
     preloadPageBlockCrudRuntimeProps(block)
-  return runtimeCrudPropsByObjectId.value[cacheKey] || null
+  const runtimeProps = runtimeCrudPropsByObjectId.value[cacheKey] || null
+  if (!runtimeProps)
+    return null
+  const treePanelProps = findTreePanelProps(pageBlocks.value) || {}
+  const searchSchema = alignSearchSchemaWithLeftTree(runtimeProps.searchSchema, {
+    treePanelProps,
+    runtimeProps,
+  })
+  const alignedProps = searchSchema === runtimeProps.searchSchema
+    ? runtimeProps
+    : { ...runtimeProps, searchSchema }
+  const blockId = String(block?.id || '').trim()
+  const treeFilter = blockId ? runtimeTreeFilterByBlockId.value[blockId] : null
+  const pageTreeFilter = runtimeTreeFilter.value
+  const activeTreeFilter = treeFilter && Object.keys(treeFilter).length ? treeFilter : pageTreeFilter
+  if (!activeTreeFilter || !Object.keys(activeTreeFilter).length)
+    return alignedProps
+  return {
+    ...alignedProps,
+    publicParams: {
+      ...(alignedProps.publicParams || {}),
+      ...activeTreeFilter,
+    },
+  }
 }
 
 function isPageBlockRuntimeCrudLoading(block = {}) {
-  if (!isDataFieldBlockType(block.blockType))
+  if (!isDataFieldBlockType(block.blockType) && block.blockType !== 'tree-panel')
     return false
   const objectRef = resolvePageBlockObjectRef(block)
   if (!isValidPageBlockObjectRef(objectRef))
@@ -3365,7 +3523,7 @@ function preloadCurrentPageCrudRuntimeProps() {
 }
 
 function preloadPageBlockCrudRuntimeProps(block = {}) {
-  if (!isDataFieldBlockType(block.blockType))
+  if (!isDataFieldBlockType(block.blockType) && block.blockType !== 'tree-panel')
     return
   const objectRef = resolvePageBlockObjectRef(block)
   if (!isValidPageBlockObjectRef(objectRef))
@@ -3577,7 +3735,7 @@ function openFormAssetDesigner(formAssetId) {
 }
 
 function resolvePageShapeDesignContext(formAssetId) {
-  const supportedTypes = new Set(['form', 'list', 'list-form'])
+  const supportedTypes = new Set(['form', 'list', 'list-form', 'tree-list', 'tree-table'])
   for (const node of builder.value?.nodes || []) {
     if (node?.type !== 'page')
       continue
@@ -3585,11 +3743,16 @@ function resolvePageShapeDesignContext(formAssetId) {
     const block = findPageBlockByFormAssetId(page?.layout?.gridLayout?.items || [], formAssetId)
     if (!block)
       continue
+    const layoutType = page?.layout?.gridLayout?.layoutType
     const pageType = supportedTypes.has(node.pageTemplate)
       ? node.pageTemplate
-      : supportedTypes.has(page?.layout?.gridLayout?.layoutType)
-        ? page.layout.gridLayout.layoutType
-        : 'list-form'
+      : supportedTypes.has(node.pageShape)
+        ? node.pageShape
+        : layoutType === 'tree-crud'
+          ? 'tree-table'
+          : supportedTypes.has(layoutType)
+            ? layoutType
+            : 'list-form'
     const objectRef = block.props?.objectRef || node.objectRef || {}
     return {
       pageId: node.id,
@@ -3766,9 +3929,23 @@ function returnToPageDesigner() {
     exitToPageManagement()
     return
   }
-  // 返回后仍停在表单设计页，必须重新挂上当前页面的表单，否则画布是空的
-  if (pageId)
+  // 返回后仍停在表单/列表设计页，必须重新挂上当前页面的表单，否则画布是空的
+  if (pageId) {
+    const entryTab = resolveEntryDesignTab(pageId)
+    activePageDesignTab.value = entryTab === 'page' ? 'form' : entryTab
     syncActiveFormAssetForPage(pageId)
+    const nextQuery = {
+      ...route.query,
+      pageId,
+      edit: '1',
+      designResource: `page-custom:${pageId}`,
+      designTab: activePageDesignTab.value === resolveEntryDesignTab(pageId) ? undefined : activePageDesignTab.value,
+    }
+    // 对象页从全屏表单设计返回时，清掉误带的 designTab=page，否则表单/列表 Tab 会被藏掉
+    if (nextQuery.designTab === 'page' && resolvePageShapeKey(pageId) !== 'custom')
+      delete nextQuery.designTab
+    router.replace({ query: nextQuery })
+  }
   else {
     activeFormAssetId.value = ''
     activePageShapeDesign.value = null
@@ -3825,6 +4002,32 @@ function handleInlineTextUpdate({ blockId, patch }) {
   updatePageBlocks(pageBlocks.value.map(item => item.id === blockId
     ? { ...item, props: { ...(item.props || {}), ...patch } }
     : item))
+}
+
+function handleRuntimeTreeSelect(payload = {}) {
+  const blockId = String(payload.blockId || '').trim()
+  if (!blockId)
+    return
+  const nextActiveKeys = { ...runtimeTreeActiveKeyByBlockId.value }
+  const nextFilters = { ...runtimeTreeFilterByBlockId.value }
+  nextActiveKeys[blockId] = payload.key || '__all__'
+  if (!payload.filterField || payload.clear || payload.value === undefined
+    || payload.value === null || payload.value === '') {
+    runtimeTreeFilter.value = {}
+    delete nextFilters[blockId]
+  }
+  else {
+    const nextFilter = buildLeftTreeFilterParams({
+      filterField: payload.filterField,
+      value: payload.value,
+      includeChildren: payload.includeChildren !== false,
+      expandedValues: payload.expandedValues,
+    })
+    runtimeTreeFilter.value = nextFilter
+    nextFilters[blockId] = nextFilter
+  }
+  runtimeTreeActiveKeyByBlockId.value = nextActiveKeys
+  runtimeTreeFilterByBlockId.value = nextFilters
 }
 
 function resolvePagePreviewBlock(block) {
@@ -5984,6 +6187,16 @@ async function saveActiveFormDesigner(returnAfter = true) {
       builder.value = saved.builder
     resetBuilderHistory(builder.value)
     const pageId = saved.pageId || context.pageId
+    if (activePageShapeDesign.value) {
+      activePageShapeDesign.value = {
+        ...activePageShapeDesign.value,
+        pageId,
+        objectId: saved.objectId || activePageShapeDesign.value.objectId || null,
+        objectCode: saved.objectCode || objectCode,
+        objectName: saved.objectName || objectName,
+        createMode: '',
+      }
+    }
     await refreshWorkspaceMetadata({ syncBuilder: true, markClean: true })
     embeddedDesignerDirty.value = false
     // refreshWorkspaceMetadata 已 reset + bump portalCrudConfigRevision；
@@ -6290,8 +6503,12 @@ async function saveCurrentDesignerSection() {
     if (!formSaved)
       return false
     // 表单保存后若本地归一化仍留下差异，静默落盘，避免连弹两次“保存成功”
-    if (dirty.value)
-      return await saveDraft({ quiet: true })
+    if (dirty.value) {
+      const draftSaved = await saveDraft({ quiet: true })
+      bumpPortalCrudConfigAfterDesignerSave()
+      return draftSaved
+    }
+    bumpPortalCrudConfigAfterDesignerSave()
     return true
   }
   if (editing.value && activePageDesignTab.value === 'list') {
@@ -6302,8 +6519,12 @@ async function saveCurrentDesignerSection() {
       const saved = await embeddedDesignerRef.value?.save?.()
       if (saved !== false)
         embeddedDesignerDirty.value = false
-      if (dirty.value)
-        return await saveDraft({ quiet: saved !== false })
+      if (dirty.value) {
+        const draftSaved = await saveDraft({ quiet: saved !== false })
+        bumpPortalCrudConfigAfterDesignerSave()
+        return draftSaved
+      }
+      bumpPortalCrudConfigAfterDesignerSave()
       return saved !== false
     }
     finally {
@@ -6322,13 +6543,26 @@ async function saveCurrentDesignerSection() {
     const saved = await embeddedDesignerRef.value?.save?.()
     if (saved !== false)
       embeddedDesignerDirty.value = false
-    if (dirty.value)
-      return await saveDraft({ quiet: saved !== false })
+    if (dirty.value) {
+      const draftSaved = await saveDraft({ quiet: saved !== false })
+      bumpPortalCrudConfigAfterDesignerSave()
+      return draftSaved
+    }
+    bumpPortalCrudConfigAfterDesignerSave()
     return saved !== false
   }
   finally {
     embeddedDesignerSaving.value = false
   }
+}
+
+/** 列表/表单草稿保存后立刻刷新门户 CRUD 预览，不必等到发布 */
+function bumpPortalCrudConfigAfterDesignerSave() {
+  resetRuntimeCrudConfig()
+  portalCrudSeed.value = {}
+  portalCrudConfigRevision.value += 1
+  if (editing.value || isDraftMode.value)
+    preloadCurrentPageCrudRuntimeProps()
 }
 
 function applyDesignerResource(resource) {
@@ -6582,7 +6816,7 @@ const PAGE_DESIGN_TABS = new Set(['page', 'form', 'list', 'settings', 'publish']
  * custom → 自由布局（仅页面设计）
  * form → 表单页（仅表单设计）
  * list → 列表页（仅列表设计）
- * list-form → 列表+表单（表单+列表设计）
+ * list-form / tree-list / tree-table → 表单 + 列表设计
  */
 function resolvePageShapeKey(pageId = '') {
   const routePageId = String(route.query.pageId || '').trim()
@@ -6611,19 +6845,28 @@ function resolveEntryDesignTab(pageId) {
   return 'form'
 }
 
+const FORM_DESIGN_SHAPES = new Set(['form', 'list-form', 'tree-list', 'tree-table'])
+const LIST_DESIGN_SHAPES = new Set(['list', 'list-form', 'tree-list', 'tree-table'])
+
 function resolvePageDesignTab(value, pageId = '') {
   const normalized = String(Array.isArray(value) ? value[0] : value || '').trim()
-  const shape = resolvePageShapeKey(pageId || String(route.query.pageId || selectedNodeId.value || '').trim())
+  const resolvedPageId = String(pageId || route.query.pageId || selectedNodeId.value || '').trim()
+  const node = (builder.value?.nodes || []).find(item => String(item.id) === resolvedPageId)
+  // 刷新时 nodes 尚未加载：先信任 URL designTab，避免 list 被误判成 page 落到空白对象卡
+  if (!node && PAGE_DESIGN_TABS.has(normalized))
+    return normalized
+
+  const shape = resolvePageShapeKey(resolvedPageId)
   // 明确的 page Tab 不再被改写成 form（否则自由布局中间会空白）
   if (normalized === 'page')
-    return shape === 'custom' || readRouteDesignTab() === 'page' ? 'page' : resolveEntryDesignTab(pageId)
-  if (normalized === 'form' && shape !== 'form' && shape !== 'list-form')
-    return resolveEntryDesignTab(pageId)
-  if (normalized === 'list' && shape !== 'list' && shape !== 'list-form')
-    return resolveEntryDesignTab(pageId)
+    return shape === 'custom' || readRouteDesignTab() === 'page' ? 'page' : resolveEntryDesignTab(resolvedPageId)
+  if (normalized === 'form' && !FORM_DESIGN_SHAPES.has(shape))
+    return resolveEntryDesignTab(resolvedPageId)
+  if (normalized === 'list' && !LIST_DESIGN_SHAPES.has(shape))
+    return resolveEntryDesignTab(resolvedPageId)
   if (PAGE_DESIGN_TABS.has(normalized))
     return normalized
-  return resolveEntryDesignTab(pageId || String(route.query.pageId || selectedNodeId.value || '').trim())
+  return resolveEntryDesignTab(resolvedPageId)
 }
 
 const activePageDesignTab = ref(resolvePageDesignTab(route.query.designTab, route.query.pageId))
@@ -6657,8 +6900,8 @@ const showFormDesignWorkbench = computed(() => {
   return editing.value && activePageDesignTab.value === 'form'
 })
 const showPageDesignTab = computed(() => readRouteDesignTab() === 'page' || currentPageShape.value === 'custom')
-const showFormDesignTab = computed(() => readRouteDesignTab() !== 'page' && ['form', 'list-form'].includes(currentPageShape.value))
-const showListDesignTab = computed(() => readRouteDesignTab() !== 'page' && ['list', 'list-form'].includes(currentPageShape.value))
+const showFormDesignTab = computed(() => readRouteDesignTab() !== 'page' && FORM_DESIGN_SHAPES.has(currentPageShape.value))
+const showListDesignTab = computed(() => readRouteDesignTab() !== 'page' && LIST_DESIGN_SHAPES.has(currentPageShape.value))
 const isPageDesignTabActive = computed(() => showPageDesignTab.value && (activePageDesignTab.value === 'page' || showFreeLayoutCanvas.value))
 
 function switchPageDesignTab(tab) {

@@ -210,32 +210,6 @@
       </div>
     </div>
 
-    <section v-if="!defaultViewOnly" class="list-custom-actions-entry">
-      <div class="custom-actions-entry-copy">
-        <strong>自定义操作</strong>
-        <span>配置列表顶部按钮和每行操作按钮，当前共 {{ listCustomActions.length }} 个。</span>
-      </div>
-      <div class="custom-actions-entry-preview">
-        <span v-for="action in customActionPreviewItems" :key="action.clientKey || action.key" class="custom-action-preview-chip">
-          {{ action.positionLabel }} · {{ action.label || '自定义操作' }}
-        </span>
-        <span v-if="!customActionPreviewItems.length" class="custom-action-preview-empty">
-          暂无自定义操作
-        </span>
-      </div>
-      <n-space class="custom-actions-entry-buttons" size="small">
-        <n-button size="small" secondary @click="createToolbarCustomAction">
-          新增顶部按钮
-        </n-button>
-        <n-button size="small" secondary @click="createRowCustomAction">
-          新增行操作
-        </n-button>
-        <n-button size="small" type="primary" @click="openCustomActionManager">
-          配置全部操作
-        </n-button>
-      </n-space>
-    </section>
-
     <div class="list-designer-body">
       <main class="list-workspace">
         <ListPageGridDesigner
@@ -251,6 +225,7 @@
           :custom-actions="visibleListCustomActions"
           :custom-actions-editable="!defaultViewOnly"
           @update:model-value="handleGridLayoutUpdate"
+          @update:model-schema="handleGridModelSchemaUpdate"
           @update:custom-actions="handleListCustomActionsUpdate"
         />
       </main>
@@ -329,6 +304,7 @@ import {
   appendDesignPreviewToApiConfig,
   appendDesignPreviewToApiValue,
 } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import { applyEmbeddedTreeTableRuntimeProps } from '@/components/lowcode-builder/shared/runtime-tree-table'
 import { createViewSchemaFromPageSchema } from './form-first/viewSchema'
 
 const props = defineProps({
@@ -370,7 +346,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:modelValue', 'update:viewSchema', 'update:designerActions', 'saved', 'dirtyChange'])
+const emit = defineEmits(['update:modelValue', 'update:modelSchema', 'update:viewSchema', 'update:designerActions', 'saved', 'dirtyChange'])
 
 const message = useMessage()
 const saving = ref(false)
@@ -392,7 +368,9 @@ const baseModelSchema = computed(() => {
 })
 
 const localSchema = ref(resolveSchema(props.modelValue, resolveDesignModelSchema(props.modelValue, baseModelSchema.value)))
-const effectiveModelSchema = computed(() => resolveDesignModelSchema(localSchema.value, baseModelSchema.value))
+const pendingModelSchema = ref(null)
+const workingModelSchema = computed(() => pendingModelSchema.value || baseModelSchema.value)
+const effectiveModelSchema = computed(() => resolveDesignModelSchema(localSchema.value, workingModelSchema.value))
 const designFields = computed(() => effectiveModelSchema.value.fields || [])
 const layoutModeLabel = computed(() => resolveLayoutModeLabel(localSchema.value.layoutType))
 const canUndo = computed(() => undoStack.value.length > 0)
@@ -400,12 +378,17 @@ const canRedo = computed(() => redoStack.value.length > 0)
 const listPreviewVisible = ref(false)
 const templateSelectValue = ref(resolveTemplateSelectValue(localSchema.value.layoutType))
 const listCustomActions = ref([])
-const customActionPreviewItems = computed(() => {
-  return listCustomActions.value.slice(0, 6).map(action => ({
-    ...action,
-    positionLabel: action.position === 'toolbar' ? '顶部' : action.position === 'detail' ? '详情' : '行内',
-  }))
-})
+
+watch(
+  () => props.modelSchema,
+  (value) => {
+    if (!pendingModelSchema.value)
+      return
+    if (isSameSchema(value || {}, pendingModelSchema.value))
+      pendingModelSchema.value = null
+  },
+  { deep: true },
+)
 const pageTypeOptions = [
   { label: '列表页', value: 'list' },
   { label: '新增页', value: 'create' },
@@ -573,14 +556,16 @@ function createCleanTemplateGridLayout(layoutType, schema = localSchema.value) {
 
   const items = defaultGrid.items.map((item) => {
     if (item.blockType === 'tree-panel') {
+      // 禁止把 table.zone treeConfig 整包盖到 tree-panel 上：
+      // zone 里常残留当前列表对象的空/旧来源，会冲掉用户已选的外部树源。
+      const previousProps = previousTree?.props || {}
       return {
         ...item,
         props: {
           ...(item.props || {}),
-          ...(tableProps.treeConfig || {}),
-          ...(previousTree?.props || {}),
+          ...previousProps,
           style: item.props?.style,
-          events: previousTree?.props?.events || item.props?.events || [],
+          events: previousProps.events || item.props?.events || [],
         },
       }
     }
@@ -685,6 +670,69 @@ function updateTreeLayoutEnabled(enabled) {
   next.zones = applyGridLayoutToZones(next.zones || [], templateGrid, effectiveModelSchema.value)
 
   setLocalSchema(resolveSchema(next, effectiveModelSchema.value))
+  // 切到左树右表时清掉误留的本表 TREE 配置，避免草稿保存卡 parentId
+  if (enabled)
+    clearEmbeddedTreeForLeftTreeLayout()
+}
+
+function clearEmbeddedTreeForLeftTreeLayout() {
+  const model = effectiveModelSchema.value || {}
+  const treeEnabled = model.treeConfig?.enabled === true || model.appType === 'TREE'
+  if (!treeEnabled && model.treeConfig?.enableTreeAddChild !== true) {
+    // 仍要清掉列表区块上残留的 enableTreeAddChild，否则运行态会继续显示「添加下级」
+    clearTreeAddChildOnListBlocks()
+    return
+  }
+  const nextModel = {
+    ...model,
+    appType: model.appType === 'TREE' ? 'SINGLE' : (model.appType || 'SINGLE'),
+    treeConfig: {
+      ...(model.treeConfig || {}),
+      enabled: false,
+      enableTreeAddChild: false,
+    },
+  }
+  emit('update:modelSchema', cloneSchema(nextModel))
+  clearTreeAddChildOnListBlocks()
+}
+
+function clearTreeAddChildOnListBlocks() {
+  const nextSchema = cloneSchema(localSchema.value || {})
+  const clearBlock = (block) => {
+    if (!block || typeof block !== 'object')
+      return block
+    const next = { ...block }
+    if (['AiCrudPage', 'data-table', 'AiTable'].includes(block.blockType)) {
+      next.props = {
+        ...(block.props || {}),
+        enableTreeAddChild: false,
+      }
+    }
+    if (Array.isArray(block.children))
+      next.children = block.children.map(clearBlock)
+    return next
+  }
+  const clearGrid = (grid) => {
+    if (!grid || typeof grid !== 'object')
+      return grid
+    return {
+      ...grid,
+      items: Array.isArray(grid.items) ? grid.items.map(clearBlock) : [],
+    }
+  }
+  nextSchema.listGridLayout = clearGrid(nextSchema.listGridLayout)
+  nextSchema.pages = Array.isArray(nextSchema.pages)
+    ? nextSchema.pages.map(page => ({
+        ...page,
+        gridLayout: clearGrid(page.gridLayout),
+      }))
+    : nextSchema.pages
+  nextSchema.zones = updateTreeZone(
+    nextSchema.zones || [],
+    nextSchema.layoutType === 'tree-crud',
+    effectiveModelSchema.value || {},
+  )
+  setLocalSchema(resolveSchema(nextSchema, effectiveModelSchema.value))
 }
 
 function updateListTemplate(value) {
@@ -714,6 +762,24 @@ function handleGridLayoutUpdate(layout) {
     nextSchema.zones = applyGridLayoutToZones(localSchema.value.zones || [], synced, effectiveModelSchema.value)
   }
   setLocalSchema(nextSchema)
+}
+
+function handleGridModelSchemaUpdate(modelSchema) {
+  const nextModel = cloneSchema(modelSchema || {})
+  pendingModelSchema.value = nextModel
+  emit('update:modelSchema', nextModel)
+  const enabled = nextModel.treeConfig?.enabled === true || nextModel.appType === 'TREE'
+  // 启用嵌入式树形时保持当前列表模板，不要切到左树右表（否则画布会右移）
+  const keepLayoutType = localSchema.value.layoutType === 'tree-crud'
+    ? 'tree-crud'
+    : (localSchema.value.layoutType || 'simple-crud')
+  const nextPage = {
+    ...localSchema.value,
+    layoutType: keepLayoutType,
+    zones: updateTreeZone(localSchema.value.zones || [], enabled, nextModel),
+  }
+  setLocalSchema(resolveSchema(nextPage, nextModel))
+  emit('dirtyChange', true)
 }
 
 function switchActivePage(pageKey) {
@@ -1092,6 +1158,7 @@ async function saveLayout() {
     const designerPayload = {
       pageSchema: cloneSchema(schema),
       viewSchema: cloneSchema(viewSchema),
+      modelSchema: cloneSchema(workingModelSchema.value || {}),
     }
     if (!props.defaultViewOnly) {
       designerPayload.designerOptions = cloneSchema({
@@ -1138,12 +1205,49 @@ function buildDesignerRuntimeCrudProps(schema = {}, fields = [], customActions =
   const runtimeActions = normalizeListCustomActions(customActions)
   const resolvedFormOpenMode = resolveDesignerFormOpenMode(formLayout, tableProps, editProps)
   const resolvedModalType = resolveDesignerModalType(resolvedFormOpenMode, formLayout, tableProps, editProps)
-  return {
+  const modelSchema = effectiveModelSchema.value || {}
+  const modelTreeConfig = modelSchema.treeConfig || {}
+  const zoneTreeConfig = tableProps.treeConfig || {}
+  const treeEnabled = schema.layoutType !== 'tree-crud'
+    && (modelTreeConfig.enabled === true || modelSchema.appType === 'TREE' || zoneTreeConfig.enabled === true)
+  const treeConfig = treeEnabled
+    ? {
+        ...resolveDefaultTreeConfig(modelSchema, {
+          ...zoneTreeConfig,
+          ...modelTreeConfig,
+          enabled: true,
+        }),
+        enabled: true,
+      }
+    : null
+  const crudBlock = (schema.listGridLayout?.items || schema.pages?.find(page => page?.pageKey === 'list')?.gridLayout?.items || [])
+    .find(item => ['AiCrudPage', 'data-table', 'AiTable'].includes(item?.blockType))
+  const treePanelBlock = (schema.listGridLayout?.items || schema.pages?.find(page => page?.pageKey === 'list')?.gridLayout?.items || [])
+    .find(item => item?.blockType === 'tree-panel')
+  const treePanelApi = treePanelBlock?.props?.treeApi
+    || (treePanelBlock?.props?.sourceConfigKey
+      ? `get@/ai/crud/${treePanelBlock.props.sourceConfigKey}/tree`
+      : (treePanelBlock?.props?.sourceModelCode
+          ? `get@/ai/crud/${treePanelBlock.props.sourceModelCode}/tree`
+          : ''))
+  // 左树右表：右表平铺，绝不显示「添加下级」（忽略区块/表区残留 true）
+  const enableTreeAddChild = schema.layoutType === 'tree-crud'
+    ? false
+    : treeEnabled
+      ? (typeof modelTreeConfig.enableTreeAddChild === 'boolean'
+          ? modelTreeConfig.enableTreeAddChild
+          : typeof crudBlock?.props?.enableTreeAddChild === 'boolean'
+            ? crudBlock.props.enableTreeAddChild
+            : typeof tableProps.enableTreeAddChild === 'boolean'
+              ? tableProps.enableTreeAddChild
+              : true)
+      : crudBlock?.props?.enableTreeAddChild === true || tableProps.enableTreeAddChild === true
+  const baseProps = {
     lazy: true,
     designPreview: true,
     loadDetailOnEdit: false,
     columns: buildDesignerColumns(tableZone, fieldMap),
-    searchSchema: buildDesignerSearchSchema(searchZone, fieldMap),
+    searchSchema: buildDesignerSearchSchema(searchZone, fieldMap, schema),
     editSchema: editFields,
     apiConfig: appendDesignPreviewToApiConfig({
       list: tableProps.listApi || apiValues.listApi,
@@ -1153,7 +1257,7 @@ function buildDesignerRuntimeCrudProps(schema = {}, fields = [], customActions =
       delete: tableProps.deleteApi || apiValues.deleteApi,
       import: tableProps.importApi || '',
       export: tableProps.exportApi || '',
-      tree: tableProps.treeApi || '',
+      tree: treePanelApi || tableProps.treeApi || apiValues.treeApi || '',
     }),
     api: appendDesignPreviewToApiValue(tableProps.api || apiValues.api),
     rowKey: tableProps.rowKey || 'id',
@@ -1210,8 +1314,17 @@ function buildDesignerRuntimeCrudProps(schema = {}, fields = [], customActions =
     submitDefaultParams: tableProps.submitDefaultParams || {},
     toolbarActions: runtimeActions.filter(action => (action.position || 'toolbar') === 'toolbar'),
     runtimeActions: runtimeActions.filter(action => (action.position || 'row') === 'row'),
+    enableTreeAddChild,
+    ...(treeConfig ? { treeConfig } : {}),
     ...hookHandlers,
   }
+  return applyEmbeddedTreeTableRuntimeProps(baseProps, {
+    layoutType: schema.layoutType || 'simple-crud',
+    options: treeConfig
+      ? { treeConfig, enableTreeAddChild }
+      : {},
+    apiConfig: baseProps.apiConfig,
+  }, { designPreview: true })
 }
 
 function resolveDesignerFormOpenMode(formLayout = {}, tableProps = {}, editProps = {}) {
@@ -1250,18 +1363,6 @@ function handleListCustomActionsUpdate(actions = []) {
   const managedActions = nextActions.map((action, index) => listActionToDesignerAction(action, index, { preserveDraftParams: true }))
   emit('update:designerActions', cloneSchema(mergeUnmanagedChildRowActions(managedActions)))
   emit('dirtyChange', true)
-}
-
-function openCustomActionManager() {
-  listGridDesignerRef.value?.openCustomActionManager?.()
-}
-
-function createToolbarCustomAction() {
-  listGridDesignerRef.value?.createAndEditCustomAction?.('toolbar')
-}
-
-function createRowCustomAction() {
-  listGridDesignerRef.value?.createAndEditCustomAction?.('row')
 }
 
 function buildDesignerActionsForSave() {
@@ -1771,6 +1872,22 @@ function resolveDesignerDefaultApiValues(schema = {}) {
     createApi: `post@${prefix}`,
     updateApi: `put@${prefix}`,
     deleteApi: `delete@${prefix}/:id`,
+    treeApi: `get@${prefix}/tree`,
+  }
+}
+
+function buildDesignerSelfTreeOptionSource(schema = localSchema.value) {
+  const treeApi = resolveDesignerDefaultApiValues(schema).treeApi
+  if (!treeApi || treeApi.includes('当前配置'))
+    return undefined
+  return {
+    type: 'tree',
+    api: treeApi,
+    keyField: 'key',
+    valueField: 'targetValue',
+    labelField: 'label',
+    childrenField: 'children',
+    params: { loadMode: 'full' },
   }
 }
 
@@ -1798,14 +1915,24 @@ function buildDesignerColumns(zone = {}, fieldMap = new Map()) {
   })
 }
 
-function buildDesignerSearchSchema(zone = {}, fieldMap = new Map()) {
+function buildDesignerSearchSchema(zone = {}, fieldMap = new Map(), schema = localSchema.value) {
+  // 优先用 AiCrudPage.searchFieldRefs（列表设计器查询条件事实来源）
+  const crud = (schema?.listGridLayout?.items || schema?.pages?.find(page => page?.pageKey === 'list')?.gridLayout?.items || [])
+    .find(item => item?.blockType === 'AiCrudPage')
+  const hasExplicitSearchRefs = Object.prototype.hasOwnProperty.call(crud?.props || {}, 'searchFieldRefs')
+  const refs = hasExplicitSearchRefs
+    ? (Array.isArray(crud.props.searchFieldRefs) ? crud.props.searchFieldRefs : [])
+    : (Array.isArray(zone.fieldRefs) ? zone.fieldRefs : [])
   // 搜索区仅在用户显式配置了搜索字段时才生成搜索表单项，
   // 避免新建列表页时自动把对象全部字段填充为搜索输入框。
-  if (!Array.isArray(zone.fieldRefs) || !zone.fieldRefs.length)
+  if (!refs.length)
     return []
-  return resolveDesignerZoneRefs(zone, fieldMap).map((fieldCode) => {
+  const settings = hasExplicitSearchRefs
+    ? (crud.props?.searchFieldSettings || zone.props?.fieldSettings || {})
+    : (zone.props?.fieldSettings || {})
+  return refs.filter(fieldCode => fieldMap.has(fieldCode)).map((fieldCode) => {
     const field = fieldMap.get(fieldCode) || {}
-    const setting = zone.props?.fieldSettings?.[fieldCode] || {}
+    const setting = settings[fieldCode] || {}
     return buildDesignerRuntimeField(field, setting, 'search')
   })
 }
@@ -1831,17 +1958,26 @@ function resolveDesignerZoneRefs(zone = {}, fieldMap = new Map()) {
 function buildDesignerRuntimeField(field = {}, setting = {}, mode = 'form') {
   const fieldCode = field.field || field.fieldCode || ''
   const type = normalizeDesignerRuntimeFieldType(setting.componentType || field.componentType || field.dataType)
+  const optionSource = setting.optionSource || field.optionSource || setting.props?.optionSource || field.props?.optionSource
+    || field.basicProps?.optionSource
+    // 查询区不擅自拼本表 /tree；表单预览仍可对无选项源的 treeSelect 兜底
+    || (mode !== 'search' && type === 'treeSelect' ? buildDesignerSelfTreeOptionSource() : undefined)
   const runtimeField = {
     field: fieldCode,
     label: setting.label || field.label || field.fieldName || fieldCode,
     type,
-    placeholder: setting.placeholder || field.placeholder || (mode === 'search' ? `请输入${field.label || fieldCode}` : `请输入${field.label || fieldCode}`),
+    placeholder: setting.placeholder || field.placeholder || (['treeSelect', 'orgTreeSelect', 'regionTreeSelect', 'select', 'dictSelect', 'userSelect', 'cascader'].includes(type)
+      ? `请选择${field.label || fieldCode}`
+      : `请输入${field.label || fieldCode}`),
     span: Number(setting.span || field.span || 1),
     clearable: true,
     options: setting.options || field.options || [],
     dictType: setting.dictType || field.dictType || '',
+    optionSource,
     props: {
+      ...(field.props || {}),
       ...(setting.props || {}),
+      ...(optionSource ? { optionSource } : {}),
     },
   }
   ;[
@@ -1901,11 +2037,12 @@ function isStandaloneDesignerLayoutNode(node = {}) {
 }
 
 function normalizeDesignerRuntimeFieldType(type = '') {
+  // UI 组件类型优先：treeSelect 存 bigint 时不能先被 dataType 分支吃掉
+  if (['textarea', 'select', 'dictSelect', 'checkbox', 'radio', 'switch', 'treeSelect', 'userSelect', 'orgTreeSelect', 'regionTreeSelect', 'cascader'].includes(type))
+    return type
   if (['int', 'bigint', 'decimal', 'number', 'inputNumber'].includes(type))
     return 'number'
   if (['datetime', 'date', 'time'].includes(type))
-    return type
-  if (['textarea', 'select', 'dictSelect', 'checkbox', 'radio', 'switch', 'treeSelect', 'userSelect'].includes(type))
     return type
   return 'input'
 }
@@ -2127,7 +2264,6 @@ function inferLayoutType(pageSchema, modelSchema) {
 }
 
 function isTreeLayout(pageSchema = {}, modelSchema = {}) {
-  const hasPageTreeConfig = Boolean(pageSchema.zones?.find(zone => zone.zoneKey === 'table')?.props?.treeConfig?.enabled)
   const listPageGridLayout = Array.isArray(pageSchema.pages)
     ? pageSchema.pages.find(page => page?.pageKey === 'list')?.gridLayout
     : null
@@ -2135,13 +2271,9 @@ function isTreeLayout(pageSchema = {}, modelSchema = {}) {
     pageSchema.listGridLayout?.items?.some(item => item.blockType === 'tree-panel')
     || listPageGridLayout?.items?.some(item => item.blockType === 'tree-panel'),
   )
-  if (pageSchema.layoutType === 'simple-crud' && !hasTreeGridBlock)
-    return false
-  return modelSchema?.appType === 'TREE'
-    || modelSchema?.treeConfig?.enabled === true
-    || pageSchema.layoutType === 'tree-crud'
-    || hasPageTreeConfig
-    || hasTreeGridBlock
+  // 左树右表：仅当明确选了 tree-crud 模板，或画布已有 tree-panel。
+  // 嵌入式树表（treeConfig.enabled / appType=TREE）不切换布局，避免中间画布被挤向右侧。
+  return pageSchema.layoutType === 'tree-crud' || hasTreeGridBlock
 }
 
 function isRelationLayout(pageSchema = {}, modelSchema = {}) {
@@ -2159,21 +2291,25 @@ function resolveLayoutModeLabel(layoutType) {
   return '自由画布'
 }
 
-function updateTreeZone(zones = [], enabled) {
-  const defaultTreeConfig = resolveDefaultTreeConfig(effectiveModelSchema.value, effectiveModelSchema.value?.treeConfig || {})
+function updateTreeZone(zones = [], enabled, modelSchema = effectiveModelSchema.value) {
+  const defaultTreeConfig = resolveDefaultTreeConfig(modelSchema || {}, modelSchema?.treeConfig || {})
   return zones.map((zone) => {
     if (zone.zoneKey !== 'table')
       return zone
     const props = { ...(zone.props || {}) }
     if (enabled) {
+      // 左树右表：右表是平铺列表，默认不要「添加下级」
       props.treeConfig = {
         ...defaultTreeConfig,
         ...(props.treeConfig || {}),
         enabled: true,
+        enableTreeAddChild: false,
       }
+      props.enableTreeAddChild = false
     }
     else {
       delete props.treeConfig
+      props.enableTreeAddChild = false
     }
     return {
       ...zone,
@@ -2250,8 +2386,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .business-list-designer {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   height: calc(100vh - 106px);
   min-height: 0;
   container-type: inline-size;
@@ -2326,61 +2462,6 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #e4e4e7;
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(10px);
-}
-
-.list-custom-actions-entry {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.9fr) minmax(260px, 1.4fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid #dbe3ee;
-  background: #f8fbff;
-}
-
-.custom-actions-entry-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.custom-actions-entry-copy strong {
-  color: #111827;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.custom-actions-entry-copy span,
-.custom-action-preview-empty {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.custom-actions-entry-preview {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.custom-action-preview-chip {
-  max-width: 180px;
-  overflow: hidden;
-  border: 1px solid #bfdbfe;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 12px;
-  line-height: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 9px;
-}
-
-.custom-actions-entry-buttons {
-  flex-wrap: nowrap;
 }
 
 .page-switch-head {
@@ -2789,6 +2870,7 @@ onBeforeUnmount(() => {
 .list-designer-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
   min-height: 0;
 }
 

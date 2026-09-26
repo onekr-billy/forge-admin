@@ -70,6 +70,140 @@ describe('default list columns', () => {
     expect(crud.fieldRefs).not.toContain('updateBy')
     expect(crud.fieldRefs).not.toContain('updateTime')
   })
+
+  it('does not default left-tree source to the current list object', () => {
+    const layout = createDefaultListGridLayout({
+      businessName: '订单',
+      objectCode: 'order',
+      fields: [
+        { field: 'id', label: '编号', listVisible: true },
+        { field: 'parentId', label: '父级', listVisible: false },
+        { field: 'name', label: '名称', listVisible: true },
+      ],
+    }, { layoutType: 'tree-crud' })
+    const tree = layout.items.find(item => item.blockType === 'tree-panel')
+    expect(tree).toBeTruthy()
+    expect(tree.props.sourceModelCode).toBe('')
+    expect(tree.props.sourceConfigKey).toBe('')
+  })
+
+  it('preserves cross-object tree source when syncing layout with current model', () => {
+    const modelSchema = {
+      businessName: '订单',
+      objectCode: 'order',
+      fields: [
+        { field: 'id', label: '编号', listVisible: true },
+        { field: 'categoryId', label: '分类', listVisible: true },
+        { field: 'orderName', label: '订单名', listVisible: true },
+      ],
+    }
+    const layout = syncGridLayoutWithModel({
+      cols: 12,
+      rowHeight: 32,
+      gap: 8,
+      layoutType: 'tree-crud',
+      items: [{
+        id: 'block_tree',
+        blockType: 'tree-panel',
+        gridX: 0,
+        gridY: 0,
+        gridW: 3,
+        gridH: 18,
+        props: {
+          sourceModelCode: 'category_tree',
+          sourceModelName: '分类树',
+          sourceConfigKey: 'category_tree',
+          sourceObjectId: 99,
+          treeApi: 'get@/ai/crud/category_tree/tree',
+          keyField: 'categoryId',
+          parentField: 'parentCategoryId',
+          labelField: 'categoryName',
+          targetField: 'categoryId',
+          filterField: 'categoryId',
+          treeTitle: '分类树',
+        },
+      }, {
+        id: 'block_crud',
+        blockType: 'AiCrudPage',
+        gridX: 3,
+        gridY: 0,
+        gridW: 9,
+        gridH: 10,
+        fieldRefs: ['orderName'],
+        props: {},
+      }],
+    }, modelSchema, { layoutType: 'tree-crud' })
+
+    const tree = layout.items.find(item => item.blockType === 'tree-panel')
+    expect(tree.props).toMatchObject({
+      sourceModelCode: 'category_tree',
+      sourceModelName: '分类树',
+      sourceConfigKey: 'category_tree',
+      sourceObjectId: 99,
+      treeApi: 'get@/ai/crud/category_tree/tree',
+      keyField: 'categoryId',
+      parentField: 'parentCategoryId',
+      labelField: 'categoryName',
+      targetField: 'categoryId',
+      filterField: 'categoryId',
+    })
+    expect(tree.props.sourceModelCode).not.toBe('order')
+    expect(tree.props.labelField).not.toBe('orderName')
+  })
+
+  it('clears stale enableTreeAddChild on AiCrudPage when layout is tree-crud', () => {
+    const modelSchema = {
+      businessName: '订单',
+      objectCode: 'order',
+      fields: [
+        { field: 'id', label: '编号', listVisible: true },
+        { field: 'orderName', label: '订单名', listVisible: true },
+      ],
+    }
+    const layout = syncGridLayoutWithModel({
+      cols: 12,
+      rowHeight: 32,
+      gap: 8,
+      layoutType: 'tree-crud',
+      items: [{
+        id: 'block_tree',
+        blockType: 'tree-panel',
+        gridX: 0,
+        gridY: 0,
+        gridW: 3,
+        gridH: 18,
+        props: {
+          sourceModelCode: 'category_tree',
+          sourceConfigKey: 'category_tree',
+          keyField: 'id',
+          parentField: 'parentId',
+          labelField: 'name',
+          filterField: 'categoryId',
+          targetField: 'id',
+        },
+      }, {
+        id: 'block_crud',
+        blockType: 'AiCrudPage',
+        gridX: 3,
+        gridY: 0,
+        gridW: 9,
+        gridH: 10,
+        fieldRefs: ['orderName'],
+        props: { enableTreeAddChild: true },
+      }],
+    }, modelSchema, { layoutType: 'tree-crud' })
+
+    const crud = layout.items.find(item => item.blockType === 'AiCrudPage')
+    expect(crud.props.enableTreeAddChild).toBe(false)
+
+    const zones = applyGridLayoutToZones(
+      [{ zoneKey: 'table', enabled: true, fieldRefs: ['orderName'], props: { enableTreeAddChild: true } }],
+      layout,
+      modelSchema,
+    )
+    const tableZone = zones.find(zone => zone.zoneKey === 'table')
+    expect(tableZone.props.enableTreeAddChild).toBe(false)
+  })
 })
 
 describe('page grid field synchronization', () => {
@@ -161,6 +295,83 @@ describe('page grid field synchronization', () => {
     }, modelSchema)
     expect(normalized.zones.find(zone => zone.zoneKey === 'table')?.fieldRefs)
       .toEqual(['fieldInput', childField])
+  })
+
+  it('migrates legacy tree property names when rebuilding the table zone', () => {
+    const modelSchema = {
+      fields: [
+        { field: 'id', label: '编号', listVisible: true },
+        { field: 'parentId', label: '父级', listVisible: true },
+        { field: 'name', label: '名称', listVisible: true },
+      ],
+    }
+    const zones = applyGridLayoutToZones([
+      { zoneKey: 'table', componentKey: 'data-table', fieldRefs: ['name'], props: {} },
+    ], {
+      items: [{
+        blockType: 'tree-panel',
+        props: {
+          nodeKeyField: 'id',
+          parentIdField: 'parentId',
+          displayField: 'name',
+          nodeValueField: 'id',
+          rightFilterField: 'parentId',
+          title: '组织树',
+          lazy: true,
+        },
+      }, {
+        blockType: 'AiCrudPage',
+        fieldRefs: ['name'],
+        props: {},
+      }],
+    }, modelSchema)
+
+    expect(zones[0].props.treeConfig).toMatchObject({
+      keyField: 'id',
+      parentField: 'parentId',
+      labelField: 'name',
+      targetField: 'id',
+      filterField: 'parentId',
+      treeTitle: '组织树',
+      loadMode: 'lazy',
+    })
+  })
+
+  it('keeps embedded treeConfig on table zone when model tree is enabled without tree-panel', () => {
+    const modelSchema = {
+      appType: 'TREE',
+      treeConfig: {
+        enabled: true,
+        keyField: 'id',
+        parentField: 'parentId',
+        labelField: 'name',
+        childrenField: 'children',
+        loadMode: 'full',
+      },
+      fields: [
+        { field: 'id', label: '编号', listVisible: true },
+        { field: 'parentId', label: '父级', listVisible: false },
+        { field: 'name', label: '名称', listVisible: true },
+      ],
+    }
+    const zones = applyGridLayoutToZones([
+      { zoneKey: 'table', componentKey: 'AiCrudPage', fieldRefs: ['name'], props: {} },
+    ], {
+      items: [{
+        blockType: 'AiCrudPage',
+        fieldRefs: ['name'],
+        props: {},
+      }],
+    }, modelSchema)
+
+    expect(zones[0].props.treeConfig).toMatchObject({
+      enabled: true,
+      keyField: 'id',
+      parentField: 'parentId',
+      labelField: 'name',
+      childrenField: 'children',
+      loadMode: 'full',
+    })
   })
 
   it('keeps searchFieldRefs for form-readonly business fields when toggling query role', () => {

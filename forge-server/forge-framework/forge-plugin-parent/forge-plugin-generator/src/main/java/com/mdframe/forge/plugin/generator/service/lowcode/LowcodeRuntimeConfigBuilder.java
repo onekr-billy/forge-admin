@@ -71,7 +71,11 @@ public class LowcodeRuntimeConfigBuilder {
                 modelSchema.getTableName()));
         runtimeConfig.setTableName(modelSchema.getTableName());
         runtimeConfig.setTableComment(modelSchema.getBusinessName());
-        runtimeConfig.setLayoutType(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "simple-crud"));
+        String layoutType = StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "simple-crud");
+        if (hasTreePanelBlock(pageSchema)) {
+            layoutType = "tree-crud";
+        }
+        runtimeConfig.setLayoutType(layoutType);
 
         try {
             runtimeConfig.setSearchSchema(objectMapper.writeValueAsString(buildSearchSchema(configKey, modelSchema, pageSchema)));
@@ -92,7 +96,8 @@ public class LowcodeRuntimeConfigBuilder {
     private List<Map<String, Object>> buildSearchSchema(String configKey, LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
         List<Map<String, Object>> fields = resolveFields(modelSchema, pageSchema, "search", field -> Boolean.TRUE.equals(field.getSearchable()))
                 .stream()
-                .map(field -> buildSearchField(field, resolveRuntimeFieldSetting(pageSchema, "search", field.getField()), modelSchema, pageSchema))
+                .map(field -> buildSearchField(field, resolveRuntimeFieldSetting(pageSchema, "search", field.getField()),
+                        modelSchema, pageSchema, configKey))
                 .collect(Collectors.toCollection(ArrayList::new));
         appendTreeRuntimeField(fields, modelSchema, pageSchema, "search");
         decorateTreeRuntimeFields(fields, configKey, modelSchema, pageSchema);
@@ -143,7 +148,7 @@ public class LowcodeRuntimeConfigBuilder {
         Map<String, String> apiConfig = new LinkedHashMap<>();
         apiConfig.put("list", "get@/ai/crud/" + configKey + "/page");
         if (isTreeRuntime(modelSchema, pageSchema)) {
-            apiConfig.put("tree", "get@/ai/crud/" + configKey + "/tree");
+            apiConfig.put("tree", "get@/ai/crud/" + resolveTreeApiConfigKey(configKey, pageSchema) + "/tree");
         }
         apiConfig.put("detail", "get@/ai/crud/" + configKey + "/:id");
         apiConfig.put("create", "post@/ai/crud/" + configKey);
@@ -233,6 +238,12 @@ public class LowcodeRuntimeConfigBuilder {
             copyOption(tableProps, options, "bordered");
             copyOption(tableProps, options, "striped");
             copyOption(tableProps, options, "drawerPlacement");
+            // 左树右表右表是平铺列表：强制关闭「添加下级」，忽略表区/区块残留配置
+            if (isLeftTreeRightTableLayout(pageSchema)) {
+                options.put("enableTreeAddChild", Boolean.FALSE);
+            } else {
+                copyOption(tableProps, options, "enableTreeAddChild");
+            }
             // 表单设计器布局里配置的抽屉方向优先于列表/表格区设置
             copyOption(editProps, options, "drawerPlacement");
             copyOption(tableProps, options, "tabWorkspace");
@@ -851,11 +862,16 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private boolean isTreeRuntime(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
-        String appType = StringUtils.defaultIfBlank(modelSchema.getAppType(), "SINGLE").toUpperCase(Locale.ROOT);
-        return "TREE".equals(appType)
-                || (modelSchema.getTreeConfig() != null && Boolean.TRUE.equals(modelSchema.getTreeConfig().getEnabled()))
-                || (pageSchema != null && "tree-crud".equals(pageSchema.getLayoutType()))
-                || extractTreeConfigOverrides(pageSchema) instanceof Map<?, ?>;
+        if (modelSchema != null) {
+            String appType = StringUtils.defaultIfBlank(modelSchema.getAppType(), "SINGLE").toUpperCase(Locale.ROOT);
+            if ("TREE".equals(appType)
+                    || (modelSchema.getTreeConfig() != null && Boolean.TRUE.equals(modelSchema.getTreeConfig().getEnabled()))) {
+                return true;
+            }
+        }
+        return (pageSchema != null && "tree-crud".equals(pageSchema.getLayoutType()))
+                || extractTreeConfigOverrides(pageSchema) instanceof Map<?, ?>
+                || hasTreePanelBlock(pageSchema);
     }
 
     private boolean isMasterDetailRuntime(LowcodePageSchema pageSchema) {
@@ -888,10 +904,11 @@ public class LowcodeRuntimeConfigBuilder {
                                                 LowcodePageSchema pageSchema,
                                                 Object overrides) {
         Map<String, Object> treeConfig = new LinkedHashMap<>();
-        if (modelSchema.getTreeConfig() != null) {
+        if (modelSchema != null && modelSchema.getTreeConfig() != null) {
             putIfNotBlank(treeConfig, "sourceModelCode", modelSchema.getTreeConfig().getSourceModelCode());
             putIfNotBlank(treeConfig, "sourceModelName", modelSchema.getTreeConfig().getSourceModelName());
             putIfNotBlank(treeConfig, "sourceTableName", modelSchema.getTreeConfig().getSourceTableName());
+            putIfNotBlank(treeConfig, "sourceConfigKey", modelSchema.getTreeConfig().getSourceConfigKey());
             putIfNotBlank(treeConfig, "keyField", modelSchema.getTreeConfig().getKeyField());
             putIfNotBlank(treeConfig, "parentField", modelSchema.getTreeConfig().getParentField());
             putIfNotBlank(treeConfig, "labelField", modelSchema.getTreeConfig().getLabelField());
@@ -908,13 +925,14 @@ public class LowcodeRuntimeConfigBuilder {
             putIfNotBlank(treeConfig, "sourceModelCode", text(map.get("sourceModelCode")));
             putIfNotBlank(treeConfig, "sourceModelName", text(map.get("sourceModelName")));
             putIfNotBlank(treeConfig, "sourceTableName", text(map.get("sourceTableName")));
-            putIfNotBlank(treeConfig, "keyField", text(map.get("keyField")));
-            putIfNotBlank(treeConfig, "parentField", text(map.get("parentField")));
-            putIfNotBlank(treeConfig, "labelField", text(map.get("labelField")));
-            putIfNotBlank(treeConfig, "filterField", text(map.get("filterField")));
-            putIfNotBlank(treeConfig, "targetField", text(map.get("targetField")));
+            putIfNotBlank(treeConfig, "sourceConfigKey", text(map.get("sourceConfigKey")));
+            putIfNotBlank(treeConfig, "keyField", firstMapText(map, "keyField", "nodeKeyField"));
+            putIfNotBlank(treeConfig, "parentField", firstMapText(map, "parentField", "parentIdField"));
+            putIfNotBlank(treeConfig, "labelField", firstMapText(map, "labelField", "displayField", "nameField"));
+            putIfNotBlank(treeConfig, "filterField", firstMapText(map, "filterField", "rightFilterField", "listFilterField"));
+            putIfNotBlank(treeConfig, "targetField", firstMapText(map, "targetField", "nodeValueField", "valueField"));
             putIfNotBlank(treeConfig, "childrenField", text(map.get("childrenField")));
-            putIfNotBlank(treeConfig, "treeTitle", text(map.get("treeTitle")));
+            putIfNotBlank(treeConfig, "treeTitle", firstMapText(map, "treeTitle", "title"));
             putIfNotBlank(treeConfig, "loadMode", text(map.get("loadMode")));
             if (StringUtils.isBlank(text(treeConfig.get("loadMode")))
                     && map.get("lazy") instanceof Boolean lazy
@@ -952,13 +970,31 @@ public class LowcodeRuntimeConfigBuilder {
         normalizePrimaryTreeField(treeConfig, "filterField", modelSchema);
         treeConfig.putIfAbsent("childrenField", "children");
         treeConfig.putIfAbsent("loadMode", "full");
-        String defaultTreeTitle = StringUtils.defaultIfBlank(text(treeConfig.get("sourceModelName")), modelSchema.getBusinessName());
+        String defaultTreeTitle = StringUtils.defaultIfBlank(
+                text(treeConfig.get("sourceModelName")),
+                modelSchema == null ? null : modelSchema.getBusinessName());
         treeConfig.putIfAbsent("treeTitle", StringUtils.isBlank(defaultTreeTitle) ? "树形导航" : defaultTreeTitle + "树");
+        // 左树右表必须显式启用，否则 TreeCrudTemplate 会降级成普通列表
+        if (isLeftTreeRightTableLayout(pageSchema)) {
+            treeConfig.put("enabled", Boolean.TRUE);
+            // 默认点上级查询本级+全部下级
+            treeConfig.putIfAbsent("includeChildren", Boolean.TRUE);
+        }
         return treeConfig;
     }
 
     private String text(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private String firstMapText(Map<?, ?> values, String... keys) {
+        for (String key : keys) {
+            String value = text(values.get(key));
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private String inferTreeParentField(LowcodeModelSchema modelSchema, LowcodePageModelRef sourceRef) {
@@ -1003,6 +1039,9 @@ public class LowcodeRuntimeConfigBuilder {
                     .filter(StringUtils::isNotBlank)
                     .toList();
         }
+        if (modelSchema == null || modelSchema.getFields() == null) {
+            return List.of();
+        }
         return modelSchema.getFields().stream()
                 .map(LowcodeFieldSchema::getField)
                 .filter(StringUtils::isNotBlank)
@@ -1022,7 +1061,7 @@ public class LowcodeRuntimeConfigBuilder {
 
     private void normalizePrimaryTreeField(Map<String, Object> treeConfig, String key, LowcodeModelSchema modelSchema) {
         String value = text(treeConfig.get(key));
-        if (StringUtils.isBlank(value)) {
+        if (StringUtils.isBlank(value) || modelSchema == null || modelSchema.getFields() == null) {
             return;
         }
         for (LowcodeFieldSchema field : modelSchema.getFields()) {
@@ -1061,7 +1100,10 @@ public class LowcodeRuntimeConfigBuilder {
         if (primaryRef != null && StringUtils.isNotBlank(primaryRef.getModelCode())) {
             return primaryRef.getModelCode();
         }
-        return modelSchema.getObject() == null ? null : modelSchema.getObject().getCode();
+        if (modelSchema == null || modelSchema.getObject() == null) {
+            return null;
+        }
+        return modelSchema.getObject().getCode();
     }
 
     private List<LowcodeRelationSchema> resolvePrimaryTreeRelations(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
@@ -1069,7 +1111,7 @@ public class LowcodeRuntimeConfigBuilder {
         if (primaryRef != null && primaryRef.getRelations() != null && !primaryRef.getRelations().isEmpty()) {
             return primaryRef.getRelations();
         }
-        return modelSchema.getRelations();
+        return modelSchema == null || modelSchema.getRelations() == null ? List.of() : modelSchema.getRelations();
     }
 
     private void putIfNotBlank(Map<String, Object> target, String key, String value) {
@@ -1097,7 +1139,10 @@ public class LowcodeRuntimeConfigBuilder {
         if (fieldSchema == null) {
             return;
         }
-        Map<String, Object> runtimeField = "edit".equals(zoneKey) ? buildEditField(fieldSchema) : buildSearchField(fieldSchema);
+        Map<String, Object> runtimeField = "edit".equals(zoneKey)
+                ? buildEditField(fieldSchema, Map.of(), modelSchema, pageSchema)
+                // 隐藏筛选项不传 runtimeConfigKey，避免外部树源误挂本表 defaultSort
+                : buildSearchField(fieldSchema, Map.of(), modelSchema, pageSchema, null);
         if (!"edit".equals(zoneKey)) {
             runtimeField.put("hidden", true);
         }
@@ -1114,16 +1159,38 @@ public class LowcodeRuntimeConfigBuilder {
         if (!isTreeRuntime(modelSchema, pageSchema) || StringUtils.isBlank(configKey)) {
             return;
         }
+        boolean leftTree = isLeftTreeRightTableLayout(pageSchema);
+        boolean modelEmbeddedTree = isModelEmbeddedTreeEnabled(modelSchema);
+        // 纯左树右表：筛选由左侧树完成，不要用外部树 parentField 改右表字段；
+        // 但本表已是 treeSelect 且无选项源的字段，仍补当前对象 tree API（表单树形下拉）
+        if (leftTree && !modelEmbeddedTree) {
+            decorateSelfTreeSelectFields(fields, configKey, modelSchema);
+            // 本表 parentId 类字段仍补树形下拉（走当前对象 tree，与左树外部源无关）
+            decorateCurrentObjectParentTreeSelect(fields, configKey, modelSchema);
+            return;
+        }
+        // 非左树时，仅嵌入式树表需要给父级字段补选项源
+        if (!leftTree && !isEmbeddedTreeTableRuntime(modelSchema, pageSchema)) {
+            return;
+        }
         Map<String, Object> treeConfig = buildTreeConfig(modelSchema, pageSchema, extractTreeConfigOverrides(pageSchema));
-        String filterField = text(treeConfig.get("filterField"));
-        if (StringUtils.isBlank(filterField)) {
+        // 本表树形父级字段（表单树形选择），不能误用左树外部数据源的 parentField
+        String parentField = modelEmbeddedTree
+                ? firstNonBlank(
+                        modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getParentField() : null,
+                        text(treeConfig.get("parentField")),
+                        "parentId")
+                : firstNonBlank(
+                        text(treeConfig.get("parentField")),
+                        text(treeConfig.get("filterField")));
+        if (StringUtils.isBlank(parentField)) {
             return;
         }
         for (Map<String, Object> item : fields) {
-            if (!filterField.equals(text(item.get("field")))) {
+            if (!parentField.equals(text(item.get("field")))) {
                 continue;
             }
-            String label = StringUtils.defaultIfBlank(text(item.get("label")), filterField);
+            String label = StringUtils.defaultIfBlank(text(item.get("label")), parentField);
             item.put("type", "treeSelect");
             item.put("queryType", "eq");
             Map<String, Object> props = new LinkedHashMap<>();
@@ -1134,12 +1201,189 @@ public class LowcodeRuntimeConfigBuilder {
             props.putIfAbsent("placeholder", "请选择" + label);
             props.putIfAbsent("clearable", true);
             props.putIfAbsent("filterable", true);
-            props.put("optionSource", buildTreeOptionSource(configKey, treeConfig));
+            // 本表父级选择必须走当前对象 tree API，不能走左树外部 sourceConfigKey
+            Map<String, Object> optionSource = buildTreeOptionSource(configKey, treeConfig);
+            props.put("optionSource", optionSource);
+            item.put("optionSource", optionSource);
             item.put("props", props);
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private void decorateSelfTreeSelectFields(List<Map<String, Object>> fields,
+                                              String configKey,
+                                              LowcodeModelSchema modelSchema) {
+        if (fields == null || StringUtils.isBlank(configKey)) {
+            return;
+        }
+        // 本表没有父级字段时不能拼 /tree，否则运行态报「树形父级字段不存在: parentId」
+        if (!canUseSelfTreeOptionSource(modelSchema)) {
+            return;
+        }
+        Map<String, Object> treeConfig = new LinkedHashMap<>();
+        treeConfig.put("childrenField", "children");
+        if (modelSchema != null && modelSchema.getTreeConfig() != null) {
+            putIfNotBlank(treeConfig, "childrenField", modelSchema.getTreeConfig().getChildrenField());
+        }
+        for (Map<String, Object> item : fields) {
+            if (!"treeSelect".equals(text(item.get("type")))) {
+                continue;
+            }
+            Map<String, Object> props = new LinkedHashMap<>();
+            Object sourceProps = item.get("props");
+            if (sourceProps instanceof Map<?, ?> sourcePropsMap) {
+                props.putAll((Map<String, Object>) sourcePropsMap);
+            }
+            if (hasEffectiveOptionSource(item.get("optionSource")) || hasEffectiveOptionSource(props.get("optionSource"))) {
+                continue;
+            }
+            Map<String, Object> optionSource = buildTreeOptionSource(configKey, treeConfig);
+            props.put("optionSource", optionSource);
+            item.put("optionSource", optionSource);
+            item.put("props", props);
+        }
+    }
+
+    /**
+     * 仅当模型真实存在父级字段时，才允许把无选项源的 treeSelect 补成本表 /tree。
+     */
+    private boolean canUseSelfTreeOptionSource(LowcodeModelSchema modelSchema) {
+        if (modelSchema == null) {
+            return false;
+        }
+        String parentField = firstNonBlank(
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getParentField() : null,
+                null);
+        if (StringUtils.isNotBlank(parentField)) {
+            return findField(modelSchema, parentField) != null;
+        }
+        return findField(modelSchema, "parentId") != null
+                || findField(modelSchema, "pid") != null
+                || findField(modelSchema, "parentCode") != null;
+    }
+
+    /**
+     * 左树右表且未开启本表嵌入树时：仍把本表 parentId/父级字段补成 treeSelect，
+     * 选项源固定当前对象（不能用左树外部对象的 parentField）。
+     */
+    @SuppressWarnings("unchecked")
+    private void decorateCurrentObjectParentTreeSelect(List<Map<String, Object>> fields,
+                                                       String configKey,
+                                                       LowcodeModelSchema modelSchema) {
+        if (fields == null || StringUtils.isBlank(configKey)) {
+            return;
+        }
+        String parentField = firstNonBlank(
+                modelSchema != null && modelSchema.getTreeConfig() != null
+                        ? modelSchema.getTreeConfig().getParentField()
+                        : null,
+                findField(modelSchema, "parentId") != null ? "parentId" : null,
+                findField(modelSchema, "pid") != null ? "pid" : null,
+                findField(modelSchema, "parentCode") != null ? "parentCode" : null);
+        if (StringUtils.isBlank(parentField) || findField(modelSchema, parentField) == null) {
+            return;
+        }
+        Map<String, Object> treeConfig = new LinkedHashMap<>();
+        treeConfig.put("childrenField", "children");
+        if (modelSchema != null && modelSchema.getTreeConfig() != null) {
+            putIfNotBlank(treeConfig, "childrenField", modelSchema.getTreeConfig().getChildrenField());
+        }
+        for (Map<String, Object> item : fields) {
+            if (!parentField.equals(text(item.get("field")))) {
+                continue;
+            }
+            Map<String, Object> props = new LinkedHashMap<>();
+            Object sourceProps = item.get("props");
+            if (sourceProps instanceof Map<?, ?> sourcePropsMap) {
+                props.putAll((Map<String, Object>) sourcePropsMap);
+            }
+            if (hasEffectiveOptionSource(item.get("optionSource")) || hasEffectiveOptionSource(props.get("optionSource"))) {
+                // 已有选项源时仍确保组件类型为树形下拉
+                if (!"treeSelect".equals(text(item.get("type")))) {
+                    item.put("type", "treeSelect");
+                }
+                continue;
+            }
+            String label = StringUtils.defaultIfBlank(text(item.get("label")), parentField);
+            item.put("type", "treeSelect");
+            item.put("queryType", "eq");
+            props.putIfAbsent("placeholder", "请选择" + label);
+            props.putIfAbsent("clearable", true);
+            props.putIfAbsent("filterable", true);
+            Map<String, Object> optionSource = buildTreeOptionSource(configKey, treeConfig);
+            props.put("optionSource", optionSource);
+            item.put("optionSource", optionSource);
+            item.put("props", props);
+        }
+    }
+
+    private boolean hasEffectiveOptionSource(Object source) {
+        if (!(source instanceof Map<?, ?> map) || map.isEmpty()) {
+            return false;
+        }
+        return StringUtils.isNotBlank(text(map.get("type")))
+                || StringUtils.isNotBlank(text(map.get("api")))
+                || StringUtils.isNotBlank(text(map.get("querySourceCode")))
+                || StringUtils.isNotBlank(text(map.get("sourceKey")))
+                || StringUtils.isNotBlank(text(map.get("objectCode")))
+                || StringUtils.isNotBlank(text(map.get("businessObjectCode")));
+    }
+
+    private boolean isModelEmbeddedTreeEnabled(LowcodeModelSchema modelSchema) {
+        if (modelSchema == null) {
+            return false;
+        }
+        if ("TREE".equalsIgnoreCase(StringUtils.defaultIfBlank(modelSchema.getAppType(), ""))) {
+            return true;
+        }
+        return modelSchema.getTreeConfig() != null && Boolean.TRUE.equals(modelSchema.getTreeConfig().getEnabled());
+    }
+
+    private boolean isLeftTreeRightTableLayout(LowcodePageSchema pageSchema) {
+        if (pageSchema == null) {
+            return false;
+        }
+        if ("tree-crud".equals(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), ""))) {
+            return true;
+        }
+        return hasTreePanelBlock(pageSchema);
+    }
+
+    private boolean hasTreePanelBlock(LowcodePageSchema pageSchema) {
+        if (pageSchema == null || pageSchema.getListGridLayout() == null) {
+            return false;
+        }
+        Object items = pageSchema.getListGridLayout().get("items");
+        if (!(items instanceof List<?> itemList)) {
+            return false;
+        }
+        for (Object item : itemList) {
+            if (item instanceof Map<?, ?> block && "tree-panel".equals(String.valueOf(block.get("blockType")))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.isNotBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
     private Map<String, Object> buildTreeOptionSource(String configKey, Map<String, Object> treeConfig) {
+        return buildTreeOptionSource(configKey, treeConfig, Map.of());
+    }
+
+    private Map<String, Object> buildTreeOptionSource(String configKey,
+                                                      Map<String, Object> treeConfig,
+                                                      Map<String, Object> sortParams) {
         Map<String, Object> source = new LinkedHashMap<>();
         source.put("type", "tree");
         source.put("api", "get@/ai/crud/" + configKey + "/tree");
@@ -1147,16 +1391,45 @@ public class LowcodeRuntimeConfigBuilder {
         source.put("valueField", "targetValue");
         source.put("labelField", "label");
         source.put("childrenField", StringUtils.defaultIfBlank(text(treeConfig.get("childrenField")), "children"));
-        source.put("params", Map.of("loadMode", "full"));
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("loadMode", "full");
+        if (sortParams != null) {
+            putIfNotBlank(params, "orderByColumn", text(sortParams.get("orderByColumn")));
+            putIfNotBlank(params, "isAsc", text(sortParams.get("isAsc")));
+        }
+        source.put("params", params);
         return source;
     }
 
-    private Object extractTreeConfigOverrides(LowcodePageSchema pageSchema) {
-        LowcodePageZone tableZone = findZone(pageSchema, "table");
-        if (tableZone != null && tableZone.getProps() != null && tableZone.getProps().get("treeConfig") != null) {
-            return tableZone.getProps().get("treeConfig");
+    private String resolveTreeApiConfigKey(String fallbackConfigKey, LowcodePageSchema pageSchema) {
+        Object overrides = extractTreeConfigOverrides(pageSchema);
+        if (overrides instanceof Map<?, ?> map) {
+            String sourceConfigKey = firstMapText(map, "sourceConfigKey");
+            if (StringUtils.isNotBlank(sourceConfigKey)) {
+                return sourceConfigKey;
+            }
         }
-        return extractGridTreeConfigOverrides(pageSchema);
+        return fallbackConfigKey;
+    }
+
+    private Object extractTreeConfigOverrides(LowcodePageSchema pageSchema) {
+        Object gridTree = extractGridTreeConfigOverrides(pageSchema);
+        LowcodePageZone tableZone = findZone(pageSchema, "table");
+        Object zoneTree = tableZone != null && tableZone.getProps() != null
+                ? tableZone.getProps().get("treeConfig")
+                : null;
+        // 优先用 tree-panel（含外部 sourceConfigKey）；zone 上可能残留空来源的旧 treeConfig
+        if (gridTree instanceof Map<?, ?> gridMap) {
+            String sourceConfigKey = firstMapText(gridMap, "sourceConfigKey");
+            String sourceModelCode = firstMapText(gridMap, "sourceModelCode");
+            if (StringUtils.isNotBlank(sourceConfigKey) || StringUtils.isNotBlank(sourceModelCode) || zoneTree == null) {
+                return gridTree;
+            }
+        }
+        if (zoneTree != null) {
+            return zoneTree;
+        }
+        return gridTree;
     }
 
     private Object extractGridTreeConfigOverrides(LowcodePageSchema pageSchema) {
@@ -1493,7 +1766,7 @@ public class LowcodeRuntimeConfigBuilder {
     }
 
     private Map<String, Object> buildSearchField(LowcodeFieldSchema field) {
-        return buildSearchField(field, Map.of(), null, null);
+        return buildSearchField(field, Map.of(), null, null, null);
     }
 
     @SuppressWarnings("unchecked")
@@ -1501,6 +1774,15 @@ public class LowcodeRuntimeConfigBuilder {
                                                  Map<String, Object> pageSetting,
                                                  LowcodeModelSchema modelSchema,
                                                  LowcodePageSchema pageSchema) {
+        return buildSearchField(field, pageSetting, modelSchema, pageSchema, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> buildSearchField(LowcodeFieldSchema field,
+                                                 Map<String, Object> pageSetting,
+                                                 LowcodeModelSchema modelSchema,
+                                                 LowcodePageSchema pageSchema,
+                                                 String runtimeConfigKey) {
         Map<String, Object> item = new LinkedHashMap<>();
         String configuredQueryFieldName = StringUtils.defaultIfBlank(text(pageSetting.get("queryField")), field.getField());
         LowcodeFieldSchema queryField = findRuntimeField(modelSchema, pageSchema, configuredQueryFieldName);
@@ -1540,13 +1822,81 @@ public class LowcodeRuntimeConfigBuilder {
         if (designerProps instanceof Map<?, ?> designerPropsMap) {
             props.putAll((Map<String, Object>) designerPropsMap);
         }
+        // 查询区选项源与表单字段保持一致：优先用表单设计器 props / 模型 basicProps
+        if (!hasEffectiveOptionSource(props.get("optionSource")) && !hasEffectiveOptionSource(item.get("optionSource"))) {
+            Map<String, Object> editSetting = resolveEditFieldSetting(pageSchema, field.getField());
+            Object editPropsValue = editSetting.get("props");
+            if (editPropsValue instanceof Map<?, ?> editProps) {
+                Object editOptionSource = editProps.get("optionSource");
+                if (hasEffectiveOptionSource(editOptionSource)) {
+                    props.put("optionSource", editOptionSource);
+                    item.put("optionSource", editOptionSource);
+                }
+            }
+        }
+        if (hasEffectiveOptionSource(props.get("optionSource")) && !hasEffectiveOptionSource(item.get("optionSource"))) {
+            item.put("optionSource", props.get("optionSource"));
+        }
         if (!props.isEmpty()) {
             item.put("props", props);
         }
         if (lookupMeta != null) {
             applyRelationLookupProps(item, lookupMeta, StringUtils.defaultIfBlank(field.getLabel(), field.getField()));
         }
+        // 查询区树形默认支持本级+子集；选项源优先对齐左树（同一 tree API / 同一排序）
+        if ("treeSelect".equals(text(item.get("type"))) || "orgTreeSelect".equals(text(item.get("type")))) {
+            String searchTreeConfigKey = StringUtils.defaultIfBlank(
+                    configKeyForSearchTree(pageSchema, modelSchema),
+                    runtimeConfigKey);
+            applySearchTreeSelectDefaults(item, props, modelSchema, pageSchema, searchTreeConfigKey);
+        }
         return item;
+    }
+
+    private String configKeyForSearchTree(LowcodePageSchema pageSchema, LowcodeModelSchema modelSchema) {
+        Object overrides = extractTreeConfigOverrides(pageSchema);
+        if (overrides instanceof Map<?, ?> map) {
+            String sourceConfigKey = firstMapText(map, "sourceConfigKey");
+            if (StringUtils.isNotBlank(sourceConfigKey)) {
+                return sourceConfigKey;
+            }
+        }
+        if (modelSchema != null && modelSchema.getTreeConfig() != null
+                && StringUtils.isNotBlank(modelSchema.getTreeConfig().getSourceConfigKey())) {
+            return modelSchema.getTreeConfig().getSourceConfigKey();
+        }
+        return null;
+    }
+
+    private void applySearchTreeSelectDefaults(Map<String, Object> item,
+                                               Map<String, Object> props,
+                                               LowcodeModelSchema modelSchema,
+                                               LowcodePageSchema pageSchema,
+                                               String leftTreeConfigKey) {
+        if (item == null) {
+            return;
+        }
+        Map<String, Object> nextProps = props == null ? new LinkedHashMap<>() : props;
+        // 与左树一致：默认本级+下级；仅显式 false 时关闭
+        if (!nextProps.containsKey("includeChildren")) {
+            nextProps.put("includeChildren", Boolean.TRUE);
+        }
+        item.put("includeChildren", nextProps.get("includeChildren"));
+        String fieldName = text(item.get("field"));
+        Map<String, Object> treeConfig = buildTreeConfig(modelSchema, pageSchema, extractTreeConfigOverrides(pageSchema));
+        String filterField = firstNonBlank(text(treeConfig.get("filterField")), text(treeConfig.get("parentField")));
+        boolean alignWithLeftTree = StringUtils.isNotBlank(leftTreeConfigKey)
+                && StringUtils.isNotBlank(filterField)
+                && filterField.equals(fieldName);
+        // 与左树筛选字段相同时，查询树强制共用左树 tree API（节点序用树接口默认序，不用列表 defaultSort）
+        if (alignWithLeftTree) {
+            Map<String, Object> optionSource = buildTreeOptionSource(leftTreeConfigKey, treeConfig, Map.of());
+            nextProps.put("optionSource", optionSource);
+            item.put("optionSource", optionSource);
+        }
+        if (!nextProps.isEmpty()) {
+            item.put("props", nextProps);
+        }
     }
 
     private LowcodeFieldSchema findRuntimeField(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema, String fieldName) {
@@ -1844,7 +2194,11 @@ public class LowcodeRuntimeConfigBuilder {
                     continue;
                 }
                 String globalAlign = "table".equals(zoneKey) ? normalizeAlign(text(props.get("globalAlign"))) : null;
+                // AiCrudPage 查询区配置写在 searchFieldSettings，不能误读表格 fieldSettings
                 Object settingsValue = props.get("fieldSettings");
+                if ("search".equals(zoneKey) && "AiCrudPage".equals(blockType) && props.containsKey("searchFieldSettings")) {
+                    settingsValue = props.get("searchFieldSettings");
+                }
                 if (!(settingsValue instanceof Map<?, ?> settings)) {
                     if (StringUtils.isNotBlank(globalAlign)) {
                         return Map.of("align", globalAlign);
@@ -2710,10 +3064,41 @@ public class LowcodeRuntimeConfigBuilder {
      * 只识别主表字段而留下过期的 table zone，发布时必须优先读取网格区块的显式选列。
      */
     private List<String> resolveListGridFieldRefs(LowcodePageSchema pageSchema, String zoneKey) {
-        if (pageSchema == null || pageSchema.getListGridLayout() == null) {
+        List<String> fromListGrid = extractGridFieldRefs(pageSchema == null ? null : pageSchema.getListGridLayout(), zoneKey);
+        if (!fromListGrid.isEmpty()) {
+            return fromListGrid;
+        }
+        // 兼容仅写在 pages[list].gridLayout 的草稿
+        if (pageSchema == null || pageSchema.getPages() == null) {
             return List.of();
         }
-        Object itemsValue = pageSchema.getListGridLayout().get("items");
+        for (Map<String, Object> page : pageSchema.getPages()) {
+            if (page == null || !"list".equals(text(page.get("pageKey")))) {
+                continue;
+            }
+            Object grid = page.get("gridLayout");
+            if (!(grid instanceof Map<?, ?> gridMap)) {
+                continue;
+            }
+            Map<String, Object> layout = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : gridMap.entrySet()) {
+                if (entry.getKey() != null) {
+                    layout.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+            }
+            List<String> fromPage = extractGridFieldRefs(layout, zoneKey);
+            if (!fromPage.isEmpty()) {
+                return fromPage;
+            }
+        }
+        return List.of();
+    }
+
+    private List<String> extractGridFieldRefs(Map<String, Object> gridLayout, String zoneKey) {
+        if (gridLayout == null || gridLayout.isEmpty()) {
+            return List.of();
+        }
+        Object itemsValue = gridLayout.get("items");
         if (!(itemsValue instanceof List<?> items)) {
             return List.of();
         }
@@ -3081,13 +3466,25 @@ public class LowcodeRuntimeConfigBuilder {
         if (hasRecordSelectorConfig(field, pageSetting)) {
             return "recordSelector";
         }
+        // 查询组件与表单字段保持一致：字段已有明确 UI 类型时，忽略 searchFieldSettings 里的旧覆盖
+        String fieldComponentType = normalizeEditComponentType(StringUtils.defaultIfBlank(field.getComponentType(), ""));
+        if (isPreferredSearchFieldComponent(fieldComponentType)) {
+            return resolveSearchComponentTypeFromField(field, queryType, fieldComponentType);
+        }
         String configuredType = StringUtils.defaultIfBlank(text(pageSetting.get("componentType")), text(pageSetting.get("type")));
         if (StringUtils.isNotBlank(configuredType)) {
-            return normalizeEditComponentType(configuredType);
+            String normalizedConfigured = normalizeEditComponentType(configuredType);
+            if (!shouldIgnoreConfiguredSearchComponent(normalizedConfigured, field)) {
+                return normalizedConfigured;
+            }
         }
         String componentType = StringUtils.defaultIfBlank(field.getComponentType(), field.getDataType());
         componentType = StringUtils.defaultIfBlank(componentType, "input");
         componentType = normalizeEditComponentType(componentType);
+        return resolveSearchComponentTypeFromField(field, queryType, componentType);
+    }
+
+    private String resolveSearchComponentTypeFromField(LowcodeFieldSchema field, String queryType, String componentType) {
         if (isBusinessSelectComponent(componentType)) {
             return componentType;
         }
@@ -3127,6 +3524,28 @@ public class LowcodeRuntimeConfigBuilder {
             return "cascader";
         }
         return "input";
+    }
+
+    private boolean isPreferredSearchFieldComponent(String componentType) {
+        return Set.of(
+                "treeSelect", "orgTreeSelect", "regionTreeSelect", "cascader", "userSelect",
+                "select", "dictSelect", "radio", "checkbox", "switch",
+                "date", "datetime", "time", "textarea", "number", "input"
+        ).contains(componentType);
+    }
+
+    /**
+     * 页面 searchFieldSettings 把树形字段误配成 number/input 时忽略该配置，回落到字段自身组件类型。
+     */
+    private boolean shouldIgnoreConfiguredSearchComponent(String configuredType, LowcodeFieldSchema field) {
+        if (field == null || StringUtils.isBlank(configuredType)) {
+            return false;
+        }
+        String fieldType = normalizeEditComponentType(StringUtils.defaultIfBlank(field.getComponentType(), ""));
+        if (!Set.of("treeSelect", "orgTreeSelect", "regionTreeSelect", "cascader", "userSelect").contains(fieldType)) {
+            return false;
+        }
+        return Set.of("input", "number", "textarea").contains(configuredType);
     }
 
     private String resolveEditComponentType(LowcodeFieldSchema field) {

@@ -292,6 +292,7 @@
                   :runtime-crud-props-resolver="runtimeCrudPropsResolver"
                   :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
                   :data-source-configured-resolver="dataSourceConfiguredResolver"
+                  :runtime-tree-active-key="runtimeTreeActiveKey"
                   @child-block-select="emit('childBlockSelect', $event)"
                   @child-block-menu-select="emit('childBlockMenuSelect', $event)"
                   @block-props-update="emit('blockPropsUpdate', $event)"
@@ -305,6 +306,7 @@
                   @child-block-move-start="emit('childBlockMoveStart', $event)"
                   @child-block-drag-end="emit('childBlockDragEnd')"
                   @child-block-resize-start="emit('childBlockResizeStart', $event)"
+                  @runtime-tree-select="emit('runtimeTreeSelect', $event)"
                   @request-data-source="emit('requestDataSource', $event)"
                 />
                 <template v-if="!readonly && child.id === selectedBlockId">
@@ -338,6 +340,11 @@
           <n-skeleton height="32px" :sharp="false" />
           <n-skeleton text :repeat="5" />
         </div>
+        <TreeCrudTemplate
+          v-else-if="effectiveRuntimeCrudProps && shouldRenderTreeCrudShell"
+          ref="runtimeCrudRef"
+          :crud-props="effectiveRuntimeCrudProps"
+        />
         <AiCrudPage
           v-else-if="effectiveRuntimeCrudProps"
           ref="runtimeCrudRef"
@@ -477,9 +484,9 @@
       </div>
     </template>
 
-    <!-- 筛选树 -->
+    <!-- 筛选树：有树 API 就加载真实数据（设计态/预览/运行态），不再仅限 readonly -->
     <template v-else-if="block.blockType === 'tree-panel'">
-      <div class="tree-preview" :class="{ 'is-runtime': readonly && runtimeCrudProps, 'is-panel-collapsed': treePanelCollapsed }">
+      <div class="tree-preview" :class="{ 'is-runtime': hasRuntimeTreeApi, 'is-panel-collapsed': treePanelCollapsed }">
         <button
           type="button"
           class="tree-panel-edge-toggle"
@@ -514,7 +521,7 @@
             </button>
           </div>
         </div>
-        <template v-if="!treePanelCollapsed && readonly && runtimeCrudProps">
+        <template v-if="!treePanelCollapsed && hasRuntimeTreeApi">
           <button
             type="button"
             class="tree-node tree-node-button"
@@ -534,37 +541,23 @@
               key-field="key"
               label-field="label"
               :children-field="runtimeTreeChildrenField"
+              :on-load="runtimeTreeLoadMode === 'lazy' ? loadRuntimeTreeChildren : undefined"
               :expanded-keys="runtimeExpandedTreeKeys"
               @update:expanded-keys="runtimeExpandedTreeKeys = $event"
               @update:selected-keys="handleRuntimeTreeSelected"
             />
             <div v-else class="tree-empty">
-              {{ runtimeTreeLoading ? '加载中...' : '暂无树节点' }}
+              {{ runtimeTreeLoading ? '加载中...' : (runtimeTreeError || '暂无树节点，请检查树数据来源与字段配置') }}
             </div>
           </n-spin>
         </template>
         <template v-else-if="!treePanelCollapsed">
-          <div class="tree-search-placeholder">
-            搜索节点
-          </div>
-          <div class="tree-node active">
-            <span class="tree-node-dot" />
-            <span>全部</span>
-            <small>12</small>
-          </div>
-          <div class="tree-node">
-            <span class="tree-node-dot" />
-            <span>{{ block.props?.labelField || '一级节点' }}</span>
-            <small>8</small>
-          </div>
-          <div v-if="previewTreeExpanded" class="tree-node child">
-            <span class="tree-node-dot" />
-            <span>子节点示例</span>
-            <small>3</small>
+          <div class="tree-empty tree-empty-hint">
+            请先在右侧选择「树数据来源」对象，并配置主键/父级/显示字段
           </div>
         </template>
         <div v-if="!treePanelCollapsed" class="tree-foot">
-          {{ block.props?.filterField || 'filterField' }} -> {{ block.props?.targetField || 'targetField' }}
+          点击树节点后，右侧列表会自动按对应字段筛选
         </div>
       </div>
     </template>
@@ -1022,6 +1015,7 @@
             :runtime-crud-props-resolver="runtimeCrudPropsResolver"
             :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
             :data-source-configured-resolver="dataSourceConfiguredResolver"
+            :runtime-tree-active-key="runtimeTreeActiveKey"
             @child-block-select="emit('childBlockSelect', $event)"
             @child-block-menu-select="emit('childBlockMenuSelect', $event)"
             @block-props-update="emit('blockPropsUpdate', $event)"
@@ -1033,6 +1027,7 @@
             @child-block-move-start="emit('childBlockMoveStart', $event)"
             @child-block-drag-end="emit('childBlockDragEnd')"
             @child-block-resize-start="emit('childBlockResizeStart', $event)"
+            @runtime-tree-select="emit('runtimeTreeSelect', $event)"
             @request-data-source="emit('requestDataSource', $event)"
           />
           <template v-if="!readonly && child.id === selectedBlockId">
@@ -1211,6 +1206,7 @@
                 :runtime-crud-props-resolver="runtimeCrudPropsResolver"
                 :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
                 :data-source-configured-resolver="dataSourceConfiguredResolver"
+                :runtime-tree-active-key="runtimeTreeActiveKey"
                 @child-block-select="emit('childBlockSelect', $event)"
                 @child-block-menu-select="emit('childBlockMenuSelect', $event)"
                 @block-props-update="emit('blockPropsUpdate', $event)"
@@ -1222,6 +1218,7 @@
                 @child-block-move-start="emit('childBlockMoveStart', $event)"
                 @child-block-drag-end="emit('childBlockDragEnd')"
                 @child-block-resize-start="emit('childBlockResizeStart', $event)"
+                @runtime-tree-select="emit('runtimeTreeSelect', $event)"
                 @request-data-source="emit('requestDataSource', $event)"
               />
               <template v-if="!readonly && child.id === selectedBlockId">
@@ -1337,6 +1334,7 @@
                   :runtime-crud-props-resolver="runtimeCrudPropsResolver"
                   :runtime-crud-loading-resolver="runtimeCrudLoadingResolver"
                   :data-source-configured-resolver="dataSourceConfiguredResolver"
+                  :runtime-tree-active-key="runtimeTreeActiveKey"
                   @child-block-select="emit('childBlockSelect', $event)"
                   @child-block-menu-select="emit('childBlockMenuSelect', $event)"
                   @block-props-update="emit('blockPropsUpdate', $event)"
@@ -1348,6 +1346,7 @@
                   @child-block-move-start="emit('childBlockMoveStart', $event)"
                   @child-block-drag-end="emit('childBlockDragEnd')"
                   @child-block-resize-start="emit('childBlockResizeStart', $event)"
+                  @runtime-tree-select="emit('runtimeTreeSelect', $event)"
                   @request-data-source="emit('requestDataSource', $event)"
                 />
                 <template v-if="!readonly && child.id === selectedBlockId">
@@ -1424,7 +1423,9 @@ import {
 } from '@/components/lowcode-builder/shared/widget-binding-slots'
 import { resolveCrudPagePresentation } from '@/components/lowcode-builder/shared/runtime-crud-page-mode'
 import { buildCrudSearchTypeRequestParams, normalizeTableRowGap, resolveCrudPreviewReloadKey, resolveCrudSearchFieldCatalog, shouldUseStaticCrudPreview } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import { collectTreeFilterValues } from '@/components/lowcode-builder/shared/runtime-tree-table'
 import { matchSimpleExpression, resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
+import { resolveDefaultSearchComponentType } from './fieldDrawerConfig'
 import { useUserStore } from '@/store'
 import { postEncrypt, request } from '@/utils'
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from './crud-hook-rules'
@@ -1433,6 +1434,7 @@ import { buildRuntimeCrudBlockProps, resolveEffectiveFormOpenMode, resolveEffect
 import WorkspaceSummaryMetrics from '@/views/workspace/WorkspaceSummaryMetrics.vue'
 
 const AiCrudPage = defineAsyncComponent(() => import('@/components/ai-form/AiCrudPage.vue'))
+const TreeCrudTemplate = defineAsyncComponent(() => import('@/components/page-templates/TreeCrudTemplate.vue'))
 
 const props = defineProps({
   block: {
@@ -1591,6 +1593,7 @@ const signaturePreviewValue = ref('')
 const runtimeCrudRef = ref(null)
 const runtimeTreeLoading = ref(false)
 const runtimeTreeNodes = ref([])
+const runtimeTreeError = ref('')
 const runtimeTreeNodeMap = ref(new Map())
 const runtimeExpandedTreeKeys = ref([])
 const detailInfoLoading = ref(false)
@@ -1603,6 +1606,10 @@ const previewTreeExpanded = ref(true)
 const treePanelCollapsed = ref(false)
 const activeTabKeyByBlockId = ref({})
 const runtimeTreeChildrenField = computed(() => props.block.props?.childrenField || 'children')
+const runtimeTreeConfig = computed(() => normalizeRuntimeTreeConfig(props.block.props || {}))
+const runtimeTreeLoadMode = computed(() => runtimeTreeConfig.value.loadMode)
+const hasRuntimeTreeApi = computed(() => Boolean(resolveRuntimeTreeApi()))
+const runtimeTreeTotal = computed(() => countTreeNodes(runtimeTreeNodes.value, runtimeTreeChildrenField.value))
 const runtimeSelectedTreeKeys = computed(() => props.runtimeTreeActiveKey === '__all__' ? [] : [props.runtimeTreeActiveKey])
 const runtimeRuleContext = computed(() => ({
   record: props.runtimeRecord || {},
@@ -1770,7 +1777,6 @@ const boundVideoPoster = computed(() => boundContentValue(props.block.props?.pos
 const boundAvatarName = computed(() => boundContentValue(props.block.props?.name || '用户名称', 'titleField', 'name'))
 const boundAvatarDescription = computed(() => boundContentValue(props.block.props?.description || '角色 / 部门', 'descriptionField', 'description'))
 const boundAvatarSrc = computed(() => boundContentValue(props.block.props?.src || '', 'valueField', 'src'))
-const runtimeTreeTotal = computed(() => countTreeNodes(runtimeTreeNodes.value, runtimeTreeChildrenField.value))
 const resizeAnchors = ['top-left', 'top', 'top-right', 'right', 'bottom-right', 'bottom', 'bottom-left', 'left']
 const nestedBlockMenuOptions = [
   { label: '复制', key: 'duplicate' },
@@ -2316,13 +2322,23 @@ const effectiveRuntimeCrudProps = computed(() => {
     blockApiConfig: blockApiConfig.value,
     // 保留原有按需计算，已有编译配置时不再重复生成字段 schema。
     aiTableColumns: runtimeProps.columns?.length ? [] : aiTableColumns.value,
-    aiSearchSchema: hasExplicitSearchFieldRefs.value || !runtimeProps.searchSchema?.length ? aiSearchSchema.value : [],
+    aiSearchSchema: aiSearchSchema.value,
     aiFormSchema: runtimeProps.editSchema?.length ? [] : aiFormSchema.value,
     hasExplicitSearchFieldRefs: hasExplicitSearchFieldRefs.value,
     designerCrudPublicParams: designerCrudPublicParams.value,
     preventStaticCrudSubmit,
     extensionRuntimeApi,
   })
+})
+
+/** 对象页通常只有 AiCrudPage；tree-crud 时用模板壳出左树。设计器已有 tree-panel 时抑制，避免双树。 */
+const shouldRenderTreeCrudShell = computed(() => {
+  const crud = effectiveRuntimeCrudProps.value
+  if (!crud || crud.formOnly === true || crud.suppressTreeCrudShell === true)
+    return false
+  if (String(crud.layoutType || '') !== 'tree-crud')
+    return false
+  return Boolean(crud.apiConfig?.tree || crud.options?.treeConfig)
 })
 
 function extensionRuntimeApi() {
@@ -2667,12 +2683,23 @@ function toAiFormField(field, mode = 'form') {
       showFeedback: field.showFeedback ?? false,
     }
   }
+  const type = mode === 'search'
+    ? (resolveDefaultSearchComponentType(field) || resolveAiFieldType(field))
+    : resolveAiFieldType(field)
+  const optionSource = resolveSearchOptionSource(field)
+  const placeholderPrefix = ['treeSelect', 'orgTreeSelect', 'regionTreeSelect', 'select', 'dictSelect', 'userSelect', 'cascader'].includes(type)
+    ? '请选择'
+    : '请输入'
+  const includeChildren = mode === 'search'
+    && ['treeSelect', 'orgTreeSelect', 'regionTreeSelect'].includes(type)
+    && field.includeChildren !== false
+    && field.props?.includeChildren !== false
   return {
     field: field.field,
     label: field.label || field.field,
-    type: resolveAiFieldType(field),
+    type,
     queryType,
-    placeholder: field.placeholder || (mode === 'search' ? `请输入${field.label || field.field}` : `请输入${field.label || field.field}`),
+    placeholder: field.placeholder || `${placeholderPrefix}${field.label || field.field}`,
     span: field.span || 1,
     clearable: true,
     multiple: field.multiple === true
@@ -2681,8 +2708,25 @@ function toAiFormField(field, mode = 'form') {
       || queryType === 'in',
     options: field.options || [],
     dictType: field.dictType || '',
-    props: field.props || {},
+    optionSource,
+    includeChildren: includeChildren ? true : field.includeChildren,
+    props: {
+      ...(field.props || {}),
+      ...(optionSource ? { optionSource } : {}),
+      ...(includeChildren ? { includeChildren: true } : {}),
+    },
   }
+}
+
+function resolveSearchOptionSource(field = {}) {
+  const configured = field.optionSource
+    || field.props?.optionSource
+    || field.basicProps?.optionSource
+  if (configured && typeof configured === 'object' && Object.keys(configured).length)
+    return configured
+  // 查询区不擅自拼本表 /tree：非树表会报「树形父级字段不存在: parentId」
+  // 选项源必须与表单字段配置一致（basicProps / props.optionSource）
+  return undefined
 }
 
 function resolveNestedBlockFields(block = {}) {
@@ -2717,8 +2761,7 @@ function resolveAiFieldType(field) {
     if (['time', 'timerange'].includes(type))
       return 'timerange'
   }
-  if (['int', 'bigint', 'decimal', 'number'].includes(type))
-    return 'number'
+  // UI 组件类型优先于存储类型（treeSelect 存 bigint 时不能退化成 number/input）
   if ([
     'input',
     'textarea',
@@ -2743,6 +2786,8 @@ function resolveAiFieldType(field) {
   ].includes(type)) {
     return type
   }
+  if (['int', 'bigint', 'decimal', 'number'].includes(type))
+    return 'number'
   if (field.dictType) {
     return 'dictSelect'
   }
@@ -3001,20 +3046,44 @@ function getNestedRecordValue(source = {}, path = '') {
     .reduce((value, key) => value?.[key], source)
 }
 
+function resolveRuntimeTreeApi() {
+  const blockProps = props.block?.props || {}
+  if (blockProps.treeApi)
+    return blockProps.treeApi
+  const sourceConfigKey = String(blockProps.sourceConfigKey || blockProps.sourceModelCode || '').trim()
+  if (sourceConfigKey)
+    return `get@/ai/crud/${sourceConfigKey}/tree`
+  return effectiveRuntimeCrudProps.value?.apiConfig?.tree || ''
+}
+
 async function loadRuntimeTree() {
-  if (!props.readonly || props.block.blockType !== 'tree-panel' || !props.runtimeCrudProps)
+  if (props.block.blockType !== 'tree-panel')
     return
-  const treeApi = effectiveRuntimeCrudProps.value?.apiConfig?.tree
-  if (!treeApi)
+  const treeApi = resolveRuntimeTreeApi()
+  if (!treeApi) {
+    runtimeTreeNodes.value = []
+    runtimeTreeNodeMap.value = new Map()
+    runtimeTreeError.value = ''
     return
+  }
   runtimeTreeLoading.value = true
+  runtimeTreeError.value = ''
   try {
     const { method, url } = parseApiConfigValue(treeApi)
+    const loadMode = runtimeTreeLoadMode.value
+    // 仅 tree-panel 显式排序；不用右表 defaultSort，避免节点序被 id desc 带偏
+    const blockProps = props.block?.props || {}
+    const panelSortField = String(blockProps.defaultSortField || blockProps.orderByColumn || '').trim()
+    const panelSortOrder = String(blockProps.defaultSortOrder || blockProps.isAsc || 'asc').toLowerCase()
+    const sortParams = panelSortField
+      ? { orderByColumn: panelSortField, isAsc: panelSortOrder === 'asc' ? 'asc' : 'desc' }
+      : {}
     const response = await request({
       method,
       url,
       params: {
-        loadMode: props.block.props?.loadMode || 'full',
+        loadMode,
+        ...sortParams,
       },
       needTip: false,
     })
@@ -3022,15 +3091,51 @@ async function loadRuntimeTree() {
     const nodeMap = new Map()
     runtimeTreeNodes.value = normalizeRuntimeTreeNodes(rows, nodeMap)
     runtimeTreeNodeMap.value = nodeMap
-    runtimeExpandedTreeKeys.value = collectTreeKeys(runtimeTreeNodes.value, runtimeTreeChildrenField.value)
+    runtimeExpandedTreeKeys.value = loadMode === 'lazy'
+      ? []
+      : collectTreeKeys(runtimeTreeNodes.value, runtimeTreeChildrenField.value)
   }
   catch (error) {
     runtimeTreeNodes.value = []
     runtimeTreeNodeMap.value = new Map()
+    runtimeTreeError.value = error?.message || '加载筛选树失败'
     console.warn('[GridBlockRenderer] 加载筛选树失败', error?.message || error)
   }
   finally {
     runtimeTreeLoading.value = false
+  }
+}
+
+async function loadRuntimeTreeChildren(node) {
+  const treeApi = resolveRuntimeTreeApi()
+  if (!treeApi || !node)
+    return
+  const { method, url } = parseApiConfigValue(treeApi)
+  const config = runtimeTreeConfig.value
+  const parentValue = node?.[config.keyField] ?? node?.key ?? node?.targetValue
+  if (parentValue === undefined || parentValue === null || parentValue === '') {
+    node.isLeaf = true
+    return
+  }
+  try {
+    const response = await request({
+      method,
+      url,
+      params: {
+        loadMode: 'lazy',
+        parentValue: String(parentValue),
+      },
+      needTip: false,
+    })
+    const childMap = new Map()
+    const children = normalizeRuntimeTreeNodes(extractRuntimeTreeRows(response), childMap)
+    node[runtimeTreeChildrenField.value] = children
+    node.isLeaf = children.length === 0
+    childMap.forEach((value, key) => runtimeTreeNodeMap.value.set(key, value))
+  }
+  catch (error) {
+    node.isLeaf = true
+    console.warn('[GridBlockRenderer] 加载筛选树子节点失败', error?.message || error)
   }
 }
 
@@ -3049,6 +3154,8 @@ function extractRuntimeTreeRows(response) {
     return data
   if (Array.isArray(data?.records))
     return data.records
+  if (Array.isArray(data?.rows))
+    return data.rows
   if (Array.isArray(data?.list))
     return data.list
   if (Array.isArray(data?.children))
@@ -3057,8 +3164,9 @@ function extractRuntimeTreeRows(response) {
 }
 
 function normalizeRuntimeTreeNodes(rows = [], nodeMap = new Map()) {
-  const keyField = props.block.props?.keyField || 'id'
-  const labelField = props.block.props?.labelField || 'label'
+  const config = runtimeTreeConfig.value
+  const keyField = config.keyField
+  const labelField = config.labelField
   const childrenField = runtimeTreeChildrenField.value
   return (Array.isArray(rows) ? rows : []).map((row) => {
     const rawKey = row?.[keyField] ?? row?.key ?? row?.id
@@ -3071,6 +3179,10 @@ function normalizeRuntimeTreeNodes(rows = [], nodeMap = new Map()) {
       label: String(label || '-'),
       [childrenField]: children,
     }
+    if (children.length)
+      node.isLeaf = false
+    else if (row?.isLeaf !== undefined)
+      node.isLeaf = row.isLeaf === true || row.isLeaf === 1 || row.isLeaf === '1'
     if (key)
       nodeMap.set(key, node)
     return node
@@ -3092,7 +3204,7 @@ function collectTreeKeys(nodes = [], childrenField = 'children') {
 }
 
 function expandTree() {
-  if (props.readonly && props.runtimeCrudProps) {
+  if (hasRuntimeTreeApi.value) {
     runtimeExpandedTreeKeys.value = collectTreeKeys(runtimeTreeNodes.value, runtimeTreeChildrenField.value)
     return
   }
@@ -3100,7 +3212,7 @@ function expandTree() {
 }
 
 function collapseTree() {
-  if (props.readonly && props.runtimeCrudProps) {
+  if (hasRuntimeTreeApi.value) {
     runtimeExpandedTreeKeys.value = []
     return
   }
@@ -3116,10 +3228,12 @@ function toggleTreePanel() {
 }
 
 function clearRuntimeTreeSelection() {
+  const config = runtimeTreeConfig.value
   emit('runtimeTreeSelect', {
     key: '__all__',
     clear: true,
-    filterField: props.block.props?.filterField || '',
+    blockId: props.block.id,
+    filterField: config.filterField,
   })
 }
 
@@ -3130,15 +3244,38 @@ function handleRuntimeTreeSelected(keys = []) {
     return
   }
   const node = runtimeTreeNodeMap.value.get(String(key)) || {}
-  const targetField = props.block.props?.targetField || props.block.props?.keyField || 'id'
-  const filterField = props.block.props?.filterField || ''
+  const config = runtimeTreeConfig.value
+  const targetField = config.targetField
+  const filterField = config.filterField
+  const includeChildren = props.block?.props?.includeChildren !== false
   const value = node?.[targetField] ?? node?.targetValue ?? node?.value ?? key
+  const expandedValues = collectTreeFilterValues(node, {
+    targetField,
+    childrenField: runtimeTreeChildrenField.value,
+    includeChildren,
+  })
   emit('runtimeTreeSelect', {
     key,
+    blockId: props.block.id,
     node,
     filterField,
-    value,
+    value: value === null || value === undefined ? value : String(value),
+    expandedValues,
+    // 默认点上级查本级+全部下级；树面板 props.includeChildren === false 时仅本节点
+    includeChildren,
   })
+}
+
+function normalizeRuntimeTreeConfig(source = {}) {
+  const targetField = source.targetField || source.nodeValueField || source.valueField || source.keyField || 'id'
+  const filterField = source.filterField || source.rightFilterField || source.listFilterField || source.parentField || ''
+  return {
+    keyField: source.keyField || source.nodeKeyField || 'id',
+    labelField: source.labelField || source.displayField || source.nameField || 'label',
+    targetField,
+    filterField,
+    loadMode: source.loadMode === 'lazy' || source.lazy === true ? 'lazy' : 'full',
+  }
 }
 
 function emitCrudPreviewState(patch = {}) {
@@ -3546,10 +3683,15 @@ watch([
 watch([
   () => props.block.blockType,
   () => props.block.props?.sourceModelCode,
+  () => props.block.props?.sourceConfigKey,
+  () => props.block.props?.treeApi,
   () => props.block.props?.keyField,
   () => props.block.props?.parentField,
   () => props.block.props?.labelField,
+  () => props.block.props?.displayField,
   () => props.block.props?.loadMode,
+  () => props.block.props?.lazy,
+  () => props.block.props?.childrenField,
   () => props.runtimeCrudProps?.apiConfig?.tree,
 ], () => loadRuntimeTree())
 
@@ -4374,6 +4516,15 @@ watch(
   background: #fafafa;
 }
 
+.ai-crud-preview :deep(.tree-crud-layout) {
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 520px;
+}
+
+.ai-crud-preview :deep(.tree-crud-right .ai-crud-page),
 .ai-crud-preview :deep(.ai-crud-page) {
   display: flex;
   flex: 1 1 0;

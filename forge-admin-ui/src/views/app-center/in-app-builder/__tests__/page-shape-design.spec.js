@@ -23,8 +23,8 @@ function emptyBuilder() {
 }
 
 describe('page shape design draft', () => {
-  it('exposes the four documented page shapes and the five minimum field components', () => {
-    expect(PAGE_SHAPE_TYPES.map(item => item.value)).toEqual(['form', 'list', 'list-form', 'custom'])
+  it('exposes the documented page shapes including left-tree-right-table and the five minimum field components', () => {
+    expect(PAGE_SHAPE_TYPES.map(item => item.value)).toEqual(['form', 'list', 'list-form', 'tree-list', 'tree-table', 'custom'])
 
     const componentKeys = FIELD_COMPONENT_PALETTE_GROUPS.flatMap(group => group.items.map(item => item.componentKey))
     expect(componentKeys).toEqual(expect.arrayContaining(['input', 'number', 'date', 'select', 'switch']))
@@ -143,6 +143,75 @@ describe('page shape design draft', () => {
     expect(custom.schema.nodes[0]).toMatchObject({ pageType: 'content', pageTemplate: 'custom', pageShape: 'custom', objectRef: null })
   })
 
+  it('presets tree fields and tree-crud layout for left-tree-right-table pages', () => {
+    const result = createPageShapeBuilder(emptyBuilder(), {
+      pageName: '组织分类',
+      objectName: '组织分类',
+      objectCode: 'org_category',
+      pageType: 'tree-table',
+    })
+
+    expect(result.schema.nodes[0]).toMatchObject({
+      pageType: 'object',
+      pageTemplate: 'tree-table',
+      pageShape: 'tree-table',
+      objectRef: expect.objectContaining({
+        objectCode: 'org_category',
+        pageMode: 'tree-table',
+      }),
+    })
+    expect(result.schema.pages[result.pageId].layout.gridLayout.layoutType).toBe('tree-crud')
+    const block = result.schema.pages[result.pageId].layout.gridLayout.items[0]
+    expect(block).toMatchObject({
+      blockType: 'AiCrudPage',
+      props: expect.objectContaining({
+        layoutType: 'tree-crud',
+        enableTreeAddChild: false,
+        formOpenMode: 'flat',
+        fieldRefs: ['name', 'sortNo', 'parentId'],
+        treeConfig: expect.objectContaining({
+          keyField: 'id',
+          parentField: 'parentId',
+          labelField: 'name',
+          filterField: 'parentId',
+        }),
+      }),
+    })
+    expect(result.schema.formAssets[0].formDesignerSchema.components.map(item => item.fieldBinding.fieldCode))
+      .toEqual(['name', 'sortNo', 'parentId'])
+    expect(result.schema.formAssets[0].formDesignerSchema.components.every(
+      item => item.fieldBinding.createIfMissing === true,
+    )).toBe(true)
+  })
+
+  it('presets embedded tree list with enabled treeConfig', () => {
+    const result = createPageShapeBuilder(emptyBuilder(), {
+      pageName: '部门',
+      objectName: '部门',
+      objectCode: 'dept',
+      pageType: 'tree-list',
+    })
+
+    expect(result.schema.nodes[0]).toMatchObject({
+      pageShape: 'tree-list',
+      pageTemplate: 'tree-list',
+      objectRef: expect.objectContaining({ pageMode: 'tree-list' }),
+    })
+    expect(result.schema.pages[result.pageId].layout.gridLayout.layoutType).toBe('list-form')
+    const block = result.schema.pages[result.pageId].layout.gridLayout.items[0]
+    expect(block.props).toMatchObject({
+      layoutType: 'list-form',
+      enableTreeAddChild: true,
+      fieldRefs: ['name', 'sortNo', 'parentId'],
+      treeConfig: expect.objectContaining({
+        enabled: true,
+        parentField: 'parentId',
+        labelField: 'name',
+        enableTreeAddChild: true,
+      }),
+    })
+  })
+
   it('forces free-layout shape when designTab is page even if node looks like list-form', () => {
     const node = {
       id: 'page_free',
@@ -155,6 +224,23 @@ describe('page shape design draft', () => {
     expect(resolvePageShapeFromNode(node)).toBe('list-form')
     expect(resolvePageShapeFromNode(node, { designTab: 'page' })).toBe('custom')
     expect(ensureFreeLayoutPageNode(node)).toBe(node)
+  })
+
+  it('keeps tree shortcuts as object shapes when objectRef is temporarily empty', () => {
+    expect(resolvePageShapeFromNode({
+      type: 'page',
+      pageType: 'object',
+      pageTemplate: 'tree-list',
+      pageShape: '',
+      objectRef: null,
+    })).toBe('tree-list')
+    expect(resolvePageShapeFromNode({
+      type: 'page',
+      pageType: 'object',
+      pageTemplate: 'tree-table',
+      pageShape: 'tree-table',
+      objectRef: null,
+    })).toBe('tree-table')
   })
 
   it('restores a polluted list-form page back to a single AiCrudPage', () => {

@@ -25,6 +25,8 @@ export function upsertChildTableSectionConfig(source = {}, input = {}) {
     inlineEditEnabled: true,
     showInDetail: true,
     allowSelectExisting: config.allowSelectExisting === true,
+    // 保存设计器中的展示字段顺序，运行时构建器据此生成子表字段。
+    childFieldCodes: config.fields.map(field => resolveFieldCode(field)).filter(Boolean),
   }
   if (config.allowSelectExisting === true) {
     nextModelRefProps.recordSelector = buildChildRecordSelector(config, currentModelRefProps.recordSelector)

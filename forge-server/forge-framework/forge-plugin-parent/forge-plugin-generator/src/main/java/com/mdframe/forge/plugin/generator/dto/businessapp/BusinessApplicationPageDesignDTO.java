@@ -14,7 +14,7 @@ public class BusinessApplicationPageDesignDTO {
 
     private String pageId;
 
-    /** form/list/list-form/custom */
+    /** form/list/list-form/tree-list/tree-table/custom */
     private String pageType;
 
     private String formAssetId;

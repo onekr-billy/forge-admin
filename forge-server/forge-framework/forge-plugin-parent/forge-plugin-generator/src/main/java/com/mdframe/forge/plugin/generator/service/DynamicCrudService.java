@@ -195,6 +195,7 @@ public class DynamicCrudService {
         // 4. 构建搜索条件
         Map<String, Object> searchParams = (query != null) ? query.getSearchParams() : null;
         searchParams = expandIncludeChildrenParams(searchParams, config, tableName, allowedSearchFields, searchTypeMap);
+        coerceMultiValueSearchTypes(searchParams, searchTypeMap);
 
         // 4.1 将显式传入的 searchParams 字段扩展为允许搜索字段（支持选择器弹窗过滤等场景）
         expandAllowedSearchFieldsFromParams(searchParams, allowedSearchFields, searchTypeMap, columnMapping);
@@ -4865,8 +4866,9 @@ public class DynamicCrudService {
         if (treeNode == null || !treeNode.isObject()) {
             return;
         }
-        if (StringUtils.isNotBlank(text(treeNode, "keyField"))) {
-            target.setKeyField(text(treeNode, "keyField"));
+        String keyField = firstText(treeNode, "keyField", "nodeKeyField");
+        if (StringUtils.isNotBlank(keyField)) {
+            target.setKeyField(keyField);
         }
         if (StringUtils.isNotBlank(text(treeNode, "sourceModelCode"))) {
             target.setSourceModelCode(text(treeNode, "sourceModelCode"));
@@ -4877,23 +4879,31 @@ public class DynamicCrudService {
         if (StringUtils.isNotBlank(text(treeNode, "sourceTableName"))) {
             target.setSourceTableName(text(treeNode, "sourceTableName"));
         }
-        if (StringUtils.isNotBlank(text(treeNode, "parentField"))) {
-            target.setParentField(text(treeNode, "parentField"));
+        if (StringUtils.isNotBlank(text(treeNode, "sourceConfigKey"))) {
+            target.setSourceConfigKey(text(treeNode, "sourceConfigKey"));
         }
-        if (StringUtils.isNotBlank(text(treeNode, "labelField"))) {
-            target.setLabelField(text(treeNode, "labelField"));
+        String parentField = firstText(treeNode, "parentField", "parentIdField");
+        if (StringUtils.isNotBlank(parentField)) {
+            target.setParentField(parentField);
         }
-        if (StringUtils.isNotBlank(text(treeNode, "filterField"))) {
-            target.setFilterField(text(treeNode, "filterField"));
+        String labelField = firstText(treeNode, "labelField", "displayField", "nameField");
+        if (StringUtils.isNotBlank(labelField)) {
+            target.setLabelField(labelField);
         }
-        if (StringUtils.isNotBlank(text(treeNode, "targetField"))) {
-            target.setTargetField(text(treeNode, "targetField"));
+        String filterField = firstText(treeNode, "filterField", "rightFilterField", "listFilterField");
+        if (StringUtils.isNotBlank(filterField)) {
+            target.setFilterField(filterField);
+        }
+        String targetField = firstText(treeNode, "targetField", "nodeValueField", "valueField");
+        if (StringUtils.isNotBlank(targetField)) {
+            target.setTargetField(targetField);
         }
         if (StringUtils.isNotBlank(text(treeNode, "childrenField"))) {
             target.setChildrenField(text(treeNode, "childrenField"));
         }
-        if (StringUtils.isNotBlank(text(treeNode, "treeTitle"))) {
-            target.setTreeTitle(text(treeNode, "treeTitle"));
+        String treeTitle = firstText(treeNode, "treeTitle", "title");
+        if (StringUtils.isNotBlank(treeTitle)) {
+            target.setTreeTitle(treeTitle);
         }
         if (StringUtils.isNotBlank(text(treeNode, "loadMode"))) {
             target.setLoadMode(text(treeNode, "loadMode"));
@@ -5394,10 +5404,10 @@ public class DynamicCrudService {
             if (!key.endsWith("_includeChildren")) continue;
             if (!isTruthy(entry.getValue())) continue;
             String baseField = key.substring(0, key.length() - "_includeChildren".length());
-            if (!allowedSearchFields.contains(baseField)) continue;
             Object baseValue = searchParams.get(baseField);
             if (baseValue == null) continue;
             keysToRemove.add(key);
+            // 前端已展开的逗号列表优先；否则按树源表递归展开。不再要求 baseField 已在 searchSchema。
             List<Object> values = normalizeIncludeChildrenValues(baseValue);
             if (values == null) {
                 values = resolveIncludeChildrenValues(config, tableName, baseField, baseValue);
@@ -5406,6 +5416,7 @@ public class DynamicCrudService {
                 continue;
             }
             expanded.put(baseField, values);
+            allowedSearchFields.add(baseField);
             if (searchTypeMap != null) {
                 searchTypeMap.put(baseField, "in");
             }
@@ -5414,6 +5425,44 @@ public class DynamicCrudService {
             expanded.remove(key);
         }
         return expanded;
+    }
+
+    /**
+     * 前端已展开的逗号列表 / List 在 _searchTypes 仍为 eq 时强制改为 in，避免 field=1,5 被整串精确匹配。
+     */
+    private void coerceMultiValueSearchTypes(Map<String, Object> searchParams, Map<String, String> searchTypeMap) {
+        if (searchParams == null || searchParams.isEmpty() || searchTypeMap == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : searchParams.entrySet()) {
+            String field = entry.getKey();
+            if (field == null || field.startsWith("_") || field.endsWith("_includeChildren")
+                    || field.endsWith("__treeExpanded")) {
+                continue;
+            }
+            Object value = entry.getValue();
+            if (!isMultiSearchValue(value)) {
+                continue;
+            }
+            String current = searchTypeMap.get(field);
+            if (current == null || "eq".equalsIgnoreCase(current)) {
+                searchTypeMap.put(field, "in");
+            }
+        }
+    }
+
+    private boolean isMultiSearchValue(Object value) {
+        if (value instanceof Collection<?> collection) {
+            return collection.size() > 1
+                    || (collection.size() == 1 && String.valueOf(collection.iterator().next()).contains(","));
+        }
+        if (value instanceof Object[] array) {
+            return array.length > 1;
+        }
+        if (value instanceof String text) {
+            return text.contains(",");
+        }
+        return false;
     }
 
     private List<CustomQueryConditionDTO> expandCustomIncludeChildrenConditions(List<CustomQueryConditionDTO> conditions,
@@ -5502,16 +5551,14 @@ public class DynamicCrudService {
         }
         Object normalizedBaseValue = normalizeIncludeChildrenBaseValue(baseValue);
         LowcodeTreeConfig treeConfig = resolveIncludeChildrenTreeConfig(config, baseField);
-        String sourceTable = treeConfig != null && StringUtils.isNotBlank(treeConfig.getSourceTableName())
-                ? treeConfig.getSourceTableName()
-                : tableName;
+        String sourceTable = resolveIncludeChildrenSourceTable(config, treeConfig, tableName);
         if (StringUtils.isBlank(sourceTable) || !repository.tableExists(sourceTable)) {
             return List.of(normalizedBaseValue);
         }
         Map<String, String> columnMapping = repository.getColumnMapping(sourceTable);
         String keyField = treeConfig == null ? "id" : StringUtils.defaultIfBlank(treeConfig.getKeyField(), "id");
         String parentField = treeConfig == null
-                ? DynamicQueryGenerator.camelToSnake(baseField)
+                ? "parentId"
                 : StringUtils.defaultIfBlank(treeConfig.getParentField(), "parentId");
         String targetField = treeConfig == null
                 ? "id"
@@ -5520,6 +5567,8 @@ public class DynamicCrudService {
         String parentColumn = resolveColumnName(parentField, columnMapping);
         String targetColumn = resolveColumnName(targetField, columnMapping);
         if (StringUtils.isBlank(keyColumn) || StringUtils.isBlank(parentColumn) || StringUtils.isBlank(targetColumn)) {
+            log.warn("[DynamicCrudService] includeChildren 字段映射失败, table={}, key={}, parent={}, target={}",
+                    sourceTable, keyField, parentField, targetField);
             return List.of(normalizedBaseValue);
         }
 
@@ -5536,13 +5585,13 @@ public class DynamicCrudService {
                 return List.of(normalizedBaseValue);
             }
             for (Map<String, Object> seed : seeds) {
-                Object keyValue = seed.get(keyColumn);
+                Object keyValue = readRowColumnValue(seed, keyColumn, keyField);
                 if (keyValue == null) {
                     continue;
                 }
                 queue.add(keyValue);
                 visitedKeys.add(String.valueOf(keyValue));
-                Object targetValue = seed.get(targetColumn);
+                Object targetValue = readRowColumnValue(seed, targetColumn, targetField);
                 resultValues.add(targetValue != null ? targetValue : normalizedBaseValue);
             }
         }
@@ -5551,11 +5600,11 @@ public class DynamicCrudService {
             Object currentKey = queue.removeFirst();
             List<Map<String, Object>> children = repository.selectListByColumn(sourceTable, parentColumn, currentKey);
             for (Map<String, Object> child : children) {
-                Object childKey = child.get(keyColumn);
+                Object childKey = readRowColumnValue(child, keyColumn, keyField);
                 if (childKey != null && visitedKeys.add(String.valueOf(childKey))) {
                     queue.addLast(childKey);
                 }
-                Object targetValue = child.get(targetColumn);
+                Object targetValue = readRowColumnValue(child, targetColumn, targetField);
                 if (targetValue != null) {
                     resultValues.add(targetValue);
                 }
@@ -5564,16 +5613,70 @@ public class DynamicCrudService {
         return resultValues.isEmpty() ? List.of(normalizedBaseValue) : new ArrayList<>(resultValues);
     }
 
+    private String resolveIncludeChildrenSourceTable(AiCrudConfig config,
+                                                     LowcodeTreeConfig treeConfig,
+                                                     String fallbackTable) {
+        if (treeConfig != null && StringUtils.isNotBlank(treeConfig.getSourceTableName())) {
+            return treeConfig.getSourceTableName();
+        }
+        if (treeConfig != null && StringUtils.isNotBlank(treeConfig.getSourceConfigKey())) {
+            try {
+                AiCrudConfig sourceConfig = configService.getByConfigKey(treeConfig.getSourceConfigKey());
+                if (sourceConfig != null && StringUtils.isNotBlank(sourceConfig.getTableName())) {
+                    return sourceConfig.getTableName();
+                }
+            } catch (Exception e) {
+                log.warn("[DynamicCrudService] 解析 includeChildren 源配置失败, sourceConfigKey={}",
+                        treeConfig.getSourceConfigKey(), e);
+            }
+        }
+        return fallbackTable;
+    }
+
+    private Object readRowColumnValue(Map<String, Object> row, String columnName, String fieldName) {
+        if (row == null || row.isEmpty()) {
+            return null;
+        }
+        if (StringUtils.isNotBlank(columnName) && row.containsKey(columnName)) {
+            return row.get(columnName);
+        }
+        if (StringUtils.isNotBlank(fieldName) && row.containsKey(fieldName)) {
+            return row.get(fieldName);
+        }
+        if (StringUtils.isNotBlank(columnName)) {
+            String camel = DynamicQueryGenerator.snakeToCamel(columnName);
+            if (row.containsKey(camel)) {
+                return row.get(camel);
+            }
+            for (Map.Entry<String, Object> entry : row.entrySet()) {
+                if (columnName.equalsIgnoreCase(entry.getKey())) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
     private LowcodeTreeConfig resolveIncludeChildrenTreeConfig(AiCrudConfig config, String baseField) {
         if (config == null || StringUtils.isBlank(baseField)) {
             return null;
         }
         LowcodeTreeConfig treeConfig = resolveTreeConfig(config);
-        if (isTreeRuntime(config) && StringUtils.equals(baseField, treeConfig.getFilterField())) {
+        boolean matchedFilter = treeConfig != null && StringUtils.equals(baseField, treeConfig.getFilterField());
+        // 与左树筛选字段一致时优先用左树源表展开
+        if (matchedFilter) {
             return treeConfig;
         }
+        // 查询区 treeSelect 按字段自身 optionSource / 系统树解析，避免被左树外部源误绑
         LowcodeTreeConfig systemTreeConfig = resolveSystemTreeConfig(config, baseField);
-        return systemTreeConfig != null ? systemTreeConfig : null;
+        if (systemTreeConfig != null) {
+            return systemTreeConfig;
+        }
+        // 左树点击筛选可能不在 searchSchema；仍回退树源表展开
+        if (treeConfig != null && isTreeRuntime(config)) {
+            return treeConfig;
+        }
+        return null;
     }
 
     private Object normalizeIncludeChildrenBaseValue(Object baseValue) {
@@ -5600,12 +5703,70 @@ public class DynamicCrudService {
         }
         if ("treeSelect".equals(fieldType)) {
             JsonNode optionSource = fieldNode.path("props").path("optionSource");
+            if (optionSource.isMissingNode() || optionSource.isNull()) {
+                optionSource = fieldNode.path("optionSource");
+            }
             String api = firstText(optionSource, "api");
+            String sourceConfigKey = extractCrudConfigKeyFromTreeApi(api);
+            if (StringUtils.isNotBlank(sourceConfigKey)) {
+                try {
+                    AiCrudConfig sourceConfig = configService.getByConfigKey(sourceConfigKey);
+                    if (sourceConfig != null) {
+                        LowcodeTreeConfig sourceTree = resolveTreeConfig(sourceConfig);
+                        if (sourceTree == null) {
+                            sourceTree = new LowcodeTreeConfig();
+                        }
+                        sourceTree.setFilterField(baseField);
+                        if (StringUtils.isBlank(sourceTree.getSourceConfigKey())) {
+                            sourceTree.setSourceConfigKey(sourceConfigKey);
+                        }
+                        if (StringUtils.isBlank(sourceTree.getSourceTableName())) {
+                            sourceTree.setSourceTableName(sourceConfig.getTableName());
+                        }
+                        if (StringUtils.isBlank(sourceTree.getKeyField())) {
+                            sourceTree.setKeyField("id");
+                        }
+                        if (StringUtils.isBlank(sourceTree.getParentField())) {
+                            sourceTree.setParentField("parentId");
+                        }
+                        if (StringUtils.isBlank(sourceTree.getTargetField())) {
+                            sourceTree.setTargetField(sourceTree.getKeyField());
+                        }
+                        return sourceTree;
+                    }
+                } catch (Exception e) {
+                    log.warn("[DynamicCrudService] 解析 treeSelect includeChildren 源配置失败, sourceConfigKey={}",
+                            sourceConfigKey, e);
+                }
+            }
             if (StringUtils.contains(api, "/ai/crud/")) {
                 return resolveTreeConfig(config);
             }
         }
         return null;
+    }
+
+    private String extractCrudConfigKeyFromTreeApi(String api) {
+        if (StringUtils.isBlank(api)) {
+            return null;
+        }
+        // get@/ai/crud/{configKey}/tree 或 /ai/crud/{configKey}/tree
+        String text = api.trim();
+        int at = text.indexOf('@');
+        if (at >= 0) {
+            text = text.substring(at + 1);
+        }
+        int marker = text.indexOf("/ai/crud/");
+        if (marker < 0) {
+            return null;
+        }
+        String rest = text.substring(marker + "/ai/crud/".length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0) {
+            return null;
+        }
+        String configKey = rest.substring(0, slash).trim();
+        return StringUtils.isBlank(configKey) ? null : configKey;
     }
 
     private LowcodeTreeConfig buildStaticTreeConfig(String sourceTable,
@@ -5948,7 +6109,7 @@ public class DynamicCrudService {
             return;
         }
         for (String key : searchParams.keySet()) {
-            if ("__orLike".equals(key)) {
+            if ("__orLike".equals(key) || key.endsWith("_includeChildren")) {
                 continue;
             }
             if (allowedSearchFields.contains(key)) {
@@ -5971,6 +6132,7 @@ public class DynamicCrudService {
         Map<String, String> searchTypeMap = buildEffectiveSearchTypeMap(config, query, allowedSearchFields);
         Map<String, Object> searchParams = query != null ? query.getSearchParams() : null;
         searchParams = expandIncludeChildrenParams(searchParams, config, tableName, allowedSearchFields, searchTypeMap);
+        coerceMultiValueSearchTypes(searchParams, searchTypeMap);
         RuntimeJoinContext joinContext = buildRuntimeJoinContext(config);
         return new ExportQueryContext(config, tableName, columnMapping, allowedSearchFields, searchTypeMap,
                 searchParams, joinContext);

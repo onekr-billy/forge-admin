@@ -44,21 +44,15 @@ export function collectRequiredFieldCodes(options = []) {
     .map(item => String(item.value))
 }
 
-/** 已选字段始终并入必填项（去重，必填在前）。 */
+/** 已选字段始终并入必填项（去重）；已有顺序保持不变，缺失的必填字段补到前面。 */
 export function ensureRequiredDisplayFieldCodes(selectedCodes = [], options = []) {
   const required = collectRequiredFieldCodes(options)
-  const selected = (Array.isArray(selectedCodes) ? selectedCodes : [])
+  const selected = [...new Set((Array.isArray(selectedCodes) ? selectedCodes : [])
     .map(code => String(code || '').trim())
-    .filter(Boolean)
-  const seen = new Set()
-  const merged = []
-  ;[...required, ...selected].forEach((code) => {
-    if (seen.has(code))
-      return
-    seen.add(code)
-    merged.push(code)
-  })
-  return merged
+    .filter(Boolean))]
+  const selectedSet = new Set(selected)
+  const missingRequired = required.filter(code => !selectedSet.has(code))
+  return [...missingRequired, ...selected]
 }
 
 export function toSubTableColumnDefs(codes = [], fields = []) {

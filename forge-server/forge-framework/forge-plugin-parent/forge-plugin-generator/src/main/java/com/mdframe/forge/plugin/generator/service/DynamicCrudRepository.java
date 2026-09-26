@@ -618,7 +618,8 @@ public class DynamicCrudRepository {
             }
 
             appendWhereJoiner(whereClause);
-            addSearchCondition(whereClause, params, columnName, resolveSearchType(fieldName, searchTypeMap), value);
+            addSearchCondition(whereClause, params, columnName,
+                    resolveSearchType(fieldName, searchTypeMap, value), value);
         }
     }
 
@@ -839,7 +840,32 @@ public class DynamicCrudRepository {
     }
 
     private String resolveSearchType(String fieldName, Map<String, String> searchTypeMap) {
-        return searchTypeMap.getOrDefault(fieldName, "eq");
+        return resolveSearchType(fieldName, searchTypeMap, null);
+    }
+
+    private String resolveSearchType(String fieldName, Map<String, String> searchTypeMap, Object value) {
+        String searchType = searchTypeMap == null
+                ? "eq"
+                : searchTypeMap.getOrDefault(fieldName, "eq");
+        // 已展开的本级+子集（1,5 / List）即使前端仍传 eq，也必须按 IN 查
+        if (isMultiSearchValue(value) && ("eq".equalsIgnoreCase(searchType) || StringUtils.isBlank(searchType))) {
+            return "in";
+        }
+        return searchType;
+    }
+
+    private boolean isMultiSearchValue(Object value) {
+        if (value instanceof Collection<?> collection) {
+            return collection.size() > 1
+                    || (collection.size() == 1 && String.valueOf(collection.iterator().next()).contains(","));
+        }
+        if (value instanceof Object[] array) {
+            return array.length > 1;
+        }
+        if (value instanceof String text) {
+            return text.contains(",");
+        }
+        return false;
     }
 
     private StringBuilder buildBaseWhereClause(String tableName) {

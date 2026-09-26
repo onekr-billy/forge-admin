@@ -35,63 +35,31 @@
       </dl>
     </section>
 
-    <!-- 挂载位置配置 -->
+    <!-- 系统菜单挂载：默认关闭，需显式打开并选择父级 -->
     <section class="page-design-publish-card">
       <header>
         <div>
-          <h2>挂载位置</h2>
-          <p>选择此页面在菜单中出现的位置，应用发布后生效。</p>
+          <h2>系统菜单挂载</h2>
+          <p>默认不挂载。打开后须选择父级菜单目录，应用发布后才会出现在系统菜单中。</p>
         </div>
+        <n-switch
+          :value="mountDraft.systemMenuVisible === true"
+          @update:value="onMountEnabledChange"
+        />
       </header>
-      <div class="mount-config">
-        <n-form label-placement="left" label-width="92" size="small">
-          <n-form-item label="挂载位置">
-            <n-radio-group :value="currentMountTarget" size="small" @update:value="onMountTargetChange">
-              <n-radio-button value="ADMIN">
-                管理端
-              </n-radio-button>
-              <n-radio-button value="MOBILE">
-                移动端
-              </n-radio-button>
-              <n-radio-button value="BOTH">
-                两端同时
-              </n-radio-button>
-            </n-radio-group>
-          </n-form-item>
-          <n-form-item label="菜单名称">
-            <n-input
-              :value="currentMenuName"
-              placeholder="留空则使用页面名称"
-              size="small"
-              @update:value="onMenuNameChange"
-            />
-          </n-form-item>
-          <n-form-item v-if="showAdminMenuConfig" label="管理端父级">
-            <MenuParentSelect
-              :value="currentMenuParentId"
-              client-code="pc"
-              @update:value="onMenuParentIdChange"
-            />
-          </n-form-item>
-          <n-form-item v-if="showMobileMenuConfig" label="移动端父级">
-            <MenuParentSelect
-              :value="currentMobileMenuParentId"
-              client-code="h5"
-              placeholder="请选择移动端菜单目录"
-              @update:value="onMobileMenuParentIdChange"
-            />
-          </n-form-item>
-          <n-form-item v-if="showAdminMenuConfig || showMobileMenuConfig" label="菜单排序">
-            <n-input-number
-              :value="currentMenuSort"
-              :min="0"
-              size="small"
-              style="width: 100%;"
-              @update:value="onMenuSortChange"
-            />
-          </n-form-item>
-        </n-form>
+      <div v-if="mountDraft.systemMenuVisible" class="mount-config">
+        <n-tag size="small" :type="mountReady ? 'success' : 'warning'" :bordered="false" class="mount-status-tag">
+          {{ mountReady ? '已配置父级，发布后生效' : '已开启挂载，请选择父级菜单' }}
+        </n-tag>
+        <PageSystemMenuMountForm
+          :model-value="mountDraft"
+          :hint="''"
+          @update:model-value="onMountDraftChange"
+        />
       </div>
+      <p v-else class="mount-off-hint">
+        当前未挂载到系统菜单。需要出现在管理端/移动端菜单时，打开右侧开关并选择父级。
+      </p>
     </section>
 
     <AppPublishAccess :application="application" :page-id="pageId" :config-key="configKey" :objects="objects" />
@@ -122,8 +90,13 @@
 <script setup>
 import { useMessage } from 'naive-ui'
 import { computed } from 'vue'
-import MenuParentSelect from '@/components/lowcode-builder/shared/MenuParentSelect.vue'
 import AppPublishAccess from '../publish/AppPublishAccess.vue'
+import PageSystemMenuMountForm from './PageSystemMenuMountForm.vue'
+import {
+  createPageMountDraft,
+  showAdminMenuMountConfig,
+  showMobileMenuMountConfig,
+} from './page-system-menu-mount'
 
 const props = defineProps({
   application: { type: Object, required: true },
@@ -141,44 +114,20 @@ const message = useMessage()
 
 const published = computed(() => Boolean(props.application?.lastPublishVersion) && Number(props.application?.status) === 1)
 
-const currentMountTarget = computed(() => {
-  const node = props.node
-  if (!node) {
-    return 'ADMIN'
-  }
-  return (node.mountTarget ?? node.settings?.mountTarget ?? 'ADMIN').toUpperCase()
-})
+const mountDraft = computed(() => createPageMountDraft(props.node))
 
-const currentMenuName = computed(() => {
-  const node = props.node
-  return node?.menuName ?? node?.settings?.menuName ?? ''
-})
+const currentMountTarget = computed(() => mountDraft.value.mountTarget)
 
-const showAdminMenuConfig = computed(() => {
-  const mt = currentMountTarget.value
-  return mt === 'ADMIN' || mt === 'BOTH'
-})
-const showMobileMenuConfig = computed(() => {
-  const mt = currentMountTarget.value
-  return mt === 'MOBILE' || mt === 'BOTH'
-})
-
-const currentMenuParentId = computed(() => {
-  const node = props.node
-  const value = node?.menuParentId ?? node?.settings?.menuParentId
-  return value != null ? String(value) : null
-})
-
-const currentMobileMenuParentId = computed(() => {
-  const node = props.node
-  const value = node?.mobileMenuParentId ?? node?.settings?.mobileMenuParentId
-  return value != null ? String(value) : null
-})
-
-const currentMenuSort = computed(() => {
-  const node = props.node
-  const value = node?.menuSort ?? node?.settings?.menuSort
-  return typeof value === 'number' ? value : Number(value) || 0
+const mountReady = computed(() => {
+  const draft = mountDraft.value
+  if (!draft.systemMenuVisible)
+    return false
+  const target = String(draft.mountTarget || 'ADMIN').toUpperCase()
+  if (showAdminMenuMountConfig(target) && !draft.menuParentId)
+    return false
+  if (showMobileMenuMountConfig(target) && !draft.mobileMenuParentId)
+    return false
+  return true
 })
 
 const formFillLinks = computed(() => {
@@ -215,30 +164,28 @@ const formFillLinks = computed(() => {
   return links
 })
 
-function onMountTargetChange(value) {
-  // Selecting a client target is itself an explicit request to expose the
-  // page in that client's menu.  Keep the visibility flag in the same patch;
-  // otherwise the server quite correctly filters the node out at publish.
-  emit('update', { mountTarget: value, systemMenuVisible: true })
+function onMountEnabledChange(enabled) {
+  emit('update', {
+    systemMenuVisible: enabled === true,
+    ...(enabled ? {} : { menuParentId: null, mobileMenuParentId: null }),
+  })
 }
 
-function onMenuNameChange(value) {
-  emit('update', { menuName: value })
-}
-
-function onMenuParentIdChange(value) {
-  // 选择管理端父级就是一次明确的菜单挂载操作。若只保存父级 ID 而
-  // 保留旧的 systemMenuVisible=false，发布时页面会被过滤掉并下线历史菜单。
-  emit('update', { menuParentId: value, systemMenuVisible: true })
-}
-
-function onMobileMenuParentIdChange(value) {
-  // 移动端使用独立的父级资源树，同样需要显式打开菜单挂载标记。
-  emit('update', { mobileMenuParentId: value, systemMenuVisible: true })
-}
-
-function onMenuSortChange(value) {
-  emit('update', { menuSort: value })
+function onMountDraftChange(next = {}) {
+  const previous = mountDraft.value
+  const patch = {}
+  for (const key of ['mountTarget', 'menuName', 'menuParentId', 'mobileMenuParentId', 'menuSort', 'systemMenuVisible']) {
+    if (next[key] !== previous[key])
+      patch[key] = next[key]
+  }
+  if (!Object.keys(patch).length)
+    return
+  // 仅在开关已打开时保留挂载；改挂载位置不再偷偷打开开关
+  if (previous.systemMenuVisible !== true && patch.systemMenuVisible !== true)
+    patch.systemMenuVisible = false
+  else if (previous.systemMenuVisible === true || patch.systemMenuVisible === true)
+    patch.systemMenuVisible = true
+  emit('update', patch)
 }
 
 async function copyLink(url, label) {
@@ -315,10 +262,19 @@ async function copyLink(url, label) {
 }
 
 .mount-config {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
   gap: 12px;
+}
+
+.mount-status-tag {
+  width: fit-content;
+}
+
+.mount-off-hint {
+  margin: 0;
+  color: #86909c;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .form-fill-links {

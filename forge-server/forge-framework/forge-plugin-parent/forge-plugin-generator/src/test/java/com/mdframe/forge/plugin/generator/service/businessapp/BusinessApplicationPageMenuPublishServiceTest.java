@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -35,8 +35,8 @@ class BusinessApplicationPageMenuPublishServiceTest {
     }
 
     @Test
-    @DisplayName("an explicitly enabled page still publishes its application root and page menu")
-    void explicitlyEnabledPageCreatesMenus() {
+    @DisplayName("enabled pages without explicit parent are skipped instead of auto-mounted")
+    void enabledPageWithoutParentDoesNotCreateMenus() {
         MenuRegisterAdapter adapter = mock(MenuRegisterAdapter.class);
         when(adapter.syncApplicationPageMenus(eq("hr_apply"), org.mockito.ArgumentMatchers.anyList()))
                 .thenReturn(Map.of());
@@ -49,15 +49,35 @@ class BusinessApplicationPageMenuPublishServiceTest {
                 "systemMenuVisible", true
         ))));
 
+        verify(adapter).syncApplicationPageMenus("hr_apply", List.of());
+    }
+
+    @Test
+    @DisplayName("enabled page with explicit parent mounts only under that parent")
+    void explicitlyMountedPageUsesExternalParent() {
+        MenuRegisterAdapter adapter = mock(MenuRegisterAdapter.class);
+        when(adapter.syncApplicationPageMenus(eq("hr_apply"), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(Map.of());
+        BusinessApplicationPageMenuPublishService service = new BusinessApplicationPageMenuPublishService(adapter);
+
+        service.sync(snapshot(List.of(Map.of(
+                "id", "page_apply",
+                "type", "page",
+                "title", "申请列表",
+                "systemMenuVisible", true,
+                "menuParentId", "42"
+        ))));
+
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<BusinessApplicationPageMenuDTO>> captor = ArgumentCaptor.forClass(List.class);
         verify(adapter).syncApplicationPageMenus(eq("hr_apply"), captor.capture());
         List<BusinessApplicationPageMenuDTO> menus = captor.getValue();
-        assertEquals(List.of("__application_menu_root__", "page_apply"),
-                menus.stream().map(BusinessApplicationPageMenuDTO::getNodeId).toList());
-        assertEquals("/app/hr_apply", menus.get(0).getPath());
-        assertEquals("/app/hr_apply?pageId=page_apply", menus.get(1).getPath());
-        assertEquals("app-center/application-portal", menus.get(1).getComponent());
+        assertEquals(1, menus.size());
+        assertEquals("page_apply", menus.get(0).getNodeId());
+        assertEquals("42", menus.get(0).getParentNodeId());
+        assertTrue(menus.get(0).isExternalParent());
+        assertEquals("/app/hr_apply?pageId=page_apply", menus.get(0).getPath());
+        assertEquals("app-center/application-portal", menus.get(0).getComponent());
     }
 
     @Test
@@ -78,7 +98,8 @@ class BusinessApplicationPageMenuPublishServiceTest {
                                 "id", "page_apply",
                                 "type", "page",
                                 "title", "申请列表",
-                                "systemMenuVisible", true
+                                "systemMenuVisible", true,
+                                "menuParentId", "42"
                         ))
                 ))
         ));
@@ -87,8 +108,7 @@ class BusinessApplicationPageMenuPublishServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<BusinessApplicationPageMenuDTO>> captor = ArgumentCaptor.forClass(List.class);
         verify(adapter).syncApplicationPageMenus(eq("hr_apply"), captor.capture());
-        assertEquals("/app/hr-portal", captor.getValue().get(0).getPath());
-        assertEquals("/app/hr-portal?pageId=page_apply", captor.getValue().get(1).getPath());
+        assertEquals("/app/hr-portal?pageId=page_apply", captor.getValue().get(0).getPath());
     }
 
     @Test
@@ -111,6 +131,7 @@ class BusinessApplicationPageMenuPublishServiceTest {
                                 "title", "申请表单",
                                 "pageType", "object",
                                 "systemMenuVisible", true,
+                                "menuParentId", "42",
                                 "objectRef", Map.of(
                                         "configKey", "hr_apply",
                                         "pageKey", "form",
@@ -125,7 +146,7 @@ class BusinessApplicationPageMenuPublishServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<BusinessApplicationPageMenuDTO>> captor = ArgumentCaptor.forClass(List.class);
         verify(adapter).syncApplicationPageMenus(eq("hr_apply"), captor.capture());
-        BusinessApplicationPageMenuDTO page = captor.getValue().get(1);
+        BusinessApplicationPageMenuDTO page = captor.getValue().get(0);
         assertEquals("/ai/crud-page/hr_apply?pageKey=form&appId=1001&formKey=hr_apply_form&runtimeOpenMode=CREATE_FORM&mode=create",
                 page.getPath());
         assertEquals("ai/crud-page", page.getComponent());
@@ -144,13 +165,15 @@ class BusinessApplicationPageMenuPublishServiceTest {
                 "type", "page",
                 "title", "申请列表",
                 "systemMenuVisible", true,
-                "mountTarget", "BOTH"
+                "mountTarget", "BOTH",
+                "menuParentId", "42",
+                "mobileMenuParentId", "84"
         ))));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<BusinessApplicationPageMenuDTO>> captor = ArgumentCaptor.forClass(List.class);
         verify(adapter).syncApplicationPageMenus(eq("hr_apply"), captor.capture());
-        assertEquals(List.of("pc", "h5", "pc", "h5"), captor.getValue().stream()
+        assertEquals(List.of("pc", "h5"), captor.getValue().stream()
                 .map(BusinessApplicationPageMenuDTO::getClientCode).toList());
     }
 
@@ -174,6 +197,7 @@ class BusinessApplicationPageMenuPublishServiceTest {
                                 "title", "移动申请",
                                 "systemMenuVisible", true,
                                 "mountTarget", "MOBILE",
+                                "mobileMenuParentId", "84",
                                 "objectRef", Map.of("configKey", "hr_apply")
                         ))
                 ))
@@ -183,14 +207,14 @@ class BusinessApplicationPageMenuPublishServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<BusinessApplicationPageMenuDTO>> captor = ArgumentCaptor.forClass(List.class);
         verify(adapter).syncApplicationPageMenus(eq("hr_apply"), captor.capture());
-        BusinessApplicationPageMenuDTO page = captor.getValue().get(1);
+        BusinessApplicationPageMenuDTO page = captor.getValue().get(0);
         assertEquals("/pages/lowcode-runtime?configKey=hr_apply&appId=1001", page.getPath());
         assertEquals(page.getPath(), page.getComponent());
     }
 
     @Test
-    @DisplayName("mobile pages use their own root and configured mobile parent")
-    void mobilePagesUseH5RootAndRetainParentGroup() {
+    @DisplayName("mobile pages use configured mobile parent without application root")
+    void mobilePagesUseConfiguredParentWithoutAppRoot() {
         MenuRegisterAdapter adapter = mock(MenuRegisterAdapter.class);
         when(adapter.syncApplicationPageMenus(eq("hr_apply"), org.mockito.ArgumentMatchers.anyList()))
                 .thenReturn(Map.of());
@@ -208,14 +232,26 @@ class BusinessApplicationPageMenuPublishServiceTest {
         ArgumentCaptor<List<BusinessApplicationPageMenuDTO>> captor = ArgumentCaptor.forClass(List.class);
         verify(adapter).syncApplicationPageMenus(eq("hr_apply"), captor.capture());
         List<BusinessApplicationPageMenuDTO> menus = captor.getValue();
-        assertEquals(List.of("h5", "h5"), menus.stream()
-                .map(BusinessApplicationPageMenuDTO::getClientCode).toList());
-        assertEquals(List.of("__application_menu_root__", "page_apply"), menus.stream()
-                .map(BusinessApplicationPageMenuDTO::getNodeId).toList());
-        assertNull(menus.get(0).getParentNodeId());
-        assertEquals("84", menus.get(1).getParentNodeId());
-        // H5 uses its own configured resource parent instead of a pc menu ID.
-        assertEquals(true, menus.get(1).isExternalParent());
+        assertEquals(1, menus.size());
+        assertEquals("h5", menus.get(0).getClientCode());
+        assertEquals("page_apply", menus.get(0).getNodeId());
+        assertEquals("84", menus.get(0).getParentNodeId());
+        assertTrue(menus.get(0).isExternalParent());
+    }
+
+    @Test
+    @DisplayName("validate ignores incomplete mount flags and only checks homepage")
+    void validateIgnoresIncompleteMountFlags() {
+        BusinessApplicationPageMenuPublishService service =
+                new BusinessApplicationPageMenuPublishService(mock(MenuRegisterAdapter.class));
+        List<String> errors = service.validate(snapshot(List.of(Map.of(
+                "id", "page_apply",
+                "type", "page",
+                "title", "申请列表",
+                "systemMenuVisible", true,
+                "mountTarget", "BOTH"
+        ))));
+        assertTrue(errors.stream().noneMatch(error -> error.contains("父级菜单")));
     }
 
     private Map<String, Object> snapshot(List<Map<String, Object>> nodes) {

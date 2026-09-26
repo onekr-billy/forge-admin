@@ -64,7 +64,7 @@
         <n-checkbox-group
           v-if="availableFields.length"
           v-model:value="visibleFieldCodes"
-          class="field-checkbox-grid"
+          class="field-checkbox-list"
         >
           <n-checkbox
             v-for="field in availableFields"
@@ -83,6 +83,33 @@
           :description="selectedRelation ? '未读取到可配置字段，请保存对象字段后重试' : '请先选择关联关系'"
         />
       </n-spin>
+      <div v-if="visibleFieldCodes.length" class="field-order-section">
+        <div class="field-order-head">
+          <strong>展示顺序</strong>
+          <span>拖动字段调整子表运行时渲染顺序</span>
+        </div>
+        <draggable
+          v-model="visibleFieldCodes"
+          :item-key="item => item"
+          handle=".field-drag-handle"
+          class="field-order-list"
+          :animation="150"
+        >
+          <template #item="{ element, index }">
+            <div class="field-order-row">
+              <span class="field-drag-handle" title="拖动排序">⋮⋮</span>
+              <span class="field-order-index">{{ index + 1 }}</span>
+              <span class="field-order-label">{{ resolveFieldLabelByCode(element) }}</span>
+              <n-button text size="tiny" :disabled="index === 0" aria-label="上移" @click="moveVisibleField(index, -1)">
+                ↑
+              </n-button>
+              <n-button text size="tiny" :disabled="index === visibleFieldCodes.length - 1" aria-label="下移" @click="moveVisibleField(index, 1)">
+                ↓
+              </n-button>
+            </div>
+          </template>
+        </draggable>
+      </div>
     </section>
 
     <template #footer>
@@ -101,6 +128,7 @@
 <script setup>
 import { useMessage } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
+import draggable from 'vuedraggable'
 import { businessObjectFields, businessObjectList } from '@/api/business-app'
 import { resolveChildTableRelationKey } from './child-table-section-config'
 
@@ -227,9 +255,12 @@ async function loadRelationFields(relation, selectedFieldCodes = null) {
     resolvedObject.value = object || modelRef || null
     availableFields.value = fields
     const availableCodes = fields.map(fieldCode).filter(Boolean)
-    const selectedCodes = Array.isArray(selectedFieldCodes) ? new Set(selectedFieldCodes) : null
+    const selectedCodes = Array.isArray(selectedFieldCodes)
+      ? [...new Set(selectedFieldCodes.map(code => String(code || '').trim()).filter(Boolean))]
+      : null
+    const availableSet = new Set(availableCodes)
     visibleFieldCodes.value = selectedCodes
-      ? availableCodes.filter(code => selectedCodes.has(code))
+      ? selectedCodes.filter(code => availableSet.has(code))
       : availableCodes
   }
   catch (error) {
@@ -320,6 +351,21 @@ function fieldCode(field = {}) {
 function fieldLabel(field = {}) {
   return field.fieldName || field.rawLabel || field.label || fieldCode(field)
 }
+
+function resolveFieldLabelByCode(code) {
+  const field = availableFields.value.find(item => fieldCode(item) === code)
+  return field ? fieldLabel(field) : code
+}
+
+function moveVisibleField(index, offset) {
+  const target = index + offset
+  if (target < 0 || target >= visibleFieldCodes.value.length)
+    return
+  const next = [...visibleFieldCodes.value]
+  const [item] = next.splice(index, 1)
+  next.splice(target, 0, item)
+  visibleFieldCodes.value = next
+}
 </script>
 
 <style scoped>
@@ -371,13 +417,77 @@ function fieldLabel(field = {}) {
   gap: 2px;
 }
 
-.field-checkbox-grid {
+.field-checkbox-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
+  grid-template-columns: 1fr;
+  gap: 8px;
   max-height: 300px;
   overflow-y: auto;
   padding: 14px;
+}
+
+.field-order-section {
+  margin-top: 12px;
+}
+
+.field-order-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.field-order-head span {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.field-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.field-order-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.field-drag-handle {
+  cursor: grab;
+  color: #94a3b8;
+  letter-spacing: -2px;
+}
+
+.field-order-index {
+  width: 18px;
+  color: #94a3b8;
+  font-size: 11px;
+  text-align: center;
+}
+
+.field-order-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-checkbox-copy {

@@ -302,9 +302,9 @@ export function createDefaultPageSchema(modelSchema) {
 export function syncPageSchemaWithModel(pageSchema, modelSchema) {
   const current = pageSchema || createDefaultPageSchema(modelSchema)
   const fields = modelSchema?.fields || []
-  const layoutType = current.layoutType || (modelSchema?.appType === 'TREE'
-    ? 'tree-crud'
-    : modelSchema?.appType === 'MASTER_DETAIL' ? 'master-detail-crud' : 'simple-crud')
+  // layoutType 以页面为准：嵌入式树表也会标 appType=TREE，不能因此改成左树右表。
+  const layoutType = current.layoutType
+    || (modelSchema?.appType === 'MASTER_DETAIL' ? 'master-detail-crud' : 'simple-crud')
   const zones = (current.zones || []).map((zone) => {
     const zoneFields = filterPageFields(fields, zone.zoneKey)
     const zoneFieldSet = new Set(zoneFields.map(field => field.field))
@@ -801,44 +801,146 @@ export function resolveTreeSourceRefs(modelSchema = {}) {
 }
 
 export function resolveDefaultTreeConfig(modelSchema = {}, overrides = {}) {
-  const sourceRef = resolveTreeSourceRef(modelSchema, overrides.sourceModelCode)
+  const normalizedOverrides = normalizeTreeConfigAliases(overrides)
+  const requestedSource = String(
+    normalizedOverrides.sourceModelCode
+    || normalizedOverrides.sourceConfigKey
+    || '',
+  ).trim()
+  const hasExplicitSourceKey = Object.prototype.hasOwnProperty.call(overrides || {}, 'sourceModelCode')
+    || Object.prototype.hasOwnProperty.call(overrides || {}, 'sourceConfigKey')
+  const matchedSourceRef = requestedSource
+    ? findTreeSourceRef(modelSchema, requestedSource)
+    : null
+  // 显式选了页面模型里没有的对象时，禁止回退到主模型字段，否则同步会把树字段打回当前列表
+  if (requestedSource && !matchedSourceRef) {
+    const keyField = normalizedOverrides.keyField || 'id'
+    const parentField = normalizedOverrides.parentField || 'parentId'
+    const labelField = normalizedOverrides.labelField || ''
+    const targetField = normalizedOverrides.targetField || keyField
+    const filterField = normalizedOverrides.filterField || parentField
+    return {
+      enabled: normalizedOverrides.enabled ?? true,
+      sourceModelCode: String(normalizedOverrides.sourceModelCode || requestedSource).trim(),
+      sourceModelName: normalizedOverrides.sourceModelName || '',
+      sourceTableName: normalizedOverrides.sourceTableName || '',
+      sourceConfigKey: String(normalizedOverrides.sourceConfigKey || '').trim(),
+      sourceObjectId: normalizedOverrides.sourceObjectId ?? null,
+      treeApi: normalizedOverrides.treeApi || '',
+      keyField,
+      parentField,
+      labelField,
+      filterField,
+      targetField,
+      childrenField: normalizedOverrides.childrenField || 'children',
+      treeTitle: normalizedOverrides.treeTitle || '',
+      loadMode: normalizedOverrides.loadMode || 'full',
+    }
+  }
+  // 设计器故意留空「树数据来源」时，不要在同步里回填成当前列表对象
+  if (hasExplicitSourceKey && !requestedSource) {
+    const modelTreeConfig = modelSchema.treeConfig || {}
+    const sourceFields = modelSchema.fields || []
+    const keyField = normalizedOverrides.keyField
+      || modelTreeConfig.keyField
+      || pickSourceField(sourceFields, ['id'])
+      || 'id'
+    const parentField = normalizedOverrides.parentField
+      || modelTreeConfig.parentField
+      || pickSourceField(sourceFields, ['parentId', 'pid', 'parentCode'])
+      || 'parentId'
+    const labelField = normalizedOverrides.labelField
+      || modelTreeConfig.labelField
+      || pickSourceField(sourceFields, ['name', 'title', 'label'])
+      || firstBusinessSourceField(sourceFields, [keyField, parentField])
+      || ''
+    return {
+      enabled: normalizedOverrides.enabled ?? true,
+      sourceModelCode: '',
+      sourceModelName: '',
+      sourceTableName: '',
+      sourceConfigKey: '',
+      sourceObjectId: null,
+      treeApi: '',
+      keyField,
+      parentField,
+      labelField,
+      filterField: normalizedOverrides.filterField || parentField,
+      targetField: normalizedOverrides.targetField || keyField,
+      childrenField: normalizedOverrides.childrenField || modelTreeConfig.childrenField || 'children',
+      treeTitle: normalizedOverrides.treeTitle || '',
+      loadMode: normalizedOverrides.loadMode || modelTreeConfig.loadMode || 'full',
+    }
+  }
+
+  const sourceRef = matchedSourceRef || resolveTreeSourceRef(modelSchema, normalizedOverrides.sourceModelCode)
   const primaryRef = resolvePrimaryModelRef(modelSchema)
   const sourceFields = sourceRef?.fields || modelSchema.fields || []
   const modelTreeConfig = sourceRef?.primary ? (modelSchema.treeConfig || {}) : {}
-  const keyField = overrides.keyField
+  const keyField = normalizedOverrides.keyField
     || modelTreeConfig.keyField
     || pickSourceField(sourceFields, ['id'])
     || 'id'
-  const parentField = overrides.parentField
+  const parentField = normalizedOverrides.parentField
     || modelTreeConfig.parentField
     || pickSourceField(sourceFields, ['parentId', 'pid', 'parentCode'])
     || 'parentId'
-  const labelField = overrides.labelField
+  const labelField = normalizedOverrides.labelField
     || modelTreeConfig.labelField
     || pickSourceField(sourceFields, ['name', 'title', 'label'])
     || firstBusinessSourceField(sourceFields, [keyField, parentField])
     || 'name'
   const relation = sourceRef?.primary ? null : findRelationToSource(primaryRef, sourceRef)
-  const filterField = overrides.filterField
+  const filterField = normalizedOverrides.filterField
     || (sourceRef?.primary ? parentField : relation?.sourceField)
     || parentField
-  const targetField = overrides.targetField
+  const targetField = normalizedOverrides.targetField
     || (sourceRef?.primary ? keyField : relation?.targetField)
     || keyField
 
   return {
-    enabled: overrides.enabled ?? true,
+    enabled: normalizedOverrides.enabled ?? true,
     sourceModelCode: sourceRef?.modelCode || '',
     sourceModelName: sourceRef?.modelName || modelSchema.businessName || '',
     sourceTableName: sourceRef?.tableName || modelSchema.tableName || '',
+    sourceConfigKey: String(normalizedOverrides.sourceConfigKey || '').trim(),
+    sourceObjectId: normalizedOverrides.sourceObjectId ?? null,
+    treeApi: normalizedOverrides.treeApi || '',
     keyField,
     parentField,
     labelField,
     filterField,
     targetField,
-    childrenField: overrides.childrenField || modelTreeConfig.childrenField || 'children',
-    treeTitle: overrides.treeTitle || modelTreeConfig.treeTitle || `${sourceRef?.modelName || modelSchema.businessName || '业务'}树`,
-    loadMode: overrides.loadMode || modelTreeConfig.loadMode || 'full',
+    childrenField: normalizedOverrides.childrenField || modelTreeConfig.childrenField || 'children',
+    treeTitle: normalizedOverrides.treeTitle || modelTreeConfig.treeTitle || `${sourceRef?.modelName || modelSchema.businessName || '业务'}树`,
+    loadMode: normalizedOverrides.loadMode || modelTreeConfig.loadMode || 'full',
+  }
+}
+
+function normalizeTreeConfigAliases(source = {}) {
+  const {
+    nodeKeyField: _nodeKeyField,
+    parentIdField: _parentIdField,
+    displayField: _displayField,
+    nameField: _nameField,
+    rightFilterField: _rightFilterField,
+    listFilterField: _listFilterField,
+    nodeValueField: _nodeValueField,
+    valueField: _valueField,
+    title: _title,
+    lazy: _lazy,
+    ...canonicalSource
+  } = source
+  const targetField = source.targetField || source.nodeValueField || source.valueField
+  return {
+    ...canonicalSource,
+    keyField: source.keyField || source.nodeKeyField,
+    parentField: source.parentField || source.parentIdField,
+    labelField: source.labelField || source.displayField || source.nameField,
+    filterField: source.filterField || source.rightFilterField || source.listFilterField,
+    targetField,
+    treeTitle: source.treeTitle || source.title,
+    loadMode: source.loadMode || (source.lazy === true ? 'lazy' : undefined),
   }
 }
 
@@ -846,12 +948,24 @@ export function resolveTreeSourceRef(modelSchema = {}, sourceModelCode = '') {
   const refs = resolveTreeSourceRefs(modelSchema)
   if (!refs.length)
     return null
-  if (sourceModelCode) {
-    const matched = refs.find(ref => ref.modelCode === sourceModelCode)
-    if (matched)
-      return matched
-  }
+  const matched = findTreeSourceRef(modelSchema, sourceModelCode)
+  if (matched)
+    return matched
+  // 未指定来源时才回退；显式来源找不到时由 resolveDefaultTreeConfig 保留外部对象配置
+  if (String(sourceModelCode || '').trim())
+    return null
   return refs.find(ref => !ref.primary) || refs.find(ref => ref.primary) || refs[0]
+}
+
+function findTreeSourceRef(modelSchema = {}, sourceValue = '') {
+  const value = String(sourceValue || '').trim()
+  if (!value)
+    return null
+  return resolveTreeSourceRefs(modelSchema).find(ref => (
+    String(ref.modelCode || '') === value
+    || String(ref.configKey || '') === value
+    || String(ref.objectCode || '') === value
+  )) || null
 }
 
 export function resolveTreeFieldOptions(modelSchema = {}, sourceModelCode = '') {
@@ -906,7 +1020,17 @@ export function createDefaultListGridLayout(modelSchema, options = {}) {
   const items = []
   const mainX = isTree ? 3 : 0
   const mainW = isTree ? 9 : 12
-  const treeConfig = isTree ? resolveDefaultTreeConfig(modelSchema) : null
+  const treeConfig = isTree
+    ? {
+        ...resolveDefaultTreeConfig(modelSchema),
+        sourceModelCode: '',
+        sourceModelName: '',
+        sourceTableName: '',
+        sourceConfigKey: '',
+        treeApi: '',
+        treeTitle: '',
+      }
+    : null
 
   if (isTree) {
     items.push({
@@ -963,9 +1087,10 @@ export function syncGridLayoutWithModel(layout, modelSchema, options = {}) {
     .filter(field => isListFieldSelectable(field, 'table'))
     .map(f => f.field))
   const searchFieldSet = new Set(filterPageFields(modelSchema?.fields || [], 'search').map(f => f.field))
-  const layoutType = options.layoutType || layout?.layoutType || (modelSchema?.appType === 'TREE'
-    ? 'tree-crud'
-    : modelSchema?.appType === 'MASTER_DETAIL' ? 'master-detail-crud' : 'simple-crud')
+  // 优先用显式 layoutType；appType=TREE 只表示树形数据，不自动切左树右表。
+  const layoutType = options.layoutType
+    || layout?.layoutType
+    || (modelSchema?.appType === 'MASTER_DETAIL' ? 'master-detail-crud' : 'simple-crud')
   const fallback = createDefaultListGridLayout(modelSchema, { layoutType })
   const hasExplicitItems = Array.isArray(layout?.items)
   const source = hasExplicitItems ? layout : fallback
@@ -993,6 +1118,25 @@ export function syncGridLayoutWithModel(layout, modelSchema, options = {}) {
           ...props,
           searchFieldRefs: searchRefs,
           searchFieldSettings: sanitizeFieldSettings(item.props?.searchFieldSettings, new Set(searchRefs), searchFieldSet),
+        }
+      }
+      else {
+        // 旧区块补齐显式查询配置：默认取模型 searchable，避免「查询」开关误跟列表列
+        const defaultSearchRefs = filterPageFields(modelSchema?.fields || [], 'search')
+          .filter(field => field.searchable === true)
+          .map(field => field.field)
+          .filter(field => searchFieldSet.has(field))
+        props = {
+          ...props,
+          searchFieldRefs: defaultSearchRefs,
+          searchFieldSettings: sanitizeFieldSettings({}, new Set(defaultSearchRefs), searchFieldSet),
+        }
+      }
+      // 左树右表右表不是本表树，区块残留 enableTreeAddChild 会导致「添加下级」误显
+      if (layoutType === 'tree-crud') {
+        props = {
+          ...props,
+          enableTreeAddChild: false,
         }
       }
     }
@@ -1336,6 +1480,8 @@ export function applyGridLayoutToZones(zones, gridLayout, modelSchema) {
         ...crudProps,
         ...tableProps,
       }
+      const treeProps = normalizeTreeConfigAliases(tree?.props || {})
+      const zoneTreeConfig = normalizeTreeConfigAliases(zone.props?.treeConfig || {})
       const nextProps = {
         ...(zone.props || {}),
         ...pickRuntimeTableProps(sourceProps),
@@ -1350,23 +1496,46 @@ export function applyGridLayoutToZones(zones, gridLayout, modelSchema) {
       }
       if (tree) {
         nextProps.treeConfig = {
-          ...(zone.props?.treeConfig || {}),
-          enabled: tree.props?.enabled ?? zone.props?.treeConfig?.enabled ?? true,
-          sourceModelCode: tree.props?.sourceModelCode || zone.props?.treeConfig?.sourceModelCode || '',
-          sourceModelName: tree.props?.sourceModelName || zone.props?.treeConfig?.sourceModelName || '',
-          sourceTableName: tree.props?.sourceTableName || zone.props?.treeConfig?.sourceTableName || '',
-          treeTitle: tree.props?.treeTitle || zone.props?.treeConfig?.treeTitle,
-          keyField: tree.props?.keyField || zone.props?.treeConfig?.keyField || 'id',
-          parentField: tree.props?.parentField || zone.props?.treeConfig?.parentField || 'parentId',
-          labelField: tree.props?.labelField || zone.props?.treeConfig?.labelField || '',
-          filterField: tree.props?.filterField || zone.props?.treeConfig?.filterField || '',
-          targetField: tree.props?.targetField || zone.props?.treeConfig?.targetField || '',
-          childrenField: tree.props?.childrenField || zone.props?.treeConfig?.childrenField || 'children',
-          loadMode: tree.props?.loadMode || zone.props?.treeConfig?.loadMode || 'full',
+          ...zoneTreeConfig,
+          ...treeProps,
+          enabled: treeProps.enabled ?? zoneTreeConfig.enabled ?? true,
+          sourceModelCode: treeProps.sourceModelCode || zoneTreeConfig.sourceModelCode || '',
+          sourceModelName: treeProps.sourceModelName || zoneTreeConfig.sourceModelName || '',
+          sourceTableName: treeProps.sourceTableName || zoneTreeConfig.sourceTableName || '',
+          sourceConfigKey: treeProps.sourceConfigKey || zoneTreeConfig.sourceConfigKey || '',
+          treeApi: treeProps.treeApi || zoneTreeConfig.treeApi || '',
+          treeTitle: treeProps.treeTitle || zoneTreeConfig.treeTitle,
+          keyField: treeProps.keyField || zoneTreeConfig.keyField || 'id',
+          parentField: treeProps.parentField || zoneTreeConfig.parentField || 'parentId',
+          labelField: treeProps.labelField || zoneTreeConfig.labelField || '',
+          filterField: treeProps.filterField || zoneTreeConfig.filterField || '',
+          targetField: treeProps.targetField || zoneTreeConfig.targetField || '',
+          childrenField: treeProps.childrenField || zoneTreeConfig.childrenField || 'children',
+          loadMode: treeProps.loadMode || zoneTreeConfig.loadMode || 'full',
         }
+        // 左树右表：右表是筛选列表，不是本表树形；强制关掉「添加下级」
+        nextProps.enableTreeAddChild = false
+      }
+      else if (modelSchema?.treeConfig?.enabled === true || modelSchema?.appType === 'TREE') {
+        // 嵌入式树表：无 tree-panel 时也要把模型树配置落到 table zone，避免被同步清掉
+        nextProps.treeConfig = {
+          ...resolveDefaultTreeConfig(modelSchema, {
+            ...zoneTreeConfig,
+            ...(modelSchema.treeConfig || {}),
+            enabled: true,
+          }),
+          enabled: true,
+        }
+        if (typeof modelSchema.treeConfig?.enableTreeAddChild === 'boolean')
+          nextProps.enableTreeAddChild = modelSchema.treeConfig.enableTreeAddChild
+        else if (typeof sourceProps.enableTreeAddChild === 'boolean')
+          nextProps.enableTreeAddChild = sourceProps.enableTreeAddChild
+        else
+          nextProps.enableTreeAddChild = true
       }
       else {
         delete nextProps.treeConfig
+        nextProps.enableTreeAddChild = false
       }
       return {
         ...zone,
@@ -1450,6 +1619,8 @@ function pickRuntimeTableProps(props = {}) {
     'lastPreviewMessage',
     'lastPreviewError',
     'lastPreviewAt',
+    'enableTreeAddChild',
+    'treeApi',
   ]
   return keys.reduce((next, key) => {
     if (Object.prototype.hasOwnProperty.call(props, key))

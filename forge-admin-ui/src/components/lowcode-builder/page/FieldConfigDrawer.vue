@@ -22,10 +22,10 @@ import {
   normalizeParamName,
   queryTypeOptions,
   resolveCrudFieldQuickValue,
-  resolveDefaultSearchComponentType,
   resolveDefaultTableRenderType,
+  resolveSearchComponentLabel,
+  resolveSearchFieldRefsForWrite,
   resolveSelectedFieldRefs,
-  searchComponentOptions,
   tableRenderOptions,
 } from './fieldDrawerConfig'
 import {
@@ -130,7 +130,37 @@ watch(() => props.show, (show) => {
   const refs = resolveSelectedFieldRefs(selectedBlock.value, zoneKey.value, props.fields)
   activeDrawerFieldName.value = props.initialField || refs?.[0] || ''
   fieldAdvancedOpen.value = false
+  // 打开查询条件抽屉时清理历史误写的 componentType，查询组件始终跟表单字段走
+  if (zoneKey.value === 'search' && selectedBlock.value?.blockType === 'AiCrudPage')
+    stripSearchComponentTypeOverrides()
 })
+
+function stripSearchComponentTypeOverrides() {
+  if (!selectedBlock.value?.id)
+    return
+  const current = selectedBlock.value.props?.searchFieldSettings || {}
+  const keys = Object.keys(current)
+  if (!keys.length)
+    return
+  let changed = false
+  const next = {}
+  keys.forEach((key) => {
+    const setting = { ...(current[key] || {}) }
+    if (Object.prototype.hasOwnProperty.call(setting, 'componentType')
+      || Object.prototype.hasOwnProperty.call(setting, 'type')) {
+      delete setting.componentType
+      delete setting.type
+      changed = true
+    }
+    next[key] = setting
+  })
+  if (!changed)
+    return
+  emit('patchProps', {
+    blockId: selectedBlock.value.id,
+    patch: { searchFieldSettings: next },
+  })
+}
 
 function resolveFieldScopeText(field = {}) {
   if (!isChildListField(field))
@@ -210,15 +240,19 @@ function updateFieldSetting(fieldName, settingPatch) {
   if (!selectedBlock.value)
     return
   if (zoneKey.value === 'search' && selectedBlock.value.blockType === 'AiCrudPage') {
+    // 查询组件类型始终跟表单字段走，清理历史误写的 componentType
+    const nextSetting = {
+      ...(selectedBlock.value.props?.searchFieldSettings?.[fieldName] || {}),
+      ...settingPatch,
+    }
+    delete nextSetting.componentType
+    delete nextSetting.type
     emit('patchProps', {
       blockId: selectedBlock.value.id,
       patch: {
         searchFieldSettings: {
           ...(selectedBlock.value.props?.searchFieldSettings || {}),
-          [fieldName]: {
-            ...(selectedBlock.value.props?.searchFieldSettings?.[fieldName] || {}),
-            ...settingPatch,
-          },
+          [fieldName]: nextSetting,
         },
       },
     })
@@ -260,14 +294,18 @@ function updateFieldRole(fieldName, role, enabled) {
     return
   }
   if (role === 'search' || role === 'table') {
+    if (role === 'search' && selectedBlock.value.blockType === 'AiCrudPage') {
+      const current = resolveSearchFieldRefsForWrite(selectedBlock.value, props.fields)
+      const next = enabled
+        ? Array.from(new Set([...current, fieldName]))
+        : current.filter(ref => ref !== fieldName)
+      emit('patchProps', { blockId: selectedBlock.value.id, patch: { searchFieldRefs: next } })
+      return
+    }
     const current = resolveSelectedFieldRefs(selectedBlock.value, role, props.fields)
     const next = enabled
       ? Array.from(new Set([...current, fieldName]))
       : current.filter(ref => ref !== fieldName)
-    if (role === 'search' && selectedBlock.value.blockType === 'AiCrudPage') {
-      emit('patchProps', { blockId: selectedBlock.value.id, patch: { searchFieldRefs: next } })
-      return
-    }
     if (role === 'table')
       emit('patchBlock', { blockId: selectedBlock.value.id, patch: { fieldRefs: next } })
     return
@@ -372,19 +410,15 @@ function renderTargetFieldOptions(field = {}) {
                 </button>
                 <div v-if="zoneKey === 'search'" class="field-setting-row search-setting-row">
                   <n-select
-                    :value="resolveFieldSetting(element.field).queryType || element.queryType || 'like'"
+                    :value="resolveFieldSetting(element.field).queryType || element.queryType || 'eq'"
                     size="tiny"
                     :options="queryTypeOptions"
                     placeholder="查询方式"
                     @update:value="updateFieldSetting(element.field, { queryType: $event })"
                   />
-                  <n-select
-                    :value="resolveFieldSetting(element.field).componentType || resolveDefaultSearchComponentType(element)"
-                    size="tiny"
-                    :options="searchComponentOptions"
-                    placeholder="查询组件"
-                    @update:value="updateFieldSetting(element.field, { componentType: $event })"
-                  />
+                  <span class="search-component-hint" :title="`与表单字段一致：${resolveSearchComponentLabel(element)}`">
+                    {{ resolveSearchComponentLabel(element) }}
+                  </span>
                   <n-select
                     :value="resolveFieldSetting(element.field).queryField || element.field"
                     size="tiny"
@@ -392,13 +426,6 @@ function renderTargetFieldOptions(field = {}) {
                     filterable
                     placeholder="映射字段"
                     @update:value="updateFieldSetting(element.field, { queryField: $event })"
-                  />
-                  <n-select
-                    :value="resolveFieldSetting(element.field).align || 'left'"
-                    size="tiny"
-                    :options="alignOptions"
-                    placeholder="对齐"
-                    @update:value="updateFieldSetting(element.field, { align: $event || 'left' })"
                   />
                 </div>
                 <div v-if="zoneKey !== 'search' && ['data-table', 'AiCrudPage', 'AiTable', 'AiForm', 'detail-info'].includes(selectedBlock.blockType)" class="field-setting-row table-setting-row">
@@ -506,17 +533,8 @@ function renderTargetFieldOptions(field = {}) {
                 <strong>{{ resolveListFieldTitle(activeDrawerField, activeDrawerFieldSetting, activeDrawerField.field) }}</strong>
                 <span>{{ activeDrawerField.sourceField || activeDrawerField.field }}</span>
               </div>
-              <div class="field-role-switches">
-                <!-- 勿用 label 包裹 n-switch：点击会冒泡二次触发，表现为「勾选不动」 -->
-                <div class="field-role-item">
-                  <span>查询</span>
-                  <n-switch
-                    size="small"
-                    :value="resolveFieldRoleEnabled(activeDrawerField.field, 'search')"
-                    :disabled="selectedBlock.blockType !== 'AiCrudPage'"
-                    @update:value="updateFieldRole(activeDrawerField.field, 'search', $event)"
-                  />
-                </div>
+              <div v-if="zoneKey !== 'search'" class="field-role-switches">
+                <!-- 显示字段抽屉只配表格列/编辑等；查询条件在「查询条件」抽屉单独维护，避免混配 -->
                 <div class="field-role-item">
                   <span>表格列</span>
                   <n-switch
@@ -551,7 +569,7 @@ function renderTargetFieldOptions(field = {}) {
                 </div>
               </div>
             </div>
-            <div class="field-detail-grid">
+            <div v-if="zoneKey !== 'search'" class="field-detail-grid">
               <label class="field-detail-control">
                 <span>列标题</span>
                 <n-input
@@ -588,7 +606,45 @@ function renderTargetFieldOptions(field = {}) {
                 />
               </label>
             </div>
-            <div class="field-detail-footer">
+            <div v-if="zoneKey === 'search'" class="field-detail-grid">
+              <label class="field-detail-control">
+                <span>查询标签</span>
+                <n-input
+                  :value="activeDrawerFieldSetting.label || activeDrawerField.label || activeDrawerField.fieldName || activeDrawerField.field"
+                  size="small"
+                  @update:value="updateFieldSetting(activeDrawerField.field, { label: $event || '' })"
+                />
+              </label>
+              <label class="field-detail-control">
+                <span>查询方式</span>
+                <n-select
+                  :value="activeDrawerFieldSetting.queryType || activeDrawerField.queryType || 'eq'"
+                  size="small"
+                  :options="queryTypeOptions"
+                  @update:value="updateFieldSetting(activeDrawerField.field, { queryType: $event })"
+                />
+              </label>
+              <label class="field-detail-control">
+                <span>查询组件</span>
+                <n-input
+                  :value="resolveSearchComponentLabel(activeDrawerField)"
+                  size="small"
+                  readonly
+                  placeholder="与表单字段一致"
+                />
+              </label>
+              <label class="field-detail-control">
+                <span>映射字段</span>
+                <n-select
+                  :value="activeDrawerFieldSetting.queryField || activeDrawerField.field"
+                  size="small"
+                  :options="queryFieldOptions"
+                  filterable
+                  @update:value="updateFieldSetting(activeDrawerField.field, { queryField: $event })"
+                />
+              </label>
+            </div>
+            <div v-if="zoneKey !== 'search'" class="field-detail-footer">
               <div class="field-detail-toggles">
                 <div class="field-role-item">
                   <span>省略</span>
@@ -611,77 +667,45 @@ function renderTargetFieldOptions(field = {}) {
                 {{ fieldAdvancedOpen ? '收起配置' : '更多字段配置' }}
               </n-button>
             </div>
-            <div v-if="fieldAdvancedOpen" class="field-advanced-panel">
-              <template v-if="zoneKey === 'search'">
-                <label class="field-detail-control">
-                  <span>查询方式</span>
-                  <n-select
-                    :value="activeDrawerFieldSetting.queryType || activeDrawerField.queryType || 'like'"
-                    size="small"
-                    :options="queryTypeOptions"
-                    @update:value="updateFieldSetting(activeDrawerField.field, { queryType: $event })"
-                  />
-                </label>
-                <label class="field-detail-control">
-                  <span>查询组件</span>
-                  <n-select
-                    :value="activeDrawerFieldSetting.componentType || resolveDefaultSearchComponentType(activeDrawerField)"
-                    size="small"
-                    :options="searchComponentOptions"
-                    @update:value="updateFieldSetting(activeDrawerField.field, { componentType: $event })"
-                  />
-                </label>
-                <label class="field-detail-control">
-                  <span>映射字段</span>
-                  <n-select
-                    :value="activeDrawerFieldSetting.queryField || activeDrawerField.field"
-                    size="small"
-                    :options="queryFieldOptions"
-                    filterable
-                    @update:value="updateFieldSetting(activeDrawerField.field, { queryField: $event })"
-                  />
-                </label>
-              </template>
-              <template v-else>
-                <label class="field-detail-control">
-                  <span>渲染方式</span>
-                  <n-select
-                    :value="activeDrawerFieldSetting.renderType || resolveDefaultTableRenderType(activeDrawerField)"
-                    size="small"
-                    :options="tableRenderOptions"
-                    @update:value="updateFieldSetting(activeDrawerField.field, { renderType: $event })"
-                  />
-                </label>
-                <label v-if="isNameRenderType(activeDrawerFieldSetting.renderType || resolveDefaultTableRenderType(activeDrawerField))" class="field-detail-control">
-                  <span>名称字段</span>
-                  <n-select
-                    :value="activeDrawerFieldSetting.targetField || `${activeDrawerField.field}Name`"
-                    size="small"
-                    :options="renderTargetFieldOptions(activeDrawerField)"
-                    filterable
-                    tag
-                    @update:value="updateFieldSetting(activeDrawerField.field, { targetField: $event })"
-                  />
-                </label>
-                <label class="field-detail-control">
-                  <span>点击动作</span>
-                  <n-select
-                    :value="activeDrawerFieldSetting.clickAction || 'none'"
-                    size="small"
-                    :options="columnClickActionOptions"
-                    @update:value="updateFieldSetting(activeDrawerField.field, { clickAction: $event || 'none' })"
-                  />
-                </label>
-                <label class="field-detail-control">
-                  <span>文字颜色</span>
-                  <n-color-picker
-                    :value="activeDrawerFieldSetting.textColor || ''"
-                    size="small"
-                    :show-alpha="true"
-                    @update:value="updateFieldSetting(activeDrawerField.field, { textColor: $event || '' })"
-                  />
-                </label>
-              </template>
+            <div v-if="zoneKey !== 'search' && fieldAdvancedOpen" class="field-advanced-panel">
+              <label class="field-detail-control">
+                <span>渲染方式</span>
+                <n-select
+                  :value="activeDrawerFieldSetting.renderType || resolveDefaultTableRenderType(activeDrawerField)"
+                  size="small"
+                  :options="tableRenderOptions"
+                  @update:value="updateFieldSetting(activeDrawerField.field, { renderType: $event })"
+                />
+              </label>
+              <label v-if="isNameRenderType(activeDrawerFieldSetting.renderType || resolveDefaultTableRenderType(activeDrawerField))" class="field-detail-control">
+                <span>名称字段</span>
+                <n-select
+                  :value="activeDrawerFieldSetting.targetField || `${activeDrawerField.field}Name`"
+                  size="small"
+                  :options="renderTargetFieldOptions(activeDrawerField)"
+                  filterable
+                  tag
+                  @update:value="updateFieldSetting(activeDrawerField.field, { targetField: $event })"
+                />
+              </label>
+              <label class="field-detail-control">
+                <span>点击动作</span>
+                <n-select
+                  :value="activeDrawerFieldSetting.clickAction || 'none'"
+                  size="small"
+                  :options="columnClickActionOptions"
+                  @update:value="updateFieldSetting(activeDrawerField.field, { clickAction: $event || 'none' })"
+                />
+              </label>
+              <label class="field-detail-control">
+                <span>文字颜色</span>
+                <n-color-picker
+                  :value="activeDrawerFieldSetting.textColor || ''"
+                  size="small"
+                  :show-alpha="true"
+                  @update:value="updateFieldSetting(activeDrawerField.field, { textColor: $event || '' })"
+                />
+              </label>
             </div>
           </div>
         </div>
@@ -806,7 +830,20 @@ function renderTargetFieldOptions(field = {}) {
 }
 
 .search-setting-row {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+  align-items: center;
+}
+
+.search-component-hint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: #f4f4f5;
+  color: #52525b;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .table-setting-row {

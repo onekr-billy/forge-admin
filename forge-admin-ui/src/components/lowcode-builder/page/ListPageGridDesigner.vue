@@ -413,6 +413,93 @@
         </button>
       </div>
       <div ref="propertyPanelRef" class="property-panel">
+        <div v-show="propertyPanelTab === 'props'" class="list-tree-model-property">
+          <div class="property-search-anchor" data-property-search="树形模型 树表 父级 parentId 添加下级 层级" />
+          <n-collapse :default-expanded-names="embeddedTreeEnabled ? ['tree-model'] : []">
+            <n-collapse-item name="tree-model" :title="layoutType === 'tree-crud' ? '本表树形字段（嵌入式）' : '树形模型'">
+              <n-alert
+                v-if="layoutType === 'tree-crud'"
+                type="info"
+                :bordered="false"
+                style="margin-bottom: 10px"
+              >
+                左侧筛选树请在画布选中「筛选树」区块配置。这里只配置<strong>本表</strong>是否按父子层级展示，以及表单里树形选择（如 parentId）用到的字段。
+              </n-alert>
+              <n-form size="small" label-placement="top" :show-feedback="false">
+                <n-form-item :label="layoutType === 'tree-crud' ? '本表启用树形列表' : '启用树形列表'">
+                  <div class="tree-action-compact">
+                    <div>
+                      <strong>{{ embeddedTreeEnabled ? '已启用' : '未启用' }}</strong>
+                      <span>{{ layoutType === 'tree-crud' ? '开启后右侧列表按父子层级展示；关闭则右侧仍为平铺列表。' : '开启后列表按父子层级展示；关闭后恢复普通平铺列表。' }}</span>
+                    </div>
+                    <n-switch
+                      size="small"
+                      :value="embeddedTreeEnabled"
+                      @update:value="updateEmbeddedTreeEnabled"
+                    />
+                  </div>
+                </n-form-item>
+                <n-form-item label="主键字段">
+                  <n-select
+                    :value="embeddedTreeConfig.keyField || 'id'"
+                    :options="primaryFieldOptions"
+                    filterable
+                    :disabled="!embeddedTreeEnabled"
+                    @update:value="value => patchEmbeddedTreeConfig({ keyField: value, targetField: value })"
+                  />
+                </n-form-item>
+                <n-form-item label="父级字段">
+                  <n-select
+                    :value="embeddedTreeConfig.parentField || 'parentId'"
+                    :options="primaryFieldOptions"
+                    filterable
+                    :disabled="!embeddedTreeEnabled"
+                    @update:value="value => patchEmbeddedTreeConfig({ parentField: value, filterField: value })"
+                  />
+                </n-form-item>
+                <n-form-item label="显示字段">
+                  <n-select
+                    :value="embeddedTreeConfig.labelField"
+                    :options="primaryFieldOptions"
+                    filterable
+                    clearable
+                    :disabled="!embeddedTreeEnabled"
+                    @update:value="value => patchEmbeddedTreeConfig({ labelField: value })"
+                  />
+                </n-form-item>
+                <n-form-item label="加载方式">
+                  <n-select
+                    :value="embeddedTreeConfig.loadMode || 'full'"
+                    :options="treeLoadModeOptions"
+                    :disabled="!embeddedTreeEnabled"
+                    @update:value="value => patchEmbeddedTreeConfig({ loadMode: value })"
+                  />
+                </n-form-item>
+                <n-form-item label="子级字段名">
+                  <n-input
+                    :value="embeddedTreeConfig.childrenField || 'children'"
+                    :disabled="!embeddedTreeEnabled"
+                    @update:value="value => patchEmbeddedTreeConfig({ childrenField: value || 'children' })"
+                  />
+                </n-form-item>
+                <n-form-item label="树表操作">
+                  <div class="tree-action-compact">
+                    <div>
+                      <strong>添加下级</strong>
+                      <span>{{ layoutType === 'tree-crud' ? '左树右表：在右侧行上新增子节点' : '在树表行上新增子节点（写入父级字段）' }}</span>
+                    </div>
+                    <n-switch
+                      size="small"
+                      :disabled="!embeddedTreeEnabled && layoutType !== 'tree-crud'"
+                      :value="treeAddChildEnabled"
+                      @update:value="updateTreeAddChildEnabled"
+                    />
+                  </div>
+                </n-form-item>
+              </n-form>
+            </n-collapse-item>
+          </n-collapse>
+        </div>
         <div v-if="!selectedBlock" class="property-empty">
           <p>选中画布上的组件以编辑属性</p>
         </div>
@@ -1923,19 +2010,6 @@
                         </div>
                       </div>
                     </n-form-item>
-                    <n-form-item label="树表操作">
-                      <div class="tree-action-compact">
-                        <div>
-                          <strong>添加下级</strong>
-                          <span>树形表行操作</span>
-                        </div>
-                        <n-switch
-                          size="small"
-                          :value="selectedBlock.props?.enableTreeAddChild === true"
-                          @update:value="patchBlockProps(selectedBlock.id, { enableTreeAddChild: $event })"
-                        />
-                      </div>
-                    </n-form-item>
                   </n-collapse-item>
 
                   <n-collapse-item v-if="selectedBlock.blockType === 'AiTable' && propertySectionVisible(['表格功能', '工具栏', '分页', '刷新', '密度', '列设置', '搜索切换', '全屏', '滚动尺寸'])" name="table" title="表格功能">
@@ -2222,70 +2296,124 @@
 
               <!-- Tree panel -->
               <template v-if="selectedBlock.blockType === 'tree-panel'">
-                <n-form-item label="树数据来源">
-                  <n-select
-                    :value="selectedBlock.props?.sourceModelCode"
-                    :options="treeSourceOptions"
-                    clearable
-                    @update:value="handleTreeSourceChange"
-                  />
-                </n-form-item>
-                <n-form-item label="树标题">
-                  <n-input
-                    :value="selectedBlock.props?.treeTitle"
-                    @update:value="patchBlockProps(selectedBlock.id, { treeTitle: $event })"
-                  />
-                </n-form-item>
-                <n-form-item label="树节点主键">
-                  <n-select
-                    :value="selectedBlock.props?.keyField"
-                    :options="treeFieldOptions"
-                    clearable
-                    @update:value="patchBlockProps(selectedBlock.id, { keyField: $event })"
-                  />
-                </n-form-item>
-                <n-form-item label="树父级字段">
-                  <n-select
-                    :value="selectedBlock.props?.parentField"
-                    :options="treeFieldOptions"
-                    clearable
-                    @update:value="patchBlockProps(selectedBlock.id, { parentField: $event })"
-                  />
-                </n-form-item>
-                <n-form-item label="树显示字段">
-                  <n-select
-                    :value="selectedBlock.props?.labelField"
-                    :options="treeFieldOptions"
-                    clearable
-                    @update:value="patchBlockProps(selectedBlock.id, { labelField: $event })"
-                  />
-                </n-form-item>
-                <n-form-item label="加载方式">
-                  <n-select
-                    :value="selectedBlock.props?.loadMode || 'full'"
-                    :options="treeLoadModeOptions"
-                    @update:value="patchBlockProps(selectedBlock.id, { loadMode: $event })"
-                  />
-                </n-form-item>
-                <n-form-item label="节点取值字段">
-                  <n-select
-                    :value="selectedBlock.props?.targetField"
-                    :options="treeFieldOptions"
-                    clearable
-                    @update:value="patchBlockProps(selectedBlock.id, { targetField: $event })"
-                  />
-                </n-form-item>
-                <n-form-item label="右表过滤字段">
-                  <n-select
-                    :value="selectedBlock.props?.filterField"
-                    :options="primaryFieldOptions"
-                    clearable
-                    @update:value="patchBlockProps(selectedBlock.id, { filterField: $event })"
-                  />
-                  <div class="field-help">
-                    树接口独立加载；点击节点只给右侧列表追加“{{ selectedBlock.props?.filterField || '列表过滤字段' }} = 节点的 {{ selectedBlock.props?.targetField || selectedBlock.props?.keyField || 'id' }}”过滤条件。
+                <div class="tree-panel-property">
+                  <div class="tree-panel-property-intro">
+                    左侧树通常来自分类、组织等<strong>另一个对象</strong>，不必用当前列表对象。选好数据源后，右侧列表仍按本对象字段过滤。
                   </div>
-                </n-form-item>
+                  <n-form-item label="树数据来源">
+                    <n-select
+                      :value="selectedTreeSourceValue"
+                      :options="treeSourceOptions"
+                      filterable
+                      clearable
+                      :loading="treeSourceLoading"
+                      placeholder="选择树对象，一般不是当前列表"
+                      @update:value="handleTreeSourceChange"
+                    />
+                  </n-form-item>
+                  <n-form-item label="树标题">
+                    <n-input
+                      :value="selectedBlock.props?.treeTitle"
+                      placeholder="例如：组织树、分类树"
+                      @update:value="patchBlockProps(selectedBlock.id, { treeTitle: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item label="树节点主键">
+                    <n-select
+                      :value="selectedBlock.props?.keyField"
+                      :options="treeFieldOptions"
+                      filterable
+                      clearable
+                      :loading="treeSourceFieldsLoading"
+                      @update:value="patchBlockProps(selectedBlock.id, { keyField: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item label="树父级字段">
+                    <n-select
+                      :value="selectedBlock.props?.parentField"
+                      :options="treeFieldOptions"
+                      filterable
+                      clearable
+                      :loading="treeSourceFieldsLoading"
+                      @update:value="patchBlockProps(selectedBlock.id, { parentField: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item label="树显示字段">
+                    <n-select
+                      :value="selectedBlock.props?.labelField"
+                      :options="treeFieldOptions"
+                      filterable
+                      clearable
+                      :loading="treeSourceFieldsLoading"
+                      @update:value="patchBlockProps(selectedBlock.id, { labelField: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item label="加载方式">
+                    <n-select
+                      :value="selectedBlock.props?.loadMode || 'full'"
+                      :options="treeLoadModeOptions"
+                      @update:value="patchBlockProps(selectedBlock.id, { loadMode: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item>
+                    <template #label>
+                      <span class="tree-panel-property-label">
+                        节点取值字段
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '280px' }">
+                          <template #trigger>
+                            <n-icon :size="13" class="tree-panel-property-tip">
+                              <HelpCircleOutline />
+                            </n-icon>
+                          </template>
+                          点击树节点时，把这个字段的值传给右侧列表。
+                        </n-tooltip>
+                      </span>
+                    </template>
+                    <n-select
+                      :value="selectedBlock.props?.targetField"
+                      :options="treeFieldOptions"
+                      filterable
+                      clearable
+                      :loading="treeSourceFieldsLoading"
+                      @update:value="patchBlockProps(selectedBlock.id, { targetField: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item>
+                    <template #label>
+                      <span class="tree-panel-property-label">
+                        右表过滤字段
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '320px' }">
+                          <template #trigger>
+                            <n-icon :size="13" class="tree-panel-property-tip">
+                              <HelpCircleOutline />
+                            </n-icon>
+                          </template>
+                          该字段属于当前列表对象。树接口按所选数据源独立加载；点节点后右表按此字段筛选，清除节点即可看全部数据。
+                        </n-tooltip>
+                      </span>
+                    </template>
+                    <n-select
+                      :value="selectedBlock.props?.filterField"
+                      :options="primaryFieldOptions"
+                      filterable
+                      clearable
+                      @update:value="patchBlockProps(selectedBlock.id, { filterField: $event })"
+                    />
+                  </n-form-item>
+                  <n-form-item v-if="layoutType === 'tree-crud'" label="树表操作">
+                    <div class="tree-action-compact">
+                      <div>
+                        <strong>添加下级</strong>
+                        <span>在右侧行上新增子节点，写入父级字段</span>
+                      </div>
+                      <n-switch
+                        size="small"
+                        :value="treeAddChildEnabled"
+                        @update:value="updateTreeAddChildEnabled"
+                      />
+                    </div>
+                  </n-form-item>
+                </div>
               </template>
 
               <template v-if="localDataBindableBlockTypes.includes(selectedBlock.blockType)">
@@ -4116,6 +4244,7 @@ import {
   ExpandOutline,
   EyeOutline,
   FlashOutline,
+  HelpCircleOutline,
   PhonePortraitOutline,
   RemoveOutline,
   ReorderThreeOutline,
@@ -4127,7 +4256,7 @@ import {
 } from '@vicons/ionicons5'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
-import { enabledApiConfigs } from '@/api/business-app'
+import { businessObjectFields, businessObjectList, enabledApiConfigs } from '@/api/business-app'
 import { DesignerNodeOverlay, getComponentSpec, isPaletteUnionSpec, LIST_BLOCK_TYPE_OVERRIDES, toListPageBlockCatalog } from '@/components/lowcode-builder/designer-core'
 import SpecPropertyPanel from '@/components/lowcode-builder/designer-core/panel/SpecPropertyPanel.vue'
 import UnifiedComponentPalette from '@/components/lowcode-builder/designer-core/panel/UnifiedComponentPalette.vue'
@@ -4136,6 +4265,11 @@ import WidgetDataBindingEditor from '@/components/lowcode-builder/shared/WidgetD
 import WidgetFieldPathPicker from '@/components/lowcode-builder/shared/WidgetFieldPathPicker.vue'
 import { resolveWidgetRenderMode } from '@/components/lowcode-builder/shared/widget-binding-slots'
 import RuntimeRulesEditor from '@/components/lowcode-builder/shared/RuntimeRulesEditor.vue'
+import {
+  alignSearchSchemaWithLeftTree,
+  buildLeftTreeFilterParams,
+  findTreePanelProps,
+} from '@/components/lowcode-builder/shared/runtime-tree-table'
 import { useListDesignerStore } from '@/store'
 import { request } from '@/utils/http'
 import {
@@ -4166,7 +4300,12 @@ import {
 import CrudDefaultParamsEditor from './CrudDefaultParamsEditor.vue'
 import CrudHookRulesEditor from './CrudHookRulesEditor.vue'
 import FieldConfigDrawer from './FieldConfigDrawer.vue'
-import { alignOptions, normalizeParamName, resolveSelectedFieldRefs } from './fieldDrawerConfig'
+import {
+  alignOptions,
+  normalizeParamName,
+  resolveSelectedFieldRefs,
+} from './fieldDrawerConfig'
+import { cloneSchema, createDefaultField } from '@/components/lowcode-builder/model/model-schema'
 import GridBlockRenderer from './GridBlockRenderer.vue'
 import {
   buildGridSyncModelSchema,
@@ -4180,7 +4319,6 @@ import {
   LIST_PAGE_GRID_COLS,
   listPageBlockCatalog,
   resolveChildListDisplayHint,
-  resolveDefaultTreeConfig,
   resolveListFieldTitle,
   resolveListPageBlockMeta,
   resolveTreeFieldOptions,
@@ -4251,7 +4389,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:modelValue', 'update:customActions'])
+const emit = defineEmits(['update:modelValue', 'update:modelSchema', 'update:customActions'])
 
 // 画布布局 / 选中区块 / 属性面板 tab 等通信状态统一走 Pinia（listDesigner store）；
 // 组件保留 props/emit 桥接：props -> store 同步，store 变更 -> emit 对外广播
@@ -4856,11 +4994,31 @@ const collapsedTreePanelMap = ref({})
 const resolvedRuntimeCrudProps = computed(() => {
   if (!props.runtimeCrudProps)
     return props.runtimeCrudProps
-  const { treeConfig: _treeConfig, ...runtimeOptions } = props.runtimeCrudProps.options || {}
+  const treePanelProps = findTreePanelProps(blocks.value) || {}
+  const searchSchema = alignSearchSchemaWithLeftTree(props.runtimeCrudProps.searchSchema, {
+    treePanelProps,
+    runtimeProps: props.runtimeCrudProps,
+  })
+  // 左树右表：主表不吃 treeConfig（由左侧 tree-panel 筛），否则会把右表也渲成嵌套树
+  // 嵌入式树表（layout ≠ tree-crud）：保留 treeConfig，画布预览与运行态一致
+  if (props.layoutType === 'tree-crud') {
+    const { treeConfig: _treeConfig, ...runtimeOptions } = props.runtimeCrudProps.options || {}
+    return {
+      ...props.runtimeCrudProps,
+      // 画布已有 tree-panel，禁止再套 TreeCrudTemplate 左树
+      suppressTreeCrudShell: true,
+      treeConfig: {},
+      options: runtimeOptions,
+      searchSchema,
+      publicParams: {
+        ...(props.runtimeCrudProps.publicParams || {}),
+        ...runtimeTreeFilter.value,
+      },
+    }
+  }
   return {
     ...props.runtimeCrudProps,
-    treeConfig: {},
-    options: runtimeOptions,
+    searchSchema,
     publicParams: {
       ...(props.runtimeCrudProps.publicParams || {}),
       ...runtimeTreeFilter.value,
@@ -5231,14 +5389,270 @@ const defaultApiValues = computed(() => {
     exportApi: `get@${prefix}/export`,
   }
 })
-const treeSourceOptions = computed(() => resolveTreeSourceRefs(props.modelSchema).map(ref => ({
-  label: `${ref.modelName || ref.modelCode || '数据模型'}${ref.primary ? '（主模型）' : '（引用模型）'}`,
-  value: ref.modelCode || '',
-})))
-const treeFieldOptions = computed(() => resolveTreeFieldOptions(
-  props.modelSchema,
-  selectedBlock.value?.props?.sourceModelCode || '',
-))
+const treeSourceCatalog = ref([])
+const treeSourceFields = ref([])
+const treeSourceLoading = ref(false)
+const treeSourceFieldsLoading = ref(false)
+let treeSourceFieldRequestId = 0
+let treeSourceCatalogPromise = null
+
+const currentListObjectCodes = computed(() => {
+  const schema = props.modelSchema || {}
+  return [
+    schema.objectCode,
+    schema.object?.code,
+    schema.modelCode,
+    schema.configKey,
+    schema.object?.configKey,
+    primaryModelCode.value,
+  ].map(value => String(value || '').trim()).filter(Boolean)
+})
+
+const selectedTreeSourceValue = computed(() => {
+  const propsData = selectedBlock.value?.props || {}
+  const raw = String(propsData.sourceModelCode || propsData.sourceConfigKey || '').trim()
+  const matched = treeSourceCatalog.value.find(item => (
+    resolveTreeSourceObjectValue(item) === raw
+    || String(item.objectCode || '') === raw
+    || String(item.configKey || '') === raw
+    || String(item.modelCode || '') === raw
+  ))
+  return matched ? resolveTreeSourceObjectValue(matched) : raw
+})
+
+const treeSourceOptions = computed(() => {
+  const options = []
+  const seen = new Set()
+  const pushOption = (option) => {
+    const value = String(option?.value || '').trim()
+    if (!value || seen.has(value))
+      return
+    seen.add(value)
+    options.push(option)
+  }
+
+  treeSourceCatalog.value.forEach((item) => {
+    const value = resolveTreeSourceObjectValue(item)
+    if (!value)
+      return
+    const isCurrent = isCurrentListObject(item)
+    pushOption({
+      label: `${item.objectName || item.objectCode || value}${isCurrent ? '（当前列表，一般不选）' : ''}`,
+      value,
+    })
+  })
+
+  resolveTreeSourceRefs(props.modelSchema).forEach((ref) => {
+    const value = String(ref.modelCode || '').trim()
+    if (!value)
+      return
+    pushOption({
+      label: `${ref.modelName || value}${ref.primary ? '（当前列表，一般不选）' : '（引用模型）'}`,
+      value,
+    })
+  })
+
+  const selected = selectedTreeSourceValue.value
+  if (selected && !seen.has(selected)) {
+    const name = selectedBlock.value?.props?.sourceModelName || selected
+    pushOption({ label: name, value: selected })
+  }
+  return options
+})
+const treeFieldOptions = computed(() => {
+  // 已选树数据源时，只展示该对象字段；不要回退到当前列表对象字段，否则看起来像没切换成功
+  if (selectedTreeSourceValue.value) {
+    return treeSourceFields.value.map(field => ({
+      label: field.label ? `${field.label}（${field.field}）` : field.field,
+      value: field.field,
+    }))
+  }
+  return resolveTreeFieldOptions(
+    props.modelSchema,
+    selectedBlock.value?.props?.sourceModelCode || '',
+  )
+})
+const embeddedTreeConfig = computed(() => {
+  const source = props.modelSchema?.treeConfig || {}
+  const fields = Array.isArray(props.modelSchema?.fields) ? props.modelSchema.fields : props.fields
+  const parentField = source.parentField || 'parentId'
+  const keyField = source.keyField || 'id'
+  const labelField = source.labelField
+    || fields.find(field => (field.field || field.fieldCode) === 'name')?.field
+    || fields.find(field => (field.field || field.fieldCode) === 'name')?.fieldCode
+    || fields.find((field) => {
+      const code = field.field || field.fieldCode
+      return code && code !== parentField && code !== keyField && !field.systemField
+    })?.field
+    || fields.find(field => field.field || field.fieldCode)?.field
+    || fields.find(field => field.field || field.fieldCode)?.fieldCode
+    || 'name'
+  return {
+    enabled: source.enabled === true || props.modelSchema?.appType === 'TREE',
+    keyField,
+    parentField,
+    labelField,
+    filterField: source.filterField || parentField,
+    targetField: source.targetField || keyField,
+    childrenField: source.childrenField || 'children',
+    treeTitle: source.treeTitle || '',
+    loadMode: source.loadMode || 'full',
+  }
+})
+const embeddedTreeEnabled = computed(() => embeddedTreeConfig.value.enabled === true)
+
+function findPrimaryListCrudBlock() {
+  const preferred = ['AiCrudPage', 'data-table', 'AiTable']
+  const all = collectBlocksInTree(blocks.value)
+  for (const type of preferred) {
+    const found = all.find(block => block?.blockType === type)
+    if (found)
+      return found
+  }
+  return null
+}
+
+const treeAddChildEnabled = computed(() => {
+  const fromModel = props.modelSchema?.treeConfig?.enableTreeAddChild
+  if (typeof fromModel === 'boolean')
+    return fromModel
+  const block = selectedBlock.value && ['AiCrudPage', 'data-table', 'AiTable'].includes(selectedBlock.value.blockType)
+    ? selectedBlock.value
+    : findPrimaryListCrudBlock()
+  if (typeof block?.props?.enableTreeAddChild === 'boolean')
+    return block.props.enableTreeAddChild === true
+  // 左树右表默认不开启「添加下级」：右表通常是平铺列表，不是本表树
+  if (props.layoutType === 'tree-crud')
+    return false
+  // 启用本表嵌入树后默认开启「添加下级」
+  return embeddedTreeEnabled.value
+})
+
+function commitEmbeddedTreeModel(model) {
+  emit('update:modelSchema', cloneSchema(model || {}))
+}
+
+function ensureEmbeddedTreeModel(model = {}) {
+  const next = cloneSchema(model || {})
+  next.fields = Array.isArray(next.fields) ? [...next.fields] : (props.fields || []).map(field => ({
+    ...field,
+    field: field.field || field.fieldCode,
+    label: field.label || field.fieldName || field.fieldCode,
+  }))
+  const parentField = next.treeConfig?.parentField || embeddedTreeConfig.value.parentField || 'parentId'
+  if (!next.fields.some(field => (field.field || field.fieldCode) === parentField)) {
+    next.fields.push({
+      ...createDefaultField(parentField, '上级节点'),
+      dataType: 'bigint',
+      componentType: 'treeSelect',
+      queryType: 'eq',
+      searchable: false,
+      listVisible: false,
+      formVisible: true,
+      width: 120,
+    })
+  }
+  next.appType = 'TREE'
+  next.treeConfig = {
+    ...embeddedTreeConfig.value,
+    ...(next.treeConfig || {}),
+    enabled: true,
+    parentField,
+    filterField: next.treeConfig?.filterField || parentField,
+    targetField: next.treeConfig?.targetField || next.treeConfig?.keyField || 'id',
+    enableTreeAddChild: next.treeConfig?.enableTreeAddChild !== false,
+  }
+  return next
+}
+
+function disableEmbeddedTreeModel(model = {}) {
+  const next = cloneSchema(model || {})
+  next.appType = next.appType === 'TREE' ? 'SINGLE' : (next.appType || 'SINGLE')
+  next.treeConfig = {
+    ...embeddedTreeConfig.value,
+    ...(next.treeConfig || {}),
+    enabled: false,
+    enableTreeAddChild: false,
+  }
+  return next
+}
+
+function updateEmbeddedTreeEnabled(enabled) {
+  const next = enabled
+    ? ensureEmbeddedTreeModel(props.modelSchema)
+    : disableEmbeddedTreeModel(props.modelSchema)
+  commitEmbeddedTreeModel(next)
+  const crudBlock = findPrimaryListCrudBlock()
+  if (!crudBlock)
+    return
+  patchBlockProps(crudBlock.id, {
+    enableTreeAddChild: enabled ? next.treeConfig?.enableTreeAddChild !== false : false,
+  })
+}
+
+function patchEmbeddedTreeConfig(patch = {}) {
+  if (!embeddedTreeEnabled.value)
+    return
+  const next = ensureEmbeddedTreeModel(props.modelSchema)
+  next.treeConfig = {
+    ...(next.treeConfig || {}),
+    ...patch,
+    enabled: true,
+  }
+  if (!next.treeConfig.filterField)
+    next.treeConfig.filterField = next.treeConfig.parentField || 'parentId'
+  if (!next.treeConfig.targetField)
+    next.treeConfig.targetField = next.treeConfig.keyField || 'id'
+  commitEmbeddedTreeModel(next)
+}
+
+function updateTreeAddChildEnabled(enabled) {
+  const nextEnabled = enabled === true
+  // 左树右表：右表不是本表树，「添加下级」只改行操作开关，禁止把 model 写成 TREE/parentId
+  if (props.layoutType === 'tree-crud') {
+    const base = disableEmbeddedTreeModel(props.modelSchema)
+    base.treeConfig = {
+      ...(base.treeConfig || {}),
+      enabled: false,
+      enableTreeAddChild: false,
+    }
+    commitEmbeddedTreeModel(base)
+    const block = selectedBlock.value && ['AiCrudPage', 'data-table', 'AiTable'].includes(selectedBlock.value.blockType)
+      ? selectedBlock.value
+      : findPrimaryListCrudBlock()
+    if (block)
+      patchBlockProps(block.id, { enableTreeAddChild: nextEnabled })
+    return
+  }
+  if (nextEnabled && !embeddedTreeEnabled.value) {
+    const next = ensureEmbeddedTreeModel(props.modelSchema)
+    next.treeConfig = {
+      ...(next.treeConfig || {}),
+      enabled: true,
+      enableTreeAddChild: true,
+    }
+    commitEmbeddedTreeModel(next)
+  }
+  else {
+    const base = cloneSchema(props.modelSchema || {})
+    base.treeConfig = {
+      ...embeddedTreeConfig.value,
+      ...(base.treeConfig || {}),
+      enabled: embeddedTreeEnabled.value || nextEnabled,
+      enableTreeAddChild: nextEnabled,
+    }
+    if (base.treeConfig.enabled)
+      base.appType = 'TREE'
+    else if (base.appType === 'TREE')
+      base.appType = 'SINGLE'
+    commitEmbeddedTreeModel(base)
+  }
+  const block = selectedBlock.value && ['AiCrudPage', 'data-table', 'AiTable'].includes(selectedBlock.value.blockType)
+    ? selectedBlock.value
+    : findPrimaryListCrudBlock()
+  if (block)
+    patchBlockProps(block.id, { enableTreeAddChild: nextEnabled })
+}
 
 // ─── 统一组件物料面板（designer-core，P2）──────────────────
 // 列表画布支持能力判定基准：spec.type 映射为存量 blockType 后存在于列表区块目录（bridge 红线测试保证 59 项一致）
@@ -5342,6 +5756,22 @@ watch(
         activeTabKey.value = firstKey
     }
   },
+)
+
+watch(
+  () => [selectedBlock.value?.blockType, selectedTreeSourceValue.value],
+  async ([blockType, sourceValue]) => {
+    if (blockType !== 'tree-panel') {
+      treeSourceFields.value = []
+      return
+    }
+    await ensureTreeSourceCatalog()
+    if (sourceValue)
+      await loadTreeSourceFields(sourceValue)
+    else
+      treeSourceFields.value = []
+  },
+  { immediate: true },
 )
 
 watch(
@@ -5785,9 +6215,12 @@ function handleRuntimeTreeSelect(payload = {}) {
     runtimeTreeFilter.value = {}
     return
   }
-  runtimeTreeFilter.value = {
-    [filterField]: payload.value,
-  }
+  runtimeTreeFilter.value = buildLeftTreeFilterParams({
+    filterField,
+    value: payload.value,
+    includeChildren: payload.includeChildren !== false,
+    expandedValues: payload.expandedValues,
+  })
 }
 
 function clearSelection() {
@@ -6389,11 +6822,253 @@ function handleNestedBlockMenuSelect(payload = {}) {
     removeBlock(block.id)
 }
 
-function handleTreeSourceChange(sourceModelCode) {
+function resolveTreeSourceObjectValue(item = {}) {
+  return String(item.objectCode || item.configKey || item.modelCode || '').trim()
+}
+
+function resolveTreeSourceObjectId(item = {}) {
+  return item?.id ?? item?.objectId ?? null
+}
+
+function isCurrentListObject(item = {}) {
+  const codes = new Set(currentListObjectCodes.value)
+  return [
+    item.configKey,
+    item.objectCode,
+    item.modelCode,
+    item.tableName,
+    item.id,
+    item.objectId,
+  ].some(value => codes.has(String(value || '').trim()))
+}
+
+function unwrapListPayload(payload) {
+  if (Array.isArray(payload))
+    return payload
+  if (Array.isArray(payload?.records))
+    return payload.records
+  if (Array.isArray(payload?.list))
+    return payload.list
+  if (Array.isArray(payload?.rows))
+    return payload.rows
+  if (Array.isArray(payload?.data))
+    return payload.data
+  return []
+}
+
+function mapObjectFieldsToTreeFields(fields = []) {
+  return (Array.isArray(fields) ? fields : [])
+    .map((field) => {
+      const code = String(field.fieldCode || field.field || field.sourceField || '').trim()
+      if (!code)
+        return null
+      // 树主键/父级常是系统字段，不能过滤掉；仅排除无编码字段
+      return {
+        field: code,
+        sourceField: code,
+        label: field.fieldName || field.label || code,
+        rawLabel: field.fieldName || field.label || code,
+        systemField: field.systemField === true,
+      }
+    })
+    .filter(Boolean)
+}
+
+function pickTreeFieldCode(fields = [], preferred = [], excluded = []) {
+  const list = Array.isArray(fields) ? fields : []
+  const excludedSet = new Set(excluded.filter(Boolean))
+  for (const name of preferred) {
+    const matched = list.find(field => field.field === name && !excludedSet.has(field.field))
+    if (matched)
+      return matched.field
+  }
+  const business = list.find(field => !field.systemField && !excludedSet.has(field.field))
+  if (business)
+    return business.field
+  const any = list.find(field => field.field && !excludedSet.has(field.field))
+  return any?.field || preferred[0] || ''
+}
+
+async function ensureTreeSourceCatalog() {
+  if (treeSourceCatalog.value.length)
+    return treeSourceCatalog.value
+  if (treeSourceCatalogPromise)
+    return treeSourceCatalogPromise
+  treeSourceCatalogPromise = (async () => {
+    treeSourceLoading.value = true
+    try {
+      // 与子表选对象一致：不强制 suite，避免可选数据源过窄
+      const res = await businessObjectList({})
+      treeSourceCatalog.value = unwrapListPayload(res?.data).filter(item => resolveTreeSourceObjectValue(item))
+      return treeSourceCatalog.value
+    }
+    catch (error) {
+      console.warn('[ListPageGridDesigner] 加载树数据源对象失败', error?.message || error)
+      treeSourceCatalog.value = []
+      return []
+    }
+    finally {
+      treeSourceLoading.value = false
+      treeSourceCatalogPromise = null
+    }
+  })()
+  return treeSourceCatalogPromise
+}
+
+function findTreeSourceObject(sourceValue = '') {
+  const value = String(sourceValue || '').trim()
+  if (!value)
+    return null
+  return treeSourceCatalog.value.find(item => (
+    resolveTreeSourceObjectValue(item) === value
+    || String(item.objectCode || '') === value
+    || String(item.configKey || '') === value
+    || String(item.modelCode || '') === value
+  )) || null
+}
+
+async function resolveTreeSourceObject(sourceValue = '') {
+  const value = String(sourceValue || '').trim()
+  if (!value)
+    return null
+  await ensureTreeSourceCatalog()
+  let object = findTreeSourceObject(value)
+  if (resolveTreeSourceObjectId(object))
+    return object
+  try {
+    const res = await businessObjectList({ objectCode: value })
+    const matched = unwrapListPayload(res?.data).find(item => (
+      String(item.objectCode || '') === value
+      || String(item.configKey || '') === value
+      || resolveTreeSourceObjectValue(item) === value
+    )) || unwrapListPayload(res?.data)[0] || null
+    if (matched) {
+      if (!findTreeSourceObject(resolveTreeSourceObjectValue(matched)))
+        treeSourceCatalog.value = [...treeSourceCatalog.value, matched]
+      return matched
+    }
+  }
+  catch (error) {
+    console.warn('[ListPageGridDesigner] 按编码查找树数据源失败', error?.message || error)
+  }
+  return object
+}
+
+async function loadTreeSourceFields(sourceValue = '') {
+  const requestId = ++treeSourceFieldRequestId
+  const object = await resolveTreeSourceObject(sourceValue)
+  const objectId = resolveTreeSourceObjectId(object)
+  if (!objectId) {
+    if (requestId === treeSourceFieldRequestId)
+      treeSourceFields.value = []
+    return []
+  }
+  treeSourceFieldsLoading.value = true
+  try {
+    const res = await businessObjectFields(objectId)
+    if (requestId !== treeSourceFieldRequestId)
+      return treeSourceFields.value
+    const fields = mapObjectFieldsToTreeFields(unwrapListPayload(res?.data))
+    treeSourceFields.value = fields
+    return fields
+  }
+  catch (error) {
+    if (requestId === treeSourceFieldRequestId)
+      treeSourceFields.value = []
+    console.warn('[ListPageGridDesigner] 加载树数据源字段失败', error?.message || error)
+    return []
+  }
+  finally {
+    if (requestId === treeSourceFieldRequestId)
+      treeSourceFieldsLoading.value = false
+  }
+}
+
+function buildTreeSourceDefaultProps(sourceValue = '', fields = treeSourceFields.value) {
+  const object = findTreeSourceObject(sourceValue) || {}
+  const sourceModelCode = String(object.objectCode || sourceValue || '').trim()
+  // configKey 为空时回退 objectCode，保证能拼出 /ai/crud/{key}/tree
+  const sourceConfigKey = String(object.configKey || object.objectCode || sourceValue || '').trim()
+  const fieldList = Array.isArray(fields) ? fields : []
+  const keyField = pickTreeFieldCode(fieldList, ['id'], [])
+  const parentField = pickTreeFieldCode(fieldList, ['parentId', 'pid', 'parentCode'], [keyField])
+  const labelField = pickTreeFieldCode(fieldList, ['name', 'title', 'label', 'fieldInput'], [keyField, parentField])
+  const targetField = keyField
+  // 右表过滤字段属于当前列表对象，切换树源时尽量保留已有配置
+  const currentFilterField = selectedBlock.value?.props?.filterField
+    || parentField
+    || 'parentId'
+  return {
+    enabled: true,
+    sourceModelCode,
+    sourceModelName: object.objectName || sourceModelCode,
+    sourceTableName: object.tableName || '',
+    sourceConfigKey,
+    sourceObjectId: resolveTreeSourceObjectId(object),
+    treeApi: sourceConfigKey ? `get@/ai/crud/${sourceConfigKey}/tree` : '',
+    treeTitle: object.objectName ? `${object.objectName}树` : (selectedBlock.value?.props?.treeTitle || ''),
+    keyField: keyField || 'id',
+    parentField: parentField || 'parentId',
+    labelField: labelField || '',
+    targetField: targetField || 'id',
+    filterField: currentFilterField,
+    childrenField: selectedBlock.value?.props?.childrenField || 'children',
+    loadMode: selectedBlock.value?.props?.loadMode || 'full',
+  }
+}
+
+async function handleTreeSourceChange(sourceValue) {
   if (!selectedBlock.value)
     return
-  const defaultConfig = resolveDefaultTreeConfig(props.modelSchema, { sourceModelCode })
-  patchBlockProps(selectedBlock.value.id, defaultConfig)
+  const nextValue = String(sourceValue || '').trim()
+  if (!nextValue) {
+    treeSourceFields.value = []
+    patchBlockProps(selectedBlock.value.id, {
+      sourceModelCode: '',
+      sourceModelName: '',
+      sourceTableName: '',
+      sourceConfigKey: '',
+      sourceObjectId: null,
+      treeApi: '',
+      keyField: '',
+      parentField: '',
+      labelField: '',
+      targetField: '',
+    })
+    return
+  }
+  await ensureTreeSourceCatalog()
+  const interimObject = findTreeSourceObject(nextValue) || {}
+  const interimConfigKey = String(interimObject.configKey || interimObject.objectCode || nextValue).trim()
+  // 先写入来源（含可用 treeApi），再异步补字段；避免中间态左侧树无 API
+  treeSourceFields.value = []
+  patchBlockProps(selectedBlock.value.id, {
+    sourceModelCode: String(interimObject.objectCode || nextValue).trim(),
+    sourceModelName: interimObject.objectName || '',
+    sourceTableName: interimObject.tableName || '',
+    sourceConfigKey: interimConfigKey,
+    sourceObjectId: resolveTreeSourceObjectId(interimObject),
+    treeApi: interimConfigKey ? `get@/ai/crud/${interimConfigKey}/tree` : '',
+    keyField: '',
+    parentField: '',
+    labelField: '',
+    targetField: '',
+  })
+  const fields = await loadTreeSourceFields(nextValue)
+  if (!selectedBlock.value)
+    return
+  const current = selectedTreeSourceValue.value
+  const object = findTreeSourceObject(nextValue)
+  const aliases = new Set([
+    nextValue,
+    object?.objectCode,
+    object?.configKey,
+    resolveTreeSourceObjectValue(object || {}),
+  ].map(value => String(value || '').trim()).filter(Boolean))
+  // 加载期间用户又换了别的对象，丢弃过期结果
+  if (current && !aliases.has(current))
+    return
+  patchBlockProps(selectedBlock.value.id, buildTreeSourceDefaultProps(nextValue, fields))
 }
 
 function handleCanvasDrop(event) {
@@ -10478,7 +11153,7 @@ function resolveCrudFieldLabel(field = {}) {
   display: grid;
   gap: 10px;
   padding: 10px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(228, 228, 231, 0.72);
   border-radius: 8px;
   background: #fff;
@@ -12506,6 +13181,59 @@ function resolveCrudFieldLabel(field = {}) {
   border: 1px solid rgba(228, 228, 231, 0.76);
   border-radius: 6px;
   background: #fff;
+}
+
+.list-tree-model-property {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eceff3;
+}
+
+.tree-panel-property {
+  display: grid;
+  gap: 4px;
+}
+
+.tree-panel-property-intro {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.tree-panel-property :deep(.n-form-item) {
+  margin-bottom: 14px;
+}
+
+.tree-panel-property :deep(.n-form-item-label),
+.tree-panel-property :deep(.n-form-item-label__text) {
+  min-height: 22px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.tree-panel-property-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-panel-property-tip {
+  color: #a1a1aa;
+  cursor: help;
+}
+
+.tree-panel-property-tip:hover {
+  color: #71717a;
+}
+
+.list-tree-model-property :deep(.n-collapse-item__header) {
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .tree-action-compact > div {

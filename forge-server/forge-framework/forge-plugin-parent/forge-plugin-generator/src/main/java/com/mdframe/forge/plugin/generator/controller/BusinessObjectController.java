@@ -57,6 +57,15 @@ public class BusinessObjectController {
         return RespInfo.success(objectService.list(query));
     }
 
+    @GetMapping("/code-available")
+    @SaCheckPermission("ai:businessObject:list")
+    @OperationLog(module = "业务对象", type = OperationType.QUERY, desc = "校验业务对象编码")
+    public RespInfo<Boolean> codeAvailable(
+            @RequestParam String objectCode,
+            @RequestParam(required = false) Long excludeId) {
+        return RespInfo.success(objectService.objectCodeAvailable(objectCode, excludeId));
+    }
+
     @PostMapping("/sync-lowcode-models")
     @SaCheckPermission("ai:businessObject:edit")
     @OperationLog(module = "业务对象", type = OperationType.UPDATE, desc = "同步低代码模型为业务对象")

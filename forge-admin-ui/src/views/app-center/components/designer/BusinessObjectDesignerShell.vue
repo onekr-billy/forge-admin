@@ -25,7 +25,7 @@
             </n-tag>
           </div>
           <p>
-            <span class="object-workbench-description">维护对象字段、数据关系和树形模型</span>
+            <span class="object-workbench-description">维护对象字段、数据关系与树形模型</span>
             {{ designer?.suiteName || designer?.suiteCode || '未关联业务域' }}
             <span v-if="designer?.updateTime">最近保存 {{ designer.updateTime }}</span>
             <span v-if="designer?.lastPublishTime">最后发布 {{ designer.lastPublishTime }}</span>
@@ -162,6 +162,7 @@ import {
   SaveOutline,
   SettingsOutline,
   TextOutline,
+  GitCompareOutline,
 } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
 import DesignerAsyncLoader from './DesignerAsyncLoader.vue'
@@ -250,7 +251,7 @@ const legacyNavItems = [
   { key: 'relations', label: '关系与级联', icon: GitNetworkOutline },
   { key: 'actions', label: '业务动作', icon: FlashOutline },
   { key: 'flow-app', label: '业务流程配置', icon: GitBranchOutline },
-  { key: 'tree-model', label: '树形模型', icon: GitNetworkOutline },
+  { key: 'tree-model', label: '树形模型', icon: GitCompareOutline },
   { key: 'publish', label: '发布检查', icon: CheckmarkDoneOutline },
   { key: 'basic', label: '基本信息', icon: OptionsOutline },
   { key: 'advanced', label: '高级配置', icon: SettingsOutline },
@@ -260,6 +261,7 @@ const standaloneIconMap = {
   'basic': OptionsOutline,
   'fields': TextOutline,
   'data-model': GitNetworkOutline,
+  'tree-model': GitCompareOutline,
 }
 
 const standaloneNavItems = standaloneObjectDesignerSections.map(item => ({

@@ -547,7 +547,11 @@ function normalizePageShape(value) {
   const raw = String(value || '').trim().toLowerCase()
   if (raw === 'list_form')
     return 'list-form'
-  if (['form', 'list', 'list-form', 'custom'].includes(raw))
+  if (raw === 'tree_table' || raw === 'tree-crud')
+    return 'tree-table'
+  if (raw === 'tree_list')
+    return 'tree-list'
+  if (['form', 'list', 'list-form', 'tree-list', 'tree-table', 'custom'].includes(raw))
     return raw
   if (raw === 'blank' || raw === 'intro' || raw === 'home' || raw === 'content')
     return 'custom'

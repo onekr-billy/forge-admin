@@ -866,6 +866,7 @@ import {
 import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, normalizeSelectorMappings, resolveSelectorSearchParams } from './record-selector-utils'
 import { resolveSelectionLabelFields as buildSelectionLabelFields, readDataFieldValue, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
 import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
+import { expandSearchTreeSelectValue } from '@/components/lowcode-builder/shared/runtime-tree-table'
 
 defineOptions({ inheritAttrs: false })
 
@@ -2665,20 +2666,35 @@ function syncIncludeChildrenFlag(field, value) {
   if (!props.context?.isSearch || !field?.field || !(field.type === 'treeSelect' || isOrgTreeSelectField(field)))
     return
   const includeChildrenKey = `${field.field}_includeChildren`
+  const expandedKey = `${field.field}__treeExpanded`
   if (Array.isArray(value) || value === null || value === undefined || value === '') {
-    props.context?.patchFormData?.({ [includeChildrenKey]: undefined })
+    props.context?.patchFormData?.({
+      [includeChildrenKey]: undefined,
+      [expandedKey]: undefined,
+    })
     return
   }
-  if (isOrgTreeSelectField(field)) {
-    props.context?.patchFormData?.({ [includeChildrenKey]: true })
+  // 查询区树形与左树一致：默认查本级+全部下级；字段显式关闭时才仅本级
+  const allowIncludeChildren = field.includeChildren !== false
+    && field.props?.includeChildren !== false
+  if (!allowIncludeChildren) {
+    props.context?.patchFormData?.({
+      [includeChildrenKey]: undefined,
+      [expandedKey]: undefined,
+    })
     return
   }
-  const selectedNode = flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, value))
-  if (selectedNode?.children?.length) {
-    props.context?.patchFormData?.({ [includeChildrenKey]: true })
-    return
-  }
-  props.context?.patchFormData?.({ [includeChildrenKey]: undefined })
+  // 与左树相同：前端从已加载选项树展开子孙，提交时发 field=1,5
+  const expanded = expandSearchTreeSelectValue(value, currentOptions.value, {
+    includeChildren: true,
+    childrenField: field.props?.optionSource?.childrenField
+      || field.optionSource?.childrenField
+      || 'children',
+  })
+  props.context?.patchFormData?.({
+    [includeChildrenKey]: true,
+    [expandedKey]: expanded.expanded.length > 1 ? expanded.expanded.join(',') : undefined,
+  })
 }
 
 /**

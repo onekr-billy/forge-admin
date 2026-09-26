@@ -20,6 +20,21 @@ import {
 } from '../runtime-crud-props'
 
 describe('runtime CRUD design preview props', () => {
+  it('merges options.defaultSort into publicParams for left-tree sort', () => {
+    const props = buildRuntimeCrudProps({
+      configKey: 'org_tree',
+      options: {
+        defaultSort: { orderByColumn: 'sortNo', isAsc: 'asc' },
+        publicParams: { foo: 1 },
+      },
+    })
+    expect(props.publicParams).toMatchObject({
+      orderByColumn: 'sortNo',
+      isAsc: 'asc',
+      foo: 1,
+    })
+  })
+
   it('adds the design preview marker to every draft CRUD endpoint', () => {
     const props = buildRuntimeCrudProps({
       configKey: 'crm_customer',
@@ -150,6 +165,36 @@ describe('runtime CRUD design preview props', () => {
     })])
   })
 
+  it('keeps treeSelect search fields as treeSelect with optionSource', () => {
+    const fields = [
+      {
+        field: 'parentId',
+        label: '上级',
+        componentType: 'treeSelect',
+        dataType: 'bigint',
+        queryType: 'eq',
+        basicProps: {
+          optionSource: {
+            type: 'tree',
+            api: 'get@/ai/crud/demo/tree',
+          },
+        },
+      },
+    ]
+
+    expect(resolveCrudSearchFieldCatalog(fields, {
+      props: { searchFieldRefs: ['parentId'] },
+    })).toEqual([expect.objectContaining({
+      field: 'parentId',
+      componentType: 'treeSelect',
+      queryType: 'eq',
+      optionSource: expect.objectContaining({
+        type: 'tree',
+        api: 'get@/ai/crud/demo/tree',
+      }),
+    })])
+  })
+
   it('serializes only supported page query operators as dynamic CRUD control metadata', () => {
     expect(buildCrudSearchTypeRequestParams([
       { field: 'customerName', queryType: 'like' },
@@ -176,14 +221,15 @@ describe('runtime CRUD design preview props', () => {
     })).toEqual([])
   })
 
-  it('falls back to list field refs only for legacy blocks without search field refs', () => {
+  it('falls back to model searchable fields for legacy blocks without search field refs', () => {
     const fields = [
-      { field: 'id', label: 'ID' },
-      { field: 'customerName', label: '客户名称' },
+      { field: 'id', label: 'ID', searchable: false },
+      { field: 'customerName', label: '客户名称', searchable: true },
+      { field: 'orderNo', label: '订单号', searchable: false },
     ]
 
     expect(resolveCrudSearchFieldCatalog(fields, {
-      fieldRefs: ['customerName'],
+      fieldRefs: ['id', 'orderNo'],
       props: {},
     }).map(field => field.field)).toEqual(['customerName'])
   })

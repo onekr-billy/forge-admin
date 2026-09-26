@@ -29,7 +29,7 @@
       v-if="objectId && !isCodeAppDesigner"
       ref="tableMappingSummaryRef"
       :object-id="objectId"
-      :expanded="activePanel === 'fields' || activePanel === 'data-model'"
+      :expanded="activePanel === 'fields' || activePanel === 'data-model' || activePanel === 'tree-model'"
       :model-schema="draft.modelSchema"
       @loaded="tableMapping = $event"
       @open-structure="handlePanelSwitch('fields')"
@@ -99,36 +99,22 @@
     />
 
     <section v-else-if="activePanel === 'data-model'" class="grouped-designer-panel">
-      <n-tabs v-model:value="dataModelTab" type="line">
-        <n-tab-pane name="relations" tab="对象关系">
-          <BusinessRelationDesigner
-            ref="relationDesignerRef"
-            v-model:linkage-schema="draft.linkageSchema"
-            :object-id="objectId"
-            :suite-code="draft.suiteCode"
-            :object-code="draft.objectCode"
-            :object-name="draft.objectName"
-            :fields="draft.fields"
-            :designer-options="draft.designerOptions"
-            :designer-actions="draft.designerOptions?.actions || []"
-            model-only
-            @updated="handleRelationsUpdated"
-            @update:designer-actions="handleActionsUpdated"
-            @fields-updated="handleFieldsUpdated"
-            @dirty-change="handleDirtyChange"
-          />
-        </n-tab-pane>
-        <n-tab-pane name="tree-model" tab="树形模型">
-          <BusinessPermissionFlowPanel
-            ref="treeModelRef"
-            v-model:model-schema="draft.modelSchema"
-            v-model:page-schema="draft.pageSchema"
-            :fields="draft.fields"
-            :object-name="draft.objectName"
-            @dirty-change="handleDirtyChange"
-          />
-        </n-tab-pane>
-      </n-tabs>
+      <BusinessRelationDesigner
+        ref="relationDesignerRef"
+        v-model:linkage-schema="draft.linkageSchema"
+        :object-id="objectId"
+        :suite-code="draft.suiteCode"
+        :object-code="draft.objectCode"
+        :object-name="draft.objectName"
+        :fields="draft.fields"
+        :designer-options="draft.designerOptions"
+        :designer-actions="draft.designerOptions?.actions || []"
+        model-only
+        @updated="handleRelationsUpdated"
+        @update:designer-actions="handleActionsUpdated"
+        @fields-updated="handleFieldsUpdated"
+        @dirty-change="handleDirtyChange"
+      />
       <n-alert
         v-if="!embedded"
         class="process-migration-alert"
@@ -178,12 +164,13 @@
       ref="listDesignerRef"
       v-model="draft.pageSchema"
       v-model:view-schema="draft.viewSchema"
-      :object-id="objectId"
       :model-schema="draft.modelSchema"
+      :object-id="objectId"
       :fields="draft.fields"
       :form-options="runtimeFormOptions"
       :designer-options="draft.designerOptions"
       :designer-actions="draft.designerOptions?.actions || []"
+      @update:model-schema="handleListModelSchemaUpdate"
       @update:designer-actions="handleActionsUpdated"
       @saved="handleLayoutSaved"
       @dirty-change="handleDirtyChange"
@@ -378,7 +365,6 @@ const fieldDraftDirty = ref(false)
 const ready = ref(false)
 const activePanel = ref(resolveInitialPanel())
 const initialFormCanvasView = resolveInitialFormCanvasView()
-const dataModelTab = ref(resolveDataModelTab(props.embedded ? props.initialPanel : route.query.modelTab || route.query.panel))
 const developerMode = ref(false)
 const designer = ref(null)
 const runtimeInfo = ref(null)
@@ -413,8 +399,9 @@ const isCodeAppDesigner = computed(() => {
 })
 const usesLegacyObjectPanels = computed(() => props.embedded || isCodeAppDesigner.value)
 const effectiveDesignerPanel = computed(() => {
+  // 数据关系分区只承载对象关系；树形模型已是一级入口
   if (activePanel.value === 'data-model')
-    return dataModelTab.value
+    return 'relations'
   return activePanel.value
 })
 const publishDisabled = computed(() => {
@@ -453,6 +440,13 @@ const runtimeFormOptions = computed(() => {
 
 function resolveInitialPanel() {
   const panel = props.embedded ? props.initialPanel : route.query.panel
+  const modelTab = props.embedded ? '' : route.query.modelTab
+  // 兼容旧深链：数据关系 > 树形模型 子 Tab → 一级「树形模型」
+  if (!props.embedded
+    && String(panel || '') === 'data-model'
+    && resolveDataModelTab(modelTab) === 'tree-model') {
+    return 'tree-model'
+  }
   const normalized = normalizePanel(panel) || 'fields'
   const codeAppRoute = route.query.codeApp === '1' || route.query.appType === 'code'
   return props.embedded || codeAppRoute ? normalized : resolveStandaloneObjectDesignerSection(normalized)
@@ -546,15 +540,8 @@ watch(activePanel, (panel) => {
     query: {
       ...route.query,
       panel,
-      ...(panel === 'data-model' ? { modelTab: dataModelTab.value } : {}),
     },
   })
-})
-
-watch(dataModelTab, (tab) => {
-  if (props.embedded || activePanel.value !== 'data-model')
-    return
-  router.replace({ path: route.path, query: { ...route.query, panel: 'data-model', modelTab: tab } })
 })
 
 watch(canAdvanced, (value) => {
@@ -851,10 +838,6 @@ async function handlePanelSwitch(panel) {
   const normalizedPanel = !usesLegacyObjectPanels.value && rawPanel === 'detail'
     ? 'detail'
     : normalizePanel(panel)
-  if (!usesLegacyObjectPanels.value) {
-    if (['relations', 'flow-app', 'tree-model'].includes(normalizedPanel))
-      dataModelTab.value = normalizedPanel
-  }
   const compatibilityPanel = ['publish', 'advanced'].includes(normalizedPanel)
   const nextPanel = usesLegacyObjectPanels.value || compatibilityPanel
     ? normalizedPanel
@@ -1183,7 +1166,6 @@ async function handleFlowAppSaved() {
   const mainFlow = draft.documentConfig?.mainFlowSummary || {}
   if (draft.documentConfig?.documentEnabled && !mainFlow.configured) {
     activePanel.value = usesLegacyObjectPanels.value ? 'flow-app' : 'data-model'
-    dataModelTab.value = 'flow-app'
   }
   const startMode = String(mainFlow.startMode || '').toUpperCase()
   if (startMode === 'TRIGGER' || startMode === 'BOTH')
@@ -1281,6 +1263,39 @@ function handleFieldDirtyChange(value) {
 
 function handleModelSchemaUpdated(modelSchema) {
   draft.modelSchema = cloneSchema(modelSchema || {})
+  dirty.value = true
+  designerDraftDirty.value = true
+}
+
+function handleListModelSchemaUpdate(modelSchema) {
+  const next = cloneSchema(modelSchema || {})
+  draft.modelSchema = next
+  const modelFields = Array.isArray(next.fields) ? next.fields : []
+  if (modelFields.length) {
+    const existing = new Map((draft.fields || []).map(field => [field.fieldCode || field.field, field]))
+    modelFields.forEach((field) => {
+      const code = field.field || field.fieldCode
+      if (!code || existing.has(code))
+        return
+      existing.set(code, {
+        fieldCode: code,
+        field: code,
+        fieldName: field.label || field.fieldName || code,
+        label: field.label || field.fieldName || code,
+        columnName: field.columnName || code,
+        dataType: field.dataType || 'varchar',
+        componentType: field.componentType || 'input',
+        queryType: field.queryType || 'eq',
+        required: field.required === true,
+        searchable: field.searchable === true,
+        listVisible: field.listVisible !== false,
+        formVisible: field.formVisible !== false,
+        systemField: field.systemField === true,
+        width: field.width || 120,
+      })
+    })
+    draft.fields = [...existing.values()]
+  }
   dirty.value = true
   designerDraftDirty.value = true
 }

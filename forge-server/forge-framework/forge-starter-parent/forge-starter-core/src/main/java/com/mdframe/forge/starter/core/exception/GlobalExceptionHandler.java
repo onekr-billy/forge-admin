@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
@@ -259,6 +260,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public RespInfo<?> handleRuntimeException(RuntimeException e, HttpServletRequest request,
                                               HttpServletResponse response) {
+        if (isClientAbortException(e)) {
+            logClientAbort(request, e);
+            return null;
+        }
         if (containsSensitiveDatabaseDetail(e)) {
             return handleDatabaseError(e, request, response, "系统运行时数据库异常");
         }
@@ -277,17 +282,63 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 客户端主动断开（切页 / 取消请求 / Broken pipe）不按系统故障刷 ERROR。
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public RespInfo<?> handleAsyncRequestNotUsable(AsyncRequestNotUsableException e, HttpServletRequest request) {
+        logClientAbort(request, e);
+        return null;
+    }
+
+    /**
      * 处理未知异常
      */
     @ExceptionHandler(Exception.class)
     public RespInfo<?> handleException(Exception e, HttpServletRequest request,
                                        HttpServletResponse response) {
+        if (isClientAbortException(e)) {
+            logClientAbort(request, e);
+            return null;
+        }
         if (containsSensitiveDatabaseDetail(e)) {
             return handleDatabaseError(e, request, response, "未知数据库异常");
         }
         log.error("未知异常: URI={}", request.getRequestURI(), e);
         setHttpStatus(response, 500);
         return RespInfo.error(500, SYSTEM_ERROR_MESSAGE);
+    }
+
+    private void logClientAbort(HttpServletRequest request, Throwable e) {
+        log.debug("客户端已断开连接，忽略响应写入: URI={}, Message={}",
+                request == null ? "-" : request.getRequestURI(),
+                e == null ? "" : e.getMessage());
+    }
+
+    private boolean isClientAbortException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof AsyncRequestNotUsableException) {
+                return true;
+            }
+            String className = current.getClass().getName();
+            if (className.endsWith("ClientAbortException")
+                    || className.endsWith("EofException")
+                    || className.contains("AsyncRequestNotUsable")) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(Locale.ROOT);
+                if (lower.contains("broken pipe")
+                        || lower.contains("connection reset by peer")
+                        || lower.contains("异步请求不可用")
+                        || lower.contains("servletoutputstream failed to write")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private RespInfo<?> handleDatabaseError(Throwable e, HttpServletRequest request,

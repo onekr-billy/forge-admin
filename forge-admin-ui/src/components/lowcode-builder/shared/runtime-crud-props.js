@@ -11,6 +11,7 @@ import {
   compileUiDocumentFromDesigner,
   UI_DOCUMENT_PROTOCOL_VERSION,
 } from '@/protocols/ui-document'
+import { applyEmbeddedTreeTableRuntimeProps } from './runtime-tree-table'
 
 export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {}) {
   const options = config.options || {}
@@ -20,7 +21,11 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
   const formOpenMode = resolveFormOpenMode(options, config, designerLayout)
   const governance = resolveDesignerFormGovernance(fdsSource)
   const configKey = String(config.configKey || '').trim()
-  const apiConfig = normalizeApiConfig(config.apiConfig, configKey, designPreview)
+  const apiConfig = ensureRuntimeApiConfig(
+    normalizeApiConfig(config.apiConfig, configKey, designPreview),
+    configKey,
+    designPreview,
+  )
   const flatEditSchema = mergeDesignerEditSchema(
     normalizeFields(config.editSchema),
     fdsSource,
@@ -28,7 +33,7 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
   const uiDocument = fdsSource
     ? compileUiDocumentFromDesigner(fdsSource, { resolvedFields: flatEditSchema })
     : null
-  return {
+  const baseProps = {
     searchSchema: normalizeFields(config.searchSchema),
     columns: normalizeColumns(config.columnsSchema, config.transConfig),
     // 平铺 fields 保留给 fieldRefs 过滤；布局由 uiDocument / hydrateRuntimeFormLayout 合成
@@ -38,8 +43,11 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     expandConfig: options.expandConfig || config.expandConfig || {},
     detailPanels: options.detailPanels || config.detailPanels || [],
     apiConfig,
+    // 兜底根路径，避免 apiConfig.create 缺失时 POST 打到 axios baseURL（/dev-api）
+    api: configKey ? `/ai/crud/${configKey}` : '',
     configKey,
     designPreview,
+    layoutType: config.layoutType || options.layoutType || 'simple-crud',
     options,
     rowKey: config.rowKey || 'id',
     formOnly: options.formOnly ?? config.formOnly ?? false,
@@ -81,7 +89,16 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     showExport: options.showExport ?? config.showExport ?? false,
     enableCustomQuery: options.enableCustomQuery ?? config.enableCustomQuery ?? true,
     customQueryConfigKey: config.configKey || '',
-    publicParams: { ...(options.publicParams || config.publicParams || {}) },
+    // 左树右表强制关闭「添加下级」；其它场景才读 options
+    ...(String(config.layoutType || options.layoutType || '') === 'tree-crud'
+      ? { enableTreeAddChild: false }
+      : (typeof options.enableTreeAddChild === 'boolean' ? { enableTreeAddChild: options.enableTreeAddChild } : {})),
+    treeConfig: options.treeConfig && typeof options.treeConfig === 'object' ? options.treeConfig : {},
+    // 左树 / TreeCrudTemplate 从 publicParams 读 orderBy；把 options.defaultSort 一并灌入
+    publicParams: {
+      ...(options.defaultSort && typeof options.defaultSort === 'object' ? options.defaultSort : {}),
+      ...(options.publicParams || config.publicParams || {}),
+    },
     publicQuery: { ...(options.publicQuery || config.publicQuery || {}) },
     formDefaultValues: { ...(options.formDefaultValues || config.formDefaultValues || {}) },
     submitDefaultParams: { ...(options.submitDefaultParams || config.submitDefaultParams || {}) },
@@ -96,13 +113,47 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     uiDocument: uiDocument || null,
     protocolVersion: uiDocument ? UI_DOCUMENT_PROTOCOL_VERSION : null,
   }
+  return applyEmbeddedTreeTableRuntimeProps(baseProps, config, { designPreview })
 }
 
 function normalizeApiConfig(apiConfig, configKey, designPreview) {
-  return Object.fromEntries(Object.entries(apiConfig || {}).map(([key, value]) => {
+  const source = typeof apiConfig === 'string'
+    ? safeParseJsonObject(apiConfig)
+    : (apiConfig && typeof apiConfig === 'object' && !Array.isArray(apiConfig) ? apiConfig : {})
+  return Object.fromEntries(Object.entries(source).map(([key, value]) => {
     const resolved = resolveCurrentConfigPlaceholder(value, configKey)
     return [key, designPreview ? appendDesignPreviewToApiValue(resolved) : resolved]
   }))
+}
+
+/** 补齐 CRUD 必备接口；缺 create 时新增会 POST 到空 URL（表现为 /dev-api 404）。 */
+function ensureRuntimeApiConfig(apiConfig = {}, configKey = '', designPreview = false) {
+  if (!configKey)
+    return apiConfig
+  const prefix = `/ai/crud/${configKey}`
+  const defaults = {
+    list: `get@${prefix}/page`,
+    detail: `get@${prefix}/:id`,
+    create: `post@${prefix}`,
+    update: `put@${prefix}`,
+    delete: `delete@${prefix}/:id`,
+  }
+  const next = { ...apiConfig }
+  Object.entries(defaults).forEach(([key, value]) => {
+    if (!String(next[key] || '').trim())
+      next[key] = designPreview ? appendDesignPreviewToApiValue(value) : value
+  })
+  return next
+}
+
+function safeParseJsonObject(value = '') {
+  try {
+    const parsed = JSON.parse(String(value || ''))
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  }
+  catch {
+    return {}
+  }
 }
 
 /**
@@ -327,7 +378,9 @@ export function resolveCrudSearchFieldCatalog(fields = [], block = {}) {
     return fieldCode ? [[fieldCode, { ...field, field: fieldCode, fieldCode }]] : []
   }))
   const hasSearchFieldRefs = Object.prototype.hasOwnProperty.call(block.props || {}, 'searchFieldRefs')
-  const refs = hasSearchFieldRefs ? block.props?.searchFieldRefs : block.fieldRefs
+  const refs = hasSearchFieldRefs
+    ? (Array.isArray(block.props?.searchFieldRefs) ? block.props.searchFieldRefs : [])
+    : (fields || []).filter(field => field?.field && field.searchable === true).map(field => field.field)
   return (Array.isArray(refs) ? refs : [])
     .map((fieldCode) => {
       const sourceField = fieldMap.get(fieldCode)
@@ -337,6 +390,18 @@ export function resolveCrudSearchFieldCatalog(fields = [], block = {}) {
       const requestedQueryField = String(setting.queryField || '').trim()
       const queryField = fieldMap.get(requestedQueryField) || sourceField
       const queryFieldCode = queryField.field
+      // 查询组件类型始终跟表单字段走，忽略历史 searchFieldSettings.componentType
+      const resolvedComponentType = queryField.componentType
+        || sourceField.componentType
+        || ''
+      const optionSource = setting.optionSource
+        || setting.props?.optionSource
+        || queryField.optionSource
+        || queryField.props?.optionSource
+        || queryField.basicProps?.optionSource
+        || sourceField.optionSource
+        || sourceField.props?.optionSource
+        || sourceField.basicProps?.optionSource
       return {
         ...sourceField,
         ...queryField,
@@ -345,8 +410,15 @@ export function resolveCrudSearchFieldCatalog(fields = [], block = {}) {
         fieldCode: queryFieldCode,
         sourceField: fieldCode,
         label: setting.label || sourceField.label || sourceField.fieldName || fieldCode,
-        componentType: setting.componentType || queryField.componentType || sourceField.componentType || '',
+        componentType: resolvedComponentType,
         queryType: setting.queryType || queryField.queryType || sourceField.queryType || 'eq',
+        optionSource,
+        props: {
+          ...(sourceField.props || {}),
+          ...(queryField.props || {}),
+          ...(setting.props || {}),
+          ...(optionSource ? { optionSource } : {}),
+        },
       }
     })
     .filter(Boolean)

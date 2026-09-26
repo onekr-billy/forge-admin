@@ -119,7 +119,11 @@ public class LowcodeSchemaValidator {
         if (businessFieldCount == 0) {
             throw new BusinessException("数据模型至少需要一个业务字段");
         }
-        if ("TREE".equals(appType) && modelSchema.getTreeConfig() != null
+        // 仅本表嵌入树真正启用时要求父级字段落在当前模型。
+        // 左树右表会误留 appType=TREE / parentField=parentId，不能按本表字段卡死草稿保存。
+        boolean modelTreeEnabled = modelSchema.getTreeConfig() != null
+                && Boolean.TRUE.equals(modelSchema.getTreeConfig().getEnabled());
+        if (modelTreeEnabled
                 && StringUtils.isNotBlank(modelSchema.getTreeConfig().getParentField())
                 && !fields.contains(modelSchema.getTreeConfig().getParentField())
                 && !columns.contains(modelSchema.getTreeConfig().getParentField())) {
@@ -377,6 +381,21 @@ public class LowcodeSchemaValidator {
         if (!isTreeRuntime(modelSchema, pageSchema)) {
             return;
         }
+        // 左树右表：树节点字段属于树数据源对象，不能按当前列表模型字段集校验
+        // layoutType 可能尚未写成 tree-crud，但画布已有 tree-panel，同样按左树处理
+        if (isLeftTreeRightTableLayout(pageSchema) || hasTreePanelBlock(pageSchema)) {
+            validateLeftTreeRightTableRuntime(modelSchema, pageSchema, modelFields, modelColumns, pageFields);
+            return;
+        }
+        // 嵌入式树表若明确配置了外部树数据源，同样不要用当前对象字段集卡死
+        if (hasSelectedExternalTreeSource(modelSchema, pageSchema)) {
+            String filterField = resolveTreeFilterField(modelSchema, pageSchema);
+            if (StringUtils.isNotBlank(filterField)
+                    && !isValidTreeField(filterField, modelFields, modelColumns, pageFields)) {
+                throw new BusinessException("右表过滤字段不存在: " + filterField);
+            }
+            return;
+        }
         String parentField = resolveTreeParentField(modelSchema, pageSchema);
         if (StringUtils.isBlank(parentField) || !isValidTreeField(parentField, modelFields, modelColumns, pageFields)) {
             throw new BusinessException("树形表必须配置父级字段，请先添加 parentId/pid 等字段或在树形配置中指定父级字段");
@@ -385,6 +404,145 @@ public class LowcodeSchemaValidator {
         if (StringUtils.isNotBlank(labelField) && !isValidTreeField(labelField, modelFields, modelColumns, pageFields)) {
             throw new BusinessException("树形显示字段不存在: " + labelField);
         }
+    }
+
+    private void validateLeftTreeRightTableRuntime(LowcodeModelSchema modelSchema,
+                                                  LowcodePageSchema pageSchema,
+                                                  Set<String> modelFields,
+                                                  Set<String> modelColumns,
+                                                  Set<String> pageFields) {
+        String filterField = resolveTreeFilterField(modelSchema, pageSchema);
+        if (StringUtils.isNotBlank(filterField)
+                && !isValidTreeField(filterField, modelFields, modelColumns, pageFields)) {
+            throw new BusinessException("右表过滤字段不存在: " + filterField);
+        }
+        // 左树节点字段（parent/key/label）一律不按当前列表模型校验；
+        // 仅在「明确同源且已配置父级」时才回退到当前模型字段校验
+        if (isExternalTreeSource(modelSchema, pageSchema) || !hasExplicitCurrentObjectTreeSource(modelSchema, pageSchema)) {
+            String sourceModelCode = firstNonBlank(
+                    readPageTreeConfig(pageSchema, "sourceModelCode"),
+                    modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceModelCode() : null);
+            String sourceConfigKey = firstNonBlank(
+                    readPageTreeConfig(pageSchema, "sourceConfigKey"),
+                    modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceConfigKey() : null);
+            boolean sourceSelected = StringUtils.isNotBlank(sourceModelCode) || StringUtils.isNotBlank(sourceConfigKey);
+            if (sourceSelected) {
+                String parentField = readPageTreeConfig(pageSchema, "parentField");
+                parentField = StringUtils.defaultIfBlank(parentField,
+                        modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getParentField() : null);
+                if (StringUtils.isBlank(parentField)) {
+                    throw new BusinessException("左树右表必须配置树父级字段");
+                }
+            }
+            return;
+        }
+        // 树数据源明确是当前对象时，父级/显示字段必须落在当前模型
+        String parentField = resolveTreeParentField(modelSchema, pageSchema);
+        if (StringUtils.isBlank(parentField) || !isValidTreeField(parentField, modelFields, modelColumns, pageFields)) {
+            throw new BusinessException("树形表必须配置父级字段，请先添加 parentId/pid 等字段或在树形配置中指定父级字段");
+        }
+        String labelField = resolveTreeLabelField(modelSchema, pageSchema);
+        if (StringUtils.isNotBlank(labelField) && !isValidTreeField(labelField, modelFields, modelColumns, pageFields)) {
+            throw new BusinessException("树形显示字段不存在: " + labelField);
+        }
+    }
+
+    private boolean isLeftTreeRightTableLayout(LowcodePageSchema pageSchema) {
+        return pageSchema != null && "tree-crud".equals(StringUtils.defaultIfBlank(pageSchema.getLayoutType(), ""));
+    }
+
+    private boolean hasTreePanelBlock(LowcodePageSchema pageSchema) {
+        if (pageSchema == null || pageSchema.getListGridLayout() == null) {
+            return false;
+        }
+        Object items = pageSchema.getListGridLayout().get("items");
+        if (!(items instanceof List<?> itemList)) {
+            return false;
+        }
+        return itemList.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .anyMatch(block -> "tree-panel".equals(String.valueOf(block.get("blockType"))));
+    }
+
+    private boolean hasExplicitCurrentObjectTreeSource(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
+        String sourceModelCode = firstNonBlank(
+                readPageTreeConfig(pageSchema, "sourceModelCode"),
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceModelCode() : null);
+        String sourceConfigKey = firstNonBlank(
+                readPageTreeConfig(pageSchema, "sourceConfigKey"),
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceConfigKey() : null);
+        if (StringUtils.isBlank(sourceModelCode) && StringUtils.isBlank(sourceConfigKey)) {
+            return false;
+        }
+        return !isExternalTreeSource(modelSchema, pageSchema);
+    }
+
+    private boolean hasSelectedExternalTreeSource(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
+        String sourceModelCode = firstNonBlank(
+                readPageTreeConfig(pageSchema, "sourceModelCode"),
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceModelCode() : null);
+        String sourceConfigKey = firstNonBlank(
+                readPageTreeConfig(pageSchema, "sourceConfigKey"),
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceConfigKey() : null);
+        if (StringUtils.isBlank(sourceModelCode) && StringUtils.isBlank(sourceConfigKey)) {
+            return false;
+        }
+        return isExternalTreeSource(modelSchema, pageSchema);
+    }
+
+    private boolean isExternalTreeSource(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
+        String sourceModelCode = firstNonBlank(
+                readPageTreeConfig(pageSchema, "sourceModelCode"),
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceModelCode() : null);
+        String sourceConfigKey = firstNonBlank(
+                readPageTreeConfig(pageSchema, "sourceConfigKey"),
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getSourceConfigKey() : null);
+        // 未选树数据源：不要按当前对象 parentId 卡死草稿保存
+        if (StringUtils.isBlank(sourceModelCode) && StringUtils.isBlank(sourceConfigKey)) {
+            return true;
+        }
+        Set<String> currentIds = resolveCurrentObjectIds(modelSchema);
+        if (StringUtils.isNotBlank(sourceModelCode) && currentIds.contains(sourceModelCode)) {
+            return false;
+        }
+        if (StringUtils.isNotBlank(sourceConfigKey) && currentIds.contains(sourceConfigKey)) {
+            return false;
+        }
+        return true;
+    }
+
+    private Set<String> resolveCurrentObjectIds(LowcodeModelSchema modelSchema) {
+        Set<String> currentIds = new java.util.LinkedHashSet<>();
+        if (modelSchema == null) {
+            return currentIds;
+        }
+        String objectCode = modelSchema.getObject() != null ? modelSchema.getObject().getCode() : null;
+        if (StringUtils.isNotBlank(objectCode)) {
+            currentIds.add(objectCode.trim());
+        }
+        if (StringUtils.isNotBlank(modelSchema.getTableName())) {
+            currentIds.add(modelSchema.getTableName().trim());
+        }
+        return currentIds;
+    }
+
+    private String resolveTreeFilterField(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
+        String filterField = readPageTreeConfig(pageSchema, "filterField");
+        return StringUtils.defaultIfBlank(filterField,
+                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getFilterField() : null);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.isNotBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private boolean isValidTreeField(String field, Set<String> modelFields, Set<String> modelColumns, Set<String> pageFields) {

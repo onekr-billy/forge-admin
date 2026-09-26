@@ -13,24 +13,25 @@ function readSource(relativePath) {
 }
 
 describe('standalone object designer navigation', () => {
-  it('exposes only the three object-owned configuration dimensions', () => {
+  it('exposes object-owned configuration dimensions including tree model', () => {
     expect(standaloneObjectDesignerSections.map(item => item.key)).toEqual([
       'basic',
       'fields',
       'data-model',
+      'tree-model',
     ])
   })
 
-  it('maps only data-owned legacy deep links into the grouped sections', () => {
+  it('maps legacy deep links into the standalone sections', () => {
     expect(resolveStandaloneObjectDesignerSection('relations')).toBe('data-model')
-    expect(resolveStandaloneObjectDesignerSection('permission')).toBe('data-model')
-    expect(resolveStandaloneObjectDesignerSection('tree-model')).toBe('data-model')
+    expect(resolveStandaloneObjectDesignerSection('permission')).toBe('tree-model')
+    expect(resolveStandaloneObjectDesignerSection('tree-model')).toBe('tree-model')
     expect(resolveStandaloneObjectDesignerSection('flow-app')).toBe('fields')
     expect(resolveStandaloneObjectDesignerSection('list')).toBe('fields')
     expect(resolveStandaloneObjectDesignerSection('triggers')).toBe('fields')
   })
 
-  it('maps the legacy permission target to the tree-model sub-tab', () => {
+  it('keeps resolveDataModelTab for legacy modelTab bookmarks', () => {
     expect(resolveDataModelTab('permission')).toBe('tree-model')
     expect(resolveDataModelTab('tree-model')).toBe('tree-model')
     expect(resolveDataModelTab('flow-app')).toBe('relations')
@@ -46,27 +47,47 @@ describe('standalone object designer navigation', () => {
     expect(objectDesigner).not.toContain('BusinessTriggerConfigPanel')
     expect(objectDesigner).not.toContain('BusinessActionDesigner')
     expect(objectDesigner).toContain('const compatibilityPanel = [\'publish\', \'advanced\'].includes(normalizedPanel)')
-    expect(listDesigner).toContain('v-if="!defaultViewOnly" class="list-custom-actions-entry"')
+    expect(listDesigner).not.toContain('class="list-custom-actions-entry"')
     expect(listDesigner).toContain('const visibleListCustomActions = computed(() => props.defaultViewOnly ? [] : listCustomActions.value)')
     expect(listDesigner).toContain('if (!props.defaultViewOnly)\n      await saveBusinessObjectActions')
     expect(gridDesigner).toContain('customActionsEditable')
+    expect(gridDesigner).toContain('title="工具栏按钮与导入导出"')
+    expect(gridDesigner).toContain('自定义操作按钮')
   })
 
-  it('shows relation and tree-model tabs with a read-only process summary', () => {
-    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
-    const designerShell = readSource('src/views/app-center/components/designer/BusinessObjectDesignerShell.vue')
+  it('hosts tree-model configuration inside list design property panel', () => {
+    const listDesigner = readSource('src/views/app-center/components/designer/BusinessListDesigner.vue')
+    const gridDesigner = readSource('src/components/lowcode-builder/page/ListPageGridDesigner.vue')
     const treeModelPanel = readSource('src/views/app-center/components/designer/BusinessPermissionFlowPanel.vue')
     const processPanel = readSource('src/views/app-center/components/designer/ObjectProcessReadOnlyPanel.vue')
+    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
 
-    expect(objectDesigner).not.toContain('<n-tab-pane name="flow-app"')
-    expect(objectDesigner).not.toContain('<n-tab-pane name="permission"')
-    expect(objectDesigner).toContain('<n-tab-pane name="tree-model" tab="树形模型">')
-    expect(designerShell).not.toContain('key: \'permission\', label: \'数据范围适配\'')
+    expect(listDesigner).not.toContain('class="list-tree-model-entry"')
+    expect(listDesigner).toContain('@update:model-schema="handleGridModelSchemaUpdate"')
+    expect(gridDesigner).toContain('class="list-tree-model-property"')
+    expect(gridDesigner).toContain('title="树形模型"')
+    expect(gridDesigner).toContain('updateEmbeddedTreeEnabled')
+    expect(treeModelPanel).toContain('配置对象的父子层级、显示字段和加载方式。')
     expect(treeModelPanel).not.toContain('数据策略')
     expect(treeModelPanel).not.toContain('updateDataScope')
+    expect(objectDesigner).toContain('@update:model-schema="handleListModelSchemaUpdate"')
     expect(objectDesigner).toContain('<ObjectProcessReadOnlyPanel')
     expect(processPanel).toContain('businessObjectProcesses(props.objectCode)')
     expect(processPanel).toContain('去应用工作台配置')
+  })
+
+  it('keeps standalone tree-model panel for legacy deep links', () => {
+    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    const designerShell = readSource('src/views/app-center/components/designer/BusinessObjectDesignerShell.vue')
+    const navigation = readSource('src/views/app-center/components/designer/object-designer-navigation.js')
+
+    expect(navigation).toContain('{ key: \'tree-model\', label: \'树形模型\' }')
+    expect(objectDesigner).not.toContain('<n-tab-pane name="tree-model"')
+    expect(objectDesigner).not.toContain('<n-tab-pane name="flow-app"')
+    expect(objectDesigner).not.toContain('<n-tab-pane name="permission"')
+    expect(objectDesigner).toContain('activePanel === \'tree-model\'')
+    expect(designerShell).toContain('key: \'tree-model\', label: \'树形模型\'')
+    expect(designerShell).not.toContain('key: \'permission\', label: \'数据范围适配\'')
   })
 
   it('guides standalone users to the application process workspace', () => {

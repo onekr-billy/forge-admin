@@ -15,6 +15,69 @@ import {
 import { hydrateRuntimeFormLayout } from '../shared/runtime-form-layout'
 import { applyCrudHookRules, CRUD_HOOK_RULE_TARGETS, normalizeCrudHookRules } from './crud-hook-rules'
 
+/**
+ * 左树右表运行配置会显式传 false；区块上残留的 true 不能盖掉。
+ */
+function resolveEnableTreeAddChild(blockProps = {}, runtimeProps = {}) {
+  if (runtimeProps.enableTreeAddChild === false || blockProps.enableTreeAddChild === false)
+    return false
+  if (runtimeProps.enableTreeAddChild === true)
+    return true
+  return blockProps.enableTreeAddChild === true
+}
+
+/**
+ * 查询条件：显式 searchFieldRefs 时优先用运行配置 searchSchema（草稿/发布）按 refs 过滤排序；
+ * 只有运行配置为空时才回落画布本地 aiSearchSchema。空 refs 表示明确不展示查询项。
+ */
+export function resolveRuntimeSearchSchema({
+  hasExplicitSearchFieldRefs = false,
+  blockProps = {},
+  runtimeSearchSchema = [],
+  aiSearchSchema = [],
+  configuredFieldRefs = [],
+} = {}) {
+  if (hasExplicitSearchFieldRefs) {
+    const refs = Array.isArray(blockProps.searchFieldRefs) ? blockProps.searchFieldRefs.filter(Boolean) : []
+    if (!refs.length)
+      return []
+    const source = Array.isArray(runtimeSearchSchema) && runtimeSearchSchema.length
+      ? runtimeSearchSchema
+      : (Array.isArray(aiSearchSchema) ? aiSearchSchema : [])
+    return orderCrudItemsByFieldRefs(filterCrudItemsByFieldRefs(source, refs), refs)
+  }
+  return filterCrudItemsByFieldRefs(
+    Array.isArray(runtimeSearchSchema) && runtimeSearchSchema.length
+      ? runtimeSearchSchema
+      : (Array.isArray(aiSearchSchema) ? aiSearchSchema : []),
+    configuredFieldRefs,
+  )
+}
+
+function orderCrudItemsByFieldRefs(items = [], fieldRefs = []) {
+  if (!Array.isArray(items) || !items.length || !Array.isArray(fieldRefs) || !fieldRefs.length)
+    return Array.isArray(items) ? items : []
+  const byKey = new Map()
+  items.forEach((item) => {
+    const key = String(item?.prop || item?.field || item?.key || item?.dataIndex || '').trim()
+    if (key && !byKey.has(key))
+      byKey.set(key, item)
+  })
+  const ordered = fieldRefs
+    .map(ref => byKey.get(String(ref)))
+    .filter(Boolean)
+  // 保留非字段项（如操作列），一般查询 schema 不会有
+  const used = new Set(ordered.map(item => String(item?.prop || item?.field || item?.key || item?.dataIndex || '').trim()))
+  items.forEach((item) => {
+    const key = String(item?.prop || item?.field || item?.key || item?.dataIndex || '').trim()
+    if (!key || used.has(key))
+      return
+    if (item?.type === 'action' || item?.fixed === 'right' || key === 'action')
+      ordered.push(item)
+  })
+  return ordered
+}
+
 /** 合并对象运行配置与当前区块配置；不修改任一输入或共享缓存。 */
 export function buildRuntimeCrudBlockProps({
   runtimeProps,
@@ -117,12 +180,13 @@ export function buildRuntimeCrudBlockProps({
       ? blockProps.formActions
       : (runtimeProps.formActions || []),
     businessObjectCode: runtimeProps.businessObjectCode || runtimeProps.objectCode || '',
-    searchSchema: hasExplicitSearchFieldRefs
-      ? aiSearchSchema
-      : filterCrudItemsByFieldRefs(
-          runtimeProps.searchSchema?.length ? runtimeProps.searchSchema : aiSearchSchema,
-          configuredFieldRefs,
-        ),
+    searchSchema: resolveRuntimeSearchSchema({
+      hasExplicitSearchFieldRefs,
+      blockProps,
+      runtimeSearchSchema: runtimeProps.searchSchema,
+      aiSearchSchema,
+      configuredFieldRefs,
+    }),
     editSchema: hydrateRuntimeFormLayout(
       filterCrudItemsByFieldRefs(
         runtimeProps.editSchema?.length ? runtimeProps.editSchema : aiFormSchema,
@@ -173,7 +237,7 @@ export function buildRuntimeCrudBlockProps({
     exportFileName: blockProps.exportFileName || runtimeProps.exportFileName,
     renderMode: blockProps.renderMode || runtimeProps.renderMode,
     showRenderModeSwitch: blockProps.showRenderModeSwitch ?? runtimeProps.showRenderModeSwitch,
-    enableTreeAddChild: blockProps.enableTreeAddChild ?? runtimeProps.enableTreeAddChild,
+    enableTreeAddChild: resolveEnableTreeAddChild(blockProps, runtimeProps),
     tableSize: blockProps.tableSize || runtimeProps.tableSize,
     bordered: blockProps.bordered ?? runtimeProps.bordered,
     striped: blockProps.striped ?? runtimeProps.striped,

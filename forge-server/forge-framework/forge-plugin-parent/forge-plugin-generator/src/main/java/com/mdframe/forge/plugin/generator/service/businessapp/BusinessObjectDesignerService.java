@@ -776,6 +776,10 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (StringUtils.isBlank(target.getLayoutType())) {
             target.setLayoutType("simple-crud");
         }
+        // 画布已有 tree-panel 时强制左树右表，避免运行态仍按 simple-crud 渲染成普通列表
+        if (hasTreePanelBlock(target) && !"tree-crud".equals(target.getLayoutType())) {
+            target.setLayoutType("tree-crud");
+        }
         if (target.getZones() == null) {
             target.setZones(new ArrayList<>());
         }
@@ -788,6 +792,22 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 .filter(zone -> !zoneKeys.contains(zone.getZoneKey()))
                 .forEach(target.getZones()::add);
         return target;
+    }
+
+    private boolean hasTreePanelBlock(LowcodePageSchema pageSchema) {
+        if (pageSchema == null || pageSchema.getListGridLayout() == null) {
+            return false;
+        }
+        Object items = pageSchema.getListGridLayout().get("items");
+        if (!(items instanceof List<?> itemList)) {
+            return false;
+        }
+        for (Object item : itemList) {
+            if (item instanceof Map<?, ?> block && "tree-panel".equals(String.valueOf(block.get("blockType")))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void applyLegacyRuntimeSchemas(AiCrudConfig config, LowcodePageSchema pageSchema, LowcodeModelSchema modelSchema) {
@@ -3767,10 +3787,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         Map<String, Object> search = searchSchema == null ? Map.of() : searchSchema;
         List<Map<String, Object>> fields = visibleSortedItems(listOfMap(search.get("fields")));
         LowcodePageZone zone = findOrCreateZone(pageSchema, "search", "search-form");
-        zone.setFieldRefs(fields.stream()
+        List<String> fieldRefs = fields.stream()
                 .map(item -> StringUtils.defaultIfBlank(text(item.get("fieldCode")), text(item.get("field"))))
                 .filter(modelFields::contains)
-                .toList());
+                .toList();
+        zone.setFieldRefs(fieldRefs);
         Map<String, Object> props = zone.getProps() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(zone.getProps());
         props.putAll(mapValue(search.get("settings")));
         Map<String, Object> settings = new LinkedHashMap<>();
@@ -3791,6 +3812,68 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         replaceModelFieldSettings(props, modelFields, settings);
         zone.setProps(props);
+        // 列表网格 AiCrudPage 以 searchFieldRefs 为查询条件事实来源，必须与 search zone 同步
+        syncListGridSearchFieldRefs(pageSchema, fieldRefs, settings);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncListGridSearchFieldRefs(LowcodePageSchema pageSchema,
+                                             List<String> fieldRefs,
+                                             Map<String, Object> fieldSettings) {
+        if (pageSchema == null) {
+            return;
+        }
+        syncGridSearchFieldRefs(pageSchema.getListGridLayout(), fieldRefs, fieldSettings);
+        if (pageSchema.getPages() == null) {
+            return;
+        }
+        for (Map<String, Object> page : pageSchema.getPages()) {
+            if (page == null || !"list".equals(text(page.get("pageKey")))) {
+                continue;
+            }
+            Object grid = page.get("gridLayout");
+            if (grid instanceof Map<?, ?> gridMap) {
+                Map<String, Object> mutable = new LinkedHashMap<>((Map<String, Object>) gridMap);
+                syncGridSearchFieldRefs(mutable, fieldRefs, fieldSettings);
+                page.put("gridLayout", mutable);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncGridSearchFieldRefs(Map<String, Object> gridLayout,
+                                         List<String> fieldRefs,
+                                         Map<String, Object> fieldSettings) {
+        if (gridLayout == null || gridLayout.isEmpty()) {
+            return;
+        }
+        Object itemsValue = gridLayout.get("items");
+        if (!(itemsValue instanceof List<?> items)) {
+            return;
+        }
+        List<Object> nextItems = new ArrayList<>(items.size());
+        boolean changed = false;
+        for (Object itemValue : items) {
+            if (!(itemValue instanceof Map<?, ?> rawItem)
+                    || !"AiCrudPage".equals(text(rawItem.get("blockType")))) {
+                nextItems.add(itemValue);
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>((Map<String, Object>) rawItem);
+            Map<String, Object> props = item.get("props") instanceof Map<?, ?> propsMap
+                    ? new LinkedHashMap<>((Map<String, Object>) propsMap)
+                    : new LinkedHashMap<>();
+            props.put("searchFieldRefs", new ArrayList<>(fieldRefs == null ? List.of() : fieldRefs));
+            if (fieldSettings != null && !fieldSettings.isEmpty()) {
+                props.put("searchFieldSettings", new LinkedHashMap<>(fieldSettings));
+            }
+            item.put("props", props);
+            nextItems.add(item);
+            changed = true;
+        }
+        if (changed) {
+            gridLayout.put("items", nextItems);
+        }
     }
 
     private void applyListViewZone(LowcodePageSchema pageSchema, Set<String> modelFields,

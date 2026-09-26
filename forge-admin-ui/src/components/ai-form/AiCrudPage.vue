@@ -3047,7 +3047,7 @@ function collectExpandSlots() {
 function normalizeRowActions(actions = []) {
   const next = Array.isArray(actions) ? [...actions] : []
   if (!props.enableTreeAddChild)
-    return next
+    return next.filter(action => action?.key !== 'addChild')
   if (next.some(action => action?.key === 'addChild'))
     return next
   const editIndex = next.findIndex(action => action?.key === 'edit')
@@ -4218,11 +4218,11 @@ async function loadList() {
   tableLoading.value = true
 
   try {
-    // 构建请求参数
-    let params = {
+    // 构建请求参数（查询区树本级+子集：用前端展开值覆盖单选值，与左树 field=1,5 一致）
+    let params = applySearchTreeExpandedParams({
       ...searchParams.value,
       ...props.publicParams,
-    }
+    })
 
     // 分页参数
     if (props.showPagination) {
@@ -4330,25 +4330,49 @@ async function enrichDocumentRuntimeRows(list = []) {
   const rows = Array.isArray(list) ? list : []
   if (!objectCode || !rows.length)
     return rows
-  const recordIds = rows.map(row => resolveRowKeyValue(row)).filter(isUsableKeyValue)
+  const childrenField = props.treeConfig?.childrenField || 'children'
+  const flatItems = []
+  const visit = (nodes = []) => {
+    if (!Array.isArray(nodes))
+      return
+    nodes.forEach((row) => {
+      if (!row || typeof row !== 'object')
+        return
+      flatItems.push(row)
+      if (Array.isArray(row[childrenField]) && row[childrenField].length)
+        visit(row[childrenField])
+    })
+  }
+  visit(rows)
+  const recordIds = [...new Set(flatItems.map(row => resolveRowKeyValue(row)).filter(isUsableKeyValue))]
   if (!recordIds.length)
     return rows
   try {
     const response = await businessDocumentRuntimeBatch(objectCode, recordIds)
     const payload = response?.data ?? response ?? {}
     const runtimeMap = payload && typeof payload === 'object' ? payload : {}
-    return rows.map((row) => {
-      const key = String(resolveRowKeyValue(row))
-      const runtime = runtimeMap[key] || runtimeMap[resolveRowKeyValue(row)]
-      if (!runtime)
-        return row
-      return {
-        ...row,
-        _documentRuntime: runtime,
-        _runtimeActions: Array.isArray(runtime.runtimeActions) ? runtime.runtimeActions : [],
-        _runtimeObjectCode: objectCode,
-      }
-    })
+    const applyRuntime = (nodes = []) => {
+      if (!Array.isArray(nodes))
+        return nodes
+      return nodes.map((row) => {
+        if (!row || typeof row !== 'object')
+          return row
+        const key = String(resolveRowKeyValue(row))
+        const runtime = runtimeMap[key] || runtimeMap[resolveRowKeyValue(row)]
+        const next = runtime
+          ? {
+              ...row,
+              _documentRuntime: runtime,
+              _runtimeActions: Array.isArray(runtime.runtimeActions) ? runtime.runtimeActions : [],
+              _runtimeObjectCode: objectCode,
+            }
+          : { ...row, _runtimeObjectCode: objectCode }
+        if (Array.isArray(row[childrenField]) && row[childrenField].length)
+          next[childrenField] = applyRuntime(row[childrenField])
+        return next
+      })
+    }
+    return applyRuntime(rows)
   }
   catch (error) {
     // 流程运行态不是列表数据本身，接口异常不能阻断普通 CRUD 列表。
@@ -4366,6 +4390,54 @@ function resolveDefaultRequestSortParams() {
     ...(orderByColumn ? { orderByColumn } : {}),
     ...(isAsc ? { isAsc } : {}),
   }
+}
+
+/** 查询区树选择：field__treeExpanded=1,5 → field=1,5；多值强制 _searchTypes=in；去掉展示用 Name */
+function applySearchTreeExpandedParams(params = {}) {
+  const next = { ...(params || {}) }
+  Object.keys(next).forEach((key) => {
+    if (!key.endsWith('__treeExpanded'))
+      return
+    const field = key.slice(0, -'__treeExpanded'.length)
+    const expanded = next[key]
+    if (field && expanded !== undefined && expanded !== null && String(expanded).trim() !== '')
+      next[field] = expanded
+    delete next[key]
+  })
+
+  // 去掉 treeSelect/userSelect 伴随展示字段（fieldTreeSelectName），避免多余 AND 条件拖垮结果
+  Object.keys(next).forEach((key) => {
+    if (!key.endsWith('Name') || key.length <= 4)
+      return
+    const base = key.slice(0, -4)
+    if (Object.prototype.hasOwnProperty.call(next, base))
+      delete next[key]
+  })
+
+  let searchTypes = {}
+  try {
+    if (typeof next._searchTypes === 'string' && next._searchTypes.trim())
+      searchTypes = JSON.parse(next._searchTypes) || {}
+    else if (next._searchTypes && typeof next._searchTypes === 'object')
+      searchTypes = { ...next._searchTypes }
+  }
+  catch {
+    searchTypes = {}
+  }
+  Object.keys(next).forEach((key) => {
+    if (key.startsWith('_') || key.endsWith('_includeChildren'))
+      return
+    const value = next[key]
+    const multi = Array.isArray(value)
+      ? value.length > 1
+      : (typeof value === 'string' && value.includes(','))
+    if (multi)
+      searchTypes[key] = 'in'
+  })
+  if (Object.keys(searchTypes).length)
+    next._searchTypes = JSON.stringify(searchTypes)
+
+  return next
 }
 
 /**
@@ -5385,14 +5457,17 @@ async function handleModalConfirm() {
 
     const isEdit = modalStatus.value === 'edit'
 
-    // 新增时优先使用 apiConfig.add,其次使用 apiConfig.create
-    let createKey = 'add'
+    // 新增优先 create，兼容旧配置 add；二者都无时不要默认 add（会落到空 props.api → /dev-api 404）
+    let createKey = 'create'
     if (!isEdit) {
-      if (props.apiConfig.create) {
+      if (props.apiConfig?.create) {
         createKey = 'create'
       }
-      else if (props.apiConfig.add) {
+      else if (props.apiConfig?.add) {
         createKey = 'add'
+      }
+      else {
+        createKey = 'create'
       }
     }
 
@@ -5415,12 +5490,18 @@ async function handleModalConfirm() {
       return
     }
 
+    const fallbackApi = String(props.api || '').trim()
+      || (props.configKey ? `/ai/crud/${props.configKey}` : '')
     const { method, url } = parseApiConfig(
       isEdit ? 'update' : createKey,
-      isEdit ? `${props.api}/${idValue}` : props.api,
+      isEdit ? `${fallbackApi}/${idValue}` : fallbackApi,
       isEdit ? 'put' : 'post',
       isEdit ? { id: idValue } : {},
     )
+    if (!String(url || '').trim()) {
+      window.$message.error('缺少新增/更新接口地址，请检查业务对象运行配置中的 apiConfig')
+      return
+    }
 
     // 确定使用哪种请求方法
     let requestMethod = method

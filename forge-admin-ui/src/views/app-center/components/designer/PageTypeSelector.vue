@@ -90,9 +90,15 @@
           <n-input v-model:value="form.objectName" maxlength="50" placeholder="页面中管理的数据对象名称" @update:value="handleObjectNameChange" />
         </n-form-item>
         <n-form-item label="对象编码" path="objectCode">
-          <n-input v-model:value="form.objectCode" maxlength="48" placeholder="字母开头，可使用数字和下划线" @update:value="objectCodeEdited = true" />
+          <n-input
+            v-model:value="form.objectCode"
+            maxlength="48"
+            placeholder="字母开头，可使用数字和下划线"
+            :loading="objectCodeChecking"
+            @update:value="objectCodeEdited = true"
+          />
           <template #feedback>
-            自动生成后仍可编辑，保存后会显示在设计器顶部。
+            {{ objectCodeChecking ? '正在检查编码是否可用…' : '自动生成后仍可编辑，保存后会显示在设计器顶部。' }}
           </template>
         </n-form-item>
       </div>
@@ -112,10 +118,10 @@
 </template>
 
 <script setup>
-import { AppsOutline, CreateOutline, DocumentTextOutline, ListOutline } from '@vicons/ionicons5'
+import { AppsOutline, CreateOutline, DocumentTextOutline, GitBranchOutline, GitNetworkOutline, ListOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { computed, reactive, ref, watch } from 'vue'
-import { genDatasourceEnabled, genDatasourceTableColumns, genDatasourceTables } from '@/api/business-app'
+import { businessObjectCodeAvailable, genDatasourceEnabled, genDatasourceTableColumns, genDatasourceTables } from '@/api/business-app'
 import { PAGE_SHAPE_TYPES } from '../../in-app-builder/page-shape-design'
 import {
   inferFormFieldsFromColumns,
@@ -148,6 +154,10 @@ const pageNameEdited = ref(false)
 const datasourceLoading = ref(false)
 const tableLoading = ref(false)
 const fieldLoading = ref(false)
+const objectCodeChecking = ref(false)
+const objectCodeCheckSignature = ref('')
+const objectCodeCheckResult = ref(null)
+let objectCodeCheckRequestId = 0
 const datasourceList = ref([])
 const tableList = ref([])
 const importedFields = ref([])
@@ -156,6 +166,8 @@ const pageTypeIcons = {
   'form': DocumentTextOutline,
   'list': ListOutline,
   'list-form': AppsOutline,
+  'tree-list': GitNetworkOutline,
+  'tree-table': GitBranchOutline,
   'custom': CreateOutline,
 }
 const requiredValue = {
@@ -175,6 +187,41 @@ const rules = computed(() => {
             validator: (_rule, value) => /^[a-z]\w{1,47}$/i.test(String(value || '')),
             message: '对象编码需以字母开头，仅含字母、数字和下划线（2-48 位）',
             trigger: ['input', 'blur'],
+          },
+          {
+            async validator(_rule, value) {
+              const code = String(value || '').trim()
+              if (!/^[a-z]\w{1,47}$/i.test(code))
+                return
+              const signature = code.toLowerCase()
+              if (objectCodeCheckSignature.value === signature && objectCodeCheckResult.value === false)
+                throw new Error('对象编码已存在，请换一个编码')
+              if (objectCodeCheckSignature.value === signature && objectCodeCheckResult.value === true)
+                return
+              const requestId = ++objectCodeCheckRequestId
+              objectCodeChecking.value = true
+              try {
+                const response = await businessObjectCodeAvailable(code)
+                if (requestId !== objectCodeCheckRequestId)
+                  return
+                objectCodeCheckSignature.value = signature
+                objectCodeCheckResult.value = response.data === true
+                if (!objectCodeCheckResult.value)
+                  throw new Error('对象编码已存在，请换一个编码')
+              }
+              catch (error) {
+                if (requestId === objectCodeCheckRequestId && objectCodeCheckResult.value !== false) {
+                  objectCodeCheckSignature.value = signature
+                  objectCodeCheckResult.value = null
+                }
+                throw error?.message ? error : new Error('对象编码校验失败，请稍后重试')
+              }
+              finally {
+                if (requestId === objectCodeCheckRequestId)
+                  objectCodeChecking.value = false
+              }
+            },
+            trigger: ['blur'],
           },
         ]
       : undefined,
@@ -208,6 +255,10 @@ watch(() => [props.show, props.defaultParentId, props.defaultPageType], async ([
   objectCodeEdited.value = false
   objectNameEdited.value = false
   pageNameEdited.value = false
+  objectCodeCheckSignature.value = ''
+  objectCodeCheckResult.value = null
+  objectCodeChecking.value = false
+  objectCodeCheckRequestId += 1
   tableList.value = []
   importedFields.value = []
   await loadDatasources()
@@ -394,7 +445,7 @@ async function confirmSelection() {
 
 .page-type-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -436,6 +487,16 @@ async function confirmSelection() {
 .page-type-icon.kind-list-form {
   background: #f3efff;
   color: #8b5cf6;
+}
+
+.page-type-icon.kind-tree-list {
+  background: #f0f9f4;
+  color: #1f8a5b;
+}
+
+.page-type-icon.kind-tree-table {
+  background: #eef6ff;
+  color: #2f6fed;
 }
 
 .page-type-icon.kind-custom {

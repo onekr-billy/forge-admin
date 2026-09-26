@@ -262,6 +262,10 @@ const boundObjectId = computed(() => {
 function mapPageModeToShape(value) {
   if (value === 'crud')
     return 'list-form'
+  if (value === 'tree-crud' || value === 'tree_table')
+    return 'tree-table'
+  if (value === 'tree_list')
+    return 'tree-list'
   return value
 }
 

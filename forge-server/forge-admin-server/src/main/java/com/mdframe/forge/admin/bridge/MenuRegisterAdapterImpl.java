@@ -327,12 +327,9 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
                     // 外部门级：parentId 直接是 sys_resource.id，不经内部节点树解析
                     parentId = parseLong(item.getParentNodeId());
                 } else if (item.getParentNodeId() == null) {
-                    // The H5 client has an independent resource tree.  Its
-                    // root must remain at parent 0; attaching it below the
-                    // management /ai directory makes the whole H5 subtree
-                    // disappear when the menu query is scoped to client h5.
-                    parentId = "h5".equalsIgnoreCase(clientCode)
-                            ? 0L : resolveDefaultLowcodeParentId();
+                    // 应用页面菜单不再默认挂到 /ai（AI应用）。未指定父级时挂顶级，
+                    // 正式挂载应通过 externalParent + menuParentId 显式指定。
+                    parentId = 0L;
                 } else {
                     parentId = resolvedIds.get(resourceKey(item.getParentNodeId(), clientCode));
                 }
