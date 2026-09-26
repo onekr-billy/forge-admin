@@ -74,6 +74,8 @@
 
 第三十四个切口使用 Coordinator + State Transition，将 Flowable 任务创建/完成事件、发起人修改节点识别与自愈、驳回证据读取、修改待办快照和运行态双状态切换迁入 `BusinessFlowTaskEventCoordinator`。入口由 3086 行降至 2834 行，新 Coordinator 385 行；任务事件仍使用独立事务且失败不反向中断审批动作，终态回调和公开事务入口保持原位。
 
+第三十五个切口使用 Coordinator + Strategy，将流程终态回调的幂等判断、状态归一、业务记录回写、回调动作、领域事件和审批结果事件发布迁入 `BusinessFlowCallbackCoordinator`，并将单据/低代码绑定/Adapter 三种状态写入策略统一到 `BusinessFlowStatusTransitionService`。公开 `@Transactional` 与 `@FlowCallback` 入口仍由 Facade 持有，状态写入继续先于流程关联终态落库。入口由 2834 行降至 2488 行；新 Coordinator/Transition Service 分别 403/96 行，均低于 1000 行。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。

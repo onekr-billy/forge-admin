@@ -226,3 +226,12 @@
 - 验证：generator Reactor 编译、任务事件/生命周期/状态修复/任务表单定向回归、`git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：既有 `BusinessFlowServiceLifecycleTest` 继续覆盖发起人修改、重提回流程中、终态拒绝延迟任务事件和回调写入失败回滚；日志主体已切换到新 Coordinator。相关 21 类共 98 项通过，0 失败、0 错误；模块 Reactor 编译与 `git diff --check` 通过。
+
+## 2026-09-26 第三十五轮增量验证：终态回调与状态写入策略
+
+- P0：回调幂等、终态归一、配置状态字段写入、回调动作幂等键、业务事件与审批结果事件发布顺序保持不变；任何状态写入失败必须阻止关联表提前落终态。
+- P0：单据模式、低代码业务绑定模式和 Adapter 跳过直写的状态策略保持一致，运行表名不一致继续拒绝。
+- P1：先提取共享状态 Transition Service，再使用 Coordinator 迁出终态回调编排；公开 `@Transactional`/`@FlowCallback` 方法继续留 Facade。
+- 验证：generator Reactor 编译、生命周期/状态字段/回调动作相关回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：新增 `BusinessFlowStatusTransitionServiceTest` 覆盖单据状态映射、低代码绑定状态映射、Adapter 跳过平台直写及运行表不一致拒绝；既有生命周期用例继续覆盖重复终态回调与状态写入失败时关联表不提前更新。相关 23 类共 105 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。

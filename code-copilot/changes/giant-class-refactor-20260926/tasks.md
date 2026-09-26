@@ -35,5 +35,6 @@
 - [x] 提取运行上下文 Resolver 与业务身份 Codec，统一列表/启动/任务的对象身份规则，使 `BusinessFlowService` 降至 3431 行。
 - [x] 提取业务列表 Enricher，集中批量关联、分组查询和展示投影，使 `BusinessFlowService` 降至 3086 行。
 - [x] 提取流程任务事件 Coordinator，集中修改节点识别、驳回证据和运行态双状态切换，使 `BusinessFlowService` 降至 2834 行。
+- [x] 提取终态回调 Coordinator 与状态迁移 Strategy，集中幂等、业务回写、动作和事件发布，使 `BusinessFlowService` 降至 2488 行。
 - [ ] 继续拆分 `BusinessFlowService` 至 1000 行以内，并完成服务级联调；运行配置真实页面验收亦待补。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

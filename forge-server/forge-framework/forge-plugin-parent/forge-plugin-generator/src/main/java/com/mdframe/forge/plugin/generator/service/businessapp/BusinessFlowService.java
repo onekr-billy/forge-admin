@@ -17,7 +17,6 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessRun;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowWithdrawDTO;
 import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
-import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowBindingDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowCallbackDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowResubmitDTO;
@@ -34,7 +33,6 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.service.businessapp.taskform.TaskFormUiDocumentCompiler;
-import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessApprovalResultEvent;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessBindingSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
@@ -60,7 +58,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -69,7 +66,6 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.defaultBusinessBinding;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeBindingConfig;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeBusinessBindingMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeStartMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeVariableMapping;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.putBoolean;
@@ -173,9 +169,7 @@ public class BusinessFlowService {
     private final BusinessFieldDesignService businessFieldDesignService;
     private final BusinessFlowVariableResolver variableResolver;
     private final BusinessCodeFormProviderRegistry codeFormProviderRegistry;
-    private final ApplicationEventPublisher applicationEventPublisher;
     private final ObjectProvider<RedissonClient> redissonClientProvider;
-    private final ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider;
     private final BusinessFlowStartLockManager startLockManager = new BusinessFlowStartLockManager();
     private final BusinessRuntimeConfigResolver runtimeConfigResolver;
     private final BusinessFlowStatusRepairService statusRepairService;
@@ -187,7 +181,9 @@ public class BusinessFlowService {
     private final BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
     private final BusinessFlowRuntimeContextResolver businessRuntimeContextResolver;
     private final BusinessFlowListDisplayEnricher businessListDisplayEnricher;
+    private final BusinessFlowStatusTransitionService statusTransitionService;
     private final BusinessFlowTaskEventCoordinator taskEventCoordinator;
+    private final BusinessFlowCallbackCoordinator callbackCoordinator;
 
     public BusinessFlowService(BusinessBindingMapper bindingMapper,
                                BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
@@ -212,9 +208,7 @@ public class BusinessFlowService {
         this.businessFieldDesignService = businessFieldDesignService;
         this.variableResolver = variableResolver;
         this.codeFormProviderRegistry = codeFormProviderRegistry;
-        this.applicationEventPublisher = applicationEventPublisher;
         this.redissonClientProvider = redissonClientProvider;
-        this.actionExecutionServiceProvider = actionExecutionServiceProvider;
         this.runtimeConfigResolver = new BusinessRuntimeConfigResolver(crudConfigMapper, this::resolveTenantId);
         this.statusRepairService = new BusinessFlowStatusRepairService(
                 runtimeConfigResolver, dynamicCrudService, documentConfigService);
@@ -272,6 +266,8 @@ public class BusinessFlowService {
                 this::toBusinessObjectVO,
                 this::selectMainFlowBindingForConfig,
                 this::resolveBusinessSummary);
+        this.statusTransitionService = new BusinessFlowStatusTransitionService(
+                documentConfigService, dynamicCrudService);
         this.taskEventCoordinator = new BusinessFlowTaskEventCoordinator(
                 () -> flowClient,
                 flowInstanceLinkMapper,
@@ -282,7 +278,21 @@ public class BusinessFlowService {
                 this::resolveTenantId,
                 this::resolveUserId,
                 this::selectMainFlowBindingForConfig,
-                this::updateBusinessFlowStatus);
+                statusTransitionService);
+        this.callbackCoordinator = new BusinessFlowCallbackCoordinator(
+                flowInstanceLinkMapper,
+                documentConfigService,
+                dynamicCrudService,
+                runtimeConfigResolver,
+                statusRepairService,
+                statusTransitionService,
+                taskEventCoordinator,
+                actionExecutionServiceProvider,
+                applicationEventPublisher,
+                this::resolveTenantId,
+                this::resolveUsername,
+                this::selectMainFlowBindingForConfig,
+                this::resolveTerminalBusinessFlowResult);
     }
 
     /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
@@ -998,7 +1008,7 @@ public class BusinessFlowService {
             callback.setTenantId(link.getTenantId());
             callback.setOperatorId(resolveUserId());
             callback.setVariables(variables == null ? new LinkedHashMap<>() : new LinkedHashMap<>(variables));
-            handleFlowCallbackInternal(link, callback);
+            callbackCoordinator.handleLinkedCallback(link, callback);
             return toRuntimeVO(link, "业务待办已办理，流程已结束");
         }
 
@@ -1160,7 +1170,7 @@ public class BusinessFlowService {
         callback.setFlowStatus(BusinessDocumentFlowStatus.CANCELED.getCode());
         callback.setTenantId(link.getTenantId());
         callback.setOperatorId(userId);
-        handleFlowCallbackInternal(link, callback);
+        callbackCoordinator.handleLinkedCallback(link, callback);
         return toRuntimeVO(link, "流程已撤回");
     }
 
@@ -1878,16 +1888,7 @@ public class BusinessFlowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void handleFlowCallback(BusinessFlowCallbackDTO dto) {
-        if (dto == null || (StringUtils.isBlank(dto.getProcessInstanceId()) && StringUtils.isBlank(dto.getBusinessKey()))) {
-            throw new BusinessException("流程回调缺少流程实例ID或业务Key");
-        }
-        Long tenantId = dto.getTenantId() != null ? dto.getTenantId() : resolveTenantId();
-        AiBusinessFlowInstanceLink link = findCallbackLink(tenantId, dto);
-        if (link == null) {
-            throw new BusinessException("未找到流程实例关联");
-        }
-        Long effectiveTenantId = link.getTenantId() != null ? link.getTenantId() : tenantId;
-        TenantContextHolder.executeWithTenant(effectiveTenantId, () -> handleFlowCallbackInternal(link, dto));
+        callbackCoordinator.handleCallback(dto);
     }
 
     @FlowCallback(on = {
@@ -1907,44 +1908,7 @@ public class BusinessFlowService {
             taskEventCoordinator.handleTaskEvent(ctx);
             return;
         }
-        BusinessFlowCallbackDTO dto = new BusinessFlowCallbackDTO();
-        dto.setProcessInstanceId(StringUtils.trimToNull(ctx.getProcessInstanceId()));
-        dto.setBusinessKey(StringUtils.trimToNull(ctx.getBusinessKey()));
-        dto.setFlowStatus(ctx.getEvent());
-        dto.setResult(resolveFlowEventResult(ctx.getEvent()));
-        dto.setTenantId(ctx.getTenantId());
-        dto.setNodeKey(ctx.getTaskDefKey());
-        dto.setNodeName(ctx.getTaskName());
-        dto.setOperatorId(parseLongValue(ctx.getAssigneeId()));
-        dto.setVariables(ctx.getVariables() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(ctx.getVariables()));
-        Long tenantId = dto.getTenantId() != null ? dto.getTenantId() : resolveTenantId();
-        AiBusinessFlowInstanceLink link = findCallbackLink(tenantId, dto);
-        if (link == null) {
-            log.debug("[低代码流程回调] 忽略未绑定业务对象的流程事件: event={}, processInstanceId={}, businessKey={}",
-                    ctx.getEvent(), ctx.getProcessInstanceId(), ctx.getBusinessKey());
-            return;
-        }
-        Long effectiveTenantId = link.getTenantId() != null ? link.getTenantId() : tenantId;
-        try {
-            TenantContextHolder.executeWithTenant(effectiveTenantId, () -> handleFlowCallbackInternal(link, dto));
-        } catch (Exception e) {
-            log.warn("[低代码流程回调] 处理流程事件失败: event={}, processInstanceId={}, businessKey={}, error={}",
-                    ctx.getEvent(), ctx.getProcessInstanceId(), ctx.getBusinessKey(), e.getMessage(), e);
-            throw e;
-        }
-    }
-
-    private String resolveFlowEventResult(String event) {
-        if (FlowCallback.ON_REJECTED.equals(event)) {
-            return "REJECTED";
-        }
-        if (FlowCallback.ON_CANCELED.equals(event)) {
-            return "CANCELED";
-        }
-        if (FlowCallback.ON_COMPLETED.equals(event)) {
-            return "APPROVED";
-        }
-        return event;
+        callbackCoordinator.handleEngineEvent(ctx);
     }
 
     /**
@@ -2112,7 +2076,9 @@ public class BusinessFlowService {
         AiCrudConfig statusRuntimeConfig = runtimeConfig != null
                 ? runtimeConfig : resolvePublishedRuntimeConfig(tenantId, objectCode);
         if (StringUtils.isBlank(statusRepairService.configuredStatusField(dto.getVariables()))) {
-            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
+            statusTransitionService.updateBusinessFlowStatus(
+                    documentConfig, runtimeConfig, bindingConfig, dto.getRecordId(),
+                    BusinessDocumentFlowStatus.IN_PROCESS.getCode());
         }
         statusRepairService.syncConfiguredStatusField(statusRuntimeConfig,
                 dto.getRecordId(), dto.getVariables(), BusinessDocumentFlowStatus.IN_PROCESS.getCode());
@@ -2136,75 +2102,6 @@ public class BusinessFlowService {
         return startLockManager.execute(tenantId, businessKey, redissonClientProvider, supplier);
     }
 
-    private void handleFlowCallbackInternal(AiBusinessFlowInstanceLink link, BusinessFlowCallbackDTO dto) {
-        if (isEndedLink(link)) {
-            // 上次回调可能已经把关联标成结束，但草稿对象没写上 flowStatus。结束态仍补写一次。
-            String result = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(link.getResult()),
-                    resolveTerminalBusinessFlowResult(link.getFlowStatus()),
-                    normalizeCallbackResult(dto));
-            reconcileRecordFlowStatus(link, result);
-            log.info("流程回调已处理，跳过重复回调: processInstanceId={}, result={}",
-                    link.getProcessInstanceId(), result);
-            publishBusinessProcessApprovalResult(link, result);
-            return;
-        }
-        AiBusinessDocumentConfig documentConfig = documentConfigService.selectEnabledByObjectCode(
-                link.getTenantId(), link.getObjectCode());
-        AiCrudConfig runtimeConfig = documentConfig == null
-                ? resolvePublishedRuntimeConfig(link.getTenantId(), link.getObjectCode())
-                : null;
-        AiBusinessBinding binding = selectMainFlowBindingForConfig(link.getTenantId(), link.getObjectCode());
-        JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
-        ensureBusinessBinding(bindingConfig, link.getTenantId(), link.getObjectCode());
-        String configKey = documentConfig != null ? documentConfig.getConfigKey() : runtimeConfig == null ? null : runtimeConfig.getConfigKey();
-        Map<String, Object> previousData = StringUtils.isBlank(configKey)
-                ? null
-                : dynamicCrudService.selectById(configKey, link.getRecordId());
-        String result = normalizeCallbackResult(dto);
-        Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
-        AiCrudConfig statusRuntimeConfig = statusRepairService.resolveStatusWriteConfig(
-                link, startVariables, runtimeConfig);
-        if (StringUtils.isBlank(statusRepairService.configuredStatusField(startVariables))) {
-            updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig, link.getRecordId(), result);
-        }
-        statusRepairService.syncConfiguredStatusField(
-                statusRuntimeConfig, link.getRecordId(), startVariables, result);
-
-        link.setFlowStatus(result);
-        link.setResult(result);
-        link.setEndTime(LocalDateTime.now());
-        link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
-                taskEventCoordinator.mergeLinkVariablesSnapshot(link, dto.getVariables()), null));
-        flowInstanceLinkMapper.updateById(link);
-
-        Map<String, Object> currentData = StringUtils.isBlank(configKey)
-                ? null
-                : dynamicCrudService.selectById(configKey, link.getRecordId());
-        executeFlowCallbackAction(link, bindingConfig, result, dto);
-        if (StringUtils.isNotBlank(configKey)) {
-            currentData = dynamicCrudService.selectById(configKey, link.getRecordId());
-        }
-        if (documentConfig != null) {
-            publishFlowResultEvent(link, documentConfig, result, previousData, currentData, dto);
-        } else if (runtimeConfig != null) {
-            publishFlowResultEvent(link, runtimeConfig, result, previousData, currentData, dto);
-        }
-        publishBusinessProcessApprovalResult(link, result);
-    }
-
-    private void publishBusinessProcessApprovalResult(AiBusinessFlowInstanceLink link, String result) {
-        if (link == null || link.getTenantId() == null
-                || StringUtils.isAnyBlank(link.getProcessInstanceId(), result)) {
-            return;
-        }
-        String normalized = result.trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("APPROVED", "REJECTED", "CANCELED", "FAILED").contains(normalized)) {
-            return;
-        }
-        applicationEventPublisher.publishEvent(new BusinessProcessApprovalResultEvent(
-                link.getTenantId(), link.getProcessInstanceId(), normalized));
-    }
 
     private String resolveStartConfigKey(AiBusinessDocumentConfig documentConfig,
                                          AiCrudConfig runtimeConfig,
@@ -2228,19 +2125,6 @@ public class BusinessFlowService {
         throw new BusinessException("业务对象缺少已发布运行配置，无法发起主流程");
     }
 
-    private AiBusinessFlowInstanceLink findCallbackLink(Long tenantId, BusinessFlowCallbackDTO dto) {
-        if (StringUtils.isNotBlank(dto.getProcessInstanceId())) {
-            AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectByProcessInstanceId(
-                    tenantId, dto.getProcessInstanceId());
-            if (link != null) {
-                return link;
-            }
-        }
-        if (StringUtils.isNotBlank(dto.getBusinessKey())) {
-            return flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, dto.getBusinessKey());
-        }
-        return null;
-    }
 
     private AiBusinessFlowInstanceLink findRuntimeLink(Long tenantId, String processInstanceId, String businessKey) {
         if (StringUtils.isNotBlank(processInstanceId)) {
@@ -2255,231 +2139,12 @@ public class BusinessFlowService {
         return null;
     }
 
-    private void updateDocumentStatus(AiBusinessDocumentConfig config, Long recordId, String statusKey) {
-        if (StringUtils.isBlank(config.getStatusField())) {
-            throw new BusinessException("单据状态字段未配置");
-        }
-        if (StringUtils.isBlank(config.getConfigKey())) {
-            throw new BusinessException("单据缺少动态运行配置，无法更新状态");
-        }
-        String statusValue = resolveDocumentStatusValue(config, statusKey);
-        Map<String, Object> updateData = new LinkedHashMap<>();
-        updateData.put(config.getStatusField(), statusValue);
-        dynamicCrudService.updateInternalFieldsById(config.getConfigKey(), recordId, updateData);
-    }
-
-    private void updateBusinessFlowStatus(AiBusinessDocumentConfig documentConfig,
-                                          AiCrudConfig runtimeConfig,
-                                          JSONObject bindingConfig,
-                                          Long recordId,
-                                          String statusKey) {
-        if (documentConfig != null) {
-            updateDocumentStatus(documentConfig, recordId, statusKey);
-            return;
-        }
-        BusinessFlowBindingDTO.BusinessBindingDTO businessBinding = toBusinessBindingDTO(
-                bindingConfig == null ? null : bindingConfig.getJSONObject("businessBinding"));
-        if (businessBinding == null || StringUtils.isBlank(businessBinding.getStatusField())) {
-            return;
-        }
-        String mode = normalizeBusinessBindingMode(businessBinding.getMode());
-        if ("ADAPTER".equals(mode)) {
-            log.debug("[低代码流程状态] Adapter 模式跳过平台直接回写: recordId={}, status={}", recordId, statusKey);
-            return;
-        }
-        if (runtimeConfig == null || StringUtils.isBlank(runtimeConfig.getConfigKey())) {
-            throw new BusinessException("业务表绑定缺少低代码运行配置，无法更新流程状态");
-        }
-        validateBusinessBindingRuntimeTable(businessBinding, runtimeConfig);
-        Map<String, Object> updateData = new LinkedHashMap<>();
-        updateData.put(businessBinding.getStatusField(), resolveBusinessBindingStatusValue(bindingConfig, statusKey));
-        dynamicCrudService.updateInternalFieldsById(runtimeConfig.getConfigKey(), recordId, updateData);
-    }
-
-    private String resolveBusinessBindingStatusValue(JSONObject bindingConfig, String statusKey) {
-        JSONObject document = bindingConfig == null ? null : bindingConfig.getJSONObject("document");
-        JSONObject statusMapping = document == null ? null : document.getJSONObject("statusMapping");
-        if (statusMapping != null) {
-            return StringUtils.defaultIfBlank(statusMapping.getString(statusKey), statusKey);
-        }
-        return statusKey;
-    }
-
-    private void executeFlowCallbackAction(AiBusinessFlowInstanceLink link,
-                                           JSONObject bindingConfig,
-                                           String result,
-                                           BusinessFlowCallbackDTO dto) {
-        String actionCode = resolveFlowCallbackActionCode(bindingConfig, result);
-        if (StringUtils.isBlank(actionCode)) {
-            return;
-        }
-        BusinessActionExecutionService actionExecutionService = actionExecutionServiceProvider.getIfAvailable();
-        if (actionExecutionService == null) {
-            throw new BusinessException("动作执行服务未启用，无法执行流程回调动作");
-        }
-        BusinessActionExecuteDTO request = new BusinessActionExecuteDTO();
-        request.setObjectCode(link.getObjectCode());
-        request.setRecordId(link.getRecordId() == null ? null : String.valueOf(link.getRecordId()));
-        request.setActionCode(actionCode);
-        request.setIdempotencyKey(buildFlowCallbackActionIdempotencyKey(link, result, actionCode));
-        request.setContext(buildFlowCallbackActionContext(link, result, dto));
-        try {
-            actionExecutionService.execute(request);
-        } catch (BusinessException e) {
-            log.warn("[低代码流程回调] 动作执行失败: objectCode={}, recordId={}, result={}, actionCode={}, error={}",
-                    link.getObjectCode(), link.getRecordId(), result, actionCode, e.getMessage());
-            throw new BusinessException("流程回调动作执行失败: " + e.getMessage());
-        }
-    }
-
-    private String resolveFlowCallbackActionCode(JSONObject bindingConfig, String result) {
-        if (bindingConfig == null || StringUtils.isBlank(result)) {
-            return null;
-        }
-        JSONObject options = bindingConfig.getJSONObject("options");
-        JSONObject callbackActions = options == null ? null : options.getJSONObject("callbackActions");
-        if (callbackActions == null || callbackActions.isEmpty()) {
-            callbackActions = bindingConfig.getJSONObject("callbackActions");
-        }
-        if (callbackActions == null || callbackActions.isEmpty()) {
-            return null;
-        }
-        String normalizedResult = StringUtils.defaultString(result).toUpperCase();
-        return StringUtils.firstNonBlank(
-                callbackActions.getString(normalizedResult),
-                callbackActions.getString(normalizedResult.toLowerCase()),
-                switch (normalizedResult) {
-                    case "APPROVED" -> callbackActions.getString("approvedActionCode");
-                    case "REJECTED" -> callbackActions.getString("rejectedActionCode");
-                    case "CANCELED" -> callbackActions.getString("canceledActionCode");
-                    default -> null;
-                }
-        );
-    }
-
-    private String buildFlowCallbackActionIdempotencyKey(AiBusinessFlowInstanceLink link, String result, String actionCode) {
-        return "flowCallback:"
-                + StringUtils.defaultString(link.getProcessInstanceId(), link.getBusinessKey())
-                + ":" + StringUtils.defaultString(result)
-                + ":" + StringUtils.defaultString(actionCode);
-    }
-
-    private Map<String, Object> buildFlowCallbackActionContext(AiBusinessFlowInstanceLink link,
-                                                               String result,
-                                                               BusinessFlowCallbackDTO dto) {
-        Map<String, Object> context = new LinkedHashMap<>();
-        context.put("source", "FLOW_CALLBACK");
-        context.put("flowResult", result);
-        context.put("processInstanceId", link.getProcessInstanceId());
-        context.put("businessKey", link.getBusinessKey());
-        context.put("flowModelKey", link.getFlowModelKey());
-        context.put("operatorId", dto.getOperatorId() != null ? dto.getOperatorId() : link.getStartUserId());
-        if (dto.getVariables() != null && !dto.getVariables().isEmpty()) {
-            context.put("variables", dto.getVariables());
-        }
-        return context;
-    }
-
-    private void validateBusinessBindingRuntimeTable(BusinessFlowBindingDTO.BusinessBindingDTO businessBinding,
-                                                     AiCrudConfig runtimeConfig) {
-        String bindingTable = StringUtils.trimToNull(businessBinding.getTableName());
-        if (bindingTable == null) {
-            return;
-        }
-        String runtimeTable = StringUtils.firstNonBlank(runtimeConfig.getRuntimeTableName(), runtimeConfig.getTableName());
-        if (StringUtils.isNotBlank(runtimeTable) && !bindingTable.equalsIgnoreCase(runtimeTable)) {
-            throw new BusinessException("业务表绑定与发布运行表不一致，禁止直接回写状态");
-        }
-    }
-
-    private String resolveDocumentStatusValue(AiBusinessDocumentConfig config, String statusKey) {
-        Map<String, String> statusMapping = documentConfigService.toVO(config).getStatusMapping();
-        return StringUtils.defaultIfBlank(statusMapping.get(statusKey), statusKey);
-    }
-
-    private void publishFlowResultEvent(AiBusinessFlowInstanceLink link,
-                                        AiBusinessDocumentConfig config,
-                                        String result,
-                                        Map<String, Object> previousData,
-                                        Map<String, Object> currentData,
-                                        BusinessFlowCallbackDTO dto) {
-        String eventType = switch (result) {
-            case "APPROVED" -> BusinessEvent.FLOW_APPROVED;
-            case "REJECTED" -> BusinessEvent.FLOW_REJECTED;
-            case "CANCELED" -> BusinessEvent.FLOW_CANCELED;
-            default -> null;
-        };
-        if (eventType == null) {
-            return;
-        }
-        BusinessEvent event = BusinessEvent.builder()
-                .eventType(eventType)
-                .suiteCode(config.getSuiteCode())
-                .objectCode(link.getObjectCode())
-                .configKey(config.getConfigKey())
-                .recordId(String.valueOf(link.getRecordId()))
-                .recordData(currentData)
-                .previousData(previousData)
-                .operatorId(dto.getOperatorId() != null ? dto.getOperatorId() : link.getStartUserId())
-                .operatorName(resolveUsername())
-                .tenantId(link.getTenantId())
-                .build();
-        applicationEventPublisher.publishEvent(event);
-    }
-
-    private void publishFlowResultEvent(AiBusinessFlowInstanceLink link,
-                                        AiCrudConfig config,
-                                        String result,
-                                        Map<String, Object> previousData,
-                                        Map<String, Object> currentData,
-                                        BusinessFlowCallbackDTO dto) {
-        String eventType = switch (result) {
-            case "APPROVED" -> BusinessEvent.FLOW_APPROVED;
-            case "REJECTED" -> BusinessEvent.FLOW_REJECTED;
-            case "CANCELED" -> BusinessEvent.FLOW_CANCELED;
-            default -> null;
-        };
-        if (eventType == null) {
-            return;
-        }
-        BusinessEvent event = BusinessEvent.builder()
-                .eventType(eventType)
-                .objectCode(link.getObjectCode())
-                .configKey(config.getConfigKey())
-                .recordId(String.valueOf(link.getRecordId()))
-                .recordData(currentData)
-                .previousData(previousData)
-                .operatorId(dto.getOperatorId() != null ? dto.getOperatorId() : link.getStartUserId())
-                .operatorName(resolveUsername())
-                .tenantId(link.getTenantId())
-                .build();
-        applicationEventPublisher.publishEvent(event);
-    }
-
     private AiCrudConfig resolvePublishedRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
         return runtimeConfigResolver.published(tenantId, objectCodeOrConfigKey);
     }
 
     private AiCrudConfig resolveRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
         return runtimeConfigResolver.runtime(tenantId, objectCodeOrConfigKey);
-    }
-
-    private String normalizeCallbackResult(BusinessFlowCallbackDTO dto) {
-        String value = StringUtils.firstNonBlank(dto.getResult(), dto.getFlowStatus());
-        if (StringUtils.isBlank(value)) {
-            throw new BusinessException("流程回调缺少结果状态");
-        }
-        String normalized = value.trim().toUpperCase();
-        if (normalized.contains("COMPLETED") || normalized.contains("APPROVED") || "APPROVE".equals(normalized)) {
-            return "APPROVED";
-        }
-        if (normalized.contains("REJECT")) {
-            return "REJECTED";
-        }
-        if (normalized.contains("CANCEL") || normalized.contains("WITHDRAW") || normalized.contains("TERMINAT")) {
-            return "CANCELED";
-        }
-        throw new BusinessException("不支持的流程回调结果: " + value);
     }
 
     private boolean isEndedLink(AiBusinessFlowInstanceLink link) {
@@ -2632,17 +2297,6 @@ public class BusinessFlowService {
             log.debug("查询流程状态失败: businessKey={}", businessKey);
         }
         return null;
-    }
-
-    private void reconcileRecordFlowStatus(AiBusinessFlowInstanceLink link, String result) {
-        if (link == null || link.getRecordId() == null || StringUtils.isBlank(result)) {
-            return;
-        }
-        Map<String, Object> startVariables = readJsonObject(link.getVariablesSnapshot());
-        AiCrudConfig statusRuntimeConfig = statusRepairService.resolveStatusWriteConfig(
-                link, startVariables, null);
-        statusRepairService.syncConfiguredStatusField(statusRuntimeConfig,
-                link.getRecordId(), startVariables, result);
     }
 
     private String resolveBusinessSummary(BusinessObjectVO object,

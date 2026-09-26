@@ -47,7 +47,7 @@ final class BusinessFlowTaskEventCoordinator {
     private final Supplier<Long> tenantIdSupplier;
     private final Supplier<Long> userIdSupplier;
     private final BindingResolver bindingResolver;
-    private final StatusUpdater statusUpdater;
+    private final BusinessFlowStatusTransitionService statusTransitionService;
 
     BusinessFlowTaskEventCoordinator(
             Supplier<FlowClient> flowClientSupplier,
@@ -59,7 +59,7 @@ final class BusinessFlowTaskEventCoordinator {
             Supplier<Long> tenantIdSupplier,
             Supplier<Long> userIdSupplier,
             BindingResolver bindingResolver,
-            StatusUpdater statusUpdater) {
+            BusinessFlowStatusTransitionService statusTransitionService) {
         this.flowClientSupplier = flowClientSupplier;
         this.flowInstanceLinkMapper = flowInstanceLinkMapper;
         this.documentConfigService = documentConfigService;
@@ -69,7 +69,7 @@ final class BusinessFlowTaskEventCoordinator {
         this.tenantIdSupplier = tenantIdSupplier;
         this.userIdSupplier = userIdSupplier;
         this.bindingResolver = bindingResolver;
-        this.statusUpdater = statusUpdater;
+        this.statusTransitionService = statusTransitionService;
     }
 
     void handleTaskEvent(FlowEventContext ctx) {
@@ -302,7 +302,7 @@ final class BusinessFlowTaskEventCoordinator {
         JSONObject bindingConfig = binding == null ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
         BusinessFlowBindingCodec.ensureBusinessBinding(bindingConfig, runtimeConfig, documentConfig);
         if (StringUtils.isBlank(statusRepairService.configuredStatusField(startVariables))) {
-            statusUpdater.update(documentConfig, runtimeConfig, bindingConfig,
+            statusTransitionService.updateBusinessFlowStatus(documentConfig, runtimeConfig, bindingConfig,
                     link.getRecordId(), targetStatusKey);
         }
         statusRepairService.syncConfiguredStatusField(
@@ -374,12 +374,4 @@ final class BusinessFlowTaskEventCoordinator {
         AiBusinessBinding resolve(Long tenantId, String objectCode);
     }
 
-    @FunctionalInterface
-    interface StatusUpdater {
-        void update(AiBusinessDocumentConfig documentConfig,
-                    AiCrudConfig runtimeConfig,
-                    JSONObject bindingConfig,
-                    Long recordId,
-                    String statusKey);
-    }
 }

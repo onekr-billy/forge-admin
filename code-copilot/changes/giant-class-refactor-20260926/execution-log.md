@@ -180,3 +180,9 @@
 - 使用 Coordinator + State Transition 从 `BusinessFlowService` 迁出 Flowable 任务创建/完成事件、发起人修改节点识别与保存自愈、驳回证据读取、修改待办快照和运行态双状态切换到 `BusinessFlowTaskEventCoordinator`。入口由 3086 行降至 2834 行，新 Coordinator 385 行；终态回调和公开事务入口仍留 Facade。
 - 首次编译发现迁移类缺少租户上下文导入，补齐后 Reactor 编译退出码 0。任务事件仍通过 `PROPAGATION_REQUIRES_NEW` 独立事务执行，失败只记录日志；可选 FlowClient/事务管理器继续用 Supplier 兼容原字段注入。
 - 执行 21 类业务流程增量回归共 98 项，0 失败、0 错误；生命周期用例覆盖修改节点、重提、终态保护和预期失败回滚。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实 Flowable 任务事件时序仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第三十五个切口：终态回调与状态写入策略
+
+- 使用 Coordinator + Strategy 从 `BusinessFlowService` 迁出终态回调查找与幂等、结果归一、业务状态回写、回调动作、业务领域事件和审批结果事件；单据/低代码绑定/Adapter 状态策略统一进入 `BusinessFlowStatusTransitionService`。公开事务与 FlowCallback 注解仍保留在 Facade，状态写入失败继续阻止流程关联提前落终态。
+- 入口由 2834 行降至 2488 行；新增 `BusinessFlowCallbackCoordinator` 403 行、`BusinessFlowStatusTransitionService` 96 行，均低于 1000 行。generator Reactor 编译退出码 0。
+- 执行 `BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 23 类 105 项，0 失败、0 错误；新增 4 项状态迁移策略测试，生命周期测试中预期的写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实回调投递与事务提交后事件消费仍需服务级联调，无服务 PID 需停止。
