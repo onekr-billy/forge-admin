@@ -20,7 +20,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,7 +46,7 @@ class BusinessFlowServiceFormAssetMergeTest {
     private Method buildObjectFieldRegistryFormSchema;
     private Method resolveRuntimeBusinessFormRef;
     private Method resolveBusinessTaskFormAsset;
-    private Method mergeRequestedFlowVariables;
+    private BusinessFlowStartContextAssembler startContextAssembler;
     private BusinessApplicationService applicationService;
 
     @BeforeEach
@@ -87,9 +86,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         resolveBusinessTaskFormAsset = BusinessFlowService.class.getDeclaredMethod(
                 "resolveBusinessTaskFormAsset", String.class, String.class);
         resolveBusinessTaskFormAsset.setAccessible(true);
-        mergeRequestedFlowVariables = BusinessFlowService.class.getDeclaredMethod(
-                "mergeRequestedFlowVariables", Map.class, Map.class);
-        mergeRequestedFlowVariables.setAccessible(true);
+        startContextAssembler = BusinessFlowStartContextAssembler.standard();
     }
 
     @Test
@@ -363,12 +360,11 @@ class BusinessFlowServiceFormAssetMergeTest {
                 "objectCode", "forged_object",
                 "businessKey", "forged:999");
 
-        InvocationTargetException exception = assertThrows(InvocationTargetException.class,
-                () -> mergeRequestedFlowVariables.invoke(service, target, requested));
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> startContextAssembler.mergeRequestedVariables(target, requested));
 
-        assertTrue(exception.getCause() instanceof BusinessException);
         assertEquals("启动变量不能覆盖服务端业务上下文：businessKey, objectCode",
-                exception.getCause().getMessage());
+                exception.getMessage());
         assertEquals(Map.of("businessKey", "order:100"), target);
     }
 
@@ -378,7 +374,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         Map<String, Object> target = new LinkedHashMap<>(Map.of("businessKey", "order:100"));
         Map<String, Object> selectedApprovers = Map.of("managerApprove", List.of("101", "102"));
 
-        mergeRequestedFlowVariables.invoke(service, target, Map.of(
+        startContextAssembler.mergeRequestedVariables(target, Map.of(
                 "PROCESS_START_USER", selectedApprovers,
                 "urgent", true));
 

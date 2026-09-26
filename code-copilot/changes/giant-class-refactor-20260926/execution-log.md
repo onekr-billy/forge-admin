@@ -119,3 +119,9 @@
 - 从 `BusinessFlowService` 迁出绑定 DTO/JSON 互转、旧 Key 兼容、默认业务表绑定、发起模式及变量映射归一化到 `BusinessFlowBindingCodec`。入口由 8082 行降至 7860 行；新类 266 行。租户绑定查询、持久化事务、状态字段同步及 Flowable 调用未移动。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。首次定向测试中 `BusinessFlowPerformanceContractTest` 的源码字符串断言仍要求旧的未限定方法名；更新为检查入口调用 `BusinessFlowBindingCodec.ensureBusinessBinding` 后，执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowBindingCodecTest,BusinessCodeAppFormAssetMergerTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowFormFieldCatalogTest,BusinessFlowNodeFormNormalizerTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceLifecycleTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：9 类共 50 项，0 失败、0 错误，退出码 0。生命周期测试的预期失败回滚 WARN 不构成测试失败。
 - `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；流程绑定保存与 BPMN 表单权限的服务级联调仍未覆盖，无服务 PID 需停止。
+
+## 2026-09-26 第二十五个切口：流程启动上下文组装
+
+- 使用 Assembler + Strategy，从 `BusinessFlowService` 迁出流程变量映射、字段 camel/snake 别名、调用方变量合并、服务端保留变量防覆盖及标题模板组装到 `BusinessFlowStartContextAssembler`；主表包装兼容读取迁入 `BusinessFlowRecordValues`。入口由 7860 行降至 7683 行，新类分别 143/98 行。服务端业务上下文的最终写入、Flowable 调用、事务与状态机仍在原入口。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowStartContextAssemblerTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 34 项，0 失败、0 错误，退出码 0。生命周期测试中的预期写入失败 WARN 被断言覆盖。
+- `git diff --check`：通过。未启动 Admin/Flow 服务，也未连接真实 MySQL/Redis/Flowable；真实流程启动、审批人变量与标题的端到端联调仍未覆盖，无服务 PID 需停止。

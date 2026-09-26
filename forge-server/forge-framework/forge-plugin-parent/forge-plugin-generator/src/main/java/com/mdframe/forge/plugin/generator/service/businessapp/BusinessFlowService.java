@@ -106,6 +106,11 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeFormMode;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeForms;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeTaskChildPermissions;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.camelToSnake;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.contains;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.read;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.sameField;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.snakeToCamel;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.firstStrongTaskFormControlType;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.normalizeTaskFormFieldType;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.resolveTaskFormControlType;
@@ -127,9 +132,8 @@ public class BusinessFlowService {
     private static final long APPLICATION_PAGE_FORM_CACHE_TTL_MS = 300_000L;
     private static final ThreadLocal<Map<String, Long>> TASK_FORM_DETAIL_STAGES = new ThreadLocal<>();
     private static final ThreadLocal<List<String>> TASK_FORM_DETAIL_NOTES = new ThreadLocal<>();
-    private static final Set<String> SERVER_OWNED_FLOW_VARIABLES = Set.of(
-            "objectCode", "configKey", "recordId", "businessKey",
-            "documentBusinessKey", "recordBusinessKey", "flowBusinessKey");
+    private static final BusinessFlowStartContextAssembler START_CONTEXT_ASSEMBLER =
+            BusinessFlowStartContextAssembler.standard();
     /** 流程运行期间允许任务事件改写的单据状态，终态不在其中。 */
     private static final Set<String> RUNNING_DOCUMENT_STATUS_KEYS = Set.of(
             "DRAFT", "SUBMITTED", "IN_PROCESS", "NEED_MODIFY");
@@ -265,12 +269,13 @@ public class BusinessFlowService {
         }
 
         // 2. 构建流程变量
-        Map<String, Object> flowVariables = buildFlowVariables(bindingConfig, recordData);
-        mergeRequestedFlowVariables(flowVariables, requestedVariables);
+        BusinessFlowStartContextAssembler.StartContext startContext = START_CONTEXT_ASSEMBLER.assemble(
+                bindingConfig, recordData, requestedVariables, objectCode);
+        Map<String, Object> flowVariables = startContext.variables();
 
         // 3. 构建业务Key和标题
         String businessKey = objectCode + ":" + recordId;
-        String title = buildFlowTitle(bindingConfig, recordData, objectCode);
+        String title = startContext.title();
 
         // 4. 发起流程
         Long userId = resolveUserId();
@@ -3065,7 +3070,7 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
             return false;
         }
-        return StringUtils.equalsIgnoreCase(snakeToCamel(left), snakeToCamel(right));
+        return sameField(left, right);
     }
 
     private boolean sameChildTableKey(String left, String right) {
@@ -5324,11 +5329,11 @@ public class BusinessFlowService {
         for (Map<String, Object> field : fields) {
             String fieldCode = StringUtils.trimToNull(textValue(field.get("field")));
             if (fieldCode != null) {
-                result.put(fieldCode, readRecordValue(recordData, fieldCode));
+                result.put(fieldCode, read(recordData, fieldCode));
             }
             for (String displayField : collectReferenceDisplayFields(field)) {
-                Object displayValue = readRecordValue(recordData, displayField);
-                if (displayValue != null || containsRecordField(recordData, displayField)) {
+                Object displayValue = read(recordData, displayField);
+                if (displayValue != null || contains(recordData, displayField)) {
                     result.put(displayField, displayValue);
                 }
             }
@@ -6166,8 +6171,9 @@ public class BusinessFlowService {
                 tenantId, objectCode, dto.getRecordId(), configKey, flowModelKey,
                 binding == null ? null : binding.getId(), binding == null ? null : binding.getBindingType());
 
-        Map<String, Object> flowVariables = buildFlowVariables(bindingConfig, recordData);
-        mergeRequestedFlowVariables(flowVariables, dto.getVariables());
+        BusinessFlowStartContextAssembler.StartContext startContext = START_CONTEXT_ASSEMBLER.assemble(
+                bindingConfig, recordData, dto.getVariables(), objectCode);
+        Map<String, Object> flowVariables = startContext.variables();
         flowVariables.put("objectCode", objectCode);
         flowVariables.put("configKey", configKey);
         flowVariables.put("recordId", dto.getRecordId());
@@ -6179,8 +6185,8 @@ public class BusinessFlowService {
         flowVariables.put("flowBusinessKey", flowBusinessKey);
 
         String userName = StringUtils.defaultIfBlank(starterUserName, resolveUsername());
-        String title = applyTitleTemplate(
-                StringUtils.defaultIfBlank(dto.getTitle(), buildFlowTitle(bindingConfig, recordData, objectCode)),
+        String title = START_CONTEXT_ASSEMBLER.renderTitle(
+                StringUtils.defaultIfBlank(dto.getTitle(), startContext.title()),
                 recordData,
                 objectCode,
                 userName,
@@ -6849,94 +6855,6 @@ public class BusinessFlowService {
         return null;
     }
 
-    /**
-     * 构建流程变量
-     */
-    private Map<String, Object> buildFlowVariables(JSONObject bindingConfig, Map<String, Object> recordData) {
-        Map<String, Object> variables = new HashMap<>();
-        JSONArray variableMapping = bindingConfig.getJSONArray("variableMapping");
-
-        if (recordData != null) {
-            for (Map.Entry<String, Object> entry : recordData.entrySet()) {
-                putBusinessFieldVariable(variables, entry.getKey(), entry.getValue());
-            }
-        }
-
-        if (variableMapping != null && recordData != null) {
-            for (int i = 0; i < variableMapping.size(); i++) {
-                JSONObject mapping = variableMapping.getJSONObject(i);
-                String formField = StringUtils.defaultIfBlank(mapping.getString("formField"), mapping.getString("field"));
-                String flowVariable = StringUtils.defaultIfBlank(mapping.getString("flowVariable"), mapping.getString("variable"));
-                Object value = readRecordValue(recordData, formField);
-                if (value != null && StringUtils.isNotBlank(flowVariable)) {
-                    variables.put(flowVariable, value);
-                }
-            }
-        }
-
-        return variables;
-    }
-
-    private void mergeRequestedFlowVariables(Map<String, Object> target, Map<String, Object> requestedVariables) {
-        if (requestedVariables == null || requestedVariables.isEmpty()) {
-            return;
-        }
-        List<String> reserved = requestedVariables.keySet().stream()
-                .filter(SERVER_OWNED_FLOW_VARIABLES::contains)
-                .sorted()
-                .toList();
-        if (!reserved.isEmpty()) {
-            throw new BusinessException("启动变量不能覆盖服务端业务上下文：" + String.join(", ", reserved));
-        }
-        target.putAll(requestedVariables);
-    }
-
-    private void putBusinessFieldVariable(Map<String, Object> variables, String field, Object value) {
-        String key = StringUtils.trimToNull(field);
-        if (key == null || value == null || value instanceof Map<?, ?> || value instanceof Iterable<?>) {
-            return;
-        }
-        variables.putIfAbsent(key, value);
-        variables.putIfAbsent(snakeToCamel(key), value);
-        variables.putIfAbsent(camelToSnake(key), value);
-    }
-
-    /**
-     * 构建流程标题
-     */
-    private String buildFlowTitle(JSONObject bindingConfig, Map<String, Object> recordData, String objectCode) {
-        String titleTemplate = bindingConfig.getString("titleTemplate");
-        return applyTitleTemplate(titleTemplate, recordData, objectCode);
-    }
-
-    private String applyTitleTemplate(String titleTemplate, Map<String, Object> recordData, String objectCode) {
-        return applyTitleTemplate(titleTemplate, recordData, objectCode, null, null);
-    }
-
-    private String applyTitleTemplate(String titleTemplate,
-                                      Map<String, Object> recordData,
-                                      String objectCode,
-                                      String starterName,
-                                      String objectName) {
-        String fallback = StringUtils.defaultIfBlank(objectCode, "业务") + " 审批申请";
-        if (StringUtils.isBlank(titleTemplate)) {
-            return fallback;
-        }
-        Map<String, String> extras = new LinkedHashMap<>();
-        if (StringUtils.isNotBlank(objectCode)) {
-            extras.put("objectCode", objectCode);
-        }
-        if (StringUtils.isNotBlank(objectName)) {
-            extras.put("objectName", objectName);
-        }
-        if (StringUtils.isNotBlank(starterName)) {
-            extras.put("starterName", starterName);
-            extras.put("initiatorName", starterName);
-            extras.put("initiator", starterName);
-        }
-        return BusinessApprovalTitleRenderer.render(titleTemplate, recordData, extras, fallback);
-    }
-
     private void reconcileRecordFlowStatus(AiBusinessFlowInstanceLink link, String result) {
         if (link == null || link.getRecordId() == null || StringUtils.isBlank(result)) {
             return;
@@ -6968,35 +6886,17 @@ public class BusinessFlowService {
             }
         }
         String displayField = object == null ? null : StringUtils.trimToNull(object.getDisplayField());
-        Object displayValue = displayField == null ? null : readRecordValue(recordData, displayField);
+        Object displayValue = displayField == null ? null : read(recordData, displayField);
         if (displayValue != null && StringUtils.isNotBlank(String.valueOf(displayValue))) {
             return String.valueOf(displayValue);
         }
         for (String field : List.of("orderNo", "businessNo", "title", "name", "code")) {
-            Object value = readRecordValue(recordData, field);
+            Object value = read(recordData, field);
             if (value != null && StringUtils.isNotBlank(String.valueOf(value))) {
                 return String.valueOf(value);
             }
         }
         return null;
-    }
-
-    private String replaceTemplateValue(String template, String key, Object value) {
-        if (StringUtils.isBlank(template) || StringUtils.isBlank(key)) {
-            return template;
-        }
-        String text = value != null ? String.valueOf(value) : "";
-        String result = replaceTemplateToken(template, key, text);
-        result = replaceTemplateToken(result, snakeToCamel(key), text);
-        return replaceTemplateToken(result, camelToSnake(key), text);
-    }
-
-    private String replaceTemplateToken(String template, String key, String value) {
-        if (StringUtils.isBlank(key)) {
-            return template;
-        }
-        return template.replace("${" + key + "}", value)
-                .replace("{" + key + "}", value);
     }
 
     private BusinessFlowBindingVO toVO(String objectCode, AiBusinessBinding binding) {
@@ -7651,83 +7551,6 @@ public class BusinessFlowService {
         }
     }
 
-
-    private Object readRecordValue(Map<String, Object> recordData, String field) {
-        if (recordData == null || StringUtils.isBlank(field)) {
-            return null;
-        }
-        Object value = readRecordValueFromFlatMap(recordData, field);
-        if (value != null || containsRecordField(recordData, field)) {
-            return value;
-        }
-        Object main = recordData.get("main");
-        if (main instanceof Map<?, ?> mainMap) {
-            Map<String, Object> mainRecord = new LinkedHashMap<>();
-            mainMap.forEach((key, item) -> {
-                if (key != null) {
-                    mainRecord.put(String.valueOf(key), item);
-                }
-            });
-            return readRecordValueFromFlatMap(mainRecord, field);
-        }
-        return null;
-    }
-
-    private Object readRecordValueFromFlatMap(Map<String, Object> recordData, String field) {
-        if (recordData.containsKey(field)) {
-            return recordData.get(field);
-        }
-        String camelField = snakeToCamel(field);
-        if (recordData.containsKey(camelField)) {
-            return recordData.get(camelField);
-        }
-        String snakeField = camelToSnake(field);
-        if (recordData.containsKey(snakeField)) {
-            return recordData.get(snakeField);
-        }
-        return null;
-    }
-
-    private boolean containsRecordField(Map<String, Object> recordData, String field) {
-        if (recordData == null || StringUtils.isBlank(field)) {
-            return false;
-        }
-        return recordData.containsKey(field)
-                || recordData.containsKey(snakeToCamel(field))
-                || recordData.containsKey(camelToSnake(field));
-    }
-
-    private String snakeToCamel(String value) {
-        if (StringUtils.isBlank(value) || !value.contains("_")) {
-            return value;
-        }
-        StringBuilder result = new StringBuilder();
-        boolean upperNext = false;
-        for (char ch : value.toCharArray()) {
-            if (ch == '_') {
-                upperNext = true;
-                continue;
-            }
-            result.append(upperNext ? Character.toUpperCase(ch) : ch);
-            upperNext = false;
-        }
-        return result.toString();
-    }
-
-    private String camelToSnake(String value) {
-        if (StringUtils.isBlank(value)) {
-            return value;
-        }
-        StringBuilder result = new StringBuilder();
-        for (char ch : value.toCharArray()) {
-            if (Character.isUpperCase(ch)) {
-                result.append('_').append(Character.toLowerCase(ch));
-            } else {
-                result.append(ch);
-            }
-        }
-        return result.toString();
-    }
 
     private Long resolveTenantId() {
         Long tenantId;

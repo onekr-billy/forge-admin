@@ -52,7 +52,9 @@
 
 第二十四个切口把业务流程绑定的 DTO/JSON 兼容编解码、默认业务表绑定、发起模式与变量映射归一化迁入 `BusinessFlowBindingCodec`。入口仍负责租户内配置查询、保存事务及状态字段同步；节点表单配置的持久化所有权不变。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7860 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十五个切口使用 Assembler + Strategy，把流程变量映射、字段别名、调用方变量合并、服务端保留变量防覆盖及标题模板组装迁入 `BusinessFlowStartContextAssembler`，记录兼容读取迁入 `BusinessFlowRecordValues`。入口仍写入最终服务端业务上下文并调用 Flowable，不改变启动事务、业务键、状态机或回调。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7683 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
