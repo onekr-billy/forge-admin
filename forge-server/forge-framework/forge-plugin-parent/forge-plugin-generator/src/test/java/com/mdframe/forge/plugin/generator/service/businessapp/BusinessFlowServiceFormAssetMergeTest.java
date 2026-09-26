@@ -41,13 +41,12 @@ class BusinessFlowServiceFormAssetMergeTest {
     private BusinessFlowService service;
     private BusinessFieldDesignService fieldDesignService;
     private BusinessObjectMapper businessObjectMapper;
-    private Method appendUniqueFormAssets;
-    private Method appendObjectFieldRegistryFallback;
     private Method buildObjectFieldRegistryFormSchema;
     private Method resolveRuntimeBusinessFormRef;
     private Method resolveBusinessTaskFormAsset;
     private BusinessFlowStartContextAssembler startContextAssembler;
     private BusinessFlowTaskChildPolicy taskChildPolicy;
+    private BusinessFlowFormAssetAssembler formAssetAssembler;
     private BusinessApplicationService applicationService;
 
     @BeforeEach
@@ -72,12 +71,8 @@ class BusinessFlowServiceFormAssetMergeTest {
         Field applicationField = BusinessFlowService.class.getDeclaredField("businessApplicationService");
         applicationField.setAccessible(true);
         applicationField.set(service, applicationService);
-        appendUniqueFormAssets = BusinessFlowService.class.getDeclaredMethod(
-                "appendUniqueFormAssets", List.class, List.class);
-        appendUniqueFormAssets.setAccessible(true);
-        appendObjectFieldRegistryFallback = BusinessFlowService.class.getDeclaredMethod(
-                "appendObjectFieldRegistryFallback", List.class, BusinessObjectVO.class);
-        appendObjectFieldRegistryFallback.setAccessible(true);
+        formAssetAssembler = new BusinessFlowFormAssetAssembler(
+                fieldDesignService, (fields, layout) -> fields, (options, fields) -> { });
         buildObjectFieldRegistryFormSchema = BusinessFlowService.class.getDeclaredMethod(
                 "buildObjectFieldRegistryFormSchema", BusinessObjectVO.class, String.class);
         buildObjectFieldRegistryFormSchema.setAccessible(true);
@@ -247,7 +242,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         runtimeAsset.put("supportsSave", true);
         List<Map<String, Object>> target = new ArrayList<>(List.of(designAsset));
 
-        appendUniqueFormAssets.invoke(service, target, List.of(runtimeAsset));
+        formAssetAssembler.appendUniqueFormAssets(target, List.of(runtimeAsset));
 
         assertEquals(1, target.size());
         Map<String, Object> merged = target.get(0);
@@ -266,7 +261,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         List<Map<String, Object>> target = new ArrayList<>(List.of(
                 asset("purchase_form", "采购申请单", List.of(field("orderNo", "采购单号")))));
 
-        appendUniqueFormAssets.invoke(service, target, List.of(
+        formAssetAssembler.appendUniqueFormAssets(target, List.of(
                 asset("invoice_form", "发票表单", List.of(field("invoiceNo", "发票号")))));
 
         assertEquals(2, target.size());
@@ -295,11 +290,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         flowStatus.setReadonly(true);
         org.mockito.Mockito.when(fieldDesignService.listFields(1001L))
                 .thenReturn(List.of(employee, flowStatus));
-        Method collectFallback = BusinessFlowService.class.getDeclaredMethod(
-                "collectObjectFieldRegistryFormAssets", BusinessObjectVO.class);
-        collectFallback.setAccessible(true);
-
-        List<Map<String, Object>> assets = (List<Map<String, Object>>) collectFallback.invoke(service, object);
+        List<Map<String, Object>> assets = formAssetAssembler.collectObjectFieldRegistryFormAssets(object);
 
         assertEquals(1, assets.size());
         assertEquals("attendance", assets.get(0).get("formKey"));
@@ -323,7 +314,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         Map<String, Object> existing = asset("attendance", "定制打卡表单", List.of());
         List<Map<String, Object>> assets = new ArrayList<>(List.of(existing));
 
-        appendObjectFieldRegistryFallback.invoke(service, assets, object);
+        formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
 
         assertEquals(1, assets.size());
         assertEquals("attendance", assets.get(0).get("formKey"));

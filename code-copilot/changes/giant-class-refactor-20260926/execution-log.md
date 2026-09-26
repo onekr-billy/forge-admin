@@ -137,3 +137,9 @@
 - 使用 Policy Object 从 `BusinessFlowService` 迁出子表/字段权限匹配、动态 CRUD 保存白名单、主子表请求拆包、子表键别名匹配、返回行字段裁剪和诊断摘要到 `BusinessFlowTaskChildPolicy`。入口由 7492 行降至 7014 行，新策略 494 行；节点表单加载、业务记录查询和保存调用仍在原入口。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。首轮新增测试使用了缺少 `field` 的非现行权限项，导致两项断言失败；按节点权限协议补齐 `field` 后未改生产逻辑，最终执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowTaskChildPolicyTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowNodeFormNormalizerTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 38 项，0 失败、0 错误，退出码 0。生命周期测试中的预期写入失败 WARN 被断言覆盖。
 - `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实主子表暂存、审批保存及候选节点权限仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第二十八个切口：业务表单资产组装
+
+- 使用 Assembler 从 `BusinessFlowService` 迁出对象设计器、运行配置和字段注册表表单资产的收集、去重补全、运行态 schema 回退及字段目录标准化到 `BusinessFlowFormAssetAssembler`；通过窄回调复用原运行态布局与子表字段目录规则。入口由 7014 行降至 6456 行，新 Assembler 654 行，均未引入 Flowable、数据库查询或保存副作用。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。首轮回归发现旧测试仍反射已迁移的字段注册表资产方法，改为直接验证 Assembler 后重跑；最终执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowFormAssetAssemblerTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowFormFieldCatalogTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 33 项，0 失败、0 错误，退出码 0。
+- `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实应用页、对象设计器与运行配置混合资产的端到端联调仍需服务环境，无服务 PID 需停止。

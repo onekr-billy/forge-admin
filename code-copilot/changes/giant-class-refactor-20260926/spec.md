@@ -58,7 +58,9 @@
 
 第二十七个切口继续使用 Policy Object，把审批子表/字段权限匹配、动态 CRUD 保存白名单、主子表请求拆包、子表键别名匹配及返回行字段裁剪迁入 `BusinessFlowTaskChildPolicy`。入口仍加载节点表单和业务记录并执行保存，BPMN 节点权限仍是唯一权限来源。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7014 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十八个切口使用 Assembler，把对象设计器、运行配置和字段注册表三类业务表单资产的收集、去重补全、运行态 schema 回退及字段目录标准化迁入 `BusinessFlowFormAssetAssembler`。入口仍查询租户内对象/运行配置并合并应用页与代码 Provider 资产，Assembler 通过窄回调复用既有布局和子表字段编译规则。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 6456 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

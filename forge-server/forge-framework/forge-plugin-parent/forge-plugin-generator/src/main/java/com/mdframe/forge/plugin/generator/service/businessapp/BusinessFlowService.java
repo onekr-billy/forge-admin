@@ -194,6 +194,7 @@ public class BusinessFlowService {
     private final BusinessFlowStartLockManager startLockManager = new BusinessFlowStartLockManager();
     private final BusinessRuntimeConfigResolver runtimeConfigResolver;
     private final BusinessFlowStatusRepairService statusRepairService;
+    private final BusinessFlowFormAssetAssembler formAssetAssembler;
 
     public BusinessFlowService(BusinessBindingMapper bindingMapper,
                                BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
@@ -224,6 +225,10 @@ public class BusinessFlowService {
         this.runtimeConfigResolver = new BusinessRuntimeConfigResolver(crudConfigMapper, this::resolveTenantId);
         this.statusRepairService = new BusinessFlowStatusRepairService(
                 runtimeConfigResolver, dynamicCrudService, documentConfigService);
+        this.formAssetAssembler = new BusinessFlowFormAssetAssembler(
+                businessFieldDesignService,
+                this::applyRuntimeCrudFormLayout,
+                this::appendRuntimeChildFieldCatalog);
     }
 
     /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
@@ -489,8 +494,9 @@ public class BusinessFlowService {
         if (objects == null || objects.isEmpty()) {
             AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, objectCode);
             JSONObject metadata = readCodeAppMetadata(tenantId, objectCode);
-            List<Map<String, Object>> assets = new ArrayList<>(collectRuntimeCrudFormAssets(null, runtimeConfig));
-            appendUniqueFormAssets(assets, mergeCodeAppAssets(
+            List<Map<String, Object>> assets = new ArrayList<>(
+                    formAssetAssembler.collectRuntimeCrudFormAssets(null, runtimeConfig));
+            formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
                     objectCode, codeFormProviderRegistry.listAssets(objectCode, includeInternal), metadata, includeInternal));
             if (assets.isEmpty()) {
                 warnings.add("业务对象不存在或无权限访问，且未找到代码表单资产: " + objectCode);
@@ -514,11 +520,13 @@ public class BusinessFlowService {
                 object.getConfigKey(), object.getObjectCode(), objectCode));
         JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
         JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
-        List<Map<String, Object>> assets = new ArrayList<>(collectBusinessFormAssets(object, formSchema));
-        appendUniqueFormAssets(assets, collectRuntimeCrudFormAssets(object, runtimeConfig));
-        appendObjectFieldRegistryFallback(assets, object);
+        List<Map<String, Object>> assets = new ArrayList<>(
+                formAssetAssembler.collectBusinessFormAssets(object, formSchema));
+        formAssetAssembler.appendUniqueFormAssets(
+                assets, formAssetAssembler.collectRuntimeCrudFormAssets(object, runtimeConfig));
+        formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
         JSONObject metadata = readCodeAppMetadata(tenantId, object.getObjectCode());
-        appendUniqueFormAssets(assets, mergeCodeAppAssets(
+        formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
                 object.getObjectCode(), codeFormProviderRegistry.listAssets(object.getObjectCode(), includeInternal),
                 metadata, includeInternal));
         if (assets.isEmpty()) {
@@ -1862,7 +1870,7 @@ public class BusinessFlowService {
         for (Map<String, Object> child : readMapList(readNestedArray(masterDetailConfig.get("children")))) {
             String childKey = TASK_CHILD_POLICY.resolveChildKey(child);
             for (Map<String, Object> rawField : readMapList(readNestedArray(child.get("fields")))) {
-                Map<String, Object> field = normalizeRuntimeCrudFormField(rawField);
+                Map<String, Object> field = formAssetAssembler.normalizeRuntimeCrudFormField(rawField);
                 if (field == null) {
                     continue;
                 }
@@ -2559,7 +2567,7 @@ public class BusinessFlowService {
             businessFieldDesignService.listFields(objectId).forEach(vo -> {
                 Map<String, Object> raw = new LinkedHashMap<>(
                         JSON.parseObject(JSON.toJSONString(vo), JSONObject.class));
-                Map<String, Object> normalized = normalizeRuntimeCrudFormField(raw);
+                Map<String, Object> normalized = formAssetAssembler.normalizeRuntimeCrudFormField(raw);
                 String fieldCode = normalized == null ? null : textValue(normalized.get("field"));
                 if (fieldCode != null) {
                     byCode.putIfAbsent(fieldCode, normalized);
@@ -4298,21 +4306,23 @@ public class BusinessFlowService {
                     object.getConfigKey(), object.getObjectCode(), objectCode));
             JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
             JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
-            assets.addAll(collectBusinessFormAssets(object, formSchema));
-            appendUniqueFormAssets(assets, collectRuntimeCrudFormAssets(object, runtimeConfig));
-            appendObjectFieldRegistryFallback(assets, object);
+            assets.addAll(formAssetAssembler.collectBusinessFormAssets(object, formSchema));
+            formAssetAssembler.appendUniqueFormAssets(
+                    assets, formAssetAssembler.collectRuntimeCrudFormAssets(object, runtimeConfig));
+            formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
             JSONObject metadata = readCodeAppMetadata(tenantId, object.getObjectCode());
-            appendUniqueFormAssets(assets, mergeCodeAppAssets(
+            formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
                     object.getObjectCode(), codeFormProviderRegistry.listAssets(object.getObjectCode()),
                     metadata, false));
         } else {
             AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, objectCode);
-            appendUniqueFormAssets(assets, collectRuntimeCrudFormAssets(null, runtimeConfig));
+            formAssetAssembler.appendUniqueFormAssets(
+                    assets, formAssetAssembler.collectRuntimeCrudFormAssets(null, runtimeConfig));
             JSONObject metadata = readCodeAppMetadata(tenantId, objectCode);
-            appendUniqueFormAssets(assets, mergeCodeAppAssets(
+            formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
                     objectCode, codeFormProviderRegistry.listAssets(objectCode), metadata, false));
         }
-        appendObjectFieldRegistryFallback(assets, object);
+        formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
         return assets;
     }
 
@@ -4349,12 +4359,12 @@ public class BusinessFlowService {
             return applicationSchema;
         }
         if (object == null) {
-            return buildRuntimeCrudFormSchema(null, runtimeConfig, formKey);
+            return formAssetAssembler.buildRuntimeCrudFormSchema(null, runtimeConfig, formKey);
         }
         if (!objectLiveSchema.isEmpty()) {
             return objectLiveSchema;
         }
-        JSONObject runtimeSchema = buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
+        JSONObject runtimeSchema = formAssetAssembler.buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
         return runtimeSchema.isEmpty() ? buildObjectFieldRegistryFormSchema(object, formKey) : runtimeSchema;
     }
 
@@ -4377,12 +4387,14 @@ public class BusinessFlowService {
         // app_ 页面 formKey 对不上对象内部 formKey，按默认/根表单取
         boolean appPageFormKey = StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_");
 
-        JSONObject byForms = findFormSchemaInArray(readNestedArray(formSchema.get("forms")), targetFormKey);
+        JSONObject byForms = formAssetAssembler.findFormSchemaInArray(
+                readNestedArray(formSchema.get("forms")), targetFormKey);
         if (!byForms.isEmpty() && !collectBusinessFormFieldCatalog(byForms).isEmpty()) {
             return byForms;
         }
         JSONObject settings = readNestedObject(formSchema.get("settings"));
-        JSONObject byAssets = findFormSchemaInArray(readNestedArray(settings.get("formAssets")), targetFormKey);
+        JSONObject byAssets = formAssetAssembler.findFormSchemaInArray(
+                readNestedArray(settings.get("formAssets")), targetFormKey);
         if (!byAssets.isEmpty() && !collectBusinessFormFieldCatalog(byAssets).isEmpty()) {
             return byAssets;
         }
@@ -4420,7 +4432,7 @@ public class BusinessFlowService {
             businessFieldDesignService.listFields(object.getId()).forEach(field ->
                     sourceFields.add(new LinkedHashMap<>(
                             JSON.parseObject(JSON.toJSONString(field), JSONObject.class))));
-            List<Map<String, Object>> fields = normalizeRuntimeCrudFormFields(sourceFields);
+            List<Map<String, Object>> fields = formAssetAssembler.normalizeRuntimeCrudFormFields(sourceFields);
             if (fields.isEmpty()) {
                 return new JSONObject();
             }
@@ -4431,35 +4443,13 @@ public class BusinessFlowService {
             schema.put("defaultFormKey", formKey);
             schema.put("formName", StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode()) + "表单");
             JSONArray components = new JSONArray();
-            fields.forEach(field -> components.add(toRuntimeCrudFormComponent(field)));
+            fields.forEach(field -> components.add(formAssetAssembler.toRuntimeCrudFormComponent(field)));
             schema.put("components", components);
             return schema;
         } catch (Exception e) {
             log.debug("读取业务对象字段注册表表单 schema 失败: objectId={}, error={}", object.getId(), e.getMessage());
             return new JSONObject();
         }
-    }
-
-    private JSONObject findFormSchemaInArray(JSONArray forms, String formKey) {
-        if (forms == null || forms.isEmpty() || StringUtils.isBlank(formKey)) {
-            return new JSONObject();
-        }
-        for (int i = 0; i < forms.size(); i++) {
-            JSONObject form = forms.getJSONObject(i);
-            if (form == null) {
-                continue;
-            }
-            JSONObject schema = readNestedObject(form.get("schema"));
-            JSONObject candidate = schema.isEmpty() ? form : schema;
-            String candidateKey = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(form.getString("formKey")),
-                    StringUtils.trimToNull(candidate.getString("formKey")),
-                    StringUtils.trimToNull(candidate.getString("defaultFormKey")));
-            if (StringUtils.equals(formKey, candidateKey)) {
-                return candidate;
-            }
-        }
-        return new JSONObject();
     }
 
     private JSONObject readCodeAppMetadata(Long tenantId, String objectCode) {
@@ -5521,7 +5511,7 @@ public class BusinessFlowService {
                 recordData,
                 objectCode,
                 userName,
-                resolveRuntimeCrudObjectName(null, runtimeConfig));
+                formAssetAssembler.resolveRuntimeCrudObjectName(null, runtimeConfig));
         Long userId = starterUserId != null ? starterUserId : resolveUserId();
         FlowResult<String> result = stableBusinessKey
                 ? flowClient.startProcessForDelegatedUser(
@@ -6314,361 +6304,6 @@ public class BusinessFlowService {
         BusinessFlowBindingCodec.ensureBusinessBinding(config, runtimeConfig, documentConfig);
     }
 
-
-    private List<Map<String, Object>> collectBusinessFormAssets(BusinessObjectVO object, JSONObject formSchema) {
-        if (object == null || formSchema == null || formSchema.isEmpty()) {
-            return List.of();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        appendBusinessFormAsset(result, seen, object, formSchema, "default");
-
-        JSONArray forms = readNestedArray(formSchema.get("forms"));
-        for (int i = 0; i < forms.size(); i++) {
-            JSONObject form = forms.getJSONObject(i);
-            JSONObject schema = readNestedObject(form.get("schema"));
-            appendBusinessFormAsset(result, seen, object, schema.isEmpty() ? form : schema, "form");
-        }
-
-        JSONObject settings = readNestedObject(formSchema.get("settings"));
-        JSONArray formAssets = readNestedArray(settings.get("formAssets"));
-        for (int i = 0; i < formAssets.size(); i++) {
-            JSONObject asset = formAssets.getJSONObject(i);
-            JSONObject schema = readNestedObject(asset.get("schema"));
-            appendBusinessFormAsset(result, seen, object, schema.isEmpty() ? asset : schema, "asset");
-        }
-        return result;
-    }
-
-    private List<Map<String, Object>> collectRuntimeCrudFormAssets(BusinessObjectVO object, AiCrudConfig runtimeConfig) {
-        if (runtimeConfig == null) {
-            return List.of();
-        }
-        List<Map<String, Object>> designerAssets = collectRuntimeDesignerFormAssets(
-                object, runtimeConfig, readRuntimeCrudFormDesignerSchema(runtimeConfig));
-        if (!designerAssets.isEmpty()) {
-            return designerAssets;
-        }
-        List<Map<String, Object>> fieldCatalog = collectRuntimeCrudFormFieldCatalog(runtimeConfig);
-        if (fieldCatalog.isEmpty()) {
-            return List.of();
-        }
-        String formKey = resolveRuntimeCrudFormKey(object, runtimeConfig);
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("type", "BUSINESS_OBJECT_FORM");
-        item.put("formMode", "BUSINESS_OBJECT_FORM");
-        item.put("objectCode", resolveRuntimeCrudObjectCode(object, runtimeConfig));
-        item.put("objectName", resolveRuntimeCrudObjectName(object, runtimeConfig));
-        item.put("configKey", runtimeConfig.getConfigKey());
-        item.put("formKey", formKey);
-        item.put("formName", resolveRuntimeCrudFormName(object, runtimeConfig));
-        item.put("viewKey", "default");
-        item.put("source", "runtimeCrud");
-        item.put("sourceType", "businessObjectRuntime");
-        item.put("fieldCatalog", fieldCatalog);
-        item.put("fields", fieldCatalog);
-        item.put("fieldCount", fieldCatalog.size());
-        item.put("fieldPreview", buildFieldPreview(fieldCatalog));
-        item.put("supportsSave", true);
-        return List.of(item);
-    }
-
-    private List<Map<String, Object>> collectObjectFieldRegistryFormAssets(BusinessObjectVO object) {
-        if (object == null || object.getId() == null || StringUtils.isBlank(object.getObjectCode())) {
-            return List.of();
-        }
-        List<Map<String, Object>> fieldCatalog;
-        try {
-            fieldCatalog = normalizeRuntimeCrudFormFields(readMapList(readNestedArray(
-                    businessFieldDesignService.listFields(object.getId()))));
-        } catch (Exception e) {
-            log.warn("读取业务对象字段目录失败: objectId={}, objectCode={}, error={}",
-                    object.getId(), object.getObjectCode(), e.getMessage());
-            return List.of();
-        }
-        if (fieldCatalog.isEmpty()) {
-            return List.of();
-        }
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("type", "BUSINESS_OBJECT_FORM");
-        item.put("formMode", "BUSINESS_OBJECT_FORM");
-        item.put("objectCode", object.getObjectCode());
-        item.put("objectName", object.getObjectName());
-        item.put("configKey", object.getConfigKey());
-        item.put("formKey", object.getObjectCode());
-        item.put("formName", StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode()) + "表单");
-        item.put("viewKey", "default");
-        item.put("source", "objectFieldRegistry");
-        item.put("sourceType", "businessObjectFieldRegistry");
-        item.put("fieldCatalog", fieldCatalog);
-        item.put("fields", fieldCatalog);
-        item.put("fieldCount", fieldCatalog.size());
-        item.put("fieldPreview", buildFieldPreview(fieldCatalog));
-        item.put("supportsSave", true);
-        return List.of(item);
-    }
-
-    private void appendObjectFieldRegistryFallback(List<Map<String, Object>> assets, BusinessObjectVO object) {
-        if (assets == null || assets.stream().anyMatch(this::hasFormAssetFields)) {
-            return;
-        }
-        List<Map<String, Object>> fallback = collectObjectFieldRegistryFormAssets(object);
-        if (fallback.isEmpty()) {
-            return;
-        }
-        if (!assets.isEmpty()) {
-            Map<String, Object> existing = assets.get(0);
-            Map<String, Object> generated = fallback.get(0);
-            String mode = StringUtils.defaultIfBlank(textValue(existing.get("formMode")), textValue(existing.get("type")));
-            String formKey = StringUtils.trimToNull(textValue(existing.get("formKey")));
-            if ("BUSINESS_OBJECT_FORM".equalsIgnoreCase(mode) && formKey != null) {
-                generated.put("formKey", formKey);
-                generated.put("formName", StringUtils.defaultIfBlank(textValue(existing.get("formName")),
-                        textValue(generated.get("formName"))));
-                generated.put("providerKey", existing.get("providerKey"));
-            }
-        }
-        appendUniqueFormAssets(assets, fallback);
-    }
-
-    private boolean hasFormAssetFields(Map<String, Object> asset) {
-        if (asset == null) {
-            return false;
-        }
-        List<Map<String, Object>> fields = readMapList(readNestedArray(asset.get("fieldCatalog")));
-        if (fields.isEmpty()) {
-            fields = readMapList(readNestedArray(asset.get("fields")));
-        }
-        return !fields.isEmpty();
-    }
-
-    private List<Map<String, Object>> collectRuntimeDesignerFormAssets(BusinessObjectVO object,
-                                                                       AiCrudConfig runtimeConfig,
-                                                                       JSONObject formSchema) {
-        if (runtimeConfig == null || formSchema == null || formSchema.isEmpty()) {
-            return List.of();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        appendRuntimeDesignerFormAsset(result, seen, object, runtimeConfig, formSchema, "runtimeDesignerDefault");
-
-        JSONArray forms = readNestedArray(formSchema.get("forms"));
-        for (int i = 0; i < forms.size(); i++) {
-            JSONObject form = forms.getJSONObject(i);
-            JSONObject schema = readNestedObject(form.get("schema"));
-            appendRuntimeDesignerFormAsset(result, seen, object, runtimeConfig, schema.isEmpty() ? form : schema,
-                    "runtimeDesignerForm");
-        }
-
-        JSONObject settings = readNestedObject(formSchema.get("settings"));
-        JSONArray formAssets = readNestedArray(settings.get("formAssets"));
-        for (int i = 0; i < formAssets.size(); i++) {
-            JSONObject asset = formAssets.getJSONObject(i);
-            JSONObject schema = readNestedObject(asset.get("schema"));
-            appendRuntimeDesignerFormAsset(result, seen, object, runtimeConfig, schema.isEmpty() ? asset : schema,
-                    "runtimeDesignerAsset");
-        }
-        return result;
-    }
-
-    private void appendRuntimeDesignerFormAsset(List<Map<String, Object>> result,
-                                                Set<String> seen,
-                                                BusinessObjectVO object,
-                                                AiCrudConfig runtimeConfig,
-                                                JSONObject schema,
-                                                String source) {
-        if (schema == null || schema.isEmpty()) {
-            return;
-        }
-        String formKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(schema.getString("formKey")),
-                StringUtils.trimToNull(schema.getString("defaultFormKey")),
-                resolveRuntimeCrudFormKey(object, runtimeConfig));
-        if (formKey == null || !seen.add(formKey)) {
-            return;
-        }
-        List<Map<String, Object>> fieldCatalog = collectBusinessFormFieldCatalog(schema);
-        if (fieldCatalog.isEmpty()) {
-            fieldCatalog = collectRuntimeCrudFormFieldCatalog(runtimeConfig);
-        } else if (runtimeConfig != null) {
-            fieldCatalog = new ArrayList<>(fieldCatalog);
-            appendRuntimeChildFieldCatalog(readJsonObject(runtimeConfig.getOptions()), fieldCatalog);
-        }
-        if (fieldCatalog.isEmpty()) {
-            return;
-        }
-        String objectName = resolveRuntimeCrudObjectName(object, runtimeConfig);
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("type", "BUSINESS_OBJECT_FORM");
-        item.put("formMode", "BUSINESS_OBJECT_FORM");
-        item.put("objectCode", resolveRuntimeCrudObjectCode(object, runtimeConfig));
-        item.put("objectName", objectName);
-        item.put("configKey", runtimeConfig.getConfigKey());
-        item.put("formKey", formKey);
-        item.put("formName", StringUtils.firstNonBlank(
-                StringUtils.trimToNull(schema.getString("formName")),
-                StringUtils.isBlank(objectName) ? null : objectName + "表单",
-                formKey));
-        item.put("viewKey", "default");
-        item.put("source", source);
-        item.put("sourceType", "businessObjectRuntime");
-        item.put("fieldCatalog", fieldCatalog);
-        item.put("fields", fieldCatalog);
-        item.put("fieldCount", fieldCatalog.size());
-        item.put("fieldPreview", buildFieldPreview(fieldCatalog));
-        item.put("supportsSave", true);
-        result.add(item);
-    }
-
-    private void appendUniqueFormAssets(List<Map<String, Object>> target, List<Map<String, Object>> source) {
-        if (target == null || source == null || source.isEmpty()) {
-            return;
-        }
-        Map<String, Integer> positions = new LinkedHashMap<>();
-        for (int index = 0; index < target.size(); index++) {
-            String key = formAssetIdentity(target.get(index));
-            if (StringUtils.isNotBlank(key)) {
-                positions.putIfAbsent(key, index);
-            }
-        }
-        for (Map<String, Object> asset : source) {
-            String key = formAssetIdentity(asset);
-            if (StringUtils.isBlank(key)) {
-                continue;
-            }
-            Integer existingIndex = positions.get(key);
-            if (existingIndex == null) {
-                positions.put(key, target.size());
-                target.add(asset);
-            } else {
-                mergeFormAssetMetadata(target.get(existingIndex), asset);
-            }
-        }
-    }
-
-    private void mergeFormAssetMetadata(Map<String, Object> target, Map<String, Object> source) {
-        if (target == null || source == null) {
-            return;
-        }
-        List<Map<String, Object>> targetFields = readMapList(readNestedArray(target.get("fieldCatalog")));
-        if (targetFields.isEmpty()) {
-            targetFields = readMapList(readNestedArray(target.get("fields")));
-        }
-        List<Map<String, Object>> sourceFields = readMapList(readNestedArray(source.get("fieldCatalog")));
-        if (sourceFields.isEmpty()) {
-            sourceFields = readMapList(readNestedArray(source.get("fields")));
-        }
-        if (sourceFields.size() > targetFields.size()) {
-            List<Map<String, Object>> mergedFields = new ArrayList<>(sourceFields);
-            target.put("fieldCatalog", mergedFields);
-            target.put("fields", mergedFields);
-            target.put("fieldCount", mergedFields.size());
-            target.put("fieldPreview", buildFieldPreview(mergedFields));
-        }
-        for (String key : List.of("configKey", "objectCode", "objectName", "viewKey",
-                "providerKey", "providerName", "formUrl")) {
-            if (StringUtils.isBlank(textValue(target.get(key))) && StringUtils.isNotBlank(textValue(source.get(key)))) {
-                target.put(key, source.get(key));
-            }
-        }
-        if (!Boolean.TRUE.equals(readNullableBooleanValue(target.get("supportsSave")))
-                && Boolean.TRUE.equals(readNullableBooleanValue(source.get("supportsSave")))) {
-            target.put("supportsSave", true);
-        }
-    }
-
-    private String formAssetIdentity(Map<String, Object> asset) {
-        if (asset == null) {
-            return "";
-        }
-        String formKey = StringUtils.trimToNull(textValue(asset.get("formKey")));
-        if (formKey == null) {
-            return "";
-        }
-        return StringUtils.defaultIfBlank(textValue(asset.get("formMode")), textValue(asset.get("type")))
-                + "::" + StringUtils.defaultString(textValue(asset.get("providerKey")))
-                + "::" + formKey;
-    }
-
-    private JSONObject buildRuntimeCrudFormSchema(BusinessObjectVO object, AiCrudConfig runtimeConfig, String requestedFormKey) {
-        if (runtimeConfig == null) {
-            return new JSONObject();
-        }
-        JSONObject designerSchema = resolveRuntimeDesignerFormSchema(
-                readRuntimeCrudFormDesignerSchema(runtimeConfig), requestedFormKey);
-        if (!designerSchema.isEmpty()) {
-            return designerSchema;
-        }
-        String formKey = resolveRuntimeCrudFormKey(object, runtimeConfig);
-        if (!matchesRuntimeCrudFormKey(requestedFormKey, formKey, runtimeConfig)) {
-            return new JSONObject();
-        }
-        List<Map<String, Object>> fieldCatalog = collectRuntimeCrudFormFieldCatalog(runtimeConfig);
-        if (fieldCatalog.isEmpty()) {
-            return new JSONObject();
-        }
-        JSONObject schema = new JSONObject();
-        schema.put("schemaVersion", "runtime-crud");
-        schema.put("formKey", formKey);
-        schema.put("defaultFormKey", formKey);
-        schema.put("formName", resolveRuntimeCrudFormName(object, runtimeConfig));
-        schema.put("objectCode", resolveRuntimeCrudObjectCode(object, runtimeConfig));
-        schema.put("objectName", resolveRuntimeCrudObjectName(object, runtimeConfig));
-
-        JSONObject settings = new JSONObject();
-        JSONObject layout = new JSONObject();
-        JSONObject runtimeOptions = readJsonObject(runtimeConfig.getOptions());
-        layout.put("gridColumns", Math.max(1, integerValue(runtimeOptions.get("editGridCols"), 2)));
-        layout.put("labelPlacement", StringUtils.defaultIfBlank(textValue(runtimeOptions.get("editLabelPlacement")), "left"));
-        layout.put("labelWidth", StringUtils.defaultIfBlank(textValue(runtimeOptions.get("editLabelWidth")), "100"));
-        settings.put("layout", layout);
-        schema.put("settings", settings);
-
-        JSONArray components = new JSONArray();
-        for (Map<String, Object> field : fieldCatalog) {
-            components.add(toRuntimeCrudFormComponent(field));
-        }
-        schema.put("components", components);
-        return schema;
-    }
-
-    private JSONObject resolveRuntimeDesignerFormSchema(JSONObject formSchema, String formKey) {
-        if (formSchema == null || formSchema.isEmpty()) {
-            return new JSONObject();
-        }
-        String targetFormKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(formKey),
-                StringUtils.trimToNull(formSchema.getString("defaultFormKey")),
-                StringUtils.trimToNull(formSchema.getString("formKey")));
-
-        JSONObject byForms = findFormSchemaInArray(readNestedArray(formSchema.get("forms")), targetFormKey);
-        if (!byForms.isEmpty()) {
-            return byForms;
-        }
-        JSONObject settings = readNestedObject(formSchema.get("settings"));
-        JSONObject byAssets = findFormSchemaInArray(readNestedArray(settings.get("formAssets")), targetFormKey);
-        if (!byAssets.isEmpty()) {
-            return byAssets;
-        }
-        String rootFormKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(formSchema.getString("formKey")),
-                StringUtils.trimToNull(formSchema.getString("defaultFormKey")));
-        if (StringUtils.isBlank(targetFormKey) || StringUtils.equals(targetFormKey, rootFormKey)) {
-            return formSchema;
-        }
-        return new JSONObject();
-    }
-
-    private boolean matchesRuntimeCrudFormKey(String requestedFormKey, String runtimeFormKey, AiCrudConfig runtimeConfig) {
-        String requested = StringUtils.trimToNull(requestedFormKey);
-        if (requested == null) {
-            return true;
-        }
-        return StringUtils.equals(requested, runtimeFormKey)
-                || StringUtils.equals(requested, runtimeConfig.getConfigKey())
-                || StringUtils.equals(requested, runtimeConfig.getObjectCode());
-    }
-
     private AiCrudConfig resolveRuntimeConfigForBusinessForm(BusinessObjectVO object, String configKey) {
         String lookupKey = StringUtils.firstNonBlank(
                 StringUtils.trimToNull(configKey),
@@ -6677,199 +6312,6 @@ public class BusinessFlowService {
         return resolvePublishedRuntimeConfig(resolveTenantId(), lookupKey);
     }
 
-    private JSONObject readRuntimeCrudFormDesignerSchema(AiCrudConfig runtimeConfig) {
-        JSONObject options = readJsonObject(runtimeConfig == null ? null : runtimeConfig.getOptions());
-        return readNestedObject(options.get("formDesignerSchema"));
-    }
-
-    private String resolveRuntimeCrudFormKey(BusinessObjectVO object, AiCrudConfig runtimeConfig) {
-        JSONObject options = readJsonObject(runtimeConfig == null ? null : runtimeConfig.getOptions());
-        JSONObject designerSchema = readNestedObject(options.get("formDesignerSchema"));
-        String objectCode = resolveRuntimeCrudObjectCode(object, runtimeConfig);
-        return StringUtils.firstNonBlank(
-                StringUtils.trimToNull(designerSchema.getString("defaultFormKey")),
-                StringUtils.trimToNull(designerSchema.getString("formKey")),
-                StringUtils.trimToNull(textValue(options.get("defaultFormKey"))),
-                StringUtils.trimToNull(textValue(options.get("formKey"))),
-                StringUtils.isBlank(objectCode) ? null : objectCode + "_default_form",
-                runtimeConfig == null ? null : runtimeConfig.getConfigKey());
-    }
-
-    private String resolveRuntimeCrudFormName(BusinessObjectVO object, AiCrudConfig runtimeConfig) {
-        JSONObject options = readJsonObject(runtimeConfig == null ? null : runtimeConfig.getOptions());
-        JSONObject designerSchema = readNestedObject(options.get("formDesignerSchema"));
-        String objectName = resolveRuntimeCrudObjectName(object, runtimeConfig);
-        return StringUtils.firstNonBlank(
-                StringUtils.trimToNull(designerSchema.getString("formName")),
-                StringUtils.trimToNull(textValue(options.get("formName"))),
-                StringUtils.isBlank(objectName) ? null : objectName + "表单",
-                runtimeConfig == null ? null : runtimeConfig.getAppName(),
-                resolveRuntimeCrudFormKey(object, runtimeConfig));
-    }
-
-    private String resolveRuntimeCrudObjectCode(BusinessObjectVO object, AiCrudConfig runtimeConfig) {
-        return StringUtils.firstNonBlank(
-                object == null ? null : StringUtils.trimToNull(object.getObjectCode()),
-                runtimeConfig == null ? null : StringUtils.trimToNull(runtimeConfig.getObjectCode()),
-                runtimeConfig == null ? null : StringUtils.trimToNull(runtimeConfig.getConfigKey()));
-    }
-
-    private String resolveRuntimeCrudObjectName(BusinessObjectVO object, AiCrudConfig runtimeConfig) {
-        return StringUtils.firstNonBlank(
-                object == null ? null : StringUtils.trimToNull(object.getObjectName()),
-                runtimeConfig == null ? null : StringUtils.trimToNull(runtimeConfig.getObjectName()),
-                runtimeConfig == null ? null : StringUtils.trimToNull(runtimeConfig.getAppName()),
-                resolveRuntimeCrudObjectCode(object, runtimeConfig));
-    }
-
-    private List<Map<String, Object>> collectRuntimeCrudFormFieldCatalog(AiCrudConfig runtimeConfig) {
-        if (runtimeConfig == null) {
-            return List.of();
-        }
-        JSONObject options = readJsonObject(runtimeConfig.getOptions());
-        List<Map<String, Object>> fields = readMapList(readNestedArray(runtimeConfig.getEditSchema()));
-        if (!fields.isEmpty()) {
-            List<Map<String, Object>> layoutFields = applyRuntimeCrudFormLayout(
-                    fields, readNestedArray(options.get("editFormLayout")));
-            List<Map<String, Object>> result = new ArrayList<>(normalizeRuntimeCrudFormFields(
-                    layoutFields.isEmpty() ? fields : layoutFields));
-            appendRuntimeChildFieldCatalog(options, result);
-            return result;
-        }
-        JSONObject modelSchema = readJsonObject(runtimeConfig.getModelSchema());
-        List<Map<String, Object>> result = new ArrayList<>(normalizeRuntimeCrudFormFields(
-                readMapList(readNestedArray(modelSchema.get("fields")))));
-        appendRuntimeChildFieldCatalog(options, result);
-        return result;
-    }
-
-    private List<Map<String, Object>> normalizeRuntimeCrudFormFields(List<Map<String, Object>> fields) {
-        if (fields == null || fields.isEmpty()) {
-            return List.of();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        for (Map<String, Object> field : fields) {
-            Map<String, Object> item = normalizeRuntimeCrudFormField(field);
-            String fieldCode = item == null ? null : StringUtils.trimToNull(textValue(item.get("field")));
-            if (fieldCode != null && seen.add(fieldCode)) {
-                result.add(item);
-            }
-        }
-        return result;
-    }
-
-    private Map<String, Object> normalizeRuntimeCrudFormField(Map<String, Object> field) {
-        if (field == null || field.isEmpty()) {
-            return null;
-        }
-        String fieldCode = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(field.get("field"))),
-                StringUtils.trimToNull(textValue(field.get("fieldCode"))),
-                StringUtils.trimToNull(textValue(field.get("prop"))),
-                StringUtils.trimToNull(textValue(field.get("name"))),
-                StringUtils.trimToNull(textValue(field.get("model"))));
-        if (fieldCode == null
-                || readBooleanValue(field.get("systemField"), false)
-                || readBooleanValue(field.get("internal"), false)
-                || (field.containsKey("formVisible") && !readBooleanValue(field.get("formVisible"), true))) {
-            return null;
-        }
-        JSONObject props = readNestedObject(field.get("props"));
-        Map<String, Object> item = new LinkedHashMap<>(field);
-        item.put("field", fieldCode);
-        item.put("fieldCode", fieldCode);
-        item.put("label", StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(field.get("label"))),
-                StringUtils.trimToNull(textValue(field.get("title"))),
-                StringUtils.trimToNull(textValue(field.get("fieldName"))),
-                fieldCode));
-        String componentType = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(field.get("componentType"))),
-                StringUtils.trimToNull(textValue(field.get("type"))),
-                StringUtils.trimToNull(textValue(field.get("componentKey"))),
-                "input");
-        item.put("type", normalizeTaskFormFieldType(componentType));
-        item.put("componentType", componentType);
-        if (field.get("dataType") != null) {
-            item.put("dataType", textValue(field.get("dataType")));
-        }
-        String dictType = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(field.get("dictType"))),
-                StringUtils.trimToNull(props.getString("dictType")));
-        if (dictType != null) {
-            item.put("dictType", dictType);
-        }
-        item.put("required", readBooleanValue(field.get("required"), false));
-        item.putIfAbsent("readable", true);
-        item.putIfAbsent("writable", !readBooleanValue(field.get("readonly"), false));
-        return item;
-    }
-
-    private JSONObject toRuntimeCrudFormComponent(Map<String, Object> field) {
-        JSONObject component = new JSONObject();
-        String fieldCode = StringUtils.trimToEmpty(textValue(field.get("field")));
-        String componentType = StringUtils.defaultIfBlank(textValue(field.get("componentType")), "input");
-        component.put("id", fieldCode);
-        component.put("key", fieldCode);
-        component.put("type", componentType);
-        component.put("componentType", componentType);
-        component.put("label", StringUtils.defaultIfBlank(textValue(field.get("label")), fieldCode));
-        component.put("field", fieldCode);
-
-        JSONObject binding = new JSONObject();
-        binding.put("mode", "field");
-        binding.put("fieldCode", fieldCode);
-        binding.put("dataType", StringUtils.trimToEmpty(textValue(field.get("dataType"))));
-        component.put("fieldBinding", binding);
-
-        JSONObject props = readNestedObject(field.get("props"));
-        props.put("field", fieldCode);
-        props.put("label", component.getString("label"));
-        if (field.get("dictType") != null) {
-            props.put("dictType", field.get("dictType"));
-        }
-        component.put("props", props);
-
-        JSONObject validation = new JSONObject();
-        validation.put("required", readBooleanValue(field.get("required"), false));
-        component.put("validation", validation);
-        return component;
-    }
-
-    private void appendBusinessFormAsset(List<Map<String, Object>> result,
-                                         Set<String> seen,
-                                         BusinessObjectVO object,
-                                         JSONObject schema,
-                                         String source) {
-        if (schema == null || schema.isEmpty()) {
-            return;
-        }
-        String formKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(schema.getString("formKey")),
-                StringUtils.trimToNull(schema.getString("defaultFormKey")));
-        if (formKey == null || !seen.add(formKey)) {
-            return;
-        }
-        String formName = StringUtils.defaultIfBlank(schema.getString("formName"), object.getObjectName() + "表单");
-        List<Map<String, Object>> fieldCatalog = collectBusinessFormFieldCatalog(schema);
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("type", "BUSINESS_OBJECT_FORM");
-        item.put("formMode", "BUSINESS_OBJECT_FORM");
-        item.put("objectCode", object.getObjectCode());
-        item.put("objectName", object.getObjectName());
-        item.put("formKey", formKey);
-        item.put("formName", formName);
-        item.put("viewKey", "default");
-        item.put("source", source);
-        item.put("sourceType", "businessObject");
-        item.put("fieldCatalog", fieldCatalog);
-        item.put("fields", fieldCatalog);
-        item.put("fieldCount", fieldCatalog.size());
-        item.put("fieldPreview", buildFieldPreview(fieldCatalog));
-        item.put("supportsSave", true);
-        result.add(item);
-    }
 
     private JSONObject readJsonObject(String json) {
         if (StringUtils.isBlank(json)) {
