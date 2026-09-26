@@ -174,3 +174,9 @@
 - 使用 Enricher + Batch Loader 从 `BusinessFlowService` 迁出流程关联批量查询、对象身份缓存、运行配置分组、低代码记录批量读取、代码 Provider 摘要和展示投影到 `BusinessFlowListDisplayEnricher`。入口由 3431 行降至 3086 行，新 Enricher 419 行；公开列表增强入口仅委托，批量与缓存策略不再散落于 Facade。
 - 首次编译暴露自动提取边界夹带下一方法的未闭合注释，修正边界后 Reactor 编译退出码 0。新增列表测试验证两条待办只执行一次关联批量查询和一次动态记录批量查询，性能源码契约改为直接检查 Enricher。
 - 执行 21 类业务流程增量回归共 98 项，0 失败、0 错误；生命周期测试中预期的写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实 Flowable 待办列表与代码 Provider 联调仍需服务环境，无服务 PID 需停止。
+
+## 2026-09-26 第三十四个切口：流程任务事件状态协调
+
+- 使用 Coordinator + State Transition 从 `BusinessFlowService` 迁出 Flowable 任务创建/完成事件、发起人修改节点识别与保存自愈、驳回证据读取、修改待办快照和运行态双状态切换到 `BusinessFlowTaskEventCoordinator`。入口由 3086 行降至 2834 行，新 Coordinator 385 行；终态回调和公开事务入口仍留 Facade。
+- 首次编译发现迁移类缺少租户上下文导入，补齐后 Reactor 编译退出码 0。任务事件仍通过 `PROPAGATION_REQUIRES_NEW` 独立事务执行，失败只记录日志；可选 FlowClient/事务管理器继续用 Supplier 兼容原字段注入。
+- 执行 21 类业务流程增量回归共 98 项，0 失败、0 错误；生命周期用例覆盖修改节点、重提、终态保护和预期失败回滚。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实 Flowable 任务事件时序仍需服务级联调，无服务 PID 需停止。

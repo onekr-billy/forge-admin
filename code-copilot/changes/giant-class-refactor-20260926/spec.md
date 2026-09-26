@@ -72,6 +72,8 @@
 
 第三十三个切口使用 Enricher + Batch Loader，将待办/抄送列表的流程关联批量查询、对象身份缓存、按运行配置分组、低代码记录批量读取、代码 Provider 摘要和展示投影迁入 `BusinessFlowListDisplayEnricher`。入口由 3431 行降至 3086 行，新 Enricher 419 行；启动展示字段优先级、业务参数合并和对象/流程名称回退保持不变。
 
+第三十四个切口使用 Coordinator + State Transition，将 Flowable 任务创建/完成事件、发起人修改节点识别与自愈、驳回证据读取、修改待办快照和运行态双状态切换迁入 `BusinessFlowTaskEventCoordinator`。入口由 3086 行降至 2834 行，新 Coordinator 385 行；任务事件仍使用独立事务且失败不反向中断审批动作，终态回调和公开事务入口保持原位。
+
 ## 验收
 
 - 所有修改后的模块可编译，新增及相关原有定向测试通过。

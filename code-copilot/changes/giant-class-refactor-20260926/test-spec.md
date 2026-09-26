@@ -217,3 +217,12 @@
 - 验证：generator Reactor 编译、列表展示/身份/生命周期/性能契约回归、`git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：新增 `BusinessFlowListDisplayEnricherTest` 验证多条待办共享一次关联批量查询和一次动态记录批量查询，并锁定 `displayFields`、业务参数、摘要及流程名称投影；相关 21 类共 98 项通过，0 失败、0 错误。模块 Reactor 编译与 `git diff --check` 通过。
+
+## 2026-09-26 第三十四轮增量验证：流程任务事件状态协调
+
+- P0：发起人修改节点、驳回证据、修改待办快照和 `NEED_MODIFY`/`IN_PROCESS` 双状态切换语义不变；终态关联不得被延迟任务事件改写。
+- P0：任务事件状态同步继续使用独立事务且失败只记录，不反向中断审批动作；表单保存自愈路径继续可用。
+- P1：使用 Coordinator + State Transition 将任务事件、修改节点修复和运行态状态同步迁出 Facade，终态回调与公开事务入口保持原位。
+- 验证：generator Reactor 编译、任务事件/生命周期/状态修复/任务表单定向回归、`git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：既有 `BusinessFlowServiceLifecycleTest` 继续覆盖发起人修改、重提回流程中、终态拒绝延迟任务事件和回调写入失败回滚；日志主体已切换到新 Coordinator。相关 21 类共 98 项通过，0 失败、0 错误；模块 Reactor 编译与 `git diff --check` 通过。
