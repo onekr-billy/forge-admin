@@ -1,7 +1,5 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.flow.client.FlowClient;
 import com.mdframe.forge.flow.client.FlowResult;
@@ -20,7 +18,6 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowBindingDTO
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowCallbackDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowResubmitDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
-import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskActionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormContextQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormSaveDTO;
@@ -36,6 +33,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessTaskFormContextVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
@@ -49,47 +47,18 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.redisson.api.RedissonClient;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.defaultBusinessBinding;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeBindingConfig;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeStartMode;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.normalizeVariableMapping;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.putBoolean;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.putText;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.readBindingConfig;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.readOptions;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.resolveBindingName;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.resolveFlowModelKey;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.toBusinessBindingDTO;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.toConfigJson;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowBindingCodec.toDTO;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.isPublicCodeAppFormField;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.mergeCodeAppAssets;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.mergeNonNull;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.normalizeCodeAppMetadataFields;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessCodeAppFormAssetMerger.sanitizeCodeAppMetadata;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readJsonObject;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readMapList;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNestedArray;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNestedObject;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.readNullableBooleanValue;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowJsonReader.textValue;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowFormFieldCatalog.collectBusinessFormFieldCatalog;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeFieldPermissions;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeEditMode;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeFormMode;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowNodeFormNormalizer.normalizeNodeForms;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.camelToSnake;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.contains;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.read;
-import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.snakeToCamel;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.buildBusinessKey;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowIdentityCodec.parseBusinessKey;
 
@@ -166,11 +135,14 @@ public class BusinessFlowService {
     private final BusinessFlowApplicationPageFormResolver applicationPageFormResolver;
     private final BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
     private final BusinessFlowRuntimeContextResolver businessRuntimeContextResolver;
+    private final BusinessFlowFormAssetCatalog formAssetCatalog;
+    private final BusinessFlowBindingViewAssembler bindingViewAssembler;
     private final BusinessFlowTaskFormContextCoordinator taskFormContextCoordinator;
     private final BusinessFlowListDisplayEnricher businessListDisplayEnricher;
     private final BusinessFlowStartCoordinator startCoordinator;
     private final BusinessFlowTaskEventCoordinator taskEventCoordinator;
     private final BusinessFlowCallbackCoordinator callbackCoordinator;
+    private final BusinessFlowTaskCommandCoordinator taskCommandCoordinator;
 
     public BusinessFlowService(BusinessBindingMapper bindingMapper,
                                BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
@@ -214,10 +186,6 @@ public class BusinessFlowService {
                 businessFieldDesignService,
                 formAssetAssembler,
                 this::resolveTenantId);
-        this.codeFormCoordinator = new BusinessFlowCodeFormCoordinator(
-                codeFormProviderRegistry,
-                TASK_FORM_POLICY,
-                code -> readCodeAppMetadata(resolveTenantId(), code));
         this.applicationPageFormResolver = new BusinessFlowApplicationPageFormResolver(
                 () -> businessApplicationService,
                 businessObjectMapper,
@@ -242,6 +210,25 @@ public class BusinessFlowService {
                 flowBindingResolver::selectForConfig,
                 taskFormProfiler::mark,
                 taskFormProfiler::note);
+        this.formAssetCatalog = new BusinessFlowFormAssetCatalog(
+                () -> businessApplicationService,
+                this::resolveTenantId,
+                applicationPageFormResolver,
+                businessRuntimeContextResolver,
+                runtimeConfigResolver,
+                businessObjectMapper,
+                bindingMapper,
+                flowBindingResolver,
+                businessFieldDesignService,
+                formAssetAssembler,
+                codeFormProviderRegistry,
+                taskFormProfiler);
+        this.bindingViewAssembler = new BusinessFlowBindingViewAssembler(
+                runtimeConfigResolver, businessRuntimeContextResolver);
+        this.codeFormCoordinator = new BusinessFlowCodeFormCoordinator(
+                codeFormProviderRegistry,
+                TASK_FORM_POLICY,
+                code -> formAssetCatalog.readCodeAppMetadata(resolveTenantId(), code));
         this.taskFormContextCoordinator = new BusinessFlowTaskFormContextCoordinator(
                 () -> flowClient,
                 taskNodeFormResolver,
@@ -258,9 +245,9 @@ public class BusinessFlowService {
                 this::resolveUserId,
                 () -> businessProcessRunMapper,
                 () -> businessApplicationObjectMapper,
-                this::queryBusinessObject,
-                this::toBusinessObjectVO,
-                this::resolveBusinessFormSchema,
+                formAssetCatalog::queryBusinessObject,
+                formAssetCatalog::toBusinessObjectVO,
+                formAssetCatalog::resolveBusinessFormSchema,
                 this::resolveBusinessSummary);
         this.businessListDisplayEnricher = new BusinessFlowListDisplayEnricher(
                 this::resolveTenantId,
@@ -268,8 +255,8 @@ public class BusinessFlowService {
                 businessRuntimeContextResolver,
                 dynamicCrudService,
                 codeFormProviderRegistry,
-                this::queryBusinessObject,
-                this::toBusinessObjectVO,
+                formAssetCatalog::queryBusinessObject,
+                formAssetCatalog::toBusinessObjectVO,
                 flowBindingResolver::selectForConfig,
                 this::resolveBusinessSummary);
         BusinessFlowStatusTransitionService statusTransitionService = new BusinessFlowStatusTransitionService(
@@ -314,6 +301,27 @@ public class BusinessFlowService {
                 this::resolveTenantId,
                 this::resolveUsername,
                 flowBindingResolver::selectForConfig,
+                this::resolveTerminalBusinessFlowResult);
+        this.taskCommandCoordinator = new BusinessFlowTaskCommandCoordinator(
+                () -> flowClient,
+                flowInstanceLinkMapper,
+                dynamicCrudService,
+                taskNodeFormResolver,
+                businessRuntimeContextResolver,
+                taskFormContextCoordinator,
+                taskEventCoordinator,
+                callbackCoordinator,
+                TASK_ACCESS_POLICY,
+                TASK_FORM_POLICY,
+                TASK_CHILD_POLICY,
+                taskFormSchemaAssembler,
+                taskChildAssembler,
+                codeFormCoordinator,
+                this::resolveTenantId,
+                this::resolveUserId,
+                formAssetCatalog::queryBusinessObject,
+                formAssetCatalog::toBusinessObjectVO,
+                formAssetCatalog::resolveBusinessFormSchema,
                 this::resolveTerminalBusinessFlowResult);
     }
 
@@ -407,9 +415,9 @@ public class BusinessFlowService {
             if (documentConfig == null || StringUtils.isBlank(documentConfig.getDefaultFlowKey())) {
                 return null;
             }
-            return legacyDocumentFlowToVO(canonicalObjectCode, documentConfig);
+            return bindingViewAssembler.fromLegacyDocument(canonicalObjectCode, documentConfig);
         }
-        return toVO(canonicalObjectCode, binding);
+        return bindingViewAssembler.fromBinding(canonicalObjectCode, binding);
     }
 
     /**
@@ -461,14 +469,14 @@ public class BusinessFlowService {
      * 查询业务对象可供流程节点绑定的表单资产。
      */
     public Map<String, Object> getFormAssets(String objectCode) {
-        return getFormAssets(objectCode, false);
+        return formAssetCatalog.getFormAssets(objectCode, false, null);
     }
 
     /**
      * 查询业务对象可供流程节点绑定的表单资产。
      */
     public Map<String, Object> getFormAssets(String objectCode, boolean includeInternal) {
-        return getFormAssets(objectCode, includeInternal, null);
+        return formAssetCatalog.getFormAssets(objectCode, includeInternal, null);
     }
 
     /**
@@ -479,89 +487,7 @@ public class BusinessFlowService {
     public Map<String, Object> getFormAssets(String objectCode,
                                              boolean includeInternal,
                                              Long applicationId) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("objectCode", objectCode);
-        result.put("formAssets", List.of());
-        result.put("providerCatalog", List.of());
-        result.put("warnings", List.of());
-        if (StringUtils.isBlank(objectCode)) {
-            return result;
-        }
-
-        if (applicationId != null && applicationId > 0 && businessApplicationService != null) {
-            String canonicalObjectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(
-                    resolveTenantId(), objectCode);
-            Map<String, Object> applicationAssets = applicationPageFormResolver.collectApplicationPageFormAssets(
-                    applicationId, canonicalObjectCode);
-            if (!applicationAssets.isEmpty()) {
-                result.putAll(applicationAssets);
-                result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(
-                        canonicalObjectCode, includeInternal));
-                return result;
-            }
-            result.put("warnings", List.of("当前应用尚未配置属于该业务对象的表单页面，请先在应用中新增表单页面"));
-            result.put("objectCode", canonicalObjectCode);
-            result.put("providerCatalog", codeFormProviderRegistry.listProviderCatalog(
-                    canonicalObjectCode, includeInternal));
-            return result;
-        }
-
-        Long tenantId = resolveTenantId();
-        List<String> warnings = new ArrayList<>();
-        List<Map<String, Object>> providerCatalog = codeFormProviderRegistry.listProviderCatalog(objectCode, includeInternal);
-        BusinessObjectQueryDTO query = new BusinessObjectQueryDTO();
-        query.setObjectCode(objectCode);
-        List<BusinessObjectVO> objects = businessObjectMapper.selectObjectList(tenantId, query);
-        if (objects == null || objects.isEmpty()) {
-            AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, objectCode);
-            JSONObject metadata = readCodeAppMetadata(tenantId, objectCode);
-            List<Map<String, Object>> assets = new ArrayList<>(
-                    formAssetAssembler.collectRuntimeCrudFormAssets(null, runtimeConfig));
-            formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
-                    objectCode, codeFormProviderRegistry.listAssets(objectCode, includeInternal), metadata, includeInternal));
-            if (assets.isEmpty()) {
-                warnings.add("业务对象不存在或无权限访问，且未找到代码表单资产: " + objectCode);
-            } else if (runtimeConfig == null) {
-                warnings.add("当前编码未匹配低代码业务对象，仅显示代码表单资产");
-            }
-            result.put("formAssets", assets);
-            if (runtimeConfig != null) {
-                result.put("objectCode", StringUtils.defaultIfBlank(runtimeConfig.getObjectCode(), objectCode));
-                result.put("objectName", StringUtils.defaultIfBlank(runtimeConfig.getObjectName(), runtimeConfig.getAppName()));
-                result.put("configKey", runtimeConfig.getConfigKey());
-            }
-            result.put("providerCatalog", providerCatalog);
-            result.put("codeAppMetadata", sanitizeCodeAppMetadata(metadata, includeInternal));
-            result.put("warnings", warnings);
-            return result;
-        }
-
-        BusinessObjectVO object = objects.get(0);
-        AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, StringUtils.firstNonBlank(
-                object.getConfigKey(), object.getObjectCode(), objectCode));
-        JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
-        JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
-        List<Map<String, Object>> assets = new ArrayList<>(
-                formAssetAssembler.collectBusinessFormAssets(object, formSchema));
-        formAssetAssembler.appendUniqueFormAssets(
-                assets, formAssetAssembler.collectRuntimeCrudFormAssets(object, runtimeConfig));
-        formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
-        JSONObject metadata = readCodeAppMetadata(tenantId, object.getObjectCode());
-        formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
-                object.getObjectCode(), codeFormProviderRegistry.listAssets(object.getObjectCode(), includeInternal),
-                metadata, includeInternal));
-        if (assets.isEmpty()) {
-            warnings.add("业务对象尚未配置低代码表单资产");
-        }
-        result.put("objectId", object.getId());
-        result.put("objectCode", object.getObjectCode());
-        result.put("objectName", object.getObjectName());
-        result.put("configKey", runtimeConfig == null ? object.getConfigKey() : runtimeConfig.getConfigKey());
-        result.put("formAssets", assets);
-        result.put("providerCatalog", providerCatalog);
-        result.put("codeAppMetadata", sanitizeCodeAppMetadata(metadata, includeInternal));
-        result.put("warnings", warnings);
-        return result;
+        return formAssetCatalog.getFormAssets(objectCode, includeInternal, applicationId);
     }
 
     /**
@@ -569,44 +495,14 @@ public class BusinessFlowService {
      * 表单 key 带应用/页面/资产三段稳定身份，运行时无需额外传 applicationId 即可重新解析页面。
      */
    public Map<String, Object> getCodeAppMetadata(String objectCode) {
-        if (StringUtils.isBlank(objectCode)) {
-            return Map.of();
-        }
-        return new LinkedHashMap<>(sanitizeCodeAppMetadata(readCodeAppMetadata(resolveTenantId(), objectCode), true));
+        return formAssetCatalog.getCodeAppMetadata(objectCode);
     }
 
     /**
      * 只更新已有流程绑定中的代码应用元数据，避免字段/视图配置覆盖流程模型和变量映射。
      */
     public boolean saveCodeAppMetadata(String objectCode, Object metadata) {
-        if (StringUtils.isBlank(objectCode) || !(metadata instanceof Map<?, ?> || metadata instanceof JSONObject)) {
-            return false;
-        }
-        Long tenantId = resolveTenantId();
-        AiBusinessBinding binding = flowBindingResolver.selectForConfig(tenantId, objectCode);
-        boolean created = false;
-        if (binding == null) {
-            binding = new AiBusinessBinding();
-            binding.setTenantId(tenantId);
-            binding.setTargetType("OBJECT");
-            binding.setTargetCode(objectCode);
-            binding.setBindingType("FLOW");
-            binding.setBindingName(objectCode + "业务表单资产配置");
-            binding.setStatus(EnableStatus.ENABLED.getCode());
-            binding.setSortOrder(0);
-            created = true;
-        }
-        JSONObject config = readBindingConfig(binding.getBindingConfig());
-        JSONObject options = readNestedObject(config.get("options"));
-        options.put("codeAppMetadata", readNestedObject(metadata));
-        config.put("options", options);
-        binding.setBindingConfig(config.toJSONString());
-        if (created) {
-            bindingMapper.insert(binding);
-        } else {
-            bindingMapper.updateById(binding);
-        }
-        return true;
+        return formAssetCatalog.saveCodeAppMetadata(objectCode, metadata);
     }
 
     /**
@@ -638,127 +534,7 @@ public class BusinessFlowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public BusinessTaskFormContextVO saveTaskFormContext(BusinessTaskFormSaveDTO dto) {
-        if (dto == null) {
-            throw new BusinessException("业务待办表单参数不能为空");
-        }
-        BusinessTaskFormContextQueryDTO query = new BusinessTaskFormContextQueryDTO();
-        query.setTaskId(dto.getTaskId());
-        query.setBusinessKey(dto.getBusinessKey());
-        query.setProcessInstanceId(dto.getProcessInstanceId());
-        query.setProcessDefKey(dto.getProcessDefKey());
-        query.setTaskDefKey(dto.getTaskDefKey());
-        query.setObjectCode(dto.getObjectCode());
-        query.setObjectId(dto.getObjectId());
-        query.setConfigKey(dto.getConfigKey());
-        query.setSuiteCode(dto.getSuiteCode());
-        query.setRecordId(dto.getRecordId());
-        query.setFormKey(dto.getFormKey());
-
-        Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
-        validateTaskAccess(query, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(query, true, taskFormInfo);
-        taskEventCoordinator.repairInitiatorModifyState(query, runtime, taskFormInfo);
-        JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
-        TaskFormSaveResult saveResult = persistTaskFormData(dto, query, runtime, nodeForm);
-        if (saveResult.context() != null) {
-            return taskFormContextCoordinator.attachPrintRuntimeIdentity(saveResult.context(), query);
-        }
-        return taskFormContextCoordinator.attachPrintRuntimeIdentity(
-                taskFormContextCoordinator.buildTaskFormContext(
-                        query, saveResult.runtime(), taskFormInfo), query);
-    }
-
-    private TaskFormSaveResult persistTaskFormData(BusinessTaskFormSaveDTO dto,
-                                                   BusinessTaskFormContextQueryDTO query,
-                                                   TaskFormRuntimeContext runtime,
-                                                   JSONObject nodeForm) {
-        if (nodeForm == null || nodeForm.isEmpty()) {
-            throw new BusinessException("当前流程节点未配置业务表单权限");
-        }
-        String formMode = normalizeNodeFormMode(nodeForm.getString("formMode"));
-        if ("BUSINESS_CODE_FORM".equals(formMode)) {
-            List<Map<String, Object>> permissions = normalizeFieldPermissions(nodeForm.get("fieldPermissions"));
-            BusinessTaskFormSaveDTO filteredDto = TASK_FORM_POLICY.filterSaveData(dto, permissions);
-            TASK_FORM_POLICY.validateRequiredFields(
-                    permissions, filteredDto.getData(), dto.getData() == null ? Map.of() : dto.getData());
-            return new TaskFormSaveResult(runtime, codeFormCoordinator.save(filteredDto, nodeForm));
-        }
-        if (!"BUSINESS_OBJECT_FORM".equals(formMode)) {
-            throw new BusinessException("当前节点不是平台可保存的业务表单，不能通过平台保存业务字段");
-        }
-        List<Map<String, Object>> permissions = normalizeFieldPermissions(nodeForm.get("fieldPermissions"));
-        String formKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(query.getFormKey()),
-                StringUtils.trimToNull(nodeForm.getString("formKey")));
-        BusinessObjectVO object = runtime.businessObject() != null
-                ? toBusinessObjectVO(runtime.businessObject())
-                : queryBusinessObject(resolveTenantId(), runtime.objectCode(), runtime.configKey());
-        JSONObject formSchema = resolveBusinessFormSchema(
-                object, formKey, runtime.configKey(), runtime.publishedConfig());
-        if (permissions.isEmpty()) {
-            List<Map<String, Object>> fieldCatalog = taskFormSchemaAssembler.resolveBusinessTaskCrudPageFields(
-                    runtime.configKey(), formKey, formSchema);
-            permissions = TASK_FORM_POLICY.normalizePermissions(fieldCatalog, permissions);
-        }
-        JSONObject runtimeOptions = runtime.publishedConfig() == null
-                ? null
-                : readJsonObject(runtime.publishedConfig().getOptions());
-        List<Map<String, Object>> childrenConfig = taskChildAssembler.resolveBusinessTaskChildrenConfig(
-                runtime.configKey(), nodeForm, runtimeOptions, formSchema);
-        Map<String, DynamicCrudService.TaskChildPermission> childPermissions =
-                TASK_CHILD_POLICY.buildSavePermissions(childrenConfig, nodeForm);
-        Set<String> writableFields = TASK_FORM_POLICY.collectPermissionFields(permissions, "writable", true);
-        boolean hasWritableChildren = childPermissions.values().stream()
-                .anyMatch(permission -> !permission.writableFields().isEmpty()
-                        || permission.allowCreate() || permission.allowUpdate() || permission.allowDelete());
-        if (writableFields.isEmpty() && !hasWritableChildren) {
-            throw new BusinessException("当前节点没有可编辑业务字段");
-        }
-
-        Map<String, Object> input = dto.getData() == null ? Map.of() : dto.getData();
-        Map<String, Object> updateData = new LinkedHashMap<>();
-        Map<String, Object> mainInput = TASK_CHILD_POLICY.extractMainPayload(input);
-        Map<String, Object> childrenInput = TASK_CHILD_POLICY.extractChildrenPayload(input);
-        for (String field : writableFields) {
-            if (mainInput.containsKey(field)) {
-                updateData.put(field, mainInput.get(field));
-            }
-        }
-        TASK_FORM_POLICY.validateRequiredFields(permissions, updateData, mainInput);
-        if (updateData.isEmpty() && childrenInput.isEmpty()) {
-            throw new BusinessException("未提交可编辑业务字段");
-        }
-
-        if (runtime.recordId() == null) {
-            if (!childrenInput.isEmpty()) {
-                throw new BusinessException("业务待办尚未关联主记录，暂不支持新增子表明细");
-            }
-            if (StringUtils.isBlank(runtime.configKey())) {
-                throw new BusinessException("业务对象缺少已发布运行配置，无法保存业务字段");
-            }
-            Map<String, Object> created = dynamicCrudService.insertInternal(runtime.configKey(), updateData);
-            Long createdId = businessRuntimeContextResolver.extractCreatedRecordId(created);
-            if (createdId == null) {
-                throw new BusinessException("保存业务单据失败");
-            }
-            ensureRuntimeLink(runtime, query, createdId);
-            query.setRecordId(createdId);
-            query.setObjectCode(runtime.objectCode());
-            query.setBusinessKey(buildBusinessKey(runtime.objectCode(), createdId));
-            TaskFormRuntimeContext createdRuntime = new TaskFormRuntimeContext(
-                    runtime.objectCode(), createdId, query.getBusinessKey(), runtime.configKey(),
-                    runtime.bindingConfig(), runtime.publishedConfig(), runtime.businessObject());
-            return new TaskFormSaveResult(createdRuntime, null);
-        }
-
-        Map<String, Object> taskData = new LinkedHashMap<>();
-        taskData.put("main", updateData);
-        if (!childrenInput.isEmpty()) {
-            taskData.put("children", childrenInput);
-        }
-        dynamicCrudService.updateTaskEditableData(runtime.configKey(), runtime.recordId(), taskData,
-                writableFields, childPermissions);
-        return new TaskFormSaveResult(runtime, null);
+        return taskCommandCoordinator.saveTaskFormContext(dto);
     }
 
     /**
@@ -767,83 +543,7 @@ public class BusinessFlowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO completeBusinessTask(BusinessTaskActionDTO dto) {
-        if (dto == null) {
-            throw new BusinessException("业务待办办理参数不能为空");
-        }
-        String action = StringUtils.defaultIfBlank(dto.getAction(), "approve").trim().toLowerCase();
-        if (!"approve".equals(action) && !"reject".equals(action)
-                && !"rejecttostart".equals(action) && !"return".equals(action)) {
-            throw new BusinessException("当前业务待办仅支持同意、驳回、驳回至发起人或退回");
-        }
-        if (flowClient == null) {
-            throw new BusinessException("流程服务未配置，无法办理业务待办");
-        }
-
-        BusinessTaskFormContextQueryDTO query = new BusinessTaskFormContextQueryDTO();
-        query.setTaskId(dto.getTaskId());
-        query.setBusinessKey(dto.getBusinessKey());
-        query.setProcessInstanceId(dto.getProcessInstanceId());
-        query.setProcessDefKey(dto.getProcessDefKey());
-        query.setTaskDefKey(dto.getTaskDefKey());
-        query.setObjectCode(dto.getObjectCode());
-        query.setObjectId(dto.getObjectId());
-        query.setConfigKey(dto.getConfigKey());
-        query.setSuiteCode(dto.getSuiteCode());
-        query.setRecordId(dto.getRecordId());
-        query.setFormKey(dto.getFormKey());
-
-        Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
-        validateTaskAccess(query, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(query, true, taskFormInfo);
-        if (dto.getData() != null && !dto.getData().isEmpty()) {
-            JSONObject nodeForm = taskNodeFormResolver.resolveTaskNodeForm(runtime, query, taskFormInfo);
-            TaskFormSaveResult saveResult = persistTaskFormData(
-                    toTaskFormSaveDTO(dto, query), query, runtime, nodeForm);
-            runtime = saveResult.runtime();
-        }
-        Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
-        String userId = String.valueOf(resolveUserId());
-
-        FlowResult<Void> result;
-        if ("rejecttostart".equals(action)) {
-            result = flowClient.rejectToStart(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
-                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
-        } else if ("reject".equals(action)) {
-            result = flowClient.reject(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
-                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest());
-        } else if ("return".equals(action)) {
-            result = flowClient.returnTask(query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
-                    StringUtils.trimToNull(dto.getTargetActivityId()));
-        } else {
-            result = flowClient.approve(query.getTaskId(), userId, dto.getComment(), dto.getSignature(), variables,
-                    resolveTrustedTaskTenant(dto), dto.getIdempotencyKey(), dto.getRequestDigest(),
-                    dto.getApprovalPointResults());
-        }
-        if (result == null || !result.isSuccess()) {
-            throw new BusinessException(result == null
-                    ? "业务待办办理失败"
-                    : StringUtils.defaultIfBlank(result.getMsg(), "业务待办办理失败"));
-        }
-
-        return syncBusinessFlowStatusAfterTaskAction(runtime, query, action, variables);
-    }
-
-    private BusinessTaskFormSaveDTO toTaskFormSaveDTO(BusinessTaskActionDTO dto,
-                                                      BusinessTaskFormContextQueryDTO query) {
-        BusinessTaskFormSaveDTO saveDTO = new BusinessTaskFormSaveDTO();
-        saveDTO.setTaskId(query.getTaskId());
-        saveDTO.setBusinessKey(query.getBusinessKey());
-        saveDTO.setProcessInstanceId(query.getProcessInstanceId());
-        saveDTO.setProcessDefKey(query.getProcessDefKey());
-        saveDTO.setTaskDefKey(query.getTaskDefKey());
-        saveDTO.setObjectCode(query.getObjectCode());
-        saveDTO.setObjectId(query.getObjectId());
-        saveDTO.setConfigKey(query.getConfigKey());
-        saveDTO.setSuiteCode(query.getSuiteCode());
-        saveDTO.setRecordId(query.getRecordId());
-        saveDTO.setFormKey(query.getFormKey());
-        saveDTO.setData(dto.getData());
-        return saveDTO;
+        return taskCommandCoordinator.completeBusinessTask(dto);
     }
 
     /**
@@ -852,120 +552,7 @@ public class BusinessFlowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO recoverCapabilityTaskAction(BusinessTaskActionDTO dto) {
-        if (dto == null || StringUtils.isBlank(dto.getTaskId())
-                || StringUtils.isBlank(dto.getIdempotencyKey())
-                || StringUtils.isBlank(dto.getRequestDigest())) {
-            throw new BusinessException(409, "FLOW_RECOVERY_EVIDENCE_REQUIRED");
-        }
-        String action = StringUtils.defaultIfBlank(dto.getAction(), "approve").trim().toLowerCase();
-        if (!"approve".equals(action) && !"reject".equals(action)) {
-            throw new BusinessException(409, "POLICY_MISMATCH");
-        }
-        if (flowClient == null) {
-            throw new BusinessException("流程服务未配置，无法恢复业务待办");
-        }
-        Long tenantId = resolveTrustedTaskTenant(dto);
-        String userId = String.valueOf(resolveUserId());
-        Map<String, Object> variables = Map.of();
-        FlowResult<Void> result = "reject".equals(action)
-                ? flowClient.reject(dto.getTaskId(), userId, dto.getComment(), dto.getSignature(),
-                        tenantId, dto.getIdempotencyKey(), dto.getRequestDigest())
-                : flowClient.approve(dto.getTaskId(), userId, dto.getComment(), dto.getSignature(), variables,
-                        tenantId, dto.getIdempotencyKey(), dto.getRequestDigest());
-        if (result == null || !result.isSuccess()) {
-            throw new BusinessException(result == null
-                    ? "业务待办恢复失败"
-                    : StringUtils.defaultIfBlank(result.getMsg(), "业务待办恢复失败"));
-        }
-
-        BusinessTaskFormContextQueryDTO query = new BusinessTaskFormContextQueryDTO();
-        query.setTaskId(dto.getTaskId());
-        query.setObjectCode(dto.getObjectCode());
-        query.setRecordId(dto.getRecordId());
-        if (StringUtils.isNotBlank(dto.getObjectCode()) && dto.getRecordId() != null) {
-            String objectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(
-                    tenantId, dto.getObjectCode());
-            query.setBusinessKey(buildBusinessKey(objectCode, dto.getRecordId()));
-        }
-        return syncBusinessFlowStatusAfterTaskAction(null, query, action, variables);
-    }
-
-    private Long resolveTrustedTaskTenant(BusinessTaskActionDTO dto) {
-        Long currentTenantId = resolveTenantId();
-        if (dto.getTenantId() != null && !dto.getTenantId().equals(currentTenantId)) {
-            throw new BusinessException(403, "FLOW_TASK_TENANT_MISMATCH");
-        }
-        return currentTenantId;
-    }
-
-    private BusinessFlowRuntimeVO syncBusinessFlowStatusAfterTaskAction(TaskFormRuntimeContext runtime,
-                                                                        BusinessTaskFormContextQueryDTO query,
-                                                                        String action,
-                                                                        Map<String, Object> variables) {
-        String businessKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(query.getBusinessKey()),
-                runtime == null ? null : StringUtils.trimToNull(runtime.businessKey()));
-        String processInstanceId = StringUtils.trimToNull(query.getProcessInstanceId());
-        AiBusinessFlowInstanceLink link = findRuntimeLink(resolveTenantId(), processInstanceId, businessKey);
-        if (link == null) {
-            BusinessFlowRuntimeVO vo = new BusinessFlowRuntimeVO();
-            vo.setObjectCode(runtime == null ? null : runtime.objectCode());
-            vo.setRecordId(runtime == null ? null : runtime.recordId());
-            vo.setBusinessKey(businessKey);
-            vo.setProcessInstanceId(processInstanceId);
-            vo.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
-            vo.setMessage("业务待办已办理，未找到低代码流程实例关联");
-            return vo;
-        }
-
-        String engineStatus = readFlowEngineBusinessStatus(resolveFlowEngineBusinessKey(link));
-        String terminalResult = resolveTerminalBusinessFlowResult(engineStatus);
-        if (StringUtils.isNotBlank(terminalResult)) {
-            BusinessFlowCallbackDTO callback = new BusinessFlowCallbackDTO();
-            callback.setProcessInstanceId(StringUtils.firstNonBlank(processInstanceId, link.getProcessInstanceId()));
-            callback.setBusinessKey(link.getBusinessKey());
-            callback.setResult(terminalResult);
-            callback.setFlowStatus(engineStatus);
-            callback.setTenantId(link.getTenantId());
-            callback.setOperatorId(resolveUserId());
-            callback.setVariables(variables == null ? new LinkedHashMap<>() : new LinkedHashMap<>(variables));
-            callbackCoordinator.handleLinkedCallback(link, callback);
-            return toRuntimeVO(link, "业务待办已办理，流程已结束");
-        }
-
-        BusinessDocumentFlowStatus targetStatus = "reject".equals(action)
-                || "rejecttostart".equals(action)
-                ? BusinessDocumentFlowStatus.NEED_MODIFY
-                : BusinessDocumentFlowStatus.IN_PROCESS;
-        taskEventCoordinator.applyRunningFlowState(link, targetStatus);
-        return toRuntimeVO(link, "业务待办已办理，流程继续流转");
-    }
-
-    private String readFlowEngineBusinessStatus(String businessKey) {
-        if (flowClient == null || StringUtils.isBlank(businessKey)) {
-            return null;
-        }
-        try {
-            FlowResult<Map<String, Object>> status = flowClient.getProcessStatus(businessKey);
-            if (status == null || !status.isSuccess() || status.getData() == null) {
-                return null;
-            }
-            return StringUtils.trimToNull(textValue(status.getData().get("status")));
-        } catch (Exception e) {
-            log.debug("[低代码流程状态] 读取 Flowable 业务状态失败: businessKey={}, error={}",
-                    businessKey, e.getMessage());
-            return null;
-        }
-    }
-
-    private String resolveFlowEngineBusinessKey(AiBusinessFlowInstanceLink link) {
-        if (link == null) {
-            return null;
-        }
-        JSONObject variables = readJsonObject(link.getVariablesSnapshot());
-        return StringUtils.firstNonBlank(
-                StringUtils.trimToNull(textValue(variables.get("flowBusinessKey"))),
-                StringUtils.trimToNull(link.getBusinessKey()));
+        return taskCommandCoordinator.recoverCapabilityTaskAction(dto);
     }
 
     private String resolveTerminalBusinessFlowResult(String engineStatus) {
@@ -987,47 +574,7 @@ public class BusinessFlowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO resubmit(BusinessFlowResubmitDTO dto) {
-        if (dto == null) {
-            throw new BusinessException("重提参数不能为空");
-        }
-        BusinessTaskFormContextQueryDTO query = new BusinessTaskFormContextQueryDTO();
-        query.setTaskId(dto.getTaskId());
-        query.setBusinessKey(dto.getBusinessKey());
-        query.setProcessInstanceId(dto.getProcessInstanceId());
-        query.setProcessDefKey(dto.getProcessDefKey());
-        query.setTaskDefKey(dto.getTaskDefKey());
-
-        Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
-        validateTaskAccess(query, true, taskFormInfo);
-        TaskFormRuntimeContext runtime = businessRuntimeContextResolver.resolveTask(query, true, taskFormInfo);
-        Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
-        FlowResult<Void> result = flowClient.approve(
-                query.getTaskId(),
-                String.valueOf(resolveUserId()),
-                StringUtils.defaultIfBlank(dto.getComment(), "修改后重提"),
-                variables);
-        if (result == null || !result.isSuccess()) {
-            throw new BusinessException(result == null ? "重提失败" : StringUtils.defaultIfBlank(result.getMsg(), "重提失败"));
-        }
-
-        AiBusinessFlowInstanceLink link = findRuntimeLink(resolveTenantId(), query.getProcessInstanceId(), runtime.businessKey());
-        if (link == null) {
-            BusinessFlowRuntimeVO vo = new BusinessFlowRuntimeVO();
-            vo.setObjectCode(runtime.objectCode());
-            vo.setRecordId(runtime.recordId());
-            vo.setBusinessKey(runtime.businessKey());
-            vo.setProcessInstanceId(query.getProcessInstanceId());
-            vo.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
-            vo.setMessage("已重提");
-            return vo;
-        }
-
-        taskEventCoordinator.applyRunningFlowState(link, BusinessDocumentFlowStatus.IN_PROCESS);
-        // 修改节点已经办完，待办随之失效；重提后的新审批待办由任务创建事件重建。
-        link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
-                taskEventCoordinator.mergeLinkVariablesSnapshot(link, variables), null));
-        flowInstanceLinkMapper.updateById(link);
-        return toRuntimeVO(link, "已重提");
+        return taskCommandCoordinator.resubmit(dto);
     }
 
     /**
@@ -1035,350 +582,16 @@ public class BusinessFlowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO withdrawDocumentFlow(BusinessFlowWithdrawDTO dto) {
-        if (dto == null) {
-            throw new BusinessException("撤回参数不能为空");
-        }
-        Long tenantId = resolveTenantId();
-        Long userId = resolveUserId();
-        if (userId == null) {
-            throw new BusinessException("当前用户未登录，无法撤回流程");
-        }
-        if (flowClient == null) {
-            throw new BusinessException("流程服务未配置，无法撤回流程");
-        }
-
-        String objectCode = StringUtils.trimToNull(dto.getObjectCode());
-        if (StringUtils.isNotBlank(objectCode)) {
-            objectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(tenantId, objectCode);
-        }
-        String businessKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(dto.getBusinessKey()),
-                objectCode != null && dto.getRecordId() != null
-                        ? buildBusinessKey(objectCode, dto.getRecordId()) : null);
-        AiBusinessFlowInstanceLink link = findRuntimeLink(
-                tenantId, StringUtils.trimToNull(dto.getProcessInstanceId()), businessKey);
-        if (link == null) {
-            throw new BusinessException("未找到可撤回的流程实例");
-        }
-        if (isEndedLink(link) || !isRunningFlowStatus(link.getFlowStatus())) {
-            throw new BusinessException("当前流程已结束，不能撤回");
-        }
-        if (!userId.equals(link.getStartUserId())) {
-            throw new BusinessException("只有流程发起人可以撤回");
-        }
-
-        FlowResult<Void> result = flowClient.withdrawProcess(
-                link.getProcessInstanceId(),
-                String.valueOf(userId),
-                StringUtils.defaultIfBlank(dto.getComment(), "申请人撤回"));
-        if (result == null || !result.isSuccess()) {
-            throw new BusinessException(result == null
-                    ? "撤回失败"
-                    : StringUtils.defaultIfBlank(result.getMsg(), "撤回失败"));
-        }
-
-        BusinessFlowCallbackDTO callback = new BusinessFlowCallbackDTO();
-        callback.setProcessInstanceId(link.getProcessInstanceId());
-        callback.setBusinessKey(link.getBusinessKey());
-        callback.setResult(BusinessDocumentFlowStatus.CANCELED.getCode());
-        callback.setFlowStatus(BusinessDocumentFlowStatus.CANCELED.getCode());
-        callback.setTenantId(link.getTenantId());
-        callback.setOperatorId(userId);
-        callbackCoordinator.handleLinkedCallback(link, callback);
-        return toRuntimeVO(link, "流程已撤回");
+        return taskCommandCoordinator.withdrawDocumentFlow(dto);
     }
-
-    private boolean isRunningFlowStatus(String flowStatus) {
-        return BusinessDocumentFlowStatus.STARTED.matches(flowStatus)
-                || BusinessDocumentFlowStatus.RUNNING.matches(flowStatus)
-                || BusinessDocumentFlowStatus.IN_PROCESS.matches(flowStatus)
-                || BusinessDocumentFlowStatus.NEED_MODIFY.matches(flowStatus);
-    }
-
-    private void validateTaskAccess(BusinessTaskFormContextQueryDTO query, boolean writeRequired) {
-        validateTaskAccess(query, writeRequired,
-                taskNodeFormResolver.loadTaskFormInfo(query == null ? null : query.getTaskId()));
-    }
-
-    private void validateTaskAccess(BusinessTaskFormContextQueryDTO query,
-                                    boolean writeRequired,
-                                    Map<String, Object> task) {
-        TASK_ACCESS_POLICY.validate(query, writeRequired, task, flowClient != null, resolveUserId());
-    }
-
-    private void ensureRuntimeLink(TaskFormRuntimeContext runtime,
-                                   BusinessTaskFormContextQueryDTO query,
-                                   Long recordId) {
-        if (runtime == null || query == null || recordId == null || StringUtils.isBlank(runtime.objectCode())) {
-            return;
-        }
-        Long tenantId = resolveTenantId();
-        String processInstanceId = StringUtils.trimToNull(query.getProcessInstanceId());
-        String businessKey = buildBusinessKey(runtime.objectCode(), recordId);
-        AiBusinessFlowInstanceLink existing = StringUtils.isBlank(processInstanceId)
-                ? null
-                : flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, processInstanceId);
-        if (existing != null) {
-            existing.setObjectCode(runtime.objectCode());
-            existing.setRecordId(recordId);
-            existing.setBusinessKey(businessKey);
-            flowInstanceLinkMapper.updateById(existing);
-            return;
-        }
-        AiBusinessFlowInstanceLink link = new AiBusinessFlowInstanceLink();
-        link.setTenantId(tenantId);
-        link.setObjectCode(runtime.objectCode());
-        link.setRecordId(recordId);
-        link.setBusinessKey(businessKey);
-        link.setFlowModelKey(StringUtils.firstNonBlank(
-                StringUtils.trimToNull(query.getProcessDefKey()),
-                resolveFlowModelKey(runtime.bindingConfig())));
-        link.setProcessInstanceId(processInstanceId);
-        link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
-        link.setStartUserId(resolveUserId());
-        link.setStartTime(LocalDateTime.now());
-        link.setRoundNo(resolveNextRoundNo(tenantId, businessKey));
-        flowInstanceLinkMapper.insert(link);
-    }
-
-    private int resolveNextRoundNo(Long tenantId, String businessKey) {
-        return resolveNextRoundNo(flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, businessKey));
-    }
-
-    private int resolveNextRoundNo(AiBusinessFlowInstanceLink latest) {
-        if (latest == null || latest.getRoundNo() == null || latest.getRoundNo() < 1) {
-            return 1;
-        }
-        return latest.getRoundNo() + 1;
-    }
-
-
-    private BusinessObjectVO queryBusinessObject(Long tenantId, String objectCode) {
-        return queryBusinessObject(tenantId, objectCode, null);
-    }
-
-    /**
-     * 查询待办展示对象。配置键是运行时的稳定身份，必须优先于可能来自历史数据的 objectCode。
-     */
-    private BusinessObjectVO queryBusinessObject(Long tenantId, String objectCode, String configKey) {
-        if (StringUtils.isNotBlank(configKey)) {
-            AiBusinessObject byConfigKey = businessObjectMapper.selectByConfigKey(tenantId, configKey);
-            if (byConfigKey != null) {
-                return toBusinessObjectVO(byConfigKey);
-            }
-        }
-        if (StringUtils.isBlank(objectCode)) {
-            return null;
-        }
-        BusinessObjectQueryDTO query = new BusinessObjectQueryDTO();
-        query.setObjectCode(objectCode);
-        List<BusinessObjectVO> objects = businessObjectMapper.selectObjectList(tenantId, query);
-        return objects == null || objects.isEmpty() ? null : objects.get(0);
-    }
-
-    private BusinessObjectVO toBusinessObjectVO(AiBusinessObject object) {
-        if (object == null) {
-            return null;
-        }
-        BusinessObjectVO vo = new BusinessObjectVO();
-        vo.setId(object.getId());
-        vo.setSuiteCode(object.getSuiteCode());
-        vo.setObjectCode(object.getObjectCode());
-        vo.setObjectName(object.getObjectName());
-        vo.setObjectType(object.getObjectType());
-        vo.setModelId(object.getModelId());
-        vo.setModelCode(object.getModelCode());
-        vo.setDisplayField(object.getDisplayField());
-        vo.setIcon(object.getIcon());
-        vo.setDescription(object.getDescription());
-        vo.setStatus(object.getStatus());
-        vo.setSortOrder(object.getSortOrder());
-        vo.setOptions(object.getOptions());
-        vo.setDesignStatus(object.getDesignStatus());
-        vo.setConfigKey(object.getConfigKey());
-        vo.setLastPublishTime(object.getLastPublishTime());
-        vo.setLastPublishVersion(object.getLastPublishVersion());
-        vo.setDesignerOptions(object.getDesignerOptions());
-        return vo;
-    }
-
 
 
     /**
      * 节点表单 / formRef 只要身份字段；避免把整份设计器 schema 拷进响应组装路径。
      */
    private List<Map<String, Object>> collectTaskFormAssets(String objectCode) {
-        if (StringUtils.isBlank(objectCode)) {
-            return List.of();
-        }
-        Long tenantId = resolveTenantId();
-        BusinessObjectVO object = queryBusinessObject(tenantId, objectCode);
-        List<Map<String, Object>> assets = new ArrayList<>();
-        if (object != null) {
-            AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, StringUtils.firstNonBlank(
-                    object.getConfigKey(), object.getObjectCode(), objectCode));
-            JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
-            JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
-            assets.addAll(formAssetAssembler.collectBusinessFormAssets(object, formSchema));
-            formAssetAssembler.appendUniqueFormAssets(
-                    assets, formAssetAssembler.collectRuntimeCrudFormAssets(object, runtimeConfig));
-            formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
-            JSONObject metadata = readCodeAppMetadata(tenantId, object.getObjectCode());
-            formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
-                    object.getObjectCode(), codeFormProviderRegistry.listAssets(object.getObjectCode()),
-                    metadata, false));
-        } else {
-            AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, objectCode);
-            formAssetAssembler.appendUniqueFormAssets(
-                    assets, formAssetAssembler.collectRuntimeCrudFormAssets(null, runtimeConfig));
-            JSONObject metadata = readCodeAppMetadata(tenantId, objectCode);
-            formAssetAssembler.appendUniqueFormAssets(assets, mergeCodeAppAssets(
-                    objectCode, codeFormProviderRegistry.listAssets(objectCode), metadata, false));
-        }
-        formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
-        return assets;
+        return formAssetCatalog.collectTaskFormAssets(objectCode);
     }
-
-    private JSONObject resolveBusinessFormSchema(BusinessObjectVO object, String formKey, String configKey) {
-        return resolveBusinessFormSchema(object, formKey, configKey, null);
-    }
-
-    private JSONObject resolveBusinessFormSchema(BusinessObjectVO object,
-                                                 String formKey,
-                                                 String configKey,
-                                                 AiCrudConfig preloadedRuntimeConfig) {
-        AiCrudConfig runtimeConfig = preloadedRuntimeConfig != null
-                ? preloadedRuntimeConfig
-                : resolveRuntimeConfigForBusinessForm(object, configKey);
-        JSONObject applicationSchema = applicationPageFormResolver.resolveApplicationPageFormSchema(formKey);
-        // 对象设计器当前表单优先：应用页 formAssets / 发布快照常落后于用户刚改的对象表单
-        JSONObject objectLiveSchema = resolveObjectDesignerFormSchema(object, formKey);
-        if (hasRenderableFormComponents(objectLiveSchema)) {
-            JSONObject result = JSON.parseObject(JSON.toJSONString(objectLiveSchema));
-            if (!applicationSchema.isEmpty()) {
-                result.put("formKey", StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(applicationSchema.getString("formKey")),
-                        StringUtils.trimToNull(result.getString("formKey")),
-                        StringUtils.trimToNull(formKey)));
-                result.put("formName", StringUtils.firstNonBlank(
-                        StringUtils.trimToNull(applicationSchema.getString("formName")),
-                        StringUtils.trimToNull(result.getString("formName"))));
-            }
-            taskFormProfiler.note("formSchema=objectDesignerLive");
-            return result;
-        }
-        if (!applicationSchema.isEmpty()) {
-            taskFormProfiler.note("formSchema=applicationPage");
-            return applicationSchema;
-        }
-        if (object == null) {
-            return formAssetAssembler.buildRuntimeCrudFormSchema(null, runtimeConfig, formKey);
-        }
-        if (!objectLiveSchema.isEmpty()) {
-            return objectLiveSchema;
-        }
-        JSONObject runtimeSchema = formAssetAssembler.buildRuntimeCrudFormSchema(object, runtimeConfig, formKey);
-        return runtimeSchema.isEmpty() ? buildObjectFieldRegistryFormSchema(object, formKey) : runtimeSchema;
-    }
-
-    /**
-     * 读取业务对象设计器里当前保存的表单 schema（designerOptions.formDesignerSchema）。
-     */
-    private JSONObject resolveObjectDesignerFormSchema(BusinessObjectVO object, String formKey) {
-        if (object == null) {
-            return new JSONObject();
-        }
-        JSONObject designerOptions = readJsonObject(object.getDesignerOptions());
-        JSONObject formSchema = readNestedObject(designerOptions.get("formDesignerSchema"));
-        if (formSchema.isEmpty()) {
-            return new JSONObject();
-        }
-        String targetFormKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(formKey),
-                StringUtils.trimToNull(formSchema.getString("defaultFormKey")),
-                StringUtils.trimToNull(formSchema.getString("formKey")));
-        // app_ 页面 formKey 对不上对象内部 formKey，按默认/根表单取
-        boolean appPageFormKey = StringUtils.startsWith(StringUtils.trimToEmpty(formKey), "app_");
-
-        JSONObject byForms = formAssetAssembler.findFormSchemaInArray(
-                readNestedArray(formSchema.get("forms")), targetFormKey);
-        if (!byForms.isEmpty() && !collectBusinessFormFieldCatalog(byForms).isEmpty()) {
-            return byForms;
-        }
-        JSONObject settings = readNestedObject(formSchema.get("settings"));
-        JSONObject byAssets = formAssetAssembler.findFormSchemaInArray(
-                readNestedArray(settings.get("formAssets")), targetFormKey);
-        if (!byAssets.isEmpty() && !collectBusinessFormFieldCatalog(byAssets).isEmpty()) {
-            return byAssets;
-        }
-        String rootFormKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(formSchema.getString("formKey")),
-                StringUtils.trimToNull(formSchema.getString("defaultFormKey")));
-        if (appPageFormKey
-                || StringUtils.isBlank(targetFormKey)
-                || StringUtils.equals(targetFormKey, rootFormKey)
-                || hasRenderableFormComponents(formSchema)) {
-            return formSchema;
-        }
-        return new JSONObject();
-    }
-
-    private boolean hasRenderableFormComponents(JSONObject formSchema) {
-        if (formSchema == null || formSchema.isEmpty()) {
-            return false;
-        }
-        JSONArray components = readNestedArray(formSchema.get("components"));
-        if (!components.isEmpty()) {
-            return true;
-        }
-        JSONObject settings = readNestedObject(formSchema.get("settings"));
-        return !readNestedArray(settings.get("components")).isEmpty()
-                || !collectBusinessFormFieldCatalog(formSchema).isEmpty();
-    }
-
-    private JSONObject buildObjectFieldRegistryFormSchema(BusinessObjectVO object, String requestedFormKey) {
-        if (object == null || object.getId() == null) {
-            return new JSONObject();
-        }
-        try {
-            List<Map<String, Object>> sourceFields = new ArrayList<>();
-            businessFieldDesignService.listFields(object.getId()).forEach(field ->
-                    sourceFields.add(new LinkedHashMap<>(
-                            JSON.parseObject(JSON.toJSONString(field), JSONObject.class))));
-            List<Map<String, Object>> fields = formAssetAssembler.normalizeRuntimeCrudFormFields(sourceFields);
-            if (fields.isEmpty()) {
-                return new JSONObject();
-            }
-            String formKey = StringUtils.firstNonBlank(
-                    StringUtils.trimToNull(requestedFormKey), object.getObjectCode());
-            JSONObject schema = new JSONObject();
-            schema.put("formKey", formKey);
-            schema.put("defaultFormKey", formKey);
-            schema.put("formName", StringUtils.defaultIfBlank(object.getObjectName(), object.getObjectCode()) + "表单");
-            JSONArray components = new JSONArray();
-            fields.forEach(field -> components.add(formAssetAssembler.toRuntimeCrudFormComponent(field)));
-            schema.put("components", components);
-            return schema;
-        } catch (Exception e) {
-            log.debug("读取业务对象字段注册表表单 schema 失败: objectId={}, error={}", object.getId(), e.getMessage());
-            return new JSONObject();
-        }
-    }
-
-    private JSONObject readCodeAppMetadata(Long tenantId, String objectCode) {
-        if (tenantId == null || StringUtils.isBlank(objectCode)) {
-            return new JSONObject();
-        }
-        AiBusinessBinding binding = flowBindingResolver.selectForConfig(tenantId, objectCode);
-        if (binding == null) {
-            return new JSONObject();
-        }
-        JSONObject config = readBindingConfig(binding.getBindingConfig());
-        JSONObject options = readNestedObject(config.get("options"));
-        return readNestedObject(options.get("codeAppMetadata"));
-    }
-
-
 
     /**
      * 旧触发器路径兼容返回，保留 config 包装结构。
@@ -1408,7 +621,7 @@ public class BusinessFlowService {
         Long tenantId = resolveTenantId();
         String canonicalObjectCode = businessRuntimeContextResolver.resolveCanonicalObjectCode(tenantId, objectCode);
         JSONObject config = normalizeBindingConfig(dto);
-        ensureBusinessBinding(config, tenantId, canonicalObjectCode);
+        bindingViewAssembler.ensureBusinessBinding(config, tenantId, canonicalObjectCode);
         String flowModelKey = config.getString("flowModelKey");
         if (StringUtils.isBlank(flowModelKey)) {
             throw new BusinessException("流程模型Key不能为空");
@@ -1621,35 +834,12 @@ public class BusinessFlowService {
      * 因此异常只记录日志，由发起人修改节点保存字段时的自愈逻辑兜底。
      */
 
-    private AiBusinessFlowInstanceLink findRuntimeLink(Long tenantId, String processInstanceId, String businessKey) {
-        if (StringUtils.isNotBlank(processInstanceId)) {
-            AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, processInstanceId);
-            if (link != null) {
-                return link;
-            }
-        }
-        if (StringUtils.isNotBlank(businessKey)) {
-            return flowInstanceLinkMapper.selectLatestByBusinessKey(tenantId, businessKey);
-        }
-        return null;
-    }
-
     private AiCrudConfig resolvePublishedRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
         return runtimeConfigResolver.published(tenantId, objectCodeOrConfigKey);
     }
 
     private AiCrudConfig resolveRuntimeConfig(Long tenantId, String objectCodeOrConfigKey) {
         return runtimeConfigResolver.runtime(tenantId, objectCodeOrConfigKey);
-    }
-
-    private boolean isEndedLink(AiBusinessFlowInstanceLink link) {
-        return link.getEndTime() != null
-                || BusinessDocumentFlowStatus.APPROVED.matches(link.getResult())
-                || BusinessDocumentFlowStatus.REJECTED.matches(link.getResult())
-                || BusinessDocumentFlowStatus.CANCELED.matches(link.getResult())
-                || BusinessDocumentFlowStatus.APPROVED.matches(link.getFlowStatus())
-                || BusinessDocumentFlowStatus.REJECTED.matches(link.getFlowStatus())
-                || BusinessDocumentFlowStatus.CANCELED.matches(link.getFlowStatus());
     }
 
     private BusinessFlowRuntimeVO toRuntimeVO(AiBusinessFlowInstanceLink link, String message) {
@@ -1719,102 +909,6 @@ public class BusinessFlowService {
         return null;
     }
 
-    private BusinessFlowBindingVO toVO(String objectCode, AiBusinessBinding binding) {
-        JSONObject config = readBindingConfig(binding.getBindingConfig());
-        ensureBusinessBinding(config, binding.getTenantId(), objectCode);
-        BusinessFlowBindingVO vo = new BusinessFlowBindingVO();
-        vo.setBindingId(binding.getId());
-        vo.setObjectCode(objectCode);
-        vo.setFlowModelKey(StringUtils.defaultIfBlank(resolveFlowModelKey(config), binding.getBindingKey()));
-        vo.setFlowModelName(StringUtils.defaultIfBlank(config.getString("flowModelName"), binding.getBindingName()));
-        vo.setTitleTemplate(config.getString("titleTemplate"));
-        vo.setStartMode(normalizeStartMode(config.getString("startMode")));
-        vo.setBusinessBinding(toBusinessBindingDTO(config.getJSONObject("businessBinding")));
-        vo.setVariableMapping(normalizeVariableMapping(config.getJSONArray("variableMapping")));
-        vo.setNodeForms(normalizeNodeForms(readMapList(config.getJSONArray("nodeForms"))));
-        vo.setConditionFlows(readMapList(config.getJSONArray("conditionFlows")));
-        vo.setOptions(readOptions(config.getJSONObject("options")));
-        vo.setStatus(binding.getStatus());
-        enrichBindingSummary(vo, "AI_BUSINESS_BINDING");
-        return vo;
-    }
-
-    private BusinessFlowBindingVO legacyDocumentFlowToVO(String objectCode, AiBusinessDocumentConfig documentConfig) {
-        BusinessFlowBindingVO vo = new BusinessFlowBindingVO();
-        vo.setObjectCode(objectCode);
-        vo.setFlowModelKey(documentConfig.getDefaultFlowKey());
-        vo.setFlowModelName(documentConfig.getDefaultFlowKey());
-        vo.setStartMode("MANUAL");
-        vo.setBusinessBinding(defaultBusinessBinding(null, documentConfig));
-        vo.setStatus(EnableStatus.ENABLED.getCode());
-        vo.setCompatibilitySource("DOCUMENT_DEFAULT_FLOW");
-        vo.setComplete(false);
-        vo.setGaps(List.of("历史默认流程缺少变量映射，请在流程与自动化中保存一次主流程"));
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("configured", true);
-        summary.put("flowModelKey", documentConfig.getDefaultFlowKey());
-        summary.put("flowModelName", documentConfig.getDefaultFlowKey());
-        summary.put("startMode", "MANUAL");
-        summary.put("businessBinding", vo.getBusinessBinding());
-        summary.put("variableMappingCount", 0);
-        summary.put("complete", false);
-        summary.put("gaps", vo.getGaps());
-        summary.put("compatibilitySource", "DOCUMENT_DEFAULT_FLOW");
-        vo.setMainFlowSummary(summary);
-        return vo;
-    }
-
-    private void enrichBindingSummary(BusinessFlowBindingVO vo, String compatibilitySource) {
-        List<String> gaps = new ArrayList<>();
-        if (StringUtils.isBlank(vo.getFlowModelKey())) {
-            gaps.add("未配置主流程");
-        }
-        if (StringUtils.isBlank(vo.getStartMode())) {
-            gaps.add("发起方式未配置");
-        }
-        if (vo.getVariableMapping() == null || vo.getVariableMapping().isEmpty()) {
-            gaps.add("变量映射缺失");
-        }
-        boolean complete = gaps.isEmpty();
-        vo.setComplete(complete);
-        vo.setGaps(gaps);
-        vo.setCompatibilitySource(compatibilitySource);
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("configured", StringUtils.isNotBlank(vo.getFlowModelKey()));
-        summary.put("bindingId", vo.getBindingId());
-        summary.put("flowModelKey", vo.getFlowModelKey());
-        summary.put("flowModelName", vo.getFlowModelName());
-        summary.put("startMode", vo.getStartMode());
-        summary.put("businessBinding", vo.getBusinessBinding());
-        summary.put("variableMappingCount", vo.getVariableMapping() == null ? 0 : vo.getVariableMapping().size());
-        summary.put("complete", complete);
-        summary.put("gaps", gaps);
-        summary.put("compatibilitySource", compatibilitySource);
-        vo.setMainFlowSummary(summary);
-    }
-
-
-    private void ensureBusinessBinding(JSONObject config, Long tenantId, String objectCode) {
-        if (config == null) {
-            return;
-        }
-        AiCrudConfig runtimeConfig = resolvePublishedRuntimeConfig(tenantId, objectCode);
-        AiBusinessDocumentConfig documentConfig = businessRuntimeContextResolver.resolveEnabledDocumentConfig(
-                tenantId, objectCode, runtimeConfig);
-        BusinessFlowBindingCodec.ensureBusinessBinding(config, runtimeConfig, documentConfig);
-    }
-
-    private AiCrudConfig resolveRuntimeConfigForBusinessForm(BusinessObjectVO object, String configKey) {
-        String lookupKey = StringUtils.firstNonBlank(
-                StringUtils.trimToNull(configKey),
-                object == null ? null : StringUtils.trimToNull(object.getConfigKey()),
-                object == null ? null : StringUtils.trimToNull(object.getObjectCode()));
-        return resolvePublishedRuntimeConfig(resolveTenantId(), lookupKey);
-    }
-
-
-
-
     private Long resolveTenantId() {
         Long tenantId;
         try {
@@ -1854,10 +948,6 @@ public class BusinessFlowService {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private record TaskFormSaveResult(TaskFormRuntimeContext runtime,
-                                      BusinessTaskFormContextVO context) {
     }
 
 }

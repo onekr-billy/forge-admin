@@ -20,7 +20,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,7 +40,7 @@ class BusinessFlowServiceFormAssetMergeTest {
     private BusinessFlowService service;
     private BusinessFieldDesignService fieldDesignService;
     private BusinessObjectMapper businessObjectMapper;
-    private Method buildObjectFieldRegistryFormSchema;
+    private BusinessFlowFormAssetCatalog formAssetCatalog;
     private BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
     private BusinessFlowStartContextAssembler startContextAssembler;
     private BusinessFlowTaskChildPolicy taskChildPolicy;
@@ -72,9 +71,9 @@ class BusinessFlowServiceFormAssetMergeTest {
         applicationField.set(service, applicationService);
         formAssetAssembler = new BusinessFlowFormAssetAssembler(
                 fieldDesignService, (fields, layout) -> fields, (options, fields) -> { });
-        buildObjectFieldRegistryFormSchema = BusinessFlowService.class.getDeclaredMethod(
-                "buildObjectFieldRegistryFormSchema", BusinessObjectVO.class, String.class);
-        buildObjectFieldRegistryFormSchema.setAccessible(true);
+        Field formAssetCatalogField = BusinessFlowService.class.getDeclaredField("formAssetCatalog");
+        formAssetCatalogField.setAccessible(true);
+        formAssetCatalog = (BusinessFlowFormAssetCatalog) formAssetCatalogField.get(service);
         Field nodeFormResolverField = BusinessFlowService.class.getDeclaredField("taskNodeFormResolver");
         nodeFormResolverField.setAccessible(true);
         taskNodeFormResolver = (BusinessFlowTaskNodeFormResolver) nodeFormResolverField.get(service);
@@ -333,8 +332,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         employee.setFormVisible(true);
         org.mockito.Mockito.when(fieldDesignService.listFields(1001L)).thenReturn(List.of(employee));
 
-        Map<String, Object> schema = (Map<String, Object>) buildObjectFieldRegistryFormSchema
-                .invoke(service, object, "attendance");
+        Map<String, Object> schema = formAssetCatalog.buildObjectFieldRegistryFormSchema(object, "attendance");
 
         assertEquals("attendance", schema.get("formKey"));
         assertEquals(1, ((List<?>) schema.get("components")).size());

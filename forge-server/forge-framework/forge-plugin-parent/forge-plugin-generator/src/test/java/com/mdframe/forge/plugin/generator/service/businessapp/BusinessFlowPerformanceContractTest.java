@@ -80,8 +80,10 @@ class BusinessFlowPerformanceContractTest {
     }
     @Test
     void businessTaskActionMustPersistSubmittedFormDataBeforeCallingFlow() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "public BusinessFlowRuntimeVO completeBusinessTask", "    /**", 1);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskCommandCoordinator.java"));
+        String method = method(source, "BusinessFlowRuntimeVO completeBusinessTask",
+                "    BusinessFlowRuntimeVO recoverCapabilityTaskAction", 0);
 
         assertTrue(method.contains("dto.getData() != null && !dto.getData().isEmpty()"));
         assertTrue(method.contains("persistTaskFormData("));
