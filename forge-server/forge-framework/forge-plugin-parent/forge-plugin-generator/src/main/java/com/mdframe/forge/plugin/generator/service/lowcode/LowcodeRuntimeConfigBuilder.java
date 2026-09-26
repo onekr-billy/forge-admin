@@ -98,7 +98,8 @@ public class LowcodeRuntimeConfigBuilder {
                         modelSchema, pageSchema, configKey))
                 .collect(Collectors.toCollection(ArrayList::new));
         appendTreeRuntimeField(fields, modelSchema, pageSchema, "search");
-        decorateTreeRuntimeFields(fields, configKey, modelSchema, pageSchema);
+        RuntimeTreeFieldDecorator.decorate(fields, configKey, modelSchema, pageSchema,
+                isTreeRuntime(modelSchema, pageSchema), isEmbeddedTreeTableRuntime(modelSchema, pageSchema));
         return fields;
     }
 
@@ -139,7 +140,8 @@ public class LowcodeRuntimeConfigBuilder {
                         modelSchema, pageSchema))
                 .collect(Collectors.toCollection(ArrayList::new));
         appendTreeRuntimeField(fields, modelSchema, pageSchema, "edit");
-        decorateTreeRuntimeFields(fields, configKey, modelSchema, pageSchema);
+        RuntimeTreeFieldDecorator.decorate(fields, configKey, modelSchema, pageSchema,
+                isTreeRuntime(modelSchema, pageSchema), isEmbeddedTreeTableRuntime(modelSchema, pageSchema));
         return fields;
     }
 
@@ -551,194 +553,6 @@ public class LowcodeRuntimeConfigBuilder {
         fields.add(runtimeField);
     }
 
-    @SuppressWarnings("unchecked")
-    private void decorateTreeRuntimeFields(List<Map<String, Object>> fields,
-                                           String configKey,
-                                           LowcodeModelSchema modelSchema,
-                                           LowcodePageSchema pageSchema) {
-        if (!isTreeRuntime(modelSchema, pageSchema) || StringUtils.isBlank(configKey)) {
-            return;
-        }
-        boolean leftTree = isLeftTreeRightTableLayout(pageSchema);
-        boolean modelEmbeddedTree = isModelEmbeddedTreeEnabled(modelSchema);
-        // 纯左树右表：筛选由左侧树完成，不要用外部树 parentField 改右表字段；
-        // 但本表已是 treeSelect 且无选项源的字段，仍补当前对象 tree API（表单树形下拉）
-        if (leftTree && !modelEmbeddedTree) {
-            decorateSelfTreeSelectFields(fields, configKey, modelSchema);
-            // 本表 parentId 类字段仍补树形下拉（走当前对象 tree，与左树外部源无关）
-            decorateCurrentObjectParentTreeSelect(fields, configKey, modelSchema);
-            return;
-        }
-        // 非左树时，仅嵌入式树表需要给父级字段补选项源
-        if (!leftTree && !isEmbeddedTreeTableRuntime(modelSchema, pageSchema)) {
-            return;
-        }
-        Map<String, Object> treeConfig = buildTreeConfig(modelSchema, pageSchema, extractTreeConfigOverrides(pageSchema));
-        // 本表树形父级字段（表单树形选择），不能误用左树外部数据源的 parentField
-        String parentField = modelEmbeddedTree
-                ? firstNonBlank(
-                        modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getParentField() : null,
-                        text(treeConfig.get("parentField")),
-                        "parentId")
-                : firstNonBlank(
-                        text(treeConfig.get("parentField")),
-                        text(treeConfig.get("filterField")));
-        if (StringUtils.isBlank(parentField)) {
-            return;
-        }
-        for (Map<String, Object> item : fields) {
-            if (!parentField.equals(text(item.get("field")))) {
-                continue;
-            }
-            String label = StringUtils.defaultIfBlank(text(item.get("label")), parentField);
-            item.put("type", "treeSelect");
-            item.put("queryType", "eq");
-            Map<String, Object> props = new LinkedHashMap<>();
-            Object sourceProps = item.get("props");
-            if (sourceProps instanceof Map<?, ?> sourcePropsMap) {
-                props.putAll((Map<String, Object>) sourcePropsMap);
-            }
-            props.putIfAbsent("placeholder", "请选择" + label);
-            props.putIfAbsent("clearable", true);
-            props.putIfAbsent("filterable", true);
-            // 本表父级选择必须走当前对象 tree API，不能走左树外部 sourceConfigKey
-            Map<String, Object> optionSource = buildTreeOptionSource(configKey, treeConfig);
-            props.put("optionSource", optionSource);
-            item.put("optionSource", optionSource);
-            item.put("props", props);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void decorateSelfTreeSelectFields(List<Map<String, Object>> fields,
-                                              String configKey,
-                                              LowcodeModelSchema modelSchema) {
-        if (fields == null || StringUtils.isBlank(configKey)) {
-            return;
-        }
-        // 本表没有父级字段时不能拼 /tree，否则运行态报「树形父级字段不存在: parentId」
-        if (!canUseSelfTreeOptionSource(modelSchema)) {
-            return;
-        }
-        Map<String, Object> treeConfig = new LinkedHashMap<>();
-        treeConfig.put("childrenField", "children");
-        if (modelSchema != null && modelSchema.getTreeConfig() != null) {
-            putIfNotBlank(treeConfig, "childrenField", modelSchema.getTreeConfig().getChildrenField());
-        }
-        for (Map<String, Object> item : fields) {
-            if (!"treeSelect".equals(text(item.get("type")))) {
-                continue;
-            }
-            Map<String, Object> props = new LinkedHashMap<>();
-            Object sourceProps = item.get("props");
-            if (sourceProps instanceof Map<?, ?> sourcePropsMap) {
-                props.putAll((Map<String, Object>) sourcePropsMap);
-            }
-            if (hasEffectiveOptionSource(item.get("optionSource")) || hasEffectiveOptionSource(props.get("optionSource"))) {
-                continue;
-            }
-            Map<String, Object> optionSource = buildTreeOptionSource(configKey, treeConfig);
-            props.put("optionSource", optionSource);
-            item.put("optionSource", optionSource);
-            item.put("props", props);
-        }
-    }
-
-    /**
-     * 仅当模型真实存在父级字段时，才允许把无选项源的 treeSelect 补成本表 /tree。
-     */
-    private boolean canUseSelfTreeOptionSource(LowcodeModelSchema modelSchema) {
-        if (modelSchema == null) {
-            return false;
-        }
-        String parentField = firstNonBlank(
-                modelSchema.getTreeConfig() != null ? modelSchema.getTreeConfig().getParentField() : null,
-                null);
-        if (StringUtils.isNotBlank(parentField)) {
-            return findField(modelSchema, parentField) != null;
-        }
-        return findField(modelSchema, "parentId") != null
-                || findField(modelSchema, "pid") != null
-                || findField(modelSchema, "parentCode") != null;
-    }
-
-    /**
-     * 左树右表且未开启本表嵌入树时：仍把本表 parentId/父级字段补成 treeSelect，
-     * 选项源固定当前对象（不能用左树外部对象的 parentField）。
-     */
-    @SuppressWarnings("unchecked")
-    private void decorateCurrentObjectParentTreeSelect(List<Map<String, Object>> fields,
-                                                       String configKey,
-                                                       LowcodeModelSchema modelSchema) {
-        if (fields == null || StringUtils.isBlank(configKey)) {
-            return;
-        }
-        String parentField = firstNonBlank(
-                modelSchema != null && modelSchema.getTreeConfig() != null
-                        ? modelSchema.getTreeConfig().getParentField()
-                        : null,
-                findField(modelSchema, "parentId") != null ? "parentId" : null,
-                findField(modelSchema, "pid") != null ? "pid" : null,
-                findField(modelSchema, "parentCode") != null ? "parentCode" : null);
-        if (StringUtils.isBlank(parentField) || findField(modelSchema, parentField) == null) {
-            return;
-        }
-        Map<String, Object> treeConfig = new LinkedHashMap<>();
-        treeConfig.put("childrenField", "children");
-        if (modelSchema != null && modelSchema.getTreeConfig() != null) {
-            putIfNotBlank(treeConfig, "childrenField", modelSchema.getTreeConfig().getChildrenField());
-        }
-        for (Map<String, Object> item : fields) {
-            if (!parentField.equals(text(item.get("field")))) {
-                continue;
-            }
-            Map<String, Object> props = new LinkedHashMap<>();
-            Object sourceProps = item.get("props");
-            if (sourceProps instanceof Map<?, ?> sourcePropsMap) {
-                props.putAll((Map<String, Object>) sourcePropsMap);
-            }
-            if (hasEffectiveOptionSource(item.get("optionSource")) || hasEffectiveOptionSource(props.get("optionSource"))) {
-                // 已有选项源时仍确保组件类型为树形下拉
-                if (!"treeSelect".equals(text(item.get("type")))) {
-                    item.put("type", "treeSelect");
-                }
-                continue;
-            }
-            String label = StringUtils.defaultIfBlank(text(item.get("label")), parentField);
-            item.put("type", "treeSelect");
-            item.put("queryType", "eq");
-            props.putIfAbsent("placeholder", "请选择" + label);
-            props.putIfAbsent("clearable", true);
-            props.putIfAbsent("filterable", true);
-            Map<String, Object> optionSource = buildTreeOptionSource(configKey, treeConfig);
-            props.put("optionSource", optionSource);
-            item.put("optionSource", optionSource);
-            item.put("props", props);
-        }
-    }
-
-    private boolean hasEffectiveOptionSource(Object source) {
-        if (!(source instanceof Map<?, ?> map) || map.isEmpty()) {
-            return false;
-        }
-        return StringUtils.isNotBlank(text(map.get("type")))
-                || StringUtils.isNotBlank(text(map.get("api")))
-                || StringUtils.isNotBlank(text(map.get("querySourceCode")))
-                || StringUtils.isNotBlank(text(map.get("sourceKey")))
-                || StringUtils.isNotBlank(text(map.get("objectCode")))
-                || StringUtils.isNotBlank(text(map.get("businessObjectCode")));
-    }
-
-    private boolean isModelEmbeddedTreeEnabled(LowcodeModelSchema modelSchema) {
-        if (modelSchema == null) {
-            return false;
-        }
-        if ("TREE".equalsIgnoreCase(StringUtils.defaultIfBlank(modelSchema.getAppType(), ""))) {
-            return true;
-        }
-        return modelSchema.getTreeConfig() != null && Boolean.TRUE.equals(modelSchema.getTreeConfig().getEnabled());
-    }
-
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -827,18 +641,20 @@ public class LowcodeRuntimeConfigBuilder {
             props.putAll((Map<String, Object>) designerPropsMap);
         }
         // 查询区选项源与表单字段保持一致：优先用表单设计器 props / 模型 basicProps
-        if (!hasEffectiveOptionSource(props.get("optionSource")) && !hasEffectiveOptionSource(item.get("optionSource"))) {
+        if (!RuntimeTreeFieldDecorator.hasEffectiveOptionSource(props.get("optionSource"))
+                && !RuntimeTreeFieldDecorator.hasEffectiveOptionSource(item.get("optionSource"))) {
             Map<String, Object> editSetting = resolveEditFieldSetting(pageSchema, field.getField());
             Object editPropsValue = editSetting.get("props");
             if (editPropsValue instanceof Map<?, ?> editProps) {
                 Object editOptionSource = editProps.get("optionSource");
-                if (hasEffectiveOptionSource(editOptionSource)) {
+                if (RuntimeTreeFieldDecorator.hasEffectiveOptionSource(editOptionSource)) {
                     props.put("optionSource", editOptionSource);
                     item.put("optionSource", editOptionSource);
                 }
             }
         }
-        if (hasEffectiveOptionSource(props.get("optionSource")) && !hasEffectiveOptionSource(item.get("optionSource"))) {
+        if (RuntimeTreeFieldDecorator.hasEffectiveOptionSource(props.get("optionSource"))
+                && !RuntimeTreeFieldDecorator.hasEffectiveOptionSource(item.get("optionSource"))) {
             item.put("optionSource", props.get("optionSource"));
         }
         if (!props.isEmpty()) {

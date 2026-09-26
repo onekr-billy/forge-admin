@@ -72,3 +72,9 @@
 - P0：将弹窗宽度优先级、modal/drawer/flat/tabWorkspace 模式和工作区默认值迁出；单测覆盖编辑配置覆盖表格配置、默认 900px 回退、auto/百分比宽度和非法模式归一化。
 - P1：重跑运行配置入口与生成配置测试，检查 JSON 中 `modalWidth`、`modalType`、`formOpenMode`、`tabWorkspace` 保持一致；generator Reactor 编译与 `git diff --check` 通过。
 - 纯配置编译迁移，不修改表单保存或 API 协议，不启动服务。
+
+## 第十二轮增量验证：树字段选项源装饰
+
+- P0：迁出树字段 `treeSelect` 类型/选项源装饰，直接测试左树右表外部源、当前对象父级字段、本表树 API 资格与已有选项源保留。
+- P1：重跑 `RuntimeTreeConfigBuilderTest`、`LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest`，确认搜索/编辑字段和 `treeConfig` JSON 协议不变；generator Reactor 编译与 `git diff --check` 通过。
+- 不改变树数据查询、Mapper、表单保存或运行时状态；不启动服务。

@@ -45,3 +45,9 @@
 - 从 `LowcodeRuntimeConfigBuilder` 提取弹窗宽度优先级、打开方式与多标签工作区默认值到 `RuntimeFormContainerOptionsCompiler`；入口由 2556 行降至 2467 行。保留现有 JSON 键名和计算顺序。
 - 增加 `RuntimeFormContainerOptionsCompilerTest` 3 项，覆盖编辑区/CRUD 配置优先级、默认宽度、非法模式和工作区参数覆盖。与前述 9 个相关 generator 测试类合并执行，共 10 类、51 项，0 失败、0 错误，退出码 0。
 - 本轮只移动纯配置计算，不更改表单保存、接口或数据库；真实服务验证仍未执行。
+
+## 2026-09-26 第十二个切口：树字段装饰
+
+- 从 `LowcodeRuntimeConfigBuilder` 迁出运行时树字段组件类型、当前对象 tree API 选项源及已有源保留逻辑到 `RuntimeTreeFieldDecorator`；入口由 2467 行降至 2283 行。共享的有效选项源判断仍由搜索字段调用新组件，避免两套标准。
+- 首次定向编译发现搜索字段也使用原判断方法，补共享调用后重跑通过。`RuntimeTreeFieldDecoratorTest` 3 项，加上 `RuntimeTreeConfigBuilderTest`、`RuntimeFormContainerOptionsCompilerTest`、`LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest`，共 5 类、32 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
+- 树 API、查询、Mapper 与运行时状态未更改；本轮未启动服务，真实数据库/Flowable 验证仍未执行。

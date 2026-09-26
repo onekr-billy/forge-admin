@@ -28,9 +28,9 @@
 
 首个切口提取 `BusinessFlowStartLockManager` 和 `RuntimeFieldMetadataCompiler`。第二个切口从运行配置入口提取 `RuntimePageRelationResolver`、`RuntimeTreeConfigBuilder` 与 `RuntimeChildTableCompiler`。第三个切口提取 `BusinessRuntimeConfigResolver` 与 `BusinessFlowStatusRepairService`，集中处理租户内运行配置选择、发布/草稿回退与流程状态字段修复；入口保留事务和 Flowable 事件编排。
 
-本轮继续从 `LowcodeRuntimeConfigBuilder` 提取页面引用字段、子表字段、默认与自定义动作、关系查找配置及表单容器选项等纯编译职责，并补完整主子表 JSON 契约。`FlowTaskNotifyListener` 仅迁出通知内容渲染，`FlowTaskEventListener` 仅迁出身份解析；`BusinessProcessOrchestrator` 仅迁出运行视图组装；`FlowMonitorServiceImpl` 仅迁出管理员视图、统计值和任务树组装。监听触发、通知投递、租户校验、批量查询、清理事务和状态机仍留原路径。
+本轮继续从 `LowcodeRuntimeConfigBuilder` 提取页面引用字段、子表字段、默认与自定义动作、关系查找配置、表单容器选项及树字段装饰等纯编译职责，并补完整主子表 JSON 契约。`FlowTaskNotifyListener` 仅迁出通知内容渲染，`FlowTaskEventListener` 仅迁出身份解析；`BusinessProcessOrchestrator` 仅迁出运行视图组装；`FlowMonitorServiceImpl` 仅迁出管理员视图、统计值和任务树组装。监听触发、通知投递、租户校验、批量查询、清理事务和状态机仍留原路径。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2467 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2283 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 
