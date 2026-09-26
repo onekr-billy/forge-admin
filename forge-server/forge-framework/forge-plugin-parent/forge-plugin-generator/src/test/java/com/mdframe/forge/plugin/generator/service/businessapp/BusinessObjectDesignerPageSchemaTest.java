@@ -309,12 +309,8 @@ class BusinessObjectDesignerPageSchemaTest {
         )));
         pageSchema.setZones(List.of(editZone));
 
-        Method migrate = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "migrateFormDesignerSchemaFromPageSchema",
-                AiBusinessObject.class, LowcodeModelSchema.class, LowcodePageSchema.class);
-        migrate.setAccessible(true);
-        FormDesignerSchemaDTO migrated = (FormDesignerSchemaDTO) migrate.invoke(
-                service, object, modelSchema(), pageSchema);
+        FormDesignerSchemaDTO migrated = new BusinessObjectFormSchemaAssembler(new ObjectMapper())
+                .resolveFormDesignerSchema(object, modelSchema(), pageSchema, Map.of());
 
         Method merge = BusinessObjectDesignerService.class.getDeclaredMethod(
                 "mergeFormDesignerSchemaIntoRuntimeOptions", String.class, LowcodePageSchema.class);

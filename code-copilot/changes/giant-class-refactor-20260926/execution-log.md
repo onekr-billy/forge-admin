@@ -252,3 +252,9 @@
 - 使用 Mutation Coordinator + Command Pipeline 从 `DynamicCrudService` 迁出普通表单、内部自动化和事务命令的新增/更新，以及条件更新、原子数值调整和行锁门禁。Facade 保留原公开 API、`@Transactional`、运行数据源切换、审计会话和数据权限条件构建。
 - 入口由 1308 行降至 770 行，新 `DynamicCrudMutationCoordinator` 496 行；字段许可、公式、唯一约束和值转换继续复用既有 Policy/Pipeline，主子表与普通 Join 继续复用各自持久化 Engine，未复制领域规则。generator Reactor 编译退出码 0。
 - 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实跨数据源写入、并发 expected 条件与复杂主子表事务仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十个切口：业务对象表单 Schema 组装器
+
+- 使用 Assembler + Adapter 从 `BusinessObjectDesignerService` 迁出默认表单 Schema 生成、旧 pageSchema 字段配置恢复、form-create 规则递归迁移、组件类型推断、校验和布局兼容。聚合服务继续负责设计上下文、保存事务和运行时编译顺序。
+- 入口由 4467 行降至 3908 行，新 `BusinessObjectFormSchemaAssembler` 765 行；旧反射测试改为直接验证 Assembler，未保留测试专用私有转发。generator Reactor 编译退出码 0。
+- 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实历史表单资产和复杂嵌套 form-create 数据仍需服务环境验收，无服务 PID 需停止。

@@ -359,3 +359,12 @@
 - 验证：重跑动态 CRUD、业务流程生命周期和表单资产依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：普通/内部/事务命令的新增、更新、原子数值调整与行锁门禁已委托 `DynamicCrudMutationCoordinator`；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 770 行，新 Coordinator 496 行。
+
+## 2026-09-27 第五十轮增量验证：业务对象表单 Schema 组装器
+
+- P0：持久化 formDesignerSchema、编辑区内嵌 Schema、旧 fieldRefs/fieldSettings 和 form-create 规则的回退优先级保持不变。
+- P0：字段组件推断、默认占位符、必填规则、栅格布局、表单级布局以及 H5 页面分区/底部栏透传保持不变。
+- P1：使用 Assembler + Adapter 迁出默认表单生成与历史协议迁移；设计器聚合服务仅保留窄委托，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：表单 Schema 解析、默认组装和两类历史协议迁移已委托 `BusinessObjectFormSchemaAssembler`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 3908 行，新 Assembler 765 行。

@@ -49,5 +49,6 @@
 - [x] 提取普通 Join 跨表持久化 Engine，集中字段分流、关联值写入和子表 upsert，使 `DynamicCrudService` 降至 1955 行。
 - [x] 提取动态读模型 Coordinator，集中分页、导出、树、自定义查询、详情、打印与批量读取，使 `DynamicCrudService` 降至 1308 行。
 - [x] 提取动态写模型 Mutation Coordinator，集中表单/内部/命令新增更新、条件门禁与原子数值调整，使 `DynamicCrudService` 降至 770 行。
+- [x] 提取业务对象表单 Schema Assembler，集中默认表单、旧 Page Schema 与 form-create 规则迁移，使 `BusinessObjectDesignerService` 降至 3908 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。
