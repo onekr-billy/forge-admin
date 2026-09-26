@@ -278,3 +278,12 @@
 - 验证：generator Reactor 编译，动态 CRUD 自动生成/金额/结构化字段/加密/主子表回归，业务流程依赖回归，`git diff --check` 和类行数检查。
 
 验证结果：新增 `DynamicCrudUniquenessValidatorTest` 覆盖模型唯一约束归一化、部分更新未改字段跳过及编辑 Schema 唯一声明；动态 CRUD 与业务流程相关 35 个测试类共 148 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 5642 行，新类 444/553 行。
+
+## 2026-09-26 第四十一轮增量验证：动态 CRUD 树查询引擎
+
+- P0：完整树与懒加载树的字段映射、排序、数据权限、祖先补链、只读标记、读取安全流水线和叶子节点协议保持不变。
+- P0：普通查询与自定义查询的 `includeChildren` 展开、前端已展开多值兼容、系统组织/区域树和外部 CRUD 树源解析保持不变。
+- P1：使用 Query Engine 整体迁出树配置解析、树查询/组装和层级条件展开；`DynamicCrudService` 仅保留运行时数据源、数据权限和读取流水线编排。
+- 验证：新增树引擎单测，重跑动态 CRUD 与业务流程依赖回归；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：新增 `DynamicCrudTreeQueryEngineTest` 覆盖配置别名与覆盖优先级、完整树祖先补链和只读标记、懒加载叶子探测、递归层级展开及前端预展开条件；动态 CRUD 与业务流程相关 36 个测试类共 153 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudService` 4878 行，新引擎 772 行。

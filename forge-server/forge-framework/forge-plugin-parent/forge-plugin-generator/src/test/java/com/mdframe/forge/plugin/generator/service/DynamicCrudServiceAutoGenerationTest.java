@@ -26,6 +26,8 @@ class DynamicCrudServiceAutoGenerationTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DynamicCrudGeneratedFieldPolicy generatedFieldPolicy =
             new DynamicCrudGeneratedFieldPolicy(repository, objectMapper, null, codeRuleService);
+    private final DynamicCrudTreeQueryEngine treeQueryEngine =
+            new DynamicCrudTreeQueryEngine(repository, null, objectMapper);
     private final DynamicCrudService service = new DynamicCrudService(
             repository,
             null,
@@ -155,9 +157,7 @@ class DynamicCrudServiceAutoGenerationTest {
                 }
                 """);
 
-        Method method = DynamicCrudService.class.getDeclaredMethod("resolveTreeConfig", AiCrudConfig.class);
-        method.setAccessible(true);
-        var treeConfig = (com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig) method.invoke(service, config);
+        var treeConfig = treeQueryEngine.resolveTreeConfig(config);
 
         assertEquals("categoryId", treeConfig.getKeyField());
         assertEquals("parentCategoryId", treeConfig.getParentField());

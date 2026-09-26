@@ -198,3 +198,9 @@
 - 使用 Coordinator + Request Profiler 从 `BusinessFlowService` 迁出待办/可办理/历史只读任务表单查询、Flowable 表单快照复用、运行身份解析、表单类型分派、字段/子表权限投影、UI 文档、打印应用身份和阶段日志。保存事务与动态 CRUD 写入继续留在 Facade。
 - 入口由 2165 行降至 1863 行；新增 `BusinessFlowTaskFormContextCoordinator` 443 行、`BusinessFlowTaskFormProfiler` 48 行，均低于 1000 行。generator Reactor 编译首次发现表单 schema 回退仍写入旧 Facade 备注方法，改为共享 Profiler 后编译退出码 0。
 - 打印身份测试取消反射旧 Facade 私有方法，直接验证 Coordinator；性能契约改为检查 Coordinator 内的一次快照与缓存复用。执行相关 25 类 112 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实历史任务、应用归属冲突与复杂主子表渲染仍需服务级联调，无服务 PID 需停止。
+
+## 2026-09-26 第四十一个切口：动态 CRUD 树查询引擎
+
+- 使用 Query Engine 从 `DynamicCrudService` 整体迁出树配置解析、完整树/懒加载查询、数据权限祖先补链、节点协议组装，以及普通/自定义查询的 `includeChildren` 递归展开。入口仍持有运行时数据源上下文、数据权限条件和解密/公式/翻译/脱敏读取流水线。
+- 入口由 5642 行降至 4878 行，新 `DynamicCrudTreeQueryEngine` 772 行；旧树配置反射测试改为直接验证引擎，新增 5 项树行为测试。generator Reactor 编译退出码 0。
+- 执行 `DynamicCrud*Test,BusinessFlow*Test,BusinessCodeAppFormAssetMergerTest` 共 36 类 153 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实大数据树与跨数据源树查询仍需服务环境验收，无服务 PID 需停止。
