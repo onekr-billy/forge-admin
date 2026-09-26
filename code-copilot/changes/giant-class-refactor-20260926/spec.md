@@ -54,7 +54,9 @@
 
 第二十五个切口使用 Assembler + Strategy，把流程变量映射、字段别名、调用方变量合并、服务端保留变量防覆盖及标题模板组装迁入 `BusinessFlowStartContextAssembler`，记录兼容读取迁入 `BusinessFlowRecordValues`。入口仍写入最终服务端业务上下文并调用 Flowable，不改变启动事务、业务键、状态机或回调。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7683 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+第二十六个切口使用 Policy Object，把待办任务存在性、状态、签收人/候选人、写权限及流程实例/业务 Key/节点/流程定义一致性校验迁入 `BusinessFlowTaskAccessPolicy`。入口仍从 Flow 服务读取任务详情并提供当前登录人，策略不修改任务或流程数据。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService`、`FlowModelServiceImpl` 和 `LowcodeRuntimeConfigBuilder` 均低于 1000 行；`BusinessFlowService` 为 7492 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

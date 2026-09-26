@@ -125,3 +125,9 @@
 - 使用 Assembler + Strategy，从 `BusinessFlowService` 迁出流程变量映射、字段 camel/snake 别名、调用方变量合并、服务端保留变量防覆盖及标题模板组装到 `BusinessFlowStartContextAssembler`；主表包装兼容读取迁入 `BusinessFlowRecordValues`。入口由 7860 行降至 7683 行，新类分别 143/98 行。服务端业务上下文的最终写入、Flowable 调用、事务与状态机仍在原入口。
 - generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowStartContextAssemblerTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：5 类共 34 项，0 失败、0 错误，退出码 0。生命周期测试中的预期写入失败 WARN 被断言覆盖。
 - `git diff --check`：通过。未启动 Admin/Flow 服务，也未连接真实 MySQL/Redis/Flowable；真实流程启动、审批人变量与标题的端到端联调仍未覆盖，无服务 PID 需停止。
+
+## 2026-09-26 第二十六个切口：待办任务访问策略
+
+- 使用 Policy Object 从 `BusinessFlowService` 迁出待办任务存在性/状态、签收人和候选人、写权限，以及流程实例、业务 Key、节点和流程定义一致性校验到 `BusinessFlowTaskAccessPolicy`。入口由 7683 行降至 7492 行，新策略 215 行；任务详情仍由入口从 Flow 服务读取，当前登录人仍由入口解析。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile`：退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessFlowTaskAccessPolicyTest,BusinessFlowServiceBusinessKeyTest,BusinessFlowServiceFormAssetMergeTest,BusinessFlowServiceChildFieldControlTest,BusinessFlowServiceLifecycleTest,BusinessFlowPerformanceContractTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 39 项，0 失败、0 错误，退出码 0。生命周期测试中的预期写入失败 WARN 被断言覆盖。
+- `git diff --check`：通过。未启动 Admin/Flow 服务、未连接真实 MySQL/Redis/Flowable；真实任务认领、候选组和跨租户场景仍需服务级联调，无服务 PID 需停止。

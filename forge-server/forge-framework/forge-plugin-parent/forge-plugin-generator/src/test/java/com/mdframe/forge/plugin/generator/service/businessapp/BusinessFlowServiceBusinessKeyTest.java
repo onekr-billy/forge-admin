@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -30,10 +29,8 @@ import static org.mockito.Mockito.when;
 class BusinessFlowServiceBusinessKeyTest {
 
     private BusinessFlowService service;
-    private Method assertBusinessKeyMatches;
     private Method parseBusinessKeyObjectCode;
     private Method parseBusinessKeyRecordId;
-    private Method isSyntheticTestBusinessKey;
     private Method resolveTaskBusinessObject;
 
     @BeforeEach
@@ -52,18 +49,12 @@ class BusinessFlowServiceBusinessKeyTest {
                 mock(ApplicationEventPublisher.class),
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class));
-        assertBusinessKeyMatches = BusinessFlowService.class.getDeclaredMethod(
-                "assertBusinessKeyMatches", String.class, Object.class);
-        assertBusinessKeyMatches.setAccessible(true);
         parseBusinessKeyObjectCode = BusinessFlowService.class.getDeclaredMethod(
                 "parseBusinessKeyObjectCode", String.class);
         parseBusinessKeyObjectCode.setAccessible(true);
         parseBusinessKeyRecordId = BusinessFlowService.class.getDeclaredMethod(
                 "parseBusinessKeyRecordId", String.class);
         parseBusinessKeyRecordId.setAccessible(true);
-        isSyntheticTestBusinessKey = BusinessFlowService.class.getDeclaredMethod(
-                "isSyntheticTestBusinessKey", String.class);
-        isSyntheticTestBusinessKey.setAccessible(true);
         resolveTaskBusinessObject = BusinessFlowService.class.getDeclaredMethod(
                 "resolveTaskBusinessObject", Long.class, BusinessTaskFormContextQueryDTO.class,
                 AiBusinessFlowInstanceLink.class);
@@ -73,24 +64,25 @@ class BusinessFlowServiceBusinessKeyTest {
     @Test
     @DisplayName("FLOW_TEST task key does not mismatch a document businessKey")
     void syntheticTaskKeyAllowsDocumentKey() {
-        assertDoesNotThrow(() -> invokeAssert("leave:1001", "FLOW_TEST:leave_flow:1710000000000"));
-        assertDoesNotThrow(() -> invokeAssert("FLOW_TEST:leave_flow:1710000000000", "FLOW_TEST:leave_flow:1710000000000"));
+        assertDoesNotThrow(() -> BusinessFlowTaskAccessPolicy.assertBusinessKeyMatches(
+                "leave:1001", "FLOW_TEST:leave_flow:1710000000000"));
+        assertDoesNotThrow(() -> BusinessFlowTaskAccessPolicy.assertBusinessKeyMatches(
+                "FLOW_TEST:leave_flow:1710000000000", "FLOW_TEST:leave_flow:1710000000000"));
     }
 
     @Test
     @DisplayName("real document keys still have to match")
     void realDocumentKeysMustMatch() {
-        InvocationTargetException error = assertThrows(InvocationTargetException.class,
-                () -> invokeAssert("leave:1001", "leave:1002"));
-        assertTrue(error.getCause() instanceof BusinessException);
-        assertEquals("业务Key与当前任务不匹配", error.getCause().getMessage());
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> BusinessFlowTaskAccessPolicy.assertBusinessKeyMatches("leave:1001", "leave:1002"));
+        assertEquals("业务Key与当前任务不匹配", error.getMessage());
     }
 
     @Test
     @DisplayName("FLOW_TEST is not parsed as objectCode:recordId")
     void syntheticKeyIsNotADocumentKey() throws Exception {
         String testKey = "FLOW_TEST:leave_flow:1710000000000";
-        assertEquals(Boolean.TRUE, isSyntheticTestBusinessKey.invoke(service, testKey));
+        assertTrue(BusinessFlowTaskAccessPolicy.isSyntheticTestBusinessKey(testKey));
         assertNull(parseBusinessKeyObjectCode.invoke(service, testKey));
         assertNull(parseBusinessKeyRecordId.invoke(service, testKey));
         assertEquals("leave", parseBusinessKeyObjectCode.invoke(service, "leave:1001"));
@@ -131,9 +123,5 @@ class BusinessFlowServiceBusinessKeyTest {
         AiBusinessObject resolved = (AiBusinessObject) resolveTaskBusinessObject.invoke(service, 1L, query, link);
         assertEquals("测试", resolved.getObjectName());
         assertEquals("presale_registration_business_object", resolved.getConfigKey());
-    }
-
-    private void invokeAssert(String requested, Object actual) throws Exception {
-        assertBusinessKeyMatches.invoke(service, requested, actual);
     }
 }

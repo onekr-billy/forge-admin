@@ -111,6 +111,7 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.read;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.sameField;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowRecordValues.snakeToCamel;
+import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskAccessPolicy.isSyntheticTestBusinessKey;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.firstStrongTaskFormControlType;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.normalizeTaskFormFieldType;
 import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowTaskFormControlTypes.resolveTaskFormControlType;
@@ -134,6 +135,8 @@ public class BusinessFlowService {
     private static final ThreadLocal<List<String>> TASK_FORM_DETAIL_NOTES = new ThreadLocal<>();
     private static final BusinessFlowStartContextAssembler START_CONTEXT_ASSEMBLER =
             BusinessFlowStartContextAssembler.standard();
+    private static final BusinessFlowTaskAccessPolicy TASK_ACCESS_POLICY =
+            new BusinessFlowTaskAccessPolicy();
     /** 流程运行期间允许任务事件改写的单据状态，终态不在其中。 */
     private static final Set<String> RUNNING_DOCUMENT_STATUS_KEYS = Set.of(
             "DRAFT", "SUBMITTED", "IN_PROCESS", "NEED_MODIFY");
@@ -1408,201 +1411,7 @@ public class BusinessFlowService {
     private void validateTaskAccess(BusinessTaskFormContextQueryDTO query,
                                     boolean writeRequired,
                                     Map<String, Object> task) {
-        if (query == null) {
-            throw new BusinessException("业务待办表单参数不能为空");
-        }
-        String taskId = StringUtils.trimToNull(query.getTaskId());
-        if (taskId == null) {
-            throw new BusinessException("任务ID不能为空");
-        }
-        query.setTaskId(taskId);
-        if (flowClient == null) {
-            throw new BusinessException("流程服务未配置，无法校验任务身份");
-        }
-        Long currentUserId = resolveUserId();
-        if (currentUserId == null) {
-            throw new BusinessException("当前登录用户不能为空");
-        }
-
-        if (task == null || task.isEmpty()) {
-            throw new BusinessException("任务不存在或无权访问");
-        }
-        Integer status = readIntegerValue(task.get("status"));
-        if (status == null || (status != 0 && status != 1)) {
-            throw new BusinessException("当前任务已处理，不能访问待办业务表单");
-        }
-
-        String currentUser = String.valueOf(currentUserId);
-        String assignee = StringUtils.trimToNull(textValue(task.get("assignee")));
-        boolean claimedByCurrentUser = StringUtils.equals(assignee, currentUser);
-        boolean unclaimedCandidate = StringUtils.isBlank(assignee)
-                && (csvContains(task.get("candidateUsers"), currentUser)
-                || StringUtils.isNotBlank(textValue(task.get("candidateGroups"))));
-
-        if (!claimedByCurrentUser && !unclaimedCandidate) {
-            throw new BusinessException("无权访问当前任务业务表单");
-        }
-        if (writeRequired && !claimedByCurrentUser) {
-            throw new BusinessException("请先签收任务后再保存业务字段");
-        }
-
-        assertTaskFieldMatches(query.getProcessInstanceId(), task.get("processInstanceId"), "流程实例");
-        assertBusinessKeyMatches(query.getBusinessKey(), task.get("businessKey"));
-        assertTaskFieldMatches(query.getTaskDefKey(), task.get("taskDefKey"), "任务节点");
-        assertProcessDefinitionMatches(query.getProcessDefKey(), task.get("processDefKey"));
-
-        if (StringUtils.isBlank(query.getProcessInstanceId())) {
-            query.setProcessInstanceId(StringUtils.trimToNull(textValue(task.get("processInstanceId"))));
-        }
-        String taskBusinessKey = StringUtils.trimToNull(textValue(task.get("businessKey")));
-        if (isSyntheticTestBusinessKey(taskBusinessKey)) {
-            // 发起测试尚未绑定低代码单据，后续按流程实例补建记录，不能用请求里的 objectCode:id 覆盖任务 Key。
-            query.setBusinessKey(taskBusinessKey);
-            if (query.getRecordId() != null && StringUtils.isBlank(query.getProcessInstanceId())) {
-                query.setRecordId(null);
-            }
-        } else if (StringUtils.isBlank(query.getBusinessKey())) {
-            query.setBusinessKey(taskBusinessKey);
-        }
-        if (StringUtils.isBlank(query.getTaskDefKey())) {
-            query.setTaskDefKey(StringUtils.trimToNull(textValue(task.get("taskDefKey"))));
-        }
-        if (StringUtils.isBlank(query.getProcessDefKey())) {
-            query.setProcessDefKey(StringUtils.trimToNull(textValue(task.get("processDefKey"))));
-        }
-    }
-
-    private void assertTaskFieldMatches(String requestedValue, Object actualValue, String label) {
-        String requested = StringUtils.trimToNull(requestedValue);
-        String actual = StringUtils.trimToNull(textValue(actualValue));
-        if (requested != null && actual != null && !StringUtils.equals(requested, actual)) {
-            throw new BusinessException(label + "与当前任务不匹配");
-        }
-    }
-
-    private void assertBusinessKeyMatches(String requestedValue, Object actualValue) {
-        String requested = StringUtils.trimToNull(requestedValue);
-        String actual = StringUtils.trimToNull(textValue(actualValue));
-        if (requested == null || actual == null || StringUtils.equals(requested, actual)) {
-            return;
-        }
-        if (isSameDocumentBusinessKey(requested, actual)) {
-            return;
-        }
-        // 流程模型「发起测试」写入 FLOW_TEST:modelKey:ts，此时还没有 objectCode:recordId。
-        // 待办暂存会按业务对象补建单据，请求 Key 可能是测试 Key 或单据 Key，不能当成串单。
-        if (isSyntheticTestBusinessKey(actual)) {
-            return;
-        }
-        throw new BusinessException("业务Key与当前任务不匹配");
-    }
-
-    private boolean isSyntheticTestBusinessKey(String businessKey) {
-        String text = StringUtils.trimToNull(businessKey);
-        return text != null && (text.startsWith("FLOW_TEST:") || "FLOW_TEST".equals(text));
-    }
-
-    private boolean isSameDocumentBusinessKey(String left, String right) {
-        String leftKey = normalizeDocumentBusinessKey(left);
-        String rightKey = normalizeDocumentBusinessKey(right);
-        return StringUtils.isNotBlank(leftKey) && StringUtils.equals(leftKey, rightKey);
-    }
-
-    private String normalizeDocumentBusinessKey(String businessKey) {
-        String text = StringUtils.trimToNull(businessKey);
-        if (text == null) {
-            return null;
-        }
-        int retryIndex = text.indexOf(":R");
-        if (retryIndex <= 0) {
-            return text;
-        }
-        String retryNo = text.substring(retryIndex + 2);
-        if (StringUtils.isNumeric(retryNo)) {
-            return text.substring(0, retryIndex);
-        }
-        return text;
-    }
-
-    private void assertProcessDefinitionMatches(String requestedValue, Object actualValue) {
-        String requested = StringUtils.trimToNull(requestedValue);
-        String actual = StringUtils.trimToNull(textValue(actualValue));
-        if (requested == null || actual == null || StringUtils.equals(requested, actual)) {
-            return;
-        }
-        String requestedKey = extractProcessDefinitionKey(requested);
-        String actualKey = extractProcessDefinitionKey(actual);
-        if (StringUtils.isNotBlank(requestedKey) && StringUtils.equals(requestedKey, actualKey)) {
-            return;
-        }
-        if (isUuidLike(requested) || isUuidLike(actual)) {
-            return;
-        }
-        log.debug("忽略流程定义标识表示差异: requested={}, actual={}", requested, actual);
-    }
-
-    private String extractProcessDefinitionKey(String value) {
-        String text = StringUtils.trimToNull(value);
-        if (text == null) {
-            return null;
-        }
-        int separator = text.indexOf(':');
-        return separator > 0 ? text.substring(0, separator) : text;
-    }
-
-    private boolean isUuidLike(String value) {
-        String text = StringUtils.trimToNull(value);
-        if (text == null || text.length() != 36) {
-            return false;
-        }
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (i == 8 || i == 13 || i == 18 || i == 23) {
-                if (ch != '-') {
-                    return false;
-                }
-                continue;
-            }
-            boolean hex = (ch >= '0' && ch <= '9')
-                    || (ch >= 'a' && ch <= 'f')
-                    || (ch >= 'A' && ch <= 'F');
-            if (!hex) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean csvContains(Object csvValue, String expected) {
-        String csv = StringUtils.trimToNull(textValue(csvValue));
-        if (csv == null || StringUtils.isBlank(expected)) {
-            return false;
-        }
-        String[] parts = csv.split(",");
-        for (String part : parts) {
-            if (StringUtils.equals(StringUtils.trimToEmpty(part), expected)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Integer readIntegerValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        String text = StringUtils.trimToNull(String.valueOf(value));
-        if (text == null) {
-            return null;
-        }
-        try {
-            return Integer.valueOf(text);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        TASK_ACCESS_POLICY.validate(query, writeRequired, task, flowClient != null, resolveUserId());
     }
 
     private BusinessTaskFormContextVO buildTaskFormContext(BusinessTaskFormContextQueryDTO query,
