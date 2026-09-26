@@ -51,3 +51,10 @@
 - 从 `LowcodeRuntimeConfigBuilder` 迁出运行时树字段组件类型、当前对象 tree API 选项源及已有源保留逻辑到 `RuntimeTreeFieldDecorator`；入口由 2467 行降至 2283 行。共享的有效选项源判断仍由搜索字段调用新组件，避免两套标准。
 - 首次定向编译发现搜索字段也使用原判断方法，补共享调用后重跑通过。`RuntimeTreeFieldDecoratorTest` 3 项，加上 `RuntimeTreeConfigBuilderTest`、`RuntimeFormContainerOptionsCompilerTest`、`LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest`，共 5 类、32 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
 - 树 API、查询、Mapper 与运行时状态未更改；本轮未启动服务，真实数据库/Flowable 验证仍未执行。
+
+## 2026-09-26 第十三至第十四个切口：字段组件与在线 DDL 策略
+
+- `RuntimeFieldComponentResolver` 接管搜索/编辑组件归一、记录选择器判定、动态选项伴随标签与占位符；`LowcodeRuntimeConfigBuilder` 由 2283 行降至 2077 行。新增 4 项解析器单测，整体运行配置入口测试保持通过。
+- `LowcodeOnlineDdlPolicy` 接管预览检查和实际执行共用的在线 DDL 白名单及拒绝异常；`LowcodeDdlService` 由 1022 行降至 985 行。新增 3 项策略测试，覆盖追加 DDL 允许、修改/删除拒绝与预检一致性。SQL 生成、执行方法及异常文案不变。
+- generator Reactor `mvn -q -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile` 退出码 0。执行 `mvn -q -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=LowcodeOnlineDdlPolicyTest,LowcodeDdlAdditiveColumnTest,LowcodeDdlExplicitIndexTest,RuntimeFieldComponentResolverTest,LowcodeRuntimeConfigBuilderTest,GeneratedLowcodeRuntimeConfigBuilderTest -Dsurefire.failIfNoSpecifiedTests=false test`：6 类共 36 项，0 失败、0 错误，退出码 0。`git diff --check` 通过。
+- 未连接数据库、未执行真实 DDL，也未启动 Admin/Flow 服务；本轮无服务 PID 需停止。真实发布和在线 DDL 的服务级验证仍待用户按既有分工执行。

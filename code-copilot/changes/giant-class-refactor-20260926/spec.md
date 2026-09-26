@@ -30,7 +30,9 @@
 
 本轮继续从 `LowcodeRuntimeConfigBuilder` 提取页面引用字段、子表字段、默认与自定义动作、关系查找配置、表单容器选项及树字段装饰等纯编译职责，并补完整主子表 JSON 契约。`FlowTaskNotifyListener` 仅迁出通知内容渲染，`FlowTaskEventListener` 仅迁出身份解析；`BusinessProcessOrchestrator` 仅迁出运行视图组装；`FlowMonitorServiceImpl` 仅迁出管理员视图、统计值和任务树组装。监听触发、通知投递、租户校验、批量查询、清理事务和状态机仍留原路径。
 
-本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2283 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
+后续切口再从运行配置入口迁出搜索/编辑字段组件协议，并从低代码 DDL 入口迁出在线执行白名单。字段值映射、SQL 生成与 DDL 执行入口不变；涉及真实 DDL 的验收仍需独立服务/数据库环境。
+
+本轮后 `FlowTaskNotifyListener`、`FlowTaskEventListener`、`BusinessProcessOrchestrator`、`FlowMonitorServiceImpl`、`LowcodeDdlService` 均低于 1000 行；`LowcodeRuntimeConfigBuilder` 约 2077 行、`BusinessFlowService` 约 9004 行，仍需继续按阶段拆分。其他目标类未完成，不视为已优化。
 
 ## 验收
 

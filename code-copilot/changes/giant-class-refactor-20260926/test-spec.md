@@ -78,3 +78,15 @@
 - P0：迁出树字段 `treeSelect` 类型/选项源装饰，直接测试左树右表外部源、当前对象父级字段、本表树 API 资格与已有选项源保留。
 - P1：重跑 `RuntimeTreeConfigBuilderTest`、`LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest`，确认搜索/编辑字段和 `treeConfig` JSON 协议不变；generator Reactor 编译与 `git diff --check` 通过。
 - 不改变树数据查询、Mapper、表单保存或运行时状态；不启动服务。
+
+## 第十三轮增量验证：运行字段组件协议
+
+- P0：迁出搜索/编辑组件类型归一、记录选择器判定、动态选项源伴随字段与占位符规则；新增单测覆盖组件别名、过时搜索覆盖回退、`objectReference` 下拉不误变弹窗、标签回写字段和选择型占位符。
+- P1：重跑 `LowcodeRuntimeConfigBuilderTest`、`GeneratedLowcodeRuntimeConfigBuilderTest` 和树/引用配置测试，检查搜索与编辑 JSON 协议；generator Reactor 编译及 `git diff --check` 必须通过。
+- 不改数据查询、表单保存或真实服务状态，不启动 Admin/Flow。
+
+## 第十四轮增量验证：在线 DDL 安全策略
+
+- P0：仅迁出在线 DDL 白名单与统一拒绝异常；新增纯策略测试覆盖创建表、追加列/索引、表注释允许，以及修改/删除、空语句拒绝。
+- P1：重跑 `LowcodeDdlAdditiveColumnTest`、`LowcodeDdlExplicitIndexTest`，检查预览、兼容修改与执行路径仍调用同一策略；generator Reactor 编译与 `git diff --check` 通过，确认 `LowcodeDdlService` 低于 1000 行。
+- 仅静态与单测验证；不连接数据库、不执行真实 DDL。
