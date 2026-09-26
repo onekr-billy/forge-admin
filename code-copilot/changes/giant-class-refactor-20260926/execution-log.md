@@ -258,3 +258,9 @@
 - 使用 Assembler + Adapter 从 `BusinessObjectDesignerService` 迁出默认表单 Schema 生成、旧 pageSchema 字段配置恢复、form-create 规则递归迁移、组件类型推断、校验和布局兼容。聚合服务继续负责设计上下文、保存事务和运行时编译顺序。
 - 入口由 4467 行降至 3908 行，新 `BusinessObjectFormSchemaAssembler` 765 行；旧反射测试改为直接验证 Assembler，未保留测试专用私有转发。generator Reactor 编译退出码 0。
 - 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实历史表单资产和复杂嵌套 form-create 数据仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十一个切口：业务对象运行时表单投影器
+
+- 使用 Projector 从 `BusinessObjectDesignerService` 迁出表单字段设置编译、嵌套布局树构建、动态可见性识别、form-create 样式元数据和编辑区弹窗/抽屉协议投影；删除已无调用的旧模型回写实现，模型字段事实源保持不变。
+- 入口由 3908 行降至 3471 行，新 `BusinessObjectRuntimeFormProjector` 623 行；动态选项识别仍通过窄策略回调复用现有规则。运行布局测试改为直接验证 Projector，未保留测试专用 Facade 方法。generator Reactor 编译退出码 0。
+- 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实复杂布局、动态显隐和多端表单渲染仍需服务环境验收，无服务 PID 需停止。

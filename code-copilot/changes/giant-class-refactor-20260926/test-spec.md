@@ -368,3 +368,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：表单 Schema 解析、默认组装和两类历史协议迁移已委托 `BusinessObjectFormSchemaAssembler`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 3908 行，新 Assembler 765 行。
+
+## 2026-09-27 第五十一轮增量验证：业务对象运行时表单投影器
+
+- P0：表单字段引用、隐藏字段动态可见性、fieldSettings 合并、嵌套容器布局和页面组件保留规则保持不变。
+- P0：标签、栅格、校验、动态选项、form-create 元数据、弹窗/抽屉/工作区打开方式及折叠配置保持不变。
+- P1：使用 Projector 迁出设计协议到运行时编辑区协议的单向编译；聚合服务保留编译顺序与模型/页面上下文，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：运行时字段设置、布局树与编辑区属性已委托 `BusinessObjectRuntimeFormProjector`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 3471 行，新 Projector 623 行。

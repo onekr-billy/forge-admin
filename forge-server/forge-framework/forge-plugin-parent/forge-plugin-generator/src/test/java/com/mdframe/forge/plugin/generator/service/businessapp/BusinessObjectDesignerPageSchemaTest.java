@@ -165,11 +165,8 @@ class BusinessObjectDesignerPageSchemaTest {
             ));
         }
 
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "buildRuntimeFormLayout", List.class, Set.class, int.class);
-        method.setAccessible(true);
-        List<Map<String, Object>> layout = (List<Map<String, Object>>) method.invoke(
-                designerService(), components, modelFields, 2);
+        List<Map<String, Object>> layout = new BusinessObjectRuntimeFormProjector(value -> false)
+                .buildRuntimeFormLayout(components, modelFields, 2);
 
         assertEquals(componentTypes.size() + LowcodeComponentCatalog.PAGE_WIDGET_COMPONENT_KEYS.size(), layout.size());
         assertEquals(componentTypes.size(), layout.stream()
