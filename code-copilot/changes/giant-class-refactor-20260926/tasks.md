@@ -79,5 +79,6 @@
 - [x] 提取低代码 AI 领域规划 Strategy 与字段模板 Catalog，集中对象推断、领域复用、命名策略和字段协议，使 `LowcodeAiGenerateService` 降至 917 行并满足单类 1000 行目标。
 - [x] 提取 Velocity 安全注解 Context Builder 与关联表/主子表/树元数据 Planner，使 `VelocityCodegenStrategy` 降至 993 行并满足单类 1000 行目标。
 - [x] 提取动态 Excel 值 Adapter/Pipeline，集中导入转换、字典映射、导出格式化和模板提示，使 `DynamicCrudExcelService` 降至 858 行并满足单类 1000 行目标。
+- [x] 提取业务流程画布 Graph Validator Strategy，集中节点注册、端口、连线和 DAG/可达性规则，使 `BusinessProcessSchemaValidator` 降至 930 行并满足单类 1000 行目标。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

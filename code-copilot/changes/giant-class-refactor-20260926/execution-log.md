@@ -433,3 +433,9 @@
 - 使用 Adapter + Pipeline 从 `DynamicCrudExcelService` 迁出导入空行过滤、必填错误聚合、字典标签解析、数据类型转换、导出展示字段投影、日期/结构化值格式化和导入模板提示生成；共享的列与原始行模型迁入 `service.excel` 包。
 - Service 继续持有公开 API、运行配置解析、工作簿读写、导入事务和异步导出任务状态机。入口由 1235 行降至 858 行，新 `DynamicCrudExcelValueAdapter` 381 行，所有新增生产类均低于 1000 行。
 - generator Reactor 编译退出码 0；执行 `DynamicCrudExcelValueAdapterTest` 共 5 项，0 失败、0 错误；测试覆盖数字/日期转换、字典映射顺序、错误聚合、展示字段优先、JSON 导出和模板提示。`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实大文件、异步导出、字典租户隔离和 Excel 样式仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第八十个切口：业务流程画布拓扑校验策略
+
+- 按 `forge-business-flow-development` Skill 复核低代码流程、状态回写、BPMN 表单所有权和验证清单后，使用 Validator Strategy 从 `BusinessProcessSchemaValidator` 迁出节点注册、开始/结束节点、端口、连线、默认分支、DAG、起点可达和结束路径规则。
+- Graph Validator 通过 `NodeConfigValidator` 窄策略回调保持节点业务配置的原校验顺序；Schema Validator 继续负责协议归一、审批/条件/动作/子流程语义、依赖目录、敏感配置和字段引用。入口由 1219 行降至 930 行，新 Strategy 376 行。
+- generator Reactor 编译退出码 0；执行 `BusinessProcessGraphValidatorTest,BusinessProcessSchemaValidatorTest` 共 2 类 17 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实 Flowable 部署、任务表单权限、驳回重提和状态修复仍需服务环境验收，无服务 PID 需停止。

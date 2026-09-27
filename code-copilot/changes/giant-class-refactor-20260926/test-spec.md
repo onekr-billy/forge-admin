@@ -553,6 +553,15 @@
 
 验证结果：导入行转换、字典映射、导出行投影和模板列组装已委托 `DynamicCrudExcelValueAdapter`；新增 5 项测试覆盖有序转换、字典先映射后类型转换、错误聚合、展示字段/JSON 导出和模板提示。generator Reactor 编译通过，测试 5 项通过、0 失败、0 错误，`git diff --check` 通过。`DynamicCrudExcelService` 858 行，新 Adapter 381 行、共享列/行模型分别 21/17 行。
 
+## 2026-09-27 第八十轮增量验证：业务流程画布拓扑校验策略
+
+- P0：节点 ID/类型/名称、固定端口、唯一开始节点、结束节点、记录来源、连线引用/端口/默认分支、DAG、全图可达和结束路径规则保持不变。
+- P0：节点业务配置、低代码审批独立 `flowStatus`、表单/Flowable 依赖及字段引用仍由 Schema Validator 按原节点顺序校验。
+- P1：使用 Validator Strategy 隔离纯图结构规则，并以窄回调扩展节点类型业务校验；Spring 使用构造注入，保留单参数构造器测试兼容，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，运行拓扑策略和完整 Schema Validator 回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：节点注册、端口、连线和拓扑检查已委托 `BusinessProcessGraphValidator`；新增 3 项测试覆盖合法 DAG/回调、环与悬空边/结束路径、记录来源与端口失败关闭，原 Schema Validator 14 项完整回归同步通过。共 17 项通过、0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessProcessSchemaValidator` 930 行，新 Graph Validator 376 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。
