@@ -404,3 +404,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：关系持久化、自动主子表关系与快照恢复已委托 `BusinessObjectRelationCoordinator`，运行时 relations/modelRefs 投影已委托 `BusinessObjectRelationProjector`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 2151 行，Coordinator 553 行，Projector 592 行。
+
+## 2026-09-27 第五十五轮增量验证：业务对象字段设计策略
+
+- P0：设计字段重建时字典、记录选择器、编码规则、引用对象、公式、级联、动态选项和多选存储元数据保持不变。
+- P0：通用输入组件不得覆盖已有业务组件；系统字段保留、字段 Schema 构建和模型归一化顺序保持不变。
+- P1：使用 Policy 隔离字段元数据合并与业务组件保护；清理没有生产调用且契约明确禁止进入保存路径的旧 Payload 降级链，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：字段重建与运行时元数据保护已委托 `BusinessObjectFieldDesignPolicy`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 1684 行，新 Policy 231 行。

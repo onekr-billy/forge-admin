@@ -282,3 +282,9 @@
 - 使用 Coordinator 从 `BusinessObjectDesignerService` 迁出关系保存/缺失删除、表单子表关系同步、子对象外键补齐和关系快照恢复；使用 Projector 迁出关系模型、主子 page modelRefs、关系属性与编辑区字段引用投影。Facade 继续持有公开事务入口和设计上下文装载，两个协作者通过窄回调复用草稿保存。
 - 入口由 2979 行降至 2151 行；新增 `BusinessObjectRelationCoordinator` 553 行、`BusinessObjectRelationProjector` 592 行，均低于 1000 行。首次整体迁移形成 1024 行 Coordinator，随即按读写职责二次拆成投影策略，未以压缩格式规避行数约束。
 - 主子表发现和 modelRef 合并测试改为直接验证新协作者，不保留测试专用 Facade 私有方法。generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实关系迁移、自动外键 DDL 与复杂多子表发布仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十五个切口：业务对象字段设计策略
+
+- 使用 Policy 从 `BusinessObjectDesignerService` 迁出字段重建时的既有元数据合并、业务组件保护、多选存储适配与模型归一化。字典、记录选择器、编码、引用、公式和级联等配置继续按原优先级保留。
+- 删除未被生产入口调用的旧表单 Payload 归一化/降级方法及其组件默认常量；`BusinessApplicationDraftPreviewContractTest` 继续约束保存路径不得重新调用该降级链。入口由 2151 行降至 1684 行，新 `BusinessObjectFieldDesignPolicy` 231 行。
+- 字段重建测试改为直接验证 Policy，不保留测试专用 Facade 私有方法。generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实历史字段元数据与复杂组件往返仍需服务环境验收，无服务 PID 需停止。

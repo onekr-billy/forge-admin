@@ -465,10 +465,10 @@ class BusinessObjectDesignerPageSchemaTest {
     }
 
     private LowcodeModelSchema rebuildModelFields(LowcodeModelSchema modelSchema, List<BusinessFieldDTO> fields) throws Exception {
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "rebuildModelFields", LowcodeModelSchema.class, List.class);
-        method.setAccessible(true);
-        return (LowcodeModelSchema) method.invoke(designerService(), modelSchema, fields);
+        BusinessFieldSchemaService fieldSchemaService = new BusinessFieldSchemaService(
+                new LowcodeModelSchemaNormalizer(), new BusinessNamingService());
+        return new BusinessObjectFieldDesignPolicy(fieldSchemaService, new LowcodeModelSchemaNormalizer())
+                .rebuildModelFields(modelSchema, fields);
     }
 
     @SuppressWarnings("unchecked")
