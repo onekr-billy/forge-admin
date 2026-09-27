@@ -15,7 +15,7 @@
 - 静态扫描通过：`forge-report-ui/src` 无 `new Function`、`AsyncFunction`、`eval(`、动态 `constructor` 和 `v-html`；Java 源码无 `engine.eval`/`ScriptEngineManager`；无 BPMN 原文 preview/substring 日志。
 - JDK 17 Admin 全依赖编译通过：`mvn -DskipTests -pl forge-admin-server -am compile`，46/46 模块成功。
 - JDK 17 Flow Server 全依赖编译通过；BPMN/流程监控 13 个非 Mockito 定向测试通过。
-- 密码策略与客户端登录配置 8 个定向测试通过；密码找回 9 个 Mockito 测试本轮因 Byte Buddy attach 失败而环境阻断，未误记为通过。
+- 密码策略与客户端登录配置已通过定向与完整模块回归；密码找回测试使用显式 Byte Buddy agent 运行，当前 11/11 通过。
 - 数据 SQL/预览、外部接口权限、API fail-closed、幂等、验证码、文件访问、事件租户/条件和社会化登录均已执行对应模块定向测试，详见 `execution-log.md`。
 - `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本变更。
 
@@ -65,6 +65,14 @@
 - 不确定性返回：Redis 命令超时或主节点切换时，Lua 可能已消费但客户端未收到结果；应用层不得自动重试这个不可幂等的判定调用。
 - 故障时必须统一 fail-closed，不执行业务委托，不记录完整 Token，并返回“重新获取 Token 后重试”的固定错误。
 - 实际结果：`RedisTokenServiceTest` 12、`TokenRequiredStrategyHandlerTest` 3，共 15/15 通过；显式验证 timeout/failover 各只执行一次 Redis Lua，第二个预置“成功”结果不会被读取。
+
+## 1.7 2026-09-28 密码历史与过期策略增量验证
+
+- 复杂度与复用：弱密码、当前密码和 `historyCount` 窗口内的历史哈希必须拒绝；新密码通过后旧哈希与密码更新处于同一事务，历史窗口最多保留 24 条。
+- 过期与首次改密：密码认证按 `expireDays` 将过期凭据标记为 `forcePasswordChange`，复用既有 API 门禁；社交登录不因不可交互随机凭据过期而被误拦截。
+- 租户与状态：手机号/邮箱找回必须过滤禁用、删除账号并校验目标租户或启用成员关系；显式选择非成员租户不能泄露账号存在性。
+- 数据迁移：`V1.0.190__add_user_password_history.sql` 回填并固化 `password_changed_time`，历史表仅存单向哈希且按租户/用户/时间建立索引，窗口外哈希物理清理。
+- 实际结果：认证验证码 25/25、System 定向 22/22；System 依赖反应堆 26/26 模块成功且插件完整测试 154/154，Admin 聚合编译 46/46 成功。未执行真实 MySQL Flyway 与多实例并发改密。
 
 ## 2. P0 必跑验证
 

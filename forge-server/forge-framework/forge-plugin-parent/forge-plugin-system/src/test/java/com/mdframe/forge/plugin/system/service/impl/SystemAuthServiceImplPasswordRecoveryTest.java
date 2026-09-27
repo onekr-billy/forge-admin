@@ -330,7 +330,7 @@ class SystemAuthServiceImplPasswordRecoveryTest {
                 userLoadService, onlineUserService, authProperties, mock(ConfigManagerService.class),
                 null, mock(ICacheService.class), null, null, null,
                 new RecoveryChannelSupport(Optional.empty(), Optional.empty()), null,
-                new PasswordPolicyService(null));
+                mock(PasswordPolicyService.class));
     }
 
     private LoginUser loginUser(Long passwordVersion) {

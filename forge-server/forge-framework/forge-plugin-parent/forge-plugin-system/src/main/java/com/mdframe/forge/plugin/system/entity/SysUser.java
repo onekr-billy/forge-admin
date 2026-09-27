@@ -84,6 +84,12 @@ public class SysUser extends TenantEntity {
     private Long passwordVersion;
 
     /**
+     * 最近一次密码变更时间。
+     */
+    @JsonIgnore
+    private LocalDateTime passwordChangedTime;
+
+    /**
      * 密码盐值
      */
     @JsonIgnore

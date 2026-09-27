@@ -477,15 +477,23 @@ public class SystemAuthServiceImpl implements IAuthService {
         if (!matchPassword(oldPassword, currentPassword)) {
             throw new RuntimeException("旧密码错误");
         }
+
+        SysUser credentialOwner = TenantContextHolder.executeIgnore(() ->
+                userMapper.selectById(loginUser.getUserId()));
+        Long credentialTenantId = credentialOwner != null && credentialOwner.getTenantId() != null
+                ? credentialOwner.getTenantId() : loginUser.getTenantId();
         
         // 3. 校验并加密新密码
-        passwordPolicyService.validate(newPassword);
+        passwordPolicyService.validateForUpdate(
+                loginUser.getUserId(), credentialTenantId, newPassword, currentPassword);
         String encodedPassword = PasswordUtil.encrypt(newPassword);
         
         // 4. 更新密码
         boolean success = updateUserPassword(loginUser.getUserId(), loginUser.getTenantId(), encodedPassword);
         
         if (success) {
+            passwordPolicyService.recordPasswordChange(
+                    loginUser.getUserId(), credentialTenantId, currentPassword, LocalDateTime.now());
             boolean keepCurrentSession = Boolean.TRUE.equals(
                     authProperties.getKeepCurrentSessionAfterPasswordChange());
             Long passwordVersion = keepCurrentSession ? loadCurrentCredentialVersion(loginUser) : null;
@@ -548,10 +556,14 @@ public class SystemAuthServiceImpl implements IAuthService {
         }
 
         String rawPassword = loginPasswordDecoder.decode(request.getNewPassword());
-        passwordPolicyService.validate(rawPassword);
+        Long credentialTenantId = user.getTenantId() == null ? request.getTenantId() : user.getTenantId();
+        passwordPolicyService.validateForUpdate(
+                user.getId(), credentialTenantId, rawPassword, user.getPassword());
         String encodedPassword = PasswordUtil.encrypt(rawPassword);
         boolean success = updateUserPassword(user.getId(), user.getTenantId(), encodedPassword);
         if (success) {
+            passwordPolicyService.recordPasswordChange(
+                    user.getId(), credentialTenantId, user.getPassword(), LocalDateTime.now());
             afterCommitOrNow(() -> {
                 revokePasswordSessions(user.getId(), null);
                 log.info("用户重置密码成功: userId={}, channel={}", user.getId(), channel);
@@ -733,6 +745,7 @@ public class SystemAuthServiceImpl implements IAuthService {
         SysUser user = new SysUser();
         user.setUsername(request.getUsername());
         user.setPassword(encodedPassword);
+        user.setPasswordChangedTime(LocalDateTime.now());
         user.setRealName(request.getRealName());
         user.setPhone(request.getPhone());
         user.setEmail(request.getEmail());

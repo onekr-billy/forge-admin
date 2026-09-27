@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.system.mapper.SysUserOrgRoleMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserPostMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserRoleMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserTenantMapper;
+import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.starter.core.session.LoginUser;
@@ -35,7 +36,13 @@ class SysUserServiceImplPasswordResetTest {
     @Test
     void administratorResetShouldAdvanceVersionAndKickOutEverySession() {
         SysUserMapper userMapper = mock(SysUserMapper.class);
+        SysUser targetUser = new SysUser();
+        targetUser.setId(11L);
+        targetUser.setTenantId(1L);
+        targetUser.setPassword("encoded-old-password");
+        when(userMapper.selectById(11L)).thenReturn(targetUser);
         when(userMapper.resetUserPassword(any(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        PasswordPolicyService passwordPolicyService = mock(PasswordPolicyService.class);
         SysUserServiceImpl service = new SysUserServiceImpl(
                 userMapper,
                 mock(SysUserRoleMapper.class),
@@ -50,7 +57,7 @@ class SysUserServiceImplPasswordResetTest {
                 mock(SysPostMapper.class),
                 mock(SysRegionMapper.class),
                 mock(IUserLoadService.class),
-                new PasswordPolicyService(null));
+                passwordPolicyService);
         LoginUser administrator = new LoginUser();
         administrator.setUserId(1L);
         administrator.setUserType(0);
@@ -63,6 +70,13 @@ class SysUserServiceImplPasswordResetTest {
 
             verify(userMapper).resetUserPassword(
                     org.mockito.ArgumentMatchers.eq(11L), anyString(), any(LocalDateTime.class));
+            verify(passwordPolicyService).validateForUpdate(
+                    11L, 1L, "NewPass123", "encoded-old-password");
+            verify(passwordPolicyService).recordPasswordChange(
+                    org.mockito.ArgumentMatchers.eq(11L),
+                    org.mockito.ArgumentMatchers.eq(1L),
+                    org.mockito.ArgumentMatchers.eq("encoded-old-password"),
+                    any(LocalDateTime.class));
             stp.verify(() -> StpUtil.kickout(11L));
         }
     }

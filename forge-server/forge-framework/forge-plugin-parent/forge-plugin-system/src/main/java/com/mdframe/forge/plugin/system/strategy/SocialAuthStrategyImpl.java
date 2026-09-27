@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.stream.Stream;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
@@ -242,6 +243,7 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
 
         // 三方自动注册不生成共享默认密码，避免账号可被密码登录横向利用。
         newUser.setPassword(PasswordUtil.encrypt(passwordPolicyService.generateSystemCredential()));
+        newUser.setPasswordChangedTime(LocalDateTime.now());
         newUser.setForcePasswordChange(false);
         newUser.setUserStatus(EnableStatus.ENABLED.getCode());
         newUser.setAvatar(identity.avatar());

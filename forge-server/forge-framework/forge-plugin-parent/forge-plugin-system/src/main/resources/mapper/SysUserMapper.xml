@@ -17,6 +17,7 @@
         <result column="gender" property="gender" />
         <result column="password" property="password" />
         <result column="password_version" property="passwordVersion" />
+        <result column="password_changed_time" property="passwordChangedTime" />
         <result column="salt" property="salt" />
         <result column="user_status" property="userStatus" />
         <result column="avatar" property="avatar" />
@@ -59,7 +60,7 @@
             </otherwise>
         </choose>
         u.user_client, u.allowed_clients, u.email, u.phone,
-        u.id_card, u.gender, u.password, u.password_version, u.salt, u.user_status, u.avatar, u.region_code,
+        u.id_card, u.gender, u.password, u.password_version, u.password_changed_time, u.salt, u.user_status, u.avatar, u.region_code,
         u.last_login_time, u.last_login_ip, u.login_count, u.force_password_change, u.remark, u.create_dept,
         u.create_by, u.create_time, u.update_by, u.update_time, u.del_flag,
         COALESCE((
@@ -610,6 +611,7 @@
         UPDATE sys_user u
         SET password = #{encodedPassword},
             password_version = COALESCE(password_version, 0) + 1,
+            password_changed_time = #{updateTime},
             force_password_change = 0,
             update_time = #{updateTime}
         WHERE u.id = #{userId}
@@ -633,6 +635,7 @@
         UPDATE sys_user u
         SET password = #{encodedPassword},
             password_version = COALESCE(password_version, 0) + 1,
+            password_changed_time = #{updateTime},
             force_password_change = 1,
             update_time = #{updateTime}
         WHERE u.id = #{userId}

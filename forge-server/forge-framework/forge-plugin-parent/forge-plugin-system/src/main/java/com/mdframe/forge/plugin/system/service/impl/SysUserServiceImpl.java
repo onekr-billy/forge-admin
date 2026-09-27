@@ -102,6 +102,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         user.setUserType(resolveWriteUserType(dto.getUserType()));
         passwordPolicyService.validate(dto.getPassword());
         user.setPassword(PasswordUtil.encrypt(dto.getPassword()));
+        user.setPasswordChangedTime(LocalDateTime.now());
         user.setForcePasswordChange(true);
         boolean inserted = userMapper.insert(user) > 0;
         if (inserted) {
@@ -303,14 +304,23 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean resetPassword(Long userId, String newPassword) {
         assertCanManageUser(userId);
         assertNotSelfManagementUnlessAdmin(userId);
-        passwordPolicyService.validate(newPassword);
+        SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
+        if (user == null) {
+            return false;
+        }
+        passwordPolicyService.validateForUpdate(
+                userId, user.getTenantId(), newPassword, user.getPassword());
         String encodedPassword = PasswordUtil.encrypt(newPassword);
+        LocalDateTime changedTime = LocalDateTime.now();
         boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.resetUserPassword(
-                userId, encodedPassword, LocalDateTime.now())) > 0;
+                userId, encodedPassword, changedTime)) > 0;
         if (updated) {
+            passwordPolicyService.recordPasswordChange(
+                    userId, user.getTenantId(), user.getPassword(), changedTime);
             StpUtil.kickout(userId);
             LoginUser operator = SessionHelper.getLoginUser();
             log.info("管理员重置密码完成: targetUserId={}, operatorUserId={}, keepCurrentSession=false",

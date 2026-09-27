@@ -1,5 +1,26 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：A-13 密码历史、过期与认证边界闭环
+
+### 实现
+
+- `PasswordPolicyService` 在统一复杂度校验之外，新增当前密码与历史密码复用检查；历史窗口由 `historyCount` 控制并限制最大 24 条，改密、找回和管理员重置均在同一事务中留存被替换的单向哈希并裁剪窗口。
+- 新增 `sys_user.password_changed_time` 和内部安全表 `sys_user_password_history`，通过 `V1.0.190__add_user_password_history.sql` 完成存量时间回填、非空约束、租户/用户/时间索引及防重复建表。超出策略窗口的哈希物理清理，以最小化凭据材料；表不提供业务查询或恢复接口。
+- 密码登录与密码+验证码登录按 `expireDays` 判断凭据年龄，过期后复用既有 `forcePasswordChange` 门禁，只允许进入改密路径；第三方社交登录不套用密码过期策略。
+- 新用户注册、后台创建和第三方自动建号写入初始密码变更时间；密码修改 SQL 同时更新版本、变更时间和强制改密状态。
+- 找回查询与更新继续强制启用状态、未删除和目标租户/成员关系条件；显式选择非成员租户时统一返回用户名或密码错误，不泄露租户归属。
+
+### 验证
+
+- 定向测试：`CaptchaServiceImplTest` 25/25；密码策略、SQL/迁移契约、跨租户登录、找回及管理员重置 22/22，覆盖弱密码、当前/历史密码、90 天过期、禁用/删除/跨租户条件和验证码二次消费失败。
+- System 依赖反应堆完整测试在沙箱外复跑成功：26/26 模块成功，`forge-plugin-system` 154/154 测试通过；首次沙箱内运行因 MockWebServer 无权绑定本机临时端口而失败，属于环境限制且未记录为代码通过。
+- `mvn -pl forge-admin-server -am -DskipTests compile`（JDK 17）：Admin 聚合反应堆 46/46 成功。
+- 两个 Mapper XML 均通过 `xmllint --noout`，`git diff --check` 通过。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 Flyway，也未进行多实例并发改密或生产密码策略灰度；上线前需在预发备份后执行迁移，并验证存量账号首次登录/过期改密流程。
+
 ## 2026-09-28：T0.2 安全契约测试过期路径修复
 
 ### 实现与验证
@@ -104,7 +125,7 @@
 
 - 后端 JDK 17 编译通过。
 - 前端生产构建通过：`pnpm --ignore-workspace build`。
-- `forge-plugin-system` 定向测试 115 个中 114 个通过，1 个错误，原因为测试引用过期路径 `forge-admin-server/sql/初始化脚本.sql`，实际初始化文件为 `forge-server/db/全量初始化SQL.sql`。
+- `forge-plugin-system` 当时定向测试 115 个中 114 个通过，1 个错误，原因为测试引用过期路径 `forge-admin-server/sql/初始化脚本.sql`；该引用已在 2026-09-28 修复并经完整 System 测试验证。
 - 使用默认 Java 8 执行 Java 17 测试会因 class 文件版本不兼容失败。
 - Flyway 版本未发现重复，当前最高版本为 `V1.0.184`。
 - `pnpm audit --json` 因工具异常 `reference.startsWith is not a function` 未完成。
@@ -187,7 +208,7 @@
 - `SystemAuthServiceImplPasswordRecoveryTest` 最新 11 个用例在显式加载本地 Byte Buddy agent 后全部通过；未加载 agent 时 Mockito inline 仍会因当前 macOS/JDK 无法 self-attach，后续复跑必须保留相同 JVM 参数。
 - `FlowModelServiceImplTest` 中 9 个 Mockito 用例同样因 Byte Buddy attach 失败；流程解析的 13 个非 Mockito 测试和完整编译均通过。
 - 未连接真实 MySQL/Redis/对象存储/Flowable 服务，未执行 Flyway 实库迁移、Redis 故障切换、集群分片续传、真实跨租户接口矩阵或生产灰度。
-- 密码历史/过期策略、流程事件 event-id/Outbox 与补偿、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
+- 流程事件 event-id/Outbox 与补偿、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
 - T4.2/T4.3 巨型组件/巨型类改造按用户要求不处理，不作为本轮遗留缺陷。
 
 ## 2026-09-27：A-20 业务流程运行租约与 fencing

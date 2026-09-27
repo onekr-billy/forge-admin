@@ -2,11 +2,18 @@ package com.mdframe.forge.plugin.system.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.mdframe.forge.plugin.system.mapper.SysUserPasswordHistoryMapper;
+import com.mdframe.forge.starter.auth.util.PasswordUtil;
 import com.mdframe.forge.starter.config.config.SecurityConfig;
 import com.mdframe.forge.starter.config.service.ConfigManagerService;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Central password-complexity policy used by every explicit password write path.
@@ -17,8 +24,15 @@ public class PasswordPolicyService {
 
     private static final int DEFAULT_MIN_LENGTH = 8;
     private static final int MAX_LENGTH = 128;
+    private static final int MAX_HISTORY_COUNT = 24;
 
     private final ConfigManagerService configManagerService;
+    private SysUserPasswordHistoryMapper passwordHistoryMapper;
+
+    @Autowired
+    void configurePasswordHistoryMapper(SysUserPasswordHistoryMapper passwordHistoryMapper) {
+        this.passwordHistoryMapper = passwordHistoryMapper;
+    }
 
     public void validate(String password) {
         if (StrUtil.isBlank(password)) {
@@ -45,6 +59,69 @@ public class PasswordPolicyService {
         }
     }
 
+    /**
+     * Validates complexity and rejects reuse of the current or retained historical password.
+     */
+    public void validateForUpdate(Long userId, Long tenantId, String password, String currentPasswordHash) {
+        validate(password);
+        if (StrUtil.isNotBlank(currentPasswordHash) && PasswordUtil.matches(password, currentPasswordHash)) {
+            throw new BusinessException("新密码不能与当前密码相同");
+        }
+
+        int historyCount = resolveHistoryCount();
+        if (historyCount == 0 || userId == null || tenantId == null || passwordHistoryMapper == null) {
+            return;
+        }
+        List<String> passwordHashes = passwordHistoryMapper.selectRecentPasswordHashes(
+                tenantId, userId, historyCount);
+        if (passwordHashes != null && passwordHashes.stream()
+                .filter(StrUtil::isNotBlank)
+                .anyMatch(passwordHash -> PasswordUtil.matches(password, passwordHash))) {
+            throw new BusinessException("新密码不能与最近使用过的密码相同");
+        }
+    }
+
+    /**
+     * Stores the replaced hash and trims hashes outside the configured reuse window.
+     * Must be invoked in the same transaction as the password update.
+     */
+    public void recordPasswordChange(Long userId, Long tenantId, String previousPasswordHash,
+                                     LocalDateTime changedTime) {
+        if (userId == null || tenantId == null || StrUtil.isBlank(previousPasswordHash)
+                || passwordHistoryMapper == null) {
+            return;
+        }
+        int historyCount = resolveHistoryCount();
+        if (historyCount == 0) {
+            passwordHistoryMapper.deleteAllPasswordHistory(tenantId, userId);
+            return;
+        }
+        LocalDateTime effectiveChangedTime = changedTime == null ? LocalDateTime.now() : changedTime;
+        passwordHistoryMapper.insertPasswordHistory(
+                tenantId, userId, previousPasswordHash, effectiveChangedTime);
+        passwordHistoryMapper.deleteOlderPasswordHistory(tenantId, userId, historyCount);
+    }
+
+    /** Applies password-age policy only to password-based authentication strategies. */
+    public void applyPasswordExpiration(LoginUser loginUser) {
+        if (loginUser != null && isExpired(loginUser.getPasswordChangedTime(), loginUser.getCreateTime())) {
+            loginUser.setForcePasswordChange(true);
+        }
+    }
+
+    public boolean isExpired(LocalDateTime passwordChangedTime, LocalDateTime accountCreatedTime) {
+        return isExpired(passwordChangedTime, accountCreatedTime, LocalDateTime.now());
+    }
+
+    boolean isExpired(LocalDateTime passwordChangedTime, LocalDateTime accountCreatedTime, LocalDateTime now) {
+        Integer configuredDays = resolvePolicy().getExpireDays();
+        if (configuredDays == null || configuredDays <= 0) {
+            return false;
+        }
+        LocalDateTime credentialTime = passwordChangedTime == null ? accountCreatedTime : passwordChangedTime;
+        return credentialTime == null || !credentialTime.isAfter(now.minusDays(configuredDays));
+    }
+
     /** Generates an unknown, non-interactive credential for social-only users. */
     public String generateSystemCredential() {
         SecurityConfig.PasswordPolicyConfig policy = resolvePolicy();
@@ -65,5 +142,13 @@ public class PasswordPolicyService {
             return new SecurityConfig.PasswordPolicyConfig();
         }
         return config.getPasswordPolicy();
+    }
+
+    private int resolveHistoryCount() {
+        Integer configuredCount = resolvePolicy().getHistoryCount();
+        if (configuredCount == null || configuredCount <= 0) {
+            return 0;
+        }
+        return Math.min(configuredCount, MAX_HISTORY_COUNT);
     }
 }
