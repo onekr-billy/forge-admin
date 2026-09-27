@@ -159,3 +159,11 @@
 - `pages.json` 全部移除 `navigationStyle: custom`，使用原生页面标题/返回；低代码与独立入口动态设置原生标题，H5 内容高度扣除原生导航。
 - Node 定向测试最终 62/62 通过；`pnpm build:h5`、`pnpm build:mp-weixin` 最终复跑均完成，`git diff --check` 通过。微信小程序仍仅提示既有 API/auth 和 storage 分包循环警告。
 - 本地 H5 在 390px 与 836px 宽度核对待办筛选区：搜索图标可见，搜索、范围 Tab、状态按钮实测高度均为 44px；登录页原生导航、表单输入和主按钮正常。因 App/Flow 服务未运行，真实消息、审批动态数据、品牌图片及转办提交尚未做端到端验证；未修改认证规则或业务数据库。
+
+## 第十四轮增量：合并 main 并接入 JSON 审批表单
+
+- 拉取最新 `origin/main@3ebe3ba4`，合并到 `codex/mobile-lowcode-runtime-refactor`（合并提交 `fd3cc0fb`）。仅知识库索引与前端坑点文档冲突，保留双方内容并解决；未改动工作区原有 `.DS_Store`。
+- 新增 H5 `uiDocument` v1 解析：优先使用 `components` 布局树，画布外字段不回灌；无树时按 `sections` 排序；字段定义、节点可见/只读与 BPMN 权限叠加，设计器新增字段和强控件类型/props 得以保留。旧 `fields`/`form-create` 继续回退。
+- 待办主表将 JSON 树传给共享 `LowcodeForm/LowcodeLayoutNodes`，修复布局字段判断中的未定义函数，并将子表选项源贯穿嵌套布局；子表仍独立按 `childrenConfig` 渲染。表单上下文优先复用内嵌 `taskFormInfo`，仅旧后端回退直接请求 Flow 表单。
+- Node 定向回归 71/71 通过；`pnpm build:h5` 和 `pnpm build:mp-weixin` 均输出 `DONE Build complete`；`git diff origin/main --check` 与 `git diff --check` 均无输出。待办页 796 行，符合 800 行限制。
+- 微信小程序构建仍提示仓库既有 API/auth 与 storage 循环分包警告。未启动 Admin、App、Flow 服务或写数据库；真实已发布 JSON 表单的办理、暂存、子表及只读历史仍需联调环境验收。

@@ -215,3 +215,10 @@ Forge 已经具备管理端低代码设计器、发布态动态 CRUD、业务对
 4. 转办弹层的内容区独立滚动，确认按钮固定在弹层底部并包含安全区留白。
 5. `pages.json` 不再使用 `navigationStyle: custom`；全部页面复用平台原生标题栏与返回操作，页面内容只保留业务标题与刷新等操作。
 6. 登录品牌名称和 Logo 读取既有 `/auth/loginConfig`，受管文件通过租户公开资源接口显示；首页、个人中心及转办人员头像读取后端用户头像，缺失时才用中性占位。
+
+## 18. 审批表单统一 JSON 文档协议
+
+1. 合并主线 `task-form-document-protocol` 后，H5 待办以 `protocolVersion=1` 的 `uiDocument.components` 作为表单布局及可见字段来源，与 PC 同源；`fields`、`fieldPermissions` 和 `recordData` 继续分别提供字段元数据、审批权限及值。
+2. 组件树存在时不得把画布外 `fields` 回灌到表单或提交载荷；组件树缺失时按 `uiDocument.sections` 字段顺序回退，并兼容旧版 `fields`/`form-create` 表单。
+3. JSON 节点的 `componentKey`、`props`、字典、远程选择器、布局、只读和可见标记须传入移动端共享渲染器；未识别组件保持安全降级。子表继续按 `childrenConfig` 独立渲染，不混入主表组件树。
+4. 暂存、同意、驳回及只读历史沿用既有审批动作协议；表单校验和提交字段必须与当前 JSON 画布及节点权限一致，真实服务联调另行记录。

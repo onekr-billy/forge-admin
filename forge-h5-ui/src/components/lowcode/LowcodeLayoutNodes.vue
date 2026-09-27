@@ -13,6 +13,7 @@
           :nodes="node.children || []"
           :data="data"
           :dict-options="dictOptions"
+          :current-children="currentChildren"
           :readonly="readonly"
           :context="context"
           :field-linkages="fieldLinkages"
@@ -29,6 +30,7 @@
           :nodes="node.children || []"
           :data="data"
           :dict-options="dictOptions"
+          :current-children="currentChildren"
           :readonly="readonly"
           :context="context"
           :field-linkages="fieldLinkages"
@@ -51,6 +53,7 @@
               :nodes="pane.children || []"
               :data="data"
               :dict-options="dictOptions"
+              :current-children="currentChildren"
               :readonly="readonly"
               :context="context"
               :field-linkages="fieldLinkages"
@@ -76,6 +79,7 @@
             :nodes="item.children || []"
             :data="data"
             :dict-options="dictOptions"
+            :current-children="currentChildren"
             :readonly="readonly"
             :context="context"
             :field-linkages="fieldLinkages"
@@ -122,7 +126,7 @@ import AiTabs from '@/components/AiTabs.vue'
 import CardSection from './CardSection.vue'
 import LowcodeField from './LowcodeField.vue'
 import LowcodeStaticNode from './LowcodeStaticNode.vue'
-import { normalizeMobileComponentType } from './mobile-component-registry'
+import { normalizeMobileComponentType, resolveMobileComponent } from './mobile-component-registry'
 import {
   applyFieldLinkageChange,
   filterFieldOptionsByLinkage,
@@ -136,6 +140,7 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   data: { type: Object, default: () => ({}) },
   dictOptions: { type: Object, default: () => ({}) },
+  currentChildren: { type: Object, default: () => ({}) },
   readonly: { type: Boolean, default: false },
   context: { type: Object, default: () => ({}) },
   fieldLinkages: { type: Array, default: () => [] },
@@ -178,7 +183,8 @@ function isCollapseNode(node) {
 }
 
 function isFieldNode(node) {
-  return !isCardLikeNode(node) && !isTabsNode(node) && !isCollapseNode(node) && node.field
+  return Boolean(node.field) && resolveMobileComponent(resolveType(node)).kind !== 'layout'
+    && !isCardNode(node) && !isContainerNode(node) && !isTabsNode(node) && !isCollapseNode(node)
 }
 
 function nodeKey(node) {
@@ -244,6 +250,14 @@ function fieldOptions(node) {
       source.map(item => typeof item === 'object' ? item : { label: String(item), value: item }),
       node.props?.linkageContext,
     )
+  }
+  if (node.props?.optionSource?.type === 'CURRENT_CHILDREN') {
+    const optionSource = node.props.optionSource
+    const rows = props.currentChildren[optionSource.relationKey] || []
+    return (Array.isArray(rows) ? rows : []).map(row => ({
+      label: row[optionSource.labelField] ?? row.id,
+      value: row[optionSource.valueField] ?? row.id,
+    }))
   }
   return []
 }

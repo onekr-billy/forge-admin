@@ -6,6 +6,7 @@
     :nodes="nodes"
     :data="data"
     :dict-options="dictOptions"
+    :current-children="currentChildren"
     :readonly="readonly"
     :context="context"
     :field-linkages="fieldLinkages"

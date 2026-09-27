@@ -33,6 +33,7 @@
               v-if="hasLowcodeForm"
               :sections="pageSections"
               :main-fields="mainFields"
+              :main-nodes="mainNodes"
               :main-data="mainData"
               :children="allChildren"
               :child-data="childData"
@@ -215,6 +216,7 @@ import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { compactObject as compact, parseNestedJson as parseJson, resolveApiErrorMessage as resolveErrorMessage } from '@/utils/flow-page'
 import { toast } from '@/utils/notify'
 import { hasDeclaredFormCreateRules, resolveTaskFormFields } from '@/utils/form-create-mobile'
+import { resolveTaskUiDocument } from '@/utils/task-ui-document'
 import { normalizeDictOptions } from '@/utils/lowcode-runtime'
 import {
   adaptBusinessTaskFields,
@@ -311,7 +313,10 @@ const businessProviderUnavailable = computed(() => {
   const warnings = Array.isArray(businessContext.value?.warnings) ? businessContext.value.warnings : []
   return warnings.some(item => String(item).includes('Provider未注册'))
 })
+const documentForm = computed(() => resolveTaskUiDocument(businessContext.value, businessSchemaFallback.value))
+const mainNodes = computed(() => documentForm.value?.nodes || [])
 const mainFields = computed(() => {
+  if (documentForm.value) return documentForm.value.fields
   const context = businessContext.value
   if (Array.isArray(context?.fields) && context.fields.length)
     return adaptBusinessTaskFields(context.fields, context.fieldPermissions)
@@ -324,7 +329,7 @@ const allChildren = computed(() => adaptChildrenConfig(
   businessContext.value?.fieldPermissions || [],
 ))
 const pageSections = computed(() =>
-  buildDefaultPageSections(mainFields.value, allChildren.value, extractPageSections(businessContext.value)),
+  buildDefaultPageSections(mainFields.value, allChildren.value, documentForm.value?.sections || extractPageSections(businessContext.value)),
 )
 const flowInteraction = computed(() => buildFlowInteraction(businessContext.value))
 const currentFlowNodeKey = computed(() => String(businessContext.value?.taskDefKey || ''))
@@ -335,7 +340,7 @@ const runtimeContext = computed(() => ({
 }))
 const hasLowcodeForm = computed(() => mainFields.value.length > 0 || allChildren.value.length > 0)
 const formMode = computed(() => {
-  if (readonlyMode.value || businessProviderUnavailable.value || businessSchemaFallback.value.length > 0)
+  if (readonlyMode.value || businessProviderUnavailable.value || (businessSchemaFallback.value.length > 0 && !documentForm.value?.hasComponentTree))
     return 'detail'
   return hasWritableBusinessTaskForm(mainFields.value, allChildren.value) ? 'edit' : 'detail'
 })
@@ -423,19 +428,25 @@ async function refresh() {
     }
     if (!task.value) return
     const currentTaskId = task.value.taskId || task.value.id || taskId.value
-    const formPromise = readonlyMode.value
-      ? api.getFlowProcessForm(compact({ taskId: currentTaskId, processInstanceId: task.value.processInstanceId, businessKey: task.value.businessKey, processDefKey: task.value.processDefKey || task.value.processDefinitionKey, taskDefKey: task.value.taskDefKey || task.value.taskDefinitionKey }))
-      : api.getFlowTaskForm(currentTaskId)
-    const [formResult, historyResult, diagramResult] = await Promise.allSettled([
-      formPromise,
+    const tracePromise = Promise.allSettled([
       task.value.processInstanceId ? api.getFlowTaskHistory(task.value.processInstanceId) : Promise.resolve({ data: [] }),
       task.value.processInstanceId ? api.getFlowDiagramInfo(task.value.processInstanceId) : Promise.resolve({ data: null }),
     ])
-    formInfo.value = formResult.status === 'fulfilled' ? formResult.value?.data || null : null
-    const context = readonlyMode.value
+    let context = readonlyMode.value
       ? await loadReadonlyBusinessContext({ taskId: currentTaskId })
       : await loadBusinessContext({ taskId: currentTaskId })
-    if (context?.taskFormInfo) formInfo.value = { ...(formInfo.value || {}), ...context.taskFormInfo }
+    if (!formInfo.value) {
+      try {
+        const response = readonlyMode.value
+          ? await api.getFlowProcessForm(compact({ taskId: currentTaskId, processInstanceId: task.value.processInstanceId, businessKey: task.value.businessKey, processDefKey: task.value.processDefKey || task.value.processDefinitionKey, taskDefKey: task.value.taskDefKey || task.value.taskDefinitionKey }))
+          : await api.getFlowTaskForm(currentTaskId)
+        formInfo.value = response?.data || null
+      }
+      catch (error) { console.warn('读取流程任务表单失败:', error) }
+      if (!isConfiguredBusinessTaskForm(context) && formInfo.value)
+        context = readonlyMode.value ? await loadReadonlyBusinessContext({ taskId: currentTaskId }) : await loadBusinessContext({ taskId: currentTaskId })
+    }
+    const [historyResult, diagramResult] = await tracePromise
     seedApprovalPointChecks(formInfo.value)
     if (!isConfiguredBusinessTaskForm(context)) replaceMainData(formInfo.value?.variables)
     await loadDictOptions()

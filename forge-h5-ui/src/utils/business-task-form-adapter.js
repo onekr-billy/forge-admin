@@ -28,7 +28,7 @@ export function adaptBusinessTaskFields(rawFields = [], fieldPermissions = [], o
       const writable = permission
         ? resolvePermissionFlag(permission, 'writable', 'editable', false)
         : resolvePermissionFlag(item, 'writable', 'editable', false) && item?.readonly !== true
-      const readonly = !writable || item?.readonly === true
+      const readonly = !writable || item?.readonly === true || item?.disabled === true || item?.props?.readonly === true || item?.props?.disabled === true
       const itemPermissions = normalizeItemPermissions(permission || item)
       const props = {
         ...(item?.props || {}),
@@ -38,7 +38,7 @@ export function adaptBusinessTaskFields(rawFields = [], fieldPermissions = [], o
         ...(item?.querySource !== undefined ? { querySource: item.querySource } : {}),
         dictType: dictType || undefined,
         readonly,
-        disabled: !writable,
+        disabled: readonly,
         itemPermissions,
       }
       return {

@@ -10,7 +10,9 @@
         <LowcodeForm
           :ref="instance => setMainFormRef(section, instance)"
           :fields="resolveFields(section)"
+          :nodes="mainNodes.length && section.sectionId === 'main' ? mainNodes : []"
           :data="mainData"
+          :current-children="childData"
           :dict-options="dictOptions"
           :readonly="mode === 'detail' || sectionReadonly(section)"
           :context="runtimeContext"
@@ -252,6 +254,7 @@ import {
 const props = defineProps({
   sections: { type: Array, default: () => [] },
   mainFields: { type: Array, default: () => [] },
+  mainNodes: { type: Array, default: () => [] },
   mainData: { type: Object, default: () => ({}) },
   children: { type: Array, default: () => [] },
   childData: { type: Object, default: () => ({}) },
