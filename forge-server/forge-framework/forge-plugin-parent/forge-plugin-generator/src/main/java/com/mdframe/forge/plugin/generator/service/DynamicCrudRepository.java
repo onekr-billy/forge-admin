@@ -56,7 +56,7 @@ public class DynamicCrudRepository {
 
     private volatile DynamicCrudTableMetadataGateway tableMetadataGateway;
 
-    private NamedParameterJdbcTemplate jdbc() {
+    NamedParameterJdbcTemplate jdbc() {
         LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
         return context == null ? namedJdbcTemplate : jdbcTemplateProvider.namedJdbcTemplate(context);
     }
@@ -500,7 +500,7 @@ public class DynamicCrudRepository {
         return whereClause;
     }
 
-    private MapSqlParameterSource buildBaseQueryParams() {
+    MapSqlParameterSource buildBaseQueryParams() {
         return buildBaseQueryParams(null);
     }
 
@@ -517,7 +517,7 @@ public class DynamicCrudRepository {
         return paginateSql(dataSql, pageNum, pageSize);
     }
 
-    private String buildOrderByClause(String orderBy) {
+    String buildOrderByClause(String orderBy) {
         if (StringUtils.isNotBlank(orderBy)) {
             return " ORDER BY " + orderBy;
         }
@@ -528,20 +528,20 @@ public class DynamicCrudRepository {
         return buildIdWhereClause(tableName, primaryKeyColumn());
     }
 
-    private StringBuilder buildIdWhereClause(String tableName, String primaryKeyColumn) {
+    StringBuilder buildIdWhereClause(String tableName, String primaryKeyColumn) {
         validateIdentifier(primaryKeyColumn);
         StringBuilder whereClause = new StringBuilder(primaryKeyColumn + " = :id");
         appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
         return whereClause;
     }
 
-    private MapSqlParameterSource buildIdQueryParams(Object id) {
+    MapSqlParameterSource buildIdQueryParams(Object id) {
         MapSqlParameterSource params = buildBaseQueryParams();
         appendIdParam(params, id);
         return params;
     }
 
-    private void appendBaseQueryConditions(StringBuilder whereClause, MapSqlParameterSource params, String tableName) {
+    void appendBaseQueryConditions(StringBuilder whereClause, MapSqlParameterSource params, String tableName) {
         appendBaseQueryConditions(whereClause, params, tableName, null);
     }
 
@@ -561,27 +561,18 @@ public class DynamicCrudRepository {
      * 根据ID查询
      */
     public Map<String, Object> selectById(String tableName, Object id) {
-        return selectById(tableName, id, null);
+        return recordQueryExecutor().selectById(tableName, primaryKeyColumn(), id, null);
     }
 
     public Map<String, Object> selectById(String tableName, Object id, SqlCondition dataScopeCondition) {
-        return selectById(tableName, primaryKeyColumn(), id, dataScopeCondition);
+        return recordQueryExecutor().selectById(tableName, primaryKeyColumn(), id, dataScopeCondition);
     }
 
     public Map<String, Object> selectById(String tableName,
                                           String primaryKeyColumn,
                                           Object id,
                                           SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-
-        StringBuilder whereClause = buildIdWhereClause(tableName, primaryKeyColumn);
-        MapSqlParameterSource params = buildIdQueryParams(id);
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-
-        String sql = buildSelectSql("SELECT *", tableName, whereClause);
-        List<Map<String, Object>> results = jdbc().queryForList(sql, params);
-        return results.isEmpty() ? null : results.get(0);
+        return recordQueryExecutor().selectById(tableName, primaryKeyColumn, id, dataScopeCondition);
     }
 
     /**
@@ -591,20 +582,7 @@ public class DynamicCrudRepository {
                                                   String primaryKeyColumn,
                                                   List<?> ids,
                                                   SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-        if (ids == null || ids.isEmpty()) {
-            return List.of();
-        }
-
-        MapSqlParameterSource params = buildBaseQueryParams();
-        params.addValue("ids", ids);
-        StringBuilder whereClause = new StringBuilder(primaryKeyColumn + " IN (:ids)");
-        appendBaseQueryConditions(whereClause, params, tableName);
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-
-        String sql = buildSelectSql("SELECT *", tableName, whereClause);
-        return jdbc().queryForList(sql, params);
+        return recordQueryExecutor().selectByIds(tableName, primaryKeyColumn, ids, dataScopeCondition);
     }
 
     /** 事务命令状态门禁使用的行锁读取，条件与普通详情查询完全一致。 */
@@ -612,70 +590,25 @@ public class DynamicCrudRepository {
                                                    String primaryKeyColumn,
                                                    Object id,
                                                    SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-        StringBuilder whereClause = buildIdWhereClause(tableName, primaryKeyColumn);
-        MapSqlParameterSource params = buildIdQueryParams(id);
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-        String sql = buildSelectSql("SELECT *", tableName, whereClause) + " FOR UPDATE";
-        List<Map<String, Object>> results = jdbc().queryForList(sql, params);
-        return results.isEmpty() ? null : results.get(0);
+        return recordQueryExecutor().selectByIdForUpdate(tableName, primaryKeyColumn, id, dataScopeCondition);
     }
 
     public List<Map<String, Object>> selectListByColumn(String tableName, String columnName, Object value) {
-        validateTableName(tableName);
-        validateIdentifier(columnName);
-        if (value == null) {
-            return List.of();
-        }
-
-        Object queryValue = normalizeColumnQueryValue(tableName, columnName, value);
-        StringBuilder whereClause = new StringBuilder(columnName + " = :value");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-        MapSqlParameterSource params = buildBaseQueryParams();
-        params.addValue("value", queryValue);
-        String orderColumn = getTableColumns(tableName).contains(primaryKeyColumn()) ? primaryKeyColumn() : columnName;
-        String sql = buildSelectSql("SELECT *", tableName, whereClause) + " ORDER BY " + orderColumn + " ASC";
-        return jdbc().queryForList(sql, params);
+        return recordQueryExecutor().selectListByColumn(tableName, columnName, value);
     }
 
     public List<Map<String, Object>> selectListByColumnIn(String tableName,
                                                           String columnName,
                                                           Collection<?> values) {
-        return selectListByColumnIn(tableName, columnName, values, null);
+        return recordQueryExecutor().selectListByColumnIn(tableName, columnName, values, null);
     }
 
     public List<Map<String, Object>> selectListByColumnIn(String tableName,
                                                           String columnName,
                                                           Collection<?> values,
                                                           SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(columnName);
-        if (values == null || values.isEmpty()) {
-            return List.of();
-        }
-
-        List<Object> nonNullValues = values.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .map(Object.class::cast)
-                .toList();
-        if (nonNullValues.isEmpty()) {
-            return List.of();
-        }
-        List<Object> queryValues = nonNullValues.stream()
-                .map(value -> normalizeColumnQueryValue(tableName, columnName, value))
-                .distinct()
-                .toList();
-
-        StringBuilder whereClause = new StringBuilder(columnName + " IN (:values)");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-        MapSqlParameterSource params = buildBaseQueryParams();
-        params.addValue("values", queryValues);
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-        String orderColumn = getTableColumns(tableName).contains(primaryKeyColumn()) ? primaryKeyColumn() : columnName;
-        String sql = buildSelectSql("SELECT *", tableName, whereClause) + " ORDER BY " + orderColumn + " ASC";
-        return jdbc().queryForList(sql, params);
+        return recordQueryExecutor().selectListByColumnIn(
+                tableName, columnName, values, dataScopeCondition);
     }
 
     public List<Map<String, Object>> selectTreeChildren(String tableName,
@@ -683,7 +616,8 @@ public class DynamicCrudRepository {
                                                         Object parentValue,
                                                         String orderBy,
                                                         int limit) {
-        return selectTreeChildren(tableName, parentColumn, parentValue, orderBy, limit, null);
+        return recordQueryExecutor().selectTreeChildren(
+                tableName, parentColumn, parentValue, orderBy, limit, null);
     }
 
     public List<Map<String, Object>> selectTreeChildren(String tableName,
@@ -692,61 +626,31 @@ public class DynamicCrudRepository {
                                                         String orderBy,
                                                         int limit,
                                                         SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(parentColumn);
-
-        boolean rootQuery = parentValue == null || StringUtils.isBlank(String.valueOf(parentValue));
-        StringBuilder whereClause = rootQuery
-                ? new StringBuilder("(" + parentColumn + " IS NULL OR " + parentColumn + " = :zeroValue OR " + parentColumn + " = :emptyValue)")
-                : new StringBuilder(parentColumn + " = :parentValue");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-
-        MapSqlParameterSource params = buildBaseQueryParams();
-        if (rootQuery) {
-            params.addValue("zeroValue", "0");
-            params.addValue("emptyValue", "");
-        } else {
-            params.addValue("parentValue", parentValue);
-        }
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-        String sql = buildSelectSql("SELECT *", tableName, whereClause)
-                + buildOrderByClause(orderBy);
-        sql = limitSql(sql, Math.max(1, limit));
-        return jdbc().queryForList(sql, params);
+        return recordQueryExecutor().selectTreeChildren(
+                tableName, parentColumn, parentValue, orderBy, limit, dataScopeCondition);
     }
 
     public boolean existsByColumn(String tableName, String columnName, Object value) {
-        return existsByColumn(tableName, columnName, value, null);
+        return recordQueryExecutor().existsByColumn(tableName, columnName, value, null);
     }
 
     public boolean existsByColumn(String tableName, String columnName, Object value, SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(columnName);
-        if (value == null) {
-            return false;
-        }
-
-        StringBuilder whereClause = new StringBuilder(columnName + " = :value");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-        MapSqlParameterSource params = buildBaseQueryParams();
-        params.addValue("value", value);
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-        String sql = buildSelectSql("SELECT COUNT(1)", tableName, whereClause);
-        Long count = jdbc().queryForObject(sql, params, Long.class);
-        return count != null && count > 0;
+        return recordQueryExecutor().existsByColumn(tableName, columnName, value, dataScopeCondition);
     }
 
     public boolean existsByColumns(String tableName,
                                    Map<String, Object> columnValues,
                                    Object excludeId) {
-        return existsByColumns(tableName, columnValues, excludeId, null);
+        return recordQueryExecutor().existsByColumns(
+                tableName, columnValues, primaryKeyColumn(), excludeId, null);
     }
 
     public boolean existsByColumns(String tableName,
                                    Map<String, Object> columnValues,
                                    Object excludeId,
                                    SqlCondition dataScopeCondition) {
-        return existsByColumns(tableName, columnValues, primaryKeyColumn(), excludeId, dataScopeCondition);
+        return recordQueryExecutor().existsByColumns(
+                tableName, columnValues, primaryKeyColumn(), excludeId, dataScopeCondition);
     }
 
     public boolean existsByColumns(String tableName,
@@ -754,36 +658,12 @@ public class DynamicCrudRepository {
                                    String primaryKeyColumn,
                                    Object excludeId,
                                    SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-        if (columnValues == null || columnValues.isEmpty()) {
-            return false;
-        }
+        return recordQueryExecutor().existsByColumns(
+                tableName, columnValues, primaryKeyColumn, excludeId, dataScopeCondition);
+    }
 
-        StringBuilder whereClause = new StringBuilder();
-        MapSqlParameterSource params = buildBaseQueryParams();
-        int index = 0;
-        for (Map.Entry<String, Object> entry : columnValues.entrySet()) {
-            String columnName = entry.getKey();
-            validateIdentifier(columnName);
-            String paramName = "uniqueValue" + index++;
-            Object value = entry.getValue();
-            if (value == null) {
-                appendWhereCondition(whereClause, columnName + " IS NULL");
-            } else {
-                appendWhereCondition(whereClause, columnName + " = :" + paramName);
-                params.addValue(paramName, value);
-            }
-        }
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-        if (excludeId != null) {
-            appendWhereCondition(whereClause, primaryKeyColumn + " <> :excludeId");
-            params.addValue("excludeId", excludeId);
-        }
-        appendSqlCondition(whereClause, params, dataScopeCondition);
-        String sql = buildSelectSql("SELECT COUNT(1)", tableName, whereClause);
-        Long count = jdbc().queryForObject(sql, params, Long.class);
-        return count != null && count > 0;
+    private DynamicCrudRecordQueryExecutor recordQueryExecutor() {
+        return new DynamicCrudRecordQueryExecutor(this);
     }
 
     // ==================== 新增操作 ====================
@@ -1117,7 +997,7 @@ public class DynamicCrudRepository {
         return tableMetadataGateway().columnMapping(tableName, () -> getTableColumns(tableName));
     }
 
-    private Object normalizeColumnQueryValue(String tableName, String columnName, Object value) {
+    Object normalizeColumnQueryValue(String tableName, String columnName, Object value) {
         return tableMetadataGateway().normalizeQueryValue(tableName, columnName, value);
     }
 
@@ -1169,7 +1049,7 @@ public class DynamicCrudRepository {
     /**
      * 校验表名
      */
-    private void validateTableName(String tableName) {
+    void validateTableName(String tableName) {
         if (StringUtils.isBlank(tableName) || !SAFE_IDENTIFIER.matcher(tableName).matches()) {
             throw new BusinessException("非法表名: " + tableName);
         }
@@ -1187,7 +1067,7 @@ public class DynamicCrudRepository {
         }
     }
 
-    private String buildSelectSql(String selectClause, String tableName, StringBuilder whereClause) {
+    String buildSelectSql(String selectClause, String tableName, StringBuilder whereClause) {
         String sql = selectClause + " FROM " + tableName;
         if (whereClause.length() > 0) {
             sql += " WHERE " + whereClause;
@@ -1235,7 +1115,7 @@ public class DynamicCrudRepository {
         return qualifyColumn(tableAlias, primaryKeyColumn());
     }
 
-    private String primaryKeyColumn() {
+    String primaryKeyColumn() {
         LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
         String columnName = context == null || context.getPrimaryKey() == null
                 ? DEFAULT_PRIMARY_KEY
@@ -1272,7 +1152,7 @@ public class DynamicCrudRepository {
         return dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()).paginate(sql, offset, limit);
     }
 
-    private String limitSql(String sql, int limit) {
+    String limitSql(String sql, int limit) {
         return dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get())
                 .paginate(sql, 0, Math.max(1, limit));
     }
@@ -1296,12 +1176,12 @@ public class DynamicCrudRepository {
         }
     }
 
-    private void appendWhereCondition(StringBuilder whereClause, String condition) {
+    void appendWhereCondition(StringBuilder whereClause, String condition) {
         appendWhereJoiner(whereClause);
         whereClause.append(condition);
     }
 
-    private void appendSqlCondition(StringBuilder whereClause, MapSqlParameterSource params, SqlCondition condition) {
+    void appendSqlCondition(StringBuilder whereClause, MapSqlParameterSource params, SqlCondition condition) {
         if (condition == null || StringUtils.isBlank(condition.sql())) {
             return;
         }

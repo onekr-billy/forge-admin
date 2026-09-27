@@ -379,3 +379,9 @@
 - 使用 Policy + Strategy 从 `DynamicCrudRepository` 迁出租户字段、审计字段、逻辑删除列/值、不可变字段剔除、后台会话降级和逻辑删除更新时间规则；Repository 继续持有写命令、事务审计事件和数据权限条件。
 - 原子数值调整的审计值也复用同一 Policy，避免形成第二套更新时间/操作人规则。入口由 1656 行降至 1456 行，新 `DynamicCrudWritePolicy` 263 行。
 - generator Reactor 编译退出码 0；执行 `DynamicCrudWritePolicyTest,DynamicCrudRepositoryBackgroundAuditTest,DynamicCrudServiceChildListTest,DynamicCrudCommandRepositoryTest` 共 4 类 13 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实定制审计列、外部表 NONE 策略和并发后台写入仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十一个切口：动态记录查询执行器
+
+- 使用 CQRS Query Executor 从 `DynamicCrudRepository` 迁出详情、批量 ID、`FOR UPDATE`、按列等值/IN、树子节点和复合唯一性探测；Repository 保留原公开签名，通过包内窄基础设施复用数据源、租户、逻辑删除和数据权限条件。
+- 入口由 1456 行降至 1336 行，新 `DynamicCrudRecordQueryExecutor` 199 行；新增测试直接约束 NULL 组合唯一条件、排除主键参数和空批量短路。
+- generator Reactor 编译退出码 0；执行记录执行器、唯一约束、树查询、命令仓储、后台审计和 Join 列表相关 6 类 20 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实大批量 IN、复杂树根值和并发锁读取仍需服务环境验收，无服务 PID 需停止。

@@ -555,3 +555,12 @@
 - 验证：重跑写入策略、后台审计、原子命令和 Join 列表回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
 
 验证结果：写入数据准备、租户/审计/逻辑删除策略和原子数值调整审计已委托 `DynamicCrudWritePolicy`；相关 4 个测试类共 13 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudRepository` 1456 行，新 Policy 263 行。
+
+## 2026-09-27 第七十一轮增量验证：动态记录查询执行器
+
+- P0：详情、批量 ID、行锁读取、按列等值/IN、树子节点和唯一性探测继续使用同一租户、逻辑删除与数据权限条件。
+- P0：字符列查询值归一、空集合短路、IN 去空去重、根节点兼容值、主键排除和 NULL 唯一条件保持不变。
+- P1：使用 CQRS Query Executor 隔离记录级读取用例；Repository 保留公开兼容门面和共享 JDBC 基础设施，新生产类少于 1000 行。
+- 验证：重跑执行器、唯一约束、树查询、命令、后台审计和 Join 列表回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：记录级查询已委托 `DynamicCrudRecordQueryExecutor`；新增 2 项测试覆盖组合唯一性 SQL/参数和空批量短路。相关 6 个测试类共 20 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`DynamicCrudRepository` 1336 行，新 Executor 199 行。
