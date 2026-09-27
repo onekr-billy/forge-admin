@@ -397,3 +397,9 @@
 - 使用 SQL Support/Compiler 从 `DynamicCrudRepository` 迁出运行时主键解析、分页方言、基础 WHERE、租户/逻辑删除/数据权限谓词、INSERT/UPDATE/DELETE 模板和参数绑定；Query/Command Executor 继续经 Repository 窄门面共享规则。Join Compiler 的组装改为静态 Factory，移除 Repository 中方言协作者的展开装配。
 - 入口由 1165 行降至 988 行，新 `DynamicCrudSqlSupport` 240 行；新增 3 项协议测试覆盖确定性 Mutation SQL、数据权限参数和方言分页。首次 `clean test` 暴露 Join 详情残留的 `appendIdParam` 调用，修正为当前参数源直接绑定后再次干净构建通过。
 - generator Reactor `clean test` 退出码 0；动态 CRUD、数据权限和业务流程依赖相关 43 个测试类共 174 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 仍由 `assertThrows` 覆盖，`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实跨库分页、复杂组合谓词和大批量写入仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十四个切口：用户组织/岗位/角色分配策略
+
+- 按剩余大类扫描优先级转入当前最大类 `SysUserServiceImpl`，使用 Policy + Specification 迁出用户有效类型、角色租户/状态、组织/岗位租户归属、组织角色适用范围及用户类型×数据范围兼容规则。Service 继续持有公开事务、关系写入和会话同步。
+- 入口由 1755 行降至 1573 行，新 `SysUserAssignmentPolicy` 257 行；纯规则分支改为 Java 17 switch expression，数据库查询条件和失败文案保持原状。
+- system Reactor 编译退出码 0；执行 `SysUserAssignmentPolicyTest,SysUserMapperSqlContractTest,SysUserImportSecurityContractTest` 共 3 类 6 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实多租户角色、组织范围和岗位绑定仍需服务环境验收，无服务 PID 需停止。

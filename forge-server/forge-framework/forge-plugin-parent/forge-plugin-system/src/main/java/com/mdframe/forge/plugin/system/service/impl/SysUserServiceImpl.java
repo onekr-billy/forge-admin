@@ -1186,234 +1186,52 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     private int resolveEffectiveUserType(Long userId, Long tenantId) {
-        SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
-        if (user == null) {
-            throw new RuntimeException("用户不存在");
-        }
-        if (Objects.equals(user.getUserType(), SystemConstants.UserType.SYSTEM_ADMIN)) {
-            return SystemConstants.UserType.SYSTEM_ADMIN;
-        }
-        SysUserTenant member = TenantContextHolder.executeIgnore(() ->
-                userTenantMapper.selectOne(new LambdaQueryWrapper<SysUserTenant>()
-                        .eq(SysUserTenant::getUserId, userId)
-                        .eq(SysUserTenant::getTenantId, tenantId)
-                        .eq(SysUserTenant::getStatus, 1)
-                        .last("LIMIT 1")));
-        if (member == null) {
-            throw new RuntimeException("目标用户不属于当前租户");
-        }
-        return Objects.equals(member.getMemberType(), SystemConstants.UserType.TENANT_ADMIN)
-                ? SystemConstants.UserType.TENANT_ADMIN
-                : SystemConstants.UserType.NORMAL_USER;
+        return assignmentPolicy().resolveEffectiveUserType(userId, tenantId);
     }
 
     private int normalizeUserType(Integer userType) {
-        if (userType == null) {
-            return SystemConstants.UserType.NORMAL_USER;
-        }
-        if (userType < SystemConstants.UserType.SYSTEM_ADMIN || userType > SystemConstants.UserType.NORMAL_USER) {
-            return SystemConstants.UserType.NORMAL_USER;
-        }
-        return userType;
+        return assignmentPolicy().normalizeUserType(userType);
     }
 
     private void validateRoleTenant(Long[] roleIds, Long tenantId) {
-        if (roleIds == null || roleIds.length == 0) {
-            return;
-        }
-        Long count = roleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
-                .in(SysRole::getId, Arrays.asList(roleIds))
-                .eq(SysRole::getTenantId, tenantId));
-        if (count == null || count != roleIds.length) {
-            throw new RuntimeException("角色不属于当前操作租户");
-        }
+        assignmentPolicy().validateRoleTenant(roleIds, tenantId);
     }
 
     private List<Long> normalizeRoleIds(List<Long> roleIds) {
-        if (roleIds == null) {
-            return new ArrayList<>();
-        }
-        return roleIds.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
+        return assignmentPolicy().normalizeRoleIds(roleIds);
     }
 
     private void validateUserOrgMembership(Long userId, Long orgId, Long tenantId) {
-        Long count = TenantContextHolder.executeIgnore(() ->
-                userOrgMapper.selectCount(new LambdaQueryWrapper<SysUserOrg>()
-                        .eq(SysUserOrg::getTenantId, tenantId)
-                        .eq(SysUserOrg::getUserId, userId)
-                        .eq(SysUserOrg::getOrgId, orgId)));
-        if (count == null || count == 0) {
-            throw new RuntimeException("用户未加入目标组织");
-        }
+        assignmentPolicy().validateUserOrgMembership(userId, orgId, tenantId);
     }
 
     private void validateRoleStatus(List<Long> roleIds, Long tenantId) {
-        if (roleIds == null || roleIds.isEmpty()) {
-            return;
-        }
-        Long count = roleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
-                .in(SysRole::getId, roleIds)
-                .eq(SysRole::getTenantId, tenantId)
-                .eq(SysRole::getRoleStatus, 1));
-        if (count == null || count != roleIds.size()) {
-            throw new RuntimeException("角色不存在或已禁用");
-        }
+        assignmentPolicy().validateRoleStatus(roleIds, tenantId);
     }
 
     private void validateRolesApplicableToOrg(List<Long> roleIds, Long orgId, Long tenantId) {
-        if (roleIds == null || roleIds.isEmpty()) {
-            return;
-        }
-        List<SysRole> roles = roleMapper.selectList(new LambdaQueryWrapper<SysRole>()
-                .eq(SysRole::getTenantId, tenantId)
-                .in(SysRole::getId, roleIds)
-                .select(SysRole::getId, SysRole::getOrgScopeType));
-        List<Long> customRoleIds = roles.stream()
-                .filter(role -> !isGlobalRoleScope(role))
-                .map(SysRole::getId)
-                .collect(Collectors.toList());
-        if (customRoleIds.isEmpty()) {
-            return;
-        }
-        Long count = roleOrgMapper.selectCount(new LambdaQueryWrapper<SysRoleOrg>()
-                .eq(SysRoleOrg::getTenantId, tenantId)
-                .eq(SysRoleOrg::getOrgId, orgId)
-                .in(SysRoleOrg::getRoleId, customRoleIds));
-        if (count == null || count != customRoleIds.size()) {
-            throw new RuntimeException("角色不适用于目标组织");
-        }
+        assignmentPolicy().validateRolesApplicableToOrg(roleIds, orgId, tenantId);
     }
 
     private boolean isRoleApplicableToOrg(Long roleId, Long orgId, Long tenantId) {
-        if (roleId == null || orgId == null || tenantId == null) {
-            return false;
-        }
-        SysRole role = roleMapper.selectOne(new LambdaQueryWrapper<SysRole>()
-                .eq(SysRole::getTenantId, tenantId)
-                .eq(SysRole::getId, roleId)
-                .select(SysRole::getId, SysRole::getOrgScopeType));
-        if (isGlobalRoleScope(role)) {
-            return true;
-        }
-        Long count = roleOrgMapper.selectCount(new LambdaQueryWrapper<SysRoleOrg>()
-                .eq(SysRoleOrg::getTenantId, tenantId)
-                .eq(SysRoleOrg::getRoleId, roleId)
-                .eq(SysRoleOrg::getOrgId, orgId));
-        return count != null && count > 0;
-    }
-
-    private boolean isGlobalRoleScope(SysRole role) {
-        return role != null && Objects.equals(role.getOrgScopeType(), SystemConstants.RoleOrgScope.GLOBAL);
+        return assignmentPolicy().isRoleApplicableToOrg(roleId, orgId, tenantId);
     }
 
     private void validateOrgTenant(List<Long> orgIds, Long tenantId) {
-        List<Long> normalizedOrgIds = orgIds == null ? new ArrayList<>() : orgIds.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
-        if (normalizedOrgIds.isEmpty()) {
-            return;
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                orgMapper.selectCount(new LambdaQueryWrapper<SysOrg>()
-                        .in(SysOrg::getId, normalizedOrgIds)
-                        .eq(SysOrg::getTenantId, tenantId)));
-        if (count == null || count != normalizedOrgIds.size()) {
-            throw new RuntimeException("组织不属于当前操作租户");
-        }
+        assignmentPolicy().validateOrgTenant(orgIds, tenantId);
     }
 
     private void validatePostTenant(List<Long> postIds, Long tenantId) {
-        List<Long> normalizedPostIds = postIds == null ? new ArrayList<>() : postIds.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
-        if (normalizedPostIds.isEmpty()) {
-            return;
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                postMapper.selectCount(new LambdaQueryWrapper<SysPost>()
-                        .in(SysPost::getId, normalizedPostIds)
-                        .eq(SysPost::getTenantId, tenantId)));
-        if (count == null || count != normalizedPostIds.size()) {
-            throw new RuntimeException("岗位不属于当前操作租户");
-        }
+        assignmentPolicy().validatePostTenant(postIds, tenantId);
     }
 
     private void validateRoleDataScopeForTarget(List<Long> roleIds, Long userId, Long tenantId) {
-        if (roleIds == null || roleIds.isEmpty()) {
-            return;
-        }
-        int targetUserType = resolveEffectiveUserType(userId, tenantId);
-        List<SysRole> roles = roleMapper.selectList(new LambdaQueryWrapper<SysRole>()
-                .in(SysRole::getId, roleIds)
-                .eq(SysRole::getTenantId, tenantId));
-        for (SysRole role : roles) {
-            if (!isDataScopeAllowedForUserType(role.getDataScope(), targetUserType)) {
-                throw new RuntimeException(buildDataScopeConflictMessage(role, targetUserType));
-            }
-        }
+        assignmentPolicy().validateRoleDataScopeForTarget(roleIds, userId, tenantId);
     }
 
-    /**
-     * 角色数据范围与目标用户类型冲突时，给出可定位、可执行的修复建议。
-     */
-    private String buildDataScopeConflictMessage(SysRole role, int userType) {
-        String roleName = role.getRoleName() != null ? role.getRoleName() : String.valueOf(role.getId());
-        String scopeLabel = resolveDataScopeLabel(role.getDataScope());
-        if (Objects.equals(role.getDataScope(), SystemConstants.RoleDataScope.ALL)) {
-            return String.format("角色【%s】的数据范围为【%s】，仅系统管理员类型的用户可绑定，请调整该角色的数据范围后重试",
-                    roleName, scopeLabel);
-        }
-        return String.format("角色【%s】的数据范围为【%s】，超出【%s】允许的上限；请调整该角色的数据范围，或将该用户的用户类型调整为【租户管理员】后重试",
-                roleName, scopeLabel, resolveUserTypeLabel(userType));
-    }
-
-    private String resolveDataScopeLabel(Integer dataScope) {
-        if (dataScope == null) {
-            return "未设置";
-        }
-        switch (dataScope) {
-            case SystemConstants.RoleDataScope.ALL:
-                return "全部数据";
-            case SystemConstants.RoleDataScope.TENANT:
-                return "本租户数据";
-            case SystemConstants.RoleDataScope.ORG:
-                return "本组织数据";
-            case SystemConstants.RoleDataScope.ORG_AND_CHILD:
-                return "本组织及子组织";
-            case SystemConstants.RoleDataScope.SELF:
-                return "个人数据";
-            case SystemConstants.RoleDataScope.REGION:
-                return "本行政区划数据";
-            default:
-                return "未知范围(" + dataScope + ")";
-        }
-    }
-
-    private String resolveUserTypeLabel(int userType) {
-        switch (userType) {
-            case SystemConstants.UserType.SYSTEM_ADMIN:
-                return "系统管理员";
-            case SystemConstants.UserType.TENANT_ADMIN:
-                return "租户管理员";
-            default:
-                return "普通用户";
-        }
-    }
-
-    private boolean isDataScopeAllowedForUserType(Integer dataScope, int userType) {
-        if (dataScope == null || userType == SystemConstants.UserType.SYSTEM_ADMIN) {
-            return true;
-        }
-        if (userType == SystemConstants.UserType.TENANT_ADMIN) {
-            return dataScope != SystemConstants.RoleDataScope.ALL;
-        }
-        return dataScope != SystemConstants.RoleDataScope.ALL
-                && dataScope != SystemConstants.RoleDataScope.TENANT;
+    private SysUserAssignmentPolicy assignmentPolicy() {
+        return new SysUserAssignmentPolicy(userMapper, userTenantMapper, roleMapper, roleOrgMapper,
+                userOrgMapper, orgMapper, postMapper);
     }
 
     private boolean syncUserRoles(Long userId, List<Long> roleIds) {

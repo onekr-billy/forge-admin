@@ -584,3 +584,12 @@
 - 验证：执行 generator Reactor `clean test`，重跑动态 CRUD、数据权限和业务流程依赖选择器；执行 `git diff --check` 与全量类行数检查，不启动真实服务。
 
 验证结果：主键/方言、基础谓词、Mutation SQL 与参数编译已委托 `DynamicCrudSqlSupport`，Join Compiler 工厂同步迁出装配细节；新增 3 项 SQL 协议测试。首次干净编译发现 Join 详情残留的旧 ID 参数助手，改为当前参数源直接绑定后重跑通过。相关 43 个测试类共 174 项通过，0 失败、0 错误；generator Reactor `clean test` 与 `git diff --check` 通过。`DynamicCrudRepository` 988 行，新 SQL Support 240 行，本阶段全部生产类低于 1000 行。
+
+## 2026-09-27 第七十四轮增量验证：用户分配策略
+
+- P0：用户有效类型解析、角色租户归属、角色启用状态、组织/岗位租户归属和组织角色适用范围保持不变。
+- P0：系统管理员、租户管理员和普通用户可绑定的数据范围上限及可执行错误提示保持不变。
+- P1：使用 Policy + Specification 隔离用户组织/岗位/角色分配规则；用户 Service 保留公开事务和绑定编排，新生产类少于 1000 行。
+- 验证：执行 system Reactor 编译，重跑分配策略、用户 Mapper SQL 与导入安全契约，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：组织、岗位、角色与数据范围校验已委托 `SysUserAssignmentPolicy`；新增 3 项测试覆盖系统管理员短路、普通用户数据范围拒绝和类型归一。相关 3 个测试类共 6 项通过，0 失败、0 错误；system Reactor 编译与 `git diff --check` 通过。`SysUserServiceImpl` 1573 行，新 Policy 257 行。
