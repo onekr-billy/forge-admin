@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：业务元数据与发布校验租户边界收口
+
+### 实现
+
+- `BusinessFieldTemplateService`、`BusinessFlowAppConfigService` 和 `BusinessBootstrapService` 在模板、对象、流程和低代码模型访问前要求可信租户；保存与批量同步在单次调用内复用同一租户，不再回退租户 `1`。
+- `BusinessObjectTableMappingService` 将租户检查前移到上下文读取和 DDL 编排之前，并校验发布上下文中的业务对象归属当前租户；映射统计查询使用入口捕获的租户。
+- `BusinessObjectDesignPublishValidator` 与 `BusinessObjectDeploymentPublishValidator` 在关系、触发器、单据配置、应用入口、数据源及 DDL 能力检查前验证当前租户和上下文对象归属，跨租户上下文在副作用前拒绝。
+
+### 验证
+
+- 新增 `BusinessMetadataIdentitySecurityTest` 7/7，覆盖字段模板、流程应用配置、初始化同步、表映射及设计/部署发布校验的缺失租户拒绝，并验证部署校验拒绝跨租户上下文；连同表映射和数据库同步测试定向回归 26/26 通过。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1309/1309 测试通过，0 失败、0 错误、0 跳过。
+- 业务应用服务目录中已无本轮扫描模式命中的默认租户 `1` 回退；`git diff --check` 通过，用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL 执行字段模板、流程应用配置、初始化同步、表映射及发布校验 HTTP 跨租户验证，也未执行真实在线 DDL；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：业务单据、流程变量与关联运行时租户边界收口
 
 ### 实现

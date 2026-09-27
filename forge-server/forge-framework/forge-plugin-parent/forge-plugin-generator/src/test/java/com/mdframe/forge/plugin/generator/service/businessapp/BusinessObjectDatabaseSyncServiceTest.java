@@ -6,13 +6,19 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeDdlPreviewVO;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,6 +27,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("BusinessObjectDatabaseSyncService")
 class BusinessObjectDatabaseSyncServiceTest {
+
+    private ExecutionIdentityContextHolder.Scope identityScope;
+
+    @BeforeEach
+    void setUpIdentity() {
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
+                loginUser, "USER", 7L, null, 1L,
+                "pc", "database-sync-test", Set.of()));
+    }
+
+    @AfterEach
+    void clearIdentity() {
+        if (identityScope != null) {
+            identityScope.close();
+            identityScope = null;
+        }
+        ExecutionIdentityContextHolder.clear();
+    }
 
     @Test
     @DisplayName("preview never executes database DDL")
