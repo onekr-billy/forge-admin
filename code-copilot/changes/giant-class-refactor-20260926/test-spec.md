@@ -656,3 +656,11 @@
 - 验证：执行 system Reactor 编译，重跑分配策略、用户 Mapper SQL 与导入安全契约，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：组织、岗位、角色与数据范围校验已委托 `SysUserAssignmentPolicy`；新增 3 项测试覆盖系统管理员短路、普通用户数据范围拒绝和类型归一。相关 3 个测试类共 6 项通过，0 失败、0 错误；system Reactor 编译与 `git diff --check` 通过。`SysUserServiceImpl` 1573 行，新 Policy 257 行。
+
+## 2026-09-27 第八十二轮增量验证：单据编号规则解释器
+
+- P0：迁出旧 `{token}` / `seq4` 模板归一、日期/序列/上下文/业务字段变量解释、预览警告、规则校验和运行时序列生成；新增单测覆盖 snake/camel 字段读取、未知变量、缺失样例字段、禁用配置及租户/对象/周期序列键。
+- P1：重跑 `BusinessDocumentRuntimeServiceTest`，执行 generator Reactor 编译、`git diff --check` 和新旧类行数检查。
+- 保留 `BusinessDocumentConfigService` 六参数构造、公开 API、保存事务和状态/流程绑定配置；预览不消耗真实序列，不启动服务、不连接数据库或 Redis。
+
+验证结果：新规则引擎的 5 项测试与单据运行态 20 项测试全部通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessDocumentConfigService` 871 行，新引擎 390 行。

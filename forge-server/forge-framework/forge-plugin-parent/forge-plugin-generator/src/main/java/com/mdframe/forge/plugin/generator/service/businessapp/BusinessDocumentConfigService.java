@@ -16,8 +16,8 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentNoRulePreviewVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentNoRuleTokenVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.id.service.ISequenceService;
 import lombok.RequiredArgsConstructor;
@@ -25,17 +25,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 业务对象单据配置服务。
@@ -48,10 +43,6 @@ public class BusinessDocumentConfigService {
             "id", "tenantId", "tenant_id", "createBy", "create_by", "createTime", "create_time",
             "createDept", "create_dept", "updateBy", "update_by", "updateTime", "update_time"
     );
-
-    private static final Pattern NO_RULE_TOKEN_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
-    private static final Pattern LEGACY_NO_RULE_TOKEN_PATTERN = Pattern.compile("(?<!\\$)\\{([^{}]+)}");
-    private static final Pattern LEGACY_SEQ_TOKEN_PATTERN = Pattern.compile("seq(\\d+)");
 
     private final BusinessDocumentConfigMapper documentConfigMapper;
     private final BusinessBindingMapper bindingMapper;
@@ -87,33 +78,11 @@ public class BusinessDocumentConfigService {
     }
 
     public List<BusinessDocumentNoRuleTokenVO> listNoRuleTokens() {
-        List<BusinessDocumentNoRuleTokenVO> tokens = new ArrayList<>();
-        tokens.add(token("${yyyy}", "年份", "日期时间", "当前年份，四位数字", "2026", "2026"));
-        tokens.add(token("${yyyyMM}", "年月", "日期时间", "当前年月，六位数字", "202606", "202606"));
-        tokens.add(token("${yyyyMMdd}", "年月日", "日期时间", "当前日期，八位数字", "20260602", "20260602"));
-        tokens.add(token("${HHmmss}", "时分秒", "日期时间", "当前时间，六位数字", "203405", "203405"));
-        tokens.add(token("${seq}", "流水号", "序列", "预览使用样例序号，不占用真实序列", "1", "1"));
-        tokens.add(token("${seq:4}", "四位流水号", "序列", "流水号左侧补零到指定长度", "0001", "0001"));
-        tokens.add(token("${suiteCode}", "套件编码", "上下文", "当前业务套件编码", "CRM", "CRM"));
-        tokens.add(token("${objectCode}", "对象编码", "上下文", "当前业务对象编码", "OPPORTUNITY", "OPPORTUNITY"));
-        tokens.add(token("${starter}", "发起人", "上下文", "当前发起人用户名或用户编码", "zhangsan", "zhangsan"));
-        tokens.add(token("${deptCode}", "部门编码", "上下文", "当前发起人部门编码", "SALES", "SALES"));
-        tokens.add(token("${field:<fieldCode>}", "单据字段", "业务字段", "从样例数据读取业务字段值，例如 ${field:customerName}", "ACME", "ACME"));
-        return tokens;
+        return noRuleEngine().listTokens();
     }
 
     public BusinessDocumentNoRulePreviewVO previewNoRule(BusinessDocumentNoRulePreviewDTO dto) {
-        BusinessDocumentNoRulePreviewDTO source = dto == null ? new BusinessDocumentNoRulePreviewDTO() : dto;
-        String template = StringUtils.defaultIfBlank(normalizeNoRuleTemplate(source.getTemplate()), "DOC-${yyyyMMdd}-${seq:4}");
-        return renderNoRulePreview(
-                template,
-                StringUtils.defaultIfBlank(source.getSuiteCode(), "SUITE"),
-                StringUtils.defaultIfBlank(source.getObjectCode(), "OBJECT"),
-                StringUtils.defaultIfBlank(source.getStarter(), "starter"),
-                StringUtils.defaultIfBlank(source.getDeptCode(), "DEPT"),
-                source.getSampleData(),
-                source.getSequence() == null ? 1L : source.getSequence().longValue()
-        );
+        return noRuleEngine().preview(dto);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -123,12 +92,12 @@ public class BusinessDocumentConfigService {
         }
         AiBusinessObject object = objectService.requireEntity(objectId);
         boolean enabled = Boolean.TRUE.equals(dto.getDocumentEnabled());
-        String documentNoRule = normalizeNoRuleTemplate(StringUtils.firstNonBlank(dto.getNoRuleTemplate(), dto.getDocumentNoRule()));
+        String documentNoRule = noRuleEngine().normalizeTemplate(StringUtils.firstNonBlank(dto.getNoRuleTemplate(), dto.getDocumentNoRule()));
         List<BusinessDocumentConfigVO.StatusMappingRowVO> statusRows = normalizeStatusRows(
                 dto.getStatusMappingRows(), dto.getStatusMapping());
         Map<String, String> statusMapping = statusMappingFromRows(statusRows);
         if (StringUtils.isNotBlank(documentNoRule)) {
-            validateNoRuleTemplate(documentNoRule);
+            noRuleEngine().validateTemplate(documentNoRule);
         }
         Long tenantId = resolveTenantId();
         String documentNoField = text(readObjectMap(dto.getOptions()).get("documentNoField"));
@@ -248,9 +217,9 @@ public class BusinessDocumentConfigService {
         vo.setConfigKey(config.getConfigKey());
         vo.setDocumentEnabled(EnableStatus.ENABLED.matches(config.getDocumentEnabled()));
         vo.setDocumentName(config.getDocumentName());
-        String normalizedDocumentNoRule = normalizeNoRuleTemplate(config.getDocumentNoRule());
+        String normalizedDocumentNoRule = noRuleEngine().normalizeTemplate(config.getDocumentNoRule());
         vo.setDocumentNoRule(normalizedDocumentNoRule);
-        vo.setNoRuleTemplate(StringUtils.defaultIfBlank(normalizeNoRuleTemplate(text(options.get("noRuleTemplate"))), normalizedDocumentNoRule));
+        vo.setNoRuleTemplate(StringUtils.defaultIfBlank(noRuleEngine().normalizeTemplate(text(options.get("noRuleTemplate"))), normalizedDocumentNoRule));
         if (StringUtils.isNotBlank(vo.getNoRuleTemplate())) {
             BusinessDocumentNoRulePreviewDTO previewDTO = new BusinessDocumentNoRulePreviewDTO();
             previewDTO.setTemplate(vo.getNoRuleTemplate());
@@ -410,41 +379,7 @@ public class BusinessDocumentConfigService {
     }
 
     public String generateDocumentNo(AiBusinessDocumentConfig config, Map<String, Object> recordData) {
-        if (config == null || !EnableStatus.ENABLED.matches(config.getDocumentEnabled())) {
-            return null;
-        }
-        String template = normalizeNoRuleTemplate(config.getDocumentNoRule());
-        if (StringUtils.isBlank(template)) {
-            return null;
-        }
-        long sequence = sequenceService.nextId(buildNoRuleSequenceKey(config, template));
-        LoginUser loginUser = safeLoginUser();
-        String starter = loginUser == null
-                ? "starter"
-                : StringUtils.firstNonBlank(loginUser.getUsername(), loginUser.getRealName(),
-                        loginUser.getUserId() == null ? null : String.valueOf(loginUser.getUserId()), "starter");
-        String deptCode = loginUser == null
-                ? "DEPT"
-                : StringUtils.firstNonBlank(
-                        loginUser.getMainOrgId() == null ? null : String.valueOf(loginUser.getMainOrgId()),
-                        loginUser.getDeptName(),
-                        "DEPT");
-        BusinessDocumentNoRulePreviewVO rendered = renderNoRulePreview(
-                template,
-                StringUtils.defaultIfBlank(config.getSuiteCode(), "SUITE"),
-                StringUtils.defaultIfBlank(config.getObjectCode(), "OBJECT"),
-                starter,
-                deptCode,
-                recordData,
-                sequence);
-        if (!rendered.getErrors().isEmpty()) {
-            String message = rendered.getErrors().stream()
-                    .map(BusinessDocumentNoRulePreviewVO.PreviewIssueVO::getMessage)
-                    .findFirst()
-                    .orElse("单据编号规则不正确");
-            throw new BusinessException(message);
-        }
-        return rendered.getPreviewNo();
+        return noRuleEngine().generate(config, recordData);
     }
 
     public void syncDefaultFlowKeyByObjectCode(Long tenantId, String objectCode, String flowModelKey) {
@@ -458,198 +393,6 @@ public class BusinessDocumentConfigService {
         }
         config.setDefaultFlowKey(StringUtils.trimToNull(flowModelKey));
         documentConfigMapper.updateById(config);
-    }
-
-    private String buildNoRuleSequenceKey(AiBusinessDocumentConfig config, String template) {
-        String tenantId = config == null || config.getTenantId() == null ? String.valueOf(resolveTenantId()) : String.valueOf(config.getTenantId());
-        String suiteCode = config == null ? "SUITE" : StringUtils.defaultIfBlank(config.getSuiteCode(), "SUITE");
-        String objectCode = config == null ? "OBJECT" : StringUtils.defaultIfBlank(config.getObjectCode(), "OBJECT");
-        String period = resolveNoRuleSequencePeriod(template);
-        String templateHash = Integer.toHexString(StringUtils.defaultString(template).hashCode());
-        return "lowcode:document-no:" + tenantId + ":" + safeSequencePart(suiteCode) + ":"
-                + safeSequencePart(objectCode) + ":" + period + ":" + templateHash;
-    }
-
-    private String resolveNoRuleSequencePeriod(String template) {
-        LocalDateTime now = LocalDateTime.now();
-        if (StringUtils.contains(template, "yyyyMMdd")) {
-            return now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        }
-        if (StringUtils.contains(template, "yyyyMM")) {
-            return now.format(DateTimeFormatter.ofPattern("yyyyMM"));
-        }
-        if (StringUtils.contains(template, "yyyy")) {
-            return now.format(DateTimeFormatter.ofPattern("yyyy"));
-        }
-        return "all";
-    }
-
-    private String safeSequencePart(String value) {
-        String result = StringUtils.defaultIfBlank(value, "NA").replaceAll("[^A-Za-z0-9_\\-]", "_");
-        return StringUtils.defaultIfBlank(result, "NA");
-    }
-
-    private LoginUser safeLoginUser() {
-        try {
-            return SessionHelper.getLoginUser();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private BusinessDocumentNoRuleTokenVO token(String insertText, String label, String groupName,
-                                                String description, String example, String sampleValue) {
-        BusinessDocumentNoRuleTokenVO vo = new BusinessDocumentNoRuleTokenVO();
-        vo.setToken(insertText);
-        vo.setInsertText(insertText);
-        vo.setLabel(label);
-        vo.setGroupName(groupName);
-        vo.setDescription(description);
-        vo.setExample(example);
-        vo.setSampleValue(sampleValue);
-        return vo;
-    }
-
-    private BusinessDocumentNoRulePreviewVO renderNoRulePreview(String template,
-                                                                String suiteCode,
-                                                                String objectCode,
-                                                                String starter,
-                                                                String deptCode,
-                                                                Map<String, Object> sampleData,
-                                                                Long sequence) {
-        BusinessDocumentNoRulePreviewVO vo = new BusinessDocumentNoRulePreviewVO();
-        vo.setTemplate(template);
-        StringBuilder result = new StringBuilder();
-        Matcher matcher = NO_RULE_TOKEN_PATTERN.matcher(template);
-        int lastIndex = 0;
-        LocalDateTime now = LocalDateTime.now();
-        while (matcher.find()) {
-            result.append(template, lastIndex, matcher.start());
-            String token = matcher.group(1);
-            vo.getUsedTokens().add("${" + token + "}");
-            String replacement = resolveNoRuleToken(token, suiteCode, objectCode, starter, deptCode, sampleData, sequence, now, vo);
-            result.append(replacement);
-            lastIndex = matcher.end();
-        }
-        result.append(template.substring(lastIndex));
-        String previewNo = result.toString();
-        vo.setPreviewNo(previewNo);
-        if (!previewNo.matches("[A-Za-z0-9_\\-./]+")) {
-            vo.getWarnings().add(issue(null, "编号包含空格或特殊字符，可能不适合作为对外单据号", "建议只使用字母、数字、短横线、下划线、点和斜线"));
-        }
-        if (previewNo.length() > 64) {
-            vo.getWarnings().add(issue(null, "编号长度超过 64 个字符", "建议缩短固定前缀或字段变量内容"));
-        }
-        vo.setValid(vo.getErrors().isEmpty());
-        return vo;
-    }
-
-    private String resolveNoRuleToken(String token,
-                                      String suiteCode,
-                                      String objectCode,
-                                      String starter,
-                                      String deptCode,
-                                      Map<String, Object> sampleData,
-                                      Long sequence,
-                                      LocalDateTime now,
-                                      BusinessDocumentNoRulePreviewVO vo) {
-        if ("yyyy".equals(token)) {
-            return now.format(DateTimeFormatter.ofPattern("yyyy"));
-        }
-        if ("yyyyMM".equals(token)) {
-            return now.format(DateTimeFormatter.ofPattern("yyyyMM"));
-        }
-        if ("yyyyMMdd".equals(token)) {
-            return now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        }
-        if ("HHmmss".equals(token)) {
-            return now.format(DateTimeFormatter.ofPattern("HHmmss"));
-        }
-        if ("seq".equals(token)) {
-            return String.valueOf(Math.max(sequence == null ? 1L : sequence, 1L));
-        }
-        if (token.startsWith("seq:")) {
-            return renderSequenceToken(token, sequence, vo);
-        }
-        if ("suiteCode".equals(token)) {
-            return suiteCode;
-        }
-        if ("objectCode".equals(token)) {
-            return objectCode;
-        }
-        if ("starter".equals(token)) {
-            return starter;
-        }
-        if ("deptCode".equals(token)) {
-            return deptCode;
-        }
-        if (token.startsWith("field:")) {
-            String fieldCode = token.substring("field:".length()).trim();
-            if (StringUtils.isBlank(fieldCode)) {
-                vo.getErrors().add(issue("${" + token + "}", "字段变量缺少字段编码", "改为 ${field:字段编码}"));
-                return "";
-            }
-            Object value = readSampleValue(sampleData, fieldCode);
-            if (value == null) {
-                vo.getWarnings().add(issue("${" + token + "}", "样例数据中没有字段 " + fieldCode, "预览时可填入 sampleData，保存后运行态会读取真实字段"));
-                return fieldCode;
-            }
-            return String.valueOf(value);
-        }
-        vo.getErrors().add(issue("${" + token + "}", "未知编号变量: ${" + token + "}", "从内置变量列表选择，或使用 ${field:<fieldCode>} 引用业务字段"));
-        return "";
-    }
-
-    private String renderSequenceToken(String token, Long sequence, BusinessDocumentNoRulePreviewVO vo) {
-        String lengthText = token.substring("seq:".length()).trim();
-        int length;
-        try {
-            length = Integer.parseInt(lengthText);
-        } catch (Exception e) {
-            vo.getErrors().add(issue("${" + token + "}", "流水号长度必须是数字", "例如 ${seq:4}"));
-            return "";
-        }
-        if (length <= 0 || length > 12) {
-            vo.getErrors().add(issue("${" + token + "}", "流水号长度建议在 1-12 之间", "例如 ${seq:4}"));
-            return "";
-        }
-        String seqText = String.valueOf(Math.max(sequence == null ? 1L : sequence, 1L));
-        return StringUtils.leftPad(seqText, length, '0');
-    }
-
-    private Object readSampleValue(Map<String, Object> sampleData, String fieldCode) {
-        if (sampleData == null || StringUtils.isBlank(fieldCode)) {
-            return null;
-        }
-        if (sampleData.containsKey(fieldCode)) {
-            return sampleData.get(fieldCode);
-        }
-        String camel = snakeToCamel(fieldCode);
-        if (sampleData.containsKey(camel)) {
-            return sampleData.get(camel);
-        }
-        String snake = camelToSnake(fieldCode);
-        return sampleData.get(snake);
-    }
-
-    private BusinessDocumentNoRulePreviewVO.PreviewIssueVO issue(String token, String message, String suggestion) {
-        BusinessDocumentNoRulePreviewVO.PreviewIssueVO vo = new BusinessDocumentNoRulePreviewVO.PreviewIssueVO();
-        vo.setToken(token);
-        vo.setMessage(message);
-        vo.setSuggestion(suggestion);
-        return vo;
-    }
-
-    private void validateNoRuleTemplate(String template) {
-        BusinessDocumentNoRulePreviewVO preview = renderNoRulePreview(normalizeNoRuleTemplate(template), "SUITE", "OBJECT", "starter", "DEPT",
-                Map.of("fieldCode", "SAMPLE"), 1L);
-        if (!preview.getErrors().isEmpty()) {
-            String message = preview.getErrors().stream()
-                    .map(BusinessDocumentNoRulePreviewVO.PreviewIssueVO::getMessage)
-                    .findFirst()
-                    .orElse("编号规则不正确");
-            throw new BusinessException(message);
-        }
     }
 
     private Map<String, Object> buildOptions(BusinessDocumentConfigDTO dto,
@@ -667,29 +410,6 @@ public class BusinessDocumentConfigService {
                 ? new LinkedHashMap<>()
                 : dto.getStatusActionPolicy());
         return options;
-    }
-
-    private String normalizeNoRuleTemplate(String template) {
-        String value = StringUtils.trimToNull(template);
-        if (value == null) {
-            return null;
-        }
-        Matcher matcher = LEGACY_NO_RULE_TOKEN_PATTERN.matcher(value);
-        StringBuffer buffer = new StringBuffer();
-        while (matcher.find()) {
-            matcher.appendReplacement(buffer, Matcher.quoteReplacement("${" + normalizeNoRuleToken(matcher.group(1)) + "}"));
-        }
-        matcher.appendTail(buffer);
-        return buffer.toString();
-    }
-
-    private String normalizeNoRuleToken(String token) {
-        String value = StringUtils.defaultString(token).trim();
-        Matcher seqMatcher = LEGACY_SEQ_TOKEN_PATTERN.matcher(value);
-        if (seqMatcher.matches()) {
-            return "seq:" + seqMatcher.group(1);
-        }
-        return value;
     }
 
     private List<BusinessDocumentConfigVO.StatusMappingRowVO> normalizeStatusRows(
@@ -1131,23 +851,12 @@ public class BusinessDocumentConfigService {
         return result.toString();
     }
 
-    private String camelToSnake(String value) {
-        if (StringUtils.isBlank(value)) {
-            return value;
-        }
-        StringBuilder result = new StringBuilder();
-        for (char ch : value.toCharArray()) {
-            if (Character.isUpperCase(ch)) {
-                result.append('_').append(Character.toLowerCase(ch));
-            } else {
-                result.append(ch);
-            }
-        }
-        return result.toString();
-    }
-
     private String text(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private BusinessDocumentNoRuleEngine noRuleEngine() {
+        return new BusinessDocumentNoRuleEngine(sequenceService);
     }
 
     private Long resolveTenantId() {

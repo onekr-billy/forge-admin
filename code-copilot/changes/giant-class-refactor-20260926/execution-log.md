@@ -445,3 +445,9 @@
 - 使用 Access Policy + Specification 从 `SysRoleServiceImpl` 迁出角色管理权限通配符、登录租户选择、租户启用、角色加载与委派、系统角色/自绑定保护、数据范围上限及组织租户归属；Service 通过窄工厂复用原 Mapper，保持 14 参数构造签名和现有测试夹具。
 - 删除仅被已废弃 `addUsersToRole` 旧实现使用、当前已无调用的目标用户赋权校验链；资源授权、范围权限、组织绑定、缓存刷新和公开事务继续留在 Service。入口由 1194 行降至 974 行，新 Policy 215 行。
 - system Reactor 编译退出码 0；执行 `SysRoleAccessPolicyTest,SysRoleServiceImplBindResourcesTest,SysRoleServiceImplScopedPermissionTest,RoleResourceSelectionNormalizerTest,SysRoleMapperXmlContractTest` 共 5 类 16 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实多租户委派、系统角色维护和并发授权仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第八十二个切口：单据编号规则解释器
+
+- 使用 Interpreter Strategy 从 `BusinessDocumentConfigService` 迁出旧模板归一、Token 目录、日期/序列/上下文/业务字段解释、预览告警、规则校验、序列键和运行时编号生成；四类解释器共享一条渲染链，避免预览与真实取号规则漂移。
+- Service 继续持有配置查询/保存事务、字段推断、状态映射和主流程绑定，并通过私有工厂保持原六参数构造边界。入口由 1162 行降至 871 行，新 `BusinessDocumentNoRuleEngine` 390 行，均低于 1000 行。
+- generator Reactor 编译退出码 0；执行 `BusinessDocumentNoRuleEngineTest,BusinessDocumentRuntimeServiceTest` 共 2 类 25 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接数据库或 Redis；真实并发序列分配、登录人/部门上下文和跨日重置仍需服务环境验收，无服务 PID 需停止。
