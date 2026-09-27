@@ -65,6 +65,8 @@ class FlowTaskMutationAuthorizationContractTest {
     void ignoreTenantFormAndBusinessLookupsMustCarryTenantPredicates() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String formResolver = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormConfigurationResolver.java"));
         assertTrue(source.contains("selectByProcessInstanceIdAndTenantIdForUpdate(\n                    task.getProcessInstanceId(), tenantId)"));
         assertTrue(source.contains("selectByProcessInstanceIdAndTenantId(processInstanceId, tenantId)"));
         assertTrue(source.contains("selectByBusinessKeyAndTenantId(tenantId, businessKey)"));
@@ -72,7 +74,8 @@ class FlowTaskMutationAuthorizationContractTest {
         assertTrue(!source.contains("flowBusinessMapper.selectByProcessInstanceId(task.getProcessInstanceId())"));
         assertTrue(!source.contains("flowBusinessMapper.selectByProcessInstanceId(processInstanceId)"));
         assertTrue(!source.contains("flowBusinessMapper.selectByBusinessKey(businessKey)"));
-        assertTrue(source.contains("selectByProcessInstanceIdAndTenantId(\n                    processInstanceId, tenantId)"));
+        assertTrue(formResolver.contains(
+                "selectByProcessInstanceIdAndTenantId(\n                    processInstanceId, tenantId)"));
     }
 
     @Test

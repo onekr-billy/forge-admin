@@ -333,6 +333,15 @@
 
 验证结果：动作许可、配置覆盖、必填变量、审批要点、自动审批模式和退回目标已统一委托 `FlowTaskNodePolicy`；新增 3 项策略行为测试，相关 10 个测试类共 36 项通过，0 失败、0 错误。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 2449 行，新 Policy 463 行。
 
+## 2026-09-27 第六十轮增量验证：Flowable 表单配置解析器
+
+- P0：BPMN 节点表单、模型表单、动态表单服务和实例快照的既有回退顺序保持不变，业务代码表单不得被动态 Schema 误降级。
+- P0：表单实例读取继续携带可信租户，数组字段保存继续使用与展示相同的节点 Schema 和字段权限；节点配置中的 formRef/formMode/provider/viewKey 兼容保持不变。
+- P1：使用 Resolver + Layered Fallback 隔离表单协议解析，任务服务仅保留流程上下文编排；新生产类少于 1000 行。
+- 验证：执行 flow Reactor 编译，重跑表单解析、节点策略、任务动作授权、状态流转、会签、流程图和待办性能契约；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：表单配置、节点选择、动态 Schema、实例快照和数组字段权限 Schema 来源已统一委托 `FlowTaskFormConfigurationResolver`；新增 3 项 Resolver 行为测试，相关 11 个测试类共 39 项通过，0 失败、0 错误。额外直接运行未改动的 `DynamicFormArrayPermissionValidatorTest` 时，存量 7 项中 1 项基线失败，本轮未修改该校验器且未借重构改变其业务语义。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 2006 行，新 Resolver 518 行。
+
 ## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
 
 - P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。

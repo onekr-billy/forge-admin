@@ -312,3 +312,9 @@
 - 使用 Policy + Specification 从 `FlowTaskServiceImpl` 迁出 BPMN 节点动作属性解析、节点配置表覆盖、审批意见/签名要求、必填变量、审批要点、自动审批模式和退回目标判定。命令事务、Flowable 副作用、任务镜像及业务状态回写仍保留在主服务。
 - 节点策略保持“BPMN 扩展属性先解析、节点配置表最终覆盖”的既有优先级，并通过流程定义 Key 窄解析器复用主服务的历史兼容逻辑。入口由 2848 行降至 2449 行，新 `FlowTaskNodePolicy` 463 行。
 - flow Reactor 编译退出码 0；执行节点策略、解析器、动作授权、状态流转、会签、流程图和待办性能相关 10 类 36 项，0 失败、0 错误；新增 3 项测试覆盖配置覆盖、必填变量提示和默认审批意见要求，`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实历史节点配置、复杂退回路径和并行实例仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十个切口：Flowable 表单配置解析器
+
+- 使用 Resolver + Layered Fallback 从 `FlowTaskServiceImpl` 迁出 BPMN 节点表单、模型表单、动态表单服务和流程表单实例快照的解析优先级，同时让审批数组字段权限校验复用同一节点 Schema 来源。任务/流程表单上下文、访问守卫和流程变量读取继续留在主服务。
+- 业务代码表单、外部表单、动态表单、formRef/formMode/provider/viewKey 和实例快照协议保持原优先级；租户约束的 `selectByProcessInstanceIdAndTenantId` 一并迁入 Resolver，并同步更新源码安全契约归属。入口由 2449 行降至 2006 行，新 `FlowTaskFormConfigurationResolver` 518 行。
+- flow Reactor 编译退出码 0；执行 Resolver、节点策略、动作授权、状态流转、会签、流程图和待办性能相关 11 类 39 项，0 失败、0 错误；新增 3 项测试覆盖节点表单覆盖、业务表单引用和租户快照读取。额外执行未改动的 `DynamicFormArrayPermissionValidatorTest` 时存量 7 项中 1 项基线失败，校验器源码无本轮差异，因此未在重构提交中改变业务行为。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实历史表单快照、远端表单资产和复杂数组权限仍需服务环境验收，无服务 PID 需停止。
