@@ -381,7 +381,7 @@ public class BusinessFlowService {
         String title = startContext.title();
 
         // 4. 发起流程
-        Long userId = resolveUserId();
+        Long userId = requireUserId();
         String userName = resolveUsername();
 
         FlowResult<String> result = flowClient.startProcess(
@@ -733,6 +733,8 @@ public class BusinessFlowService {
     @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO startFlowFromTrigger(String flowModelKey, String businessKey, String title,
                                                       Long userId, String userName, Long tenantId, JSONObject variables) {
+        Long effectiveTenantId = requireTenantId(tenantId);
+        Long effectiveUserId = requireUserId(userId);
         BusinessKeyParts parts = parseBusinessKey(businessKey);
         BusinessFlowStartDTO dto = new BusinessFlowStartDTO();
         dto.setObjectCode(parts.objectCode());
@@ -742,9 +744,8 @@ public class BusinessFlowService {
         if (variables != null) {
             dto.setVariables(new LinkedHashMap<>(variables));
         }
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
         return TenantContextHolder.executeWithTenant(effectiveTenantId,
-                () -> startCoordinator.start(dto, false, userId, userName,
+                () -> startCoordinator.start(dto, false, effectiveUserId, userName,
                         effectiveTenantId, false, false));
     }
 
@@ -758,6 +759,8 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(flowModelKey)) {
             throw new BusinessException("审批节点未配置已发布流程模型");
         }
+        Long effectiveTenantId = requireTenantId(tenantId);
+        Long effectiveUserId = requireUserId(userId);
         BusinessKeyParts parts = parseBusinessKey(businessKey);
         BusinessFlowStartDTO dto = new BusinessFlowStartDTO();
         dto.setObjectCode(parts.objectCode());
@@ -767,9 +770,8 @@ public class BusinessFlowService {
         if (variables != null) {
             dto.setVariables(new LinkedHashMap<>(variables));
         }
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
         return TenantContextHolder.executeWithTenant(effectiveTenantId,
-                () -> startCoordinator.start(dto, false, userId, userName,
+                () -> startCoordinator.start(dto, false, effectiveUserId, userName,
                         effectiveTenantId, false, true));
     }
 
@@ -919,7 +921,23 @@ public class BusinessFlowService {
         if (tenantId == null) {
             tenantId = TenantContextHolder.getTenantId();
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0 || TenantContextHolder.isIgnore()) {
+            throw new BusinessException("业务流程缺少隔离的可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private Long requireTenantId(Long tenantId) {
+        if (TenantContextHolder.isIgnore()) {
+            throw new BusinessException("业务流程缺少隔离的可信租户上下文");
+        }
+        if (tenantId != null) {
+            if (tenantId <= 0) {
+                throw new BusinessException("业务流程租户上下文无效");
+            }
+            return tenantId;
+        }
+        return resolveTenantId();
     }
 
     private Long resolveUserId() {
@@ -928,6 +946,17 @@ public class BusinessFlowService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private Long requireUserId() {
+        return requireUserId(resolveUserId());
+    }
+
+    private Long requireUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException("业务流程缺少可信发起人");
+        }
+        return userId;
     }
 
     private Long resolveActiveOrgId() {

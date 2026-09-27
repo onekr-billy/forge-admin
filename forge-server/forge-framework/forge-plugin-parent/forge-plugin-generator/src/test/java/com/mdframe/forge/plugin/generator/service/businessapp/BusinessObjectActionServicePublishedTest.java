@@ -83,6 +83,20 @@ class BusinessObjectActionServicePublishedTest {
                 org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void draftActionShouldAlsoFailClosedWithoutTrustedTenant() {
+        ExecutionIdentityContextHolder.clear();
+
+        assertThatThrownBy(() -> service.resolveAction(
+                "purchase", "order", "confirm"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("租户上下文");
+        verify(objectMapper, never()).selectByObjectCode(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     private void openIdentity() {
         LoginUser user = new LoginUser();
         user.setUserId(101L);

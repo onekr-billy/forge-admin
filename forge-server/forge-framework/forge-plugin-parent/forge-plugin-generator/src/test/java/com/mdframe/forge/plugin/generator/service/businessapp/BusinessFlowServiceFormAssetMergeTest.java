@@ -12,6 +12,8 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFieldVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +51,7 @@ class BusinessFlowServiceFormAssetMergeTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        TenantContextHolder.setTenantId(1L);
         fieldDesignService = mock(BusinessFieldDesignService.class);
         businessObjectMapper = mock(BusinessObjectMapper.class);
         service = new BusinessFlowService(
@@ -79,6 +82,11 @@ class BusinessFlowServiceFormAssetMergeTest {
         taskNodeFormResolver = (BusinessFlowTaskNodeFormResolver) nodeFormResolverField.get(service);
         startContextAssembler = BusinessFlowStartContextAssembler.standard();
         taskChildPolicy = new BusinessFlowTaskChildPolicy();
+    }
+
+    @AfterEach
+    void clearTenantContext() {
+        TenantContextHolder.clear();
     }
 
     @Test
