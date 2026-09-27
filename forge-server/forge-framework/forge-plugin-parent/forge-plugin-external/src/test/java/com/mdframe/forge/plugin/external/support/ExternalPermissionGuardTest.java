@@ -39,6 +39,15 @@ class ExternalPermissionGuardTest {
         }
     }
 
+    @Test
+    void shouldFailClosedWhenPermissionCheckIsDisabledOrMissing() {
+        ExternalApi api = new ExternalApi();
+        assertThrows(BusinessException.class, () -> guard.check(api));
+
+        api.setPermissionCheckEnabled(false);
+        assertThrows(BusinessException.class, () -> guard.check(api));
+    }
+
     private ExecutionIdentity identity(Set<String> permissions) {
         LoginUser user = new LoginUser();
         user.setUserId(8L);

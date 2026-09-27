@@ -24,28 +24,19 @@ public class TokenRequiredStrategyHandler implements IdempotentStrategyHandler {
         String token = extractToken();
         String prefix = annotation.prefix();
         
-        if (!tokenService.validateToken(token, prefix)) {
-            log.warn("Token模式: Token验证失败, token={}, prefix={}", token, prefix);
+        if (!tokenService.consumeToken(token, prefix)) {
+            log.warn("Token模式: Token原子消费失败, prefix={}", prefix);
             throw new TokenInvalidException("Token无效或已过期");
         }
-        
-        tokenService.consumeToken(token, prefix);
-        log.debug("Token模式: Token验证成功并已消费, token={}", token);
+        log.debug("Token模式: Token验证并消费成功, prefix={}", prefix);
         
         return delegateHandler.handle(joinPoint, annotation, idempotentKey);
     }
     
     private String extractToken() {
-        org.aspectj.lang.ProceedingJoinPoint jp = null;
         try {
-            org.springframework.web.context.request.RequestContextHolder currentRequest =
-                (org.springframework.web.context.request.RequestContextHolder)
-                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-            
-            if (currentRequest != null) {
-                ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-                HttpServletRequest request =
-                        attributes.getRequest();
+            if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+                HttpServletRequest request = attributes.getRequest();
                 return request.getHeader(tokenProperties.getHeader());
             }
         } catch (Exception e) {

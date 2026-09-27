@@ -128,9 +128,13 @@ public class FileController {
             @RequestParam("fileName") String fileName,
             @RequestParam(value = "businessType", required = false, defaultValue = "common") String businessType,
             @RequestParam(value = "businessId", required = false) String businessId,
-            @RequestParam(value = "storageType", required = false, defaultValue = "local") String storageType) {
+            @RequestParam(value = "storageType", required = false, defaultValue = "local") String storageType,
+            @RequestParam(value = "totalSize", required = false) Long totalSize,
+            @RequestParam(value = "totalParts", required = false) Integer totalParts,
+            @RequestParam(value = "isPrivate", required = false, defaultValue = "true") Boolean isPrivate) {
         
-        String uploadId = fileManager.initMultipartUpload(fileName, businessType, businessId, storageType);
+        String uploadId = fileManager.initMultipartUpload(
+                fileName, businessType, businessId, storageType, totalSize, totalParts, isPrivate);
         return RespInfo.success(uploadId);
     }
     
@@ -146,7 +150,7 @@ public class FileController {
             @RequestParam(value = "storageType", required = false, defaultValue = "local") String storageType) throws Exception {
         
         try (InputStream inputStream = file.getInputStream()) {
-            String etag = fileManager.uploadPart(uploadId, partNumber, inputStream, storageType);
+            String etag = fileManager.uploadPart(uploadId, partNumber, inputStream, storageType, file.getSize());
             return RespInfo.success(etag);
         }
     }

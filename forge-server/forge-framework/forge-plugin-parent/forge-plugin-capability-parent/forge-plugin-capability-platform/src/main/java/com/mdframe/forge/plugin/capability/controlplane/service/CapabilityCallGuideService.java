@@ -67,7 +67,7 @@ public class CapabilityCallGuideService {
             ObjectMapper objectMapper,
             Clock capabilityClock,
             @Value("${forge.capability.open-gateway.enabled:false}") boolean gatewayEnabled,
-            @Value("${forge.capability.identity.enabled:true}") boolean identityEnabled,
+            @Value("${forge.capability.identity.enabled:false}") boolean identityEnabled,
             @Value("${forge.capability.flow-actions.enabled:false}") boolean flowActionsEnabled,
             @Value("${forge.capability.identity.issuer:http://localhost:8580}")
             String identityIssuer,

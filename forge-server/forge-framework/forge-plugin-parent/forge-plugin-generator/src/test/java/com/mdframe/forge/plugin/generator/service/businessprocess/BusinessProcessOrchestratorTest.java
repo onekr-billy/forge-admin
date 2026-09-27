@@ -102,7 +102,6 @@ class BusinessProcessOrchestratorTest {
         when(nodeRunMapper.selectMaxAttemptNo(anyLong(), anyLong(), any())).thenReturn(0);
         when(nodeRunMapper.insertAttempt(any())).thenReturn(1);
         when(nodeRunMapper.claimAttempt(anyLong(), anyLong())).thenReturn(1);
-        when(nodeRunMapper.selectLatestAttempt(anyLong(), anyLong(), any())).thenReturn(null);
         when(nodeRunMapper.completeAttempt(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
         when(runMapper.selectByIdempotencyKey(eq(1L), anyLong(), any())).thenReturn(null);
@@ -126,6 +125,23 @@ class BusinessProcessOrchestratorTest {
         assertEquals("SUCCESS", result.getStatus());
         assertEquals("order:9001", result.getBusinessKey());
         assertEquals("submit_approval", result.getProcessCode());
+        verify(nodeRunMapper, never()).selectLatestAttempt(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    void nodeSideEffectDoesNotRunWhenAttemptClaimFails() {
+        stubPublishedProcess(manualSchema());
+        when(nodeRunMapper.claimAttempt(anyLong(), anyLong())).thenReturn(0);
+        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO();
+        dto.setRecordId("9001");
+        dto.setObjectCode("order");
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.start("CRM_APP", "submit_approval", dto));
+
+        verifyNoInteractions(actionExecutor);
+        verify(nodeRunMapper, never()).completeAttempt(
+                anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -199,6 +215,37 @@ class BusinessProcessOrchestratorTest {
         assertEquals("SUCCESS", storedRun.get().getStatus());
         assertEquals("EVENT", storedRun.get().getTriggerType());
         assertEquals("order:9001", storedRun.get().getBusinessKey());
+    }
+
+    @Test
+    void eventStartRejectsMissingTenantInsteadOfFallingBackToDefaultTenant() {
+        BusinessEvent event = BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("order")
+                .recordId("9001")
+                .build();
+
+        assertThrows(BusinessException.class, () -> orchestrator.startEvent(event));
+        verifyNoInteractions(versionMapper);
+    }
+
+    @Test
+    void eventStartRejectsUnknownConditionOperator() {
+        AiBusinessProcessVersion version = publishedEventVersion(
+                eventSchema().replace("\"operator\":\"EQ\"", "\"operator\":\"UNKNOWN\""));
+        when(versionMapper.selectCurrentPublishedBySubjectObjectCode(1L, "order"))
+                .thenReturn(java.util.List.of(version));
+        BusinessEvent event = BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("order")
+                .recordId("9001")
+                .recordData(Map.of("main", Map.of("approval_status", "DRAFT")))
+                .tenantId(1L)
+                .build();
+
+        orchestrator.startEvent(event);
+
+        verify(runMapper, never()).insert(any(AiBusinessProcessRun.class));
     }
 
     @Test

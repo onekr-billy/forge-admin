@@ -2,10 +2,21 @@
 
 ## 1. 当前基线
 
-- 本文件对应 `security-audit-remediation-20260923`，目前只生成 Spec/Tasks，尚未修改业务代码。
-- 已有证据：后端 JDK 17 编译通过；前端生产构建通过；`forge-plugin-system` 定向测试 115 个中 114 个通过，1 个因过期 SQL 路径失败。
-- 默认 Java 8 运行 Java 17 测试会失败；后续统一使用 JDK 17。
+- 本文件对应 `security-audit-remediation-20260923`。截至 2026-09-27，P0/P1 中能够通过源码和模块测试闭环的缺陷已进入实现与验证阶段。
+- 按用户要求，T4.2 巨型前端组件拆分和 T4.3 后端巨型类拆分不属于本轮修复范围；相关任务保留但不计入本轮完成度。
+- 后端统一使用 JDK 17；Admin 依赖反应堆 46 个模块编译通过，Flow Server 依赖反应堆 38 个模块编译通过。
+- `forge-admin-ui` 与 `forge-report-ui` 生产构建通过。Admin 的 `pnpm --ignore-workspace build` 因 pnpm 非 TTY 依赖目录确认而中止，随后直接执行 package.json 中同一 Vite 构建命令通过；没有删除或重装现有依赖。
+- 本机 Mockito inline/Byte Buddy 在部分测试中无法 self-attach；这类结果按环境阻断记录，不视为代码通过，也不覆盖此前同测试已通过的证据。
 - `pnpm audit --json` 曾因工具异常 `reference.startsWith is not a function` 未完成，不能作为安全结论。
+
+## 1.1 2026-09-27 本轮实际证据
+
+- 静态扫描通过：`forge-report-ui/src` 无 `new Function`、`AsyncFunction`、`eval(`、动态 `constructor` 和 `v-html`；Java 源码无 `engine.eval`/`ScriptEngineManager`；无 BPMN 原文 preview/substring 日志。
+- JDK 17 Admin 全依赖编译通过：`mvn -DskipTests -pl forge-admin-server -am compile`，46/46 模块成功。
+- JDK 17 Flow Server 全依赖编译通过；BPMN/流程监控 13 个非 Mockito 定向测试通过。
+- 密码策略与客户端登录配置 8 个定向测试通过；密码找回 9 个 Mockito 测试本轮因 Byte Buddy attach 失败而环境阻断，未误记为通过。
+- 数据 SQL/预览、外部接口权限、API fail-closed、幂等、验证码、文件访问、事件租户/条件和社会化登录均已执行对应模块定向测试，详见 `execution-log.md`。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本变更。
 
 ## 2. P0 必跑验证
 
@@ -55,7 +66,9 @@
 
 ## 5. 低代码/流程专项验证
 
-### 巨型类拆分与行为保持
+### 巨型类拆分与行为保持（本轮排除）
+
+以下用例属于后续架构改造验收基线，本轮按用户要求不执行、不计入安全缺陷修复完成度。
 
 - 生成目标类的行数、方法数、依赖数、圈复杂度、事务方法和远程调用基线；拆分后单类不超过 800 行，且不存在仅转发调用的规避类。
 - 对 `BusinessFlowService`、`DynamicCrudService`、`BusinessObjectDesignerService`、`LowcodeRuntimeConfigBuilder`、`FlowTaskServiceImpl` 和监听器执行 API、权限、租户、逻辑删除、状态、幂等和审计行为快照对比。

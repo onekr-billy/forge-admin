@@ -10,8 +10,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -39,7 +40,7 @@ class RedisTokenServiceTest {
         tokenProperties.setExpire(300);
         tokenProperties.setHeader("X-Idempotent-Token");
         
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        lenient().when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         
         tokenService = new RedisTokenService(redisTemplate, tokenProperties);
     }
@@ -67,10 +68,7 @@ class RedisTokenServiceTest {
         
         when(redisTemplate.hasKey(anyString())).thenReturn(true);
         
-        Map<Object, Object> tokenData = new HashMap<>();
-        tokenData.put("status", "UNUSED");
-        when(hashOperations.entries(anyString())).thenReturn(tokenData);
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get(anyString(), eq("status"))).thenReturn("UNUSED");
         
         boolean isValid = tokenService.validateToken(token, prefix);
         
@@ -99,10 +97,7 @@ class RedisTokenServiceTest {
         
         when(redisTemplate.hasKey(anyString())).thenReturn(true);
         
-        Map<Object, Object> tokenData = new HashMap<>();
-        tokenData.put("status", "CONSUMED");
-        when(hashOperations.entries(anyString())).thenReturn(tokenData);
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get(anyString(), eq("status"))).thenReturn("CONSUMED");
         
         boolean isValid = tokenService.validateToken(token, prefix);
         
@@ -125,10 +120,26 @@ class RedisTokenServiceTest {
         String token = "test-token";
         String prefix = "test";
         
-        tokenService.consumeToken(token, prefix);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(1L);
+
+        boolean consumed = tokenService.consumeToken(token, prefix);
         
-        verify(hashOperations).put(anyString(), eq("status"), eq("CONSUMED"));
-        verify(redisTemplate).expire(anyString(), eq(60L), eq(TimeUnit.SECONDS));
+        assertTrue(consumed);
+        verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("idempotent:token:test:test-token")),
+                any(Object[].class));
+        verify(hashOperations, never()).put(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("消费Token - 已被其他请求消费")
+    void testConsumeToken_AlreadyConsumed() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(0L);
+
+        boolean consumed = tokenService.consumeToken("test-token", "test");
+
+        assertFalse(consumed);
     }
     
     @Test

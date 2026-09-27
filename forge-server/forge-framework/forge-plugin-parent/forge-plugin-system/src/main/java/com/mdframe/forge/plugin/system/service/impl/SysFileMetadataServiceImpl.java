@@ -125,7 +125,10 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
     @Override
     public void removeBatch(String[] fileIds) {
         for (String fileId : fileIds) {
-            SysFileMetadata fileMetadata = this.getById(fileId);
+            SysFileMetadata fileMetadata = this.lambdaQuery()
+                    .eq(SysFileMetadata::getFileId, fileId)
+                    .eq(SysFileMetadata::getStatus, 1)
+                    .one();
             if (fileMetadata == null) {
                 continue;
             }

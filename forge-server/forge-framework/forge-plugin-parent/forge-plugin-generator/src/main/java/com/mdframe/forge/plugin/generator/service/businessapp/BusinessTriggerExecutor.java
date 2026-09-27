@@ -53,7 +53,12 @@ public class BusinessTriggerExecutor {
      */
     @Async
     public void executeTriggersAsync(BusinessEvent event) {
-        Long tenantId = event == null || event.getTenantId() == null ? 1L : event.getTenantId();
+        Long tenantId = trustedTenantId(event);
+        if (tenantId == null) {
+            log.error("拒绝执行缺少可信租户的业务事件, objectCode={}, eventType={}",
+                    event == null ? null : event.getObjectCode(), event == null ? null : event.getEventType());
+            return;
+        }
         try {
             TenantContextHolder.executeWithTenant(tenantId, () -> executeMatchingTriggers(event, tenantId));
         } catch (Exception e) {
@@ -81,11 +86,19 @@ public class BusinessTriggerExecutor {
 
     @Async
     public void executeTriggerAsync(AiBusinessTrigger trigger, BusinessEvent event) {
-        Long tenantId = event == null || event.getTenantId() == null ? 1L : event.getTenantId();
+        Long tenantId = trustedTenantId(event);
+        if (tenantId == null) {
+            log.error("拒绝执行缺少可信租户的业务事件, triggerId={}", trigger == null ? null : trigger.getId());
+            return;
+        }
         TenantContextHolder.executeWithTenant(tenantId, () -> executeSingleTrigger(trigger, event));
     }
 
     public void executeTrigger(AiBusinessTrigger trigger, BusinessEvent event) {
+        if (trustedTenantId(event) == null) {
+            log.error("拒绝执行缺少可信租户的业务事件, triggerId={}", trigger == null ? null : trigger.getId());
+            return;
+        }
         executeSingleTrigger(trigger, event);
     }
 
@@ -97,6 +110,13 @@ public class BusinessTriggerExecutor {
      * 执行单个触发器
      */
     private void executeSingleTrigger(AiBusinessTrigger trigger, BusinessEvent event) {
+        if (trigger == null || event == null || trustedTenantId(event) == null
+                || trigger.getTenantId() == null || !trigger.getTenantId().equals(event.getTenantId())) {
+            log.error("拒绝执行租户不匹配的业务触发器, triggerId={}, triggerTenant={}, eventTenant={}",
+                    trigger == null ? null : trigger.getId(), trigger == null ? null : trigger.getTenantId(),
+                    event == null ? null : event.getTenantId());
+            return;
+        }
         long startTime = System.currentTimeMillis();
         AiBusinessTriggerLog logEntry = buildLogEntry(trigger, event);
 
@@ -211,8 +231,8 @@ public class BusinessTriggerExecutor {
         String op = StringUtils.firstNonBlank(node.getString("op"), node.getString("operator"));
         Object expectedValue = node.get("value");
 
-        if (field == null || op == null) {
-            return true;
+        if (StringUtils.isBlank(field) || StringUtils.isBlank(op)) {
+            return false;
         }
         op = op.trim().toLowerCase(Locale.ROOT);
 
@@ -244,8 +264,13 @@ public class BusinessTriggerExecutor {
                 Object prevValue = event.readPreviousValue(field);
                 yield Objects.equals(String.valueOf(prevValue), String.valueOf(expectedValue));
             }
-            default -> true;
+            default -> false;
         };
+    }
+
+    private Long trustedTenantId(BusinessEvent event) {
+        Long tenantId = event == null ? null : event.getTenantId();
+        return tenantId == null || tenantId <= 0 ? null : tenantId;
     }
 
     private boolean compare(Object actualValue, Object expectedValue, String operator) {

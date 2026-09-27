@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -435,47 +436,18 @@ public class FlowModelVersionServiceImpl extends ServiceImpl<FlowModelVersionMap
     }
 
     private String extractProcessKey(String bpmnXml) {
-        try {
-            int start = bpmnXml.indexOf("<bpmn:process id=\"");
-            if (start == -1) {
-                start = bpmnXml.indexOf("<process id=\"");
-            }
-            if (start == -1) {
-                return null;
-            }
-
-            start = bpmnXml.indexOf("id=\"", start) + 4;
-            int end = bpmnXml.indexOf("\"", start);
-            return bpmnXml.substring(start, end);
+        BpmnXmlUtils.BpmnAnalysis analysis = BpmnXmlUtils.analyze(bpmnXml);
+        if (analysis.processCount() != 1 || analysis.processId() == null || analysis.processId().isBlank()) {
+            throw new RuntimeException("BPMN XML 必须包含且只能包含一个带 id 的 process 节点");
         }
-        catch (Exception e) {
-            log.warn("提取流程Key失败", e);
-            return null;
-        }
+        return analysis.processId();
     }
 
     private String replaceProcessId(String bpmnXml, String modelKey) {
-        try {
-            String currentProcessId = extractProcessKey(bpmnXml);
-            if (currentProcessId == null || currentProcessId.equals(modelKey)) {
-                return bpmnXml;
-            }
-
-            bpmnXml = bpmnXml.replace(
-                    "<bpmn:process id=\"" + currentProcessId + "\"",
-                    "<bpmn:process id=\"" + modelKey + "\"");
-            bpmnXml = bpmnXml.replace(
-                    "<process id=\"" + currentProcessId + "\"",
-                    "<process id=\"" + modelKey + "\"");
-            bpmnXml = bpmnXml.replace(
-                    "bpmnElement=\"" + currentProcessId + "\"",
-                    "bpmnElement=\"" + modelKey + "\"");
+        if (extractProcessKey(bpmnXml).equals(modelKey)) {
             return bpmnXml;
         }
-        catch (Exception e) {
-            log.warn("替换流程ID失败", e);
-            return bpmnXml;
-        }
+        return BpmnXmlUtils.replaceSingleProcessId(bpmnXml, modelKey);
     }
 
     private Map<String, XmlNodeInfo> extractNodes(String bpmnXml) {
@@ -543,11 +515,23 @@ public class FlowModelVersionServiceImpl extends ServiceImpl<FlowModelVersionMap
     private Document parseXml(String xml) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
         factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        setXmlAttributeIfSupported(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        setXmlAttributeIfSupported(factory, XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        factory.setXIncludeAware(false);
         factory.setExpandEntityReferences(false);
         return factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
+    }
+
+    private void setXmlAttributeIfSupported(DocumentBuilderFactory factory, String name, Object value) {
+        try {
+            factory.setAttribute(name, value);
+        } catch (IllegalArgumentException ignored) {
+            // DOCTYPE and both external entity features above remain mandatory.
+        }
     }
 
     private boolean shouldSkipTag(String tagName) {

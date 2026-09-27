@@ -35,6 +35,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class FileManager {
 
     private static final long DEFAULT_MAX_FILE_SIZE_MB = 100L;
+    private static final long MAX_MULTIPART_PART_SIZE = 20L * 1024 * 1024;
+    private static final int MAX_MULTIPART_PARTS = 10_000;
+    private static final long MULTIPART_CONTEXT_TTL_MILLIS = 30L * 60 * 1000;
 
     public static final String DEFAULT_ALLOWED_TYPES =
             "jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,csv,zip,rar,mp4,mp3";
@@ -73,6 +76,7 @@ public class FileManager {
     );
     
     private final Map<String, FileStorage> storageMap = new ConcurrentHashMap<>();
+    private final Map<String, MultipartUploadContext> multipartContexts = new ConcurrentHashMap<>();
     
     @Autowired(required = false)
     private StorageConfigProvider configProvider;
@@ -102,7 +106,11 @@ public class FileManager {
         if (metadataPersistence == null) {
             return null;
         }
-        return metadataPersistence.getById(fileId);
+        FileMetadata metadata = metadataPersistence.getById(fileId);
+        if (metadata != null) {
+            assertReadPermission(fileId, metadata);
+        }
+        return metadata;
     }
     
     /**
@@ -187,9 +195,7 @@ public class FileManager {
         if (metadata.getFileSize() == null && fileSize != null) {
             metadata.setFileSize(fileSize);
         }
-        if (isPrivate != null) {
-            metadata.setIsPrivate(isPrivate);
-        }
+        metadata.setIsPrivate(isPrivate == null || isPrivate);
         applyUploader(metadata);
         if (metadataPersistence != null) {
             metadataPersistence.save(metadata);
@@ -223,9 +229,7 @@ public class FileManager {
         
         FileMetadata metadata = storage.upload(file, businessType, businessId);
         metadata.setMd5(md5);
-        if (isPrivate != null) {
-            metadata.setIsPrivate(isPrivate);
-        }
+        metadata.setIsPrivate(isPrivate == null || isPrivate);
         applyUploader(metadata);
 
         // 持久化元数据
@@ -338,6 +342,7 @@ public class FileManager {
         if (metadata == null) {
             return null;
         }
+        assertReadPermission(fileId, metadata);
         FileStorage storage = getStorage(metadata.getStorageType());
         if (storage == null) {
             return null;
@@ -393,18 +398,47 @@ public class FileManager {
      * 分片上传初始化
      */
     public String initMultipartUpload(String fileName, String businessType, String businessId, String storageType) {
+        return initMultipartUpload(fileName, businessType, businessId, storageType, null, null, true);
+    }
+
+    public String initMultipartUpload(String fileName, String businessType, String businessId, String storageType,
+                                      Long totalSize, Integer totalParts, Boolean isPrivate) {
         validateFileName(fileName, storageType, null);
+        requireAuthenticatedUploader();
+        if (totalSize != null && (totalSize <= 0 || totalSize > DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024)) {
+            throw new BusinessException("分片上传总大小不合法");
+        }
+        if (totalParts != null && (totalParts <= 0 || totalParts > MAX_MULTIPART_PARTS)) {
+            throw new BusinessException("分片数量不合法");
+        }
         FileStorage storage = getStorage(storageType);
         if (storage == null) {
             throw new RuntimeException("不支持的存储类型: " + storageType);
         }
-        return storage.initMultipartUpload(fileName, businessType, businessId);
+        String uploadId = storage.initMultipartUpload(fileName, businessType, businessId);
+        multipartContexts.put(uploadId, new MultipartUploadContext(
+                SessionHelper.getUserId(), SessionHelper.getTenantId(), storageType,
+                totalSize, totalParts, isPrivate == null || isPrivate,
+                System.currentTimeMillis() + MULTIPART_CONTEXT_TTL_MILLIS));
+        return uploadId;
     }
     
     /**
      * 上传分片
      */
     public String uploadPart(String uploadId, int partNumber, InputStream inputStream, String storageType) {
+        return uploadPart(uploadId, partNumber, inputStream, storageType, null);
+    }
+
+    public String uploadPart(String uploadId, int partNumber, InputStream inputStream, String storageType, Long partSize) {
+        MultipartUploadContext context = requireMultipartContext(uploadId, storageType);
+        if (partNumber <= 0 || partNumber > MAX_MULTIPART_PARTS
+                || (context.totalParts() != null && partNumber > context.totalParts())) {
+            throw new BusinessException("分片序号不合法");
+        }
+        if (partSize != null && (partSize <= 0 || partSize > MAX_MULTIPART_PART_SIZE)) {
+            throw new BusinessException("单个分片大小不合法");
+        }
         FileStorage storage = getStorage(storageType);
         if (storage == null) {
             throw new RuntimeException("不支持的存储类型: " + storageType);
@@ -416,19 +450,52 @@ public class FileManager {
      * 完成分片上传
      */
     public FileMetadata completeMultipartUpload(String uploadId, List<String> partETags, String storageType) {
+        MultipartUploadContext context = requireMultipartContext(uploadId, storageType);
+        if (partETags == null || partETags.isEmpty()
+                || (context.totalParts() != null && partETags.size() != context.totalParts())) {
+            throw new BusinessException("分片列表不完整");
+        }
         FileStorage storage = getStorage(storageType);
         if (storage == null) {
             throw new RuntimeException("不支持的存储类型: " + storageType);
         }
         
         FileMetadata metadata = storage.completeMultipartUpload(uploadId, partETags);
-        applyUploader(metadata);
+        metadata.setUploaderId(context.userId());
+        metadata.setIsPrivate(context.isPrivate());
         
         if (metadataPersistence != null) {
             metadataPersistence.save(metadata);
         }
+        multipartContexts.remove(uploadId);
         
         return metadata;
+    }
+
+    private void requireAuthenticatedUploader() {
+        if (SessionHelper.getUserId() == null || SessionHelper.getTenantId() == null) {
+            throw new BusinessException(401, "分片上传需要登录用户和租户上下文");
+        }
+    }
+
+    private MultipartUploadContext requireMultipartContext(String uploadId, String storageType) {
+        requireAuthenticatedUploader();
+        MultipartUploadContext context = multipartContexts.get(uploadId);
+        if (context == null || context.expiresAtMillis() < System.currentTimeMillis()) {
+            multipartContexts.remove(uploadId);
+            throw new BusinessException("分片上传会话不存在或已过期");
+        }
+        if (!java.util.Objects.equals(context.userId(), SessionHelper.getUserId())
+                || !java.util.Objects.equals(context.tenantId(), SessionHelper.getTenantId())
+                || !java.util.Objects.equals(context.storageType(), storageType)) {
+            throw new BusinessException(403, "无权使用该分片上传会话");
+        }
+        return context;
+    }
+
+    private record MultipartUploadContext(Long userId, Long tenantId, String storageType,
+                                          Long totalSize, Integer totalParts, boolean isPrivate,
+                                          long expiresAtMillis) {
     }
 
     private void applyUploader(FileMetadata metadata) {

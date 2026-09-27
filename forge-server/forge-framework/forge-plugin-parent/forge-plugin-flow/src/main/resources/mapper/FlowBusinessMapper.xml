@@ -265,6 +265,13 @@
           AND process_def_key = #{processDefinitionKey}
     </select>
 
+    <select id="countByProcessDefKeyAndTenantId" resultType="long">
+        SELECT COUNT(1)
+        FROM sys_flow_business
+        WHERE tenant_id = #{tenantId}
+          AND process_def_key = #{processDefKey}
+    </select>
+
     <update id="updateStatusByProcessInstanceId">
         UPDATE sys_flow_business
         SET status = #{status},

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @DisplayName("增强事件触发器")
@@ -48,6 +49,36 @@ class BusinessTriggerExecutorEventTest {
 
         assertNull(TenantContextHolder.getTenantId());
         verify(triggerService).selectActiveByObjectAndEvent(9L, "presale_order", BusinessEvent.RECORD_CREATED);
+    }
+
+    @Test
+    void missingEventTenantDoesNotFallBackToDefaultTenant() {
+        BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        BusinessTriggerExecutor executor = executor(triggerService);
+        BusinessEvent event = BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("presale_order")
+                .build();
+
+        executor.executeTriggersAsync(event);
+
+        verify(triggerService, never()).selectActiveByObjectAndEvent(
+                org.mockito.ArgumentMatchers.anyLong(), eq("presale_order"), eq(BusinessEvent.RECORD_CREATED));
+    }
+
+    @Test
+    void unknownConditionOperatorFailsClosed() {
+        BusinessTriggerExecutor executor = executor(mock(BusinessTriggerService.class));
+        AiBusinessTrigger trigger = new AiBusinessTrigger();
+        trigger.setId(12L);
+        trigger.setTenantId(1L);
+        trigger.setEventCondition("{\"field\":\"status\",\"op\":\"execute\",\"value\":\"READY\"}");
+        BusinessEvent event = BusinessEvent.builder()
+                .tenantId(1L)
+                .recordData(Map.of("status", "READY"))
+                .build();
+
+        assertEquals(false, executor.matchesCondition(trigger, event));
     }
 
     @Test
@@ -104,5 +135,15 @@ class BusinessTriggerExecutorEventTest {
                 eq(8L), eq("operator"), eq(1L), variables.capture());
         assertEquals("SKU-1", variables.getValue().getString("sku"));
         verify(triggerService).incrementExecuteCount(10L);
+    }
+
+    private BusinessTriggerExecutor executor(BusinessTriggerService triggerService) {
+        return new BusinessTriggerExecutor(
+                triggerService,
+                mock(BusinessFlowService.class),
+                mock(DynamicCrudService.class),
+                mock(BusinessMessageChannelService.class),
+                mock(BusinessActionExecutionService.class),
+                mock(CallApiActionStepExecutor.class));
     }
 }

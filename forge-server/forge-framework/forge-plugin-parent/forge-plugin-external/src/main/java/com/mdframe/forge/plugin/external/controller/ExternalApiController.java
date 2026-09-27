@@ -1,10 +1,12 @@
 package com.mdframe.forge.plugin.external.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.mdframe.forge.plugin.external.dto.ExternalApiDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalApiQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalApi;
+import com.mdframe.forge.plugin.external.constant.ExternalPermissions;
 import com.mdframe.forge.plugin.external.service.ExternalApiService;
 import com.mdframe.forge.plugin.external.support.ExternalQueryContractValidator;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -28,16 +30,19 @@ public class ExternalApiController {
     private final ExternalQueryContractValidator queryContractValidator;
 
     @GetMapping("/page")
+    @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<IPage<ExternalApi>> page(ExternalApiQuery query) {
         return RespInfo.success(apiService.page(query));
     }
 
     @GetMapping("/{id}")
+    @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<ExternalApi> getById(@PathVariable Long id) {
         return RespInfo.success(apiService.getById(id));
     }
 
     @PostMapping
+    @SaCheckPermission(ExternalPermissions.API_ADD)
     public RespInfo<Void> add(@Validated @RequestBody ExternalApiDTO dto) {
         validateApi(dto);
         ExternalApi entity = convertDtoToEntity(dto);
@@ -46,6 +51,7 @@ public class ExternalApiController {
     }
 
     @PutMapping
+    @SaCheckPermission(ExternalPermissions.API_EDIT)
     public RespInfo<Void> edit(@Validated @RequestBody ExternalApiDTO dto) {
         validateApi(dto);
         ExternalApi entity = convertDtoToEntity(dto);
@@ -54,12 +60,14 @@ public class ExternalApiController {
     }
 
     @DeleteMapping("/{id}")
+    @SaCheckPermission(ExternalPermissions.API_REMOVE)
     public RespInfo<Void> remove(@PathVariable Long id) {
         apiService.removeById(id);
         return RespInfo.success();
     }
 
     @GetMapping("/list")
+    @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<List<ExternalApi>> list(@RequestParam(required = false) Long systemId) {
         if (systemId != null) {
             return RespInfo.success(apiService.listBySystemId(systemId));
@@ -111,6 +119,9 @@ public class ExternalApiController {
     }
 
     private void validateApi(ExternalApiDTO dto) {
+        if (dto.getPermissionCheckEnabled() == null) {
+            dto.setPermissionCheckEnabled(true);
+        }
         if (dto.getSystemId() == null) {
             throw new BusinessException("请选择所属系统");
         }

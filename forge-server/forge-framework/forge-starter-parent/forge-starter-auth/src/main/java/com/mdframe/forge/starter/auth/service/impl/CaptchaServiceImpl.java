@@ -14,6 +14,7 @@ import com.mdframe.forge.starter.auth.service.ICaptchaService;
 import com.mdframe.forge.starter.auth.sms.SmsCaptchaSender;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.core.util.SensitiveDataUtil;
+import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
@@ -30,6 +31,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -59,6 +63,11 @@ public class CaptchaServiceImpl implements ICaptchaService {
      * 验证码缓存key前缀
      */
     private static final String CAPTCHA_KEY_PREFIX = "captcha:";
+
+    private static final String CAPTCHA_CONSUMED_KEY_PREFIX = "captcha:consumed:";
+    private static final String SMS_CONSUMED_KEY_PREFIX = "captcha:sms:consumed:";
+    private static final String EMAIL_CONSUMED_KEY_PREFIX = "captcha:email:consumed:";
+    private static final String SEND_RATE_KEY_PREFIX = "captcha:rate:";
 
     /**
      * 滑块验证码一次性消费标记前缀。
@@ -196,11 +205,19 @@ public class CaptchaServiceImpl implements ICaptchaService {
 
     @Override
     public boolean validateAndDelete(String key, String code) {
-        boolean valid = validate(key, code);
-        if (valid) {
-            deleteCaptcha(key);
+        if (StrUtil.isBlank(key) || StrUtil.isBlank(code)) {
+            return false;
         }
-        return valid;
+        String cacheKey = CAPTCHA_KEY_PREFIX + key;
+        String cacheCode = cacheService.get(cacheKey);
+        if (cacheCode == null || !claimCaptcha(CAPTCHA_CONSUMED_KEY_PREFIX + key)) {
+            return false;
+        }
+        try {
+            return code.equalsIgnoreCase(cacheCode);
+        } finally {
+            cacheService.delete(cacheKey);
+        }
     }
 
     @Override
@@ -647,10 +664,18 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .build();
         }
 
-        // 检查发送间隔
         String intervalKey = SMS_CAPTCHA_KEY_PREFIX + "interval:" + phone;
-        String lastSendTime = cacheService.get(intervalKey);
-        if (lastSendTime != null) {
+        if (!cacheService.setIfAbsent(intervalKey, String.valueOf(System.currentTimeMillis()),
+                SMS_SEND_INTERVAL, TimeUnit.SECONDS)) {
+            return SmsCaptchaResult.builder()
+                    .phone(phone)
+                    .status("fail")
+                    .message("发送过于频繁，请稍后再试")
+                    .interval(SMS_SEND_INTERVAL)
+                    .build();
+        }
+
+        if (!acquireSendQuota("sms", phone)) {
             return SmsCaptchaResult.builder()
                     .phone(phone)
                     .status("fail")
@@ -670,13 +695,11 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .map(sender -> sender.sendVerificationCode(phone, code, duration))
                     .orElse(false);
             if (!sendSuccess) {
-                rollbackSmsCaptcha(cacheKey, phone);
+                rollbackSmsCaptcha(cacheKey, intervalKey, phone);
                 log.warn("短信验证码发送失败: phone={}", SensitiveDataUtil.maskPhone(phone));
                 return smsFailure(phone);
             }
 
-            cacheService.set(intervalKey, String.valueOf(System.currentTimeMillis()),
-                    Duration.ofSeconds(SMS_SEND_INTERVAL));
             log.info("短信验证码发送成功: phone={}, mode={}", SensitiveDataUtil.maskPhone(phone),
                     developmentEcho ? "development" : "provider");
             return SmsCaptchaResult.builder()
@@ -690,7 +713,7 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .captchaType("sms")
                     .build();
         } catch (Exception e) {
-            rollbackSmsCaptcha(cacheKey, phone);
+            rollbackSmsCaptcha(cacheKey, intervalKey, phone);
             log.error("短信验证码发送异常: phone={}, errorType={}",
                     SensitiveDataUtil.maskPhone(phone), e.getClass().getSimpleName(), sanitizedException(e));
             return smsFailure(phone);
@@ -718,12 +741,19 @@ public class CaptchaServiceImpl implements ICaptchaService {
 
     @Override
     public boolean validateAndDeleteSmsCaptcha(String phone, String code) {
-        boolean valid = validateSmsCaptcha(phone, code);
-        if (valid) {
-            String cacheKey = SMS_CAPTCHA_KEY_PREFIX + phone;
+        if (StrUtil.isBlank(phone) || StrUtil.isBlank(code)) {
+            return false;
+        }
+        String cacheKey = SMS_CAPTCHA_KEY_PREFIX + phone;
+        String cacheCode = cacheService.get(cacheKey);
+        if (cacheCode == null || !claimCaptcha(SMS_CONSUMED_KEY_PREFIX + phone + ":" + digest(cacheCode))) {
+            return false;
+        }
+        try {
+            return code.equals(cacheCode);
+        } finally {
             cacheService.delete(cacheKey);
         }
-        return valid;
     }
 
     // ==================== 邮箱验证码 ====================
@@ -744,8 +774,17 @@ public class CaptchaServiceImpl implements ICaptchaService {
         }
 
         String intervalKey = EMAIL_CAPTCHA_KEY_PREFIX + "interval:" + email;
-        String lastSendTime = cacheService.get(intervalKey);
-        if (lastSendTime != null) {
+        if (!cacheService.setIfAbsent(intervalKey, String.valueOf(System.currentTimeMillis()),
+                SMS_SEND_INTERVAL, TimeUnit.SECONDS)) {
+            return EmailCaptchaResult.builder()
+                    .email(email)
+                    .status("fail")
+                    .message("发送过于频繁，请稍后再试")
+                    .interval(SMS_SEND_INTERVAL)
+                    .build();
+        }
+
+        if (!acquireSendQuota("email", email)) {
             return EmailCaptchaResult.builder()
                     .email(email)
                     .status("fail")
@@ -765,13 +804,11 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .map(sender -> sender.sendVerificationCode(email, code, duration))
                     .orElse(false);
             if (!sendSuccess) {
-                rollbackEmailCaptcha(cacheKey, email);
+                rollbackEmailCaptcha(cacheKey, intervalKey, email);
                 log.warn("邮箱验证码发送失败: email={}", SensitiveDataUtil.maskEmail(email));
                 return emailFailure(email);
             }
 
-            cacheService.set(intervalKey, String.valueOf(System.currentTimeMillis()),
-                    Duration.ofSeconds(SMS_SEND_INTERVAL));
             log.info("邮箱验证码发送成功: email={}, mode={}", SensitiveDataUtil.maskEmail(email),
                     developmentEcho ? "development" : "provider");
             return EmailCaptchaResult.builder()
@@ -785,7 +822,7 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .captchaType("email")
                     .build();
         } catch (Exception e) {
-            rollbackEmailCaptcha(cacheKey, email);
+            rollbackEmailCaptcha(cacheKey, intervalKey, email);
             log.error("邮箱验证码发送异常: email={}, errorType={}",
                     SensitiveDataUtil.maskEmail(email), e.getClass().getSimpleName(), sanitizedException(e));
             return emailFailure(email);
@@ -813,12 +850,19 @@ public class CaptchaServiceImpl implements ICaptchaService {
 
     @Override
     public boolean validateAndDeleteEmailCaptcha(String email, String code) {
-        boolean valid = validateEmailCaptcha(email, code);
-        if (valid) {
-            String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
+        if (StrUtil.isBlank(email) || StrUtil.isBlank(code)) {
+            return false;
+        }
+        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
+        String cacheCode = cacheService.get(cacheKey);
+        if (cacheCode == null || !claimCaptcha(EMAIL_CONSUMED_KEY_PREFIX + email + ":" + digest(cacheCode))) {
+            return false;
+        }
+        try {
+            return code.equals(cacheCode);
+        } finally {
             cacheService.delete(cacheKey);
         }
-        return valid;
     }
 
     private boolean isDevelopmentEchoEnabled() {
@@ -834,9 +878,63 @@ public class CaptchaServiceImpl implements ICaptchaService {
         return code.toString();
     }
 
-    private void rollbackSmsCaptcha(String cacheKey, String phone) {
+    private boolean claimCaptcha(String consumedKey) {
+        return cacheService.setIfAbsent(consumedKey, Boolean.TRUE,
+                DEFAULT_DURATION.toSeconds(), TimeUnit.SECONDS);
+    }
+
+    private boolean acquireSendQuota(String channel, String target) {
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.systemDefault());
+        long ttlSeconds = Math.max(1L, Duration.between(now, now.toLocalDate().plusDays(1)
+                .atStartOfDay(now.getZone())).toSeconds());
+        String date = LocalDate.from(now).toString();
+        HttpServletRequest request = currentRequest();
+        String ip = request == null ? "unknown" : StrUtil.blankToDefault(request.getRemoteAddr(), "unknown");
+        String device = request == null ? "unknown" : String.join("|",
+                StrUtil.blankToDefault(request.getHeader("X-Device-Id"), ""),
+                StrUtil.blankToDefault(request.getHeader("User-Agent"), ""),
+                StrUtil.blankToDefault(request.getRequestedSessionId(), ""));
+        Long tenantId = TenantContextHolder.getTenantId();
+        String tenant = tenantId == null || tenantId <= 0 ? "anonymous" : String.valueOf(tenantId);
+        return consumeDailyQuota(quotaKey(channel, "target", date, target),
+                    captchaProperties.getDailyTargetLimit(), ttlSeconds)
+                && consumeDailyQuota(quotaKey(channel, "ip", date, ip),
+                    captchaProperties.getDailyIpLimit(), ttlSeconds)
+                && consumeDailyQuota(quotaKey(channel, "device", date, device),
+                    captchaProperties.getDailyDeviceLimit(), ttlSeconds)
+                && consumeDailyQuota(quotaKey(channel, "tenant", date, tenant),
+                    captchaProperties.getDailyTenantLimit(), ttlSeconds);
+    }
+
+    private boolean consumeDailyQuota(String key, int limit, long ttlSeconds) {
+        if (limit <= 0) {
+            return false;
+        }
+        if (cacheService.setIfAbsent(key, 1L, ttlSeconds, TimeUnit.SECONDS)) {
+            return true;
+        }
+        return cacheService.increment(key, 1L) <= limit;
+    }
+
+    private String quotaKey(String channel, String dimension, String date, String value) {
+        return SEND_RATE_KEY_PREFIX + channel + ":" + dimension + ":" + date + ":" + digest(value);
+    }
+
+    private HttpServletRequest currentRequest() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            return attributes.getRequest();
+        }
+        return null;
+    }
+
+    private String digest(String value) {
+        return cn.hutool.crypto.digest.DigestUtil.sha256Hex(value).substring(0, 16);
+    }
+
+    private void rollbackSmsCaptcha(String cacheKey, String intervalKey, String phone) {
         try {
             cacheService.delete(cacheKey);
+            cacheService.delete(intervalKey);
         } catch (RuntimeException rollbackException) {
             log.error("短信验证码缓存回滚失败: phone={}, errorType={}",
                     SensitiveDataUtil.maskPhone(phone),
@@ -844,9 +942,10 @@ public class CaptchaServiceImpl implements ICaptchaService {
         }
     }
 
-    private void rollbackEmailCaptcha(String cacheKey, String email) {
+    private void rollbackEmailCaptcha(String cacheKey, String intervalKey, String email) {
         try {
             cacheService.delete(cacheKey);
+            cacheService.delete(intervalKey);
         } catch (RuntimeException rollbackException) {
             log.error("邮箱验证码缓存回滚失败: email={}, errorType={}",
                     SensitiveDataUtil.maskEmail(email),

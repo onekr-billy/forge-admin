@@ -158,6 +158,11 @@ forge:
     dev-echo-code: ${FORGE_CAPTCHA_DEV_ECHO_CODE:false}
     # 生产必须注入稳定的 HMAC 挑战密钥，禁止写入仓库
     challenge-secret: ${FORGE_CAPTCHA_CHALLENGE_SECRET:}
+    # 短信/邮件验证码按目标、来源 IP、设备和租户分别执行自然日配额
+    daily-target-limit: ${FORGE_CAPTCHA_DAILY_TARGET_LIMIT:10}
+    daily-ip-limit: ${FORGE_CAPTCHA_DAILY_IP_LIMIT:50}
+    daily-device-limit: ${FORGE_CAPTCHA_DAILY_DEVICE_LIMIT:30}
+    daily-tenant-limit: ${FORGE_CAPTCHA_DAILY_TENANT_LIMIT:500}
   flow:
     timeout:
       time-zone: ${FORGE_FLOW_TIMEOUT_TIME_ZONE:Asia/Shanghai}
@@ -166,6 +171,14 @@ forge:
         enabled: ${FORGE_FLOW_JOB_REMOTE_ENABLED:false}
         url: ${FORGE_FLOW_JOB_REMOTE_URL:http://127.0.0.1:8081}
         token: ${FORGE_FLOW_JOB_REMOTE_TOKEN:}
+  data:
+    jdbc-security:
+      # 临时 JDBC 测试默认无可访问主机；按精确主机名/IP显式配置，并单独决定是否允许私网。
+      allowed-hosts: ${FORGE_DATA_JDBC_ALLOWED_HOSTS:}
+      allowed-ports: ${FORGE_DATA_JDBC_ALLOWED_PORTS:3306,5432,1521,1433}
+      allow-private-addresses: ${FORGE_DATA_JDBC_ALLOW_PRIVATE:false}
+      connection-timeout: ${FORGE_DATA_JDBC_CONNECTION_TIMEOUT:3s}
+      query-timeout: ${FORGE_DATA_JDBC_QUERY_TIMEOUT:3s}
   job:
     open-api:
       enabled: ${FORGE_JOB_OPEN_API_ENABLED:false}
@@ -178,7 +191,7 @@ forge:
       enabled: ${FORGE_CAPABILITY_SECURE_ACTIONS_ENABLED:${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:${FORGE_MCP_ENABLED:false}}}
     flow-actions:
       # 开放已发布业务对象的 SUBMIT/START/APPROVE/REJECT 受控流程能力
-      enabled: ${FORGE_CAPABILITY_FLOW_ACTIONS_ENABLED:${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:${FORGE_MCP_ENABLED:true}}}
+      enabled: ${FORGE_CAPABILITY_FLOW_ACTIONS_ENABLED:${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:${FORGE_MCP_ENABLED:false}}}
     high-risk:
       # HIGH 动作默认关闭；启用前必须通过环境变量提供版本化 256-bit KEK
       enabled: ${FORGE_CAPABILITY_HIGH_RISK_ENABLED:false}
@@ -213,7 +226,7 @@ forge:
           organization-claim: ${FORGE_CAPABILITY_OIDC_ORG_CLAIM:forge_org_id}
     open-gateway:
       # 统一能力开放网关，默认关闭（失败关闭）；防重放窗口/nonce/幂等锁参数复用 forge.openapi.security.*
-      enabled: ${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:true}
+      enabled: ${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:false}
       # 读/写能力限流：每分钟每客户端许可数
       read-permits-per-minute: ${FORGE_CAPABILITY_OPEN_GATEWAY_READ_PERMITS:120}
       write-permits-per-minute: ${FORGE_CAPABILITY_OPEN_GATEWAY_WRITE_PERMITS:20}

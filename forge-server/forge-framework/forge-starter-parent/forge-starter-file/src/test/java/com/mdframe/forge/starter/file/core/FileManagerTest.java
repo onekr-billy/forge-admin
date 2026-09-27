@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("FileManager upload policy")
@@ -173,6 +174,71 @@ class FileManagerTest {
 
         assertEquals("private, no-store", response.getHeader("Cache-Control"));
         assertEquals("no-cache", response.getHeader("Pragma"));
+    }
+
+    @Test
+    @DisplayName("rejects internal byte reads when private file permission is missing")
+    void rejectsPrivateFileBytesWhenCallerLacksPermission() throws Exception {
+        FileManager fileManager = new FileManager();
+        setPersistence(fileManager, new FileMetadataPersistence() {
+            @Override public void save(FileMetadata metadata) { }
+            @Override public FileMetadata getById(String fileId) {
+                return FileMetadata.builder().fileId(fileId).storageType("local").isPrivate(true).build();
+            }
+            @Override public FileMetadata getByMd5(String md5) { return null; }
+            @Override public void incrementDownloadCount(String fileId) { }
+            @Override public void delete(String fileId) { }
+            @Override public boolean checkPermission(String fileId, Long userId) { return false; }
+            @Override public boolean canModify(String fileId, Long userId) { return false; }
+        });
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> fileManager.getFileBytes("private-file"));
+
+        assertEquals(403, exception.getCode());
+    }
+
+    @Test
+    @DisplayName("binds multipart upload sessions to their user and tenant")
+    void rejectsMultipartSessionFromDifferentUser() throws Exception {
+        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
+        FileStorage storage = mock(FileStorage.class);
+        when(storage.getStorageType()).thenReturn("local");
+        when(storage.initMultipartUpload("report.pdf", "report", "7")).thenReturn("upload-1");
+        fileManager.registerStorage(storage);
+        fileManager.initMultipartUpload("report.pdf", "report", "7", "local", 4L, 1, true);
+
+        identityScope.close();
+        LoginUser other = new LoginUser();
+        other.setUserId(2L);
+        other.setTenantId(1L);
+        identityScope = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(other, "USER", 2L, null, 1L, "test", "other-token", java.util.Set.of()));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> fileManager.uploadPart("upload-1", 1,
+                        new ByteArrayInputStream("part".getBytes()), "local", 4L));
+
+        assertEquals(403, exception.getCode());
+    }
+
+    @Test
+    @DisplayName("multipart completion keeps private visibility and uploader")
+    void multipartCompletionInheritsVisibilityAndUploader() throws Exception {
+        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
+        FileStorage storage = mock(FileStorage.class);
+        when(storage.getStorageType()).thenReturn("local");
+        when(storage.initMultipartUpload("report.pdf", "report", "7")).thenReturn("upload-1");
+        when(storage.completeMultipartUpload("upload-1", List.of("etag-1")))
+                .thenReturn(FileMetadata.builder().fileId("file-1").storageType("local").build());
+        fileManager.registerStorage(storage);
+        fileManager.initMultipartUpload("report.pdf", "report", "7", "local", 4L, 1, true);
+
+        FileMetadata metadata = fileManager.completeMultipartUpload("upload-1", List.of("etag-1"), "local");
+
+        assertTrue(Boolean.TRUE.equals(metadata.getIsPrivate()));
+        assertEquals(1L, metadata.getUploaderId());
+        verify(storage).completeMultipartUpload("upload-1", List.of("etag-1"));
     }
 
     private void setPersistence(FileManager fileManager, FileMetadataPersistence persistence) throws Exception {

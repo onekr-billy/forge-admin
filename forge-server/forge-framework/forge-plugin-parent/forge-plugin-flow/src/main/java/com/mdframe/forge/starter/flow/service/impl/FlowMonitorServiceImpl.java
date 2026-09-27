@@ -16,6 +16,7 @@ import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.service.FlowMonitorService;
 import com.mdframe.forge.starter.flow.service.support.FlowCleanupTransactionExecutor;
+import com.mdframe.forge.starter.flow.service.support.FlowMonitorVariableSanitizer;
 import com.mdframe.forge.starter.flow.spi.FlowMonitorUserLookup;
 import com.mdframe.forge.starter.flow.vo.FlowMonitorDailyStatVO;
 import com.mdframe.forge.starter.flow.vo.FlowMonitorProcessInstanceDetailVO;
@@ -73,32 +74,38 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public Map<String, Object> getProcessInstanceOverview() {
+        String tenantId = String.valueOf(resolveCurrentTenantId("无法确定当前租户，禁止查看流程统计"));
         Map<String, Object> result = new HashMap<>();
         
         // 运行中的流程实例数量
-        long runningCount = runtimeService.createProcessInstanceQuery().count();
+        long runningCount = runtimeService.createProcessInstanceQuery()
+                .processInstanceTenantId(tenantId).count();
         result.put("runningCount", runningCount);
         
         // 已完成的流程实例数量
         long completedCount = historyService.createHistoricProcessInstanceQuery()
+                .processInstanceTenantId(tenantId)
                 .finished()
                 .count();
         result.put("completedCount", completedCount);
         
         // 挂起的流程实例数量
         long suspendedCount = runtimeService.createProcessInstanceQuery()
+                .processInstanceTenantId(tenantId)
                 .suspended()
                 .count();
         result.put("suspendedCount", suspendedCount);
         
         // 今日新增
         long todayNewCount = historyService.createHistoricProcessInstanceQuery()
+                .processInstanceTenantId(tenantId)
                 .startedAfter(getTodayStart())
                 .count();
         result.put("todayNewCount", todayNewCount);
         
         // 今日完成
         long todayCompletedCount = historyService.createHistoricProcessInstanceQuery()
+                .processInstanceTenantId(tenantId)
                 .finishedAfter(getTodayStart())
                 .count();
         result.put("todayCompletedCount", todayCompletedCount);
@@ -108,20 +115,23 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public Map<String, Object> getTaskOverview() {
+        String tenantId = String.valueOf(resolveCurrentTenantId("无法确定当前租户，禁止查看任务统计"));
         Map<String, Object> result = new HashMap<>();
         
         // 待办任务数量
-        long todoCount = taskService.createTaskQuery().count();
+        long todoCount = taskService.createTaskQuery().taskTenantId(tenantId).count();
         result.put("todoCount", todoCount);
         
         // 已办任务数量（今日）
         long doneCount = historyService.createHistoricTaskInstanceQuery()
+                .taskTenantId(tenantId)
                 .taskCompletedAfter(getTodayStart())
                 .count();
         result.put("doneCount", doneCount);
         
         // 候选任务数量（未分配办理人的任务）
         long candidateCount = taskService.createTaskQuery()
+                .taskTenantId(tenantId)
                 .taskUnassigned()
                 .count();
         result.put("candidateCount", candidateCount);
@@ -149,6 +159,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public Map<String, Object> getProcessInstanceList(String processDefinitionKey, String status, int pageNum, int pageSize) {
+        String tenantId = String.valueOf(resolveCurrentTenantId("无法确定当前租户，禁止查看流程实例"));
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> instances = new ArrayList<>();
         
@@ -159,24 +170,29 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         
         if (FlowBusinessStatus.RUNNING.matches(status)) {
             processInstances = runtimeService.createProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .active()
                     .listPage(firstResult, pageSize);
             total = runtimeService.createProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .active()
                     .count();
         } else if (FlowBusinessStatus.SUSPENDED.matches(status)) {
             processInstances = runtimeService.createProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .suspended()
                     .listPage(firstResult, pageSize);
             total = runtimeService.createProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .suspended()
                     .count();
         } else if (FlowBusinessStatus.COMPLETED.matches(status)) {
             List<HistoricProcessInstance> historicInstances = historyService.createHistoricProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .finished()
                     .orderByProcessInstanceEndTime()
@@ -198,6 +214,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
             }
             
             total = historyService.createHistoricProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .finished()
                     .count();
@@ -207,9 +224,11 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
             return result;
         } else {
             processInstances = runtimeService.createProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .listPage(firstResult, pageSize);
             total = runtimeService.createProcessInstanceQuery()
+                    .processInstanceTenantId(tenantId)
                     .processDefinitionKey(processDefinitionKey)
                     .count();
         }
@@ -236,6 +255,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public Map<String, Object> getProcessInstanceDetail(String processInstanceId) {
+        requireCurrentTenantProcessInstance(processInstanceId);
         Map<String, Object> result = new HashMap<>();
         
         // 获取流程实例信息
@@ -279,6 +299,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public List<Map<String, Object>> getExecutionHistory(String processInstanceId) {
+        requireCurrentTenantProcessInstance(processInstanceId);
         List<Map<String, Object>> result = new ArrayList<>();
         
         List<HistoricActivityInstance> activities = historyService.createHistoricActivityInstanceQuery()
@@ -344,6 +365,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public List<Map<String, Object>> getActiveNodes(String processInstanceId) {
+        requireCurrentTenantProcessInstance(processInstanceId);
         List<Map<String, Object>> result = new ArrayList<>();
         
         List<Task> tasks = taskService.createTaskQuery()
@@ -365,26 +387,30 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public Map<String, Object> getProcessVariables(String processInstanceId) {
+        FlowBusiness business = requireCurrentTenantProcessInstance(processInstanceId);
         Map<String, Object> variables = new HashMap<>();
         ProcessInstance processInstance = runtimeService.createProcessInstanceQuery()
                 .processInstanceId(processInstanceId)
                 .singleResult();
         if (processInstance != null) {
             variables.putAll(runtimeService.getVariables(processInstanceId));
-            return variables;
+        } else {
+            List<HistoricVariableInstance> historicVariables = historyService.createHistoricVariableInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .list();
+            for (HistoricVariableInstance variable : historicVariables) {
+                variables.put(variable.getVariableName(), variable.getValue());
+            }
         }
-
-        List<HistoricVariableInstance> historicVariables = historyService.createHistoricVariableInstanceQuery()
-                .processInstanceId(processInstanceId)
-                .list();
-        for (HistoricVariableInstance variable : historicVariables) {
-            variables.put(variable.getVariableName(), variable.getValue());
-        }
-        return variables;
+        Map<String, Object> sanitized = FlowMonitorVariableSanitizer.sanitize(variables);
+        log.info("流程监控变量读取: operator={}, tenantId={}, processInstanceId={}, fields={}",
+                SessionHelper.getUsername(), business.getTenantId(), processInstanceId, sanitized.keySet());
+        return sanitized;
     }
 
     @Override
     public Map<String, Object> getProcessDiagramHighlight(String processInstanceId) {
+        requireCurrentTenantProcessInstance(processInstanceId);
         Map<String, Object> result = new HashMap<>();
         
         // 获取已完成的节点
@@ -421,9 +447,11 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public List<Map<String, Object>> getDeploymentStats() {
+        String tenantId = String.valueOf(resolveCurrentTenantId("无法确定当前租户，禁止查看流程部署"));
         List<Map<String, Object>> result = new ArrayList<>();
         
         List<ProcessDefinition> processDefinitions = repositoryService.createProcessDefinitionQuery()
+                .processDefinitionTenantId(tenantId)
                 .orderByProcessDefinitionKey()
                 .asc()
                 .list();
@@ -449,9 +477,11 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
 
     @Override
     public List<Map<String, Object>> getProcessDefinitionVersions(String processDefinitionKey) {
+        String tenantId = String.valueOf(resolveCurrentTenantId("无法确定当前租户，禁止查看流程版本"));
         List<Map<String, Object>> result = new ArrayList<>();
         
         List<ProcessDefinition> versions = repositoryService.createProcessDefinitionQuery()
+                .processDefinitionTenantId(tenantId)
                 .processDefinitionKey(processDefinitionKey)
                 .orderByProcessDefinitionVersion()
                 .desc()

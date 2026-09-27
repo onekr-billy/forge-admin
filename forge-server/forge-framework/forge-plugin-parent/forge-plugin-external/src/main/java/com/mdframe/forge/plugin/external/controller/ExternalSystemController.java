@@ -1,11 +1,13 @@
 package com.mdframe.forge.plugin.external.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.mdframe.forge.plugin.external.dto.ExternalSystemDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalSystemQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalSystem;
+import com.mdframe.forge.plugin.external.constant.ExternalPermissions;
 import com.mdframe.forge.plugin.external.service.ExternalSystemService;
 import com.mdframe.forge.plugin.external.support.ExternalSensitiveDataMasker;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -29,16 +31,19 @@ public class ExternalSystemController {
     private final ExternalSystemService systemService;
 
     @GetMapping("/page")
+    @SaCheckPermission(ExternalPermissions.SYSTEM_QUERY)
     public RespInfo<IPage<ExternalSystem>> page(ExternalSystemQuery query) {
         return RespInfo.success(systemService.page(query));
     }
 
     @GetMapping("/{id}")
+    @SaCheckPermission(ExternalPermissions.SYSTEM_QUERY)
     public RespInfo<ExternalSystem> getById(@PathVariable Long id) {
         return RespInfo.success(systemService.getManagementById(id));
     }
 
     @PostMapping
+    @SaCheckPermission(ExternalPermissions.SYSTEM_ADD)
     public RespInfo<Void> add(@Validated @RequestBody ExternalSystemDTO dto) {
         validateSystem(dto);
         ExternalSystem entity = convertDtoToEntity(dto);
@@ -47,6 +52,7 @@ public class ExternalSystemController {
     }
 
     @PutMapping
+    @SaCheckPermission(ExternalPermissions.SYSTEM_EDIT)
     public RespInfo<Void> edit(@Validated @RequestBody ExternalSystemDTO dto) {
         validateSystem(dto);
         ExternalSystem entity = convertDtoToEntity(dto);
@@ -55,12 +61,14 @@ public class ExternalSystemController {
     }
 
     @DeleteMapping("/{id}")
+    @SaCheckPermission(ExternalPermissions.SYSTEM_REMOVE)
     public RespInfo<Void> remove(@PathVariable Long id) {
         systemService.removeById(id);
         return RespInfo.success();
     }
 
     @GetMapping("/list")
+    @SaCheckPermission(ExternalPermissions.SYSTEM_QUERY)
     public RespInfo<List<ExternalSystem>> list() {
         return RespInfo.success(systemService.listAll());
     }

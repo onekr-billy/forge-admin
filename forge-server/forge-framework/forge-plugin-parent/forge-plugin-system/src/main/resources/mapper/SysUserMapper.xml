@@ -504,6 +504,7 @@
         FROM sys_user u
         WHERE u.phone = #{phone}
           AND u.del_flag = 0
+          AND u.user_status = 1
         <if test="tenantId != null">
           AND (
               u.tenant_id = #{tenantId}
@@ -564,6 +565,7 @@
         FROM sys_user u
         WHERE u.email = #{email}
           AND u.del_flag = 0
+          AND u.user_status = 1
         <if test="tenantId != null">
           AND (
               u.tenant_id = #{tenantId}
@@ -586,6 +588,44 @@
         </choose>
         LIMIT 1
     </select>
+
+    <select id="countRegistrationConflicts" resultType="long">
+        SELECT COUNT(1)
+        FROM sys_user u
+        WHERE u.tenant_id = #{tenantId}
+          AND u.del_flag = 0
+          AND (
+              u.username = #{username}
+              <if test="phone != null and phone != ''">
+                  OR u.phone = #{phone}
+              </if>
+              <if test="email != null and email != ''">
+                  OR u.email = #{email}
+              </if>
+          )
+    </select>
+
+    <update id="updateActiveUserPassword">
+        UPDATE sys_user u
+        SET password = #{encodedPassword},
+            force_password_change = 0,
+            update_time = #{updateTime}
+        WHERE u.id = #{userId}
+          AND u.user_status = 1
+          AND u.del_flag = 0
+          <if test="tenantId != null">
+              AND (
+                  u.tenant_id = #{tenantId}
+                  OR EXISTS (
+                      SELECT 1
+                      FROM sys_user_tenant sut
+                      WHERE sut.user_id = u.id
+                        AND sut.tenant_id = #{tenantId}
+                        AND sut.status = 1
+                  )
+              )
+          </if>
+    </update>
 
     <!-- 协同目录同步：按手机号/邮箱查询租户内未删除用户（身份冲突检测，仅限本租户） -->
     <select id="selectActiveUsersByPhoneOrEmail" resultMap="BaseResultMap">

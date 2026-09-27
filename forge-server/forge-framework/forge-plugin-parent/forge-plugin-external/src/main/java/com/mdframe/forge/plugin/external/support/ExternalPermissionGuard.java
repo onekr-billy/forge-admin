@@ -10,7 +10,7 @@ public class ExternalPermissionGuard {
 
     public void check(ExternalApi api) {
         if (!Boolean.TRUE.equals(api.getPermissionCheckEnabled())) {
-            return;
+            throw new BusinessException(403, "外部接口未启用调用权限校验，已拒绝执行");
         }
         String permission = api.getRequiredPermission();
         if (permission == null || permission.isBlank()) {

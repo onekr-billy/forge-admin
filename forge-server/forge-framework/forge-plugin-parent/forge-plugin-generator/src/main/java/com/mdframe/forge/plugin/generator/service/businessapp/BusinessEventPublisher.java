@@ -123,6 +123,11 @@ public class BusinessEventPublisher {
         if (event == null || StringUtils.isBlank(event.getObjectCode()) || StringUtils.isBlank(event.getEventType())) {
             return;
         }
+        if (event.getTenantId() == null || event.getTenantId() <= 0) {
+            log.error("拒绝发布缺少可信租户的业务事件, objectCode={}, eventType={}, recordId={}",
+                    event.getObjectCode(), event.getEventType(), event.getRecordId());
+            return;
+        }
         // Keep legacy action triggers and application-level START_EVENT flows
         // on the same successful CRUD event. The orchestrator is optional so
         // installations that do not enable business-process support keep the
@@ -168,7 +173,7 @@ public class BusinessEventPublisher {
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        return tenantId != null && tenantId > 0 ? tenantId : null;
     }
 
     private Long resolveUserId() {

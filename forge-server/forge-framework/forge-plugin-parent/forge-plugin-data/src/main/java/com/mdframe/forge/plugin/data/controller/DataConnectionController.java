@@ -1,11 +1,13 @@
 package com.mdframe.forge.plugin.data.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.mdframe.forge.plugin.data.dto.DataConnectionSaveDTO;
 import com.mdframe.forge.plugin.data.dto.DataConnectionTestDTO;
 import com.mdframe.forge.plugin.data.entity.DataConnection;
 import com.mdframe.forge.plugin.data.service.DataConnectionService;
 import com.mdframe.forge.plugin.data.support.DbDialectFactory;
+import com.mdframe.forge.plugin.data.support.JdbcConnectionSecurityPolicy;
 import com.mdframe.forge.plugin.data.support.JdbcDataSourceProvider;
 import com.mdframe.forge.plugin.data.vo.DataConnectionDetailVO;
 import com.mdframe.forge.plugin.data.vo.DataConnectionFieldVO;
@@ -14,6 +16,8 @@ import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +43,7 @@ public class DataConnectionController {
     private final DataConnectionService connectionService;
     private final JdbcDataSourceProvider dataSourceProvider;
     private final DbDialectFactory dialectFactory;
+    private final JdbcConnectionSecurityPolicy connectionSecurityPolicy;
 
     @GetMapping("/page")
     public RespInfo<IPage<DataConnection>> page(
@@ -114,13 +119,18 @@ public class DataConnectionController {
     }
 
     @PostMapping("/test")
+    @SaCheckPermission("data:connection:test-temp")
     public RespInfo<Boolean> testTemp(@RequestBody DataConnectionTestDTO dto) {
+        LoginUser loginUser = SessionHelper.getLoginUser();
+        if (loginUser == null || !loginUser.isAdmin()) {
+            throw new BusinessException(403, "仅平台管理员可测试临时数据连接");
+        }
         DataConnection connection = new DataConnection();
         connection.setDriverClassName(dto.getDriverClassName());
         connection.setJdbcUrl(dto.getJdbcUrl());
         connection.setUsername(dto.getUsername());
         connection.setPasswordCipher(dto.getPassword());
-        connection.setTestSql(dto.getTestSql() != null ? dto.getTestSql() : "SELECT 1");
+        connection.setTestSql("SELECT 1");
         boolean success = doTestConnectionTemp(connection);
         return RespInfo.success(success);
     }
@@ -212,24 +222,15 @@ public class DataConnectionController {
     }
 
     private boolean doTestConnection(DataConnection connection) {
-        try {
+        try (Connection conn = dataSourceProvider.getConnection(connection);
+             PreparedStatement ps = conn.prepareStatement("SELECT 1")) {
             log.info("Testing saved connection id={}, dbType={}, url={}, username={}", 
                     connection.getId(), connection.getDbType(), 
                     maskJdbcUrl(connection.getJdbcUrl()), connection.getUsername());
-            Connection conn = dataSourceProvider.getConnection(connection);
-            try {
-                PreparedStatement ps = conn.prepareStatement(connection.getTestSql());
-                try {
-                    ResultSet rs = ps.executeQuery();
-                    rs.close();
-                    ps.close();
-                    log.info("Connection test success for id={}", connection.getId());
-                    return true;
-                } finally {
-                    ps.close();
-                }
-            } finally {
-                conn.close();
+            ps.setQueryTimeout(connectionSecurityPolicy.queryTimeoutSeconds());
+            try (ResultSet ignored = ps.executeQuery()) {
+                log.info("Connection test success for id={}", connection.getId());
+                return true;
             }
         } catch (Exception e) {
             log.error("Test saved connection failed for id={}: {}", 
@@ -242,19 +243,12 @@ public class DataConnectionController {
         DataSource ds = null;
         try {
             ds = dataSourceProvider.createTempDataSource(connection, connection.getPasswordCipher());
-            Connection conn = ds.getConnection();
-            try {
-                PreparedStatement ps = conn.prepareStatement(connection.getTestSql());
-                try {
-                    ResultSet rs = ps.executeQuery();
-                    rs.close();
-                    ps.close();
+            try (Connection conn = ds.getConnection();
+                 PreparedStatement ps = conn.prepareStatement("SELECT 1")) {
+                ps.setQueryTimeout(connectionSecurityPolicy.queryTimeoutSeconds());
+                try (ResultSet ignored = ps.executeQuery()) {
                     return true;
-                } finally {
-                    ps.close();
                 }
-            } finally {
-                conn.close();
             }
         } catch (Exception e) {
             log.warn("Test temp connection failed: {}", e.getMessage());
@@ -278,6 +272,12 @@ public class DataConnectionController {
                 String sql = dialectFactory.getDialect(connection.getDbType()).getTableQuerySql(schemaName, keyword);
                 PreparedStatement ps = conn.prepareStatement(sql);
                 try {
+                    ps.setString(1, schemaName);
+                    if (keyword != null && !keyword.isEmpty()) {
+                        String keywordPattern = "%" + keyword + "%";
+                        ps.setString(2, keywordPattern);
+                        ps.setString(3, keywordPattern);
+                    }
                     ResultSet rs = ps.executeQuery();
                     while (rs.next()) {
                         DataConnectionTableVO table = new DataConnectionTableVO();
@@ -311,6 +311,8 @@ public class DataConnectionController {
                 String sql = dialectFactory.getDialect(connection.getDbType()).getColumnQuerySql(schemaName, tableName);
                 PreparedStatement ps = conn.prepareStatement(sql);
                 try {
+                    ps.setString(1, schemaName);
+                    ps.setString(2, tableName);
                     ResultSet rs = ps.executeQuery();
                     while (rs.next()) {
                         DataConnectionFieldVO field = new DataConnectionFieldVO();

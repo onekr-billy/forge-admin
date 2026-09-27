@@ -53,6 +53,18 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
      */
     SysUser selectByEmailForLogin(@Param("email") String email, @Param("tenantId") Long tenantId);
 
+    /** Public registration uniqueness check, scoped to the trusted registration tenant. */
+    long countRegistrationConflicts(@Param("tenantId") Long tenantId,
+                                    @Param("username") String username,
+                                    @Param("phone") String phone,
+                                    @Param("email") String email);
+
+    /** Update a password only while the user is active and belongs to the selected tenant. */
+    int updateActiveUserPassword(@Param("userId") Long userId,
+                                 @Param("tenantId") Long tenantId,
+                                 @Param("encodedPassword") String encodedPassword,
+                                 @Param("updateTime") java.time.LocalDateTime updateTime);
+
     /**
      * 协同目录同步：按手机号/邮箱查询租户内未删除用户（身份冲突检测，仅限本租户）
      */

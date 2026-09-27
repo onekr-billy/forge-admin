@@ -1,5 +1,7 @@
 package com.mdframe.forge.plugin.external.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.mdframe.forge.plugin.external.constant.ExternalPermissions;
 import com.mdframe.forge.plugin.external.service.ExternalProxyService;
 import com.mdframe.forge.plugin.external.vo.ExternalApiDebugResult;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
@@ -20,6 +22,7 @@ public class ExternalProxyController {
     private final ExternalProxyService proxyService;
 
     @PostMapping("/{apiId}")
+    @SaCheckPermission(ExternalPermissions.PROXY_INVOKE)
     public RespInfo<Object> proxyPost(
             @PathVariable Long apiId,
             @RequestBody(required = false) Map<String, Object> params) {
@@ -28,6 +31,7 @@ public class ExternalProxyController {
     }
 
     @GetMapping("/{apiId}")
+    @SaCheckPermission(ExternalPermissions.PROXY_INVOKE)
     public RespInfo<Object> proxyGet(
             @PathVariable Long apiId,
             @RequestParam(required = false) Map<String, Object> params) {
@@ -36,6 +40,7 @@ public class ExternalProxyController {
     }
 
     @PostMapping("/debug/{apiId}")
+    @SaCheckPermission(ExternalPermissions.PROXY_DEBUG)
     public RespInfo<ExternalApiDebugResult> debug(
             @PathVariable Long apiId,
             @RequestBody(required = false) Map<String, Object> params) {

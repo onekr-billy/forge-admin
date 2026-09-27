@@ -11,7 +11,8 @@ import type { RequestGlobalConfigType, RequestConfigType } from '@/store/modules
 import { resolveDynamicRequestParams } from '@/utils/requestDynamicParams'
 import type { DynamicPageContext, DynamicParamComponent } from '@/utils/requestDynamicParams'
 import { queryDataDataset } from './data/dataset'
-import { assertSafeFilterScript } from '@/utils/utils'
+import { resolveRestrictedUrlTemplate } from '@/utils/safeExpression'
+import { unref } from 'vue'
 
 export const get = (url: string, params?: object) => {
   return axiosInstance({
@@ -107,16 +108,7 @@ const mergeDefinedObjects = (...items: Record<string, unknown>[]) => {
 export const translateStr = (target: string | object) => {
   if (typeof target === 'string') {
     if (target.startsWith(prefix)) {
-      const funcStr = target.split(prefix)[1]
-      let result;
-      try {
-        assertSafeFilterScript(funcStr)
-        result = new Function(`${funcStr}`)()
-      } catch (error) {
-        console.log(error)
-        window['$message'].error('js内容解析有误！')
-      }
-      return result
+      throw new Error('javascript: 动态参数已禁用，请迁移为动态参数绑定')
     } else {
       return target
     }
@@ -276,8 +268,11 @@ export const customizeHttp = async (
 
   try {
     const urlTemplate = `${requestOriginUrl}${requestUrl}`.trim()
-    assertSafeFilterScript(urlTemplate)
-    const url = (new Function('return `' + urlTemplate + '`'))()
+    const url = resolveRestrictedUrlTemplate(urlTemplate, {
+      ...(unref(pageContext) || {}),
+      ...dynamicParams.Params,
+      params: dynamicParams.Params
+    })
     return axiosInstance({
         url,
         method: requestHttpType,

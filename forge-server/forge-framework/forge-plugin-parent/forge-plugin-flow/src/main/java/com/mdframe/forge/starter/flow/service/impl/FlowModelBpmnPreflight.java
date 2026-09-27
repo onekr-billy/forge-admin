@@ -3,7 +3,6 @@ package com.mdframe.forge.starter.flow.service.impl;
 import com.mdframe.forge.starter.flow.helper.BpmnXmlUtils;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.HashSet;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -17,70 +16,29 @@ final class FlowModelBpmnPreflight {
     }
 
     static String extractProcessKey(String bpmnXml) {
-        try {
-            int start = bpmnXml.indexOf("<bpmn:process id=\"");
-            if (start == -1) {
-                start = bpmnXml.indexOf("<process id=\"");
-            }
-            if (start == -1) {
-                return null;
-            }
-            start = bpmnXml.indexOf("id=\"", start) + 4;
-            int end = bpmnXml.indexOf("\"", start);
-            return bpmnXml.substring(start, end);
-        } catch (Exception e) {
-            log.warn("提取流程Key失败", e);
-            return null;
+        BpmnXmlUtils.BpmnAnalysis analysis = analyzeSingleProcess(bpmnXml);
+        if (!hasText(analysis.processId())) {
+            throw new RuntimeException("BPMN process 缺少 id 属性");
         }
+        return analysis.processId();
     }
 
     static String replaceProcessId(String bpmnXml, String modelKey) {
-        try {
-            String currentProcessId = extractProcessKey(bpmnXml);
-            if (currentProcessId == null) {
-                log.warn("无法提取当前流程ID，跳过替换");
-                return bpmnXml;
-            }
-            if (currentProcessId.equals(modelKey)) {
-                log.debug("流程ID已经是 {}，无需替换", modelKey);
-                return bpmnXml;
-            }
-            log.info("将流程ID从 {} 替换为 {}", currentProcessId, modelKey);
-            bpmnXml = bpmnXml.replace(
-                    "<bpmn:process id=\"" + currentProcessId + "\"",
-                    "<bpmn:process id=\"" + modelKey + "\"");
-            bpmnXml = bpmnXml.replace(
-                    "<process id=\"" + currentProcessId + "\"",
-                    "<process id=\"" + modelKey + "\"");
-            bpmnXml = bpmnXml.replace(
-                    "bpmnElement=\"" + currentProcessId + "\"",
-                    "bpmnElement=\"" + modelKey + "\"");
-            return bpmnXml;
-        } catch (Exception e) {
-            log.warn("替换流程ID失败", e);
+        String currentProcessId = extractProcessKey(bpmnXml);
+        if (currentProcessId.equals(modelKey)) {
             return bpmnXml;
         }
+        log.info("将流程ID从 {} 替换为 {}", currentProcessId, modelKey);
+        return BpmnXmlUtils.replaceSingleProcessId(bpmnXml, modelKey);
     }
 
     static void validateSequenceFlowRefs(String bpmnXml) {
-        java.util.regex.Pattern flowPattern = java.util.regex.Pattern.compile(
-                "<(?:bpmn:)?sequenceFlow\\b([^>]*?)/?>",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Pattern idPattern = java.util.regex.Pattern.compile("\\bid=\"([^\"]*)\"");
-        java.util.regex.Pattern targetRefPattern = java.util.regex.Pattern.compile("\\btargetRef=\"([^\"]*)\"");
-        java.util.regex.Pattern sourceRefPattern = java.util.regex.Pattern.compile("\\bsourceRef=\"([^\"]*)\"");
-        java.util.regex.Matcher matcher = flowPattern.matcher(bpmnXml);
-        while (matcher.find()) {
-            String flowElement = matcher.group(0);
-            String attrs = matcher.group(1);
-            java.util.regex.Matcher idMatcher = idPattern.matcher(flowElement);
-            String flowId = idMatcher.find() ? idMatcher.group(1) : "unknown";
-            boolean hasTargetRef = targetRefPattern.matcher(attrs).find();
-            boolean hasSourceRef = sourceRefPattern.matcher(attrs).find();
-            if (!hasTargetRef || !hasSourceRef) {
-                String missing = !hasTargetRef ? "targetRef" : "sourceRef";
-                log.error("BPMN sequenceFlow [{}] 缺少 {} 属性，XML 片段: {}",
-                        flowId, missing, flowElement);
+        BpmnXmlUtils.BpmnAnalysis analysis = analyzeSingleProcess(bpmnXml);
+        for (BpmnXmlUtils.BpmnSequenceFlowInfo flow : analysis.sequenceFlows()) {
+            if (!hasText(flow.targetRef()) || !hasText(flow.sourceRef())) {
+                String missing = !hasText(flow.targetRef()) ? "targetRef" : "sourceRef";
+                String flowId = hasText(flow.id()) ? flow.id() : "unknown";
+                log.error("BPMN sequenceFlow [{}] 缺少 {} 属性", flowId, missing);
                 throw new RuntimeException(String.format(
                         "流程图数据不完整：连线 [%s] 缺少 %s 属性。"
                                 + "请在流程设计器中检查所有连线是否完整连接到目标节点，重新保存后再部署。",
@@ -90,29 +48,20 @@ final class FlowModelBpmnPreflight {
     }
 
     static void validateBpmnStructure(String bpmnXml) {
-        if (countMatches(bpmnXml, "<(?:bpmn:)?startEvent\\b") == 0) {
+        BpmnXmlUtils.BpmnAnalysis analysis = analyzeSingleProcess(bpmnXml);
+        if (analysis.nodes().stream().noneMatch(node -> "startEvent".equals(node.type()))) {
             throw new RuntimeException("流程模型缺少开始节点，请至少配置一个开始节点。");
         }
-        if (countMatches(bpmnXml, "<(?:bpmn:)?endEvent\\b") == 0) {
+        if (analysis.nodes().stream().noneMatch(node -> "endEvent".equals(node.type()))) {
             throw new RuntimeException("流程模型缺少结束节点，请至少配置一个结束节点。");
         }
-        Set<String> nodeIds = new HashSet<>();
-        java.util.regex.Matcher nodeMatcher = java.util.regex.Pattern.compile(
-                "<(?:bpmn:)?(?:startEvent|endEvent|userTask|serviceTask|scriptTask|exclusiveGateway|parallelGateway|inclusiveGateway|callActivity|subProcess)\\b([^>]*)>",
-                java.util.regex.Pattern.CASE_INSENSITIVE).matcher(bpmnXml);
-        java.util.regex.Pattern idPattern = java.util.regex.Pattern.compile("\\bid=\"([^\"]+)\"");
-        while (nodeMatcher.find()) {
-            java.util.regex.Matcher idMatcher = idPattern.matcher(nodeMatcher.group(1));
-            if (idMatcher.find()) {
-                nodeIds.add(idMatcher.group(1));
-            }
-        }
-        java.util.regex.Matcher flowMatcher = java.util.regex.Pattern.compile(
-                "<(?:bpmn:)?sequenceFlow\\b([^>]*)/?>", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(bpmnXml);
-        while (flowMatcher.find()) {
-            String attrs = flowMatcher.group(1);
-            String source = attributeValue(attrs, "sourceRef");
-            String target = attributeValue(attrs, "targetRef");
+        Set<String> nodeIds = analysis.nodes().stream()
+                .map(BpmnXmlUtils.BpmnNodeInfo::id)
+                .filter(FlowModelBpmnPreflight::hasText)
+                .collect(Collectors.toSet());
+        for (BpmnXmlUtils.BpmnSequenceFlowInfo flow : analysis.sequenceFlows()) {
+            String source = flow.sourceRef();
+            String target = flow.targetRef();
             if (source == null || target == null || !nodeIds.contains(source) || !nodeIds.contains(target)) {
                 throw new RuntimeException("流程模型存在悬空连线，请检查 sourceRef 和 targetRef 是否指向有效节点。");
             }
@@ -120,15 +69,11 @@ final class FlowModelBpmnPreflight {
     }
 
     static void validateExecutableNodesAndGatewayConditions(String bpmnXml) {
-        java.util.regex.Pattern nodePattern = java.util.regex.Pattern.compile(
-                "<(?:bpmn:)?(scriptTask|callActivity|subProcess|serviceTask|userTask)\\b([^>]*)>",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher nodeMatcher = nodePattern.matcher(bpmnXml);
-        while (nodeMatcher.find()) {
-            String type = nodeMatcher.group(1).toLowerCase(Locale.ROOT);
-            String attrs = nodeMatcher.group(2);
-            String id = attributeValue(attrs, "id");
-            String name = attributeValue(attrs, "name");
+        BpmnXmlUtils.BpmnAnalysis analysis = analyzeSingleProcess(bpmnXml);
+        for (BpmnXmlUtils.BpmnNodeInfo node : analysis.nodes()) {
+            String type = node.type().toLowerCase(Locale.ROOT);
+            String id = node.id();
+            String name = node.name();
             String label = (name == null || name.isBlank()) ? id : name;
             if ("scriptTask".equalsIgnoreCase(type)
                     || "callActivity".equalsIgnoreCase(type)
@@ -138,21 +83,21 @@ final class FlowModelBpmnPreflight {
                         label == null ? "未命名" : label, type));
             }
             if ("serviceTask".equalsIgnoreCase(type)
-                    && !"cc".equalsIgnoreCase(attributeValue(attrs, "type"))) {
+                    && !"cc".equalsIgnoreCase(node.attribute("type"))) {
                 throw new RuntimeException(String.format(
                         "节点 [%s] 的 serviceTask 未声明受支持的 flowable:type=cc，无法保证运行时执行委托。",
                         label == null ? "未命名" : label));
             }
             if ("serviceTask".equalsIgnoreCase(type)
-                    && containsUnsupportedExecutionAttribute(attrs)) {
+                    && containsUnsupportedExecutionAttribute(node)) {
                 throw new RuntimeException(String.format(
                         "节点 [%s] 包含未注册的执行委托属性，禁止通过 raw XML 绕过执行白名单。",
                         label == null ? "未命名" : label));
             }
             if ("userTask".equalsIgnoreCase(type)) {
-                boolean hasAssignee = hasText(attributeValue(attrs, "assignee"));
-                boolean hasCandidateUsers = hasText(attributeValue(attrs, "candidateUsers"));
-                boolean hasCandidateGroups = hasText(attributeValue(attrs, "candidateGroups"));
+                boolean hasAssignee = hasText(node.attribute("assignee"));
+                boolean hasCandidateUsers = hasText(node.attribute("candidateUsers"));
+                boolean hasCandidateGroups = hasText(node.attribute("candidateGroups"));
                 if (!hasAssignee && !hasCandidateUsers && !hasCandidateGroups) {
                     throw new RuntimeException(String.format(
                             "审批节点 [%s] 未配置处理人、候选用户或候选组，请先完成审批人配置。",
@@ -160,36 +105,29 @@ final class FlowModelBpmnPreflight {
                 }
             }
         }
-        java.util.regex.Pattern gatewayPattern = java.util.regex.Pattern.compile(
-                "<(?:bpmn:)?(exclusiveGateway|inclusiveGateway)\\b([^>]*)>([\\s\\S]*?)</(?:bpmn:)?\\1>",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Pattern flowPattern = java.util.regex.Pattern.compile(
-                "<(?:bpmn:)?sequenceFlow\\b([^>]*)>([\\s\\S]*?)</(?:bpmn:)?sequenceFlow>|"
-                        + "<(?:bpmn:)?sequenceFlow\\b([^>]*)/>",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher gatewayMatcher = gatewayPattern.matcher(bpmnXml);
-        while (gatewayMatcher.find()) {
-            String gatewayAttrs = gatewayMatcher.group(2);
-            String gatewayId = attributeValue(gatewayAttrs, "id");
+        for (BpmnXmlUtils.BpmnNodeInfo gateway : analysis.nodes()) {
+            if (!"exclusiveGateway".equals(gateway.type()) && !"inclusiveGateway".equals(gateway.type())) {
+                continue;
+            }
+            String gatewayId = gateway.id();
             if (gatewayId == null) {
                 continue;
             }
-            String defaultFlow = attributeValue(gatewayAttrs, "default");
+            String defaultFlow = gateway.attribute("default");
             int outgoingCount = 0;
-            java.util.regex.Matcher flowMatcher = flowPattern.matcher(bpmnXml);
-            while (flowMatcher.find()) {
-                String flowAttrs = flowMatcher.group(1) != null ? flowMatcher.group(1) : flowMatcher.group(3);
-                if (!gatewayId.equals(attributeValue(flowAttrs, "sourceRef"))) {
+            for (BpmnXmlUtils.BpmnSequenceFlowInfo flow : analysis.sequenceFlows()) {
+                if (!gatewayId.equals(flow.sourceRef())) {
                     continue;
                 }
                 outgoingCount++;
-                String flowId = attributeValue(flowAttrs, "id");
-                boolean hasCondition = flowMatcher.group(2) != null
-                        && flowMatcher.group(2).toLowerCase(Locale.ROOT).contains("conditionexpression");
-                if (!hasCondition && !Objects.equals(defaultFlow, flowId)) {
+                if (flow.hasCondition() && Objects.equals(defaultFlow, flow.id())) {
+                    throw new RuntimeException(String.format(
+                            "网关 [%s] 的默认分支 [%s] 禁止配置条件表达式。", gatewayId, flow.id()));
+                }
+                if (!flow.hasCondition() && !Objects.equals(defaultFlow, flow.id())) {
                     throw new RuntimeException(String.format(
                             "网关 [%s] 的分支连线 [%s] 缺少条件表达式或默认分支。",
-                            gatewayId, flowId == null ? "未命名" : flowId));
+                            gatewayId, hasText(flow.id()) ? flow.id() : "未命名"));
                 }
             }
             if (outgoingCount > 1 && defaultFlow == null) {
@@ -221,29 +159,17 @@ final class FlowModelBpmnPreflight {
         return multiInstanceResult.getBpmnXml();
     }
 
-    private static boolean containsUnsupportedExecutionAttribute(String attributes) {
-        String normalized = attributes == null ? "" : attributes.toLowerCase(Locale.ROOT);
-        return normalized.contains("flowable:class=")
-                || normalized.contains("flowable:delegateexpression=")
-                || normalized.contains("flowable:expression=")
-                || normalized.contains("activiti:class=")
-                || normalized.contains("activiti:delegateexpression=")
-                || normalized.contains("activiti:expression=");
+    private static boolean containsUnsupportedExecutionAttribute(BpmnXmlUtils.BpmnNodeInfo node) {
+        return hasText(node.attribute("class"))
+                || hasText(node.attribute("delegateExpression"))
+                || hasText(node.attribute("expression"));
     }
 
-    private static int countMatches(String value, String regex) {
-        int count = 0;
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(regex,
-                java.util.regex.Pattern.CASE_INSENSITIVE).matcher(value);
-        while (matcher.find()) {
-            count++;
+    private static BpmnXmlUtils.BpmnAnalysis analyzeSingleProcess(String bpmnXml) {
+        BpmnXmlUtils.BpmnAnalysis analysis = BpmnXmlUtils.analyze(bpmnXml);
+        if (analysis.processCount() != 1) {
+            throw new RuntimeException("BPMN XML 必须包含且只能包含一个 process 节点");
         }
-        return count;
-    }
-
-    private static String attributeValue(String attributes, String name) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                "\\b" + name + "=\"([^\"]*)\"").matcher(attributes);
-        return matcher.find() ? matcher.group(1) : null;
+        return analysis;
     }
 }

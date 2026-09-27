@@ -264,7 +264,10 @@ public class BusinessProcessOrchestrator {
         if (event == null || StringUtils.isAnyBlank(event.getEventType(), event.getObjectCode())) {
             return;
         }
-        Long tenantId = event.getTenantId() == null ? 1L : event.getTenantId();
+        Long tenantId = event.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务事件缺少可信租户上下文");
+        }
         List<AiBusinessProcessVersion> versions = versionMapper.selectCurrentPublishedBySubjectObjectCode(
                 tenantId, event.getObjectCode());
         if (versions == null || versions.isEmpty()) {
@@ -361,8 +364,9 @@ public class BusinessProcessOrchestrator {
         int hops = 0;
         while (hops++ < MAX_HOPS) {
             BusinessProcessNode node = requireNode(schema, currentNodeId);
-            BusinessProcessNodeResult result = executeNode(run, schema, node);
-            completeNodeAttempt(run, node, result);
+            NodeExecution execution = executeNode(run, schema, node);
+            BusinessProcessNodeResult result = execution.result();
+            completeNodeAttempt(run, execution.attemptId(), result);
             if (result.isFailed()) {
                 failRun(run, result.getErrorCode(), result.getErrorSummary());
                 return;
@@ -500,11 +504,18 @@ public class BusinessProcessOrchestrator {
         return BusinessProcessRunViewAssembler.toVo(requireRun(runId), null);
     }
 
-    private BusinessProcessNodeResult executeNode(
+    private NodeExecution executeNode(
             AiBusinessProcessRun run,
             BusinessProcessSchema schema,
             BusinessProcessNode node) {
-        startNodeAttempt(run, node);
+        Long attemptId = startNodeAttempt(run, node);
+        return new NodeExecution(attemptId, executeNodeBody(run, schema, node));
+    }
+
+    private BusinessProcessNodeResult executeNodeBody(
+            AiBusinessProcessRun run,
+            BusinessProcessSchema schema,
+            BusinessProcessNode node) {
         String type = upper(node.getType());
         try {
             if (START_TYPES.contains(type)) {
@@ -595,7 +606,7 @@ public class BusinessProcessOrchestrator {
         return BusinessProcessNodeResult.waiting(processInstanceId, "已发起审批并等待结果");
     }
 
-    private void startNodeAttempt(AiBusinessProcessRun run, BusinessProcessNode node) {
+    private Long startNodeAttempt(AiBusinessProcessRun run, BusinessProcessNode node) {
         int attemptNo = value(nodeRunMapper.selectMaxAttemptNo(run.getTenantId(), run.getId(), node.getId())) + 1;
         AiBusinessProcessNodeRun attempt = new AiBusinessProcessNodeRun();
         attempt.setId(IdWorker.getId());
@@ -607,33 +618,34 @@ public class BusinessProcessOrchestrator {
         attempt.setIdempotencyKey(run.getId() + ":" + node.getId() + ":" + attemptNo);
         attempt.setCreateBy(run.getActorUserId());
         attempt.setUpdateBy(run.getActorUserId());
-        nodeRunMapper.insertAttempt(attempt);
-        nodeRunMapper.claimAttempt(run.getTenantId(), attempt.getId());
+        if (nodeRunMapper.insertAttempt(attempt) != 1
+                || nodeRunMapper.claimAttempt(run.getTenantId(), attempt.getId()) != 1) {
+            throw new BusinessException("节点执行权认领失败，请稍后重试");
+        }
+        return attempt.getId();
     }
 
     private void completeNodeAttempt(
             AiBusinessProcessRun run,
-            BusinessProcessNode node,
+            Long attemptId,
             BusinessProcessNodeResult result) {
-        AiBusinessProcessNodeRun latest = nodeRunMapper.selectLatestAttempt(
-                run.getTenantId(), run.getId(), node.getId());
-        if (latest == null) {
-            return;
-        }
         String nextStatus = result.isFailed()
                 ? BusinessProcessRunStatus.FAILED.getCode()
                 : (result.isWaiting() ? BusinessProcessRunStatus.WAITING.getCode() : BusinessProcessRunStatus.SUCCESS.getCode());
-        nodeRunMapper.completeAttempt(
+        int updated = nodeRunMapper.completeAttempt(
                 run.getTenantId(),
-                latest.getId(),
+                attemptId,
                 "RUNNING",
-                latest.getCorrelationId(),
+                null,
                 nextStatus,
                 result.getCorrelationId(),
                 truncate(result.getOutputSummary()),
                 result.getErrorCode(),
                 truncate(result.getErrorSummary()),
                 null);
+        if (updated != 1) {
+            throw new BusinessException("节点执行结果已被其他执行器处理，请稍后重试");
+        }
     }
 
     private boolean advanceCheckpoint(
@@ -713,14 +725,25 @@ public class BusinessProcessOrchestrator {
         if (!(rules instanceof List<?> list) || list.isEmpty()) {
             return true;
         }
-        boolean any = "OR".equalsIgnoreCase(String.valueOf(condition.get("operator")))
-                || "OR".equalsIgnoreCase(String.valueOf(condition.get("logic")));
+        Object conditionOperator = condition.get("operator");
+        Object conditionLogic = condition.get("logic");
+        String logic = StringUtils.firstNonBlank(
+                conditionOperator == null ? null : StringUtils.trimToNull(String.valueOf(conditionOperator)),
+                conditionLogic == null ? null : StringUtils.trimToNull(String.valueOf(conditionLogic)), "AND");
+        if (!"AND".equalsIgnoreCase(logic) && !"OR".equalsIgnoreCase(logic)) {
+            return false;
+        }
+        boolean any = "OR".equalsIgnoreCase(logic);
         boolean result = any ? false : true;
         for (Object rawRule : list) {
             if (!(rawRule instanceof Map<?, ?> rule)) {
-                continue;
+                return false;
             }
-            String field = StringUtils.trimToEmpty(String.valueOf(rule.get("field")));
+            Object fieldValue = rule.get("field");
+            String field = fieldValue == null ? "" : StringUtils.trimToEmpty(String.valueOf(fieldValue));
+            if (field.isEmpty()) {
+                return false;
+            }
             Object operatorValue = rule.containsKey("operator") ? rule.get("operator") : rule.get("op");
             String operator = upper(String.valueOf(operatorValue));
             Object actual = event.readRecordValue(field);
@@ -730,7 +753,7 @@ public class BusinessProcessOrchestrator {
                 case "NE", "NEQ", "NOT_EQUALS" -> !StringUtils.equals(String.valueOf(actual), String.valueOf(expected));
                 case "IS_NULL" -> actual == null;
                 case "NOT_NULL" -> actual != null;
-                default -> true;
+                default -> false;
             };
             if (any) {
                 result |= matched;
@@ -912,6 +935,9 @@ public class BusinessProcessOrchestrator {
 
     private List<AiBusinessProcessNodeRun> safeList(List<AiBusinessProcessNodeRun> list) {
         return list == null ? List.of() : list;
+    }
+
+    private record NodeExecution(Long attemptId, BusinessProcessNodeResult result) {
     }
 
     private int normalizePageNum(Integer pageNum) {

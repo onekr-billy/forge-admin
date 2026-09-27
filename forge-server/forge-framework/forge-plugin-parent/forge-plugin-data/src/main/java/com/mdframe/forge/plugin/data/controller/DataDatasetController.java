@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.data.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.mdframe.forge.plugin.data.dto.DataDatasetFieldDTO;
 import com.mdframe.forge.plugin.data.dto.DataDatasetPreviewDTO;
@@ -230,6 +231,7 @@ public class DataDatasetController {
     }
 
     @PostMapping("/preview-sql")
+    @SaCheckPermission("data:dataset:preview-sql")
     @OperationLog(module = "数据资产", desc = "预览SQL数据集")
     public RespInfo<Map<String, Object>> previewSql(@RequestBody DataDatasetSaveDTO dto) {
         if (dto.getConnectionId() == null) {
@@ -237,6 +239,10 @@ public class DataDatasetController {
         }
         if (dto.getSqlText() == null || dto.getSqlText().isEmpty()) {
             throw new BusinessException("SQL不能为空");
+        }
+        if (dto.getId() != null) {
+            DataDataset existing = requireDataset(dto.getId());
+            datasetAccessService.requireAccess(existing, DataDatasetAccessLevelEnum.MANAGE);
         }
         DataConnection connection = requireEnabledConnection(dto.getConnectionId());
 
@@ -476,6 +482,8 @@ public class DataDatasetController {
                 String sql = dialectFactory.getDialect(connection.getDbType()).getColumnQuerySql(schemaName, tableName);
                 PreparedStatement ps = conn.prepareStatement(sql);
                 try {
+                    ps.setString(1, schemaName);
+                    ps.setString(2, tableName);
                     ResultSet rs = ps.executeQuery();
                     while (rs.next()) {
                         DataConnectionFieldVO field = new DataConnectionFieldVO();
@@ -567,8 +575,8 @@ public class DataDatasetController {
         Map<String, Object> result = new LinkedHashMap<>();
         List<Map<String, Object>> rows = new ArrayList<>();
         List<String> columns = new ArrayList<>();
-        try {
-            Connection conn = dataSourceProvider.getConnection(connection);
+        try (Connection conn = dataSourceProvider.getConnection(connection)) {
+            conn.setReadOnly(true);
             try {
                 DbDialect dialect = dialectFactory.getDialect(connection.getDbType());
                 String validatedSql = dataset.getSqlText();
@@ -576,31 +584,30 @@ public class DataDatasetController {
                 String wrappedSql = "SELECT * FROM (" + validatedSql + ") t";
                 wrappedSql = dialect.buildLimitSql(wrappedSql, maxRows);
                 String preparedSql = parameterBinder.convertToPreparedStatement(wrappedSql);
-                PreparedStatement ps = conn.prepareStatement(preparedSql);
-                try {
+                try (PreparedStatement ps = conn.prepareStatement(preparedSql)) {
+                    ps.setQueryTimeout(5);
+                    ps.setMaxRows(maxRows);
                     Map<Integer, Object> paramIndexMap = parameterBinder.buildParamIndexMap(wrappedSql, Map.of());
                     for (Map.Entry<Integer, Object> entry : paramIndexMap.entrySet()) {
                         ps.setObject(entry.getKey(), entry.getValue());
                     }
-                    ResultSet rs = ps.executeQuery();
-                    ResultSetMetaData metaData = rs.getMetaData();
-                    int columnCount = metaData.getColumnCount();
-                    for (int i = 1; i <= columnCount; i++) {
-                        columns.add(metaData.getColumnLabel(i));
-                    }
-                    while (rs.next()) {
-                        Map<String, Object> row = new LinkedHashMap<>();
+                    try (ResultSet rs = ps.executeQuery()) {
+                        ResultSetMetaData metaData = rs.getMetaData();
+                        int columnCount = metaData.getColumnCount();
                         for (int i = 1; i <= columnCount; i++) {
-                            row.put(metaData.getColumnLabel(i), rs.getObject(i));
+                            columns.add(metaData.getColumnLabel(i));
                         }
-                        rows.add(row);
+                        while (rs.next()) {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            for (int i = 1; i <= columnCount; i++) {
+                                row.put(metaData.getColumnLabel(i), rs.getObject(i));
+                            }
+                            rows.add(row);
+                        }
                     }
-                    rs.close();
-                } finally {
-                    ps.close();
                 }
             } finally {
-                conn.close();
+                conn.setReadOnly(false);
             }
         } catch (BusinessException e) {
             throw e;

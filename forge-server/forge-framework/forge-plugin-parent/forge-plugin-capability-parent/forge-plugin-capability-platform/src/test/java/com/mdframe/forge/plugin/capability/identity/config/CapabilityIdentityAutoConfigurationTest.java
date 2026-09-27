@@ -24,6 +24,24 @@ import static org.mockito.Mockito.mock;
 class CapabilityIdentityAutoConfigurationTest {
 
     @Test
+    void shouldKeepIdentityRuntimeDisabledWhenNoSwitchIsConfigured() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(CapabilityIdentityAutoConfiguration.class))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(CapabilityAccessTokenService.class);
+                });
+    }
+
+    @Test
+    void identityAndExternalProvidersShouldBeDisabledByDefault() {
+        CapabilityIdentityProperties properties = new CapabilityIdentityProperties();
+
+        assertThat(properties.isEnabled()).isFalse();
+        assertThat(new CapabilityIdentityProperties.ExternalProvider().isEnabled()).isFalse();
+    }
+
+    @Test
     void shouldReplaceScopeOnlyPolicyWithForgeGovernancePolicy() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(

@@ -30,6 +30,7 @@ import com.mdframe.forge.plugin.system.mapper.SysUserRoleMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserTenantMapper;
 import com.mdframe.forge.plugin.system.service.ISysUserService;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
+import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.plugin.system.vo.SysUserTenantVO;
 import com.mdframe.forge.plugin.system.vo.UserOrgBindingVO;
 import com.mdframe.forge.starter.auth.util.PasswordUtil;
@@ -63,6 +64,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     private final SysPostMapper postMapper;
     private final SysRegionMapper regionMapper;
     private final IUserLoadService userLoadService;
+    private final PasswordPolicyService passwordPolicyService;
 
     @Override
     public IPage<SysUser> selectUserPage(SysUserQuery query) {
@@ -95,6 +97,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         BeanUtil.copyProperties(dto, user);
         user.setTenantId(tenantId);
         user.setUserType(resolveWriteUserType(dto.getUserType()));
+        passwordPolicyService.validate(dto.getPassword());
         user.setPassword(PasswordUtil.encrypt(dto.getPassword()));
         user.setForcePasswordChange(true);
         boolean inserted = userMapper.insert(user) > 0;
@@ -300,11 +303,16 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     public boolean resetPassword(Long userId, String newPassword) {
         assertCanManageUser(userId);
         assertNotSelfManagementUnlessAdmin(userId);
+        passwordPolicyService.validate(newPassword);
         SysUser user = new SysUser();
         user.setId(userId);
         user.setPassword(PasswordUtil.encrypt(newPassword));
         user.setForcePasswordChange(true);
-        return TenantContextHolder.executeIgnore(() -> userMapper.updateById(user) > 0);
+        boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.updateById(user) > 0);
+        if (updated) {
+            StpUtil.kickout(userId);
+        }
+        return updated;
     }
 
     @Override

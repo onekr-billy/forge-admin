@@ -28,4 +28,20 @@ class FlowBusinessStatsMapperSqlContractTest {
             assertTrue(statement.contains("process_def_key = #{processDefinitionKey}"));
         }
     }
+
+    @Test
+    void modelDeletionGuardMustCountBusinessRowsInsideTrustedTenant() throws IOException {
+        try (InputStream input = getClass().getClassLoader().getResourceAsStream("mapper/FlowBusinessMapper.xml")) {
+            if (input == null) {
+                throw new IOException("Missing FlowBusinessMapper.xml");
+            }
+            String xml = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            int start = xml.indexOf("<select id=\"countByProcessDefKeyAndTenantId\"");
+            int end = xml.indexOf("</select>", start);
+            assertTrue(start >= 0 && end > start);
+            String statement = xml.substring(start, end);
+            assertTrue(statement.contains("tenant_id = #{tenantId}"));
+            assertTrue(statement.contains("process_def_key = #{processDefKey}"));
+        }
+    }
 }
