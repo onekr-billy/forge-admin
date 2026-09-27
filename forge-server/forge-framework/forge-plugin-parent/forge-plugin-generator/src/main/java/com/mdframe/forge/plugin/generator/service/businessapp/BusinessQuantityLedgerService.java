@@ -62,7 +62,7 @@ public class BusinessQuantityLedgerService {
 
     @Transactional(rollbackFor = Exception.class)
     public BusinessQuantityOperationResultVO inbound(BusinessQuantityOperationDTO dto) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         normalizeCommon(dto, OP_INBOUND);
         BusinessQuantityOperationResultVO idempotent = idempotentResult(tenantId, dto);
         if (idempotent != null) {
@@ -82,7 +82,7 @@ public class BusinessQuantityLedgerService {
 
     @Transactional(rollbackFor = Exception.class)
     public BusinessQuantityOperationResultVO lock(BusinessQuantityOperationDTO dto) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         normalizeCommon(dto, OP_LOCK);
         BusinessQuantityOperationResultVO idempotent = idempotentResult(tenantId, dto);
         if (idempotent != null) {
@@ -103,7 +103,7 @@ public class BusinessQuantityLedgerService {
 
     @Transactional(rollbackFor = Exception.class)
     public BusinessQuantityOperationResultVO release(BusinessQuantityOperationDTO dto) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         normalizeCommon(dto, OP_RELEASE);
         BusinessQuantityOperationResultVO idempotent = idempotentResult(tenantId, dto);
         if (idempotent != null) {
@@ -129,7 +129,7 @@ public class BusinessQuantityLedgerService {
 
     @Transactional(rollbackFor = Exception.class)
     public BusinessQuantityOperationResultVO commit(BusinessQuantityOperationDTO dto) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         normalizeCommon(dto, OP_COMMIT);
         BusinessQuantityOperationResultVO idempotent = idempotentResult(tenantId, dto);
         if (idempotent != null) {
@@ -155,7 +155,7 @@ public class BusinessQuantityLedgerService {
 
     @Transactional(rollbackFor = Exception.class)
     public BusinessQuantityOperationResultVO transfer(BusinessQuantityOperationDTO dto) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         normalizeCommon(dto, OP_TRANSFER);
         normalizeTarget(dto);
         BusinessQuantityOperationResultVO idempotent = idempotentResult(tenantId, dto);
@@ -512,13 +512,16 @@ public class BusinessQuantityLedgerService {
         }
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId == null ? 1L : tenantId;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("数量台账操作缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

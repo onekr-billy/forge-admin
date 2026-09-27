@@ -44,10 +44,10 @@ public class BusinessObjectReadinessService {
      * @return 就绪度信息
      */
     public BusinessObjectReadinessVO readiness(Long objectId) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
 
         // 查询业务对象
-        AiBusinessObject object = businessObjectMapper.selectById(objectId);
+        AiBusinessObject object = businessObjectMapper.selectByIdForTenant(tenantId, objectId);
         if (object == null) {
             throw new BusinessException("业务对象不存在");
         }
@@ -607,13 +607,16 @@ public class BusinessObjectReadinessService {
         return "";
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务对象就绪度检查缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

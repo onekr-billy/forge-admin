@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：运行态业务数据租户边界收口
+
+### 实现
+
+- `BusinessRecordSelectorService` 在对象、动态记录和运行配置读取前取得可信租户；字段标签与字段类型解析增加对象租户一致性校验，拒绝把其他租户的对象元数据带入当前上下文。
+- `BusinessQuantityQueryService` 与 `BusinessQuantityLedgerService` 的余额、流水、锁定记录查询及入库、锁定、释放、提交、调拨写路径改为 fail-closed，并在单次调用内复用同一租户快照。
+- `BusinessObjectReadinessService` 将租户检查前移到对象读取之前，按 ID 查询改用 `selectByIdForTenant`；`BusinessEngineSummaryService` 在绑定统计读取前要求可信租户。
+
+### 验证
+
+- 新增 `BusinessRuntimeDataIdentitySecurityTest` 7/7，覆盖缺失租户时副作用前拒绝、跨租户对象元数据拒绝和对象就绪度显式租户查询；首轮相关定向测试 28/28，通过补强后聚焦回归 17/17。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1296/1296 测试通过，0 失败、0 错误、0 跳过。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL 执行记录选择、数量台账、对象就绪度和引擎汇总 HTTP 跨租户验证，也未执行真实并发锁竞争；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：应用入口、能力挂接与业务套件租户边界收口
 
 ### 实现
