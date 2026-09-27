@@ -38,8 +38,9 @@ public class BusinessApplicationObjectService
     private final BusinessObjectService objectService;
 
     public List<BusinessApplicationObjectVO> list(Long applicationId) {
+        Long tenantId = requireTenantId();
         applicationService.requireEntity(applicationId);
-        List<BusinessApplicationObjectVO> objects = baseMapper.selectByApplicationId(resolveTenantId(), applicationId);
+        List<BusinessApplicationObjectVO> objects = baseMapper.selectByApplicationId(tenantId, applicationId);
         if (objects != null) {
             objects.forEach(this::enrichDatabaseSummary);
         }
@@ -51,8 +52,9 @@ public class BusinessApplicationObjectService
         if (applicationId == null || applicationId <= 0 || StringUtils.isBlank(configKey)) {
             return false;
         }
+        Long tenantId = requireTenantId();
         applicationService.requireEntity(applicationId);
-        Long count = baseMapper.countByApplicationAndConfigKey(resolveTenantId(), applicationId, configKey.trim());
+        Long count = baseMapper.countByApplicationAndConfigKey(tenantId, applicationId, configKey.trim());
         return count != null && count > 0;
     }
 
@@ -63,6 +65,7 @@ public class BusinessApplicationObjectService
      */
     @Transactional(rollbackFor = Exception.class)
     public void detachOrphanPageFormObjects(Long applicationId) {
+        requireTenantId();
         AiBusinessApplication application = applicationService.requireEntity(applicationId);
         JSONObject builder = readInAppBuilder(application.getOptions());
         if (builder == null) {
@@ -104,10 +107,11 @@ public class BusinessApplicationObjectService
 
     @Transactional(rollbackFor = Exception.class)
     public void replace(Long applicationId, List<BusinessApplicationObjectDTO> objects) {
+        Long tenantId = requireTenantId();
         AiBusinessApplication application = applicationService.requireEntity(applicationId);
         List<BusinessApplicationObjectDTO> normalized = objects == null ? List.of() : objects;
-        List<AiBusinessApplicationObject> entities = validateAndConvert(application, normalized);
-        baseMapper.logicDeleteByApplicationId(resolveTenantId(), applicationId);
+        List<AiBusinessApplicationObject> entities = validateAndConvert(application, normalized, tenantId);
+        baseMapper.logicDeleteByApplicationId(tenantId, applicationId);
         if (!entities.isEmpty()) {
             baseMapper.insertBatch(entities);
         }
@@ -118,12 +122,14 @@ public class BusinessApplicationObjectService
         if (objectId == null) {
             throw new BusinessException("业务对象ID不能为空");
         }
+        Long tenantId = requireTenantId();
         objectService.requireEntity(objectId);
-        return new LinkedHashSet<>(baseMapper.selectApplicationIdsByObjectId(resolveTenantId(), objectId));
+        return new LinkedHashSet<>(baseMapper.selectApplicationIdsByObjectId(tenantId, objectId));
     }
 
     private List<AiBusinessApplicationObject> validateAndConvert(
-            AiBusinessApplication application, List<BusinessApplicationObjectDTO> objects) {
+            AiBusinessApplication application, List<BusinessApplicationObjectDTO> objects,
+            Long tenantId) {
         Set<Long> objectIds = new HashSet<>();
         int primaryCount = 0;
         List<AiBusinessApplicationObject> entities = new ArrayList<>(objects.size());
@@ -150,7 +156,7 @@ public class BusinessApplicationObjectService
             }
             AiBusinessApplicationObject entity = new AiBusinessApplicationObject();
             entity.setId(IdWorker.getId());
-            entity.setTenantId(resolveTenantId());
+            entity.setTenantId(tenantId);
             entity.setApplicationId(application.getId());
             entity.setObjectId(object.getId());
             entity.setObjectRole(role);
@@ -280,13 +286,16 @@ public class BusinessApplicationObjectService
         return !referencedObjectIds.contains(String.valueOf(association.getObjectId()));
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("应用对象编排缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

@@ -1,5 +1,24 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：应用目录与对象关系租户边界收口
+
+### 实现
+
+- `BusinessApplicationService` 和 `BusinessAppService` 在业务应用创建、入口详情/打开、入口发布及快照恢复前要求可信租户；一次调用内的应用校验、入口查询和写入复用同一租户，不再把缺失身份静默映射到租户 `1`。
+- `BusinessApplicationObjectService` 将租户校验前移到应用/对象读取之前，应用对象列表、配置键检查、替换、孤儿解绑和反向应用查询统一使用入口捕获的租户；新增关联实体与逻辑删除也保持相同归属。
+- `BusinessPermissionService` 在数据范围和权限绑定读取前 fail-closed；单对象权限摘要改用 `selectByIdForTenant`，批量权限摘要的权限码查询复用一次捕获的租户。
+- `BusinessObjectRelationService` 在对象解析前校验租户，并将同一租户贯穿关系列表、查重、按 ID 查询、实体写入和缺失关系删除。
+
+### 验证
+
+- 新增 `BusinessApplicationCatalogIdentitySecurityTest` 4/4，通过副作用前拒绝和显式租户 Mapper 交互覆盖入口、权限及对象关系边界；应用目录与相邻应用发布/权限定向测试合计 57/57 通过。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1283/1283 测试通过，0 失败、0 错误、0 跳过。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL 执行应用目录、入口、权限摘要和对象关系 HTTP 跨租户验证；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：应用运行时与发布检查租户边界收口
 
 ### 实现
