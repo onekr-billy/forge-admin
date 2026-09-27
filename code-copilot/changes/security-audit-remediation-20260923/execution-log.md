@@ -1,5 +1,24 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：应用与流程发布写路径可信身份收口
+
+### 实现
+
+- 应用发布运行单的预留、认领、恢复和进度更新不再回退租户/用户 `1`；入口捕获一次租户与操作者快照，版本号预留、运行单归属和操作者审计复用同一身份，并在更新进度前校验运行单租户。
+- 应用不可变版本提交在打印模板行锁、版本查询和状态指针切换前要求可信租户与操作者；版本实体、幂等重试和应用发布指针复用同一身份，详情查询也在应用读取前 fail-closed。
+- 业务流程协调发布、独立发布和历史投影恢复统一使用一次 `PublishActor` 快照，流程版本 `publishedBy/createBy/updateBy/createDept`、投影更新及未选中流程清理不再重新猜测身份。
+- 业务扩展编辑锁的获取、续期、校验和释放统一复用租户/用户/用户名快照；缺失身份时不生成或持久化锁，且不再把匿名调用伪装为 `system` 或用户 `1`。
+- 应用发布启用扩展的查询同步改为可信租户 fail-closed；本轮不改变既有发布步骤、状态机和跨数据源事务语义。
+
+### 验证
+
+- `BusinessApplicationPublishRunServiceTest` 2/2、`BusinessApplicationVersionServiceTest` 3/3、`BusinessExtensionLockServiceTest` 3/3、`BusinessProcessPublishServiceTest` 9/9、`PrintApplicationPersistenceTest` 8/8，共 25/25 通过；覆盖副作用前拒绝、真实操作者归属、流程版本审计字段和并发事务线程身份传播。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1260/1260 测试通过，0 失败、0 错误、0 跳过。
+
+### 未覆盖
+
+- 未连接真实 MySQL/Flowable 或启动 Admin 执行应用发布、恢复、独立流程发布和扩展锁 HTTP 端到端；T4.5 要求的 DDL Outbox、跨数据源补偿、死信与人工重放仍未完成。
+
 ## 2026-09-28：业务流程入口与动作解析身份收口
 
 ### 实现

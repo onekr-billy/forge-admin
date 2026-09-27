@@ -31,11 +31,12 @@ public class BusinessApplicationVersionService
     private final PrintApplicationVersionGuard printVersionGuard;
 
     public List<BusinessApplicationVersionVO> list(Long applicationId) {
-        return baseMapper.selectVersions(resolveTenantId(), applicationId).stream()
+        return baseMapper.selectVersions(requireTenantId(), applicationId).stream()
                 .map(version -> toVO(version, false)).toList();
     }
 
     public BusinessApplicationVersionVO detail(Long applicationId, Integer versionNo) {
+        requireTenantId();
         applicationService.requireEntity(applicationId);
         return toVO(requireVersion(applicationId, versionNo), true);
     }
@@ -44,7 +45,7 @@ public class BusinessApplicationVersionService
         if (versionNo == null || versionNo < 1) {
             throw new BusinessException("应用版本号不正确");
         }
-        AiBusinessApplicationVersion version = baseMapper.selectVersion(resolveTenantId(), applicationId, versionNo);
+        AiBusinessApplicationVersion version = baseMapper.selectVersion(requireTenantId(), applicationId, versionNo);
         if (version == null) {
             throw new BusinessException("应用发布版本不存在: v" + versionNo);
         }
@@ -61,19 +62,21 @@ public class BusinessApplicationVersionService
         if (!BusinessApplicationPublishStatus.versionStatuses().contains(publishStatus)) {
             throw new BusinessException("应用发布版本状态不正确");
         }
+        IdentitySnapshot identity = requireIdentity();
         // 与模板修改/删除共用应用行锁；同一事务内失败不会插入版本或切换发布指针。
         printVersionGuard.lockAndValidate(applicationId, snapshot.json());
-        AiBusinessApplicationVersion existing = baseMapper.selectVersion(resolveTenantId(), applicationId, versionNo);
+        AiBusinessApplicationVersion existing = baseMapper.selectVersion(
+                identity.tenantId(), applicationId, versionNo);
         if (existing != null) {
             if (!StringUtils.equals(existing.getSnapshotHash(), snapshot.hash())) {
                 throw new BusinessException("目标应用版本已被其他发布占用");
             }
-            markApplicationPublished(applicationId, versionNo, LocalDateTime.now());
+            markApplicationPublished(identity.tenantId(), applicationId, versionNo, LocalDateTime.now());
             return existing;
         }
         LocalDateTime now = LocalDateTime.now();
         AiBusinessApplicationVersion version = new AiBusinessApplicationVersion();
-        version.setTenantId(resolveTenantId());
+        version.setTenantId(identity.tenantId());
         version.setApplicationId(applicationId);
         version.setVersionNo(versionNo);
         version.setSnapshotJson(snapshot.json());
@@ -81,15 +84,16 @@ public class BusinessApplicationVersionService
         version.setPublishStatus(publishStatus);
         version.setPublishSummary(StringUtils.abbreviate(StringUtils.trimToNull(summary), 1000));
         version.setSourceVersionNo(sourceVersionNo);
-        version.setPublishedBy(resolveUserId());
+        version.setPublishedBy(identity.userId());
         version.setPublishedTime(now);
         save(version);
-        markApplicationPublished(applicationId, versionNo, now);
+        markApplicationPublished(identity.tenantId(), applicationId, versionNo, now);
         return version;
     }
 
-    private void markApplicationPublished(Long applicationId, Integer versionNo, LocalDateTime publishTime) {
-        if (applicationMapper.markPublished(resolveTenantId(), applicationId, versionNo, publishTime) == 0) {
+    private void markApplicationPublished(Long tenantId, Long applicationId,
+                                          Integer versionNo, LocalDateTime publishTime) {
+        if (applicationMapper.markPublished(tenantId, applicationId, versionNo, publishTime) == 0) {
             throw new BusinessException("应用发布状态提交失败");
         }
     }
@@ -112,21 +116,33 @@ public class BusinessApplicationVersionService
         return vo;
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
+        Long tenantId;
         try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? 1L : tenantId;
+            tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
-            return 1L;
+            tenantId = null;
         }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("应用版本操作缺少可信租户上下文");
+        }
+        return tenantId;
     }
 
-    private Long resolveUserId() {
+    private IdentitySnapshot requireIdentity() {
+        Long tenantId = requireTenantId();
+        Long userId;
         try {
-            Long userId = SessionHelper.getUserId();
-            return userId == null ? 1L : userId;
+            userId = SessionHelper.getUserId();
         } catch (Exception e) {
-            return 1L;
+            userId = null;
         }
+        if (userId == null || userId <= 0) {
+            throw new BusinessException("应用版本操作缺少可信操作者");
+        }
+        return new IdentitySnapshot(tenantId, userId);
+    }
+
+    private record IdentitySnapshot(Long tenantId, Long userId) {
     }
 }
