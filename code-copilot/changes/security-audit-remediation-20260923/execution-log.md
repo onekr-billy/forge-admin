@@ -1,5 +1,22 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：服务端扩展执行身份收口
+
+### 实现
+
+- `BusinessExtensionExecutionService` 不再在缺失会话租户或执行用户时回退到 `1`；执行 Java 增强前必须取得正数可信身份，否则在处理器副作用之前拒绝。
+- 单次扩展执行只捕获一份租户/用户快照，处理器上下文和执行审计共用该快照，避免中途重新解析导致归属不一致。
+- `ServerBindingExecutor` 作为第二道防线，对显式扩展上下文与当前可信会话的租户、执行用户做一致性校验；缺失、非正数、跨租户或冒用其他用户均 fail-closed。
+
+### 验证
+
+- `BusinessExtensionExecutionServiceTest` 8/8、`ServerBindingExecutorTest` 7/7 通过；覆盖处理器不执行、无归属审计不落库、跨租户和执行用户冒用拦截。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1248/1248 测试通过，0 失败、0 错误、0 跳过。
+
+### 未覆盖
+
+- 未在真实 Admin/capability 网关下执行服务身份的 Java 增强端到端；本轮不改变扩展失败策略、处理器白名单和超时语义。
+
 ## 2026-09-28：T4.4 运行时流程动作可信身份收口
 
 ### 实现

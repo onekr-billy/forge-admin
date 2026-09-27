@@ -118,6 +118,14 @@
 - 实际结果：`BusinessProcessRuntimeActionProjectionServiceTest`、`BusinessActionTrustedActorTest`、`BusinessActionExecutionServiceTest`、`BusinessTriggerExecutorEventTest` 共 22/22 通过；Generator 完整依赖反应堆 33/33 成功，`forge-plugin-generator` 1244/1244，0 失败、0 错误、0 跳过。
 - 环境限制：未启动 Admin、MySQL 或 Flowable 端到端；此阶段不代表 Outbox、乱序回调或远程成功本地失败场景已闭环。
 
+## 1.13 2026-09-28 服务端扩展可信身份
+
+- 入口身份：执行白名单 Java 增强前必须同时取得正数租户和执行用户；缺失或异常不得回退到平台租户/用户 `1`。
+- 快照一致性：处理器 `ExtensionExecutionContext` 和 `AiBusinessExtensionExecutionLog` 必须使用同一次解析的身份快照，执行期间不再重新读取会话猜测归属。
+- 防御性校验：执行器必须拒绝显式上下文与可信会话租户不同，以及显式执行用户与会话用户不同的请求。
+- 实际结果：`BusinessExtensionExecutionServiceTest` 8/8、`ServerBindingExecutorTest` 7/7；Generator 完整依赖反应堆 33/33 成功，`forge-plugin-generator` 1248/1248，0 失败、0 错误、0 跳过。
+- 环境限制：未使用真实 SERVICE 身份经 Admin/capability 网关执行 Java 增强，不代表网关配置和生产身份数据已验收。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML
