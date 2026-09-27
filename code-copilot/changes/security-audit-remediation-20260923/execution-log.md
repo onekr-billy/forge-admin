@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：应用入口、能力挂接与业务套件租户边界收口
+
+### 实现
+
+- `BusinessAppOpenService` 在入口或运行配置读取前要求可信租户，按 ID 打开与运行态打开信息构建将同一租户传到入口和配置 Mapper，不再回退租户 `1`。
+- `BusinessBindingService` 将租户检查前移到列表及全部写入口；目标校验、绑定查重、实体租户、按 ID 查询和批量范围删除复用一次捕获的租户。
+- `BusinessSuiteService` 的查询、写入、树结构和菜单联动路径改为可信租户 fail-closed；套件实体按 ID 读取新增显式 `selectBySuiteId(tenantId, id)` XML SQL，同时过滤逻辑删除数据。
+- `BusinessSuiteAcceptanceService` 在套件和对象读取前取得可信租户，套件、对象、引擎和渠道验收计算沿用该租户上下文。
+
+### 验证
+
+- 新增 `BusinessApplicationFoundationIdentitySecurityTest` 5/5，覆盖入口、绑定、套件和验收的副作用前拒绝及套件显式租户查询；补充 `BusinessApplicationMapperTest` XML 契约，入口/绑定/套件及相邻应用目录定向测试共 48/48 通过。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1289/1289 测试通过，0 失败、0 错误、0 跳过。
+- 一次从生成器模块目录直接执行的定向命令因沙箱禁止写入 `~/.m2` 的仓库内 BOM 跟踪文件而中止；改用项目反应堆 `-pl ... -am` 后同组测试通过，不属于代码或测试失败。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL 执行入口、能力挂接、套件管理和套件验收 HTTP 跨租户验证；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：应用目录与对象关系租户边界收口
 
 ### 实现
