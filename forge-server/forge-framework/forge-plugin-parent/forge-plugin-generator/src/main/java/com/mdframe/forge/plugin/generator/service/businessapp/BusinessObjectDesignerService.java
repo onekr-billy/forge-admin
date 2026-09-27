@@ -55,13 +55,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
@@ -82,34 +79,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private static final String LINKAGE_SCHEMA_MANAGED_BY = "linkageSchema";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE_ID = "runtimeDatasourceId";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE = "runtimeDatasource";
-    private static final Map<String, String> PAGE_ZONE_ALIASES = Map.ofEntries(
-            Map.entry("search", "search"),
-            Map.entry("search-form", "search"),
-            Map.entry("query", "search"),
-            Map.entry("filter", "search"),
-            Map.entry("table", "table"),
-            Map.entry("data-table", "table"),
-            Map.entry("list", "table"),
-            Map.entry("grid", "table"),
-            Map.entry("edit", "edit"),
-            Map.entry("edit-form", "edit"),
-            Map.entry("form", "edit"),
-            Map.entry("create", "edit"),
-            Map.entry("update", "edit"),
-            Map.entry("detail", "detail"),
-            Map.entry("detail-view", "detail"),
-            Map.entry("view", "detail"),
-            Map.entry("toolbar", "toolbar"),
-            Map.entry("table-toolbar", "toolbar"),
-            Map.entry("actions", "toolbar")
-    );
-    private static final Map<String, String> PAGE_ZONE_COMPONENTS = Map.of(
-            "search", "search-form",
-            "table", "data-table",
-            "edit", "edit-form",
-            "detail", "detail-view",
-            "toolbar", "table-toolbar"
-    );
     private final ObjectMapper objectMapper;
     private final BusinessObjectService objectService;
     private final BusinessSuiteService suiteService;
@@ -703,222 +672,18 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     }
 
     private LowcodePageSchema ensurePageSchema(LowcodePageSchema pageSchema, LowcodeModelSchema modelSchema) {
-        LowcodePageSchema target = pageSchema == null ? fieldSchemaService.buildDefaultPageSchema(modelSchema) : pageSchema;
-        if (StringUtils.isBlank(target.getLayoutType())) {
-            target.setLayoutType("simple-crud");
-        }
-        // 画布已有 tree-panel 时强制左树右表，避免运行态仍按 simple-crud 渲染成普通列表
-        if (hasTreePanelBlock(target) && !"tree-crud".equals(target.getLayoutType())) {
-            target.setLayoutType("tree-crud");
-        }
-        if (target.getZones() == null) {
-            target.setZones(new ArrayList<>());
-        }
-        Map<String, LowcodePageZone> normalizedZones = new LinkedHashMap<>();
-        target.getZones().forEach(zone -> normalizePageZone(zone, normalizedZones));
-        target.setZones(new ArrayList<>(normalizedZones.values()));
-        Set<String> zoneKeys = new LinkedHashSet<>(normalizedZones.keySet());
-        LowcodePageSchema defaults = fieldSchemaService.buildDefaultPageSchema(modelSchema);
-        defaults.getZones().stream()
-                .filter(zone -> !zoneKeys.contains(zone.getZoneKey()))
-                .forEach(target.getZones()::add);
-        return target;
+        return legacyPageSchemaAdapter().ensurePageSchema(pageSchema, modelSchema);
     }
 
-    private boolean hasTreePanelBlock(LowcodePageSchema pageSchema) {
-        if (pageSchema == null || pageSchema.getListGridLayout() == null) {
-            return false;
-        }
-        Object items = pageSchema.getListGridLayout().get("items");
-        if (!(items instanceof List<?> itemList)) {
-            return false;
-        }
-        for (Object item : itemList) {
-            if (item instanceof Map<?, ?> block && "tree-panel".equals(String.valueOf(block.get("blockType")))) {
-                return true;
-            }
-        }
-        return false;
+    private void applyLegacyRuntimeSchemas(AiCrudConfig config,
+                                           LowcodePageSchema pageSchema,
+                                           LowcodeModelSchema modelSchema) {
+        legacyPageSchemaAdapter().applyLegacyRuntimeSchemas(config, pageSchema, modelSchema);
     }
 
-    private void applyLegacyRuntimeSchemas(AiCrudConfig config, LowcodePageSchema pageSchema, LowcodeModelSchema modelSchema) {
-        if (config == null || pageSchema == null || modelSchema == null) {
-            return;
-        }
-        Set<String> modelFields = lowcodeFieldMap(modelSchema).keySet();
-        applyLegacyRuntimeSchemaToZone(config.getSearchSchema(), pageSchema, "search", "search-form", modelFields, "field");
-        applyLegacyRuntimeSchemaToZone(config.getEditSchema(), pageSchema, "edit", "edit-form", modelFields, "field");
-        applyLegacyRuntimeSchemaToZone(config.getColumnsSchema(), pageSchema, "table", "data-table", modelFields, "prop");
+    private BusinessObjectLegacyPageSchemaAdapter legacyPageSchemaAdapter() {
+        return new BusinessObjectLegacyPageSchemaAdapter(objectMapper, fieldSchemaService);
     }
-
-    private void applyLegacyRuntimeSchemaToZone(String schemaJson, LowcodePageSchema pageSchema,
-                                                String zoneKey, String componentKey,
-                                                Set<String> modelFields, String primaryFieldKey) {
-        List<Map<String, Object>> legacyItems = readLegacySchemaList(schemaJson);
-        if (legacyItems.isEmpty() || modelFields == null || modelFields.isEmpty()) {
-            return;
-        }
-        LowcodePageZone zone = findOrCreateZone(pageSchema, zoneKey, componentKey);
-        List<String> fieldRefs = zone.getFieldRefs() == null ? new ArrayList<>() : new ArrayList<>(zone.getFieldRefs());
-        LinkedHashSet<String> mergedRefs = new LinkedHashSet<>(fieldRefs);
-        Map<String, Object> props = zone.getProps() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(zone.getProps());
-        Map<String, Object> settings = new LinkedHashMap<>(mapValue(props.get("fieldSettings")));
-
-        for (Map<String, Object> item : legacyItems) {
-            String fieldCode = resolveLegacyFieldCode(item, primaryFieldKey);
-            if (!modelFields.contains(fieldCode)) {
-                continue;
-            }
-            mergedRefs.add(fieldCode);
-            Map<String, Object> existing = new LinkedHashMap<>(mapValue(settings.get(fieldCode)));
-            mergeLegacyRuntimeFieldSetting(existing, buildLegacyRuntimeFieldSetting(item, zoneKey));
-            settings.put(fieldCode, existing);
-        }
-        zone.setFieldRefs(new ArrayList<>(mergedRefs));
-        props.put("fieldSettings", settings);
-        zone.setProps(props);
-    }
-
-    private List<Map<String, Object>> readLegacySchemaList(String schemaJson) {
-        if (StringUtils.isBlank(schemaJson)) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(schemaJson, new TypeReference<>() {
-            });
-        } catch (Exception e) {
-            return List.of();
-        }
-    }
-
-    private String resolveLegacyFieldCode(Map<String, Object> item, String primaryFieldKey) {
-        return StringUtils.firstNonBlank(
-                text(item.get(primaryFieldKey)),
-                text(item.get("field")),
-                text(item.get("prop")),
-                text(item.get("dataIndex")),
-                text(item.get("key"))
-        );
-    }
-
-    private Map<String, Object> buildLegacyRuntimeFieldSetting(Map<String, Object> item, String zoneKey) {
-        Map<String, Object> setting = new LinkedHashMap<>();
-        String componentType = normalizeRuntimeComponentType(StringUtils.firstNonBlank(
-                text(item.get("componentType")), text(item.get("type"))));
-        putIfNotBlank(setting, "componentType", componentType);
-        putIfNotBlank(setting, "type", componentType);
-        putIfNotBlank(setting, "label", text(item.get("label")));
-        putIfNotBlank(setting, "queryType", text(item.get("queryType")));
-        putIfNotBlank(setting, "align", normalizeAlign(StringUtils.firstNonBlank(text(item.get("align")), text(item.get("textAlign")))));
-        putIfNotBlank(setting, "fixed", normalizeFixed(text(item.get("fixed"))));
-        putIfPresent(setting, "width", item.get("width"));
-        putIfPresent(setting, "minWidth", item.get("minWidth"));
-        putIfPresent(setting, "span", item.get("span"));
-        putIfPresent(setting, "required", item.get("required"));
-        putIfPresent(setting, "readonly", item.get("readonly"));
-        putIfPresent(setting, "disabled", item.get("disabled"));
-        putIfPresent(setting, "defaultValue", item.get("defaultValue"));
-        putIfPresent(setting, "rules", item.get("rules"));
-        putIfNotBlank(setting, "requiredMessage", text(item.get("requiredMessage")));
-        if (item.containsKey("sortable")) {
-            setting.put("sortable", readBoolean(item.get("sortable"), false));
-        }
-
-        Map<String, Object> props = new LinkedHashMap<>(mapValue(item.get("props")));
-        String dictType = StringUtils.firstNonBlank(text(item.get("dictType")), text(props.get("dictType")));
-        putIfNotBlank(setting, "dictType", dictType);
-        if (StringUtils.isNotBlank(dictType)) {
-            props.putIfAbsent("dictType", dictType);
-        }
-        if (item.containsKey("generation")) {
-            props.putIfAbsent("generation", item.get("generation"));
-        }
-        if (!props.isEmpty()) {
-            setting.put("props", props);
-        }
-
-        if ("table".equals(zoneKey)) {
-            Object render = item.get("render");
-            Map<String, Object> renderMap = mapValue(render);
-            String renderType = StringUtils.firstNonBlank(
-                    text(item.get("renderType")),
-                    text(renderMap.get("type")),
-                    StringUtils.isNotBlank(dictType) ? "dictTag" : null
-            );
-            putIfNotBlank(setting, "renderType", renderType);
-            if (StringUtils.isBlank(text(setting.get("dictType")))) {
-                putIfNotBlank(setting, "dictType", text(renderMap.get("dictType")));
-            }
-        }
-        return setting;
-    }
-
-    @SuppressWarnings("unchecked")
-    private void mergeLegacyRuntimeFieldSetting(Map<String, Object> target, Map<String, Object> legacy) {
-        if (target == null || legacy == null || legacy.isEmpty()) {
-            return;
-        }
-        for (Map.Entry<String, Object> entry : legacy.entrySet()) {
-            String key = entry.getKey();
-            Object legacyValue = entry.getValue();
-            Object currentValue = target.get(key);
-            if ("props".equals(key) && legacyValue instanceof Map<?, ?> legacyProps) {
-                Map<String, Object> merged = new LinkedHashMap<>(mapValue(legacyProps));
-                merged.putAll(mapValue(currentValue));
-                target.put("props", merged);
-                continue;
-            }
-            if (("componentType".equals(key) || "type".equals(key)) && StringUtils.isNotBlank(text(legacyValue))) {
-                String legacyComponent = text(legacyValue);
-                if (isBlankValue(currentValue)
-                        || (isGenericComponent(text(currentValue)) && !isGenericComponent(legacyComponent))) {
-                    target.put(key, legacyComponent);
-                }
-                continue;
-            }
-            if (isBlankValue(currentValue)) {
-                target.put(key, legacyValue);
-            }
-        }
-    }
-
-    private void normalizePageZone(LowcodePageZone zone, Map<String, LowcodePageZone> normalizedZones) {
-        if (zone == null) {
-            return;
-        }
-        String zoneKey = normalizePageZoneKey(zone.getZoneKey());
-        if (StringUtils.isBlank(zoneKey)) {
-            return;
-        }
-        zone.setZoneKey(zoneKey);
-        if (StringUtils.isBlank(zone.getComponentKey())) {
-            zone.setComponentKey(PAGE_ZONE_COMPONENTS.get(zoneKey));
-        }
-        if (zone.getFieldRefs() == null) {
-            zone.setFieldRefs(new ArrayList<>());
-        }
-        if (zone.getProps() == null) {
-            zone.setProps(new LinkedHashMap<>());
-        }
-        LowcodePageZone existing = normalizedZones.get(zoneKey);
-        if (existing == null) {
-            normalizedZones.put(zoneKey, zone);
-            return;
-        }
-        LinkedHashSet<String> refs = new LinkedHashSet<>(existing.getFieldRefs());
-        refs.addAll(zone.getFieldRefs());
-        existing.setFieldRefs(new ArrayList<>(refs));
-        zone.getProps().forEach(existing.getProps()::putIfAbsent);
-        if (existing.getEnabled() == null) {
-            existing.setEnabled(zone.getEnabled());
-        }
-    }
-
-    private String normalizePageZoneKey(String zoneKey) {
-        String normalized = StringUtils.trimToEmpty(zoneKey).toLowerCase(Locale.ROOT);
-        return PAGE_ZONE_ALIASES.get(normalized);
-    }
-
     private void validateDraft(LowcodeModelSchema modelSchema, LowcodePageSchema pageSchema) {
         if (!hasBusinessFields(modelSchema)) {
             return;
@@ -1094,11 +859,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         );
     }
 
-    private void putIfNotBlank(Map<String, Object> target, String key, String value) {
-        if (StringUtils.isNotBlank(value)) {
-            target.put(key, value);
-        }
-    }
     private void restoreDesignerOptionsFromSnapshot(AiBusinessObject object, String designerOptionsSnapshot) {
         if (object == null) {
             return;
@@ -1282,33 +1042,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             LinkageSchemaDTO linkageSchema) {
         linkagePolicy().applyLinkageSchemaToModel(modelSchema, linkageSchema);
     }
-    private LowcodePageZone findOrCreateZone(LowcodePageSchema pageSchema, String zoneKey, String componentKey) {
-        if (pageSchema.getZones() == null) {
-            pageSchema.setZones(new ArrayList<>());
-        }
-        LowcodePageZone zone = pageSchema.getZones().stream()
-                .filter(item -> item != null && zoneKey.equals(item.getZoneKey()))
-                .findFirst()
-                .orElse(null);
-        if (zone != null) {
-            if (StringUtils.isBlank(zone.getComponentKey())) {
-                zone.setComponentKey(componentKey);
-            }
-            if (zone.getProps() == null) {
-                zone.setProps(new LinkedHashMap<>());
-            }
-            return zone;
-        }
-        zone = new LowcodePageZone();
-        zone.setZoneKey(zoneKey);
-        zone.setComponentKey(componentKey);
-        zone.setEnabled(true);
-        zone.setFieldRefs(new ArrayList<>());
-        zone.setProps(new LinkedHashMap<>());
-        pageSchema.getZones().add(zone);
-        return zone;
-    }
-
     private LowcodePageZone findZone(LowcodePageSchema pageSchema, String zoneKey) {
         if (pageSchema == null || pageSchema.getZones() == null) {
             return null;
@@ -1319,200 +1052,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 .orElse(null);
     }
 
-    private void replaceModelFieldSettings(Map<String, Object> props, Set<String> modelFields,
-                                           Map<String, Object> compiledSettings) {
-        Map<String, Object> existing = new LinkedHashMap<>(mapValue(props.get("fieldSettings")));
-        modelFields.forEach(existing::remove);
-        existing.putAll(compiledSettings);
-        props.put("fieldSettings", existing);
-    }
-
-    private List<Map<String, Object>> visibleSortedItems(List<Map<String, Object>> items) {
-        return items.stream()
-                .filter(item -> item != null && !isFalse(item.get("visible")))
-                .sorted(Comparator.comparingInt(item -> integerValue(item.get("order"), 0)))
-                .toList();
-    }
-
-    private List<Map<String, Object>> flattenFormComponents(List<Map<String, Object>> components) {
-        List<Map<String, Object>> result = new ArrayList<>();
-        collectFormComponents(components, result);
-        return result;
-    }
-
-    private void collectFormComponents(List<Map<String, Object>> components, List<Map<String, Object>> result) {
-        if (components == null) {
-            return;
-        }
-        for (Map<String, Object> component : components) {
-            if (component == null) {
-                continue;
-            }
-            result.add(component);
-            collectFormComponents(listOfMap(component.get("children")), result);
-        }
-    }
-
-    private Map<String, LowcodeFieldSchema> lowcodeFieldMap(LowcodeModelSchema modelSchema) {
-        Map<String, LowcodeFieldSchema> fields = new LinkedHashMap<>();
-        if (modelSchema != null && modelSchema.getFields() != null) {
-            for (LowcodeFieldSchema field : modelSchema.getFields()) {
-                if (field != null && StringUtils.isNotBlank(field.getField())) {
-                    fields.put(field.getField(), field);
-                }
-            }
-        }
-        return fields;
-    }
-
-    private String normalizeRuntimeComponentType(String componentKey) {
-        return switch (StringUtils.defaultString(componentKey)) {
-            case "inputNumber", "input-number", "inputnumber", "integer", "money" -> "number";
-            case "upload" -> "fileUpload";
-            case "orgSelect", "departmentSelect", "departmentTreeSelect", "deptSelect", "deptTreeSelect",
-                    "elTreeSelect", "orgName", "deptName" -> "orgTreeSelect";
-            case "userPicker", "userName" -> "userSelect";
-            default -> componentKey;
-        };
-    }
-
-    private String normalizeFormComponentKey(String componentKey) {
-        String normalized = StringUtils.defaultIfBlank(componentKey, "input");
-        if ("inputNumber".equals(normalized) || "input-number".equals(normalized) || "inputnumber".equals(normalized)) {
-            return "number";
-        }
-        return normalized;
-    }
-
-    private String normalizeAlign(String value) {
-        String align = StringUtils.defaultString(value).trim().toLowerCase(Locale.ROOT);
-        return Set.of("left", "center", "right").contains(align) ? align : "left";
-    }
-
-    private String normalizeLabelAlign(String value) {
-        String align = StringUtils.defaultString(value).trim().toLowerCase(Locale.ROOT);
-        return Set.of("left", "right").contains(align) ? align : "right";
-    }
-
-    private String normalizeRuntimeFormSize(String value) {
-        String size = StringUtils.defaultString(value).trim().toLowerCase(Locale.ROOT);
-        if ("default".equals(size) || "medium".equals(size)) {
-            return "medium";
-        }
-        return Set.of("small", "large").contains(size) ? size : "medium";
-    }
-
-    private String normalizeFormOpenMode(String value) {
-        String mode = StringUtils.defaultString(value).trim();
-        if ("tabWorkspace".equalsIgnoreCase(mode)) {
-            return "tabWorkspace";
-        }
-        String normalized = mode.toLowerCase(Locale.ROOT);
-        return Set.of("modal", "drawer", "flat").contains(normalized) ? normalized : "modal";
-    }
-
-    private String normalizeDrawerPlacement(Object value, Object fallback) {
-        String placement = StringUtils.defaultString(text(value)).trim().toLowerCase(Locale.ROOT);
-        if (Set.of("left", "right", "top", "bottom").contains(placement)) {
-            return placement;
-        }
-        String fallbackPlacement = StringUtils.defaultString(text(fallback)).trim().toLowerCase(Locale.ROOT);
-        return Set.of("left", "right", "top", "bottom").contains(fallbackPlacement) ? fallbackPlacement : "right";
-    }
-
-    /**
-     * 表单设计器布局中的打开方式/弹窗宽度/抽屉方向/折叠配置同步到编辑区 props。
-     *
-     * <p>与前端 buildFormDesignerEditZone 的同步语义保持一致：打开方式总是写入，
-     * 宽度类配置仅在表单设计器显式提供时覆盖，避免默认值清空列表设计器的自定义设置。</p>
-     */
-    private void applyFormLayoutOpenModeAndModalProps(Map<String, Object> props, Map<String, Object> layout) {
-        String formOpenMode = normalizeFormOpenMode(StringUtils.firstNonBlank(
-                text(layout.get("formOpenMode")), text(layout.get("modalType"))));
-        props.put("formOpenMode", formOpenMode);
-        props.put("modalType", "modal".equals(formOpenMode) || "drawer".equals(formOpenMode) ? formOpenMode : "modal");
-        putIfNotBlank(props, "modalWidth", StringUtils.trimToNull(text(layout.get("modalWidth"))));
-        putIfNotBlank(props, "detailModalWidth", StringUtils.trimToNull(text(layout.get("detailModalWidth"))));
-        props.put("drawerPlacement", normalizeDrawerPlacement(layout.get("drawerPlacement"), props.get("drawerPlacement")));
-        props.put("enableCollapse", readBoolean(layout.get("enableCollapse"), false));
-        int maxVisibleFields = integerValue(layout.get("maxVisibleFields"), 0);
-        if (maxVisibleFields > 0) {
-            props.put("maxVisibleFields", maxVisibleFields);
-        }
-    }
-
-    private String normalizeFixed(String value) {
-        String fixed = StringUtils.defaultString(value).trim().toLowerCase(Locale.ROOT);
-        return Set.of("left", "right").contains(fixed) ? fixed : null;
-    }
-
-    private boolean isFalse(Object value) {
-        return Boolean.FALSE.equals(value) || "false".equalsIgnoreCase(text(value)) || "0".equals(text(value));
-    }
-
-    private boolean isBlankValue(Object value) {
-        if (value == null) {
-            return true;
-        }
-        if (value instanceof String text) {
-            return StringUtils.isBlank(text);
-        }
-        if (value instanceof Map<?, ?> map) {
-            return map.isEmpty();
-        }
-        if (value instanceof List<?> list) {
-            return list.isEmpty();
-        }
-        return false;
-    }
-
-    private int integerValue(Object value, int defaultValue) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String text && StringUtils.isNotBlank(text)) {
-            try {
-                return Integer.parseInt(text.trim());
-            } catch (NumberFormatException ignored) {
-                String digits = text.trim().replaceAll("[^0-9-]", "");
-                if (StringUtils.isBlank(digits) || "-".equals(digits)) {
-                    return defaultValue;
-                }
-                try {
-                    return Integer.parseInt(digits);
-                } catch (NumberFormatException ignoredAgain) {
-                    return defaultValue;
-                }
-            }
-        }
-        return defaultValue;
-    }
-
-    private Object getNestedValue(Map<String, Object> source, String path) {
-        if (source == null || StringUtils.isBlank(path)) {
-            return null;
-        }
-        Object current = source;
-        for (String segment : path.split("\\.")) {
-            if (!(current instanceof Map<?, ?> map)) {
-                return null;
-            }
-            current = map.get(segment);
-        }
-        return current;
-    }
-
-    private int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private void putIfPresent(Map<String, Object> target, String key, Object value) {
-        if (value != null) {
-            target.put(key, value);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
     private Map<String, Object> mapValue(Object value) {
         if (value instanceof Map<?, ?> map) {
             return (Map<String, Object>) map;
@@ -1523,42 +1062,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     /**
      * 表单设计器里的开关默认值可能是 true/false，落到 tinyint 列必须是 0/1。
      */
-    private Object normalizeDesignerDefaultValue(LowcodeFieldSchema field, Object defaultValue) {
-        if (defaultValue == null || field == null) {
-            return defaultValue;
-        }
-        String dataType = StringUtils.defaultString(field.getDataType()).toLowerCase(Locale.ROOT);
-        String fieldType = StringUtils.defaultString(field.getBusinessFieldType()).toUpperCase(Locale.ROOT);
-        String componentType = StringUtils.defaultString(field.getComponentType()).toLowerCase(Locale.ROOT);
-        boolean switchLike = "tinyint".equals(dataType)
-                || "SWITCH".equals(fieldType)
-                || "switch".equals(componentType);
-        if (!switchLike) {
-            return defaultValue;
-        }
-        if (defaultValue instanceof Boolean bool) {
-            return bool ? 1 : 0;
-        }
-        String text = String.valueOf(defaultValue).trim();
-        if ("true".equalsIgnoreCase(text) || "1".equals(text)) {
-            return 1;
-        }
-        if ("false".equalsIgnoreCase(text) || "0".equals(text)) {
-            return 0;
-        }
-        return defaultValue;
-    }
-
-    private List<Map<String, Object>> listOfMap(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return List.of();
-        }
-        return list.stream()
-                .filter(Map.class::isInstance)
-                .map(this::mapValue)
-                .toList();
-    }
-
     private Map<String, Object> readMap(String json) {
         if (StringUtils.isBlank(json)) {
             return new LinkedHashMap<>();
@@ -1597,23 +1100,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return writeJson(options, "options");
     }
 
-    private boolean readBoolean(Object value, boolean defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        String text = StringUtils.trimToEmpty(String.valueOf(value));
-        if (StringUtils.isBlank(text)) {
-            return defaultValue;
-        }
-        return "true".equalsIgnoreCase(text) || "1".equals(text) || "yes".equalsIgnoreCase(text);
-    }
-
     private <T> T readJson(String json, Class<T> type, String fieldName) {
         if (StringUtils.isBlank(json)) {
             return null;
@@ -1646,16 +1132,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         if (value instanceof String text && StringUtils.isNotBlank(text)) {
             return Long.valueOf(text);
-        }
-        return null;
-    }
-
-    private Integer numberAsInteger(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String text && StringUtils.isNotBlank(text)) {
-            return Integer.valueOf(text);
         }
         return null;
     }

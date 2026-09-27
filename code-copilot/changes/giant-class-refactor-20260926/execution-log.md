@@ -288,3 +288,9 @@
 - 使用 Policy 从 `BusinessObjectDesignerService` 迁出字段重建时的既有元数据合并、业务组件保护、多选存储适配与模型归一化。字典、记录选择器、编码、引用、公式和级联等配置继续按原优先级保留。
 - 删除未被生产入口调用的旧表单 Payload 归一化/降级方法及其组件默认常量；`BusinessApplicationDraftPreviewContractTest` 继续约束保存路径不得重新调用该降级链。入口由 2151 行降至 1684 行，新 `BusinessObjectFieldDesignPolicy` 231 行。
 - 字段重建测试改为直接验证 Policy，不保留测试专用 Facade 私有方法。generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实历史字段元数据与复杂组件往返仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十六个切口：历史页面协议适配器
+
+- 使用 Adapter 从 `BusinessObjectDesignerService` 迁出旧 search/edit/columns Schema 到统一 Page Zone 的字段配置翻译、区域别名归一、重复区域合并、缺省区域补齐和 tree-panel 布局识别。
+- 清理前序 Assembler/Projector 已接管后残留的无调用布局、组件、字段排序和值归一工具链；入口由 1684 行降至 1160 行，新 `BusinessObjectLegacyPageSchemaAdapter` 411 行。旧协议显式值与新 Page Zone 已有值的优先级保持不变。
+- Page Schema 归一测试改为直接验证 Adapter，不保留测试专用 Facade 私有方法。generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实历史配置样本与 tree-crud 页面仍需服务环境验收，无服务 PID 需停止。

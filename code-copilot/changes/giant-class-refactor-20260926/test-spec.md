@@ -413,3 +413,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：字段重建与运行时元数据保护已委托 `BusinessObjectFieldDesignPolicy`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 1684 行，新 Policy 231 行。
+
+## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
+
+- P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。
+- P0：Page Zone 别名归一、重复区域合并、默认区域补齐和 tree-panel 布局识别保持不变；新格式显式配置继续优先于旧格式。
+- P1：使用 Adapter 隔离旧协议翻译；删除前序 Assembler/Projector 已接管后无调用的旧工具链，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：历史页面协议与区域归一已委托 `BusinessObjectLegacyPageSchemaAdapter`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 1160 行，新 Adapter 411 行。

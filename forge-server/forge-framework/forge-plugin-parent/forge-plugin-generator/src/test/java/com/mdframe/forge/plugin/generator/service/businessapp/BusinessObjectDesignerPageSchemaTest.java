@@ -450,11 +450,8 @@ class BusinessObjectDesignerPageSchemaTest {
                 new LowcodeModelSchemaNormalizer(),
                 new BusinessNamingService()
         );
-        BusinessObjectDesignerService service = designerService(fieldSchemaService);
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "ensurePageSchema", LowcodePageSchema.class, LowcodeModelSchema.class);
-        method.setAccessible(true);
-        return (LowcodePageSchema) method.invoke(service, pageSchema, modelSchema);
+        return new BusinessObjectLegacyPageSchemaAdapter(new ObjectMapper(), fieldSchemaService)
+                .ensurePageSchema(pageSchema, modelSchema);
     }
 
     private LowcodePageSchema resolvePageSchema(AiCrudConfig config, LowcodeModelSchema modelSchema) throws Exception {

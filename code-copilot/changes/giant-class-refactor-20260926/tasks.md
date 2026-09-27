@@ -55,5 +55,6 @@
 - [x] 提取业务对象字段联动 Policy/Translator，集中旧联动兼容、治理规则合并和 cascade 元数据翻译，使 `BusinessObjectDesignerService` 降至 2979 行。
 - [x] 提取业务对象关系 Coordinator 与运行时关系 Projector，集中关系持久化、主子表外键补齐、modelRefs 投影和快照恢复，使 `BusinessObjectDesignerService` 降至 2151 行。
 - [x] 提取业务对象字段设计 Policy，集中运行时元数据保留与业务组件保护，并清理无调用的旧 Payload 降级链，使 `BusinessObjectDesignerService` 降至 1684 行。
+- [x] 提取历史 Page Schema Adapter，集中旧搜索/编辑/列表协议与区域别名迁移，并清理投影职责迁出后的无调用工具链，使 `BusinessObjectDesignerService` 降至 1160 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。
