@@ -44,11 +44,11 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
 
     public Page<BusinessObjectVO> page(Integer pageNum, Integer pageSize, BusinessObjectQueryDTO query) {
         Page<BusinessObjectVO> page = new Page<>(normalizePageNum(pageNum), normalizePageSize(pageSize));
-        return baseMapper.selectObjectPage(page, resolveTenantId(), normalizeQuery(query));
+        return baseMapper.selectObjectPage(page, requireTenantId(), normalizeQuery(query));
     }
 
     public List<BusinessObjectVO> list(BusinessObjectQueryDTO query) {
-        return baseMapper.selectObjectList(resolveTenantId(), normalizeQuery(query));
+        return baseMapper.selectObjectList(requireTenantId(), normalizeQuery(query));
     }
 
     /**
@@ -60,11 +60,16 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (code == null || !CODE_PATTERN.matcher(code).matches()) {
             return false;
         }
-        return baseMapper.countActiveByObjectCode(resolveTenantId(), code, excludeId) == 0;
+        return baseMapper.countActiveByObjectCode(requireTenantId(), code, excludeId) == 0;
     }
 
     public BusinessObjectVO detail(Long id) {
-        BusinessObjectVO vo = baseMapper.selectObjectDetail(resolveTenantId(), id);
+        return detail(requireTenantId(), id);
+    }
+
+    BusinessObjectVO detail(Long tenantId, Long id) {
+        requireExplicitTenantId(tenantId);
+        BusinessObjectVO vo = baseMapper.selectObjectDetail(tenantId, id);
         if (vo == null) {
             throw new BusinessException("业务对象不存在");
         }
@@ -73,7 +78,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
 
     public BusinessObjectVO detailByCode(String suiteCode, String objectCode) {
         BusinessObjectVO vo = baseMapper.selectObjectDetailByCode(
-                resolveTenantId(), StringUtils.trimToNull(suiteCode), StringUtils.trimToNull(objectCode));
+                requireTenantId(), StringUtils.trimToNull(suiteCode), StringUtils.trimToNull(objectCode));
         if (vo == null) {
             throw new BusinessException("业务对象不存在");
         }
@@ -81,9 +86,10 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
     }
 
     public BusinessObjectRuntimeInfoVO runtimeInfo(Long id) {
-        AiBusinessObject object = requireEntity(id);
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = requireEntity(tenantId, id);
         AiBusinessApp app = businessAppMapper.selectRuntimeAppByObject(
-                resolveTenantId(), object.getSuiteCode(), object.getObjectCode());
+                tenantId, object.getSuiteCode(), object.getObjectCode());
         BusinessObjectRuntimeInfoVO vo = new BusinessObjectRuntimeInfoVO();
         vo.setObjectId(object.getId());
         vo.setObjectCode(object.getObjectCode());
@@ -140,8 +146,9 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (dto == null) {
             throw new BusinessException("业务对象不能为空");
         }
+        Long tenantId = requireTenantId();
         AiBusinessObject object = new AiBusinessObject();
-        copyDtoToEntity(dto, object, true);
+        copyDtoToEntity(tenantId, dto, object, true);
         try {
             save(object);
         } catch (DuplicateKeyException exception) {
@@ -155,11 +162,11 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (dto == null || dto.getId() == null) {
             throw new BusinessException("业务对象ID不能为空");
         }
-        Long tenantId = resolveTenantId();
-        AiBusinessObject object = requireEntity(dto.getId());
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = requireEntity(tenantId, dto.getId());
         String oldSuiteCode = object.getSuiteCode();
         String oldObjectCode = object.getObjectCode();
-        copyDtoToEntity(dto, object, false);
+        copyDtoToEntity(tenantId, dto, object, false);
         if (!StringUtils.equals(oldSuiteCode, object.getSuiteCode())) {
             assertSuiteMoveAllowed(tenantId, object.getId(), oldSuiteCode, oldObjectCode);
         }
@@ -175,15 +182,15 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
 
     @Transactional(rollbackFor = Exception.class)
     public void updateStatus(Long id, Integer status) {
-        AiBusinessObject object = requireEntity(id);
+        AiBusinessObject object = requireEntity(requireTenantId(), id);
         object.setStatus(normalizeStatus(status));
         updateById(object);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
-        AiBusinessObject object = requireEntity(id);
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = requireEntity(tenantId, id);
         if (baseMapper.countRelationsByObject(tenantId, object.getSuiteCode(), object.getObjectCode()) > 0) {
             throw new BusinessException("该业务对象已存在对象关系，不能删除");
         }
@@ -193,7 +200,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (applicationObjectMapper.countByObjectId(tenantId, object.getId()) > 0) {
             throw new BusinessException("该业务对象已加入业务应用，不能删除");
         }
-        softDeleteObjectAndExclusiveModel(object);
+        softDeleteObjectAndExclusiveModel(tenantId, object);
     }
 
     /**
@@ -208,7 +215,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (code == null) {
             return false;
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         AiBusinessObject existing = baseMapper.selectFirstByObjectCode(tenantId, code);
         if (existing == null || !isPageFormManaged(existing.getOptions())) {
             return false;
@@ -220,7 +227,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
             return false;
         }
         relationMapper.deleteRelationsByObjectCode(tenantId, existing.getSuiteCode(), existing.getObjectCode());
-        softDeleteObjectAndExclusiveModel(existing);
+        softDeleteObjectAndExclusiveModel(tenantId, existing);
         return true;
     }
 
@@ -232,7 +239,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (objectId == null) {
             return false;
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         AiBusinessObject existing = baseMapper.selectByIdForTenant(tenantId, objectId);
         if (existing == null || !isPageFormManaged(existing.getOptions())) {
             return false;
@@ -244,19 +251,19 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
             return false;
         }
         relationMapper.deleteRelationsByObjectCode(tenantId, existing.getSuiteCode(), existing.getObjectCode());
-        softDeleteObjectAndExclusiveModel(existing);
+        softDeleteObjectAndExclusiveModel(tenantId, existing);
         return true;
     }
 
-    private void softDeleteObjectAndExclusiveModel(AiBusinessObject object) {
+    private void softDeleteObjectAndExclusiveModel(Long tenantId, AiBusinessObject object) {
         Long modelId = object.getModelId();
         removeById(object.getId());
         if (modelId == null) {
             return;
         }
-        AiBusinessObject stillBound = baseMapper.selectByModelId(resolveTenantId(), modelId);
+        AiBusinessObject stillBound = baseMapper.selectByModelId(tenantId, modelId);
         if (stillBound == null) {
-            baseMapper.logicDeleteModelById(resolveTenantId(), modelId);
+            baseMapper.logicDeleteModelById(tenantId, modelId);
         }
     }
 
@@ -273,10 +280,15 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
     }
 
     public AiBusinessObject requireEntity(Long id) {
+        return requireEntity(requireTenantId(), id);
+    }
+
+    AiBusinessObject requireEntity(Long tenantId, Long id) {
+        requireExplicitTenantId(tenantId);
         if (id == null) {
             throw new BusinessException("业务对象ID不能为空");
         }
-        AiBusinessObject object = getById(id);
+        AiBusinessObject object = baseMapper.selectByIdForTenant(tenantId, id);
         if (object == null) {
             throw new BusinessException("业务对象不存在");
         }
@@ -289,7 +301,7 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (StringUtils.isBlank(suite) || StringUtils.isBlank(code)) {
             throw new BusinessException("业务套件编码和对象编码不能为空");
         }
-        AiBusinessObject object = baseMapper.selectByObjectCode(resolveTenantId(), suite, code);
+        AiBusinessObject object = baseMapper.selectByObjectCode(requireTenantId(), suite, code);
         if (object == null) {
             throw new BusinessException("业务对象不存在: " + code);
         }
@@ -301,10 +313,11 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         if (normalizedConfigKey == null) {
             return null;
         }
-        return baseMapper.selectByConfigKey(resolveTenantId(), normalizedConfigKey);
+        return baseMapper.selectByConfigKey(requireTenantId(), normalizedConfigKey);
     }
 
-    private void copyDtoToEntity(BusinessObjectDTO dto, AiBusinessObject object, boolean create) {
+    private void copyDtoToEntity(Long tenantId, BusinessObjectDTO dto,
+                                 AiBusinessObject object, boolean create) {
         String suiteCode = StringUtils.trimToNull(dto.getSuiteCode());
         String objectName = StringUtils.trimToNull(dto.getObjectName());
         String rawObjectCode = StringUtils.trimToNull(dto.getObjectCode());
@@ -323,15 +336,15 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
             throw new BusinessException("对象类型不正确");
         }
         Long excludeId = create ? null : object.getId();
-        if (baseMapper.countActiveByObjectCode(resolveTenantId(), objectCode, excludeId) > 0) {
+        if (baseMapper.countActiveByObjectCode(tenantId, objectCode, excludeId) > 0) {
             if (create && reclaimUnusedPageFormObject(objectCode)
-                    && baseMapper.countActiveByObjectCode(resolveTenantId(), objectCode, null) == 0) {
+                    && baseMapper.countActiveByObjectCode(tenantId, objectCode, null) == 0) {
                 // 页面删除后残留的托管对象已回收，允许同编码重建
             } else {
                 throw new BusinessException("业务对象编码已存在（编码必须在租户内唯一）: " + objectCode);
             }
         }
-        object.setTenantId(resolveTenantId());
+        object.setTenantId(tenantId);
         object.setSuiteCode(suiteCode);
         object.setObjectCode(objectCode);
         object.setObjectName(objectName);
@@ -426,13 +439,20 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         return Math.min(pageSize, 100);
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        requireExplicitTenantId(tenantId);
+        return tenantId;
+    }
+
+    private void requireExplicitTenantId(Long tenantId) {
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务对象操作缺少可信租户上下文");
+        }
     }
 }

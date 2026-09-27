@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：业务对象设计与发布租户隔离收口
+
+### 实现
+
+- `BusinessObjectService` 去除默认租户 `1`，列表、详情、编码校验、运行入口和写操作均要求可信租户；按 ID 读取改用显式租户 Mapper，删除与孤儿模型回收沿用同一次租户快照。
+- `BusinessObjectDesignerService` 在加载和保存上下文时校验当前租户与对象归属；关系读写、草稿保存、版本回滚和应用变更标记复用可信租户，跨租户上下文在写入前拒绝。
+- 设计预览缓存由 `objectId` 单键改为 `(tenantId, objectId)` 组合键，并将租户检查前移到缓存读取之前，关闭跨租户缓存命中窗口。
+- 设计版本创建和业务对象发布要求可信租户与操作者；设计版本号分配、版本实体、预加载发布上下文和批量发布状态更新保持同一身份边界。
+
+### 验证
+
+- `BusinessObject*Test` 与 `BusinessApplicationReadinessServiceTest` 共 76/76 通过；其中新增/调整的 `BusinessObjectDesignIdentitySecurityTest`、`BusinessObjectDesignVersionServiceTest`、`BusinessObjectPageFormOrphanReclaimTest` 共 11/11，覆盖缺失身份、副作用前拒绝、跨租户上下文和同对象跨租户缓存隔离。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1273/1273 测试通过，0 失败、0 错误、0 跳过。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL 执行跨租户 HTTP、缓存并发和在线 DDL 发布；T4.5 的发布任务/Outbox、跨数据源补偿、死信与人工重放仍未完成。
+
 ## 2026-09-28：扩展设计、发布快照与应用回滚可信身份收口
 
 ### 实现
