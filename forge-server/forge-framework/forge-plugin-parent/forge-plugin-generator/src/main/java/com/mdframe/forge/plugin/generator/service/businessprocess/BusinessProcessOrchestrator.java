@@ -26,6 +26,7 @@ import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessNode
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunDetailVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunVO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEvent;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventEnvelope;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
@@ -271,8 +272,8 @@ public class BusinessProcessOrchestrator {
             return;
         }
         Long tenantId = event.getTenantId();
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("业务事件缺少可信租户上下文");
+        if (tenantId == null || tenantId <= 0 || !BusinessEventEnvelope.isTrusted(event)) {
+            throw new BusinessException("业务事件缺少可信事件信封");
         }
         List<AiBusinessProcessVersion> versions = versionMapper.selectCurrentPublishedBySubjectObjectCode(
                 tenantId, event.getObjectCode());
@@ -296,8 +297,7 @@ public class BusinessProcessOrchestrator {
                 continue;
             }
             String recordId = StringUtils.defaultIfBlank(event.getRecordId(), "-");
-            String idempotencyKey = "EVENT:" + event.getEventType() + ":"
-                    + schema.getSubject().getObjectCode() + ":" + recordId;
+            String idempotencyKey = BusinessEventEnvelope.processIdempotencyKey(event);
             AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
             if (existing != null) {
                 if (BusinessProcessRunStatus.PENDING.matches(existing.getStatus())) {
@@ -316,6 +316,7 @@ public class BusinessProcessOrchestrator {
             run.setSubjectRecordId(recordId);
             run.setBusinessKey(schema.getSubject().getObjectCode() + ":" + recordId);
             run.setTriggerType("EVENT");
+            run.setSourceEventId(event.getEventId());
             run.setIdempotencyKey(idempotencyKey);
             run.setActorType("USER");
             run.setActorUserId(event.getOperatorId());

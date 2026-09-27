@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
@@ -11,19 +12,21 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerLogMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessTriggerScenarioTemplateVO;
 import com.mdframe.forge.starter.core.domain.PageQuery;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 触发器管理服务。
@@ -117,12 +120,27 @@ public class BusinessTriggerService {
         return TenantContextHolder.executeIgnore(() -> triggerMapper.selectActiveScheduleTriggers(normalizedLimit));
     }
 
-    /**
-     * 记录触发器执行日志
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public void saveExecutionLog(AiBusinessTriggerLog logEntry) {
-        triggerLogMapper.insert(logEntry);
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public boolean tryClaimExecution(AiBusinessTriggerLog logEntry) {
+        if (logEntry == null || StringUtils.isBlank(logEntry.getEventId())) {
+            throw new BusinessException("业务事件缺少稳定事件ID");
+        }
+        if (logEntry.getId() == null) {
+            logEntry.setId(IdWorker.getId());
+        }
+        try {
+            return triggerLogMapper.insert(logEntry) == 1;
+        } catch (DuplicateKeyException duplicate) {
+            return false;
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void updateExecutionLog(AiBusinessTriggerLog logEntry) {
+        if (logEntry == null || logEntry.getId() == null || logEntry.getTenantId() == null
+                || triggerLogMapper.updateExecutionResult(logEntry) != 1) {
+            throw new BusinessException("业务触发器执行日志更新失败");
+        }
     }
 
     /**
@@ -307,6 +325,9 @@ public class BusinessTriggerService {
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -74,7 +76,11 @@ class BusinessEventPublisherTest {
             assertEquals("presale_registration_business_object", event.getConfigKey());
             assertEquals("18", event.getRecordId());
             assertEquals(1L, event.getTenantId());
+            assertEquals(BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD, event.getEventSource());
+            assertEquals(BusinessEventEnvelope.CURRENT_VERSION, event.getEventVersion());
+            assertTrue(BusinessEventEnvelope.isTrusted(event));
         });
+        assertNotEquals(events.get(0).getEventId(), events.get(1).getEventId());
         verify(triggerExecutor, times(2)).executeTriggersAsync(eventCaptor.capture());
         verify(crudConfigMapper, never()).selectByConfigKey(1L, "presale_registration_business_object");
     }

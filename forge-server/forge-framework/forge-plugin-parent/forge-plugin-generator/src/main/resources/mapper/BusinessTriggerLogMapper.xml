@@ -11,6 +11,10 @@
         <result column="object_code" property="objectCode"/>
         <result column="record_id" property="recordId"/>
         <result column="event_type" property="eventType"/>
+        <result column="event_id" property="eventId"/>
+        <result column="event_source" property="eventSource"/>
+        <result column="event_version" property="eventVersion"/>
+        <result column="event_digest" property="eventDigest"/>
         <result column="event_data" property="eventData"/>
         <result column="action_type" property="actionType"/>
         <result column="action_result" property="actionResult"/>
@@ -33,6 +37,10 @@
         object_code,
         record_id,
         event_type,
+        event_id,
+        event_source,
+        event_version,
+        event_digest,
         event_data,
         action_type,
         action_result,
@@ -67,5 +75,18 @@
           AND execute_status IN ('SUCCESS', 'TODO')
           AND execute_time &gt;= #{sinceTime}
     </select>
+
+    <update id="updateExecutionResult">
+        UPDATE ai_business_trigger_log
+        SET execute_status = #{log.executeStatus},
+            action_result = #{log.actionResult},
+            error_message = #{log.errorMessage},
+            todo_code = #{log.todoCode},
+            correlation_id = #{log.correlationId},
+            duration_ms = #{log.durationMs},
+            retry_count = #{log.retryCount}
+        WHERE id = #{log.id}
+          AND tenant_id = #{log.tenantId}
+    </update>
 
 </mapper>

@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessNodeRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEvent;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventEnvelope;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunVO;
@@ -264,7 +265,7 @@ class BusinessProcessOrchestratorTest {
         AiBusinessProcessVersion version = publishedEventVersion(eventSchema());
         when(versionMapper.selectCurrentPublishedBySubjectObjectCode(1L, "order"))
                 .thenReturn(java.util.List.of(version));
-        BusinessEvent event = BusinessEvent.builder()
+        BusinessEvent event = BusinessEventEnvelope.stamp(BusinessEvent.builder()
                 .eventType(BusinessEvent.RECORD_CREATED)
                 .objectCode("order")
                 .recordId("9001")
@@ -274,13 +275,15 @@ class BusinessProcessOrchestratorTest {
                 .operatorId(101L)
                 .operatorName("operator")
                 .tenantId(1L)
-                .build();
+                .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
 
         orchestrator.startEvent(event);
 
         assertEquals("SUCCESS", storedRun.get().getStatus());
         assertEquals("EVENT", storedRun.get().getTriggerType());
         assertEquals("order:9001", storedRun.get().getBusinessKey());
+        assertEquals(event.getEventId(), storedRun.get().getSourceEventId());
+        assertEquals(BusinessEventEnvelope.processIdempotencyKey(event), storedRun.get().getIdempotencyKey());
     }
 
     @Test
@@ -301,13 +304,13 @@ class BusinessProcessOrchestratorTest {
                 eventSchema().replace("\"operator\":\"EQ\"", "\"operator\":\"UNKNOWN\""));
         when(versionMapper.selectCurrentPublishedBySubjectObjectCode(1L, "order"))
                 .thenReturn(java.util.List.of(version));
-        BusinessEvent event = BusinessEvent.builder()
+        BusinessEvent event = BusinessEventEnvelope.stamp(BusinessEvent.builder()
                 .eventType(BusinessEvent.RECORD_CREATED)
                 .objectCode("order")
                 .recordId("9001")
                 .recordData(Map.of("main", Map.of("approval_status", "DRAFT")))
                 .tenantId(1L)
-                .build();
+                .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
 
         orchestrator.startEvent(event);
 

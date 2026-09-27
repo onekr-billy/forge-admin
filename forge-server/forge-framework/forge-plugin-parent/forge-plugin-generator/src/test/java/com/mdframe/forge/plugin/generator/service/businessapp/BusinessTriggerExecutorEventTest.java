@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
@@ -13,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -38,12 +40,12 @@ class BusinessTriggerExecutorEventTest {
                 mock(BusinessMessageChannelService.class),
                 mock(BusinessActionExecutionService.class),
                 mock(CallApiActionStepExecutor.class));
-        BusinessEvent event = BusinessEvent.builder()
+        BusinessEvent event = trusted(BusinessEvent.builder()
                 .eventType(BusinessEvent.RECORD_CREATED)
                 .objectCode("presale_order")
                 .recordId("100")
                 .tenantId(9L)
-                .build();
+                .build());
 
         executor.executeTriggersAsync(event);
 
@@ -85,6 +87,7 @@ class BusinessTriggerExecutorEventTest {
     @DisplayName("主子表新增结果使用 main 字段匹配条件并发起主流程")
     void startsMainFlowForAggregateCreateEvent() {
         BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        when(triggerService.tryClaimExecution(any())).thenReturn(true);
         BusinessFlowService flowService = mock(BusinessFlowService.class);
         BusinessFlowRuntimeVO runtime = new BusinessFlowRuntimeVO();
         runtime.setFlowModelKey("presale_approval");
@@ -115,7 +118,7 @@ class BusinessTriggerExecutorEventTest {
                 {"useMainFlow":true,"titleTemplate":"预售申请 ${skuCode}",
                  "variableMapping":[{"formField":"skuCode","flowVariable":"sku"}]}
                 """);
-        BusinessEvent event = BusinessEvent.builder()
+        BusinessEvent event = trusted(BusinessEvent.builder()
                 .eventType(BusinessEvent.RECORD_CREATED)
                 .objectCode("presale_order")
                 .recordId("100")
@@ -125,7 +128,7 @@ class BusinessTriggerExecutorEventTest {
                 .operatorId(8L)
                 .operatorName("operator")
                 .tenantId(1L)
-                .build();
+                .build());
 
         executor.executeTrigger(trigger, event);
 
@@ -137,6 +140,129 @@ class BusinessTriggerExecutorEventTest {
         verify(triggerService).incrementExecuteCount(10L);
     }
 
+    @Test
+    @DisplayName("同一事件重复投递时只执行一次副作用")
+    void duplicateEventExecutesSideEffectOnlyOnce() {
+        BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        when(triggerService.tryClaimExecution(any())).thenReturn(true, false);
+        BusinessFlowService flowService = mock(BusinessFlowService.class);
+        BusinessFlowRuntimeVO runtime = new BusinessFlowRuntimeVO();
+        runtime.setProcessInstanceId("process-instance-1");
+        runtime.setFlowStatus("RUNNING");
+        when(flowService.startFlowFromTrigger(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(runtime);
+        BusinessTriggerExecutor executor = new BusinessTriggerExecutor(
+                triggerService,
+                flowService,
+                mock(DynamicCrudService.class),
+                mock(BusinessMessageChannelService.class),
+                mock(BusinessActionExecutionService.class),
+                mock(CallApiActionStepExecutor.class));
+        AiBusinessTrigger trigger = new AiBusinessTrigger();
+        trigger.setId(10L);
+        trigger.setTenantId(1L);
+        trigger.setObjectCode("presale_order");
+        trigger.setTriggerName("新增后发起流程");
+        trigger.setEventType(BusinessEvent.RECORD_CREATED);
+        trigger.setActionType("START_FLOW");
+        trigger.setActionConfig("{\"flowModelKey\":\"presale_approval\"}");
+        BusinessEvent event = trusted(BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("presale_order")
+                .recordId("100")
+                .recordData(Map.of("id", 100L))
+                .operatorId(8L)
+                .operatorName("operator")
+                .tenantId(1L)
+                .build());
+
+        executor.executeTrigger(trigger, event);
+        executor.executeTrigger(trigger, event);
+
+        verify(triggerService, org.mockito.Mockito.times(2)).tryClaimExecution(any());
+        verify(flowService, org.mockito.Mockito.times(1)).startFlowFromTrigger(
+                any(), any(), any(), any(), any(), any(), any());
+        verify(triggerService, org.mockito.Mockito.times(1)).incrementExecuteCount(10L);
+    }
+
+    @Test
+    @DisplayName("事件被篡改或版本过期时拒绝执行")
+    void rejectsTamperedAndOutdatedEvents() {
+        BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        BusinessTriggerExecutor executor = executor(triggerService);
+        AiBusinessTrigger trigger = new AiBusinessTrigger();
+        trigger.setId(10L);
+        trigger.setTenantId(1L);
+        BusinessEvent tampered = trusted(BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_UPDATED)
+                .objectCode("presale_order")
+                .recordId("100")
+                .recordData(new java.util.HashMap<>(Map.of("status", "DRAFT")))
+                .tenantId(1L)
+                .build());
+        tampered.getRecordData().put("status", "APPROVED");
+        BusinessEvent outdated = trusted(BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_UPDATED)
+                .objectCode("presale_order")
+                .recordId("100")
+                .tenantId(1L)
+                .build());
+        outdated.setEventVersion(0);
+
+        executor.executeTrigger(trigger, tampered);
+        executor.executeTrigger(trigger, outdated);
+
+        verify(triggerService, never()).tryClaimExecution(any());
+    }
+
+    @Test
+    @DisplayName("触发器与事件租户不一致时拒绝认领")
+    void rejectsCrossTenantTrigger() {
+        BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        BusinessTriggerExecutor executor = executor(triggerService);
+        AiBusinessTrigger trigger = new AiBusinessTrigger();
+        trigger.setId(10L);
+        trigger.setTenantId(2L);
+        BusinessEvent event = trusted(BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("presale_order")
+                .recordId("100")
+                .tenantId(1L)
+                .build());
+
+        executor.executeTrigger(trigger, event);
+
+        verify(triggerService, never()).tryClaimExecution(any());
+    }
+
+    @Test
+    @DisplayName("未知动作类型按失败记录而不是伪装成功")
+    void unknownActionTypeFailsClosed() {
+        BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        when(triggerService.tryClaimExecution(any())).thenReturn(true);
+        BusinessTriggerExecutor executor = executor(triggerService);
+        AiBusinessTrigger trigger = new AiBusinessTrigger();
+        trigger.setId(10L);
+        trigger.setTenantId(1L);
+        trigger.setObjectCode("presale_order");
+        trigger.setTriggerName("未知动作");
+        trigger.setActionType("UNSUPPORTED");
+        trigger.setActionConfig("{}");
+        BusinessEvent event = trusted(BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("presale_order")
+                .recordId("100")
+                .tenantId(1L)
+                .build());
+
+        executor.executeTrigger(trigger, event);
+
+        ArgumentCaptor<AiBusinessTriggerLog> logCaptor = ArgumentCaptor.forClass(AiBusinessTriggerLog.class);
+        verify(triggerService).updateExecutionLog(logCaptor.capture());
+        assertEquals("FAILED", logCaptor.getValue().getExecuteStatus());
+        verify(triggerService, never()).incrementExecuteCount(10L);
+    }
+
     private BusinessTriggerExecutor executor(BusinessTriggerService triggerService) {
         return new BusinessTriggerExecutor(
                 triggerService,
@@ -145,5 +271,9 @@ class BusinessTriggerExecutorEventTest {
                 mock(BusinessMessageChannelService.class),
                 mock(BusinessActionExecutionService.class),
                 mock(CallApiActionStepExecutor.class));
+    }
+
+    private BusinessEvent trusted(BusinessEvent event) {
+        return BusinessEventEnvelope.stamp(event, BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
     }
 }

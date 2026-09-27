@@ -268,7 +268,7 @@
 
 - [x] 去除 `BusinessProcessOrchestrator`、`BusinessEventPublisher`、`BusinessTriggerExecutor` 在缺失可信租户时默认 `1L` 的行为；事件进入隔离失败队列或返回明确错误。
 - [x] 将未知事件条件操作符从 fail-open 改为 fail-closed；发布前校验操作符、字段类型、版本和表达式长度。
-- [ ] 事件增加来源、版本、签名/可信上下文和幂等键；伪造其他 tenantId、重复事件、乱序事件均有测试。
+- [ ] 事件增加来源、版本、签名/可信上下文和幂等键；伪造其他 tenantId、重复事件、乱序事件均有测试。（本轮已完成低代码 CRUD/流程回调/定时事件的可信信封、摘要校验、跨租户拒绝和数据库唯一认领；业务聚合顺序号、真实乱序回调、Outbox 与 PENDING 崩溃恢复尚未完成）
 - [x] 为 `BusinessProcessOrchestrator` 增加 run lease/heartbeat/fencing token；节点 attempt claim 和 complete 均按 attemptId 原子更新并检查 claim 结果。（已增加数据库租约、单调 execution token、双线程心跳守卫、限界提交后执行池、过期接管、租约约束的 checkpoint/attempt CAS，并在事务提交后使用独立线程/连接认领执行）
 - [ ] 为远程 FlowClient 启动、审批、回调和状态同步增加 Outbox、重试、补偿、超时接管和人工恢复记录。
 - [ ] 测试并发启动、并发执行、重复/乱序回调、不同租户回调、超时恢复和远程成功本地失败场景。

@@ -64,6 +64,7 @@ public class BusinessEventPublisher {
         BusinessEvent event = buildEvent(configKey, BusinessEvent.RECORD_DELETED, null, null);
         if (event != null) {
             event.setRecordId(recordId);
+            BusinessEventEnvelope.stamp(event, BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
             publish(event);
         }
     }
@@ -101,7 +102,7 @@ public class BusinessEventPublisher {
             Object newVal = baseEvent.readRecordValue(field);
             Object oldVal = baseEvent.readPreviousValue(field);
             if (newVal != null && !newVal.equals(oldVal)) {
-                BusinessEvent statusEvent = BusinessEvent.builder()
+                BusinessEvent statusEvent = BusinessEventEnvelope.stamp(BusinessEvent.builder()
                         .eventType(BusinessEvent.STATUS_CHANGED)
                         .suiteCode(baseEvent.getSuiteCode())
                         .objectCode(baseEvent.getObjectCode())
@@ -112,7 +113,7 @@ public class BusinessEventPublisher {
                         .operatorId(baseEvent.getOperatorId())
                         .operatorName(baseEvent.getOperatorName())
                         .tenantId(baseEvent.getTenantId())
-                        .build();
+                        .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
                 publish(statusEvent);
                 break;
             }
@@ -123,8 +124,8 @@ public class BusinessEventPublisher {
         if (event == null || StringUtils.isBlank(event.getObjectCode()) || StringUtils.isBlank(event.getEventType())) {
             return;
         }
-        if (event.getTenantId() == null || event.getTenantId() <= 0) {
-            log.error("拒绝发布缺少可信租户的业务事件, objectCode={}, eventType={}, recordId={}",
+        if (!BusinessEventEnvelope.isTrusted(event)) {
+            log.error("拒绝发布缺少可信信封的业务事件, objectCode={}, eventType={}, recordId={}",
                     event.getObjectCode(), event.getEventType(), event.getRecordId());
             return;
         }
@@ -151,7 +152,7 @@ public class BusinessEventPublisher {
     private BusinessEvent buildFlowResultEvent(String objectCode, String recordId,
                                                String eventType, Map<String, Object> recordData) {
         try {
-            return BusinessEvent.builder()
+            return BusinessEventEnvelope.stamp(BusinessEvent.builder()
                     .eventType(eventType)
                     .objectCode(objectCode)
                     .recordId(recordId)
@@ -159,7 +160,7 @@ public class BusinessEventPublisher {
                     .operatorId(resolveUserId())
                     .operatorName(resolveUsername())
                     .tenantId(resolveTenantId())
-                    .build();
+                    .build(), BusinessEventEnvelope.SOURCE_FLOW_CALLBACK);
         } catch (Exception e) {
             log.debug("构建流程业务事件失败, objectCode={}, recordId={}", objectCode, recordId);
             return null;
@@ -208,7 +209,7 @@ public class BusinessEventPublisher {
 
             String recordId = resolveRecordId(configKey, data);
 
-            return BusinessEvent.builder()
+            return BusinessEventEnvelope.stamp(BusinessEvent.builder()
                     .eventType(eventType)
                     .suiteCode(resolvedObject.suiteCode())
                     .objectCode(objectCode)
@@ -219,7 +220,7 @@ public class BusinessEventPublisher {
                     .operatorId(SessionHelper.getUserId())
                     .operatorName(SessionHelper.getUsername())
                     .tenantId(tenantId)
-                    .build();
+                    .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
         } catch (Exception e) {
             log.debug("构建业务事件失败, configKey={}: {}", configKey, e.getMessage());
             return null;

@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionExecuteDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
+import com.mdframe.forge.plugin.generator.enums.BusinessTriggerExecutionStatus;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionExecuteResultVO;
@@ -14,6 +15,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResul
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,8 +56,8 @@ public class BusinessTriggerExecutor {
     @Async
     public void executeTriggersAsync(BusinessEvent event) {
         Long tenantId = trustedTenantId(event);
-        if (tenantId == null) {
-            log.error("拒绝执行缺少可信租户的业务事件, objectCode={}, eventType={}",
+        if (tenantId == null || !BusinessEventEnvelope.isTrusted(event)) {
+            log.error("拒绝执行缺少可信信封的业务事件, objectCode={}, eventType={}",
                     event == null ? null : event.getObjectCode(), event == null ? null : event.getEventType());
             return;
         }
@@ -87,16 +89,16 @@ public class BusinessTriggerExecutor {
     @Async
     public void executeTriggerAsync(AiBusinessTrigger trigger, BusinessEvent event) {
         Long tenantId = trustedTenantId(event);
-        if (tenantId == null) {
-            log.error("拒绝执行缺少可信租户的业务事件, triggerId={}", trigger == null ? null : trigger.getId());
+        if (tenantId == null || !BusinessEventEnvelope.isTrusted(event)) {
+            log.error("拒绝执行缺少可信信封的业务事件, triggerId={}", trigger == null ? null : trigger.getId());
             return;
         }
         TenantContextHolder.executeWithTenant(tenantId, () -> executeSingleTrigger(trigger, event));
     }
 
     public void executeTrigger(AiBusinessTrigger trigger, BusinessEvent event) {
-        if (trustedTenantId(event) == null) {
-            log.error("拒绝执行缺少可信租户的业务事件, triggerId={}", trigger == null ? null : trigger.getId());
+        if (trustedTenantId(event) == null || !BusinessEventEnvelope.isTrusted(event)) {
+            log.error("拒绝执行缺少可信信封的业务事件, triggerId={}", trigger == null ? null : trigger.getId());
             return;
         }
         executeSingleTrigger(trigger, event);
@@ -111,6 +113,7 @@ public class BusinessTriggerExecutor {
      */
     private void executeSingleTrigger(AiBusinessTrigger trigger, BusinessEvent event) {
         if (trigger == null || event == null || trustedTenantId(event) == null
+                || !BusinessEventEnvelope.isTrusted(event)
                 || trigger.getTenantId() == null || !trigger.getTenantId().equals(event.getTenantId())) {
             log.error("拒绝执行租户不匹配的业务触发器, triggerId={}, triggerTenant={}, eventTenant={}",
                     trigger == null ? null : trigger.getId(), trigger == null ? null : trigger.getTenantId(),
@@ -120,12 +123,17 @@ public class BusinessTriggerExecutor {
         long startTime = System.currentTimeMillis();
         AiBusinessTriggerLog logEntry = buildLogEntry(trigger, event);
 
+        if (!triggerService.tryClaimExecution(logEntry)) {
+            log.info("跳过重复业务事件: triggerId={}, eventId={}", trigger.getId(), event.getEventId());
+            return;
+        }
+
         try {
             // 1. 评估条件
             if (!evaluateCondition(trigger, event)) {
-                logEntry.setExecuteStatus("SKIPPED");
+                logEntry.setExecuteStatus(BusinessTriggerExecutionStatus.SKIPPED.getCode());
                 logEntry.setErrorMessage("条件不满足");
-                triggerService.saveExecutionLog(logEntry);
+                triggerService.updateExecutionLog(logEntry);
                 return;
             }
 
@@ -134,28 +142,31 @@ public class BusinessTriggerExecutor {
 
             // 3. 记录执行结果
             String resultStatus = result == null ? "SUCCESS" : result.getString("status");
-            logEntry.setExecuteStatus("TODO".equals(resultStatus)
-                    ? "TODO" : "FAILED".equals(resultStatus) ? "FAILED" : "SUCCESS");
+            logEntry.setExecuteStatus(BusinessTriggerExecutionStatus.TODO.matches(resultStatus)
+                    ? BusinessTriggerExecutionStatus.TODO.getCode()
+                    : BusinessTriggerExecutionStatus.FAILED.matches(resultStatus)
+                    ? BusinessTriggerExecutionStatus.FAILED.getCode()
+                    : BusinessTriggerExecutionStatus.SUCCESS.getCode());
             if (result != null) {
                 logEntry.setTodoCode(result.getString("todoCode"));
                 logEntry.setCorrelationId(resolveCorrelationId(result));
-                if ("FAILED".equals(resultStatus)) {
+                if (BusinessTriggerExecutionStatus.FAILED.matches(resultStatus)) {
                     logEntry.setErrorMessage(result.getString("errorMessage"));
                 }
             }
             logEntry.setActionResult(result != null ? result.toJSONString() : null);
             logEntry.setDurationMs(System.currentTimeMillis() - startTime);
-            triggerService.saveExecutionLog(logEntry);
+            triggerService.updateExecutionLog(logEntry);
             triggerService.incrementExecuteCount(trigger.getId());
 
             log.info("触发器执行成功: trigger={}, object={}, record={}",
                     trigger.getTriggerName(), event.getObjectCode(), event.getRecordId());
 
         } catch (Exception e) {
-            logEntry.setExecuteStatus("FAILED");
+            logEntry.setExecuteStatus(BusinessTriggerExecutionStatus.FAILED.getCode());
             logEntry.setErrorMessage(e.getMessage());
             logEntry.setDurationMs(System.currentTimeMillis() - startTime);
-            triggerService.saveExecutionLog(logEntry);
+            triggerService.updateExecutionLog(logEntry);
 
             log.error("触发器执行失败: trigger={}, object={}", trigger.getTriggerName(), event.getObjectCode(), e);
         }
@@ -395,10 +406,7 @@ public class BusinessTriggerExecutor {
             case "CREATE_RECORD" -> executeCreateRecordAction(actionConfig, event);
             case "UPDATE_FIELD" -> executeUpdateFieldAction(actionConfig, event);
             case "WEBHOOK" -> executeWebhookAction(actionConfig, event);
-            default -> {
-                log.warn("未知动作类型: {}", actionType);
-                yield null;
-            }
+            default -> throw new BusinessException("不支持的触发器动作类型: " + actionType);
         };
     }
 
@@ -449,9 +457,7 @@ public class BusinessTriggerExecutor {
     private String buildTriggerActionIdempotencyKey(AiBusinessTrigger trigger, BusinessEvent event, String actionCode) {
         String raw = "trigger:"
                 + StringUtils.defaultString(trigger.getId() == null ? null : String.valueOf(trigger.getId()))
-                + ":" + StringUtils.defaultString(event.getEventType())
-                + ":" + StringUtils.defaultString(event.getObjectCode())
-                + ":" + StringUtils.defaultString(event.getRecordId())
+                + ":" + StringUtils.defaultString(event.getEventId())
                 + ":" + StringUtils.defaultString(actionCode);
         if (raw.length() <= 128) {
             return raw;
@@ -955,8 +961,13 @@ public class BusinessTriggerExecutor {
         logEntry.setObjectCode(trigger.getObjectCode());
         logEntry.setRecordId(event.getRecordId());
         logEntry.setEventType(event.getEventType());
+        logEntry.setEventId(event.getEventId());
+        logEntry.setEventSource(event.getEventSource());
+        logEntry.setEventVersion(event.getEventVersion());
+        logEntry.setEventDigest(event.getEventDigest());
         logEntry.setEventData(event.getRecordData() != null ? JSON.toJSONString(event.getRecordData()) : null);
         logEntry.setActionType(trigger.getActionType());
+        logEntry.setExecuteStatus(BusinessTriggerExecutionStatus.PENDING.getCode());
         logEntry.setExecuteTime(LocalDateTime.now());
         logEntry.setRetryCount(0);
         return logEntry;

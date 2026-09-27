@@ -1,5 +1,26 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 低代码业务事件可信信封与幂等认领
+
+### 实现
+
+- 新增进程内可信事件信封，统一携带事件 ID、来源、协议版本和规范化载荷 SHA-256 摘要；动态 CRUD、流程回调和定时扫描三个生产端完成封装，发布器、触发器执行器和业务流程编排器在产生副作用前统一校验。
+- 普通 CRUD 事件使用每次发生唯一的 ID；流程终态回调使用租户/流程实例/结果稳定键，定时事件使用租户/触发器/记录/日期/提醒档位稳定键，兼顾合法重复业务发生与上游重投去重。
+- `ai_business_trigger_log` 新增信封字段及 `(tenant_id, trigger_id, event_id)` 唯一索引；触发器先以独立事务写 PENDING 认领记录，唯一键冲突直接跳过，执行结果再以 `id + tenantId` 显式更新。
+- 业务流程事件幂等键改由 eventId 派生并写入 `source_event_id`；业务动作幂等键同步绑定 eventId。未知动作类型改为明确 FAILED，不再记录伪成功；执行状态统一使用枚举。
+- `BusinessTriggerService` 缺少租户上下文时不再回退租户 1；迁移 `V1.0.191__add_business_event_envelope.sql` 先扩列、回填历史审计行，再建立唯一认领索引和非空约束。
+
+### 验证
+
+- 事件信封、来源/类型矩阵、发布、认领、重复投递、跨租户、篡改/过期版本、未知动作、WEBHOOK 和流程编排定向测试 36/36 通过；Generator 及 33 个依赖反应堆模块成功。
+- Generator 完整回归在沙箱外运行 1236 个测试；本轮引起的旧 `BusinessTriggerServiceWebhookTest` 租户上下文失败已修复，其余结果为 6 个失败、4 个既有装配/协议错误，分布于 Mapper 契约、数据审计、代码生成、应用绑定/版本和公式测试，不在本轮改动文件中，保留为后续修复基线。
+- Admin JDK 17 聚合编译 46/46 成功；`BusinessTriggerLogMapper.xml` 通过 `xmllint --noout`，Flyway 版本唯一、无 `${...}`/`tenant_id=0`，`git diff --check` 通过。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.191，也未进行多 JVM 并发投递、进程在 PENDING 认领后崩溃、Outbox 重放或业务聚合版本乱序验证。
+- 当前唯一认领提供 at-most-once 执行门禁；PENDING 超时恢复、可靠 Outbox、事件顺序号、死信和人工重放仍保留在 T4.4/T4.6，不能宣称 exactly-once 或可靠投递闭环。
+
 ## 2026-09-28：T1.4 外部连接器租户边界与权限矩阵
 
 ### 实现
@@ -249,7 +270,7 @@
 - `SystemAuthServiceImplPasswordRecoveryTest` 最新 11 个用例在显式加载本地 Byte Buddy agent 后全部通过；未加载 agent 时 Mockito inline 仍会因当前 macOS/JDK 无法 self-attach，后续复跑必须保留相同 JVM 参数。
 - `FlowModelServiceImplTest` 中 9 个 Mockito 用例同样因 Byte Buddy attach 失败；流程解析的 13 个非 Mockito 测试和完整编译均通过。
 - 未连接真实 MySQL/Redis/对象存储/Flowable 服务，未执行 Flyway 实库迁移、Redis 故障切换、集群分片续传、真实跨租户接口矩阵或生产灰度。
-- 流程事件 event-id/Outbox 与补偿、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
+- Flowable 镜像事件 event-id/Outbox 与补偿、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
 - T4.2/T4.3 巨型组件/巨型类改造按用户要求不处理，不作为本轮遗留缺陷。
 
 ## 2026-09-27：A-20 业务流程运行租约与 fencing

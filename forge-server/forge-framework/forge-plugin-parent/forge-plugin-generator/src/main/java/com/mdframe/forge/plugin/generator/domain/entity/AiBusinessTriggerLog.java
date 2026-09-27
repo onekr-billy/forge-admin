@@ -36,6 +36,14 @@ public class AiBusinessTriggerLog implements Serializable {
 
     private String eventType;
 
+    private String eventId;
+
+    private String eventSource;
+
+    private Integer eventVersion;
+
+    private String eventDigest;
+
     /** 事件数据快照JSON */
     private String eventData;
 

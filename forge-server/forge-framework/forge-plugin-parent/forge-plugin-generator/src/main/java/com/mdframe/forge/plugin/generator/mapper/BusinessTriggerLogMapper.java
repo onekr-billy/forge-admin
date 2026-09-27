@@ -20,4 +20,6 @@ public interface BusinessTriggerLogMapper extends BaseMapper<AiBusinessTriggerLo
                                  @Param("recordId") String recordId,
                                  @Param("eventType") String eventType,
                                  @Param("sinceTime") LocalDateTime sinceTime);
+
+    int updateExecutionResult(@Param("log") AiBusinessTriggerLog log);
 }

@@ -22,6 +22,18 @@ import java.util.Map;
 @AllArgsConstructor
 public class BusinessEvent {
 
+    /** 稳定事件 ID；相同逻辑事件重投时必须保持不变。 */
+    private String eventId;
+
+    /** 受信事件来源。 */
+    private String eventSource;
+
+    /** 事件协议版本。 */
+    private Integer eventVersion;
+
+    /** 信封载荷 SHA-256 摘要，用于发现传递期间的意外修改。 */
+    private String eventDigest;
+
     /** 事件类型 */
     private String eventType;
 
