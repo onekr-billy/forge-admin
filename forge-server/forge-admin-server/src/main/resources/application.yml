@@ -163,6 +163,10 @@ forge:
     daily-ip-limit: ${FORGE_CAPTCHA_DAILY_IP_LIMIT:50}
     daily-device-limit: ${FORGE_CAPTCHA_DAILY_DEVICE_LIMIT:30}
     daily-tenant-limit: ${FORGE_CAPTCHA_DAILY_TENANT_LIMIT:500}
+    # 同一短信/邮箱目标在失败窗口内达到阈值后短时锁定
+    verification-max-failures: ${FORGE_CAPTCHA_VERIFICATION_MAX_FAILURES:5}
+    verification-failure-window: ${FORGE_CAPTCHA_VERIFICATION_FAILURE_WINDOW:10m}
+    verification-lock-duration: ${FORGE_CAPTCHA_VERIFICATION_LOCK_DURATION:10m}
   flow:
     timeout:
       time-zone: ${FORGE_FLOW_TIMEOUT_TIME_ZONE:Asia/Shanghai}

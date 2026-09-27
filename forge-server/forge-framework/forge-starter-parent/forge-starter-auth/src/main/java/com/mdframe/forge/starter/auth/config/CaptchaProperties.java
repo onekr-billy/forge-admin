@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+
 /**
  * 验证码配置属性
  */
@@ -23,6 +25,15 @@ public class CaptchaProperties {
 
     /** 单一租户每天最多发送次数；匿名流量归入 anonymous 桶。 */
     private int dailyTenantLimit = 500;
+
+    /** 同一短信/邮箱目标在失败窗口内允许的最大验证码错误次数。 */
+    private int verificationMaxFailures = 5;
+
+    /** 验证码错误次数统计窗口。 */
+    private Duration verificationFailureWindow = Duration.ofMinutes(10);
+
+    /** 达到失败阈值后的短时锁定时长。 */
+    private Duration verificationLockDuration = Duration.ofMinutes(10);
 
     /**
      * 是否在接口响应中回显验证码明文（dev-echo）

@@ -11,6 +11,7 @@ import com.mdframe.forge.starter.auth.domain.EmailCaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SmsCaptchaResult;
 import com.mdframe.forge.starter.auth.email.EmailCaptchaSender;
 import com.mdframe.forge.starter.auth.service.ICaptchaService;
+import com.mdframe.forge.starter.auth.service.support.CaptchaAttemptGuard;
 import com.mdframe.forge.starter.auth.sms.SmsCaptchaSender;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.core.util.SensitiveDataUtil;
@@ -58,6 +59,7 @@ public class CaptchaServiceImpl implements ICaptchaService {
     private final Environment environment;
     private final Optional<SmsCaptchaSender> smsCaptchaSender;
     private final Optional<EmailCaptchaSender> emailCaptchaSender;
+    private final CaptchaAttemptGuard attemptGuard;
 
     /**
      * 验证码缓存key前缀
@@ -664,47 +666,35 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .build();
         }
 
-        String intervalKey = SMS_CAPTCHA_KEY_PREFIX + "interval:" + phone;
-        if (!cacheService.setIfAbsent(intervalKey, String.valueOf(System.currentTimeMillis()),
-                SMS_SEND_INTERVAL, TimeUnit.SECONDS)) {
-            return SmsCaptchaResult.builder()
-                    .phone(phone)
-                    .status("fail")
-                    .message("发送过于频繁，请稍后再试")
-                    .interval(SMS_SEND_INTERVAL)
-                    .build();
-        }
-
-        if (!acquireSendQuota("sms", phone)) {
-            return SmsCaptchaResult.builder()
-                    .phone(phone)
-                    .status("fail")
-                    .message("发送过于频繁，请稍后再试")
-                    .interval(SMS_SEND_INTERVAL)
-                    .build();
-        }
-
+        String normalizedPhone = StrUtil.trim(phone);
+        String intervalKey = SMS_CAPTCHA_KEY_PREFIX + "interval:" + normalizedPhone;
         String code = generateSmsCode();
         String key = UUID.randomUUID().toString().replace("-", "");
-        String cacheKey = SMS_CAPTCHA_KEY_PREFIX + phone;
+        String cacheKey = SMS_CAPTCHA_KEY_PREFIX + normalizedPhone;
         boolean developmentEcho = isDevelopmentEchoEnabled();
 
         try {
+            if (attemptGuard.isBlocked(CaptchaAttemptGuard.Channel.SMS, normalizedPhone)
+                    || !cacheService.setIfAbsent(intervalKey, String.valueOf(System.currentTimeMillis()),
+                    SMS_SEND_INTERVAL, TimeUnit.SECONDS)
+                    || !acquireSendQuota("sms", normalizedPhone)) {
+                return smsRateLimited(normalizedPhone);
+            }
             cacheService.set(cacheKey, code, duration);
             boolean sendSuccess = developmentEcho || smsCaptchaSender
-                    .map(sender -> sender.sendVerificationCode(phone, code, duration))
+                    .map(sender -> sender.sendVerificationCode(normalizedPhone, code, duration))
                     .orElse(false);
             if (!sendSuccess) {
-                rollbackSmsCaptcha(cacheKey, intervalKey, phone);
-                log.warn("短信验证码发送失败: phone={}", SensitiveDataUtil.maskPhone(phone));
-                return smsFailure(phone);
+                rollbackSmsCaptcha(cacheKey, intervalKey, normalizedPhone);
+                log.warn("短信验证码发送失败: phone={}", SensitiveDataUtil.maskPhone(normalizedPhone));
+                return smsFailure(normalizedPhone);
             }
 
-            log.info("短信验证码发送成功: phone={}, mode={}", SensitiveDataUtil.maskPhone(phone),
+            log.info("短信验证码发送成功: phone={}, mode={}", SensitiveDataUtil.maskPhone(normalizedPhone),
                     developmentEcho ? "development" : "provider");
             return SmsCaptchaResult.builder()
                     .codeKey(key)
-                    .phone(phone)
+                    .phone(normalizedPhone)
                     .status("success")
                     .message("验证码发送成功")
                     .code(developmentEcho ? code : null)
@@ -713,47 +703,21 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .captchaType("sms")
                     .build();
         } catch (Exception e) {
-            rollbackSmsCaptcha(cacheKey, intervalKey, phone);
+            rollbackSmsCaptcha(cacheKey, intervalKey, normalizedPhone);
             log.error("短信验证码发送异常: phone={}, errorType={}",
-                    SensitiveDataUtil.maskPhone(phone), e.getClass().getSimpleName(), sanitizedException(e));
-            return smsFailure(phone);
+                    SensitiveDataUtil.maskPhone(normalizedPhone), e.getClass().getSimpleName(), sanitizedException(e));
+            return smsFailure(normalizedPhone);
         }
     }
 
     @Override
     public boolean validateSmsCaptcha(String phone, String code) {
-        if (StrUtil.isBlank(phone) || StrUtil.isBlank(code)) {
-            return false;
-        }
-
-        String cacheKey = SMS_CAPTCHA_KEY_PREFIX + phone;
-        String cacheCode = cacheService.get(cacheKey);
-
-        if (cacheCode == null) {
-            log.warn("短信验证码不存在或已过期: phone={}", SensitiveDataUtil.maskPhone(phone));
-            return false;
-        }
-
-        boolean match = code.equals(cacheCode);
-        log.debug("短信验证码校验: phone={}, result={}", SensitiveDataUtil.maskPhone(phone), match);
-        return match;
+        return validateContactCaptcha(CaptchaAttemptGuard.Channel.SMS, phone, code, false);
     }
 
     @Override
     public boolean validateAndDeleteSmsCaptcha(String phone, String code) {
-        if (StrUtil.isBlank(phone) || StrUtil.isBlank(code)) {
-            return false;
-        }
-        String cacheKey = SMS_CAPTCHA_KEY_PREFIX + phone;
-        String cacheCode = cacheService.get(cacheKey);
-        if (cacheCode == null || !claimCaptcha(SMS_CONSUMED_KEY_PREFIX + phone + ":" + digest(cacheCode))) {
-            return false;
-        }
-        try {
-            return code.equals(cacheCode);
-        } finally {
-            cacheService.delete(cacheKey);
-        }
+        return validateContactCaptcha(CaptchaAttemptGuard.Channel.SMS, phone, code, true);
     }
 
     // ==================== 邮箱验证码 ====================
@@ -773,47 +737,35 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .build();
         }
 
-        String intervalKey = EMAIL_CAPTCHA_KEY_PREFIX + "interval:" + email;
-        if (!cacheService.setIfAbsent(intervalKey, String.valueOf(System.currentTimeMillis()),
-                SMS_SEND_INTERVAL, TimeUnit.SECONDS)) {
-            return EmailCaptchaResult.builder()
-                    .email(email)
-                    .status("fail")
-                    .message("发送过于频繁，请稍后再试")
-                    .interval(SMS_SEND_INTERVAL)
-                    .build();
-        }
-
-        if (!acquireSendQuota("email", email)) {
-            return EmailCaptchaResult.builder()
-                    .email(email)
-                    .status("fail")
-                    .message("发送过于频繁，请稍后再试")
-                    .interval(SMS_SEND_INTERVAL)
-                    .build();
-        }
-
+        String normalizedEmail = StrUtil.trim(email);
+        String intervalKey = EMAIL_CAPTCHA_KEY_PREFIX + "interval:" + normalizedEmail;
         String code = generateSmsCode();
         String key = UUID.randomUUID().toString().replace("-", "");
-        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
+        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + normalizedEmail;
         boolean developmentEcho = isDevelopmentEchoEnabled();
 
         try {
+            if (attemptGuard.isBlocked(CaptchaAttemptGuard.Channel.EMAIL, normalizedEmail)
+                    || !cacheService.setIfAbsent(intervalKey, String.valueOf(System.currentTimeMillis()),
+                    SMS_SEND_INTERVAL, TimeUnit.SECONDS)
+                    || !acquireSendQuota("email", normalizedEmail)) {
+                return emailRateLimited(normalizedEmail);
+            }
             cacheService.set(cacheKey, code, duration);
             boolean sendSuccess = developmentEcho || emailCaptchaSender
-                    .map(sender -> sender.sendVerificationCode(email, code, duration))
+                    .map(sender -> sender.sendVerificationCode(normalizedEmail, code, duration))
                     .orElse(false);
             if (!sendSuccess) {
-                rollbackEmailCaptcha(cacheKey, intervalKey, email);
-                log.warn("邮箱验证码发送失败: email={}", SensitiveDataUtil.maskEmail(email));
-                return emailFailure(email);
+                rollbackEmailCaptcha(cacheKey, intervalKey, normalizedEmail);
+                log.warn("邮箱验证码发送失败: email={}", SensitiveDataUtil.maskEmail(normalizedEmail));
+                return emailFailure(normalizedEmail);
             }
 
-            log.info("邮箱验证码发送成功: email={}, mode={}", SensitiveDataUtil.maskEmail(email),
+            log.info("邮箱验证码发送成功: email={}, mode={}", SensitiveDataUtil.maskEmail(normalizedEmail),
                     developmentEcho ? "development" : "provider");
             return EmailCaptchaResult.builder()
                     .codeKey(key)
-                    .email(email)
+                    .email(normalizedEmail)
                     .status("success")
                     .message("验证码发送成功")
                     .code(developmentEcho ? code : null)
@@ -822,47 +774,87 @@ public class CaptchaServiceImpl implements ICaptchaService {
                     .captchaType("email")
                     .build();
         } catch (Exception e) {
-            rollbackEmailCaptcha(cacheKey, intervalKey, email);
+            rollbackEmailCaptcha(cacheKey, intervalKey, normalizedEmail);
             log.error("邮箱验证码发送异常: email={}, errorType={}",
-                    SensitiveDataUtil.maskEmail(email), e.getClass().getSimpleName(), sanitizedException(e));
-            return emailFailure(email);
+                    SensitiveDataUtil.maskEmail(normalizedEmail), e.getClass().getSimpleName(), sanitizedException(e));
+            return emailFailure(normalizedEmail);
         }
     }
 
     @Override
     public boolean validateEmailCaptcha(String email, String code) {
-        if (StrUtil.isBlank(email) || StrUtil.isBlank(code)) {
-            return false;
-        }
-
-        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
-        String cacheCode = cacheService.get(cacheKey);
-
-        if (cacheCode == null) {
-            log.warn("邮箱验证码不存在或已过期: email={}", SensitiveDataUtil.maskEmail(email));
-            return false;
-        }
-
-        boolean match = code.equals(cacheCode);
-        log.debug("邮箱验证码校验: email={}, result={}", SensitiveDataUtil.maskEmail(email), match);
-        return match;
+        return validateContactCaptcha(CaptchaAttemptGuard.Channel.EMAIL, email, code, false);
     }
 
     @Override
     public boolean validateAndDeleteEmailCaptcha(String email, String code) {
-        if (StrUtil.isBlank(email) || StrUtil.isBlank(code)) {
+        return validateContactCaptcha(CaptchaAttemptGuard.Channel.EMAIL, email, code, true);
+    }
+
+    private boolean validateContactCaptcha(CaptchaAttemptGuard.Channel channel, String target,
+                                            String code, boolean consume) {
+        if (StrUtil.isBlank(target) || StrUtil.isBlank(code)) {
             return false;
         }
-        String cacheKey = EMAIL_CAPTCHA_KEY_PREFIX + email;
-        String cacheCode = cacheService.get(cacheKey);
-        if (cacheCode == null || !claimCaptcha(EMAIL_CONSUMED_KEY_PREFIX + email + ":" + digest(cacheCode))) {
-            return false;
-        }
+        String normalizedTarget = StrUtil.trim(target);
+        String cacheKey = contactCachePrefix(channel) + normalizedTarget;
+        boolean deleteRequired = false;
+        boolean result = false;
         try {
-            return code.equals(cacheCode);
-        } finally {
-            cacheService.delete(cacheKey);
+            if (attemptGuard.isBlocked(channel, normalizedTarget)) {
+                return false;
+            }
+            String cacheCode = cacheService.get(cacheKey);
+            if (cacheCode == null) {
+                log.warn("验证码不存在或已过期: channel={}, target={}",
+                        channel, maskContact(channel, normalizedTarget));
+                return false;
+            }
+            if (consume && !claimCaptcha(contactConsumedPrefix(channel) + normalizedTarget
+                    + ":" + digest(cacheCode))) {
+                return false;
+            }
+            deleteRequired = consume;
+            boolean match = MessageDigest.isEqual(
+                    code.getBytes(StandardCharsets.UTF_8),
+                    cacheCode.getBytes(StandardCharsets.UTF_8));
+            if (match) {
+                result = attemptGuard.clearFailures(channel, normalizedTarget);
+            } else {
+                attemptGuard.recordFailure(channel, normalizedTarget);
+            }
+            log.debug("验证码校验: channel={}, target={}, result={}",
+                    channel, maskContact(channel, normalizedTarget), result);
+        } catch (RuntimeException exception) {
+            log.error("验证码校验缓存异常: channel={}, target={}, errorType={}",
+                    channel, maskContact(channel, normalizedTarget), exception.getClass().getSimpleName());
+            result = false;
         }
+        if (deleteRequired) {
+            try {
+                cacheService.delete(cacheKey);
+            } catch (RuntimeException exception) {
+                log.error("验证码消费清理异常: channel={}, target={}, errorType={}",
+                        channel, maskContact(channel, normalizedTarget), exception.getClass().getSimpleName());
+                result = false;
+            }
+        }
+        return result;
+    }
+
+    private String contactCachePrefix(CaptchaAttemptGuard.Channel channel) {
+        return channel == CaptchaAttemptGuard.Channel.SMS
+                ? SMS_CAPTCHA_KEY_PREFIX : EMAIL_CAPTCHA_KEY_PREFIX;
+    }
+
+    private String contactConsumedPrefix(CaptchaAttemptGuard.Channel channel) {
+        return channel == CaptchaAttemptGuard.Channel.SMS
+                ? SMS_CONSUMED_KEY_PREFIX : EMAIL_CONSUMED_KEY_PREFIX;
+    }
+
+    private String maskContact(CaptchaAttemptGuard.Channel channel, String target) {
+        return channel == CaptchaAttemptGuard.Channel.SMS
+                ? SensitiveDataUtil.maskPhone(target) : SensitiveDataUtil.maskEmail(target);
     }
 
     private boolean isDevelopmentEchoEnabled() {
@@ -910,10 +902,7 @@ public class CaptchaServiceImpl implements ICaptchaService {
         if (limit <= 0) {
             return false;
         }
-        if (cacheService.setIfAbsent(key, 1L, ttlSeconds, TimeUnit.SECONDS)) {
-            return true;
-        }
-        return cacheService.increment(key, 1L) <= limit;
+        return cacheService.incrementWithExpiry(key, 1L, ttlSeconds, TimeUnit.SECONDS) <= limit;
     }
 
     private String quotaKey(String channel, String dimension, String date, String value) {
@@ -967,11 +956,29 @@ public class CaptchaServiceImpl implements ICaptchaService {
                 .build();
     }
 
+    private SmsCaptchaResult smsRateLimited(String phone) {
+        return SmsCaptchaResult.builder()
+                .phone(phone)
+                .status("fail")
+                .message("发送过于频繁，请稍后再试")
+                .interval(SMS_SEND_INTERVAL)
+                .build();
+    }
+
     private EmailCaptchaResult emailFailure(String email) {
         return EmailCaptchaResult.builder()
                 .email(email)
                 .status("fail")
                 .message("验证码发送失败，请稍后重试")
+                .build();
+    }
+
+    private EmailCaptchaResult emailRateLimited(String email) {
+        return EmailCaptchaResult.builder()
+                .email(email)
+                .status("fail")
+                .message("发送过于频繁，请稍后再试")
+                .interval(SMS_SEND_INTERVAL)
                 .build();
     }
 }

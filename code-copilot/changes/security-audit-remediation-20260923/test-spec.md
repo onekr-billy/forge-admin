@@ -58,6 +58,7 @@
 - 密码修改、找回和管理员重置后旧 Token 请求失败。
 - 两个并发请求使用同一幂等 Token，业务方法只执行一次。
 - 两个并发验证码校验最多一次成功；发送间隔和日配额不能被并发绕过。
+- 同一短信/邮箱目标在失败窗口达到阈值后必须短时锁定，锁定期间不得继续校验或调用发送器；Redis 查询、计数或发送占位异常时统一 fail-closed。
 - 不同 client 并发登录不互相修改 Token TTL、并发和共享策略。
 
 ### 数据连接和 SQL 预览
@@ -141,3 +142,11 @@ rg -n "new Function|AsyncFunction|engine\.eval|StrictHostKeyChecking=no|fastjson
 - 未配置本地 MySQL/Redis 时，不将真实接口、Flyway、并发 Lua 和 JDBC 网络边界写成通过；改用 Testcontainers 或明确记录跳过原因。
 - 未启动服务时，不进行真实浏览器、网关、租户隔离和文件存储结论。
 - 不停止工作区其他任务启动的进程，不删除现有数据库、缓存和测试数据。
+
+## 8. 2026-09-27 验证码风控增量验证
+
+- 风险范围：共享 Redis 计数原语、短信/邮箱验证码校验与发送、Admin/App 配置绑定。
+- 定向行为：执行 `CaptchaServiceImplTest` 全量 25 个用例，覆盖失败阈值、短时锁、成功清理和 Redis fail-closed。
+- 缓存契约：执行 `RedissonCacheServiceImplTest`，确认 `INCRBY + 首建 PEXPIRE` 使用单次 Lua，非正 TTL 拒绝。
+- 聚合兼容：执行 `mvn -pl forge-admin-server -am -DskipTests compile`，验证共享 `ICacheService` 接口变化的 46 模块编译。
+- 环境限制：无真实 Redis 集群，本轮不声明节点切换、网络分区或 Lua 实库并发压测通过。

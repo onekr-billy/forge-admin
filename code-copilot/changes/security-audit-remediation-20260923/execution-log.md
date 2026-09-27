@@ -64,7 +64,7 @@
 - 临时 JDBC 增加管理员边界、协议/驱动/主机/端口策略、私网/元数据地址阻断、超时、只读与资源上限；`preview-sql` 绑定已保存数据集、ACL、只读和最大行数，新增 `V1.0.186__secure_dataset_sql_preview.sql`。
 - 数据集分页改为 offset/limit 并执行独立 count；元数据查询改为参数绑定；SQL 预览改用 AST 单 SELECT 校验，标识符严格白名单。
 - 登录不再修改 Sa-Token 全局配置；改密、找回和管理员重置后吊销旧会话。注册/改密/找回/管理员重置/第三方建用户统一使用 `PasswordPolicyService`，注册租户不再信任客户端 tenantId。
-- 幂等 Token 使用 Redis Lua 原子消费并仅记录摘要；验证码原子消费，发送间隔原子占位且发送失败回滚；短信/邮件增加目标、来源 IP、设备和租户四维自然日配额，Redis 异常时不调用发送器。
+- 幂等 Token 使用 Redis Lua 原子消费并仅记录摘要；验证码原子消费，发送间隔原子占位且发送失败回滚；短信/邮件增加目标、来源 IP、设备和租户四维自然日配额、跨挑战失败窗口与短时锁定，Redis 异常时不调用发送器或继续校验。
 - 分片上传补充绑定主体、数量/大小/TTL 上限，完成后默认私有并继承私有属性；下载/URL/Base64/bytes 统一授权；`removeBatch` 按字符串 fileId 删除。
 - 低代码事件缺少可信租户时 fail-closed，未知操作符/格式错误条件不再命中。
 - 业务流程节点执行改为携带创建时的明确 attemptId；claim 失败时禁止进入节点副作用，完成阶段只允许原子更新同一个 RUNNING attempt，不再查询并误写“最新 attempt”。
@@ -82,7 +82,7 @@
 - `BpmnXmlUtilsTest` 3、`FlowModelBpmnPreflightTest` 6、`FlowMonitorVariableSanitizerTest` 2、`FlowBusinessStatsMapperSqlContractTest` 2：共 13 个通过。
 - generator 事件租户/条件定向测试：20 个通过。
 - `BusinessProcessOrchestratorTest`：14 个通过，包含 attempt claim 失败不执行副作用与禁止 latest-attempt 回写用例。
-- `CaptchaServiceImplTest`：20 个通过，包含原子消费、发送间隔和日配额 fail-closed 用例。
+- `CaptchaServiceImplTest`：25 个通过，包含原子消费、发送间隔、日配额、失败阈值短锁和 Redis fail-closed 用例；`RedissonCacheServiceImplTest` 2 个通过，覆盖计数与首建 TTL 的单次 Lua 执行。
 - `SystemAuthServiceImplClientCredentialTest` 7、`PasswordPolicyServiceTest` 1：共 8 个通过。
 - 社会化登录相关定向测试：29 个通过；依赖树验证通过。
 - 文件权限/分片相关定向测试：27 个通过。
@@ -95,7 +95,7 @@
 - `SystemAuthServiceImplPasswordRecoveryTest` 本轮 9 个用例均因 Mockito inline/Byte Buddy 无法 self-attach 报错；这是测试运行时限制，不记录为代码通过。相同用例在本次会话早期曾全部通过，当前仍以最新运行的环境阻断为准。
 - `FlowModelServiceImplTest` 中 9 个 Mockito 用例同样因 Byte Buddy attach 失败；流程解析的 13 个非 Mockito 测试和完整编译均通过。
 - 未连接真实 MySQL/Redis/对象存储/Flowable 服务，未执行 Flyway 实库迁移、Redis 故障切换、集群分片续传、真实跨租户接口矩阵或生产灰度。
-- 密码历史/过期策略、验证码失败次数锁定、流程事件 event-id/Outbox/租约 fencing、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
+- 密码历史/过期策略、流程事件 event-id/Outbox 与补偿、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
 - T4.2/T4.3 巨型组件/巨型类改造按用户要求不处理，不作为本轮遗留缺陷。
 
 ## 2026-09-27：A-20 业务流程运行租约与 fencing
@@ -120,3 +120,26 @@
 
 - 未连接真实 MySQL/Flowable，未执行 Flyway 实库迁移、双 JVM 崩溃接管、网络分区或远程 FlowClient 补偿。A-20 的 Outbox、重试/补偿和人工恢复记录仍保留为后续任务。
 - T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
+## 2026-09-27：A-12 验证码失败窗口与 Redis fail-closed
+
+### 实现
+
+- 新增独立 `CaptchaAttemptGuard`，按短信/邮箱目标摘要维护失败窗口和短时锁；默认 10 分钟内 5 次错误触发 10 分钟锁定，配置支持环境变量覆盖。
+- 正确验证码清理历史失败状态；错误答案仍先消费当前挑战再累计失败，锁定期间发码和校验均直接拒绝，日志及缓存键不保存联系方式原文。
+- 缓存层新增 `incrementWithExpiry`，以单次 Redis Lua 原子执行 `INCRBY` 和首建 `PEXPIRE`；自然日发送配额同步复用该原语，避免计数与 TTL 分步执行留下永久键。
+- 发码间隔、配额或风控缓存异常统一返回失败且不调用短信/邮件发送器；校验缓存异常统一返回 false。
+
+### 验证
+
+- `CaptchaServiceImplTest`：25/25 通过，新增短信/邮箱阈值锁定、成功后清理失败状态、Redis 发码占位异常和锁查询异常 fail-closed 用例。
+- `RedissonCacheServiceImplTest`：2/2 通过，验证失败计数使用单次 Lua 并拒绝非正 TTL。
+- 命令：`mvn -pl forge-framework/forge-starter-parent/forge-starter-auth -am -Penable-tests -DskipTests=false -Dforge.tests.skip=false -Dsurefire.failIfNoSpecifiedTests=false -Djava.awt.headless=true -Dtest=CaptchaServiceImplTest test`（测试 JVM 显式加载本地 Byte Buddy agent）。
+- 命令：`mvn -pl forge-framework/forge-starter-parent/forge-starter-cache -am -Penable-tests -DskipTests=false -Dforge.tests.skip=false -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RedissonCacheServiceImplTest test`（测试 JVM 显式加载本地 Byte Buddy agent）。
+- 命令：`mvn -pl forge-admin-server -am -DskipTests compile`，Admin 聚合反应堆 46/46 成功。
+- `git diff --check`：通过；`CaptchaServiceImpl` 984 行，未突破 Java 单类 1000 行约束。
+- 首次显式 Java agent 全量运行未设置 headless，图形验证码加载 AWT 时测试 JVM 退出码 134；增加 `-Djava.awt.headless=true` 后同一全量测试 25/25 通过。
+
+### 未覆盖
+
+- 未连接真实 Redis 集群，未执行节点切换、网络分区及 Lua 实库并发压测；本轮以 Lua 调用契约、服务行为单测和 Admin 聚合编译作为自动化证据。

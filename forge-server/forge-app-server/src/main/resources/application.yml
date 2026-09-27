@@ -139,3 +139,6 @@ management:
 forge:
   captcha:
     challenge-secret: ${FORGE_CAPTCHA_CHALLENGE_SECRET:}
+    verification-max-failures: ${FORGE_CAPTCHA_VERIFICATION_MAX_FAILURES:5}
+    verification-failure-window: ${FORGE_CAPTCHA_VERIFICATION_FAILURE_WINDOW:10m}
+    verification-lock-duration: ${FORGE_CAPTCHA_VERIFICATION_LOCK_DURATION:10m}
