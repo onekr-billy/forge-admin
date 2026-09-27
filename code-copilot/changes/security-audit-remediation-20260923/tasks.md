@@ -50,10 +50,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-external/src/main/java/com/mdframe/forge/plugin/external/adapter/impl/ScriptAdapter.java`
 - external adapter DTO、配置校验、Mapper XML、迁移脚本和相关单测
 
-- [ ] 新增 DSL/字段映射适配器测试，覆盖允许操作、未知函数、超长配置、循环和超时。
+- [x] 新增 DSL/字段映射适配器测试，覆盖允许操作、未知/可执行配置、超长配置、记录数/映射操作数和结果大小上限；协议不包含循环或任意代码语义，因此无可触发超时的执行路径。
 - [x] 将 `ScriptAdapter` 改为白名单转换器；旧脚本配置返回明确迁移错误，不得静默执行。
-- [ ] 若业务确认必须保留 JavaScript，另建独立执行服务/容器协议，明确 CPU、内存、网络、超时和结果大小上限；主 JVM 只进行 RPC 调用和结果校验。
-- [ ] 审计日志记录脚本版本、操作者、结果摘要，不记录脚本中的密钥和响应原文。
+- [x] 若业务确认必须保留 JavaScript，另建独立执行服务/容器协议，明确 CPU、内存、网络、超时和结果大小上限；主 JVM 只进行 RPC 调用和结果校验。（本轮确认不保留 JavaScript，该条件分支不适用）
+- [x] 审计日志记录映射协议版本、操作者、结果和配置 SHA-256 摘要，`OperationLog` 禁止保存请求参数与响应原文。
 
 ### T1.3 API 权限改为 fail-closed
 

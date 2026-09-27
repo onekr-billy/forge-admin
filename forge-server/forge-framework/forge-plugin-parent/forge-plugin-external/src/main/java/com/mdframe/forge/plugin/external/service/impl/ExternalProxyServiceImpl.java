@@ -190,7 +190,11 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
     private Object transformResponse(ExternalApi api, Object originalData) {
         if (api.getResponseTransformEnabled() != null && api.getResponseTransformEnabled()
                 && api.getResponseTransformScript() != null && !api.getResponseTransformScript().isEmpty()) {
-            DataAdapter adapter = adapterFactory.getAdapter("Script");
+            DataAdapter adapter = adapterFactory.getRequiredAdapter("JsonPath");
+            if (!adapter.validateConfig(api.getResponseTransformScript())) {
+                return adapterFactory.getRequiredAdapter("Script")
+                        .transform(originalData, api.getResponseTransformScript());
+            }
             return adapter.transform(originalData, api.getResponseTransformScript());
         }
         return originalData;

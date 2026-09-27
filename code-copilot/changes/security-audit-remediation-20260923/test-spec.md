@@ -42,6 +42,15 @@
 - 实际结果：启动门禁 10/10、platform 安全链路 45/45、replay guard 10/10、actions 12/12、高风险 15/15、数据缓存/执行器 6/6 通过；Admin 聚合编译 46/46 成功。
 - 环境限制：没有真实 MySQL/Redis/开放网关，未执行生产 client/grant 实库扫描、网关压测和生产启用审批；这些结果不得替代上线人工门禁。
 
+## 1.4 2026-09-28 外部响应字段映射增量验证
+
+- 协议范围：仅允许版本化 `FIELD_MAP_V1` JSON 中的 `sourcePath`、`fieldMapping`、`targetPath`；路径只允许安全字段名和源数组数字下标，不提供函数、递归、通配符、网络或任意代码能力。
+- 边界验证：配置最大 16 KiB、路径最大 256 字符/16 层、映射字段最大 128、集合最大 10,000 条、映射操作最大 250,000 次、输出最大 2 MiB；超限统一 fail-closed。
+- 迁移验证：旧 JavaScript/未知配置在保存前和运行时均明确拒绝，不回退到主 JVM 执行；管理页只展示字段映射协议。
+- 审计验证：新增/修改禁止 `OperationLog` 保存请求与响应，只记录操作、租户、操作者、API 标识、协议版本、SHA-256 摘要和结果。
+- 实际结果：`JsonPathAdapterTest`、`ExternalApiControllerTransformValidationTest`、`ExternalControllerPermissionContractTest`、`ExternalProxyServiceImplTest` 共 10/10 通过；Admin 聚合编译 46/46 成功。
+- 前端结果：`manage.vue` 新增部分 ESLint 通过（保留存量 template ref 规则例外），Vite 生产构建成功；只有仓库已有 CSS 注释和动态导入告警。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

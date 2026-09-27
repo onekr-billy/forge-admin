@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ScriptAdapter implements DataAdapter {
 
-    static final String MIGRATION_MESSAGE =
+    public static final String MIGRATION_MESSAGE =
             "脚本响应转换已禁用，请迁移为 JsonPath 白名单字段映射";
 
     @Override
