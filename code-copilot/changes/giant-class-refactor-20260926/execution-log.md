@@ -306,3 +306,9 @@
 - 使用 Facade + Assembler 边界从 `FlowTaskServiceImpl` 迁出流程图可见性校验、BPMN 模型与部署资源读取、PNG 生成、节点/连线状态计算、人员批量展示和降级信息组装。审批、驳回、撤回、会签及业务状态迁移仍保留在原任务服务，不改变公开接口。
 - 入口由 3516 行降至 2848 行，新 `FlowProcessDiagramService` 768 行；历史查询继续统一限制为 1000 条，人员展示继续使用租户约束的批量组织查询。旧源码契约改为分别约束任务服务和流程图服务，没有放宽安全或性能断言。
 - flow Reactor 编译退出码 0；执行 `FlowProcessDiagramSequenceContractTest,FlowOrgIntegrationSecurityContractTest,FlowTaskActionAuthorizationTest,FlowTaskMutationAuthorizationContractTest,FlowTaskServiceImplStateChangeTest,FlowTaskSignContractTest,FlowTaskStatusTransitionContractTest,FlowTodoPerformanceContractTest` 共 8 类 31 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实 BPMN 图片字体、部署资源和复杂并行网关仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十九个切口：Flowable 任务节点动作策略
+
+- 使用 Policy + Specification 从 `FlowTaskServiceImpl` 迁出 BPMN 节点动作属性解析、节点配置表覆盖、审批意见/签名要求、必填变量、审批要点、自动审批模式和退回目标判定。命令事务、Flowable 副作用、任务镜像及业务状态回写仍保留在主服务。
+- 节点策略保持“BPMN 扩展属性先解析、节点配置表最终覆盖”的既有优先级，并通过流程定义 Key 窄解析器复用主服务的历史兼容逻辑。入口由 2848 行降至 2449 行，新 `FlowTaskNodePolicy` 463 行。
+- flow Reactor 编译退出码 0；执行节点策略、解析器、动作授权、状态流转、会签、流程图和待办性能相关 10 类 36 项，0 失败、0 错误；新增 3 项测试覆盖配置覆盖、必填变量提示和默认审批意见要求，`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实历史节点配置、复杂退回路径和并行实例仍需服务环境验收，无服务 PID 需停止。

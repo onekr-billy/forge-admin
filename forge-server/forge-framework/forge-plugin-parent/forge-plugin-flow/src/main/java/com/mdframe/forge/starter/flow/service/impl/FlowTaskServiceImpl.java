@@ -7,22 +7,16 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayAdapter;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayItem;
 import com.mdframe.forge.plugin.message.service.MessageService;
-import com.mdframe.forge.starter.flow.dto.FlowApprovalPointDTO;
 import com.mdframe.forge.starter.flow.dto.FlowApprovalPointResultDTO;
 import com.mdframe.forge.starter.flow.dto.ProcessDiagramInfo;
-import com.mdframe.forge.starter.flow.dto.ProcessNodeInfo;
-import com.mdframe.forge.starter.flow.dto.ProcessSequenceFlowInfo;
 import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
-import com.mdframe.forge.starter.flow.helper.FlowNodePolicyParser;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowForm;
 import com.mdframe.forge.starter.flow.entity.FlowFormInstance;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
-import com.mdframe.forge.starter.flow.entity.FlowNodeConfig;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
-import com.mdframe.forge.starter.flow.enums.FlowDiagramStatus;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.enums.FlowTaskSignMode;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
@@ -48,24 +42,20 @@ import lombok.extern.slf4j.Slf4j;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.FlowNode;
-import org.flowable.bpmn.model.GraphicInfo;
 import org.flowable.bpmn.model.UserTask;
 import org.flowable.bpmn.model.MultiInstanceLoopCharacteristics;
 import org.flowable.bpmn.model.ExtensionElement;
 import org.flowable.bpmn.model.Process;
-import org.flowable.bpmn.model.SequenceFlow;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.ProcessEngineConfiguration;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
-import org.flowable.engine.task.Comment;
 import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.engine.runtime.Execution;
-import org.flowable.image.ProcessDiagramGenerator;
 import org.flowable.task.api.DelegationState;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.history.HistoricTaskInstance;
@@ -74,8 +64,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -362,17 +350,18 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         // 整个审批事务只解析一次 BPMN：动作校验/必填变量/审批要点与自动同意模式共用，
         // 避免 getBpmnModel（每次一条命令往返）在同一请求内重复执行
         BpmnModel actionBpmnModel = repositoryService.getBpmnModel(task.getProcessDefinitionId());
-        FlowNode actionFlowNode = getFlowNode(actionBpmnModel, task.getTaskDefinitionKey());
-        validateTaskAction(task, ACTION_APPROVE, comment, signature, actionFlowNode);
+        FlowTaskNodePolicy nodePolicy = taskNodePolicy();
+        FlowNode actionFlowNode = nodePolicy.resolveFlowNode(actionBpmnModel, task.getTaskDefinitionKey());
+        nodePolicy.validateTaskAction(task, ACTION_APPROVE, comment, signature, actionFlowNode);
         validateDynamicFormArrayVariables(task, actionFlowNode, variables);
-        validateRequiredVariables(task, variables, actionFlowNode);
-        validateApprovalPoints(task, approvalPointResults, actionFlowNode);
+        nodePolicy.validateRequiredVariables(variables, actionFlowNode);
+        nodePolicy.validateApprovalPoints(approvalPointResults, actionFlowNode);
 
         try {
             if (comment != null && !comment.isEmpty()) {
                 taskService.addComment(taskId, task.getProcessInstanceId(), comment);
             }
-            recordApprovalPointResults(task, approvalPointResults);
+            nodePolicy.recordApprovalPointResults(task, approvalPointResults);
 
             Map<String, Object> completeVariables = mergeActionVariables(variables, true);
             completeTask(task, completeVariables);
@@ -432,7 +421,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
         validateFlowableAssignee(task, userId);
-        validateTaskAction(task, rejectToStart ? ACTION_REJECT_TO_START : ACTION_REJECT, comment, signature);
+        taskNodePolicy().validateTaskAction(
+                task, rejectToStart ? ACTION_REJECT_TO_START : ACTION_REJECT, comment, signature);
 
         try {
             if (comment != null && !comment.isEmpty()) {
@@ -533,7 +523,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (task == null) {
             throw new RuntimeException("任务不存在或已处理");
         }
-        validateTaskAction(task, ACTION_DELEGATE, comment, signature);
+        taskNodePolicy().validateTaskAction(task, ACTION_DELEGATE, comment, signature);
 
         try {
             String owner = task.getAssignee() != null && !task.getAssignee().isEmpty()
@@ -581,10 +571,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("任务不存在或已处理");
         }
         validateFlowableAssignee(task, userId);
-        validateReturnAction(task, comment, signature, requestedTargetActivityId);
+        FlowTaskNodePolicy nodePolicy = taskNodePolicy();
+        nodePolicy.validateReturnAction(task, comment, signature, requestedTargetActivityId);
 
         try {
-            String targetActivityId = resolveReturnTarget(task, requestedTargetActivityId);
+            String targetActivityId = nodePolicy.resolveReturnTarget(task, requestedTargetActivityId);
             if (targetActivityId == null || targetActivityId.isEmpty()) {
                 throw new RuntimeException("当前任务没有可退回的上一审批节点");
             }
@@ -683,7 +674,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         if (task == null) {
             throw new RuntimeException("任务不存在或已处理");
         }
-        validateTaskAction(task, ACTION_TERMINATE, comment, signature);
+        taskNodePolicy().validateTaskAction(task, ACTION_TERMINATE, comment, signature);
 
         try {
             List<String> activeTaskIds = taskService.createTaskQuery()
@@ -893,9 +884,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             return;
         }
 
-        String mode = readProcessStringAttribute(
-                resolvedProcess != null ? resolvedProcess : getBpmnProcess(instance.getProcessDefinitionId()),
-                "autoApprovalMode");
+        String mode = taskNodePolicy().resolveAutoApprovalMode(
+                resolvedProcess, instance.getProcessDefinitionId());
         if (!AUTO_APPROVAL_FIRST_ONLY.equals(mode) && !AUTO_APPROVAL_CONSECUTIVE.equals(mode)) {
             return;
         }
@@ -1297,7 +1287,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new RuntimeException("流程实例不存在或已结束");
         }
 
-        Boolean allowed = readBooleanProcessAttribute(instance.getProcessDefinitionId(), "allowSubmitterWithdraw");
+        Boolean allowed = taskNodePolicy().readBooleanProcessAttribute(
+                instance.getProcessDefinitionId(), "allowSubmitterWithdraw");
         if (Boolean.FALSE.equals(allowed)) {
             throw new RuntimeException("当前流程不允许提交人撤回审批中的申请");
         }
@@ -1420,353 +1411,15 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         }
     }
 
-    private void validateTaskAction(Task task, String action, String comment, String signature) {
-        validateTaskAction(task, action, comment, signature, getFlowNode(task));
-    }
-
-    private void validateTaskAction(Task task, String action, String comment, String signature, FlowNode flowNode) {
-        TaskApprovalPolicy policy = getTaskApprovalPolicy(task, null, flowNode);
-        if (!policy.isAllowed(action)) {
-            throw new RuntimeException("当前节点不允许执行该审批操作");
-        }
-        validateCommentAndSignature(policy, comment, signature);
-    }
-
-    /**
-     * 指定节点驳回走“驳回”语义，不能再要求节点单独开启 allowReturn。
-     * 未指定目标时仍按退回上一节点校验 allowReturn。
-     */
-    private void validateReturnAction(Task task, String comment, String signature, String requestedTargetActivityId) {
-        TaskApprovalPolicy policy = getTaskApprovalPolicy(task);
-        boolean specifiedNode = !isBlank(requestedTargetActivityId);
-        boolean allowed = specifiedNode
-                ? (policy.allowReject || policy.allowReturn || policy.allowMultiReturn)
-                : (policy.allowReturn || policy.allowMultiReturn);
-        if (!allowed) {
-            throw new RuntimeException(specifiedNode ? "当前节点不允许驳回" : "当前节点不允许退回");
-        }
-        validateCommentAndSignature(policy, comment, signature);
-    }
-
-    private void applyNodePolicy(TaskFormInfo formInfo, FlowNode flowNode) {
-        List<FlowApprovalPointDTO> approvalPoints = FlowNodePolicyParser.resolveApprovalPoints(flowNode);
-        String approvalPoint = approvalPoints.stream()
-                .map(FlowApprovalPointDTO::getContent)
-                .collect(Collectors.joining("\n"));
-        formInfo.setApprovalPoints(approvalPoints);
-        formInfo.setApprovalPoint(isBlank(approvalPoint) ? null : approvalPoint);
-        formInfo.setResponsibilityDescription(FlowNodePolicyParser.resolveResponsibilityDescription(flowNode));
-        formInfo.setPrintTemplatePolicy(flowNode == null
-                ? null : flowNode.getAttributeValue(FLOWABLE_NS, "printTemplatePolicy"));
-        formInfo.setPrintTemplateIds(flowNode == null
-                ? null : flowNode.getAttributeValue(FLOWABLE_NS, "printTemplateIds"));
-    }
-
-    private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults) {
-        validateApprovalPoints(task, approvalPointResults, getFlowNode(task));
-    }
-
-    private void validateApprovalPoints(Task task, List<FlowApprovalPointResultDTO> approvalPointResults,
-            FlowNode flowNode) {
-        List<FlowApprovalPointDTO> required = FlowNodePolicyParser.resolveApprovalPoints(flowNode).stream()
-                .filter(point -> Boolean.TRUE.equals(point.getRequired()))
-                .toList();
-        if (required.isEmpty()) {
-            return;
-        }
-        Map<String, Boolean> checked = new HashMap<>();
-        if (approvalPointResults != null) {
-            for (FlowApprovalPointResultDTO result : approvalPointResults) {
-                if (result != null && !isBlank(result.getId())) {
-                    checked.put(result.getId(), Boolean.TRUE.equals(result.getChecked()));
-                }
-            }
-        }
-        boolean incomplete = required.stream().anyMatch(point -> !Boolean.TRUE.equals(checked.get(point.getId())));
-        if (incomplete) {
-            throw new RuntimeException("请完成全部必审要点");
-        }
-    }
-
-    private void recordApprovalPointResults(Task task, List<FlowApprovalPointResultDTO> approvalPointResults) {
-        if (task == null || approvalPointResults == null || approvalPointResults.isEmpty()) {
-            return;
-        }
-        try {
-            String json = OBJECT_MAPPER.writeValueAsString(approvalPointResults);
-            taskService.addComment(task.getId(), task.getProcessInstanceId(), COMMENT_TYPE_APPROVAL_POINTS, json);
-        } catch (Exception e) {
-            log.warn("保存审批要点结果失败: taskId={}", task.getId(), e);
-        }
-    }
-
-    private List<Map<String, Object>> readApprovalPointResults(String taskId) {
-        if (isBlank(taskId)) {
-            return Collections.emptyList();
-        }
-        try {
-            List<Comment> comments = taskService.getTaskComments(taskId, COMMENT_TYPE_APPROVAL_POINTS);
-            if (comments == null || comments.isEmpty()) {
-                return Collections.emptyList();
-            }
-            String message = comments.get(0).getFullMessage();
-            if (isBlank(message)) {
-                return Collections.emptyList();
-            }
-            return OBJECT_MAPPER.readValue(message, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
-        } catch (Exception e) {
-            log.debug("读取审批要点结果失败: taskId={}", taskId);
-            return Collections.emptyList();
-        }
-    }
-
-    private void validateCommentAndSignature(TaskApprovalPolicy policy, String comment, String signature) {
-        if (policy.requireComment && isBlank(comment)) {
-            throw new RuntimeException("请输入审批意见");
-        }
-        if (policy.requireSignature && isBlank(signature)) {
-            throw new RuntimeException("请完成审批签名");
-        }
-    }
-
-    private TaskApprovalPolicy getTaskApprovalPolicy(Task task) {
-        return getTaskApprovalPolicy(task, null, null);
-    }
-
-    private TaskApprovalPolicy getTaskApprovalPolicy(Task task, FlowModel flowModel, FlowNode flowNode) {
-        TaskApprovalPolicy policy = TaskApprovalPolicy.defaultPolicy();
-        FlowNode effectiveFlowNode = flowNode != null ? flowNode : getFlowNode(task);
-        if (effectiveFlowNode != null) {
-            applyBpmnPolicy(policy, effectiveFlowNode);
-        }
-
-        FlowModel effectiveFlowModel = flowModel != null
-                ? flowModel
-                : flowModelService.getModelByKey(resolveProcessDefinitionKey(task.getProcessDefinitionId(), null));
-        if (effectiveFlowModel != null) {
-            policy.allowMultiReturn = Boolean.TRUE.equals(effectiveFlowModel.getAllowMultiReturn());
-            FlowNodeConfig nodeConfig = flowNodeConfigService.getByModelAndNode(
-                    effectiveFlowModel.getId(), task.getTaskDefinitionKey());
-            if (nodeConfig != null) {
-                applyNodeConfigPolicy(policy, nodeConfig);
-            }
-        }
-        return policy;
-    }
-
-    private FlowNode getFlowNode(Task task) {
-        return getFlowNode(
-                isBlank(task.getProcessDefinitionId()) ? null
-                        : repositoryService.getBpmnModel(task.getProcessDefinitionId()),
-                task.getTaskDefinitionKey());
-    }
-
-    private FlowNode getFlowNode(BpmnModel bpmnModel, String taskDefinitionKey) {
-        if (bpmnModel == null) {
-            return null;
-        }
-        Process process = bpmnModel.getMainProcess();
-        if (process == null) {
-            return null;
-        }
-        FlowElement element = process.getFlowElement(taskDefinitionKey);
-        return element instanceof FlowNode ? (FlowNode) element : null;
-    }
-
-    private void applyBpmnPolicy(TaskApprovalPolicy policy, FlowNode flowNode) {
-        Boolean allowApprove = readBooleanFlowableAttribute(flowNode, "allowApprove");
-        if (allowApprove != null) policy.allowApprove = allowApprove;
-        Boolean allowReject = readBooleanFlowableAttribute(flowNode, "allowReject");
-        if (allowReject != null) policy.allowReject = allowReject;
-        Boolean allowRejectToStart = readBooleanFlowableAttribute(flowNode, "allowRejectToStart");
-        if (allowRejectToStart != null) policy.allowRejectToStart = allowRejectToStart;
-        Boolean allowDelegate = readBooleanFlowableAttribute(flowNode, "allowDelegate");
-        if (allowDelegate != null) policy.allowDelegate = allowDelegate;
-        Boolean allowReturn = readBooleanFlowableAttribute(flowNode, "allowReturn");
-        if (allowReturn != null) policy.allowReturn = allowReturn;
-        Boolean allowTerminate = readBooleanFlowableAttribute(flowNode, "allowTerminate");
-        if (allowTerminate != null) policy.allowTerminate = allowTerminate;
-        Boolean requireSignature = readBooleanFlowableAttribute(flowNode, "requireSignature");
-        if (requireSignature != null) policy.requireSignature = requireSignature;
-        Boolean requireComment = readBooleanFlowableAttribute(flowNode, "requireComment");
-        if (requireComment != null) policy.requireComment = requireComment;
-    }
-
-    private void applyNodeConfigPolicy(TaskApprovalPolicy policy, FlowNodeConfig nodeConfig) {
-        if (nodeConfig.getAllowApprove() != null) policy.allowApprove = nodeConfig.getAllowApprove();
-        if (nodeConfig.getAllowReject() != null) policy.allowReject = nodeConfig.getAllowReject();
-        if (nodeConfig.getAllowRejectToStart() != null) {
-            policy.allowRejectToStart = nodeConfig.getAllowRejectToStart();
-        }
-        if (nodeConfig.getAllowDelegate() != null) policy.allowDelegate = nodeConfig.getAllowDelegate();
-        if (nodeConfig.getAllowReturn() != null) policy.allowReturn = nodeConfig.getAllowReturn();
-        if (nodeConfig.getAllowTerminate() != null) policy.allowTerminate = nodeConfig.getAllowTerminate();
-        if (nodeConfig.getRequireSignature() != null) policy.requireSignature = nodeConfig.getRequireSignature();
-        if (nodeConfig.getRequireComment() != null) policy.requireComment = nodeConfig.getRequireComment();
-    }
-
-    private Boolean readBooleanFlowableAttribute(FlowNode flowNode, String name) {
-        return parseBooleanValue(readStringFlowableAttribute(flowNode, name));
-    }
-
-    private String readStringFlowableAttribute(FlowNode flowNode, String name) {
-        String value = flowNode.getAttributeValue(FLOWABLE_NS, name);
-        if (isBlank(value)) {
-            Map<String, List<ExtensionElement>> extensions = flowNode.getExtensionElements();
-            List<ExtensionElement> elements = extensions != null ? extensions.get(name) : null;
-            if (elements != null && !elements.isEmpty()) {
-                value = elements.get(0).getElementText();
-            }
-        }
-        return value;
-    }
-
-    private void validateRequiredVariables(Task task, Map<String, Object> variables) {
-        validateRequiredVariables(task, variables, getFlowNode(task));
-    }
-
-    private void validateRequiredVariables(Task task, Map<String, Object> variables, FlowNode flowNode) {
-        if (flowNode == null) {
-            return;
-        }
-        String requiredVariables = readStringFlowableAttribute(flowNode, "requiredVariables");
-        if (isBlank(requiredVariables)) {
-            return;
-        }
-
-        List<String> missing = new ArrayList<>();
-        for (String variable : requiredVariables.split("[,;，；]")) {
-            String key = variable == null ? "" : variable.trim();
-            if (key.isEmpty()) {
-                continue;
-            }
-            Object value = variables == null ? null : variables.get(key);
-            if (isEmptyVariableValue(value)) {
-                missing.add(key);
-            }
-        }
-        if (missing.isEmpty()) {
-            return;
-        }
-
-        String message = readStringFlowableAttribute(flowNode, "requiredMessage");
-        if (isBlank(message)) {
-            message = "请补充必填流程表单信息：" + String.join("、", missing);
-        }
-        throw new RuntimeException(message);
-    }
-
-    private boolean isEmptyVariableValue(Object value) {
-        if (value == null) {
-            return true;
-        }
-        if (value instanceof String) {
-            return ((String) value).trim().isEmpty();
-        }
-        if (value instanceof Collection<?>) {
-            return ((Collection<?>) value).isEmpty();
-        }
-        return false;
-    }
-
-    private Boolean readBooleanProcessAttribute(String processDefinitionId, String name) {
-        return parseBooleanValue(readProcessStringAttribute(processDefinitionId, name));
-    }
-
-    private String readProcessStringAttribute(String processDefinitionId, String name) {
-        return readProcessStringAttribute(getBpmnProcess(processDefinitionId), name);
-    }
-
-    private String readProcessStringAttribute(Process process, String name) {
-        if (process == null) {
-            return null;
-        }
-        String value = process.getAttributeValue(FLOWABLE_NS, name);
-        if (isBlank(value)) {
-            Map<String, List<ExtensionElement>> extensions = process.getExtensionElements();
-            List<ExtensionElement> elements = extensions != null ? extensions.get(name) : null;
-            if (elements != null && !elements.isEmpty()) {
-                value = elements.get(0).getElementText();
-            }
-        }
-        if ("autoApprovalMode".equals(name)
-                && !AUTO_APPROVAL_FIRST_ONLY.equals(value)
-                && !AUTO_APPROVAL_CONSECUTIVE.equals(value)) {
-            return AUTO_APPROVAL_NONE;
-        }
-        return value;
-    }
-
-    private Process getBpmnProcess(String processDefinitionId) {
-        if (isBlank(processDefinitionId)) {
-            return null;
-        }
-        BpmnModel bpmnModel = repositoryService.getBpmnModel(processDefinitionId);
-        if (bpmnModel == null) {
-            return null;
-        }
-        return bpmnModel.getMainProcess();
-    }
-
-    private Boolean parseBooleanValue(String value) {
-        if (isBlank(value)) {
-            return null;
-        }
-        String normalized = value.trim();
-        if ("true".equalsIgnoreCase(normalized) || "1".equals(normalized)
-                || "Y".equalsIgnoreCase(normalized) || "yes".equalsIgnoreCase(normalized)) {
-            return true;
-        }
-        if ("false".equalsIgnoreCase(normalized) || "0".equals(normalized)
-                || "N".equalsIgnoreCase(normalized) || "no".equalsIgnoreCase(normalized)) {
-            return false;
-        }
-        return null;
-    }
-
-    private String findPreviousUserTaskActivityId(Task task) {
-        List<HistoricActivityInstance> activities = historyService.createHistoricActivityInstanceQuery()
-                .processInstanceId(task.getProcessInstanceId())
-                .activityType("userTask")
-                .finished()
-                .orderByHistoricActivityInstanceEndTime()
-                .desc()
-                .list();
-        if (activities == null || activities.isEmpty()) {
-            return null;
-        }
-        for (HistoricActivityInstance activity : activities) {
-            if (!Objects.equals(activity.getActivityId(), task.getTaskDefinitionKey())) {
-                return activity.getActivityId();
-            }
-        }
-        return null;
-    }
-
-    private String resolveReturnTarget(Task task, String requestedTargetActivityId) {
-        String previous = findPreviousUserTaskActivityId(task);
-        if (isBlank(requestedTargetActivityId)) {
-            return previous;
-        }
-        String target = requestedTargetActivityId.trim();
-        if (Objects.equals(target, task.getTaskDefinitionKey())) {
-            throw new RuntimeException("不能退回当前任务节点");
-        }
-        FlowModel model = flowModelService.getModelByKey(
-                resolveProcessDefinitionKey(task.getProcessDefinitionId(), null));
-        if (model == null || !Boolean.TRUE.equals(model.getAllowMultiReturn())) {
-            throw new RuntimeException("当前流程未开启多级退回");
-        }
-        List<HistoricActivityInstance> activities = historyService.createHistoricActivityInstanceQuery()
-                .processInstanceId(task.getProcessInstanceId())
-                .activityType("userTask")
-                .finished()
-                .list();
-        boolean found = activities.stream().anyMatch(activity -> target.equals(activity.getActivityId()));
-        if (!found) {
-            throw new RuntimeException("目标节点不是当前流程已完成的用户任务");
-        }
-        return target;
+    private FlowTaskNodePolicy taskNodePolicy() {
+        return new FlowTaskNodePolicy(
+                repositoryService,
+                historyService,
+                taskService,
+                flowModelService,
+                flowNodeConfigService,
+                processDefinitionId -> resolveProcessDefinitionKey(processDefinitionId, null)
+        );
     }
 
     private boolean isProcessStarterTask(Task task, String userId) {
@@ -1940,19 +1593,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         hydrateFormInstanceSnapshotIfNecessary(formInfo, task.getProcessInstanceId(), taskTenantId);
 
         // 6. 获取节点办理配置（BPMN扩展属性 + 节点配置表，配置表优先）
-        TaskApprovalPolicy policy = getTaskApprovalPolicy(task, flowModel, flowNode);
-        formInfo.setAllowApprove(policy.allowApprove);
-        formInfo.setAllowReject(policy.allowReject);
-        formInfo.setAllowDelegate(policy.allowDelegate);
-        formInfo.setAllowReturn(policy.allowReturn);
-        formInfo.setAllowMultiReturn(flowModel != null && Boolean.TRUE.equals(flowModel.getAllowMultiReturn()));
+        taskNodePolicy().applyApprovalPolicy(formInfo, task, flowModel, flowNode);
         formInfo.setReturnTargets(buildReturnTargets(task, formInfo.getAllowMultiReturn()));
         populateDirectSendInfo(formInfo, task, bpmnModel, variables);
-        formInfo.setAllowTerminate(policy.allowTerminate);
-        formInfo.setRequireSignature(policy.requireSignature);
-        formInfo.setRequireComment(policy.requireComment);
-        formInfo.setAllowRejectToStart(policy.allowRejectToStart);
-        applyNodePolicy(formInfo, flowNode);
+        taskNodePolicy().applyNodePolicy(formInfo, flowNode);
 
         log.info("获取任务表单信息：taskId={}, formType={}, formKey={}",
                 taskId, formInfo.getFormType(), formInfo.getFormKey());
@@ -2254,7 +1898,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     }
 
     private void applyFormConfiguration(TaskFormInfo formInfo, FlowModel flowModel, FlowNode flowNode) {
-        applyNodePolicy(formInfo, flowNode);
+        taskNodePolicy().applyNodePolicy(formInfo, flowNode);
         NodeFormConfig nodeForm = readNodeFormConfig(flowNode);
         formInfo.setFormFieldPermissions(nodeForm.formFieldPermissions);
 
@@ -2744,7 +2388,7 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             node.setAction(FlowTaskStatus.historyActionOf(task.getStatus()));
             node.setComment(task.getComment() != null ? task.getComment() : "");
             node.setSignature(task.getSignature());
-            node.setApprovalPointResults(readApprovalPointResults(task.getTaskId()));
+            node.setApprovalPointResults(taskNodePolicy().readApprovalPointResults(task.getTaskId()));
             node.setCreateTime(task.getCreateTime() != null ? task.getCreateTime().toString() : null);
             node.setCompleteTime(task.getCompleteTime() != null ? task.getCompleteTime().toString() : null);
             records.add(node);
@@ -2802,47 +2446,4 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         }
     }
 
-    private static class TaskApprovalPolicy {
-        private boolean allowApprove;
-        private boolean allowReject;
-        private boolean allowRejectToStart;
-        private boolean allowDelegate;
-        private boolean allowReturn;
-        private boolean allowMultiReturn;
-        private boolean allowTerminate;
-        private boolean requireSignature;
-        private boolean requireComment;
-
-        private static TaskApprovalPolicy defaultPolicy() {
-            TaskApprovalPolicy policy = new TaskApprovalPolicy();
-            policy.allowApprove = true;
-            policy.allowReject = true;
-            policy.allowRejectToStart = false;
-            policy.allowDelegate = true;
-            policy.allowReturn = false;
-            policy.allowTerminate = false;
-            policy.requireSignature = false;
-            policy.requireComment = true;
-            return policy;
-        }
-
-        private boolean isAllowed(String action) {
-            switch (action) {
-                case ACTION_APPROVE:
-                    return allowApprove;
-                case ACTION_REJECT:
-                    return allowReject;
-                case ACTION_REJECT_TO_START:
-                    return allowRejectToStart;
-                case ACTION_DELEGATE:
-                    return allowDelegate;
-                case ACTION_RETURN:
-                    return allowReturn || allowMultiReturn;
-                case ACTION_TERMINATE:
-                    return allowTerminate;
-                default:
-                    return false;
-            }
-        }
-    }
 }
