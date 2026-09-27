@@ -1,5 +1,22 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：AI Provider 空类型校验失败关闭
+
+### 实现
+
+- 修复 OpenAI 兼容供应商在 `baseUrl` 为空且 `providerType` 缺失时，直接对不可变默认端点表执行 `get(null)` 导致 NPE 的问题；空值和空白值现在统一落入稳定的 `BusinessException` 配置校验。
+- 默认端点查找前统一执行 `trim + Locale.ROOT` 小写规范化，合法供应商类型不再因大小写或首尾空格丢失内置端点；未知类型仍要求显式填写 Base URL，不扩大出站访问范围。
+
+### 验证
+
+- `OpenAiCompatibleProviderAdapterTest` 与 `AiProviderBaseUrlPolicyTest` 定向反应堆测试 8/8 通过，覆盖 null、空白、未知类型以及大小写/空格规范化。
+- 包含 FlowClient、Generator、AI、Flow 插件与 Flow Server 的 38 模块完整反应堆测试全部通过；其中 AI 124/124、Generator 1366/1366、Flow 插件 228/228、Flow Server 48/48，均为 0 失败、0 错误、0 跳过。
+- 本批未修改巨型组件或开展巨型类拆分。
+
+### 未覆盖
+
+- 未使用真实第三方 AI 凭证发起外部连接；本批验证的是配置校验和默认端点解析边界，不改变实际供应商鉴权与受控出站策略。
+
 ## 2026-09-28：T4.4 退回动作远端幂等回放
 
 ### 实现
@@ -18,7 +35,7 @@
 ### 未覆盖
 
 - 未连接真实 Flowable 注入退回成功后 HTTP 响应丢失，也未建立本地持久化审批/退回命令 Outbox；本批闭环的是同一稳定请求到达 Flow 服务后的安全回放。
-- 全链完整测试在与本批无关的 `forge-plugin-ai` 基线用例 `OpenAiCompatibleProviderAdapterTest.validateShouldRequireCompleteCompatibleConfiguration` 处失败：空 provider code 进入 `Map.of(...).get(null)` 触发 NPE，而用例期望 `BusinessException`。该问题未影响上述受影响模块完整测试，留待后续按优先级修复。
+- 全链完整测试当时在与本批无关的 `forge-plugin-ai` 基线用例 `OpenAiCompatibleProviderAdapterTest.validateShouldRequireCompleteCompatibleConfiguration` 处发现空 provider type 触发 NPE；该基线问题已由后续“AI Provider 空类型校验失败关闭”批次修复并通过 38 模块完整回归。
 - 撤回、重提、主动状态同步、Redis 入箱前 ACK 和授权人工重放仍属于 T4.4 未完成项；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
 
 ## 2026-09-28：T4.4 审批动作稳定幂等凭证
