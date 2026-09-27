@@ -76,5 +76,6 @@
 - [x] 提取用户组织/岗位/角色 Assignment Policy，集中租户归属、组织适用范围和用户类型×数据范围规则，使 `SysUserServiceImpl` 降至 1573 行。
 - [x] 提取用户管理 Access Policy，集中登录身份、权限通配符、租户选择、跨租户边界和自操作限制，使 `SysUserServiceImpl` 降至 1384 行。
 - [x] 提取用户关系生命周期 Coordinator，统一角色/组织/租户/岗位的校验、差异写入、级联清理和会话刷新，使 `SysUserServiceImpl` 降至 554 行并满足单类 1000 行目标。
+- [x] 提取低代码 AI 领域规划 Strategy 与字段模板 Catalog，集中对象推断、领域复用、命名策略和字段协议，使 `LowcodeAiGenerateService` 降至 917 行并满足单类 1000 行目标。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

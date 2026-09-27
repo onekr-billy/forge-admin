@@ -526,6 +526,15 @@
 
 验证结果：角色、组织、租户和岗位关系已委托 `SysUserRelationCoordinator`；新增 3 项测试覆盖角色越权拒绝、岗位差异写入/主岗位迁移和最后租户解绑清理。相关 5 个测试类共 12 项通过，0 失败、0 错误；system Reactor 干净编译与 `git diff --check` 通过。`SysUserServiceImpl` 554 行，新 Coordinator 780 行。
 
+## 2026-09-27 第七十七轮增量验证：低代码 AI 领域规划与字段模板
+
+- P0：关键词命中的业务对象、跨领域划分、显式单领域偏好、已有启用/禁用领域复用与冲突后缀策略保持不变。
+- P0：用户指定表名前缀、领域 Schema 命名同步、对象字段/敏感类型/查询类型、树字段和页面区域协议保持不变。
+- P1：使用 Strategy + Catalog/Factory 分离领域/对象规划和确定性字段模板；Service 保留 AI 调用、流式事件、结果归一与运行时校验，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 干净编译，重跑规划策略、字段模板、编排入口、运行时配置与 Schema 校验测试，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：领域/对象推断和命名策略已委托 `LowcodeAiDomainPlanningStrategy`，字段映射与字段/区域工厂已委托 `LowcodeAiFieldTemplateCatalog`；新增 7 项测试覆盖单领域合并、领域冲突、表名前缀、字段协议和规则回退端到端连接。相关 6 个测试类共 40 项通过，0 失败、0 错误；generator Reactor 干净编译与 `git diff --check` 通过。`LowcodeAiGenerateService` 917 行，新 Strategy 452 行、Catalog 187 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。

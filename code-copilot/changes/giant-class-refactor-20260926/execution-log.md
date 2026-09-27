@@ -415,3 +415,9 @@
 - 使用 Coordinator 从 `SysUserServiceImpl` 成块迁出角色、组织、组织角色、租户和岗位关系的授权后编排，统一关系归一、归属补齐、差异写入、级联清理、旧角色兼容同步和会话/行政区划刷新；Access Policy 与 Assignment Policy 继续分别提供访问边界和分配规则。
 - 公开事务注解仍保留在 Service 门面，Coordinator 通过两个窄回调触发会话和主组织区划同步，避免反向注入 Service。入口由 1384 行降至 554 行，新 `SysUserRelationCoordinator` 780 行，均低于 1000 行。
 - system Reactor 干净编译退出码 0；执行 `SysUserRelationCoordinatorTest,SysUserAccessPolicyTest,SysUserAssignmentPolicyTest,SysUserMapperSqlContractTest,SysUserImportSecurityContractTest` 共 5 类 12 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实批量跨租户绑定、组织角色迁移和在线会话刷新仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十七个切口：低代码 AI 领域规划与字段模板目录
+
+- 使用 Strategy 从 `LowcodeAiGenerateService` 迁出领域/对象候选目录、关键词推断、已有领域复用、禁用领域冲突后缀、单领域偏好、表名前缀和代码/表名归一；使用 Catalog/Factory 迁出对象字段模板、敏感类型、查询属性、字段工厂和页面区域工厂。
+- 保留原 Service 的六参数 Spring 构造边界，规划器与目录由私有工厂延迟创建；AI 调用、流式进度、结果归一、模型/页面组装和运行时验证仍由入口编排。入口由 1450 行降至 917 行，新 Strategy 452 行、Catalog 187 行，均低于 1000 行。
+- generator Reactor 干净编译退出码 0；规划策略、字段目录、编排入口、运行时配置和 Schema 校验相关 6 类 40 项通过，0 失败、0 错误；首次编译暴露页面区域与树父字段仍调用旧本地工厂，改为显式委托 Catalog 后编译通过。`git diff --check` 通过。未调用真实 AI、未启动 Admin 服务、未连接真实数据库；真实模型供应商流式响应和多领域复杂提示仍需服务环境验收，无服务 PID 需停止。
