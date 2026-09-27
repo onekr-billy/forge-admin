@@ -36,11 +36,16 @@
 
 ## 分类目录
 
-### [前端 / 构建 / 路由](pitfalls/frontend.md)（40）
+### [前端 / 构建 / 路由](pitfalls/frontend.md)（47）
 
+- 门户富列表禁止嵌套 ListPageGridDesigner
 - Vitest 结构测试读取源码时 new URL 不能内联字面量路径
 - pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
 - SPA fallback 不能吞掉缺失的哈希静态资源
+- Naive UI `n-tabs` 只识别直接子级 `n-tab-pane`
+- part1 return 引用 part2 函数必须先挂 `__impl` 转发
+- 多 part composable 的 return 必须用 `...deps` 转发
+- Options API + composable 拆分后，模板用到的 import 必须 return
 - naive-ui FormItem 挂载测量会清空字段级固定 labelWidth
 - window.$message 是 class 实例，方法不能分离调用
 - computed 每次返回新对象时 watch 引用比较恒不等

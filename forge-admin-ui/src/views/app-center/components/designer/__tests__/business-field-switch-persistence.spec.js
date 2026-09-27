@@ -1,14 +1,16 @@
-import fs from 'node:fs'
-import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 
 function readSource(relativePath) {
-  return fs.readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
+  return readSplitVueSource(relativePath)
 }
 
 describe('business field switch persistence contract', () => {
   it('saves the current field before leaving the data structure panel', () => {
-    const designerSource = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    const designerSource = readSplitVueSource(
+      'src/views/app-center/object-designer.[objectCode].vue',
+      'useObjectDesigner',
+    )
 
     expect(designerSource).toContain(':confirm-dirty-switch="!fieldDraftDirty"')
     expect(designerSource).toContain('@dirty-change="handleFieldDirtyChange"')

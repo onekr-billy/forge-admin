@@ -136,9 +136,9 @@ describe('page-flow-geometry', () => {
   })
 
   it('normalizes page padding defaults and css', () => {
-    expect(normalizePagePadding(null)).toEqual({ top: 24, right: 24, bottom: 24, left: 24 })
+    expect(normalizePagePadding(null)).toEqual({ top: 8, right: 8, bottom: 8, left: 8 })
     expect(normalizePagePadding(12)).toEqual({ top: 12, right: 12, bottom: 12, left: 12 })
-    expect(normalizePagePadding({ top: 8, left: 16 })).toEqual({ top: 8, right: 24, bottom: 24, left: 16 })
+    expect(normalizePagePadding({ top: 8, left: 16 })).toEqual({ top: 8, right: 8, bottom: 8, left: 16 })
     expect(resolvePagePaddingCss({ top: 8, right: 12, bottom: 16, left: 20 })).toBe('8px 12px 16px 20px')
   })
 })

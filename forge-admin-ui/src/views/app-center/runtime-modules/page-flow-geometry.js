@@ -7,10 +7,10 @@ import { shouldUsePageFlowStack } from '@/views/app-center/components/portal/por
  */
 
 export const DEFAULT_PAGE_PADDING = Object.freeze({
-  top: 24,
-  right: 24,
-  bottom: 24,
-  left: 24,
+  top: 8,
+  right: 8,
+  bottom: 8,
+  left: 8,
 })
 
 export function readPageBlockLength(value, fallback = 0) {
@@ -21,10 +21,10 @@ export function readPageBlockLength(value, fallback = 0) {
 /** 统一解析页面内边距；支持数字 / 四边对象 / CSS 简写字符串 */
 export function normalizePagePadding(raw, fallback = DEFAULT_PAGE_PADDING) {
   const base = {
-    top: Number(fallback.top) || 24,
-    right: Number(fallback.right) || 24,
-    bottom: Number(fallback.bottom) || 24,
-    left: Number(fallback.left) || 24,
+    top: Number(fallback.top) || 8,
+    right: Number(fallback.right) || 8,
+    bottom: Number(fallback.bottom) || 8,
+    left: Number(fallback.left) || 8,
   }
   if (raw == null || raw === '')
     return { ...base }

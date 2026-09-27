@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 import {
   pickBusinessObjectIdentity,
   resolveDataModelTab,
@@ -10,6 +11,14 @@ import {
 
 function readSource(relativePath) {
   return fs.readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
+}
+
+function readObjectDesigner() {
+  return readSplitVueSource('src/views/app-center/object-designer.[objectCode].vue', 'useObjectDesigner')
+}
+
+function readListDesigner() {
+  return readSplitVueSource('src/views/app-center/components/designer/BusinessListDesigner.vue', 'useBusinessListDesigner')
 }
 
 describe('standalone object designer navigation', () => {
@@ -38,9 +47,9 @@ describe('standalone object designer navigation', () => {
   })
 
   it('keeps application-owned designers out of the standalone object designer', () => {
-    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
-    const listDesigner = readSource('src/views/app-center/components/designer/BusinessListDesigner.vue')
-    const gridDesigner = readSource('src/components/lowcode-builder/page/ListPageGridDesigner.vue')
+    const objectDesigner = readObjectDesigner()
+    const listDesigner = readListDesigner()
+    const gridDesigner = readSplitVueSource('src/components/lowcode-builder/page/ListPageGridDesigner.vue', 'useListPageGridDesigner')
 
     expect(objectDesigner).not.toContain('activePanel === \'default-view\'')
     expect(objectDesigner).not.toContain('activePanel === \'triggers\'')
@@ -49,23 +58,23 @@ describe('standalone object designer navigation', () => {
     expect(objectDesigner).toContain('const compatibilityPanel = [\'publish\', \'advanced\'].includes(normalizedPanel)')
     expect(listDesigner).not.toContain('class="list-custom-actions-entry"')
     expect(listDesigner).toContain('const visibleListCustomActions = computed(() => props.defaultViewOnly ? [] : listCustomActions.value)')
-    expect(listDesigner).toContain('if (!props.defaultViewOnly)\n      await saveBusinessObjectActions')
+    expect(listDesigner).toMatch(/if \(!props\.defaultViewOnly\)\s*\n?\s*await saveBusinessObjectActions/)
     expect(gridDesigner).toContain('customActionsEditable')
     expect(gridDesigner).toContain('title="工具栏按钮与导入导出"')
     expect(gridDesigner).toContain('自定义操作按钮')
   })
 
   it('hosts tree-model configuration inside list design property panel', () => {
-    const listDesigner = readSource('src/views/app-center/components/designer/BusinessListDesigner.vue')
-    const gridDesigner = readSource('src/components/lowcode-builder/page/ListPageGridDesigner.vue')
+    const listDesigner = readListDesigner()
+    const gridDesigner = readSplitVueSource('src/components/lowcode-builder/page/ListPageGridDesigner.vue', 'useListPageGridDesigner')
     const treeModelPanel = readSource('src/views/app-center/components/designer/BusinessPermissionFlowPanel.vue')
     const processPanel = readSource('src/views/app-center/components/designer/ObjectProcessReadOnlyPanel.vue')
-    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    const objectDesigner = readObjectDesigner()
 
     expect(listDesigner).not.toContain('class="list-tree-model-entry"')
     expect(listDesigner).toContain('@update:model-schema="handleGridModelSchemaUpdate"')
     expect(gridDesigner).toContain('class="list-tree-model-property"')
-    expect(gridDesigner).toContain('title="树形模型"')
+    expect(gridDesigner).toContain('树形模型')
     expect(gridDesigner).toContain('updateEmbeddedTreeEnabled')
     expect(treeModelPanel).toContain('配置对象的父子层级、显示字段和加载方式。')
     expect(treeModelPanel).not.toContain('数据策略')
@@ -77,7 +86,7 @@ describe('standalone object designer navigation', () => {
   })
 
   it('keeps standalone tree-model panel for legacy deep links', () => {
-    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    const objectDesigner = readObjectDesigner()
     const designerShell = readSource('src/views/app-center/components/designer/BusinessObjectDesignerShell.vue')
     const navigation = readSource('src/views/app-center/components/designer/object-designer-navigation.js')
 
@@ -91,7 +100,7 @@ describe('standalone object designer navigation', () => {
   })
 
   it('guides standalone users to the application process workspace', () => {
-    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    const objectDesigner = readObjectDesigner()
 
     expect(objectDesigner).toContain('流程与自动化配置已移至应用工作台')
     expect(objectDesigner).toContain('触发器、流程绑定和业务动作已统一为业务流程画布')
@@ -109,7 +118,7 @@ describe('standalone object designer navigation', () => {
     })).toEqual({ id: '2089974506884993026' })
     expect(pickBusinessObjectIdentity({ objectByCode: colliding })).toEqual(colliding)
 
-    const objectDesigner = readSource('src/views/app-center/object-designer.[objectCode].vue')
+    const objectDesigner = readObjectDesigner()
     expect(objectDesigner).toContain('pickBusinessObjectIdentity({ queryObjectId })')
     expect(objectDesigner).not.toContain('return object?.id ? object : { id }')
   })

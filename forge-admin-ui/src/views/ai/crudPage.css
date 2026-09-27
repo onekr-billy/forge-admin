@@ -1,0 +1,46 @@
+.ai-crud-page-wrapper {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: transparent;
+}
+
+.loading-wrapper,
+.error-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+.runtime-column-link {
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.runtime-column-link:hover {
+  text-decoration: underline;
+}
+
+.runtime-list-grid {
+  min-height: 100%;
+  padding: 0;
+  background: transparent;
+}
+
+.runtime-list-grid :deep(.canvas-panel) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.runtime-list-grid :deep(.canvas-scroll) {
+  min-height: 100%;
+  overflow: visible;
+}
+
+.runtime-list-grid :deep(.canvas-grid) {
+  background: transparent;
+  box-shadow: none;
+}

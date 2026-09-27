@@ -49,6 +49,48 @@
         </n-form>
       </section>
 
+      <section v-else-if="activeSection === 'params'" class="page-design-settings-card">
+        <header>
+          <h2>页面入参</h2>
+          <p>声明本页可从路由接收的参数。其它页面跳转时可传入；本页列表/表单可通过「路由参数」取值使用。</p>
+        </header>
+        <div class="page-params-editor">
+          <div
+            v-for="(param, index) in pageParams"
+            :key="index"
+            class="page-params-row"
+          >
+            <n-input
+              size="small"
+              :value="param.name"
+              placeholder="参数名，如 orderId"
+              @update:value="updatePageParam(index, { name: normalizeParamName($event) })"
+            />
+            <n-input
+              size="small"
+              :value="param.label"
+              placeholder="显示名（可选）"
+              @update:value="updatePageParam(index, { label: $event })"
+            />
+            <n-input
+              size="small"
+              :value="param.defaultValue"
+              placeholder="默认值（可选）"
+              @update:value="updatePageParam(index, { defaultValue: $event })"
+            />
+            <n-button size="tiny" quaternary type="error" @click="removePageParam(index)">
+              删除
+            </n-button>
+          </div>
+          <n-button size="small" dashed block @click="addPageParam">
+            + 添加入参
+          </n-button>
+          <p class="page-params-hint">
+            跳转时在事件「传参」里选「路由参数」或静态值写入这些名字；本页 AiCrudPage 会自动把同名路由参数并入查询条件 / 表单默认值。
+          </p>
+        </div>
+      </section>
+
       <section v-else-if="activeSection === 'audit'" class="page-design-settings-card">
         <header>
           <h2>数据变更审计</h2>
@@ -157,7 +199,7 @@
 </template>
 
 <script setup>
-import { ColorPaletteOutline, EyeOutline, InformationCircleOutline, PrintOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
+import { ColorPaletteOutline, EyeOutline, InformationCircleOutline, LinkOutline, PrintOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DataAuditPolicyPanel from '@/components/data-audit/DataAuditPolicyPanel.vue'
@@ -197,7 +239,7 @@ const emit = defineEmits(['update', 'restore-layout'])
 const route = useRoute()
 const router = useRouter()
 
-const PAGE_SETTINGS_SECTIONS = new Set(['basic', 'display', 'audit', 'printing', 'info'])
+const PAGE_SETTINGS_SECTIONS = new Set(['basic', 'display', 'params', 'audit', 'printing', 'info'])
 
 function resolvePageSettingsSection(value) {
   const normalized = String(Array.isArray(value) ? value[0] : value || '').trim()
@@ -208,6 +250,7 @@ const activeSection = ref(resolvePageSettingsSection(route.query.settingsSection
 const sections = [
   { key: 'basic', label: '基础信息', icon: ColorPaletteOutline },
   { key: 'display', label: '显示设置', icon: EyeOutline },
+  { key: 'params', label: '页面入参', icon: LinkOutline },
   { key: 'audit', label: '数据审计', icon: ShieldCheckmarkOutline },
   { key: 'printing', label: '打印模板', icon: PrintOutline },
   { key: 'info', label: '页面信息', icon: InformationCircleOutline },
@@ -235,6 +278,41 @@ watch(() => route.query.settingsSection, (section) => {
 
 const navigationVisible = computed(() => (props.node.navigationVisible ?? props.node.settings?.navigationVisible) !== false)
 const printWatermark = computed(() => normalizePrintPageWatermark(props.node.printWatermark ?? props.node.settings?.printWatermark))
+const pageParams = computed(() => normalizePageParams(props.node.pageParams ?? props.node.settings?.pageParams))
+
+function normalizePageParams(value) {
+  if (!Array.isArray(value))
+    return []
+  return value
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({
+      name: String(item.name || '').trim(),
+      label: String(item.label || '').trim(),
+      defaultValue: item.defaultValue == null ? '' : String(item.defaultValue),
+    }))
+}
+
+function normalizeParamName(value = '') {
+  return String(value || '').trim().replace(/\s+/g, '_')
+}
+
+function addPageParam() {
+  patch({
+    pageParams: [
+      ...pageParams.value,
+      { name: '', label: '', defaultValue: '' },
+    ],
+  })
+}
+
+function updatePageParam(index, partial = {}) {
+  const next = pageParams.value.map((item, idx) => (idx === index ? { ...item, ...partial } : item))
+  patch({ pageParams: next })
+}
+
+function removePageParam(index) {
+  patch({ pageParams: pageParams.value.filter((_, idx) => idx !== index) })
+}
 
 const pageShapeLabel = computed(() => {
   const value = props.node.pageTemplate || props.node.objectRef?.pageMode || ''
@@ -425,6 +503,25 @@ function patchWatermarkColor(value) {
   gap: 10px;
   color: #4e5969;
   font-size: 13px;
+}
+
+.page-params-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.page-params-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-params-hint {
+  margin: 0 !important;
+  color: #86909c;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .page-design-settings-meta {

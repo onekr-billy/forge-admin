@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 import { pageWidgetComponentKeys } from '@/components/lowcode-builder/shared/page-widget-schema'
 import {
   FIELD_COMPONENT_DEFAULTS,
@@ -10,17 +11,14 @@ import {
 } from '../form-first/fieldComponentCatalog'
 
 function readDesignerSource() {
-  return fs.readFileSync(
-    path.resolve(process.cwd(), 'src/views/app-center/components/designer/BusinessFormDesigner.vue'),
-    'utf8',
+  return readSplitVueSource(
+    'src/views/app-center/components/designer/BusinessFormDesigner.vue',
+    'useBusinessFormDesigner',
   )
 }
 
 function readRuntimeFieldSource() {
-  return fs.readFileSync(
-    path.resolve(process.cwd(), 'src/components/ai-form/AiFormItem.vue'),
-    'utf8',
-  )
+  return readSplitVueSource('src/components/ai-form/AiFormItem.vue', 'useAiFormItem')
 }
 
 describe('business form runtime compilation contract', () => {
@@ -58,9 +56,13 @@ describe('business form runtime compilation contract', () => {
       .filter(componentKey => !['number', 'money', 'userSelect', 'orgTreeSelect'].includes(componentKey))
 
     directTypes.forEach((componentKey) => {
+      if (componentKey === 'objectReference' || componentKey === 'recordSelector') {
+        expect(runtimeSource, componentKey).toContain('isRelationSelectorField')
+        return
+      }
       expect(runtimeSource, componentKey).toContain(`field.type === '${componentKey}'`)
     })
-    expect(runtimeSource).toContain('v-else-if="isNumberFieldType(field.type)"')
+    expect(runtimeSource).toContain('v-else-if="isNumberLikeField(field)"')
     expect(runtimeSource).toContain('v-else-if="isUserSelectField(field)"')
     expect(runtimeSource).toContain('v-else-if="isOrgTreeSelectField(field)"')
   })
@@ -73,7 +75,7 @@ describe('business form runtime compilation contract', () => {
     )
     const standaloneWidgetKeys = pageWidgetComponentKeys.filter(componentKey => componentKey !== 'transfer')
 
-    expect(standaloneWidgetKeys).toHaveLength(19)
+    expect(standaloneWidgetKeys).toHaveLength(23)
     expect(designerSource).toContain('nodeType: \'widget\'')
     expect(designerSource).toContain('isPageWidgetComponentKey(componentKey)')
     expect(runtimeSource).toContain('<PageWidgetRenderer')

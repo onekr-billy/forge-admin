@@ -36,6 +36,7 @@ export {
   isPaletteUnionSpec,
   LIST_BLOCK_TYPE_OVERRIDES,
   LIST_CANVAS_PENDING_TYPES,
+  LIST_PALETTE_EXCLUDED_TYPES,
   PALETTE_ZONE_ONLY_TYPES,
   resolveBridgeSpec,
   toCanvasComponentCatalog,

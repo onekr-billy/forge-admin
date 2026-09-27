@@ -74,6 +74,7 @@
 <script setup>
 import { NSkeleton } from 'naive-ui'
 import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { crudConfigRender } from '@/api/ai'
 import { executePublishedExtensionHook } from '@/api/business-extension'
 import { buildRuntimeCrudProps } from '@/components/lowcode-builder/shared/runtime-crud-props'
@@ -90,7 +91,7 @@ import {
 } from '@/components/lowcode-extension/runtime/application-extension-runtime'
 import RuntimeScopedStyles from '@/components/lowcode-extension/runtime/RuntimeScopedStyles'
 import { isRuntimeAutoHeightBlock, resolvePortalPageBlocks, shouldUseContentSizedFlow, sortBlocksByPageFlowY } from './portal-page-runtime-layout'
-import { normalizePagePadding, resolvePagePaddingCss, resolvePageBlockShellStyle as computePageBlockShellStyle } from '@/views/app-center/runtime-modules/page-flow-geometry'
+import { normalizePagePadding, resolvePagePaddingCss, resolvePageBlockShellStyle as computePageBlockShellStyle, DEFAULT_PAGE_PADDING } from '@/views/app-center/runtime-modules/page-flow-geometry'
 import PortalEmptyState from './PortalEmptyState.vue'
 import { isDataFieldBlockType } from '@/components/lowcode-builder/page/page-schema'
 
@@ -109,6 +110,8 @@ const GridBlockRenderer = defineAsyncComponent({
   loadingComponent: PortalBlockAsyncLoader,
   loader: () => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'),
 })
+
+const route = useRoute()
 
 const props = defineProps({
   node: { type: Object, default: null },
@@ -215,8 +218,24 @@ const showContentSkeleton = computed(() => {
 })
 
 const pagePaddingCss = computed(() => resolvePagePaddingCss(
-  props.page?.layout?.gridLayout?.pagePadding || props.page?.layout?.pagePadding,
+  resolvePortalRuntimePagePadding(
+    props.page?.layout?.gridLayout?.pagePadding || props.page?.layout?.pagePadding,
+  ),
 ))
+
+/** 门户正式页：默认 8px；历史默认 24 四边收敛为 8，避免灰底大留白 */
+function resolvePortalRuntimePagePadding(raw) {
+  const pad = normalizePagePadding(raw, DEFAULT_PAGE_PADDING)
+  const looksLikeLegacyDefault = [pad.top, pad.right, pad.bottom, pad.left].every(v => v === 24)
+  if (looksLikeLegacyDefault || raw == null || raw === '')
+    return { ...DEFAULT_PAGE_PADDING }
+  return {
+    top: Math.min(pad.top, 12),
+    right: Math.min(pad.right, 12),
+    bottom: Math.min(pad.bottom, 12),
+    left: Math.min(pad.left, 12),
+  }
+}
 
 const portalFlowStyle = computed(() => {
   const style = { padding: pagePaddingCss.value }
@@ -427,6 +446,7 @@ function resolveRuntimeCrudProps(block) {
     treePanelProps,
     runtimeProps,
   })
+  const pageRouteParams = resolveDeclaredPageRouteParams()
   // 页面已有 tree-panel 时，不要再套 TreeCrudTemplate，也不要把右表渲成嵌套树
   if (hasTreePanel && block?.blockType === 'AiCrudPage') {
     const { treeConfig: _treeConfig, ...runtimeOptions } = runtimeProps.options || {}
@@ -438,10 +458,12 @@ function resolveRuntimeCrudProps(block) {
       searchSchema,
       publicParams: {
         ...(runtimeProps.publicParams || {}),
+        ...pageRouteParams,
         ...(treeFilter || {}),
       },
       formDefaultValues: {
         ...(runtimeProps.formDefaultValues || {}),
+        ...pageRouteParams,
         ...(pageInitDefaultsByObject.value[key] || {}),
       },
     }
@@ -451,13 +473,38 @@ function resolveRuntimeCrudProps(block) {
     searchSchema,
     publicParams: {
       ...(runtimeProps.publicParams || {}),
+      ...pageRouteParams,
       ...(treeFilter || {}),
     },
     formDefaultValues: {
       ...(runtimeProps.formDefaultValues || {}),
+      ...pageRouteParams,
       ...(pageInitDefaultsByObject.value[key] || {}),
     },
   }
+}
+
+/** 把页面声明的入参从 route.query 取出，供列表过滤 / 表单默认值使用。 */
+function resolveDeclaredPageRouteParams() {
+  const declared = props.node?.pageParams
+    || props.node?.settings?.pageParams
+    || props.page?.params
+    || []
+  if (!Array.isArray(declared) || !declared.length)
+    return {}
+  const query = route.query || {}
+  const result = {}
+  declared.forEach((item) => {
+    const name = String(item?.name || '').trim()
+    if (!name)
+      return
+    const raw = query[name]
+    if (raw !== undefined && raw !== null && String(raw) !== '')
+      result[name] = Array.isArray(raw) ? raw[0] : raw
+    else if (item.defaultValue !== undefined && item.defaultValue !== null && String(item.defaultValue) !== '')
+      result[name] = item.defaultValue
+  })
+  return result
 }
 
 function blockForObjectKey(key) {
@@ -675,7 +722,7 @@ function resolveBlockShellStyle(block, index) {
   }
 
   const gridLayout = props.page?.layout?.gridLayout || {}
-  const pagePadding = normalizePagePadding(gridLayout.pagePadding || props.page?.layout?.pagePadding)
+  const pagePadding = resolvePortalRuntimePagePadding(gridLayout.pagePadding || props.page?.layout?.pagePadding)
   return computePageBlockShellStyle(block, blocks.value, {
     pageId: props.pageId || props.node?.id || '',
     pagePadding,
@@ -770,7 +817,7 @@ function readLength(value) {
   align-content: start;
   gap: 10px;
   min-height: 320px;
-  padding: 16px 20px;
+  padding: 8px;
   box-sizing: border-box;
 }
 
@@ -793,7 +840,7 @@ function readLength(value) {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   box-sizing: border-box;
 }
 
@@ -803,6 +850,12 @@ function readLength(value) {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  box-sizing: border-box;
+  /* 单页填满时由内部 AiCrudPage / 表格滚动；外层 auto 会在 padding+100% 时误出竖条 */
+  overflow: hidden;
+}
+
+.portal-page-flow.is-fill.is-content-sized {
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -814,8 +867,8 @@ function readLength(value) {
 
 .portal-page-block {
   min-width: 0;
-  overflow: visible;
-  border-radius: 6px;
+  overflow: hidden;
+  border-radius: 0;
 }
 
 .portal-page-block :deep(.grid-block) {
@@ -842,6 +895,7 @@ function readLength(value) {
   bottom: auto !important;
   left: auto !important;
   width: 100% !important;
+  overflow: visible;
   /* 高度交给 resolveBlockShellStyle 的内联 style；不能 min-height:0，
    * 否则 AiCrudPage（flex + overflow:hidden）会在运行态被压成空白。 */
 }
@@ -886,7 +940,7 @@ function readLength(value) {
   min-height: 0 !important;
   height: auto;
   flex-direction: column;
-  padding: 16px 24px 24px;
+  padding: 8px;
   box-sizing: border-box;
 }
 
@@ -914,9 +968,9 @@ function readLength(value) {
 @media (max-width: 768px) {
   .portal-page-flow {
     display: grid;
-    gap: 12px;
+    gap: 8px;
     min-height: 0 !important;
-    padding: 12px;
+    padding: 8px;
   }
 
   .portal-page-block {

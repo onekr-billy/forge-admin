@@ -1,0 +1,635 @@
+.business-relation-designer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-secondary, #f7f8fa);
+}
+
+.relation-designer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-light, #e5e6eb);
+  background: var(--bg-primary, #fff);
+  padding: 10px 14px;
+}
+
+.relation-designer-head h3 {
+  margin: 0;
+  color: var(--text-primary, #1d2129);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.relation-designer-head p {
+  margin: 4px 0 0;
+  color: var(--text-tertiary, #86909c);
+  font-size: 12px;
+}
+
+.relation-workbench {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.relation-step-rail {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-light, #e5e6eb);
+  background: var(--bg-secondary, #f7f8fa);
+  padding: 12px 10px;
+}
+
+.rail-block {
+  display: grid;
+  gap: 10px;
+}
+
+.rail-divider {
+  height: 1px;
+  background: #e5e9f2;
+}
+
+.rail-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.relation-choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.relation-choice {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid #e4e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  padding: 9px 10px;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.relation-choice:hover,
+.relation-choice.active {
+  border-color: #2b6bed;
+  background: #f3f7ff;
+  box-shadow: 0 6px 16px rgb(43 107 237 / 8%);
+}
+
+.er-choice {
+  border-style: dashed;
+}
+
+.relation-er-panel {
+  display: grid;
+  gap: 10px;
+  min-height: 100%;
+  padding: 0;
+}
+
+.er-object-picker {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.45fr) minmax(320px, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border-default, #c9cdd4);
+  border-radius: 7px;
+  background: var(--bg-primary, #fff);
+  padding: 9px 11px;
+}
+
+.er-object-picker > div {
+  display: grid;
+  gap: 2px;
+}
+
+.er-object-picker strong {
+  color: var(--text-primary, #1d2129);
+  font-size: 12px;
+}
+
+.er-object-picker span {
+  color: var(--text-tertiary, #86909c);
+  font-size: 11px;
+}
+
+.relation-choice strong {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.relation-choice span {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.relation-main-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 18px;
+  scroll-behavior: smooth;
+}
+
+.relation-main-pane :deep(.n-spin-container),
+.relation-main-pane :deep(.n-spin-content) {
+  display: grid;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.relation-config-card {
+  border: 1px solid var(--border-default, #c9cdd4);
+  border-radius: 7px;
+  background: var(--bg-primary, #fff);
+  padding: 14px;
+  scroll-margin-top: 16px;
+}
+
+.relation-match-box {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1px solid var(--border-light, #e5e6eb);
+  border-radius: 7px;
+  background: var(--bg-secondary, #f7f8fa);
+  padding: 11px;
+}
+
+.relation-match-box-head,
+.selector-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.relation-match-box-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.relation-match-box-head strong {
+  color: var(--text-primary, #1d2129);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.relation-match-box-head span {
+  color: var(--text-tertiary, #86909c);
+  font-size: 11px;
+}
+
+.relation-identity-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) 112px 92px;
+  align-items: end;
+  gap: 10px;
+}
+
+.relation-identity-grid :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+.relation-identity-state {
+  display: flex;
+  min-height: 56px;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid var(--border-light, #e5e6eb);
+  border-radius: 6px;
+  background: var(--bg-secondary, #f7f8fa);
+  padding: 7px 9px;
+}
+
+.relation-identity-state span {
+  color: var(--text-tertiary, #86909c);
+  font-size: 11px;
+}
+
+.relation-identity-state strong {
+  color: var(--text-primary, #1d2129);
+  font-size: 12px;
+}
+
+.relation-endpoint-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.relation-endpoint-card {
+  min-width: 0;
+  border: 1px solid var(--border-default, #c9cdd4);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  padding: 9px 10px 0;
+}
+
+.relation-endpoint-card header {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 7px;
+}
+
+.relation-endpoint-card header span {
+  color: var(--text-tertiary, #86909c);
+  font-size: 10px;
+}
+
+.relation-endpoint-card header strong {
+  overflow: hidden;
+  color: var(--text-primary, #1d2129);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-endpoint-card :deep(.n-form-item) {
+  margin-bottom: 9px;
+}
+
+.endpoint-connector {
+  display: grid;
+  grid-template-columns: 18px minmax(20px, 1fr) 18px;
+  align-items: center;
+  color: var(--primary-color, #165dff);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.endpoint-connector i {
+  height: 1px;
+  background: var(--primary-color, #165dff);
+}
+
+.endpoint-connector span {
+  border: 1px solid var(--primary-color, #165dff);
+  border-radius: 50%;
+  line-height: 16px;
+}
+
+.relation-display-field {
+  max-width: calc(50% - 44px);
+}
+
+.relation-display-field :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+.relation-advanced-collapse {
+  border: 1px solid #e3e8f2;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgb(16 24 40 / 4%);
+  padding: 4px 16px 10px;
+}
+
+.relation-advanced-collapse :deep(.n-collapse-item:not(:last-child)) {
+  border-bottom: 1px solid #edf1f7;
+}
+
+.advanced-relation-title {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.advanced-relation-hint,
+.selector-toggle-row span {
+  margin: 0 0 12px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.selector-toggle-row {
+  margin-bottom: 12px;
+}
+
+.section-title-row,
+.relation-card-head,
+.selector-filter-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.section-title-row > div,
+.relation-card-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.section-title-row strong,
+.relation-card-head strong,
+.selector-filter-title strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.section-title-row span,
+.relation-card-head p {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.relation-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.relation-card {
+  border: 1px solid var(--border-light, #e5e6eb);
+  border-radius: 7px;
+  background: var(--bg-secondary, #f7f8fa);
+  padding: 12px;
+}
+
+.linkage-flow-editor {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 26px minmax(180px, 1fr) 26px minmax(160px, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.linkage-flow-editor :deep(.n-form-item),
+.linkage-state-grid :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+.linkage-flow-arrow {
+  margin-top: 18px;
+  color: var(--primary-color, #165dff);
+  font-size: 18px;
+  text-align: center;
+}
+
+.linkage-detail-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border-light, #e5e6eb);
+  padding-top: 10px;
+}
+
+.linkage-detail-section > strong {
+  color: var(--text-secondary, #4e5969);
+  font-size: 12px;
+}
+
+.linkage-state-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(120px, 0.7fr);
+  align-items: end;
+  gap: 12px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-light, #e5e6eb);
+  padding-top: 10px;
+}
+
+.selector-row-head,
+.selector-mapping-row,
+.selector-filter-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.selector-row-head,
+.selector-mapping-row {
+  grid-template-columns: minmax(220px, 1fr) 56px minmax(220px, 1fr) 34px;
+}
+
+.selector-row-head {
+  margin-top: 8px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.selector-mapping-list,
+.selector-filter-list,
+.selector-filter-block {
+  display: grid;
+  gap: 10px;
+}
+
+.selector-filter-block {
+  margin-top: 14px;
+  border-top: 1px solid #edf1f7;
+  padding-top: 14px;
+}
+
+.selector-filter-row {
+  grid-template-columns: minmax(180px, 1fr) 140px minmax(180px, 1fr) 34px;
+}
+
+.selector-mapping-arrow {
+  border-radius: 999px;
+  background: #eff4ff;
+  color: #3157a8;
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+.relation-empty-state {
+  align-self: center;
+  min-height: 260px;
+  border: 1px dashed #cfd8e6;
+  border-radius: 8px;
+  background: #fff;
+  padding-top: 72px;
+}
+
+.wizard-field-hint {
+  margin-top: 6px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.relation-wizard-form {
+  display: grid;
+  gap: 10px;
+}
+
+.wizard-section {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--border-light, #e5e6eb);
+  border-radius: 7px;
+  background: var(--bg-secondary, #f7f8fa);
+  padding: 11px 12px 2px;
+}
+
+.wizard-section > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.wizard-section > header > span {
+  flex: 0 0 22px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--primary-color, #165dff);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+
+.wizard-section > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.wizard-section > header strong {
+  color: var(--text-primary, #1d2129);
+  font-size: 13px;
+}
+
+.wizard-section > header small {
+  color: var(--text-tertiary, #86909c);
+  font-size: 11px;
+}
+
+.wizard-section :deep(.n-form-item) {
+  margin-bottom: 9px;
+}
+
+.wizard-endpoint-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.wizard-flow-arrow {
+  margin-top: 18px;
+  border-radius: 999px;
+  color: var(--primary-color, #165dff);
+  background: color-mix(in srgb, var(--primary-color, #165dff) 9%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 24px;
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .relation-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .relation-step-rail {
+    position: static;
+    grid-template-columns: minmax(0, 1fr);
+    border-right: 0;
+    border-bottom: 1px solid #e5e9f2;
+  }
+
+  .relation-identity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .relation-designer-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .relation-main-pane {
+    padding: 14px;
+  }
+
+  .relation-match-box-head,
+  .selector-toggle-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .relation-identity-grid,
+  .relation-endpoint-flow,
+  .er-object-picker,
+  .linkage-flow-editor,
+  .linkage-state-grid,
+  .wizard-endpoint-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .endpoint-connector {
+    width: 120px;
+    justify-self: center;
+  }
+
+  .linkage-flow-arrow {
+    margin: -2px 0;
+    transform: rotate(90deg);
+  }
+
+  .relation-display-field {
+    max-width: none;
+  }
+
+  .wizard-flow-arrow {
+    width: 64px;
+    margin: 0;
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+
+  .selector-row-head {
+    display: none;
+  }
+
+  .selector-mapping-row,
+  .selector-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .selector-mapping-arrow {
+    width: max-content;
+  }
+}

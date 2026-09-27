@@ -1,0 +1,213 @@
+.ai-form-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.ai-form-item-body {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+}
+
+/* 开关控件很窄，避免被拉满整列后看起来离 label 很远 */
+.ai-form-item--switch .ai-form-item-body {
+  width: auto;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.ai-form-item--switch :deep(.n-form-item-label) {
+  padding-right: 8px;
+}
+
+.ai-form-item--switch :deep(.n-form-item-blank) {
+  flex: 0 0 auto;
+  width: auto !important;
+  display: flex;
+  align-items: center;
+}
+
+.ai-form-switch {
+  flex: 0 0 auto;
+}
+
+.ai-form-item-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.ai-form-item-label__text {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-form-item-label__badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  max-width: 72px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.ai-form-item-description {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
+}
+
+.ai-form-field-event {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 8px;
+  line-height: 18px;
+}
+
+.ai-form-field-event__action {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.ai-form-field-event__message {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-form-field-event__message.is-error {
+  color: #dc2626;
+}
+
+.ai-form-field-event__message.is-not_found {
+  color: #b45309;
+}
+
+.ai-form-field-event__message.is-loading {
+  color: #2563eb;
+}
+
+.ai-form-item-label__tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid #cbd5e1;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+  transition: all 0.2s;
+}
+
+.ai-form-item-label__tip:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.ai-form-item-label__tip-content {
+  white-space: pre-line;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ai-form-readonly-text {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  color: var(--n-text-color);
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.ai-form-control :deep(.n-base-selection),
+.ai-form-control :deep(.n-base-selection-label) {
+  align-items: center;
+}
+
+.ai-form-control :deep(.n-base-selection__clear),
+.ai-form-control :deep(.n-base-clear) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.time-range-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.time-range-separator {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ai-form-item-align-center :deep(.n-input__input-el),
+.ai-form-item-align-center :deep(.n-input__textarea-el),
+.ai-form-item-align-center :deep(.n-input-number-input),
+.ai-form-item-align-center :deep(.n-base-selection-label__render-label) {
+  text-align: center;
+}
+
+.ai-form-item-align-right :deep(.n-input__input-el),
+.ai-form-item-align-right :deep(.n-input__textarea-el),
+.ai-form-item-align-right :deep(.n-input-number-input),
+.ai-form-item-align-right :deep(.n-base-selection-label__render-label) {
+  text-align: right;
+}
+
+.ai-form-item-align-center :deep(.n-base-selection-label),
+.ai-form-item-align-right :deep(.n-base-selection-label) {
+  justify-content: center;
+}
+
+.ai-form-item-align-right :deep(.n-base-selection-label) {
+  justify-content: flex-end;
+}
+
+.ai-form-field-flash {
+  border-radius: 8px;
+  animation: ai-form-field-flash 2.8s ease-in-out;
+}
+
+@keyframes ai-form-field-flash {
+  0%,
+  35%,
+  70%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  12%,
+  47%,
+  82% {
+    background: rgba(245, 108, 108, 0.1);
+    box-shadow: 0 0 0 4px rgba(245, 108, 108, 0.2);
+  }
+}

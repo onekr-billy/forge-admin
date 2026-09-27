@@ -1,23 +1,18 @@
 <template>
   <section class="settings-section-card">
     <header>
-      <h2>导航设置</h2>
-      <p>导航风格随门户配置发布；页面顺序与页面设计器共用同一份页面树。</p>
+      <h2>导航与布局</h2>
+      <p>门户壳布局与系统后台布局语义一致；页面顺序与页面设计器共用同一份页面树。保存后随应用发布生效。</p>
     </header>
     <n-form label-placement="top">
-      <n-form-item label="导航风格">
-        <n-radio-group :value="modelValue.navigation?.style" @update:value="patchNavigation({ style: $event })">
-          <n-radio-button value="side">
-            左侧导航
-          </n-radio-button>
-          <n-radio-button value="top">
-            顶部导航
-          </n-radio-button>
-          <n-radio-button value="collapsed">
-            折叠侧栏
-          </n-radio-button>
-        </n-radio-group>
+      <!-- 门户壳布局 -->
+      <n-form-item label="门户布局">
+        <PortalShellLayoutSelector
+          :model-value="currentShellLayout"
+          @update:model-value="patchShellLayout"
+        />
       </n-form-item>
+
       <n-space vertical :size="14">
         <n-checkbox :checked="modelValue.navigation?.showLogo" @update:checked="patchNavigation({ showLogo: $event })">
           显示应用 Logo
@@ -25,10 +20,15 @@
         <n-checkbox :checked="modelValue.navigation?.showName" @update:checked="patchNavigation({ showName: $event })">
           显示应用名称
         </n-checkbox>
-        <n-checkbox :checked="modelValue.navigation?.collapsible" @update:checked="patchNavigation({ collapsible: $event })">
+        <n-checkbox
+          :checked="modelValue.navigation?.collapsible"
+          :disabled="!shellSupportsCollapse"
+          @update:checked="patchNavigation({ collapsible: $event })"
+        >
           允许用户收起导航
         </n-checkbox>
       </n-space>
+
       <n-divider title-placement="left">
         页面顺序
       </n-divider>
@@ -56,12 +56,24 @@
 
 <script setup>
 import { computed } from 'vue'
+import {
+  resolvePortalShellChrome,
+  resolvePortalShellLayout,
+  syncPortalShellNavigationFields,
+} from '../portal/portal-shell-layouts'
+import PortalShellLayoutSelector from './PortalShellLayoutSelector.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
   pages: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['update:modelValue'])
+
+const currentShellLayout = computed(() => resolvePortalShellLayout(props.modelValue))
+const shellSupportsCollapse = computed(() => {
+  const chrome = resolvePortalShellChrome({ ...props.modelValue, shellLayout: currentShellLayout.value })
+  return chrome.showPersistentSidebar || chrome.showDrawerToggle
+})
 
 const orderedPages = computed(() => {
   const pageById = new Map(props.pages.filter(page => page.type === 'page').map(page => [String(page.id), page]))
@@ -71,11 +83,23 @@ const orderedPages = computed(() => {
   return ordered
 })
 
-function patchNavigation(value) {
-  emit('update:modelValue', {
+function patchModel(patch) {
+  emit('update:modelValue', syncPortalShellNavigationFields({
     ...props.modelValue,
-    navigation: { ...(props.modelValue.navigation || {}), ...value },
-  })
+    ...patch,
+    navigation: {
+      ...(props.modelValue.navigation || {}),
+      ...(patch.navigation || {}),
+    },
+  }))
+}
+
+function patchNavigation(value) {
+  patchModel({ navigation: value })
+}
+
+function patchShellLayout(shellLayout) {
+  patchModel({ shellLayout })
 }
 
 function move(index, direction) {

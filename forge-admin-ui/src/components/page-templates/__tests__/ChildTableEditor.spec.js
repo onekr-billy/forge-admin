@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 
 const childTableEditorSource = readFileSync(resolve('src/components/page-templates/ChildTableEditor.vue'), 'utf8')
-const aiFormItemSource = readFileSync(resolve('src/components/ai-form/AiFormItem.vue'), 'utf8')
+const aiFormItemSource = readSplitVueSource('src/components/ai-form/AiFormItem.vue', 'useAiFormItem')
 
 describe('child table editor runtime cells', () => {
   it('does not fall class through onto fragment-rooted AiFormItem', () => {

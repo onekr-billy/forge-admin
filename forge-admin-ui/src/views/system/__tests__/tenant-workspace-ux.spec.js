@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 
 function readSource(relativeUrl) {
   return readFileSync(new URL(relativeUrl, import.meta.url), 'utf8')
@@ -7,7 +8,7 @@ function readSource(relativeUrl) {
 
 describe('tenant workspace UX', () => {
   it('opens a workspace picker dialog after password login when the account has more than one workspace', () => {
-    const source = readSource('../../login/index.vue')
+    const source = readSplitVueSource('src/views/login/index.vue', 'useLoginPage')
     expect(source).toContain('showWorkspaceModal')
     expect(source).toContain('LOGIN_TENANT_SELECTION_REQUIRED = 4091')
     expect(source).toContain('applyWorkspaceChallenge')

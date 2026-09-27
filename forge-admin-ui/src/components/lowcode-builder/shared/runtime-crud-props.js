@@ -112,6 +112,9 @@ export function buildRuntimeCrudProps(config = {}, { designPreview = false } = {
     // 统一渲染协议（H5 / 多端可直接消费）
     uiDocument: uiDocument || null,
     protocolVersion: uiDocument ? UI_DOCUMENT_PROTOCOL_VERSION : null,
+    // 列表自由布局 / 模型：门户与 GridBlockRenderer 据此决定是否改走 RuntimeListGridFlow
+    pageSchema: config.pageSchema && typeof config.pageSchema === 'object' ? config.pageSchema : null,
+    modelSchema: config.modelSchema && typeof config.modelSchema === 'object' ? config.modelSchema : null,
   }
   return applyEmbeddedTreeTableRuntimeProps(baseProps, config, { designPreview })
 }

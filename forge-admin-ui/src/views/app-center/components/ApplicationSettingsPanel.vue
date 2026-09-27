@@ -66,6 +66,7 @@ import {
 import { resolveApplicationSettingsSection } from './application-print-entry'
 import ApplicationIntegrations from './integrations/ApplicationIntegrations.vue'
 import { normalizePortalConfig, parseJsonObject } from './portal/portal-config'
+import { syncPortalShellNavigationFields } from './portal/portal-shell-layouts'
 import AppSettingsAccess from './settings/AppSettingsAccess.vue'
 import AppSettingsAdvanced from './settings/AppSettingsAdvanced.vue'
 import AppSettingsBasic from './settings/AppSettingsBasic.vue'
@@ -96,7 +97,7 @@ const accessRef = ref(null)
 const sections = [
   { key: 'basic', label: '基础属性', icon: ColorPaletteOutline },
   { key: 'access', label: '访问地址', icon: LinkOutline },
-  { key: 'navigation', label: '导航设置', icon: MenuOutline },
+  { key: 'navigation', label: '导航与布局', icon: MenuOutline },
   { key: 'permission', label: '应用权限', icon: LockClosedOutline },
   { key: 'globalization', label: '全球化', icon: EarthOutline },
   { key: 'integrations', label: '集成与开放', icon: ExtensionPuzzleOutline },
@@ -205,7 +206,7 @@ async function saveSettings() {
     })
     await saveBusinessApplicationPortalConfig(props.application.id, {
       portalSlug: settingsModel.value.portalSlug,
-      portalConfig: settingsModel.value,
+      portalConfig: syncPortalShellNavigationFields(stripPortalSettingsPayload(settingsModel.value)),
     })
     message.success('应用设置已保存')
     emit('saved')
@@ -226,6 +227,12 @@ watch(() => props.application?.applicationCode, (code) => {
 watch(() => route.query.settingsSection, (section) => {
   activeSection.value = resolveApplicationSettingsSection(section)
 })
+
+function stripPortalSettingsPayload(model) {
+  const clone = JSON.parse(JSON.stringify(model || {}))
+  ;['id', 'applicationName', 'applicationCode', 'portalSlug', 'icon', 'description', 'status'].forEach(key => delete clone[key])
+  return clone
+}
 </script>
 
 <style scoped>

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 
 function readSource(relativePath) {
   return fs.readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
@@ -18,18 +19,19 @@ describe('application designer phase E layout contract', () => {
   })
 
   it('uses the resource tree as the only editing sidebar and delegates page creation', () => {
-    const runtimeSource = readSource('src/views/app-center/application-runtime.[applicationCode].vue')
+    const runtimeSource = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
     const treeSource = readSource('src/views/app-center/components/ApplicationDesignerResourceTree.vue')
 
-    expect(runtimeSource).toContain('@create-page="createQuickNode(\'page\')"')
-    expect(runtimeSource).toContain('<aside v-if="!editing" class="runtime-navigation')
+    expect(runtimeSource).toContain('@create-page="openPageTypeSelector()"')
+    expect(runtimeSource).toContain('function createQuickNode')
+    expect(runtimeSource).toMatch(/<aside\s+v-if="!editing"[\s\S]*?class="runtime-navigation/)
     expect(treeSource).toContain('emit(\'createPage\')')
   })
 
   it('renders the real application extension panel for the enhancement resource', () => {
-    const source = readSource('src/views/app-center/application-runtime.[applicationCode].vue')
+    const source = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
 
-    expect(source).toContain('activeDesignerResource?.kind === \'automation-enhancements\'')
+    expect(source).toContain('runtimeViewMode === \'enhance\'')
     expect(source).toContain('<ApplicationExtensionsPanel')
     expect(source).toContain(':initial-extensions="workspaceExtensions"')
   })

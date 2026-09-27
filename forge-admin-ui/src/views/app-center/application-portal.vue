@@ -1,5 +1,18 @@
 <template>
-  <div class="application-portal" :lang="portalLanguage" :class="[`navigation-${navigationStyle}`, { 'is-collapsed': navigationCollapsed, 'is-h5': isMobileDisplay }]" :style="portalStyle">
+  <div
+    class="application-portal"
+    :lang="portalLanguage"
+    :class="[
+      shellChrome.shellClass,
+      `navigation-${shellChrome.navigationStyle}`,
+      {
+        'is-collapsed': navigationCollapsed,
+        'is-h5': isMobileDisplay,
+        'has-persistent-sidebar': shellChrome.showPersistentSidebar,
+      },
+    ]"
+    :style="portalStyle"
+  >
     <ApplicationPortalSkeleton v-if="loading" />
     <template v-else>
       <PortalEmptyState
@@ -9,15 +22,18 @@
       />
 
       <template v-else-if="application">
+        <!-- 顶栏：品牌 / 顶部导航 / 操作 -->
         <header class="portal-header">
           <div class="portal-brand">
             <n-button
-              v-if="portalConfig.navigation.collapsible && navigationStyle !== 'top'"
+              v-if="shellChrome.showDrawerToggle || (portalConfig.navigation.collapsible && shellChrome.showPersistentSidebar)"
               quaternary
               circle
               class="portal-collapse"
-              :aria-label="navigationCollapsed ? '展开导航' : '收起导航'"
-              @click="navigationCollapsed = !navigationCollapsed"
+              :aria-label="shellChrome.showDrawerToggle
+                ? (drawerNavVisible ? '关闭导航' : '打开导航')
+                : (navigationCollapsed ? '展开导航' : '收起导航')"
+              @click="handleChromeToggle"
             >
               <template #icon>
                 <n-icon><MenuOutline /></n-icon>
@@ -31,7 +47,7 @@
           </div>
 
           <PortalNavigation
-            v-if="navigationStyle === 'top'"
+            v-if="shellChrome.showTopNav"
             :nodes="navigationNodes"
             :current-page-id="currentPageId"
             navigation-style="top"
@@ -68,16 +84,19 @@
               @select="selectPage"
             />
           </div>
-          <aside v-if="navigationStyle !== 'top'" class="portal-sidebar">
+
+          <!-- 常驻侧栏 -->
+          <aside v-if="shellChrome.showPersistentSidebar" class="portal-sidebar">
             <PortalNavigation
               :nodes="navigationNodes"
               :current-page-id="currentPageId"
-              :navigation-style="navigationStyle"
+              :navigation-style="shellChrome.navigationStyle"
               :collapsed="navigationCollapsed"
               @select="selectPage"
             />
           </aside>
 
+          <!-- 中间内容区 -->
           <main class="portal-main">
             <PortalEmptyState
               v-if="!pageNodes.length"
@@ -118,6 +137,23 @@
             />
           </main>
         </div>
+
+        <!-- 沉浸式抽屉导航 -->
+        <n-drawer
+          v-model:show="drawerNavVisible"
+          :width="280"
+          placement="left"
+          display-directive="show"
+        >
+          <n-drawer-content title="页面导航" closable>
+            <PortalNavigation
+              :nodes="navigationNodes"
+              :current-page-id="currentPageId"
+              navigation-style="side"
+              @select="selectPageFromDrawer"
+            />
+          </n-drawer-content>
+        </n-drawer>
 
         <n-modal v-model:show="profileVisible" preset="card" title="个人资料" class="portal-profile-modal">
           <div class="portal-profile-content">
@@ -169,6 +205,7 @@ import {
   parseJsonObject,
 } from './components/portal/portal-config'
 import { buildApplicationPortalNavigationNodes } from './components/portal/portal-navigation-runtime'
+import { resolvePortalShellChrome } from './components/portal/portal-shell-layouts'
 import PortalAiAssistant from './components/portal/PortalAiAssistant.vue'
 import PortalEmptyState from './components/portal/PortalEmptyState.vue'
 import PortalNavigation from './components/portal/PortalNavigation.vue'
@@ -186,18 +223,16 @@ const builder = ref(null)
 const loadState = ref('')
 const loadError = ref('')
 const navigationCollapsed = ref(false)
+const drawerNavVisible = ref(false)
 const assistantVisible = ref(false)
 const runtime = reactive({ objects: [], entries: [], extensions: [], versionNo: null })
 
 const isMobileDisplay = computed(() => route.meta.display === 'h5' || String(route.query.display || '') === 'h5')
 const portalConfig = computed(() => normalizePortalConfig(application.value?.portalConfig))
+const shellChrome = computed(() => resolvePortalShellChrome(portalConfig.value))
 const portalLanguage = computed(() => portalConfig.value.globalization.enabled
   ? portalConfig.value.globalization.defaultLanguage
   : 'zh-CN')
-const navigationStyle = computed(() => {
-  const value = String(portalConfig.value.navigation.style || 'side')
-  return ['side', 'top', 'collapsed'].includes(value) ? value : 'side'
-})
 const navigationNodes = computed(() => buildApplicationPortalNavigationNodes(
   builder.value?.nodes || [],
   isMobileDisplay.value ? 'h5' : 'pc',
@@ -260,13 +295,28 @@ const watermarkText = computed(() => buildPortalWatermarkText(
 const watermarkStyle = computed(() => buildPortalWatermarkStyle(watermarkText.value))
 
 watch(() => String(route.params.applicationCodeOrSlug || ''), loadPortal, { immediate: true })
-watch(navigationStyle, (style) => {
-  navigationCollapsed.value = style === 'collapsed' || portalConfig.value.navigation.collapsed === true
+watch(shellChrome, (chrome) => {
+  navigationCollapsed.value = chrome.defaultCollapsed
+  if (!chrome.showDrawerToggle)
+    drawerNavVisible.value = false
 }, { immediate: true })
 watch(currentPageId, (pageId) => {
   if (pageId && String(route.query.pageId || '') !== pageId)
     router.replace({ query: { ...route.query, pageId } })
 })
+
+function handleChromeToggle() {
+  if (shellChrome.value.showDrawerToggle && !shellChrome.value.showPersistentSidebar) {
+    drawerNavVisible.value = !drawerNavVisible.value
+    return
+  }
+  navigationCollapsed.value = !navigationCollapsed.value
+}
+
+function selectPageFromDrawer(pageId) {
+  selectPage(pageId)
+  drawerNavVisible.value = false
+}
 
 async function loadPortal(identifier) {
   if (!identifier) {
@@ -467,7 +517,8 @@ function resolveErrorMessage(error) {
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--portal-surface-muted);
+  /* 正式门户内容区用白底，避免灰底+大留白像「套了一层卡片」 */
+  background: var(--portal-surface);
 }
 
 .portal-system-page {
@@ -475,7 +526,7 @@ function resolveErrorMessage(error) {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 12px;
+  padding: 8px;
 }
 
 .portal-watermark {
@@ -488,6 +539,95 @@ function resolveErrorMessage(error) {
 .portal-watermark.is-full {
   position: fixed;
   z-index: 1001;
+}
+
+/* —— 门户壳布局变体（与系统布局语义对齐，独立渲染） —— */
+.application-portal.shell-workbench .portal-header,
+.application-portal.shell-top-side .portal-header {
+  background: color-mix(in srgb, var(--portal-primary) 92%, #0f172a);
+  border-bottom-color: transparent;
+  color: #fff;
+}
+
+.application-portal.shell-workbench .portal-brand strong,
+.application-portal.shell-top-side .portal-brand strong,
+.application-portal.shell-workbench .portal-header-actions,
+.application-portal.shell-top-side .portal-header-actions {
+  color: #fff;
+}
+
+.application-portal.shell-workbench .portal-logo,
+.application-portal.shell-top-side .portal-logo {
+  background: rgb(255 255 255 / 18%);
+  color: #fff;
+}
+
+.application-portal.shell-workbench .portal-sidebar {
+  width: 232px;
+  background: #f8fafc;
+}
+
+.application-portal.shell-simple .portal-header {
+  height: 48px;
+}
+
+.application-portal.shell-simple .portal-shell {
+  height: calc(100vh - 48px);
+}
+
+.application-portal.shell-simple .portal-sidebar {
+  width: 200px;
+}
+
+.application-portal.shell-full .portal-header {
+  border-bottom: 0;
+  box-shadow: 0 1px 0 rgb(15 23 42 / 6%);
+}
+
+.application-portal.shell-full .portal-sidebar {
+  border-right: 0;
+  box-shadow: 1px 0 0 rgb(15 23 42 / 6%);
+}
+
+.application-portal.shell-bento .portal-sidebar {
+  width: 64px;
+}
+
+.application-portal.shell-bento.is-collapsed .portal-sidebar,
+.application-portal.shell-bento .portal-sidebar {
+  flex-basis: 64px;
+  width: 64px;
+  min-width: 64px;
+}
+
+.application-portal.shell-nexus .portal-shell {
+  gap: 12px;
+  padding: 12px;
+  background: var(--portal-surface-muted);
+}
+
+.application-portal.shell-nexus .portal-sidebar {
+  width: 220px;
+  border: 1px solid #e5e6eb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 6%);
+}
+
+.application-portal.shell-nexus .portal-main {
+  border: 1px solid #e5e6eb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 6%);
+  overflow: hidden;
+}
+
+.application-portal.shell-immersive .portal-sidebar {
+  display: none;
+}
+
+.application-portal.shell-top-menu .portal-header {
+  grid-template-columns: minmax(160px, auto) minmax(0, 1fr) auto;
 }
 
 .application-portal.is-h5 .portal-header {

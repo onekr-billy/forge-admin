@@ -8,24 +8,35 @@
   <div v-if="hasTree && !crudProps.formOnly" class="tree-crud-layout">
     <!-- 左侧树形导航 -->
     <div class="tree-crud-left" :class="{ 'is-collapsed': treePanelCollapsed }">
-      <button
-        type="button"
-        class="tree-panel-edge-toggle"
-        :aria-label="treePanelCollapsed ? '展开筛选树' : '收起筛选树'"
-        :title="treePanelCollapsed ? '展开筛选树' : '收起筛选树'"
-        @click="treePanelCollapsed = !treePanelCollapsed"
-      >
-        <span>{{ treePanelCollapsed ? '›' : '‹' }}</span>
-      </button>
       <div v-if="treePanelCollapsed" class="tree-panel-rail" :title="treeTitle">
-        <span>树</span>
+        <button
+          type="button"
+          class="tree-panel-edge-toggle is-collapsed"
+          aria-label="展开筛选树"
+          title="展开筛选树"
+          @click="treePanelCollapsed = false"
+        >
+          <span>›</span>
+        </button>
+        <span class="tree-panel-rail__label">树</span>
       </div>
       <template v-else>
         <div class="tree-header">
           <span>{{ treeTitle }}</span>
-          <n-button text size="tiny" @click="clearTreeSelect">
-            全部
-          </n-button>
+          <div class="tree-header-actions">
+            <n-button text size="tiny" @click="clearTreeSelect">
+              全部
+            </n-button>
+            <button
+              type="button"
+              class="tree-panel-edge-toggle"
+              aria-label="收起筛选树"
+              title="收起筛选树"
+              @click="treePanelCollapsed = true"
+            >
+              <span>‹</span>
+            </button>
+          </div>
         </div>
         <div class="tree-node-toolbar">
           <span>节点层级</span>
@@ -392,6 +403,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   min-height: 0;
+  border-radius: 0;
   transition: width 0.18s ease;
 }
 
@@ -401,14 +413,16 @@ defineExpose({
 }
 
 .tree-panel-edge-toggle {
-  position: absolute;
-  top: 10px;
-  right: 4px;
-  z-index: 2;
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
   width: 22px;
   height: 22px;
   border: 1px solid #e2e8f0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: #fff;
   color: #64748b;
   cursor: pointer;
@@ -416,27 +430,57 @@ defineExpose({
   padding: 0;
 }
 
+.tree-panel-edge-toggle:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.tree-panel-edge-toggle span {
+  display: block;
+  margin-top: -1px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .tree-panel-rail {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 10px;
   flex: 1;
-  writing-mode: vertical-rl;
-  letter-spacing: 0.2em;
+  width: 100%;
+  padding-top: 4px;
   color: #64748b;
+}
+
+.tree-panel-rail__label {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.18em;
   font-size: 12px;
+  color: #64748b;
 }
 
 .tree-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   color: #374151;
-  padding: 0 24px 10px 6px;
+  padding: 0 0 10px;
   border-bottom: 1px solid #f3f4f6;
   margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.tree-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 

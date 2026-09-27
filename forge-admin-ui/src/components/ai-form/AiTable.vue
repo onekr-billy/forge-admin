@@ -83,21 +83,22 @@
       </template>
     </n-data-table>
 
-    <!-- 卡片列表 -->
+    <!-- 卡片列表：中间区域独立滚动，底部分页固定 -->
     <div
       v-else
       class="ai-card-mode"
       :style="cardModeStyle"
     >
-      <NSpin :show="loading">
-        <NGrid
-          v-if="dataSource.length > 0"
-          class="ai-card-grid"
-          :cols="cardGridCols"
-          :x-gap="cardGridGap"
-          :y-gap="cardGridGap"
-          responsive="screen"
-        >
+      <div class="ai-card-scroll">
+        <NSpin :show="loading">
+          <NGrid
+            v-if="dataSource.length > 0"
+            class="ai-card-grid"
+            :cols="cardGridCols"
+            :x-gap="cardGridGap"
+            :y-gap="cardGridGap"
+            responsive="screen"
+          >
           <NGridItem
             v-for="(row, index) in dataSource"
             :key="rowKeyFn(row)"
@@ -162,7 +163,8 @@
             </div>
           </template>
         </NEmpty>
-      </NSpin>
+        </NSpin>
+      </div>
 
       <NPagination
         v-if="paginationProps"
@@ -849,10 +851,10 @@ function normalizeCssUnit(value) {
 const cardModeStyle = computed(() => {
   const style = { ...(props.cardProps.style || {}) }
   const maxHeight = props.cardProps.maxHeight ?? props.maxHeight
-  if (maxHeight !== undefined) {
+  if (maxHeight !== undefined)
     style.maxHeight = normalizeCssUnit(maxHeight)
-    style.overflow = style.overflow || 'auto'
-  }
+  // 滚动交给 .ai-card-scroll，避免整块（含分页）被 overflow 裁掉且中间无法滚
+  delete style.overflow
   return style
 })
 
@@ -1085,12 +1087,25 @@ defineExpose({
 }
 
 .ai-card-mode {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 10px 12px 0;
+}
+
+.ai-card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .ai-card-mode :deep(.n-spin-container),
 .ai-card-mode :deep(.n-spin-content) {
   width: 100%;
+  min-height: 0;
 }
 
 .ai-card-grid {
@@ -1282,13 +1297,15 @@ defineExpose({
 }
 
 .ai-card-pagination {
+  flex: 0 0 auto;
   padding: 12px 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
   border-top: 1px solid var(--border-light);
-  margin-top: 12px;
+  margin-top: 0;
+  background: var(--bg-primary);
 }
 
 .ai-table-toolbar {

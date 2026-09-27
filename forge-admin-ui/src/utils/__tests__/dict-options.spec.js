@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { computed, nextTick, ref } from 'vue'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 import {
   mapDictOptionValues,
   normalizeDictOptionValue,
@@ -14,10 +15,7 @@ const sourceOptions = [
   { label: '禁用', value: '0', listClass: 'error' },
 ]
 
-const datasetSource = readFileSync(
-  resolve(process.cwd(), 'src/views/data/dataset.vue'),
-  'utf8',
-)
+const datasetSource = readSplitVueSource('src/views/data/dataset.vue', 'useDatasetPage')
 const frontendDictionaryMigrationSource = readFileSync(
   resolve(process.cwd(), '../forge-server/db/migration/V1.0.54__add_frontend_runtime_dicts.sql'),
   'utf8',
