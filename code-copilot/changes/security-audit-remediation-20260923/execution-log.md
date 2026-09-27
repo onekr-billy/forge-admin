@@ -1,5 +1,28 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：Flow 通知事务 Outbox 与有序补偿
+
+### 实现
+
+- 新增 `sys_flow_notify_outbox`、实体、Mapper 与服务，将通知信封在发布方事务内持久化；事务提交后异步派发，无事务发布也先写 Outbox，由定时扫描补偿，避免业务回滚后仍发送“幽灵通知”。
+- 新增 Outbox 专用持久化异常并让 `FlowTaskEventListener` 仅对此类可靠性失败启用 fail-closed；写入失败不再被旧监听器的日志降级吞掉，而是向 Flowable 传播并回滚当前事务，普通镜像异常仍保持原有降级语义。
+- 通知信封增加唯一 `eventId`、协议版本、数据库单调事件序号与载荷摘要；重复事件只允许摘要一致的幂等复用，冲突载荷直接拒绝。
+- 认领使用租户范围内的原子 CAS、处理租约和过期接管；同一业务聚合只允许最早未送达事件被认领，失败执行指数退避并在耗尽后进入死信，防止后续状态越序发送。
+- `FlowTaskNotifyListener` 将通道异常汇总后重新抛出，不再把站内信、协同卡片、抄送、Redis 或 Webhook 失败伪装成成功；Webhook 附带稳定事件请求头并保留受控出站策略。
+- 收紧通知日志：完整站内信/H5/协同卡片 URL 不再输出，Webhook 目标仅保留 scheme/host/port，失败只记录异常类型。
+
+### 验证
+
+- Outbox 服务、捕获器、派发器、Mapper 契约、Flowable 失败传播、通知监听器、内容渲染与 Webhook 定向回归 20/20 通过。
+- `forge-plugin-flow` 完整测试 210/210 通过；Flow Server 38 模块主链编译全部成功；Flow Server 自身测试 46/46 通过，均为 0 失败、0 错误、0 跳过。
+- 38 模块全测试已执行到无关的 `forge-plugin-ai` 测试编译，因 `AiProviderAdapterRegistryTest.RecordingAdapter` 未实现新增 `createEmbeddingModel` 而阻断；该问题未修改，且不影响本批生产主链编译和 Flow 两层回归结果。
+- 新增 Mapper XML 通过 `xmllint --noout`，静态扫描未发现 `fallbackExecution=true` 或完整通知 URL 日志。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.192/Flyway，未执行双节点认领、进程在认领后崩溃、真实 Webhook/消息系统故障注入和死信人工重放。
+- 本批仅闭环通知事件；Flowable 任务镜像、候选人与业务状态同步仍缺少统一事件 ID、幂等写入、补偿和人工恢复，T4.6 保持未完成。
+
 ## 2026-09-28：BPMN 嵌套执行容器绕过修复
 
 ### 实现

@@ -273,6 +273,16 @@
 - 实际结果：`FlowModelBpmnPreflightTest` 与 `BpmnXmlUtilsTest` 定向回归 10/10；`forge-plugin-flow` 完整测试 198/198，0 失败、0 错误、0 跳过。
 - 环境限制：未部署到真实 Flowable 引擎执行恶意 transaction/adHocSubProcess 模型；事件乱序仍属于通知 Outbox 与顺序版本任务，不计入本批完成项。
 
+## 1.31 2026-09-28 Flow 通知事务 Outbox 与有序补偿
+
+- 事务边界：通知事件先在发布方事务内写入 `sys_flow_notify_outbox`；Outbox 写入失败必须越过旧监听器降级边界并回滚 Flowable 事务，提交后才异步派发；无事务发布也必须先持久化，不能直接执行站内信、协同卡片、Redis 或 Webhook 副作用。
+- 信封与幂等：每个通知具有唯一 `eventId`、协议 `eventVersion`、数据库单调 `eventSequence` 和 `payloadHash`；相同事件 ID 仅允许完全一致的载荷幂等复用，摘要冲突必须拒绝。
+- 有序补偿：按租户进行原子 CAS 认领，处理中租约超时后可接管；同一聚合只有最早未送达事件可被认领，失败按指数退避重试，超过阈值进入死信并阻断同聚合后续事件越序发送。
+- 失败可见性：通知通道异常不再被吞掉，统一回写重试/死信状态；Webhook 使用稳定事件请求头，日志仅记录安全目标、业务键和异常类型，站内信/H5/协同卡片完整 URL 不进入日志。
+- 实际结果：Outbox/监听器/Webhook/内容渲染定向回归 20/20；`forge-plugin-flow` 完整测试 210/210；Flow Server 38 模块主链编译全部成功，Flow Server 自身测试 46/46，均为 0 失败、0 错误、0 跳过。
+- 既有限制：38 模块全测试在无关的 `forge-plugin-ai` 测试夹具编译处阻断（`RecordingAdapter` 未实现新增的 `createEmbeddingModel`），但生产主链编译、Flow 插件全量测试和 Flow Server 自身测试均独立通过。
+- 环境限制：未连接真实 MySQL 执行 V1.0.192/Flyway，未进行双节点并发认领、进程崩溃和真实下游故障注入；尚无死信人工重放接口，Flowable 镜像、候选人与业务状态同步仍需独立补偿闭环。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

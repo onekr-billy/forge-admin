@@ -7,6 +7,7 @@ import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.enums.FlowFormInstanceStatus;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.core.domain.FlowEventMessage;
+import com.mdframe.forge.starter.flow.event.FlowNotifyOutboxPersistenceException;
 import com.mdframe.forge.starter.flow.event.FlowTaskNotifyEvent;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
@@ -146,6 +147,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     break;
             }
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("FlowTaskEventListener.onEvent 未捕获异常", e);
             recordEventListenerError(event, "EVENT_DISPATCH", e);
         }
@@ -290,6 +292,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("处理任务创建事件失败", e);
             recordEventListenerError(event, "EVENT_TASK_CREATED", e);
         }
@@ -367,6 +370,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("处理任务完成事件失败", e);
             recordEventListenerError(event, "EVENT_TASK_COMPLETED", e);
         }
@@ -436,6 +440,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("处理任务分配事件失败", e);
             recordEventListenerError(event, "EVENT_TASK_ASSIGNED", e);
         }
@@ -466,6 +471,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("处理任务删除事件失败", e);
             recordEventListenerError(event, "EVENT_TASK_DELETED", e);
         }
@@ -555,6 +561,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("处理流程完成事件失败", e);
             recordEventListenerError(event, "EVENT_PROCESS_COMPLETED", e);
         }
@@ -661,6 +668,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
             }
             
         } catch (Exception e) {
+            rethrowNotifyOutboxFailure(e);
             log.error("处理流程取消事件失败", e);
             recordEventListenerError(event, "EVENT_PROCESS_CANCELLED", e);
         }
@@ -940,9 +948,16 @@ public class FlowTaskEventListener implements FlowableEventListener {
         }
     }
 
+    private void rethrowNotifyOutboxFailure(Exception failure) {
+        if (failure instanceof FlowNotifyOutboxPersistenceException) {
+            throw (FlowNotifyOutboxPersistenceException) failure;
+        }
+    }
+
     @Override
     public boolean isFailOnException() {
-        return false; // 不因监听器异常中断流程
+        // 普通镜像异常仍在各处理器内降级；只有通知 Outbox 持久化失败会逃逸并回滚引擎事务。
+        return true;
     }
 
     @Override

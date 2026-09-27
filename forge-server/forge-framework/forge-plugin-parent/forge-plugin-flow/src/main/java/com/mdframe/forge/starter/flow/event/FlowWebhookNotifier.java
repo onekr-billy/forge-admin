@@ -10,7 +10,6 @@ import com.mdframe.forge.starter.outbound.model.OutboundRequest;
 import com.mdframe.forge.starter.outbound.model.OutboundResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -90,18 +89,18 @@ public class FlowWebhookNotifier {
     }
 
     /**
-     * 异步发送 Webhook 回调（带重试）
+     * 发送 Webhook 回调（带进程内快速重试）。异步调度与持久化补偿由通知 Outbox 负责。
      *
      * @param webhookUrl 回调 URL（配置在 FlowModel.webhookUrl）
      * @param message    流程事件消息
      */
-    @Async("flowEventExecutor")
     public void notify(String webhookUrl, FlowEventMessage message) {
         if (!StringUtils.hasText(webhookUrl)) {
             return;
         }
         String safeTarget = safeTarget(webhookUrl);
 
+        Exception lastFailure = null;
         for (int attempt = 1; attempt <= MAX_RETRY; attempt++) {
             try {
                 doSend(webhookUrl, message);
@@ -109,6 +108,7 @@ public class FlowWebhookNotifier {
                         attempt, safeTarget, message.getEventType(), message.getBusinessKey());
                 return;
             } catch (Exception e) {
+                lastFailure = e;
                 log.warn("[FlowWebhook] 回调失败(attempt={}/{}): target={}, eventType={}, failureType={}",
                         attempt, MAX_RETRY, safeTarget, message.getEventType(), safeFailureType(e));
                 if (attempt < MAX_RETRY) {
@@ -118,7 +118,7 @@ public class FlowWebhookNotifier {
                         }
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
-                        return;
+                        throw new IllegalStateException("FLOW_WEBHOOK_RETRY_INTERRUPTED", ie);
                     }
                 } else {
                     log.error("[FlowWebhook] 回调最终失败，已放弃: target={}, eventType={}, businessKey={}, failureType={}",
@@ -126,6 +126,7 @@ public class FlowWebhookNotifier {
                 }
             }
         }
+        throw new IllegalStateException("FLOW_WEBHOOK_DELIVERY_FAILED", lastFailure);
     }
 
     /**
@@ -135,6 +136,15 @@ public class FlowWebhookNotifier {
         byte[] body = objectMapper.writeValueAsString(message).getBytes(StandardCharsets.UTF_8);
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("X-Flow-Event-Type", message.getEventType());
+        if (message.getEventId() != null) {
+            headers.put("X-Flow-Event-Id", message.getEventId());
+        }
+        if (message.getEventVersion() != null) {
+            headers.put("X-Flow-Event-Version", String.valueOf(message.getEventVersion()));
+        }
+        if (message.getEventSequence() != null) {
+            headers.put("X-Flow-Event-Sequence", String.valueOf(message.getEventSequence()));
+        }
         if (message.getProcessDefKey() != null) {
             headers.put("X-Flow-Process-Key", message.getProcessDefKey());
         }
