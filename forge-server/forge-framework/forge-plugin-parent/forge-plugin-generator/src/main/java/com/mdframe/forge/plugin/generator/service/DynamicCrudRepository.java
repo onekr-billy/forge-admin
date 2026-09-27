@@ -1,7 +1,6 @@
 package com.mdframe.forge.plugin.generator.service;
 
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
-import com.mdframe.forge.plugin.generator.service.audit.DataAuditRecordIds;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTenantSupport;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryConditionDTO;
@@ -17,8 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -672,16 +669,7 @@ public class DynamicCrudRepository {
      * 新增记录
      */
     public int insert(String tableName, Map<String, Object> data) {
-        validateTableName(tableName);
-
-        Map<String, Object> insertData = prepareInsertData(tableName, data);
-        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn(), insertData.get(primaryKeyColumn()),
-                DataAuditTransactionHolder.WriteKind.INSERT);
-        int affected = jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData));
-        DataAuditTransactionHolder.afterWrite(tableName, insertData.get(primaryKeyColumn()), insertData,
-                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
-                DataAuditTransactionHolder.WriteKind.INSERT, affected);
-        return affected;
+        return mutationExecutor().insert(tableName, data);
     }
 
     /**
@@ -705,29 +693,8 @@ public class DynamicCrudRepository {
                                      Map<String, Object> data,
                                      String primaryKeyColumn,
                                      boolean autoIncrement) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-
-        Map<String, Object> insertData = prepareInsertData(tableName, data);
-        if (!autoIncrement && !insertData.containsKey(primaryKeyColumn)) {
-            throw new BusinessException("新增操作缺少主键字段: " + primaryKeyColumn);
-        }
-        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, insertData.get(primaryKeyColumn),
-                DataAuditTransactionHolder.WriteKind.INSERT);
-        Object generatedKey;
-        if (!autoIncrement) {
-            jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData));
-            generatedKey = insertData.get(primaryKeyColumn);
-        } else {
-            KeyHolder keyHolder = new GeneratedKeyHolder();
-            jdbc().update(buildInsertSql(tableName, insertData), toSqlParams(insertData), keyHolder, new String[] { primaryKeyColumn });
-            Number key = keyHolder.getKey();
-            generatedKey = key == null ? insertData.get(primaryKeyColumn) : key;
-        }
-        DataAuditTransactionHolder.afterWrite(tableName, generatedKey, insertData,
-                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
-                DataAuditTransactionHolder.WriteKind.INSERT, 1);
-        return generatedKey;
+        return mutationExecutor().insertReturningKey(
+                tableName, data, primaryKeyColumn, autoIncrement);
     }
 
     // ==================== 更新操作 ====================
@@ -736,11 +703,12 @@ public class DynamicCrudRepository {
      * 根据ID更新
      */
     public int updateById(String tableName, Object id, Map<String, Object> data) {
-        return updateById(tableName, id, data, null);
+        return mutationExecutor().updateById(tableName, primaryKeyColumn(), id, data, null);
     }
 
     public int updateById(String tableName, Object id, Map<String, Object> data, SqlCondition dataScopeCondition) {
-        return updateById(tableName, primaryKeyColumn(), id, data, dataScopeCondition);
+        return mutationExecutor().updateById(
+                tableName, primaryKeyColumn(), id, data, dataScopeCondition);
     }
 
     public int updateById(String tableName,
@@ -748,20 +716,8 @@ public class DynamicCrudRepository {
                           Object id,
                           Map<String, Object> data,
                           SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-
-        Map<String, Object> updateData = prepareUpdateData(tableName, data, primaryKeyColumn);
-        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.UPDATE);
-        MapSqlParameterSource params = toSqlParams(updateData, id);
-        String sql = appendTenantCondition(buildUpdateSql(tableName, updateData, primaryKeyColumn), params, tableName);
-        sql = appendLogicActiveCondition(sql, params, tableName);
-        sql = appendSqlCondition(sql, params, dataScopeCondition);
-        int affected = jdbc().update(sql, params);
-        DataAuditTransactionHolder.afterWrite(tableName, id, updateData,
-                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
-                DataAuditTransactionHolder.WriteKind.UPDATE, affected);
-        return affected;
+        return mutationExecutor().updateById(
+                tableName, primaryKeyColumn, id, data, dataScopeCondition);
     }
 
     /**
@@ -774,88 +730,12 @@ public class DynamicCrudRepository {
                                  Map<String, BigDecimal> minimums,
                                  Map<String, BigDecimal> maximums,
                                  SqlCondition condition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-        if (id == null) {
-            throw new BusinessException("数值调整缺少目标记录 ID");
-        }
-        if (deltas == null || deltas.isEmpty()) {
-            throw new BusinessException("数值调整字段不能为空");
-        }
-        Set<String> tableColumns = getTableColumns(tableName);
-        MapSqlParameterSource params = new MapSqlParameterSource();
-        params.addValue("id", id);
-        List<String> setClauses = new ArrayList<>();
-        List<String> boundConditions = new ArrayList<>();
-        int index = 0;
-        for (Map.Entry<String, BigDecimal> entry : deltas.entrySet()) {
-            String column = entry.getKey();
-            validateIdentifier(column);
-            if (!tableColumns.contains(column)) {
-                throw new BusinessException("数值调整字段不存在");
-            }
-            BigDecimal delta = entry.getValue();
-            if (delta == null) {
-                throw new BusinessException("数值调整量不能为空");
-            }
-            String deltaParam = "adjustDelta" + index;
-            params.addValue(deltaParam, delta);
-            setClauses.add(column + " = " + column + " + :" + deltaParam);
-            BigDecimal minimum = minimums == null ? null : minimums.get(column);
-            if (minimum != null) {
-                String minParam = "adjustMin" + index;
-                params.addValue(minParam, minimum);
-                boundConditions.add(column + " + :" + deltaParam + " >= :" + minParam);
-            }
-            BigDecimal maximum = maximums == null ? null : maximums.get(column);
-            if (maximum != null) {
-                String maxParam = "adjustMax" + index;
-                params.addValue(maxParam, maximum);
-                boundConditions.add(column + " + :" + deltaParam + " <= :" + maxParam);
-            }
-            index++;
-        }
-
-        Map<String, Object> auditValues = new LinkedHashMap<>();
-        writePolicy().fillUpdateAuditFields(auditValues, tableColumns);
-        auditValues.forEach((column, value) -> {
-            if (!deltas.containsKey(column)) {
-                validateIdentifier(column);
-                setClauses.add(column + " = :" + column);
-                params.addValue(column, value);
-            }
-        });
-
-        String sql = "UPDATE " + tableName + " SET " + String.join(", ", setClauses)
-                + " WHERE " + primaryKeyColumn + " = :id";
-        sql = appendTenantCondition(sql, params, tableName);
-        sql = appendLogicActiveCondition(sql, params, tableName);
-        sql = appendSqlCondition(sql, params, condition);
-        for (String bound : boundConditions) {
-            sql += " AND (" + bound + ")";
-        }
-        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.UPDATE);
-        int affected = jdbc().update(sql, params);
-        DataAuditTransactionHolder.afterWrite(tableName, id, Map.of(),
-                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.BUSINESS_ACTION),
-                DataAuditTransactionHolder.WriteKind.UPDATE, affected);
-        return affected;
+        return mutationExecutor().adjustNumbersById(
+                tableName, primaryKeyColumn, id, deltas, minimums, maximums, condition);
     }
 
     public Long selectFirstIdByColumn(String tableName, String columnName, Object value) {
-        validateTableName(tableName);
-        validateIdentifier(columnName);
-        if (value == null) {
-            return null;
-        }
-        StringBuilder whereClause = new StringBuilder(columnName + " = :value");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-        MapSqlParameterSource params = buildBaseQueryParams();
-        params.addValue("value", value);
-        String sql = buildSelectSql("SELECT id", tableName, whereClause) + " ORDER BY id ASC";
-        sql = limitSql(sql, 1);
-        List<Long> ids = jdbc().queryForList(sql, params, Long.class);
-        return ids.isEmpty() ? null : ids.get(0);
+        return recordQueryExecutor().selectFirstIdByColumn(tableName, columnName, value);
     }
 
     // ==================== 删除操作 ====================
@@ -864,11 +744,13 @@ public class DynamicCrudRepository {
      * 根据ID删除
      */
     public int deleteById(String tableName, Object id, boolean logicDelete) {
-        return deleteById(tableName, id, logicDelete, null);
+        return mutationExecutor().deleteById(
+                tableName, primaryKeyColumn(), id, logicDelete, null);
     }
 
     public int deleteById(String tableName, Object id, boolean logicDelete, SqlCondition dataScopeCondition) {
-        return deleteById(tableName, primaryKeyColumn(), id, logicDelete, dataScopeCondition);
+        return mutationExecutor().deleteById(
+                tableName, primaryKeyColumn(), id, logicDelete, dataScopeCondition);
     }
 
     public int deleteById(String tableName,
@@ -876,21 +758,8 @@ public class DynamicCrudRepository {
                           Object id,
                           boolean logicDelete,
                           SqlCondition dataScopeCondition) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-
-        MapSqlParameterSource params = toIdParam(id);
-        if (logicDelete) {
-            params.addValue("deletedValue", logicDeletedValue());
-        }
-        DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE);
-        String sql = appendTenantCondition(buildDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
-        sql = appendSqlCondition(sql, params, dataScopeCondition);
-        int affected = jdbc().update(sql, params);
-        DataAuditTransactionHolder.afterWrite(tableName, id, Map.of(),
-                DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
-                DataAuditTransactionHolder.WriteKind.DELETE, affected);
-        return affected;
+        return mutationExecutor().deleteById(
+                tableName, primaryKeyColumn, id, logicDelete, dataScopeCondition);
     }
 
     /**
@@ -901,7 +770,8 @@ public class DynamicCrudRepository {
                            List<?> ids,
                            boolean logicDelete,
                            SqlCondition dataScopeCondition) {
-        return deleteByIds(tableName, primaryKeyColumn, ids, logicDelete, dataScopeCondition, null);
+        return mutationExecutor().deleteByIds(
+                tableName, primaryKeyColumn, ids, logicDelete, dataScopeCondition, null);
     }
 
     /**
@@ -913,57 +783,16 @@ public class DynamicCrudRepository {
                            boolean logicDelete,
                            SqlCondition dataScopeCondition,
                            Map<String, Map<String, Object>> beforeById) {
-        validateTableName(tableName);
-        validateIdentifier(primaryKeyColumn);
-        if (ids == null || ids.isEmpty()) {
-            return 0;
-        }
-
-        MapSqlParameterSource params = new MapSqlParameterSource();
-        params.addValue("ids", ids);
-        if (logicDelete) {
-            params.addValue("deletedValue", logicDeletedValue());
-        }
-        for (Object id : ids) {
-            Map<String, Object> snapshot = null;
-            if (beforeById != null) {
-                String key = DataAuditRecordIds.normalize(id);
-                if (key != null) {
-                    snapshot = beforeById.get(key);
-                }
-            }
-            DataAuditTransactionHolder.prepareWrite(
-                    tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE, snapshot);
-        }
-        String sql = appendTenantCondition(buildBatchDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
-        sql = appendSqlCondition(sql, params, dataScopeCondition);
-        int affected = jdbc().update(sql, params);
-        for (Object id : ids) {
-            DataAuditTransactionHolder.afterWrite(tableName, id, Map.of(),
-                    DataAuditTransactionHolder.currentFieldSource(DataAuditSourceType.FORM),
-                    DataAuditTransactionHolder.WriteKind.DELETE, affected > 0 ? 1 : 0);
-        }
-        return affected;
+        return mutationExecutor().deleteByIds(
+                tableName, primaryKeyColumn, ids, logicDelete, dataScopeCondition, beforeById);
     }
 
     public int deleteByColumn(String tableName, String columnName, Object value, boolean logicDelete) {
-        validateTableName(tableName);
-        validateIdentifier(columnName);
-        if (value == null) {
-            return 0;
-        }
-        captureColumnDelete(tableName, columnName, value);
-        MapSqlParameterSource params = new MapSqlParameterSource();
-        params.addValue("value", value);
-        String sql;
-        if (logicDelete) {
-            params.addValue("deletedValue", logicDeletedValue());
-            sql = "UPDATE " + tableName + " SET " + logicDeleteSetClause(tableName)
-                    + " WHERE " + columnName + " = :value";
-        } else {
-            sql = "DELETE FROM " + tableName + " WHERE " + columnName + " = :value";
-        }
-        return jdbc().update(appendTenantCondition(sql, params, tableName), params);
+        return mutationExecutor().deleteByColumn(tableName, columnName, value, logicDelete);
+    }
+
+    private DynamicCrudMutationExecutor mutationExecutor() {
+        return new DynamicCrudMutationExecutor(this);
     }
 
     // ==================== 工具方法 ====================
@@ -1001,7 +830,7 @@ public class DynamicCrudRepository {
         return tableMetadataGateway().normalizeQueryValue(tableName, columnName, value);
     }
 
-    private void captureColumnDelete(String tableName, String columnName, Object value) {
+    void captureColumnDelete(String tableName, String columnName, Object value) {
         if (DataAuditTransactionHolder.index().findTable(DataAuditTenantSupport.currentTenantIdOrNull(), tableName) == null) {
             return;
         }
@@ -1201,7 +1030,7 @@ public class DynamicCrudRepository {
         return appendTenantCondition(sql, params, null);
     }
 
-    private String appendTenantCondition(String sql, MapSqlParameterSource params, String tableName) {
+    String appendTenantCondition(String sql, MapSqlParameterSource params, String tableName) {
         Long tenantId = TenantContextHolder.getTenantId();
         if (tenantId == null || !tenantStrategyEnabled()) {
             return sql;
@@ -1214,7 +1043,7 @@ public class DynamicCrudRepository {
         return sql + " AND " + tenantColumn + " = :tenantId";
     }
 
-    private String appendLogicActiveCondition(String sql, MapSqlParameterSource params, String tableName) {
+    String appendLogicActiveCondition(String sql, MapSqlParameterSource params, String tableName) {
         if (tableName == null || !hasDelFlag(tableName)) {
             return sql;
         }
@@ -1222,7 +1051,7 @@ public class DynamicCrudRepository {
         return sql + " AND " + logicDeleteColumn() + " = :logicActiveValue";
     }
 
-    private String appendSqlCondition(String sql, MapSqlParameterSource params, SqlCondition condition) {
+    String appendSqlCondition(String sql, MapSqlParameterSource params, SqlCondition condition) {
         if (condition == null || StringUtils.isBlank(condition.sql())) {
             return sql;
         }
@@ -1232,7 +1061,7 @@ public class DynamicCrudRepository {
         return sql + " AND (" + condition.sql() + ")";
     }
 
-    private String buildInsertSql(String tableName, Map<String, Object> data) {
+    String buildInsertSql(String tableName, Map<String, Object> data) {
         String columns = String.join(", ", data.keySet());
         String placeholders = data.keySet().stream()
                 .map(col -> ":" + col)
@@ -1240,14 +1069,14 @@ public class DynamicCrudRepository {
         return "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ")";
     }
 
-    private String buildUpdateSql(String tableName, Map<String, Object> data, String primaryKeyColumn) {
+    String buildUpdateSql(String tableName, Map<String, Object> data, String primaryKeyColumn) {
         String setClauses = data.entrySet().stream()
                 .map(entry -> entry.getKey() + " = :" + entry.getKey())
                 .collect(Collectors.joining(", "));
         return "UPDATE " + tableName + " SET " + setClauses + " WHERE " + primaryKeyColumn + " = :id";
     }
 
-    private String buildDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
+    String buildDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
         if (logicDelete) {
             return "UPDATE " + tableName + " SET " + logicDeleteSetClause(tableName) + " WHERE "
                     + primaryKeyColumn + " = :id";
@@ -1255,7 +1084,7 @@ public class DynamicCrudRepository {
         return "DELETE FROM " + tableName + " WHERE " + primaryKeyColumn + " = :id";
     }
 
-    private String buildBatchDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
+    String buildBatchDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
         if (logicDelete) {
             return "UPDATE " + tableName + " SET " + logicDeleteSetClause(tableName) + " WHERE "
                     + primaryKeyColumn + " IN (:ids)";
@@ -1263,23 +1092,23 @@ public class DynamicCrudRepository {
         return "DELETE FROM " + tableName + " WHERE " + primaryKeyColumn + " IN (:ids)";
     }
 
-    private String logicDeleteSetClause(String tableName) {
+    String logicDeleteSetClause(String tableName) {
         return writePolicy().logicDeleteSetClause(getTableColumns(tableName));
     }
 
-    private MapSqlParameterSource toSqlParams(Map<String, Object> data) {
+    MapSqlParameterSource toSqlParams(Map<String, Object> data) {
         MapSqlParameterSource params = new MapSqlParameterSource();
         data.forEach(params::addValue);
         return params;
     }
 
-    private MapSqlParameterSource toSqlParams(Map<String, Object> data, Object id) {
+    MapSqlParameterSource toSqlParams(Map<String, Object> data, Object id) {
         MapSqlParameterSource params = toSqlParams(data);
         appendIdParam(params, id);
         return params;
     }
 
-    private MapSqlParameterSource toIdParam(Object id) {
+    MapSqlParameterSource toIdParam(Object id) {
         MapSqlParameterSource params = new MapSqlParameterSource();
         appendIdParam(params, id);
         return params;
@@ -1294,7 +1123,7 @@ public class DynamicCrudRepository {
         log.info("[DynamicCrudRepository] {} 参数: {}", scene, params == null ? Map.of() : params.getValues());
     }
 
-    private Map<String, Object> prepareInsertData(String tableName, Map<String, Object> data) {
+    Map<String, Object> prepareInsertData(String tableName, Map<String, Object> data) {
         return writePolicy().prepareInsert(data, getTableColumns(tableName));
     }
 
@@ -1302,7 +1131,7 @@ public class DynamicCrudRepository {
         return prepareUpdateData(tableName, data, DEFAULT_PRIMARY_KEY);
     }
 
-    private Map<String, Object> prepareUpdateData(String tableName, Map<String, Object> data, String primaryKeyColumn) {
+    Map<String, Object> prepareUpdateData(String tableName, Map<String, Object> data, String primaryKeyColumn) {
         return writePolicy().prepareUpdate(data, getTableColumns(tableName), primaryKeyColumn);
     }
 
@@ -1326,11 +1155,11 @@ public class DynamicCrudRepository {
         return writePolicy().logicActiveValue();
     }
 
-    private Object logicDeletedValue() {
+    Object logicDeletedValue() {
         return writePolicy().logicDeletedValue();
     }
 
-    private DynamicCrudWritePolicy writePolicy() {
+    DynamicCrudWritePolicy writePolicy() {
         return new DynamicCrudWritePolicy(this::validateIdentifier);
     }
 }

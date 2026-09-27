@@ -564,3 +564,13 @@
 - 验证：重跑执行器、唯一约束、树查询、命令、后台审计和 Join 列表回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
 
 验证结果：记录级查询已委托 `DynamicCrudRecordQueryExecutor`；新增 2 项测试覆盖组合唯一性 SQL/参数和空批量短路。相关 6 个测试类共 20 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`DynamicCrudRepository` 1336 行，新 Executor 199 行。
+
+## 2026-09-27 第七十二轮增量验证：动态变更命令执行器
+
+- P0：新增/返回主键、更新、原子数值调整、逻辑/物理删除与批量删除的 SQL、参数和受影响行语义保持不变。
+- P0：每条命令继续执行审计前置捕获、JDBC 副作用和审计后置回写；批量删除继续复用调用方快照并按规范化 ID 匹配。
+- P0：原子数值上下界、期望条件、租户/逻辑删除条件和审计更新时间保持在同一 UPDATE 中。
+- P1：使用 CQRS Command Executor + Template Method 隔离写命令执行；Repository 保留公开兼容门面，新生产类少于 1000 行。
+- 验证：重跑命令仓储、后台审计、写策略、记录查询和 Join 列表回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：所有动态变更命令已委托 `DynamicCrudMutationExecutor`，首个 ID 查询同步归入 Record Query Executor；相关 5 个测试类共 15 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudRepository` 1165 行，新 Mutation Executor 251 行，Record Query Executor 214 行。

@@ -162,6 +162,21 @@ final class DynamicCrudRecordQueryExecutor {
         return count != null && count > 0;
     }
 
+    Long selectFirstIdByColumn(String tableName, String columnName, Object value) {
+        support.validateTableName(tableName);
+        support.validateIdentifier(columnName);
+        if (value == null) {
+            return null;
+        }
+        StringBuilder whereClause = new StringBuilder(columnName + " = :value");
+        support.appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
+        MapSqlParameterSource params = support.buildBaseQueryParams();
+        params.addValue("value", value);
+        String sql = support.buildSelectSql("SELECT id", tableName, whereClause) + " ORDER BY id ASC";
+        List<Long> ids = support.jdbc().queryForList(support.limitSql(sql, 1), params, Long.class);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
     boolean existsByColumns(String tableName,
                             Map<String, Object> columnValues,
                             String primaryKeyColumn,

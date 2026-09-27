@@ -385,3 +385,9 @@
 - 使用 CQRS Query Executor 从 `DynamicCrudRepository` 迁出详情、批量 ID、`FOR UPDATE`、按列等值/IN、树子节点和复合唯一性探测；Repository 保留原公开签名，通过包内窄基础设施复用数据源、租户、逻辑删除和数据权限条件。
 - 入口由 1456 行降至 1336 行，新 `DynamicCrudRecordQueryExecutor` 199 行；新增测试直接约束 NULL 组合唯一条件、排除主键参数和空批量短路。
 - generator Reactor 编译退出码 0；执行记录执行器、唯一约束、树查询、命令仓储、后台审计和 Join 列表相关 6 类 20 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实大批量 IN、复杂树根值和并发锁读取仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十二个切口：动态变更命令执行器
+
+- 使用 CQRS Command Executor + Template Method 从 `DynamicCrudRepository` 迁出新增、运行时主键返回、更新、原子数值调整、单条/批量/按列删除，以及审计前置/JDBC/审计后置执行模板；首个 ID 查询同步归入 Record Query Executor。
+- 原子上下界构造收敛为统一的 bound helper，仍保持最小值、最大值和期望状态与数值增量处于同一 SQL。入口由 1336 行降至 1165 行，新 `DynamicCrudMutationExecutor` 251 行，Record Query Executor 增至 214 行，均低于 1000 行。
+- generator Reactor 编译退出码 0；执行命令仓储、后台审计、写策略、记录查询和 Join 列表相关 5 类 15 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实批量删除审计快照、自增/非自增主键和并发数值调整仍需服务环境验收，无服务 PID 需停止。
