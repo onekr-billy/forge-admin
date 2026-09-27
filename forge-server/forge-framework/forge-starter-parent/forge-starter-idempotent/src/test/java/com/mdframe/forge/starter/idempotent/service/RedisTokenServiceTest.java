@@ -8,9 +8,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.dao.QueryTimeoutException;
 
 import java.util.List;
 import java.util.Map;
@@ -140,6 +142,30 @@ class RedisTokenServiceTest {
         boolean consumed = tokenService.consumeToken("test-token", "test");
 
         assertFalse(consumed);
+    }
+
+    @Test
+    @DisplayName("消费Token - Redis超时时不重试不确定写入")
+    void testConsumeToken_TimeoutMustNotRetryAmbiguousWrite() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenThrow(new QueryTimeoutException("command timed out"))
+                .thenReturn(1L);
+
+        assertThrows(QueryTimeoutException.class,
+                () -> tokenService.consumeToken("test-token", "test"));
+        verify(redisTemplate, times(1)).execute(any(RedisScript.class), anyList(), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("消费Token - 节点切换时不重试不确定写入")
+    void testConsumeToken_FailoverMustNotRetryAmbiguousWrite() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenThrow(new RedisConnectionFailureException("primary switched"))
+                .thenReturn(1L);
+
+        assertThrows(RedisConnectionFailureException.class,
+                () -> tokenService.consumeToken("test-token", "test"));
+        verify(redisTemplate, times(1)).execute(any(RedisScript.class), anyList(), any(Object[].class));
     }
     
     @Test

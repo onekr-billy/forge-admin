@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
+import org.springframework.dao.DataAccessException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -24,7 +25,15 @@ public class TokenRequiredStrategyHandler implements IdempotentStrategyHandler {
         String token = extractToken();
         String prefix = annotation.prefix();
         
-        if (!tokenService.consumeToken(token, prefix)) {
+        boolean consumed;
+        try {
+            consumed = tokenService.consumeToken(token, prefix);
+        } catch (DataAccessException exception) {
+            log.warn("Token模式: Redis原子消费结果不确定，prefix={}, errorType={}",
+                    prefix, exception.getClass().getSimpleName());
+            throw new TokenInvalidException("幂等校验服务暂不可用，请重新获取Token后重试");
+        }
+        if (!consumed) {
             log.warn("Token模式: Token原子消费失败, prefix={}", prefix);
             throw new TokenInvalidException("Token无效或已过期");
         }
@@ -40,7 +49,7 @@ public class TokenRequiredStrategyHandler implements IdempotentStrategyHandler {
                 return request.getHeader(tokenProperties.getHeader());
             }
         } catch (Exception e) {
-            log.warn("提取Token失败: {}", e.getMessage());
+            log.warn("提取Token失败，errorType={}", e.getClass().getSimpleName());
         }
         return null;
     }

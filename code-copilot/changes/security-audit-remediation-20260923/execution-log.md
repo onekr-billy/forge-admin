@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：A-06 幂等 Token Redis 故障 fail-closed
+
+### 实现
+
+- 保持 Redis Lua 的单次原子消费语义；对命令超时或主节点切换这类“服务端可能已消费、客户端未收到结果”的不确定状态，明确禁止应用层自动重试。
+- `TokenRequiredStrategyHandler` 捕获 Redis `DataAccessException` 后统一 fail-closed，不调用业务委托，返回固定错误并要求客户端重新获取 Token。
+- 故障日志仅记录 prefix 和异常类型，移除 Token 提取异常原文，不记录 Token 或 Redis 驱动错误详情。
+
+### 验证
+
+- `RedisTokenServiceTest` 12/12 通过：覆盖成功消费、已消费、空 Token、Redis 超时和节点切换；超时/切换用例均断言 Redis Lua 只调用一次。
+- `TokenRequiredStrategyHandlerTest` 3/3 通过：覆盖原子消费成功、竞争失败和 Redis failover 结果不确定，后两者都不进入业务处理器。
+- idempotent 模块及 5 个依赖模块编译成功；`git diff --check` 通过。
+
+### 未覆盖
+
+- 未连接真实 Redis Cluster/Sentinel 触发故障转移；本轮在服务边界模拟 `QueryTimeoutException` 与 `RedisConnectionFailureException`，并验证安全的单次调用和 fail-closed 语义。
+
 ## 2026-09-28：A-07 数据连接与 SQL 预览审计脱敏
 
 ### 实现

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -65,6 +66,23 @@ class TokenRequiredStrategyHandlerTest {
 
         assertThrows(TokenInvalidException.class,
                 () -> handler.handle(joinPoint, annotation, "key"));
+        verify(delegate, never()).handle(joinPoint, annotation, "key");
+    }
+
+    @Test
+    void failsClosedWhenRedisFailoverLeavesConsumptionOutcomeUnknown() throws Throwable {
+        bindRequest("token-value");
+        ProceedingJoinPoint joinPoint = mock(ProceedingJoinPoint.class);
+        Idempotent annotation = mock(Idempotent.class);
+        when(annotation.prefix()).thenReturn("submit");
+        when(tokenService.consumeToken("token-value", "submit"))
+                .thenThrow(new RedisConnectionFailureException("primary switched"));
+
+        TokenInvalidException error = assertThrows(TokenInvalidException.class,
+                () -> handler.handle(joinPoint, annotation, "key"));
+
+        assertEquals("幂等校验服务暂不可用，请重新获取Token后重试", error.getMessage());
+        verify(tokenService).consumeToken("token-value", "submit");
         verify(delegate, never()).handle(joinPoint, annotation, "key");
     }
 

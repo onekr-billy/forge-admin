@@ -58,6 +58,13 @@
 - 连接与预览失败不得记录 JDBC URL、用户名、密码、完整 SQL 或 JDBC 异常消息；返回客户端的错误也使用固定诊断文案。
 - 实际结果：`DataConnectionControllerSecurityTest`、`DataDatasetControllerSecurityTest`、`DataQueryExecutorTest` 共 10/10 通过，包含携带伪造密码和 SQL 的 JDBC 异常不返回原文用例；Admin 聚合编译 46/46 成功。
 
+## 1.6 2026-09-28 幂等 Token Redis 故障边界验证
+
+- 确定性返回：Lua 返回 `1` 时只允许一个请求进入业务，返回 `0` 表示 Token 不存在、过期或已消费，重复请求不进入委托处理器。
+- 不确定性返回：Redis 命令超时或主节点切换时，Lua 可能已消费但客户端未收到结果；应用层不得自动重试这个不可幂等的判定调用。
+- 故障时必须统一 fail-closed，不执行业务委托，不记录完整 Token，并返回“重新获取 Token 后重试”的固定错误。
+- 实际结果：`RedisTokenServiceTest` 12、`TokenRequiredStrategyHandlerTest` 3，共 15/15 通过；显式验证 timeout/failover 各只执行一次 Redis Lua，第二个预置“成功”结果不会被读取。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML
