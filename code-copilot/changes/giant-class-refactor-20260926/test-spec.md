@@ -562,6 +562,15 @@
 
 验证结果：节点注册、端口、连线和拓扑检查已委托 `BusinessProcessGraphValidator`；新增 3 项测试覆盖合法 DAG/回调、环与悬空边/结束路径、记录来源与端口失败关闭，原 Schema Validator 14 项完整回归同步通过。共 17 项通过、0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessProcessSchemaValidator` 930 行，新 Graph Validator 376 行。
 
+## 2026-09-27 第八十一轮增量验证：角色管理访问策略
+
+- P0：角色管理权限通配符、登录租户约束、委派角色列表、跨租户拦截、系统角色/自绑定角色保护和租户启用校验保持不变。
+- P0：系统/租户/普通用户的数据范围上限、已绑定用户兼容性、组织租户归属及原资源授权事务边界保持不变。
+- P1：使用 Access Policy + Specification 隔离身份、租户和赋权规则；Service 保留公开事务、资源/组织关系和数据范围编排，保留原构造签名，新生产类少于 1000 行。
+- 验证：执行 system Reactor 编译，运行访问策略、资源绑定、范围权限、选择归一和 Mapper XML 契约测试，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：角色访问、租户、维护权限、数据范围和组织归属已委托 `SysRoleAccessPolicy`；删除了仅供已废弃直接加人接口使用且已无调用的旧赋权校验链。新增 4 项策略测试，相关 5 个测试类共 16 项通过、0 失败、0 错误；system Reactor 编译与 `git diff --check` 通过。`SysRoleServiceImpl` 974 行，新 Policy 215 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。

@@ -439,3 +439,9 @@
 - 按 `forge-business-flow-development` Skill 复核低代码流程、状态回写、BPMN 表单所有权和验证清单后，使用 Validator Strategy 从 `BusinessProcessSchemaValidator` 迁出节点注册、开始/结束节点、端口、连线、默认分支、DAG、起点可达和结束路径规则。
 - Graph Validator 通过 `NodeConfigValidator` 窄策略回调保持节点业务配置的原校验顺序；Schema Validator 继续负责协议归一、审批/条件/动作/子流程语义、依赖目录、敏感配置和字段引用。入口由 1219 行降至 930 行，新 Strategy 376 行。
 - generator Reactor 编译退出码 0；执行 `BusinessProcessGraphValidatorTest,BusinessProcessSchemaValidatorTest` 共 2 类 17 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实 Flowable 部署、任务表单权限、驳回重提和状态修复仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第八十一个切口：角色管理访问策略
+
+- 使用 Access Policy + Specification 从 `SysRoleServiceImpl` 迁出角色管理权限通配符、登录租户选择、租户启用、角色加载与委派、系统角色/自绑定保护、数据范围上限及组织租户归属；Service 通过窄工厂复用原 Mapper，保持 14 参数构造签名和现有测试夹具。
+- 删除仅被已废弃 `addUsersToRole` 旧实现使用、当前已无调用的目标用户赋权校验链；资源授权、范围权限、组织绑定、缓存刷新和公开事务继续留在 Service。入口由 1194 行降至 974 行，新 Policy 215 行。
+- system Reactor 编译退出码 0；执行 `SysRoleAccessPolicyTest,SysRoleServiceImplBindResourcesTest,SysRoleServiceImplScopedPermissionTest,RoleResourceSelectionNormalizerTest,SysRoleMapperXmlContractTest` 共 5 类 16 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实多租户委派、系统角色维护和并发授权仍需服务环境验收，无服务 PID 需停止。

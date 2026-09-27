@@ -17,12 +17,9 @@ import com.mdframe.forge.plugin.system.entity.SysResource;
 import com.mdframe.forge.plugin.system.entity.SysRole;
 import com.mdframe.forge.plugin.system.entity.SysRoleOrg;
 import com.mdframe.forge.plugin.system.entity.SysRoleResource;
-import com.mdframe.forge.plugin.system.entity.SysOrg;
-import com.mdframe.forge.plugin.system.entity.SysTenant;
 import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.entity.SysUserOrgRole;
 import com.mdframe.forge.plugin.system.entity.SysUserRole;
-import com.mdframe.forge.plugin.system.entity.SysUserTenant;
 import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
 import com.mdframe.forge.plugin.system.mapper.SysResourceMapper;
 import com.mdframe.forge.plugin.system.mapper.SysRoleMapper;
@@ -41,7 +38,6 @@ import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.datascope.entity.SysDataScopeConfig;
 import com.mdframe.forge.starter.datascope.entity.SysRoleModuleDataScope;
-import com.mdframe.forge.starter.datascope.enums.DataScopeType;
 import com.mdframe.forge.starter.datascope.mapper.SysDataScopeConfigMapper;
 import com.mdframe.forge.starter.datascope.mapper.SysRoleModuleDataScopeMapper;
 import com.mdframe.forge.starter.datascope.service.IDataScopeService;
@@ -64,10 +60,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> implements ISysRoleService {
 
-    private static final String[] ROLE_MANAGEMENT_PERMISSIONS = {
-            "system:role:list", "system:role:query", "system:role:add", "system:role:edit", "system:role:remove"
-    };
-
     private final SysRoleMapper roleMapper;
     private final SysRoleOrgMapper roleOrgMapper;
     private final SysRoleResourceMapper roleResourceMapper;
@@ -86,9 +78,9 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     @Override
     public IPage<SysRole> selectRolePage(SysRoleQuery query) {
-        assertRoleManagementAllowed();
+        accessPolicy().assertRoleManagementAllowed();
         query = query == null ? new SysRoleQuery() : query;
-        normalizeRoleQueryTenant(query);
+        accessPolicy().normalizeRoleQueryTenant(query);
         Page<SysRole> page = new Page<>(query.getPageNum(), query.getPageSize());
         SysRoleQuery finalQuery = query;
         return TenantContextHolder.executeIgnore(() -> roleMapper.selectRolePage(page, finalQuery));
@@ -96,18 +88,18 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     @Override
     public SysRole selectRoleById(Long id) {
-        loadRoleForAccess(id);
+        accessPolicy().loadRoleForAccess(id);
         return TenantContextHolder.executeIgnore(() -> roleMapper.selectRoleById(id));
     }
 
     @Override
     public boolean insertRole(SysRoleDTO dto) {
-        assertRoleManagementAllowed();
+        accessPolicy().assertRoleManagementAllowed();
         SysRole role = new SysRole();
         BeanUtil.copyProperties(dto, role);
-        role.setTenantId(resolveWriteTenantId(dto.getTenantId()));
+        role.setTenantId(accessPolicy().resolveWriteTenantId(dto.getTenantId()));
         role.setOrgScopeType(resolveOrgScopeType(dto.getOrgScopeType()));
-        validateDataScopeAllowedForCurrentUser(role.getDataScope());
+        accessPolicy().validateDataScopeAllowedForCurrentUser(role.getDataScope());
         boolean inserted = TenantContextHolder.executeIgnore(() -> roleMapper.insert(role) > 0);
         if (inserted && dto.getOrgIds() != null) {
             bindRoleOrgs(role.getId(), dto.getOrgIds());
@@ -117,21 +109,21 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     @Override
     public boolean updateRole(SysRoleDTO dto) {
-        SysRole existing = loadRoleForAccess(dto.getId());
-        assertCanMaintainRole(existing);
+        SysRole existing = accessPolicy().loadRoleForAccess(dto.getId());
+        accessPolicy().assertCanMaintainRole(existing);
         SysRole role = new SysRole();
         BeanUtil.copyProperties(dto, role);
         role.setOrgScopeType(null);
-        LoginUser loginUser = requireLoginUser();
+        LoginUser loginUser = accessPolicy().requireLoginUser();
         if (loginUser.isAdmin()) {
             Long tenantId = dto.getTenantId() != null ? dto.getTenantId() : existing.getTenantId();
-            role.setTenantId(resolveWriteTenantId(tenantId));
+            role.setTenantId(accessPolicy().resolveWriteTenantId(tenantId));
         } else {
             role.setTenantId(null);
         }
         Integer nextDataScope = dto.getDataScope() != null ? dto.getDataScope() : existing.getDataScope();
-        validateDataScopeAllowedForCurrentUser(nextDataScope);
-        validateDataScopeAllowedForBoundUsers(existing, nextDataScope);
+        accessPolicy().validateDataScopeAllowedForCurrentUser(nextDataScope);
+        accessPolicy().validateDataScopeAllowedForBoundUsers(existing, nextDataScope);
         boolean updated = TenantContextHolder.executeIgnore(() -> roleMapper.updateById(role) > 0);
         if (updated && dto.getOrgIds() != null) {
             bindRoleOrgs(existing.getId(), dto.getOrgIds());
@@ -142,9 +134,9 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteRoleById(Long id) {
-        SysRole role = loadRoleForAccess(id);
-        assertCanMaintainRole(role);
-        validateRoleDeletable(role);
+        SysRole role = accessPolicy().loadRoleForAccess(id);
+        accessPolicy().assertCanMaintainRole(role);
+        accessPolicy().validateRoleDeletable(role);
         return TenantContextHolder.executeIgnore(() -> {
             roleResourceMapper.delete(new LambdaQueryWrapper<SysRoleResource>()
                     .eq(SysRoleResource::getRoleId, id)
@@ -187,8 +179,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             return false;
         }
 
-        SysRole role = loadRoleForAccess(roleId);
-        assertCanMaintainRole(role);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
+        accessPolicy().assertCanMaintainRole(role);
 
         List<SysResource> assignableResources;
         Set<Long> resourceIdSet = resourceIds != null ? new HashSet<>(Arrays.asList(resourceIds)) : Collections.emptySet();
@@ -338,8 +330,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (settings == null) {
             throw new RuntimeException("范围化角色权限不能为空");
         }
-        SysRole role = loadRoleForAccess(roleId);
-        assertCanMaintainRole(role);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
+        accessPolicy().assertCanMaintainRole(role);
 
         Set<Long> scopeResourceIds = normalizeIds(settings.getScopeResourceIds());
         Set<Long> selectedResourceIds = normalizeIds(settings.getSelectedResourceIds());
@@ -439,8 +431,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (roleId == null || resourceIds == null || resourceIds.length == 0) {
             return false;
         }
-        SysRole role = loadRoleForAccess(roleId);
-        assertCanMaintainRole(role);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
+        accessPolicy().assertCanMaintainRole(role);
 
         LambdaQueryWrapper<SysRoleResource> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SysRoleResource::getRoleId, roleId)
@@ -464,7 +456,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (roleId == null) {
             return new ArrayList<>();
         }
-        SysRole role = loadRoleForAccess(roleId);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
 
         LambdaQueryWrapper<SysRoleResource> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SysRoleResource::getRoleId, roleId)
@@ -527,7 +519,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (roleId == null) {
             return new ArrayList<>();
         }
-        SysRole role = loadRoleForAccess(roleId);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
         return TenantContextHolder.executeIgnore(() -> roleOrgMapper.selectList(new LambdaQueryWrapper<SysRoleOrg>()
                         .eq(SysRoleOrg::getTenantId, role.getTenantId())
                         .eq(SysRoleOrg::getRoleId, roleId)
@@ -540,8 +532,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean bindRoleOrgs(Long roleId, List<Long> orgIds) {
-        SysRole role = loadRoleForAccess(roleId);
-        assertCanMaintainRole(role);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
+        accessPolicy().assertCanMaintainRole(role);
         List<Long> normalizedOrgIds = normalizeOrgIds(orgIds);
 
         List<Long> existingOrgIds = selectRoleOrgIds(roleId);
@@ -553,7 +545,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             return true;
         }
 
-        validateOrgTenant(normalizedOrgIds, role.getTenantId());
+        accessPolicy().validateOrgTenant(normalizedOrgIds, role.getTenantId());
         updateRoleOrgScopeType(role, SystemConstants.RoleOrgScope.CUSTOM);
 
         List<Long> removedOrgIds = existingOrgIds.stream()
@@ -622,7 +614,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
     @Override
     public RoleDataScopeSettingsVO getRoleDataScopeSettings(Long roleId) {
-        SysRole role = loadRoleForAccess(roleId);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
         List<SysDataScopeConfig> configs = listEnabledDataScopeConfigs(role.getTenantId());
         List<SysRoleModuleDataScope> overrides = listRoleModuleDataScopes(role);
         Map<String, Integer> overrideMap = overrides.stream()
@@ -658,12 +650,12 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (settings == null) {
             throw new RuntimeException("数据权限设置不能为空");
         }
-        SysRole role = loadRoleForAccess(roleId);
-        assertCanMaintainRole(role);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
+        accessPolicy().assertCanMaintainRole(role);
         Integer defaultDataScope = settings.getDefaultDataScope();
-        validateSupportedDataScope(defaultDataScope);
-        validateDataScopeAllowedForCurrentUser(defaultDataScope);
-        validateDataScopeAllowedForBoundUsers(role, defaultDataScope);
+        accessPolicy().validateSupportedDataScope(defaultDataScope);
+        accessPolicy().validateDataScopeAllowedForCurrentUser(defaultDataScope);
+        accessPolicy().validateDataScopeAllowedForBoundUsers(role, defaultDataScope);
 
         Set<String> availableModuleCodes = listEnabledDataScopeConfigs(role.getTenantId()).stream()
                 .map(SysDataScopeConfig::getResourceCode)
@@ -751,7 +743,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     }
 
     private void validateCurrentUserCanAssign(Set<Long> resourceIds) {
-        LoginUser loginUser = requireLoginUser();
+        LoginUser loginUser = accessPolicy().requireLoginUser();
         if (loginUser.isAdmin() || resourceIds.isEmpty()) {
             return;
         }
@@ -805,8 +797,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             if (dataScope == null) {
                 continue;
             }
-            validateSupportedDataScope(dataScope);
-            validateDataScopeAllowedForCurrentUser(dataScope);
+            accessPolicy().validateSupportedDataScope(dataScope);
+            accessPolicy().validateDataScopeAllowedForCurrentUser(dataScope);
             result.put(moduleCode, dataScope);
         }
         return result;
@@ -834,7 +826,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         if (query.getRoleId() == null) {
             return new Page<>();
         }
-        SysRole role = loadRoleForAccess(query.getRoleId());
+        SysRole role = accessPolicy().loadRoleForAccess(query.getRoleId());
         query.setTenantId(role.getTenantId());
         Page<SysUser> page = new Page<>(query.getPageNum(), query.getPageSize());
         return TenantContextHolder.executeIgnore(() -> roleMapper.selectRoleUsers(page, query));
@@ -847,8 +839,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             return false;
         }
 
-        SysRole role = loadRoleForAccess(roleId);
-        assertCanMaintainRole(role);
+        SysRole role = accessPolicy().loadRoleForAccess(roleId);
+        accessPolicy().assertCanMaintainRole(role);
         return TenantContextHolder.executeIgnore(() -> {
             userOrgRoleMapper.delete(new LambdaQueryWrapper<SysUserOrgRole>()
                     .eq(SysUserOrgRole::getRoleId, roleId)
@@ -867,170 +859,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         throw new RuntimeException("旧角色加人接口已废弃，请选择授权组织后使用组织角色授权");
     }
 
-    private void normalizeRoleQueryTenant(SysRoleQuery query) {
-        LoginUser loginUser = requireLoginUser();
-        query.setTenantId(resolveWriteTenantId(null));
-        if (!loginUser.isAdmin()) {
-            query.setAccessibleRoleIds(loginUser.getRoleIds() == null
-                    ? Collections.emptyList()
-                    : loginUser.getRoleIds());
-        }
-    }
-
-    private void assertRoleManagementAllowed() {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.isAdmin() || loginUser.isTenantAdmin()) {
-            return;
-        }
-        if (!hasAnyPermission(loginUser, ROLE_MANAGEMENT_PERMISSIONS)) {
-            throw new RuntimeException("无权访问角色管理功能");
-        }
-    }
-
-    private LoginUser requireLoginUser() {
-        LoginUser loginUser = SessionHelper.getLoginUser();
-        if (loginUser == null) {
-            throw new RuntimeException("用户未登录");
-        }
-        return loginUser;
-    }
-
-    private boolean hasAnyPermission(LoginUser loginUser, String... permissions) {
-        Set<String> userPermissions = loginUser == null ? null : loginUser.getPermissions();
-        if (userPermissions == null || userPermissions.isEmpty() || permissions == null) {
-            return false;
-        }
-        if (userPermissions.contains("*") || userPermissions.contains("*:*:*")) {
-            return true;
-        }
-        for (String permission : permissions) {
-            if (hasPermission(userPermissions, permission)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean hasPermission(Set<String> userPermissions, String permission) {
-        if (permission == null || userPermissions.contains(permission)) {
-            return permission != null;
-        }
-        int splitIndex = permission.lastIndexOf(':');
-        while (splitIndex > 0) {
-            String wildcardPermission = permission.substring(0, splitIndex) + ":*";
-            if (userPermissions.contains(wildcardPermission)) {
-                return true;
-            }
-            splitIndex = permission.lastIndexOf(':', splitIndex - 1);
-        }
-        return false;
-    }
-
-    private Long resolveWriteTenantId(Long requestedTenantId) {
-        LoginUser loginUser = requireLoginUser();
-        Long tenantId = loginUser.getTenantId();
-        validateTenantEnabled(tenantId);
-        return tenantId;
-    }
-
-    private void validateTenantEnabled(Long tenantId) {
-        if (tenantId == null) {
-            throw new RuntimeException("租户不能为空");
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                tenantMapper.selectCount(new LambdaQueryWrapper<SysTenant>()
-                        .eq(SysTenant::getId, tenantId)
-                        .eq(SysTenant::getTenantStatus, 1)));
-        if (count == null || count == 0) {
-            throw new RuntimeException("租户不存在或已禁用");
-        }
-    }
-
-    private SysRole loadRoleForAccess(Long roleId) {
-        assertRoleManagementAllowed();
-        if (roleId == null) {
-            throw new RuntimeException("角色ID不能为空");
-        }
-        SysRole role = TenantContextHolder.executeIgnore(() -> roleMapper.selectById(roleId));
-        if (role == null) {
-            throw new RuntimeException("角色不存在");
-        }
-        LoginUser loginUser = requireLoginUser();
-        if (!loginUser.isAdmin() && !Objects.equals(role.getTenantId(), loginUser.getTenantId())) {
-            throw new RuntimeException("无权操作非本租户角色");
-        }
-        if (!loginUser.isAdmin()
-                && (loginUser.getRoleIds() == null || !loginUser.getRoleIds().contains(roleId))) {
-            throw new RuntimeException("无权操作未委派给自己的角色");
-        }
-        return role;
-    }
-
-    private void validateRoleDeletable(SysRole role) {
-        Long userCount = TenantContextHolder.executeIgnore(() ->
-                roleMapper.countUsersByRole(role.getId(), role.getTenantId()));
-        if (userCount != null && userCount > 0) {
-            throw new RuntimeException("当前角色已绑定用户，不能删除");
-        }
-    }
-
-    private void assertCanMaintainRole(SysRole role) {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.isAdmin()) {
-            return;
-        }
-        if (role.getIsSystem() != null && role.getIsSystem() == 1) {
-            throw new RuntimeException("系统内置角色只能由超级管理员维护");
-        }
-        if (loginUser.getRoleIds() != null && loginUser.getRoleIds().contains(role.getId())) {
-            throw new RuntimeException("不能维护自己当前绑定的角色");
-        }
-    }
-
-    private void validateDataScopeAllowedForCurrentUser(Integer dataScope) {
-        LoginUser loginUser = requireLoginUser();
-        if (!isDataScopeAllowedForUserType(dataScope, normalizeUserType(loginUser.getUserType()))) {
-            throw new RuntimeException("不能设置超过当前用户类型上限的数据范围");
-        }
-    }
-
-    private void validateDataScopeAllowedForBoundUsers(SysRole role, Integer dataScope) {
-        if (dataScope == null) {
-            return;
-        }
-        Long exceedCount = TenantContextHolder.executeIgnore(() ->
-                roleMapper.countRoleUsersExceedingDataScope(dataScope, role.getId(), role.getTenantId()));
-        if (exceedCount != null && exceedCount > 0) {
-            throw new RuntimeException("角色数据范围超过目标用户类型上限");
-        }
-    }
-
-    private void validateRoleAssignableToUsers(SysRole role, List<Long> userIds) {
-        if (CollUtil.isEmpty(userIds)) {
-            return;
-        }
-        List<Long> normalizedUserIds = userIds.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        if (CollUtil.isEmpty(normalizedUserIds)) {
-            return;
-        }
-        Long tenantId = role.getTenantId();
-        Long assignableCount = TenantContextHolder.executeIgnore(() ->
-                roleMapper.countAssignableTargetUsers(normalizedUserIds, tenantId));
-        if (assignableCount == null || assignableCount != normalizedUserIds.size()) {
-            throw new RuntimeException("目标用户不存在或不属于当前租户");
-        }
-        LoginUser loginUser = requireLoginUser();
-        if (!loginUser.isAdmin()) {
-            Long nonNormalCount = TenantContextHolder.executeIgnore(() ->
-                    roleMapper.countNonNormalTargetUsers(normalizedUserIds, tenantId));
-            if (nonNormalCount != null && nonNormalCount > 0) {
-                throw new RuntimeException("租户管理员只能给普通用户分配角色");
-            }
-        }
-        validateDataScopeAllowedForUsers(role.getDataScope(), normalizedUserIds, tenantId);
+    private SysRoleAccessPolicy accessPolicy() {
+        return new SysRoleAccessPolicy(roleMapper, tenantMapper, orgMapper);
     }
 
     private List<SysDataScopeConfig> listEnabledDataScopeConfigs(Long tenantId) {
@@ -1124,49 +954,11 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             if (dataScope == null) {
                 continue;
             }
-            validateSupportedDataScope(dataScope);
-            validateDataScopeAllowedForCurrentUser(dataScope);
+            accessPolicy().validateSupportedDataScope(dataScope);
+            accessPolicy().validateDataScopeAllowedForCurrentUser(dataScope);
             result.put(moduleCode, dataScope);
         }
         return result;
-    }
-
-    private void validateSupportedDataScope(Integer dataScope) {
-        if (DataScopeType.getByRoleDataScope(dataScope, false) == null) {
-            throw new RuntimeException("不支持的数据权限范围");
-        }
-    }
-
-    private void validateDataScopeAllowedForUsers(Integer dataScope, List<Long> userIds, Long tenantId) {
-        if (dataScope == null || CollUtil.isEmpty(userIds)) {
-            return;
-        }
-        Long exceedCount = TenantContextHolder.executeIgnore(() ->
-                roleMapper.countUsersExceedingDataScope(dataScope, userIds, tenantId));
-        if (exceedCount != null && exceedCount > 0) {
-            throw new RuntimeException("角色数据范围超过目标用户类型上限");
-        }
-    }
-
-    private boolean isDataScopeAllowedForUserType(Integer dataScope, int userType) {
-        if (dataScope == null || userType == SystemConstants.UserType.SYSTEM_ADMIN) {
-            return true;
-        }
-        if (userType == SystemConstants.UserType.TENANT_ADMIN) {
-            return dataScope != SystemConstants.RoleDataScope.ALL;
-        }
-        return dataScope != SystemConstants.RoleDataScope.ALL
-                && dataScope != SystemConstants.RoleDataScope.TENANT;
-    }
-
-    private int normalizeUserType(Integer userType) {
-        if (userType == null) {
-            return SystemConstants.UserType.NORMAL_USER;
-        }
-        if (userType < SystemConstants.UserType.SYSTEM_ADMIN || userType > SystemConstants.UserType.NORMAL_USER) {
-            return SystemConstants.UserType.NORMAL_USER;
-        }
-        return userType;
     }
 
     private List<Long> normalizeOrgIds(List<Long> orgIds) {
@@ -1179,16 +971,4 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 .collect(Collectors.toList());
     }
 
-    private void validateOrgTenant(List<Long> orgIds, Long tenantId) {
-        if (CollUtil.isEmpty(orgIds)) {
-            return;
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                orgMapper.selectCount(new LambdaQueryWrapper<SysOrg>()
-                        .in(SysOrg::getId, orgIds)
-                        .eq(SysOrg::getTenantId, tenantId)));
-        if (count == null || count != orgIds.size()) {
-            throw new RuntimeException("组织不属于当前角色租户");
-        }
-    }
 }
