@@ -409,3 +409,9 @@
 - 使用 Access Policy + Specification 从 `SysUserServiceImpl` 迁出登录身份、用户管理权限通配符、系统/租户管理员边界、写入租户选择、跨租户目标访问、用户类型写入和自操作保护；Service 继续持有公开事务和关系副作用。
 - 入口由 1573 行降至 1384 行，新 `SysUserAccessPolicy` 287 行；管理与只读目标校验复用统一访问模板，同时保留不同失败文案和当前用户只读例外。
 - system Reactor 执行 `SysUserAccessPolicyTest,SysUserAssignmentPolicyTest,SysUserMapperSqlContractTest,SysUserImportSecurityContractTest` 共 4 类 9 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实跨租户授权、租户禁用和会话切换仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十六个切口：用户关系生命周期协调器
+
+- 使用 Coordinator 从 `SysUserServiceImpl` 成块迁出角色、组织、组织角色、租户和岗位关系的授权后编排，统一关系归一、归属补齐、差异写入、级联清理、旧角色兼容同步和会话/行政区划刷新；Access Policy 与 Assignment Policy 继续分别提供访问边界和分配规则。
+- 公开事务注解仍保留在 Service 门面，Coordinator 通过两个窄回调触发会话和主组织区划同步，避免反向注入 Service。入口由 1384 行降至 554 行，新 `SysUserRelationCoordinator` 780 行，均低于 1000 行。
+- system Reactor 干净编译退出码 0；执行 `SysUserRelationCoordinatorTest,SysUserAccessPolicyTest,SysUserAssignmentPolicyTest,SysUserMapperSqlContractTest,SysUserImportSecurityContractTest` 共 5 类 12 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实批量跨租户绑定、组织角色迁移和在线会话刷新仍需服务环境验收，无服务 PID 需停止。

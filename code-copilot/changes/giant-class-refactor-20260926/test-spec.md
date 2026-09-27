@@ -517,6 +517,15 @@
 
 验证结果：用户管理授权、租户选择和目标用户边界已委托 `SysUserAccessPolicy`；相关 4 个测试类共 9 项通过，0 失败、0 错误。`git diff --check` 通过；`SysUserServiceImpl` 1384 行，新 Access Policy 287 行。
 
+## 2026-09-27 第七十六轮增量验证：用户关系生命周期协调器
+
+- P0：角色绑定的可管理范围、角色租户/数据范围校验、旧用户角色向组织角色同步和会话刷新保持不变。
+- P0：组织、租户、岗位的主关系标记、差异新增/删除、租户解绑级联清理和最后租户删除用户语义保持不变。
+- P1：使用 Coordinator 编排关系生命周期，Access Policy 与 Assignment Policy 分别保留授权和适用规则；公开事务边界继续位于 Service，新生产类少于 1000 行。
+- 验证：执行 system Reactor 干净编译，重跑关系协调器、访问/分配策略和用户 Mapper/导入安全契约测试，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：角色、组织、租户和岗位关系已委托 `SysUserRelationCoordinator`；新增 3 项测试覆盖角色越权拒绝、岗位差异写入/主岗位迁移和最后租户解绑清理。相关 5 个测试类共 12 项通过，0 失败、0 错误；system Reactor 干净编译与 `git diff --check` 通过。`SysUserServiceImpl` 554 行，新 Coordinator 780 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。
