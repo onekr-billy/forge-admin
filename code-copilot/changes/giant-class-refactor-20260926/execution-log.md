@@ -300,3 +300,9 @@
 - 使用 Gateway 从 `BusinessObjectDesignerService` 迁出模型与运行配置查找、默认模型构造、领域/对象/审计/数据源补全、草稿校验，以及 ai_lowcode_model/ai_crud_config 双表持久化。Facade 通过窄委托保留既有事务和保存时序。
 - 入口由 1160 行降至 904 行，新 `BusinessObjectDraftSchemaGateway` 467 行，至此设计器主类和本轮全部新增生产类均低于 1000 行；未改变 `BusinessObjectDesignerService` 的公开方法和 Spring 构造注入签名。
 - generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实多领域、外部数据源和发布版本双写仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十八个切口：Flowable 流程图服务
+
+- 使用 Facade + Assembler 边界从 `FlowTaskServiceImpl` 迁出流程图可见性校验、BPMN 模型与部署资源读取、PNG 生成、节点/连线状态计算、人员批量展示和降级信息组装。审批、驳回、撤回、会签及业务状态迁移仍保留在原任务服务，不改变公开接口。
+- 入口由 3516 行降至 2848 行，新 `FlowProcessDiagramService` 768 行；历史查询继续统一限制为 1000 条，人员展示继续使用租户约束的批量组织查询。旧源码契约改为分别约束任务服务和流程图服务，没有放宽安全或性能断言。
+- flow Reactor 编译退出码 0；执行 `FlowProcessDiagramSequenceContractTest,FlowOrgIntegrationSecurityContractTest,FlowTaskActionAuthorizationTest,FlowTaskMutationAuthorizationContractTest,FlowTaskServiceImplStateChangeTest,FlowTaskSignContractTest,FlowTaskStatusTransitionContractTest,FlowTodoPerformanceContractTest` 共 8 类 31 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实 BPMN 图片字体、部署资源和复杂并行网关仍需服务环境验收，无服务 PID 需停止。

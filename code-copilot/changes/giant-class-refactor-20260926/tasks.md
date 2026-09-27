@@ -57,5 +57,6 @@
 - [x] 提取业务对象字段设计 Policy，集中运行时元数据保留与业务组件保护，并清理无调用的旧 Payload 降级链，使 `BusinessObjectDesignerService` 降至 1684 行。
 - [x] 提取历史 Page Schema Adapter，集中旧搜索/编辑/列表协议与区域别名迁移，并清理投影职责迁出后的无调用工具链，使 `BusinessObjectDesignerService` 降至 1160 行。
 - [x] 提取草稿 Schema Gateway，集中模型/运行配置加载、领域与数据源补全、校验和双表持久化，使 `BusinessObjectDesignerService` 降至 904 行并满足单类 1000 行目标。
+- [x] 提取 Flowable 流程图 Facade/Assembler，集中 BPMN 图片生成、节点/连线状态投影和人员批量展示，使 `FlowTaskServiceImpl` 降至 2848 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

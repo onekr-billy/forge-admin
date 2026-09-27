@@ -43,8 +43,11 @@ class FlowTaskMutationAuthorizationContractTest {
     void processDetailsMustCapHistoricalCollections() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String diagramService = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowProcessDiagramService.java"));
         assertTrue(source.contains("MAX_DETAIL_HISTORY_ITEMS = 1000"));
-        assertTrue(source.contains("listPage(0, MAX_DETAIL_HISTORY_ITEMS)"));
+        assertTrue(diagramService.contains("MAX_DETAIL_HISTORY_ITEMS = 1000"));
+        assertTrue(diagramService.contains("listPage(0, MAX_DETAIL_HISTORY_ITEMS)"));
         assertTrue(source.contains("selectHistoryTasks"));
         assertTrue(source.contains("Math.min(pageSize, MAX_DETAIL_HISTORY_ITEMS)"));
     }
