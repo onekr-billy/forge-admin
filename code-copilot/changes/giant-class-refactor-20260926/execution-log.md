@@ -343,3 +343,9 @@
 - 使用 Validator + Pipeline 从 `BusinessObjectPublishService` 迁出表单组件树、表单治理、嵌套表单字段事件、安全路径与映射协议、视图字段引用校验；使用 Collector 统一检查项构造及不可降级阻断白名单。发布 Facade 继续持有上下文加载、事务、在线 DDL 和状态切换顺序。
 - 入口由 2709 行降至 2210 行，新 `BusinessObjectFormPublishValidator` 497 行、`BusinessPublishCheckCollector` 53 行，均低于 1000 行；表单与字段事件测试改为直接验证 Validator，不保留测试专用 Facade 私有方法。
 - generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库或执行在线 DDL；真实历史表单资产、复杂字段事件和发布事务仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十五个切口：页面与事务动作发布校验链
+
+- 使用 Validator Chain + Strategy 从 `BusinessObjectPublishService` 迁出 Page Zone 引用、页面协议、跳转目标、区块预览、事件/自定义动作参数和事务命令步骤校验；使用 Catalog 统一页面/表单目标键目录，供页面校验与应用入口检查复用。
+- 入口由 2210 行降至 1680 行，新 `BusinessObjectPagePublishValidator` 641 行、`BusinessPublishTargetCatalog` 67 行，均低于 1000 行；事务命令测试改为直接验证 Validator，不保留测试专用 Facade 私有方法。
+- generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库或执行在线 DDL；真实复杂页面、多入口跳转和事务命令仍需服务环境验收，无服务 PID 需停止。
